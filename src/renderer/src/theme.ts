@@ -1,4 +1,4 @@
-import { createTheme } from '@mui/material/styles'
+import { createTheme, alpha } from '@mui/material/styles'
 import { themeColors } from './themeColors'
 import { CSSObject } from '@mui/system'
 
@@ -120,6 +120,20 @@ function buildTheme(mode: 'light' | 'dark') {
               backgroundColor: isLight ? themeColors.highlightAlphaLight : themeColors.highlightAlphaDark,
             },
           },
+          root: {
+            '&.hover-ring.MuiButton-containedPrimary:hover': {
+              backgroundColor: isLight ? themeColors.highlightLight : themeColors.highlightDark,
+              boxShadow: `0 0 0 2px ${
+                alpha(isLight ? themeColors.highlightLight : themeColors.highlightDark, 0.55)
+              } inset`,
+            },
+            '&.hover-ring.MuiButton-containedPrimary:focus-visible': {
+              outline: 'none',
+              boxShadow: `0 0 0 2px ${
+                alpha(isLight ? themeColors.highlightLight : themeColors.highlightDark, 0.75)
+              } inset`,
+            },
+          },
         },
       },
       MuiAppBar: {
@@ -146,6 +160,76 @@ function buildTheme(mode: 'light' | 'dark') {
 
 export const lightTheme = buildTheme('light')
 export const darkTheme = buildTheme('dark')
+
+export function buildRuntimeTheme(mode: 'light' | 'dark', primary?: string) {
+  if (!primary) return buildTheme(mode)
+
+  const base = buildTheme(mode)
+  const isLight = mode === 'light'
+  const hoverBg = isLight ? themeColors.highlightAlphaLight : themeColors.highlightAlphaDark
+
+  return createTheme({
+    ...base,
+    palette: {
+      ...base.palette,
+      primary: { main: primary },
+    },
+    components: {
+      ...base.components,
+      MuiTabs: {
+        styleOverrides: {
+          ...(base.components?.MuiTabs as any)?.styleOverrides,
+          indicator: {
+            ...((base.components?.MuiTabs as any)?.styleOverrides?.indicator || {}),
+            backgroundColor: primary,
+            height: 4,
+          },
+        },
+      },
+      MuiOutlinedInput: {
+        styleOverrides: {
+          ...(base.components?.MuiOutlinedInput as any)?.styleOverrides,
+          root: {
+            ...((base.components?.MuiOutlinedInput as any)?.styleOverrides?.root || {}),
+            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: primary },
+            '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: primary },
+          },
+          notchedOutline: (base.components?.MuiOutlinedInput as any)?.styleOverrides?.notchedOutline,
+        },
+      },
+      MuiInputLabel: {
+        styleOverrides: {
+          ...(base.components?.MuiInputLabel as any)?.styleOverrides,
+          root: {
+            ...((base.components?.MuiInputLabel as any)?.styleOverrides?.root || {}),
+            '&.Mui-focused': { color: primary },
+          },
+        },
+      },
+      MuiButton: {
+        styleOverrides: {
+          ...(base.components?.MuiButton as any)?.styleOverrides,
+          containedPrimary: {
+            ...((base.components?.MuiButton as any)?.styleOverrides?.containedPrimary || {}),
+            backgroundColor: primary,
+            '&:hover': { backgroundColor: hoverBg },
+          },
+          root: {
+            ...((base.components?.MuiButton as any)?.styleOverrides?.root || {}),
+            '&.hover-ring.MuiButton-containedPrimary:hover': {
+              backgroundColor: primary,
+              boxShadow: `0 0 0 2px ${alpha(primary, 0.55)} inset`,
+            },
+            '&.hover-ring.MuiButton-containedPrimary:focus-visible': {
+              outline: 'none',
+              boxShadow: `0 0 0 2px ${alpha(primary, 0.75)} inset`,
+            },
+          },
+        },
+      },
+    },
+  })
+}
 
 export function initCursorHider(inactivityMs: number = 5000) {
   let timer: ReturnType<typeof setTimeout>

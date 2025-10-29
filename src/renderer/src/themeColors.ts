@@ -15,7 +15,7 @@ export const themeColors = {
   barColor: '#61dafb',
 
   // Highlight (primary) colors
-  highlightLight: '#61dafb',
+  highlightLight: '#fa1900',
   highlightDark: '#61dafb',
 
   // Higlight active carplay stream

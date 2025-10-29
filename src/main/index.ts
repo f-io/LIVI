@@ -390,6 +390,8 @@ function persistKioskAndBroadcast(kiosk: boolean) {
           mediaDelay: +config.mediaDelay,
           wifiType: config.wifiType,
           wifiChannel: config.wifiChannel,
+          primaryColorDark: config.primaryColorDark,
+          primaryColorLight: config.primaryColorLight,
         },
         null,
         2
@@ -670,6 +672,8 @@ function saveSettings(settings: ExtraConfig) {
         mediaDelay: +settings.mediaDelay,
         wifiType: settings.wifiType,
         wifiChannel: settings.wifiChannel,
+        primaryColorDark: settings.primaryColorDark,
+        primaryColorLight: settings.primaryColorLight,
       },
       null,
       2
