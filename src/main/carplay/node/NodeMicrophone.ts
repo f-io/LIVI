@@ -123,20 +123,20 @@ export default class NodeMicrophone extends EventEmitter {
         const result = execSync('arecord -L', { encoding: 'utf8' });
         const lines = result.split('\n');
         const index = lines.findIndex(line => line.trim().startsWith('sysdefault:'));
-        if (index === -1) return 'no device available';
+        if (index === -1) return 'not available';
 
         const description = lines[index + 1]?.trim();
-        if (!description || description === 'sysdefault') return 'no device available';
+        if (!description || description === 'sysdefault') return 'not available';
 
         return description;
       } catch (e) {
         console.warn('[NodeMicrophone] Failed to get sysdefault mic label', e);
-        return 'no device available';
+        return 'not available';
       }
     } else if (os.platform() === 'darwin') {
-      return 'default device';
+      return 'system default';
     } else {
-      return 'no device';
+      return 'not available';
     }
   }
 }
