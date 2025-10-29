@@ -11,38 +11,40 @@ jobs:
     name: Type-Check
     if: ${{ github.actor != 'github-actions' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: true
+      NODE_ENV: development
+      npm_config_ignore_scripts: "true"
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      PUPPETEER_SKIP_DOWNLOAD: "1"
+      npm_config_audit: "false"
+      npm_config_fund: "false"
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Fetch latest Node.js 22.x
-        run: |
-          curl -s https://nodejs.org/dist/index.json | jq -r '[.[] | select(.version | test("^v22\\.\\d+\\.\\d+$"))][0].version' > .nvmrc
-          echo "Using Node version: $(cat .nvmrc)"
-
-      - name: Setup latest Node.js 22.x
+      - name: Setup Node.js 22.x
         uses: actions/setup-node@v4
         with:
-          node-version-file: .nvmrc
+          node-version: '22.x'
+          check-latest: true
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
 
       - name: Setup npm 11.x
         run: |
           npm i -g npm@^11
-          echo "npm version: $(npm -v)"
-          node -e "const v=require('child_process').execSync('npm -v').toString().trim(); if(!/^11\./.test(v)){console.error('Expected npm 11.x, got', v); process.exit(1);} console.log('npm 11 OK');"
+          echo "Node: $(node -v)"
+          echo "npm:  $(npm -v)"
+          node -e "const v=require('child_process').execSync('npm -v').toString().trim(); if(!/^11\./.test(v)){process.exit(1)}"
 
-      - name: Ensure native build deps
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            build-essential python3 python3-dev libusb-1.0-0-dev libudev-dev     
-
-      - name: Clean & install dependencies
-        run: |
-          rm -rf node_modules package-lock.json
-          npm install --no-audit --prefer-offline
+      - name: Install deps (no scripts, no optional)
+        run: npm ci --ignore-scripts --omit=optional
 
       - name: Run TypeScript type-check
         run: npm run typecheck
