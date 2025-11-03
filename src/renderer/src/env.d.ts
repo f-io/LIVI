@@ -1,12 +1,14 @@
 /// <reference types="@webgpu/types" />
 
-declare module 'pcm-ringbuf-player' {
-  export class PcmPlayer {
-    readonly sab: SharedArrayBuffer
-    constructor(sampleRate: number, channels: number)
-    volume(volume: number, duration?: number): void
-    start(): void
-    stop(): void
+declare module 'ringbuf.js' {
+  export class RingBuffer {
+    constructor(sab: SharedArrayBuffer, type: { BYTES_PER_ELEMENT: number })
+    push(elements: ArrayBufferView, length?: number, offset?: number): number
+    pop(elements: ArrayBufferView, length: number, offset?: number): number
+    empty(): boolean
+    full(): boolean
+    capacity(): number
+    availableRead(): number
   }
 }
 

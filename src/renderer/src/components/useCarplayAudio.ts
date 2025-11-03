@@ -1,65 +1,109 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { AudioCommand, AudioData, decodeTypeMap } from '../../../main/carplay/messages'
-import { PcmPlayer } from 'pcm-ringbuf-player'
+import { PcmPlayer } from '../audio/PcmPlayer'
 import { AudioPlayerKey, CarPlayWorker } from './worker/types'
 import { createAudioPlayerKey } from './worker/utils'
 import { useCarplayStore } from '../store/store'
 
-const useCarplayAudio = (worker: CarPlayWorker) => {
-  const [audioPlayers] = useState(new Map<AudioPlayerKey, PcmPlayer>())
-  const audioVolume = useCarplayStore(s => s.settings?.audioVolume ?? 1.0)
-  const navVolume = useCarplayStore(s => s.settings?.navVolume ?? 0.5)
+type PlayerEntry = {
+  player: PcmPlayer
+  isNav: boolean
+  jitterMs: number
+}
 
-  useEffect(() => {
-    audioPlayers.forEach((player, key) => {
-      if (key.includes('navi') || key.endsWith('2') || key.endsWith('3')) {
-        player.volume(navVolume)
-      } else {
-        player.volume(audioVolume)
-      }
-    })
-  }, [audioVolume, navVolume, audioPlayers])
+const useCarplayAudio = (worker: CarPlayWorker) => {
+  const playersRef = useRef(new Map<AudioPlayerKey, PlayerEntry>())
+
+  const audioVolume = useCarplayStore((s) => s.audioVolume ?? s.settings?.audioVolume ?? 1.0)
+  const navVolume = useCarplayStore((s) => s.navVolume ?? s.settings?.navVolume ?? 0.5)
+  const audioJitterMs = useCarplayStore((s) => s.audioJitterMs ?? 15)
 
   const getCommandName = (cmd?: number) => {
-    if (typeof cmd === 'number' && cmd in AudioCommand) {
-      return AudioCommand[cmd as unknown as keyof typeof AudioCommand]
+    if (typeof cmd === 'number') {
+      // Numeric enum reverse mapping
+      return (AudioCommand as any)[cmd] as string | undefined
     }
     return undefined
   }
+
+  const applyVolumes = useCallback(() => {
+    playersRef.current.forEach(({ player, isNav }) => {
+      player.volume(isNav ? navVolume : audioVolume)
+    })
+  }, [audioVolume, navVolume])
+
+  useEffect(() => {
+    applyVolumes()
+  }, [applyVolumes])
 
   const getAudioPlayer = useCallback(
     (audio: AudioData): PcmPlayer => {
       const { decodeType, audioType } = audio
       const format = decodeTypeMap[decodeType]
-      const audioKey = createAudioPlayerKey(decodeType, audioType)
+      const key: AudioPlayerKey = createAudioPlayerKey(decodeType, audioType)
+      const isNav = audioType === 2 || audioType === 3
 
-      let player = audioPlayers.get(audioKey)
-      if (!player) {
-        player = new PcmPlayer(format.frequency, format.channel)
-        audioPlayers.set(audioKey, player)
+      const existing = playersRef.current.get(key)
+
+      if (!existing || existing.jitterMs !== audioJitterMs) {
+        if (existing) {
+          try {
+            existing.player.stop()
+          } catch {}
+          playersRef.current.delete(key)
+        }
+
+        // eslint-disable-next-line no-console
+        console.log(
+          '[Audio] Create PcmPlayer FS:',
+          format.frequency,
+          'Hz',
+          'Channels:',
+          format.channel,
+          'Jitter:',
+          audioJitterMs,
+          'ms'
+        )
+
+        const player = new PcmPlayer(format.frequency, format.channel, audioJitterMs)
+        playersRef.current.set(key, { player, isNav, jitterMs: audioJitterMs })
         player.start()
+
+        // Initial volume based on stream type
+        player.volume(isNav ? navVolume : audioVolume)
+
+        // Hand off SAB to the worker
         worker.postMessage({
           type: 'audioPlayer',
           payload: {
-            sab: player.sab,
+            sab: player.getRawBuffer(),
             decodeType,
-            audioType,
-          },
+            audioType
+          }
         })
+
+        return player
       }
 
-      const isNav = audioType === 2 || audioType === 3
-      player.volume(isNav ? navVolume : audioVolume)
-
-      return player
+      return existing.player
     },
-    [audioPlayers, worker, audioVolume, navVolume]
+    [audioJitterMs, audioVolume, navVolume, worker]
   )
 
   const processAudio = useCallback(
     (audio: AudioData) => {
       const player = getAudioPlayer(audio)
-      console.log('[Audio] decodeType:', audio.decodeType, 'audioType:', audio.audioType, 'command:', audio.command, '(', getCommandName(audio.command), ')')
+      // eslint-disable-next-line no-console
+      console.log(
+        '[Audio]',
+        'decodeType:',
+        audio.decodeType,
+        'audioType:',
+        audio.audioType,
+        'command:',
+        audio.command,
+        `(${getCommandName(audio.command)})`
+      )
 
       if (audio.command === AudioCommand.AudioNaviStart) {
         setTimeout(() => player.volume(navVolume), 10)
@@ -72,9 +116,14 @@ const useCarplayAudio = (worker: CarPlayWorker) => {
 
   useEffect(() => {
     return () => {
-      audioPlayers.forEach(p => p.stop())
+      playersRef.current.forEach((entry) => {
+        try {
+          entry.player.stop()
+        } catch {}
+      })
+      playersRef.current.clear()
     }
-  }, [audioPlayers])
+  }, [])
 
   return { processAudio, getAudioPlayer }
 }

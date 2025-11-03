@@ -1,160 +1,157 @@
-import { decodeTypeMap } from "../../../../main/carplay/messages";
-import { AudioPlayerKey } from "./types";
-import { RingBuffer } from "ringbuf.js";
-import { createAudioPlayerKey } from "./utils";
+/* eslint-disable no-restricted-globals */
+import { decodeTypeMap } from '../../../../main/carplay/messages'
+import { AudioPlayerKey } from './types'
+import { RingBuffer } from 'ringbuf.js'
+import { createAudioPlayerKey } from './utils'
 
-const audioBuffers: Record<AudioPlayerKey, RingBuffer> = {};
-const pendingAudio: Record<AudioPlayerKey, Int16Array[]> = {};
-const remainders: Record<AudioPlayerKey, Int16Array | undefined> = {};
+type Key = AudioPlayerKey
 
-let microphonePort: MessagePort | undefined;
+const audioBuffers: Record<Key, RingBuffer> = {}
+const pendingChunks: Record<Key, Int16Array[]> = {}
+const sabRequested: Record<Key, boolean> = {}
 
-let isNewStream = true;
-let lastPcmTimestamp = Date.now();
-const PCM_TIMEOUT = 2000;
+let audioPort: MessagePort | undefined
+
+type Info = { codec: string | number; sampleRate: number; channels: number; bitDepth?: number }
+const lastInfo: Record<Key, Info> = {}
+let currentKey: Key | undefined
+
+function toInt16(audioData: any): Int16Array | undefined {
+  if (audioData?.data instanceof Int16Array) {
+    const src = audioData.data as Int16Array
+    const aligned =
+      src.byteOffset % 2 === 0 && src.buffer.byteLength >= src.byteOffset + src.byteLength
+    return aligned ? src : new Int16Array(src)
+  }
+  if (audioData?.buffer instanceof ArrayBuffer) return new Int16Array(audioData.buffer)
+  if (audioData?.chunk instanceof ArrayBuffer) return new Int16Array(audioData.chunk)
+  console.error('[CARPLAY.WORKER] PCM - cannot interpret PCM data:', audioData)
+  return undefined
+}
+
+function requestSabIfNeeded(decodeType: number, audioType: number, key: Key) {
+  if (!audioBuffers[key] && !sabRequested[key]) {
+    ;(self as unknown as Worker).postMessage({
+      type: 'requestBuffer',
+      message: { decodeType, audioType }
+    })
+    sabRequested[key] = true
+  }
+}
+
+function pushOrPend(key: Key, chunk: Int16Array) {
+  const rb = audioBuffers[key]
+  if (rb) rb.push(chunk)
+  else {
+    if (!pendingChunks[key]) pendingChunks[key] = []
+    pendingChunks[key].push(chunk)
+  }
+}
 
 function processAudioData(audioData: any) {
-  const { decodeType, audioType } = audioData;
-  const meta = decodeTypeMap[decodeType];
+  const { decodeType, audioType } = audioData
+  const key = createAudioPlayerKey(decodeType, audioType)
+  const meta = decodeTypeMap[decodeType]
 
-  // normalize to Int16Array
-  let int16: Int16Array;
-  if (audioData.data instanceof Int16Array) {
-    int16 =
-      audioData.data.byteOffset % 2 === 0 &&
-      audioData.data.buffer.byteLength >=
-        audioData.data.byteOffset + audioData.data.byteLength
-        ? audioData.data
-        : new Int16Array(audioData.data);
-  } else if (audioData.buffer instanceof ArrayBuffer) {
-    int16 = new Int16Array(audioData.buffer);
-  } else {
-    console.error("[CARPLAY.WORKER] PCM - cannot interpret PCM data:", audioData);
-    return;
+  const channels = Math.max(1, meta?.channel ?? 2)
+  const sampleRate = Math.max(8000, meta?.frequency ?? 48000)
+  const codec = meta?.format ?? meta?.mimeType ?? String(decodeType)
+  const bitDepth = meta?.bitDepth
+
+  const pcm = toInt16(audioData)
+  if (!pcm) return
+
+  requestSabIfNeeded(decodeType, audioType, key)
+
+  // send audioInfo on key change or if format values differ
+  const info: Info = { codec, sampleRate, channels, bitDepth }
+  const keyChanged = key !== currentKey
+  const changed =
+    !lastInfo[key] ||
+    lastInfo[key].sampleRate !== info.sampleRate ||
+    lastInfo[key].channels !== info.channels ||
+    lastInfo[key].codec !== info.codec ||
+    lastInfo[key].bitDepth !== info.bitDepth
+
+  if (keyChanged || changed) {
+    currentKey = key
+    lastInfo[key] = info
+    ;(self as unknown as Worker).postMessage({ type: 'audioInfo', payload: info })
   }
 
-  const now = Date.now();
-  if (now - lastPcmTimestamp > PCM_TIMEOUT) isNewStream = true;
-
-  if (isNewStream && meta) {
-    isNewStream = false;
-
-    (self as unknown as Worker).postMessage({
-      type: "audioInfo",
-      payload: {
-        codec: meta.format ?? meta.mimeType ?? String(decodeType),
-        sampleRate: meta.frequency,
-        channels: meta.channel,
-        bitDepth: meta.bitDepth,
-      },
-    });
-
-    const keyInit = createAudioPlayerKey(decodeType, audioType);
-    remainders[keyInit] = undefined;
-  }
-
-  // downmix for UI/FFT
-  if (meta) {
-    const chUI = Math.max(1, meta.channel ?? 2);
-    const framesUI = Math.floor(int16.length / chUI);
-    const float32 = new Float32Array(framesUI);
-    for (let i = 0; i < framesUI; i++) {
-      let sum = 0;
-      for (let c = 0; c < chUI; c++) sum += int16[i * chUI + c] || 0;
-      float32[i] = (sum / chUI) / 32768;
+  // FFT downmix for UI/visuals
+  {
+    const frames = Math.floor(pcm.length / channels)
+    const f32 = new Float32Array(frames)
+    for (let i = 0; i < frames; i++) {
+      let s = 0
+      for (let c = 0; c < channels; c++) s += pcm[i * channels + c] || 0
+      f32[i] = s / channels / 32768
     }
-    (self as unknown as Worker).postMessage(
-      { type: "pcmData", payload: float32.buffer, decodeType },
-      [float32.buffer]
-    );
+    ;(self as unknown as Worker).postMessage({ type: 'pcmData', payload: f32.buffer, decodeType }, [
+      f32.buffer
+    ])
   }
 
-  // write to audio ring: frame-aligned
-  const key = createAudioPlayerKey(decodeType, audioType);
-  const channels = Math.max(1, meta?.channel ?? 2);
-
-  // prepend remainder
-  let src = int16;
-  const prev = remainders[key];
-  if (prev && prev.length) {
-    const merged = new Int16Array(prev.length + int16.length);
-    merged.set(prev, 0);
-    merged.set(int16, prev.length);
-    src = merged;
-    remainders[key] = undefined;
-  }
-
-  // push only whole frames
-  const framesTotal = Math.floor(src.length / channels);
-  const samplesAligned = framesTotal * channels;
-
-  if (samplesAligned > 0) {
-    const aligned = samplesAligned === src.length ? src : src.subarray(0, samplesAligned);
-    if (audioBuffers[key]) {
-      audioBuffers[key].push(aligned);
-    } else {
-      pendingAudio[key] = pendingAudio[key] || [];
-      pendingAudio[key].push(aligned);
-      (self as unknown as Worker).postMessage({
-        type: "requestBuffer",
-        message: { decodeType, audioType },
-      });
-    }
-  }
-
-  // keep leftover for next chunk
-  const leftover = src.length - samplesAligned;
-  if (leftover > 0) remainders[key] = src.subarray(samplesAligned);
-
-  lastPcmTimestamp = now;
+  pushOrPend(key, pcm)
 }
 
-function setupPorts(mPort: MessagePort) {
+function setupPorts(port: MessagePort) {
   try {
-    mPort.onmessage = (ev) => {
+    port.onmessage = (ev) => {
       try {
-        const data = ev.data as any;
-        if (data.type === "audio" && data.buffer) processAudioData(data);
+        const data = ev.data as any
+        if (data?.type === 'audio' && (data.buffer || data.data || data.chunk)) {
+          processAudioData(data)
+        }
       } catch (e) {
-        console.error("[CARPLAY.WORKER] error processing audio message:", e);
+        console.error('[CARPLAY.WORKER] error processing audio message:', e)
       }
-    };
-    mPort.start?.();
+    }
+    port.start?.()
   } catch (e) {
-    console.error("[CARPLAY.WORKER] port setup failed:", e);
-    (self as unknown as Worker).postMessage({ type: "failure", error: "Port setup failed" });
+    console.error('[CARPLAY.WORKER] port setup failed:', e)
+    ;(self as unknown as Worker).postMessage({ type: 'failure', error: 'Port setup failed' })
   }
 }
 
-(self as unknown as Worker).onmessage = (ev: MessageEvent) => {
-  const data = ev.data as any;
-  switch (data.type) {
-    case "initialise": {
-      microphonePort = data.payload.microphonePort;
-      if (microphonePort) setupPorts(microphonePort);
-      else console.error("[CARPLAY.WORKER] missing microphonePort in initialise payload");
-      break;
+;(self as unknown as Worker).onmessage = (ev: MessageEvent) => {
+  const data = ev.data as any
+  switch (data?.type) {
+    case 'initialise': {
+      audioPort = data?.payload?.audioPort
+      if (audioPort) setupPorts(audioPort)
+      else console.error('[CARPLAY.WORKER] missing audioPort in initialise payload')
+      break
     }
-    case "audioPlayer": {
+    case 'audioPlayer': {
       const { sab, decodeType, audioType } = data.payload as {
-        sab: SharedArrayBuffer;
-        decodeType: number;
-        audioType: number;
-      };
-      const key = createAudioPlayerKey(decodeType, audioType);
-      audioBuffers[key] = new RingBuffer(sab, Int16Array);
+        sab: SharedArrayBuffer
+        decodeType: number
+        audioType: number
+      }
+      const key = createAudioPlayerKey(decodeType, audioType)
+      audioBuffers[key] = new RingBuffer(sab, Int16Array)
+      sabRequested[key] = false
 
-      const pend = pendingAudio[key] || [];
-      for (const buf of pend) audioBuffers[key].push(buf);
-      delete pendingAudio[key];
-      break;
+      const pend = pendingChunks[key] || []
+      if (pend.length) {
+        for (const chunk of pend) audioBuffers[key].push(chunk)
+        delete pendingChunks[key]
+      }
+      break
     }
-    case "stop":
-      isNewStream = true;
-      break;
+    case 'stop': {
+      Object.keys(audioBuffers).forEach((k) => delete audioBuffers[k as Key])
+      Object.keys(pendingChunks).forEach((k) => delete pendingChunks[k as Key])
+      Object.keys(sabRequested).forEach((k) => delete sabRequested[k as Key])
+      Object.keys(lastInfo).forEach((k) => delete lastInfo[k as Key])
+      currentKey = undefined
+      break
+    }
     default:
-      break;
+      break
   }
-};
+}
 
-export {};
+export {}

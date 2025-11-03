@@ -172,6 +172,7 @@ function loadConfig(): ExtraConfig {
     nightMode: true,
     audioVolume: 1.0,
     navVolume: 0.5,
+    audioJitterMs: 15,
     bindings: { ...DEFAULT_BINDINGS },
     ...fileConfig,
   } as ExtraConfig

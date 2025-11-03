@@ -9,7 +9,7 @@ const socket = io(URL, {
   transports: ['websocket'],
   reconnection: true,
   reconnectionAttempts: 5,
-  reconnectionDelay: 2000,
+  reconnectionDelay: 2000
 })
 
 socket.on('connect_error', (err) => {
@@ -45,6 +45,16 @@ export interface CarplayStore {
   audioPcmData: Float32Array | null
   setPcmData: (data: Float32Array) => void
 
+  // Audio settings with direct access
+  audioVolume: number
+  navVolume: number
+  audioJitterMs: number
+
+  // Audio setters
+  setAudioVolume: (volume: number) => void
+  setNavVolume: (volume: number) => void
+  setAudioJitterMs: (jitterMs: number) => void
+
   // Setter
   setDeviceInfo: (info: {
     serial: string
@@ -61,15 +71,24 @@ export interface CarplayStore {
   }) => void
 }
 
-export const useCarplayStore = create<CarplayStore>((set) => ({
+export const useCarplayStore = create<CarplayStore>((set, get) => ({
   settings: null,
+
   saveSettings: (settings) => {
     set({ settings })
+    // Sync audio settings from saved settings
+    set({
+      audioVolume: settings.audioVolume ?? 1.0,
+      navVolume: settings.navVolume ?? 0.5,
+      audioJitterMs: settings.audioJitterMs ?? 15
+    })
     socket.emit('saveSettings', settings)
   },
+
   getSettings: () => {
     socket.emit('getSettings')
   },
+
   stream: (stream) => {
     socket.emit('stream', stream)
   },
@@ -87,7 +106,7 @@ export const useCarplayStore = create<CarplayStore>((set) => ({
       audioSampleRate: null,
       audioChannels: null,
       audioBitDepth: null,
-      audioPcmData: null,
+      audioPcmData: null
     }),
 
   negotiatedWidth: null,
@@ -105,6 +124,54 @@ export const useCarplayStore = create<CarplayStore>((set) => ({
   audioPcmData: null,
   setPcmData: (data) => set({ audioPcmData: data }),
 
+  // Audio settings with defaults
+  audioVolume: 1.0,
+  navVolume: 0.5,
+  audioJitterMs: 15,
+
+  // Audio setters
+  setAudioVolume: (audioVolume) => {
+    set({ audioVolume })
+    const { settings, navVolume, audioJitterMs } = get()
+    if (settings) {
+      const updatedSettings: ExtraConfig = {
+        ...settings,
+        audioVolume,
+        navVolume,
+        audioJitterMs
+      }
+      get().saveSettings(updatedSettings)
+    }
+  },
+
+  setNavVolume: (navVolume) => {
+    set({ navVolume })
+    const { settings, audioVolume, audioJitterMs } = get()
+    if (settings) {
+      const updatedSettings: ExtraConfig = {
+        ...settings,
+        audioVolume,
+        navVolume,
+        audioJitterMs
+      }
+      get().saveSettings(updatedSettings)
+    }
+  },
+
+  setAudioJitterMs: (audioJitterMs) => {
+    set({ audioJitterMs })
+    const { settings, audioVolume, navVolume } = get()
+    if (settings) {
+      const updatedSettings: ExtraConfig = {
+        ...settings,
+        audioVolume,
+        navVolume,
+        audioJitterMs
+      }
+      get().saveSettings(updatedSettings)
+    }
+  },
+
   setDeviceInfo: ({ serial, manufacturer, product, fwVersion }) =>
     set({ serial, manufacturer, product, fwVersion }),
 
@@ -116,16 +183,14 @@ export const useCarplayStore = create<CarplayStore>((set) => ({
       audioCodec: codec,
       audioSampleRate: sampleRate,
       audioChannels: channels,
-      audioBitDepth: bitDepth,
-    }),
+      audioBitDepth: bitDepth
+    })
 }))
 
 // Status store
 export interface StatusStore {
   reverse: boolean
   lights: boolean
-
-  // Dongle- und Streaming-Status
   isDongleConnected: boolean
   isStreaming: boolean
   cameraFound: boolean
@@ -148,12 +213,17 @@ export const useStatusStore = create<StatusStore>((set) => ({
   setDongleConnected: (connected) => set({ isDongleConnected: connected }),
   setStreaming: (streaming) => set({ isStreaming: streaming }),
   setReverse: (reverse) => set({ reverse }),
-  setLights: (lights) => set({ lights }),
+  setLights: (lights) => set({ lights })
 }))
 
 // Socket.IO Event-Handler
 socket.on('settings', (settings: ExtraConfig) => {
-  useCarplayStore.setState({ settings })
+  useCarplayStore.setState({
+    settings,
+    audioVolume: settings.audioVolume ?? 1.0,
+    navVolume: settings.navVolume ?? 0.5,
+    audioJitterMs: settings.audioJitterMs ?? 15
+  })
 })
 
 socket.on('reverse', (reverse: boolean) => {

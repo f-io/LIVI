@@ -7,6 +7,7 @@ export type ExtraConfig = DongleConfig & {
   bindings: KeyBindings,
   audioVolume: number;
   navVolume: number;
+  audioJitterMs: number;
   primaryColorDark?: string;
   primaryColorLight?: string;
 }
