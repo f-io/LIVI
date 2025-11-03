@@ -1,44 +1,34 @@
-// globals provided by AudioWorklet
-declare const sampleRate: number
-declare function registerProcessor(name: string, ctor: any): void
-declare class AudioWorkletProcessor {
-  readonly port: MessagePort
-  constructor(options?: any)
-}
+/* eslint-disable no-undef */
+'use strict'
 
 const RENDER_QUANTUM_FRAMES = 128
 const RING_POINTERS_SIZE = 8
 
 // Helpers
-function quantaFromMs(ms: number, sr: number) {
-  return Math.max(1, Math.ceil((ms / 1000) * sr / RENDER_QUANTUM_FRAMES))
+function quantaFromMs(ms, sr) {
+  return Math.max(1, Math.ceil(((ms / 1000) * sr) / RENDER_QUANTUM_FRAMES))
 }
 
 class RingBuffReader {
-  private storage: Int16Array
-  private writePointer: Uint32Array
-  private readPointer: Uint32Array
-
-  constructor(buffer: SharedArrayBuffer) {
-    const storageSize =
-      (buffer.byteLength - RING_POINTERS_SIZE) / Int16Array.BYTES_PER_ELEMENT
+  constructor(buffer) {
+    const storageSize = (buffer.byteLength - RING_POINTERS_SIZE) / Int16Array.BYTES_PER_ELEMENT
     this.storage = new Int16Array(buffer, RING_POINTERS_SIZE, storageSize)
     this.writePointer = new Uint32Array(buffer, 0, 1)
     this.readPointer = new Uint32Array(buffer, 4, 1)
   }
 
-  readTo(target: Int16Array): number {
-    const { readPos, available } = this.getReadInfo()
-    if (available === 0) return 0
+  readTo(target) {
+    const info = this.getReadInfo()
+    if (info.available === 0) return 0
 
-    const readLength = Math.min(available, target.length)
-    const first = Math.min(this.storage.length - readPos, readLength)
+    const readLength = Math.min(info.available, target.length)
+    const first = Math.min(this.storage.length - info.readPos, readLength)
     const second = readLength - first
 
-    target.set(this.storage.subarray(readPos, readPos + first), 0)
+    target.set(this.storage.subarray(info.readPos, info.readPos + first), 0)
     if (second > 0) target.set(this.storage.subarray(0, second), first)
 
-    Atomics.store(this.readPointer, 0, (readPos + readLength) % this.storage.length)
+    Atomics.store(this.readPointer, 0, (info.readPos + readLength) % this.storage.length)
     return readLength
   }
 
@@ -51,65 +41,50 @@ class RingBuffReader {
 }
 
 class PCMWorkletProcessor extends AudioWorkletProcessor {
-  private channels: number
-  private reader: RingBuffReader
-  private readerOutput: Int16Array
-
-  // Priming / preroll
-  private streamSR = sampleRate
-  private basePrerollQ: number
-  private targetPrerollQ: number
-  private maxPrerollQ: number
-
-  private primed = false
-  private stableBlocks = 0
-  private softUnderruns = 0
-  private hardUnderruns = 0
-
-  // Ramp
-  private rampMs = 8
-  private rampLen = 0
-  private rampLeft = 0
-  private needRamp = true
-  private xfFromL = 0
-  private xfFromR = 0
-  private xfFromM = 0
-
-  // Last samples for clickless padding
-  private lastL = 0
-  private lastR = 0
-  private lastM = 0
-
-  private reportedUnderrun = false
-
-  constructor(options: any) {
+  constructor(options) {
     super()
-    const { sab, channels, streamSampleRate, prerollMs, maxPrerollMs, rampMs } =
-      (options?.processorOptions as {
-        sab: SharedArrayBuffer
-        channels: number
-        streamSampleRate?: number
-        prerollMs?: number      // default ~8ms
-        maxPrerollMs?: number   // default ~40ms
-        rampMs?: number         // default ~5ms
-      }) || {}
-
-    this.channels = Math.max(1, channels | 0 || 1)
+    const p = (options && options.processorOptions) || {}
+    const sab = p.sab
+    this.channels = Math.max(1, p.channels | 0 || 1)
     this.reader = new RingBuffReader(sab)
     this.readerOutput = new Int16Array(RENDER_QUANTUM_FRAMES * this.channels)
 
-    if (typeof streamSampleRate === 'number' && streamSampleRate > 0) this.streamSR = streamSampleRate
-    if (typeof rampMs === 'number' && rampMs >= 0) this.rampMs = rampMs
+    // Stream SR / ramp / preroll
+    this.streamSR =
+      typeof p.streamSampleRate === 'number' && p.streamSampleRate > 0
+        ? p.streamSampleRate
+        : sampleRate
+    this.rampMs = typeof p.rampMs === 'number' && p.rampMs >= 0 ? p.rampMs : 8
 
-    const baseMs = typeof prerollMs === 'number' && prerollMs > 0 ? prerollMs : 8   // ~3 quanta @48k
-    const maxMs  = typeof maxPrerollMs === 'number' && maxPrerollMs > baseMs ? maxPrerollMs : 40
+    const baseMs = typeof p.prerollMs === 'number' && p.prerollMs > 0 ? p.prerollMs : 8
+    const maxMs =
+      typeof p.maxPrerollMs === 'number' && p.maxPrerollMs > baseMs ? p.maxPrerollMs : 40
 
-    this.basePrerollQ   = quantaFromMs(baseMs, this.streamSR)
+    this.basePrerollQ = quantaFromMs(baseMs, this.streamSR)
     this.targetPrerollQ = this.basePrerollQ
-    this.maxPrerollQ    = quantaFromMs(maxMs,  this.streamSR)
+    this.maxPrerollQ = quantaFromMs(maxMs, this.streamSR)
 
-    // Optional runtime tuning
-    this.port.onmessage = (e: MessageEvent) => {
+    // State
+    this.primed = false
+    this.stableBlocks = 0
+    this.softUnderruns = 0
+    this.hardUnderruns = 0
+
+    // Ramp/clickless
+    this.rampLen = 0
+    this.rampLeft = 0
+    this.needRamp = true
+    this.xfFromL = 0
+    this.xfFromR = 0
+    this.xfFromM = 0
+    this.lastL = 0
+    this.lastR = 0
+    this.lastM = 0
+
+    this.reportedUnderrun = false
+
+    // Runtime tuning
+    this.port.onmessage = (e) => {
       const msg = e.data || {}
       if (msg.t === 'setPrerollMs' && typeof msg.ms === 'number' && msg.ms > 0) {
         this.basePrerollQ = quantaFromMs(msg.ms, this.streamSR)
@@ -122,9 +97,11 @@ class PCMWorkletProcessor extends AudioWorkletProcessor {
     }
   }
 
-  private toF32(s16: number) { return s16 / 32768 }
+  toF32(s16) {
+    return s16 / 32768
+  }
 
-  private beginRamp() {
+  beginRamp() {
     this.rampLen = Math.max(1, Math.floor((this.streamSR * this.rampMs) / 1000))
     this.rampLeft = this.rampLen
     this.xfFromL = this.lastL
@@ -133,10 +110,14 @@ class PCMWorkletProcessor extends AudioWorkletProcessor {
     this.needRamp = false
   }
 
-  private fillWithLast(out: Float32Array[], frames: number) {
+  fillWithLast(out, frames) {
     if (out.length >= 2 && this.channels === 2) {
-      const L = out[0], R = out[1] ?? out[0]
-      for (let f = 0; f < frames; f++) { L[f] = this.lastL; R[f] = this.lastR }
+      const L = out[0],
+        R = out[1] || out[0]
+      for (let f = 0; f < frames; f++) {
+        L[f] = this.lastL
+        R[f] = this.lastR
+      }
       for (let c = 2; c < out.length; c++) out[c].fill(0)
     } else {
       const M = out[0]
@@ -145,11 +126,12 @@ class PCMWorkletProcessor extends AudioWorkletProcessor {
     }
   }
 
-  private applyRampStereo(L: Float32Array, R: Float32Array, written: number) {
+  applyRampStereo(L, R, written) {
     const start = this.rampLen - this.rampLeft
     const n = Math.min(written, this.rampLeft)
     for (let k = 0; k < n; k++) {
-      const a = (start + k + 1) / this.rampLen, b = 1 - a
+      const a = (start + k + 1) / this.rampLen,
+        b = 1 - a
       L[k] = b * this.xfFromL + a * L[k]
       R[k] = b * this.xfFromR + a * R[k]
     }
@@ -157,24 +139,47 @@ class PCMWorkletProcessor extends AudioWorkletProcessor {
     if (this.rampLeft < 0) this.rampLeft = 0
   }
 
-  private applyRampMono(M: Float32Array, written: number) {
+  applyRampMono(M, written) {
     const start = this.rampLen - this.rampLeft
     const n = Math.min(written, this.rampLeft)
     for (let k = 0; k < n; k++) {
-      const a = (start + k + 1) / this.rampLen, b = 1 - a
+      const a = (start + k + 1) / this.rampLen,
+        b = 1 - a
       M[k] = b * this.xfFromM + a * M[k]
     }
     this.rampLeft -= n
     if (this.rampLeft < 0) this.rampLeft = 0
   }
 
-  process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
+  process(_inputs, outputs) {
     const out = outputs[0]
     const ch = this.channels
     const frames = RENDER_QUANTUM_FRAMES
     const needSamples = frames * ch
 
     let info = this.reader.getReadInfo()
+
+    // High-water guard: if producer outruns consumer
+    // skip just enough to fall back near target preroll, smooth back in via ramp
+    const cap = this.reader.storage.length
+    const hi = (cap * 0.82) | 0 // ~82% capacity
+    const target = this.targetPrerollQ * needSamples
+    if (info.available > hi) {
+      let toSkip = info.available - Math.max(target, needSamples)
+      // align to full frames (channel multiple)
+      toSkip = toSkip - (toSkip % ch)
+      if (toSkip > 0) {
+        const scratch = this.readerOutput // reuse buffer to drain
+        while (toSkip > 0) {
+          const n = Math.min(toSkip, scratch.length)
+          const got = this.reader.readTo(scratch.subarray(0, n))
+          if (got <= 0) break
+          toSkip -= got
+        }
+        this.needRamp = true
+        info = this.reader.getReadInfo() // refresh after drain
+      }
+    }
 
     // Priming with small, adaptive preroll
     if (!this.primed) {
@@ -190,7 +195,7 @@ class PCMWorkletProcessor extends AudioWorkletProcessor {
       }
     }
 
-    // Channel-aligned
+    // Channel-aligned pull
     const want = Math.min(this.readerOutput.length, info.available)
     const aligned = want - (want % ch)
 
@@ -202,7 +207,10 @@ class PCMWorkletProcessor extends AudioWorkletProcessor {
       if (this.targetPrerollQ < this.maxPrerollQ) this.targetPrerollQ += 1
       this.stableBlocks = 0
       this.softUnderruns = 0
-      if (!this.reportedUnderrun) { this.port.postMessage({ t: 'underrun' }); this.reportedUnderrun = true }
+      if (!this.reportedUnderrun) {
+        this.port.postMessage({ t: 'underrun' })
+        this.reportedUnderrun = true
+      }
       return true
     }
 
@@ -212,8 +220,10 @@ class PCMWorkletProcessor extends AudioWorkletProcessor {
     if (this.needRamp && this.rampLeft === 0) this.beginRamp()
 
     if (ch === 2) {
-      const L = out[0], R = out[1] ?? out[0]
-      let f = 0, i = 0
+      const L = out[0],
+        R = out[1] || out[0]
+      let f = 0,
+        i = 0
       for (; f < framesGot; f++, i += 2) {
         L[f] = this.toF32(this.readerOutput[i])
         R[f] = this.toF32(this.readerOutput[i + 1])
@@ -221,7 +231,10 @@ class PCMWorkletProcessor extends AudioWorkletProcessor {
       if (this.rampLeft > 0) this.applyRampStereo(L, R, f)
       const padL = f ? L[f - 1] : this.lastL
       const padR = f ? R[f - 1] : this.lastR
-      for (; f < frames; f++) { L[f] = padL; R[f] = padR }
+      for (; f < frames; f++) {
+        L[f] = padL
+        R[f] = padR
+      }
       for (let c = 2; c < out.length; c++) out[c].fill(0)
       this.lastL = L[frames - 1]
       this.lastR = R[frames - 1]
@@ -243,7 +256,10 @@ class PCMWorkletProcessor extends AudioWorkletProcessor {
         this.stableBlocks = 0
       }
       this.softUnderruns = 0
-      if (this.reportedUnderrun) { this.port.postMessage({ t: 'recovered' }); this.reportedUnderrun = false }
+      if (this.reportedUnderrun) {
+        this.port.postMessage({ t: 'recovered' })
+        this.reportedUnderrun = false
+      }
     } else {
       this.needRamp = true
       this.stableBlocks = 0
