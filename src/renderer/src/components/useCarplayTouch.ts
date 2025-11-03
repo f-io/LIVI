@@ -59,7 +59,7 @@ export const useCarplayMultiTouch = (): Handlers => {
     window.carplay.ipc.sendMultiTouch(pts)
   }
 
-  const onPointerDown: Handlers['onPointerDown'] = e => {
+  const onPointerDown: Handlers['onPointerDown'] = (e) => {
     const el = e.currentTarget as HTMLElement
     const { x, y } = norm(el, e.clientX, e.clientY)
 
@@ -77,7 +77,7 @@ export const useCarplayMultiTouch = (): Handlers => {
     sendFullFrame(overrides)
   }
 
-  const onPointerMove: Handlers['onPointerMove'] = e => {
+  const onPointerMove: Handlers['onPointerMove'] = (e) => {
     const el = e.currentTarget as HTMLElement
     const { x, y } = norm(el, e.clientX, e.clientY)
 
@@ -116,11 +116,11 @@ export const useCarplayMultiTouch = (): Handlers => {
     }
   }
 
-  const onPointerUp: Handlers['onPointerUp'] = e => finishPointer(e)
-  const onPointerCancel: Handlers['onPointerCancel'] = e => finishPointer(e)
-  const onLostPointerCapture: Handlers['onLostPointerCapture'] = e => finishPointer(e)
-  const onPointerOut: Handlers['onPointerOut'] = () => { }
-  const onContextMenu: Handlers['onContextMenu'] = e => e.preventDefault()
+  const onPointerUp: Handlers['onPointerUp'] = (e) => finishPointer(e)
+  const onPointerCancel: Handlers['onPointerCancel'] = (e) => finishPointer(e)
+  const onLostPointerCapture: Handlers['onLostPointerCapture'] = (e) => finishPointer(e)
+  const onPointerOut: Handlers['onPointerOut'] = () => {}
+  const onContextMenu: Handlers['onContextMenu'] = (e) => e.preventDefault()
 
   return useMemo(
     () => ({
@@ -130,7 +130,7 @@ export const useCarplayMultiTouch = (): Handlers => {
       onPointerCancel,
       onPointerOut,
       onLostPointerCapture,
-      onContextMenu,
+      onContextMenu
     }),
     [
       onPointerDown,
@@ -139,7 +139,7 @@ export const useCarplayMultiTouch = (): Handlers => {
       onPointerCancel,
       onPointerOut,
       onLostPointerCapture,
-      onContextMenu,
+      onContextMenu
     ]
   )
 }

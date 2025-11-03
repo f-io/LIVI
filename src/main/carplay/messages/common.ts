@@ -16,7 +16,7 @@ import {
   Opened,
   BoxInfo,
   Unplugged,
-  Phase,
+  Phase
 } from './readable.js'
 
 export enum CommandMapping {
@@ -63,7 +63,7 @@ export enum CommandMapping {
   wifiConnected = 1009,
   wifiDisconnected = 1010,
   btPairStart = 1011,
-  wifiPair = 1012,
+  wifiPair = 1012
 }
 
 export type CommandValue = keyof typeof CommandMapping
@@ -92,7 +92,7 @@ export enum MessageType {
   MediaData = 0x2a,
   SendFile = 0x99,
   HeartBeat = 0xaa,
-  SoftwareVersion = 0xcc,
+  SoftwareVersion = 0xcc
 }
 
 export class HeaderBuildError extends Error {}
@@ -108,9 +108,7 @@ export class MessageHeader {
 
   static fromBuffer(data: Buffer): MessageHeader {
     if (data.length !== 16) {
-      throw new HeaderBuildError(
-        `Invalid buffer size - Expecting 16, got ${data.length}`,
-      )
+      throw new HeaderBuildError(`Invalid buffer size - Expecting 16, got ${data.length}`)
     }
     const magic = data.readUInt32LE(0)
     if (magic !== MessageHeader.magic) {
@@ -174,9 +172,7 @@ export class MessageHeader {
         case MessageType.Phase:
           return new Phase(this, data)
         default:
-          console.debug(
-            `Unknown message type: ${type}, data: ${data.toString()}`,
-          )
+          console.debug(`Unknown message type: ${type}, data: ${data.toString()}`)
           return null
       }
     } else {

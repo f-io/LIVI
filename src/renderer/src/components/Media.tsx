@@ -66,7 +66,7 @@ function useElementSize<T extends HTMLElement>() {
       const next = pendingRef.current
       pendingRef.current = null
       if (!next) return
-      set(prev => (prev.w !== next.w || prev.h !== next.h ? next : prev))
+      set((prev) => (prev.w !== next.w || prev.h !== next.h ? next : prev))
     }
 
     const ro = new ResizeObserver((entries) => {
@@ -143,8 +143,8 @@ function useOptimisticPlaying(realPlaying: boolean | undefined) {
 // Button feedback
 function usePressFeedback() {
   const press = { play: false, next: false, prev: false } as const
-  const bump = (_key: keyof typeof press, _ms = 140) => { }
-  const reset = () => { }
+  const bump = (_key: keyof typeof press, _ms = 140) => {}
+  const reset = () => {}
   return { press, bump, reset }
 }
 
@@ -184,16 +184,16 @@ function useMediaState(allowInitialHydrate: boolean) {
       })
     }
 
-      ; (window.carplay.ipc as any).onEvent?.(handler)
+    ;(window.carplay.ipc as any).onEvent?.(handler)
     return () => {
       if ((window.carplay.ipc as any).offEvent) {
         try {
-          ; (window.carplay.ipc as any).offEvent(handler)
-        } catch { }
+          ;(window.carplay.ipc as any).offEvent(handler)
+        } catch {}
       } else {
         try {
-          ; (window.electron as any)?.ipcRenderer?.removeListener?.('carplay-event', handler)
-        } catch { }
+          ;(window.electron as any)?.ipcRenderer?.removeListener?.('carplay-event', handler)
+        } catch {}
       }
     }
   }, [])
@@ -201,20 +201,20 @@ function useMediaState(allowInitialHydrate: boolean) {
   useEffect(() => {
     if (!allowInitialHydrate || hydratedOnceRef.current) return
     let cancelled = false
-      ; (async () => {
-        try {
-          const initial = await window.carplay.ipc.readMedia()
-          if (!cancelled && initial) {
-            hydratedOnceRef.current = true
-            setSnap(initial)
-            const t0 = initial.payload.media?.MediaSongPlayTime ?? 0
-            setLivePlayMs(t0)
-            livePlayMsRef.current = t0
-            lastTick.current = performance.now()
-            lastUiUpdateRef.current = lastTick.current
-          }
-        } catch { }
-      })()
+    ;(async () => {
+      try {
+        const initial = await window.carplay.ipc.readMedia()
+        if (!cancelled && initial) {
+          hydratedOnceRef.current = true
+          setSnap(initial)
+          const t0 = initial.payload.media?.MediaSongPlayTime ?? 0
+          setLivePlayMs(t0)
+          livePlayMsRef.current = t0
+          lastTick.current = performance.now()
+          lastUiUpdateRef.current = lastTick.current
+        }
+      } catch {}
+    })()
     return () => {
       cancelled = true
     }
