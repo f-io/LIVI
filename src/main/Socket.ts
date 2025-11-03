@@ -64,8 +64,7 @@ export class Socket extends EventEmitter {
   }
 
   async connect(): Promise<void> {
-    // 200ms warten, falls Port 4000 noch belegt ist
-    await new Promise(r => setTimeout(r, 200))
+    await new Promise((r) => setTimeout(r, 200))
     this.startServer()
     return Promise.resolve()
   }

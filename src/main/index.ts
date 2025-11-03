@@ -6,7 +6,7 @@ import {
   readFileSync,
   writeFileSync,
   createWriteStream,
-  promises as fsp,
+  promises as fsp
 } from 'fs'
 import { electronApp, is } from '@electron-toolkit/utils'
 import { DEFAULT_CONFIG } from '@carplay/node'
@@ -31,7 +31,7 @@ function linuxPresetAngleVulkan() {
     'AcceleratedVideoDecodeLinuxZeroCopyGL',
     'AcceleratedVideoEncoder',
     'VaapiIgnoreDriverChecks',
-    'UseMultiPlaneFormatForHardwareVideo',
+    'UseMultiPlaneFormatForHardwareVideo'
   ])
   app.commandLine.appendSwitch('ozone-platform-hint', 'auto')
 }
@@ -41,7 +41,7 @@ function linuxPresetEglGl() {
     'AcceleratedVideoDecodeLinuxGL',
     'AcceleratedVideoDecodeLinuxZeroCopyGL',
     'AcceleratedVideoEncoder',
-    'UseMultiPlaneFormatForHardwareVideo',
+    'UseMultiPlaneFormatForHardwareVideo'
   ])
 }
 function commonGpuToggles() {
@@ -65,7 +65,7 @@ app.on('gpu-info-update', () => {
 
 const mimeTypeFromExt = (ext: string): string =>
   (
-    {
+    ({
       '.html': 'text/html',
       '.js': 'text/javascript',
       '.css': 'text/css',
@@ -75,8 +75,8 @@ const mimeTypeFromExt = (ext: string): string =>
       '.svg': 'image/svg+xml',
       '.json': 'application/json',
       '.wasm': 'application/wasm',
-      '.map': 'application/json',
-    } as const
+      '.map': 'application/json'
+    }) as const
   )[ext.toLowerCase()] ?? 'application/octet-stream'
 
 const MIN_WIDTH = 400
@@ -137,9 +137,9 @@ protocol.registerSchemesAsPrivileged([
       standard: true,
       corsEnabled: true,
       supportFetchAPI: true,
-      stream: true,
-    },
-  },
+      stream: true
+    }
+  }
 ])
 
 const appPath = app.getPath('userData')
@@ -157,7 +157,7 @@ const DEFAULT_BINDINGS: KeyBindings = {
   play: 'KeyP',
   pause: 'KeyO',
   next: 'KeyM',
-  prev: 'KeyN',
+  prev: 'KeyN'
 }
 
 function loadConfig(): ExtraConfig {
@@ -172,8 +172,9 @@ function loadConfig(): ExtraConfig {
     nightMode: true,
     audioVolume: 1.0,
     navVolume: 0.5,
+    audioJitterMs: 15,
     bindings: { ...DEFAULT_BINDINGS },
-    ...fileConfig,
+    ...fileConfig
   } as ExtraConfig
 
   merged.bindings = { ...DEFAULT_BINDINGS, ...(fileConfig.bindings || {}) }
@@ -195,18 +196,19 @@ function pickAssetForPlatform(assets: any[]): { url?: string } {
   const urlOf = (a: any) => a?.browser_download_url as string | undefined
 
   if (process.platform === 'darwin') {
-    const dmgs = assets.filter(a => /\.dmg$/i.test(nameOf(a)))
+    const dmgs = assets.filter((a) => /\.dmg$/i.test(nameOf(a)))
     if (dmgs.length === 0) return {}
     const arch = process.arch
     const preferred =
       arch === 'arm64'
-        ? dmgs.find(a => /(arm64|aarch64|apple[-_]?silicon|universal)/i.test(nameOf(a))) ?? dmgs[0]
-        : dmgs.find(a => /(x86_64|amd64|x64|universal)/i.test(nameOf(a))) ?? dmgs[0]
+        ? (dmgs.find((a) => /(arm64|aarch64|apple[-_]?silicon|universal)/i.test(nameOf(a))) ??
+          dmgs[0])
+        : (dmgs.find((a) => /(x86_64|amd64|x64|universal)/i.test(nameOf(a))) ?? dmgs[0])
     return { url: urlOf(preferred) }
   }
 
   if (process.platform === 'linux') {
-    const appImages = assets.filter(a => /\.AppImage$/i.test(nameOf(a)))
+    const appImages = assets.filter((a) => /\.AppImage$/i.test(nameOf(a)))
     if (appImages.length === 0) return {}
 
     let patterns: RegExp[] = []
@@ -218,7 +220,7 @@ function pickAssetForPlatform(assets: any[]): { url?: string } {
       return {}
     }
 
-    const match = appImages.find(a => patterns.some(re => re.test(nameOf(a))))
+    const match = appImages.find((a) => patterns.some((re) => re.test(nameOf(a))))
     return { url: urlOf(match) }
   }
 
@@ -249,7 +251,12 @@ async function downloadWithProgress(url: string, dest: string): Promise<void> {
       const file = createWriteStream(dest)
       res.on('data', (chunk) => {
         received += chunk.length
-        sendUpdateProgress({ phase: 'download', received, total, percent: total ? received / total : 0 })
+        sendUpdateProgress({
+          phase: 'download',
+          received,
+          total,
+          percent: total ? received / total : 0
+        })
       })
       res.on('error', (err) => reject(err))
       file.on('finish', () => file.close(() => resolve()))
@@ -265,7 +272,9 @@ async function getMacDesiredOwner(dstApp: string): Promise<{ user: string; group
   if (existsSync(dstApp)) {
     try {
       const out = await new Promise<string>((resolve, reject) =>
-        execFile('stat', ['-f', '%Su:%Sg', dstApp], (err, stdout) => (err ? reject(err) : resolve(stdout.trim())))
+        execFile('stat', ['-f', '%Su:%Sg', dstApp], (err, stdout) =>
+          err ? reject(err) : resolve(stdout.trim())
+        )
       )
       const [user, group] = out.split(':')
       if (user) return { user, group: group || 'staff' }
@@ -293,9 +302,13 @@ async function installFromDmg(dmgPath: string): Promise<void> {
   )
 
   const entries = await fsp.readdir(mountPoint, { withFileTypes: true })
-  const appFolder = entries.find((e) => e.isDirectory() && e.name.toLowerCase().endsWith('.app'))?.name
+  const appFolder = entries.find(
+    (e) => e.isDirectory() && e.name.toLowerCase().endsWith('.app')
+  )?.name
   if (!appFolder) {
-    await new Promise<void>((resolve) => execFile('hdiutil', ['detach', mountPoint, '-quiet'], () => resolve()))
+    await new Promise<void>((resolve) =>
+      execFile('hdiutil', ['detach', mountPoint, '-quiet'], () => resolve())
+    )
     throw new Error('No .app found in DMG')
   }
 
@@ -309,10 +322,14 @@ async function installFromDmg(dmgPath: string): Promise<void> {
     `chflags -R nouchg,noschg $dst 2>/dev/null || true; rm -rf $dst; ` +
     `ditto -v $src $dst; xattr -cr $dst; chmod -RN $dst 2>/dev/null || true; ` +
     `chflags -R nouchg,noschg $dst 2>/dev/null || true; chown -R ${desired.user}:${desired.group} $dst" with administrator privileges`
-  await new Promise<void>((resolve, reject) => execFile('osascript', ['-e', script], (err) => (err ? reject(err) : resolve())))
+  await new Promise<void>((resolve, reject) =>
+    execFile('osascript', ['-e', script], (err) => (err ? reject(err) : resolve()))
+  )
 
   sendUpdateEvent({ phase: 'unmounting' })
-  await new Promise<void>((resolve) => execFile('hdiutil', ['detach', mountPoint, '-quiet'], () => resolve()))
+  await new Promise<void>((resolve) =>
+    execFile('hdiutil', ['detach', mountPoint, '-quiet'], () => resolve())
+  )
 }
 
 // Linux helper
@@ -391,7 +408,7 @@ function persistKioskAndBroadcast(kiosk: boolean) {
           wifiType: config.wifiType,
           wifiChannel: config.wifiChannel,
           primaryColorDark: config.primaryColorDark,
-          primaryColorLight: config.primaryColorLight,
+          primaryColorLight: config.primaryColorLight
         },
         null,
         2
@@ -438,26 +455,30 @@ function createWindow(): void {
       contextIsolation: true,
       webSecurity: true,
       allowRunningInsecureContent: false,
-      experimentalFeatures: true,
-    },
+      experimentalFeatures: true
+    }
   })
 
   const ses = mainWindow.webContents.session
   ses.setPermissionCheckHandler((_w, p) => ['usb', 'hid', 'media', 'display-capture'].includes(p))
-  ses.setPermissionRequestHandler((_w, p, cb) => cb(['usb', 'hid', 'media', 'display-capture'].includes(p)))
+  ses.setPermissionRequestHandler((_w, p, cb) =>
+    cb(['usb', 'hid', 'media', 'display-capture'].includes(p))
+  )
   ses.setUSBProtectedClassesHandler(({ protectedClasses }) =>
     protectedClasses.filter((c) => ['audio', 'video', 'vendor-specific'].includes(c))
   )
 
-  session.defaultSession.webRequest.onHeadersReceived({ urls: ['*://*/*', 'file://*/*'] }, (d, cb) =>
-    cb({
-      responseHeaders: {
-        ...d.responseHeaders,
-        'Cross-Origin-Opener-Policy': ['same-origin'],
-        'Cross-Origin-Embedder-Policy': ['require-corp'],
-        'Cross-Origin-Resource-Policy': ['same-site'],
-      },
-    })
+  session.defaultSession.webRequest.onHeadersReceived(
+    { urls: ['*://*/*', 'file://*/*'] },
+    (d, cb) =>
+      cb({
+        responseHeaders: {
+          ...d.responseHeaders,
+          'Cross-Origin-Opener-Policy': ['same-origin'],
+          'Cross-Origin-Embedder-Policy': ['require-corp'],
+          'Cross-Origin-Resource-Policy': ['same-site']
+        }
+      })
   )
 
   mainWindow.once('ready-to-show', () => {
@@ -494,7 +515,10 @@ function createWindow(): void {
     })
 
     mainWindow.on('leave-full-screen', () => {
-      if (suppressNextFsSync) { suppressNextFsSync = false; return }
+      if (suppressNextFsSync) {
+        suppressNextFsSync = false
+        return
+      }
       applyAspectRatioWindowed(mainWindow!, config.width || 800, config.height || 480)
       persistKioskAndBroadcast(false)
     })
@@ -505,7 +529,8 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
-  if (is.dev && process.env.ELECTRON_RENDERER_URL) mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
+  if (is.dev && process.env.ELECTRON_RENDERER_URL)
+    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   else mainWindow.loadURL('app://index.html')
 
   mainWindow.on('close', (e) => {
@@ -526,7 +551,7 @@ function createWindow(): void {
       width: 1000,
       height: 800,
       title: 'GPU Info',
-      webPreferences: { nodeIntegration: false, contextIsolation: true },
+      webPreferences: { nodeIntegration: false, contextIsolation: true }
     })
     gpuWindow.loadURL('chrome://gpu')
   }
@@ -535,7 +560,7 @@ function createWindow(): void {
       width: 1000,
       height: 800,
       title: 'GPU Info',
-      webPreferences: { nodeIntegration: false, contextIsolation: true },
+      webPreferences: { nodeIntegration: false, contextIsolation: true }
     })
     mediaWindow.loadURL('chrome://media-internals')
   }
@@ -558,9 +583,9 @@ app.whenReady().then(() => {
           'Content-Type': mimeTypeFromExt(extname(file)),
           'Cross-Origin-Opener-Policy': 'same-origin',
           'Cross-Origin-Embedder-Policy': 'require-corp',
-          'Cross-Origin-Resource-Policy': 'same-site',
+          'Cross-Origin-Resource-Policy': 'same-site'
         },
-        data: createReadStream(file),
+        data: createReadStream(file)
       })
     } catch (e) {
       console.error('[app-protocol] error', e)
@@ -571,11 +596,17 @@ app.whenReady().then(() => {
   usbService = new USBService(carplayService)
   socket = new Socket(config, saveSettings)
 
-  ipcMain.handle('quit', () => (isMac
-    ? (mainWindow?.isFullScreen()
-        ? (() => { suppressNextFsSync = true; mainWindow!.once('leave-full-screen', () => mainWindow?.hide()); mainWindow!.setFullScreen(false) })()
-        : mainWindow?.hide())
-    : app.quit()))
+  ipcMain.handle('quit', () =>
+    isMac
+      ? mainWindow?.isFullScreen()
+        ? (() => {
+            suppressNextFsSync = true
+            mainWindow!.once('leave-full-screen', () => mainWindow?.hide())
+            mainWindow!.setFullScreen(false)
+          })()
+        : mainWindow?.hide()
+      : app.quit()
+  )
 
   ipcMain.handle('settings:get-kiosk', () => currentKiosk())
   ipcMain.handle('getSettings', () => config)
@@ -612,7 +643,8 @@ app.whenReady().then(() => {
           directUrl ||
           (await (async () => {
             const repo = process.env.UPDATE_REPO || 'f-io/pi-carplay'
-            const feed = process.env.UPDATE_FEED || `https://api.github.com/repos/${repo}/releases/latest`
+            const feed =
+              process.env.UPDATE_FEED || `https://api.github.com/repos/${repo}/releases/latest`
             const res = await fetch(feed, { headers: { 'User-Agent': 'pi-carplay-updater' } })
             const json: any = await res.json()
             return pickAssetForPlatform(json.assets || []).url
@@ -625,7 +657,8 @@ app.whenReady().then(() => {
           directUrl ||
           (await (async () => {
             const repo = process.env.UPDATE_REPO || 'f-io/pi-carplay'
-            const feed = process.env.UPDATE_FEED || `https://api.github.com/repos/${repo}/releases/latest`
+            const feed =
+              process.env.UPDATE_FEED || `https://api.github.com/repos/${repo}/releases/latest`
             const res = await fetch(feed, { headers: { 'User-Agent': 'pi-carplay-updater' } })
             const json: any = await res.json()
             return pickAssetForPlatform(json.assets || []).url
@@ -673,7 +706,7 @@ function saveSettings(settings: ExtraConfig) {
         wifiType: settings.wifiType,
         wifiChannel: settings.wifiChannel,
         primaryColorDark: settings.primaryColorDark,
-        primaryColorLight: settings.primaryColorLight,
+        primaryColorLight: settings.primaryColorLight
       },
       null,
       2

@@ -13,14 +13,10 @@ import {
   VideoData,
   CommandValue,
   Command,
-  AudioCommand,
+  AudioCommand
 } from '../messages'
 
-import {
-  DongleDriver,
-  DongleConfig,
-  DEFAULT_CONFIG,
-} from '../DongleDriver'
+import { DongleDriver, DongleConfig, DEFAULT_CONFIG } from '../DongleDriver'
 
 export type CarplayMessage =
   | { type: 'plugged'; message?: undefined }
@@ -45,7 +41,7 @@ export default class CarplayNode {
     const mic = new NodeMicrophone()
     const driver = new DongleDriver()
 
-    mic.on('data', data => {
+    mic.on('data', (data) => {
       driver.send(new SendAudio(data))
     })
 
@@ -57,7 +53,7 @@ export default class CarplayNode {
         if (phoneTypeConfg?.frameInterval) {
           this._frameInterval = setInterval(
             () => this.dongleDriver.send(new SendCommand('frame')),
-            phoneTypeConfg.frameInterval,
+            phoneTypeConfg.frameInterval
           )
         }
         this.onmessage?.({ type: 'plugged' })

@@ -42,10 +42,9 @@ export const FFTSpectrum = ({ data }: FFTSpectrumProps) => {
   const binsRef = useRef<Float32Array>(new Float32Array(POINTS))
 
   useEffect(() => {
-    const worker = new Worker(
-      new URL('./worker/fft.worker.ts', import.meta.url),
-      { type: 'module' }
-    )
+    const worker = new Worker(new URL('./worker/fft.worker.ts', import.meta.url), {
+      type: 'module'
+    })
     workerRef.current = worker
     worker.postMessage({
       type: 'init',
@@ -66,9 +65,8 @@ export const FFTSpectrum = ({ data }: FFTSpectrumProps) => {
   useEffect(() => {
     const worker = workerRef.current
     if (!worker || dataRef.current.length === 0) return
-    const buf = dataRef.current instanceof Float32Array
-      ? dataRef.current
-      : new Float32Array(dataRef.current)
+    const buf =
+      dataRef.current instanceof Float32Array ? dataRef.current : new Float32Array(dataRef.current)
     worker.postMessage({ type: 'pcm', buffer: buf.buffer }, [buf.buffer])
   }, [data])
 
@@ -104,7 +102,7 @@ export const FFTSpectrum = ({ data }: FFTSpectrumProps) => {
 
     // Horizontal guide lines
     ctx.lineWidth = 0.5
-    ;[0.25, 0.5, 0.75].forEach(f => {
+    ;[0.25, 0.5, 0.75].forEach((f) => {
       const y = usableH * f
       ctx.strokeStyle = gridLine
       ctx.beginPath()
@@ -124,7 +122,7 @@ export const FFTSpectrum = ({ data }: FFTSpectrumProps) => {
     const logMax = Math.log10(MAX_FREQ)
     const logDen = logMax - logMin
 
-    freqs.forEach(freq => {
+    freqs.forEach((freq) => {
       const pos = (Math.log10(freq) - logMin) / logDen
       const x = xOff + pos * specW
       ctx.strokeStyle = majorLine
@@ -177,13 +175,25 @@ export const FFTSpectrum = ({ data }: FFTSpectrumProps) => {
     <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
       <Box
         ref={bgCanvasRef}
-        component='canvas'
-        sx={{ position: 'absolute', width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1 }}
+        component="canvas"
+        sx={{
+          position: 'absolute',
+          width: '100%',
+          height: '100%',
+          pointerEvents: 'none',
+          zIndex: 1
+        }}
       />
       <Box
         ref={canvasRef}
-        component='canvas'
-        sx={{ position: 'absolute', width: '100%', height: '100%', background: 'transparent', zIndex: 2 }}
+        component="canvas"
+        sx={{
+          position: 'absolute',
+          width: '100%',
+          height: '100%',
+          background: 'transparent',
+          zIndex: 2
+        }}
       />
     </Box>
   )
