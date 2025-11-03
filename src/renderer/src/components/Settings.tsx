@@ -299,12 +299,12 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
         try {
           const kiosk = await window.app.getKiosk()
           startTransition(() =>
-            setActiveSettings((prev) => (prev.kiosk === kiosk ? prev : { ...prev, kiosk }))
+            setActiveSettings((prev: ExtraConfig) => (prev.kiosk === kiosk ? prev : { ...prev, kiosk }))
           )
         } catch { }
         off = window.app.onKioskSync((kiosk) => {
           startTransition(() =>
-            setActiveSettings((prev) => (prev.kiosk === kiosk ? prev : { ...prev, kiosk }))
+            setActiveSettings((prev: ExtraConfig) => (prev.kiosk === kiosk ? prev : { ...prev, kiosk }))
           )
         })
       })()

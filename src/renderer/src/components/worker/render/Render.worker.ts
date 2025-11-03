@@ -172,6 +172,7 @@ export class RendererWorker {
     } else if (renderer === 'webgpu') {
       try {
         context = canvas.getContext('webgpu')
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       } catch (e) {
         context = null
       }

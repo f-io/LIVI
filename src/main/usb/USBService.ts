@@ -161,6 +161,7 @@ export class USBService {
       )
       productName = await this.tryGetStringDescriptor(device, device.deviceDescriptor.iProduct)
       device.close()
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
       try { device.close() } catch { }
     }

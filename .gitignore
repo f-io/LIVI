@@ -1,8 +1,8 @@
-<<<<<<< HEAD
 #directories
 bower_components
 node_modules
 dist
+out
 build
 .idea
 
@@ -15,10 +15,3 @@ build
 
 # Hide OS X stuff
 .DS_Store
-
-=======
-node_modules
-dist
-out
-*.log*
->>>>>>> origin/v4

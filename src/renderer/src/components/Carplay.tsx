@@ -493,6 +493,8 @@ const Carplay: React.FC<CarplayProps> = ({
     })()
 
     return () => {
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
       window.electron?.ipcRenderer.removeListener('usb-event', usbHandler)
     }
   }, [setReceivingVideo, setDongleConnected, setStreaming, clearRetryTimeout, navigate, resetInfo])
@@ -543,6 +545,8 @@ const Carplay: React.FC<CarplayProps> = ({
     }
     window.carplay.ipc.onEvent(handler)
     return () => {
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
       window.electron?.ipcRenderer.removeListener('carplay-event', handler)
     }
   }, [gotoHostUI, setReceivingVideo])

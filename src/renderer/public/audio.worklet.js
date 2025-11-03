@@ -1,4 +1,4 @@
-/* eslint-disable no-undef */
+ 
 'use strict'
 
 const RENDER_QUANTUM_FRAMES = 128

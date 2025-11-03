@@ -774,6 +774,7 @@ export class NALUStream {
    * @param p
    * @returns iterator
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   nextAnnexBPacket(buf: Uint8Array, p: number, _: number) {
     const buflen = buf.byteLength
     const start = p
@@ -1052,7 +1053,7 @@ export class SPS {
         for (let i = 0; i < this.num_ref_frames_in_pic_order_cnt_cycle; i++) {
           const offsetForRefFrame = bitstream.se_v()
           this.offset_for_ref_frame.push(offsetForRefFrame)
-          // eslint-disable-next-line no-unused-vars
+           
           // expectedDeltaPerPicOrderCntCycle += offsetForRefFrame
         }
         break

@@ -1,4 +1,4 @@
-/* eslint-disable no-restricted-globals */
+ 
 import { decodeTypeMap } from "../../../../main/carplay/messages";
 import { AudioPlayerKey } from "./types";
 import { RingBuffer } from "ringbuf.js";
@@ -145,7 +145,7 @@ function processAudioData(audioData: any) {
   } else if (audioData.chunk instanceof ArrayBuffer) {
     int16 = new Int16Array(audioData.chunk);
   } else {
-    // eslint-disable-next-line no-console
+     
     console.error("[CARPLAY.WORKER] PCM - cannot interpret PCM data:", audioData);
     return;
   }
@@ -219,13 +219,13 @@ function setupPorts(mPort: MessagePort) {
           processAudioData(data);
         }
       } catch (e) {
-        // eslint-disable-next-line no-console
+         
         console.error("[CARPLAY.WORKER] error processing audio message:", e);
       }
     };
     mPort.start?.();
   } catch (e) {
-    // eslint-disable-next-line no-console
+     
     console.error("[CARPLAY.WORKER] port setup failed:", e);
     (self as unknown as Worker).postMessage({ type: "failure", error: "Port setup failed" });
   }

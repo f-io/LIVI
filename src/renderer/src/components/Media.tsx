@@ -143,6 +143,7 @@ function useOptimisticPlaying(realPlaying: boolean | undefined) {
 // Button feedback
 function usePressFeedback() {
   const press = { play: false, next: false, prev: false } as const
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const bump = (_key: keyof typeof press, _ms = 140) => { }
   const reset = () => { }
   return { press, bump, reset }
@@ -192,6 +193,8 @@ function useMediaState(allowInitialHydrate: boolean) {
         } catch { }
       } else {
         try {
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
           ; (window.electron as any)?.ipcRenderer?.removeListener?.('carplay-event', handler)
         } catch { }
       }
@@ -268,7 +271,7 @@ export default function Media() {
   const pagePad = Math.round(clamp(minSide * 0.02, 12, 22))
   const colGap = Math.round(clamp(w * 0.025, 16, 28))
   const sectionGap = Math.round(clamp(h * 0.03, 10, 24))
-  let ctrlSize = Math.round(clamp(h * 0.095, 50, 82))
+  const ctrlSize = Math.round(clamp(h * 0.095, 50, 82))
   const ctrlGap = Math.round(clamp(w * 0.03, 16, 32))
   const progressH = Math.round(clamp(h * 0.012, 8, 12))
 

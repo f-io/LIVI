@@ -116,7 +116,7 @@ export class WebGPURenderer implements FrameRenderer {
         '[WebGPURenderer] importExternalTexture failed, falling back to copyExternalImageToTexture:',
         e
       )
-      // @ts-ignore
+      
       ;(this.#device.queue as any).copyExternalImageToTexture(
         { source: frame },
         { texture: this.#ctx.getCurrentTexture() },

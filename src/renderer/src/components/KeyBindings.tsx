@@ -17,7 +17,7 @@ const Item = styled(Paper)(({ theme }) => ({
 }))
 
 const style = {
-  position: 'absolute' as 'absolute',
+  position: 'absolute' as const,
   top: '50%',
   left: '50%',
   transform: 'translate(-50%, -50%)',
@@ -60,12 +60,12 @@ export function KeyBindings({ settings, updateKey }: KeyBindingsProps) {
   return (
     <>
       <Grid container spacing={2}>
-        {Object.entries(settings.bindings).map(([action, code]) => (
+        {Object.entries(settings.bindings).map(([action, code]: [string, unknown]) => (
           <Grid size={{ xs: 3 }} key={action}>
             <Item>
               <Typography variant="subtitle2">{action}</Typography>
               <Button variant="outlined" onClick={() => awaitKeyPress(action)}>
-                {code}
+                {code as React.ReactNode}
               </Button>
             </Item>
           </Grid>
