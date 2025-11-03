@@ -121,7 +121,7 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
     let kiosk = activeSettings.kiosk
     try {
       kiosk = await window.app.getKiosk()
-    } catch { }
+    } catch {}
     const current = useCarplayStore.getState().settings
     const nightMode =
       typeof current?.nightMode === 'boolean' ? current!.nightMode : activeSettings.nightMode
@@ -295,19 +295,23 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
 
   useEffect(() => {
     let off: (() => void) | undefined
-      ; (async () => {
-        try {
-          const kiosk = await window.app.getKiosk()
-          startTransition(() =>
-            setActiveSettings((prev: ExtraConfig) => (prev.kiosk === kiosk ? prev : { ...prev, kiosk }))
+    ;(async () => {
+      try {
+        const kiosk = await window.app.getKiosk()
+        startTransition(() =>
+          setActiveSettings((prev: ExtraConfig) =>
+            prev.kiosk === kiosk ? prev : { ...prev, kiosk }
           )
-        } catch { }
-        off = window.app.onKioskSync((kiosk) => {
-          startTransition(() =>
-            setActiveSettings((prev: ExtraConfig) => (prev.kiosk === kiosk ? prev : { ...prev, kiosk }))
+        )
+      } catch {}
+      off = window.app.onKioskSync((kiosk) => {
+        startTransition(() =>
+          setActiveSettings((prev: ExtraConfig) =>
+            prev.kiosk === kiosk ? prev : { ...prev, kiosk }
           )
-        })
-      })()
+        )
+      })
+    })()
     return () => {
       if (off) off()
     }
@@ -321,7 +325,7 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
   const micUnavailable = micLabel === 'not available'
 
   const cameraIds = useMemo<readonly string[]>(
-    () => (cameras.length ? cameras.map(c => c.deviceId ?? '') : ['']),
+    () => (cameras.length ? cameras.map((c) => c.deviceId ?? '') : ['']),
     [cameras]
   )
   const cameraValue = coerceSelectValue(activeSettings.camera ?? '', cameraIds)
@@ -371,7 +375,7 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
                   label="WIDTH"
                   type="number"
                   value={activeSettings.width}
-                  onChange={e => settingsChange('width', Number(e.target.value))}
+                  onChange={(e) => settingsChange('width', Number(e.target.value))}
                   InputProps={{
                     inputProps: { min: MIN_WIDTH, step: 1 },
                     endAdornment: <InputAdornment position="end">px</InputAdornment>
@@ -545,11 +549,13 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
               value={cameraValue}
               onChange={(e) => settingsChange('camera', e.target.value)}
             >
-              {(cameras.length ? cameras : [{ deviceId: '', label: 'No camera' }]).map((cam: any) => (
-                <MenuItem key={cam.deviceId ?? 'none'} value={cam.deviceId ?? ''}>
-                  {cam.label || 'Camera'}
-                </MenuItem>
-              ))}
+              {(cameras.length ? cameras : [{ deviceId: '', label: 'No camera' }]).map(
+                (cam: any) => (
+                  <MenuItem key={cam.deviceId ?? 'none'} value={cam.deviceId ?? ''}>
+                    {cam.label || 'Camera'}
+                  </MenuItem>
+                )
+              )}
             </TextField>
           </Grid>
         </Grid>

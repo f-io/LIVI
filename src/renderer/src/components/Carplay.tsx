@@ -259,7 +259,7 @@ const Carplay: React.FC<CarplayProps> = ({
 
   // Channels
   const videoChannel = useMemo(() => new MessageChannel(), [])
-  const micChannel = useMemo(() => new MessageChannel(), [])
+  const audioChannel = useMemo(() => new MessageChannel(), [])
 
   // CarPlay worker setup
   const carplayWorker = useMemo<CarPlayWorker>(() => {
@@ -272,20 +272,20 @@ const Carplay: React.FC<CarplayProps> = ({
     }
 
     console.log('[CARPLAY] Creating CarPlayWorker with port:', {
-      microphonePort: micChannel.port1
+      audioPort: audioChannel.port1
     })
 
     w.postMessage(
       {
         type: 'initialise',
         payload: {
-          microphonePort: micChannel.port1
+          audioPort: audioChannel.port1
         }
       },
-      [micChannel.port1]
+      [audioChannel.port1]
     )
     return w
-  }, [micChannel])
+  }, [audioChannel])
 
   // Render worker setup
   useEffect(() => {
@@ -339,11 +339,11 @@ const Carplay: React.FC<CarplayProps> = ({
     return () => {}
   }, [videoChannel, renderReady])
 
-  // Forward audio chunks to mic channel
+  // Forward audio chunks to audio channel
   useEffect(() => {
     const handleAudio = (chunk: any) => {
       if (chunk && chunk.chunk && chunk.chunk.buffer) {
-        micChannel.port2.postMessage(
+        audioChannel.port2.postMessage(
           {
             type: 'audio',
             buffer: chunk.chunk.buffer,
@@ -355,7 +355,7 @@ const Carplay: React.FC<CarplayProps> = ({
     }
     window.carplay.ipc.onAudioChunk(handleAudio)
     return () => {}
-  }, [micChannel])
+  }, [audioChannel])
 
   // Start CarPlay service on mount
   useEffect(() => {

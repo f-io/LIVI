@@ -1,4 +1,12 @@
-singleQuote: true
-semi: false
-printWidth: 100
-trailingComma: none
+{
+  'printWidth': 100,
+  'singleQuote': true,
+  'trailingComma': 'none',
+  'semi': false,
+  'bracketSpacing': true,
+  'arrowParens': 'always',
+  'endOfLine': 'lf',
+  'tabWidth': 2,
+  'useTabs': false,
+  'proseWrap': 'preserve'
+}

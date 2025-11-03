@@ -13,7 +13,7 @@ export enum AudioCommand {
   AudioMediaStart = 10,
   AudioMediaStop = 11,
   AudioAlertStart = 12,
-  AudioAlertStop = 13,
+  AudioAlertStop = 13
 }
 
 export abstract class Message {
@@ -112,7 +112,7 @@ export enum PhoneType {
   CarPlay = 3,
   iPhoneMirror = 4,
   AndroidAuto = 5,
-  HiCar = 6,
+  HiCar = 6
 }
 
 export class Plugged extends Message {
@@ -125,12 +125,7 @@ export class Plugged extends Message {
     if (wifiAvail) {
       this.phoneType = data.readUInt32LE(0)
       this.wifi = data.readUInt32LE(4)
-      console.debug(
-        'wifi avail, phone type: ',
-        PhoneType[this.phoneType],
-        ' wifi: ',
-        this.wifi,
-      )
+      console.debug('wifi avail, phone type: ', PhoneType[this.phoneType], ' wifi: ', this.wifi)
     } else {
       this.phoneType = data.readUInt32LE(0)
       console.debug('no wifi avail, phone type: ', PhoneType[this.phoneType])
@@ -148,7 +143,7 @@ export type AudioFormat = {
   frequency: 48000 | 44100 | 24000 | 16000 | 8000
   channel: 1 | 2
   bitDepth: number
-  format?:   string
+  format?: string
   mimeType?: string
 }
 
@@ -161,51 +156,51 @@ export const decodeTypeMap: DecodeTypeMapping = {
     frequency: 44100,
     channel: 2,
     bitDepth: 16,
-    format: "S16LE",
-    mimeType: "audio/L16; rate=44100; channels=2"
+    format: 'S16LE',
+    mimeType: 'audio/L16; rate=44100; channels=2'
   },
   2: {
     frequency: 44100,
     channel: 2,
     bitDepth: 16,
-    format: "S16LE",
-    mimeType: "audio/L16; rate=44100; channels=2"
+    format: 'S16LE',
+    mimeType: 'audio/L16; rate=44100; channels=2'
   },
   3: {
     frequency: 8000,
     channel: 1,
     bitDepth: 16,
-    format: "S16LE",
-    mimeType:  "audio/L16; rate=8000; channels=1"
+    format: 'S16LE',
+    mimeType: 'audio/L16; rate=8000; channels=1'
   },
   4: {
     frequency: 48000,
     channel: 2,
     bitDepth: 16,
-    format: "S16LE",
-    mimeType:  "audio/L16; rate=48000; channels=2"
+    format: 'S16LE',
+    mimeType: 'audio/L16; rate=48000; channels=2'
   },
   5: {
     frequency: 16000,
     channel: 1,
     bitDepth: 16,
-    format: "S16LE",
-    mimeType:  "audio/L16; rate=16000; channels=1"
+    format: 'S16LE',
+    mimeType: 'audio/L16; rate=16000; channels=1'
   },
   6: {
     frequency: 24000,
     channel: 1,
     bitDepth: 16,
-    format: "S16LE",
-    mimeType:  "audio/L16; rate=24000; channels=1"
+    format: 'S16LE',
+    mimeType: 'audio/L16; rate=24000; channels=1'
   },
   7: {
     frequency: 16000,
     channel: 2,
     bitDepth: 16,
-    format: "S16LE",
-    mimeType:  "audio/L16; rate=16000; channels=2"
-  },
+    format: 'S16LE',
+    mimeType: 'audio/L16; rate=16000; channels=2'
+  }
 }
 
 export class AudioData extends Message {
@@ -253,7 +248,7 @@ export class VideoData extends Message {
 
 export enum MediaType {
   Data = 1,
-  AlbumCover = 3,
+  AlbumCover = 3
 }
 
 export class MediaData extends Message {
@@ -278,13 +273,13 @@ export class MediaData extends Message {
       const imageData = data.subarray(4)
       this.payload = {
         type,
-        base64Image: imageData.toString('base64'),
+        base64Image: imageData.toString('base64')
       }
     } else if (type === MediaType.Data) {
       const mediaData = data.subarray(4, data.length - 1)
       this.payload = {
         type,
-        media: JSON.parse(mediaData.toString('utf8')),
+        media: JSON.parse(mediaData.toString('utf8'))
       }
     } else {
       console.info(`Unexpected media type: ${type}`)

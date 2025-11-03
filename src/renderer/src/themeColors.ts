@@ -1,5 +1,4 @@
 export const themeColors = {
- 
   // Background defaults
   light: '#d4d4d4',
   dark: '#000000',
@@ -16,8 +15,8 @@ export const themeColors = {
 
   // Higlight active carplay stream
   successLight: '#81c784',
-  successMain:  '#4caf50',
-  successDark:  '#388e3c',
+  successMain: '#4caf50',
+  successDark: '#388e3c',
 
   // Alpha variants for hover states
   highlightAlphaLight: 'rgba(97, 218, 251, 0.1)',
@@ -25,5 +24,5 @@ export const themeColors = {
 
   // Divider colors
   dividerLight: '#cccccc',
-  dividerDark: '#444444',
+  dividerDark: '#444444'
 }

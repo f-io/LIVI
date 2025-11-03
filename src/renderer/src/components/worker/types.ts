@@ -7,14 +7,15 @@ export type AudioPortMessage = { type: 'audio'; buffer: ArrayBuffer; decodeType:
 
 export type CarplayWorkerMessage =
   | { type: 'resolution'; payload: { width: number; height: number } }
-  | { type: 'audioInfo'; payload: { codec: string; sampleRate: number; channels: number; bitDepth: number } }
+  | {
+      type: 'audioInfo'
+      payload: { codec: string; sampleRate: number; channels: number; bitDepth: number }
+    }
   | { type: 'pcmData'; payload: ArrayBuffer }
-
-
 
 export type InitialisePayload = {
   videoPort?: MessagePort
-  microphonePort: MessagePort
+  audioPort: MessagePort
 }
 
 export type AudioPlayerPayload = {
@@ -28,19 +29,49 @@ export type StartPayload = {
 }
 
 export type ValidCommand =
-  | 'left' | 'right' | 'next' | 'invalid' | 'pause' | 'play'
-  | 'selectDown' | 'back' | 'down' | 'home' | 'prev' | 'up'
-  | 'selectUp' | 'frame' | 'mic' | 'deviceFound'
-  | 'startRecordAudio' | 'stopRecordAudio'
-  | 'requestHostUI' | 'wifiPair'
+  | 'left'
+  | 'right'
+  | 'next'
+  | 'invalid'
+  | 'pause'
+  | 'play'
+  | 'selectDown'
+  | 'back'
+  | 'down'
+  | 'home'
+  | 'prev'
+  | 'up'
+  | 'selectUp'
+  | 'frame'
+  | 'mic'
+  | 'deviceFound'
+  | 'startRecordAudio'
+  | 'stopRecordAudio'
+  | 'requestHostUI'
+  | 'wifiPair'
 
 export function isValidCommand(cmd: string): cmd is ValidCommand {
   return [
-    'left', 'right', 'next', 'invalid', 'pause', 'play',
-    'selectDown', 'back', 'down', 'home', 'prev', 'up',
-    'selectUp', 'frame', 'mic', 'deviceFound',
-    'startRecordAudio', 'stopRecordAudio',
-    'requestHostUI', 'wifiPair'
+    'left',
+    'right',
+    'next',
+    'invalid',
+    'pause',
+    'play',
+    'selectDown',
+    'back',
+    'down',
+    'home',
+    'prev',
+    'up',
+    'selectUp',
+    'frame',
+    'mic',
+    'deviceFound',
+    'startRecordAudio',
+    'stopRecordAudio',
+    'requestHostUI',
+    'wifiPair'
   ].includes(cmd)
 }
 
@@ -62,14 +93,13 @@ export type Command =
   | { type: 'start'; payload: StartPayload }
   | { type: 'touch'; payload: { x: number; y: number; action: TouchAction } }
   | { type: 'initialise'; payload: InitialisePayload }
-  | { type: 'audioPlayer'; payload: AudioPlayerPayload }  
+  | { type: 'audioPlayer'; payload: AudioPlayerPayload }
   | { type: 'audioBuffer'; payload: AudioPlayerPayload }
   | { type: 'microphoneInput'; payload: Int16Array }
   | { type: 'frame' }
   | { type: 'keyCommand'; command: KeyCommand }
 
-export interface CarPlayWorker
-  extends Omit<Worker, 'postMessage' | 'onmessage'> {
+export interface CarPlayWorker extends Omit<Worker, 'postMessage' | 'onmessage'> {
   postMessage(message: Command, transfer?: Transferable[]): void
   onmessage: ((this: Worker, ev: CarplayWorkerMessage) => any) | null
 }
