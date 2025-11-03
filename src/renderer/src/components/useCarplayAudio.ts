@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AudioCommand, AudioData, decodeTypeMap } from '../../../main/carplay/messages'
-import { PcmPlayer } from 'pcm-ringbuf-player'
+import { PcmPlayer } from '../audio/PcmPlayer'
 import { AudioPlayerKey, CarPlayWorker } from './worker/types'
 import { createAudioPlayerKey } from './worker/utils'
 import { useCarplayStore } from '../store/store'
@@ -41,7 +41,7 @@ const useCarplayAudio = (worker: CarPlayWorker) => {
         worker.postMessage({
           type: 'audioPlayer',
           payload: {
-            sab: player.sab,
+            sab: player.getRawBuffer(),
             decodeType,
             audioType,
           },

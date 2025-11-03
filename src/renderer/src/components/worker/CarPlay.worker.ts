@@ -1,34 +1,151 @@
+/* eslint-disable no-restricted-globals */
 import { decodeTypeMap } from "../../../../main/carplay/messages";
 import { AudioPlayerKey } from "./types";
 import { RingBuffer } from "ringbuf.js";
 import { createAudioPlayerKey } from "./utils";
 
-const audioBuffers: Record<AudioPlayerKey, RingBuffer> = {};
-const pendingAudio: Record<AudioPlayerKey, Int16Array[]> = {};
-const remainders: Record<AudioPlayerKey, Int16Array | undefined> = {};
+/**
+ * CarPlay.worker
+ * - Receives steady ~60 ms PCM chunks (5760 samples @ 48 kHz stereo).
+ * - Normalizes to Int16, preserves channel-frame alignment.
+ * - Accumulates across packets so that only multiples of 128 frames are queued.
+ *   -> Target slice = 384 frames (~8 ms @ 48 kHz).
+ * - Pacer ticks ~8 ms and pushes exactly one full slice per tick (opt. catch-up).
+ */
+
+type Key = AudioPlayerKey;
+
+const WORKLET_QUANTUM = 128; // frames
+const PCM_TIMEOUT = 2000;    // new-stream detection
+
+// SAB ring for each audio stream
+const audioBuffers: Record<Key, RingBuffer> = {};
+const sliceQueues: Record<Key, Int16Array[]> = {};
+const accumSamples: Record<Key, Int16Array | undefined> = {};
+const pendingSlices: Record<Key, Int16Array[]> = {};
+
+// Steady feeder
+type Pacer = {
+  id: number | null;
+  msPerTick: number;
+  framesPerTick: number;
+  sampleRate: number;
+  channels: number;
+};
+const pacers: Record<Key, Pacer> = {};
 
 let microphonePort: MessagePort | undefined;
-
 let isNewStream = true;
 let lastPcmTimestamp = Date.now();
-const PCM_TIMEOUT = 2000;
+
+function framesPerSliceAligned(sampleRate: number): number {
+  const targetFrames = Math.max(WORKLET_QUANTUM, Math.round(sampleRate * 0.008));
+  const multiples = Math.max(1, Math.round(targetFrames / WORKLET_QUANTUM));
+  return multiples * WORKLET_QUANTUM;
+}
+
+function ensurePacer(key: Key, sampleRate: number, channels: number) {
+  const frames = framesPerSliceAligned(sampleRate);
+  const ms = (frames / sampleRate) * 1000;
+
+  const existing = pacers[key];
+  if (existing && existing.sampleRate === sampleRate && existing.channels === channels) return;
+
+  if (existing?.id != null) clearInterval(existing.id);
+
+  const pacer: Pacer = {
+    id: null,
+    msPerTick: ms,
+    framesPerTick: frames,
+    sampleRate,
+    channels,
+  };
+
+  const tick = () => {
+    const q = sliceQueues[key];
+    const rb = audioBuffers[key];
+    if (!rb || !q || q.length === 0) return;
+
+    // Push exactly one full slice per tick for steady cadence
+    const slice = q.shift()!;
+    rb.push(slice);
+
+    // If queue grows large, occasionally push a second slice
+    if (q.length > 40) {
+      const extra = q.shift();
+      if (extra) rb.push(extra);
+    }
+  };
+
+  const timer = setInterval(tick, pacer.msPerTick) as unknown as number;
+  pacer.id = timer;
+  pacers[key] = pacer;
+}
+
+function extractFullSlices(
+  key: Key,
+  incoming: Int16Array,
+  sampleRate: number,
+  channels: number
+): Int16Array[] {
+  const framesPerSlice = framesPerSliceAligned(sampleRate);
+  const sliceSamples = framesPerSlice * channels;
+
+  // Merge with previous accumulator
+  const prev = accumSamples[key];
+  let src = incoming;
+  if (prev && prev.length) {
+    const merged = new Int16Array(prev.length + incoming.length);
+    merged.set(prev, 0);
+    merged.set(incoming, prev.length);
+    src = merged;
+  }
+
+  // Use only whole frames
+  const totalFrames = Math.floor(src.length / channels);
+  const usableSamples = totalFrames * channels;
+
+  // Number of full slices
+  const fullSlices = Math.floor((usableSamples) / sliceSamples);
+  const out: Int16Array[] = [];
+
+  if (fullSlices > 0) {
+    for (let i = 0; i < fullSlices; i++) {
+      const start = i * sliceSamples;
+      const end = start + sliceSamples;
+      out.push(src.subarray(start, end));
+    }
+  }
+
+  // Keep leftover
+  const consumedSamples = fullSlices * sliceSamples;
+  const leftoverSamples = usableSamples - consumedSamples;
+  if (leftoverSamples > 0) {
+    accumSamples[key] = src.subarray(consumedSamples, consumedSamples + leftoverSamples);
+  } else {
+    accumSamples[key] = undefined;
+  }
+  return out;
+}
 
 function processAudioData(audioData: any) {
   const { decodeType, audioType } = audioData;
   const meta = decodeTypeMap[decodeType];
 
-  // normalize to Int16Array
+  // Normalize to Int16Array
   let int16: Int16Array;
   if (audioData.data instanceof Int16Array) {
     int16 =
       audioData.data.byteOffset % 2 === 0 &&
-      audioData.data.buffer.byteLength >=
-        audioData.data.byteOffset + audioData.data.byteLength
+      audioData.data.buffer.byteLength >= audioData.data.byteOffset + audioData.data.byteLength
         ? audioData.data
         : new Int16Array(audioData.data);
   } else if (audioData.buffer instanceof ArrayBuffer) {
     int16 = new Int16Array(audioData.buffer);
+  } else if (audioData.chunk instanceof ArrayBuffer) {
+    int16 = new Int16Array(audioData.chunk);
   } else {
+    // eslint-disable-next-line no-console
     console.error("[CARPLAY.WORKER] PCM - cannot interpret PCM data:", audioData);
     return;
   }
@@ -38,7 +155,6 @@ function processAudioData(audioData: any) {
 
   if (isNewStream && meta) {
     isNewStream = false;
-
     (self as unknown as Worker).postMessage({
       type: "audioInfo",
       payload: {
@@ -48,12 +164,11 @@ function processAudioData(audioData: any) {
         bitDepth: meta.bitDepth,
       },
     });
-
     const keyInit = createAudioPlayerKey(decodeType, audioType);
-    remainders[keyInit] = undefined;
+    accumSamples[keyInit] = undefined;
   }
 
-  // downmix for UI/FFT
+  // Downmix for UI/FFT
   if (meta) {
     const chUI = Math.max(1, meta.channel ?? 2);
     const framesUI = Math.floor(int16.length / chUI);
@@ -69,42 +184,28 @@ function processAudioData(audioData: any) {
     );
   }
 
-  // write to audio ring: frame-aligned
   const key = createAudioPlayerKey(decodeType, audioType);
   const channels = Math.max(1, meta?.channel ?? 2);
+  const sr = Math.max(8000, meta?.frequency ?? 48000);
 
-  // prepend remainder
-  let src = int16;
-  const prev = remainders[key];
-  if (prev && prev.length) {
-    const merged = new Int16Array(prev.length + int16.length);
-    merged.set(prev, 0);
-    merged.set(int16, prev.length);
-    src = merged;
-    remainders[key] = undefined;
-  }
+  // Accumulate and extract full 128*n slices
+  const slices = extractFullSlices(key, int16, sr, channels);
 
-  // push only whole frames
-  const framesTotal = Math.floor(src.length / channels);
-  const samplesAligned = framesTotal * channels;
-
-  if (samplesAligned > 0) {
-    const aligned = samplesAligned === src.length ? src : src.subarray(0, samplesAligned);
+  if (slices.length > 0) {
     if (audioBuffers[key]) {
-      audioBuffers[key].push(aligned);
+      if (!sliceQueues[key]) sliceQueues[key] = [];
+      for (const s of slices) sliceQueues[key].push(s);
+      ensurePacer(key, sr, channels);
     } else {
-      pendingAudio[key] = pendingAudio[key] || [];
-      pendingAudio[key].push(aligned);
+      // Buffer until the SAB ring arrives
+      pendingSlices[key] = pendingSlices[key] || [];
+      for (const s of slices) pendingSlices[key].push(s);
       (self as unknown as Worker).postMessage({
         type: "requestBuffer",
         message: { decodeType, audioType },
       });
     }
   }
-
-  // keep leftover for next chunk
-  const leftover = src.length - samplesAligned;
-  if (leftover > 0) remainders[key] = src.subarray(samplesAligned);
 
   lastPcmTimestamp = now;
 }
@@ -114,13 +215,17 @@ function setupPorts(mPort: MessagePort) {
     mPort.onmessage = (ev) => {
       try {
         const data = ev.data as any;
-        if (data.type === "audio" && data.buffer) processAudioData(data);
+        if (data.type === "audio" && (data.buffer || data.data || data.chunk)) {
+          processAudioData(data);
+        }
       } catch (e) {
+        // eslint-disable-next-line no-console
         console.error("[CARPLAY.WORKER] error processing audio message:", e);
       }
     };
     mPort.start?.();
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.error("[CARPLAY.WORKER] port setup failed:", e);
     (self as unknown as Worker).postMessage({ type: "failure", error: "Port setup failed" });
   }
@@ -144,14 +249,28 @@ function setupPorts(mPort: MessagePort) {
       const key = createAudioPlayerKey(decodeType, audioType);
       audioBuffers[key] = new RingBuffer(sab, Int16Array);
 
-      const pend = pendingAudio[key] || [];
-      for (const buf of pend) audioBuffers[key].push(buf);
-      delete pendingAudio[key];
+      // Drain any pending full slices via the pacer
+      const pend = pendingSlices[key] || [];
+      if (pend.length) {
+        if (!sliceQueues[key]) sliceQueues[key] = [];
+        for (const s of pend) sliceQueues[key].push(s);
+        const meta = decodeTypeMap[decodeType];
+        const sr = Math.max(8000, meta?.frequency ?? 48000);
+        const ch = Math.max(1, meta?.channel ?? 2);
+        ensurePacer(key, sr, ch);
+        delete pendingSlices[key];
+      }
       break;
     }
-    case "stop":
+    case "stop": {
       isNewStream = true;
+      Object.keys(pacers).forEach((k) => {
+        const p = pacers[k as Key];
+        if (p?.id != null) clearInterval(p.id);
+        delete pacers[k as Key];
+      });
       break;
+    }
     default:
       break;
   }
