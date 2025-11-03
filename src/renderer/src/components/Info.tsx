@@ -9,7 +9,7 @@ import {
   DialogContent,
   LinearProgress,
   Chip,
-  Tooltip,
+  Tooltip
 } from '@mui/material'
 import { useTheme } from '@mui/material/styles'
 import { useCarplayStore, useStatusStore } from '../store/store'
@@ -33,7 +33,7 @@ function abbreviateManufacturer(name?: string, max = 24): string | undefined {
     [/\b(Incorporated)\b/gi, 'Inc.'],
     [/\b(Industries)\b/gi, 'Ind.'],
     [/\b(Laboratories)\b/gi, 'Labs'],
-    [/\b(Semiconductors?)\b/gi, 'Semi'],
+    [/\b(Semiconductors?)\b/gi, 'Semi']
   ]
   for (const [re, to] of repl) s = s.replace(re, to)
   if (s.length <= max) return s
@@ -41,7 +41,7 @@ function abbreviateManufacturer(name?: string, max = 24): string | undefined {
   const parts = s.split(/\s+/).filter(Boolean)
   if (parts.length > 1) {
     const first = parts[0]
-    const rest = parts.slice(1).map(p => {
+    const rest = parts.slice(1).map((p) => {
       const core = p.replace(/[.,]/g, '')
       const cut = Math.min(4, Math.max(3, Math.ceil(core.length * 0.4)))
       return core.slice(0, cut) + '.'
@@ -49,7 +49,7 @@ function abbreviateManufacturer(name?: string, max = 24): string | undefined {
     s = [first, ...rest].join(' ')
     if (s.length <= max) return s
 
-    const initials = parts.slice(1).map(p => (p[0] ? p[0].toUpperCase() + '.' : ''))
+    const initials = parts.slice(1).map((p) => (p[0] ? p[0].toUpperCase() + '.' : ''))
     s = [first, ...initials].join(' ')
     if (s.length <= max) return s
   }
@@ -88,7 +88,7 @@ export default function Info() {
   const [total, setTotal] = useState<number>(0)
   const [error, setError] = useState<string>('')
 
-  // Grid const 
+  // Grid const
   const HW_MIN_COL = 'calc(112px + 20ch)'
 
   // UI helpers
@@ -108,8 +108,8 @@ export default function Info() {
           mt: 0.5,
           backgroundColor: theme.palette.primary.main,
           opacity: 0.6,
-          borderRadius: 1,
-        },
+          borderRadius: 1
+        }
       }}
     >
       {children}
@@ -127,7 +127,9 @@ export default function Info() {
 
     return (
       <Stack direction="row" spacing={1} alignItems="baseline">
-        <Typography sx={{ minWidth: 112, color: theme.palette.text.secondary }}>{label}:</Typography>
+        <Typography sx={{ minWidth: 112, color: theme.palette.text.secondary }}>
+          {label}:
+        </Typography>
         <Tooltip title={tooltipTitle} disableInteractive>
           {isString ? (
             <Typography
@@ -141,7 +143,7 @@ export default function Info() {
                 maxWidth: `${opts.maxCh ?? 26}ch`,
                 fontFamily: opts.mono
                   ? 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
-                  : undefined,
+                  : undefined
               }}
             >
               {value ?? '—'}
@@ -160,7 +162,7 @@ export default function Info() {
                   ? 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
                   : undefined,
                 display: 'inline-flex',
-                alignItems: 'center',
+                alignItems: 'center'
               }}
             >
               {value ?? '—'}
@@ -193,8 +195,13 @@ export default function Info() {
     [installedSem, latestSem]
   )
 
-  const actionLabel =
-    !hasLatest ? 'CHECK' : cmp! < 0 ? 'UPDATE' : cmp! > 0 ? 'DOWNGRADE' : 'UP TO DATE'
+  const actionLabel = !hasLatest
+    ? 'CHECK'
+    : cmp! < 0
+      ? 'UPDATE'
+      : cmp! > 0
+        ? 'DOWNGRADE'
+        : 'UP TO DATE'
   const actionEnabled = !hasLatest ? true : cmp! !== null && cmp! !== 0
 
   const recheckLatest = async () => {
@@ -223,7 +230,7 @@ export default function Info() {
             serial: info.serialNumber,
             manufacturer: info.manufacturerName,
             product: info.productName,
-            fwVersion: info.fwVersion,
+            fwVersion: info.fwVersion
           })
         }
       })
@@ -257,7 +264,7 @@ export default function Info() {
     setTotal(0)
     setPhase('start')
     setUpDialogOpen(true)
-      ; (window as any)?.app?.performUpdate?.(latestUrl)
+    ;(window as any)?.app?.performUpdate?.(latestUrl)
   }
 
   const onPrimaryAction = () => {
@@ -315,7 +322,7 @@ export default function Info() {
           py: 1.5,
           display: 'flex',
           flexDirection: 'column',
-          gap: 2,
+          gap: 2
         }}
       >
         {/* Section A: 3-column grid */}
@@ -324,11 +331,11 @@ export default function Info() {
             display: 'grid',
             gridTemplateColumns: {
               xs: '1fr',
-              sm: `minmax(${HW_MIN_COL}, 1.4fr) minmax(0,1fr) minmax(0,1fr)`,
+              sm: `minmax(${HW_MIN_COL}, 1.4fr) minmax(0,1fr) minmax(0,1fr)`
             },
             columnGap: 2,
             rowGap: 2,
-            px: 1,
+            px: 1
           }}
         >
           {/* Col 1: Hardware */}
@@ -336,7 +343,10 @@ export default function Info() {
             <SectionHeader>HARDWARE INFO</SectionHeader>
             <Stack spacing={0.5} sx={{ pl: 1.5 }}>
               {Row('Serial', serial, { mono: true, maxCh: 28 })}
-              {Row('Manufacturer', displayManufacturer, { maxCh: 28, tooltip: manufacturer || undefined })}
+              {Row('Manufacturer', displayManufacturer, {
+                maxCh: 28,
+                tooltip: manufacturer || undefined
+              })}
               {Row('Product', product, { maxCh: 28 })}
               {Row('Firmware', fwVersion, { mono: true, maxCh: 18 })}
             </Stack>
@@ -347,7 +357,7 @@ export default function Info() {
             sx={{
               minWidth: 0,
               pl: { md: 2 },
-              borderLeft: { md: `1px solid ${theme.palette.divider}` },
+              borderLeft: { md: `1px solid ${theme.palette.divider}` }
             }}
           >
             <SectionHeader>PHONE</SectionHeader>
@@ -369,7 +379,9 @@ export default function Info() {
             <Stack spacing={0.5} sx={{ pl: 1.5 }}>
               {Row(
                 'Resolution',
-                negotiatedWidth && negotiatedHeight ? `${negotiatedWidth}×${negotiatedHeight}` : '—',
+                negotiatedWidth && negotiatedHeight
+                  ? `${negotiatedWidth}×${negotiatedHeight}`
+                  : '—',
                 { mono: true, maxCh: 18 }
               )}
             </Stack>
@@ -380,7 +392,7 @@ export default function Info() {
             sx={{
               minWidth: 0,
               pl: { md: 2 },
-              borderLeft: { md: `1px solid ${theme.palette.divider}` },
+              borderLeft: { md: `1px solid ${theme.palette.divider}` }
             }}
           >
             <SectionHeader>SOFTWARE</SectionHeader>
@@ -413,12 +425,12 @@ export default function Info() {
                 {Row('Codec', audioCodec, { maxCh: 24 })}
                 {Row('Samplerate', audioSampleRate ? `${audioSampleRate} Hz` : '—', {
                   mono: true,
-                  maxCh: 24,
+                  maxCh: 24
                 })}
                 {Row('Channels', audioChannels, { mono: true, maxCh: 8 })}
                 {Row('Bit depth', audioBitDepth ? `${audioBitDepth} bit` : '—', {
                   mono: true,
-                  maxCh: 12,
+                  maxCh: 12
                 })}
               </Stack>
             </Box>
@@ -431,7 +443,7 @@ export default function Info() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                mt: 0.5,
+                mt: 0.5
               }}
             >
               <FFTSpectrum data={pcmData} />

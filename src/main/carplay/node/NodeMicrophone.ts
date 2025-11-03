@@ -26,13 +26,18 @@ export default class NodeMicrophone extends EventEmitter {
     if (os.platform() === 'linux') {
       cmd = 'arecord'
       args = [
-        '-D', this.device,
-        '-f', this.format,
-        '-c', this.channels.toString(),
-        '-r', this.rate.toString(),
-        '-t', 'raw',
+        '-D',
+        this.device,
+        '-f',
+        this.format,
+        '-c',
+        this.channels.toString(),
+        '-r',
+        this.rate.toString(),
+        '-t',
+        'raw',
         '-q',
-        '-',
+        '-'
       ]
     } else if (os.platform() === 'darwin') {
       const recPath = NodeMicrophone.resolveRecPath()
@@ -42,13 +47,18 @@ export default class NodeMicrophone extends EventEmitter {
       }
       cmd = recPath
       args = [
-        '-b', '16',
-        '-c', this.channels.toString(),
-        '-r', this.rate.toString(),
-        '-e', 'signed-integer',
-        '-t', 'raw',
+        '-b',
+        '16',
+        '-c',
+        this.channels.toString(),
+        '-r',
+        this.rate.toString(),
+        '-e',
+        'signed-integer',
+        '-t',
+        'raw',
         '-q',
-        '-',
+        '-'
       ]
     } else {
       console.error('[NodeMicrophone] Platform not supported for microphone recording')
@@ -87,7 +97,9 @@ export default class NodeMicrophone extends EventEmitter {
   stop(): void {
     if (this.process) {
       console.debug('[NodeMicrophone] Stopping recording')
-      try { this.process.kill() } catch (e) {
+      try {
+        this.process.kill()
+      } catch (e) {
         console.warn('[NodeMicrophone] Failed to kill process:', e)
       }
       this.cleanup()
@@ -106,29 +118,25 @@ export default class NodeMicrophone extends EventEmitter {
     if (fromEnv && fs.existsSync(fromEnv)) return fromEnv
 
     const candidates = [
-      '/opt/homebrew/bin/rec',   // Apple Silicon
-      '/usr/local/bin/rec',      // Intel
+      '/opt/homebrew/bin/rec', // Apple Silicon
+      '/usr/local/bin/rec' // Intel
     ]
     for (const p of candidates) if (fs.existsSync(p)) return p
 
     try {
       const widened = NodeMicrophone.buildExecPath(process.env.PATH)
-      const out = execSync('which rec', { encoding: 'utf8', env: { ...process.env, PATH: widened } }).trim()
+      const out = execSync('which rec', {
+        encoding: 'utf8',
+        env: { ...process.env, PATH: widened }
+      }).trim()
       if (out && fs.existsSync(out)) return out
-    } catch { }
+    } catch {}
 
     return null
   }
 
   private static buildExecPath(current?: string): string {
-    const extra = [
-      '/opt/homebrew/bin',
-      '/usr/local/bin',
-      '/usr/bin',
-      '/bin',
-      '/usr/sbin',
-      '/sbin',
-    ]
+    const extra = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin']
     const set = new Set<string>([...extra, ...(current ? current.split(':') : [])])
     return Array.from(set).join(':')
   }
@@ -160,7 +168,7 @@ export default class NodeMicrophone extends EventEmitter {
       try {
         const result = execSync('arecord -L', { encoding: 'utf8' })
         const lines = result.split('\n')
-        const idx = lines.findIndex(l => l.trim().startsWith('sysdefault:'))
+        const idx = lines.findIndex((l) => l.trim().startsWith('sysdefault:'))
         if (idx === -1) return 'not available'
         const desc = lines[idx + 1]?.trim()
         return desc && desc !== 'sysdefault' ? desc : 'not available'

@@ -1,24 +1,68 @@
-<<<<<<< HEAD
-#directories
-bower_components
-node_modules
-dist
-build
-.idea
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-#files
-*.tgz
-*.log
+# Builds & bundles
+dist/
+build/
+out/
+release/
+tmp/
+temp/
+
+# Test/coverage
+coverage/
+.nyc_output/
+
+# Caches
+.cache/
+.vite/
+.parcel-cache/
+.turbo/
+.eslintcache
+.stylelintcache
+.rpt2_cache/
+*.tsbuildinfo
+
+# Electron-builder artifacts
+*.AppImage
+*.dmg
+*.dmg.blockmap
+*.snap
+*.deb
+*.rpm
+*.exe
+*.msi
+*.nupkg
+*.zip
+*.7z
+*.tar.gz
+*.tar.xz
+*.blockmap
+latest*.yml
+app-update.yml
+
+# Android/archives
 *.apk
-.idea/workspace.xml
-*.xml
+*.tgz
 
-# Hide OS X stuff
+# IDE
+.idea/
+*.iml
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# OS
 .DS_Store
+Thumbs.db
 
-=======
-node_modules
-dist
-out
+# Logs
+*.log
 *.log*
->>>>>>> origin/v4

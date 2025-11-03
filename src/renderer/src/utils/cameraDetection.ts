@@ -1,4 +1,4 @@
-import { ExtraConfig } from "../../../main/Globals"
+import { ExtraConfig } from '../../../main/Globals'
 
 export async function updateCameras(
   setCameraFound: (found: boolean) => void,
@@ -7,7 +7,7 @@ export async function updateCameras(
 ): Promise<MediaDeviceInfo[]> {
   try {
     const devs = await navigator.mediaDevices.enumerateDevices()
-    const cams = devs.filter(d => d.kind === 'videoinput')
+    const cams = devs.filter((d) => d.kind === 'videoinput')
     setCameraFound(cams.length > 0)
 
     if (!currentSettings.camera && cams.length > 0) {

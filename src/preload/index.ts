@@ -51,13 +51,13 @@ const api = {
     },
     unlistenForEvents: (callback: ApiCallback<any>) => {
       usbEventHandlers = usbEventHandlers.filter((cb) => cb !== callback)
-    },
+    }
   },
 
   settings: {
     get: (): Promise<ExtraConfig> => ipcRenderer.invoke('getSettings'),
     save: (settings: ExtraConfig) => ipcRenderer.invoke('save-settings', settings),
-    onUpdate: (callback: ApiCallback<ExtraConfig>) => ipcRenderer.on('settings', callback),
+    onUpdate: (callback: ApiCallback<ExtraConfig>) => ipcRenderer.on('settings', callback)
   },
 
   ipc: {
@@ -80,8 +80,8 @@ const api = {
       audioChunkHandler = handler
       audioChunkQueue.forEach((chunk) => handler(chunk))
       audioChunkQueue = []
-    },
-  },
+    }
+  }
 }
 
 contextBridge.exposeInMainWorld('carplay', api)
@@ -110,7 +110,7 @@ const appApi = {
     const handler = (_e: IpcRendererEvent, kiosk: boolean) => cb(kiosk)
     ipcRenderer.on(ch, handler)
     return () => ipcRenderer.removeListener(ch, handler)
-  },
+  }
 }
 
 contextBridge.exposeInMainWorld('app', appApi)

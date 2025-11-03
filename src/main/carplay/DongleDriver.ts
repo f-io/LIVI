@@ -68,7 +68,7 @@ export const DEFAULT_CONFIG: DongleConfig = {
   }
 }
 
-export class DriverStateError extends Error { }
+export class DriverStateError extends Error {}
 
 export class DongleDriver extends EventEmitter {
   private _heartbeatInterval: ReturnType<typeof setInterval> | null = null
@@ -86,7 +86,9 @@ export class DongleDriver extends EventEmitter {
     { vendorId: 0x1314, productId: 0x1521 }
   ]
 
-  private sleep(ms: number) { return new Promise<void>((r) => setTimeout(r, ms)) }
+  private sleep(ms: number) {
+    return new Promise<void>((r) => setTimeout(r, ms))
+  }
   private async waitForReaderStop(timeoutMs = 500) {
     const t0 = Date.now()
     while (this._readerActive && Date.now() - t0 < timeoutMs) await this.sleep(10)
@@ -148,7 +150,10 @@ export class DongleDriver extends EventEmitter {
       }
 
       try {
-        const headerRes = await this._device.transferIn(this._inEP!.endpointNumber, MessageHeader.dataLength)
+        const headerRes = await this._device.transferIn(
+          this._inEP!.endpointNumber,
+          MessageHeader.dataLength
+        )
         if (this._closing) break
         const headerBuf = headerRes?.data?.buffer
         if (!headerBuf) throw new HeaderBuildError('Empty header')
@@ -229,7 +234,9 @@ export class DongleDriver extends EventEmitter {
         await this.waitForReaderStop(400)
 
         if (this._ifaceNumber != null) {
-          try { await this._device.releaseInterface(this._ifaceNumber) } catch (e) {
+          try {
+            await this._device.releaseInterface(this._ifaceNumber)
+          } catch (e) {
             console.warn('releaseInterface() failed', e)
           }
         }

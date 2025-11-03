@@ -121,19 +121,18 @@ export class RendererWorker {
     const isMac = platform.startsWith('mac')
     const isLinux = platform.includes('linux')
 
-    const rendererPriority =
-      isMac
-        ? ['webgpu', 'webgl2', 'webgl']
-        : isLinux
-          ? ['webgl2', 'webgl', 'webgpu']
-          : ['webgl', 'webgl2', 'webgpu']
+    const rendererPriority = isMac
+      ? ['webgpu', 'webgl2', 'webgl']
+      : isLinux
+        ? ['webgl2', 'webgl', 'webgpu']
+        : ['webgl', 'webgl2', 'webgpu']
 
     const results: Record<string, { hw: boolean; sw: boolean; available: boolean }> = {}
     for (const r of rendererPriority) {
       results[r] = await this.isRendererSupported(r)
       console.debug(
         `[RENDER.WORKER] ${r.toUpperCase()}: available=${results[r].available}, ` +
-        `hw=${results[r].hw}, sw=${results[r].sw}`
+          `hw=${results[r].hw}, sw=${results[r].sw}`
       )
     }
 
@@ -149,7 +148,7 @@ export class RendererWorker {
           this.hardwareAccelerationTested = true
           console.debug(
             `[RENDER.WORKER] Selected renderer: ${r} (` +
-            `${mode === 'hw' ? 'hardware' : 'software'})`
+              `${mode === 'hw' ? 'hardware' : 'software'})`
           )
           return
         }
@@ -295,4 +294,4 @@ scope.addEventListener('message', (event: MessageEvent<WorkerEvent>) => {
   }
 })
 
-export { }
+export {}

@@ -1,10 +1,5 @@
 import { DongleConfig } from '../DongleDriver.js'
-import {
-  MessageType,
-  MessageHeader,
-  CommandMapping,
-  CommandValue,
-} from './common.js'
+import { MessageType, MessageHeader, CommandMapping, CommandValue } from './common.js'
 import { clamp, getCurrentTimeInMs } from './utils.js'
 
 export abstract class SendableMessage {
@@ -47,7 +42,7 @@ export class SendCommand extends SendableMessageWithPayload {
 export enum TouchAction {
   Down = 14,
   Move = 15,
-  Up = 16,
+  Up = 16
 }
 
 export class SendTouch extends SendableMessageWithPayload {
@@ -84,7 +79,7 @@ export class SendTouch extends SendableMessageWithPayload {
 export enum MultiTouchAction {
   Down = 1,
   Move = 2,
-  Up = 0,
+  Up = 0
 }
 
 class TouchItem {
@@ -128,11 +123,11 @@ export class SendMultiTouch extends SendableMessageWithPayload {
 
   constructor(points: MultiTouchPoint[]) {
     super()
-    this.touches = points.map(p => new TouchItem(p.x, p.y, p.action, p.id))
+    this.touches = points.map((p) => new TouchItem(p.x, p.y, p.action, p.id))
   }
 
   getPayload(): Buffer {
-    return Buffer.concat(this.touches.map(i => i.getPayload()))
+    return Buffer.concat(this.touches.map((i) => i.getPayload()))
   }
 }
 
@@ -192,7 +187,7 @@ export enum FileAddress {
   ICON_120 = '/etc/icon_120x120.png',
   ICON_180 = '/etc/icon_180x180.png',
   ICON_250 = '/etc/icon_256x256.png',
-  ANDROID_WORK_MODE = '/etc/android_work_mode',
+  ANDROID_WORK_MODE = '/etc/android_work_mode'
 }
 
 export class SendNumber extends SendFile {
@@ -243,15 +238,7 @@ export class SendOpen extends SendableMessageWithPayload {
     iBox.writeUInt32LE(config.iBoxVersion)
     const phoneMode = Buffer.alloc(4)
     phoneMode.writeUInt32LE(config.phoneWorkMode)
-    return Buffer.concat([
-      width,
-      height,
-      fps,
-      format,
-      packetMax,
-      iBox,
-      phoneMode,
-    ])
+    return Buffer.concat([width, height, fps, format, packetMax, iBox, phoneMode])
   }
 
   constructor(config: DongleConfig) {
@@ -280,7 +267,7 @@ export class SendBoxSettings extends SendableMessageWithPayload {
       androidAutoSizeW: this.config.width,
       androidAutoSizeH: this.config.height,
       WiFiChannel: channel,
-      wifiChannel: channel,
+      wifiChannel: channel
     }
 
     return Buffer.from(JSON.stringify(body), 'ascii')
@@ -295,7 +282,7 @@ export class SendBoxSettings extends SendableMessageWithPayload {
 
 export enum LogoType {
   HomeButton = 1,
-  Siri = 2,
+  Siri = 2
 }
 
 export class SendLogoType extends SendableMessageWithPayload {
@@ -326,7 +313,7 @@ export class SendIconConfig extends SendFile {
       oemIconVisible: 1,
       name: 'AutoBox',
       model: 'Magic-Car-Link-1.00',
-      oemIconPath: FileAddress.OEM_ICON,
+      oemIconPath: FileAddress.OEM_ICON
     }
 
     if (config.label) {
@@ -334,7 +321,7 @@ export class SendIconConfig extends SendFile {
     }
 
     const fileData = Object.entries(valueMap)
-      .map(e => `${e[0]} = ${e[1]}`)
+      .map((e) => `${e[0]} = ${e[1]}`)
       .join('\n')
 
     super(Buffer.from(fileData + '\n', 'ascii'), FileAddress.AIRPLAY_CONFIG)

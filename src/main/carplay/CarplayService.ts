@@ -88,12 +88,12 @@ export class CarplayService {
         this.clearTimeouts()
         this.webContents.send('carplay-event', { type: 'plugged' })
         if (!this.started && !this.isStarting) {
-          this.start().catch(() => { })
+          this.start().catch(() => {})
         }
       } else if (msg instanceof Unplugged) {
         this.webContents.send('carplay-event', { type: 'unplugged' })
         if (!this.shuttingDown && !this.stopping) {
-          this.stop().catch(() => { })
+          this.stop().catch(() => {})
         }
       } else if (msg instanceof VideoData) {
         if (!this.firstFrameLogged) {
@@ -108,7 +108,9 @@ export class CarplayService {
         this.sendChunked('carplay-video-chunk', msg.data?.buffer as ArrayBuffer, 512 * 1024)
       } else if (msg instanceof AudioData) {
         if (msg.data) {
-          this.sendChunked('carplay-audio-chunk', msg.data.buffer as ArrayBuffer, 64 * 1024, { ...msg })
+          this.sendChunked('carplay-audio-chunk', msg.data.buffer as ArrayBuffer, 64 * 1024, {
+            ...msg
+          })
           if (!this.audioInfoSent) {
             const meta = decodeTypeMap[msg.decodeType]
             if (meta) {
@@ -188,7 +190,8 @@ export class CarplayService {
 
     type MultiTouchPoint = { id: number; x: number; y: number; action: number }
     const to01 = (v: any) => {
-      const n = +v; if (!Number.isFinite(n)) return 0
+      const n = +v
+      if (!Number.isFinite(n)) return 0
       return n < 0 ? 0 : n > 1 ? 1 : n
     }
     const ONE_BASED_IDS = false
@@ -196,11 +199,11 @@ export class CarplayService {
     ipcMain.on('carplay-multi-touch', (_evt, points: MultiTouchPoint[]) => {
       try {
         if (!Array.isArray(points) || points.length === 0) return
-        const safe = points.map(p => ({
+        const safe = points.map((p) => ({
           id: (p.id | 0) + (ONE_BASED_IDS ? 1 : 0),
           x: to01(p.x),
           y: to01(p.y),
-          action: p.action | 0,
+          action: p.action | 0
         }))
         this.driver.send(new SendMultiTouch(safe))
       } catch (e) {
@@ -280,7 +283,9 @@ export class CarplayService {
           this.audioInfoSent = false
           this.firstFrameLogged = false
         } catch {
-          try { await this.webUsbDevice?.close() } catch { }
+          try {
+            await this.webUsbDevice?.close()
+          } catch {}
           this.webUsbDevice = null
           this.started = false
         }
@@ -301,9 +306,18 @@ export class CarplayService {
     this.isStopping = true
     this.stopPromise = (async () => {
       this.clearTimeouts()
-      try { await this.driver.close() } catch { }
-      try { this._mic?.stop() } catch { }
-      try { await this.webUsbDevice?.close() } catch { } finally { this.webUsbDevice = null }
+      try {
+        await this.driver.close()
+      } catch {}
+      try {
+        this._mic?.stop()
+      } catch {}
+      try {
+        await this.webUsbDevice?.close()
+      } catch {
+      } finally {
+        this.webUsbDevice = null
+      }
       this.started = false
       this.audioInfoSent = false
       this.firstFrameLogged = false
