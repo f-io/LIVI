@@ -1,4 +1,4 @@
-appId: com.electron.app
+appId: dev.f-io.pi-carplay
 productName: pi-carplay
 
 directories:
