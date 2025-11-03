@@ -2,19 +2,19 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffe
 import { Box, Typography, useTheme, alpha } from '@mui/material'
 import { keyframes } from '@mui/system'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { CommandMapping } from '../../../main/carplay/messages/common'
+import { CommandMapping } from '@main/carplay/messages/common'
 
-import { ExtraConfig } from '../../../main/Globals'
-import { useCarplayStore, useStatusStore } from '../store/store'
-import { InitEvent, Renderer } from './worker/render/RenderEvents'
-import useCarplayAudio from './useCarplayAudio'
-import { useCarplayMultiTouch } from './useCarplayTouch'
-import type { CarPlayWorker, KeyCommand } from './worker/types'
+import { ExtraConfig } from '@main/Globals'
+import { InitEvent, Renderer } from '@worker/render/RenderEvents'
+import useCarplayAudio from './hooks/useCarplayAudio'
+import { useCarplayMultiTouch } from './hooks/useCarplayTouch'
+import type { CarPlayWorker, KeyCommand } from '@worker/types'
 
 // Icons
 import UsbOffOutlinedIcon from '@mui/icons-material/UsbOffOutlined'
 import UsbOutlinedIcon from '@mui/icons-material/UsbOutlined'
 import PhoneIphoneOutlinedIcon from '@mui/icons-material/PhoneIphoneOutlined'
+import { useCarplayStore, useStatusStore } from '../../../store/store'
 
 const RETRY_DELAY_MS = 3000
 
@@ -182,7 +182,7 @@ function StatusOverlay({
 
 /* --------------------------------- Carplay -------------------------------- */
 
-const Carplay: React.FC<CarplayProps> = ({
+const CarplayComponent: React.FC<CarplayProps> = ({
   receivingVideo,
   setReceivingVideo,
   settings,
@@ -263,7 +263,7 @@ const Carplay: React.FC<CarplayProps> = ({
 
   // CarPlay worker setup
   const carplayWorker = useMemo<CarPlayWorker>(() => {
-    const w = new Worker(new URL('./worker/CarPlay.worker.ts', import.meta.url), {
+    const w = new Worker(new URL('../../../worker/CarPlay.worker.ts', import.meta.url), {
       type: 'module'
     }) as CarPlayWorker
 
@@ -641,4 +641,4 @@ const Carplay: React.FC<CarplayProps> = ({
   )
 }
 
-export default React.memo(Carplay)
+export const Carplay = React.memo(CarplayComponent)

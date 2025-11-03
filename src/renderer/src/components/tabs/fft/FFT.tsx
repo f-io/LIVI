@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Box } from '@mui/material'
-import { useCarplayStore } from '../store/store'
+import { useCarplayStore } from '@store/store'
 import { useTheme, alpha } from '@mui/material/styles'
 
 export interface FFTSpectrumProps {
@@ -17,7 +17,7 @@ const MAX_FREQ = 20000
 const SPECTRUM_WIDTH_RATIO = 0.92
 const TARGET_FPS = 30
 
-export default function FFTSpectrum({ data }: FFTSpectrumProps) {
+export const FFTSpectrum = ({ data }: FFTSpectrumProps) => {
   const theme = useTheme()
   const isDark = theme.palette.mode === 'dark'
 

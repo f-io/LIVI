@@ -16,6 +16,7 @@ import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew'
 import { useTheme } from '@mui/material/styles'
 import { useStatusStore } from '../store/store'
 import { ExtraConfig } from '../../../main/Globals'
+import { indexToRoute, ROUTES, routeToIndex } from '../constants'
 
 interface NavProps {
   settings: ExtraConfig | null
@@ -33,21 +34,6 @@ export default function Nav({ receivingVideo }: NavProps) {
 
   if (isStreaming && pathname === '/') return null
 
-  const indexToRoute: Record<number, string | 'quit'> = {
-    0: '/',
-    1: '/media',
-    2: '/camera',
-    3: '/info',
-    4: '/settings',
-    5: 'quit'
-  }
-  const routeToIndex: Record<string, number> = {
-    '/': 0,
-    '/media': 1,
-    '/camera': 2,
-    '/info': 3,
-    '/settings': 4
-  }
   const value = routeToIndex[pathname] ?? 0
 
   const blurActive = () => {
@@ -137,7 +123,7 @@ export default function Nav({ receivingVideo }: NavProps) {
 
   const handleChange = (_: React.SyntheticEvent, newIndex: number) => {
     const dest = indexToRoute[newIndex]
-    if (dest === 'quit') {
+    if (dest === ROUTES.QUIT) {
       quit()
       requestAnimationFrame(blurActive)
       return

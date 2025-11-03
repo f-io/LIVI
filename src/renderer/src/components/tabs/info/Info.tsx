@@ -13,8 +13,8 @@ import {
   Tooltip,
 } from '@mui/material'
 import { useTheme } from '@mui/material/styles'
-import { useCarplayStore, useStatusStore } from '../store/store'
-import FFTSpectrum from './FFT'
+import { useCarplayStore, useStatusStore } from '@store/store'
+import { FFTSpectrum } from '../fft'
 
 // Abbreviate names
 function abbreviateManufacturer(name?: string, max = 24): string | undefined {
@@ -58,7 +58,7 @@ function abbreviateManufacturer(name?: string, max = 24): string | undefined {
   return s.slice(0, Math.max(0, max - 1)) + '…'
 }
 
-export default function Info() {
+export const Info = () => {
   const theme = useTheme()
 
   const isDongleConnected = useStatusStore((s) => s.isDongleConnected)

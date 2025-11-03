@@ -1,15 +1,10 @@
 import { useEffect, useState } from 'react'
 import { HashRouter as Router, Route, Routes } from 'react-router-dom'
-import Media from './components/Media'
-import Settings from './components/Settings'
-import Info from './components/Info'
-import Home from './components/Home'
+import { Home, Carplay, Camera, Info, Media, Settings } from './components/tabs'
 import Nav from './components/Nav'
-import Carplay from './components/Carplay'
-import Camera from './components/Camera'
 import { Box, Modal } from '@mui/material'
 import { useCarplayStore, useStatusStore } from './store/store'
-import type { KeyCommand } from './components/worker/types'
+import type { KeyCommand } from '@worker/types'
 import { updateCameras } from './utils/cameraDetection'
 
 const style = {
