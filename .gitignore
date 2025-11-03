@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 #directories
 bower_components
 node_modules
@@ -6,7 +5,6 @@ dist
 out
 build
 .idea
-=======
 # Node
 node_modules/
 npm-debug.log*
@@ -14,7 +12,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
->>>>>>> origin/dev
 
 # Builds & bundles
 dist/
@@ -71,11 +68,8 @@ app-update.yml
 
 # OS
 .DS_Store
-<<<<<<< HEAD
-=======
 Thumbs.db
 
 # Logs
 *.log
 *.log*
->>>>>>> origin/dev
