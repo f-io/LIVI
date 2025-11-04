@@ -169,7 +169,6 @@ export class USBService {
       )
       productName = await this.tryGetStringDescriptor(device, device.deviceDescriptor.iProduct)
       device.close()
-       
     } catch (e) {
       try {
         device.close()

@@ -148,7 +148,7 @@ function useOptimisticPlaying(realPlaying: boolean | undefined) {
 // Button feedback
 function usePressFeedback() {
   const press = { play: false, next: false, prev: false } as const
-   
+
   const bump = (_key: keyof typeof press, _ms = 140) => {}
   const reset = () => {}
   return { press, bump, reset }

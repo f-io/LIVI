@@ -4,7 +4,7 @@ export enum ROUTES {
   CAMERA = '/camera',
   INFO = '/info',
   SETTINGS = '/settings',
-  QUIT = 'quit',
+  QUIT = 'quit'
 }
 
 export const indexToRoute: Record<number, string | 'quit'> = {

@@ -82,7 +82,6 @@ class PCMWorkletProcessor extends AudioWorkletProcessor {
     this.rampSamples += rampFrames
   }
 
-   
   handleUnderrun(output, frames) {
     for (let c = 0; c < output.length; c++) output[c].fill(0)
     this.underrunCount++

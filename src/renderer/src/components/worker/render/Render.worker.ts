@@ -171,7 +171,6 @@ export class RendererWorker {
     } else if (renderer === 'webgpu') {
       try {
         context = canvas.getContext('webgpu')
-       
       } catch (e) {
         context = null
       }

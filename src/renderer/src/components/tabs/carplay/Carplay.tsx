@@ -16,7 +16,6 @@ import UsbOffOutlinedIcon from '@mui/icons-material/UsbOffOutlined'
 import UsbOutlinedIcon from '@mui/icons-material/UsbOutlined'
 import PhoneIphoneOutlinedIcon from '@mui/icons-material/PhoneIphoneOutlined'
 
-
 const RETRY_DELAY_MS = 3000
 
 interface CarplayProps {

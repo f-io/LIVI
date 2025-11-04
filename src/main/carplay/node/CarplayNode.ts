@@ -97,7 +97,6 @@ export default class CarplayNode {
     let device: USBDevice | null = null
     try {
       device = await webusb.requestDevice({ filters: DongleDriver.knownDevices })
-       
     } catch (_) {
       return null
     }

@@ -185,7 +185,6 @@ export class CarplayService {
     ipcMain.on('carplay-touch', (_evt, data: { x: number; y: number; action: number }) => {
       try {
         this.driver.send(new SendTouch(data.x, data.y, data.action))
-         
       } catch (e) {
         // ignore
       }
@@ -208,7 +207,6 @@ export class CarplayService {
           action: p.action | 0
         }))
         this.driver.send(new SendMultiTouch(safe))
-         
       } catch (e) {
         // ignore
       }
