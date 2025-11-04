@@ -6,6 +6,7 @@
   "author": "Lasse Heitgres",
   "homepage": "https://f-io.dev",
   "scripts": {
+    "prepare": "husky install",
     "format": "prettier --write .",
     "lint": "eslint . --ext .js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
@@ -19,6 +20,9 @@
     "build:mac": "electron-vite build && electron-builder --mac --arm64 --config",
     "build:linux": "electron-vite build && electron-builder --linux --config",
     "build:armLinux": "electron-vite build && electron-builder --linux AppImage --arm64 --config"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,json,css,scss,md,yml,yaml}": "prettier --write"
   },
   "dependencies": {
     "@electron-toolkit/utils": "4.0.0",
@@ -64,6 +68,8 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
     "globals": "^16.5.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.6",
     "prettier": "^3.6.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
