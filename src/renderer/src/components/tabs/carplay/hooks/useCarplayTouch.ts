@@ -1,5 +1,5 @@
 import { useMemo, useRef, useCallback } from 'react'
-import { MultiTouchAction, TouchAction } from '../../../main/carplay/messages/sendable'
+import { MultiTouchAction, TouchAction } from '@main/carplay/messages/sendable'
 
 type Handlers = {
   onPointerDown: React.PointerEventHandler<HTMLDivElement>

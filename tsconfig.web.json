@@ -26,8 +26,24 @@
     "noEmit": true,
     "baseUrl": "./src",
     "paths": {
-      "@renderer/*": ["renderer/src/*"],
-      "@carplay/messages": ["main/carplay/messages/index.ts"]
+      "@renderer/*": [
+        "renderer/src/*"
+      ],
+      "@carplay/messages": [
+        "main/carplay/messages/index.ts"
+      ],
+      "@main/*": [
+        "main/*"
+      ],
+      "@worker/*": [
+        "renderer/src/components/worker/*"
+      ],
+      "@store/*": [
+        "renderer/src/store/*"
+      ],
+      "@utils/*": [
+        "renderer/src/utils/*"
+      ]
     }
   }
 }

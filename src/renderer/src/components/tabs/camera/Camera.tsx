@@ -5,7 +5,7 @@ interface CameraProps {
   settings: { camera: string } | null
 }
 
-const Camera: React.FC<CameraProps> = ({ settings }) => {
+export const Camera: React.FC<CameraProps> = ({ settings }) => {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [cameraFound, setCameraFound] = useState(false)
 
@@ -94,5 +94,3 @@ const Camera: React.FC<CameraProps> = ({ settings }) => {
     </div>
   )
 }
-
-export default Camera

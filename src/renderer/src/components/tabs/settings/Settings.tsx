@@ -1,4 +1,4 @@
-import { ExtraConfig } from '../../../main/Globals'
+import { ExtraConfig } from '@main/Globals'
 import React, { useEffect, useMemo, useState, startTransition, useCallback } from 'react'
 import {
   Box,
@@ -23,10 +23,10 @@ import {
 import { useTheme } from '@mui/material/styles'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { TransitionProps } from '@mui/material/transitions'
-import { KeyBindings } from './KeyBindings'
-import { useCarplayStore, useStatusStore } from '../store/store'
-import { updateCameras as detectCameras } from '../utils/cameraDetection'
+import { KeyBindings } from '../../keyBindings'
+import { updateCameras as detectCameras } from '@utils/cameraDetection'
 import debounce from 'lodash.debounce'
+import { useCarplayStore, useStatusStore } from '@store/store'
 
 interface SettingsProps {
   settings: ExtraConfig | null
@@ -86,7 +86,7 @@ function coerceSelectValue<T extends string | number>(
   return value != null && options.includes(value as T) ? (value as T) : ''
 }
 
-const Settings: React.FC<SettingsProps> = ({ settings }) => {
+export const Settings: React.FC<SettingsProps> = ({ settings }) => {
   const hasSettings = !!settings
 
   const [activeSettings, setActiveSettings] = useState<ExtraConfig>(() => {
@@ -813,5 +813,3 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
     </Box>
   )
 }
-
-export default Settings
