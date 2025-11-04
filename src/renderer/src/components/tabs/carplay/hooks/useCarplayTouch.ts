@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useCallback } from 'react'
 import { MultiTouchAction, TouchAction } from '@main/carplay/messages/sendable'
 
 type Handlers = {
@@ -26,24 +26,25 @@ export const useCarplayMultiTouch = (): Handlers => {
   const nextSlot = useRef(0)
   const mouseDown = useRef(false)
 
-  const alloc = (pid: number) => {
+  const alloc = useCallback((pid: number) => {
     const old = slotByPointerId.current.get(pid)
     if (old !== undefined) return old
     const reuse = freeSlots.current.pop()
     const slot = reuse ?? nextSlot.current++
     slotByPointerId.current.set(pid, slot)
     return slot
-  }
-  const free = (pid: number) => {
+  }, [])
+
+  const free = useCallback((pid: number) => {
     const slot = slotByPointerId.current.get(pid)
     if (slot !== undefined) {
       slotByPointerId.current.delete(pid)
       active.current.delete(slot)
       freeSlots.current.push(slot)
     }
-  }
+  }, [])
 
-  const sendFullFrame = (overrides?: Map<number, MultiTouchAction>) => {
+  const sendFullFrame = useCallback((overrides?: Map<number, MultiTouchAction>) => {
     const pts: MTPoint[] = []
     active.current.forEach((pos, id) => {
       const action = overrides?.get(id) ?? MultiTouchAction.Move
@@ -57,70 +58,86 @@ export const useCarplayMultiTouch = (): Handlers => {
     }
     if (!pts.length) return
     window.carplay.ipc.sendMultiTouch(pts)
-  }
+  }, [])
 
-  const onPointerDown: Handlers['onPointerDown'] = (e) => {
-    const el = e.currentTarget as HTMLElement
-    const { x, y } = norm(el, e.clientX, e.clientY)
+  const onPointerDown = useCallback<Handlers['onPointerDown']>(
+    (e) => {
+      const el = e.currentTarget as HTMLElement
+      const { x, y } = norm(el, e.clientX, e.clientY)
 
-    if (e.pointerType === 'mouse') {
-      mouseDown.current = true
-      window.carplay.ipc.sendTouch(x, y, TouchAction.Down)
-      return
-    }
+      if (e.pointerType === 'mouse') {
+        mouseDown.current = true
+        window.carplay.ipc.sendTouch(x, y, TouchAction.Down)
+        return
+      }
 
-    el.setPointerCapture?.(e.pointerId)
-    const id = alloc(e.pointerId)
-    active.current.set(id, { x, y })
-    const overrides = new Map<number, MultiTouchAction>()
-    overrides.set(id, MultiTouchAction.Down)
-    sendFullFrame(overrides)
-  }
-
-  const onPointerMove: Handlers['onPointerMove'] = (e) => {
-    const el = e.currentTarget as HTMLElement
-    const { x, y } = norm(el, e.clientX, e.clientY)
-
-    if (e.pointerType === 'mouse') {
-      if (!mouseDown.current) return
-      window.carplay.ipc.sendTouch(x, y, TouchAction.Move)
-      return
-    }
-
-    const id = slotByPointerId.current.get(e.pointerId)
-    if (id === undefined) return
-    active.current.set(id, { x, y })
-    sendFullFrame()
-  }
-
-  const finishPointer = (e: React.PointerEvent<HTMLDivElement>) => {
-    const el = e.currentTarget as HTMLElement
-    const { x, y } = norm(el, e.clientX, e.clientY)
-
-    if (e.pointerType === 'mouse') {
-      if (!mouseDown.current) return
-      mouseDown.current = false
-      window.carplay.ipc.sendTouch(x, y, TouchAction.Up)
-      return
-    }
-
-    const id = slotByPointerId.current.get(e.pointerId)
-    if (id !== undefined) {
+      el.setPointerCapture?.(e.pointerId)
+      const id = alloc(e.pointerId)
       active.current.set(id, { x, y })
       const overrides = new Map<number, MultiTouchAction>()
-      overrides.set(id, MultiTouchAction.Up)
+      overrides.set(id, MultiTouchAction.Down)
       sendFullFrame(overrides)
+    },
+    [alloc, sendFullFrame]
+  )
 
-      el.releasePointerCapture?.(e.pointerId)
-      free(e.pointerId)
-    }
-  }
+  const onPointerMove = useCallback<Handlers['onPointerMove']>(
+    (e) => {
+      const el = e.currentTarget as HTMLElement
+      const { x, y } = norm(el, e.clientX, e.clientY)
 
-  const onPointerUp: Handlers['onPointerUp'] = (e) => finishPointer(e)
-  const onPointerCancel: Handlers['onPointerCancel'] = (e) => finishPointer(e)
-  const onLostPointerCapture: Handlers['onLostPointerCapture'] = (e) => finishPointer(e)
-  const onPointerOut: Handlers['onPointerOut'] = () => {}
-  const onContextMenu: Handlers['onContextMenu'] = (e) => e.preventDefault()
+      if (e.pointerType === 'mouse') {
+        if (!mouseDown.current) return
+        window.carplay.ipc.sendTouch(x, y, TouchAction.Move)
+        return
+      }
+
+      const id = slotByPointerId.current.get(e.pointerId)
+      if (id === undefined) return
+      active.current.set(id, { x, y })
+      sendFullFrame()
+    },
+    [sendFullFrame]
+  )
+
+  const finishPointer = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const el = e.currentTarget as HTMLElement
+      const { x, y } = norm(el, e.clientX, e.clientY)
+
+      if (e.pointerType === 'mouse') {
+        if (!mouseDown.current) return
+        mouseDown.current = false
+        window.carplay.ipc.sendTouch(x, y, TouchAction.Up)
+        return
+      }
+
+      const id = slotByPointerId.current.get(e.pointerId)
+      if (id !== undefined) {
+        active.current.set(id, { x, y })
+        const overrides = new Map<number, MultiTouchAction>()
+        overrides.set(id, MultiTouchAction.Up)
+        sendFullFrame(overrides)
+
+        el.releasePointerCapture?.(e.pointerId)
+        free(e.pointerId)
+      }
+    },
+    [free, sendFullFrame]
+  )
+
+  const onPointerUp = useCallback<Handlers['onPointerUp']>((e) => finishPointer(e), [finishPointer])
+  const onPointerCancel = useCallback<Handlers['onPointerCancel']>(
+    (e) => finishPointer(e),
+    [finishPointer]
+  )
+  const onLostPointerCapture = useCallback<Handlers['onLostPointerCapture']>(
+    (e) => finishPointer(e),
+    [finishPointer]
+  )
+
+  const onPointerOut = useCallback<Handlers['onPointerOut']>(() => {}, [])
+  const onContextMenu = useCallback<Handlers['onContextMenu']>((e) => e.preventDefault(), [])
 
   return useMemo(
     () => ({

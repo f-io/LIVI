@@ -2,6 +2,7 @@
 import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
 import react from 'eslint-plugin-react'
+import reactHooks from 'eslint-plugin-react-hooks'
 import globals from 'globals'
 import prettier from 'eslint-config-prettier'
 
@@ -18,12 +19,22 @@ export default tseslint.config(
       sourceType: 'module',
       globals: { ...globals.browser, ...globals.node }
     },
-    plugins: { react },
+    plugins: {
+      react,
+      'react-hooks': reactHooks
+    },
     settings: { react: { version: 'detect' } },
     rules: {
-      // Let Prettier handle formatting
-      ...prettier.rules,
+      // React
+      'react/react-in-jsx-scope': 'off',
+      'react/jsx-uses-react': 'off',
+      'react/jsx-uses-vars': 'warn',
 
+      // Hooks
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
+
+      // TS / general
       '@typescript-eslint/no-explicit-any': ['warn', { ignoreRestArgs: true }],
       '@typescript-eslint/no-unused-vars': [
         'warn',
@@ -37,18 +48,12 @@ export default tseslint.config(
       'no-empty': ['warn', { allowEmptyCatch: true }],
       '@typescript-eslint/ban-ts-comment': [
         'error',
-        {
-          'ts-ignore': 'allow-with-description', // require an explanation
-          'ts-expect-error': 'allow-with-description'
-        }
-      ],
-
-      // React modern JSX transform
-      'react/react-in-jsx-scope': 'off'
+        { 'ts-ignore': 'allow-with-description', 'ts-expect-error': 'allow-with-description' }
+      ]
     }
   },
 
-  // 2) Declaration files: allow `any`/unused — modeling external surfaces
+  // Declaration files
   {
     files: ['**/*.d.ts'],
     rules: {
@@ -57,11 +62,12 @@ export default tseslint.config(
     }
   },
 
-  // 3) Plain JS assets: relax TS-specific rules
+  // Plain JS assets
   {
     files: ['src/renderer/public/**/*.js'],
-    rules: {
-      '@typescript-eslint/no-unused-vars': 'off'
-    }
-  }
+    rules: { '@typescript-eslint/no-unused-vars': 'off' }
+  },
+
+  // Prettier last
+  prettier
 )

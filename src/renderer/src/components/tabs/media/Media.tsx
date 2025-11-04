@@ -452,6 +452,7 @@ export const Media = () => {
 
   return (
     <div
+      id="media-root"
       ref={rootRef}
       style={{
         position: 'fixed',

@@ -1,5 +1,5 @@
 import { ExtraConfig } from '@main/Globals'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Grid from '@mui/material/Grid'
 import { Box, Button, Modal, Paper, styled, Typography } from '@mui/material'
 
@@ -32,29 +32,29 @@ export function KeyBindings({ settings, updateKey }: KeyBindingsProps) {
   const [keyToBind, setKeyToBind] = useState<string>('')
   const [openWaiting, setOpenWaiting] = useState<boolean>(false)
 
-  useEffect(() => {
-    if (!openWaiting) {
-      return
-    }
+  const setKey = useCallback(
+    (keyPressed: KeyboardEvent) => {
+      const oldBindings = { ...settings.bindings }
+      oldBindings[keyToBind] = keyPressed.code
+      updateKey('bindings', oldBindings)
+      setOpenWaiting(false)
+      setKeyToBind('')
+    },
+    [keyToBind, settings.bindings, updateKey]
+  )
 
+  useEffect(() => {
+    if (!openWaiting) return
     const handler = (e: KeyboardEvent) => setKey(e)
     document.addEventListener('keydown', handler)
     return () => {
       document.removeEventListener('keydown', handler)
     }
-  }, [openWaiting])
+  }, [openWaiting, setKey])
 
   const awaitKeyPress = (keyName: string) => {
     setKeyToBind(keyName)
     setOpenWaiting(true)
-  }
-
-  const setKey = (keyPressed: KeyboardEvent) => {
-    const oldBindings = { ...settings.bindings }
-    oldBindings[keyToBind] = keyPressed.code
-    updateKey('bindings', oldBindings)
-    setOpenWaiting(false)
-    setKeyToBind('')
   }
 
   return (
