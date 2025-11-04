@@ -112,13 +112,15 @@ const useCarplayAudio = (worker: CarPlayWorker) => {
   )
 
   useEffect(() => {
+    const players = playersRef.current
+
     return () => {
-      playersRef.current.forEach((entry) => {
+      players.forEach((entry) => {
         try {
           entry.player.stop()
         } catch {}
       })
-      playersRef.current.clear()
+      players.clear()
     }
   }, [])
 

@@ -313,7 +313,7 @@ const Carplay: React.FC<CarplayProps> = ({
       renderWorkerRef.current = null
       offscreenCanvasRef.current = null
     }
-  }, [videoChannel])
+  }, [videoChannel, preferredRenderer, reportFps, useHardware, useWebRTC])
 
   useEffect(() => {
     if (!renderWorkerRef.current) return

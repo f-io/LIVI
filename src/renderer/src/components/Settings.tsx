@@ -1,5 +1,5 @@
 import { ExtraConfig } from '../../../main/Globals'
-import React, { useEffect, useMemo, useState, startTransition } from 'react'
+import React, { useEffect, useMemo, useState, startTransition, useCallback } from 'react'
 import {
   Box,
   FormControlLabel,
@@ -87,13 +87,25 @@ function coerceSelectValue<T extends string | number>(
 }
 
 const Settings: React.FC<SettingsProps> = ({ settings }) => {
-  if (!settings) return null
+  const hasSettings = !!settings
 
-  const [activeSettings, setActiveSettings] = useState<ExtraConfig>({
-    ...settings,
-    audioVolume: settings.audioVolume ?? 1.0,
-    navVolume: settings.navVolume ?? 1.0
+  const [activeSettings, setActiveSettings] = useState<ExtraConfig>(() => {
+    const base = (settings ?? ({} as ExtraConfig)) as ExtraConfig
+    return {
+      ...base,
+      audioVolume: base?.audioVolume ?? 1.0,
+      navVolume: base?.navVolume ?? 1.0
+    }
   })
+  useEffect(() => {
+    if (!settings) return
+    setActiveSettings({
+      ...settings,
+      audioVolume: settings.audioVolume ?? 1.0,
+      navVolume: settings.navVolume ?? 1.0
+    })
+  }, [settings])
+
   const [micLabel, setMicLabel] = useState('not available')
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([])
   const [openBindings, setOpenBindings] = useState(false)
@@ -119,19 +131,25 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
   )
   useEffect(() => () => debouncedSave.cancel(), [debouncedSave])
 
-  const autoSave = async (patch: Partial<ExtraConfig>) => {
-    let kiosk = activeSettings.kiosk
-    try {
-      kiosk = await window.app.getKiosk()
-    } catch {}
-    const current = useCarplayStore.getState().settings
-    const nightMode =
-      typeof current?.nightMode === 'boolean' ? current!.nightMode : activeSettings.nightMode
-
-    const updated: ExtraConfig = { ...activeSettings, ...patch, kiosk, nightMode }
-    startTransition(() => setActiveSettings(updated))
-    saveSettings(updated)
-  }
+  const autoSave = useCallback(
+    async (patch: Partial<ExtraConfig>) => {
+      let kiosk = false
+      try {
+        kiosk = await window.app.getKiosk()
+      } catch {
+        // keep default false: merged with prev
+      }
+      setActiveSettings((prev) => {
+        const storeSettings = useCarplayStore.getState().settings
+        const nightMode =
+          typeof storeSettings?.nightMode === 'boolean' ? storeSettings.nightMode : prev.nightMode
+        const updated: ExtraConfig = { ...prev, ...patch, kiosk, nightMode }
+        saveSettings(updated)
+        return updated
+      })
+    },
+    [saveSettings]
+  )
 
   const requiresRestartParams: (keyof ExtraConfig)[] = [
     'width',
@@ -182,10 +200,13 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
     } else if (key === 'kiosk' || key === 'nightMode') {
       saveSettings(updated)
     } else if (requiresRestartParams.includes(key)) {
-      const pending = requiresRestartParams.some((p) => updated[p] !== settings![p])
-      setHasChanges(pending)
-    } else {
-      saveSettings(updated)
+      if (hasSettings) {
+        const prev = settings!
+        const pending = requiresRestartParams.some((param) => updated[param] !== prev[param])
+        setHasChanges(pending)
+      } else {
+        setHasChanges(false)
+      }
     }
   }
 
@@ -251,7 +272,6 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
       case 'packetMax':
       case 'wifiChannel': {
         const n = Number(raw)
-        // no `any`: use current[key] for the fallback, and cast the number to ExtraConfig[K]
         return Number.isFinite(n) ? (n as unknown as ExtraConfig[K]) : current[key]
       }
 
@@ -323,22 +343,22 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
     return `OS • ${raw}`
   }
 
-  useEffect(() => {
-    const updateMic = async () => {
-      try {
-        const label = await window.carplay.usb.getSysdefaultPrettyName()
-        const final = label && !['sysdefault', 'null'].includes(label) ? label : 'not available'
-        setMicLabel(final)
+  const updateMic = useCallback(async () => {
+    try {
+      const label = await window.carplay.usb.getSysdefaultPrettyName()
+      const final = label && !['sysdefault', 'null'].includes(label) ? label : 'not available'
+      setMicLabel(final)
 
-        if (!activeSettings.micType) {
-          await autoSave({ micType: (final === 'not available' ? 'box' : 'os') as 'box' | 'os' })
-        }
-      } catch {
-        console.warn('[Settings] Mic label fetch failed')
+      if (!activeSettings.micType) {
+        await autoSave({ micType: (final === 'not available' ? 'box' : 'os') as 'box' | 'os' })
       }
+    } catch {
+      console.warn('[Settings] Mic label fetch failed')
     }
-    updateMic()
+  }, [activeSettings.micType, autoSave])
 
+  useEffect(() => {
+    updateMic()
     const micUsbHandler = (_evt: unknown, ...args: unknown[]) => {
       const data = (args[0] ?? {}) as UsbEvent
       if (data.type && ['attach', 'plugged', 'detach', 'unplugged'].includes(data.type)) {
@@ -347,14 +367,17 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
     }
     window.carplay.usb.listenForEvents(micUsbHandler)
     return () => window.carplay.usb.unlistenForEvents(micUsbHandler)
-  }, [activeSettings.micType])
+  }, [updateMic])
 
-  useEffect(() => {
-    const safeCameraPersist = async (cfgOrId: string | { camera?: string } | null | undefined) => {
+  const safeCameraPersist = useCallback(
+    async (cfgOrId: string | { camera?: string } | null | undefined) => {
       const cameraId = typeof cfgOrId === 'string' ? cfgOrId : cfgOrId?.camera
       await autoSave({ camera: cameraId ?? '' })
-    }
+    },
+    [autoSave]
+  )
 
+  useEffect(() => {
     detectCameras(setCameraFound, safeCameraPersist, activeSettings).then(setCameras)
 
     const usbHandler = (_evt: unknown, ...args: unknown[]) => {
@@ -365,7 +388,7 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
     }
     window.carplay.usb.listenForEvents(usbHandler)
     return () => window.carplay.usb.unlistenForEvents(usbHandler)
-  }, [])
+  }, [activeSettings, safeCameraPersist, setCameraFound])
 
   useEffect(() => {
     let off: (() => void) | undefined
@@ -412,6 +435,8 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
     (activeSettings.wifiType as unknown as string) ?? '',
     wifiOptions as unknown as string[]
   )
+
+  if (!hasSettings) return null
 
   return (
     <Box
@@ -763,7 +788,8 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
               value={activeSettings.dpi}
               onChange={(e) => settingsChange('dpi', Number(e.target.value))}
               InputLabelProps={{ shrink: true }}
-              autoFocus
+              autoFocus={openAdvanced}
+              inputProps={{ tabIndex: openAdvanced ? 0 : -1 }}
               sx={{ width: 120 }}
             />
             <TextField
