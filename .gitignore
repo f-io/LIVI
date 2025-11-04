@@ -1,3 +1,10 @@
+#directories
+bower_components
+node_modules
+dist
+out
+build
+.idea
 # Node
 node_modules/
 npm-debug.log*

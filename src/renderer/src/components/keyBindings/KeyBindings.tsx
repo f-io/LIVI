@@ -1,4 +1,4 @@
-import { ExtraConfig } from '../../../main/Globals'
+import { ExtraConfig } from '@main/Globals'
 import { useEffect, useState } from 'react'
 import Grid from '@mui/material/Grid'
 import { Box, Button, Modal, Paper, styled, Typography } from '@mui/material'
@@ -60,12 +60,12 @@ export function KeyBindings({ settings, updateKey }: KeyBindingsProps) {
   return (
     <>
       <Grid container spacing={2}>
-        {Object.entries(settings.bindings).map(([action, code]) => (
+        {Object.entries(settings.bindings).map(([action, code]: [string, unknown]) => (
           <Grid size={{ xs: 3 }} key={action}>
             <Item>
               <Typography variant="subtitle2">{action}</Typography>
               <Button variant="outlined" onClick={() => awaitKeyPress(action)}>
-                {code}
+                {code as React.ReactNode}
               </Button>
             </Item>
           </Grid>

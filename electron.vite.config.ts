@@ -2,12 +2,17 @@ import { resolve } from "path";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import react from "@vitejs/plugin-react";
 import { NodeGlobalsPolyfillPlugin } from "@esbuild-plugins/node-globals-polyfill";
+import path from "path";
 
 const alias = {
   "@renderer": resolve(__dirname, "src/renderer/src"),
   "@carplay/web": resolve(__dirname, "src/renderer/components/web/CarplayWeb.ts"),
   "@carplay/messages": resolve(__dirname, "src/main/carplay/messages"),
   "@carplay": resolve(__dirname, "src/main/carplay"),
+  "@main": path.resolve(__dirname, "src/main"),
+  "@worker": path.resolve(__dirname, "src/renderer/src/components/worker"),
+  "@store": path.resolve(__dirname, "src/renderer/src/store"),
+  "@utils": path.resolve(__dirname, "src/renderer/src/utils"),
   stream: "stream-browserify",
   Buffer: "buffer",
 };

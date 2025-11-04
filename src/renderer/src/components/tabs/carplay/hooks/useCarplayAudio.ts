@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { AudioCommand, AudioData, decodeTypeMap } from '../../../main/carplay/messages'
-import { PcmPlayer } from '../audio/PcmPlayer'
-import { AudioPlayerKey, CarPlayWorker } from './worker/types'
-import { createAudioPlayerKey } from './worker/utils'
-import { useCarplayStore } from '../store/store'
+import { AudioCommand, AudioData, decodeTypeMap } from '@main/carplay/messages'
+import { PcmPlayer } from '../../../../audio/PcmPlayer'
+import { AudioPlayerKey, CarPlayWorker } from '@worker/types'
+import { createAudioPlayerKey } from '@worker/utils'
+import { useCarplayStore } from '@store/store'
 
 type PlayerEntry = {
   player: PcmPlayer
