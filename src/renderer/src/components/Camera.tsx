@@ -31,7 +31,7 @@ const Camera: React.FC<CameraProps> = ({ settings }) => {
         videoEl.srcObject = stream
         const p = videoEl.play()
         // Avoid unhandled promise rejection on autoplay restrictions
-         
+
         if (p && typeof (p as Promise<void>).catch === 'function')
           (p as Promise<void>).catch(() => {})
       })
@@ -59,6 +59,7 @@ const Camera: React.FC<CameraProps> = ({ settings }) => {
 
   return (
     <div
+      id="camera-root"
       style={{
         width: '100%',
         height: '100%',

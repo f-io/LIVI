@@ -308,6 +308,7 @@ export default function Info() {
 
   return (
     <Box
+      id="info-root"
       className={theme.palette.mode === 'dark' ? 'App-header-dark' : 'App-header-light'}
       p={2}
       display="flex"

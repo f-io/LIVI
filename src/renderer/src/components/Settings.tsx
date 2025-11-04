@@ -136,9 +136,7 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
       let kiosk = false
       try {
         kiosk = await window.app.getKiosk()
-      } catch {
-        // keep default false: merged with prev
-      }
+      } catch {}
       setActiveSettings((prev) => {
         const storeSettings = useCarplayStore.getState().settings
         const nightMode =
@@ -398,13 +396,17 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
         startTransition(() =>
           setActiveSettings((prev) => (prev.kiosk === kiosk ? prev : { ...prev, kiosk }))
         )
-      } catch {}
+      } catch {
+        // ignore
+      }
+
       off = window.app.onKioskSync((kiosk) => {
         startTransition(() =>
           setActiveSettings((prev) => (prev.kiosk === kiosk ? prev : { ...prev, kiosk }))
         )
       })
     })()
+
     return () => {
       if (off) off()
     }
@@ -440,6 +442,7 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
 
   return (
     <Box
+      id="settings-root"
       className={theme.palette.mode === 'dark' ? 'App-header-dark' : 'App-header-light'}
       p={2}
       display="flex"
@@ -607,7 +610,6 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
             </Stack>
           </Grid>
 
-          {/* WIFI */}
           <Grid size={{ xs: 6, sm: 3 }} sx={{ display: 'flex', alignItems: 'center' }}>
             <TextField
               size="small"
@@ -622,7 +624,6 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
             </TextField>
           </Grid>
 
-          {/* MICROPHONE */}
           <Grid size={{ xs: 6, sm: 3 }} sx={{ display: 'flex', alignItems: 'center' }}>
             <TextField
               size="small"
@@ -641,7 +642,6 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
             </TextField>
           </Grid>
 
-          {/* CAMERA */}
           <Grid size={{ xs: 6, sm: 3 }} sx={{ display: 'flex', alignItems: 'center' }}>
             <TextField
               size="small"

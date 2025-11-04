@@ -109,7 +109,8 @@ function StatusOverlay({
         position: 'absolute',
         inset: 0,
         pointerEvents: 'none',
-        display: show ? 'block' : 'none'
+        display: show ? 'block' : 'none',
+        zIndex: 9
       }}
     >
       {/* Ring center pinned to window center */}

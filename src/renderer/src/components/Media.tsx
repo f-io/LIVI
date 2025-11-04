@@ -451,6 +451,7 @@ export default function Media() {
 
   return (
     <div
+      id="media-root"
       ref={rootRef}
       style={{
         position: 'fixed',
