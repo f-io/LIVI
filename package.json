@@ -6,7 +6,7 @@
   "author": "Lasse Heitgres",
   "homepage": "https://f-io.dev",
   "scripts": {
-    "prepare": "husky install",
+    "prepare": "husky",
     "format": "prettier --write .",
     "lint": "eslint . --ext .js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
