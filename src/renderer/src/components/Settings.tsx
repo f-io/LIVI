@@ -193,7 +193,12 @@ const Settings: React.FC<SettingsProps> = ({ settings }) => {
 
     startTransition(() => setActiveSettings(updated))
 
-    if (key === 'audioVolume' || key === 'navVolume' || UI_DEBOUNCED_KEYS.has(key)) {
+    if (
+      key === 'audioVolume' ||
+      key === 'navVolume' ||
+      key === 'bindings' ||
+      UI_DEBOUNCED_KEYS.has(key)
+    ) {
       debouncedSave(updated)
     } else if (key === 'kiosk' || key === 'nightMode') {
       saveSettings(updated)
