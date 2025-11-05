@@ -1,3 +1,5 @@
+export {}
+
 jest.mock('electron', () => ({
   ipcRenderer: {
     send: jest.fn(),
@@ -10,8 +12,20 @@ jest.mock('electron', () => ({
   },
   BrowserWindow: jest.fn()
 }))
-;(global as any).window = Object.create(window)
-;(global as any).window.api = {
-  send: jest.fn(),
-  receive: jest.fn()
+
+declare global {
+  interface Window {
+    api: {
+      send: jest.Mock
+      receive: jest.Mock
+    }
+  }
 }
+
+Object.defineProperty(window, 'api', {
+  value: {
+    send: jest.fn(),
+    receive: jest.fn()
+  },
+  configurable: true
+})
