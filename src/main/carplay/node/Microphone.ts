@@ -3,7 +3,7 @@ import { EventEmitter } from 'events'
 import os from 'os'
 import fs from 'fs'
 
-export default class NodeMicrophone extends EventEmitter {
+export default class Microphone extends EventEmitter {
   private process: ChildProcessWithoutNullStreams | null = null
   private readonly device: string
   private readonly rate: number = 16000
@@ -12,8 +12,8 @@ export default class NodeMicrophone extends EventEmitter {
 
   constructor() {
     super()
-    this.device = NodeMicrophone.resolveSysdefaultDevice()
-    console.debug('[NodeMicrophone] Using device:', this.device)
+    this.device = Microphone.resolveSysdefaultDevice()
+    console.debug('[Microphone] Using device:', this.device)
   }
 
   start(): void {
@@ -21,7 +21,7 @@ export default class NodeMicrophone extends EventEmitter {
 
     let cmd = ''
     let args: string[] = []
-    const env = { ...process.env, PATH: NodeMicrophone.buildExecPath(process.env.PATH) }
+    const env = { ...process.env, PATH: Microphone.buildExecPath(process.env.PATH) }
 
     if (os.platform() === 'linux') {
       cmd = 'arecord'
@@ -40,9 +40,9 @@ export default class NodeMicrophone extends EventEmitter {
         '-'
       ]
     } else if (os.platform() === 'darwin') {
-      const recPath = NodeMicrophone.resolveRecPath()
+      const recPath = Microphone.resolveRecPath()
       if (!recPath) {
-        console.error('[NodeMicrophone] SoX (rec) not found. Install with: brew install sox')
+        console.error('[Microphone] SoX (rec) not found. Install with: brew install sox')
         return
       }
       cmd = recPath
@@ -61,18 +61,18 @@ export default class NodeMicrophone extends EventEmitter {
         '-'
       ]
     } else {
-      console.error('[NodeMicrophone] Platform not supported for microphone recording')
+      console.error('[Microphone] Platform not supported for microphone recording')
       return
     }
 
-    console.debug('[NodeMicrophone] PATH =', env.PATH)
-    console.debug(`[NodeMicrophone] Spawning ${cmd} with args:`, args.join(' '))
+    console.debug('[Microphone] PATH =', env.PATH)
+    console.debug(`[Microphone] Spawning ${cmd} with args:`, args.join(' '))
 
     this.process = spawn(cmd, args, { env, shell: false })
 
     const proc = this.process
     if (!proc) {
-      console.error('[NodeMicrophone] Failed to spawn recorder process')
+      console.error('[Microphone] Failed to spawn recorder process')
       this.cleanup()
       return
     }
@@ -80,31 +80,31 @@ export default class NodeMicrophone extends EventEmitter {
     proc.stdout.on('data', (chunk: Buffer) => this.emit('data', chunk))
     proc.stderr.on('data', (d: Buffer) => {
       const s = d.toString().trim()
-      if (s) console.warn('[NodeMicrophone] STDERR:', s)
+      if (s) console.warn('[Microphone] STDERR:', s)
     })
     proc.on('error', (err) => {
-      console.error('[NodeMicrophone] Error:', err)
+      console.error('[Microphone] Error:', err)
       this.cleanup()
     })
     proc.on('close', (code) => {
-      console.debug('[NodeMicrophone] recorder exited with code', code)
+      console.debug('[Microphone] recorder exited with code', code)
       this.cleanup()
     })
 
-    console.debug('[NodeMicrophone] Recording started')
+    console.debug('[Microphone] Recording started')
   }
 
   stop(): void {
     if (this.process) {
-      console.debug('[NodeMicrophone] Stopping recording')
+      console.debug('[Microphone] Stopping recording')
       try {
         this.process.kill()
       } catch (e) {
-        console.warn('[NodeMicrophone] Failed to kill process:', e)
+        console.warn('[Microphone] Failed to kill process:', e)
       }
       this.cleanup()
     } else {
-      console.debug('[NodeMicrophone] No active process to stop')
+      console.debug('[Microphone] No active process to stop')
     }
   }
 
@@ -124,7 +124,7 @@ export default class NodeMicrophone extends EventEmitter {
     for (const p of candidates) if (fs.existsSync(p)) return p
 
     try {
-      const widened = NodeMicrophone.buildExecPath(process.env.PATH)
+      const widened = Microphone.buildExecPath(process.env.PATH)
       const out = execSync('which rec', {
         encoding: 'utf8',
         env: { ...process.env, PATH: widened }
@@ -150,10 +150,10 @@ export default class NodeMicrophone extends EventEmitter {
           const m = line.trim().match(/^sysdefault:CARD=([^\s,]+)/)
           if (m) return `plughw:CARD=${m[1]},DEV=0`
         }
-        console.warn('[NodeMicrophone] sysdefault card not found, falling back')
+        console.warn('[Microphone] sysdefault card not found, falling back')
         return 'plughw:0,0'
       } catch (e) {
-        console.warn('[NodeMicrophone] Failed to resolve sysdefault device', e)
+        console.warn('[Microphone] Failed to resolve sysdefault device', e)
         return 'plughw:0,0'
       }
     } else if (os.platform() === 'darwin') {
@@ -173,7 +173,7 @@ export default class NodeMicrophone extends EventEmitter {
         const desc = lines[idx + 1]?.trim()
         return desc && desc !== 'sysdefault' ? desc : 'not available'
       } catch (e) {
-        console.warn('[NodeMicrophone] Failed to get sysdefault mic label', e)
+        console.warn('[Microphone] Failed to get sysdefault mic label', e)
         return 'not available'
       }
     } else if (os.platform() === 'darwin') {
