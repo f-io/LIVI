@@ -2,7 +2,7 @@ import type { Device } from 'usb'
 import { ipcMain, BrowserWindow } from 'electron'
 import { CarplayService } from '../carplay/CarplayService'
 import { findDongle } from './helpers'
-import NodeMicrophone from '../carplay/node/NodeMicrophone'
+import Microphone from '../carplay/node/Microphone'
 
 import * as usbModule from 'usb'
 const { usb, getDeviceList } = usbModule
@@ -145,7 +145,7 @@ export class USBService {
       return { type: 'unplugged', device: null }
     })
 
-    ipcMain.handle('get-sysdefault-mic-label', () => NodeMicrophone.getSysdefaultPrettyName())
+    ipcMain.handle('get-sysdefault-mic-label', () => Microphone.getSysdefaultPrettyName())
   }
 
   private async getDongleInfo(device: Device) {

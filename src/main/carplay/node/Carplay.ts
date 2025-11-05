@@ -1,5 +1,5 @@
 import { webusb } from 'usb'
-import NodeMicrophone from './NodeMicrophone'
+import Microphone from './Microphone'
 
 import {
   AudioData,
@@ -27,7 +27,7 @@ export type CarplayMessage =
   | { type: 'media'; message: MediaData }
   | { type: 'command'; message: Command }
 
-export default class CarplayNode {
+export default class Carplay {
   private _pairTimeout: NodeJS.Timeout | null = null
   private _frameInterval: ReturnType<typeof setInterval> | null = null
   private _config: DongleConfig
@@ -38,7 +38,7 @@ export default class CarplayNode {
 
   constructor(config: Partial<DongleConfig>) {
     this._config = Object.assign({}, DEFAULT_CONFIG, config)
-    const mic = new NodeMicrophone()
+    const mic = new Microphone()
     const driver = new DongleDriver()
 
     mic.on('data', (data) => {
@@ -109,7 +109,7 @@ export default class CarplayNode {
     await device.open()
     await device.reset()
     await device.close()
-    console.log('[CarplayNode] Dongle has been reset, waiting for reconnect...')
+    console.log('[Carplay] Dongle has been reset, waiting for reconnect...')
   }
 
   public async initialiseAfterReconnect() {

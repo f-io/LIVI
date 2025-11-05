@@ -21,7 +21,7 @@ import {
 import fs from 'fs'
 import path from 'path'
 import usb from 'usb'
-import NodeMicrophone from './node/NodeMicrophone'
+import Microphone from './node/Microphone'
 
 let dongleConnected = false
 
@@ -71,7 +71,7 @@ export class CarplayService {
   private config: DongleConfig = DEFAULT_CONFIG
   private pairTimeout: NodeJS.Timeout | null = null
   private frameInterval: NodeJS.Timeout | null = null
-  private _mic: NodeMicrophone | null = null
+  private _mic: Microphone | null = null
   private started = false
   private stopping = false
   private shuttingDown = false
@@ -135,7 +135,7 @@ export class CarplayService {
           ) {
             if (this.config.audioTransferMode) return
             if (!this._mic) {
-              this._mic = new NodeMicrophone()
+              this._mic = new Microphone()
               this._mic.on('data', (data: Buffer) => {
                 this.driver.send(new SendAudio(new Int16Array(data.buffer)))
               })
