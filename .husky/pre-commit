@@ -1,1 +1,26 @@
+# .husky/pre-commit
+
+echo "🔍 Running Prettier + Jest tests before commit..."
+
 npx lint-staged
+if [ $? -ne 0 ]; then
+  echo "❌ Lint-staged failed, aborting commit."
+  exit 1
+fi
+
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx)$')
+
+if [ -z "$STAGED_FILES" ]; then
+  echo "No testable files staged. Skipping Jest."
+  exit 0
+fi
+
+echo "🧪 Running related Jest tests..."
+npx jest --config jest.web.config.js --bail --findRelatedTests $STAGED_FILES --maxWorkers=2 --silent
+
+if [ $? -ne 0 ]; then
+  echo "❌ Tests failed, aborting commit."
+  exit 1
+fi
+
+echo "✅ All checks passed!"
