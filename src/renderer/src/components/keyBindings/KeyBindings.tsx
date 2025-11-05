@@ -1,5 +1,5 @@
-import { ExtraConfig } from '../../../main/Globals'
-import { useEffect, useState } from 'react'
+import { ExtraConfig } from '@main/Globals'
+import { useEffect, useState, useCallback } from 'react'
 import Grid from '@mui/material/Grid'
 import { Box, Button, Modal, Paper, styled, Typography } from '@mui/material'
 
@@ -32,40 +32,40 @@ export function KeyBindings({ settings, updateKey }: KeyBindingsProps) {
   const [keyToBind, setKeyToBind] = useState<string>('')
   const [openWaiting, setOpenWaiting] = useState<boolean>(false)
 
-  useEffect(() => {
-    if (!openWaiting) {
-      return
-    }
+  const setKey = useCallback(
+    (keyPressed: KeyboardEvent) => {
+      const oldBindings = { ...settings.bindings }
+      oldBindings[keyToBind] = keyPressed.code
+      updateKey('bindings', oldBindings)
+      setOpenWaiting(false)
+      setKeyToBind('')
+    },
+    [keyToBind, settings.bindings, updateKey]
+  )
 
+  useEffect(() => {
+    if (!openWaiting) return
     const handler = (e: KeyboardEvent) => setKey(e)
     document.addEventListener('keydown', handler)
     return () => {
       document.removeEventListener('keydown', handler)
     }
-  }, [openWaiting])
+  }, [openWaiting, setKey])
 
   const awaitKeyPress = (keyName: string) => {
     setKeyToBind(keyName)
     setOpenWaiting(true)
   }
 
-  const setKey = (keyPressed: KeyboardEvent) => {
-    const oldBindings = { ...settings.bindings }
-    oldBindings[keyToBind] = keyPressed.code
-    updateKey('bindings', oldBindings)
-    setOpenWaiting(false)
-    setKeyToBind('')
-  }
-
   return (
     <>
       <Grid container spacing={2}>
-        {Object.entries(settings.bindings).map(([action, code]) => (
+        {Object.entries(settings.bindings).map(([action, code]: [string, unknown]) => (
           <Grid size={{ xs: 3 }} key={action}>
             <Item>
               <Typography variant="subtitle2">{action}</Typography>
               <Button variant="outlined" onClick={() => awaitKeyPress(action)}>
-                {code}
+                {code as React.ReactNode}
               </Button>
             </Item>
           </Grid>

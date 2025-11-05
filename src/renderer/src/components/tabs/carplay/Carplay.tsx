@@ -2,14 +2,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffe
 import { Box, Typography, useTheme, alpha } from '@mui/material'
 import { keyframes } from '@mui/system'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { CommandMapping } from '../../../main/carplay/messages/common'
+import { CommandMapping } from '@main/carplay/messages/common'
 
-import { ExtraConfig } from '../../../main/Globals'
-import { useCarplayStore, useStatusStore } from '../store/store'
-import { InitEvent, Renderer } from './worker/render/RenderEvents'
-import useCarplayAudio from './useCarplayAudio'
-import { useCarplayMultiTouch } from './useCarplayTouch'
-import type { CarPlayWorker, UsbEvent, KeyCommand, WorkerToUI, AudioData } from './worker/types'
+import { ExtraConfig } from '@main/Globals'
+import { useCarplayStore, useStatusStore } from '../../../store/store'
+import { InitEvent, Renderer } from '@worker/render/RenderEvents'
+import type { CarPlayWorker, UsbEvent, KeyCommand, WorkerToUI, AudioData } from '@worker/types'
+import useCarplayAudio from './hooks/useCarplayAudio'
+import { useCarplayMultiTouch } from './hooks/useCarplayTouch'
 
 // Icons
 import UsbOffOutlinedIcon from '@mui/icons-material/UsbOffOutlined'
@@ -109,7 +109,8 @@ function StatusOverlay({
         position: 'absolute',
         inset: 0,
         pointerEvents: 'none',
-        display: show ? 'block' : 'none'
+        display: show ? 'block' : 'none',
+        zIndex: 9
       }}
     >
       {/* Ring center pinned to window center */}
@@ -182,7 +183,7 @@ function StatusOverlay({
 
 /* --------------------------------- Carplay -------------------------------- */
 
-const Carplay: React.FC<CarplayProps> = ({
+const CarplayComponent: React.FC<CarplayProps> = ({
   receivingVideo,
   setReceivingVideo,
   settings,
@@ -263,7 +264,7 @@ const Carplay: React.FC<CarplayProps> = ({
 
   // CarPlay worker setup
   const carplayWorker = useMemo<CarPlayWorker>(() => {
-    const w = new Worker(new URL('./worker/CarPlay.worker.ts', import.meta.url), {
+    const w = new Worker(new URL('../../worker/CarPlay.worker.ts', import.meta.url), {
       type: 'module'
     }) as CarPlayWorker
 
@@ -291,7 +292,7 @@ const Carplay: React.FC<CarplayProps> = ({
   useEffect(() => {
     if (canvasRef.current && !offscreenCanvasRef.current && !renderWorkerRef.current) {
       offscreenCanvasRef.current = canvasRef.current.transferControlToOffscreen()
-      const w = new Worker(new URL('./worker/render/Render.worker.ts', import.meta.url), {
+      const w = new Worker(new URL('../../worker/render/Render.worker.ts', import.meta.url), {
         type: 'module'
       })
       renderWorkerRef.current = w
@@ -313,7 +314,7 @@ const Carplay: React.FC<CarplayProps> = ({
       renderWorkerRef.current = null
       offscreenCanvasRef.current = null
     }
-  }, [videoChannel])
+  }, [videoChannel, preferredRenderer, reportFps, useHardware, useWebRTC])
 
   useEffect(() => {
     if (!renderWorkerRef.current) return
@@ -347,6 +348,7 @@ const Carplay: React.FC<CarplayProps> = ({
       const m = payload as { chunk?: { buffer?: ArrayBuffer } } & Record<string, unknown>
       const buf = m.chunk?.buffer
       if (!buf) return
+
       const { chunk: _chunk, ...rest } = m
       audioChannel.port2.postMessage({ type: 'audio', buffer: buf, ...rest }, [buf])
     }
@@ -518,6 +520,9 @@ const Carplay: React.FC<CarplayProps> = ({
 
     return () => {
       window.carplay.usb.unlistenForEvents?.(usbHandler)
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      window.electron?.ipcRenderer.removeListener('usb-event', usbHandler)
     }
   }, [setReceivingVideo, setDongleConnected, setStreaming, clearRetryTimeout, navigate, resetInfo])
 
@@ -694,4 +699,4 @@ const Carplay: React.FC<CarplayProps> = ({
   )
 }
 
-export default React.memo(Carplay)
+export const Carplay = React.memo(CarplayComponent)

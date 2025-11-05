@@ -94,8 +94,8 @@ self.onmessage = (e: MessageEvent) => {
         const db = Math.min(Math.max(20 * Math.log10(avg + 1e-12), FLOOR_DB), 0)
         bins[i] = (db - FLOOR_DB) / -FLOOR_DB
       }
-
-      self.postMessage({ type: 'bins', bins }, [bins.buffer])
+      const buffer = [bins.buffer] as unknown as string // TODO TS workaround. Fix type properly.
+      self.postMessage({ type: 'bins', bins }, buffer)
       ringBuffer = ringBuffer.subarray(fftSize)
     }
   }

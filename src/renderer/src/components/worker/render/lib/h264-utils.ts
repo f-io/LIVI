@@ -774,6 +774,7 @@ export class NALUStream {
    * @param p
    * @returns iterator
    */
+
   nextAnnexBPacket(buf: Uint8Array, p: number, _: number) {
     const buflen = buf.byteLength
     const start = p

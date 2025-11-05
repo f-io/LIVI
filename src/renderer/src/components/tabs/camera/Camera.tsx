@@ -5,14 +5,16 @@ interface CameraProps {
   settings: { camera: string } | null
 }
 
-const Camera: React.FC<CameraProps> = ({ settings }) => {
+export const Camera: React.FC<CameraProps> = ({ settings }) => {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [cameraFound, setCameraFound] = useState(false)
 
   useEffect(() => {
+    const videoEl = videoRef.current
     let activeStream: MediaStream | null = null
+    let cancelled = false
 
-    if (!settings?.camera) {
+    if (!settings?.camera || !videoEl) {
       setCameraFound(false)
       return
     }
@@ -20,25 +22,36 @@ const Camera: React.FC<CameraProps> = ({ settings }) => {
     navigator.mediaDevices
       .getUserMedia({ video: { width: 800, deviceId: settings.camera } })
       .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop())
+          return
+        }
         activeStream = stream
         setCameraFound(true)
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-          videoRef.current.play()
-        }
+        videoEl.srcObject = stream
+        const p = videoEl.play()
+        // Avoid unhandled promise rejection on autoplay restrictions
+
+        if (p && typeof (p as Promise<void>).catch === 'function')
+          (p as Promise<void>).catch(() => {})
       })
       .catch((err) => {
-        console.error('error:', err)
-        setCameraFound(false)
+        if (!cancelled) {
+          console.error('error:', err)
+          setCameraFound(false)
+        }
       })
 
-    // Cleanup
     return () => {
+      cancelled = true
       if (activeStream) {
         activeStream.getTracks().forEach((track) => track.stop())
       }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null
+      if (videoEl) {
+        try {
+          videoEl.pause()
+        } catch {}
+        ;(videoEl as HTMLVideoElement).srcObject = null
       }
       setCameraFound(false)
     }
@@ -46,6 +59,7 @@ const Camera: React.FC<CameraProps> = ({ settings }) => {
 
   return (
     <div
+      id="camera-root"
       style={{
         width: '100%',
         height: '100%',
@@ -80,5 +94,3 @@ const Camera: React.FC<CameraProps> = ({ settings }) => {
     </div>
   )
 }
-
-export default Camera

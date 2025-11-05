@@ -3,7 +3,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import PauseIcon from '@mui/icons-material/Pause'
 import SkipNextIcon from '@mui/icons-material/SkipNext'
 import SkipPreviousIcon from '@mui/icons-material/SkipPrevious'
-import { useStatusStore } from '../store/store'
+import { useStatusStore } from '../../../store/store'
 
 // Types
 type PersistedSnapshot = { timestamp: string; payload: MediaPayload }
@@ -148,6 +148,7 @@ function useOptimisticPlaying(realPlaying: boolean | undefined) {
 // Button feedback
 function usePressFeedback() {
   const press = { play: false, next: false, prev: false } as const
+
   const bump = (_key: keyof typeof press, _ms = 140) => {}
   const reset = () => {}
   return { press, bump, reset }
@@ -280,7 +281,7 @@ function useMediaState(allowInitialHydrate: boolean) {
 }
 
 // Component
-export default function Media() {
+export const Media = () => {
   const isStreaming = useStatusStore((s) => s.isStreaming)
 
   const top = useBelowNavTop()
@@ -451,6 +452,7 @@ export default function Media() {
 
   return (
     <div
+      id="media-root"
       ref={rootRef}
       style={{
         position: 'fixed',
