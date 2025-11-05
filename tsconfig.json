@@ -3,11 +3,7 @@
     "jsx": "react-jsx",
     "target": "es2024",
     "module": "es2022",
-    "lib": [
-      "es2024",
-      "dom",
-      "webgpu"
-    ],
+    "lib": ["es2024", "dom", "webgpu"],
     "allowJs": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -19,7 +15,6 @@
     "resolveJsonModule": true,
     "isolatedModules": true
   },
-  "include": [
-    "src/**/*"
-  ]
+  "include": ["src/**/*"],
+  "exclude": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"]
 }
