@@ -248,7 +248,8 @@ export class VideoData extends Message {
 
 export enum MediaType {
   Data = 1,
-  AlbumCover = 3
+  AlbumCover = 3,
+  ControlAutoplayTrigger = 100
 }
 
 export class MediaData extends Message {
@@ -265,6 +266,7 @@ export class MediaData extends Message {
         }
       }
     | { type: MediaType.AlbumCover; base64Image: string }
+    | { type: MediaType.ControlAutoplayTrigger }
 
   constructor(header: MessageHeader, data: Buffer) {
     super(header)
@@ -281,9 +283,29 @@ export class MediaData extends Message {
         type,
         media: JSON.parse(mediaData.toString('utf8'))
       }
+    } else if (type === MediaType.ControlAutoplayTrigger) {
+      this.payload = { type }
     } else {
       console.info(`Unexpected media type: ${type}`)
     }
+  }
+}
+
+export class BluetoothPeerConnecting extends Message {
+  address: string
+
+  constructor(header: MessageHeader, data: Buffer) {
+    super(header)
+    this.address = data.toString('ascii')
+  }
+}
+
+export class BluetoothPeerConnected extends Message {
+  address: string
+
+  constructor(header: MessageHeader, data: Buffer) {
+    super(header)
+    this.address = data.toString('ascii')
   }
 }
 
