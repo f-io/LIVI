@@ -197,6 +197,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
       key === 'audioVolume' ||
       key === 'navVolume' ||
       key === 'bindings' ||
+      key === 'camera' ||
       UI_DEBOUNCED_KEYS.has(key)
     ) {
       debouncedSave(updated)
@@ -374,10 +375,11 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
 
   const safeCameraPersist = useCallback(
     async (cfgOrId: string | { camera?: string } | null | undefined) => {
+      if (activeSettings.camera && activeSettings.camera !== '') return
       const cameraId = typeof cfgOrId === 'string' ? cfgOrId : cfgOrId?.camera
       await autoSave({ camera: cameraId ?? '' })
     },
-    [autoSave]
+    [autoSave, activeSettings.camera]
   )
 
   useEffect(() => {
