@@ -17,52 +17,17 @@ import {
   DEFAULT_CONFIG,
   decodeTypeMap,
   AudioCommand
-} from './messages'
+} from '../messages'
 import fs from 'fs'
 import path from 'path'
 import usb from 'usb'
-import Microphone from './node/Microphone'
+import Microphone from '../node/Microphone'
+import { PersistedMediaPayload } from './types'
+import { APP_START_TS, DEFAULT_MEDIA_DATA_RESPONSE } from './constants'
+import { readMediaFile } from './utils/readMediaFile'
+import { asDomUSBDevice } from './utils/asDomUSBDevice'
 
 let dongleConnected = false
-
-const APP_START_TS = Date.now()
-
-type MediaBag = Record<string, unknown>
-
-interface PersistedMediaPayload {
-  type: MediaType
-  media?: MediaBag
-  base64Image?: string
-}
-
-type PersistedMediaFile = {
-  timestamp: string
-  payload: PersistedMediaPayload
-}
-
-function readMediaFile(filePath: string): PersistedMediaFile {
-  try {
-    const raw = fs.readFileSync(filePath, 'utf8')
-    return JSON.parse(raw) as PersistedMediaFile
-  } catch {
-    return {
-      timestamp: '',
-      payload: { type: MediaType.Data, media: {}, base64Image: undefined }
-    }
-  }
-}
-
-function asDomUSBDevice(dev: WebUSBDevice): USBDevice {
-  const d = dev as unknown as USBDevice & {
-    manufacturerName?: string | null
-    productName?: string | null
-    serialNumber?: string | null
-  }
-  if (d.manufacturerName === undefined) d.manufacturerName = null
-  if (d.productName === undefined) d.productName = null
-  if (d.serialNumber === undefined) d.serialNumber = null
-  return d as unknown as USBDevice
-}
 
 export class CarplayService {
   private driver = new DongleDriver()
@@ -219,12 +184,16 @@ export class CarplayService {
     ipcMain.handle('carplay-media-read', async () => {
       try {
         const file = path.join(app.getPath('userData'), 'mediaData.json')
+
+        if (!fs.existsSync(file)) {
+          console.log('[carplay-media-read] Error: ENOENT: no such file or directory')
+          return DEFAULT_MEDIA_DATA_RESPONSE
+        }
+
         return readMediaFile(file)
-      } catch {
-        return {
-          timestamp: '',
-          payload: { type: MediaType.Data, media: {}, base64Image: undefined }
-        } as PersistedMediaFile
+      } catch (error) {
+        console.log('[carplay-media-read]', error)
+        return DEFAULT_MEDIA_DATA_RESPONSE
       }
     })
   }

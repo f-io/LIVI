@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStatusStore } from '@store/store'
-import { UsbEvent } from './types'
+import { MediaEventType, UsbEvent } from './types'
 import {
   useBelowNavTop,
   useElementSize,
@@ -10,53 +10,53 @@ import {
 } from './hooks'
 import { clamp } from './utils'
 import { ProgressBar, Controls } from './components'
+import { MIN_TEXT_COL } from './constants'
+import { flash } from './utils/flash'
+import { mediaScaleOps } from './utils/mediaScaleOps'
+import { mediaLayoutArtworksOps } from './utils/mediaLayoutArtworksOps'
+import { mediaProjectionOps } from './utils/mediaProjectionOps'
+import { mediaControlOps } from './utils/mediaControllOps'
 
 export const Media = () => {
-  const isStreaming = useStatusStore((s) => s.isStreaming)
+  const isStreaming = useStatusStore((s: { isStreaming: boolean }) => s.isStreaming)
 
   const top = useBelowNavTop()
   const [rootRef, { w, h }] = useElementSize<HTMLDivElement>()
   const { snap, livePlayMs } = useMediaState(isStreaming)
 
   // Scales
-  const minSide = Math.min(w, h)
-  const titlePx = Math.round(clamp(minSide * 0.07, 22, 48))
-  const artistPx = Math.round(clamp(minSide * 0.034, 14, 24))
-  const albumPx = Math.round(clamp(minSide * 0.028, 13, 20))
-  const pagePad = Math.round(clamp(minSide * 0.02, 12, 22))
-  const colGap = Math.round(clamp(w * 0.025, 16, 28))
-  const sectionGap = Math.round(clamp(h * 0.03, 10, 24))
-  const ctrlSize = Math.round(clamp(h * 0.095, 50, 82))
-  const ctrlGap = Math.round(clamp(w * 0.03, 16, 32))
-  const progressH = Math.round(clamp(h * 0.012, 8, 12))
+  const { titlePx, artistPx, albumPx, pagePad, colGap, sectionGap, ctrlSize, ctrlGap, progressH } =
+    mediaScaleOps({ w, h })
 
   // Layout + artwork
-  const bottomDockH = ctrlSize + 16 + (progressH + 20)
-  const contentH = Math.max(0, h - pagePad * 2 - bottomDockH)
-  const innerW = Math.max(0, w - pagePad * 2)
-  const MIN_TEXT_COL = 400
-  const MIN_ART_COL = 140
-  const canTwoCol = innerW >= MIN_TEXT_COL + MIN_ART_COL + colGap
-  const textEst = titlePx * 1.25 + artistPx * 1.25 + albumPx * 1.1 + 40
-  const artFromH = Math.max(130, contentH - Math.max(60, Math.min(textEst, contentH * 0.6)))
-  const artWidthAllowance = Math.max(MIN_ART_COL, Math.floor(innerW - MIN_TEXT_COL - colGap))
-  const artPx = canTwoCol
-    ? Math.round(clamp(Math.min(contentH, artWidthAllowance), 140, 340))
-    : Math.round(clamp(Math.min(h * 0.52, artFromH), 130, 320))
+  const { canTwoCol, artPx } = mediaLayoutArtworksOps({
+    ctrlSize,
+    progressH,
+    w,
+    h,
+    pagePad,
+    colGap,
+    titlePx,
+    artistPx,
+    albumPx
+  })
 
   // Media projection
-  const m = snap?.payload.media
-  const base64 = snap?.payload.base64Image
-  const guessedMime = base64 && base64.startsWith('/9j/') ? 'image/jpeg' : 'image/png'
-  const title = m?.MediaSongName ?? '—'
-  const artist = m?.MediaArtistName ?? '—'
-  const album = m?.MediaAlbumName ?? '—'
-  const appName = m?.MediaAPPName ?? '—'
-  const durationMs = m?.MediaSongDuration ?? 0
-  const realPlaying = m?.MediaPlayStatus === 1
-  const imageDataUrl = base64 ? `data:${guessedMime};base64,${base64}` : null
+  const {
+    mediaPayloadError,
+    title,
+    artist,
+    album,
+    appName,
+    durationMs,
+    realPlaying,
+    imageDataUrl
+  } = mediaProjectionOps({ snap })
 
-  const { uiPlaying, setOverride, clearOverride } = useOptimisticPlaying(realPlaying)
+  const { uiPlaying, setOverride, clearOverride } = useOptimisticPlaying(
+    realPlaying,
+    mediaPayloadError
+  )
   const { press, bump, reset: resetPress } = usePressFeedback()
 
   // Per-button focus
@@ -71,67 +71,36 @@ export const Media = () => {
   const playBtnRef = useRef<HTMLButtonElement | null>(null)
   const nextBtnRef = useRef<HTMLButtonElement | null>(null)
 
-  function flash(ref: React.RefObject<HTMLButtonElement | null>, ms = 140) {
-    const el = ref.current
-    if (!el) return
-    const prevTransform = el.style.transform
-    const prevShadow = el.style.boxShadow
-    el.style.transform = 'scale(0.94)'
-    el.style.boxShadow = '0 0 0 5px rgba(255,255,255,0.35) inset'
-    window.setTimeout(() => {
-      el.style.transform = prevTransform
-      el.style.boxShadow = prevShadow
-    }, ms)
-  }
-
   // Backward-jump guard controls
   const prevElapsedRef = useRef(0)
   const allowBackwardOnceRef = useRef(false)
 
-  // Commands
-  const onPlayPause = () => {
-    bump('play')
-    flash(playBtnRef)
-    const next = !uiPlaying
-    setOverride(next)
-    if (next) {
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
-      window.carplay.ipc.sendKeyCommand('play')
-    }
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    else window.carplay.ipc.sendKeyCommand('pause')
-  }
-
-  const onPrev = () => {
-    bump('prev')
-    flash(prevBtnRef)
-    allowBackwardOnceRef.current = true
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    window.carplay.ipc.sendKeyCommand('prev')
-  }
-  const onNext = () => {
-    bump('next')
-    flash(nextBtnRef)
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    window.carplay.ipc.sendKeyCommand('next')
-  }
+  const { onPlayPause, onPrev, onNext } = mediaControlOps({
+    uiPlaying,
+    onBump: bump,
+    playBtnRef,
+    prevBtnRef,
+    allowBackwardOnceRef,
+    nextBtnRef,
+    setOverride
+  })
 
   useEffect(() => {
     const handler = (e: Event) => {
       const cmd = (e as CustomEvent<{ command?: string }>).detail?.command?.toLowerCase()
       if (!cmd) return
-      if (cmd === 'play' || cmd === 'pause' || cmd === 'stop') {
-        bump('play')
+      if (
+        cmd === MediaEventType.PLAY ||
+        cmd === MediaEventType.PAUSE ||
+        cmd === MediaEventType.STOP
+      ) {
+        bump(MediaEventType.PLAY)
         flash(playBtnRef)
-      } else if (cmd === 'next') {
-        bump('next')
+      } else if (cmd === MediaEventType.NEXT) {
+        bump(MediaEventType.NEXT)
         flash(nextBtnRef)
-      } else if (cmd === 'prev') {
-        bump('prev')
+      } else if (cmd === MediaEventType.PREV) {
+        bump(MediaEventType.PREV)
         flash(prevBtnRef)
         allowBackwardOnceRef.current = true
       }
@@ -259,7 +228,7 @@ export const Media = () => {
               style={{
                 width: artPx,
                 height: artPx,
-                borderRadius: 18,
+                borderRadius: 34,
                 overflow: 'hidden',
                 background: 'rgba(255,255,255,0.06)',
                 display: 'flex',
@@ -337,7 +306,7 @@ export const Media = () => {
       </div>
 
       {/* BOTTOM DOCK */}
-      <div style={{ display: 'grid', gridAutoRows: 'auto', rowGap: 10 }}>
+      <div style={{ display: 'grid', gridAutoRows: 'auto', rowGap: 10, paddingBottom: '1rem' }}>
         <Controls
           ctrlGap={ctrlGap}
           ctrlSize={ctrlSize}
@@ -355,7 +324,9 @@ export const Media = () => {
           iconMainPx={iconMainPx}
         />
 
-        <ProgressBar elapsedMs={elapsedMs} progressH={progressH} totalMs={totalMs} pct={pct} />
+        {!mediaPayloadError && (
+          <ProgressBar elapsedMs={elapsedMs} progressH={progressH} totalMs={totalMs} pct={pct} />
+        )}
       </div>
     </div>
   )

@@ -1,6 +1,6 @@
 import type { Device } from 'usb'
 import { ipcMain, BrowserWindow } from 'electron'
-import { CarplayService } from '../carplay/CarplayService'
+import { CarplayService } from '../carplay/services/CarplayService'
 import { findDongle } from './helpers'
 import Microphone from '../carplay/node/Microphone'
 

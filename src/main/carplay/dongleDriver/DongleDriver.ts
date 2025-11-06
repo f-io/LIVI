@@ -1,6 +1,6 @@
 import EventEmitter from 'events'
-import { MessageHeader, HeaderBuildError } from './messages/common.js'
-import { PhoneType } from './messages/readable.js'
+import { MessageHeader, HeaderBuildError } from '../messages/common.js'
+import { PhoneType } from '../messages/readable.js'
 import {
   SendableMessage,
   SendNumber,
@@ -11,7 +11,7 @@ import {
   SendBoxSettings,
   SendCommand,
   HeartBeat
-} from './messages/sendable.js'
+} from '../messages/sendable.js'
 
 const CONFIG_NUMBER = 1
 const MAX_ERROR_COUNT = 5

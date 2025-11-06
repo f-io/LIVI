@@ -1,4 +1,4 @@
-import { DongleConfig } from '../DongleDriver.js'
+import { DongleConfig } from '../dongleDriver/DongleDriver.js'
 import { MessageType, MessageHeader, CommandMapping, CommandValue } from './common.js'
 import { clamp, getCurrentTimeInMs } from './utils.js'
 

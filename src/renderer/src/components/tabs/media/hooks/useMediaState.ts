@@ -1,8 +1,9 @@
 // Live media (throttled progress updates)
 
 import { useEffect, useRef, useState } from 'react'
-import { PersistedSnapshot, UsbEvent } from '../types'
+import { Bridge, PersistedSnapshot, UsbEvent } from '../types'
 import { clamp, mergePayload, payloadFromLiveEvent } from '../utils'
+import { UI_INTERVAL_MS } from '../constants'
 
 export function useMediaState(allowInitialHydrate: boolean) {
   const [snap, setSnap] = useState<PersistedSnapshot | null>(null)
@@ -40,17 +41,6 @@ export function useMediaState(allowInitialHydrate: boolean) {
       })
     }
 
-    // Typed view of the pieces we use on window (no `any`)
-    type Bridge = {
-      carplay?: {
-        ipc?: { onEvent?: (cb: (e: unknown, ...a: unknown[]) => void) => void | (() => void) }
-      }
-      electron?: {
-        ipcRenderer?: {
-          removeListener?: (channel: string, listener: (...a: unknown[]) => void) => void
-        }
-      }
-    }
     const w = window as unknown as Bridge
 
     let unsubscribe: (() => void) | undefined
@@ -101,7 +91,6 @@ export function useMediaState(allowInitialHydrate: boolean) {
 
   useEffect(() => {
     let raf = 0
-    const UI_INTERVAL_MS = 120
 
     const loop = () => {
       raf = requestAnimationFrame(loop)
