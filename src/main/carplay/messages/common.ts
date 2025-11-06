@@ -16,39 +16,41 @@ import {
   Opened,
   BoxInfo,
   Unplugged,
-  Phase
+  Phase,
+  BluetoothPeerConnecting,
+  BluetoothPeerConnected
 } from './readable.js'
 
 export enum CommandMapping {
-  invalid = 0, //'invalid',
+  invalid = 0, // 'invalid'
   startRecordAudio = 1,
   stopRecordAudio = 2,
-  requestHostUI = 3, //'Carplay Interface My Car button clicked',
-  siri = 5, //'Siri Button',
-  mic = 7, //'Car Microphone',
-  boxMic = 15, //'Box Microphone',
-  enableNightMode = 16, // night mode
-  disableNightMode = 17, // disable night mode
-  wifi24g = 24, //'2.4G Wifi',
-  wifi5g = 25, //'5G Wifi',
-  left = 100, //'Button Left',
-  right = 101, //'Button Right',
+  requestHostUI = 3, // 'Carplay Interface My Car button clicked'
+  siri = 5, // 'Siri Button'
+  mic = 7, // 'Car Microphone'
   frame = 12,
-  audioTransferOn = 22, // Phone will Stream audio directly to car system and not dongle
-  audioTransferOff = 23, // DEFAULT - Phone will stream audio to the dongle and it will send it over the link
-  selectDown = 104, //'Button Select Down',
-  selectUp = 105, //'Button Select Up',
-  back = 106, //'Button Back',
-  up = 113, //'Button Up',
-  down = 114, //'Button Down',
-  home = 200, //'Button Home',
-  play = 201, //'Button Play',
-  pause = 202, //'Button Pause',
-  playOrPause = 203, //'Button Switch Play/Pause',
-  next = 204, //'Button Next Track',
-  prev = 205, //'Button Prev Track',
-  acceptPhone = 300, //'Accept Phone Call',
-  rejectPhone = 301, //'Reject Phone Call',
+  boxMic = 15, // 'Box Microphone'
+  enableNightMode = 16,
+  disableNightMode = 17,
+  audioTransferOn = 22, // Phone streams audio directly to car system, not dongle
+  audioTransferOff = 23, // DEFAULT - Phone streams audio to dongle
+  wifi24g = 24, // '2.4G Wifi'
+  wifi5g = 25, // '5G Wifi'
+  left = 100, // 'Button Left'
+  right = 101, // 'Button Right'
+  selectDown = 104, // 'Button Select Down'
+  selectUp = 105, // 'Button Select Up'
+  back = 106, // 'Button Back'
+  up = 113, // 'Button Up'
+  down = 114, // 'Button Down'
+  home = 200, // 'Button Home'
+  play = 201, // 'Button Play'
+  pause = 202, // 'Button Pause'
+  playOrPause = 203, // 'Button Switch Play/Pause'
+  next = 204, // 'Button Next Track'
+  prev = 205, // 'Button Prev Track'
+  acceptPhone = 300, // 'Accept Phone Call'
+  rejectPhone = 301, // 'Reject Phone Call'
   requestVideoFocus = 500,
   releaseVideoFocus = 501,
   wifiEnable = 1000,
@@ -78,7 +80,7 @@ export enum MessageType {
   AudioData = 0x07,
   Command = 0x08,
   LogoType = 0x09,
-  DisconnectPhone = 0xf,
+  DisconnectPhone = 0x0f,
   CloseDongle = 0x15,
   BluetoothAddress = 0x0a,
   BluetoothPIN = 0x0c,
@@ -92,7 +94,11 @@ export enum MessageType {
   MediaData = 0x2a,
   SendFile = 0x99,
   HeartBeat = 0xaa,
-  SoftwareVersion = 0xcc
+  SoftwareVersion = 0xcc,
+  PeerBluetoothAddress = 0x23,
+  PeerBluetoothAddressAlt = 0x24,
+  UiHidePeerInfo = 0x25,
+  UiBringToForeground = 0x26
 }
 
 export class HeaderBuildError extends Error {}
@@ -171,6 +177,10 @@ export class MessageHeader {
           return new BoxInfo(this, data)
         case MessageType.Phase:
           return new Phase(this, data)
+        case MessageType.PeerBluetoothAddress:
+          return new BluetoothPeerConnecting(this, data)
+        case MessageType.PeerBluetoothAddressAlt:
+          return new BluetoothPeerConnected(this, data)
         default:
           console.debug(`Unknown message type: ${type}, data: ${data.toString()}`)
           return null
@@ -179,6 +189,10 @@ export class MessageHeader {
       switch (type) {
         case MessageType.Unplugged:
           return new Unplugged(this)
+        case MessageType.UiHidePeerInfo:
+          return null
+        case MessageType.UiBringToForeground:
+          return null
         default:
           console.debug(`Unknown message type without data: ${type}`)
           return null
