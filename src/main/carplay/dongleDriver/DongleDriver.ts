@@ -7,7 +7,6 @@ import {
   FileAddress,
   SendOpen,
   SendBoolean,
-  SendString,
   SendBoxSettings,
   SendCommand,
   HeartBeat
@@ -38,6 +37,10 @@ export type DongleConfig = {
   boxName: string
   hand: HandDriveType
   mediaDelay: number
+  mediaSound: 0 | 1
+  callQuality: 0 | 1 | 2
+  autoPlay: boolean
+  autoConn: boolean
   audioTransferMode: boolean
   wifiType: '2.4ghz' | '5ghz'
   wifiChannel: number
@@ -49,15 +52,19 @@ export const DEFAULT_CONFIG: DongleConfig = {
   width: 800,
   height: 480,
   fps: 60,
-  dpi: 140,
+  dpi: 160,
   format: 5,
   iBoxVersion: 2,
   phoneWorkMode: 2,
   packetMax: 49152,
-  boxName: 'nodePlay',
+  boxName: 'picarplay',
   nightMode: true,
   hand: HandDriveType.LHD,
   mediaDelay: 1000,
+  mediaSound: 1,
+  callQuality: 1,
+  autoPlay: true,
+  autoConn: true,
   audioTransferMode: false,
   wifiType: '5ghz',
   wifiChannel: 36,
@@ -199,7 +206,6 @@ export class DongleDriver extends EventEmitter {
       new SendBoolean(cfg.nightMode, FileAddress.NIGHT_MODE),
       new SendNumber(cfg.hand, FileAddress.HAND_DRIVE_MODE),
       new SendBoolean(true, FileAddress.CHARGE_MODE),
-      new SendString(cfg.boxName, FileAddress.BOX_NAME),
       new SendCommand(cfg.wifiType === '5ghz' ? 'wifi5g' : 'wifi24g'),
       new SendBoxSettings(cfg),
       new SendCommand('wifiEnable'),
