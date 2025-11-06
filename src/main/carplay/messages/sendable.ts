@@ -181,7 +181,6 @@ export enum FileAddress {
   NIGHT_MODE = '/tmp/night_mode',
   HAND_DRIVE_MODE = '/tmp/hand_drive_mode',
   CHARGE_MODE = '/tmp/charge_mode',
-  BOX_NAME = '/etc/box_name',
   OEM_ICON = '/etc/oem_icon.png',
   AIRPLAY_CONFIG = '/etc/airplay.conf',
   ICON_120 = '/etc/icon_120x120.png',
@@ -254,6 +253,12 @@ type BoxSettingsBody = {
   androidAutoSizeH: number
   WiFiChannel: number
   wifiChannel: number
+  mediaSound: 0 | 1
+  callQuality: 0 | 1 | 2
+  autoPlay: boolean
+  autoConn: boolean
+  wifiName: string
+  btName: string
 }
 
 export class SendBoxSettings extends SendableMessageWithPayload {
@@ -275,7 +280,13 @@ export class SendBoxSettings extends SendableMessageWithPayload {
       androidAutoSizeW: cfg.width,
       androidAutoSizeH: cfg.height,
       WiFiChannel: channel,
-      wifiChannel: channel
+      wifiChannel: channel,
+      mediaSound: cfg.mediaSound,
+      callQuality: cfg.callQuality,
+      autoPlay: cfg.autoPlay,
+      autoConn: cfg.autoConn,
+      wifiName: cfg.boxName,
+      btName: cfg.boxName
     }
 
     return Buffer.from(JSON.stringify(body), 'ascii')
