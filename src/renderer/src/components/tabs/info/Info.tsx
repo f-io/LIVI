@@ -321,7 +321,7 @@ export const Info = () => {
           overflowX: 'hidden',
           flexGrow: 1,
           px: 1.5,
-          py: 1.5,
+          py: 0.25,
           display: 'flex',
           flexDirection: 'column',
           gap: 2

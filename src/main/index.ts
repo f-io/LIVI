@@ -708,58 +708,94 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
+function sizesEqual(a: ExtraConfig, b: ExtraConfig) {
+  const aw = Number(a.width) || 0
+  const ah = Number(a.height) || 0
+  const bw = Number(b.width) || 0
+  const bh = Number(b.height) || 0
+  return aw === bw && ah === bh
+}
+
 // Settings IPC
-function saveSettings(settings: ExtraConfig) {
+function saveSettings(next: ExtraConfig) {
+  // persist
   writeFileSync(
     configPath,
     JSON.stringify(
       {
-        ...settings,
-        width: +settings.width,
-        height: +settings.height,
-        fps: +settings.fps,
-        dpi: +settings.dpi,
-        format: +settings.format,
-        iBoxVersion: +settings.iBoxVersion,
-        phoneWorkMode: +settings.phoneWorkMode,
-        packetMax: +settings.packetMax,
-        mediaDelay: +settings.mediaDelay,
-        wifiType: settings.wifiType,
-        wifiChannel: settings.wifiChannel,
-        primaryColorDark: settings.primaryColorDark,
-        primaryColorLight: settings.primaryColorLight
+        ...next,
+        width: +next.width,
+        height: +next.height,
+        fps: +next.fps,
+        dpi: +next.dpi,
+        format: +next.format,
+        iBoxVersion: +next.iBoxVersion,
+        phoneWorkMode: +next.phoneWorkMode,
+        packetMax: +next.packetMax,
+        mediaDelay: +next.mediaDelay,
+        wifiType: next.wifiType,
+        wifiChannel: next.wifiChannel,
+        primaryColorDark: next.primaryColorDark,
+        primaryColorLight: next.primaryColorLight
       },
       null,
       2
     )
   )
 
-  config = { ...settings }
-  socket.config = settings
+  const prev = config
+  config = { ...next }
+
+  socket.config = config
   socket.sendSettings()
   sendKioskSync(config.kiosk)
 
   if (!mainWindow) return
 
-  if (isMac) {
-    const w = settings.width || 800
-    const h = settings.height || 480
-    if (settings.kiosk) {
-      applyWindowedContentSize(mainWindow, w, h)
-      applyAspectRatioFullscreen(mainWindow, w, h)
-      mainWindow.setFullScreen(true)
-    } else {
-      mainWindow.setFullScreen(false)
-      applyWindowedContentSize(mainWindow, w, h)
+  const sizeChanged = !sizesEqual(prev, next)
+  const kioskChanged = prev.kiosk !== next.kiosk
+
+  if (process.platform === 'darwin') {
+    if (kioskChanged) {
+      if (next.kiosk) {
+        if (sizeChanged) {
+          applyWindowedContentSize(mainWindow, next.width || 800, next.height || 480)
+          applyAspectRatioFullscreen(mainWindow, next.width || 800, next.height || 480)
+        }
+        mainWindow.setFullScreen(true)
+      } else {
+        mainWindow.setFullScreen(false)
+        if (sizeChanged) {
+          applyWindowedContentSize(mainWindow, next.width || 800, next.height || 480)
+        }
+      }
+    } else if (sizeChanged) {
+      if (next.kiosk) {
+        applyWindowedContentSize(mainWindow, next.width || 800, next.height || 480)
+        applyAspectRatioFullscreen(mainWindow, next.width || 800, next.height || 480)
+      } else {
+        applyWindowedContentSize(mainWindow, next.width || 800, next.height || 480)
+      }
     }
   } else {
-    if (settings.kiosk) {
-      mainWindow.setKiosk(true)
-      applyAspectRatioWindowed(mainWindow, 0, 0)
-    } else {
-      mainWindow.setKiosk(false)
-      mainWindow.setContentSize(settings.width, settings.height, false)
-      applyAspectRatioWindowed(mainWindow, settings.width, settings.height)
+    // Linux/Windows
+    if (kioskChanged) {
+      mainWindow.setKiosk(!!next.kiosk)
+      if (sizeChanged) {
+        if (next.kiosk) {
+          applyAspectRatioWindowed(mainWindow, 0, 0)
+        } else {
+          mainWindow.setContentSize(next.width, next.height, false)
+          applyAspectRatioWindowed(mainWindow, next.width, next.height)
+        }
+      }
+    } else if (sizeChanged) {
+      if (next.kiosk) {
+        applyAspectRatioWindowed(mainWindow, 0, 0)
+      } else {
+        mainWindow.setContentSize(next.width, next.height, false)
+        applyAspectRatioWindowed(mainWindow, next.width, next.height)
+      }
     }
   }
 }

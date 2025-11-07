@@ -2,9 +2,9 @@ import { ExtraConfig } from '@main/Globals'
 import React, { useEffect, useMemo, useState, startTransition, useCallback } from 'react'
 import {
   Box,
+  Divider,
   FormControlLabel,
   TextField,
-  Checkbox,
   FormControl,
   FormLabel,
   Button,
@@ -16,16 +16,28 @@ import {
   Grid,
   Slider,
   CircularProgress,
+  Tooltip,
   Typography,
   MenuItem,
-  InputAdornment
+  InputAdornment,
+  Switch,
+  Paper
 } from '@mui/material'
+import {
+  DarkModeOutlined,
+  LightModeOutlined,
+  VolumeOffOutlined,
+  VolumeUpOutlined,
+  PlayCircleOutline,
+  FullscreenOutlined
+} from '@mui/icons-material'
 import { useTheme } from '@mui/material/styles'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { TransitionProps } from '@mui/material/transitions'
 import { KeyBindings } from '../../keyBindings'
 import { updateCameras as detectCameras } from '@utils/cameraDetection'
 import debounce from 'lodash.debounce'
+import type { DebouncedFunc } from 'lodash'
 import { useCarplayStore, useStatusStore } from '@store/store'
 
 interface SettingsProps {
@@ -46,6 +58,8 @@ function normalizeCarName(input: string): string {
 }
 
 type UsbEvent = { type?: string } & Record<string, unknown>
+type DebouncedSave = DebouncedFunc<(s: ExtraConfig) => void>
+type ToggleKey = 'autoPlay' | 'audioTransferMode' | 'nightMode' | 'kiosk'
 
 const Transition = React.forwardRef(function Transition(
   props: TransitionProps & { children: React.ReactElement },
@@ -131,7 +145,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
     (isDarkMode ? activeSettings.primaryColorDark : activeSettings.primaryColorLight) ??
     theme.palette.primary.main
 
-  const debouncedSave = useMemo(
+  const debouncedSave = useMemo<DebouncedSave>(
     () => debounce((newSettings: ExtraConfig) => saveSettings(newSettings), 500),
     [saveSettings]
   )
@@ -164,7 +178,9 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
     'mediaDelay',
     'wifiType',
     'audioTransferMode',
-    'carName'
+    'carName',
+    'mediaSound',
+    'autoPlay'
   ]
 
   const getValidWifiChannel = (wifiType: ExtraConfig['wifiType'], ch?: number): number => {
@@ -225,15 +241,11 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
     const needsReset = hasChanges || micResetPending
 
     try {
-      ;(debouncedSave as any)?.flush?.()
-    } catch {
-      /* ignore */
-    }
+      debouncedSave.flush()
+    } catch {}
     try {
-      ;(debouncedSave as any)?.cancel?.()
-    } catch {
-      /* ignore */
-    }
+      debouncedSave.cancel()
+    } catch {}
 
     await saveSettings(activeSettings)
 
@@ -308,6 +320,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
       case 'kiosk':
       case 'nightMode':
       case 'audioTransferMode':
+      case 'autoPlay':
         return Boolean(raw) as ExtraConfig[K]
 
       case 'wifiType': {
@@ -316,6 +329,12 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
       }
       case 'micType': {
         const v = raw === 'box' ? 'box' : raw === 'os' ? 'os' : current.micType
+        return v as ExtraConfig[K]
+      }
+
+      case 'mediaSound': {
+        const n = Number(raw)
+        const v = n === 0 ? 0 : 1
         return v as ExtraConfig[K]
       }
 
@@ -422,10 +441,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
         startTransition(() =>
           setActiveSettings((prev) => (prev.kiosk === kiosk ? prev : { ...prev, kiosk }))
         )
-      } catch {
-        // ignore
-      }
-
+      } catch {}
       off = window.app.onKioskSync((kiosk) => {
         startTransition(() =>
           setActiveSettings((prev) => (prev.kiosk === kiosk ? prev : { ...prev, kiosk }))
@@ -466,6 +482,17 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
 
   if (!hasSettings) return null
 
+  const setBool =
+    <K extends ToggleKey>(key: K) =>
+    (_: React.ChangeEvent<HTMLInputElement>, checked: boolean) =>
+      settingsChange(key, checked as unknown as ExtraConfig[K])
+
+  // Visual state for Audio (true = audio on), write inverted
+  const audioEnabled = !activeSettings.audioTransferMode
+  const onAudioSwitch = (_e: React.ChangeEvent<HTMLInputElement>, checked: boolean) => {
+    settingsChange('audioTransferMode', !checked as ExtraConfig['audioTransferMode'])
+  }
+
   return (
     <Box
       id="settings-root"
@@ -481,7 +508,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
           overflowX: 'hidden',
           flexGrow: 1,
           px: 1.5,
-          py: 1.5,
+          py: 0.25,
           display: 'flex',
           flexDirection: 'column',
           gap: 2
@@ -600,53 +627,135 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
           </Grid>
         </Grid>
 
-        {/* Left: toggles | Right: 2x3 grid (row1: WiFi|Mic|Camera, row2: CarName|empty|empty) */}
-        <Grid container spacing={2} sx={{ px: 1 }} columns={12} alignItems="center">
-          {/* Left column: toggles */}
-          <Grid size={{ xs: 12, sm: 3 }}>
-            <Stack spacing={0.5}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    size="small"
-                    checked={activeSettings.kiosk}
-                    onChange={(e) => settingsChange('kiosk', e.target.checked)}
-                  />
-                }
-                label="KIOSK"
-              />
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    size="small"
-                    checked={activeSettings.nightMode}
-                    onChange={(e) => settingsChange('nightMode', e.target.checked)}
-                  />
-                }
-                label="DARK MODE"
-              />
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    size="small"
-                    checked={activeSettings.audioTransferMode}
-                    onChange={(e) => settingsChange('audioTransferMode', e.target.checked)}
-                  />
-                }
-                label="DISABLE AUDIO"
-              />
-            </Stack>
-          </Grid>
+        {/* Left: icon switches | Right: form grid (never wrap) */}
+        <Box
+          sx={{
+            px: 1,
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            gap: 3,
+            flexWrap: 'nowrap'
+          }}
+        >
+          {/* Left: Paper (fixed width) */}
+          <Box sx={{ pl: 1.5, flex: '0 0 auto', mt: 1.5 }}>
+            <Paper
+              variant="outlined"
+              sx={(theme) => ({
+                p: 0.75,
+                borderRadius: 1,
+                borderColor: theme.palette.divider,
+                background: 'transparent',
+                width: 136,
+                maxWidth: 168
+              })}
+            >
+              {(
+                [
+                  {
+                    key: 'autoPlay' as const,
+                    title: 'Auto Play',
+                    visualChecked: Boolean(activeSettings.autoPlay),
+                    IconOn: PlayCircleOutline,
+                    IconOff: PlayCircleOutline,
+                    onChange: setBool('autoPlay')
+                  },
+                  {
+                    key: 'audioTransferMode' as const,
+                    title: 'Audio',
+                    visualChecked: audioEnabled,
+                    IconOn: VolumeUpOutlined,
+                    IconOff: VolumeOffOutlined,
+                    onChange: onAudioSwitch
+                  },
+                  {
+                    key: 'nightMode' as const,
+                    title: 'Dark Mode',
+                    visualChecked: Boolean(activeSettings.nightMode),
+                    IconOn: DarkModeOutlined,
+                    IconOff: LightModeOutlined,
+                    onChange: setBool('nightMode')
+                  },
+                  {
+                    key: 'kiosk' as const,
+                    title: 'Kiosk (Fullscreen)',
+                    visualChecked: Boolean(activeSettings.kiosk),
+                    IconOn: FullscreenOutlined,
+                    IconOff: FullscreenOutlined,
+                    onChange: setBool('kiosk')
+                  }
+                ] as const
+              ).map((item, idx, arr) => {
+                const Icon = item.visualChecked ? item.IconOn : item.IconOff
+                return (
+                  <React.Fragment key={item.key}>
+                    <FormControlLabel
+                      sx={{
+                        m: 0,
+                        px: 0.25,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        minHeight: 32
+                      }}
+                      labelPlacement="end"
+                      label={
+                        <Tooltip title={item.title} enterDelay={150}>
+                          <Box
+                            aria-label={item.title}
+                            sx={(theme) => ({
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: 22,
+                              height: 22,
+                              borderRadius: 1,
+                              color: item.visualChecked
+                                ? theme.palette.primary.main
+                                : theme.palette.text.disabled,
+                              border: `1px solid ${theme.palette.divider}`
+                            })}
+                          >
+                            <Icon fontSize="inherit" />
+                          </Box>
+                        </Tooltip>
+                      }
+                      control={
+                        <Switch
+                          size="small"
+                          checked={item.visualChecked}
+                          onChange={item.onChange}
+                          sx={{ mx: 0 }}
+                          inputProps={{ 'aria-label': item.title }}
+                        />
+                      }
+                    />
+                    {idx < arr.length - 1 && <Divider flexItem sx={{ my: 0.25, opacity: 0.08 }} />}
+                  </React.Fragment>
+                )
+              })}
+            </Paper>
+          </Box>
 
-          {/* Right column: nested 2x3 grid */}
-          <Grid size={{ xs: 12, sm: 9 }} sx={{ mt: 2 }}>
-            <Grid container spacing={2} columns={12} alignItems="center" sx={{ width: '100%' }}>
-              {/* Row 1 */}
-              <Grid size={{ xs: 12, sm: 4 }} sx={{ display: 'flex', alignItems: 'center' }}>
+          {/* Right: form grid (flexible, shrinks instead of wrapping) */}
+          <Box sx={{ flex: '1 1 auto', minWidth: 0 }}>
+            <Grid
+              container
+              spacing={2}
+              columns={12}
+              alignItems="center"
+              sx={{ width: '100%', minWidth: 0, mt: 1.5 }}
+            >
+              <Grid
+                size={{ xs: 12, sm: 4 }}
+                sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
+              >
                 <TextField
                   size="small"
                   select
                   fullWidth
+                  sx={{ minWidth: 0 }}
                   label="WIFI"
                   value={wifiValue}
                   onChange={(e) => settingsChange('wifiType', toWifiType(e.target.value))}
@@ -656,11 +765,15 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                 </TextField>
               </Grid>
 
-              <Grid size={{ xs: 12, sm: 4 }} sx={{ display: 'flex', alignItems: 'center' }}>
+              <Grid
+                size={{ xs: 12, sm: 4 }}
+                sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
+              >
                 <TextField
                   size="small"
                   select
                   fullWidth
+                  sx={{ minWidth: 0 }}
                   label="MICROPHONE"
                   value={activeSettings.micType}
                   onChange={(e) => settingsChange('micType', e.target.value as 'box' | 'os')}
@@ -674,11 +787,15 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                 </TextField>
               </Grid>
 
-              <Grid size={{ xs: 12, sm: 4 }} sx={{ display: 'flex', alignItems: 'center' }}>
+              <Grid
+                size={{ xs: 12, sm: 4 }}
+                sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
+              >
                 <TextField
                   size="small"
                   select
                   fullWidth
+                  sx={{ minWidth: 0 }}
                   label="CAMERA"
                   value={cameraValue}
                   onChange={(e) => settingsChange('camera', e.target.value)}
@@ -691,8 +808,10 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                 </TextField>
               </Grid>
 
-              {/* Row 2 */}
-              <Grid size={{ xs: 12, sm: 4 }} sx={{ display: 'flex', alignItems: 'center' }}>
+              <Grid
+                size={{ xs: 12, sm: 4 }}
+                sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
+              >
                 <TextField
                   size="small"
                   fullWidth
@@ -703,14 +822,36 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                     settingsChange('carName', v)
                   }}
                   inputProps={{ maxLength: CAR_NAME_MAX }}
-                  helperText={`${(activeSettings.carName ?? '').length}/${CAR_NAME_MAX} ASCII`}
+                  helperText={`${activeSettings.carName?.length ?? 0}/${CAR_NAME_MAX}`}
+                  FormHelperTextProps={{ sx: { textAlign: 'right', m: 0, mt: 0.5 } }}
                 />
               </Grid>
-              <Grid size={{ xs: 12, sm: 4 }} />
+
+              <Grid
+                size={{ xs: 12, sm: 4 }}
+                sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
+              >
+                <TextField
+                  size="small"
+                  select
+                  fullWidth
+                  sx={{ minWidth: 0 }}
+                  label="SAMPLING FREQUENCY"
+                  value={
+                    typeof activeSettings.mediaSound === 'number' ? activeSettings.mediaSound : 1
+                  }
+                  onChange={(e) => settingsChange('mediaSound', Number(e.target.value) as 0 | 1)}
+                  helperText=" "
+                >
+                  <MenuItem value={0}>44.1 kHz</MenuItem>
+                  <MenuItem value={1}>48 kHz</MenuItem>
+                </TextField>
+              </Grid>
+
               <Grid size={{ xs: 12, sm: 4 }} />
             </Grid>
-          </Grid>
-        </Grid>
+          </Box>
+        </Box>
       </Box>
 
       <Box
