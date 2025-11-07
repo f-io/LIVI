@@ -60,16 +60,18 @@ export function KeyBindings({ settings, updateKey }: KeyBindingsProps) {
   return (
     <>
       <Grid container spacing={2}>
-        {Object.entries(settings.bindings).map(([action, code]: [string, unknown]) => (
-          <Grid size={{ xs: 3 }} key={action}>
-            <Item>
-              <Typography variant="subtitle2">{action}</Typography>
-              <Button variant="outlined" onClick={() => awaitKeyPress(action)}>
-                {code as React.ReactNode}
-              </Button>
-            </Item>
-          </Grid>
-        ))}
+        {Object.entries(settings && settings?.bindings ? settings.bindings : []).map(
+          ([action, code]: [string, unknown]) => (
+            <Grid size={{ xs: 3 }} key={action}>
+              <Item>
+                <Typography variant="subtitle2">{action}</Typography>
+                <Button variant="outlined" onClick={() => awaitKeyPress(action)}>
+                  {code as React.ReactNode}
+                </Button>
+              </Item>
+            </Grid>
+          )
+        )}
       </Grid>
 
       <Modal

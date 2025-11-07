@@ -647,8 +647,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                 borderRadius: 1,
                 borderColor: theme.palette.divider,
                 background: 'transparent',
-                width: 136,
-                maxWidth: 168
+                width: 168
               })}
             >
               {(
@@ -679,7 +678,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                   },
                   {
                     key: 'kiosk' as const,
-                    title: 'Kiosk (Fullscreen)',
+                    title: 'Fullscreen',
                     visualChecked: Boolean(activeSettings.kiosk),
                     IconOn: FullscreenOutlined,
                     IconOff: FullscreenOutlined,
@@ -702,23 +701,39 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                       labelPlacement="end"
                       label={
                         <Tooltip title={item.title} enterDelay={150}>
-                          <Box
-                            aria-label={item.title}
-                            sx={(theme) => ({
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              width: 22,
-                              height: 22,
-                              borderRadius: 1,
-                              color: item.visualChecked
-                                ? theme.palette.primary.main
-                                : theme.palette.text.disabled,
-                              border: `1px solid ${theme.palette.divider}`
-                            })}
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center'
+                            }}
                           >
-                            <Icon fontSize="inherit" />
-                          </Box>
+                            <span
+                              style={{
+                                fontSize: '0.85rem',
+                                display: 'inline-block',
+                                marginRight: '0.5rem'
+                              }}
+                            >
+                              {item.title}
+                            </span>
+                            <Box
+                              aria-label={item.title}
+                              sx={(theme) => ({
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: 22,
+                                height: 22,
+                                borderRadius: 1,
+                                color: item.visualChecked
+                                  ? theme.palette.primary.main
+                                  : theme.palette.text.disabled,
+                                border: `1px solid ${theme.palette.divider}`
+                              })}
+                            >
+                              <Icon fontSize="inherit" />
+                            </Box>
+                          </div>
                         </Tooltip>
                       }
                       control={
