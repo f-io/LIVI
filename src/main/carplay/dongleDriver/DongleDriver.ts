@@ -34,7 +34,7 @@ export type DongleConfig = {
   packetMax: number
   phoneWorkMode: number
   nightMode: boolean
-  boxName: string
+  carName: string
   hand: HandDriveType
   mediaDelay: number
   mediaSound: 0 | 1
@@ -57,7 +57,7 @@ export const DEFAULT_CONFIG: DongleConfig = {
   iBoxVersion: 2,
   phoneWorkMode: 2,
   packetMax: 49152,
-  boxName: 'pi-carplay',
+  carName: 'pi-carplay',
   nightMode: true,
   hand: HandDriveType.LHD,
   mediaDelay: 1000,

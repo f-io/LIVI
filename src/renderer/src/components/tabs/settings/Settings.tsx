@@ -39,6 +39,12 @@ const MIN_WIDTH = 400
 
 const UI_DEBOUNCED_KEYS = new Set<keyof ExtraConfig>(['primaryColorDark', 'primaryColorLight'])
 
+const CAR_NAME_MAX = 20
+function normalizeCarName(input: string): string {
+  const ascii = input.replace(/[^\x20-\x7E]/g, '')
+  return ascii.slice(0, CAR_NAME_MAX)
+}
+
 type UsbEvent = { type?: string } & Record<string, unknown>
 
 const Transition = React.forwardRef(function Transition(
@@ -157,7 +163,8 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
     'format',
     'mediaDelay',
     'wifiType',
-    'audioTransferMode'
+    'audioTransferMode',
+    'carName'
   ]
 
   const getValidWifiChannel = (wifiType: ExtraConfig['wifiType'], ch?: number): number => {
@@ -217,6 +224,19 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
   const handleSave = async () => {
     const needsReset = hasChanges || micResetPending
 
+    try {
+      ;(debouncedSave as any)?.flush?.()
+    } catch {
+      /* ignore */
+    }
+    try {
+      ;(debouncedSave as any)?.cancel?.()
+    } catch {
+      /* ignore */
+    }
+
+    await saveSettings(activeSettings)
+
     if (needsReset) {
       setIsResetting(true)
       setCloseCountdown(3)
@@ -235,7 +255,6 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
       resetStatus = 'Dongle Reset Error.'
     }
 
-    await saveSettings(activeSettings)
     setHasChanges(false)
     setMicResetPending(false)
     setIsResetting(false)
@@ -304,7 +323,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
       case 'primaryColorLight':
       case 'camera':
       case 'microphone':
-      case 'boxName':
+      case 'carName':
         return (raw === undefined ? undefined : String(raw)) as ExtraConfig[K]
 
       case 'bindings':
@@ -581,8 +600,10 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
           </Grid>
         </Grid>
 
+        {/* Left: toggles | Right: 2x3 grid (row1: WiFi|Mic|Camera, row2: CarName|empty|empty) */}
         <Grid container spacing={2} sx={{ px: 1 }} columns={12} alignItems="center">
-          <Grid size={{ xs: 6, sm: 3 }}>
+          {/* Left column: toggles */}
+          <Grid size={{ xs: 12, sm: 3 }}>
             <Stack spacing={0.5}>
               <FormControlLabel
                 control={
@@ -617,53 +638,77 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
             </Stack>
           </Grid>
 
-          <Grid size={{ xs: 6, sm: 3 }} sx={{ display: 'flex', alignItems: 'center' }}>
-            <TextField
-              size="small"
-              select
-              fullWidth
-              label="WIFI"
-              value={wifiValue}
-              onChange={(e) => settingsChange('wifiType', toWifiType(e.target.value))}
-            >
-              <MenuItem value="2.4ghz">2.4 GHz</MenuItem>
-              <MenuItem value="5ghz">5 GHz</MenuItem>
-            </TextField>
-          </Grid>
+          {/* Right column: nested 2x3 grid */}
+          <Grid size={{ xs: 12, sm: 9 }} sx={{ mt: 2 }}>
+            <Grid container spacing={2} columns={12} alignItems="center" sx={{ width: '100%' }}>
+              {/* Row 1 */}
+              <Grid size={{ xs: 12, sm: 4 }} sx={{ display: 'flex', alignItems: 'center' }}>
+                <TextField
+                  size="small"
+                  select
+                  fullWidth
+                  label="WIFI"
+                  value={wifiValue}
+                  onChange={(e) => settingsChange('wifiType', toWifiType(e.target.value))}
+                >
+                  <MenuItem value="2.4ghz">2.4 GHz</MenuItem>
+                  <MenuItem value="5ghz">5 GHz</MenuItem>
+                </TextField>
+              </Grid>
 
-          <Grid size={{ xs: 6, sm: 3 }} sx={{ display: 'flex', alignItems: 'center' }}>
-            <TextField
-              size="small"
-              select
-              fullWidth
-              label="MICROPHONE"
-              value={activeSettings.micType}
-              onChange={(e) => settingsChange('micType', e.target.value as 'box' | 'os')}
-            >
-              <MenuItem value="os" disabled={micUnavailable && activeSettings.micType !== 'os'}>
-                <Typography noWrap component="span" title={micLabel}>
-                  {renderOsMicLabel(micLabel)}
-                </Typography>
-              </MenuItem>
-              <MenuItem value="box">BOX</MenuItem>
-            </TextField>
-          </Grid>
+              <Grid size={{ xs: 12, sm: 4 }} sx={{ display: 'flex', alignItems: 'center' }}>
+                <TextField
+                  size="small"
+                  select
+                  fullWidth
+                  label="MICROPHONE"
+                  value={activeSettings.micType}
+                  onChange={(e) => settingsChange('micType', e.target.value as 'box' | 'os')}
+                >
+                  <MenuItem value="os" disabled={micUnavailable && activeSettings.micType !== 'os'}>
+                    <Typography noWrap component="span" title={micLabel}>
+                      {renderOsMicLabel(micLabel)}
+                    </Typography>
+                  </MenuItem>
+                  <MenuItem value="box">BOX</MenuItem>
+                </TextField>
+              </Grid>
 
-          <Grid size={{ xs: 6, sm: 3 }} sx={{ display: 'flex', alignItems: 'center' }}>
-            <TextField
-              size="small"
-              select
-              fullWidth
-              label="CAMERA"
-              value={cameraValue}
-              onChange={(e) => settingsChange('camera', e.target.value)}
-            >
-              {cameraOptions.map((cam) => (
-                <MenuItem key={cam.deviceId || 'none'} value={cam.deviceId}>
-                  {cam.label}
-                </MenuItem>
-              ))}
-            </TextField>
+              <Grid size={{ xs: 12, sm: 4 }} sx={{ display: 'flex', alignItems: 'center' }}>
+                <TextField
+                  size="small"
+                  select
+                  fullWidth
+                  label="CAMERA"
+                  value={cameraValue}
+                  onChange={(e) => settingsChange('camera', e.target.value)}
+                >
+                  {cameraOptions.map((cam) => (
+                    <MenuItem key={cam.deviceId || 'none'} value={cam.deviceId}>
+                      {cam.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+
+              {/* Row 2 */}
+              <Grid size={{ xs: 12, sm: 4 }} sx={{ display: 'flex', alignItems: 'center' }}>
+                <TextField
+                  size="small"
+                  fullWidth
+                  label="CAR NAME"
+                  value={activeSettings.carName ?? ''}
+                  onChange={(e) => {
+                    const v = normalizeCarName(e.target.value)
+                    settingsChange('carName', v)
+                  }}
+                  inputProps={{ maxLength: CAR_NAME_MAX }}
+                  helperText={`${(activeSettings.carName ?? '').length}/${CAR_NAME_MAX} ASCII`}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }} />
+              <Grid size={{ xs: 12, sm: 4 }} />
+            </Grid>
           </Grid>
         </Grid>
       </Box>

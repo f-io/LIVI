@@ -285,8 +285,8 @@ export class SendBoxSettings extends SendableMessageWithPayload {
       callQuality: cfg.callQuality,
       autoPlay: cfg.autoPlay,
       autoConn: cfg.autoConn,
-      wifiName: cfg.boxName,
-      btName: cfg.boxName
+      wifiName: cfg.carName,
+      btName: cfg.carName
     }
 
     return Buffer.from(JSON.stringify(body), 'ascii')
