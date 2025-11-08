@@ -7,7 +7,6 @@ type ApiCallback<TArgs extends unknown[] = unknown[]> = (
   ...args: TArgs
 ) => void
 
-// Queue + handlers for usb-event
 let usbEventQueue: Array<[IpcRendererEvent, ...unknown[]]> = []
 let usbEventHandlers: Array<ApiCallback> = []
 
@@ -125,7 +124,10 @@ const appApi = {
     const handler = (_e: IpcRendererEvent, kiosk: boolean) => cb(kiosk)
     ipcRenderer.on(ch, handler)
     return () => ipcRenderer.removeListener(ch, handler)
-  }
+  },
+
+  beginInstall: (): Promise<void> => ipcRenderer.invoke('app:beginInstall'),
+  abortUpdate: (): Promise<void> => ipcRenderer.invoke('app:abortUpdate')
 }
 
 contextBridge.exposeInMainWorld('app', appApi)

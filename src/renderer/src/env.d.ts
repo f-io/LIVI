@@ -31,7 +31,16 @@ interface USBDeviceRequestOptions {
 
 declare global {
   type UpdateEvent =
-    | { phase: 'start' | 'mounting' | 'copying' | 'unmounting' | 'installing' | 'relaunching' }
+    | {
+        phase:
+          | 'start'
+          | 'ready'
+          | 'mounting'
+          | 'copying'
+          | 'unmounting'
+          | 'installing'
+          | 'relaunching'
+      }
     | { phase: 'error'; message?: string }
 
   type UpdateProgress = {
@@ -125,6 +134,8 @@ declare global {
       onUpdateProgress(cb: (payload: UpdateProgress) => void): () => void
       getKiosk(): Promise<boolean>
       onKioskSync(cb: (kiosk: boolean) => void): () => void
+      beginInstall(): Promise<void>
+      abortUpdate(): Promise<void>
     }
   }
 }

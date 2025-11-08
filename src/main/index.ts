@@ -115,9 +115,18 @@ declare global {
 }
 globalThis.carplayService = carplayService
 
+type UpdateSessionState = 'idle' | 'downloading' | 'ready' | 'installing'
+let updateSession: {
+  state: UpdateSessionState
+  tmpFile?: string
+  cancel?: () => void
+  platform?: 'darwin' | 'linux'
+} = { state: 'idle' }
+
 type UpdateEventPayload =
   | { phase: 'start' }
   | { phase: 'download'; received: number; total: number; percent: number }
+  | { phase: 'ready' }
   | { phase: 'mounting' | 'copying' | 'unmounting' | 'installing' | 'relaunching' }
   | { phase: 'error'; message: string }
 
@@ -230,7 +239,6 @@ function pickAssetForPlatform(assets: GhAsset[]): { url?: string } {
   if (process.platform === 'linux') {
     const appImages = assets.filter((a) => /\.AppImage$/i.test(nameOf(a)))
     if (appImages.length === 0) return {}
-
     let patterns: RegExp[] = []
     if (process.arch === 'x64') {
       patterns = [/[-_.]x86_64\.AppImage$/i, /[-_.]amd64\.AppImage$/i, /[-_.]x64\.AppImage$/i]
@@ -239,7 +247,6 @@ function pickAssetForPlatform(assets: GhAsset[]): { url?: string } {
     } else {
       return {}
     }
-
     const match = appImages.find((a) => patterns.some((re) => re.test(nameOf(a))))
     return { url: urlOf(match) }
   }
@@ -254,39 +261,118 @@ function sendUpdateProgress(payload: Extract<UpdateEventPayload, { phase: 'downl
   mainWindow?.webContents.send('update:progress', payload)
 }
 
-async function downloadWithProgress(url: string, dest: string): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    const req = https.get(url, (res) => {
+function downloadWithProgress(
+  url: string,
+  dest: string,
+  onProgress: (p: { received: number; total: number; percent: number }) => void
+): { promise: Promise<void>; cancel: () => void } {
+  let req: import('http').ClientRequest | null = null
+  let file: import('fs').WriteStream | null = null
+  let resolved = false
+  let rejected = false
+  let cancelled = false
+  let _resolve: (() => void) | null = null
+  let _reject: ((e: unknown) => void) | null = null
+  // hält ggf. den Cancel des Redirect-Downloads
+  let redirectCancel: (() => void) | null = null
+
+  const safeResolve = () => {
+    if (!resolved && !rejected) {
+      resolved = true
+      _resolve?.()
+    }
+  }
+  const safeReject = (e: unknown) => {
+    if (!resolved && !rejected) {
+      rejected = true
+      _reject?.(e)
+    }
+  }
+
+  const cleanup = async () => {
+    try {
+      req?.destroy()
+    } catch {}
+    req = null
+    try {
+      file?.destroy()
+    } catch {}
+    file = null
+    try {
+      if (existsSync(dest)) await fsp.unlink(dest).catch(() => {})
+    } catch {}
+  }
+
+  const promise = new Promise<void>((resolve, reject) => {
+    _resolve = resolve
+    _reject = (e: unknown) => reject(e)
+
+    req = https.get(url, (res) => {
+      // Redirect
       if (res.statusCode && res.statusCode >= 300 && res.headers.location) {
-        req.destroy()
-        downloadWithProgress(res.headers.location, dest).then(resolve, reject)
+        try {
+          req!.destroy()
+        } catch {}
+        const next = downloadWithProgress(res.headers.location, dest, onProgress)
+        redirectCancel = next.cancel
+        next.promise.then(resolve, reject)
+        req = null
         return
       }
+
       if (res.statusCode !== 200) {
-        reject(new Error(`HTTP ${res.statusCode}`))
+        safeReject(new Error(`HTTP ${res.statusCode}`))
         return
       }
+
       const total = parseInt(String(res.headers['content-length'] || 0), 10) || 0
       let received = 0
-      const file = createWriteStream(dest)
-      res.on('data', (chunk) => {
+      file = createWriteStream(dest)
+
+      res.on('data', (chunk: Buffer) => {
+        if (cancelled) return
         received += chunk.length
-        sendUpdateProgress({
-          phase: 'download',
-          received,
-          total,
-          percent: total ? received / total : 0
-        })
+        onProgress({ received, total, percent: total ? received / total : 0 })
       })
-      res.on('error', (err) => reject(err))
-      file.on('finish', () => file.close(() => resolve()))
+      res.on('error', (err: Error) => {
+        if (cancelled) return
+        safeReject(err)
+      })
+
+      file.on('error', (err: Error) => {
+        if (cancelled) return
+        safeReject(err)
+      })
+      file.on('finish', async () => {
+        if (cancelled) return
+        try {
+          await new Promise<void>((r) => file?.close(() => r()))
+        } catch {}
+        file = null
+        safeResolve()
+      })
+
       res.pipe(file)
     })
-    req.on('error', reject)
+
+    req.on('error', (e: Error) => {
+      if (cancelled) return
+      safeReject(e)
+    })
   })
+
+  const cancel = () => {
+    if (cancelled) return
+    cancelled = true
+    try {
+      redirectCancel?.()
+    } catch {}
+    cleanup().finally(() => safeReject(new Error('aborted')))
+  }
+
+  return { promise, cancel }
 }
 
-// macOS helpers
 async function getMacDesiredOwner(dstApp: string): Promise<{ user: string; group: string }> {
   if (process.platform !== 'darwin') throw new Error('macOS only')
   if (existsSync(dstApp)) {
@@ -352,8 +438,16 @@ async function installFromDmg(dmgPath: string): Promise<void> {
   )
 }
 
-// Linux helper
-async function installOnLinux(url: string): Promise<void> {
+async function installOnMacFromFile(dmgPath: string): Promise<void> {
+  if (process.platform !== 'darwin') throw new Error('macOS only')
+  sendUpdateEvent({ phase: 'installing' })
+  await installFromDmg(dmgPath)
+  sendUpdateEvent({ phase: 'relaunching' })
+  app.relaunch()
+  setImmediate(() => app.quit())
+}
+
+async function installOnLinuxFromFile(appImagePath: string): Promise<void> {
   if (process.platform !== 'linux') throw new Error('Linux only')
   const current = process.env.APPIMAGE
   if (!current) throw new Error('Not running from an AppImage')
@@ -361,26 +455,13 @@ async function installOnLinux(url: string): Promise<void> {
   const currentDir = dirname(current)
   const currentBase = basename(current)
 
-  const tmpDownload = join(os.tmpdir(), `pcu-${Date.now()}.AppImage`)
-  await downloadWithProgress(url, tmpDownload)
-
-  const tmpRenamed = join(os.tmpdir(), currentBase)
-  try {
-    if (existsSync(tmpRenamed)) await fsp.unlink(tmpRenamed).catch(() => {})
-    await fsp.rename(tmpDownload, tmpRenamed)
-  } catch {
-    await fsp.copyFile(tmpDownload, tmpRenamed)
-    await fsp.unlink(tmpDownload).catch(() => {})
-  }
-
   const destNew = join(currentDir, currentBase + '.new')
-  await fsp.copyFile(tmpRenamed, destNew)
+  await fsp.copyFile(appImagePath, destNew)
   await fsp.chmod(destNew, 0o755)
   await fsp.rename(destNew, current)
 
   sendUpdateEvent({ phase: 'relaunching' })
 
-  // Relaunch via spawn
   const cleanEnv: Record<string, string | undefined> = { ...process.env }
   delete cleanEnv.APPIMAGE
   delete cleanEnv.APPDIR
@@ -392,18 +473,6 @@ async function installOnLinux(url: string): Promise<void> {
   app.exit(0)
 }
 
-async function installOnMac(url: string): Promise<void> {
-  if (process.platform !== 'darwin') throw new Error('macOS only')
-  const tmpFile = join(os.tmpdir(), `pcu-${Date.now()}.dmg`)
-  await downloadWithProgress(url, tmpFile)
-  sendUpdateEvent({ phase: 'installing' })
-  await installFromDmg(tmpFile)
-  sendUpdateEvent({ phase: 'relaunching' })
-  app.relaunch()
-  setImmediate(() => app.quit())
-}
-
-// Window
 function sendKioskSync(kiosk: boolean) {
   mainWindow?.webContents.send('settings:kiosk-sync', kiosk)
 }
@@ -656,43 +725,85 @@ app.whenReady().then(() => {
 
   ipcMain.handle('app:performUpdate', async (_evt, directUrl?: string) => {
     try {
+      if (updateSession.state !== 'idle') throw new Error('Update already in progress')
       sendUpdateEvent({ phase: 'start' })
 
-      if (process.platform === 'darwin') {
-        const url =
-          directUrl ||
-          (await (async () => {
-            const repo = process.env.UPDATE_REPO || 'f-io/pi-carplay'
-            const feed =
-              process.env.UPDATE_FEED || `https://api.github.com/repos/${repo}/releases/latest`
-            const res = await fetch(feed, { headers: { 'User-Agent': 'pi-carplay-updater' } })
-            const json = (await res.json()) as unknown as GhRelease
-            return pickAssetForPlatform(json.assets || []).url
-          })())
-        if (!url || !/\.dmg($|\?)/i.test(url)) throw new Error('No DMG asset found')
-        await installOnMac(url)
-        return
-      } else if (process.platform === 'linux') {
-        const url =
-          directUrl ||
-          (await (async () => {
-            const repo = process.env.UPDATE_REPO || 'f-io/pi-carplay'
-            const feed =
-              process.env.UPDATE_FEED || `https://api.github.com/repos/${repo}/releases/latest`
-            const res = await fetch(feed, { headers: { 'User-Agent': 'pi-carplay-updater' } })
-            const json = (await res.json()) as unknown as GhRelease
-            return pickAssetForPlatform(json.assets || []).url
-          })())
-        if (!url || !/\.AppImage($|\?)/i.test(url)) throw new Error('No AppImage asset found')
-        await installOnLinux(url)
+      const platform = process.platform
+      if (platform !== 'darwin' && platform !== 'linux') {
+        sendUpdateEvent({ phase: 'error', message: 'Unsupported platform' })
         return
       }
+      updateSession.platform = platform as 'darwin' | 'linux'
 
-      console.warn('[update] unsupported platform:', process.platform)
-      sendUpdateEvent({ phase: 'error', message: 'Unsupported platform' })
+      let url = directUrl
+      if (!url) {
+        const repo = process.env.UPDATE_REPO || 'f-io/pi-carplay'
+        const feed =
+          process.env.UPDATE_FEED || `https://api.github.com/repos/${repo}/releases/latest`
+        const res = await fetch(feed, { headers: { 'User-Agent': 'pi-carplay-updater' } })
+        if (!res.ok) throw new Error(`feed ${res.status}`)
+        const json = (await res.json()) as unknown as GhRelease
+        url = pickAssetForPlatform(json.assets || []).url
+      }
+      if (!url) throw new Error('No asset found for platform')
+
+      const suffix = platform === 'darwin' ? '.dmg' : '.AppImage'
+      const tmpFile = join(os.tmpdir(), `pcu-${Date.now()}${suffix}`)
+      updateSession.tmpFile = tmpFile
+
+      updateSession.state = 'downloading'
+      const { promise, cancel } = downloadWithProgress(
+        url,
+        tmpFile,
+        ({ received, total, percent }) => {
+          sendUpdateProgress({ phase: 'download', received, total, percent })
+        }
+      )
+      updateSession.cancel = () => {
+        cancel()
+        updateSession = { state: 'idle' }
+        sendUpdateEvent({ phase: 'error', message: 'Aborted' })
+      }
+
+      await promise
+      updateSession.state = 'ready'
+      sendUpdateEvent({ phase: 'ready' })
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      console.warn('[update] failed:', e)
+      updateSession = { state: 'idle' }
+      sendUpdateEvent({ phase: 'error', message: msg })
+    }
+  })
+
+  ipcMain.handle('app:abortUpdate', async () => {
+    try {
+      if (updateSession.state === 'downloading' && updateSession.cancel) {
+        updateSession.cancel()
+      } else if (updateSession.state === 'ready') {
+        if (updateSession.tmpFile && existsSync(updateSession.tmpFile)) {
+          try {
+            await fsp.unlink(updateSession.tmpFile)
+          } catch {}
+        }
+      }
+    } finally {
+      updateSession = { state: 'idle' }
+      sendUpdateEvent({ phase: 'error', message: 'Aborted' })
+    }
+  })
+
+  ipcMain.handle('app:beginInstall', async () => {
+    try {
+      if (updateSession.state !== 'ready' || !updateSession.tmpFile || !updateSession.platform) {
+        throw new Error('No downloaded update ready')
+      }
+      const file = updateSession.tmpFile
+      updateSession.state = 'installing'
+      if (updateSession.platform === 'darwin') await installOnMacFromFile(file)
+      else await installOnLinuxFromFile(file)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      updateSession = { state: 'idle' }
       sendUpdateEvent({ phase: 'error', message: msg })
     }
   })

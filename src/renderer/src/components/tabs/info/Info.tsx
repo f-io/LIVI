@@ -7,6 +7,7 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogActions,
   LinearProgress,
   Chip,
   Tooltip
@@ -15,7 +16,6 @@ import { useTheme } from '@mui/material/styles'
 import { useCarplayStore, useStatusStore } from '@store/store'
 import { FFTSpectrum } from '../fft'
 
-// Abbreviate names
 function abbreviateManufacturer(name?: string, max = 24): string | undefined {
   if (!name) return name
   let s = name.trim()
@@ -57,6 +57,17 @@ function abbreviateManufacturer(name?: string, max = 24): string | undefined {
   return s.slice(0, Math.max(0, max - 1)) + '…'
 }
 
+type UpdatePhase =
+  | 'start'
+  | 'download'
+  | 'ready'
+  | 'mounting'
+  | 'copying'
+  | 'unmounting'
+  | 'installing'
+  | 'relaunching'
+  | 'error'
+
 export const Info = () => {
   const theme = useTheme()
 
@@ -82,16 +93,26 @@ export const Info = () => {
   const [latestUrl, setLatestUrl] = useState<string | undefined>(undefined)
 
   const [upDialogOpen, setUpDialogOpen] = useState(false)
-  const [phase, setPhase] = useState<string>('start')
+  const [phase, setPhase] = useState<UpdatePhase>('start')
   const [percent, setPercent] = useState<number | null>(null)
   const [received, setReceived] = useState<number>(0)
   const [total, setTotal] = useState<number>(0)
   const [error, setError] = useState<string>('')
 
-  // Grid const
+  const [inFlight, setInFlight] = useState(false)
+
+  const closeAndReset = () => {
+    setUpDialogOpen(false)
+    setInFlight(false)
+    setPercent(null)
+    setReceived(0)
+    setTotal(0)
+    setError('')
+    setPhase('start')
+  }
+
   const HW_MIN_COL = 'calc(112px + 20ch)'
 
-  // UI helpers
   const SectionHeader: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     <Typography
       variant="overline"
@@ -196,15 +217,6 @@ export const Info = () => {
     [installedSem, latestSem]
   )
 
-  const actionLabel = !hasLatest
-    ? 'CHECK'
-    : cmp! < 0
-      ? 'UPDATE'
-      : cmp! > 0
-        ? 'DOWNGRADE'
-        : 'UP TO DATE'
-  const actionEnabled = !hasLatest ? true : cmp! !== null && cmp! !== 0
-
   const recheckLatest = async () => {
     try {
       const r = await window.app?.getLatestRelease?.()
@@ -221,6 +233,18 @@ export const Info = () => {
     window.app?.getVersion?.().then((v) => v && setInstalledVersion(v))
     recheckLatest()
   }, [])
+
+  useEffect(() => {
+    if (phase === 'ready' && !upDialogOpen) setUpDialogOpen(true)
+  }, [phase, upDialogOpen])
+
+  useEffect(() => {
+    if (phase === 'error' && /aborted/i.test(error || '')) {
+      const t = setTimeout(closeAndReset, 1200)
+      return () => clearTimeout(t)
+    }
+    return
+  }, [phase, error])
 
   useEffect(() => {
     if (isDongleConnected) {
@@ -241,11 +265,13 @@ export const Info = () => {
 
   useEffect(() => {
     const off1 = window.app?.onUpdateEvent?.((e: UpdateEvent) => {
+      setPhase(e.phase as UpdatePhase)
+      setInFlight(e.phase !== 'error' && e.phase !== 'start')
       if (e.phase === 'error') setError(e.message ?? 'Update failed')
-      setPhase(e.phase)
     })
 
     const off2 = window.app?.onUpdateProgress?.((p: UpdateProgress) => {
+      setInFlight(true)
       setPhase('download')
       setPercent(typeof p.percent === 'number' ? Math.max(0, Math.min(1, p.percent)) : null)
       setReceived(p.received ?? 0)
@@ -258,6 +284,8 @@ export const Info = () => {
     }
   }, [])
 
+  const actionEnabled = !hasLatest ? true : cmp! !== null && cmp! !== 0 && !inFlight
+
   const triggerUpdate = () => {
     setError('')
     setPercent(null)
@@ -265,12 +293,17 @@ export const Info = () => {
     setTotal(0)
     setPhase('start')
     setUpDialogOpen(true)
+    setInFlight(true)
     window.app?.performUpdate?.(latestUrl)
   }
 
   const onPrimaryAction = () => {
     if (!hasLatest) {
       recheckLatest()
+      return
+    }
+    if (inFlight) {
+      setUpDialogOpen(true)
       return
     }
     if (cmp !== 0) triggerUpdate()
@@ -293,13 +326,25 @@ export const Info = () => {
               ? 'Finalizing'
               : phase === 'relaunching'
                 ? 'Relaunching'
-                : phase === 'start'
-                  ? 'Starting…'
-                  : phase === 'error'
-                    ? 'Error'
-                    : 'Working…'
+                : phase === 'ready'
+                  ? 'Ready to install'
+                  : phase === 'start'
+                    ? 'Starting…'
+                    : phase === 'error'
+                      ? 'Error'
+                      : 'Working…'
 
   const isUpToDate = hasLatest && cmp === 0
+  const isDowngrade = hasLatest && cmp !== null && cmp > 0
+  const dialogTitle = isDowngrade ? 'Software Downgrade' : 'Software Update'
+
+  const installPhases: ReadonlyArray<UpdatePhase> = [
+    'mounting',
+    'copying',
+    'unmounting',
+    'installing',
+    'relaunching'
+  ]
 
   const displayManufacturer = useMemo(
     () => abbreviateManufacturer(manufacturer ?? undefined, 24),
@@ -327,7 +372,6 @@ export const Info = () => {
           gap: 2
         }}
       >
-        {/* Section A: 3-column grid */}
         <Box
           sx={{
             display: 'grid',
@@ -340,7 +384,6 @@ export const Info = () => {
             px: 1
           }}
         >
-          {/* Col 1: Hardware */}
           <Box sx={{ minWidth: 0 }}>
             <SectionHeader>HARDWARE INFO</SectionHeader>
             <Stack spacing={0.5} sx={{ pl: 1.5 }}>
@@ -354,7 +397,6 @@ export const Info = () => {
             </Stack>
           </Box>
 
-          {/* Col 2: Phone + Video */}
           <Box
             sx={{
               minWidth: 0,
@@ -389,7 +431,6 @@ export const Info = () => {
             </Stack>
           </Box>
 
-          {/* Col 3: Software */}
           <Box
             sx={{
               minWidth: 0,
@@ -411,14 +452,13 @@ export const Info = () => {
                   onClick={onPrimaryAction}
                   sx={{ alignSelf: 'flex-start' }}
                 >
-                  {actionLabel}
+                  {cmp! < 0 ? 'UPDATE' : cmp! > 0 ? 'DOWNGRADE' : 'UP TO DATE'}
                 </Button>
               )}
             </Stack>
           </Box>
         </Box>
 
-        {/* Section B: Audio + FFT */}
         <Box sx={{ px: 1 }}>
           <Box sx={{ display: 'flex', flexWrap: 'nowrap', gap: 1.5 }}>
             <Box sx={{ flex: '1 1 40%', minWidth: 240, alignSelf: 'center' }}>
@@ -454,9 +494,8 @@ export const Info = () => {
         </Box>
       </Box>
 
-      {/* Update progress dialog */}
       <Dialog open={upDialogOpen} onClose={() => {}} disableEscapeKeyDown>
-        <DialogTitle>Software Update</DialogTitle>
+        <DialogTitle>{dialogTitle}</DialogTitle>
         <DialogContent sx={{ width: 360 }}>
           <Typography sx={{ mb: 1 }}>{phaseText}</Typography>
           <LinearProgress
@@ -473,10 +512,27 @@ export const Info = () => {
               {error}
             </Typography>
           )}
-          <Typography variant="body2" sx={{ mt: 1 }} color="text.secondary">
-            The app will relaunch automatically when finished.
-          </Typography>
+          {installPhases.includes(phase) && (
+            <Typography variant="body2" sx={{ mt: 1 }} color="text.secondary">
+              Restarts automatically when done.
+            </Typography>
+          )}
         </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              window.app?.abortUpdate?.()
+            }}
+            disabled={!(phase === 'download' ? pct == null || pct < 100 : phase === 'ready')}
+          >
+            Abort
+          </Button>
+          {phase === 'ready' && (
+            <Button variant="contained" onClick={() => window.app?.beginInstall?.()}>
+              Install now
+            </Button>
+          )}
+        </DialogActions>
       </Dialog>
     </Box>
   )
