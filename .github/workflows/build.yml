@@ -1,8 +1,9 @@
 name: build
+run-name: 'build → ${{ github.event.inputs.branch || github.event.workflow_run.head_branch || github.ref_name }}'
 
 on:
   workflow_run:
-    workflows: ["typecheck"]
+    workflows: ['typecheck']
     branches: [main, dev]
     types: [completed]
 
@@ -22,6 +23,8 @@ jobs:
     name: Build ${{ matrix.artifact_ext }} (${{ matrix.platform }}) on ${{ github.event.inputs.branch || github.event.workflow_run.head_branch || github.ref_name }}
     if: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) && github.actor != 'github-actions' }}
     runs-on: ${{ matrix.os }}
+    env:
+      BUILD_BRANCH: ${{ github.event.inputs.branch || github.event.workflow_run.head_branch || github.head_ref || github.ref_name }}
     strategy:
       matrix:
         include:
@@ -181,11 +184,11 @@ jobs:
           retention-days: 10
 
       - name: Write version badge JSON
-        if: matrix.platform == 'x86_64'
+        if: matrix.platform == 'x86_64' && (env.BUILD_BRANCH == 'main' || env.BUILD_BRANCH == 'dev')
         run: |
-          BRANCH_NAME="${{ github.event.inputs.branch || github.event.workflow_run.head_branch || github.ref_name }}"
+          BRANCH_NAME="${BUILD_BRANCH}"
           mkdir -p .github/badges
-          echo "{\"schemaVersion\":1,\"label\":\"${BRANCH_NAME}\",\"message\":\"v${{ steps.pkg.outputs.version }}\",\"color\":\"lightgrey\"}" > .github/badges/${BRANCH_NAME}-version.json
+          echo "{\"schemaVersion\":1,\"label\":\"${BRANCH_NAME}\",\"message\":\"v${{ steps.pkg.outputs.version }}\",\"color\":\"lightgrey\"}" > ".github/badges/${BRANCH_NAME}-version.json"
 
       - name: Setup latest Node.js 22.x
         uses: actions/setup-node@v4
@@ -199,11 +202,11 @@ jobs:
           node -e "const v=require('child_process').execSync('npm -v').toString().trim(); if(!/^11\./.test(v)){console.error('Expected npm 11.x, got', v); process.exit(1);} console.log('npm 11 OK');"
 
       - name: Push version badge to version branch
-        if: matrix.platform == 'x86_64'
+        if: matrix.platform == 'x86_64' && (env.BUILD_BRANCH == 'main' || env.BUILD_BRANCH == 'dev')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          BRANCH_NAME="${{ github.event.inputs.branch || github.event.workflow_run.head_branch || github.ref_name }}"
+          BRANCH_NAME="${BUILD_BRANCH}"
           VERSION="${{ steps.pkg.outputs.version }}"
           NODE_VERSION=$(node -v | sed 's/^v//')
           NPM_VERSION=$(npm -v)
@@ -212,14 +215,14 @@ jobs:
           cd temp-badges
 
           git clone --depth=1 --branch version "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" .
-          
+
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
           mkdir -p .github/badges
-          echo "{\"schemaVersion\":1,\"label\":\"${BRANCH_NAME}\",\"message\":\"v${VERSION}\",\"color\":\"lightblue\"}" > .github/badges/${BRANCH_NAME}-version.json
-          echo "{\"schemaVersion\":1,\"label\":\"node\",\"message\":\"${NODE_VERSION}\",\"color\":\"lightgrey\"}" > .github/badges/${BRANCH_NAME}-node.json
-          echo "{\"schemaVersion\":1,\"label\":\"npm\",\"message\":\"${NPM_VERSION}\",\"color\":\"lightgrey\"}" > .github/badges/${BRANCH_NAME}-npm.json
+          echo "{\"schemaVersion\":1,\"label\":\"${BRANCH_NAME}\",\"message\":\"v${VERSION}\",\"color\":\"lightblue\"}" > ".github/badges/${BRANCH_NAME}-version.json"
+          echo "{\"schemaVersion\":1,\"label\":\"node\",\"message\":\"${NODE_VERSION}\",\"color\":\"lightgrey\"}" > ".github/badges/${BRANCH_NAME}-node.json"
+          echo "{\"schemaVersion\":1,\"label\":\"npm\",\"message\":\"${NPM_VERSION}\",\"color\":\"lightgrey\"}" > ".github/badges/${BRANCH_NAME}-npm.json"
 
           git add .github/badges/${BRANCH_NAME}-version.json
           git add .github/badges/${BRANCH_NAME}-node.json
@@ -231,7 +234,7 @@ jobs:
           rm -rf temp-badges
 
   cleanup:
-    name: "Garbage Collection"
+    name: 'Garbage Collection'
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
     needs: [build]
     runs-on: ubuntu-latest
