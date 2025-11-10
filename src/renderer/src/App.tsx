@@ -179,7 +179,7 @@ function AppInner() {
       (el.tagName === 'INPUT' && (el as HTMLInputElement).type === 'checkbox')
 
     const isDropdownButton =
-      el.getAttribute('role') === 'button' && el.getAttribute('aria-haspopup') === 'listbox'
+      el.getAttribute('role') === 'combobox' && el.getAttribute('aria-haspopup') === 'listbox'
 
     const clickable =
       el.closest<HTMLElement>(
@@ -188,10 +188,19 @@ function AppInner() {
       el.querySelector<HTMLElement>(
         '[role="button"][aria-haspopup="listbox"],[role="switch"],button,[role="button"],a,label,[for]'
       ) ||
+      el.querySelector<HTMLElement>(
+        '[role="combobox"][aria-haspopup="listbox"],[role="switch"],button,[role="button"],a,label,[for]'
+      ) ||
       el
 
-    if (isSwitchLike || isDropdownButton || typeof clickable.click === 'function') {
+    if (isSwitchLike || (typeof clickable.click === 'function' && !isDropdownButton)) {
       clickable.click()
+      return true
+    }
+
+    if (isDropdownButton) {
+      const evt = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+      clickable.dispatchEvent(evt)
       return true
     }
 
@@ -288,7 +297,8 @@ function AppInner() {
         const isSwitch =
           role === 'switch' || (tag === 'INPUT' && (active as HTMLInputElement).type === 'checkbox')
 
-        const isDropdown = role === 'button' && active?.getAttribute('aria-haspopup') === 'listbox'
+        const isDropdown =
+          role === 'combobox' && active?.getAttribute('aria-haspopup') === 'listbox'
 
         if (isSwitch || isDropdown || role === 'button') {
           const ok = activateControl(active)

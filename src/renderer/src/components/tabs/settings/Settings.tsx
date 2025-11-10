@@ -39,24 +39,23 @@ import { updateCameras as detectCameras } from '@utils/cameraDetection'
 import debounce from 'lodash.debounce'
 import type { DebouncedFunc } from 'lodash'
 import { useCarplayStore, useStatusStore } from '@store/store'
+import {
+  CAR_NAME_MAX,
+  DEFAULT_HEIGHT,
+  DEFAULT_WIDTH,
+  HEIGHT_MIN,
+  MAX_HEIGHT,
+  MAX_WIDTH,
+  MEDIA_DELAY_MIN,
+  MEDIA_DELAY_MAX,
+  OEM_LABEL_MAX,
+  UI_DEBOUNCED_KEYS,
+  MIN_WIDTH
+} from './constants'
 
 interface SettingsProps {
   settings: ExtraConfig | null
 }
-
-const MEDIA_DELAY_MIN = 300
-const MEDIA_DELAY_MAX = 2000
-const HEIGHT_MIN = 200
-const MIN_WIDTH = 400
-const MAX_WIDTH = 4096
-const MAX_HEIGHT = 2160
-const DEFAULT_WIDTH = 800
-const DEFAULT_HEIGHT = 480
-
-const UI_DEBOUNCED_KEYS = new Set<keyof ExtraConfig>(['primaryColorDark', 'primaryColorLight'])
-
-const CAR_NAME_MAX = 20
-const OEM_LABEL_MAX = 13
 
 function normalizeCarName(input: string): string {
   const ascii = input.replace(/[^\x20-\x7E]/g, '')
