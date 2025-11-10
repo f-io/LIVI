@@ -46,6 +46,9 @@ import {
   HEIGHT_MIN,
   MAX_HEIGHT,
   MAX_WIDTH,
+  DEFAULT_FPS,
+  MAX_FPS,
+  MIN_FPS,
   MEDIA_DELAY_MIN,
   MEDIA_DELAY_MAX,
   OEM_LABEL_MAX,
@@ -153,6 +156,11 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
     setDraftHeight(String(activeSettings.height))
   }, [activeSettings.width, activeSettings.height])
 
+  const [draftFps, setDraftFps] = useState<string>(() => String(activeSettings.fps ?? DEFAULT_FPS))
+  useEffect(() => {
+    setDraftFps(String(activeSettings.fps ?? DEFAULT_FPS))
+  }, [activeSettings.fps])
+
   const saveSettings = useCarplayStore((s) => s.saveSettings)
   const isDongleConnected = useStatusStore((s) => s.isDongleConnected)
   const setCameraFound = useStatusStore((s) => s.setCameraFound)
@@ -250,12 +258,14 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
         const pending = requiresRestartParams.some((param) => {
           if (param === 'width') return String(draftWidth) !== String(prev.width)
           if (param === 'height') return String(draftHeight) !== String(prev.height)
+          if (param === 'fps') return String(draftFps) !== String(prev.fps)
           return updated[param] !== prev[param]
         })
         setHasChanges(
           pending ||
             String(draftWidth) !== String(activeSettings.width) ||
-            String(draftHeight) !== String(activeSettings.height)
+            String(draftHeight) !== String(activeSettings.height) ||
+            String(draftFps) !== String(activeSettings.fps)
         )
       } else {
         setHasChanges(false)
@@ -275,11 +285,18 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
     }
   }
 
+  const validateFpsOrDefault = (fpsRaw: string) => {
+    const n = Number(fpsRaw)
+    const ok = isValidInt(n) && n >= MIN_FPS && n <= MAX_FPS
+    return { fps: ok ? Math.round(n) : DEFAULT_FPS }
+  }
+
   const handleSave = async () => {
     const needsReset = hasChanges || micResetPending
 
     const { width: finalW, height: finalH } = validateResolutionOrDefault(draftWidth, draftHeight)
-    const next: ExtraConfig = { ...activeSettings, width: finalW, height: finalH }
+    const { fps: finalFps } = validateFpsOrDefault(draftFps)
+    const next: ExtraConfig = { ...activeSettings, width: finalW, height: finalH, fps: finalFps }
 
     try {
       debouncedSave.flush()
@@ -293,6 +310,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
       setActiveSettings(next)
       setDraftWidth(String(next.width))
       setDraftHeight(String(next.height))
+      setDraftFps(String(next.fps))
     })
 
     if (needsReset) {
@@ -651,8 +669,14 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                   size="small"
                   label="FPS"
                   type="number"
-                  value={activeSettings.fps}
-                  onChange={(e) => settingsChange('fps', Number(e.target.value))}
+                  value={draftFps}
+                  onChange={(e) => {
+                    setDraftFps(e.target.value)
+                    setHasChanges(true)
+                  }}
+                  slotProps={{
+                    input: { inputProps: { min: MIN_FPS, max: MAX_FPS, step: 1 } }
+                  }}
                   sx={{ width: 136 }}
                 />
                 <Box sx={{ width: 24, height: 1 }} />

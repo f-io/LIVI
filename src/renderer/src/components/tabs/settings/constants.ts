@@ -8,6 +8,9 @@ export const MAX_WIDTH = 4096
 export const MAX_HEIGHT = 2160
 export const DEFAULT_WIDTH = 800
 export const DEFAULT_HEIGHT = 480
+export const MIN_FPS = 20
+export const MAX_FPS = 60
+export const DEFAULT_FPS = 60
 
 export const UI_DEBOUNCED_KEYS = new Set<keyof ExtraConfig>([
   'primaryColorDark',
