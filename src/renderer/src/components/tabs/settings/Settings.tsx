@@ -50,7 +50,8 @@ import {
   MEDIA_DELAY_MAX,
   OEM_LABEL_MAX,
   UI_DEBOUNCED_KEYS,
-  MIN_WIDTH
+  MIN_WIDTH,
+  WiFiValues
 } from './constants'
 
 interface SettingsProps {
@@ -505,6 +506,17 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
     setCloseCountdown(0)
   }
 
+  const handleCloseDialogByBackspace = (
+    e: React.KeyboardEvent<HTMLDivElement>,
+    cb: (status: boolean) => void
+  ) => {
+    if (e.key === 'Backspace') {
+      e.preventDefault()
+      e.stopPropagation()
+      cb(false)
+    }
+  }
+
   const micUnavailable = micLabel === 'not available'
 
   const cameraOptions = useMemo<readonly { deviceId: string; label: string }[]>(
@@ -520,7 +532,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
   )
   const cameraValue = coerceSelectValue(activeSettings.camera ?? '', cameraIds)
 
-  const wifiOptions = ['2.4ghz', '5ghz'] as const
+  const wifiOptions = [WiFiValues['2.4ghz'], WiFiValues['5ghz']]
   const wifiValue = coerceSelectValue(
     (activeSettings.wifiType as unknown as string) ?? '',
     wifiOptions as unknown as string[]
@@ -1023,6 +1035,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
         open={openBindings}
         keepMounted
         onClose={() => setOpenBindings(false)}
+        onKeyDown={(e) => handleCloseDialogByBackspace(e, setOpenBindings)}
         slots={{ transition: Transition }}
         slotProps={{ paper: { sx: { minHeight: '80%', minWidth: '80%' } } }}
       >
@@ -1036,6 +1049,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
         open={openAdvanced}
         keepMounted
         onClose={() => setOpenAdvanced(false)}
+        onKeyDown={(e) => handleCloseDialogByBackspace(e, setOpenAdvanced)}
         maxWidth={false}
         slots={{ transition: Transition }}
         slotProps={{
