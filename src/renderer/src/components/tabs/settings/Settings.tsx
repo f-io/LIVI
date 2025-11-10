@@ -118,8 +118,6 @@ function coerceSelectValue<T extends string | number>(
 export const Settings: React.FC<SettingsProps> = ({ settings }) => {
   const hasSettings = !!settings
 
-  const [open, setOpen] = useState(false)
-
   const [activeSettings, setActiveSettings] = useState<ExtraConfig>(() => {
     const base = (settings ?? ({} as ExtraConfig)) as ExtraConfig
     return {
