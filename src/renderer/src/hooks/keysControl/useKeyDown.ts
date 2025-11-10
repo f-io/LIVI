@@ -18,7 +18,7 @@ export const useKeyDown = ({
   focusFirstInMain,
   moveFocusLinear,
   isFormField,
-  // editingField,
+  editingField,
   activateControl,
   navRef,
   mainRef,
@@ -93,15 +93,14 @@ export const useKeyDown = ({
       }
 
       // TODO - should be triggered when the field is already empty and the user clicks backspace again
-      /*if (editingField) {
+      if (editingField) {
         if (isBackKey) {
-
           onSetEditingField(null)
           event.preventDefault()
           event.stopPropagation()
         }
         return
-      }*/
+      }
 
       if (inMain && isBackKey) {
         const ok = focusSelectedNav()
@@ -211,7 +210,7 @@ export const useKeyDown = ({
       navRef,
       mainRef,
       isFormField,
-      // editingField,
+      editingField,
       onSetKeyCommand,
       onSetCommandCounter,
       focusFirstInMain,
