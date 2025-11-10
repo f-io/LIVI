@@ -6,6 +6,8 @@ import { Box, Modal } from '@mui/material'
 import { useCarplayStore, useStatusStore } from './store/store'
 import type { KeyCommand } from '@worker/types'
 import { updateCameras } from './utils/cameraDetection'
+import { useActiveControl, useKeyDown } from './hooks'
+import { FOCUSABLE_SELECTOR } from './constants'
 
 const modalStyle = {
   position: 'absolute' as const,
@@ -18,23 +20,11 @@ const modalStyle = {
   display: 'flex'
 }
 
-function broadcastMediaKey(action: string) {
-  window.dispatchEvent(new CustomEvent('car-media-key', { detail: { command: action } }))
-}
-
-type BindKey =
-  | 'left'
-  | 'right'
-  | 'up'
-  | 'down'
-  | 'back'
-  | 'selectDown'
-  | 'next'
-  | 'prev'
-  | 'play'
-  | 'pause'
-  | 'seekFwd'
-  | 'seekBack'
+// TODO
+// move:
+// isVisible, isFormField, getFocusableList, getFirstFocusable,focusSelectedNav
+// focusFirstInMain, moveFocusLinear, inContainer
+// to the application context
 
 function AppInner() {
   const [receivingVideo, setReceivingVideo] = useState(false)
@@ -52,23 +42,6 @@ function AppInner() {
 
   const navRef = useRef<HTMLDivElement | null>(null)
   const mainRef = useRef<HTMLDivElement | null>(null)
-
-  const FOCUSABLE_SELECTOR = [
-    'button:not([disabled])',
-    'a[href]',
-    '[role="button"]:not([aria-disabled="true"])',
-    '[role="tab"]',
-    '[role="menuitem"]',
-    '[role="treeitem"]',
-    '[role="slider"]',
-    '[role="spinbutton"]',
-    '[role="switch"]',
-    'input:not([disabled]):not([type="hidden"])',
-    'input[type="checkbox"]:not([disabled])',
-    'select:not([disabled])',
-    'textarea:not([disabled])',
-    '[tabindex]:not([tabindex="-1"])'
-  ].join(',')
 
   const isVisible = useCallback((el: HTMLElement) => {
     const cs = window.getComputedStyle(el)
@@ -93,7 +66,7 @@ function AppInner() {
       const all = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
       return all.filter(isVisible).filter((el) => !el.closest('[aria-hidden="true"], [inert]'))
     },
-    [FOCUSABLE_SELECTOR, isVisible]
+    [isVisible]
   )
 
   const getFirstFocusable = useCallback(
@@ -171,228 +144,24 @@ function AppInner() {
     }
   }, [location.pathname, focusFirstInMain])
 
-  const activateControl = useCallback((el: HTMLElement | null) => {
-    if (!el) return false
+  const activateControl = useActiveControl()
 
-    const isSwitchLike =
-      el.getAttribute('role') === 'switch' ||
-      (el.tagName === 'INPUT' && (el as HTMLInputElement).type === 'checkbox')
-
-    const isDropdownButton =
-      el.getAttribute('role') === 'combobox' && el.getAttribute('aria-haspopup') === 'listbox'
-
-    const clickable =
-      el.closest<HTMLElement>(
-        '[role="button"][aria-haspopup="listbox"],[role="switch"],button,[role="button"],a,label,[for]'
-      ) ||
-      el.querySelector<HTMLElement>(
-        '[role="button"][aria-haspopup="listbox"],[role="switch"],button,[role="button"],a,label,[for]'
-      ) ||
-      el.querySelector<HTMLElement>(
-        '[role="combobox"][aria-haspopup="listbox"],[role="switch"],button,[role="button"],a,label,[for]'
-      ) ||
-      el
-
-    if (isSwitchLike || (typeof clickable.click === 'function' && !isDropdownButton)) {
-      clickable.click()
-      return true
-    }
-
-    if (isDropdownButton) {
-      const evt = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
-      clickable.dispatchEvent(evt)
-      return true
-    }
-
-    const evt = new MouseEvent('click', { bubbles: true, cancelable: true })
-    return clickable.dispatchEvent(evt)
-  }, [])
-
-  const onKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      if (!settings) return
-
-      const code = event.code
-      const active = document.activeElement as HTMLElement | null
-      const isCarPlayActive = location.pathname === '/' && receivingVideo
-
-      const b = settings.bindings as Partial<Record<BindKey, string>> | undefined
-
-      const isLeft = code === 'ArrowLeft' || b?.left === code
-      const isRight = code === 'ArrowRight' || b?.right === code
-      const isUp = code === 'ArrowUp' || b?.up === code
-      const isDown = code === 'ArrowDown' || b?.down === code
-      const isBackKey = b?.back === code || code === 'Escape'
-      const isEnter = code === 'Enter' || code === 'NumpadEnter'
-      const isSelectDown = !!b?.selectDown && code === b?.selectDown
-
-      let mappedAction: BindKey | undefined
-      for (const [k, v] of Object.entries(b ?? {})) {
-        if (v === code) {
-          mappedAction = k as BindKey
-          break
-        }
-      }
-
-      if (isCarPlayActive && mappedAction) {
-        setKeyCommand(mappedAction as KeyCommand)
-        setCommandCounter((p) => p + 1)
-        broadcastMediaKey(mappedAction)
-        if (mappedAction === 'selectDown') {
-          setTimeout(() => {
-            setKeyCommand('selectUp' as KeyCommand)
-            setCommandCounter((p) => p + 1)
-            broadcastMediaKey('selectUp')
-          }, 200)
-        }
-        event.preventDefault()
-        event.stopPropagation()
-        return
-      }
-
-      const inNav = inContainer(navRef.current, active)
-      const inMain = inContainer(mainRef.current, active)
-      const nothing = !active || active === document.body
-      const formFocused = isFormField(active)
-
-      if (inNav && isEnter) {
-        requestAnimationFrame(() => {
-          focusFirstInMain()
-        })
-        return
-      }
-
-      if (location.pathname !== '/' && nothing && (isLeft || isRight || isUp || isDown)) {
-        const okMain = focusFirstInMain()
-        if (okMain) {
-          event.preventDefault()
-          event.stopPropagation()
-          return
-        }
-      }
-
-      if (editingField) {
-        if (isBackKey) {
-          setEditingField(null)
-          event.preventDefault()
-          event.stopPropagation()
-        }
-        return
-      }
-
-      if (inMain && isBackKey) {
-        const ok = focusSelectedNav()
-        if (ok) {
-          event.preventDefault()
-          event.stopPropagation()
-        }
-        return
-      }
-
-      // ENTER/selectDown: Switch/Dropdown/Button → aktivieren; Formfelder → Edit-Mode
-      if (inMain && (isEnter || isSelectDown)) {
-        const role = active?.getAttribute('role') || ''
-        const tag = active?.tagName || ''
-
-        const isSwitch =
-          role === 'switch' || (tag === 'INPUT' && (active as HTMLInputElement).type === 'checkbox')
-
-        const isDropdown =
-          role === 'combobox' && active?.getAttribute('aria-haspopup') === 'listbox'
-
-        if (isSwitch || isDropdown || role === 'button') {
-          const ok = activateControl(active)
-          if (ok) {
-            event.preventDefault()
-            event.stopPropagation()
-            return
-          }
-        }
-
-        if (formFocused) {
-          setEditingField(active!)
-          if (active?.tagName === 'INPUT' && (active as HTMLInputElement).type === 'number') {
-            ;(active as HTMLInputElement).select()
-          }
-          event.preventDefault()
-          event.stopPropagation()
-          return
-        }
-
-        const ok = activateControl(active || null)
-        if (ok) {
-          event.preventDefault()
-          event.stopPropagation()
-          return
-        }
-      }
-
-      // Pfeilnavigation linear (DOM-Reihenfolge)
-      if (inMain && (isLeft || isUp)) {
-        const ok = moveFocusLinear(-1)
-        if (ok) {
-          event.preventDefault()
-          event.stopPropagation()
-        }
-        return
-      }
-      if (inMain && (isRight || isDown)) {
-        const ok = moveFocusLinear(1)
-        if (ok) {
-          event.preventDefault()
-          event.stopPropagation()
-        }
-        return
-      }
-
-      const isTransport =
-        code === b?.next ||
-        code === b?.prev ||
-        code === b?.play ||
-        code === b?.pause ||
-        code === b?.seekFwd ||
-        code === b?.seekBack
-
-      if (!isCarPlayActive && isTransport) {
-        const action: BindKey =
-          code === b?.next
-            ? 'next'
-            : code === b?.prev
-              ? 'prev'
-              : code === b?.play
-                ? 'play'
-                : code === b?.pause
-                  ? 'pause'
-                  : code === b?.seekFwd
-                    ? 'seekFwd'
-                    : 'seekBack'
-        setKeyCommand(action as KeyCommand)
-        setCommandCounter((p) => p + 1)
-        broadcastMediaKey(action)
-      }
-
-      if ((isLeft || isRight || isDown) && nothing) {
-        const ok = focusSelectedNav()
-        if (ok) {
-          event.preventDefault()
-          event.stopPropagation()
-        }
-        return
-      }
-    },
-    [
-      settings,
-      location.pathname,
-      receivingVideo,
-      inContainer,
-      focusSelectedNav,
-      focusFirstInMain,
-      moveFocusLinear,
-      isFormField,
-      editingField,
-      activateControl
-    ]
-  )
+  const onKeyDown = useKeyDown({
+    settings,
+    receivingVideo,
+    inContainer,
+    focusSelectedNav,
+    focusFirstInMain,
+    moveFocusLinear,
+    isFormField,
+    editingField,
+    activateControl,
+    navRef,
+    mainRef,
+    onSetKeyCommand: setKeyCommand,
+    onSetCommandCounter: setCommandCounter,
+    onSetEditingField: setEditingField
+  })
 
   useEffect(() => {
     document.addEventListener('keydown', onKeyDown, true)
