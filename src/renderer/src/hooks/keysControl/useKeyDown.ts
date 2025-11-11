@@ -1,32 +1,55 @@
-import { useCallback } from 'react'
+import { Ref, useCallback, useContext } from 'react'
 import { BindKey, useKeyDownProps } from './types'
 import { broadcastMediaKey } from '../../utils/broadcastMediaKey'
 import { KeyCommand } from '../../components/worker/types'
 import { useLocation } from 'react-router-dom'
 import { ROUTES } from '../../constants'
-
-// TODO
-// change function naming by react standards
-// create enums & constants for all key codes
-// split hook to separate hooks by the logic
+import { AppContext } from '../../context'
+import { get } from 'lodash'
+import { useCarplayStore } from '@store/store'
 
 export const useKeyDown = ({
-  settings,
   receivingVideo,
   inContainer,
   focusSelectedNav,
   focusFirstInMain,
   moveFocusLinear,
   isFormField,
-  editingField,
   activateControl,
-  navRef,
-  mainRef,
   onSetKeyCommand,
-  onSetCommandCounter,
-  onSetEditingField
+  onSetCommandCounter
 }: useKeyDownProps) => {
   const location = useLocation()
+  const appContext = useContext(AppContext)
+  const settings = useCarplayStore((s) => s.settings)
+
+  const navRef: Ref<HTMLElement> | undefined = get(appContext, 'navEl')
+  const mainRef: Ref<HTMLElement> | undefined = get(appContext, 'contentEl')
+
+  const editingField = appContext?.keyboardNavigation?.focusedElId
+
+  const handleSetFocusedElId = useCallback(
+    (active: HTMLElement | null) => {
+      const elementId = active?.id || active?.ariaLabel || null
+      const currentFocusedElementId = appContext?.keyboardNavigation?.focusedElId
+
+      if (elementId === null) {
+        appContext?.onSetAppContext?.({
+          keyboardNavigation: {
+            focusedElId: null
+          }
+        })
+        return
+      }
+
+      appContext?.onSetAppContext?.({
+        keyboardNavigation: {
+          focusedElId: currentFocusedElementId === elementId ? null : elementId
+        }
+      })
+    },
+    [appContext]
+  )
 
   return useCallback(
     (event: KeyboardEvent) => {
@@ -70,8 +93,8 @@ export const useKeyDown = ({
         return
       }
 
-      const inNav = inContainer(navRef.current, active)
-      const inMain = inContainer(mainRef.current, active)
+      const inNav = inContainer(navRef?.current, active)
+      const inMain = inContainer(mainRef?.current, active)
       const nothing = !active || active === document.body
       const formFocused = isFormField(active)
 
@@ -92,17 +115,36 @@ export const useKeyDown = ({
         }
       }
 
-      // TODO - should be triggered when the field is already empty and the user clicks backspace again
-      if (editingField) {
-        if (isBackKey) {
-          onSetEditingField(null)
-          event.preventDefault()
-          event.stopPropagation()
-        }
-        return
-      }
+      const isInputOrEditable = (_active: HTMLElement | null) =>
+        _active?.tagName === 'INPUT' ||
+        _active?.tagName === 'TEXTAREA' ||
+        _active?.getAttribute('contenteditable') === 'true' ||
+        _active?.getAttribute('role') === 'slider' ||
+        _active?.getAttribute('role') === 'switch' ||
+        (_active instanceof HTMLInputElement && _active.type === 'range') ||
+        (_active instanceof HTMLInputElement && _active.type === 'listbox')
 
       if (inMain && isBackKey) {
+        const active = document.activeElement as HTMLElement | null
+
+        if (editingField && isInputOrEditable(active as HTMLElement | null)) {
+          const isRangeInput =
+            active?.tagName === 'INPUT' && (active as HTMLInputElement).type === 'range'
+
+          if (isRangeInput) {
+            return
+          }
+
+          if ((active as HTMLInputElement).value?.length > 0) {
+            return
+          }
+
+          handleSetFocusedElId(null)
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+
         const ok = focusSelectedNav()
         if (ok) {
           event.preventDefault()
@@ -122,18 +164,38 @@ export const useKeyDown = ({
         const isDropdown =
           role === 'combobox' && active?.getAttribute('aria-haspopup') === 'listbox'
 
+        const isSlider = tag === 'INPUT' && (active as HTMLInputElement).type === 'range'
+
         if (isSwitch || isDropdown || role === 'button') {
-          const ok = activateControl(active)
-          if (ok) {
-            event.preventDefault()
-            event.stopPropagation()
-            return
+          if (!isSlider) {
+            const ok = activateControl(active)
+            if (ok) {
+              event.preventDefault()
+              event.stopPropagation()
+
+              if (isDropdown) {
+                handleSetFocusedElId(active)
+              }
+              return
+            }
           }
         }
 
         if (formFocused) {
-          onSetEditingField(active!)
-          if (active?.tagName === 'INPUT' && (active as HTMLInputElement).type === 'number') {
+          if (editingField) {
+            handleSetFocusedElId(null)
+
+            event.preventDefault()
+            event.stopPropagation()
+
+            return
+          }
+          handleSetFocusedElId(active)
+
+          if (
+            active?.tagName === 'INPUT' &&
+            ['number', 'range'].includes((active as HTMLInputElement).type)
+          ) {
             ;(active as HTMLInputElement).select()
           }
           event.preventDefault()
@@ -151,6 +213,10 @@ export const useKeyDown = ({
 
       // Pfeilnavigation linear (DOM-Reihenfolge)
       if (inMain && (isLeft || isUp)) {
+        if (editingField && isInputOrEditable(document.activeElement as HTMLElement)) {
+          return
+        }
+
         const ok = moveFocusLinear(-1)
         if (ok) {
           event.preventDefault()
@@ -159,6 +225,10 @@ export const useKeyDown = ({
         return
       }
       if (inMain && (isRight || isDown)) {
+        if (editingField && isInputOrEditable(document.activeElement as HTMLElement)) {
+          return
+        }
+
         const ok = moveFocusLinear(1)
         if (ok) {
           event.preventDefault()
@@ -214,8 +284,8 @@ export const useKeyDown = ({
       onSetKeyCommand,
       onSetCommandCounter,
       focusFirstInMain,
-      onSetEditingField,
       focusSelectedNav,
+      handleSetFocusedElId,
       activateControl,
       moveFocusLinear
     ]

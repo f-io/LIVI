@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, useContext } from 'react'
 import { HashRouter as Router, Route, Routes, useLocation } from 'react-router-dom'
 import { Home, Carplay, Camera, Info, Media, Settings } from './components/tabs'
 import Nav from './components/Nav'
@@ -6,8 +6,9 @@ import { Box, Modal } from '@mui/material'
 import { useCarplayStore, useStatusStore } from './store/store'
 import type { KeyCommand } from '@worker/types'
 import { updateCameras } from './utils/cameraDetection'
-import { useActiveControl, useKeyDown } from './hooks'
-import { FOCUSABLE_SELECTOR } from './constants'
+import { useActiveControl, useFocus, useKeyDown } from './hooks'
+import { ROUTES } from './constants'
+import { AppContext } from './context'
 
 const modalStyle = {
   position: 'absolute' as const,
@@ -27,10 +28,12 @@ const modalStyle = {
 // to the application context
 
 function AppInner() {
+  const appContext = useContext(AppContext)
   const [receivingVideo, setReceivingVideo] = useState(false)
   const [commandCounter, setCommandCounter] = useState(0)
   const [keyCommand, setKeyCommand] = useState('')
-  const [editingField, setEditingField] = useState<HTMLElement | null>(null)
+  const editingField = appContext?.keyboardNavigation?.focusedElId
+  // const [editingField, setEditingField] = useState<HTMLElement | null>(null)
   const location = useLocation()
 
   const reverse = useStatusStore((s) => s.reverse)
@@ -43,101 +46,43 @@ function AppInner() {
   const navRef = useRef<HTMLDivElement | null>(null)
   const mainRef = useRef<HTMLDivElement | null>(null)
 
-  const isVisible = useCallback((el: HTMLElement) => {
-    const cs = window.getComputedStyle(el)
-    if (cs.display === 'none' || cs.visibility === 'hidden') return false
-    if (el.hasAttribute('hidden') || el.hasAttribute('disabled')) return false
-    return true
-  }, [])
+  useEffect(() => {
+    if (!appContext?.navEl || !appContext?.contentEl) {
+      appContext?.onSetAppContext?.({
+        navEl: navRef,
+        contentEl: mainRef
+      })
+    }
+  }, [appContext])
 
-  const isFormField = useCallback((el: HTMLElement | null) => {
-    if (!el) return false
-    const tag = el.tagName
-    const role = el.getAttribute('role') || ''
-    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return true
-    if (role === 'slider' || role === 'spinbutton') return true
-    if (el.getAttribute('contenteditable') === 'true') return true
-    return false
-  }, [])
-
-  const getFocusableList = useCallback(
-    (root: HTMLElement | null): HTMLElement[] => {
-      if (!root) return []
-      const all = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
-      return all.filter(isVisible).filter((el) => !el.closest('[aria-hidden="true"], [inert]'))
-    },
-    [isVisible]
-  )
-
-  const getFirstFocusable = useCallback(
-    (root: HTMLElement | null): HTMLElement | null => {
-      const list = getFocusableList(root)
-      if (!list.length) return null
-      const seed = root?.querySelector<HTMLElement>('[data-seed="first"]')
-      if (seed && list.includes(seed)) return seed
-      const nonForm = list.find((el) => !isFormField(el))
-      return nonForm ?? list[0]
-    },
-    [getFocusableList, isFormField]
-  )
-
-  const focusSelectedNav = useCallback(() => {
-    const target =
-      (navRef.current?.querySelector('[role="tab"][aria-selected="true"]') as HTMLElement) ||
-      getFirstFocusable(navRef.current)
-    target?.focus({ preventScroll: true })
-    return !!target
-  }, [getFirstFocusable])
-
-  const focusFirstInMain = useCallback(() => {
-    const target = getFirstFocusable(mainRef.current)
-    target?.focus({ preventScroll: true })
-    return !!target
-  }, [getFirstFocusable])
-
-  const moveFocusLinear = useCallback(
-    (delta: -1 | 1) => {
-      const list = getFocusableList(mainRef.current)
-      if (!list.length) return false
-
-      const active = (document.activeElement as HTMLElement | null) ?? null
-      let next: HTMLElement | null = null
-
-      if (!active || !list.includes(active)) {
-        next = delta > 0 ? list[0] : list[list.length - 1]
-      } else {
-        const idx = list.indexOf(active)
-        const targetIdx = idx + delta
-        if (targetIdx >= 0 && targetIdx < list.length) next = list[targetIdx]
-      }
-
-      if (next) {
-        next.focus({ preventScroll: true })
-        return true
-      }
-      return false
-    },
-    [getFocusableList]
-  )
+  const { isFormField, focusSelectedNav, focusFirstInMain, moveFocusLinear } = useFocus()
 
   const inContainer = useCallback(
-    (container: HTMLElement | null, el: Element | null) =>
+    (container?: HTMLElement | null, el?: Element | null) =>
       !!(container && el && container.contains(el)),
     []
   )
 
   useEffect(() => {
     const handleFocusChange = () => {
-      if (editingField && !editingField.contains(document.activeElement)) {
-        setEditingField(null)
+      if (
+        editingField &&
+        (editingField !== document.activeElement?.id ||
+          editingField !== document.activeElement?.ariaLabel)
+      ) {
+        appContext?.onSetAppContext?.({
+          keyboardNavigation: {
+            focusedElId: null
+          }
+        })
       }
     }
     document.addEventListener('focusin', handleFocusChange)
     return () => document.removeEventListener('focusin', handleFocusChange)
-  }, [editingField])
+  }, [appContext, editingField])
 
   useEffect(() => {
-    if (location.pathname !== '/') {
+    if (location.pathname !== ROUTES.HOME) {
       requestAnimationFrame(() => {
         focusFirstInMain()
       })
@@ -147,20 +92,18 @@ function AppInner() {
   const activateControl = useActiveControl()
 
   const onKeyDown = useKeyDown({
-    settings,
+    // settings,
     receivingVideo,
     inContainer,
     focusSelectedNav,
     focusFirstInMain,
     moveFocusLinear,
     isFormField,
-    editingField,
+    // editingField,
     activateControl,
-    navRef,
-    mainRef,
     onSetKeyCommand: setKeyCommand,
-    onSetCommandCounter: setCommandCounter,
-    onSetEditingField: setEditingField
+    onSetCommandCounter: setCommandCounter
+    // onSetEditingField: setEditingField
   })
 
   useEffect(() => {
@@ -201,7 +144,7 @@ function AppInner() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/media" element={<Media />} />
-          <Route path="/settings" element={<Settings settings={settings!} />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="/info" element={<Info />} />
           <Route path="/camera" element={<Camera settings={settings!} />} />
         </Routes>

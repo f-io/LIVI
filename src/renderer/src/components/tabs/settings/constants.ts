@@ -24,3 +24,18 @@ export enum WiFiValues {
   '2.4ghz' = '2.4ghz',
   '5ghz' = '5ghz'
 }
+
+export const requiresRestartParams: (keyof ExtraConfig)[] = [
+  'width',
+  'height',
+  'fps',
+  'dpi',
+  'format',
+  'mediaDelay',
+  'wifiType',
+  'audioTransferMode',
+  'carName',
+  'oemName',
+  'mediaSound',
+  'autoPlay'
+]
