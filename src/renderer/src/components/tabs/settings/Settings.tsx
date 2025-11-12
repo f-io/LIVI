@@ -748,6 +748,10 @@ export const Settings: React.FC = () => {
                   onChange={(_, v) =>
                     typeof v === 'number' && settingsChange('audioVolume', v / 100)
                   }
+                  sx={highlightEditableField({
+                    isActive: appContext?.keyboardNavigation?.focusedElId === 'audioVolume',
+                    isDarkMode
+                  })}
                 />
               </FormControl>
 
@@ -763,6 +767,10 @@ export const Settings: React.FC = () => {
                   marks
                   valueLabelDisplay="auto"
                   onChange={(_, v) => typeof v === 'number' && settingsChange('navVolume', v / 100)}
+                  sx={highlightEditableField({
+                    isActive: appContext?.keyboardNavigation?.focusedElId === 'navVolume',
+                    isDarkMode
+                  })}
                 />
               </FormControl>
             </Stack>

@@ -45,6 +45,17 @@ export const highlightEditableField = ({
             '&.MuiSelect-outlined fieldset': {
               borderColor: `${borderColor} !important`
             }
+          },
+          '& .MuiSlider-thumb': {
+            border: `2px solid ${borderColor}`
+          },
+          '& .MuiSlider-thumb.Mui-focusVisible': {
+            outline: `2px solid ${borderColor}`,
+            outlineOffset: 4
+          },
+          '& .MuiSlider-track': {
+            borderColor: `${borderColor}`,
+            borderWidth: 2
           }
         }
       : {})
