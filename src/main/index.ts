@@ -497,7 +497,9 @@ function persistKioskAndBroadcast(kiosk: boolean) {
           wifiType: config.wifiType,
           wifiChannel: config.wifiChannel,
           primaryColorDark: config.primaryColorDark,
-          primaryColorLight: config.primaryColorLight
+          primaryColorLight: config.primaryColorLight,
+          highlightEditableFieldDark: config.highlightEditableFieldDark,
+          highlightEditableFieldLight: config.highlightEditableFieldLight
         },
         null,
         2
@@ -847,7 +849,9 @@ function saveSettings(next: ExtraConfig) {
         wifiType: next.wifiType,
         wifiChannel: next.wifiChannel,
         primaryColorDark: next.primaryColorDark,
-        primaryColorLight: next.primaryColorLight
+        primaryColorLight: next.primaryColorLight,
+        highlightEditableFieldDark: next.highlightEditableFieldDark,
+        highlightEditableFieldLight: next.highlightEditableFieldLight
       },
       null,
       2

@@ -1,4 +1,5 @@
 import { themeColors } from '../../../themeColors'
+import { useCarplayStore } from '@store/store'
 
 export const highlightEditableField = ({
   isActive,
@@ -9,11 +10,14 @@ export const highlightEditableField = ({
 }) => {
   if (!isActive) return {}
 
-  const borderColor = isDarkMode
-    ? themeColors.highlightEditableFieldDark
-    : themeColors.highlightEditableFieldLight
+  const settings = useCarplayStore.getState().settings
+  const override = isDarkMode
+    ? settings?.highlightEditableFieldDark
+    : settings?.highlightEditableFieldLight
 
-  console.log(isActive, borderColor)
+  const borderColor =
+    override ??
+    (isDarkMode ? themeColors.highlightEditableFieldDark : themeColors.highlightEditableFieldLight)
 
   return {
     ...(isActive

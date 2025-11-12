@@ -34,15 +34,20 @@ const Root = () => {
         : THEME.LIGHT
       : THEME.DARK
 
-  const override = mode === THEME.DARK ? settings?.primaryColorDark : settings?.primaryColorLight
+  const primaryOverride =
+    mode === THEME.DARK ? settings?.primaryColorDark : settings?.primaryColorLight
+  const EditableOverride =
+    mode === THEME.DARK
+      ? settings?.highlightEditableFieldDark
+      : settings?.highlightEditableFieldLight
 
   const theme = useMemo(() => {
-    return override
-      ? buildRuntimeTheme(mode, override)
+    return primaryOverride || EditableOverride
+      ? buildRuntimeTheme(mode, primaryOverride)
       : mode === THEME.DARK
         ? darkTheme
         : lightTheme
-  }, [mode, override])
+  }, [mode, primaryOverride, EditableOverride])
 
   return (
     <AppContext.Provider value={{ ...appContext, onSetAppContext: handleChangeAppContext }}>

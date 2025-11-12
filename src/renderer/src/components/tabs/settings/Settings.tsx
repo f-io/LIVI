@@ -48,19 +48,19 @@ import type { DebouncedFunc } from 'lodash'
 import { useCarplayStore, useStatusStore } from '@store/store'
 import {
   CAR_NAME_MAX,
+  DEFAULT_FPS,
   DEFAULT_HEIGHT,
   DEFAULT_WIDTH,
-  HEIGHT_MIN,
   MAX_HEIGHT,
   MAX_WIDTH,
-  DEFAULT_FPS,
   MAX_FPS,
   MIN_FPS,
+  MIN_HEIGHT,
+  MIN_WIDTH,
   MEDIA_DELAY_MIN,
   MEDIA_DELAY_MAX,
   OEM_LABEL_MAX,
   UI_DEBOUNCED_KEYS,
-  MIN_WIDTH,
   WiFiValues,
   requiresRestartParams
 } from './constants'
@@ -273,7 +273,7 @@ export const Settings: React.FC = () => {
     const wNum = Number(wRaw)
     const hNum = Number(hRaw)
     const wOk = isValidInt(wNum) && wNum >= MIN_WIDTH && wNum <= MAX_WIDTH
-    const hOk = isValidInt(hNum) && hNum >= HEIGHT_MIN && hNum <= MAX_HEIGHT
+    const hOk = isValidInt(hNum) && hNum >= MIN_HEIGHT && hNum <= MAX_HEIGHT
     return {
       width: wOk ? Math.round(wNum) : DEFAULT_WIDTH,
       height: hOk ? Math.round(hNum) : DEFAULT_HEIGHT
@@ -349,7 +349,7 @@ export const Settings: React.FC = () => {
       }
       case 'height': {
         const n = Number(raw)
-        const v = Number.isFinite(n) ? Math.round(Math.max(HEIGHT_MIN, n)) : current.height
+        const v = Number.isFinite(n) ? Math.round(Math.max(MIN_HEIGHT, n)) : current.height
         return v as ExtraConfig[K]
       }
       case 'width': {
@@ -404,6 +404,8 @@ export const Settings: React.FC = () => {
 
       case 'primaryColorDark':
       case 'primaryColorLight':
+      case 'highlightEditableFieldLight':
+      case 'highlightEditableFieldDark':
       case 'camera':
       case 'microphone':
       case 'carName':
@@ -657,7 +659,7 @@ export const Settings: React.FC = () => {
                   }}
                   slotProps={{
                     input: {
-                      inputProps: { min: HEIGHT_MIN, max: MAX_HEIGHT, step: 1 },
+                      inputProps: { min: MIN_HEIGHT, max: MAX_HEIGHT, step: 1 },
                       endAdornment: <InputAdornment position="end">px</InputAdornment>
                     }
                   }}
@@ -1175,35 +1177,52 @@ export const Settings: React.FC = () => {
               label={isDarkMode ? 'PRIMARY (DARK)' : 'PRIMARY (LIGHT)'}
               type="color"
               value={currentPrimary}
-              onChange={(e) =>
-                settingsChange(
-                  isDarkMode ? 'primaryColorDark' : 'primaryColorLight',
-                  e.target.value
-                )
-              }
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      onClick={() =>
-                        settingsChange(
-                          isDarkMode ? 'primaryColorDark' : 'primaryColorLight',
-                          undefined
-                        )
-                      }
-                      sx={{ ml: 1, py: 0.25, px: 1 }}
-                    >
-                      RESET
-                    </Button>
-                  </InputAdornment>
-                )
+              onChange={(e) => {
+                const next = e.target.value
+                setActiveSettings((prev) => {
+                  const updated = {
+                    ...prev,
+                    [isDarkMode ? 'primaryColorDark' : 'primaryColorLight']: next,
+                    [isDarkMode ? 'highlightEditableFieldDark' : 'highlightEditableFieldLight']:
+                      next
+                  } as ExtraConfig
+                  debouncedSave(updated)
+                  return updated
+                })
               }}
-              slotProps={{ inputLabel: { shrink: true } }}
+              slotProps={{
+                inputLabel: { shrink: true },
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => {
+                          setActiveSettings((prev) => {
+                            const updated = {
+                              ...prev,
+                              [isDarkMode ? 'primaryColorDark' : 'primaryColorLight']: undefined,
+                              [isDarkMode
+                                ? 'highlightEditableFieldDark'
+                                : 'highlightEditableFieldLight']: undefined
+                            } as ExtraConfig
+                            debouncedSave(updated)
+                            return updated
+                          })
+                        }}
+                        sx={{ ml: 1, py: 0.25, px: 1 }}
+                      >
+                        RESET
+                      </Button>
+                    </InputAdornment>
+                  )
+                }
+              }}
               fullWidth
               sx={{ gridColumn: '1 / span 2' }}
             />
+
             <TextField
               label="DPI"
               type="number"

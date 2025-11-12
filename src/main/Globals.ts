@@ -10,6 +10,8 @@ export type ExtraConfig = DongleConfig & {
   audioJitterMs: number
   primaryColorDark?: string
   primaryColorLight?: string
+  highlightEditableFieldLight?: string
+  highlightEditableFieldDark?: string
 }
 
 export interface KeyBindings {
