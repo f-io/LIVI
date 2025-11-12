@@ -4,6 +4,7 @@ export enum ROUTES {
   CAMERA = '/camera',
   INFO = '/info',
   SETTINGS = '/settings',
+  NEW_SETTINGS = '/new-settings',
   QUIT = 'quit'
 }
 
@@ -13,7 +14,8 @@ export const indexToRoute: Record<number, string | 'quit'> = {
   2: ROUTES.CAMERA,
   3: ROUTES.INFO,
   4: ROUTES.SETTINGS,
-  5: ROUTES.QUIT
+  5: ROUTES.NEW_SETTINGS,
+  6: ROUTES.QUIT
 }
 
 export const routeToIndex: Record<string, number> = {
@@ -22,7 +24,8 @@ export const routeToIndex: Record<string, number> = {
   [ROUTES.CAMERA]: 2,
   [ROUTES.INFO]: 3,
   [ROUTES.SETTINGS]: 4,
-  [ROUTES.QUIT]: 5
+  [ROUTES.NEW_SETTINGS]: 5,
+  [ROUTES.QUIT]: 6
 }
 
 export const FOCUSABLE_SELECTOR = [

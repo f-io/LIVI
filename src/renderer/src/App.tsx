@@ -1,6 +1,6 @@
-import { useEffect, useState, useRef, useCallback, useContext } from 'react'
-import { HashRouter as Router, Route, Routes, useLocation } from 'react-router-dom'
-import { Home, Carplay, Camera, Info, Media, Settings } from './components/tabs'
+import { useEffect, useState, useRef, useCallback, useContext, ElementType } from 'react'
+import { HashRouter as Router, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { Carplay, Camera } from './components/tabs'
 import Nav from './components/Nav'
 import { Box, Modal } from '@mui/material'
 import { useCarplayStore, useStatusStore } from './store/store'
@@ -9,6 +9,7 @@ import { updateCameras } from './utils/cameraDetection'
 import { useActiveControl, useFocus, useKeyDown } from './hooks'
 import { ROUTES } from './constants'
 import { AppContext } from './context'
+import { RoutePath, routes, ROUTES_NEW } from './routes'
 
 const modalStyle = {
   position: 'absolute' as const,
@@ -92,18 +93,15 @@ function AppInner() {
   const activateControl = useActiveControl()
 
   const onKeyDown = useKeyDown({
-    // settings,
     receivingVideo,
     inContainer,
     focusSelectedNav,
     focusFirstInMain,
     moveFocusLinear,
     isFormField,
-    // editingField,
     activateControl,
     onSetKeyCommand: setKeyCommand,
     onSetCommandCounter: setCommandCounter
-    // onSetEditingField: setEditingField
   })
 
   useEffect(() => {
@@ -142,11 +140,20 @@ function AppInner() {
 
       <div ref={mainRef} id="main-root">
         <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/media" element={<Media />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/info" element={<Info />} />
-          <Route path="/camera" element={<Camera settings={settings!} />} />
+          <Route path={ROUTES_NEW.HOME} element={<Navigate to={`/${RoutePath.Home}`} />} />
+
+          {routes.map((route, index) => {
+            const Component = route.component as unknown as ElementType
+            const path = route.path
+
+            if (Component) {
+              return <Route key={index} path={path} element={<Component settings={settings!} />} />
+            }
+
+            return null
+          })}
+
+          <Route path="*" element={<Navigate to={`/${RoutePath.Home}`} replace />} />
         </Routes>
       </div>
 

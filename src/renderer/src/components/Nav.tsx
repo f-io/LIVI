@@ -156,6 +156,7 @@ export default function Nav({ receivingVideo }: NavProps) {
       <Tab aria-label="Camera" sx={tabSx} icon={cameraIcon} disabled={!cameraFound} />
       <Tab aria-label="Info" sx={tabSx} icon={infoIcon} />
       <Tab aria-label="Settings" sx={tabSx} icon={settingsIcon} />
+      <Tab aria-label="NewSettings" sx={tabSx} icon={settingsIcon} />
       <Tab aria-label="Quit" sx={tabSx} icon={quitIcon} />
     </Tabs>
   )
