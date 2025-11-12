@@ -1,5 +1,12 @@
 import { ExtraConfig } from '@main/Globals'
-import React, { useEffect, useMemo, useState, startTransition, useCallback } from 'react'
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+  startTransition,
+  useCallback,
+  useContext
+} from 'react'
 import {
   Box,
   Divider,
@@ -41,25 +48,26 @@ import type { DebouncedFunc } from 'lodash'
 import { useCarplayStore, useStatusStore } from '@store/store'
 import {
   CAR_NAME_MAX,
+  DEFAULT_FPS,
   DEFAULT_HEIGHT,
   DEFAULT_WIDTH,
-  HEIGHT_MIN,
   MAX_HEIGHT,
   MAX_WIDTH,
-  DEFAULT_FPS,
   MAX_FPS,
   MIN_FPS,
+  MIN_HEIGHT,
+  MIN_WIDTH,
   MEDIA_DELAY_MIN,
   MEDIA_DELAY_MAX,
   OEM_LABEL_MAX,
   UI_DEBOUNCED_KEYS,
-  MIN_WIDTH,
-  WiFiValues
+  WiFiValues,
+  requiresRestartParams
 } from './constants'
-
-interface SettingsProps {
-  settings: ExtraConfig | null
-}
+import { AppContext } from '../../../context'
+import { themeColors } from '../../../themeColors'
+import { THEME } from '../../../constants'
+import { highlightEditableField } from './utils'
 
 function normalizeCarName(input: string): string {
   const ascii = input.replace(/[^\x20-\x7E]/g, '')
@@ -119,7 +127,9 @@ function coerceSelectValue<T extends string | number>(
   return value != null && options.includes(value as T) ? (value as T) : ''
 }
 
-export const Settings: React.FC<SettingsProps> = ({ settings }) => {
+export const Settings: React.FC = () => {
+  const settings = useCarplayStore((s) => s.settings)
+  const appContext = useContext(AppContext)
   const hasSettings = !!settings
 
   const [activeSettings, setActiveSettings] = useState<ExtraConfig>(() => {
@@ -165,7 +175,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
   const isDongleConnected = useStatusStore((s) => s.isDongleConnected)
   const setCameraFound = useStatusStore((s) => s.setCameraFound)
   const theme = useTheme()
-  const isDarkMode = theme.palette.mode === 'dark'
+  const isDarkMode = theme.palette.mode === THEME.DARK
   const currentPrimary =
     (isDarkMode ? activeSettings.primaryColorDark : activeSettings.primaryColorLight) ??
     theme.palette.primary.main
@@ -194,23 +204,8 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
     [saveSettings]
   )
 
-  const requiresRestartParams: (keyof ExtraConfig)[] = [
-    'width',
-    'height',
-    'fps',
-    'dpi',
-    'format',
-    'mediaDelay',
-    'wifiType',
-    'audioTransferMode',
-    'carName',
-    'oemName',
-    'mediaSound',
-    'autoPlay'
-  ]
-
   const getValidWifiChannel = (wifiType: ExtraConfig['wifiType'], ch?: number): number => {
-    if (wifiType === '5ghz') {
+    if (wifiType === WiFiValues['5ghz']) {
       return typeof ch === 'number' && ch >= 36 ? ch : 36
     }
     return typeof ch === 'number' && ch > 0 && ch < 36 ? ch : 6
@@ -278,7 +273,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
     const wNum = Number(wRaw)
     const hNum = Number(hRaw)
     const wOk = isValidInt(wNum) && wNum >= MIN_WIDTH && wNum <= MAX_WIDTH
-    const hOk = isValidInt(hNum) && hNum >= HEIGHT_MIN && hNum <= MAX_HEIGHT
+    const hOk = isValidInt(hNum) && hNum >= MIN_HEIGHT && hNum <= MAX_HEIGHT
     return {
       width: wOk ? Math.round(wNum) : DEFAULT_WIDTH,
       height: hOk ? Math.round(hNum) : DEFAULT_HEIGHT
@@ -354,7 +349,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
       }
       case 'height': {
         const n = Number(raw)
-        const v = Number.isFinite(n) ? Math.round(Math.max(HEIGHT_MIN, n)) : current.height
+        const v = Number.isFinite(n) ? Math.round(Math.max(MIN_HEIGHT, n)) : current.height
         return v as ExtraConfig[K]
       }
       case 'width': {
@@ -388,7 +383,12 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
         return Boolean(raw) as ExtraConfig[K]
 
       case 'wifiType': {
-        const v = raw === '2.4ghz' ? '2.4ghz' : raw === '5ghz' ? '5ghz' : current.wifiType
+        const v =
+          raw === WiFiValues['2.4ghz']
+            ? WiFiValues['2.4ghz']
+            : raw === WiFiValues['5ghz']
+              ? WiFiValues['5ghz']
+              : current.wifiType
         return v as ExtraConfig[K]
       }
       case 'micType': {
@@ -404,6 +404,8 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
 
       case 'primaryColorDark':
       case 'primaryColorLight':
+      case 'highlightEditableFieldLight':
+      case 'highlightEditableFieldDark':
       case 'camera':
       case 'microphone':
       case 'carName':
@@ -426,7 +428,8 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
     return { ...base, [key]: val }
   }
 
-  const toWifiType = (s: string): ExtraConfig['wifiType'] => (s === '5ghz' ? '5ghz' : '2.4ghz')
+  const toWifiType = (s: string): ExtraConfig['wifiType'] =>
+    s === WiFiValues['5ghz'] ? WiFiValues['5ghz'] : WiFiValues['2.4ghz']
 
   useEffect(() => {
     if (!resetMessage) return
@@ -568,6 +571,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
 
   const openSelectOnEnter = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== 'Enter') return
+
     const root = e.currentTarget as HTMLElement
     const btn =
       root.querySelector<HTMLElement>('[role="button"][aria-haspopup="listbox"]') ??
@@ -619,6 +623,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                 }}
               >
                 <TextField
+                  id="width"
                   size="small"
                   label="WIDTH"
                   type="number"
@@ -633,10 +638,17 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                       endAdornment: <InputAdornment position="end">px</InputAdornment>
                     }
                   }}
-                  sx={{ width: 136 }}
+                  sx={{
+                    width: 136,
+                    ...highlightEditableField({
+                      isActive: appContext?.keyboardNavigation?.focusedElId === 'width',
+                      isDarkMode
+                    })
+                  }}
                 />
                 <Typography sx={{ textAlign: 'center', fontSize: 22, lineHeight: 1 }}>×</Typography>
                 <TextField
+                  id="height"
                   size="small"
                   label="HEIGHT"
                   type="number"
@@ -647,11 +659,17 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                   }}
                   slotProps={{
                     input: {
-                      inputProps: { min: HEIGHT_MIN, max: MAX_HEIGHT, step: 1 },
+                      inputProps: { min: MIN_HEIGHT, max: MAX_HEIGHT, step: 1 },
                       endAdornment: <InputAdornment position="end">px</InputAdornment>
                     }
                   }}
-                  sx={{ width: 136 }}
+                  sx={{
+                    width: 136,
+                    ...highlightEditableField({
+                      isActive: appContext?.keyboardNavigation?.focusedElId === 'height',
+                      isDarkMode
+                    })
+                  }}
                 />
               </Box>
 
@@ -666,6 +684,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                 }}
               >
                 <TextField
+                  id="fps"
                   size="small"
                   label="FPS"
                   type="number"
@@ -677,10 +696,17 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                   slotProps={{
                     input: { inputProps: { min: MIN_FPS, max: MAX_FPS, step: 1 } }
                   }}
-                  sx={{ width: 136 }}
+                  sx={{
+                    width: 136,
+                    ...highlightEditableField({
+                      isActive: appContext?.keyboardNavigation?.focusedElId === 'fps',
+                      isDarkMode
+                    })
+                  }}
                 />
                 <Box sx={{ width: 24, height: 1 }} />
                 <TextField
+                  id="mediaDelay"
                   size="small"
                   label="MEDIA DELAY"
                   type="number"
@@ -692,7 +718,13 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                       endAdornment: <InputAdornment position="end">ms</InputAdornment>
                     }
                   }}
-                  sx={{ width: 136 }}
+                  sx={{
+                    width: 136,
+                    ...highlightEditableField({
+                      isActive: appContext?.keyboardNavigation?.focusedElId === 'mediaDelay',
+                      isDarkMode
+                    })
+                  }}
                 />
               </Box>
             </Box>
@@ -705,6 +737,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
               <FormControl fullWidth>
                 <FormLabel sx={{ typography: 'body2' }}>AUDIO VOLUME</FormLabel>
                 <Slider
+                  aria-label="audioVolume"
                   size="small"
                   value={Math.round((activeSettings.audioVolume ?? 1.0) * 100)}
                   min={0}
@@ -715,12 +748,17 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                   onChange={(_, v) =>
                     typeof v === 'number' && settingsChange('audioVolume', v / 100)
                   }
+                  sx={highlightEditableField({
+                    isActive: appContext?.keyboardNavigation?.focusedElId === 'audioVolume',
+                    isDarkMode
+                  })}
                 />
               </FormControl>
 
               <FormControl fullWidth>
                 <FormLabel sx={{ typography: 'body2' }}>NAV VOLUME</FormLabel>
                 <Slider
+                  aria-label="navVolume"
                   size="small"
                   value={Math.round((activeSettings.navVolume ?? 1.0) * 100)}
                   min={0}
@@ -729,6 +767,10 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                   marks
                   valueLabelDisplay="auto"
                   onChange={(_, v) => typeof v === 'number' && settingsChange('navVolume', v / 100)}
+                  sx={highlightEditableField({
+                    isActive: appContext?.keyboardNavigation?.focusedElId === 'navVolume',
+                    isDarkMode
+                  })}
                 />
               </FormControl>
             </Stack>
@@ -806,13 +848,12 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                         justifyContent: 'space-between',
                         minHeight: 32,
                         '&:has(.MuiSwitch-input:focus-visible)': {
-                          outline: `2px solid ${theme.palette.primary.main}`,
-                          outlineOffset: 2,
-                          borderRadius: 6
+                          outline: `2px solid ${themeColors.highlightFocusedFieldDark}`,
+                          outlineOffset: 4,
+                          borderRadius: 1
                         },
                         '&:has(.MuiSwitch-input:focus-visible) .MuiFormControlLabel-label': {
-                          color: theme.palette.primary.main,
-                          fontWeight: 600
+                          color: theme.palette.primary.main
                         }
                       })}
                       labelPlacement="end"
@@ -879,17 +920,24 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                 sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
               >
                 <TextField
+                  id="wifi"
                   size="small"
                   select
                   fullWidth
-                  sx={{ minWidth: 0 }}
+                  sx={{
+                    minWidth: 0,
+                    ...highlightEditableField({
+                      isActive: appContext?.keyboardNavigation?.focusedElId === 'wifi',
+                      isDarkMode
+                    })
+                  }}
                   label="WIFI"
                   value={wifiValue}
                   onKeyDown={openSelectOnEnter}
                   onChange={(e) => settingsChange('wifiType', toWifiType(e.target.value))}
                 >
-                  <MenuItem value="2.4ghz">2.4 GHz</MenuItem>
-                  <MenuItem value="5ghz">5 GHz</MenuItem>
+                  <MenuItem value={WiFiValues['2.4ghz']}>2.4 GHz</MenuItem>
+                  <MenuItem value={WiFiValues['5ghz']}>5 GHz</MenuItem>
                 </TextField>
               </Grid>
 
@@ -898,10 +946,17 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                 sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
               >
                 <TextField
+                  id="mic"
                   size="small"
                   select
                   fullWidth
-                  sx={{ minWidth: 0 }}
+                  sx={{
+                    minWidth: 0,
+                    ...highlightEditableField({
+                      isActive: appContext?.keyboardNavigation?.focusedElId === 'mic',
+                      isDarkMode
+                    })
+                  }}
                   label="MICROPHONE"
                   value={activeSettings.micType}
                   onKeyDown={openSelectOnEnter}
@@ -921,10 +976,17 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                 sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
               >
                 <TextField
+                  id="camera"
                   size="small"
                   select
                   fullWidth
-                  sx={{ minWidth: 0 }}
+                  sx={{
+                    minWidth: 0,
+                    ...highlightEditableField({
+                      isActive: appContext?.keyboardNavigation?.focusedElId === 'camera',
+                      isDarkMode
+                    })
+                  }}
                   label="CAMERA"
                   value={cameraValue}
                   onKeyDown={openSelectOnEnter}
@@ -943,6 +1005,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                 sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
               >
                 <TextField
+                  id="carName"
                   size="small"
                   fullWidth
                   label="CAR NAME"
@@ -950,6 +1013,12 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                   onChange={(e) => {
                     const v = normalizeCarName(e.target.value)
                     settingsChange('carName', v)
+                  }}
+                  sx={{
+                    ...highlightEditableField({
+                      isActive: appContext?.keyboardNavigation?.focusedElId === 'carName',
+                      isDarkMode
+                    })
                   }}
                   slotProps={{
                     input: { inputProps: { maxLength: CAR_NAME_MAX } },
@@ -964,6 +1033,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                 sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
               >
                 <TextField
+                  id="uiLabel"
                   size="small"
                   fullWidth
                   label="UI LABEL"
@@ -971,6 +1041,12 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                   onChange={(e) => {
                     const v = normalizeOemLabel(e.target.value)
                     settingsChange('oemName', v as unknown as ExtraConfig['oemName'])
+                  }}
+                  sx={{
+                    ...highlightEditableField({
+                      isActive: appContext?.keyboardNavigation?.focusedElId === 'uiLabel',
+                      isDarkMode
+                    })
                   }}
                   slotProps={{
                     input: { inputProps: { maxLength: OEM_LABEL_MAX } },
@@ -985,10 +1061,17 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
                 sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
               >
                 <TextField
+                  id="frequency"
                   size="small"
                   select
                   fullWidth
-                  sx={{ minWidth: 0 }}
+                  sx={{
+                    minWidth: 0,
+                    ...highlightEditableField({
+                      isActive: appContext?.keyboardNavigation?.focusedElId === 'frequency',
+                      isDarkMode
+                    })
+                  }}
                   label="SAMPLING FREQUENCY"
                   value={
                     typeof activeSettings.mediaSound === 'number' ? activeSettings.mediaSound : 1
@@ -1102,35 +1185,52 @@ export const Settings: React.FC<SettingsProps> = ({ settings }) => {
               label={isDarkMode ? 'PRIMARY (DARK)' : 'PRIMARY (LIGHT)'}
               type="color"
               value={currentPrimary}
-              onChange={(e) =>
-                settingsChange(
-                  isDarkMode ? 'primaryColorDark' : 'primaryColorLight',
-                  e.target.value
-                )
-              }
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      onClick={() =>
-                        settingsChange(
-                          isDarkMode ? 'primaryColorDark' : 'primaryColorLight',
-                          undefined
-                        )
-                      }
-                      sx={{ ml: 1, py: 0.25, px: 1 }}
-                    >
-                      RESET
-                    </Button>
-                  </InputAdornment>
-                )
+              onChange={(e) => {
+                const next = e.target.value
+                setActiveSettings((prev) => {
+                  const updated = {
+                    ...prev,
+                    [isDarkMode ? 'primaryColorDark' : 'primaryColorLight']: next,
+                    [isDarkMode ? 'highlightEditableFieldDark' : 'highlightEditableFieldLight']:
+                      next
+                  } as ExtraConfig
+                  debouncedSave(updated)
+                  return updated
+                })
               }}
-              slotProps={{ inputLabel: { shrink: true } }}
+              slotProps={{
+                inputLabel: { shrink: true },
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => {
+                          setActiveSettings((prev) => {
+                            const updated = {
+                              ...prev,
+                              [isDarkMode ? 'primaryColorDark' : 'primaryColorLight']: undefined,
+                              [isDarkMode
+                                ? 'highlightEditableFieldDark'
+                                : 'highlightEditableFieldLight']: undefined
+                            } as ExtraConfig
+                            debouncedSave(updated)
+                            return updated
+                          })
+                        }}
+                        sx={{ ml: 1, py: 0.25, px: 1 }}
+                      >
+                        RESET
+                      </Button>
+                    </InputAdornment>
+                  )
+                }
+              }}
               fullWidth
               sx={{ gridColumn: '1 / span 2' }}
             />
+
             <TextField
               label="DPI"
               type="number"

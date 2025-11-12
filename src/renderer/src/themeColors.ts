@@ -13,7 +13,12 @@ export const themeColors = {
   highlightLight: '#ff0000',
   highlightDark: '#00ffff',
 
-  // Higlight active carplay stream
+  highlightFocusedFieldLight: '#cccccc',
+  highlightFocusedFieldDark: '#bbbbbb',
+  highlightEditableFieldLight: '#ff0000',
+  highlightEditableFieldDark: '#00ffff',
+
+  // Highlight active carplay stream
   successLight: '#81c784',
   successMain: '#4caf50',
   successDark: '#388e3c',

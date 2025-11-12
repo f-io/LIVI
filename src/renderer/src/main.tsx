@@ -3,31 +3,59 @@ import App from './App'
 import { ThemeProvider, CssBaseline } from '@mui/material'
 import { useCarplayStore } from './store/store'
 import { darkTheme, lightTheme, buildRuntimeTheme, initCursorHider } from './theme'
-import { useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import '@fontsource/roboto/300.css'
 import '@fontsource/roboto/400.css'
 import '@fontsource/roboto/500.css'
 import '@fontsource/roboto/700.css'
+import { AppContext, AppContextProps } from './context'
+import { THEME } from './constants'
 
 initCursorHider()
 
 const Root = () => {
   const settings = useCarplayStore((s) => s.settings)
+  const [appContext, setAppContext] = useState<AppContextProps>()
 
-  const mode: 'dark' | 'light' =
-    typeof settings?.nightMode === 'boolean' ? (settings.nightMode ? 'dark' : 'light') : 'dark'
+  const handleChangeAppContext = useCallback(
+    (props: AppContextProps) => {
+      setAppContext({
+        ...appContext,
+        ...props
+      })
+    },
+    [appContext]
+  )
 
-  const override = mode === 'dark' ? settings?.primaryColorDark : settings?.primaryColorLight
+  const mode: THEME.DARK | THEME.LIGHT =
+    typeof settings?.nightMode === 'boolean'
+      ? settings.nightMode
+        ? THEME.DARK
+        : THEME.LIGHT
+      : THEME.DARK
+
+  const primaryOverride =
+    mode === THEME.DARK ? settings?.primaryColorDark : settings?.primaryColorLight
+  const EditableOverride =
+    mode === THEME.DARK
+      ? settings?.highlightEditableFieldDark
+      : settings?.highlightEditableFieldLight
 
   const theme = useMemo(() => {
-    return override ? buildRuntimeTheme(mode, override) : mode === 'dark' ? darkTheme : lightTheme
-  }, [mode, override])
+    return primaryOverride || EditableOverride
+      ? buildRuntimeTheme(mode, primaryOverride)
+      : mode === THEME.DARK
+        ? darkTheme
+        : lightTheme
+  }, [mode, primaryOverride, EditableOverride])
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline enableColorScheme />
-      <App />
-    </ThemeProvider>
+    <AppContext.Provider value={{ ...appContext, onSetAppContext: handleChangeAppContext }}>
+      <ThemeProvider theme={theme}>
+        <CssBaseline enableColorScheme />
+        <App />
+      </ThemeProvider>
+    </AppContext.Provider>
   )
 }
 

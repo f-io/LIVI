@@ -41,3 +41,8 @@ export const FOCUSABLE_SELECTOR = [
   'textarea:not([disabled])',
   '[tabindex]:not([tabindex="-1"])'
 ].join(',')
+
+export enum THEME {
+  LIGHT = 'light',
+  DARK = 'dark'
+}

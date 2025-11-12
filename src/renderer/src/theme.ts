@@ -1,6 +1,7 @@
 import { createTheme, alpha } from '@mui/material/styles'
 import { themeColors } from './themeColors'
 import { CSSObject } from '@mui/system'
+import { THEME } from './constants'
 
 const commonLayout = {
   'html, body, #root': {
@@ -37,8 +38,8 @@ const tabItemBase = {
 const buttonBaseRoot = { cursor: 'default' }
 const svgIconRoot = { cursor: 'default' }
 
-function buildTheme(mode: 'light' | 'dark') {
-  const isLight = mode === 'light'
+function buildTheme(mode: THEME.LIGHT | THEME.DARK) {
+  const isLight = mode === THEME.LIGHT
   return createTheme({
     palette: {
       mode,
@@ -92,10 +93,15 @@ function buildTheme(mode: 'light' | 'dark') {
         styleOverrides: {
           root: {
             '&:hover .MuiOutlinedInput-notchedOutline': {
-              borderColor: isLight ? themeColors.highlightLight : themeColors.highlightDark
+              borderColor: isLight
+                ? themeColors.highlightFocusedFieldLight
+                : themeColors.highlightFocusedFieldDark
             },
             '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-              borderColor: isLight ? themeColors.highlightLight : themeColors.highlightDark
+              borderColor: isLight
+                ? themeColors.highlightFocusedFieldLight
+                : themeColors.highlightFocusedFieldDark,
+              borderWidth: '2px'
             }
           },
           notchedOutline: {
@@ -154,14 +160,14 @@ function buildTheme(mode: 'light' | 'dark') {
   })
 }
 
-export const lightTheme = buildTheme('light')
-export const darkTheme = buildTheme('dark')
+export const lightTheme = buildTheme(THEME.LIGHT)
+export const darkTheme = buildTheme(THEME.DARK)
 
-export function buildRuntimeTheme(mode: 'light' | 'dark', primary?: string) {
+export function buildRuntimeTheme(mode: THEME.LIGHT | THEME.DARK, primary?: string) {
   if (!primary) return buildTheme(mode)
 
   const base = buildTheme(mode)
-  const isLight = mode === 'light'
+  const isLight = mode === THEME.LIGHT
   const hoverBg = isLight ? themeColors.highlightAlphaLight : themeColors.highlightAlphaDark
 
   const tabsSO = (base.components?.MuiTabs?.styleOverrides ?? {}) as Record<string, CSSObject>
@@ -207,8 +213,8 @@ export function buildRuntimeTheme(mode: 'light' | 'dark', primary?: string) {
           ...outlinedSO,
           root: {
             ...outlinedRoot,
-            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: primary },
-            '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: primary }
+            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'white' },
+            '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: 'white' }
           },
           notchedOutline: outlinedNotched
         }
