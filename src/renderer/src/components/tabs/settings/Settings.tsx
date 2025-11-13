@@ -594,670 +594,695 @@ export const Settings: React.FC = () => {
       p={2}
       display="flex"
       flexDirection="column"
-      height="100vh"
+      height="calc(100vh - 64px)"
     >
-      <Box
-        sx={{
-          overflowY: 'hidden',
-          overflowX: 'hidden',
-          flexGrow: 1,
-          px: 1.5,
-          py: 0.25,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 2
-        }}
-      >
-        <Grid container spacing={2} sx={{ px: 1 }}>
-          <Grid size={{ xs: 12, sm: 6 }}>
-            <SectionHeader sx={{ mb: 2.25 }}>VIDEO SETTINGS</SectionHeader>
-
-            <Box sx={{ pl: 1.5 }}>
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: '136px 24px 136px',
-                  alignItems: 'center',
-                  gap: 2,
-                  width: 'fit-content'
-                }}
-              >
-                <TextField
-                  id="width"
-                  size="small"
-                  label="WIDTH"
-                  type="number"
-                  value={draftWidth}
-                  onChange={(e) => {
-                    setDraftWidth(e.target.value)
-                    setHasChanges(true)
-                  }}
-                  slotProps={{
-                    input: {
-                      inputProps: { min: MIN_WIDTH, max: MAX_WIDTH, step: 1 },
-                      endAdornment: <InputAdornment position="end">px</InputAdornment>
-                    }
-                  }}
-                  sx={{
-                    width: 136,
-                    ...highlightEditableField({
-                      isActive: appContext?.keyboardNavigation?.focusedElId === 'width',
-                      isDarkMode
-                    })
-                  }}
-                />
-                <Typography sx={{ textAlign: 'center', fontSize: 22, lineHeight: 1 }}>×</Typography>
-                <TextField
-                  id="height"
-                  size="small"
-                  label="HEIGHT"
-                  type="number"
-                  value={draftHeight}
-                  onChange={(e) => {
-                    setDraftHeight(e.target.value)
-                    setHasChanges(true)
-                  }}
-                  slotProps={{
-                    input: {
-                      inputProps: { min: MIN_HEIGHT, max: MAX_HEIGHT, step: 1 },
-                      endAdornment: <InputAdornment position="end">px</InputAdornment>
-                    }
-                  }}
-                  sx={{
-                    width: 136,
-                    ...highlightEditableField({
-                      isActive: appContext?.keyboardNavigation?.focusedElId === 'height',
-                      isDarkMode
-                    })
-                  }}
-                />
-              </Box>
-
-              <Box
-                sx={{
-                  mt: 1.75,
-                  display: 'grid',
-                  gridTemplateColumns: '136px 24px 136px',
-                  alignItems: 'center',
-                  gap: 2,
-                  width: 'fit-content'
-                }}
-              >
-                <TextField
-                  id="fps"
-                  size="small"
-                  label="FPS"
-                  type="number"
-                  value={draftFps}
-                  onChange={(e) => {
-                    setDraftFps(e.target.value)
-                    setHasChanges(true)
-                  }}
-                  slotProps={{
-                    input: { inputProps: { min: MIN_FPS, max: MAX_FPS, step: 1 } }
-                  }}
-                  sx={{
-                    width: 136,
-                    ...highlightEditableField({
-                      isActive: appContext?.keyboardNavigation?.focusedElId === 'fps',
-                      isDarkMode
-                    })
-                  }}
-                />
-                <Box sx={{ width: 24, height: 1 }} />
-                <TextField
-                  id="mediaDelay"
-                  size="small"
-                  label="MEDIA DELAY"
-                  type="number"
-                  value={activeSettings.mediaDelay}
-                  onChange={(e) => settingsChange('mediaDelay', Number(e.target.value))}
-                  slotProps={{
-                    input: {
-                      inputProps: { min: MEDIA_DELAY_MIN, max: MEDIA_DELAY_MAX, step: 50 },
-                      endAdornment: <InputAdornment position="end">ms</InputAdornment>
-                    }
-                  }}
-                  sx={{
-                    width: 136,
-                    ...highlightEditableField({
-                      isActive: appContext?.keyboardNavigation?.focusedElId === 'mediaDelay',
-                      isDarkMode
-                    })
-                  }}
-                />
-              </Box>
-            </Box>
-          </Grid>
-
-          <Grid size={{ xs: 12, sm: 6 }}>
-            <SectionHeader>AUDIO SETTINGS</SectionHeader>
-
-            <Stack spacing={1.5} sx={{ pl: 1.5, maxWidth: 360 }}>
-              <FormControl fullWidth>
-                <FormLabel sx={{ typography: 'body2' }}>AUDIO VOLUME</FormLabel>
-                <Slider
-                  aria-label="audioVolume"
-                  size="small"
-                  value={Math.round((activeSettings.audioVolume ?? 1.0) * 100)}
-                  min={0}
-                  max={100}
-                  step={5}
-                  marks
-                  valueLabelDisplay="auto"
-                  onChange={(_, v) =>
-                    typeof v === 'number' && settingsChange('audioVolume', v / 100)
-                  }
-                  sx={highlightEditableField({
-                    isActive: appContext?.keyboardNavigation?.focusedElId === 'audioVolume',
-                    isDarkMode
-                  })}
-                />
-              </FormControl>
-
-              <FormControl fullWidth>
-                <FormLabel sx={{ typography: 'body2' }}>NAV VOLUME</FormLabel>
-                <Slider
-                  aria-label="navVolume"
-                  size="small"
-                  value={Math.round((activeSettings.navVolume ?? 1.0) * 100)}
-                  min={0}
-                  max={100}
-                  step={5}
-                  marks
-                  valueLabelDisplay="auto"
-                  onChange={(_, v) => typeof v === 'number' && settingsChange('navVolume', v / 100)}
-                  sx={highlightEditableField({
-                    isActive: appContext?.keyboardNavigation?.focusedElId === 'navVolume',
-                    isDarkMode
-                  })}
-                />
-              </FormControl>
-            </Stack>
-          </Grid>
-        </Grid>
-
-        {/* Left: icon switches | Right: form grid (never wrap) */}
+      <div style={{ overflowX: 'auto', height: '100%' }}>
         <Box
           sx={{
-            px: 1,
+            flexGrow: 1,
+            px: 1.5,
+            py: 0.25,
             display: 'flex',
-            flexDirection: 'row',
-            alignItems: 'flex-start',
-            gap: 3,
-            flexWrap: 'nowrap'
+            flexDirection: 'column',
+            gap: 2
           }}
         >
-          {/* Left: Paper (fixed width) */}
-          <Box sx={{ pl: 1.5, flex: '0 0 auto', mt: 1.5 }}>
-            <Paper
-              variant="outlined"
-              sx={(theme) => ({
-                p: 0.75,
-                borderRadius: 1,
-                borderColor: theme.palette.divider,
-                background: 'transparent',
-                width: 168
-              })}
-            >
-              {(
-                [
-                  {
-                    key: 'autoPlay' as const,
-                    title: 'Auto Play',
-                    visualChecked: Boolean(activeSettings.autoPlay),
-                    IconOn: PlayCircleOutline,
-                    IconOff: PlayCircleOutline,
-                    onChange: setBool('autoPlay')
-                  },
-                  {
-                    key: 'audioTransferMode' as const,
-                    title: 'Audio',
-                    visualChecked: audioEnabled,
-                    IconOn: VolumeUpOutlined,
-                    IconOff: VolumeOffOutlined,
-                    onChange: onAudioSwitch
-                  },
-                  {
-                    key: 'nightMode' as const,
-                    title: 'Dark Mode',
-                    visualChecked: Boolean(activeSettings.nightMode),
-                    IconOn: DarkModeOutlined,
-                    IconOff: LightModeOutlined,
-                    onChange: setBool('nightMode')
-                  },
-                  {
-                    key: 'kiosk' as const,
-                    title: 'Fullscreen',
-                    visualChecked: Boolean(activeSettings.kiosk),
-                    IconOn: FullscreenOutlined,
-                    IconOff: FullscreenOutlined,
-                    onChange: setBool('kiosk')
-                  }
-                ] as const
-              ).map((item, idx, arr) => {
-                const Icon = item.visualChecked ? item.IconOn : item.IconOff
-                return (
-                  <React.Fragment key={item.key}>
-                    <FormControlLabel
-                      sx={(theme) => ({
-                        m: 0,
-                        px: 0.25,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        minHeight: 32,
-                        '&:has(.MuiSwitch-input:focus-visible)': {
-                          outline: `2px solid ${themeColors.highlightFocusedFieldDark}`,
-                          outlineOffset: 4,
-                          borderRadius: 1
-                        },
-                        '&:has(.MuiSwitch-input:focus-visible) .MuiFormControlLabel-label': {
-                          color: theme.palette.primary.main
+          <Box
+            sx={{
+              px: 1,
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              gap: 3,
+              flexWrap: 'nowrap'
+            }}
+          >
+            <Grid container spacing={2} sx={{ px: 1, width: '100%' }}>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <SectionHeader sx={{ mb: 2.25 }}>VIDEO SETTINGS</SectionHeader>
+
+                <Box sx={{ pl: 1.5 }}>
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: '136px 24px 136px',
+                      alignItems: 'center',
+                      gap: 2,
+                      width: 'fit-content'
+                    }}
+                  >
+                    <TextField
+                      id="width"
+                      size="small"
+                      label="WIDTH"
+                      type="number"
+                      value={draftWidth}
+                      onChange={(e) => {
+                        setDraftWidth(e.target.value)
+                        setHasChanges(true)
+                      }}
+                      slotProps={{
+                        input: {
+                          inputProps: { min: MIN_WIDTH, max: MAX_WIDTH, step: 1 },
+                          endAdornment: <InputAdornment position="end">px</InputAdornment>
                         }
-                      })}
-                      labelPlacement="end"
-                      label={
-                        <Tooltip title={item.title} enterDelay={150}>
-                          <div style={{ display: 'flex', alignItems: 'center' }}>
-                            <span
-                              style={{
-                                fontSize: '0.85rem',
-                                display: 'inline-block',
-                                marginRight: '0.5rem'
-                              }}
-                            >
-                              {item.title}
-                            </span>
-                            <Box
-                              aria-label={item.title}
-                              sx={(theme) => ({
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                width: 22,
-                                height: 22,
-                                borderRadius: 1,
-                                color: item.visualChecked
-                                  ? theme.palette.primary.main
-                                  : theme.palette.text.disabled,
-                                border: `1px solid ${theme.palette.divider}`
-                              })}
-                            >
-                              <Icon fontSize="inherit" />
-                            </Box>
-                          </div>
-                        </Tooltip>
-                      }
-                      control={
-                        <Switch
-                          size="small"
-                          checked={item.visualChecked}
-                          onChange={item.onChange}
-                          sx={{ mx: 0 }}
-                          slotProps={{ input: { 'aria-label': item.title } }}
-                        />
-                      }
+                      }}
+                      sx={{
+                        width: 136,
+                        ...highlightEditableField({
+                          isActive: appContext?.keyboardNavigation?.focusedElId === 'width',
+                          isDarkMode
+                        })
+                      }}
                     />
-                    {idx < arr.length - 1 && <Divider flexItem sx={{ my: 0.25, opacity: 0.08 }} />}
-                  </React.Fragment>
-                )
-              })}
-            </Paper>
-          </Box>
-
-          {/* Right: form grid (flexible, shrinks instead of wrapping) */}
-          <Box sx={{ flex: '1 1 auto', minWidth: 0 }}>
-            <Grid
-              container
-              spacing={2}
-              columns={12}
-              alignItems="center"
-              sx={{ width: '100%', minWidth: 0, mt: 1.5 }}
-            >
-              <Grid
-                size={{ xs: 12, sm: 4 }}
-                sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
-              >
-                <TextField
-                  id="wifi"
-                  size="small"
-                  select
-                  fullWidth
-                  sx={{
-                    minWidth: 0,
-                    ...highlightEditableField({
-                      isActive: appContext?.keyboardNavigation?.focusedElId === 'wifi',
-                      isDarkMode
-                    })
-                  }}
-                  label="WIFI"
-                  value={wifiValue}
-                  onKeyDown={openSelectOnEnter}
-                  onChange={(e) => settingsChange('wifiType', toWifiType(e.target.value))}
-                >
-                  <MenuItem value={WiFiValues['2.4ghz']}>2.4 GHz</MenuItem>
-                  <MenuItem value={WiFiValues['5ghz']}>5 GHz</MenuItem>
-                </TextField>
-              </Grid>
-
-              <Grid
-                size={{ xs: 12, sm: 4 }}
-                sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
-              >
-                <TextField
-                  id="mic"
-                  size="small"
-                  select
-                  fullWidth
-                  sx={{
-                    minWidth: 0,
-                    ...highlightEditableField({
-                      isActive: appContext?.keyboardNavigation?.focusedElId === 'mic',
-                      isDarkMode
-                    })
-                  }}
-                  label="MICROPHONE"
-                  value={activeSettings.micType}
-                  onKeyDown={openSelectOnEnter}
-                  onChange={(e) => settingsChange('micType', e.target.value as 'box' | 'os')}
-                >
-                  <MenuItem value="os" disabled={micUnavailable && activeSettings.micType !== 'os'}>
-                    <Typography noWrap component="span" title={micLabel}>
-                      {renderOsMicLabel(micLabel)}
+                    <Typography sx={{ textAlign: 'center', fontSize: 22, lineHeight: 1 }}>
+                      ×
                     </Typography>
-                  </MenuItem>
-                  <MenuItem value="box">BOX</MenuItem>
-                </TextField>
+                    <TextField
+                      id="height"
+                      size="small"
+                      label="HEIGHT"
+                      type="number"
+                      value={draftHeight}
+                      onChange={(e) => {
+                        setDraftHeight(e.target.value)
+                        setHasChanges(true)
+                      }}
+                      slotProps={{
+                        input: {
+                          inputProps: { min: MIN_HEIGHT, max: MAX_HEIGHT, step: 1 },
+                          endAdornment: <InputAdornment position="end">px</InputAdornment>
+                        }
+                      }}
+                      sx={{
+                        width: 136,
+                        ...highlightEditableField({
+                          isActive: appContext?.keyboardNavigation?.focusedElId === 'height',
+                          isDarkMode
+                        })
+                      }}
+                    />
+                  </Box>
+
+                  <Box
+                    sx={{
+                      mt: 1.75,
+                      display: 'grid',
+                      gridTemplateColumns: '136px 24px 136px',
+                      alignItems: 'center',
+                      gap: 2,
+                      width: 'fit-content'
+                    }}
+                  >
+                    <TextField
+                      id="fps"
+                      size="small"
+                      label="FPS"
+                      type="number"
+                      value={draftFps}
+                      onChange={(e) => {
+                        setDraftFps(e.target.value)
+                        setHasChanges(true)
+                      }}
+                      slotProps={{
+                        input: { inputProps: { min: MIN_FPS, max: MAX_FPS, step: 1 } }
+                      }}
+                      sx={{
+                        width: 136,
+                        ...highlightEditableField({
+                          isActive: appContext?.keyboardNavigation?.focusedElId === 'fps',
+                          isDarkMode
+                        })
+                      }}
+                    />
+                    <Box sx={{ width: 24, height: 1 }} />
+                    <TextField
+                      id="mediaDelay"
+                      size="small"
+                      label="MEDIA DELAY"
+                      type="number"
+                      value={activeSettings.mediaDelay}
+                      onChange={(e) => settingsChange('mediaDelay', Number(e.target.value))}
+                      slotProps={{
+                        input: {
+                          inputProps: { min: MEDIA_DELAY_MIN, max: MEDIA_DELAY_MAX, step: 50 },
+                          endAdornment: <InputAdornment position="end">ms</InputAdornment>
+                        }
+                      }}
+                      sx={{
+                        width: 136,
+                        ...highlightEditableField({
+                          isActive: appContext?.keyboardNavigation?.focusedElId === 'mediaDelay',
+                          isDarkMode
+                        })
+                      }}
+                    />
+                  </Box>
+                </Box>
               </Grid>
 
-              <Grid
-                size={{ xs: 12, sm: 4 }}
-                sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
-              >
-                <TextField
-                  id="camera"
-                  size="small"
-                  select
-                  fullWidth
-                  sx={{
-                    minWidth: 0,
-                    ...highlightEditableField({
-                      isActive: appContext?.keyboardNavigation?.focusedElId === 'camera',
-                      isDarkMode
-                    })
-                  }}
-                  label="CAMERA"
-                  value={cameraValue}
-                  onKeyDown={openSelectOnEnter}
-                  onChange={(e) => settingsChange('camera', e.target.value)}
-                >
-                  {cameraOptions.map((cam) => (
-                    <MenuItem key={cam.deviceId || 'none'} value={cam.deviceId}>
-                      {cam.label}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <SectionHeader>AUDIO SETTINGS</SectionHeader>
 
-              <Grid
-                size={{ xs: 12, sm: 4 }}
-                sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
-              >
-                <TextField
-                  id="carName"
-                  size="small"
-                  fullWidth
-                  label="CAR NAME"
-                  value={activeSettings.carName ?? ''}
-                  onChange={(e) => {
-                    const v = normalizeCarName(e.target.value)
-                    settingsChange('carName', v)
-                  }}
-                  sx={{
-                    ...highlightEditableField({
-                      isActive: appContext?.keyboardNavigation?.focusedElId === 'carName',
-                      isDarkMode
-                    })
-                  }}
-                  slotProps={{
-                    input: { inputProps: { maxLength: CAR_NAME_MAX } },
-                    formHelperText: { sx: { textAlign: 'right', m: 0, mt: 0.5 } }
-                  }}
-                  helperText={`${activeSettings.carName?.length ?? 0}/${CAR_NAME_MAX}`}
-                />
-              </Grid>
+                <Stack spacing={1.5} sx={{ pl: 1.5, width: '100%' }}>
+                  <FormControl fullWidth>
+                    <FormLabel sx={{ typography: 'body2' }}>AUDIO VOLUME</FormLabel>
+                    <Slider
+                      aria-label="audioVolume"
+                      size="small"
+                      value={Math.round((activeSettings.audioVolume ?? 1.0) * 100)}
+                      min={0}
+                      max={100}
+                      step={5}
+                      marks
+                      valueLabelDisplay="auto"
+                      onChange={(_, v) =>
+                        typeof v === 'number' && settingsChange('audioVolume', v / 100)
+                      }
+                      sx={highlightEditableField({
+                        isActive: appContext?.keyboardNavigation?.focusedElId === 'audioVolume',
+                        isDarkMode
+                      })}
+                    />
+                  </FormControl>
 
-              <Grid
-                size={{ xs: 12, sm: 4 }}
-                sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
-              >
-                <TextField
-                  id="uiLabel"
-                  size="small"
-                  fullWidth
-                  label="UI LABEL"
-                  value={activeSettings.oemName ?? ''}
-                  onChange={(e) => {
-                    const v = normalizeOemLabel(e.target.value)
-                    settingsChange('oemName', v as unknown as ExtraConfig['oemName'])
-                  }}
-                  sx={{
-                    ...highlightEditableField({
-                      isActive: appContext?.keyboardNavigation?.focusedElId === 'uiLabel',
-                      isDarkMode
-                    })
-                  }}
-                  slotProps={{
-                    input: { inputProps: { maxLength: OEM_LABEL_MAX } },
-                    formHelperText: { sx: { textAlign: 'right', m: 0, mt: 0.5 } }
-                  }}
-                  helperText={`${activeSettings.oemName?.length ?? 0}/${OEM_LABEL_MAX}`}
-                />
+                  <FormControl fullWidth>
+                    <FormLabel sx={{ typography: 'body2' }}>NAV VOLUME</FormLabel>
+                    <Slider
+                      aria-label="navVolume"
+                      size="small"
+                      value={Math.round((activeSettings.navVolume ?? 1.0) * 100)}
+                      min={0}
+                      max={100}
+                      step={5}
+                      marks
+                      valueLabelDisplay="auto"
+                      onChange={(_, v) =>
+                        typeof v === 'number' && settingsChange('navVolume', v / 100)
+                      }
+                      sx={highlightEditableField({
+                        isActive: appContext?.keyboardNavigation?.focusedElId === 'navVolume',
+                        isDarkMode
+                      })}
+                    />
+                  </FormControl>
+                </Stack>
               </Grid>
-
-              <Grid
-                size={{ xs: 12, sm: 4 }}
-                sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
-              >
-                <TextField
-                  id="frequency"
-                  size="small"
-                  select
-                  fullWidth
-                  sx={{
-                    minWidth: 0,
-                    ...highlightEditableField({
-                      isActive: appContext?.keyboardNavigation?.focusedElId === 'frequency',
-                      isDarkMode
-                    })
-                  }}
-                  label="SAMPLING FREQUENCY"
-                  value={
-                    typeof activeSettings.mediaSound === 'number' ? activeSettings.mediaSound : 1
-                  }
-                  onKeyDown={openSelectOnEnter}
-                  onChange={(e) => settingsChange('mediaSound', Number(e.target.value) as 0 | 1)}
-                  helperText=" "
-                >
-                  <MenuItem value={0}>44.1 kHz</MenuItem>
-                  <MenuItem value={1}>48 kHz</MenuItem>
-                </TextField>
-              </Grid>
-
-              <Grid size={{ xs: 12, sm: 4 }} />
             </Grid>
           </Box>
-        </Box>
-      </Box>
 
-      <Box
-        position="sticky"
-        bottom={0}
-        bgcolor="transparent"
-        display="flex"
-        justifyContent="center"
-        sx={{ pt: 1, pb: 1 }}
-      >
-        <Box sx={{ display: 'flex', gap: 1.5 }}>
-          <Button variant="outlined" onClick={() => setOpenAdvanced(true)}>
-            ADVANCED
-          </Button>
-          <Button variant="outlined" onClick={() => setOpenBindings(true)}>
-            BINDINGS
-          </Button>
-          <Button
-            variant="contained"
-            className="hover-ring"
-            color={hasChanges || micResetPending ? 'primary' : 'inherit'}
-            onClick={hasChanges || micResetPending ? handleSave : undefined}
-            disabled={!(hasChanges || micResetPending) || isResetting}
+          {/* Left: icon switches | Right: form grid (never wrap) */}
+          <Box
+            sx={{
+              px: 1,
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              gap: 3,
+              flexWrap: 'nowrap'
+            }}
           >
-            SAVE
-          </Button>
-        </Box>
-      </Box>
+            {/* Left: Paper (fixed width) */}
+            <Box sx={{ pl: 1.5, flex: '0 0 auto', mt: 1.5 }}>
+              <Paper
+                variant="outlined"
+                sx={(theme) => ({
+                  p: 0.75,
+                  borderRadius: 1,
+                  borderColor: theme.palette.divider,
+                  background: 'transparent',
+                  width: 168
+                })}
+              >
+                {(
+                  [
+                    {
+                      key: 'autoPlay' as const,
+                      title: 'Auto Play',
+                      visualChecked: Boolean(activeSettings.autoPlay),
+                      IconOn: PlayCircleOutline,
+                      IconOff: PlayCircleOutline,
+                      onChange: setBool('autoPlay')
+                    },
+                    {
+                      key: 'audioTransferMode' as const,
+                      title: 'Audio',
+                      visualChecked: audioEnabled,
+                      IconOn: VolumeUpOutlined,
+                      IconOff: VolumeOffOutlined,
+                      onChange: onAudioSwitch
+                    },
+                    {
+                      key: 'nightMode' as const,
+                      title: 'Dark Mode',
+                      visualChecked: Boolean(activeSettings.nightMode),
+                      IconOn: DarkModeOutlined,
+                      IconOff: LightModeOutlined,
+                      onChange: setBool('nightMode')
+                    },
+                    {
+                      key: 'kiosk' as const,
+                      title: 'Fullscreen',
+                      visualChecked: Boolean(activeSettings.kiosk),
+                      IconOn: FullscreenOutlined,
+                      IconOff: FullscreenOutlined,
+                      onChange: setBool('kiosk')
+                    }
+                  ] as const
+                ).map((item, idx, arr) => {
+                  const Icon = item.visualChecked ? item.IconOn : item.IconOff
+                  return (
+                    <React.Fragment key={item.key}>
+                      <FormControlLabel
+                        sx={(theme) => ({
+                          m: 0,
+                          px: 0.25,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          minHeight: 32,
+                          '&:has(.MuiSwitch-input:focus-visible)': {
+                            outline: `2px solid ${themeColors.highlightFocusedFieldDark}`,
+                            outlineOffset: 4,
+                            borderRadius: 1
+                          },
+                          '&:has(.MuiSwitch-input:focus-visible) .MuiFormControlLabel-label': {
+                            color: theme.palette.primary.main
+                          }
+                        })}
+                        labelPlacement="end"
+                        label={
+                          <Tooltip title={item.title} enterDelay={150}>
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                              <span
+                                style={{
+                                  fontSize: '0.85rem',
+                                  display: 'inline-block',
+                                  marginRight: '0.5rem'
+                                }}
+                              >
+                                {item.title}
+                              </span>
+                              <Box
+                                aria-label={item.title}
+                                sx={(theme) => ({
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  width: 22,
+                                  height: 22,
+                                  borderRadius: 1,
+                                  color: item.visualChecked
+                                    ? theme.palette.primary.main
+                                    : theme.palette.text.disabled,
+                                  border: `1px solid ${theme.palette.divider}`
+                                })}
+                              >
+                                <Icon fontSize="inherit" />
+                              </Box>
+                            </div>
+                          </Tooltip>
+                        }
+                        control={
+                          <Switch
+                            size="small"
+                            checked={item.visualChecked}
+                            onChange={item.onChange}
+                            sx={{ mx: 0 }}
+                            slotProps={{ input: { 'aria-label': item.title } }}
+                          />
+                        }
+                      />
+                      {idx < arr.length - 1 && (
+                        <Divider flexItem sx={{ my: 0.25, opacity: 0.08 }} />
+                      )}
+                    </React.Fragment>
+                  )
+                })}
+              </Paper>
+            </Box>
 
-      {isResetting && (
-        <Box display="flex" justifyContent="center" sx={{ mt: 1.5 }}>
-          <CircularProgress />
-        </Box>
-      )}
+            {/* Right: form grid (flexible, shrinks instead of wrapping) */}
+            <Box sx={{ flex: '1 1 auto', minWidth: 0 }}>
+              <Grid
+                container
+                spacing={2}
+                columns={12}
+                alignItems="center"
+                sx={{ width: '100%', minWidth: 0, mt: 1.5 }}
+              >
+                <Grid
+                  size={{ xs: 12, sm: 4 }}
+                  sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
+                >
+                  <TextField
+                    id="wifi"
+                    size="small"
+                    select
+                    fullWidth
+                    sx={{
+                      minWidth: 0,
+                      ...highlightEditableField({
+                        isActive: appContext?.keyboardNavigation?.focusedElId === 'wifi',
+                        isDarkMode
+                      })
+                    }}
+                    label="WIFI"
+                    value={wifiValue}
+                    onKeyDown={openSelectOnEnter}
+                    onChange={(e) => settingsChange('wifiType', toWifiType(e.target.value))}
+                  >
+                    <MenuItem value={WiFiValues['2.4ghz']}>2.4 GHz</MenuItem>
+                    <MenuItem value={WiFiValues['5ghz']}>5 GHz</MenuItem>
+                  </TextField>
+                </Grid>
 
-      <Dialog open={!!resetMessage} onClose={handleClosePopup}>
-        <DialogTitle>Reset Status</DialogTitle>
-        <DialogContent sx={{ textAlign: 'center' }}>
-          <Typography variant="body1" sx={{ mb: 2 }}>
-            {resetMessage}
-          </Typography>
-          <Box display="flex" justifyContent="center">
-            <Button variant="outlined" onClick={handleClosePopup}>
-              Close{closeCountdown > 0 ? ` (${closeCountdown})` : ''}
+                <Grid
+                  size={{ xs: 12, sm: 4 }}
+                  sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
+                >
+                  <TextField
+                    id="mic"
+                    size="small"
+                    select
+                    fullWidth
+                    sx={{
+                      minWidth: 0,
+                      ...highlightEditableField({
+                        isActive: appContext?.keyboardNavigation?.focusedElId === 'mic',
+                        isDarkMode
+                      })
+                    }}
+                    label="MICROPHONE"
+                    value={activeSettings.micType}
+                    onKeyDown={openSelectOnEnter}
+                    onChange={(e) => settingsChange('micType', e.target.value as 'box' | 'os')}
+                  >
+                    <MenuItem
+                      value="os"
+                      disabled={micUnavailable && activeSettings.micType !== 'os'}
+                    >
+                      <Typography noWrap component="span" title={micLabel}>
+                        {renderOsMicLabel(micLabel)}
+                      </Typography>
+                    </MenuItem>
+                    <MenuItem value="box">BOX</MenuItem>
+                  </TextField>
+                </Grid>
+
+                <Grid
+                  size={{ xs: 12, sm: 4 }}
+                  sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
+                >
+                  <TextField
+                    id="camera"
+                    size="small"
+                    select
+                    fullWidth
+                    sx={{
+                      minWidth: 0,
+                      ...highlightEditableField({
+                        isActive: appContext?.keyboardNavigation?.focusedElId === 'camera',
+                        isDarkMode
+                      })
+                    }}
+                    label="CAMERA"
+                    value={cameraValue}
+                    onKeyDown={openSelectOnEnter}
+                    onChange={(e) => settingsChange('camera', e.target.value)}
+                  >
+                    {cameraOptions.map((cam) => (
+                      <MenuItem key={cam.deviceId || 'none'} value={cam.deviceId}>
+                        {cam.label}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                </Grid>
+
+                <Grid
+                  size={{ xs: 12, sm: 4 }}
+                  sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
+                >
+                  <TextField
+                    id="carName"
+                    size="small"
+                    fullWidth
+                    label="CAR NAME"
+                    value={activeSettings.carName ?? ''}
+                    onChange={(e) => {
+                      const v = normalizeCarName(e.target.value)
+                      settingsChange('carName', v)
+                    }}
+                    sx={{
+                      ...highlightEditableField({
+                        isActive: appContext?.keyboardNavigation?.focusedElId === 'carName',
+                        isDarkMode
+                      })
+                    }}
+                    slotProps={{
+                      input: { inputProps: { maxLength: CAR_NAME_MAX } },
+                      formHelperText: { sx: { textAlign: 'right', m: 0, mt: 0.5 } }
+                    }}
+                    helperText={`${activeSettings.carName?.length ?? 0}/${CAR_NAME_MAX}`}
+                  />
+                </Grid>
+
+                <Grid
+                  size={{ xs: 12, sm: 4 }}
+                  sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
+                >
+                  <TextField
+                    id="uiLabel"
+                    size="small"
+                    fullWidth
+                    label="UI LABEL"
+                    value={activeSettings.oemName ?? ''}
+                    onChange={(e) => {
+                      const v = normalizeOemLabel(e.target.value)
+                      settingsChange('oemName', v as unknown as ExtraConfig['oemName'])
+                    }}
+                    sx={{
+                      ...highlightEditableField({
+                        isActive: appContext?.keyboardNavigation?.focusedElId === 'uiLabel',
+                        isDarkMode
+                      })
+                    }}
+                    slotProps={{
+                      input: { inputProps: { maxLength: OEM_LABEL_MAX } },
+                      formHelperText: { sx: { textAlign: 'right', m: 0, mt: 0.5 } }
+                    }}
+                    helperText={`${activeSettings.oemName?.length ?? 0}/${OEM_LABEL_MAX}`}
+                  />
+                </Grid>
+
+                <Grid
+                  size={{ xs: 12, sm: 4 }}
+                  sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}
+                >
+                  <TextField
+                    id="frequency"
+                    size="small"
+                    select
+                    fullWidth
+                    sx={{
+                      minWidth: 0,
+                      ...highlightEditableField({
+                        isActive: appContext?.keyboardNavigation?.focusedElId === 'frequency',
+                        isDarkMode
+                      })
+                    }}
+                    label="SAMPLING FREQUENCY"
+                    value={
+                      typeof activeSettings.mediaSound === 'number' ? activeSettings.mediaSound : 1
+                    }
+                    onKeyDown={openSelectOnEnter}
+                    onChange={(e) => settingsChange('mediaSound', Number(e.target.value) as 0 | 1)}
+                    helperText=" "
+                  >
+                    <MenuItem value={0}>44.1 kHz</MenuItem>
+                    <MenuItem value={1}>48 kHz</MenuItem>
+                  </TextField>
+                </Grid>
+
+                <Grid size={{ xs: 12, sm: 4 }} />
+              </Grid>
+            </Box>
+          </Box>
+        </Box>
+
+        <Box
+          bgcolor="transparent"
+          display="flex"
+          justifyContent="center"
+          sx={{
+            position: 'relative',
+            top: '-1rem',
+            left: '-1.25rem',
+            justifyContent: 'flex-end',
+            pt: 1,
+            pb: 1
+          }}
+        >
+          <Box sx={{ display: 'flex', gap: 1.5 }}>
+            <Button variant="outlined" onClick={() => setOpenAdvanced(true)}>
+              ADVANCED
+            </Button>
+            <Button variant="outlined" onClick={() => setOpenBindings(true)}>
+              BINDINGS
+            </Button>
+            <Button
+              variant="contained"
+              className="hover-ring"
+              color={hasChanges || micResetPending ? 'primary' : 'inherit'}
+              onClick={hasChanges || micResetPending ? handleSave : undefined}
+              disabled={!(hasChanges || micResetPending) || isResetting}
+            >
+              SAVE
             </Button>
           </Box>
-        </DialogContent>
-      </Dialog>
+        </Box>
 
-      <Dialog
-        open={openBindings}
-        keepMounted
-        onClose={() => setOpenBindings(false)}
-        onKeyDown={(e) => handleCloseDialogByBackspace(e, setOpenBindings)}
-        slots={{ transition: Transition }}
-        slotProps={{ paper: { sx: { minHeight: '80%', minWidth: '80%' } } }}
-      >
-        <DialogTitle>Key Bindings</DialogTitle>
-        <DialogContent>
-          <KeyBindings settings={activeSettings} updateKey={settingsChange} />
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={openAdvanced}
-        keepMounted
-        onClose={() => setOpenAdvanced(false)}
-        onKeyDown={(e) => handleCloseDialogByBackspace(e, setOpenAdvanced)}
-        maxWidth={false}
-        slots={{ transition: Transition }}
-        slotProps={{
-          paper: {
-            sx: {
-              width: 320,
-              maxWidth: 'calc(100vw - 48px)',
-              borderRadius: 2
-            }
-          }
-        }}
-      >
-        <DialogTitle>Advanced Settings</DialogTitle>
-        <DialogContent sx={{ pt: 2, pb: 2, px: 2.25, overflow: 'visible' }}>
-          <Box
-            sx={(theme) => ({
-              display: 'grid',
-              gridTemplateColumns: '120px 120px',
-              columnGap: theme.spacing(1.5),
-              rowGap: theme.spacing(1.5),
-              justifyContent: 'center'
-            })}
-          >
-            <TextField
-              size="small"
-              label={isDarkMode ? 'PRIMARY (DARK)' : 'PRIMARY (LIGHT)'}
-              type="color"
-              value={currentPrimary}
-              onChange={(e) => {
-                const next = e.target.value
-                setActiveSettings((prev) => {
-                  const updated = {
-                    ...prev,
-                    [isDarkMode ? 'primaryColorDark' : 'primaryColorLight']: next,
-                    [isDarkMode ? 'highlightEditableFieldDark' : 'highlightEditableFieldLight']:
-                      next
-                  } as ExtraConfig
-                  debouncedSave(updated)
-                  return updated
-                })
-              }}
-              slotProps={{
-                inputLabel: { shrink: true },
-                input: {
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={() => {
-                          setActiveSettings((prev) => {
-                            const updated = {
-                              ...prev,
-                              [isDarkMode ? 'primaryColorDark' : 'primaryColorLight']: undefined,
-                              [isDarkMode
-                                ? 'highlightEditableFieldDark'
-                                : 'highlightEditableFieldLight']: undefined
-                            } as ExtraConfig
-                            debouncedSave(updated)
-                            return updated
-                          })
-                        }}
-                        sx={{ ml: 1, py: 0.25, px: 1 }}
-                      >
-                        RESET
-                      </Button>
-                    </InputAdornment>
-                  )
-                }
-              }}
-              fullWidth
-              sx={{ gridColumn: '1 / span 2' }}
-            />
-
-            <TextField
-              label="DPI"
-              type="number"
-              size="small"
-              margin="dense"
-              value={activeSettings.dpi}
-              onChange={(e) => settingsChange('dpi', Number(e.target.value))}
-              slotProps={{
-                inputLabel: { shrink: true },
-                input: { inputProps: { tabIndex: openAdvanced ? 0 : -1 } }
-              }}
-              autoFocus={openAdvanced}
-              sx={{ width: 120 }}
-            />
-            <TextField
-              label="FORMAT"
-              type="number"
-              size="small"
-              margin="dense"
-              value={activeSettings.format}
-              onChange={(e) => settingsChange('format', Number(e.target.value))}
-              slotProps={{ inputLabel: { shrink: true } }}
-              sx={{ width: 120 }}
-            />
+        {isResetting && (
+          <Box display="flex" justifyContent="center" sx={{ mt: 1.5 }}>
+            <CircularProgress />
           </Box>
-        </DialogContent>
-      </Dialog>
+        )}
+
+        <Dialog open={!!resetMessage} onClose={handleClosePopup}>
+          <DialogTitle>Reset Status</DialogTitle>
+          <DialogContent sx={{ textAlign: 'center' }}>
+            <Typography variant="body1" sx={{ mb: 2 }}>
+              {resetMessage}
+            </Typography>
+            <Box display="flex" justifyContent="center">
+              <Button variant="outlined" onClick={handleClosePopup}>
+                Close{closeCountdown > 0 ? ` (${closeCountdown})` : ''}
+              </Button>
+            </Box>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={openBindings}
+          keepMounted
+          onClose={() => setOpenBindings(false)}
+          onKeyDown={(e) => handleCloseDialogByBackspace(e, setOpenBindings)}
+          slots={{ transition: Transition }}
+          slotProps={{ paper: { sx: { minHeight: '80%', minWidth: '80%' } } }}
+        >
+          <DialogTitle>Key Bindings</DialogTitle>
+          <DialogContent>
+            <KeyBindings settings={activeSettings} updateKey={settingsChange} />
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={openAdvanced}
+          keepMounted
+          onClose={() => setOpenAdvanced(false)}
+          onKeyDown={(e) => handleCloseDialogByBackspace(e, setOpenAdvanced)}
+          maxWidth={false}
+          slots={{ transition: Transition }}
+          slotProps={{
+            paper: {
+              sx: {
+                width: 320,
+                maxWidth: 'calc(100vw - 48px)',
+                borderRadius: 2
+              }
+            }
+          }}
+        >
+          <DialogTitle>Advanced Settings</DialogTitle>
+          <DialogContent sx={{ pt: 2, pb: 2, px: 2.25, overflow: 'visible' }}>
+            <Box
+              sx={(theme) => ({
+                display: 'grid',
+                gridTemplateColumns: '120px 120px',
+                columnGap: theme.spacing(1.5),
+                rowGap: theme.spacing(1.5),
+                justifyContent: 'center'
+              })}
+            >
+              <TextField
+                size="small"
+                label={isDarkMode ? 'PRIMARY (DARK)' : 'PRIMARY (LIGHT)'}
+                type="color"
+                value={currentPrimary}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setActiveSettings((prev) => {
+                    const updated = {
+                      ...prev,
+                      [isDarkMode ? 'primaryColorDark' : 'primaryColorLight']: next,
+                      [isDarkMode ? 'highlightEditableFieldDark' : 'highlightEditableFieldLight']:
+                        next
+                    } as ExtraConfig
+                    debouncedSave(updated)
+                    return updated
+                  })
+                }}
+                slotProps={{
+                  inputLabel: { shrink: true },
+                  input: {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => {
+                            setActiveSettings((prev) => {
+                              const updated = {
+                                ...prev,
+                                [isDarkMode ? 'primaryColorDark' : 'primaryColorLight']: undefined,
+                                [isDarkMode
+                                  ? 'highlightEditableFieldDark'
+                                  : 'highlightEditableFieldLight']: undefined
+                              } as ExtraConfig
+                              debouncedSave(updated)
+                              return updated
+                            })
+                          }}
+                          sx={{ ml: 1, py: 0.25, px: 1 }}
+                        >
+                          RESET
+                        </Button>
+                      </InputAdornment>
+                    )
+                  }
+                }}
+                fullWidth
+                sx={{ gridColumn: '1 / span 2' }}
+              />
+
+              <TextField
+                label="DPI"
+                type="number"
+                size="small"
+                margin="dense"
+                value={activeSettings.dpi}
+                onChange={(e) => settingsChange('dpi', Number(e.target.value))}
+                slotProps={{
+                  inputLabel: { shrink: true },
+                  input: { inputProps: { tabIndex: openAdvanced ? 0 : -1 } }
+                }}
+                autoFocus={openAdvanced}
+                sx={{ width: 120 }}
+              />
+              <TextField
+                label="FORMAT"
+                type="number"
+                size="small"
+                margin="dense"
+                value={activeSettings.format}
+                onChange={(e) => settingsChange('format', Number(e.target.value))}
+                slotProps={{ inputLabel: { shrink: true } }}
+                sx={{ width: 120 }}
+              />
+            </Box>
+          </DialogContent>
+        </Dialog>
+      </div>
     </Box>
   )
 }

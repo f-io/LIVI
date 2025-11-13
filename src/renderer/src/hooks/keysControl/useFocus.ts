@@ -93,7 +93,7 @@ export const useFocus = () => {
       }
 
       if (next) {
-        next.focus({ preventScroll: true })
+        next.focus()
 
         appContext?.onSetAppContext?.({
           keyboardNavigation: {

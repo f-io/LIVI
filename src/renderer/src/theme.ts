@@ -41,6 +41,15 @@ const svgIconRoot = { cursor: 'default' }
 function buildTheme(mode: THEME.LIGHT | THEME.DARK) {
   const isLight = mode === THEME.LIGHT
   return createTheme({
+    breakpoints: {
+      values: {
+        xs: 0, // default value
+        sm: 760, // customized value from 600
+        md: 900, // default value
+        lg: 1200, // default value
+        xl: 1536 // default value
+      }
+    },
     palette: {
       mode,
       background: {
