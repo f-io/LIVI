@@ -2,7 +2,7 @@ import { useCallback, useContext } from 'react'
 import { AppContext } from '../../context'
 import { FOCUSABLE_SELECTOR } from '../../constants'
 
-const useFocus = () => {
+export const useFocus = () => {
   const appContext = useContext(AppContext)
 
   const navRef = appContext.navEl
@@ -124,4 +124,3 @@ const useFocus = () => {
     moveFocusLinear
   }
 }
-export default useFocus
