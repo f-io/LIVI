@@ -596,7 +596,7 @@ export const Settings: React.FC = () => {
       flexDirection="column"
       height="calc(100vh - 64px)"
     >
-      <div style={{ overflowX: 'auto', height: '100%' }}>
+      <div style={{ overflowX: 'auto', height: '100%' }} data-scrolled-wrapper>
         <Box
           sx={{
             flexGrow: 1,

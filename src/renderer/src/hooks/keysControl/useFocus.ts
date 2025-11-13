@@ -2,7 +2,7 @@ import { useCallback, useContext } from 'react'
 import { AppContext } from '../../context'
 import { FOCUSABLE_SELECTOR } from '../../constants'
 
-export const useFocus = () => {
+const useFocus = () => {
   const appContext = useContext(AppContext)
 
   const navRef = appContext.navEl
@@ -90,6 +90,12 @@ export const useFocus = () => {
         const idx = list.indexOf(active)
         const targetIdx = idx + delta
         if (targetIdx >= 0 && targetIdx < list.length) next = list[targetIdx]
+
+        if (targetIdx <= 1) {
+          const scrolledWrapper = mainRef?.current?.querySelector('[data-scrolled-wrapper]')
+
+          scrolledWrapper?.scrollTo(0, 0)
+        }
       }
 
       if (next) {
@@ -118,3 +124,4 @@ export const useFocus = () => {
     moveFocusLinear
   }
 }
+export default useFocus
