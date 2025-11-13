@@ -638,6 +638,7 @@ export const Settings: React.FC = () => {
                       type="number"
                       value={draftWidth}
                       onChange={(e) => {
+                        if (appContext?.keyboardNavigation?.focusedElId !== 'width') return
                         setDraftWidth(e.target.value)
                         setHasChanges(true)
                       }}
@@ -665,6 +666,7 @@ export const Settings: React.FC = () => {
                       type="number"
                       value={draftHeight}
                       onChange={(e) => {
+                        if (appContext?.keyboardNavigation?.focusedElId !== 'height') return
                         setDraftHeight(e.target.value)
                         setHasChanges(true)
                       }}
@@ -701,6 +703,7 @@ export const Settings: React.FC = () => {
                       type="number"
                       value={draftFps}
                       onChange={(e) => {
+                        if (appContext?.keyboardNavigation?.focusedElId !== 'fps') return
                         setDraftFps(e.target.value)
                         setHasChanges(true)
                       }}
@@ -722,7 +725,10 @@ export const Settings: React.FC = () => {
                       label="MEDIA DELAY"
                       type="number"
                       value={activeSettings.mediaDelay}
-                      onChange={(e) => settingsChange('mediaDelay', Number(e.target.value))}
+                      onChange={(e) => {
+                        if (appContext?.keyboardNavigation?.focusedElId !== 'mediaDelay') return
+                        settingsChange('mediaDelay', Number(e.target.value))
+                      }}
                       slotProps={{
                         input: {
                           inputProps: { min: MEDIA_DELAY_MIN, max: MEDIA_DELAY_MAX, step: 50 },
@@ -1030,6 +1036,8 @@ export const Settings: React.FC = () => {
                     label="CAR NAME"
                     value={activeSettings.carName ?? ''}
                     onChange={(e) => {
+                      if (appContext?.keyboardNavigation?.focusedElId !== 'carName') return
+
                       const v = normalizeCarName(e.target.value)
                       settingsChange('carName', v)
                     }}
@@ -1058,6 +1066,7 @@ export const Settings: React.FC = () => {
                     label="UI LABEL"
                     value={activeSettings.oemName ?? ''}
                     onChange={(e) => {
+                      if (appContext?.keyboardNavigation?.focusedElId !== 'uiLabel') return
                       const v = normalizeOemLabel(e.target.value)
                       settingsChange('oemName', v as unknown as ExtraConfig['oemName'])
                     }}
