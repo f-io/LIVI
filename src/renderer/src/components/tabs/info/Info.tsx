@@ -358,7 +358,7 @@ export const Info = () => {
       p={2}
       display="flex"
       flexDirection="column"
-      height="100vh"
+      height="calc(100vh - 64px)"
     >
       <Box
         sx={{
