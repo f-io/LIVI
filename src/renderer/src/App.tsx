@@ -72,7 +72,6 @@ function AppInner() {
         (editingField !== document.activeElement?.id ||
           editingField !== document.activeElement?.ariaLabel)
       ) {
-        console.log('handleFocusChange null', editingField, document.activeElement)
         appContext?.onSetAppContext?.({
           ...appContext,
           keyboardNavigation: {
