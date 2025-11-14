@@ -3,6 +3,7 @@ import { createContext, RefObject } from 'react'
 export type AppContextProps = {
   navEl?: RefObject<HTMLElement | null> | null
   contentEl?: RefObject<HTMLElement | null> | null
+  isTouchDevice: boolean
   keyboardNavigation?: {
     focusedElId?: string | null
   }
@@ -12,6 +13,7 @@ export type AppContextProps = {
 export const AppContext = createContext<AppContextProps>({
   navEl: null,
   contentEl: null,
+  isTouchDevice: false,
   keyboardNavigation: {
     focusedElId: null
   },

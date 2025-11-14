@@ -35,6 +35,7 @@ export const useKeyDown = ({
 
       if (elementId === null) {
         appContext?.onSetAppContext?.({
+          ...appContext,
           keyboardNavigation: {
             focusedElId: null
           }
@@ -43,6 +44,7 @@ export const useKeyDown = ({
       }
 
       appContext?.onSetAppContext?.({
+        ...appContext,
         keyboardNavigation: {
           focusedElId: currentFocusedElementId === elementId ? null : elementId
         }
