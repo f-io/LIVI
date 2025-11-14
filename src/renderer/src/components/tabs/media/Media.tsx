@@ -288,7 +288,9 @@ export const Media = () => {
                 </>
               )}
 
-              <div style={{ opacity: 0.55, fontSize: 12, marginTop: 4 }}>{appName}</div>
+              <div style={{ opacity: 0.55, fontSize: 12, marginTop: 4 }}>
+                {innerW > EXTRA_SMALL_SCREEN || !artist ? appName : artist}
+              </div>
             </div>
 
             {innerW > MIN_SCREEN_SIZE_FOR_ATRWORK && (
