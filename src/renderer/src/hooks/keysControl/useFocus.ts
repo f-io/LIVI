@@ -102,6 +102,7 @@ export const useFocus = () => {
         next.focus()
 
         appContext?.onSetAppContext?.({
+          ...appContext,
           keyboardNavigation: {
             focusedElId: null
           }

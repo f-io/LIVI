@@ -585,6 +585,21 @@ export const Settings: React.FC = () => {
       btn.click()
     }
   }, [])
+
+  const handleTouchEvent = useCallback(
+    (field: string) => {
+      if (!field) return
+
+      appContext?.onSetAppContext?.({
+        ...appContext,
+        keyboardNavigation: {
+          focusedElId: field
+        }
+      })
+    },
+    [appContext]
+  )
+
   if (!hasSettings) return null
 
   return (
@@ -637,6 +652,7 @@ export const Settings: React.FC = () => {
                       label="WIDTH"
                       type="number"
                       value={draftWidth}
+                      onPointerDown={() => handleTouchEvent('width')}
                       onChange={(e) => {
                         if (appContext?.keyboardNavigation?.focusedElId !== 'width') return
                         setDraftWidth(e.target.value)
@@ -665,6 +681,7 @@ export const Settings: React.FC = () => {
                       label="HEIGHT"
                       type="number"
                       value={draftHeight}
+                      onPointerDown={() => handleTouchEvent('height')}
                       onChange={(e) => {
                         if (appContext?.keyboardNavigation?.focusedElId !== 'height') return
                         setDraftHeight(e.target.value)
@@ -702,6 +719,7 @@ export const Settings: React.FC = () => {
                       label="FPS"
                       type="number"
                       value={draftFps}
+                      onPointerDown={() => handleTouchEvent('fps')}
                       onChange={(e) => {
                         if (appContext?.keyboardNavigation?.focusedElId !== 'fps') return
                         setDraftFps(e.target.value)
@@ -725,6 +743,7 @@ export const Settings: React.FC = () => {
                       label="MEDIA DELAY"
                       type="number"
                       value={activeSettings.mediaDelay}
+                      onPointerDown={() => handleTouchEvent('mediaDelay')}
                       onChange={(e) => {
                         if (appContext?.keyboardNavigation?.focusedElId !== 'mediaDelay') return
                         settingsChange('mediaDelay', Number(e.target.value))
@@ -1035,6 +1054,7 @@ export const Settings: React.FC = () => {
                     fullWidth
                     label="CAR NAME"
                     value={activeSettings.carName ?? ''}
+                    onPointerDown={() => handleTouchEvent('carName')}
                     onChange={(e) => {
                       if (appContext?.keyboardNavigation?.focusedElId !== 'carName') return
 
@@ -1065,6 +1085,7 @@ export const Settings: React.FC = () => {
                     fullWidth
                     label="UI LABEL"
                     value={activeSettings.oemName ?? ''}
+                    onPointerDown={() => handleTouchEvent('uiLabel')}
                     onChange={(e) => {
                       if (appContext?.keyboardNavigation?.focusedElId !== 'uiLabel') return
                       const v = normalizeOemLabel(e.target.value)
