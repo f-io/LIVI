@@ -168,8 +168,6 @@ export const Media = () => {
   const iconMainPx = Math.round(ctrlSize * 0.52)
   const textSidePad = Math.max(8, Math.round(pagePad * 0.75))
 
-  console.log(MIN_SCREEN_SIZE_FOR_ATRWORK, innerW)
-
   return (
     <div
       id="media-root"
