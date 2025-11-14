@@ -10,7 +10,12 @@ import {
 } from './hooks'
 import { clamp } from './utils'
 import { ProgressBar, Controls } from './components'
-import { MIN_TEXT_COL } from './constants'
+import {
+  EXTRA_SMALL_SCREEN,
+  MIN_SCREEN_SIZE_FOR_ATRWORK,
+  MIN_SCREEN_SIZE_FOR_PROGRESSBAR,
+  MIN_TEXT_COL
+} from './constants'
 import { flash } from './utils/flash'
 import { mediaScaleOps } from './utils/mediaScaleOps'
 import { mediaLayoutArtworksOps } from './utils/mediaLayoutArtworksOps'
@@ -29,7 +34,7 @@ export const Media = () => {
     mediaScaleOps({ w, h })
 
   // Layout + artwork
-  const { canTwoCol, artPx } = mediaLayoutArtworksOps({
+  const { canTwoCol, artPx, innerW } = mediaLayoutArtworksOps({
     ctrlSize,
     progressH,
     w,
@@ -272,35 +277,46 @@ export const Media = () => {
               >
                 {title}
               </div>
-              <div style={{ opacity: 0.9, fontSize: `${artistPx}px`, marginTop: 8 }}>{artist}</div>
-              <div style={{ opacity: 0.7, fontSize: `${albumPx}px`, marginTop: 4 }}>{album}</div>
+              {innerW > EXTRA_SMALL_SCREEN && (
+                <>
+                  <div style={{ opacity: 0.9, fontSize: `${artistPx}px`, marginTop: 8 }}>
+                    {artist}
+                  </div>
+                  <div style={{ opacity: 0.7, fontSize: `${albumPx}px`, marginTop: 4 }}>
+                    {album}
+                  </div>
+                </>
+              )}
+
               <div style={{ opacity: 0.55, fontSize: 12, marginTop: 4 }}>{appName}</div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
-              <div
-                style={{
-                  width: artPx,
-                  height: artPx,
-                  borderRadius: 18,
-                  overflow: 'hidden',
-                  background: 'rgba(255,255,255,0.06)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                {imageDataUrl ? (
-                  <img
-                    src={imageDataUrl}
-                    alt="Cover"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                ) : (
-                  <div style={{ opacity: 0.6, fontSize: 12 }}>No Artwork</div>
-                )}
+            {innerW > MIN_SCREEN_SIZE_FOR_ATRWORK && (
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <div
+                  style={{
+                    width: artPx,
+                    height: artPx,
+                    borderRadius: 18,
+                    overflow: 'hidden',
+                    background: 'rgba(255,255,255,0.06)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  {imageDataUrl ? (
+                    <img
+                      src={imageDataUrl}
+                      alt="Cover"
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <div style={{ opacity: 0.6, fontSize: 12 }}>No Artwork</div>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
       </div>
@@ -324,7 +340,7 @@ export const Media = () => {
           iconMainPx={iconMainPx}
         />
 
-        {!mediaPayloadError && (
+        {!mediaPayloadError && innerW > MIN_SCREEN_SIZE_FOR_PROGRESSBAR && (
           <ProgressBar elapsedMs={elapsedMs} progressH={progressH} totalMs={totalMs} pct={pct} />
         )}
       </div>
