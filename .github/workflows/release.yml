@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       build_run_id:
-        description: "ID of successful build run (leave empty = latest on main)"
+        description: 'ID of successful build run (leave empty = latest on main)'
         required: false
       draft:
-        description: "Create as draft?"
+        description: 'Create as draft?'
         type: boolean
         default: true
 
@@ -17,65 +17,81 @@ jobs:
     permissions: { contents: write, actions: read }
 
     steps:
-    - name: Pick build run ID
-      id: pick
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        REPO:     ${{ github.repository }}
-      run: |
-        if [[ -z "${{ github.event.inputs.build_run_id }}" ]]; then
-          RUN=$(gh run list --repo "$REPO" \
-                             --workflow build.yml \
-                             -b main \
-                             -s success \
-                             -L 1 \
-                             --json databaseId \
-                             -q '.[0].databaseId')
-        else
-          RUN="${{ github.event.inputs.build_run_id }}"
-        fi
-        if [[ -z "$RUN" ]]; then
-          echo "::error::No suitable build run found."
-          exit 1
-        fi
-        echo "run_id=$RUN" >> "$GITHUB_OUTPUT"
+      - name: Pick build run ID
+        id: pick
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [[ -z "${{ github.event.inputs.build_run_id }}" ]]; then
+            RUN=$(gh run list --repo "$REPO" \
+                               --workflow build.yml \
+                               -b main \
+                               -s success \
+                               -L 1 \
+                               --json databaseId \
+                               -q '.[0].databaseId')
+          else
+            RUN="${{ github.event.inputs.build_run_id }}"
+          fi
+          if [[ -z "$RUN" ]]; then
+            echo "::error::No suitable build run found."
+            exit 1
+          fi
+          echo "run_id=$RUN" >> "$GITHUB_OUTPUT"
 
-    - name: Get commit SHA
-      id: sha
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        REPO:     ${{ github.repository }}
-      run: |
-        SHA=$(gh run view "${{ steps.pick.outputs.run_id }}" \
-               --repo "$REPO" \
-               --json headSha \
-               -q .headSha)
-        echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+      - name: Get commit SHA
+        id: sha
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          SHA=$(gh run view "${{ steps.pick.outputs.run_id }}" \
+                 --repo "$REPO" \
+                 --json headSha \
+                 -q .headSha)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
-    - uses: actions/checkout@v4
-      with:
-        ref: ${{ steps.sha.outputs.sha }}
-        fetch-depth: 1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.sha.outputs.sha }}
+          fetch-depth: 1
 
-    - name: Read version
-      id: ver
-      run: |
-        VERSION=$(grep -oP '"version"\s*:\s*"\K[^"]+' package.json)
-        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Read version
+        id: ver
+        run: |
+          VERSION=$(grep -oP '"version"\s*:\s*"\K[^"]+' package.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-    - name: Download artifacts
-      uses: actions/download-artifact@v4
-      with:
-        run-id: ${{ steps.pick.outputs.run_id }}
-        path: release-assets
-        github-token: ${{ secrets.GITHUB_TOKEN }} 
+      - name: Get release date (Europe/Berlin)
+        id: rel_date
+        run: |
+          echo "date=$(TZ=Europe/Berlin date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
 
-    - name: Create GitHub release
-      uses: softprops/action-gh-release@v2
-      with:
-        draft:    ${{ github.event.inputs.draft }}
-        tag_name: v${{ steps.ver.outputs.version }}
-        name:     v${{ steps.ver.outputs.version }}
-        files:    release-assets/**/*
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ steps.pick.outputs.run_id }}
+          path: release-assets
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: ${{ github.event.inputs.draft }}
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: v${{ steps.ver.outputs.version }} (${{ steps.rel_date.outputs.date }})
+          body: |
+            ## Release Notes – v${{ steps.ver.outputs.version }}
+
+            ### Fix
+
+            ### Improvements
+
+            ### Feature
+
+            ### Chores
+
+          files: release-assets/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

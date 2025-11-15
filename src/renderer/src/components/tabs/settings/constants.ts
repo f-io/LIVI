@@ -3,7 +3,7 @@ import { ExtraConfig } from '@main/Globals'
 export const MEDIA_DELAY_MIN = 300
 export const MEDIA_DELAY_MAX = 2000
 export const MIN_HEIGHT = 200
-export const MIN_WIDTH = 400
+export const MIN_WIDTH = 300
 export const MAX_WIDTH = 4096
 export const MAX_HEIGHT = 2160
 export const DEFAULT_WIDTH = 800

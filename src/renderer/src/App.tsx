@@ -50,6 +50,7 @@ function AppInner() {
   useEffect(() => {
     if (!appContext?.navEl || !appContext?.contentEl) {
       appContext?.onSetAppContext?.({
+        ...appContext,
         navEl: navRef,
         contentEl: mainRef
       })
@@ -68,10 +69,12 @@ function AppInner() {
     const handleFocusChange = () => {
       if (
         editingField &&
+        !appContext.isTouchDevice &&
         (editingField !== document.activeElement?.id ||
           editingField !== document.activeElement?.ariaLabel)
       ) {
         appContext?.onSetAppContext?.({
+          ...appContext,
           keyboardNavigation: {
             focusedElId: null
           }

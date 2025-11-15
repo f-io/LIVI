@@ -90,12 +90,19 @@ export const useFocus = () => {
         const idx = list.indexOf(active)
         const targetIdx = idx + delta
         if (targetIdx >= 0 && targetIdx < list.length) next = list[targetIdx]
+
+        if (targetIdx <= 1) {
+          const scrolledWrapper = mainRef?.current?.querySelector('[data-scrolled-wrapper]')
+
+          scrolledWrapper?.scrollTo(0, 0)
+        }
       }
 
       if (next) {
-        next.focus({ preventScroll: true })
+        next.focus()
 
         appContext?.onSetAppContext?.({
+          ...appContext,
           keyboardNavigation: {
             focusedElId: null
           }

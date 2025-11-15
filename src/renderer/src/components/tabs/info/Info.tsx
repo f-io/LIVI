@@ -358,7 +358,7 @@ export const Info = () => {
       p={2}
       display="flex"
       flexDirection="column"
-      height="100vh"
+      height="calc(100vh - 64px)"
     >
       <Box
         sx={{
@@ -460,8 +460,20 @@ export const Info = () => {
         </Box>
 
         <Box sx={{ px: 1 }}>
-          <Box sx={{ display: 'flex', flexWrap: 'nowrap', gap: 1.5 }}>
-            <Box sx={{ flex: '1 1 40%', minWidth: 240, alignSelf: 'center' }}>
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: { xs: 'column', sm: 'row' },
+              gap: 1.5
+            }}
+          >
+            <Box
+              sx={{
+                flex: { xs: '0 0 auto', sm: '1 1 40%' },
+                minWidth: { xs: 0, sm: 240 },
+                alignSelf: { xs: 'stretch', sm: 'center' }
+              }}
+            >
               <SectionHeader>AUDIO INFO</SectionHeader>
               <Stack spacing={0.5} sx={{ pl: 1.5 }}>
                 {Row('Codec', audioCodec, { maxCh: 24 })}
@@ -479,8 +491,8 @@ export const Info = () => {
 
             <Box
               sx={{
-                flex: '1 1 60%',
-                minWidth: 240,
+                flex: { xs: '0 0 auto', sm: '1 1 60%' },
+                minWidth: { xs: 0, sm: 240 },
                 height: 'clamp(180px, 30vh, 440px)',
                 display: 'flex',
                 alignItems: 'center',

@@ -15,7 +15,13 @@ initCursorHider()
 
 const Root = () => {
   const settings = useCarplayStore((s) => s.settings)
-  const [appContext, setAppContext] = useState<AppContextProps>()
+  // detect touch, stylus and mouse
+  const isTouchDevice =
+    navigator.maxTouchPoints >= 0 || window.matchMedia('(pointer: coarse)').matches
+
+  const [appContext, setAppContext] = useState<AppContextProps>({
+    isTouchDevice
+  })
 
   const handleChangeAppContext = useCallback(
     (props: AppContextProps) => {

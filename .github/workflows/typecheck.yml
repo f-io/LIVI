@@ -26,6 +26,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Setup npm 11.x
         run: |
@@ -39,14 +41,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential python3 python3-dev libusb-1.0-0-dev libudev-dev
 
-      - name: Disable root postinstall (CI typecheck)
+      - name: Install dependencies from lockfile
         run: |
-          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));if(p.scripts&&p.scripts.postinstall){p.scripts._postinstall=p.scripts.postinstall;delete p.scripts.postinstall;fs.writeFileSync('package.json',JSON.stringify(p,null,2));console.log('postinstall disabled');}else{console.log('no postinstall found');}"
-
-      - name: Clean & install dependencies
-        run: |
-          rm -rf node_modules package-lock.json
-          npm install --no-audit --prefer-offline
+          npm run install:ci
 
       - name: Run TypeScript type-check
         run: npm run typecheck
