@@ -7,8 +7,7 @@ import { CommandMapping } from '@main/carplay/messages/common'
 import { ExtraConfig } from '@main/Globals'
 import { useCarplayStore, useStatusStore } from '../../../store/store'
 import { InitEvent, Renderer } from '@worker/render/RenderEvents'
-import type { CarPlayWorker, UsbEvent, KeyCommand, WorkerToUI, AudioData } from '@worker/types'
-import useCarplayAudio from './hooks/useCarplayAudio'
+import type { CarPlayWorker, UsbEvent, KeyCommand, WorkerToUI } from '@worker/types'
 import { useCarplayMultiTouch } from './hooks/useCarplayTouch'
 
 // Icons
@@ -258,6 +257,9 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     configRef.current = settings
   }, [settings])
 
+  // Visual delay for FFT so spectrum matches audio playback
+  const fftVisualDelayMs = 0
+
   // Channels
   const videoChannel = useMemo(() => new MessageChannel(), [])
   const audioChannel = useMemo(() => new MessageChannel(), [])
@@ -341,20 +343,40 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     return () => {}
   }, [videoChannel, renderReady])
 
-  // Forward audio chunks to audio channel
+  // Forward audio chunks to FFT
   useEffect(() => {
+    const timers = new Set<number>()
+
     const handleAudio = (payload: unknown) => {
       if (!payload || typeof payload !== 'object') return
+
       const m = payload as { chunk?: { buffer?: ArrayBuffer } } & Record<string, unknown>
       const buf = m.chunk?.buffer
       if (!buf) return
 
-      const { chunk: _chunk, ...rest } = m
-      audioChannel.port2.postMessage({ type: 'audio', buffer: buf, ...rest }, [buf])
+      // mono Int16 from main -> Float32 [-1, 1] for FFT
+      const int16 = new Int16Array(buf)
+      const f32 = new Float32Array(int16.length)
+      for (let i = 0; i < int16.length; i += 1) {
+        f32[i] = int16[i] / 32768
+      }
+
+      const id = window.setTimeout(() => {
+        timers.delete(id)
+        setPcmData(f32)
+      }, fftVisualDelayMs)
+      timers.add(id)
     }
+
     window.carplay.ipc.onAudioChunk(handleAudio)
-    return () => {}
-  }, [audioChannel])
+
+    return () => {
+      for (const id of timers) {
+        window.clearTimeout(id)
+      }
+      timers.clear()
+    }
+  }, [setPcmData, fftVisualDelayMs])
 
   // Start CarPlay service on mount
   useEffect(() => {
@@ -368,7 +390,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   }, [])
 
   // Audio + touch hooks
-  const { processAudio, getAudioPlayer } = useCarplayAudio(carplayWorker)
   const touchHandlers = useCarplayMultiTouch()
 
   const clearRetryTimeout = useCallback(() => {
@@ -404,20 +425,11 @@ const CarplayComponent: React.FC<CarplayProps> = ({
 
         case 'requestBuffer': {
           clearRetryTimeout()
-          const m = (msg as Extract<WorkerToUI, { type: 'requestBuffer' }>).message
-          getAudioPlayer(m)
           break
         }
 
         case 'audio': {
           clearRetryTimeout()
-          const m = (msg as Extract<WorkerToUI, { type: 'audio' }>).message
-          const audioPayload: AudioData & { command?: number } = {
-            ...m,
-            command: audioCommandRef.current
-          }
-          processAudio(audioPayload)
-          audioCommandRef.current = undefined
           break
         }
 
@@ -469,8 +481,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   }, [
     carplayWorker,
     clearRetryTimeout,
-    getAudioPlayer,
-    processAudio,
     gotoHostUI,
     setDeviceInfo,
     setNegotiatedResolution,

@@ -19,8 +19,10 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": "./src",
     "paths": {
+      "@main/*": ["main/*"],
       "@carplay/*": ["main/carplay/*"],
-      "@carplay/node": ["main/carplay/node"]
+      "@carplay/node": ["main/carplay/node"],
+      "@audio": ["main/audio/index.ts"]
     }
   }
 }
