@@ -4,18 +4,6 @@ import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { ExtraConfig } from '../../main/Globals'
 import type { MultiTouchPoint } from '../../main/carplay/messages/sendable'
 
-declare module 'ringbuf.js' {
-  export class RingBuffer {
-    constructor(sab: SharedArrayBuffer, type: { BYTES_PER_ELEMENT: number })
-    push(elements: ArrayBufferView, length?: number, offset?: number): number
-    pop(elements: ArrayBufferView, length: number, offset?: number): number
-    empty(): boolean
-    full(): boolean
-    capacity(): number
-    availableRead(): number
-  }
-}
-
 interface USBDevice {
   readonly productName?: string
   readonly manufacturerName?: string

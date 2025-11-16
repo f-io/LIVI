@@ -13,7 +13,12 @@
     "skipLibCheck": true,
     "noEmit": true,
     "resolveJsonModule": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "baseUrl": "./src",
+    "paths": {
+      "@audio": ["main/audio/index.ts"],
+      "@audio/*": ["main/audio/*"]
+    }
   },
   "include": ["src/**/*", "src/types"],
   "exclude": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"]
