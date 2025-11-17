@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, useContext, ElementType } from 'react'
-import { HashRouter as Router, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { HashRouter as Router, Route, Routes, useLocation } from 'react-router-dom'
 import { Carplay, Camera } from './components/tabs'
 import { Nav } from './components/navigation/Nav'
 import { Box, Modal } from '@mui/material'

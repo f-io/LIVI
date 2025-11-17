@@ -6,7 +6,9 @@ import {
   Other,
   Sources,
   ViewMode
-} from '../../components/tabs/newSettings/componetns'
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
+} from '../../components/tabs/neewSettings/componetns'
 import { RouteProps, RoutePath } from '../types'
 
 export const settingsNestedPath = {
