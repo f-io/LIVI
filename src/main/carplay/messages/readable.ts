@@ -216,13 +216,18 @@ export class AudioData extends Message {
     this.decodeType = data.readUInt32LE(0)
     this.volume = data.readFloatLE(4)
     this.audioType = data.readUInt32LE(8)
-    const amount = data.length - 12
-    if (amount === 1) {
+
+    const payloadBytes = data.length - 12
+    if (payloadBytes <= 0) return
+
+    if (payloadBytes === 1) {
       this.command = data.readInt8(12)
-    } else if (amount === 4) {
+    } else if (payloadBytes === 4) {
       this.volumeDuration = data.readFloatLE(12)
-    } else {
-      this.data = new Int16Array(data.buffer, 12)
+    } else if (payloadBytes > 0) {
+      const byteOffset = data.byteOffset + 12
+      const sampleCount = payloadBytes / Int16Array.BYTES_PER_ELEMENT
+      this.data = new Int16Array(data.buffer, byteOffset, sampleCount)
     }
   }
 }
@@ -329,6 +334,7 @@ export class Opened extends Message {
     this.phoneMode = data.readUInt32LE(24)
   }
 }
+
 export class BoxInfo extends Message {
   settings:
     | {

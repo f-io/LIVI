@@ -89,6 +89,9 @@ const api = {
       audioChunkHandler = handler
       audioChunkQueue.forEach((chunk) => handler(chunk))
       audioChunkQueue = []
+    },
+    setVolume: (stream: 'music' | 'nav' | 'siri' | 'call', volume: number): void => {
+      ipcRenderer.send('carplay-set-volume', { stream, volume })
     }
   }
 }

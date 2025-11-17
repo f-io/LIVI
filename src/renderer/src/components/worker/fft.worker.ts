@@ -1,6 +1,6 @@
 import FFT from 'fft.js'
 
-// Worker für FFT: init mit Parametern, empfangen von Float32-PCM-Puffern, Ausgabe normierter Bins
+// Worker for FFT: init with parametern
 const FLOOR_DB = -80
 const MIN_FREQ = 20
 

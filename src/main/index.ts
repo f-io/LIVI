@@ -200,8 +200,9 @@ function loadConfig(): ExtraConfig {
     microphone: '',
     nightMode: true,
     audioVolume: 1.0,
-    navVolume: 0.5,
-    audioJitterMs: 15,
+    navVolume: 1.0,
+    siriVolume: 1.0,
+    callVolume: 1.0,
     bindings: { ...DEFAULT_BINDINGS },
     ...fileConfig
   } as ExtraConfig
