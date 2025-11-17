@@ -1,51 +1,56 @@
-import { SettingsLayout } from '../../../../layouts/SettingsLayout'
+import { SettingsLayout } from '@renderer/components/layouts'
 import { Typography } from '@mui/material'
-import Divider from '@mui/material/Divider'
-import { StackItem } from '../stackItem'
-import { ScreenResolution } from './ScreenResolution'
-import { useCallback, useState } from 'react'
+import { StackItem } from '../StackItem'
+import { useCarplayStore } from '@store/store'
+import { dialogsConfig } from '../dialog/config'
+import { useSettingsDialogs } from '../../hooks'
+import { VideoSettingKey } from './types'
+import { videoSettingsUIConfig } from './config'
+import { useSmartSettings } from '../../hooks/useSmartSettings'
 
 export const Video = () => {
-  const [isOpen, setIsOpen] = useState(false)
+  const settings = useCarplayStore((s) => s.settings)
 
-  const handleIsOpen = useCallback(
-    (status) => {
-      setIsOpen(status)
-    },
-    [setIsOpen]
-  )
+  const initialState: Record<VideoSettingKey, number> = {
+    width: settings?.width ?? 0,
+    height: settings?.height ?? 0,
+    fps: settings?.fps ?? 0,
+    mediaDelay: settings?.mediaDelay ?? 0,
+    audioVolume: settings?.audioVolume ?? 0,
+    navVolume: settings?.navVolume ?? 0
+  }
+
+  const {
+    state: settingsState,
+    handleFieldChange,
+    resetState,
+    save
+  } = useSmartSettings(initialState, settings)
+
+  const { dialog, onToggleDialog } = useSettingsDialogs({
+    dialogsConfig,
+    data: settingsState,
+    onSave: save,
+    onChange: handleFieldChange,
+    onReset: resetState
+  })
+
+  const stackItems = (Object.keys(videoSettingsUIConfig) as VideoSettingKey[])
+    .filter((key) => key !== 'height')
+    .map((key) => {
+      const cfg = videoSettingsUIConfig[key]
+      return (
+        <StackItem key={key} onClick={() => cfg.dialog && onToggleDialog(cfg.dialog!, true)}>
+          <Typography>{cfg.label}</Typography>
+          <Typography>{cfg.display ? cfg.display(settingsState) : settingsState[key]}</Typography>
+        </StackItem>
+      )
+    })
 
   return (
-    <SettingsLayout>
-      <StackItem onClick={() => handleIsOpen(true)}>
-        <Typography>Screen resolution</Typography>
-        <Typography>800 x 480</Typography>
-      </StackItem>
-      <StackItem>
-        <Typography>FPS</Typography>
-        <Typography>60</Typography>
-      </StackItem>
-      <StackItem>
-        <Typography>Media Delay</Typography>
-        <Typography>1000</Typography>
-      </StackItem>
-
-      <br />
-
-      <Divider />
-
-      <br />
-
-      <StackItem>
-        <Typography>Audio Volume</Typography>
-        <Typography>80</Typography>
-      </StackItem>
-      <StackItem>
-        <Typography>Navigation Volume</Typography>
-        <Typography>40</Typography>
-      </StackItem>
-
-      <ScreenResolution isOpen={isOpen} onClose={handleIsOpen} />
+    <SettingsLayout onSave={save}>
+      {stackItems}
+      {dialog && dialog()}
     </SettingsLayout>
   )
 }

@@ -1,6 +1,6 @@
-import { settingsSubNestedPath } from '../../../../../routes/settings/nested'
-import { SettingsLayout } from '../../../../layouts/SettingsLayout'
-import { StackItem } from '../stackItem'
+import { settingsSubNestedPath } from '@renderer/routes/settings/nested'
+import { SettingsLayout } from '@renderer/components/layouts/SettingsLayout'
+import { StackItem } from '../StackItem'
 import { Typography } from '@mui/material'
 import { NavLink } from 'react-router-dom'
 

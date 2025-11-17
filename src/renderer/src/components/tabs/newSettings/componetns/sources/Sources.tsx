@@ -1,5 +1,5 @@
-import { SettingsLayout } from '../../../../layouts/SettingsLayout'
-import { StackItem } from '../stackItem'
+import { SettingsLayout } from '@renderer/components/layouts/SettingsLayout'
+import { StackItem } from '../StackItem'
 import { Typography, TextField, MenuItem } from '@mui/material'
 import { WiFiValues } from '../../../settings/constants'
 

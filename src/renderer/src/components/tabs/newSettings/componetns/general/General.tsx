@@ -1,34 +1,75 @@
-import { SettingsLayout } from '../../../../layouts/SettingsLayout'
-import { StackItem } from '../stackItem'
+import { SettingsLayout } from '@renderer/components/layouts/SettingsLayout'
+import { StackItem } from '../StackItem'
 import { Typography, Switch } from '@mui/material'
+import { useCarplayStore } from '@store/store'
+import { GeneralSettingKey } from './types'
+import { generalSettingsUIConfig } from './config'
+import { useSettingsDialogs } from '../../hooks'
+import { dialogsConfig } from '../dialog/config'
+import { useSmartSettings } from '../../hooks/useSmartSettings'
 
 export const General = () => {
+  // FIXME types
+  const settings = useCarplayStore((s) => s.settings)
+
+  const initialState: Record<GeneralSettingKey, number | string | boolean> = {
+    carName: settings?.carName || '',
+    oemName: settings?.oemName || '',
+    autoPlay: settings?.autoPlay,
+    audioTransferMode: settings?.audioTransferMode,
+    nightMode: settings?.nightMode,
+    kiosk: settings?.kiosk
+  }
+
+  const {
+    state: settingsState,
+    handleFieldChange,
+    resetState,
+    save
+  } = useSmartSettings(initialState, settings, {
+    overrides: {
+      audioTransferMode: {
+        transform: (v: boolean) => !v
+      }
+    }
+  })
+
+  const { dialog, onToggleDialog } = useSettingsDialogs({
+    dialogsConfig,
+    data: settingsState,
+    onSave: save,
+    onChange: handleFieldChange,
+    onReset: resetState
+  })
+
   return (
-    <SettingsLayout>
-      <StackItem>
-        <Typography>Auto play music</Typography>
-        <div>
-          <Switch defaultChecked />
-        </div>
-      </StackItem>
-      <StackItem>
-        <Typography>Audio</Typography>
-        <div>
-          <Switch defaultChecked />
-        </div>
-      </StackItem>
-      <StackItem>
-        <Typography>Dark mode</Typography>
-        <div>
-          <Switch defaultChecked />
-        </div>
-      </StackItem>
-      <StackItem>
-        <Typography>Fullscreen</Typography>
-        <div>
-          <Switch defaultChecked />
-        </div>
-      </StackItem>
+    <SettingsLayout onSave={save}>
+      {(Object.keys(generalSettingsUIConfig) as GeneralSettingKey[]).map((key) => {
+        const cfg = generalSettingsUIConfig[key]
+        const _onClick = () =>
+          cfg.dialog
+            ? onToggleDialog(cfg.dialog!, true)
+            : handleFieldChange(key, !settingsState[key])
+
+        return (
+          <StackItem key={key} onClick={_onClick}>
+            <Typography>{generalSettingsUIConfig[key].label}</Typography>
+
+            {cfg.dialog ? (
+              <Typography style={{ justifyContent: 'flex-end' }}>
+                {cfg.display ? cfg.display(settingsState) : settingsState[key]}
+              </Typography>
+            ) : (
+              <Switch
+                checked={!!settingsState[key]}
+                onChange={(e) => handleFieldChange(key, e.target.checked)}
+                slotProps={{ input: { 'aria-label': key } }}
+              />
+            )}
+          </StackItem>
+        )
+      })}
+      {dialog && dialog()}
     </SettingsLayout>
   )
 }

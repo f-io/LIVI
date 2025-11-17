@@ -1,7 +1,8 @@
 import { styled } from '@mui/material/styles'
 import Paper from '@mui/material/Paper'
 import ArrowForwardIosOutlinedIcon from '@mui/icons-material/ArrowForwardIosOutlined'
-import { themeColors } from '../../../../themeColors'
+import { themeColors } from '@renderer/themeColors'
+import { StackItemProps } from './types'
 
 const Item = styled(Paper)(({ theme }) => ({
   ...theme.typography.body2,
@@ -100,7 +101,7 @@ const Item = styled(Paper)(({ theme }) => ({
   }
 }))
 
-export const StackItem = ({ children, withForwardIcon, onClick }) => {
+export const StackItem = ({ children, withForwardIcon, onClick }: StackItemProps) => {
   return (
     <Item onClick={onClick}>
       {children}

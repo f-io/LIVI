@@ -1,4 +1,4 @@
-export * from './general/General'
+export * from './general'
 export * from './videoAudio/Video'
 export * from './keybindings/KeyBindings'
 export * from './other/Advanced'
