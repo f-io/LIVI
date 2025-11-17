@@ -143,8 +143,9 @@ export class AudioOutput {
       this.bytesWritten += buf.byteLength
 
       if (!ok) {
-        // wait for next 'drain'
-        console.debug('[AudioOutput] backpressure: waiting for drain, queued', this.queue.length)
+        if (this.queue.length > 0) {
+          console.debug('[AudioOutput] backpressure: waiting for drain, queued', this.queue.length)
+        }
         return
       }
     }
@@ -173,7 +174,7 @@ export class AudioOutput {
   stop(): void {
     if (!this.process) return
 
-    console.debug('[AudioOutput] stopping playback')
+    // console.debug('[AudioOutput] stopping playback')
 
     try {
       if (this.process.stdin && !this.process.stdin.destroyed) {
