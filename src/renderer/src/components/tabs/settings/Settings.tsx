@@ -1006,10 +1006,14 @@ export const Settings: React.FC = () => {
                     <MenuItem
                       value="os"
                       disabled={micUnavailable && activeSettings.micType !== 'os'}
+                      title={micLabel}
+                      sx={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
                     >
-                      <Typography noWrap component="span" title={micLabel}>
-                        {renderOsMicLabel(micLabel)}
-                      </Typography>
+                      {renderOsMicLabel(micLabel)}
                     </MenuItem>
                     <MenuItem value="box">BOX</MenuItem>
                   </TextField>
