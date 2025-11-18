@@ -52,9 +52,7 @@ export const VideoAudio = () => {
               justifyContent: 'flex-end'
             }}
           >
-            {cfg.display
-              ? get(cfg.display(settingsState), '', EMPTY_STRING)
-              : get(settingsState[key], '', EMPTY_STRING)}
+            {cfg.display ? cfg.display(settingsState) : get(settingsState[key], '', EMPTY_STRING)}
           </Typography>
         </StackItem>
       )

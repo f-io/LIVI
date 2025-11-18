@@ -60,7 +60,7 @@ export const General = () => {
             {cfg.dialog ? (
               <Typography style={{ justifyContent: 'flex-end' }}>
                 {cfg.display
-                  ? get(cfg.display(settingsState), '', EMPTY_STRING)
+                  ? cfg.display(settingsState)
                   : get(settingsState[key], '', EMPTY_STRING)}
               </Typography>
             ) : (
