@@ -1,4 +1,4 @@
-import { Home, Media, Camera, Settings, Info } from '../components/tabs'
+import { Home, Media, Camera, Settings, Info } from '../components/pages'
 import { RoutePath, RouteProps } from './types'
 import { settingsRoutes } from './settings'
 

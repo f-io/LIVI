@@ -1,6 +1,6 @@
 import { RoutePath, RouteProps } from '../types'
 import { settingsNestedRoutes } from './nested'
-import { NewSettings } from '../../components/tabs'
+import { NewSettings } from '../../components/pages'
 
 export const settingsRoutes: RouteProps[] = [
   {

@@ -1,12 +1,13 @@
 import {
   General,
-  Video,
+  VideoAudio,
   KeyBindings,
   Advanced,
   Other,
   Sources,
-  ViewMode
-} from '../../components/tabs/newSettings/componetns'
+  UiTheme,
+  About
+} from '../../components/pages/newSettings/subPages'
 import { RouteProps, RoutePath } from '../types'
 
 export const settingsNestedPath = {
@@ -14,7 +15,8 @@ export const settingsNestedPath = {
   screen: `/${RoutePath.NewSettings}/screen`,
   sources: `/${RoutePath.NewSettings}/sources`,
   keybindings: `/${RoutePath.NewSettings}/keybindings`,
-  other: `/${RoutePath.NewSettings}/other`
+  other: `/${RoutePath.NewSettings}/other`,
+  about: `/${RoutePath.NewSettings}/about`
 }
 
 export const settingsSubNestedPath = {
@@ -30,7 +32,7 @@ export const settingsSubNestedRoutes: RouteProps[] = [
   },
   {
     path: settingsSubNestedPath.viewMode,
-    component: ViewMode,
+    component: UiTheme,
     title: 'ViewMode'
   }
 ]
@@ -43,7 +45,7 @@ export const settingsNestedRoutes: RouteProps[] = [
   },
   {
     path: settingsNestedPath.screen,
-    component: Video,
+    component: VideoAudio,
     title: 'Video & Audio'
   },
   {
@@ -60,6 +62,11 @@ export const settingsNestedRoutes: RouteProps[] = [
     path: settingsNestedPath.other,
     component: Other,
     title: 'Other'
+  },
+  {
+    path: settingsNestedPath.about,
+    component: About,
+    title: 'About'
   },
   ...settingsSubNestedRoutes
 ]

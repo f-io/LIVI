@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback, useContext, ElementType } from 'react'
 import { HashRouter as Router, Route, Routes, useLocation } from 'react-router-dom'
-import { Carplay, Camera } from './components/tabs'
+import { Carplay, Camera } from './components/pages'
 import { Nav } from './components/navigation/Nav'
 import { Box, Modal } from '@mui/material'
 import { useCarplayStore, useStatusStore } from './store/store'
@@ -21,12 +21,6 @@ const modalStyle = {
   boxShadow: 24,
   display: 'flex'
 }
-
-// TODO
-// move:
-// isVisible, isFormField, getFocusableList, getFirstFocusable,focusSelectedNav
-// focusFirstInMain, moveFocusLinear, inContainer
-// to the application context
 
 function AppInner() {
   const appContext = useContext(AppContext)
