@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback, useContext, ElementType } from 'react'
-import { HashRouter as Router, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { HashRouter as Router, Route, Routes, useLocation } from 'react-router-dom'
 import { Carplay, Camera } from './components/tabs'
-import Nav from './components/Nav'
+import { Nav } from './components/navigation/Nav'
 import { Box, Modal } from '@mui/material'
 import { useCarplayStore, useStatusStore } from './store/store'
 import type { KeyCommand } from '@worker/types'
@@ -9,7 +9,7 @@ import { updateCameras } from './utils/cameraDetection'
 import { useActiveControl, useFocus, useKeyDown } from './hooks'
 import { ROUTES } from './constants'
 import { AppContext } from './context'
-import { RoutePath, routes, ROUTES_NEW } from './routes'
+import { routes } from './routes'
 
 const modalStyle = {
   position: 'absolute' as const,
@@ -143,8 +143,6 @@ function AppInner() {
 
       <div ref={mainRef} id="main-root">
         <Routes>
-          <Route path={ROUTES_NEW.HOME} element={<Navigate to={`/${RoutePath.Home}`} />} />
-
           {routes.map((route, index) => {
             const Component = route.component as unknown as ElementType
             const path = route.path
@@ -156,7 +154,8 @@ function AppInner() {
             return null
           })}
 
-          <Route path="*" element={<Navigate to={`/${RoutePath.Home}`} replace />} />
+          {/*TODO Clarify behaviour*/}
+          {/*<Route path="*" element={<Navigate to={`/${RoutePath.Home}`} replace />} />*/}
         </Routes>
       </div>
 

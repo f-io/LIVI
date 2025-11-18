@@ -27,7 +27,7 @@ export const SettingsLayout = ({ children, onSave }: SettingsLayoutProps) => {
       <div
         style={{
           overflow: 'auto',
-          height: '100%',
+          height: 'calc(100% - 40px)',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between'
@@ -40,7 +40,11 @@ export const SettingsLayout = ({ children, onSave }: SettingsLayoutProps) => {
             display: 'flex',
             flexDirection: 'row',
             justifyContent: 'space-between',
-            marginTop: '1rem'
+            position: 'fixed',
+            bottom: '0.5rem',
+            left: 0,
+            width: '100%',
+            padding: '0 2rem'
           }}
         >
           <Button

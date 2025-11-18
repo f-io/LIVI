@@ -93,6 +93,10 @@ export class CarplayService {
   private readonly musicRampInMs = 1000
   private readonly voiceTailMuteMs = 500
 
+  // Fallback
+  private readonly orphanMediaStartTimeoutMs = 2000
+  private pendingMediaStartAt = 0
+
   // When to start the next ramp
   private nextMusicRampStartAt = 0
   private musicRampActive = false
@@ -405,6 +409,24 @@ export class CarplayService {
         const channels = meta?.channel ?? 2
         const totalSamples = msg.data.length
 
+        // Fallback
+        if (!this.mediaActive && this.pendingMediaStartAt > 0) {
+          const elapsed = now - this.pendingMediaStartAt
+          if (elapsed >= this.orphanMediaStartTimeoutMs) {
+            this.mediaActive = true
+            this.musicRampActive = true
+            this.musicFade.current = 0
+            this.musicFade.target = 1
+            this.musicFade.remainingSamples = 0
+            this.nextMusicRampStartAt = now
+            this.pendingMediaStartAt = 0
+
+            console.debug('[CarplayService] fallback AudioMediaStart after timeout', {
+              elapsedMs: elapsed
+            })
+          }
+        }
+
         // Always mute music if there is no active media session
         if (!this.mediaActive) {
           pcm = new Int16Array(totalSamples)
@@ -510,12 +532,13 @@ export class CarplayService {
       const cmd = msg.command
       console.debug('[CarplayService] audio command', { command: cmd })
 
-      // 1 == AudioOpen
+      // 1 == AudioOpen: arm genau ein nächstes AudioMediaStart
       if (cmd === 1) {
         this.audioOpenArmed = true
         this.mediaActive = false
         this.musicRampActive = false
         this.nextMusicRampStartAt = 0
+        this.pendingMediaStartAt = 0
         this.musicFade.current = 0
         this.musicFade.target = 1
         this.musicFade.remainingSamples = 0
@@ -528,11 +551,21 @@ export class CarplayService {
         const totalDelayMs = baseDelay + this.mediaDelaySafetyMs
 
         if (!this.audioOpenArmed) {
-          console.debug('[CarplayService] AudioMediaStart ignored (no preceding AudioOpen)', {
-            mediaDelayMs: baseDelay,
-            safetyMs: this.mediaDelaySafetyMs,
-            totalDelayMs
-          })
+          if (!this.mediaActive && this.pendingMediaStartAt === 0) {
+            this.pendingMediaStartAt = Date.now()
+            console.debug('[CarplayService] AudioMediaStart pending (no preceding AudioOpen)', {
+              mediaDelayMs: baseDelay,
+              safetyMs: this.mediaDelaySafetyMs,
+              totalDelayMs,
+              fallbackAfterMs: this.orphanMediaStartTimeoutMs
+            })
+          } else {
+            console.debug('[CarplayService] AudioMediaStart ignored (no preceding AudioOpen)', {
+              mediaDelayMs: baseDelay,
+              safetyMs: this.mediaDelaySafetyMs,
+              totalDelayMs
+            })
+          }
           return
         }
 
@@ -545,12 +578,14 @@ export class CarplayService {
           return
         }
 
+        // Gültige 1→10-Sequenz
         this.audioOpenArmed = false
         this.mediaActive = true
         this.musicRampActive = true
         this.musicFade.current = 0
         this.musicFade.target = 1
         this.musicFade.remainingSamples = 0
+        this.pendingMediaStartAt = 0
         this.nextMusicRampStartAt = Date.now() + totalDelayMs
 
         console.debug('[CarplayService] AudioMediaStart received', {
@@ -566,6 +601,7 @@ export class CarplayService {
         this.audioOpenArmed = false
         this.musicRampActive = false
         this.nextMusicRampStartAt = 0
+        this.pendingMediaStartAt = 0
         this.musicFade.current = 0
         this.musicFade.target = 1
         this.musicFade.remainingSamples = 0
@@ -588,6 +624,7 @@ export class CarplayService {
         // While voice is active, keep music muted
         this.musicRampActive = false
         this.nextMusicRampStartAt = 0
+        this.pendingMediaStartAt = 0
         this.musicFade.current = 0
         this.musicFade.target = 1
         this.musicFade.remainingSamples = 0
@@ -700,6 +737,7 @@ export class CarplayService {
         this.audioOpenArmed = false
         this.musicRampActive = false
         this.nextMusicRampStartAt = 0
+        this.pendingMediaStartAt = 0
         this.musicFade = { current: 1, target: 1, remainingSamples: 0 }
 
         // Players depend on config (mediaSound), so prewarm now
@@ -781,6 +819,7 @@ export class CarplayService {
       this.audioOpenArmed = false
       this.musicRampActive = false
       this.nextMusicRampStartAt = 0
+      this.pendingMediaStartAt = 0
       this.musicFade = { current: 1, target: 1, remainingSamples: 0 }
     })().finally(() => {
       this.stopping = false
