@@ -407,7 +407,6 @@ export const Settings: React.FC = () => {
       case 'highlightEditableFieldLight':
       case 'highlightEditableFieldDark':
       case 'camera':
-      case 'microphone':
       case 'carName':
       case 'oemName':
         return (raw === undefined ? undefined : String(raw)) as ExtraConfig[K]

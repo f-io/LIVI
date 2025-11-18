@@ -197,7 +197,6 @@ function loadConfig(): ExtraConfig {
     ...DEFAULT_CONFIG,
     kiosk: true,
     camera: '',
-    microphone: '',
     nightMode: true,
     audioVolume: 1.0,
     navVolume: 1.0,
