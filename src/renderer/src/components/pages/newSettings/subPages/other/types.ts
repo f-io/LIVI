@@ -1,7 +1,7 @@
 import { ExtraConfig } from '@main/Globals'
 import { DefaultDialogProps } from '../../components/dialog/types'
 
-export type AdvancedSettingKey = keyof Pick<ExtraConfig, 'dpi' | 'format'>
+export type AdvancedSettingKey = keyof Pick<ExtraConfig, 'dpi' | 'format' | 'language'>
 
 export type UiThemeSettingKey = keyof Pick<ExtraConfig, 'primaryColor' | 'highlightEditableField'>
 

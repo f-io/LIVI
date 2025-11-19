@@ -13,7 +13,7 @@ export const SettingsLayout = ({ children, onSave }: SettingsLayoutProps) => {
   }
 
   const handleSave = () => {
-    const isRequireReset = onSave()
+    const isRequireReset = onSave?.()
 
     if (isRequireReset) {
       console.log('need reset app')
@@ -61,19 +61,21 @@ export const SettingsLayout = ({ children, onSave }: SettingsLayoutProps) => {
             Back
           </Button>
 
-          <Button
-            onClick={handleSave}
-            sx={{
-              width: '100px',
-              padding: '0.5rem',
-              display: 'flex',
-              justifyContent: 'space-between',
-              gap: '0.5rem'
-            }}
-          >
-            <SaveOutlinedIcon />
-            Save
-          </Button>
+          {onSave && (
+            <Button
+              onClick={handleSave}
+              sx={{
+                width: '100px',
+                padding: '0.5rem',
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: '0.5rem'
+              }}
+            >
+              <SaveOutlinedIcon />
+              Save
+            </Button>
+          )}
         </div>
       </div>
     </Box>

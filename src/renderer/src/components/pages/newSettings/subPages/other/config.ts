@@ -18,6 +18,9 @@ export const advancedSettingsUIConfig: Record<
     label: 'Format',
     dialog: SETTINGS_DIALOGS.FORMAT,
     display: (state) => state.format
+  },
+  language: {
+    label: 'Language'
   }
 }
 
