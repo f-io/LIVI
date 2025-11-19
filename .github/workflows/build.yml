@@ -4,7 +4,7 @@ run-name: 'build → ${{ github.event.inputs.branch || github.event.workflow_run
 on:
   workflow_run:
     workflows: ['typecheck']
-    branches: [main, dev]
+    branches: [main]
     types: [completed]
 
   workflow_dispatch:
@@ -21,7 +21,7 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.artifact_ext }} (${{ matrix.platform }}) on ${{ github.event.inputs.branch || github.event.workflow_run.head_branch || github.ref_name }}
-    if: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) && github.actor != 'github-actions' }}
+    if: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')) && github.actor != 'github-actions' }}
     runs-on: ${{ matrix.os }}
     env:
       BUILD_BRANCH: ${{ github.event.inputs.branch || github.event.workflow_run.head_branch || github.head_ref || github.ref_name }}
