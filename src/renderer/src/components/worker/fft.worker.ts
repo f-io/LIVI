@@ -1,6 +1,6 @@
 import FFT from 'fft.js'
 
-// Worker for FFT: init with parametern
+// Worker for FFT: init with parameters
 const FLOOR_DB = -80
 const MIN_FREQ = 20
 
@@ -21,12 +21,22 @@ let fftInstance: FFT
 let fftOutput: number[]
 let ringBuffer = new Float32Array(0)
 
+// reusable buffers
+let input: Float32Array
+let sums: Float32Array
+let counts: Uint16Array
+
+// precomputed log-scale constants
+let logMin: number
+let logMax: number
+let logDen: number
+
 self.onmessage = (e: MessageEvent) => {
   const msg = e.data
   if (msg.type === 'init') {
     ;({ fftSize, points, sampleRate } = msg)
 
-    // Hanning
+    // Hanning window
     windowFunc = new Float32Array(fftSize)
     for (let i = 0; i < fftSize; i++) {
       windowFunc[i] = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (fftSize - 1))
@@ -43,6 +53,16 @@ self.onmessage = (e: MessageEvent) => {
     fftInstance = new FFT(fftSize)
     fftOutput = fftInstance.createComplexArray()
     ringBuffer = new Float32Array(0)
+
+    // reusable buffers
+    input = new Float32Array(fftSize)
+    sums = new Float32Array(points)
+    counts = new Uint16Array(points)
+
+    // log scale constants
+    logMin = Math.log10(MIN_FREQ)
+    logMax = Math.log10(sampleRate / 2)
+    logDen = logMax - logMin
   } else if (msg.type === 'pcm' && msg.buffer) {
     // Ringbuffer
     const incoming = new Float32Array(msg.buffer)
@@ -54,8 +74,7 @@ self.onmessage = (e: MessageEvent) => {
     while (ringBuffer.length >= fftSize) {
       const segment = ringBuffer.subarray(0, fftSize)
 
-      // apply window
-      const input = new Float32Array(fftSize)
+      // apply window (reuse input buffer)
       for (let i = 0; i < fftSize; i++) {
         input[i] = segment[i] * windowFunc[i]
       }
@@ -64,13 +83,11 @@ self.onmessage = (e: MessageEvent) => {
       fftInstance.realTransform(fftOutput, input)
       fftInstance.completeSpectrum(fftOutput)
 
-      // SUM and Counts
-      const sums = new Float32Array(points)
-      const counts = new Uint16Array(points)
+      // reuse sums/counts buffers
+      sums.fill(0)
+      counts.fill(0)
+
       const half = fftSize / 2
-      const logMin = Math.log10(MIN_FREQ)
-      const logMax = Math.log10(sampleRate / 2)
-      const logDen = logMax - logMin
 
       for (let i = 1; i <= half; i++) {
         const re = fftOutput[2 * i]
@@ -87,15 +104,17 @@ self.onmessage = (e: MessageEvent) => {
         }
       }
 
-      // dB-Normierung
+      // dB normalization
       const bins = new Float32Array(points)
       for (let i = 0; i < points; i++) {
         const avg = counts[i] > 0 ? sums[i] / counts[i] : 0
         const db = Math.min(Math.max(20 * Math.log10(avg + 1e-12), FLOOR_DB), 0)
         bins[i] = (db - FLOOR_DB) / -FLOOR_DB
       }
+
       const buffer = [bins.buffer] as unknown as string // TODO TS workaround. Fix type properly.
       self.postMessage({ type: 'bins', bins }, buffer)
+
       ringBuffer = ringBuffer.subarray(fftSize)
     }
   }

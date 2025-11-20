@@ -3,10 +3,6 @@ import { Box } from '@mui/material'
 import { useCarplayStore } from '@store/store'
 import { useTheme, alpha } from '@mui/material/styles'
 
-export interface FFTSpectrumProps {
-  data: number[] | Float32Array
-}
-
 // Configuration
 const POINTS = 24
 const FFT_SIZE = 4096
@@ -17,13 +13,12 @@ const MAX_FREQ = 20000
 const SPECTRUM_WIDTH_RATIO = 0.92
 const TARGET_FPS = 30
 
-export const FFTSpectrum = ({ data }: FFTSpectrumProps) => {
+export const FFTSpectrum = () => {
   const theme = useTheme()
   const isDark = theme.palette.mode === 'dark'
 
   const barColor = theme.palette.primary.main
 
-  // Grid/labels derived from theme text colors
   const gridFill = alpha(theme.palette.text.primary, isDark ? 0.12 : 0.06)
   const gridLine = alpha(theme.palette.text.primary, 0.35)
   const majorLine = alpha(theme.palette.text.primary, 0.45)
@@ -31,13 +26,10 @@ export const FFTSpectrum = ({ data }: FFTSpectrumProps) => {
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const bgCanvasRef = useRef<HTMLCanvasElement>(null)
-  const dataRef = useRef<number[] | Float32Array>(data)
-  dataRef.current = data
 
   const sampleRate = useCarplayStore((s) => s.audioSampleRate) ?? 44100
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
 
-  // Worker and buffers
   const workerRef = useRef<Worker | null>(null)
   const binsRef = useRef<Float32Array>(new Float32Array(POINTS))
 
@@ -63,12 +55,18 @@ export const FFTSpectrum = ({ data }: FFTSpectrumProps) => {
   }, [sampleRate])
 
   useEffect(() => {
-    const worker = workerRef.current
-    if (!worker || dataRef.current.length === 0) return
-    const buf =
-      dataRef.current instanceof Float32Array ? dataRef.current : new Float32Array(dataRef.current)
-    worker.postMessage({ type: 'pcm', buffer: buf.buffer }, [buf.buffer])
-  }, [data])
+    const unsubscribe = useCarplayStore.subscribe((state) => {
+      const pcm = state.audioPcmData
+      const worker = workerRef.current
+      if (!worker || !pcm || pcm.length === 0) return
+
+      // Copy to avoid transferring the buffer from the store directly
+      const buf = pcm instanceof Float32Array ? pcm.slice() : new Float32Array(pcm)
+      worker.postMessage({ type: 'pcm', buffer: buf.buffer }, [buf.buffer])
+    })
+
+    return () => unsubscribe()
+  }, [])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -82,7 +80,6 @@ export const FFTSpectrum = ({ data }: FFTSpectrumProps) => {
     return () => obs.disconnect()
   }, [])
 
-  // Static grid and labels (redrawn on theme, size, or sample rate changes)
   useEffect(() => {
     const bg = bgCanvasRef.current
     if (!bg || dimensions.width === 0) return
@@ -96,11 +93,9 @@ export const FFTSpectrum = ({ data }: FFTSpectrumProps) => {
 
     ctx.clearRect(0, 0, cw, ch)
 
-    // Background band
     ctx.fillStyle = gridFill
     ctx.fillRect(xOff, 0, specW, usableH)
 
-    // Horizontal guide lines
     ctx.lineWidth = 0.5
     ;[0.25, 0.5, 0.75].forEach((f) => {
       const y = usableH * f
@@ -111,7 +106,6 @@ export const FFTSpectrum = ({ data }: FFTSpectrumProps) => {
       ctx.stroke()
     })
 
-    // Vertical lines + labels
     const freqs = [MIN_FREQ, 100, 500, 1000, 5000, 10000, MAX_FREQ]
     ctx.font = `${LABEL_FONT_SIZE}px sans-serif`
     ctx.textAlign = 'center'
@@ -135,7 +129,6 @@ export const FFTSpectrum = ({ data }: FFTSpectrumProps) => {
     })
   }, [dimensions, sampleRate, gridFill, gridLine, majorLine, labelColor])
 
-  // Dynamic bars only
   useEffect(() => {
     let rafId = 0
     let last = 0
@@ -144,6 +137,7 @@ export const FFTSpectrum = ({ data }: FFTSpectrumProps) => {
       const now = performance.now()
       if (now - last < 1000 / TARGET_FPS) return
       last = now
+
       const canvas = canvasRef.current
       if (!canvas) return
       const ctx = canvas.getContext('2d')!
