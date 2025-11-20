@@ -84,9 +84,7 @@ export const Info = () => {
   const audioSampleRate = useCarplayStore((s) => s.audioSampleRate)
   const audioChannels = useCarplayStore((s) => s.audioChannels)
   const audioBitDepth = useCarplayStore((s) => s.audioBitDepth)
-
   const isStreaming = useStatusStore((s) => s.isStreaming)
-  const pcmData = useCarplayStore((s) => s.audioPcmData) ?? new Float32Array(0)
 
   const [installedVersion, setInstalledVersion] = useState<string>('—')
   const [latestVersion, setLatestVersion] = useState<string>('—')
@@ -500,7 +498,7 @@ export const Info = () => {
                 mt: 0.5
               }}
             >
-              <FFTSpectrum data={pcmData} />
+              <FFTSpectrum />
             </Box>
           </Box>
         </Box>
