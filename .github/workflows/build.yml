@@ -115,7 +115,7 @@ jobs:
             $HOME/.electron-gyp
             $HOME/.cache/node-gyp
             $HOME/Library/Caches/node-gyp
-          key: electron-gyp-${{ runner.os }}-${{ steps.elres_x86.outputs.resolved }}-${{ hashFiles('**/package-lock.json') }}
+          key: electron-gyp-${{ runner.os }}-${{ steps.elres_x86.outputs.resolved }}-${{ github.ref_name }}
           restore-keys: |
             electron-gyp-${{ runner.os }}-${{ steps.elres_x86.outputs.resolved }}-
             electron-gyp-${{ runner.os }}-
@@ -125,7 +125,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.ELECTRON_BUILDER_CACHE }}
-          key: eb-cache-${{ runner.os }}-${{ steps.elres_x86.outputs.resolved }}-${{ hashFiles('**/package-lock.json') }}
+          key: eb-cache-${{ runner.os }}-${{ steps.elres_x86.outputs.resolved }}-${{ github.ref_name }}
           restore-keys: |
             eb-cache-${{ runner.os }}-${{ steps.elres_x86.outputs.resolved }}-
             eb-cache-${{ runner.os }}-
@@ -228,7 +228,7 @@ jobs:
             $HOME/.electron-gyp
             $HOME/.cache/node-gyp
             $HOME/Library/Caches/node-gyp
-          key: electron-gyp-${{ runner.os }}-${{ steps.elres_mac.outputs.resolved }}-${{ hashFiles('**/package-lock.json') }}
+          key: electron-gyp-${{ runner.os }}-${{ steps.elres_mac.outputs.resolved }}-${{ github.ref_name }}
           restore-keys: |
             electron-gyp-${{ runner.os }}-${{ steps.elres_mac.outputs.resolved }}-
             electron-gyp-${{ runner.os }}-
@@ -238,7 +238,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.ELECTRON_BUILDER_CACHE }}
-          key: eb-cache-${{ runner.os }}-${{ steps.elres_mac.outputs.resolved }}-${{ hashFiles('**/package-lock.json') }}
+          key: eb-cache-${{ runner.os }}-${{ steps.elres_mac.outputs.resolved }}-${{ github.ref_name }}
           restore-keys: |
             eb-cache-${{ runner.os }}-${{ steps.elres_mac.outputs.resolved }}-
             eb-cache-${{ runner.os }}-
