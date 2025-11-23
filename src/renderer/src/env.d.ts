@@ -88,6 +88,7 @@ declare global {
         getDeviceInfo(): Promise<UsbDeviceInfo>
         getLastEvent(): Promise<unknown>
         getSysdefaultPrettyName(): Promise<string>
+        uploadIcons(): Promise<void>
         listenForEvents(callback: (event: unknown, ...args: unknown[]) => void): void
         unlistenForEvents(callback: (event: unknown, ...args: unknown[]) => void): void
       }

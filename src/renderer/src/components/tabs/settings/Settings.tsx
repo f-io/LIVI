@@ -5,7 +5,8 @@ import React, {
   useState,
   startTransition,
   useCallback,
-  useContext
+  useContext,
+  useRef
 } from 'react'
 import {
   Box,
@@ -28,7 +29,9 @@ import {
   MenuItem,
   InputAdornment,
   Switch,
-  Paper
+  Paper,
+  InputLabel,
+  OutlinedInput
 } from '@mui/material'
 import {
   DarkModeOutlined,
@@ -158,6 +161,47 @@ export const Settings: React.FC = () => {
   const [hasChanges, setHasChanges] = useState(false)
   const [openAdvanced, setOpenAdvanced] = useState(false)
   const [micResetPending, setMicResetPending] = useState(false)
+  const [isUploadingIcon, setIsUploadingIcon] = useState(false)
+  const [isResettingIcons, setIsResettingIcons] = useState(false)
+  const [isImportingIcon, setIsImportingIcon] = useState(false)
+  const [iconRestartPending, setIconRestartPending] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  const loadImageFromFile = (file: File): Promise<HTMLImageElement> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const img = new Image()
+        img.onload = () => resolve(img)
+        img.onerror = (err) => reject(err)
+        img.src = reader.result as string
+      }
+      reader.onerror = (err) => reject(err)
+      reader.readAsDataURL(file)
+    })
+  }
+
+  const resizeImageToBase64Png = (img: HTMLImageElement, size: number): string => {
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      throw new Error('Canvas 2D context not available')
+    }
+
+    const scale = Math.max(size / img.width, size / img.height)
+    const w = img.width * scale
+    const h = img.height * scale
+    const dx = (size - w) / 2
+    const dy = (size - h) / 2
+
+    ctx.clearRect(0, 0, size, size)
+    ctx.drawImage(img, dx, dy, w, h)
+
+    const dataUrl = canvas.toDataURL('image/png')
+    return dataUrl.replace(/^data:image\/png;base64,/, '')
+  }
 
   const [draftWidth, setDraftWidth] = useState<string>(() => String(activeSettings.width))
   const [draftHeight, setDraftHeight] = useState<string>(() => String(activeSettings.height))
@@ -185,6 +229,56 @@ export const Settings: React.FC = () => {
     [saveSettings]
   )
   useEffect(() => () => debouncedSave.cancel(), [debouncedSave])
+
+  const handleIconFileSelected = useCallback(
+    async (file: File) => {
+      try {
+        setIsImportingIcon(true)
+        const img = await loadImageFromFile(file)
+
+        const b120 = resizeImageToBase64Png(img, 120)
+        const b180 = resizeImageToBase64Png(img, 180)
+        const b256 = resizeImageToBase64Png(img, 256)
+
+        setActiveSettings((prev) => {
+          const updated: ExtraConfig = {
+            ...prev,
+            dongleIcon120: b120,
+            dongleIcon180: b180,
+            dongleIcon256: b256
+          }
+          debouncedSave(updated)
+          return updated
+        })
+
+        setResetMessage('Icon imported. You can upload it to your dongle now.')
+      } catch (err) {
+        console.error('[Settings] Icon import failed', err)
+        setResetMessage('Icon import failed.')
+      } finally {
+        setIsImportingIcon(false)
+      }
+    },
+    [debouncedSave]
+  )
+
+  const handlePickIconFile = useCallback(() => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click()
+    }
+  }, [])
+
+  const handleIconFileInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      if (!file) return
+
+      void handleIconFileSelected(file)
+
+      e.target.value = ''
+    },
+    [handleIconFileSelected]
+  )
 
   const autoSave = useCallback(
     async (patch: Partial<ExtraConfig>) => {
@@ -287,7 +381,7 @@ export const Settings: React.FC = () => {
   }
 
   const handleSave = async () => {
-    const needsReset = hasChanges || micResetPending
+    const needsReset = hasChanges || micResetPending || iconRestartPending
 
     const { width: finalW, height: finalH } = validateResolutionOrDefault(draftWidth, draftHeight)
     const { fps: finalFps } = validateFpsOrDefault(draftFps)
@@ -328,6 +422,7 @@ export const Settings: React.FC = () => {
 
     setHasChanges(false)
     setMicResetPending(false)
+    setIconRestartPending(false)
     setIsResetting(false)
     setResetMessage(resetStatus)
   }
@@ -536,6 +631,75 @@ export const Settings: React.FC = () => {
       cb(false)
     }
   }
+
+  const handleUploadDefaultIcon = async () => {
+    try {
+      setIsUploadingIcon(true)
+      await window.carplay.usb.uploadIcons()
+
+      setIconRestartPending(true)
+      setResetMessage('Icon upload done.')
+    } catch (err) {
+      console.error('[Settings] Icon upload failed', err)
+      setResetMessage('Icon upload failed.')
+    } finally {
+      setIsUploadingIcon(false)
+    }
+  }
+
+  const handleResetDongleIcons = async () => {
+    try {
+      setIsResettingIcons(true)
+
+      const win = window as typeof window & {
+        app?: {
+          resetDongleIcons?: () => Promise<{
+            dongleIcon120?: string
+            dongleIcon180?: string
+            dongleIcon256?: string
+          }>
+        }
+      }
+
+      const api = win.app
+      if (!api || typeof api.resetDongleIcons !== 'function') {
+        console.warn('[Settings] resetDongleIcons API not available')
+        setResetMessage('Reset API not available.')
+        return
+      }
+
+      const result = await api.resetDongleIcons()
+
+      if (result && typeof result === 'object') {
+        startTransition(() =>
+          setActiveSettings((prev) => ({
+            ...prev,
+            dongleIcon120: result.dongleIcon120 ?? prev.dongleIcon120,
+            dongleIcon180: result.dongleIcon180 ?? prev.dongleIcon180,
+            dongleIcon256: result.dongleIcon256 ?? prev.dongleIcon256
+          }))
+        )
+      }
+
+      setResetMessage('Icons reset to defaults.')
+    } catch (err) {
+      console.error('[Settings] Reset dongle icons failed', err)
+      setResetMessage('Resetting icons failed.')
+    } finally {
+      setIsResettingIcons(false)
+    }
+  }
+
+  const iconPreviewSrc = useMemo(() => {
+    const base64 =
+      activeSettings.dongleIcon180 || activeSettings.dongleIcon120 || activeSettings.dongleIcon256
+
+    if (!base64 || base64.trim() === '') {
+      return ''
+    }
+
+    return `data:image/png;base64,${base64.trim()}`
+  }, [activeSettings.dongleIcon120, activeSettings.dongleIcon180, activeSettings.dongleIcon256])
 
   const micUnavailable = micLabel === 'not available'
 
@@ -1166,9 +1330,9 @@ export const Settings: React.FC = () => {
             <Button
               variant="contained"
               className="hover-ring"
-              color={hasChanges || micResetPending ? 'primary' : 'inherit'}
-              onClick={hasChanges || micResetPending ? handleSave : undefined}
-              disabled={!(hasChanges || micResetPending) || isResetting}
+              color={hasChanges || micResetPending || iconRestartPending ? 'primary' : 'inherit'}
+              onClick={hasChanges || micResetPending || iconRestartPending ? handleSave : undefined}
+              disabled={!(hasChanges || micResetPending || iconRestartPending) || isResetting}
             >
               SAVE
             </Button>
@@ -1312,7 +1476,126 @@ export const Settings: React.FC = () => {
                 slotProps={{ inputLabel: { shrink: true } }}
                 sx={{ width: 120 }}
               />
+              <FormControl
+                variant="outlined"
+                size="small"
+                sx={{
+                  gridColumn: '1 / span 2',
+                  mt: 1.25
+                }}
+              >
+                <InputLabel>UI ICON</InputLabel>
+                <OutlinedInput
+                  label="UI ICON"
+                  readOnly
+                  inputProps={{ tabIndex: -1 }}
+                  startAdornment={
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        width: '100%',
+                        py: 1.0
+                      }}
+                    >
+                      <Box
+                        className="ui-icon-preview"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => {
+                          if (!isImportingIcon) {
+                            handlePickIconFile()
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (!isImportingIcon && (e.key === 'Enter' || e.key === ' ')) {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            handlePickIconFile()
+                          }
+                        }}
+                        sx={(theme) => ({
+                          width: 48,
+                          height: 48,
+                          borderRadius: 1,
+                          border: `1px solid ${theme.palette.divider}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          overflow: 'hidden',
+                          backgroundColor: 'transparent',
+                          cursor: isImportingIcon ? 'default' : 'pointer',
+                          transition:
+                            'border-color 120ms ease, box-shadow 120ms ease, transform 80ms ease'
+                        })}
+                      >
+                        {iconPreviewSrc ? (
+                          <Box
+                            component="img"
+                            src={iconPreviewSrc}
+                            alt="icon preview"
+                            sx={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'contain'
+                            }}
+                          />
+                        ) : (
+                          <Typography variant="caption" color="text.secondary">
+                            No icon found
+                          </Typography>
+                        )}
+                      </Box>
+
+                      <Box sx={{ flex: 1, minWidth: 0, pr: '14px' }}>
+                        <Stack direction="row" spacing={1} justifyContent="flex-end">
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleResetDongleIcons()
+                            }}
+                            disabled={isResettingIcons}
+                          >
+                            {isResettingIcons ? 'Resetting…' : 'Reset'}
+                          </Button>
+
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleUploadDefaultIcon()
+                            }}
+                            disabled={isUploadingIcon || !isDongleConnected}
+                          >
+                            {isUploadingIcon ? 'Uploading…' : 'Upload'}
+                          </Button>
+                        </Stack>
+                      </Box>
+                    </Box>
+                  }
+                  sx={{
+                    '& .MuiOutlinedInput-input': {
+                      display: 'none'
+                    },
+                    '& .MuiInputAdornment-root': {
+                      m: 0,
+                      flex: 1,
+                      maxWidth: '100%'
+                    }
+                  }}
+                />
+              </FormControl>
             </Box>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png"
+              style={{ display: 'none' }}
+              onChange={handleIconFileInputChange}
+            />
           </DialogContent>
         </Dialog>
       </div>

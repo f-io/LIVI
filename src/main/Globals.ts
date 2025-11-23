@@ -13,6 +13,9 @@ export type ExtraConfig = DongleConfig & {
   primaryColorLight?: string
   highlightEditableFieldLight?: string
   highlightEditableFieldDark?: string
+  dongleIcon120?: string
+  dongleIcon180?: string
+  dongleIcon256?: string
 }
 
 export interface KeyBindings {

@@ -12,12 +12,14 @@ import {
   SendTouch,
   SendMultiTouch,
   SendAudio,
+  SendFile,
+  FileAddress,
   DongleDriver,
-  DongleConfig,
   DEFAULT_CONFIG,
   decodeTypeMap,
   AudioCommand
 } from '../messages'
+import { ExtraConfig } from '@main/Globals'
 import fs from 'fs'
 import path from 'path'
 import usb from 'usb'
@@ -31,9 +33,6 @@ let dongleConnected = false
 
 type PlayerKey = string
 type LogicalStreamKey = 'music' | 'nav' | 'siri' | 'call'
-type ConfigWithMediaSound = DongleConfig & {
-  mediaSound?: 0 | 1
-}
 
 type VolumeConfig = {
   audioVolume?: number
@@ -54,7 +53,7 @@ export class CarplayService {
   private driver = new DongleDriver()
   private webUsbDevice: WebUSBDevice | null = null
   private webContents: WebContents | null = null
-  private config: DongleConfig = DEFAULT_CONFIG
+  private config: ExtraConfig = DEFAULT_CONFIG as ExtraConfig
   private pairTimeout: NodeJS.Timeout | null = null
   private frameInterval: NodeJS.Timeout | null = null
   private _mic: Microphone | null = null
@@ -168,6 +167,12 @@ export class CarplayService {
     ipcMain.handle('carplay-start', async () => this.start())
     ipcMain.handle('carplay-stop', async () => this.stop())
     ipcMain.handle('carplay-sendframe', async () => this.driver.send(new SendCommand('frame')))
+    ipcMain.handle('carplay-upload-icons', async () => {
+      if (!this.started || !this.webUsbDevice) {
+        throw new Error('[CarplayService] CarPlay is not started or dongle not connected')
+      }
+      this.uploadIcons()
+    })
 
     ipcMain.on('carplay-touch', (_evt, data: { x: number; y: number; action: number }) => {
       try {
@@ -232,7 +237,7 @@ export class CarplayService {
   private prewarmAudioPlayers() {
     if (this.audioPlayers.size > 0) return
 
-    const mediaSound = (this.config as ConfigWithMediaSound).mediaSound ?? 1
+    const mediaSound = this.config.mediaSound ?? 1
     const preferredMediaSampleRate = mediaSound === 1 ? 48000 : 44100
 
     const seen = new Set<PlayerKey>()
@@ -678,12 +683,50 @@ export class CarplayService {
   }
 
   private getMediaDelay(): number {
-    const maybeWithMediaDelay = this.config as DongleConfig & { mediaDelay?: number }
-    const raw = maybeWithMediaDelay.mediaDelay
-    if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 0) {
-      return raw
+    const raw = this.config.mediaDelay
+    return typeof raw === 'number' && Number.isFinite(raw) && raw >= 0 ? raw : 0
+  }
+
+  private uploadIcons() {
+    try {
+      const configPath = path.join(app.getPath('userData'), 'config.json')
+
+      let cfg: ExtraConfig = { ...(DEFAULT_CONFIG as ExtraConfig), ...this.config }
+
+      try {
+        if (fs.existsSync(configPath)) {
+          const diskCfg = JSON.parse(fs.readFileSync(configPath, 'utf8')) as ExtraConfig
+          cfg = { ...cfg, ...diskCfg }
+          this.config = cfg
+        }
+      } catch (err) {
+        console.warn(
+          '[CarplayService] failed to reload config.json before icon upload, using in-memory config',
+          err
+        )
+      }
+
+      const b120 = cfg.dongleIcon120 ? cfg.dongleIcon120.trim() : ''
+      const b180 = cfg.dongleIcon180 ? cfg.dongleIcon180.trim() : ''
+      const b256 = cfg.dongleIcon256 ? cfg.dongleIcon256.trim() : ''
+
+      if (!b120 || !b180 || !b256) {
+        console.error('[CarplayService] Icon fields missing in config.json — upload cancelled')
+        return
+      }
+
+      const buf120 = Buffer.from(b120, 'base64')
+      const buf180 = Buffer.from(b180, 'base64')
+      const buf256 = Buffer.from(b256, 'base64')
+
+      this.driver.send(new SendFile(buf120, FileAddress.ICON_120))
+      this.driver.send(new SendFile(buf180, FileAddress.ICON_180))
+      this.driver.send(new SendFile(buf256, FileAddress.ICON_256))
+
+      console.debug('[CarplayService] uploaded icons from fresh config.json')
+    } catch (err) {
+      console.error('[CarplayService] failed to upload icons', err)
     }
-    return 0
   }
 
   public attachRenderer(webContents: WebContents) {
@@ -710,7 +753,7 @@ export class CarplayService {
       try {
         const configPath = path.join(app.getPath('userData'), 'config.json')
         try {
-          const userConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+          const userConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')) as ExtraConfig
           this.config = { ...this.config, ...userConfig }
 
           const ext = this.config as VolumeConfig
