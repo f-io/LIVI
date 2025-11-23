@@ -16,7 +16,7 @@ import {
   AudioCommand
 } from '../messages'
 
-import { DongleDriver, DongleConfig, DEFAULT_CONFIG } from '../dongleDriver/DongleDriver'
+import { DongleDriver, DongleConfig, DEFAULT_CONFIG } from '../driver/DongleDriver'
 
 export type CarplayMessage =
   | { type: 'plugged'; message?: undefined }

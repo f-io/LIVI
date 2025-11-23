@@ -10,6 +10,7 @@ import {
 } from 'fs'
 import { electronApp, is } from '@electron-toolkit/utils'
 import { DEFAULT_CONFIG } from '@carplay/node'
+import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from './carplay/assets/carIcons'
 import { Socket } from './Socket'
 import { ExtraConfig, KeyBindings } from './Globals'
 import { USBService } from './usb/USBService'
@@ -205,6 +206,16 @@ function loadConfig(): ExtraConfig {
     bindings: { ...DEFAULT_BINDINGS },
     ...fileConfig
   } as ExtraConfig
+
+  if (!merged.dongleIcon120) {
+    merged.dongleIcon120 = ICON_120_B64
+  }
+  if (!merged.dongleIcon180) {
+    merged.dongleIcon180 = ICON_180_B64
+  }
+  if (!merged.dongleIcon256) {
+    merged.dongleIcon256 = ICON_256_B64
+  }
 
   merged.bindings = { ...DEFAULT_BINDINGS, ...(fileConfig.bindings || {}) }
 
@@ -499,7 +510,10 @@ function persistKioskAndBroadcast(kiosk: boolean) {
           primaryColorDark: config.primaryColorDark,
           primaryColorLight: config.primaryColorLight,
           highlightEditableFieldDark: config.highlightEditableFieldDark,
-          highlightEditableFieldLight: config.highlightEditableFieldLight
+          highlightEditableFieldLight: config.highlightEditableFieldLight,
+          dongleIcon120: config.dongleIcon120,
+          dongleIcon180: config.dongleIcon180,
+          dongleIcon256: config.dongleIcon256
         },
         null,
         2
@@ -705,6 +719,22 @@ app.whenReady().then(() => {
     saveSettings(settings)
     return true
   })
+  ipcMain.handle('settings:reset-dongle-icons', () => {
+    const next: ExtraConfig = {
+      ...config,
+      dongleIcon120: ICON_120_B64,
+      dongleIcon180: ICON_180_B64,
+      dongleIcon256: ICON_256_B64
+    }
+
+    saveSettings(next)
+
+    return {
+      dongleIcon120: next.dongleIcon120,
+      dongleIcon180: next.dongleIcon180,
+      dongleIcon256: next.dongleIcon256
+    }
+  })
 
   ipcMain.handle('app:getVersion', () => app.getVersion())
 
@@ -851,7 +881,10 @@ function saveSettings(next: ExtraConfig) {
         primaryColorDark: next.primaryColorDark,
         primaryColorLight: next.primaryColorLight,
         highlightEditableFieldDark: next.highlightEditableFieldDark,
-        highlightEditableFieldLight: next.highlightEditableFieldLight
+        highlightEditableFieldLight: next.highlightEditableFieldLight,
+        dongleIcon120: next.dongleIcon120,
+        dongleIcon180: next.dongleIcon180,
+        dongleIcon256: next.dongleIcon256
       },
       null,
       2

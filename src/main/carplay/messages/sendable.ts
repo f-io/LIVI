@@ -1,4 +1,4 @@
-import { DongleConfig } from '../dongleDriver/DongleDriver.js'
+import { DongleConfig } from '../driver/DongleDriver.js'
 import { MessageType, MessageHeader, CommandMapping, CommandValue } from './common.js'
 import { clamp, getCurrentTimeInMs } from './utils.js'
 
@@ -188,7 +188,7 @@ export enum FileAddress {
   CARPLAY_LOGO_TYPE = '/etc/carplay_logo_type',
   ICON_120 = '/etc/icon_120x120.png',
   ICON_180 = '/etc/icon_180x180.png',
-  ICON_250 = '/etc/icon_256x256.png',
+  ICON_256 = '/etc/icon_256x256.png',
   ANDROID_WORK_MODE = '/etc/android_work_mode'
 }
 
