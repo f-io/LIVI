@@ -71,6 +71,12 @@ export class CarplayService {
   private audioPlayers = new Map<PlayerKey, AudioOutput>()
   private lastStreamLogKey: PlayerKey | null = null
 
+  // Last used players per logical stream (for clean teardown)
+  private lastMusicPlayerKey: PlayerKey | null = null
+  private lastNavPlayerKey: PlayerKey | null = null
+  private lastSiriPlayerKey: PlayerKey | null = null
+  private lastCallPlayerKey: PlayerKey | null = null
+
   // Logical per-stream volumes, controlled via IPC and config
   private volumes: VolumeState = {
     music: 1.0,
@@ -79,24 +85,19 @@ export class CarplayService {
     call: 1.0
   }
 
-  // Siri / phonecall state
+  // Siri / phonecall / nav state
   private siriActive = false
   private phonecallActive = false
+  private navActive = false
 
   // Media session state (music)
   private mediaActive = false
   private audioOpenArmed = false
 
-  // Delay and ramp configuration
-  private readonly mediaDelaySafetyMs = 500
+  // Ramp configuration
   private readonly musicRampInMs = 1000
-  private readonly voiceTailMuteMs = 500
 
-  // Fallback
-  private readonly orphanMediaStartTimeoutMs = 2000
-  private pendingMediaStartAt = 0
-
-  // When to start the next ramp
+  // When to start the next music ramp
   private nextMusicRampStartAt = 0
   private musicRampActive = false
 
@@ -105,6 +106,10 @@ export class CarplayService {
     target: 1,
     remainingSamples: 0
   }
+
+  // Queue for nav PCM that should be mixed into music
+  private navMixQueue: Int16Array[] = []
+  private navMixOffset = 0
 
   constructor() {
     this.driver.on('message', (msg) => {
@@ -233,45 +238,6 @@ export class CarplayService {
     )
   }
 
-  // Prewarm one AudioOutput per (sampleRate, channels).
-  private prewarmAudioPlayers() {
-    if (this.audioPlayers.size > 0) return
-
-    const mediaSound = this.config.mediaSound ?? 1
-    const preferredMediaSampleRate = mediaSound === 1 ? 48000 : 44100
-
-    const seen = new Set<PlayerKey>()
-
-    for (const [, meta] of Object.entries(decodeTypeMap)) {
-      const sampleRate = meta.frequency
-      const channels = meta.channel
-
-      // For stereo media (music): only prewarm the preferred FS (44.1 or 48)
-      if (channels === 2 && (sampleRate === 44100 || sampleRate === 48000)) {
-        if (sampleRate !== preferredMediaSampleRate) {
-          continue
-        }
-      }
-
-      const key: PlayerKey = `${sampleRate}:${channels}`
-      if (seen.has(key)) continue
-      seen.add(key)
-
-      const player = new AudioOutput({
-        sampleRate,
-        channels
-      })
-      player.start()
-      this.audioPlayers.set(key, player)
-
-      console.debug('[CarplayService] prewarmed AudioOutput', {
-        playerKey: key,
-        sampleRate,
-        channels
-      })
-    }
-  }
-
   private stopAllAudioPlayers() {
     for (const player of this.audioPlayers.values()) {
       try {
@@ -282,6 +248,47 @@ export class CarplayService {
     }
     this.audioPlayers.clear()
     this.lastStreamLogKey = null
+    this.lastMusicPlayerKey = null
+    this.lastNavPlayerKey = null
+    this.lastSiriPlayerKey = null
+    this.lastCallPlayerKey = null
+  }
+
+  private stopPlayerByKey(key: PlayerKey | null, label: string) {
+    if (!key) return
+    const player = this.audioPlayers.get(key)
+    if (!player) return
+
+    try {
+      player.stop()
+    } catch {
+      // ignore
+    }
+    this.audioPlayers.delete(key)
+
+    console.debug('[CarplayService] stopped AudioOutput', {
+      label,
+      playerKey: key
+    })
+  }
+
+  private createAndStartAudioPlayer(sampleRate: number, channels: number): AudioOutput {
+    const key: PlayerKey = `${sampleRate}:${channels}`
+
+    const player = new AudioOutput({
+      sampleRate,
+      channels
+    })
+    player.start()
+    this.audioPlayers.set(key, player)
+
+    console.debug('[CarplayService] created AudioOutput', {
+      playerKey: key,
+      sampleRate,
+      channels
+    })
+
+    return player
   }
 
   private getAudioOutputForStream(msg: AudioData): AudioOutput | null {
@@ -298,10 +305,9 @@ export class CarplayService {
     const channels = meta.channel
     const key: PlayerKey = `${sampleRate}:${channels}`
 
-    const player = this.audioPlayers.get(key)
+    let player = this.audioPlayers.get(key)
     if (!player) {
-      console.warn('[CarplayService] no AudioOutput for key', { key, sampleRate, channels })
-      return null
+      player = this.createAndStartAudioPlayer(sampleRate, channels)
     }
 
     if (this.lastStreamLogKey !== key) {
@@ -358,6 +364,15 @@ export class CarplayService {
     console.debug('[CarplayService] setStreamVolume', { stream, volume: v })
   }
 
+  private gainFromVolume(volume: number): number {
+    const v = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0))
+    if (v <= 0) return 0
+    const minDb = -60
+    const maxDb = 0
+    const db = minDb + (maxDb - minDb) * v
+    return Math.pow(10, db / 20)
+  }
+
   private applyGain(pcm: Int16Array, gain: number): Int16Array {
     if (!Number.isFinite(gain) || gain === 1.0) {
       return pcm
@@ -376,6 +391,49 @@ export class CarplayService {
     return out
   }
 
+  private mixMusicAndNav(musicPcm: Int16Array, musicGain: number, navGain: number): Int16Array {
+    if (navGain <= 0 || this.navMixQueue.length === 0) {
+      // Nothing to mix, just apply music gain
+      return this.applyGain(musicPcm, musicGain)
+    }
+
+    const out = new Int16Array(musicPcm.length)
+
+    let navChunk = this.navMixQueue[0]
+    let navOffset = this.navMixOffset
+
+    for (let i = 0; i < musicPcm.length; i += 1) {
+      const musicSample = musicPcm[i] * musicGain
+
+      let navSample = 0
+      if (navChunk) {
+        navSample = navChunk[navOffset] * navGain
+        navOffset += 1
+
+        if (navOffset >= navChunk.length) {
+          this.navMixQueue.shift()
+          navChunk = this.navMixQueue[0] || null
+          navOffset = 0
+        }
+      }
+
+      let mixed = musicSample + navSample
+      if (mixed > 32767) mixed = 32767
+      else if (mixed < -32768) mixed = -32768
+
+      out[i] = mixed
+    }
+
+    this.navMixOffset = navChunk ? navOffset : 0
+
+    return out
+  }
+
+  private clearNavMix() {
+    this.navMixQueue = []
+    this.navMixOffset = 0
+  }
+
   private handleAudioData(msg: AudioData) {
     const meta = decodeTypeMap[msg.decodeType]
 
@@ -389,24 +447,32 @@ export class CarplayService {
         return
       }
 
+      const logicalKey = this.getLogicalStreamKey(msg)
+
+      if (logicalKey === 'music' && !this.mediaActive) {
+        return
+      }
+
       const player = this.getAudioOutputForStream(msg)
       if (!player) return
 
-      const logicalKey = this.getLogicalStreamKey(msg)
       const volume = this.volumes[logicalKey] ?? 1.0
 
-      // Map logical volume (0..1) to dB range (-60 dB .. 0 dB)
-      const minDb = -60
-      const maxDb = 0
-
-      let baseGain: number
-      if (volume <= 0) {
-        baseGain = 0
-      } else {
-        const db = minDb + (maxDb - minDb) * volume
-        baseGain = Math.pow(10, db / 20)
+      // Track last player per logical stream for later teardown
+      if (meta) {
+        const keyForStream: PlayerKey = `${meta.frequency}:${meta.channel}`
+        if (logicalKey === 'music') {
+          this.lastMusicPlayerKey = keyForStream
+        } else if (logicalKey === 'nav') {
+          if (!this.mediaActive) this.lastNavPlayerKey = keyForStream
+        } else if (logicalKey === 'siri') {
+          this.lastSiriPlayerKey = keyForStream
+        } else if (logicalKey === 'call') {
+          this.lastCallPlayerKey = keyForStream
+        }
       }
 
+      const baseGain = this.gainFromVolume(volume)
       let pcm: Int16Array
 
       if (logicalKey === 'music') {
@@ -414,38 +480,21 @@ export class CarplayService {
         const channels = meta?.channel ?? 2
         const totalSamples = msg.data.length
 
-        // Fallback
-        if (!this.mediaActive && this.pendingMediaStartAt > 0) {
-          const elapsed = now - this.pendingMediaStartAt
-          if (elapsed >= this.orphanMediaStartTimeoutMs) {
-            this.mediaActive = true
-            this.musicRampActive = true
-            this.musicFade.current = 0
-            this.musicFade.target = 1
-            this.musicFade.remainingSamples = 0
-            this.nextMusicRampStartAt = now
-            this.pendingMediaStartAt = 0
-
-            console.debug('[CarplayService] fallback AudioMediaStart after timeout', {
-              elapsedMs: elapsed
-            })
-          }
-        }
-
-        // Always mute music if there is no active media session
-        if (!this.mediaActive) {
-          pcm = new Int16Array(totalSamples)
-        } else if (voiceActive) {
-          // Mute while Siri/phone is active
+        // While Siri/phone is active, music is muted
+        if (!this.mediaActive || voiceActive) {
           pcm = new Int16Array(totalSamples)
         } else if (this.nextMusicRampStartAt > 0 && now < this.nextMusicRampStartAt) {
-          // Still in delay window (mediaDelay + safety or voice tail)
           pcm = new Int16Array(totalSamples)
         } else if (!this.musicRampActive) {
-          // Stable playback at full baseGain
-          pcm = this.applyGain(msg.data, baseGain)
+          const navVolume = this.volumes.nav ?? 0.5
+          const navGain = this.navActive ? this.gainFromVolume(navVolume) : 0
+
+          if (this.navActive && this.navMixQueue.length > 0 && navGain > 0) {
+            pcm = this.mixMusicAndNav(msg.data, baseGain, navGain)
+          } else {
+            pcm = this.applyGain(msg.data, baseGain)
+          }
         } else {
-          // Sample-based ramp from 0 -> 1 over musicRampInMs
           const fade = this.musicFade
 
           if (fade.remainingSamples === 0 && fade.current < fade.target) {
@@ -460,6 +509,9 @@ export class CarplayService {
               channels
             })
           }
+
+          const navVolume = this.volumes.nav ?? 0.5
+          const navGain = this.navActive ? this.gainFromVolume(navVolume) : 0
 
           pcm = new Int16Array(totalSamples)
 
@@ -476,11 +528,32 @@ export class CarplayService {
               current = target
             }
 
-            const g = baseGain * current
-            let v = msg.data[i] * g
-            if (v > 32767) v = 32767
-            else if (v < -32768) v = -32768
-            pcm[i] = v
+            const musicSample = msg.data[i] * (baseGain * current)
+            let navSample = 0
+
+            if (this.navActive && this.navMixQueue.length > 0 && navGain > 0) {
+              let navChunk = this.navMixQueue[0]
+              let navOffset = this.navMixOffset
+
+              if (navChunk) {
+                navSample = navChunk[navOffset] * navGain
+                navOffset += 1
+
+                if (navOffset >= navChunk.length) {
+                  this.navMixQueue.shift()
+                  navChunk = this.navMixQueue[0] || null
+                  navOffset = 0
+                }
+              }
+
+              this.navMixOffset = navChunk ? navOffset : 0
+            }
+
+            let mixed = musicSample + navSample
+            if (mixed > 32767) mixed = 32767
+            else if (mixed < -32768) mixed = -32768
+
+            pcm[i] = mixed
           }
 
           fade.current = current
@@ -490,8 +563,17 @@ export class CarplayService {
             this.musicRampActive = false
           }
         }
+      } else if (logicalKey === 'nav') {
+        // If music is active and nav is active, enqueue nav data for mixing
+        if (this.mediaActive && this.navActive) {
+          this.navMixQueue.push(msg.data.slice())
+          return
+        }
+
+        // Nav-only playback (no music): just output nav
+        pcm = this.applyGain(msg.data, baseGain)
       } else {
-        // nav / siri / call: no ramp, volume mapping
+        // siri / call: no ramp, just volume mapping
         pcm = this.applyGain(msg.data, baseGain)
       }
 
@@ -532,18 +614,30 @@ export class CarplayService {
       return
     }
 
-    // Command-only messages: Siri / phone / media control
+    // Command-only messages: Siri / phone / media / nav control
     if (msg.command != null) {
       const cmd = msg.command
       console.debug('[CarplayService] audio command', { command: cmd })
 
-      // 1 == AudioOpen: arm genau ein nächstes AudioMediaStart
-      if (cmd === 1) {
+      // Explicit Nav / turn-by-turn start
+      if (cmd === AudioCommand.AudioNaviStart || cmd === AudioCommand.AudioTurnByTurnStart) {
+        this.navActive = true
+        this.clearNavMix()
+        console.debug('[CarplayService] Nav start received', { command: cmd })
+        return
+      }
+
+      // 1 == AudioOpen: arm exactly one next AudioMediaStart
+      if (cmd === AudioCommand.AudioOutputStart) {
+        if (this.mediaActive) {
+          console.debug('[CarplayService] AudioOpen ignored, media already active')
+          return
+        }
+
         this.audioOpenArmed = true
         this.mediaActive = false
         this.musicRampActive = false
         this.nextMusicRampStartAt = 0
-        this.pendingMediaStartAt = 0
         this.musicFade.current = 0
         this.musicFade.target = 1
         this.musicFade.remainingSamples = 0
@@ -553,23 +647,33 @@ export class CarplayService {
 
       if (cmd === AudioCommand.AudioMediaStart) {
         const baseDelay = this.getMediaDelay()
-        const totalDelayMs = baseDelay + this.mediaDelaySafetyMs
+        const totalDelayMs = baseDelay
 
         if (!this.audioOpenArmed) {
-          if (!this.mediaActive && this.pendingMediaStartAt === 0) {
-            this.pendingMediaStartAt = Date.now()
-            console.debug('[CarplayService] AudioMediaStart pending (no preceding AudioOpen)', {
-              mediaDelayMs: baseDelay,
-              safetyMs: this.mediaDelaySafetyMs,
-              totalDelayMs,
-              fallbackAfterMs: this.orphanMediaStartTimeoutMs
-            })
+          if (!this.mediaActive) {
+            // 10 without 1: treat as implicit open+start
+            this.mediaActive = true
+            this.musicRampActive = true
+            this.musicFade.current = 0
+            this.musicFade.target = 1
+            this.musicFade.remainingSamples = 0
+            this.nextMusicRampStartAt = Date.now() + totalDelayMs
+
+            console.debug(
+              '[CarplayService] AudioMediaStart without AudioOpen – treating as implicit open+start',
+              {
+                mediaDelayMs: baseDelay,
+                totalDelayMs
+              }
+            )
           } else {
-            console.debug('[CarplayService] AudioMediaStart ignored (no preceding AudioOpen)', {
-              mediaDelayMs: baseDelay,
-              safetyMs: this.mediaDelaySafetyMs,
-              totalDelayMs
-            })
+            console.debug(
+              '[CarplayService] AudioMediaStart ignored (no preceding AudioOpen, media already active)',
+              {
+                mediaDelayMs: baseDelay,
+                totalDelayMs
+              }
+            )
           }
           return
         }
@@ -577,25 +681,21 @@ export class CarplayService {
         if (this.mediaActive) {
           console.debug('[CarplayService] AudioMediaStart ignored, media already active', {
             mediaDelayMs: baseDelay,
-            safetyMs: this.mediaDelaySafetyMs,
             totalDelayMs
           })
           return
         }
 
-        // Gültige 1→10-Sequenz
         this.audioOpenArmed = false
         this.mediaActive = true
         this.musicRampActive = true
         this.musicFade.current = 0
         this.musicFade.target = 1
         this.musicFade.remainingSamples = 0
-        this.pendingMediaStartAt = 0
         this.nextMusicRampStartAt = Date.now() + totalDelayMs
 
         console.debug('[CarplayService] AudioMediaStart received', {
           mediaDelayMs: baseDelay,
-          safetyMs: this.mediaDelaySafetyMs,
           totalDelayMs
         })
         return
@@ -606,12 +706,31 @@ export class CarplayService {
         this.audioOpenArmed = false
         this.musicRampActive = false
         this.nextMusicRampStartAt = 0
-        this.pendingMediaStartAt = 0
         this.musicFade.current = 0
         this.musicFade.target = 1
         this.musicFade.remainingSamples = 0
 
+        if (this.lastMusicPlayerKey) {
+          this.stopPlayerByKey(this.lastMusicPlayerKey, 'music')
+          this.lastMusicPlayerKey = null
+        }
+
         console.debug('[CarplayService] AudioMediaStop received, music muted')
+        return
+      }
+
+      if (cmd === AudioCommand.AudioNaviStop || cmd === AudioCommand.AudioTurnByTurnStop) {
+        this.navActive = false
+        if (!this.mediaActive && this.lastNavPlayerKey) {
+          this.stopPlayerByKey(this.lastNavPlayerKey, 'nav')
+          this.lastNavPlayerKey = null
+        } else {
+          // mixing with music -> do not kill shared player, let tail drain
+        }
+        console.debug('[CarplayService] Nav stop received', {
+          command: cmd,
+          killed: !this.mediaActive
+        })
         return
       }
 
@@ -629,7 +748,6 @@ export class CarplayService {
         // While voice is active, keep music muted
         this.musicRampActive = false
         this.nextMusicRampStartAt = 0
-        this.pendingMediaStartAt = 0
         this.musicFade.current = 0
         this.musicFade.target = 1
         this.musicFade.remainingSamples = 0
@@ -657,17 +775,25 @@ export class CarplayService {
       if (cmd === AudioCommand.AudioSiriStop || cmd === AudioCommand.AudioPhonecallStop) {
         if (cmd === AudioCommand.AudioSiriStop) {
           this.siriActive = false
+          if (this.lastSiriPlayerKey) {
+            this.stopPlayerByKey(this.lastSiriPlayerKey, 'siri')
+            this.lastSiriPlayerKey = null
+          }
         } else if (cmd === AudioCommand.AudioPhonecallStop) {
           this.phonecallActive = false
+          if (this.lastCallPlayerKey) {
+            this.stopPlayerByKey(this.lastCallPlayerKey, 'call')
+            this.lastCallPlayerKey = null
+          }
         }
 
-        // After voice: short tail mute + ramp-in for music, if media is active
+        // After voice: ramp-in for music, if media is active
         if (this.mediaActive) {
           this.musicRampActive = true
           this.musicFade.current = 0
           this.musicFade.target = 1
           this.musicFade.remainingSamples = 0
-          this.nextMusicRampStartAt = Date.now() + this.voiceTailMuteMs
+          this.nextMusicRampStartAt = Date.now()
         } else {
           this.musicRampActive = false
           this.nextMusicRampStartAt = 0
@@ -776,15 +902,17 @@ export class CarplayService {
         // Reset audio state
         this.siriActive = false
         this.phonecallActive = false
+        this.navActive = false
         this.mediaActive = false
         this.audioOpenArmed = false
         this.musicRampActive = false
         this.nextMusicRampStartAt = 0
-        this.pendingMediaStartAt = 0
         this.musicFade = { current: 1, target: 1, remainingSamples: 0 }
-
-        // Players depend on config (mediaSound), so prewarm now
-        this.prewarmAudioPlayers()
+        this.lastMusicPlayerKey = null
+        this.lastNavPlayerKey = null
+        this.lastSiriPlayerKey = null
+        this.lastCallPlayerKey = null
+        this.clearNavMix()
 
         const device = usb
           .getDeviceList()
@@ -811,6 +939,10 @@ export class CarplayService {
           this.audioInfoSent = false
           this.firstFrameLogged = false
           this.lastStreamLogKey = null
+          this.lastMusicPlayerKey = null
+          this.lastNavPlayerKey = null
+          this.lastSiriPlayerKey = null
+          this.lastCallPlayerKey = null
         } catch {
           try {
             await this.webUsbDevice?.close()
@@ -848,21 +980,25 @@ export class CarplayService {
         this.webUsbDevice = null
       }
 
-      // Stop / clear all AudioOutput processes so no old samples survive
       this.stopAllAudioPlayers()
+      this.clearNavMix()
 
       this.started = false
       this.audioInfoSent = false
       this.firstFrameLogged = false
       this.lastStreamLogKey = null
+      this.lastMusicPlayerKey = null
+      this.lastNavPlayerKey = null
+      this.lastSiriPlayerKey = null
+      this.lastCallPlayerKey = null
 
       this.siriActive = false
       this.phonecallActive = false
+      this.navActive = false
       this.mediaActive = false
       this.audioOpenArmed = false
       this.musicRampActive = false
       this.nextMusicRampStartAt = 0
-      this.pendingMediaStartAt = 0
       this.musicFade = { current: 1, target: 1, remainingSamples: 0 }
     })().finally(() => {
       this.stopping = false
