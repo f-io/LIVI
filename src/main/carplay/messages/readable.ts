@@ -13,7 +13,9 @@ export enum AudioCommand {
   AudioMediaStart = 10,
   AudioMediaStop = 11,
   AudioAlertStart = 12,
-  AudioAlertStop = 13
+  AudioAlertStop = 13,
+  AudioTurnByTurnStart = 15,
+  AudioTurnByTurnStop = 16
 }
 
 export abstract class Message {

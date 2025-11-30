@@ -5,29 +5,24 @@ import fs from 'fs'
 export interface AudioOutputOptions {
   sampleRate: number
   channels: number
-  device?: string
 }
 
 export class AudioOutput {
   private process: ChildProcessWithoutNullStreams | null = null
   private readonly sampleRate: number
   private readonly channels: number
-  private readonly device: string
 
   private bytesWritten = 0
-
   private queue: Buffer[] = []
   private writing = false
 
   constructor(opts: AudioOutputOptions) {
     this.sampleRate = opts.sampleRate
     this.channels = Math.max(1, opts.channels | 0)
-    this.device = opts.device ?? AudioOutput.resolveDefaultDevice()
 
     console.debug('[AudioOutput] Init', {
       sampleRate: this.sampleRate,
       channels: this.channels,
-      device: this.device,
       platform: os.platform()
     })
   }
@@ -40,19 +35,13 @@ export class AudioOutput {
     const env = { ...process.env, PATH: AudioOutput.buildExecPath(process.env.PATH) }
 
     if (os.platform() === 'linux') {
-      cmd = 'aplay'
+      cmd = 'pw-play'
       args = [
-        '-D',
-        this.device,
-        '-f',
-        'S16_LE',
-        '-c',
-        this.channels.toString(),
-        '-r',
+        '--raw',
+        '--rate',
         this.sampleRate.toString(),
-        '-t',
-        'raw',
-        '-q',
+        '--channels',
+        this.channels.toString(),
         '-' // stdin
       ]
     } else if (os.platform() === 'darwin') {
@@ -61,10 +50,11 @@ export class AudioOutput {
         console.error('[AudioOutput] SoX (play) not found. Install with: brew install sox')
         return
       }
-
       cmd = playPath
       args = [
         '-q',
+        '--buffer',
+        '4096',
         '-t',
         'raw',
         '-r',
@@ -76,7 +66,11 @@ export class AudioOutput {
         '-c',
         this.channels.toString(),
         '-L',
-        '-' // stdin
+        '--ignore-length',
+        '-', // stdin
+        '-t',
+        'coreaudio', // explicit CoreAudio sink (prevents early close)
+        'default'
       ]
     } else {
       console.error('[AudioOutput] Platform not supported for audio output')
@@ -88,10 +82,7 @@ export class AudioOutput {
     this.queue = []
     this.writing = false
 
-    this.process = spawn(cmd, args, {
-      env,
-      shell: false
-    })
+    this.process = spawn(cmd, args, { env, shell: false })
 
     const proc = this.process
     const stdin = proc.stdin
@@ -99,21 +90,16 @@ export class AudioOutput {
     stdin.on('error', (err) => {
       console.warn('[AudioOutput] stdin error:', err.message)
     })
-
-    stdin.on('drain', () => {
-      this.flushQueue()
-    })
+    stdin.on('drain', () => this.flushQueue())
 
     proc.stderr.on('data', (d: Buffer) => {
       const s = d.toString().trim()
       if (s) console.warn('[AudioOutput] STDERR:', s)
     })
-
     proc.on('error', (err) => {
       console.error('[AudioOutput] process error:', err)
       this.cleanup()
     })
-
     proc.on('close', (code, signal) => {
       console.debug('[AudioOutput] process exited', {
         code,
@@ -126,7 +112,7 @@ export class AudioOutput {
     console.debug('[AudioOutput] playback started')
   }
 
-  private flushQueue() {
+  private flushQueue(): void {
     const proc = this.process
     if (!proc || !proc.stdin || proc.stdin.destroyed) {
       this.queue = []
@@ -135,19 +121,13 @@ export class AudioOutput {
     }
 
     const stdin = proc.stdin
-
     this.writing = true
+
     while (this.queue.length > 0) {
       const buf = this.queue.shift()!
       const ok = stdin.write(buf)
       this.bytesWritten += buf.byteLength
-
-      if (!ok) {
-        if (this.queue.length > 0) {
-          console.debug('[AudioOutput] backpressure: waiting for drain, queued', this.queue.length)
-        }
-        return
-      }
+      if (!ok) return
     }
 
     this.writing = false
@@ -158,24 +138,16 @@ export class AudioOutput {
     if (!proc || !proc.stdin || proc.stdin.destroyed) return
     if (!chunk) return
 
-    let buf: Buffer
-    if (Buffer.isBuffer(chunk)) {
-      buf = chunk
-    } else {
-      buf = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)
-    }
+    const buf = Buffer.isBuffer(chunk)
+      ? chunk
+      : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)
 
     this.queue.push(buf)
-    if (!this.writing) {
-      this.flushQueue()
-    }
+    if (!this.writing) this.flushQueue()
   }
 
   stop(): void {
     if (!this.process) return
-
-    // console.debug('[AudioOutput] stopping playback')
-
     try {
       if (this.process.stdin && !this.process.stdin.destroyed) {
         this.process.stdin.end()
@@ -183,13 +155,11 @@ export class AudioOutput {
     } catch (e) {
       console.warn('[AudioOutput] failed to end stdin:', e)
     }
-
     try {
       this.process.kill()
     } catch (e) {
       console.warn('[AudioOutput] failed to kill process:', e)
     }
-
     this.cleanup()
   }
 
@@ -207,14 +177,8 @@ export class AudioOutput {
     const fromEnv = process.env.SOX_PLAY_PATH
     if (fromEnv && fs.existsSync(fromEnv)) return fromEnv
 
-    const candidates = [
-      '/opt/homebrew/bin/play', // Apple Silicon
-      '/usr/local/bin/play' // Intel
-    ]
-
-    for (const p of candidates) {
-      if (fs.existsSync(p)) return p
-    }
+    const candidates = ['/opt/homebrew/bin/play', '/usr/local/bin/play']
+    for (const p of candidates) if (fs.existsSync(p)) return p
 
     try {
       const widened = AudioOutput.buildExecPath(process.env.PATH)
@@ -225,9 +189,7 @@ export class AudioOutput {
         .toString()
         .trim()
       if (out && fs.existsSync(out)) return out
-    } catch {
-      // ignore
-    }
+    } catch {}
 
     return null
   }
@@ -236,11 +198,5 @@ export class AudioOutput {
     const extra = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin']
     const set = new Set<string>([...extra, ...(current ? current.split(':') : [])])
     return Array.from(set).join(':')
-  }
-
-  private static resolveDefaultDevice(): string {
-    if (os.platform() === 'linux') return 'default'
-    if (os.platform() === 'darwin') return 'default'
-    return 'default'
   }
 }

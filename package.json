@@ -1,6 +1,6 @@
 {
   "name": "pi-carplay",
-  "version": "4.1.0",
+  "version": "4.1.1",
   "description": "An Electron application with React and TypeScript",
   "main": "./out/main/main.js",
   "author": "Lasse Heitgres",
@@ -47,7 +47,7 @@
     "stream-browserify": "^3.0.0",
     "usb": "^2.16.0",
     "vite-plugin-esmodule": "^1.5.0",
-    "zustand": "^5.0.8"
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",
@@ -82,7 +82,7 @@
     "jest-environment-node": "^30.2.0",
     "lint-staged": "^16.2.7",
     "lodash": "^4.17.21",
-    "prettier": "^3.7.2",
+    "prettier": "^3.7.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "rollup-plugin-polyfill-node": "^0.13.0",
