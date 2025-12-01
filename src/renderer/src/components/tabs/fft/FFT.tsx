@@ -27,11 +27,13 @@ export const FFTSpectrum = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const bgCanvasRef = useRef<HTMLCanvasElement>(null)
 
-  const sampleRate = useCarplayStore((s) => s.audioSampleRate) ?? 44100
+  const sampleRate = useCarplayStore((s) => s.audioSampleRate) ?? 48000
+  const visualAudioDelayMs = useCarplayStore((s) => s.visualAudioDelayMs) ?? 300
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
 
   const workerRef = useRef<Worker | null>(null)
   const binsRef = useRef<Float32Array>(new Float32Array(POINTS))
+  const timeoutsRef = useRef<number[]>([])
 
   useEffect(() => {
     const worker = new Worker(new URL('../../worker/fft.worker.ts', import.meta.url), {
@@ -62,11 +64,23 @@ export const FFTSpectrum = () => {
 
       // Copy to avoid transferring the buffer from the store directly
       const buf = pcm instanceof Float32Array ? pcm.slice() : new Float32Array(pcm)
-      worker.postMessage({ type: 'pcm', buffer: buf.buffer }, [buf.buffer])
+
+      if (visualAudioDelayMs > 0) {
+        const id = window.setTimeout(() => {
+          worker.postMessage({ type: 'pcm', buffer: buf.buffer }, [buf.buffer])
+        }, visualAudioDelayMs)
+        timeoutsRef.current.push(id)
+      } else {
+        worker.postMessage({ type: 'pcm', buffer: buf.buffer }, [buf.buffer])
+      }
     })
 
-    return () => unsubscribe()
-  }, [])
+    return () => {
+      unsubscribe()
+      timeoutsRef.current.forEach((id) => clearTimeout(id))
+      timeoutsRef.current = []
+    }
+  }, [visualAudioDelayMs])
 
   useEffect(() => {
     const canvas = canvasRef.current

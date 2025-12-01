@@ -203,6 +203,7 @@ function loadConfig(): ExtraConfig {
     navVolume: 1.0,
     siriVolume: 1.0,
     callVolume: 1.0,
+    visualAudioDelayMs: 300,
     bindings: { ...DEFAULT_BINDINGS },
     ...fileConfig
   } as ExtraConfig
@@ -505,6 +506,7 @@ function persistKioskAndBroadcast(kiosk: boolean) {
           phoneWorkMode: +config.phoneWorkMode,
           packetMax: +config.packetMax,
           mediaDelay: +config.mediaDelay,
+          visualAudioDelayMs: config.visualAudioDelayMs,
           wifiType: config.wifiType,
           wifiChannel: config.wifiChannel,
           primaryColorDark: config.primaryColorDark,
@@ -876,6 +878,7 @@ function saveSettings(next: ExtraConfig) {
         phoneWorkMode: +next.phoneWorkMode,
         packetMax: +next.packetMax,
         mediaDelay: +next.mediaDelay,
+        visualAudioDelayMs: next.visualAudioDelayMs,
         wifiType: next.wifiType,
         wifiChannel: next.wifiChannel,
         primaryColorDark: next.primaryColorDark,

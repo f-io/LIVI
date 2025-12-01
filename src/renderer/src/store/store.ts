@@ -109,7 +109,7 @@ export const useCarplayStore = create<CarplayStore>((set, get) => ({
     const navVolume = settings.navVolume ?? 1.0
     const siriVolume = settings.siriVolume ?? 1.0
     const callVolume = settings.callVolume ?? 1.0
-    const visualAudioDelayMs = settings.visualAudioDelayMs ?? 0
+    const visualAudioDelayMs = settings.visualAudioDelayMs ?? 300
 
     set({
       audioVolume,
@@ -173,7 +173,7 @@ export const useCarplayStore = create<CarplayStore>((set, get) => ({
   callVolume: 1.0,
 
   // new: visual delay default
-  visualAudioDelayMs: 0,
+  visualAudioDelayMs: 300,
 
   // Audio setters
   setAudioVolume: (audioVolume) => {
@@ -286,7 +286,7 @@ socket.on('settings', (settings: ExtraConfig) => {
   const navVolume = settings.navVolume ?? 0.5
   const siriVolume = settings.siriVolume ?? 0.5
   const callVolume = settings.callVolume ?? 1.0
-  const visualAudioDelayMs = settings.visualAudioDelayMs ?? 0
+  const visualAudioDelayMs = settings.visualAudioDelayMs ?? 300
 
   useCarplayStore.setState({
     settings,

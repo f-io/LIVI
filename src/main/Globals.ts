@@ -8,7 +8,7 @@ export type ExtraConfig = DongleConfig & {
   navVolume: number
   siriVolume: number
   callVolume: number
-  visualAudioDelayMs?: number
+  visualAudioDelayMs: number
   primaryColorDark?: string
   primaryColorLight?: string
   highlightEditableFieldLight?: string

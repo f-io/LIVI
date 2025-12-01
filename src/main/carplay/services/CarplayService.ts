@@ -581,11 +581,11 @@ export class CarplayService {
       player.write(pcm)
 
       // Mono only for FFT visualization
-      if (this.webContents && meta) {
+      if (this.webContents && meta && msg.data) {
         const inSampleRate = meta.frequency ?? 48000
         const inChannels = meta.channel ?? 2
 
-        const mono = downsampleToMono(pcm, {
+        const mono = downsampleToMono(msg.data, {
           inSampleRate,
           inChannels
         })
