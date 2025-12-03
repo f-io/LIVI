@@ -6,7 +6,6 @@ import {
   AudioVolumeProps,
   NavVolumeProps
 } from './videoAudio/types'
-import { CarNameProps, OemNameProps } from './general'
 import { DpiProps, FormatProps } from './other/types'
 
 export enum SETTINGS_DIALOGS {

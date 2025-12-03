@@ -20,6 +20,7 @@ export const Dpi: React.FC = () => {
   return (
     <SettingsLayout onSave={save}>
       <TextField
+        style={{ marginTop: 16 }}
         id="dpi"
         size="small"
         fullWidth

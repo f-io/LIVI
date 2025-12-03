@@ -20,7 +20,8 @@ export const PhoneWorkMode: React.FC = () => {
   return (
     <SettingsLayout onSave={save}>
       <TextField
-        id="carName"
+        style={{ marginTop: 16 }}
+        id="phoneWorkMode"
         size="small"
         fullWidth
         label="phoneWorkMode"

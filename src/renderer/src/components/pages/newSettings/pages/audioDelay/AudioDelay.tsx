@@ -19,6 +19,7 @@ export const AudioDelay: React.FC = () => {
   return (
     <SettingsLayout onSave={save}>
       <TextField
+        style={{ marginTop: 16 }}
         id="mediaDelay"
         size="small"
         fullWidth

@@ -20,6 +20,7 @@ export const PacketMax: React.FC = () => {
   return (
     <SettingsLayout onSave={save}>
       <TextField
+        style={{ marginTop: 16 }}
         id="packetMax"
         size="small"
         fullWidth

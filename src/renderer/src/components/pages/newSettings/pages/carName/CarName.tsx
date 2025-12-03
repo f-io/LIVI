@@ -20,6 +20,7 @@ export const CarName: React.FC = () => {
   return (
     <SettingsLayout onSave={save}>
       <TextField
+        style={{ marginTop: 16 }}
         id="carName"
         size="small"
         fullWidth

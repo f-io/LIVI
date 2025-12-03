@@ -2,8 +2,8 @@ import { SettingsLayout } from '@renderer/components/layouts/SettingsLayout'
 import { useCarplayStore } from '@store/store'
 import { useSmartSettings } from '../../hooks/useSmartSettings'
 import { MicTypeSettingKey } from './types'
-import ToggleButton from '@mui/material/ToggleButton'
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
+import { MicTypeValues } from '../../../settings/constants'
+import { SettingsItemRow } from '../../components'
 
 export const MicType: React.FC = () => {
   // FIXME types
@@ -17,29 +17,32 @@ export const MicType: React.FC = () => {
 
   const { state: settingsState, handleFieldChange, save } = useSmartSettings(initialState, settings)
 
+  const config = {
+    [MicTypeValues['box']]: { label: MicTypeValues['box'], type: 'checkbox' },
+    [MicTypeValues['os']]: { label: MicTypeValues['os'], type: 'checkbox' }
+  }
+
+  console.log(settingsState)
+
   return (
     <SettingsLayout onSave={save}>
-      <ToggleButtonGroup
-        value={settingsState.wifiType}
-        exclusive
-        onChange={(e, value) => handleFieldChange(key, value)}
-        aria-label="text alignment"
-      >
-        {['box', 'os'].map((variant, index) => {
-          return (
-            <ToggleButton
-              size="small"
-              value={variant}
-              sx={{
-                minWidth: '100px'
-              }}
-              aria-label={index === 0 ? 'left aligned' : 'justified'}
-            >
-              {variant}
-            </ToggleButton>
-          )
-        })}
-      </ToggleButtonGroup>
+      {Object.keys(config).map((item, index) => {
+        return (
+          <SettingsItemRow
+            key={index}
+            config={config}
+            item={item}
+            state={settingsState}
+            transformer={() => {
+              return settingsState.micType === item
+            }}
+            onClick={(e, value) => handleFieldChange(item, value)}
+            onChange={(e, value) => handleFieldChange(item, value)}
+          />
+        )
+      })}
+
+      <span>Helper text</span>
     </SettingsLayout>
   )
 }

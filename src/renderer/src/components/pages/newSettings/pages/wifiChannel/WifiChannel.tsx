@@ -19,10 +19,11 @@ export const WifiChannel: React.FC = () => {
   return (
     <SettingsLayout onSave={save}>
       <TextField
+        style={{ marginTop: 16 }}
         id="wifiChannel"
         size="small"
         fullWidth
-        label="wifiChannel"
+        label="WiFi Channel"
         value={settingsState.wifiChannel ?? ''}
         slotProps={{
           input: { inputProps: { maxLength: 3 } },
