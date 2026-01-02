@@ -32,10 +32,10 @@ export const Nav = ({ receivingVideo }: NavProps) => {
     return pathname.startsWith(t.path)
   })
 
-  const value = activeIndex + 1 >= 1 ? activeIndex + 1 : 1
+  const value = activeIndex >= 0 ? activeIndex : 0
 
   const handleChange = (_: React.SyntheticEvent, newIndex: number) => {
-    const tab = tabs[newIndex - 1]
+    const tab = tabs[newIndex]
     if (tab.path === ROUTES.QUIT) {
       window.carplay.quit().catch(console.error)
       return
@@ -69,8 +69,6 @@ export const Nav = ({ receivingVideo }: NavProps) => {
         selectionFollowsFocus={false}
         orientation="vertical"
         sx={{
-          borderRight: '1px solid',
-          borderColor: 'divider',
           '& .MuiTabs-indicator': {
             display: 'none'
           },

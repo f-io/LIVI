@@ -652,9 +652,8 @@ const CarplayComponent: React.FC<CarplayProps> = ({
 
   return (
     <div
-      id="main"
+      id="carplay-root"
       ref={mainElem}
-      className="App"
       style={
         pathname === '/'
           ? { height: '100%', width: '100%', touchAction: 'none', position: 'relative' }
