@@ -3,9 +3,8 @@ import React, { ReactNode } from 'react'
 export interface SettingsLayoutProps {
   children?: ReactNode
   title: string
-  onSave?: () => boolean
-  isDirty: boolean
-  needsRestart?: boolean
+  showRestart: boolean
+  onRestart?: () => void | Promise<void>
 }
 
 export interface AppLayoutProps {

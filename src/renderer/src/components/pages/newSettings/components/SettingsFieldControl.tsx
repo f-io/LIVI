@@ -1,4 +1,4 @@
-import { MenuItem, Select, Slider, Switch, TextField } from '@mui/material'
+import { Box, MenuItem, Select, Slider, Switch, TextField } from '@mui/material'
 import NumberSpinner from './numberSpinner/numberSpinner'
 import { SettingsNode } from '../../../../routes'
 import { ExtraConfig } from '@main/Globals'
@@ -57,6 +57,13 @@ export const SettingsFieldControl = <T,>({ node, value, onChange }: Props<T>) =>
           marks
           valueLabelDisplay="auto"
           onChange={(_, v) => onChange(((v as number) / 100) as T)}
+          sx={{
+            width: 'calc(100% - 48px)', // 2*24px
+            ml: 3,
+            mr: 3,
+            minWidth: 0,
+            '& .MuiSlider-valueLabel': { zIndex: 2 }
+          }}
         />
       )
 

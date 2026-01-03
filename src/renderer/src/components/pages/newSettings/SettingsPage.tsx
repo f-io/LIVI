@@ -1,4 +1,4 @@
-import { useCarplayStore } from '@store/store'
+import { useCarplayStore, useStatusStore } from '@store/store'
 import { ExtraConfig } from '@main/Globals'
 import { SettingsLayout } from '../../layouts'
 import { useSmartSettingsFromSchema } from './hooks/useSmartSettingsFromSchema'
@@ -16,15 +16,16 @@ export const SettingsPage = () => {
   const navigate = useNavigate()
   const { '*': splat } = useParams()
 
-  const path = splat ? splat.split('/') : []
+  const isDongleConnected = useStatusStore((s) => s.isDongleConnected)
 
+  const path = splat ? splat.split('/') : []
   const node = getNodeByPath(settingsSchema, path)
-  // TODO Fixme
+
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore
   const settings = useCarplayStore((s) => s.settings)
 
-  const { state, isDirty, handleFieldChange, save } = useSmartSettingsFromSchema(
+  const { state, handleFieldChange, needsRestart, restart } = useSmartSettingsFromSchema(
     settingsSchema,
     settings
   )
@@ -32,10 +33,11 @@ export const SettingsPage = () => {
   if (!node) return null
 
   const title = node.label ?? 'Settings'
+  const showRestart = Boolean(needsRestart) && Boolean(isDongleConnected)
 
   if ('path' in node && node.page) {
     return (
-      <SettingsLayout title={title} onSave={save} isDirty={isDirty}>
+      <SettingsLayout title={title} showRestart={showRestart} onRestart={restart}>
         <SettingsFieldPage
           node={node}
           value={getValueByPath(state, node.path)}
@@ -45,13 +47,12 @@ export const SettingsPage = () => {
     )
   }
 
-  // TODO Fixme
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore
   const children = node.children ?? []
 
   return (
-    <SettingsLayout title={title} onSave={save} isDirty={isDirty}>
+    <SettingsLayout title={title} showRestart={showRestart} onRestart={restart}>
       {children.map((child: SettingsNode<ExtraConfig>, index: Key | null | undefined) => {
         const _path = child.path as string
 

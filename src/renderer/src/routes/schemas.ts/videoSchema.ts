@@ -1,5 +1,4 @@
 import { SettingsNode } from '../types'
-import { StreamResolution } from '../../components/pages/newSettings/pages/streamResolution'
 import { ExtraConfig } from '@main/Globals'
 
 export const videoSchema: SettingsNode<ExtraConfig> = {
@@ -9,29 +8,25 @@ export const videoSchema: SettingsNode<ExtraConfig> = {
   path: '',
   children: [
     {
-      type: 'route',
-      label: 'Stream Resolution',
-      route: 'streamResolution',
+      type: 'number',
+      label: 'Width',
+      path: 'width',
+      displayValue: true,
+      page: { title: 'Width', description: 'Stream width in px' }
+    },
+    {
+      type: 'number',
+      label: 'Height',
       path: 'height',
-      children: [
-        {
-          path: 'width',
-          type: 'custom',
-          label: 'Stream Resolution',
-          displayValue: true,
-          component: StreamResolution
-        }
-      ]
+      displayValue: true,
+      page: { title: 'Height', description: 'Stream height in px' }
     },
     {
       type: 'number',
       label: 'FPS',
       path: 'fps',
       displayValue: true,
-      page: {
-        title: 'FPS',
-        description: 'FPS'
-      }
+      page: { title: 'FPS', description: 'FPS' }
     }
   ]
 }

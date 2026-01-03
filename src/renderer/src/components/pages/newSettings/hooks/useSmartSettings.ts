@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { requiresRestartParams } from '../../settings/constants'
 import { getValueByPath, setValueByPath } from '../utils'
+import { useCarplayStore, useStatusStore } from '@store/store'
 
 type OverrideConfig<T> = {
   transform?: (value: any, prev: T) => T
@@ -16,11 +17,14 @@ export function useSmartSettings<T extends Record<string, any>>(
 ) {
   const overrides = options?.overrides ?? {}
   const [state, setState] = useState<T>(() => ({ ...initial }))
-  const [isRequireReset, setIsRequireReset] = useState(false)
+
+  const saveSettings = useCarplayStore((s) => s.saveSettings)
+  const restartBaseline = useCarplayStore((s) => s.restartBaseline)
+  const markRestartBaseline = useCarplayStore((s) => s.markRestartBaseline)
+  const isDongleConnected = useStatusStore((s) => s.isDongleConnected)
 
   useEffect(() => {
     setState({ ...initial })
-    setIsRequireReset(false)
   }, [initial])
 
   const isDirty = useMemo(
@@ -31,49 +35,54 @@ export function useSmartSettings<T extends Record<string, any>>(
     [state, settings]
   )
 
-  const evaluateNeedRestart = (path: string, nextValue: any) => {
-    const key = path.split('.').at(-1) as any
-    return requiresRestartParams.includes(key)
-  }
+  const needsRestart = useMemo(() => {
+    const cfg = (settings ?? {}) as any
+    const baseline = (restartBaseline ?? settings ?? {}) as any
+
+    for (const key of requiresRestartParams) {
+      if (cfg[key] !== baseline[key]) return true
+    }
+    return false
+  }, [settings, restartBaseline])
 
   const handleFieldChange = (path: string, rawValue: any) => {
     const prevValue = state[path]
     const override = overrides[path]
 
     const nextValue = override?.transform?.(rawValue, prevValue) ?? rawValue
-
     if (override?.validate && !override.validate(nextValue)) return
 
-    if (evaluateNeedRestart(path, nextValue)) {
-      setIsRequireReset(true)
-    }
+    setState((prev) => {
+      const next = { ...prev, [path]: nextValue }
 
-    setState((prev) => ({
-      ...prev,
-      [path]: nextValue
-    }))
+      const newSettings = structuredClone((settings ?? {}) as any)
+      Object.entries(next).forEach(([p, v]) => {
+        setValueByPath(newSettings, p, v)
+      })
+
+      saveSettings(newSettings)
+      return next
+    })
   }
 
   const resetState = () => setState(initial)
 
-  const save = () => {
-    const newSettings = structuredClone(settings ?? {})
+  const restart = async () => {
+    if (!needsRestart) return false
+    if (!isDongleConnected) return false
 
-    Object.entries(state).forEach(([path, value]) => {
-      setValueByPath(newSettings, path, value)
-    })
-
-    console.log('saved settings:', newSettings)
-
-    // saveSettings(newSettings)
-    return isRequireReset
+    await window.carplay.usb.forceReset()
+    markRestartBaseline()
+    return true
   }
 
   return {
     state,
     isDirty,
+    needsRestart,
+    isDongleConnected,
     handleFieldChange,
     resetState,
-    save
+    restart
   }
 }

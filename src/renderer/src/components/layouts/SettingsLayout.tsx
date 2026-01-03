@@ -3,37 +3,32 @@ import Stack from '@mui/material/Stack'
 import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
 import ArrowBackIosOutlinedIcon from '@mui/icons-material/ArrowBackIosOutlined'
-import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined'
+import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined'
 import { useNavigate } from 'react-router'
 import { SettingsLayoutProps } from './types'
+import { useTheme } from '@mui/material/styles'
 
-export const SettingsLayout = ({ children, title, onSave, isDirty }: SettingsLayoutProps) => {
+export const SettingsLayout = ({
+  children,
+  title,
+  showRestart,
+  onRestart
+}: SettingsLayoutProps) => {
   const navigate = useNavigate()
+  const theme = useTheme()
 
   const handleNavigate = () => navigate(-1)
-
-  const handleSave = () => {
-    const isRequireReset = onSave?.()
-    if (isRequireReset) {
-      console.log('need reset app')
-    }
-  }
-
-  const showSave = Boolean(onSave) && isDirty
 
   return (
     <Box
       sx={{
         position: 'absolute',
         inset: 0,
-
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
-
         overflow: 'hidden',
         boxSizing: 'border-box',
-
         px: 'clamp(12px, 3.5vw, 28px)',
         pt: 'clamp(8px, 2.2vh, 18px)',
         pb: 'clamp(10px, 2.2vh, 18px)'
@@ -67,7 +62,7 @@ export const SettingsLayout = ({ children, title, onSave, isDirty }: SettingsLay
             textAlign: 'center',
             fontWeight: 800,
             lineHeight: 1.05,
-            fontSize: 'clamp(18px, 4.2vh, 42px)'
+            fontSize: 'clamp(16px, 3.6vh, 34px)'
           }}
         >
           {title}
@@ -75,22 +70,21 @@ export const SettingsLayout = ({ children, title, onSave, isDirty }: SettingsLay
 
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
           <IconButton
-            onClick={handleSave}
-            aria-label="Save"
-            disabled={!showSave}
+            onClick={onRestart}
+            aria-label="Restart dongle"
             sx={{
-              width: 44,
-              height: 44,
-              opacity: showSave ? 1 : 0,
-              pointerEvents: showSave ? 'auto' : 'none'
+              width: 'clamp(32px, 5.5vw, 44px)',
+              height: 'clamp(32px, 5.5vw, 44px)',
+              opacity: showRestart ? 1 : 0,
+              pointerEvents: showRestart ? 'auto' : 'none',
+              color: showRestart ? theme.palette.primary.main : 'inherit'
             }}
           >
-            <SaveOutlinedIcon />
+            <RestartAltOutlinedIcon />
           </IconButton>
         </Box>
       </Box>
 
-      {/* CONTENT */}
       <Box
         sx={{
           flex: '1 1 auto',
