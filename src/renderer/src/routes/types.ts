@@ -7,6 +7,7 @@ export enum ROUTES_NEW {
   INFO = '/info',
   SETTINGS = '/settings',
   NEW_SETTINGS = '/new-settings',
+  TELEMETRY = '/telemetry',
   QUIT = 'quit'
 }
 
@@ -16,7 +17,8 @@ export enum RoutePath {
   NewSettings = 'new-settings',
   Camera = 'camera',
   Media = 'media',
-  Info = 'info'
+  Info = 'info',
+  Telemetry = 'telemetry'
 }
 
 export interface RouteProps {

@@ -11,12 +11,15 @@ import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import CameraswitchOutlinedIcon from '@mui/icons-material/CameraswitchOutlined'
 import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew'
+import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined'
 
+import { useTelemetryStore } from '../../store/telemetryStore'
 export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivingVideo) => {
   const theme = useTheme()
   const isStreaming = useStatusStore((s) => s.isStreaming)
   const isDongleConnected = useStatusStore((s) => s.isDongleConnected)
   const cameraFound = useStatusStore((s) => s.cameraFound)
+  const telemetryConnected = useTelemetryStore((s) => s.connected)
 
   return [
     {
@@ -50,6 +53,21 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
       label: 'Settings',
       path: ROUTES.SETTINGS,
       icon: <SettingsOutlinedIcon sx={{ fontSize: 30 }} />
+    },
+    {
+      label: 'Telemetry',
+      path: ROUTES.TELEMETRY,
+      icon: telemetryConnected ? (
+        <Badge
+          variant="dot"
+          overlap="circular"
+          sx={{ '& .MuiBadge-badge': { bgcolor: theme.palette.success.main } }}
+        >
+          <SpeedOutlinedIcon sx={{ color: theme.palette.success.main, fontSize: 30 }} />
+        </Badge>
+      ) : (
+        <SpeedOutlinedIcon sx={{ fontSize: 30 }} />
+      )
     },
     { label: 'Quit', path: 'quit', icon: <PowerSettingsNewIcon sx={{ fontSize: 30 }} /> }
   ]
