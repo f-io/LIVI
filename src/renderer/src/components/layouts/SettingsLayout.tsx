@@ -98,7 +98,7 @@ export const SettingsLayout = ({
                   gap: '0.5rem'
                 }}
               >
-                <span>Save</span>
+                <span>Apply</span>
                 <RestartAltOutlinedIcon />
               </div>
             </IconButton>
