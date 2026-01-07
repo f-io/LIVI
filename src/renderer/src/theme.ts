@@ -40,6 +40,8 @@ const svgIconRoot = { cursor: 'default' }
 
 function buildTheme(mode: THEME.LIGHT | THEME.DARK) {
   const isLight = mode === THEME.LIGHT
+  const primary = isLight ? themeColors.highlightLight : themeColors.highlightDark
+
   return createTheme({
     breakpoints: {
       values: {
@@ -60,7 +62,7 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK) {
         primary: isLight ? themeColors.textPrimaryLight : themeColors.textPrimaryDark,
         secondary: isLight ? themeColors.textSecondaryLight : themeColors.textSecondaryDark
       },
-      primary: { main: isLight ? themeColors.highlightLight : themeColors.highlightDark },
+      primary: { main: primary },
       divider: isLight ? themeColors.dividerLight : themeColors.dividerDark,
       success: { main: themeColors.successMain }
     },
@@ -88,10 +90,7 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK) {
           '.artwork-surface': {
             backgroundColor: isLight
               ? themeColors.artworkSurfaceLight
-              : themeColors.artworkSurfaceDark,
-            boxShadow: `0 0 0 1px ${
-              isLight ? themeColors.artworkSurfaceBorderLight : themeColors.artworkSurfaceBorderDark
-            } inset`
+              : themeColors.artworkSurfaceDark
           }
         }
       },
@@ -102,7 +101,7 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK) {
             backgroundColor: isLight ? themeColors.light : themeColors.dark
           },
           indicator: {
-            backgroundColor: isLight ? themeColors.highlightLight : themeColors.highlightDark,
+            backgroundColor: primary,
             height: 4
           }
         }
@@ -146,7 +145,7 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK) {
         styleOverrides: {
           root: {
             '&.Mui-focused': {
-              color: isLight ? themeColors.highlightLight : themeColors.highlightDark
+              color: primary
             }
           }
         }
@@ -154,21 +153,29 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK) {
       MuiButton: {
         styleOverrides: {
           containedPrimary: {
-            backgroundColor: isLight ? themeColors.highlightLight : themeColors.highlightDark,
+            backgroundColor: primary,
             '&:hover': {
-              backgroundColor: isLight
-                ? themeColors.highlightAlphaLight
-                : themeColors.highlightAlphaDark
+              backgroundColor: primary,
+              boxShadow: `0 0 0 2px ${alpha(primary, 0.55)} inset, 0 0 14px ${alpha(primary, 0.45)}`
+            },
+            '&:active': {
+              backgroundColor: primary,
+              boxShadow: `0 0 0 2px ${alpha(primary, 0.65)} inset, 0 0 18px ${alpha(primary, 0.5)}`
             }
           },
           root: {
+            '&.MuiButton-containedPrimary:focus-visible': {
+              outline: 'none',
+              boxShadow: `0 0 0 2px ${alpha(primary, 0.75)} inset, 0 0 18px ${alpha(primary, 0.65)}`
+            },
+
             '&.hover-ring.MuiButton-containedPrimary:hover': {
-              backgroundColor: isLight ? themeColors.highlightLight : themeColors.highlightDark,
-              boxShadow: `0 0 0 2px ${alpha(isLight ? themeColors.highlightLight : themeColors.highlightDark, 0.55)} inset`
+              backgroundColor: primary,
+              boxShadow: `0 0 0 2px ${alpha(primary, 0.65)} inset, 0 0 16px ${alpha(primary, 0.55)}`
             },
             '&.hover-ring.MuiButton-containedPrimary:focus-visible': {
               outline: 'none',
-              boxShadow: `0 0 0 2px ${alpha(isLight ? themeColors.highlightLight : themeColors.highlightDark, 0.75)} inset`
+              boxShadow: `0 0 0 2px ${alpha(primary, 0.85)} inset, 0 0 20px ${alpha(primary, 0.7)}`
             }
           }
         }
@@ -200,8 +207,6 @@ export function buildRuntimeTheme(mode: THEME.LIGHT | THEME.DARK, primary?: stri
   if (!primary) return buildTheme(mode)
 
   const base = buildTheme(mode)
-  const isLight = mode === THEME.LIGHT
-  const hoverBg = isLight ? themeColors.highlightAlphaLight : themeColors.highlightAlphaDark
 
   const tabsSO = (base.components?.MuiTabs?.styleOverrides ?? {}) as Record<string, CSSObject>
   const outlinedSO = (base.components?.MuiOutlinedInput?.styleOverrides ?? {}) as Record<
@@ -269,17 +274,30 @@ export function buildRuntimeTheme(mode: THEME.LIGHT | THEME.DARK, primary?: stri
           containedPrimary: {
             ...btnContainedPrimary,
             backgroundColor: primary,
-            '&:hover': { backgroundColor: hoverBg }
+            '&:hover': {
+              backgroundColor: primary,
+              boxShadow: `0 0 0 2px ${alpha(primary, 0.55)} inset, 0 0 14px ${alpha(primary, 0.45)}`
+            },
+            '&:active': {
+              backgroundColor: primary,
+              boxShadow: `0 0 0 2px ${alpha(primary, 0.65)} inset, 0 0 18px ${alpha(primary, 0.5)}`
+            }
           },
           root: {
             ...btnRoot,
+
+            '&.MuiButton-containedPrimary:focus-visible': {
+              outline: 'none',
+              boxShadow: `0 0 0 2px ${alpha(primary, 0.75)} inset, 0 0 18px ${alpha(primary, 0.65)}`
+            },
+
             '&.hover-ring.MuiButton-containedPrimary:hover': {
               backgroundColor: primary,
-              boxShadow: `0 0 0 2px ${alpha(primary, 0.55)} inset`
+              boxShadow: `0 0 0 2px ${alpha(primary, 0.65)} inset, 0 0 16px ${alpha(primary, 0.55)}`
             },
             '&.hover-ring.MuiButton-containedPrimary:focus-visible': {
               outline: 'none',
-              boxShadow: `0 0 0 2px ${alpha(primary, 0.75)} inset`
+              boxShadow: `0 0 0 2px ${alpha(primary, 0.85)} inset, 0 0 20px ${alpha(primary, 0.7)}`
             }
           }
         }
