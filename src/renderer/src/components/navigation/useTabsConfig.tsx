@@ -8,9 +8,7 @@ import PhonelinkOffIcon from '@mui/icons-material/PhonelinkOff'
 import PhonelinkIcon from '@mui/icons-material/Phonelink'
 import PlayCircleOutlinedIcon from '@mui/icons-material/PlayCircleOutlined'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import CameraswitchOutlinedIcon from '@mui/icons-material/CameraswitchOutlined'
-import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew'
 
 export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivingVideo) => {
   const theme = useTheme()
@@ -45,12 +43,10 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
       icon: <CameraswitchOutlinedIcon sx={{ fontSize: 30 }} />,
       disabled: !cameraFound
     },
-    { label: 'Info', path: ROUTES.INFO, icon: <InfoOutlinedIcon sx={{ fontSize: 30 }} /> },
     {
       label: 'Settings',
       path: ROUTES.SETTINGS,
       icon: <SettingsOutlinedIcon sx={{ fontSize: 30 }} />
-    },
-    { label: 'Quit', path: 'quit', icon: <PowerSettingsNewIcon sx={{ fontSize: 30 }} /> }
+    }
   ]
 }

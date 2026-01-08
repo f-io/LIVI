@@ -17,7 +17,13 @@
     "baseUrl": "./src",
     "paths": {
       "@audio": ["main/audio/index.ts"],
-      "@audio/*": ["main/audio/*"]
+      "@audio/*": ["main/audio/*"],
+      "@renderer/*": ["renderer/src/*"],
+      "@carplay/messages": ["main/carplay/messages/index.ts"],
+      "@main/*": ["main/*"],
+      "@worker/*": ["renderer/src/components/worker/*"],
+      "@store/*": ["renderer/src/store/*"],
+      "@utils/*": ["renderer/src/utils/*"]
     }
   },
   "include": ["src/**/*", "src/types"],

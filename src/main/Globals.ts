@@ -11,8 +11,8 @@ export type ExtraConfig = DongleConfig & {
   visualAudioDelayMs: number
   primaryColorDark?: string
   primaryColorLight?: string
-  highlightEditableFieldLight?: string
-  highlightEditableFieldDark?: string
+  highlightColorLight?: string
+  highlightColorDark?: string
   dongleIcon120?: string
   dongleIcon180?: string
   dongleIcon256?: string
@@ -31,15 +31,4 @@ export interface KeyBindings {
   pause: string
   next: string
   prev: string
-}
-
-export interface CanMessage {
-  canId: number
-  byte: number
-  mask: number
-}
-
-export interface CanConfig {
-  reverse?: CanMessage
-  lights?: CanMessage
 }

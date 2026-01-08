@@ -1,6 +1,6 @@
 {
   "name": "pi-carplay",
-  "version": "4.2.0",
+  "version": "5.0.0",
   "description": "CarPlay/Android Auto head unit app for Linux",
   "main": "./out/main/main.js",
   "author": "Lasse Heitgres",
@@ -34,6 +34,7 @@
     "*.{js,jsx,ts,tsx,json,css,scss,md,yml,yaml}": "prettier --write"
   },
   "dependencies": {
+    "@base-ui/react": "^1.0.0",
     "@electron-toolkit/utils": "4.0.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
@@ -67,19 +68,19 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@types/w3c-web-usb": "^1.0.13",
-    "@typescript-eslint/eslint-plugin": "^8.50.1",
-    "@typescript-eslint/parser": "^8.50.1",
+    "@typescript-eslint/eslint-plugin": "^8.52.0",
+    "@typescript-eslint/parser": "^8.52.0",
     "@vitejs/plugin-react": "^5.1.2",
     "@webgpu/types": "^0.1.68",
     "electron": "^39.2.7",
-    "electron-builder": "^26.0.12",
+    "electron-builder": "^26.4.0",
     "electron-to-chromium": "^1.5.267",
     "electron-vite": "^5.0.0",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
-    "globals": "^16.5.0",
+    "globals": "^17.0.0",
     "husky": "^9.1.7",
     "jest": "^30.2.0",
     "jest-environment-jsdom": "^30.2.0",
@@ -93,6 +94,6 @@
     "ts-jest": "^29.4.6",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
-    "vite": "^7.3.0"
+    "vite": "^7.3.1"
   }
 }

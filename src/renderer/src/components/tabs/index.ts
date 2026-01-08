@@ -1,7 +1,0 @@
-export * from './camera'
-export * from './carplay'
-export * from './fft'
-export * from './home'
-export * from './info'
-export * from './media'
-export * from './settings'

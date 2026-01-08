@@ -6,6 +6,8 @@ import { useStatusStore } from '../../store/store'
 import { ExtraConfig } from '../../../../main/Globals'
 import { useTabsConfig } from './useTabsConfig'
 import { ROUTES } from '../../constants'
+import { useBlinkingTime } from '../../hooks/useBlinkingTime'
+import { useNetworkStatus } from '../../hooks/useNetworkStatus'
 
 interface NavProps {
   settings: ExtraConfig | null
@@ -15,6 +17,9 @@ interface NavProps {
 export const Nav = ({ receivingVideo }: NavProps) => {
   const navigate = useNavigate()
   const { pathname } = useLocation()
+
+  useBlinkingTime()
+  useNetworkStatus()
 
   const isStreaming = useStatusStore((s) => s.isStreaming)
   const tabs = useTabsConfig(receivingVideo)
@@ -39,32 +44,51 @@ export const Nav = ({ receivingVideo }: NavProps) => {
     navigate(tab.path)
   }
 
+  // TODO move it to global UI constants
+  const isXSIcons = window.innerHeight <= 320
+
   const tabSx = {
     minWidth: 0,
     flex: '1 1 0',
-    padding: '10px 0',
-    '& .MuiTab-iconWrapper': { display: 'grid', placeItems: 'center' }
+    padding: isXSIcons ? '5px 0' : '10px 0',
+    '& .MuiTab-iconWrapper': { display: 'grid', placeItems: 'center' },
+    '& .MuiSvgIcon-root': {
+      fontSize: isXSIcons ? '1.5rem' : '2rem'
+    },
+    minHeight: 'auto'
   } as const
 
   return (
-    <Tabs
-      value={value}
-      onChange={handleChange}
-      aria-label="Navigation Tabs"
-      variant="fullWidth"
-      textColor="inherit"
-      indicatorColor="secondary"
-      selectionFollowsFocus={false}
-    >
-      {tabs.map((tab) => (
-        <Tab
-          key={tab.path}
-          sx={tabSx}
-          icon={tab.icon}
-          disabled={tab.disabled}
-          aria-label={tab.label}
-        />
-      ))}
-    </Tabs>
+    <>
+      <Tabs
+        value={value}
+        onChange={handleChange}
+        aria-label="Navigation Tabs"
+        variant="fullWidth"
+        textColor="inherit"
+        visibleScrollbar={false}
+        selectionFollowsFocus={false}
+        orientation="vertical"
+        sx={{
+          '& .MuiTabs-indicator': {
+            display: 'none'
+          },
+          '& .MuiTabs-list': {
+            height: '100%'
+          },
+          height: '100%'
+        }}
+      >
+        {tabs.map((tab) => (
+          <Tab
+            key={tab.path}
+            sx={tabSx}
+            icon={tab.icon}
+            disabled={tab.disabled}
+            aria-label={tab.label}
+          />
+        ))}
+      </Tabs>
+    </>
   )
 }

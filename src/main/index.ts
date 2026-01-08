@@ -516,8 +516,8 @@ function persistKioskAndBroadcast(kiosk: boolean) {
           wifiChannel: config.wifiChannel,
           primaryColorDark: config.primaryColorDark,
           primaryColorLight: config.primaryColorLight,
-          highlightEditableFieldDark: config.highlightEditableFieldDark,
-          highlightEditableFieldLight: config.highlightEditableFieldLight,
+          highlightColorDark: config.highlightColorDark,
+          highlightColorLight: config.highlightColorLight,
           dongleIcon120: config.dongleIcon120,
           dongleIcon180: config.dongleIcon180,
           dongleIcon256: config.dongleIcon256
@@ -888,8 +888,8 @@ function saveSettings(next: ExtraConfig) {
         wifiChannel: next.wifiChannel,
         primaryColorDark: next.primaryColorDark,
         primaryColorLight: next.primaryColorLight,
-        highlightEditableFieldDark: next.highlightEditableFieldDark,
-        highlightEditableFieldLight: next.highlightEditableFieldLight,
+        highlightColorDark: next.highlightColorDark,
+        highlightColorLight: next.highlightColorLight,
         dongleIcon120: next.dongleIcon120,
         dongleIcon180: next.dongleIcon180,
         dongleIcon256: next.dongleIcon256

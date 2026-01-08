@@ -3,6 +3,7 @@ export enum ROUTES {
   MEDIA = '/media',
   CAMERA = '/camera',
   INFO = '/info',
+  OLD_SETTINGS = '/old-settings',
   SETTINGS = '/settings',
   QUIT = 'quit'
 }
@@ -28,3 +29,5 @@ export enum THEME {
   LIGHT = 'light',
   DARK = 'dark'
 }
+
+export const EMPTY_STRING = '—'

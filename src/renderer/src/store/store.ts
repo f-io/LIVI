@@ -48,6 +48,9 @@ export interface CarplayStore {
   stream: (payload: unknown) => void
   resetInfo: () => void
 
+  restartBaseline: ExtraConfig | null
+  markRestartBaseline: () => void
+
   // Display resolution
   negotiatedWidth: number | null
   negotiatedHeight: number | null
@@ -101,6 +104,13 @@ export interface CarplayStore {
 
 export const useCarplayStore = create<CarplayStore>((set, get) => ({
   settings: null,
+
+  restartBaseline: null,
+  markRestartBaseline: () => {
+    const s = get().settings
+    if (!s) return
+    set({ restartBaseline: s })
+  },
 
   saveSettings: (settings) => {
     set({ settings })
@@ -172,8 +182,8 @@ export const useCarplayStore = create<CarplayStore>((set, get) => ({
   siriVolume: 0.5,
   callVolume: 1.0,
 
-  // new: visual delay default
-  visualAudioDelayMs: 300,
+  // Visual delay default
+  visualAudioDelayMs: 120,
 
   // Audio setters
   setAudioVolume: (audioVolume) => {
@@ -276,8 +286,8 @@ export const useStatusStore = create<StatusStore>((set) => ({
   setCameraFound: (found) => set({ cameraFound: found }),
   setDongleConnected: (connected) => set({ isDongleConnected: connected }),
   setStreaming: (streaming) => set({ isStreaming: streaming }),
-  setReverse: (reverse) => set({ reverse }),
-  setLights: (lights) => set({ lights })
+  setReverse: (reverse: boolean) => set({ reverse }),
+  setLights: (lights: boolean) => set({ lights })
 }))
 
 // Socket.IO event handlers
@@ -287,9 +297,11 @@ socket.on('settings', (settings: ExtraConfig) => {
   const siriVolume = settings.siriVolume ?? 0.5
   const callVolume = settings.callVolume ?? 1.0
   const visualAudioDelayMs = settings.visualAudioDelayMs ?? 120
+  const prevBaseline = useCarplayStore.getState().restartBaseline
 
   useCarplayStore.setState({
     settings,
+    restartBaseline: prevBaseline ?? settings,
     audioVolume,
     navVolume,
     siriVolume,

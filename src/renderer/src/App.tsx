@@ -1,7 +1,6 @@
-import { useEffect, useState, useRef, useCallback, useContext, ElementType } from 'react'
-import { HashRouter as Router, Route, Routes, useLocation } from 'react-router'
-import { Carplay, Camera } from './components/tabs'
-import { Nav } from './components/navigation/Nav'
+import { useEffect, useState, useRef, useCallback, useContext } from 'react'
+import { HashRouter as Router, useLocation, useRoutes } from 'react-router'
+import { Carplay, Camera } from './components/pages'
 import { Box, Modal } from '@mui/material'
 import { useCarplayStore, useStatusStore } from './store/store'
 import type { KeyCommand } from '@worker/types'
@@ -9,7 +8,8 @@ import { updateCameras } from './utils/cameraDetection'
 import { useActiveControl, useFocus, useKeyDown } from './hooks'
 import { ROUTES } from './constants'
 import { AppContext } from './context'
-import { routes } from './routes'
+import { appRoutes } from './routes/appRoutes'
+import { AppLayout } from './components/layouts/AppLayout'
 
 const modalStyle = {
   position: 'absolute' as const,
@@ -21,12 +21,6 @@ const modalStyle = {
   boxShadow: 24,
   display: 'flex'
 }
-
-// TODO
-// move:
-// isVisible, isFormField, getFocusableList, getFirstFocusable,focusSelectedNav
-// focusFirstInMain, moveFocusLinear, inContainer
-// to the application context
 
 function AppInner() {
   const appContext = useContext(AppContext)
@@ -46,6 +40,8 @@ function AppInner() {
 
   const navRef = useRef<HTMLDivElement | null>(null)
   const mainRef = useRef<HTMLDivElement | null>(null)
+
+  const element = useRoutes(appRoutes)
 
   useEffect(() => {
     if (!appContext?.navEl || !appContext?.contentEl) {
@@ -126,11 +122,7 @@ function AppInner() {
   }, [settings, saveSettings, setCameraFound])
 
   return (
-    <div style={{ height: '100%', touchAction: 'none' }} id="main" className="App">
-      <div ref={navRef} id="nav-root">
-        <Nav receivingVideo={receivingVideo} settings={settings} />
-      </div>
-
+    <AppLayout navRef={navRef} receivingVideo={receivingVideo}>
       {settings && (
         <Carplay
           receivingVideo={receivingVideo}
@@ -141,30 +133,14 @@ function AppInner() {
         />
       )}
 
-      <div ref={mainRef} id="main-root">
-        <Routes>
-          {routes.map((route, index) => {
-            const Component = route.component as unknown as ElementType
-            const path = route.path
-
-            if (Component) {
-              return <Route key={index} path={path} element={<Component settings={settings!} />} />
-            }
-
-            return null
-          })}
-
-          {/*TODO Clarify behaviour*/}
-          {/*<Route path="*" element={<Navigate to={`/${RoutePath.Home}`} replace />} />*/}
-        </Routes>
-      </div>
+      <>{element}</>
 
       <Modal open={reverse} onClick={() => setReverse(false)}>
         <Box sx={modalStyle}>
-          <Camera settings={settings} />
+          <Camera />
         </Box>
       </Modal>
-    </div>
+    </AppLayout>
   )
 }
 
