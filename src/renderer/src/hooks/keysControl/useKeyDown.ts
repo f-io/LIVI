@@ -1,4 +1,4 @@
-import { Ref, useCallback, useContext } from 'react'
+import { Ref, useCallback, useContext, useMemo } from 'react'
 import { BindKey, useKeyDownProps } from './types'
 import { broadcastMediaKey } from '../../utils/broadcastMediaKey'
 import { KeyCommand } from '../../components/worker/types'
@@ -20,6 +20,16 @@ export const useKeyDown = ({
   onSetCommandCounter
 }: useKeyDownProps) => {
   const location = useLocation()
+
+  const currentRoute = useMemo(() => {
+    // HashRouter: "#/media" -> "/media", "#media" -> "/media"
+    const raw = location.hash ? location.hash.replace(/^#/, '') : ''
+    if (raw) return raw.startsWith('/') ? raw : `/${raw}`
+
+    // BrowserRouter fallback
+    return location.pathname || '/'
+  }, [location.hash, location.pathname])
+
   const appContext = useContext(AppContext)
   const settings = useCarplayStore((s) => s.settings)
 
@@ -30,7 +40,7 @@ export const useKeyDown = ({
 
   const handleSetFocusedElId = useCallback(
     (active: HTMLElement | null) => {
-      const elementId = active?.id || active?.ariaLabel || null
+      const elementId = active?.id || active?.getAttribute('aria-label') || null
       const currentFocusedElementId = appContext?.keyboardNavigation?.focusedElId
 
       if (elementId === null) {
@@ -55,13 +65,12 @@ export const useKeyDown = ({
 
   return useCallback(
     (event: KeyboardEvent) => {
-      if (!settings) return
-
       const code = event.code
       const active = document.activeElement as HTMLElement | null
-      const isCarPlayActive = location.pathname === ROUTES.HOME && receivingVideo
+      const isCarPlayRouteActive = currentRoute === ROUTES.HOME
+      const isCarPlayActive = isCarPlayRouteActive && receivingVideo
 
-      const b = settings.bindings as Partial<Record<BindKey, string>> | undefined
+      const b = (settings?.bindings ?? {}) as Partial<Record<BindKey, string>>
 
       const isLeft = code === 'ArrowLeft' || b?.left === code
       const isRight = code === 'ArrowRight' || b?.right === code
@@ -79,7 +88,22 @@ export const useKeyDown = ({
         }
       }
 
-      if (isCarPlayActive && mappedAction) {
+      const navRoot =
+        (navRef as any)?.current ?? (document.getElementById('nav-root') as HTMLElement | null)
+      const mainRoot =
+        (mainRef as any)?.current ?? (document.getElementById('content-root') as HTMLElement | null)
+
+      const inNav = inContainer(navRoot, active) || !!active?.closest?.('#nav-root')
+      const inMain = inContainer(mainRoot, active) || !!active?.closest?.('#content-root')
+
+      const nothing = !active || active === document.body
+      const formFocused = isFormField(active)
+
+      if (formFocused && !editingField && code === 'Backspace') {
+        return
+      }
+
+      if (settings && isCarPlayActive && mappedAction && !inNav) {
         onSetKeyCommand(mappedAction as KeyCommand)
         onSetCommandCounter((p) => p + 1)
         broadcastMediaKey(mappedAction)
@@ -95,25 +119,42 @@ export const useKeyDown = ({
         return
       }
 
-      const inNav = inContainer(navRef?.current, active)
-      const inMain = inContainer(mainRef?.current, active)
-      const nothing = !active || active === document.body
-      const formFocused = isFormField(active)
+      if (inNav) {
+        if (isEnter || isSelectDown) {
+          const target = document.activeElement as HTMLElement | null
 
-      if (inNav && isEnter) {
-        requestAnimationFrame(() => {
-          focusFirstInMain()
-        })
-        return
-      }
+          const ok = activateControl(target)
+          if (!ok && target) {
+            target.click()
+          }
 
-      if (location.pathname !== ROUTES.HOME && nothing && (isLeft || isRight || isUp || isDown)) {
-        const okMain = focusFirstInMain()
-
-        if (okMain) {
           event.preventDefault()
           event.stopPropagation()
           return
+        }
+
+        if (isRight) {
+          requestAnimationFrame(() => {
+            focusFirstInMain()
+          })
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+      }
+
+      {
+        const wantEnterMainFromNav = inNav && (isRight || isEnter || isSelectDown)
+        const wantEnterMainFromNothing =
+          nothing && (isLeft || isRight || isUp || isDown || isEnter || isSelectDown)
+
+        if (currentRoute !== ROUTES.HOME && (wantEnterMainFromNav || wantEnterMainFromNothing)) {
+          const okMain = focusFirstInMain()
+          if (okMain) {
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
         }
       }
 
@@ -126,22 +167,30 @@ export const useKeyDown = ({
         (_active instanceof HTMLInputElement && _active.type === 'range') ||
         (_active instanceof HTMLInputElement && _active.type === 'listbox')
 
+      const isRangeSlider =
+        (active?.tagName === 'INPUT' && (active as HTMLInputElement).type === 'range') ||
+        active?.getAttribute('role') === 'slider'
+
       if (inMain && isBackKey) {
-        const active = document.activeElement as HTMLElement | null
+        const activeNow = document.activeElement as HTMLElement | null
 
-        if (editingField && isInputOrEditable(active as HTMLElement | null)) {
+        if (editingField) {
           const isRangeInput =
-            active?.tagName === 'INPUT' && (active as HTMLInputElement).type === 'range'
+            activeNow?.tagName === 'INPUT' && (activeNow as HTMLInputElement).type === 'range'
 
-          if (isRangeInput) {
+          if (!isRangeInput) {
+            handleSetFocusedElId(null)
+            event.preventDefault()
+            event.stopPropagation()
             return
           }
+        }
 
-          if ((active as HTMLInputElement).value?.length > 0) {
-            return
-          }
+        const isSettingsRoute = currentRoute.startsWith(ROUTES.SETTINGS)
+        const isSettingsRoot = currentRoute === ROUTES.SETTINGS
 
-          handleSetFocusedElId(null)
+        if (isSettingsRoute && !isSettingsRoot) {
+          window.history.back()
           event.preventDefault()
           event.stopPropagation()
           return
@@ -155,8 +204,23 @@ export const useKeyDown = ({
         return
       }
 
-      // ENTER/selectDown: Switch/Dropdown/Button → aktivieren; Formfelder → Edit-Mode
       if (inMain && (isEnter || isSelectDown)) {
+        const colorInput =
+          (active instanceof HTMLInputElement && active.type === 'color'
+            ? active
+            : (active?.querySelector?.('input[type="color"]') as HTMLInputElement | null)) ??
+          (active
+            ?.closest?.('[role="button"]')
+            ?.querySelector?.('input[type="color"]') as HTMLInputElement | null)
+
+        if (colorInput) {
+          colorInput.focus()
+          colorInput.click()
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+
         const role = active?.getAttribute('role') || ''
         const tag = active?.tagName || ''
 
@@ -213,25 +277,55 @@ export const useKeyDown = ({
         }
       }
 
-      // Pfeilnavigation linear (DOM-Reihenfolge)
       if (inMain && (isLeft || isUp)) {
-        if (editingField && isInputOrEditable(document.activeElement as HTMLElement)) {
+        if (isRangeSlider && isLeft) {
+          return
+        }
+
+        if (
+          !isRangeSlider &&
+          editingField &&
+          isInputOrEditable(document.activeElement as HTMLElement)
+        ) {
           return
         }
 
         const ok = moveFocusLinear(-1)
+
+        if (isRangeSlider && isUp) {
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+
         if (ok) {
           event.preventDefault()
           event.stopPropagation()
         }
         return
       }
+
       if (inMain && (isRight || isDown)) {
-        if (editingField && isInputOrEditable(document.activeElement as HTMLElement)) {
+        if (isRangeSlider && isRight) {
+          return
+        }
+
+        if (
+          !isRangeSlider &&
+          editingField &&
+          isInputOrEditable(document.activeElement as HTMLElement)
+        ) {
           return
         }
 
         const ok = moveFocusLinear(1)
+
+        if (isRangeSlider && isDown) {
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+
         if (ok) {
           event.preventDefault()
           event.stopPropagation()
@@ -247,7 +341,7 @@ export const useKeyDown = ({
         code === b?.seekFwd ||
         code === b?.seekBack
 
-      if (!isCarPlayActive && isTransport) {
+      if (settings && !isCarPlayActive && isTransport) {
         const action: BindKey =
           code === b?.next
             ? 'next'
@@ -276,7 +370,7 @@ export const useKeyDown = ({
     },
     [
       settings,
-      location.pathname,
+      currentRoute,
       receivingVideo,
       inContainer,
       navRef,

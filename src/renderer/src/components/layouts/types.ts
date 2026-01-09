@@ -9,5 +9,6 @@ export interface SettingsLayoutProps {
 
 export interface AppLayoutProps {
   navRef: React.RefObject<HTMLDivElement | null>
+  mainRef: React.RefObject<HTMLDivElement | null>
   receivingVideo: boolean
 }

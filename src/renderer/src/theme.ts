@@ -92,6 +92,9 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK) {
             backgroundColor: isLight
               ? themeColors.artworkSurfaceLight
               : themeColors.artworkSurfaceDark
+          },
+          ':focus': {
+            outline: 'none'
           }
         }
       },
@@ -231,6 +234,10 @@ export function buildRuntimeTheme(
     CSSObject
   >
   const buttonSO = (base.components?.MuiButton?.styleOverrides ?? {}) as Record<string, CSSObject>
+  const cssBaselineSO = (base.components?.MuiCssBaseline?.styleOverrides ?? {}) as Record<
+    string,
+    any
+  >
 
   const tabsIndicator = (tabsSO.indicator ?? {}) as CSSObject
   const outlinedRoot = (outlinedSO.root ?? {}) as CSSObject
@@ -245,8 +252,15 @@ export function buildRuntimeTheme(
       ...base.palette,
       primary: { main: primary! }
     },
+
     components: {
       ...base.components,
+
+      MuiCssBaseline: {
+        styleOverrides: {
+          ...cssBaselineSO
+        }
+      },
 
       MuiTabs: {
         styleOverrides: {

@@ -14,6 +14,7 @@ import { ROUTES } from '../../constants'
 export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
   children,
   navRef,
+  mainRef,
   receivingVideo
 }) => {
   const { pathname } = useLocation()
@@ -84,6 +85,7 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
 
       {/* CONTENT COLUMN */}
       <div
+        ref={mainRef}
         id="content-root"
         style={{
           flex: 1,

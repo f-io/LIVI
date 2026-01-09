@@ -122,7 +122,7 @@ function AppInner() {
   }, [settings, saveSettings, setCameraFound])
 
   return (
-    <AppLayout navRef={navRef} receivingVideo={receivingVideo}>
+    <AppLayout navRef={navRef} mainRef={mainRef} receivingVideo={receivingVideo}>
       {settings && (
         <Carplay
           receivingVideo={receivingVideo}

@@ -47,8 +47,7 @@ export const useFocus = () => {
 
       if (!list.length) return null
 
-      const seed = root?.querySelector<HTMLElement>('[data-seed="first"]')
-
+      const seed = root.querySelector<HTMLElement>('[data-seed="first"]')
       if (seed && list.includes(seed)) return seed
 
       const nonForm = list.find((el) => !isFormField(el))
@@ -59,25 +58,42 @@ export const useFocus = () => {
   )
 
   const focusSelectedNav = useCallback(() => {
-    const target =
-      (navRef?.current?.querySelector('[role="tab"][aria-selected="true"]') as HTMLElement) ||
-      getFirstFocusable(navRef?.current)
-    target?.focus({ preventScroll: true })
+    const navRoot =
+      (navRef as any)?.current ?? (document.getElementById('nav-root') as HTMLElement | null)
 
-    return !!target
+    if (!navRoot) return false
+
+    const target =
+      (navRoot.querySelector('[role="tab"][aria-selected="true"]') as HTMLElement | null) ||
+      getFirstFocusable(navRoot)
+
+    if (!target) return false
+
+    target.focus({ preventScroll: true })
+
+    return document.activeElement === target
   }, [getFirstFocusable, navRef])
 
   const focusFirstInMain = useCallback(() => {
-    const target = getFirstFocusable(mainRef?.current)
+    const mainRoot =
+      (mainRef as any)?.current ?? (document.getElementById('content-root') as HTMLElement | null)
 
-    target?.focus({ preventScroll: true })
+    if (!mainRoot) return false
 
-    return !!target
+    const target = getFirstFocusable(mainRoot)
+    if (!target) return false
+
+    target.focus({ preventScroll: true })
+
+    return document.activeElement === target
   }, [getFirstFocusable, mainRef])
 
   const moveFocusLinear = useCallback(
     (delta: -1 | 1) => {
-      const list = getFocusableList(mainRef?.current)
+      const mainRoot =
+        (mainRef as any)?.current ?? (document.getElementById('content-root') as HTMLElement | null)
+
+      const list = getFocusableList(mainRoot)
 
       if (!list.length) return false
 
@@ -92,14 +108,16 @@ export const useFocus = () => {
         if (targetIdx >= 0 && targetIdx < list.length) next = list[targetIdx]
 
         if (targetIdx <= 1) {
-          const scrolledWrapper = mainRef?.current?.querySelector('[data-scrolled-wrapper]')
+          const scrolledWrapper = mainRoot?.querySelector(
+            '[data-scrolled-wrapper]'
+          ) as HTMLElement | null
 
           scrolledWrapper?.scrollTo(0, 0)
         }
       }
 
       if (next) {
-        next.focus()
+        next.focus({ preventScroll: true })
 
         appContext?.onSetAppContext?.({
           ...appContext,
@@ -107,7 +125,8 @@ export const useFocus = () => {
             focusedElId: null
           }
         })
-        return true
+
+        return document.activeElement === next
       }
 
       return false

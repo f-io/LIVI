@@ -2,6 +2,7 @@ import { styled } from '@mui/material/styles'
 import Paper from '@mui/material/Paper'
 import ArrowForwardIosOutlinedIcon from '@mui/icons-material/ArrowForwardIosOutlined'
 import { StackItemProps } from '../../type'
+import React from 'react'
 
 const Item = styled(Paper)(({ theme }) => {
   const activeColor = theme.palette.primary.main
@@ -107,8 +108,23 @@ export const StackItem = ({
     displayValue = '---'
   }
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!onClick) return
+    // Make Enter/Space activate the row (keyboard + D-pad OK mapping)
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      e.stopPropagation()
+      onClick()
+    }
+  }
+
   return (
-    <Item onClick={onClick}>
+    <Item
+      onClick={onClick}
+      onKeyDown={handleKeyDown}
+      tabIndex={onClick ? 0 : -1}
+      role={onClick ? 'button' : undefined}
+    >
       {children}
       {showValue && (value || displayValue) && (
         <div style={{ whiteSpace: 'nowrap', fontSize: 'clamp(0.85rem, 2.0svh, 0.95rem)' }}>
