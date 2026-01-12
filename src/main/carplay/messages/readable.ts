@@ -52,7 +52,11 @@ export class SoftwareVersion extends Message {
 
   constructor(header: MessageHeader, data: Buffer) {
     super(header)
-    this.version = data.toString('ascii')
+    this.version = data
+      .toString('ascii')
+      .replace(/\0+$/g, '')
+      .trim()
+      .replace(/^(\d{4}\.\d{2}\.\d{2}\.\d{4}).*$/, '$1')
   }
 }
 
@@ -338,27 +342,36 @@ export class Opened extends Message {
   }
 }
 
+export type BoxDeviceEntry = {
+  id?: string
+  type?: string
+  name?: string
+  index?: string | number
+  time?: string
+  rfcomm?: string | number
+} & Record<string, unknown>
+
+export type BoxInfoSettings = {
+  uuid?: string
+  MFD?: string
+  boxType?: string
+  OemName?: string
+  productType?: string
+  HiCar?: number
+  supportLinkType?: string
+  supportFeatures?: string
+  hwVersion?: string
+  WiFiChannel?: number
+  CusCode?: string
+  DevList?: BoxDeviceEntry[]
+} & Record<string, unknown>
+
 export class BoxInfo extends Message {
-  settings:
-    | {
-        HiCar: number
-        OemName: string
-        WiFiChannel: number
-        boxType: string
-        hwVersion: string
-        productType: string
-        uuid: string
-      }
-    | {
-        MDLinkType: string
-        MDModel: string
-        MDOSVersion: string
-        MDLinkVersion: string
-        cpuTemp: number
-      }
+  settings: BoxInfoSettings
+
   constructor(header: MessageHeader, data: Buffer) {
     super(header)
-    this.settings = JSON.parse(data.toString())
+    this.settings = JSON.parse(data.toString('utf8')) as BoxInfoSettings
   }
 }
 

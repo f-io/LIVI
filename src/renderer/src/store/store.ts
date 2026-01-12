@@ -55,11 +55,14 @@ export interface CarplayStore {
   negotiatedWidth: number | null
   negotiatedHeight: number | null
 
-  // USB device info
-  serial: string | null
-  manufacturer: string | null
-  product: string | null
-  fwVersion: string | null
+  // USB descriptor
+  vendorId: number | null
+  productId: number | null
+  usbFwVersion: string | null
+
+  // USB dongle info
+  dongleFwVersion: string | null
+  boxInfo: unknown | null
 
   // Audio metadata
   audioCodec: string | null
@@ -86,13 +89,10 @@ export interface CarplayStore {
   setSiriVolume: (volume: number) => void
   setCallVolume: (volume: number) => void
 
-  // Setter
-  setDeviceInfo: (info: {
-    serial: string
-    manufacturer: string
-    product: string
-    fwVersion: string
-  }) => void
+  // Setters for metadata
+  setDeviceInfo: (info: { vendorId: number; productId: number; usbFwVersion: string }) => void
+  setDongleInfo: (info: { dongleFwVersion?: string; boxInfo?: unknown }) => void
+
   setNegotiatedResolution: (width: number, height: number) => void
   setAudioInfo: (info: {
     codec: string
@@ -150,10 +150,11 @@ export const useCarplayStore = create<CarplayStore>((set, get) => ({
     set({
       negotiatedWidth: null,
       negotiatedHeight: null,
-      serial: null,
-      manufacturer: null,
-      product: null,
-      fwVersion: null,
+
+      vendorId: null,
+      productId: null,
+      usbFwVersion: null,
+
       audioCodec: null,
       audioSampleRate: null,
       audioChannels: null,
@@ -163,10 +164,12 @@ export const useCarplayStore = create<CarplayStore>((set, get) => ({
 
   negotiatedWidth: null,
   negotiatedHeight: null,
-  serial: null,
-  manufacturer: null,
-  product: null,
-  fwVersion: null,
+
+  vendorId: null,
+  productId: null,
+  usbFwVersion: null,
+  dongleFwVersion: null,
+  boxInfo: null,
 
   audioCodec: null,
   audioSampleRate: null,
@@ -246,8 +249,39 @@ export const useCarplayStore = create<CarplayStore>((set, get) => ({
     }
   },
 
-  setDeviceInfo: ({ serial, manufacturer, product, fwVersion }) =>
-    set({ serial, manufacturer, product, fwVersion }),
+  setDeviceInfo: ({ vendorId, productId, usbFwVersion }) =>
+    set(() => ({
+      vendorId,
+      productId,
+      usbFwVersion: usbFwVersion?.trim() ? usbFwVersion.trim() : null
+    })),
+
+  setDongleInfo: ({ dongleFwVersion, boxInfo }) =>
+    set((state) => {
+      const nextFw =
+        typeof dongleFwVersion === 'string' && dongleFwVersion.trim()
+          ? dongleFwVersion.trim()
+          : null
+
+      // Merge objects
+      const mergeObjects = (a: unknown, b: unknown) => {
+        if (!a || typeof a !== 'object') return b
+        if (!b || typeof b !== 'object') return a
+        return { ...(a as Record<string, unknown>), ...(b as Record<string, unknown>) }
+      }
+
+      const nextBox =
+        boxInfo == null
+          ? state.boxInfo
+          : typeof boxInfo === 'object'
+            ? mergeObjects(state.boxInfo, boxInfo)
+            : (state.boxInfo ?? boxInfo)
+
+      return {
+        dongleFwVersion: nextFw ?? state.dongleFwVersion,
+        boxInfo: nextBox
+      }
+    }),
 
   setNegotiatedResolution: (width, height) =>
     set({ negotiatedWidth: width, negotiatedHeight: height }),
@@ -319,12 +353,15 @@ socket.on('settings', (settings: ExtraConfig) => {
 socket.on('reverse', (reverse: boolean) => {
   useStatusStore.setState({ reverse })
 })
+
 socket.on('dongle-status', (connected: boolean) => {
   useStatusStore.setState({ isDongleConnected: connected })
 })
+
 socket.on('stream-status', (streaming: boolean) => {
   useStatusStore.setState({ isStreaming: streaming })
 })
+
 socket.on('camera-found', (found: boolean) => {
   useStatusStore.setState({ cameraFound: found })
 })

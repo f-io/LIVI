@@ -39,13 +39,9 @@ declare global {
   }
 }
 
-type UsbDeviceInfo = {
-  device: boolean
-  serialNumber?: string
-  manufacturerName?: string
-  productName?: string
-  fwVersion?: string
-}
+type UsbDeviceInfo =
+  | { device: false; vendorId: null; productId: null; usbFwVersion: string }
+  | { device: true; vendorId: number; productId: number; usbFwVersion: string }
 
 type MediaPayload = {
   timestamp: string
@@ -83,8 +79,8 @@ declare global {
       onUSBResetStatus(callback: (event: unknown, ...args: unknown[]) => void): void
 
       usb: {
-        forceReset(): Promise<void>
-        detectDongle(): Promise<unknown>
+        forceReset(): Promise<boolean>
+        detectDongle(): Promise<boolean>
         getDeviceInfo(): Promise<UsbDeviceInfo>
         getLastEvent(): Promise<unknown>
         getSysdefaultPrettyName(): Promise<string>

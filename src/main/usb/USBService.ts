@@ -50,8 +50,8 @@ export class USBService {
       console.log('[USBService] Dongle was already connected on startup', device)
       this.lastDongleState = true
       this.carplay.markDongleConnected(true)
-      this.carplay.autoStartIfNeeded().catch(console.error)
       this.notifyDeviceChange(device, true)
+      this.carplay.autoStartIfNeeded().catch(console.error)
     }
   }
 
@@ -63,8 +63,8 @@ export class USBService {
         console.log('[USBService] Dongle connected:', device)
         this.lastDongleState = true
         this.carplay.markDongleConnected(true)
-        this.carplay.autoStartIfNeeded().catch(console.error)
         this.notifyDeviceChange(device, true)
+        this.carplay.autoStartIfNeeded().catch(console.error)
       }
     })
 
@@ -118,11 +118,7 @@ export class USBService {
           device: false,
           vendorId: null,
           productId: null,
-          deviceName: '',
-          serialNumber: '',
-          manufacturerName: '',
-          productName: '',
-          fwVersion: 'Unknown'
+          usbFwVersion: 'Unknown'
         }
       }
 
@@ -133,14 +129,18 @@ export class USBService {
           device: false,
           vendorId: null,
           productId: null,
-          deviceName: '',
-          serialNumber: '',
-          manufacturerName: '',
-          productName: '',
-          fwVersion: 'Unknown'
+          usbFwVersion: 'Unknown'
         }
       }
-      return await this.getDongleInfo(detectDev)
+
+      const info = this.getDongleUsbBasics(detectDev)
+
+      return {
+        device: true,
+        vendorId: info.vendorId,
+        productId: info.productId,
+        usbFwVersion: info.usbFwVersion
+      }
     })
 
     ipcMain.handle('usb-force-reset', async () => {
@@ -177,52 +177,20 @@ export class USBService {
     ipcMain.handle('get-sysdefault-mic-label', () => Microphone.getSysdefaultPrettyName())
   }
 
-  private async getDongleInfo(device: Device) {
-    const fwVersion = device.deviceDescriptor.bcdDevice
-      ? `${device.deviceDescriptor.bcdDevice >> 8}.${(device.deviceDescriptor.bcdDevice & 0xff).toString().padStart(2, '0')}`
+  private getDongleUsbBasics(device: Device) {
+    const usbFwVersion = device.deviceDescriptor.bcdDevice
+      ? `${device.deviceDescriptor.bcdDevice >> 8}.${(device.deviceDescriptor.bcdDevice & 0xff)
+          .toString()
+          .padStart(2, '0')}`
       : 'Unknown'
-
-    let serialNumber = ''
-    let manufacturerName = ''
-    let productName = ''
-
-    try {
-      device.open()
-      serialNumber = await this.tryGetStringDescriptor(
-        device,
-        device.deviceDescriptor.iSerialNumber
-      )
-      manufacturerName = await this.tryGetStringDescriptor(
-        device,
-        device.deviceDescriptor.iManufacturer
-      )
-      productName = await this.tryGetStringDescriptor(device, device.deviceDescriptor.iProduct)
-      device.close()
-    } catch (e) {
-      try {
-        device.close()
-      } catch {}
-    }
+    const vendorId = device.deviceDescriptor.idVendor
+    const productId = device.deviceDescriptor.idProduct
 
     return {
-      device: true,
-      vendorId: device.deviceDescriptor.idVendor,
-      productId: device.deviceDescriptor.idProduct,
-      serialNumber,
-      manufacturerName,
-      productName,
-      fwVersion
+      vendorId,
+      productId,
+      usbFwVersion
     }
-  }
-
-  private tryGetStringDescriptor(device: Device, index: number | undefined): Promise<string> {
-    return new Promise((resolve) => {
-      if (!index) return resolve('')
-      device.getStringDescriptor(index, (err, str) => {
-        if (err) return resolve('')
-        resolve(str || '')
-      })
-    })
   }
 
   private isDongle(

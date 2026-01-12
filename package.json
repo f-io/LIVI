@@ -52,7 +52,7 @@
     "stream-browserify": "^3.0.0",
     "usb": "^2.16.0",
     "vite-plugin-esmodule": "^1.5.0",
-    "zustand": "^5.0.9"
+    "zustand": "^5.0.10"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",

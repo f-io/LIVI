@@ -20,6 +20,7 @@ import { DongleDriver, DongleConfig, DEFAULT_CONFIG } from '../driver/DongleDriv
 
 export type CarplayMessage =
   | { type: 'plugged'; message?: undefined }
+  | { type: 'dongleInfo'; message: { dongleFwVersion?: string; boxInfo?: unknown } }
   | { type: 'unplugged'; message?: undefined }
   | { type: 'failure'; message?: undefined }
   | { type: 'audio'; message: AudioData }
@@ -88,6 +89,10 @@ export default class Carplay {
 
     driver.on('failure', () => {
       this.onmessage?.({ type: 'failure' })
+    })
+
+    driver.on('dongle-info', (info: { dongleFwVersion?: string; boxInfo?: unknown }) => {
+      this.onmessage?.({ type: 'dongleInfo', message: info })
     })
 
     this.dongleDriver = driver

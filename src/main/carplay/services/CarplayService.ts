@@ -8,6 +8,8 @@ import {
   MediaData,
   MediaType,
   Command,
+  BoxInfo,
+  SoftwareVersion,
   SendCommand,
   SendTouch,
   SendMultiTouch,
@@ -52,6 +54,11 @@ export class CarplayService {
   private isStopping = false
   private stopPromise: Promise<void> | null = null
   private firstFrameLogged = false
+  private lastVideoWidth?: number
+  private lastVideoHeight?: number
+  private dongleFwVersion?: string
+  private boxInfo?: unknown
+  private lastDongleInfoEmitKey = ''
 
   private audio: CarplayAudio
 
@@ -93,10 +100,18 @@ export class CarplayService {
           const dt = Date.now() - APP_START_TS
           console.log(`[Perf] AppStart→FirstFrame: ${dt} ms`)
         }
-        this.webContents.send('carplay-event', {
-          type: 'resolution',
-          payload: { width: msg.width, height: msg.height }
-        })
+        const w = msg.width
+        const h = msg.height
+        if (w > 0 && h > 0 && (w !== this.lastVideoWidth || h !== this.lastVideoHeight)) {
+          this.lastVideoWidth = w
+          this.lastVideoHeight = h
+
+          this.webContents.send('carplay-event', {
+            type: 'resolution',
+            payload: { width: w, height: h }
+          })
+        }
+
         this.sendChunked('carplay-video-chunk', msg.data?.buffer as ArrayBuffer, 512 * 1024)
       } else if (msg instanceof AudioData) {
         this.audio.handleAudioData(msg)
@@ -137,6 +152,12 @@ export class CarplayService {
         fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
       } else if (msg instanceof Command) {
         this.webContents.send('carplay-event', { type: 'command', message: msg })
+      } else if (msg instanceof SoftwareVersion) {
+        this.dongleFwVersion = msg.version
+        this.emitDongleInfoIfChanged()
+      } else if (msg instanceof BoxInfo) {
+        this.boxInfo = msg.settings
+        this.emitDongleInfoIfChanged()
       }
     })
 
@@ -264,6 +285,31 @@ export class CarplayService {
     this.webContents = webContents
   }
 
+  private emitDongleInfoIfChanged() {
+    if (!this.webContents) return
+
+    let boxKey = ''
+    if (this.boxInfo != null) {
+      try {
+        boxKey = JSON.stringify(this.boxInfo)
+      } catch {
+        boxKey = String(this.boxInfo)
+      }
+    }
+
+    const key = `${this.dongleFwVersion ?? ''}||${boxKey}`
+    if (key === this.lastDongleInfoEmitKey) return
+    this.lastDongleInfoEmitKey = key
+
+    this.webContents.send('carplay-event', {
+      type: 'dongleInfo',
+      payload: {
+        dongleFwVersion: this.dongleFwVersion,
+        boxInfo: this.boxInfo
+      }
+    })
+  }
+
   public markDongleConnected(connected: boolean) {
     dongleConnected = connected
   }
@@ -300,6 +346,12 @@ export class CarplayService {
         }
 
         this.audio.resetForSessionStart()
+
+        this.dongleFwVersion = undefined
+        this.boxInfo = undefined
+        this.lastDongleInfoEmitKey = ''
+        this.lastVideoWidth = undefined
+        this.lastVideoHeight = undefined
 
         const device = usb
           .getDeviceList()
@@ -362,6 +414,12 @@ export class CarplayService {
 
       this.started = false
       this.firstFrameLogged = false
+
+      this.dongleFwVersion = undefined
+      this.boxInfo = undefined
+      this.lastDongleInfoEmitKey = ''
+      this.lastVideoWidth = undefined
+      this.lastVideoHeight = undefined
     })().finally(() => {
       this.stopping = false
       this.isStopping = false

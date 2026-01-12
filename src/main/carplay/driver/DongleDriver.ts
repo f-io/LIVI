@@ -1,6 +1,6 @@
 import EventEmitter from 'events'
 import { MessageHeader, HeaderBuildError } from '../messages/common.js'
-import { PhoneType } from '../messages/readable.js'
+import { PhoneType, BoxInfo, SoftwareVersion, type BoxInfoSettings } from '../messages/readable.js'
 import {
   SendableMessage,
   SendNumber,
@@ -92,6 +92,10 @@ export class DongleDriver extends EventEmitter {
   private _started = false
   private _readerActive = false
 
+  private _dongleFwVersion?: string
+  private _boxInfo?: BoxInfoSettings
+  private _lastDongleInfoEmitKey = ''
+
   static knownDevices = [
     { vendorId: 0x1314, productId: 0x1520 },
     { vendorId: 0x1314, productId: 0x1521 }
@@ -103,6 +107,26 @@ export class DongleDriver extends EventEmitter {
   private async waitForReaderStop(timeoutMs = 500) {
     const t0 = Date.now()
     while (this._readerActive && Date.now() - t0 < timeoutMs) await this.sleep(10)
+  }
+
+  private emitDongleInfoIfChanged() {
+    const fw = this._dongleFwVersion
+    const box = this._boxInfo
+
+    let boxKey = ''
+    if (box != null) {
+      try {
+        boxKey = JSON.stringify(box)
+      } catch {
+        boxKey = String(box)
+      }
+    }
+
+    const key = `${fw ?? ''}||${boxKey}`
+    if (key === this._lastDongleInfoEmitKey) return
+    this._lastDongleInfoEmitKey = key
+
+    this.emit('dongle-info', { dongleFwVersion: fw, boxInfo: box })
   }
 
   initialise = async (device: USBDevice) => {
@@ -182,6 +206,15 @@ export class DongleDriver extends EventEmitter {
         const msg = header.toMessage(extra)
         if (msg) {
           this.emit('message', msg)
+
+          if (msg instanceof SoftwareVersion) {
+            this._dongleFwVersion = msg.version
+            this.emitDongleInfoIfChanged()
+          } else if (msg instanceof BoxInfo) {
+            this._boxInfo = msg.settings
+            this.emitDongleInfoIfChanged()
+          }
+
           if (this.errorCount !== 0) this.errorCount = 0
         }
       } catch (err) {
@@ -278,5 +311,8 @@ export class DongleDriver extends EventEmitter {
     this._started = false
     this._readerActive = false
     this._closing = false
+    this._dongleFwVersion = undefined
+    this._boxInfo = undefined
+    this._lastDongleInfoEmitKey = ''
   }
 }

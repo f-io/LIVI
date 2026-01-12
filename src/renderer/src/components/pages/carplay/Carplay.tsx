@@ -207,7 +207,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const isDongleConnected = useStatusStore((s) => s.isDongleConnected)
   const resetInfo = useCarplayStore((s) => s.resetInfo)
   const setDeviceInfo = useCarplayStore((s) => s.setDeviceInfo)
-  const setNegotiatedResolution = useCarplayStore((s) => s.setNegotiatedResolution)
+  const setDongleInfo = useCarplayStore((s) => s.setDongleInfo)
   const setAudioInfo = useCarplayStore((s) => s.setAudioInfo)
   const setPcmData = useCarplayStore((s) => s.setPcmData)
 
@@ -517,22 +517,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
         }
 
         case 'dongleInfo': {
-          const p = (msg as Extract<WorkerToUI, { type: 'dongleInfo' }>).payload
-          setDeviceInfo({
-            serial: p.serial ?? '',
-            manufacturer: p.manufacturer ?? '',
-            product: p.product ?? '',
-            fwVersion: p.fwVersion ?? ''
-          })
-          break
-        }
-
-        case 'resolution': {
-          const r = (msg as Extract<WorkerToUI, { type: 'resolution' }>).payload
-          setNegotiatedResolution(r.width, r.height)
-          setStreaming(true)
-          setReceivingVideo(true)
-          hasStartedRef.current = true
           break
         }
 
@@ -552,7 +536,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     clearRetryTimeout,
     gotoHostUI,
     setDeviceInfo,
-    setNegotiatedResolution,
     setAudioInfo,
     setPcmData,
     setDongleConnected,
@@ -566,6 +549,19 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     const onUsbConnect = async () => {
       if (!hasStartedRef.current) {
         resetInfo()
+        try {
+          const info = await window.carplay.usb.getDeviceInfo()
+          if (info?.device) {
+            setDeviceInfo({
+              vendorId: info.vendorId,
+              productId: info.productId,
+              usbFwVersion: info.usbFwVersion ?? ''
+            })
+          }
+        } catch (e) {
+          console.warn('[UI] usb.getDeviceInfo() failed', e)
+        }
+
         setDongleConnected(true)
         hasStartedRef.current = true
         await window.carplay.ipc.start()
@@ -627,6 +623,12 @@ const CarplayComponent: React.FC<CarplayProps> = ({
               }
             }
           }
+          break
+        }
+        case 'dongleInfo': {
+          const p = d.payload as { dongleFwVersion?: string; boxInfo?: unknown } | undefined
+          if (!p) break
+          setDongleInfo({ dongleFwVersion: p.dongleFwVersion, boxInfo: p.boxInfo })
           break
         }
         case 'audioInfo': {

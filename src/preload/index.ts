@@ -33,6 +33,14 @@ ipcRenderer.on('carplay-audio-chunk', (_event, payload: unknown) => {
   else audioChunkQueue.push(payload)
 })
 
+type UsbDeviceInfo =
+  | { device: false; vendorId: null; productId: null; usbFwVersion: string }
+  | { device: true; vendorId: number; productId: number; usbFwVersion: string }
+
+type UsbLastEvent =
+  | { type: 'unplugged'; device: null }
+  | { type: 'plugged'; device: { vendorId: number; productId: number; deviceName: string } }
+
 const api = {
   quit: (): Promise<void> => ipcRenderer.invoke('quit'),
 
@@ -42,10 +50,10 @@ const api = {
   },
 
   usb: {
-    forceReset: (): Promise<void> => ipcRenderer.invoke('usb-force-reset'),
-    detectDongle: (): Promise<unknown> => ipcRenderer.invoke('usb-detect-dongle'),
-    getDeviceInfo: (): Promise<unknown> => ipcRenderer.invoke('carplay:usbDevice'),
-    getLastEvent: (): Promise<unknown> => ipcRenderer.invoke('usb-last-event'),
+    forceReset: (): Promise<boolean> => ipcRenderer.invoke('usb-force-reset'),
+    detectDongle: (): Promise<boolean> => ipcRenderer.invoke('usb-detect-dongle'),
+    getDeviceInfo: (): Promise<UsbDeviceInfo> => ipcRenderer.invoke('carplay:usbDevice'),
+    getLastEvent: (): Promise<UsbLastEvent> => ipcRenderer.invoke('usb-last-event'),
     getSysdefaultPrettyName: (): Promise<string> => ipcRenderer.invoke('get-sysdefault-mic-label'),
     uploadIcons: () => ipcRenderer.invoke('carplay-upload-icons'),
     listenForEvents: (callback: ApiCallback): void => {
