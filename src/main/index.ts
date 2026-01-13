@@ -183,7 +183,7 @@ app.on('before-quit', async (e) => {
   } catch (err) {
     console.warn('Error while quitting:', err)
   } finally {
-    setImmediate(() => app.exit(0))
+    setTimeout(() => app.exit(0), 150)
   }
 })
 
