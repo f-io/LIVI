@@ -375,6 +375,15 @@ export class BoxInfo extends Message {
   }
 }
 
+export class VendorCarPlaySessionBlob extends Message {
+  public readonly raw: Buffer
+
+  public constructor(header: MessageHeader, data: Buffer) {
+    super(header)
+    this.raw = data
+  }
+}
+
 export class Phase extends Message {
   phase: number
 

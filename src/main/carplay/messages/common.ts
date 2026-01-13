@@ -100,36 +100,8 @@ export enum MessageType {
   PeerBluetoothAddress = 0x23,
   PeerBluetoothAddressAlt = 0x24,
   UiHidePeerInfo = 0x25,
-  UiBringToForeground = 0x26
-}
-
-function trimNull(s: string) {
-  return s.replace(/\0+$/g, '')
-}
-
-function hexPreview(buf: Buffer, max = 256) {
-  const end = Math.min(buf.length, max)
-  const slice = buf.subarray(0, end)
-  const chunks = slice.toString('hex').match(/.{1,2}/g)
-  return chunks ? chunks.join(' ') : ''
-}
-
-function utf8Preview(buf: Buffer, max = 256) {
-  const end = Math.min(buf.length, max)
-  const slice = buf.subarray(0, end)
-  return trimNull(slice.toString('utf8')).replace(/\n/g, '\\n')
-}
-
-function jsonPreview(buf: Buffer) {
-  const s = trimNull(buf.toString('utf8'))
-  if (!s.startsWith('{') && !s.startsWith('[')) return null
-  try {
-    const obj = JSON.parse(s)
-    const oneLine = JSON.stringify(obj)
-    return oneLine.length > 600 ? oneLine.slice(0, 600) + '…' : oneLine
-  } catch {
-    return null
-  }
+  UiBringToForeground = 0x26,
+  VendorCarPlaySessionBlob = 0xa3
 }
 
 export type CarplayMessageTapPayload = {
@@ -238,14 +210,12 @@ export class MessageHeader {
           return new BluetoothPeerConnecting(this, data)
         case MessageType.PeerBluetoothAddressAlt:
           return new BluetoothPeerConnected(this, data)
+        case MessageType.VendorCarPlaySessionBlob:
+          // Known vendor-specific opaque blob
+          return null
         default: {
-          const max = 256
-          const json = jsonPreview(data)
-          console.debug(
-            `[CARPLAY][MSG] type=0x${type.toString(16)} (${type}) len=${this.length} dataLen=${data.length}\n` +
-              `  hex[0..${Math.min(data.length, max)}]: ${hexPreview(data, max)}\n` +
-              `  utf8[0..${Math.min(data.length, max)}]: ${utf8Preview(data, max)}` +
-              (json ? `\n  json?: ${json}` : '')
+          console.warn(
+            `[CARPLAY][MSG] Unknown type=0x${type.toString(16)} (${type}) len=${this.length} dataLen=${data.length}`
           )
           return null
         }

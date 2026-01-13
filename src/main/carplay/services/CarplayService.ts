@@ -15,6 +15,8 @@ import {
   SendMultiTouch,
   SendAudio,
   SendFile,
+  SendDisconnectPhone,
+  SendCloseDongle,
   FileAddress,
   DongleDriver,
   DEFAULT_CONFIG
@@ -375,7 +377,6 @@ export class CarplayService {
           }, 15000)
 
           this.started = true
-          this.firstFrameLogged = false
         } catch {
           try {
             await this.webUsbDevice?.close()
@@ -392,28 +393,59 @@ export class CarplayService {
     return this.startPromise
   }
 
+  public async disconnectPhone(): Promise<boolean> {
+    if (!this.started) return false
+
+    let ok = false
+    try {
+      ok = (await this.driver.send(new SendDisconnectPhone())) || ok
+    } catch (e) {
+      console.warn('[CarplayService] SendDisconnectPhone failed', e)
+    }
+
+    try {
+      ok = (await this.driver.send(new SendCloseDongle())) || ok
+    } catch (e) {
+      console.warn('[CarplayService] SendCloseDongle failed', e)
+    }
+
+    if (ok) await new Promise((r) => setTimeout(r, 150))
+
+    return ok
+  }
+
   public async stop(): Promise<void> {
     if (this.isStopping) return this.stopPromise ?? Promise.resolve()
     if (!this.started || this.stopping) return
 
     this.stopping = true
     this.isStopping = true
+
     this.stopPromise = (async () => {
       this.clearTimeouts()
+
       try {
-        await this.driver.close()
+        await this.disconnectPhone()
       } catch {}
+
       try {
-        await this.webUsbDevice?.close()
-      } catch {
-      } finally {
-        this.webUsbDevice = null
+        if (process.platform === 'darwin' && this.webUsbDevice) {
+          await this.webUsbDevice.reset()
+        }
+      } catch (e) {
+        console.warn('[CarplayService] webUsbDevice.reset() failed (ignored)', e)
       }
 
+      try {
+        await this.driver.close()
+      } catch (e) {
+        console.warn('[CarplayService] driver.close() failed (ignored)', e)
+      }
+
+      this.webUsbDevice = null
       this.audio.resetForSessionStop()
 
       this.started = false
-      this.firstFrameLogged = false
 
       this.dongleFwVersion = undefined
       this.boxInfo = undefined

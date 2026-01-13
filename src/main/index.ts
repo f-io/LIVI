@@ -162,28 +162,73 @@ app.on('before-quit', async (e) => {
   isQuitting = true
   e.preventDefault()
 
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+
+  const withTimeout = async <T>(
+    label: string,
+    p: Promise<T>,
+    ms: number
+  ): Promise<T | undefined> => {
+    let t: NodeJS.Timeout | null = null
+    try {
+      return (await Promise.race([
+        p,
+        new Promise<T | undefined>((resolve) => {
+          t = setTimeout(() => {
+            console.warn(`[MAIN] before-quit timeout: ${label} after ${ms}ms`)
+            resolve(undefined)
+          }, ms)
+        })
+      ])) as T | undefined
+    } finally {
+      if (t) clearTimeout(t)
+    }
+  }
+
+  const measureStep = async (label: string, fn: () => Promise<unknown>) => {
+    const t0 = Date.now()
+    console.log(`[MAIN] before-quit step:start ${label}`)
+    try {
+      await fn()
+    } finally {
+      console.log(`[MAIN] before-quit step:done ${label} (${Date.now() - t0}ms)`)
+    }
+  }
+
+  // Safeguards based on measured timings
+  const tUsbStop = 500
+  const tDisconnect = 800
+  const tCarplayStop = 6000
+
+  // Global watchdog: log only
+  const watchdogMs = process.platform === 'darwin' ? 10000 : 3000
+  const watchdog = setTimeout(() => {
+    console.warn(`[MAIN] before-quit watchdog: giving up waiting after ${watchdogMs}ms`)
+  }, watchdogMs)
+
   try {
     ;(carplayService as any).shuttingDown = true
 
-    // macOS: block all usb IPC/polling as early as possible
-    if (process.platform === 'darwin') {
-      usbService.beginShutdown()
-    }
+    // Block hotplug callbacks ASAP
+    usbService?.beginShutdown()
 
-    // Stop CarPlay pipeline first
-    await carplayService.stop().catch(() => {})
+    await measureStep('usbService.stop()', async () => {
+      await withTimeout('usbService.stop()', usbService?.stop?.() ?? Promise.resolve(), tUsbStop)
+    })
 
-    // macOS only: send the reset so iPhone drops session immediately
-    if (process.platform === 'darwin') {
-      await usbService.gracefulForceReset().catch(() => {})
-    }
+    await measureStep('carplay.disconnectPhone()', async () => {
+      await withTimeout('carplay.disconnectPhone()', carplayService.disconnectPhone(), tDisconnect)
+      await sleep(75)
+    })
 
-    // Stop hotplug listeners last
-    await usbService.stop().catch(() => {})
+    await measureStep('carplay.stop()', async () => {
+      await withTimeout('carplay.stop()', carplayService.stop(), tCarplayStop)
+    })
   } catch (err) {
-    console.warn('Error while quitting:', err)
+    console.warn('[MAIN] Error while quitting:', err)
   } finally {
-    setTimeout(() => app.exit(0), 150)
+    setTimeout(() => clearTimeout(watchdog), 250)
+    setImmediate(() => app.quit())
   }
 })
 
