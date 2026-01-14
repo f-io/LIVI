@@ -82,7 +82,6 @@ type DongleFwApiRaw = {
   size?: string | number
   id?: string
   notes?: string
-  forced?: number | boolean
   msg?: string
   error?: string
 }
@@ -95,7 +94,6 @@ type LocalFwStatus =
 type DongleFwCheckResponse = {
   ok: boolean
   hasUpdate: boolean
-  forced: boolean
   size: string | number
   token?: string
   request?: Record<string, unknown> & { local?: LocalFwStatus }
@@ -201,12 +199,30 @@ export function USBDongle() {
   const [changelogOpen, setChangelogOpen] = useState(false)
 
   const ok = Boolean(fwResult?.ok) && fwResult?.raw?.err === 0
+
+  // Vendor/API version string
   const latestVer = typeof fwResult?.raw?.ver === 'string' ? fwResult.raw.ver.trim() : ''
-  const forced = Boolean(fwResult?.forced)
+
+  // Device version string
+  const dongleVer = typeof dongleFwVersion === 'string' ? dongleFwVersion.trim() : ''
+
   const notes = typeof fwResult?.raw?.notes === 'string' ? fwResult.raw.notes : undefined
-  const hasUpdate = Boolean(fwResult?.hasUpdate) && latestVer.length > 0
-  const latestFwLabel = ok ? (hasUpdate ? latestVer : '—') : '—'
   const hasChangelog = typeof notes === 'string' && notes.trim().length > 0
+
+  // Vendor semantics: "-" means "already latest"
+  const apiSaysNoUpdate = ok && latestVer === '-'
+
+  // UI-trustworthy update flag: only if vendor version is different from the dongle version
+  const hasUpdate =
+    ok &&
+    latestVer.length > 0 &&
+    latestVer !== '-' &&
+    dongleVer.length > 0 &&
+    latestVer !== dongleVer
+
+  // Show vendor "latest" version if we have one.
+  // Vendor semantics: "-" means "already latest" -> show current dongle version to keep UI stable.
+  const latestFwLabel = ok ? (latestVer && latestVer !== '-' ? latestVer : dongleVer || '—') : '—'
 
   // Local firmware status (manifest-based)
   const local = fwResult?.request?.local
@@ -220,6 +236,16 @@ export function USBDongle() {
       : local && local.ok === false
         ? local.error
         : ''
+
+  // Versions for "same as dongle" check (local package version vs dongle)
+  const localLatestVer =
+    localReady && typeof local.latestVer === 'string' ? local.latestVer.trim() : ''
+
+  const localIsSameAsDongle =
+    localReady && localLatestVer.length > 0 && dongleVer.length > 0 && localLatestVer === dongleVer
+
+  const vendorSaysUpdate = hasUpdate && !apiSaysNoUpdate
+  const shouldOfferUpload = localReady && !localIsSameAsDongle && vendorSaysUpdate
 
   const safePreview = (v: unknown): string => {
     try {
@@ -250,31 +276,18 @@ export function USBDongle() {
     if (fwBusy === 'upload') return 'Uploading…'
     if (!fwResult) return '—'
 
-    // 1. actual API errors
+    // 1) API errors
     if (!fwResult.ok || fwResult.raw?.err !== 0) {
       const msg = fwResult.raw?.msg || fwResult.raw?.error || fwResult.error || 'Unknown error'
       return `Error: ${String(msg)}`
     }
 
-    // after error check:
-    const local = fwResult.request?.local
-    if (local?.ok === true && local.ready === true) {
-      // return 'Downloaded (ready to upload)'
-    }
+    // 2) update availability
+    if (hasUpdate) return 'Update available'
 
-    // 2. update availability
-    if (hasUpdate) return forced ? 'Update available (forced)' : 'Update available'
-
-    // 3. local status is informational only
-    if (local) {
-      if (local.ok === true && local.ready === true) return 'Downloaded (ready to upload)'
-      if (local.ok === true && local.ready === false) return local.reason
-      if (local.ok === false) return local.error
-      return 'Local firmware status unknown'
-    }
-
+    // 3) no update -> ALWAYS show "Up to date"
     return 'Up to date'
-  }, [fwBusy, fwResult, hasUpdate, forced])
+  }, [fwBusy, fwResult, hasUpdate])
 
   const canCheck =
     fwBusy == null &&
@@ -287,8 +300,7 @@ export function USBDongle() {
 
   const canDownload = fwBusy == null && Boolean(isDongleConnected) && hasUpdate && isOnline
 
-  // Upload is ONLY allowed when the downloaded firmware matches THIS exact dongle (manifest checks)
-  const canUpload = fwBusy == null && Boolean(isDongleConnected) && localReady
+  const canUpload = fwBusy == null && Boolean(isDongleConnected) && shouldOfferUpload
 
   const fwPct = useMemo(() => {
     const p = fwDlg.progress?.percent
@@ -369,7 +381,7 @@ export function USBDongle() {
           phase: 'download',
           inFlight: true,
           error: '',
-          message: '',
+          message: prev.message || 'Download in progress…',
           progress: { received, total, percent }
         }))
         return
@@ -411,14 +423,24 @@ export function USBDongle() {
         return
       }
       if (stage === 'upload:progress') {
+        // Option A: int32 progress (0..100) coming from 0xb1
+        const pInt = typeof payload.progress === 'number' ? payload.progress : undefined
+        const percentFromInt =
+          typeof pInt === 'number' && Number.isFinite(pInt)
+            ? Math.max(0, Math.min(1, pInt / 100))
+            : undefined
+
+        // Option B: byte progress (if you later add sent/total)
         const received = typeof payload.sent === 'number' ? payload.sent : 0
         const total = typeof payload.total === 'number' ? payload.total : 0
-        const percent =
+        const percentFromBytes =
           typeof payload.percent === 'number'
             ? payload.percent
             : total > 0
               ? received / total
               : undefined
+
+        const percent = percentFromInt ?? percentFromBytes
 
         setFwDlg((prev) => ({
           ...prev,
@@ -426,9 +448,25 @@ export function USBDongle() {
           phase: 'upload',
           inFlight: true,
           error: '',
-          message: '',
+          message: prev.message || 'Update in progress…',
           progress: { received, total, percent }
         }))
+        return
+      }
+      if (stage === 'upload:state') {
+        const statusText = payload.statusText ? String(payload.statusText) : ''
+        const isTerminal = Boolean(payload.isTerminal)
+        const ok = Boolean(payload.ok)
+
+        setFwDlg((prev) => ({
+          ...prev,
+          open: true,
+          phase: isTerminal ? (ok ? 'ready' : 'error') : 'upload',
+          inFlight: !isTerminal,
+          error: isTerminal && !ok ? statusText || 'Update failed' : '',
+          message: statusText || prev.message || 'Update in progress…'
+        }))
+
         return
       }
       if (stage === 'upload:done') {
@@ -472,17 +510,21 @@ export function USBDongle() {
     }
 
     // Upload reconnect auto-close:
+    // Only close after we reached a terminal "ready" state AND we saw a disconnect->reconnect.
     if (fwWaitingForReconnect) {
+      const uploadFinished = fwDlg.phase === 'ready' && !fwDlg.inFlight && !fwDlg.error
+
       if (!isDongleConnected) {
         if (!fwSawDisconnect) setFwSawDisconnect(true)
         return
       }
 
-      if (fwSawDisconnect && isDongleConnected) {
+      if (uploadFinished && fwSawDisconnect && isDongleConnected) {
         setFwWaitingForReconnect(false)
         setFwSawDisconnect(false)
         closeFwDialog()
       }
+
       return
     }
 
@@ -648,15 +690,15 @@ export function USBDongle() {
           return
         }
 
-        // If it returns ok/err=0 but no events, close dialog with a generic message.
         if (action === 'upload') {
+          // Keep dialog open until we receive upload:done / upload:error from dongle
           setFwDlg((prev) => ({
             ...prev,
             open: true,
-            phase: 'ready',
-            inFlight: false,
+            phase: 'upload',
+            inFlight: true,
             error: '',
-            message: 'Upload request sent.'
+            message: 'Update in progress…'
           }))
         }
       } catch (e) {
@@ -842,8 +884,6 @@ export function USBDongle() {
               <CircularProgress size={14} />
               Download
             </Box>
-          ) : forced ? (
-            'Download (forced)'
           ) : (
             'Download'
           )}

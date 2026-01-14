@@ -189,7 +189,20 @@ export enum FileAddress {
   ICON_120 = '/etc/icon_120x120.png',
   ICON_180 = '/etc/icon_180x180.png',
   ICON_256 = '/etc/icon_256x256.png',
-  ANDROID_WORK_MODE = '/etc/android_work_mode'
+  ANDROID_WORK_MODE = '/etc/android_work_mode',
+  TMP = '/tmp'
+}
+
+export function boxTmpPath(fileName: string): string {
+  const base = (fileName.split(/[\\/]/).pop() || fileName).trim()
+  const safe = base.length > 0 ? base : 'update.img'
+  return `${FileAddress.TMP}/${safe}`
+}
+
+export class SendTmpFile extends SendFile {
+  constructor(content: Buffer, fileName: string) {
+    super(content, boxTmpPath(fileName))
+  }
 }
 
 export class SendNumber extends SendFile {

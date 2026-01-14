@@ -68,7 +68,6 @@ type DongleFirmwareCheckResult =
       ok: true
       hasUpdate: boolean
       latestVer?: string
-      forced?: boolean
       notes?: string
       size?: number
       id?: string

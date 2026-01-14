@@ -2,6 +2,8 @@ import { net, app } from 'electron'
 import { join, basename } from 'path'
 import { createWriteStream, existsSync } from 'fs'
 import { promises as fsp } from 'fs'
+import type { DongleDriver } from '../driver/DongleDriver.js'
+import { SendTmpFile } from '../messages/sendable.js'
 
 export type FirmwareCheckInput = {
   appVer: string
@@ -16,7 +18,6 @@ export type FirmwareCheckResult =
       ok: true
       hasUpdate: boolean
       latestVer?: string
-      forced?: boolean
       notes?: string
       size?: number
       id?: string
@@ -145,7 +146,6 @@ export class FirmwareUpdateService {
       }
 
       const latestVer = fmt((raw as any).ver)
-      const forced = Boolean((raw as any).forced)
       const notes = fmt((raw as any).notes)
       const size = toInt((raw as any).size)
       const id = fmt((raw as any).id)
@@ -157,7 +157,6 @@ export class FirmwareUpdateService {
         ok: true,
         hasUpdate,
         latestVer: latestVer ?? undefined,
-        forced,
         notes: notes ?? undefined,
         size: size ?? undefined,
         id: id ?? undefined,
@@ -267,8 +266,50 @@ export class FirmwareUpdateService {
     }
   }
 
-  public async startUpdate(_input: FirmwareCheckInput): Promise<void> {
-    throw new Error('Firmware update (flash to dongle) is not implemented yet')
+  public async startUpdate(
+    input: FirmwareCheckInput,
+    driver: DongleDriver,
+    opts?: {
+      onProgress?: (p: { sent: number; total: number; percent: number }) => void
+      maxBytes?: number
+    }
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+      // 1) validate local firmware file is present and matches current dongle
+      const st = await this.getLocalFirmwareStatus(input)
+      if (!st.ok) return { ok: false, error: st.error }
+      if (!st.ready) return { ok: false, error: st.reason }
+
+      const maxBytes = typeof opts?.maxBytes === 'number' ? opts.maxBytes : 50 * 1024 * 1024
+      if (st.bytes > maxBytes) {
+        return { ok: false, error: `Firmware file too large (${st.bytes} > ${maxBytes})` }
+      }
+
+      // 2) read file into memory (APK does the same; it pushes the image into /tmp)
+      const buf = await fsp.readFile(st.path)
+
+      // 3) keep original filename (A15W_Update.img, W15..., fallback, etc.)
+      const fileName = basename(st.path)
+
+      // 4) send to dongle /tmp/<fileName>
+      // NOTE: This only uploads the image. The dongle-side update trigger command is still unknown.
+      // With your wire logs, we can identify the trigger after you run one update.
+      let sent = 0
+      const total = buf.length
+
+      // Simple single-shot send (fast). If you later discover size limits / chunking needs,
+      // we can switch this to chunked sending.
+      const ok = await driver.send(new SendTmpFile(buf, fileName))
+      sent = total
+
+      opts?.onProgress?.({ sent, total, percent: total > 0 ? sent / total : 1 })
+
+      if (!ok) return { ok: false, error: 'Failed to send firmware image to dongle' }
+      return { ok: true }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return { ok: false, error: msg }
+    }
   }
 
   private safeJson(text: string): unknown {

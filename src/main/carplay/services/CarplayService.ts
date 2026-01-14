@@ -19,6 +19,8 @@ import {
   SendCloseDongle,
   FileAddress,
   DongleDriver,
+  BoxUpdateProgress,
+  BoxUpdateState,
   DEFAULT_CONFIG
 } from '../messages'
 import { ExtraConfig } from '@main/Globals'
@@ -52,7 +54,6 @@ type DongleFwApiRaw = {
   size?: string | number
   id?: string
   notes?: string
-  forced?: number | boolean
   msg?: string
   error?: string
 }
@@ -60,7 +61,6 @@ type DongleFwApiRaw = {
 type DongleFwCheckResponse = {
   ok: boolean
   hasUpdate: boolean
-  forced: boolean
   size: string | number
   token?: string
   request?: Record<string, unknown>
@@ -137,6 +137,45 @@ export class CarplayService {
         this.webContents.send('carplay-event', { type: 'unplugged' })
         if (!this.shuttingDown && !this.stopping) {
           this.stop().catch(() => {})
+        }
+      } else if (msg instanceof BoxUpdateProgress) {
+        // 0xb1 payload: int32 progress
+        this.webContents.send('carplay-event', {
+          type: 'fwUpdate',
+          stage: 'upload:progress',
+          progress: msg.progress
+        })
+      } else if (msg instanceof BoxUpdateState) {
+        // 0xbb payload: int32 status (start/success/fail, ota variants)
+        this.webContents.send('carplay-event', {
+          type: 'fwUpdate',
+          stage: 'upload:state',
+          status: msg.status,
+          statusText: msg.statusText,
+          isOta: msg.isOta,
+          isTerminal: msg.isTerminal,
+          ok: msg.ok
+        })
+
+        if (msg.isTerminal) {
+          // Terminal state decides done vs error
+          this.webContents.send('carplay-event', {
+            type: 'fwUpdate',
+            stage: msg.ok ? 'upload:done' : 'upload:error',
+            message: msg.statusText || (msg.ok ? 'Update finished' : 'Update failed'),
+            status: msg.status,
+            isOta: msg.isOta
+          })
+
+          // Ensure the next SoftwareVersion/BoxInfo triggers a fresh emit.
+          this.lastDongleInfoEmitKey = ''
+
+          // Force a fresh dongleInfo emit AFTER the dongle reports new SoftwareVersion/BoxInfo.
+          try {
+            this.driver.send(new SendCommand('frame'))
+          } catch {
+            // ignore
+          }
         }
       } else if (msg instanceof VideoData) {
         if (!this.firstFrameLogged) {
@@ -272,7 +311,6 @@ export class CarplayService {
         const asError = (message: string): DongleFwCheckResponse => ({
           ok: false,
           hasUpdate: false,
-          forced: false,
           size: 0,
           error: message,
           raw: { err: -1, msg: message }
@@ -286,7 +324,6 @@ export class CarplayService {
           return {
             ok: true,
             hasUpdate: Boolean(r.hasUpdate),
-            forced: Boolean(r.forced),
             size: typeof r.size === 'number' ? r.size : 0,
             token: r.token,
             request: (r.request as any) ?? undefined,
@@ -297,7 +334,6 @@ export class CarplayService {
               size: (typeof r.size === 'number' ? r.size : rawObj.size) ?? 0,
               id: r.id ?? rawObj.id,
               notes: r.notes ?? rawObj.notes,
-              forced: r.forced ?? rawObj.forced,
               msg: rawObj.msg,
               error: rawObj.error
             }
@@ -401,7 +437,74 @@ export class CarplayService {
         }
 
         if (action === 'upload') {
-          return asError('Upload is not implemented yet')
+          try {
+            if (!this.started) return asError('CarPlay not started / dongle not connected')
+
+            this.webContents?.send('carplay-event', { type: 'fwUpdate', stage: 'upload:start' })
+
+            const st: any = await this.firmware.getLocalFirmwareStatus({
+              appVer: this.getApkVer(),
+              dongleFwVersion: this.dongleFwVersion ?? null,
+              boxInfo: this.boxInfo
+            })
+
+            if (!st || st.ok !== true) {
+              const msg = String(st?.error || 'Local firmware status failed')
+              this.webContents?.send('carplay-event', {
+                type: 'fwUpdate',
+                stage: 'upload:error',
+                message: msg
+              })
+              return asError(msg)
+            }
+
+            if (!st.ready) {
+              const msg = String(st.reason || 'No firmware ready to upload')
+              this.webContents?.send('carplay-event', {
+                type: 'fwUpdate',
+                stage: 'upload:error',
+                message: msg
+              })
+              return asError(msg)
+            }
+
+            const fwBuf = await fs.promises.readFile(st.path)
+            const remotePath = `/tmp/${path.basename(st.path)}`
+
+            const ok = await this.driver.send(new SendFile(fwBuf, remotePath))
+            if (!ok) {
+              const msg = 'Dongle upload failed (SendFile returned false)'
+              this.webContents?.send('carplay-event', {
+                type: 'fwUpdate',
+                stage: 'upload:error',
+                message: msg
+              })
+              return asError(msg)
+            }
+
+            this.webContents?.send('carplay-event', {
+              type: 'fwUpdate',
+              stage: 'upload:file-sent',
+              path: remotePath,
+              bytes: fwBuf.length
+            })
+            return {
+              ok: true,
+              hasUpdate: true,
+              size: fwBuf.length,
+              token: undefined,
+              request: { uploadedTo: remotePath, local: st },
+              raw: { err: 0, msg: 'upload:file-sent', size: fwBuf.length }
+            }
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e)
+            this.webContents?.send('carplay-event', {
+              type: 'fwUpdate',
+              stage: 'upload:error',
+              message: msg
+            })
+            return asError(msg)
+          }
         }
 
         if (action === 'status') {
@@ -421,7 +524,6 @@ export class CarplayService {
           return {
             ok: true,
             hasUpdate: Boolean(latestVer),
-            forced: false,
             size: bytes,
             token: undefined,
             request: { local: st },

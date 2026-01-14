@@ -385,11 +385,71 @@ export class VendorCarPlaySessionBlob extends Message {
 }
 
 export class Phase extends Message {
-  phase: number
+  value: number
 
   constructor(header: MessageHeader, data: Buffer) {
     super(header)
-    //TODO: find correct mapped values
-    this.phase = data.readUInt32LE(0)
+    this.value = data.readUInt32LE(0)
+  }
+}
+
+export enum BoxUpdateStatus {
+  BoxUpdateStart = 1,
+  BoxUpdateSuccess = 2,
+  BoxUpdateFailed = 3,
+
+  BoxOtaUpdateStart = 5,
+  BoxOtaUpdateSuccess = 6,
+  BoxOtaUpdateFailed = 7
+}
+
+export function boxUpdateStatusToString(status: number): string {
+  switch (status) {
+    case BoxUpdateStatus.BoxUpdateStart:
+      return 'EVT_BOX_UPDATE'
+    case BoxUpdateStatus.BoxUpdateSuccess:
+      return 'EVT_BOX_UPDATE_SUCCESS'
+    case BoxUpdateStatus.BoxUpdateFailed:
+      return 'EVT_BOX_UPDATE_FAILED'
+    case BoxUpdateStatus.BoxOtaUpdateStart:
+      return 'EVT_BOX_OTA_UPDATE'
+    case BoxUpdateStatus.BoxOtaUpdateSuccess:
+      return 'EVT_BOX_OTA_UPDATE_SUCCESS'
+    case BoxUpdateStatus.BoxOtaUpdateFailed:
+      return 'EVT_BOX_OTA_UPDATE_FAILED'
+    default:
+      return `EVT_BOX_UPDATE_UNKNOWN(${status})`
+  }
+}
+
+// CMD_UPDATE_PROGRESS (177), payload: int32 progress
+export class BoxUpdateProgress extends Message {
+  progress: number
+
+  constructor(header: MessageHeader, data: Buffer) {
+    super(header)
+    this.progress = data.readInt32LE(0)
+  }
+}
+
+// CMD_UPDATE (187), payload: int32 status
+export class BoxUpdateState extends Message {
+  status: BoxUpdateStatus | number
+  statusText: string
+  isOta: boolean
+  isTerminal: boolean
+  ok?: boolean
+
+  constructor(header: MessageHeader, data: Buffer) {
+    super(header)
+
+    const raw = data.readInt32LE(0)
+    this.status = raw
+    this.statusText = boxUpdateStatusToString(raw)
+    this.isOta = raw === 5 || raw === 6 || raw === 7
+    this.isTerminal = raw === 2 || raw === 3 || raw === 6 || raw === 7
+
+    if (raw === 2 || raw === 6) this.ok = true
+    if (raw === 3 || raw === 7) this.ok = false
   }
 }

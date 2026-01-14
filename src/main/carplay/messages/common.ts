@@ -18,7 +18,9 @@ import {
   Unplugged,
   Phase,
   BluetoothPeerConnecting,
-  BluetoothPeerConnected
+  BluetoothPeerConnected,
+  BoxUpdateProgress,
+  BoxUpdateState
 } from './readable.js'
 
 export enum CommandMapping {
@@ -96,6 +98,8 @@ export enum MessageType {
   MediaData = 0x2a,
   SendFile = 0x99,
   HeartBeat = 0xaa,
+  UpdateProgress = 0xb1,
+  UpdateState = 0xbb,
   SoftwareVersion = 0xcc,
   PeerBluetoothAddress = 0x23,
   PeerBluetoothAddressAlt = 0x24,
@@ -206,6 +210,10 @@ export class MessageHeader {
           return new BoxInfo(this, data)
         case MessageType.Phase:
           return new Phase(this, data)
+        case MessageType.UpdateProgress:
+          return new BoxUpdateProgress(this, data)
+        case MessageType.UpdateState:
+          return new BoxUpdateState(this, data)
         case MessageType.PeerBluetoothAddress:
           return new BluetoothPeerConnecting(this, data)
         case MessageType.PeerBluetoothAddressAlt:
