@@ -29,7 +29,14 @@ export class Socket extends EventEmitter {
     this.io?.on(MessageNames.Connection, (socket) => {
       this.sendSettings()
       socket.on(MessageNames.GetSettings, () => this.sendSettings())
-      socket.on(MessageNames.SaveSettings, (settings: ExtraConfig) => this.saveSettings(settings))
+      socket.on(MessageNames.SaveSettings, (settings: ExtraConfig) => {
+        // Persist via main callback
+        this.saveSettings(settings)
+
+        // Keep local config in sync and broadcast to all clients
+        this.config = settings
+        this.sendSettings()
+      })
       socket.on(MessageNames.Stream, (stream: Stream) => this.emit(MessageNames.Stream, stream))
     })
   }

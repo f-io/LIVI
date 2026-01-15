@@ -9,7 +9,7 @@ import WifiIcon from '@mui/icons-material/Wifi'
 import WifiOffIcon from '@mui/icons-material/WifiOff'
 import { useBlinkingTime } from '../../hooks/useBlinkingTime'
 import { useNetworkStatus } from '../../hooks/useNetworkStatus'
-import { ROUTES } from '../../constants'
+import { ROUTES, UI } from '../../constants'
 
 export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
   children,
@@ -20,15 +20,17 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
   const { pathname } = useLocation()
   const settings = useCarplayStore((s) => s.settings)
   const isStreaming = useStatusStore((s) => s.isStreaming)
-
   const time = useBlinkingTime()
   const network = useNetworkStatus()
 
-  // TODO move it to global UI constants
-  const isVisibleTimeAndWifi = window.innerHeight > 320
+  const isVisibleTimeAndWifi = window.innerHeight > UI.MIN_HEIGHT_SHOW_TIME_WIFI
 
   // Hide nav column while streaming on home screen
   const hideNav = isStreaming && pathname === ROUTES.HOME
+
+  // Steering wheel position
+  const isRhd = Number(settings?.hand ?? 0) === 1
+  const layoutDirection: 'row' | 'row-reverse' = isRhd ? 'row-reverse' : 'row'
 
   return (
     <div
@@ -38,7 +40,7 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
         height: '100dvh',
         touchAction: 'none',
         display: 'flex',
-        flexDirection: 'row'
+        flexDirection: layoutDirection
       }}
     >
       {/* NAV COLUMN */}
@@ -50,7 +52,8 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
             height: '100%',
             display: 'flex',
             flexDirection: 'column',
-            borderRight: '1px solid #444',
+            borderRight: isRhd ? undefined : '1px solid #444',
+            borderLeft: isRhd ? '1px solid #444' : undefined,
             flex: '0 0 auto',
             position: 'relative',
             zIndex: 10

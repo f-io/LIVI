@@ -9,11 +9,6 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
   path: '',
   children: [
     {
-      type: 'checkbox',
-      label: 'Fullscreen',
-      path: 'kiosk'
-    },
-    {
       type: 'route',
       route: 'connections',
       label: 'Connections',
@@ -225,6 +220,25 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
         { type: 'keybinding', label: 'Reject Call', path: 'bindings', bindingKey: 'rejectPhone' },
         { type: 'keybinding', label: 'Voice Assistant', path: 'bindings', bindingKey: 'siri' }
       ]
+    },
+    {
+      type: 'select',
+      label: 'Steering wheel position',
+      path: 'hand',
+      displayValue: true,
+      options: [
+        { label: 'LHD', value: 0 },
+        { label: 'RHD', value: 1 }
+      ],
+      page: {
+        title: 'Steering wheel position',
+        description: 'Left-hand drive or right-hand drive configuration.'
+      }
+    },
+    {
+      type: 'checkbox',
+      label: 'Fullscreen',
+      path: 'kiosk'
     }
   ]
 }

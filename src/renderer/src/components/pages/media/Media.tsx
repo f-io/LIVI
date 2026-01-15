@@ -307,11 +307,8 @@ export const Media = () => {
       id="media-root"
       ref={rootRef}
       style={{
-        position: 'fixed',
-        left: '75px',
-        right: 0,
-        top: 0,
-        bottom: 0,
+        position: 'absolute',
+        inset: 0,
         zIndex: 1,
         display: 'flex',
         flexDirection: 'column',

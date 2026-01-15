@@ -29,3 +29,7 @@ export enum THEME {
 }
 
 export const EMPTY_STRING = '—'
+
+export const UI = {
+  MIN_HEIGHT_SHOW_TIME_WIFI: 320
+} as const
