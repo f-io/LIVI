@@ -31,6 +31,13 @@ export enum HandDriveType {
 export type PhoneTypeConfig = { frameInterval: number | null }
 type PhoneTypeConfigMap = { [K in PhoneType]: PhoneTypeConfig }
 
+export type NaviScreenConfig = {
+  enabled: boolean
+  width: number
+  height: number
+  fps: number
+}
+
 export type DongleConfig = {
   androidWorkMode?: boolean
   width: number
@@ -56,6 +63,7 @@ export type DongleConfig = {
   wifiChannel: number
   micType: 'box' | 'os'
   phoneConfig: Partial<PhoneTypeConfigMap>
+  naviScreen: NaviScreenConfig
 }
 
 export const DEFAULT_CONFIG: DongleConfig = {
@@ -84,6 +92,12 @@ export const DEFAULT_CONFIG: DongleConfig = {
   phoneConfig: {
     [PhoneType.CarPlay]: { frameInterval: 5000 },
     [PhoneType.AndroidAuto]: { frameInterval: null }
+  },
+  naviScreen: {
+    enabled: false,
+    width: 800,
+    height: 480,
+    fps: 30
   }
 }
 
@@ -253,7 +267,8 @@ export class DongleDriver extends EventEmitter {
           const headerBuf = headerRes?.data?.buffer
           if (!headerBuf) throw new HeaderBuildError('Empty header')
 
-          const header = MessageHeader.fromBuffer(Buffer.from(headerBuf))
+          const headerBuffer = Buffer.from(headerBuf)
+          const header = MessageHeader.fromBuffer(headerBuffer)
           let extra: Buffer | undefined
 
           if (header.length) {

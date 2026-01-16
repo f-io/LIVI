@@ -55,7 +55,7 @@ type BoxInfoPayload = {
   supportLinkType?: string
   supportFeatures?: string
   hwVersion?: string
-  WiFiChannel?: number
+  wifiChannel?: number
   CusCode?: string
   DevList?: DevListEntry[]
 }

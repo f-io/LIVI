@@ -233,6 +233,11 @@ export class CarplayService {
         fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
       } else if (msg instanceof Command) {
         this.webContents.send('carplay-event', { type: 'command', message: msg })
+        // Respond to RequestNaviScreenFocus (508) by sending command 508 back
+        // This triggers HU_NEEDNAVI_STREAM D-Bus signal in the adapter firmware
+        if ((msg.value as number) === 508 && this.config.naviScreen?.enabled) {
+          this.driver.send(new SendCommand('requestNaviScreenFocus'))
+        }
       }
     })
 

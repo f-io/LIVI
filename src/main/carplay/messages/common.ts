@@ -57,6 +57,8 @@ export enum CommandMapping {
   releaseVideoFocus = 501,
   naviFocus = 506,
   naviRelease = 507,
+  requestNaviScreenFocus = 508, // Request navigation screen (triggers HU_NEEDNAVI_STREAM)
+  releaseNaviScreenFocus = 509, // Release navigation screen
   wifiEnable = 1000,
   autoConnetEnable = 1001,
   wifiConnect = 1002,
@@ -96,6 +98,8 @@ export enum MessageType {
   HiCarLink = 0x18,
   BoxSettings = 0x19,
   MediaData = 0x2a,
+  AltVideoData = 0x2b, // Navigation/Instrument Cluster video stream (expected)
+  NaviVideoData = 0x2c, // Navigation/Instrument Cluster video stream (actual - 44)
   SendFile = 0x99,
   HeartBeat = 0xaa,
   UpdateProgress = 0xb1,
@@ -105,7 +109,9 @@ export enum MessageType {
   PeerBluetoothAddressAlt = 0x24,
   UiHidePeerInfo = 0x25,
   UiBringToForeground = 0x26,
-  VendorCarPlaySessionBlob = 0xa3
+  VendorCarPlaySessionBlob = 0xa3,
+  NaviFocusRequest = 0x6e,
+  NaviFocusRelease = 0x6f
 }
 
 export type CarplayMessageTapPayload = {

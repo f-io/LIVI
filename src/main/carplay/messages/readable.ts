@@ -361,7 +361,7 @@ export type BoxInfoSettings = {
   supportLinkType?: string
   supportFeatures?: string
   hwVersion?: string
-  WiFiChannel?: number
+  wifiChannel?: number
   CusCode?: string
   DevList?: BoxDeviceEntry[]
 } & Record<string, unknown>

@@ -46,6 +46,7 @@ type BoxInfoPayload = {
   WiFiChannel?: number
   CusCode?: string
   DevList?: DevListEntry[]
+  ChannelList?: string
 }
 
 function normalizeBoxInfo(input: unknown): BoxInfoPayload | null {
@@ -787,7 +788,8 @@ export function USBDongle() {
       { label: 'WiFi Channel', value: boxInfo?.WiFiChannel ?? null, mono: true },
       { label: 'Links', value: fmt(boxInfo?.supportLinkType) },
       { label: 'Features', value: fmt(boxInfo?.supportFeatures) },
-      { label: 'CusCode', value: fmt(boxInfo?.CusCode), mono: true }
+      { label: 'CusCode', value: fmt(boxInfo?.CusCode), mono: true },
+      { label: 'Channel List', value: fmt(boxInfo?.ChannelList), mono: true }
     ],
     [boxInfo]
   )
