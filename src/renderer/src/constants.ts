@@ -31,5 +31,6 @@ export enum THEME {
 export const EMPTY_STRING = '—'
 
 export const UI = {
-  MIN_HEIGHT_SHOW_TIME_WIFI: 320
+  MIN_HEIGHT_SHOW_TIME_WIFI: 320,
+  XS_ICON_MAX_HEIGHT: 320
 } as const

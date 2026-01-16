@@ -5,9 +5,10 @@ import Tab from '@mui/material/Tab'
 import { useStatusStore } from '../../store/store'
 import { ExtraConfig } from '../../../../main/Globals'
 import { useTabsConfig } from './useTabsConfig'
-import { ROUTES } from '../../constants'
+import { ROUTES, UI } from '../../constants'
 import { useBlinkingTime } from '../../hooks/useBlinkingTime'
 import { useNetworkStatus } from '../../hooks/useNetworkStatus'
+import { useTheme } from '@mui/material/styles'
 
 interface NavProps {
   settings: ExtraConfig | null
@@ -17,6 +18,7 @@ interface NavProps {
 export const Nav = ({ receivingVideo }: NavProps) => {
   const navigate = useNavigate()
   const { pathname } = useLocation()
+  const theme = useTheme()
 
   useBlinkingTime()
   useNetworkStatus()
@@ -44,8 +46,7 @@ export const Nav = ({ receivingVideo }: NavProps) => {
     navigate(tab.path)
   }
 
-  // TODO move it to global UI constants
-  const isXSIcons = window.innerHeight <= 320
+  const isXSIcons = window.innerHeight <= UI.XS_ICON_MAX_HEIGHT
 
   const tabSx = {
     minWidth: 0,
@@ -53,42 +54,51 @@ export const Nav = ({ receivingVideo }: NavProps) => {
     padding: isXSIcons ? '5px 0' : '10px 0',
     '& .MuiTab-iconWrapper': { display: 'grid', placeItems: 'center' },
     '& .MuiSvgIcon-root': {
-      fontSize: isXSIcons ? '1.5rem' : '2rem'
+      fontSize: isXSIcons ? '1.5rem' : '2rem',
+      transition: 'color 120ms ease-out'
     },
-    minHeight: 'auto'
+    minHeight: 'auto',
+
+    '&.Mui-focusVisible, &:hover': {
+      opacity: 1
+    },
+    '&.Mui-focusVisible .MuiSvgIcon-root, &:hover .MuiSvgIcon-root': {
+      color: `${theme.palette.primary.main} !important`
+    }
   } as const
 
   return (
-    <>
-      <Tabs
-        value={value}
-        onChange={handleChange}
-        aria-label="Navigation Tabs"
-        variant="fullWidth"
-        textColor="inherit"
-        visibleScrollbar={false}
-        selectionFollowsFocus={false}
-        orientation="vertical"
-        sx={{
-          '& .MuiTabs-indicator': {
-            display: 'none'
-          },
-          '& .MuiTabs-list': {
-            height: '100%'
-          },
+    <Tabs
+      value={value}
+      onChange={handleChange}
+      aria-label="Navigation Tabs"
+      variant="fullWidth"
+      textColor="inherit"
+      visibleScrollbar={false}
+      selectionFollowsFocus={false}
+      orientation="vertical"
+      sx={{
+        '& .MuiTabs-indicator': {
+          display: 'none'
+        },
+        '& .MuiTabs-list': {
           height: '100%'
-        }}
-      >
-        {tabs.map((tab) => (
-          <Tab
-            key={tab.path}
-            sx={tabSx}
-            icon={tab.icon}
-            disabled={tab.disabled}
-            aria-label={tab.label}
-          />
-        ))}
-      </Tabs>
-    </>
+        },
+        height: '100%'
+      }}
+    >
+      {tabs.map((tab) => (
+        <Tab
+          key={tab.path}
+          sx={tabSx}
+          icon={tab.icon}
+          disabled={tab.disabled}
+          aria-label={tab.label}
+          disableRipple
+          disableFocusRipple
+          disableTouchRipple
+        />
+      ))}
+    </Tabs>
   )
 }

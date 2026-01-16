@@ -114,6 +114,10 @@ export const SettingsLayout = ({
             <IconButton
               onClick={handleNavigate}
               aria-label="Back"
+              className="nav-focus-primary"
+              disableRipple
+              disableFocusRipple
+              disableTouchRipple
               sx={{
                 width: `${px.slotLeftW}px`,
                 height: '100%',

@@ -126,7 +126,7 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK) {
           root: {
             ...buttonBaseRoot,
             '& .MuiTouchRipple-child': {
-              backgroundColor: `${alpha(highlight, 0.45)} !important`
+              backgroundColor: `${alpha(highlight, 0.75)} !important`
             }
           }
         }
@@ -172,7 +172,14 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK) {
             outline: 'none',
 
             '&:hover': { backgroundColor: 'transparent' },
-            '&.Mui-focusVisible': { backgroundColor: 'transparent' }
+            '&.Mui-focusVisible': { backgroundColor: 'transparent' },
+            '&.nav-focus-primary .MuiSvgIcon-root': {
+              transition: 'color 120ms ease-out'
+            },
+            '&.nav-focus-primary:hover .MuiSvgIcon-root, &.nav-focus-primary.Mui-focusVisible .MuiSvgIcon-root':
+              {
+                color: primary
+              }
           }
         }
       },
@@ -199,6 +206,16 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK) {
           },
           thumb: { boxShadow: 'none' },
           track: { opacity: 1 }
+        }
+      },
+
+      MuiSlider: {
+        styleOverrides: {
+          thumb: {
+            '&.Mui-focusVisible, &.Mui-active, &:hover': {
+              boxShadow: `0 0 0 10px ${alpha(highlight, 0.75)}`
+            }
+          }
         }
       },
 
@@ -375,7 +392,7 @@ export function buildRuntimeTheme(
             cursor: 'default',
 
             '& .MuiTouchRipple-child': {
-              backgroundColor: `${alpha(highlight!, 0.45)} !important`
+              backgroundColor: `${alpha(highlight!, 0.75)} !important`
             }
           }
         }
@@ -431,7 +448,14 @@ export function buildRuntimeTheme(
             outline: 'none',
 
             '&:hover': { backgroundColor: 'transparent' },
-            '&.Mui-focusVisible': { backgroundColor: 'transparent' }
+            '&.Mui-focusVisible': { backgroundColor: 'transparent' },
+            '&.nav-focus-primary .MuiSvgIcon-root': {
+              transition: 'color 120ms ease-out'
+            },
+            '&.nav-focus-primary:hover .MuiSvgIcon-root, &.nav-focus-primary.Mui-focusVisible .MuiSvgIcon-root':
+              {
+                color: primary!
+              }
           }
         }
       },
@@ -462,6 +486,15 @@ export function buildRuntimeTheme(
           },
           thumb: { ...swThumb, boxShadow: 'none' },
           track: { ...swTrack, opacity: 1 }
+        }
+      },
+      MuiSlider: {
+        styleOverrides: {
+          thumb: {
+            '&.Mui-focusVisible, &.Mui-active, &:hover': {
+              boxShadow: `0 0 0 10px ${alpha(highlight!, 0.75)}`
+            }
+          }
         }
       }
     }
