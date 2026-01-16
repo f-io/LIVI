@@ -11,21 +11,13 @@ import {
   Stack,
   Typography
 } from '@mui/material'
-
-type UpdatePhase =
-  | 'start'
-  | 'download'
-  | 'ready'
-  | 'mounting'
-  | 'copying'
-  | 'unmounting'
-  | 'installing'
-  | 'relaunching'
-  | 'error'
+import { cmpSemver, parseSemver } from './utils'
+import { phaseMap, UpdatePhase, UpgradeText } from './types'
+import { EMPTY_STRING } from '@renderer/constants'
 
 export function SoftwareUpdate() {
-  const [installedVersion, setInstalledVersion] = useState<string>('—')
-  const [latestVersion, setLatestVersion] = useState<string>('—')
+  const [installedVersion, setInstalledVersion] = useState<string>(EMPTY_STRING)
+  const [latestVersion, setLatestVersion] = useState<string>(EMPTY_STRING)
   const [latestUrl, setLatestUrl] = useState<string | undefined>(undefined)
 
   const [message, setMessage] = useState<string>('')
@@ -38,21 +30,6 @@ export function SoftwareUpdate() {
   const [error, setError] = useState<string>('')
 
   const [inFlight, setInFlight] = useState(false)
-
-  const parseSemver = (v?: string): number[] | null => {
-    if (!v) return null
-    const m = v.trim().match(/^(\d+)\.(\d+)\.(\d+)$/)
-    if (!m) return null
-    return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)]
-  }
-
-  const cmpSemver = (a: number[], b: number[]) => {
-    for (let i = 0; i < 3; i++) {
-      if ((a[i] || 0) < (b[i] || 0)) return -1
-      if ((a[i] || 0) > (b[i] || 0)) return 1
-    }
-    return 0
-  }
 
   const installedSem = useMemo(() => parseSemver(installedVersion), [installedVersion])
   const latestSem = useMemo(() => parseSemver(latestVersion), [latestVersion])
@@ -69,26 +46,7 @@ export function SoftwareUpdate() {
   const human = (n: number) =>
     n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`
 
-  const phaseText =
-    phase === 'download'
-      ? 'Downloading'
-      : phase === 'installing'
-        ? 'Installing'
-        : phase === 'mounting'
-          ? 'Mounting image'
-          : phase === 'copying'
-            ? 'Copying'
-            : phase === 'unmounting'
-              ? 'Finalizing'
-              : phase === 'relaunching'
-                ? 'Relaunching'
-                : phase === 'ready'
-                  ? 'Ready to install'
-                  : phase === 'start'
-                    ? 'Starting…'
-                    : phase === 'error'
-                      ? 'Error'
-                      : 'Working…'
+  const phaseText = phaseMap[phase] ?? 'Working…'
 
   const installPhases: ReadonlyArray<UpdatePhase> = [
     'mounting',
@@ -98,7 +56,7 @@ export function SoftwareUpdate() {
     'relaunching'
   ]
 
-  const dialogTitle = isDowngrade ? 'Software Downgrade' : 'Software Update'
+  const dialogTitle = isDowngrade ? UpgradeText.downgrade : UpgradeText.upgrade
 
   const closeAndReset = useCallback(() => {
     setUpDialogOpen(false)

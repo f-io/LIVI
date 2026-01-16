@@ -1,5 +1,5 @@
-import { SoftwareUpdate } from '../../components/pages/settings/pages/system/SoftwareUpdate'
-import { USBDongle } from '../../components/pages/settings/pages/system/USBDongle'
+import { SoftwareUpdate } from '../../components/pages/settings/pages/system/softwareUpdate/SoftwareUpdate'
+import { USBDongle } from '../../components/pages/settings/pages/system/usbDongle/USBDongle'
 import { About } from '../../components/pages/settings/pages/system/About'
 import { Restart } from '../../components/pages/settings/pages/system/Restart'
 import { PowerOff } from '../../components/pages/settings/pages/system/PowerOff'
