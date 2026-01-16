@@ -34,7 +34,7 @@
     "*.{js,jsx,ts,tsx,json,css,scss,md,yml,yaml}": "prettier --write"
   },
   "dependencies": {
-    "@base-ui/react": "^1.0.0",
+    "@base-ui/react": "^1.1.0",
     "@electron-toolkit/utils": "4.0.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
@@ -72,7 +72,7 @@
     "@typescript-eslint/parser": "^8.53.0",
     "@vitejs/plugin-react": "^5.1.2",
     "@webgpu/types": "^0.1.69",
-    "electron": "^39.2.7",
+    "electron": "^40.0.0",
     "electron-builder": "^26.4.0",
     "electron-to-chromium": "^1.5.267",
     "electron-vite": "^5.0.0",
