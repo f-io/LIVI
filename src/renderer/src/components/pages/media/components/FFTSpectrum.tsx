@@ -17,7 +17,9 @@ export const FFTSpectrum = () => {
   const theme = useTheme()
   const isDark = theme.palette.mode === 'dark'
 
-  const barColor = theme.palette.primary.main
+  const barColor =
+    getComputedStyle(document.body).getPropertyValue('--ui-highlight').trim() ||
+    theme.palette.primary.main
 
   const gridFill = alpha(theme.palette.text.primary, isDark ? 0.12 : 0.06)
   const gridLine = alpha(theme.palette.text.primary, 0.35)

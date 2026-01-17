@@ -49,7 +49,7 @@ export const ProgressBar = ({ elapsedMs, progressH, totalMs, pct }: ProgressProp
             width: `${pct}%`,
             height: '100%',
             transition: 'width 120ms linear',
-            background: 'rgba(255,255,255,0.95)'
+            background: 'var(--ui-highlight)'
           }}
         />
       </div>

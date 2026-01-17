@@ -71,7 +71,10 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK) {
       MuiCssBaseline: {
         styleOverrides: {
           ...commonLayout,
-          body: { backgroundColor: isLight ? themeColors.light : themeColors.dark },
+          body: {
+            backgroundColor: isLight ? themeColors.light : themeColors.dark,
+            '--ui-highlight': highlight
+          },
           '.fft-surface': {
             backgroundColor: isLight ? themeColors.fftSurfaceLight : themeColors.fftSurfaceDark,
             ...(isLight
@@ -351,6 +354,10 @@ export function buildRuntimeTheme(
       MuiCssBaseline: {
         styleOverrides: {
           ...cssBaselineSO,
+          body: {
+            ...(cssBaselineSO.body ?? {}),
+            '--ui-highlight': highlight!
+          },
           ':focus': { outline: 'none' }
         }
       },

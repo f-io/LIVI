@@ -15,8 +15,8 @@ export const themeColors = {
 
   highlightFocusedFieldLight: '#cccccc',
   highlightFocusedFieldDark: '#bbbbbb',
-  highlightColorLight: '#ff0000',
-  highlightColorDark: '#00ffff',
+  highlightColorLight: '#000000',
+  highlightColorDark: '#ffffff',
 
   // Highlight active carplay stream
   successLight: '#81c784',
