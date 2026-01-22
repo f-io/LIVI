@@ -111,5 +111,18 @@
     "url": "URL",
     "author": "Autor",
     "contributors": "Mitwirkende"
+  },
+  "softwareUpdate": {
+    "couldNotCheckLatestRelease": "Konnte die neueste Version nicht überprüfen.",
+    "updateFailed": "Update fehlgeschlagen",
+    "installedVersion": "Installierte Version",
+    "availableVersion": "Verfügbare Version",
+    "status": "Status",
+    "refresh": "Aktualisieren",
+    "check": "Nach Updates suchen",
+    "restartsAutomaticallyWhenDone": "Startet nach Abschluss automatisch neu.",
+    "abort": "Abbrechen",
+    "installNow": "Jetzt installieren",
+    "close": "Schließen"
   }
 }

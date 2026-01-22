@@ -111,5 +111,18 @@
     "url": "URL",
     "author": "Author",
     "contributors": "Contributors"
+  },
+  "softwareUpdate": {
+    "couldNotCheckLatestRelease": "Could not check latest release.",
+    "updateFailed": "Update failed",
+    "installedVersion": "Installed Version",
+    "availableVersion": "Available Version",
+    "status": "Status",
+    "refresh": "Refresh",
+    "check": "Check for Updates",
+    "restartsAutomaticallyWhenDone": "Restarts automatically when done.",
+    "abort": "Abort",
+    "installNow": "Install now",
+    "close": "Close"
   }
 }

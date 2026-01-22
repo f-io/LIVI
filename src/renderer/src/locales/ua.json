@@ -111,5 +111,18 @@
     "url": "URL",
     "author": "Автор",
     "contributors": "Співавтори"
+  },
+  "softwareUpdate": {
+    "couldNotCheckLatestRelease": "Не вдалося перевірити останній випуск.",
+    "updateFailed": "Оновлення не вдалося",
+    "installedVersion": "Встановлена версія",
+    "availableVersion": "Доступна версія",
+    "status": "Статус",
+    "refresh": "Оновити",
+    "check": "Перевірити оновлення",
+    "restartsAutomaticallyWhenDone": "Автоматично перезавантажується після завершення.",
+    "abort": "Скасувати",
+    "installNow": "Встановити зараз",
+    "close": "Закрити"
   }
 }
