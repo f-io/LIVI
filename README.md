@@ -2,7 +2,7 @@
   <img alt='LIVI' src='docs/images/banner.png' width="1200" />
 </p>
 
-# LIVI
+# LIVI – Linux In-Vehicle Infotainment
 
 LIVI is an open-source **Apple CarPlay and Android Auto head unit for Linux**.
 
