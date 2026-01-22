@@ -6,6 +6,7 @@ import { DEFAULT_BINDINGS } from '@main/Globals'
 import { useCarplayStore } from '@store/store'
 import { StackItem } from './stackItem'
 import type { KeyBindingNode } from '@renderer/routes/types'
+import { useTranslation } from 'react-i18next'
 
 function isModifierOnly(code: string) {
   return [
@@ -34,6 +35,7 @@ function normalize(v: unknown) {
 }
 
 export function KeyBindingRow({ node }: { node: KeyBindingNode }) {
+  const { t } = useTranslation()
   const saveSettings = useCarplayStore((s) => s.saveSettings)
   const settings = useCarplayStore((s) => s.settings) as ExtraConfig | null
 
@@ -114,15 +116,12 @@ export function KeyBindingRow({ node }: { node: KeyBindingNode }) {
     return () => document.removeEventListener('keydown', onKeyDown, true)
   }, [applyValue, capturing, hasDefault, reset])
 
+  const label = node.labelKey ? t(node.labelKey) : node.label
+
   return (
     <>
-      <StackItem
-        node={node}
-        showValue={false}
-        withForwardIcon={false}
-        onClick={() => setCapturing(true)}
-      >
-        <p>{node.label}</p>
+      <StackItem node={node} onClick={() => setCapturing(true)}>
+        <p>{label}</p>
 
         {/* Right side: value + reset */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, whiteSpace: 'nowrap' }}>

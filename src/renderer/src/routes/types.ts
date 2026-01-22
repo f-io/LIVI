@@ -18,7 +18,9 @@ export type ValueTransform<StoreValue = any, ViewValue = StoreValue> = {
 export type NodeMeta = {
   page?: {
     title?: string
+    labelTitle?: string
     description?: string
+    labelDescription?: string
   }
   displayValue?: boolean
   displayValueUnit?: string
@@ -27,7 +29,8 @@ export type NodeMeta = {
 }
 
 export type BaseFieldNode = NodeMeta & {
-  label: string
+  label: string // TODO deleted in favor of i18n
+  labelKey?: string
   path: string
 }
 
@@ -53,7 +56,11 @@ export type ColorNode = BaseFieldNode & {
 
 export type SelectNode = BaseFieldNode & {
   type: 'select'
-  options: Array<{ label: string; value: string | number }>
+  options: Array<{
+    label: string // TODO deleted in favor of i18n
+    labelKey?: string
+    value: string | number
+  }>
 }
 
 export type ToggleNode = BaseFieldNode & {
@@ -84,7 +91,8 @@ export type KeyBindingKey =
 
 export type KeyBindingNode = NodeMeta & {
   type: 'keybinding'
-  label: string
+  label: string // TODO deleted in favor of i18n
+  labelKey?: string
   path: string
   bindingKey: KeyBindingKey
   defaultValue?: string
@@ -101,14 +109,16 @@ export type SettingsCustomPageProps<TStore, TValue> = {
 
 export type SettingsCustomNode<TStore = any> = NodeMeta & {
   type: 'custom'
-  label: string
+  label: string // TODO deleted in favor of i18n
+  labelKey?: string
   path: string
   component: React.ComponentType<SettingsCustomPageProps<TStore, any>>
 }
 
 export type RouteNode<TStore = any> = NodeMeta & {
   type: 'route'
-  label: string
+  label: string // TODO deleted in favor of i18n
+  labelKey?: string
   route: string
   path: string
   children: SettingsNode<TStore>[]

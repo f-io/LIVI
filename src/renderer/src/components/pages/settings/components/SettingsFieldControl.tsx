@@ -4,6 +4,7 @@ import NumberSpinner from './numberSpinner/numberSpinner'
 import { SettingsNode } from '../../../../routes'
 import { ExtraConfig } from '@main/Globals'
 import { themeColors } from '@renderer/themeColors'
+import { useTranslation } from 'react-i18next'
 
 type Props<T> = {
   node: SettingsNode<ExtraConfig>
@@ -27,6 +28,8 @@ const defaultColorForPath = (path?: string): string => {
 }
 
 export const SettingsFieldControl = <T,>({ node, value, onChange }: Props<T>) => {
+  const { t } = useTranslation()
+
   switch (node.type) {
     case 'string':
       return (
@@ -76,11 +79,14 @@ export const SettingsFieldControl = <T,>({ node, value, onChange }: Props<T>) =>
           sx={{ minWidth: 200 }}
           onChange={(e) => onChange(e.target.value as T)}
         >
-          {node.options.map((o) => (
-            <MenuItem key={o.value} value={o.value}>
-              {o.label}
-            </MenuItem>
-          ))}
+          {node.options.map((o) => {
+            const label = o.labelKey ? t(o.labelKey) : o.label
+            return (
+              <MenuItem key={o.value} value={o.value}>
+                {label}
+              </MenuItem>
+            )
+          })}
         </Select>
       )
 

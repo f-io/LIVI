@@ -16,6 +16,7 @@ export type ExtraConfig = DongleConfig & {
   dongleIcon120?: string
   dongleIcon180?: string
   dongleIcon256?: string
+  language: string
 }
 
 export interface KeyBindings {

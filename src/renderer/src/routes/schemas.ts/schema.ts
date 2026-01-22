@@ -10,7 +10,8 @@ import { systemSchema } from './systemSchema'
 export const settingsSchema: SettingsNode<ExtraConfig> = {
   type: 'route',
   route: 'new-settings',
-  label: 'Settings',
+  label: 'Settings', // TODO deleted in favor of i18n
+  labelKey: 'settings.settingsTitle',
   path: 'settings',
   children: [generalSchema, audioSchema, videoSchema, appearanceSchema, systemSchema]
 }

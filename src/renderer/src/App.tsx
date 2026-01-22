@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, useContext } from 'react'
+import { useEffect, useState, useRef, useCallback, useContext, useLayoutEffect } from 'react'
 import { HashRouter as Router, useLocation, useRoutes } from 'react-router'
 import { Carplay, Camera } from './components/pages'
 import { Box, Modal } from '@mui/material'
@@ -10,6 +10,7 @@ import { ROUTES } from './constants'
 import { AppContext } from './context'
 import { appRoutes } from './routes/appRoutes'
 import { AppLayout } from './components/layouts/AppLayout'
+import i18n from 'i18next'
 
 const modalStyle = {
   position: 'absolute' as const,
@@ -43,6 +44,10 @@ function AppInner() {
   const mainRef = useRef<HTMLDivElement | null>(null)
 
   const element = useRoutes(appRoutes)
+
+  useLayoutEffect(() => {
+    i18n.changeLanguage(settings?.language || 'en')
+  }, [settings?.language])
 
   useEffect(() => {
     if (!appContext?.navEl || !appContext?.contentEl) {

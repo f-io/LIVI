@@ -11,10 +11,12 @@ import { SettingsFieldPage } from './components/SettingsFieldPage'
 import { SettingsFieldRow } from './components/SettingsFieldRow'
 import type { Key } from 'react'
 import type { SettingsNode } from '@renderer/routes/types'
+import { useTranslation } from 'react-i18next'
 
 export function SettingsPage() {
   const navigate = useNavigate()
   const { '*': splat } = useParams()
+  const { t } = useTranslation()
 
   const isDongleConnected = useStatusStore((s) => s.isDongleConnected)
 
@@ -34,7 +36,7 @@ export function SettingsPage() {
 
   if (!node) return null
 
-  const title = node.label ?? 'Settings'
+  const title = node.labelKey ? t(node.labelKey) : node.label
   const showRestart = Boolean(needsRestart) && Boolean(isDongleConnected)
 
   if ('path' in node && node.page) {
@@ -66,7 +68,7 @@ export function SettingsPage() {
               node={child}
               onClick={() => navigate(child.route)}
             >
-              <Typography>{child.label}</Typography>
+              <Typography>{child.labelKey ? t(child.labelKey) : child.label}</Typography>
             </StackItem>
           )
         }

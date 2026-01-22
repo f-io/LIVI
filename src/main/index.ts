@@ -271,6 +271,7 @@ function loadConfig(): ExtraConfig {
     siriVolume: 1.0,
     callVolume: 1.0,
     visualAudioDelayMs: 120,
+    language: 'en',
     ...fileConfig,
     bindings: { ...DEFAULT_BINDINGS, ...(fileConfig.bindings || {}) }
   } as ExtraConfig

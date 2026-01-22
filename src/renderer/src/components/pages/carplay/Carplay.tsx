@@ -15,6 +15,7 @@ import { useCarplayMultiTouch } from './hooks/useCarplayTouch'
 import UsbOffOutlinedIcon from '@mui/icons-material/UsbOffOutlined'
 import UsbOutlinedIcon from '@mui/icons-material/UsbOutlined'
 import PhoneIphoneOutlinedIcon from '@mui/icons-material/PhoneIphoneOutlined'
+import { useTranslation } from 'react-i18next'
 
 const RETRY_DELAY_MS = 3000
 
@@ -47,6 +48,7 @@ function StatusOverlay({
   show: boolean
   offsetY?: number
 }) {
+  const { t } = useTranslation()
   const theme = useTheme()
   const isPhonePhase = mode === 'phone'
   const ringColor = isPhonePhase ? theme.palette.primary.main : theme.palette.text.secondary
@@ -175,10 +177,10 @@ function StatusOverlay({
         }}
       >
         {isPhonePhase
-          ? Chip(true, UsbOutlinedIcon, 'Dongle')
-          : Chip(false, UsbOffOutlinedIcon, 'Dongle')}
+          ? Chip(true, UsbOutlinedIcon, t('carplay.dongle'))
+          : Chip(false, UsbOffOutlinedIcon, t('carplay.dongle'))}
         <Box sx={{ width: 18, height: 2, bgcolor: alpha(ringColor, 0.25), borderRadius: 1 }} />
-        {Chip(false, PhoneIphoneOutlinedIcon, 'Phone', !isPhonePhase)}
+        {Chip(false, PhoneIphoneOutlinedIcon, t('carplay.phone'), !isPhonePhase)}
       </Box>
     </Box>
   )

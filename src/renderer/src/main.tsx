@@ -10,6 +10,7 @@ import '@fontsource/roboto/500.css'
 import '@fontsource/roboto/700.css'
 import { AppContext, AppContextProps } from './context'
 import { THEME } from './constants'
+import './i18n'
 
 initCursorHider()
 
