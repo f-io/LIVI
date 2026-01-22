@@ -1,0 +1,68 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Builds & bundles
+dist/
+build/
+out/
+release/
+tmp/
+temp/
+
+# Test/coverage
+coverage/
+.nyc_output/
+
+# Caches
+.cache/
+.vite/
+.parcel-cache/
+.turbo/
+.eslintcache
+.stylelintcache
+.rpt2_cache/
+*.tsbuildinfo
+
+# Electron-builder artifacts
+*.AppImage
+*.dmg
+*.dmg.blockmap
+*.snap
+*.deb
+*.rpm
+*.exe
+*.msi
+*.nupkg
+*.zip
+*.7z
+*.tar.gz
+*.tar.xz
+*.blockmap
+latest*.yml
+app-update.yml
+
+# Android/archives
+*.apk
+*.tgz
+
+# IDE
+.idea/
+*.iml
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+*.log*
