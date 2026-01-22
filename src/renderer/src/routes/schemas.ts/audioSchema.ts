@@ -15,59 +15,73 @@ export const audioSchema: SettingsNode<ExtraConfig> = {
   type: 'route',
   route: 'audio',
   label: 'Audio',
+  labelKey: 'settings.audio',
   path: '',
   children: [
     {
       type: 'slider',
       label: 'Music',
+      labelKey: 'settings.music',
       path: 'audioVolume',
       displayValue: true,
       displayValueUnit: '%',
       valueTransform: audioValueTransform,
       page: {
         title: 'Music',
-        description: 'Music Volume'
+        labelTitle: 'settings.music',
+        description: 'Music volume',
+        labelDescription: 'settings.musicDescription'
       }
     },
     {
       type: 'slider',
       label: 'Navigation',
+      labelKey: 'settings.navigation',
       path: 'navVolume',
       displayValue: true,
       displayValueUnit: '%',
       valueTransform: audioValueTransform,
       page: {
         title: 'Navigation',
-        description: 'Navigation volume'
+        labelTitle: 'settings.navigation',
+        description: 'Navigation volume',
+        labelDescription: 'settings.navigationDescription'
       }
     },
     {
       type: 'slider',
       label: 'Siri',
+      labelKey: 'settings.siri',
       path: 'siriVolume',
       displayValue: true,
       displayValueUnit: '%',
       valueTransform: audioValueTransform,
       page: {
         title: 'Siri',
-        description: 'Siri volume'
+        labelTitle: 'settings.siri',
+        description: 'Siri voice assistant settings',
+        labelDescription: 'settings.siriDescription'
       }
     },
     {
       type: 'slider',
-      label: 'Phone Call',
+      label: 'Phone Calls',
+      labelKey: 'settings.phoneCalls',
       path: 'callVolume',
       displayValue: true,
       displayValueUnit: '%',
       valueTransform: audioValueTransform,
       page: {
-        title: 'Phone Call',
-        description: 'Phone call volume'
+        title: 'Phone Calls',
+        labelTitle: 'settings.phoneCalls',
+        description: 'Phone call volume',
+        labelDescription: 'settings.phoneCallsDescription'
       }
     },
     {
       type: 'number',
       label: 'Audio Buffer',
+      labelKey: 'settings.audioBufferSize',
       path: 'mediaDelay',
       step: 50,
       min: 300,
@@ -86,12 +100,15 @@ export const audioSchema: SettingsNode<ExtraConfig> = {
       },
       page: {
         title: 'Audio Buffer',
-        description: 'Dongle audio buffer size in ms'
+        labelTitle: 'settings.audioBufferSize',
+        description: 'Dongle audio buffer size in ms',
+        labelDescription: 'settings.audioBufferDescription'
       }
     },
     {
       type: 'select',
       label: 'Sampling Frequency',
+      labelKey: 'settings.samplingFrequency',
       path: 'mediaSound',
       displayValue: true,
       options: [
@@ -100,47 +117,58 @@ export const audioSchema: SettingsNode<ExtraConfig> = {
       ],
       page: {
         title: 'Sampling Frequency',
-        description: 'Native stream sampling frequency'
+        labelTitle: 'settings.samplingFrequency',
+        description: 'Native stream sampling frequency',
+        labelDescription: 'settings.samplingFrequencyDescription'
       }
     },
     {
       type: 'select',
       label: 'Call Quality',
+      labelKey: 'settings.callQuality',
       path: 'callQuality',
       displayValue: true,
       options: [
-        { label: 'Low', value: 0 },
-        { label: 'Medium', value: 1 },
-        { label: 'High', value: 2 }
+        { label: 'Low', labelKey: 'settings.callQualityLow', value: 0 },
+        { label: 'Medium', labelKey: 'settings.callQualityMedium', value: 1 },
+        { label: 'High', labelKey: 'settings.callQualityHigh', value: 2 }
       ],
       page: {
         title: 'Call Quality',
-        description: 'Call quality, will affect bandwidth usage'
+        labelTitle: 'settings.callQuality',
+        description: 'Call quality, will affect bandwidth usage',
+        labelDescription: 'settings.callQualityDescription'
       }
     },
     {
       type: 'select',
       label: 'Microphone',
+      labelKey: 'settings.microphone',
       path: 'micType',
       displayValue: true,
       options: [
         {
           label: 'OS default',
+          labelKey: 'settings.osDefault',
           value: 'os'
         },
         {
           label: 'BOX',
+          labelKey: 'settings.box',
           value: 'box'
         }
       ],
       page: {
         title: 'Microphone',
-        description: 'Microphone selection'
+        labelTitle: 'settings.microphone',
+        description: 'Microphone selection',
+        labelDescription: 'settings.microphoneDescription'
       }
     },
     {
       type: 'checkbox',
       label: 'Disable Audio',
+      labelKey: 'settings.disableAudio',
       path: 'audioTransferMode'
     }
   ]

@@ -18,6 +18,7 @@ import { useCarplayStore, useStatusStore } from '@store/store'
 import { useNetworkStatus } from '@renderer/hooks/useNetworkStatus'
 import { fmt, isDongleFwCheckResponse, normalizeBoxInfo } from './utils'
 import { DongleFwCheckResponse, FwDialogState, Row } from './types'
+import { EMPTY_STRING } from '@renderer/constants'
 
 export function USBDongle() {
   const isDongleConnected = useStatusStore((s) => s.isDongleConnected)
@@ -59,7 +60,7 @@ export function USBDongle() {
   )
 
   const resolution =
-    negotiatedWidth && negotiatedHeight ? `${negotiatedWidth}×${negotiatedHeight}` : '—'
+    negotiatedWidth && negotiatedHeight ? `${negotiatedWidth}×${negotiatedHeight}` : EMPTY_STRING
 
   const audioLine = useMemo(() => {
     const parts: string[] = []
@@ -67,7 +68,7 @@ export function USBDongle() {
     if (audioSampleRate) parts.push(`${audioSampleRate} Hz`)
     if (audioChannels != null) parts.push(`${audioChannels} ch`)
     if (audioBitDepth) parts.push(`${audioBitDepth} bit`)
-    return parts.length ? parts.join(' • ') : '—'
+    return parts.length ? parts.join(' • ') : EMPTY_STRING
   }, [audioCodec, audioSampleRate, audioChannels, audioBitDepth])
 
   const Mono: CSSProperties = {
@@ -111,13 +112,17 @@ export function USBDongle() {
   const hasUpdate =
     ok &&
     latestVer.length > 0 &&
-    latestVer !== '-' &&
+    latestVer !== EMPTY_STRING &&
     dongleVer.length > 0 &&
     latestVer !== dongleVer
 
   // Show vendor "latest" version if we have one.
   // Vendor semantics: "-" means "already latest" -> show current dongle version to keep UI stable.
-  const latestFwLabel = ok ? (latestVer && latestVer !== '-' ? latestVer : dongleVer || '—') : '—'
+  const latestFwLabel = ok
+    ? latestVer && latestVer !== EMPTY_STRING
+      ? latestVer
+      : dongleVer || EMPTY_STRING
+    : EMPTY_STRING
 
   // Local firmware status (manifest-based)
   const local = fwResult?.request?.local
@@ -169,7 +174,7 @@ export function USBDongle() {
     if (fwBusy === 'check') return 'Checking…'
     if (fwBusy === 'download') return 'Downloading…'
     if (fwBusy === 'upload') return 'Uploading…'
-    if (!fwResult) return '—'
+    if (!fwResult) return EMPTY_STRING
 
     // 1) API errors
     if (!fwResult.ok || fwResult.raw?.err !== 0) {

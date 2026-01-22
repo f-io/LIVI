@@ -8,6 +8,8 @@ import {
   contributors,
   homepage
 } from '../../../../../../../../package.json'
+import { useTranslation } from 'react-i18next'
+import { EMPTY_STRING } from '@renderer/constants'
 
 type Row = {
   label: string
@@ -26,19 +28,20 @@ const toAuthorString = (a: unknown): string => {
     const e = isNonEmptyString(anyA.email) ? `<${anyA.email}>` : ''
     const u = isNonEmptyString(anyA.url) ? `(${anyA.url})` : ''
     const s = [n, e, u].filter(Boolean).join(' ')
-    return s || '—'
+    return s || EMPTY_STRING
   }
-  return '—'
+  return EMPTY_STRING
 }
 
 const toStringOrDash = (v: unknown): string => {
-  if (v == null) return '—'
-  if (typeof v === 'string') return v.trim() || '—'
+  if (v == null) return EMPTY_STRING
+  if (typeof v === 'string') return v.trim() || EMPTY_STRING
   if (typeof v === 'number' || typeof v === 'boolean') return String(v)
-  return '—'
+  return EMPTY_STRING
 }
 
 export const About = () => {
+  const { t } = useTranslation()
   const contributorsStr = useMemo(() => {
     if (Array.isArray(contributors) && contributors.length > 0) {
       return contributors
@@ -56,18 +59,18 @@ export const About = () => {
     const appVersion = toStringOrDash(version)
     const appHomepage = toStringOrDash(homepage)
     const appAuthor = toAuthorString(author)
-    const appContrib = contributorsStr || '—'
+    const appContrib = contributorsStr || EMPTY_STRING
 
     return [
-      { label: 'Name', value: appName },
-      { label: 'Description', value: appDesc, tooltip: appDesc },
-      { label: 'Version', value: appVersion, mono: true },
-      { label: 'Build', value: appVersion, mono: true },
-      { label: 'URL', value: appHomepage, tooltip: appHomepage },
-      { label: 'Author', value: appAuthor, tooltip: appAuthor },
-      { label: 'Contributors', value: appContrib, tooltip: appContrib }
+      { label: t('settings.name'), value: appName },
+      { label: t('settings.description'), value: appDesc, tooltip: appDesc },
+      { label: t('settings.version'), value: appVersion, mono: true },
+      { label: t('settings.build'), value: appVersion, mono: true },
+      { label: t('settings.url'), value: appHomepage, tooltip: appHomepage },
+      { label: t('settings.author'), value: appAuthor, tooltip: appAuthor },
+      { label: t('settings.contributors'), value: appContrib, tooltip: appContrib }
     ]
-  }, [contributorsStr])
+  }, [contributorsStr, t])
 
   const Mono: React.CSSProperties = {
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
