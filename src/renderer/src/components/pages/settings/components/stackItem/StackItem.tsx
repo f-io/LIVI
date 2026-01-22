@@ -103,7 +103,6 @@ export const StackItem = ({
   withForwardIcon,
   onClick
 }: StackItemProps) => {
-  const { t } = useTranslation()
   const viewValue = node?.valueTransform?.toView ? node?.valueTransform.toView(value) : value
 
   let displayValue = node?.valueTransform?.format
