@@ -89,46 +89,6 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
       path: '',
       children: [
         {
-          type: 'number',
-          label: 'iBox Version',
-          labelKey: 'settings.iBoxVersion',
-          path: 'iBoxVersion',
-          displayValue: true,
-          page: {
-            title: 'iBox Version',
-            labelTitle: 'settings.iBoxVersion',
-            description:
-              'Select the iBox hardware version to optimize compatibility and performance.',
-            labelDescription: 'settings.iBoxVersionDescription'
-          }
-        },
-        {
-          type: 'number',
-          label: 'Phone Work Mode',
-          labelKey: 'settings.phoneWorkMode',
-          path: 'phoneWorkMode',
-          displayValue: true,
-          page: {
-            title: 'Phone Work Mode',
-            labelTitle: 'settings.phoneWorkMode',
-            description: 'Select the phone work mode',
-            labelDescription: 'settings.phoneWorkModeDescription'
-          }
-        },
-        {
-          type: 'number',
-          label: 'Packet Max',
-          labelKey: 'settings.packetMax',
-          path: 'packetMax',
-          displayValue: true,
-          page: {
-            title: 'Packet Max',
-            labelTitle: 'settings.packetMax',
-            description: 'Packet Max',
-            labelDescription: 'settings.packetMaxDescription'
-          }
-        },
-        {
           type: 'route',
           route: 'androidauto',
           label: 'Android Auto',
