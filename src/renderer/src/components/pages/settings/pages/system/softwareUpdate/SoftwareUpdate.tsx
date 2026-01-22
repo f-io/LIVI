@@ -141,11 +141,11 @@ export function SoftwareUpdate() {
 
   const versionInfo = useMemo(() => {
     if (!hasLatest || cmp == null) {
-      return { label: 'Check', status: EMPTY_STRING }
+      return { label: t('softwareUpdate.check'), status: EMPTY_STRING }
     }
 
-    return CMP_CONFIG[cmp] ?? { label: 'Update', status: EMPTY_STRING }
-  }, [hasLatest, cmp])
+    return CMP_CONFIG[cmp] ?? { label: t('softwareUpdate.update'), status: EMPTY_STRING }
+  }, [hasLatest, cmp, t])
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

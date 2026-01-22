@@ -120,6 +120,7 @@
     "status": "Status",
     "refresh": "Aktualisieren",
     "check": "Nach Updates suchen",
+    "update": "Aktualisieren",
     "restartsAutomaticallyWhenDone": "Startet nach Abschluss automatisch neu.",
     "abort": "Abbrechen",
     "installNow": "Jetzt installieren",

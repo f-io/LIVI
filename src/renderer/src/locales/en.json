@@ -120,6 +120,7 @@
     "status": "Status",
     "refresh": "Refresh",
     "check": "Check for Updates",
+    "update": "Update",
     "restartsAutomaticallyWhenDone": "Restarts automatically when done.",
     "abort": "Abort",
     "installNow": "Install now",
