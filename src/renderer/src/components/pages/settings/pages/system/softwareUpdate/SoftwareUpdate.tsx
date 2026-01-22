@@ -11,9 +11,10 @@ import {
   Stack,
   Typography
 } from '@mui/material'
-import { cmpSemver, parseSemver } from './utils'
-import { phaseMap, UpdatePhase, UpgradeText } from './types'
+import { cmpSemver, human, parseSemver } from './utils'
+import { phaseMap, UpdatePhases, UpgradeText } from './types'
 import { EMPTY_STRING } from '@renderer/constants'
+import { CMP_CONFIG, INSTALL_PHASES } from './constants'
 
 export function SoftwareUpdate() {
   const [installedVersion, setInstalledVersion] = useState<string>(EMPTY_STRING)
@@ -23,7 +24,7 @@ export function SoftwareUpdate() {
   const [message, setMessage] = useState<string>('')
 
   const [upDialogOpen, setUpDialogOpen] = useState(false)
-  const [phase, setPhase] = useState<UpdatePhase>('start')
+  const [phase, setPhase] = useState<UpdatePhases>(UpdatePhases.start)
   const [percent, setPercent] = useState<number | null>(null)
   const [received, setReceived] = useState<number>(0)
   const [total, setTotal] = useState<number>(0)
@@ -31,54 +32,41 @@ export function SoftwareUpdate() {
 
   const [inFlight, setInFlight] = useState(false)
 
-  const installedSem = useMemo(() => parseSemver(installedVersion), [installedVersion])
-  const latestSem = useMemo(() => parseSemver(latestVersion), [latestVersion])
+  const installedSem = parseSemver(installedVersion)
+  const latestSem = parseSemver(latestVersion)
 
-  const hasLatest = !!latestUrl && !!latestSem
-  const cmp = useMemo(
-    () => (installedSem && latestSem ? cmpSemver(installedSem, latestSem) : null),
-    [installedSem, latestSem]
-  )
-
-  const isDowngrade = hasLatest && cmp !== null && cmp > 0
-
+  const hasLatest = Boolean(latestUrl && latestSem && installedSem)
+  const cmp = hasLatest ? cmpSemver(installedSem!, latestSem!) : null
+  const isDowngrade = cmp != null && cmp > 0
   const pct = percent != null ? Math.round(percent * 100) : null
-  const human = (n: number) =>
-    n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`
-
   const phaseText = phaseMap[phase] ?? 'Working…'
-
-  const installPhases: ReadonlyArray<UpdatePhase> = [
-    'mounting',
-    'copying',
-    'unmounting',
-    'installing',
-    'relaunching'
-  ]
-
   const dialogTitle = isDowngrade ? UpgradeText.downgrade : UpgradeText.upgrade
 
-  const closeAndReset = useCallback(() => {
-    setUpDialogOpen(false)
-    setInFlight(false)
+  const resetUpdateState = useCallback(() => {
     setPercent(null)
     setReceived(0)
     setTotal(0)
     setError('')
-    setPhase('start')
+    setPhase(UpdatePhases.start)
+    setInFlight(false)
   }, [])
 
-  const recheckLatest = useCallback(async () => {
+  const handleCloseAndReset = useCallback(() => {
+    setUpDialogOpen(false)
+    resetUpdateState()
+  }, [resetUpdateState])
+
+  const handleRecheckLatest = useCallback(async () => {
     try {
       setMessage('')
       const r = await window.app?.getLatestRelease?.()
       if (r?.version) setLatestVersion(r.version)
-      else setLatestVersion('—')
+      else setLatestVersion(EMPTY_STRING)
       setLatestUrl(r?.url)
       if (!r?.version) setMessage('Could not check latest release.')
     } catch (err) {
       console.warn('[SoftwareUpdate] getLatestRelease failed', err)
-      setLatestVersion('—')
+      setLatestVersion(EMPTY_STRING)
       setLatestUrl(undefined)
       setMessage('Could not check latest release.')
     }
@@ -86,26 +74,26 @@ export function SoftwareUpdate() {
 
   useEffect(() => {
     window.app?.getVersion?.().then((v) => v && setInstalledVersion(v))
-    recheckLatest()
-  }, [recheckLatest])
+    handleRecheckLatest()
+  }, [handleRecheckLatest])
 
   useEffect(() => {
-    if (phase === 'ready' && !upDialogOpen) setUpDialogOpen(true)
+    if (phase === UpdatePhases.ready && !upDialogOpen) setUpDialogOpen(true)
   }, [phase, upDialogOpen])
 
   useEffect(() => {
-    if (phase === 'error' && /aborted/i.test(error || '')) {
-      const t = setTimeout(closeAndReset, 1200)
+    if (phase === UpdatePhases.error && /aborted/i.test(error || '')) {
+      const t = setTimeout(handleCloseAndReset, 1200)
       return () => clearTimeout(t)
     }
     return
-  }, [phase, error, closeAndReset])
+  }, [phase, error, handleCloseAndReset])
 
   useEffect(() => {
     const off1 = window.app?.onUpdateEvent?.((e: UpdateEvent) => {
-      setPhase(e.phase as UpdatePhase)
-      setInFlight(e.phase !== 'error' && e.phase !== 'start')
-      if (e.phase === 'error') {
+      setPhase(e.phase as UpdatePhases)
+      setInFlight(e.phase !== UpdatePhases.error && e.phase !== UpdatePhases.start)
+      if (e.phase === UpdatePhases.error) {
         setError(e.message ?? 'Update failed')
         setMessage(e.message ?? 'Update failed')
       } else {
@@ -115,7 +103,7 @@ export function SoftwareUpdate() {
 
     const off2 = window.app?.onUpdateProgress?.((p: UpdateProgress) => {
       setInFlight(true)
-      setPhase('download')
+      setPhase(UpdatePhases.download)
       setPercent(typeof p.percent === 'number' ? Math.max(0, Math.min(1, p.percent)) : null)
       setReceived(p.received ?? 0)
       setTotal(p.total ?? 0)
@@ -127,23 +115,19 @@ export function SoftwareUpdate() {
     }
   }, [])
 
-  const actionEnabled = !hasLatest ? true : cmp !== null && cmp !== 0 && !inFlight
+  const canUpdate = cmp != null && cmp !== 0 && !inFlight
+  const actionEnabled = !hasLatest || canUpdate
 
   const triggerUpdate = useCallback(() => {
     setMessage('')
-    setError('')
-    setPercent(null)
-    setReceived(0)
-    setTotal(0)
-    setPhase('start')
     setUpDialogOpen(true)
-    setInFlight(true)
+    resetUpdateState()
     window.app?.performUpdate?.(latestUrl)
-  }, [latestUrl])
+  }, [latestUrl, resetUpdateState])
 
-  const onPrimaryAction = useCallback(() => {
+  const handlePrimaryAction = useCallback(() => {
     if (!hasLatest) {
-      recheckLatest()
+      handleRecheckLatest()
       return
     }
     if (inFlight) {
@@ -151,21 +135,14 @@ export function SoftwareUpdate() {
       return
     }
     if (cmp !== 0) triggerUpdate()
-  }, [hasLatest, inFlight, cmp, triggerUpdate, recheckLatest])
+  }, [hasLatest, inFlight, cmp, triggerUpdate, handleRecheckLatest])
 
-  const primaryLabel = useMemo(() => {
-    if (!hasLatest) return 'Check'
-    if (cmp == null) return 'Update'
-    if (cmp < 0) return 'Update'
-    if (cmp > 0) return 'Downgrade'
-    return 'Up to date'
-  }, [hasLatest, cmp])
+  const versionInfo = useMemo(() => {
+    if (!hasLatest || cmp == null) {
+      return { label: 'Check', status: EMPTY_STRING }
+    }
 
-  const availabilityStatus = useMemo(() => {
-    if (!hasLatest || cmp == null) return '—'
-    if (cmp < 0) return 'Update available'
-    if (cmp > 0) return 'Downgrade available'
-    return 'Up to date'
+    return CMP_CONFIG[cmp] ?? { label: 'Update', status: EMPTY_STRING }
   }, [hasLatest, cmp])
 
   return (
@@ -190,19 +167,19 @@ export function SoftwareUpdate() {
             Status:
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {availabilityStatus}
+            {versionInfo.status}
           </Typography>
         </Stack>
       </Stack>
 
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-        <Button variant="contained" onClick={onPrimaryAction} disabled={!actionEnabled}>
-          {primaryLabel}
+        <Button variant="contained" onClick={handlePrimaryAction} disabled={!actionEnabled}>
+          {versionInfo.label}
         </Button>
 
-        {(inFlight || phase === 'download') && <CircularProgress size={18} />}
+        {(inFlight || phase === UpdatePhases.download) && <CircularProgress size={18} />}
 
-        <Button variant="outlined" onClick={recheckLatest} disabled={inFlight}>
+        <Button variant="outlined" onClick={handleRecheckLatest} disabled={inFlight}>
           Refresh
         </Button>
       </Stack>
@@ -213,7 +190,11 @@ export function SoftwareUpdate() {
         </Typography>
       )}
 
-      <Dialog open={upDialogOpen} onClose={() => {}} disableEscapeKeyDown>
+      <Dialog
+        open={upDialogOpen}
+        onClose={phase === UpdatePhases.error ? handleCloseAndReset : undefined}
+        disableEscapeKeyDown={phase !== UpdatePhases.error}
+      >
         <DialogTitle>{dialogTitle}</DialogTitle>
         <DialogContent sx={{ width: 360 }}>
           <Typography sx={{ mb: 1 }}>{phaseText}</Typography>
@@ -235,7 +216,7 @@ export function SoftwareUpdate() {
             </Typography>
           )}
 
-          {installPhases.includes(phase) && (
+          {INSTALL_PHASES.includes(phase) && (
             <Typography variant="body2" sx={{ mt: 1 }} color="text.secondary">
               Restarts automatically when done.
             </Typography>
@@ -262,7 +243,7 @@ export function SoftwareUpdate() {
             <Button
               variant="outlined"
               onClick={() => {
-                closeAndReset()
+                handleCloseAndReset()
               }}
             >
               Close

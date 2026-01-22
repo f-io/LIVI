@@ -1,26 +1,16 @@
-export type UpdatePhase =
-  | 'start'
-  | 'download'
-  | 'ready'
-  | 'mounting'
-  | 'copying'
-  | 'unmounting'
-  | 'installing'
-  | 'relaunching'
-  | 'error'
+export enum UpdatePhases {
+  'start' = 'start',
+  'download' = 'download',
+  'ready' = 'ready',
+  'mounting' = 'mounting',
+  'copying' = 'copying',
+  'unmounting' = 'unmounting',
+  'installing' = 'installing',
+  'relaunching' = 'relaunching',
+  'error' = 'error'
+}
 
-type PhaseText =
-  | 'download'
-  | 'installing'
-  | 'mounting'
-  | 'copying'
-  | 'unmounting'
-  | 'relaunching'
-  | 'ready'
-  | 'start'
-  | 'error'
-
-export const phaseMap: Record<PhaseText, string> = {
+export const phaseMap: Record<UpdatePhases, string> = {
   download: 'Downloading',
   installing: 'Installing',
   mounting: 'Mounting image',

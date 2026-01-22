@@ -12,3 +12,6 @@ export const cmpSemver = (a: number[], b: number[]) => {
   }
   return 0
 }
+
+export const human = (n: number) =>
+  n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`
