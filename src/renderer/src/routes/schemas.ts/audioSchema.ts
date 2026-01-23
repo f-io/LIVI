@@ -79,6 +79,31 @@ export const audioSchema: SettingsNode<ExtraConfig> = {
       }
     },
     {
+      type: 'select',
+      label: 'Microphone',
+      labelKey: 'settings.microphone',
+      path: 'micType',
+      displayValue: true,
+      options: [
+        {
+          label: 'OS default',
+          labelKey: 'settings.osDefault',
+          value: 'os'
+        },
+        {
+          label: 'BOX',
+          labelKey: 'settings.box',
+          value: 'box'
+        }
+      ],
+      page: {
+        title: 'Microphone',
+        labelTitle: 'settings.microphone',
+        description: 'Microphone selection',
+        labelDescription: 'settings.microphoneDescription'
+      }
+    },
+    {
       type: 'number',
       label: 'Audio Buffer',
       labelKey: 'settings.audioBufferSize',
@@ -138,31 +163,6 @@ export const audioSchema: SettingsNode<ExtraConfig> = {
         labelTitle: 'settings.callQuality',
         description: 'Call quality, will affect bandwidth usage',
         labelDescription: 'settings.callQualityDescription'
-      }
-    },
-    {
-      type: 'select',
-      label: 'Microphone',
-      labelKey: 'settings.microphone',
-      path: 'micType',
-      displayValue: true,
-      options: [
-        {
-          label: 'OS default',
-          labelKey: 'settings.osDefault',
-          value: 'os'
-        },
-        {
-          label: 'BOX',
-          labelKey: 'settings.box',
-          value: 'box'
-        }
-      ],
-      page: {
-        title: 'Microphone',
-        labelTitle: 'settings.microphone',
-        description: 'Microphone selection',
-        labelDescription: 'settings.microphoneDescription'
       }
     },
     {

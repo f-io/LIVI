@@ -57,11 +57,61 @@ export const videoSchema: SettingsNode<ExtraConfig> = {
       displayValue: true,
       children: [
         {
-          path: 'camera',
-          type: 'custom',
+          type: 'route',
           label: 'Camera',
           labelKey: 'settings.camera',
-          component: Camera
+          route: 'select',
+          path: '',
+          children: [
+            {
+              path: 'camera',
+              type: 'custom',
+              label: 'Camera',
+              labelKey: 'settings.camera',
+              component: Camera
+            }
+          ]
+        },
+        {
+          type: 'checkbox',
+          label: 'Mirror',
+          labelKey: 'settings.cameraMirror',
+          path: 'cameraMirror'
+        }
+      ]
+    },
+    {
+      type: 'route',
+      route: 'androidauto',
+      label: 'Android Auto',
+      labelKey: 'settings.androidAuto',
+      path: '',
+      children: [
+        {
+          type: 'number',
+          label: 'DPI',
+          labelKey: 'settings.dpi',
+          path: 'dpi',
+          displayValue: true,
+          page: {
+            title: 'DPI',
+            labelTitle: 'settings.dpi',
+            description: 'Set the DPI (Dots Per Inch) for the display',
+            labelDescription: 'settings.dpiDescription'
+          }
+        },
+        {
+          type: 'number',
+          label: 'Format',
+          labelKey: 'settings.format',
+          path: 'format',
+          displayValue: true,
+          page: {
+            title: 'Format',
+            labelTitle: 'settings.format',
+            description: 'Format',
+            labelDescription: 'settings.formatDescription'
+          }
         }
       ]
     }

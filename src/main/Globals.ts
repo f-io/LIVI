@@ -3,6 +3,7 @@ import { DongleConfig } from '@carplay/messages'
 export type ExtraConfig = DongleConfig & {
   kiosk: boolean
   camera: string
+  cameraMirror: boolean
   bindings: KeyBindings
   audioVolume: number
   navVolume: number

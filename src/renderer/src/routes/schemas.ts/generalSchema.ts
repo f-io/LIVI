@@ -42,12 +42,6 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
           }
         },
         {
-          type: 'checkbox',
-          label: 'Auto Connect',
-          labelKey: 'settings.autoConnect',
-          path: 'autoConn'
-        },
-        {
           type: 'route',
           route: 'wifi',
           label: 'Wi-Fi',
@@ -78,70 +72,14 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
               }
             }
           ]
-        }
-      ]
-    },
-    {
-      type: 'route',
-      label: 'Advanced Parameters',
-      labelKey: 'settings.advancedParameters',
-      route: 'dongle',
-      path: '',
-      children: [
+        },
         {
-          type: 'route',
-          route: 'androidauto',
-          label: 'Android Auto',
-          labelKey: 'settings.androidAuto',
-          path: '',
-          children: [
-            {
-              type: 'number',
-              label: 'DPI',
-              labelKey: 'settings.dpi',
-              path: 'dpi',
-              displayValue: true,
-              page: {
-                title: 'DPI',
-                labelTitle: 'settings.dpi',
-                description: 'Set the DPI (Dots Per Inch) for the display',
-                labelDescription: 'settings.dpiDescription'
-              }
-            },
-            {
-              type: 'number',
-              label: 'Format',
-              labelKey: 'settings.format',
-              path: 'format',
-              displayValue: true,
-              page: {
-                title: 'Format',
-                labelTitle: 'settings.format',
-                description: 'Format',
-                labelDescription: 'settings.formatDescription'
-              }
-            }
-          ]
+          type: 'checkbox',
+          label: 'Auto Connect',
+          labelKey: 'settings.autoConnect',
+          path: 'autoConn'
         }
       ]
-    },
-    {
-      type: 'number',
-      label: 'FFT Delay',
-      labelKey: 'settings.fftDelay',
-      path: 'visualAudioDelayMs',
-      displayValue: true,
-      valueTransform: {
-        toView: (v: number) => v,
-        fromView: (v: number) => v,
-        format: (v: number) => `${v} ms`
-      },
-      page: {
-        title: 'FFT Visualization Delay',
-        labelTitle: 'settings.fftDelay',
-        description: 'Delays the FFT visualization to compensate for audio latency.',
-        labelDescription: 'settings.fftDelayDescription'
-      }
     },
     {
       type: 'route',
@@ -267,6 +205,24 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
           bindingKey: 'siri'
         }
       ]
+    },
+    {
+      type: 'number',
+      label: 'FFT Delay',
+      labelKey: 'settings.fftDelay',
+      path: 'visualAudioDelayMs',
+      displayValue: true,
+      valueTransform: {
+        toView: (v: number) => v,
+        fromView: (v: number) => v,
+        format: (v: number) => `${v} ms`
+      },
+      page: {
+        title: 'FFT Visualization Delay',
+        labelTitle: 'settings.fftDelay',
+        description: 'Delays the FFT visualization to compensate for audio latency.',
+        labelDescription: 'settings.fftDelayDescription'
+      }
     },
     {
       type: 'select',
