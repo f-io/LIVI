@@ -1,4 +1,4 @@
-import { FC, PropsWithChildren } from 'react'
+import { FC, PropsWithChildren, useCallback } from 'react'
 import { useLocation } from 'react-router'
 import { Nav } from '../navigation'
 import { useCarplayStore, useStatusStore } from '@store/store'
@@ -32,10 +32,15 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
   const isRhd = Number(settings?.hand ?? 0) === 1
   const layoutDirection: 'row' | 'row-reverse' = isRhd ? 'row-reverse' : 'row'
 
+  const onUserActivity = useCallback(() => {
+    window.app?.notifyUserActivity?.()
+  }, [])
+
   return (
     <div
       id="main"
       className="App"
+      onPointerDownCapture={onUserActivity}
       style={{
         height: '100dvh',
         touchAction: 'none',

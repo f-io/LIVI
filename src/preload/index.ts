@@ -154,7 +154,11 @@ const appApi = {
   beginInstall: (): Promise<void> => ipcRenderer.invoke('app:beginInstall'),
   abortUpdate: (): Promise<void> => ipcRenderer.invoke('app:abortUpdate'),
   quitApp: (): Promise<void> => ipcRenderer.invoke('app:quitApp'),
-  restartApp: (): Promise<void> => ipcRenderer.invoke('app:restartApp')
+  restartApp: (): Promise<void> => ipcRenderer.invoke('app:restartApp'),
+
+  notifyUserActivity: (): void => {
+    ipcRenderer.send('app:user-activity')
+  }
 }
 
 contextBridge.exposeInMainWorld('app', appApi)

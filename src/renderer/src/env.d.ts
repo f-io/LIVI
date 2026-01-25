@@ -142,6 +142,7 @@ declare global {
     }
 
     app: {
+      notifyUserActivity(): void
       quitApp(): Promise<void>
       restartApp(): Promise<void>
       getVersion(): Promise<string>

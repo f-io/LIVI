@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, session, ipcMain, protocol } from 'electron'
+import { app, shell, BrowserWindow, session, ipcMain, protocol, screen } from 'electron'
 import { join, extname, dirname, basename } from 'path'
 import {
   existsSync,
@@ -82,6 +82,26 @@ const mimeTypeFromExt = (ext: string): string =>
 const MIN_WIDTH = 400
 const isMac = process.platform === 'darwin'
 
+function fitWindowToWorkArea(win: BrowserWindow) {
+  const d = screen.getDisplayMatching(win.getBounds())
+  const wa = d.workArea
+
+  // Remove constraints
+  win.setResizable(true)
+  win.setMinimumSize(0, 0)
+  win.setAspectRatio(0)
+
+  // Apply bounds
+  win.setBounds({ x: wa.x, y: wa.y, width: wa.width, height: wa.height }, false)
+
+  // Apply once again on the first resize the WM triggers during the transition
+  const onResize = () => {
+    win.removeListener('resize', onResize)
+    win.setBounds({ x: wa.x, y: wa.y, width: wa.width, height: wa.height }, false)
+  }
+  win.on('resize', onResize)
+}
+
 function applyAspectRatioWindowed(win: BrowserWindow, width: number, height: number): void {
   const ratio = width && height ? width / height : 0
   const [winW, winH] = win.getSize()
@@ -96,9 +116,69 @@ function applyAspectRatioWindowed(win: BrowserWindow, width: number, height: num
     win.setMinimumSize(0, 0)
   }
 }
+
 function applyAspectRatioFullscreen(win: BrowserWindow, width: number, height: number): void {
   const ratio = width && height ? width / height : 0
   win.setAspectRatio(ratio, { width: 0, height: 0 })
+}
+
+// Tracks if the window manager forced us out of kiosk
+let wmExitedKiosk = false
+
+function restoreKioskAfterWmExit() {
+  if (process.platform !== 'linux') return
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (!wmExitedKiosk) return
+
+  wmExitedKiosk = false
+
+  try {
+    mainWindow.setKiosk(true)
+  } catch {}
+
+  saveSettings({ kiosk: true })
+}
+
+function attachKioskStateSync(win: BrowserWindow) {
+  if (process.platform !== 'linux') return
+
+  let lastSent: boolean | null = null
+
+  const push = (effectiveKiosk: boolean) => {
+    if (lastSent === effectiveKiosk) return
+    lastSent = effectiveKiosk
+
+    // WM forced us out -> persist truthful state and mark RAM flag
+    if (!effectiveKiosk && config.kiosk) {
+      wmExitedKiosk = true
+      saveSettings({ kiosk: false })
+      return
+    }
+
+    // Normal sync
+    sendKioskSync(effectiveKiosk)
+  }
+
+  const syncFromElectron = () => {
+    if (win.isDestroyed()) return
+    push(win.isKiosk())
+  }
+
+  win.on('enter-full-screen', syncFromElectron)
+  win.on('leave-full-screen', syncFromElectron)
+  win.on('resize', syncFromElectron)
+  win.on('move', syncFromElectron)
+  win.on('show', syncFromElectron)
+
+  win.on('focus', () => {
+    restoreKioskAfterWmExit()
+  })
+
+  win.on('blur', syncFromElectron)
+  win.on('restore', syncFromElectron)
+  win.on('minimize', syncFromElectron)
+
+  syncFromElectron()
 }
 
 // Globals
@@ -557,6 +637,7 @@ function sendKioskSync(kiosk: boolean) {
 
 function persistKioskAndBroadcast(kiosk: boolean) {
   if (config.kiosk === kiosk) return
+  wmExitedKiosk = false
   saveSettings({ kiosk })
 }
 
@@ -569,6 +650,22 @@ function currentKiosk(): boolean {
 }
 
 function applyWindowedContentSize(win: BrowserWindow, w: number, h: number) {
+  if (process.platform === 'linux') {
+    const d = screen.getDisplayMatching(win.getBounds())
+    const work = d.workAreaSize
+
+    const dipW = Math.max(1, Math.min(Math.round(w), work.width))
+    const dipH = Math.max(1, Math.min(Math.round(h), work.height))
+
+    win.setResizable(true)
+    win.setMinimumSize(0, 0)
+
+    win.setContentSize(dipW, dipH, false)
+    applyAspectRatioWindowed(win, dipW, dipH)
+    return
+  }
+
+  // non-Linux
   win.setContentSize(w, h, false)
   applyAspectRatioWindowed(win, w, h)
 }
@@ -594,6 +691,9 @@ function createWindow(): void {
       experimentalFeatures: true
     }
   })
+
+  // keep in sync with WM
+  attachKioskStateSync(mainWindow)
 
   const ses = mainWindow.webContents.session
   ses.setPermissionCheckHandler((_w, p) => ['usb', 'hid', 'media', 'display-capture'].includes(p))
@@ -630,9 +730,9 @@ function createWindow(): void {
       if (config.kiosk) {
         mainWindow.setKiosk(true)
         applyAspectRatioWindowed(mainWindow, 0, 0)
+        fitWindowToWorkArea(mainWindow)
       } else {
-        mainWindow.setContentSize(config.width, config.height, false)
-        applyAspectRatioWindowed(mainWindow, config.width, config.height)
+        applyWindowedContentSize(mainWindow, config.width, config.height)
       }
       mainWindow.show()
     }
@@ -755,6 +855,11 @@ app.whenReady().then(() => {
     if (isQuitting) return
     app.relaunch()
     app.quit()
+  })
+
+  // User activity (touch/click)
+  ipcMain.on('app:user-activity', () => {
+    restoreKioskAfterWmExit()
   })
 
   ipcMain.handle('settings:get-kiosk', () => currentKiosk())
@@ -964,23 +1069,40 @@ function saveSettings(next: Partial<ExtraConfig>) {
     }
   } else {
     // Linux
+    const win = mainWindow
     if (kioskChanged) {
-      mainWindow.setKiosk(!!config.kiosk)
-      if (sizeChanged) {
-        if (config.kiosk) {
-          applyAspectRatioWindowed(mainWindow, 0, 0)
-        } else {
-          mainWindow.setContentSize(config.width, config.height, false)
-          applyAspectRatioWindowed(mainWindow, config.width, config.height)
+      const leavingKiosk = !config.kiosk
+
+      // Always drop constraints before switching mode
+      applyAspectRatioWindowed(win, 0, 0)
+
+      win.setKiosk(!!config.kiosk)
+
+      if (leavingKiosk) {
+        applyWindowedContentSize(win, config.width, config.height)
+
+        // Re-apply bounds once the WM finishes the transition
+        const onResize = () => {
+          win.removeListener('resize', onResize)
+          fitWindowToWorkArea(win)
+          applyWindowedContentSize(win, config.width, config.height)
         }
-      }
-    } else if (sizeChanged) {
-      if (config.kiosk) {
-        applyAspectRatioWindowed(mainWindow, 0, 0)
+        win.on('resize', onResize)
+
+        setImmediate(() => {
+          if (win.isDestroyed()) return
+          fitWindowToWorkArea(win)
+          applyWindowedContentSize(win, config.width, config.height)
+        })
       } else {
-        mainWindow.setContentSize(config.width, config.height, false)
-        applyAspectRatioWindowed(mainWindow, config.width, config.height)
+        // entering kiosk
+        applyAspectRatioWindowed(win, 0, 0)
       }
+      return
+    }
+    // no kiosk change, only size change in windowed mode
+    if (sizeChanged && !config.kiosk) {
+      applyWindowedContentSize(win, config.width, config.height)
     }
   }
 }
