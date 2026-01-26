@@ -620,14 +620,14 @@ async function installOnLinuxFromFile(appImagePath: string): Promise<void> {
 
   sendUpdateEvent({ phase: 'relaunching' })
 
-  const cleanEnv: Record<string, string | undefined> = { ...process.env }
-  delete cleanEnv.APPIMAGE
-  delete cleanEnv.APPDIR
-  delete cleanEnv.ARGV0
-  delete cleanEnv.OWD
+  app.once('will-quit', () => {
+    const child = spawn(current, [], {
+      detached: true,
+      stdio: 'ignore'
+    })
+    child.unref()
+  })
 
-  const child = spawn(current, [], { detached: true, stdio: 'ignore', env: cleanEnv })
-  child.unref()
   app.quit()
 }
 
@@ -978,6 +978,15 @@ app.whenReady().then(() => {
       if (updateSession.state !== 'ready' || !updateSession.tmpFile || !updateSession.platform) {
         throw new Error('No downloaded update ready')
       }
+
+      try {
+        await usbService.gracefulReset()
+      } catch (e) {
+        console.warn('[MAIN] gracefulReset failed (continuing install):', e)
+      }
+
+      await new Promise((r) => setTimeout(r, 150))
+
       const file = updateSession.tmpFile
       updateSession.state = 'installing'
       if (updateSession.platform === 'darwin') await installOnMacFromFile(file)
