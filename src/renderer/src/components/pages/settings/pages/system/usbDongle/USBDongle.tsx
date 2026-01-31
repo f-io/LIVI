@@ -52,6 +52,11 @@ export function USBDongle() {
   const [fwWaitingForReconnect, setFwWaitingForReconnect] = useState(false)
   const [fwSawDisconnect, setFwSawDisconnect] = useState(false)
 
+  // Dev tools
+  const [devBusy, setDevBusy] = useState(false)
+  const [devOk, setDevOk] = useState<null | { ok: boolean; cgiOk: boolean; webOk: boolean }>(null)
+  const [devError, setDevError] = useState<string | null>(null)
+
   // Parsed box info
   const boxInfo = useMemo(() => normalizeBoxInfo(boxInfoRaw), [boxInfoRaw])
   const devList = useMemo(
@@ -201,6 +206,34 @@ export function USBDongle() {
   const canDownload = fwBusy == null && Boolean(isDongleConnected) && hasUpdate && isOnline
 
   const canUpload = fwBusy == null && Boolean(isDongleConnected) && shouldOfferUpload
+
+  const canEnableDevTools = !devBusy && Boolean(isDongleConnected)
+
+  const handleEnableDevTools = useCallback(async () => {
+    setDevError(null)
+    setDevOk(null)
+
+    try {
+      setDevBusy(true)
+      const res = await window.carplay.usb.uploadLiviScripts()
+      setDevOk(res)
+
+      if (!res.ok) {
+        setDevError(`Upload failed (cgiOk=${String(res.cgiOk)}, webOk=${String(res.webOk)})`)
+      }
+    } catch (e) {
+      setDevError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDevBusy(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isDongleConnected) return
+    setDevOk(null)
+    setDevError(null)
+    setDevBusy(false)
+  }, [isDongleConnected])
 
   const fwPct = useMemo(() => {
     const p = fwDlg.progress?.percent
@@ -881,6 +914,46 @@ export function USBDongle() {
       {fwUiError ? (
         <Alert severity="error" sx={{ mt: 1 }}>
           {fwUiError}
+        </Alert>
+      ) : null}
+
+      <Divider />
+
+      <Typography variant="subtitle2" color="text.secondary">
+        Dev Tools
+      </Typography>
+
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', px: 1 }}>
+        <Button
+          variant="outlined"
+          size="small"
+          disabled={!canEnableDevTools}
+          onClick={handleEnableDevTools}
+        >
+          {devBusy ? (
+            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
+              <CircularProgress size={14} />
+              Enabling…
+            </Box>
+          ) : (
+            'Enable Dev Tools'
+          )}
+        </Button>
+      </Stack>
+
+      <Typography variant="caption" color="text.secondary" sx={{ px: 1.25, mt: 0.25 }}>
+        Temporarily replaces the dongle’s default Web UI.
+      </Typography>
+
+      {devError ? (
+        <Alert severity="error" sx={{ mt: 1 }}>
+          {devError}
+        </Alert>
+      ) : devOk ? (
+        <Alert severity={devOk.ok ? 'success' : 'warning'} sx={{ mt: 1 }}>
+          {devOk.ok
+            ? `Dev tools enabled`
+            : `Partial result (cgiOk=${String(devOk.cgiOk)}, webOk=${String(devOk.webOk)})`}
         </Alert>
       ) : null}
 

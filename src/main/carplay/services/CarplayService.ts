@@ -15,6 +15,8 @@ import {
   SendMultiTouch,
   SendAudio,
   SendFile,
+  SendServerCgiScript,
+  SendLiviWeb,
   SendDisconnectPhone,
   SendCloseDongle,
   FileAddress,
@@ -278,11 +280,27 @@ export class CarplayService {
     ipcMain.handle('carplay-start', async () => this.start())
     ipcMain.handle('carplay-stop', async () => this.stop())
     ipcMain.handle('carplay-sendframe', async () => this.driver.send(new SendCommand('frame')))
+
     ipcMain.handle('carplay-upload-icons', async () => {
       if (!this.started || !this.webUsbDevice) {
         throw new Error('[CarplayService] CarPlay is not started or dongle not connected')
       }
       this.uploadIcons()
+    })
+
+    ipcMain.handle('carplay-upload-livi-scripts', async () => {
+      if (!this.started || !this.webUsbDevice) {
+        throw new Error('[CarplayService] CarPlay is not started or dongle not connected')
+      }
+
+      const cgiOk = await this.driver.send(new SendServerCgiScript())
+      const webOk = await this.driver.send(new SendLiviWeb())
+
+      return {
+        ok: Boolean(cgiOk && webOk),
+        cgiOk: Boolean(cgiOk),
+        webOk: Boolean(webOk)
+      }
     })
 
     ipcMain.on('carplay-touch', (_evt, data: { x: number; y: number; action: number }) => {

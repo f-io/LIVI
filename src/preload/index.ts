@@ -71,6 +71,7 @@ const api = {
     getLastEvent: (): Promise<UsbLastEvent> => ipcRenderer.invoke('usb-last-event'),
     getSysdefaultPrettyName: (): Promise<string> => ipcRenderer.invoke('get-sysdefault-mic-label'),
     uploadIcons: () => ipcRenderer.invoke('carplay-upload-icons'),
+    uploadLiviScripts: () => ipcRenderer.invoke('carplay-upload-livi-scripts'),
     listenForEvents: (callback: ApiCallback): void => {
       usbEventHandlers.push(callback)
       usbEventQueue.forEach(([evt, ...args]) => callback(evt, ...args))

@@ -114,6 +114,7 @@ declare global {
         getLastEvent(): Promise<unknown>
         getSysdefaultPrettyName(): Promise<string>
         uploadIcons(): Promise<void>
+        uploadLiviScripts(): Promise<{ ok: boolean; cgiOk: boolean; webOk: boolean }>
         listenForEvents(callback: (event: unknown, ...args: unknown[]) => void): void
         unlistenForEvents(callback: (event: unknown, ...args: unknown[]) => void): void
       }
