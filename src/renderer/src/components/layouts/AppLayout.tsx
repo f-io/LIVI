@@ -10,6 +10,7 @@ import WifiOffIcon from '@mui/icons-material/WifiOff'
 import { useBlinkingTime } from '../../hooks/useBlinkingTime'
 import { useNetworkStatus } from '../../hooks/useNetworkStatus'
 import { ROUTES, UI } from '../../constants'
+import { useTheme } from '@mui/material/styles'
 
 export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
   children,
@@ -22,6 +23,7 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
   const isStreaming = useStatusStore((s) => s.isStreaming)
   const time = useBlinkingTime()
   const network = useNetworkStatus()
+  const theme = useTheme()
 
   const isVisibleTimeAndWifi = window.innerHeight > UI.MIN_HEIGHT_SHOW_TIME_WIFI
 
@@ -67,7 +69,8 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
           {isVisibleTimeAndWifi && (
             <div
               style={{
-                paddingTop: '1rem'
+                paddingTop: '1rem',
+                background: theme.palette.background.paper
               }}
             >
               <Box sx={{ display: 'flex', alignItems: 'center', flexDirection: 'column' }}>

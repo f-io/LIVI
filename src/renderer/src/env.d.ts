@@ -123,21 +123,28 @@ declare global {
         save(settings: ExtraConfig): Promise<void>
         onUpdate(callback: (event: unknown, settings: ExtraConfig) => void): void
       }
-
       ipc: {
         start(): Promise<void>
         stop(): Promise<void>
         sendFrame(): Promise<void>
         dongleFirmware(action: DongleFirmwareAction): Promise<DongleFirmwareCheckResult>
+
         sendTouch(x: number, y: number, action: number): void
         sendMultiTouch(points: MultiTouchPoint[]): void
         sendKeyCommand(key: string): void
+
         onEvent(callback: (event: unknown, ...args: unknown[]) => void): void
         offEvent(callback: (event: unknown, ...args: unknown[]) => void): void
+
         setVisualizerEnabled(enabled: boolean): void
         readMedia(): Promise<MediaPayload>
+
         onVideoChunk(handler: (payload: unknown) => void): void
         onAudioChunk(handler: (payload: unknown) => void): void
+
+        requestMaps(enabled: boolean): Promise<{ ok: boolean; enabled: boolean }>
+        onMapsVideoChunk(handler: (payload: unknown) => void): void
+        onMapsResolution(handler: (payload: unknown) => void): void
       }
     }
 

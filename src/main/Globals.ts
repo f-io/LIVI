@@ -10,6 +10,7 @@ export type ExtraConfig = DongleConfig & {
   siriVolume: number
   callVolume: number
   visualAudioDelayMs: number
+  enableMaps: boolean
   primaryColorDark?: string
   primaryColorLight?: string
   highlightColorLight?: string

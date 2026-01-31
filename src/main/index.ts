@@ -348,6 +348,7 @@ function loadConfig(): ExtraConfig {
     camera: '',
     cameraMirror: false,
     nightMode: true,
+    enableMaps: false,
     audioVolume: 0.95,
     navVolume: 0.95,
     siriVolume: 0.95,

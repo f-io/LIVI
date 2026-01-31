@@ -21,6 +21,7 @@ import {
   DongleDriver,
   BoxUpdateProgress,
   BoxUpdateState,
+  MessageType,
   DEFAULT_CONFIG
 } from '../messages'
 import { ExtraConfig } from '@main/Globals'
@@ -90,6 +91,10 @@ export class CarplayService {
   private boxInfo?: unknown
   private lastDongleInfoEmitKey = ''
   private firmware = new FirmwareUpdateService()
+
+  private lastNaviVideoWidth?: number
+  private lastNaviVideoHeight?: number
+  private mapsRequested = false
 
   private audio: CarplayAudio
 
@@ -178,11 +183,34 @@ export class CarplayService {
           }
         }
       } else if (msg instanceof VideoData) {
+        const isNavi =
+          msg.header.type === MessageType.NaviVideoData ||
+          msg.header.type === MessageType.AltVideoData
+
+        // navi video stream (0x2c / 0x2b)
+        if (isNavi) {
+          if (!this.mapsRequested) return
+
+          const w = msg.width
+          const h = msg.height
+
+          if (w > 0 && h > 0 && (w !== this.lastNaviVideoWidth || h !== this.lastNaviVideoHeight)) {
+            this.lastNaviVideoWidth = w
+            this.lastNaviVideoHeight = h
+            this.webContents.send('maps-video-resolution', { width: w, height: h })
+          }
+
+          this.sendChunked('maps-video-chunk', msg.data?.buffer as ArrayBuffer, 512 * 1024)
+          return
+        }
+
+        // main video stream (0x06)
         if (!this.firstFrameLogged) {
           this.firstFrameLogged = true
           const dt = Date.now() - APP_START_TS
           console.log(`[Perf] AppStart→FirstFrame: ${dt} ms`)
         }
+
         const w = msg.width
         const h = msg.height
         if (w > 0 && h > 0 && (w !== this.lastVideoWidth || h !== this.lastVideoHeight)) {
@@ -233,6 +261,13 @@ export class CarplayService {
         fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
       } else if (msg instanceof Command) {
         this.webContents.send('carplay-event', { type: 'command', message: msg })
+        if ((msg.value as number) === 508 && this.mapsRequested) {
+          try {
+            this.driver.send(new SendCommand('requestNaviScreenFocus'))
+          } catch {
+            // ignore
+          }
+        }
       }
     })
 
@@ -256,6 +291,24 @@ export class CarplayService {
       } catch {
         // ignore
       }
+    })
+
+    ipcMain.handle('maps:request', async (_evt, enabled: boolean) => {
+      this.mapsRequested = Boolean(enabled)
+
+      if (!this.mapsRequested) {
+        this.lastNaviVideoWidth = undefined
+        this.lastNaviVideoHeight = undefined
+        return { ok: true, enabled: false }
+      }
+
+      try {
+        this.driver.send(new SendCommand('requestNaviScreenFocus'))
+      } catch {
+        // ignore
+      }
+
+      return { ok: true, enabled: true }
     })
 
     type MultiTouchPoint = { id: number; x: number; y: number; action: number }

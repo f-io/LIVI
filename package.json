@@ -1,6 +1,6 @@
 {
   "name": "LIVI",
-  "version": "5.0.4",
+  "version": "5.1.0",
   "description": "LIVI - Linux In-Vehicle Infotainment",
   "main": "./out/main/main.js",
   "author": "Lasse Heitgres",
@@ -76,7 +76,7 @@
     "@webgpu/types": "^0.1.69",
     "electron": "^40.1.0",
     "electron-builder": "^26.4.0",
-    "electron-to-chromium": "^1.5.282",
+    "electron-to-chromium": "^1.5.283",
     "electron-vite": "^5.0.0",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",

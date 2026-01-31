@@ -215,6 +215,12 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const navigate = useNavigate()
   const location = useLocation()
   const pathname = location.pathname
+
+  const pathnameRef = useRef(pathname)
+  useEffect(() => {
+    pathnameRef.current = pathname
+  }, [pathname])
+
   const theme = useTheme()
 
   // Zustand store
@@ -245,6 +251,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const [renderReady, setRenderReady] = useState(false)
   const [rendererError, setRendererError] = useState<string | null>(null)
   const lastNonCarplayPathRef = useRef<string | null>(null)
+  const lastNonMapsPathRef = useRef<string | null>(null)
   const autoSwitchedRef = useRef(false)
   const pendingVideoFocusRef = useRef(false)
 
@@ -323,9 +330,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
       ro?.disconnect()
     }
   }, [settings?.hand])
-
-  // MediaPlayStatus handling
-  const mediaPlayStatusRef = useRef<number | undefined>(undefined)
 
   // Render worker + OffscreenCanvas
   const renderWorkerRef = useRef<Worker | null>(null)
@@ -724,9 +728,13 @@ const CarplayComponent: React.FC<CarplayProps> = ({
       }
       return next
     }
+
     const handler = (_evt: unknown, data: unknown) => {
+      const pathnameNow = pathnameRef.current
+
       const d = (data ?? {}) as Record<string, unknown>
       const t = typeof d.type === 'string' ? d.type : undefined
+
       switch (t) {
         case 'resolution': {
           const payload = d.payload as { width?: number; height?: number } | undefined
@@ -743,13 +751,14 @@ const CarplayComponent: React.FC<CarplayProps> = ({
 
             if (pendingVideoFocusRef.current) {
               pendingVideoFocusRef.current = false
-              if (pathname !== '/') {
+              if (pathnameNow !== '/') {
                 navigate('/', { replace: true })
               }
             }
           }
           break
         }
+
         case 'dongleInfo': {
           const p = d.payload as { dongleFwVersion?: string; boxInfo?: unknown } | undefined
           if (!p) break
@@ -759,25 +768,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           }))
           break
         }
-        case 'audioInfo': {
-          const p = d.payload as
-            | {
-                codec?: string
-                sampleRate?: number
-                channels?: number
-                bitDepth?: number
-              }
-            | undefined
-          if (p) {
-            useCarplayStore.setState({
-              audioCodec: p.codec,
-              audioSampleRate: p.sampleRate,
-              audioChannels: p.channels,
-              audioBitDepth: p.bitDepth
-            })
-          }
-          break
-        }
+
         case 'audio': {
           const cmd = (d as { payload?: { command?: number } }).payload?.command
           if (typeof cmd !== 'number') break
@@ -794,51 +785,43 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           }
           break
         }
-        case 'media': {
-          const playStatus = (
-            d as {
-              payload?: { payload?: { media?: { MediaPlayStatus?: number } } }
-            }
-          ).payload?.payload?.media?.MediaPlayStatus
-          const prevStatus = mediaPlayStatusRef.current
-          if (typeof playStatus === 'number' && playStatus !== prevStatus) {
-            mediaPlayStatusRef.current = playStatus
-          }
-          break
-        }
-        case 'plugged':
-          useStatusStore.setState({ isDongleConnected: true })
-          break
-        case 'unplugged':
-          useStatusStore.setState({ isDongleConnected: false, isStreaming: false })
-          useCarplayStore.getState().resetInfo()
-          setNavVideoOverlayActive(false)
-          break
+
         case 'command': {
           const value = (d as { message?: { value?: number } }).message?.value
           if (typeof value !== 'number') break
-
-          //  NAV overlay manual dismiss
-          if (navVideoOverlayActive && pathname !== '/') {
-            if (value === CommandMapping.back || value === CommandMapping.selectDown) {
-              setNavVideoOverlayActive(false)
-              break
-            }
-          }
 
           if (value === CommandMapping.requestHostUI) {
             gotoHostUI()
             break
           }
 
+          const mapsEnabled = Boolean(settings.enableMaps)
+
           if (value === CommandMapping.naviFocus) {
-            if (pathname !== '/') {
+            if (mapsEnabled) {
+              if (pathnameNow === '/' || pathnameNow === '/maps') break
+
+              lastNonMapsPathRef.current = pathnameNow
+              navigate('/maps', { replace: true })
+              break
+            }
+
+            if (pathnameNow !== '/') {
               setNavVideoOverlayActive(true)
             }
             break
           }
 
           if (value === CommandMapping.naviRelease) {
+            if (mapsEnabled) {
+              const back = lastNonMapsPathRef.current
+              if (back && back !== '/maps' && back !== '/') {
+                lastNonMapsPathRef.current = null
+                navigate(back, { replace: true })
+              }
+              break
+            }
+
             setNavVideoOverlayActive(false)
             break
           }
@@ -846,8 +829,8 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           if (value === CommandMapping.requestVideoFocus) {
             if (attentionSwitchedByRef.current) break
 
-            if (pathname !== '/') {
-              lastNonCarplayPathRef.current = pathname
+            if (pathnameNow !== '/' && pathnameNow !== '/maps') {
+              lastNonCarplayPathRef.current = pathnameNow
               autoSwitchedRef.current = true
             }
 
@@ -856,13 +839,27 @@ const CarplayComponent: React.FC<CarplayProps> = ({
               break
             }
 
-            if (pathname !== '/') {
+            if (pathnameNow !== '/') {
               navigate('/', { replace: true })
             }
             break
           }
 
           if (value === CommandMapping.releaseVideoFocus) {
+            const backFromMaps = lastNonMapsPathRef.current
+
+            if (
+              mapsEnabled &&
+              pathnameNow === '/maps' &&
+              backFromMaps &&
+              backFromMaps !== '/maps' &&
+              backFromMaps !== '/'
+            ) {
+              lastNonMapsPathRef.current = null
+              navigate(backFromMaps, { replace: true })
+              break
+            }
+
             if (attentionSwitchedByRef.current) {
               autoSwitchedRef.current = false
               lastNonCarplayPathRef.current = null
@@ -882,23 +879,19 @@ const CarplayComponent: React.FC<CarplayProps> = ({
       }
     }
 
-    // subscribe
     window.carplay.ipc.onEvent(handler)
+    return () => window.carplay.ipc.offEvent(handler)
 
-    // cleanup
-    return () => {
-      window.carplay.ipc.offEvent(handler)
-    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     gotoHostUI,
     setReceivingVideo,
     navigate,
-    pathname,
-    navVideoOverlayActive,
     isStreaming,
     setNavVideoOverlayActive,
     applyAttention,
-    rendererError
+    rendererError,
+    settings.enableMaps
   ])
 
   // Resize observer => inform render worker

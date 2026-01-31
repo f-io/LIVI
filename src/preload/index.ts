@@ -24,6 +24,11 @@ let videoChunkHandler: ChunkHandler | null = null
 let audioChunkQueue: unknown[] = []
 let audioChunkHandler: ChunkHandler | null = null
 
+let mapsVideoChunkQueue: unknown[] = []
+let mapsVideoChunkHandler: ChunkHandler | null = null
+let mapsResolutionQueue: unknown[] = []
+let mapsResolutionHandler: ChunkHandler | null = null
+
 ipcRenderer.on('carplay-video-chunk', (_event, payload: unknown) => {
   if (videoChunkHandler) videoChunkHandler(payload)
   else videoChunkQueue.push(payload)
@@ -31,6 +36,16 @@ ipcRenderer.on('carplay-video-chunk', (_event, payload: unknown) => {
 ipcRenderer.on('carplay-audio-chunk', (_event, payload: unknown) => {
   if (audioChunkHandler) audioChunkHandler(payload)
   else audioChunkQueue.push(payload)
+})
+
+ipcRenderer.on('maps-video-chunk', (_event, payload: unknown) => {
+  if (mapsVideoChunkHandler) mapsVideoChunkHandler(payload)
+  else mapsVideoChunkQueue.push(payload)
+})
+
+ipcRenderer.on('maps-video-resolution', (_event, payload: unknown) => {
+  if (mapsResolutionHandler) mapsResolutionHandler(payload)
+  else mapsResolutionQueue.push(payload)
 })
 
 type UsbDeviceInfo =
@@ -108,6 +123,18 @@ const api = {
     },
     setVisualizerEnabled: (enabled: boolean): void => {
       ipcRenderer.send('carplay-set-visualizer-enabled', !!enabled)
+    },
+    requestMaps: (enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> =>
+      ipcRenderer.invoke('maps:request', enabled),
+    onMapsVideoChunk: (handler: ChunkHandler): void => {
+      mapsVideoChunkHandler = handler
+      mapsVideoChunkQueue.forEach((chunk) => handler(chunk))
+      mapsVideoChunkQueue = []
+    },
+    onMapsResolution: (handler: ChunkHandler): void => {
+      mapsResolutionHandler = handler
+      mapsResolutionQueue.forEach((chunk) => handler(chunk))
+      mapsResolutionQueue = []
     }
   }
 }

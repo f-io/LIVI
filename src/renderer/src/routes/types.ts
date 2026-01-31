@@ -2,11 +2,10 @@ import type React from 'react'
 
 export enum RoutePath {
   Home = 'home',
-  OldSettings = 'old-settings',
-  Settings = 'settings',
-  Camera = 'camera',
+  Maps = 'maps',
   Media = 'media',
-  Info = 'info'
+  Camera = 'camera',
+  Settings = 'settings'
 }
 
 export type ValueTransform<StoreValue = any, ViewValue = StoreValue> = {

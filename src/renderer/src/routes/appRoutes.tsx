@@ -1,5 +1,5 @@
 import { RoutePath } from './types'
-import { Home, Media, Camera } from '../components/pages'
+import { Home, Media, Camera, Maps } from '../components/pages'
 import { settingsRoutes } from './schemas.ts/schema'
 import { Layout } from '../components/layouts/Layout'
 import { SettingsPage } from '../components/pages/settings/SettingsPage'
@@ -12,6 +12,10 @@ export const appRoutes = [
       {
         path: `/${RoutePath.Home}`,
         element: <Home />
+      },
+      {
+        path: `/${RoutePath.Maps}`,
+        element: <Maps />
       },
       {
         path: `/${RoutePath.Media}`,

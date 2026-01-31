@@ -157,7 +157,7 @@ function AppInner() {
         />
       )}
 
-      <>{element}</>
+      <Box sx={{ width: '100%', height: '100%' }}>{element}</Box>
 
       <Modal open={reverse} onClick={() => setReverse(false)}>
         <Box sx={modalStyle}>

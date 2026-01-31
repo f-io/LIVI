@@ -261,6 +261,18 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
     },
     {
       type: 'checkbox',
+      label: 'Navigation Screen',
+      labelKey: 'settings.naviScreen',
+      path: 'naviScreenEnabled'
+    },
+    {
+      type: 'checkbox',
+      label: 'Maps',
+      labelKey: 'settings.maps',
+      path: 'enableMaps'
+    },
+    {
+      type: 'checkbox',
       label: 'Fullscreen',
       labelKey: 'settings.fullscreen',
       path: 'kiosk'
