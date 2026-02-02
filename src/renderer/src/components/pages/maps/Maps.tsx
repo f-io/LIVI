@@ -196,7 +196,6 @@ export const Maps: React.FC = () => {
             display: 'grid',
             placeItems: 'start center',
             pt: 6,
-            pl: { xs: '84px', sm: '92px' },
             textAlign: 'center',
             pointerEvents: 'none'
           }}

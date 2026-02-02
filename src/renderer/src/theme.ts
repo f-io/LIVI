@@ -1,7 +1,7 @@
 import { createTheme, alpha } from '@mui/material/styles'
 import { themeColors } from './themeColors'
 import { CSSObject } from '@mui/system'
-import { THEME } from './constants'
+import { THEME, UI } from './constants'
 
 const commonLayout = {
   'html, body, #root': {
@@ -508,7 +508,8 @@ export function buildRuntimeTheme(
   })
 }
 
-export function initCursorHider(inactivityMs: number = 5000) {
+export function initCursorHider() {
+  const inactivityMs = UI.INACTIVITY_HIDE_DELAY_MS
   let timer: ReturnType<typeof setTimeout>
   const setCursor = (value: string) => {
     const elems = [
@@ -524,6 +525,7 @@ export function initCursorHider(inactivityMs: number = 5000) {
   }
   function reset() {
     clearTimeout(timer)
+    window.app?.notifyUserActivity?.()
     setCursor('default')
     timer = setTimeout(() => setCursor('none'), inactivityMs)
   }
