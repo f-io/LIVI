@@ -117,6 +117,7 @@ const api = {
       ipcRenderer.removeListener('carplay-event', callback)
     },
     readMedia: (): Promise<unknown> => ipcRenderer.invoke('carplay-media-read'),
+    readNavigation: (): Promise<unknown> => ipcRenderer.invoke('carplay-navigation-read'),
     onVideoChunk: (handler: ChunkHandler): void => {
       videoChunkHandler = handler
       videoChunkQueue.forEach((chunk) => handler(chunk))

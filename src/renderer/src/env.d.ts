@@ -140,7 +140,9 @@ declare global {
         offEvent(callback: (event: unknown, ...args: unknown[]) => void): void
 
         setVisualizerEnabled(enabled: boolean): void
+
         readMedia(): Promise<MediaPayload>
+        readNavigation(): Promise<unknown>
 
         onVideoChunk(handler: (payload: unknown) => void): void
         onAudioChunk(handler: (payload: unknown) => void): void
