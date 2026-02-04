@@ -98,8 +98,7 @@ export enum MessageType {
   HiCarLink = 0x18,
   BoxSettings = 0x19,
   MetaData = 0x2a,
-  AltVideoData = 0x2b, // Navigation/Instrument Cluster video stream (expected)
-  NaviVideoData = 0x2c, // Navigation/Instrument Cluster video stream (actual - 44)
+  NaviVideoData = 0x2c,
   SendFile = 0x99,
   HeartBeat = 0xaa,
   UpdateProgress = 0xb1,
