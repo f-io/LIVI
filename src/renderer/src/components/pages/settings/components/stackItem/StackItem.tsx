@@ -12,6 +12,12 @@ const Item = styled(Paper)(({ theme }) => {
   const rowFont = 'clamp(0.9rem, 2.2svh, 1rem)'
   const rowGap = 'clamp(0.75rem, 2.6svh, 3rem)'
 
+  const activeRowStyles = {
+    borderBottom: `2px solid ${activeColor}`,
+    a: { color: activeColor },
+    svg: { right: '3px', color: activeColor }
+  } as const
+
   return {
     display: 'flex',
     alignItems: 'center',
@@ -28,30 +34,22 @@ const Item = styled(Paper)(({ theme }) => {
       transition: 'all 0.3s ease-in-out'
     },
 
-    '&:hover': {
-      borderBottom: `2px solid ${activeColor}`,
-      a: { color: activeColor },
-      svg: { right: '3px', color: activeColor }
-    },
-    '&:active': {
-      borderBottom: `2px solid ${activeColor}`,
-      a: { color: activeColor },
-      svg: { right: '3px', color: activeColor }
+    // Hover ONLY for real mouse (prevents sticky hover after touch)
+    'html[data-input="mouse"] &': {
+      '&:hover': activeRowStyles
     },
 
+    // Press feedback (mouse + touch) - same as keyboard highlight
+    '&:active': activeRowStyles,
+
+    // Keyboard/D-pad highlight
     '&:focus-visible': {
       outline: 'none',
-      borderBottom: `2px solid ${activeColor}`,
-      a: { color: activeColor },
-      svg: { right: '3px', color: activeColor }
+      ...activeRowStyles
     },
 
-    '&:focus': {
-      outline: 'none',
-      borderBottom: `2px solid ${activeColor}`,
-      a: { color: activeColor },
-      svg: { right: '3px', color: activeColor }
-    },
+    // IMPORTANT: do not use :focus styling (can stick on touch/click)
+    '&:focus': { outline: 'none' },
 
     ...theme.applyStyles('dark', {
       backgroundColor: 'transparent'
@@ -79,18 +77,27 @@ const Item = styled(Paper)(({ theme }) => {
       outline: 'none',
       color: theme.palette.text.secondary,
 
-      '&:hover': {
-        color: activeColor,
-        '+ svg': { right: '3px', color: activeColor }
+      // Hover ONLY for real mouse
+      'html[data-input="mouse"] &': {
+        '&:hover': {
+          color: activeColor,
+          '+ svg': { right: '3px', color: activeColor }
+        }
       },
+
+      // Press feedback (mouse + touch) - same as keyboard highlight
       '&:active': {
         color: activeColor,
         '+ svg': { right: '3px', color: activeColor }
       },
-      '&:focus': {
+
+      // Keyboard highlight
+      '&:focus-visible': {
         color: activeColor,
         '+ svg': { right: '3px', color: activeColor }
-      }
+      },
+
+      '&:focus': { outline: 'none' }
     }
   }
 })
@@ -122,7 +129,6 @@ export const StackItem = ({
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!onClick) return
-    // Make Enter/Space activate the row (keyboard + D-pad OK mapping)
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       e.stopPropagation()

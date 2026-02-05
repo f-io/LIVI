@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback, useContext, useLayoutEffect } from 'react'
 import { HashRouter as Router, useLocation, useRoutes, useNavigate } from 'react-router'
-import { Carplay, Camera } from './components/pages'
-import { Box, Modal } from '@mui/material'
+import { Carplay } from './components/pages'
+import { Box } from '@mui/material'
 import { useCarplayStore, useStatusStore } from './store/store'
 import type { KeyCommand } from '@worker/types'
 import { updateCameras } from './utils/cameraDetection'
@@ -12,17 +12,6 @@ import { appRoutes } from './routes/appRoutes'
 import { AppLayout } from './components/layouts/AppLayout'
 import i18n from 'i18next'
 
-const modalStyle = {
-  position: 'absolute' as const,
-  top: '50%',
-  left: '50%',
-  transform: 'translate(-50%, -50%)',
-  height: '95%',
-  width: '95%',
-  boxShadow: 24,
-  display: 'flex'
-}
-
 function AppInner() {
   const appContext = useContext(AppContext)
   const [receivingVideo, setReceivingVideo] = useState(false)
@@ -30,14 +19,10 @@ function AppInner() {
   const [keyCommand, setKeyCommand] = useState('')
   const [navVideoOverlayActive, setNavVideoOverlayActive] = useState(false)
   const editingField = appContext?.keyboardNavigation?.focusedElId
-  // const [editingField, setEditingField] = useState<HTMLElement | null>(null)
   const location = useLocation()
 
   const navigate = useNavigate()
   const didApplyStartPageRef = useRef(false)
-
-  const reverse = useStatusStore((s) => s.reverse)
-  const setReverse = useStatusStore((s) => s.setReverse)
 
   const settings = useCarplayStore((s) => s.settings)
   const saveSettings = useCarplayStore((s) => s.saveSettings)
@@ -48,11 +33,53 @@ function AppInner() {
 
   const element = useRoutes(appRoutes)
 
+  const lastInputModeRef = useRef<'keys' | 'pointer' | 'other'>('other')
+  const prevPathRef = useRef<string>(location.pathname)
+  const cameFromSettingsSubRef = useRef(false)
+
+  // Track input mode globally (for CSS that must behave differently on touch vs mouse)
+  useEffect(() => {
+    const setMode = (mode: 'mouse' | 'touch' | 'keys') => {
+      document.documentElement.dataset.input = mode
+    }
+
+    const onPointerDown = (e: PointerEvent) => {
+      lastInputModeRef.current = 'pointer'
+      setMode(e.pointerType === 'mouse' ? 'mouse' : 'touch')
+    }
+
+    const onKeyDown = () => {
+      lastInputModeRef.current = 'keys'
+      setMode('keys')
+    }
+
+    document.addEventListener('pointerdown', onPointerDown, true)
+    document.addEventListener('keydown', onKeyDown, true)
+
+    // default
+    setMode('keys')
+
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true)
+      document.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [])
+
+  useEffect(() => {
+    const prev = prevPathRef.current
+    const next = location.pathname
+    prevPathRef.current = next
+
+    const prevIsSettingsSub = prev.startsWith('/settings/') && prev !== '/settings'
+    const nextIsSettingsRoot = next === '/settings'
+
+    cameFromSettingsSubRef.current = prevIsSettingsSub && nextIsSettingsRoot
+  }, [location.pathname])
+
   useEffect(() => {
     if (!settings) return
     if (didApplyStartPageRef.current) return
 
-    // Only apply on initial app start when we're on HOME
     if (location.pathname !== ROUTES.HOME) {
       didApplyStartPageRef.current = true
       return
@@ -121,11 +148,12 @@ function AppInner() {
   }, [appContext, editingField])
 
   useEffect(() => {
-    if (location.pathname !== ROUTES.HOME) {
-      requestAnimationFrame(() => {
-        focusFirstInMain()
-      })
-    }
+    if (location.pathname === ROUTES.HOME) return
+    if (lastInputModeRef.current !== 'keys') return
+
+    requestAnimationFrame(() => {
+      focusFirstInMain()
+    })
   }, [location.pathname, focusFirstInMain])
 
   const activateControl = useActiveControl()
@@ -144,6 +172,9 @@ function AppInner() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      lastInputModeRef.current = 'keys'
+      document.documentElement.dataset.input = 'keys'
+
       if (navVideoOverlayActive && location.pathname !== ROUTES.HOME) {
         const back = settings?.bindings?.back
         const enter = settings?.bindings?.selectDown
@@ -189,14 +220,7 @@ function AppInner() {
           setNavVideoOverlayActive={setNavVideoOverlayActive}
         />
       )}
-
       <Box sx={{ width: '100%', height: '100%' }}>{element}</Box>
-
-      <Modal open={reverse} onClick={() => setReverse(false)}>
-        <Box sx={modalStyle}>
-          <Camera />
-        </Box>
-      </Modal>
     </AppLayout>
   )
 }

@@ -38,6 +38,16 @@ export default function NumberSpinner({
     id = idProp
   }
 
+  const pressStyles = {
+    boxShadow: `inset 1px 0 0 ${theme.palette.primary.main}`,
+    borderColor: theme.palette.primary.main
+  } as const
+
+  const pressStylesDec = {
+    boxShadow: `inset 1px 0 0 ${theme.palette.primary.main}, inset 0 1px 0 ${theme.palette.primary.main}`,
+    borderColor: theme.palette.primary.main
+  } as const
+
   return (
     <BaseNumberField.Root
       {...other}
@@ -56,27 +66,8 @@ export default function NumberSpinner({
               minHeight: 0,
               padding: 0,
               bgcolor: 'action.hover',
-              '&:not(.Mui-disabled)': {
-                color: 'text.primary'
-              }
+              '&:not(.Mui-disabled)': { color: 'text.primary' }
             },
-
-            '& .MuiButton-root.Mui-focusVisible': {
-              borderColor: theme.palette.primary.main,
-              backgroundColor: alpha(theme.palette.primary.main, 0.12)
-            },
-            '& .MuiButton-root.Mui-focusVisible .MuiSvgIcon-root': {
-              color: theme.palette.primary.main
-            },
-
-            '& .MuiButton-root:focus-visible': {
-              borderColor: theme.palette.primary.main,
-              backgroundColor: alpha(theme.palette.primary.main, 0.12)
-            },
-            '& .MuiButton-root:focus-visible .MuiSvgIcon-root': {
-              color: theme.palette.primary.main
-            },
-
             width: '100%'
           }}
         >
@@ -229,8 +220,8 @@ export default function NumberSpinner({
               <Button
                 variant="outlined"
                 aria-label="Increase"
-                disableFocusRipple
                 size={size}
+                disableFocusRipple
                 sx={{
                   height: '50%',
                   minHeight: 0,
@@ -246,12 +237,23 @@ export default function NumberSpinner({
                   alignItems: 'center',
                   justifyContent: 'center',
                   '&.Mui-disabled': { borderLeft: '0px' },
-                  '&.Mui-focusVisible': {
-                    boxShadow: `inset 1px 0 0 ${theme.palette.primary.main}`
+
+                  // Keyboard/D-Pad focus look
+                  '&.Mui-focusVisible, &:focus-visible': {
+                    ...pressStyles,
+                    backgroundColor: alpha(theme.palette.primary.main, 0.12)
                   },
-                  '&:focus-visible': {
-                    boxShadow: `inset 1px 0 0 ${theme.palette.primary.main}`
-                  }
+                  '&.Mui-focusVisible .MuiSvgIcon-root, &:focus-visible .MuiSvgIcon-root': {
+                    color: theme.palette.primary.main
+                  },
+
+                  // Mouse hover
+                  '&:hover': pressStyles,
+                  '&:hover .MuiSvgIcon-root': { color: theme.palette.primary.main },
+
+                  // Press (mouse + touch) solange gedrückt
+                  '&:active': pressStyles,
+                  '&:active .MuiSvgIcon-root': { color: theme.palette.primary.main }
                 }}
               />
             }
@@ -283,12 +285,29 @@ export default function NumberSpinner({
                   justifyContent: 'center',
                   '&.Mui-disabled': { borderLeft: '0px', borderTop: '0px' },
 
-                  '&.Mui-focusVisible': {
-                    boxShadow: `inset 1px 0 0 ${theme.palette.primary.main}, inset 0 1px 0 ${theme.palette.primary.main}`
+                  // Keyboard/D-Pad focus look
+                  '&.Mui-focusVisible, &:focus-visible': {
+                    ...pressStylesDec,
+                    backgroundColor: alpha(theme.palette.primary.main, 0.12),
+                    borderTop: `1px solid ${theme.palette.primary.main}`
                   },
-                  '&:focus-visible': {
-                    boxShadow: `inset 1px 0 0 ${theme.palette.primary.main}, inset 0 1px 0 ${theme.palette.primary.main}`
-                  }
+                  '&.Mui-focusVisible .MuiSvgIcon-root, &:focus-visible .MuiSvgIcon-root': {
+                    color: theme.palette.primary.main
+                  },
+
+                  // Mouse hover
+                  '&:hover': {
+                    ...pressStylesDec,
+                    borderTop: `1px solid ${theme.palette.primary.main}`
+                  },
+                  '&:hover .MuiSvgIcon-root': { color: theme.palette.primary.main },
+
+                  // Press (mouse + touch) solange gedrückt
+                  '&:active': {
+                    ...pressStylesDec,
+                    borderTop: `1px solid ${theme.palette.primary.main}`
+                  },
+                  '&:active .MuiSvgIcon-root': { color: theme.palette.primary.main }
                 }}
               />
             }
