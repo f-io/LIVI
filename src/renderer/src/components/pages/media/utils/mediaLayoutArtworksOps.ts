@@ -30,8 +30,8 @@ export const mediaLayoutArtworksOps = ({
   const artFromH = Math.max(130, contentH - Math.max(60, Math.min(textEst, contentH * 0.6)))
   const artWidthAllowance = Math.max(MIN_ART_COL, Math.floor(innerW - MIN_TEXT_COL - colGap))
   const artPx = canTwoCol
-    ? Math.round(clamp(Math.min(contentH, artWidthAllowance), 140, 340))
-    : Math.round(clamp(Math.min(h * 0.52, artFromH), 130, 320))
+    ? Math.round(clamp(Math.min(contentH, artWidthAllowance), 140, 520))
+    : Math.round(clamp(Math.min(h * 0.52, artFromH), 130, 480))
 
   return {
     bottomDockH,
