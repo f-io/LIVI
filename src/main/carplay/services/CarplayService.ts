@@ -40,6 +40,7 @@ import { readMediaFile } from './utils/readMediaFile'
 import { readNavigationFile } from './utils/readNavigationFile'
 import { normalizeNavigationPayload } from './utils/normalizeNavigation'
 import { translateNavigation } from './utils/translateNavigation'
+import type { NavLocale } from './utils/translateNavigation'
 import { asDomUSBDevice } from './utils/asDomUSBDevice'
 import { CarplayAudio, LogicalStreamKey } from './CarplayAudio'
 import { FirmwareUpdateService, FirmwareCheckResult } from './FirmwareUpdateService'
@@ -310,8 +311,14 @@ export class CarplayService {
           const file = path.join(app.getPath('userData'), 'navigationData.json')
           const existing = readNavigationFile(file)
 
-          const locale =
-            this.config.language === 'de' ? 'de' : this.config.language === 'uk' ? 'uk' : 'en'
+          const locale: NavLocale =
+            this.config.language === 'de'
+              ? 'de'
+              : this.config.language === 'ua' ||
+                  this.config.language === 'uk' ||
+                  this.config.language === 'uk-UA'
+                ? 'ua'
+                : 'en'
 
           const normalized = normalizeNavigationPayload(existing.payload, navMsg)
           const translated = translateNavigation(normalized.navi, locale)

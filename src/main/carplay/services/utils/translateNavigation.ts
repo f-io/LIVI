@@ -423,7 +423,7 @@ function fmtMeters(meters: unknown, locale: string): string | undefined {
 
 export function translateNavigation(navi: NaviBag | null | undefined, locale: NavLocale) {
   const d = DICT[locale] ?? DICT.en
-  const langTag = locale === 'de' ? 'de-DE' : locale === 'uk' ? 'uk-UA' : 'en-US'
+  const langTag = locale === 'de' ? 'de-DE' : locale === 'ua' ? 'uk-UA' : 'en-US'
 
   const obj = (navi ?? {}) as Record<string, unknown>
 

@@ -1,4 +1,5 @@
 import { MediaType, NavigationMetaType } from '../messages'
+import type { NavLocale } from './utils/translateNavigation'
 
 export type MediaBag = Record<string, unknown>
 export type NaviBag = Record<string, unknown>
@@ -21,7 +22,7 @@ export interface PersistedNavigationPayload {
   rawUtf8?: string
   error?: boolean
   display?: {
-    locale: 'en' | 'de' | 'uk'
+    locale: NavLocale
     appName?: string
     destinationName?: string
     roadName?: string
