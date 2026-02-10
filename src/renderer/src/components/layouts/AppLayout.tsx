@@ -47,7 +47,7 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
       setMapsNavHidden(true)
       hideTimerRef.current = null
     }, NAV_HIDE_DELAY_MS)
-  }, [clearHideTimer])
+  }, [clearHideTimer, NAV_HIDE_DELAY_MS])
 
   const showNavAndArmHide = useCallback(() => {
     setMapsNavHidden(false)
@@ -72,7 +72,7 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
   useEffect(() => {
     if (!inMaps) return
 
-    const wake = () => {
+    const wake: EventListener = () => {
       showNavAndArmHide()
     }
 
@@ -81,9 +81,9 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
     document.addEventListener('wheel', wake, { passive: true })
 
     return () => {
-      window.removeEventListener('keydown', wake as any)
-      document.removeEventListener('mousemove', wake as any)
-      document.removeEventListener('wheel', wake as any)
+      window.removeEventListener('keydown', wake)
+      document.removeEventListener('mousemove', wake)
+      document.removeEventListener('wheel', wake)
     }
   }, [inMaps, showNavAndArmHide])
 

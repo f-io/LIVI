@@ -45,7 +45,7 @@ export const SettingsFieldControl = <T,>({ node, value, onChange }: Props<T>) =>
     case 'string':
       return (
         <TextField
-          value={(value ?? '') as any}
+          value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value as T)}
           fullWidth
           variant="outlined"
@@ -69,7 +69,7 @@ export const SettingsFieldControl = <T,>({ node, value, onChange }: Props<T>) =>
       return (
         <NumberSpinner
           size="medium"
-          value={(value ?? 0) as any}
+          value={typeof value === 'number' && Number.isFinite(value) ? value : 0}
           min={min}
           max={max}
           step={step}
@@ -90,7 +90,7 @@ export const SettingsFieldControl = <T,>({ node, value, onChange }: Props<T>) =>
     case 'slider':
       return (
         <Slider
-          value={Math.round(((value as any) ?? 1.0) * 100)}
+          value={Math.round((Number(value ?? 1.0) || 1.0) * 100)}
           max={100}
           step={5}
           marks={marks}
@@ -112,7 +112,7 @@ export const SettingsFieldControl = <T,>({ node, value, onChange }: Props<T>) =>
         <Select
           size="small"
           variant="outlined"
-          value={value as any}
+          value={value as unknown as string | number}
           sx={{
             minWidth: 200,
 
@@ -136,7 +136,7 @@ export const SettingsFieldControl = <T,>({ node, value, onChange }: Props<T>) =>
 
     case 'color': {
       const hasCustom = value != null && String(value).trim() !== ''
-      const color = hasCustom ? (value as unknown as string) : defaultColorForPath(node.path as any)
+      const color = hasCustom ? String(value) : defaultColorForPath(node.path)
 
       return (
         <div style={{ height: '100%', display: 'flex', alignItems: 'center', gap: 8 }}>

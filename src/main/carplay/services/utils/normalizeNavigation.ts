@@ -24,6 +24,12 @@ function asNaviBag(input: unknown): NaviBag {
   return input as NaviBag
 }
 
+function readNumber(o: unknown, key: string): number | null {
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return null
+  const v = (o as Record<string, unknown>)[key]
+  return typeof v === 'number' && Number.isFinite(v) ? v : null
+}
+
 export function normalizeNavigationPayload(
   existing: PersistedNavigationPayload,
   navMsg: NavMsg
@@ -37,7 +43,7 @@ export function normalizeNavigationPayload(
   const patch: NaviBag = { ...rawObj, ...msgNavi }
 
   // Flush signal
-  const isFlush = metaType === 200 && (patch as any)?.NaviStatus === 0
+  const isFlush = metaType === 200 && readNumber(patch, 'NaviStatus') === 0
 
   // Flush only on explicit signal (metaType 200 + NaviStatus 0), otherwise always merge
   const nextNavi: NaviBag | null = isFlush ? { ...patch } : { ...(existing.navi ?? {}), ...patch }

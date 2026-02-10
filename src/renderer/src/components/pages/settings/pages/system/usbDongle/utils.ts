@@ -27,8 +27,18 @@ export function fmt(v: unknown): string | null {
   return s.length ? s : null
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 export function isDongleFwCheckResponse(v: unknown): v is DongleFwCheckResponse {
-  if (!v || typeof v !== 'object') return false
-  const o = v as any
-  return typeof o.ok === 'boolean' && o.raw && typeof o.raw === 'object' && 'err' in o.raw
+  if (!isRecord(v)) return false
+
+  const ok = v.ok
+  const raw = v.raw
+
+  if (typeof ok !== 'boolean') return false
+  if (!isRecord(raw)) return false
+
+  return 'err' in raw
 }

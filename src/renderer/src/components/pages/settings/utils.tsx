@@ -1,25 +1,42 @@
 import { SettingsNode } from '../../../routes'
 import { ExtraConfig } from '@main/Globals'
 
-export const getValueByPath = (obj: any, path: string) => {
-  if (!obj || !path) return undefined
+type AnyRecord = Record<string, unknown>
 
-  return path.split('.').reduce((acc, key) => {
-    if (acc == null) return undefined
-    return acc[key]
-  }, obj)
+function isRecord(v: unknown): v is AnyRecord {
+  return typeof v === 'object' && v !== null
 }
 
-export const setValueByPath = (obj: any, path: string, value: any) => {
-  const keys = path.split('.')
-  let cur = obj
+export const getValueByPath = (obj: unknown, path: string): unknown => {
+  if (!path) return undefined
 
-  keys.slice(0, -1).forEach((k) => {
-    if (typeof cur[k] !== 'object' || cur[k] === null) {
-      cur[k] = {}
+  const keys = path.split('.').filter(Boolean)
+  let cur: unknown = obj
+
+  for (const key of keys) {
+    if (!isRecord(cur)) return undefined
+    cur = cur[key]
+  }
+
+  return cur
+}
+
+export const setValueByPath = (obj: AnyRecord, path: string, value: unknown): void => {
+  const keys = path.split('.').filter(Boolean)
+  if (keys.length === 0) return
+
+  let cur: AnyRecord = obj
+
+  for (const k of keys.slice(0, -1)) {
+    const next = cur[k]
+    if (isRecord(next)) {
+      cur = next
+    } else {
+      const created: AnyRecord = {}
+      cur[k] = created
+      cur = created
     }
-    cur = cur[k]
-  })
+  }
 
   cur[keys[keys.length - 1]] = value
 }

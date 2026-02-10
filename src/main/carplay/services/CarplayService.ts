@@ -78,6 +78,25 @@ type DongleFwCheckResponse = {
   error?: string
 }
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === 'object' && !Array.isArray(v)
+}
+
+function pickString(o: Record<string, unknown>, key: string): string | undefined {
+  const v = o[key]
+  return typeof v === 'string' ? v : undefined
+}
+
+function pickNumber(o: Record<string, unknown>, key: string): number | undefined {
+  const v = o[key]
+  return typeof v === 'number' ? v : undefined
+}
+
+function pickStringOrNumber(o: Record<string, unknown>, key: string): string | number | undefined {
+  const v = o[key]
+  return typeof v === 'string' || typeof v === 'number' ? v : undefined
+}
+
 export class CarplayService {
   private driver = new DongleDriver()
   private webUsbDevice: WebUSBDevice | null = null
@@ -106,6 +125,10 @@ export class CarplayService {
   private mapsRequested = false
 
   private audio: CarplayAudio
+
+  public beginShutdown(): void {
+    this.shuttingDown = true
+  }
 
   constructor() {
     this.audio = new CarplayAudio(
@@ -314,7 +337,7 @@ export class CarplayService {
         // Unknown meta
       } else if (msg instanceof Command) {
         this.webContents.send('carplay-event', { type: 'command', message: msg })
-        if ((msg.value as number) === 508 && this.mapsRequested) {
+        if (typeof msg.value === 'number' && msg.value === 508 && this.mapsRequested) {
           try {
             this.driver.send(new SendCommand('requestNaviScreenFocus'))
           } catch {
@@ -457,27 +480,35 @@ export class CarplayService {
         const toRendererShape = (r: FirmwareCheckResult): DongleFwCheckResponse => {
           if (!r.ok) return asError(r.error || 'Unknown error')
 
-          const rawObj: any = r.raw && typeof r.raw === 'object' ? r.raw : { err: 0 }
+          const rawObj: Record<string, unknown> = isRecord(r.raw) ? r.raw : {}
+
+          const rawErr = pickNumber(rawObj, 'err') ?? 0
+          const rawToken = pickString(rawObj, 'token')
+          const rawVer = pickString(rawObj, 'ver')
+          const rawSize = pickStringOrNumber(rawObj, 'size')
+          const rawId = pickString(rawObj, 'id')
+          const rawNotes = pickString(rawObj, 'notes')
+          const rawMsg = pickString(rawObj, 'msg')
+          const rawError = pickString(rawObj, 'error')
 
           return {
             ok: true,
             hasUpdate: Boolean(r.hasUpdate),
             size: typeof r.size === 'number' ? r.size : 0,
             token: r.token,
-            request: (r.request as any) ?? undefined,
+            request: isRecord(r.request) ? r.request : undefined,
             raw: {
-              err: typeof rawObj.err === 'number' ? rawObj.err : 0,
-              token: r.token ?? rawObj.token,
-              ver: r.latestVer ?? rawObj.ver,
-              size: (typeof r.size === 'number' ? r.size : rawObj.size) ?? 0,
-              id: r.id ?? rawObj.id,
-              notes: r.notes ?? rawObj.notes,
-              msg: rawObj.msg,
-              error: rawObj.error
+              err: rawErr,
+              token: r.token ?? rawToken,
+              ver: r.latestVer ?? rawVer,
+              size: (typeof r.size === 'number' ? r.size : rawSize) ?? 0,
+              id: r.id ?? rawId,
+              notes: r.notes ?? rawNotes,
+              msg: rawMsg,
+              error: rawError
             }
           }
         }
-
         const action = req?.action
 
         if (action === 'check') {
@@ -580,7 +611,7 @@ export class CarplayService {
 
             this.webContents?.send('carplay-event', { type: 'fwUpdate', stage: 'upload:start' })
 
-            const st: any = await this.firmware.getLocalFirmwareStatus({
+            const st = await this.firmware.getLocalFirmwareStatus({
               appVer: this.getApkVer(),
               dongleFwVersion: this.dongleFwVersion ?? null,
               boxInfo: this.boxInfo
@@ -646,18 +677,36 @@ export class CarplayService {
         }
 
         if (action === 'status') {
-          const st: any = await this.firmware.getLocalFirmwareStatus({
+          const st = await this.firmware.getLocalFirmwareStatus({
             appVer: this.getApkVer(),
             dongleFwVersion: this.dongleFwVersion ?? null,
             boxInfo: this.boxInfo
           })
 
-          if (!st || st.ok !== true) {
-            return asError(String(st?.error || 'Local firmware status failed'))
+          if (!st) {
+            return asError('Local firmware status failed')
+          }
+
+          if (st.ok !== true) {
+            return asError(typeof st.error === 'string' ? st.error : 'Local firmware status failed')
+          }
+
+          if (!st.ready) {
+            return {
+              ok: true,
+              hasUpdate: false,
+              size: 0,
+              token: undefined,
+              request: { local: st },
+              raw: {
+                err: 0,
+                msg: 'local:not-ready'
+              }
+            }
           }
 
           const latestVer = typeof st.latestVer === 'string' ? st.latestVer : undefined
-          const bytes = typeof st.bytes === 'number' ? st.bytes : 0
+          const bytes = st.bytes
 
           return {
             ok: true,
@@ -669,7 +718,7 @@ export class CarplayService {
               err: 0,
               ver: latestVer,
               size: bytes,
-              msg: st.ready ? 'local:ready' : 'local:not-ready'
+              msg: 'local:ready'
             }
           }
         }

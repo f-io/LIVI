@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import type { CSSProperties } from 'react'
 import { Box, Stack, Typography } from '@mui/material'
 import {
   name,
@@ -18,18 +19,29 @@ type Row = {
   tooltip?: string
 }
 
+const contributorsValue: unknown = contributors as unknown
+
 const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0
+
+type PersonLike = {
+  name?: unknown
+  email?: unknown
+  url?: unknown
+}
+
+const isPersonLike = (v: unknown): v is PersonLike => typeof v === 'object' && v !== null
 
 const toAuthorString = (a: unknown): string => {
   if (isNonEmptyString(a)) return a
-  if (a && typeof a === 'object') {
-    const anyA = a as any
-    const n = isNonEmptyString(anyA.name) ? anyA.name : ''
-    const e = isNonEmptyString(anyA.email) ? `<${anyA.email}>` : ''
-    const u = isNonEmptyString(anyA.url) ? `(${anyA.url})` : ''
+
+  if (isPersonLike(a)) {
+    const n = isNonEmptyString(a.name) ? a.name : ''
+    const e = isNonEmptyString(a.email) ? `<${a.email}>` : ''
+    const u = isNonEmptyString(a.url) ? `(${a.url})` : ''
     const s = [n, e, u].filter(Boolean).join(' ')
     return s || EMPTY_STRING
   }
+
   return EMPTY_STRING
 }
 
@@ -44,9 +56,14 @@ export const About = () => {
   const { t } = useTranslation()
 
   const contributorsStr = useMemo(() => {
-    if (Array.isArray(contributors) && contributors.length > 0) {
-      return contributors
-        .map((c) => (typeof c === 'string' ? c : (c as any)?.name))
+    const list = Array.isArray(contributorsValue) ? (contributorsValue as unknown[]) : []
+    if (list.length > 0) {
+      return list
+        .map((c) => {
+          if (typeof c === 'string') return c
+          if (isPersonLike(c) && isNonEmptyString(c.name)) return c.name
+          return ''
+        })
         .filter(isNonEmptyString)
         .join(', ')
         .trim()
@@ -94,7 +111,7 @@ export const About = () => {
     return out
   }, [contributorsStr, t, buildRunStr, commitShaStr])
 
-  const Mono: React.CSSProperties = {
+  const Mono: CSSProperties = {
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
     fontVariantNumeric: 'tabular-nums'
   }

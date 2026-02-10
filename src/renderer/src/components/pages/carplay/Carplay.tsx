@@ -415,10 +415,27 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   }, [settings.fps])
 
   useEffect(() => {
-    if (!renderWorkerRef.current) return
+    const w = renderWorkerRef.current
+    if (!w) return
 
-    const handler = (ev: MessageEvent<any>) => {
-      const t = ev.data?.type
+    type RenderWorkerMsg =
+      | { type: 'render-ready' }
+      | { type: 'render-error'; message?: string }
+      | { type: string; [key: string]: unknown }
+
+    const isRecord = (v: unknown): v is Record<string, unknown> =>
+      typeof v === 'object' && v !== null
+
+    const readWorkerMsg = (data: unknown): RenderWorkerMsg | null => {
+      if (!isRecord(data)) return null
+      const t = data.type
+      if (typeof t !== 'string') return null
+      return data as RenderWorkerMsg
+    }
+
+    const handler = (ev: MessageEvent<unknown>) => {
+      const msg = readWorkerMsg(ev.data)
+      const t = msg?.type
 
       if (t === 'render-ready') {
         console.log('[CARPLAY] Render worker ready message received')
@@ -428,23 +445,20 @@ const CarplayComponent: React.FC<CarplayProps> = ({
       }
 
       if (t === 'render-error') {
-        const msg =
-          typeof ev.data?.message === 'string' && ev.data.message.trim()
-            ? ev.data.message.trim()
-            : 'No renderer available'
+        const message = msg && typeof msg.message === 'string' ? msg.message.trim() : ''
+        const text = message ? message : 'No renderer available'
 
-        console.warn('[CARPLAY] Render worker error:', ev.data)
+        console.warn('[CARPLAY] Render worker error:', msg)
 
-        setRendererError(msg)
+        setRendererError(text)
         setRenderReady(false)
         setReceivingVideo(false)
-        renderWorkerRef.current?.postMessage({ type: 'clear' })
-        return
+        w.postMessage({ type: 'clear' })
       }
     }
 
-    renderWorkerRef.current.addEventListener('message', handler)
-    return () => renderWorkerRef.current?.removeEventListener('message', handler)
+    w.addEventListener('message', handler)
+    return () => w.removeEventListener('message', handler)
   }, [setReceivingVideo])
 
   // Forward video chunks to worker port
@@ -742,8 +756,11 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           prev = null
         }
       }
-      if (prev && typeof prev === 'object' && next && typeof next === 'object') {
-        return { ...(prev as any), ...(next as any) }
+      const isRecord = (v: unknown): v is Record<string, unknown> =>
+        typeof v === 'object' && v !== null
+
+      if (isRecord(prev) && isRecord(next)) {
+        return { ...prev, ...next }
       }
       return next
     }
@@ -917,8 +934,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
 
     window.carplay.ipc.onEvent(handler)
     return () => window.carplay.ipc.offEvent(handler)
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     gotoHostUI,
     setReceivingVideo,

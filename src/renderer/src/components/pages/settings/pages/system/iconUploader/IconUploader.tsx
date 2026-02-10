@@ -7,6 +7,22 @@ import { loadImageFromFile, resizeImageToBase64Png } from './utils'
 import { ResetDongleIconsResult } from './types'
 import { useTranslation } from 'react-i18next'
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null
+}
+
+function getResetDongleIconsFn(w: unknown): (() => Promise<ResetDongleIconsResult>) | null {
+  if (!isRecord(w)) return null
+
+  const app = w.app
+  if (!isRecord(app)) return null
+
+  const fn = app.resetDongleIcons
+  if (typeof fn !== 'function') return null
+
+  return fn as () => Promise<ResetDongleIconsResult>
+}
+
 export function IconUploader(props: SettingsCustomPageProps<ExtraConfig, unknown>) {
   const { requestRestart } = props
 
@@ -94,9 +110,8 @@ export function IconUploader(props: SettingsCustomPageProps<ExtraConfig, unknown
       setIsResetting(true)
       setMessage('')
 
-      const api = (window as any).app
-      const fn = api?.resetDongleIcons as undefined | (() => Promise<ResetDongleIconsResult>)
-      if (typeof fn !== 'function') {
+      const fn = getResetDongleIconsFn(window)
+      if (!fn) {
         setMessage('Reset API not available.')
         return
       }

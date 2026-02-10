@@ -25,6 +25,17 @@ import {
 const CONFIG_NUMBER = 1
 const MAX_ERROR_COUNT = 5
 
+type UnknownRecord = Record<string, unknown>
+
+function isRecord(v: unknown): v is UnknownRecord {
+  return typeof v === 'object' && v !== null
+}
+
+function readProp<T = unknown>(obj: unknown, key: string): T | undefined {
+  if (!isRecord(obj)) return undefined
+  return obj[key] as T
+}
+
 export enum HandDriveType {
   LHD = 0,
   RHD = 1
@@ -189,18 +200,24 @@ export class DongleDriver extends EventEmitter {
   }
 
   private async tryResetUnderlyingUsbDevice(dev: USBDevice): Promise<boolean> {
-    const raw =
-      (dev as any)?.device ??
-      (dev as any)?._device ??
-      (dev as any)?.usbDevice ??
-      (dev as any)?.rawDevice
+    const candidates: unknown[] = [
+      readProp(dev, 'device'),
+      readProp(dev, '_device'),
+      readProp(dev, 'usbDevice'),
+      readProp(dev, 'rawDevice')
+    ]
 
-    const resetFn = raw?.reset
+    const raw = candidates.find(isRecord)
+    if (!raw) return false
+
+    const resetFn = readProp(raw, 'reset')
     if (typeof resetFn !== 'function') return false
 
     try {
       await new Promise<void>((resolve, reject) => {
-        resetFn.call(raw, (err: unknown) => (err ? reject(err) : resolve()))
+        ;(resetFn as (cb: (err: unknown) => void) => void).call(raw, (err: unknown) =>
+          err ? reject(err) : resolve()
+        )
       })
       return true
     } catch (e) {

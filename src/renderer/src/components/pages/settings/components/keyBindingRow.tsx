@@ -8,6 +8,10 @@ import { StackItem } from './stackItem'
 import type { KeyBindingNode } from '@renderer/routes/types'
 import { useTranslation } from 'react-i18next'
 
+const DEFAULT_BINDINGS_MAP = DEFAULT_BINDINGS as Partial<
+  Record<KeyBindingNode['bindingKey'], string>
+>
+
 function isModifierOnly(code: string) {
   return [
     'ShiftLeft',
@@ -47,14 +51,14 @@ export function KeyBindingRow({ node }: { node: KeyBindingNode }) {
 
   // default value (from schema node OR DEFAULT_BINDINGS fallback)
   const defaultValue = useMemo(() => {
-    const fallback = (DEFAULT_BINDINGS as any)?.[node.bindingKey] as string | undefined
+    const fallback = DEFAULT_BINDINGS_MAP[node.bindingKey]
     return normalize(node.defaultValue ?? fallback)
   }, [node.bindingKey, node.defaultValue])
 
   // IMPORTANT: default can be '' (meaning: unbound)
   const hasDefault = useMemo(() => {
     if (node.defaultValue !== undefined && node.defaultValue !== null) return true
-    return Object.prototype.hasOwnProperty.call(DEFAULT_BINDINGS as any, node.bindingKey)
+    return Object.prototype.hasOwnProperty.call(DEFAULT_BINDINGS_MAP, node.bindingKey)
   }, [node.bindingKey, node.defaultValue])
 
   const isDefault = useMemo(() => {

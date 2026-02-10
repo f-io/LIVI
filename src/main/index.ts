@@ -228,10 +228,15 @@ const NULL_DELETES: (keyof ExtraConfig)[] = [
   // add more explicit “reset-to-default” keys here
 ]
 
+type NullDeleteKey = (typeof NULL_DELETES)[number]
+
 function applyNullDeletes(merged: ExtraConfig, next: Partial<ExtraConfig>) {
+  const nextAny = next as Record<string, unknown>
+  const mergedAny = merged as Record<string, unknown>
+
   for (const key of NULL_DELETES) {
-    if ((next as any)[key] === null) {
-      delete (merged as any)[key]
+    if (nextAny[key] === null) {
+      delete mergedAny[key as NullDeleteKey]
     }
   }
 }
@@ -286,7 +291,7 @@ app.on('before-quit', async (e) => {
   }, watchdogMs)
 
   try {
-    ;(carplayService as any).shuttingDown = true
+    carplayService.beginShutdown()
 
     // Block hotplug callbacks ASAP
     usbService?.beginShutdown()

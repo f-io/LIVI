@@ -15,6 +15,12 @@ type Props<T, K> = {
   onClick?: () => void
 }
 
+const toDisplayValue = (raw: unknown): string | undefined => {
+  if (typeof raw === 'string') return raw
+  if (raw == null) return undefined
+  return String(raw)
+}
+
 export const SettingsFieldRow = <T, K>({ node, value, state, onChange, onClick }: Props<T, K>) => {
   const { t } = useTranslation()
   const label = node.labelKey ? t(node.labelKey) : node.label
@@ -25,7 +31,7 @@ export const SettingsFieldRow = <T, K>({ node, value, state, onChange, onClick }
         withForwardIcon
         onClick={onClick}
         node={node}
-        value={getValueByPath(state, node.path)}
+        value={toDisplayValue(getValueByPath(state, node.path))}
         showValue={node.displayValue}
       >
         <Typography>{label}</Typography>
