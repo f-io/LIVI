@@ -23,9 +23,7 @@ export function SettingsPage() {
   const path = splat ? splat.split('/') : []
   const node = getNodeByPath(settingsSchema, path)
 
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
-  const settings = useCarplayStore((s) => s.settings)
+  const settings = useCarplayStore((s) => s.settings) as ExtraConfig
 
   const { state, handleFieldChange, needsRestart, restart, requestRestart } =
     useSmartSettingsFromSchema(settingsSchema, settings)
@@ -86,7 +84,7 @@ export function SettingsPage() {
           return (
             <child.component
               key={child.label}
-              state={state}
+              state={settings}
               node={child}
               onChange={(v) => handleFieldChange(_path, v)}
               requestRestart={requestRestart}

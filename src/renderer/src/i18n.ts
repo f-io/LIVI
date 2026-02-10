@@ -6,16 +6,16 @@ import de from './locales/de.json'
 import ua from './locales/ua.json'
 
 i18n.use(initReactI18next).init({
+  debug: false,
   resources: {
     en: { translation: en },
     de: { translation: de },
-    ua: { translation: ua }
+    'uk-UA': { translation: ua }
   },
-  lng: 'ua',
+  lng: 'uk-UA',
   fallbackLng: 'en',
+
   interpolation: {
     escapeValue: false
   }
 })
-
-export default i18n

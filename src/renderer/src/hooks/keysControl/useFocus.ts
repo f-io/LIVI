@@ -2,6 +2,16 @@ import { useCallback, useContext } from 'react'
 import { AppContext } from '../../context'
 import { FOCUSABLE_SELECTOR } from '../../constants'
 
+type RefLike<T> = { current: T | null }
+
+function isRefLike<T>(v: unknown): v is RefLike<T> {
+  return typeof v === 'object' && v !== null && 'current' in v
+}
+
+function readRefCurrent<T>(v: unknown): T | null {
+  return isRefLike<T>(v) ? v.current : null
+}
+
 export const useFocus = () => {
   const appContext = useContext(AppContext)
 
@@ -58,8 +68,7 @@ export const useFocus = () => {
   )
 
   const focusSelectedNav = useCallback(() => {
-    const navRoot =
-      (navRef as any)?.current ?? (document.getElementById('nav-root') as HTMLElement | null)
+    const navRoot = readRefCurrent<HTMLElement>(navRef) ?? document.getElementById('nav-root')
 
     if (!navRoot) return false
 
@@ -75,8 +84,7 @@ export const useFocus = () => {
   }, [getFirstFocusable, navRef])
 
   const focusFirstInMain = useCallback(() => {
-    const mainRoot =
-      (mainRef as any)?.current ?? (document.getElementById('content-root') as HTMLElement | null)
+    const mainRoot = readRefCurrent<HTMLElement>(mainRef) ?? document.getElementById('content-root')
 
     if (!mainRoot) return false
 
@@ -91,7 +99,7 @@ export const useFocus = () => {
   const moveFocusLinear = useCallback(
     (delta: -1 | 1) => {
       const mainRoot =
-        (mainRef as any)?.current ?? (document.getElementById('content-root') as HTMLElement | null)
+        readRefCurrent<HTMLElement>(mainRef) ?? document.getElementById('content-root')
 
       const list = getFocusableList(mainRoot)
 

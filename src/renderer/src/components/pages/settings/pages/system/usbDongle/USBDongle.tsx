@@ -277,13 +277,18 @@ export function USBDongle() {
     })
   }, [clearAutoCloseTimer])
 
+  function isRecord(v: unknown): v is Record<string, unknown> {
+    return typeof v === 'object' && v !== null
+  }
+
   // Listen to main-process fwUpdate events
   useEffect(() => {
-    const handler = (_event: unknown, payload: any) => {
-      if (!payload || typeof payload !== 'object') return
+    const handler = (_event: unknown, payload: unknown) => {
+      if (!isRecord(payload)) return
       if (payload.type !== 'fwUpdate') return
 
-      const stage = String(payload.stage || '')
+      const stageRaw = payload.stage
+      const stage = typeof stageRaw === 'string' ? stageRaw : String(stageRaw ?? '')
       if (!stage) return
 
       // download

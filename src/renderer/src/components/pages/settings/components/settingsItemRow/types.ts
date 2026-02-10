@@ -1,4 +1,7 @@
-export interface SettingsItemRowProps<T extends Record<string, any>, K extends keyof T> {
+export interface SettingsItemRowProps<
+  T extends Record<string, unknown>,
+  K extends Extract<keyof T, string>
+> {
   config: Record<
     K,
     {

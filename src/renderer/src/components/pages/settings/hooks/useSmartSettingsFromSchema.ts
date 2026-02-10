@@ -4,43 +4,56 @@ import { getValueByPath } from '../utils'
 import type { SettingsNode } from '../../../../routes'
 import type { ExtraConfig } from '@main/Globals'
 
-type FlatSettings = Record<string, any>
+type FlatSettings = Record<string, unknown>
 
-type Overrides = Record<
-  string,
-  {
-    transform?: (value: any, prev?: any) => any
-    validate?: (value: any) => boolean
-  }
->
+type OverrideConfig = {
+  transform?: (value: unknown, prev?: unknown) => unknown
+  validate?: (value: unknown) => boolean
+}
+
+type Overrides = Record<string, OverrideConfig>
+
+type NodeWithPath = { path: string }
+type NodeWithTransform = { transform?: (value: unknown, prev?: unknown) => unknown }
+
+function hasPath(node: unknown): node is NodeWithPath {
+  return (
+    typeof node === 'object' &&
+    node !== null &&
+    typeof (node as Record<string, unknown>).path === 'string'
+  )
+}
+
+function hasTransform(node: unknown): node is NodeWithTransform {
+  return (
+    typeof node === 'object' &&
+    node !== null &&
+    typeof (node as Record<string, unknown>).transform === 'function'
+  )
+}
 
 const walkSchema = (
   node: SettingsNode<ExtraConfig>,
-  settings: any,
+  settings: unknown,
   initial: FlatSettings,
   overrides: Overrides
-) => {
+): void => {
   if (node.type !== 'route') {
-    const path = (node as any).path as unknown
+    if (hasPath(node) && node.path.length > 0) {
+      initial[node.path] = getValueByPath(settings, node.path)
 
-    if (typeof path === 'string' && path.length > 0) {
-      initial[path] = getValueByPath(settings, path)
-
-      const transform = (node as any).transform
-      if (typeof transform === 'function') {
-        overrides[path] = { transform }
+      if (hasTransform(node)) {
+        overrides[node.path] = { transform: node.transform }
       }
     }
-  }
-
-  if (node.type === 'route') {
+  } else {
     node.children.forEach((child) => walkSchema(child, settings, initial, overrides))
   }
 }
 
 export const useSmartSettingsFromSchema = (
   rootSchema: SettingsNode<ExtraConfig>,
-  settings: any
+  settings: ExtraConfig | null | undefined
 ) => {
   const { initialState, overrides } = useMemo(() => {
     const initialState: FlatSettings = {}
@@ -51,7 +64,7 @@ export const useSmartSettingsFromSchema = (
     return { initialState, overrides }
   }, [rootSchema, settings])
 
-  const smart = useSmartSettings(initialState, settings ?? {}, { overrides }) as any
+  const smart = useSmartSettings(initialState, settings ?? ({} as ExtraConfig), { overrides })
 
   const requestRestart = useCallback(
     (path?: string) => {

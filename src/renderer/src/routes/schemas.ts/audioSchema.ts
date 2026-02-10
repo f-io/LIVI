@@ -121,7 +121,7 @@ export const audioSchema: SettingsNode<ExtraConfig> = {
       displayValueUnit: 'ms',
       valueTransform: {
         toView: (v) => v ?? 1000,
-        fromView: (v, prev) => (Number.isFinite(v) ? Math.round(v) : (prev ?? 1000)),
+        fromView: (v: number, prev) => (Number.isFinite(v) ? Math.round(v) : (prev ?? 1000)),
         format: (v) => `${v} ms`
       },
       page: {

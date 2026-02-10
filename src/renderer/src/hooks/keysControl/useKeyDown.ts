@@ -1,12 +1,21 @@
-import { Ref, useCallback, useContext, useMemo } from 'react'
+import { useCallback, useContext, useMemo } from 'react'
 import { BindKey, useKeyDownProps } from './types'
 import { broadcastMediaKey } from '../../utils/broadcastMediaKey'
 import { KeyCommand } from '../../components/worker/types'
 import { useLocation } from 'react-router'
 import { ROUTES } from '../../constants'
 import { AppContext } from '../../context'
-import { get } from 'lodash'
 import { useCarplayStore } from '@store/store'
+
+type RefLike<T> = { current: T | null }
+
+function isRefLike<T>(v: unknown): v is RefLike<T> {
+  return typeof v === 'object' && v !== null && 'current' in v
+}
+
+function readRefCurrent<T>(v: unknown): T | null {
+  return isRefLike<T>(v) ? v.current : null
+}
 
 export const useKeyDown = ({
   receivingVideo,
@@ -33,8 +42,8 @@ export const useKeyDown = ({
   const appContext = useContext(AppContext)
   const settings = useCarplayStore((s) => s.settings)
 
-  const navRef: Ref<HTMLElement> | undefined = get(appContext, 'navEl')
-  const mainRef: Ref<HTMLElement> | undefined = get(appContext, 'contentEl')
+  const navRef = appContext?.navEl
+  const mainRef = appContext?.contentEl
 
   const editingField = appContext?.keyboardNavigation?.focusedElId
 
@@ -94,10 +103,9 @@ export const useKeyDown = ({
         }
       }
 
-      const navRoot =
-        (navRef as any)?.current ?? (document.getElementById('nav-root') as HTMLElement | null)
+      const navRoot = readRefCurrent<HTMLElement>(navRef) ?? document.getElementById('nav-root')
       const mainRoot =
-        (mainRef as any)?.current ?? (document.getElementById('content-root') as HTMLElement | null)
+        readRefCurrent<HTMLElement>(mainRef) ?? document.getElementById('content-root')
 
       const inNav = inContainer(navRoot, active) || !!active?.closest?.('#nav-root')
       const inMain = inContainer(mainRoot, active) || !!active?.closest?.('#content-root')

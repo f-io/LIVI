@@ -3,6 +3,29 @@ import { Box, Typography, useTheme } from '@mui/material'
 import { InitEvent } from '@worker/render/RenderEvents'
 import { useStatusStore, useCarplayStore } from '../../../store/store'
 
+type BoxInfo = { supportFeatures?: unknown }
+
+function isBoxInfo(v: unknown): v is BoxInfo {
+  return typeof v === 'object' && v !== null
+}
+
+function parseBoxInfo(raw: unknown): BoxInfo | null {
+  if (isBoxInfo(raw)) return raw
+
+  if (typeof raw === 'string') {
+    const s = raw.trim()
+    if (!s) return null
+    try {
+      const parsed: unknown = JSON.parse(s)
+      return isBoxInfo(parsed) ? parsed : null
+    } catch {
+      return null
+    }
+  }
+
+  return null
+}
+
 export const Maps: React.FC = () => {
   const theme = useTheme()
 
@@ -21,28 +44,33 @@ export const Maps: React.FC = () => {
 
   const mapsVideoChannel = useMemo(() => new MessageChannel(), [])
 
-  // Check for feature flag
-  const supportsNaviScreen = useMemo(() => {
-    let box: any = null
-    if (boxInfoRaw && typeof boxInfoRaw === 'object') {
-      box = boxInfoRaw as any
-    } else if (typeof boxInfoRaw === 'string') {
-      const s = boxInfoRaw.trim()
-      if (!s) return false
-      try {
-        const parsed = JSON.parse(s)
-        if (parsed && typeof parsed === 'object') box = parsed
-      } catch {
-        return false
-      }
-    }
+  // Render.worker message typing
+  type RenderWorkerMsg =
+    | { type: 'render-ready' }
+    | { type: 'render-error'; message?: string }
+    | { type: string; [key: string]: unknown }
 
+  function isRecord(v: unknown): v is Record<string, unknown> {
+    return typeof v === 'object' && v !== null
+  }
+
+  const readWorkerMsg = React.useCallback((data: unknown): RenderWorkerMsg | null => {
+    if (!isRecord(data)) return null
+    const t = data.type
+    if (typeof t !== 'string') return null
+    return data as RenderWorkerMsg
+  }, [])
+
+  const supportsNaviScreen = useMemo(() => {
+    const box = parseBoxInfo(boxInfoRaw)
     if (!box) return false
+
     const features = box.supportFeatures
 
     if (Array.isArray(features)) {
       return features.some((f) => String(f).trim().toLowerCase() === 'naviscreen')
     }
+
     if (typeof features === 'string') {
       return features
         .split(/[,\s]+/g)
@@ -50,6 +78,7 @@ export const Maps: React.FC = () => {
         .filter(Boolean)
         .includes('naviscreen')
     }
+
     return false
   }, [boxInfoRaw])
 
@@ -106,20 +135,21 @@ export const Maps: React.FC = () => {
     const w = renderWorkerRef.current
     if (!w) return
 
-    const handler = (ev: MessageEvent<any>) => {
-      const t = ev.data?.type
+    const handler = (ev: MessageEvent<unknown>) => {
+      const msg = readWorkerMsg(ev.data)
+      const t = msg?.type
+
       if (t === 'render-ready') {
         setRenderReady(true)
         setRendererError(null)
         console.log('[MAPS] Render worker ready message received')
         return
       }
+
       if (t === 'render-error') {
-        const msg =
-          typeof ev.data?.message === 'string' && ev.data.message.trim()
-            ? ev.data.message.trim()
-            : 'No renderer available'
-        setRendererError(msg)
+        const message = msg && typeof msg.message === 'string' ? msg.message.trim() : ''
+        const text = message ? message : 'No renderer available'
+        setRendererError(text)
         setRenderReady(false)
         w.postMessage({ type: 'clear' })
       }
@@ -127,7 +157,7 @@ export const Maps: React.FC = () => {
 
     w.addEventListener('message', handler)
     return () => w.removeEventListener('message', handler)
-  }, [])
+  }, [readWorkerMsg])
 
   // resize
   useEffect(() => {

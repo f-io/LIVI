@@ -105,7 +105,10 @@ export function Debug() {
     return () => window.carplay.ipc.offEvent(handler)
   }, [readAllSnapshots, readNavigationSnapshot, readMediaSnapshot])
 
-  const sourceEvents = autoUpdateLive ? events : (frozenEvents ?? [])
+  const sourceEvents = React.useMemo(
+    () => (autoUpdateLive ? events : (frozenEvents ?? [])),
+    [autoUpdateLive, events, frozenEvents]
+  )
 
   const typeOptions = React.useMemo(() => {
     const set = new Set<string>()

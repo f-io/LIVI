@@ -3,22 +3,22 @@ import { requiresRestartParams } from '../constants'
 import { getValueByPath, setValueByPath } from '../utils'
 import { useCarplayStore, useStatusStore } from '@store/store'
 
-type OverrideConfig<T> = {
-  transform?: (value: any, prev: T) => T
-  validate?: (value: any) => boolean
+type OverrideConfig = {
+  transform?: (value: unknown, prev: unknown) => unknown
+  validate?: (value: unknown) => boolean
 }
 
-type Overrides<T> = Partial<Record<keyof T, OverrideConfig<T>>>
+type Overrides = Record<string, OverrideConfig>
 
 function isRestartRelevantPath(path?: string) {
   if (!path) return true
   return !(path === 'bindings' || path.startsWith('bindings.'))
 }
 
-export function useSmartSettings<T extends Record<string, any>>(
+export function useSmartSettings<T extends Record<string, unknown>>(
   initial: T,
   settings: T,
-  options?: { overrides?: Overrides<T> }
+  options?: { overrides?: Overrides }
 ) {
   const overrides = options?.overrides ?? {}
   const [state, setState] = useState<T>(() => ({ ...initial }))
@@ -42,8 +42,8 @@ export function useSmartSettings<T extends Record<string, any>>(
   )
 
   const needsRestartFromConfig = useMemo(() => {
-    const cfg = (settings ?? {}) as any
-    const baseline = (restartBaseline ?? settings ?? {}) as any
+    const cfg = (settings ?? {}) as Record<string, unknown>
+    const baseline = (restartBaseline ?? settings ?? {}) as Record<string, unknown>
 
     for (const key of requiresRestartParams) {
       if (!isRestartRelevantPath(key)) continue
@@ -61,7 +61,7 @@ export function useSmartSettings<T extends Record<string, any>>(
     setRestartRequested(true)
   }, [])
 
-  const handleFieldChange = (path: string, rawValue: any) => {
+  const handleFieldChange = (path: string, rawValue: unknown) => {
     const prevValue = state[path]
     const override = overrides[path]
 
@@ -71,7 +71,7 @@ export function useSmartSettings<T extends Record<string, any>>(
     setState((prev) => {
       const next = { ...prev, [path]: nextValue }
 
-      const newSettings = structuredClone((settings ?? {}) as any)
+      const newSettings = structuredClone((settings ?? {}) as T)
       Object.entries(next).forEach(([p, v]) => {
         setValueByPath(newSettings, p, v)
       })

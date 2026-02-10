@@ -325,8 +325,15 @@ export function buildRuntimeTheme(
   const switchSO = (base.components?.MuiSwitch?.styleOverrides ?? {}) as Record<string, CSSObject>
   const cssBaselineSO = (base.components?.MuiCssBaseline?.styleOverrides ?? {}) as Record<
     string,
-    any
+    unknown
   >
+
+  const cssBodySO =
+    cssBaselineSO.body != null &&
+    typeof cssBaselineSO.body === 'object' &&
+    !Array.isArray(cssBaselineSO.body)
+      ? (cssBaselineSO.body as CSSObject)
+      : {}
 
   const tabsIndicator = (tabsSO.indicator ?? {}) as CSSObject
   const outlinedRoot = (outlinedSO.root ?? {}) as CSSObject
@@ -355,7 +362,7 @@ export function buildRuntimeTheme(
         styleOverrides: {
           ...cssBaselineSO,
           body: {
-            ...(cssBaselineSO.body ?? {}),
+            ...cssBodySO,
             '--ui-highlight': highlight!
           },
           ':focus': { outline: 'none' }
