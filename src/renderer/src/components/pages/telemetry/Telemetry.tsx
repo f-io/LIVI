@@ -269,9 +269,9 @@ export const Telemetry: React.FC = () => {
 
   const t = React.useMemo(() => translateNavigation(navi, locale), [navi, locale])
 
-  const remainDistanceText = (t as any)?.RemainDistanceText as string | undefined
-
-  const isActive = (navi as any)?.NaviStatus === 1
+  const remainDistanceText =
+    isRecord(t) && typeof t.RemainDistanceText === 'string' ? t.RemainDistanceText : undefined
+  const isActive = navi?.NaviStatus === 1
 
   return (
     <Box
