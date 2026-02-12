@@ -131,21 +131,15 @@ Listed limitations are firmware-level restrictions and cannot be fixed by the ap
 </p>
 
 <p align="center">
-  <img src="docs/images/carplay_no_phone.png" alt="No Phone" width="48%" align="top" />
+  <img src="docs/images/media.png" alt="Media" width="48%" align="top" />
   &emsp;
   <img src="docs/images/settings.png" alt="Settings" width="48%" align="top" />
 </p>
 
 <p align="center">
-  <img src="docs/images/fft.png" alt="Info" width="48%" align="top" />
-  &emsp;
-  <img src="docs/images/media.png" alt="Media" width="48%" align="top" />
-</p>
-
-<p align="center">
   <img src="docs/images/maps.png" alt="Maps (Cluster Stream)" width="48%" align="top" />
   &emsp;
-  <img src="docs/images/maps_no_nav.png" alt="Maps Fullscreen (Auto-hide Navigation)" width="48%" align="top" />
+  <img src="docs/images/telemetry.png" alt="Telemetry" width="48%" align="top" />
 </p>
 
 ## Credits
