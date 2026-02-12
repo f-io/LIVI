@@ -1,11 +1,10 @@
 import { TabConfig } from './types'
-import Badge from '@mui/material/Badge'
 import { ROUTES } from '../../constants'
 import { useTheme } from '@mui/material/styles'
 import { useStatusStore, useCarplayStore } from '../../store/store'
 
-import PhonelinkOffIcon from '@mui/icons-material/PhonelinkOff'
-import PhonelinkIcon from '@mui/icons-material/Phonelink'
+// Icons
+import CropPortraitOutlinedIcon from '@mui/icons-material/CropPortraitOutlined'
 import PlayCircleOutlinedIcon from '@mui/icons-material/PlayCircleOutlined'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
 import CameraswitchOutlinedIcon from '@mui/icons-material/CameraswitchOutlined'
@@ -24,21 +23,29 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
     {
       label: 'CarPlay',
       path: ROUTES.HOME,
-      icon: isDongleConnected ? (
-        isStreaming && receivingVideo ? (
-          <Badge
-            variant="dot"
-            overlap="circular"
-            sx={{ '& .MuiBadge-badge': { bgcolor: theme.palette.success.main } }}
-          >
-            <PhonelinkIcon sx={{ color: theme.palette.success.main, fontSize: 30 }} />
-          </Badge>
-        ) : (
-          <PhonelinkIcon sx={{ color: theme.palette.text.primary, fontSize: 30 }} />
+      icon: (() => {
+        const usbConnected = isDongleConnected
+        const phoneActive = isStreaming && receivingVideo
+        const baseColor = usbConnected ? theme.palette.text.primary : theme.palette.text.disabled
+        const activeColor = 'var(--ui-highlight)'
+
+        if (!usbConnected) {
+          return <CropPortraitOutlinedIcon sx={{ color: baseColor, fontSize: 30 }} />
+        }
+
+        return (
+          <CropPortraitOutlinedIcon
+            sx={{
+              fontSize: 30,
+              color: phoneActive ? activeColor : baseColor,
+              '&, &.MuiSvgIcon-root': {
+                color: `${phoneActive ? activeColor : baseColor} !important`
+              },
+              opacity: !phoneActive ? 'var(--ui-breathe-opacity, 1)' : 1
+            }}
+          />
         )
-      ) : (
-        <PhonelinkOffIcon sx={{ color: theme.palette.text.disabled, fontSize: 30 }} />
-      )
+      })()
     },
     ...(mapsEnabled
       ? [

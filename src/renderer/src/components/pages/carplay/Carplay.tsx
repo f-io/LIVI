@@ -1,10 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react'
-import { Box, Typography, useTheme, alpha } from '@mui/material'
-import { keyframes } from '@mui/system'
+import { Box, useTheme } from '@mui/material'
 import { useLocation, useNavigate } from 'react-router'
 import { CommandMapping } from '@main/carplay/messages/common'
 import { AudioCommand } from '@main/carplay/messages/readable'
-
 import { ExtraConfig } from '@main/Globals'
 import { useCarplayStore, useStatusStore } from '../../../store/store'
 import { InitEvent, UpdateFpsEvent } from '@worker/render/RenderEvents'
@@ -12,10 +10,7 @@ import type { CarPlayWorker, UsbEvent, KeyCommand, WorkerToUI } from '@worker/ty
 import { useCarplayMultiTouch } from './hooks/useCarplayTouch'
 
 // Icons
-import UsbOffOutlinedIcon from '@mui/icons-material/UsbOffOutlined'
-import UsbOutlinedIcon from '@mui/icons-material/UsbOutlined'
-import PhoneIphoneOutlinedIcon from '@mui/icons-material/PhoneIphoneOutlined'
-import { useTranslation } from 'react-i18next'
+import CropPortraitOutlinedIcon from '@mui/icons-material/CropPortraitOutlined'
 
 const RETRY_DELAY_MS = 3000
 
@@ -30,93 +25,19 @@ interface CarplayProps {
   setNavVideoOverlayActive: (v: boolean) => void
 }
 
-// Overlay visuals
-
-const spin = keyframes`to { transform: rotate(360deg); }`
-const pulse = keyframes`
-  0%   { transform: scale(1);   opacity: .35; }
-  50%  { transform: scale(1.08); opacity: .7; }
-  100% { transform: scale(1);   opacity: .35; }
-`
-
 function StatusOverlay({
   mode,
   show,
   offsetX = 0,
-  offsetY = 0,
-  rendererOk,
-  rendererError
+  offsetY = 0
 }: {
   mode: 'dongle' | 'phone'
   show: boolean
   offsetX?: number
   offsetY?: number
-  rendererOk: boolean
-  rendererError: string | null
 }) {
-  const { t } = useTranslation()
   const theme = useTheme()
   const isPhonePhase = mode === 'phone'
-  const ringColor = rendererError
-    ? theme.palette.error.main
-    : rendererOk
-      ? theme.palette.primary.main
-      : isPhonePhase
-        ? theme.palette.primary.main
-        : theme.palette.text.secondary
-
-  const track = alpha(ringColor, 0.22)
-
-  // Measure ring size
-  const ringRef = useRef<HTMLDivElement>(null)
-  const [ringH, setRingH] = useState(0)
-  useLayoutEffect(() => {
-    const measure = () => {
-      const h = ringRef.current?.getBoundingClientRect().height ?? 0
-      if (h && h !== ringH) setRingH(h)
-    }
-    measure()
-    const ro = ringRef.current ? new ResizeObserver(measure) : null
-    if (ringRef.current) ro?.observe(ringRef.current)
-    window.addEventListener('resize', measure)
-    return () => {
-      window.removeEventListener('resize', measure)
-      ro?.disconnect()
-    }
-  }, [ringH])
-
-  const GAP_BELOW = 12
-
-  const Chip = (active: boolean, Icon: React.ElementType, label: string, muted?: boolean) => (
-    <Box
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 0.75,
-        px: 1.25,
-        py: 0.5,
-        borderRadius: 999,
-        backdropFilter: 'blur(6px)',
-        backgroundColor: alpha(
-          theme.palette.background.paper,
-          theme.palette.mode === 'dark' ? 0.28 : 0.18
-        ),
-        color: active
-          ? theme.palette.primary.main
-          : muted
-            ? theme.palette.text.disabled
-            : theme.palette.text.secondary,
-        fontSize: 12,
-        lineHeight: 1,
-        border: `1px solid ${alpha(theme.palette.divider, 0.5)}`
-      }}
-    >
-      <Icon sx={{ fontSize: 18 }} />
-      <Typography variant="caption" sx={{ fontWeight: 500 }}>
-        {label}
-      </Typography>
-    </Box>
-  )
 
   return (
     <Box
@@ -131,71 +52,23 @@ function StatusOverlay({
         zIndex: 9
       }}
     >
-      {/* Ring center pinned to window center */}
       <Box
-        ref={ringRef}
         sx={{
           position: 'absolute',
           left: `calc(50% + ${offsetX}px)`,
           top: `calc(50% + ${offsetY}px)`,
           transform: 'translate(-50%, -50%)',
-          width: { xs: 72, sm: 88 },
-          height: { xs: 72, sm: 88 }
+          display: 'grid',
+          placeItems: 'center'
         }}
       >
-        {/* Track */}
-        <Box
+        <CropPortraitOutlinedIcon
           sx={{
-            position: 'absolute',
-            inset: 0,
-            borderRadius: '50%',
-            border: '6px solid',
-            borderColor: track
+            fontSize: 84,
+            color: isPhonePhase ? theme.palette.text.primary : theme.palette.text.disabled,
+            opacity: isPhonePhase ? 'var(--ui-breathe-opacity, 1)' : 0.55
           }}
         />
-        {/* Spinning arc */}
-        <Box
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            borderRadius: '50%',
-            border: '6px solid',
-            borderColor: 'transparent',
-            borderTopColor: ringColor,
-            animation: `${spin} 900ms linear infinite`
-          }}
-        />
-        {/* Soft pulse */}
-        <Box
-          sx={{
-            position: 'absolute',
-            inset: 10,
-            borderRadius: '50%',
-            background: alpha(ringColor, 0.15),
-            animation: `${pulse} 1400ms ease-in-out infinite`
-          }}
-        />
-      </Box>
-
-      {/* Chips */}
-      <Box
-        sx={{
-          position: 'absolute',
-          left: `calc(50% + ${offsetX}px)`,
-          top: `calc(50% + ${offsetY}px + ${(ringH || 0) / 2 + GAP_BELOW}px)`,
-          transform: 'translateX(-50%)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1.5
-        }}
-      >
-        {isPhonePhase
-          ? Chip(true, UsbOutlinedIcon, t('carplay.dongle'))
-          : Chip(false, UsbOffOutlinedIcon, t('carplay.dongle'))}
-        <Box
-          sx={{ width: 18, height: 2, bgcolor: alpha(theme.palette.divider, 0.6), borderRadius: 1 }}
-        />
-        {Chip(false, PhoneIphoneOutlinedIcon, t('carplay.phone'), !isPhonePhase)}
       </Box>
     </Box>
   )
@@ -1023,8 +896,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           mode={mode}
           offsetX={overlayX}
           offsetY={overlayY}
-          rendererOk={renderReady && !rendererError}
-          rendererError={rendererError}
         />
       )}
 

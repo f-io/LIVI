@@ -2,7 +2,13 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import { ThemeProvider, CssBaseline } from '@mui/material'
 import { useCarplayStore } from './store/store'
-import { darkTheme, lightTheme, buildRuntimeTheme, initCursorHider } from './theme'
+import {
+  darkTheme,
+  lightTheme,
+  buildRuntimeTheme,
+  initCursorHider,
+  initUiBreatheClock
+} from './theme'
 import { useCallback, useMemo, useState } from 'react'
 import '@fontsource/roboto/300.css'
 import '@fontsource/roboto/400.css'
@@ -12,6 +18,7 @@ import { AppContext, AppContextProps } from './context'
 import { THEME } from './constants'
 import './i18n'
 
+initUiBreatheClock()
 initCursorHider()
 
 const Root = () => {

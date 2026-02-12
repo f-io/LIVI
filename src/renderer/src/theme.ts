@@ -64,6 +64,7 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK) {
         secondary: isLight ? themeColors.textSecondaryLight : themeColors.textSecondaryDark
       },
       primary: { main: primary },
+      secondary: { main: highlight },
       divider: isLight ? themeColors.dividerLight : themeColors.dividerDark,
       success: { main: themeColors.successMain }
     },
@@ -73,7 +74,8 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK) {
           ...commonLayout,
           body: {
             backgroundColor: isLight ? themeColors.light : themeColors.dark,
-            '--ui-highlight': highlight
+            '--ui-highlight': highlight,
+            '--ui-breathe-dur': '1350ms'
           },
           '.fft-surface': {
             backgroundColor: isLight ? themeColors.fftSurfaceLight : themeColors.fftSurfaceDark,
@@ -352,7 +354,8 @@ export function buildRuntimeTheme(
     ...base,
     palette: {
       ...base.palette,
-      primary: { main: primary! }
+      primary: { main: primary! },
+      secondary: { main: highlight! }
     },
 
     components: {
@@ -538,4 +541,35 @@ export function initCursorHider() {
   }
   document.addEventListener('mousemove', reset)
   reset()
+}
+
+export function initUiBreatheClock() {
+  const start = () => {
+    const body = document.body
+    if (!body) return false
+
+    const getDurMs = () => {
+      const raw = getComputedStyle(body).getPropertyValue('--ui-breathe-dur').trim()
+      const n = Number.parseFloat(raw)
+      return Number.isFinite(n) && n > 0 ? n : 1350
+    }
+
+    const t0 = performance.now()
+    const tick = () => {
+      const dur = getDurMs()
+      const t = (performance.now() - t0) % dur
+      const x = (t / dur) * Math.PI * 2
+      const s01 = (Math.sin(x - Math.PI / 2) + 1) / 2
+      const opacity = 0.25 + 0.75 * s01
+
+      body.style.setProperty('--ui-breathe-opacity', opacity.toFixed(4))
+      requestAnimationFrame(tick)
+    }
+
+    requestAnimationFrame(tick)
+    return true
+  }
+
+  if (start()) return
+  window.addEventListener('DOMContentLoaded', () => start(), { once: true })
 }

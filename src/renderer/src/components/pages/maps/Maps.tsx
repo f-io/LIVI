@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Typography, useTheme } from '@mui/material'
 import { InitEvent } from '@worker/render/RenderEvents'
 import { useStatusStore, useCarplayStore } from '../../../store/store'
+import MapOutlinedIcon from '@mui/icons-material/MapOutlined'
 
 type BoxInfo = { supportFeatures?: unknown }
 
@@ -225,18 +226,12 @@ export const Maps: React.FC = () => {
             position: 'absolute',
             inset: 0,
             display: 'grid',
-            placeItems: 'start center',
-            pt: 6,
+            placeItems: 'center',
             textAlign: 'center',
             pointerEvents: 'none'
           }}
         >
-          <Box sx={{ px: 2 }}>
-            <Typography variant="h6">Maps</Typography>
-            <Typography variant="body2" sx={{ opacity: 0.8, mt: 1 }}>
-              Start CarPlay to enable the navigation screen.
-            </Typography>
-          </Box>
+          <MapOutlinedIcon sx={{ fontSize: 84, opacity: 0.55 }} />
         </Box>
       )}
 
@@ -276,17 +271,15 @@ export const Maps: React.FC = () => {
             position: 'absolute',
             inset: 0,
             display: 'grid',
-            placeItems: 'start center',
-            pt: 6,
-            pl: { xs: '84px', sm: '92px' },
+            placeItems: 'center',
             textAlign: 'center',
             pointerEvents: 'none'
           }}
         >
-          <Box sx={{ px: 2 }}>
-            <Typography variant="h6">Maps</Typography>
-            <Typography variant="body2" sx={{ opacity: 0.8, mt: 1 }}>
-              This dongle firmware does not support the navigation screen (NaviScreen).
+          <Box sx={{ display: 'grid', placeItems: 'center', gap: 1 }}>
+            <MapOutlinedIcon sx={{ fontSize: 84, opacity: 0.55 }} />
+            <Typography variant="body2" sx={{ opacity: 0.75 }}>
+              Not supported by firmware
             </Typography>
           </Box>
         </Box>
