@@ -443,3 +443,77 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           retain_days: 7
           keep_minimum_runs: 1
+
+      - name: Cleanup caches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CACHES="$(gh api -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/actions/caches" \
+            --paginate \
+            --jq '.actions_caches[]
+              | select(.key | startswith("node-cache-") or startswith("eb-cache-") or startswith("electron-gyp-"))
+              | "\(.id) \(.last_accessed_at) \(.ref) \(.key)"' \
+            | sort -k2 -r || true)"
+
+          if [ -z "${CACHES}" ]; then
+            echo "No matching cache entries found."
+            exit 0
+          fi
+
+          declare -A KEEP_FOR_GROUP=()
+
+          while read -r ID LAST REF KEY; do
+            [ -n "${ID}" ] || continue
+
+            case "${KEY}" in
+              node-cache-*)
+                GROUP="$(echo "${KEY}" | sed -E 's/^(node-cache-[^-]+-[^-]+-npm).*/\1/')"
+                ;;
+              eb-cache-*)
+                GROUP="$(echo "${KEY}" | sed -E 's/^(eb-cache-[^-]+).*/\1/')"
+                ;;
+              electron-gyp-*)
+                GROUP="$(echo "${KEY}" | sed -E 's/^(electron-gyp-[^-]+).*/\1/')"
+                ;;
+              *)
+                continue
+                ;;
+            esac
+
+            GROUP="${GROUP}::${REF}"
+
+            if [ -z "${KEEP_FOR_GROUP[${GROUP}]+x}" ]; then
+              KEEP_FOR_GROUP["${GROUP}"]="${ID}"
+            fi
+          done <<< "${CACHES}"
+
+          while read -r ID LAST REF KEY; do
+            [ -n "${ID}" ] || continue
+
+            case "${KEY}" in
+              node-cache-*)
+                GROUP="$(echo "${KEY}" | sed -E 's/^(node-cache-[^-]+-[^-]+-npm).*/\1/')"
+                ;;
+              eb-cache-*)
+                GROUP="$(echo "${KEY}" | sed -E 's/^(eb-cache-[^-]+).*/\1/')"
+                ;;
+              electron-gyp-*)
+                GROUP="$(echo "${KEY}" | sed -E 's/^(electron-gyp-[^-]+).*/\1/')"
+                ;;
+              *)
+                continue
+                ;;
+            esac
+
+            GROUP="${GROUP}::${REF}"
+            KEEP_ID="${KEEP_FOR_GROUP[${GROUP}]}"
+
+            if [ "${ID}" != "${KEEP_ID}" ]; then
+              gh api -X DELETE -H "Accept: application/vnd.github+json" \
+                "/repos/${GITHUB_REPOSITORY}/actions/caches/${ID}" >/dev/null
+            fi
+          done <<< "${CACHES}"
