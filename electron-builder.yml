@@ -5,12 +5,18 @@ directories:
   buildResources: assets
 
 files:
-  - '!src/*'
-  - '!**/.vscode/*'
+  - out/**
+  - package.json
+  - node_modules/**
+  - '!**/.cache/**'
+  - '!**/.pnpm-store/**'
+  - '!**/node_modules/.vite/**'
+  - '!**/node_modules/.cache/**'
+  - '!**/.vscode/**'
+  - '!**/*.map'
+  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml,CHANGELOG.md,README.md}'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
-  - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yml,dev-app-update.yml,CHANGELOG.md,README.md}'
-  - '!{.env,.env.*,.npmrc,pnpm-lock.yml}'
-  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!src/**'
 
 asarUnpack:
   - resources/**
@@ -40,7 +46,7 @@ dmg:
 appImage:
   artifactName: ${name}-${version}-${arch}.${ext}
 
-npmRebuild: true
+npmRebuild: false
 
 publish:
   provider: generic

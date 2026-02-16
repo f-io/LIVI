@@ -86,7 +86,7 @@ brew install sox
 ## Build Environment
 
 ![Node](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-node.json)
-![npm](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-npm.json)
+![pnpm](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-pnpm.json)
 ![electron](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-electron.json)
 ![chrome](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-electron-date.json)
 ![release](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-electron-chromium.json)
@@ -106,9 +106,22 @@ Make sure the following packages and tools are installed on your system before b
 ```bash
 git clone --branch main --single-branch https://github.com/f-io/LIVI.git \
   && cd LIVI \
-  && npm run install:clean \
-  && npm run build \
-  && npm run build:armLinux
+  && corepack enable \
+  && corepack install
+
+# Install dependencies from lockfile
+pnpm run install:ci
+
+# --- Build targets ---
+
+# Linux x86_64 (AppImage)
+pnpm run build:linux
+
+# Linux ARM64 (AppImage)
+pnpm run build:armLinux
+
+# macOS (arm64 dmg)
+pnpm run build:mac
 ```
 
 ## Dongle Firmware Feature Matrix

@@ -11,6 +11,8 @@ jobs:
     name: Type-Check
     if: ${{ github.actor != 'github-actions' }}
     runs-on: ubuntu-latest
+    env:
+      HUSKY: 0
 
     steps:
       - uses: actions/checkout@v4
@@ -26,14 +28,25 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-          cache: npm
-          cache-dependency-path: package-lock.json
 
-      - name: Setup npm 11.x
+      - name: Setup pnpm
         run: |
-          npm i -g npm@^11
-          echo "npm version: $(npm -v)"
-          node -e "const v=require('child_process').execSync('npm -v').toString().trim(); if(!/^11\./.test(v)){console.error('Expected npm 11.x, got', v); process.exit(1);} console.log('npm 11 OK');"
+          corepack enable
+          corepack install
+          echo "pnpm version: $(pnpm -v)"
+          node -e "const v=require('child_process').execSync('pnpm -v').toString().trim(); if(!/^10\\./.test(v)){console.error('Expected pnpm 10.x, got', v); process.exit(1);} console.log('pnpm 10 OK');"
+
+      - name: Resolve pnpm store path
+        id: pnpm_store
+        run: echo "path=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm_store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-x86_64-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-x86_64-
 
       - name: Ensure native build deps
         run: |
@@ -42,8 +55,7 @@ jobs:
             build-essential python3 python3-dev libusb-1.0-0-dev libudev-dev
 
       - name: Install dependencies from lockfile
-        run: |
-          npm run install:ci
+        run: pnpm install --frozen-lockfile
 
       - name: Run TypeScript type-check
-        run: npm run typecheck
+        run: pnpm run typecheck
