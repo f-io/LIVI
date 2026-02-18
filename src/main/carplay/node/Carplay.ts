@@ -98,14 +98,12 @@ export default class Carplay {
     this.dongleDriver = driver
   }
 
-  private async findDevice() {
-    let device: USBDevice | null = null
+  private async findDevice(): Promise<ReturnType<typeof webusb.requestDevice> | null> {
     try {
-      device = await webusb.requestDevice({ filters: DongleDriver.knownDevices })
-    } catch (_) {
+      return await webusb.requestDevice({ filters: DongleDriver.knownDevices })
+    } catch {
       return null
     }
-    return device
   }
 
   public async resetDongle() {
