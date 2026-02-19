@@ -47,7 +47,3 @@ appImage:
   artifactName: ${name}-${version}-${arch}.${ext}
 
 npmRebuild: false
-
-publish:
-  provider: generic
-  url: 'https://f-io.github.io/LIVI/releases/'
