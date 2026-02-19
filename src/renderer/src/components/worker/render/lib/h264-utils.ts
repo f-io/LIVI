@@ -449,6 +449,7 @@ export class Bitstream extends RawBitstream {
       }
       stream[p++]! = buf[q++]!
     }
+    // eslint-disable-next-line no-useless-assignment
     stream[p++] = buf[q++]!
     return stream.subarray(0, p)
   }
@@ -480,6 +481,7 @@ export class Bitstream extends RawBitstream {
       if (stream[p - 2] === 0 && stream[p - 1] === 0 && stream[p] === 3 && stream[p]! <= 3) p++
       else buf[q++] = stream[p++]!
     }
+    // eslint-disable-next-line no-useless-assignment
     buf[q++] = stream[p++]!
     return buf.subarray(0, q)
   }
@@ -694,6 +696,7 @@ export class NALUStream {
         buff[p++] = 0xff & (len >> 24)
         buff[p++] = 0xff & (len >> 16)
         buff[p++] = 0xff & (len >> 8)
+        // eslint-disable-next-line no-useless-assignment
         buff[p++] = 0xff & len
       })
     } else if (this.type === 'annexB' && this.boxSize === 3) {
@@ -702,12 +705,13 @@ export class NALUStream {
         let p = first - 3
         if (p < 0) throw new Error('Unexpected packet format')
         const len = last - first
-        if (this.strict && 0xff && len >> 24 !== 0)
+        if (this.strict && len >> 24 !== 0)
           throw new Error(
             'NALUStream error: Packet too long to store length when boxLenMinusOne is 2'
           )
         buff[p++] = 0xff & (len >> 16)
         buff[p++] = 0xff & (len >> 8)
+        // eslint-disable-next-line no-useless-assignment
         buff[p++] = 0xff & len
       })
     }
@@ -727,6 +731,7 @@ export class NALUStream {
         buff[p++] = 0xff & 0
         buff[p++] = 0xff & 0
         buff[p++] = 0xff & 0
+        // eslint-disable-next-line no-useless-assignment
         buff[p++] = 0xff & 1
       })
     } else if (this.type === 'packet' && this.boxSize === 3) {
@@ -735,6 +740,7 @@ export class NALUStream {
         if (p < 0) throw new Error('Unexpected packet format')
         buff[p++] = 0xff & 0
         buff[p++] = 0xff & 0
+        // eslint-disable-next-line no-useless-assignment
         buff[p++] = 0xff & 1
       })
     }
@@ -842,7 +848,6 @@ export class NALUStream {
     for (let boxSize = 4; boxSize >= 1; boxSize--) {
       let packetCount = 0
       if (this.buf.length <= boxSize) {
-        packetCount = -1
         break
       }
       let delim = this.nextLengthCountedPacket(this.buf, 0, boxSize)

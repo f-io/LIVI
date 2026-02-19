@@ -294,7 +294,7 @@ export class USBService {
   }
 
   private async resetDongle(dongle: Device): Promise<boolean> {
-    let opened = false
+    let opened: boolean
 
     try {
       dongle.open()

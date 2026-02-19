@@ -290,34 +290,16 @@ jobs:
           ELECTRON_SEMVER="$(node -e "try{console.log(require('./node_modules/electron/package.json').version)}catch(e){try{console.log(require('./package.json').devDependencies.electron)}catch(e){console.log('unknown')}}" )"
           export ELECTRON_SEMVER
 
-          CHROMIUM_VER="$(node -e "
-          try {
-            const { electronToChromium } = require('electron-to-chromium');
-            const v = (process.env.ELECTRON_SEMVER || '').trim();
-            if (!v || v === 'unknown') { console.log('unknown'); process.exit(0); }
-            const clean = v.replace(/^v/i,'').split('-')[0];
-            const parts = clean.split('.');
-            const candidates = [clean, parts.slice(0,2).join('.'), parts[0]].filter(Boolean);
-            for (const c of candidates) {
-              const mapped = electronToChromium(c);
-              if (mapped) { console.log(String(mapped).trim()); process.exit(0); }
-            }
-            console.log('unknown');
-          } catch { console.log('unknown'); }
+          CHROMIUM_VER="$(ELECTRON_RUN_AS_NODE=1 node -e "
+            const { execFileSync } = require('child_process');
+            const e = require('electron');
+            const out = execFileSync(
+              e,
+              ['-e', 'process.stdout.write(process.versions.chrome || \"unknown\")'],
+              { encoding: 'utf8' }
+            );
+            process.stdout.write((out || 'unknown').trim());
           ")"
-
-          if [ "$CHROMIUM_VER" = "unknown" ] || [ -z "$CHROMIUM_VER" ]; then
-            CHROMIUM_VER="$(node -e "
-            const { execSync } = require('child_process');
-            const v = (process.env.ELECTRON_SEMVER || '').trim();
-            const clean = v.replace(/^v/i,'').split('-')[0];
-            const major = clean.split('.')[0];
-            try {
-              const out = execSync('npx -y electron-to-chromium@latest --electron ' + major, { stdio:['ignore','pipe','ignore'] }).toString().trim();
-              console.log(out || 'unknown');
-            } catch { console.log('unknown'); }
-            ")"
-          fi
 
           ELECTRON_DATE_DE="$(node -e "
             const cp = require('child_process');
@@ -333,6 +315,9 @@ jobs:
               ).format(d));
             } catch { console.log('unknown'); }
           ")"
+
+          echo "ELECTRON_SEMVER=${ELECTRON_SEMVER}"
+          echo "CHROMIUM_VER=${CHROMIUM_VER}"
 
           mkdir temp-badges
           cd temp-badges

@@ -30,8 +30,8 @@ export class AudioOutput {
   start(): void {
     this.stop()
 
-    let cmd = ''
-    let args: string[] = []
+    let cmd: string
+    let args: string[]
     const env = { ...process.env, PATH: AudioOutput.buildExecPath(process.env.PATH) }
 
     if (os.platform() === 'linux') {

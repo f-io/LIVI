@@ -338,7 +338,7 @@ export class CarplayAudio {
           const canRestoreNow =
             !this.navActive && (this.navHoldUntil === 0 || now >= this.navHoldUntil)
 
-          let desiredTarget = fade.target
+          let desiredTarget: number
           if (canDuckNow) {
             desiredTarget = this.navDuckingTarget
           } else if (canRestoreNow) {
