@@ -197,11 +197,13 @@ jobs:
               apt-get install -y --no-install-recommends \
                 git build-essential python3 python3-dev \
                 libusb-1.0-0-dev libudev-dev pkg-config \
-                libusb-1.0-0 libudev1 ca-certificates
+                libusb-1.0-0 libudev1 ca-certificates \
+                liblzo2-2
               rm -rf /var/lib/apt/lists/*
 
               corepack enable
               corepack install
+              pnpm --version
 
               pnpm config set store-dir /work/.pnpm-store
               pnpm install --frozen-lockfile
