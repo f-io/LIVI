@@ -12,7 +12,7 @@ import { Dash3 } from './dashboards/Dash3'
 import { Dash4 } from './dashboards/Dash4'
 
 // Placeholder
-import { DashPlaceholder } from './dashboards/DashPlaceholder'
+import { DashPlaceholder } from './components/DashPlaceholder'
 
 const isDashId = (id: unknown): id is TelemetryDashboardId =>
   id === 'dash1' || id === 'dash2' || id === 'dash3' || id === 'dash4'

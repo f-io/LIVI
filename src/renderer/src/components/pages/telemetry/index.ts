@@ -1,1 +1,1 @@
-export * from './Telemetry'
+export { Telemetry } from './Telemetry'
