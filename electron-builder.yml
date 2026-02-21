@@ -47,3 +47,6 @@ appImage:
   artifactName: ${name}-${version}-${arch}.${ext}
 
 npmRebuild: false
+
+toolsets:
+  appimage: '1.0.2'
