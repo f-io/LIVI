@@ -7,7 +7,15 @@ export type AppContextProps = {
   keyboardNavigation?: {
     focusedElId?: string | null
   }
-  onSetAppContext?: (appContext: AppContextProps) => void
+
+  telemetryPager?: {
+    prev: () => void
+    next: () => void
+    canPrev: () => boolean
+    canNext: () => boolean
+  }
+
+  onSetAppContext?: (patch: Partial<AppContextProps>) => void
 }
 
 export const AppContext = createContext<AppContextProps>({

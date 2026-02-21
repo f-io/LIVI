@@ -308,12 +308,6 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
       }
     },
     {
-      type: 'checkbox',
-      label: 'Maps',
-      labelKey: 'settings.maps',
-      path: 'mapsEnabled'
-    },
-    {
       type: 'route',
       label: 'Telemetry',
       labelKey: 'settings.telemetry',
@@ -333,6 +327,12 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
           ]
         }
       ]
+    },
+    {
+      type: 'checkbox',
+      label: 'Maps',
+      labelKey: 'settings.maps',
+      path: 'mapsEnabled'
     },
     {
       type: 'checkbox',
