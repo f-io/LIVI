@@ -72,6 +72,12 @@ const applyDerivedFromSettings = (s: ExtraConfig) => {
   return { audioVolume, navVolume, siriVolume, callVolume, visualAudioDelayMs }
 }
 
+const deriveTelemetryEnabled = (cfg: ExtraConfig): boolean => {
+  const d = cfg.telemetryDashboards
+  if (!Array.isArray(d) || d.length === 0) return false
+  return d.some((x) => x.enabled)
+}
+
 // Carplay Store
 export interface CarplayStore {
   // Full app config (from main, includes defaults)
@@ -204,11 +210,19 @@ export const useCarplayStore = create<CarplayStore>((set, get) => {
       await refreshFromMain()
     },
 
-    saveSettings: async (patch) => {
+    saveSettings: async (patchArg) => {
+      let patch = patchArg
+
       // Optimistic merge so UI updates instantly
       const prev = get().settings
       if (prev) {
-        const merged = { ...prev, ...patch } as ExtraConfig
+        let merged = { ...prev, ...patch } as ExtraConfig
+
+        if (patch.telemetryDashboards !== undefined) {
+          merged = { ...merged, telemetryEnabled: deriveTelemetryEnabled(merged) }
+          patch = { ...patch, telemetryEnabled: merged.telemetryEnabled }
+        }
+
         const derived = applyDerivedFromSettings(merged)
 
         set({ settings: merged, ...derived })

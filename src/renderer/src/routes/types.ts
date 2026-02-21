@@ -119,6 +119,20 @@ export type SettingsCustomNode<TStore, TValue = unknown> = NodeMeta & {
   component: React.ComponentType<SettingsCustomPageProps<TStore, TValue>>
 }
 
+export type PosListItem = {
+  id: string
+  label: string // TODO deleted in favor of i18n
+  labelKey?: string
+}
+
+export type PosListNode = NodeMeta & {
+  type: 'posList'
+  label: string // TODO deleted in favor of i18n
+  labelKey?: string
+  path: string
+  items: PosListItem[]
+}
+
 export type RouteNode<TStore> = NodeMeta & {
   type: 'route'
   label: string // TODO deleted in favor of i18n
@@ -139,3 +153,4 @@ export type SettingsNode<TStore> =
   | SliderNode
   | KeyBindingNode
   | SettingsCustomNode<TStore>
+  | PosListNode
