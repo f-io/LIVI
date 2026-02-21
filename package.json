@@ -9,7 +9,7 @@
     "Lasse Heitgres"
   ],
   "homepage": "https://f-io.dev",
-  "packageManager": "pnpm@10.30.0",
+  "packageManager": "pnpm@10.30.1",
   "pnpm": {
     "onlyBuiltDependencies": [
       "usb",
@@ -48,7 +48,7 @@
     "@electron-toolkit/utils": "4.0.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
-    "@fontsource/roboto": "^5.2.9",
+    "@fontsource/roboto": "^5.2.10",
     "@mui/icons-material": "^7.3.8",
     "@mui/material": "^7.3.8",
     "@mui/system": "^7.3.8",
@@ -56,8 +56,9 @@
     "electron-is-dev": "^3.0.1",
     "events": "^3.3.0",
     "fft.js": "^4.0.4",
-    "i18next": "^25.8.11",
+    "i18next": "^25.8.13",
     "lodash.debounce": "^4.0.8",
+    "ms": "^2.1.3",
     "react-i18next": "^16.5.4",
     "react-router": "^7.13.0",
     "socket.io": "^4.8.3",
@@ -88,7 +89,7 @@
     "electron": "^40.6.0",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
-    "eslint": "^10.0.0",
+    "eslint": "^10.0.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",

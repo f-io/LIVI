@@ -1,25 +1,25 @@
 import { MetricRow } from '../components/MetricRow'
 
-export type CoolantTempProps = {
-  coolantC?: number
+export type OilTempProps = {
+  oilC?: number
   className?: string
 }
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v))
 
-export function CoolantTemp({ coolantC = 0, className }: CoolantTempProps) {
-  const v = Number.isFinite(coolantC) ? clamp(Math.round(coolantC), -99, 999) : 0
+export function OilTemp({ oilC = 0, className }: OilTempProps) {
+  const v = Number.isFinite(oilC) ? clamp(Math.round(oilC), -99, 999) : 0
 
   return (
     <MetricRow
       className={className}
-      label="COOLANT"
+      label="OIL"
       value={v}
       unit="°C"
       min={0}
-      max={140}
+      max={160}
       barValue={v}
-      warnFrom={110}
+      warnFrom={130}
       valueWidthCh={3}
       labelAlign="right"
     />

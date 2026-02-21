@@ -14,6 +14,7 @@ import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from './carplay/assets/carIc
 import { ExtraConfig, DEFAULT_BINDINGS } from './Globals'
 import { USBService } from './usb/USBService'
 import { CarplayService } from './carplay/services/CarplayService'
+import { TelemetrySocket, TelemetryEvents, type TelemetryPayload } from './Socket'
 import { execFile, spawn } from 'node:child_process'
 import os from 'node:os'
 import https from 'node:https'
@@ -187,6 +188,7 @@ let config: ExtraConfig
 let usbService: USBService
 let isQuitting = false
 let suppressNextFsSync = false
+let telemetrySocket: TelemetrySocket | null = null
 
 const carplayService = new CarplayService()
 declare global {
@@ -303,6 +305,14 @@ app.on('before-quit', async (e) => {
     await measureStep('carplay.disconnectPhone()', async () => {
       await withTimeout('carplay.disconnectPhone()', carplayService.disconnectPhone(), tDisconnect)
       await sleep(75)
+    })
+
+    await measureStep('telemetrySocket.disconnect()', async () => {
+      await withTimeout(
+        'telemetrySocket.disconnect()',
+        telemetrySocket?.disconnect?.() ?? Promise.resolve(),
+        300
+      )
     })
 
     await measureStep('carplay.stop()', async () => {
@@ -843,6 +853,20 @@ app.whenReady().then(() => {
   })
 
   usbService = new USBService(carplayService)
+
+  telemetrySocket = new TelemetrySocket(4000)
+
+  telemetrySocket.on(TelemetryEvents.Push, (payload: TelemetryPayload) => {
+    const msg = { ts: Date.now(), ...payload }
+    mainWindow?.webContents.send(TelemetryEvents.Update, msg)
+
+    if (typeof payload.reverse === 'boolean') {
+      mainWindow?.webContents.send(TelemetryEvents.Reverse, payload.reverse)
+    }
+    if (typeof payload.lights === 'boolean') {
+      mainWindow?.webContents.send(TelemetryEvents.Lights, payload.lights)
+    }
+  })
 
   ipcMain.handle('quit', () =>
     isMac
