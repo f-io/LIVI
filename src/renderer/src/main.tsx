@@ -14,7 +14,7 @@ import '@fontsource/roboto/300.css'
 import '@fontsource/roboto/400.css'
 import '@fontsource/roboto/500.css'
 import '@fontsource/roboto/700.css'
-import { AppContext, AppContextProps } from './context'
+import { AppContext, type AppContextProps } from './context'
 import { THEME } from './constants'
 import './i18n'
 
@@ -23,6 +23,7 @@ initCursorHider()
 
 const Root = () => {
   const settings = useCarplayStore((s) => s.settings)
+
   // detect touch, stylus and mouse
   const isTouchDevice =
     navigator.maxTouchPoints >= 0 || window.matchMedia('(pointer: coarse)').matches
@@ -31,15 +32,12 @@ const Root = () => {
     isTouchDevice
   })
 
-  const handleChangeAppContext = useCallback(
-    (props: AppContextProps) => {
-      setAppContext({
-        ...appContext,
-        ...props
-      })
-    },
-    [appContext]
-  )
+  const handleChangeAppContext = useCallback((patch: Partial<AppContextProps>) => {
+    setAppContext((prev) => ({
+      ...prev,
+      ...patch
+    }))
+  }, [])
 
   const mode: THEME.DARK | THEME.LIGHT =
     typeof settings?.nightMode === 'boolean'
@@ -62,8 +60,16 @@ const Root = () => {
         : lightTheme
   }, [mode, primaryOverride, highlightOverride])
 
+  const providerValue = useMemo(
+    () => ({
+      ...appContext,
+      onSetAppContext: handleChangeAppContext
+    }),
+    [appContext, handleChangeAppContext]
+  )
+
   return (
-    <AppContext.Provider value={{ ...appContext, onSetAppContext: handleChangeAppContext }}>
+    <AppContext.Provider value={providerValue}>
       <ThemeProvider theme={theme}>
         <CssBaseline enableColorScheme />
         <App />
