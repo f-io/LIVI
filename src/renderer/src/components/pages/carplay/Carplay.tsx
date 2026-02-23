@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffe
 import { Box, Typography, useTheme, alpha } from '@mui/material'
 import { keyframes } from '@mui/system'
 import { useLocation, useNavigate } from 'react-router'
-import { CommandMapping } from '@main/carplay/messages/common'
-import { AudioCommand } from '@main/carplay/messages/readable'
+import { CommandMapping } from '@main/services/carplay/messages/common'
+import { AudioCommand } from '@main/services/carplay/messages/readable'
 
 import { ExtraConfig } from '@main/Globals'
 import { useCarplayStore, useStatusStore } from '../../../store/store'

@@ -1,5 +1,5 @@
-import { DongleConfig, TouchAction } from '../../../../main/carplay/messages'
-import type { AudioData as CoreAudioData } from '../../../../main/carplay/messages/readable'
+import { DongleConfig, TouchAction } from '../../../../main/services/carplay/messages'
+import type { AudioData as CoreAudioData } from '../../../../main/services/carplay/messages/readable'
 
 export type AudioData = CoreAudioData
 

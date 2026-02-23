@@ -1,21 +1,21 @@
-import { ExtraConfig } from './Globals'
 import { Server } from 'socket.io'
 import { EventEmitter } from 'events'
-import type { Stream } from 'stream'
 import http from 'http'
+import { ExtraConfig } from '@main/Globals'
+import { ClientToServerEvents, ServerToClientEvents, Stream } from '@main/types'
 
-export enum MessageNames {
-  Connection = 'connection',
-  GetSettings = 'getSettings',
-  SaveSettings = 'saveSettings',
-  Stream = 'stream'
-}
+export const MessageNames = {
+  Connection: 'connection',
+  GetSettings: 'getSettings',
+  SaveSettings: 'saveSettings',
+  Stream: 'stream'
+} as const
 
 export class Socket extends EventEmitter {
   config: ExtraConfig
   saveSettings: (settings: ExtraConfig) => void
 
-  io: Server | null = null
+  io: Server<ClientToServerEvents, ServerToClientEvents> | null = null
   httpServer: http.Server | null = null
 
   constructor(config: ExtraConfig, saveSettings: (settings: ExtraConfig) => void) {

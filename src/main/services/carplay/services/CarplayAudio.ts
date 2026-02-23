@@ -1,6 +1,6 @@
 import { AudioData, AudioCommand, decodeTypeMap } from '../messages'
 import { ExtraConfig } from '@main/Globals'
-import { Microphone, AudioOutput, downsampleToMono } from '@audio'
+import { Microphone, AudioOutput, downsampleToMono } from '@main/services/audio'
 
 export type PlayerKey = string
 export type LogicalStreamKey = 'music' | 'nav' | 'siri' | 'call'

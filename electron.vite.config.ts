@@ -25,7 +25,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           main: resolve(__dirname, 'src/main/index.ts'),
-          usbWorker: resolve(__dirname, 'src/main/usb/USBWorker.ts')
+          usbWorker: resolve(__dirname, 'src/main/services/usb/USBWorker.ts')
         },
         output: { entryFileNames: '[name].js' }
       }
