@@ -139,6 +139,9 @@ declare global {
         onEvent(callback: (event: unknown, ...args: unknown[]) => void): void
         offEvent(callback: (event: unknown, ...args: unknown[]) => void): void
 
+        onTelemetry(handler: (payload: unknown) => void): void
+        offTelemetry(): void
+
         setVisualizerEnabled(enabled: boolean): void
 
         readMedia(): Promise<MediaPayload>

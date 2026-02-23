@@ -29,6 +29,10 @@ let mapsVideoChunkHandler: ChunkHandler | null = null
 let mapsResolutionQueue: unknown[] = []
 let mapsResolutionHandler: ChunkHandler | null = null
 
+type TelemetryHandler = (payload: unknown) => void
+let telemetryQueue: unknown[] = []
+let telemetryHandler: TelemetryHandler | null = null
+
 ipcRenderer.on('carplay-video-chunk', (_event, payload: unknown) => {
   if (videoChunkHandler) videoChunkHandler(payload)
   else videoChunkQueue.push(payload)
@@ -46,6 +50,11 @@ ipcRenderer.on('maps-video-chunk', (_event, payload: unknown) => {
 ipcRenderer.on('maps-video-resolution', (_event, payload: unknown) => {
   if (mapsResolutionHandler) mapsResolutionHandler(payload)
   else mapsResolutionQueue.push(payload)
+})
+
+ipcRenderer.on('telemetry:update', (_event, payload: unknown) => {
+  if (telemetryHandler) telemetryHandler(payload)
+  else telemetryQueue.push(payload)
 })
 
 type UsbDeviceInfo =
@@ -145,6 +154,15 @@ const api = {
       mapsResolutionHandler = handler
       mapsResolutionQueue.forEach((chunk) => handler(chunk))
       mapsResolutionQueue = []
+    },
+    onTelemetry: (handler: (payload: unknown) => void): void => {
+      telemetryHandler = handler
+      telemetryQueue.forEach((p) => handler(p))
+      telemetryQueue = []
+    },
+    offTelemetry: (): void => {
+      telemetryHandler = null
+      telemetryQueue = []
     }
   }
 }

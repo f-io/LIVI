@@ -1,245 +1,81 @@
 import * as React from 'react'
-import { Box, Chip, Divider, Stack, Typography, useTheme } from '@mui/material'
-
-import AccessTimeIcon from '@mui/icons-material/AccessTime'
-import RouteIcon from '@mui/icons-material/Route'
-import PlaceIcon from '@mui/icons-material/Place'
-import AppsIcon from '@mui/icons-material/Apps'
-import SignpostIcon from '@mui/icons-material/Signpost'
-
-import StraightIcon from '@mui/icons-material/Straight'
-import TurnLeftIcon from '@mui/icons-material/TurnLeft'
-import TurnRightIcon from '@mui/icons-material/TurnRight'
-import TurnSlightLeftIcon from '@mui/icons-material/TurnSlightLeft'
-import TurnSlightRightIcon from '@mui/icons-material/TurnSlightRight'
-import TurnSharpLeftIcon from '@mui/icons-material/TurnSharpLeft'
-import TurnSharpRightIcon from '@mui/icons-material/TurnSharpRight'
-import SubdirectoryArrowLeftIcon from '@mui/icons-material/SubdirectoryArrowLeft'
-import SubdirectoryArrowRightIcon from '@mui/icons-material/SubdirectoryArrowRight'
-import UTurnLeftIcon from '@mui/icons-material/UTurnLeft'
-import UTurnRightIcon from '@mui/icons-material/UTurnRight'
-import RoundaboutRightIcon from '@mui/icons-material/RoundaboutRight'
-import ForkLeftIcon from '@mui/icons-material/ForkLeft'
-import ForkRightIcon from '@mui/icons-material/ForkRight'
-import MergeIcon from '@mui/icons-material/Merge'
-import ExitToAppIcon from '@mui/icons-material/ExitToApp'
-import FlagIcon from '@mui/icons-material/Flag'
-import DirectionsBoatIcon from '@mui/icons-material/DirectionsBoat'
-import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
-import WrongLocationIcon from '@mui/icons-material/WrongLocation'
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
-import NavigationOutlinedIcon from '@mui/icons-material/NavigationOutlined'
-
-import type { NaviBag } from '../../../../../main/carplay/services/types'
-import { translateNavigation } from '../../../../../main/carplay/services/utils/translateNavigation'
-import type { NavLocale } from '../../../../../main/carplay/services/utils/translateNavigation'
+import { Box, useTheme } from '@mui/material'
 import { useCarplayStore } from '../../../store/store'
+import { AppContext } from '../../../context'
 
-type CarplayEventMsg = { type: string; payload?: unknown }
+import type { TelemetryDashboardConfig, TelemetryDashboardId } from '@main/Globals'
 
-function navLocaleFromSettings(v: unknown): NavLocale {
-  if (v === 'de' || v === 'ua' || v === 'en') return v
-  return 'en'
+// Dashboards
+import { Dash1 } from './dashboards/Dash1'
+import { Dash2 } from './dashboards/Dash2'
+import { Dash3 } from './dashboards/Dash3'
+import { Dash4 } from './dashboards/Dash4'
+
+// Placeholder
+import { DashPlaceholder } from './components/DashPlaceholder'
+
+const isDashId = (id: unknown): id is TelemetryDashboardId =>
+  id === 'dash1' || id === 'dash2' || id === 'dash3' || id === 'dash4'
+
+type DashPage = {
+  id: TelemetryDashboardId
+  pos: number
+  Component: React.ComponentType
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null
-}
-
-function unwrapNaviPatch(raw: unknown): Partial<NaviBag> | null {
-  if (!isRecord(raw)) return null
-
-  // readNavigation() shape: { timestamp, payload: { ... } }
-  if (isRecord(raw.payload)) {
-    const p = raw.payload as Record<string, unknown>
-
-    // persisted shape: { metaType, navi, display, ... }
-    if (isRecord(p.navi)) return p.navi as unknown as Partial<NaviBag>
-
-    if (
-      'NaviStatus' in p ||
-      'NaviAPPName' in p ||
-      'NaviDestinationName' in p ||
-      'NaviManeuverType' in p ||
-      'NaviRemainDistance' in p
-    ) {
-      return p as unknown as Partial<NaviBag>
-    }
-  }
-
-  // carplay-event message wrapper
-  if (isRecord(raw) && isRecord(raw.payload)) {
-    const p = raw.payload as Record<string, unknown>
-
-    if (isRecord(p.navi)) return p.navi as unknown as Partial<NaviBag>
-
-    if (
-      'NaviStatus' in p ||
-      'NaviAPPName' in p ||
-      'NaviDestinationName' in p ||
-      'NaviManeuverType' in p ||
-      'NaviRemainDistance' in p
-    ) {
-      return p as unknown as Partial<NaviBag>
-    }
-  }
-
-  // { navi: {...} }
-  if (isRecord((raw as Record<string, unknown>).navi)) {
-    return (raw as Record<string, unknown>).navi as unknown as Partial<NaviBag>
-  }
-
-  if (
-    'NaviStatus' in raw ||
-    'NaviAPPName' in raw ||
-    'NaviDestinationName' in raw ||
-    'NaviManeuverType' in raw ||
-    'NaviRemainDistance' in raw
-  ) {
-    return raw as unknown as Partial<NaviBag>
-  }
-
-  return null
-}
-
-function mergeNavi(prev: NaviBag | null, patch: Partial<NaviBag> | null): NaviBag | null {
-  if (!patch) return prev
-  if (!prev) return patch as NaviBag
-  return {
-    ...(prev as unknown as Record<string, unknown>),
-    ...(patch as unknown as Record<string, unknown>)
-  } as NaviBag
-}
-
-function RoundaboutIconWithExit({ exitNumber }: { exitNumber: number }) {
-  const size = 72
-  return (
-    <Box
-      sx={{
-        position: 'relative',
-        width: size,
-        height: size,
-        display: 'grid',
-        placeItems: 'center'
-      }}
-    >
-      <RoundaboutRightIcon sx={{ fontSize: size }} />
-      <Box sx={{ position: 'absolute', right: -6, bottom: -6 }}>
-        <Chip
-          size="small"
-          label={exitNumber}
-          sx={{ height: 20, fontSize: 12, '& .MuiChip-label': { px: 0.8 } }}
-        />
-      </Box>
-    </Box>
-  )
-}
-
-function ManeuverVisual({
-  type,
-  turnSide
-}: {
-  type: number | undefined
-  turnSide: number | undefined
-}) {
-  const size = 72
-  const isRight = turnSide === 2
-
-  if (type == null) return <HelpOutlineIcon sx={{ fontSize: size }} />
-
-  if (type >= 28 && type <= 46) {
-    return <RoundaboutIconWithExit exitNumber={type - 27} />
-  }
-
-  switch (type) {
-    case 0:
-    case 3:
-    case 5:
-      return <StraightIcon sx={{ fontSize: size }} />
-
-    case 1:
-      return <TurnLeftIcon sx={{ fontSize: size }} />
-    case 2:
-      return <TurnRightIcon sx={{ fontSize: size }} />
-
-    case 4:
-    case 18:
-    case 26:
-      return isRight ? (
-        <UTurnRightIcon sx={{ fontSize: size }} />
-      ) : (
-        <UTurnLeftIcon sx={{ fontSize: size }} />
-      )
-
-    case 6:
-    case 7:
-    case 19:
-      return <RoundaboutRightIcon sx={{ fontSize: size }} />
-
-    case 8:
-    case 22:
-    case 23:
-      return <ExitToAppIcon sx={{ fontSize: size }} />
-
-    case 9:
-      return <MergeIcon sx={{ fontSize: size }} />
-
-    case 10:
-    case 12:
-    case 24:
-    case 25:
-    case 27:
-      return <FlagIcon sx={{ fontSize: size }} />
-
-    case 11:
-      return <WrongLocationIcon sx={{ fontSize: size }} />
-
-    case 13:
-      return <ForkLeftIcon sx={{ fontSize: size }} />
-    case 14:
-      return <ForkRightIcon sx={{ fontSize: size }} />
-
-    case 15:
-    case 16:
-    case 17:
-      return <DirectionsBoatIcon sx={{ fontSize: size }} />
-
-    case 20:
-      return <SubdirectoryArrowLeftIcon sx={{ fontSize: size }} />
-    case 21:
-      return <SubdirectoryArrowRightIcon sx={{ fontSize: size }} />
-
-    case 47:
-      return <TurnSharpLeftIcon sx={{ fontSize: size }} />
-    case 48:
-      return <TurnSharpRightIcon sx={{ fontSize: size }} />
-
-    case 49:
-      return <TurnSlightLeftIcon sx={{ fontSize: size }} />
-    case 50:
-      return <TurnSlightRightIcon sx={{ fontSize: size }} />
-
-    case 51:
-      return <SwapHorizIcon sx={{ fontSize: size }} />
-    case 52:
-      return <ForkLeftIcon sx={{ fontSize: size }} />
-    case 53:
-      return <ForkRightIcon sx={{ fontSize: size }} />
-
+const getDashComponent = (id: TelemetryDashboardId): React.ComponentType => {
+  switch (id) {
+    case 'dash4':
+      return Dash4
+    case 'dash1':
+      return Dash1
+    case 'dash2':
+      return Dash2
+    case 'dash3':
+      return Dash3
     default:
-      return <HelpOutlineIcon sx={{ fontSize: size }} />
+      return () => <DashPlaceholder title="Unknown dash" />
   }
 }
+
+const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n))
 
 export const Telemetry: React.FC = () => {
   const theme = useTheme()
   const settings = useCarplayStore((s) => s.settings)
-  const locale = navLocaleFromSettings(settings?.language)
 
-  const [navi, setNavi] = React.useState<NaviBag | null>(null)
-  const [navHidden, setNavHidden] = React.useState(false)
+  const { onSetAppContext } = React.useContext(AppContext)
 
-  React.useEffect(() => {
+  const pages = React.useMemo<DashPage[]>(() => {
+    const raw = settings?.telemetryDashboards
+    const base: TelemetryDashboardConfig[] = Array.isArray(raw) ? raw : []
+
+    const enabled = base
+      .filter((d) => d && isDashId(d.id) && Boolean(d.enabled))
+      .map((d) => ({
+        id: d.id,
+        pos: typeof d.pos === 'number' && Number.isFinite(d.pos) ? Math.round(d.pos) : 9999
+      }))
+      .sort((a, b) => a.pos - b.pos)
+
+    // stable normalize positions
+    const normalized = enabled.map((d, idx) => ({ ...d, pos: idx + 1 }))
+
+    return normalized.map((d) => ({
+      id: d.id,
+      pos: d.pos,
+      Component: getDashComponent(d.id)
+    }))
+  }, [settings?.telemetryDashboards])
+
+  const [index, setIndex] = React.useState(0)
+  const [showDots, setShowDots] = React.useState(false)
+  const [navHidden, setNavHidden] = React.useState(() => {
+    const el = document.getElementById('content-root')
+    return el?.getAttribute('data-nav-hidden') === '1'
+  })
+
+  React.useLayoutEffect(() => {
     const el = document.getElementById('content-root')
     if (!el) return
 
@@ -252,40 +88,133 @@ export const Telemetry: React.FC = () => {
     return () => mo.disconnect()
   }, [])
 
-  const hydrate = React.useCallback(async () => {
-    try {
-      const snap = await window.carplay.ipc.readNavigation()
-      const patch = unwrapNaviPatch(snap)
-      setNavi((prev) => mergeNavi(prev, patch))
-    } catch {
-      // keep previous state
+  // keep index valid if pages change
+  React.useEffect(() => {
+    setIndex((prev) => clamp(prev, 0, Math.max(0, pages.length - 1)))
+  }, [pages.length])
+
+  // dots timer
+  const dotsTimerRef = React.useRef<number | null>(null)
+  const revealDots = React.useCallback(() => {
+    setShowDots(true)
+    if (dotsTimerRef.current != null) window.clearTimeout(dotsTimerRef.current)
+    dotsTimerRef.current = window.setTimeout(() => setShowDots(false), 2000)
+  }, [])
+
+  React.useEffect(() => {
+    return () => {
+      if (dotsTimerRef.current != null) window.clearTimeout(dotsTimerRef.current)
     }
   }, [])
 
   React.useEffect(() => {
-    void hydrate()
-
-    const handler = (_event: unknown, ...args: unknown[]) => {
-      const msg = (args[0] ?? {}) as CarplayEventMsg
-      if (msg.type !== 'navigation') return
-
-      const patch = unwrapNaviPatch(msg)
-      if (patch) {
-        setNavi((prev) => mergeNavi(prev, patch))
-      } else {
-        void hydrate()
-      }
+    if (!navHidden) {
+      setShowDots(true)
+      if (dotsTimerRef.current != null) window.clearTimeout(dotsTimerRef.current)
+      dotsTimerRef.current = null
+      return
     }
 
-    window.carplay.ipc.onEvent(handler)
-    return () => window.carplay.ipc.offEvent(handler)
-  }, [hydrate])
+    setShowDots(false)
+  }, [navHidden])
 
-  const t = React.useMemo(() => translateNavigation(navi, locale), [navi, locale])
+  const go = React.useCallback(
+    (dir: -1 | 1) => {
+      if (pages.length <= 1) return
+      setIndex((prev) => clamp(prev + dir, 0, pages.length - 1))
+      revealDots()
+    },
+    [pages.length, revealDots]
+  )
 
-  const remainDistanceText =
-    isRecord(t) && typeof t.RemainDistanceText === 'string' ? t.RemainDistanceText : undefined
-  const isActive = navi?.NaviStatus === 1
+  // ---- register pager for global key handler (useKeyDown) ----
+  const pagerStateRef = React.useRef({ index: 0, len: 0 })
+  pagerStateRef.current = { index, len: pages.length }
+
+  const prev = React.useCallback(() => {
+    const { index: i } = pagerStateRef.current
+    if (i <= 0) return
+    go(-1)
+  }, [go])
+
+  const next = React.useCallback(() => {
+    const { index: i, len } = pagerStateRef.current
+    if (len <= 0) return
+    if (i >= len - 1) return
+    go(1)
+  }, [go])
+
+  const canPrev = React.useCallback(() => pagerStateRef.current.index > 0, [])
+  const canNext = React.useCallback(() => {
+    const { index: i, len } = pagerStateRef.current
+    return len > 0 && i < len - 1
+  }, [])
+
+  React.useEffect(() => {
+    if (!onSetAppContext) return
+
+    // register (PATCH only!)
+    onSetAppContext({
+      telemetryPager: { prev, next, canPrev, canNext }
+    })
+
+    // cleanup on unmount
+    return () => {
+      onSetAppContext({
+        telemetryPager: undefined
+      })
+    }
+  }, [onSetAppContext, prev, next, canPrev, canNext])
+
+  // swipe
+  const startRef = React.useRef<{ x: number; y: number; t: number } | null>(null)
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (!e.isPrimary) return
+    startRef.current = { x: e.clientX, y: e.clientY, t: performance.now() }
+  }
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    if (!e.isPrimary) return
+    const start = startRef.current
+    startRef.current = null
+    if (!start) return
+
+    const dx = e.clientX - start.x
+    const dy = e.clientY - start.y
+    const dt = performance.now() - start.t
+
+    const absX = Math.abs(dx)
+    const absY = Math.abs(dy)
+
+    if (absX < 40) return
+    if (absY > absX * 0.8) return
+    if (dt > 900) return
+
+    if (dx < 0)
+      go(1) // swipe left -> next
+    else go(-1) // swipe right -> prev
+  }
+
+  // render
+  if (pages.length === 0) {
+    return (
+      <Box
+        sx={{
+          position: 'absolute',
+          inset: 0,
+          backgroundColor: theme.palette.background.default,
+          display: 'grid',
+          placeItems: 'center',
+          opacity: 0.8
+        }}
+      >
+        <DashPlaceholder title="No dashboards enabled" />
+      </Box>
+    )
+  }
+
+  const Active = pages[index]?.Component ?? (() => <DashPlaceholder title="Missing page" />)
 
   return (
     <Box
@@ -295,101 +224,83 @@ export const Telemetry: React.FC = () => {
         width: '100%',
         height: '100%',
         overflow: 'hidden',
-        backgroundColor: theme.palette.background.default,
-        display: 'grid',
-        placeItems: 'center',
-        p: 2
+        backgroundColor: theme.palette.background.default
       }}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
     >
-      {!isActive ? (
-        <NavigationOutlinedIcon sx={{ fontSize: 84, opacity: 0.55 }} />
-      ) : (
-        <Box sx={{ width: 'min(920px, 100%)' }}>
-          <Stack spacing={2.2} sx={{ alignItems: 'center', textAlign: 'center' }}>
-            <Stack direction="row" spacing={2} alignItems="center" justifyContent="center">
+      <Active />
+
+      {/* dots overlay */}
+      {pages.length > 1 && (
+        <Box
+          sx={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 'clamp(10px, 2.2svh, 18px)',
+            display: 'flex',
+            justifyContent: 'center',
+            pointerEvents: 'auto',
+            opacity: showDots ? 1 : 0,
+            transition: 'opacity 180ms ease-out'
+          }}
+        >
+          <Box
+            sx={{
+              display: 'flex',
+              gap: 'clamp(6px, 1.2svh, 10px)',
+              px: 'clamp(10px, 2svh, 14px)',
+              py: 'clamp(6px, 1.4svh, 10px)',
+              borderRadius: 999,
+              backgroundColor:
+                theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.18)',
+              backdropFilter: 'blur(6px)'
+            }}
+          >
+            {pages.map((p, i) => (
               <Box
+                key={p.id}
+                role="button"
+                tabIndex={0}
+                onPointerDown={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setIndex(i)
+                  revealDots()
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setIndex(i)
+                    revealDots()
+                  }
+                }}
                 sx={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  minWidth: 92
+                  width: 'clamp(14px, 2.6svh, 22px)',
+                  height: 'clamp(14px, 2.6svh, 22px)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  borderRadius: 999,
+                  cursor: 'pointer',
+                  WebkitTapHighlightColor: 'transparent'
                 }}
               >
-                <ManeuverVisual type={t.codes.ManeuverType} turnSide={t.codes.TurnSide} />
-
-                {remainDistanceText && (
-                  <Typography
-                    sx={{
-                      mt: 0.5,
-                      fontSize: 20,
-                      fontWeight: 600,
-                      letterSpacing: 0.2,
-                      lineHeight: 1
-                    }}
-                  >
-                    {remainDistanceText}
-                  </Typography>
-                )}
+                <Box
+                  sx={{
+                    width: 'clamp(6px, 1.2svh, 10px)',
+                    height: 'clamp(6px, 1.2svh, 10px)',
+                    borderRadius: 999,
+                    backgroundColor:
+                      i === index ? theme.palette.primary.main : theme.palette.text.secondary,
+                    opacity: i === index ? 1 : 0.45,
+                    transition: 'opacity 120ms ease-out'
+                  }}
+                />
               </Box>
-
-              <Box sx={{ minWidth: 0, textAlign: 'left' }}>
-                <Typography variant="h5" sx={{ lineHeight: 1.1 }}>
-                  {t.ManeuverTypeText}
-                </Typography>
-
-                {t.CurrentRoadName && (
-                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.6 }}>
-                    <SignpostIcon fontSize="small" sx={{ opacity: 0.85 }} />
-                    <Typography variant="body2" sx={{ opacity: 0.85 }} noWrap>
-                      {t.CurrentRoadName}
-                    </Typography>
-                  </Stack>
-                )}
-              </Box>
-            </Stack>
-
-            <Divider flexItem sx={{ opacity: 0.35 }} />
-
-            <Stack
-              direction="row"
-              spacing={3}
-              flexWrap="wrap"
-              justifyContent="center"
-              sx={{ rowGap: 1 }}
-            >
-              {t.TimeRemainingToDestinationText && (
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <AccessTimeIcon fontSize="small" />
-                  <Typography variant="body1">{t.TimeRemainingToDestinationText}</Typography>
-                </Stack>
-              )}
-
-              {t.DistanceRemainingDisplayStringText && (
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <RouteIcon fontSize="small" />
-                  <Typography variant="body1">{t.DistanceRemainingDisplayStringText}</Typography>
-                </Stack>
-              )}
-
-              {t.DestinationName && (
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-                  <PlaceIcon fontSize="small" />
-                  <Typography variant="body1" noWrap sx={{ minWidth: 0 }}>
-                    {t.DestinationName}
-                  </Typography>
-                </Stack>
-              )}
-
-              {t.SourceName && (
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-                  <AppsIcon fontSize="small" />
-                  <Typography variant="body2" sx={{ opacity: 0.85 }} noWrap>
-                    {t.SourceName}
-                  </Typography>
-                </Stack>
-              )}
-            </Stack>
-          </Stack>
+            ))}
+          </Box>
         </Box>
       )}
     </Box>

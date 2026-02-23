@@ -308,16 +308,31 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
       }
     },
     {
+      type: 'route',
+      label: 'Telemetry',
+      labelKey: 'settings.telemetry',
+      route: 'telemetry',
+      path: '',
+      children: [
+        {
+          type: 'posList',
+          label: 'Dashboards',
+          labelKey: 'settings.telemetryDashboards',
+          path: 'telemetryDashboards',
+          items: [
+            { id: 'dash1', label: 'Dash 1', labelKey: 'settings.telemetryDash1' },
+            { id: 'dash2', label: 'Dash 2', labelKey: 'settings.telemetryDash2' },
+            { id: 'dash3', label: 'Dash 3', labelKey: 'settings.telemetryDash3' },
+            { id: 'dash4', label: 'Dash 4', labelKey: 'settings.telemetryDash4' }
+          ]
+        }
+      ]
+    },
+    {
       type: 'checkbox',
       label: 'Maps',
       labelKey: 'settings.maps',
       path: 'mapsEnabled'
-    },
-    {
-      type: 'checkbox',
-      label: 'Telemetry',
-      labelKey: 'settings.telemetry',
-      path: 'telemetryEnabled'
     },
     {
       type: 'checkbox',

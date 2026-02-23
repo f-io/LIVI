@@ -95,6 +95,25 @@ export const useKeyDown = ({
       const isEnter = code === 'Enter' || code === 'NumpadEnter'
       const isSelectDown = code === (b?.selectDown || '') || isEnter
 
+      const pager = appContext?.telemetryPager
+      const isTelemetryRoute = currentRoute.startsWith('/telemetry')
+
+      if (pager && isTelemetryRoute) {
+        if (isLeft) {
+          if (pager.canPrev()) pager.prev()
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+
+        if (isRight) {
+          if (pager.canNext()) pager.next()
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+      }
+
       let mappedAction: BindKey | undefined
       for (const [k, v] of Object.entries(b ?? {})) {
         if (v === code) {
@@ -390,6 +409,7 @@ export const useKeyDown = ({
       }
     },
     [
+      appContext,
       settings,
       currentRoute,
       receivingVideo,

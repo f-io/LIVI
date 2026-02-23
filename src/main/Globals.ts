@@ -1,10 +1,19 @@
 import { DongleConfig } from '@carplay/messages'
 
+export type TelemetryDashboardId = 'dash1' | 'dash2' | 'dash3' | 'dash4'
+
+export type TelemetryDashboardConfig = {
+  id: TelemetryDashboardId
+  enabled: boolean
+  pos: number
+}
+
 export type ExtraConfig = DongleConfig & {
   startPage: 'home' | 'media' | 'maps' | 'telemetry' | 'camera' | 'settings'
   kiosk: boolean
   camera: string
   telemetryEnabled: boolean
+  telemetryDashboards?: TelemetryDashboardConfig[]
   cameraMirror: boolean
   bindings: KeyBindings
   audioVolume: number

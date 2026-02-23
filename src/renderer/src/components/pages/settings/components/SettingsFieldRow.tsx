@@ -2,6 +2,7 @@ import { Typography } from '@mui/material'
 import { StackItem } from './stackItem'
 import { SettingsItemRow } from './settingsItemRow'
 import { SettingsFieldControl } from './SettingsFieldControl'
+import { PosSensitiveList } from './posSensitiveList/PosSensitiveList'
 import { SettingsNode } from '../../../../routes'
 import { getValueByPath } from '../utils'
 import { ExtraConfig } from '../../../../../../main/Globals'
@@ -17,7 +18,11 @@ type Props<T, K> = {
 
 export const SettingsFieldRow = <T, K>({ node, value, state, onChange, onClick }: Props<T, K>) => {
   const { t } = useTranslation()
-  const label = node.labelKey ? t(node.labelKey) : node.label
+  const label = node.labelKey ? t(node.labelKey, node.label) : node.label
+
+  if (node.type === 'posList') {
+    return <PosSensitiveList node={node} value={value} onChange={onChange} />
+  }
 
   if (onClick) {
     return (
