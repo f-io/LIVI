@@ -1,4 +1,4 @@
-import { io } from 'socket.io-client'
+import { io, type Socket } from 'socket.io-client'
 
 const URL = process.env.TELEMETRY_URL ?? 'http://127.0.0.1:4000'
 const SOURCE = process.env.TELEMETRY_SOURCE ?? 'sim'
@@ -56,21 +56,21 @@ function rpmFromSpeedAndGear(speedKph: number, gear: DriveGear) {
   return wheelRpmFromSpeed(speedKph) * finalDrive * ratios[gear]
 }
 
-function connect() {
-  const socket = io(URL, { transports: ['websocket'] })
+function connect(): Socket {
+  const socket: Socket = io(URL, { transports: ['websocket'] })
 
   socket.on('connect', () => {
     console.log(`[telemetry-sim] connected ${socket.id} -> ${URL} (source=${SOURCE})`)
   })
 
   socket.on('connect_error', (e) => {
-    console.error('[telemetry-sim] connect_error:', e?.message ?? e)
+    console.error('[telemetry-sim] connect_error:', (e as { message?: string })?.message ?? e)
   })
 
   return socket
 }
 
-function push(socket: any, payload: Record<string, unknown>) {
+function push(socket: Socket, payload: Record<string, unknown>) {
   socket.emit('telemetry:push', { ts: Date.now(), source: SOURCE, ...payload })
 }
 
@@ -191,7 +191,7 @@ function stepEngineSignals(s: SimState, dtS: number, throttle01: number) {
   const idle = 780
 
   // Target RPM based on shifter + 6-speed gear model in D
-  let rpmTarget = idle
+  let rpmTarget: number
 
   if (s.shifter === 'D') {
     // base rpm from speed + current gear
@@ -301,7 +301,7 @@ function stepEnvironment(s: SimState, dtS: number, t: number) {
 // Drive cycle (P -> N -> D, accelerate, cruise, stop, reverse etc.)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function driveCycle(socket: any) {
+async function driveCycle(socket: Socket) {
   const dt = 20 // 50 Hz
   const dtS = dt / 1000
   const s = createInitialState()
@@ -318,10 +318,10 @@ async function driveCycle(socket: any) {
     const phaseT = (a: number, b: number) => clamp((t - a) / (b - a), 0, 1)
 
     // Defaults
-    let throttle01 = 0
-    let speedTarget = 0
+    let speedTarget: number
+    let throttle01: number
+    let shifter: Shifter
     let steerTarget = 0
-    let shifter: Shifter = s.shifter
 
     if (inRange(0, 2)) {
       shifter = 'P'
@@ -378,11 +378,7 @@ async function driveCycle(socket: any) {
       throttle01 = 0.05
       steerTarget = 0
     } else {
-      // Park + restart cycle
-      shifter = 'P'
-      speedTarget = 0
-      throttle01 = 0.03
-      steerTarget = 0
+      // restart cycle
       break
     }
 
@@ -471,7 +467,7 @@ async function driveCycle(socket: any) {
 // Sweep
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function sweep(socket: any) {
+async function sweep(socket: Socket) {
   const dt = 20
   const t0 = Date.now()
 
@@ -557,7 +553,7 @@ function ambientCFromT(t: number) {
 // Set once (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function setOnce(socket: any) {
+async function setOnce(socket: Socket) {
   const speedKph = Number(process.argv[3] ?? 0)
   const rpm = Number(process.argv[4] ?? 0)
   const coolantC = Number(process.argv[5] ?? 0)
