@@ -11,7 +11,8 @@ export function setupLifecycle(runtimeState: runtimeStateProps, services: Servic
   })
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0 && !mainWindow) createMainWindow(runtimeState)
+    if (BrowserWindow.getAllWindows().length === 0 && !mainWindow)
+      createMainWindow(runtimeState, services)
     else mainWindow?.show()
   })
 

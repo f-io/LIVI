@@ -2,7 +2,6 @@ import { isMacPlatform, pushSettingsToRenderer } from '@main/utils'
 import { BrowserWindow, session, shell } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { join } from 'path'
-import { CarplayService } from '@main/services/carplay/services/CarplayService'
 import {
   applyAspectRatioFullscreen,
   applyAspectRatioWindowed,
