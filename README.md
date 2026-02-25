@@ -124,6 +124,23 @@ pnpm run build:armLinux
 pnpm run build:mac
 ```
 
+## Dashboard
+
+The Dashboard is currently in an early stage. While the IPC/socket telemetry payload already supports many signals, the UI exposes only a small subset. Widgets and layouts will be extended over time.
+
+### Telemetry Simulator (local)
+
+To feed demo telemetry into the app, you can run the simulator from `scripts/tools`:
+
+```bash
+pnpm --dir scripts/tools install
+pnpm --dir scripts/tools tsx telemetry-sim.ts cycle
+```
+
+<p align="center">
+  <img src="docs/images/dash.png" alt="Dashboard" width="70%" />
+</p>
+
 ## Dongle Firmware Feature Matrix
 
 The available features depend on the firmware version running on the Carlinkit dongle.
