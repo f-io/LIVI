@@ -7,6 +7,7 @@ import { downloadWithProgress } from '@main/ipc/update/downloader'
 import { GhRelease, ServicesProps, UpdateSessionState } from '@main/types'
 import { existsSync, promises as fsp } from 'fs'
 import os from 'node:os'
+import type { IpcMainInvokeEvent } from 'electron'
 
 let updateSession: {
   state: UpdateSessionState
@@ -18,7 +19,7 @@ let updateSession: {
 export class Updater {
   constructor(private services: ServicesProps) {}
 
-  perform = async (_evt: any, directUrl?: string) => {
+  perform = async (_evt: IpcMainInvokeEvent, directUrl?: string) => {
     try {
       if (updateSession.state !== 'idle') throw new Error('Update already in progress')
       sendUpdateEvent({ phase: 'start' })
