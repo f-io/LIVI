@@ -23,10 +23,12 @@ import ExitToAppIcon from '@mui/icons-material/ExitToApp'
 import FlagIcon from '@mui/icons-material/Flag'
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
 
-import type { NaviBag } from '../../../../../../main/carplay/services/types'
-import { translateNavigation } from '../../../../../../main/carplay/services/utils/translateNavigation'
-import type { NavLocale } from '../../../../../../main/carplay/services/utils/translateNavigation'
-import { useCarplayStore } from '../../../../store/store'
+import { useCarplayStore } from '@store/store'
+import { NaviBag } from '@main/services/carplay/services/types'
+import {
+  NavLocale,
+  translateNavigation
+} from '@main/services/carplay/services/utils/translateNavigation'
 
 type CarplayEventMsg = { type: string; payload?: unknown }
 

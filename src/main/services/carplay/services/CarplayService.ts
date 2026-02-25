@@ -362,6 +362,7 @@ export class CarplayService {
       this.webContents?.send('carplay-event', { type: 'failure' })
     })
 
+    // TODO all ipcMain should me moved to a separate file (registerIpc) and imported, this is just for quick iteration
     ipcMain.handle('carplay-start', async () => this.start())
     ipcMain.handle('carplay-stop', async () => this.stop())
     ipcMain.handle('carplay-sendframe', async () => this.driver.send(new SendCommand('frame')))

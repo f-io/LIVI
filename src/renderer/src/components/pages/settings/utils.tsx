@@ -52,6 +52,8 @@ export const getNodeByPath = (
 
     const segment = segments[i]
 
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
     const routeChild = current.children.find((c) => c.type === 'route' && c.route === segment)
 
     if (routeChild) {
