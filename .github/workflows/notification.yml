@@ -1,0 +1,76 @@
+name: notification
+
+on:
+  release:
+    types: [published, prereleased]
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve release info
+        id: rel
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HAS_RELEASE_EVENT: ${{ github.event_name == 'release' }}
+        run: |
+          set -e
+
+          if [ "$HAS_RELEASE_EVENT" = "true" ]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+            echo "url=${{ github.event.release.html_url }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=${{ github.event.release.prerelease }}" >> "$GITHUB_OUTPUT"
+            echo "date=${{ github.event.release.published_at }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Manual run: fetch most recent non-draft release (includes prereleases)
+          data="$(gh api "repos/${REPO}/releases?per_page=20")"
+          rel="$(printf '%s' "$data" | jq -c '[ .[] | select(.draft == false) ][0] // empty')"
+
+          if [ -z "$rel" ]; then
+            echo "No non-draft release found." >&2
+            exit 1
+          fi
+
+          tag="$(printf '%s' "$rel" | jq -r '.tag_name // empty')"
+          url="$(printf '%s' "$rel" | jq -r '.html_url // empty')"
+          prerelease="$(printf '%s' "$rel" | jq -r '.prerelease')"
+          date="$(printf '%s' "$rel" | jq -r '.published_at // empty')"
+
+          if [ -z "$tag" ] || [ -z "$url" ]; then
+            echo "Release is missing tag_name or html_url." >&2
+            exit 1
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "date=$date" >> "$GITHUB_OUTPUT"
+
+      - name: Send release to Discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_RELEASE_URL }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.rel.outputs.tag }}
+          URL: ${{ steps.rel.outputs.url }}
+          DATE: ${{ steps.rel.outputs.date }}
+          IS_PRERELEASE: ${{ steps.rel.outputs.prerelease }}
+        run: |
+          set -e
+
+          repo="${REPO##*/}"
+          date="${DATE:0:10}"
+
+          suffix=""
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            suffix=" [pre-release]"
+          fi
+
+          curl --fail-with-body -H "Content-Type: application/json" \
+            -d "{\"content\":\"${repo} ${TAG} (${date})${suffix}\n${URL}\"}" \
+            "$WEBHOOK"

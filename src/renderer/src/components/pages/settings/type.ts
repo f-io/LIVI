@@ -5,7 +5,7 @@ import { ExtraConfig } from '../../../../../main/Globals'
 export interface StackItemProps {
   children?: ReactNode
   withForwardIcon?: boolean
-  value?: string
+  value?: unknown
   showValue?: boolean
   onClick?: () => void
   node?: SettingsNode<ExtraConfig>

@@ -1,21 +1,23 @@
-import { app } from 'electron'
-import { USBService } from '@main/services/usb/USBService'
-import { runtimeStateProps } from '@main/types'
+import { app, BrowserWindow } from 'electron'
+import { runtimeStateProps, ServicesProps } from '@main/types'
+import { createMainWindow, getMainWindow } from '@main/window/createWindow'
 
-export function setupLifecycle({ isQuitting }: runtimeStateProps) {
-  let usbService: USBService | null = null
-
-  if (carplayService) {
-    usbService = new USBService(carplayService)
-  }
+export function setupLifecycle(runtimeState: runtimeStateProps, services: ServicesProps) {
+  const { carplayService, usbService, telemetrySocket } = services
+  const mainWindow = getMainWindow()
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()
   })
 
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0 && !mainWindow) createMainWindow(runtimeState)
+    else mainWindow?.show()
+  })
+
   app.on('before-quit', async (e) => {
-    if (isQuitting) return
-    isQuitting = true
+    if (runtimeState.isQuitting) return
+    runtimeState.isQuitting = true
     e.preventDefault()
 
     const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
@@ -57,13 +59,14 @@ export function setupLifecycle({ isQuitting }: runtimeStateProps) {
     const tCarplayStop = 6000
 
     // Global watchdog: log only
+    // TODO replace by isMac fn
     const watchdogMs = process.platform === 'darwin' ? 10000 : 3000
     const watchdog = setTimeout(() => {
       console.warn(`[MAIN] before-quit watchdog: giving up waiting after ${watchdogMs}ms`)
     }, watchdogMs)
 
     try {
-      ;(carplayService as any).shuttingDown = true
+      carplayService.beginShutdown()
 
       // Block hotplug callbacks ASAP
       usbService?.beginShutdown()
@@ -73,21 +76,24 @@ export function setupLifecycle({ isQuitting }: runtimeStateProps) {
       })
 
       await measureStep('carplay.disconnectPhone()', async () => {
-        if (carplayService) {
-          await withTimeout(
-            'carplay.disconnectPhone()',
-            carplayService.disconnectPhone(),
-            tDisconnect
-          )
-        }
-
+        await withTimeout(
+          'carplay.disconnectPhone()',
+          carplayService.disconnectPhone(),
+          tDisconnect
+        )
         await sleep(75)
       })
 
+      await measureStep('telemetrySocket.disconnect()', async () => {
+        await withTimeout(
+          'telemetrySocket.disconnect()',
+          telemetrySocket?.disconnect?.() ?? Promise.resolve(),
+          300
+        )
+      })
+
       await measureStep('carplay.stop()', async () => {
-        if (carplayService) {
-          await withTimeout('carplay.stop()', carplayService.stop(), tCarplayStop)
-        }
+        await withTimeout('carplay.stop()', carplayService.stop(), tCarplayStop)
       })
     } catch (err) {
       console.warn('[MAIN] Error while quitting:', err)

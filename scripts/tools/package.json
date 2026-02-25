@@ -1,0 +1,14 @@
+{
+  "name": "@livi/tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "telemetry:cycle": "tsx telemetry-sim.ts cycle",
+    "telemetry:sweep": "tsx telemetry-sim.ts sweep",
+    "telemetry:set": "tsx telemetry-sim.ts set"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3",
+    "tsx": "^4.0.0"
+  }
+}

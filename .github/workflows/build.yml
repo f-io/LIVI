@@ -25,6 +25,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       BUILD_BRANCH: ${{ github.event.inputs.branch || github.event.workflow_run.head_branch || github.head_ref || github.ref_name }}
+      HUSKY: 0
+      ELECTRON_CACHE: .cache/electron
+      ELECTRON_BUILDER_CACHE: .cache/electron-builder
+
     strategy:
       matrix:
         include:
@@ -50,29 +54,73 @@ jobs:
       - name: Fetch latest Node.js 24.x
         run: |
           curl -s https://nodejs.org/dist/index.json | jq -r '[.[] | select(.version | test("^v24\\.\\d+\\.\\d+$"))][0].version' > .nvmrc
-          echo "Using Node version: $(cat .nvmrc)"
 
       - name: Setup latest Node.js 24.x
         uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-          cache: npm
-          cache-dependency-path: package-lock.json
 
-      - name: Setup npm 11.x
+      - name: Setup pnpm
         run: |
-          npm i -g npm@^11
-          echo "npm version: $(npm -v)"
-          node -e "const v=require('child_process').execSync('npm -v').toString().trim(); if(!/^11\./.test(v)){console.error('Expected npm 11.x, got', v); process.exit(1);} console.log('npm 11 OK');"
+          corepack enable
+          corepack install
+          node -e "const v=require('child_process').execSync('pnpm -v').toString().trim(); if(!/^10\\./.test(v)){console.error('Expected pnpm 10.x, got', v); process.exit(1);} "
 
-      - name: Set electron-builder cache path
-        run: echo "ELECTRON_BUILDER_CACHE=$RUNNER_TEMP/.cache/electron-builder" >> "$GITHUB_ENV"
+      - name: Force pnpm store into workspace
+        run: |
+          pnpm config set store-dir .pnpm-store
+
+      - name: Ensure cache dirs exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .pnpm-store
+          mkdir -p .cache/electron .cache/electron-builder
+          mkdir -p node_modules/.vite node_modules/.cache || true
+          chmod -R a+rwx .pnpm-store .cache node_modules/.vite node_modules/.cache || true
+
+      # ----------------------------
+      # Caches
+      # ----------------------------
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: .pnpm-store
+          key: pnpm-store-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-${{ matrix.platform }}-
+
+      - name: Cache build caches (vite/esbuild)
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.vite
+            node_modules/.cache
+          key: build-cache-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            build-cache-${{ runner.os }}-${{ matrix.platform }}-
+
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: .cache/electron
+          key: electron-cache-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('package.json', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            electron-cache-${{ runner.os }}-${{ matrix.platform }}-
+
+      - name: Cache electron-builder binaries
+        uses: actions/cache@v4
+        with:
+          path: .cache/electron-builder
+          key: eb-cache-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('package.json', 'pnpm-lock.yaml', 'electron-builder.yml') }}
+          restore-keys: |
+            eb-cache-${{ runner.os }}-${{ matrix.platform }}-
 
       - name: Capture runtime versions
         id: rt
         run: |
           echo "node=$(node -v | sed 's/^v//')" >> "$GITHUB_OUTPUT"
-          echo "npm=$(npm -v)" >> "$GITHUB_OUTPUT"
+          echo "pnpm=$(pnpm -v)" >> "$GITHUB_OUTPUT"
 
       - name: Read version from package.json
         id: pkg
@@ -85,7 +133,10 @@ jobs:
         run: |
           echo "semver=$(node -p 'require(\"./package.json\").devDependencies.electron')" >> "$GITHUB_OUTPUT"
 
-      - name: Build for x86_64 (native)
+      # ----------------------------
+      # Linux x86_64
+      # ----------------------------
+      - name: Install Linux deps [x86_64]
         if: matrix.platform == 'x86_64'
         shell: bash
         run: |
@@ -96,98 +147,87 @@ jobs:
               pkg-config libusb-1.0-0 libudev1 ca-certificates
           sudo rm -rf /var/lib/apt/lists/*
 
-          # Install from package-lock
-          npm run install:ci
-
-      # Resolve installed Electron version (for caches & headers)
-      - name: Resolve Electron version (installed) [x86_64]
+      - name: Install deps (pnpm) [x86_64]
         if: matrix.platform == 'x86_64'
-        id: elres_x86
-        run: |
-          ELECTRON_VERSION="$(node -p "require('./node_modules/electron/package.json').version")"
-          echo "resolved=${ELECTRON_VERSION}" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Electron headers (resolved) [x86_64]
-        if: matrix.platform == 'x86_64'
-        uses: actions/cache@v4
-        with:
-          path: |
-            $HOME/.electron-gyp
-            $HOME/.cache/node-gyp
-            $HOME/Library/Caches/node-gyp
-          key: electron-gyp-${{ runner.os }}-${{ steps.elres_x86.outputs.resolved }}-${{ github.ref_name }}
-          restore-keys: |
-            electron-gyp-${{ runner.os }}-${{ steps.elres_x86.outputs.resolved }}-
-            electron-gyp-${{ runner.os }}-
-
-      - name: Cache electron-builder cache (resolved) [x86_64]
-        if: matrix.platform == 'x86_64'
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.ELECTRON_BUILDER_CACHE }}
-          key: eb-cache-${{ runner.os }}-${{ steps.elres_x86.outputs.resolved }}-${{ github.ref_name }}
-          restore-keys: |
-            eb-cache-${{ runner.os }}-${{ steps.elres_x86.outputs.resolved }}-
-            eb-cache-${{ runner.os }}-
+        run: pnpm install --frozen-lockfile
 
       - name: Build for x86_64 (native Ubuntu)
         if: matrix.platform == 'x86_64'
         shell: bash
         run: |
           set -euo pipefail
-
-          # Prefetch headers for the installed Electron version
           ELECTRON_VERSION=$(node -p "require('./node_modules/electron/package.json').version")
-          echo "electron=$ELECTRON_VERSION"
           npx --yes node-gyp install --target="$ELECTRON_VERSION" --dist-url=https://artifacts.electronjs.org/headers/dist
-
-          # Rebuild native deps against Electron
-          npm run rebuild:native
-
-          npm run typecheck
+          pnpm run rebuild:native
+          pnpm run typecheck
           rm -rf dist
-          npm run build:linux
+          pnpm run build:linux
+
+      # ----------------------------
+      # Linux arm64 (emulated via Docker + QEMU)
+      # ----------------------------
+      - name: Enable binfmt for ARM64 containers [arm64]
+        if: matrix.platform == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --privileged --rm tonistiigi/binfmt --install arm64 >/dev/null
 
       - name: Build for ARM64 (emulated)
         if: matrix.platform == 'arm64'
-        uses: uraimo/run-on-arch-action@v3
-        with:
-          arch: none
-          distro: none
-          base_image: --platform=linux/arm64/v8 node:22-trixie-slim
-          run: |
-            set -euo pipefail
+        shell: bash
+        run: |
+          set -euo pipefail
 
-            # ARM64 check
-            echo "uname -m: $(uname -m)"
-            echo "dpkg arch: $(dpkg --print-architecture)"
-            echo "node arch: $(node -p process.arch)"
+          mkdir -p .pnpm-store .cache/electron .cache/electron-builder
+          chmod -R a+rwx .pnpm-store .cache || true
 
-            apt-get update
-            apt-get install -y --no-install-recommends git build-essential python3 python3-dev libusb-1.0-0-dev libudev-dev pkg-config libusb-1.0-0 libudev1 ca-certificates
-            rm -rf /var/lib/apt/lists/*
+          docker run --rm --platform=linux/arm64/v8 \
+            -v "${GITHUB_WORKSPACE}:/work" \
+            -w /work \
+            -e HUSKY=0 \
+            -e PNPM_NODE_LINKER=hoisted \
+            -e PNPM_SHAMEFULLY_HOIST=true \
+            -e ELECTRON_CACHE=/work/.cache/electron \
+            -e ELECTRON_BUILDER_CACHE=/work/.cache/electron-builder \
+            node:24-trixie-slim bash -lc '
+              set -euo pipefail
 
-            npm i -g npm@^11
-            echo "npm version: $(npm -v)"
-            node -e "const v=require('child_process').execSync('npm -v').toString().trim(); if(!/^11\./.test(v)){console.error('Expected npm 11.x, got', v); process.exit(1);} console.log('npm 11 OK');"
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                git build-essential python3 python3-dev \
+                libusb-1.0-0-dev libudev-dev pkg-config \
+                libusb-1.0-0 libudev1 ca-certificates \
+                liblzo2-2
+              rm -rf /var/lib/apt/lists/*
 
-            echo "==> Waiting for file system to settle (QEMU workaround)..."
-            sleep 15
+              corepack enable
+              corepack install
+              pnpm --version
 
-            # Install from package-lock
-            npm run install:ci
+              pnpm config set store-dir /work/.pnpm-store
+              pnpm install --frozen-lockfile
 
-            ELECTRON_VERSION=$(node -p "require('./node_modules/electron/package.json').version")
-            echo "electron=$ELECTRON_VERSION"
-            npx --yes node-gyp install --target="$ELECTRON_VERSION" --dist-url=https://artifacts.electronjs.org/headers/dist
+              ELECTRON_VERSION="$(node -p "require(\"./node_modules/electron/package.json\").version")"
+              npx --yes node-gyp install --target="$ELECTRON_VERSION" --dist-url=https://artifacts.electronjs.org/headers/dist
 
-            npm run rebuild:native
-            npm run build:armLinux
+              pnpm run rebuild:native
+              pnpm run build:armLinux
+            '
 
-            mkdir -p /github/workspace/dist/
-            cp dist/*-arm64.AppImage /github/workspace/dist/
+      - name: Fix cache permissions after ARM64 container
+        if: matrix.platform == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # docker wrote these as root -> actions/cache runs as runner user -> tar can't read
+          sudo chown -R "$USER:$USER" .cache .pnpm-store node_modules/.vite node_modules/.cache 2>/dev/null || true
+          sudo chmod -R a+rX .cache .pnpm-store node_modules/.vite node_modules/.cache 2>/dev/null || true
 
-      - name: Build for macOS (native)
+      # ----------------------------
+      # macOS
+      # ----------------------------
+      - name: Install deps (brew) [darwin]
         if: matrix.platform == 'darwin'
         shell: bash
         run: |
@@ -195,69 +235,31 @@ jobs:
           brew update >/dev/null
           for pkg in libusb pkg-config; do
             if ! brew list --versions "$pkg" >/dev/null; then
-              echo "Installing $pkg..."
               brew install "$pkg" >/dev/null
             elif brew outdated --quiet | grep -q "^$pkg\$"; then
-              echo "Upgrading $pkg..."
               brew upgrade "$pkg" >/dev/null
-            else
-              echo "$pkg is up-to-date."
             fi
           done
 
-          npm i -g npm@^11
-          echo "npm version: $(npm -v)"
-          node -e "const v=require('child_process').execSync('npm -v').toString().trim(); if(!/^11\./.test(v)){console.error('Expected npm 11.x, got', v); process.exit(1);} console.log('npm 11 OK');"
-
-          # Install from package-lock
-          npm run install:ci
-
-      # Resolve installed Electron version (for caches & headers)
-      - name: Resolve Electron version (installed) [darwin]
+      - name: Install deps (pnpm) [darwin]
         if: matrix.platform == 'darwin'
-        id: elres_mac
+        shell: bash
         run: |
-          ELECTRON_VERSION="$(node -p "require('./node_modules/electron/package.json').version")"
-          echo "resolved=${ELECTRON_VERSION}" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Electron headers (resolved) [darwin]
-        if: matrix.platform == 'darwin'
-        uses: actions/cache@v4
-        with:
-          path: |
-            $HOME/.electron-gyp
-            $HOME/.cache/node-gyp
-            $HOME/Library/Caches/node-gyp
-          key: electron-gyp-${{ runner.os }}-${{ steps.elres_mac.outputs.resolved }}-${{ github.ref_name }}
-          restore-keys: |
-            electron-gyp-${{ runner.os }}-${{ steps.elres_mac.outputs.resolved }}-
-            electron-gyp-${{ runner.os }}-
-
-      - name: Cache electron-builder cache (resolved) [darwin]
-        if: matrix.platform == 'darwin'
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.ELECTRON_BUILDER_CACHE }}
-          key: eb-cache-${{ runner.os }}-${{ steps.elres_mac.outputs.resolved }}-${{ github.ref_name }}
-          restore-keys: |
-            eb-cache-${{ runner.os }}-${{ steps.elres_mac.outputs.resolved }}-
-            eb-cache-${{ runner.os }}-
+          set -euo pipefail
+          corepack enable
+          corepack install
+          pnpm install --frozen-lockfile
 
       - name: Build for macOS (native)
         if: matrix.platform == 'darwin'
         shell: bash
         run: |
           set -euo pipefail
-
           ELECTRON_VERSION=$(node -p "require('./node_modules/electron/package.json').version")
-          echo "electron=$ELECTRON_VERSION"
           npx --yes node-gyp install --target="$ELECTRON_VERSION" --dist-url=https://artifacts.electronjs.org/headers/dist
-
-          # Rebuild native deps against Electron
-          npm run rebuild:native
-
-          npm run typecheck
-          npm run build:mac
+          pnpm run rebuild:native
+          pnpm run typecheck
+          pnpm run build:mac
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -285,108 +287,27 @@ jobs:
           BRANCH_NAME="${BUILD_BRANCH}"
           VERSION="${{ steps.pkg.outputs.version }}"
           NODE_VERSION="${{ steps.rt.outputs.node }}"
-          NPM_VERSION="${{ steps.rt.outputs.npm }}"
+          PNPM_VERSION="${{ steps.rt.outputs.pnpm }}"
 
-          # Prefer installed Electron version (node_modules), fallback to package.json semver
           ELECTRON_SEMVER="$(node -e "try{console.log(require('./node_modules/electron/package.json').version)}catch(e){try{console.log(require('./package.json').devDependencies.electron)}catch(e){console.log('unknown')}}" )"
           export ELECTRON_SEMVER
 
-          echo "BRANCH_NAME=${BRANCH_NAME}"
-          echo "VERSION=${VERSION}"
-          echo "NODE_VERSION=${NODE_VERSION}"
-          echo "NPM_VERSION=${NPM_VERSION}"
-          echo "ELECTRON_SEMVER=${ELECTRON_SEMVER}"
-
-          echo "==> Debug: electron-to-chromium package & mappings"
-          node -e "
-          try {
-            const pkg = require('electron-to-chromium/package.json');
-            const { electronToChromium } = require('electron-to-chromium');
-
-            const v = (process.env.ELECTRON_SEMVER || '').trim();
-            const clean = v.replace(/^v/i,'').split('-')[0];
-            const parts = clean.split('.');
-            const candidates = [clean, parts.slice(0,2).join('.'), parts[0]].filter(Boolean);
-
-            console.log('electron-to-chromium=', pkg.version);
-            console.log('electron(clean)=', clean);
-            for (const c of candidates) {
-              console.log('  map(' + c + ')=', electronToChromium(c));
-            }
-          } catch (e) {
-            console.log('electron-to-chromium load failed:', e?.message || e);
-          }
-          "
-
-          # Chromium version: try electron-to-chromium with patch->minor->major fallback
-          CHROMIUM_VER="$(node -e "
-          try {
-            const { electronToChromium } = require('electron-to-chromium');
-            const v = (process.env.ELECTRON_SEMVER || '').trim();
-            if (!v || v === 'unknown') { console.log('unknown'); process.exit(0); }
-
-            const clean = v.replace(/^v/i,'').split('-')[0];
-            const parts = clean.split('.');
-            const candidates = [
-              clean,                         // X.X.X
-              parts.slice(0,2).join('.'),    // X.X
-              parts[0],                      // X
-            ].filter(Boolean);
-
-            for (const c of candidates) {
-              const mapped = electronToChromium(c);
-              if (mapped) { console.log(String(mapped).trim()); process.exit(0); }
-            }
-            console.log('unknown');
-          } catch { console.log('unknown'); }
+          CHROMIUM_VER="$(ELECTRON_RUN_AS_NODE=1 node -e "
+            const { execFileSync } = require('child_process');
+            const e = require('electron');
+            const out = execFileSync(
+              e,
+              ['-e', 'process.stdout.write(process.versions.chrome || \"unknown\")'],
+              { encoding: 'utf8' }
+            );
+            process.stdout.write((out || 'unknown').trim());
           ")"
 
-          echo "Chromium (electron-to-chromium)=${CHROMIUM_VER}"
-
-          # If still unknown, try npx with latest mapping dataset (no repo changes required)
-          if [ "$CHROMIUM_VER" = "unknown" ] || [ -z "$CHROMIUM_VER" ]; then
-            echo "Chromium mapping failed, trying npx electron-to-chromium@latest…"
-            CHROMIUM_VER="$(node -e "
-            const { execSync } = require('child_process');
-            const v = (process.env.ELECTRON_SEMVER || '').trim();
-            const clean = v.replace(/^v/i,'').split('-')[0];
-            const major = clean.split('.')[0];
-            try {
-              // Prefer major mapping to keep it stable
-              const out = execSync('npx -y electron-to-chromium@latest --electron ' + major, { stdio:['ignore','pipe','ignore'] }).toString().trim();
-              console.log(out || 'unknown');
-            } catch {
-              console.log('unknown');
-            }
-            ")"
-            echo "Chromium (npx electron-to-chromium@latest)=${CHROMIUM_VER}"
-          fi
-
-          # Optional fallback: try Electron binary (usually unavailable with --ignore-scripts)
-          if [ "$CHROMIUM_VER" = "unknown" ] || [ -z "$CHROMIUM_VER" ]; then
-            echo "Chromium mapping still unknown, trying Electron binary…"
-            ELECTRON_BIN="$(node -e "try{console.log(require('electron'))}catch{process.exit(1)}" 2>/dev/null || true)"
-            echo "Electron binary=${ELECTRON_BIN:-<not found>}"
-
-            if [ -n "$ELECTRON_BIN" ] && [ -x "$ELECTRON_BIN" ]; then
-              CHROMIUM_FROM_BIN="$(ELECTRON_RUN_AS_NODE=1 "$ELECTRON_BIN" -e "console.log(process.versions.chrome||'')" 2>/dev/null || true)"
-              echo "Chromium from Electron binary=${CHROMIUM_FROM_BIN:-<empty>}"
-              if [ -n "$CHROMIUM_FROM_BIN" ]; then
-                CHROMIUM_VER="$CHROMIUM_FROM_BIN"
-              fi
-            else
-              echo "Electron binary not executable or not found."
-            fi
-          fi
-
-          echo "Chromium version used for badge=${CHROMIUM_VER}"
-
-          # Electron release date (de-DE, Europe/Berlin)
           ELECTRON_DATE_DE="$(node -e "
             const cp = require('child_process');
             const v = (process.env.ELECTRON_SEMVER || '').trim().replace(/^v/i,'');
             try {
-              const out = cp.execSync('npm view electron@'+v+' time --json',{stdio:['ignore','pipe','ignore']}).toString();
+              const out = cp.execSync('pnpm view electron@'+v+' time --json',{stdio:['ignore','pipe','ignore']}).toString();
               const map = JSON.parse(out)||{};
               const iso = map[v];
               if (!iso) { console.log('unknown'); process.exit(0); }
@@ -397,7 +318,8 @@ jobs:
             } catch { console.log('unknown'); }
           ")"
 
-          echo "Electron release date (de-DE)=${ELECTRON_DATE_DE}"
+          echo "ELECTRON_SEMVER=${ELECTRON_SEMVER}"
+          echo "CHROMIUM_VER=${CHROMIUM_VER}"
 
           mkdir temp-badges
           cd temp-badges
@@ -408,26 +330,16 @@ jobs:
           git config user.email "github-actions@github.com"
 
           mkdir -p .github/badges
-
           echo "{\"schemaVersion\":1,\"label\":\"${BRANCH_NAME}\",\"message\":\"v${VERSION}\",\"color\":\"lightblue\"}" > ".github/badges/${BRANCH_NAME}-version.json"
           echo "{\"schemaVersion\":1,\"label\":\"node\",\"message\":\"${NODE_VERSION}\",\"color\":\"lightgrey\"}" > ".github/badges/${BRANCH_NAME}-node.json"
-          echo "{\"schemaVersion\":1,\"label\":\"npm\",\"message\":\"${NPM_VERSION}\",\"color\":\"lightgrey\"}" > ".github/badges/${BRANCH_NAME}-npm.json"
+          echo "{\"schemaVersion\":1,\"label\":\"pnpm\",\"message\":\"${PNPM_VERSION}\",\"color\":\"lightgrey\"}" > ".github/badges/${BRANCH_NAME}-pnpm.json"
           echo "{\"schemaVersion\":1,\"label\":\"electron\",\"message\":\"${ELECTRON_SEMVER}\",\"color\":\"lightblue\"}" > ".github/badges/${BRANCH_NAME}-electron.json"
-
-          # Chromium mapping + Electron release date + combined info
           echo "{\"schemaVersion\":1,\"label\":\"chromium\",\"message\":\"${CHROMIUM_VER}\",\"color\":\"informational\"}" > ".github/badges/${BRANCH_NAME}-electron-chromium.json"
           echo "{\"schemaVersion\":1,\"label\":\"released\",\"message\":\"${ELECTRON_DATE_DE}\",\"color\":\"success\"}" > ".github/badges/${BRANCH_NAME}-electron-date.json"
           echo "{\"schemaVersion\":1,\"label\":\"Electron\",\"message\":\"${ELECTRON_SEMVER} • Chromium ${CHROMIUM_VER} • ${ELECTRON_DATE_DE}\",\"color\":\"blue\"}" > ".github/badges/${BRANCH_NAME}-electron-info.json"
 
-          git add .github/badges/${BRANCH_NAME}-version.json
-          git add .github/badges/${BRANCH_NAME}-node.json
-          git add .github/badges/${BRANCH_NAME}-npm.json
-          git add .github/badges/${BRANCH_NAME}-electron.json
-          git add .github/badges/${BRANCH_NAME}-electron-chromium.json
-          git add .github/badges/${BRANCH_NAME}-electron-date.json
-          git add .github/badges/${BRANCH_NAME}-electron-info.json
-
-          git commit -m "chore(badges): ${BRANCH_NAME} -> v${VERSION}, node ${NODE_VERSION}, npm ${NPM_VERSION}, electron ${ELECTRON_SEMVER} (chromium ${CHROMIUM_VER}, ${ELECTRON_DATE_DE})" || echo "No changes"
+          git add .github/badges/${BRANCH_NAME}-*.json
+          git commit -m "chore(badges): ${BRANCH_NAME} -> v${VERSION}, node ${NODE_VERSION}, pnpm ${PNPM_VERSION}, electron ${ELECTRON_SEMVER} (chromium ${CHROMIUM_VER}, ${ELECTRON_DATE_DE})" || echo "No changes"
           git push
           cd ..
           rm -rf temp-badges
@@ -443,3 +355,74 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           retain_days: 7
           keep_minimum_runs: 1
+
+      - name: Cleanup caches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CACHES="$(gh api -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/actions/caches" \
+            --paginate \
+            --jq '.actions_caches[]
+              | select(.key | startswith("node-cache-") or startswith("eb-cache-") or startswith("electron-gyp-"))
+              | "\(.id) \(.last_accessed_at) \(.ref) \(.key)"' \
+            | sort -k2 -r || true)"
+
+          if [ -z "${CACHES}" ]; then
+            exit 0
+          fi
+
+          declare -A KEEP_FOR_GROUP=()
+
+          while read -r ID LAST REF KEY; do
+            [ -n "${ID}" ] || continue
+
+            case "${KEY}" in
+              node-cache-*)
+                GROUP="$(echo "${KEY}" | sed -E 's/^(node-cache-[^-]+-[^-]+-pnpm).*/\1/')"
+                ;;
+              eb-cache-*)
+                GROUP="$(echo "${KEY}" | sed -E 's/^(eb-cache-[^-]+).*/\1/')"
+                ;;
+              electron-gyp-*)
+                GROUP="$(echo "${KEY}" | sed -E 's/^(electron-gyp-[^-]+).*/\1/')"
+                ;;
+              *)
+                continue
+                ;;
+            esac
+
+            GROUP="${GROUP}::${REF}"
+            if [ -z "${KEEP_FOR_GROUP[${GROUP}]+x}" ]; then
+              KEEP_FOR_GROUP["${GROUP}"]="${ID}"
+            fi
+          done <<< "${CACHES}"
+
+          while read -r ID LAST REF KEY; do
+            [ -n "${ID}" ] || continue
+
+            case "${KEY}" in
+              node-cache-*)
+                GROUP="$(echo "${KEY}" | sed -E 's/^(node-cache-[^-]+-[^-]+-pnpm).*/\1/')"
+                ;;
+              eb-cache-*)
+                GROUP="$(echo "${KEY}" | sed -E 's/^(eb-cache-[^-]+).*/\1/')"
+                ;;
+              electron-gyp-*)
+                GROUP="$(echo "${KEY}" | sed -E 's/^(electron-gyp-[^-]+).*/\1/')"
+                ;;
+              *)
+                continue
+                ;;
+            esac
+
+            GROUP="${GROUP}::${REF}"
+            KEEP_ID="${KEEP_FOR_GROUP[${GROUP}]}"
+            if [ "${ID}" != "${KEEP_ID}" ]; then
+              gh api -X DELETE -H "Accept: application/vnd.github+json" \
+                "/repos/${GITHUB_REPOSITORY}/actions/caches/${ID}" >/dev/null
+            fi
+          done <<< "${CACHES}"

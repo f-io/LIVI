@@ -1,8 +1,10 @@
 export enum ROUTES {
   HOME = '/',
+  MAPS = '/maps',
   MEDIA = '/media',
   CAMERA = '/camera',
   SETTINGS = '/settings',
+  TELEMETRY = '/telemetry',
   QUIT = 'quit'
 }
 
@@ -32,5 +34,6 @@ export const EMPTY_STRING = '—'
 
 export const UI = {
   MIN_HEIGHT_SHOW_TIME_WIFI: 320,
-  XS_ICON_MAX_HEIGHT: 320
+  XS_ICON_MAX_HEIGHT: 320,
+  INACTIVITY_HIDE_DELAY_MS: 3000
 } as const

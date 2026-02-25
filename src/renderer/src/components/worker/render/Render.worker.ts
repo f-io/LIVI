@@ -22,8 +22,8 @@ export class RendererWorker {
   private selectedRenderer: string | null = null
   private renderScheduled = false
   private lastRenderTime: number = 0
-  private targetFps = 60
-  private frameInterval: number = 1000 / this.targetFps
+  private targetFps: number | null = null
+  private frameInterval: number = 1000 / 60
 
   private rendererHwSupported = false
   private rendererSwSupported = false
@@ -37,6 +37,9 @@ export class RendererWorker {
 
   private setTargetFps(fps?: number) {
     if (!fps || !Number.isFinite(fps)) return
+
+    const isFirst = this.targetFps == null
+    if (!isFirst && fps === this.targetFps) return
 
     this.targetFps = fps
     this.frameInterval = 1000 / fps
@@ -90,25 +93,38 @@ export class RendererWorker {
 
     this.setTargetFps(event.targetFps)
 
-    self.postMessage({ type: 'render-ready' })
-    console.debug('[RENDER.WORKER] render-ready')
-
     await this.evaluateRendererCapabilities()
 
     if (!this.selectedRenderer) {
       console.warn('[RENDER.WORKER] No suitable renderer found')
+      self.postMessage({ type: 'render-error', message: 'No renderer available' })
       return
     }
 
-    if (this.selectedRenderer === 'webgl2') {
-      this.renderer = new WebGL2Renderer(event.canvas)
-    } else if (this.selectedRenderer === 'webgpu') {
-      this.renderer = new WebGPURenderer(event.canvas)
+    try {
+      if (this.selectedRenderer === 'webgl2') {
+        this.renderer = new WebGL2Renderer(event.canvas)
+      } else if (this.selectedRenderer === 'webgpu') {
+        this.renderer = new WebGPURenderer(event.canvas)
+      }
+    } catch (e) {
+      this.renderer = null
+      console.warn('[RENDER.WORKER] Renderer init failed', e)
+      self.postMessage({
+        type: 'render-error',
+        message: `Renderer init failed (${this.selectedRenderer})`
+      })
+      return
     }
 
     if (!this.renderer) {
       console.warn('[RENDER.WORKER] No valid renderer selected, cannot proceed.')
+      self.postMessage({ type: 'render-error', message: 'No renderer available' })
+      return
     }
+
+    console.debug('[RENDER.WORKER] render-ready')
+    self.postMessage({ type: 'render-ready' })
   }
 
   private async evaluateRendererCapabilities() {
@@ -257,11 +273,16 @@ export class RendererWorker {
     }
 
     console.warn('[RENDER.WORKER] Failed to configure decoder (HW/SW not usable for renderer)')
+    self.postMessage({
+      type: 'render-error',
+      message: 'Decoder not usable for selected renderer'
+    })
     return false
   }
 
   private async processRaw(buffer: ArrayBuffer) {
     if (!buffer.byteLength) return
+    if (!this.renderer) return
 
     const data = new Uint8Array(buffer)
     const videoData =

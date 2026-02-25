@@ -6,14 +6,27 @@ type NetworkStatus = {
   online: boolean
 }
 
+type NetworkInformationLike = {
+  type?: unknown
+  effectiveType?: unknown
+  addEventListener?: (type: 'change', listener: () => void) => void
+  removeEventListener?: (type: 'change', listener: () => void) => void
+}
+
+function getConnection(): NetworkInformationLike | null {
+  const nav = navigator as Navigator & {
+    connection?: NetworkInformationLike
+    mozConnection?: NetworkInformationLike
+    webkitConnection?: NetworkInformationLike
+  }
+
+  return nav.connection ?? nav.mozConnection ?? nav.webkitConnection ?? null
+}
+
 export function useNetworkStatus(): NetworkStatus {
   const read = (): NetworkStatus => {
     const online = typeof navigator !== 'undefined' ? navigator.onLine : true
-
-    const c: any =
-      (navigator as any).connection ||
-      (navigator as any).mozConnection ||
-      (navigator as any).webkitConnection
+    const c = getConnection()
 
     // If the API is missing, we can only reliably know "online/offline".
     if (!c) {
@@ -40,22 +53,18 @@ export function useNetworkStatus(): NetworkStatus {
   const [network, setNetwork] = useState<NetworkStatus>(() => read())
 
   useEffect(() => {
-    const c: any =
-      (navigator as any).connection ||
-      (navigator as any).mozConnection ||
-      (navigator as any).webkitConnection
-
+    const c = getConnection()
     const update = () => setNetwork(read())
 
     window.addEventListener('online', update)
     window.addEventListener('offline', update)
 
-    if (c?.addEventListener) c.addEventListener('change', update)
+    c?.addEventListener?.('change', update)
 
     return () => {
       window.removeEventListener('online', update)
       window.removeEventListener('offline', update)
-      if (c?.removeEventListener) c.removeEventListener('change', update)
+      c?.removeEventListener?.('change', update)
     }
   }, [])
 

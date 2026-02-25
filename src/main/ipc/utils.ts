@@ -4,14 +4,13 @@ import os from 'node:os'
 import { runtimeStateProps, UpdateEventPayload } from '@main/types'
 import { getMainWindow } from '@main/window/createWindow'
 import { DEFAULT_BINDINGS, ExtraConfig } from '@main/Globals'
-import { applyNullDeletes, sizesEqual } from '@main/utils'
+import { applyNullDeletes, pushSettingsToRenderer, sizesEqual } from '@main/utils'
 import {
   applyAspectRatioFullscreen,
   applyAspectRatioWindowed,
   applyWindowedContentSize,
-  sendKioskSync
+  fitWindowToWorkArea
 } from '@main/window/utils'
-import { DEFAULT_HEIGHT, DEFAULT_WIDTH } from '@main/constants'
 import { CONFIG_PATH } from '@main/config/paths'
 
 export async function getMacDesiredOwner(dstApp: string): Promise<{ user: string; group: string }> {
@@ -71,11 +70,7 @@ export function saveSettings(runtimeState: runtimeStateProps, next: Partial<Extr
   const prev = runtimeState.config
   runtimeState.config = merged
 
-  if (runtimeState.socket) {
-    runtimeState.socket.config = runtimeState.config
-    runtimeState.socket.sendSettings()
-  }
-  sendKioskSync(runtimeState.config.kiosk)
+  pushSettingsToRenderer(runtimeState)
 
   if (!mainWindow) return
 
@@ -91,13 +86,13 @@ export function saveSettings(runtimeState: runtimeStateProps, next: Partial<Extr
         if (sizeChanged) {
           applyWindowedContentSize(
             mainWindow,
-            runtimeState.config.width || DEFAULT_WIDTH,
-            runtimeState.config.height || DEFAULT_HEIGHT
+            runtimeState.config.width || 800,
+            runtimeState.config.height || 480
           )
           applyAspectRatioFullscreen(
             mainWindow,
-            runtimeState.config.width || DEFAULT_WIDTH,
-            runtimeState.config.height || DEFAULT_HEIGHT
+            runtimeState.config.width || 800,
+            runtimeState.config.height || 480
           )
         }
         if (!isFs) mainWindow.setFullScreen(true)
@@ -106,8 +101,8 @@ export function saveSettings(runtimeState: runtimeStateProps, next: Partial<Extr
         if (sizeChanged) {
           applyWindowedContentSize(
             mainWindow,
-            runtimeState.config.width || DEFAULT_WIDTH,
-            runtimeState.config.height || DEFAULT_HEIGHT
+            runtimeState.config.width || 800,
+            runtimeState.config.height || 480
           )
         }
       }
@@ -115,45 +110,58 @@ export function saveSettings(runtimeState: runtimeStateProps, next: Partial<Extr
       if (wantFs) {
         applyWindowedContentSize(
           mainWindow,
-          runtimeState.config.width || DEFAULT_WIDTH,
-          runtimeState.config.height || DEFAULT_HEIGHT
+          runtimeState.config.width || 800,
+          runtimeState.config.height || 480
         )
         applyAspectRatioFullscreen(
           mainWindow,
-          runtimeState.config.width || DEFAULT_WIDTH,
-          runtimeState.config.height || DEFAULT_HEIGHT
+          runtimeState.config.width || 800,
+          runtimeState.config.height || 480
         )
       } else {
         applyWindowedContentSize(
           mainWindow,
-          runtimeState.config.width || DEFAULT_WIDTH,
-          runtimeState.config.height || DEFAULT_HEIGHT
+          runtimeState.config.width || 800,
+          runtimeState.config.height || 480
         )
       }
     }
   } else {
     // Linux
+    const win = mainWindow
     if (kioskChanged) {
-      mainWindow.setKiosk(runtimeState.config.kiosk)
-      if (sizeChanged) {
-        if (runtimeState.config.kiosk) {
-          applyAspectRatioWindowed(mainWindow, 0, 0)
-        } else {
-          mainWindow.setContentSize(runtimeState.config.width, runtimeState.config.height, false)
-          applyAspectRatioWindowed(
-            mainWindow,
-            runtimeState.config.width,
-            runtimeState.config.height
-          )
+      const leavingKiosk = !runtimeState.config.kiosk
+
+      // Always drop constraints before switching mode
+      applyAspectRatioWindowed(win, 0, 0)
+
+      win.setKiosk(runtimeState.config.kiosk)
+
+      if (leavingKiosk) {
+        applyWindowedContentSize(win, runtimeState.config.width, runtimeState.config.height)
+
+        // Re-apply bounds once the WM finishes the transition
+        const onResize = () => {
+          win.removeListener('resize', onResize)
+          fitWindowToWorkArea(win)
+          applyWindowedContentSize(win, runtimeState.config.width, runtimeState.config.height)
         }
-      }
-    } else if (sizeChanged) {
-      if (runtimeState.config.kiosk) {
-        applyAspectRatioWindowed(mainWindow, 0, 0)
+        win.on('resize', onResize)
+
+        setImmediate(() => {
+          if (win.isDestroyed()) return
+          fitWindowToWorkArea(win)
+          applyWindowedContentSize(win, runtimeState.config.width, runtimeState.config.height)
+        })
       } else {
-        mainWindow.setContentSize(runtimeState.config.width, runtimeState.config.height, false)
-        applyAspectRatioWindowed(mainWindow, runtimeState.config.width, runtimeState.config.height)
+        // entering kiosk
+        applyAspectRatioWindowed(win, 0, 0)
       }
+      return
+    }
+    // no kiosk change, only size change in windowed mode
+    if (sizeChanged && !runtimeState.config.kiosk) {
+      applyWindowedContentSize(win, runtimeState.config.width, runtimeState.config.height)
     }
   }
 }

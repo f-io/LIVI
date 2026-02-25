@@ -1,13 +1,10 @@
 import { createWriteStream, existsSync, promises as fsp } from 'fs'
 import * as https from 'node:https'
 
-export async function downloadWithProgress(
+export function downloadWithProgress(
   url: string,
   dest: string,
   onProgress: (p: { received: number; total: number; percent: number }) => void
-  // FIXME
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
 ): { promise: Promise<void>; cancel: () => void } {
   let req: import('http').ClientRequest | null = null
   let file: import('fs').WriteStream | null = null

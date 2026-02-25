@@ -4,6 +4,7 @@ import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { ExtraConfig } from '../../main/Globals'
 import type { MultiTouchPoint } from '../../main/services/carplay/messages/sendable'
 
+// Should move to src/types/usb.ts
 interface USBDevice {
   readonly productName?: string
   readonly manufacturerName?: string
@@ -37,6 +38,10 @@ declare global {
     received?: number
     total?: number
   }
+
+  const __BUILD_SHA__: string
+  const __BUILD_RUN__: string
+  const __BUILD_BRANCH__: string
 }
 
 type UsbDeviceInfo =
@@ -110,34 +115,50 @@ declare global {
         getLastEvent(): Promise<unknown>
         getSysdefaultPrettyName(): Promise<string>
         uploadIcons(): Promise<void>
+        uploadLiviScripts(): Promise<{ ok: boolean; cgiOk: boolean; webOk: boolean }>
         listenForEvents(callback: (event: unknown, ...args: unknown[]) => void): void
         unlistenForEvents(callback: (event: unknown, ...args: unknown[]) => void): void
       }
 
       settings: {
         get(): Promise<ExtraConfig>
-        save(settings: ExtraConfig): Promise<void>
-        onUpdate(callback: (event: unknown, settings: ExtraConfig) => void): void
+        save(settings: Partial<ExtraConfig>): Promise<void>
+        onUpdate(
+          callback: (event: import('electron').IpcRendererEvent, settings: ExtraConfig) => void
+        ): () => void
       }
-
       ipc: {
         start(): Promise<void>
         stop(): Promise<void>
         sendFrame(): Promise<void>
         dongleFirmware(action: DongleFirmwareAction): Promise<DongleFirmwareCheckResult>
+
         sendTouch(x: number, y: number, action: number): void
         sendMultiTouch(points: MultiTouchPoint[]): void
         sendKeyCommand(key: string): void
+
         onEvent(callback: (event: unknown, ...args: unknown[]) => void): void
         offEvent(callback: (event: unknown, ...args: unknown[]) => void): void
+
+        onTelemetry(handler: (payload: unknown) => void): void
+        offTelemetry(): void
+
         setVisualizerEnabled(enabled: boolean): void
+
         readMedia(): Promise<MediaPayload>
+        readNavigation(): Promise<unknown>
+
         onVideoChunk(handler: (payload: unknown) => void): void
         onAudioChunk(handler: (payload: unknown) => void): void
+
+        requestMaps(enabled: boolean): Promise<{ ok: boolean; enabled: boolean }>
+        onMapsVideoChunk(handler: (payload: unknown) => void): void
+        onMapsResolution(handler: (payload: unknown) => void): void
       }
     }
 
     app: {
+      notifyUserActivity(): void
       quitApp(): Promise<void>
       restartApp(): Promise<void>
       getVersion(): Promise<string>
@@ -145,8 +166,6 @@ declare global {
       performUpdate(imageUrl?: string): Promise<void>
       onUpdateEvent(cb: (payload: UpdateEvent) => void): () => void
       onUpdateProgress(cb: (payload: UpdateProgress) => void): () => void
-      getKiosk(): Promise<boolean>
-      onKioskSync(cb: (kiosk: boolean) => void): () => void
       beginInstall(): Promise<void>
       abortUpdate(): Promise<void>
     }

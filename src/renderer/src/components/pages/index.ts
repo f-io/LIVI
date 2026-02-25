@@ -1,5 +1,7 @@
 export * from './camera'
 export * from './carplay'
 export * from './home'
+export * from './maps'
 export * from './media'
 export * from './settings'
+export * from './telemetry'

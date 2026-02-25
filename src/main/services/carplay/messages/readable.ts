@@ -264,7 +264,12 @@ export enum MediaType {
   ControlAutoplayTrigger = 100
 }
 
+export enum NavigationMetaType {
+  DashboardInfo = 200
+}
+
 export class MediaData extends Message {
+  mediaType: MediaType
   payload?:
     | {
         type: MediaType.Data
@@ -280,25 +285,133 @@ export class MediaData extends Message {
     | { type: MediaType.AlbumCover; base64Image: string }
     | { type: MediaType.ControlAutoplayTrigger }
 
+  constructor(header: MessageHeader, mediaType: MediaType, payloadOnly: Buffer) {
+    super(header)
+    this.mediaType = mediaType
+
+    if (mediaType === MediaType.AlbumCover) {
+      this.payload = {
+        type: mediaType,
+        base64Image: payloadOnly.toString('base64')
+      }
+      return
+    }
+
+    if (mediaType === MediaType.Data) {
+      const jsonBytes = payloadOnly.subarray(0, Math.max(0, payloadOnly.length - 1)) // drop trailing NUL-ish byte
+      try {
+        this.payload = {
+          type: mediaType,
+          media: JSON.parse(jsonBytes.toString('utf8'))
+        }
+      } catch {
+        // keep payload undefined on parse error
+      }
+      return
+    }
+
+    if (mediaType === MediaType.ControlAutoplayTrigger) {
+      this.payload = { type: mediaType }
+      return
+    }
+  }
+}
+
+export type NaviInfo = {
+  NaviStatus?: number
+  NaviTimeToDestination?: number
+  NaviDestinationName?: string
+  NaviDistanceToDestination?: number
+  NaviAPPName?: string
+  NaviRemainDistance?: number
+
+  NaviRoadName?: string
+  NaviOrderType?: number
+  NaviManeuverType?: number
+  NaviTurnAngle?: number
+  NaviTurnSide?: number
+} & Record<string, unknown>
+
+export function parseNaviInfoFromBuffer(buf: Buffer): NaviInfo | null {
+  let s = buf.toString('utf8')
+  const nul = s.indexOf('\u0000')
+  if (nul !== -1) s = s.slice(0, nul)
+  s = s.trim()
+  if (!s) return null
+
+  try {
+    const parsed = JSON.parse(s)
+    if (!parsed || typeof parsed !== 'object') return null
+    return parsed as NaviInfo
+  } catch {
+    return null
+  }
+}
+
+export class NavigationData extends Message {
+  metaType: NavigationMetaType
+  navi: NaviInfo | null
+  rawUtf8: string
+
+  constructor(header: MessageHeader, metaType: NavigationMetaType, payloadOnly: Buffer) {
+    super(header)
+    this.metaType = metaType
+
+    let s = payloadOnly.toString('utf8')
+    const nul = s.indexOf('\u0000')
+    if (nul !== -1) s = s.slice(0, nul)
+    this.rawUtf8 = s
+
+    this.navi = parseNaviInfoFromBuffer(payloadOnly)
+  }
+}
+
+export type MetaInner =
+  | { kind: 'media'; message: MediaData }
+  | { kind: 'navigation'; message: NavigationData }
+  | { kind: 'unknown'; metaType: number; raw: Buffer }
+
+export class MetaData extends Message {
+  innerType: number
+  inner: MetaInner
+
   constructor(header: MessageHeader, data: Buffer) {
     super(header)
-    const type = data.readUInt32LE(0)
-    if (type === MediaType.AlbumCover) {
-      const imageData = data.subarray(4)
-      this.payload = {
-        type,
-        base64Image: imageData.toString('base64')
-      }
-    } else if (type === MediaType.Data) {
-      const mediaData = data.subarray(4, data.length - 1)
-      this.payload = {
-        type,
-        media: JSON.parse(mediaData.toString('utf8'))
-      }
-    } else if (type === MediaType.ControlAutoplayTrigger) {
-      this.payload = { type }
-    } else {
-      console.info(`Unexpected media type: ${type}`)
+
+    this.innerType = data.readUInt32LE(0)
+    const payloadOnly = data.subarray(4)
+
+    // Navigation
+    if (this.innerType === NavigationMetaType.DashboardInfo) {
+      const msg = new NavigationData(header, NavigationMetaType.DashboardInfo, payloadOnly)
+      this.inner = { kind: 'navigation', message: msg }
+      return
+    }
+
+    // known media types
+    if (
+      this.innerType === MediaType.Data ||
+      this.innerType === MediaType.AlbumCover ||
+      this.innerType === MediaType.ControlAutoplayTrigger
+    ) {
+      const msg = new MediaData(header, this.innerType as MediaType, payloadOnly)
+      this.inner = { kind: 'media', message: msg }
+      return
+    }
+
+    // Unknown
+    this.inner = { kind: 'unknown', metaType: this.innerType, raw: payloadOnly }
+
+    const head = data.subarray(0, Math.min(64, data.length))
+    console.info(
+      `Unexpected meta innerType: ${this.innerType}, bytes=${data.length}, head=${head.toString('hex')}`
+    )
+    const text = payloadOnly.toString('utf8')
+    const trimmed = text.replace(/\0+$/g, '').trim()
+    if (trimmed.length > 0) {
+      console.info(
+        `Unexpected meta innerType: ${this.innerType}, utf8=${JSON.stringify(trimmed.slice(0, 200))}`
+      )
     }
   }
 }

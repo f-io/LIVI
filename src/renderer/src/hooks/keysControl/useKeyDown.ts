@@ -1,12 +1,21 @@
-import { Ref, useCallback, useContext, useMemo } from 'react'
+import { useCallback, useContext, useMemo } from 'react'
 import { BindKey, useKeyDownProps } from './types'
 import { broadcastMediaKey } from '../../utils/broadcastMediaKey'
 import { KeyCommand } from '../../components/worker/types'
 import { useLocation } from 'react-router'
 import { ROUTES } from '../../constants'
 import { AppContext } from '../../context'
-import { get } from 'lodash'
 import { useCarplayStore } from '@store/store'
+
+type RefLike<T> = { current: T | null }
+
+function isRefLike<T>(v: unknown): v is RefLike<T> {
+  return typeof v === 'object' && v !== null && 'current' in v
+}
+
+function readRefCurrent<T>(v: unknown): T | null {
+  return isRefLike<T>(v) ? v.current : null
+}
 
 export const useKeyDown = ({
   receivingVideo,
@@ -33,8 +42,8 @@ export const useKeyDown = ({
   const appContext = useContext(AppContext)
   const settings = useCarplayStore((s) => s.settings)
 
-  const navRef: Ref<HTMLElement> | undefined = get(appContext, 'navEl')
-  const mainRef: Ref<HTMLElement> | undefined = get(appContext, 'contentEl')
+  const navRef = appContext?.navEl
+  const mainRef = appContext?.contentEl
 
   const editingField = appContext?.keyboardNavigation?.focusedElId
 
@@ -72,13 +81,38 @@ export const useKeyDown = ({
 
       const b = (settings?.bindings ?? {}) as Partial<Record<BindKey, string>>
 
-      const isLeft = code === 'ArrowLeft' || b?.left === code
-      const isRight = code === 'ArrowRight' || b?.right === code
-      const isUp = code === 'ArrowUp' || b?.up === code
-      const isDown = code === 'ArrowDown' || b?.down === code
-      const isBackKey = b?.back === code || code === 'Escape'
+      const leftKey = b?.left || 'ArrowLeft'
+      const rightKey = b?.right || 'ArrowRight'
+      const upKey = b?.up || 'ArrowUp'
+      const downKey = b?.down || 'ArrowDown'
+
+      const isLeft = code === leftKey
+      const isRight = code === rightKey
+      const isUp = code === upKey
+      const isDown = code === downKey
+
+      const isBackKey = code === (b?.back || '') || code === 'Escape'
       const isEnter = code === 'Enter' || code === 'NumpadEnter'
-      const isSelectDown = !!b?.selectDown && code === b?.selectDown
+      const isSelectDown = code === (b?.selectDown || '') || isEnter
+
+      const pager = appContext?.telemetryPager
+      const isTelemetryRoute = currentRoute.startsWith('/telemetry')
+
+      if (pager && isTelemetryRoute) {
+        if (isLeft) {
+          if (pager.canPrev()) pager.prev()
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+
+        if (isRight) {
+          if (pager.canNext()) pager.next()
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+      }
 
       let mappedAction: BindKey | undefined
       for (const [k, v] of Object.entries(b ?? {})) {
@@ -88,10 +122,9 @@ export const useKeyDown = ({
         }
       }
 
-      const navRoot =
-        (navRef as any)?.current ?? (document.getElementById('nav-root') as HTMLElement | null)
+      const navRoot = readRefCurrent<HTMLElement>(navRef) ?? document.getElementById('nav-root')
       const mainRoot =
-        (mainRef as any)?.current ?? (document.getElementById('content-root') as HTMLElement | null)
+        readRefCurrent<HTMLElement>(mainRef) ?? document.getElementById('content-root')
 
       const inNav = inContainer(navRoot, active) || !!active?.closest?.('#nav-root')
       const inMain = inContainer(mainRoot, active) || !!active?.closest?.('#content-root')
@@ -366,7 +399,7 @@ export const useKeyDown = ({
         broadcastMediaKey(action)
       }
 
-      if ((isLeft || isRight || isDown) && nothing) {
+      if ((isLeft || isRight || isUp || isDown) && nothing) {
         const ok = focusSelectedNav()
         if (ok) {
           event.preventDefault()
@@ -376,6 +409,7 @@ export const useKeyDown = ({
       }
     },
     [
+      appContext,
       settings,
       currentRoute,
       receivingVideo,

@@ -5,7 +5,7 @@ import {
   Unplugged,
   VideoData,
   AudioData,
-  MediaData,
+  MetaData,
   MediaType,
   Command,
   BoxInfo,
@@ -15,21 +15,32 @@ import {
   SendMultiTouch,
   SendAudio,
   SendFile,
+  SendServerCgiScript,
+  SendLiviWeb,
   SendDisconnectPhone,
   SendCloseDongle,
   FileAddress,
   DongleDriver,
   BoxUpdateProgress,
   BoxUpdateState,
+  MessageType,
   DEFAULT_CONFIG
 } from '../messages'
 import { ExtraConfig } from '@main/Globals'
 import fs from 'fs'
 import path from 'path'
 import usb from 'usb'
-import { PersistedMediaPayload } from './types'
-import { APP_START_TS, DEFAULT_MEDIA_DATA_RESPONSE } from './constants'
+import { PersistedMediaPayload, PersistedNavigationPayload } from './types'
+import {
+  APP_START_TS,
+  DEFAULT_MEDIA_DATA_RESPONSE,
+  DEFAULT_NAVIGATION_DATA_RESPONSE
+} from './constants'
 import { readMediaFile } from './utils/readMediaFile'
+import { readNavigationFile } from './utils/readNavigationFile'
+import { normalizeNavigationPayload } from './utils/normalizeNavigation'
+import { translateNavigation } from './utils/translateNavigation'
+import type { NavLocale } from './utils/translateNavigation'
 import { asDomUSBDevice } from './utils/asDomUSBDevice'
 import { CarplayAudio, LogicalStreamKey } from './CarplayAudio'
 import { FirmwareUpdateService, FirmwareCheckResult } from './FirmwareUpdateService'
@@ -68,6 +79,25 @@ type DongleFwCheckResponse = {
   error?: string
 }
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === 'object' && !Array.isArray(v)
+}
+
+function pickString(o: Record<string, unknown>, key: string): string | undefined {
+  const v = o[key]
+  return typeof v === 'string' ? v : undefined
+}
+
+function pickNumber(o: Record<string, unknown>, key: string): number | undefined {
+  const v = o[key]
+  return typeof v === 'number' ? v : undefined
+}
+
+function pickStringOrNumber(o: Record<string, unknown>, key: string): string | number | undefined {
+  const v = o[key]
+  return typeof v === 'string' || typeof v === 'number' ? v : undefined
+}
+
 export class CarplayService {
   private driver = new DongleDriver()
   private webUsbDevice: WebUSBDevice | null = null
@@ -91,7 +121,15 @@ export class CarplayService {
   private lastDongleInfoEmitKey = ''
   private firmware = new FirmwareUpdateService()
 
+  private lastNaviVideoWidth?: number
+  private lastNaviVideoHeight?: number
+  private mapsRequested = false
+
   private audio: CarplayAudio
+
+  public beginShutdown(): void {
+    this.shuttingDown = true
+  }
 
   constructor() {
     this.audio = new CarplayAudio(
@@ -135,6 +173,8 @@ export class CarplayService {
         }
       } else if (msg instanceof Unplugged) {
         this.webContents.send('carplay-event', { type: 'unplugged' })
+        this.resetNavigationSnapshot('unplugged')
+
         if (!this.shuttingDown && !this.stopping) {
           this.stop().catch(() => {})
         }
@@ -178,11 +218,31 @@ export class CarplayService {
           }
         }
       } else if (msg instanceof VideoData) {
+        const isNavi = msg.header.type === MessageType.NaviVideoData
+        // navi video stream (0x2c)
+        if (isNavi) {
+          if (!this.mapsRequested) return
+
+          const w = msg.width
+          const h = msg.height
+
+          if (w > 0 && h > 0 && (w !== this.lastNaviVideoWidth || h !== this.lastNaviVideoHeight)) {
+            this.lastNaviVideoWidth = w
+            this.lastNaviVideoHeight = h
+            this.webContents.send('maps-video-resolution', { width: w, height: h })
+          }
+
+          this.sendChunked('maps-video-chunk', msg.data?.buffer as ArrayBuffer, 512 * 1024)
+          return
+        }
+
+        // main video stream (0x06)
         if (!this.firstFrameLogged) {
           this.firstFrameLogged = true
           const dt = Date.now() - APP_START_TS
           console.log(`[Perf] AppStart→FirstFrame: ${dt} ms`)
         }
+
         const w = msg.width
         const h = msg.height
         if (w > 0 && h > 0 && (w !== this.lastVideoWidth || h !== this.lastVideoHeight)) {
@@ -210,29 +270,91 @@ export class CarplayService {
             }
           })
         }
-      } else if (msg instanceof MediaData) {
-        if (!msg.payload) return
+      } else if (msg instanceof MetaData) {
+        const inner = msg.inner
 
-        this.webContents.send('carplay-event', { type: 'media', payload: msg })
-        const file = path.join(app.getPath('userData'), 'mediaData.json')
-        const existing = readMediaFile(file)
-        const existingPayload = existing.payload
-        const newPayload: PersistedMediaPayload = { type: msg.payload.type }
+        // Media metadata (innerType 1/3/100)
+        if (inner.kind === 'media') {
+          const mediaMsg = inner.message
+          if (!mediaMsg.payload) return
 
-        if (msg.payload.type === MediaType.Data && msg.payload.media) {
-          newPayload.media = { ...existingPayload.media, ...msg.payload.media }
-          if (existingPayload.base64Image) newPayload.base64Image = existingPayload.base64Image
-        } else if (msg.payload.type === MediaType.AlbumCover && msg.payload.base64Image) {
-          newPayload.base64Image = msg.payload.base64Image
-          if (existingPayload.media) newPayload.media = existingPayload.media
-        } else {
-          newPayload.media = existingPayload.media
-          newPayload.base64Image = existingPayload.base64Image
+          this.webContents.send('carplay-event', { type: 'media', payload: mediaMsg })
+
+          const file = path.join(app.getPath('userData'), 'mediaData.json')
+          const existing = readMediaFile(file)
+          const existingPayload = existing.payload
+          const newPayload: PersistedMediaPayload = { type: mediaMsg.payload.type }
+
+          if (mediaMsg.payload.type === MediaType.Data && mediaMsg.payload.media) {
+            newPayload.media = { ...existingPayload.media, ...mediaMsg.payload.media }
+            if (existingPayload.base64Image) newPayload.base64Image = existingPayload.base64Image
+          } else if (
+            mediaMsg.payload.type === MediaType.AlbumCover &&
+            mediaMsg.payload.base64Image
+          ) {
+            newPayload.base64Image = mediaMsg.payload.base64Image
+            if (existingPayload.media) newPayload.media = existingPayload.media
+          } else {
+            newPayload.media = existingPayload.media
+            newPayload.base64Image = existingPayload.base64Image
+          }
+
+          const out = { timestamp: new Date().toISOString(), payload: newPayload }
+          fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
+          return
         }
-        const out = { timestamp: new Date().toISOString(), payload: newPayload }
-        fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
+
+        // Navigation metadata (innerType 200)
+        if (inner.kind === 'navigation') {
+          if (!this.started) return
+          const navMsg = inner.message
+
+          this.webContents.send('carplay-event', { type: 'navigation', payload: navMsg })
+
+          const file = path.join(app.getPath('userData'), 'navigationData.json')
+          const existing = readNavigationFile(file)
+
+          const locale: NavLocale =
+            this.config.language === 'de'
+              ? 'de'
+              : this.config.language === 'ua' ||
+                  this.config.language === 'uk' ||
+                  this.config.language === 'uk-UA'
+                ? 'ua'
+                : 'en'
+
+          const normalized = normalizeNavigationPayload(existing.payload, navMsg)
+          const translated = translateNavigation(normalized.navi, locale)
+
+          const nextPayload: PersistedNavigationPayload = {
+            ...normalized,
+            display: {
+              locale,
+              appName: translated.SourceName,
+              destinationName: translated.DestinationName,
+              roadName: translated.CurrentRoadName,
+              maneuverText: translated.ManeuverTypeText,
+              timeToDestinationText: translated.TimeRemainingToDestinationText,
+              distanceToDestinationText: translated.DistanceRemainingDisplayStringText,
+              remainDistanceText: translated.RemainDistanceText
+            }
+          }
+
+          const out = { timestamp: new Date().toISOString(), payload: nextPayload }
+          fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
+
+          return
+        }
+        // Unknown meta
       } else if (msg instanceof Command) {
         this.webContents.send('carplay-event', { type: 'command', message: msg })
+        if (typeof msg.value === 'number' && msg.value === 508 && this.mapsRequested) {
+          try {
+            this.driver.send(new SendCommand('requestNaviScreenFocus'))
+          } catch {
+            // ignore
+          }
+        }
       }
     })
 
@@ -240,14 +362,31 @@ export class CarplayService {
       this.webContents?.send('carplay-event', { type: 'failure' })
     })
 
+    // TODO all ipcMain should me moved to a separate file (registerIpc) and imported, this is just for quick iteration
     ipcMain.handle('carplay-start', async () => this.start())
     ipcMain.handle('carplay-stop', async () => this.stop())
     ipcMain.handle('carplay-sendframe', async () => this.driver.send(new SendCommand('frame')))
+
     ipcMain.handle('carplay-upload-icons', async () => {
       if (!this.started || !this.webUsbDevice) {
         throw new Error('[CarplayService] CarPlay is not started or dongle not connected')
       }
       this.uploadIcons()
+    })
+
+    ipcMain.handle('carplay-upload-livi-scripts', async () => {
+      if (!this.started || !this.webUsbDevice) {
+        throw new Error('[CarplayService] CarPlay is not started or dongle not connected')
+      }
+
+      const cgiOk = await this.driver.send(new SendServerCgiScript())
+      const webOk = await this.driver.send(new SendLiviWeb())
+
+      return {
+        ok: Boolean(cgiOk && webOk),
+        cgiOk: Boolean(cgiOk),
+        webOk: Boolean(webOk)
+      }
     })
 
     ipcMain.on('carplay-touch', (_evt, data: { x: number; y: number; action: number }) => {
@@ -256,6 +395,24 @@ export class CarplayService {
       } catch {
         // ignore
       }
+    })
+
+    ipcMain.handle('maps:request', async (_evt, enabled: boolean) => {
+      this.mapsRequested = Boolean(enabled)
+
+      if (!this.mapsRequested) {
+        this.lastNaviVideoWidth = undefined
+        this.lastNaviVideoHeight = undefined
+        return { ok: true, enabled: false }
+      }
+
+      try {
+        this.driver.send(new SendCommand('requestNaviScreenFocus'))
+      } catch {
+        // ignore
+      }
+
+      return { ok: true, enabled: true }
     })
 
     type MultiTouchPoint = { id: number; x: number; y: number; action: number }
@@ -300,6 +457,26 @@ export class CarplayService {
       }
     })
 
+    ipcMain.handle('carplay-navigation-read', async () => {
+      try {
+        if (!this.started) {
+          return DEFAULT_NAVIGATION_DATA_RESPONSE
+        }
+
+        const file = path.join(app.getPath('userData'), 'navigationData.json')
+
+        if (!fs.existsSync(file)) {
+          console.log('[carplay-navigation-read] Error: ENOENT: no such file or directory')
+          return DEFAULT_NAVIGATION_DATA_RESPONSE
+        }
+
+        return readNavigationFile(file)
+      } catch (error) {
+        console.log('[carplay-navigation-read]', error)
+        return DEFAULT_NAVIGATION_DATA_RESPONSE
+      }
+    })
+
     // ============================
     // Dongle firmware updater IPC
     // ============================
@@ -319,27 +496,35 @@ export class CarplayService {
         const toRendererShape = (r: FirmwareCheckResult): DongleFwCheckResponse => {
           if (!r.ok) return asError(r.error || 'Unknown error')
 
-          const rawObj: any = r.raw && typeof r.raw === 'object' ? r.raw : { err: 0 }
+          const rawObj: Record<string, unknown> = isRecord(r.raw) ? r.raw : {}
+
+          const rawErr = pickNumber(rawObj, 'err') ?? 0
+          const rawToken = pickString(rawObj, 'token')
+          const rawVer = pickString(rawObj, 'ver')
+          const rawSize = pickStringOrNumber(rawObj, 'size')
+          const rawId = pickString(rawObj, 'id')
+          const rawNotes = pickString(rawObj, 'notes')
+          const rawMsg = pickString(rawObj, 'msg')
+          const rawError = pickString(rawObj, 'error')
 
           return {
             ok: true,
             hasUpdate: Boolean(r.hasUpdate),
             size: typeof r.size === 'number' ? r.size : 0,
             token: r.token,
-            request: (r.request as any) ?? undefined,
+            request: isRecord(r.request) ? r.request : undefined,
             raw: {
-              err: typeof rawObj.err === 'number' ? rawObj.err : 0,
-              token: r.token ?? rawObj.token,
-              ver: r.latestVer ?? rawObj.ver,
-              size: (typeof r.size === 'number' ? r.size : rawObj.size) ?? 0,
-              id: r.id ?? rawObj.id,
-              notes: r.notes ?? rawObj.notes,
-              msg: rawObj.msg,
-              error: rawObj.error
+              err: rawErr,
+              token: r.token ?? rawToken,
+              ver: r.latestVer ?? rawVer,
+              size: (typeof r.size === 'number' ? r.size : rawSize) ?? 0,
+              id: r.id ?? rawId,
+              notes: r.notes ?? rawNotes,
+              msg: rawMsg,
+              error: rawError
             }
           }
         }
-
         const action = req?.action
 
         if (action === 'check') {
@@ -442,7 +627,7 @@ export class CarplayService {
 
             this.webContents?.send('carplay-event', { type: 'fwUpdate', stage: 'upload:start' })
 
-            const st: any = await this.firmware.getLocalFirmwareStatus({
+            const st = await this.firmware.getLocalFirmwareStatus({
               appVer: this.getApkVer(),
               dongleFwVersion: this.dongleFwVersion ?? null,
               boxInfo: this.boxInfo
@@ -508,18 +693,36 @@ export class CarplayService {
         }
 
         if (action === 'status') {
-          const st: any = await this.firmware.getLocalFirmwareStatus({
+          const st = await this.firmware.getLocalFirmwareStatus({
             appVer: this.getApkVer(),
             dongleFwVersion: this.dongleFwVersion ?? null,
             boxInfo: this.boxInfo
           })
 
-          if (!st || st.ok !== true) {
-            return asError(String(st?.error || 'Local firmware status failed'))
+          if (!st) {
+            return asError('Local firmware status failed')
+          }
+
+          if (st.ok !== true) {
+            return asError(typeof st.error === 'string' ? st.error : 'Local firmware status failed')
+          }
+
+          if (!st.ready) {
+            return {
+              ok: true,
+              hasUpdate: false,
+              size: 0,
+              token: undefined,
+              request: { local: st },
+              raw: {
+                err: 0,
+                msg: 'local:not-ready'
+              }
+            }
           }
 
           const latestVer = typeof st.latestVer === 'string' ? st.latestVer : undefined
-          const bytes = typeof st.bytes === 'number' ? st.bytes : 0
+          const bytes = st.bytes
 
           return {
             ok: true,
@@ -531,7 +734,7 @@ export class CarplayService {
               err: 0,
               ver: latestVer,
               size: bytes,
-              msg: st.ready ? 'local:ready' : 'local:not-ready'
+              msg: 'local:ready'
             }
           }
         }
@@ -676,6 +879,8 @@ export class CarplayService {
         this.lastVideoWidth = undefined
         this.lastVideoHeight = undefined
 
+        this.resetNavigationSnapshot('session-start')
+
         const device = usb
           .getDeviceList()
           .find(
@@ -766,6 +971,7 @@ export class CarplayService {
       this.audio.resetForSessionStop()
 
       this.started = false
+      this.resetNavigationSnapshot('session-stop')
 
       this.dongleFwVersion = undefined
       this.boxInfo = undefined
@@ -779,6 +985,23 @@ export class CarplayService {
     })
 
     return this.stopPromise
+  }
+
+  private resetNavigationSnapshot(reason: string): void {
+    try {
+      const file = path.join(app.getPath('userData'), 'navigationData.json')
+
+      const out = {
+        timestamp: new Date().toISOString(),
+        payload: DEFAULT_NAVIGATION_DATA_RESPONSE.payload
+      }
+
+      fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
+    } catch (e) {
+      console.warn('[CarplayService] resetNavigationSnapshot failed (ignored)', reason, e)
+    }
+
+    this.webContents?.send('carplay-event', { type: 'navigation-reset', reason })
   }
 
   private clearTimeouts() {

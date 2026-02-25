@@ -15,8 +15,10 @@ import { cmpSemver, human, parseSemver } from './utils'
 import { phaseMap, UpdatePhases, UpgradeText } from './types'
 import { EMPTY_STRING } from '@renderer/constants'
 import { CMP_CONFIG, INSTALL_PHASES } from './constants'
+import { useTranslation } from 'react-i18next'
 
 export function SoftwareUpdate() {
+  const { t } = useTranslation()
   const [installedVersion, setInstalledVersion] = useState<string>(EMPTY_STRING)
   const [latestVersion, setLatestVersion] = useState<string>(EMPTY_STRING)
   const [latestUrl, setLatestUrl] = useState<string | undefined>(undefined)
@@ -63,14 +65,14 @@ export function SoftwareUpdate() {
       if (r?.version) setLatestVersion(r.version)
       else setLatestVersion(EMPTY_STRING)
       setLatestUrl(r?.url)
-      if (!r?.version) setMessage('Could not check latest release.')
+      if (!r?.version) setMessage(t('softwareUpdate.couldNotCheckLatestRelease'))
     } catch (err) {
       console.warn('[SoftwareUpdate] getLatestRelease failed', err)
       setLatestVersion(EMPTY_STRING)
       setLatestUrl(undefined)
-      setMessage('Could not check latest release.')
+      setMessage(t('softwareUpdate.couldNotCheckLatestRelease'))
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     window.app?.getVersion?.().then((v) => v && setInstalledVersion(v))
@@ -94,8 +96,8 @@ export function SoftwareUpdate() {
       setPhase(e.phase as UpdatePhases)
       setInFlight(e.phase !== UpdatePhases.error && e.phase !== UpdatePhases.start)
       if (e.phase === UpdatePhases.error) {
-        setError(e.message ?? 'Update failed')
-        setMessage(e.message ?? 'Update failed')
+        setError(e.message ?? t('softwareUpdate.updateFailed'))
+        setMessage(e.message ?? t('softwareUpdate.updateFailed'))
       } else {
         setError('')
       }
@@ -113,7 +115,7 @@ export function SoftwareUpdate() {
       off1?.()
       off2?.()
     }
-  }, [])
+  }, [t])
 
   const canUpdate = cmp != null && cmp !== 0 && !inFlight
   const actionEnabled = !hasLatest || canUpdate
@@ -139,32 +141,32 @@ export function SoftwareUpdate() {
 
   const versionInfo = useMemo(() => {
     if (!hasLatest || cmp == null) {
-      return { label: 'Check', status: EMPTY_STRING }
+      return { label: t('softwareUpdate.check'), status: EMPTY_STRING }
     }
 
-    return CMP_CONFIG[cmp] ?? { label: 'Update', status: EMPTY_STRING }
-  }, [hasLatest, cmp])
+    return CMP_CONFIG[cmp] ?? { label: t('softwareUpdate.update'), status: EMPTY_STRING }
+  }, [hasLatest, cmp, t])
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       <Stack spacing={0.75}>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline' }}>
           <Typography sx={{ minWidth: 96 }} color="text.secondary">
-            Installed:
+            {t('softwareUpdate.installedVersion')}:
           </Typography>
           <Typography sx={{ fontVariantNumeric: 'tabular-nums' }}>{installedVersion}</Typography>
         </Stack>
 
         <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline' }}>
           <Typography sx={{ minWidth: 96 }} color="text.secondary">
-            Available:
+            {t('softwareUpdate.availableVersion')}:
           </Typography>
           <Typography sx={{ fontVariantNumeric: 'tabular-nums' }}>{latestVersion}</Typography>
         </Stack>
 
         <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline' }}>
           <Typography sx={{ minWidth: 96 }} color="text.secondary">
-            Status:
+            {t('softwareUpdate.status')}:
           </Typography>
           <Typography variant="body2" color="text.secondary">
             {versionInfo.status}
@@ -180,7 +182,7 @@ export function SoftwareUpdate() {
         {(inFlight || phase === UpdatePhases.download) && <CircularProgress size={18} />}
 
         <Button variant="outlined" onClick={handleRecheckLatest} disabled={inFlight}>
-          Refresh
+          {t('softwareUpdate.refresh')}
         </Button>
       </Stack>
 
@@ -218,7 +220,7 @@ export function SoftwareUpdate() {
 
           {INSTALL_PHASES.includes(phase) && (
             <Typography variant="body2" sx={{ mt: 1 }} color="text.secondary">
-              Restarts automatically when done.
+              {t('softwareUpdate.restartsAutomaticallyWhenDone')}
             </Typography>
           )}
         </DialogContent>
@@ -230,12 +232,12 @@ export function SoftwareUpdate() {
             }}
             disabled={!(phase === 'download' ? pct == null || pct < 100 : phase === 'ready')}
           >
-            Abort
+            {t('softwareUpdate.abort')}
           </Button>
 
           {phase === 'ready' && (
             <Button variant="contained" onClick={() => window.app?.beginInstall?.()}>
-              Install now
+              {t('softwareUpdate.installNow')}
             </Button>
           )}
 
@@ -246,7 +248,7 @@ export function SoftwareUpdate() {
                 handleCloseAndReset()
               }}
             >
-              Close
+              {t('softwareUpdate.close')}
             </Button>
           )}
         </DialogActions>

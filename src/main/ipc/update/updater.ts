@@ -4,7 +4,7 @@ import { pickAssetForPlatform } from '@main/ipc/update/pickAsset'
 import { sendUpdateEvent, sendUpdateProgress } from '@main/ipc/utils'
 import { join } from 'path'
 import { downloadWithProgress } from '@main/ipc/update/downloader'
-import { GhRelease, UpdateSessionState } from '@main/types'
+import { GhRelease, ServicesProps, UpdateSessionState } from '@main/types'
 import { existsSync, promises as fsp } from 'fs'
 import os from 'node:os'
 
@@ -16,7 +16,9 @@ let updateSession: {
 } = { state: 'idle' }
 
 export class Updater {
-  async perform(_evt: any, directUrl?: string) {
+  constructor(private services: ServicesProps) {}
+
+  perform = async (_evt: any, directUrl?: string) => {
     try {
       if (updateSession.state !== 'idle') throw new Error('Update already in progress')
       sendUpdateEvent({ phase: 'start' })
@@ -67,7 +69,8 @@ export class Updater {
       sendUpdateEvent({ phase: 'error', message: msg })
     }
   }
-  async abort() {
+
+  abort = async () => {
     try {
       if (updateSession.state === 'downloading' && updateSession.cancel) {
         updateSession.cancel()
@@ -83,11 +86,21 @@ export class Updater {
       sendUpdateEvent({ phase: 'error', message: 'Aborted' })
     }
   }
-  async install() {
+
+  install = async () => {
     try {
       if (updateSession.state !== 'ready' || !updateSession.tmpFile || !updateSession.platform) {
         throw new Error('No downloaded update ready')
       }
+
+      try {
+        await this.services.usbService.gracefulReset()
+      } catch (e) {
+        console.warn('[MAIN] gracefulReset failed (continuing install):', e)
+      }
+
+      await new Promise((r) => setTimeout(r, 150))
+
       const file = updateSession.tmpFile
       updateSession.state = 'installing'
       if (updateSession.platform === 'darwin') await installOnMacFromFile(file)

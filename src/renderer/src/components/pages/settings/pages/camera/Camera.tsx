@@ -65,8 +65,23 @@ export const Camera: React.FC<SettingsCustomPageProps<ExtraConfig, string>> = ({
           <>
             <Select
               size="small"
+              variant="outlined"
               value={cameraValue}
-              sx={{ minWidth: 200, width: '100%' }}
+              sx={{
+                minWidth: 200,
+                width: '100%',
+
+                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                  borderColor: 'primary.main',
+                  borderWidth: '1px'
+                },
+
+                '& .MuiSelect-select': {
+                  display: 'flex',
+                  alignItems: 'center',
+                  minHeight: 0
+                }
+              }}
               onChange={(e) => onChange(e.target.value)}
             >
               {cameraOptions.map((o) => (

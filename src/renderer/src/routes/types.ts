@@ -1,33 +1,40 @@
 import type React from 'react'
 
 export enum RoutePath {
-  Home = 'home',
-  OldSettings = 'old-settings',
-  Settings = 'settings',
   Camera = 'camera',
+  Home = 'home',
+  Maps = 'maps',
   Media = 'media',
-  Info = 'info'
+  Settings = 'settings',
+  Telemetry = 'telemetry'
 }
 
-export type ValueTransform<StoreValue = any, ViewValue = StoreValue> = {
-  toView?: (value: StoreValue) => ViewValue
-  fromView?: (value: ViewValue, prev?: StoreValue) => StoreValue
-  format?: (value: ViewValue) => string
+type BivariantCallback<T extends (...args: never[]) => unknown> = {
+  __bivariant(...args: Parameters<T>): ReturnType<T>
+}['__bivariant']
+
+export type ValueTransform<StoreValue = unknown, ViewValue = StoreValue> = {
+  toView?: BivariantCallback<(value: StoreValue) => ViewValue>
+  fromView?: BivariantCallback<(value: ViewValue, prev?: StoreValue) => StoreValue>
+  format?: BivariantCallback<(value: ViewValue) => string>
 }
 
 export type NodeMeta = {
   page?: {
     title?: string
+    labelTitle?: string
     description?: string
+    labelDescription?: string
   }
   displayValue?: boolean
   displayValueUnit?: string
-  valueTransform?: ValueTransform<any, any>
-  transform?: (value: any, prev?: any) => any
+  valueTransform?: ValueTransform<unknown, unknown>
+  transform?: (value: unknown, prev?: unknown) => unknown
 }
 
 export type BaseFieldNode = NodeMeta & {
-  label: string
+  label: string // TODO deleted in favor of i18n
+  labelKey?: string
   path: string
 }
 
@@ -53,7 +60,11 @@ export type ColorNode = BaseFieldNode & {
 
 export type SelectNode = BaseFieldNode & {
   type: 'select'
-  options: Array<{ label: string; value: string | number }>
+  options: Array<{
+    label: string // TODO deleted in favor of i18n
+    labelKey?: string
+    value: string | number
+  }>
 }
 
 export type ToggleNode = BaseFieldNode & {
@@ -84,7 +95,8 @@ export type KeyBindingKey =
 
 export type KeyBindingNode = NodeMeta & {
   type: 'keybinding'
-  label: string
+  label: string // TODO deleted in favor of i18n
+  labelKey?: string
   path: string
   bindingKey: KeyBindingKey
   defaultValue?: string
@@ -94,27 +106,43 @@ export type KeyBindingNode = NodeMeta & {
 
 export type SettingsCustomPageProps<TStore, TValue> = {
   state: TStore
-  node: SettingsCustomNode<TStore>
-  onChange: (v: TValue) => void
+  node: SettingsCustomNode<TStore, TValue>
+  onChange: BivariantCallback<(v: TValue) => void>
   requestRestart?: () => void
 }
 
-export type SettingsCustomNode<TStore = any> = NodeMeta & {
+export type SettingsCustomNode<TStore, TValue = unknown> = NodeMeta & {
   type: 'custom'
-  label: string
+  label: string // TODO deleted in favor of i18n
+  labelKey?: string
   path: string
-  component: React.ComponentType<SettingsCustomPageProps<TStore, any>>
+  component: React.ComponentType<SettingsCustomPageProps<TStore, TValue>>
 }
 
-export type RouteNode<TStore = any> = NodeMeta & {
+export type PosListItem = {
+  id: string
+  label: string // TODO deleted in favor of i18n
+  labelKey?: string
+}
+
+export type PosListNode = NodeMeta & {
+  type: 'posList'
+  label: string // TODO deleted in favor of i18n
+  labelKey?: string
+  path: string
+  items: PosListItem[]
+}
+
+export type RouteNode<TStore> = NodeMeta & {
   type: 'route'
-  label: string
+  label: string // TODO deleted in favor of i18n
+  labelKey?: string
   route: string
   path: string
   children: SettingsNode<TStore>[]
 }
 
-export type SettingsNode<TStore = any> =
+export type SettingsNode<TStore> =
   | RouteNode<TStore>
   | ToggleNode
   | CheckboxNode
@@ -125,3 +153,4 @@ export type SettingsNode<TStore = any> =
   | SliderNode
   | KeyBindingNode
   | SettingsCustomNode<TStore>
+  | PosListNode

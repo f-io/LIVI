@@ -5,9 +5,28 @@ import type { SettingsCustomPageProps } from '@renderer/routes/types'
 import { useCarplayStore, useStatusStore } from '@store/store'
 import { loadImageFromFile, resizeImageToBase64Png } from './utils'
 import { ResetDongleIconsResult } from './types'
+import { useTranslation } from 'react-i18next'
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null
+}
+
+function getResetDongleIconsFn(w: unknown): (() => Promise<ResetDongleIconsResult>) | null {
+  if (!isRecord(w)) return null
+
+  const app = w.app
+  if (!isRecord(app)) return null
+
+  const fn = app.resetDongleIcons
+  if (typeof fn !== 'function') return null
+
+  return fn as () => Promise<ResetDongleIconsResult>
+}
 
 export function IconUploader(props: SettingsCustomPageProps<ExtraConfig, unknown>) {
   const { requestRestart } = props
+
+  const { t } = useTranslation()
 
   const settings = useCarplayStore((s) => s.settings)
   const saveSettings = useCarplayStore((s) => s.saveSettings)
@@ -91,9 +110,8 @@ export function IconUploader(props: SettingsCustomPageProps<ExtraConfig, unknown
       setIsResetting(true)
       setMessage('')
 
-      const api = (window as any).app
-      const fn = api?.resetDongleIcons as undefined | (() => Promise<ResetDongleIconsResult>)
-      if (typeof fn !== 'function') {
+      const fn = getResetDongleIconsFn(window)
+      if (!fn) {
         setMessage('Reset API not available.')
         return
       }
@@ -159,11 +177,11 @@ export function IconUploader(props: SettingsCustomPageProps<ExtraConfig, unknown
 
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
         <Button variant="outlined" onClick={pickFile} disabled={isImporting}>
-          {isImporting ? 'Importing…' : 'Import PNG'}
+          {isImporting ? t('settings.importing') : t('settings.importPng')}
         </Button>
 
         <Button variant="outlined" onClick={resetToDefaults} disabled={isResetting}>
-          {isResetting ? 'Resetting…' : 'Reset'}
+          {isResetting ? t('settings.resetting') : t('settings.reset')}
         </Button>
 
         <Button
@@ -171,7 +189,7 @@ export function IconUploader(props: SettingsCustomPageProps<ExtraConfig, unknown
           onClick={uploadToDongle}
           disabled={isUploading || !isDongleConnected}
         >
-          {isUploading ? 'Uploading…' : 'Upload'}
+          {isUploading ? t('settings.uploading') : t('settings.upload')}
         </Button>
 
         {(isImporting || isUploading || isResetting) && <CircularProgress size={18} />}

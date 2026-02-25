@@ -18,6 +18,7 @@ import { useCarplayStore, useStatusStore } from '@store/store'
 import { useNetworkStatus } from '@renderer/hooks/useNetworkStatus'
 import { fmt, isDongleFwCheckResponse, normalizeBoxInfo } from './utils'
 import { DongleFwCheckResponse, FwDialogState, Row } from './types'
+import { EMPTY_STRING } from '@renderer/constants'
 
 export function USBDongle() {
   const isDongleConnected = useStatusStore((s) => s.isDongleConnected)
@@ -51,6 +52,11 @@ export function USBDongle() {
   const [fwWaitingForReconnect, setFwWaitingForReconnect] = useState(false)
   const [fwSawDisconnect, setFwSawDisconnect] = useState(false)
 
+  // Dev tools
+  const [devBusy, setDevBusy] = useState(false)
+  const [devOk, setDevOk] = useState<null | { ok: boolean; cgiOk: boolean; webOk: boolean }>(null)
+  const [devError, setDevError] = useState<string | null>(null)
+
   // Parsed box info
   const boxInfo = useMemo(() => normalizeBoxInfo(boxInfoRaw), [boxInfoRaw])
   const devList = useMemo(
@@ -59,7 +65,7 @@ export function USBDongle() {
   )
 
   const resolution =
-    negotiatedWidth && negotiatedHeight ? `${negotiatedWidth}×${negotiatedHeight}` : '—'
+    negotiatedWidth && negotiatedHeight ? `${negotiatedWidth}×${negotiatedHeight}` : EMPTY_STRING
 
   const audioLine = useMemo(() => {
     const parts: string[] = []
@@ -67,7 +73,7 @@ export function USBDongle() {
     if (audioSampleRate) parts.push(`${audioSampleRate} Hz`)
     if (audioChannels != null) parts.push(`${audioChannels} ch`)
     if (audioBitDepth) parts.push(`${audioBitDepth} bit`)
-    return parts.length ? parts.join(' • ') : '—'
+    return parts.length ? parts.join(' • ') : EMPTY_STRING
   }, [audioCodec, audioSampleRate, audioChannels, audioBitDepth])
 
   const Mono: CSSProperties = {
@@ -111,13 +117,17 @@ export function USBDongle() {
   const hasUpdate =
     ok &&
     latestVer.length > 0 &&
-    latestVer !== '-' &&
+    latestVer !== EMPTY_STRING &&
     dongleVer.length > 0 &&
     latestVer !== dongleVer
 
   // Show vendor "latest" version if we have one.
   // Vendor semantics: "-" means "already latest" -> show current dongle version to keep UI stable.
-  const latestFwLabel = ok ? (latestVer && latestVer !== '-' ? latestVer : dongleVer || '—') : '—'
+  const latestFwLabel = ok
+    ? latestVer && latestVer !== EMPTY_STRING
+      ? latestVer
+      : dongleVer || EMPTY_STRING
+    : EMPTY_STRING
 
   // Local firmware status (manifest-based)
   const local = fwResult?.request?.local
@@ -169,7 +179,7 @@ export function USBDongle() {
     if (fwBusy === 'check') return 'Checking…'
     if (fwBusy === 'download') return 'Downloading…'
     if (fwBusy === 'upload') return 'Uploading…'
-    if (!fwResult) return '—'
+    if (!fwResult) return EMPTY_STRING
 
     // 1) API errors
     if (!fwResult.ok || fwResult.raw?.err !== 0) {
@@ -196,6 +206,34 @@ export function USBDongle() {
   const canDownload = fwBusy == null && Boolean(isDongleConnected) && hasUpdate && isOnline
 
   const canUpload = fwBusy == null && Boolean(isDongleConnected) && shouldOfferUpload
+
+  const canEnableDevTools = !devBusy && Boolean(isDongleConnected)
+
+  const handleEnableDevTools = useCallback(async () => {
+    setDevError(null)
+    setDevOk(null)
+
+    try {
+      setDevBusy(true)
+      const res = await window.carplay.usb.uploadLiviScripts()
+      setDevOk(res)
+
+      if (!res.ok) {
+        setDevError(`Upload failed (cgiOk=${String(res.cgiOk)}, webOk=${String(res.webOk)})`)
+      }
+    } catch (e) {
+      setDevError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDevBusy(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isDongleConnected) return
+    setDevOk(null)
+    setDevError(null)
+    setDevBusy(false)
+  }, [isDongleConnected])
 
   const fwPct = useMemo(() => {
     const p = fwDlg.progress?.percent
@@ -239,13 +277,18 @@ export function USBDongle() {
     })
   }, [clearAutoCloseTimer])
 
+  function isRecord(v: unknown): v is Record<string, unknown> {
+    return typeof v === 'object' && v !== null
+  }
+
   // Listen to main-process fwUpdate events
   useEffect(() => {
-    const handler = (_event: unknown, payload: any) => {
-      if (!payload || typeof payload !== 'object') return
+    const handler = (_event: unknown, payload: unknown) => {
+      if (!isRecord(payload)) return
       if (payload.type !== 'fwUpdate') return
 
-      const stage = String(payload.stage || '')
+      const stageRaw = payload.stage
+      const stage = typeof stageRaw === 'string' ? stageRaw : String(stageRaw ?? '')
       if (!stage) return
 
       // download
@@ -534,7 +577,6 @@ export function USBDongle() {
 
         // Call preload -> main IPC
         const raw = await window.carplay.ipc.dongleFirmware(action)
-        console.log('[DongleInfo] dongleFirmware raw =', raw)
 
         if (!isDongleFwCheckResponse(raw)) {
           setFwResult(null)
@@ -877,6 +919,46 @@ export function USBDongle() {
       {fwUiError ? (
         <Alert severity="error" sx={{ mt: 1 }}>
           {fwUiError}
+        </Alert>
+      ) : null}
+
+      <Divider />
+
+      <Typography variant="subtitle2" color="text.secondary">
+        Dev Tools
+      </Typography>
+
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', px: 1 }}>
+        <Button
+          variant="outlined"
+          size="small"
+          disabled={!canEnableDevTools}
+          onClick={handleEnableDevTools}
+        >
+          {devBusy ? (
+            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
+              <CircularProgress size={14} />
+              Enabling…
+            </Box>
+          ) : (
+            'Enable Dev Tools'
+          )}
+        </Button>
+      </Stack>
+
+      <Typography variant="caption" color="text.secondary" sx={{ px: 1.25, mt: 0.25 }}>
+        Temporarily replaces the dongle’s default Web UI.
+      </Typography>
+
+      {devError ? (
+        <Alert severity="error" sx={{ mt: 1 }}>
+          {devError}
+        </Alert>
+      ) : devOk ? (
+        <Alert severity={devOk.ok ? 'success' : 'warning'} sx={{ mt: 1 }}>
+          {devOk.ok
+            ? `Dev tools enabled`
+            : `Partial result (cgiOk=${String(devOk.cgiOk)}, webOk=${String(devOk.webOk)})`}
         </Alert>
       ) : null}
 

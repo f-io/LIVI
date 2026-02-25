@@ -19,13 +19,13 @@ export async function installOnLinuxFromFile(appImagePath: string): Promise<void
 
   sendUpdateEvent({ phase: 'relaunching' })
 
-  const cleanEnv: Record<string, string | undefined> = { ...process.env }
-  delete cleanEnv.APPIMAGE
-  delete cleanEnv.APPDIR
-  delete cleanEnv.ARGV0
-  delete cleanEnv.OWD
+  app.once('will-quit', () => {
+    const child = spawn(current, [], {
+      detached: true,
+      stdio: 'ignore'
+    })
+    child.unref()
+  })
 
-  const child = spawn(current, [], { detached: true, stdio: 'ignore', env: cleanEnv })
-  child.unref()
   app.quit()
 }

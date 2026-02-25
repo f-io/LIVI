@@ -1,4 +1,4 @@
-import { isMacPlatform } from '@main/utils'
+import { isMacPlatform, pushSettingsToRenderer } from '@main/utils'
 import { BrowserWindow, session, shell } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { join } from 'path'
@@ -7,23 +7,17 @@ import {
   applyAspectRatioFullscreen,
   applyAspectRatioWindowed,
   applyWindowedContentSize,
+  attachKioskStateSync,
   currentKiosk,
-  persistKioskAndBroadcast,
-  sendKioskSync
+  fitWindowToWorkArea,
+  persistKioskAndBroadcast
 } from './utils'
-import { runtimeStateProps } from '@main/types'
-import { DEFAULT_HEIGHT, DEFAULT_WIDTH } from '@main/constants'
+import { runtimeStateProps, ServicesProps } from '@main/types'
 
 let mainWindow: BrowserWindow | null = null
 
-const carplayService = new CarplayService()
-
-declare global {
-  var carplayService: CarplayService | undefined
-}
-globalThis.carplayService = carplayService
-
-export function createMainWindow(runtimeState: runtimeStateProps) {
+export function createMainWindow(runtimeState: runtimeStateProps, services: ServicesProps) {
+  const { carplayService } = services
   const { isQuitting, suppressNextFsSync } = runtimeState
   const isMac = isMacPlatform()
 
@@ -47,6 +41,9 @@ export function createMainWindow(runtimeState: runtimeStateProps) {
       experimentalFeatures: true
     }
   })
+
+  // keep in sync with WM
+  attachKioskStateSync(runtimeState)
 
   const ses = mainWindow.webContents.session
   ses.setPermissionCheckHandler((_w, p) => ['usb', 'hid', 'media', 'display-capture'].includes(p))
@@ -74,8 +71,8 @@ export function createMainWindow(runtimeState: runtimeStateProps) {
     if (!mainWindow) return
 
     if (isMac) {
-      const baseW = runtimeState.config.width || DEFAULT_WIDTH
-      const baseH = runtimeState.config.height || DEFAULT_HEIGHT
+      const baseW = runtimeState.config.width || 800
+      const baseH = runtimeState.config.height || 480
       applyWindowedContentSize(mainWindow, baseW, baseH)
       mainWindow.show()
       if (runtimeState.config.kiosk) setImmediate(() => mainWindow!.setFullScreen(true))
@@ -83,14 +80,14 @@ export function createMainWindow(runtimeState: runtimeStateProps) {
       if (runtimeState.config.kiosk) {
         mainWindow.setKiosk(true)
         applyAspectRatioWindowed(mainWindow, 0, 0)
+        fitWindowToWorkArea(mainWindow)
       } else {
-        mainWindow.setContentSize(runtimeState.config.width, runtimeState.config.height, false)
-        applyAspectRatioWindowed(mainWindow, runtimeState.config.width, runtimeState.config.height)
+        applyWindowedContentSize(mainWindow, runtimeState.config.width, runtimeState.config.height)
       }
       mainWindow.show()
     }
 
-    sendKioskSync(currentKiosk(runtimeState.config))
+    pushSettingsToRenderer(runtimeState, { kiosk: currentKiosk(runtimeState.config) })
 
     if (is.dev) mainWindow.webContents.openDevTools({ mode: 'detach' })
     carplayService.attachRenderer(mainWindow.webContents)
@@ -126,9 +123,9 @@ export function createMainWindow(runtimeState: runtimeStateProps) {
     return { action: 'deny' }
   })
 
-  if (is.dev && process.env.ELECTRON_RENDERER_URL)
+  if (is.dev && process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
-  else mainWindow.loadURL('app://index.html')
+  } else mainWindow.loadURL('app://index.html')
 
   mainWindow.on('close', (e) => {
     if (isMac && !isQuitting) {
@@ -152,6 +149,7 @@ export function createMainWindow(runtimeState: runtimeStateProps) {
     })
     gpuWindow.loadURL('chrome://gpu')
   }
+
   if (is.dev) {
     const mediaWindow = new BrowserWindow({
       width: 1000,

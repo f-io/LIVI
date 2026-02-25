@@ -2,7 +2,7 @@ import {
   Message,
   AudioData,
   VideoData,
-  MediaData,
+  MetaData,
   BluetoothAddress,
   BluetoothDeviceName,
   BluetoothPIN,
@@ -97,9 +97,8 @@ export enum MessageType {
   MultiTouch = 0x17,
   HiCarLink = 0x18,
   BoxSettings = 0x19,
-  MediaData = 0x2a,
-  AltVideoData = 0x2b, // Navigation/Instrument Cluster video stream (expected)
-  NaviVideoData = 0x2c, // Navigation/Instrument Cluster video stream (actual - 44)
+  MetaData = 0x2a,
+  NaviVideoData = 0x2c,
   SendFile = 0x99,
   HeartBeat = 0xaa,
   UpdateProgress = 0xb1,
@@ -188,12 +187,10 @@ export class MessageHeader {
           return new AudioData(this, data)
         case MessageType.VideoData:
           return new VideoData(this, data)
-        case MessageType.AltVideoData:
-          return new VideoData(this, data)
         case MessageType.NaviVideoData:
           return new VideoData(this, data)
-        case MessageType.MediaData:
-          return new MediaData(this, data)
+        case MessageType.MetaData:
+          return new MetaData(this, data)
         case MessageType.BluetoothAddress:
           return new BluetoothAddress(this, data)
         case MessageType.BluetoothDeviceName:

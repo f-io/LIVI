@@ -3,6 +3,10 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+const BUILD_SHA = (process.env.GITHUB_SHA || process.env.BUILD_SHA || 'dev').slice(0, 7)
+const BUILD_RUN = process.env.GITHUB_RUN_NUMBER || process.env.BUILD_RUN || ''
+const BUILD_BRANCH = process.env.BUILD_BRANCH || ''
+
 const alias = {
   '@renderer': resolve(__dirname, 'src/renderer/src'),
   '@carplay/web': resolve(__dirname, 'src/renderer/components/web/CarplayWeb.ts'),
@@ -40,6 +44,11 @@ export default defineConfig({
   },
 
   renderer: {
+    define: {
+      __BUILD_SHA__: JSON.stringify(BUILD_SHA),
+      __BUILD_RUN__: JSON.stringify(BUILD_RUN),
+      __BUILD_BRANCH__: JSON.stringify(BUILD_BRANCH)
+    },
     base: 'app://',
     publicDir: resolve(__dirname, 'src/renderer/public'),
     build: {

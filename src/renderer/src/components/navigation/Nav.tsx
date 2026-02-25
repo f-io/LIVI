@@ -39,10 +39,17 @@ export const Nav = ({ receivingVideo }: NavProps) => {
 
   const handleChange = (_: React.SyntheticEvent, newIndex: number) => {
     const tab = tabs[newIndex]
+
     if (tab.path === ROUTES.QUIT) {
       window.carplay.quit().catch(console.error)
       return
     }
+
+    if (tab.path === ROUTES.SETTINGS && pathname.startsWith(ROUTES.SETTINGS)) {
+      navigate(ROUTES.SETTINGS, { replace: true })
+      return
+    }
+
     navigate(tab.path)
   }
 
@@ -78,12 +85,8 @@ export const Nav = ({ receivingVideo }: NavProps) => {
       selectionFollowsFocus={false}
       orientation="vertical"
       sx={{
-        '& .MuiTabs-indicator': {
-          display: 'none'
-        },
-        '& .MuiTabs-list': {
-          height: '100%'
-        },
+        '& .MuiTabs-indicator': { display: 'none' },
+        '& .MuiTabs-list': { height: '100%' },
         height: '100%'
       }}
     >
@@ -97,6 +100,17 @@ export const Nav = ({ receivingVideo }: NavProps) => {
           disableRipple
           disableFocusRipple
           disableTouchRipple
+          onClick={() => {
+            if (tab.path === ROUTES.SETTINGS && pathname.startsWith(ROUTES.SETTINGS)) {
+              navigate(ROUTES.SETTINGS, { replace: true })
+              return
+            }
+            if (tab.path === ROUTES.QUIT) {
+              window.carplay.quit().catch(console.error)
+              return
+            }
+            navigate(tab.path)
+          }}
         />
       ))}
     </Tabs>

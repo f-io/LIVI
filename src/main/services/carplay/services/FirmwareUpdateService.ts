@@ -75,6 +75,24 @@ type LocalFirmwareStatus =
   | { ok: true; ready: false; reason: string }
   | { ok: false; error: string }
 
+type UnknownRecord = Record<string, unknown>
+
+function isRecord(v: unknown): v is UnknownRecord {
+  return typeof v === 'object' && v !== null
+}
+
+function readString(o: unknown, key: string): string | null {
+  if (!isRecord(o)) return null
+  const v = o[key]
+  return typeof v === 'string' && v.trim() ? v.trim() : null
+}
+
+function readNumber(o: unknown, key: string): number | null {
+  if (!isRecord(o)) return null
+  const v = o[key]
+  return typeof v === 'number' && Number.isFinite(v) ? v : null
+}
+
 function normalizeBoxInfo(input: unknown): BoxInfoPayload | null {
   if (!input) return null
   if (typeof input === 'object') return input as BoxInfoPayload
@@ -140,16 +158,16 @@ export class FirmwareUpdateService {
     try {
       const rawText = await this.httpPostForm(this.apiUrl, form.toString())
       const raw = this.safeJson(rawText)
-      const err = raw && typeof raw === 'object' ? (raw as any).err : null
+      const err = isRecord(raw) ? raw.err : null
       if (err !== 0) {
         return { ok: false, error: `checkBox err=${String(err ?? 'unknown')}` }
       }
 
-      const latestVer = fmt((raw as any).ver)
-      const notes = fmt((raw as any).notes)
-      const size = toInt((raw as any).size)
-      const id = fmt((raw as any).id)
-      const token = fmt((raw as any).token)
+      const latestVer = readString(raw, 'ver')
+      const notes = readString(raw, 'notes')
+      const size = readNumber(raw, 'size')
+      const id = readString(raw, 'id')
+      const token = readString(raw, 'token')
 
       const hasUpdate = latestVer != null && latestVer !== ver
 

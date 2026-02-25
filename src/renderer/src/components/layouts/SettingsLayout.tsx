@@ -23,7 +23,13 @@ export const SettingsLayout = ({
   const theme = useTheme()
   const location = useLocation()
 
-  const handleNavigate = () => navigate(-1)
+  //const handleNavigate = () => navigate(-1)
+  const handleNavigate = () => {
+    const el = document.activeElement as HTMLElement | null
+    if (el && el !== document.body) el.blur?.()
+    requestAnimationFrame(() => navigate(-1))
+  }
+
   const showBack = location.pathname !== '/settings'
 
   const [vp, setVp] = useState<Vp>(() => {
@@ -215,7 +221,7 @@ export const SettingsLayout = ({
           touchAction: 'pan-y'
         }}
       >
-        <Stack spacing={0} sx={{ minHeight: 0, padding: '0 0 0 0.5rem' }}>
+        <Stack spacing={0} sx={{ minHeight: '100%', padding: '0 0 0 0.5rem' }}>
           {children}
         </Stack>
       </Box>

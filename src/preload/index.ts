@@ -24,6 +24,15 @@ let videoChunkHandler: ChunkHandler | null = null
 let audioChunkQueue: unknown[] = []
 let audioChunkHandler: ChunkHandler | null = null
 
+let mapsVideoChunkQueue: unknown[] = []
+let mapsVideoChunkHandler: ChunkHandler | null = null
+let mapsResolutionQueue: unknown[] = []
+let mapsResolutionHandler: ChunkHandler | null = null
+
+type TelemetryHandler = (payload: unknown) => void
+let telemetryQueue: unknown[] = []
+let telemetryHandler: TelemetryHandler | null = null
+
 ipcRenderer.on('carplay-video-chunk', (_event, payload: unknown) => {
   if (videoChunkHandler) videoChunkHandler(payload)
   else videoChunkQueue.push(payload)
@@ -31,6 +40,21 @@ ipcRenderer.on('carplay-video-chunk', (_event, payload: unknown) => {
 ipcRenderer.on('carplay-audio-chunk', (_event, payload: unknown) => {
   if (audioChunkHandler) audioChunkHandler(payload)
   else audioChunkQueue.push(payload)
+})
+
+ipcRenderer.on('maps-video-chunk', (_event, payload: unknown) => {
+  if (mapsVideoChunkHandler) mapsVideoChunkHandler(payload)
+  else mapsVideoChunkQueue.push(payload)
+})
+
+ipcRenderer.on('maps-video-resolution', (_event, payload: unknown) => {
+  if (mapsResolutionHandler) mapsResolutionHandler(payload)
+  else mapsResolutionQueue.push(payload)
+})
+
+ipcRenderer.on('telemetry:update', (_event, payload: unknown) => {
+  if (telemetryHandler) telemetryHandler(payload)
+  else telemetryQueue.push(payload)
 })
 
 type UsbDeviceInfo =
@@ -44,9 +68,15 @@ type UsbLastEvent =
 const api = {
   quit: (): Promise<void> => ipcRenderer.invoke('quit'),
 
-  onUSBResetStatus: (callback: ApiCallback): void => {
-    ipcRenderer.on('usb-reset-start', callback)
-    ipcRenderer.on('usb-reset-done', callback)
+  onUSBResetStatus: (callback: ApiCallback): (() => void) => {
+    const s = 'usb-reset-start'
+    const d = 'usb-reset-done'
+    ipcRenderer.on(s, callback)
+    ipcRenderer.on(d, callback)
+    return () => {
+      ipcRenderer.removeListener(s, callback)
+      ipcRenderer.removeListener(d, callback)
+    }
   },
 
   usb: {
@@ -56,6 +86,7 @@ const api = {
     getLastEvent: (): Promise<UsbLastEvent> => ipcRenderer.invoke('usb-last-event'),
     getSysdefaultPrettyName: (): Promise<string> => ipcRenderer.invoke('get-sysdefault-mic-label'),
     uploadIcons: () => ipcRenderer.invoke('carplay-upload-icons'),
+    uploadLiviScripts: () => ipcRenderer.invoke('carplay-upload-livi-scripts'),
     listenForEvents: (callback: ApiCallback): void => {
       usbEventHandlers.push(callback)
       usbEventQueue.forEach(([evt, ...args]) => callback(evt, ...args))
@@ -70,8 +101,10 @@ const api = {
     get: (): Promise<ExtraConfig> => ipcRenderer.invoke('getSettings'),
     save: (settings: Partial<ExtraConfig>): Promise<void> =>
       ipcRenderer.invoke('save-settings', settings),
-    onUpdate: (callback: ApiCallback<[ExtraConfig]>): void => {
-      ipcRenderer.on('settings', callback)
+    onUpdate: (callback: ApiCallback<[ExtraConfig]>): (() => void) => {
+      const ch = 'settings'
+      ipcRenderer.on(ch, callback)
+      return () => ipcRenderer.removeListener(ch, callback)
     }
   },
 
@@ -93,6 +126,7 @@ const api = {
       ipcRenderer.removeListener('carplay-event', callback)
     },
     readMedia: (): Promise<unknown> => ipcRenderer.invoke('carplay-media-read'),
+    readNavigation: (): Promise<unknown> => ipcRenderer.invoke('carplay-navigation-read'),
     onVideoChunk: (handler: ChunkHandler): void => {
       videoChunkHandler = handler
       videoChunkQueue.forEach((chunk) => handler(chunk))
@@ -108,6 +142,27 @@ const api = {
     },
     setVisualizerEnabled: (enabled: boolean): void => {
       ipcRenderer.send('carplay-set-visualizer-enabled', !!enabled)
+    },
+    requestMaps: (enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> =>
+      ipcRenderer.invoke('maps:request', enabled),
+    onMapsVideoChunk: (handler: ChunkHandler): void => {
+      mapsVideoChunkHandler = handler
+      mapsVideoChunkQueue.forEach((chunk) => handler(chunk))
+      mapsVideoChunkQueue = []
+    },
+    onMapsResolution: (handler: ChunkHandler): void => {
+      mapsResolutionHandler = handler
+      mapsResolutionQueue.forEach((chunk) => handler(chunk))
+      mapsResolutionQueue = []
+    },
+    onTelemetry: (handler: (payload: unknown) => void): void => {
+      telemetryHandler = handler
+      telemetryQueue.forEach((p) => handler(p))
+      telemetryQueue = []
+    },
+    offTelemetry: (): void => {
+      telemetryHandler = null
+      telemetryQueue = []
     }
   }
 }
@@ -137,14 +192,6 @@ const appApi = {
     return () => ipcRenderer.removeListener(ch, handler)
   },
 
-  getKiosk: (): Promise<boolean> => ipcRenderer.invoke('settings:get-kiosk'),
-  onKioskSync: (cb: (kiosk: boolean) => void): (() => void) => {
-    const ch = 'settings:kiosk-sync'
-    const handler = (_e: IpcRendererEvent, kiosk: boolean) => cb(kiosk)
-    ipcRenderer.on(ch, handler)
-    return () => ipcRenderer.removeListener(ch, handler)
-  },
-
   resetDongleIcons: (): Promise<{
     dongleIcon120?: string
     dongleIcon180?: string
@@ -154,7 +201,11 @@ const appApi = {
   beginInstall: (): Promise<void> => ipcRenderer.invoke('app:beginInstall'),
   abortUpdate: (): Promise<void> => ipcRenderer.invoke('app:abortUpdate'),
   quitApp: (): Promise<void> => ipcRenderer.invoke('app:quitApp'),
-  restartApp: (): Promise<void> => ipcRenderer.invoke('app:restartApp')
+  restartApp: (): Promise<void> => ipcRenderer.invoke('app:restartApp'),
+
+  notifyUserActivity: (): void => {
+    ipcRenderer.send('app:user-activity')
+  }
 }
 
 contextBridge.exposeInMainWorld('app', appApi)

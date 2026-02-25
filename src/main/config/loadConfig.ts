@@ -18,14 +18,20 @@ export function loadConfig(): ExtraConfig {
   // Start with defaults
   const merged: ExtraConfig = {
     ...DEFAULT_CONFIG,
+    startPage: 'home',
     kiosk: true,
     camera: '',
+    cameraMirror: false,
     nightMode: true,
-    audioVolume: 1.0,
-    navVolume: 1.0,
-    siriVolume: 1.0,
-    callVolume: 1.0,
+    audioVolume: 0.95,
+    navVolume: 0.95,
+    siriVolume: 0.95,
+    callVolume: 0.95,
+    autoSwitchOnStream: false,
+    autoSwitchOnPhoneCall: true,
+    autoSwitchOnGuidance: true,
     visualAudioDelayMs: 120,
+    language: 'en',
     ...fileConfig,
     bindings: { ...DEFAULT_BINDINGS, ...(fileConfig.bindings || {}) }
   } as ExtraConfig

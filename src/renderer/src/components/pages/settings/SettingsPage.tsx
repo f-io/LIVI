@@ -6,24 +6,24 @@ import { settingsSchema } from '../../../routes/schemas.ts/schema'
 import { useNavigate, useParams } from 'react-router'
 import { StackItem, KeyBindingRow } from './components'
 import { getNodeByPath, getValueByPath } from './utils'
-import { Typography } from '@mui/material'
+import { Typography, Box } from '@mui/material'
 import { SettingsFieldPage } from './components/SettingsFieldPage'
 import { SettingsFieldRow } from './components/SettingsFieldRow'
 import type { Key } from 'react'
 import type { SettingsNode } from '@renderer/routes/types'
+import { useTranslation } from 'react-i18next'
 
 export function SettingsPage() {
   const navigate = useNavigate()
   const { '*': splat } = useParams()
+  const { t } = useTranslation()
 
   const isDongleConnected = useStatusStore((s) => s.isDongleConnected)
 
   const path = splat ? splat.split('/') : []
   const node = getNodeByPath(settingsSchema, path)
 
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
-  const settings = useCarplayStore((s) => s.settings)
+  const settings = useCarplayStore((s) => s.settings) as ExtraConfig
 
   const { state, handleFieldChange, needsRestart, restart, requestRestart } =
     useSmartSettingsFromSchema(settingsSchema, settings)
@@ -34,17 +34,26 @@ export function SettingsPage() {
 
   if (!node) return null
 
-  const title = node.label ?? 'Settings'
+  const title = node.labelKey ? t(node.labelKey) : node.label
   const showRestart = Boolean(needsRestart) && Boolean(isDongleConnected)
 
   if ('path' in node && node.page) {
     return (
       <SettingsLayout title={title} showRestart={showRestart} onRestart={handleRestart}>
-        <SettingsFieldPage
-          node={node}
-          value={getValueByPath(state, node.path)}
-          onChange={(v) => handleFieldChange(node.path, v)}
-        />
+        <Box
+          sx={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'flex-start'
+          }}
+        >
+          <SettingsFieldPage
+            node={node}
+            value={getValueByPath(state, node.path)}
+            onChange={(v) => handleFieldChange(node.path, v)}
+          />
+        </Box>
       </SettingsLayout>
     )
   }
@@ -66,7 +75,7 @@ export function SettingsPage() {
               node={child}
               onClick={() => navigate(child.route)}
             >
-              <Typography>{child.label}</Typography>
+              <Typography>{child.labelKey ? t(child.labelKey) : child.label}</Typography>
             </StackItem>
           )
         }
@@ -75,7 +84,7 @@ export function SettingsPage() {
           return (
             <child.component
               key={child.label}
-              state={state}
+              state={settings}
               node={child}
               onChange={(v) => handleFieldChange(_path, v)}
               requestRestart={requestRestart}

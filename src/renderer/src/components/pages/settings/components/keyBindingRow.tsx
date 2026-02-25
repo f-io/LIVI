@@ -6,6 +6,11 @@ import { DEFAULT_BINDINGS } from '@main/Globals'
 import { useCarplayStore } from '@store/store'
 import { StackItem } from './stackItem'
 import type { KeyBindingNode } from '@renderer/routes/types'
+import { useTranslation } from 'react-i18next'
+
+const DEFAULT_BINDINGS_MAP = DEFAULT_BINDINGS as Partial<
+  Record<KeyBindingNode['bindingKey'], string>
+>
 
 function isModifierOnly(code: string) {
   return [
@@ -34,6 +39,7 @@ function normalize(v: unknown) {
 }
 
 export function KeyBindingRow({ node }: { node: KeyBindingNode }) {
+  const { t } = useTranslation()
   const saveSettings = useCarplayStore((s) => s.saveSettings)
   const settings = useCarplayStore((s) => s.settings) as ExtraConfig | null
 
@@ -45,14 +51,14 @@ export function KeyBindingRow({ node }: { node: KeyBindingNode }) {
 
   // default value (from schema node OR DEFAULT_BINDINGS fallback)
   const defaultValue = useMemo(() => {
-    const fallback = (DEFAULT_BINDINGS as any)?.[node.bindingKey] as string | undefined
+    const fallback = DEFAULT_BINDINGS_MAP[node.bindingKey]
     return normalize(node.defaultValue ?? fallback)
   }, [node.bindingKey, node.defaultValue])
 
   // IMPORTANT: default can be '' (meaning: unbound)
   const hasDefault = useMemo(() => {
     if (node.defaultValue !== undefined && node.defaultValue !== null) return true
-    return Object.prototype.hasOwnProperty.call(DEFAULT_BINDINGS as any, node.bindingKey)
+    return Object.prototype.hasOwnProperty.call(DEFAULT_BINDINGS_MAP, node.bindingKey)
   }, [node.bindingKey, node.defaultValue])
 
   const isDefault = useMemo(() => {
@@ -114,15 +120,12 @@ export function KeyBindingRow({ node }: { node: KeyBindingNode }) {
     return () => document.removeEventListener('keydown', onKeyDown, true)
   }, [applyValue, capturing, hasDefault, reset])
 
+  const label = node.labelKey ? t(node.labelKey) : node.label
+
   return (
     <>
-      <StackItem
-        node={node}
-        showValue={false}
-        withForwardIcon={false}
-        onClick={() => setCapturing(true)}
-      >
-        <p>{node.label}</p>
+      <StackItem node={node} onClick={() => setCapturing(true)}>
+        <p>{label}</p>
 
         {/* Right side: value + reset */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, whiteSpace: 'nowrap' }}>

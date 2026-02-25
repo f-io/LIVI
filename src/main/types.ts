@@ -1,5 +1,9 @@
 import { ExtraConfig } from '@main/Globals'
-import { Socket } from '@main/services/Socket'
+import { TelemetrySocket } from '@main/services/Socket'
+import { NULL_DELETES } from '@main/constants'
+import { CarplayService } from '@main/services/carplay/services/CarplayService'
+import { USBService } from '@main/services/usb/USBService'
+// import { Socket } from '@main/services/Socket'
 
 export type UpdateSessionState = 'idle' | 'downloading' | 'ready' | 'installing'
 
@@ -21,12 +25,21 @@ export interface GhRelease {
   assets?: GhAsset[]
 }
 
+export interface ServicesProps {
+  carplayService: CarplayService
+  usbService: USBService
+  telemetrySocket: TelemetrySocket
+}
+
 export interface runtimeStateProps {
   config: ExtraConfig
-  socket: Socket | null
+  telemetrySocket: TelemetrySocket | null
   isQuitting: boolean
   suppressNextFsSync: boolean
+  wmExitedKiosk: boolean
 }
+
+export type NullDeleteKey = (typeof NULL_DELETES)[number]
 
 export interface Stream {
   speed: number

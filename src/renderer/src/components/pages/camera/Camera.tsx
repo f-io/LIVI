@@ -26,6 +26,7 @@ export const Camera: React.FC<CameraProps> = ({
   withAudio = false
 }) => {
   const settings = useCarplayStore((s) => s.settings)
+
   const videoRef = useRef<HTMLVideoElement>(null)
   const currentStreamRef = useRef<MediaStream | null>(null)
   const [status, setStatus] = useState<OpenStatus>({ state: 'idle' })
@@ -275,7 +276,8 @@ export const Camera: React.FC<CameraProps> = ({
           height: '100%',
           objectFit: 'cover',
           objectPosition: 'center',
-          display: 'block'
+          display: 'block',
+          transform: settings?.cameraMirror === true ? 'none' : 'scaleX(-1)'
         }}
       />
 

@@ -1,5 +1,10 @@
 import { SettingsNode, ValueTransform } from '../types'
 import { ExtraConfig } from '../../../../main/Globals'
+import {
+  MEDIA_DELAY_MIN,
+  MEDIA_DELAY_MAX,
+  MEDIA_DELAY_STEP
+} from '../../components/pages/settings/constants'
 
 const audioValueTransform: ValueTransform<number | undefined, number> = {
   toView: (v) => Math.round((v ?? 1) * 100),
@@ -15,83 +20,121 @@ export const audioSchema: SettingsNode<ExtraConfig> = {
   type: 'route',
   route: 'audio',
   label: 'Audio',
+  labelKey: 'settings.audio',
   path: '',
   children: [
     {
       type: 'slider',
       label: 'Music',
+      labelKey: 'settings.music',
       path: 'audioVolume',
       displayValue: true,
       displayValueUnit: '%',
       valueTransform: audioValueTransform,
       page: {
         title: 'Music',
-        description: 'Music Volume'
+        labelTitle: 'settings.music',
+        description: 'Music volume',
+        labelDescription: 'settings.musicDescription'
       }
     },
     {
       type: 'slider',
       label: 'Navigation',
+      labelKey: 'settings.navigation',
       path: 'navVolume',
       displayValue: true,
       displayValueUnit: '%',
       valueTransform: audioValueTransform,
       page: {
         title: 'Navigation',
-        description: 'Navigation volume'
+        labelTitle: 'settings.navigation',
+        description: 'Navigation volume',
+        labelDescription: 'settings.navigationDescription'
       }
     },
     {
       type: 'slider',
       label: 'Siri',
+      labelKey: 'settings.siri',
       path: 'siriVolume',
       displayValue: true,
       displayValueUnit: '%',
       valueTransform: audioValueTransform,
       page: {
         title: 'Siri',
-        description: 'Siri volume'
+        labelTitle: 'settings.siri',
+        description: 'Siri voice assistant settings',
+        labelDescription: 'settings.siriDescription'
       }
     },
     {
       type: 'slider',
-      label: 'Phone Call',
+      label: 'Phone Calls',
+      labelKey: 'settings.phoneCalls',
       path: 'callVolume',
       displayValue: true,
       displayValueUnit: '%',
       valueTransform: audioValueTransform,
       page: {
-        title: 'Phone Call',
-        description: 'Phone call volume'
+        title: 'Phone Calls',
+        labelTitle: 'settings.phoneCalls',
+        description: 'Phone call volume',
+        labelDescription: 'settings.phoneCallsDescription'
+      }
+    },
+    {
+      type: 'select',
+      label: 'Microphone',
+      labelKey: 'settings.microphone',
+      path: 'micType',
+      displayValue: true,
+      options: [
+        {
+          label: 'OS default',
+          labelKey: 'settings.osDefault',
+          value: 'os'
+        },
+        {
+          label: 'BOX',
+          labelKey: 'settings.box',
+          value: 'box'
+        }
+      ],
+      page: {
+        title: 'Microphone',
+        labelTitle: 'settings.microphone',
+        description: 'Microphone selection',
+        labelDescription: 'settings.microphoneDescription'
       }
     },
     {
       type: 'number',
       label: 'Audio Buffer',
+      labelKey: 'settings.audioBufferSize',
       path: 'mediaDelay',
-      step: 50,
-      min: 300,
-      max: 2000,
+      step: MEDIA_DELAY_STEP,
+      min: MEDIA_DELAY_MIN,
+      max: MEDIA_DELAY_MAX,
       default: 1000,
       displayValue: true,
       displayValueUnit: 'ms',
       valueTransform: {
-        toView: (v: number | undefined) => v ?? 1000,
-        fromView: (v: number, prev?: number) => {
-          const next = Math.round(v / 50) * 50
-          if (!Number.isFinite(next)) return prev ?? 1000
-          return next
-        },
-        format: (v: number) => `${v} ms`
+        toView: (v) => v ?? 1000,
+        fromView: (v: number, prev) => (Number.isFinite(v) ? Math.round(v) : (prev ?? 1000)),
+        format: (v) => `${v} ms`
       },
       page: {
         title: 'Audio Buffer',
-        description: 'Dongle audio buffer size in ms'
+        labelTitle: 'settings.audioBufferSize',
+        description: 'Dongle audio buffer size in ms',
+        labelDescription: 'settings.audioBufferDescription'
       }
     },
     {
       type: 'select',
       label: 'Sampling Frequency',
+      labelKey: 'settings.samplingFrequency',
       path: 'mediaSound',
       displayValue: true,
       options: [
@@ -100,47 +143,33 @@ export const audioSchema: SettingsNode<ExtraConfig> = {
       ],
       page: {
         title: 'Sampling Frequency',
-        description: 'Native stream sampling frequency'
+        labelTitle: 'settings.samplingFrequency',
+        description: 'Native stream sampling frequency',
+        labelDescription: 'settings.samplingFrequencyDescription'
       }
     },
     {
       type: 'select',
       label: 'Call Quality',
+      labelKey: 'settings.callQuality',
       path: 'callQuality',
       displayValue: true,
       options: [
-        { label: 'Low', value: 0 },
-        { label: 'Medium', value: 1 },
-        { label: 'High', value: 2 }
+        { label: 'Low', labelKey: 'settings.callQualityLow', value: 0 },
+        { label: 'Medium', labelKey: 'settings.callQualityMedium', value: 1 },
+        { label: 'High', labelKey: 'settings.callQualityHigh', value: 2 }
       ],
       page: {
         title: 'Call Quality',
-        description: 'Call quality, will affect bandwidth usage'
-      }
-    },
-    {
-      type: 'select',
-      label: 'Microphone',
-      path: 'micType',
-      displayValue: true,
-      options: [
-        {
-          label: 'OS default',
-          value: 'os'
-        },
-        {
-          label: 'BOX',
-          value: 'box'
-        }
-      ],
-      page: {
-        title: 'Microphone',
-        description: 'Microphone selection'
+        labelTitle: 'settings.callQuality',
+        description: 'Call quality, will affect bandwidth usage',
+        labelDescription: 'settings.callQualityDescription'
       }
     },
     {
       type: 'checkbox',
       label: 'Disable Audio',
+      labelKey: 'settings.disableAudio',
       path: 'audioTransferMode'
     }
   ]

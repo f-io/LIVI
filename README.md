@@ -17,51 +17,34 @@ It is a standalone cross-platform Electron head unit with hardware-accelerated v
 ![TS Main](https://img.shields.io/github/actions/workflow/status/f-io/LIVI/typecheck.yml?branch=main&label=TS%20main)
 ![Build Main](https://img.shields.io/github/actions/workflow/status/f-io/LIVI/build.yml?branch=main&label=build%20main)
 
-## Dongle Firmware Feature Matrix
-
-The available features depend on the firmware version running on the Carlinkit dongle.
-Listed limitations are firmware-level restrictions and cannot be fixed by the application.
-
-| Firmware Version | Nav Auto Switch | Call Auto Switch | Audio Metadata | Web Interface | Notes                                    |
-| :--------------: | :-------------: | :--------------: | :------------: | :-----------: | :--------------------------------------- |
-| 2025.10.15.1127  |       🟢        |        🟢        |       🟢       |      🟢       | Full feature set                         |
-| 2025.02.25.1521  |       🔴        |        🟢        |       🟢       |      🟢       | No auto switching on navigation guidance |
-| 2021.02.23.1758  |       🔴        |        🟡        |       🔴       |      🔴       | Limited protocol support                 |
-
-### Legend
-
-- `🟢` = Supported
-- `🔴` = Not supported
-- `🟡` = Unkown
-
-### Notes
-
-- The firmware updater may not detect devices running USB FW ≤ 2.0
-- The dongle web interface does not support firmware updates; it requires the original APK
-
 ## Installation
+
+> [!IMPORTANT]
+> LIVI requires **WebGL2 or WebGPU support**.
 
 ### Raspberry Pi OS
 
 ```bash
-curl -LO https://raw.githubusercontent.com/f-io/LIVI/main/setup-pi.sh
-sudo chmod +x setup-pi.sh
-./setup-pi.sh
+curl -fL -o install.sh https://raw.githubusercontent.com/f-io/LIVI/main/scripts/install/pi/install.sh
+chmod +x install.sh
+./install.sh
 ```
 
-The `setup-pi.sh` script performs the following tasks:
+> Raspberry Pi OS **Trixie or newer** is required for WebGL2 support.
 
-1. check for required tools: curl and xdg-user-dir
-2. configures udev rules to ensure the proper access rights for the CarPlay dongle
-3. downloads the latest AppImage
-4. creates an autostart entry, so the application will launch automatically on boot
-5. creates a desktop shortcut for easy access to the application
+The `install.sh` script performs the following tasks:
 
-_Not actively tested on other Linux distributions._
+1. checks for required tools: curl and xdg-user-dir
+2. configures udev rules to ensure proper access rights for the CarPlay dongle
+3. downloads the latest LIVI AppImage
+4. creates an autostart entry so the application launches automatically on boot
+5. creates a desktop shortcut for easy access
+
+_This install script is not actively tested on other Linux distributions._
 
 ### Linux (x86_64)
 
-This AppImage has been tested on Debian Trixie (13). No additional software is required — just download the `-x86_64.AppImage` and make it executable. Depending on your distro and how you run the app, you may need a udev rule to access the USB dongle. It presents as a composite (multi-class) USB device, and unlike single-class devices, its interfaces often require explicit permissions.
+This AppImage has been tested on **Debian Trixie (13)** with Wayland. No additional software is required — just download the `-x86_64.AppImage` and make it executable. Depending on your distro and how you run the app, you may need a udev rule to access the USB dongle. It presents as a composite (multi-class) USB device, and unlike single-class devices, its interfaces often require explicit permissions.
 
 ```bash
 sudo bash -c '
@@ -94,7 +77,7 @@ This step is required for all non-Apple-signed apps and future in-app updates wi
 xattr -cr /Applications/LIVI.app
 ```
 
-For microphone support, please install Sound eXchange (SoX) via brew.
+For audio support, please install Sound eXchange (SoX) via brew.
 
 ```bash
 brew install sox
@@ -103,7 +86,7 @@ brew install sox
 ## Build Environment
 
 ![Node](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-node.json)
-![npm](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-npm.json)
+![pnpm](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-pnpm.json)
 ![electron](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-electron.json)
 ![chrome](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-electron-date.json)
 ![release](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-electron-chromium.json)
@@ -123,35 +106,53 @@ Make sure the following packages and tools are installed on your system before b
 ```bash
 git clone --branch main --single-branch https://github.com/f-io/LIVI.git \
   && cd LIVI \
-  && npm run install:clean \
-  && npm run build \
-  && npm run build:armLinux
+  && corepack enable \
+  && corepack install
+
+# Install dependencies from lockfile
+pnpm run install:ci
+
+# --- Build targets ---
+
+# Linux x86_64 (AppImage)
+pnpm run build:linux
+
+# Linux ARM64 (AppImage)
+pnpm run build:armLinux
+
+# macOS (arm64 dmg)
+pnpm run build:mac
 ```
 
-## Android Auto
+## Dongle Firmware Feature Matrix
 
-> **Provisioning not supported.** This app does **not** perform the Android Auto first-time provisioning/pairing flow.
-> Your phone must already be paired/enrolled **on the dongle**.
+The available features depend on the firmware version running on the Carlinkit dongle.
+Listed limitations are firmware-level restrictions and cannot be fixed by the application.
 
-**How to provision AA on the dongle:**
+| Firmware Version | Nav Auto Switch | Call Auto Switch | Audio Metadata | Web Interface | Notes                                    |
+| :--------------: | :-------------: | :--------------: | :------------: | :-----------: | :--------------------------------------- |
+| 2025.10.15.1127  |       🟢        |        🟢        |       🟢       |      🟢       | Full feature set                         |
+| 2025.02.25.1521  |       🔴        |        🟢        |       🟢       |      🟢       | No auto switching on navigation guidance |
+| 2021.02.23.1758  |       🔴        |        🟡        |       🔴       |      🔴       | Limited protocol support                 |
 
-1. Use the dongle with a regular head unit **or** the vendor’s mobile app to add your phone once.
-2. After the dongle knows your phone, connect the dongle to LIVI — it will attach without running provisioning again.
+`🟢` = Supported, `🔴` = Not supported, `🟡` = Unknown
 
 ## Images
 
 <p align="center">
   <img src="docs/images/carplay.png" alt="CarPlay" width="58%" />
 </p>
+
 <p align="center">
-  <img src="docs/images/carplay_no_phone.png" alt="No Phone" width="48%" align="top" />
-  &emsp;
   <img src="docs/images/media.png" alt="Media" width="48%" align="top" />
-</p>
-<p align="center">
-  <img src="docs/images/fft.png" alt="Info" width="48%" align="top" />
   &emsp;
   <img src="docs/images/settings.png" alt="Settings" width="48%" align="top" />
+</p>
+
+<p align="center">
+  <img src="docs/images/maps.png" alt="Maps (Cluster Stream)" width="48%" align="top" />
+  &emsp;
+  <img src="docs/images/telemetry.png" alt="Telemetry" width="48%" align="top" />
 </p>
 
 ## Credits

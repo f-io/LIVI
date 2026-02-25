@@ -11,18 +11,26 @@
 
     <meta
       name="description"
-      content="Open-source Apple CarPlay and Android Auto head unit for Linux. Hardware-accelerated video, low-latency audio, and support for both touchscreen and non-touch controls."
+      content="Carplay and Android Auto head unit for Linux. Hardware-accelerated video, low-latency audio, touchscreen and D-pad friendly."
     />
-
+    <meta property="og:site_name" content="LIVI" />
     <meta property="og:title" content="LIVI - Linux In-Vehicle Infotainment" />
     <meta property="og:url" content="https://f-io.github.io/LIVI/" />
     <meta property="og:type" content="website" />
     <meta
       property="og:description"
-      content="Open-source Apple CarPlay and Android Auto head unit for Linux with hardware-accelerated video and low-latency audio."
+      content="Carplay and Android Auto head unit for Linux. Hardware-accelerated video, low-latency audio, touchscreen and D-pad friendly."
     />
-    <meta property="og:image" content="https://f-io.github.io/livi/images/banner.png" />
+    <meta property="og:image" content="https://f-io.github.io/LIVI/images/banner.png" />
     <meta property="og:image:alt" content="LIVI banner" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="LIVI - Linux In-Vehicle Infotainment" />
+    <meta
+      name="twitter:description"
+      content="Carplay and Android Auto head unit for Linux. Hardware-accelerated video, low-latency audio, touchscreen and D-pad friendly."
+    />
+    <meta name="twitter:image" content="https://f-io.github.io/LIVI/images/banner.png" />
+    <meta name="twitter:image:alt" content="LIVI banner" />
 
     <meta name="theme-color" content="#0e1116" />
     <style>
@@ -171,28 +179,30 @@
         </p>
       </header>
 
-      <h1>Apple CarPlay & Android Auto on Linux</h1>
+      <h1>Apple Carplay & Android Auto on Linux</h1>
 
-      <p><strong>Standalone Apple CarPlay and Android Auto head unit for Linux</strong></p>
+      <p><strong>Standalone Apple Carplay and Android Auto head unit for Linux</strong></p>
 
       <p>
         LIVI - Linux In-Vehicle Infotainment - is an open-source project that provides a standalone
-        <strong>Apple CarPlay and Android Auto head unit</strong> for Linux. It runs on standard
+        <strong>Apple Carplay and Android Auto head unit</strong> for Linux. It runs on standard
         Linux desktops (x86_64) as well as various ARM-based single-board computers, including
         Raspberry Pi and other embedded platforms.
       </p>
 
       <h2>Features</h2>
       <ul>
-        <li>CarPlay support via compatible USB dongles</li>
+        <li>Carplay support via compatible USB dongles</li>
         <li>Hardware-accelerated video pipeline</li>
+        <li>Instrument cluster video stream support</li>
+        <li>iAP2 turn-by-turn navigation data support</li>
+        <li>Audio metadata and playback state integration</li>
         <li>Low-latency audio output via PipeWire</li>
         <li>Voice input support</li>
         <li>Touchscreen and multi-touch support</li>
         <li>Full non-touch navigation via D-Pad and button controls</li>
         <li>
-          Optional Android Auto compatibility (experimental; not fully integrated or actively
-          tested)
+          Optional Android Auto compatibility (experimental)
         </li>
         <li>UI optimized for low-resolution OEM in-car displays</li>
       </ul>
@@ -218,7 +228,7 @@
 
       <h2>How it works</h2>
       <p>
-        LIVI does not implement CarPlay itself. It relies on compatible USB dongles that handle the
+        LIVI does not implement Carplay itself. It relies on compatible USB dongles that handle the
         CarPlay protocol. These dongles usually ship with a <em>questionable</em> Android app — and
         because we love Linux ❤️ and value our sanity, we decided to build a solution instead.
       </p>
@@ -234,8 +244,8 @@
           src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-node.json"
         />
         <img
-          alt="npm"
-          src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-npm.json"
+          alt="pnpm"
+          src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-pnpm.json"
         />
         <img
           alt="electron"
@@ -258,15 +268,15 @@
       </p>
 
       <p style="text-align: center">
-        <img src="images/carplay_no_phone.png" alt="No Phone" width="48%" />
+        <img src="images/settings.png" alt="Settings" width="48%" align="top" />
         &emsp;
-        <img src="images/media.png" alt="Media" width="48%" />
+        <img src="images/media.png" alt="Media" width="48%" align="top" />
       </p>
 
       <p style="text-align: center">
-        <img src="images/fft.png" alt="Info" width="48%" />
+        <img src="images/maps.png" alt="Maps (Cluster Stream)" width="48%" align="top" />
         &emsp;
-        <img src="images/settings.png" alt="Settings" width="48%" />
+        <img src="images/telemetry.png" alt="Telemetry" width="48%" align="top" />
       </p>
 
       <h2>Documentation</h2>
