@@ -30,10 +30,12 @@ import WrongLocationIcon from '@mui/icons-material/WrongLocation'
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
 import NavigationOutlinedIcon from '@mui/icons-material/NavigationOutlined'
 
-import type { NaviBag } from '../../../../../../main/carplay/services/types'
-import { translateNavigation } from '../../../../../../main/carplay/services/utils/translateNavigation'
-import type { NavLocale } from '../../../../../../main/carplay/services/utils/translateNavigation'
-import { useCarplayStore } from '../../../../store/store'
+import {
+  NavLocale,
+  translateNavigation
+} from '@main/services/carplay/services/utils/translateNavigation'
+import { useCarplayStore } from '@store/store'
+import { NaviBag } from '@main/services/carplay/services/types'
 
 export type NavFullProps = {
   className?: string

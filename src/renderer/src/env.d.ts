@@ -2,8 +2,9 @@
 
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { ExtraConfig } from '../../main/Globals'
-import type { MultiTouchPoint } from '../../main/carplay/messages/sendable'
+import type { MultiTouchPoint } from '../../main/services/carplay/messages/sendable'
 
+// Should move to src/types/usb.ts
 interface USBDevice {
   readonly productName?: string
   readonly manufacturerName?: string

@@ -1,5 +1,5 @@
 import { webusb } from 'usb'
-import { Microphone } from '@audio'
+import { Microphone } from '@main/services/audio'
 
 import {
   AudioData,
