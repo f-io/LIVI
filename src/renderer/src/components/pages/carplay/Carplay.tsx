@@ -700,6 +700,28 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           break
         }
 
+        case 'audioInfo': {
+          const p = d.payload as
+            | {
+                codec?: string
+                sampleRate?: number
+                channels?: number
+                bitDepth?: number
+              }
+            | undefined
+
+          if (!p) break
+
+          setAudioInfo({
+            codec: p.codec ?? '',
+            sampleRate: p.sampleRate ?? 0,
+            channels: p.channels ?? 0,
+            bitDepth: p.bitDepth ?? 0
+          })
+
+          break
+        }
+
         case 'command': {
           const value = (d as { message?: { value?: number } }).message?.value
           if (typeof value !== 'number') break

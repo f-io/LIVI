@@ -28,6 +28,13 @@ export type BoxInfoPayload = {
   CusCode?: string
   DevList?: DevListEntry[]
   ChannelList?: string
+  MDLinkType?: string
+  MDModel?: string
+  MDOSVersion?: string
+  MDLinkVersion?: string
+  btMacAddr?: string
+  btName?: string
+  cpuTemp?: number
 }
 
 export type DongleFwApiRaw = {

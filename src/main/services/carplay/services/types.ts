@@ -33,6 +33,13 @@ export interface PersistedNavigationPayload {
   }
 }
 
+export type AudioInfo = {
+  codec: string | null
+  sampleRate: number | null
+  channels: number | null
+  bitDepth: number | null
+}
+
 export type PersistedNavigationFile = {
   timestamp: string
   payload: PersistedNavigationPayload

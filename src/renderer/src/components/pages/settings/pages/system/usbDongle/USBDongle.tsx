@@ -730,6 +730,19 @@ export function USBDongle() {
     [boxInfo]
   )
 
+  const rowsPhoneInfo = useMemo<Row[]>(
+    () => [
+      { label: 'Link Type', value: fmt(boxInfo?.MDLinkType) },
+      { label: 'Model', value: fmt(boxInfo?.MDModel) },
+      { label: 'OS', value: fmt(boxInfo?.MDOSVersion), mono: true },
+      { label: 'Link Version', value: fmt(boxInfo?.MDLinkVersion), mono: true },
+      { label: 'BT Name', value: fmt(boxInfo?.btName) },
+      { label: 'BT MAC', value: fmt(boxInfo?.btMacAddr), mono: true },
+      { label: 'CPU Temp', value: boxInfo?.cpuTemp ?? null, mono: true }
+    ],
+    [boxInfo]
+  )
+
   const rowsStreams = useMemo<Row[]>(
     () => [
       { label: 'Resolution', value: resolution, mono: true },
@@ -987,6 +1000,14 @@ export function USBDongle() {
       </Typography>
 
       {renderRows(rowsDongleInfo)}
+
+      <Divider sx={{ my: 1.5 }} />
+
+      <Typography variant="subtitle2" color="text.secondary">
+        Phone
+      </Typography>
+
+      {renderRows(rowsPhoneInfo)}
 
       <Typography variant="subtitle2" color="text.secondary">
         Paired / Connected Devices

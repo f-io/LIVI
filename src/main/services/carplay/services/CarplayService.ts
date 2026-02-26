@@ -24,6 +24,7 @@ import {
   BoxUpdateProgress,
   BoxUpdateState,
   MessageType,
+  decodeTypeMap,
   DEFAULT_CONFIG
 } from '../messages'
 import { ExtraConfig } from '@main/Globals'
@@ -119,6 +120,7 @@ export class CarplayService {
   private dongleFwVersion?: string
   private boxInfo?: unknown
   private lastDongleInfoEmitKey = ''
+  private lastAudioMetaEmitKey = ''
   private firmware = new FirmwareUpdateService()
 
   private lastNaviVideoWidth?: number
@@ -167,11 +169,21 @@ export class CarplayService {
 
       if (msg instanceof Plugged) {
         this.clearTimeouts()
+        const phoneTypeConfig = this.config.phoneConfig?.[msg.phoneType]
+        if (phoneTypeConfig?.frameInterval) {
+          this.frameInterval = setInterval(() => {
+            if (!this.started) return
+            try {
+              this.driver.send(new SendCommand('frame'))
+            } catch {}
+          }, phoneTypeConfig.frameInterval)
+        }
         this.webContents.send('carplay-event', { type: 'plugged' })
         if (!this.started && !this.isStarting) {
           this.start().catch(() => {})
         }
       } else if (msg instanceof Unplugged) {
+        this.clearTimeouts()
         this.webContents.send('carplay-event', { type: 'unplugged' })
         this.resetNavigationSnapshot('unplugged')
 
@@ -270,6 +282,23 @@ export class CarplayService {
             }
           })
         }
+
+        const fmt = decodeTypeMap[msg.decodeType]
+        if (!fmt) return
+
+        const key = `${msg.decodeType}|${msg.audioType}|${fmt.frequency}|${fmt.channel}|${fmt.bitDepth}`
+        if (key === this.lastAudioMetaEmitKey) return
+        this.lastAudioMetaEmitKey = key
+
+        this.webContents.send('carplay-event', {
+          type: 'audioInfo',
+          payload: {
+            codec: fmt.format ?? msg.decodeType ?? 'unknown',
+            sampleRate: fmt.frequency,
+            channels: fmt.channel,
+            bitDepth: fmt.bitDepth
+          }
+        })
       } else if (msg instanceof MetaData) {
         const inner = msg.inner
 
