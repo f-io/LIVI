@@ -50,6 +50,9 @@ export class AudioOutput {
         console.error('[AudioOutput] SoX (play) not found. Install with: brew install sox')
         return
       }
+      // Known macOS limitation: minimizing the window via the frame controls (-)
+      // can block the main thread (event loop) for ~575ms,
+      // causing audio chunk gaps (data source stall).
       cmd = playPath
       args = [
         '-q',
@@ -69,7 +72,7 @@ export class AudioOutput {
         '--ignore-length',
         '-', // stdin
         '-t',
-        'coreaudio', // explicit CoreAudio sink (prevents early close)
+        'coreaudio',
         'default'
       ]
     } else {

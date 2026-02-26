@@ -69,7 +69,7 @@ export class CarplayAudio {
 
   // If we see a long gap between music chunks, we hard-reset the music AudioOutput
   // to avoid PipeWire/pw-play buffer state causing stutter on resume.
-  private readonly musicGapResetMs = 500
+  private readonly musicGapResetMs = process.platform === 'darwin' ? 1000 : 500
   private lastMusicDataAt = 0
 
   // After nav stop: delay restoring music until this timestamp
