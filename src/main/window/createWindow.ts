@@ -17,7 +17,6 @@ let mainWindow: BrowserWindow | null = null
 
 export function createMainWindow(runtimeState: runtimeStateProps, services: ServicesProps) {
   const { carplayService } = services
-  const { isQuitting, suppressNextFsSync } = runtimeState
   const isMac = isMacPlatform()
 
   mainWindow = new BrowserWindow({
@@ -94,7 +93,7 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
 
   if (isMac) {
     mainWindow.on('enter-full-screen', () => {
-      if (suppressNextFsSync) return
+      if (runtimeState.suppressNextFsSync) return
       applyAspectRatioFullscreen(
         mainWindow!,
         runtimeState.config.width || 800,
@@ -104,7 +103,7 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
     })
 
     mainWindow.on('leave-full-screen', () => {
-      if (suppressNextFsSync) {
+      if (runtimeState.suppressNextFsSync) {
         runtimeState.suppressNextFsSync = false
         return
       }
@@ -127,7 +126,7 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
   } else mainWindow.loadURL('app://index.html')
 
   mainWindow.on('close', (e) => {
-    if (isMac && !isQuitting) {
+    if (isMac && !runtimeState.isQuitting) {
       e.preventDefault()
       if (mainWindow!.isFullScreen()) {
         runtimeState.suppressNextFsSync = true
