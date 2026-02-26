@@ -41,7 +41,7 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
               '&, &.MuiSvgIcon-root': {
                 color: `${phoneActive ? activeColor : baseColor} !important`
               },
-              opacity: !phoneActive ? 'var(--ui-breathe-opacity, 1)' : 1
+              animation: !phoneActive ? 'ui-breathe 1350ms ease-in-out infinite' : 'none'
             }}
           />
         )

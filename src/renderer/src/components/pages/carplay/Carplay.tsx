@@ -66,7 +66,8 @@ function StatusOverlay({
           sx={{
             fontSize: 84,
             color: theme.palette.text.primary,
-            opacity: isPhonePhase ? 'var(--ui-breathe-opacity, 1)' : 0.55
+            opacity: isPhonePhase ? 1 : 0.55,
+            animation: isPhonePhase ? 'ui-breathe 1350ms ease-in-out infinite' : 'none'
           }}
         />
       </Box>
