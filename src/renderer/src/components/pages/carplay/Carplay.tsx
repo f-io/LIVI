@@ -837,6 +837,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     setNavVideoOverlayActive,
     applyAttention,
     rendererError,
+    setAudioInfo,
     settings.mapsEnabled
   ])
 
