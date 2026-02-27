@@ -27,6 +27,8 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
 
   const isVisibleTimeAndWifi = window.innerHeight > UI.MIN_HEIGHT_SHOW_TIME_WIFI
 
+  // TODO should be cleaned up and probably moved to a custom hook (useAutoHideNav or something)
+  // TODO also should be aligned with the useNavbarHidden hook (mapsNavHidden vs navHidden, etc)
   // Auto-hide nav on Maps
   const NAV_HIDE_DELAY_MS = UI.INACTIVITY_HIDE_DELAY_MS
   const hideTimerRef = useRef<number | null>(null)
