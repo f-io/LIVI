@@ -1,5 +1,4 @@
 import { Box, useTheme } from '@mui/material'
-import * as React from 'react'
 import { DashboardsPaginationProps } from './types'
 import { FC } from 'react'
 import { usePaginationDots } from '@renderer/components/pages/telemetry/hooks/usePaginationDots'
