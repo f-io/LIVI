@@ -4,7 +4,8 @@ export enum ROUTES {
   MEDIA = '/media',
   CAMERA = '/camera',
   SETTINGS = '/settings',
-  TELEMETRY = '/telemetry',
+  // TELEMETRY = '/telemetry',
+  TELEMETRY_ = '/telemetry_',
   QUIT = 'quit'
 }
 

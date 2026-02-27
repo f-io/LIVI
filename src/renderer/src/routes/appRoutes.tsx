@@ -3,6 +3,7 @@ import { Home, Media, Camera, Maps, Telemetry } from '../components/pages'
 import { settingsRoutes } from './schemas.ts/schema'
 import { Layout } from '../components/layouts/Layout'
 import { SettingsPage } from '../components/pages/settings/SettingsPage'
+import { Telemetry_ } from '@renderer/components/pages/telemetry_2'
 
 export const appRoutes = [
   {
@@ -13,9 +14,13 @@ export const appRoutes = [
         path: `/${RoutePath.Home}`,
         element: <Home />
       },
+      // {
+      //   path: `/${RoutePath.Telemetry}`,
+      //   element: <Telemetry />
+      // },
       {
-        path: `/${RoutePath.Telemetry}`,
-        element: <Telemetry />
+        path: `/${RoutePath.Telemetry_}`,
+        element: <Telemetry_ />
       },
       {
         path: `/${RoutePath.Maps}`,

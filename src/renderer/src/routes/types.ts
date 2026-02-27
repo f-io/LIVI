@@ -6,7 +6,8 @@ export enum RoutePath {
   Maps = 'maps',
   Media = 'media',
   Settings = 'settings',
-  Telemetry = 'telemetry'
+  // Telemetry = 'telemetry',
+  Telemetry_ = 'telemetry_'
 }
 
 type BivariantCallback<T extends (...args: never[]) => unknown> = {
