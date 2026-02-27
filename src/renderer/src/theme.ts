@@ -543,33 +543,42 @@ export function initCursorHider() {
   reset()
 }
 
+// CarPlay-style LED
+let started = false
 export function initUiBreatheClock() {
-  const start = () => {
-    const body = document.body
-    if (!body) return false
+  if (started) return
+  started = true
 
-    const getDurMs = () => {
-      const raw = getComputedStyle(body).getPropertyValue('--ui-breathe-dur').trim()
-      const n = Number.parseFloat(raw)
-      return Number.isFinite(n) && n > 0 ? n : 1350
+  const root = document.documentElement
+
+  const dur = 1600
+  const min = 0.18
+  const max = 1
+  const range = max - min
+
+  const start = performance.now()
+
+  function tick() {
+    const t = (performance.now() - start) % dur
+    const p = t / dur
+
+    let wave: number
+
+    if (p < 0.35) {
+      wave = p / 0.35
+    } else if (p < 0.5) {
+      wave = 1
+    } else if (p < 0.85) {
+      wave = 1 - (p - 0.5) / 0.35
+    } else {
+      wave = 0
     }
 
-    const t0 = performance.now()
-    const tick = () => {
-      const dur = getDurMs()
-      const t = (performance.now() - t0) % dur
-      const x = (t / dur) * Math.PI * 2
-      const s01 = (Math.sin(x - Math.PI / 2) + 1) / 2
-      const opacity = 0.25 + 0.75 * s01
+    const opacity = min + range * wave
+    root.style.setProperty('--ui-breathe-opacity', opacity.toFixed(3))
 
-      body.style.setProperty('--ui-breathe-opacity', opacity.toFixed(4))
-      requestAnimationFrame(tick)
-    }
-
-    requestAnimationFrame(tick)
-    return true
+    setTimeout(tick, 42) // ~24fps (very easy for RPi)
   }
 
-  if (start()) return
-  window.addEventListener('DOMContentLoaded', () => start(), { once: true })
+  tick()
 }
