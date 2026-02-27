@@ -34,7 +34,7 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
   const hideTimerRef = useRef<number | null>(null)
   const [mapsNavHidden, setMapsNavHidden] = useState(false)
 
-  const inAutoHideNavPage = pathname === ROUTES.MAPS || pathname === ROUTES.TELEMETRY_
+  const inAutoHideNavPage = pathname === ROUTES.MAPS || pathname === ROUTES.TELEMETRY
 
   const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current != null) {

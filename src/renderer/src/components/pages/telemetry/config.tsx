@@ -1,4 +1,4 @@
-import { TelemetryDashboardIds } from '@renderer/components/pages/telemetry_2/types'
+import { TelemetryDashboardIds } from '@renderer/components/pages/telemetry/types'
 import { Dash1 } from '@renderer/components/pages/telemetry/dashboards/Dash1'
 import { Dash2 } from '@renderer/components/pages/telemetry/dashboards/Dash2'
 import { Dash3 } from '@renderer/components/pages/telemetry/dashboards/Dash3'

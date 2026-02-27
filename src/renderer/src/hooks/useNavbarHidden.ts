@@ -13,7 +13,6 @@ export const useNavbarHidden = () => {
     const el = document.getElementById('content-root')
     if (!el) return
 
-    console.log(111, el)
     const read = () => setNavHidden(el.getAttribute('data-nav-hidden') === '1')
     read()
 

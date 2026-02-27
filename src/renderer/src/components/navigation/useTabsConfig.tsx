@@ -56,23 +56,14 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
           }
         ]
       : []),
-    // ...(telemetryEnabled
-    //   ? [
-    //       {
-    //         label: 'Telemetry',
-    //         path: ROUTES.TELEMETRY,
-    //         icon: <SpeedOutlinedIcon sx={{ fontSize: 30 }} />
-    //       }
-    //     ]
-    //   : []),
     ...(telemetryEnabled
       ? [
-        {
-          label: 'Telemetry',
-          path: ROUTES.TELEMETRY_,
-          icon: <SpeedOutlinedIcon sx={{ fontSize: 30 }} />
-        }
-      ]
+          {
+            label: 'Telemetry',
+            path: ROUTES.TELEMETRY,
+            icon: <SpeedOutlinedIcon sx={{ fontSize: 30 }} />
+          }
+        ]
       : []),
     { label: 'Media', path: ROUTES.MEDIA, icon: <PlayCircleOutlinedIcon sx={{ fontSize: 30 }} /> },
     {
