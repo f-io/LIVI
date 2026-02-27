@@ -1,37 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import { Box, useTheme } from '@mui/material'
-import { DashShell } from '../components/DashShell'
-import { useVehicleTelemetry } from '../hooks/useVehicleTelemetry'
-import { Speed } from '../widgets/Speed'
-import { Rpm } from '../widgets/Rpm'
-import { RpmRing } from '../widgets/RpmRing'
-import { Gear } from '../widgets/Gear'
-import { CoolantTemp } from '../widgets/CoolantTemp'
-import { OilTemp } from '../widgets/OilTemp'
-import { FuelLevel } from '../widgets/FuelLevel'
-import { NavMini } from '../widgets/NavMini'
-
-const BASE_W = 1280
-const BASE_H = 720
-
-const CENTER_X = Math.round(BASE_W / 2)
-
-// layout
-const SPEED_GROUP_LEFT = 0
-const SPEED_GROUP_TOP = 40
-const SPEED_GROUP_W = 720
-
-const RPM_RIGHT = 620
-const RPM_TOP = 82
-
-const NAV_X = CENTER_X
-const NAV_Y = 580
-
-const GEAR_X = CENTER_X + CENTER_X / 2
-const GEAR_Y = 580
-
-const METRICS_RIGHT = 80
-const METRICS_TOP = 190
+import { DashShell } from '../../components/DashShell'
+import { useVehicleTelemetry } from '../../hooks/useVehicleTelemetry'
+import { Speed, Rpm, RpmRing, Gear, CoolantTemp, OilTemp, FuelLevel, NavMini } from '../../widgets'
+import {
+  BASE_W,
+  BASE_H,
+  SPEED_GROUP_LEFT,
+  SPEED_GROUP_TOP,
+  SPEED_GROUP_W,
+  NAV_X,
+  NAV_Y,
+  GEAR_X,
+  GEAR_Y,
+  RPM_RIGHT,
+  RPM_TOP,
+  METRICS_RIGHT,
+  METRICS_TOP
+} from './constants'
 
 export function Dash1() {
   const theme = useTheme()

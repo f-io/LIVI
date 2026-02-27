@@ -1,8 +1,5 @@
 import { TelemetryDashboardIds } from '@renderer/components/pages/telemetry/types'
-import { Dash1 } from '@renderer/components/pages/telemetry/dashboards/Dash1'
-import { Dash2 } from '@renderer/components/pages/telemetry/dashboards/Dash2'
-import { Dash3 } from '@renderer/components/pages/telemetry/dashboards/Dash3'
-import { Dash4 } from '@renderer/components/pages/telemetry/dashboards/Dash4'
+import { Dash1, Dash2, Dash3, Dash4 } from '@renderer/components/pages/telemetry/dashboards'
 
 export const DashboardConfig = {
   [TelemetryDashboardIds.Dash1]: <Dash1 />,

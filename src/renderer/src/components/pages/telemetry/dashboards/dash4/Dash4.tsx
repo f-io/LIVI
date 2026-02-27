@@ -1,5 +1,5 @@
 import { Box } from '@mui/material'
-import { NavFull } from '../widgets/NavFull'
+import { NavFull } from '../../widgets'
 
 export function Dash4() {
   return (
