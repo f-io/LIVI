@@ -83,7 +83,8 @@ export function Dash1() {
             width: BASE_W,
             height: BASE_H,
             transform: `translate(-50%, -50%) scale(${scale})`,
-            transformOrigin: 'center'
+            transformOrigin: 'center',
+            transition: 'transform 0.05s ease-out'
           }}
         >
           {/* SPEED + RING GROUP */}
