@@ -1,0 +1,98 @@
+name: maintenance
+
+on:
+  schedule:
+    - cron: '20 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cleanup:
+    name: Garbage Collection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          retain_days: 7
+          keep_minimum_runs: 1
+
+      - name: Cleanup caches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CACHES="$(gh api -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/actions/caches" \
+            --paginate \
+            --jq '.actions_caches[]
+              | select(.key | startswith("pnpm-store-") or startswith("build-cache-") or startswith("electron-cache-") or startswith("eb-cache-"))
+              | "\(.id) \(.last_accessed_at) \(.ref) \(.key)"' \
+            | sort -k2 -r || true)"
+
+          if [ -z "${CACHES}" ]; then
+            exit 0
+          fi
+
+          declare -A KEEP_FOR_GROUP=()
+
+          while read -r ID LAST REF KEY; do
+            [ -n "${ID}" ] || continue
+
+            case "${KEY}" in
+              pnpm-store-*)
+                GROUP="pnpm-store"
+                ;;
+              build-cache-*)
+                GROUP="build-cache"
+                ;;
+              electron-cache-*)
+                GROUP="electron-cache"
+                ;;
+              eb-cache-*)
+                GROUP="eb-cache"
+                ;;
+              *)
+                continue
+                ;;
+            esac
+
+            GROUP="${GROUP}::${REF}"
+            if [ -z "${KEEP_FOR_GROUP[${GROUP}]+x}" ]; then
+              KEEP_FOR_GROUP["${GROUP}"]="${ID}"
+            fi
+          done <<< "${CACHES}"
+
+          while read -r ID LAST REF KEY; do
+            [ -n "${ID}" ] || continue
+
+            case "${KEY}" in
+              pnpm-store-*)
+                GROUP="pnpm-store"
+                ;;
+              build-cache-*)
+                GROUP="build-cache"
+                ;;
+              electron-cache-*)
+                GROUP="electron-cache"
+                ;;
+              eb-cache-*)
+                GROUP="eb-cache"
+                ;;
+              *)
+                continue
+                ;;
+            esac
+
+            GROUP="${GROUP}::${REF}"
+            KEEP_ID="${KEEP_FOR_GROUP[${GROUP}]}"
+            if [ "${ID}" != "${KEEP_ID}" ]; then
+              gh api -X DELETE -H "Accept: application/vnd.github+json" \
+                "/repos/${GITHUB_REPOSITORY}/actions/caches/${ID}" >/dev/null
+            fi
+          done <<< "${CACHES}"
