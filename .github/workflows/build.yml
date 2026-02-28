@@ -132,7 +132,6 @@ jobs:
           set -euo pipefail
           ELECTRON_VERSION=$(node -p "require('./node_modules/electron/package.json').version")
           npx --yes node-gyp install --target="$ELECTRON_VERSION" --dist-url=https://artifacts.electronjs.org/headers/dist
-          pnpm run rebuild:native
           pnpm run typecheck
           rm -rf dist
           pnpm run build:linux
@@ -185,7 +184,6 @@ jobs:
               ELECTRON_VERSION="$(node -p "require(\"./node_modules/electron/package.json\").version")"
               npx --yes node-gyp install --target="$ELECTRON_VERSION" --dist-url=https://artifacts.electronjs.org/headers/dist
 
-              pnpm run rebuild:native
               pnpm run build:armLinux
             '
 
@@ -227,7 +225,6 @@ jobs:
           set -euo pipefail
           ELECTRON_VERSION=$(node -p "require('./node_modules/electron/package.json').version")
           npx --yes node-gyp install --target="$ELECTRON_VERSION" --dist-url=https://artifacts.electronjs.org/headers/dist
-          pnpm run rebuild:native
           pnpm run typecheck
           pnpm run build:mac
 

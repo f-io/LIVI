@@ -36,7 +36,6 @@
     "build:mac": "pnpm run build:app && electron-builder --mac --arm64 --publish never --config",
     "build:linux": "pnpm run build:app && electron-builder --linux --publish never --config",
     "build:armLinux": "pnpm run build:app && electron-builder --linux AppImage --arm64 --publish never --config",
-    "rebuild:native": "pnpm exec electron-rebuild --parallel --only usb",
     "test": "jest --config jest.config.ts",
     "test:renderer": "jest --config jest.web.config.js"
   },
@@ -71,7 +70,6 @@
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",
     "@electron-toolkit/eslint-config-ts": "^3.1.0",
     "@electron-toolkit/tsconfig": "^2.0.0",
-    "@electron/rebuild": "^4.0.3",
     "@esbuild-plugins/node-globals-polyfill": "^0.2.3",
     "@eslint/js": "^10.0.1",
     "@testing-library/jest-dom": "^6.9.1",
