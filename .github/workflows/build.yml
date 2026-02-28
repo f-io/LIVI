@@ -51,34 +51,6 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.inputs.branch && format('refs/heads/{0}', github.event.inputs.branch) || format('refs/heads/{0}', github.event.workflow_run.head_branch) }}
 
-      - name: Fetch latest Node.js 24.x
-        run: |
-          curl -s https://nodejs.org/dist/index.json | jq -r '[.[] | select(.version | test("^v24\\.\\d+\\.\\d+$"))][0].version' > .nvmrc
-
-      - name: Setup latest Node.js 24.x
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-
-      - name: Setup pnpm
-        run: |
-          corepack enable
-          corepack install
-          node -e "const v=require('child_process').execSync('pnpm -v').toString().trim(); if(!/^10\\./.test(v)){console.error('Expected pnpm 10.x, got', v); process.exit(1);} "
-
-      - name: Force pnpm store into workspace
-        run: |
-          pnpm config set store-dir .pnpm-store
-
-      - name: Ensure cache dirs exist
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .pnpm-store
-          mkdir -p .cache/electron .cache/electron-builder
-          mkdir -p node_modules/.vite node_modules/.cache || true
-          chmod -R a+rwx .pnpm-store .cache node_modules/.vite node_modules/.cache || true
-
       # ----------------------------
       # Caches
       # ----------------------------
@@ -116,11 +88,13 @@ jobs:
           restore-keys: |
             eb-cache-${{ runner.os }}-${{ matrix.platform }}-
 
-      - name: Capture runtime versions
-        id: rt
-        run: |
-          echo "node=$(node -v | sed 's/^v//')" >> "$GITHUB_OUTPUT"
-          echo "pnpm=$(pnpm -v)" >> "$GITHUB_OUTPUT"
+      - name: Setup Node + pnpm
+        id: pnpm
+        uses: ./.github/actions/pnpm
+        with:
+          node-version: '24'
+          pnpm-major: '10'
+          pnpm-store-dir: '.pnpm-store'
 
       - name: Read version from package.json
         id: pkg
@@ -244,11 +218,7 @@ jobs:
       - name: Install deps (pnpm) [darwin]
         if: matrix.platform == 'darwin'
         shell: bash
-        run: |
-          set -euo pipefail
-          corepack enable
-          corepack install
-          pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Build for macOS (native)
         if: matrix.platform == 'darwin'
@@ -269,160 +239,13 @@ jobs:
             dist/*${{ matrix.artifact_ext == 'dmg' && 'arm64.dmg' || (matrix.artifact_ext == 'AppImage' && (matrix.platform == 'arm64' && '-arm64.AppImage' || '-x86_64.AppImage')) }}
           retention-days: 7
 
-      - name: Write version badge JSON
+      - name: Push badges to version branch
         if: matrix.platform == 'x86_64' && (env.BUILD_BRANCH == 'main' || env.BUILD_BRANCH == 'dev')
-        run: |
-          BRANCH_NAME="${BUILD_BRANCH}"
-          mkdir -p .github/badges
-          echo "{\"schemaVersion\":1,\"label\":\"${BRANCH_NAME}\",\"message\":\"v${{ steps.pkg.outputs.version }}\",\"color\":\"lightgrey\"}" > ".github/badges/${BRANCH_NAME}-version.json"
-
-      - name: Push version badge to version branch
-        if: matrix.platform == 'x86_64' && (env.BUILD_BRANCH == 'main' || env.BUILD_BRANCH == 'dev')
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          BRANCH_NAME="${BUILD_BRANCH}"
-          VERSION="${{ steps.pkg.outputs.version }}"
-          NODE_VERSION="${{ steps.rt.outputs.node }}"
-          PNPM_VERSION="${{ steps.rt.outputs.pnpm }}"
-
-          ELECTRON_SEMVER="$(node -e "try{console.log(require('./node_modules/electron/package.json').version)}catch(e){try{console.log(require('./package.json').devDependencies.electron)}catch(e){console.log('unknown')}}" )"
-          export ELECTRON_SEMVER
-
-          CHROMIUM_VER="$(ELECTRON_RUN_AS_NODE=1 node -e "
-            const { execFileSync } = require('child_process');
-            const e = require('electron');
-            const out = execFileSync(
-              e,
-              ['-e', 'process.stdout.write(process.versions.chrome || \"unknown\")'],
-              { encoding: 'utf8' }
-            );
-            process.stdout.write((out || 'unknown').trim());
-          ")"
-
-          ELECTRON_DATE_DE="$(node -e "
-            const cp = require('child_process');
-            const v = (process.env.ELECTRON_SEMVER || '').trim().replace(/^v/i,'');
-            try {
-              const out = cp.execSync('pnpm view electron@'+v+' time --json',{stdio:['ignore','pipe','ignore']}).toString();
-              const map = JSON.parse(out)||{};
-              const iso = map[v];
-              if (!iso) { console.log('unknown'); process.exit(0); }
-              const d = new Date(iso);
-              console.log(new Intl.DateTimeFormat('de-DE',
-                { timeZone:'Europe/Berlin', day:'2-digit', month:'2-digit', year:'numeric' }
-              ).format(d));
-            } catch { console.log('unknown'); }
-          ")"
-
-          echo "ELECTRON_SEMVER=${ELECTRON_SEMVER}"
-          echo "CHROMIUM_VER=${CHROMIUM_VER}"
-
-          mkdir temp-badges
-          cd temp-badges
-
-          git clone --depth=1 --branch version "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" .
-
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-
-          mkdir -p .github/badges
-          echo "{\"schemaVersion\":1,\"label\":\"${BRANCH_NAME}\",\"message\":\"v${VERSION}\",\"color\":\"lightblue\"}" > ".github/badges/${BRANCH_NAME}-version.json"
-          echo "{\"schemaVersion\":1,\"label\":\"node\",\"message\":\"${NODE_VERSION}\",\"color\":\"lightgrey\"}" > ".github/badges/${BRANCH_NAME}-node.json"
-          echo "{\"schemaVersion\":1,\"label\":\"pnpm\",\"message\":\"${PNPM_VERSION}\",\"color\":\"lightgrey\"}" > ".github/badges/${BRANCH_NAME}-pnpm.json"
-          echo "{\"schemaVersion\":1,\"label\":\"electron\",\"message\":\"${ELECTRON_SEMVER}\",\"color\":\"lightblue\"}" > ".github/badges/${BRANCH_NAME}-electron.json"
-          echo "{\"schemaVersion\":1,\"label\":\"chromium\",\"message\":\"${CHROMIUM_VER}\",\"color\":\"informational\"}" > ".github/badges/${BRANCH_NAME}-electron-chromium.json"
-          echo "{\"schemaVersion\":1,\"label\":\"released\",\"message\":\"${ELECTRON_DATE_DE}\",\"color\":\"success\"}" > ".github/badges/${BRANCH_NAME}-electron-date.json"
-          echo "{\"schemaVersion\":1,\"label\":\"Electron\",\"message\":\"${ELECTRON_SEMVER} • Chromium ${CHROMIUM_VER} • ${ELECTRON_DATE_DE}\",\"color\":\"blue\"}" > ".github/badges/${BRANCH_NAME}-electron-info.json"
-
-          git add .github/badges/${BRANCH_NAME}-*.json
-          git commit -m "chore(badges): ${BRANCH_NAME} -> v${VERSION}, node ${NODE_VERSION}, pnpm ${PNPM_VERSION}, electron ${ELECTRON_SEMVER} (chromium ${CHROMIUM_VER}, ${ELECTRON_DATE_DE})" || echo "No changes"
-          git push
-          cd ..
-          rm -rf temp-badges
-
-  cleanup:
-    name: 'Garbage Collection'
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
-    needs: [build]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: Mattraks/delete-workflow-runs@v2
+        uses: ./.github/actions/badges
         with:
+          branch: ${{ env.BUILD_BRANCH }}
+          version: ${{ steps.pkg.outputs.version }}
+          node: ${{ steps.pnpm.outputs.node }}
+          pnpm: ${{ steps.pnpm.outputs.pnpm }}
+          repo: ${{ github.repository }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          retain_days: 7
-          keep_minimum_runs: 1
-
-      - name: Cleanup caches
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          CACHES="$(gh api -H "Accept: application/vnd.github+json" \
-            "/repos/${GITHUB_REPOSITORY}/actions/caches" \
-            --paginate \
-            --jq '.actions_caches[]
-              | select(.key | startswith("node-cache-") or startswith("eb-cache-") or startswith("electron-gyp-"))
-              | "\(.id) \(.last_accessed_at) \(.ref) \(.key)"' \
-            | sort -k2 -r || true)"
-
-          if [ -z "${CACHES}" ]; then
-            exit 0
-          fi
-
-          declare -A KEEP_FOR_GROUP=()
-
-          while read -r ID LAST REF KEY; do
-            [ -n "${ID}" ] || continue
-
-            case "${KEY}" in
-              node-cache-*)
-                GROUP="$(echo "${KEY}" | sed -E 's/^(node-cache-[^-]+-[^-]+-pnpm).*/\1/')"
-                ;;
-              eb-cache-*)
-                GROUP="$(echo "${KEY}" | sed -E 's/^(eb-cache-[^-]+).*/\1/')"
-                ;;
-              electron-gyp-*)
-                GROUP="$(echo "${KEY}" | sed -E 's/^(electron-gyp-[^-]+).*/\1/')"
-                ;;
-              *)
-                continue
-                ;;
-            esac
-
-            GROUP="${GROUP}::${REF}"
-            if [ -z "${KEEP_FOR_GROUP[${GROUP}]+x}" ]; then
-              KEEP_FOR_GROUP["${GROUP}"]="${ID}"
-            fi
-          done <<< "${CACHES}"
-
-          while read -r ID LAST REF KEY; do
-            [ -n "${ID}" ] || continue
-
-            case "${KEY}" in
-              node-cache-*)
-                GROUP="$(echo "${KEY}" | sed -E 's/^(node-cache-[^-]+-[^-]+-pnpm).*/\1/')"
-                ;;
-              eb-cache-*)
-                GROUP="$(echo "${KEY}" | sed -E 's/^(eb-cache-[^-]+).*/\1/')"
-                ;;
-              electron-gyp-*)
-                GROUP="$(echo "${KEY}" | sed -E 's/^(electron-gyp-[^-]+).*/\1/')"
-                ;;
-              *)
-                continue
-                ;;
-            esac
-
-            GROUP="${GROUP}::${REF}"
-            KEEP_ID="${KEEP_FOR_GROUP[${GROUP}]}"
-            if [ "${ID}" != "${KEEP_ID}" ]; then
-              gh api -X DELETE -H "Accept: application/vnd.github+json" \
-                "/repos/${GITHUB_REPOSITORY}/actions/caches/${ID}" >/dev/null
-            fi
-          done <<< "${CACHES}"
