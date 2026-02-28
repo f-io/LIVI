@@ -13,43 +13,80 @@ on:
         description: 'Branch to build'
         required: true
         default: 'main'
+      linux_x86_64:
+        description: 'Build Linux x86_64 (AppImage)'
+        type: boolean
+        default: false
+      linux_arm64:
+        description: 'Build Linux arm64 (AppImage, emulated)'
+        type: boolean
+        default: false
+      macos_arm64:
+        description: 'Build macOS arm64 (dmg)'
+        type: boolean
+        default: false
+      windows_x64:
+        description: 'Build Windows x64 (nsis)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
   actions: write
 
 jobs:
+  # ------------------------------------------------------------
+  # Manual builds (matrix), only for selected targets
+  # ------------------------------------------------------------
   build:
-    name: Build ${{ matrix.artifact_ext }} (${{ matrix.platform }}) on ${{ github.event.inputs.branch || github.event.workflow_run.head_branch || github.ref_name }}
-    if: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')) && github.actor != 'github-actions' }}
+    name: Build ${{ matrix.artifact_ext }} (${{ matrix.platform }}) on ${{ github.event.inputs.branch }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
     runs-on: ${{ matrix.os }}
     env:
-      BUILD_BRANCH: ${{ github.event.inputs.branch || github.event.workflow_run.head_branch || github.head_ref || github.ref_name }}
+      BUILD_BRANCH: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.event.workflow_run.head_branch }}
       HUSKY: 0
       ELECTRON_CACHE: .cache/electron
       ELECTRON_BUILDER_CACHE: .cache/electron-builder
 
     strategy:
+      fail-fast: false
       matrix:
         include:
           - platform: x86_64
             os: ubuntu-latest
             arch: native
             artifact_ext: AppImage
+            enabled: ${{ github.event_name == 'workflow_run' || github.event.inputs.linux_x86_64 == 'true' }}
+
           - platform: arm64
             os: ubuntu-latest
             arch: emulated
             artifact_ext: AppImage
+            enabled: ${{ github.event_name == 'workflow_run' || github.event.inputs.linux_arm64 == 'true' }}
+
           - platform: darwin
             os: macos-latest
             arch: native
             artifact_ext: dmg
+            enabled: ${{ github.event_name == 'workflow_run' || github.event.inputs.macos_arm64 == 'true' }}
+
+          - platform: win-x64
+            os: windows-latest
+            arch: native
+            artifact_ext: exe
+            enabled: ${{ github.event_name == 'workflow_run' || github.event.inputs.windows_x64 == 'true' }}
 
     steps:
+      - name: Skip if not selected
+        if: ${{ !matrix.enabled }}
+        run: |
+          echo "Not selected in workflow_dispatch inputs -> skipping."
+          exit 0
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.inputs.branch && format('refs/heads/{0}', github.event.inputs.branch) || format('refs/heads/{0}', github.event.workflow_run.head_branch) }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/heads/{0}', github.event.inputs.branch) || github.event.workflow_run.head_sha }}
 
       # ----------------------------
       # Caches
@@ -63,6 +100,7 @@ jobs:
             pnpm-store-${{ runner.os }}-${{ matrix.platform }}-
 
       - name: Cache build caches (vite/esbuild)
+        if: ${{ matrix.platform != 'win-x64' }}
         uses: actions/cache@v4
         with:
           path: |
@@ -98,12 +136,14 @@ jobs:
 
       - name: Read version from package.json
         id: pkg
+        shell: bash
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Read Electron semver from package.json
         id: el
+        shell: bash
         run: |
           echo "semver=$(node -p 'require(\"./package.json\").devDependencies.electron')" >> "$GITHUB_OUTPUT"
 
@@ -192,7 +232,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # docker wrote these as root -> actions/cache runs as runner user -> tar can't read
           sudo chown -R "$USER:$USER" .cache .pnpm-store node_modules/.vite node_modules/.cache 2>/dev/null || true
           sudo chmod -R a+rX .cache .pnpm-store node_modules/.vite node_modules/.cache 2>/dev/null || true
 
@@ -228,12 +267,71 @@ jobs:
           pnpm run typecheck
           pnpm run build:mac
 
+      # ----------------------------
+      # Windows
+      # ----------------------------
+      - name: Install deps (pnpm) [win-x64]
+        if: matrix.platform == 'win-x64'
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch ffplay bundle (f-io/ffmpeg-bundles latest) [win-x64]
+        if: matrix.platform == 'win-x64'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          New-Item -ItemType Directory -Force -Path "assets/bin/win" | Out-Null
+
+          $assetName = "ffplay-win-x64.zip"
+          $zip = Join-Path $env:RUNNER_TEMP $assetName
+
+          $tag = (gh release view --repo f-io/ffmpeg-bundles latest --json tagName -q ".tagName")
+          if (-not $tag) { throw "Could not resolve release tag from f-io/ffmpeg-bundles" }
+
+          gh release download $tag `
+            --repo f-io/ffmpeg-bundles `
+            --pattern $assetName `
+            --dir $env:RUNNER_TEMP
+
+          if (-not (Test-Path $zip)) { throw "Downloaded asset not found: $zip" }
+
+          $extract = Join-Path $env:RUNNER_TEMP "ffplay_extract"
+          if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
+          Expand-Archive -Path $zip -DestinationPath $extract -Force
+
+          $ffplay = Get-ChildItem -Path $extract -Recurse -Filter "ffplay.exe" | Select-Object -First 1
+          if (-not $ffplay) { throw "ffplay.exe not found in $assetName" }
+
+          $binDir = Split-Path $ffplay.FullName -Parent
+
+          Copy-Item "$binDir\ffplay.exe" "assets/bin/win/ffplay.exe" -Force
+          Copy-Item "$binDir\*.dll" "assets/bin/win/" -Force -ErrorAction SilentlyContinue
+
+          Write-Host "Bundled ffplay files:"
+          Get-ChildItem "assets/bin/win" | Format-Table Name,Length
+
+      - name: Build for Windows (native) [win-x64]
+        if: matrix.platform == 'win-x64'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ELECTRON_VERSION = node -p "require('./node_modules/electron/package.json').version"
+          npx --yes node-gyp install --target="$ELECTRON_VERSION" --dist-url=https://artifacts.electronjs.org/headers/dist
+          pnpm run typecheck
+          pnpm run build:win
+
+      # ----------------------------
+      # Upload artifacts
+      # ----------------------------
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: LIVI-${{ steps.pkg.outputs.version }}-${{ matrix.platform }}.${{ matrix.artifact_ext }}
           path: |
-            dist/*${{ matrix.artifact_ext == 'dmg' && 'arm64.dmg' || (matrix.artifact_ext == 'AppImage' && (matrix.platform == 'arm64' && '-arm64.AppImage' || '-x86_64.AppImage')) }}
+            dist/*${{ matrix.artifact_ext == 'dmg' && 'arm64.dmg' || (matrix.artifact_ext == 'AppImage' && (matrix.platform == 'arm64' && '-arm64.AppImage' || '-x86_64.AppImage')) || (matrix.artifact_ext == 'exe' && '-setup.exe') }}
           retention-days: 7
 
       - name: Push badges to version branch

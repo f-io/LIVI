@@ -36,6 +36,7 @@
     "build:mac": "pnpm run build:app && electron-builder --mac --arm64 --publish never --config",
     "build:linux": "pnpm run build:app && electron-builder --linux --publish never --config",
     "build:armLinux": "pnpm run build:app && electron-builder --linux AppImage --arm64 --publish never --config",
+    "build:win": "pnpm run build && electron-builder --win --publish never --config",
     "test": "jest --config jest.config.ts",
     "test:renderer": "jest --config jest.web.config.js"
   },

@@ -47,3 +47,29 @@ appImage:
   artifactName: ${name}-${version}-${arch}.${ext}
 
 npmRebuild: false
+
+copyright: 'Copyright © 2026 Lasse Heitgres'
+publish: null
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: icons/win/livi.ico
+  executableName: LIVI
+  artifactName: ${name}-${version}-win-${arch}-setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+extraResources:
+  - from: assets/bin/win
+    to: bin
+    filter:
+      - ffplay.exe
+      - '*.dll'

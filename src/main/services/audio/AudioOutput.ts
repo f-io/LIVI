@@ -1,6 +1,7 @@
 import { spawn, ChildProcessWithoutNullStreams, execSync } from 'child_process'
 import os from 'os'
 import fs from 'fs'
+import path from 'path'
 
 export interface AudioOutputOptions {
   sampleRate: number
@@ -75,6 +76,27 @@ export class AudioOutput {
         'coreaudio',
         'default'
       ]
+    } else if (os.platform() === 'win32') {
+      const ffplayPath = AudioOutput.resolveFfplayPath()
+      if (!ffplayPath) {
+        console.error('[AudioOutput] ffplay not found (expected resources/bin/ffplay.exe)')
+        return
+      }
+
+      cmd = ffplayPath
+      args = [
+        '-nodisp',
+        '-loglevel',
+        'warning',
+        '-f',
+        's16le',
+        '-ar',
+        this.sampleRate.toString(),
+        '-ch_layout',
+        AudioOutput.ffplayChannelLayout(this.channels),
+        '-i',
+        'pipe:0'
+      ]
     } else {
       console.error('[AudioOutput] Platform not supported for audio output')
       return
@@ -85,7 +107,8 @@ export class AudioOutput {
     this.queue = []
     this.writing = false
 
-    this.process = spawn(cmd, args, { env, shell: false })
+    const spawnEnv = os.platform() === 'win32' ? process.env : env
+    this.process = spawn(cmd, args, { env: spawnEnv, shell: false })
 
     const proc = this.process
     const stdin = proc.stdin
@@ -197,9 +220,31 @@ export class AudioOutput {
     return null
   }
 
+  private static resolveFfplayPath(): string | null {
+    const bundled = path.join(process.resourcesPath, 'bin', 'ffplay.exe')
+    return fs.existsSync(bundled) ? bundled : null
+  }
+
   private static buildExecPath(current?: string): string {
     const extra = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin']
     const set = new Set<string>([...extra, ...(current ? current.split(':') : [])])
     return Array.from(set).join(':')
+  }
+
+  private static ffplayChannelLayout(channels: number): string {
+    switch (channels | 0) {
+      case 1:
+        return 'mono'
+      case 2:
+        return 'stereo'
+      case 4:
+        return 'quad'
+      case 6:
+        return '5.1'
+      case 8:
+        return '7.1'
+      default:
+        throw new Error(`[AudioOutput] Unsupported channel count for ffplay: ${channels}`)
+    }
   }
 }
