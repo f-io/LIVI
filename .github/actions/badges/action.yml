@@ -1,0 +1,93 @@
+name: 'Push badges'
+description: 'Write and push badge JSON files to version branch'
+
+inputs:
+  branch:
+    required: true
+    description: 'Branch name label (e.g. main/dev)'
+  version:
+    required: true
+    description: 'App version (from package.json)'
+  node:
+    required: true
+    description: 'Node version'
+  pnpm:
+    required: true
+    description: 'pnpm version'
+  repo:
+    required: true
+    description: 'owner/repo'
+  token:
+    required: true
+    description: 'GitHub token to push'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Push badges
+      shell: bash
+      env:
+        BRANCH_NAME: ${{ inputs.branch }}
+        VERSION: ${{ inputs.version }}
+        NODE_VERSION: ${{ inputs.node }}
+        PNPM_VERSION: ${{ inputs.pnpm }}
+        GH_REPO: ${{ inputs.repo }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+
+        # Try to get actual electron version (installed), fallback to semver from package.json
+        ELECTRON_SEMVER="$(node -e "try{console.log(require('./node_modules/electron/package.json').version)}catch(e){try{console.log(require('./package.json').devDependencies.electron)}catch(e){console.log('unknown')}}" )"
+        export ELECTRON_SEMVER
+
+        CHROMIUM_VER="$(ELECTRON_RUN_AS_NODE=1 node -e "
+          const { execFileSync } = require('child_process');
+          const e = require('electron');
+          const out = execFileSync(
+            e,
+            ['-e', 'process.stdout.write(process.versions.chrome || \"unknown\")'],
+            { encoding: 'utf8' }
+          );
+          process.stdout.write((out || 'unknown').trim());
+        " || echo "unknown")"
+
+        ELECTRON_DATE_DE="$(node -e "
+          const cp = require('child_process');
+          const v = (process.env.ELECTRON_SEMVER || '').trim().replace(/^v/i,'');
+          try {
+            const out = cp.execSync('pnpm view electron@'+v+' time --json',{stdio:['ignore','pipe','ignore']}).toString();
+            const map = JSON.parse(out)||{};
+            const iso = map[v];
+            if (!iso) { console.log('unknown'); process.exit(0); }
+            const d = new Date(iso);
+            console.log(new Intl.DateTimeFormat('de-DE',
+              { timeZone:'Europe/Berlin', day:'2-digit', month:'2-digit', year:'numeric' }
+            ).format(d));
+          } catch { console.log('unknown'); }
+        ")"
+
+        echo "ELECTRON_SEMVER=${ELECTRON_SEMVER}"
+        echo "CHROMIUM_VER=${CHROMIUM_VER}"
+        echo "ELECTRON_DATE_DE=${ELECTRON_DATE_DE}"
+
+        rm -rf temp-badges
+        mkdir temp-badges
+        cd temp-badges
+
+        git clone --depth=1 --branch version "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}" .
+
+        git config user.name "github-actions"
+        git config user.email "github-actions@github.com"
+
+        mkdir -p .github/badges
+        echo "{\"schemaVersion\":1,\"label\":\"${BRANCH_NAME}\",\"message\":\"v${VERSION}\",\"color\":\"lightblue\"}" > ".github/badges/${BRANCH_NAME}-version.json"
+        echo "{\"schemaVersion\":1,\"label\":\"node\",\"message\":\"${NODE_VERSION}\",\"color\":\"lightgrey\"}" > ".github/badges/${BRANCH_NAME}-node.json"
+        echo "{\"schemaVersion\":1,\"label\":\"pnpm\",\"message\":\"${PNPM_VERSION}\",\"color\":\"lightgrey\"}" > ".github/badges/${BRANCH_NAME}-pnpm.json"
+        echo "{\"schemaVersion\":1,\"label\":\"electron\",\"message\":\"${ELECTRON_SEMVER}\",\"color\":\"lightblue\"}" > ".github/badges/${BRANCH_NAME}-electron.json"
+        echo "{\"schemaVersion\":1,\"label\":\"chromium\",\"message\":\"${CHROMIUM_VER}\",\"color\":\"informational\"}" > ".github/badges/${BRANCH_NAME}-electron-chromium.json"
+        echo "{\"schemaVersion\":1,\"label\":\"released\",\"message\":\"${ELECTRON_DATE_DE}\",\"color\":\"success\"}" > ".github/badges/${BRANCH_NAME}-electron-date.json"
+        echo "{\"schemaVersion\":1,\"label\":\"Electron\",\"message\":\"${ELECTRON_SEMVER} • Chromium ${CHROMIUM_VER} • ${ELECTRON_DATE_DE}\",\"color\":\"blue\"}" > ".github/badges/${BRANCH_NAME}-electron-info.json"
+
+        git add .github/badges/${BRANCH_NAME}-*.json
+        git commit -m "chore(badges): ${BRANCH_NAME} -> v${VERSION}, node ${NODE_VERSION}, pnpm ${PNPM_VERSION}, electron ${ELECTRON_SEMVER} (chromium ${CHROMIUM_VER}, ${ELECTRON_DATE_DE})" || echo "No changes"
+        git push

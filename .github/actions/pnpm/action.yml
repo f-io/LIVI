@@ -1,0 +1,76 @@
+name: 'Setup Node + pnpm'
+description: 'Setup Node and pnpm, configure store + cache dirs'
+
+inputs:
+  node-version:
+    description: 'Node major to install (e.g. 24)'
+    required: false
+    default: '24'
+  pnpm-major:
+    description: 'Expected pnpm major version'
+    required: false
+    default: '10'
+  pnpm-store-dir:
+    description: 'pnpm store-dir'
+    required: false
+    default: '.pnpm-store'
+
+outputs:
+  node:
+    description: 'Node version (no leading v)'
+    value: ${{ steps.versions.outputs.node }}
+  pnpm:
+    description: 'pnpm version'
+    value: ${{ steps.versions.outputs.pnpm }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Fetch latest Node.js 24.x
+      shell: bash
+      run: |
+        set -euo pipefail
+        curl -s https://nodejs.org/dist/index.json \
+          | jq -r "[.[] | select(.version | test(\"^v${{ inputs.node-version }}\\\\.\\\\d+\\\\.\\\\d+$\"))][0].version" \
+          > .nvmrc
+
+    - name: Setup latest Node.js 24.x
+      uses: actions/setup-node@v4
+      with:
+        node-version-file: .nvmrc
+
+    - name: Setup pnpm via corepack
+      shell: bash
+      run: |
+        set -euo pipefail
+        corepack enable
+        corepack install
+        v="$(pnpm -v)"
+        major="${v%%.*}"
+        if [ "$major" != "${{ inputs.pnpm-major }}" ]; then
+          echo "Expected pnpm ${{ inputs.pnpm-major }}.x but got $v" >&2
+          exit 1
+        fi
+
+    - name: Force pnpm store into workspace
+      shell: bash
+      run: |
+        set -euo pipefail
+        pnpm config set store-dir "${{ inputs.pnpm-store-dir }}"
+
+    - name: Ensure cache dirs exist
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "${{ inputs.pnpm-store-dir }}"
+        mkdir -p .cache/electron .cache/electron-builder
+        mkdir -p node_modules/.vite node_modules/.cache || true
+        chmod -R a+rwx "${{ inputs.pnpm-store-dir }}" .cache node_modules/.vite node_modules/.cache || true
+
+    - name: Capture runtime versions
+      id: versions
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "node=$(node -v | sed 's/^v//')" >> "$GITHUB_OUTPUT"
+        echo "pnpm=$(pnpm -v)" >> "$GITHUB_OUTPUT"
