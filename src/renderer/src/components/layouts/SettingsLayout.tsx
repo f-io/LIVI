@@ -178,7 +178,7 @@ export const SettingsLayout = ({
           {showRestart ? (
             <IconButton
               onClick={onRestart}
-              aria-label="Restart dongle"
+              aria-label="Apply"
               sx={{
                 width: `${px.slotRightW}px`,
                 height: '100%',

@@ -133,6 +133,13 @@ export type PosListNode = NodeMeta & {
   items: PosListItem[]
 }
 
+export type BtDeviceListNode = NodeMeta & {
+  type: 'btDeviceList'
+  label: string // TODO deleted in favor of i18n
+  labelKey?: string
+  path: string
+}
+
 export type RouteNode<TStore> = NodeMeta & {
   type: 'route'
   label: string // TODO deleted in favor of i18n
@@ -154,3 +161,4 @@ export type SettingsNode<TStore> =
   | KeyBindingNode
   | SettingsCustomNode<TStore>
   | PosListNode
+  | BtDeviceListNode

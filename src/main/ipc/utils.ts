@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events'
 import { existsSync, writeFileSync } from 'fs'
 import { execFile } from 'node:child_process'
 import os from 'node:os'
@@ -12,6 +13,8 @@ import {
   fitWindowToWorkArea
 } from '@main/window/utils'
 import { CONFIG_PATH } from '@main/config/paths'
+
+export const configEvents = new EventEmitter()
 
 export async function getMacDesiredOwner(dstApp: string): Promise<{ user: string; group: string }> {
   if (process.platform !== 'darwin') throw new Error('macOS only')
@@ -69,6 +72,8 @@ export function saveSettings(runtimeState: runtimeStateProps, next: Partial<Extr
 
   const prev = runtimeState.config
   runtimeState.config = merged
+
+  configEvents.emit('changed', merged, prev)
 
   pushSettingsToRenderer(runtimeState)
 

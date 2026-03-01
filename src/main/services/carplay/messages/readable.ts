@@ -110,7 +110,7 @@ export class BluetoothPairedList extends Message {
 
   constructor(header: MessageHeader, data: Buffer) {
     super(header)
-    this.data = data.toString('ascii')
+    this.data = data.toString('utf8').replace(/\0+$/g, '')
   }
 }
 

@@ -90,16 +90,9 @@ export const audioSchema: SettingsNode<ExtraConfig> = {
       path: 'micType',
       displayValue: true,
       options: [
-        {
-          label: 'OS default',
-          labelKey: 'settings.osDefault',
-          value: 'os'
-        },
-        {
-          label: 'BOX',
-          labelKey: 'settings.box',
-          value: 'box'
-        }
+        { label: 'Car mic', labelKey: 'settings.micCar', value: 0 },
+        { label: 'Dongle mic', labelKey: 'settings.micDongle', value: 1 },
+        { label: 'Phone mic', labelKey: 'settings.micPhone', value: 2 }
       ],
       page: {
         title: 'Microphone',

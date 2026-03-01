@@ -135,7 +135,7 @@ declare global {
 
         sendTouch(x: number, y: number, action: number): void
         sendMultiTouch(points: MultiTouchPoint[]): void
-        sendKeyCommand(key: string): void
+        sendCommand(key: string): void
 
         onEvent(callback: (event: unknown, ...args: unknown[]) => void): void
         offEvent(callback: (event: unknown, ...args: unknown[]) => void): void

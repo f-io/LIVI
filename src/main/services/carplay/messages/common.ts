@@ -34,6 +34,7 @@ export enum CommandMapping {
   boxMic = 15, // 'Box Microphone'
   enableNightMode = 16,
   disableNightMode = 17,
+  phoneMic = 21, // 'Phone Microphone'
   audioTransferOn = 22, // Phone streams audio directly to car system, not dongle
   audioTransferOff = 23, // DEFAULT - Phone streams audio to dongle
   wifi24g = 24, // '2.4G Wifi'

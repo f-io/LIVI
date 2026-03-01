@@ -1,7 +1,13 @@
 import { create } from 'zustand'
 import { ExtraConfig } from '../../../main/Globals'
+import type { MicType } from '../../../main/services/carplay/messages'
 
 type VolumeStreamKey = 'music' | 'nav' | 'siri' | 'call'
+
+export type BluetoothPairedDevice = {
+  mac: string
+  name: string
+}
 
 type CarplaySettingsApi = {
   get?: () => Promise<ExtraConfig>
@@ -15,6 +21,8 @@ type CarplayUsbApi = {
 
 type CarplayIpcApi = {
   setVolume?: (stream: VolumeStreamKey, volume: number) => void
+  setBluetoothPairedList?: (listText: string) => Promise<{ ok: boolean }>
+  sendCommand?: (command: string) => void
 }
 
 type CarplayApi = {
@@ -38,6 +46,30 @@ const sendCarplayVolume = (stream: VolumeStreamKey, volume: number) => {
     api.ipc.setVolume(stream, clamp01(volume))
   } catch (err) {
     console.warn('carplay-set-volume IPC failed', err)
+  }
+}
+
+const sendCarplayMicType = (micType: MicType) => {
+  const api = getCarplayApi()
+  if (!api?.ipc?.sendCommand) return
+
+  let cmd: string
+
+  switch (micType) {
+    case 1:
+      cmd = 'boxMic'
+      break
+    case 2:
+      cmd = 'phoneMic'
+      break
+    default:
+      cmd = 'mic'
+  }
+
+  try {
+    api.ipc.sendCommand(cmd)
+  } catch (err) {
+    console.warn('carplay-set-mic IPC failed', err)
   }
 }
 
@@ -139,6 +171,22 @@ export interface CarplayStore {
   setSiriVolume: (volume: number) => void
   setCallVolume: (volume: number) => void
 
+  // Bluetooth paired list
+  bluetoothPairedListRaw: string
+  bluetoothPairedDevices: BluetoothPairedDevice[]
+  setBluetoothPairedList: (raw: string) => void
+
+  // Local edits (pending apply)
+  bluetoothPairedDirty: boolean
+  bluetoothPairedDeleteNeedsRestart: boolean
+  applyBluetoothPairedList: () => Promise<boolean>
+
+  // Local editing (delete)
+  removeBluetoothPairedDeviceLocal: (mac: string) => void
+
+  // Reconstruct text payload to send back to dongle
+  buildBluetoothPairedListText: () => string
+
   // Reset volatile info
   resetInfo: () => void
 }
@@ -146,6 +194,31 @@ export interface CarplayStore {
 export const useCarplayStore = create<CarplayStore>((set, get) => {
   // Prevent double init (strict mode / hot reload)
   let didInit = false
+
+  const parseBluetoothPairedList = (raw: string): BluetoothPairedDevice[] => {
+    const clean = String(raw ?? '').replace(/\0+$/g, '')
+    const lines = clean.split('\n')
+
+    const out: BluetoothPairedDevice[] = []
+
+    for (const lineRaw of lines) {
+      const line = String(lineRaw).replace(/\0+$/g, '').replace(/\r$/, '').trim()
+      if (!line) continue
+
+      const mac = line.slice(0, 17)
+      if (mac.length !== 17 || !mac.includes(':')) continue
+
+      const name = line.slice(17).trim()
+      out.push({ mac, name })
+    }
+
+    return out
+  }
+
+  const buildBluetoothPairedListFromDevices = (devices: BluetoothPairedDevice[]): string => {
+    const lines = devices.map((d) => `${d.mac}${String(d.name ?? '').trim()}`)
+    return lines.join('\n') + '\n'
+  }
 
   const refreshFromMain = async () => {
     const s = await getSettingsIpc()
@@ -169,6 +242,81 @@ export const useCarplayStore = create<CarplayStore>((set, get) => {
 
   return {
     settings: null,
+
+    bluetoothPairedListRaw: '',
+    bluetoothPairedDevices: [],
+    bluetoothPairedDirty: false,
+    bluetoothPairedDeleteNeedsRestart: false,
+
+    setBluetoothPairedList: (raw) => {
+      const clean = String(raw ?? '').replace(/\0+$/g, '')
+      set({
+        bluetoothPairedListRaw: clean,
+        bluetoothPairedDevices: parseBluetoothPairedList(clean),
+        bluetoothPairedDirty: false,
+        bluetoothPairedDeleteNeedsRestart: false
+      })
+    },
+
+    removeBluetoothPairedDeviceLocal: (mac) =>
+      set((s) => {
+        const next = s.bluetoothPairedDevices.filter((d) => d.mac !== mac)
+
+        const boxInfo = get().boxInfo
+        const connected =
+          boxInfo &&
+          typeof boxInfo === 'object' &&
+          'btMacAddr' in boxInfo &&
+          typeof (boxInfo as { btMacAddr?: unknown }).btMacAddr === 'string'
+            ? (boxInfo as { btMacAddr: string }).btMacAddr
+            : undefined
+        const connectedMac = typeof connected === 'string' ? connected.trim().toUpperCase() : null
+        const deletedMac = String(mac).trim().toUpperCase()
+
+        const deletedIsConnected = connectedMac != null && deletedMac === connectedMac
+
+        return {
+          bluetoothPairedDevices: next,
+          bluetoothPairedListRaw: buildBluetoothPairedListFromDevices(next),
+          bluetoothPairedDirty: true,
+          bluetoothPairedDeleteNeedsRestart:
+            s.bluetoothPairedDeleteNeedsRestart || deletedIsConnected
+        }
+      }),
+
+    buildBluetoothPairedListText: () => {
+      const { bluetoothPairedDevices } = get()
+      return buildBluetoothPairedListFromDevices(bluetoothPairedDevices)
+    },
+
+    applyBluetoothPairedList: async () => {
+      const api = getCarplayApi()
+      if (!api?.ipc?.setBluetoothPairedList) return false
+
+      try {
+        const text = get().buildBluetoothPairedListText()
+        const res = await api.ipc.setBluetoothPairedList(text)
+        const ok = Boolean(res?.ok)
+
+        if (ok) {
+          const needsRestart = get().bluetoothPairedDeleteNeedsRestart
+
+          set({
+            bluetoothPairedDirty: false,
+            bluetoothPairedDeleteNeedsRestart: false
+          })
+
+          if (needsRestart) {
+            await api.usb?.forceReset?.()
+          }
+        }
+
+        return ok
+      } catch (err) {
+        console.warn('[BT] applyBluetoothPairedList failed', err)
+        return false
+      }
+    },
 
     restartBaseline: null,
     markRestartBaseline: () => {
@@ -231,6 +379,10 @@ export const useCarplayStore = create<CarplayStore>((set, get) => {
         sendCarplayVolume('nav', derived.navVolume)
         sendCarplayVolume('siri', derived.siriVolume)
         sendCarplayVolume('call', derived.callVolume)
+
+        if (patch.micType !== undefined) {
+          sendCarplayMicType(patch.micType as MicType)
+        }
       }
 
       // Persist patch in main

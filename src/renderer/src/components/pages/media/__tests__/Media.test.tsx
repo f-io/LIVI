@@ -33,7 +33,7 @@ describe('Media component', () => {
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
     window.carplay = {
-      ipc: { sendKeyCommand: jest.fn() },
+      ipc: { sendCommand: jest.fn() },
       usb: {
         listenForEvents: jest.fn(),
         unlistenForEvents: jest.fn()
@@ -50,7 +50,7 @@ describe('Media component', () => {
     // @ts-ignore
     window.carplay = {
       ipc: {
-        sendKeyCommand: jest.fn()
+        sendCommand: jest.fn()
       },
       usb: {
         listenForEvents: jest.fn(),
@@ -77,7 +77,7 @@ describe('Media component', () => {
 
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    expect(window.carplay.ipc.sendKeyCommand).toHaveBeenCalledWith('play')
+    expect(window.carplay.ipc.sendCommand).toHaveBeenCalledWith('play')
 
     // advance timers for reset
     await act(async () => {
@@ -92,7 +92,7 @@ describe('Media component', () => {
 
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    expect(window.carplay.ipc.sendKeyCommand).toHaveBeenCalledWith('pause')
+    expect(window.carplay.ipc.sendCommand).toHaveBeenCalledWith('pause')
   })
 
   it('sends next and prev commands', async () => {
@@ -105,10 +105,10 @@ describe('Media component', () => {
 
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    expect(window.carplay.ipc.sendKeyCommand).toHaveBeenCalledWith('next')
+    expect(window.carplay.ipc.sendCommand).toHaveBeenCalledWith('next')
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    expect(window.carplay.ipc.sendKeyCommand).toHaveBeenCalledWith('prev')
+    expect(window.carplay.ipc.sendCommand).toHaveBeenCalledWith('prev')
   })
 
   it('cleans up USB listeners on unmount', () => {

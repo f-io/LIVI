@@ -3,6 +3,7 @@ import { StackItem } from './stackItem'
 import { SettingsItemRow } from './settingsItemRow'
 import { SettingsFieldControl } from './SettingsFieldControl'
 import { PosSensitiveList } from './posSensitiveList/PosSensitiveList'
+import { BtDeviceList } from './btDeviceList/BtDeviceList'
 import { SettingsNode } from '../../../../routes'
 import { getValueByPath } from '../utils'
 import { ExtraConfig } from '../../../../../../main/Globals'
@@ -22,6 +23,10 @@ export const SettingsFieldRow = <T, K>({ node, value, state, onChange, onClick }
 
   if (node.type === 'posList') {
     return <PosSensitiveList node={node} value={value} onChange={onChange} />
+  }
+
+  if (node.type === 'btDeviceList') {
+    return <BtDeviceList />
   }
 
   if (onClick) {

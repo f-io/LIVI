@@ -28,14 +28,26 @@ export function SettingsPage() {
   const { state, handleFieldChange, needsRestart, restart, requestRestart } =
     useSmartSettingsFromSchema(settingsSchema, settings)
 
+  const btDirty = useCarplayStore((s) => s.bluetoothPairedDirty)
+  const applyBtList = useCarplayStore((s) => s.applyBluetoothPairedList)
+
   const handleRestart = async () => {
-    await restart()
+    if (!isDongleConnected) return
+
+    if (needsRestart) {
+      await restart()
+      return
+    }
+
+    if (btDirty && typeof applyBtList === 'function') {
+      await applyBtList()
+    }
   }
 
   if (!node) return null
 
   const title = node.labelKey ? t(node.labelKey) : node.label
-  const showRestart = Boolean(needsRestart) && Boolean(isDongleConnected)
+  const showRestart = Boolean(isDongleConnected) && (Boolean(needsRestart) || Boolean(btDirty))
 
   if ('path' in node && node.page) {
     return (

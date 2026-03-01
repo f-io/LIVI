@@ -24,19 +24,19 @@ export const mediaControlOps = ({
     flash(playBtnRef)
     setOverride(!uiPlaying)
 
-    window.carplay.ipc.sendKeyCommand(!uiPlaying ? MediaEventType.PLAY : MediaEventType.PAUSE)
+    window.carplay.ipc.sendCommand(!uiPlaying ? MediaEventType.PLAY : MediaEventType.PAUSE)
   }
 
   const handlePrev = () => {
     onBump(MediaEventType.PREV)
     flash(prevBtnRef)
     allowBackwardOnceRef.current = true
-    window.carplay.ipc.sendKeyCommand(MediaEventType.PREV)
+    window.carplay.ipc.sendCommand(MediaEventType.PREV)
   }
   const handleNext = () => {
     onBump(MediaEventType.NEXT)
     flash(nextBtnRef)
-    window.carplay.ipc.sendKeyCommand(MediaEventType.NEXT)
+    window.carplay.ipc.sendCommand(MediaEventType.NEXT)
   }
 
   return {

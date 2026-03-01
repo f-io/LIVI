@@ -105,6 +105,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const setDeviceInfo = useCarplayStore((s) => s.setDeviceInfo)
   const setAudioInfo = useCarplayStore((s) => s.setAudioInfo)
   const setPcmData = useCarplayStore((s) => s.setPcmData)
+  const setBluetoothPairedList = useCarplayStore((s) => s.setBluetoothPairedList)
 
   useEffect(() => {
     if (pathname !== '/') return
@@ -645,6 +646,19 @@ const CarplayComponent: React.FC<CarplayProps> = ({
       const t = typeof d.type === 'string' ? d.type : undefined
 
       switch (t) {
+        case 'bluetoothPairedList': {
+          const raw =
+            typeof d.payload === 'string'
+              ? d.payload
+              : typeof (d.payload as { data?: unknown } | undefined)?.data === 'string'
+                ? ((d.payload as { data?: string }).data as string)
+                : typeof d.data === 'string'
+                  ? (d.data as string)
+                  : ''
+
+          setBluetoothPairedList(raw)
+          break
+        }
         case 'resolution': {
           const payload = d.payload as { width?: number; height?: number } | undefined
           if (payload && typeof payload.width === 'number' && typeof payload.height === 'number') {
@@ -838,6 +852,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     applyAttention,
     rendererError,
     setAudioInfo,
+    setBluetoothPairedList,
     settings.mapsEnabled
   ])
 
@@ -854,7 +869,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     if (!commandCounter) return
     if (!isStreaming) return
 
-    window.carplay.ipc.sendKeyCommand(command)
+    window.carplay.ipc.sendCommand(command)
   }, [command, commandCounter, isStreaming])
 
   // Cleanup

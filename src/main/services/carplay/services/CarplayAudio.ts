@@ -661,8 +661,10 @@ export class CarplayAudio {
       }
 
       if (cmd === AudioCommand.AudioSiriStart || cmd === AudioCommand.AudioPhonecallStart) {
-        const cfg = this.getConfig()
-        if (cfg.audioTransferMode) return
+        const cfg = this.getConfig() as ExtraConfig & {
+          micType?: number
+          audioTransferMode?: boolean
+        }
 
         if (cmd === AudioCommand.AudioSiriStart) {
           this.siriActive = true
@@ -680,6 +682,11 @@ export class CarplayAudio {
         this.musicFade.target = 1
         this.musicFade.remainingSamples = 0
         this.musicGateMuted = true
+
+        if (cfg.audioTransferMode || cfg.micType !== 0) {
+          this._mic?.stop()
+          return
+        }
 
         if (!this._mic) {
           this._mic = new Microphone()

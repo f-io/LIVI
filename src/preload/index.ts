@@ -112,13 +112,15 @@ const api = {
     start: (): Promise<void> => ipcRenderer.invoke('carplay-start'),
     stop: (): Promise<void> => ipcRenderer.invoke('carplay-stop'),
     sendFrame: (): Promise<void> => ipcRenderer.invoke('carplay-sendframe'),
+    setBluetoothPairedList: (listText: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('carplay-bt-pairedlist-set', listText),
     dongleFirmware: (action: 'check' | 'download' | 'upload' | 'status'): Promise<unknown> =>
       ipcRenderer.invoke('dongle-fw', { action }),
     sendTouch: (x: number, y: number, action: number): void =>
       ipcRenderer.send('carplay-touch', { x, y, action }),
     sendMultiTouch: (points: MultiTouchPoint[]): void =>
       ipcRenderer.send('carplay-multi-touch', points),
-    sendKeyCommand: (key: string): void => ipcRenderer.send('carplay-key-command', key),
+    sendCommand: (key: string): void => ipcRenderer.send('carplay-command', key),
     onEvent: (callback: ApiCallback): void => {
       ipcRenderer.on('carplay-event', callback)
     },

@@ -3,6 +3,7 @@ import { WebUSBDevice } from 'usb'
 import {
   Plugged,
   Unplugged,
+  BluetoothPairedList,
   VideoData,
   AudioData,
   MetaData,
@@ -45,6 +46,7 @@ import type { NavLocale } from './utils/translateNavigation'
 import { asDomUSBDevice } from './utils/asDomUSBDevice'
 import { CarplayAudio, LogicalStreamKey } from './CarplayAudio'
 import { FirmwareUpdateService, FirmwareCheckResult } from './FirmwareUpdateService'
+import { configEvents } from '@main/ipc/utils'
 
 let dongleConnected = false
 
@@ -129,8 +131,22 @@ export class CarplayService {
 
   private audio: CarplayAudio
 
+  private readonly onConfigChanged = (next: ExtraConfig) => {
+    if (this.shuttingDown) return
+    this.config = { ...this.config, ...next }
+  }
+
+  private subscribeConfigEvents(): void {
+    configEvents.on('changed', this.onConfigChanged)
+  }
+
+  private unsubscribeConfigEvents(): void {
+    configEvents.off('changed', this.onConfigChanged)
+  }
+
   public beginShutdown(): void {
     this.shuttingDown = true
+    this.unsubscribeConfigEvents()
   }
 
   constructor() {
@@ -166,6 +182,14 @@ export class CarplayService {
       }
 
       if (!this.webContents) return
+
+      if (msg instanceof BluetoothPairedList) {
+        this.webContents.send('carplay-event', {
+          type: 'bluetoothPairedList',
+          payload: msg.data
+        })
+        return
+      }
 
       if (msg instanceof Plugged) {
         this.clearTimeouts()
@@ -396,6 +420,12 @@ export class CarplayService {
     ipcMain.handle('carplay-stop', async () => this.stop())
     ipcMain.handle('carplay-sendframe', async () => this.driver.send(new SendCommand('frame')))
 
+    ipcMain.handle('carplay-bt-pairedlist-set', async (_evt, listText: string) => {
+      if (!this.started) return { ok: false }
+      const ok = await this.driver.sendBluetoothPairedList(String(listText ?? ''))
+      return { ok }
+    })
+
     ipcMain.handle('carplay-upload-icons', async () => {
       if (!this.started || !this.webUsbDevice) {
         throw new Error('[CarplayService] CarPlay is not started or dongle not connected')
@@ -466,7 +496,7 @@ export class CarplayService {
       }
     })
 
-    ipcMain.on('carplay-key-command', (_evt, command) => {
+    ipcMain.on('carplay-command', (_evt, command) => {
       this.driver.send(new SendCommand(command))
     })
 
@@ -784,6 +814,7 @@ export class CarplayService {
     ipcMain.on('carplay-set-visualizer-enabled', (_evt, enabled: boolean) => {
       this.audio.setVisualizerEnabled(Boolean(enabled))
     })
+    this.subscribeConfigEvents()
   }
 
   private async reloadConfigFromDisk(): Promise<void> {
@@ -845,6 +876,10 @@ export class CarplayService {
 
   public attachRenderer(webContents: WebContents) {
     this.webContents = webContents
+  }
+
+  public applyConfigPatch(patch: Partial<ExtraConfig>): void {
+    this.config = { ...this.config, ...patch }
   }
 
   private emitDongleInfoIfChanged() {

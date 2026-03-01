@@ -41,6 +41,21 @@ export class SendCommand extends SendableMessageWithPayload {
   }
 }
 
+export class SendBluetoothPairedList extends SendableMessageWithPayload {
+  type = MessageType.BluetoothPairedList
+  private readonly payload: Buffer
+
+  constructor(listText: string) {
+    super()
+    const withNul = listText.endsWith('\0') ? listText : listText + '\0'
+    this.payload = Buffer.from(withNul, 'utf8')
+  }
+
+  getPayload(): Buffer {
+    return this.payload
+  }
+}
+
 export enum TouchAction {
   Down = 14,
   Move = 15,

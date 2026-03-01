@@ -4,7 +4,7 @@ declare global {
   interface Window {
     carplay: {
       ipc: {
-        sendKeyCommand: (cmd: string) => void
+        sendCommand: (cmd: string) => void
       }
       usb: {
         listenForEvents: (...args: any[]) => void

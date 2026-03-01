@@ -16,6 +16,21 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
       path: '',
       children: [
         {
+          type: 'route',
+          route: 'deviceList',
+          label: 'Device List',
+          labelKey: 'settings.deviceList',
+          path: '',
+          children: [
+            {
+              type: 'btDeviceList',
+              label: 'Device List',
+              labelKey: 'settings.deviceList',
+              path: 'bluetoothPairedDevices'
+            }
+          ]
+        },
+        {
           type: 'string',
           label: 'Car Name',
           labelKey: 'settings.carName',

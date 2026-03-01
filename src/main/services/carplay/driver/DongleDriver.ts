@@ -1,5 +1,6 @@
 import EventEmitter from 'events'
 import { MessageHeader, HeaderBuildError } from '../messages/common.js'
+import type { CommandValue } from '../messages/common.js'
 import {
   PhoneType,
   BoxInfo,
@@ -19,6 +20,7 @@ import {
   SendIconConfig,
   SendCommand,
   SendString,
+  SendBluetoothPairedList,
   HeartBeat
 } from '../messages/sendable.js'
 
@@ -39,6 +41,12 @@ function readProp<T = unknown>(obj: unknown, key: string): T | undefined {
 export enum HandDriveType {
   LHD = 0,
   RHD = 1
+}
+
+export enum MicType {
+  CarMic = 0,
+  DongleMic = 1,
+  PhoneMic = 2
 }
 
 export enum AndroidWorkMode {
@@ -80,7 +88,7 @@ export type DongleConfig = {
   audioTransferMode: boolean
   wifiType: '2.4ghz' | '5ghz'
   wifiChannel: number
-  micType: 'box' | 'os'
+  micType: MicType
   phoneConfig: Partial<PhoneTypeConfigMap>
 }
 
@@ -108,7 +116,7 @@ export const DEFAULT_CONFIG: DongleConfig = {
   audioTransferMode: false,
   wifiType: '5ghz',
   wifiChannel: 36,
-  micType: 'os',
+  micType: MicType.PhoneMic,
   phoneConfig: {
     [PhoneType.CarPlay]: { frameInterval: 5000 },
     [PhoneType.AndroidAuto]: { frameInterval: null }
@@ -291,6 +299,11 @@ export class DongleDriver extends EventEmitter {
     }
   }
 
+  public sendBluetoothPairedList = async (listText: string): Promise<boolean> => {
+    console.log('[DongleDriver] TX BluetoothPairedList.data =', JSON.stringify(listText))
+    return this.send(new SendBluetoothPairedList(listText))
+  }
+
   private async readLoop() {
     if (this._readerActive) return
     this._readerActive = true
@@ -393,6 +406,13 @@ export class DongleDriver extends EventEmitter {
 
     const ui = (cfg.oemName ?? '').trim()
     const label = ui.length > 0 ? ui : cfg.carName
+    const micCmd: CommandValue =
+      cfg.micType === MicType.DongleMic
+        ? 'boxMic'
+        : cfg.micType === MicType.PhoneMic
+          ? 'phoneMic'
+          : 'mic'
+    console.log('[DongleDriver] micType=', cfg.micType, '=> micCmd=', micCmd)
 
     const messages: SendableMessage[] = [
       new SendString(label, FileAddress.BOX_NAME),
@@ -402,8 +422,8 @@ export class DongleDriver extends EventEmitter {
       new SendBoolean(cfg.nightMode, FileAddress.NIGHT_MODE),
       new SendNumber(cfg.hand, FileAddress.HAND_DRIVE_MODE),
       new SendNumber(cfg.androidWorkMode, FileAddress.ANDROID_WORK_MODE),
-      new SendCommand(cfg.micType === 'box' ? 'boxMic' : 'mic'),
       new SendCommand(cfg.audioTransferMode ? 'audioTransferOn' : 'audioTransferOff'),
+      new SendCommand(micCmd),
       new SendCommand(cfg.wifiType === '5ghz' ? 'wifi5g' : 'wifi24g'),
       new SendIconConfig({ oemName: cfg.oemName }),
       new SendBoxSettings(cfg),
