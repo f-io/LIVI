@@ -412,7 +412,6 @@ export class DongleDriver extends EventEmitter {
         : cfg.micType === MicType.PhoneMic
           ? 'phoneMic'
           : 'mic'
-    console.log('[DongleDriver] micType=', cfg.micType, '=> micCmd=', micCmd)
 
     const messages: SendableMessage[] = [
       new SendString(label, FileAddress.BOX_NAME),

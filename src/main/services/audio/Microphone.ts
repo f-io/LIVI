@@ -2,6 +2,7 @@ import { spawn, ChildProcessWithoutNullStreams, execSync } from 'child_process'
 import { EventEmitter } from 'events'
 import os from 'os'
 import fs from 'fs'
+import path from 'path'
 
 export default class Microphone extends EventEmitter {
   private process: ChildProcessWithoutNullStreams | null = null
@@ -60,15 +61,41 @@ export default class Microphone extends EventEmitter {
         '-q',
         '-'
       ]
+    } else if (os.platform() === 'win32') {
+      const ffmpegPath = Microphone.resolveFfmpegPath()
+      if (!ffmpegPath) {
+        console.error('[Microphone] ffmpeg not found (expected resources/bin/ffmpeg.exe)')
+        return
+      }
+
+      cmd = ffmpegPath
+
+      const micName = Microphone.resolveSysdefaultDevice(ffmpegPath)
+
+      args = [
+        '-hide_banner',
+        '-loglevel',
+        'warning',
+        '-nostdin',
+        '-f',
+        'dshow',
+        '-i',
+        `audio=${micName}`,
+        '-ac',
+        this.channels.toString(),
+        '-ar',
+        this.rate.toString(),
+        '-f',
+        's16le',
+        'pipe:1'
+      ]
     } else {
       console.error('[Microphone] Platform not supported for microphone recording')
       return
     }
 
-    console.debug('[Microphone] PATH =', env.PATH)
-    console.debug(`[Microphone] Spawning ${cmd} with args:`, args.join(' '))
-
-    this.process = spawn(cmd, args, { env, shell: false })
+    const spawnEnv = os.platform() === 'win32' ? process.env : env
+    this.process = spawn(cmd, args, { env: spawnEnv, shell: false })
 
     const proc = this.process
     if (!proc) {
@@ -112,6 +139,12 @@ export default class Microphone extends EventEmitter {
     this.process = null
   }
 
+  // Windows: resolve bundled ffmpeg
+  private static resolveFfmpegPath(): string | null {
+    const bundled = path.join(process.resourcesPath, 'bin', 'ffmpeg.exe')
+    return fs.existsSync(bundled) ? bundled : null
+  }
+
   // macOS: find SoX/rec
   private static resolveRecPath(): string | null {
     const fromEnv = process.env.SOX_REC_PATH
@@ -141,8 +174,10 @@ export default class Microphone extends EventEmitter {
     return Array.from(set).join(':')
   }
 
-  static resolveSysdefaultDevice(): string {
-    if (os.platform() === 'linux') {
+  static resolveSysdefaultDevice(ffmpegPath?: string): string {
+    const platform = os.platform()
+
+    if (platform === 'linux') {
       try {
         const output = execSync('arecord -L', { encoding: 'utf8' })
         const lines = output.split('\n')
@@ -156,11 +191,40 @@ export default class Microphone extends EventEmitter {
         console.warn('[Microphone] Failed to resolve sysdefault device', e)
         return 'plughw:0,0'
       }
-    } else if (os.platform() === 'darwin') {
-      return 'default'
-    } else {
-      return 'unsupported'
     }
+
+    if (platform === 'darwin') return 'default'
+
+    if (platform === 'win32') {
+      if (!ffmpegPath) return 'default'
+
+      try {
+        const out = execSync(
+          `cmd.exe /d /s /c ""${ffmpegPath}" -hide_banner -loglevel info -f dshow -list_devices true -i dummy 2>&1"`,
+          { encoding: 'utf8', windowsHide: true }
+        )
+
+        const lines = out.split(/\r?\n/)
+
+        for (let i = 0; i < lines.length; i++) {
+          const m = lines[i].match(/"\s*([^"]+?)\s*"\s*\(audio\)/i)
+          if (!m?.[1]) continue
+
+          const friendly = m[1]
+          const next = lines[i + 1] ?? ''
+          const a = next.match(/Alternative name\s+"([^"]+)"/i)
+          const alt = a?.[1]
+
+          return alt ?? friendly
+        }
+      } catch (e) {
+        console.warn('[Microphone] Failed to enumerate dshow devices:', e)
+      }
+
+      return 'default'
+    }
+
+    return 'unsupported'
   }
 
   static getSysdefaultPrettyName(): string {
@@ -178,6 +242,8 @@ export default class Microphone extends EventEmitter {
       }
     } else if (os.platform() === 'darwin') {
       return 'system default'
+    } else if (os.platform() === 'win32') {
+      return 'system default (DirectShow best-effort)'
     } else {
       return 'not available'
     }
