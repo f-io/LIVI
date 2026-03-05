@@ -74,3 +74,6 @@ extraResources:
       - ffplay.exe
       - ffmpeg.exe
       - '*.dll'
+
+toolsets:
+  appimage: '1.0.2'
