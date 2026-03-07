@@ -954,6 +954,7 @@ export class CarplayService {
         this.lastVideoWidth = undefined
         this.lastVideoHeight = undefined
 
+        this.resetMediaSnapshot('session-start')
         this.resetNavigationSnapshot('session-start')
 
         const device = usb
@@ -1046,6 +1047,7 @@ export class CarplayService {
       this.audio.resetForSessionStop()
 
       this.started = false
+      this.resetMediaSnapshot('session-stop')
       this.resetNavigationSnapshot('session-stop')
 
       this.dongleFwVersion = undefined
@@ -1060,6 +1062,23 @@ export class CarplayService {
     })
 
     return this.stopPromise
+  }
+
+  private resetMediaSnapshot(reason: string): void {
+    try {
+      const file = path.join(app.getPath('userData'), 'mediaData.json')
+
+      const out = {
+        timestamp: new Date().toISOString(),
+        payload: DEFAULT_MEDIA_DATA_RESPONSE.payload
+      }
+
+      fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
+    } catch (e) {
+      console.warn('[CarplayService] resetMediaSnapshot failed (ignored)', reason, e)
+    }
+
+    this.webContents?.send('carplay-event', { type: 'media-reset', reason })
   }
 
   private resetNavigationSnapshot(reason: string): void {
