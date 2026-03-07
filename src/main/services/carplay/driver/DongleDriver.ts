@@ -542,7 +542,12 @@ export class DongleDriver extends EventEmitter {
             break
           }
 
-          console.error('[DongleDriver] readLoop error', err)
+          if (err instanceof HeaderBuildError) {
+            console.warn('[DongleDriver] HeaderBuildError', err.message)
+          } else {
+            console.error('[DongleDriver] readLoop error', err)
+          }
+
           this.errorCount++
         }
       }

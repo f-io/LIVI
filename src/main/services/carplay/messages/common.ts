@@ -230,9 +230,16 @@ export class MessageHeader {
           // Known vendor-specific opaque blob
           return null
         default: {
+          const head = data.subarray(0, Math.min(64, data.length))
           console.warn(
-            `[CARPLAY][MSG] Unknown type=0x${type.toString(16)} (${type}) len=${this.length} dataLen=${data.length}`
+            `[CARPLAY][MSG] Unknown type=0x${type.toString(16)} (${type}) len=${this.length} dataLen=${data.length} head=${head.toString('hex')}`
           )
+          const text = data.toString('utf8').replace(/\0+$/g, '').trim()
+          if (text.length > 0) {
+            console.warn(
+              `[CARPLAY][MSG] Unknown type=0x${type.toString(16)} (${type}) utf8=${JSON.stringify(text.slice(0, 200))}`
+            )
+          }
           return null
         }
       }
@@ -244,8 +251,12 @@ export class MessageHeader {
           return null
         case MessageType.UiBringToForeground:
           return null
-        default:
+        default: {
+          console.warn(
+            `[CARPLAY][MSG] Unknown type without payload=0x${type.toString(16)} (${type}) len=${this.length}`
+          )
           return null
+        }
       }
     }
   }
