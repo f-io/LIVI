@@ -115,11 +115,21 @@ runs:
         if [ -n "${MAIN_COVERAGE}" ]; then
           MAIN_COVERAGE_COLOR="$(coverage_color "${MAIN_COVERAGE}")"
           echo "{\"schemaVersion\":1,\"label\":\"coverage main\",\"message\":\"${MAIN_COVERAGE}\",\"color\":\"${MAIN_COVERAGE_COLOR}\"}" > ".github/badges/${BRANCH_NAME}-coverage-main.json"
+
+          # Fallback alias for README links that target main before first main coverage publish.
+          if [ "${BRANCH_NAME}" = "dev" ] && [ ! -f ".github/badges/main-coverage-main.json" ]; then
+            cp ".github/badges/${BRANCH_NAME}-coverage-main.json" ".github/badges/main-coverage-main.json"
+          fi
         fi
 
         if [ -n "${RENDERER_COVERAGE}" ]; then
           RENDERER_COVERAGE_COLOR="$(coverage_color "${RENDERER_COVERAGE}")"
           echo "{\"schemaVersion\":1,\"label\":\"coverage renderer\",\"message\":\"${RENDERER_COVERAGE}\",\"color\":\"${RENDERER_COVERAGE_COLOR}\"}" > ".github/badges/${BRANCH_NAME}-coverage-renderer.json"
+
+          # Fallback alias for README links that target main before first main coverage publish.
+          if [ "${BRANCH_NAME}" = "dev" ] && [ ! -f ".github/badges/main-coverage-renderer.json" ]; then
+            cp ".github/badges/${BRANCH_NAME}-coverage-renderer.json" ".github/badges/main-coverage-renderer.json"
+          fi
         fi
 
         git add .github/badges/${BRANCH_NAME}-*.json
