@@ -26,18 +26,11 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Fetch latest Node.js 24.x
-      shell: bash
-      run: |
-        set -euo pipefail
-        curl -s https://nodejs.org/dist/index.json \
-          | jq -r "[.[] | select(.version | test(\"^v${{ inputs.node-version }}\\\\.\\\\d+\\\\.\\\\d+$\"))][0].version" \
-          > .nvmrc
-
     - name: Setup latest Node.js 24.x
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6
       with:
-        node-version-file: .nvmrc
+        node-version: ${{ inputs.node-version }}
+        check-latest: true
 
     - name: Setup pnpm via corepack
       shell: bash

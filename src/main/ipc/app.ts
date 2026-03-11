@@ -1,16 +1,17 @@
-import { app, ipcMain } from 'electron'
+import { app } from 'electron'
 import { getMainWindow } from '@main/window/createWindow'
 import { isMacPlatform } from '@main/utils'
 import { runtimeStateProps, ServicesProps } from '@main/types'
 import { restoreKioskAfterWmExit } from '@main/window/utils'
 import { spawn } from 'child_process'
+import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
 
 export function registerAppIpc(runtimeState: runtimeStateProps, services: ServicesProps) {
   const mainWindow = getMainWindow()
   const { usbService } = services
   const isMac = isMacPlatform()
 
-  ipcMain.handle('quit', () =>
+  registerIpcHandle('quit', () =>
     isMac
       ? mainWindow?.isFullScreen()
         ? (() => {
@@ -23,13 +24,13 @@ export function registerAppIpc(runtimeState: runtimeStateProps, services: Servic
   )
 
   // App Quit
-  ipcMain.handle('app:quitApp', () => {
+  registerIpcHandle('app:quitApp', () => {
     if (runtimeState.isQuitting) return
     app.quit()
   })
 
   // App Restart
-  ipcMain.handle('app:restartApp', async () => {
+  registerIpcHandle('app:restartApp', async () => {
     if (runtimeState.isQuitting) return
     runtimeState.isQuitting = true
 
@@ -65,7 +66,7 @@ export function registerAppIpc(runtimeState: runtimeStateProps, services: Servic
   })
 
   // User activity (touch/click)
-  ipcMain.on('app:user-activity', () => {
+  registerIpcOn('app:user-activity', () => {
     restoreKioskAfterWmExit(runtimeState)
   })
 }

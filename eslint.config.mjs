@@ -68,6 +68,15 @@ export default tseslint.config(
     rules: { '@typescript-eslint/no-unused-vars': 'off' }
   },
 
+  // Tests: allow pragmatic mocking patterns
+  {
+    files: ['**/*.test.{ts,tsx,js,jsx}', '**/__tests__/**/*.{ts,tsx,js,jsx}'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+      '@typescript-eslint/no-explicit-any': 'off'
+    }
+  },
+
   // Prettier last
   prettier
 )

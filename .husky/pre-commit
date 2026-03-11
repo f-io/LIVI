@@ -22,8 +22,13 @@ echo "🧪 Running related Jest tests on:"
 printf '%s' "$nul_list" | tr '\0' '\n' | sed 's/^/   • /'
 
 printf '%s' "$nul_list" \
+| xargs -0 npx jest --config jest.config.js \
+    --watchman=false --findRelatedTests --runInBand --bail --verbose --passWithNoTests \
+|| { echo "❌ Main-process tests failed, aborting commit."; exit 1; }
+
+printf '%s' "$nul_list" \
 | xargs -0 npx jest --config jest.web.config.js \
-    --findRelatedTests --runInBand --bail --verbose --passWithNoTests \
-|| { echo "❌ Tests failed, aborting commit."; exit 1; }
+    --watchman=false --findRelatedTests --runInBand --bail --verbose --passWithNoTests \
+|| { echo "❌ Renderer tests failed, aborting commit."; exit 1; }
 
 echo "✅ All checks passed!"

@@ -118,7 +118,7 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/heads/{0}', github.event.inputs.branch) || github.event.workflow_run.head_sha }}
@@ -127,7 +127,7 @@ jobs:
       # Caches
       # ----------------------------
       - name: Cache pnpm store
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .pnpm-store
           key: pnpm-store-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -136,7 +136,7 @@ jobs:
 
       - name: Cache build caches (vite/esbuild)
         if: ${{ matrix.platform != 'win-x64' }}
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             node_modules/.vite
@@ -146,7 +146,7 @@ jobs:
             build-cache-${{ runner.os }}-${{ matrix.platform }}-
 
       - name: Cache Electron downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .cache/electron
           key: electron-cache-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('package.json', 'pnpm-lock.yaml') }}
@@ -154,7 +154,7 @@ jobs:
             electron-cache-${{ runner.os }}-${{ matrix.platform }}-
 
       - name: Cache electron-builder binaries
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .cache/electron-builder
           key: eb-cache-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('package.json', 'pnpm-lock.yaml', 'electron-builder.yml') }}
@@ -200,6 +200,25 @@ jobs:
         if: matrix.platform == 'x86_64'
         run: pnpm install --frozen-lockfile
 
+      - name: Collect test coverage [x86_64]
+        id: coverage
+        if: matrix.platform == 'x86_64' && (env.BUILD_BRANCH == 'main' || env.BUILD_BRANCH == 'dev')
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm run coverage
+
+          read_coverage_pct() {
+            node -e 'const fs=require("fs");const p=process.argv[1];try{const j=JSON.parse(fs.readFileSync(p,"utf8"));const pct=Number(j?.total?.lines?.pct);process.stdout.write(Number.isFinite(pct)?pct.toFixed(2)+"%":"0.00%")}catch{process.stdout.write("0.00%")}' "$1"
+          }
+
+          MAIN_COVERAGE=$(read_coverage_pct "coverage/main/coverage-summary.json")
+          RENDERER_COVERAGE=$(read_coverage_pct "coverage/renderer/coverage-summary.json")
+
+          echo "main=$MAIN_COVERAGE" >> "$GITHUB_OUTPUT"
+          echo "renderer=$RENDERER_COVERAGE" >> "$GITHUB_OUTPUT"
+          echo "Coverage main: $MAIN_COVERAGE"
+          echo "Coverage renderer: $RENDERER_COVERAGE"
       - name: Build for x86_64 (native Ubuntu)
         if: matrix.platform == 'x86_64'
         shell: bash
@@ -366,7 +385,7 @@ jobs:
       # Upload artifacts
       # ----------------------------
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: LIVI-${{ steps.pkg.outputs.version }}-${{ matrix.platform }}.${{ matrix.artifact_ext }}
           path: |
@@ -381,5 +400,7 @@ jobs:
           version: ${{ steps.pkg.outputs.version }}
           node: ${{ steps.pnpm.outputs.node }}
           pnpm: ${{ steps.pnpm.outputs.pnpm }}
+          coverage-main: ${{ steps.coverage.outputs.main }}
+          coverage-renderer: ${{ steps.coverage.outputs.renderer }}
           repo: ${{ github.repository }}
           token: ${{ secrets.GITHUB_TOKEN }}

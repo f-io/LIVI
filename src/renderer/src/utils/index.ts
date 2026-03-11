@@ -1,3 +1,3 @@
 export * from './msToClock'
 export * from './cameraDetection'
-export * from "./clamp"
+export * from './clamp'

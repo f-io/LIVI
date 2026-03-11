@@ -1,4 +1,4 @@
-import { app, ipcMain, WebContents } from 'electron'
+import { app, WebContents } from 'electron'
 import { WebUSBDevice } from 'usb'
 import {
   Plugged,
@@ -50,6 +50,7 @@ import { asDomUSBDevice } from './utils/asDomUSBDevice'
 import { ProjectionAudio, LogicalStreamKey } from './ProjectionAudio'
 import { FirmwareUpdateService, FirmwareCheckResult } from './FirmwareUpdateService'
 import { configEvents } from '@main/ipc/utils'
+import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
 
 let dongleConnected = false
 
@@ -448,25 +449,27 @@ export class ProjectionService {
       this.webContents?.send('projection-event', { type: 'failure' })
     })
 
-    // TODO all ipcMain should me moved to a separate file (registerIpc) and imported, this is just for quick iteration
-    ipcMain.handle('projection-start', async () => this.start())
-    ipcMain.handle('projection-stop', async () => this.stop())
-    ipcMain.handle('projection-sendframe', async () => this.driver.send(new SendCommand('frame')))
+    // TODO move IPC registration to dedicated IPC modules instead of service constructor
+    registerIpcHandle('projection-start', async () => this.start())
+    registerIpcHandle('projection-stop', async () => this.stop())
+    registerIpcHandle('projection-sendframe', async () =>
+      this.driver.send(new SendCommand('frame'))
+    )
 
-    ipcMain.handle('projection-bt-pairedlist-set', async (_evt, listText: string) => {
+    registerIpcHandle('projection-bt-pairedlist-set', async (_evt, listText: string) => {
       if (!this.started) return { ok: false }
       const ok = await this.driver.sendBluetoothPairedList(String(listText ?? ''))
       return { ok }
     })
 
-    ipcMain.handle('projection-upload-icons', async () => {
+    registerIpcHandle('projection-upload-icons', async () => {
       if (!this.started || !this.webUsbDevice) {
         throw new Error('[ProjectionService] Projection is not started or dongle not connected')
       }
       this.uploadIcons()
     })
 
-    ipcMain.handle('projection-upload-livi-scripts', async () => {
+    registerIpcHandle('projection-upload-livi-scripts', async () => {
       if (!this.started || !this.webUsbDevice) {
         throw new Error('[ProjectionService] Projection is not started or dongle not connected')
       }
@@ -481,7 +484,7 @@ export class ProjectionService {
       }
     })
 
-    ipcMain.on('projection-touch', (_evt, data: { x: number; y: number; action: number }) => {
+    registerIpcOn('projection-touch', (_evt, data: { x: number; y: number; action: number }) => {
       try {
         this.driver.send(new SendTouch(data.x, data.y, data.action))
       } catch {
@@ -489,7 +492,7 @@ export class ProjectionService {
       }
     })
 
-    ipcMain.handle('maps:request', async (_evt, enabled: boolean) => {
+    registerIpcHandle('maps:request', async (_evt, enabled: boolean) => {
       this.mapsRequested = Boolean(enabled)
 
       if (!this.mapsRequested) {
@@ -514,7 +517,7 @@ export class ProjectionService {
     }
     const ONE_BASED_IDS = false
 
-    ipcMain.on('projection-multi-touch', (_evt, points: MultiTouchPoint[]) => {
+    registerIpcOn('projection-multi-touch', (_evt, points: MultiTouchPoint[]) => {
       try {
         if (!Array.isArray(points) || points.length === 0) return
         const safe = points.map((p) => ({
@@ -529,11 +532,14 @@ export class ProjectionService {
       }
     })
 
-    ipcMain.on('projection-command', (_evt, command) => {
-      this.driver.send(new SendCommand(command))
-    })
+    registerIpcOn(
+      'projection-command',
+      (_evt, command: ConstructorParameters<typeof SendCommand>[0]) => {
+        this.driver.send(new SendCommand(command))
+      }
+    )
 
-    ipcMain.handle('projection-media-read', async () => {
+    registerIpcHandle('projection-media-read', async () => {
       try {
         const file = path.join(app.getPath('userData'), 'mediaData.json')
 
@@ -549,7 +555,7 @@ export class ProjectionService {
       }
     })
 
-    ipcMain.handle('projection-navigation-read', async () => {
+    registerIpcHandle('projection-navigation-read', async () => {
       try {
         if (!this.started) {
           return DEFAULT_NAVIGATION_DATA_RESPONSE
@@ -572,7 +578,7 @@ export class ProjectionService {
     // ============================
     // Dongle firmware updater IPC
     // ============================
-    ipcMain.handle(
+    registerIpcHandle(
       'dongle-fw',
       async (_evt, req: DongleFirmwareRequest): Promise<DongleFwCheckResponse> => {
         await this.reloadConfigFromDisk()
@@ -838,7 +844,7 @@ export class ProjectionService {
       }
     )
 
-    ipcMain.on(
+    registerIpcOn(
       'projection-set-volume',
       (_evt, payload: { stream: LogicalStreamKey; volume: number }) => {
         const { stream, volume } = payload || {}
@@ -847,7 +853,7 @@ export class ProjectionService {
     )
 
     // visualizer / FFT toggle from renderer
-    ipcMain.on('projection-set-visualizer-enabled', (_evt, enabled: boolean) => {
+    registerIpcOn('projection-set-visualizer-enabled', (_evt, enabled: boolean) => {
       this.audio.setVisualizerEnabled(Boolean(enabled))
     })
     this.subscribeConfigEvents()

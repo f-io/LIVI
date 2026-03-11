@@ -1,17 +1,18 @@
-import { app, ipcMain } from 'electron'
+import { app } from 'electron'
 import type { ExtraConfig } from '@shared/types'
 import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
 import { currentKiosk } from '@main/window/utils'
 import { pickAssetForPlatform } from '@main/ipc/update/pickAsset'
 import { GhRelease, runtimeStateProps } from '@main/types'
 import { configEvents, saveSettings } from '@main/ipc/utils'
+import { registerIpcHandle } from '@main/ipc/register'
 
 export function registerSettingsIpc(runtimeState: runtimeStateProps) {
-  ipcMain.handle('settings:get-kiosk', () => currentKiosk(runtimeState.config))
+  registerIpcHandle('settings:get-kiosk', () => currentKiosk(runtimeState.config))
 
-  ipcMain.handle('getSettings', () => runtimeState.config)
+  registerIpcHandle('getSettings', () => runtimeState.config)
 
-  ipcMain.handle('save-settings', (_evt, settings: Partial<ExtraConfig>) => {
+  registerIpcHandle('save-settings', (_evt, settings: Partial<ExtraConfig>) => {
     saveSettings(runtimeState, settings)
     return true
   })
@@ -20,7 +21,7 @@ export function registerSettingsIpc(runtimeState: runtimeStateProps) {
     saveSettings(runtimeState, settings)
   })
 
-  ipcMain.handle('settings:reset-dongle-icons', () => {
+  registerIpcHandle('settings:reset-dongle-icons', () => {
     const next: ExtraConfig = {
       ...runtimeState.config,
       dongleIcon120: ICON_120_B64,
@@ -37,9 +38,9 @@ export function registerSettingsIpc(runtimeState: runtimeStateProps) {
     }
   })
 
-  ipcMain.handle('app:getVersion', () => app.getVersion())
+  registerIpcHandle('app:getVersion', () => app.getVersion())
 
-  ipcMain.handle('app:getLatestRelease', async () => {
+  registerIpcHandle('app:getLatestRelease', async () => {
     try {
       const repo = process.env.UPDATE_REPO || 'f-io/LIVI'
       const feed = process.env.UPDATE_FEED || `https://api.github.com/repos/${repo}/releases/latest`

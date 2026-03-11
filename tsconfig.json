@@ -4,7 +4,7 @@
     "target": "es2024",
     "module": "es2022",
     "lib": ["es2024", "dom"],
-    "types": ["@webgpu/types"],
+    "types": ["@webgpu/types", "jest", "node"],
     "allowJs": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -30,6 +30,5 @@
       "@types/*": ["renderer/src/types/*"]
     }
   },
-  "include": ["src/**/*", "src/types"],
-  "exclude": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"]
+  "include": ["src/**/*", "src/types"]
 }

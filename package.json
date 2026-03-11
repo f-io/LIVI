@@ -37,8 +37,12 @@
     "build:linux": "pnpm run build:app && electron-builder --linux --publish never --config",
     "build:armLinux": "pnpm run build:app && electron-builder --linux AppImage --arm64 --publish never --config",
     "build:win": "pnpm run build && electron-builder --win --publish never --config",
-    "test": "jest --config jest.config.ts",
-    "test:renderer": "jest --config jest.web.config.js"
+    "test": "pnpm run test:main && pnpm run test:renderer",
+    "test:main": "jest --watchman=false --config jest.config.js",
+    "test:renderer": "jest --watchman=false --config jest.web.config.js",
+    "coverage": "pnpm run coverage:main && pnpm run coverage:renderer",
+    "coverage:main": "jest --watchman=false --config jest.config.js --coverage",
+    "coverage:renderer": "jest --watchman=false --config jest.web.config.js --coverage"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,json,css,scss,md,yml,yaml}": "prettier --write"

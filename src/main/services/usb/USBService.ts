@@ -1,8 +1,9 @@
 import type { Device } from 'usb'
-import { ipcMain, BrowserWindow } from 'electron'
+import { BrowserWindow } from 'electron'
 import { ProjectionService } from '../projection/services/ProjectionService'
 import { findDongle } from './helpers'
 import { Microphone } from '@main/services/audio'
+import { registerIpcHandle } from '@main/ipc/register'
 
 import * as usbModule from 'usb'
 const { usb, getDeviceList } = usbModule
@@ -113,7 +114,7 @@ export class USBService {
   }
 
   private registerIpcHandlers() {
-    ipcMain.handle('usb-detect-dongle', async () => {
+    registerIpcHandle('usb-detect-dongle', async () => {
       if (this.shutdownInProgress || this.resetInProgress) {
         return false
       }
@@ -121,7 +122,7 @@ export class USBService {
       return devices.some(this.isDongle)
     })
 
-    ipcMain.handle('projection:usbDevice', async () => {
+    registerIpcHandle('projection:usbDevice', async () => {
       if (this.shutdownInProgress || this.resetInProgress) {
         return {
           device: false,
@@ -152,7 +153,7 @@ export class USBService {
       }
     })
 
-    ipcMain.handle('usb-force-reset', async () => {
+    registerIpcHandle('usb-force-reset', async () => {
       if (this.shutdownInProgress) {
         console.log('[USBService] usb-force-reset ignored: shutting down')
         return false
@@ -170,7 +171,7 @@ export class USBService {
       return this.forceReset()
     })
 
-    ipcMain.handle('usb-last-event', async () => {
+    registerIpcHandle('usb-last-event', async () => {
       if (this.shutdownInProgress || this.resetInProgress) {
         return { type: 'unplugged', device: null }
       }
@@ -192,7 +193,7 @@ export class USBService {
       return { type: 'unplugged', device: null }
     })
 
-    ipcMain.handle('get-sysdefault-mic-label', () => Microphone.getSysdefaultPrettyName())
+    registerIpcHandle('get-sysdefault-mic-label', () => Microphone.getSysdefaultPrettyName())
   }
 
   private getDongleUsbBasics(device: Device) {

@@ -15,6 +15,7 @@ describe('usePressFeedback', () => {
     expect(result.current.press).toEqual({
       play: false,
       pause: false,
+      playpause: false,
       stop: false,
       next: false,
       prev: false
@@ -48,6 +49,7 @@ describe('usePressFeedback', () => {
     expect(result.current.press).toEqual({
       play: false,
       pause: false,
+      playpause: false,
       stop: false,
       next: true,
       prev: true
@@ -60,6 +62,7 @@ describe('usePressFeedback', () => {
     expect(result.current.press).toEqual({
       play: false,
       pause: false,
+      playpause: false,
       stop: false,
       next: false,
       prev: false
