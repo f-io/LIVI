@@ -89,6 +89,16 @@ type DongleFirmwareCheckResult =
     }
   | { ok: false; error: string }
 
+type DevToolsUploadResult = {
+  ok: boolean
+  cgiOk: boolean
+  webOk: boolean
+  urls: string[]
+  startedAt: string
+  finishedAt: string
+  durationMs: number
+}
+
 declare global {
   interface Navigator {
     usb: {
@@ -113,7 +123,7 @@ declare global {
         getLastEvent(): Promise<unknown>
         getSysdefaultPrettyName(): Promise<string>
         uploadIcons(): Promise<void>
-        uploadLiviScripts(): Promise<{ ok: boolean; cgiOk: boolean; webOk: boolean }>
+        uploadLiviScripts(): Promise<DevToolsUploadResult>
         listenForEvents(callback: (event: unknown, ...args: unknown[]) => void): void
         unlistenForEvents(callback: (event: unknown, ...args: unknown[]) => void): void
       }
@@ -166,6 +176,7 @@ declare global {
       onUpdateProgress(cb: (payload: UpdateProgress) => void): () => void
       beginInstall(): Promise<void>
       abortUpdate(): Promise<void>
+      openExternal(url: string): Promise<{ ok: boolean; error?: string }>
     }
   }
 }

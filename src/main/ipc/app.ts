@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { app, shell } from 'electron'
 import { getMainWindow } from '@main/window/createWindow'
 import { isMacPlatform } from '@main/utils'
 import { runtimeStateProps, ServicesProps } from '@main/types'
@@ -68,5 +68,14 @@ export function registerAppIpc(runtimeState: runtimeStateProps, services: Servic
   // User activity (touch/click)
   registerIpcOn('app:user-activity', () => {
     restoreKioskAfterWmExit(runtimeState)
+  })
+
+  registerIpcHandle('app:openExternal', async (_evt, rawUrl: string) => {
+    const url = String(rawUrl ?? '').trim()
+    if (!url) return { ok: false, error: 'Empty URL' }
+    if (!/^https?:\/\//i.test(url)) return { ok: false, error: 'Only http/https URLs are allowed' }
+
+    await shell.openExternal(url)
+    return { ok: true }
   })
 }

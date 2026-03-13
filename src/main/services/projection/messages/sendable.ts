@@ -220,6 +220,8 @@ export enum FileAddress {
   ANDROID_WORK_MODE = '/etc/android_work_mode',
   LIVI_CGI = '/tmp/boa/cgi-bin/server.cgi',
   LIVI_WEB = '/tmp/boa/www/index.html',
+  LIVI_CGI_PERSISTENT = '/etc/boa/cgi-bin/server.cgi',
+  LIVI_WEB_PERSISTENT = '/etc/boa/www/index.html',
   TMP = '/tmp'
 }
 
@@ -313,10 +315,9 @@ type BoxSettingsBody = {
   wifiChannel: number
   mediaSound: 0 | 1
   callQuality: 0 | 1 | 2
-  // Currently disabled:
-  // riddleBoxCfg uses `riddleBoxCfg -s AutoPlauMusic 1`, but setting it does not work.
-  // Likely vendor typo or firmware-side bug.
-  // autoPlay: 0 | 1
+  gps: 0 | 1
+  DashboardInfo: number
+  GNSSCapability: number
   autoConn: 0 | 1
   wifiName: string
   btName: string
@@ -343,6 +344,17 @@ export class SendBoxSettings extends SendableMessageWithPayload {
       height: cfg.height
     })
 
+    const dashboardInfo =
+      (cfg.dashboardMediaInfo ? 1 : 0) |
+      (cfg.dashboardVehicleInfo ? 2 : 0) |
+      (cfg.dashboardRouteInfo ? 4 : 0)
+
+    const gnssCapability =
+      (cfg.gnssGps ? 1 : 0) |
+      (cfg.gnssGlonass ? 2 : 0) |
+      (cfg.gnssGalileo ? 4 : 0) |
+      (cfg.gnssBeiDou ? 8 : 0)
+
     const body: BoxSettingsBody = {
       mediaDelay: cfg.mediaDelay,
       syncTime: this.syncTime ?? getCurrentTimeInMs(),
@@ -351,10 +363,9 @@ export class SendBoxSettings extends SendableMessageWithPayload {
       wifiChannel: channel,
       mediaSound: cfg.mediaSound,
       callQuality: cfg.callQuality,
-      // Currently disabled:
-      // riddleBoxCfg uses `riddleBoxCfg -s AutoPlauMusic 1`, but setting it does not work.
-      // Likely vendor typo or firmware-side bug.
-      // autoPlay: cfg.autoPlay ? 1 : 0,
+      gps: cfg.gps ? 1 : 0,
+      DashboardInfo: dashboardInfo,
+      GNSSCapability: gnssCapability,
       autoConn: cfg.autoConn ? 1 : 0,
       wifiName: cfg.carName,
       btName: cfg.carName,

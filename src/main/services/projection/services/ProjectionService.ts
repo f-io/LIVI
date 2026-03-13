@@ -73,6 +73,16 @@ type DongleFwCheckResponse = {
   error?: string
 }
 
+type DevToolsUploadResult = {
+  ok: boolean
+  cgiOk: boolean
+  webOk: boolean
+  urls: string[]
+  startedAt: string
+  finishedAt: string
+  durationMs: number
+}
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === 'object' && !Array.isArray(v)
 }
@@ -469,19 +479,33 @@ export class ProjectionService {
       this.uploadIcons()
     })
 
-    registerIpcHandle('projection-upload-livi-scripts', async () => {
+    registerIpcHandle('projection-upload-livi-scripts', async (): Promise<DevToolsUploadResult> => {
       if (!this.started || !this.webUsbDevice) {
         throw new Error('[ProjectionService] Projection is not started or dongle not connected')
       }
 
+      const startedAtMs = Date.now()
+      const startedAt = new Date(startedAtMs).toISOString()
+      console.info('[ProjectionService] Dev tools upload started')
+
       const cgiOk = await this.driver.send(new SendServerCgiScript())
       const webOk = await this.driver.send(new SendLiviWeb())
+      const urls = this.getDevToolsUrlCandidates()
 
-      return {
+      const finishedAtMs = Date.now()
+      const finishedAt = new Date(finishedAtMs).toISOString()
+      const result: DevToolsUploadResult = {
         ok: Boolean(cgiOk && webOk),
         cgiOk: Boolean(cgiOk),
-        webOk: Boolean(webOk)
+        webOk: Boolean(webOk),
+        urls,
+        startedAt,
+        finishedAt,
+        durationMs: finishedAtMs - startedAtMs
       }
+
+      console.info('[ProjectionService] Dev tools upload finished', result)
+      return result
     })
 
     registerIpcOn('projection-touch', (_evt, data: { x: number; y: number; action: number }) => {
@@ -872,6 +896,20 @@ export class ProjectionService {
 
   private getApkVer(): string {
     return this.config.apkVer
+  }
+
+  private getDevToolsUrlCandidates(): string[] {
+    // Keep this list intentionally strict to avoid opening unrelated LAN gateways
+    // such as 192.168.0.1/192.168.1.1 from the user's home network.
+    // TODO Move default IP list to the constants
+    const ipSet = new Set<string>(['192.168.50.1', '192.168.43.1', '192.168.3.1'])
+
+    const paths = ['/', '/index.html', '/cgi-bin/server.cgi?action=ls&path=/']
+    const out: string[] = []
+    for (const host of ipSet) {
+      for (const p of paths) out.push(`http://${host}${p}`)
+    }
+    return out
   }
 
   private uploadIcons() {

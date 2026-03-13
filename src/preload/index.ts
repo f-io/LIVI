@@ -204,6 +204,8 @@ const appApi = {
   abortUpdate: (): Promise<void> => ipcRenderer.invoke('app:abortUpdate'),
   quitApp: (): Promise<void> => ipcRenderer.invoke('app:quitApp'),
   restartApp: (): Promise<void> => ipcRenderer.invoke('app:restartApp'),
+  openExternal: (url: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('app:openExternal', url),
 
   notifyUserActivity: (): void => {
     ipcRenderer.send('app:user-activity')

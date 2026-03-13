@@ -34,7 +34,10 @@ export default defineConfig({
           main: resolve(__dirname, 'src/main/index.ts'),
           usbWorker: resolve(__dirname, 'src/main/services/usb/USBWorker.ts')
         },
-        output: { entryFileNames: '[name].js' }
+        output: {
+          format: 'cjs',
+          entryFileNames: '[name].js'
+        }
       }
     },
     resolve: { alias }

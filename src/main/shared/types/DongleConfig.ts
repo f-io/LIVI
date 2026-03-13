@@ -30,10 +30,14 @@ export type DongleConfig = {
   mediaDelay: number
   mediaSound: 0 | 1
   callQuality: 0 | 1 | 2
-  // Currently disabled:
-  // riddleBoxCfg uses `riddleBoxCfg -s AutoPlauMusic 1`, but setting it does not work.
-  // Likely vendor typo or firmware-side bug.
-  // autoPlay: boolean
+  dashboardMediaInfo: boolean
+  dashboardVehicleInfo: boolean
+  dashboardRouteInfo: boolean
+  gps: boolean
+  gnssGps: boolean
+  gnssGlonass: boolean
+  gnssGalileo: boolean
+  gnssBeiDou: boolean
   autoConn: boolean
   mapsEnabled: boolean
   audioTransferMode: boolean

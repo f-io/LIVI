@@ -39,10 +39,14 @@ export const requiresRestartParams: (keyof ExtraConfig)[] = [
   'wifiType',
   'audioTransferMode',
   'callQuality',
-  // Currently disabled:
-  // riddleBoxCfg uses `riddleBoxCfg -s AutoPlauMusic 1`, but setting it does not work.
-  // Likely vendor typo or firmware-side bug.
-  // 'autoPlay',
+  'dashboardMediaInfo',
+  'dashboardVehicleInfo',
+  'dashboardRouteInfo',
+  'gps',
+  'gnssGps',
+  'gnssGlonass',
+  'gnssGalileo',
+  'gnssBeiDou',
   'autoConn',
   'carName',
   'oemName',

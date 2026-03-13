@@ -12,6 +12,7 @@ import {
   Divider,
   LinearProgress,
   Stack,
+  TextField,
   Typography
 } from '@mui/material'
 import { useLiviStore, useStatusStore } from '@store/store'
@@ -19,10 +20,74 @@ import { useNetworkStatus } from '@renderer/hooks/useNetworkStatus'
 import { fmt, isDongleFwCheckResponse, normalizeBoxInfo } from './utils'
 import { DongleFwCheckResponse, FwDialogState, Row } from '@renderer/types'
 import { EMPTY_STRING } from '@renderer/constants'
+import { useTranslation } from 'react-i18next'
+
+type DevToolsStatus = 'idle' | 'uploading' | 'opening' | 'success' | 'partial' | 'error'
+type DevToolsUploadResult = Awaited<ReturnType<typeof window.projection.usb.uploadLiviScripts>>
+
+function dedupe(list: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of list) {
+    if (seen.has(item)) continue
+    seen.add(item)
+    out.push(item)
+  }
+  return out
+}
+
+function rankDevUrl(url: string): number {
+  if (url.includes('/index.html')) return 0
+  if (url.includes('/cgi-bin/server.cgi?action=ls&path=/')) return 1
+  return 2
+}
+
+function toIndexCandidates(urls: string[]): string[] {
+  const hosts = new Set<string>()
+  for (const raw of urls) {
+    if (!/^https?:\/\//i.test(raw)) continue
+    try {
+      const u = new URL(raw)
+      if (!u.host) continue
+      hosts.add(u.host)
+    } catch {
+      // ignore malformed candidate
+    }
+  }
+  return Array.from(hosts).map((host) => `http://${host}/index.html`)
+}
+
+function normalizeIp(raw: string): string {
+  return String(raw ?? '').trim()
+}
+
+function maskIpv4Input(raw: string): string {
+  const cleaned = String(raw ?? '').replace(/[^\d.]/g, '')
+  const parts = cleaned.split('.').slice(0, 4)
+  return parts
+    .map((p) => p.replace(/\D/g, '').slice(0, 3))
+    .join('.')
+    .slice(0, 15)
+}
+
+function isValidIpv4(raw: string): boolean {
+  const ip = normalizeIp(raw)
+  if (!ip) return false
+  const parts = ip.split('.')
+  if (parts.length !== 4) return false
+  return parts.every((p) => {
+    if (!/^\d+$/.test(p)) return false
+    const n = Number(p)
+    return n >= 0 && n <= 255
+  })
+}
 
 export function USBDongle() {
+  const { t } = useTranslation()
   const isDongleConnected = useStatusStore((s) => s.isDongleConnected)
   const isStreaming = useStatusStore((s) => s.isStreaming)
+  const settings = useLiviStore((s) => s.settings)
+  const saveSettings = useLiviStore((s) => s.saveSettings)
 
   // Network status
   const network = useNetworkStatus()
@@ -53,9 +118,13 @@ export function USBDongle() {
   const [fwSawDisconnect, setFwSawDisconnect] = useState(false)
 
   // Dev tools
-  const [devBusy, setDevBusy] = useState(false)
-  const [devOk, setDevOk] = useState<null | { ok: boolean; cgiOk: boolean; webOk: boolean }>(null)
+  const [devStatus, setDevStatus] = useState<DevToolsStatus>('idle')
+  const [devResult, setDevResult] = useState<DevToolsUploadResult | null>(null)
   const [devError, setDevError] = useState<string | null>(null)
+  const [devOpenedUrl, setDevOpenedUrl] = useState<string | null>(null)
+  const [devLog, setDevLog] = useState<string[]>([])
+  const [devIpInput, setDevIpInput] = useState('')
+  const [devIpFocused, setDevIpFocused] = useState(false)
 
   // Parsed box info
   const boxInfo = useMemo(() => normalizeBoxInfo(boxInfoRaw), [boxInfoRaw])
@@ -207,32 +276,120 @@ export function USBDongle() {
 
   const canUpload = fwBusy == null && Boolean(isDongleConnected) && shouldOfferUpload
 
+  const devBusy = devStatus === 'uploading' || devStatus === 'opening'
   const canEnableDevTools = !devBusy && Boolean(isDongleConnected)
 
+  const pushDevLog = useCallback((line: string) => {
+    const ts = new Date().toISOString().slice(11, 19)
+    setDevLog((prev) => [...prev, `[${ts}] ${line}`].slice(-10))
+  }, [])
+
+  const devUrlCandidates = useMemo(() => {
+    const urls = dedupe(devResult?.urls ?? [])
+    return urls.sort((a, b) => rankDevUrl(a) - rankDevUrl(b))
+  }, [devResult])
+
+  useEffect(() => {
+    setDevIpInput(normalizeIp(settings?.dongleToolsIp ?? ''))
+  }, [settings?.dongleToolsIp])
+
   const handleEnableDevTools = useCallback(async () => {
+    if (devBusy) return
     setDevError(null)
-    setDevOk(null)
+    setDevResult(null)
+    setDevOpenedUrl(null)
+    setDevLog([])
 
     try {
-      setDevBusy(true)
+      setDevStatus('uploading')
+      pushDevLog(t('settings.devToolsLogUploadStart'))
+      const configuredIp = normalizeIp(devIpInput)
+
+      if (configuredIp && !isValidIpv4(configuredIp)) {
+        throw new Error(t('settings.devToolsInvalidIp', { ip: configuredIp }))
+      }
+
+      await saveSettings({ dongleToolsIp: configuredIp })
+      if (configuredIp) {
+        pushDevLog(t('settings.devToolsLogUsingIp', { ip: configuredIp }))
+      } else {
+        pushDevLog(t('settings.devToolsLogUsingAutoCandidates'))
+      }
+
       const res = await window.projection.usb.uploadLiviScripts()
-      setDevOk(res)
+      setDevResult(res)
+      pushDevLog(
+        t('settings.devToolsLogUploadDone', {
+          ok: String(res.ok),
+          cgiOk: String(res.cgiOk),
+          webOk: String(res.webOk),
+          durationMs: res.durationMs
+        })
+      )
 
       if (!res.ok) {
-        setDevError(`Upload failed (cgiOk=${String(res.cgiOk)}, webOk=${String(res.webOk)})`)
+        setDevStatus('partial')
+        setDevError(
+          t('settings.devToolsPartial', {
+            cgiOk: String(res.cgiOk),
+            webOk: String(res.webOk)
+          })
+        )
+        return
       }
+
+      const openTargets = configuredIp
+        ? [`http://${configuredIp}/index.html`]
+        : dedupe(toIndexCandidates(res.urls ?? [])).sort((a, b) => rankDevUrl(a) - rankDevUrl(b))
+      if (openTargets.length === 0) {
+        setDevStatus('success')
+        pushDevLog(t('settings.devToolsLogNoCandidates'))
+        return
+      }
+
+      setDevStatus('opening')
+      pushDevLog(t('settings.devToolsLogOpeningCount', { count: openTargets.length }))
+
+      let openedCount = 0
+      let firstOpened: string | null = null
+      for (const url of openTargets) {
+        const openRes = await window.app.openExternal(url)
+        if (openRes?.ok) {
+          openedCount += 1
+          firstOpened ??= url
+        } else {
+          pushDevLog(
+            t('settings.devToolsLogOpenFailed', {
+              url,
+              error: openRes?.error || t('settings.devToolsUnknownError')
+            })
+          )
+        }
+      }
+
+      if (openedCount === 0) {
+        throw new Error(t('settings.devToolsOpenNoneFailed'))
+      }
+
+      setDevOpenedUrl(firstOpened)
+      setDevStatus('success')
+      pushDevLog(
+        t('settings.devToolsLogOpenDone', { opened: openedCount, total: openTargets.length })
+      )
     } catch (e) {
+      setDevStatus('error')
       setDevError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setDevBusy(false)
+      pushDevLog(`Error: ${e instanceof Error ? e.message : String(e)}`)
     }
-  }, [])
+  }, [devBusy, devIpInput, pushDevLog, saveSettings, t])
 
   useEffect(() => {
     if (isDongleConnected) return
-    setDevOk(null)
+    setDevStatus('idle')
+    setDevResult(null)
+    setDevOpenedUrl(null)
     setDevError(null)
-    setDevBusy(false)
+    setDevLog([])
   }, [isDongleConnected])
 
   const fwPct = useMemo(() => {
@@ -1055,40 +1212,103 @@ export function USBDongle() {
       <Divider />
 
       <Typography variant="subtitle2" color="text.secondary">
-        Dev Tools
+        {`${t('settings.devTools')} (${t('settings.mustBeOnDongleWifi')})`}
       </Typography>
 
       <Stack
         direction="row"
         spacing={1}
-        sx={{ alignItems: 'center', flexWrap: 'wrap', px: 1, mb: 1 }}
+        sx={{ alignItems: 'flex-start', flexWrap: 'wrap', px: 1, mb: 1 }}
       >
         <Button
           variant="outlined"
           size="small"
           disabled={!canEnableDevTools}
           onClick={handleEnableDevTools}
+          sx={{ height: 40 }}
         >
           {devBusy ? (
             <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
               <CircularProgress size={14} />
-              Enabling…
+              {devStatus === 'opening' ? t('settings.opening') : t('settings.enabling')}
             </Box>
           ) : (
-            'Enable Dev Tools'
+            t('settings.enableDevTools')
           )}
         </Button>
+        <TextField
+          label={t('settings.dongleIpOptional')}
+          placeholder={
+            devIpFocused || devIpInput.length > 0
+              ? t('settings.dongleIpMaskPlaceholder')
+              : t('settings.dongleIpPlaceholder')
+          }
+          size="small"
+          sx={{ minWidth: 240, flex: '1 1 280px' }}
+          value={devIpInput}
+          disabled={devBusy}
+          onFocus={() => setDevIpFocused(true)}
+          onBlur={() => setDevIpFocused(false)}
+          onChange={(e) => setDevIpInput(maskIpv4Input(e.target.value))}
+          error={devIpInput.length > 0 && !isValidIpv4(devIpInput)}
+          inputProps={{ inputMode: 'numeric', maxLength: 15 }}
+          InputProps={{ sx: { height: 40 } }}
+          helperText={
+            devIpInput.length > 0 && !isValidIpv4(devIpInput) ? t('settings.enterValidIpv4') : ' '
+          }
+        />
       </Stack>
+      {devBusy ? <LinearProgress sx={{ mt: 1 }} /> : null}
       {devError ? (
         <Alert severity="error" sx={{ mt: 1 }}>
           {devError}
         </Alert>
-      ) : devOk ? (
-        <Alert severity={devOk.ok ? 'success' : 'warning'} sx={{ mt: 1 }}>
-          {devOk.ok
-            ? `Dev tools enabled`
-            : `Partial result (cgiOk=${String(devOk.cgiOk)}, webOk=${String(devOk.webOk)})`}
+      ) : devResult ? (
+        <Alert severity={devResult.ok ? 'success' : 'warning'} sx={{ mt: 1 }}>
+          {devResult.ok
+            ? t('settings.devToolsEnabled')
+            : t('settings.devToolsPartial', {
+                cgiOk: String(devResult.cgiOk),
+                webOk: String(devResult.webOk)
+              })}
         </Alert>
+      ) : null}
+      {!devOpenedUrl && devUrlCandidates.length > 0 ? (
+        <Alert severity="info" sx={{ mt: 1 }}>
+          {t('settings.tryOneOfUrls')}
+          <Box component="ul" sx={{ m: 0, pl: 2 }}>
+            {devUrlCandidates.slice(0, 6).map((url) => (
+              <li key={url}>
+                <a href={url} target="_blank" rel="noreferrer">
+                  {url}
+                </a>
+              </li>
+            ))}
+          </Box>
+        </Alert>
+      ) : null}
+      {devLog.length > 0 ? (
+        <Box sx={{ mt: 1, px: 1 }}>
+          <Typography variant="caption" color="text.secondary">
+            {t('settings.devToolsLog')}
+          </Typography>
+          <Box
+            component="pre"
+            sx={{
+              m: 0,
+              p: 1,
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1,
+              background: 'rgba(0,0,0,0.25)',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              ...Mono
+            }}
+          >
+            {devLog.join('\n')}
+          </Box>
+        </Box>
       ) : null}
     </Box>
   )
