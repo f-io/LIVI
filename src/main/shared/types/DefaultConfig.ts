@@ -17,12 +17,16 @@ export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
   mediaDelay: 1000,
   mediaSound: 1,
   callQuality: 1,
-  // Currently disabled:
-  // riddleBoxCfg uses `riddleBoxCfg -s AutoPlauMusic 1`, but setting it does not work.
-  // Likely vendor typo or firmware-side bug.
-  // autoPlay: true,
   autoConn: true,
   audioTransferMode: false,
+  dashboardMediaInfo: true,
+  dashboardVehicleInfo: true,
+  dashboardRouteInfo: true,
+  gps: false,
+  gnssGps: false,
+  gnssGlonass: false,
+  gnssGalileo: false,
+  gnssBeiDou: false,
   wifiType: '5ghz',
   wifiChannel: 36,
   micType: MicType.CarMic,
@@ -36,6 +40,7 @@ export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
   autoSwitchOnStream: false,
   autoSwitchOnPhoneCall: true,
   autoSwitchOnGuidance: true,
+  dongleToolsIp: '',
   visualAudioDelayMs: 120,
   audioVolume: 0.95,
   navVolume: 0.95,
@@ -51,6 +56,5 @@ export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
   bindings: DEFAULT_BINDINGS,
   dongleIcon120: ICON_120_B64,
   dongleIcon180: ICON_180_B64,
-  dongleIcon256: ICON_256_B64,
-  dongleToolsIp: ''
+  dongleIcon256: ICON_256_B64
 }

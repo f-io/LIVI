@@ -10,6 +10,7 @@ export type TelemetryDashboardConfig = {
 
 export type ExtraConfig = DongleConfig & {
   startPage: 'home' | 'media' | 'maps' | 'telemetry' | 'camera' | 'settings'
+  language: string
   kiosk: boolean
   uiZoomPercent: number
   camera: string
@@ -25,6 +26,7 @@ export type ExtraConfig = DongleConfig & {
   autoSwitchOnPhoneCall: boolean
   autoSwitchOnGuidance: boolean
   visualAudioDelayMs: number
+  dongleToolsIp?: string
   primaryColorDark?: string
   primaryColorLight?: string
   highlightColorLight?: string
@@ -32,8 +34,6 @@ export type ExtraConfig = DongleConfig & {
   dongleIcon120?: string
   dongleIcon180?: string
   dongleIcon256?: string
-  dongleToolsIp?: string
-  language: string
 }
 
 export interface KeyBindings {

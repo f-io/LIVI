@@ -58,39 +58,6 @@ const BODY = `
         <span class="slider"></span>
       </label>
     </div>
-
-    <div class="toggleRow">
-      <div class="toggleLeft">
-        <span class="chip">DashboardInfo</span>
-        <span class="toggleMeta" id="metaDbi">value=?</span>
-      </div>
-      <label class="switch">
-        <input type="checkbox" id="togDbi" />
-        <span class="slider"></span>
-      </label>
-    </div>
-
-    <div class="toggleRow">
-      <div class="toggleLeft">
-        <span class="chip">GPSForwarding</span>
-        <span class="toggleMeta" id="metaGps">HudGPSSwitch=?, GNSSCapability=?</span>
-      </div>
-      <label class="switch">
-        <input type="checkbox" id="togGps" />
-        <span class="slider"></span>
-      </label>
-    </div>
-
-    <div class="toggleRow">
-      <div class="toggleLeft">
-        <span class="chip">AndroidWorkMode</span>
-        <span class="toggleMeta" id="metaAwm">value=?</span>
-      </div>
-      <label class="switch">
-        <input type="checkbox" id="togAwm" />
-        <span class="slider"></span>
-      </label>
-    </div>
   </section>
 
   <section>
@@ -219,25 +186,6 @@ async function loadStatus(){
     const advVal = parseFirstInt(advTxt);
     document.getElementById("togAdv").checked = advVal === 1;
     setMeta("metaAdv", isNaN(advVal) ? "?" : String(advVal));
-
-    const dbiTxt = await execSilent("/usr/sbin/riddleBoxCfg -g DashboardInfo");
-    const dbiVal = parseFirstInt(dbiTxt);
-    document.getElementById("togDbi").checked = dbiVal === 7;
-    setMeta("metaDbi", isNaN(dbiVal) ? "?" : String(dbiVal));
-
-    const hudGpsTxt = await execSilent("/usr/sbin/riddleBoxCfg -g HudGPSSwitch");
-    const hudGpsVal = parseFirstInt(hudGpsTxt);
-
-    const gnssTxt = await execSilent("/usr/sbin/riddleBoxCfg -g GNSSCapability");
-    const gnssVal = parseFirstInt(gnssTxt);
-
-    document.getElementById("togGps").checked = hudGpsVal === 1 && gnssVal === 3;
-    setMeta("metaGps", "HudGPSSwitch=" + (isNaN(hudGpsVal) ? "?" : hudGpsVal) + ", GNSSCapability=" + (isNaN(gnssVal) ? "?" : gnssVal));
-
-    const awmTxt = await execSilent("od /etc/android_work_mode 2>/dev/null");
-    const awmIsOne = /\\b1\\b/.test(awmTxt) || /000001/.test(awmTxt);
-    document.getElementById("togAwm").checked = awmIsOne;
-    setMeta("metaAwm", awmIsOne ? "1" : "0");
   } catch (e) {
     outEl().textContent = "Failed to load status: " + String(e);
   }
@@ -266,33 +214,6 @@ async function toggleWrite(el, writeCmd){
 document.getElementById("togAdv").onchange = (e) => {
   const v = e.target.checked ? 1 : 0;
   toggleWrite(e.target, "/usr/sbin/riddleBoxCfg -s AdvancedFeatures " + v);
-};
-
-document.getElementById("togDbi").onchange = (e) => {
-  const v = e.target.checked ? 7 : 0;
-  toggleWrite(e.target, "/usr/sbin/riddleBoxCfg -s DashboardInfo " + v);
-};
-
-document.getElementById("togGps").onchange = async (e) => {
-  const el = e.target;
-  const enabled = el.checked;
-  const prev = !enabled;
-  lockToggle(el, true);
-  try {
-    await execSilent("/usr/sbin/riddleBoxCfg -s HudGPSSwitch " + (enabled ? 1 : 0));
-    await execSilent("/usr/sbin/riddleBoxCfg -s GNSSCapability " + (enabled ? 3 : 0));
-  } catch (err) {
-    el.checked = prev;
-    outEl().textContent = "Toggle failed: " + String(err);
-  } finally {
-    lockToggle(el, false);
-    await loadStatus();
-  }
-};
-
-document.getElementById("togAwm").onchange = (e) => {
-  const b = e.target.checked ? "01" : "00";
-  toggleWrite(e.target, "printf \\\\x" + b + "\\\\x00\\\\x00\\\\x00 > /etc/android_work_mode");
 };
 
 loadStatus();
