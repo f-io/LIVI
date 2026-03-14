@@ -6,7 +6,7 @@ import { ROUTES } from '../../../constants'
 
 const mockBroadcastMediaKey = jest.fn()
 
-let mockPathname = ROUTES.HOME
+let mockPathname: string = ROUTES.HOME
 let mockHash = ''
 let mockSettings: any = null
 
@@ -123,7 +123,7 @@ describe('useKeyDown', () => {
 
   test('telemetry pager handles left/right when not in nav', () => {
     setupRoots()
-    mockPathname = '/telemetry/live'
+    mockPathname = ROUTES.TELEMETRY
 
     const pager = {
       prev: jest.fn(),

@@ -43,6 +43,9 @@ describe('settings schemas', () => {
   })
 
   test('audio value transform handles invalid and valid values', () => {
+    if (audioSchema.type !== 'route') {
+      throw new Error('audioSchema must be a route node')
+    }
     const slider = (audioSchema.children as any[]).find((x) => x.path === 'audioVolume')
     expect(slider.valueTransform.toView(0.45)).toBe(45)
     expect(slider.valueTransform.fromView(25, 1)).toBe(0.25)
@@ -52,6 +55,9 @@ describe('settings schemas', () => {
 
   test('settings schema aggregates major sections and generates routes', () => {
     expect(settingsSchema.type).toBe('route')
+    if (settingsSchema.type !== 'route') {
+      throw new Error('settingsSchema must be a route node')
+    }
     expect((settingsSchema.children as any[]).length).toBe(5)
     expect(settingsRoutes?.path).toBe('new-settings')
     expect(Array.isArray(settingsRoutes?.children)).toBe(true)

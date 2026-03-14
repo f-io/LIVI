@@ -118,9 +118,11 @@ describe('Render.worker', () => {
     const videoPort = {
       onmessage: null as any,
       start: jest.fn()
-    } as MessagePort
+    } as unknown as MessagePort
 
-    await worker.init(new InitEvent({ getContext: () => ({}) } as OffscreenCanvas, videoPort, 30))
+    await worker.init(
+      new InitEvent({ getContext: () => ({}) } as unknown as OffscreenCanvas, videoPort, 30)
+    )
 
     expect(videoPort.start).toHaveBeenCalled()
     expect(mockWebGL2Renderer).toHaveBeenCalled()
@@ -143,7 +145,7 @@ describe('Render.worker', () => {
 
     await worker.init(
       new InitEvent(
-        { getContext: () => null } as OffscreenCanvas,
+        { getContext: () => null } as unknown as OffscreenCanvas,
         { onmessage: null, start: jest.fn() } as unknown as MessagePort,
         60
       )

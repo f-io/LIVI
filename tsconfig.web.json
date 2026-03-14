@@ -6,7 +6,8 @@
     "src/renderer/src/**/*.tsx",
     "src/preload/*.d.ts",
     "src/types/**/*",
-    "jest.setup.ts"
+    "jest.setup.ts",
+    "jest.web.setup.ts"
   ],
   "compilerOptions": {
     "composite": false,
@@ -14,7 +15,7 @@
     "target": "es2024",
     "module": "es2022",
     "lib": ["dom", "dom.iterable", "es2024", "webworker"],
-    "types": ["jest", "@webgpu/types", "w3c-web-usb", "vite/client"],
+    "types": ["jest", "@testing-library/jest-dom", "@webgpu/types", "w3c-web-usb", "vite/client"],
     "allowJs": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,

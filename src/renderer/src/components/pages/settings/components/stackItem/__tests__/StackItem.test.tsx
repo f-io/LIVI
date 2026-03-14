@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { StackItem } from '../StackItem'
-import type { SettingsNode } from '@renderer/src/routes/types'
+import type { SettingsNode } from '@renderer/routes/types'
+import type { ExtraConfig } from '@shared/types'
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -15,7 +16,7 @@ describe('StackItem', () => {
       label: 'Theme',
       path: 'theme',
       options: [{ value: 'light', label: 'Light', labelKey: 'settings.theme.light' }]
-    } as SettingsNode<unknown>
+    } as SettingsNode<ExtraConfig>
 
     render(
       <StackItem node={node} showValue value="light">
@@ -32,7 +33,7 @@ describe('StackItem', () => {
       label: 'Speed',
       path: 'speed',
       valueTransform: { format: () => 'undefined' }
-    } as SettingsNode<unknown>
+    } as SettingsNode<ExtraConfig>
 
     render(
       <StackItem node={node} showValue value={42}>

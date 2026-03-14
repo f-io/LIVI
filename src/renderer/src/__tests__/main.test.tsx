@@ -4,7 +4,7 @@ const initUiBreatheClockMock = jest.fn()
 
 jest.mock('react-dom/client', () => ({
   __esModule: true,
-  default: { createRoot: (...args: unknown[]) => createRootMock(...args) }
+  default: { createRoot: (...args: unknown[]) => createRootMock.apply(null, args) }
 }))
 
 jest.mock('../App', () => ({

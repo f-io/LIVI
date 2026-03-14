@@ -3,7 +3,7 @@ import { Nav } from '../Nav'
 import { ROUTES } from '../../../constants'
 
 const navigateMock = jest.fn()
-let mockPathname = ROUTES.HOME
+let mockPathname: string = ROUTES.HOME
 let mockIsStreaming = false
 const quitMock = jest.fn(() => Promise.resolve())
 
