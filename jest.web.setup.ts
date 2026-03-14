@@ -2,11 +2,19 @@ import '@testing-library/jest-dom'
 import { TextDecoder, TextEncoder } from 'util'
 
 if (typeof globalThis.TextEncoder === 'undefined') {
-  ;(globalThis as typeof globalThis & { TextEncoder: typeof TextEncoder }).TextEncoder = TextEncoder
+  Object.defineProperty(globalThis, 'TextEncoder', {
+    configurable: true,
+    writable: true,
+    value: TextEncoder
+  })
 }
 
 if (typeof globalThis.TextDecoder === 'undefined') {
-  ;(globalThis as typeof globalThis & { TextDecoder: typeof TextDecoder }).TextDecoder = TextDecoder
+  Object.defineProperty(globalThis, 'TextDecoder', {
+    configurable: true,
+    writable: true,
+    value: TextDecoder
+  })
 }
 
 if (typeof globalThis.structuredClone === 'undefined') {
