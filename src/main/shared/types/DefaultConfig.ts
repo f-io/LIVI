@@ -7,7 +7,6 @@ export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
   width: 800,
   height: 480,
   fps: 60,
-  dpi: 160,
   lastPhoneWorkMode: PhoneWorkMode.CarPlay,
   apkVer: '2025.03.19.1126',
   carName: 'LIVI',

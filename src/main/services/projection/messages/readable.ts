@@ -197,7 +197,8 @@ export enum MediaType {
 }
 
 export enum NavigationMetaType {
-  DashboardInfo = 200
+  DashboardInfo = 200,
+  DashboardImage = 201
 }
 
 function isAsciiBase64(buf: Buffer): boolean {
@@ -279,6 +280,7 @@ export type NaviInfo = {
   NaviManeuverType?: number
   NaviTurnAngle?: number
   NaviTurnSide?: number
+  NaviImageBase64?: string
 } & Record<string, unknown>
 
 export function parseNaviInfoFromBuffer(buf: Buffer): NaviInfo | null {
@@ -306,6 +308,14 @@ export class NavigationData extends Message {
     super(header)
     this.metaType = metaType
 
+    if (metaType === NavigationMetaType.DashboardImage) {
+      this.rawUtf8 = ''
+      this.navi = {
+        NaviImageBase64: payloadOnly.toString('base64')
+      }
+      return
+    }
+
     let s = payloadOnly.toString('utf8')
     const nul = s.indexOf('\u0000')
     if (nul !== -1) s = s.slice(0, nul)
@@ -331,8 +341,11 @@ export class MetaData extends Message {
     const payloadOnly = data.subarray(4)
 
     // Navigation
-    if (this.innerType === NavigationMetaType.DashboardInfo) {
-      const msg = new NavigationData(header, NavigationMetaType.DashboardInfo, payloadOnly)
+    if (
+      this.innerType === NavigationMetaType.DashboardInfo ||
+      this.innerType === NavigationMetaType.DashboardImage
+    ) {
+      const msg = new NavigationData(header, this.innerType as NavigationMetaType, payloadOnly)
       this.inner = { kind: 'navigation', message: msg }
       return
     }

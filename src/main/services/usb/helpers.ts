@@ -1,4 +1,4 @@
-import usb from 'usb'
+import { usb } from 'usb'
 
 export function findDongle() {
   return (

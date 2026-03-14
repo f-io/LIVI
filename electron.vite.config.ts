@@ -1,5 +1,5 @@
 import { resolve } from 'path'
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
@@ -26,10 +26,11 @@ const rendererAlias = {
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({})],
     build: {
       outDir: 'out/main',
+      externalizeDeps: true,
       rollupOptions: {
+        external: ['electron', 'usb', 'node-gyp-build'],
         input: {
           main: resolve(__dirname, 'src/main/index.ts'),
           usbWorker: resolve(__dirname, 'src/main/services/usb/USBWorker.ts')
@@ -44,8 +45,13 @@ export default defineConfig({
   },
 
   preload: {
-    plugins: [externalizeDepsPlugin({})],
-    build: { outDir: 'out/preload' },
+    build: {
+      outDir: 'out/preload',
+      externalizeDeps: true,
+      rollupOptions: {
+        external: ['electron']
+      }
+    },
     resolve: { alias }
   },
 

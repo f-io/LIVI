@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffe
 import { Box, useTheme } from '@mui/material'
 import { useLocation, useNavigate } from 'react-router'
 import { CommandMapping, AudioCommand } from '@shared/types/ProjectionEnums'
+import { matchFittingAAResolution } from '@shared/utils'
 import type { ExtraConfig } from '@shared/types'
 import { useLiviStore, useStatusStore } from '../../../store/store'
 import { InitEvent, UpdateFpsEvent } from '@worker/render/RenderEvents'
@@ -108,6 +109,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const setBluetoothPairedList = useLiviStore((s) => s.setBluetoothPairedList)
   const negotiatedWidth = useLiviStore((s) => s.negotiatedWidth)
   const negotiatedHeight = useLiviStore((s) => s.negotiatedHeight)
+  const boxInfo = useLiviStore((s) => s.boxInfo)
 
   useEffect(() => {
     if (pathname !== '/') return
@@ -193,6 +195,11 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const [overlayX, setOverlayX] = useState(0)
   const [overlayY, setOverlayY] = useState(0)
 
+  const [viewportSize, setViewportSize] = useState({
+    width: window.innerWidth,
+    height: window.innerHeight
+  })
+
   useLayoutEffect(() => {
     const getAnchor = () => document.getElementById('content-root')
 
@@ -224,6 +231,44 @@ const CarplayComponent: React.FC<CarplayProps> = ({
       ro?.disconnect()
     }
   }, [settings?.hand])
+
+  useLayoutEffect(() => {
+    const updateViewportSize = () => {
+      const el = mainElem.current
+      if (!el) {
+        setViewportSize({
+          width: window.innerWidth,
+          height: window.innerHeight
+        })
+        return
+      }
+
+      const rect = el.getBoundingClientRect()
+      const width = Math.round(rect.width)
+      const height = Math.round(rect.height)
+
+      setViewportSize((prev) =>
+        prev.width === width && prev.height === height ? prev : { width, height }
+      )
+    }
+
+    updateViewportSize()
+    const raf = requestAnimationFrame(updateViewportSize)
+
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateViewportSize) : null
+
+    if (ro && mainElem.current) {
+      ro.observe(mainElem.current)
+    }
+
+    window.addEventListener('resize', updateViewportSize)
+
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('resize', updateViewportSize)
+      ro?.disconnect()
+    }
+  }, [])
 
   // Render worker + OffscreenCanvas
   const renderWorkerRef = useRef<Worker | null>(null)
@@ -398,7 +443,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   }, [])
 
   // Audio + touch hooks
-  const touchHandlers = useCarplayMultiTouch(canvasRef)
 
   const clearRetryTimeout = useCallback(() => {
     if (retryTimeoutRef.current) {
@@ -408,11 +452,10 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   }, [])
 
   const gotoHostUI = useCallback(() => {
-    const target = settings.mapsEnabled ? '/maps' : '/media'
-    if (location.pathname !== target) {
-      navigate(target, { replace: true })
+    if (location.pathname !== '/media') {
+      navigate('/media', { replace: true })
     }
-  }, [location.pathname, navigate, settings.mapsEnabled])
+  }, [location.pathname, navigate])
 
   const applyAttention = useCallback(
     (p: AttentionPayload) => {
@@ -908,24 +951,72 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const resolvedNegotiatedWidth = negotiatedWidth ?? 0
   const resolvedNegotiatedHeight = negotiatedHeight ?? 0
 
-  const shouldPreserveAspect =
+  const viewportWidth = viewportSize.width
+  const viewportHeight = viewportSize.height
+
+  const mdLinkType =
+    boxInfo && typeof boxInfo === 'object' && 'MDLinkType' in boxInfo
+      ? String((boxInfo as { MDLinkType?: unknown }).MDLinkType ?? '')
+      : ''
+
+  const normalizedLinkType = mdLinkType.trim().toLowerCase()
+  const isAndroidAutoActive = normalizedLinkType.includes('android')
+
+  const aaVisibleSize =
+    settings.width > 0 && settings.height > 0
+      ? matchFittingAAResolution({
+          width: settings.width,
+          height: settings.height
+        })
+      : null
+
+  const isAndroidAutoTiered =
+    isAndroidAutoActive &&
+    aaVisibleSize !== null &&
     resolvedNegotiatedWidth > 0 &&
     resolvedNegotiatedHeight > 0 &&
-    settings.width > 0 &&
-    settings.height > 0 &&
-    (resolvedNegotiatedWidth !== settings.width || resolvedNegotiatedHeight !== settings.height)
+    (resolvedNegotiatedWidth !== aaVisibleSize.width ||
+      resolvedNegotiatedHeight !== aaVisibleSize.height)
 
-  const streamAspect =
-    resolvedNegotiatedWidth > 0 && resolvedNegotiatedHeight > 0
-      ? resolvedNegotiatedWidth / resolvedNegotiatedHeight
+  const visibleWidth = isAndroidAutoTiered
+    ? Math.min(aaVisibleSize.width, resolvedNegotiatedWidth)
+    : resolvedNegotiatedWidth
+
+  const visibleHeight = isAndroidAutoTiered
+    ? Math.min(aaVisibleSize.height, resolvedNegotiatedHeight)
+    : resolvedNegotiatedHeight
+
+  const cropLeft =
+    isAndroidAutoTiered && resolvedNegotiatedWidth > visibleWidth
+      ? (resolvedNegotiatedWidth - visibleWidth) / 2
       : 0
 
-  const viewportWidth = mainElem.current?.clientWidth ?? window.innerWidth
-  const viewportHeight = mainElem.current?.clientHeight ?? window.innerHeight
-  const viewportAspect =
-    viewportWidth > 0 && viewportHeight > 0 ? viewportWidth / viewportHeight : 0
+  const cropTop =
+    isAndroidAutoTiered && resolvedNegotiatedHeight > visibleHeight
+      ? (resolvedNegotiatedHeight - visibleHeight) / 2
+      : 0
 
-  const fitByHeight = shouldPreserveAspect && streamAspect > 0 && viewportAspect > streamAspect
+  const touchHandlers = useCarplayMultiTouch(
+    videoContainerRef,
+    isAndroidAutoTiered
+      ? {
+          streamWidth: resolvedNegotiatedWidth,
+          streamHeight: resolvedNegotiatedHeight,
+          cropLeft,
+          cropTop,
+          visibleWidth,
+          visibleHeight
+        }
+      : undefined
+  )
+
+  const scaleX = visibleWidth > 0 && viewportWidth > 0 ? viewportWidth / visibleWidth : 0
+  const scaleY = visibleHeight > 0 && viewportHeight > 0 ? viewportHeight / visibleHeight : 0
+
+  const canvasCssWidth = scaleX > 0 ? `${resolvedNegotiatedWidth * scaleX}px` : '0px'
+  const canvasCssHeight = scaleY > 0 ? `${resolvedNegotiatedHeight * scaleY}px` : '0px'
+  const canvasCssLeft = scaleX > 0 ? `${-cropLeft * scaleX}px` : '0px'
+  const canvasCssTop = scaleY > 0 ? `${-cropTop * scaleY}px` : '0px'
 
   return (
     <div
@@ -937,21 +1028,13 @@ const CarplayComponent: React.FC<CarplayProps> = ({
         width: '100%',
         height: '100%',
         touchAction: 'none',
-
-        // show as full UI when on "/" OR as overlay when navFocusActive
         visibility: showCarplayOverlay ? 'visible' : 'hidden',
         opacity: showCarplayOverlay ? 1 : 0,
         transition: 'opacity 120ms ease',
-
-        // IMPORTANT:
-        // - In projection route: allow touch (so touchHandlers work)
-        // - In overlay mode: do NOT swallow clicks/touch/keys for the host UI
         pointerEvents: inCarplay && isStreaming ? 'auto' : 'none',
-
         zIndex: showCarplayOverlay ? 999 : -1
       }}
     >
-      {/* Overlay (ring + icon chips) */}
       {pathname === '/' && (
         <StatusOverlay
           show={!isDongleConnected || !isStreaming}
@@ -970,16 +1053,10 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           width: '100%',
           padding: 0,
           margin: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          display: 'block',
           touchAction: 'none',
           backgroundColor:
-            receivingVideo && !rendererError
-              ? shouldPreserveAspect
-                ? '#000'
-                : 'transparent'
-              : theme.palette.background.default,
+            receivingVideo && !rendererError ? '#000' : theme.palette.background.default,
           visibility: receivingVideo && !rendererError ? 'visible' : 'hidden',
           zIndex: receivingVideo && !rendererError ? 1 : -1,
           position: 'relative',
@@ -990,28 +1067,13 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           ref={canvasRef}
           id="video"
           style={{
-            width:
-              receivingVideo && !rendererError
-                ? shouldPreserveAspect
-                  ? fitByHeight
-                    ? 'auto'
-                    : '100%'
-                  : '100%'
-                : '0',
-            height:
-              receivingVideo && !rendererError
-                ? shouldPreserveAspect
-                  ? fitByHeight
-                    ? '100%'
-                    : 'auto'
-                  : '100%'
-                : '0',
-            maxWidth: receivingVideo && !rendererError ? '100%' : '0',
-            maxHeight: receivingVideo && !rendererError ? '100%' : '0',
-            aspectRatio:
-              resolvedNegotiatedWidth > 0 && resolvedNegotiatedHeight > 0
-                ? `${resolvedNegotiatedWidth} / ${resolvedNegotiatedHeight}`
-                : undefined,
+            width: receivingVideo && !rendererError ? canvasCssWidth : '0px',
+            height: receivingVideo && !rendererError ? canvasCssHeight : '0px',
+            position: 'absolute',
+            left: receivingVideo && !rendererError ? canvasCssLeft : '0px',
+            top: receivingVideo && !rendererError ? canvasCssTop : '0px',
+            maxWidth: 'none',
+            maxHeight: 'none',
             touchAction: 'none',
             userSelect: 'none',
             pointerEvents: 'none',

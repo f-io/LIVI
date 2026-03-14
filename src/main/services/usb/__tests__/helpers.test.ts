@@ -1,5 +1,11 @@
-import usb from 'usb'
+import { usb } from 'usb'
 import { findDongle } from '@main/services/usb/helpers'
+
+jest.mock('usb', () => ({
+  usb: {
+    getDeviceList: jest.fn(() => [])
+  }
+}))
 
 describe('findDongle', () => {
   beforeEach(() => {

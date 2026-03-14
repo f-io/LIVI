@@ -1,8 +1,7 @@
 import { BrowserWindow } from 'electron'
 import { registerIpcHandle } from '@main/ipc/register'
 import { Microphone } from '@main/services/audio'
-
-import * as usbModule from 'usb'
+import { usb } from 'usb'
 
 jest.mock('@main/ipc/register', () => ({
   registerIpcHandle: jest.fn()
@@ -18,9 +17,9 @@ jest.mock('usb', () => ({
   usb: {
     on: jest.fn(),
     removeAllListeners: jest.fn(),
-    unrefHotplugEvents: jest.fn()
-  },
-  getDeviceList: jest.fn(() => [])
+    unrefHotplugEvents: jest.fn(),
+    getDeviceList: jest.fn(() => [])
+  }
 }))
 
 jest.mock('../helpers', () => ({
@@ -30,8 +29,7 @@ jest.mock('../helpers', () => ({
 import { USBService } from '@main/services/usb/USBService'
 
 describe('USBService', () => {
-  const getDeviceList = usbModule.getDeviceList as jest.Mock
-  const usb = (usbModule as any).usb
+  const getDeviceList = usb.getDeviceList as jest.Mock
 
   const projection = {
     markDongleConnected: jest.fn(),

@@ -1,5 +1,5 @@
 import { app, WebContents } from 'electron'
-import { WebUSBDevice } from 'usb'
+import { WebUSBDevice, usb } from 'usb'
 import {
   Plugged,
   Unplugged,
@@ -34,7 +34,6 @@ import { PhoneWorkMode } from '@shared/types'
 import type { ExtraConfig, DongleFirmwareAction, DongleFwApiRaw } from '@shared/types'
 import fs from 'fs'
 import path from 'path'
-import usb from 'usb'
 import { PersistedMediaPayload, PersistedNavigationPayload } from './types'
 import {
   APP_START_TS,
@@ -401,7 +400,7 @@ export class ProjectionService {
           return
         }
 
-        // Navigation metadata (innerType 200)
+        // Navigation metadata (innerType 200/201)
         if (inner.kind === 'navigation') {
           if (!this.started) return
           const navMsg = inner.message

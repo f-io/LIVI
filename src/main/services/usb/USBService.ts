@@ -1,12 +1,11 @@
-import type { Device } from 'usb'
+import { usb, type Device } from 'usb'
 import { BrowserWindow } from 'electron'
 import { ProjectionService } from '../projection/services/ProjectionService'
 import { findDongle } from './helpers'
 import { Microphone } from '@main/services/audio'
 import { registerIpcHandle } from '@main/ipc/register'
 
-import * as usbModule from 'usb'
-const { usb, getDeviceList } = usbModule
+const getDeviceList = () => usb.getDeviceList()
 
 export class USBService {
   private lastDongleState: boolean = false

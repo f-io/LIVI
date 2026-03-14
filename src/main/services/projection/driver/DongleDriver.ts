@@ -3,6 +3,7 @@ import { MessageHeader, HeaderBuildError } from '@projection/messages/common'
 import { decryptVendorSessionText } from '@main/helpers/vendorSessionInfo'
 import type { CommandValue } from '@shared/types/ProjectionEnums'
 import { MicType, PhoneWorkMode } from '@shared/types'
+import { matchFittingAAResolution } from '@shared/utils'
 import type { DongleConfig } from '@shared/types'
 import { DEFAULT_EXTRA_CONFIG } from '@shared/types'
 import { DEBUG } from '@main/constants'
@@ -31,7 +32,8 @@ import {
   SendBluetoothPairedList,
   SendGnssData,
   HeartBeat,
-  SendDisconnectPhone
+  SendDisconnectPhone,
+  SendAndroidAutoDpi
 } from '@projection/messages/sendable'
 
 const CONFIG_NUMBER = 1
@@ -540,6 +542,10 @@ export class DongleDriver extends EventEmitter {
         : cfg.micType === MicType.PhoneMic
           ? 'phoneMic'
           : 'mic'
+    const aaResolution = matchFittingAAResolution({
+      width: cfg.width,
+      height: cfg.height
+    })
 
     const messages: SendableMessage[] = [
       new SendString(label, FileAddress.BOX_NAME),
@@ -550,7 +556,7 @@ export class DongleDriver extends EventEmitter {
         { width: cfg.width, height: cfg.height, fps: cfg.fps },
         this._phoneWorkModeRuntime
       ),
-      new SendNumber(cfg.dpi, FileAddress.DPI),
+      new SendAndroidAutoDpi(aaResolution.width, aaResolution.height),
       new SendBoolean(cfg.nightMode, FileAddress.NIGHT_MODE),
       new SendNumber(cfg.hand, FileAddress.HAND_DRIVE_MODE),
       new SendNumber(this._androidWorkModeRuntime, FileAddress.ANDROID_WORK_MODE),

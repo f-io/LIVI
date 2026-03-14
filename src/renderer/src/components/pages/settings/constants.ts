@@ -34,7 +34,6 @@ export const requiresRestartParams: (keyof ExtraConfig)[] = [
   'width',
   'height',
   'fps',
-  'dpi',
   'mediaDelay',
   'wifiType',
   'audioTransferMode',

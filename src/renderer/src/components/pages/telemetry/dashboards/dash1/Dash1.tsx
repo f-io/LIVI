@@ -123,14 +123,14 @@ export function Dash1() {
               position: 'absolute',
               left: NAV_X,
               top: NAV_Y,
-              transform: 'translate(-50%, -50%) scale(1.35)',
+              transform: 'translate(-50%, -50%)',
               width: 220,
               height: 120,
               display: 'grid',
               placeItems: 'center'
             }}
           >
-            <NavMini iconSize={64} />
+            <NavMini iconSize={84} />
           </Box>
 
           {/* GEAR */}
@@ -162,7 +162,7 @@ export function Dash1() {
               top: METRICS_TOP,
               width: 'fit-content',
               display: 'grid',
-              rowGap: 1.9,
+              rowGap: 1.6,
               justifyItems: 'end',
               transform: 'scale(1.45)',
               transformOrigin: 'right top'

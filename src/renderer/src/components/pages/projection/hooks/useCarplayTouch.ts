@@ -13,13 +13,23 @@ type Handlers = {
 
 type MTPoint = { id: number; x: number; y: number; action: MultiTouchAction }
 
+type TouchTransform = {
+  streamWidth: number
+  streamHeight: number
+  cropLeft: number
+  cropTop: number
+  visibleWidth: number
+  visibleHeight: number
+}
+
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v)
 
 const norm = (
   eventTarget: HTMLElement,
   videoRef: RefObject<HTMLElement | null>,
   cx: number,
-  cy: number
+  cy: number,
+  transform?: TouchTransform
 ) => {
   const target = videoRef.current ?? eventTarget
   const r = target.getBoundingClientRect()
@@ -32,13 +42,35 @@ const norm = (
     return null
   }
 
+  const localX = cx - r.left
+  const localY = cy - r.top
+
+  if (
+    transform &&
+    transform.streamWidth > 0 &&
+    transform.streamHeight > 0 &&
+    transform.visibleWidth > 0 &&
+    transform.visibleHeight > 0
+  ) {
+    const streamX = (localX / r.width) * transform.visibleWidth
+    const streamY = (localY / r.height) * transform.visibleHeight
+
+    return {
+      x: clamp01(streamX / transform.streamWidth),
+      y: clamp01(streamY / transform.streamHeight)
+    }
+  }
+
   return {
-    x: clamp01((cx - r.left) / r.width),
-    y: clamp01((cy - r.top) / r.height)
+    x: clamp01(localX / r.width),
+    y: clamp01(localY / r.height)
   }
 }
 
-export const useCarplayMultiTouch = (videoRef: RefObject<HTMLElement | null>): Handlers => {
+export const useCarplayMultiTouch = (
+  videoRef: RefObject<HTMLElement | null>,
+  transform?: TouchTransform
+): Handlers => {
   const slotByPointerId = useRef(new Map<number, number>())
   const active = useRef(new Map<number, { x: number; y: number }>())
   const freeSlots = useRef<number[]>([])
@@ -82,7 +114,7 @@ export const useCarplayMultiTouch = (videoRef: RefObject<HTMLElement | null>): H
   const onPointerDown = useCallback<Handlers['onPointerDown']>(
     (e) => {
       const el = e.currentTarget as HTMLElement
-      const p = norm(el, videoRef, e.clientX, e.clientY)
+      const p = norm(el, videoRef, e.clientX, e.clientY, transform)
       if (!p) return
       const { x, y } = p
 
@@ -99,13 +131,13 @@ export const useCarplayMultiTouch = (videoRef: RefObject<HTMLElement | null>): H
       overrides.set(id, MultiTouchAction.Down)
       sendFullFrame(overrides)
     },
-    [alloc, sendFullFrame, videoRef]
+    [alloc, sendFullFrame, videoRef, transform]
   )
 
   const onPointerMove = useCallback<Handlers['onPointerMove']>(
     (e) => {
       const el = e.currentTarget as HTMLElement
-      const p = norm(el, videoRef, e.clientX, e.clientY)
+      const p = norm(el, videoRef, e.clientX, e.clientY, transform)
       if (!p) return
       const { x, y } = p
 
@@ -120,13 +152,13 @@ export const useCarplayMultiTouch = (videoRef: RefObject<HTMLElement | null>): H
       active.current.set(id, { x, y })
       sendFullFrame()
     },
-    [sendFullFrame, videoRef]
+    [sendFullFrame, videoRef, transform]
   )
 
   const finishPointer = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       const el = e.currentTarget as HTMLElement
-      const p = norm(el, videoRef, e.clientX, e.clientY)
+      const p = norm(el, videoRef, e.clientX, e.clientY, transform)
 
       if (e.pointerType === 'mouse') {
         if (!mouseDown.current) return
@@ -162,7 +194,7 @@ export const useCarplayMultiTouch = (videoRef: RefObject<HTMLElement | null>): H
       el.releasePointerCapture?.(e.pointerId)
       free(e.pointerId)
     },
-    [free, sendFullFrame, videoRef]
+    [free, sendFullFrame, videoRef, transform]
   )
 
   const onPointerUp = useCallback<Handlers['onPointerUp']>((e) => finishPointer(e), [finishPointer])
