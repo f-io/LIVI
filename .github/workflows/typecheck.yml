@@ -2,15 +2,16 @@ name: typecheck
 
 on:
   push:
-    branches: [main, dev]
+    branches: ['**']
   pull_request:
     branches: [main, dev]
 
 jobs:
-  ts-typecheck:
-    name: Type-Check
+  checks:
+    name: Lint, Typecheck, Tests
     if: ${{ github.actor != 'github-actions' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       HUSKY: 0
 
@@ -53,5 +54,62 @@ jobs:
       - name: Install dependencies from lockfile
         run: pnpm install --frozen-lockfile
 
+      - name: Run ESLint
+        run: pnpm run lint:check
+
       - name: Run TypeScript type-check
         run: pnpm run typecheck
+
+      - name: Run tests
+        run: pnpm run test
+
+  coverage:
+    name: Coverage
+    if: ${{ github.actor != 'github-actions' && github.event_name == 'pull_request' }}
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HUSKY: 0
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Setup latest Node.js 24.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack install
+          echo "pnpm version: $(pnpm -v)"
+          node -e "const v=require('child_process').execSync('pnpm -v').toString().trim(); if(!/^10\\./.test(v)){console.error('Expected pnpm 10.x, got', v); process.exit(1);} console.log('pnpm 10 OK');"
+
+      - name: Resolve pnpm store path
+        id: pnpm_store
+        run: echo "path=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.pnpm_store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-x86_64-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-x86_64-
+
+      - name: Ensure native build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential python3 python3-dev libusb-1.0-0-dev libudev-dev
+
+      - name: Install dependencies from lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Run coverage
+        run: pnpm run coverage

@@ -1,10 +1,15 @@
 #!/bin/sh
 set -eu
 
-echo "🔍 Running Prettier + Jest tests before commit..."
+echo "Running Prettier, lint and Jest checks before commit..."
 
 if ! npx lint-staged; then
-  echo "❌ Lint-staged failed, aborting commit."
+  echo "Lint-staged failed, aborting commit."
+  exit 1
+fi
+
+if ! pnpm run lint:check; then
+  echo "Lint failed, aborting commit."
   exit 1
 fi
 
@@ -14,21 +19,21 @@ nul_list=$(
 )
 
 if [ -z "$nul_list" ]; then
-  echo "ℹ️  No testable files staged. Skipping Jest."
+  echo "No testable files staged. Skipping Jest."
   exit 0
 fi
 
-echo "🧪 Running related Jest tests on:"
+echo "Running related Jest tests on:"
 printf '%s' "$nul_list" | tr '\0' '\n' | sed 's/^/   • /'
 
 printf '%s' "$nul_list" \
 | xargs -0 npx jest --config jest.config.js \
     --watchman=false --findRelatedTests --runInBand --bail --verbose --passWithNoTests \
-|| { echo "❌ Main-process tests failed, aborting commit."; exit 1; }
+|| { echo "Main-process tests failed, aborting commit."; exit 1; }
 
 printf '%s' "$nul_list" \
 | xargs -0 npx jest --config jest.web.config.js \
     --watchman=false --findRelatedTests --runInBand --bail --verbose --passWithNoTests \
-|| { echo "❌ Renderer tests failed, aborting commit."; exit 1; }
+|| { echo "Renderer tests failed, aborting commit."; exit 1; }
 
-echo "✅ All checks passed!"
+echo "All checks passed."
