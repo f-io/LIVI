@@ -134,10 +134,20 @@ const api = {
       videoChunkQueue.forEach((chunk) => handler(chunk))
       videoChunkQueue = []
     },
+    offVideoChunk: (handler: ChunkHandler): void => {
+      if (videoChunkHandler === handler) {
+        videoChunkHandler = null
+      }
+    },
     onAudioChunk: (handler: ChunkHandler): void => {
       audioChunkHandler = handler
       audioChunkQueue.forEach((chunk) => handler(chunk))
       audioChunkQueue = []
+    },
+    offAudioChunk: (handler: ChunkHandler): void => {
+      if (audioChunkHandler === handler) {
+        audioChunkHandler = null
+      }
     },
     setVolume: (stream: 'music' | 'nav' | 'siri' | 'call', volume: number): void => {
       ipcRenderer.send('projection-set-volume', { stream, volume })
