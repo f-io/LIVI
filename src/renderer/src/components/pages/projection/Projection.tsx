@@ -8,6 +8,7 @@ import { useLiviStore, useStatusStore } from '../../../store/store'
 import { InitEvent, UpdateFpsEvent } from '@worker/render/RenderEvents'
 import type { ProjectionWorker, UsbEvent, KeyCommand, WorkerToUI } from '@worker/types'
 import { useCarplayMultiTouch } from './hooks/useCarplayTouch'
+import { projectionWorkerUrl, renderWorkerUrl } from '@worker/workerUrls'
 
 // Icons
 import CropPortraitOutlinedIcon from '@mui/icons-material/CropPortraitOutlined'
@@ -285,7 +286,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
 
   // Projection worker setup
   const carplayWorker = useMemo<ProjectionWorker>(() => {
-    const w = new Worker(new URL('../../worker/Projection.worker.ts', import.meta.url), {
+    const w = new Worker(projectionWorkerUrl, {
       type: 'module'
     }) as ProjectionWorker
 
@@ -309,7 +310,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   useEffect(() => {
     if (canvasRef.current && !offscreenCanvasRef.current && !renderWorkerRef.current) {
       offscreenCanvasRef.current = canvasRef.current.transferControlToOffscreen()
-      const w = new Worker(new URL('../../worker/render/Render.worker.ts', import.meta.url), {
+      const w = new Worker(renderWorkerUrl, {
         type: 'module'
       })
       renderWorkerRef.current = w
