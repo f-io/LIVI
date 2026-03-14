@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Typography, useTheme } from '@mui/material'
 import { InitEvent } from '@worker/render/RenderEvents'
+import { renderWorkerUrl } from '@worker/workerUrls'
 import { useStatusStore, useLiviStore } from '../../../store/store'
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined'
 
@@ -128,7 +129,7 @@ export const Maps: React.FC = () => {
 
     offscreenCanvasRef.current = canvasRef.current.transferControlToOffscreen()
 
-    const w = new Worker(new URL('../../worker/render/Render.worker.ts', import.meta.url), {
+    const w = new Worker(renderWorkerUrl, {
       type: 'module'
     })
     renderWorkerRef.current = w
