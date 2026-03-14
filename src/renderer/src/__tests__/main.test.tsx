@@ -1,10 +1,10 @@
-const createRootMock = jest.fn(() => ({ render: jest.fn() }))
+const createRootMock = jest.fn((..._args: unknown[]) => ({ render: jest.fn() }))
 const initCursorHiderMock = jest.fn()
 const initUiBreatheClockMock = jest.fn()
 
 jest.mock('react-dom/client', () => ({
   __esModule: true,
-  default: { createRoot: (...args: unknown[]) => createRootMock.apply(null, args) }
+  default: { createRoot: (...args: unknown[]) => createRootMock(...args) }
 }))
 
 jest.mock('../App', () => ({
