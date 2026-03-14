@@ -5,9 +5,12 @@ import { CommandMapping } from '@shared/types/ProjectionEnums'
 const navigateMock = jest.fn()
 let mockPathname = '/'
 
-jest.mock('@worker/workerUrls', () => ({
-  projectionWorkerUrl: 'projection-worker-url',
-  renderWorkerUrl: 'render-worker-url'
+jest.mock('@worker/createProjectionWorker', () => ({
+  createProjectionWorker: jest.fn()
+}))
+
+jest.mock('@worker/createRenderWorker', () => ({
+  createRenderWorker: jest.fn()
 }))
 
 type AnyFn = (...args: any[]) => any
@@ -93,6 +96,13 @@ describe('Projection page', () => {
   beforeEach(() => {
     MockWorker.instances = []
     MockMessageChannel.instances = []
+
+    const { createProjectionWorker } = jest.requireMock('@worker/createProjectionWorker')
+    const { createRenderWorker } = jest.requireMock('@worker/createRenderWorker')
+
+    createProjectionWorker.mockImplementation(() => new MockWorker('projection-worker'))
+    createRenderWorker.mockImplementation(() => new MockWorker('render-worker'))
+
     onEventCb = undefined
     usbCb = undefined
     navigateMock.mockReset()
@@ -129,7 +139,9 @@ describe('Projection page', () => {
         stop: jest.fn().mockResolvedValue(undefined),
         sendFrame: jest.fn().mockResolvedValue(undefined),
         onVideoChunk: jest.fn(),
+        offVideoChunk: jest.fn(),
         onAudioChunk: jest.fn(),
+        offAudioChunk: jest.fn(),
         onEvent: jest.fn((cb: AnyFn) => {
           onEventCb = cb
         }),
@@ -148,7 +160,7 @@ describe('Projection page', () => {
     }
   })
 
-  test('starts projection and initializes workers on mount', async () => {
+  test('starts projection on usb plugged and initializes workers', async () => {
     render(
       <Projection
         receivingVideo={false}
@@ -161,8 +173,14 @@ describe('Projection page', () => {
       />
     )
 
+    expect((window as any).projection.ipc.start).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await usbCb?.(null, { type: 'plugged' })
+    })
+
     await waitFor(() => {
-      expect((window as any).projection.ipc.start).toHaveBeenCalled()
+      expect((window as any).projection.ipc.start).toHaveBeenCalledTimes(1)
     })
     expect(MockWorker.instances.length).toBeGreaterThanOrEqual(2)
   })

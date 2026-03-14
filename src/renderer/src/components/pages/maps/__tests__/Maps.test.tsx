@@ -3,8 +3,8 @@ import { Maps } from '../Maps'
 
 type AnyFn = (...args: any[]) => any
 
-jest.mock('@worker/workerUrls', () => ({
-  renderWorkerUrl: 'render-worker-url'
+jest.mock('@worker/createRenderWorker', () => ({
+  createRenderWorker: jest.fn()
 }))
 
 const statusState: Record<string, any> = {
@@ -54,6 +54,9 @@ describe('Maps page', () => {
   let mapsVideoCb: AnyFn | undefined
 
   beforeEach(() => {
+    const { createRenderWorker } = jest.requireMock('@worker/createRenderWorker')
+    createRenderWorker.mockImplementation(() => new MockWorker())
+
     MockWorker.instances = []
     MockMessageChannel.instances = []
     mapsVideoCb = undefined

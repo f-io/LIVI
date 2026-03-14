@@ -157,7 +157,9 @@ declare global {
         readNavigation(): Promise<unknown>
 
         onVideoChunk(handler: (payload: unknown) => void): void
+        offVideoChunk(handler: (payload: unknown) => void): void
         onAudioChunk(handler: (payload: unknown) => void): void
+        offAudioChunk(handler: (payload: unknown) => void): void
 
         requestMaps(enabled: boolean): Promise<{ ok: boolean; enabled: boolean }>
         onMapsVideoChunk(handler: (payload: unknown) => void): void

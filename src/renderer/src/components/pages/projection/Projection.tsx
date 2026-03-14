@@ -6,9 +6,10 @@ import { matchFittingAAResolution } from '@shared/utils'
 import type { ExtraConfig } from '@shared/types'
 import { useLiviStore, useStatusStore } from '../../../store/store'
 import { InitEvent, UpdateFpsEvent } from '@worker/render/RenderEvents'
+import { createProjectionWorker } from '@worker/createProjectionWorker'
+import { createRenderWorker } from '@worker/createRenderWorker'
 import type { ProjectionWorker, UsbEvent, KeyCommand, WorkerToUI } from '@worker/types'
 import { useCarplayMultiTouch } from './hooks/useCarplayTouch'
-import { projectionWorkerUrl, renderWorkerUrl } from '@worker/workerUrls'
 
 // Icons
 import CropPortraitOutlinedIcon from '@mui/icons-material/CropPortraitOutlined'
@@ -125,6 +126,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const mainElem = useRef<HTMLDivElement>(null)
   const videoContainerRef = useRef<HTMLDivElement>(null)
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const usbOpTokenRef = useRef(0)
   const hasStartedRef = useRef(false)
   const [renderReady, setRenderReady] = useState(false)
   const [rendererError, setRendererError] = useState<string | null>(null)
@@ -286,9 +288,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
 
   // Projection worker setup
   const carplayWorker = useMemo<ProjectionWorker>(() => {
-    const w = new Worker(projectionWorkerUrl, {
-      type: 'module'
-    }) as ProjectionWorker
+    const w = createProjectionWorker()
 
     w.onerror = (e) => {
       console.error('Worker error:', e)
@@ -310,9 +310,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   useEffect(() => {
     if (canvasRef.current && !offscreenCanvasRef.current && !renderWorkerRef.current) {
       offscreenCanvasRef.current = canvasRef.current.transferControlToOffscreen()
-      const w = new Worker(renderWorkerUrl, {
-        type: 'module'
-      })
+      const w = createRenderWorker()
       renderWorkerRef.current = w
 
       const targetFps = initialFpsRef.current
@@ -393,7 +391,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
       videoChannel.port1.postMessage(buf, [buf])
     }
     window.projection.ipc.onVideoChunk(handleVideo)
-    return () => {}
+    return () => window.projection.ipc.offVideoChunk(handleVideo)
   }, [videoChannel, renderReady, rendererError])
 
   // Forward audio chunks to FFT
@@ -424,23 +422,13 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     window.projection.ipc.onAudioChunk(handleAudio)
 
     return () => {
+      window.projection.ipc.offAudioChunk(handleAudio)
       for (const id of timers) {
         window.clearTimeout(id)
       }
       timers.clear()
     }
   }, [setPcmData, fftVisualDelayMs])
-
-  // Start projection service on mount
-  useEffect(() => {
-    ;(async () => {
-      try {
-        await window.projection.ipc.start()
-      } catch (err) {
-        console.error('Projection start failed:', err)
-      }
-    })()
-  }, [])
 
   // Audio + touch hooks
 
@@ -519,19 +507,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     const handler = (ev: MessageEvent<WorkerToUI>) => {
       const msg = ev.data
       switch (msg.type) {
-        case 'plugged':
-          setDongleConnected(true)
-          break
-
-        case 'unplugged':
-          hasStartedRef.current = false
-          setDongleConnected(false)
-          setStreaming(false)
-          setReceivingVideo(false)
-          resetInfo()
-          setNavVideoOverlayActive(false)
-          break
-
         case 'requestBuffer': {
           clearRetryTimeout()
           break
@@ -578,29 +553,37 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     setDeviceInfo,
     setAudioInfo,
     setPcmData,
-    setDongleConnected,
-    setStreaming,
-    resetInfo,
-    setNavVideoOverlayActive,
     setReceivingVideo
   ])
 
   // USB events
   useEffect(() => {
+    let disposed = false
+
     const onUsbConnect = async () => {
+      const token = ++usbOpTokenRef.current
       if (!hasStartedRef.current) {
         resetInfo()
+
+        let info:
+          | { device: false; vendorId: null; productId: null; usbFwVersion: string }
+          | { device: true; vendorId: number; productId: number; usbFwVersion: string }
+          | null = null
+
         try {
-          const info = await window.projection.usb.getDeviceInfo()
-          if (info?.device) {
-            setDeviceInfo({
-              vendorId: info.vendorId,
-              productId: info.productId,
-              usbFwVersion: info.usbFwVersion ?? ''
-            })
-          }
+          info = await window.projection.usb.getDeviceInfo()
         } catch (e) {
           console.warn('[CARPLAY] usb.getDeviceInfo() failed', e)
+        }
+
+        if (disposed || token !== usbOpTokenRef.current) return
+
+        if (info?.device) {
+          setDeviceInfo({
+            vendorId: info.vendorId,
+            productId: info.productId,
+            usbFwVersion: info.usbFwVersion ?? ''
+          })
         }
 
         setDongleConnected(true)
@@ -608,7 +591,9 @@ const CarplayComponent: React.FC<CarplayProps> = ({
         await window.projection.ipc.start()
       }
     }
+
     const onUsbDisconnect = async () => {
+      const token = ++usbOpTokenRef.current
       clearRetryTimeout()
       setReceivingVideo(false)
       setStreaming(false)
@@ -616,6 +601,9 @@ const CarplayComponent: React.FC<CarplayProps> = ({
       hasStartedRef.current = false
       resetInfo()
       await window.projection.ipc.stop()
+
+      if (disposed || token !== usbOpTokenRef.current) return
+
       if (canvasRef.current) {
         canvasRef.current.style.width = '0'
         canvasRef.current.style.height = '0'
@@ -635,6 +623,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     })()
 
     return () => {
+      disposed = true
       window.projection.usb.unlistenForEvents?.(usbHandler)
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
