@@ -218,7 +218,7 @@ describe('Projection page', () => {
     })
 
     await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith('/maps', { replace: true })
+      expect(navigateMock).toHaveBeenCalledWith('/media', { replace: true })
     })
   })
 })

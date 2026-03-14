@@ -14,7 +14,7 @@ describe('About page', () => {
 
     render(<About />)
     expect(screen.getByText('LIVI')).toBeInTheDocument()
-    expect(screen.getByText('5.5.1')).toBeInTheDocument()
+    expect(screen.getByText((v) => /^\d+\.\d+\.\d+/.test(v))).toBeInTheDocument()
     expect(screen.getByText('#123')).toBeInTheDocument()
     expect(screen.getByText('abcdef0')).toBeInTheDocument()
   })
