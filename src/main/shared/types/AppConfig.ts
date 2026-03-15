@@ -36,26 +36,54 @@ export type ExtraConfig = DongleConfig & {
   dongleIcon256?: string
 }
 
-export interface KeyBindings {
-  selectUp: string
-  selectDown: string
+export type KeyBindings = {
+  // D-PAD
   up: string
+  down: string
   left: string
   right: string
-  down: string
+  selectUp: string
+  selectDown: string
   back: string
+
+  // Rotary Knob
+  knobLeft: string
+  knobRight: string
+  knobUp: string
+  knobDown: string
+
+  // Media Control
   home: string
   playPause: string
   play: string
   pause: string
   next: string
   prev: string
+
+  // Phone
   acceptPhone: string
   rejectPhone: string
+  phoneKey0: string
+  phoneKey1: string
+  phoneKey2: string
+  phoneKey3: string
+  phoneKey4: string
+  phoneKey5: string
+  phoneKey6: string
+  phoneKey7: string
+  phoneKey8: string
+  phoneKey9: string
+  phoneKeyStar: string
+  phoneKeyHash: string
+  phoneKeyHookSwitch: string
+
+  // Voice
   siri: string
+  siriRelease: string
 }
 
 export const DEFAULT_BINDINGS: KeyBindings = {
+  // D-PAD
   up: 'ArrowUp',
   down: 'ArrowDown',
   left: 'ArrowLeft',
@@ -63,13 +91,39 @@ export const DEFAULT_BINDINGS: KeyBindings = {
   selectUp: '',
   selectDown: 'Enter',
   back: 'Backspace',
+
+  // Rotary Knob
+  knobLeft: '',
+  knobRight: '',
+  knobUp: '',
+  knobDown: '',
+
+  // Media Control
   home: 'KeyH',
   playPause: 'KeyP',
   play: '',
   pause: '',
   next: 'KeyN',
   prev: 'KeyB',
+
+  // Phone
   acceptPhone: 'KeyA',
   rejectPhone: 'KeyR',
-  siri: 'KeyV'
+  phoneKey0: '',
+  phoneKey1: '',
+  phoneKey2: '',
+  phoneKey3: '',
+  phoneKey4: '',
+  phoneKey5: '',
+  phoneKey6: '',
+  phoneKey7: '',
+  phoneKey8: '',
+  phoneKey9: '',
+  phoneKeyStar: '',
+  phoneKeyHash: '',
+  phoneKeyHookSwitch: '',
+
+  // Voice / UI
+  siri: 'KeyV',
+  siriRelease: ''
 }

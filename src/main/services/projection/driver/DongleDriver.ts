@@ -80,6 +80,7 @@ export class DongleDriver extends EventEmitter {
   private _lastDongleInfoEmitKey = ''
 
   private _cfg: DongleConfig | null = null
+  private _postOpenConfigSent = false
 
   private _wifiConnectTimer: ReturnType<typeof setTimeout> | null = null
   private _modeSwitchInFlight: Promise<void> = Promise.resolve()
@@ -157,15 +158,13 @@ export class DongleDriver extends EventEmitter {
       await this.send(new SendDisconnectPhone())
       await this.sleep(120)
 
+      this._postOpenConfigSent = false
       await this.send(
         new SendOpen(
           { width: cfg.width, height: cfg.height, fps: cfg.fps },
           this._phoneWorkModeRuntime
         )
       )
-
-      await this.send(new SendCommand('wifiEnable'))
-      this.scheduleWifiConnect(150)
     })
 
     await this._modeSwitchInFlight
@@ -403,7 +402,50 @@ export class DongleDriver extends EventEmitter {
     if (!this._heartbeatInterval) {
       this._heartbeatInterval = setInterval(() => void this.send(new HeartBeat()), 2000)
     }
+    void this.sendPostOpenConfig()
+  }
+
+  private async sendPostOpenConfig() {
+    if (this._postOpenConfigSent) return
+
+    const cfg = this._cfg
+    if (!cfg) return
+    if (this._closing || !this._device?.opened) return
+
+    const ui = (cfg.oemName ?? '').trim()
+    const label = ui.length > 0 ? ui : cfg.carName
+    const initMicRouteCommand: CommandValue =
+      cfg.micType === MicType.DongleMic
+        ? 'boxMic'
+        : cfg.micType === MicType.PhoneMic
+          ? 'phoneMic'
+          : 'mic'
+    const aaResolution = matchFittingAAResolution({
+      width: cfg.width,
+      height: cfg.height
+    })
+
+    const messages: SendableMessage[] = [
+      new SendBoxSettings(cfg),
+      new SendString(label, FileAddress.BOX_NAME),
+      new SendBoolean(cfg.nightMode, FileAddress.NIGHT_MODE),
+      new SendAndroidAutoDpi(aaResolution.width, aaResolution.height),
+      new SendNumber(this._androidWorkModeRuntime, FileAddress.ANDROID_WORK_MODE),
+      new SendBoolean(true, FileAddress.CHARGE_MODE),
+      new SendIconConfig({ oemName: cfg.oemName }),
+      new SendNumber(cfg.hand, FileAddress.HAND_DRIVE_MODE),
+      new SendCommand(initMicRouteCommand),
+      new SendCommand(cfg.wifiType === '5ghz' ? 'wifi5g' : 'wifi24g'),
+      new SendCommand(cfg.audioTransferMode ? 'audioTransferOn' : 'audioTransferOff')
+    ]
+
+    for (const m of messages) {
+      await this.send(m)
+      await this.sleep(120)
+    }
+
     this.scheduleWifiConnect(150)
+    this._postOpenConfigSent = true
   }
 
   private onUnplugged() {
@@ -534,36 +576,13 @@ export class DongleDriver extends EventEmitter {
         : PhoneWorkMode.CarPlay
     this._androidWorkModeRuntime = AndroidWorkMode.AndroidAuto
 
-    const ui = (cfg.oemName ?? '').trim()
-    const label = ui.length > 0 ? ui : cfg.carName
-    const micCmd: CommandValue =
-      cfg.micType === MicType.DongleMic
-        ? 'boxMic'
-        : cfg.micType === MicType.PhoneMic
-          ? 'phoneMic'
-          : 'mic'
-    const aaResolution = matchFittingAAResolution({
-      width: cfg.width,
-      height: cfg.height
-    })
+    this._postOpenConfigSent = false
 
     const messages: SendableMessage[] = [
-      new SendString(label, FileAddress.BOX_NAME),
-      new SendBoolean(true, FileAddress.CHARGE_MODE),
-      new SendCommand(cfg.wifiType === '5ghz' ? 'wifi5g' : 'wifi24g'),
-      new SendCommand('wifiEnable'),
       new SendOpen(
         { width: cfg.width, height: cfg.height, fps: cfg.fps },
         this._phoneWorkModeRuntime
-      ),
-      new SendAndroidAutoDpi(aaResolution.width, aaResolution.height),
-      new SendBoolean(cfg.nightMode, FileAddress.NIGHT_MODE),
-      new SendNumber(cfg.hand, FileAddress.HAND_DRIVE_MODE),
-      new SendNumber(this._androidWorkModeRuntime, FileAddress.ANDROID_WORK_MODE),
-      new SendCommand(cfg.audioTransferMode ? 'audioTransferOn' : 'audioTransferOff'),
-      new SendCommand(micCmd),
-      new SendIconConfig({ oemName: cfg.oemName }),
-      new SendBoxSettings(cfg)
+      )
     ]
 
     for (const m of messages) {
@@ -678,6 +697,7 @@ export class DongleDriver extends EventEmitter {
         this._dongleFwVersion = undefined
         this._boxInfo = undefined
         this._lastDongleInfoEmitKey = ''
+        this._postOpenConfigSent = false
 
         // Only clear the device ref if we successfully closed OR we are sure it won't crash later.
         if (!keepDeviceRefToAvoidGcFinalizerCrash) {

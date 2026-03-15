@@ -229,17 +229,7 @@ export class ProjectionAudio {
     if (msg.data) {
       const now = Date.now()
       const voiceActive = this.siriActive || this.phonecallActive
-
-      // Drop Siri/phone-coded frames when no voice session is active
-      if (msg.decodeType === 5 && !voiceActive) {
-        return
-      }
-
       const logicalKey = this.getLogicalStreamKey(msg)
-
-      if (logicalKey === 'music' && !this.mediaActive) {
-        return
-      }
 
       // Player selection
       // music/nav use their normal stream player

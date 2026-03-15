@@ -3,40 +3,80 @@ export enum CommandMapping {
   startRecordAudio = 1,
   stopRecordAudio = 2,
   requestHostUI = 3, // 'Projection interface My Car button clicked'
+  disableBluetooth = 4,
   siri = 5, // 'Siri Button'
+  siriRelease = 6, // 'Siri Release Button'
   mic = 7, // 'Car Microphone'
+  boxMic = 8, // 'Dongle integrated Microphone'
   frame = 12,
-  boxMic = 15, // 'Box Microphone'
+  hideUI = 14,
+  boxMici2s = 15, // 'Box Microphone'
   enableNightMode = 16,
   disableNightMode = 17,
   startGnssReport = 18,
   stopGnssReport = 19,
   phoneMic = 21, // 'Phone Microphone'
-  audioTransferOn = 22, // Phone streams audio directly to car system, not dongle
-  audioTransferOff = 23, // DEFAULT - Phone streams audio to dongle
+  audioTransferOn = 22, // Disable audio
+  audioTransferOff = 23, // Default - Phone streams audio to LIVI
   wifi24g = 24, // '2.4G Wifi'
   wifi5g = 25, // '5G Wifi'
+  refreshFrame = 26,
+  enableStandbyMode = 28,
+  disableStandbyMode = 29,
+  startBleAdvertising = 30,
+  stopBleAdvertising = 31,
+
+  // D-PAD
   left = 100, // 'Button Left'
   right = 101, // 'Button Right'
+  up = 102, // 'Button Up'
+  down = 103, // 'Button Down'
   selectDown = 104, // 'Button Select Down'
   selectUp = 105, // 'Button Select Up'
   back = 106, // 'Button Back'
-  up = 113, // 'Button Up'
-  down = 114, // 'Button Down'
+
+  // Rotary Knob
+  knobLeft = 111,
+  knobRight = 112,
+  knobUp = 113,
+  knobDown = 114,
+
+  // Media Control
   home = 200, // 'Button Home'
   play = 201, // 'Button Play'
   pause = 202, // 'Button Pause'
   playPause = 203, // 'Button Toggle Play/Pause'
   next = 204, // 'Button Next Track'
   prev = 205, // 'Button Prev Track'
-  acceptPhone = 300, // 'Accept Phone Call'
-  rejectPhone = 301, // 'Reject Phone Call'
+
+  // Phone
+  acceptPhone = 300,
+  rejectPhone = 301,
+  phoneKey0 = 302,
+  phoneKey1 = 303,
+  phoneKey2 = 304,
+  phoneKey3 = 305,
+  phoneKey4 = 306,
+  phoneKey5 = 307,
+  phoneKey6 = 308,
+  phoneKey7 = 309,
+  phoneKey8 = 310,
+  phoneKey9 = 311,
+  phoneKeyStar = 312,
+  phoneKeyHash = 313,
+  phoneKeyHookSwitch = 314,
+
+  // Android Auto
   requestVideoFocus = 500,
   releaseVideoFocus = 501,
-  naviFocus = 506,
-  naviRelease = 507,
-  requestNaviScreenFocus = 508, // Request navigation screen
-  releaseNaviScreenFocus = 509, // Release navigation screen
+  requestAudioFocusDuck = 504,
+  releaseAudioFocus = 505,
+  requestNaviFocus = 506,
+  releaseNaviFocus = 507,
+  requestNaviScreenFocus = 508,
+  releaseNaviScreenFocus = 509,
+
+  // Connection Status Commands
   wifiEnable = 1000,
   autoConnetEnable = 1001,
   wifiConnect = 1002,
@@ -49,7 +89,8 @@ export enum CommandMapping {
   wifiConnected = 1009,
   wifiDisconnected = 1010,
   btPairStart = 1011,
-  wifiPair = 1012
+  wifiPair = 1012,
+  getBtOnlineList = 1013
 }
 
 export type CommandValue = keyof typeof CommandMapping

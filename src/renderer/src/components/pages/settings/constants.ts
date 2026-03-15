@@ -41,6 +41,7 @@ export const requiresRestartParams: (keyof ExtraConfig)[] = [
   'dashboardMediaInfo',
   'dashboardVehicleInfo',
   'dashboardRouteInfo',
+  'micType',
   'gps',
   'gnssGps',
   'gnssGlonass',

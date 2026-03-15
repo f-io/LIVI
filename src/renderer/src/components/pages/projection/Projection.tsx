@@ -783,7 +783,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           const autoSwitchOnStream = autoSwitchOnStreamRef.current
           const autoSwitchOnGuidance = autoSwitchOnGuidanceRef.current
 
-          if (value === CommandMapping.naviFocus) {
+          if (value === CommandMapping.requestNaviFocus) {
             if (!autoSwitchOnGuidance) break
 
             if (mapsEnabled) {
@@ -800,7 +800,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
             break
           }
 
-          if (value === CommandMapping.naviRelease) {
+          if (value === CommandMapping.releaseNaviFocus) {
             if (!autoSwitchOnGuidance) break
             if (mapsEnabled) {
               const back = lastNonMapsPathRef.current

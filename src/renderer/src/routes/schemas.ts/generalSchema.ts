@@ -256,6 +256,36 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
           path: 'bindings',
           bindingKey: 'back'
         },
+
+        {
+          type: 'keybinding',
+          label: 'Knob Left',
+          labelKey: 'settings.knobLeft',
+          path: 'bindings',
+          bindingKey: 'knobLeft'
+        },
+        {
+          type: 'keybinding',
+          label: 'Knob Right',
+          labelKey: 'settings.knobRight',
+          path: 'bindings',
+          bindingKey: 'knobRight'
+        },
+        {
+          type: 'keybinding',
+          label: 'Knob Up',
+          labelKey: 'settings.knobUp',
+          path: 'bindings',
+          bindingKey: 'knobUp'
+        },
+        {
+          type: 'keybinding',
+          label: 'Knob Down',
+          labelKey: 'settings.knobDown',
+          path: 'bindings',
+          bindingKey: 'knobDown'
+        },
+
         {
           type: 'keybinding',
           label: 'Home',
@@ -300,6 +330,7 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
           path: 'bindings',
           bindingKey: 'prev'
         },
+
         {
           type: 'keybinding',
           label: 'Accept Call',
@@ -314,12 +345,112 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
           path: 'bindings',
           bindingKey: 'rejectPhone'
         },
+
+        {
+          type: 'keybinding',
+          label: 'Phone Key 0',
+          labelKey: 'settings.phoneKey0',
+          path: 'bindings',
+          bindingKey: 'phoneKey0'
+        },
+        {
+          type: 'keybinding',
+          label: 'Phone Key 1',
+          labelKey: 'settings.phoneKey1',
+          path: 'bindings',
+          bindingKey: 'phoneKey1'
+        },
+        {
+          type: 'keybinding',
+          label: 'Phone Key 2',
+          labelKey: 'settings.phoneKey2',
+          path: 'bindings',
+          bindingKey: 'phoneKey2'
+        },
+        {
+          type: 'keybinding',
+          label: 'Phone Key 3',
+          labelKey: 'settings.phoneKey3',
+          path: 'bindings',
+          bindingKey: 'phoneKey3'
+        },
+        {
+          type: 'keybinding',
+          label: 'Phone Key 4',
+          labelKey: 'settings.phoneKey4',
+          path: 'bindings',
+          bindingKey: 'phoneKey4'
+        },
+        {
+          type: 'keybinding',
+          label: 'Phone Key 5',
+          labelKey: 'settings.phoneKey5',
+          path: 'bindings',
+          bindingKey: 'phoneKey5'
+        },
+        {
+          type: 'keybinding',
+          label: 'Phone Key 6',
+          labelKey: 'settings.phoneKey6',
+          path: 'bindings',
+          bindingKey: 'phoneKey6'
+        },
+        {
+          type: 'keybinding',
+          label: 'Phone Key 7',
+          labelKey: 'settings.phoneKey7',
+          path: 'bindings',
+          bindingKey: 'phoneKey7'
+        },
+        {
+          type: 'keybinding',
+          label: 'Phone Key 8',
+          labelKey: 'settings.phoneKey8',
+          path: 'bindings',
+          bindingKey: 'phoneKey8'
+        },
+        {
+          type: 'keybinding',
+          label: 'Phone Key 9',
+          labelKey: 'settings.phoneKey9',
+          path: 'bindings',
+          bindingKey: 'phoneKey9'
+        },
+        {
+          type: 'keybinding',
+          label: 'Phone Key *',
+          labelKey: 'settings.phoneKeyStar',
+          path: 'bindings',
+          bindingKey: 'phoneKeyStar'
+        },
+        {
+          type: 'keybinding',
+          label: 'Phone Key #',
+          labelKey: 'settings.phoneKeyHash',
+          path: 'bindings',
+          bindingKey: 'phoneKeyHash'
+        },
+        {
+          type: 'keybinding',
+          label: 'Hook Switch',
+          labelKey: 'settings.phoneKeyHookSwitch',
+          path: 'bindings',
+          bindingKey: 'phoneKeyHookSwitch'
+        },
+
         {
           type: 'keybinding',
           label: 'Voice Assistant',
           labelKey: 'settings.voiceAssistant',
           path: 'bindings',
           bindingKey: 'siri'
+        },
+        {
+          type: 'keybinding',
+          label: 'Voice Assistant Release',
+          labelKey: 'settings.voiceAssistantRelease',
+          path: 'bindings',
+          bindingKey: 'siriRelease'
         }
       ]
     },
