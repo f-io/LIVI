@@ -380,9 +380,9 @@ export class SendBoxSettings extends SendableMessageWithPayload {
 
     if (cfg.mapsEnabled) {
       body.naviScreenInfo = {
-        width: cfg.width,
-        height: cfg.height,
-        fps: cfg.fps
+        width: cfg.naviWidth,
+        height: cfg.naviHeight,
+        fps: cfg.naviFps
       }
     }
     if (DEBUG) {

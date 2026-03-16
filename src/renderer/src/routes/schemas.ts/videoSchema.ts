@@ -67,6 +67,63 @@ export const videoSchema: SettingsNode<ExtraConfig> = {
     },
     {
       type: 'route',
+      label: 'Navigation Screen',
+      labelKey: 'settings.navigationScreen',
+      route: 'navigationScreen',
+      path: '',
+      children: [
+        {
+          type: 'number',
+          label: 'Width',
+          labelKey: 'settings.width',
+          path: 'naviWidth',
+          min: MIN_WIDTH,
+          max: MAX_WIDTH,
+          step: 1,
+          displayValue: true,
+          page: {
+            title: 'Navigation Screen Width',
+            labelTitle: 'settings.width',
+            description: 'Navigation screen width in px',
+            labelDescription: 'settings.navigationScreenWidthDescription'
+          }
+        },
+        {
+          type: 'number',
+          label: 'Height',
+          labelKey: 'settings.height',
+          path: 'naviHeight',
+          min: MIN_HEIGHT,
+          max: MAX_HEIGHT,
+          step: 1,
+          displayValue: true,
+          page: {
+            title: 'Navigation Screen Height',
+            labelTitle: 'settings.height',
+            description: 'Navigation screen height in px',
+            labelDescription: 'settings.navigationScreenHeightDescription'
+          }
+        },
+        {
+          type: 'number',
+          label: 'FPS',
+          labelKey: 'settings.fps',
+          path: 'naviFps',
+          min: MIN_FPS,
+          max: MAX_FPS,
+          step: 1,
+          displayValue: true,
+          page: {
+            title: 'Navigation Screen FPS',
+            labelTitle: 'settings.fps',
+            description: 'Navigation screen FPS',
+            labelDescription: 'settings.navigationScreenFpsDescription'
+          }
+        }
+      ]
+    },
+    {
+      type: 'route',
       label: 'Camera',
       labelKey: 'settings.camera',
       route: 'camera',
