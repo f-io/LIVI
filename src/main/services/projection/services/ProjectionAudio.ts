@@ -2,6 +2,7 @@ import { AudioData, decodeTypeMap } from '../messages'
 import { AudioCommand } from '@shared/types/ProjectionEnums'
 import type { ExtraConfig } from '@shared/types'
 import { Microphone, AudioOutput, downsampleToMono } from '@main/services/audio'
+import { DEBUG } from '@main/constants'
 
 export type PlayerKey = string
 export type LogicalStreamKey = 'music' | 'nav' | 'siri' | 'call'
@@ -743,10 +744,12 @@ export class ProjectionAudio {
   private getAudioOutputForStream(msg: AudioData): AudioOutput | null {
     const meta = msg.decodeType != null ? this.safeDecodeType(msg.decodeType) : null
     if (!meta) {
-      console.warn('[ProjectionAudio] unknown decodeType in AudioData', {
-        decodeType: msg.decodeType,
-        audioType: msg.audioType
-      })
+      if (DEBUG) {
+        console.warn('[ProjectionAudio] unknown decodeType in AudioData', {
+          decodeType: msg.decodeType,
+          audioType: msg.audioType
+        })
+      }
       return null
     }
 

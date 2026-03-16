@@ -1,4 +1,5 @@
 import { spawn, ChildProcessWithoutNullStreams, execSync } from 'child_process'
+import { DEBUG } from '@main/constants'
 import os from 'os'
 import fs from 'fs'
 import path from 'path'
@@ -21,11 +22,13 @@ export class AudioOutput {
     this.sampleRate = opts.sampleRate
     this.channels = Math.max(1, opts.channels | 0)
 
-    console.debug('[AudioOutput] Init', {
-      sampleRate: this.sampleRate,
-      channels: this.channels,
-      platform: os.platform()
-    })
+    if (DEBUG) {
+      console.debug('[AudioOutput] Init', {
+        sampleRate: this.sampleRate,
+        channels: this.channels,
+        platform: os.platform()
+      })
+    }
   }
 
   start(): void {
@@ -110,7 +113,9 @@ export class AudioOutput {
       return
     }
 
-    console.debug('[AudioOutput] Spawning', cmd, args.join(' '))
+    if (DEBUG) {
+      console.debug('[AudioOutput] Spawning', cmd, args.join(' '))
+    }
     this.bytesWritten = 0
     this.queue = []
     this.writing = false
@@ -122,28 +127,32 @@ export class AudioOutput {
     const stdin = proc.stdin
 
     stdin.on('error', (err) => {
-      console.warn('[AudioOutput] stdin error:', err.message)
+      if (DEBUG) console.warn('[AudioOutput] stdin error:', err.message)
     })
     stdin.on('drain', () => this.flushQueue())
 
     proc.stderr.on('data', (d: Buffer) => {
       const s = d.toString().trim()
-      if (s) console.warn('[AudioOutput] STDERR:', s)
+      if (s && DEBUG) console.warn('[AudioOutput] STDERR:', s)
     })
     proc.on('error', (err) => {
-      console.error('[AudioOutput] process error:', err)
+      if (DEBUG) console.error('[AudioOutput] process error:', err)
       this.cleanup()
     })
     proc.on('close', (code, signal) => {
-      console.debug('[AudioOutput] process exited', {
-        code,
-        signal,
-        bytesWritten: this.bytesWritten
-      })
+      if (DEBUG) {
+        console.debug('[AudioOutput] process exited', {
+          code,
+          signal,
+          bytesWritten: this.bytesWritten
+        })
+      }
       this.cleanup()
     })
 
-    console.debug('[AudioOutput] playback started')
+    if (DEBUG) {
+      console.debug('[AudioOutput] playback started')
+    }
   }
 
   private flushQueue(): void {
@@ -187,12 +196,12 @@ export class AudioOutput {
         this.process.stdin.end()
       }
     } catch (e) {
-      console.warn('[AudioOutput] failed to end stdin:', e)
+      if (DEBUG) console.warn('[AudioOutput] failed to end stdin:', e)
     }
     try {
       this.process.kill()
     } catch (e) {
-      console.warn('[AudioOutput] failed to kill process:', e)
+      if (DEBUG) console.warn('[AudioOutput] failed to kill process:', e)
     }
     this.cleanup()
   }

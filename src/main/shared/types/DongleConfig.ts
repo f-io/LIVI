@@ -20,6 +20,9 @@ export type DongleConfig = {
   width: number
   height: number
   fps: number
+  naviWidth: number
+  naviHeight: number
+  naviFps: number
   lastPhoneWorkMode: number
   apkVer: string
   nightMode: boolean
