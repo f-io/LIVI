@@ -1,101 +1,82 @@
-import { spawn, ChildProcessWithoutNullStreams, execSync } from 'child_process'
+import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
 import { EventEmitter } from 'events'
-import os from 'os'
+import { DEBUG } from '@main/constants'
+import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
+import { decodeTypeMap, type AudioFormat } from '@shared/types'
 
 export default class Microphone extends EventEmitter {
   private process: ChildProcessWithoutNullStreams | null = null
-  private readonly device: string
-  private readonly rate: number = 16000
-  private readonly channels: number = 1
-  private readonly format: string = 'S16_LE'
+  private currentDecodeType = 5
+  private bytesRead = 0
+  private chunkSeq = 0
 
   constructor() {
     super()
-    this.device = Microphone.resolveSysdefaultDevice()
-    console.debug('[Microphone] Using device:', this.device)
+
+    if (DEBUG) {
+      console.debug('[Microphone] Init', {
+        platform: process.platform
+      })
+    }
   }
 
-  start(): void {
+  start(decodeType = 5): void {
     this.stop()
 
-    let cmd: string
-    let args: string[]
-    const env = { ...process.env, PATH: Microphone.buildExecPath(process.env.PATH) }
-
-    if (os.platform() === 'linux') {
-      cmd = 'arecord'
-      args = [
-        '-D',
-        this.device,
-        '-f',
-        this.format,
-        '-c',
-        this.channels.toString(),
-        '-r',
-        this.rate.toString(),
-        '-t',
-        'raw',
-        '-q',
-        '-'
-      ]
-    } else if (os.platform() === 'darwin') {
-      const recPath = Microphone.resolveRecPath()
-      if (!recPath) {
-        console.error('[Microphone] SoX (rec) not found. Install with: brew install sox')
-        return
-      }
-      cmd = recPath
-      args = [
-        '-b',
-        '16',
-        '-c',
-        this.channels.toString(),
-        '-r',
-        this.rate.toString(),
-        '-e',
-        'signed-integer',
-        '-t',
-        'raw',
-        '-q',
-        '-'
-      ]
-    } else if (os.platform() === 'win32') {
-      const ffmpegPath = Microphone.resolveFfmpegPath()
-      if (!ffmpegPath) {
-        console.error('[Microphone] ffmpeg not found (expected resources/bin/ffmpeg.exe)')
-        return
-      }
-
-      cmd = ffmpegPath
-
-      const micName = Microphone.resolveSysdefaultDevice(ffmpegPath)
-
-      args = [
-        '-hide_banner',
-        '-loglevel',
-        'warning',
-        '-nostdin',
-        '-f',
-        'dshow',
-        '-i',
-        `audio=${micName}`,
-        '-ac',
-        this.channels.toString(),
-        '-ar',
-        this.rate.toString(),
-        '-f',
-        's16le',
-        'pipe:1'
-      ]
-    } else {
-      console.error('[Microphone] Platform not supported for microphone recording')
+    if (process.platform !== 'darwin') {
+      console.error('[Microphone] Only macOS is supported by this build')
       return
     }
 
-    const spawnEnv = os.platform() === 'win32' ? process.env : env
-    this.process = spawn(cmd, args, { env: spawnEnv, shell: false })
+    const gstRoot = Microphone.resolveGStreamerRoot()
+    if (!gstRoot) {
+      console.error('[Microphone] Bundled GStreamer not found')
+      return
+    }
+
+    const format = Microphone.resolveFormat(decodeType)
+    this.currentDecodeType = decodeType
+
+    const cmd = path.join(gstRoot, 'bin', 'gst-launch-1.0')
+    const args = [
+      'osxaudiosrc',
+      '!',
+      'queue',
+      'max-size-time=20000000', // max 20 ms
+      'max-size-bytes=0',
+      'max-size-buffers=0',
+      'leaky=downstream',
+      '!',
+      'audioconvert',
+      '!',
+      'audioresample',
+      '!',
+      `audio/x-raw,format=${Microphone.toGstRawFormat(format)},rate=${format.frequency},channels=${format.channel}`,
+      '!',
+      'fdsink',
+      'fd=1'
+    ]
+
+    const env = {
+      ...process.env,
+      DYLD_LIBRARY_PATH: path.join(gstRoot, 'lib'),
+      GST_PLUGIN_SYSTEM_PATH_1_0: path.join(gstRoot, 'lib', 'gstreamer-1.0'),
+      GST_PLUGIN_SCANNER: path.join(gstRoot, 'libexec', 'gstreamer-1.0', 'gst-plugin-scanner')
+    }
+
+    if (DEBUG) {
+      console.debug('[Microphone] Spawning', cmd, args.join(' '))
+    }
+
+    this.bytesRead = 0
+    this.chunkSeq = 0
+
+    this.process = spawn(cmd, args, {
+      env,
+      shell: false
+    })
 
     const proc = this.process
     if (!proc) {
@@ -104,148 +85,127 @@ export default class Microphone extends EventEmitter {
       return
     }
 
-    proc.stdout.on('data', (chunk: Buffer) => this.emit('data', chunk))
+    proc.stdout.on('data', (chunk: Buffer) => {
+      this.bytesRead += chunk.byteLength
+      this.chunkSeq += 1
+
+      if (DEBUG && (this.chunkSeq === 1 || this.chunkSeq % 100 === 0)) {
+        console.debug('[Microphone] chunk received', {
+          ts: Date.now(),
+          decodeType: this.currentDecodeType,
+          chunkBytes: chunk.byteLength,
+          bytesRead: this.bytesRead,
+          seq: this.chunkSeq
+        })
+      }
+
+      this.emit('data', chunk)
+    })
+
     proc.stderr.on('data', (d: Buffer) => {
       const s = d.toString().trim()
-      if (s) console.warn('[Microphone] STDERR:', s)
+      if (s && DEBUG) {
+        console.warn('[Microphone] STDERR:', s)
+      }
     })
+
     proc.on('error', (err) => {
-      console.error('[Microphone] Error:', err)
-      this.cleanup()
-    })
-    proc.on('close', (code) => {
-      console.debug('[Microphone] recorder exited with code', code)
+      console.error('[Microphone] process error:', err)
       this.cleanup()
     })
 
-    console.debug('[Microphone] Recording started')
+    proc.on('close', (code, signal) => {
+      if (DEBUG) {
+        console.debug('[Microphone] recorder exited', {
+          ts: Date.now(),
+          code,
+          signal,
+          decodeType: this.currentDecodeType,
+          bytesRead: this.bytesRead
+        })
+      }
+      this.cleanup()
+    })
+
+    if (DEBUG) {
+      console.debug('[Microphone] Recording started', {
+        ts: Date.now(),
+        decodeType: this.currentDecodeType,
+        frequency: format.frequency,
+        channel: format.channel,
+        bitDepth: format.bitDepth,
+        format: format.format
+      })
+    }
   }
 
   stop(): void {
-    if (this.process) {
-      console.debug('[Microphone] Stopping recording')
-      try {
-        this.process.kill()
-      } catch (e) {
+    if (!this.process) {
+      if (DEBUG) {
+        console.debug('[Microphone] No active process to stop')
+      }
+      return
+    }
+
+    if (DEBUG) {
+      console.debug('[Microphone] Stopping recording', {
+        ts: Date.now(),
+        decodeType: this.currentDecodeType,
+        bytesRead: this.bytesRead
+      })
+    }
+
+    try {
+      this.process.kill()
+    } catch (e) {
+      if (DEBUG) {
         console.warn('[Microphone] Failed to kill process:', e)
       }
-      this.cleanup()
-    } else {
-      console.debug('[Microphone] No active process to stop')
     }
+
+    this.cleanup()
+  }
+
+  isCapturing(): boolean {
+    return !!this.process
   }
 
   private cleanup(): void {
     this.process = null
+    this.bytesRead = 0
+    this.chunkSeq = 0
   }
 
-  // Windows: resolve bundled ffmpeg
-  private static resolveFfmpegPath(): string | null {
-    const bundled = path.join(process.resourcesPath, 'bin', 'ffmpeg.exe')
+  private static resolveFormat(decodeType: number): AudioFormat {
+    return (
+      decodeTypeMap[decodeType] ?? {
+        frequency: 16000,
+        channel: 1,
+        bitDepth: 16,
+        format: 's16le'
+      }
+    )
+  }
+
+  private static toGstRawFormat(format: AudioFormat): string {
+    const raw = (format.format ?? 's16le').toLowerCase()
+
+    if (raw === 's16le' || raw === 's16_le') {
+      return 'S16LE'
+    }
+
+    return raw.toUpperCase()
+  }
+
+  private static resolveGStreamerRoot(): string | null {
+    const isPackaged = app.isPackaged
+    const base = isPackaged ? process.resourcesPath : path.join(app.getAppPath(), 'assets')
+    const bundled = path.join(base, 'gstreamer', 'darwin')
+
     return fs.existsSync(bundled) ? bundled : null
   }
 
-  // macOS: find SoX/rec
-  private static resolveRecPath(): string | null {
-    const fromEnv = process.env.SOX_REC_PATH
-    if (fromEnv && fs.existsSync(fromEnv)) return fromEnv
-
-    const candidates = [
-      '/opt/homebrew/bin/rec', // Apple Silicon
-      '/usr/local/bin/rec' // Intel
-    ]
-    for (const p of candidates) if (fs.existsSync(p)) return p
-
-    try {
-      const widened = Microphone.buildExecPath(process.env.PATH)
-      const out = execSync('which rec', {
-        encoding: 'utf8',
-        env: { ...process.env, PATH: widened }
-      }).trim()
-      if (out && fs.existsSync(out)) return out
-    } catch {}
-
-    return null
-  }
-
-  private static buildExecPath(current?: string): string {
-    const extra = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin']
-    const set = new Set<string>([...extra, ...(current ? current.split(':') : [])])
-    return Array.from(set).join(':')
-  }
-
-  static resolveSysdefaultDevice(ffmpegPath?: string): string {
-    const platform = os.platform()
-
-    if (platform === 'linux') {
-      try {
-        const output = execSync('arecord -L', { encoding: 'utf8' })
-        const lines = output.split('\n')
-        for (const line of lines) {
-          const m = line.trim().match(/^sysdefault:CARD=([^\s,]+)/)
-          if (m) return `plughw:CARD=${m[1]},DEV=0`
-        }
-        console.warn('[Microphone] sysdefault card not found, falling back')
-        return 'plughw:0,0'
-      } catch (e) {
-        console.warn('[Microphone] Failed to resolve sysdefault device', e)
-        return 'plughw:0,0'
-      }
-    }
-
-    if (platform === 'darwin') return 'default'
-
-    if (platform === 'win32') {
-      if (!ffmpegPath) return 'default'
-
-      try {
-        const out = execSync(
-          `cmd.exe /d /s /c ""${ffmpegPath}" -hide_banner -loglevel info -f dshow -list_devices true -i dummy 2>&1"`,
-          { encoding: 'utf8', windowsHide: true }
-        )
-
-        const lines = out.split(/\r?\n/)
-
-        for (let i = 0; i < lines.length; i++) {
-          const m = lines[i].match(/"\s*([^"]+?)\s*"\s*\(audio\)/i)
-          if (!m?.[1]) continue
-
-          const friendly = m[1]
-          const next = lines[i + 1] ?? ''
-          const a = next.match(/Alternative name\s+"([^"]+)"/i)
-          const alt = a?.[1]
-
-          return alt ?? friendly
-        }
-      } catch (e) {
-        console.warn('[Microphone] Failed to enumerate dshow devices:', e)
-      }
-
-      return 'default'
-    }
-
-    return 'unsupported'
-  }
-
   static getSysdefaultPrettyName(): string {
-    if (os.platform() === 'linux') {
-      try {
-        const result = execSync('arecord -L', { encoding: 'utf8' })
-        const lines = result.split('\n')
-        const idx = lines.findIndex((l) => l.trim().startsWith('sysdefault:'))
-        if (idx === -1) return 'not available'
-        const desc = lines[idx + 1]?.trim()
-        return desc && desc !== 'sysdefault' ? desc : 'not available'
-      } catch (e) {
-        console.warn('[Microphone] Failed to get sysdefault mic label', e)
-        return 'not available'
-      }
-    } else if (os.platform() === 'darwin') {
-      return 'system default'
-    } else if (os.platform() === 'win32') {
-      return 'system default (DirectShow best-effort)'
-    } else {
-      return 'not available'
-    }
+    return 'system default'
   }
 }

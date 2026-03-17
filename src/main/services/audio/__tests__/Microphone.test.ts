@@ -1,11 +1,22 @@
 import { EventEmitter } from 'events'
-import os from 'os'
-import { spawn, execSync } from 'child_process'
+import { spawn } from 'child_process'
+import fs from 'fs'
 import Microphone from '@main/services/audio/Microphone'
+import { app } from 'electron'
 
 jest.mock('child_process', () => ({
-  spawn: jest.fn(),
-  execSync: jest.fn()
+  spawn: jest.fn()
+}))
+
+jest.mock('fs', () => ({
+  existsSync: jest.fn()
+}))
+
+jest.mock('electron', () => ({
+  app: {
+    isPackaged: false,
+    getAppPath: jest.fn()
+  }
 }))
 
 type MockProc = EventEmitter & {
@@ -23,37 +34,31 @@ function makeProc(): MockProc {
 }
 
 describe('Microphone', () => {
+  const originalPlatform = process.platform
+
   beforeEach(() => {
     jest.clearAllMocks()
-  })
 
-  test('resolveSysdefaultDevice linux parses sysdefault card', () => {
-    jest.spyOn(os, 'platform').mockReturnValue('linux')
-    ;(execSync as jest.Mock).mockReturnValue('sysdefault:CARD=PCH\n  HDA Intel PCH\n')
-
-    expect(Microphone.resolveSysdefaultDevice()).toBe('plughw:CARD=PCH,DEV=0')
-  })
-
-  test('resolveSysdefaultDevice linux fallback on failure', () => {
-    jest.spyOn(os, 'platform').mockReturnValue('linux')
-    ;(execSync as jest.Mock).mockImplementation(() => {
-      throw new Error('fail')
+    Object.defineProperty(process, 'platform', {
+      value: 'darwin'
     })
-
-    expect(Microphone.resolveSysdefaultDevice()).toBe('plughw:0,0')
+    ;(app.getAppPath as jest.Mock).mockReturnValue('/mock/app')
+    ;(fs.existsSync as jest.Mock).mockImplementation((p: fs.PathLike) => {
+      return String(p).includes('/mock/app/assets/gstreamer/darwin')
+    })
   })
 
-  test('getSysdefaultPrettyName linux returns description line', () => {
-    jest.spyOn(os, 'platform').mockReturnValue('linux')
-    ;(execSync as jest.Mock).mockReturnValue('null\nsysdefault:CARD=PCH\n  HDA Intel PCH, ALC\n')
-
-    expect(Microphone.getSysdefaultPrettyName()).toBe('HDA Intel PCH, ALC')
+  afterAll(() => {
+    Object.defineProperty(process, 'platform', {
+      value: originalPlatform
+    })
   })
 
-  test('start on linux spawns arecord and forwards stdout data event', () => {
-    jest.spyOn(os, 'platform').mockReturnValue('linux')
-    ;(execSync as jest.Mock).mockReturnValue('sysdefault:CARD=PCH\n')
+  test('getSysdefaultPrettyName returns system default', () => {
+    expect(Microphone.getSysdefaultPrettyName()).toBe('system default')
+  })
 
+  test('start spawns gst-launch on darwin and forwards stdout data', () => {
     const proc = makeProc()
     ;(spawn as jest.Mock).mockReturnValue(proc)
 
@@ -61,39 +66,60 @@ describe('Microphone', () => {
     const onData = jest.fn()
     mic.on('data', onData)
 
-    mic.start()
+    mic.start(5)
 
     expect(spawn).toHaveBeenCalledWith(
-      'arecord',
-      expect.arrayContaining(['-D', 'plughw:CARD=PCH,DEV=0', '-f', 'S16_LE']),
+      '/mock/app/assets/gstreamer/darwin/bin/gst-launch-1.0',
+      expect.arrayContaining([
+        'osxaudiosrc',
+        'queue',
+        'max-size-time=20000000',
+        'audioconvert',
+        'audioresample',
+        'audio/x-raw,format=S16LE,rate=16000,channels=1',
+        'fdsink',
+        'fd=1'
+      ]),
       expect.any(Object)
     )
 
-    const chunk = Buffer.from([1, 2, 3])
+    const chunk = Buffer.from([1, 2, 3, 4])
     proc.stdout.emit('data', chunk)
+
     expect(onData).toHaveBeenCalledWith(chunk)
   })
 
-  test('stop kills active process', () => {
-    jest.spyOn(os, 'platform').mockReturnValue('linux')
-    ;(execSync as jest.Mock).mockReturnValue('sysdefault:CARD=PCH\n')
-
+  test('start uses decodeType-driven format', () => {
     const proc = makeProc()
     ;(spawn as jest.Mock).mockReturnValue(proc)
 
     const mic = new Microphone()
-    mic.start()
+    mic.start(3)
+
+    expect(spawn).toHaveBeenCalledWith(
+      '/mock/app/assets/gstreamer/darwin/bin/gst-launch-1.0',
+      expect.arrayContaining(['audio/x-raw,format=S16LE,rate=8000,channels=1']),
+      expect.any(Object)
+    )
+  })
+
+  test('stop kills active process', () => {
+    const proc = makeProc()
+    ;(spawn as jest.Mock).mockReturnValue(proc)
+
+    const mic = new Microphone()
+    mic.start(5)
     mic.stop()
 
     expect(proc.kill).toHaveBeenCalledTimes(1)
   })
 
-  test('resolveSysdefaultDevice win32 picks Alternative name when available', () => {
-    jest.spyOn(os, 'platform').mockReturnValue('win32')
-    ;(execSync as jest.Mock).mockReturnValue(
-      '[dshow @ ...]  "Microphone (USB)" (audio)\n[dshow @ ...]     Alternative name "@device_cm_123"\n'
-    )
+  test('start does not spawn when gstreamer root is missing', () => {
+    ;(fs.existsSync as jest.Mock).mockReturnValue(false)
 
-    expect(Microphone.resolveSysdefaultDevice('C:\\ffmpeg.exe')).toBe('@device_cm_123')
+    const mic = new Microphone()
+    mic.start(5)
+
+    expect(spawn).not.toHaveBeenCalled()
   })
 })
