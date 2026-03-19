@@ -18,7 +18,7 @@ on:
         type: boolean
         default: false
       linux_arm64:
-        description: 'Build Linux arm64 (AppImage, emulated)'
+        description: 'Build Linux arm64 (AppImage, native)'
         type: boolean
         default: false
       macos_arm64:
@@ -76,13 +76,13 @@ jobs:
           if (eventName === 'workflow_run') {
             // main: always build everything
             add('x86_64', 'ubuntu-latest',  'native',   'AppImage');
-            add('arm64',  'ubuntu-latest',  'emulated', 'AppImage');
+            add('arm64',  'ubuntu-24.04-arm',  'native', 'AppImage');
             add('darwin', 'macos-latest',   'native',   'dmg');
             add('win-x64','windows-latest', 'native',   'exe');
           } else {
             // manual: only selected
             if (inputs.linux_x86_64) add('x86_64', 'ubuntu-latest',  'native',   'AppImage');
-            if (inputs.linux_arm64)  add('arm64',  'ubuntu-latest',  'emulated', 'AppImage');
+            if (inputs.linux_arm64)  add('arm64',  'ubuntu-24.04-arm',  'native', 'AppImage');
             if (inputs.macos_arm64)  add('darwin', 'macos-latest',   'native',   'dmg');
             if (inputs.windows_x64)  add('win-x64','windows-latest', 'native',   'exe');
           }
@@ -231,63 +231,34 @@ jobs:
           pnpm run build:linux
 
       # ----------------------------
-      # Linux arm64 (emulated via Docker + QEMU)
+      # Linux arm64
       # ----------------------------
-      - name: Enable binfmt for ARM64 containers [arm64]
+
+      - name: Install Linux deps [arm64]
         if: matrix.platform == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
-          docker run --privileged --rm tonistiigi/binfmt --install arm64 >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+              build-essential python3 python3-dev libusb-1.0-0-dev libudev-dev \
+              pkg-config libusb-1.0-0 libudev1 ca-certificates
+          sudo rm -rf /var/lib/apt/lists/*
 
-      - name: Build for ARM64 (emulated)
+      - name: Install deps (pnpm) [arm64]
+        if: matrix.platform == 'arm64'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build for ARM64 (native Ubuntu)
         if: matrix.platform == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
-
-          mkdir -p .pnpm-store .cache/electron .cache/electron-builder
-          chmod -R a+rwx .pnpm-store .cache || true
-
-          docker run --rm --platform=linux/arm64/v8 \
-            -v "${GITHUB_WORKSPACE}:/work" \
-            -w /work \
-            -e HUSKY=0 \
-            -e PNPM_NODE_LINKER=hoisted \
-            -e PNPM_SHAMEFULLY_HOIST=true \
-            -e ELECTRON_CACHE=/work/.cache/electron \
-            -e ELECTRON_BUILDER_CACHE=/work/.cache/electron-builder \
-            node:24-trixie-slim bash -lc '
-              set -euo pipefail
-
-              apt-get update
-              apt-get install -y --no-install-recommends \
-                git build-essential python3 python3-dev \
-                libusb-1.0-0-dev libudev-dev pkg-config \
-                libusb-1.0-0 libudev1 ca-certificates \
-                liblzo2-2
-              rm -rf /var/lib/apt/lists/*
-
-              corepack enable
-              corepack install
-              pnpm --version
-
-              pnpm config set store-dir /work/.pnpm-store
-              pnpm install --frozen-lockfile
-
-              ELECTRON_VERSION="$(node -p "require(\"./node_modules/electron/package.json\").version")"
-              npx --yes node-gyp install --target="$ELECTRON_VERSION" --dist-url=https://artifacts.electronjs.org/headers/dist
-
-              pnpm run build:armLinux
-            '
-
-      - name: Fix cache permissions after ARM64 container
-        if: matrix.platform == 'arm64'
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo chown -R "$USER:$USER" .cache .pnpm-store node_modules/.vite node_modules/.cache 2>/dev/null || true
-          sudo chmod -R a+rX .cache .pnpm-store node_modules/.vite node_modules/.cache 2>/dev/null || true
+          ELECTRON_VERSION=$(node -p "require('./node_modules/electron/package.json').version")
+          npx --yes node-gyp install --target="$ELECTRON_VERSION" --dist-url=https://artifacts.electronjs.org/headers/dist
+          pnpm run typecheck
+          rm -rf dist
+          pnpm run build:armLinux
 
       # ----------------------------
       # macOS

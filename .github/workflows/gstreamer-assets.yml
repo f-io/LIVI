@@ -145,9 +145,137 @@ jobs:
           path: gstreamer-darwin.tar.gz
           retention-days: 7
 
-      # Linux/Windows
-      # - package-linux.sh / smoke-test-linux.sh / version.txt / upload-artifact
-      # - package-windows.ps1 / smoke-test-windows.ps1 / version.txt / upload-artifact
+      - name: Build bundle [linux-x86_64 via Debian forky]
+        if: matrix.platform == 'linux-x86_64'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          chmod +x scripts/gstreamer/package-linux.sh
+          chmod +x scripts/gstreamer/smoke-test-linux.sh
+
+          docker run --rm --platform=linux/amd64 \
+            -v "${GITHUB_WORKSPACE}:/work" \
+            -w /work \
+            debian:forky-slim sh -lc '
+              set -euo pipefail
+
+              export DEBIAN_FRONTEND=noninteractive
+
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                bash coreutils findutils file python3 dpkg-dev ca-certificates \
+                gstreamer1.0-tools \
+                gstreamer1.0-plugins-base \
+                gstreamer1.0-plugins-good \
+                gstreamer1.0-plugins-bad \
+                gstreamer1.0-libav \
+                gstreamer1.0-gl \
+                gstreamer1.0-x \
+                gstreamer1.0-alsa \
+                gstreamer1.0-pulseaudio \
+                libgstreamer1.0-0 \
+                libgstreamer-plugins-base1.0-0 \
+                libglib2.0-0 \
+                liborc-0.4-0 \
+                libgudev-1.0-0 \
+                zlib1g \
+                libc6 \
+                libgcc-s1 \
+                libstdc++6
+
+              scripts/gstreamer/package-linux.sh "assets/gstreamer/linux-x86_64"
+              scripts/gstreamer/smoke-test-linux.sh "assets/gstreamer/linux-x86_64"
+
+              VERSION="$(assets/gstreamer/linux-x86_64/bin/gst-launch-1.0 --version | awk '"'"'/^gst-launch-1.0 version / { print $3; exit }'"'"')"
+              printf "%s\n" "$VERSION" > assets/gstreamer/linux-x86_64/version.txt
+              echo "Version: $VERSION"
+            '
+
+      - name: Build bundle [linux-aarch64 via Debian forky]
+        if: matrix.platform == 'linux-aarch64'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          chmod +x scripts/gstreamer/package-linux.sh
+          chmod +x scripts/gstreamer/smoke-test-linux.sh
+
+          docker run --rm --platform=linux/arm64/v8 \
+            -v "${GITHUB_WORKSPACE}:/work" \
+            -w /work \
+            debian:forky-slim sh -lc '
+              set -euo pipefail
+
+              export DEBIAN_FRONTEND=noninteractive
+
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                bash coreutils findutils file python3 dpkg-dev ca-certificates \
+                gstreamer1.0-tools \
+                gstreamer1.0-plugins-base \
+                gstreamer1.0-plugins-good \
+                gstreamer1.0-plugins-bad \
+                gstreamer1.0-libav \
+                gstreamer1.0-gl \
+                gstreamer1.0-x \
+                gstreamer1.0-alsa \
+                gstreamer1.0-pulseaudio \
+                libgstreamer1.0-0 \
+                libgstreamer-plugins-base1.0-0 \
+                libglib2.0-0 \
+                liborc-0.4-0 \
+                libgudev-1.0-0 \
+                zlib1g \
+                libc6 \
+                libgcc-s1 \
+                libstdc++6
+
+              scripts/gstreamer/package-linux.sh "assets/gstreamer/linux-aarch64"
+              scripts/gstreamer/smoke-test-linux.sh "assets/gstreamer/linux-aarch64"
+
+              VERSION="$(assets/gstreamer/linux-aarch64/bin/gst-launch-1.0 --version | awk '"'"'/^gst-launch-1.0 version / { print $3; exit }'"'"')"
+              printf "%s\n" "$VERSION" > assets/gstreamer/linux-aarch64/version.txt
+              echo "Version: $VERSION"
+            '
+
+      - name: Fix file permissions [linux]
+        if: startsWith(matrix.platform, 'linux-')
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo chown -R "$USER:$USER" "${{ matrix.asset_path }}" 2>/dev/null || true
+          sudo chmod -R a+rX "${{ matrix.asset_path }}" 2>/dev/null || true
+
+      - name: Pack artifact [linux-x86_64]
+        if: matrix.platform == 'linux-x86_64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -C assets/gstreamer -czf gstreamer-linux-x86_64.tar.gz linux-x86_64
+
+      - name: Upload artifact [linux-x86_64]
+        if: matrix.platform == 'linux-x86_64'
+        uses: actions/upload-artifact@v6
+        with:
+          name: gstreamer-linux-x86_64
+          path: gstreamer-linux-x86_64.tar.gz
+          retention-days: 7
+
+      - name: Pack artifact [linux-aarch64]
+        if: matrix.platform == 'linux-aarch64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -C assets/gstreamer -czf gstreamer-linux-aarch64.tar.gz linux-aarch64
+
+      - name: Upload artifact [linux-aarch64]
+        if: matrix.platform == 'linux-aarch64'
+        uses: actions/upload-artifact@v6
+        with:
+          name: gstreamer-linux-aarch64
+          path: gstreamer-linux-aarch64.tar.gz
+          retention-days: 7
 
   publish:
     name: Publish gstreamer assets
@@ -187,14 +315,32 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: gstreamer-linux-x86_64
-          path: assets/gstreamer/linux-x86_64
+          path: .artifacts/linux-x86_64
+
+      - name: Extract artifact [linux-x86_64]
+        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-x86_64"')
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf assets/gstreamer/linux-x86_64
+          mkdir -p assets/gstreamer
+          tar -C assets/gstreamer -xzf .artifacts/linux-x86_64/gstreamer-linux-x86_64.tar.gz
 
       - name: Download artifact [linux-aarch64]
         if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-aarch64"')
         uses: actions/download-artifact@v8
         with:
           name: gstreamer-linux-aarch64
-          path: assets/gstreamer/linux-aarch64
+          path: .artifacts/linux-aarch64
+
+      - name: Extract artifact [linux-aarch64]
+        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-aarch64"')
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf assets/gstreamer/linux-aarch64
+          mkdir -p assets/gstreamer
+          tar -C assets/gstreamer -xzf .artifacts/linux-aarch64/gstreamer-linux-aarch64.tar.gz
 
       - name: Download artifact [win-x86]
         if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-win-x86"')
