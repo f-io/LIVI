@@ -85,5 +85,19 @@ extraResources:
       - '!**/*.a'
       - '!share/**'
 
+  - from: assets/gstreamer/linux-x86_64
+    to: gstreamer/linux-x86_64
+    filter:
+      - '**/*'
+      - '!**/*.a'
+      - '!share/**'
+
+  - from: assets/gstreamer/linux-aarch64
+    to: gstreamer/linux-aarch64
+    filter:
+      - '**/*'
+      - '!**/*.a'
+      - '!share/**'
+
 toolsets:
   appimage: '1.0.2'
