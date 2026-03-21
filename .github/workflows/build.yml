@@ -2,10 +2,10 @@ name: build
 run-name: 'build → ${{ github.event.inputs.branch || github.event.workflow_run.head_branch || github.ref_name }}'
 
 on:
-  # workflow_run:
-  #   workflows: ['typecheck']
-  #   branches: [main]
-  #   types: [completed]
+  workflow_run:
+    workflows: ['typecheck']
+    branches: [main]
+    types: [completed]
 
   workflow_dispatch:
     inputs:
@@ -13,22 +13,22 @@ on:
         description: 'Branch to build'
         required: true
         default: 'main'
-      linux_x86_64:
-        description: 'Build Linux x86_64 (AppImage)'
+      linux_x64:
+        description: 'Build Linux x64 (AppImage)'
         type: boolean
-        default: false
+        default: true
       linux_arm64:
         description: 'Build Linux arm64 (AppImage)'
         type: boolean
-        default: false
+        default: true
       macos_arm64:
         description: 'Build macOS arm64 (dmg)'
         type: boolean
-        default: false
+        default: true
       windows_x64:
-        description: 'Build Windows x86_64 (nsis)'
+        description: 'Build Windows x64 (nsis)'
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: write
@@ -47,7 +47,7 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          IN_LINUX_X86_64: ${{ inputs.linux_x86_64 }}
+          IN_LINUX_X64: ${{ inputs.linux_x64 }}
           IN_LINUX_ARM64: ${{ inputs.linux_arm64 }}
           IN_MACOS_ARM64: ${{ inputs.macos_arm64 }}
           IN_WINDOWS_X64: ${{ inputs.windows_x64 }}
@@ -62,29 +62,29 @@ jobs:
           const isTrue = (v) => String(v).toLowerCase() === 'true';
 
           const inputs = {
-            linux_x86_64: isTrue(process.env.IN_LINUX_X86_64),
-            linux_arm64:  isTrue(process.env.IN_LINUX_ARM64),
-            macos_arm64:  isTrue(process.env.IN_MACOS_ARM64),
-            windows_x64:  isTrue(process.env.IN_WINDOWS_X64),
+            linux_x64: isTrue(process.env.IN_LINUX_X64),
+            linux_arm64: isTrue(process.env.IN_LINUX_ARM64),
+            macos_arm64: isTrue(process.env.IN_MACOS_ARM64),
+            windows_x64: isTrue(process.env.IN_WINDOWS_X64),
           };
 
           const include = [];
-          const add = (platform, os, arch, artifact_ext) => {
-            include.push({ platform, os, arch, artifact_ext });
+          const add = (os, runner, arch, artifact_ext) => {
+            include.push({ os, runner, arch, artifact_ext });
           };
 
           if (eventName === 'workflow_run') {
             // main: always build everything
-            add('x86_64', 'ubuntu-latest',  'native',   'AppImage');
-            add('arm64',  'ubuntu-24.04-arm',  'native', 'AppImage');
-            add('darwin', 'macos-latest',   'native',   'dmg');
-            add('win-x64','windows-latest', 'native',   'exe');
+            add('linux', 'ubuntu-latest', 'x64', 'AppImage');
+            add('linux', 'ubuntu-24.04-arm', 'arm64', 'AppImage');
+            add('macos', 'macos-latest', 'arm64', 'dmg');
+            add('windows', 'windows-latest', 'x64', 'exe');
           } else {
             // manual: only selected
-            if (inputs.linux_x86_64) add('x86_64', 'ubuntu-latest',  'native',   'AppImage');
-            if (inputs.linux_arm64)  add('arm64',  'ubuntu-24.04-arm',  'native', 'AppImage');
-            if (inputs.macos_arm64)  add('darwin', 'macos-latest',   'native',   'dmg');
-            if (inputs.windows_x64)  add('win-x64','windows-latest', 'native',   'exe');
+            if (inputs.linux_x64) add('linux', 'ubuntu-latest', 'x64', 'AppImage');
+            if (inputs.linux_arm64) add('linux', 'ubuntu-24.04-arm', 'arm64', 'AppImage');
+            if (inputs.macos_arm64) add('macos', 'macos-latest', 'arm64', 'dmg');
+            if (inputs.windows_x64) add('windows', 'windows-latest', 'x64', 'exe');
           }
 
           const matrixObj = { include };
@@ -99,14 +99,11 @@ jobs:
           console.log('Empty:', isEmpty);
           NODE
 
-  # ------------------------------------------------------------
-  # Builds (only planned targets)
-  # ------------------------------------------------------------
   build:
-    name: Build ${{ matrix.artifact_ext }} (${{ matrix.platform }}) on ${{ github.event.inputs.branch || github.event.workflow_run.head_branch || github.ref_name }}
+    name: Build ${{ matrix.artifact_ext }} (${{ matrix.os }}-${{ matrix.arch }}) on ${{ github.event.inputs.branch || github.event.workflow_run.head_branch || github.ref_name }}
     needs: plan
     if: ${{ needs.plan.outputs.is_empty != 'true' }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     env:
       BUILD_BRANCH: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.event.workflow_run.head_branch }}
       HUSKY: 0
@@ -123,43 +120,40 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/heads/{0}', github.event.inputs.branch) || github.event.workflow_run.head_sha }}
 
-      # ----------------------------
-      # Caches
-      # ----------------------------
       - name: Cache pnpm store
         uses: actions/cache@v5
         with:
           path: .pnpm-store
-          key: pnpm-store-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: pnpm-store-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
-            pnpm-store-${{ runner.os }}-${{ matrix.platform }}-
+            pnpm-store-${{ matrix.os }}-${{ matrix.arch }}-
 
       - name: Cache build caches (vite/esbuild)
-        if: ${{ matrix.platform != 'win-x64' }}
+        if: ${{ matrix.os != 'windows' }}
         uses: actions/cache@v5
         with:
           path: |
             node_modules/.vite
             node_modules/.cache
-          key: build-cache-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: build-cache-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
-            build-cache-${{ runner.os }}-${{ matrix.platform }}-
+            build-cache-${{ matrix.os }}-${{ matrix.arch }}-
 
       - name: Cache Electron downloads
         uses: actions/cache@v5
         with:
           path: .cache/electron
-          key: electron-cache-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('package.json', 'pnpm-lock.yaml') }}
+          key: electron-cache-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('package.json', 'pnpm-lock.yaml') }}
           restore-keys: |
-            electron-cache-${{ runner.os }}-${{ matrix.platform }}-
+            electron-cache-${{ matrix.os }}-${{ matrix.arch }}-
 
       - name: Cache electron-builder binaries
         uses: actions/cache@v5
         with:
           path: .cache/electron-builder
-          key: eb-cache-${{ runner.os }}-${{ matrix.platform }}-${{ hashFiles('package.json', 'pnpm-lock.yaml', 'electron-builder.yml') }}
+          key: eb-cache-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('package.json', 'pnpm-lock.yaml', 'electron-builder.yml') }}
           restore-keys: |
-            eb-cache-${{ runner.os }}-${{ matrix.platform }}-
+            eb-cache-${{ matrix.os }}-${{ matrix.arch }}-
 
       - name: Setup Node + pnpm
         id: pnpm
@@ -183,10 +177,10 @@ jobs:
           echo "semver=$(node -p 'require(\"./package.json\").devDependencies.electron')" >> "$GITHUB_OUTPUT"
 
       # ----------------------------
-      # Linux x86_64
+      # Linux x64
       # ----------------------------
-      - name: Install Linux deps [x86_64]
-        if: matrix.platform == 'x86_64'
+      - name: Install Linux deps [linux-x64]
+        if: matrix.os == 'linux' && matrix.arch == 'x64'
         shell: bash
         run: |
           set -euo pipefail
@@ -196,13 +190,13 @@ jobs:
               pkg-config libusb-1.0-0 libudev1 ca-certificates
           sudo rm -rf /var/lib/apt/lists/*
 
-      - name: Install deps (pnpm) [x86_64]
-        if: matrix.platform == 'x86_64'
+      - name: Install deps (pnpm) [linux-x64]
+        if: matrix.os == 'linux' && matrix.arch == 'x64'
         run: pnpm install --frozen-lockfile
 
-      - name: Collect test coverage [x86_64]
+      - name: Collect test coverage [linux-x64]
         id: coverage
-        if: matrix.platform == 'x86_64' && (env.BUILD_BRANCH == 'main' || env.BUILD_BRANCH == 'dev')
+        if: matrix.os == 'linux' && matrix.arch == 'x64' && (env.BUILD_BRANCH == 'main' || env.BUILD_BRANCH == 'dev')
         shell: bash
         run: |
           set -euo pipefail
@@ -219,8 +213,9 @@ jobs:
           echo "renderer=$RENDERER_COVERAGE" >> "$GITHUB_OUTPUT"
           echo "Coverage main: $MAIN_COVERAGE"
           echo "Coverage renderer: $RENDERER_COVERAGE"
-      - name: Build for x86_64 (native Ubuntu)
-        if: matrix.platform == 'x86_64'
+
+      - name: Build for Linux x64 (native Ubuntu)
+        if: matrix.os == 'linux' && matrix.arch == 'x64'
         shell: bash
         run: |
           set -euo pipefail
@@ -233,9 +228,8 @@ jobs:
       # ----------------------------
       # Linux arm64
       # ----------------------------
-
-      - name: Install Linux deps [arm64]
-        if: matrix.platform == 'arm64'
+      - name: Install Linux deps [linux-arm64]
+        if: matrix.os == 'linux' && matrix.arch == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
@@ -245,12 +239,12 @@ jobs:
               pkg-config libusb-1.0-0 libudev1 ca-certificates
           sudo rm -rf /var/lib/apt/lists/*
 
-      - name: Install deps (pnpm) [arm64]
-        if: matrix.platform == 'arm64'
+      - name: Install deps (pnpm) [linux-arm64]
+        if: matrix.os == 'linux' && matrix.arch == 'arm64'
         run: pnpm install --frozen-lockfile
 
-      - name: Build for ARM64 (native Ubuntu)
-        if: matrix.platform == 'arm64'
+      - name: Build for Linux arm64 (native Ubuntu)
+        if: matrix.os == 'linux' && matrix.arch == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
@@ -261,10 +255,10 @@ jobs:
           pnpm run build:armLinux
 
       # ----------------------------
-      # macOS
+      # macOS arm64
       # ----------------------------
-      - name: Install deps (brew) [darwin]
-        if: matrix.platform == 'darwin'
+      - name: Install deps (brew) [macos-arm64]
+        if: matrix.os == 'macos' && matrix.arch == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
@@ -277,13 +271,13 @@ jobs:
             fi
           done
 
-      - name: Install deps (pnpm) [darwin]
-        if: matrix.platform == 'darwin'
+      - name: Install deps (pnpm) [macos-arm64]
+        if: matrix.os == 'macos' && matrix.arch == 'arm64'
         shell: bash
         run: pnpm install --frozen-lockfile
 
-      - name: Build for macOS (native)
-        if: matrix.platform == 'darwin'
+      - name: Build for macOS arm64 (native)
+        if: matrix.os == 'macos' && matrix.arch == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
@@ -293,15 +287,15 @@ jobs:
           pnpm run build:mac
 
       # ----------------------------
-      # Windows
+      # Windows x64
       # ----------------------------
-      - name: Install deps (pnpm) [win-x64]
-        if: matrix.platform == 'win-x64'
+      - name: Install deps (pnpm) [windows-x64]
+        if: matrix.os == 'windows' && matrix.arch == 'x64'
         shell: pwsh
         run: pnpm install --frozen-lockfile
 
-      - name: Build for Windows (native) [win-x64]
-        if: matrix.platform == 'win-x64'
+      - name: Build for Windows x64 (native)
+        if: matrix.os == 'windows' && matrix.arch == 'x64'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -316,13 +310,17 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: LIVI-${{ steps.pkg.outputs.version }}-${{ matrix.platform }}.${{ matrix.artifact_ext }}
+          name: LIVI-${{ steps.pkg.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}.${{ matrix.artifact_ext }}
           path: |
-            dist/*${{ matrix.artifact_ext == 'dmg' && 'arm64.dmg' || (matrix.artifact_ext == 'AppImage' && (matrix.platform == 'arm64' && '-arm64.AppImage' || '-x86_64.AppImage')) || (matrix.artifact_ext == 'exe' && '-setup.exe') }}
+            dist/*${{
+              matrix.artifact_ext == 'dmg' && 'arm64.dmg' ||
+              (matrix.artifact_ext == 'AppImage' && (matrix.arch == 'arm64' && '-arm64.AppImage' || '-x86_64.AppImage')) ||
+              (matrix.artifact_ext == 'exe' && '-setup.exe')
+            }}
           retention-days: 7
 
       - name: Push badges to version branch
-        if: matrix.platform == 'x86_64' && (env.BUILD_BRANCH == 'main' || env.BUILD_BRANCH == 'dev')
+        if: matrix.os == 'linux' && matrix.arch == 'x64' && (env.BUILD_BRANCH == 'main' || env.BUILD_BRANCH == 'dev')
         uses: ./.github/actions/badges
         with:
           branch: ${{ env.BUILD_BRANCH }}

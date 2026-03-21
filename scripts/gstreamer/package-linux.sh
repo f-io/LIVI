@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OUT="${1:-assets/gstreamer/linux-x86_64}"
+OUT="${1:-assets/gstreamer/linux-x64}"
 
 copy_required() {
   local src="$1"
@@ -279,7 +279,7 @@ done
 # All libs
 copy_all_pending_libs
 
-echo "Created Linux GStreamer probe bundle at: $OUT"
+echo "Created linux-x64/linux-arm64 GStreamer bundle at: $OUT"
 echo "Bundle size:"
 du -sh "$OUT"
 echo "Top-level contents:"

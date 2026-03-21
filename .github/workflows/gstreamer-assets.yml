@@ -4,22 +4,22 @@ run-name: 'gstreamer-assets → ${{ github.ref_name }}'
 on:
   workflow_dispatch:
     inputs:
-      darwin:
-        description: 'Build Darwin bundle'
+      macos_arm64:
+        description: 'Build macOS arm64 bundle'
         type: boolean
-        default: false
-      linux_x86_64:
-        description: 'Build Linux x86_64 bundle'
+        default: true
+      linux_x64:
+        description: 'Build Linux x64 bundle'
         type: boolean
-        default: false
-      linux_aarch64:
-        description: 'Build Linux aarch64 bundle'
+        default: true
+      linux_arm64:
+        description: 'Build Linux arm64 bundle'
         type: boolean
-        default: false
-      win_x86_64:
-        description: 'Build Windows x86-64 bundle'
+        default: true
+      windows_x64:
+        description: 'Build Windows x64 bundle'
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: write
@@ -36,10 +36,10 @@ jobs:
       - id: plan
         shell: bash
         env:
-          IN_DARWIN: ${{ inputs.darwin }}
-          IN_LINUX_X86_64: ${{ inputs.linux_x86_64 }}
-          IN_LINUX_AARCH64: ${{ inputs.linux_aarch64 }}
-          IN_WIN_X86_64: ${{ inputs.win_x86_64 }}
+          IN_MACOS_ARM64: ${{ inputs.macos_arm64 }}
+          IN_LINUX_X64: ${{ inputs.linux_x64 }}
+          IN_LINUX_ARM64: ${{ inputs.linux_arm64 }}
+          IN_WINDOWS_X64: ${{ inputs.windows_x64 }}
         run: |
           set -euo pipefail
 
@@ -49,21 +49,60 @@ jobs:
           const isTrue = (v) => String(v).toLowerCase() === 'true';
 
           const inputs = {
-            darwin: isTrue(process.env.IN_DARWIN),
-            linux_x86_64: isTrue(process.env.IN_LINUX_X86_64),
-            linux_aarch64: isTrue(process.env.IN_LINUX_AARCH64),
-            win_x86_64: isTrue(process.env.IN_WIN_X86_64),
+            macos_arm64: isTrue(process.env.IN_MACOS_ARM64),
+            linux_x64: isTrue(process.env.IN_LINUX_X64),
+            linux_arm64: isTrue(process.env.IN_LINUX_ARM64),
+            windows_x64: isTrue(process.env.IN_WINDOWS_X64),
           };
 
           const include = [];
-          const add = (platform, os, asset_path, artifact_name) => {
-            include.push({ platform, os, asset_path, artifact_name });
+          const add = (os, runner, arch, dir_name, artifact_name, archive_name) => {
+            include.push({ os, runner, arch, dir_name, artifact_name, archive_name });
           };
 
-          if (inputs.darwin) add('darwin', 'macos-latest', 'assets/gstreamer/darwin-arm64', 'gstreamer-darwin-arm64');
-          if (inputs.linux_x86_64) add('linux-x86_64', 'ubuntu-24.04', 'assets/gstreamer/linux-x86_64', 'gstreamer-linux-x86_64');
-          if (inputs.linux_aarch64) add('linux-aarch64', 'ubuntu-24.04-arm', 'assets/gstreamer/linux-aarch64', 'gstreamer-linux-aarch64');
-          if (inputs.win_x86_64) add('win-x86_64', 'windows-latest', 'assets/gstreamer/win-x86_64', 'gstreamer-win-x86_64');
+          if (inputs.macos_arm64) {
+            add(
+              'macos',
+              'macos-latest',
+              'arm64',
+              'macos-arm64',
+              'gstreamer-macos-arm64',
+              'gstreamer-macos-arm64.tar.gz'
+            );
+          }
+
+          if (inputs.linux_x64) {
+            add(
+              'linux',
+              'ubuntu-24.04',
+              'x64',
+              'linux-x64',
+              'gstreamer-linux-x64',
+              'gstreamer-linux-x64.tar.gz'
+            );
+          }
+
+          if (inputs.linux_arm64) {
+            add(
+              'linux',
+              'ubuntu-24.04-arm',
+              'arm64',
+              'linux-arm64',
+              'gstreamer-linux-arm64',
+              'gstreamer-linux-arm64.tar.gz'
+            );
+          }
+
+          if (inputs.windows_x64) {
+            add(
+              'windows',
+              'windows-latest',
+              'x64',
+              'windows-x64',
+              'gstreamer-windows-x64',
+              ''
+            );
+          }
 
           const matrixObj = { include };
           const matrix = JSON.stringify(matrixObj);
@@ -77,10 +116,10 @@ jobs:
           NODE
 
   build:
-    name: Build assets (${{ matrix.platform }})
+    name: Build assets (${{ matrix.os }}-${{ matrix.arch }})
     needs: plan
     if: ${{ needs.plan.outputs.is_empty != 'true' }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
 
     strategy:
       fail-fast: false
@@ -89,8 +128,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Download GStreamer runtime pkg [darwin]
-        if: matrix.platform == 'darwin'
+      # ----------------------------
+      # macOS arm64
+      # ----------------------------
+      - name: Download GStreamer runtime pkg [macos-arm64]
+        if: matrix.os == 'macos' && matrix.arch == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
@@ -98,55 +140,58 @@ jobs:
             -o gstreamer-runtime.pkg \
             https://gstreamer.freedesktop.org/data/pkg/osx/1.28.1/gstreamer-1.0-1.28.1-universal.pkg
 
-      - name: Install GStreamer runtime pkg [darwin]
-        if: matrix.platform == 'darwin'
+      - name: Install GStreamer runtime pkg [macos-arm64]
+        if: matrix.os == 'macos' && matrix.arch == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
           sudo installer -pkg gstreamer-runtime.pkg -target /
 
-      - name: Build bundle [darwin]
-        if: matrix.platform == 'darwin'
+      - name: Build bundle [macos-arm64]
+        if: matrix.os == 'macos' && matrix.arch == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x scripts/gstreamer/package-darwin.sh
-          scripts/gstreamer/package-darwin.sh "${{ matrix.asset_path }}"
+          chmod +x scripts/gstreamer/package-macos.sh
+          scripts/gstreamer/package-macos.sh "assets/gstreamer/${{ matrix.dir_name }}"
 
-      - name: Smoke test bundle [darwin]
-        if: matrix.platform == 'darwin'
+      - name: Smoke test bundle [macos-arm64]
+        if: matrix.os == 'macos' && matrix.arch == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x scripts/gstreamer/smoke-test-darwin.sh
-          scripts/gstreamer/smoke-test-darwin.sh "${{ matrix.asset_path }}"
+          chmod +x scripts/gstreamer/smoke-test-macos.sh
+          scripts/gstreamer/smoke-test-macos.sh "assets/gstreamer/${{ matrix.dir_name }}"
 
-      - name: Write version file [darwin]
-        if: matrix.platform == 'darwin'
+      - name: Write version file [macos-arm64]
+        if: matrix.os == 'macos' && matrix.arch == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="$("${{ matrix.asset_path }}/bin/gst-launch-1.0" --version | awk '/^gst-launch-1.0 version / { print $3; exit }')"
-          printf '%s\n' "$VERSION" > "${{ matrix.asset_path }}/version.txt"
+          VERSION="$("assets/gstreamer/${{ matrix.dir_name }}/bin/gst-launch-1.0" --version | awk '/^gst-launch-1.0 version / { print $3; exit }')"
+          printf '%s\n' "$VERSION" > "assets/gstreamer/${{ matrix.dir_name }}/version.txt"
           echo "Version: $VERSION"
 
-      - name: Pack artifact [darwin]
-        if: matrix.platform == 'darwin'
+      - name: Pack artifact [macos-arm64]
+        if: matrix.os == 'macos' && matrix.arch == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
-          tar -C assets/gstreamer -czf gstreamer-darwin-arm64.tar.gz darwin-arm64
+          tar -C assets/gstreamer -czf "${{ matrix.archive_name }}" "${{ matrix.dir_name }}"
 
-      - name: Upload artifact [darwin]
-        if: matrix.platform == 'darwin'
+      - name: Upload artifact [macos-arm64]
+        if: matrix.os == 'macos' && matrix.arch == 'arm64'
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact_name }}
-          path: gstreamer-darwin-arm64.tar.gz
+          path: ${{ matrix.archive_name }}
           retention-days: 7
 
-      - name: Build bundle [linux-x86_64 via Debian forky]
-        if: matrix.platform == 'linux-x86_64'
+      # ----------------------------
+      # Linux x64
+      # ----------------------------
+      - name: Build bundle [linux-x64 via Debian forky]
+        if: matrix.os == 'linux' && matrix.arch == 'x64'
         shell: bash
         run: |
           set -euo pipefail
@@ -184,16 +229,42 @@ jobs:
                 libgcc-s1 \
                 libstdc++6
 
-              scripts/gstreamer/package-linux.sh "assets/gstreamer/linux-x86_64"
-              scripts/gstreamer/smoke-test-linux.sh "assets/gstreamer/linux-x86_64"
+              scripts/gstreamer/package-linux.sh "assets/gstreamer/linux-x64"
+              scripts/gstreamer/smoke-test-linux.sh "assets/gstreamer/linux-x64"
 
-              VERSION="$(assets/gstreamer/linux-x86_64/bin/gst-launch-1.0 --version | awk '"'"'/^gst-launch-1.0 version / { print $3; exit }'"'"')"
-              printf "%s\n" "$VERSION" > assets/gstreamer/linux-x86_64/version.txt
+              VERSION="$(assets/gstreamer/linux-x64/bin/gst-launch-1.0 --version | awk '"'"'/^gst-launch-1.0 version / { print $3; exit }'"'"')"
+              printf "%s\n" "$VERSION" > assets/gstreamer/linux-x64/version.txt
               echo "Version: $VERSION"
             '
 
-      - name: Build bundle [linux-aarch64 via Debian forky]
-        if: matrix.platform == 'linux-aarch64'
+      - name: Fix file permissions [linux-x64]
+        if: matrix.os == 'linux' && matrix.arch == 'x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo chown -R "$USER:$USER" "assets/gstreamer/${{ matrix.dir_name }}" 2>/dev/null || true
+          sudo chmod -R a+rX "assets/gstreamer/${{ matrix.dir_name }}" 2>/dev/null || true
+
+      - name: Pack artifact [linux-x64]
+        if: matrix.os == 'linux' && matrix.arch == 'x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -C assets/gstreamer -czf "${{ matrix.archive_name }}" "${{ matrix.dir_name }}"
+
+      - name: Upload artifact [linux-x64]
+        if: matrix.os == 'linux' && matrix.arch == 'x64'
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.archive_name }}
+          retention-days: 7
+
+      # ----------------------------
+      # Linux arm64
+      # ----------------------------
+      - name: Build bundle [linux-arm64 via Debian forky]
+        if: matrix.os == 'linux' && matrix.arch == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
@@ -231,61 +302,49 @@ jobs:
                 libgcc-s1 \
                 libstdc++6
 
-              scripts/gstreamer/package-linux.sh "assets/gstreamer/linux-aarch64"
-              scripts/gstreamer/smoke-test-linux.sh "assets/gstreamer/linux-aarch64"
+              scripts/gstreamer/package-linux.sh "assets/gstreamer/linux-arm64"
+              scripts/gstreamer/smoke-test-linux.sh "assets/gstreamer/linux-arm64"
 
-              VERSION="$(assets/gstreamer/linux-aarch64/bin/gst-launch-1.0 --version | awk '"'"'/^gst-launch-1.0 version / { print $3; exit }'"'"')"
-              printf "%s\n" "$VERSION" > assets/gstreamer/linux-aarch64/version.txt
+              VERSION="$(assets/gstreamer/linux-arm64/bin/gst-launch-1.0 --version | awk '"'"'/^gst-launch-1.0 version / { print $3; exit }'"'"')"
+              printf "%s\n" "$VERSION" > assets/gstreamer/linux-arm64/version.txt
               echo "Version: $VERSION"
             '
 
-      - name: Fix file permissions [linux]
-        if: startsWith(matrix.platform, 'linux-')
+      - name: Fix file permissions [linux-arm64]
+        if: matrix.os == 'linux' && matrix.arch == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
-          sudo chown -R "$USER:$USER" "${{ matrix.asset_path }}" 2>/dev/null || true
-          sudo chmod -R a+rX "${{ matrix.asset_path }}" 2>/dev/null || true
+          sudo chown -R "$USER:$USER" "assets/gstreamer/${{ matrix.dir_name }}" 2>/dev/null || true
+          sudo chmod -R a+rX "assets/gstreamer/${{ matrix.dir_name }}" 2>/dev/null || true
 
-      - name: Pack artifact [linux-x86_64]
-        if: matrix.platform == 'linux-x86_64'
+      - name: Pack artifact [linux-arm64]
+        if: matrix.os == 'linux' && matrix.arch == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
-          tar -C assets/gstreamer -czf gstreamer-linux-x86_64.tar.gz linux-x86_64
+          tar -C assets/gstreamer -czf "${{ matrix.archive_name }}" "${{ matrix.dir_name }}"
 
-      - name: Upload artifact [linux-x86_64]
-        if: matrix.platform == 'linux-x86_64'
+      - name: Upload artifact [linux-arm64]
+        if: matrix.os == 'linux' && matrix.arch == 'arm64'
         uses: actions/upload-artifact@v6
         with:
-          name: gstreamer-linux-x86_64
-          path: gstreamer-linux-x86_64.tar.gz
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.archive_name }}
           retention-days: 7
 
-      - name: Pack artifact [linux-aarch64]
-        if: matrix.platform == 'linux-aarch64'
-        shell: bash
-        run: |
-          set -euo pipefail
-          tar -C assets/gstreamer -czf gstreamer-linux-aarch64.tar.gz linux-aarch64
-
-      - name: Upload artifact [linux-aarch64]
-        if: matrix.platform == 'linux-aarch64'
-        uses: actions/upload-artifact@v6
-        with:
-          name: gstreamer-linux-aarch64
-          path: gstreamer-linux-aarch64.tar.gz
-          retention-days: 7
-
-      - name: Download GStreamer runtime installer [win-x86_64]
-        if: matrix.platform == 'win-x86_64'
+      # ----------------------------
+      # Windows x64
+      # ----------------------------
+      - name: Download GStreamer runtime installer [windows-x64]
+        if: matrix.os == 'windows' && matrix.arch == 'x64'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           curl.exe -L 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.1/msvc/gstreamer-1.0-msvc-x86_64-1.28.1.exe' -o 'gstreamer-runtime-x86_64.exe'
 
-      - name: Install GStreamer runtime [win-x86_64]
-        if: matrix.platform == 'win-x86_64'
+      - name: Install GStreamer runtime [windows-x64]
+        if: matrix.os == 'windows' && matrix.arch == 'x64'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -304,26 +363,26 @@ jobs:
             throw "GStreamer installer failed with exit code $($p.ExitCode)"
           }
 
-      - name: Build bundle [win-x86_64]
-        if: matrix.platform == 'win-x86_64'
+      - name: Build bundle [windows-x64]
+        if: matrix.os == 'windows' && matrix.arch == 'x64'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          ./scripts/gstreamer/package-win.ps1 '${{ matrix.asset_path }}'
+          ./scripts/gstreamer/package-windows.ps1 "assets/gstreamer/${{ matrix.dir_name }}"
 
-      - name: Smoke test bundle [win-x86_64]
-        if: matrix.platform == 'win-x86_64'
+      - name: Smoke test bundle [windows-x64]
+        if: matrix.os == 'windows' && matrix.arch == 'x64'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          ./scripts/gstreamer/smoke-test-win.ps1 '${{ matrix.asset_path }}'
+          ./scripts/gstreamer/smoke-test-windows.ps1 "assets/gstreamer/${{ matrix.dir_name }}"
 
-      - name: Write version file [win-x86_64]
-        if: matrix.platform == 'win-x86_64'
+      - name: Write version file [windows-x64]
+        if: matrix.os == 'windows' && matrix.arch == 'x64'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $versionLine = & "${{ matrix.asset_path }}/bin/gst-launch-1.0.exe" --version |
+          $versionLine = & "assets/gstreamer/${{ matrix.dir_name }}/bin/gst-launch-1.0.exe" --version |
             Select-String '^gst-launch-1.0 version ' |
             Select-Object -First 1
 
@@ -337,15 +396,15 @@ jobs:
           }
 
           $version = $parts[2]
-          Set-Content -Path "${{ matrix.asset_path }}/version.txt" -Value $version -NoNewline
+          Set-Content -Path "assets/gstreamer/${{ matrix.dir_name }}/version.txt" -Value $version -NoNewline
           Write-Host "Version: $version"
 
-      - name: Upload artifact [win-x86_64]
-        if: matrix.platform == 'win-x86_64'
+      - name: Upload artifact [windows-x64]
+        if: matrix.os == 'windows' && matrix.arch == 'x64'
         uses: actions/upload-artifact@v6
         with:
-          name: gstreamer-win-x86_64
-          path: assets/gstreamer/win-x86_64
+          name: ${{ matrix.artifact_name }}
+          path: assets/gstreamer/${{ matrix.dir_name }}
           retention-days: 7
 
   publish:
@@ -365,75 +424,75 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.ref }}
 
-      - name: Download artifact [darwin]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-darwin-arm64"')
+      - name: Download artifact [macos-arm64]
+        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-macos-arm64"')
         uses: actions/download-artifact@v8
         with:
-          name: gstreamer-darwin-arm64
-          path: .artifacts/darwin-arm64
+          name: gstreamer-macos-arm64
+          path: .artifacts/macos-arm64
 
-      - name: Extract artifact [darwin]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-darwin-arm64"')
+      - name: Extract artifact [macos-arm64]
+        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-macos-arm64"')
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf assets/gstreamer/darwin-arm64
+          rm -rf assets/gstreamer/macos-arm64
           mkdir -p assets/gstreamer
-          tar -C assets/gstreamer -xzf .artifacts/darwin-arm64/gstreamer-darwin-arm64.tar.gz
+          tar -C assets/gstreamer -xzf .artifacts/macos-arm64/gstreamer-macos-arm64.tar.gz
 
-      - name: Download artifact [linux-x86_64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-x86_64"')
+      - name: Download artifact [linux-x64]
+        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-x64"')
         uses: actions/download-artifact@v8
         with:
-          name: gstreamer-linux-x86_64
-          path: .artifacts/linux-x86_64
+          name: gstreamer-linux-x64
+          path: .artifacts/linux-x64
 
-      - name: Extract artifact [linux-x86_64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-x86_64"')
+      - name: Extract artifact [linux-x64]
+        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-x64"')
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf assets/gstreamer/linux-x86_64
+          rm -rf assets/gstreamer/linux-x64
           mkdir -p assets/gstreamer
-          tar -C assets/gstreamer -xzf .artifacts/linux-x86_64/gstreamer-linux-x86_64.tar.gz
+          tar -C assets/gstreamer -xzf .artifacts/linux-x64/gstreamer-linux-x64.tar.gz
 
-      - name: Download artifact [linux-aarch64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-aarch64"')
+      - name: Download artifact [linux-arm64]
+        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-arm64"')
         uses: actions/download-artifact@v8
         with:
-          name: gstreamer-linux-aarch64
-          path: .artifacts/linux-aarch64
+          name: gstreamer-linux-arm64
+          path: .artifacts/linux-arm64
 
-      - name: Extract artifact [linux-aarch64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-aarch64"')
+      - name: Extract artifact [linux-arm64]
+        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-arm64"')
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf assets/gstreamer/linux-aarch64
+          rm -rf assets/gstreamer/linux-arm64
           mkdir -p assets/gstreamer
-          tar -C assets/gstreamer -xzf .artifacts/linux-aarch64/gstreamer-linux-aarch64.tar.gz
+          tar -C assets/gstreamer -xzf .artifacts/linux-arm64/gstreamer-linux-arm64.tar.gz
 
-      - name: Prepare target dir [win-x86_64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-win-x86_64"')
+      - name: Prepare target dir [windows-x64]
+        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-windows-x64"')
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf assets/gstreamer/win-x86_64
+          rm -rf assets/gstreamer/windows-x64
           mkdir -p assets/gstreamer
 
-      - name: Download artifact [win-x86_64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-win-x86_64"')
+      - name: Download artifact [windows-x64]
+        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-windows-x64"')
         uses: actions/download-artifact@v8
         with:
-          name: gstreamer-win-x86_64
-          path: .artifacts/win-x86_64
+          name: gstreamer-windows-x64
+          path: .artifacts/windows-x64
 
-      - name: Copy artifact into repo [win-x86_64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-win-x86_64"')
+      - name: Copy artifact into repo [windows-x64]
+        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-windows-x64"')
         shell: bash
         run: |
           set -euo pipefail
-          cp -a .artifacts/win-x86_64 assets/gstreamer/win-x86_64
+          cp -a .artifacts/windows-x64 assets/gstreamer/windows-x64
 
       - name: Read published version
         id: meta
@@ -442,14 +501,14 @@ jobs:
           set -euo pipefail
 
           VERSION=""
-          if [[ -f assets/gstreamer/darwin-arm64/version.txt ]]; then
-            VERSION="$(cat assets/gstreamer/darwin-arm64/version.txt)"
-          elif [[ -f assets/gstreamer/linux-x86_64/version.txt ]]; then
-            VERSION="$(cat assets/gstreamer/linux-x86_64/version.txt)"
-          elif [[ -f assets/gstreamer/linux-aarch64/version.txt ]]; then
-            VERSION="$(cat assets/gstreamer/linux-aarch64/version.txt)"
-          elif [[ -f assets/gstreamer/win-x86_64/version.txt ]]; then
-            VERSION="$(cat assets/gstreamer/win-x86_64/version.txt)"
+          if [[ -f assets/gstreamer/macos-arm64/version.txt ]]; then
+            VERSION="$(cat assets/gstreamer/macos-arm64/version.txt)"
+          elif [[ -f assets/gstreamer/linux-x64/version.txt ]]; then
+            VERSION="$(cat assets/gstreamer/linux-x64/version.txt)"
+          elif [[ -f assets/gstreamer/linux-arm64/version.txt ]]; then
+            VERSION="$(cat assets/gstreamer/linux-arm64/version.txt)"
+          elif [[ -f assets/gstreamer/windows-x64/version.txt ]]; then
+            VERSION="$(cat assets/gstreamer/windows-x64/version.txt)"
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -479,6 +538,7 @@ jobs:
 
           git push
           echo "changed=true" >> "$GITHUB_OUTPUT"
+
       - name: Push gstreamer badge
         if: steps.commit_assets.outputs.changed == 'true' && steps.meta.outputs.version != '' && (github.ref_name == 'main' || github.ref_name == 'dev')
         shell: bash

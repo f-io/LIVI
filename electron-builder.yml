@@ -29,14 +29,14 @@ linux:
   maintainer: 'Lasse Heitgres <hello@f-io.dev>'
   category: Utility
   extraResources:
-    - from: assets/gstreamer/linux-x86_64
-      to: gstreamer/linux-x86_64
+    - from: assets/gstreamer/linux-x64
+      to: gstreamer/linux-x64
       filter:
         - '**/*'
         - '!**/*.a'
         - '!share/**'
-    - from: assets/gstreamer/linux-aarch64
-      to: gstreamer/linux-aarch64
+    - from: assets/gstreamer/linux-arm64
+      to: gstreamer/linux-arm64
       filter:
         - '**/*'
         - '!**/*.a'
@@ -56,8 +56,8 @@ mac:
     NSDocumentsFolderUsageDescription: LIVI requires access to documents.
     NSDownloadsFolderUsageDescription: LIVI requires access to downloads.
   extraResources:
-    - from: assets/gstreamer/darwin-arm64
-      to: gstreamer/darwin-arm64
+    - from: assets/gstreamer/macos-arm64
+      to: gstreamer/macos-arm64
       filter:
         - '**/*'
         - '!**/*.a'
@@ -83,8 +83,8 @@ win:
   executableName: LIVI
   artifactName: ${name}-${version}-win-${arch}-setup.${ext}
   extraResources:
-    - from: assets/gstreamer/win-x86_64
-      to: gstreamer/win-x86_64
+    - from: assets/gstreamer/windows-x64
+      to: gstreamer/windows-x64
       filter:
         - '**/*'
         - '!**/*.a'

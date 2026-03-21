@@ -332,13 +332,19 @@ export class AudioOutput {
 
     const platformDir =
       process.platform === 'darwin'
-        ? 'darwin-arm64'
+        ? process.arch === 'arm64'
+          ? 'macos-arm64'
+          : null
         : process.platform === 'linux'
           ? process.arch === 'arm64'
-            ? 'linux-aarch64'
-            : 'linux-x86_64'
+            ? 'linux-arm64'
+            : process.arch === 'x64'
+              ? 'linux-x64'
+              : null
           : process.platform === 'win32'
-            ? 'win-x86_64'
+            ? process.arch === 'x64'
+              ? 'windows-x64'
+              : null
             : null
 
     if (!platformDir) return null

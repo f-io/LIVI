@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-GST_ROOT="$ROOT/assets/gstreamer/darwin-arm64"
+GST_ROOT="$ROOT/assets/gstreamer/macos-arm64"
 
 export DYLD_LIBRARY_PATH="$GST_ROOT/lib"
 export GST_PLUGIN_SYSTEM_PATH_1_0="$GST_ROOT/lib/gstreamer-1.0"
