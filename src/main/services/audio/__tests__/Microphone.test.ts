@@ -35,12 +35,16 @@ function makeProc(): MockProc {
 
 describe('Microphone', () => {
   const originalPlatform = process.platform
+  const originalArch = process.arch
 
   beforeEach(() => {
     jest.clearAllMocks()
 
     Object.defineProperty(process, 'platform', {
       value: 'darwin'
+    })
+    Object.defineProperty(process, 'arch', {
+      value: 'arm64'
     })
     ;(app.getAppPath as jest.Mock).mockReturnValue('/mock/app')
     ;(fs.existsSync as jest.Mock).mockImplementation((p: fs.PathLike) => {
@@ -51,6 +55,9 @@ describe('Microphone', () => {
   afterAll(() => {
     Object.defineProperty(process, 'platform', {
       value: originalPlatform
+    })
+    Object.defineProperty(process, 'arch', {
+      value: originalArch
     })
   })
 
