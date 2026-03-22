@@ -121,6 +121,12 @@ const api = {
     sendMultiTouch: (points: MultiTouchPoint[]): void =>
       ipcRenderer.send('projection-multi-touch', points),
     sendCommand: (key: string): void => ipcRenderer.send('projection-command', key),
+    sendRawMessage: (type: number, data: Uint8Array): void => {
+      ipcRenderer.send('projection-raw-message', {
+        type,
+        data: Array.from(data)
+      })
+    },
     onEvent: (callback: ApiCallback): void => {
       ipcRenderer.on('projection-event', callback)
     },

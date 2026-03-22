@@ -12,6 +12,7 @@ import {
   Command,
   BoxInfo,
   SoftwareVersion,
+  SendRawMessage,
   GnssData,
   SendCommand,
   SendTouch,
@@ -552,6 +553,17 @@ export class ProjectionService {
         this.driver.send(new SendMultiTouch(safe))
       } catch {
         // ignore
+      }
+    })
+
+    registerIpcOn('projection-raw-message', (_evt, payload: { type: number; data: number[] }) => {
+      try {
+        if (!this.started) return
+
+        const msg = new SendRawMessage(payload.type, new Uint8Array(payload.data ?? []))
+        this.driver.send(msg)
+      } catch (e) {
+        console.error('[ProjectionService] projection-raw-message failed', e)
       }
     })
 

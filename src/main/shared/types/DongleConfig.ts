@@ -20,10 +20,20 @@ export type DongleConfig = {
   width: number
   height: number
   fps: number
+  projectionSafeAreaTop: number
+  projectionSafeAreaBottom: number
+  projectionSafeAreaLeft: number
+  projectionSafeAreaRight: number
+  projectionSafeAreaDrawOutside: boolean
   naviWidth: number
   naviHeight: number
   naviFps: number
-  lastPhoneWorkMode: number
+  naviSafeAreaTop: number
+  naviSafeAreaBottom: number
+  naviSafeAreaLeft: number
+  naviSafeAreaRight: number
+  naviSafeAreaDrawOutside: boolean
+  lastPhoneWorkMode: PhoneWorkMode
   apkVer: string
   nightMode: boolean
   carName: string

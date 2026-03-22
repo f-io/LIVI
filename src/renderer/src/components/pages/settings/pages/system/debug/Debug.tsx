@@ -13,6 +13,8 @@ import AccordionSummary from '@mui/material/AccordionSummary'
 import AccordionDetails from '@mui/material/AccordionDetails'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import Button from '@mui/material/Button'
+import TextField from '@mui/material/TextField'
+import Stack from '@mui/material/Stack'
 
 type ProjectionEventMsg = { type: string; payload?: unknown }
 
@@ -22,6 +24,71 @@ function safeJson(value: unknown): string {
   } catch {
     return String(value)
   }
+}
+
+type RawSendEncoding = 'utf8' | 'hex' | 'json' | 'base64'
+
+const RAW_MESSAGE_TYPES = [
+  { value: 0x08, label: '0x08 Command' },
+  { value: 0x10, label: '0x10 DashboardData' },
+  { value: 0x29, label: '0x29 GnssData' },
+  { value: 0x2a, label: '0x2A MetaData' }
+]
+
+function encodeRawPayload(
+  value: string,
+  encoding: RawSendEncoding,
+  appendNul: boolean
+): Uint8Array {
+  let buf: Uint8Array
+
+  switch (encoding) {
+    case 'hex': {
+      const clean = value.replace(/\s+/g, '')
+      if (clean.length % 2 !== 0) {
+        throw new Error('Hex payload length must be even')
+      }
+      if (!/^[\da-fA-F]*$/.test(clean)) {
+        throw new Error('Hex payload contains invalid characters')
+      }
+
+      const out = new Uint8Array(clean.length / 2)
+      for (let i = 0; i < clean.length; i += 2) {
+        out[i / 2] = parseInt(clean.slice(i, i + 2), 16)
+      }
+      buf = out
+      break
+    }
+
+    case 'json': {
+      const parsed = JSON.parse(value)
+      buf = new TextEncoder().encode(JSON.stringify(parsed))
+      break
+    }
+
+    case 'base64': {
+      const decoded = atob(value)
+      const out = new Uint8Array(decoded.length)
+      for (let i = 0; i < decoded.length; i++) {
+        out[i] = decoded.charCodeAt(i)
+      }
+      buf = out
+      break
+    }
+
+    case 'utf8':
+    default: {
+      buf = new TextEncoder().encode(value)
+      break
+    }
+  }
+
+  if (!appendNul) return buf
+
+  const out = new Uint8Array(buf.length + 1)
+  out.set(buf, 0)
+  out[out.length - 1] = 0
+  return out
 }
 
 export function Debug() {
@@ -44,6 +111,13 @@ export function Debug() {
   const autoUpdateNavSnapshotRef = React.useRef(autoUpdateNavSnapshot)
   const autoUpdateMediaSnapshotRef = React.useRef(autoUpdateMediaSnapshot)
 
+  const [rawType, setRawType] = React.useState<number>(0x10)
+  const [rawEncoding, setRawEncoding] = React.useState<RawSendEncoding>('json')
+  const [rawPayload, setRawPayload] = React.useState('')
+  const [rawAppendNul, setRawAppendNul] = React.useState(true)
+  const [rawPreview, setRawPreview] = React.useState('')
+  const [rawError, setRawError] = React.useState<string | null>(null)
+
   const eventsRef = React.useRef<ProjectionEventMsg[]>(events)
   React.useEffect(() => {
     eventsRef.current = events
@@ -56,6 +130,21 @@ export function Debug() {
   React.useEffect(() => {
     autoUpdateMediaSnapshotRef.current = autoUpdateMediaSnapshot
   }, [autoUpdateMediaSnapshot])
+
+  React.useEffect(() => {
+    try {
+      const encoded = encodeRawPayload(rawPayload, rawEncoding, rawAppendNul)
+      setRawPreview(
+        Array.from(encoded)
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('')
+      )
+      setRawError(null)
+    } catch (err) {
+      setRawPreview('')
+      setRawError(err instanceof Error ? err.message : String(err))
+    }
+  }, [rawPayload, rawEncoding, rawAppendNul])
 
   const readNavigationSnapshot = React.useCallback(async () => {
     try {
@@ -135,8 +224,139 @@ export function Debug() {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {/* Raw sender */}
+      <Accordion defaultExpanded={false}>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Typography variant="subtitle2">Raw Projection Message</Typography>
+        </AccordionSummary>
+
+        <AccordionDetails>
+          <Stack spacing={2}>
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+              <FormControl size="small" sx={{ minWidth: 220 }}>
+                <InputLabel id="raw-message-type-label">Message Type</InputLabel>
+                <Select
+                  labelId="raw-message-type-label"
+                  label="Message Type"
+                  value={rawType}
+                  onChange={(e) => setRawType(Number(e.target.value))}
+                >
+                  {RAW_MESSAGE_TYPES.map((item) => (
+                    <MenuItem key={item.value} value={item.value}>
+                      {item.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <FormControl size="small" sx={{ minWidth: 160 }}>
+                <InputLabel id="raw-encoding-label">Encoding</InputLabel>
+                <Select
+                  labelId="raw-encoding-label"
+                  label="Encoding"
+                  value={rawEncoding}
+                  onChange={(e) => setRawEncoding(e.target.value as RawSendEncoding)}
+                >
+                  <MenuItem value="utf8">utf8</MenuItem>
+                  <MenuItem value="hex">hex</MenuItem>
+                  <MenuItem value="json">json</MenuItem>
+                  <MenuItem value="base64">base64</MenuItem>
+                </Select>
+              </FormControl>
+
+              <FormControlLabel
+                label="Append NUL"
+                control={
+                  <Switch
+                    checked={rawAppendNul}
+                    onChange={(e) => setRawAppendNul(e.target.checked)}
+                  />
+                }
+              />
+            </Stack>
+
+            <TextField
+              label="Payload"
+              multiline
+              minRows={6}
+              value={rawPayload}
+              onChange={(e) => setRawPayload(e.target.value)}
+              fullWidth
+              spellCheck={false}
+              sx={{
+                '& .MuiInputBase-input': {
+                  fontFamily:
+                    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+                }
+              }}
+            />
+
+            <Paper variant="outlined" sx={{ p: 2 }}>
+              <Typography variant="caption" sx={{ display: 'block', mb: 1, opacity: 0.7 }}>
+                Encoded payload preview (hex)
+              </Typography>
+
+              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {rawError ? `Error: ${rawError}` : rawPreview || '<empty>'}
+              </pre>
+            </Paper>
+
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 1,
+                flexWrap: 'wrap'
+              }}
+            >
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => {
+                  setRawEncoding('hex')
+                  setRawPayload(rawPreview)
+                  setRawAppendNul(false)
+                }}
+                disabled={Boolean(rawError) || !rawPreview}
+              >
+                Use preview as hex input
+              </Button>
+
+              <Button
+                variant="contained"
+                disabled={Boolean(rawError)}
+                onClick={() => {
+                  try {
+                    const encoded = encodeRawPayload(rawPayload, rawEncoding, rawAppendNul)
+
+                    window.projection.ipc.sendRawMessage(rawType, encoded)
+
+                    console.log('[raw-message-sent]', {
+                      type: rawType,
+                      encoding: rawEncoding,
+                      appendNul: rawAppendNul,
+                      hex: Array.from(encoded)
+                        .map((b) => b.toString(16).padStart(2, '0'))
+                        .join('')
+                    })
+                  } catch (err) {
+                    console.error(
+                      '[raw-message-send-failed]',
+                      err instanceof Error ? err.message : String(err)
+                    )
+                  }
+                }}
+              >
+                Send
+              </Button>
+            </Box>
+          </Stack>
+        </AccordionDetails>
+      </Accordion>
+
       {/* Live */}
-      <Accordion defaultExpanded>
+      <Accordion defaultExpanded={false}>
         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
           <Box
             sx={{

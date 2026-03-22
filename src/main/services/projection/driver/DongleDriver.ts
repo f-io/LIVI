@@ -33,7 +33,10 @@ import {
   SendGnssData,
   HeartBeat,
   SendDisconnectPhone,
-  SendAndroidAutoDpi
+  SendAndroidAutoDpi,
+  SendViewArea,
+  SendSafeArea,
+  AreaTarget
 } from '@projection/messages/sendable'
 
 const CONFIG_NUMBER = 1
@@ -425,8 +428,44 @@ export class DongleDriver extends EventEmitter {
       height: cfg.height
     })
 
+    const projectionAreaMessages: SendableMessage[] = [
+      new SendViewArea(cfg.width, cfg.height, {
+        target: AreaTarget.Main
+      }),
+      new SendSafeArea(cfg.width, cfg.height, {
+        target: AreaTarget.Main,
+        insets: {
+          top: cfg.projectionSafeAreaTop,
+          bottom: cfg.projectionSafeAreaBottom,
+          left: cfg.projectionSafeAreaLeft,
+          right: cfg.projectionSafeAreaRight
+        },
+        drawOutside: cfg.projectionSafeAreaDrawOutside
+      })
+    ]
+
+    const naviAreaMessages: SendableMessage[] = cfg.mapsEnabled
+      ? [
+          new SendViewArea(cfg.naviWidth, cfg.naviHeight, {
+            target: AreaTarget.Navi
+          }),
+          new SendSafeArea(cfg.naviWidth, cfg.naviHeight, {
+            target: AreaTarget.Navi,
+            insets: {
+              top: cfg.naviSafeAreaTop,
+              bottom: cfg.naviSafeAreaBottom,
+              left: cfg.naviSafeAreaLeft,
+              right: cfg.naviSafeAreaRight
+            },
+            drawOutside: cfg.naviSafeAreaDrawOutside
+          })
+        ]
+      : []
+
     const messages: SendableMessage[] = [
       new SendBoxSettings(cfg),
+      ...projectionAreaMessages,
+      ...naviAreaMessages,
       new SendString(label, FileAddress.BOX_NAME),
       new SendBoolean(cfg.nightMode, FileAddress.NIGHT_MODE),
       new SendAndroidAutoDpi(aaResolution.width, aaResolution.height),

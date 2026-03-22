@@ -41,6 +41,21 @@ export abstract class SendableMessageWithPayload extends SendableMessage {
   }
 }
 
+export class SendRawMessage extends SendableMessageWithPayload {
+  type: MessageType
+  private payload: Buffer
+
+  constructor(type: number, payload: Uint8Array) {
+    super()
+    this.type = type as MessageType
+    this.payload = Buffer.from(payload)
+  }
+
+  getPayload(): Buffer {
+    return this.payload
+  }
+}
+
 export class SendCommand extends SendableMessageWithPayload {
   type = MessageType.Command
   value: CommandMapping
@@ -230,7 +245,97 @@ export enum FileAddress {
   LIVI_WEB = '/tmp/boa/www/index.html',
   LIVI_CGI_PERSISTENT = '/etc/boa/cgi-bin/server.cgi',
   LIVI_WEB_PERSISTENT = '/etc/boa/www/index.html',
+  HU_VIEWAREA_INFO = '/etc/RiddleBoxData/HU_VIEWAREA_INFO',
+  HU_SAFEAREA_INFO = '/etc/RiddleBoxData/HU_SAFEAREA_INFO',
+  HU_NAVISCREEN_VIEWAREA_INFO = '/etc/RiddleBoxData/HU_NAVISCREEN_VIEWAREA_INFO',
+  HU_NAVISCREEN_SAFEAREA_INFO = '/etc/RiddleBoxData/HU_NAVISCREEN_SAFEAREA_INFO',
   TMP = '/tmp'
+}
+
+export enum AreaTarget {
+  Main = 'main',
+  Navi = 'navi'
+}
+
+export type ScreenInsets = {
+  top: number
+  bottom: number
+  left: number
+  right: number
+}
+
+export type ViewAreaOptions = {
+  target?: AreaTarget
+}
+
+export type SafeAreaOptions = {
+  insets?: Partial<ScreenInsets>
+  drawOutside?: boolean
+  target?: AreaTarget
+}
+
+function getViewAreaFile(target: AreaTarget): FileAddress {
+  switch (target) {
+    case AreaTarget.Navi:
+      return FileAddress.HU_NAVISCREEN_VIEWAREA_INFO
+    case AreaTarget.Main:
+    default:
+      return FileAddress.HU_VIEWAREA_INFO
+  }
+}
+
+function getSafeAreaFile(target: AreaTarget): FileAddress {
+  switch (target) {
+    case AreaTarget.Navi:
+      return FileAddress.HU_NAVISCREEN_SAFEAREA_INFO
+    case AreaTarget.Main:
+    default:
+      return FileAddress.HU_SAFEAREA_INFO
+  }
+}
+
+/** 24 bytes LE: [screenW, screenH, viewW, viewH, originX, originY] */
+export class SendViewArea extends SendFile {
+  constructor(screenW: number, screenH: number, options: ViewAreaOptions = {}) {
+    const target = options.target ?? AreaTarget.Main
+
+    const b = Buffer.alloc(24)
+    b.writeUInt32LE(screenW, 0)
+    b.writeUInt32LE(screenH, 4)
+    b.writeUInt32LE(screenW, 8)
+    b.writeUInt32LE(screenH, 12)
+    b.writeUInt32LE(0, 16)
+    b.writeUInt32LE(0, 20)
+
+    super(b, getViewAreaFile(target))
+  }
+}
+
+/** 20 bytes LE: [safeW, safeH, originX, originY, drawOutside] */
+export class SendSafeArea extends SendFile {
+  constructor(videoW: number, videoH: number, options: SafeAreaOptions = {}) {
+    const insets: ScreenInsets = {
+      top: options.insets?.top ?? 0,
+      bottom: options.insets?.bottom ?? 0,
+      left: options.insets?.left ?? 0,
+      right: options.insets?.right ?? 0
+    }
+
+    const safeW = Math.max(0, videoW - insets.left - insets.right)
+    const safeH = Math.max(0, videoH - insets.top - insets.bottom)
+    const hasInsets = (insets.top | insets.bottom | insets.left | insets.right) !== 0
+    const drawOutside = options.drawOutside ?? hasInsets
+    const target = options.target ?? AreaTarget.Main
+
+    const b = Buffer.alloc(20)
+    b.writeUInt32LE(safeW, 0)
+    b.writeUInt32LE(safeH, 4)
+    b.writeUInt32LE(insets.left, 8)
+    b.writeUInt32LE(insets.top, 12)
+    b.writeUInt32LE(drawOutside ? 1 : 0, 16)
+
+    super(b, getSafeAreaFile(target))
+  }
 }
 
 export function boxTmpPath(fileName: string): string {
