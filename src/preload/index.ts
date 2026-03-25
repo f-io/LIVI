@@ -31,7 +31,7 @@ let mapsResolutionHandler: ChunkHandler | null = null
 
 type TelemetryHandler = (payload: unknown) => void
 let telemetryQueue: unknown[] = []
-let telemetryHandler: TelemetryHandler | null = null
+let telemetryHandlers: TelemetryHandler[] = []
 
 ipcRenderer.on('projection-video-chunk', (_event, payload: unknown) => {
   if (videoChunkHandler) videoChunkHandler(payload)
@@ -53,8 +53,11 @@ ipcRenderer.on('maps-video-resolution', (_event, payload: unknown) => {
 })
 
 ipcRenderer.on('telemetry:update', (_event, payload: unknown) => {
-  if (telemetryHandler) telemetryHandler(payload)
-  else telemetryQueue.push(payload)
+  if (telemetryHandlers.length) {
+    telemetryHandlers.forEach((handler) => handler(payload))
+  } else {
+    telemetryQueue.push(payload)
+  }
 })
 
 type UsbDeviceInfo =
@@ -174,13 +177,12 @@ const api = {
       mapsResolutionQueue = []
     },
     onTelemetry: (handler: (payload: unknown) => void): void => {
-      telemetryHandler = handler
+      telemetryHandlers.push(handler)
       telemetryQueue.forEach((p) => handler(p))
       telemetryQueue = []
     },
-    offTelemetry: (): void => {
-      telemetryHandler = null
-      telemetryQueue = []
+    offTelemetry: (handler: (payload: unknown) => void): void => {
+      telemetryHandlers = telemetryHandlers.filter((h) => h !== handler)
     }
   }
 }

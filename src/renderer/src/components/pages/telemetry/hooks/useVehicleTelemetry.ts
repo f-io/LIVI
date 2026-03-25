@@ -29,7 +29,7 @@ export function useVehicleTelemetry() {
     window.projection?.ipc?.onTelemetry?.(onMsg)
 
     return () => {
-      window.projection?.ipc?.offTelemetry?.()
+      window.projection?.ipc?.offTelemetry?.(onMsg)
     }
   }, [])
 

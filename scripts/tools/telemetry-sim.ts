@@ -557,11 +557,15 @@ async function setOnce(socket: Socket) {
   const speedKph = Number(process.argv[3] ?? 0)
   const rpm = Number(process.argv[4] ?? 0)
   const coolantC = Number(process.argv[5] ?? 0)
+  const nightModeArg = process.argv[6]
+  const nightMode =
+    nightModeArg == null ? undefined : nightModeArg === 'true' || nightModeArg === '1'
 
   const payload = {
     speedKph: clamp(speedKph, 0, 999),
     rpm: clamp(rpm, 0, 9999),
-    coolantC: clamp(coolantC, -40, 140)
+    coolantC: clamp(coolantC, -40, 140),
+    ...(nightMode !== undefined ? { nightMode } : {})
   }
 
   push(socket, payload)

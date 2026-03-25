@@ -23,6 +23,8 @@ type CarplayIpcApi = {
   setVolume?: (stream: VolumeStreamKey, volume: number) => void
   setBluetoothPairedList?: (listText: string) => Promise<{ ok: boolean }>
   sendCommand?: (command: string) => void
+  onTelemetry?: (handler: (payload: unknown) => void) => void
+  offTelemetry?: (handler: (payload: unknown) => void) => void
 }
 
 type ProjectionApi = {
@@ -73,6 +75,17 @@ const sendCarplayMicType = (micType: MicType) => {
   }
 }
 
+const sendCarplayNightMode = (nightMode: boolean) => {
+  const api = getProjectionApi()
+  if (!api?.ipc?.sendCommand) return
+
+  try {
+    api.ipc.sendCommand(nightMode ? 'enableNightMode' : 'disableNightMode')
+  } catch (err) {
+    console.warn('projection-set-night-mode IPC failed', err)
+  }
+}
+
 const saveSettingsIpc = async (patch: Partial<ExtraConfig>) => {
   const api = getProjectionApi()
   if (!api?.settings?.save) return
@@ -110,6 +123,16 @@ const deriveTelemetryEnabled = (cfg: ExtraConfig): boolean => {
   return d.some((x) => x.enabled)
 }
 
+const applyTelemetryControls = (payload: unknown) => {
+  if (!payload || typeof payload !== 'object') return
+
+  const msg = payload as Record<string, unknown>
+
+  if (typeof msg.nightMode === 'boolean') {
+    void useLiviStore.getState().saveSettings({ nightMode: msg.nightMode })
+  }
+}
+
 // Projection Store
 export interface CarplayStore {
   // Full app config (from main, includes defaults)
@@ -125,6 +148,7 @@ export interface CarplayStore {
 
   // Save patches (main merges them into config.json)
   saveSettings: (patch: Partial<ExtraConfig>) => Promise<void>
+  setNightMode: (nightMode: boolean) => Promise<void>
 
   // Display resolution
   negotiatedWidth: number | null
@@ -352,10 +376,20 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
           sendCarplayVolume('call', derived.callVolume)
         })
       }
+
+      if (api?.ipc?.onTelemetry) {
+        api.ipc.onTelemetry((payload) => {
+          applyTelemetryControls(payload)
+        })
+      }
     },
 
     getSettings: async () => {
       await refreshFromMain()
+    },
+
+    setNightMode: async (nightMode) => {
+      await get().saveSettings({ nightMode })
     },
 
     saveSettings: async (patchArg) => {
@@ -382,6 +416,10 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
 
         if (patch.micType !== undefined) {
           sendCarplayMicType(patch.micType as MicType)
+        }
+
+        if (patch.nightMode !== undefined) {
+          sendCarplayNightMode(Boolean(patch.nightMode))
         }
       }
 

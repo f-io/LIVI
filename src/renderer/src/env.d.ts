@@ -150,7 +150,7 @@ declare global {
         offEvent(callback: (event: unknown, ...args: unknown[]) => void): void
 
         onTelemetry(handler: (payload: unknown) => void): void
-        offTelemetry(): void
+        offTelemetry(handler: (payload: unknown) => void): void
 
         setVisualizerEnabled(enabled: boolean): void
 
