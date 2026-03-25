@@ -211,4 +211,274 @@ describe('Render.worker', () => {
 
     expect(port.start).toHaveBeenCalled()
   })
+  test('updateTargetFps ignores invalid and unchanged fps values', async () => {
+    const { RendererWorker } = await importWorkerModule()
+    const worker = new RendererWorker() as any
+
+    worker.updateTargetFps(undefined)
+    expect(worker.targetFps).toBeNull()
+
+    worker.updateTargetFps(30)
+    expect(worker.targetFps).toBe(30)
+    expect(worker.frameInterval).toBeCloseTo(1000 / 30)
+
+    worker.updateTargetFps(30)
+    expect(worker.targetFps).toBe(30)
+  })
+
+  test('decoder output forwards frame into render pipeline', async () => {
+    const { RendererWorker } = await importWorkerModule()
+    const worker = new RendererWorker() as any
+
+    const close = jest.fn()
+    const frame = { close } as unknown as VideoFrame
+    const draw = jest.fn()
+
+    worker.renderer = { draw }
+    worker.frameInterval = 0
+
+    worker.onVideoDecoderOutput(frame)
+
+    expect(draw).toHaveBeenCalledWith(frame)
+    expect(worker.pendingFrame).toBeNull()
+  })
+
+  test('renderFrame closes previous pending frame before replacing it', async () => {
+    const { RendererWorker } = await importWorkerModule()
+    const worker = new RendererWorker() as any
+
+    const oldFrame = { close: jest.fn() } as unknown as VideoFrame
+    const newFrame = { close: jest.fn() } as unknown as VideoFrame
+
+    worker.pendingFrame = oldFrame
+    worker.renderer = { draw: jest.fn() }
+    worker.frameInterval = 0
+
+    worker.renderFrame(newFrame)
+
+    expect((oldFrame as any).close).toHaveBeenCalled()
+  })
+
+  test('renderAnimationFrame reschedules when frame interval has not elapsed', async () => {
+    const { RendererWorker } = await importWorkerModule()
+    const worker = new RendererWorker() as any
+
+    const draw = jest.fn()
+    worker.renderer = { draw }
+    worker.pendingFrame = { close: jest.fn() } as unknown as VideoFrame
+    worker.lastRenderTime = 990
+    worker.frameInterval = 20
+    ;(global as any).requestAnimationFrame = jest.fn()
+    ;(global.performance.now as jest.Mock).mockReturnValue(1000)
+
+    worker.renderAnimationFrame()
+
+    expect(draw).not.toHaveBeenCalled()
+    expect((global as any).requestAnimationFrame).toHaveBeenCalled()
+  })
+
+  test('onVideoDecoderOutputError logs decoder errors', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const { RendererWorker } = await importWorkerModule()
+    const worker = new RendererWorker() as any
+
+    const err = new Error('decode failed')
+    worker.onVideoDecoderOutputError(err)
+
+    expect(errorSpy).toHaveBeenCalled()
+
+    errorSpy.mockRestore()
+  })
+
+  test('init posts render-error when renderer construction throws', async () => {
+    mockWebGL2Renderer.mockImplementationOnce(() => {
+      throw new Error('boom')
+    })
+
+    const { RendererWorker } = await importWorkerModule()
+    const worker = new RendererWorker() as any
+
+    const videoPort = {
+      onmessage: null as any,
+      start: jest.fn()
+    } as unknown as MessagePort
+
+    await worker.init(
+      new InitEvent({ getContext: () => ({}) } as unknown as OffscreenCanvas, videoPort, 30)
+    )
+
+    expect(postMessageSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'render-error' }))
+  })
+
+  test('configureDecoder falls back to software when hardware configure fails', async () => {
+    const { RendererWorker } = await importWorkerModule()
+    const worker = new RendererWorker() as any
+
+    let call = 0
+    decoderConfigure.mockImplementation(() => {
+      call += 1
+      if (call === 1) {
+        throw new Error('hw failed')
+      }
+    })
+
+    worker.rendererHwSupported = true
+    worker.rendererSwSupported = true
+
+    const ok = await worker.configureDecoder({
+      codec: 'avc1.42001f',
+      codedWidth: 800,
+      codedHeight: 480
+    })
+
+    expect(ok).toBe(true)
+    expect(decoderConfigure).toHaveBeenCalledTimes(2)
+  })
+
+  test('configureDecoder posts render-error when neither hardware nor software works', async () => {
+    const { RendererWorker } = await importWorkerModule()
+    const worker = new RendererWorker() as any
+
+    decoderConfigure.mockImplementation(() => {
+      throw new Error('fail')
+    })
+
+    worker.rendererHwSupported = true
+    worker.rendererSwSupported = true
+
+    const ok = await worker.configureDecoder({
+      codec: 'avc1.42001f',
+      codedWidth: 800,
+      codedHeight: 480
+    })
+
+    expect(ok).toBe(false)
+    expect(postMessageSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'render-error' }))
+  })
+
+  test('processRaw ignores delta frames while awaiting valid keyframe', async () => {
+    const { RendererWorker } = await importWorkerModule()
+    const worker = new RendererWorker() as any
+
+    worker.renderer = { draw: jest.fn() }
+    worker.awaitingValidKeyframe = true
+
+    mockGetNaluFromStream.mockReturnValue(null)
+    mockIsKeyFrame.mockReturnValue(false)
+
+    await worker.processRaw(new Uint8Array(64).buffer)
+
+    expect(decoderDecode).not.toHaveBeenCalled()
+  })
+
+  test('processRaw catches decode errors after configuration', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const { RendererWorker } = await importWorkerModule()
+    const worker = new RendererWorker() as any
+
+    worker.renderer = { draw: jest.fn() }
+    worker.isConfigured = true
+    worker.awaitingValidKeyframe = false
+
+    mockGetNaluFromStream.mockReturnValue(null)
+    mockIsKeyFrame.mockReturnValue(true)
+
+    decoderDecode.mockImplementation(() => {
+      throw new Error('decode crash')
+    })
+
+    await worker.processRaw(new Uint8Array(64).buffer)
+
+    expect(errorSpy).toHaveBeenCalled()
+
+    errorSpy.mockRestore()
+  })
+  test('evaluateRendererCapabilities returns early when already tested', async () => {
+    const { RendererWorker } = await importWorkerModule()
+    const worker = new RendererWorker() as any
+
+    worker.hardwareAccelerationTested = true
+    const spy = jest.spyOn(worker as any, 'isRendererSupported')
+
+    await worker.evaluateRendererCapabilities()
+
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  test('evaluateRendererCapabilities keeps selectedRenderer null when no renderer is available', async () => {
+    const { RendererWorker } = await importWorkerModule()
+    const worker = new RendererWorker() as any
+
+    jest.spyOn(worker as any, 'isRendererSupported').mockResolvedValue({
+      hw: false,
+      sw: false,
+      available: false
+    })
+
+    await worker.evaluateRendererCapabilities()
+
+    expect(worker.selectedRenderer).toBeNull()
+    expect(worker.hardwareAccelerationTested).toBe(true)
+  })
+
+  test('configureDecoder skips hardware and uses software when hardware is not supported', async () => {
+    decoderConfigure.mockReset()
+    decoderConfigure.mockImplementation(() => undefined)
+    const { RendererWorker } = await importWorkerModule()
+    const worker = new RendererWorker() as any
+
+    worker.rendererHwSupported = false
+    worker.rendererSwSupported = true
+
+    const ok = await worker.configureDecoder({
+      codec: 'avc1.42001f',
+      codedWidth: 800,
+      codedHeight: 480
+    })
+
+    expect(ok).toBe(true)
+    expect(decoderConfigure).toHaveBeenCalledTimes(1)
+    expect(decoderConfigure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hardwareAcceleration: 'prefer-software'
+      })
+    )
+  })
+
+  test('message listener ignores unknown worker event types', async () => {
+    await importWorkerModule()
+
+    expect(onMessageHandler).toBeTruthy()
+
+    onMessageHandler?.({
+      data: { type: 'unknown-event' }
+    } as MessageEvent)
+
+    expect(postMessageSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'render-error' })
+    )
+  })
+
+  test('init posts render-error when no renderer instance is created after selection', async () => {
+    const { RendererWorker } = await importWorkerModule()
+    const worker = new RendererWorker() as any
+
+    jest.spyOn(worker, 'evaluateRendererCapabilities').mockImplementation(async () => {
+      worker.selectedRenderer = 'unknown-renderer'
+      worker.hardwareAccelerationTested = true
+    })
+
+    const videoPort = {
+      onmessage: null as any,
+      start: jest.fn()
+    } as unknown as MessagePort
+
+    await worker.init(
+      new InitEvent({ getContext: () => ({}) } as unknown as OffscreenCanvas, videoPort, 30)
+    )
+
+    expect(postMessageSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'render-error' }))
+  })
 })

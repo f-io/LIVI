@@ -1,14 +1,12 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render } from '@testing-library/react'
+import { Home } from '../Home'
 
-// TODO Test file.
+describe('Home', () => {
+  test('renders an empty div', () => {
+    const { container } = render(<Home />)
 
-function Button({ onClick }: { onClick: () => void }) {
-  return <button onClick={onClick}>Click me</button>
-}
-
-test('Button calls onClick when pressed', () => {
-  const handleClick = jest.fn()
-  render(<Button onClick={handleClick} />)
-  fireEvent.click(screen.getByText('Click me'))
-  expect(handleClick).toHaveBeenCalledTimes(1)
+    expect(container.firstChild).toBeInTheDocument()
+    expect(container.firstChild?.nodeName).toBe('DIV')
+    expect(container.firstChild).toBeEmptyDOMElement()
+  })
 })

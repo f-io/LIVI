@@ -9,7 +9,7 @@ module.exports = {
     '!<rootDir>/src/**/*.test.{ts,tsx,js,jsx}'
   ],
   coverageDirectory: '<rootDir>/coverage/renderer',
-  coverageReporters: ['text-summary', 'html', 'lcov', 'json-summary'],
+  coverageReporters: ['text', 'text-summary', 'html', 'lcov', 'json-summary'],
   testMatch: ['<rootDir>/src/renderer/**/*.test.(ts|tsx|js)'],
   transform: {
     '^.+\\.tsx?$': [

@@ -21,7 +21,7 @@ import './i18n'
 initUiBreatheClock()
 initCursorHider()
 
-const Root = () => {
+export const Root = () => {
   const settings = useLiviStore((s) => s.settings)
 
   // detect touch, stylus and mouse

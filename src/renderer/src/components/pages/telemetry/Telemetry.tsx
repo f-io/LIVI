@@ -68,8 +68,7 @@ export const Telemetry: FC = () => {
     return dashboards.map((d) => ({
       id: d.id,
       pos: d.pos,
-      Component:
-        DashboardConfig[d.id as keyof typeof DashboardConfig] || (() => <DashboardFallback />)
+      Component: DashboardConfig[d.id as keyof typeof DashboardConfig] || <DashboardFallback />
     }))
   }
 
