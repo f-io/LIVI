@@ -43,6 +43,7 @@ describe('registerAppIpc', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     jest.restoreAllMocks()
+    Object.defineProperty(process, 'platform', { value: originalPlatform })
     mockedGetMainWindow.mockReturnValue(null)
     mockedIsMacPlatform.mockReturnValue(false)
 
@@ -187,6 +188,11 @@ describe('registerAppIpc', () => {
       return 0 as any
     }) as typeof setTimeout)
 
+    const unref = jest.fn()
+    mockedSpawn.mockReturnValue({ unref })
+    Object.defineProperty(process, 'platform', { value: 'linux' })
+    process.env.APPIMAGE = '/tmp/app.AppImage'
+
     const beginShutdown = jest.fn()
     const gracefulReset = jest.fn().mockResolvedValue(undefined)
 
@@ -201,7 +207,7 @@ describe('registerAppIpc', () => {
     expect(runtimeState.isQuitting).toBe(true)
     expect(beginShutdown).toHaveBeenCalledTimes(1)
     expect(gracefulReset).toHaveBeenCalledTimes(1)
-    expect(app.relaunch).toHaveBeenCalledTimes(1)
+    expect(unref).toHaveBeenCalledTimes(1)
     expect(app.exit).toHaveBeenCalledWith(0)
   })
 
@@ -211,6 +217,11 @@ describe('registerAppIpc', () => {
       return 0 as any
     }) as typeof setTimeout)
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const unref = jest.fn()
+    mockedSpawn.mockReturnValue({ unref })
+    Object.defineProperty(process, 'platform', { value: 'linux' })
+    process.env.APPIMAGE = '/tmp/app.AppImage'
 
     const beginShutdown = jest.fn()
     const gracefulReset = jest.fn().mockRejectedValue(new Error('boom'))
@@ -225,11 +236,11 @@ describe('registerAppIpc', () => {
 
     expect(beginShutdown).toHaveBeenCalledTimes(1)
     expect(gracefulReset).toHaveBeenCalledTimes(1)
+    expect(unref).toHaveBeenCalledTimes(1)
     expect(warnSpy).toHaveBeenCalledWith(
       '[MAIN] gracefulReset failed (continuing restart):',
       expect.any(Error)
     )
-    expect(app.relaunch).toHaveBeenCalledTimes(1)
     expect(app.exit).toHaveBeenCalledWith(0)
   })
 
