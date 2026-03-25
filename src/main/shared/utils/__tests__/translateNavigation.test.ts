@@ -68,9 +68,35 @@ describe('translateNavigation', () => {
     expect(result.DistanceRemainingDisplayStringText).toBe('12.3 km')
   })
 
+  test('formats exactly 1km and under 10km with two decimals', () => {
+    expect(
+      translateNavigation({ NaviDistanceToDestination: 1000 }, 'en')
+        .DistanceRemainingDisplayStringText
+    ).toBe('1.00 km')
+    expect(
+      translateNavigation({ NaviDistanceToDestination: 9000 }, 'en')
+        .DistanceRemainingDisplayStringText
+    ).toBe('9.00 km')
+  })
+
+  test('formats sub-kilometer distances in meters', () => {
+    const result = translateNavigation({ NaviRemainDistance: 12.7 }, 'en')
+    expect(result.RemainDistanceText).toBe('13 m')
+  })
+
   test('supports dynamic roundabout exit labels', () => {
     const result = translateNavigation({ NaviManeuverType: 46 }, 'en')
     expect(result.ManeuverTypeText).toBe('Roundabout exit 19')
+  })
+
+  test('maps additional maneuver codes', () => {
+    expect(translateNavigation({ NaviManeuverType: 0 }, 'en').ManeuverTypeText).toBe('No turn')
+    expect(translateNavigation({ NaviManeuverType: 26 }, 'en').ManeuverTypeText).toBe(
+      'Make a U-turn when possible'
+    )
+    expect(translateNavigation({ NaviManeuverType: 53 }, 'en').ManeuverTypeText).toBe(
+      'Change highway (right)'
+    )
   })
 
   test('uses locale dictionaries for de and ua', () => {
@@ -86,6 +112,14 @@ describe('translateNavigation', () => {
     expect(ua.ManeuverTypeText).toBe('Різко праворуч')
   })
 
+  test('uses locale-specific number formatting', () => {
+    const de = translateNavigation({ NaviDistanceToDestination: 1580 }, 'de')
+    const ua = translateNavigation({ NaviDistanceToDestination: 1580 }, 'ua')
+
+    expect(de.DistanceRemainingDisplayStringText).toBe('1,58 km')
+    expect(ua.DistanceRemainingDisplayStringText).toBe('1,58 km')
+  })
+
   test('falls back to english dictionary for unsupported locale', () => {
     const result = translateNavigation({ NaviManeuverType: 2 }, 'fr' as never)
     expect(result.ManeuverTypeText).toBe('Turn right')
@@ -96,11 +130,48 @@ describe('translateNavigation', () => {
     expect(result.ManeuverTypeText).toBe('Unknown')
   })
 
+  test('returns undefined junction text for unsupported junction code', () => {
+    const result = translateNavigation({ NaviJunctionType: 99 }, 'en')
+    expect(result.JunctionTypeText).toBeUndefined()
+    expect(result.codes.JunctionType).toBe(99)
+  })
+
   test('keeps raw turn side code and derives driving side only for 0/1', () => {
     const result = translateNavigation({ NaviTurnSide: 5 }, 'en')
     expect(result.codes.TurnSide).toBe(5)
     expect(result.codes.DrivingSide).toBeUndefined()
     expect(result.DrivingSideText).toBeUndefined()
+  })
+
+  test('maps right-hand driving side from turn side 0', () => {
+    const result = translateNavigation({ NaviTurnSide: 0 }, 'en')
+    expect(result.codes.TurnSide).toBe(0)
+    expect(result.codes.DrivingSide).toBe(0)
+    expect(result.DrivingSideText).toBe('Right')
+  })
+
+  test('ignores non-string source fields and non-number code fields', () => {
+    const result = translateNavigation(
+      {
+        NaviAPPName: 123,
+        NaviDestinationName: false,
+        NaviRoadName: {},
+        NaviStatus: '2',
+        NaviOrderType: '4',
+        NaviTurnAngle: '35',
+        NaviManeuverType: '1'
+      } as never,
+      'en'
+    )
+
+    expect(result.SourceName).toBeUndefined()
+    expect(result.DestinationName).toBeUndefined()
+    expect(result.CurrentRoadName).toBeUndefined()
+    expect(result.ManeuverTypeText).toBe('Unknown')
+    expect(result.codes.RouteGuidanceState).toBeUndefined()
+    expect(result.codes.ManeuverState).toBeUndefined()
+    expect(result.codes.TurnAngle).toBeUndefined()
+    expect(result.codes.ManeuverType).toBeUndefined()
   })
 
   test('does not format invalid numeric values', () => {
