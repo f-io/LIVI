@@ -66,4 +66,18 @@ describe('mergePayload', () => {
 
     expect(mergePayload(prev, inc).base64Image).toBe('old')
   })
+
+  it('falls back to type 0 when neither incoming nor previous type is set', () => {
+    const prev = { media: { MediaSongName: 'Old Song' } } as MediaPayload
+    const inc = { media: { MediaArtistName: 'New Artist' } } as MediaPayload
+
+    expect(mergePayload(prev, inc).type).toBe(0)
+  })
+
+  it('treats missing media objects as empty and returns undefined media', () => {
+    const prev = { type: 1 } as MediaPayload
+    const inc = { type: 2 } as MediaPayload
+
+    expect(mergePayload(prev, inc).media).toBeUndefined()
+  })
 })

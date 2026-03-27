@@ -14,6 +14,8 @@ type NetworkInformationLike = {
 }
 
 function getConnection(): NetworkInformationLike | null {
+  if (typeof navigator === 'undefined') return null
+
   const nav = navigator as Navigator & {
     connection?: NetworkInformationLike
     mozConnection?: NetworkInformationLike

@@ -134,4 +134,16 @@ describe('Dash1', () => {
 
     expect(disconnectMock).toHaveBeenCalledTimes(1)
   })
+
+  test('ignores ResizeObserver entries without contentRect', async () => {
+    render(<Dash1 />)
+
+    resizeObserverCallback?.([{} as never])
+
+    await waitFor(() => {
+      expect(screen.getByText('Speed:123')).toBeInTheDocument()
+      expect(screen.getByText('Rpm:3456')).toBeInTheDocument()
+      expect(screen.getByText('Fuel:67')).toBeInTheDocument()
+    })
+  })
 })

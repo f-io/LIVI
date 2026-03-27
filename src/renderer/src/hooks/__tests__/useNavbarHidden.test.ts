@@ -24,4 +24,22 @@ describe('useNavbarHidden', () => {
     expect(disconnect).toHaveBeenCalled()
     el.remove()
   })
+
+  test('handles missing content-root element', () => {
+    const disconnect = jest.fn()
+    ;(global as any).MutationObserver = jest.fn(() => ({ observe: jest.fn(), disconnect }))
+
+    const { result, unmount } = renderHook(() => useNavbarHidden())
+
+    expect(result.current.isNavbarHidden).toBe(false)
+
+    act(() => {
+      result.current.onSetNavHidden(true)
+    })
+
+    expect(result.current.isNavbarHidden).toBe(true)
+
+    unmount()
+    expect(disconnect).not.toHaveBeenCalled()
+  })
 })

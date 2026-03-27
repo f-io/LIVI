@@ -6,7 +6,8 @@ let mockState = {
   isDongleConnected: false,
   cameraFound: true,
   mapsEnabled: false,
-  telemetryEnabled: false
+  telemetryEnabled: false,
+  settingsMissing: false
 }
 
 jest.mock('@mui/material/styles', () => ({
@@ -26,10 +27,12 @@ jest.mock('@store/store', () => ({
     }),
   useLiviStore: (selector: (s: any) => unknown) =>
     selector({
-      settings: {
-        mapsEnabled: mockState.mapsEnabled,
-        telemetryEnabled: mockState.telemetryEnabled
-      }
+      settings: mockState.settingsMissing
+        ? undefined
+        : {
+            mapsEnabled: mockState.mapsEnabled,
+            telemetryEnabled: mockState.telemetryEnabled
+          }
     })
 }))
 
@@ -40,7 +43,8 @@ describe('useTabsConfig', () => {
       isDongleConnected: false,
       cameraFound: true,
       mapsEnabled: false,
-      telemetryEnabled: false
+      telemetryEnabled: false,
+      settingsMissing: false
     }
   })
 
@@ -68,5 +72,72 @@ describe('useTabsConfig', () => {
     const { result } = renderHook(() => useTabsConfig(false))
     const camera = result.current.find((t) => t.path === '/camera')
     expect(camera?.disabled).toBe(true)
+  })
+
+  test('returns active CarPlay icon variant when dongle is connected', () => {
+    mockState.isDongleConnected = true
+
+    const { result } = renderHook(() => useTabsConfig(false))
+    const carPlayTab = result.current.find((t) => t.path === '/')
+
+    expect(carPlayTab).toBeDefined()
+    expect((carPlayTab!.icon as any).props.sx).toEqual(
+      expect.objectContaining({
+        fontSize: 30,
+        color: '#fff',
+        opacity: 'var(--ui-breathe-opacity, 1)'
+      })
+    )
+    expect((carPlayTab!.icon as any).props.sx['&, &.MuiSvgIcon-root']).toEqual({
+      color: '#fff !important'
+    })
+  })
+
+  test('falls back to false for maps and telemetry when settings are missing', () => {
+    mockState.settingsMissing = true
+
+    const { result } = renderHook(() => useTabsConfig(false))
+
+    expect(result.current.map((t) => t.path)).toEqual(['/', '/media', '/camera', '/settings'])
+  })
+
+  test('uses base CarPlay icon styling when streaming is active but receivingVideo is false', () => {
+    mockState.isDongleConnected = true
+    mockState.isStreaming = true
+
+    const { result } = renderHook(() => useTabsConfig(false))
+    const carPlayTab = result.current.find((t) => t.path === '/')
+
+    expect(carPlayTab).toBeDefined()
+    expect((carPlayTab!.icon as any).props.sx).toEqual(
+      expect.objectContaining({
+        fontSize: 30,
+        color: '#fff',
+        opacity: 'var(--ui-breathe-opacity, 1)'
+      })
+    )
+    expect((carPlayTab!.icon as any).props.sx['&, &.MuiSvgIcon-root']).toEqual({
+      color: '#fff !important'
+    })
+  })
+
+  test('uses highlighted CarPlay icon styling when streaming and receivingVideo are both active', () => {
+    mockState.isDongleConnected = true
+    mockState.isStreaming = true
+
+    const { result } = renderHook(() => useTabsConfig(true))
+    const carPlayTab = result.current.find((t) => t.path === '/')
+
+    expect(carPlayTab).toBeDefined()
+    expect((carPlayTab!.icon as any).props.sx).toEqual(
+      expect.objectContaining({
+        fontSize: 30,
+        color: 'var(--ui-highlight)',
+        opacity: 1
+      })
+    )
+    expect((carPlayTab!.icon as any).props.sx['&, &.MuiSvgIcon-root']).toEqual({
+      color: 'var(--ui-highlight) !important'
+    })
   })
 })

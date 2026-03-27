@@ -30,6 +30,7 @@ export class ProjectionAudio {
   // One AudioOutput per (sampleRate, channels)
   private audioPlayers = new Map<PlayerKey, AudioOutput>()
   private lastStreamLogKey: PlayerKey | null = null
+  private lastCallPlaybackLog: { decodeType?: number; audioType?: number } | null = null
 
   // Last used players per logical stream (for clean teardown)
   private lastMusicPlayerKey: PlayerKey | null = null
@@ -151,6 +152,7 @@ export class ProjectionAudio {
     this.musicWarmupUntil = 0
 
     this.lastStreamLogKey = null
+    this.lastCallPlaybackLog = null
     this.lastMusicPlayerKey = null
     this.lastNavPlayerKey = null
     this.lastSiriPlayerKey = null
@@ -185,6 +187,7 @@ export class ProjectionAudio {
     this.musicWarmupUntil = 0
 
     this.lastStreamLogKey = null
+    this.lastCallPlaybackLog = null
     this.lastMusicPlayerKey = null
     this.lastNavPlayerKey = null
     this.lastSiriPlayerKey = null
@@ -433,11 +436,23 @@ export class ProjectionAudio {
       }
 
       if (DEBUG && logicalKey === 'call') {
-        console.debug('[ProjectionAudio] call playback write', {
+        const nextLogState = {
           decodeType: msg.decodeType,
-          audioType: msg.audioType,
-          samples: pcm.length
-        })
+          audioType: msg.audioType
+        }
+
+        const changed =
+          !this.lastCallPlaybackLog ||
+          this.lastCallPlaybackLog.decodeType !== nextLogState.decodeType ||
+          this.lastCallPlaybackLog.audioType !== nextLogState.audioType
+
+        if (changed) {
+          console.debug('[ProjectionAudio] call playback write', {
+            ...nextLogState,
+            samples: pcm.length
+          })
+          this.lastCallPlaybackLog = nextLogState
+        }
       }
 
       // Playback
@@ -808,6 +823,7 @@ export class ProjectionAudio {
     }
     this.audioPlayers.clear()
     this.lastStreamLogKey = null
+    this.lastCallPlaybackLog = null
     this.lastMusicPlayerKey = null
     this.lastNavPlayerKey = null
     this.lastSiriPlayerKey = null

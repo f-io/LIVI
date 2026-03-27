@@ -86,4 +86,10 @@ describe('Gear', () => {
 
     expect(container.firstChild).toHaveClass('gear-test')
   })
+
+  test('renders dash for null gear', () => {
+    render(<Gear gear={null as unknown as string} />)
+
+    expect(screen.getByText('—')).toBeInTheDocument()
+  })
 })

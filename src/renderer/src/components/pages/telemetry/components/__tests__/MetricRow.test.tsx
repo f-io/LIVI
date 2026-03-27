@@ -27,4 +27,21 @@ describe('MetricRow', () => {
     expect(screen.getByText('FUEL')).toBeInTheDocument()
     expect(screen.getByText('--')).toBeInTheDocument()
   })
+
+  test('supports center label alignment', () => {
+    render(
+      <MetricRow
+        label="RPM"
+        value={2500}
+        unit=""
+        min={0}
+        max={8000}
+        barValue={2500}
+        labelAlign="center"
+      />
+    )
+
+    expect(screen.getByText('RPM')).toBeInTheDocument()
+    expect(screen.getByText('2500')).toBeInTheDocument()
+  })
 })

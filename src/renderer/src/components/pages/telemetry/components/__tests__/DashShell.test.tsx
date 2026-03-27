@@ -116,4 +116,18 @@ describe('DashShell', () => {
 
     expect(disconnectMock).toHaveBeenCalledTimes(1)
   })
+
+  test('ignores resize entries without contentRect', async () => {
+    const { container } = render(
+      <DashShell>
+        <div>Telemetry content</div>
+      </DashShell>
+    )
+
+    resizeObserverCallback?.([{} as never])
+
+    await waitFor(() => {
+      expect(container.firstChild).toHaveStyle('--dash-scale: 1')
+    })
+  })
 })
