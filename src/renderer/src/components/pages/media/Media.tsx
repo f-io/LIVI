@@ -216,9 +216,6 @@ export const Media = () => {
   // Slightly reduce side padding for text on tiny screens
   const textSidePad = Math.max(6, Math.round(pagePadClamped * 0.75))
 
-  // Always show progress bar (unless payload error)
-  const showProgressBar = !mediaPayloadError
-
   const ART_ROUND = canTwoCol ? 34 : 18
   const fftPad = Math.max(8, Math.round(artPx * 0.06))
 
@@ -491,17 +488,15 @@ export const Media = () => {
           />
         </div>
 
-        {/* Always render progress bar (unless payload error) */}
-        {showProgressBar && (
-          <div style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
-            <ProgressBar
-              elapsedMs={elapsedMs}
-              progressH={progressHScaled}
-              totalMs={totalMs}
-              pct={pct}
-            />
-          </div>
-        )}
+        {/* Always render progress bar */}
+        <div style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+          <ProgressBar
+            elapsedMs={elapsedMs}
+            progressH={progressHScaled}
+            totalMs={totalMs}
+            pct={pct}
+          />
+        </div>
       </div>
     </div>
   )
