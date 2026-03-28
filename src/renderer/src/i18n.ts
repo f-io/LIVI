@@ -7,7 +7,6 @@ import ua from './locales/ua.json'
 
 i18n.use(initReactI18next).init({
   debug: false,
-  showSupportNotice: false,
   resources: {
     en: { translation: en },
     de: { translation: de },
