@@ -24,8 +24,9 @@ jest.mock('../../messages', () => {
     stop = jest.fn(async () => undefined)
     close = jest.fn(async () => undefined)
     sendBluetoothPairedList = jest.fn(async () => true)
+    setPendingStartupConnectTarget = jest.fn()
+    clearPendingStartupConnectTarget = jest.fn()
   }
-
   class StubMsg {
     constructor(
       public value?: unknown,

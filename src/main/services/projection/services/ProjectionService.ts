@@ -22,7 +22,6 @@ import {
   SendServerCgiScript,
   SendLiviWeb,
   SendDisconnectPhone,
-  SendAutoConnectByBtAddress,
   SendForgetBluetoothAddr,
   SendCloseDongle,
   FileAddress,
@@ -37,7 +36,11 @@ import { PhoneWorkMode } from '@shared/types'
 import type { ExtraConfig, DongleFirmwareAction, DongleFwApiRaw } from '@shared/types'
 import fs from 'fs'
 import path from 'path'
-import { PersistedMediaPayload, PersistedNavigationPayload } from './types'
+import {
+  PersistedMediaPayload,
+  PersistedNavigationPayload,
+  type PendingStartupConnectTarget
+} from './types'
 import {
   APP_START_TS,
   DEFAULT_MEDIA_DATA_RESPONSE,
@@ -133,8 +136,7 @@ export class ProjectionService {
   private mapsRequested = false
   private lastPluggedPhoneType?: PhoneType
   private aaPlaybackInferred: 1 | 2 = 1
-  private pendingReconnectBtMac: string | null = null
-  private shouldReconnectToPendingBtMac = false
+  private pendingStartupConnectTarget: PendingStartupConnectTarget | null = null
 
   private audio: ProjectionAudio
 
@@ -475,6 +477,10 @@ export class ProjectionService {
       this.webContents?.send('projection-event', { type: 'failure' })
     })
 
+    this.driver.on('targeted-connect-dispatched', () => {
+      this.pendingStartupConnectTarget = null
+    })
+
     // TODO move IPC registration to dedicated IPC modules instead of service constructor
     registerIpcHandle('projection-start', async () => this.start())
     registerIpcHandle('projection-stop', async () => this.stop())
@@ -494,8 +500,19 @@ export class ProjectionService {
       const btMac = String(mac ?? '').trim()
       if (!btMac) return { ok: false }
 
-      this.pendingReconnectBtMac = btMac
-      this.shouldReconnectToPendingBtMac = true
+      const devList = Array.isArray((this.boxInfo as { DevList?: unknown[] } | undefined)?.DevList)
+        ? ((this.boxInfo as { DevList?: Array<{ id?: string; type?: string }> }).DevList ?? [])
+        : []
+
+      const devEntry = devList.find((entry) => String(entry?.id ?? '').trim() === btMac)
+
+      const targetPhoneWorkMode =
+        devEntry?.type === 'AndroidAuto' ? PhoneWorkMode.Android : PhoneWorkMode.CarPlay
+
+      this.pendingStartupConnectTarget = {
+        btMac,
+        phoneWorkMode: targetPhoneWorkMode
+      }
 
       return { ok: true }
     })
@@ -1094,6 +1111,13 @@ export class ProjectionService {
           this.webUsbDevice = webUsbDevice
 
           await this.driver.initialise(asDomUSBDevice(webUsbDevice))
+
+          if (this.pendingStartupConnectTarget) {
+            this.driver.setPendingStartupConnectTarget(this.pendingStartupConnectTarget)
+          } else {
+            this.driver.clearPendingStartupConnectTarget()
+          }
+
           await this.driver.start(this.config)
 
           this.pairTimeout = setTimeout(() => {
@@ -1101,19 +1125,6 @@ export class ProjectionService {
           }, 15000)
 
           this.started = true
-
-          if (this.shouldReconnectToPendingBtMac && this.pendingReconnectBtMac) {
-            const targetMac = this.pendingReconnectBtMac
-            this.shouldReconnectToPendingBtMac = false
-
-            setTimeout(() => {
-              try {
-                this.driver.send(new SendAutoConnectByBtAddress(targetMac))
-              } catch (e) {
-                console.warn('[ProjectionService] pending BT reconnect failed', e)
-              }
-            }, 300)
-          }
         } catch {
           try {
             await this.webUsbDevice?.close()

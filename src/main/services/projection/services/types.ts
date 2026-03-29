@@ -1,6 +1,12 @@
+import { PhoneWorkMode } from '@shared/types'
 import { MediaType, NavigationMetaType } from '../messages'
 import type { NavLocale } from '@shared/utils'
 import type { NaviBag } from '@shared/types'
+
+export type PendingStartupConnectTarget = {
+  btMac: string
+  phoneWorkMode: PhoneWorkMode
+}
 
 export type MediaBag = Record<string, unknown>
 

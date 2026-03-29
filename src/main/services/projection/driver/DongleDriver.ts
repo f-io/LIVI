@@ -7,6 +7,7 @@ import { matchFittingAAResolution } from '@shared/utils'
 import type { DongleConfig } from '@shared/types'
 import { DEFAULT_EXTRA_CONFIG } from '@shared/types'
 import { DEBUG } from '@main/constants'
+import type { PendingStartupConnectTarget } from '@main/services/projection/services/types'
 import {
   PhoneType,
   BoxInfo,
@@ -30,6 +31,7 @@ import {
   SendCommand,
   SendString,
   SendBluetoothPairedList,
+  SendAutoConnectByBtAddress,
   SendGnssData,
   HeartBeat,
   SendDisconnectPhone,
@@ -85,6 +87,7 @@ export class DongleDriver extends EventEmitter {
   private _postOpenConfigSent = false
 
   private _wifiConnectTimer: ReturnType<typeof setTimeout> | null = null
+  private _pendingStartupConnectTarget: PendingStartupConnectTarget | null = null
   private _modeSwitchInFlight: Promise<void> = Promise.resolve()
   private _lastModeSwitchAt = 0
 
@@ -185,6 +188,28 @@ export class DongleDriver extends EventEmitter {
     this._wifiConnectTimer = setTimeout(() => {
       void this.send(new SendCommand('wifiConnect'))
     }, delayMs)
+  }
+
+  public setPendingStartupConnectTarget(target: PendingStartupConnectTarget | null): void {
+    if (!target) {
+      this._pendingStartupConnectTarget = null
+      return
+    }
+
+    const btMac = String(target.btMac ?? '').trim()
+    if (!btMac) {
+      this._pendingStartupConnectTarget = null
+      return
+    }
+
+    this._pendingStartupConnectTarget = {
+      btMac,
+      phoneWorkMode: target.phoneWorkMode
+    }
+  }
+
+  public clearPendingStartupConnectTarget(): void {
+    this._pendingStartupConnectTarget = null
   }
 
   private sleep(ms: number) {
@@ -460,7 +485,28 @@ export class DongleDriver extends EventEmitter {
       await this.sleep(120)
     }
 
-    this.scheduleWifiConnect(150)
+    const pendingTarget = this._pendingStartupConnectTarget
+
+    if (pendingTarget) {
+      if (this._wifiConnectTimer) {
+        clearTimeout(this._wifiConnectTimer)
+        this._wifiConnectTimer = null
+      }
+
+      if (DEBUG) {
+        console.debug('[DongleDriver] sendPostOpenConfig uses targeted auto-connect', {
+          btMac: pendingTarget.btMac,
+          phoneWorkMode: pendingTarget.phoneWorkMode
+        })
+      }
+
+      await this.send(new SendAutoConnectByBtAddress(pendingTarget.btMac))
+      this.emit('targeted-connect-dispatched', pendingTarget)
+      this._pendingStartupConnectTarget = null
+    } else {
+      this.scheduleWifiConnect(150)
+    }
+
     this._postOpenConfigSent = true
   }
 
