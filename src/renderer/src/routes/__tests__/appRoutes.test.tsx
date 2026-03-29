@@ -11,7 +11,7 @@ jest.mock('../../components/layouts/Layout', () => ({
 jest.mock('../../components/pages/settings/SettingsPage', () => ({
   SettingsPage: () => null
 }))
-jest.mock('../schemas.ts/schema', () => ({
+jest.mock('../schemas/schema', () => ({
   settingsRoutes: { children: [{ path: 'general' }] }
 }))
 
@@ -41,7 +41,7 @@ describe('appRoutes', () => {
       jest.doMock('../../components/pages/settings/SettingsPage', () => ({
         SettingsPage: () => null
       }))
-      jest.doMock('../schemas.ts/schema', () => ({
+      jest.doMock('../schemas/schema', () => ({
         settingsRoutes: undefined
       }))
 

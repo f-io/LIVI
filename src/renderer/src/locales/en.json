@@ -5,9 +5,9 @@
   },
   "settings": {
     "settingsTitle": "Settings",
+    "devices": "Devices",
     "general": "General",
     "connections": "Connections",
-    "deviceList": "Device List",
     "carName": "Car Name",
     "carNameDescription": "The name of the CarPlay device.",
     "uiName": "UI Name",

@@ -1,3 +1,4 @@
+import { devicesSchema } from './devicesSchema'
 import { generateRoutes } from '../../utils/generateRoutes'
 import { generalSchema } from './generalSchema'
 import { audioSchema } from './audioSchema'
@@ -13,7 +14,7 @@ export const settingsSchema: SettingsNode<ExtraConfig> = {
   label: 'Settings', // TODO deleted in favor of i18n
   labelKey: 'settings.settingsTitle',
   path: 'settings',
-  children: [generalSchema, audioSchema, videoSchema, appearanceSchema, systemSchema]
+  children: [devicesSchema, generalSchema, audioSchema, videoSchema, appearanceSchema, systemSchema]
 }
 
 export const settingsRoutes = generateRoutes(settingsSchema)

@@ -11,7 +11,7 @@ describe('generalSchema', () => {
     expect(schema.children).toHaveLength(12)
   })
 
-  test('connections route contains device list, names, wifi and auto connect', () => {
+  test('connections route contains names, wifi and auto connect', () => {
     const connections = schema.children[0]
     expect(connections).toEqual(
       expect.objectContaining({
@@ -21,26 +21,21 @@ describe('generalSchema', () => {
       })
     )
 
-    expect(connections.children).toHaveLength(5)
+    expect(connections.children).toHaveLength(4)
+
     expect(connections.children[0]).toEqual(
-      expect.objectContaining({
-        type: 'route',
-        route: 'deviceList'
-      })
-    )
-    expect(connections.children[1]).toEqual(
       expect.objectContaining({
         type: 'string',
         path: 'carName'
       })
     )
-    expect(connections.children[2]).toEqual(
+    expect(connections.children[1]).toEqual(
       expect.objectContaining({
         type: 'string',
         path: 'oemName'
       })
     )
-    expect(connections.children[4]).toEqual(
+    expect(connections.children[3]).toEqual(
       expect.objectContaining({
         type: 'checkbox',
         path: 'autoConn'
@@ -48,18 +43,8 @@ describe('generalSchema', () => {
     )
   })
 
-  test('device list route contains btDeviceList leaf', () => {
-    const deviceList = schema.children[0].children[0]
-    expect(deviceList.children).toEqual([
-      expect.objectContaining({
-        type: 'btDeviceList',
-        path: 'bluetoothPairedDevices'
-      })
-    ])
-  })
-
   test('wifi route contains expected frequency options', () => {
-    const wifi = schema.children[0].children[3]
+    const wifi = schema.children[0].children[2]
     expect(wifi).toEqual(
       expect.objectContaining({
         type: 'route',

@@ -5,9 +5,9 @@
   },
   "settings": {
     "settingsTitle": "Налаштування",
+    "devices": "Пристрої",
     "general": "Загальні",
     "connections": "Підключення",
-    "deviceList": "Список пристроїв",
     "carName": "Назва автомобіля",
     "carNameDescription": "Назва пристрою CarPlay",
     "uiName": "Назва інтерфейсу",

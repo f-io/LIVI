@@ -1,6 +1,6 @@
 import { RoutePath } from './types'
 import { Home, Media, Camera, Maps, Telemetry } from '../components/pages'
-import { settingsRoutes } from './schemas.ts/schema'
+import { settingsRoutes } from './schemas/schema'
 import { Layout } from '../components/layouts/Layout'
 import { SettingsPage } from '../components/pages/settings/SettingsPage'
 
