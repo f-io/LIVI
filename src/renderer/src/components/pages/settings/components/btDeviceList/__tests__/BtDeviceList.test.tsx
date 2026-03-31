@@ -35,8 +35,8 @@ describe('BtDeviceList', () => {
 
   const renderWithState = (state: {
     bluetoothPairedDevices: Array<{ mac: string; name: string }> | unknown
-    forgetBluetoothPairedDevice?: (mac: string) => void
-    removeBluetoothPairedDeviceLocal?: (mac: string) => void
+    //forgetBluetoothPairedDevice?: (mac: string) => void
+    removeBluetoothPairedDeviceLocal: (mac: string) => void
     connectBluetoothPairedDevice: (mac: string) => Promise<boolean> | boolean
     saveSettings: (settings: unknown) => Promise<void> | void
     boxInfo?: {
@@ -167,13 +167,15 @@ describe('BtDeviceList', () => {
 
     warnSpy.mockRestore()
   })
+
   test('clears pending state once device becomes connected', async () => {
     connectMock.mockResolvedValue(true)
     saveSettingsMock.mockResolvedValue(undefined)
 
     const state: {
       bluetoothPairedDevices: Array<{ mac: string; name: string }>
-      forgetBluetoothPairedDevice: typeof removeMock
+      //forgetBluetoothPairedDevice: typeof removeMock
+      removeBluetoothPairedDeviceLocal: typeof removeMock
       connectBluetoothPairedDevice: typeof connectMock
       saveSettings: typeof saveSettingsMock
       boxInfo?: {
