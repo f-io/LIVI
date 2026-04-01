@@ -192,4 +192,150 @@ describe('Projection node wrapper', () => {
     expect(p._pairTimeout).toBeNull()
     expect(p._frameInterval).toBeNull()
   })
+
+  test('handles Plugged event with frameInterval config and sends frame commands on interval', () => {
+    const p = new Projection({
+      phoneConfig: {
+        3: { frameInterval: 1000 }
+      }
+    } as any) as any
+
+    p.onmessage = jest.fn()
+
+    p.dongleDriver.emit('message', new Plugged(3))
+
+    expect(p.onmessage).toHaveBeenCalledWith({ type: 'plugged' })
+
+    jest.advanceTimersByTime(1000)
+
+    expect(p.dongleDriver.send).toHaveBeenCalledTimes(1)
+    expect(p.dongleDriver.send.mock.calls[0][0]).toBeInstanceOf(SendCommand)
+    expect(p.dongleDriver.send.mock.calls[0][0].value).toBe('frame')
+  })
+
+  test('handles Unplugged event and emits onmessage unplugged', () => {
+    const p = new Projection({}) as any
+    p.onmessage = jest.fn()
+
+    p.dongleDriver.emit('message', new Unplugged())
+
+    expect(p.onmessage).toHaveBeenCalledWith({ type: 'unplugged' })
+  })
+
+  test('handles VideoData event and emits onmessage video', () => {
+    const p = new Projection({}) as any
+    p.onmessage = jest.fn()
+
+    const message = new VideoData()
+    p.dongleDriver.emit('message', message)
+
+    expect(p.onmessage).toHaveBeenCalledWith({ type: 'video', message })
+  })
+
+  test('handles MediaData event and emits onmessage media', () => {
+    const p = new Projection({}) as any
+    p.onmessage = jest.fn()
+
+    const message = new MediaData()
+    p.dongleDriver.emit('message', message)
+
+    expect(p.onmessage).toHaveBeenCalledWith({ type: 'media', message })
+  })
+
+  test('handles Command event and emits onmessage command', () => {
+    const p = new Projection({}) as any
+    p.onmessage = jest.fn()
+
+    const message = new Command()
+    p.dongleDriver.emit('message', message)
+
+    expect(p.onmessage).toHaveBeenCalledWith({ type: 'command', message })
+  })
+
+  test('handles failure event and emits onmessage failure', () => {
+    const p = new Projection({}) as any
+    p.onmessage = jest.fn()
+
+    p.dongleDriver.emit('failure')
+
+    expect(p.onmessage).toHaveBeenCalledWith({ type: 'failure' })
+  })
+
+  test('handles dongle-info event and emits onmessage dongleInfo', () => {
+    const p = new Projection({}) as any
+    p.onmessage = jest.fn()
+
+    const info = { dongleFwVersion: '1.2.3', boxInfo: { foo: 'bar' } }
+    p.dongleDriver.emit('dongle-info', info)
+
+    expect(p.onmessage).toHaveBeenCalledWith({ type: 'dongleInfo', message: info })
+  })
+
+  test('resetDongle throws when no device is found', async () => {
+    requestDevice.mockResolvedValue(null)
+
+    const p = new Projection({})
+
+    await expect(p.resetDongle()).rejects.toThrow('No dongle found for reset')
+  })
+
+  test('initialiseAfterReconnect throws when no device is found after reconnect', async () => {
+    requestDevice.mockResolvedValue(null)
+
+    const p = new Projection({})
+
+    await expect(p.initialiseAfterReconnect()).rejects.toThrow('Dongle not found after reconnect')
+  })
+
+  test('resetDongle returns null from findDevice when requestDevice throws', async () => {
+    requestDevice.mockRejectedValue(new Error('usb failed'))
+
+    const p = new Projection({})
+
+    await expect(p.resetDongle()).rejects.toThrow('No dongle found for reset')
+  })
+
+  test('stop catches close errors and logs them', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const p = new Projection({}) as any
+    const err = new Error('close failed')
+
+    p.dongleDriver.close.mockRejectedValue(err)
+
+    await expect(p.stop()).resolves.toBeUndefined()
+
+    expect(errorSpy).toHaveBeenCalledWith(err)
+
+    errorSpy.mockRestore()
+  })
+
+  test('ignores microphone data until an AudioInputConfig decode type was received', () => {
+    const p = new Projection({}) as any
+    const mic = micInstances[0]
+
+    const chunk = new Int16Array([1, 2, 3])
+    mic.emit('data', chunk)
+
+    expect(p.dongleDriver.send).not.toHaveBeenCalled()
+  })
+
+  test('ignores unknown driver message types', () => {
+    const p = new Projection({}) as any
+    p.onmessage = jest.fn()
+
+    class UnknownMessage {}
+    p.dongleDriver.emit('message', new UnknownMessage())
+
+    expect(p.onmessage).not.toHaveBeenCalled()
+  })
+
+  test('does not start microphone on audio start command when decode type is still unknown', () => {
+    const p = new Projection({}) as any
+    const mic = micInstances[0]
+
+    p.dongleDriver.emit('message', new AudioData(AudioCommand.AudioSiriStart))
+    p.dongleDriver.emit('message', new AudioData(AudioCommand.AudioPhonecallStart))
+
+    expect(mic.start).not.toHaveBeenCalled()
+  })
 })

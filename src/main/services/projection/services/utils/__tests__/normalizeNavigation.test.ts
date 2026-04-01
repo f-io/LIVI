@@ -62,4 +62,87 @@ describe('normalizeNavigationPayload', () => {
     expect(out.navi).toEqual({ A: 1 })
     expect(out.error).toBe(false)
   })
+
+  test('ignores rawUtf8 when it is valid json but not an object', () => {
+    const existing = {
+      metaType: 7,
+      navi: { A: 1 },
+      rawUtf8: '',
+      error: false
+    } as any
+
+    const out = normalizeNavigationPayload(existing, {
+      rawUtf8: '[]',
+      navi: null
+    })
+
+    expect(out.metaType).toBe(7)
+    expect(out.navi).toEqual({ A: 1 })
+    expect(out.error).toBe(false)
+  })
+
+  test('does not flush when metaType=200 but NaviStatus is not a finite number', () => {
+    const existing = {
+      metaType: 100,
+      navi: { Keep: 'old', NaviStatus: 2 },
+      rawUtf8: '',
+      error: false
+    } as any
+
+    const out = normalizeNavigationPayload(existing, {
+      metaType: 200,
+      navi: { NaviStatus: '0', Added: true } as any
+    })
+
+    expect(out.metaType).toBe(200)
+    expect(out.navi).toEqual({
+      Keep: 'old',
+      NaviStatus: '0',
+      Added: true
+    })
+    expect(out.error).toBe(false)
+  })
+
+  test('does not flush when metaType=200 but NaviStatus is NaN', () => {
+    const existing = {
+      metaType: 100,
+      navi: { Keep: 'old', NaviStatus: 2 },
+      rawUtf8: '',
+      error: false
+    } as any
+
+    const out = normalizeNavigationPayload(existing, {
+      metaType: 200,
+      navi: { NaviStatus: Number.NaN, Added: true } as any
+    })
+
+    expect(out.metaType).toBe(200)
+    expect(out.navi).toEqual({
+      Keep: 'old',
+      NaviStatus: NaN,
+      Added: true
+    })
+    expect(out.error).toBe(false)
+  })
+
+  test('merges into empty object when existing.navi is undefined and no flush is triggered', () => {
+    const existing = {
+      metaType: 100,
+      navi: undefined,
+      rawUtf8: '',
+      error: false
+    } as any
+
+    const out = normalizeNavigationPayload(existing, {
+      metaType: 201,
+      navi: { DestinationName: 'Home' }
+    })
+
+    expect(out).toEqual({
+      metaType: 201,
+      navi: { DestinationName: 'Home' },
+      rawUtf8: '',
+      error: false
+    })
+  })
 })

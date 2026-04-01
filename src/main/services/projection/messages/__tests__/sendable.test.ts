@@ -4,6 +4,7 @@ import {
   LogoType,
   SendAndroidAutoDpi,
   SendAudio,
+  SendAutoConnectByBtAddress,
   SendBluetoothPairedList,
   SendBoolean,
   SendBoxSettings,
@@ -11,6 +12,7 @@ import {
   SendCommand,
   SendDisconnectPhone,
   SendFile,
+  SendForgetBluetoothAddr,
   SendGnssData,
   SendIconConfig,
   SendLiviWeb,
@@ -20,6 +22,7 @@ import {
   SendNaviFocusRelease,
   SendNumber,
   SendOpen,
+  SendRawMessage,
   SendSafeArea,
   SendServerCgiScript,
   SendString,
@@ -478,5 +481,377 @@ describe('sendable messages', () => {
 
     expect(name).toBe(FileAddress.LIVI_WEB)
     expect(body.byteLength).toBeGreaterThan(0)
+  })
+
+  test('SendRawMessage keeps type and raw payload', () => {
+    const raw = new Uint8Array([0xde, 0xad, 0xbe, 0xef])
+    const msg = new SendRawMessage(MessageType.DebugTrace, raw)
+
+    expect(msg.type).toBe(MessageType.DebugTrace)
+    expect(msg.getPayload()).toEqual(Buffer.from(raw))
+
+    const buf = msg.serialise()
+    expect(buf.readUInt32LE(0)).toBe(0x55aa55aa)
+    expect(buf.readUInt32LE(4)).toBe(4)
+    expect(buf.readUInt32LE(8)).toBe(MessageType.DebugTrace)
+    expect(buf.subarray(16)).toEqual(Buffer.from(raw))
+  })
+
+  test('SendAutoConnectByBtAddress stores ascii bluetooth address payload', () => {
+    const msg = new SendAutoConnectByBtAddress('AA:BB:CC:DD:EE:FF')
+
+    expect(msg.type).toBe(MessageType.WifiStatusData)
+    expect(msg.getPayload().toString('ascii')).toBe('AA:BB:CC:DD:EE:FF')
+  })
+
+  test('SendForgetBluetoothAddr stores ascii bluetooth address payload', () => {
+    const msg = new SendForgetBluetoothAddr('11:22:33:44:55:66')
+
+    expect(msg.type).toBe(MessageType.ForgetBluetoothAddr)
+    expect(msg.getPayload().toString('ascii')).toBe('11:22:33:44:55:66')
+  })
+
+  test('SendBoxSettings logs payload when DEBUG is true', () => {
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
+
+    jest.resetModules()
+
+    jest.isolateModules(() => {
+      jest.doMock('@main/constants', () => ({
+        DEBUG: true
+      }))
+
+      const { SendBoxSettings } = require('@main/services/projection/messages/sendable')
+
+      const msg = new SendBoxSettings(
+        {
+          width: 1280,
+          height: 720,
+          fps: 60,
+          mediaDelay: 0,
+          wifiChannel: 1,
+          wifiType: '2.4ghz',
+          mediaSound: 1,
+          callQuality: 1,
+          gps: false,
+          autoConn: false,
+          UseBTPhone: false,
+          carName: 'CarName',
+          oemName: 'OEM',
+          hand: 0,
+          micType: 0,
+          audioTransferMode: false,
+          dashboardMediaInfo: false,
+          dashboardVehicleInfo: false,
+          dashboardRouteInfo: false,
+          gnssGps: false,
+          gnssGlonass: false,
+          gnssGalileo: false,
+          gnssBeiDou: false,
+          mapsEnabled: false
+        },
+        123
+      )
+
+      const payload = msg.getPayload()
+      const body = JSON.parse(payload.toString('ascii'))
+
+      expect(body.syncTime).toBe(123)
+    })
+
+    expect(logSpy).toHaveBeenCalledWith('[SendBoxSettings]', expect.any(String))
+
+    logSpy.mockRestore()
+    jest.resetModules()
+    jest.dontMock('@main/constants')
+  })
+
+  test('SendBoxSettings logs payload when DEBUG is true', () => {
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
+
+    jest.resetModules()
+
+    jest.isolateModules(() => {
+      jest.doMock('@main/constants', () => ({
+        DEBUG: true
+      }))
+
+      const { SendBoxSettings } = require('@main/services/projection/messages/sendable')
+
+      const msg = new SendBoxSettings(
+        {
+          width: 1280,
+          height: 720,
+          fps: 60,
+          mediaDelay: 0,
+          wifiChannel: 1,
+          wifiType: '2.4ghz',
+          mediaSound: 1,
+          callQuality: 1,
+          gps: false,
+          autoConn: false,
+          UseBTPhone: false,
+          carName: 'CarName',
+          oemName: 'OEM',
+          hand: 0,
+          micType: 0,
+          audioTransferMode: false,
+          dashboardMediaInfo: false,
+          dashboardVehicleInfo: false,
+          dashboardRouteInfo: false,
+          gnssGps: false,
+          gnssGlonass: false,
+          gnssGalileo: false,
+          gnssBeiDou: false,
+          mapsEnabled: false
+        },
+        123
+      )
+
+      const payload = msg.getPayload()
+      const body = JSON.parse(payload.toString('ascii'))
+
+      expect(body.syncTime).toBe(123)
+    })
+
+    expect(logSpy).toHaveBeenCalledWith('[SendBoxSettings]', expect.any(String))
+
+    logSpy.mockRestore()
+    jest.resetModules()
+    jest.dontMock('@main/constants')
+  })
+
+  test('SendBoxSettings uses current time when syncTime is null', () => {
+    const msg = new SendBoxSettings(
+      {
+        width: 1280,
+        height: 720,
+        fps: 60,
+        mediaDelay: 0,
+        wifiChannel: 1,
+        wifiType: '2.4ghz',
+        mediaSound: 1,
+        callQuality: 1,
+        gps: false,
+        autoConn: false,
+        UseBTPhone: false,
+        carName: 'CarName',
+        oemName: 'OEM',
+        hand: 0,
+        micType: 0,
+        audioTransferMode: false,
+        dashboardMediaInfo: false,
+        dashboardVehicleInfo: false,
+        dashboardRouteInfo: false,
+        gnssGps: false,
+        gnssGlonass: false,
+        gnssGalileo: false,
+        gnssBeiDou: false,
+        mapsEnabled: false
+      } as any,
+      null
+    )
+
+    const body = JSON.parse(msg.getPayload().toString('ascii'))
+    expect(typeof body.syncTime).toBe('number')
+    expect(body.syncTime).toBeGreaterThan(0)
+  })
+
+  test('SendBoxSettings falls back to carName when oemName is undefined', () => {
+    const msg = new SendBoxSettings(
+      {
+        width: 1280,
+        height: 720,
+        fps: 60,
+        mediaDelay: 0,
+        wifiChannel: 1,
+        wifiType: '2.4ghz',
+        mediaSound: 1,
+        callQuality: 1,
+        gps: false,
+        autoConn: false,
+        UseBTPhone: false,
+        carName: 'CarName',
+        oemName: undefined,
+        hand: 0,
+        micType: 0,
+        audioTransferMode: false,
+        dashboardMediaInfo: false,
+        dashboardVehicleInfo: false,
+        dashboardRouteInfo: false,
+        gnssGps: false,
+        gnssGlonass: false,
+        gnssGalileo: false,
+        gnssBeiDou: true,
+        mapsEnabled: false
+      } as any,
+      1
+    )
+
+    const body = JSON.parse(msg.getPayload().toString('ascii'))
+
+    expect(body.boxName).toBe('CarName')
+    expect(body.OemName).toBe('CarName')
+    expect(body.GNSSCapability).toBe(8)
+  })
+
+  test('SendBoxSettings uses default navi safe-area zeros when values are undefined', () => {
+    const msg = new SendBoxSettings(
+      {
+        width: 1280,
+        height: 720,
+        fps: 60,
+        mediaDelay: 0,
+        wifiChannel: 1,
+        wifiType: '2.4ghz',
+        mediaSound: 1,
+        callQuality: 1,
+        gps: false,
+        autoConn: false,
+        UseBTPhone: false,
+        carName: 'CarName',
+        oemName: 'OEM',
+        hand: 0,
+        micType: 0,
+        audioTransferMode: false,
+        dashboardMediaInfo: false,
+        dashboardVehicleInfo: false,
+        dashboardRouteInfo: false,
+        gnssGps: false,
+        gnssGlonass: false,
+        gnssGalileo: false,
+        gnssBeiDou: false,
+        mapsEnabled: true,
+        naviWidth: 800,
+        naviHeight: 480,
+        naviFps: 30,
+        naviSafeAreaTop: undefined,
+        naviSafeAreaBottom: undefined,
+        naviSafeAreaLeft: undefined,
+        naviSafeAreaRight: undefined
+      } as any,
+      1
+    )
+
+    const body = JSON.parse(msg.getPayload().toString('ascii'))
+
+    expect(body.naviScreenInfo).toEqual({
+      width: 800,
+      height: 480,
+      fps: 30,
+      safearea: {
+        width: 800,
+        height: 480,
+        x: 0,
+        y: 0,
+        outside: 0
+      }
+    })
+  })
+
+  test('SendBoxSettings constructor uses default syncTime parameter when omitted', () => {
+    const msg = new SendBoxSettings({
+      width: 1280,
+      height: 720,
+      fps: 60,
+      mediaDelay: 0,
+      wifiChannel: 1,
+      wifiType: '2.4ghz',
+      mediaSound: 1,
+      callQuality: 1,
+      gps: false,
+      autoConn: false,
+      UseBTPhone: false,
+      carName: 'CarName',
+      oemName: 'OEM',
+      hand: 0,
+      micType: 0,
+      audioTransferMode: false,
+      dashboardMediaInfo: false,
+      dashboardVehicleInfo: false,
+      dashboardRouteInfo: false,
+      gnssGps: false,
+      gnssGlonass: false,
+      gnssGalileo: false,
+      gnssBeiDou: false,
+      mapsEnabled: false
+    } as any)
+
+    const body = JSON.parse(msg.getPayload().toString('ascii'))
+    expect(typeof body.syncTime).toBe('number')
+    expect(body.syncTime).toBeGreaterThan(0)
+  })
+
+  test('SendIconConfig handles undefined oemName without label', () => {
+    const msg = new SendIconConfig({})
+    const payload = msg.getPayload()
+
+    const nameLen = payload.readUInt32LE(0)
+    const contentLen = payload.readUInt32LE(4 + nameLen)
+    const body = payload.subarray(4 + nameLen + 4, 4 + nameLen + 4 + contentLen).toString('ascii')
+
+    expect(body).toContain('oemIconVisible = 1')
+    expect(body).not.toContain('oemIconLabel =')
+  })
+
+  test('SendGnssData treats nullish input as empty string', () => {
+    const msg = new SendGnssData(undefined as any)
+    expect(msg.getPayload().toString('ascii')).toBe('')
+  })
+
+  test('SendSafeArea uses default options and zero insets when omitted', () => {
+    const msg = new SendSafeArea(1000, 500)
+    const payload = msg.getPayload()
+    const nameLen = payload.readUInt32LE(0)
+    const bodyOffset = 4 + nameLen + 4
+    const body = payload.subarray(bodyOffset)
+
+    expect(body.readUInt32LE(0)).toBe(1000)
+    expect(body.readUInt32LE(4)).toBe(500)
+    expect(body.readUInt32LE(8)).toBe(0)
+    expect(body.readUInt32LE(12)).toBe(0)
+    expect(body.readUInt32LE(16)).toBe(0)
+  })
+
+  test('boxTmpPath falls back correctly for empty filename', () => {
+    expect(boxTmpPath('')).toBe('/tmp/update.img')
+  })
+
+  test('SendBoxSettings uses 2.4ghz fallback channel and sets vehicle/glonass flags', () => {
+    const msg = new SendBoxSettings(
+      {
+        width: 1280,
+        height: 720,
+        fps: 60,
+        mediaDelay: 0,
+        wifiChannel: Number.NaN,
+        wifiType: '2.4ghz',
+        mediaSound: 1,
+        callQuality: 1,
+        gps: false,
+        autoConn: false,
+        UseBTPhone: false,
+        carName: 'CarName',
+        oemName: 'OEM',
+        hand: 0,
+        micType: 0,
+        audioTransferMode: false,
+        dashboardMediaInfo: false,
+        dashboardVehicleInfo: true,
+        dashboardRouteInfo: false,
+        gnssGps: false,
+        gnssGlonass: true,
+        gnssGalileo: false,
+        gnssBeiDou: false,
+        mapsEnabled: false
+      } as any,
+      1
+    )
+
+    const body = JSON.parse(msg.getPayload().toString('ascii'))
+
+    expect(body.wifiChannel).toBe(1)
+    expect(body.DashboardInfo).toBe(2)
+    expect(body.GNSSCapability).toBe(2)
   })
 })

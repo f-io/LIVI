@@ -491,4 +491,70 @@ describe('readable messages', () => {
     expect(msg.isTerminal).toBe(false)
     expect(msg.ok).toBeUndefined()
   })
+
+  test('AudioData reads non-command non-duration extra payload as Int16Array', () => {
+    const head = Buffer.alloc(12)
+    head.writeUInt32LE(5, 0)
+    head.writeFloatLE(1.0, 4)
+    head.writeUInt32LE(2, 8)
+
+    const pcmBytes = Buffer.from([0x34, 0x12]) // ein Int16-Wert = 0x1234
+    const msg = new AudioData(fakeHeader() as any, Buffer.concat([head, pcmBytes]))
+
+    expect(msg.command).toBeUndefined()
+    expect(msg.volumeDuration).toBeUndefined()
+    expect(msg.data).toBeInstanceOf(Int16Array)
+    expect(Array.from(msg.data ?? [])).toEqual([0x1234])
+  })
+
+  test('parseNaviInfoFromBuffer cuts off content at first NUL byte', () => {
+    const info = parseNaviInfoFromBuffer(Buffer.from('{"NaviStatus":1}\0TRAILING', 'utf8'))
+    expect(info).toEqual({ NaviStatus: 1 })
+  })
+
+  test('parseNaviInfoFromBuffer returns null for valid non-object json', () => {
+    const info = parseNaviInfoFromBuffer(Buffer.from('123', 'utf8'))
+    expect(info).toBeNull()
+  })
+
+  test('NavigationData cuts off text at first NUL byte', () => {
+    const buf = Buffer.from('{"NaviStatus":1}\0TRAILING', 'utf8')
+    const msg = new NavigationData(fakeHeader() as any, NavigationMetaType.DashboardInfo, buf)
+
+    expect(msg.rawUtf8).toBe('{"NaviStatus":1}')
+    expect(msg.navi).toEqual({ NaviStatus: 1 })
+  })
+
+  test('MediaData treats empty album cover ascii payload as non-base64 and encodes raw bytes', () => {
+    const raw = Buffer.from('\0\0', 'ascii')
+    const msg = new MediaData(fakeHeader() as any, MediaType.AlbumCoverAlt, raw)
+
+    expect(msg.payload).toEqual({
+      type: MediaType.AlbumCoverAlt,
+      base64Image: raw.toString('base64')
+    })
+  })
+
+  test('AudioData reads non-command non-duration extra payload as Int16Array', () => {
+    const head = Buffer.alloc(12)
+    head.writeUInt32LE(5, 0)
+    head.writeFloatLE(1.0, 4)
+    head.writeUInt32LE(2, 8)
+
+    const pcmBytes = Buffer.from([0x34, 0x12])
+    const msg = new AudioData(fakeHeader() as any, Buffer.concat([head, pcmBytes]))
+
+    expect(msg.command).toBeUndefined()
+    expect(msg.volumeDuration).toBeUndefined()
+    expect(msg.data).toBeInstanceOf(Int16Array)
+    expect(Array.from(msg.data ?? [])).toEqual([0x1234])
+  })
+
+  test('NavigationData keeps rawUtf8 unchanged when payload has no NUL byte', () => {
+    const buf = Buffer.from('{"NaviDestinationName":"Home"}', 'utf8')
+    const msg = new NavigationData(fakeHeader() as any, NavigationMetaType.DashboardInfo, buf)
+
+    expect(msg.rawUtf8).toBe('{"NaviDestinationName":"Home"}')
+    expect(msg.navi).toEqual({ NaviDestinationName: 'Home' })
+  })
 })

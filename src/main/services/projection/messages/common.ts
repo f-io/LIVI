@@ -118,9 +118,9 @@ export class MessageHeader {
     return new MessageHeader(length, msgType)
   }
 
-  static asBuffer(messageType: MessageType, byeLength: number): Buffer {
+  static asBuffer(messageType: MessageType, byteLength: number): Buffer {
     const dataLen = Buffer.alloc(4)
-    dataLen.writeUInt32LE(byeLength)
+    dataLen.writeUInt32LE(byteLength)
     const type = Buffer.alloc(4)
     type.writeUInt32LE(messageType)
     const typeCheck = Buffer.alloc(4)

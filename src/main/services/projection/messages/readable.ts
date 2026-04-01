@@ -162,7 +162,7 @@ export class AudioData extends Message {
       this.command = data.readUInt8(12)
     } else if (payloadBytes === 4) {
       this.volumeDuration = data.readFloatLE(12)
-    } else if (payloadBytes > 0) {
+    } else {
       const byteOffset = data.byteOffset + 12
       const sampleCount = payloadBytes / Int16Array.BYTES_PER_ELEMENT
       this.data = new Int16Array(data.buffer, byteOffset, sampleCount)
