@@ -1,6 +1,6 @@
-import { flash } from './flash'
-import { MediaEventType } from '../types'
 import { RefObject } from 'react'
+import { MediaEventType } from '../types'
+import { flash } from './flash'
 
 export const mediaControlOps = ({
   uiPlaying,

@@ -1,6 +1,6 @@
-import { createMainWindow, getMainWindow } from '@main/window/createWindow'
 import { is } from '@electron-toolkit/utils'
 import { isMacPlatform, pushSettingsToRenderer } from '@main/utils'
+import { createMainWindow, getMainWindow } from '@main/window/createWindow'
 import {
   applyAspectRatioFullscreen,
   applyAspectRatioWindowed,
@@ -8,7 +8,7 @@ import {
   attachKioskStateSync,
   persistKioskAndBroadcast
 } from '@main/window/utils'
-import { session, shell, screen } from 'electron'
+import { screen, session, shell } from 'electron'
 
 const browserWindowInstances: any[] = []
 

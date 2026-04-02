@@ -1,6 +1,6 @@
-import { app, BrowserWindow } from 'electron'
 import { setupLifecycle } from '@main/app/lifecycle'
 import { createMainWindow, getMainWindow } from '@main/window/createWindow'
+import { app, BrowserWindow } from 'electron'
 
 jest.mock('@main/window/createWindow', () => ({
   createMainWindow: jest.fn(),

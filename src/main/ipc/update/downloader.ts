@@ -1,5 +1,5 @@
-import { createWriteStream, existsSync, promises as fsp } from 'fs'
 import * as https from 'node:https'
+import { createWriteStream, existsSync, promises as fsp } from 'fs'
 
 export function downloadWithProgress(
   url: string,

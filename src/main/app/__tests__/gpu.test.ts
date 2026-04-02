@@ -1,5 +1,5 @@
-import { app } from 'electron'
 import { linuxPresetAngleVulkan } from '@main/utils'
+import { app } from 'electron'
 
 jest.mock('electron', () => ({
   app: {

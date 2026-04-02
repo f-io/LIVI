@@ -1,22 +1,22 @@
-import { PhoneWorkMode } from '@shared/types'
+import { DEBUG } from '@main/constants'
 import type { DongleConfig } from '@shared/types'
-import type { MultiTouchPoint } from '@shared/types/TouchTypes'
-import { MessageType, MessageHeader } from './common.js'
+import { PhoneWorkMode } from '@shared/types'
 import {
   CommandMapping,
   type CommandValue,
-  TouchAction,
-  MultiTouchAction
+  MultiTouchAction,
+  TouchAction
 } from '@shared/types/ProjectionEnums'
+import type { MultiTouchPoint } from '@shared/types/TouchTypes'
 import {
   clamp,
+  computeAndroidAutoDpi,
   getCurrentTimeInMs,
-  matchFittingAAResolution,
-  computeAndroidAutoDpi
+  matchFittingAAResolution
 } from '@shared/utils'
 import { buildServerCgiScript } from '../assets/LIVI_cgi.js'
 import { buildLiviWeb } from '../assets/LIVI_web.js'
-import { DEBUG } from '@main/constants'
+import { MessageHeader, MessageType } from './common.js'
 
 export type OpenConfig = Pick<DongleConfig, 'width' | 'height' | 'fps'>
 

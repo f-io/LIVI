@@ -1,5 +1,5 @@
-import { SettingsNode } from '../types'
 import type { ExtraConfig } from '@shared/types'
+import { SettingsNode } from '../types'
 
 export const generalSchema: SettingsNode<ExtraConfig> = {
   route: 'general',

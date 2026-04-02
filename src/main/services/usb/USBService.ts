@@ -1,9 +1,9 @@
-import { usb, type Device } from 'usb'
+import { registerIpcHandle } from '@main/ipc/register'
+import { Microphone } from '@main/services/audio'
 import { BrowserWindow } from 'electron'
+import { type Device, usb } from 'usb'
 import { ProjectionService } from '../projection/services/ProjectionService'
 import { findDongle } from './helpers'
-import { Microphone } from '@main/services/audio'
-import { registerIpcHandle } from '@main/ipc/register'
 
 const getDeviceList = () => usb.getDeviceList()
 

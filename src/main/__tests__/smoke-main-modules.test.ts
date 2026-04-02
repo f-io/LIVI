@@ -28,14 +28,13 @@ describe('main module smoke imports', () => {
     .filter((file) => !excluded.has(file))
     .sort((a, b) => a.localeCompare(b))
 
-  test.each(files.map((file) => [path.relative(projectRoot, file), file]))(
-    'imports %s',
-    (_label, filePath) => {
-      expect(() => {
-        jest.isolateModules(() => {
-          require(filePath)
-        })
-      }).not.toThrow()
-    }
-  )
+  test.each(
+    files.map((file) => [path.relative(projectRoot, file), file])
+  )('imports %s', (_label, filePath) => {
+    expect(() => {
+      jest.isolateModules(() => {
+        require(filePath)
+      })
+    }).not.toThrow()
+  })
 })

@@ -1,11 +1,11 @@
+import type { ExtraConfig } from '@shared/types'
+import { About } from '../../components/pages/settings/pages/system/About'
+import { Debug } from '../../components/pages/settings/pages/system/debug/Debug'
+import { PowerOff } from '../../components/pages/settings/pages/system/PowerOff'
+import { Restart } from '../../components/pages/settings/pages/system/Restart'
 import { SoftwareUpdate } from '../../components/pages/settings/pages/system/softwareUpdate/SoftwareUpdate'
 import { USBDongle } from '../../components/pages/settings/pages/system/usbDongle/USBDongle'
-import { Debug } from '../../components/pages/settings/pages/system/debug/Debug'
-import { About } from '../../components/pages/settings/pages/system/About'
-import { Restart } from '../../components/pages/settings/pages/system/Restart'
-import { PowerOff } from '../../components/pages/settings/pages/system/PowerOff'
 import type { SettingsNode } from '../types'
-import type { ExtraConfig } from '@shared/types'
 
 export const systemSchema: SettingsNode<ExtraConfig> = {
   route: 'system',

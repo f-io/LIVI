@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { Nav } from '../Nav'
 import { ROUTES, UI } from '../../../constants'
+import { Nav } from '../Nav'
 
 const navigateMock = jest.fn()
 const quitMock = jest.fn(() => Promise.resolve())

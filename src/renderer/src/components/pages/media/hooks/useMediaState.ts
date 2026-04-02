@@ -1,9 +1,9 @@
 // Live media (throttled progress updates)
 
 import { useEffect, useRef, useState } from 'react'
+import { UI_INTERVAL_MS } from '../constants'
 import { Bridge, PersistedSnapshot, UsbEvent } from '../types'
 import { clamp, mergePayload, payloadFromLiveEvent } from '../utils'
-import { UI_INTERVAL_MS } from '../constants'
 
 export function useMediaState(allowInitialHydrate: boolean) {
   const [snap, setSnap] = useState<PersistedSnapshot | null>(null)

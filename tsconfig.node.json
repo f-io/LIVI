@@ -1,10 +1,10 @@
 {
-  "extends": "@electron-toolkit/tsconfig/tsconfig.node.json",
-  "include": ["electron.vite.config.*", "src/main/**/*", "src/preload/**/*", "src/types/**/*"],
+  "extends": "./tsconfig.json",
+  "include": ["vite.config.*", "src/main/**/*", "src/preload/**/*", "src/types/**/*"],
   "exclude": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"],
   "compilerOptions": {
     "composite": true,
-    "types": ["electron-vite/node", "w3c-web-usb"],
+    "types": ["node", "w3c-web-usb"],
     "target": "es2024",
     "module": "nodenext",
     "lib": ["es2024"],

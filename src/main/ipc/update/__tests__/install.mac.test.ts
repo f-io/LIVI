@@ -1,7 +1,7 @@
-import { app } from 'electron'
 import { installFromDmg } from '@main/ipc/update/install.dmg'
-import { sendUpdateEvent } from '@main/ipc/utils'
 import { installOnMacFromFile } from '@main/ipc/update/install.mac'
+import { sendUpdateEvent } from '@main/ipc/utils'
+import { app } from 'electron'
 
 jest.mock('@main/ipc/update/install.dmg', () => ({
   installFromDmg: jest.fn(() => Promise.resolve())

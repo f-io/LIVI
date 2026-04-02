@@ -1,5 +1,5 @@
-import * as React from 'react'
 import type { TelemetryPayload as VehicleTelemetry } from '@shared/types'
+import * as React from 'react'
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null

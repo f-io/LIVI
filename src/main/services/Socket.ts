@@ -1,7 +1,7 @@
-import { Server } from 'socket.io'
+import type { TelemetryPayload } from '@shared/types'
 import { EventEmitter } from 'events'
 import http from 'http'
-import type { TelemetryPayload } from '@shared/types'
+import { Server } from 'socket.io'
 
 export enum TelemetryEvents {
   Connection = 'connection',

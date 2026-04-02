@@ -10,9 +10,9 @@ jest.mock('node:https', () => ({
   get: jest.fn()
 }))
 
-import { createWriteStream, existsSync, promises as fsp } from 'fs'
 import * as https from 'node:https'
 import { downloadWithProgress } from '@main/ipc/update/downloader'
+import { createWriteStream, existsSync, promises as fsp } from 'fs'
 
 function makeReq(): EventEmitter & { destroy: jest.Mock } {
   const req = new EventEmitter() as EventEmitter & { destroy: jest.Mock }

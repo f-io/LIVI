@@ -1,8 +1,7 @@
-import { net, app } from 'electron'
-import { join, basename } from 'path'
-import { createWriteStream, existsSync } from 'fs'
-import { promises as fsp } from 'fs'
 import type { BoxInfoPayload } from '@shared/types'
+import { app, net } from 'electron'
+import { createWriteStream, existsSync, promises as fsp } from 'fs'
+import { basename, join } from 'path'
 import type { DongleDriver } from '../driver/DongleDriver.js'
 import { SendTmpFile } from '../messages/sendable.js'
 

@@ -1,14 +1,14 @@
-import React from 'react'
-import { useNavigate, useLocation } from 'react-router'
-import Tabs from '@mui/material/Tabs'
+import { useTheme } from '@mui/material/styles'
 import Tab from '@mui/material/Tab'
-import { useStatusStore } from '../../store/store'
+import Tabs from '@mui/material/Tabs'
 import type { ExtraConfig } from '@shared/types'
-import { useTabsConfig } from './useTabsConfig'
+import React from 'react'
+import { useLocation, useNavigate } from 'react-router'
 import { ROUTES, UI } from '../../constants'
 import { useBlinkingTime } from '../../hooks/useBlinkingTime'
 import { useNetworkStatus } from '../../hooks/useNetworkStatus'
-import { useTheme } from '@mui/material/styles'
+import { useStatusStore } from '../../store/store'
+import { useTabsConfig } from './useTabsConfig'
 
 interface NavProps {
   settings: ExtraConfig | null

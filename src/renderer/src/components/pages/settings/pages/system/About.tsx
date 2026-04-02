@@ -1,16 +1,16 @@
-import { useMemo } from 'react'
-import type { CSSProperties } from 'react'
 import { Box, Stack, Typography } from '@mui/material'
+import { EMPTY_STRING } from '@renderer/constants'
+import type { CSSProperties } from 'react'
+import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
-  name,
-  description,
-  version,
   author,
   contributors,
-  homepage
+  description,
+  homepage,
+  name,
+  version
 } from '../../../../../../../../package.json'
-import { useTranslation } from 'react-i18next'
-import { EMPTY_STRING } from '@renderer/constants'
 
 type Row = {
   label: string

@@ -1,4 +1,6 @@
+import { MessageType } from '@main/services/projection/messages/common'
 import {
+  boxTmpPath,
   FileAddress,
   HeartBeat,
   LogoType,
@@ -18,20 +20,18 @@ import {
   SendLiviWeb,
   SendLogoType,
   SendMultiTouch,
-  SendNaviFocusRequest,
   SendNaviFocusRelease,
+  SendNaviFocusRequest,
   SendNumber,
   SendOpen,
   SendRawMessage,
   SendSafeArea,
   SendServerCgiScript,
   SendString,
-  SendTouch,
   SendTmpFile,
-  SendViewArea,
-  boxTmpPath
+  SendTouch,
+  SendViewArea
 } from '@main/services/projection/messages/sendable'
-import { MessageType } from '@main/services/projection/messages/common'
 
 describe('sendable messages', () => {
   test('SendCommand serialises message header + mapped payload', () => {

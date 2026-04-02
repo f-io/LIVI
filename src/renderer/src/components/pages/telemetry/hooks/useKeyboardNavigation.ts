@@ -1,10 +1,21 @@
-import { clamp } from '@renderer/utils'
-import * as React from 'react'
-import { useCallback, useRef } from 'react'
 import { usePaginationDots } from '@renderer/components/pages/telemetry/hooks/usePaginationDots'
+import { clamp } from '@renderer/utils'
+import type * as React from 'react'
+import { useCallback, useRef } from 'react'
 
-export const useKeyboardNavigation = ({ dashboards, index, isNavbarHidden, onSetIndex }) => {
-  // swipe
+type UseKeyboardNavigationProps = {
+  dashboards: ArrayLike<unknown>
+  index: number
+  isNavbarHidden: boolean
+  onSetIndex: React.Dispatch<React.SetStateAction<number>>
+}
+
+export const useKeyboardNavigation = ({
+  dashboards,
+  index,
+  isNavbarHidden,
+  onSetIndex
+}: UseKeyboardNavigationProps) => {
   const startRef = useRef<{ x: number; y: number; t: number } | null>(null)
   const pagerStateRef = useRef({ index: 0, len: 0 })
 
@@ -37,9 +48,8 @@ export const useKeyboardNavigation = ({ dashboards, index, isNavbarHidden, onSet
       if (absY > absX * 0.8) return
       if (dt > 900) return
 
-      if (dx < 0)
-        handleNavigate(1) // swipe left -> next
-      else handleNavigate(-1) // swipe right -> prev
+      if (dx < 0) handleNavigate(1)
+      else handleNavigate(-1)
     },
     [handleNavigate]
   )
@@ -49,7 +59,6 @@ export const useKeyboardNavigation = ({ dashboards, index, isNavbarHidden, onSet
     startRef.current = { x: e.clientX, y: e.clientY, t: performance.now() }
   }, [])
 
-  // ---- register pager for global key handler (useKeyDown) ----
   pagerStateRef.current = { index, len: dashboards.length }
 
   const prev = useCallback(() => {

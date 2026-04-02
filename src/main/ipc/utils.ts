@@ -1,19 +1,19 @@
-import { EventEmitter } from 'events'
-import { existsSync, writeFileSync } from 'fs'
 import { execFile } from 'node:child_process'
-import { screen } from 'electron'
 import os from 'node:os'
+import { CONFIG_PATH } from '@main/config/paths'
 import { runtimeStateProps, UpdateEventPayload } from '@main/types'
-import { getMainWindow } from '@main/window/createWindow'
-import { DEFAULT_BINDINGS } from '@shared/types'
-import type { ExtraConfig } from '@shared/types'
 import { applyNullDeletes, pushSettingsToRenderer, sizesEqual } from '@main/utils'
+import { getMainWindow } from '@main/window/createWindow'
 import {
   applyAspectRatioFullscreen,
   applyAspectRatioWindowed,
   applyWindowedContentSize
 } from '@main/window/utils'
-import { CONFIG_PATH } from '@main/config/paths'
+import type { ExtraConfig } from '@shared/types'
+import { DEFAULT_BINDINGS } from '@shared/types'
+import { screen } from 'electron'
+import { EventEmitter } from 'events'
+import { existsSync, writeFileSync } from 'fs'
 
 export const configEvents = new EventEmitter()
 

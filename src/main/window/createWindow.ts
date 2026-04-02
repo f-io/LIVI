@@ -1,6 +1,7 @@
-import { isMacPlatform, pushSettingsToRenderer } from '@main/utils'
-import { BrowserWindow, session, shell, screen } from 'electron'
 import { is } from '@electron-toolkit/utils'
+import { runtimeStateProps, ServicesProps } from '@main/types'
+import { isMacPlatform, pushSettingsToRenderer } from '@main/utils'
+import { BrowserWindow, screen, session, shell } from 'electron'
 import { join } from 'path'
 import {
   applyAspectRatioFullscreen,
@@ -10,7 +11,6 @@ import {
   currentKiosk,
   persistKioskAndBroadcast
 } from './utils'
-import { runtimeStateProps, ServicesProps } from '@main/types'
 
 let mainWindow: BrowserWindow | null = null
 

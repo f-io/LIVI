@@ -1,6 +1,6 @@
-import { protocol, net } from 'electron'
-import { join } from 'path'
+import { net, protocol } from 'electron'
 import { existsSync } from 'fs'
+import { join } from 'path'
 import { pathToFileURL } from 'url'
 
 // protocol.registerSchemesAsPrivileged should be called before app is ready

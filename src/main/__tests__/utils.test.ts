@@ -1,4 +1,3 @@
-import { app } from 'electron'
 import {
   applyNullDeletes,
   isMacPlatform,
@@ -8,6 +7,7 @@ import {
   sizesEqual
 } from '@main/utils'
 import { getMainWindow } from '@main/window/createWindow'
+import { app } from 'electron'
 
 jest.mock('@main/window/createWindow', () => ({
   getMainWindow: jest.fn()

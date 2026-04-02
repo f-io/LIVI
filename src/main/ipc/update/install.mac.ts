@@ -1,6 +1,6 @@
-import { app } from 'electron'
 import { installFromDmg } from '@main/ipc/update/install.dmg'
 import { sendUpdateEvent } from '@main/ipc/utils'
+import { app } from 'electron'
 
 export async function installOnMacFromFile(dmgPath: string): Promise<void> {
   if (process.platform !== 'darwin') throw new Error('macOS only')

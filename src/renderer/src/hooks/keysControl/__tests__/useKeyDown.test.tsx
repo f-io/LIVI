@@ -1,8 +1,8 @@
 import { renderHook } from '@testing-library/react'
 import { ReactNode } from 'react'
+import { ROUTES } from '../../../constants'
 import { AppContext, AppContextProps } from '../../../context'
 import { useKeyDown } from '../useKeyDown'
-import { ROUTES } from '../../../constants'
 
 const mockBroadcastMediaKey = jest.fn()
 

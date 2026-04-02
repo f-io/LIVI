@@ -1,22 +1,22 @@
-import { useEffect, useRef, useState } from 'react'
 import { Box, useTheme } from '@mui/material'
+import { useEffect, useRef, useState } from 'react'
 import { DashShell } from '../../components/DashShell'
 import { useVehicleTelemetry } from '../../hooks/useVehicleTelemetry'
-import { Speed, Rpm, RpmRing, Gear, CoolantTemp, OilTemp, FuelLevel, NavMini } from '../../widgets'
+import { CoolantTemp, FuelLevel, Gear, NavMini, OilTemp, Rpm, RpmRing, Speed } from '../../widgets'
 import {
-  BASE_W,
   BASE_H,
-  SPEED_GROUP_LEFT,
-  SPEED_GROUP_TOP,
-  SPEED_GROUP_W,
-  NAV_X,
-  NAV_Y,
+  BASE_W,
   GEAR_X,
   GEAR_Y,
+  METRICS_RIGHT,
+  METRICS_TOP,
+  NAV_X,
+  NAV_Y,
   RPM_RIGHT,
   RPM_TOP,
-  METRICS_RIGHT,
-  METRICS_TOP
+  SPEED_GROUP_LEFT,
+  SPEED_GROUP_TOP,
+  SPEED_GROUP_W
 } from './constants'
 
 export function Dash1() {

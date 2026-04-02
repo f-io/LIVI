@@ -1,13 +1,13 @@
-import { installOnMacFromFile } from '@main/ipc/update/install.mac'
+import os from 'node:os'
+import { downloadWithProgress } from '@main/ipc/update/downloader'
 import { installOnLinuxFromFile } from '@main/ipc/update/install.linux'
+import { installOnMacFromFile } from '@main/ipc/update/install.mac'
 import { pickAssetForPlatform } from '@main/ipc/update/pickAsset'
 import { sendUpdateEvent, sendUpdateProgress } from '@main/ipc/utils'
-import { join } from 'path'
-import { downloadWithProgress } from '@main/ipc/update/downloader'
 import { GhRelease, ServicesProps, UpdateSessionState } from '@main/types'
-import { existsSync, promises as fsp } from 'fs'
-import os from 'node:os'
 import type { IpcMainInvokeEvent } from 'electron'
+import { existsSync, promises as fsp } from 'fs'
+import { join } from 'path'
 
 let updateSession: {
   state: UpdateSessionState

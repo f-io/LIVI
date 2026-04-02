@@ -1,6 +1,6 @@
 import fs from 'fs'
-import { PersistedNavigationFile } from '../types'
 import { DEFAULT_NAVIGATION_DATA_RESPONSE } from '../constants'
+import { PersistedNavigationFile } from '../types'
 
 export function readNavigationFile(filePath: string): PersistedNavigationFile {
   try {

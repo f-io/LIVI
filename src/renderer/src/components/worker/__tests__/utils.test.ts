@@ -1,5 +1,5 @@
-import { createAudioPlayerKey } from '../utils'
 import { decodeTypeMap } from '@shared/types/AudioDecode'
+import { createAudioPlayerKey } from '../utils'
 
 describe('createAudioPlayerKey', () => {
   test('creates key from decode type format and audio type', () => {

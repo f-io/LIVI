@@ -1,20 +1,15 @@
 {
   "compilerOptions": {
-    "jsx": "react-jsx",
-    "target": "es2024",
-    "module": "es2022",
-    "lib": ["es2024", "dom"],
-    "types": ["@webgpu/types", "jest", "node"],
     "allowJs": true,
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "strict": true,
     "forceConsistentCasingInFileNames": true,
-    "moduleResolution": "bundler",
-    "skipLibCheck": true,
-    "noEmit": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
+    "noFallthroughCasesInSwitch": true,
     "paths": {
       "@audio": ["./src/main/audio/index.ts"],
       "@audio/*": ["./src/main/audio/*"],
@@ -29,5 +24,5 @@
       "@types/*": ["./src/renderer/src/types/*"]
     }
   },
-  "include": ["src/**/*", "src/types"]
+  "include": ["src/**/*", "src/types/**/*"]
 }

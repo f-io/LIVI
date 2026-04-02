@@ -1,7 +1,7 @@
-import React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
-import NumberSpinner from '../numberSpinner'
+import React from 'react'
 import { AppContext } from '../../../../../../context'
+import NumberSpinner from '../numberSpinner'
 
 const alphaMock = jest.fn((color: string, value: number) => `alpha(${color},${value})`)
 

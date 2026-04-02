@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Box,
   Button,
@@ -11,11 +10,12 @@ import {
   Stack,
   Typography
 } from '@mui/material'
-import { cmpSemver, human, parseSemver } from './utils'
-import { phaseMap, UpdatePhases, UpgradeText } from './types'
 import { EMPTY_STRING } from '@renderer/constants'
-import { CMP_CONFIG, INSTALL_PHASES } from './constants'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CMP_CONFIG, INSTALL_PHASES } from './constants'
+import { phaseMap, UpdatePhases, UpgradeText } from './types'
+import { cmpSemver, human, parseSemver } from './utils'
 
 export function SoftwareUpdate() {
   const { t } = useTranslation()

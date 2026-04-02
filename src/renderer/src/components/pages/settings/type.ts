@@ -1,6 +1,6 @@
+import type { ExtraConfig } from '@shared/types'
 import { ReactNode } from 'react'
 import { SettingsNode } from '../../../routes'
-import type { ExtraConfig } from '@shared/types'
 
 export interface StackItemProps {
   children?: ReactNode

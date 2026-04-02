@@ -1,5 +1,5 @@
-import React from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
+import React from 'react'
 import { Controls } from '../controls'
 
 const circleBtnStyleMock = jest.fn((size: number, state: unknown) => ({

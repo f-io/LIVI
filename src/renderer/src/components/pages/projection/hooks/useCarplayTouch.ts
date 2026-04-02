@@ -1,5 +1,5 @@
-import { useMemo, useRef, useCallback, type RefObject } from 'react'
 import { MultiTouchAction, TouchAction } from '@shared/types/ProjectionEnums'
+import { type RefObject, useCallback, useMemo, useRef } from 'react'
 
 type Handlers = {
   onPointerDown: React.PointerEventHandler<HTMLDivElement>

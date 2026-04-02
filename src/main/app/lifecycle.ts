@@ -1,6 +1,6 @@
-import { app, BrowserWindow } from 'electron'
 import { runtimeStateProps, ServicesProps } from '@main/types'
 import { createMainWindow, getMainWindow } from '@main/window/createWindow'
+import { app, BrowserWindow } from 'electron'
 
 export function setupLifecycle(runtimeState: runtimeStateProps, services: ServicesProps) {
   const { projectionService, usbService, telemetrySocket } = services

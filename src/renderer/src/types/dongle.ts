@@ -1,5 +1,6 @@
 import type { DongleFwApiRaw } from '@shared/types'
-export type { DevListEntry, BoxInfoPayload } from '@shared/types'
+
+export type { BoxInfoPayload, DevListEntry } from '@shared/types'
 
 export type LocalFwStatus =
   | { ok: true; ready: true; path: string; bytes: number; model: string; latestVer?: string }

@@ -1,10 +1,10 @@
-import { app, shell } from 'electron'
-import { getMainWindow } from '@main/window/createWindow'
-import { isMacPlatform } from '@main/utils'
+import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
 import { runtimeStateProps, ServicesProps } from '@main/types'
+import { isMacPlatform } from '@main/utils'
+import { getMainWindow } from '@main/window/createWindow'
 import { restoreKioskAfterWmExit } from '@main/window/utils'
 import { spawn } from 'child_process'
-import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
+import { app, shell } from 'electron'
 
 export function registerAppIpc(runtimeState: runtimeStateProps, services: ServicesProps) {
   const mainWindow = getMainWindow()

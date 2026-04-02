@@ -1,8 +1,8 @@
-import { app } from 'electron'
-import { NULL_DELETES } from './constants'
-import type { ExtraConfig } from '@shared/types'
 import { NullDeleteKey, runtimeStateProps } from '@main/types'
 import { getMainWindow } from '@main/window/createWindow'
+import type { ExtraConfig } from '@shared/types'
+import { app } from 'electron'
+import { NULL_DELETES } from './constants'
 
 export const isMacPlatform = () => process.platform === 'darwin'
 

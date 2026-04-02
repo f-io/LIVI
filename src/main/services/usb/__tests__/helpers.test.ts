@@ -1,5 +1,5 @@
-import { usb } from 'usb'
 import { findDongle } from '@main/services/usb/helpers'
+import { usb } from 'usb'
 
 jest.mock('usb', () => ({
   usb: {

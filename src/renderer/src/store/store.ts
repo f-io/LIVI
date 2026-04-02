@@ -1,6 +1,5 @@
+import type { ExtraConfig, MicType } from '@shared/types'
 import { create } from 'zustand'
-import type { ExtraConfig } from '@shared/types'
-import type { MicType } from '@shared/types'
 
 type VolumeStreamKey = 'music' | 'nav' | 'siri' | 'call'
 

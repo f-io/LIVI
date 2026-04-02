@@ -1,8 +1,8 @@
+import { installOnLinuxFromFile } from '@main/ipc/update/install.linux'
+import { sendUpdateEvent } from '@main/ipc/utils'
+import { spawn } from 'child_process'
 import { app } from 'electron'
 import { promises as fsp } from 'fs'
-import { spawn } from 'child_process'
-import { sendUpdateEvent } from '@main/ipc/utils'
-import { installOnLinuxFromFile } from '@main/ipc/update/install.linux'
 
 jest.mock('fs', () => ({
   promises: {

@@ -1,5 +1,5 @@
-import { mergePayload } from '../../utils'
 import { MediaPayload } from '../../types'
+import { mergePayload } from '../../utils'
 
 describe('mergePayload', () => {
   it('returns incoming payload when previous is undefined', () => {

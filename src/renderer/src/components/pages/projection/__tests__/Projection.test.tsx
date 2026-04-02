@@ -1,6 +1,6 @@
+import { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
 import { act, render, waitFor } from '@testing-library/react'
 import { Projection } from '../Projection'
-import { CommandMapping, AudioCommand } from '@shared/types/ProjectionEnums'
 
 const navigateMock = jest.fn()
 let mockPathname = '/'

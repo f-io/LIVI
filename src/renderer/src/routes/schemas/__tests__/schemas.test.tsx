@@ -26,8 +26,8 @@ jest.mock('@renderer/components/pages/settings/SettingsPage', () => ({
   SettingsPage: () => null
 }))
 
-import { audioSchema } from '../audioSchema'
 import { appearanceSchema } from '../appearanceSchema'
+import { audioSchema } from '../audioSchema'
 import { generalSchema } from '../generalSchema'
 import { settingsRoutes, settingsSchema } from '../schema'
 import { systemSchema } from '../systemSchema'

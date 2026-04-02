@@ -1,5 +1,5 @@
-import { registerUpdateIpc } from '@main/ipc/update'
 import { registerIpcHandle } from '@main/ipc/register'
+import { registerUpdateIpc } from '@main/ipc/update'
 import { Updater } from '@main/ipc/update/updater'
 
 jest.mock('@main/ipc/register', () => ({

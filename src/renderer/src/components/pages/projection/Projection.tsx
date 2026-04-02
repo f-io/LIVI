@@ -1,18 +1,17 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react'
-import { Box, useTheme } from '@mui/material'
-import { useLocation, useNavigate } from 'react-router'
-import { CommandMapping, AudioCommand } from '@shared/types/ProjectionEnums'
-import { matchFittingAAResolution } from '@shared/utils'
-import type { ExtraConfig } from '@shared/types'
-import { useLiviStore, useStatusStore } from '../../../store/store'
-import { InitEvent, UpdateFpsEvent } from '@worker/render/RenderEvents'
-import { createProjectionWorker } from '@worker/createProjectionWorker'
-import { createRenderWorker } from '@worker/createRenderWorker'
-import type { ProjectionWorker, UsbEvent, KeyCommand, WorkerToUI } from '@worker/types'
-import { useCarplayMultiTouch } from './hooks/useCarplayTouch'
-
 // Icons
 import CropPortraitOutlinedIcon from '@mui/icons-material/CropPortraitOutlined'
+import { Box, useTheme } from '@mui/material'
+import type { ExtraConfig } from '@shared/types'
+import { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
+import { matchFittingAAResolution } from '@shared/utils'
+import { createProjectionWorker } from '@worker/createProjectionWorker'
+import { createRenderWorker } from '@worker/createRenderWorker'
+import { InitEvent, UpdateFpsEvent } from '@worker/render/RenderEvents'
+import type { KeyCommand, ProjectionWorker, UsbEvent, WorkerToUI } from '@worker/types'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router'
+import { useLiviStore, useStatusStore } from '../../../store/store'
+import { useCarplayMultiTouch } from './hooks/useCarplayTouch'
 
 const RETRY_DELAY_MS = 3000
 

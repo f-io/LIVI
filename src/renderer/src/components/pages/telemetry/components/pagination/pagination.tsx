@@ -1,7 +1,7 @@
 import { Box, useTheme } from '@mui/material'
-import { DashboardsPaginationProps } from './types'
-import { FC } from 'react'
 import { usePaginationDots } from '@renderer/components/pages/telemetry/hooks/usePaginationDots'
+import { FC } from 'react'
+import { DashboardsPaginationProps } from './types'
 
 export const DashboardsPagination: FC<DashboardsPaginationProps> = ({
   activeIndex,

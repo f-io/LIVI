@@ -1,5 +1,5 @@
-import { ipcMain } from 'electron'
 import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
+import { ipcMain } from 'electron'
 
 describe('register IPC helpers', () => {
   beforeEach(() => {

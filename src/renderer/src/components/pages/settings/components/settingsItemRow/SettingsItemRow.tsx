@@ -1,6 +1,6 @@
 import { Typography } from '@mui/material'
-import { StackItem } from '../stackItem'
 import { ReactNode } from 'react'
+import { StackItem } from '../stackItem'
 
 type Props = {
   label: string

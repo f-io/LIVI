@@ -1,5 +1,5 @@
 {
-  "extends": "@electron-toolkit/tsconfig/tsconfig.web.json",
+  "extends": "./tsconfig.json",
   "include": [
     "src/renderer/src/env.d.ts",
     "src/renderer/src/**/*",
@@ -9,6 +9,7 @@
     "jest.setup.ts",
     "jest.web.setup.ts"
   ],
+  "exclude": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"],
   "compilerOptions": {
     "composite": false,
     "jsx": "react-jsx",

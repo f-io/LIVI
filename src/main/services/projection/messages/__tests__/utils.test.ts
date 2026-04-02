@@ -1,8 +1,8 @@
 import {
   clamp,
+  computeAndroidAutoDpi,
   getCurrentTimeInMs,
-  matchFittingAAResolution,
-  computeAndroidAutoDpi
+  matchFittingAAResolution
 } from '@shared/utils'
 
 describe('projection message utils', () => {

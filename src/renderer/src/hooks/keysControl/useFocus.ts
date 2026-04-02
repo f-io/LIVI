@@ -1,6 +1,6 @@
 import { useCallback, useContext } from 'react'
-import { AppContext } from '../../context'
 import { FOCUSABLE_SELECTOR } from '../../constants'
+import { AppContext } from '../../context'
 
 type RefLike<T> = { current: T | null }
 
