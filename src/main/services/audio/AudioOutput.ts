@@ -1,5 +1,5 @@
-import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
 import { DEBUG } from '@main/constants'
+import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'

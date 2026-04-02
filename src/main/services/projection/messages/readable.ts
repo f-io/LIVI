@@ -1,5 +1,5 @@
-import { MessageHeader } from './common.js'
 import { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
+import { MessageHeader } from './common.js'
 
 export abstract class Message {
   header: MessageHeader

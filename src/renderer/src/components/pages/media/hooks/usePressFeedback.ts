@@ -1,7 +1,7 @@
 // Button feedback
 import { useCallback, useRef, useState } from 'react'
-import { MediaEventType } from '../types'
 import { FLASH_TIMEOUT_MS } from '../constants'
+import { MediaEventType } from '../types'
 
 export function usePressFeedback() {
   const [press, setPress] = useState<Record<MediaEventType, boolean>>({

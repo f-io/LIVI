@@ -1,5 +1,5 @@
+import { createTheme, ThemeProvider } from '@mui/material/styles'
 import { act, render, waitFor } from '@testing-library/react'
-import { ThemeProvider, createTheme } from '@mui/material/styles'
 import { FFTSpectrum, normalizePcmBuffer } from '../FFTSpectrum'
 
 const postMessageMock = jest.fn()

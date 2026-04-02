@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Box, IconButton, Modal, Paper, Typography } from '@mui/material'
 import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined'
+import { Box, IconButton, Modal, Paper, Typography } from '@mui/material'
+import type { KeyBindingNode } from '@renderer/routes/types'
 import type { ExtraConfig } from '@shared/types'
 import { DEFAULT_BINDINGS } from '@shared/types'
 import { useLiviStore } from '@store/store'
-import { StackItem } from './stackItem'
-import type { KeyBindingNode } from '@renderer/routes/types'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { StackItem } from './stackItem'
 
 const DEFAULT_BINDINGS_MAP = DEFAULT_BINDINGS as Partial<
   Record<KeyBindingNode['bindingKey'], string>

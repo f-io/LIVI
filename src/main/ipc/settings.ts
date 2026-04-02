@@ -1,11 +1,11 @@
-import { app } from 'electron'
-import type { ExtraConfig } from '@shared/types'
-import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
-import { currentKiosk } from '@main/window/utils'
-import { pickAssetForPlatform } from '@main/ipc/update/pickAsset'
-import { GhRelease, runtimeStateProps } from '@main/types'
-import { configEvents, saveSettings } from '@main/ipc/utils'
 import { registerIpcHandle } from '@main/ipc/register'
+import { pickAssetForPlatform } from '@main/ipc/update/pickAsset'
+import { configEvents, saveSettings } from '@main/ipc/utils'
+import { GhRelease, runtimeStateProps } from '@main/types'
+import { currentKiosk } from '@main/window/utils'
+import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
+import type { ExtraConfig } from '@shared/types'
+import { app } from 'electron'
 
 export function registerSettingsIpc(runtimeState: runtimeStateProps) {
   registerIpcHandle('settings:get-kiosk', () => currentKiosk(runtimeState.config))

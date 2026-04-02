@@ -1,7 +1,7 @@
-import { getMacDesiredOwner, sendUpdateEvent } from '@main/ipc/utils'
 import { execFile } from 'node:child_process'
-import { join } from 'path'
+import { getMacDesiredOwner, sendUpdateEvent } from '@main/ipc/utils'
 import { promises as fsp } from 'fs'
+import { join } from 'path'
 
 export async function installFromDmg(dmgPath: string): Promise<void> {
   if (process.platform !== 'darwin') throw new Error('macOS only')

@@ -1,8 +1,8 @@
+import { AudioOutput } from '@main/services/audio/AudioOutput'
+import { spawn } from 'child_process'
+import { app } from 'electron'
 import { EventEmitter } from 'events'
 import fs from 'fs'
-import { spawn } from 'child_process'
-import { AudioOutput } from '@main/services/audio/AudioOutput'
-import { app } from 'electron'
 
 jest.mock('child_process', () => ({
   spawn: jest.fn()

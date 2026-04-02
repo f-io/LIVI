@@ -1,6 +1,6 @@
-import { TouchAction } from '@shared/types/ProjectionEnums'
 import type { DongleConfig } from '@shared/types'
 import type { CoreAudioData } from '@shared/types/AudioMessageTypes'
+import { TouchAction } from '@shared/types/ProjectionEnums'
 
 export type AudioData = CoreAudioData
 

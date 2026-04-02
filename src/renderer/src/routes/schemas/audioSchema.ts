@@ -1,10 +1,10 @@
-import { SettingsNode, ValueTransform } from '../types'
 import type { ExtraConfig } from '@shared/types'
 import {
-  MEDIA_DELAY_MIN,
   MEDIA_DELAY_MAX,
+  MEDIA_DELAY_MIN,
   MEDIA_DELAY_STEP
 } from '../../components/pages/settings/constants'
+import { SettingsNode, ValueTransform } from '../types'
 
 const audioValueTransform: ValueTransform<number | undefined, number> = {
   toView: (v) => Math.round((v ?? 1) * 100),

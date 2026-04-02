@@ -1,7 +1,7 @@
+import { SendTmpFile } from '@main/services/projection/messages/sendable'
+import { FirmwareUpdateService } from '@main/services/projection/services/FirmwareUpdateService'
 import { app } from 'electron'
 import { existsSync, promises as fsp } from 'fs'
-import { FirmwareUpdateService } from '@main/services/projection/services/FirmwareUpdateService'
-import { SendTmpFile } from '@main/services/projection/messages/sendable'
 
 jest.mock('electron', () => ({
   app: {

@@ -1,7 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react'
-import { StackItem } from '../StackItem'
 import type { SettingsNode } from '@renderer/routes/types'
 import type { ExtraConfig } from '@shared/types'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { StackItem } from '../StackItem'
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({

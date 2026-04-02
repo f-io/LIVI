@@ -1,6 +1,6 @@
-import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import type { ExtraConfig } from '@shared/types'
 import type { MultiTouchPoint } from '@shared/types/TouchTypes'
+import { contextBridge, IpcRendererEvent, ipcRenderer } from 'electron'
 
 type ApiCallback<TArgs extends unknown[] = unknown[]> = (
   event: IpcRendererEvent,

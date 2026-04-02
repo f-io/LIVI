@@ -1,5 +1,5 @@
-import { payloadFromLiveEvent } from '../../utils'
 import type { MediaPayload } from '../../types'
+import { payloadFromLiveEvent } from '../../utils'
 
 describe('payloadFromLiveEvent', () => {
   it('returns null when event is undefined', () => {

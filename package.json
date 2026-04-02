@@ -25,7 +25,7 @@
     "start": "vite preview",
     "format": "biome format --write .",
     "lint": "biome check --write .",
-    "lint:check": "biome check .",
+    "lint:check": "biome lint .",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",

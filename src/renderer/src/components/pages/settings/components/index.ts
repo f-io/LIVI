@@ -1,4 +1,4 @@
-export * from './numberSpinner/numberSpinner'
-export * from './stackItem'
-export * from './settingsItemRow'
 export * from './keyBindingRow'
+export * from './numberSpinner/numberSpinner'
+export * from './settingsItemRow'
+export * from './stackItem'

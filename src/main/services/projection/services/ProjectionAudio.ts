@@ -1,8 +1,8 @@
-import { AudioData, decodeTypeMap } from '../messages'
-import { AudioCommand } from '@shared/types/ProjectionEnums'
-import type { ExtraConfig } from '@shared/types'
-import { Microphone, AudioOutput, downsampleToMono } from '@main/services/audio'
 import { DEBUG } from '@main/constants'
+import { AudioOutput, downsampleToMono, Microphone } from '@main/services/audio'
+import type { ExtraConfig } from '@shared/types'
+import { AudioCommand } from '@shared/types/ProjectionEnums'
+import { AudioData, decodeTypeMap } from '../messages'
 
 export type PlayerKey = string
 export type LogicalStreamKey = 'music' | 'nav' | 'siri' | 'call'

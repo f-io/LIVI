@@ -1,4 +1,4 @@
-import { ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { type IpcMainEvent, type IpcMainInvokeEvent, ipcMain } from 'electron'
 
 type InvokeHandler<TArgs extends unknown[] = unknown[], TResult = unknown> = (
   event: IpcMainInvokeEvent,

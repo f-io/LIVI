@@ -4,15 +4,10 @@ import {
   DriverStateError
 } from '@main/services/projection/driver/DongleDriver'
 import {
-  SendAutoConnectByBtAddress,
-  SendBluetoothPairedList,
-  SendCommand,
-  SendDisconnectPhone,
-  SendGnssData,
-  SendOpen,
-  SendString
-} from '@main/services/projection/messages/sendable'
-import { MicType, PhoneWorkMode, CommandMapping } from '@shared/types'
+  HeaderBuildError,
+  MessageHeader,
+  MessageType
+} from '@main/services/projection/messages/common'
 import {
   BluetoothPeerConnected,
   BoxInfo,
@@ -25,10 +20,15 @@ import {
   VendorSessionInfo
 } from '@main/services/projection/messages/readable'
 import {
-  HeaderBuildError,
-  MessageHeader,
-  MessageType
-} from '@main/services/projection/messages/common'
+  SendAutoConnectByBtAddress,
+  SendBluetoothPairedList,
+  SendCommand,
+  SendDisconnectPhone,
+  SendGnssData,
+  SendOpen,
+  SendString
+} from '@main/services/projection/messages/sendable'
+import { CommandMapping, MicType, PhoneWorkMode } from '@shared/types'
 
 jest.mock('@main/helpers/vendorSessionInfo', () => ({
   decryptVendorSessionText: jest.fn(async () => 'decrypted-session')

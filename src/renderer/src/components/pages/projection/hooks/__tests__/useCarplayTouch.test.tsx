@@ -1,7 +1,7 @@
+import { MultiTouchAction, TouchAction } from '@shared/types/ProjectionEnums'
 import { renderHook } from '@testing-library/react'
 import { createRef } from 'react'
 import { useCarplayMultiTouch } from '../useCarplayTouch'
-import { MultiTouchAction, TouchAction } from '@shared/types/ProjectionEnums'
 
 describe('useCarplayMultiTouch', () => {
   const sendTouch = jest.fn()

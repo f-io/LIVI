@@ -1,5 +1,5 @@
-import { getMainWindow } from '@main/window/createWindow'
 import { TelemetryEvents, TelemetrySocket } from '@main/services/Socket'
+import { getMainWindow } from '@main/window/createWindow'
 
 export function setupTelemetry(telemetrySocket: TelemetrySocket) {
   const mainWindow = getMainWindow()

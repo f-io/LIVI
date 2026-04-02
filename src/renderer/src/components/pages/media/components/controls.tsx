@@ -1,10 +1,10 @@
-import { circleBtnStyle } from '../styles'
-import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import PauseIcon from '@mui/icons-material/Pause'
+import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import SkipNextIcon from '@mui/icons-material/SkipNext'
 import SkipPreviousIcon from '@mui/icons-material/SkipPrevious'
-import { RefObject, SetStateAction, useState } from 'react'
 import { useTheme } from '@mui/material/styles'
+import { RefObject, SetStateAction, useState } from 'react'
+import { circleBtnStyle } from '../styles'
 
 type ControlsProps = {
   ctrlGap: number

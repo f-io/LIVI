@@ -1,6 +1,6 @@
 import fs from 'fs'
-import { PersistedMediaFile } from '../types'
 import { DEFAULT_MEDIA_DATA_RESPONSE } from '../constants'
+import { PersistedMediaFile } from '../types'
 
 export function readMediaFile(filePath: string): PersistedMediaFile {
   try {

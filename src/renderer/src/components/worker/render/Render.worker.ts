@@ -1,5 +1,5 @@
 import { getDecoderConfig, getNaluFromStream, isKeyFrame, NaluTypes } from './lib/utils'
-import { InitEvent, WorkerEvent, UpdateFpsEvent } from './RenderEvents'
+import { InitEvent, UpdateFpsEvent, WorkerEvent } from './RenderEvents'
 import { WebGL2Renderer } from './WebGL2Renderer'
 import { WebGPURenderer } from './WebGPURenderer'
 

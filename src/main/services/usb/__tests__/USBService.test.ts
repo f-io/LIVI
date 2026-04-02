@@ -1,9 +1,9 @@
-import { BrowserWindow } from 'electron'
 import { registerIpcHandle } from '@main/ipc/register'
 import { Microphone } from '@main/services/audio'
+import { USBService } from '@main/services/usb/USBService'
+import { BrowserWindow } from 'electron'
 import { usb } from 'usb'
 import { findDongle } from '../helpers'
-import { USBService } from '@main/services/usb/USBService'
 
 jest.mock('electron', () => ({
   BrowserWindow: {

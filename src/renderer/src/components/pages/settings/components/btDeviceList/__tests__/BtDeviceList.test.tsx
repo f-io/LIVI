@@ -1,7 +1,7 @@
-import React from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { BtDeviceList } from '../BtDeviceList'
 import { PhoneWorkMode } from '@shared/types'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import React from 'react'
+import { BtDeviceList } from '../BtDeviceList'
 
 const mockUseLiviStore = jest.fn()
 const removeMock = jest.fn()

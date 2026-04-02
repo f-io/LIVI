@@ -1,10 +1,10 @@
-import { MenuItem, Select, Slider, Switch, TextField, IconButton } from '@mui/material'
 import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined'
-import NumberSpinner from './numberSpinner/numberSpinner'
-import { SettingsNode } from '../../../../routes'
-import type { ExtraConfig } from '@shared/types'
+import { IconButton, MenuItem, Select, Slider, Switch, TextField } from '@mui/material'
 import { themeColors } from '@renderer/themeColors'
+import type { ExtraConfig } from '@shared/types'
 import { useTranslation } from 'react-i18next'
+import { SettingsNode } from '../../../../routes'
+import NumberSpinner from './numberSpinner/numberSpinner'
 
 type Props<T> = {
   node: SettingsNode<ExtraConfig>

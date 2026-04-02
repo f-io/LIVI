@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { loadConfig } from '@main/config/loadConfig'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
 
 jest.mock('fs', () => ({
   existsSync: jest.fn(),

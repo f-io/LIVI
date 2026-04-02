@@ -1,11 +1,11 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react'
 import { Box, Button, CircularProgress, Stack, Typography } from '@mui/material'
-import type { ExtraConfig } from '@shared/types'
 import type { SettingsCustomPageProps } from '@renderer/routes/types'
+import type { ExtraConfig } from '@shared/types'
 import { useLiviStore, useStatusStore } from '@store/store'
-import { loadImageFromFile, resizeImageToBase64Png } from './utils'
-import { ResetDongleIconsResult } from './types'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ResetDongleIconsResult } from './types'
+import { loadImageFromFile, resizeImageToBase64Png } from './utils'
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null

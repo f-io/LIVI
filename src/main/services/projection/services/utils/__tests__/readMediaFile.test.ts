@@ -1,6 +1,6 @@
-import fs from 'fs'
-import { readMediaFile } from '@main/services/projection/services/utils/readMediaFile'
 import { DEFAULT_MEDIA_DATA_RESPONSE } from '@main/services/projection/services/constants'
+import { readMediaFile } from '@main/services/projection/services/utils/readMediaFile'
+import fs from 'fs'
 
 jest.mock('fs', () => ({
   readFileSync: jest.fn()

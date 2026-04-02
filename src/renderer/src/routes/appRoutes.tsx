@@ -1,8 +1,8 @@
-import { RoutePath } from './types'
-import { Home, Media, Camera, Maps, Telemetry } from '../components/pages'
-import { settingsRoutes } from './schemas/schema'
 import { Layout } from '../components/layouts/Layout'
+import { Camera, Home, Maps, Media, Telemetry } from '../components/pages'
 import { SettingsPage } from '../components/pages/settings/SettingsPage'
+import { settingsRoutes } from './schemas/schema'
+import { RoutePath } from './types'
 
 export const appRoutes = [
   {

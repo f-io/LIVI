@@ -1,12 +1,11 @@
-import { IconButton, Switch, Typography } from '@mui/material'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import { useMemo } from 'react'
-import { useTranslation } from 'react-i18next'
-
-import { StackItem } from '../stackItem'
+import { IconButton, Switch, Typography } from '@mui/material'
 import type { PosListNode } from '@renderer/routes/types'
 import type { TelemetryDashboardConfig, TelemetryDashboardId } from '@shared/types'
+import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
+import { StackItem } from '../stackItem'
 
 type Props<T> = {
   node: PosListNode

@@ -1,15 +1,15 @@
-import * as React from 'react'
 import { Box, useTheme } from '@mui/material'
-import { useLiviStore } from '@store/store'
-import { AppContext } from '@renderer/context'
+import { DashPlaceholder } from '@renderer/components/pages/telemetry/components/DashPlaceholder'
+import { DashboardsPagination } from '@renderer/components/pages/telemetry/components/pagination/pagination'
 import { DashboardConfig } from '@renderer/components/pages/telemetry/config'
 import { normalizeDashComponents } from '@renderer/components/pages/telemetry/utils'
-import { DashboardsPagination } from '@renderer/components/pages/telemetry/components/pagination/pagination'
-import { DashPlaceholder } from '@renderer/components/pages/telemetry/components/DashPlaceholder'
-import { useKeyboardNavigation } from './hooks/useKeyboardNavigation'
-import { FC, useContext, useEffect, useState } from 'react'
-import { clamp } from '@utils/index'
+import { AppContext } from '@renderer/context'
 import { useNavbarHidden } from '@renderer/hooks/useNavbarHidden'
+import { useLiviStore } from '@store/store'
+import { clamp } from '@utils/index'
+import * as React from 'react'
+import { FC, useContext, useEffect, useState } from 'react'
+import { useKeyboardNavigation } from './hooks/useKeyboardNavigation'
 
 export const Telemetry: FC = () => {
   const theme = useTheme()

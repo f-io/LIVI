@@ -1,20 +1,20 @@
+import { PhoneWorkMode } from '@shared/types'
 import EventEmitter from 'events'
 import fs from 'fs'
 import {
-  Plugged,
-  Unplugged,
-  SoftwareVersion,
-  BoxInfo,
-  GnssData,
+  AudioData,
   BluetoothPairedList,
+  BoxInfo,
   BoxUpdateProgress,
   BoxUpdateState,
   Command,
-  AudioData,
+  decodeTypeMap,
+  GnssData,
   PhoneType,
-  decodeTypeMap
+  Plugged,
+  SoftwareVersion,
+  Unplugged
 } from '../../messages'
-import { PhoneWorkMode } from '@shared/types'
 
 jest.mock('../../messages', () => {
   class MockDongleDriver extends EventEmitter {
@@ -163,12 +163,12 @@ jest.mock('../utils/readNavigationFile', () => ({
   }))
 }))
 
-import { ProjectionService } from '@main/services/projection/services/ProjectionService'
 import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
 import { configEvents } from '@main/ipc/utils'
+import { ProjectionService } from '@main/services/projection/services/ProjectionService'
+import { usb, WebUSBDevice } from 'usb'
 import { readMediaFile } from '../utils/readMediaFile'
 import { readNavigationFile } from '../utils/readNavigationFile'
-import { WebUSBDevice, usb } from 'usb'
 
 describe('ProjectionService', () => {
   beforeEach(() => {

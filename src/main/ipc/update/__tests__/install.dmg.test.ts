@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
-import { promises as fsp } from 'fs'
-import { getMacDesiredOwner, sendUpdateEvent } from '@main/ipc/utils'
 import { installFromDmg } from '@main/ipc/update/install.dmg'
+import { getMacDesiredOwner, sendUpdateEvent } from '@main/ipc/utils'
+import { promises as fsp } from 'fs'
 
 jest.mock('node:child_process', () => ({
   execFile: jest.fn()

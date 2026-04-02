@@ -1,7 +1,7 @@
-import { EventEmitter } from 'events'
-import { setupTelemetry } from '@main/services/telemetry/setupTelemetry'
 import { TelemetryEvents } from '@main/services/Socket'
+import { setupTelemetry } from '@main/services/telemetry/setupTelemetry'
 import { getMainWindow } from '@main/window/createWindow'
+import { EventEmitter } from 'events'
 
 jest.mock('@main/window/createWindow', () => ({
   getMainWindow: jest.fn()

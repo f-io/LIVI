@@ -1,5 +1,5 @@
-import { flash } from '../../utils/flash'
 import { FLASH_TIMEOUT_MS } from '../../constants'
+import { flash } from '../../utils/flash'
 
 describe('flash', () => {
   beforeEach(() => {

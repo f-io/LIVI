@@ -1,61 +1,61 @@
-import { app, WebContents } from 'electron'
-import { WebUSBDevice, usb } from 'usb'
-import {
-  Plugged,
-  Unplugged,
-  PhoneType,
-  BluetoothPairedList,
-  VideoData,
-  AudioData,
-  MetaData,
-  MediaType,
-  Command,
-  BoxInfo,
-  SoftwareVersion,
-  SendRawMessage,
-  GnssData,
-  SendCommand,
-  SendTouch,
-  SendMultiTouch,
-  SendAudio,
-  SendFile,
-  SendServerCgiScript,
-  SendLiviWeb,
-  SendDisconnectPhone,
-  SendForgetBluetoothAddr,
-  SendCloseDongle,
-  FileAddress,
-  DongleDriver,
-  BoxUpdateProgress,
-  BoxUpdateState,
-  MessageType,
-  decodeTypeMap,
-  DEFAULT_CONFIG
-} from '../messages'
+import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
+import { configEvents } from '@main/ipc/utils'
+import type { DongleFirmwareAction, DongleFwApiRaw, ExtraConfig } from '@shared/types'
 import { PhoneWorkMode } from '@shared/types'
-import type { ExtraConfig, DongleFirmwareAction, DongleFwApiRaw } from '@shared/types'
+import type { NavLocale } from '@shared/utils'
+import { translateNavigation } from '@shared/utils'
+import { app, WebContents } from 'electron'
 import fs from 'fs'
 import path from 'path'
+import { usb, WebUSBDevice } from 'usb'
 import {
-  PersistedMediaPayload,
-  PersistedNavigationPayload,
-  type PendingStartupConnectTarget
-} from './types'
+  AudioData,
+  BluetoothPairedList,
+  BoxInfo,
+  BoxUpdateProgress,
+  BoxUpdateState,
+  Command,
+  DEFAULT_CONFIG,
+  DongleDriver,
+  decodeTypeMap,
+  FileAddress,
+  GnssData,
+  MediaType,
+  MessageType,
+  MetaData,
+  PhoneType,
+  Plugged,
+  SendAudio,
+  SendCloseDongle,
+  SendCommand,
+  SendDisconnectPhone,
+  SendFile,
+  SendForgetBluetoothAddr,
+  SendLiviWeb,
+  SendMultiTouch,
+  SendRawMessage,
+  SendServerCgiScript,
+  SendTouch,
+  SoftwareVersion,
+  Unplugged,
+  VideoData
+} from '../messages'
 import {
   APP_START_TS,
   DEFAULT_MEDIA_DATA_RESPONSE,
   DEFAULT_NAVIGATION_DATA_RESPONSE
 } from './constants'
+import { FirmwareCheckResult, FirmwareUpdateService } from './FirmwareUpdateService'
+import { LogicalStreamKey, ProjectionAudio } from './ProjectionAudio'
+import {
+  type PendingStartupConnectTarget,
+  PersistedMediaPayload,
+  PersistedNavigationPayload
+} from './types'
+import { asDomUSBDevice } from './utils/asDomUSBDevice'
+import { normalizeNavigationPayload } from './utils/normalizeNavigation'
 import { readMediaFile } from './utils/readMediaFile'
 import { readNavigationFile } from './utils/readNavigationFile'
-import { normalizeNavigationPayload } from './utils/normalizeNavigation'
-import { translateNavigation } from '@shared/utils'
-import type { NavLocale } from '@shared/utils'
-import { asDomUSBDevice } from './utils/asDomUSBDevice'
-import { ProjectionAudio, LogicalStreamKey } from './ProjectionAudio'
-import { FirmwareUpdateService, FirmwareCheckResult } from './FirmwareUpdateService'
-import { configEvents } from '@main/ipc/utils'
-import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
 
 let dongleConnected = false
 

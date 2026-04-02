@@ -1,10 +1,10 @@
-import type { SettingsCustomPageProps } from '../../type'
+import { MenuItem, Select, Typography } from '@mui/material'
 import type { ExtraConfig } from '@shared/types'
+import { useStatusStore } from '@store/store'
 import { updateCameras as detectCameras } from '@utils/cameraDetection'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useStatusStore } from '@store/store'
 import { UsbEvent } from '../../../media/types'
-import { MenuItem, Select, Typography } from '@mui/material'
+import type { SettingsCustomPageProps } from '../../type'
 
 function coerceSelectValue<T extends string | number>(
   value: T | null | undefined,

@@ -1,8 +1,8 @@
-import { app } from 'electron'
-import { join, basename, dirname } from 'path'
-import { promises as fsp } from 'fs'
 import { sendUpdateEvent } from '@main/ipc/utils'
 import { spawn } from 'child_process'
+import { app } from 'electron'
+import { promises as fsp } from 'fs'
+import { basename, dirname, join } from 'path'
 
 export async function installOnLinuxFromFile(appImagePath: string): Promise<void> {
   if (process.platform !== 'linux') throw new Error('Linux only')

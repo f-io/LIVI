@@ -1,3 +1,6 @@
+import { saveSettings } from '@main/ipc/utils'
+import { isMacPlatform, pushSettingsToRenderer } from '@main/utils'
+import { getMainWindow } from '@main/window/createWindow'
 import {
   applyAspectRatioFullscreen,
   applyAspectRatioWindowed,
@@ -8,9 +11,6 @@ import {
   restoreKioskAfterWmExit,
   sendKioskSync
 } from '@main/window/utils'
-import { getMainWindow } from '@main/window/createWindow'
-import { isMacPlatform, pushSettingsToRenderer } from '@main/utils'
-import { saveSettings } from '@main/ipc/utils'
 import { screen } from 'electron'
 
 jest.mock('@main/window/createWindow', () => ({

@@ -1,5 +1,5 @@
-import type { PersistedNavigationPayload } from '../types'
 import type { NaviBag } from '@shared/types'
+import type { PersistedNavigationPayload } from '../types'
 
 type NavMsg = {
   metaType?: unknown

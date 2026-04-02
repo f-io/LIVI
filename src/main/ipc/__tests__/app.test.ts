@@ -1,10 +1,10 @@
-import { app, shell } from 'electron'
-import { spawn } from 'child_process'
 import { registerAppIpc } from '@main/ipc/app'
-import { restoreKioskAfterWmExit } from '@main/window/utils'
 import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
-import { getMainWindow } from '@main/window/createWindow'
 import { isMacPlatform } from '@main/utils'
+import { getMainWindow } from '@main/window/createWindow'
+import { restoreKioskAfterWmExit } from '@main/window/utils'
+import { spawn } from 'child_process'
+import { app, shell } from 'electron'
 
 jest.mock('@main/window/createWindow', () => ({
   getMainWindow: jest.fn(() => null)

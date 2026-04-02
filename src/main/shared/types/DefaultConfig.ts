@@ -1,6 +1,6 @@
+import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
 import type { ExtraConfig } from '@shared/types'
 import { DEFAULT_BINDINGS } from '@shared/types'
-import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
 import { HandDriveType, MicType, PhoneWorkMode } from '@shared/types/DongleConfig'
 
 export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {

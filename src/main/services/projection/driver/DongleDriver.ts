@@ -1,44 +1,43 @@
-import EventEmitter from 'events'
-import { MessageHeader, HeaderBuildError } from '@projection/messages/common'
-import { decryptVendorSessionText } from '@main/helpers/vendorSessionInfo'
-import type { CommandValue } from '@shared/types/ProjectionEnums'
-import { MicType, PhoneWorkMode } from '@shared/types'
-import { matchFittingAAResolution } from '@shared/utils'
-import type { DongleConfig } from '@shared/types'
-import { DEFAULT_EXTRA_CONFIG } from '@shared/types'
 import { DEBUG } from '@main/constants'
+import { decryptVendorSessionText } from '@main/helpers/vendorSessionInfo'
 import type { PendingStartupConnectTarget } from '@main/services/projection/services/types'
+import { HeaderBuildError, MessageHeader } from '@projection/messages/common'
 import {
-  PhoneType,
-  BoxInfo,
-  SoftwareVersion,
-  VendorSessionInfo,
   BluetoothPeerConnected,
-  Plugged,
-  Unplugged,
+  BoxInfo,
+  type BoxInfoSettings,
   DongleReady,
   Opened,
-  type BoxInfoSettings
+  PhoneType,
+  Plugged,
+  SoftwareVersion,
+  Unplugged,
+  VendorSessionInfo
 } from '@projection/messages/readable'
 import {
-  SendableMessage,
-  SendNumber,
   FileAddress,
-  SendOpen,
+  HeartBeat,
+  SendAndroidAutoDpi,
+  SendAutoConnectByBtAddress,
+  SendableMessage,
+  SendBluetoothPairedList,
   SendBoolean,
   SendBoxSettings,
-  SendIconConfig,
   SendCommand,
-  SendString,
-  SendBluetoothPairedList,
-  SendAutoConnectByBtAddress,
-  SendGnssData,
-  HeartBeat,
   SendDisconnectPhone,
-  SendAndroidAutoDpi,
-  SendViewArea,
-  SendSafeArea
+  SendGnssData,
+  SendIconConfig,
+  SendNumber,
+  SendOpen,
+  SendSafeArea,
+  SendString,
+  SendViewArea
 } from '@projection/messages/sendable'
+import type { DongleConfig } from '@shared/types'
+import { DEFAULT_EXTRA_CONFIG, MicType, PhoneWorkMode } from '@shared/types'
+import type { CommandValue } from '@shared/types/ProjectionEnums'
+import { matchFittingAAResolution } from '@shared/utils'
+import EventEmitter from 'events'
 
 const CONFIG_NUMBER = 1
 const MAX_ERROR_COUNT = 5

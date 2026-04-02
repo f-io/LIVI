@@ -1,8 +1,8 @@
-import type { ExtraConfig } from '@shared/types'
-import { TelemetrySocket } from '@main/services/Socket'
 import { NULL_DELETES } from '@main/constants'
 import { ProjectionService } from '@main/services/projection/services/ProjectionService'
+import { TelemetrySocket } from '@main/services/Socket'
 import { USBService } from '@main/services/usb/USBService'
+import type { ExtraConfig } from '@shared/types'
 
 export type UpdateSessionState = 'idle' | 'downloading' | 'ready' | 'installing'
 

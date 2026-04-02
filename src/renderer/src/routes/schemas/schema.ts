@@ -1,12 +1,12 @@
-import { devicesSchema } from './devicesSchema'
-import { generateRoutes } from '../../utils/generateRoutes'
-import { generalSchema } from './generalSchema'
-import { audioSchema } from './audioSchema'
-import { videoSchema } from './videoSchema'
-import { appearanceSchema } from './appearanceSchema'
-import { SettingsNode } from '../types'
 import type { ExtraConfig } from '@shared/types'
+import { generateRoutes } from '../../utils/generateRoutes'
+import { SettingsNode } from '../types'
+import { appearanceSchema } from './appearanceSchema'
+import { audioSchema } from './audioSchema'
+import { devicesSchema } from './devicesSchema'
+import { generalSchema } from './generalSchema'
 import { systemSchema } from './systemSchema'
+import { videoSchema } from './videoSchema'
 
 export const settingsSchema: SettingsNode<ExtraConfig> = {
   type: 'route',

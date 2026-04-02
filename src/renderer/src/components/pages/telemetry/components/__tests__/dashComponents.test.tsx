@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
-import { DashShell } from '../DashShell'
 import { DashPlaceholder } from '../DashPlaceholder'
+import { DashShell } from '../DashShell'
 
 describe('DashShell', () => {
   test('renders children and attaches ResizeObserver', () => {

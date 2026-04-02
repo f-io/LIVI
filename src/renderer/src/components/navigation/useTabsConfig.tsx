@@ -1,15 +1,14 @@
-import { TabConfig } from './types'
-import { ROUTES } from '../../constants'
-import { useTheme } from '@mui/material/styles'
-import { useStatusStore, useLiviStore } from '../../store/store'
-
+import CameraswitchOutlinedIcon from '@mui/icons-material/CameraswitchOutlined'
 // Icons
 import CropPortraitOutlinedIcon from '@mui/icons-material/CropPortraitOutlined'
+import MapOutlinedIcon from '@mui/icons-material/MapOutlined'
 import PlayCircleOutlinedIcon from '@mui/icons-material/PlayCircleOutlined'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
-import CameraswitchOutlinedIcon from '@mui/icons-material/CameraswitchOutlined'
-import MapOutlinedIcon from '@mui/icons-material/MapOutlined'
 import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined'
+import { useTheme } from '@mui/material/styles'
+import { ROUTES } from '../../constants'
+import { useLiviStore, useStatusStore } from '../../store/store'
+import { TabConfig } from './types'
 
 export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivingVideo) => {
   const theme = useTheme()

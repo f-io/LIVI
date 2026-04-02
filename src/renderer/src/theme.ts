@@ -1,7 +1,7 @@
-import { createTheme, alpha } from '@mui/material/styles'
-import { themeColors } from './themeColors'
+import { alpha, createTheme } from '@mui/material/styles'
 import { CSSObject } from '@mui/system'
 import { THEME, UI } from './constants'
+import { themeColors } from './themeColors'
 
 const commonLayout = {
   'html, body, #root': {

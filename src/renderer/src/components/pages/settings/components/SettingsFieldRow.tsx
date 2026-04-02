@@ -1,13 +1,13 @@
 import { Typography } from '@mui/material'
-import { StackItem } from './stackItem'
-import { SettingsItemRow } from './settingsItemRow'
-import { SettingsFieldControl } from './SettingsFieldControl'
-import { PosSensitiveList } from './posSensitiveList/PosSensitiveList'
-import { BtDeviceList } from './btDeviceList/BtDeviceList'
-import { SettingsNode } from '../../../../routes'
-import { getValueByPath } from '../utils'
 import type { ExtraConfig } from '@shared/types'
 import { useTranslation } from 'react-i18next'
+import { SettingsNode } from '../../../../routes'
+import { getValueByPath } from '../utils'
+import { BtDeviceList } from './btDeviceList/BtDeviceList'
+import { PosSensitiveList } from './posSensitiveList/PosSensitiveList'
+import { SettingsFieldControl } from './SettingsFieldControl'
+import { SettingsItemRow } from './settingsItemRow'
+import { StackItem } from './stackItem'
 
 type Props<T, K> = {
   node: SettingsNode<ExtraConfig>

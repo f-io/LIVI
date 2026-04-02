@@ -1,5 +1,5 @@
-import EventEmitter from 'events'
 import { AudioCommand } from '@shared/types/ProjectionEnums'
+import EventEmitter from 'events'
 
 const requestDevice = jest.fn()
 

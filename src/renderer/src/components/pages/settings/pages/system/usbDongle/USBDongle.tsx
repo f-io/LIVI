@@ -1,5 +1,3 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
 import {
   Alert,
   Box,
@@ -15,12 +13,14 @@ import {
   TextField,
   Typography
 } from '@mui/material'
-import { useLiviStore, useStatusStore } from '@store/store'
-import { useNetworkStatus } from '@renderer/hooks/useNetworkStatus'
-import { fmt, isDongleFwCheckResponse, normalizeBoxInfo } from './utils'
-import { DongleFwCheckResponse, FwDialogState, Row } from '@renderer/types'
 import { EMPTY_STRING } from '@renderer/constants'
+import { useNetworkStatus } from '@renderer/hooks/useNetworkStatus'
+import { DongleFwCheckResponse, FwDialogState, Row } from '@renderer/types'
+import { useLiviStore, useStatusStore } from '@store/store'
+import type { CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { fmt, isDongleFwCheckResponse, normalizeBoxInfo } from './utils'
 
 type DevToolsStatus = 'idle' | 'uploading' | 'opening' | 'success' | 'partial' | 'error'
 type DevToolsUploadResult = Awaited<ReturnType<typeof window.projection.usb.uploadLiviScripts>>

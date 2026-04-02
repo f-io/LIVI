@@ -1,8 +1,11 @@
-import { webusb } from 'usb'
 import { Microphone } from '@main/services/audio'
-
+import type { DongleConfig } from '@shared/types'
+import { AudioCommand, type CommandValue } from '@shared/types/ProjectionEnums'
+import { webusb } from 'usb'
+import { DEFAULT_CONFIG, DongleDriver } from '../driver/DongleDriver'
 import {
   AudioData,
+  Command,
   MediaData,
   Message,
   Plugged,
@@ -10,13 +13,8 @@ import {
   SendCommand,
   SendTouch,
   Unplugged,
-  VideoData,
-  Command
+  VideoData
 } from '../messages'
-
-import { AudioCommand, type CommandValue } from '@shared/types/ProjectionEnums'
-import { DongleDriver, DEFAULT_CONFIG } from '../driver/DongleDriver'
-import type { DongleConfig } from '@shared/types'
 
 export type ProjectionMessage =
   | { type: 'plugged'; message?: undefined }

@@ -1,6 +1,6 @@
-import fs from 'fs'
-import { readNavigationFile } from '@main/services/projection/services/utils/readNavigationFile'
 import { DEFAULT_NAVIGATION_DATA_RESPONSE } from '@main/services/projection/services/constants'
+import { readNavigationFile } from '@main/services/projection/services/utils/readNavigationFile'
+import fs from 'fs'
 
 jest.mock('fs', () => ({
   readFileSync: jest.fn()

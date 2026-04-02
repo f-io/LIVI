@@ -1,7 +1,7 @@
 import React from 'react'
 import { DashboardConfig } from '../config'
-import { TelemetryDashboardIds } from '../types'
 import { Dash1, Dash2, Dash3, Dash4 } from '../dashboards'
+import { TelemetryDashboardIds } from '../types'
 
 jest.mock('../dashboards', () => ({
   Dash1: () => React.createElement('div', { 'data-testid': 'dash1' }),

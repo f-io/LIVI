@@ -1,13 +1,13 @@
-import { useLayoutEffect, useMemo, useState } from 'react'
-import Box from '@mui/material/Box'
-import Stack from '@mui/material/Stack'
-import IconButton from '@mui/material/IconButton'
-import Typography from '@mui/material/Typography'
 import ArrowBackIosOutlinedIcon from '@mui/icons-material/ArrowBackIosOutlined'
 import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined'
+import Box from '@mui/material/Box'
+import IconButton from '@mui/material/IconButton'
+import Stack from '@mui/material/Stack'
+import { useTheme } from '@mui/material/styles'
+import Typography from '@mui/material/Typography'
+import { useLayoutEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { SettingsLayoutProps } from './types'
-import { useTheme } from '@mui/material/styles'
 
 type Vp = { w: number; h: number }
 

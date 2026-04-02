@@ -1,11 +1,11 @@
+import { useLiviStore } from '@store/store'
 import { useCallback, useContext, useMemo } from 'react'
-import { BindKey, useKeyDownProps } from './types'
-import { broadcastMediaKey } from '../../utils/broadcastMediaKey'
-import { KeyCommand } from '../../components/worker/types'
 import { useLocation } from 'react-router'
+import { KeyCommand } from '../../components/worker/types'
 import { ROUTES } from '../../constants'
 import { AppContext } from '../../context'
-import { useLiviStore } from '@store/store'
+import { broadcastMediaKey } from '../../utils/broadcastMediaKey'
+import { BindKey, useKeyDownProps } from './types'
 
 type RefLike<T> = { current: T | null }
 

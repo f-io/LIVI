@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, Suspense, lazy } from 'react'
 import { useStatusStore } from '@store/store'
-import { MediaEventType, UsbEvent } from './types'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Controls, ProgressBar } from './components'
+import { EXTRA_SMALL_SCREEN, MIN_SCREEN_SIZE_FOR_ATRWORK, MIN_TEXT_COL } from './constants'
 import {
   // useBelowNavTop,
   useElementSize,
@@ -8,14 +9,13 @@ import {
   useOptimisticPlaying,
   usePressFeedback
 } from './hooks'
+import { MediaEventType, UsbEvent } from './types'
 import { clamp } from './utils'
-import { ProgressBar, Controls } from './components'
-import { EXTRA_SMALL_SCREEN, MIN_SCREEN_SIZE_FOR_ATRWORK, MIN_TEXT_COL } from './constants'
 import { flash } from './utils/flash'
-import { mediaScaleOps } from './utils/mediaScaleOps'
+import { mediaControlOps } from './utils/mediaControllOps'
 import { mediaLayoutArtworksOps } from './utils/mediaLayoutArtworksOps'
 import { mediaProjectionOps } from './utils/mediaProjectionOps'
-import { mediaControlOps } from './utils/mediaControllOps'
+import { mediaScaleOps } from './utils/mediaScaleOps'
 
 const FFTSpectrum = lazy(() =>
   import('./components/FFTSpectrum').then((m) => ({ default: m.FFTSpectrum }))

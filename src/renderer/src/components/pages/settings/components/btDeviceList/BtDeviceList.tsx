@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import CloseIcon from '@mui/icons-material/Close'
+import LinkIcon from '@mui/icons-material/Link'
 import { IconButton, Typography } from '@mui/material'
-import { StackItem } from '../stackItem'
 import { useLiviStore } from '@renderer/store/store'
 import type { BoxInfoPayload, DevListEntry } from '@renderer/types'
 import { PhoneWorkMode } from '@shared/types'
-
-import CloseIcon from '@mui/icons-material/Close'
-import LinkIcon from '@mui/icons-material/Link'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { StackItem } from '../stackItem'
 
 const iconSx = { fontSize: 'clamp(22px, 4.2vh, 34px)' } as const
 const btnSx = { padding: 'clamp(4px, 1.2vh, 10px)' } as const

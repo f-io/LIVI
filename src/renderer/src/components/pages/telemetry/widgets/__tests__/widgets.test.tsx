@@ -1,10 +1,10 @@
 import { render, screen } from '@testing-library/react'
-import { Gear } from '../Gear'
-import { Speed } from '../Speed'
-import { Rpm } from '../Rpm'
-import { FuelLevel } from '../FuelLevel'
 import { CoolantTemp } from '../CoolantTemp'
+import { FuelLevel } from '../FuelLevel'
+import { Gear } from '../Gear'
 import { OilTemp } from '../OilTemp'
+import { Rpm } from '../Rpm'
+import { Speed } from '../Speed'
 
 jest.mock('../../components/SegmentDisplay', () => ({
   SegmentDisplay: ({ value, digits }: { value: string; digits: number }) => (

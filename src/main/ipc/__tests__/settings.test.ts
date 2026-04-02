@@ -1,9 +1,9 @@
-import { app } from 'electron'
-import { registerSettingsIpc } from '@main/ipc/settings'
 import { registerIpcHandle } from '@main/ipc/register'
-import { currentKiosk } from '@main/window/utils'
+import { registerSettingsIpc } from '@main/ipc/settings'
 import { pickAssetForPlatform } from '@main/ipc/update/pickAsset'
 import { configEvents, saveSettings } from '@main/ipc/utils'
+import { currentKiosk } from '@main/window/utils'
+import { app } from 'electron'
 
 jest.mock('@main/ipc/register', () => ({
   registerIpcHandle: jest.fn()

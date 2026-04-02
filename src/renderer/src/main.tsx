@@ -1,21 +1,21 @@
+import { CssBaseline, ThemeProvider } from '@mui/material'
+import { useCallback, useMemo, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
-import { ThemeProvider, CssBaseline } from '@mui/material'
 import { useLiviStore } from './store/store'
 import {
-  darkTheme,
-  lightTheme,
   buildRuntimeTheme,
+  darkTheme,
   initCursorHider,
-  initUiBreatheClock
+  initUiBreatheClock,
+  lightTheme
 } from './theme'
-import { useCallback, useMemo, useState } from 'react'
 import '@fontsource/roboto/300.css'
 import '@fontsource/roboto/400.css'
 import '@fontsource/roboto/500.css'
 import '@fontsource/roboto/700.css'
-import { AppContext, type AppContextProps } from './context'
 import { THEME } from './constants'
+import { AppContext, type AppContextProps } from './context'
 import './i18n'
 
 initUiBreatheClock()

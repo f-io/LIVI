@@ -1,14 +1,5 @@
-import os from 'node:os'
 import { execFile } from 'node:child_process'
-import { existsSync, writeFileSync } from 'fs'
-import { screen } from 'electron'
-import { getMainWindow } from '@main/window/createWindow'
-import { applyNullDeletes, pushSettingsToRenderer, sizesEqual } from '@main/utils'
-import {
-  applyAspectRatioFullscreen,
-  applyAspectRatioWindowed,
-  applyWindowedContentSize
-} from '@main/window/utils'
+import os from 'node:os'
 import {
   configEvents,
   getMacDesiredOwner,
@@ -16,6 +7,15 @@ import {
   sendUpdateEvent,
   sendUpdateProgress
 } from '@main/ipc/utils'
+import { applyNullDeletes, pushSettingsToRenderer, sizesEqual } from '@main/utils'
+import { getMainWindow } from '@main/window/createWindow'
+import {
+  applyAspectRatioFullscreen,
+  applyAspectRatioWindowed,
+  applyWindowedContentSize
+} from '@main/window/utils'
+import { screen } from 'electron'
+import { existsSync, writeFileSync } from 'fs'
 
 jest.mock('fs', () => ({
   existsSync: jest.fn(() => false),

@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Typography } from '@mui/material'
 import { useLiviStore } from '@store/store'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 type CameraId = string
 
@@ -74,7 +74,7 @@ export const Camera: React.FC<CameraProps> = ({
             throw new Error('aborted')
           }
           return s
-        } catch (e) {
+        } catch (_e) {
           // keep trying next variant
         }
       }

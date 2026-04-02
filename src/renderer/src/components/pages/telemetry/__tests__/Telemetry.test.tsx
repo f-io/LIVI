@@ -1,7 +1,7 @@
-import React from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
-import { Telemetry } from '../Telemetry'
 import { AppContext } from '@renderer/context'
+import { fireEvent, render, screen } from '@testing-library/react'
+import React from 'react'
+import { Telemetry } from '../Telemetry'
 
 const useLiviStoreMock = jest.fn()
 const useNavbarHiddenMock = jest.fn()

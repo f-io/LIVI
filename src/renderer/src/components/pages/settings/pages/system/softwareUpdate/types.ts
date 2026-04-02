@@ -1,13 +1,13 @@
 export enum UpdatePhases {
-  'start' = 'start',
-  'download' = 'download',
-  'ready' = 'ready',
-  'mounting' = 'mounting',
-  'copying' = 'copying',
-  'unmounting' = 'unmounting',
-  'installing' = 'installing',
-  'relaunching' = 'relaunching',
-  'error' = 'error'
+  start = 'start',
+  download = 'download',
+  ready = 'ready',
+  mounting = 'mounting',
+  copying = 'copying',
+  unmounting = 'unmounting',
+  installing = 'installing',
+  relaunching = 'relaunching',
+  error = 'error'
 }
 
 export const phaseMap: Record<UpdatePhases, string> = {

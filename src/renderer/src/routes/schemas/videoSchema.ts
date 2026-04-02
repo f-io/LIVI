@@ -1,17 +1,17 @@
-import { SettingsNode } from '../types'
 import type { ExtraConfig } from '@shared/types'
-import { Camera } from '../../components/pages/settings/pages/camera'
 import {
-  MIN_WIDTH,
-  MIN_HEIGHT,
-  MAX_WIDTH,
+  MAX_FPS,
   MAX_HEIGHT,
-  SAFE_AREA_MIN,
+  MAX_WIDTH,
+  MIN_FPS,
+  MIN_HEIGHT,
+  MIN_WIDTH,
   SAFE_AREA_MAX_HEIGHT,
   SAFE_AREA_MAX_WIDTH,
-  MIN_FPS,
-  MAX_FPS
+  SAFE_AREA_MIN
 } from '../../components/pages/settings/constants'
+import { Camera } from '../../components/pages/settings/pages/camera'
+import { SettingsNode } from '../types'
 
 export const videoSchema: SettingsNode<ExtraConfig> = {
   type: 'route',

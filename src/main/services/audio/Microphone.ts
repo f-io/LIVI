@@ -1,10 +1,10 @@
-import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
-import { EventEmitter } from 'events'
 import { DEBUG } from '@main/constants'
+import { type AudioFormat, decodeTypeMap } from '@shared/types'
+import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import { app } from 'electron'
+import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
-import { decodeTypeMap, type AudioFormat } from '@shared/types'
 
 export default class Microphone extends EventEmitter {
   private process: ChildProcessWithoutNullStreams | null = null

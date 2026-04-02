@@ -1,5 +1,5 @@
-import { SettingsNode } from '../../../routes'
 import type { ExtraConfig } from '@shared/types'
+import { SettingsNode } from '../../../routes'
 
 type AnyRecord = Record<string, unknown>
 
