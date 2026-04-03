@@ -243,8 +243,6 @@ export enum FileAddress {
   ANDROID_WORK_MODE = '/etc/android_work_mode',
   LIVI_CGI = '/tmp/boa/cgi-bin/server.cgi',
   LIVI_WEB = '/tmp/boa/www/index.html',
-  LIVI_CGI_PERSISTENT = '/etc/boa/cgi-bin/server.cgi',
-  LIVI_WEB_PERSISTENT = '/etc/boa/www/index.html',
   HU_VIEWAREA_INFO = '/etc/RiddleBoxData/HU_VIEWAREA_INFO',
   HU_SAFEAREA_INFO = '/etc/RiddleBoxData/HU_SAFEAREA_INFO',
   TMP = '/tmp'

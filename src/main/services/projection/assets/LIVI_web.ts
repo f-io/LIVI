@@ -68,16 +68,32 @@ const BODY = `
   </section>
 
   <section>
+    <h2>Persistent Web UI</h2>
+    <p>
+      The dongle copies <code>/etc/boa</code> to <code>/tmp/boa</code> on boot.
+      These actions modify the persistent source files under <code>/etc/boa</code>.
+    </p>
+    <div class="row" style="margin-top:8px;">
+      <button type="button" class="secondary" onclick="installPersistentWeb()">
+        Install LIVI web UI persistently
+      </button>
+      <button type="button" class="secondary" onclick="stripVendorWeb()">
+        Strip vendor web assets
+      </button>
+    </div>
+    <div class="spacer"></div>
+  </section>
+
+  <section>
     <h2>Dev Console</h2>
     <div class="row">
-      <label class="chip"><input id="arm" type="checkbox" onchange="updateArm()" /> ARM write/exec</label>
       <button type="button" class="secondary" onclick="loadHistory()">History</button>
       <button type="button" class="secondary" onclick="clearOutput()">Clear output</button>
     </div>
     <div class="spacer"></div>
     <textarea id="cmd" spellcheck="false" placeholder="e.g. /usr/sbin/riddleBoxCfg --info"></textarea>
     <div class="row" style="margin-top:8px;">
-      <button id="runBtn" type="button" class="danger" onclick="runCmdFromBox()" disabled>Run</button>
+      <button id="runBtn" type="button" class="danger" onclick="runCmdFromBox()">Run</button>
     </div>
     <div class="spacer"></div>
     <pre id="out">output</pre>
@@ -89,16 +105,6 @@ const SCRIPT = `
 const CGI = "./cgi-bin/server.cgi";
 const outEl = () => document.getElementById("out");
 const cmdEl = () => document.getElementById("cmd");
-const runBtn = () => document.getElementById("runBtn");
-const isArmed = () => !!document.getElementById("arm")?.checked;
-
-function updateArm(){
-  const armed = isArmed();
-  runBtn().disabled = !armed;
-  outEl().textContent = armed
-    ? "(ARMED) Ready. Running commands executes on the dongle."
-    : "output";
-}
 
 function clearOutput(){ outEl().textContent = "(output cleared)"; }
 
@@ -129,7 +135,6 @@ async function execSilent(cmd){
 }
 
 async function execConsole(cmd){
-  if (!isArmed()) { outEl().textContent = "Not armed. Tick ARM first."; return; }
   outEl().textContent = "> " + cmd + "\\n\\n(running...)";
   pushHistory(cmd);
   try {
@@ -211,13 +216,50 @@ async function toggleWrite(el, writeCmd){
   }
 }
 
+async function installPersistentWeb(){
+  const ok = confirm(
+    "This will copy the current LIVI server.cgi and index.html from /tmp/boa to /etc/boa. Continue?"
+  )
+  if (!ok) return
+
+  outEl().textContent = "(installing persistent LIVI web UI...)"
+
+  try {
+    const res = await fetch(CGI + "?action=install_persistent", { cache: "no-store" })
+    const txt = await res.text()
+    outEl().textContent =
+      "Installed persistent LIVI web UI into /etc/boa. Reboot the dongle afterwards.\\n\\n" +
+      txt
+  } catch (e) {
+    outEl().textContent = "Persistent install failed: " + String(e)
+  }
+}
+
+async function stripVendorWeb(){
+  const ok = confirm(
+    "This will delete everything under /etc/boa/www except index.html and everything under /etc/boa/cgi-bin except server.cgi. Continue?"
+  )
+  if (!ok) return
+
+  outEl().textContent = "(stripping /etc/boa down to index.html + server.cgi...)"
+
+  try {
+    const res = await fetch(CGI + "?action=strip_vendor_web", { cache: "no-store" })
+    const txt = await res.text()
+    outEl().textContent =
+      "Stripped /etc/boa down to index.html and server.cgi only. Reboot the dongle afterwards.\\n\\n" +
+      txt
+  } catch (e) {
+    outEl().textContent = "Vendor web strip failed: " + String(e)
+  }
+}
+
 document.getElementById("togAdv").onchange = (e) => {
   const v = e.target.checked ? 1 : 0;
   toggleWrite(e.target, "/usr/sbin/riddleBoxCfg -s AdvancedFeatures " + v);
 };
 
 loadStatus();
-updateArm();
 `
 
 export const buildLiviWeb = (): string => `<!doctype html>
