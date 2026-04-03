@@ -80,7 +80,7 @@
     "@types/events": "^3.0.3",
     "@types/jest": "^30.0.0",
     "@types/lodash.debounce": "^4.0.9",
-    "@types/node": "^25.5.1",
+    "@types/node": "^25.5.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/w3c-web-usb": "^1.0.14",
