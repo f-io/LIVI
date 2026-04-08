@@ -194,8 +194,10 @@ export function SoftwareUpdate() {
 
       <Dialog
         open={upDialogOpen}
-        onClose={phase === UpdatePhases.error ? handleCloseAndReset : undefined}
-        disableEscapeKeyDown={phase !== UpdatePhases.error}
+        onClose={(event, reason) => {
+          if (phase !== UpdatePhases.error && reason === 'escapeKeyDown') return
+          handleCloseAndReset()
+        }}
       >
         <DialogTitle>{dialogTitle}</DialogTitle>
         <DialogContent sx={{ width: 360 }}>

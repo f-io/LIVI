@@ -235,24 +235,28 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK) {
       },
 
       MuiButton: {
-        styleOverrides: {
-          containedPrimary: {
-            backgroundColor: primary,
-            '&:hover': {
+        variants: [
+          {
+            props: { variant: 'contained', color: 'primary' },
+            style: {
               backgroundColor: primary,
-              boxShadow: `0 0 0 2px ${alpha(highlight, 0.55)} inset, 0 0 14px ${alpha(highlight, 0.45)}`
-            },
-            '&:active': {
-              backgroundColor: primary,
-              boxShadow: `0 0 0 2px ${alpha(highlight, 0.65)} inset, 0 0 18px ${alpha(highlight, 0.5)}`
+              '&:hover': {
+                backgroundColor: primary,
+                boxShadow: `0 0 0 2px ${alpha(highlight, 0.55)} inset, 0 0 14px ${alpha(highlight, 0.45)}`
+              },
+              '&:active': {
+                backgroundColor: primary,
+                boxShadow: `0 0 0 2px ${alpha(highlight, 0.65)} inset, 0 0 18px ${alpha(highlight, 0.5)}`
+              }
             }
-          },
+          }
+        ],
+        styleOverrides: {
           root: {
             '&.MuiButton-containedPrimary:focus-visible': {
               outline: 'none',
               boxShadow: `0 0 0 2px ${alpha(highlight, 0.75)} inset, 0 0 18px ${alpha(highlight, 0.65)}`
             },
-
             '&.hover-ring.MuiButton-containedPrimary:hover': {
               backgroundColor: primary,
               boxShadow: `0 0 0 2px ${alpha(highlight, 0.65)} inset, 0 0 16px ${alpha(highlight, 0.55)}`
@@ -341,7 +345,6 @@ export function buildRuntimeTheme(
   const outlinedRoot = (outlinedSO.root ?? {}) as CSSObject
   const outlinedNotched = (outlinedSO.notchedOutline ?? {}) as CSSObject
   const inputLabelRoot = (inputLabelSO.root ?? {}) as CSSObject
-  const btnContainedPrimary = (buttonSO.containedPrimary ?? {}) as CSSObject
   const btnRoot = (buttonSO.root ?? {}) as CSSObject
   const btnBaseRoot = (buttonBaseSO.root ?? {}) as CSSObject
 
@@ -416,20 +419,23 @@ export function buildRuntimeTheme(
       },
 
       MuiButton: {
-        styleOverrides: {
-          ...buttonSO,
-          containedPrimary: {
-            ...btnContainedPrimary,
-            backgroundColor: primary!,
-            '&:hover': {
+        variants: [
+          {
+            props: { variant: 'contained', color: 'primary' },
+            style: {
               backgroundColor: primary!,
-              boxShadow: `0 0 0 2px ${alpha(highlight!, 0.55)} inset, 0 0 14px ${alpha(highlight!, 0.45)}`
-            },
-            '&:active': {
-              backgroundColor: primary!,
-              boxShadow: `0 0 0 2px ${alpha(highlight!, 0.65)} inset, 0 0 18px ${alpha(highlight!, 0.5)}`
+              '&:hover': {
+                backgroundColor: primary!,
+                boxShadow: `0 0 0 2px ${alpha(highlight!, 0.55)} inset, 0 0 14px ${alpha(highlight!, 0.45)}`
+              },
+              '&:active': {
+                backgroundColor: primary!,
+                boxShadow: `0 0 0 2px ${alpha(highlight!, 0.65)} inset, 0 0 18px ${alpha(highlight!, 0.5)}`
+              }
             }
-          },
+          }
+        ],
+        styleOverrides: {
           root: {
             ...btnRoot,
 

@@ -3,7 +3,7 @@ import ExitToAppIcon from '@mui/icons-material/ExitToApp'
 import FlagIcon from '@mui/icons-material/Flag'
 import ForkLeftIcon from '@mui/icons-material/ForkLeft'
 import ForkRightIcon from '@mui/icons-material/ForkRight'
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
+import HelpOutlinedIcon from '@mui/icons-material/HelpOutlined'
 import MergeIcon from '@mui/icons-material/Merge'
 import RoundaboutRightIcon from '@mui/icons-material/RoundaboutRight'
 import RouteIcon from '@mui/icons-material/Route'
@@ -152,7 +152,7 @@ function ManeuverIcon({
       return <ForkRightIcon sx={{ fontSize: size }} />
 
     default:
-      return <HelpOutlineIcon sx={{ fontSize: size, opacity: 0.8 }} />
+      return <HelpOutlinedIcon sx={{ fontSize: size, opacity: 0.8 }} />
   }
 }
 

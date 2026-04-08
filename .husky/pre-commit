@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-echo "Running Prettier, lint and Jest checks before commit..."
+echo "Running Biome and Jest checks before commit..."
 
 if ! npx lint-staged; then
   echo "Lint-staged failed, aborting commit."

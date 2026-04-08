@@ -409,7 +409,7 @@ describe('NavFull', () => {
     render(<NavFull />)
 
     await waitFor(() => {
-      expect(screen.getByTestId('HelpOutlineIcon')).toBeInTheDocument()
+      expect(screen.getByTestId('HelpOutlinedIcon')).toBeInTheDocument()
     })
   })
 

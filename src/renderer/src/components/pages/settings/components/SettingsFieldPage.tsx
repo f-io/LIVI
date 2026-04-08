@@ -20,7 +20,7 @@ export const SettingsFieldPage = <T,>({ node, value, onChange }: Props<T>) => {
       <SettingsFieldControl node={node} value={value} onChange={onChange} />
 
       {description && (
-        <Typography color="text.secondary" mb={2}>
+        <Typography color="text.secondary" sx={{ mb: 2 }}>
           {description}
         </Typography>
       )}

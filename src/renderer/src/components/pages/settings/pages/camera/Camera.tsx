@@ -90,13 +90,13 @@ export const Camera: React.FC<SettingsCustomPageProps<ExtraConfig, string>> = ({
               ))}
             </Select>
 
-            <Typography color="text.secondary" mb={2}>
+            <Typography color="text.secondary" sx={{ mb: 2 }}>
               Source
             </Typography>
           </>
         ) : (
           <>
-            <Typography color="text.secondary" mb={2}>
+            <Typography color="text.secondary" sx={{ mb: 2 }}>
               No camera detected
             </Typography>
           </>

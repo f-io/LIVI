@@ -5,7 +5,7 @@ import ExitToAppIcon from '@mui/icons-material/ExitToApp'
 import FlagIcon from '@mui/icons-material/Flag'
 import ForkLeftIcon from '@mui/icons-material/ForkLeft'
 import ForkRightIcon from '@mui/icons-material/ForkRight'
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
+import HelpOutlinedIcon from '@mui/icons-material/HelpOutlined'
 import MergeIcon from '@mui/icons-material/Merge'
 import NavigationOutlinedIcon from '@mui/icons-material/NavigationOutlined'
 import PlaceIcon from '@mui/icons-material/Place'
@@ -146,7 +146,7 @@ function ManeuverVisual({
   const size = 72
   const isRight = turnSide === 2
 
-  if (type == null) return <HelpOutlineIcon sx={{ fontSize: size }} />
+  if (type == null) return <HelpOutlinedIcon sx={{ fontSize: size }} />
 
   if (type >= 28 && type <= 46) {
     return <RoundaboutIconWithExit exitNumber={type - 27} />
@@ -228,7 +228,7 @@ function ManeuverVisual({
       return <ForkRightIcon sx={{ fontSize: size }} />
 
     default:
-      return <HelpOutlineIcon sx={{ fontSize: size }} />
+      return <HelpOutlinedIcon sx={{ fontSize: size }} />
   }
 }
 
@@ -336,7 +336,7 @@ export function NavFull({ className }: NavFullProps) {
         ) : (
           <Stack spacing={2.6} sx={{ alignItems: 'center', textAlign: 'center' }}>
             {hasManeuverImage ? (
-              <Stack spacing={1.2} alignItems="center" justifyContent="center">
+              <Stack spacing={1.2} sx={{ alignItems: 'center', justifyContent: 'center' }}>
                 <Box
                   sx={{
                     display: 'flex',
@@ -373,7 +373,14 @@ export function NavFull({ className }: NavFullProps) {
                 )}
               </Stack>
             ) : (
-              <Stack direction="row" spacing={2} alignItems="center" justifyContent="center">
+              <Stack
+                direction="row"
+                spacing={2}
+                sx={{
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
                 <Box
                   sx={{
                     display: 'flex',
@@ -411,7 +418,12 @@ export function NavFull({ className }: NavFullProps) {
                   )}
 
                   {t.CurrentRoadName && (
-                    <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.6 }}>
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      component="div"
+                      sx={{ mt: 0.6, alignItems: 'center' }}
+                    >
                       <SignpostIcon fontSize="small" sx={{ opacity: 0.85 }} />
                       <Typography variant="body2" sx={{ opacity: 0.85 }} noWrap>
                         {t.CurrentRoadName}
@@ -435,12 +447,21 @@ export function NavFull({ className }: NavFullProps) {
             <Stack
               direction="row"
               spacing={3}
-              flexWrap="wrap"
-              justifyContent="center"
-              sx={{ rowGap: 1 }}
+              sx={{
+                flexWrap: 'wrap',
+                justifyContent: 'center',
+                rowGap: 1
+              }}
             >
               {hasManeuverImage && t.CurrentRoadName && (
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  sx={{
+                    alignItems: 'center',
+                    minWidth: 0
+                  }}
+                >
                   <SignpostIcon fontSize="small" sx={{ opacity: 0.85 }} />
                   <Typography variant="body2" sx={{ opacity: 0.85 }} noWrap>
                     {t.CurrentRoadName}
@@ -449,21 +470,28 @@ export function NavFull({ className }: NavFullProps) {
               )}
 
               {t.TimeRemainingToDestinationText && (
-                <Stack direction="row" spacing={1} alignItems="center">
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                   <AccessTimeIcon fontSize="small" />
                   <Typography variant="body1">{t.TimeRemainingToDestinationText}</Typography>
                 </Stack>
               )}
 
               {t.DistanceRemainingDisplayStringText && (
-                <Stack direction="row" spacing={1} alignItems="center">
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                   <RouteIcon fontSize="small" />
                   <Typography variant="body1">{t.DistanceRemainingDisplayStringText}</Typography>
                 </Stack>
               )}
 
               {t.DestinationName && (
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  sx={{
+                    alignItems: 'center',
+                    minWidth: 0
+                  }}
+                >
                   <PlaceIcon fontSize="small" />
                   <Typography variant="body1" noWrap sx={{ minWidth: 0 }}>
                     {t.DestinationName}
@@ -472,7 +500,14 @@ export function NavFull({ className }: NavFullProps) {
               )}
 
               {t.SourceName && (
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  sx={{
+                    alignItems: 'center',
+                    minWidth: 0
+                  }}
+                >
                   <AppsIcon fontSize="small" />
                   <Typography variant="body2" sx={{ opacity: 0.85 }} noWrap>
                     {t.SourceName}

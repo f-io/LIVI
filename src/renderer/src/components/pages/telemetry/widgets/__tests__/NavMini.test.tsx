@@ -464,7 +464,7 @@ describe('NavMini', () => {
     render(<NavMini />)
 
     await waitFor(() => {
-      expect(screen.getByTestId('HelpOutlineIcon')).toBeInTheDocument()
+      expect(screen.getByTestId('HelpOutlinedIcon')).toBeInTheDocument()
     })
   })
 

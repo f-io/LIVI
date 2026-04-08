@@ -1146,7 +1146,12 @@ export function USBDongle() {
       </Stack>
 
       {/* Progress dialog (download/upload) */}
-      <Dialog open={fwDlg.open} onClose={() => {}} disableEscapeKeyDown>
+      <Dialog
+        open={fwDlg.open}
+        onClose={(event, reason) => {
+          if (reason === 'escapeKeyDown') return
+        }}
+      >
         <DialogTitle>Dongle Firmware</DialogTitle>
         <DialogContent sx={{ width: 360 }}>
           <Typography sx={{ mb: 1 }}>{fwPhaseText}</Typography>
@@ -1244,15 +1249,19 @@ export function USBDongle() {
               : t('settings.dongleIpPlaceholder')
           }
           size="small"
-          sx={{ minWidth: 240, flex: '1 1 280px' }}
+          sx={{ minWidth: 240, flex: '1 1 280px', height: 40 }}
           value={devIpInput}
           disabled={devBusy}
           onFocus={() => setDevIpFocused(true)}
           onBlur={() => setDevIpFocused(false)}
           onChange={(e) => setDevIpInput(maskIpv4Input(e.target.value))}
           error={devIpInput.length > 0 && !isValidIpv4(devIpInput)}
-          inputProps={{ inputMode: 'numeric', maxLength: 15 }}
-          InputProps={{ sx: { height: 40 } }}
+          slotProps={{
+            input: {
+              inputMode: 'numeric',
+              inputProps: { maxLength: 15 }
+            }
+          }}
           helperText={
             devIpInput.length > 0 && !isValidIpv4(devIpInput) ? t('settings.enterValidIpv4') : ' '
           }
