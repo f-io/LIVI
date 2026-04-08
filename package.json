@@ -54,9 +54,9 @@
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@fontsource/roboto": "^5.2.10",
-    "@mui/icons-material": "^7.3.9",
-    "@mui/material": "^7.3.9",
-    "@mui/system": "^7.3.9",
+    "@mui/icons-material": "^9.0.0",
+    "@mui/material": "^9.0.0",
+    "@mui/system": "^9.0.0",
     "buffer": "^6.0.3",
     "electron-is-dev": "^3.0.1",
     "events": "^3.3.0",
@@ -103,7 +103,7 @@
     "ts-jest": "^29.4.9",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.2",
-    "vite": "^8.0.5",
+    "vite": "^8.0.7",
     "vite-plugin-electron": "^0.29.1",
     "vite-plugin-electron-renderer": "^0.14.6"
   }
