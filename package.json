@@ -96,14 +96,14 @@
     "jest-environment-node": "^30.3.0",
     "lint-staged": "^16.4.0",
     "lodash": "^4.18.1",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
     "rollup-plugin-polyfill-node": "^0.13.0",
     "rollup-plugin-visualizer": "^7.0.1",
     "ts-jest": "^29.4.9",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.2",
-    "vite": "^8.0.7",
+    "vite": "^8.0.8",
     "vite-plugin-electron": "^0.29.1",
     "vite-plugin-electron-renderer": "^0.14.6"
   }
