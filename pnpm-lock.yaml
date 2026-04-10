@@ -120,6 +120,9 @@ importers:
       electron-builder:
         specifier: ^26.8.2
         version: 26.8.2(electron-builder-squirrel-windows@26.8.2)
+      electron-builder-sandbox-fix:
+        specifier: ^1.1.1
+        version: 1.1.1
       esbuild:
         specifier: ^0.28.0
         version: 0.28.0
@@ -2096,6 +2099,9 @@ packages:
     resolution: {integrity: sha512-UeJmFfOrAQS8OJWPZ4qtgHyWExa088/MtK5UEyoJGFH67cDEXkZSviOiKRCZ4Xij0zxI3JECgYs3oKx+AizQBA==}
     engines: {node: '>=0.10.0'}
     hasBin: true
+
+  electron-builder-sandbox-fix@1.1.1:
+    resolution: {integrity: sha512-+gSiLZ7KZDRr3ATm89eud96QwURauUXMzB2lbzZffkAYMC4yyF2fqq0W2xoTg38eDVFCJThcoyW1p8Ph/unxoA==}
 
   electron-builder-squirrel-windows@26.8.2:
     resolution: {integrity: sha512-kXhajX6DzdIQcTlctVTKoG1oO39JhWcTG0lH7ZEJ4FzPaKJy7KFNfNJUd5BoEmLjv5GlrRZpEOYnniD+LcwNJA==}
@@ -6059,6 +6065,10 @@ snapshots:
   ejs@3.1.10:
     dependencies:
       jake: 10.9.4
+
+  electron-builder-sandbox-fix@1.1.1:
+    dependencies:
+      chalk: 4.1.2
 
   electron-builder-squirrel-windows@26.8.2(dmg-builder@26.8.2):
     dependencies:

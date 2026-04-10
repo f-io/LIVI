@@ -45,6 +45,9 @@
     "coverage:main": "jest --watchman=false --config jest.config.js --coverage",
     "coverage:renderer": "jest --watchman=false --config jest.web.config.js --coverage"
   },
+  "build": {
+    "afterPack": "electron-builder-sandbox-fix"
+  },
   "lint-staged": {
     "*.{js,jsx,cjs,mjs,ts,tsx,cts,mts,json,jsonc,css,scss,md,yml,yaml}": "biome check --write --no-errors-on-unmatched"
   },
@@ -88,6 +91,7 @@
     "@webgpu/types": "^0.1.69",
     "electron": "^41.2.0",
     "electron-builder": "^26.8.2",
+    "electron-builder-sandbox-fix": "^1.1.1",
     "esbuild": "^0.28.0",
     "globals": "^17.4.0",
     "husky": "^9.1.7",
