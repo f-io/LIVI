@@ -1,9 +1,10 @@
 import { execFileSync, spawn } from 'child_process'
-import { dialog } from 'electron'
+import { BrowserWindow, dialog } from 'electron'
 import fs from 'fs'
 import { checkAndInstallUdevRule, udevRuleExists } from '../udevRule'
 
 jest.mock('electron', () => ({
+  BrowserWindow: jest.fn(),
   dialog: {
     showMessageBox: jest.fn(),
     showErrorBox: jest.fn()
@@ -25,6 +26,7 @@ describe('udevRule', () => {
   const mockExecFileSync = execFileSync as jest.Mock
   const mockSpawn = spawn as jest.Mock
   const mockShowMessageBox = dialog.showMessageBox as jest.Mock
+  const mockWindow = {} as BrowserWindow
 
   const mkProc = (exitCode: number) => {
     const listeners: Record<string, (code: number) => void> = {}
@@ -71,13 +73,13 @@ describe('udevRule', () => {
   describe('checkAndInstallUdevRule', () => {
     test('does nothing on non-linux platforms', async () => {
       Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
-      await checkAndInstallUdevRule()
+      await checkAndInstallUdevRule(mockWindow)
       expect(mockShowMessageBox).not.toHaveBeenCalled()
     })
 
     test('does nothing when rule file already exists', async () => {
       mockExistsSync.mockReturnValue(true)
-      await checkAndInstallUdevRule()
+      await checkAndInstallUdevRule(mockWindow)
       expect(mockShowMessageBox).not.toHaveBeenCalled()
     })
 
@@ -85,35 +87,37 @@ describe('udevRule', () => {
       mockExecFileSync.mockImplementation(() => {
         throw new Error('not found')
       })
-      await checkAndInstallUdevRule()
+      await checkAndInstallUdevRule(mockWindow)
       expect(mockShowMessageBox).not.toHaveBeenCalled()
     })
 
     test('does nothing when user clicks Skip', async () => {
       mockShowMessageBox.mockResolvedValue({ response: 1 })
-      await checkAndInstallUdevRule()
+      await checkAndInstallUdevRule(mockWindow)
       expect(mockSpawn).not.toHaveBeenCalled()
     })
 
     test('spawns pkexec when user clicks Install', async () => {
-      await checkAndInstallUdevRule()
+      await checkAndInstallUdevRule(mockWindow)
       expect(mockSpawn).toHaveBeenCalledWith('pkexec', ['bash', '-c', expect.any(String)], {
         stdio: 'ignore'
       })
     })
 
     test('shows success dialog after successful install', async () => {
-      await checkAndInstallUdevRule()
+      await checkAndInstallUdevRule(mockWindow)
       expect(mockShowMessageBox).toHaveBeenCalledTimes(2)
       expect(mockShowMessageBox).toHaveBeenLastCalledWith(
+        mockWindow,
         expect.objectContaining({ type: 'info', title: 'Done' })
       )
     })
 
     test('shows error dialog when pkexec exits with non-zero code', async () => {
       mockSpawn.mockReturnValue(mkProc(127))
-      await checkAndInstallUdevRule()
+      await checkAndInstallUdevRule(mockWindow)
       expect(mockShowMessageBox).toHaveBeenLastCalledWith(
+        mockWindow,
         expect.objectContaining({ type: 'error', title: 'Installation Failed' })
       )
     })
@@ -125,8 +129,9 @@ describe('udevRule', () => {
         })
       }
       mockSpawn.mockReturnValue(proc)
-      await checkAndInstallUdevRule()
+      await checkAndInstallUdevRule(mockWindow)
       expect(mockShowMessageBox).toHaveBeenLastCalledWith(
+        mockWindow,
         expect.objectContaining({ type: 'error', title: 'Installation Failed' })
       )
     })

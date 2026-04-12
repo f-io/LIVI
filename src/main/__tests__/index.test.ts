@@ -3,7 +3,8 @@ jest.mock('../config/loadConfig', () => ({
 }))
 
 jest.mock('../window/createWindow', () => ({
-  createMainWindow: jest.fn()
+  createMainWindow: jest.fn(),
+  getMainWindow: jest.fn(() => ({}))
 }))
 
 jest.mock('@main/app/lifecycle', () => ({
@@ -36,6 +37,10 @@ jest.mock('@main/services/Socket', () => ({
 
 jest.mock('@main/services/telemetry/setupTelemetry', () => ({
   setupTelemetry: jest.fn()
+}))
+
+jest.mock('../services/usb/udevRule', () => ({
+  checkAndInstallUdevRule: jest.fn(() => Promise.resolve())
 }))
 
 describe('main index bootstrap', () => {

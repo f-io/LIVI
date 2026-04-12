@@ -1,6 +1,3 @@
-import { app } from 'electron'
-import { loadConfig } from './config/loadConfig'
-import { createMainWindow } from './window/createWindow'
 import './app/gpu'
 import { setupAppIdentity } from '@main/app/init'
 import { setupLifecycle } from '@main/app/lifecycle'
@@ -10,12 +7,13 @@ import { ProjectionService } from '@main/services/projection/services/Projection
 import { TelemetrySocket } from '@main/services/Socket'
 import { setupTelemetry } from '@main/services/telemetry/setupTelemetry'
 import { runtimeStateProps } from '@main/types'
+import { app } from 'electron'
+import { loadConfig } from './config/loadConfig'
 import { USBService } from './services/usb/USBService'
 import { checkAndInstallUdevRule } from './services/usb/udevRule'
+import { createMainWindow, getMainWindow } from './window/createWindow'
 
 app.whenReady().then(async () => {
-  await checkAndInstallUdevRule()
-
   const projectionService = new ProjectionService()
   const usbService = new USBService(projectionService)
   const telemetrySocket = new TelemetrySocket(4000)
@@ -41,4 +39,7 @@ app.whenReady().then(async () => {
   createMainWindow(runtimeState, services)
   setupTelemetry(telemetrySocket)
   setupLifecycle(runtimeState, services)
+
+  const win = getMainWindow()
+  if (win) await checkAndInstallUdevRule(win)
 })

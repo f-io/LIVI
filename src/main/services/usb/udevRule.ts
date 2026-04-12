@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'child_process'
-import { dialog } from 'electron'
+import { BrowserWindow, dialog } from 'electron'
 import fs from 'fs'
 import os from 'os'
 
@@ -69,7 +69,7 @@ function installRule(): Promise<void> {
   })
 }
 
-export async function checkAndInstallUdevRule(): Promise<void> {
+export async function checkAndInstallUdevRule(window: BrowserWindow): Promise<void> {
   if (process.platform !== 'linux') return
   if (udevRuleExists()) return
   if (!pkexecAvailable()) {
@@ -77,12 +77,11 @@ export async function checkAndInstallUdevRule(): Promise<void> {
     return
   }
 
-  const { response } = await dialog.showMessageBox({
+  const { response } = await dialog.showMessageBox(window, {
     type: 'question',
     title: 'USB Permission Required',
-    message: 'LIVI needs permission to access the Carlinkit dongle.',
-    detail:
-      'A udev rule will be installed to /etc/udev/rules.d/99-LIVI.rules.\n\nThis requires your sudo password.',
+    message: 'LIVI needs permission to access the USB dongle.',
+    detail: 'A udev rule will be installed to /etc/udev/rules.d/99-LIVI.rules.',
     buttons: ['Install', 'Skip'],
     defaultId: 0,
     cancelId: 1
@@ -92,17 +91,16 @@ export async function checkAndInstallUdevRule(): Promise<void> {
 
   try {
     await installRule()
-    await dialog.showMessageBox({
+    await dialog.showMessageBox(window, {
       type: 'info',
       title: 'Done',
       message: 'udev rule installed successfully.',
-      detail: 'Reconnect the dongle if it is already plugged in.',
       buttons: ['OK']
     })
   } catch (err) {
     console.error('[udevRule] Installation failed:', err)
     const ruleContent = buildRuleContent()
-    await dialog.showMessageBox({
+    await dialog.showMessageBox(window, {
       type: 'error',
       title: 'Installation Failed',
       message: 'Could not install the udev rule.',
