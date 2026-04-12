@@ -1,0 +1,7 @@
+abi <abi/4.0>,
+include <tunables/global>
+
+profile livi "/opt/LIVI/livi" flags=(unconfined) {
+  userns,
+  include if exists <local/livi>
+}

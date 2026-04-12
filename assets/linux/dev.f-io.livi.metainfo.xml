@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.f-io.livi</id>
+  <name>LIVI</name>
+  <summary>LIVI - Linux In-Vehicle Infotainment</summary>
+  <description>
+    <p>
+      LIVI is an open-source Apple CarPlay and Android Auto head unit for Linux.
+      It supports hardware-accelerated video decoding, low-latency audio, multitouch
+      and D-Pad navigation using CPC200-CCPA and CPC200-CCPW dongles.
+    </p>
+  </description>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="dev.f-io">
+    <name>Lasse Heitgres</name>
+  </developer>
+  <url type="homepage">https://f-io.github.io/LIVI/</url>
+  <url type="bugtracker">https://github.com/f-io/LIVI/issues</url>
+  <launchable type="desktop-id">livi.desktop</launchable>
+  <categories>
+    <category>Utility</category>
+    <category>AudioVideo</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+</component>

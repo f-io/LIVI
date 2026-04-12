@@ -11,8 +11,11 @@ import { TelemetrySocket } from '@main/services/Socket'
 import { setupTelemetry } from '@main/services/telemetry/setupTelemetry'
 import { runtimeStateProps } from '@main/types'
 import { USBService } from './services/usb/USBService'
+import { checkAndInstallUdevRule } from './services/usb/udevRule'
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await checkAndInstallUdevRule()
+
   const projectionService = new ProjectionService()
   const usbService = new USBService(projectionService)
   const telemetrySocket = new TelemetrySocket(4000)
