@@ -307,16 +307,31 @@ jobs:
       # ----------------------------
       # Upload artifacts
       # ----------------------------
+      - name: Upload AppImage [linux-x64]
+        if: matrix.os == 'linux' && matrix.arch == 'x64'
+        uses: actions/upload-artifact@v6
+        with:
+          name: LIVI-${{ steps.pkg.outputs.version }}-linux-x64.AppImage
+          path: dist/*.AppImage
+          retention-days: 7
+
+      - name: Upload deb [linux-x64]
+        if: matrix.os == 'linux' && matrix.arch == 'x64'
+        uses: actions/upload-artifact@v6
+        with:
+          name: LIVI-${{ steps.pkg.outputs.version }}-linux-x64.deb
+          path: dist/*.deb
+          retention-days: 7
+
       - name: Upload Artifacts
+        if: matrix.os != 'linux' || matrix.arch != 'x64'
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.os == 'windows' && format('LIVI-{0}-windows-{1}-setup.exe', steps.pkg.outputs.version, matrix.arch) || format('LIVI-{0}-{1}-{2}.{3}', steps.pkg.outputs.version, matrix.os, matrix.arch, matrix.artifact_ext)}}
           path: |
-            dist/*${{
-              matrix.artifact_ext == 'dmg' && 'arm64.dmg' ||
-              (matrix.artifact_ext == 'AppImage' && (matrix.arch == 'arm64' && '-arm64.AppImage' || '-x86_64.AppImage')) ||
-              (matrix.artifact_ext == 'exe' && '-setup.exe')
-            }}
+            dist/*.AppImage
+            dist/*.dmg
+            dist/*-setup.exe
           retention-days: 7
 
       - name: Push badges to version branch
