@@ -505,4 +505,229 @@ describe('ProjectionAudio state controls', () => {
     expect(a.phonecallActive).toBe(false)
     expect(a._mic.stop).toHaveBeenCalled()
   })
+
+  test('handleAudioData AudioAttentionStart sets uiCallIncoming and emits attention', () => {
+    const emitAttention = jest.fn()
+    const a = createSubject()
+    a.emitAttention = emitAttention
+    a.uiCallIncoming = false
+
+    a.handleAudioData({ command: 1 }) // AudioAttentionStart
+
+    expect(a.uiCallIncoming).toBe(true)
+    expect(emitAttention).toHaveBeenCalledWith('call', true, { phase: 'incoming' })
+  })
+
+  test('handleAudioData AudioAttentionStart does not re-emit when uiCallIncoming already true', () => {
+    const emitAttention = jest.fn()
+    const a = createSubject()
+    a.emitAttention = emitAttention
+    a.uiCallIncoming = true
+
+    a.handleAudioData({ command: 1 })
+
+    expect(emitAttention).not.toHaveBeenCalled()
+  })
+
+  test('handleAudioData AudioAttentionRinging also sets uiCallIncoming', () => {
+    const emitAttention = jest.fn()
+    const a = createSubject()
+    a.emitAttention = emitAttention
+    a.uiCallIncoming = false
+
+    a.handleAudioData({ command: 2 }) // AudioAttentionRinging
+
+    expect(a.uiCallIncoming).toBe(true)
+    expect(emitAttention).toHaveBeenCalledWith('call', true, { phase: 'incoming' })
+  })
+
+  test('handleAudioData AudioPhonecallStop emits attention ended when uiCallIncoming is true', () => {
+    const emitAttention = jest.fn()
+    const a = createSubject()
+    a.emitAttention = emitAttention
+    a.uiCallIncoming = true
+    a._mic = { stop: jest.fn() }
+
+    a.handleAudioData({ command: 3 }) // AudioPhonecallStop
+
+    expect(a.uiCallIncoming).toBe(false)
+    expect(emitAttention).toHaveBeenCalledWith('call', false, { phase: 'ended' })
+  })
+
+  test('handleAudioData AudioNaviStop emits attention nav:false when uiNavHintActive is true', () => {
+    const emitAttention = jest.fn()
+    const a = createSubject()
+    a.emitAttention = emitAttention
+    a.uiNavHintActive = true
+    a.navActive = true
+    a.lastNavPlayerKey = null
+    a.clearNavMix = jest.fn()
+    a.stopPlayerByKey = jest.fn()
+
+    a.handleAudioData({ command: 8 }) // AudioNaviStop
+
+    expect(a.uiNavHintActive).toBe(false)
+    expect(emitAttention).toHaveBeenCalledWith('nav', false)
+  })
+
+  test('handleAudioData AudioOutputStart does nothing when mediaActive is already true', () => {
+    const a = createSubject()
+    a.mediaActive = true
+    a.audioOpenArmed = false
+
+    a.handleAudioData({ command: 10 }) // AudioOutputStart
+
+    // mediaActive stays true and audioOpenArmed remains unchanged
+    expect(a.mediaActive).toBe(true)
+    expect(a.audioOpenArmed).toBe(false)
+  })
+
+  test('handleAudioData AudioMediaStart returns early when audioOpenArmed and mediaActive both true', () => {
+    const a = createSubject()
+    a.audioOpenArmed = true
+    a.mediaActive = true
+
+    // Should return early at line 612 (mediaActive true inside audioOpenArmed branch)
+    a.handleAudioData({ command: 11 }) // AudioMediaStart
+
+    // mediaActive should still be true (unchanged)
+    expect(a.mediaActive).toBe(true)
+    expect(a.audioOpenArmed).toBe(true)
+  })
+
+  test('handleAudioData AudioNaviStop with mediaActive=true does not stop nav player', () => {
+    const a = createSubject()
+    a.navActive = true
+    a.mediaActive = true // mixing with music — do not kill player
+    a.lastNavPlayerKey = 'nav-key'
+    a.clearNavMix = jest.fn()
+    a.stopPlayerByKey = jest.fn()
+
+    a.handleAudioData({ command: 8 }) // AudioNaviStop
+
+    expect(a.navActive).toBe(false)
+    // With mediaActive=true, stopPlayerByKey should NOT be called (else branch)
+    expect(a.stopPlayerByKey).not.toHaveBeenCalled()
+    expect(a.lastNavPlayerKey).toBe('nav-key')
+  })
+
+  test('handleAudioData AudioInputConfig restarts mic when decodeType changes and mic is capturing', () => {
+    const a = createSubject()
+    a.currentMicDecodeType = 1
+    a._mic = { isCapturing: jest.fn(() => true), start: jest.fn(), stop: jest.fn() }
+
+    a.handleAudioData({ command: 14, decodeType: 2 }) // decodeType changed from 1 to 2
+
+    expect(a.currentMicDecodeType).toBe(2)
+    expect(a._mic.start).toHaveBeenCalledWith(2)
+  })
+
+  test('handleAudioData AudioInputConfig does not restart mic when decodeType unchanged', () => {
+    const a = createSubject()
+    a.currentMicDecodeType = 2
+    a._mic = { isCapturing: jest.fn(() => true), start: jest.fn(), stop: jest.fn() }
+
+    a.handleAudioData({ command: 14, decodeType: 2 }) // same decodeType
+
+    expect(a._mic.start).not.toHaveBeenCalled()
+  })
+
+  test('handleAudioData AudioSiriStart with micType=0 creates mic and starts it with decodeType', () => {
+    const { Microphone } = require('@main/services/audio')
+
+    const a = createSubject({ micType: 0, audioTransferMode: false })
+    a._mic = null
+
+    a.handleAudioData({ command: 4, decodeType: 1 }) // AudioSiriStart with decodeType
+
+    expect(Microphone).toHaveBeenCalled()
+    expect(a._mic).not.toBeNull()
+    expect(a._mic.start).toHaveBeenCalledWith(1)
+    expect(a.currentMicDecodeType).toBe(1)
+  })
+
+  test('handleAudioData AudioSiriStart skips mic.start when no decodeType available', () => {
+    const a = createSubject({ micType: 0, audioTransferMode: false })
+    a._mic = null
+    a.currentMicDecodeType = null
+
+    a.handleAudioData({ command: 4 }) // AudioSiriStart, no decodeType in msg
+
+    expect(a.siriActive).toBe(true)
+    // mic is created but start is NOT called (no decode type)
+    expect(a._mic).not.toBeNull()
+    expect(a._mic.start).not.toHaveBeenCalled()
+  })
+
+  test('handleAudioData AudioSiriStart reuses existing mic and sets decodeType from msg', () => {
+    const existingMic = { on: jest.fn(), start: jest.fn(), stop: jest.fn(), isCapturing: jest.fn() }
+    const a = createSubject({ micType: 0, audioTransferMode: false })
+    a._mic = existingMic
+    a.currentMicDecodeType = 1
+
+    a.handleAudioData({ command: 4, decodeType: 2 })
+
+    expect(a.currentMicDecodeType).toBe(2)
+    expect(existingMic.start).toHaveBeenCalledWith(2)
+  })
+
+  test('handleAudioData with pcm data and visualizerEnabled sends chunked audio', () => {
+    const sendChunked = jest.fn()
+    const a = new (require('@main/services/projection/services/ProjectionAudio').ProjectionAudio)(
+      () => ({ mediaDelay: 120 }) as any,
+      jest.fn(),
+      sendChunked,
+      jest.fn()
+    ) as any
+
+    const player = { write: jest.fn() }
+    a.getAudioOutputForStream = jest.fn(() => player)
+    a.getLogicalStreamKey = jest.fn(() => 'music')
+    a.mediaActive = true
+    a.visualizerEnabled = true
+
+    a.handleAudioData({ data: new Int16Array([1, 2, 3]), decodeType: 1 })
+
+    const [, buf] = sendChunked.mock.calls[0]
+    expect(Object.prototype.toString.call(buf)).toBe('[object ArrayBuffer]')
+    expect(sendChunked).toHaveBeenCalledWith(
+      'projection-audio-chunk',
+      expect.anything(),
+      64 * 1024,
+      expect.objectContaining({ channels: 1 })
+    )
+  })
+
+  test('stopAllAudioPlayers is called during reset and stops all players ignoring errors', () => {
+    const a = createSubject()
+    const throwingPlayer = {
+      stop: jest.fn(() => {
+        throw new Error('stop failed')
+      })
+    }
+    const goodPlayer = { stop: jest.fn() }
+
+    a.audioPlayers.set('48000:2', throwingPlayer)
+    a.audioPlayers.set('16000:1', goodPlayer)
+
+    // Should not throw even when player.stop() throws
+    expect(() => a.resetForSessionStart()).not.toThrow()
+
+    expect(throwingPlayer.stop).toHaveBeenCalled()
+    expect(goodPlayer.stop).toHaveBeenCalled()
+    expect(a.audioPlayers.size).toBe(0)
+  })
+
+  test('stopPlayerByKey swallows errors when player.stop throws', () => {
+    const a = createSubject()
+    const badPlayer = {
+      stop: jest.fn(() => {
+        throw new Error('stop error')
+      })
+    }
+    a.audioPlayers.set('48000:2', badPlayer)
+
+    expect(() => a.stopPlayerByKey('48000:2')).not.toThrow()
+    expect(a.audioPlayers.size).toBe(0)
+  })
 })

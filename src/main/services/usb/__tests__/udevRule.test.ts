@@ -136,4 +136,32 @@ describe('udevRule', () => {
       )
     })
   })
+
+  test('uses PKEXEC_UID to resolve username when available', async () => {
+    process.env.PKEXEC_UID = '1000'
+    mockExecFileSync
+      .mockReturnValueOnce(undefined) // which pkexec
+      .mockReturnValueOnce('testuser\n') // id -nu 1000
+    await checkAndInstallUdevRule(mockWindow)
+    const script = mockSpawn.mock.calls[0][1][2] as string
+    expect(script).toContain('OWNER="testuser"')
+    delete process.env.PKEXEC_UID
+  })
+
+  test('falls back to SUDO_USER when PKEXEC_UID is not set', async () => {
+    delete process.env.PKEXEC_UID
+    process.env.SUDO_USER = 'sudouser'
+    await checkAndInstallUdevRule(mockWindow)
+    const script = mockSpawn.mock.calls[0][1][2] as string
+    expect(script).toContain('OWNER="sudouser"')
+    delete process.env.SUDO_USER
+  })
+
+  test('falls back to os.userInfo when neither PKEXEC_UID nor SUDO_USER is set', async () => {
+    delete process.env.PKEXEC_UID
+    delete process.env.SUDO_USER
+    await checkAndInstallUdevRule(mockWindow)
+    const script = mockSpawn.mock.calls[0][1][2] as string
+    expect(script).toContain('OWNER="')
+  })
 })

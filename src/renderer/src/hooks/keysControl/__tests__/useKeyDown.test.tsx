@@ -14,13 +14,9 @@ jest.mock('../../../utils/broadcastMediaKey', () => ({
   broadcastMediaKey: (...args: unknown[]) => mockBroadcastMediaKey(...args)
 }))
 
-jest.mock('react-router', () => {
-  const actual = jest.requireActual('react-router')
-  return {
-    ...actual,
-    useLocation: () => ({ pathname: mockPathname, hash: mockHash })
-  }
-})
+jest.mock('react-router', () => ({
+  useLocation: () => ({ pathname: mockPathname, hash: mockHash })
+}))
 
 jest.mock('@store/store', () => ({
   useLiviStore: (selector: (s: { settings: unknown }) => unknown) =>
@@ -397,5 +393,314 @@ describe('useKeyDown', () => {
 
     expect(focusSelectedNav).toHaveBeenCalled()
     expect(event.preventDefault).toHaveBeenCalled()
+  })
+
+  test('hash without leading slash is normalised to /media route', () => {
+    // covers line 38: raw.startsWith('/') false branch -> `/${raw}`
+    mockHash = '#media' // no leading slash after stripping '#'
+    mockPathname = ''
+    setupRoots()
+
+    const focusSelectedNav = jest.fn(() => false)
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppContext.Provider value={{ isTouchDevice: false }}>{children}</AppContext.Provider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useKeyDown({
+          receivingVideo: false,
+          inContainer: () => false,
+          focusSelectedNav,
+          focusFirstInMain: jest.fn(() => false),
+          moveFocusLinear: jest.fn(() => false),
+          isFormField: jest.fn(() => false),
+          activateControl: jest.fn(() => false),
+          onSetKeyCommand: jest.fn(),
+          onSetCommandCounter: jest.fn()
+        }),
+      { wrapper }
+    )
+
+    // Just need the hook to mount with the normalised route - no error means it worked
+    result.current(makeEvent('ArrowUp'))
+    // focusSelectedNav is called meaning the route resolved (not HOME, not blocking)
+    expect(focusSelectedNav).toHaveBeenCalled()
+  })
+
+  test('Backspace in a form field without editingField returns early', () => {
+    // covers lines 149-151: formFocused && !editingField && code === 'Backspace' -> return
+    const { contentRoot } = setupRoots()
+    const input = document.createElement('input')
+    input.type = 'text'
+    contentRoot.appendChild(input)
+    input.focus()
+
+    const activateControl = jest.fn(() => false)
+    const context: AppContextProps = {
+      isTouchDevice: false,
+      keyboardNavigation: { focusedElId: null },
+      contentEl: { current: contentRoot },
+      onSetAppContext: jest.fn()
+    }
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppContext.Provider value={context}>{children}</AppContext.Provider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useKeyDown({
+          receivingVideo: false,
+          inContainer: (root, el) => !!root && !!el && root.contains(el),
+          focusSelectedNav: jest.fn(() => false),
+          focusFirstInMain: jest.fn(() => false),
+          moveFocusLinear: jest.fn(() => false),
+          isFormField: () => true,
+          activateControl,
+          onSetKeyCommand: jest.fn(),
+          onSetCommandCounter: jest.fn()
+        }),
+      { wrapper }
+    )
+
+    const event = makeEvent('Backspace')
+    result.current(event)
+    // Early return - activateControl should NOT have been called
+    expect(activateControl).not.toHaveBeenCalled()
+    expect(event.preventDefault).not.toHaveBeenCalled()
+  })
+
+  test('dialog root counts as inMain for focus routing', () => {
+    // covers lines 107-117: !inMain && dialogRoot && active && ... -> inMain = true
+    const { contentRoot } = setupRoots()
+    mockPathname = ROUTES.SETTINGS
+
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    const dialogBtn = document.createElement('button')
+    dialog.appendChild(dialogBtn)
+    document.body.appendChild(dialog)
+    dialogBtn.focus()
+
+    const activateControl = jest.fn(() => true)
+    const context: AppContextProps = {
+      isTouchDevice: false,
+      keyboardNavigation: { focusedElId: null },
+      contentEl: { current: contentRoot },
+      onSetAppContext: jest.fn()
+    }
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppContext.Provider value={context}>{children}</AppContext.Provider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useKeyDown({
+          receivingVideo: false,
+          inContainer: (root, el) => !!root && !!el && root.contains(el),
+          focusSelectedNav: jest.fn(() => false),
+          focusFirstInMain: jest.fn(() => false),
+          moveFocusLinear: jest.fn(() => false),
+          isFormField: jest.fn(() => false),
+          activateControl,
+          onSetKeyCommand: jest.fn(),
+          onSetCommandCounter: jest.fn()
+        }),
+      { wrapper }
+    )
+
+    // Enter should activate the button inside the dialog (inMain=true path)
+    result.current(makeEvent('Enter'))
+    expect(activateControl).toHaveBeenCalled()
+
+    document.body.removeChild(dialog)
+  })
+
+  test('Escape when editingField is set and on telemetry route clears it and focuses nav', () => {
+    // covers lines 311-319: editingField set, isTelemetryRoute, not range input
+    const { contentRoot } = setupRoots()
+    mockPathname = ROUTES.TELEMETRY
+
+    const btn = document.createElement('button')
+    btn.id = 'some-btn'
+    contentRoot.appendChild(btn)
+    btn.focus()
+
+    const focusSelectedNav = jest.fn(() => true)
+    const onSetAppContext = jest.fn()
+    const context: AppContextProps = {
+      isTouchDevice: false,
+      keyboardNavigation: { focusedElId: 'some-btn' },
+      contentEl: { current: contentRoot },
+      onSetAppContext
+    }
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppContext.Provider value={context}>{children}</AppContext.Provider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useKeyDown({
+          receivingVideo: false,
+          inContainer: (root, el) => !!root && !!el && root.contains(el),
+          focusSelectedNav,
+          focusFirstInMain: jest.fn(() => false),
+          moveFocusLinear: jest.fn(() => false),
+          isFormField: jest.fn(() => false),
+          activateControl: jest.fn(() => false),
+          onSetKeyCommand: jest.fn(),
+          onSetCommandCounter: jest.fn()
+        }),
+      { wrapper }
+    )
+
+    result.current(makeEvent('Escape'))
+    expect(onSetAppContext).toHaveBeenCalled()
+    expect(focusSelectedNav).toHaveBeenCalled()
+  })
+
+  test('handleSetFocusedElId with element having no id or aria-label sets focusedElId to null', () => {
+    // covers lines 55-63: elementId === null branch
+    const { contentRoot } = setupRoots()
+    mockPathname = ROUTES.SETTINGS
+
+    const btn = document.createElement('button')
+    // no id, no aria-label
+    contentRoot.appendChild(btn)
+    btn.focus()
+
+    const onSetAppContext = jest.fn()
+    const context: AppContextProps = {
+      isTouchDevice: false,
+      keyboardNavigation: { focusedElId: 'previous-id' },
+      contentEl: { current: contentRoot },
+      onSetAppContext
+    }
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppContext.Provider value={context}>{children}</AppContext.Provider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useKeyDown({
+          receivingVideo: false,
+          inContainer: (root, el) => !!root && !!el && root.contains(el),
+          focusSelectedNav: jest.fn(() => false),
+          focusFirstInMain: jest.fn(() => false),
+          moveFocusLinear: jest.fn(() => false),
+          isFormField: () => true,
+          activateControl: jest.fn(() => false),
+          onSetKeyCommand: jest.fn(),
+          onSetCommandCounter: jest.fn()
+        }),
+      { wrapper }
+    )
+
+    // Enter on a form field with editingField='previous-id' → handleSetFocusedElId(null)
+    // but active element has no id → sets focusedElId to null
+    result.current(makeEvent('Enter'))
+    expect(onSetAppContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        keyboardNavigation: { focusedElId: null }
+      })
+    )
+  })
+
+  test('transport keys: prev, playPause, play, pause, acceptPhone, rejectPhone, siri', () => {
+    // covers lines 487-501: full transport action chain
+    setupRoots()
+    mockPathname = ROUTES.MEDIA
+    mockSettings = {
+      bindings: {
+        prev: 'MediaPrev',
+        playPause: 'MediaPlayPause',
+        play: 'MediaPlay',
+        pause: 'MediaPause',
+        acceptPhone: 'KeyA',
+        rejectPhone: 'KeyR',
+        siri: 'KeyV'
+      }
+    }
+
+    const onSetKeyCommand = jest.fn()
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppContext.Provider value={{ isTouchDevice: false }}>{children}</AppContext.Provider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useKeyDown({
+          receivingVideo: false,
+          inContainer: () => false,
+          focusSelectedNav: jest.fn(() => false),
+          focusFirstInMain: jest.fn(() => false),
+          moveFocusLinear: jest.fn(() => false),
+          isFormField: jest.fn(() => false),
+          activateControl: jest.fn(() => false),
+          onSetKeyCommand,
+          onSetCommandCounter: jest.fn()
+        }),
+      { wrapper }
+    )
+
+    for (const [code, expected] of [
+      ['MediaPrev', 'prev'],
+      ['MediaPlayPause', 'playPause'],
+      ['MediaPlay', 'play'],
+      ['MediaPause', 'pause'],
+      ['KeyA', 'acceptPhone'],
+      ['KeyR', 'rejectPhone'],
+      ['KeyV', 'siri']
+    ] as const) {
+      onSetKeyCommand.mockClear()
+      result.current(makeEvent(code))
+      expect(onSetKeyCommand).toHaveBeenCalledWith(expected)
+    }
+  })
+
+  test('combobox with aria-expanded remaps rotary left/right to arrow up/down', () => {
+    // covers lines 249-268: focusOnExpandedCombobox branch
+    const { contentRoot } = setupRoots()
+    const listbox = document.createElement('ul')
+    listbox.setAttribute('role', 'listbox')
+    contentRoot.appendChild(listbox)
+
+    const combo = document.createElement('div')
+    combo.setAttribute('role', 'combobox')
+    combo.setAttribute('aria-expanded', 'true')
+    combo.setAttribute('tabindex', '0')
+    contentRoot.appendChild(combo)
+    combo.focus()
+
+    const dispatchSpy = jest.spyOn(listbox, 'dispatchEvent')
+
+    const context: AppContextProps = {
+      isTouchDevice: false,
+      keyboardNavigation: { focusedElId: null },
+      contentEl: { current: contentRoot },
+      onSetAppContext: jest.fn()
+    }
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppContext.Provider value={context}>{children}</AppContext.Provider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useKeyDown({
+          receivingVideo: false,
+          inContainer: (root, el) => !!root && !!el && root.contains(el),
+          focusSelectedNav: jest.fn(() => false),
+          focusFirstInMain: jest.fn(() => false),
+          moveFocusLinear: jest.fn(() => false),
+          isFormField: jest.fn(() => false),
+          activateControl: jest.fn(() => false),
+          onSetKeyCommand: jest.fn(),
+          onSetCommandCounter: jest.fn()
+        }),
+      { wrapper }
+    )
+
+    result.current(makeEvent('ArrowRight'))
+    expect(dispatchSpy).toHaveBeenCalled()
   })
 })
