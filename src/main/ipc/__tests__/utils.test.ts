@@ -205,6 +205,39 @@ describe('ipc utils', () => {
     })
   })
 
+  test('getMacDesiredOwner falls back when stat returns empty user portion', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+    process.env.SUDO_USER = ''
+    process.env.USER = 'fallback-user'
+    mockedExistsSync.mockReturnValue(true)
+    mockedExecFile.mockImplementation((cmd, args, cb) => {
+      // stat returns a colon-only string — user part is empty, so if (user) is false
+      if (cmd === 'stat') cb(null, ':wheel')
+      if (cmd === 'id') cb(null, 'staff wheel')
+    })
+
+    await expect(getMacDesiredOwner('/Applications/Test.app')).resolves.toEqual({
+      user: 'fallback-user',
+      group: 'staff'
+    })
+  })
+
+  test('getMacDesiredOwner uses staff group when id succeeds but admin is not listed', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+    process.env.SUDO_USER = 'sudo-user'
+    mockedExistsSync.mockReturnValue(true)
+    mockedExecFile.mockImplementation((cmd, args, cb) => {
+      if (cmd === 'stat') cb(new Error('stat failed'))
+      // id returns groups without 'admin'
+      if (cmd === 'id') cb(null, 'staff wheel dialout')
+    })
+
+    await expect(getMacDesiredOwner('/Applications/Test.app')).resolves.toEqual({
+      user: 'sudo-user',
+      group: 'staff'
+    })
+  })
+
   test('saveSettings merges config and bindings, writes file and updates runtime state', () => {
     mockedGetMainWindow.mockReturnValue(null)
     mockedSizesEqual.mockReturnValue(true)
@@ -480,5 +513,67 @@ describe('ipc utils', () => {
     saveSettings(runtimeState, { width: 1024, height: 600 } as any)
 
     expect(mockedApplyWindowedContentSize).toHaveBeenCalledWith(mainWindow, 1024, 600)
+  })
+
+  test('saveSettings on mac enters fullscreen kiosk without size change', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+
+    const mainWindow = {
+      webContents: { setZoomFactor: jest.fn() },
+      isFullScreen: jest.fn(() => false),
+      setFullScreen: jest.fn()
+    }
+    mockedGetMainWindow.mockReturnValue(mainWindow)
+    mockedSizesEqual.mockReturnValue(true)
+
+    const runtimeState = {
+      config: { width: 800, height: 480, kiosk: false, bindings: {} }
+    } as any
+
+    saveSettings(runtimeState, { kiosk: true } as any)
+
+    expect(mainWindow.setFullScreen).toHaveBeenCalledWith(true)
+    expect(mockedApplyWindowedContentSize).not.toHaveBeenCalled()
+    expect(mockedApplyAspectRatioFullscreen).not.toHaveBeenCalled()
+  })
+
+  test('saveSettings on mac leaves fullscreen kiosk without size change', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+
+    const mainWindow = {
+      webContents: { setZoomFactor: jest.fn() },
+      isFullScreen: jest.fn(() => true),
+      setFullScreen: jest.fn()
+    }
+    mockedGetMainWindow.mockReturnValue(mainWindow)
+    mockedSizesEqual.mockReturnValue(true)
+
+    const runtimeState = {
+      config: { width: 800, height: 480, kiosk: true, bindings: {} }
+    } as any
+
+    saveSettings(runtimeState, { kiosk: false } as any)
+
+    expect(mainWindow.setFullScreen).toHaveBeenCalledWith(false)
+    expect(mockedApplyWindowedContentSize).not.toHaveBeenCalled()
+  })
+
+  test('saveSettings on linux does not apply windowed size when size changes in kiosk mode', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' })
+
+    const mainWindow = {
+      webContents: { setZoomFactor: jest.fn() },
+      setKiosk: jest.fn()
+    }
+    mockedGetMainWindow.mockReturnValue(mainWindow)
+    mockedSizesEqual.mockReturnValue(false)
+
+    const runtimeState = {
+      config: { width: 800, height: 480, kiosk: true, bindings: {} }
+    } as any
+
+    saveSettings(runtimeState, { width: 1024, height: 600 } as any)
+
+    expect(mockedApplyWindowedContentSize).not.toHaveBeenCalled()
   })
 })

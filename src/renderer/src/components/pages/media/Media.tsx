@@ -1,6 +1,7 @@
 import { useStatusStore } from '@store/store'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Controls, ProgressBar } from './components'
+import { FFTSpectrum } from './components/createFFTSpectrum'
 import { EXTRA_SMALL_SCREEN, MIN_SCREEN_SIZE_FOR_ATRWORK, MIN_TEXT_COL } from './constants'
 import {
   // useBelowNavTop,
@@ -16,10 +17,6 @@ import { mediaControlOps } from './utils/mediaControllOps'
 import { mediaLayoutArtworksOps } from './utils/mediaLayoutArtworksOps'
 import { mediaProjectionOps } from './utils/mediaProjectionOps'
 import { mediaScaleOps } from './utils/mediaScaleOps'
-
-const FFTSpectrum = lazy(() =>
-  import('./components/FFTSpectrum').then((m) => ({ default: m.FFTSpectrum }))
-)
 
 export const Media = () => {
   const isStreaming = useStatusStore((s: { isStreaming: boolean }) => s.isStreaming)

@@ -565,6 +565,96 @@ describe('ProjectionService', () => {
     expect(svc.lastDongleInfoEmitKey).toBe('')
   })
 
+  test('stop resets btMacAddr from boxInfo when boxInfo is a record', async () => {
+    const svc = new ProjectionService() as any
+    svc.started = true
+    svc.stopping = false
+    svc.boxInfo = { uuid: 'u1', MFD: 'm1', productType: 'A15W', btMacAddr: 'AA:BB:CC' }
+    svc.disconnectPhone = jest.fn(async () => false)
+    svc.driver.close = jest.fn(async () => undefined)
+    svc.audio.resetForSessionStop = jest.fn()
+    svc.clearTimeouts = jest.fn()
+    svc.resetMediaSnapshot = jest.fn()
+    svc.resetNavigationSnapshot = jest.fn()
+
+    await svc.stop()
+
+    expect(svc.boxInfo.btMacAddr).toBe('')
+  })
+
+  test('stop on darwin resets webUsbDevice if present', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+
+    const svc = new ProjectionService() as any
+    svc.started = true
+    svc.stopping = false
+    const reset = jest.fn(async () => undefined)
+    svc.webUsbDevice = { reset, close: jest.fn(async () => undefined) }
+    svc.disconnectPhone = jest.fn(async () => false)
+    svc.driver.close = jest.fn(async () => undefined)
+    svc.audio.resetForSessionStop = jest.fn()
+    svc.clearTimeouts = jest.fn()
+    svc.resetMediaSnapshot = jest.fn()
+    svc.resetNavigationSnapshot = jest.fn()
+
+    await svc.stop()
+
+    expect(reset).toHaveBeenCalled()
+    expect(svc.started).toBe(false)
+
+    Object.defineProperty(process, 'platform', { value: 'linux' })
+  })
+
+  test('stop swallows webUsbDevice.reset errors on darwin', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const svc = new ProjectionService() as any
+    svc.started = true
+    svc.stopping = false
+    svc.webUsbDevice = {
+      reset: jest.fn(async () => {
+        throw new Error('reset failed')
+      })
+    }
+    svc.disconnectPhone = jest.fn(async () => false)
+    svc.driver.close = jest.fn(async () => undefined)
+    svc.audio.resetForSessionStop = jest.fn()
+    svc.clearTimeouts = jest.fn()
+    svc.resetMediaSnapshot = jest.fn()
+    svc.resetNavigationSnapshot = jest.fn()
+
+    await expect(svc.stop()).resolves.toBeUndefined()
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[ProjectionService] webUsbDevice.reset() failed (ignored)',
+      expect.any(Error)
+    )
+
+    Object.defineProperty(process, 'platform', { value: 'linux' })
+  })
+
+  test('stop swallows driver.close errors', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const svc = new ProjectionService() as any
+    svc.started = true
+    svc.stopping = false
+    svc.disconnectPhone = jest.fn(async () => false)
+    svc.driver.close = jest.fn(async () => {
+      throw new Error('close failed')
+    })
+    svc.audio.resetForSessionStop = jest.fn()
+    svc.clearTimeouts = jest.fn()
+    svc.resetMediaSnapshot = jest.fn()
+    svc.resetNavigationSnapshot = jest.fn()
+
+    await expect(svc.stop()).resolves.toBeUndefined()
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[ProjectionService] driver.close() failed (ignored)',
+      expect.any(Error)
+    )
+  })
+
   test('projection-start handler delegates to start', async () => {
     const svc = new ProjectionService() as any
     svc.start = jest.fn(async () => undefined)
@@ -885,6 +975,58 @@ describe('ProjectionService', () => {
     expect(svc.driver.initialise).toHaveBeenCalled()
     expect(svc.driver.start).toHaveBeenCalled()
     expect(svc.started).toBe(true)
+
+    // Clear the pairTimeout to avoid open handles in Jest worker
+    svc.clearTimeouts()
+  })
+
+  test('start sets pendingStartupConnectTarget on driver when configured', async () => {
+    const svc = new ProjectionService() as any
+    ;(usb.getDeviceList as jest.Mock).mockReturnValue([
+      { deviceDescriptor: { idVendor: 0x1314, idProduct: 0x1520 } }
+    ])
+    svc.pendingStartupConnectTarget = 'my-target'
+
+    await svc.start()
+
+    expect(svc.driver.setPendingStartupConnectTarget).toHaveBeenCalledWith('my-target')
+    expect(svc.started).toBe(true)
+
+    svc.clearTimeouts()
+  })
+
+  test('start clears btMacAddr from boxInfo when boxInfo is a record', async () => {
+    const svc = new ProjectionService() as any
+    ;(usb.getDeviceList as jest.Mock).mockReturnValue([])
+    svc.boxInfo = { uuid: 'u1', MFD: 'm1', productType: 'A15W', btMacAddr: 'AA:BB:CC' }
+    svc.audio.setInitialVolumes = jest.fn()
+    svc.audio.resetForSessionStart = jest.fn()
+    svc.resetMediaSnapshot = jest.fn()
+    svc.resetNavigationSnapshot = jest.fn()
+
+    await svc.start()
+
+    expect(svc.boxInfo.btMacAddr).toBe('')
+  })
+
+  test('start pairTimeout callback sends wifiPair command after 15 seconds', async () => {
+    jest.useFakeTimers()
+
+    const svc = new ProjectionService() as any
+    ;(usb.getDeviceList as jest.Mock).mockReturnValue([
+      { deviceDescriptor: { idVendor: 0x1314, idProduct: 0x1520 } }
+    ])
+
+    await svc.start()
+
+    expect(svc.started).toBe(true)
+    const sendCallsBefore = (svc.driver.send as jest.Mock).mock.calls.length
+
+    jest.advanceTimersByTime(15000)
+
+    expect((svc.driver.send as jest.Mock).mock.calls.length).toBeGreaterThan(sendCallsBefore)
+
+    jest.useRealTimers()
   })
 
   test('start closes webUsbDevice and leaves started=false when driver init fails', async () => {
@@ -1445,6 +1587,201 @@ describe('ProjectionService', () => {
     )
   })
 
+  test('dongle-fw upload returns error when local firmware status has ok:false', async () => {
+    const svc = new ProjectionService() as any
+    const send = jest.fn()
+    svc.webContents = { send }
+    svc.started = true
+    svc.reloadConfigFromDisk = jest.fn(async () => undefined)
+
+    svc.firmware.getLocalFirmwareStatus = jest.fn(async () => ({
+      ok: false,
+      error: 'status check failed'
+    }))
+
+    const h = getHandle('dongle-fw')
+    const out = await h.call(svc, null, { action: 'upload' })
+
+    expect(send).toHaveBeenCalledWith('projection-event', {
+      type: 'fwUpdate',
+      stage: 'upload:error',
+      message: 'status check failed'
+    })
+
+    expect(out).toEqual({
+      ok: false,
+      hasUpdate: false,
+      size: 0,
+      error: 'status check failed',
+      raw: { err: -1, msg: 'status check failed' }
+    })
+  })
+
+  test('dongle-fw upload sends firmware file to dongle and returns success', async () => {
+    const svc = new ProjectionService() as any
+    const send = jest.fn()
+    svc.webContents = { send }
+    svc.started = true
+    svc.reloadConfigFromDisk = jest.fn(async () => undefined)
+
+    svc.firmware.getLocalFirmwareStatus = jest.fn(async () => ({
+      ok: true,
+      ready: true,
+      path: '/tmp/appdata/firmware/A15W_Update.img',
+      bytes: 100,
+      model: 'A15W',
+      latestVer: '2.0.0'
+    }))
+
+    jest.spyOn(fs.promises, 'readFile').mockResolvedValue(Buffer.alloc(100) as any)
+    svc.driver.send = jest.fn(async () => true)
+
+    const h = getHandle('dongle-fw')
+    const out = await h.call(svc, null, { action: 'upload' })
+
+    expect(send).toHaveBeenCalledWith('projection-event', {
+      type: 'fwUpdate',
+      stage: 'upload:file-sent',
+      path: '/tmp/A15W_Update.img',
+      bytes: 100
+    })
+
+    expect(out).toEqual(
+      expect.objectContaining({
+        ok: true,
+        hasUpdate: true,
+        size: 100
+      })
+    )
+  })
+
+  test('dongle-fw upload returns error when SendFile returns false', async () => {
+    const svc = new ProjectionService() as any
+    const send = jest.fn()
+    svc.webContents = { send }
+    svc.started = true
+    svc.reloadConfigFromDisk = jest.fn(async () => undefined)
+
+    svc.firmware.getLocalFirmwareStatus = jest.fn(async () => ({
+      ok: true,
+      ready: true,
+      path: '/tmp/appdata/firmware/A15W_Update.img',
+      bytes: 100,
+      model: 'A15W',
+      latestVer: '2.0.0'
+    }))
+
+    jest.spyOn(fs.promises, 'readFile').mockResolvedValue(Buffer.alloc(100) as any)
+    svc.driver.send = jest.fn(async () => false)
+
+    const h = getHandle('dongle-fw')
+    const out = await h.call(svc, null, { action: 'upload' })
+
+    expect(send).toHaveBeenCalledWith('projection-event', {
+      type: 'fwUpdate',
+      stage: 'upload:error',
+      message: 'Dongle upload failed (SendFile returned false)'
+    })
+
+    expect(out).toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: 'Dongle upload failed (SendFile returned false)'
+      })
+    )
+  })
+
+  test('dongle-fw upload catches thrown errors and emits upload:error', async () => {
+    const svc = new ProjectionService() as any
+    const send = jest.fn()
+    svc.webContents = { send }
+    svc.started = true
+    svc.reloadConfigFromDisk = jest.fn(async () => undefined)
+
+    svc.firmware.getLocalFirmwareStatus = jest.fn(async () => ({
+      ok: true,
+      ready: true,
+      path: '/tmp/appdata/firmware/A15W_Update.img',
+      bytes: 100,
+      model: 'A15W',
+      latestVer: '2.0.0'
+    }))
+
+    jest.spyOn(fs.promises, 'readFile').mockRejectedValue(new Error('read error'))
+
+    const h = getHandle('dongle-fw')
+    const out = await h.call(svc, null, { action: 'upload' })
+
+    expect(send).toHaveBeenCalledWith('projection-event', {
+      type: 'fwUpdate',
+      stage: 'upload:error',
+      message: 'read error'
+    })
+
+    expect(out).toEqual(expect.objectContaining({ ok: false, error: 'read error' }))
+  })
+
+  test('dongle-fw download catches thrown exceptions and emits download:error', async () => {
+    const svc = new ProjectionService() as any
+    const send = jest.fn()
+    svc.webContents = { send }
+    svc.reloadConfigFromDisk = jest.fn(async () => undefined)
+
+    svc.firmware.checkForUpdate = jest.fn(async () => ({
+      ok: true,
+      hasUpdate: true,
+      latestVer: '2.0.0',
+      size: 100,
+      token: 'tok',
+      request: { foo: 'bar' },
+      raw: { err: 0 }
+    }))
+
+    svc.firmware.downloadFirmwareToHost = jest.fn(async () => {
+      throw new Error('disk full')
+    })
+
+    const h = getHandle('dongle-fw')
+    const out = await h.call(svc, null, { action: 'download' })
+
+    expect(send).toHaveBeenCalledWith('projection-event', {
+      type: 'fwUpdate',
+      stage: 'download:error',
+      message: 'disk full'
+    })
+
+    expect(out).toEqual(expect.objectContaining({ ok: false, error: 'disk full' }))
+  })
+
+  test('dongle-fw status returns error shape when getLocalFirmwareStatus returns null', async () => {
+    const svc = new ProjectionService() as any
+    svc.reloadConfigFromDisk = jest.fn(async () => undefined)
+
+    svc.firmware.getLocalFirmwareStatus = jest.fn(async () => null)
+
+    const h = getHandle('dongle-fw')
+    const out = await h.call(svc, null, { action: 'status' })
+
+    expect(out).toEqual(
+      expect.objectContaining({ ok: false, error: 'Local firmware status failed' })
+    )
+  })
+
+  test('dongle-fw status returns error shape when status ok is false', async () => {
+    const svc = new ProjectionService() as any
+    svc.reloadConfigFromDisk = jest.fn(async () => undefined)
+
+    svc.firmware.getLocalFirmwareStatus = jest.fn(async () => ({
+      ok: false,
+      error: 'status error'
+    }))
+
+    const h = getHandle('dongle-fw')
+    const out = await h.call(svc, null, { action: 'status' })
+
+    expect(out).toEqual(expect.objectContaining({ ok: false, error: 'status error' }))
+  })
+
   test('dongle-fw upload returns error when local firmware is not ready', async () => {
     const svc = new ProjectionService() as any
     const send = jest.fn()
@@ -1814,6 +2151,63 @@ describe('ProjectionService', () => {
       message: msg
     })
     expect(svc.driver.send).toHaveBeenCalledTimes(1)
+  })
+
+  test('uploadIcons logs warning when config.json reload throws', () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    const svc = new ProjectionService() as any
+    jest.spyOn(fs, 'existsSync').mockReturnValue(true)
+    jest.spyOn(fs, 'readFileSync').mockImplementation(() => {
+      throw new Error('parse error')
+    })
+    svc.config = {
+      dongleIcon120: Buffer.from('120').toString('base64'),
+      dongleIcon180: Buffer.from('180').toString('base64'),
+      dongleIcon256: Buffer.from('256').toString('base64')
+    }
+
+    svc.uploadIcons()
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('failed to reload config.json'),
+      expect.any(Error)
+    )
+    expect(svc.driver.send).toHaveBeenCalledTimes(3)
+  })
+
+  test('uploadIcons swallows errors in outer catch', () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const svc = new ProjectionService() as any
+    jest.spyOn(fs, 'existsSync').mockReturnValue(true)
+    jest.spyOn(fs, 'readFileSync').mockReturnValue(
+      JSON.stringify({
+        dongleIcon120: Buffer.from('120').toString('base64'),
+        dongleIcon180: Buffer.from('180').toString('base64'),
+        dongleIcon256: Buffer.from('256').toString('base64')
+      }) as any
+    )
+    svc.driver.send = jest.fn(() => {
+      throw new Error('send failed')
+    })
+
+    expect(() => svc.uploadIcons()).not.toThrow()
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[ProjectionService] failed to upload icons',
+      expect.any(Error)
+    )
+  })
+
+  test('emitDongleInfoIfChanged uses String(boxInfo) when JSON.stringify throws', () => {
+    const svc = new ProjectionService() as any
+    const send = jest.fn()
+    svc.webContents = { send }
+
+    const circular: Record<string, unknown> = {}
+    circular.self = circular
+    svc.boxInfo = circular
+
+    expect(() => svc.emitDongleInfoIfChanged()).not.toThrow()
+    expect(send).toHaveBeenCalledTimes(1)
   })
 
   test('driver AudioData emits audio and audioInfo once per unique decode format', () => {

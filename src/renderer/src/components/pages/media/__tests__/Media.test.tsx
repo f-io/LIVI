@@ -1,5 +1,9 @@
-import { act, fireEvent, render } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Media } from '../Media'
+
+jest.mock('../components/createFFTSpectrum', () => ({
+  FFTSpectrum: () => null
+}))
 
 jest.mock('./../hooks/useBelowNavTop', () => ({
   useBelowNavTop: () => 0
@@ -27,12 +31,14 @@ jest.mock('./../hooks/useMediaState', () => ({
   })
 }))
 
+let usbEventCb: ((_: unknown, ...args: unknown[]) => void) | undefined
+
 describe('Media component', () => {
   beforeAll(() => {
     // — expand the global window
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     window.projection = {
-      ipc: { sendCommand: jest.fn() },
+      ipc: { sendCommand: jest.fn(), setVisualizerEnabled: jest.fn() },
       usb: {
         listenForEvents: jest.fn(),
         unlistenForEvents: jest.fn()
@@ -42,15 +48,19 @@ describe('Media component', () => {
   })
 
   beforeEach(() => {
+    usbEventCb = undefined
     jest.useFakeTimers()
     // — expand the global window
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     window.projection = {
       ipc: {
-        sendCommand: jest.fn()
+        sendCommand: jest.fn(),
+        setVisualizerEnabled: jest.fn()
       },
       usb: {
-        listenForEvents: jest.fn(),
+        listenForEvents: jest.fn((cb: any) => {
+          usbEventCb = cb
+        }),
         unlistenForEvents: jest.fn()
       }
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -109,5 +119,93 @@ describe('Media component', () => {
 
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     expect(window.projection.usb.unlistenForEvents).toHaveBeenCalled()
+  })
+
+  it('artwork button toggles FFT spectrum on click', async () => {
+    render(<Media />)
+    // showFft=false initially
+    expect(screen.getByRole('button', { name: /Show spectrum/i })).toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Show spectrum/i }))
+    })
+    // showFft=true → label flips
+    expect(screen.getByRole('button', { name: /Show artwork/i })).toBeInTheDocument()
+
+    // Toggle back
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Show artwork/i }))
+    })
+    expect(screen.getByRole('button', { name: /Show spectrum/i })).toBeInTheDocument()
+  })
+
+  it('keyboard Enter on artwork button toggles FFT', async () => {
+    render(<Media />)
+    await act(async () => {
+      fireEvent.keyDown(screen.getByRole('button', { name: /Show spectrum/i }), { key: 'Enter' })
+    })
+    expect(screen.getByRole('button', { name: /Show artwork/i })).toBeInTheDocument()
+  })
+
+  it('keyboard Space on artwork button toggles FFT', async () => {
+    render(<Media />)
+    await act(async () => {
+      fireEvent.keyDown(screen.getByRole('button', { name: /Show spectrum/i }), { key: ' ' })
+    })
+    expect(screen.getByRole('button', { name: /Show artwork/i })).toBeInTheDocument()
+  })
+
+  it('car-media-key PLAY event bumps play feedback', async () => {
+    render(<Media />)
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('car-media-key', { detail: { command: 'play' } }))
+    })
+    // Component handled the event without error
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    expect(window.projection.ipc.sendCommand).not.toHaveBeenCalled() // car-media-key doesn't call sendCommand
+  })
+
+  it('car-media-key NEXT event flashes next button', async () => {
+    render(<Media />)
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('car-media-key', { detail: { command: 'next' } }))
+    })
+    expect(screen.getByLabelText('Next')).toBeInTheDocument()
+  })
+
+  it('car-media-key PREV event flashes prev button', async () => {
+    render(<Media />)
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('car-media-key', { detail: { command: 'prev' } }))
+    })
+    expect(screen.getByLabelText('Previous')).toBeInTheDocument()
+  })
+
+  it('car-media-key with no command does nothing', async () => {
+    render(<Media />)
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('car-media-key', { detail: {} }))
+    })
+    expect(screen.getByLabelText('Play/Pause')).toBeInTheDocument()
+  })
+
+  it('USB unplugged event resets showFft to false', async () => {
+    render(<Media />)
+
+    // First enable FFT
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Show spectrum/i }))
+    })
+    expect(screen.getByRole('button', { name: /Show artwork/i })).toBeInTheDocument()
+
+    // USB unplug resets showFft to false
+    await act(async () => {
+      usbEventCb?.(null, { type: 'unplugged' })
+    })
+    expect(screen.getByRole('button', { name: /Show spectrum/i })).toBeInTheDocument()
   })
 })

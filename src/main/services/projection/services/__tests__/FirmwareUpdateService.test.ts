@@ -911,4 +911,264 @@ describe('FirmwareUpdateService', () => {
 
     await expect(svc.readManifest()).resolves.toBeNull()
   })
+
+  test('getLocalFirmwareStatus handles null boxInfo (normalizeBoxInfo returns null)', async () => {
+    const svc = new FirmwareUpdateService()
+
+    const out = await svc.getLocalFirmwareStatus({ boxInfo: null } as any)
+
+    expect(out).toEqual({ ok: true, ready: false, reason: 'Missing boxInfo.productType' })
+  })
+
+  test('getLocalFirmwareStatus catches and returns unexpected Error exceptions', async () => {
+    const svc = new FirmwareUpdateService() as any
+    svc.readManifest = jest.fn(async () => {
+      throw new Error('unexpected db error')
+    })
+
+    const out = await svc.getLocalFirmwareStatus({
+      boxInfo: { productType: 'A15W', uuid: 'u', MFD: 'm' }
+    })
+
+    expect(out).toEqual({ ok: false, error: 'unexpected db error' })
+  })
+
+  test('getLocalFirmwareStatus catches non-Error thrown values', async () => {
+    const svc = new FirmwareUpdateService() as any
+    svc.readManifest = jest.fn(async () => {
+      throw 'raw string error'
+    })
+
+    const out = await svc.getLocalFirmwareStatus({
+      boxInfo: { productType: 'A15W', uuid: 'u', MFD: 'm' }
+    })
+
+    expect(out).toEqual({ ok: false, error: 'raw string error' })
+  })
+
+  test('downloadFirmwareToHost handles non-number size via toInt (string size)', async () => {
+    const svc = new FirmwareUpdateService() as any
+    svc.downloadToFile = jest.fn(async () => ({ bytes: 10 }))
+    svc.writeManifest = jest.fn(async () => undefined)
+
+    const out = await svc.downloadFirmwareToHost({
+      ok: true,
+      hasUpdate: true,
+      latestVer: '2.0.0',
+      size: '10' as any,
+      token: 'tok',
+      request: {
+        lang: 0,
+        code: 37,
+        appVer: '1.0.0',
+        ver: '1.0.0',
+        uuid: 'u',
+        mfd: 'm',
+        fwn: 'A15W_Update.img',
+        model: 'A15W'
+      },
+      raw: {}
+    })
+
+    expect(out).toEqual({
+      ok: true,
+      path: '/tmp/app-user-data/firmware/A15W_Update.img',
+      bytes: 10
+    })
+  })
+
+  test('downloadFirmwareToHost handles null size via toInt', async () => {
+    const svc = new FirmwareUpdateService() as any
+    svc.downloadToFile = jest.fn(async () => ({ bytes: 0 }))
+    svc.writeManifest = jest.fn(async () => undefined)
+
+    const out = await svc.downloadFirmwareToHost({
+      ok: true,
+      hasUpdate: true,
+      latestVer: '2.0.0',
+      size: null as any,
+      token: 'tok',
+      request: {
+        lang: 0,
+        code: 37,
+        appVer: '1.0.0',
+        ver: '1.0.0',
+        uuid: 'u',
+        mfd: 'm',
+        fwn: 'A15W_Update.img',
+        model: 'A15W'
+      },
+      raw: {}
+    })
+
+    expect(out).toEqual({
+      ok: true,
+      path: '/tmp/app-user-data/firmware/A15W_Update.img',
+      bytes: 0
+    })
+  })
+
+  test('httpPostForm resolves with accumulated response body', async () => {
+    const svc = new FirmwareUpdateService() as any
+    const { net } = require('electron')
+
+    const mockReq = { on: jest.fn(), write: jest.fn(), end: jest.fn() }
+    ;(net.request as jest.Mock).mockReturnValue(mockReq)
+
+    const promise = svc.httpPostForm('http://test.com/api', 'key=value')
+
+    const responseHandler = mockReq.on.mock.calls.find(([e]: [string]) => e === 'response')?.[1]
+    const mockRes = { on: jest.fn() }
+    responseHandler(mockRes)
+
+    const dataHandler = mockRes.on.mock.calls.find(([e]: [string]) => e === 'data')?.[1]
+    dataHandler(Buffer.from('{"err":0}'))
+
+    const endHandler = mockRes.on.mock.calls.find(([e]: [string]) => e === 'end')?.[1]
+    endHandler()
+
+    await expect(promise).resolves.toBe('{"err":0}')
+    expect(mockReq.write).toHaveBeenCalledWith('key=value')
+    expect(mockReq.end).toHaveBeenCalled()
+  })
+
+  test('httpPostForm rejects on request error', async () => {
+    const svc = new FirmwareUpdateService() as any
+    const { net } = require('electron')
+
+    const mockReq = { on: jest.fn(), write: jest.fn(), end: jest.fn() }
+    ;(net.request as jest.Mock).mockReturnValue(mockReq)
+
+    const promise = svc.httpPostForm('http://test.com/api', 'key=value')
+
+    const errorHandler = mockReq.on.mock.calls.find(([e]: [string]) => e === 'error')?.[1]
+    errorHandler(new Error('connection refused'))
+
+    await expect(promise).rejects.toThrow('connection refused')
+  })
+
+  test('downloadToFile resolves with byte count on successful 200 response', async () => {
+    const svc = new FirmwareUpdateService() as any
+    const { net } = require('electron')
+    const { createWriteStream } = require('fs')
+
+    const mockStream = {
+      on: jest.fn(),
+      write: jest.fn(),
+      end: jest.fn((cb: () => void) => cb()),
+      destroy: jest.fn()
+    }
+    ;(createWriteStream as jest.Mock).mockReturnValue(mockStream)
+
+    const mockReq = { on: jest.fn(), write: jest.fn(), end: jest.fn() }
+    ;(net.request as jest.Mock).mockReturnValue(mockReq)
+
+    const onProgress = jest.fn()
+    const promise = svc.downloadToFile({
+      url: 'http://test.com/down',
+      body: 'key=value',
+      token: 'tok',
+      tmpPath: '/tmp/fw.part',
+      onProgress
+    })
+
+    const resHandler = mockReq.on.mock.calls.find(([e]: [string]) => e === 'response')?.[1]
+    const mockRes = {
+      statusCode: 200,
+      headers: { 'content-length': '5' },
+      on: jest.fn()
+    }
+    resHandler(mockRes)
+
+    const dataHandler = mockRes.on.mock.calls.find(([e]: [string]) => e === 'data')?.[1]
+    dataHandler(Buffer.alloc(5))
+
+    const endHandler = mockRes.on.mock.calls.find(([e]: [string]) => e === 'end')?.[1]
+    endHandler()
+
+    await expect(promise).resolves.toEqual({ bytes: 5 })
+    expect(onProgress).toHaveBeenCalledWith({ received: 5, total: 5, percent: 1 })
+    expect(createWriteStream).toHaveBeenCalledWith('/tmp/fw.part')
+  })
+
+  test('downloadToFile rejects on non-200 HTTP status', async () => {
+    const svc = new FirmwareUpdateService() as any
+    const { net } = require('electron')
+
+    const mockReq = { on: jest.fn(), write: jest.fn(), end: jest.fn() }
+    ;(net.request as jest.Mock).mockReturnValue(mockReq)
+
+    const promise = svc.downloadToFile({
+      url: 'http://test.com/down',
+      body: 'key=value',
+      token: 'tok',
+      tmpPath: '/tmp/fw.part'
+    })
+
+    const resHandler = mockReq.on.mock.calls.find(([e]: [string]) => e === 'response')?.[1]
+    resHandler({ statusCode: 404, headers: {}, on: jest.fn() })
+
+    await expect(promise).rejects.toThrow('HTTP 404')
+  })
+
+  test('downloadToFile rejects on request-level error', async () => {
+    const svc = new FirmwareUpdateService() as any
+    const { net } = require('electron')
+
+    const mockReq = { on: jest.fn(), write: jest.fn(), end: jest.fn() }
+    ;(net.request as jest.Mock).mockReturnValue(mockReq)
+
+    const promise = svc.downloadToFile({
+      url: 'http://test.com/down',
+      body: 'key=value',
+      token: 'tok',
+      tmpPath: '/tmp/fw.part'
+    })
+
+    const errorHandler = mockReq.on.mock.calls.find(([e]: [string]) => e === 'error')?.[1]
+    errorHandler(new Error('network error'))
+
+    await expect(promise).rejects.toThrow('network error')
+  })
+
+  test('downloadToFile handles missing content-length header (total=0)', async () => {
+    const svc = new FirmwareUpdateService() as any
+    const { net } = require('electron')
+    const { createWriteStream } = require('fs')
+
+    const mockStream = {
+      on: jest.fn(),
+      write: jest.fn(),
+      end: jest.fn((cb: () => void) => cb()),
+      destroy: jest.fn()
+    }
+    ;(createWriteStream as jest.Mock).mockReturnValue(mockStream)
+
+    const mockReq = { on: jest.fn(), write: jest.fn(), end: jest.fn() }
+    ;(net.request as jest.Mock).mockReturnValue(mockReq)
+
+    const onProgress = jest.fn()
+    const promise = svc.downloadToFile({
+      url: 'http://test.com/down',
+      body: 'key=value',
+      token: 'tok',
+      tmpPath: '/tmp/fw.part',
+      onProgress
+    })
+
+    const resHandler = mockReq.on.mock.calls.find(([e]: [string]) => e === 'response')?.[1]
+    // No content-length header → total defaults to 0
+    const mockRes = { statusCode: 200, headers: {}, on: jest.fn() }
+    resHandler(mockRes)
+
+    const dataHandler = mockRes.on.mock.calls.find(([e]: [string]) => e === 'data')?.[1]
+    dataHandler(Buffer.alloc(3))
+
+    const endHandler = mockRes.on.mock.calls.find(([e]: [string]) => e === 'end')?.[1]
+    endHandler()
+
+    await expect(promise).resolves.toEqual({ bytes: 3 })
+    // When total=0, percent is reported as 0
+    expect(onProgress).toHaveBeenCalledWith({ received: 3, total: 0, percent: 0 })
+  })
 })
