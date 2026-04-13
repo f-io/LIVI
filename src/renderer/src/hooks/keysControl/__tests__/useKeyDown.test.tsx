@@ -703,4 +703,436 @@ describe('useKeyDown', () => {
     result.current(makeEvent('ArrowRight'))
     expect(dispatchSpy).toHaveBeenCalled()
   })
+
+  test('nothing focused + arrow key on non-home route triggers focusFirstInMain', () => {
+    // lines 276-287: wantEnterMainFromNothing path
+    setupRoots()
+    mockPathname = ROUTES.MEDIA
+
+    const focusFirstInMain = jest.fn(() => true)
+
+    const context: AppContextProps = {
+      isTouchDevice: false,
+      keyboardNavigation: { focusedElId: null },
+      onSetAppContext: jest.fn()
+    }
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppContext.Provider value={context}>{children}</AppContext.Provider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useKeyDown({
+          receivingVideo: false,
+          inContainer: () => false,
+          focusSelectedNav: jest.fn(() => false),
+          focusFirstInMain,
+          moveFocusLinear: jest.fn(() => false),
+          isFormField: jest.fn(() => false),
+          activateControl: jest.fn(() => false),
+          onSetKeyCommand: jest.fn(),
+          onSetCommandCounter: jest.fn()
+        }),
+      { wrapper }
+    )
+
+    const event = makeEvent('ArrowLeft')
+    result.current(event)
+
+    expect(focusFirstInMain).toHaveBeenCalled()
+    expect(event.preventDefault).toHaveBeenCalled()
+  })
+
+  test('back key in non-settings route without editingField calls focusSelectedNav', () => {
+    // lines 338-343: focusSelectedNav() fallback after back key
+    const { contentRoot } = setupRoots()
+    mockPathname = ROUTES.MEDIA
+
+    const btn = document.createElement('button')
+    contentRoot.appendChild(btn)
+    btn.focus()
+
+    const focusSelectedNav = jest.fn(() => true)
+
+    const context: AppContextProps = {
+      isTouchDevice: false,
+      keyboardNavigation: { focusedElId: null },
+      contentEl: { current: contentRoot },
+      onSetAppContext: jest.fn()
+    }
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppContext.Provider value={context}>{children}</AppContext.Provider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useKeyDown({
+          receivingVideo: false,
+          inContainer: (root, el) => !!root && !!el && root.contains(el),
+          focusSelectedNav,
+          focusFirstInMain: jest.fn(() => false),
+          moveFocusLinear: jest.fn(() => false),
+          isFormField: jest.fn(() => false),
+          activateControl: jest.fn(() => false),
+          onSetKeyCommand: jest.fn(),
+          onSetCommandCounter: jest.fn()
+        }),
+      { wrapper }
+    )
+
+    const event = makeEvent('Escape')
+    result.current(event)
+
+    expect(focusSelectedNav).toHaveBeenCalled()
+    expect(event.preventDefault).toHaveBeenCalled()
+  })
+
+  test('Enter on switch in main area calls activateControl', () => {
+    // lines 374-386: switch/button role → activateControl
+    const { contentRoot } = setupRoots()
+    mockPathname = ROUTES.SETTINGS
+
+    const sw = document.createElement('button')
+    sw.setAttribute('role', 'switch')
+    contentRoot.appendChild(sw)
+    sw.focus()
+
+    const activateControl = jest.fn(() => true)
+    const onSetAppContext = jest.fn()
+
+    const context: AppContextProps = {
+      isTouchDevice: false,
+      keyboardNavigation: { focusedElId: null },
+      contentEl: { current: contentRoot },
+      onSetAppContext
+    }
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppContext.Provider value={context}>{children}</AppContext.Provider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useKeyDown({
+          receivingVideo: false,
+          inContainer: (root, el) => !!root && !!el && root.contains(el),
+          focusSelectedNav: jest.fn(() => false),
+          focusFirstInMain: jest.fn(() => false),
+          moveFocusLinear: jest.fn(() => false),
+          isFormField: jest.fn(() => false),
+          activateControl,
+          onSetKeyCommand: jest.fn(),
+          onSetCommandCounter: jest.fn()
+        }),
+      { wrapper }
+    )
+
+    result.current(makeEvent('Enter'))
+    expect(activateControl).toHaveBeenCalled()
+  })
+
+  test('Enter on dropdown in main area activates and tracks focusedElId', () => {
+    // lines 374-386: isDropdown → handleSetFocusedElId(active)
+    const { contentRoot } = setupRoots()
+    mockPathname = ROUTES.SETTINGS
+
+    const combo = document.createElement('div')
+    combo.setAttribute('role', 'combobox')
+    combo.setAttribute('aria-haspopup', 'listbox')
+    combo.id = 'my-combo'
+    combo.setAttribute('tabindex', '0')
+    contentRoot.appendChild(combo)
+    combo.focus()
+
+    const activateControl = jest.fn(() => true)
+    const onSetAppContext = jest.fn()
+
+    const context: AppContextProps = {
+      isTouchDevice: false,
+      keyboardNavigation: { focusedElId: null },
+      contentEl: { current: contentRoot },
+      onSetAppContext
+    }
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppContext.Provider value={context}>{children}</AppContext.Provider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useKeyDown({
+          receivingVideo: false,
+          inContainer: (root, el) => !!root && !!el && root.contains(el),
+          focusSelectedNav: jest.fn(() => false),
+          focusFirstInMain: jest.fn(() => false),
+          moveFocusLinear: jest.fn(() => false),
+          isFormField: jest.fn(() => false),
+          activateControl,
+          onSetKeyCommand: jest.fn(),
+          onSetCommandCounter: jest.fn()
+        }),
+      { wrapper }
+    )
+
+    result.current(makeEvent('Enter'))
+    expect(activateControl).toHaveBeenCalled()
+    // dropdown path → handleSetFocusedElId records the combo id
+    expect(onSetAppContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        keyboardNavigation: expect.objectContaining({ focusedElId: 'my-combo' })
+      })
+    )
+  })
+
+  test('Enter on form field with editingField set clears the editing state', () => {
+    // lines 390-396: inMain + enter + formFocused + editingField → handleSetFocusedElId(null)
+    const { contentRoot } = setupRoots()
+    mockPathname = ROUTES.SETTINGS
+
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.id = 'name-field'
+    contentRoot.appendChild(input)
+    input.focus()
+
+    const onSetAppContext = jest.fn()
+    const context: AppContextProps = {
+      isTouchDevice: false,
+      keyboardNavigation: { focusedElId: 'name-field' },
+      contentEl: { current: contentRoot },
+      onSetAppContext
+    }
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppContext.Provider value={context}>{children}</AppContext.Provider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useKeyDown({
+          receivingVideo: false,
+          inContainer: (root, el) => !!root && !!el && root.contains(el),
+          focusSelectedNav: jest.fn(() => false),
+          focusFirstInMain: jest.fn(() => false),
+          moveFocusLinear: jest.fn(() => false),
+          isFormField: () => true,
+          activateControl: jest.fn(() => false),
+          onSetKeyCommand: jest.fn(),
+          onSetCommandCounter: jest.fn()
+        }),
+      { wrapper }
+    )
+
+    result.current(makeEvent('Enter'))
+    expect(onSetAppContext).toHaveBeenCalledWith(
+      expect.objectContaining({ keyboardNavigation: { focusedElId: null } })
+    )
+  })
+
+  test('Enter on generic element in main calls activateControl fallback', () => {
+    // lines 411-415: inMain + enter + not switch/form → activateControl
+    const { contentRoot } = setupRoots()
+    mockPathname = ROUTES.SETTINGS
+
+    const div = document.createElement('div')
+    div.setAttribute('tabindex', '0')
+    contentRoot.appendChild(div)
+    div.focus()
+
+    const activateControl = jest.fn(() => true)
+    const context: AppContextProps = {
+      isTouchDevice: false,
+      keyboardNavigation: { focusedElId: null },
+      contentEl: { current: contentRoot },
+      onSetAppContext: jest.fn()
+    }
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppContext.Provider value={context}>{children}</AppContext.Provider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useKeyDown({
+          receivingVideo: false,
+          inContainer: (root, el) => !!root && !!el && root.contains(el),
+          focusSelectedNav: jest.fn(() => false),
+          focusFirstInMain: jest.fn(() => false),
+          moveFocusLinear: jest.fn(() => false),
+          isFormField: jest.fn(() => false),
+          activateControl,
+          onSetKeyCommand: jest.fn(),
+          onSetCommandCounter: jest.fn()
+        }),
+      { wrapper }
+    )
+
+    result.current(makeEvent('Enter'))
+    expect(activateControl).toHaveBeenCalled()
+  })
+
+  test('Left on range slider in main returns early without moveFocusLinear', () => {
+    // line 421: isRangeSlider && isLeft → return
+    const { contentRoot } = setupRoots()
+    mockPathname = ROUTES.SETTINGS
+
+    const slider = document.createElement('input')
+    slider.type = 'range'
+    contentRoot.appendChild(slider)
+    slider.focus()
+
+    const moveFocusLinear = jest.fn(() => true)
+    const context: AppContextProps = {
+      isTouchDevice: false,
+      keyboardNavigation: { focusedElId: null },
+      contentEl: { current: contentRoot },
+      onSetAppContext: jest.fn()
+    }
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppContext.Provider value={context}>{children}</AppContext.Provider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useKeyDown({
+          receivingVideo: false,
+          inContainer: (root, el) => !!root && !!el && root.contains(el),
+          focusSelectedNav: jest.fn(() => false),
+          focusFirstInMain: jest.fn(() => false),
+          moveFocusLinear,
+          isFormField: jest.fn(() => false),
+          activateControl: jest.fn(() => false),
+          onSetKeyCommand: jest.fn(),
+          onSetCommandCounter: jest.fn()
+        }),
+      { wrapper }
+    )
+
+    const event = makeEvent('ArrowLeft')
+    result.current(event)
+    expect(moveFocusLinear).not.toHaveBeenCalled()
+    expect(event.preventDefault).not.toHaveBeenCalled()
+  })
+
+  test('Up on range slider in main calls preventDefault without moveFocusLinear navigation', () => {
+    // lines 434-437: isRangeSlider && isUp → preventDefault after moveFocusLinear
+    const { contentRoot } = setupRoots()
+    mockPathname = ROUTES.SETTINGS
+
+    const slider = document.createElement('input')
+    slider.type = 'range'
+    contentRoot.appendChild(slider)
+    slider.focus()
+
+    const moveFocusLinear = jest.fn(() => false)
+    const context: AppContextProps = {
+      isTouchDevice: false,
+      keyboardNavigation: { focusedElId: null },
+      contentEl: { current: contentRoot },
+      onSetAppContext: jest.fn()
+    }
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppContext.Provider value={context}>{children}</AppContext.Provider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useKeyDown({
+          receivingVideo: false,
+          inContainer: (root, el) => !!root && !!el && root.contains(el),
+          focusSelectedNav: jest.fn(() => false),
+          focusFirstInMain: jest.fn(() => false),
+          moveFocusLinear,
+          isFormField: jest.fn(() => false),
+          activateControl: jest.fn(() => false),
+          onSetKeyCommand: jest.fn(),
+          onSetCommandCounter: jest.fn()
+        }),
+      { wrapper }
+    )
+
+    const event = makeEvent('ArrowUp')
+    result.current(event)
+    expect(event.preventDefault).toHaveBeenCalled()
+  })
+
+  test('Left in main with editingField on input returns early (skips moveFocusLinear)', () => {
+    // lines 424-430: !isRangeSlider && editingField && isInputOrEditable → return
+    const { contentRoot } = setupRoots()
+    mockPathname = ROUTES.SETTINGS
+
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.id = 'edit-field'
+    contentRoot.appendChild(input)
+    input.focus()
+
+    const moveFocusLinear = jest.fn(() => true)
+    const context: AppContextProps = {
+      isTouchDevice: false,
+      keyboardNavigation: { focusedElId: 'edit-field' },
+      contentEl: { current: contentRoot },
+      onSetAppContext: jest.fn()
+    }
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppContext.Provider value={context}>{children}</AppContext.Provider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useKeyDown({
+          receivingVideo: false,
+          inContainer: (root, el) => !!root && !!el && root.contains(el),
+          focusSelectedNav: jest.fn(() => false),
+          focusFirstInMain: jest.fn(() => false),
+          moveFocusLinear,
+          isFormField: jest.fn(() => false),
+          activateControl: jest.fn(() => false),
+          onSetKeyCommand: jest.fn(),
+          onSetCommandCounter: jest.fn()
+        }),
+      { wrapper }
+    )
+
+    result.current(makeEvent('ArrowLeft'))
+    expect(moveFocusLinear).not.toHaveBeenCalled()
+  })
+
+  test('Right in main with editingField on input returns early (skips moveFocusLinear)', () => {
+    // line 457: !isRangeSlider && editingField && isInputOrEditable → return
+    const { contentRoot } = setupRoots()
+    mockPathname = ROUTES.SETTINGS
+
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.id = 'edit-field-r'
+    contentRoot.appendChild(input)
+    input.focus()
+
+    const moveFocusLinear = jest.fn(() => true)
+    const context: AppContextProps = {
+      isTouchDevice: false,
+      keyboardNavigation: { focusedElId: 'edit-field-r' },
+      contentEl: { current: contentRoot },
+      onSetAppContext: jest.fn()
+    }
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AppContext.Provider value={context}>{children}</AppContext.Provider>
+    )
+
+    const { result } = renderHook(
+      () =>
+        useKeyDown({
+          receivingVideo: false,
+          inContainer: (root, el) => !!root && !!el && root.contains(el),
+          focusSelectedNav: jest.fn(() => false),
+          focusFirstInMain: jest.fn(() => false),
+          moveFocusLinear,
+          isFormField: jest.fn(() => false),
+          activateControl: jest.fn(() => false),
+          onSetKeyCommand: jest.fn(),
+          onSetCommandCounter: jest.fn()
+        }),
+      { wrapper }
+    )
+
+    result.current(makeEvent('ArrowRight'))
+    expect(moveFocusLinear).not.toHaveBeenCalled()
+  })
 })
