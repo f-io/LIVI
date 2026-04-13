@@ -6,7 +6,11 @@ module.exports = {
     '<rootDir>/src/renderer/**/*.{ts,tsx,js,jsx}',
     '!<rootDir>/src/**/*.d.ts',
     '!<rootDir>/src/**/__tests__/**',
-    '!<rootDir>/src/**/*.test.{ts,tsx,js,jsx}'
+    '!<rootDir>/src/**/*.test.{ts,tsx,js,jsx}',
+    '!<rootDir>/src/renderer/**/createFFTSpectrum.ts',
+    '!<rootDir>/src/renderer/**/createFftWorker.ts',
+    '!<rootDir>/src/renderer/**/createRenderWorker.ts',
+    '!<rootDir>/src/renderer/**/createProjectionWorker.ts'
   ],
   coverageDirectory: '<rootDir>/coverage/renderer',
   coverageReporters: ['text', 'text-summary', 'html', 'lcov', 'json-summary'],
