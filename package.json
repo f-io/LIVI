@@ -9,7 +9,7 @@
     "Lasse Heitgres"
   ],
   "homepage": "https://f-io.dev",
-  "packageManager": "pnpm@10.33.0",
+  "packageManager": "pnpm@10.33.1",
   "pnpm": {
     "onlyBuiltDependencies": [
       "usb",
@@ -86,7 +86,7 @@
     "@types/w3c-web-usb": "^1.0.14",
     "@vitejs/plugin-react": "^6.0.1",
     "@webgpu/types": "^0.1.69",
-    "electron": "^41.2.2",
+    "electron": "^41.3.0",
     "electron-builder": "^26.9.0",
     "esbuild": "^0.28.0",
     "globals": "^17.5.0",
@@ -103,7 +103,7 @@
     "ts-jest": "^29.4.9",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3",
-    "vite": "^8.0.9",
+    "vite": "^8.0.10",
     "vite-plugin-electron": "^0.29.1",
     "vite-plugin-electron-renderer": "^0.14.6"
   }
