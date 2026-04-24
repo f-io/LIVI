@@ -9,7 +9,7 @@
     "Lasse Heitgres"
   ],
   "homepage": "https://f-io.dev",
-  "packageManager": "pnpm@10.33.1",
+  "packageManager": "pnpm@10.33.2",
   "pnpm": {
     "onlyBuiltDependencies": [
       "usb",
@@ -61,7 +61,7 @@
     "electron-is-dev": "^3.0.1",
     "events": "^3.3.0",
     "fft.js": "^4.0.4",
-    "i18next": "^26.0.6",
+    "i18next": "^26.0.7",
     "lodash.debounce": "^4.0.8",
     "ms": "^2.1.3",
     "react-i18next": "^17.0.4",
@@ -73,7 +73,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.12",
+    "@biomejs/biome": "^2.4.13",
     "@esbuild-plugins/node-globals-polyfill": "^0.2.3",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
