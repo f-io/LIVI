@@ -3,6 +3,7 @@ import { setupAppIdentity } from '@main/app/init'
 import { setupLifecycle } from '@main/app/lifecycle'
 import { registerIpc } from '@main/ipc'
 import { registerAppProtocol } from '@main/protocol/appProtocol'
+import { checkAndInstallAaSudoers } from '@main/services/projection/driver/aa/aaSudoers'
 import { ProjectionService } from '@main/services/projection/services/ProjectionService'
 import { TelemetrySocket } from '@main/services/Socket'
 import { setupTelemetry } from '@main/services/telemetry/setupTelemetry'
@@ -42,4 +43,14 @@ app.whenReady().then(async () => {
 
   const win = getMainWindow()
   if (win) await checkAndInstallUdevRule(win)
+
+  // Wireless AA needs root for BlueZ + hostapd + dnsmasq. We install the
+  // sudoers drop-in once, on first run with `aa: true`.
+  if (win && runtimeState.config.aa === true && process.platform === 'linux') {
+    await checkAndInstallAaSudoers(win)
+  }
+
+  projectionService.applyConfigPatch(runtimeState.config)
+
+  await projectionService.autoStartIfNeeded()
 })

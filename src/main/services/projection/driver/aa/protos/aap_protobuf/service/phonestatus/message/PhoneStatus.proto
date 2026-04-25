@@ -1,0 +1,27 @@
+syntax="proto2";
+
+package aap_protobuf.service.phonestatus.message;
+
+message PhoneStatus {
+  repeated Call calls = 1;
+  message Call {
+    required State phone_state = 1;
+    required uint32 call_duration_seconds = 2;
+    optional string caller_number = 3;
+    optional string caller_id = 4;
+    optional string caller_number_type = 5;
+    optional bytes caller_thumbnail = 6;
+  }
+
+  optional uint32 signal_strength = 2;
+
+  enum State {
+    UNKNOWN = 0;
+    IN_CALL = 1;
+    ON_HOLD = 2;
+    INACTIVE = 3;
+    INCOMING = 4;
+    CONFERENCED = 5;
+    MUTED = 6;
+  }
+}

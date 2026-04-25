@@ -1,0 +1,10 @@
+syntax="proto2";
+
+package aap_protobuf.shared;
+
+enum SessionConfiguration {
+  UI_CONFIG_HIDE_CLOCK = 1;
+  UI_CONFIG_HIDE_PHONE_SIGNAL = 2;
+  UI_CONFIG_HIDE_BATTERY_LEVEL = 4;
+  CAN_PLAY_NATIVE_MEDIA_DURING_VR = 8;
+}

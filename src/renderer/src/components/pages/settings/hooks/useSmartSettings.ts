@@ -85,9 +85,14 @@ export function useSmartSettings<T extends Record<string, unknown>>(
 
   const restart = async () => {
     if (!needsRestart) return false
-    if (!isDongleConnected) return false
 
-    await window.projection.usb.forceReset()
+    const aaActive = Boolean((settings as unknown as { aa?: boolean })?.aa)
+    if (aaActive) {
+      await window.projection.ipc.restart()
+    } else {
+      if (!isDongleConnected) return false
+      await window.projection.usb.forceReset()
+    }
 
     markRestartBaseline()
     setRestartRequested(false)

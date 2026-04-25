@@ -1,0 +1,12 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+import "aap_protobuf/shared/MessageStatus.proto";
+
+package aap_protobuf.service.radio.message;
+
+message RadioSourceResponse {
+  optional shared.MessageStatus status = 1;
+  required bool radio_source_enabled = 2;
+}

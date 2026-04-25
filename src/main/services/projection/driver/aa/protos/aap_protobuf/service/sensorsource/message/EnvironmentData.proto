@@ -1,0 +1,9 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource.message;
+
+message EnvironmentData {
+    optional int32 temperature_e3 = 1;
+    optional int32 pressure_e3 = 2;
+    optional int32 rain = 3;
+}

@@ -1,0 +1,10 @@
+syntax="proto2";
+
+package aap_protobuf.service.vendorextension;
+
+message VendorExtensionService
+{
+    required string name = 1;
+    repeated string package_white_list = 2;
+    optional bytes data = 3;
+}

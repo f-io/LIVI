@@ -1,0 +1,22 @@
+syntax="proto2";
+
+import "aap_protobuf/service/media/shared/message/MediaCodecType.proto";
+import "aap_protobuf/service/media/sink/message/AudioStreamType.proto";
+import "aap_protobuf/service/media/shared/message/AudioConfiguration.proto";
+import "aap_protobuf/service/media/sink/message/VideoConfiguration.proto";
+import "aap_protobuf/service/media/sink/message/DisplayType.proto";
+import "aap_protobuf/service/media/sink/message/KeyCode.proto";
+
+package aap_protobuf.service.media.sink;
+
+message MediaSinkService
+{
+    optional shared.message.MediaCodecType available_type = 1 [default = MEDIA_CODEC_AUDIO_PCM];
+    optional message.AudioStreamType audio_type = 2;
+    repeated shared.message.AudioConfiguration audio_configs = 3;
+    repeated message.VideoConfiguration video_configs = 4;
+    optional bool available_while_in_call = 5;
+    optional uint32 display_id = 6;
+    optional message.DisplayType display_type = 7;
+    optional message.KeyCode initial_content_keycode = 8;
+}

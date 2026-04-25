@@ -1,0 +1,15 @@
+syntax="proto2";
+
+package aap_protobuf.service.media.sink.message;
+
+enum VideoCodecResolutionType {
+  VIDEO_800x480 = 1;
+  VIDEO_1280x720 = 2;
+  VIDEO_1920x1080 = 3;
+  VIDEO_2560x1440 = 4;
+  VIDEO_3840x2160 = 5;
+  VIDEO_720x1280 = 6;
+  VIDEO_1080x1920 = 7;
+  VIDEO_1440x2560 = 8;
+  VIDEO_2160x3840 = 9;
+}

@@ -1,0 +1,11 @@
+syntax="proto2";
+
+import "aap_protobuf/aaw/Status.proto";
+
+package aap_protobuf.aaw;
+
+message WifiStartResponse {
+  optional string ip_address = 1;
+  optional uint32 port = 2;
+  required Status status = 3;
+}

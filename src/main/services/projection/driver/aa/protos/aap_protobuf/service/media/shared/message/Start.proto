@@ -1,0 +1,8 @@
+syntax="proto2";
+
+package aap_protobuf.service.media.shared.message;
+
+message Start {
+    required int32 session_id = 1;
+    required uint32 configuration_index = 2;
+}

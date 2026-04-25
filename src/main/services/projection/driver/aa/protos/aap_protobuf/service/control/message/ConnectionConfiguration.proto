@@ -1,0 +1,11 @@
+syntax="proto2";
+
+package aap_protobuf.service.control.message;
+
+import "aap_protobuf/service/control/message/PingConfiguration.proto";
+import "aap_protobuf/service/control/message/WirelessTcpConfiguration.proto";
+
+message ConnectionConfiguration {
+  optional PingConfiguration ping_configuration = 1;
+  optional WirelessTcpConfiguration wireless_tcp_configuration = 2;
+}

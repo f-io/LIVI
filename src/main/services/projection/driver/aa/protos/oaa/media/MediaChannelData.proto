@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto2";
+
+package oaa.proto.data;
+
+// APK class: vyr (16.1) / vyd (16.2) — empty proto2 message
+// ChannelDescriptor field 9 (media_info_channel)
+// confidence: gold [apk_deep_trace, 2026-03-06]
+message MediaInfoChannel
+{
+}

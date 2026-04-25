@@ -1,0 +1,28 @@
+// Android Auto Protocol Buffer Definitions
+// https://github.com/mrmees/open-android-auto
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/*
+ * RadioBandType — radio frequency band type.
+ *
+ * 16.2: vzz (runtime enum, 3 values: AM=1, FM=2, DAB=3)
+ * Used in SDP RadioBandGroup (waa) field 1.
+ * 16.1: a.bq() via vyv.s — accepts values 0, 1, 2.
+ */
+
+syntax="proto2";
+
+package oaa.proto.enums;
+
+// confidence: gold [apk_deep_trace]
+message RadioBandType
+{
+    // confidence: gold [apk_deep_trace]
+    enum Enum
+    {
+        BAND_TYPE_UNKNOWN = 0;
+        BAND_TYPE_AM = 1;
+        BAND_TYPE_FM = 2;
+        BAND_TYPE_DAB = 3;  // DAB/DAB+/DMB digital radio
+    }
+}

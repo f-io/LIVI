@@ -1,0 +1,10 @@
+syntax="proto2";
+
+import "aap_protobuf/service/navigationstatus/message/NavigationDistance.proto";
+
+package aap_protobuf.service.navigationstatus.message;
+
+message NavigationStepDistance {
+  optional NavigationDistance distance = 1;
+  optional int64 time_to_step_seconds = 2;
+}

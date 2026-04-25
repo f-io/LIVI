@@ -1,0 +1,9 @@
+syntax="proto2";
+
+import "aap_protobuf/service/sensorsource/message/SensorType.proto";
+
+package aap_protobuf.service.sensorsource.message;
+
+message Sensor {
+    required SensorType sensor_type = 1;
+}

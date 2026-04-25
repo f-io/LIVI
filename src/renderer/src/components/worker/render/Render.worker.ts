@@ -5,6 +5,7 @@ import { WebGPURenderer } from './WebGPURenderer'
 
 export interface FrameRenderer {
   draw(data: VideoFrame): void
+  clear(): void
 }
 
 const scope = self as unknown as Worker
@@ -17,6 +18,9 @@ export class RendererWorker {
   private decoder: VideoDecoder
   private isConfigured = false
   private lastSPS: Uint8Array | null = null
+  private keyframeRetryTimer: ReturnType<typeof setInterval> | null = null
+  private keyframeRetryCount = 0
+  private pendingExtraData: Uint8Array | null = null
   private awaitingValidKeyframe = true
   private hardwareAccelerationTested = false
   private selectedRenderer: string | null = null
@@ -50,7 +54,13 @@ export class RendererWorker {
     this.setTargetFps(fps)
   }
 
+  private hasDecodedFrame = false
+
   private onVideoDecoderOutput = (frame: VideoFrame) => {
+    if (!this.hasDecodedFrame) {
+      this.hasDecodedFrame = true
+      self.postMessage({ type: 'streaming' })
+    }
     this.renderFrame(frame)
   }
 
@@ -82,6 +92,106 @@ export class RendererWorker {
 
   private onVideoDecoderOutputError = (err: Error) => {
     console.error(`[RENDER.WORKER] Decoder error`, err)
+
+    this.resetDecoder()
+  }
+
+  private resetDecoder = () => {
+    try {
+      this.decoder.close()
+    } catch {
+      // already closed — fine
+    }
+    this.decoder = new VideoDecoder({
+      output: this.onVideoDecoderOutput,
+      error: this.onVideoDecoderOutputError
+    })
+    this.isConfigured = false
+    this.awaitingValidKeyframe = true
+    this.lastSPS = null
+    this.pendingExtraData = null
+    this.hasDecodedFrame = false
+    // Drop the last decoded frame and blank the canvas so the user doesn't
+    // see a frozen still from the previous session while we wait for the
+    // phone to send a new SPS+IDR.
+    if (this.pendingFrame) {
+      try {
+        this.pendingFrame.close()
+      } catch {
+        /* already closed */
+      }
+      this.pendingFrame = null
+    }
+    try {
+      this.renderer?.clear()
+    } catch {
+      /* renderer not yet ready */
+    }
+    console.debug('[RENDER.WORKER] decoder reset — awaiting next SPS+IDR')
+    // Tell the host UI we're not actually streaming — Projection.tsx flips
+    // its `isStreaming` flag off so the streaming overlay shows again and
+    // tab navigation works normally instead of trapping the user.
+    self.postMessage({ type: 'awaiting-keyframe' })
+    this.startKeyframeRetry()
+  }
+
+  private startKeyframeRetry = () => {
+    this.stopKeyframeRetry()
+    this.keyframeRetryCount = 0
+    self.postMessage({ type: 'request-keyframe' })
+    this.keyframeRetryCount += 1
+    this.keyframeRetryTimer = setInterval(() => {
+      if (!this.awaitingValidKeyframe || this.isConfigured) {
+        this.stopKeyframeRetry()
+        return
+      }
+      this.keyframeRetryCount += 1
+      // Log only every 10th retry
+      // phone-side stalls — once per ~20 s
+      if (this.keyframeRetryCount % 10 === 0) {
+        console.debug(`[RENDER.WORKER] still waiting for IDR (retry #${this.keyframeRetryCount})`)
+      }
+      self.postMessage({ type: 'request-keyframe' })
+    }, 2000)
+  }
+
+  private stopKeyframeRetry = () => {
+    if (this.keyframeRetryTimer !== null) {
+      clearInterval(this.keyframeRetryTimer)
+      this.keyframeRetryTimer = null
+    }
+  }
+
+  handleExternalReset(): void {
+    this.stopKeyframeRetry()
+    try {
+      this.decoder.close()
+    } catch {
+      /* already closed */
+    }
+    this.decoder = new VideoDecoder({
+      output: this.onVideoDecoderOutput,
+      error: this.onVideoDecoderOutputError
+    })
+    this.isConfigured = false
+    this.awaitingValidKeyframe = true
+    this.lastSPS = null
+    this.pendingExtraData = null
+    this.hasDecodedFrame = false
+    if (this.pendingFrame) {
+      try {
+        this.pendingFrame.close()
+      } catch {
+        /* already closed */
+      }
+      this.pendingFrame = null
+    }
+    try {
+      this.renderer?.clear()
+    } catch {
+      /* renderer not ready */
+    }
+    console.debug('[RENDER.WORKER] external reset')
   }
 
   init = async (event: InitEvent) => {
@@ -292,9 +402,18 @@ export class RendererWorker {
     const key = isKeyFrame(videoData)
     const now = performance.now()
 
+    // Detect mid-stream parameter-set change (resolution / profile / level).
+    if (sps && this.isConfigured && this.lastSPS && !buffersEqual(sps.rawNalu, this.lastSPS)) {
+      console.debug('[RENDER.WORKER] SPS changed mid-stream — resetting decoder')
+      this.resetDecoder()
+    }
+
     if (sps && !this.isConfigured) {
       console.debug('[RENDER.WORKER] SPS detected, length:', sps.rawNalu?.length)
       this.lastSPS = sps.rawNalu
+      if (!key) {
+        this.pendingExtraData = videoData
+      }
     }
 
     if (this.awaitingValidKeyframe && !key) {
@@ -307,14 +426,29 @@ export class RendererWorker {
       const config = getDecoderConfig(this.lastSPS)
       if (config && (await this.configureDecoder(config))) {
         try {
+          // Annex-B mode: ensure SPS+PPS precede the IDR in the same chunk.
+          // If the IDR frame already contains SPS (dongle path), use it as-is;
+          // otherwise prepend the cached parameter-set frame (AA path).
+          let firstChunk = videoData
+          const idrHasSps = getNaluFromStream(videoData, NaluTypes.SPS) !== null
+          if (!idrHasSps && this.pendingExtraData) {
+            firstChunk = new Uint8Array(this.pendingExtraData.length + videoData.length)
+            firstChunk.set(this.pendingExtraData, 0)
+            firstChunk.set(videoData, this.pendingExtraData.length)
+            console.debug(
+              `[RENDER.WORKER] Prepended ${this.pendingExtraData.length}B SPS+PPS to ${videoData.length}B IDR`
+            )
+          }
           const chunk = new EncodedVideoChunk({
             type: 'key',
             timestamp: now,
-            data: videoData
+            data: firstChunk
           })
           this.decoder.decode(chunk)
           console.debug('[RENDER.WORKER] SPS+IDR sent')
           this.awaitingValidKeyframe = false
+          this.pendingExtraData = null
+          this.stopKeyframeRetry()
           return
         } catch (e) {
           console.warn('[RENDER.WORKER] Failed to decode first keyframe', e)
@@ -335,8 +469,16 @@ export class RendererWorker {
       this.decoder.decode(chunk)
     } catch (e) {
       console.error('[RENDER.WORKER] Error during decoding:', e)
+      this.resetDecoder()
     }
   }
+}
+
+function buffersEqual(a: Uint8Array | null, b: Uint8Array | null): boolean {
+  if (!a || !b) return false
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return false
+  return true
 }
 
 const worker = new RendererWorker()
@@ -350,6 +492,10 @@ scope.addEventListener('message', (event: MessageEvent<WorkerEvent>) => {
 
     case 'updateFps':
       worker.updateTargetFps((msg as UpdateFpsEvent).fps)
+      break
+
+    case 'reset':
+      worker.handleExternalReset()
       break
 
     default:

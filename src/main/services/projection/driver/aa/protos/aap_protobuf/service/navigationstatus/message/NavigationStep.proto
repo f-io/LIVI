@@ -1,0 +1,15 @@
+syntax="proto2";
+
+import "aap_protobuf/service/navigationstatus/message/NavigationManeuver.proto";
+import "aap_protobuf/service/navigationstatus/message/NavigationRoad.proto";
+import "aap_protobuf/service/navigationstatus/message/NavigationLane.proto";
+import "aap_protobuf/service/navigationstatus/message/NavigationCue.proto";
+
+package aap_protobuf.service.navigationstatus.message;
+
+message NavigationStep {
+  optional NavigationManeuver maneuver = 1;
+  optional NavigationRoad road = 2;
+  repeated NavigationLane lanes = 3;
+  optional NavigationCue cue = 4;
+}

@@ -1,0 +1,17 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+import "aap_protobuf/service/radio/message/HdRadioSisData.proto";
+import "aap_protobuf/service/radio/message/HdRadioPsdData.proto";
+import "aap_protobuf/service/radio/message/HdAcquisionState.proto";
+
+package aap_protobuf.service.radio.message;
+
+message HdRadioStationInfo {
+  optional HdAcquisionState acquisition_state = 1;
+  optional int32 digital_signal_strength = 2;
+  optional HdRadioPsdData psd = 3;
+  optional HdRadioSisData sis = 4;
+}
+

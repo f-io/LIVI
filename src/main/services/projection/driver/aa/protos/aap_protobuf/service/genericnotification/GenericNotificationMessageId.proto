@@ -1,0 +1,12 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+package aap_protobuf.service.genericnotification;
+
+enum GenericNotificationMessageId {
+  GENERIC_NOTIFICATION_SUBSCRIBE = 32769;
+  GENERIC_NOTIFICATION_UNSUBSCRIBE = 32770;
+  GENERIC_NOTIFICATION_MESSAGE = 32771;
+  GENERIC_NOTIFICATION_ACK = 32772;
+}

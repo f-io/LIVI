@@ -1,0 +1,183 @@
+// Android Auto Protocol Buffer Definitions
+// https://github.com/mrmees/open-android-auto
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/*
+ * Car Control channel messages (GAL channel type 19, CAR_CONTROL)
+ * Handler: hyc.java (16.2) / hxp.java (16.1), log tag: CAR.GAL.CAR_CONTROL
+ *
+ * This channel provides VHAL (Vehicle HAL) property access — HVAC controls,
+ * seat temperature, defrost, toll card status, etc. The HU registers listeners
+ * for car properties and receives change events. It can also set property values.
+ *
+ * Message IDs (from vik.m36843p/m36844q):
+ *   0x8001 = CAR_CONTROL_SET_CAR_PROPERTY_VALUE_REQUEST    (HU→Phone, wbq)
+ *   0x8002 = CAR_CONTROL_SET_CAR_PROPERTY_VALUE_RESPONSE   (Phone→HU, wbr)
+ *   0x8003 = CAR_CONTROL_REGISTER_CAR_PROPERTY_LISTENERS_REQUEST (HU→Phone, waz)
+ *   0x8004 = CAR_CONTROL_REGISTER_CAR_PROPERTY_LISTENERS_RESPONSE (Phone→HU, wba)
+ *   0x8005 = CAR_CONTROL_CAR_PROPERTY_CHANGE_EVENT         (Phone→HU, vwg)
+ *   0x8006 = CAR_CONTROL_CAR_ACTION_NOTIFICATION           (HU→Phone, vvv)
+ *   0x8007 = CAR_CONTROL_CAR_CONTROL_GROUP_UPDATE           (Phone→HU, vvz)
+ *
+ * No msg ID offset — hyc extends iav directly, vik.m36844q maps IDs unchanged.
+ * Handler receives: 0x8002, 0x8004, 0x8005, 0x8007 (Phone→HU).
+ * Handler drops with "unexpected": 0x8003, 0x8006 (HU→Phone, send-only).
+ *
+ * Proto3 sub-messages (CarProperty, CarAreaId, CarAction, CarPropertyValue,
+ * CarPropertyControl, IntValues, FloatValues, LongValues) are in
+ * CarPropertyData.proto — split because the APK compiles those as proto3.
+ *
+ * APK: AA v16.2 (verified 2026-03-07)
+ */
+
+syntax = "proto2";
+
+import "oaa/carcontrol/CarPropertyData.proto";
+
+package oaa.proto.messages;
+
+// ============================================================================
+// Enums (proto2)
+// ============================================================================
+
+// CarControlStatus — RETRACTED
+// The status fields in SetCarPropertyValueResponse and SetCarPropertyListenerResult
+// use the shared ProtocolStatus enum (vyh, 34 values) on the wire, NOT this 3-value
+// enum. Car-control-specific codes: -26 (SET_REQUEST_FAILED), -27 (LISTENER_REGISTRATION_FAILED).
+// See oaa/common/ProtocolStatus for the full enum.
+
+// Side affinity for controls — driver vs passenger side
+// (APK class: vvx field 6 validator; SafeParcelable: CarControl.sideAffinity)
+// confidence: silver [apk_static, no named enum class in DB]
+enum SideAffinity {
+    SIDE_NONE = 0;
+    SIDE_DRIVER = 1;
+    SIDE_PASSENGER = 2;
+}
+
+// Control group type (APK class: vvy field 1)
+// confidence: silver [apk_static, no named enum class in DB]
+enum CarControlGroupType {
+    CAR_CONTROL_GROUP_UNKNOWN = 0;
+    CAR_CONTROL_GROUP_PRIMARY = 1;
+}
+
+// Metadata type for CarControl entries (APK enum: vug)
+// confidence: gold [deep_trace, 16.2 DB verified]
+enum CarControlMetadataType {
+    METADATA_UNKNOWN = 0;
+    METADATA_COMPACT_UI = 1;
+    METADATA_PREFER_STATUS_BAR = 2;  // NEW in 16.2
+}
+
+// ============================================================================
+// Sub-messages (proto2)
+// ============================================================================
+
+// APK class: vvu (16.2) / vwi (16.1) → wraps CarAction for action-only controls
+// confidence: gold [deep_trace, 16.2 DB verified]
+message CarActionControl {
+    optional CarAction action = 1;  // confidence: gold [deep_trace]
+}
+
+// APK class: vvx (16.2) / vwl (16.1) → SafeParcelable: CarControl
+// A single control entry — either a property, action, or nested group.
+// confidence: gold [deep_trace, 16.2 DB verified]
+message CarControl {
+    oneof control {
+        CarPropertyControl property_control = 1; // vuk  // confidence: gold [deep_trace]
+        CarActionControl action_control = 2; // vvu  // confidence: gold [deep_trace]
+        CarControlGroup control_group = 3; // vvy (recursive)  // confidence: gold [deep_trace]
+    }
+    optional bool enabled = 4;  // confidence: gold [deep_trace]
+    repeated CarControlMetadataType metadata = 5;  // confidence: gold [deep_trace]
+    optional SideAffinity side_affinity = 6;  // confidence: gold [deep_trace]
+}
+
+// APK class: vvy (16.2) / vwm (16.1) → SafeParcelable: CarControlGroup
+// confidence: gold [deep_trace, 16.2 DB verified]
+message CarControlGroup {
+    optional CarControlGroupType group_type = 1;  // confidence: gold [deep_trace]
+    repeated CarControl controls = 2;  // confidence: gold [deep_trace]
+}
+
+// ============================================================================
+// Top-level messages (received by handler)
+// ============================================================================
+
+// 0x8001: SetCarPropertyValueRequest (APK class: wbq 16.2 / wca 16.1)
+// HU requests the phone to set a car property value.
+// confidence: gold [deep_trace, 16.2 DB verified]
+message SetCarPropertyValueRequest {
+    optional CarProperty car_property = 1;  // confidence: gold [deep_trace]
+    optional CarPropertyValue property_value = 2;  // confidence: gold [deep_trace]
+    optional string request_id = 3; // UUID for correlating response  // confidence: gold [deep_trace]
+}
+
+// 0x8002: SetCarPropertyValueResponse (APK class: wbr 16.2 / wcb 16.1)
+// Phone responds to HU's set-property request with result.
+// confidence: gold [deep_trace, handler hyc.java case 32770]
+message SetCarPropertyValueResponse {
+    optional CarProperty car_property = 1;  // confidence: gold [deep_trace]
+    optional int32 status = 2;  // ProtocolStatus (vyh) — shared AA status enum. 0=SUCCESS, -26=SET_FAILED, -27=LISTENER_FAILED  // confidence: gold [deep_trace, vyh.m37369b confirmed in handler]
+    optional string request_id = 3; // UUID correlating to original request  // confidence: gold [deep_trace]
+    optional int32 error_code = 4; // CarPropertySetError code  // confidence: gold [deep_trace]
+}
+
+// 0x8003: RegisterCarPropertyListenersRequest (APK class: waz 16.2)
+// HU subscribes to change events for a list of properties.
+// confidence: gold [deep_trace, 16.2 DB verified]
+message RegisterCarPropertyListenersRequest {
+    repeated CarProperty car_properties = 1;  // confidence: gold [deep_trace]
+}
+
+// 0x8004: RegisterCarPropertyListenersResponse (APK class: wba 16.2 / wbk 16.1)
+// Phone responds with per-property registration results.
+// confidence: gold [deep_trace, handler hyc.java case 32772]
+message RegisterCarPropertyListenersResponse {
+    repeated SetCarPropertyListenerResult results = 1;  // confidence: gold [deep_trace]
+}
+
+// APK class: vwh (16.2) / vwv (16.1) — individual listener registration result
+// confidence: gold [deep_trace, 16.2 DB verified]
+message SetCarPropertyListenerResult {
+    optional CarProperty car_property = 1;  // confidence: gold [deep_trace]
+    optional int32 status = 2;  // ProtocolStatus (vyh) — shared AA status enum. vik.m36848u confirms vyh  // confidence: gold [deep_trace]
+}
+
+// 0x8005: CarPropertyChangeEvent (APK class: vwg 16.2 / vwu 16.1)
+// Phone notifies HU that a car property value changed.
+// confidence: gold [deep_trace, handler hyc.java case 32773]
+message CarPropertyChangeEvent {
+    optional CarProperty car_property = 1;  // confidence: gold [deep_trace]
+    optional CarPropertyValue property_value = 2;  // confidence: gold [deep_trace]
+    optional int32 status = 3;  // 1=AVAILABLE, 2=UNAVAILABLE  // confidence: gold [deep_trace]
+}
+
+// 0x8006: CarActionNotification (APK class: vvv 16.2 / vwj 16.1)
+// HU tells the phone to trigger an application launch action.
+// confidence: gold [deep_trace, 16.2 DB verified]
+message CarActionNotification {
+    optional CarAction action = 1;  // confidence: gold [deep_trace]
+}
+
+// 0x8007: CarControlGroupUpdate (APK class: vvz 16.2 / vwn 16.1)
+// Phone sends updated control group layout to HU.
+// confidence: gold [deep_trace, handler hyc.java case 32775]
+message CarControlGroupUpdate {
+    optional CarControlGroup car_control_group = 1;  // confidence: gold [deep_trace]
+}
+
+// ============================================================================
+// SDP Channel Descriptor
+// ============================================================================
+
+// CarControlChannelDescriptor (APK class: vwa 16.2 / vwo 16.1)
+// Describes the car control channel's available property configs, controls, and actions.
+// Sent during channel setup to inform the phone about HU capabilities.
+// confidence: gold [deep_trace, 16.2 DB verified — field 2 is CarControl not CarControlGroup]
+message CarControlChannelDescriptor {
+    repeated CarPropertyConfig property_configs = 1; // vuj  // confidence: gold [deep_trace]
+    repeated CarControl controls = 2; // vvx — NOT CarControlGroup (16.2 DB confirmed)  // confidence: gold [deep_trace]
+    repeated CarActionEntry action_entries = 3; // vua  // confidence: gold [deep_trace]
+}

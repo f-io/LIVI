@@ -1,0 +1,17 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+import "aap_protobuf/service/radio/message/Location.proto";
+
+package aap_protobuf.service.radio.message;
+
+message HdRadioSisData {
+  optional int32 station_id = 1;
+  optional string station_name_short = 2;
+  optional string station_name_long = 3;
+  optional Location station_location = 4;
+  optional string station_message = 5;
+  optional string service_info_message = 6;
+  optional string universal_short_station_name_slogan = 7;
+}

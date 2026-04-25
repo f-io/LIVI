@@ -1,0 +1,9 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource.message;
+
+enum SensorErrorType {
+  SENSOR_OK = 1;
+  SENSOR_ERROR_TRANSIENT = 2;
+  SENSOR_ERROR_PERMANENT = 3;
+}

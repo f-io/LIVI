@@ -38,6 +38,9 @@ export enum WiFiValues {
 }
 
 export const requiresRestartParams: (keyof ExtraConfig)[] = [
+  'aa',
+  'cp',
+
   'width',
   'height',
   'fps',
@@ -71,6 +74,7 @@ export const requiresRestartParams: (keyof ExtraConfig)[] = [
   'autoConn',
   'carName',
   'oemName',
+  'wifiPassword',
   'mediaSound',
   'hand',
   'mapsEnabled'

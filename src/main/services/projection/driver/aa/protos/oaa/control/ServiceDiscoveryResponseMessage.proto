@@ -1,0 +1,51 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+//
+// Validated against APK v16.2 class wbo (proto2, 15 fields). 0E/0W.
+// 16.1 class: wby
+syntax="proto2";
+
+import "oaa/control/ChannelDescriptorData.proto";
+import "oaa/common/DriverPositionEnum.proto";
+import "oaa/control/HeadUnitInfoData.proto";
+
+package oaa.proto.messages;
+
+// APK class: vyd (16.2), vyr (16.1) — feature flag placeholder
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+message ServiceDiscoveryFeatureA {}
+
+// APK class: vxy (16.2), vym (16.1) — feature flag placeholder
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+message ServiceDiscoveryFeatureB {}
+
+// APK class: vwf (16.2), vwt (16.1) — feature flag placeholder
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+message ServiceDiscoveryFeatureC {}
+
+// APK class: vvp (16.2), vwd (16.1) — feature flag placeholder
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+message ServiceDiscoveryFeatureD {}
+
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+message ServiceDiscoveryResponse
+{
+    repeated data.ChannelDescriptor channels = 1;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional string head_unit_name = 2;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional string car_model = 3;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional string car_year = 4;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional string car_serial = 5;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional enums.DriverPosition.Enum driver_position = 6;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional string headunit_manufacturer = 7;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional string headunit_model = 8;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional string sw_build = 9;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional string sw_version = 10;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional bool can_play_native_media_during_vr = 11;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    // Field 12 not in APK v16.1.
+    optional int32 session_configuration = 13;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional string display_name = 14;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional bool probe_for_support = 15;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    // Field 16 not in APK v16.1.
+    optional data.HeadUnitInfo headunit_info = 17;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+}

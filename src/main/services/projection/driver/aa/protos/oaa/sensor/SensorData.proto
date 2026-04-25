@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto2";
+
+import "oaa/sensor/SensorTypeEnum.proto";
+
+package oaa.proto.data;
+
+// confidence: silver [apk_static, cross_version]
+message Sensor
+{
+    optional enums.SensorType.Enum type = 1;  // confidence: silver [apk_static, cross_version]
+}

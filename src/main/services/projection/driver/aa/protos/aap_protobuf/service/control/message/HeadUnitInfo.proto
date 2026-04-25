@@ -1,0 +1,14 @@
+syntax="proto2";
+
+package aap_protobuf.service.control.message;
+
+message HeadUnitInfo {
+  optional string make = 1;
+  optional string model = 2;
+  optional string year = 3;
+  optional string vehicle_id = 4;
+  optional string head_unit_make = 5;
+  optional string head_unit_model = 6;
+  optional string head_unit_software_build = 7;
+  optional string head_unit_software_version = 8;
+}

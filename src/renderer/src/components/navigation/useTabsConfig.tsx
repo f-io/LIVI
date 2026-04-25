@@ -13,7 +13,7 @@ import { TabConfig } from './types'
 export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivingVideo) => {
   const theme = useTheme()
   const isStreaming = useStatusStore((s) => s.isStreaming)
-  const isDongleConnected = useStatusStore((s) => s.isDongleConnected)
+  const isDongleConnected = useStatusStore((s) => s.isDongleConnected || s.isAaActive)
   const cameraFound = useStatusStore((s) => s.cameraFound)
   const mapsEnabled = useLiviStore((s) => s.settings?.mapsEnabled ?? false)
   const telemetryEnabled = useLiviStore((s) => s.settings?.telemetryEnabled ?? false)

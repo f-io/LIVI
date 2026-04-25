@@ -1,0 +1,15 @@
+syntax="proto2";
+
+package aap_protobuf.shared;
+
+enum LocationCharacterization {
+  PRIOR_LOCATIONS = 1;
+  GYROSCOPE_FUSION = 2;
+  ACCELEROMETER_FUSION = 4;
+  COMPASS_FUSION = 8;
+  WHEEL_SPEED_FUSION = 16;
+  STEERING_ANGLE_FUSION = 32;
+  CAR_SPEED_FUSION = 64;
+  DEAD_RECKONED = 128;
+  RAW_GPS_ONLY = 256;
+}

@@ -1,0 +1,13 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource.message;
+
+message LocationData {
+    optional uint64 timestamp = 1 [deprecated = true];
+    required int32 latitude_e7 = 2;
+    required int32 longitude_e7 = 3;
+    optional uint32 accuracy_e3 = 4;
+    optional int32 altitude_e2 = 5;
+    optional int32 speed_e3 = 6;
+    optional int32 bearing_e6 = 7;
+}

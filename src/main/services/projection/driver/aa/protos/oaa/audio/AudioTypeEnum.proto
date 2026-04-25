@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto3";
+
+package oaa.proto.enums;
+
+// confidence: unverified
+message AudioType
+{
+    // confidence: unverified
+    enum Enum
+    {
+        NONE = 0;
+        SPEECH = 1;
+        SYSTEM = 2;
+        MEDIA = 3;
+        ALARM = 4;
+    }
+}

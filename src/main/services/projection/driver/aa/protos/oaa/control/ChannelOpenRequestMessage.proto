@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+
+/*
+ * Channel open request (msg ID 7 on control channel).
+ *
+ * Phone requests HU to open a specific channel.
+ *
+ * APK class: vwj (16.2)
+ * Sender: hyr.java line 107
+ * Direction: Phone->HU
+ */
+syntax="proto2";
+
+package oaa.proto.messages;
+
+// confidence: gold [apk_deep_trace]
+message ChannelOpenRequest
+{
+    required sint32 priority = 1;  // zigzag encoded  // confidence: gold [apk_deep_trace]
+    required int32 channel_id = 2;  // confidence: gold [apk_deep_trace]
+}

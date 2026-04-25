@@ -11,6 +11,10 @@ export type AndroidAutoResolution = {
   height: number
 }
 
+export function dongleDisplayName(name: string): string {
+  return `${name} (D)`
+}
+
 /**
  * Android Auto resolution selection
  * - tier chosen by width

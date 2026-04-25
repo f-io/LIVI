@@ -1,0 +1,10 @@
+syntax="proto2";
+
+import "aap_protobuf/service/control/message/AudioFocusRequestType.proto";
+
+package aap_protobuf.service.control.message;
+
+message AudioFocusRequest
+{
+    required AudioFocusRequestType audio_focus_type = 1;
+}

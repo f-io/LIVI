@@ -1,0 +1,15 @@
+syntax="proto2";
+
+import "aap_protobuf/shared/PhoneInfo.proto";
+
+package aap_protobuf.service.control.message;
+
+message ServiceDiscoveryRequest
+{
+    optional bytes small_icon = 1;
+    optional bytes medium_icon = 2;
+    optional bytes large_icon = 3;
+    optional string label_text = 4;
+    optional string device_name = 5;
+    optional shared.PhoneInfo phone_info = 6;
+}

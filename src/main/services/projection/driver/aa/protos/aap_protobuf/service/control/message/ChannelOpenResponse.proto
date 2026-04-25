@@ -1,0 +1,10 @@
+syntax="proto2";
+
+import "aap_protobuf/shared/MessageStatus.proto";
+
+package aap_protobuf.service.control.message;
+
+message ChannelOpenResponse
+{
+    required shared.MessageStatus status = 1;
+}

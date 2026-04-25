@@ -1,0 +1,11 @@
+syntax="proto2";
+
+package aap_protobuf.service.media.video.message;
+
+enum VideoFocusReason
+{
+    UNKNOWN = 0;
+    PHONE_SCREEN_OFF = 1;
+    LAUNCH_NATIVE = 2;
+}
+

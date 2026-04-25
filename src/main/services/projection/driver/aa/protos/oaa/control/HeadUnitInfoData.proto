@@ -1,0 +1,22 @@
+// Android Auto Protocol Buffer Definitions
+// https://github.com/mrmees/open-android-auto
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// APK class: vuq (16.2)
+// Sub-message of ServiceDiscoveryResponse field 17
+syntax="proto2";
+
+package oaa.proto.data;
+
+// confidence: gold [apk_deep_trace]
+message HeadUnitInfo {
+    optional string make = 1;  // confidence: gold [apk_deep_trace]
+    optional string model = 2;  // confidence: gold [apk_deep_trace]
+    optional string year = 3;  // confidence: gold [apk_deep_trace]
+    optional string vehicle_id = 4;  // confidence: gold [apk_deep_trace]
+    optional string head_unit_make = 5;  // confidence: gold [apk_deep_trace]
+    optional string head_unit_model = 6;  // confidence: gold [apk_deep_trace]
+    optional string head_unit_software_build = 7;  // confidence: gold [apk_deep_trace]
+    optional string head_unit_software_version = 8;  // confidence: gold [apk_deep_trace]
+    optional int32 vehicle_type = 9;  // 0=car, 2=truck. New in 16.2  // confidence: gold [apk_deep_trace]
+}

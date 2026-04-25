@@ -1,0 +1,14 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+package aap_protobuf.service.radio.message;
+
+enum RadioType {
+    AM_RADIO = 0;
+    FM_RADIO = 1;
+    AM_HD_RADIO = 2;
+    FM_HD_RADIO = 3;
+    DAB_RADIO = 4;
+    XM_RADIO = 5;
+}
