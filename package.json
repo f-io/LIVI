@@ -61,7 +61,7 @@
     "electron-is-dev": "^3.0.1",
     "events": "^3.3.0",
     "fft.js": "^4.0.4",
-    "i18next": "^26.0.7",
+    "i18next": "^26.0.8",
     "lodash.debounce": "^4.0.8",
     "ms": "^2.1.3",
     "react-i18next": "^17.0.4",
