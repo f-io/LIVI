@@ -10,14 +10,14 @@ import os
 import subprocess
 import time
 
-from config import SSID, PASSPHRASE, CHANNEL, COUNTRY_CODE
+from config import SSID, PASSPHRASE, CHANNEL, COUNTRY_CODE, WIFI_IFACE
 
 HOSTAPD_CONFIG_PATH = "/tmp/livi-hostapd.conf"
 DNSMASQ_CONFIG_PATH = "/tmp/livi-dnsmasq.conf"
 AP_IP = "10.10.0.1"
 
 
-def get_wlan_mac(iface: str = "wlan0") -> str:
+def get_wlan_mac(iface: str = WIFI_IFACE) -> str:
     try:
         with open(f"/sys/class/net/{iface}/address") as f:
             return f.read().strip().upper()
@@ -40,7 +40,7 @@ def get_security_config() -> str:
 def write_hostapd_config():
     security_config = get_security_config()
     config = f"""
-interface=wlan0
+interface={WIFI_IFACE}
 driver=nl80211
 ssid={SSID}
 hw_mode=a
@@ -58,32 +58,32 @@ wpa_passphrase={PASSPHRASE}
 
 
 def setup_network_interface():
-    subprocess.run(["sudo", "ip", "link", "set", "wlan0", "up"], check=True)
-    subprocess.run(["sudo", "ip", "addr", "flush", "dev", "wlan0"], check=True)
-    subprocess.run(["sudo", "ip", "addr", "add", f"{AP_IP}/24", "dev", "wlan0"], check=True)
+    subprocess.run(["sudo", "ip", "link", "set", WIFI_IFACE, "up"], check=True)
+    subprocess.run(["sudo", "ip", "addr", "flush", "dev", WIFI_IFACE], check=True)
+    subprocess.run(["sudo", "ip", "addr", "add", f"{AP_IP}/24", "dev", WIFI_IFACE], check=True)
 
 
 def disable_existing_wifi_network_services():
-    subprocess.run(["sudo", "systemctl", "stop", "wpa_supplicant@wlan0"], check=False)
-    subprocess.run(["sudo", "systemctl", "disable", "wpa_supplicant@wlan0"], check=False)
-    subprocess.run(["sudo", "ip", "addr", "flush", "dev", "wlan0"], check=False)
-    subprocess.run(["sudo", "dhcpcd", "-k", "wlan0"], check=False)
-    subprocess.run(["sudo", "ip", "link", "set", "wlan0", "up"], check=False)
+    subprocess.run(["sudo", "systemctl", "stop", f"wpa_supplicant@{WIFI_IFACE}"], check=False)
+    subprocess.run(["sudo", "systemctl", "disable", f"wpa_supplicant@{WIFI_IFACE}"], check=False)
+    subprocess.run(["sudo", "ip", "addr", "flush", "dev", WIFI_IFACE], check=False)
+    subprocess.run(["sudo", "dhcpcd", "-k", WIFI_IFACE], check=False)
+    subprocess.run(["sudo", "ip", "link", "set", WIFI_IFACE, "up"], check=False)
     time.sleep(1)
 
 
 def kill_network_manager_and_supplicant():
-    # Only release wlan0 — leave NM running for other interfaces (e.g. wlan1/MT7925)
-    subprocess.run(["sudo", "nmcli", "device", "set", "wlan0", "managed", "no"], check=False)
-    subprocess.run(["sudo", "nmcli", "device", "disconnect", "wlan0"], check=False)
-    subprocess.run(["sudo", "systemctl", "stop", "wpa_supplicant@wlan0"], check=False)
+    # Only release {WIFI_IFACE} — leave NM running for other interfaces (e.g. wlan1/MT7925)
+    subprocess.run(["sudo", "nmcli", "device", "set", WIFI_IFACE, "managed", "no"], check=False)
+    subprocess.run(["sudo", "nmcli", "device", "disconnect", WIFI_IFACE], check=False)
+    subprocess.run(["sudo", "systemctl", "stop", f"wpa_supplicant@{WIFI_IFACE}"], check=False)
     subprocess.run(["sudo", "rfkill", "unblock", "wifi"], check=False)
     time.sleep(1)
 
 
 def start_dnsmasq():
-    dnsmasq_config = """
-interface=wlan0
+    dnsmasq_config = f"""
+interface={WIFI_IFACE}
 bind-interfaces
 dhcp-range=10.10.0.10,10.10.0.50,255.255.255.0,12h
 domain-needed
@@ -103,8 +103,8 @@ def start_hostapd():
 
 def wait_for_ap_ready(timeout_seconds: float = 8.0) -> bool:
     """
-    Block until hostapd has actually brought wlan0 up as an AP, not just
-    until the Popen returned. Polls `iw dev wlan0 info` for `type AP` and
+    Block until hostapd has actually brought WIFI_IFACE up as an AP, not just
+    until the Popen returned. Polls `iw dev WIFI_IFACE info` for `type AP` and
     `channel <n>` (a populated channel line means hostapd finished its
     nl80211 init and is broadcasting beacons).
 
@@ -124,7 +124,7 @@ def wait_for_ap_ready(timeout_seconds: float = 8.0) -> bool:
     while time.monotonic() < deadline:
         try:
             out = subprocess.check_output(
-                ["iw", "dev", "wlan0", "info"],
+                ["iw", "dev", WIFI_IFACE, "info"],
                 text=True, stderr=subprocess.DEVNULL,
             )
             # Two indicators: type AP (nl80211 mode flipped) and channel set
@@ -139,8 +139,8 @@ def wait_for_ap_ready(timeout_seconds: float = 8.0) -> bool:
 
 def setup_ap():
     # Belt-and-suspenders: kill any hostapd/dnsmasq left over from a previous
-    # crashed run before kill_network_manager_and_supplicant grabs wlan0 again.
-    # Without this, a stale hostapd holding wlan0 makes our new instance log
+    # crashed run before kill_network_manager_and_supplicant grabs WIFI_IFACE again.
+    # Without this, a stale hostapd holding WIFI_IFACE makes our new instance log
     # "could not configure driver: nl80211 driver initialization failed".
     subprocess.run(["sudo", "pkill", "-f", f"hostapd.*{HOSTAPD_CONFIG_PATH}"], check=False)
     subprocess.run(["sudo", "pkill", "-f", f"dnsmasq.*{DNSMASQ_CONFIG_PATH}"], check=False)
@@ -165,11 +165,11 @@ def setup_ap():
 def teardown_ap():
     subprocess.run(["sudo", "pkill", "-f", f"hostapd.*{HOSTAPD_CONFIG_PATH}"], check=False)
     subprocess.run(["sudo", "pkill", "-f", f"dnsmasq.*{DNSMASQ_CONFIG_PATH}"], check=False)
-    subprocess.run(["sudo", "ip", "addr", "flush", "dev", "wlan0"], check=False)
-    # Hand wlan0 back to NetworkManager — symmetric with kill_network_manager_and_supplicant
+    subprocess.run(["sudo", "ip", "addr", "flush", "dev", WIFI_IFACE], check=False)
+    # Hand WIFI_IFACE back to NetworkManager — symmetric with kill_network_manager_and_supplicant
     # at start. If NM happens to grab it for Wi-Fi-client mode before the next
-    # AA session starts, setup_ap()'s `nmcli device set wlan0 managed no` plus
+    # AA session starts, setup_ap()'s `nmcli device set WIFI_IFACE managed no` plus
     # the new `pkill stale hostapd` defensive cleanup unsticks it within the
     # NM-disconnect race window.
-    subprocess.run(["sudo", "nmcli", "device", "set", "wlan0", "managed", "yes"], check=False)
+    subprocess.run(["sudo", "nmcli", "device", "set", WIFI_IFACE, "managed", "yes"], check=False)
     print("[wifi_ap] AP down")

@@ -36,7 +36,7 @@ import dbus.mainloop.glib
 from gi.repository import GLib
 
 from wifi_ap import setup_ap, teardown_ap, get_wlan_mac, AP_IP
-from config import SSID, PASSPHRASE, CHANNEL, PORT as AA_PORT, BTNAME
+from config import SSID, PASSPHRASE, CHANNEL, PORT as AA_PORT, BTNAME, WIFI_IFACE, BT_ADAPTER
 
 # ── BlueZ --compat setup + sdp_clean ──────────────────────────────────────────
 
@@ -287,7 +287,7 @@ def _run_wifi_handshake(sock: socket.socket, mac: str):
     """
     print(f"[aa-bt] handshake thread entered (mac={mac})", flush=True)
     try:
-        bssid = get_wlan_mac("wlan0")
+        bssid = get_wlan_mac(WIFI_IFACE)
         print(f"[aa-bt] RFCOMM connected — WiFi handshake", flush=True)
         print(f"[aa-bt]   HOST={AP_IP}:{AA_PORT}  SSID={SSID}  BSSID={bssid}", flush=True)
 
@@ -627,7 +627,7 @@ PROFILE_MANAGER = "org.bluez.ProfileManager1"
 AGENT_MANAGER   = "org.bluez.AgentManager1"
 BLUEZ_SERVICE   = "org.bluez"
 BLUEZ_OBJ       = "/org/bluez"
-ADAPTER_PATH    = "/org/bluez/hci0"
+ADAPTER_PATH    = f"/org/bluez/{BT_ADAPTER}"
 
 AA_UUID  = "4de17a00-52cb-11e6-bdf4-0800200c9a66"
 HFP_HF_UUID = "0000111e-0000-1000-8000-00805f9b34fb"  # HFP Hands-Free (car kit role)
@@ -1197,9 +1197,9 @@ def main():
     # This makes the phone recognise us as a car and auto-trigger Android Auto.
     # Without the correct device class, the phone treats us as a generic BT
     # device and Android Auto does not start automatically → only cleanup sessions.
-    subprocess.run(["hciconfig", "hci0", "class", "0x200418"],
+    subprocess.run(["hciconfig", BT_ADAPTER, "class", "0x200418"],
                    capture_output=True, check=False)
-    subprocess.run(["hciconfig", "hci0", "sspmode", "1"],
+    subprocess.run(["hciconfig", BT_ADAPTER, "sspmode", "1"],
                    capture_output=True, check=False)
     print("[aa-bt] BT class=0x200418 (Car Audio) SSP=1", flush=True)
 
@@ -1219,7 +1219,7 @@ def main():
     except FileNotFoundError:
         print("[aa-bt] rfkill not installed — skipping unblock")
     try:
-        subprocess.run(["hciconfig", "hci0", "up"], capture_output=True, check=False)
+        subprocess.run(["hciconfig", BT_ADAPTER, "up"], capture_output=True, check=False)
     except FileNotFoundError:
         # bluez-tools missing → fall back to btmgmt (bluez-utils, usually present).
         try:
@@ -1329,8 +1329,8 @@ def main():
             raise
 
         # adapter HCI tweaks have to be re-applied — bluetoothd reset the device.
-        subprocess.run(["hciconfig", "hci0", "class", "0x200418"], capture_output=True, check=False)
-        subprocess.run(["hciconfig", "hci0", "sspmode", "1"],     capture_output=True, check=False)
+        subprocess.run(["hciconfig", BT_ADAPTER, "class", "0x200418"], capture_output=True, check=False)
+        subprocess.run(["hciconfig", BT_ADAPTER, "sspmode", "1"],     capture_output=True, check=False)
 
         aa_obj = AAProfile(bus, "/livi/bt/aa")
         _register_aa_profile()
