@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+
+/*
+ * Ping response message (msg ID 12 = PING_RESPONSE on control channel).
+ *
+ * Echoes the timestamp from PingRequest for latency measurement.
+ *
+ * APK class: vzw (16.2), wak (16.1)
+ * WARNING: wak in 16.2 is a DIFFERENT proto (radio-related message container).
+ * Handler: hzh.java — received case 12, sent via mo20033e
+ */
+syntax="proto2";
+
+package oaa.proto.messages;
+
+// confidence: gold [apk_deep_trace]
+message PingResponse
+{
+    required int64 timestamp = 1;  // confidence: gold [apk_deep_trace]
+    optional bytes payload = 2;  // confidence: gold [apk_deep_trace]
+}

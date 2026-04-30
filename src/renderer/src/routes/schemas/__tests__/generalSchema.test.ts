@@ -22,7 +22,7 @@ describe('generalSchema', () => {
       })
     )
 
-    expect(connections.children).toHaveLength(4)
+    expect(connections.children).toHaveLength(5)
 
     expect(connections.children[0]).toEqual(
       expect.objectContaining({
@@ -40,6 +40,12 @@ describe('generalSchema', () => {
       expect.objectContaining({
         type: 'checkbox',
         path: 'autoConn'
+      })
+    )
+    expect(connections.children[4]).toEqual(
+      expect.objectContaining({
+        type: 'route',
+        route: 'wirelessProjection'
       })
     )
   })

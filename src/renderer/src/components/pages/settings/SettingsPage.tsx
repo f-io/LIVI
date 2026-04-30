@@ -31,8 +31,11 @@ export function SettingsPage() {
   const btDirty = useLiviStore((s) => s.bluetoothPairedDirty)
   const applyBtList = useLiviStore((s) => s.applyBluetoothPairedList)
 
+  const aaActive = Boolean(settings?.aa)
+  const restartAvailable = isDongleConnected || aaActive
+
   const handleRestart = async () => {
-    if (!isDongleConnected) return
+    if (!restartAvailable) return
 
     if (needsRestart) {
       await restart()
@@ -47,7 +50,7 @@ export function SettingsPage() {
   if (!node) return null
 
   const title = node.labelKey ? t(node.labelKey) : node.label
-  const showRestart = Boolean(isDongleConnected) && (Boolean(needsRestart) || Boolean(btDirty))
+  const showRestart = restartAvailable && (Boolean(needsRestart) || Boolean(btDirty))
 
   if ('path' in node && node.page) {
     return (

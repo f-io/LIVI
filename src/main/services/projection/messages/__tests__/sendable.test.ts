@@ -345,8 +345,10 @@ describe('sendable messages', () => {
     expect(body.UseBTPhone).toBe(0)
     expect(body.DashboardInfo).toBe(5)
     expect(body.GNSSCapability).toBe(5)
-    expect(body.wifiName).toBe('CarName')
-    expect(body.btName).toBe('CarName')
+    // wifiName/btName carry the (D) suffix so the user can distinguish the
+    // dongle's BT/AP from the native-AA stack on the same head unit.
+    expect(body.wifiName).toBe('CarName (D)')
+    expect(body.btName).toBe('CarName (D)')
     expect(body.boxName).toBe('OEM')
     expect(body.OemName).toBe('OEM')
   })

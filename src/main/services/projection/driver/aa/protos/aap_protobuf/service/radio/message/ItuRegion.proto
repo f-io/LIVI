@@ -1,0 +1,14 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+package aap_protobuf.service.radio;
+
+enum ItuRegion {
+    RADIO_REGION_NONE = 0;
+    RADIO_REGION_ITU_1 = 1;
+    RADIO_REGION_ITU_2 = 2;
+    RADIO_REGION_OIRT = 3;
+    RADIO_REGION_JAPAN = 4;
+    RADIO_REGION_KOREA = 5;
+}

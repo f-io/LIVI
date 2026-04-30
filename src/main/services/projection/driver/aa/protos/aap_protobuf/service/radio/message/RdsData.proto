@@ -1,0 +1,17 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+package aap_protobuf.service.radio.message;
+
+message RdsData {
+  repeated int32 alternative_frequencies = 1;
+  optional int32 program_id = 2;
+  optional int32 music_speech_switch = 3;
+  optional string program_service_name = 4;
+  optional int32 program_type = 5;
+  optional string program_type_name = 6;
+  optional string radio_text = 7;
+  optional bool traffic_program_flag = 8;
+  optional bool traffic_announcement_flag = 9;
+}

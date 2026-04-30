@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+//
+// Validated against APK v16.1 class wcz / v16.2 class wcp (proto2, 11 fields). 0E/0W.
+// Fields 6-9 identified via 16.2 APK tracing + wire capture + aa-proxy-rs cross-reference.
+syntax="proto2";
+
+import "oaa/video/VideoResolutionEnum.proto";
+import "oaa/video/VideoFPSEnum.proto";
+import "oaa/av/MediaCodecTypeEnum.proto";
+import "oaa/video/AdditionalVideoConfigData.proto";
+
+package oaa.proto.data;
+
+// APK class: wcz (16.1) / wcp (16.2) — video channel configuration
+// confidence: silver [apk_static, cross_version, wire_capture]
+message VideoConfig
+{
+    optional enums.VideoResolution.Enum video_resolution = 1;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional enums.VideoFPS.Enum video_fps = 2;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional uint32 margin_width = 3;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional uint32 margin_height = 4;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional uint32 dpi = 5;  // Android density bucket (120/160/240/320/480/640)  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional uint32 decoder_additional_depth = 6;  // Extra decoder buffer frames beyond default (0 = no extra). APK: hnt.java "decoder add depth", buffer = value + 1  // confidence: silver [apk_static, cross_version, wire_capture]
+    optional uint32 viewing_distance = 7;  // Driver-to-display viewing distance in mm (typically 500 ~= 20 inches). Set by ilf.java:176, not consumed phone-side in 16.2  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional uint32 pixel_aspect_ratio_e4 = 8;  // Pixel aspect ratio × 10000 (10000 = 1.0 = square pixels). Used for overlay coordinate correction (fvx.java) and layout rail sizing (hnt.java)  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional uint32 real_density = 9;  // Actual DPI before Android bucket quantization. Used to rank video configs (prefer highest density). Calculated from physical display dimensions  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional enums.MediaCodecType.Enum codec = 10;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional AdditionalVideoConfig additional_config = 11; // APK: wcm (16.1) sub-message  // confidence: gold [deep_trace_verified, 16.2_jadx]
+}

@@ -101,15 +101,18 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const isStreaming = useStatusStore((s) => s.isStreaming)
   const setStreaming = useStatusStore((s) => s.setStreaming)
   const setDongleConnected = useStatusStore((s) => s.setDongleConnected)
-  const isDongleConnected = useStatusStore((s) => s.isDongleConnected)
+  const setAaActive = useStatusStore((s) => s.setAaActive)
+  const isDongleConnected = useStatusStore((s) => s.isDongleConnected || s.isAaActive)
   const resetInfo = useLiviStore((s) => s.resetInfo)
   const setDeviceInfo = useLiviStore((s) => s.setDeviceInfo)
   const setAudioInfo = useLiviStore((s) => s.setAudioInfo)
   const setPcmData = useLiviStore((s) => s.setPcmData)
   const setBluetoothPairedList = useLiviStore((s) => s.setBluetoothPairedList)
+  const isAaActiveFlag = useStatusStore((s) => s.isAaActive)
   const negotiatedWidth = useLiviStore((s) => s.negotiatedWidth)
   const negotiatedHeight = useLiviStore((s) => s.negotiatedHeight)
   const boxInfo = useLiviStore((s) => s.boxInfo)
+  const aaActive = useLiviStore((s) => Boolean((s.settings as { aa?: boolean } | undefined)?.aa))
 
   useEffect(() => {
     if (pathname !== '/') return
@@ -339,6 +342,9 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     type RenderWorkerMsg =
       | { type: 'render-ready' }
       | { type: 'render-error'; message?: string }
+      | { type: 'request-keyframe' }
+      | { type: 'awaiting-keyframe' }
+      | { type: 'streaming' }
       | { type: string; [key: string]: unknown }
 
     const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -359,6 +365,40 @@ const CarplayComponent: React.FC<CarplayProps> = ({
         console.log('[CARPLAY] Render worker ready message received')
         setRenderReady(true)
         setRendererError(null)
+        // Immediately ask the phone for a fresh IDR. The pathname-driven
+        // `sendFrame` further up runs at mount time, before the worker has
+        // its videoPort wired — a keyframe arriving in that window is lost
+        // (render worker drops everything until it sees its own SPS+IDR).
+        // Firing here guarantees we ask *after* the worker can actually
+        // consume the response.
+        void window.projection.ipc.sendFrame().catch(() => {})
+        return
+      }
+
+      if (t === 'request-keyframe') {
+        // The render worker tore down its decoder (resolution change or error)
+        // and now needs a fresh SPS+IDR to re-init. Phone won't volunteer one
+        // until its next scheduled intra-refresh — kick it via the same path
+        // the tab-mount keyframe-request uses.
+        void window.projection.ipc.sendFrame().catch(() => {})
+        return
+      }
+
+      if (t === 'awaiting-keyframe') {
+        // Worker has reset its decoder and is waiting for a new keyframe —
+        // mark streaming as inactive so the overlay shows up and tab nav
+        // doesn't get stuck behind a stale "streaming" UI. We'll be told
+        // to flip it back via 'streaming' once the worker decodes a frame.
+        setStreaming(false)
+        setReceivingVideo(false)
+        return
+      }
+
+      if (t === 'streaming') {
+        // Worker decoded its first frame after init/reset. Now it's safe
+        // to mark the projection as live — the user will see real video,
+        // not a frozen still or a misleading loading state.
+        setStreaming(true)
         return
       }
 
@@ -609,17 +649,20 @@ const CarplayComponent: React.FC<CarplayProps> = ({
       }
     }
     const usbHandler = (_evt: unknown, ...args: unknown[]) => {
+      if (aaActive) return
       const data = args[0] as UsbEvent | undefined
       if (!data) return
       if (data.type === 'plugged') onUsbConnect()
       else if (data.type === 'unplugged') onUsbDisconnect()
     }
 
-    window.projection.usb.listenForEvents(usbHandler)
-    ;(async () => {
-      const last = await window.projection.usb.getLastEvent()
-      if (last) usbHandler(undefined, last as unknown)
-    })()
+    if (!aaActive) {
+      window.projection.usb.listenForEvents(usbHandler)
+      ;(async () => {
+        const last = await window.projection.usb.getLastEvent()
+        if (last) usbHandler(undefined, last as unknown)
+      })()
+    }
 
     return () => {
       disposed = true
@@ -633,7 +676,8 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     clearRetryTimeout,
     navigate,
     resetInfo,
-    setDeviceInfo
+    setDeviceInfo,
+    aaActive
   ])
 
   // Settings/events from main
@@ -698,7 +742,12 @@ const CarplayComponent: React.FC<CarplayProps> = ({
               negotiatedHeight: payload.height
             })
 
-            useStatusStore.setState({ isStreaming: true })
+            // Don't set isStreaming here — that's the moment ProjectionService
+            // first sees a VideoData header, NOT the moment the renderer
+            // actually decoded a frame. Setting it here drops the streaming
+            // overlay before frames are showing, trapping the user on a
+            // black projection page until a keyframe arrives. Wait for the
+            // worker's 'streaming' postMessage instead.
             if (!rendererError) {
               setReceivingVideo(true)
             }
@@ -871,25 +920,42 @@ const CarplayComponent: React.FC<CarplayProps> = ({
         }
 
         case 'plugged': {
-          setDongleConnected(true)
+          if (aaActive) setAaActive(true)
+          else setDongleConnected(true)
           break
         }
 
         case 'unplugged': {
           setStreaming(false)
-          setDongleConnected(false)
+          if (aaActive) setAaActive(false)
+          else setDongleConnected(false)
           setReceivingVideo(false)
           pendingVideoFocusRef.current = false
           setNavVideoOverlayActive(false)
+          // Blank the render worker too — without this the canvas keeps
+          // showing the last decoded frame from the dead session and a
+          // user navigating to the projection tab during a restart sees a
+          // frozen still that doesn't reflect reality.
+          try {
+            renderWorkerRef.current?.postMessage({ type: 'reset' })
+          } catch {
+            /* worker not yet alive — no frame to clear */
+          }
           break
         }
 
         case 'failure': {
           setStreaming(false)
-          setDongleConnected(false)
+          if (aaActive) setAaActive(false)
+          else setDongleConnected(false)
           setReceivingVideo(false)
           pendingVideoFocusRef.current = false
           setNavVideoOverlayActive(false)
+          try {
+            renderWorkerRef.current?.postMessage({ type: 'reset' })
+          } catch {
+            /* worker not yet alive */
+          }
           break
         }
       }
@@ -971,7 +1037,15 @@ const CarplayComponent: React.FC<CarplayProps> = ({
       : ''
 
   const normalizedLinkType = mdLinkType.trim().toLowerCase()
-  const isAndroidAutoActive = normalizedLinkType.includes('android')
+  // Both the USB dongle and the native AA driver use the same on-wire
+  // contract for non-tier displays: the phone streams a full tier (e.g.
+  // 1280×720) and we tell it via `width_margin`/`height_margin` +
+  // `UiConfig.margins` to centre its actual UI inside an AR-matched
+  // rectangle, leaving symmetric black borders. The renderer then strips
+  // those borders with `cropLeft`/`cropTop`. The native AA path goes
+  // through `isAaActiveFlag` (no MDLinkType is set there since nothing
+  // pretends to be an iPhone), so we OR both detection paths.
+  const isAndroidAutoActive = normalizedLinkType.includes('android') || isAaActiveFlag
 
   const aaVisibleSize =
     settings.width > 0 && settings.height > 0

@@ -1,0 +1,1313 @@
+/**
+ * AA wireless session — one per TCP connection.
+ * State: INIT → VERSION → TLS_HANDSHAKE → AUTH → SERVICE_DISCOVERY
+ *        → CHANNEL_SETUP → RUNNING → CLOSED
+ * Pre-TLS frames ar%e handled inline; post-TLS cleartext is bridged through tlsSocket.
+ */
+
+import { EventEmitter } from 'node:events'
+import * as net from 'node:net'
+import * as tls from 'node:tls'
+import { AudioChannel, type AudioChannelType } from '../channels/AudioChannel.js'
+import { InputChannel, type TouchPointer } from '../channels/InputChannel.js'
+import {
+  MediaInfoChannel,
+  type MediaPlaybackMetadata,
+  type MediaPlaybackStatus
+} from '../channels/MediaInfoChannel.js'
+import { MicChannel } from '../channels/MicChannel.js'
+import { VideoChannel } from '../channels/VideoChannel.js'
+import {
+  AUDIO_TYPE,
+  AV_MSG,
+  AV_SETUP_STATUS,
+  AV_STREAM_TYPE,
+  BT_PAIRING_METHOD,
+  CH,
+  COLOR_SCHEME,
+  CTRL_MSG,
+  DISPLAY_TYPE,
+  FRAME_FLAGS,
+  MEDIA_CODEC,
+  SENSOR_TYPE,
+  STATUS_OK,
+  VERSION,
+  VIDEO_FPS,
+  VIDEO_RESOLUTION
+} from '../constants.js'
+import { HU_CERT_PEM, HU_KEY_PEM } from '../crypto/cert.js'
+import { createTlsClient, TlsBridge } from '../crypto/TlsBridge.js'
+import { encodeFrame, FrameParser, type RawFrame } from '../frame/codec.js'
+import { decode, encode, loadProtos, type ProtoTypes } from '../proto/index.js'
+import { ControlChannel } from './ControlChannel.js'
+
+// ── Session state machine ─────────────────────────────────────────────────────
+const enum State {
+  INIT,
+  VERSION,
+  TLS_HANDSHAKE,
+  AUTH,
+  SERVICE_DISCOVERY,
+  CHANNEL_SETUP,
+  RUNNING,
+  CLOSED
+}
+
+export interface SessionConfig {
+  /** HU label in SDR */
+  huName?: string
+  /** AA tier the phone encodes into (800×480 / 1280×720 / 1920×1080 / 2560×1440 / 3840×2160) */
+  videoWidth?: number
+  videoHeight?: number
+  videoDpi?: number
+  videoFps?: 30 | 60
+  /** Physical HU display — drives margin / inset computation for non-tier ARs */
+  displayWidth?: number
+  displayHeight?: number
+  /** Driver seat position. Matches LIVI HandDriveType (LHD=0 / RHD=1). */
+  driverPosition?: 0 | 1
+  /** BT adapter MAC for BT channel */
+  btMacAddress?: string
+  /** WiFi AP BSSID/SSID/password */
+  wifiBssid?: string
+  wifiSsid?: string
+  wifiPassword?: string
+}
+
+export class Session extends EventEmitter {
+  // Events: 'video-frame', 'audio-frame', 'audio-start', 'audio-stop',
+  //         'mic-start', 'mic-stop',
+  //         'host-ui-requested', 'media-metadata', 'media-status',
+  //         'connected', 'disconnected', 'error'
+
+  private _state: State = State.INIT
+  private _rawParser = new FrameParser() // pre-TLS frame parser
+  private _bridge!: TlsBridge
+  private _tlsSocket!: tls.TLSSocket
+  private _pingTimer: ReturnType<typeof setInterval> | null = null
+  // (channelId, flags) for the next TLS record. Writes are serialised through
+  // _writeChain so Node's Writable layer cannot batch two tlsSocket.write()
+  // calls into a single TLS record — that would collapse multi-channel sends.
+  private _pendingChannelId = 0
+  private _pendingFlags = 0
+  private _writeChain: Promise<void> = Promise.resolve()
+  // (channelId, flags) per injected TLS record, consumed in 'data' order
+  private _channelQueue: Array<{ channelId: number; flags: number }> = []
+  private _proto!: ProtoTypes
+  private _control!: ControlChannel
+  private _video!: VideoChannel
+  /** Audio channels keyed by channelId (CH.MEDIA_AUDIO=4, SPEECH_AUDIO=5, SYSTEM_AUDIO=6). */
+  private _audio = new Map<number, AudioChannel>()
+  private _input!: InputChannel
+  private _media!: MediaInfoChannel
+  private _mic!: MicChannel
+  private _channelMap = new Map<number, number>() // channelId → service type
+
+  constructor(
+    private readonly _sock: net.Socket,
+    private readonly _cfg: SessionConfig
+  ) {
+    super()
+    this._setupRawPipeline()
+  }
+
+  // ── Internal wiring ───────────────────────────────────────────────────────
+
+  private _setupRawPipeline(): void {
+    this._sock.on('data', (chunk: Buffer) => {
+      // Trace pre-RUNNING (bounded handshake bytes); enable per-frame via AA_TRACE=1.
+      if (this._state !== State.RUNNING || process.env['AA_TRACE'] === '1') {
+        const fullDump = this._state <= State.TLS_HANDSHAKE
+        const hexPreview =
+          fullDump || chunk.length <= 48
+            ? chunk.toString('hex')
+            : chunk.subarray(0, 48).toString('hex') + `…(+${chunk.length - 48}B)`
+        console.log(`[Session] sock← ${chunk.length}B state=${this._state}: ${hexPreview}`)
+      }
+      if (this._state <= State.TLS_HANDSHAKE) {
+        this._rawParser.push(chunk)
+      } else {
+        this._stripHeaderAndInjectTls(chunk)
+      }
+    })
+
+    this._sock.on('close', () => this._transition(State.CLOSED, 'socket closed'))
+
+    // Phone TCP FIN: keep write side open in RUNNING (transient phone hiccup);
+    // otherwise complete the close so the phone can open a fresh session.
+    this._sock.on('end', () => {
+      const stateNames = [
+        'INIT',
+        'VERSION',
+        'TLS_HANDSHAKE',
+        'AUTH',
+        'SERVICE_DISCOVERY',
+        'CHANNEL_SETUP',
+        'RUNNING',
+        'CLOSED'
+      ]
+      const stateName = stateNames[this._state] ?? this._state.toString()
+      if (this._pingTimer) {
+        clearInterval(this._pingTimer)
+        this._pingTimer = null
+      }
+      if (this._state === State.RUNNING) {
+        console.log(`[Session] phone sent TCP FIN in RUNNING state — keeping write side open`)
+      } else {
+        console.log(`[Session] phone sent TCP FIN state=${stateName} — completing close`)
+        this._sock.end()
+      }
+    })
+
+    this._sock.on('error', (err) => {
+      this.emit('error', err)
+      this._transition(State.CLOSED, err.message)
+    })
+
+    this._rawParser.onFrame((frame) => this._handleRawFrame(frame))
+  }
+
+  /** Buffer for reassembling TLS-layer frame headers (post-TLS) */
+  private _tlsBuf = Buffer.allocUnsafe(0)
+
+  /**
+   * Per-channel cleartext reassembly for multi-fragment encrypted messages.
+   * Each encrypted AA frame carries one complete TLS record — we must inject
+   * them independently and queue one ctx per inject; aasdk reassembles on the
+   * cleartext side via FIRST/MIDDLE/LAST. The first cleartext fragment carries
+   * the 2-byte msgId; subsequent fragments are pure proto continuation.
+   */
+  private _tlsCleartextFragments = new Map<number, { parts: Buffer[]; flags: number }>()
+
+  private _stripHeaderAndInjectTls(chunk: Buffer): void {
+    this._tlsBuf = Buffer.concat([this._tlsBuf, chunk])
+
+    while (this._tlsBuf.length >= 4) {
+      // AA frame header — SHORT (4B): [ch][flags][size:2BE]
+      //                  EXTENDED (8B, FIRST-only): [ch][flags][size:2BE][totalSize:4BE]
+      const channelId = this._tlsBuf.readUInt8(0)
+      const flags = this._tlsBuf.readUInt8(1)
+      const isEncrypted = (flags & 0x08) !== 0
+      const isFirst = (flags & 0x01) !== 0
+      const isLast = (flags & 0x02) !== 0
+      const isExtended = isFirst && !isLast
+      const headerLen = isExtended ? 8 : 4
+
+      if (this._tlsBuf.length < headerLen) break
+
+      const payloadSize = this._tlsBuf.readUInt16BE(2)
+      const totalLen = headerLen + payloadSize
+      if (this._tlsBuf.length < totalLen) break
+
+      const rawPayload = Buffer.from(this._tlsBuf.subarray(headerLen, totalLen))
+      this._tlsBuf = this._tlsBuf.subarray(totalLen)
+
+      if (!isEncrypted) {
+        // Plaintext post-TLS (PING_REQUEST/RESPONSE) — never fragments in practice.
+        if (rawPayload.length < 2) {
+          console.warn('[Session] post-TLS plaintext too short')
+          continue
+        }
+        const msgId = rawPayload.readUInt16BE(0)
+        const payload = rawPayload.subarray(2)
+        console.log(
+          `[Session] ← PLAIN ch=${channelId} msgId=0x${msgId.toString(16).padStart(4, '0')} len=${payload.length}`
+        )
+        this._handleDecryptedMessage(channelId, flags, msgId, payload)
+        continue
+      }
+
+      // Encrypted: rawPayload is one full TLS-1.2 record. Inject one record at
+      // a time + one ctx per inject so cleartext 'data' events stay ordered.
+      if (this._state !== State.RUNNING || process.env['AA_TRACE'] === '1') {
+        console.log(
+          `[Session] TLS inject ch=${channelId} flags=0x${flags.toString(16)} record=${payloadSize}B`
+        )
+      }
+      this._channelQueue.push({ channelId, flags })
+      this._bridge.injectBytes(rawPayload)
+    }
+  }
+
+  // ── Pre-TLS frame handling ────────────────────────────────────────────────
+
+  private async _handleRawFrame(frame: RawFrame): Promise<void> {
+    const { msgId, payload } = frame
+
+    switch (msgId) {
+      case CTRL_MSG.VERSION_RESPONSE:
+        await this._onVersionResponse(payload)
+        break
+
+      case CTRL_MSG.SSL_HANDSHAKE:
+        // Feed TLS handshake bytes into the TLS engine
+        console.log(`[Session] TLS ← phone: ${payload.length} bytes (SSL_HANDSHAKE)`)
+        if (this._bridge) this._bridge.injectBytes(payload)
+        break
+
+      default:
+        // Encrypted frame piggy-backed on the same TCP segment as TLS Finished
+        // (e.g. AUTH_COMPLETE immediately following TLS handshake).
+        if (this._bridge && this._tlsSocket && (frame.flags & 0x08) !== 0) {
+          console.log(
+            `[Session] pre-TLS encrypted frame ch=${frame.channelId} flags=0x${frame.flags.toString(16)} — routing to TLS`
+          )
+          this._channelQueue.push({ channelId: frame.channelId, flags: frame.flags })
+          this._bridge.injectBytes(frame.rawPayload)
+        } else {
+          console.log(
+            `[Session] pre-TLS unknown msgId=0x${msgId.toString(16)} flags=0x${frame.flags.toString(16)}`
+          )
+        }
+    }
+  }
+
+  // ── Post-TLS frame handling ───────────────────────────────────────────────
+
+  private _handleDecryptedMessage(
+    channelId: number,
+    flags: number,
+    msgId: number,
+    payload: Buffer
+  ): void {
+    // Per-message trace is the loudest spammer in steady state — gate on
+    // pre-RUNNING (handshake / channel setup) or AA_TRACE=1.
+    if (this._state !== State.RUNNING || process.env['AA_TRACE'] === '1') {
+      const stateName =
+        [
+          'INIT',
+          'VERSION',
+          'TLS_HANDSHAKE',
+          'AUTH',
+          'SERVICE_DISCOVERY',
+          'CHANNEL_SETUP',
+          'RUNNING',
+          'CLOSED'
+        ][this._state] ?? this._state.toString()
+      console.log(
+        `[Session] MSG ch=${channelId} msgId=0x${msgId.toString(16).padStart(4, '0')} len=${payload.length} state=${stateName}`
+      )
+    }
+
+    if (channelId === CH.CONTROL) {
+      this._control?.handleMessage(msgId, payload)
+      return
+    }
+
+    // CHANNEL_OPEN_REQUEST normally arrives on the target service channel,
+    // not ch=0 — aasdk routes by frame channelId; only session-level control
+    // (Version/SDR/Ping/AudioFocus/Shutdown) goes on ch=0.
+    if (msgId === CTRL_MSG.CHANNEL_OPEN_REQUEST) {
+      console.log(`[Session] CHANNEL_OPEN_REQUEST ch=${channelId} → responding OK`)
+      const respBuf = encode(this._proto.ChannelOpenResponse, { status: STATUS_OK })
+      this._sendEncrypted(
+        channelId,
+        FRAME_FLAGS.ENC_CONTROL,
+        CTRL_MSG.CHANNEL_OPEN_RESPONSE,
+        respBuf
+      )
+      return
+    }
+
+    if (channelId === CH.VIDEO) {
+      if (msgId === AV_MSG.SETUP_REQUEST) {
+        this._handleAVSetupRequest(channelId, payload)
+        return
+      }
+      const rawPayload = Buffer.concat([Buffer.allocUnsafe(2), payload])
+      rawPayload.writeUInt16BE(msgId, 0)
+      const frame = { channelId, flags, msgId, payload, rawPayload }
+      this._video?.handleMessage(msgId, payload, frame)
+      return
+    }
+
+    // Audio channels (media/speech/system) share AV wire shape with video.
+    const audioCh = this._audio.get(channelId)
+    if (audioCh && msgId !== AV_MSG.SETUP_REQUEST) {
+      const rawPayload = Buffer.concat([Buffer.allocUnsafe(2), payload])
+      rawPayload.writeUInt16BE(msgId, 0)
+      const frame = { channelId, flags, msgId, payload, rawPayload }
+      audioCh.handleMessage(msgId, payload, frame)
+      return
+    }
+
+    if (channelId === CH.SENSOR) {
+      if (msgId === 0x8001) {
+        // SENSOR_MESSAGE_REQUEST
+        this._handleSensorStartRequest(payload)
+        return
+      }
+      console.log(
+        `[Session] sensor ch=${channelId} msgId=0x${msgId.toString(16).padStart(4, '0')} (unhandled)`
+      )
+      return
+    }
+
+    if (channelId === CH.MEDIA_INFO) {
+      this._media?.handleMessage(msgId, payload)
+      return
+    }
+
+    if (channelId === CH.MIC_INPUT) {
+      if (msgId === AV_MSG.SETUP_REQUEST) {
+        this._handleAVSetupRequest(channelId, payload)
+        return
+      }
+      const rawPayload = Buffer.concat([Buffer.allocUnsafe(2), payload])
+      rawPayload.writeUInt16BE(msgId, 0)
+      const frame = { channelId, flags, msgId, payload, rawPayload }
+      this._mic?.handleMessage(msgId, payload, frame)
+      return
+    }
+
+    if (channelId === CH.WIFI) {
+      if (msgId === 0x8001) {
+        // WIFI_CREDENTIALS_REQUEST
+        console.log('[Session] WifiCredentialsRequest received — sending credentials')
+        this._handleWifiCredentialsRequest()
+        return
+      }
+      console.log(
+        `[Session] wifi ch=${channelId} msgId=0x${msgId.toString(16).padStart(4, '0')} (unhandled)`
+      )
+      return
+    }
+
+    // AV SETUP_REQUEST on audio channels
+    if (msgId === AV_MSG.SETUP_REQUEST) {
+      this._handleAVSetupRequest(channelId, payload)
+      return
+    }
+
+    // AV START_INDICATION — phone announces it's about to send media frames.
+    if (msgId === AV_MSG.START_INDICATION) {
+      let sessionId = -1
+      let configIdx = -1
+      // Manual decode: field 1 tag=0x08, field 2 tag=0x10
+      let i = 0
+      while (i < payload.length) {
+        const tag = payload[i++]!
+        if (tag === 0x08 && i < payload.length) {
+          sessionId = payload[i++]!
+        } else if (tag === 0x10 && i < payload.length) {
+          configIdx = payload[i++]!
+        } else break
+      }
+      const label =
+        channelId === CH.VIDEO
+          ? 'video'
+          : channelId === CH.MEDIA_AUDIO ||
+              channelId === CH.SPEECH_AUDIO ||
+              channelId === CH.SYSTEM_AUDIO
+            ? 'audio'
+            : `ch${channelId}`
+      console.log(
+        `[Session] ${label} START_INDICATION ch=${channelId} sessionId=${sessionId} configIdx=${configIdx} — stream starting`
+      )
+      return
+    }
+
+    // Input channel uses its own msgId space; 0x8002 = BindingResponse (no-op until binding wired)
+    if (channelId === CH.INPUT && msgId === 0x8002) {
+      console.log(
+        `[Session] INPUT ch=${channelId} BindingResponse (len=${payload.length}) — ignoring (binding flow TBD)`
+      )
+      return
+    }
+
+    console.log(
+      `[Session] unhandled ch=${channelId} msgId=0x${msgId.toString(16).padStart(4, '0')}`
+    )
+  }
+
+  // ── Session startup sequence ──────────────────────────────────────────────
+
+  /** Entry point — called once the TCP connection is accepted. */
+  async start(): Promise<void> {
+    this._proto = await loadProtos()
+
+    // Initialise channels
+    this._control = new ControlChannel(this._proto, (ch, flags, msgId, data) =>
+      this._sendAA(ch, flags, msgId, data)
+    )
+
+    this._video = new VideoChannel((ch, flags, msgId, data) =>
+      this._sendEncrypted(ch, flags, msgId, data)
+    )
+
+    this._video.on('frame', (buf: Buffer, ts: bigint) => this.emit('video-frame', buf, ts))
+
+    // Exit/Home on AA display — keep session alive so phone can re-request focus.
+    this._video.on('host-ui-requested', () => this.emit('host-ui-requested'))
+
+    // Audio sinks: media (4), speech/guidance (5), system/notification (6).
+    // 'audio-start'/'audio-stop' drive ProjectionAudio's `mediaActive` gate.
+    for (const channelId of [CH.MEDIA_AUDIO, CH.SPEECH_AUDIO, CH.SYSTEM_AUDIO]) {
+      const audio = new AudioChannel(channelId, (ch, flags, msgId, data) =>
+        this._sendEncrypted(ch, flags, msgId, data)
+      )
+      audio.on('pcm', (buf: Buffer, ts: bigint, channel: AudioChannelType) =>
+        this.emit('audio-frame', buf, ts, channel, channelId)
+      )
+      audio.on('start', (channel: AudioChannelType, chId: number) =>
+        this.emit('audio-start', channel, chId)
+      )
+      audio.on('stop', (channel: AudioChannelType, chId: number) =>
+        this.emit('audio-stop', channel, chId)
+      )
+      this._audio.set(channelId, audio)
+    }
+
+    // Input channel — outbound only (HU → Phone)
+    this._input = new InputChannel((ch, flags, msgId, data) =>
+      this._sendEncrypted(ch, flags, msgId, data)
+    )
+
+    // Mic channel — outbound HU→Phone PCM, lifecycle driven by phone OPEN_REQUEST.
+    this._mic = new MicChannel(CH.MIC_INPUT, (ch, flags, msgId, data) =>
+      this._sendEncrypted(ch, flags, msgId, data)
+    )
+    this._mic.on('mic-start', (chId: number) => this.emit('mic-start', chId))
+    this._mic.on('mic-stop', (chId: number) => this.emit('mic-stop', chId))
+
+    // NowPlaying — forward to driver for MediaData mapping
+    this._media = new MediaInfoChannel()
+    this._media.on('metadata', (m: MediaPlaybackMetadata) => this.emit('media-metadata', m))
+    this._media.on('status', (s: MediaPlaybackStatus) => this.emit('media-status', s))
+
+    this._control.on('service-discovery-request', (req: Record<string, unknown>) => {
+      console.log(`[Session] Phone: ${req['labelText'] ?? '?'} / ${req['deviceName'] ?? '?'}`)
+      const sdResp = this._buildServiceDiscoveryResponse()
+      this._sendAA(CH.CONTROL, FRAME_FLAGS.ENC_SIGNAL, CTRL_MSG.SERVICE_DISCOVERY_RESPONSE, sdResp)
+
+      // VideoFocusIndication MUST wait until after AVChannelSetupResponse for video
+      // Sending it now triggers AudioFocus RELEASE + FIN.
+
+      // Ping after SDR: sendPing() + schedulePing() every 1500ms
+      // Ping uses PLAINTEXT (ControlServiceChannel::sendPingRequest uses PLAIN).
+      const sendPing = () => {
+        if (this._state >= State.CLOSED) return
+        const pingBuf = encode(this._proto.PingRequest, { timestamp: Date.now() * 1000 })
+        this._sendAA(CH.CONTROL, FRAME_FLAGS.PLAINTEXT, CTRL_MSG.PING_REQUEST, pingBuf)
+      }
+      sendPing()
+      this._pingTimer = setInterval(sendPing, 1500)
+      console.log('[Session] SDR + Ping sent (1500ms interval)')
+
+      this._openChannels()
+    })
+
+    // CHANNEL_OPEN_REQUEST on ch=0 (rare — normally arrives on the target channel)
+    this._control.on('channel-open-request', (channelId: number) => {
+      this._control.sendChannelOpenResponse(channelId, STATUS_OK)
+    })
+
+    this._control.on('av-setup-request', (channelId: number, payload: Buffer) => {
+      this._handleAVSetupRequest(channelId, payload)
+    })
+
+    this._control.on('shutdown', (reason: number) => {
+      console.log(`[Session] Phone shutdown, reason=${reason}`)
+      this._transition(State.CLOSED, `phone shutdown reason=${reason}`)
+    })
+
+    // Step 1: send version request
+    this._transition(State.VERSION)
+    this._sendVersionRequest()
+  }
+
+  // ── Public outbound API (HU → Phone) ─────────────────────────────────────
+  /** Touch event in advertised touchscreen-space pixels. No-op outside RUNNING. */
+  sendTouch(action: number, pointers: TouchPointer[]): void {
+    if (this._state !== State.RUNNING || !this._input) return
+    this._input.sendTouch(action, pointers)
+  }
+
+  /**
+   * Push captured mic PCM (s16le, 16 kHz mono) to the phone.
+   * No-op outside RUNNING or when the mic channel hasn't been opened by the
+   * phone — the MicChannel itself drops frames silently in those cases.
+   */
+  sendMicPcm(buf: Buffer, ts: bigint = BigInt(Date.now()) * 1_000_000n): void {
+    if (this._state !== State.RUNNING || !this._mic) return
+    this._mic.pushPcm(buf, ts)
+  }
+
+  /** HW button event. Codes in InputChannel.BUTTON_KEY. */
+  sendButton(keyCode: number | readonly number[], down: boolean): void {
+    if (this._state !== State.RUNNING || !this._input) return
+    this._input.sendButton(keyCode, down)
+  }
+
+  /**
+   * Ask the phone to emit a fresh IDR. Same VideoFocusIndication(PROJECTED,
+   * unsolicited=false) aasdk sends after AV setup — phone re-primes its encoder.
+   */
+  requestKeyframe(): void {
+    if (this._state !== State.RUNNING) return
+    // payload: [focus=PROJECTED(1)]; unsolicited defaults to false
+    this._sendEncrypted(
+      CH.VIDEO,
+      FRAME_FLAGS.ENC_SIGNAL,
+      AV_MSG.VIDEO_FOCUS_INDICATION,
+      Buffer.from([0x08, 0x01])
+    )
+    console.log(
+      '[Session] keyframe requested via VideoFocusIndication(PROJECTED, unsolicited=false)'
+    )
+  }
+
+  /**
+   * HU-initiated shutdown via ByeByeRequest. Idempotent.
+   * Default reason=1 (USER_SELECTION) — explicit user action in the HU shell.
+   */
+  requestShutdown(reason = 1 /* USER_SELECTION */): void {
+    if (this._state >= State.CLOSED) return
+    const payload = Buffer.from([0x08, reason & 0xff])
+    console.log(`[Session] requesting shutdown reason=${reason}`)
+    try {
+      this._sendEncrypted(CH.CONTROL, FRAME_FLAGS.ENC_SIGNAL, CTRL_MSG.SHUTDOWN_REQUEST, payload)
+    } catch (err) {
+      console.warn(`[Session] shutdown send failed: ${(err as Error).message}`)
+    }
+    this._transition(State.CLOSED, 'hu-initiated shutdown')
+    try {
+      this._sock.end()
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private _sendVersionRequest(): void {
+    // VERSION_REQUEST: major(2BE) + minor(2BE)
+    const data = Buffer.allocUnsafe(4)
+    data.writeUInt16BE(VERSION.MAJOR, 0)
+    data.writeUInt16BE(VERSION.MINOR, 2)
+    const frame = encodeFrame(CH.CONTROL, FRAME_FLAGS.PLAINTEXT, CTRL_MSG.VERSION_REQUEST, data)
+    this._sock.write(frame)
+  }
+
+  private async _onVersionResponse(payload: Buffer): Promise<void> {
+    // payload: [major(2BE)][minor(2BE)][status(2BE)]
+    if (payload.length < 6) {
+      console.error('[Session] VERSION_RESPONSE too short')
+      return
+    }
+    const major = payload.readUInt16BE(0)
+    const minor = payload.readUInt16BE(2)
+    const status = payload.readUInt16BE(4)
+
+    if (status === VERSION.STATUS_MISMATCH) {
+      this._transition(State.CLOSED, `version mismatch ${major}.${minor}`)
+      return
+    }
+    console.log(`[Session] Version negotiated: ${major}.${minor}`)
+
+    // Step 2: start TLS handshake
+    this._transition(State.TLS_HANDSHAKE)
+    await this._startTls()
+  }
+
+  private async _startTls(): Promise<void> {
+    // Coalesce same-tick TLS handshake chunks into one SSL_HANDSHAKE frame.
+    // Electron's BoringSSL splits the 2nd flight across multiple _write()s;
+    // aasdk on the phone needs the flight as one blob or it FINs with
+    // "bad record mac". setImmediate flush fires once after the tick.
+    const hsOutBuf: Buffer[] = []
+    let hsFlushScheduled = false
+    const flushHs = (): void => {
+      hsFlushScheduled = false
+      if (hsOutBuf.length === 0) return
+      const all = Buffer.concat(hsOutBuf)
+      const n = hsOutBuf.length
+      hsOutBuf.length = 0
+      const note = n > 1 ? ` coalesced from ${n} chunks` : ''
+      console.log(
+        `[Session] TLS → phone: ${all.length}B (SSL_HANDSHAKE${note}): ${all.toString('hex')}`
+      )
+      const frame = encodeFrame(CH.CONTROL, FRAME_FLAGS.PLAINTEXT, CTRL_MSG.SSL_HANDSHAKE, all)
+      this._sock.write(frame)
+    }
+
+    const { tlsSocket, bridge } = createTlsClient(
+      HU_CERT_PEM,
+      HU_KEY_PEM,
+      // Handshake: wrap in SSL_HANDSHAKE frames. Post-handshake: _pendingChannelId/Flags
+      // are set in _sendAA right before tlsSocket.write(); _writeChain serialises so the
+      // pending values always match this record.
+      (tlsBytes) => {
+        if (this._state === State.TLS_HANDSHAKE) {
+          hsOutBuf.push(tlsBytes)
+          if (!hsFlushScheduled) {
+            hsFlushScheduled = true
+            setImmediate(flushHs)
+          }
+        } else {
+          const header = Buffer.allocUnsafe(4)
+          header.writeUInt8(this._pendingChannelId, 0)
+          header.writeUInt8(this._pendingFlags, 1)
+          header.writeUInt16BE(tlsBytes.length, 2)
+          if (this._state !== State.RUNNING || process.env['AA_TRACE'] === '1') {
+            console.log(
+              `[Session] sock→ ENC ch=${this._pendingChannelId} flags=0x${this._pendingFlags.toString(16)} ${tlsBytes.length}B`
+            )
+          }
+          this._sock.write(Buffer.concat([header, tlsBytes]))
+        }
+      }
+    )
+
+    this._bridge = bridge
+    this._tlsSocket = tlsSocket
+
+    // Cleartext per decrypted AA-frame record. ctx is queued 1:1 in _stripHeaderAndInjectTls.
+    // Reassembly: BULK(0x03) emit; FIRST(0x01) start; MIDDLE append; LAST(0x02) concat+emit.
+    // msgId lives in the FIRST fragment's first 2 bytes only.
+    tlsSocket.on('data', (chunk: Buffer) => {
+      const ctx = this._channelQueue.shift()
+      if (!ctx) {
+        console.warn(`[Session] TLS data (${chunk.length}B) without channel ctx — dropping`)
+        return
+      }
+      const isFirst = (ctx.flags & 0x01) !== 0
+      const isLast = (ctx.flags & 0x02) !== 0
+
+      // BULK — single-frame message, emit immediately.
+      if (isFirst && isLast) {
+        if (chunk.length < 2) {
+          console.warn(`[Session] TLS decrypted payload too short (${chunk.length}B)`)
+          return
+        }
+        const msgId = chunk.readUInt16BE(0)
+        const payload = chunk.subarray(2)
+        if (this._state !== State.RUNNING || process.env['AA_TRACE'] === '1') {
+          console.log(
+            `[Session] ← ch=${ctx.channelId} msgId=0x${msgId.toString(16).padStart(4, '0')} len=${payload.length}`
+          )
+        }
+        this._handleDecryptedMessage(ctx.channelId, ctx.flags, msgId, payload)
+        return
+      }
+
+      // FIRST — start cleartext accumulator for this channel.
+      if (isFirst && !isLast) {
+        this._tlsCleartextFragments.set(ctx.channelId, { parts: [chunk], flags: ctx.flags })
+        if (this._state !== State.RUNNING || process.env['AA_TRACE'] === '1') {
+          console.log(
+            `[Session] TLS cleartext frag-start ch=${ctx.channelId} have=${chunk.length}B`
+          )
+        }
+        return
+      }
+
+      // MIDDLE / LAST — append cleartext.
+      const state = this._tlsCleartextFragments.get(ctx.channelId)
+      if (!state) {
+        console.warn(
+          `[Session] ch=${ctx.channelId} cleartext continuation without first fragment — dropping`
+        )
+        return
+      }
+      state.parts.push(chunk)
+
+      if (!isLast) {
+        if (this._state !== State.RUNNING || process.env['AA_TRACE'] === '1') {
+          const have = state.parts.reduce((n, p) => n + p.length, 0)
+          console.log(`[Session] TLS cleartext frag-cont  ch=${ctx.channelId} have=${have}B`)
+        }
+        return
+      }
+
+      // LAST — concat all cleartext fragments and emit.
+      this._tlsCleartextFragments.delete(ctx.channelId)
+      const full = Buffer.concat(state.parts)
+      if (full.length < 2) {
+        console.warn(
+          `[Session] ch=${ctx.channelId} reassembled cleartext too short (${full.length}B)`
+        )
+        return
+      }
+      const msgId = full.readUInt16BE(0)
+      const payload = full.subarray(2)
+      if (this._state !== State.RUNNING || process.env['AA_TRACE'] === '1') {
+        console.log(
+          `[Session] ← ch=${ctx.channelId} msgId=0x${msgId.toString(16).padStart(4, '0')} len=${payload.length} (reassembled from ${state.parts.length} fragments)`
+        )
+      }
+      // Use FIRST fragment's flags — only first/last bits differ across fragments.
+      this._handleDecryptedMessage(ctx.channelId, state.flags, msgId, payload)
+    })
+
+    tlsSocket.on('error', (err) => {
+      console.error('[Session] TLS error:', err.message)
+      this.emit('error', err)
+    })
+
+    tlsSocket.on('secureConnect', () => {
+      console.log('[Session] TLS handshake complete')
+      this._transition(State.AUTH)
+      void this._postTlsSetup()
+    })
+
+    // tls.connect() starts the handshake automatically.
+  }
+
+  private async _postTlsSetup(): Promise<void> {
+    // AUTH_COMPLETE is sent PLAINTEXT (aasdk EncryptionType for ch=0/0x0004 = PLAIN).
+    const authBuf = encode(this._proto.AuthCompleteIndication, { status: STATUS_OK })
+    console.log(`[Session] AUTH_COMPLETE proto bytes: ${authBuf.toString('hex')}`)
+    this._sendAA(CH.CONTROL, FRAME_FLAGS.PLAINTEXT, CTRL_MSG.AUTH_COMPLETE, authBuf)
+    this._transition(State.SERVICE_DISCOVERY)
+    console.log('[Session] AUTH_COMPLETE sent — waiting for SERVICE_DISCOVERY_REQUEST')
+  }
+
+  // ── ServiceDiscoveryResponse builder ─────────────────────────────────────
+
+  private _buildServiceDiscoveryResponse(): Buffer {
+    const cfg = this._cfg
+    const vW = cfg.videoWidth ?? 1280
+    const vH = cfg.videoHeight ?? 720
+    const dpi = cfg.videoDpi ?? 140
+    const fps = cfg.videoFps ?? 30
+
+    // VideoCodecResolutionType: 800x480=1, 1280x720=2, 1920x1080=3, 2560x1440=4, 3840x2160=5
+    const vRes: number =
+      vW >= 3840
+        ? 5
+        : vW >= 2560
+          ? 4
+          : vW >= 1920
+            ? VIDEO_RESOLUTION._1920x1080
+            : vW <= 800
+              ? VIDEO_RESOLUTION._800x480
+              : VIDEO_RESOLUTION._1280x720
+
+    const vFps = fps === 60 ? VIDEO_FPS._60 : VIDEO_FPS._30
+
+    // Non-tier display fit: phone encodes the full tier with symmetric
+    // black bars; renderer crops them off display-side.
+    let widthMargin = 0
+    let heightMargin = 0
+    if (cfg.displayWidth && cfg.displayHeight && vW > 0 && vH > 0) {
+      const displayAR = cfg.displayWidth / cfg.displayHeight
+      const tierAR = vW / vH
+      if (displayAR > tierAR) {
+        // wider display → letterbox
+        const contentH = Math.round(vW / displayAR) & ~1
+        heightMargin = Math.max(0, vH - contentH)
+      } else if (displayAR < tierAR) {
+        // narrower display → pillarbox
+        const contentW = Math.round(vH * displayAR) & ~1
+        widthMargin = Math.max(0, vW - contentW)
+      }
+    }
+    // UiConfig.margins forces symmetric split; without it the phone top-aligns.
+    const insetTop = Math.floor(heightMargin / 2)
+    const insetBottom = heightMargin - insetTop
+    const insetLeft = Math.floor(widthMargin / 2)
+    const insetRight = widthMargin - insetLeft
+
+    // AudioStreamType: GUIDANCE=1, SYSTEM=2, MEDIA=3, TELEPHONY=4
+    const AS_GUIDANCE = 1,
+      AS_SYSTEM = 2,
+      AS_MEDIA = 3
+
+    // SensorType (aasdk numeric values)
+    const SENSOR = {
+      LOCATION: 1,
+      COMPASS: 2,
+      SPEED: 3,
+      RPM: 4,
+      ODOMETER: 5,
+      FUEL: 6,
+      PARKING_BRAKE: 7,
+      GEAR: 8,
+      NIGHT_MODE: 10,
+      ENV_DATA: 11,
+      HVAC: 12,
+      DRIVING_STATUS: 13,
+      ACCELEROMETER: 19,
+      GYROSCOPE: 20,
+      GPS_SATELLITE: 21
+    } as const
+
+    const TS_CAPACITIVE = 1
+
+    const channels: object[] = []
+
+    // ── Video (ch=3) ──
+    channels.push({
+      id: CH.VIDEO,
+      mediaSinkService: {
+        availableType: MEDIA_CODEC.VIDEO_H264_BP,
+        availableWhileInCall: true,
+        videoConfigs: [
+          {
+            codecResolution: vRes,
+            frameRate: vFps,
+            widthMargin,
+            heightMargin,
+            density: dpi,
+            videoCodecType: MEDIA_CODEC.VIDEO_H264_BP,
+            uiConfig: {
+              margins: { top: insetTop, bottom: insetBottom, left: insetLeft, right: insetRight }
+            }
+          }
+        ]
+      }
+    })
+
+    // ── Media Audio (ch=4) ──
+    channels.push({
+      id: CH.MEDIA_AUDIO,
+      mediaSinkService: {
+        availableType: MEDIA_CODEC.AUDIO_PCM,
+        audioType: AS_MEDIA,
+        availableWhileInCall: true,
+        audioConfigs: [{ samplingRate: 48000, numberOfBits: 16, numberOfChannels: 2 }]
+      }
+    })
+
+    // ── Speech / Guidance Audio (ch=5) ──
+    channels.push({
+      id: CH.SPEECH_AUDIO,
+      mediaSinkService: {
+        availableType: MEDIA_CODEC.AUDIO_PCM,
+        audioType: AS_GUIDANCE,
+        availableWhileInCall: true,
+        audioConfigs: [{ samplingRate: 16000, numberOfBits: 16, numberOfChannels: 1 }]
+      }
+    })
+
+    // ── System Audio (ch=6) ──
+    channels.push({
+      id: CH.SYSTEM_AUDIO,
+      mediaSinkService: {
+        availableType: MEDIA_CODEC.AUDIO_PCM,
+        audioType: AS_SYSTEM,
+        availableWhileInCall: true,
+        audioConfigs: [{ samplingRate: 16000, numberOfBits: 16, numberOfChannels: 1 }]
+      }
+    })
+
+    // ── Audio Input / Microphone (ch=9) ──
+    channels.push({
+      id: CH.MIC_INPUT,
+      mediaSourceService: {
+        availableType: MEDIA_CODEC.AUDIO_PCM,
+        audioConfig: { samplingRate: 16000, numberOfBits: 16, numberOfChannels: 1 }
+      }
+    })
+
+    // ── Sensor Source (ch=1) ──
+    channels.push({
+      id: CH.SENSOR,
+      sensorSourceService: {
+        sensors: [
+          { sensorType: SENSOR.LOCATION },
+          { sensorType: SENSOR.COMPASS },
+          { sensorType: SENSOR.SPEED },
+          { sensorType: SENSOR.RPM },
+          { sensorType: SENSOR.ODOMETER },
+          { sensorType: SENSOR.FUEL },
+          { sensorType: SENSOR.PARKING_BRAKE },
+          { sensorType: SENSOR.GEAR },
+          { sensorType: SENSOR.NIGHT_MODE },
+          { sensorType: SENSOR.ENV_DATA },
+          { sensorType: SENSOR.HVAC },
+          { sensorType: SENSOR.DRIVING_STATUS },
+          { sensorType: SENSOR.ACCELEROMETER },
+          { sensorType: SENSOR.GYROSCOPE },
+          { sensorType: SENSOR.GPS_SATELLITE }
+        ],
+        // RAW_GPS_ONLY=256 | ACCEL=4 | GYRO=2 | COMPASS=8 | CAR_SPEED=64
+        locationCharacterization: 256 | 4 | 2 | 8 | 64
+      }
+    })
+
+    // ── Input Source (ch=8) ──
+    // Touch dims match the AA tier, not the physical display.
+    let touchW = 1920,
+      touchH = 1080
+    switch (vRes) {
+      case 1:
+        touchW = 800
+        touchH = 480
+        break
+      case 2:
+        touchW = 1280
+        touchH = 720
+        break
+      case 3:
+        touchW = 1920
+        touchH = 1080
+        break
+      case 4:
+        touchW = 2560
+        touchH = 1440
+        break
+      case 5:
+        touchW = 3840
+        touchH = 2160
+        break
+    }
+    void vH
+    channels.push({
+      id: CH.INPUT,
+      inputSourceService: {
+        // KeyEvent.KEYCODE_* + AA extensions — mirrors BUTTON_KEY in InputChannel.ts.
+        keycodesSupported: [
+          // System
+          3, // HOME
+          4, // BACK
+          5,
+          6, // CALL, ENDCALL
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16, // 0-9 (DTMF)
+          17,
+          18, // STAR, POUND
+          19,
+          20,
+          21,
+          22,
+          23, // D-PAD
+          24,
+          25, // VOLUME +/− (audioTransferMode)
+          26,
+          66,
+          79,
+          82,
+          84, // POWER, ENTER, HEADSET_HOOK, MENU, SEARCH
+          85,
+          86,
+          87,
+          88,
+          89,
+          90,
+          91,
+          111,
+          126,
+          127,
+          164, // media transport + mute
+          219,
+          231, // VOICE_ASSIST, CALL_VOICE
+          260,
+          261,
+          262,
+          263, // NAVIGATE_*
+          65536,
+          65537,
+          65543,
+          65544 // AA extensions: rotary, surface, tertiary, turn-card
+        ],
+        touchscreen: [{ width: touchW, height: touchH, type: TS_CAPACITIVE }]
+      }
+    })
+
+    // ── Bluetooth (ch=10) ──
+    channels.push({
+      id: CH.BLUETOOTH,
+      bluetoothService: {
+        carAddress: cfg.btMacAddress ?? '00:00:00:00:00:00',
+        supportedPairingMethods: [BT_PAIRING_METHOD.PIN, BT_PAIRING_METHOD.NUMERIC_COMPARISON]
+      }
+    })
+
+    // ── Navigation Status (ch=12) ──
+    channels.push({
+      id: CH.NAVIGATION,
+      navigationStatusService: {
+        minimumIntervalMs: 500,
+        type: 1, // IMAGE
+        imageOptions: { width: 256, height: 256, colourDepthBits: 32 }
+      }
+    })
+
+    // ── Media Playback Status (ch=13) — empty body, presence-only ──
+    channels.push({ id: CH.MEDIA_INFO, mediaPlaybackService: {} })
+
+    // ── Phone Status (ch=14) ──
+    channels.push({ id: CH.PHONE_STATUS, phoneStatusService: {} })
+
+    // WiFi Projection (ch=18) intentionally not advertised
+    // and WiFi credentials are handled via RFCOMM WifiInfoResponse at the BT layer.
+
+    const sdrFields: Record<string, unknown> = {
+      driverPosition: cfg.driverPosition ?? 0, // LHD=0 (LEFT), RHD=1 (RIGHT)
+      displayName: cfg.huName ?? 'LIVI',
+      probeForSupport: false,
+      connectionConfiguration: {
+        pingConfiguration: {
+          timeoutMs: 5000,
+          intervalMs: 1500,
+          highLatencyThresholdMs: 500,
+          trackedPingCount: 5
+        }
+      },
+      headunitInfo: {
+        make: 'LIVI',
+        model: 'Universal',
+        year: '2026',
+        vehicleId: 'livi-001',
+        headUnitMake: 'LIVI',
+        headUnitModel: 'LIVI Head Unit',
+        headUnitSoftwareBuild: '1',
+        headUnitSoftwareVersion: '1.0'
+      },
+      make: 'LIVI',
+      model: 'Universal',
+      year: '2026',
+      vehicleId: 'livi-001',
+      headUnitMake: 'LIVI',
+      headUnitModel: 'LIVI Head Unit',
+      headUnitSoftwareBuild: '1',
+      headUnitSoftwareVersion: '1.0',
+      canPlayNativeMediaDuringVr: false,
+      channels
+    }
+
+    const msg = this._proto.ServiceDiscoveryResponse.create(sdrFields)
+    const buf = Buffer.from(this._proto.ServiceDiscoveryResponse.encode(msg).finish())
+
+    console.log(`[Session] SDR (aasdk aap_protobuf): ${channels.length} channels, ${buf.length}B`)
+    console.log(
+      `[Session] SDR hex: ${buf.subarray(0, 64).toString('hex')}${buf.length > 64 ? '...' : ''}`
+    )
+    return buf
+  }
+
+  // ── Channel open sequence ─────────────────────────────────────────────────
+
+  private _openChannels(): void {
+    // Phone sends CHANNEL_OPEN_REQUEST on each service channel; we respond on
+    // the same channel. HU never initiates channel open.
+    this._transition(State.CHANNEL_SETUP)
+    console.log(
+      '[Session] Channel setup — waiting for phone CHANNEL_OPEN_REQUEST on each service channel'
+    )
+  }
+
+  // ── AV channel setup ──────────────────────────────────────────────────────
+
+  private _handleAVSetupRequest(channelId: number, payload: Buffer): void {
+    const req = decode(this._proto.AVChannelSetupRequest, payload)
+    const codec = req['mediaCodecType'] as number
+    console.log(`[Session] AVSetupRequest ch=${channelId} codec=${codec}`)
+
+    // Push advertised rate/channels into AudioChannel so it labels 'pcm' emits.
+    const audioCh = this._audio.get(channelId)
+    if (audioCh) {
+      const cfg =
+        channelId === CH.MEDIA_AUDIO
+          ? { rate: 48000, ch: 2 }
+          : channelId === CH.SPEECH_AUDIO
+            ? { rate: 16000, ch: 1 }
+            : { rate: 16000, ch: 1 } // SYSTEM_AUDIO
+      audioCh.handleSetupRequest(codec, cfg.rate, cfg.ch)
+    } else if (channelId === CH.MIC_INPUT && this._mic) {
+      // Mic uses the same SETUP_REQUEST/RESPONSE flow but is outbound;
+      // the format we advertised is 16 kHz mono.
+      this._mic.handleSetupRequest(codec, 16000, 1)
+    }
+
+    // mediaStatus MUST be OK(2) — NONE(0) is treated as FAIL and drops the session.
+    // max_unacked=1: phone paces to real-time. Higher values cause burst+stall.
+    const respBuf = encode(this._proto.AVChannelSetupResponse, {
+      mediaStatus: AV_SETUP_STATUS.OK,
+      maxUnacked: 1,
+      configs: [0]
+    })
+    this._sendEncrypted(channelId, FRAME_FLAGS.ENC_SIGNAL, AV_MSG.SETUP_RESPONSE, respBuf)
+    console.log(
+      `[Session] AVChannelSetupResponse ch=${channelId} status=OK(${AV_SETUP_STATUS.OK}) sent`
+    )
+
+    if (channelId === CH.VIDEO) {
+      // VideoFocusIndication(PROJECTED, unsolicited=false) IS the keyframe-request
+      // mechanism in aasdk — triggers a fresh IDR. unsolicited=true would stall.
+      this._sendEncrypted(
+        CH.VIDEO,
+        FRAME_FLAGS.ENC_SIGNAL,
+        AV_MSG.VIDEO_FOCUS_INDICATION,
+        Buffer.from([0x08, 0x01])
+      )
+      console.log(
+        '[Session] VideoFocusIndication (PROJECTED, unsolicited=false) sent — requests fresh IDR'
+      )
+
+      // No AVChannelStartIndication — phone sends START_INDICATION when ready.
+      this._transition(State.RUNNING)
+      this.emit('connected')
+      console.log('[Session] Video channel ready — waiting for H.264 frames from phone')
+    }
+  }
+
+  // ── Sensor channel ────────────────────────────────────────────────────────
+
+  private _handleSensorStartRequest(payload: Buffer): void {
+    // SensorRequest: field 1 (varint) = SensorType
+    let sensorType = 0
+    if (payload.length >= 2 && payload[0] === 0x08) {
+      sensorType = payload[1]!
+    }
+    console.log(`[Session] SensorStartRequest type=${sensorType}`)
+
+    // SensorStartResponse: status=SUCCESS(0). msgId 0x8002 = SENSOR_MESSAGE_RESPONSE.
+    this._sendEncrypted(CH.SENSOR, FRAME_FLAGS.ENC_SIGNAL, 0x8002, Buffer.from([0x08, 0x00]))
+
+    // SensorBatch (msgId 0x8003) — emit initial value per type.
+    if (sensorType === 13) {
+      // DrivingStatus = UNRESTRICTED(0)
+      this._sendEncrypted(
+        CH.SENSOR,
+        FRAME_FLAGS.ENC_SIGNAL,
+        0x8003,
+        Buffer.from([0x6a, 0x02, 0x08, 0x00])
+      )
+      console.log('[Session] SensorBatch: DrivingStatus=UNRESTRICTED sent')
+    } else if (sensorType === 10) {
+      // NightMode = false
+      this._sendEncrypted(
+        CH.SENSOR,
+        FRAME_FLAGS.ENC_SIGNAL,
+        0x8003,
+        Buffer.from([0x52, 0x02, 0x08, 0x00])
+      )
+      console.log('[Session] SensorBatch: NightMode=false sent')
+    } else {
+      console.log(`[Session] SensorStartRequest type=${sensorType} — no batch data for this type`)
+    }
+  }
+
+  // ── WiFi Projection channel (ch=14) ──────────────────────────────────────
+
+  private _handleWifiCredentialsRequest(): void {
+    // WifiCredentialsResponse: f1=password, f2=security_mode (WPA2=5),
+    //                         f3=ssid, f5=ap_type (DYNAMIC=1). msgId 0x8002.
+    const ssid = this._cfg.wifiSsid ?? ''
+    const pass = this._cfg.wifiPassword ?? ''
+
+    if (!ssid) {
+      console.warn(
+        '[Session] WifiCredentialsRequest: no wifiSsid configured — sending empty response'
+      )
+    }
+
+    const parts: Buffer[] = []
+
+    // field 1: password
+    if (pass.length > 0) {
+      const passBytes = Buffer.from(pass, 'utf-8')
+      parts.push(Buffer.from([0x0a]))
+      parts.push(_encodeVarint(passBytes.length))
+      parts.push(passBytes)
+    }
+
+    // field 2: security_mode = WPA2_PERSONAL (5)
+    parts.push(Buffer.from([0x10, 0x05]))
+
+    // field 3: ssid
+    if (ssid.length > 0) {
+      const ssidBytes = Buffer.from(ssid, 'utf-8')
+      parts.push(Buffer.from([0x1a]))
+      parts.push(_encodeVarint(ssidBytes.length))
+      parts.push(ssidBytes)
+    }
+
+    // field 5: access_point_type = DYNAMIC (1)
+    parts.push(Buffer.from([0x28, 0x01]))
+
+    const respBuf = Buffer.concat(parts)
+    console.log(`[Session] WifiCredentialsResponse: ssid="${ssid}" security=WPA2 type=DYNAMIC`)
+    this._sendEncrypted(CH.WIFI, FRAME_FLAGS.ENC_SIGNAL, 0x8002, respBuf)
+  }
+
+  // ── Frame sending ─────────────────────────────────────────────────────────
+
+  /**
+   * Send an AA frame. Encrypted (flags & 0x08) → TLS via tlsSocket. Plaintext
+   * → raw on TCP (AUTH_COMPLETE / PING are always plaintext per aasdk).
+   */
+  private _sendAA(channelId: number, flags: number, msgId: number, data: Buffer): void {
+    const isEncrypted = (flags & 0x08) !== 0
+
+    if (!isEncrypted) {
+      const frame = encodeFrame(channelId, flags, msgId, data)
+      if (this._state !== State.RUNNING || process.env['AA_TRACE'] === '1') {
+        console.log(
+          `[Session] sock→ PLAIN ch=${channelId} msgId=0x${msgId.toString(16).padStart(4, '0')} ${frame.length}B`
+        )
+      }
+      this._sock.write(frame)
+      return
+    }
+
+    if (!this._tlsSocket || this._state < State.AUTH) {
+      console.warn('[Session] _sendAA: TLS not ready for encrypted frame')
+      return
+    }
+
+    const msgIdBuf = Buffer.allocUnsafe(2)
+    msgIdBuf.writeUInt16BE(msgId, 0)
+    const cleartext = Buffer.concat([msgIdBuf, data])
+
+    // Serialise — Node's _writev would otherwise merge consecutive writes into
+    // one TLS record, and the bridge would tag it with the last channelId/flags,
+    // dropping earlier messages' headers.
+    const sock = this._tlsSocket
+    this._writeChain = this._writeChain.then(
+      () =>
+        new Promise<void>((resolve) => {
+          this._pendingChannelId = channelId
+          this._pendingFlags = flags
+          sock.write(cleartext, () => resolve())
+        })
+    )
+    this._writeChain.catch((err) => {
+      console.warn('[Session] _writeChain rejected:', err)
+    })
+  }
+
+  private _sendEncrypted(channelId: number, flags: number, msgId: number, data: Buffer): void {
+    this._sendAA(channelId, flags, msgId, data)
+  }
+
+  // ── State machine ─────────────────────────────────────────────────────────
+
+  private _transition(newState: State, reason?: string): void {
+    this._state = newState
+    if (newState === State.CLOSED) {
+      if (this._pingTimer) {
+        clearInterval(this._pingTimer)
+        this._pingTimer = null
+      }
+      // Don't destroy the socket — phone controls lifetime; just notify.
+      this.emit('disconnected', reason)
+    }
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function _sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+/** Encode a non-negative integer as a protobuf varint. */
+function _encodeVarint(value: number): Buffer {
+  const bytes: number[] = []
+  while (value > 0x7f) {
+    bytes.push((value & 0x7f) | 0x80)
+    value >>>= 7
+  }
+  bytes.push(value & 0x7f)
+  return Buffer.from(bytes)
+}

@@ -1,0 +1,50 @@
+
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto3";
+
+package oaa.proto.enums;
+
+// confidence: unverified
+message Status
+{
+    // confidence: unverified
+    enum Enum
+    {
+        OK = 0;
+        UNSOLICITED_MESSAGE = 1;
+        NO_COMPATIBLE_VERSION = -1;
+        CERTIFICATE_ERROR = -2;
+        AUTHENTICATION_FAILURE = -3;
+        INVALID_SERVICE = -4;
+        INVALID_CHANNEL = -5;
+        INVALID_PRIORITY = -6;
+        INTERNAL_ERROR = -7;
+        MEDIA_CONFIG_MISMATCH = -8;
+        INVALID_SENSOR = -9;
+        BLUETOOTH_PAIRING_DELAYED = -10;
+        BLUETOOTH_UNAVAILABLE = -11;
+        BLUETOOTH_INVALID_ADDRESS = -12;
+        BLUETOOTH_INVALID_PAIRING_METHOD = -13;
+        BLUETOOTH_INVALID_AUTH_DATA = -14;
+        BLUETOOTH_AUTH_DATA_MISMATCH = -15;
+        BLUETOOTH_HFP_ANOTHER_CONNECTION = -16;
+        BLUETOOTH_HFP_CONNECTION_FAILURE = -17;
+        KEYCODE_NOT_BOUND = -18;
+        RADIO_INVALID_STATION = -19;
+        INVALID_INPUT = -20;
+        RADIO_STATION_PRESETS_NOT_SUPPORTED = -21;
+        RADIO_COMM_ERROR = -22;
+        CERT_NOT_YET_VALID = -23;
+        CERT_EXPIRED = -24;
+        PING_TIMEOUT = -25;
+        CAR_PROPERTY_SET_FAILED = -26;
+        CAR_PROPERTY_LISTENER_FAILED = -27;
+        COMMAND_NOT_SUPPORTED = -250;
+        FRAMING_ERROR = -251;
+        UNEXPECTED_MESSAGE = -253;
+        BUSY = -254;
+        OUT_OF_MEMORY = -255;
+    }
+}

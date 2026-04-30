@@ -1,0 +1,40 @@
+// Android Auto Protocol Buffer Definitions
+// https://github.com/mrmees/open-android-auto
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/*
+ * AVChannelMediaConfig — AV channel media configuration.
+ *
+ * APK class: vyo.java (AA v16.1)
+ * Channel: AV (video/audio media channels)
+ * Message ID: 0x8014 (32788) — sent by phone (outbound)
+ * Dispatched by icg.java line 178: k(32788, vyoVar)
+ *
+ * Nested as field 4 of AVChannelStartIndication (wce.java).
+ * Built by hmq.java from CarInfo and experiment flags (abhj.el()).
+ * Contains PingConfiguration sub-messages for timing parameters
+ * and boolean feature flags.
+ */
+
+syntax="proto2";
+
+import "oaa/common/PingConfigurationData.proto";
+
+package oaa.proto.messages;
+
+// confidence: gold [apk_deep_trace, 2026-03-06]
+message AVChannelMediaConfig {
+    optional data.PingConfiguration timing_1 = 1; // APK: zyd sub-message  // confidence: gold [apk_deep_trace, 2026-03-06]
+    optional bool feature_flag_1 = 2; // APK: boolean  // confidence: gold [apk_deep_trace, 2026-03-06]
+    optional data.PingConfiguration timing_2 = 3; // APK: zyd sub-message  // confidence: gold [apk_deep_trace, 2026-03-06]
+    optional data.PingConfiguration timing_3 = 4; // APK: zyd sub-message  // confidence: gold [apk_deep_trace, 2026-03-06]
+    optional data.PingConfiguration timing_4 = 5; // APK: zyd sub-message  // confidence: gold [apk_deep_trace, 2026-03-06]
+    optional data.PingConfiguration timing_5 = 6; // APK: zyd sub-message  // confidence: gold [apk_deep_trace, 2026-03-06]
+    optional uint32 config_value = 7; // APK: int (uint32)  // confidence: gold [apk_deep_trace, 2026-03-06]
+    optional data.PingConfiguration timing_6 = 8; // APK: zyd sub-message  // confidence: gold [apk_deep_trace, 2026-03-06]
+    optional bool feature_flag_2 = 9; // APK: boolean  // confidence: gold [apk_deep_trace, 2026-03-06]
+    optional data.PingConfiguration timing_7 = 10; // APK: zyd sub-message  // confidence: gold [apk_deep_trace, 2026-03-06]
+    optional bool feature_flag_3 = 11; // APK: boolean  // confidence: gold [apk_deep_trace, 2026-03-06]
+    optional data.PingConfiguration timing_8 = 12; // APK: zyd sub-message  // confidence: gold [apk_deep_trace, 2026-03-06]
+    optional data.PingConfiguration timing_9 = 13; // APK: zyd sub-message  // confidence: gold [apk_deep_trace, 2026-03-06]
+}

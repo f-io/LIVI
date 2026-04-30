@@ -1,0 +1,15 @@
+syntax="proto2";
+
+import "aap_protobuf/service/sensorsource/message/Sensor.proto";
+import "aap_protobuf/service/sensorsource/message/FuelType.proto";
+import "aap_protobuf/service/sensorsource/message/EvConnectorType.proto";
+
+package aap_protobuf.service.sensorsource;
+
+message SensorSourceService
+{
+    repeated message.Sensor sensors = 1;
+    optional uint32 location_characterization = 2;
+    repeated message.FuelType supported_fuel_types = 3;
+    repeated message.EvConnectorType supported_ev_connector_types = 4;
+}

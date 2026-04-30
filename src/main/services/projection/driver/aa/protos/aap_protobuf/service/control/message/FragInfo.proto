@@ -1,0 +1,10 @@
+syntax="proto2";
+
+package aap_protobuf.service.control.message;
+
+enum FragInfo {
+  FRAG_CONTINUATION = 0;
+  FRAG_FIRST = 1;
+  FRAG_LAST = 2;
+  FRAG_UNFRAGMENTED = 3;
+}

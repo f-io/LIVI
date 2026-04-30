@@ -1,0 +1,8 @@
+syntax="proto2";
+
+package aap_protobuf.aaw;
+
+message WifiStartRequest {
+  required string ip_address = 1;
+  required uint32 port = 2;
+}

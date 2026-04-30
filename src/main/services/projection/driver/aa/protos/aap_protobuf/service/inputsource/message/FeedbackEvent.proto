@@ -1,0 +1,11 @@
+syntax="proto2";
+
+package aap_protobuf.service.inputsource.message;
+
+enum FeedbackEvent {
+  FEEDBACK_SELECT = 1;
+  FEEDBACK_FOCUS_CHANGE = 2;
+  FEEDBACK_DRAG_SELECT = 3;
+  FEEDBACK_DRAG_START = 4;
+  FEEDBACK_DRAG_END = 5;
+}

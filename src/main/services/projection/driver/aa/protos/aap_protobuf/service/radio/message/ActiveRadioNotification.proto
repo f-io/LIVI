@@ -1,0 +1,14 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+import "aap_protobuf/shared/MessageStatus.proto";
+import "aap_protobuf/service/radio/message/RadioStationInfo.proto";
+
+package aap_protobuf.service.radio.message;
+
+message ActiveRadioNotification {
+  optional shared.MessageStatus status = 1;
+  required int32 radio_id = 2;
+  optional message.RadioStationInfo station_info = 3;
+}

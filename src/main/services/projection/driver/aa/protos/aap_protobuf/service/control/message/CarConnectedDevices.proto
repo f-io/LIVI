@@ -1,0 +1,11 @@
+syntax="proto2";
+
+import "aap_protobuf/service/control/message/ConnectedDevice.proto";
+
+package aap_protobuf.service.control.message;
+
+message CarConnectedDevices {
+  repeated ConnectedDevice connected_devices = 1;
+  optional bool unsolicited = 2;
+  optional bool final_list = 3 [default = true];
+}

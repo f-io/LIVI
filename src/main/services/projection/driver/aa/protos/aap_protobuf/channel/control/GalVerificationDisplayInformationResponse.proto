@@ -1,0 +1,8 @@
+syntax="proto2";
+
+package aap_protobuf.service.control.message;
+
+message GalVerificationDisplayInformationResponse {
+  required int32 native_width = 1;
+  required int32 native_height = 2;
+}

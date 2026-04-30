@@ -1,0 +1,13 @@
+syntax="proto2";
+
+import "aap_protobuf/service/media/shared/message/UiTheme.proto";
+import "aap_protobuf/service/media/shared/message/Insets.proto";
+
+package aap_protobuf.service.media.shared.message;
+
+message UiConfig {
+  optional Insets margins = 1;
+  optional Insets content_insets = 2;
+  optional Insets stable_content_insets = 3;
+  optional UiTheme ui_theme = 4;
+}

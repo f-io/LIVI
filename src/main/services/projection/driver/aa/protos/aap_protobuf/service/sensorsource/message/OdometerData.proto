@@ -1,0 +1,8 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource.message;
+
+message OdometerData {
+    required int32 kms_e1 = 1;
+    optional int32 trip_kms_e1 = 2;
+}

@@ -1,0 +1,12 @@
+syntax="proto2";
+
+import "aap_protobuf/service/sensorsource/message/HeadLightState.proto";
+import "aap_protobuf/service/sensorsource/message/TurnIndicatorState.proto";
+
+package aap_protobuf.service.sensorsource.message;
+
+message LightData {
+    optional HeadLightState head_light_state = 1;
+    optional TurnIndicatorState turn_indicator_state = 2;
+    optional bool hazard_lights_on = 3;
+}

@@ -1,0 +1,36 @@
+// Android Auto Protocol Buffer Definitions
+// https://github.com/mrmees/open-android-auto
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/*
+ * EVConnectorType — electric vehicle connector type for SensorChannel config.
+ *
+ * APK class: vxl.java (AA v16.1)
+ * Used in SensorChannel field 4 (repeated).
+ */
+
+syntax="proto2";
+
+package oaa.proto.enums;
+
+// confidence: silver [apk_static, cross_version]
+message EVConnectorType
+{
+    // confidence: silver [apk_static, cross_version]
+    enum Enum
+    {
+        UNKNOWN = 0;
+        J1772 = 1;  // confidence: silver [apk_static, cross_version]
+        MENNEKES = 2;
+        CHADEMO = 3;
+        COMBO_1 = 4;  // confidence: silver [apk_static, cross_version]
+        COMBO_2 = 5;  // confidence: silver [apk_static, cross_version]
+        TESLA_ROADSTER = 6;
+        TESLA_HPWC = 7;
+        TESLA_SUPERCHARGER = 8;
+        GBT = 9;
+        GBT_DC = 10;
+        LECCS = 11;
+        NACS = 14;
+    }
+}

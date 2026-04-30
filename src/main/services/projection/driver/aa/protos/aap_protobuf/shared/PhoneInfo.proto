@@ -1,0 +1,8 @@
+syntax="proto2";
+
+package aap_protobuf.shared;
+
+message PhoneInfo {
+  optional string instance_id = 1;
+  optional string connectivity_lifetime_id = 2;
+}

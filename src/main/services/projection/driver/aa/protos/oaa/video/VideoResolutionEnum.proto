@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto3";
+
+package oaa.proto.enums;
+
+// APK class: wco (16.2) — 9 values with explicit resolution naming
+// Values 5-9 changed completely from aasdk-era definitions.
+// NONE=0 is proto3 default only — not defined in APK validator.
+// confidence: gold [deep_trace]
+message VideoResolution
+{
+    // confidence: gold [deep_trace]
+    enum Enum
+    {
+        NONE = 0;  // proto3 default only — not in APK
+        VIDEO_800x480 = 1;  // 480p landscape
+        VIDEO_1280x720 = 2;  // 720p landscape
+        VIDEO_1920x1080 = 3;  // 1080p landscape
+        VIDEO_2560x1440 = 4;  // 1440p landscape
+        VIDEO_3840x2160 = 5;  // 4K landscape (was _720p_p in aasdk — WRONG)
+        VIDEO_720x1280 = 6;  // 720p portrait (was _1080pp in aasdk — WRONG)
+        VIDEO_1080x1920 = 7;  // 1080p portrait
+        VIDEO_1440x2560 = 8;  // 1440p portrait (NEW in 16.2)
+        VIDEO_2160x3840 = 9;  // 4K portrait (NEW in 16.2)
+    }
+}

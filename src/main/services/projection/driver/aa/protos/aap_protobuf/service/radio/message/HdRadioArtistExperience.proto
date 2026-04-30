@@ -1,0 +1,11 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+package aap_protobuf.service.radio.message;
+
+message HdRadioArtistExperience {
+  optional bytes image = 1;
+}
+
+

@@ -1,0 +1,13 @@
+syntax="proto2";
+
+import "aap_protobuf/service/mediabrowser/message/MediaList.proto";
+import "aap_protobuf/service/mediabrowser/message/MediaSource.proto";
+
+package aap_protobuf.service.mediabrowser.message;
+
+message MediaSourceNode {
+  required MediaSource source = 1;
+  optional int32 start = 2;
+  optional int32 total = 3;
+  repeated MediaList lists = 4;
+}

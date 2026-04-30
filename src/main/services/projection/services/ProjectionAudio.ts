@@ -4,6 +4,41 @@ import type { ExtraConfig } from '@shared/types'
 import { AudioCommand } from '@shared/types/ProjectionEnums'
 import { AudioData, decodeTypeMap } from '../messages'
 
+/**
+ * Resample / channel-fan a PCM buffer to match the music stream's format so
+ * processMusicChunk's 1:1 sample mixer doesn't pitch-shift it. Nearest-neighbour
+ * up-sample is good enough for speech intelligibility (and far cheaper than a
+ * proper polyphase resampler, which we don't need here).
+ */
+function alignToMusicFormat(
+  src: Int16Array,
+  srcRate: number,
+  srcChannels: number,
+  dstRate: number,
+  dstChannels: number
+): Int16Array {
+  const srcFrames = Math.floor(src.length / srcChannels)
+  if (srcFrames === 0) return new Int16Array(0)
+  const ratio = dstRate / srcRate
+  const dstFrames = Math.round(srcFrames * ratio)
+  const out = new Int16Array(dstFrames * dstChannels)
+  for (let f = 0; f < dstFrames; f++) {
+    const sIdx = Math.min(srcFrames - 1, Math.floor(f / ratio))
+    if (srcChannels === 1) {
+      const sample = src[sIdx]!
+      // mono → broadcast across all dst channels
+      for (let c = 0; c < dstChannels; c++) out[f * dstChannels + c] = sample
+    } else {
+      // copy first min(srcChannels, dstChannels) channels; pad excess with last
+      for (let c = 0; c < dstChannels; c++) {
+        const srcC = Math.min(c, srcChannels - 1)
+        out[f * dstChannels + c] = src[sIdx * srcChannels + srcC]!
+      }
+    }
+  }
+  return out
+}
+
 export type PlayerKey = string
 export type LogicalStreamKey = 'music' | 'nav' | 'siri' | 'call'
 
@@ -419,12 +454,30 @@ export class ProjectionAudio {
           }
         }
       } else if (logicalKey === 'nav') {
-        // Inline nav while music is active
+        // Inline nav while music is active — queue for mixing into music chunks.
+        // The original navActive-gate dropped frames when the phone hadn't sent
+        // an explicit AudioNaviStart (AA case). audioType-driven routing already
+        // filters the right frames into here, so the gate is not needed.
+        //
+        // Nav PCM may arrive at a different rate / channel count than music
+        // (typically 16 kHz mono vs 48 kHz stereo). Match it to the music
+        // format BEFORE queueing so processMusicChunk's 1:1 mixer doesn't
+        // chipmunk the speech.
         if (this.mediaActive) {
-          if (this.navActive) {
-            // Real inline nav: enqueue for mixing into music
-            this.navMixQueue.push(msg.data.slice())
-          }
+          const navMeta = meta
+          const musicSampleRate = 48000
+          const musicChannels = 2
+          const aligned =
+            navMeta && (navMeta.frequency !== musicSampleRate || navMeta.channel !== musicChannels)
+              ? alignToMusicFormat(
+                  msg.data,
+                  navMeta.frequency,
+                  navMeta.channel,
+                  musicSampleRate,
+                  musicChannels
+                )
+              : msg.data.slice()
+          this.navMixQueue.push(aligned)
           return
         }
 
@@ -557,6 +610,15 @@ export class ProjectionAudio {
         this.navActive = true
         this.navHoldUntil = 0
         this.clearNavMix()
+
+        // Pre-warm the nav PipeWire stream so the first PCM frames don't get
+        // dropped while the AudioOutput is still opening. Speech is 16k mono in
+        // both AA and dongle paths; if the phone happens to use a different
+        // rate, getAudioOutputForStream will create the right one on demand.
+        const navKey: PlayerKey = '16000:1'
+        if (!this.audioPlayers.has(navKey)) {
+          this.createAndStartAudioPlayer(16000, 1)
+        }
 
         if (this.mediaActive && !this.siriActive && !this.phonecallActive) {
           // We don't compute remainingSamples here; it will be computed on next music chunk
@@ -884,9 +946,18 @@ export class ProjectionAudio {
     return player
   }
 
-  private getLogicalStreamKey(_msg: AudioData): LogicalStreamKey {
+  private getLogicalStreamKey(msg: AudioData): LogicalStreamKey {
     if (this.phonecallActive) return 'call'
     if (this.siriActive) return 'siri'
+    // AA streams media/speech/system on parallel channels — route by the
+    // frame's audioType so each channel ends up on the right LIVI player
+    // regardless of when (or whether) the phone sent AudioNaviStart.
+    //   1 = SPEECH (nav, voice prompts)
+    //   2 = SYSTEM (notification chimes)
+    //   3 = MEDIA  (music)
+    if (msg.audioType === 1 || msg.audioType === 2) return 'nav'
+    if (msg.audioType === 3) return 'music'
+    // Dongle / unknown audioType — fall back to flag-driven routing.
     if (this.navActive) return 'nav'
     return 'music'
   }

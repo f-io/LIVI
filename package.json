@@ -1,6 +1,6 @@
 {
   "name": "LIVI",
-  "version": "5.9.4",
+  "version": "6.0.0",
   "description": "LIVI - Linux In-Vehicle Infotainment",
   "main": "./out/main/main.js",
   "author": "Lasse Heitgres",
@@ -12,11 +12,12 @@
   "packageManager": "pnpm@10.33.2",
   "pnpm": {
     "onlyBuiltDependencies": [
-      "usb",
-      "esbuild",
-      "unrs-resolver",
       "electron",
-      "electron-winstaller"
+      "electron-winstaller",
+      "esbuild",
+      "protobufjs",
+      "unrs-resolver",
+      "usb"
     ]
   },
   "scripts": {
@@ -36,7 +37,9 @@
     "postinstall": "electron-builder install-app-deps",
     "build:mac": "pnpm run build:app && electron-builder --mac --arm64 --publish never --config",
     "build:linux": "pnpm run build:app && electron-builder --linux --publish never --config",
+    "build:linux:appimage": "pnpm run build:app && electron-builder --linux AppImage --publish never --config",
     "build:armLinux": "pnpm run build:app && electron-builder --linux AppImage deb --arm64 --publish never --config",
+    "build:armLinux:appimage": "pnpm run build:app && electron-builder --linux AppImage --arm64 --publish never --config",
     "build:win": "pnpm run build && electron-builder --win --publish never --config",
     "test": "pnpm run test:main && pnpm run test:renderer",
     "test:main": "jest --watchman=false --config jest.config.js",
@@ -64,6 +67,7 @@
     "i18next": "^26.0.8",
     "lodash.debounce": "^4.0.8",
     "ms": "^2.1.3",
+    "protobufjs": "^8.0.1",
     "react-i18next": "^17.0.6",
     "react-router": "^7.14.2",
     "socket.io": "^4.8.3",

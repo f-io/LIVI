@@ -1,0 +1,14 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+import "aap_protobuf/shared/MessageStatus.proto";
+import "aap_protobuf/service/radio/message/TrafficIncident.proto";
+
+package aap_protobuf.service.radio.message;
+
+message GetTrafficUpdateResponse {
+  required shared.MessageStatus status = 1;
+  required int32 radio_id = 2;
+  repeated TrafficIncident incidents = 3;
+}

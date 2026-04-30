@@ -1,0 +1,10 @@
+syntax="proto2";
+
+package aap_protobuf.service.media.source.message;
+
+message MicrophoneRequest {
+    required bool open = 1;
+    optional bool anc_enabled = 2;
+    optional bool ec_enabled = 3;
+    optional int32 max_unacked = 4;
+}

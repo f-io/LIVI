@@ -1,0 +1,12 @@
+syntax="proto2";
+
+import "aap_protobuf/service/media/video/message/VideoFocusMode.proto";
+import "aap_protobuf/service/media/video/message/VideoFocusReason.proto";
+
+package aap_protobuf.service.media.video.message;
+
+message VideoFocusRequestNotification {
+    optional int32 disp_channel_id = 1 [deprecated = true];
+    optional VideoFocusMode mode = 2;
+    optional VideoFocusReason reason = 3;
+}

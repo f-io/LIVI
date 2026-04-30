@@ -1,0 +1,14 @@
+syntax="proto2";
+
+package aap_protobuf.service.navigationstatus.message;
+
+message NavigationStatus
+{
+    required NavigationStatusEnum status = 1;
+    enum NavigationStatusEnum {
+        UNAVAILABLE = 0;
+        ACTIVE = 1;
+        INACTIVE = 2;
+        REROUTING = 3;
+    }
+}

@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto3";
+
+package oaa.proto.enums;
+
+// APK class: vdp (16.2) — 2 values, validated by vdp.m36490W
+// confidence: gold [deep_trace]
+message VideoFPS
+{
+    // confidence: gold [deep_trace]
+    enum Enum
+    {
+        NONE = 0;  // proto3 default only
+        _60 = 1;  // 60 fps
+        _30 = 2;  // 30 fps
+    }
+}

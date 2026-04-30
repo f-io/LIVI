@@ -17,6 +17,7 @@ files:
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml,CHANGELOG.md,README.md}'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!src/**'
+  - '!out/main/bt/**'
 
 asarUnpack:
   - resources/**
@@ -46,6 +47,12 @@ linux:
         - '**/*'
         - '!**/*.a'
         - '!share/**'
+    - from: src/main/services/projection/driver/aa/bt
+      to: aa/bt
+      filter:
+        - '**/*'
+        - '!__pycache__/**'
+        - '!*.pyc'
 
 deb:
   packageName: livi

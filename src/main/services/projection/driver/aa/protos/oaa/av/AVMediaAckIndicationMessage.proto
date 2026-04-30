@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto2";
+
+package oaa.proto.messages;
+
+/*
+ * AV media ack indication (wire msg ID 0x8004 on all AV channels)
+ * Sent HU -> Phone to acknowledge received audio/video frames.
+ *
+ * APK class: vuw (16.2) / vvk (16.1)
+ * Channels: CAR.GAL.MEDIA (qnf), CAR.GAL.VIDEO (icv/ied), DHU clustersim (ilm)
+ * Direction: HU -> Phone
+ *
+ * ACK flow: phone sends frames, tracks timestamps in queue. HU sends vuw
+ * with session_id and per-frame receive timestamps. Phone releases semaphore
+ * permits and calculates round-trip latency. If unacked > 400, phone triggers
+ * CAR_NOT_RESPONDING. Ackless mode (PDK 5.0+) makes this optional.
+ *
+ * Verified: 2026-03-06, proto-verification pipeline
+ */
+// confidence: gold [apk_deep_trace, 2026-03-06]
+message AVMediaAckIndication
+{
+    required int32 session_id = 1;  // AV session ID (compared mod 256)  // confidence: gold [apk_deep_trace]
+    optional uint32 ack_count = 2;  // Frames acknowledged (must be > 0). Fallback when field 3 empty.  // confidence: gold [apk_deep_trace]
+    repeated uint64 receive_timestamps = 3;  // Per-frame HU receive timestamps (nanoseconds). Takes priority over field 2.  // confidence: gold [apk_deep_trace]
+}

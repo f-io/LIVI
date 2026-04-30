@@ -1,0 +1,7 @@
+syntax="proto2";
+
+package aap_protobuf.service.media.sink.message;
+
+message KeyBindingRequest {
+    repeated int32 keycodes = 1 [packed = true];
+}

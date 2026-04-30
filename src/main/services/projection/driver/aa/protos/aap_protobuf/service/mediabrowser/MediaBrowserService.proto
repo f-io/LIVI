@@ -1,0 +1,10 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+package aap_protobuf.service.mediabrowser;
+
+message MediaBrowserService
+{
+
+}

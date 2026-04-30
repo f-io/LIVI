@@ -70,6 +70,20 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
                 description: 'Wi-Fi frequency selection',
                 labelDescription: 'settings.wifiFrequencyDescription'
               }
+            },
+            {
+              type: 'string',
+              label: 'Wi-Fi Password',
+              labelKey: 'settings.wifiPassword',
+              path: 'wifiPassword',
+              displayValue: true,
+              page: {
+                title: 'Wi-Fi Password',
+                labelTitle: 'settings.wifiPassword',
+                description:
+                  'Passphrase for the native AA/CP Wi-Fi access point. Phones use this to join after BT pairing.',
+                labelDescription: 'settings.wifiPasswordDescription'
+              }
             }
           ]
         },
@@ -78,6 +92,27 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
           label: 'Auto Connect',
           labelKey: 'settings.autoConnect',
           path: 'autoConn'
+        },
+        {
+          type: 'route',
+          route: 'wirelessProjection',
+          label: 'Wireless Projection',
+          labelKey: 'settings.wirelessProjection',
+          path: '',
+          children: [
+            {
+              type: 'checkbox',
+              label: 'Wireless Android Auto',
+              labelKey: 'settings.wirelessAa',
+              path: 'aa'
+            }
+            //{
+            //  type: 'checkbox',
+            //  label: 'Wireless CarPlay',
+            //  labelKey: 'settings.wirelessCp',
+            //  path: 'cp'
+            //}
+          ]
         }
       ]
     },

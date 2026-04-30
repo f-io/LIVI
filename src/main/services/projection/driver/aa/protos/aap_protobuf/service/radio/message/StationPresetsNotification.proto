@@ -1,0 +1,11 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+import "aap_protobuf/service/radio/message/StationPresetList.proto";
+
+package aap_protobuf.service.radio.message;
+
+message StationPresetsNotification {
+  repeated StationPresetList preset_lists = 2;
+}

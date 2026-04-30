@@ -1,0 +1,8 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource.message;
+
+message RpmData {
+    required int32 rpm_e3 = 1;
+}
+

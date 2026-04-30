@@ -74,7 +74,7 @@ jest.mock('@main/services/projection/messages', () => ({
   SendTouch
 }))
 
-jest.mock('@main/services/projection/driver/DongleDriver', () => ({
+jest.mock('@main/services/projection/driver/dongle/dongleDriver', () => ({
   DongleDriver: MockDongleDriver,
   DEFAULT_CONFIG: { phoneConfig: {} }
 }))

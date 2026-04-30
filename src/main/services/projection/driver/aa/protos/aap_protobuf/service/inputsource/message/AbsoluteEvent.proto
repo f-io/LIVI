@@ -1,0 +1,11 @@
+syntax="proto2";
+
+package aap_protobuf.service.inputsource.message;
+
+message AbsoluteEvent {
+    repeated Abs data = 1;
+    message Abs {
+        required uint32 keycode = 1;
+        required int32 value = 2;
+    }
+}

@@ -1,0 +1,9 @@
+syntax="proto2";
+
+package aap_protobuf.service.control.message;
+
+enum GalConstants {
+  WIFI_PORT = 30515;
+  PROTOCOL_MAJOR_VERSION = 1;
+  PROTOCOL_MINOR_VERSION = 6;
+}

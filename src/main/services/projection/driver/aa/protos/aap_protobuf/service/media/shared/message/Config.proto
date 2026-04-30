@@ -1,0 +1,14 @@
+syntax="proto2";
+
+package aap_protobuf.service.media.shared.message;
+
+message Config {
+  required Status status = 1;
+  enum Status {
+    STATUS_WAIT = 1;
+    STATUS_READY = 2;
+  }
+
+  optional uint32 max_unacked = 2;
+  repeated uint32 configuration_indices = 3;
+}

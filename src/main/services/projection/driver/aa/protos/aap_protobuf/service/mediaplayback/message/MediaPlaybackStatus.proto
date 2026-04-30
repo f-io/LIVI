@@ -1,0 +1,18 @@
+syntax="proto2";
+
+package aap_protobuf.service.mediaplayback.message;
+
+message MediaPlaybackStatus {
+    optional State state = 1;
+    enum State {
+        STOPPED = 1;
+        PLAYING = 2;
+        PAUSED = 3;
+    }
+
+    optional string media_source = 2;
+    optional uint32 playback_seconds = 3;
+    optional bool shuffle = 4;
+    optional bool repeat = 5;
+    optional bool repeat_one = 6;
+}

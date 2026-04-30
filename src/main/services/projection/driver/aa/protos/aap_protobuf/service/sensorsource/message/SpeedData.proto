@@ -1,0 +1,9 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource.message;
+
+message SpeedData {
+    required int32 speed_e3 = 1;
+    optional bool cruise_engaged = 2;
+    optional int32 cruise_set_speed = 4;
+}

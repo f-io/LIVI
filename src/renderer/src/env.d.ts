@@ -1,7 +1,7 @@
 /// <reference types="@webgpu/types" />
 
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { ExtraConfig, DongleFirmwareAction } from '@shared/types'
+import type { DongleFirmwareAction, ExtraConfig } from '@shared/types'
 import type { MultiTouchPoint } from '@shared/types/TouchTypes'
 
 // Should move to src/types/usb.ts
@@ -138,6 +138,7 @@ declare global {
       ipc: {
         start(): Promise<void>
         stop(): Promise<void>
+        restart(): Promise<void>
         sendFrame(): Promise<void>
         dongleFirmware(action: DongleFirmwareAction): Promise<DongleFirmwareCheckResult>
 

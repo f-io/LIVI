@@ -1,0 +1,8 @@
+syntax="proto2";
+
+package aap_protobuf.service.media.shared.message;
+
+message Stop
+{
+
+}

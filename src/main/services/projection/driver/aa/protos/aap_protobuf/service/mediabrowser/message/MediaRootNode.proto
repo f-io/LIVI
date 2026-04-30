@@ -1,0 +1,10 @@
+syntax="proto2";
+
+import "aap_protobuf/service/mediabrowser/message/MediaSource.proto";
+
+package aap_protobuf.service.mediabrowser.message;
+
+message MediaRootNode {
+  required string path = 1;
+  repeated MediaSource media_sources = 2;
+}

@@ -1,0 +1,13 @@
+syntax="proto2";
+
+package aap_protobuf.aaw;
+
+enum MessageId {
+  WIFI_START_REQUEST = 1;
+  WIFI_INFO_REQUEST = 2;
+  WIFI_INFO_RESPONSE = 3;
+  WIFI_VERSION_REQUEST = 4;
+  WIFI_VERSION_RESPONSE = 5;
+  WIFI_CONNECTION_STATUS = 6;
+  WIFI_START_RESPONSE = 7;
+}
