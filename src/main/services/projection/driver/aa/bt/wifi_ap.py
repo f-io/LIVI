@@ -1,12 +1,10 @@
 """
 wifi_ap.py — WiFi Access Point for Android Auto
-
-Direct port of iap2/wifi_ap.py — same structure, same function names.
-Apple-specific parts removed (WAC vendor_elements, Bonjour/Avahi).
 """
 
 import re
 import os
+import shutil
 import subprocess
 import time
 
@@ -15,6 +13,70 @@ from config import SSID, PASSPHRASE, CHANNEL, COUNTRY_CODE, WIFI_IFACE
 HOSTAPD_CONFIG_PATH = "/tmp/livi-hostapd.conf"
 DNSMASQ_CONFIG_PATH = "/tmp/livi-dnsmasq.conf"
 AP_IP = "10.10.0.1"
+
+# ── firewalld zone management ─────────────────────────────────────────────────
+#
+# Some distros ship firewalld active by default. When that's the case, the
+# AP interface lands in a default zone (typically one that drops inbound
+# broadcasts), which silently swallows the phone's DHCP DISCOVER even though
+# dnsmasq is happily listening. Symptom: the phone associates and completes
+# EAPOL but never gets an IP, then deauths after the inactivity timer.
+#
+# Fix: for the lifetime of the AP, move WIFI_IFACE into the `trusted` zone
+# (runtime-only, no `--permanent`) so all inbound traffic on that interface
+# is allowed; on teardown restore the zone we displaced.
+
+_saved_firewalld_zone: str | None = None
+
+
+def _firewall_cmd(*args: str, timeout: float = 5.0) -> tuple[int, str, str]:
+    """Run firewall-cmd. Returns (rc, stdout, stderr). rc=127 if not installed."""
+    if not shutil.which("firewall-cmd"):
+        return (127, "", "firewall-cmd not installed")
+    try:
+        r = subprocess.run(
+            ["sudo", "firewall-cmd", *args],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        return (r.returncode, r.stdout.strip(), r.stderr.strip())
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        return (1, "", str(e))
+
+
+def _firewalld_open_iface(iface: str) -> None:
+    """Move iface into firewalld's `trusted` zone (runtime). Saves prior zone."""
+    global _saved_firewalld_zone
+    rc, prior, _ = _firewall_cmd("--get-zone-of-interface", iface)
+    if rc == 127:
+        return  # firewall-cmd not installed → no firewalld to manage
+    if rc != 0 or not prior:
+        # firewalld likely inactive; trying to set anyway will fail harmlessly.
+        prior = ""
+    _saved_firewalld_zone = prior or None
+
+    rc, _, err = _firewall_cmd("--zone=trusted", f"--change-interface={iface}")
+    if rc == 0:
+        if prior:
+            print(f"[wifi_ap] firewalld: {iface} {prior} → trusted (runtime)")
+        else:
+            print(f"[wifi_ap] firewalld: {iface} → trusted (runtime)")
+    elif rc != 127:
+        print(f"[wifi_ap] firewalld: could not move {iface} to trusted: {err}")
+
+
+def _firewalld_restore_iface(iface: str) -> None:
+    """Restore the firewalld zone we displaced in _firewalld_open_iface."""
+    global _saved_firewalld_zone
+    if _saved_firewalld_zone is None:
+        return
+    prior = _saved_firewalld_zone
+    _saved_firewalld_zone = None
+    rc, _, err = _firewall_cmd(f"--zone={prior}", f"--change-interface={iface}")
+    if rc == 0:
+        print(f"[wifi_ap] firewalld: {iface} trusted → {prior} (restored)")
+    elif rc != 127:
+        # Non-fatal: on next firewalld reload the runtime change is gone anyway.
+        print(f"[wifi_ap] firewalld: could not restore {iface} to {prior}: {err}")
 
 
 def get_wlan_mac(iface: str = WIFI_IFACE) -> str:
@@ -138,10 +200,6 @@ def wait_for_ap_ready(timeout_seconds: float = 8.0) -> bool:
 
 
 def setup_ap():
-    # Belt-and-suspenders: kill any hostapd/dnsmasq left over from a previous
-    # crashed run before kill_network_manager_and_supplicant grabs WIFI_IFACE again.
-    # Without this, a stale hostapd holding WIFI_IFACE makes our new instance log
-    # "could not configure driver: nl80211 driver initialization failed".
     subprocess.run(["sudo", "pkill", "-f", f"hostapd.*{HOSTAPD_CONFIG_PATH}"], check=False)
     subprocess.run(["sudo", "pkill", "-f", f"dnsmasq.*{DNSMASQ_CONFIG_PATH}"], check=False)
     time.sleep(0.3)
@@ -149,13 +207,13 @@ def setup_ap():
     kill_network_manager_and_supplicant()
     disable_existing_wifi_network_services()
     setup_network_interface()
+    _firewalld_open_iface(WIFI_IFACE)
+
     write_hostapd_config()
     start_dnsmasq()
     start_hostapd()
 
-    # Don't return until hostapd is *actually* beaconing — see comment in
-    # wait_for_ap_ready. Caller (aa-bluetooth.py main) gates BT advertising
-    # on this returning so the phone never sees BT before WiFi.
+    # Don't return until hostapd is actually beaconing
     if wait_for_ap_ready():
         print(f"[wifi_ap] AP up — SSID={SSID!r}  IP={AP_IP}  channel={CHANNEL}")
     else:
@@ -166,6 +224,10 @@ def teardown_ap():
     subprocess.run(["sudo", "pkill", "-f", f"hostapd.*{HOSTAPD_CONFIG_PATH}"], check=False)
     subprocess.run(["sudo", "pkill", "-f", f"dnsmasq.*{DNSMASQ_CONFIG_PATH}"], check=False)
     subprocess.run(["sudo", "ip", "addr", "flush", "dev", WIFI_IFACE], check=False)
+
+    # Restore the original firewalld zone — silent no-op with no firewalld
+    _firewalld_restore_iface(WIFI_IFACE)
+
     # Hand WIFI_IFACE back to NetworkManager — symmetric with kill_network_manager_and_supplicant
     # at start. If NM happens to grab it for Wi-Fi-client mode before the next
     # AA session starts, setup_ap()'s `nmcli device set WIFI_IFACE managed no` plus

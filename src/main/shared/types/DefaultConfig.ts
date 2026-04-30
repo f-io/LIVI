@@ -44,7 +44,7 @@ export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
   wifiChannel: 36,
   micType: MicType.CarMic,
   phoneConfig: {},
-  aa: true,
+  aa: false,
   cp: false,
   wifiPassword: '12345678',
   btAdapter: 'hci0',

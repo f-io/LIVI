@@ -3,17 +3,31 @@
 aa-bluetooth.py — Android Auto: WiFi AP + Bluetooth profile manager
 
 Startup sequence (all at runtime, no pre-setup required):
-  1. wifi_ap.setup_ap()     — kills NM/wpa_supplicant, starts hostapd + dnsmasq
-  2. BlueZ dbus setup       — registers HFP AG, HSP HS, AA RFCOMM profiles
-  3. AA SDP record          — passed as ServiceRecord to RegisterProfile
-                              (no --compat / sdp_clean needed)
-  4. Pairing agent          — auto-confirms pairing (inline, no separate process)
-  5. RFCOMM WiFi handshake  — 5-stage credential exchange
+  1. wifi_ap.setup_ap()        — kills NM/wpa_supplicant, starts hostapd + dnsmasq
+  2. bluetoothd "-P *" drop-in — disables every BlueZ plugin, leaving the
+                                 SDP space clean (no plugin auto-registers
+                                 records that would confuse Android's strict
+                                 SDP parser). Triggers a one-time bluetoothd
+                                 restart on first run.
+  3. btmgmt CoD + SSP          — class major byte=0x04 (Audio/Video) and
+                                 minor byte=0x18 (semantic minor 6 in
+                                 bits 2-7); SSP on. Audio service-class bit
+                                 gets added by BlueZ once we register
+                                 HFP/AA UUIDs, which is what makes the phone
+                                 recognise the host as a carkit.
+  4. BlueZ D-Bus setup         — registers AA RFCOMM profile (with the AA
+                                 SDP record passed inline as ServiceRecord),
+                                 HFP HF profile, and a pairing agent that
+                                 auto-confirms (KeyboardDisplay).
+  5. RFCOMM WiFi handshake     — 5-stage credential exchange when the phone
+                                 connects to channel 8.
 
 Pattern mirrors iap2/transport/bluetooth.py + iap2/wifi_ap.py.
 
 Requires (apt):
-  hostapd dnsmasq bluetooth bluez python3-dbus python3-gi gir1.2-glib-2.0
+  hostapd dnsmasq bluez python3-dbus python3-gi gir1.2-glib-2.0
+  (bluez-utils provides btmgmt; busctl ships with systemd. Legacy
+   bluez-tools / hciconfig / sdptool are no longer needed.)
 
 Config:  bt/wifi.conf
 Usage:   sudo python3 bt/aa-bluetooth.py
@@ -38,13 +52,116 @@ from gi.repository import GLib
 from wifi_ap import setup_ap, teardown_ap, get_wlan_mac, AP_IP
 from config import SSID, PASSPHRASE, CHANNEL, PORT as AA_PORT, BTNAME, WIFI_IFACE, BT_ADAPTER
 
-# ── BlueZ --compat setup + sdp_clean ──────────────────────────────────────────
+# ── btmgmt / busctl wrappers ──────────────────────────────────────────────
+#
+# Helpers here are intentionally best-effort: every shell-out is wrapped so a
+# missing binary or transient failure can't tear down the supervisor. Anything
+# that *must* succeed is asserted via the D-Bus property API further down
+# (e.g. Adapter.Set("Powered", True)) which runs regardless.
 
-_BT_DIR     = os.path.dirname(os.path.abspath(__file__))
-_SDP_SRC    = os.path.join(_BT_DIR, "sdp_clean.c")
-_SDP_BIN    = os.path.join(_BT_DIR, "sdp_clean")
-_COMPAT_DIR = "/etc/systemd/system/bluetooth.service.d"
-_COMPAT_CFG = os.path.join(_COMPAT_DIR, "livi-compat.conf")
+def _btmgmt(*args: str, timeout: float = 5.0) -> subprocess.CompletedProcess:
+    """Run btmgmt against the configured adapter. Best-effort, never raises.
+
+    Replaces legacy `hciconfig <iface> ...` and the kernel-level bits of
+    `bluetoothctl`. btmgmt accepts either 'hci0' or '0' for --index, so we
+    can pass BT_ADAPTER as-is.
+    """
+    cmd = ["btmgmt", "--index", BT_ADAPTER, *args]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        if result.returncode != 0:
+            err = (result.stderr or result.stdout).strip()
+            print(f"[aa-bt] btmgmt {' '.join(args)} → rc={result.returncode}: {err}",
+                  flush=True)
+        return result
+    except FileNotFoundError:
+        print("[aa-bt] btmgmt not installed — apt install bluez (bluez-utils)",
+              flush=True)
+        return subprocess.CompletedProcess(cmd, 127, "", "btmgmt missing")
+    except subprocess.TimeoutExpired:
+        print(f"[aa-bt] btmgmt timed out: {' '.join(cmd)}", flush=True)
+        return subprocess.CompletedProcess(cmd, 1, "", "timeout")
+
+
+def _power_on_bt() -> None:
+    """Make sure the radio is on. Idempotent.
+
+    Replaces:  rfkill unblock bluetooth + hciconfig <iface> up
+
+    `btmgmt power on` flips the kernel mgmt POWERED flag, which on its own is
+    enough on a sane system. We still try `rfkill unblock` first as a belt
+    against soft-blocked radios (OS Bluetooth toggle, airplane mode, etc.) —
+    rfkill is part of util-linux now, not bluez, so it stays available.
+    """
+    try:
+        subprocess.run(["rfkill", "unblock", "bluetooth"],
+                       capture_output=True, check=False)
+    except FileNotFoundError:
+        pass  # rfkill missing — btmgmt power on alone is usually enough
+    _btmgmt("power", "on")
+
+
+def _set_bt_adapter_class_and_ssp() -> None:
+    """
+      btmgmt class 4 24
+        major byte = 0x04   (Audio/Video, bits 5-7 must be zero)
+        minor byte = 0x18   (semantic minor 6 in bits 2-7; bits 0-1 are the
+                             CoD format field and must be zero)
+
+      btmgmt add-uuid 0000111e-… 0x20
+        Adds HFP HF to the adapter's UUID list with the Audio service-class
+        hint (0x20). This is what re-introduces bit 21 (Audio) of the CoD,
+        i.e. the difference between the legacy 0x200418 and a btmgmt-only
+        0x000418. Without this hint the upper byte stays zero, the phone
+        sees a generic Audio/Video device instead of an audio-capable car
+        kit, and Android Auto's wireless flow can refuse to enter the real
+        session even after WiFi credentials change hands.
+
+      btmgmt ssp on
+        Secure Simple Pairing
+    """
+    _btmgmt("class", "4", "24")                   # major=0x04, minor=0x18
+    _btmgmt("add-uuid", HFP_HF_UUID, "0x20")      # service-hint Audio (bit 21)
+    _btmgmt("ssp", "on")
+    print("[aa-bt] BT class major=0x04 minor=0x18  +Audio service hint  "
+          "SSP=on  (via btmgmt)", flush=True)
+
+
+def _busctl_get_property(path: str, iface: str, prop: str,
+                         timeout: float = 5.0) -> str:
+    """
+    Read a D-Bus property via `busctl get-property`. Returns "" on error.
+    """
+    try:
+        result = subprocess.run(
+            ["busctl", "--system", "get-property",
+             "org.bluez", path, iface, prop],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return ""
+
+
+# ── bluetoothd "-P *" drop-in (disable plugins) ────────────────────────────
+#
+#   `bluetoothd -P *` turns off every plugin, so the only SDP records left on
+#   the adapter are the ones we register ourselves through ProfileManager1
+#   (the AA record is passed inline as ServiceRecord — see AA_SDP_RECORD).
+#   HFP AG / HSP HS are core code in bluetoothd, not plugins, so they survive
+#   `-P *` and don't need re-registration.
+#
+# Migration note:
+#   Earlier installs left a `livi-compat.conf` drop-in behind. We unlink it on
+#   first run of the new code so two drop-ins don't both override ExecStart.
+
+_DROPIN_DIR        = "/etc/systemd/system/bluetooth.service.d"
+_DROPIN_CFG        = os.path.join(_DROPIN_DIR, "livi-noplugins.conf")
+
+# --------------------- TODO remove ----------------------------------------
+_LEGACY_COMPAT_CFG = os.path.join(_DROPIN_DIR, "livi-compat.conf")
+# --------------------------------------------------------------------------
+
 def _find_bluetoothd() -> str:
     """Return the bluetoothd binary path from the running service unit."""
     for p in ("/usr/libexec/bluetooth/bluetoothd",
@@ -67,77 +184,58 @@ def _find_bluetoothd() -> str:
     raise RuntimeError("Cannot find bluetoothd binary")
 
 
-def _ensure_compat_dropin() -> bool:
-    """Write --compat -P * drop-in if missing. Returns True if restart is needed."""
+def _ensure_noplugins_dropin() -> bool:
+    """Write the `bluetoothd -P *` drop-in. Returns True if a restart is needed.
+
+    Also unlinks the older `livi-compat.conf` drop-in if upgrading from the
+    sdp_clean-era setup. Both files would otherwise stack ExecStart= overrides
+    in alphabetical order and produce a daemon command line we don't want.
+    """
     bluetoothd = _find_bluetoothd()
-    # -P * disables all BlueZ plugins → prevents auto-registration of conflicting
-    # HFP/HSP/A2DP SDP records; we register them ourselves via D-Bus ProfileManager1.
     content = (
         "[Service]\n"
         "ExecStart=\n"
-        f"ExecStart={bluetoothd} --compat -P *\n"
+        f"ExecStart={bluetoothd} -P *\n"
     )
+
+    restart_needed = False
+
+# --------------------- TODO remove ----------------------------------------
+    # Wipe the legacy --compat drop-in if present (one-time upgrade step).
+    if os.path.exists(_LEGACY_COMPAT_CFG):
+        try:
+            os.unlink(_LEGACY_COMPAT_CFG)
+            print(f"[aa-bt] removed legacy drop-in {_LEGACY_COMPAT_CFG}")
+            restart_needed = True
+        except OSError as e:
+            print(f"[aa-bt] could not remove {_LEGACY_COMPAT_CFG}: {e}")
+# --------------------------------------------------------------------------
+
     try:
-        current = open(_COMPAT_CFG).read() if os.path.exists(_COMPAT_CFG) else ""
+        current = open(_DROPIN_CFG).read() if os.path.exists(_DROPIN_CFG) else ""
     except OSError:
         current = ""
-    if current == content:
-        print(f"[aa-bt] bluetoothd --compat -P * drop-in already in place ({bluetoothd})")
-        return False
-    os.makedirs(_COMPAT_DIR, exist_ok=True)
-    with open(_COMPAT_CFG, "w") as f:
-        f.write(content)
-    print(f"[aa-bt] wrote {_COMPAT_CFG} ({bluetoothd} --compat -P *)")
-    return True
+
+    if current != content:
+        os.makedirs(_DROPIN_DIR, exist_ok=True)
+        with open(_DROPIN_CFG, "w") as f:
+            f.write(content)
+        print(f"[aa-bt] wrote {_DROPIN_CFG} ({bluetoothd} -P *)")
+        restart_needed = True
+    else:
+        print(f"[aa-bt] bluetoothd -P * drop-in already in place ({bluetoothd})")
+
+    return restart_needed
 
 
-def _ensure_sdp_binary():
-    """Compile sdp_clean.c → sdp_clean binary if not up-to-date."""
-    if (os.path.exists(_SDP_BIN) and
-            os.path.getmtime(_SDP_BIN) >= os.path.getmtime(_SDP_SRC)):
-        print("[aa-bt] sdp_clean binary up-to-date")
-        return
-    print("[aa-bt] compiling sdp_clean.c …")
-    result = subprocess.run(
-        ["gcc", "-o", _SDP_BIN, _SDP_SRC, "-lbluetooth"],
-        capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        print(f"[aa-bt] gcc failed:\n{result.stderr}")
-        print("  Install: sudo apt install libbluetooth-dev")
-        raise RuntimeError("sdp_clean compile failed")
-    os.chmod(_SDP_BIN, 0o755)
-    print("[aa-bt] sdp_clean compiled OK")
-
-
-def setup_compat():
-    """Ensure --compat drop-in and restart bluetoothd if needed."""
-    restart_needed = _ensure_compat_dropin()
-    if restart_needed:
-        print("[aa-bt] restarting bluetoothd to apply --compat …")
+def setup_bluetoothd_dropin():
+    """Ensure the -P * drop-in is in place and restart bluetoothd if it changed."""
+    if _ensure_noplugins_dropin():
+        print("[aa-bt] restarting bluetoothd to apply -P * …")
         subprocess.run(["systemctl", "daemon-reload"], check=False)
         subprocess.run(["systemctl", "restart", "bluetooth"], check=True)
         time.sleep(5)
         print("[aa-bt] bluetoothd restarted")
-
-
-def _start_sdp_clean() -> subprocess.Popen:
-    """Compile sdp_clean if needed and start it as background process."""
-    _ensure_sdp_binary()
-    proc = subprocess.Popen(
-        [_SDP_BIN],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True
-    )
-    def _log():
-        for line in proc.stdout:
-            print(line, end="")
-    threading.Thread(target=_log, daemon=True).start()
-    time.sleep(1)
-    if proc.poll() is not None:
-        raise RuntimeError(f"sdp_clean exited early (rc={proc.returncode})")
-    print(f"[aa-bt] sdp_clean running (pid={proc.pid})")
-    return proc
 
 # ── Protobuf helpers (hand-rolled — no extra dependency) ──────────────────────
 
@@ -634,9 +732,17 @@ HFP_HF_UUID = "0000111e-0000-1000-8000-00805f9b34fb"  # HFP Hands-Free (car kit 
 HFP_AG_UUID = "0000111f-0000-1000-8000-00805f9b34fb"  # HFP Audio Gateway (phone role)
 HSP_UUID    = "00001108-0000-1000-8000-00805f9b34fb"   # HSP Headset
 
-# AA SDP record with only 128-bit service class UUID.
-# Passed as ServiceRecord to RegisterProfile → no --compat / sdp_clean needed.
-# Mirrors iap2 approach (IAP_RECORD in iap2/transport/bluetooth.py).
+# AA SDP record — passed inline as ServiceRecord on RegisterProfile so BlueZ
+# publishes it directly via its D-Bus-driven SDP server (no /var/run/sdp,
+# no libbluetooth helper). Contents:
+#   0x0001 ServiceClassIDList    — only the 128-bit AA UUID (no SPP, no
+#                                  16-bit fillers — Android's SDP parser
+#                                  rejects mixed UUID sizes in one record)
+#   0x0004 ProtocolDescriptorList — L2CAP + RFCOMM channel 8
+#   0x0005 BrowseGroupList        — PublicBrowseRoot (so the phone finds it
+#                                   on a generic SDP browse)
+#   0x0100 ServiceName            — "Android Auto Wireless"
+# Mirrors the iap2 approach (IAP_RECORD in iap2/transport/bluetooth.py).
 AA_SDP_RECORD = """<?xml version="1.0" encoding="UTF-8" ?>
 <record>
   <attribute id="0x0001">
@@ -707,37 +813,35 @@ _hfp_cached_channel: dict[str, int] = {}  # mac → channel number
 # Interval: 5s — fast enough for 3-5s reconnect target without being aggressive.
 
 def _bt_is_connected(mac: str) -> bool:
-    """Return True if the phone's BT is currently connected to us."""
-    try:
-        result = subprocess.run(
-            ["bluetoothctl", "info", mac],
-            capture_output=True, text=True, timeout=5
-        )
-        return "Connected: yes" in result.stdout
-    except Exception:
-        return False
+    """Return True if the phone's BT is currently connected to us.
+
+    Reads org.bluez.Device1.Connected via busctl. Replaces the previous
+    `bluetoothctl info <mac>` text-grep, which depended on bluetoothctl's
+    output format and on a tool that may not be present on minimal images.
+    busctl ships with systemd → always available where BlueZ runs.
+    """
+    path = f"{ADAPTER_PATH}/dev_{mac.replace(':', '_')}"
+    out = _busctl_get_property(path, "org.bluez.Device1", "Connected")
+    # busctl prints booleans as "b true" / "b false"
+    return out.lower().endswith("true")
 
 
 def _find_hfp_ag_channel(mac: str) -> int:
-    """Return phone's HFP AG RFCOMM channel number via sdptool SDP browse.
-    Falls back to channel 1 if sdptool is unavailable or times out.
+    """Return a best-guess HFP AG RFCOMM channel for the phone.
+
+    Modern bluez-utils no longer ships `sdptool`, and there's no equivalent
+    in btmgmt for browsing a remote device's SDP records (BlueZ keeps that
+    capability internal to ConnectProfile). Doing it ourselves would mean
+    pulling in libbluetooth-dev + a custom helper just for one channel
+    number, which isn't worth it: the probe loop in _connect_hfp_direct
+    already iterates ch=1..15 and caches the first one that answers
+    AT+BRSF, so the second connect attempt onward goes straight to the
+    right channel.
+
+    Channel 1 is what Pixel 8 (and most current Android phones) use for HFP
+    AG, so it's a strong first guess.
     """
-    try:
-        result = subprocess.run(
-            ["sdptool", "search", "--bdaddr", mac, "HFP"],
-            capture_output=True, text=True, timeout=8,
-        )
-        for line in result.stdout.splitlines():
-            if "Channel:" in line:
-                try:
-                    return int(line.split("Channel:")[1].strip().split()[0])
-                except ValueError:
-                    pass
-    except FileNotFoundError:
-        pass  # sdptool not installed
-    except Exception as e:
-        print(f"[hfp] sdptool: {e}", flush=True)
-    return 1   # Default: Pixel 8 HFP AG is typically on channel 1
+    return 1
 
 
 def _connect_hfp_direct(mac: str) -> None:
@@ -767,15 +871,16 @@ def _connect_hfp_direct(mac: str) -> None:
         # Use cached channel if available (avoids 3s ch=2 probe timeout on retry).
         cached = _hfp_cached_channel.get(mac)
         if cached:
-            sdptool_ch = cached
             candidates = [cached] + [c for c in range(1, 16) if c != cached]
             print(f"[hfp] probing channels for HFP AG on {mac} (cached ch={cached})", flush=True)
         else:
-            sdptool_ch = _find_hfp_ag_channel(mac)
-            # sdptool result first, then scan 1–15 in order (skip sdptool ch to avoid dup)
-            candidates = [sdptool_ch] + [c for c in range(1, 16) if c != sdptool_ch]
+            # No SDP browse available (sdptool is gone on modern distros) —
+            # try the most common default first, then scan the rest. Once a
+            # channel succeeds it's cached so subsequent connects skip the scan.
+            first = _find_hfp_ag_channel(mac)
+            candidates = [first] + [c for c in range(1, 16) if c != first]
             print(f"[hfp] probing {len(candidates)} channels for HFP AG on {mac} "
-                  f"(sdptool→{sdptool_ch})", flush=True)
+                  f"(default→{first}, no SDP browse)", flush=True)
 
         for ch in candidates:
             sock = None
@@ -1145,9 +1250,9 @@ def main():
     # Two failure modes we have to defend against, in order of nastiness:
     #
     # 1) LIVI dies hard (crash, OOM, kill -9). Linux re-parents this Python to
-    #    init, hostapd / dnsmasq / sdp_clean keep running, NetworkManager
-    #    never gets wlan0 back, BT keeps advertising. Next LIVI launch then
-    #    can't bind hostapd ("Could not initialize iface").
+    #    init, hostapd / dnsmasq keep running, NetworkManager never gets wlan0
+    #    back, BT keeps advertising. Next LIVI launch then can't bind hostapd
+    #    ("Could not initialize iface").
     #    → prctl(PR_SET_PDEATHSIG, SIGTERM) makes the kernel send us SIGTERM
     #      the moment our parent dies, no matter how it dies.
     #
@@ -1188,52 +1293,35 @@ def main():
     # ── 1. WiFi AP ────────────────────────────────────────────────────────────
     setup_ap()
 
-    # ── 2. --compat drop-in + sdp_clean subprocess ───────────────────────────
-    setup_compat()
-    sdp_proc = _start_sdp_clean()
+    # ── 2. bluetoothd "-P *" drop-in (no plugins, no --compat) ───────────────
+    # Plugins-off keeps the SDP space clean so the only records on the wire
+    # are the ones we register through ProfileManager1. The AA SDP record is
+    # passed inline as ServiceRecord (see AA_SDP_RECORD), so we no longer
+    # need the sdp_clean.c helper or bluetoothd's --compat SDP socket.
+    setup_bluetoothd_dropin()
 
     # ── 2b. BT device class + SSP mode ────────────────────────────────────────
-    # 0x200418 = Major: Audio/Video, Minor: Car Audio, Service: Audio
-    # This makes the phone recognise us as a car and auto-trigger Android Auto.
-    # Without the correct device class, the phone treats us as a generic BT
-    # device and Android Auto does not start automatically → only cleanup sessions.
-    subprocess.run(["hciconfig", BT_ADAPTER, "class", "0x200418"],
-                   capture_output=True, check=False)
-    subprocess.run(["hciconfig", BT_ADAPTER, "sspmode", "1"],
-                   capture_output=True, check=False)
-    print("[aa-bt] BT class=0x200418 (Car Audio) SSP=1", flush=True)
+    # Audio/Video major + minor=6 + Audio service bit (set by BlueZ once we
+    # register HFP/AA via ProfileManager1) makes the phone recognise us as a
+    # car kit and auto-trigger Android Auto. Without the right CoD the phone
+    # treats us as a generic BT device and AA does not auto-start → cleanup
+    # sessions only. See _set_bt_adapter_class_and_ssp() for byte layout notes.
+    _set_bt_adapter_class_and_ssp()
 
     # ── 2c. Make sure BT is actually on before we touch BlueZ ─────────────────
     # If the user toggled Bluetooth off via OS settings (or anything else
     # rfkill'd it), Adapter.Set("Powered", True) further down silently no-ops:
-    # BlueZ reports the property as set but the radio stays off. Unblock via
-    # rfkill — idempotent and harmless when BT was already on.
-    #
-    # Both `rfkill` and `hciconfig` may not be installed (Bookworm dropped
-    # bluez-tools from the default image). Catch FileNotFoundError so we don't
-    # crash the supervisor on systems that lack them — `Adapter.Set("Powered")`
-    # below will still work as long as nothing rfkill'd the radio in the first
-    # place.
-    try:
-        subprocess.run(["rfkill", "unblock", "bluetooth"], capture_output=True, check=False)
-    except FileNotFoundError:
-        print("[aa-bt] rfkill not installed — skipping unblock")
-    try:
-        subprocess.run(["hciconfig", BT_ADAPTER, "up"], capture_output=True, check=False)
-    except FileNotFoundError:
-        # bluez-tools missing → fall back to btmgmt (bluez-utils, usually present).
-        try:
-            subprocess.run(["btmgmt", "power", "on"], capture_output=True, check=False)
-        except FileNotFoundError:
-            print("[aa-bt] no hciconfig/btmgmt available — relying on Adapter.Set(Powered)")
+    # BlueZ reports the property as set but the radio stays off. _power_on_bt
+    # combines rfkill unblock + `btmgmt power on`, both best-effort.
+    _power_on_bt()
 
     # ── Crash-safe cleanup via atexit ─────────────────────────────────────────
     # If anything past this point raises (RegisterProfile collision, BlueZ
     # going away, Adapter.Set failure …), the bare `try: loop.run()` further
     # down won't catch it because the exception happens before we reach the
-    # MainLoop. Without atexit, every setup failure would leave hostapd,
-    # dnsmasq and sdp_clean as orphans — and the supervisor's restart loop
-    # would multiply that until the box runs out of slots.
+    # MainLoop. Without atexit, every setup failure would leave hostapd and
+    # dnsmasq as orphans — and the supervisor's restart loop would multiply
+    # that until the box runs out of slots.
     # atexit fires on normal exit, sys.exit(), and unhandled exceptions.
     # SIGTERM/SIGHUP land in our signal handler which calls loop.quit() (or
     # raises KeyboardInterrupt before the loop exists), both of which unwind
@@ -1253,10 +1341,6 @@ def main():
         if am is not None and ag is not None:
             try: am.UnregisterAgent(ag)
             except Exception: pass
-        try:
-            sdp_proc.terminate()
-            sdp_proc.wait(timeout=3)
-        except Exception: pass
         teardown_ap()
     atexit.register(_atexit_cleanup)
 
@@ -1267,19 +1351,26 @@ def main():
     # Register AA RFCOMM profile.
     # HFP AG / HSP HS are handled internally by BlueZ even with -P *
     # (they're core, not plugins). Don't re-register them — causes NotPermitted.
-    # SDP record is handled by sdp_clean subprocess.
+    # The AA SDP record is supplied inline via ServiceRecord on the
+    # RegisterProfile call below (see AA_SDP_RECORD); BlueZ publishes it
+    # verbatim, so we don't need a separate SDP helper.
     profile_manager = dbus.Interface(bluez, PROFILE_MANAGER)
     _bluez_handles["profile_manager"] = profile_manager
 
     aa_obj = AAProfile(bus, "/livi/bt/aa")
 
     def _register_aa_profile():
+        # ServiceRecord is the XML SDP record we want BlueZ to publish for
+        # this profile. Passing it inline is what replaces sdp_clean.c — BlueZ
+        # registers the record verbatim, so the AA UUID is discoverable
+        # without us touching the legacy /var/run/sdp socket.
         return profile_manager.RegisterProfile(aa_obj, AA_UUID, {
             'Name':                  'Android Auto Wireless',
             'Role':                  'server',
             'Channel':               dbus.types.UInt16(8),
             'RequireAuthentication': False,
             'RequireAuthorization':  False,
+            'ServiceRecord':         AA_SDP_RECORD,
         })
 
     # Try to unregister any stale AA profile from a previous run on OUR new bus
@@ -1308,10 +1399,14 @@ def main():
         print("[aa-bt] AA UUID held by stale bus — restarting bluetoothd to evict it")
         subprocess.run(["systemctl", "restart", "bluetooth"], check=False)
 
-        # Poll for bluetoothd availability instead of guessing a sleep — on a
-        # busy system the daemon can take a few seconds to re-export D-Bus.
+        # Poll for bluetoothd availability instead of guessing a sleep. On
+        # x86 Fedora a fresh bluetoothd start-up takes 5-10 s, so the
+        # previous 5 s budget tripped before the daemon was ready and we
+        # bailed even though the restart had succeeded. 15 s is generous
+        # enough for both the Pi and a stock Fedora workstation.
         rebound = False
-        for _ in range(20):  # up to ~5 s
+        deadline = time.monotonic() + 15.0
+        while time.monotonic() < deadline:
             time.sleep(0.25)
             try:
                 bus = dbus.SystemBus(private=True)
@@ -1325,12 +1420,11 @@ def main():
             except Exception:
                 continue
         if not rebound:
-            print("[aa-bt] bluetoothd did not come back within 5s — giving up this spawn")
+            print("[aa-bt] bluetoothd did not come back within 15s — giving up this spawn")
             raise
 
-        # adapter HCI tweaks have to be re-applied — bluetoothd reset the device.
-        subprocess.run(["hciconfig", BT_ADAPTER, "class", "0x200418"], capture_output=True, check=False)
-        subprocess.run(["hciconfig", BT_ADAPTER, "sspmode", "1"],     capture_output=True, check=False)
+        # adapter mgmt tweaks have to be re-applied — bluetoothd reset the device.
+        _set_bt_adapter_class_and_ssp()
 
         aa_obj = AAProfile(bus, "/livi/bt/aa")
         _register_aa_profile()
@@ -1340,15 +1434,23 @@ def main():
     # When phone connects HFP to our HU, Android Auto auto-starts on phone.
     # This sets user intention BEFORE the TCP session → real session (not cleanup).
     #
-    # Unregister any stale HFP profile from a previous run first.
-    # Without this, RegisterProfile fails with "UUID already registered"
-    # (BlueZ keeps registrations until the registering process exits cleanly,
-    # but if we crash/restart, the D-Bus service is gone but the UUID stays).
+    # On modern BlueZ (5.86+ confirmed on Fedora) the HFP HF UUID 0x111e is
+    # held internally by bluetoothd even with `-P *`, so RegisterProfile fails
+    # with NotPermitted. That's fine functionally: the raw RFCOMM
+    # direct-connect path (_connect_hfp_direct → _handle_hfp_rfcomm) drives
+    # SLC from our side instead, and that's what actually flips
+    # hfp_slc_established. The D-Bus profile registration is best-effort
+    # extra coverage — when it works, BlueZ also delivers any phone-initiated
+    # HFP RFCOMM connections to our profile object; when it doesn't, those
+    # phone-initiated connections are simply not exposed to us, but our own
+    # HU-initiated SLC still establishes via _connect_hfp_direct.
+    #
+    # First, drop any registration WE owned in a previous spawn (best-effort).
     try:
         profile_manager.UnregisterProfile("/livi/bt/hfp")
         print("[aa-bt] unregistered stale HFP profile (previous run)")
     except Exception:
-        pass  # Not registered — that's fine
+        pass  # Not registered on our connection — that's fine
 
     global _hfp_profile_registered
     hfp_obj = HFPProfile(bus, "/livi/bt/hfp")
@@ -1364,8 +1466,15 @@ def main():
         _hfp_profile_registered = True
         print("[aa-bt] registered HFP HF profile ✓")
     except dbus.exceptions.DBusException as e:
-        print(f"[aa-bt] HFP profile registration FAILED: {e}")
-        print(f"[aa-bt] HFP SLC tracking disabled — reconnect worker won't cycle BT")
+        msg = str(e).lower()
+        if "already registered" in msg or "notpermitted" in msg:
+            # Expected on BlueZ 5.86+: UUID 0x111e is reserved internally.
+            # SLC still works through _connect_hfp_direct, so this is just an
+            # informational log line — not a real failure.
+            print("[aa-bt] HFP HF profile is reserved by BlueZ — using raw "
+                  "RFCOMM direct-connect path (SLC unaffected)")
+        else:
+            print(f"[aa-bt] HFP profile registration unexpected error: {e}")
 
     # Agent SECOND — matches iap2
     agent = PairingAgent(bus, "/livi/bt/agent")
@@ -1376,16 +1485,45 @@ def main():
     agent_manager.RequestDefaultAgent(agent)
     print("[aa-bt] pairing agent registered")
 
-    # Adapter properties LAST — matches iap2
+    # Adapter properties LAST — matches iap2.
+    #
+    # Pairable/Discoverable/Powered all map to kernel mgmt ops that BlueZ
+    # serializes; right after Powered=True there's a short window where the
+    # next mgmt-driven property set returns org.bluez.Error.Busy. Observed on
+    # Fedora + BlueZ 5.86: first one or two spawns fail at Pairable, third
+    # one succeeds because the adapter has settled. Retrying on Busy with a
+    # bounded backoff makes this deterministic on the first spawn.
     adapter = dbus.Interface(
         bus.get_object(BLUEZ_SERVICE, ADAPTER_PATH),
         dbus.PROPERTIES_IFACE,
     )
-    adapter.Set("org.bluez.Adapter1", "Alias",               BTNAME)
-    adapter.Set("org.bluez.Adapter1", "DiscoverableTimeout", dbus.UInt32(0))
-    adapter.Set("org.bluez.Adapter1", "Powered",             True)
-    adapter.Set("org.bluez.Adapter1", "Discoverable",        True)
-    adapter.Set("org.bluez.Adapter1", "Pairable",            True)
+
+    def _adapter_set(prop: str, value, attempts: int = 12, base_delay: float = 0.25):
+        """Adapter1.Set wrapper with retry on transient Busy. ~5 s max wait."""
+        delay = base_delay
+        last: Exception | None = None
+        for i in range(attempts):
+            try:
+                adapter.Set("org.bluez.Adapter1", prop, value)
+                if i > 0:
+                    print(f"[aa-bt] adapter Set({prop}) succeeded after {i} retries",
+                          flush=True)
+                return
+            except dbus.exceptions.DBusException as e:
+                last = e
+                if "org.bluez.Error.Busy" not in str(e):
+                    raise
+                time.sleep(delay)
+                delay = min(delay * 1.5, 0.6)
+        # Out of attempts — re-raise the last Busy so the caller still sees it.
+        assert last is not None
+        raise last
+
+    _adapter_set("Alias",               BTNAME)
+    _adapter_set("DiscoverableTimeout", dbus.UInt32(0))
+    _adapter_set("Powered",             True)
+    _adapter_set("Discoverable",        True)
+    _adapter_set("Pairable",            True)
 
     props = adapter.GetAll("org.bluez.Adapter1")
     print(f"[aa-bt] adapter: {props.get('Name','?')} ({props.get('Address','?')}) discoverable=True")
@@ -1424,11 +1562,6 @@ def main():
                 pass
         try:
             agent_manager.UnregisterAgent(agent)
-        except Exception:
-            pass
-        try:
-            sdp_proc.terminate()
-            sdp_proc.wait(timeout=3)
         except Exception:
             pass
         teardown_ap()
