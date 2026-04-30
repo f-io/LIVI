@@ -6,7 +6,9 @@
 
 LIVI is an open-source **Apple CarPlay and Android Auto head unit for Linux**.
 
-It is a standalone cross-platform Electron head unit with hardware-accelerated video decoding, low-latency audio, multitouch + D-Pad navigation, and support for very small embedded/OEM displays. For CarPlay, LIVI relies on a dongle (MFi chip), while native Android Auto support is available directly on Linux.
+It is a standalone cross-platform Electron head unit with hardware-accelerated video decoding, low-latency audio, multitouch + D-Pad navigation, and support for very small embedded/OEM displays.
+
+LIVI supports native Android Auto on Linux. For CarPlay, a dongle with an MFi chip is currently required.
 
 > **Supported USB adapters:** Carlinkit **CPC200-CCPA** (wireless/wired) and **CPC200-CCPW** (wired)
 
