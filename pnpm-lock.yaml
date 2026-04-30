@@ -170,10 +170,10 @@ importers:
         version: 8.0.10(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(yaml@2.8.3)
       vite-plugin-electron:
         specifier: ^0.29.1
-        version: 0.29.1(vite-plugin-electron-renderer@0.14.6)
+        version: 0.29.1(vite-plugin-electron-renderer@0.14.7)
       vite-plugin-electron-renderer:
-        specifier: ^0.14.6
-        version: 0.14.6
+        specifier: ^0.14.7
+        version: 0.14.7
 
 packages:
 
@@ -3863,8 +3863,8 @@ packages:
     resolution: {integrity: sha512-veufcmxri4e3XSrT0xwfUR7kguIkaxBeosDg00yDWhk49wdwkSUrvvsm7nc75e1PUyvIeZj6nS8VQRYz2/S4Xg==}
     engines: {node: '>=0.6.0'}
 
-  vite-plugin-electron-renderer@0.14.6:
-    resolution: {integrity: sha512-oqkWFa7kQIkvHXG7+Mnl1RTroA4sP0yesKatmAy0gjZC4VwUqlvF9IvOpHd1fpLWsqYX/eZlVxlhULNtaQ78Jw==}
+  vite-plugin-electron-renderer@0.14.7:
+    resolution: {integrity: sha512-hHBMKuZ24MB2SIxG7U7ix+DDEnvxou7Bgy/TdhYxNz3S5N3Yh7Hjvj9blfMeGEJ0oaZJn7y5z0V/RyDmJ5OuCA==}
 
   vite-plugin-electron@0.29.1:
     resolution: {integrity: sha512-AejNed5BgHFnuw8h5puTa61C6vdP4ydbsbo/uVjH1fTdHAlCDz1+o6pDQ/scQj1udDrGvH01+vTbzQh/vMnR9w==}
@@ -8096,11 +8096,11 @@ snapshots:
       extsprintf: 1.4.1
     optional: true
 
-  vite-plugin-electron-renderer@0.14.6: {}
+  vite-plugin-electron-renderer@0.14.7: {}
 
-  vite-plugin-electron@0.29.1(vite-plugin-electron-renderer@0.14.6):
+  vite-plugin-electron@0.29.1(vite-plugin-electron-renderer@0.14.7):
     optionalDependencies:
-      vite-plugin-electron-renderer: 0.14.6
+      vite-plugin-electron-renderer: 0.14.7
 
   vite-plugin-esmodule@1.5.0:
     dependencies:
