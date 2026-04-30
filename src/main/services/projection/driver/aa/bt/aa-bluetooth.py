@@ -2,39 +2,23 @@
 """
 aa-bluetooth.py — Android Auto: WiFi AP + Bluetooth profile manager
 
-Startup sequence (all at runtime, no pre-setup required):
-  1. wifi_ap.setup_ap()        — kills NM/wpa_supplicant, starts hostapd + dnsmasq
-  2. bluetoothd "-P *" drop-in — disables every BlueZ plugin, leaving the
-                                 SDP space clean (no plugin auto-registers
-                                 records that would confuse Android's strict
-                                 SDP parser). Triggers a one-time bluetoothd
-                                 restart on first run.
-  3. btmgmt CoD + SSP          — class major byte=0x04 (Audio/Video) and
-                                 minor byte=0x18 (semantic minor 6 in
-                                 bits 2-7); SSP on. Audio service-class bit
-                                 gets added by BlueZ once we register
-                                 HFP/AA UUIDs, which is what makes the phone
-                                 recognise the host as a carkit.
-  4. BlueZ D-Bus setup         — registers AA RFCOMM profile (with the AA
-                                 SDP record passed inline as ServiceRecord),
-                                 HFP HF profile, and a pairing agent that
-                                 auto-confirms (KeyboardDisplay).
-  5. RFCOMM WiFi handshake     — 5-stage credential exchange when the phone
-                                 connects to channel 8.
+Startup sequence:
+  1. wifi_ap.setup_ap()  — kills NM/wpa_supplicant, brings up hostapd+dnsmasq.
+  2. bluetoothd -P *     — drop-in disables BlueZ plugins so only the SDP
+                           records we register through ProfileManager1 are
+                           on the wire.
+  3. rfkill unblock      — unblock the radio if it's soft-blocked.
+  4. BlueZ D-Bus setup   — register AA RFCOMM profile (ServiceRecord inline),
+                           HFP HF profile, pairing agent, and set Adapter1
+                           Powered/Discoverable/Pairable.
+  5. RFCOMM WiFi exchange — 5-stage credential handshake when the phone
+                            connects on channel 8.
 
-Pattern mirrors iap2/transport/bluetooth.py + iap2/wifi_ap.py.
-
-Requires (apt):
-  hostapd dnsmasq bluez python3-dbus python3-gi gir1.2-glib-2.0
-  (bluez-utils provides btmgmt; busctl ships with systemd. Legacy
-   bluez-tools / hciconfig / sdptool are no longer needed.)
-
-Config:  bt/wifi.conf
-Usage:   sudo python3 bt/aa-bluetooth.py
 """
 
 import os
 import sys
+import json
 import struct
 import socket
 import subprocess
@@ -52,79 +36,13 @@ from gi.repository import GLib
 from wifi_ap import setup_ap, teardown_ap, get_wlan_mac, AP_IP
 from config import SSID, PASSPHRASE, CHANNEL, PORT as AA_PORT, BTNAME, WIFI_IFACE, BT_ADAPTER
 
-# ── btmgmt / busctl wrappers ──────────────────────────────────────────────
-#
-# Helpers here are intentionally best-effort: every shell-out is wrapped so a
-# missing binary or transient failure can't tear down the supervisor. Anything
-# that *must* succeed is asserted via the D-Bus property API further down
-# (e.g. Adapter.Set("Powered", True)) which runs regardless.
-
-def _btmgmt(*args: str, timeout: float = 5.0) -> subprocess.CompletedProcess:
-    """Run btmgmt against the configured adapter. Best-effort, never raises.
-
-    Replaces legacy `hciconfig <iface> ...` and the kernel-level bits of
-    `bluetoothctl`. btmgmt accepts either 'hci0' or '0' for --index, so we
-    can pass BT_ADAPTER as-is.
-    """
-    cmd = ["btmgmt", "--index", BT_ADAPTER, *args]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        if result.returncode != 0:
-            err = (result.stderr or result.stdout).strip()
-            print(f"[aa-bt] btmgmt {' '.join(args)} → rc={result.returncode}: {err}",
-                  flush=True)
-        return result
-    except FileNotFoundError:
-        print("[aa-bt] btmgmt not installed — apt install bluez (bluez-utils)",
-              flush=True)
-        return subprocess.CompletedProcess(cmd, 127, "", "btmgmt missing")
-    except subprocess.TimeoutExpired:
-        print(f"[aa-bt] btmgmt timed out: {' '.join(cmd)}", flush=True)
-        return subprocess.CompletedProcess(cmd, 1, "", "timeout")
-
-
 def _power_on_bt() -> None:
-    """Make sure the radio is on. Idempotent.
-
-    Replaces:  rfkill unblock bluetooth + hciconfig <iface> up
-
-    `btmgmt power on` flips the kernel mgmt POWERED flag, which on its own is
-    enough on a sane system. We still try `rfkill unblock` first as a belt
-    against soft-blocked radios (OS Bluetooth toggle, airplane mode, etc.) —
-    rfkill is part of util-linux now, not bluez, so it stays available.
-    """
+    """rfkill unblock; D-Bus Adapter1.Set('Powered',True) handles the rest."""
     try:
         subprocess.run(["rfkill", "unblock", "bluetooth"],
                        capture_output=True, check=False)
     except FileNotFoundError:
-        pass  # rfkill missing — btmgmt power on alone is usually enough
-    _btmgmt("power", "on")
-
-
-def _set_bt_adapter_class_and_ssp() -> None:
-    """
-      btmgmt class 4 24
-        major byte = 0x04   (Audio/Video, bits 5-7 must be zero)
-        minor byte = 0x18   (semantic minor 6 in bits 2-7; bits 0-1 are the
-                             CoD format field and must be zero)
-
-      btmgmt add-uuid 0000111e-… 0x20
-        Adds HFP HF to the adapter's UUID list with the Audio service-class
-        hint (0x20). This is what re-introduces bit 21 (Audio) of the CoD,
-        i.e. the difference between the legacy 0x200418 and a btmgmt-only
-        0x000418. Without this hint the upper byte stays zero, the phone
-        sees a generic Audio/Video device instead of an audio-capable car
-        kit, and Android Auto's wireless flow can refuse to enter the real
-        session even after WiFi credentials change hands.
-
-      btmgmt ssp on
-        Secure Simple Pairing
-    """
-    _btmgmt("class", "4", "24")                   # major=0x04, minor=0x18
-    _btmgmt("add-uuid", HFP_HF_UUID, "0x20")      # service-hint Audio (bit 21)
-    _btmgmt("ssp", "on")
-    print("[aa-bt] BT class major=0x04 minor=0x18  +Audio service hint  "
-          "SSP=on  (via btmgmt)", flush=True)
+        pass
 
 
 def _busctl_get_property(path: str, iface: str, prop: str,
@@ -142,25 +60,8 @@ def _busctl_get_property(path: str, iface: str, prop: str,
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return ""
 
-
-# ── bluetoothd "-P *" drop-in (disable plugins) ────────────────────────────
-#
-#   `bluetoothd -P *` turns off every plugin, so the only SDP records left on
-#   the adapter are the ones we register ourselves through ProfileManager1
-#   (the AA record is passed inline as ServiceRecord — see AA_SDP_RECORD).
-#   HFP AG / HSP HS are core code in bluetoothd, not plugins, so they survive
-#   `-P *` and don't need re-registration.
-#
-# Migration note:
-#   Earlier installs left a `livi-compat.conf` drop-in behind. We unlink it on
-#   first run of the new code so two drop-ins don't both override ExecStart.
-
 _DROPIN_DIR        = "/etc/systemd/system/bluetooth.service.d"
 _DROPIN_CFG        = os.path.join(_DROPIN_DIR, "livi-noplugins.conf")
-
-# --------------------- TODO remove ----------------------------------------
-_LEGACY_COMPAT_CFG = os.path.join(_DROPIN_DIR, "livi-compat.conf")
-# --------------------------------------------------------------------------
 
 def _find_bluetoothd() -> str:
     """Return the bluetoothd binary path from the running service unit."""
@@ -200,17 +101,6 @@ def _ensure_noplugins_dropin() -> bool:
 
     restart_needed = False
 
-# --------------------- TODO remove ----------------------------------------
-    # Wipe the legacy --compat drop-in if present (one-time upgrade step).
-    if os.path.exists(_LEGACY_COMPAT_CFG):
-        try:
-            os.unlink(_LEGACY_COMPAT_CFG)
-            print(f"[aa-bt] removed legacy drop-in {_LEGACY_COMPAT_CFG}")
-            restart_needed = True
-        except OSError as e:
-            print(f"[aa-bt] could not remove {_LEGACY_COMPAT_CFG}: {e}")
-# --------------------------------------------------------------------------
-
     try:
         current = open(_DROPIN_CFG).read() if os.path.exists(_DROPIN_CFG) else ""
     except OSError:
@@ -228,16 +118,94 @@ def _ensure_noplugins_dropin() -> bool:
     return restart_needed
 
 
+_MAIN_CONF = "/etc/bluetooth/main.conf"
+_BT_CLASS = "0x200418"  # Audio service + Audio/Video major + Headphones-slot minor
+
+
+def _ensure_main_conf_class() -> bool:
+    """Make sure [General] Class = 0x200418 is set in /etc/bluetooth/main.conf.
+
+    BlueZ uses this as the base CoD; the service-class bits derived from
+    registered profiles are OR'd on top. Without it the adapter ends up at
+    0x600000 (only service bits), which Android does not classify as a
+    carkit and so its phone-side auto-reconnect-to-known-carkit path never
+    triggers after boot.
+
+    Returns True iff the file was modified.
+    """
+    desired = f"Class = {_BT_CLASS}"
+    try:
+        original = open(_MAIN_CONF).read()
+    except OSError as e:
+        print(f"[aa-bt] {_MAIN_CONF} read failed: {e}", flush=True)
+        return False
+
+    lines = original.splitlines()
+    out: list[str] = []
+    in_general = False
+    seen_class_in_general = False
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            # Leaving [General] without an active Class= line → inject.
+            if in_general and not seen_class_in_general:
+                out.append(desired)
+                seen_class_in_general = True
+            in_general = stripped == "[General]"
+            out.append(line)
+            continue
+
+        if in_general:
+            cleaned = stripped.lstrip("#").strip()
+            if cleaned.startswith("Class") and "=" in cleaned:
+                if seen_class_in_general:
+                    continue  # drop duplicate
+                out.append(desired)
+                seen_class_in_general = True
+                continue
+        out.append(line)
+
+    if in_general and not seen_class_in_general:
+        out.append(desired)
+        seen_class_in_general = True
+
+    if not seen_class_in_general:
+        # No [General] section at all — append one
+        if out and out[-1].strip():
+            out.append("")
+        out.append("[General]")
+        out.append(desired)
+
+    new = "\n".join(out)
+    if not new.endswith("\n"):
+        new += "\n"
+    if new == original:
+        return False
+
+    try:
+        with open(_MAIN_CONF, "w") as f:
+            f.write(new)
+        print(f"[aa-bt] {_MAIN_CONF}: Class = {_BT_CLASS}", flush=True)
+        return True
+    except OSError as e:
+        print(f"[aa-bt] {_MAIN_CONF} write failed: {e}", flush=True)
+        return False
+
+
 def setup_bluetoothd_dropin():
-    """Ensure the -P * drop-in is in place and restart bluetoothd if it changed."""
-    if _ensure_noplugins_dropin():
-        print("[aa-bt] restarting bluetoothd to apply -P * …")
+    """Ensure the -P * systemd drop-in AND main.conf Class are in place.
+    Restart bluetoothd once if either changed."""
+    dropin_changed = _ensure_noplugins_dropin()
+    class_changed = _ensure_main_conf_class()
+    if dropin_changed or class_changed:
+        print("[aa-bt] restarting bluetoothd to apply config changes …", flush=True)
         subprocess.run(["systemctl", "daemon-reload"], check=False)
         subprocess.run(["systemctl", "restart", "bluetooth"], check=True)
         time.sleep(5)
-        print("[aa-bt] bluetoothd restarted")
+        print("[aa-bt] bluetoothd restarted", flush=True)
 
-# ── Protobuf helpers (hand-rolled — no extra dependency) ──────────────────────
+# ── Protobuf helpers ──────────────────────
 
 def _encode_varint(value: int) -> bytes:
     out = []
@@ -257,12 +225,8 @@ def _pb_varint(field: int, value: int) -> bytes:
 
 
 def _build_wifi_version_request() -> bytes:
-    # WifiVersionRequest (msgId=4): HU → Phone, empty proto body.
-    # REQUIRED for WiFi persistence: without it the phone logs
-    # "Trying to proceed with WifiStartRequest before we received WifiVersionRequest"
-    # → "Not persisting Wi-Fi configuration" → "config is removed"
-    # → next boot: "No WPP on TCP configuration found" → RFCOMM forever.
-    return struct.pack(">HH", 0, 4)  # length=0, msgId=4, empty proto
+    """WifiVersionRequest (msgId=4): empty proto body."""
+    return struct.pack(">HH", 0, 4)
 
 def _build_wifi_start_request(ip: str, port: int) -> bytes:
     proto = _pb_string(1, ip) + _pb_varint(2, port)
@@ -280,10 +244,6 @@ def _channel_to_freq_mhz(channel: int) -> int:
     return 5180  # fallback
 
 def _build_wifi_info_response(ssid: str, key: str, bssid: str) -> bytes:
-    # WifiInfoResponse (msgId=3): HU → Phone, AP credentials.
-    #
-    #   rfcomm_send(fd, 3, pbs(1,SSID) + pbs(2,KEY) + pbs(3,BSSID) + pbi(4,8) + pbi(5,1))
-    #
     proto = (
         _pb_string(1, ssid) +
         _pb_string(2, key)  +
@@ -291,7 +251,8 @@ def _build_wifi_info_response(ssid: str, key: str, bssid: str) -> bytes:
         _pb_varint(4, 8)    +   # securityMode = WPA2_PERSONAL
         _pb_varint(5, 1)        # AccessPointType = DYNAMIC
     )
-    print(f"[aa-bt]   WifiInfoResponse: ssid={ssid!r} bssid={bssid} securityMode=WPA2_PERSONAL(8) type=DYNAMIC(1)", flush=True)
+    print(f"[aa-bt]   WifiInfoResponse: ssid={ssid!r} bssid={bssid} "
+          f"securityMode=WPA2_PERSONAL(8) type=DYNAMIC(1)", flush=True)
     return struct.pack(">HH", len(proto), 3) + proto
 
 # ── RFCOMM socket helpers ──────────────────────────────────────────────────────
@@ -321,8 +282,6 @@ def _is_tcp_listening(port: int) -> bool:
         with open("/proc/net/tcp") as f:
             for line in f:
                 parts = line.split()
-                # fields: sl local_address rem_address st ...
-                # local_address is hex ADDR:PORT (little-endian), st=0A is LISTEN
                 if len(parts) > 3 and parts[3] == "0A":
                     if parts[1].endswith(f":{hex_port}"):
                         return True
@@ -332,14 +291,7 @@ def _is_tcp_listening(port: int) -> bool:
 
 
 def _wait_for_tcp_server(ip: str, port: int, timeout_s: float = 30.0, interval_s: float = 0.3) -> bool:
-    """Block until port is in LISTEN state or timeout expires.
-
-    Uses /proc/net/tcp instead of socket.connect() to avoid creating a spurious
-    TCP session on our AA server (which would trigger the retrigger logic prematurely).
-
-    Returns True if the server came up within timeout_s, False otherwise
-    (caller proceeds anyway — better to send WifiStartRequest late than never).
-    """
+    """Block until port is in LISTEN state or timeout expires."""
     deadline = time.monotonic() + timeout_s
     first = True
     while time.monotonic() < deadline:
@@ -361,15 +313,8 @@ def _run_wifi_handshake(sock: socket.socket, mac: str):
     """
     WiFi credential exchange over RFCOMM.
 
-    Modern Android Auto (GH.WIRELESS.SETUP in logcat) requires a *version
-    negotiation* BEFORE the start/info exchange. Without it, the phone logs
-    `Trying to proceed with WifiStartRequest before we received WifiVersionRequest`
-    and then `Not persisting Wi-Fi configuration`, which means on every future
-    connection it re-enters RFCOMM ("No WPP on TCP configuration found") and
-    never reaches a real (non-verifier) TCP session.
-
     Full WPP sequence on current phones:
-      0. HU → Phone  WifiVersionRequest   (msgId=4, empty proto)
+      0. HU → Phone  WifiVersionRequest   (msgId=4, version + freq)
       1. Phone → HU  WifiVersionResponse  (msgId=5, phone's version)
       2. HU → Phone  WifiStartRequest     (msgId=1, our IP + TCP port)
       3. Phone → HU  WifiInfoRequest      (msgId=2, empty — phone asks for AP creds)
@@ -377,11 +322,6 @@ def _run_wifi_handshake(sock: socket.socket, mac: str):
       5. Phone → HU  WifiStartResponse    (msgId=7, ack)
       6. Phone → HU  WifiConnectionStatus (msgId=6, status=0 → joined AP)
 
-    CRITICAL: After WifiConnectionStatus, the RFCOMM socket is kept OPEN
-    (no close in the happy path). Closing it triggers WPP_SOCKET_IO_EXCEPTION
-    on the phone which restarts the WPP state machine and loops RFCOMM.
-
-    The socket closes naturally when BT disconnects (recv returns empty/error).
     """
     print(f"[aa-bt] handshake thread entered (mac={mac})", flush=True)
     try:
@@ -391,13 +331,10 @@ def _run_wifi_handshake(sock: socket.socket, mac: str):
 
         _wait_for_tcp_server(AP_IP, AA_PORT, timeout_s=30.0)
 
-        # Step 0: WifiVersionRequest (msgId=4, empty proto body).
-        # MUST precede WifiStartRequest — see docstring.
+        # Step 0: WifiVersionRequest (msgId=4, empty proto body)
         sock.sendall(_build_wifi_version_request())
         print("[aa-bt]   → WifiVersionRequest sent (msgId=4)", flush=True)
 
-        # Step 1: wait for WifiVersionResponse (msgId=5).
-        # Use a tighter timeout here so a broken phone can't stall us forever.
         sock.settimeout(10.0)
         try:
             msg_id, data = _recv_frame(sock)
@@ -405,18 +342,9 @@ def _run_wifi_handshake(sock: socket.socket, mac: str):
             if msg_id == 5:
                 print(f"[aa-bt]   WifiVersionResponse: {data.hex()}", flush=True)
             else:
-                # Some phones jump straight to WifiInfoRequest (2) here; we
-                # just keep processing in the main loop below instead of
-                # aborting — persistence path will still be hit as long as
-                # the version request went out before start request.
                 print(f"[aa-bt]   ! Expected WifiVersionResponse(5), got msgId={msg_id} — continuing", flush=True)
-                # Remember this message so the main loop can handle it.
                 _pending = (msg_id, data)
         except socket.timeout:
-            # Not all phones respond with msgId=5 — they silently accept
-            # the version hint. Continue with WifiStartRequest anyway;
-            # the persistence guard on the phone only checks that
-            # WifiVersionRequest was *received* before WifiStartRequest.
             print("[aa-bt]   no WifiVersionResponse within 10s — continuing", flush=True)
             _pending = None
         else:
@@ -426,8 +354,7 @@ def _run_wifi_handshake(sock: socket.socket, mac: str):
         sock.sendall(_build_wifi_start_request(AP_IP, AA_PORT))
         print("[aa-bt]   → WifiStartRequest sent (msgId=1)", flush=True)
 
-        # Steps 3-6: receive up to 4 messages until WifiConnectionStatus.
-        # If the phone already sent a non-version message above, handle it first.
+        # Steps 3-6: receive up to 4 messages until WifiConnectionStatus
         sock.settimeout(30.0)
         iterations = 0
         max_iterations = 5
@@ -471,7 +398,6 @@ def _run_wifi_handshake(sock: socket.socket, mac: str):
                 if not data:
                     print(f"[aa-bt]   RFCOMM closed by phone (BT disconnect)", flush=True)
                     break
-                # Ignore any unexpected data (shouldn't arrive post-handshake)
             except socket.timeout:
                 continue   # keepalive — loop back
             except OSError as e:
@@ -502,9 +428,6 @@ def _run_wifi_handshake(sock: socket.socket, mac: str):
 #   HF → AG : AT+CMER=3,0,0,1    (enable indicator events)
 #   AG → HF : OK                  ← SLC established
 #
-# Without AT+CIND? (reading current values), some phones skip AT+CMER OK
-# and never complete SLC → Android Auto never triggers.
-
 # HFP HF feature bitmask:
 #   Bit 2: CLI presentation, Bit 3: Voice recognition, Bit 4: Remote volume,
 #   Bit 7: Codec negotiation (mSBC/CVSD) = 156
@@ -512,18 +435,7 @@ _HFP_HF_FEATURES = (1 << 2) | (1 << 3) | (1 << 4) | (1 << 7)
 
 
 def _handle_hfp_rfcomm(fd: int, device_path: str, initial_data: bytes = b"") -> None:
-    """Full HFP HF SLC setup + AT command response loop.
-
-    The Pi is the Hands-Free (car kit). The phone is the Audio Gateway.
-    HF initiates with AT+BRSF, drives the SLC sequence, then enters
-    an idle loop responding to any AT commands the phone sends.
-    Once SLC is established, Android Auto auto-starts on the phone.
-    Sets/clears the global hfp_slc_established flag.
-
-    initial_data: bytes already read from fd during channel probing
-    (AT+BRSF already sent, initial +BRSF response may be in this buffer).
-    If empty, AT+BRSF is sent here as normal.
-    """
+    """Full HFP HF SLC setup + AT command response loop."""
     global hfp_slc_established
 
     import fcntl as _fcntl
@@ -545,7 +457,7 @@ def _handle_hfp_rfcomm(fd: int, device_path: str, initial_data: bytes = b"") -> 
 
     try:
         if initial_data:
-            # Probe already sent AT+BRSF and read initial response — process it
+            # Probe already sent AT+BRSF and read initial response
             print(f"[hfp] SLC continuation from probe ({len(initial_data)} bytes in buffer)", flush=True)
         else:
             # HF must speak first: send AT+BRSF
@@ -606,7 +518,6 @@ def _handle_hfp_rfcomm(fd: int, device_path: str, initial_data: bytes = b"") -> 
                         elif _sent_cmer:
                             hfp_slc_established = True
                             print("[hfp] ✓ SLC established — Android Auto should trigger", flush=True)
-                        # else: still waiting for +BRSF / ag_features to arrive
 
                 elif line.startswith("+CIND:"):
                     print(f"[hfp]    indicators: {line}", flush=True)
@@ -775,17 +686,12 @@ _open_sockets: list = []  # holds HFP/HSP fds alive
 
 # Device path and MAC of the last RFCOMM-connected phone.
 _last_device_path: str = ""
-_last_phone_mac:   str = ""   # e.g. "94:45:60:A2:1B:BA" — for BT reconnect
+_last_phone_mac:   str = ""
 
-# HFP Service Level Connection state — set True once AT+CMER OK received,
-# cleared when RFCOMM fd is closed. Used by the reconnect worker to decide
-# whether to cycle BT (ACL up but no SLC) or leave the connection alone.
+# HFP Service Level Connection state
 hfp_slc_established: bool = False
 
-# Set True only when HFP RegisterProfile succeeds. When False (e.g. stale
-# registration from a previous run), the reconnect worker must NOT cycle BT
-# based on SLC state — it would loop forever since hfp_slc_established never
-# becomes True.
+# Set True only when HFP RegisterProfile succeeds.
 _hfp_profile_registered: bool = False
 
 # Raw RFCOMM HFP direct-connect state.
@@ -796,7 +702,6 @@ _HFP_RAW_COOLDOWN_SEC = 8.0   # min seconds between raw HFP connect attempts
 
 # Cache of confirmed HFP AG RFCOMM channel per phone MAC.
 # Once ch=3 is discovered, subsequent probes skip ch=1 and ch=2 entirely,
-# reducing probe time from ~4s to ~1s.
 _hfp_cached_channel: dict[str, int] = {}  # mac → channel number
 
 # ── BT reconnect worker ────────────────────────────────────────────────────────
@@ -874,7 +779,6 @@ def _connect_hfp_direct(mac: str) -> None:
             candidates = [cached] + [c for c in range(1, 16) if c != cached]
             print(f"[hfp] probing channels for HFP AG on {mac} (cached ch={cached})", flush=True)
         else:
-            # No SDP browse available (sdptool is gone on modern distros) —
             # try the most common default first, then scan the rest. Once a
             # channel succeeds it's cached so subsequent connects skip the scan.
             first = _find_hfp_ag_channel(mac)
@@ -951,19 +855,222 @@ def _connect_hfp_direct(mac: str) -> None:
     threading.Thread(target=_do, daemon=True).start()
 
 
-# ── Event server (IPC from connect-test.ts / Session.ts) ──────────────────────
+# ── Device management helpers (BlueZ enumeration + actions) ───────────────────
+
+def _device_path(mac: str) -> str:
+    """Compose the BlueZ D-Bus device object path from a MAC address."""
+    return f"{ADAPTER_PATH}/dev_{mac.replace(':', '_').upper()}"
+
+
+def _busctl_parse_value(s: str) -> str | bool | int:
+    """Parse a single-line busctl get-property output into a Python value.
+
+    busctl prints the d-bus signature followed by the value, e.g.:
+      's "Pixel 8"'         → "Pixel 8"
+      'b true' / 'b false'  → True / False
+      'u 5898764'           → 5898764
+      'i -1'                → -1
+    Anything we don't understand is returned as the trimmed raw string.
+    """
+    s = s.strip()
+    if not s:
+        return ""
+    sig, _, rest = s.partition(" ")
+    rest = rest.strip()
+    if sig == "s" or sig == "o":
+        # quoted string; strip surrounding double quotes if present
+        if rest.startswith('"') and rest.endswith('"'):
+            return rest[1:-1]
+        return rest
+    if sig == "b":
+        return rest.lower() == "true"
+    if sig in ("u", "i", "y", "n", "q", "x", "t"):
+        try:
+            return int(rest)
+        except ValueError:
+            return 0
+    return rest
+
+
+def _is_device_path(path: str) -> bool:
+    """True iff path looks like /org/bluez/hciX/dev_AA_BB_CC_DD_EE_FF."""
+    if "/dev_" not in path:
+        return False
+    suffix = path.rsplit("/dev_", 1)[1]
+    parts = suffix.split("_")
+    if len(parts) != 6:
+        return False
+    for p in parts:
+        if len(p) != 2:
+            return False
+        try:
+            int(p, 16)
+        except ValueError:
+            return False
+    return True
+
+
+def _list_paired_devices() -> list[dict]:
+    """Enumerate all paired BlueZ devices via busctl.
+
+    Worker-thread safe by design: every D-Bus interaction is a separate
+    subprocess, so we never share a libdbus connection with the GLib main
+    loop running on the main thread. Slower than ObjectManager.GetManagedObjects
+    but reliable in this concurrency model.
+    """
+    # 1. Enumerate object paths under org.bluez.
+    try:
+        r = subprocess.run(
+            ["busctl", "--system", "tree", "--list", "org.bluez"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+    if r.returncode != 0:
+        return []
+
+    device_paths = [ln.strip() for ln in r.stdout.splitlines()
+                    if _is_device_path(ln.strip())]
+
+    # 2. Pull the properties we care about for each device.
+    interesting = ("Address", "Name", "Alias", "Paired",
+                   "Connected", "Trusted", "Class")
+    devices: list[dict] = []
+    for path in device_paths:
+        props: dict = {}
+        for name in interesting:
+            raw = _busctl_get_property(path, "org.bluez.Device1", name)
+            if raw:
+                props[name] = _busctl_parse_value(raw)
+
+        if not bool(props.get("Paired", False)):
+            continue
+
+        display_name = (props.get("Name") or props.get("Alias") or "")
+        cod = props.get("Class", 0)
+        if not isinstance(cod, int):
+            try: cod = int(cod)
+            except (TypeError, ValueError): cod = 0
+
+        devices.append({
+            "mac":       str(props.get("Address", "")).upper(),
+            "name":      str(display_name),
+            "connected": bool(props.get("Connected", False)),
+            "trusted":   bool(props.get("Trusted", False)),
+            "class":     cod,
+            "path":      path,
+        })
+
+    # Stable ordering: connected first, then alphabetical by name, then by MAC.
+    devices.sort(key=lambda d: (not d["connected"], d["name"].lower(), d["mac"]))
+    return devices
+
+
+def _device_call(path: str, iface: str, method: str,
+                 *busctl_args: str, timeout: float = 15.0) -> tuple[bool, str]:
+    """Invoke a BlueZ method via busctl. Returns (ok, error_message).
+
+    busctl is used in worker threads instead of dbus-python for one-shot
+    method calls so we don't have to manage another private SystemBus just
+    to make a single Connect/Disconnect call.
+    """
+    cmd = ["busctl", "--system", "call", "org.bluez", path, iface, method,
+           *busctl_args]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return False, f"timeout calling {iface}.{method}"
+    except FileNotFoundError:
+        return False, "busctl not installed"
+    if r.returncode == 0:
+        return True, ""
+    return False, (r.stderr or r.stdout).strip()
+
+
+def _device_connect(mac: str) -> tuple[bool, str]:
+    """BlueZ Device1.Connect — establishes BT ACL + connects all profiles."""
+    return _device_call(
+        _device_path(mac), "org.bluez.Device1", "Connect",
+        timeout=30.0,
+    )
+
+
+def _device_disconnect(mac: str) -> tuple[bool, str]:
+    """BlueZ Device1.Disconnect — tears down the ACL."""
+    return _device_call(_device_path(mac), "org.bluez.Device1", "Disconnect")
+
+
+def _device_remove(mac: str) -> tuple[bool, str]:
+    """BlueZ Adapter1.RemoveDevice — unpairs and forgets the device."""
+    return _device_call(
+        ADAPTER_PATH, "org.bluez.Adapter1", "RemoveDevice",
+        "o", _device_path(mac),
+    )
+
+
+# ── IPC server (TS ↔ Python device management) ───────────────────────────────
 
 _AA_EVENT_SOCK = "/tmp/aa-bt.sock"
 
+# Persistent event-stream subscribers. Connections from the TS side that issued
+# the `subscribe` command stay open here; we push one JSON line per BlueZ
+# device-state change. Mutated only from the GLib main thread (where the
+# signal callback runs) and from the accept-loop worker threads — guarded
+# by _subscribers_lock.
+_subscribers: list[socket.socket] = []
+_subscribers_lock = threading.Lock()
+
+
+def _push_event(payload: dict) -> None:
+    """Send one JSON line to every active subscriber, drop dead ones."""
+    line = (json.dumps(payload) + "\n").encode()
+    with _subscribers_lock:
+        dead: list[socket.socket] = []
+        for s in _subscribers:
+            try:
+                s.sendall(line)
+            except OSError:
+                dead.append(s)
+        for s in dead:
+            try: _subscribers.remove(s)
+            except ValueError: pass
+            try: s.close()
+            except Exception: pass
+
+
+def _read_request(c: socket.socket, max_bytes: int = 4096,
+                  timeout_s: float = 2.0) -> str:
+    """Read one newline-terminated request from the client socket."""
+    c.settimeout(timeout_s)
+    buf = b""
+    while b"\n" not in buf and len(buf) < max_bytes:
+        try:
+            chunk = c.recv(min(1024, max_bytes - len(buf)))
+        except socket.timeout:
+            break
+        if not chunk:
+            break
+        buf += chunk
+    return buf.decode(errors="replace").strip()
+
+
 def _start_event_server() -> None:
-    """Unix socket server — receives session lifecycle events from the TypeScript side.
+    """Unix-socket request/response server for the TS-side device-management UI.
 
-    Protocol (newline-terminated text):
-      session_running               — real AA session confirmed running (CHANNEL_OPEN_REQUEST seen)
-      session_disconnected:verifier — TCP session ended before RUNNING
-      session_disconnected:running  — TCP session ended after reaching RUNNING state
+    One newline-terminated request per connection. Server replies with one
+    newline-terminated JSON line, then closes.
 
-    No BT cycling. Android Auto requires BT to stay connected (HFP for phone calls, etc.).
+    Commands:
+      list_paired
+        → {"ok": true, "devices": [
+              {"mac": "AA:BB:CC:DD:EE:FF", "name": "Pixel 8",
+               "connected": false, "trusted": true, "class": 5898764,
+               "path": "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF"},
+              ...
+           ]}
+      connect <mac>     → {"ok": true} or {"ok": false, "error": "..."}
+      disconnect <mac>  → {"ok": true} or {"ok": false, "error": "..."}
+      remove <mac>      → {"ok": true} or {"ok": false, "error": "..."}
     """
     try:
         os.unlink(_AA_EVENT_SOCK)
@@ -976,6 +1083,37 @@ def _start_event_server() -> None:
     os.chmod(_AA_EVENT_SOCK, 0o666)  # allow non-root TypeScript process to connect
     print(f"[aa-bt] event server listening on {_AA_EVENT_SOCK}", flush=True)
 
+    def _send_json(c: socket.socket, payload: dict) -> None:
+        try:
+            c.sendall((json.dumps(payload) + "\n").encode())
+        except OSError:
+            pass
+
+    def _dispatch_command(cmd: str, arg: str) -> dict:
+        """Run a device-management command. Always returns a JSON-able dict."""
+        try:
+            if cmd == "list_paired":
+                return {"ok": True, "devices": _list_paired_devices()}
+            if cmd == "connect":
+                if not arg:
+                    return {"ok": False, "error": "connect requires a MAC argument"}
+                ok, err = _device_connect(arg)
+                return {"ok": ok} if ok else {"ok": False, "error": err}
+            if cmd == "disconnect":
+                if not arg:
+                    return {"ok": False, "error": "disconnect requires a MAC argument"}
+                ok, err = _device_disconnect(arg)
+                return {"ok": ok} if ok else {"ok": False, "error": err}
+            if cmd == "remove":
+                if not arg:
+                    return {"ok": False, "error": "remove requires a MAC argument"}
+                ok, err = _device_remove(arg)
+                return {"ok": ok} if ok else {"ok": False, "error": err}
+            return {"ok": False, "error": f"unknown command: {cmd!r}"}
+        except Exception as e:
+            traceback.print_exc()
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
     def _accept_loop() -> None:
         while True:
             try:
@@ -984,38 +1122,77 @@ def _start_event_server() -> None:
                 break  # server socket closed (shutdown)
 
             def _handle(c: socket.socket) -> None:
+                # `keep_open` switches off the auto-close so a `subscribe`
+                # connection survives past _handle's lifetime and stays in
+                # the _subscribers list for event pushes.
+                keep_open = False
                 try:
-                    raw = c.recv(256).decode(errors="replace").strip()
-                    c.close()
+                    raw = _read_request(c)
                     if not raw:
                         return
-                    print(f"[aa-bt] event: {raw!r}", flush=True)
-                    if raw == "session_running":
-                        print("[aa-bt] event: real AA session running", flush=True)
-                    elif raw in ("session_disconnected:pre_running",
-                                 "session_disconnected:verifier"):
-                        # Pre-RUNNING TCP disconnect. DO NOT cycle BT here.
-                        #
-                        # Prior behaviour (cycling BT on every pre-RUNNING close) was based
-                        # on a misdiagnosed "verifier pattern". The actual cause of those
-                        # closes was an incorrect AudioFocusResponse mapping in the TS code
-                        # (RELEASE→GAIN instead of RELEASE→LOSS) — the phone closed TCP
-                        # because the HU's response made no sense to its state machine.
-                        # Cycling BT caused WPP_SOCKET_IO_EXCEPTION on the phone and put it
-                        # into an infinite RFCOMM retry loop, preventing a real session.
-                        #
-                        # With the AudioFocusResponse fix, pre-RUNNING closes should stop
-                        # happening. If one occurs anyway, leave BT alone and let the phone
-                        # drive recovery via its own WPP/WirelessFSM state machine.
-                        print("[aa-bt] event: pre-RUNNING TCP close — letting phone drive retry (no BT cycle)", flush=True)
-                    elif raw == "session_disconnected:running":
-                        print("[aa-bt] event: real session ended", flush=True)
+                    print(f"[aa-bt] sock req: {raw!r}", flush=True)
+
+                    parts = raw.split(maxsplit=1)
+                    cmd = parts[0]
+                    arg = parts[1].strip() if len(parts) > 1 else ""
+
+                    if cmd == "subscribe":
+                        with _subscribers_lock:
+                            _subscribers.append(c)
+                        _send_json(c, {"ok": True, "subscribed": True})
+                        keep_open = True
+                        return
+
+                    resp = _dispatch_command(cmd, arg)
+                    _send_json(c, resp)
+
                 except Exception as e:
-                    print(f"[aa-bt] event handler error: {e}", flush=True)
+                    print(f"[aa-bt] sock handler error: {e}", flush=True)
+                    try: _send_json(c, {"ok": False, "error": str(e)})
+                    except Exception: pass
+                finally:
+                    if not keep_open:
+                        try: c.close()
+                        except Exception: pass
 
             threading.Thread(target=_handle, args=(conn,), daemon=True).start()
 
     threading.Thread(target=_accept_loop, daemon=True, name="event-server").start()
+
+
+def _subscribe_device_signals(bus: dbus.Bus) -> None:
+    """Push a JSON event to subscribers when any Device1 property changes.
+
+    Runs on the GLib main thread. Forward only the bits the TS side acts on:
+    Connected and Paired flips drive list refreshes, anything else is ignored.
+    """
+    def _on_props_changed(interface, changed, invalidated, path=""):
+        if interface != "org.bluez.Device1":
+            return
+        if "Connected" not in changed and "Paired" not in changed:
+            return
+        mac = ""
+        if "/dev_" in path:
+            mac = path.rsplit("/dev_", 1)[-1].replace("_", ":").upper()
+        # When a device transitions to connected, mark it Trusted so BlueZ
+        # persists it to /var/lib/bluetooth and accepts incoming reconnects
+        # after reboot without re-pairing.
+        if changed.get("Connected") is True:
+            try:
+                obj = bus.get_object("org.bluez", str(path))
+                dbus.Interface(obj, dbus.PROPERTIES_IFACE).Set(
+                    "org.bluez.Device1", "Trusted", True
+                )
+            except Exception:
+                pass
+        _push_event({"event": "device_changed", "mac": mac, "path": path})
+
+    bus.add_signal_receiver(
+        _on_props_changed,
+        signal_name="PropertiesChanged",
+        dbus_interface="org.freedesktop.DBus.Properties",
+        path_keyword="path",
+    )
 
 
 def _trigger_hfp_slc_async(mac: str) -> None:
@@ -1227,7 +1404,15 @@ class PairingAgent(dbus.service.Object):
 
     @dbus.service.method(AGENT_IFACE, in_signature="ou", out_signature="")
     def RequestConfirmation(self, device, passkey):
-        print(f"[aa-bt] RequestConfirmation {passkey:06d} → confirmed")
+        # Mark Trusted so BlueZ accepts later incoming reconnects without
+        # re-prompting. busctl-based to stay decoupled from the agent's bus.
+        subprocess.run(
+            ["busctl", "--system", "set-property",
+             "org.bluez", str(device), "org.bluez.Device1",
+             "Trusted", "b", "true"],
+            capture_output=True, check=False, timeout=3,
+        )
+        print(f"[aa-bt] RequestConfirmation {passkey:06d} → confirmed+trusted")
 
     @dbus.service.method(AGENT_IFACE, in_signature="o", out_signature="")
     def RequestAuthorization(self, device):
@@ -1246,22 +1431,6 @@ def main():
         print("ERROR: must run as root: sudo python3 bt/aa-bluetooth.py")
         sys.exit(1)
 
-    # ── Robust shutdown wiring ────────────────────────────────────────────────
-    # Two failure modes we have to defend against, in order of nastiness:
-    #
-    # 1) LIVI dies hard (crash, OOM, kill -9). Linux re-parents this Python to
-    #    init, hostapd / dnsmasq keep running, NetworkManager never gets wlan0
-    #    back, BT keeps advertising. Next LIVI launch then can't bind hostapd
-    #    ("Could not initialize iface").
-    #    → prctl(PR_SET_PDEATHSIG, SIGTERM) makes the kernel send us SIGTERM
-    #      the moment our parent dies, no matter how it dies.
-    #
-    # 2) LIVI shuts down politely and the supervisor sends SIGTERM. Python
-    #    *receives* the signal but GLib.MainLoop runs C code most of the time;
-    #    a handler that `raise KeyboardInterrupt()` from inside a glib callback
-    #    sometimes gets swallowed depending on glib/python version. Calling
-    #    loop.quit() from the handler (which is what GLib expects) is the
-    #    documented escape and runs the finally block reliably.
     import ctypes, signal
 
     PR_SET_PDEATHSIG = 1
@@ -1291,46 +1460,27 @@ def main():
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
 
     # ── 1. WiFi AP ────────────────────────────────────────────────────────────
-    setup_ap()
-
-    # ── 2. bluetoothd "-P *" drop-in (no plugins, no --compat) ───────────────
-    # Plugins-off keeps the SDP space clean so the only records on the wire
-    # are the ones we register through ProfileManager1. The AA SDP record is
-    # passed inline as ServiceRecord (see AA_SDP_RECORD), so we no longer
-    # need the sdp_clean.c helper or bluetoothd's --compat SDP socket.
+    ap_ready = setup_ap()
     setup_bluetoothd_dropin()
-
-    # ── 2b. BT device class + SSP mode ────────────────────────────────────────
-    # Audio/Video major + minor=6 + Audio service bit (set by BlueZ once we
-    # register HFP/AA via ProfileManager1) makes the phone recognise us as a
-    # car kit and auto-trigger Android Auto. Without the right CoD the phone
-    # treats us as a generic BT device and AA does not auto-start → cleanup
-    # sessions only. See _set_bt_adapter_class_and_ssp() for byte layout notes.
-    _set_bt_adapter_class_and_ssp()
-
-    # ── 2c. Make sure BT is actually on before we touch BlueZ ─────────────────
-    # If the user toggled Bluetooth off via OS settings (or anything else
-    # rfkill'd it), Adapter.Set("Powered", True) further down silently no-ops:
-    # BlueZ reports the property as set but the radio stays off. _power_on_bt
-    # combines rfkill unblock + `btmgmt power on`, both best-effort.
     _power_on_bt()
 
-    # ── Crash-safe cleanup via atexit ─────────────────────────────────────────
-    # If anything past this point raises (RegisterProfile collision, BlueZ
-    # going away, Adapter.Set failure …), the bare `try: loop.run()` further
-    # down won't catch it because the exception happens before we reach the
-    # MainLoop. Without atexit, every setup failure would leave hostapd and
-    # dnsmasq as orphans — and the supervisor's restart loop would multiply
-    # that until the box runs out of slots.
-    # atexit fires on normal exit, sys.exit(), and unhandled exceptions.
-    # SIGTERM/SIGHUP land in our signal handler which calls loop.quit() (or
-    # raises KeyboardInterrupt before the loop exists), both of which unwind
-    # cleanly into atexit. SIGKILL bypasses everything — that's what the
-    # TS-side `pkill` belt-and-suspenders in aaDriver.close() catches.
     import atexit
     _bluez_handles = {"profile_manager": None, "agent_manager": None, "agent": None}
+
+    def _set_advertising(state: bool) -> None:
+        """Flip Adapter1.Discoverable+Pairable via busctl. Best-effort."""
+        flag = "true" if state else "false"
+        for prop in ("Discoverable", "Pairable"):
+            subprocess.run(
+                ["busctl", "--system", "set-property",
+                 "org.bluez", ADAPTER_PATH, "org.bluez.Adapter1",
+                 prop, "b", flag],
+                capture_output=True, check=False, timeout=3,
+            )
+
     def _atexit_cleanup():
         print("[aa-bt] atexit cleanup running")
+        _set_advertising(False)
         pm = _bluez_handles["profile_manager"]
         if pm is not None:
             for path in ("/livi/bt/aa", "/livi/bt/hfp"):
@@ -1349,21 +1499,12 @@ def main():
     bluez = bus.get_object(BLUEZ_SERVICE, BLUEZ_OBJ)
 
     # Register AA RFCOMM profile.
-    # HFP AG / HSP HS are handled internally by BlueZ even with -P *
-    # (they're core, not plugins). Don't re-register them — causes NotPermitted.
-    # The AA SDP record is supplied inline via ServiceRecord on the
-    # RegisterProfile call below (see AA_SDP_RECORD); BlueZ publishes it
-    # verbatim, so we don't need a separate SDP helper.
     profile_manager = dbus.Interface(bluez, PROFILE_MANAGER)
     _bluez_handles["profile_manager"] = profile_manager
 
     aa_obj = AAProfile(bus, "/livi/bt/aa")
 
     def _register_aa_profile():
-        # ServiceRecord is the XML SDP record we want BlueZ to publish for
-        # this profile. Passing it inline is what replaces sdp_clean.c — BlueZ
-        # registers the record verbatim, so the AA UUID is discoverable
-        # without us touching the legacy /var/run/sdp socket.
         return profile_manager.RegisterProfile(aa_obj, AA_UUID, {
             'Name':                  'Android Auto Wireless',
             'Role':                  'server',
@@ -1373,10 +1514,6 @@ def main():
             'ServiceRecord':         AA_SDP_RECORD,
         })
 
-    # Try to unregister any stale AA profile from a previous run on OUR new bus
-    # — that handles the case where BlueZ kept the path but it's actually owned
-    # by us. This is best-effort; the real fix for cross-connection zombies is
-    # the bluetoothd-restart fallback below.
     try:
         profile_manager.UnregisterProfile("/livi/bt/aa")
         print("[aa-bt] unregistered stale AA profile (previous run)")
@@ -1386,24 +1523,11 @@ def main():
     try:
         _register_aa_profile()
     except dbus.exceptions.DBusException as e:
-        # "UUID already registered" means a previous python instance crashed
-        # without cleanly disconnecting its D-Bus connection — BlueZ tracks
-        # profile owners by bus name, so a zombie connection holds the UUID
-        # forever from our perspective (we can't UnregisterProfile someone
-        # else's path). The only way to evict it without rebooting is to
-        # restart bluetoothd, which drops every D-Bus connection BlueZ has
-        # and starts fresh. We do this exactly once per spawn so a real bug
-        # (e.g. wrong UUID) doesn't loop.
         if 'already registered' not in str(e).lower():
             raise
         print("[aa-bt] AA UUID held by stale bus — restarting bluetoothd to evict it")
         subprocess.run(["systemctl", "restart", "bluetooth"], check=False)
 
-        # Poll for bluetoothd availability instead of guessing a sleep. On
-        # x86 Fedora a fresh bluetoothd start-up takes 5-10 s, so the
-        # previous 5 s budget tripped before the daemon was ready and we
-        # bailed even though the restart had succeeded. 15 s is generous
-        # enough for both the Pi and a stock Fedora workstation.
         rebound = False
         deadline = time.monotonic() + 15.0
         while time.monotonic() < deadline:
@@ -1423,29 +1547,11 @@ def main():
             print("[aa-bt] bluetoothd did not come back within 15s — giving up this spawn")
             raise
 
-        # adapter mgmt tweaks have to be re-applied — bluetoothd reset the device.
-        _set_bt_adapter_class_and_ssp()
-
         aa_obj = AAProfile(bus, "/livi/bt/aa")
         _register_aa_profile()
     print("[aa-bt] registered AA RFCOMM profile (ch=8)")
 
-    # HFP Hands-Free profile — car kit role (Pi = HF, Phone = AG).
-    # When phone connects HFP to our HU, Android Auto auto-starts on phone.
-    # This sets user intention BEFORE the TCP session → real session (not cleanup).
-    #
-    # On modern BlueZ (5.86+ confirmed on Fedora) the HFP HF UUID 0x111e is
-    # held internally by bluetoothd even with `-P *`, so RegisterProfile fails
-    # with NotPermitted. That's fine functionally: the raw RFCOMM
-    # direct-connect path (_connect_hfp_direct → _handle_hfp_rfcomm) drives
-    # SLC from our side instead, and that's what actually flips
-    # hfp_slc_established. The D-Bus profile registration is best-effort
-    # extra coverage — when it works, BlueZ also delivers any phone-initiated
-    # HFP RFCOMM connections to our profile object; when it doesn't, those
-    # phone-initiated connections are simply not exposed to us, but our own
-    # HU-initiated SLC still establishes via _connect_hfp_direct.
-    #
-    # First, drop any registration WE owned in a previous spawn (best-effort).
+    # HFP Hands-Free profile — car kit role (Pi = HF, Phone = AG)
     try:
         profile_manager.UnregisterProfile("/livi/bt/hfp")
         print("[aa-bt] unregistered stale HFP profile (previous run)")
@@ -1468,15 +1574,11 @@ def main():
     except dbus.exceptions.DBusException as e:
         msg = str(e).lower()
         if "already registered" in msg or "notpermitted" in msg:
-            # Expected on BlueZ 5.86+: UUID 0x111e is reserved internally.
-            # SLC still works through _connect_hfp_direct, so this is just an
-            # informational log line — not a real failure.
             print("[aa-bt] HFP HF profile is reserved by BlueZ — using raw "
                   "RFCOMM direct-connect path (SLC unaffected)")
         else:
             print(f"[aa-bt] HFP profile registration unexpected error: {e}")
 
-    # Agent SECOND — matches iap2
     agent = PairingAgent(bus, "/livi/bt/agent")
     agent_manager = dbus.Interface(bluez, AGENT_MANAGER)
     _bluez_handles["agent"] = agent
@@ -1485,14 +1587,6 @@ def main():
     agent_manager.RequestDefaultAgent(agent)
     print("[aa-bt] pairing agent registered")
 
-    # Adapter properties LAST — matches iap2.
-    #
-    # Pairable/Discoverable/Powered all map to kernel mgmt ops that BlueZ
-    # serializes; right after Powered=True there's a short window where the
-    # next mgmt-driven property set returns org.bluez.Error.Busy. Observed on
-    # Fedora + BlueZ 5.86: first one or two spawns fail at Pairable, third
-    # one succeeds because the adapter has settled. Retrying on Busy with a
-    # bounded backoff makes this deterministic on the first spawn.
     adapter = dbus.Interface(
         bus.get_object(BLUEZ_SERVICE, ADAPTER_PATH),
         dbus.PROPERTIES_IFACE,
@@ -1522,14 +1616,20 @@ def main():
     _adapter_set("Alias",               BTNAME)
     _adapter_set("DiscoverableTimeout", dbus.UInt32(0))
     _adapter_set("Powered",             True)
-    _adapter_set("Discoverable",        True)
-    _adapter_set("Pairable",            True)
+    # Only enable Discoverable/Pairable if the AP is fully serving
+    if ap_ready:
+        _adapter_set("Discoverable",    True)
+        _adapter_set("Pairable",        True)
+    else:
+        print("[aa-bt] AP not ready — leaving BT non-discoverable/non-pairable")
 
     props = adapter.GetAll("org.bluez.Adapter1")
-    print(f"[aa-bt] adapter: {props.get('Name','?')} ({props.get('Address','?')}) discoverable=True")
+    print(f"[aa-bt] adapter: {props.get('Name','?')} ({props.get('Address','?')}) "
+          f"discoverable={ap_ready}")
 
-    # ── Start event server (IPC from connect-test.ts) ────────────────────────
+    # ── Start event server + BlueZ signal subscription ──────────────────────
     _start_event_server()
+    _subscribe_device_signals(bus)
 
     # ── Start BT reconnect worker ─────────────────────────────────────────────
     t = threading.Thread(target=_bt_reconnect_worker, daemon=True)
@@ -1553,8 +1653,7 @@ def main():
         print("\n[aa-bt] shutting down...")
     finally:
         print("[aa-bt] tearing down (hostapd, dnsmasq, BT profile)...")
-        # Unregister by string path, not object — works even if the local
-        # `aa_obj`/`agent` references are gone or the private bus is half-torn.
+        _set_advertising(False)
         for path in ("/livi/bt/aa", "/livi/bt/hfp"):
             try:
                 profile_manager.UnregisterProfile(path)

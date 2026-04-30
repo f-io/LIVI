@@ -5,6 +5,7 @@ export type DevListEntry = {
   index?: string | number
   time?: string
   rfcomm?: string | number
+  source?: 'dongle' | 'host'
 }
 
 export type BoxInfoPayload = {

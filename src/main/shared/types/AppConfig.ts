@@ -16,6 +16,7 @@ export type ExtraConfig = DongleConfig & {
   camera: string
   telemetryEnabled: boolean
   telemetryDashboards?: TelemetryDashboardConfig[]
+  lastConnectedAaBtMac?: string
   cameraMirror: boolean
   bindings: KeyBindings
   audioVolume: number

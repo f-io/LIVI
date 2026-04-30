@@ -163,43 +163,51 @@ def start_hostapd():
     subprocess.Popen(["sudo", "hostapd", HOSTAPD_CONFIG_PATH])
 
 
-def wait_for_ap_ready(timeout_seconds: float = 8.0) -> bool:
-    """
-    Block until hostapd has actually brought WIFI_IFACE up as an AP, not just
-    until the Popen returned. Polls `iw dev WIFI_IFACE info` for `type AP` and
-    `channel <n>` (a populated channel line means hostapd finished its
-    nl80211 init and is broadcasting beacons).
-
-    Returns True on success, False on timeout. We don't fail hard on a
-    timeout — the rest of the bring-up (BT advertising, profile register)
-    will still succeed; the phone just may see BT before WiFi and retry
-    its AP-join. Logging the timeout is enough to diagnose.
-
-    Why this matters: BlueZ's adapter.Set('Discoverable', True) below in
-    main() flips BT advertising as soon as it returns. Pairing phones
-    that auto-trigger AA hit the BT advert and immediately try to join
-    the announced AP via the WPP (Wi-Fi Pairing Protocol) credential
-    exchange — if hostapd hasn't beaconed yet the phone's join times out
-    and we have to retry the whole sequence.
-    """
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        try:
-            out = subprocess.check_output(
-                ["iw", "dev", WIFI_IFACE, "info"],
-                text=True, stderr=subprocess.DEVNULL,
-            )
-            # Two indicators: type AP (nl80211 mode flipped) and channel set
-            # (hostapd's hw_mode/channel block applied). Both required.
-            if "type AP" in out and "channel " in out:
-                return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            pass
-        time.sleep(0.2)
+def _is_dhcp_listening() -> bool:
+    """True if any process is bound to UDP 67. Reads /proc/net/udp; the
+    local_address column is hex IP:PORT (little-endian), 0x0043 == 67."""
+    try:
+        with open("/proc/net/udp") as f:
+            for line in f:
+                if "local_address" in line:
+                    continue
+                parts = line.split()
+                if len(parts) >= 2 and parts[1].endswith(":0043"):
+                    return True
+    except OSError:
+        pass
     return False
 
 
-def setup_ap():
+def wait_for_ap_ready(timeout_seconds: float = 20.0) -> bool:
+    """Wait for hostapd beaconing (`iw dev`) AND dnsmasq bound to UDP 67."""
+    deadline = time.monotonic() + timeout_seconds
+    hostapd_ready = False
+    dhcp_ready = False
+    while time.monotonic() < deadline:
+        if not hostapd_ready:
+            try:
+                out = subprocess.check_output(
+                    ["iw", "dev", WIFI_IFACE, "info"],
+                    text=True, stderr=subprocess.DEVNULL,
+                )
+                if "type AP" in out and "channel " in out:
+                    hostapd_ready = True
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                pass
+        if hostapd_ready and not dhcp_ready and _is_dhcp_listening():
+            dhcp_ready = True
+        if hostapd_ready and dhcp_ready:
+            return True
+        time.sleep(0.2)
+    print(f"[wifi_ap] AP readiness timeout: hostapd={hostapd_ready} dhcp={dhcp_ready}",
+          flush=True)
+    return False
+
+
+def setup_ap() -> bool:
+    """Bring up the AP. Returns True iff the AP is fully serving (hostapd
+    beaconing AND dnsmasq bound). Caller gates BT advertising on this."""
     subprocess.run(["sudo", "pkill", "-f", f"hostapd.*{HOSTAPD_CONFIG_PATH}"], check=False)
     subprocess.run(["sudo", "pkill", "-f", f"dnsmasq.*{DNSMASQ_CONFIG_PATH}"], check=False)
     time.sleep(0.3)
@@ -213,11 +221,10 @@ def setup_ap():
     start_dnsmasq()
     start_hostapd()
 
-    # Don't return until hostapd is actually beaconing
-    if wait_for_ap_ready():
+    ready = wait_for_ap_ready()
+    if ready:
         print(f"[wifi_ap] AP up — SSID={SSID!r}  IP={AP_IP}  channel={CHANNEL}")
-    else:
-        print(f"[wifi_ap] AP wait timed out — proceeding anyway (BT may race the phone's AP-join)")
+    return ready
 
 
 def teardown_ap():
@@ -228,10 +235,6 @@ def teardown_ap():
     # Restore the original firewalld zone — silent no-op with no firewalld
     _firewalld_restore_iface(WIFI_IFACE)
 
-    # Hand WIFI_IFACE back to NetworkManager — symmetric with kill_network_manager_and_supplicant
-    # at start. If NM happens to grab it for Wi-Fi-client mode before the next
-    # AA session starts, setup_ap()'s `nmcli device set WIFI_IFACE managed no` plus
-    # the new `pkill stale hostapd` defensive cleanup unsticks it within the
-    # NM-disconnect race window.
+    # Hand WIFI_IFACE back to NetworkManager
     subprocess.run(["sudo", "nmcli", "device", "set", WIFI_IFACE, "managed", "yes"], check=False)
     print("[wifi_ap] AP down")

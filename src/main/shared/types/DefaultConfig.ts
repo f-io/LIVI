@@ -20,6 +20,7 @@ export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
   naviSafeAreaLeft: 0,
   naviSafeAreaRight: 0,
   naviSafeAreaDrawOutside: false,
+  lastConnectedAaBtMac: '',
   lastPhoneWorkMode: PhoneWorkMode.CarPlay,
   apkVer: '2025.03.19.1126',
   carName: 'LIVI',

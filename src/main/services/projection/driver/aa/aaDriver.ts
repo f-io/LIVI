@@ -320,7 +320,8 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       // HandDriveType.LHD=0 / RHD=1 maps 1:1 to AA DriverPosition.
       driverPosition: cfg.hand === 1 ? 1 : 0,
       wifiSsid: name,
-      wifiPassword: cfg.wifiPassword || '12345678'
+      wifiPassword: cfg.wifiPassword || '12345678',
+      wifiChannel: cfg.wifiChannel
     }
     const displayAR = cfg.width / cfg.height
     const tierAR = tierW / tierH

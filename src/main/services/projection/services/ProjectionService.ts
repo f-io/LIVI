@@ -1,6 +1,6 @@
 import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
 import { configEvents } from '@main/ipc/utils'
-import type { DongleFirmwareAction, DongleFwApiRaw, ExtraConfig } from '@shared/types'
+import type { DevListEntry, DongleFirmwareAction, DongleFwApiRaw, ExtraConfig } from '@shared/types'
 import { PhoneWorkMode } from '@shared/types'
 import type { NavLocale } from '@shared/utils'
 import { translateNavigation } from '@shared/utils'
@@ -8,6 +8,7 @@ import { app, WebContents } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { usb, WebUSBDevice } from 'usb'
+import { AaBtSockClient } from '../driver/aa/AaBtSockClient'
 import { AaDriver } from '../driver/aa/aaDriver'
 import type { IPhoneDriver } from '../driver/IPhoneDriver'
 import {
@@ -112,16 +113,6 @@ function pickStringOrNumber(o: Record<string, unknown>, key: string): string | n
 }
 
 export class ProjectionService {
-  /**
-   * Driver islands.
-   * - `dongleDriver` is always present so that USB hot-plug works even when
-   *   AA is enabled (e.g. user disables `aa` in settings without restart).
-   * - `aaDriver` is created lazily when the runtime is Linux and `cfg.aa` is true.
-   * - `driver` (getter) returns whichever one is currently steering the session.
-   *
-   * Selection is decided at `start()`/`autoStartIfNeeded()` time, not on the fly:
-   * once a session is up, the active driver does not switch under it.
-   */
   private readonly dongleDriver = new DongleDriver()
   private aaDriver: AaDriver | null = null
   private get driver(): IPhoneDriver {
@@ -148,6 +139,17 @@ export class ProjectionService {
   private lastDongleInfoEmitKey = ''
   private lastAudioMetaEmitKey = ''
   private firmware = new FirmwareUpdateService()
+  private readonly aaBtSock = new AaBtSockClient()
+  // Persistent event subscription on /tmp/aa-bt.sock — BlueZ PropertiesChanged
+  // for Connected/Paired arrives here and triggers a list refresh.
+  private aaBtSubscription: { close: () => void } | null = null
+
+  private readonly onAaConnected = (): void => {
+    this.refreshAaBtPairedList().catch(() => {})
+  }
+  private readonly onAaDisconnected = (): void => {
+    this.refreshAaBtPairedList().catch(() => {})
+  }
 
   private lastNaviVideoWidth?: number
   private lastNaviVideoHeight?: number
@@ -163,14 +165,6 @@ export class ProjectionService {
     this.config = { ...this.config, ...next }
   }
 
-  /**
-   * Decoded driver message → renderer / state. Bound once, attached per driver.
-   *
-   * Both DongleDriver and AaDriver pump LIVI-domain readables on `'message'`,
-   * so the same handler works for either. AaDriver simply emits a smaller
-   * subset (DongleReady / Plugged / Unplugged / VideoData); the rest of the
-   * branches are inert no-ops in AA mode.
-   */
   private readonly onDriverMessage = (msg: Message): void => {
     // Always keep updater-relevant state, even if renderer is not attached yet.
     if (msg instanceof SoftwareVersion) {
@@ -180,6 +174,13 @@ export class ProjectionService {
     }
 
     if (msg instanceof BoxInfo) {
+      const settings = msg.settings as { DevList?: Array<Record<string, unknown>> }
+      if (Array.isArray(settings.DevList)) {
+        settings.DevList = settings.DevList.map((entry) => ({
+          ...entry,
+          source: 'dongle' as const
+        }))
+      }
       this.boxInfo = mergePreferExisting(this.boxInfo, msg.settings)
       this.emitDongleInfoIfChanged()
       return
@@ -209,11 +210,6 @@ export class ProjectionService {
       this.clearTimeouts()
       this.lastPluggedPhoneType = msg.phoneType
       this.aaPlaybackInferred = 1
-      // Reset the resolution debouncer so the next VideoData fires a fresh
-      // 'resolution' event even if the dimensions are unchanged. Without this,
-      // re-entering projection (e.g. after Host-UI excursion in the AA path)
-      // never re-triggers `setStreaming(true)` on the renderer because the
-      // first incoming VideoData hits the "same WxH as before" guard.
       this.lastVideoWidth = undefined
       this.lastVideoHeight = undefined
       this.lastNaviVideoWidth = undefined
@@ -576,10 +572,15 @@ export class ProjectionService {
 
     registerIpcHandle('projection-bt-pairedlist-set', async (_evt, listText: string) => {
       if (!this.started) return { ok: false }
-      // Dongle-only operation: AA stack manages pairing via its own python BT.
-      if (!(this.driver instanceof DongleDriver)) return { ok: false }
-      const ok = await this.driver.sendBluetoothPairedList(String(listText ?? ''))
-      return { ok }
+      // Bulk-set is a dongle-only concept — the dongle keeps its own paired
+      // list and we push the desired state to it. BlueZ is authoritative on
+      // the host-BT (AaDriver) path, so per-device removal goes through
+      // projection-bt-forget-device and the bulk call is a no-op there.
+      if (this.driver instanceof DongleDriver) {
+        const ok = await this.driver.sendBluetoothPairedList(String(listText ?? ''))
+        return { ok }
+      }
+      return { ok: true }
     })
 
     registerIpcHandle('projection-bt-connect-device', async (_evt, mac: string) => {
@@ -587,6 +588,17 @@ export class ProjectionService {
 
       const btMac = String(mac ?? '').trim()
       if (!btMac) return { ok: false }
+
+      // AaDriver path: drive BlueZ Device1.Connect through the python sock.
+      if (this.aaDriver) {
+        try {
+          const resp = await this.aaBtSock.connect(btMac)
+          if (resp.ok) this.refreshAaBtPairedList().catch(() => {})
+          return resp
+        } catch (e) {
+          return { ok: false, error: (e as Error).message }
+        }
+      }
 
       const devList = Array.isArray((this.boxInfo as { DevList?: unknown[] } | undefined)?.DevList)
         ? ((this.boxInfo as { DevList?: Array<{ id?: string; type?: string }> }).DevList ?? [])
@@ -610,6 +622,17 @@ export class ProjectionService {
 
       const btMac = String(mac ?? '').trim()
       if (!btMac) return { ok: false }
+
+      // AaDriver path: BlueZ Adapter1.RemoveDevice via the python sock.
+      if (this.aaDriver) {
+        try {
+          const resp = await this.aaBtSock.remove(btMac)
+          if (resp.ok) this.refreshAaBtPairedList().catch(() => {})
+          return resp
+        } catch (e) {
+          return { ok: false, error: (e as Error).message }
+        }
+      }
 
       const ok = await this.driver.send(new SendForgetBluetoothAddr(btMac))
       return { ok: Boolean(ok) }
@@ -1148,8 +1171,7 @@ export class ProjectionService {
 
   /**
    * Pick the right driver for the upcoming session.
-   * If we need to switch, detach listeners from the old one, swap, attach to
-   * the new one. Idempotent: a second call with the same target is a no-op.
+   * On switch, detach listeners from the old one, swap, attach to the new one.
    */
   private selectDriverFor(useAa: boolean): IPhoneDriver {
     if (useAa) {
@@ -1159,11 +1181,23 @@ export class ProjectionService {
         // Stop driving the dongle while AA owns the session.
         this.detachDriverListeners(this.dongleDriver)
         this.attachDriverListeners(aa)
+        aa.on('connected', this.onAaConnected)
+        aa.on('disconnected', this.onAaDisconnected)
+        this.openAaBtSubscription()
+        // Initial populate, then attempt autoconnect to the first trusted
+        // paired device. tryAutoConnect bails fast if anyone is already
+        // connected (e.g. because the user manually clicked connect first).
+        this.populateAaBtPairedListInitial()
+          .then(() => this.tryAutoConnect())
+          .catch(() => {})
       }
       return this.aaDriver
     }
     // useAa === false → return to dongle.
     if (this.aaDriver) {
+      this.aaDriver.off('connected', this.onAaConnected)
+      this.aaDriver.off('disconnected', this.onAaDisconnected)
+      this.closeAaBtSubscription()
       this.detachDriverListeners(this.aaDriver)
       try {
         this.aaDriver.close()
@@ -1176,11 +1210,150 @@ export class ProjectionService {
     return this.dongleDriver
   }
 
+  private async refreshAaBtPairedList(opts: { throwOnError?: boolean } = {}): Promise<void> {
+    if (!this.aaDriver) return
+    let devices
+    try {
+      devices = await this.aaBtSock.listPaired()
+    } catch (e) {
+      if (opts.throwOnError) throw e
+      return
+    }
+
+    const entries: DevListEntry[] = devices.map((d) => ({
+      id: d.mac,
+      name: d.name || d.mac,
+      type: 'AndroidAuto',
+      source: 'host'
+    }))
+    const connected = devices.find((d) => d.connected)?.mac ?? ''
+    if (connected && this.config.lastConnectedAaBtMac !== connected) {
+      configEvents.emit('requestSave', { lastConnectedAaBtMac: connected })
+    }
+
+    const prev = isRecord(this.boxInfo) ? this.boxInfo : {}
+    this.boxInfo = {
+      ...prev,
+      DevList: entries,
+      btMacAddr: connected
+    }
+    this.emitDongleInfoIfChanged()
+
+    // Also feed the renderer's bluetoothPairedDevices store. Format expected
+    // by parseBluetoothPairedList: "<17-char MAC><name>\n" per device.
+    if (this.webContents) {
+      const raw = devices.length
+        ? devices.map((d) => `${d.mac}${d.name ?? ''}`).join('\n') + '\n'
+        : ''
+      this.webContents.send('projection-event', {
+        type: 'bluetoothPairedList',
+        payload: raw
+      })
+    }
+  }
+
+  private async populateAaBtPairedListInitial(): Promise<void> {
+    const totalTimeoutMs = 30_000
+    const intervalMs = 2_000
+    const deadline = Date.now() + totalTimeoutMs
+    // If config has a remembered MAC, we expect at least that device to
+    // surface in BlueZ. Treat an empty list as "still loading" until the
+    // budget runs out, instead of accepting it as the final answer.
+    const expectDevice = !!this.config.lastConnectedAaBtMac
+
+    while (Date.now() < deadline) {
+      if (!this.aaDriver) return
+      try {
+        await this.refreshAaBtPairedList({ throwOnError: true })
+        const dev = (this.boxInfo as { DevList?: unknown[] } | undefined)?.DevList
+        const isEmpty = !Array.isArray(dev) || dev.length === 0
+        if (isEmpty && expectDevice) {
+          await new Promise((r) => setTimeout(r, intervalMs))
+          continue
+        }
+        return
+      } catch {
+        await new Promise((r) => setTimeout(r, intervalMs))
+      }
+    }
+    console.warn(
+      '[ProjectionService] aa-bt initial populate gave up after 30s — paired-device list may be empty until the next user action triggers a refresh'
+    )
+  }
+
+  /** Pick a target from the paired list and fire a single Connect.
+   *
+   *  Preference: last-connected MAC (config), first trusted, first paired.
+   *  Bails immediately if any device is already connected. */
+  private async tryAutoConnect(): Promise<void> {
+    if (!this.aaDriver) return
+
+    let devices
+    try {
+      devices = await this.aaBtSock.listPaired()
+    } catch {
+      return
+    }
+    if (devices.some((d) => d.connected)) return
+
+    const lastMac = this.config.lastConnectedAaBtMac
+    const preferred = lastMac ? devices.find((d) => d.mac === lastMac) : null
+    const trusted = devices.filter((d) => d.trusted)
+    const target = preferred || trusted[0] || devices[0]
+    if (!target) {
+      console.log(
+        `[ProjectionService] autoconnect: no candidate (paired=${devices.length}, lastMac=${lastMac ?? '∅'})`
+      )
+      return
+    }
+
+    const tag = preferred ? '[last]' : trusted.includes(target) ? '[trusted]' : '[first]'
+    console.log(`[ProjectionService] autoconnect ${tag} → ${target.mac}`)
+    try {
+      const resp = await this.aaBtSock.connect(target.mac)
+      if (!resp.ok) {
+        console.log(`[ProjectionService] autoconnect: ${resp.error ?? 'failed'}`)
+      }
+    } catch (e) {
+      console.log(`[ProjectionService] autoconnect threw: ${(e as Error).message}`)
+    }
+  }
+
+  /** Open the long-lived aa-bt event subscription. Each device-changed event
+   *  triggers a refresh. If the sock isn't bindable yet, retry once after
+   *  the initial population finishes (~30 s budget). */
+  private openAaBtSubscription(): void {
+    if (this.aaBtSubscription) return
+    const open = (): void => {
+      if (!this.aaDriver) return
+      this.aaBtSubscription = this.aaBtSock.subscribe(
+        () => {
+          this.refreshAaBtPairedList().catch(() => {})
+        },
+        () => {
+          this.aaBtSubscription = null
+          // Reopen if AaDriver is still active — typically means python
+          // restarted or temporarily lost the connection.
+          if (this.aaDriver) setTimeout(open, 1000)
+        }
+      )
+    }
+    open()
+  }
+
+  private closeAaBtSubscription(): void {
+    if (!this.aaBtSubscription) return
+    try {
+      this.aaBtSubscription.close()
+    } catch {
+      /* already closed */
+    }
+    this.aaBtSubscription = null
+  }
+
   public async autoStartIfNeeded() {
     if (this.shuttingDown) return
     if (this.started || this.isStarting) return
-    // AA path is self-driving (no USB hot-plug gate). Dongle path waits for
-    // a recognised CPC200 dongle on the bus.
     if (this.wantsAaDriver() || dongleConnected) {
       await this.start()
     }
