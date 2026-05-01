@@ -2,7 +2,7 @@ import {
   AndroidWorkMode,
   DongleDriver,
   DriverStateError
-} from '@main/services/projection/driver/DongleDriver'
+} from '@main/services/projection/driver/dongle/dongleDriver'
 import {
   HeaderBuildError,
   MessageHeader,
@@ -888,7 +888,7 @@ describe('DongleDriver core behavior', () => {
       const {
         DongleDriver,
         AndroidWorkMode
-      } = require('@main/services/projection/driver/DongleDriver')
+      } = require('@main/services/projection/driver/dongle/dongleDriver')
       const { PhoneWorkMode, MicType } = require('@shared/types')
 
       const d = new DongleDriver() as any
@@ -1283,7 +1283,7 @@ describe('DongleDriver core behavior', () => {
         decryptVendorSessionText: jest.fn(async () => 'decrypted-session')
       }))
 
-      const { DongleDriver } = require('@main/services/projection/driver/DongleDriver')
+      const { DongleDriver } = require('@main/services/projection/driver/dongle/dongleDriver')
       const { VendorSessionInfo } = require('@main/services/projection/messages/readable')
 
       const d = new DongleDriver() as any
@@ -1491,7 +1491,7 @@ describe('DongleDriver core behavior', () => {
         decryptVendorSessionText: jest.fn(async () => 'decrypted-session')
       }))
 
-      const { DongleDriver } = require('@main/services/projection/driver/DongleDriver')
+      const { DongleDriver } = require('@main/services/projection/driver/dongle/dongleDriver')
       const { VendorSessionInfo } = require('@main/services/projection/messages/readable')
 
       const d = new DongleDriver() as any
@@ -1707,7 +1707,7 @@ describe('DongleDriver core behavior', () => {
         decryptVendorSessionText: jest.fn(async () => 'decrypted-session')
       }))
 
-      const { DongleDriver } = require('@main/services/projection/driver/DongleDriver')
+      const { DongleDriver } = require('@main/services/projection/driver/dongle/dongleDriver')
       const { VendorSessionInfo } = require('@main/services/projection/messages/readable')
 
       const d = new DongleDriver() as any
@@ -1942,7 +1942,7 @@ describe('DongleDriver core behavior', () => {
         decryptVendorSessionText: jest.fn(async () => 'decrypted-session')
       }))
 
-      const { DongleDriver } = require('@main/services/projection/driver/DongleDriver')
+      const { DongleDriver } = require('@main/services/projection/driver/dongle/dongleDriver')
       const { VendorSessionInfo } = require('@main/services/projection/messages/readable')
 
       const d = new DongleDriver() as any

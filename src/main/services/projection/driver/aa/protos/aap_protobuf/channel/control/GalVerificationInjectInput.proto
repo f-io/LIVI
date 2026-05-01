@@ -1,0 +1,9 @@
+syntax="proto2";
+
+import "aap_protobuf/service/inputsource/message/InputReport.proto";
+
+package aap_protobuf.service.control.message;
+
+message GalVerificationInjectInput {
+  required inputsource.message.InputReport input = 1;
+}

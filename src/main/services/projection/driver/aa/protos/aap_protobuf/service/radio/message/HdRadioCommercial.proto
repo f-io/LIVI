@@ -1,0 +1,16 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+package aap_protobuf.service.radio.message;
+
+message HdRadioCommercial {
+  optional int32 encoding = 1;
+  optional string price = 2;
+  optional string valid = 3;
+  optional string url = 4;
+  optional int32 received = 5;
+  optional string seller = 6;
+  optional string description = 7;
+}
+

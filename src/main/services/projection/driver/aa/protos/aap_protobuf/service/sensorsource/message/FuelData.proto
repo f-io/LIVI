@@ -1,0 +1,9 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource.message;
+
+message FuelData {
+    optional int32 fuel_level = 1;
+    optional int32 range = 2;
+    optional bool low_fuel_warning = 3;
+}

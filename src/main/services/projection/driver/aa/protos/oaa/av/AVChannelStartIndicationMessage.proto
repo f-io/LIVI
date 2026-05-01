@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto2";
+
+package oaa.proto.messages;
+
+import "oaa/av/AVChannelMediaConfigMessage.proto";
+import "oaa/av/AVChannelSessionTypeEnum.proto";
+
+/*
+ * AV channel start indication (wire msg ID 0x8001 on all AV channels)
+ * Bidirectional: phone sends on audio start, HU sends on video start.
+ *
+ * APK class: wbu (16.2) / wce (16.1)
+ * Audio: icv/pjx/hqg build and send. Video: ilm receives.
+ * media_config (field 4) only sent when PDK >= 5.0.
+ *
+ * Verified: 2026-03-06, proto-verification pipeline
+ */
+// confidence: gold [apk_deep_trace, 2026-03-06]
+message AVChannelStartIndication
+{
+    required int32 session = 1;  // Session ID counter  // confidence: gold [apk_deep_trace]
+    required uint32 config = 2;  // Config/codec index  // confidence: gold [apk_deep_trace]
+    optional enums.AVChannelSessionType.Enum session_type = 3; // Values 0-2. Value 2 set when PDK >= 5.0.  // confidence: gold [apk_deep_trace]
+    optional AVChannelMediaConfig media_config = 4; // APK: vya (16.2) / vyo (16.1). 13 fields, only sent PDK >= 5.0.  // confidence: gold [apk_deep_trace]
+}

@@ -1,0 +1,28 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+import "aap_protobuf/service/radio/message/RadioType.proto";
+import "aap_protobuf/service/radio/message/Range.proto";
+import "aap_protobuf/service/radio/message/RdsType.proto";
+import "aap_protobuf/service/radio/message/TrafficServiceType.proto";
+import "aap_protobuf/service/radio/message/ItuRegion.proto";
+
+package aap_protobuf.service.radio.message;
+
+message RadioProperties {
+    required int32 radio_id = 1;
+    required RadioType type = 2;
+    repeated Range channel_range = 3;
+    repeated int32 channel_spacings = 4;
+    required int32 channel_spacing = 5;
+    optional bool background_tuner = 6;
+    optional ItuRegion region = 7;
+    optional RdsType rds = 8;
+    optional bool af_switch = 9;
+    optional bool ta = 10;
+    optional TrafficServiceType traffic_service = 11;
+    optional bool audio_loopback = 12;
+    optional bool mute_capability = 13;
+    optional int32 station_presets_access = 14;
+}

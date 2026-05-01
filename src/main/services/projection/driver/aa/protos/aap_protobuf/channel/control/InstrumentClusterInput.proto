@@ -1,0 +1,17 @@
+syntax="proto2";
+
+package aap_protobuf.service.control.message;
+
+message InstrumentClusterInput {
+    required InstrumentClusterAction action = 1;
+    enum InstrumentClusterAction {
+        UNKNOWN = 0;
+        UP = 1;
+        DOWN = 2;
+        LEFT = 3;
+        RIGHT = 4;
+        ENTER = 5;
+        BACK = 6;
+        CALL = 7;
+    }
+}

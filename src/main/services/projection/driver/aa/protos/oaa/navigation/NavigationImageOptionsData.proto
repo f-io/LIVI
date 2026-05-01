@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto2";
+
+package oaa.proto.data;
+
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+message NavigationImageOptions
+{
+    optional int32 width = 1; // APK: may be sub-message, but int32 works on wire  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional int32 height = 2;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional int32 colour_depth_bits = 3;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+}

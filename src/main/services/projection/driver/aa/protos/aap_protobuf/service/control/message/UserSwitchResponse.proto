@@ -1,0 +1,11 @@
+syntax="proto2";
+
+import "aap_protobuf/service/control/message/UserSwitchStatus.proto";
+import "aap_protobuf/service/control/message/ConnectedDevice.proto";
+
+package aap_protobuf.service.control.message;
+
+message UserSwitchResponse {
+  optional UserSwitchStatus status = 1;
+  optional ConnectedDevice selected_device = 2;
+}

@@ -1,0 +1,8 @@
+syntax="proto2";
+
+package aap_protobuf.service.control.message;
+
+enum NavFocusType {
+    NAV_FOCUS_NATIVE = 1;
+    NAV_FOCUS_PROJECTED = 2;
+}

@@ -1,0 +1,14 @@
+syntax="proto2";
+
+import "aap_protobuf/service/wifiprojection/message/AccessPointType.proto";
+import "aap_protobuf/service/wifiprojection/message/WifiSecurityMode.proto";
+
+package aap_protobuf.aaw;
+
+message WifiInfoResponse {
+  required string ssid = 1;
+  required string password = 2;
+  required string bssid = 3;
+  required service.wifiprojection.message.WifiSecurityMode security_mode = 4;
+  optional service.wifiprojection.message.AccessPointType access_point_type = 5;
+}

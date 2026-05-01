@@ -1,0 +1,11 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+package aap_protobuf.service.radio.message;
+
+enum HdAcquisionState {
+  ANALOG = 0;
+  ACQUIRING_HD = 1;
+  ACQUIRED_HD = 2;
+}

@@ -1,0 +1,13 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+import "aap_protobuf/shared/MessageStatus.proto";
+
+package aap_protobuf.service.radio.message;
+
+message MuteRadioResponse {
+  optional shared.MessageStatus status = 1;
+  optional int32 radio_id = 2;
+  optional bool muted = 3;
+}

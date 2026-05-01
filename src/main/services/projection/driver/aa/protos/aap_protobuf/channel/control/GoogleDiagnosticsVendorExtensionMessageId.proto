@@ -1,0 +1,4 @@
+enum GoogleDiagnosticsVendorExtensionMessageId {
+  DIAGNOSTICS_BUG_REPORT_REQUEST = 1;
+  DIAGNOSTICS_BUG_REPORT_RESPONSE = 2;
+}

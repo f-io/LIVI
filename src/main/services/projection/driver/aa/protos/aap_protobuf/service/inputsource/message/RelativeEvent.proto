@@ -1,0 +1,11 @@
+syntax="proto2";
+
+package aap_protobuf.service.inputsource.message;
+
+message RelativeEvent {
+    repeated Rel data = 1;
+    message Rel {
+        required uint32 keycode = 1;
+        required int32 delta = 2;
+    }
+}

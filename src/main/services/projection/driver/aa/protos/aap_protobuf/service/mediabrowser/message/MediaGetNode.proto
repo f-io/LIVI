@@ -1,0 +1,9 @@
+syntax="proto2";
+
+package aap_protobuf.service.mediabrowser.message;
+
+message MediaGetNode {
+  required string path = 1;
+  optional int32 start = 2;
+  optional bool get_album_art = 3 [default = true];
+}

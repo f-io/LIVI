@@ -1,0 +1,12 @@
+syntax="proto2";
+
+package aap_protobuf.service.mediabrowser;
+
+enum MediaBrowserMessageId {
+  MEDIA_ROOT_NODE = 32769;
+  MEDIA_SOURCE_NODE = 32770;
+  MEDIA_LIST_NODE = 32771;
+  MEDIA_SONG_NODE = 32772;
+  MEDIA_GET_NODE = 32773;
+  MEDIA_BROWSE_INPUT = 32774;
+}

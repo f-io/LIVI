@@ -1,0 +1,19 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource.message;
+
+enum FuelType {
+  FUEL_TYPE_UNKNOWN = 0;
+  FUEL_TYPE_UNLEADED = 1;
+  FUEL_TYPE_LEADED = 2;
+  FUEL_TYPE_DIESEL_1 = 3;
+  FUEL_TYPE_DIESEL_2 = 4;
+  FUEL_TYPE_BIODIESEL = 5;
+  FUEL_TYPE_E85 = 6;
+  FUEL_TYPE_LPG = 7;
+  FUEL_TYPE_CNG = 8;
+  FUEL_TYPE_LNG = 9;
+  FUEL_TYPE_ELECTRIC = 10;
+  FUEL_TYPE_HYDROGEN = 11;
+  FUEL_TYPE_OTHER = 12;
+}

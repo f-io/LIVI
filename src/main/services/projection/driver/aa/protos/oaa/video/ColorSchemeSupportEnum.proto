@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+
+/*
+ * Color scheme support level — advertised in AVChannel field 9 of the SDP
+ * ChannelDescriptor (main display only).
+ *
+ * Gates Material You theming token delivery (UiConfigRequest, 0x8011).
+ * Phone reads this field, converts via vdp.m36508ao() to an internal version,
+ * then exposes (internal - 1) as the HU palette version. If the HU version
+ * doesn't match the phone's palette version, theming is rejected:
+ *   "Not updating theme, palette version doesn't match. Current version: X, HU version: Y"
+ *
+ * Mapping (vdp.m36508ao):
+ *   Wire 0 → internal 1 → HU version 0 (basic, no Material You)
+ *   Wire 2 → internal 3 → HU version 2 (Material You v2 — identity seed color)
+ *   Wire 3 → internal 4 → HU version 3 (Material You v3 — remapped seed color)
+ *   Other  → internal 0 → HU version -1 (unsupported)
+ *
+ * v2 and v3 send the same 16 tokens in the same wire format. The only difference
+ * is how the phone processes the wallpaper seed color before generating the palette:
+ *   v2: uses seed color as-is (identity function)
+ *   v3: remaps seed color through Material Design 3's improved extraction algorithm
+ *
+ * The version must MATCH between phone and HU — mismatches are rejected entirely.
+ * Most phones currently use v2. Start with COLOR_SCHEME_MATERIAL_YOU_V2.
+ *
+ * APK evidence: vye.j (field 9), vdp.m36508ao(), huz.f35813K, hum.mo19776a(),
+ *   mui.java:202 version check, ncq.java CarThemeVersionLD
+ */
+syntax="proto2";
+
+package oaa.proto.enums;
+
+// confidence: gold [deep_trace, multi-agent verified]
+message ColorSchemeSupport
+{
+    // confidence: gold [deep_trace]
+    enum Enum
+    {
+        COLOR_SCHEME_BASIC = 0;             // No Material You — HU version 0
+        // 1 is not used (maps to internal 0 = unsupported)
+        COLOR_SCHEME_MATERIAL_YOU_V2 = 2;   // Material You v2 — HU version 2
+        COLOR_SCHEME_MATERIAL_YOU_V3 = 3;   // Material You v3 — HU version 3
+    }
+}

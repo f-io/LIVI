@@ -1,0 +1,20 @@
+syntax="proto2";
+
+package aap_protobuf.service.navigationstatus.message;
+
+message NavigationDistance {
+  optional int32 meters = 1;
+  optional string display_value = 2;
+
+  optional DistanceUnits display_units = 3;
+  enum DistanceUnits {
+    UNKNOWN_DISTANCE_UNIT = 0;
+    METERS = 1;
+    KILOMETERS = 2;
+    KILOMETERS_P1 = 3;
+    MILES = 4;
+    MILES_P1 = 5;
+    FEET = 6;
+    YARDS = 7;
+  }
+}

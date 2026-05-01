@@ -1,0 +1,8 @@
+syntax="proto2";
+
+package aap_protobuf.service.control.message;
+
+message ConnectedDevice {
+  optional string device_name = 1;
+  optional int32 device_id = 2;
+}

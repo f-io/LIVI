@@ -1,0 +1,41 @@
+syntax="proto2";
+
+package aap_protobuf.service.navigationstatus.message;
+
+message NavigationNextTurnEvent {
+    option deprecated = true;
+    required string road = 1;
+
+    optional TurnSide turn_side = 2;
+    enum TurnSide {
+        LEFT = 1;
+        RIGHT = 2;
+        UNSPECIFIED = 3;
+    }
+
+    optional NextTurnEnum event = 3;
+    enum NextTurnEnum {
+        UNKNOWN = 0;
+        DEPART = 1;
+        NAME_CHANGE = 2;
+        SLIGHT_TURN = 3;
+        TURN = 4;
+        SHARP_TURN = 5;
+        U_TURN = 6;
+        ON_RAMP = 7;
+        OFF_RAMP = 8;
+        FORK = 9;
+        MERGE = 10;
+        ROUNDABOUT_ENTER = 11;
+        ROUNDABOUT_EXIT = 12;
+        ROUNDABOUT_ENTER_AND_EXIT = 13;
+        STRAIGHT = 14;
+        FERRY_BOAT = 16;
+        FERRY_TRAIN = 17;
+        DESTINATION = 19;
+    }
+
+    optional bytes image = 4;
+    optional int32 turn_number = 5;
+    optional int32 turn_angle = 6;
+}

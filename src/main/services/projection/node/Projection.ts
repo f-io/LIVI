@@ -2,7 +2,7 @@ import { Microphone } from '@main/services/audio'
 import type { DongleConfig } from '@shared/types'
 import { AudioCommand, type CommandValue } from '@shared/types/ProjectionEnums'
 import { webusb } from 'usb'
-import { DEFAULT_CONFIG, DongleDriver } from '../driver/DongleDriver'
+import { DEFAULT_CONFIG, DongleDriver } from '../driver/dongle/dongleDriver'
 import {
   AudioData,
   Command,

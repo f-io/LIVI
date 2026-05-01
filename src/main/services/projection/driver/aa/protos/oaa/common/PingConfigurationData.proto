@@ -1,0 +1,21 @@
+// Android Auto Protocol Buffer Definitions
+// https://github.com/mrmees/open-android-auto
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/*
+ * PingConfiguration — connection keepalive parameters.
+ *
+ * APK class: zyd.java (AA v16.1) → aaac.java (AA v16.2)
+ * Sub-message of ConnectionConfiguration field 1.
+ * Only 2 fields (was incorrectly 4 in previous version).
+ */
+
+syntax="proto3";
+
+package oaa.proto.data;
+
+// confidence: gold [16.2_db_verified]
+message PingConfiguration {
+    optional int64 ping_interval_ns = 1; // APK: zyd.b (16.1) → aaac (16.2)  // confidence: gold
+    optional int32 ping_timeout_ms = 2; // APK: zyd.c (16.1) → aaac (16.2)  // confidence: gold
+}

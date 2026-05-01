@@ -1,0 +1,19 @@
+// Android Auto Protocol Buffer Definitions
+// https://github.com/mrmees/open-android-auto
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/*
+ * NotificationChannel — SDP channel descriptor for notifications.
+ * APK class: wah (16.2) — 1 bool field (was thought empty in 16.1)
+ */
+
+syntax="proto2";
+
+package oaa.proto.data;
+
+// APK class: wah (16.2) — notification channel config
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+message NotificationChannel
+{
+    optional bool enabled = 1;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+}

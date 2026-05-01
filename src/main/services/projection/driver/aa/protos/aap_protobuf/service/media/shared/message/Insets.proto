@@ -1,0 +1,10 @@
+syntax="proto2";
+
+package aap_protobuf.service.media.shared.message;
+
+message Insets {
+  optional uint32 top = 1;
+  optional uint32 bottom = 2;
+  optional uint32 left = 3;
+  optional uint32 right = 4;
+}

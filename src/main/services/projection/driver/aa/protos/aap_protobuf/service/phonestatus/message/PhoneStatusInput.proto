@@ -1,0 +1,11 @@
+syntax="proto2";
+
+import "aap_protobuf/shared/InstrumentClusterInput.proto";
+
+package aap_protobuf.service.phonestatus.message;
+
+message PhoneStatusInput {
+  required shared.InstrumentClusterInput input = 1;
+  optional string caller_number = 2;
+  optional string caller_id = 3;
+}

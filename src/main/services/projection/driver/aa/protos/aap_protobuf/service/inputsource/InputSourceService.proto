@@ -1,0 +1,33 @@
+syntax="proto2";
+
+import "aap_protobuf/service/inputsource/message/FeedbackEvent.proto";
+import "aap_protobuf/service/inputsource/message/TouchScreenType.proto";
+
+package aap_protobuf.service.inputsource;
+
+message InputSourceService {
+    repeated int32 keycodes_supported = 1 [packed = true];
+
+    repeated TouchScreen touchscreen = 2;
+    message TouchScreen {
+        required int32 width = 1;
+        required int32 height = 2;
+        optional message.TouchScreenType type = 3;
+        optional bool is_secondary = 4;
+    }
+
+    repeated TouchPad touchpad = 3;
+    message TouchPad {
+        required int32 width = 1;
+        required int32 height = 2;
+        optional bool ui_navigation = 3;
+        optional int32 physical_width = 4;
+        optional int32 physical_height = 5;
+        optional bool ui_absolute = 6;
+        optional bool tap_as_select = 7;
+        optional int32 sensitivity = 8;
+    }
+
+    repeated message.FeedbackEvent feedback_events_supported = 4;
+    optional uint32 display_id = 5;
+}

@@ -1,0 +1,9 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource.message;
+
+enum TurnIndicatorState {
+    TURN_INDICATOR_NONE = 1;
+    TURN_INDICATOR_LEFT = 2;
+    TURN_INDICATOR_RIGHT = 3;
+}

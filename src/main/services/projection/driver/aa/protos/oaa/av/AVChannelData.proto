@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto2";
+
+import "oaa/av/AVStreamTypeEnum.proto";
+import "oaa/av/AndroidKeycodeEnum.proto";
+import "oaa/audio/AudioTypeEnum.proto";
+import "oaa/audio/AudioConfigData.proto";
+import "oaa/video/VideoConfigData.proto";
+import "oaa/video/DisplayTypeEnum.proto";
+import "oaa/video/ColorSchemeSupportEnum.proto";
+package oaa.proto.data;
+
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+message AVChannel
+{
+    optional enums.AVStreamType.Enum stream_type = 1;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional enums.AudioType.Enum audio_type = 2;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    repeated AudioConfig audio_configs = 3;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    repeated VideoConfig video_configs = 4;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    // Field 5: MediaSinkService.available_while_in_call (bool).
+    // Old aasdk had this removed; new aasdk MediaSinkService.proto field 5 = available_while_in_call.
+    optional bool available_while_in_call = 5;
+
+    // Fields 6-9 discovered via APK decompilation (vye in 16.2, vys in 16.1).
+    optional uint32 channel_id = 6; // Display/channel identifier (assigned by phone)  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional enums.DisplayType.Enum display_type = 7; // MAIN, CLUSTER, AUXILIARY  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional enums.AndroidKeycode.Enum keycode = 8; // Android keycode (APK enum: vyh.java)  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional enums.ColorSchemeSupport.Enum color_scheme_support = 9; // Material You palette version — gates theming (0x8011). Set to 2 for Material You v2.  // confidence: gold [deep_trace, multi-agent verified]
+}

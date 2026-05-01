@@ -1,0 +1,14 @@
+syntax="proto2";
+
+package aap_protobuf.service.media.shared.message;
+
+enum MediaCodecType
+{
+    MEDIA_CODEC_AUDIO_PCM = 1;
+    MEDIA_CODEC_AUDIO_AAC_LC = 2;
+    MEDIA_CODEC_VIDEO_H264_BP = 3;
+    MEDIA_CODEC_AUDIO_AAC_LC_ADTS = 4;
+    MEDIA_CODEC_VIDEO_VP9 = 5;
+    MEDIA_CODEC_VIDEO_AV1 = 6;
+    MEDIA_CODEC_VIDEO_H265 = 7;
+}

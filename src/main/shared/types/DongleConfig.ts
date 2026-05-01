@@ -17,6 +17,11 @@ export enum PhoneWorkMode {
 export type PhoneTypeConfig = { frameInterval: number | null }
 
 export type DongleConfig = {
+  aa: boolean
+  cp: boolean
+  wifiPassword: string
+  btAdapter: string
+  wifiInterface: string
   width: number
   height: number
   fps: number

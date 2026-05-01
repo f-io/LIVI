@@ -1,0 +1,9 @@
+syntax="proto2";
+
+package aap_protobuf.service.genericnotification.message;
+
+message GenericNotificationMessage {
+  optional string id = 1;
+  optional string text = 2;
+  optional bytes icon = 3;
+}

@@ -1,0 +1,52 @@
+syntax="proto2";
+
+import "aap_protobuf/service/sensorsource/message/LocationData.proto";
+import "aap_protobuf/service/sensorsource/message/CompassData.proto";
+import "aap_protobuf/service/sensorsource/message/SpeedData.proto";
+import "aap_protobuf/service/sensorsource/message/RpmData.proto";
+import "aap_protobuf/service/sensorsource/message/OdometerData.proto";
+import "aap_protobuf/service/sensorsource/message/FuelData.proto";
+import "aap_protobuf/service/sensorsource/message/ParkingBrakeData.proto";
+import "aap_protobuf/service/sensorsource/message/GearData.proto";
+import "aap_protobuf/service/sensorsource/message/DiagnosticsData.proto";
+import "aap_protobuf/service/sensorsource/message/NightModeData.proto";
+import "aap_protobuf/service/sensorsource/message/EnvironmentData.proto";
+import "aap_protobuf/service/sensorsource/message/HvacData.proto";
+import "aap_protobuf/service/sensorsource/message/DrivingStatusData.proto";
+import "aap_protobuf/service/sensorsource/message/DeadReckoningData.proto";
+import "aap_protobuf/service/sensorsource/message/PassengerData.proto";
+import "aap_protobuf/service/sensorsource/message/DoorData.proto";
+import "aap_protobuf/service/sensorsource/message/LightData.proto";
+import "aap_protobuf/service/sensorsource/message/AccelerometerData.proto";
+import "aap_protobuf/service/sensorsource/message/GyroscopeData.proto";
+import "aap_protobuf/service/sensorsource/message/TirePressureData.proto";
+import "aap_protobuf/service/sensorsource/message/TollCardData.proto";
+import "aap_protobuf/service/sensorsource/message/GpsSatellite.proto";
+
+
+package aap_protobuf.service.sensorsource.message;
+
+message SensorBatch {
+    repeated LocationData location_data = 1;
+    repeated CompassData compass_data = 2;
+    repeated SpeedData speed_data = 3;
+    repeated RpmData rpm_data = 4;
+    repeated OdometerData odometer_data = 5;
+    repeated FuelData fuel_data = 6;
+    repeated ParkingBrakeData parking_brake_data = 7;
+    repeated GearData gear_data = 8;
+    repeated DiagnosticsData diagnostics_data = 9;
+    repeated NightModeData night_mode_data = 10;
+    repeated EnvironmentData environment_data = 11;
+    repeated HvacData hvac_data = 12;
+    repeated DrivingStatusData driving_status_data = 13;
+    repeated DeadReckoningData dead_reckoning_data = 14;
+    repeated PassengerData passenger_data = 15;
+    repeated DoorData door_data = 16;
+    repeated LightData light_data = 17;
+    repeated TirePressureData tire_pressure_data = 18;
+    repeated AccelerometerData accelerometer_data = 19;
+    repeated GyroscopeData gyroscope_data = 20;
+    repeated GpsSatelliteData gps_satellite_data = 21;
+    repeated TollCardData toll_card_data = 22;
+}

@@ -1,6 +1,6 @@
 export type { AudioFormat } from '@shared/types/AudioDecode'
 export { decodeTypeMap } from '@shared/types/AudioDecode'
-export * from '../driver/DongleDriver.js'
+export * from '../driver/dongle/dongleDriver.js'
 export * from './common.js'
 export * from './readable.js'
 export * from './sendable.js'

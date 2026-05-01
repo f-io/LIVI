@@ -1,0 +1,12 @@
+syntax="proto2";
+
+package aap_protobuf.service.media.video.message;
+
+enum VideoFocusMode
+{
+    VIDEO_FOCUS_PROJECTED = 1;
+    VIDEO_FOCUS_NATIVE = 2;
+    VIDEO_FOCUS_NATIVE_TRANSIENT = 3;
+    VIDEO_FOCUS_PROJECTED_NO_INPUT_FOCUS = 4;
+}
+

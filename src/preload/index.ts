@@ -125,6 +125,7 @@ const api = {
   ipc: {
     start: (): Promise<void> => ipcRenderer.invoke('projection-start'),
     stop: (): Promise<void> => ipcRenderer.invoke('projection-stop'),
+    restart: (): Promise<void> => ipcRenderer.invoke('projection-restart'),
     sendFrame: (): Promise<void> => ipcRenderer.invoke('projection-sendframe'),
     setBluetoothPairedList: (listText: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('projection-bt-pairedlist-set', listText),

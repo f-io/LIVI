@@ -1,0 +1,25 @@
+// Android Auto Protocol Buffer Definitions
+// https://github.com/mrmees/open-android-auto
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/*
+ * Discovered via APK decompilation (vxg.java, AA v16.1)
+ * Specifies which vehicle display the AV channel targets.
+ */
+
+syntax="proto3";
+
+package oaa.proto.enums;
+
+// APK class: vxg (16.1) / vws (16.2) — 3 values confirmed via ied.java (vws.DISPLAY_TYPE_MAIN)
+// confidence: gold [deep_trace]
+message DisplayType
+{
+    // confidence: gold [deep_trace]
+    enum Enum
+    {
+        MAIN = 0;  // DISPLAY_TYPE_MAIN
+        CLUSTER = 1;  // DISPLAY_TYPE_CLUSTER
+        AUXILIARY = 2;  // DISPLAY_TYPE_AUXILIARY
+    }
+}

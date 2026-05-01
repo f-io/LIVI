@@ -1,0 +1,81 @@
+// Android Auto Protocol Buffer Definitions
+// https://github.com/mrmees/open-android-auto
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/*
+ * AOSP Vehicle HAL area ID enums — bitmask values from
+ * hardware/interfaces/automotive/vehicle/aidl/android/hardware/automotive/vehicle/
+ * Used by CarAreaId to identify vehicle zones for HVAC, seats, mirrors, etc.
+ *
+ * Verified against 16.2 APK DB proto_enum_classes (2026-03-07).
+ * All values match AOSP VHAL spec. Each enum includes UNRECOGNIZED=-1 in APK
+ * (standard proto3 convention, omitted from proto definition).
+ */
+
+syntax = "proto3";
+
+package oaa.proto.messages;
+
+// AOSP VehicleAreaWindow (APK class: vuf, 12 values incl UNRECOGNIZED)
+// confidence: gold [deep_trace, 16.2 DB verified]
+enum VehicleAreaWindow {
+    VEHICLE_AREA_WINDOW_UNKNOWN = 0;
+    VEHICLE_AREA_WINDOW_FRONT_WINDSHIELD = 1;
+    VEHICLE_AREA_WINDOW_REAR_WINDSHIELD = 2;
+    VEHICLE_AREA_WINDOW_ROW_1_LEFT = 16;      // 0x10
+    VEHICLE_AREA_WINDOW_ROW_1_RIGHT = 64;     // 0x40
+    VEHICLE_AREA_WINDOW_ROW_2_LEFT = 256;     // 0x100
+    VEHICLE_AREA_WINDOW_ROW_2_RIGHT = 1024;   // 0x400
+    VEHICLE_AREA_WINDOW_ROW_3_LEFT = 4096;    // 0x1000
+    VEHICLE_AREA_WINDOW_ROW_3_RIGHT = 16384;  // 0x4000
+    VEHICLE_AREA_WINDOW_ROOF_TOP_1 = 65536;   // 0x10000
+    VEHICLE_AREA_WINDOW_ROOF_TOP_2 = 131072;  // 0x20000
+}
+
+// AOSP VehicleAreaSeat (APK class: vud, 10 values incl UNRECOGNIZED)
+// NOTE: ROW_3_CENTER (512/0x200) is in AOSP spec but NOT in AA's proto enum.
+// confidence: gold [deep_trace, 16.2 DB verified]
+enum VehicleAreaSeat {
+    VEHICLE_AREA_SEAT_UNKNOWN = 0;
+    VEHICLE_AREA_SEAT_ROW_1_LEFT = 1;
+    VEHICLE_AREA_SEAT_ROW_1_CENTER = 2;
+    VEHICLE_AREA_SEAT_ROW_1_RIGHT = 4;
+    VEHICLE_AREA_SEAT_ROW_2_LEFT = 16;    // 0x10
+    VEHICLE_AREA_SEAT_ROW_2_CENTER = 32;  // 0x20
+    VEHICLE_AREA_SEAT_ROW_2_RIGHT = 64;   // 0x40
+    VEHICLE_AREA_SEAT_ROW_3_LEFT = 256;   // 0x100
+    VEHICLE_AREA_SEAT_ROW_3_RIGHT = 1024; // 0x400
+}
+
+// AOSP VehicleAreaMirror (APK class: vuc, 5 values incl UNRECOGNIZED)
+// confidence: gold [deep_trace, 16.2 DB verified]
+enum VehicleAreaMirror {
+    VEHICLE_AREA_MIRROR_UNKNOWN = 0;
+    VEHICLE_AREA_MIRROR_DRIVER_LEFT = 1;
+    VEHICLE_AREA_MIRROR_DRIVER_RIGHT = 2;
+    VEHICLE_AREA_MIRROR_DRIVER_CENTER = 4;
+}
+
+// AOSP VehicleAreaDoor (APK class: vub, 10 values incl UNRECOGNIZED)
+// confidence: gold [deep_trace, 16.2 DB verified]
+enum VehicleAreaDoor {
+    VEHICLE_AREA_DOOR_UNKNOWN = 0;
+    VEHICLE_AREA_DOOR_ROW_1_LEFT = 1;
+    VEHICLE_AREA_DOOR_ROW_1_RIGHT = 4;
+    VEHICLE_AREA_DOOR_ROW_2_LEFT = 16;           // 0x10
+    VEHICLE_AREA_DOOR_ROW_2_RIGHT = 64;          // 0x40
+    VEHICLE_AREA_DOOR_ROW_3_LEFT = 256;          // 0x100
+    VEHICLE_AREA_DOOR_ROW_3_RIGHT = 1024;        // 0x400
+    VEHICLE_AREA_DOOR_HOOD = 268435456;          // 0x10000000
+    VEHICLE_AREA_DOOR_REAR = 536870912;          // 0x20000000
+}
+
+// AOSP VehicleAreaWheel (APK class: vue, 6 values incl UNRECOGNIZED)
+// confidence: gold [deep_trace, 16.2 DB verified]
+enum VehicleAreaWheel {
+    VEHICLE_AREA_WHEEL_UNKNOWN = 0;
+    VEHICLE_AREA_WHEEL_LEFT_FRONT = 1;
+    VEHICLE_AREA_WHEEL_RIGHT_FRONT = 2;
+    VEHICLE_AREA_WHEEL_LEFT_REAR = 4;
+    VEHICLE_AREA_WHEEL_RIGHT_REAR = 8;
+}

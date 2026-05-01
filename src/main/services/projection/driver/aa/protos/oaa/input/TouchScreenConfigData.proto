@@ -1,0 +1,25 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+
+/*
+ * TouchScreenConfig — touch screen capability descriptor.
+ *
+ * APK class: vxl (16.2), vxz (16.1)
+ * Used as repeated field in InputChannelConfig field 2.
+ * Width/height must match the video resolution for that display.
+ */
+
+syntax="proto2";
+
+import "oaa/video/DisplayTypeEnum.proto";
+
+package oaa.proto.data;
+
+// confidence: gold [handler_trace, deep_apk]
+message TouchScreenConfig
+{
+    required int32 width = 1;                          // touch area width in pixels
+    required int32 height = 2;                         // touch area height in pixels
+    optional enums.DisplayType.Enum display_type = 3;  // MAIN=1, CLUSTER=2, AUXILIARY=3
+}

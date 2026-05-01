@@ -1,0 +1,13 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource.message;
+
+enum DrivingStatus
+{
+    DRIVE_STATUS_UNRESTRICTED = 0;
+    DRIVE_STATUS_NO_VIDEO = 1;
+    DRIVE_STATUS_NO_KEYBOARD_INPUT = 2;
+    DRIVE_STATUS_NO_VOICE_INPUT = 4;
+    DRIVE_STATUS_NO_CONFIG = 8;
+    DRIVE_STATUS_LIMIT_MESSAGE_LEN = 16;
+}

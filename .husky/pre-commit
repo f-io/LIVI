@@ -1,6 +1,10 @@
 #!/bin/sh
 set -eu
 
+# Load nvm (works with any node version)
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
 echo "Running Biome and Jest checks before commit..."
 
 if ! npx lint-staged; then

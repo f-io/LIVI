@@ -1,0 +1,29 @@
+// Android Auto Protocol Buffer Definitions
+// https://github.com/mrmees/open-android-auto
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/*
+ * BluetoothPairingMethod — BT pairing method types.
+ *
+ * 16.2: vvl (runtime enum), 16.1: vvz
+ * Phone prioritizes: NUMERIC_COMPARISON first, then PIN (plq.java line 26).
+ * Value -1 (BLUETOOTH_PAIRING_UNAVAILABLE) is internal sentinel, never on wire.
+ */
+
+syntax = "proto3";
+
+package oaa.proto.enums;
+
+// confidence: gold [apk_deep_trace]
+message BluetoothPairingMethod
+{
+    // confidence: gold [apk_deep_trace]
+    enum Enum
+    {
+        NONE = 0;
+        OOB = 1;                  // Out-Of-Band pairing
+        NUMERIC_COMPARISON = 2;   // Numeric comparison
+        PASSKEY_ENTRY = 3;        // Passkey entry
+        PIN = 4;                  // PIN code
+    }
+}

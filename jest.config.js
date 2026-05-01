@@ -19,7 +19,7 @@ module.exports = {
     '^.+\\?raw$': '<rootDir>/src/main/__tests__/__mocks__/rawMock.ts',
     ...aliasMapper
   },
-  setupFiles: ['<rootDir>/jest.setup.ts'],
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   collectCoverageFrom: [
     '<rootDir>/src/main/**/*.{ts,tsx,js,jsx}',
     '<rootDir>/src/preload/**/*.{ts,tsx,js,jsx}',

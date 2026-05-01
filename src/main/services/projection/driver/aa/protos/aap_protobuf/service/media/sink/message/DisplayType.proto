@@ -1,0 +1,9 @@
+syntax="proto2";
+
+package aap_protobuf.service.media.sink.message;
+
+enum DisplayType {
+  DISPLAY_TYPE_MAIN = 0;
+  DISPLAY_TYPE_CLUSTER = 1;
+  DISPLAY_TYPE_AUXILIARY = 2;
+}

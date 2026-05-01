@@ -1,0 +1,29 @@
+// Android Auto Protocol Buffer Definitions
+// https://github.com/mrmees/open-android-auto
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/*
+ * AVChannelSessionType — AV channel session type/mode.
+ *
+ * APK verifier: a.bq() via vvs.n (AA v16.1) — accepts values 0, 1, 2.
+ * Used in AVChannelStartIndication field 3.
+ * Exact semantics TBD — values observed during protocol analysis.
+ */
+
+syntax="proto2";
+
+package oaa.proto.enums;
+
+// Verified via C0000a.m124bs/m104bY (16.2) — values 0, 1, 2 accepted.
+// Value 2 set when PDK >= 5.0 (hqg.java line 226).
+// confidence: gold [apk_deep_trace, 2026-03-06]
+message AVChannelSessionType
+{
+    // confidence: gold [apk_deep_trace, 2026-03-06]
+    enum Enum
+    {
+        SESSION_TYPE_UNKNOWN = 0;
+        SESSION_TYPE_NORMAL = 1;
+        SESSION_TYPE_ALTERNATE = 2;  // Set when PDK >= 5.0
+    }
+}

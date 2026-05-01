@@ -1,0 +1,8 @@
+syntax="proto2";
+
+package aap_protobuf.service.control.message;
+
+enum VoiceSessionStatus {
+  VOICE_SESSION_START = 1;
+  VOICE_SESSION_END = 2;
+}

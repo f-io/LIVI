@@ -1,0 +1,9 @@
+syntax="proto2";
+
+package aap_protobuf.service.media.source.message;
+
+message Ack {
+  required int32 session_id = 1;
+  optional uint32 ack = 2;
+  repeated uint64 receive_timestamp_ns = 3;
+}

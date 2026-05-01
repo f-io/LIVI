@@ -23,10 +23,11 @@ export const BtDeviceList = () => {
   const boxInfo = useLiviStore((s) => s.boxInfo) as BoxInfoPayload | undefined
   const connectedMac = useMemo(() => getConnectedMacFromBoxInfo(boxInfo), [boxInfo])
   const [pendingConnectMac, setPendingConnectMac] = useState<string>('')
-  const deviceMetaCacheRef = useRef<Record<string, { type?: string; index?: number }>>({})
+  const deviceMetaCacheRef = useRef<
+    Record<string, { type?: string; index?: number; source?: 'dongle' | 'host' }>
+  >({})
 
-  const remove = useLiviStore((s) => s.removeBluetoothPairedDeviceLocal)
-  //const remove = useLiviStore((s) => s.forgetBluetoothPairedDevice)
+  const remove = useLiviStore((s) => s.forgetBluetoothPairedDevice)
 
   const connect = useLiviStore((s) => s.connectBluetoothPairedDevice)
   const saveSettings = useLiviStore((s) => s.saveSettings)
@@ -40,7 +41,8 @@ export const BtDeviceList = () => {
 
       deviceMetaCacheRef.current[mac] = {
         type: (entry as DevListEntry).type,
-        index: Number((entry as DevListEntry).index ?? 999)
+        index: Number((entry as DevListEntry).index ?? 999),
+        source: (entry as DevListEntry).source
       }
     }
 
@@ -60,10 +62,11 @@ export const BtDeviceList = () => {
 
       const type = devEntry?.type ?? cached?.type ?? 'Unknown'
       const index = Number(devEntry?.index ?? cached?.index ?? 999)
+      const source = (devEntry as DevListEntry | undefined)?.source ?? cached?.source
       const targetPhoneWorkMode =
         type === 'AndroidAuto' ? PhoneWorkMode.Android : PhoneWorkMode.CarPlay
 
-      return { ...d, mac, type, index, targetPhoneWorkMode }
+      return { ...d, mac, type, index, source, targetPhoneWorkMode }
     })
 
     return enriched.sort((a, b) => a.index - b.index)
@@ -73,7 +76,8 @@ export const BtDeviceList = () => {
     <>
       {sortedList.map((d) => {
         const name = d.name?.trim()
-        const label = name && name.length > 0 ? name : 'Unknown device'
+        const baseLabel = name && name.length > 0 ? name : 'Unknown device'
+        const label = d.source === 'dongle' ? `${baseLabel} (D)` : baseLabel
         const isConnected = d.mac === connectedMac
         const isConnecting = d.mac === pendingConnectMac
         const isSwitching = pendingConnectMac.length > 0

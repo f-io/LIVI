@@ -16,6 +16,7 @@ during development.
 - **ludwig-v/wireless-carplay-dongle-reverse-engineering** by Ludwig
 - **rhysmorgan134/node-carplay** by Rhys Morgan
 - **OllieJones/h264-interp-utils** by Ollie Jones
+- **f1xpl/aasdk** — Android Auto protocol SDK by f1xpl
 - Various Carlinkit / CPC200 reverse-engineering projects, websites, and community write-ups
 
 This list is likely incomplete — many thanks to everyone whose work contributed,
