@@ -1196,21 +1196,17 @@ export class Session extends EventEmitter {
   // ── WiFi Projection channel (ch=14) ──────────────────────────────────────
 
   private _handleWifiCredentialsRequest(): void {
-    // WifiCredentialsResponse (msgId 0x8002) on the BT/WPP TCP channel.
-    // Mirrors openautolink/external/opencardev-openauto's
-    // WifiProjectionService::onWifiCredentialsRequest exactly:
-    //   f1=car_wifi_password (string)
-    //   f2=car_wifi_security_mode = WifiSecurityMode::WPA2_PERSONAL = 5
-    //                               (new aap_protobuf enum imported by this
-    //                                message; distinct from the legacy
-    //                                aasdk_proto SecurityMode enum used by
-    //                                RFCOMM-side WifiInfoResponse where the
-    //                                value 8 ends up meaning the same thing)
-    //   f3=car_wifi_ssid (string)
-    //   f5=access_point_type = AccessPointType::STATIC = 0
-    //                          STATIC is the persistence trigger — phone
-    //                          treats DYNAMIC as a transient hotspot and
-    //                          drops the config after disconnect.
+    // WifiCredentialsResponse (msgId 0x8002) on the WiFi projection channel:
+    //   f1 = car_wifi_password (string)
+    //   f2 = car_wifi_security_mode (varint, WPA2_PERSONAL = 5 in the new
+    //        aap_protobuf WifiSecurityMode enum used by this message;
+    //        distinct from the legacy aasdk_proto SecurityMode enum where
+    //        WPA2_PERSONAL = 8 used by the RFCOMM-side WifiInfoResponse)
+    //   f3 = car_wifi_ssid (string)
+    //   f5 = access_point_type = STATIC (0)
+    //
+    // STATIC at f5 is what makes the phone persist the WifiConfiguration —
+    // DYNAMIC is treated as a transient hotspot and discarded.
     const ssid = this._cfg.wifiSsid ?? ''
     const pass = this._cfg.wifiPassword ?? ''
 

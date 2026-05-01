@@ -10,14 +10,6 @@ import { join } from 'node:path'
 import { app, BrowserWindow, dialog } from 'electron'
 
 const RULE_FILE = '/etc/sudoers.d/99-LIVI-aa'
-
-/**
- * Per-user sentinel marking that we have successfully installed the sudoers
- * drop-in. We can't probe `/etc/sudoers.d/` directly: on Debian/Pi OS that
- * directory is mode 0750 root:root
- * The sentinel lives in userData (always traversable) and is bumped via
- * a version suffix when the rule format changes.
- */
 const SENTINEL_VERSION = 'v2'
 function sentinelPath(): string {
   return join(app.getPath('userData'), `aa-sudoers-${SENTINEL_VERSION}.installed`)
@@ -50,9 +42,6 @@ function resolveUsername(): string {
 function buildRuleContent(): string {
   const user = resolveUsername()
   const py = pythonPath()
-  // SETENV: lets the supervisor pass LIVI_SSID / LIVI_PASSPHRASE / … through
-  // sudo without an explicit env_keep list. NOEXEC: blocks the script from
-  // re-execing other privileged binaries via system() — defence-in-depth.
   return [
     `# Installed by LIVI — allows ${user} to run aa-bluetooth.py as root`,
     `# without a password prompt. Remove this file to revoke.`,
@@ -62,13 +51,6 @@ function buildRuleContent(): string {
   ].join('\n')
 }
 
-/**
- * Ground-truth probe: ask sudo itself whether the LIVI alias is allowed
- * non-interactively. `sudo -n -l` lists the user's permitted commands without
- * prompting — if the rule file is in place and SETENV: NOPASSWD is honoured,
- * the LIVI_AA_BT alias appears in the listing. If sudo would need a password
- * for `-l`, it exits non-zero; we catch and fall through to the sentinel.
- */
 function ruleActiveInSudo(): boolean {
   try {
     const out = execFileSync('sudo', ['-n', '-l'], {
@@ -102,9 +84,6 @@ function pkexecAvailable(): boolean {
 function installRule(): Promise<void> {
   return new Promise((resolve, reject) => {
     const content = buildRuleContent()
-    // Heredoc avoids quoting hell with embedded newlines. visudo -c -f sanity
-    // checks the file before we move it into place; on parse error we delete
-    // the temp instead of leaving a broken sudoers entry.
     const tmpFile = `${RULE_FILE}.livi-tmp`
     const script = [
       `cat > ${tmpFile} <<'EOF'`,
@@ -148,10 +127,6 @@ export async function checkAndInstallAaSudoers(window: BrowserWindow): Promise<v
 
   try {
     await installRule()
-    // Drop the per-user sentinel so subsequent launches skip the prompt even
-    // though we can't stat /etc/sudoers.d/. ruleActiveInSudo() is still the
-    // ground truth — the sentinel just avoids re-prompting the user when the
-    // sudoers dir is unreadable to us.
     try {
       writeFileSync(sentinelPath(), `${new Date().toISOString()} ${RULE_FILE}\n`, { mode: 0o644 })
     } catch (e) {

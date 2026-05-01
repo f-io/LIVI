@@ -225,15 +225,11 @@ def _pb_varint(field: int, value: int) -> bytes:
 
 
 def _build_wifi_version_request() -> bytes:
-    """WifiVersionRequest (msgId=4): announce modern WPP path (f2=6)."""
+    """WifiVersionRequest (msgId=4): WPP version 6.0 + AP frequency."""
     freq = _channel_to_freq_mhz(CHANNEL)
     freq_body = _encode_varint(freq)
     packed_channels = bytes([0x22]) + _encode_varint(len(freq_body)) + freq_body
-    proto = (
-        _pb_varint(1, 6) +    # f1 — version_major (6 = modern PDK 4.5+ path)
-        _pb_varint(2, 0) +    # f2 — version_minor
-        packed_channels       # supported_wifi_channels = [freq]
-    )
+    proto = _pb_varint(1, 6) + _pb_varint(2, 0) + packed_channels
     return struct.pack(">HH", len(proto), 4) + proto
 
 def _build_wifi_start_request(ip: str, port: int) -> bytes:
@@ -252,16 +248,14 @@ def _channel_to_freq_mhz(channel: int) -> int:
     return 5180  # fallback
 
 def _build_wifi_info_response(ssid: str, key: str, bssid: str) -> bytes:
-    """WifiInfoResponse (msgId=3)"""
+    """WifiInfoResponse (msgId=3): SSID/key/BSSID + security/AP type."""
     proto = (
         _pb_string(1, ssid) +
         _pb_string(2, key)  +
         _pb_string(3, bssid) +
-        _pb_varint(4, 8)    +   # security_mode (parsed by phone as WPA2_PERSONAL)
+        _pb_varint(4, 8)    +   # security_mode = WPA2_PERSONAL (legacy enum)
         _pb_varint(5, 0)        # access_point_type = STATIC
     )
-    print(f"[aa-bt]   WifiInfoResponse: ssid={ssid!r} bssid={bssid} "
-          f"security=WPA2_PERSONAL(8) type=STATIC(0)", flush=True)
     return struct.pack(">HH", len(proto), 3) + proto
 
 # ── RFCOMM socket helpers ──────────────────────────────────────────────────────
@@ -332,38 +326,35 @@ def _run_wifi_handshake(sock: socket.socket, mac: str):
       6. Phone → HU  WifiConnectionStatus (msgId=6, status=0 → joined AP)
 
     """
-    print(f"[aa-bt] handshake thread entered (mac={mac})", flush=True)
     try:
         bssid = get_wlan_mac(WIFI_IFACE)
-        print(f"[aa-bt] RFCOMM connected — WiFi handshake", flush=True)
-        print(f"[aa-bt]   HOST={AP_IP}:{AA_PORT}  SSID={SSID}  BSSID={bssid}", flush=True)
+        print(f"[aa-bt] WPP handshake → {mac} (AP {AP_IP}:{AA_PORT} SSID={SSID})",
+              flush=True)
 
         _wait_for_tcp_server(AP_IP, AA_PORT, timeout_s=30.0)
 
-        # Step 0: WifiVersionRequest (msgId=4, empty proto body)
         sock.sendall(_build_wifi_version_request())
-        print("[aa-bt]   → WifiVersionRequest sent (msgId=4)", flush=True)
 
         sock.settimeout(10.0)
         try:
             msg_id, data = _recv_frame(sock)
-            print(f"[aa-bt]   ← msgId={msg_id}  ({len(data)} bytes)", flush=True)
             if msg_id == 5:
-                print(f"[aa-bt]   WifiVersionResponse: {data.hex()}", flush=True)
+                # Phone identity payload — embeds phone-name, BT MAC, two
+                # vendor UUIDs and a serial number we use for diagnostics.
+                print(f"[aa-bt] WPP: WifiVersionResponse hex={data.hex()}",
+                      flush=True)
+                _pending = None
             else:
-                print(f"[aa-bt]   ! Expected WifiVersionResponse(5), got msgId={msg_id} — continuing", flush=True)
                 _pending = (msg_id, data)
         except socket.timeout:
-            print("[aa-bt]   no WifiVersionResponse within 10s — continuing", flush=True)
+            print("[aa-bt] WPP: no WifiVersionResponse within 10s — continuing",
+                  flush=True)
             _pending = None
-        else:
-            _pending = None if msg_id == 5 else (msg_id, data)
 
-        # Step 2: send WifiStartRequest
         sock.sendall(_build_wifi_start_request(AP_IP, AA_PORT))
-        print("[aa-bt]   → WifiStartRequest sent (msgId=1)", flush=True)
 
-        # Steps 3+: handle WifiInfoRequest/StartResponse/ConnectionStatus
+        # Stay in this loop after CONNECTED_WIFI: the modern WPP path keeps
+        # sending msgId=8 pings on RFCOMM that we must echo as msgId=9.
         sock.settimeout(30.0)
         wifi_status_seen = False
         while True:
@@ -375,38 +366,34 @@ def _run_wifi_handshake(sock: socket.socket, mac: str):
                     msg_id, data = _recv_frame(sock)
                 except socket.timeout:
                     if wifi_status_seen:
-                        # Idle keep-alive after handshake: just keep waiting.
                         sock.settimeout(60.0)
                         continue
-                    print("[aa-bt]   timeout waiting for next WPP frame", flush=True)
+                    print("[aa-bt] WPP: handshake timeout", flush=True)
                     break
-                print(f"[aa-bt]   ← msgId={msg_id}  ({len(data)} bytes)", flush=True)
 
-            if msg_id == 2:      # WifiInfoRequest — phone asks for AP credentials
+            if msg_id == 2:      # WifiInfoRequest
                 sock.sendall(_build_wifi_info_response(SSID, PASSPHRASE, bssid))
-                print(f"[aa-bt]   → WifiInfoResponse sent (SSID={SSID!r})", flush=True)
-
-            elif msg_id == 7:    # WifiStartResponse — ack
-                print("[aa-bt]   WifiStartResponse (ack)", flush=True)
 
             elif msg_id == 6:    # WifiConnectionStatus
                 status = data[1] if len(data) >= 2 else 0
                 if status == 0:
-                    print(f"[aa-bt]   ✓ WifiConnectionStatus OK — phone joining {SSID!r}", flush=True)
+                    print(f"[aa-bt] WPP: phone joined AP {SSID!r}", flush=True)
                 else:
-                    print(f"[aa-bt]   ✗ WifiConnectionStatus FAIL (status={status})", flush=True)
+                    print(f"[aa-bt] WPP: phone-side AP join FAILED (status={status})",
+                          flush=True)
                 wifi_status_seen = True
 
-            elif msg_id == 5:    # late WifiVersionResponse
-                print(f"[aa-bt]   WifiVersionResponse (late): {data.hex()}", flush=True)
-
-            elif msg_id == 8:    # Modern WPP ping — echo body back as msgId=9
+            elif msg_id == 8:    # WPP ping (modern path) — echo as msgId=9
                 pong = struct.pack(">HH", len(data), 9) + data
                 sock.sendall(pong)
-                print(f"[aa-bt]   ← Ping(8) hex={data.hex()}  → Pong(9) sent", flush=True)
 
-            else:
-                print(f"[aa-bt]   unknown msgId={msg_id} len={len(data)} hex={data.hex()} — ignoring", flush=True)
+            elif msg_id == 5:    # late WifiVersionResponse
+                print(f"[aa-bt] WPP: WifiVersionResponse hex={data.hex()}",
+                      flush=True)
+
+            elif msg_id != 7:
+                print(f"[aa-bt] WPP: unknown msgId={msg_id} len={len(data)} "
+                      f"hex={data.hex()}", flush=True)
 
     except ConnectionError as e:
         print(f"[aa-bt] RFCOMM disconnected during handshake: {e}", flush=True)
@@ -645,7 +632,8 @@ ADAPTER_PATH    = f"/org/bluez/{BT_ADAPTER}"
 AA_UUID  = "4de17a00-52cb-11e6-bdf4-0800200c9a66"
 HFP_HF_UUID = "0000111e-0000-1000-8000-00805f9b34fb"  # HFP Hands-Free (car kit role)
 HFP_AG_UUID = "0000111f-0000-1000-8000-00805f9b34fb"  # HFP Audio Gateway (phone role)
-HSP_UUID    = "00001108-0000-1000-8000-00805f9b34fb"   # HSP Headset
+HSP_HS_UUID = "00001108-0000-1000-8000-00805f9b34fb"   # HSP Headset (we are HS)
+HSP_AG_UUID = "00001112-0000-1000-8000-00805f9b34fb"   # HSP Audio Gateway (phone is AG)
 
 # AA SDP record — passed inline as ServiceRecord on RegisterProfile so BlueZ
 # publishes it directly via its D-Bus-driven SDP server (no /var/run/sdp,
@@ -686,7 +674,7 @@ AA_SDP_RECORD = """<?xml version="1.0" encoding="UTF-8" ?>
   </attribute>
 </record>"""
 
-_open_sockets: list = []  # holds HFP/HSP fds alive
+_open_sockets: list[int] = []  # raw fds for HFP/HSP, kept alive to hold the BR/EDR ACL
 
 # Device path and MAC of the last RFCOMM-connected phone.
 _last_device_path: str = ""
@@ -972,12 +960,7 @@ def _list_paired_devices() -> list[dict]:
 
 def _device_call(path: str, iface: str, method: str,
                  *busctl_args: str, timeout: float = 15.0) -> tuple[bool, str]:
-    """Invoke a BlueZ method via busctl. Returns (ok, error_message).
-
-    busctl is used in worker threads instead of dbus-python for one-shot
-    method calls so we don't have to manage another private SystemBus just
-    to make a single Connect/Disconnect call.
-    """
+    """Invoke a BlueZ method via busctl. Returns (ok, error_message)."""
     cmd = ["busctl", "--system", "call", "org.bluez", path, iface, method,
            *busctl_args]
     try:
@@ -992,11 +975,35 @@ def _device_call(path: str, iface: str, method: str,
 
 
 def _device_connect(mac: str) -> tuple[bool, str]:
-    """BlueZ Device1.Connect — establishes BT ACL + connects all profiles."""
-    return _device_call(
-        _device_path(mac), "org.bluez.Device1", "Connect",
-        timeout=30.0,
-    )
+    """Wake the phone via ConnectProfile(HSP_AG_UUID), with async retry."""
+    target = mac.upper()
+    max_attempts = 5
+    interval_s = 3.0
+
+    def _attempt() -> tuple[bool, str]:
+        return _device_call(
+            _device_path(mac), "org.bluez.Device1", "ConnectProfile",
+            "s", HSP_AG_UUID,
+            timeout=10.0,
+        )
+
+    print(f"[aa-bt] wake-up → {mac} (HSP_AG, up to {max_attempts} attempts)",
+          flush=True)
+    ok, err = _attempt()
+
+    def _retry_loop() -> None:
+        for attempt in range(2, max_attempts + 1):
+            time.sleep(interval_s)
+            if _last_phone_mac.upper() == target:
+                print(f"[aa-bt] wake-up: AA RFCOMM up after {attempt - 1} retr"
+                      f"{'y' if attempt - 1 == 1 else 'ies'}", flush=True)
+                return
+            _attempt()
+        print(f"[aa-bt] wake-up: gave up after {max_attempts} attempts", flush=True)
+
+    threading.Thread(target=_retry_loop, daemon=True,
+                     name=f"wake-up-{mac.split(':')[-1]}").start()
+    return ok, err
 
 
 def _device_disconnect(mac: str) -> tuple[bool, str]:
@@ -1200,15 +1207,8 @@ def _subscribe_device_signals(bus: dbus.Bus) -> None:
 
 
 def _trigger_hfp_slc_async(mac: str) -> None:
-    """Trigger HFP SLC via direct raw RFCOMM (bypasses BlueZ Profile API).
-
-    Called right after WifiConnectionStatus — the Pixel 8 retries RFCOMM
-    ~3-4 seconds later. Raw RFCOMM connect + full AT exchange takes ~1-2s.
-    This gives enough time for SLC to be established before the next RFCOMM
-    so the phone says "user intends to start projection" → real TCP session.
-    """
+    """Trigger HFP SLC via direct raw RFCOMM (bypasses BlueZ Profile API)."""
     _connect_hfp_direct(mac)
-
 
 def _bt_reconnect_worker() -> None:
     """Daemon thread: keep phone BT + HFP SLC alive after pairing.
@@ -1242,19 +1242,19 @@ def _bt_reconnect_worker() -> None:
                 _connect_hfp_direct(mac)
                 continue   # Don't also run ConnectProfile — causes br-connection-busy
 
-            # Not connected: reconnect via ConnectProfile(HFP_AG).
-            print(f"[aa-bt] BT not connected — ConnectProfile(HFP_AG) → {mac}", flush=True)
+            # Not connected: reconnect via ConnectProfile(HSP_AG).
+            print(f"[aa-bt] BT not connected — ConnectProfile(HSP_AG) → {mac}", flush=True)
             result = subprocess.run(
                 [
                     "busctl", "--system", "call",
                     "org.bluez", path,
                     "org.bluez.Device1", "ConnectProfile",
-                    "s", HFP_AG_UUID,
+                    "s", HSP_AG_UUID,
                 ],
                 capture_output=True, text=True, timeout=15,
             )
             if result.returncode == 0:
-                print(f"[aa-bt] ConnectProfile(HFP_AG) OK", flush=True)
+                print(f"[aa-bt] ConnectProfile(HSP_AG) OK", flush=True)
             else:
                 err = (result.stderr or result.stdout).strip()
                 print(f"[aa-bt] ConnectProfile failed: {err}", flush=True)
@@ -1272,18 +1272,21 @@ def _bt_reconnect_worker() -> None:
 # ── D-Bus Profile objects ──────────────────────────────────────────────────────
 
 class DummyProfile(dbus.service.Object):
-    """HFP AG / HSP HS — hold fd open. Android Auto app requires HFP presence."""
+    """HSP HS placeholder — accepts incoming RFCOMM and holds the fd open
+    so the BR/EDR ACL doesn't tear down."""
 
     def __init__(self, bus, path):
         super().__init__(bus, path)
 
     @dbus.service.method(PROFILE_IFACE, in_signature="oha{sv}")
     def NewConnection(self, path, fd, properties):
+        raw_fd = fd.take() if hasattr(fd, 'take') else int(fd)
+        own_fd = os.dup(raw_fd)
+        if hasattr(fd, 'take'):
+            os.close(raw_fd)
         name = self.__dbus_object_path__.split("/")[-1]
-        print(f"[aa-bt] {name}: connection from {path}")
-        sock = socket.fromfd(int(fd), socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.setblocking(True)
-        _open_sockets.append(sock)
+        print(f"[aa-bt] {name}: connection from {path} (fd={own_fd})", flush=True)
+        _open_sockets.append(own_fd)
 
     @dbus.service.method(PROFILE_IFACE, in_signature="o")
     def RequestDisconnection(self, path): pass
@@ -1515,7 +1518,7 @@ def main():
             except Exception: pass
         pm = _bluez_handles["profile_manager"]
         if pm is not None:
-            for path in ("/livi/bt/aa", "/livi/bt/hfp"):
+            for path in ("/livi/bt/aa", "/livi/bt/hfp", "/livi/bt/hsp_hs"):
                 try: pm.UnregisterProfile(path)
                 except Exception: pass
         am = _bluez_handles["agent_manager"]
@@ -1530,12 +1533,7 @@ def main():
     bus = dbus.SystemBus(private=True)
     bluez = bus.get_object(BLUEZ_SERVICE, BLUEZ_OBJ)
 
-    # Power the adapter OFF before we register any profiles. Between Pi boot
-    # and LIVI launch, bluetoothd defaults to Powered=true with no AA SDP
-    # record published — paired phones can Page us during that window, fail
-    # to find AA channel 8, and then back off. Toggling Powered off → full
-    # registration → Powered on guarantees the phone never sees a
-    # half-configured HU.
+    # Pre-power-off so the adapter is invisible during profile setup.
     try:
         adapter_props = dbus.Interface(
             bus.get_object(BLUEZ_SERVICE, ADAPTER_PATH),
@@ -1601,7 +1599,8 @@ def main():
     print("[aa-bt] registered AA RFCOMM profile (ch=8)")
 
     # ── BLE advertisement of the AA UUID ───────────────────────────────────────
-    # Tells nearby paired phones the HU is online and ready, which is what
+    # Phones use the BLE adv to detect that the HU is in range and fire a
+    # CDM appear event without needing a fresh BR/EDR inquiry.
     ble_ad_obj = BLEAd(bus, "/livi/bt/ble")
     _bluez_handles["ble_ad"] = ble_ad_obj
     try:
@@ -1661,6 +1660,29 @@ def main():
                   "RFCOMM direct-connect path (SLC unaffected)")
         else:
             print(f"[aa-bt] HFP profile registration unexpected error: {e}")
+
+    # HSP HS (Headset) profile — accept-only, no audio routing. Required
+    # so the phone accepts our incoming ConnectProfile(HSP_AG) wake-up
+    # without refusing it as an unknown service request.
+    try:
+        profile_manager.UnregisterProfile("/livi/bt/hsp_hs")
+    except Exception:
+        pass
+    try:
+        hsp_obj = DummyProfile(bus, "/livi/bt/hsp_hs")
+        profile_manager.RegisterProfile(hsp_obj, HSP_HS_UUID, {
+            'Name':                  'HSP HS',
+            'Role':                  'client',
+            'RequireAuthentication': False,
+            'RequireAuthorization':  False,
+        })
+        print("[aa-bt] registered HSP HS profile ✓")
+    except dbus.exceptions.DBusException as e:
+        msg = str(e).lower()
+        if "already registered" in msg or "notpermitted" in msg:
+            print("[aa-bt] HSP HS profile is reserved by BlueZ — skipping")
+        else:
+            print(f"[aa-bt] HSP profile registration unexpected error: {e}")
 
     agent = PairingAgent(bus, "/livi/bt/agent")
     agent_manager = dbus.Interface(bluez, AGENT_MANAGER)

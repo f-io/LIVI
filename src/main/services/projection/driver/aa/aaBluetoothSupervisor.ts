@@ -29,22 +29,8 @@ import { join } from 'node:path'
 import type { DongleConfig } from '@shared/types'
 import { app } from 'electron'
 
-/**
- * AppImage mounts the squashfs payload at `/tmp/.mount_LIVI-XXXXXX/...` via
- * libfuse with mode 0700 owned by the invoking user. When the supervisor
- * re-execs via `sudo`, root cannot read that mount at all (FUSE enforces the
- * mode regardless of DAC bypass) — the python interpreter then dies with
- * `[Errno 13] Permission denied`.
- *
- * Same problem balenaEtcher hit and solved by staging `etcher-util` into
- * `app.getPath('userData')` before invoking elevation. We follow the same
- * pattern: copy `bt/` out of the mount once per app version into userData
- * (root has DAC bypass on regular filesystems) and point the supervisor at
- * the staged path.
- */
 function isInsideAppImageMount(p: string): boolean {
   // $APPIMAGE / $APPDIR are set by AppRun. The `.mount_` substring covers
-  // edge cases where someone re-execs without the wrapper.
   if (process.env.APPIMAGE && p.startsWith(process.env.APPDIR ?? '')) return true
   return p.includes('/.mount_')
 }
@@ -242,22 +228,6 @@ export class AaBluetoothSupervisor extends EventEmitter {
     }
 
     const env = envFromConfig(this._cfg)
-
-    // aa-bluetooth.py refuses to run unless euid==0 (it needs CAP_NET_ADMIN,
-    // BlueZ root D-Bus, hostapd, dnsmasq). On Linux we re-exec via
-    // `sudo -n -E python3 …`. The matching sudoers drop-in is installed once
-    // at first run by aaSudoers.checkAndInstallAaSudoers (mirrors the udev
-    // rule installer). `-n` makes sudo refuse instead of prompting if the rule
-    // is missing — the supervisor's exit-loop then surfaces that in the log.
-    // `-E` preserves the LIVI_* env vars; the sudoers SETENV: tag whitelists
-    // them. Off-Linux (dev/macOS) we fall back to plain python3.
-    //
-    // `-u` forces unbuffered stdout/stderr on the python interpreter. Without
-    // it, aa-bluetooth.py's print() calls (which mostly omit flush=True) sit
-    // in libc buffers and only land in our log when python flushes — which
-    // means a crash before the first explicit flush appears in the log as
-    // "no python output at all", masking how far it actually got. Cheap and
-    // safe; the python source stays untouched.
     const useSudo = process.platform === 'linux'
     const cmd = useSudo ? 'sudo' : this._python
     const args = useSudo ? ['-n', '-E', this._python, '-u', script] : ['-u', script]
