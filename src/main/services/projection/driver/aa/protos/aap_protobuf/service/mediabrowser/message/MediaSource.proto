@@ -1,0 +1,9 @@
+syntax="proto2";
+
+package aap_protobuf.service.mediabrowser.message;
+
+message MediaSource {
+  required string path = 1;
+  required string name = 2;
+  optional bytes album_art = 3;
+}

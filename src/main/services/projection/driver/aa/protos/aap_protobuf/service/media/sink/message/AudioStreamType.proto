@@ -1,0 +1,12 @@
+syntax="proto2";
+
+package aap_protobuf.service.media.sink.message;
+
+enum AudioStreamType
+{
+    AUDIO_STREAM_GUIDANCE = 1;
+    AUDIO_STREAM_SYSTEM_AUDIO = 2;
+    AUDIO_STREAM_MEDIA = 3;
+    AUDIO_STREAM_TELEPHONY = 4;
+}
+

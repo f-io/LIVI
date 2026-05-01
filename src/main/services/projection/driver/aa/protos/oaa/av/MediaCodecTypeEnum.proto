@@ -1,0 +1,26 @@
+// Android Auto Protocol Buffer Definitions
+// https://github.com/mrmees/open-android-auto
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+syntax="proto3";
+
+package oaa.proto.enums;
+
+// Media codec types for AA AV channels (field 10 on VideoConfig, field 1 on AudioCodecConfig)
+// Values confirmed via decompiled APK (vyn.java) and firmware analysis
+// confidence: gold [apk_deep_trace, 2026-03-06]
+message MediaCodecType
+{
+    // confidence: gold [apk_deep_trace, 2026-03-06]
+    enum Enum
+    {
+        MEDIA_CODEC_UNKNOWN = 0;
+        MEDIA_CODEC_AUDIO_PCM = 1;
+        MEDIA_CODEC_AUDIO_AAC_LC = 2;
+        MEDIA_CODEC_VIDEO_H264_BP = 3;  // confidence: gold [apk_deep_trace, 2026-03-06]
+        MEDIA_CODEC_AUDIO_AAC_LC_ADTS = 4;
+        MEDIA_CODEC_VIDEO_VP9 = 5;  // confidence: gold [apk_deep_trace, 2026-03-06]
+        MEDIA_CODEC_VIDEO_AV1 = 6;  // confidence: gold [apk_deep_trace, 2026-03-06]
+        MEDIA_CODEC_VIDEO_H265 = 7;  // confidence: gold [apk_deep_trace, 2026-03-06]
+    }
+}

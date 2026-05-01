@@ -1,0 +1,17 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource.message;
+
+message GpsSatellite {
+  required int32 prn = 1;
+  required int32 snr_e3 = 2;
+  required bool used_in_fix = 3;
+  optional int32 azimuth_e3 = 4;
+  optional int32 elevation_e3 = 5;
+}
+
+message GpsSatelliteData {
+  required int32 number_in_use = 1;
+  optional int32 number_in_view = 2;
+  repeated GpsSatellite satellites = 3;
+}

@@ -1,0 +1,19 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+import "aap_protobuf/service/radio/message/RadioStationInfo.proto";
+import "aap_protobuf/service/radio/message/StationPresetList.proto";
+
+package aap_protobuf.service.radio.message;
+
+message RadioStateNotification {
+  required bool radio_source_enabled = 1;
+  optional bool radio_muted = 2;
+  required int32 active_radio_id = 3;
+  required RadioStationInfo station_info = 4;
+  repeated RadioStationInfo program_list = 5;
+  repeated StationPresetList station_preset_lists = 6;
+}
+
+

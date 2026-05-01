@@ -1,0 +1,25 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+
+/*
+ * Channel open response (msg ID 8 on control channel).
+ *
+ * HU responds to a channel open request.
+ *
+ * APK class: vwk (16.2)
+ * Handler: hyn.java (channel control callback)
+ * Direction: HU->Phone
+ * Status enum: vyh (ProtocolStatus) — closed enum
+ */
+syntax="proto2";
+
+import "oaa/common/StatusEnum.proto";
+
+package oaa.proto.messages;
+
+// confidence: gold [apk_deep_trace]
+message ChannelOpenResponse
+{
+    required enums.Status.Enum status = 1;  // confidence: gold [apk_deep_trace]
+}

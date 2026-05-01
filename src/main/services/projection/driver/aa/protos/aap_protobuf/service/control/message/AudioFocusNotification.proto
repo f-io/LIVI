@@ -1,0 +1,10 @@
+syntax="proto2";
+
+import "aap_protobuf/service/control/message/AudioFocusStateType.proto";
+
+package aap_protobuf.service.control.message;
+
+message AudioFocusNotification {
+    required AudioFocusStateType focus_state = 1;
+    optional bool unsolicited = 2;
+}

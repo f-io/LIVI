@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto2";
+
+import "oaa/common/StatusEnum.proto";
+
+package oaa.proto.messages;
+
+// APK class: vwb — 2 fields (status enum + already_paired bool)
+// confidence: silver [apk_static, cross_version]
+message BindingResponse
+{
+    optional enums.Status.Enum status = 1;  // confidence: silver [apk_static, cross_version]
+    optional bool already_paired = 2;  // confidence: silver [apk_static, cross_version]
+}

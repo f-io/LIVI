@@ -1,0 +1,9 @@
+syntax="proto2";
+
+package aap_protobuf.service.control.message;
+
+message WirelessTcpConfiguration {
+  optional uint32 socket_receive_buffer_size_kb = 1;
+  optional uint32 socket_send_buffer_size_kb = 2;
+  optional uint32 socket_read_timeout_ms = 3;
+}

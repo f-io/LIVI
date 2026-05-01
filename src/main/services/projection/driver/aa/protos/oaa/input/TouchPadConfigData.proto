@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+
+/*
+ * TouchPadConfig — touch pad capability descriptor.
+ *
+ * APK class: vxk (16.2), vxy (16.1)
+ * Used as repeated field in InputChannelConfig field 3.
+ * Field names from hlg.java dump diagnostic printf.
+ */
+
+syntax="proto2";
+
+package oaa.proto.data;
+
+// confidence: gold [handler_trace, deep_apk]
+message TouchPadConfig
+{
+    required int32 width = 1;            // virtual touchpad width (pixels)
+    required int32 height = 2;           // virtual touchpad height (pixels)
+    optional bool ui_navigation = 3;     // touchpad for focus navigation (DPAD mode)
+    optional int32 physical_width = 4;   // physical pad width in mm
+    optional int32 physical_height = 5;  // physical pad height in mm
+    optional bool ui_absolute = 6;       // absolute positioning mode indicator
+    optional bool tap_as_select = 7;     // tap gesture generates select action
+    optional int32 sensitivity = 8;      // 0-10 range (5 = neutral)
+}

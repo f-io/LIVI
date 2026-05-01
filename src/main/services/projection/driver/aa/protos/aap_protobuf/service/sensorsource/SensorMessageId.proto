@@ -1,0 +1,12 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource;
+
+enum SensorMessageId
+{
+    SENSOR_MESSAGE_REQUEST = 32769;
+    SENSOR_MESSAGE_RESPONSE = 32770;
+    SENSOR_MESSAGE_BATCH = 32771;
+    SENSOR_MESSAGE_ERROR = 32772;
+}
+

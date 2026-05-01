@@ -1,0 +1,36 @@
+// Android Auto Protocol Buffer Definitions
+// https://github.com/mrmees/open-android-auto
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/*
+ * FuelType — vehicle fuel type for SensorChannel config.
+ *
+ * APK class: vxo.java (AA v16.1)
+ * Used in SensorChannel field 3 (repeated).
+ */
+
+syntax="proto2";
+
+package oaa.proto.enums;
+
+// confidence: silver [apk_static, cross_version]
+message FuelType
+{
+    // confidence: silver [apk_static, cross_version]
+    enum Enum
+    {
+        UNKNOWN = 0;
+        UNLEADED = 1;
+        LEADED = 2;
+        DIESEL_1 = 3;  // confidence: silver [apk_static, cross_version]
+        DIESEL_2 = 4;  // confidence: silver [apk_static, cross_version]
+        BIODIESEL = 5;
+        E85 = 6;  // confidence: silver [apk_static, cross_version]
+        LPG = 7;
+        CNG = 8;
+        LNG = 9;
+        ELECTRIC = 10;
+        HYDROGEN = 11;
+        OTHER = 12;
+    }
+}

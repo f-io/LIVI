@@ -1,0 +1,17 @@
+syntax="proto2";
+
+import "aap_protobuf/service/inputsource/message/PointerAction.proto";
+
+package aap_protobuf.service.inputsource.message;
+
+message TouchEvent {
+    repeated Pointer pointer_data = 1;
+    message Pointer {
+        required uint32 x = 1;
+        required uint32 y = 2;
+        required uint32 pointer_id = 3;
+    }
+
+    optional uint32 action_index = 2;
+    optional PointerAction action = 3;
+}

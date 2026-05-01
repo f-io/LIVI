@@ -1,0 +1,13 @@
+syntax="proto2";
+
+import "aap_protobuf/service/navigationstatus/message/NavigationStepDistance.proto";
+import "aap_protobuf/service/navigationstatus/message/NavigationDestinationDistance.proto";
+import "aap_protobuf/service/navigationstatus/message/NavigationRoad.proto";
+
+package aap_protobuf.service.navigationstatus.message;
+
+message NavigationCurrentPosition {
+  optional NavigationStepDistance step_distance = 1;
+  repeated NavigationDestinationDistance destination_distances = 2;
+  optional NavigationRoad current_road = 3;
+}

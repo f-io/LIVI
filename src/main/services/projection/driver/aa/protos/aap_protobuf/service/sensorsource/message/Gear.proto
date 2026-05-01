@@ -1,0 +1,22 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource.message;
+
+enum Gear
+{
+    GEAR_NEUTRAL = 0;
+    GEAR_1 = 1;
+    GEAR_2 = 2;
+    GEAR_3 = 3;
+    GEAR_4 = 4;
+    GEAR_5 = 5;
+    GEAR_6 = 6;
+    GEAR_7 = 7;
+    GEAR_8 = 8;
+    GEAR_9 = 9;
+    GEAR_10 = 10;
+    GEAR_DRIVE = 100;
+    GEAR_PARK = 101;
+    GEAR_REVERSE = 102;
+}
+

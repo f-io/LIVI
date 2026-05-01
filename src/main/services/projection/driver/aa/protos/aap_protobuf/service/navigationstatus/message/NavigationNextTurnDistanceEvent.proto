@@ -1,0 +1,22 @@
+syntax="proto2";
+
+package aap_protobuf.service.navigationstatus.message;
+
+message NavigationNextTurnDistanceEvent {
+  option deprecated = true;
+  required int32 distance_meters = 1;
+  required int32 time_to_turn_seconds = 2;
+  optional int32 display_distance_e3 = 3;
+
+  optional DistanceUnits display_distance_unit = 4;
+  enum DistanceUnits {
+    UNKNOWN_DISTANCE_UNIT = 0;
+    METERS = 1;
+    KILOMETERS = 2;
+    KILOMETERS_P1 = 3;
+    MILES = 4;
+    MILES_P1 = 5;
+    FEET = 6;
+    YARDS = 7;
+  }
+}

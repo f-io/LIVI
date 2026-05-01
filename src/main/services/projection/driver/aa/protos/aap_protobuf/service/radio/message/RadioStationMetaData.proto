@@ -1,0 +1,19 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+
+import "aap_protobuf/service/radio/message/RdsData.proto";
+import "aap_protobuf/service/radio/message/HdRadioStationInfo.proto";
+
+package aap_protobuf.service.radio.message;
+
+message RadioStationMetaData {
+  optional int32 audio_channels = 1;
+  optional int32 signal_quality = 2;
+  optional RdsData rds = 3;
+  optional HdRadioStationInfo hd_station_info = 4;
+}
+
+
+

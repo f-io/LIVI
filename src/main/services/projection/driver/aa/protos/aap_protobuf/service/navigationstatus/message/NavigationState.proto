@@ -1,0 +1,11 @@
+syntax="proto2";
+
+import "aap_protobuf/service/navigationstatus/message/NavigationStep.proto";
+import "aap_protobuf/service/navigationstatus/message/NavigationDestination.proto";
+
+package aap_protobuf.service.navigationstatus.message;
+
+message NavigationState {
+  repeated NavigationStep steps = 1;
+  repeated NavigationDestination destinations = 2;
+}

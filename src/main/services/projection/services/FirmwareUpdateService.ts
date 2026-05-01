@@ -2,7 +2,7 @@ import type { BoxInfoPayload } from '@shared/types'
 import { app, net } from 'electron'
 import { createWriteStream, existsSync, promises as fsp } from 'fs'
 import { basename, join } from 'path'
-import type { DongleDriver } from '../driver/DongleDriver.js'
+import type { DongleDriver } from '../driver/dongle/dongleDriver.js'
 import { SendTmpFile } from '../messages/sendable.js'
 
 export type FirmwareCheckInput = {

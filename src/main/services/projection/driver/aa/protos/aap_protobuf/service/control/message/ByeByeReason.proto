@@ -1,0 +1,12 @@
+syntax="proto2";
+
+package aap_protobuf.service.control.message;
+
+enum ByeByeReason
+{
+    USER_SELECTION = 1;
+    DEVICE_SWITCH = 2;
+    NOT_SUPPORTED = 3;
+    NOT_CURRENTLY_SUPPORTED = 4;
+    PROBE_SUPPORTED = 5;
+}

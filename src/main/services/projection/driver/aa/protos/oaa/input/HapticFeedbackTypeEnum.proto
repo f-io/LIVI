@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+
+/*
+ * HapticFeedbackType — input haptic feedback supported by head unit.
+ *
+ * APK class: vwy (16.2), vxm (16.1)
+ * Used in InputChannelConfig field 4 (repeated) and InputBindingNotification field 1.
+ * Verified via vve case 12 → vwy.m37362b enum lookup.
+ */
+
+syntax="proto2";
+
+package oaa.proto.enums;
+
+// confidence: gold [handler_trace, deep_apk]
+message HapticFeedbackType
+{
+    enum Enum
+    {
+        FEEDBACK_SELECT = 1;
+        FEEDBACK_FOCUS_CHANGE = 2;
+        FEEDBACK_DRAG_SELECT = 3;
+        FEEDBACK_DRAG_START = 4;
+        FEEDBACK_DRAG_END = 5;
+    }
+}

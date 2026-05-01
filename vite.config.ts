@@ -1,11 +1,55 @@
+import { cpSync, existsSync, rmSync } from 'node:fs'
+import { builtinModules } from 'node:module'
 import path, { resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import electron from 'vite-plugin-electron/simple'
 
+const NODE_BUILTINS = [...builtinModules, ...builtinModules.map((m) => `node:${m}`)]
 const BUILD_SHA = (process.env.GITHUB_SHA || process.env.BUILD_SHA || 'dev').slice(0, 7)
 const BUILD_RUN = process.env.GITHUB_RUN_NUMBER || process.env.BUILD_RUN || ''
 const BUILD_BRANCH = process.env.BUILD_BRANCH || ''
+
+function copyAaResourcesPlugin(): Plugin {
+  const aaRoot = resolve(__dirname, 'src/main/services/projection/driver/aa')
+  const protosSrc = path.join(aaRoot, 'protos')
+  const btSrc = path.join(aaRoot, 'bt')
+  const protosDst = resolve(__dirname, 'out/main/protos')
+  const btDst = resolve(__dirname, 'out/main/bt')
+
+  // Skip Python build droppings; the live process will recreate __pycache__.
+  const filter = (src: string): boolean => !/[\\/]__pycache__([\\/]|$)/.test(src)
+
+  let copied = false
+  const copy = (): void => {
+    if (copied) return
+    copied = true
+    if (existsSync(protosSrc)) {
+      // Refresh: removing first guarantees deletions in the source propagate.
+      try {
+        rmSync(protosDst, { recursive: true, force: true })
+      } catch {}
+      cpSync(protosSrc, protosDst, { recursive: true, filter })
+    }
+    if (existsSync(btSrc)) {
+      try {
+        rmSync(btDst, { recursive: true, force: true })
+      } catch {}
+      cpSync(btSrc, btDst, { recursive: true, filter })
+    }
+  }
+
+  return {
+    name: 'livi:copy-aa-resources',
+    // Run on every main-process build, dev or prod.
+    buildStart() {
+      copied = false
+    },
+    closeBundle() {
+      copy()
+    }
+  }
+}
 
 const mainAlias = {
   '@projection/web': resolve(__dirname, 'src/renderer/src/components/web/CarplayWeb.ts'),
@@ -34,6 +78,7 @@ export default defineConfig({
       main: {
         entry: 'src/main/index.ts',
         vite: {
+          plugins: [copyAaResourcesPlugin()],
           resolve: {
             alias: mainAlias
           },
@@ -41,7 +86,7 @@ export default defineConfig({
             outDir: resolve(__dirname, 'out/main'),
             emptyOutDir: false,
             rollupOptions: {
-              external: ['electron', 'usb', 'node-gyp-build'],
+              external: ['electron', 'usb', 'node-gyp-build', ...NODE_BUILTINS],
               input: {
                 main: resolve(__dirname, 'src/main/index.ts'),
                 usbWorker: resolve(__dirname, 'src/main/services/usb/USBWorker.ts')
@@ -65,7 +110,7 @@ export default defineConfig({
             outDir: resolve(__dirname, 'out/preload'),
             emptyOutDir: false,
             rollupOptions: {
-              external: ['electron'],
+              external: ['electron', ...NODE_BUILTINS],
               output: {
                 format: 'cjs',
                 entryFileNames: '[name].js'

@@ -1,0 +1,10 @@
+syntax="proto2";
+
+import "aap_protobuf/service/media/shared/message/MediaCodecType.proto";
+
+package aap_protobuf.service.media.shared.message;
+
+message Setup
+{
+    required service.media.shared.message.MediaCodecType type = 1;
+}

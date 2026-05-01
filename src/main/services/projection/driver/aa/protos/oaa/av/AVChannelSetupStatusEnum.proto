@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto3";
+
+package oaa.proto.enums;
+
+// APK enum verified via vdp.m36490W() — values 1 (FAIL) and 2 (OK) only.
+// Value 0 (NONE) is not validated (returns 0 = invalid), treated as FAIL.
+// confidence: gold [apk_deep_trace, 2026-03-06]
+message AVChannelSetupStatus
+{
+    // confidence: gold [apk_deep_trace, 2026-03-06]
+    enum Enum
+    {
+        NONE = 0;  // Not a valid wire value — treated as FAIL
+        FAIL = 1;
+        OK = 2;
+    }
+}

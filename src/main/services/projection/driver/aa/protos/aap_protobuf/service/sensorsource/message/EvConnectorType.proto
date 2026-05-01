@@ -1,0 +1,17 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource.message;
+
+enum EvConnectorType {
+  EV_CONNECTOR_TYPE_UNKNOWN = 0;
+  EV_CONNECTOR_TYPE_J1772 = 1;
+  EV_CONNECTOR_TYPE_MENNEKES = 2;
+  EV_CONNECTOR_TYPE_CHADEMO = 3;
+  EV_CONNECTOR_TYPE_COMBO_1 = 4;
+  EV_CONNECTOR_TYPE_COMBO_2 = 5;
+  EV_CONNECTOR_TYPE_TESLA_ROADSTER = 6 [deprecated = true];
+  EV_CONNECTOR_TYPE_TESLA_HPWC = 7 [deprecated = true];
+  EV_CONNECTOR_TYPE_TESLA_SUPERCHARGER = 8;
+  EV_CONNECTOR_TYPE_GBT = 9;
+  EV_CONNECTOR_TYPE_OTHER = 101;
+}

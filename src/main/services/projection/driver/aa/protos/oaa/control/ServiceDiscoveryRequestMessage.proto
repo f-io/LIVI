@@ -1,0 +1,25 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto2";
+
+import "oaa/common/SessionInfoData.proto";
+
+package oaa.proto.messages;
+
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+message ServiceDiscoveryRequest
+{
+    // APK class: wbn.java (16.2), wbx.java (16.1) — NOT aahi.java (that's unrelated)
+    // Confirmed as PNG images via live capture (Samsung S25 Ultra, 2026-02-24)
+    optional bytes phone_icon_small = 1; // 32x32 PNG — phone/AA app icon  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional bytes phone_icon_medium = 2; // 64x64 PNG — phone/AA app icon  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional bytes phone_icon_large = 3; // 128x128 PNG — phone/AA app icon  // confidence: gold [deep_trace_verified, 16.2_jadx]
+
+    optional string device_name = 4; // APK is proto3, no required fields  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional string device_brand = 5;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+
+    // Sub-message with UUID string (confirmed via live capture)
+    // e.g. { session_uuid: "13504ec4-0e63-4e0f-a4d6-38472b4c39f7" }
+    optional data.SessionInfo session_info = 6;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+}

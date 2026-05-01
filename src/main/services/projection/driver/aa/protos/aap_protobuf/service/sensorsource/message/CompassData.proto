@@ -1,0 +1,9 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource.message;
+
+message CompassData {
+    required int32 bearing_e6 = 1;
+    optional int32 pitch_e6 = 2;
+    optional int32 roll_e6 = 3;
+}

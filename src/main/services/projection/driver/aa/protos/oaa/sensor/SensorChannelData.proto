@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto2";
+
+import "oaa/sensor/SensorData.proto";
+import "oaa/sensor/FuelTypeEnum.proto";
+import "oaa/sensor/EVConnectorTypeEnum.proto";
+
+package oaa.proto.data;
+
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+message SensorChannel
+{
+    repeated Sensor sensors = 1;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional uint32 location_characterization = 2; // APK toString (qmr.java): "locationCharacterization"  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    repeated enums.FuelType.Enum fuel_types = 3; // APK: vxo.java (was int32)  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    repeated enums.EVConnectorType.Enum ev_connectors = 4; // APK: vxl.java (was int32)  // confidence: gold [deep_trace_verified, 16.2_jadx]
+}

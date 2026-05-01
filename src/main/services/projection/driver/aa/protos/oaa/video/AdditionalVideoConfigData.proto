@@ -1,0 +1,89 @@
+// Android Auto Protocol Buffer Definitions
+// https://github.com/mrmees/open-android-auto
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/*
+ * Discovered via APK analysis (wcb in 16.2, wcm in 16.1)
+ * Additional video configuration for AV channel setup.
+ * Includes resolution ranges, UI theme, and display element preferences.
+ */
+
+syntax="proto2";
+
+package oaa.proto.data;
+
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+message AdditionalVideoConfig
+{
+    optional VideoResolutionRange min_resolution = 1; // APK: vxn (16.2), vyb (16.1) — minimum supported resolution  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional VideoResolutionRange max_resolution = 2; // APK: vxn (16.2) — maximum supported resolution  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional VideoResolutionRange preferred_resolution = 3; // APK: vxn (16.2) — preferred resolution  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional UITheme ui_theme = 4; // APK: wcr enum (16.1) — light/dark/auto (0=auto, 1=light, 2=dark)  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    repeated UIElement hidden_ui_elements = 5; // APK: wcn enum — elements phone should hide  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    repeated VideoResizeAction resize_actions = 6; // APK: vux (16.2), vvl (16.1) — supported resize behaviors  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    repeated VideoMarginConfig margin_configs = 7; // APK: vwp (16.2), vxd (16.1) — margin/inset configs  // confidence: gold [deep_trace_verified, 16.2_jadx]
+}
+
+// APK class: vxn (16.2), vyb (16.1) — resolution dimensions (width x height x density x fps)
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+message VideoResolutionRange
+{
+    optional uint32 width = 1;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional uint32 height = 2;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional uint32 density = 3;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional uint32 fps = 4;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+}
+
+// APK class: vux (16.2), vvl (16.1) — video resize action wrapper
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+message VideoResizeAction
+{
+    optional ResizeActionType action = 1;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+}
+
+// APK class: vwp (16.2), vxd (16.1) — margin/inset configuration
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+message VideoMarginConfig
+{
+    optional VideoInsets insets = 1;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+}
+
+// APK class: way (16.2), wbi (16.1) — inset values (top/bottom/left/right)
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+message VideoInsets
+{
+    optional uint32 left = 1;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional uint32 top = 2;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional uint32 right = 3;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional uint32 bottom = 4;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+}
+
+// APK class: wcr
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+enum UITheme
+{
+    UI_THEME_AUTOMATIC = 0;
+    UI_THEME_LIGHT = 1;
+    UI_THEME_DARK = 2;
+}
+
+// APK class: wcn
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+enum UIElement
+{
+    UI_ELEMENT_UNKNOWN = 0;
+    UI_ELEMENT_CLOCK = 1;
+    UI_ELEMENT_BATTERY_LEVEL = 2;
+    UI_ELEMENT_PHONE_SIGNAL = 3;
+    UI_ELEMENT_NATIVE_UI_AFFORDANCE = 4;
+    UI_ELEMENT_NAVIGATION_TURN_DATA_AVAILABLE = 5;
+}
+
+// APK class: vvn (16.1) — values confirmed in 16.2
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+enum ResizeActionType
+{
+    ACTION_UNKNOWN = 0;
+    ACTION_RESIZE_TO_SMALLER = 1;
+    ACTION_RESIZE_TO_LARGER = 2;
+}

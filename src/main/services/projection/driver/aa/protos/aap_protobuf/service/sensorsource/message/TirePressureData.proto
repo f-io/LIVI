@@ -1,0 +1,7 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource.message;
+
+message TirePressureData {
+    repeated int32 tire_pressures_e2 = 1;
+}

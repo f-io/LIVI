@@ -1,0 +1,55 @@
+syntax="proto2";
+
+package aap_protobuf.service.navigationstatus.message;
+
+message NavigationManeuver {
+  optional NavigationType type = 1;
+  enum NavigationType {
+    UNKNOWN = 0;
+    DEPART = 1;
+    NAME_CHANGE = 2;
+    KEEP_LEFT = 3;
+    KEEP_RIGHT = 4;
+    TURN_SLIGHT_LEFT = 5;
+    TURN_SLIGHT_RIGHT = 6;
+    TURN_NORMAL_LEFT = 7;
+    TURN_NORMAL_RIGHT = 8;
+    TURN_SHARP_LEFT = 9;
+    TURN_SHARP_RIGHT = 10;
+    U_TURN_LEFT = 11;
+    U_TURN_RIGHT = 12;
+    ON_RAMP_SLIGHT_LEFT = 13;
+    ON_RAMP_SLIGHT_RIGHT = 14;
+    ON_RAMP_NORMAL_LEFT = 15;
+    ON_RAMP_NORMAL_RIGHT = 16;
+    ON_RAMP_SHARP_LEFT = 17;
+    ON_RAMP_SHARP_RIGHT = 18;
+    ON_RAMP_U_TURN_LEFT = 19;
+    ON_RAMP_U_TURN_RIGHT = 20;
+    OFF_RAMP_SLIGHT_LEFT = 21;
+    OFF_RAMP_SLIGHT_RIGHT = 22;
+    OFF_RAMP_NORMAL_LEFT = 23;
+    OFF_RAMP_NORMAL_RIGHT = 24;
+    FORK_LEFT = 25;
+    FORK_RIGHT = 26;
+    MERGE_LEFT = 27;
+    MERGE_RIGHT = 28;
+    MERGE_SIDE_UNSPECIFIED = 29;
+    ROUNDABOUT_ENTER = 30;
+    ROUNDABOUT_EXIT = 31;
+    ROUNDABOUT_ENTER_AND_EXIT_CW = 32;
+    ROUNDABOUT_ENTER_AND_EXIT_CW_WITH_ANGLE = 33;
+    ROUNDABOUT_ENTER_AND_EXIT_CCW = 34;
+    ROUNDABOUT_ENTER_AND_EXIT_CCW_WITH_ANGLE = 35;
+    STRAIGHT = 36;
+    FERRY_BOAT = 37;
+    FERRY_TRAIN = 38;
+    DESTINATION = 39;
+    DESTINATION_STRAIGHT = 40;
+    DESTINATION_LEFT = 41;
+    DESTINATION_RIGHT = 42;
+  }
+
+  optional int32 roundabout_exit_number = 2;
+  optional int32 roundabout_exit_angle = 3;
+}

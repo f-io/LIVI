@@ -1,0 +1,9 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource.message;
+
+message AccelerometerData {
+    optional int32 acceleration_x_e3 = 1;
+    optional int32 acceleration_y_e3 = 2;
+    optional int32 acceleration_z_e3 = 3;
+}

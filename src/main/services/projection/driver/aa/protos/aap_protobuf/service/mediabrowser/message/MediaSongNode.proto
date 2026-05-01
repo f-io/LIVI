@@ -1,0 +1,11 @@
+syntax="proto2";
+
+import "aap_protobuf/service/mediabrowser/message/MediaSong.proto";
+
+package aap_protobuf.service.mediabrowser.message;
+
+message MediaSongNode {
+  required MediaSong song = 1;
+  optional bytes album_art = 2;
+  optional uint32 duration_seconds = 3;
+}

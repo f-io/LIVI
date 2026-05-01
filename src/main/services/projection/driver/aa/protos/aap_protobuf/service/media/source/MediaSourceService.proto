@@ -1,0 +1,13 @@
+syntax="proto2";
+
+import "aap_protobuf/service/media/shared/message/MediaCodecType.proto";
+import "aap_protobuf/service/media/shared/message/AudioConfiguration.proto";
+
+package aap_protobuf.service.media.source;
+
+message MediaSourceService
+{
+    optional media.shared.message.MediaCodecType available_type = 1 [default = MEDIA_CODEC_AUDIO_PCM];
+    optional media.shared.message.AudioConfiguration audio_config = 2;
+    optional bool available_while_in_call = 3;
+}

@@ -1,0 +1,10 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+package aap_protobuf.service.wifiprojection;
+
+enum WifiProjectionMessageId {
+  WIFI_MESSAGE_CREDENTIALS_REQUEST = 32769;
+  WIFI_MESSAGE_CREDENTIALS_RESPONSE = 32770;
+}

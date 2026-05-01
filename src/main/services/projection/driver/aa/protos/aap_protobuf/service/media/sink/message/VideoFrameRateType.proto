@@ -1,0 +1,8 @@
+syntax="proto2";
+
+package aap_protobuf.service.media.sink.message;
+
+enum VideoFrameRateType {
+    VIDEO_FPS_60 = 1;
+    VIDEO_FPS_30 = 2;
+}

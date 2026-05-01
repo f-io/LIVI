@@ -1,0 +1,22 @@
+syntax="proto2";
+
+import "aap_protobuf/service/media/shared/message/MediaCodecType.proto";
+import "aap_protobuf/service/media/sink/message/VideoFrameRateType.proto";
+import "aap_protobuf/service/media/sink/message/VideoCodecResolutionType.proto";
+import "aap_protobuf/service/media/shared/message/UiConfig.proto";
+
+package aap_protobuf.service.media.sink.message;
+
+message VideoConfiguration {
+    optional VideoCodecResolutionType codec_resolution = 1;
+    optional VideoFrameRateType frame_rate = 2;
+    optional uint32 width_margin = 3;
+    optional uint32 height_margin = 4;
+    optional uint32 density = 5;
+    optional uint32 decoder_additional_depth = 6;
+    optional uint32 viewing_distance = 7;
+    optional uint32 pixel_aspect_ratio_e4 = 8;
+    optional uint32 real_density = 9;
+    optional shared.message.MediaCodecType video_codec_type = 10;
+    optional shared.message.UiConfig ui_config = 11;
+}

@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto2";
+
+package oaa.proto.messages;
+
+// APK class: vvh (16.2), vvh (16.1)
+// Msg ID: 4 (AUTH_COMPLETE) on control channel (GAL type 1)
+// Direction: HU->Phone
+// Handler: hzh.java case 4 — status resolved via vyh (ProtocolStatus enum)
+// Also deserialized by qmg.java (alternate handler) and qex.java (debug printer)
+// confidence: gold [apk_deep_trace]
+message AuthCompleteIndication
+{
+    required int32 status = 1;  // vyh/ProtocolStatus enum value  // confidence: gold [apk_deep_trace]
+}

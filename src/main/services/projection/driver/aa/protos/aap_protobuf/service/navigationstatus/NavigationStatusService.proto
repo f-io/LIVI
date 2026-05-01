@@ -1,0 +1,20 @@
+syntax="proto2";
+
+package aap_protobuf.service.navigationstatus;
+
+message NavigationStatusService {
+    required int32 minimum_interval_ms = 1;
+
+    required InstrumentClusterType type = 2;
+    enum InstrumentClusterType {
+        IMAGE = 1;
+        ENUM = 2;
+    }
+
+    optional ImageOptions image_options = 3;
+    message ImageOptions {
+        required int32 height = 1;
+        required int32 width = 2;
+        required int32 colour_depth_bits = 3;
+    }
+}

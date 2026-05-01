@@ -1,0 +1,12 @@
+syntax="proto2";
+
+package aap_protobuf.service.control.message;
+
+enum AudioFocusRequestType
+{
+    AUDIO_FOCUS_GAIN = 1;
+    AUDIO_FOCUS_GAIN_TRANSIENT = 2;
+    AUDIO_FOCUS_GAIN_TRANSIENT_MAY_DUCK = 3;
+    AUDIO_FOCUS_RELEASE = 4;
+}
+

@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto2";
+
+import "oaa/av/AVStreamTypeEnum.proto";
+import "oaa/audio/AudioConfigData.proto";
+
+package oaa.proto.data;
+
+// confidence: gold [deep_trace_verified, 16.2_jadx]
+message AVInputChannel
+{
+    optional enums.AVStreamType.Enum stream_type = 1;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    optional AudioConfig audio_config = 2;  // confidence: gold [deep_trace_verified, 16.2_jadx]
+    // Field 3: APK has uint32 here, not bool. Not present in phone-side proto. Removed.
+}

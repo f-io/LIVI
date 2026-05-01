@@ -1,0 +1,10 @@
+syntax="proto2";
+
+import "aap_protobuf/service/bluetooth/message/BluetoothPairingMethod.proto";
+
+package aap_protobuf.service.bluetooth.message;
+
+message BluetoothAuthenticationData {
+  required string auth_data = 1;
+  optional BluetoothPairingMethod pairing_method = 2;
+}

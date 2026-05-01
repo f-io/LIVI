@@ -1,0 +1,67 @@
+// Android Auto Protocol Buffer Definitions
+// https://github.com/mrmees/open-android-auto
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/*
+ * AndroidKeycode — Android keycode values used in AV channel config.
+ *
+ * APK class: vyh.java (AA v16.1) — standard Android KeyEvent keycodes
+ * plus AA-specific extensions starting at 0x10000.
+ * Used in AVChannel field 8.
+ *
+ * Only a subset of commonly-used keycodes is included here.
+ * See android.view.KeyEvent for the full set.
+ */
+
+syntax="proto2";
+
+package oaa.proto.enums;
+
+// confidence: unverified
+message AndroidKeycode
+{
+    // confidence: unverified
+    enum Enum
+    {
+        KEYCODE_UNKNOWN = 0;
+        KEYCODE_HOME = 3;
+        KEYCODE_BACK = 4;
+        KEYCODE_CALL = 5;
+        KEYCODE_ENDCALL = 6;
+        KEYCODE_DPAD_UP = 19;
+        KEYCODE_DPAD_DOWN = 20;
+        KEYCODE_DPAD_LEFT = 21;
+        KEYCODE_DPAD_RIGHT = 22;
+        KEYCODE_DPAD_CENTER = 23;
+        KEYCODE_VOLUME_UP = 24;
+        KEYCODE_VOLUME_DOWN = 25;
+        KEYCODE_POWER = 26;
+        KEYCODE_ENTER = 66;
+        KEYCODE_HEADSETHOOK = 79;
+        KEYCODE_MENU = 82;
+        KEYCODE_SEARCH = 84;
+        KEYCODE_MEDIA_PLAY_PAUSE = 85;
+        KEYCODE_MEDIA_STOP = 86;
+        KEYCODE_MEDIA_NEXT = 87;
+        KEYCODE_MEDIA_PREVIOUS = 88;
+        KEYCODE_MEDIA_REWIND = 89;
+        KEYCODE_MEDIA_FAST_FORWARD = 90;
+        KEYCODE_MUTE = 91;
+        KEYCODE_ESCAPE = 111;
+        KEYCODE_MEDIA_PLAY = 126;
+        KEYCODE_MEDIA_PAUSE = 127;
+        KEYCODE_VOLUME_MUTE = 164;
+        KEYCODE_ASSIST = 219;
+        KEYCODE_VOICE_ASSIST = 231;
+        KEYCODE_NAVIGATE_PREVIOUS = 260;
+        KEYCODE_NAVIGATE_NEXT = 261;
+        KEYCODE_NAVIGATE_IN = 262;
+        KEYCODE_NAVIGATE_OUT = 263;
+        // AA-specific extensions
+        KEYCODE_SENTINEL = 65535;
+        KEYCODE_ROTARY_CONTROLLER = 65536;
+        KEYCODE_MEDIA = 65537;
+        KEYCODE_TERTIARY_BUTTON = 65543;
+        KEYCODE_TURN_CARD = 65544;
+    }
+}

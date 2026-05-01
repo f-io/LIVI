@@ -1,0 +1,9 @@
+syntax="proto2";
+
+package aap_protobuf.service.sensorsource.message;
+
+enum HeadLightState {
+    HEAD_LIGHT_STATE_OFF = 1;
+    HEAD_LIGHT_STATE_ON = 2;
+    HEAD_LIGHT_STATE_HIGH = 3;
+}

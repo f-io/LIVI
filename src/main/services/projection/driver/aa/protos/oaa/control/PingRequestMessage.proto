@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+
+/*
+ * Ping request message (msg ID 11 = PING_REQUEST on control channel).
+ *
+ * Bidirectional keep-alive. Timestamp is echoed in PingResponse.
+ * Field 2 (bugreport_request) triggers BugreporterReceiver on the phone
+ * when set to true by the HU.
+ *
+ * APK class: vzv (16.2), waj (16.1)
+ * WARNING: waj in 16.2 is a DIFFERENT proto (radio program identifier).
+ * Handler: hzh.java — received case 11, sent via mo20032d
+ * Ping handler: iau.m20103e — echoes timestamp, checks bugreport flag
+ */
+syntax="proto2";
+
+package oaa.proto.messages;
+
+// confidence: gold [apk_deep_trace]
+message PingRequest
+{
+    required int64 timestamp = 1;  // confidence: gold [apk_deep_trace]
+    optional bool bugreport_request = 2;  // triggers bugreport via iau.m20103e  // confidence: gold [apk_deep_trace]
+    optional bytes payload = 3;  // confidence: gold [apk_deep_trace]
+}

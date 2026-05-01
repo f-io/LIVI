@@ -1,0 +1,11 @@
+syntax="proto2";
+
+package aap_protobuf.service.inputsource;
+
+enum InputMessageId
+{
+    INPUT_MESSAGE_INPUT_REPORT = 32769;
+    INPUT_MESSAGE_KEY_BINDING_REQUEST = 32770;
+    INPUT_MESSAGE_KEY_BINDING_RESPONSE = 32771;
+    INPUT_MESSAGE_INPUT_FEEDBACK = 32772;
+}

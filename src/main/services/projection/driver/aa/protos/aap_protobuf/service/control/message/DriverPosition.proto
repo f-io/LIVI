@@ -1,0 +1,10 @@
+syntax="proto2";
+
+package aap_protobuf.service.control.message;
+
+enum DriverPosition {
+  DRIVER_POSITION_LEFT = 0;
+  DRIVER_POSITION_RIGHT = 1;
+  DRIVER_POSITION_CENTER = 2;
+  DRIVER_POSITION_UNKNOWN = 3;
+}

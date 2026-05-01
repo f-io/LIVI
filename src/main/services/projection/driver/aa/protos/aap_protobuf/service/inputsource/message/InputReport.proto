@@ -1,0 +1,19 @@
+syntax="proto2";
+
+import "aap_protobuf/service/inputsource/message/TouchEvent.proto";
+import "aap_protobuf/service/inputsource/message/AbsoluteEvent.proto";
+import "aap_protobuf/service/inputsource/message/RelativeEvent.proto";
+import "aap_protobuf/service/inputsource/message/KeyEvent.proto";
+
+package aap_protobuf.service.inputsource.message;
+
+message InputReport
+{
+    required uint64 timestamp = 1;
+    optional int32 disp_channel_id = 2 [deprecated = true];
+    optional TouchEvent touch_event = 3;
+    optional KeyEvent key_event = 4;
+    optional AbsoluteEvent absolute_event = 5;
+    optional RelativeEvent relative_event = 6;
+    optional TouchEvent touchpad_event = 7;
+}

@@ -1,6 +1,6 @@
 import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
 import { configEvents } from '@main/ipc/utils'
-import type { DongleFirmwareAction, DongleFwApiRaw, ExtraConfig } from '@shared/types'
+import type { DevListEntry, DongleFirmwareAction, DongleFwApiRaw, ExtraConfig } from '@shared/types'
 import { PhoneWorkMode } from '@shared/types'
 import type { NavLocale } from '@shared/utils'
 import { translateNavigation } from '@shared/utils'
@@ -8,6 +8,9 @@ import { app, WebContents } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { usb, WebUSBDevice } from 'usb'
+import { AaBtSockClient } from '../driver/aa/AaBtSockClient'
+import { AaDriver } from '../driver/aa/aaDriver'
+import type { IPhoneDriver } from '../driver/IPhoneDriver'
 import {
   AudioData,
   BluetoothPairedList,
@@ -21,6 +24,7 @@ import {
   FileAddress,
   GnssData,
   MediaType,
+  type Message,
   MessageType,
   MetaData,
   PhoneType,
@@ -109,7 +113,11 @@ function pickStringOrNumber(o: Record<string, unknown>, key: string): string | n
 }
 
 export class ProjectionService {
-  private driver = new DongleDriver()
+  private readonly dongleDriver = new DongleDriver()
+  private aaDriver: AaDriver | null = null
+  private get driver(): IPhoneDriver {
+    return this.aaDriver ?? this.dongleDriver
+  }
   private webUsbDevice: WebUSBDevice | null = null
   private webContents: WebContents | null = null
   private config: ExtraConfig = DEFAULT_CONFIG as ExtraConfig
@@ -131,6 +139,17 @@ export class ProjectionService {
   private lastDongleInfoEmitKey = ''
   private lastAudioMetaEmitKey = ''
   private firmware = new FirmwareUpdateService()
+  private readonly aaBtSock = new AaBtSockClient()
+  // Persistent event subscription on /tmp/aa-bt.sock — BlueZ PropertiesChanged
+  // for Connected/Paired arrives here and triggers a list refresh.
+  private aaBtSubscription: { close: () => void } | null = null
+
+  private readonly onAaConnected = (): void => {
+    this.refreshAaBtPairedList().catch(() => {})
+  }
+  private readonly onAaDisconnected = (): void => {
+    this.refreshAaBtPairedList().catch(() => {})
+  }
 
   private lastNaviVideoWidth?: number
   private lastNaviVideoHeight?: number
@@ -144,6 +163,344 @@ export class ProjectionService {
   private readonly onConfigChanged = (next: ExtraConfig) => {
     if (this.shuttingDown) return
     this.config = { ...this.config, ...next }
+  }
+
+  private readonly onDriverMessage = (msg: Message): void => {
+    // Always keep updater-relevant state, even if renderer is not attached yet.
+    if (msg instanceof SoftwareVersion) {
+      this.dongleFwVersion = msg.version
+      this.emitDongleInfoIfChanged()
+      return
+    }
+
+    if (msg instanceof BoxInfo) {
+      const settings = msg.settings as { DevList?: Array<Record<string, unknown>> }
+      if (Array.isArray(settings.DevList)) {
+        settings.DevList = settings.DevList.map((entry) => ({
+          ...entry,
+          source: 'dongle' as const
+        }))
+      }
+      this.boxInfo = mergePreferExisting(this.boxInfo, msg.settings)
+      this.emitDongleInfoIfChanged()
+      return
+    }
+
+    if (msg instanceof GnssData) {
+      this.webContents?.send('projection-event', {
+        type: 'gnss',
+        payload: {
+          text: msg.text
+        }
+      })
+      return
+    }
+
+    if (!this.webContents) return
+
+    if (msg instanceof BluetoothPairedList) {
+      this.webContents.send('projection-event', {
+        type: 'bluetoothPairedList',
+        payload: msg.data
+      })
+      return
+    }
+
+    if (msg instanceof Plugged) {
+      this.clearTimeouts()
+      this.lastPluggedPhoneType = msg.phoneType
+      this.aaPlaybackInferred = 1
+      this.lastVideoWidth = undefined
+      this.lastVideoHeight = undefined
+      this.lastNaviVideoWidth = undefined
+      this.lastNaviVideoHeight = undefined
+
+      const nextPhoneWorkMode =
+        msg.phoneType === PhoneType.CarPlay ? PhoneWorkMode.CarPlay : PhoneWorkMode.Android
+
+      try {
+        configEvents.emit('requestSave', { lastPhoneWorkMode: nextPhoneWorkMode })
+      } catch (e) {
+        console.warn('[ProjectionService] failed to persist lastPhoneWorkMode (ignored)', e)
+      }
+
+      const phoneTypeConfig = this.config.phoneConfig?.[msg.phoneType]
+      if (phoneTypeConfig?.frameInterval) {
+        this.frameInterval = setInterval(() => {
+          if (!this.started) return
+          try {
+            this.driver.send(new SendCommand('frame'))
+          } catch {}
+        }, phoneTypeConfig.frameInterval)
+      }
+      this.webContents.send('projection-event', { type: 'plugged' })
+      if (!this.started && !this.isStarting) {
+        this.start().catch(() => {})
+      }
+    } else if (msg instanceof Unplugged) {
+      this.clearTimeouts()
+      this.lastPluggedPhoneType = undefined
+      this.aaPlaybackInferred = 1
+
+      if (isRecord(this.boxInfo)) {
+        this.boxInfo = { ...this.boxInfo, btMacAddr: '' }
+      }
+
+      this.webContents.send('projection-event', { type: 'unplugged' })
+      this.webContents.send('projection-event', {
+        type: 'dongleInfo',
+        payload: {
+          dongleFwVersion: this.dongleFwVersion,
+          boxInfo: this.boxInfo
+        }
+      })
+      this.resetNavigationSnapshot('unplugged')
+
+      if (!this.shuttingDown && !this.stopping) {
+        this.stop().catch(() => {})
+      }
+    } else if (msg instanceof BoxUpdateProgress) {
+      // 0xb1 payload: int32 progress
+      this.webContents.send('projection-event', {
+        type: 'fwUpdate',
+        stage: 'upload:progress',
+        progress: msg.progress
+      })
+    } else if (msg instanceof BoxUpdateState) {
+      // 0xbb payload: int32 status (start/success/fail, ota variants)
+      this.webContents.send('projection-event', {
+        type: 'fwUpdate',
+        stage: 'upload:state',
+        status: msg.status,
+        statusText: msg.statusText,
+        isOta: msg.isOta,
+        isTerminal: msg.isTerminal,
+        ok: msg.ok
+      })
+
+      if (msg.isTerminal) {
+        // Terminal state decides done vs error
+        this.webContents.send('projection-event', {
+          type: 'fwUpdate',
+          stage: msg.ok ? 'upload:done' : 'upload:error',
+          message: msg.statusText || (msg.ok ? 'Update finished' : 'Update failed'),
+          status: msg.status,
+          isOta: msg.isOta
+        })
+
+        // Ensure the next SoftwareVersion/BoxInfo triggers a fresh emit.
+        this.lastDongleInfoEmitKey = ''
+
+        // Force a fresh dongleInfo emit AFTER the dongle reports new SoftwareVersion/BoxInfo.
+        try {
+          this.driver.send(new SendCommand('frame'))
+        } catch {
+          // ignore
+        }
+      }
+    } else if (msg instanceof VideoData) {
+      const isNavi = msg.header.type === MessageType.NaviVideoData
+      // navi video stream (0x2c)
+      if (isNavi) {
+        if (!this.mapsRequested) return
+
+        const w = msg.width
+        const h = msg.height
+
+        if (w > 0 && h > 0 && (w !== this.lastNaviVideoWidth || h !== this.lastNaviVideoHeight)) {
+          this.lastNaviVideoWidth = w
+          this.lastNaviVideoHeight = h
+          this.webContents.send('maps-video-resolution', { width: w, height: h })
+        }
+
+        this.sendChunked('maps-video-chunk', msg.data?.buffer as ArrayBuffer, 512 * 1024)
+        return
+      }
+
+      // main video stream (0x06)
+      if (!this.firstFrameLogged) {
+        this.firstFrameLogged = true
+        const dt = Date.now() - APP_START_TS
+        console.log(`[Perf] AppStart→FirstFrame: ${dt} ms`)
+      }
+
+      const w = msg.width
+      const h = msg.height
+      if (w > 0 && h > 0 && (w !== this.lastVideoWidth || h !== this.lastVideoHeight)) {
+        this.lastVideoWidth = w
+        this.lastVideoHeight = h
+
+        this.webContents.send('projection-event', {
+          type: 'resolution',
+          payload: { width: w, height: h }
+        })
+      }
+
+      this.sendChunked('projection-video-chunk', msg.data?.buffer as ArrayBuffer, 512 * 1024)
+    } else if (msg instanceof AudioData) {
+      this.audio.handleAudioData(msg)
+
+      if (msg.command != null) {
+        if (this.lastPluggedPhoneType === PhoneType.AndroidAuto) {
+          if (msg.command === 10) {
+            this.aaPlaybackInferred = 1
+            this.patchAaMediaPlayStatus(1)
+          }
+          if (msg.command === 11 || msg.command === 2) {
+            this.aaPlaybackInferred = 2
+            this.patchAaMediaPlayStatus(2)
+          }
+        }
+
+        this.webContents.send('projection-event', {
+          type: 'audio',
+          payload: {
+            command: msg.command,
+            audioType: msg.audioType,
+            decodeType: msg.decodeType,
+            volume: msg.volume
+          }
+        })
+      }
+
+      const fmt = decodeTypeMap[msg.decodeType]
+      if (!fmt) return
+
+      const key = `${msg.decodeType}|${msg.audioType}|${fmt.frequency}|${fmt.channel}|${fmt.bitDepth}`
+      if (key === this.lastAudioMetaEmitKey) return
+      this.lastAudioMetaEmitKey = key
+
+      this.webContents.send('projection-event', {
+        type: 'audioInfo',
+        payload: {
+          codec: fmt.format ?? msg.decodeType ?? 'unknown',
+          sampleRate: fmt.frequency,
+          channels: fmt.channel,
+          bitDepth: fmt.bitDepth
+        }
+      })
+    } else if (msg instanceof MetaData) {
+      const inner = msg.inner
+
+      // Media metadata (innerType 1/3/100)
+      if (inner.kind === 'media') {
+        const mediaMsg = inner.message
+        if (!mediaMsg.payload) return
+
+        this.webContents.send('projection-event', { type: 'media', payload: mediaMsg })
+
+        const file = path.join(app.getPath('userData'), 'mediaData.json')
+        const existing = readMediaFile(file)
+        const existingPayload = existing.payload
+        const newPayload: PersistedMediaPayload = { type: mediaMsg.payload.type }
+
+        if (mediaMsg.payload.type === MediaType.Data && mediaMsg.payload.media) {
+          const mergedMedia = { ...existingPayload.media, ...mediaMsg.payload.media }
+
+          if (
+            this.lastPluggedPhoneType === PhoneType.AndroidAuto &&
+            mergedMedia.MediaPlayStatus === undefined
+          ) {
+            mergedMedia.MediaPlayStatus = this.aaPlaybackInferred
+          }
+
+          newPayload.media = mergedMedia
+          if (existingPayload.base64Image) newPayload.base64Image = existingPayload.base64Image
+        } else if ('base64Image' in mediaMsg.payload && mediaMsg.payload.base64Image) {
+          newPayload.base64Image = mediaMsg.payload.base64Image
+          if (existingPayload.media) newPayload.media = existingPayload.media
+        } else {
+          newPayload.media = existingPayload.media
+          newPayload.base64Image = existingPayload.base64Image
+        }
+
+        const out = { timestamp: new Date().toISOString(), payload: newPayload }
+        fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
+        return
+      }
+
+      // Navigation metadata (innerType 200/201)
+      if (inner.kind === 'navigation') {
+        if (!this.started) return
+        const navMsg = inner.message
+
+        this.webContents.send('projection-event', { type: 'navigation', payload: navMsg })
+
+        const file = path.join(app.getPath('userData'), 'navigationData.json')
+        const existing = readNavigationFile(file)
+
+        const locale: NavLocale =
+          this.config.language === 'de'
+            ? 'de'
+            : this.config.language === 'ua' ||
+                this.config.language === 'uk' ||
+                this.config.language === 'uk-UA'
+              ? 'ua'
+              : 'en'
+
+        const normalized = normalizeNavigationPayload(existing.payload, navMsg)
+        const translated = translateNavigation(normalized.navi, locale)
+
+        const nextPayload: PersistedNavigationPayload = {
+          ...normalized,
+          display: {
+            locale,
+            appName: translated.SourceName,
+            destinationName: translated.DestinationName,
+            roadName: translated.CurrentRoadName,
+            maneuverText: translated.ManeuverTypeText,
+            timeToDestinationText: translated.TimeRemainingToDestinationText,
+            distanceToDestinationText: translated.DistanceRemainingDisplayStringText,
+            remainDistanceText: translated.RemainDistanceText
+          }
+        }
+
+        const out = { timestamp: new Date().toISOString(), payload: nextPayload }
+        fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
+
+        return
+      }
+      // Unknown meta
+    } else if (msg instanceof Command) {
+      this.webContents.send('projection-event', { type: 'command', message: msg })
+      if (typeof msg.value === 'number' && msg.value === 508 && this.mapsRequested) {
+        try {
+          this.driver.send(new SendCommand('requestNaviScreenFocus'))
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+
+  private readonly onDriverFailure = (): void => {
+    // Late AA-stack socket errors can fire after before-quit destroyed
+    // webContents — `?.send` doesn't catch the destroyed-but-not-null case,
+    // so guard explicitly. `isDestroyed?.()` keeps test mocks happy too.
+    const wc = this.webContents
+    if (!wc || wc.isDestroyed?.()) return
+    wc.send('projection-event', { type: 'failure' })
+  }
+
+  /**
+   * `'targeted-connect-dispatched'` is dongle-only; AaDriver never emits it.
+   * We attach unconditionally so swapping drivers doesn't require a switch in
+   * the wiring; on AaDriver the listener simply never fires.
+   */
+  private readonly onDriverTargetedConnect = (): void => {
+    this.pendingStartupConnectTarget = null
+  }
+
+  private attachDriverListeners(d: IPhoneDriver): void {
+    d.on('message', this.onDriverMessage)
+    d.on('failure', this.onDriverFailure)
+    d.on('targeted-connect-dispatched', this.onDriverTargetedConnect)
+  }
+
+  private detachDriverListeners(d: IPhoneDriver): void {
+    d.off('message', this.onDriverMessage)
+    d.off('failure', this.onDriverFailure)
+    d.off('targeted-connect-dispatched', this.onDriverTargetedConnect)
   }
 
   private subscribeConfigEvents(): void {
@@ -177,322 +534,53 @@ export class ProjectionService {
       }
     )
 
-    this.driver.on('message', (msg) => {
-      // Always keep updater-relevant state, even if renderer is not attached yet.
-      if (msg instanceof SoftwareVersion) {
-        this.dongleFwVersion = msg.version
-        this.emitDongleInfoIfChanged()
-        return
-      }
-
-      if (msg instanceof BoxInfo) {
-        this.boxInfo = mergePreferExisting(this.boxInfo, msg.settings)
-        this.emitDongleInfoIfChanged()
-        return
-      }
-
-      if (msg instanceof GnssData) {
-        this.webContents?.send('projection-event', {
-          type: 'gnss',
-          payload: {
-            text: msg.text
-          }
-        })
-        return
-      }
-
-      if (!this.webContents) return
-
-      if (msg instanceof BluetoothPairedList) {
-        this.webContents.send('projection-event', {
-          type: 'bluetoothPairedList',
-          payload: msg.data
-        })
-        return
-      }
-
-      if (msg instanceof Plugged) {
-        this.clearTimeouts()
-        this.lastPluggedPhoneType = msg.phoneType
-        this.aaPlaybackInferred = 1
-
-        const nextPhoneWorkMode =
-          msg.phoneType === PhoneType.CarPlay ? PhoneWorkMode.CarPlay : PhoneWorkMode.Android
-
-        try {
-          configEvents.emit('requestSave', { lastPhoneWorkMode: nextPhoneWorkMode })
-        } catch (e) {
-          console.warn('[ProjectionService] failed to persist lastPhoneWorkMode (ignored)', e)
-        }
-
-        const phoneTypeConfig = this.config.phoneConfig?.[msg.phoneType]
-        if (phoneTypeConfig?.frameInterval) {
-          this.frameInterval = setInterval(() => {
-            if (!this.started) return
-            try {
-              this.driver.send(new SendCommand('frame'))
-            } catch {}
-          }, phoneTypeConfig.frameInterval)
-        }
-        this.webContents.send('projection-event', { type: 'plugged' })
-        if (!this.started && !this.isStarting) {
-          this.start().catch(() => {})
-        }
-      } else if (msg instanceof Unplugged) {
-        this.clearTimeouts()
-        this.lastPluggedPhoneType = undefined
-        this.aaPlaybackInferred = 1
-
-        if (isRecord(this.boxInfo)) {
-          this.boxInfo = { ...this.boxInfo, btMacAddr: '' }
-        }
-
-        this.webContents.send('projection-event', { type: 'unplugged' })
-        this.webContents.send('projection-event', {
-          type: 'dongleInfo',
-          payload: {
-            dongleFwVersion: this.dongleFwVersion,
-            boxInfo: this.boxInfo
-          }
-        })
-        this.resetNavigationSnapshot('unplugged')
-
-        if (!this.shuttingDown && !this.stopping) {
-          this.stop().catch(() => {})
-        }
-      } else if (msg instanceof BoxUpdateProgress) {
-        // 0xb1 payload: int32 progress
-        this.webContents.send('projection-event', {
-          type: 'fwUpdate',
-          stage: 'upload:progress',
-          progress: msg.progress
-        })
-      } else if (msg instanceof BoxUpdateState) {
-        // 0xbb payload: int32 status (start/success/fail, ota variants)
-        this.webContents.send('projection-event', {
-          type: 'fwUpdate',
-          stage: 'upload:state',
-          status: msg.status,
-          statusText: msg.statusText,
-          isOta: msg.isOta,
-          isTerminal: msg.isTerminal,
-          ok: msg.ok
-        })
-
-        if (msg.isTerminal) {
-          // Terminal state decides done vs error
-          this.webContents.send('projection-event', {
-            type: 'fwUpdate',
-            stage: msg.ok ? 'upload:done' : 'upload:error',
-            message: msg.statusText || (msg.ok ? 'Update finished' : 'Update failed'),
-            status: msg.status,
-            isOta: msg.isOta
-          })
-
-          // Ensure the next SoftwareVersion/BoxInfo triggers a fresh emit.
-          this.lastDongleInfoEmitKey = ''
-
-          // Force a fresh dongleInfo emit AFTER the dongle reports new SoftwareVersion/BoxInfo.
-          try {
-            this.driver.send(new SendCommand('frame'))
-          } catch {
-            // ignore
-          }
-        }
-      } else if (msg instanceof VideoData) {
-        const isNavi = msg.header.type === MessageType.NaviVideoData
-        // navi video stream (0x2c)
-        if (isNavi) {
-          if (!this.mapsRequested) return
-
-          const w = msg.width
-          const h = msg.height
-
-          if (w > 0 && h > 0 && (w !== this.lastNaviVideoWidth || h !== this.lastNaviVideoHeight)) {
-            this.lastNaviVideoWidth = w
-            this.lastNaviVideoHeight = h
-            this.webContents.send('maps-video-resolution', { width: w, height: h })
-          }
-
-          this.sendChunked('maps-video-chunk', msg.data?.buffer as ArrayBuffer, 512 * 1024)
-          return
-        }
-
-        // main video stream (0x06)
-        if (!this.firstFrameLogged) {
-          this.firstFrameLogged = true
-          const dt = Date.now() - APP_START_TS
-          console.log(`[Perf] AppStart→FirstFrame: ${dt} ms`)
-        }
-
-        const w = msg.width
-        const h = msg.height
-        if (w > 0 && h > 0 && (w !== this.lastVideoWidth || h !== this.lastVideoHeight)) {
-          this.lastVideoWidth = w
-          this.lastVideoHeight = h
-
-          this.webContents.send('projection-event', {
-            type: 'resolution',
-            payload: { width: w, height: h }
-          })
-        }
-
-        this.sendChunked('projection-video-chunk', msg.data?.buffer as ArrayBuffer, 512 * 1024)
-      } else if (msg instanceof AudioData) {
-        this.audio.handleAudioData(msg)
-
-        if (msg.command != null) {
-          if (this.lastPluggedPhoneType === PhoneType.AndroidAuto) {
-            if (msg.command === 10) {
-              this.aaPlaybackInferred = 1
-              this.patchAaMediaPlayStatus(1)
-            }
-            if (msg.command === 11 || msg.command === 2) {
-              this.aaPlaybackInferred = 2
-              this.patchAaMediaPlayStatus(2)
-            }
-          }
-
-          this.webContents.send('projection-event', {
-            type: 'audio',
-            payload: {
-              command: msg.command,
-              audioType: msg.audioType,
-              decodeType: msg.decodeType,
-              volume: msg.volume
-            }
-          })
-        }
-
-        const fmt = decodeTypeMap[msg.decodeType]
-        if (!fmt) return
-
-        const key = `${msg.decodeType}|${msg.audioType}|${fmt.frequency}|${fmt.channel}|${fmt.bitDepth}`
-        if (key === this.lastAudioMetaEmitKey) return
-        this.lastAudioMetaEmitKey = key
-
-        this.webContents.send('projection-event', {
-          type: 'audioInfo',
-          payload: {
-            codec: fmt.format ?? msg.decodeType ?? 'unknown',
-            sampleRate: fmt.frequency,
-            channels: fmt.channel,
-            bitDepth: fmt.bitDepth
-          }
-        })
-      } else if (msg instanceof MetaData) {
-        const inner = msg.inner
-
-        // Media metadata (innerType 1/3/100)
-        if (inner.kind === 'media') {
-          const mediaMsg = inner.message
-          if (!mediaMsg.payload) return
-
-          this.webContents.send('projection-event', { type: 'media', payload: mediaMsg })
-
-          const file = path.join(app.getPath('userData'), 'mediaData.json')
-          const existing = readMediaFile(file)
-          const existingPayload = existing.payload
-          const newPayload: PersistedMediaPayload = { type: mediaMsg.payload.type }
-
-          if (mediaMsg.payload.type === MediaType.Data && mediaMsg.payload.media) {
-            const mergedMedia = { ...existingPayload.media, ...mediaMsg.payload.media }
-
-            if (
-              this.lastPluggedPhoneType === PhoneType.AndroidAuto &&
-              mergedMedia.MediaPlayStatus === undefined
-            ) {
-              mergedMedia.MediaPlayStatus = this.aaPlaybackInferred
-            }
-
-            newPayload.media = mergedMedia
-            if (existingPayload.base64Image) newPayload.base64Image = existingPayload.base64Image
-          } else if ('base64Image' in mediaMsg.payload && mediaMsg.payload.base64Image) {
-            newPayload.base64Image = mediaMsg.payload.base64Image
-            if (existingPayload.media) newPayload.media = existingPayload.media
-          } else {
-            newPayload.media = existingPayload.media
-            newPayload.base64Image = existingPayload.base64Image
-          }
-
-          const out = { timestamp: new Date().toISOString(), payload: newPayload }
-          fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
-          return
-        }
-
-        // Navigation metadata (innerType 200/201)
-        if (inner.kind === 'navigation') {
-          if (!this.started) return
-          const navMsg = inner.message
-
-          this.webContents.send('projection-event', { type: 'navigation', payload: navMsg })
-
-          const file = path.join(app.getPath('userData'), 'navigationData.json')
-          const existing = readNavigationFile(file)
-
-          const locale: NavLocale =
-            this.config.language === 'de'
-              ? 'de'
-              : this.config.language === 'ua' ||
-                  this.config.language === 'uk' ||
-                  this.config.language === 'uk-UA'
-                ? 'ua'
-                : 'en'
-
-          const normalized = normalizeNavigationPayload(existing.payload, navMsg)
-          const translated = translateNavigation(normalized.navi, locale)
-
-          const nextPayload: PersistedNavigationPayload = {
-            ...normalized,
-            display: {
-              locale,
-              appName: translated.SourceName,
-              destinationName: translated.DestinationName,
-              roadName: translated.CurrentRoadName,
-              maneuverText: translated.ManeuverTypeText,
-              timeToDestinationText: translated.TimeRemainingToDestinationText,
-              distanceToDestinationText: translated.DistanceRemainingDisplayStringText,
-              remainDistanceText: translated.RemainDistanceText
-            }
-          }
-
-          const out = { timestamp: new Date().toISOString(), payload: nextPayload }
-          fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
-
-          return
-        }
-        // Unknown meta
-      } else if (msg instanceof Command) {
-        this.webContents.send('projection-event', { type: 'command', message: msg })
-        if (typeof msg.value === 'number' && msg.value === 508 && this.mapsRequested) {
-          try {
-            this.driver.send(new SendCommand('requestNaviScreenFocus'))
-          } catch {
-            // ignore
-          }
-        }
-      }
-    })
-
-    this.driver.on('failure', () => {
-      this.webContents?.send('projection-event', { type: 'failure' })
-    })
-
-    this.driver.on('targeted-connect-dispatched', () => {
-      this.pendingStartupConnectTarget = null
-    })
+    this.attachDriverListeners(this.dongleDriver)
 
     // TODO move IPC registration to dedicated IPC modules instead of service constructor
     registerIpcHandle('projection-start', async () => this.start())
-    registerIpcHandle('projection-stop', async () => this.stop())
+    // In AA-native mode the lifecycle is owned by the main process: we
+    // auto-start at app boot (no USB hot-plug trigger) and tear down only on
+    // before-quit. The renderer's Projection page, however, still emits a
+    // synthetic 'unplugged' on first mount via `usb-last-event` (because no
+    // CPC200 dongle is attached), and its onUsbDisconnect handler unconditionally
+    // calls `ipc.stop()`. In USB mode that's a harmless no-op (this.started is
+    // false), but in AA mode main has already started the python BT/Wi-Fi stack,
+    // so the spurious stop() kills it via SIGTERM mid-handshake. Gate the IPC
+    // here — full teardown still happens correctly via lifecycle.before-quit.
+    registerIpcHandle('projection-stop', async () => {
+      if (this.wantsAaDriver()) return
+      return this.stop()
+    })
+
+    // Driver-agnostic "apply settings & restart". The dongle path used
+    // `usb.forceReset()` which is meaningless for AA (no USB device); this
+    // IPC just bounces the projection service so whichever driver is active
+    // picks up the new config. Settings page calls it when the user hits the
+    // restart button after changing AA-affecting fields (width/height/fps,
+    // wifi password, hostname, …).
+    registerIpcHandle('projection-restart', async () => {
+      try {
+        await this.stop()
+      } catch (e) {
+        console.warn('[ProjectionService] projection-restart: stop threw (ignored)', e)
+      }
+      return this.start()
+    })
     registerIpcHandle('projection-sendframe', async () =>
       this.driver.send(new SendCommand('frame'))
     )
 
     registerIpcHandle('projection-bt-pairedlist-set', async (_evt, listText: string) => {
       if (!this.started) return { ok: false }
-      const ok = await this.driver.sendBluetoothPairedList(String(listText ?? ''))
-      return { ok }
+      // Bulk-set is a dongle-only concept — the dongle keeps its own paired
+      // list and we push the desired state to it. BlueZ is authoritative on
+      // the host-BT (AaDriver) path, so per-device removal goes through
+      // projection-bt-forget-device and the bulk call is a no-op there.
+      if (this.driver instanceof DongleDriver) {
+        const ok = await this.driver.sendBluetoothPairedList(String(listText ?? ''))
+        return { ok }
+      }
+      return { ok: true }
     })
 
     registerIpcHandle('projection-bt-connect-device', async (_evt, mac: string) => {
@@ -500,6 +588,17 @@ export class ProjectionService {
 
       const btMac = String(mac ?? '').trim()
       if (!btMac) return { ok: false }
+
+      // AaDriver path: drive BlueZ Device1.Connect through the python sock.
+      if (this.aaDriver) {
+        try {
+          const resp = await this.aaBtSock.connect(btMac)
+          if (resp.ok) this.refreshAaBtPairedList().catch(() => {})
+          return resp
+        } catch (e) {
+          return { ok: false, error: (e as Error).message }
+        }
+      }
 
       const devList = Array.isArray((this.boxInfo as { DevList?: unknown[] } | undefined)?.DevList)
         ? ((this.boxInfo as { DevList?: Array<{ id?: string; type?: string }> }).DevList ?? [])
@@ -523,6 +622,17 @@ export class ProjectionService {
 
       const btMac = String(mac ?? '').trim()
       if (!btMac) return { ok: false }
+
+      // AaDriver path: BlueZ Adapter1.RemoveDevice via the python sock.
+      if (this.aaDriver) {
+        try {
+          const resp = await this.aaBtSock.remove(btMac)
+          if (resp.ok) this.refreshAaBtPairedList().catch(() => {})
+          return resp
+        } catch (e) {
+          return { ok: false, error: (e as Error).message }
+        }
+      }
 
       const ok = await this.driver.send(new SendForgetBluetoothAddr(btMac))
       return { ok: Boolean(ok) }
@@ -1049,9 +1159,202 @@ export class ProjectionService {
     dongleConnected = connected
   }
 
+  /**
+   * The AA driver is Linux-only and gated behind `cfg.aa`.
+   * On macOS / Windows the python BT/Wi-Fi stack does not run, so we ignore
+   * the flag and fall back to the USB DongleDriver. This is intentional:
+   * dev / debug builds on a Mac stay usable.
+   */
+  private wantsAaDriver(): boolean {
+    return this.config.aa === true && process.platform === 'linux'
+  }
+
+  /**
+   * Pick the right driver for the upcoming session.
+   * On switch, detach listeners from the old one, swap, attach to the new one.
+   */
+  private selectDriverFor(useAa: boolean): IPhoneDriver {
+    if (useAa) {
+      if (!this.aaDriver) {
+        const aa = new AaDriver()
+        this.aaDriver = aa
+        // Stop driving the dongle while AA owns the session.
+        this.detachDriverListeners(this.dongleDriver)
+        this.attachDriverListeners(aa)
+        aa.on('connected', this.onAaConnected)
+        aa.on('disconnected', this.onAaDisconnected)
+        this.openAaBtSubscription()
+        // Initial populate, then attempt autoconnect to the first trusted
+        // paired device. tryAutoConnect bails fast if anyone is already
+        // connected (e.g. because the user manually clicked connect first).
+        this.populateAaBtPairedListInitial()
+          .then(() => this.tryAutoConnect())
+          .catch(() => {})
+      }
+      return this.aaDriver
+    }
+    // useAa === false → return to dongle.
+    if (this.aaDriver) {
+      this.aaDriver.off('connected', this.onAaConnected)
+      this.aaDriver.off('disconnected', this.onAaDisconnected)
+      this.closeAaBtSubscription()
+      this.detachDriverListeners(this.aaDriver)
+      try {
+        this.aaDriver.close()
+      } catch (e) {
+        console.warn('[ProjectionService] aaDriver.close threw on swap-out', e)
+      }
+      this.aaDriver = null
+      this.attachDriverListeners(this.dongleDriver)
+    }
+    return this.dongleDriver
+  }
+
+  private async refreshAaBtPairedList(opts: { throwOnError?: boolean } = {}): Promise<void> {
+    if (!this.aaDriver) return
+    let devices
+    try {
+      devices = await this.aaBtSock.listPaired()
+    } catch (e) {
+      if (opts.throwOnError) throw e
+      return
+    }
+
+    const entries: DevListEntry[] = devices.map((d) => ({
+      id: d.mac,
+      name: d.name || d.mac,
+      type: 'AndroidAuto',
+      source: 'host'
+    }))
+    const connected = devices.find((d) => d.connected)?.mac ?? ''
+    if (connected && this.config.lastConnectedAaBtMac !== connected) {
+      configEvents.emit('requestSave', { lastConnectedAaBtMac: connected })
+    }
+
+    const prev = isRecord(this.boxInfo) ? this.boxInfo : {}
+    this.boxInfo = {
+      ...prev,
+      DevList: entries,
+      btMacAddr: connected
+    }
+    this.emitDongleInfoIfChanged()
+
+    // Also feed the renderer's bluetoothPairedDevices store. Format expected
+    // by parseBluetoothPairedList: "<17-char MAC><name>\n" per device.
+    if (this.webContents) {
+      const raw = devices.length
+        ? devices.map((d) => `${d.mac}${d.name ?? ''}`).join('\n') + '\n'
+        : ''
+      this.webContents.send('projection-event', {
+        type: 'bluetoothPairedList',
+        payload: raw
+      })
+    }
+  }
+
+  private async populateAaBtPairedListInitial(): Promise<void> {
+    const totalTimeoutMs = 30_000
+    const intervalMs = 2_000
+    const deadline = Date.now() + totalTimeoutMs
+    // If config has a remembered MAC, we expect at least that device to
+    // surface in BlueZ. Treat an empty list as "still loading" until the
+    // budget runs out, instead of accepting it as the final answer.
+    const expectDevice = !!this.config.lastConnectedAaBtMac
+
+    while (Date.now() < deadline) {
+      if (!this.aaDriver) return
+      try {
+        await this.refreshAaBtPairedList({ throwOnError: true })
+        const dev = (this.boxInfo as { DevList?: unknown[] } | undefined)?.DevList
+        const isEmpty = !Array.isArray(dev) || dev.length === 0
+        if (isEmpty && expectDevice) {
+          await new Promise((r) => setTimeout(r, intervalMs))
+          continue
+        }
+        return
+      } catch {
+        await new Promise((r) => setTimeout(r, intervalMs))
+      }
+    }
+    console.warn(
+      '[ProjectionService] aa-bt initial populate gave up after 30s — paired-device list may be empty until the next user action triggers a refresh'
+    )
+  }
+
+  /** Pick a target from the paired list and fire a single Connect.
+   *
+   *  Preference: last-connected MAC (config), first trusted, first paired.
+   *  Bails immediately if any device is already connected. */
+  private async tryAutoConnect(): Promise<void> {
+    if (!this.aaDriver) return
+
+    let devices
+    try {
+      devices = await this.aaBtSock.listPaired()
+    } catch {
+      return
+    }
+    if (devices.some((d) => d.connected)) return
+
+    const lastMac = this.config.lastConnectedAaBtMac
+    const preferred = lastMac ? devices.find((d) => d.mac === lastMac) : null
+    const trusted = devices.filter((d) => d.trusted)
+    const target = preferred || trusted[0] || devices[0]
+    if (!target) {
+      console.log(
+        `[ProjectionService] autoconnect: no candidate (paired=${devices.length}, lastMac=${lastMac ?? '∅'})`
+      )
+      return
+    }
+
+    const tag = preferred ? '[last]' : trusted.includes(target) ? '[trusted]' : '[first]'
+    console.log(`[ProjectionService] autoconnect ${tag} → ${target.mac}`)
+    try {
+      const resp = await this.aaBtSock.connect(target.mac)
+      if (!resp.ok) {
+        console.log(`[ProjectionService] autoconnect: ${resp.error ?? 'failed'}`)
+      }
+    } catch (e) {
+      console.log(`[ProjectionService] autoconnect threw: ${(e as Error).message}`)
+    }
+  }
+
+  /** Open the long-lived aa-bt event subscription. Each device-changed event
+   *  triggers a refresh. If the sock isn't bindable yet, retry once after
+   *  the initial population finishes (~30 s budget). */
+  private openAaBtSubscription(): void {
+    if (this.aaBtSubscription) return
+    const open = (): void => {
+      if (!this.aaDriver) return
+      this.aaBtSubscription = this.aaBtSock.subscribe(
+        () => {
+          this.refreshAaBtPairedList().catch(() => {})
+        },
+        () => {
+          this.aaBtSubscription = null
+          // Reopen if AaDriver is still active — typically means python
+          // restarted or temporarily lost the connection.
+          if (this.aaDriver) setTimeout(open, 1000)
+        }
+      )
+    }
+    open()
+  }
+
+  private closeAaBtSubscription(): void {
+    if (!this.aaBtSubscription) return
+    try {
+      this.aaBtSubscription.close()
+    } catch {
+      /* already closed */
+    }
+    this.aaBtSubscription = null
+  }
+
   public async autoStartIfNeeded() {
     if (this.shuttingDown) return
-    if (!this.started && !this.isStarting && dongleConnected) {
+    if (this.started || this.isStarting) return
+    if (this.wantsAaDriver() || dongleConnected) {
       await this.start()
     }
   }
@@ -1088,6 +1391,25 @@ export class ProjectionService {
         this.resetMediaSnapshot('session-start')
         this.resetNavigationSnapshot('session-start')
 
+        const useAa = this.wantsAaDriver()
+        const active = this.selectDriverFor(useAa)
+
+        if (useAa) {
+          // Native wireless AA: no USB enumeration, no pairTimeout. The python
+          // BT/Wi-Fi supervisor inside AaDriver brings up the AP and waits for
+          // the phone; AAStack emits 'connected' once TCP 5277 hands shake.
+          try {
+            await active.start(this.config)
+            this.started = true
+            console.log('[ProjectionService] started in AA-native mode (linux)')
+          } catch (e) {
+            console.warn('[ProjectionService] AA-native start failed', e)
+            this.started = false
+          }
+          return
+        }
+
+        // Dongle (USB CPC200) path.
         const device = usb
           .getDeviceList()
           .find(
@@ -1102,18 +1424,18 @@ export class ProjectionService {
           await webUsbDevice.open()
           this.webUsbDevice = webUsbDevice
 
-          await this.driver.initialise(asDomUSBDevice(webUsbDevice))
+          await this.dongleDriver.initialise(asDomUSBDevice(webUsbDevice))
 
           if (this.pendingStartupConnectTarget) {
-            this.driver.setPendingStartupConnectTarget(this.pendingStartupConnectTarget)
+            this.dongleDriver.setPendingStartupConnectTarget(this.pendingStartupConnectTarget)
           } else {
-            this.driver.clearPendingStartupConnectTarget()
+            this.dongleDriver.clearPendingStartupConnectTarget()
           }
 
-          await this.driver.start(this.config)
+          await this.dongleDriver.start(this.config)
 
           this.pairTimeout = setTimeout(() => {
-            this.driver.send(new SendCommand('wifiPair'))
+            this.dongleDriver.send(new SendCommand('wifiPair'))
           }, 15000)
 
           this.started = true
@@ -1163,6 +1485,22 @@ export class ProjectionService {
 
     this.stopPromise = (async () => {
       this.clearTimeouts()
+
+      // Tell the renderer the projection session is going away NOW. Without
+      // this, the renderer keeps its last decoded frame on screen and its
+      // streaming flag set, so a user navigating to the projection tab
+      // during a settings-driven restart sees a frozen still from the
+      // previous session. The renderer reacts to 'unplugged' by clearing
+      // the canvas + tearing down its decoder via the render-worker reset
+      // path — see Projection.tsx.
+      try {
+        const wc = this.webContents
+        if (wc && !wc.isDestroyed()) {
+          wc.send('projection-event', { type: 'unplugged' })
+        }
+      } catch (e) {
+        console.warn('[ProjectionService] stop(): unplugged emit threw (ignored)', e)
+      }
 
       try {
         await this.disconnectPhone()

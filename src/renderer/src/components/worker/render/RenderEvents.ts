@@ -1,4 +1,4 @@
-export type WorkerEventType = 'init' | 'frame' | 'renderDone' | 'updateFps'
+export type WorkerEventType = 'init' | 'frame' | 'renderDone' | 'updateFps' | 'reset'
 
 export interface WorkerEvent {
   type: WorkerEventType

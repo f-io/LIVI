@@ -1,0 +1,10 @@
+syntax="proto2";
+
+import "aap_protobuf/service/media/video/message/VideoFocusMode.proto";
+
+package aap_protobuf.service.media.video.message;
+
+message VideoFocusNotification {
+    optional VideoFocusMode focus = 1;
+    optional bool unsolicited = 2;
+}

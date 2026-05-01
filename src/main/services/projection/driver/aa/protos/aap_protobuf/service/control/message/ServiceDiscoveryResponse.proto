@@ -1,0 +1,31 @@
+syntax="proto2";
+
+import "aap_protobuf/service/Service.proto";
+import "aap_protobuf/service/control/message/ConnectionConfiguration.proto";
+import "aap_protobuf/service/control/message/DriverPosition.proto";
+import "aap_protobuf/service/control/message/HeadUnitInfo.proto";
+
+package aap_protobuf.service.control.message;
+
+message ServiceDiscoveryResponse
+{
+    repeated service.Service channels = 1;
+    optional string make = 2 [deprecated = true];
+    optional string model = 3 [deprecated = true];
+    optional string year = 4 [deprecated = true];
+    optional string vehicle_id = 5 [deprecated = true];
+    optional DriverPosition driver_position = 6;
+    optional string head_unit_make = 7 [deprecated = true];
+    optional string head_unit_model = 8 [deprecated = true];
+    optional string head_unit_software_build = 9 [deprecated = true];
+    optional string head_unit_software_version = 10 [deprecated = true];
+    optional bool can_play_native_media_during_vr = 11 [deprecated = true];
+    optional int32 session_configuration = 13;
+    optional string display_name = 14;
+    optional bool probe_for_support = 15;
+    optional ConnectionConfiguration connection_configuration = 16;
+    optional HeadUnitInfo headunit_info = 17;
+}
+
+
+

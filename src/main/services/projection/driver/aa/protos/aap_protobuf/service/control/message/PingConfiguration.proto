@@ -1,0 +1,10 @@
+syntax="proto2";
+
+package aap_protobuf.service.control.message;
+
+message PingConfiguration {
+  optional uint32 timeout_ms = 1;
+  optional uint32 interval_ms = 2;
+  optional uint32 high_latency_threshold_ms = 3;
+  optional uint32 tracked_ping_count = 4;
+}

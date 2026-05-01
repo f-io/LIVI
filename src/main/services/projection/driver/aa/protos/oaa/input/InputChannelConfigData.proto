@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+
+/*
+ * Input channel configuration — SDP descriptor per display.
+ *
+ * APK class: vxm (16.2), vya (16.1)
+ * Used in ServiceDiscoveryResponse ChannelDescriptor.
+ * display_id (field 5) matches VideoChannelDescriptor display.
+ */
+
+syntax="proto2";
+
+import "oaa/input/TouchScreenConfigData.proto";
+import "oaa/input/TouchPadConfigData.proto";
+import "oaa/input/HapticFeedbackTypeEnum.proto";
+
+package oaa.proto.data;
+
+// confidence: gold [handler_trace, deep_apk]
+message InputChannelConfig
+{
+    repeated int32 supported_keycodes = 1 [packed = true];           // Android keycodes the HU can send
+    repeated TouchScreenConfig touch_screen_configs = 2;             // touchscreen resolution per display
+    repeated TouchPadConfig touchpad_configs = 3;                    // touchpad config (at most 1)
+    repeated enums.HapticFeedbackType.Enum supported_haptic_types = 4;  // haptic feedback types HU supports
+    optional uint32 display_id = 5;                                  // matches video channel display ID
+}

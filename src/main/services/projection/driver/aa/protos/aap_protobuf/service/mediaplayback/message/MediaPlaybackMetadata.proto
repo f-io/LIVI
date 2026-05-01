@@ -1,0 +1,13 @@
+syntax="proto2";
+
+package aap_protobuf.service.mediaplayback.message;
+
+message MediaPlaybackMetadata {
+   optional string song = 1;
+   optional string artist = 2;
+   optional string album = 3;
+   optional bytes album_art = 4;
+   optional string playlist = 5;
+   optional uint32 duration_seconds = 6;
+   optional int32 rating = 7;
+}

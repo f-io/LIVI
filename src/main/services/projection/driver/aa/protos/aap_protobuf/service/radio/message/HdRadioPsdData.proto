@@ -1,0 +1,19 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+import "aap_protobuf/service/radio/message/HdRadioComment.proto";
+import "aap_protobuf/service/radio/message/HdRadioCommercial.proto";
+import "aap_protobuf/service/radio/message/HdRadioArtistExperience.proto";
+
+package aap_protobuf.service.radio.message;
+
+message HdRadioPsdData {
+  optional string title = 1;
+  optional string artist = 2;
+  optional string album = 3;
+  optional string genre = 4;
+  optional HdRadioComment comment = 5;
+  optional HdRadioCommercial commercial = 6;
+  optional HdRadioArtistExperience artist_experience = 7;
+}

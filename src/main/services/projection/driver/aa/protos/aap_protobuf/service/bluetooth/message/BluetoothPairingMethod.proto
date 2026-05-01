@@ -1,0 +1,13 @@
+syntax="proto2";
+
+package aap_protobuf.service.bluetooth.message;
+
+enum BluetoothPairingMethod
+{
+    BLUETOOTH_PAIRING_UNAVAILABLE = -1;
+    BLUETOOTH_PAIRING_OOB = 1;
+    BLUETOOTH_PAIRING_NUMERIC_COMPARISON = 2;
+    BLUETOOTH_PAIRING_PASSKEY_ENTRY = 3;
+    BLUETOOTH_PAIRING_PIN = 4;
+}
+

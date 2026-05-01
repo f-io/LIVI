@@ -582,11 +582,13 @@ export interface StatusStore {
   reverse: boolean
   lights: boolean
   isDongleConnected: boolean
+  isAaActive: boolean
   isStreaming: boolean
   cameraFound: boolean
 
   setCameraFound: (found: boolean) => void
   setDongleConnected: (connected: boolean) => void
+  setAaActive: (active: boolean) => void
   setStreaming: (streaming: boolean) => void
   setReverse: (reverse: boolean) => void
   setLights: (lights: boolean) => void
@@ -596,12 +598,17 @@ export const useStatusStore = create<StatusStore>((set) => ({
   reverse: false,
   lights: false,
   isDongleConnected: false,
+  isAaActive: false,
   isStreaming: false,
   cameraFound: false,
 
   setCameraFound: (found) => set({ cameraFound: found }),
   setDongleConnected: (connected) => set({ isDongleConnected: connected }),
+  setAaActive: (active) => set({ isAaActive: active }),
   setStreaming: (streaming) => set({ isStreaming: streaming }),
   setReverse: (reverse) => set({ reverse }),
   setLights: (lights) => set({ lights })
 }))
+
+export const useProjectionActive = (): boolean =>
+  useStatusStore((s) => s.isDongleConnected || s.isAaActive)

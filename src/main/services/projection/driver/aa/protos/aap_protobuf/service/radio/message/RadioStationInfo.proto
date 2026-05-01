@@ -1,0 +1,15 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+import "aap_protobuf/service/radio/message/RadioType.proto";
+import "aap_protobuf/service/radio/message/RadioStationMetaData.proto";
+
+package aap_protobuf.service.radio.message;
+
+message RadioStationInfo {
+  required RadioType type = 1;
+  required int32 channel = 2;
+  optional int32 sub_channel = 3;
+  optional RadioStationMetaData meta_data = 4;
+}

@@ -94,4 +94,12 @@ export class WebGL2Renderer implements FrameRenderer {
     bitmap.close()
     frame.close()
   }
+
+  clear(): void {
+    const gl = this.#ctx
+    if (!gl) return
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight)
+    gl.clearColor(0, 0, 0, 1)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+  }
 }

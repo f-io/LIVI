@@ -24,7 +24,10 @@ jest.mock('@main/app/init', () => ({
 }))
 
 jest.mock('@main/services/projection/services/ProjectionService', () => ({
-  ProjectionService: jest.fn().mockImplementation(() => ({}))
+  ProjectionService: jest.fn().mockImplementation(() => ({
+    applyConfigPatch: jest.fn(),
+    autoStartIfNeeded: jest.fn(async () => undefined)
+  }))
 }))
 
 jest.mock('../services/usb/USBService', () => ({

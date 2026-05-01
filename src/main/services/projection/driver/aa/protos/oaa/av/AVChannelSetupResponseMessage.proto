@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto2";
+
+import "oaa/av/AVChannelSetupStatusEnum.proto";
+
+package oaa.proto.messages;
+
+/*
+ * AV channel setup response (wire msg ID 0x8003 on all AV channels)
+ * Bidirectional: HU -> Phone on audio channels, Phone -> HU on video channels.
+ *
+ * APK class: vwn (16.2) / vxb (16.1)
+ * Audio: qnf.java/icv.java deserialize (HU sends to phone)
+ * Video: vkk.java constructs and sends (phone sends to HU)
+ *
+ * Verified: 2026-03-06, proto-verification pipeline
+ */
+// confidence: gold [apk_deep_trace, 2026-03-06]
+message AVChannelSetupResponse
+{
+    required enums.AVChannelSetupStatus.Enum media_status = 1;  // Default=FAIL(1). Value 0 (NONE) is treated as invalid.  // confidence: gold [apk_deep_trace]
+    optional uint32 max_unacked = 2;  // Flow control window size. Must be > 0. Forced to 24 in ackless mode.  // confidence: gold [apk_deep_trace]
+    repeated uint32 configs = 3;  // Display/stream indices (used on video channel)  // confidence: gold [apk_deep_trace]
+}

@@ -1,0 +1,27 @@
+// Android Auto Protocol Buffer Definitions
+// https://github.com/mrmees/open-android-auto
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/*
+ * DriverPosition — driver seat position in vehicle.
+ *
+ * APK class: vxi.java (AA v16.1)
+ * Used in ServiceDiscoveryResponse field 6 (was bool left_hand_drive_vehicle).
+ */
+
+syntax="proto2";
+
+package oaa.proto.enums;
+
+// confidence: bronze [apk_static]
+message DriverPosition
+{
+    // confidence: bronze [apk_static]
+    enum Enum
+    {
+        LEFT = 0;
+        RIGHT = 1;
+        CENTER = 2;
+        UNKNOWN = 3;
+    }
+}

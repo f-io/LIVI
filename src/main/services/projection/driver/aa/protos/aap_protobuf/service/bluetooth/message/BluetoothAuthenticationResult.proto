@@ -1,0 +1,9 @@
+syntax="proto2";
+
+import "aap_protobuf/shared/MessageStatus.proto";
+
+package aap_protobuf.service.bluetooth.message;
+
+message BluetoothAuthenticationResult {
+  required shared.MessageStatus status = 1;
+}

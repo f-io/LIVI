@@ -425,6 +425,7 @@ export type BoxDeviceEntry = {
   index?: string | number
   time?: string
   rfcomm?: string | number
+  source?: 'dongle' | 'host'
 } & Record<string, unknown>
 
 export type BoxInfoSettings = {

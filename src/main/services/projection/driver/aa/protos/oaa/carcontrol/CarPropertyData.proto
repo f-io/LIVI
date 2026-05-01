@@ -1,0 +1,204 @@
+// Android Auto Protocol Buffer Definitions
+// https://github.com/mrmees/open-android-auto
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/*
+ * Car property sub-messages — proto3 types used by Car Control channel.
+ * These are SafeParcelable classes in com.google.android.gms.car.control.*
+ * Split from CarControlMessages.proto because the APK compiles these as proto3.
+ *
+ * APK: AA v16.2 (verified 2026-03-07)
+ */
+
+syntax = "proto3";
+
+package oaa.proto.messages;
+
+import "oaa/carcontrol/VehicleAreaEnums.proto";
+
+// Car property IDs — uses raw VHAL property identifiers (APK enum: vul)
+// Values are Android VHAL property IDs (VehiclePropertyIds.java), NOT sequential.
+// confidence: gold [deep_trace, 16.2 DB verified — 26 values + UNRECOGNIZED]
+enum CarPropertyId {
+    CAR_PROPERTY_UNKNOWN = 0;
+    // HVAC properties
+    HMG_CAR_ALERTS_COUNT = 34908672;                // new in 16.2
+    HVAC_TEMPERATURE_DISPLAY_UNITS = 289408270;     // GLOBAL, int32 (1=C, 2=F)
+    HVAC_STEERING_WHEEL_HEAT = 289408269;           // GLOBAL, int32
+    ELECTRONIC_TOLL_COLLECTION_CARD_STATUS = 289410874; // GLOBAL, int32
+    HVAC_DEFROSTER = 320865540;                     // WINDOW, bool
+    HVAC_SIDE_MIRROR_HEAT = 339739916;              // MIRROR, int32
+    HVAC_AC_ON = 354419973;                         // SEAT, bool
+    HVAC_MAX_AC_ON = 354419974;                     // SEAT, bool
+    HVAC_MAX_DEFROST_ON = 354419975;                // SEAT, bool
+    HVAC_RECIRC_ON = 354419976;                     // SEAT, bool
+    HVAC_DUAL_ON = 354419977;                       // SEAT, bool
+    HVAC_AUTO_ON = 354419978;                       // SEAT, bool
+    HVAC_POWER_ON = 354419984;                      // SEAT, bool
+    HVAC_AUTO_RECIRC_ON = 354419986;                // SEAT, bool
+    HVAC_FAN_SPEED = 356517120;                     // SEAT, int32
+    HVAC_FAN_DIRECTION = 356517121;                 // SEAT, int32
+    HVAC_SEAT_TEMPERATURE = 356517131;              // SEAT, int32
+    HVAC_SEAT_VENTILATION = 356517139;              // SEAT, int32
+    HVAC_FAN_DIRECTION_AVAILABLE = 356582673;       // SEAT, int32
+    HVAC_TEMPERATURE_SET = 358614275;               // SEAT, float
+    DOOR_LOCK = 371198722;                          // DOOR, bool — new in 16.2
+    HMG_HVAC_TEMPERATURE_RANGE = 557940737;         // SEAT, int32 (HMG vendor)
+    HMG_HVAC_MTC_TEMPERATURE = 624984185;           // SEAT, int32 (HMG vendor)
+    HMG_HVAC_TEMPERATURE_SET_FAHRENHEIT = 627081339; // SEAT, float (HMG vendor)
+    HMG_HVAC_TEMPERATURE_SET_CELSIUS = 627081341;   // SEAT, float (HMG vendor)
+}
+
+// Car action IDs — application launch actions
+// No named proto enum class in APK; used as int32 field in CarAction.
+// confidence: silver [apk_static, cross_version, no named enum class]
+enum CarActionId {
+    CAR_ACTION_UNKNOWN = 0;
+    CAR_ACTION_LAUNCH_HVAC = 3;
+    CAR_ACTION_LAUNCH_CAR_MEDIA = 4;
+    CAR_ACTION_LAUNCH_CONTROL_CENTER = 5;
+    CAR_ACTION_LAUNCH_CAR_ALERTS = 6;
+}
+
+// Area type for CarAreaId (APK class: vui field 1)
+// No named proto enum class in DB; values from AOSP VehicleArea.
+// confidence: silver [apk_static, no named enum class]
+enum CarAreaType {
+    CAR_AREA_GLOBAL = 0;
+    CAR_AREA_WINDOW = 2;
+    CAR_AREA_SEAT = 3;
+    CAR_AREA_MIRROR = 4;
+    CAR_AREA_WHEEL = 5;
+    CAR_AREA_DOOR = 6;
+}
+
+// APK class: vuh (16.2) / vuv (16.1) → SafeParcelable: CarProperty
+// confidence: gold [deep_trace, 16.2 DB verified]
+message CarProperty {
+    CarPropertyId property_id = 1;  // confidence: gold [deep_trace]
+    CarAreaId area_id = 2;  // confidence: gold [deep_trace]
+}
+
+// APK class: vui (16.2) / vuw (16.1) → SafeParcelable: CarAreaId
+// Area IDs are bitmasks — list elements are ORed together on the phone side.
+// confidence: gold [deep_trace, 16.2 DB verified]
+message CarAreaId {
+    CarAreaType area_type = 1;  // confidence: gold [deep_trace]
+    repeated VehicleAreaWindow window_ids = 2 [packed = true];  // confidence: gold [deep_trace]
+    repeated VehicleAreaSeat seat_ids = 3 [packed = true];  // confidence: gold [deep_trace]
+    repeated VehicleAreaMirror mirror_ids = 4 [packed = true];  // confidence: gold [deep_trace]
+    repeated VehicleAreaDoor door_ids = 5 [packed = true];  // confidence: gold [deep_trace]
+    repeated VehicleAreaWheel wheel_ids = 6 [packed = true];  // confidence: gold [deep_trace]
+}
+
+// APK class: vtz (16.2) / vun (16.1) → SafeParcelable: CarAction
+// confidence: gold [deep_trace, 16.2 DB verified — 1 int field]
+message CarAction {
+    CarActionId action_id = 1;  // confidence: gold [deep_trace]
+}
+
+// APK class: vup (16.2) / vvd (16.1) → SafeParcelable: CarPropertyValue
+// confidence: gold [deep_trace, 16.2 DB verified — vup.java descriptor references vun/vuo/vum]
+message CarPropertyValue {
+    oneof value {
+        int32 int_value = 1;  // confidence: gold [deep_trace]
+        float float_value = 2;  // confidence: gold [deep_trace]
+        bool bool_value = 3;  // confidence: gold [deep_trace]
+        int64 long_value = 4;  // confidence: gold [deep_trace]
+        string string_value = 5;  // confidence: gold [deep_trace]
+        IntValues int_array = 6;  // vun — repeated int32  // confidence: gold [deep_trace, vup.java descriptor]
+        LongValues long_array = 7;  // vuo — repeated int64  // confidence: gold [deep_trace, vup.java descriptor]
+        FloatValues float_array = 8;  // vum — repeated float  // confidence: gold [deep_trace, vup.java descriptor]
+    }
+}
+
+// APK class: vun (16.2) / vvb (16.1) — repeated packed int32
+// confidence: gold [deep_trace, zzq schema char '&'=packed int32]
+message IntValues {
+    repeated int32 values = 1 [packed = true];
+}
+
+// APK class: vum (16.2) / vvc (16.1) — repeated packed float
+// confidence: gold [deep_trace, zzq schema char '$'=packed float]
+message FloatValues {
+    repeated float values = 1 [packed = true];
+}
+
+// APK class: vuo (16.2) / vva (16.1) — repeated packed int64
+// confidence: gold [deep_trace, zzq schema char '%'=packed int64]
+message LongValues {
+    repeated int64 values = 1 [packed = true];
+}
+
+// APK class: vua (16.2) / vuo (16.1) → wraps CarAction in an entry wrapper
+// confidence: gold [deep_trace, 16.2 DB verified — sub_ref vtz]
+message CarActionEntry {
+    CarAction action = 1;  // confidence: gold [deep_trace]
+}
+
+// APK class: vty (16.2) / vum (16.1) → SafeParcelable: CarPropertyAreaConfig
+// Configures a property for a specific vehicle area, with min/max value bounds.
+// confidence: gold [deep_trace, 16.2 DB verified]
+message CarPropertyAreaConfig {
+    CarAreaId area_id = 1;  // confidence: gold [deep_trace]
+    CarPropertyValue min_value = 2;  // confidence: gold [deep_trace]
+    CarPropertyValue max_value = 3;  // confidence: gold [deep_trace]
+}
+
+// APK class: vuj (16.2) / vux (16.1) → SafeParcelable: CarPropertyConfig
+// Describes a car property's type, access mode, and area configurations.
+// NOTE: Fields 4 and 7 restructured in 16.2 (see below).
+// confidence: gold [deep_trace, 16.2 DB verified — vuj descriptor confirms vui/vty refs]
+message CarPropertyConfig {
+    CarPropertyId property_id = 1;  // confidence: gold [deep_trace]
+    CarPropertyAccessMode access_mode = 2;  // confidence: gold [deep_trace]
+    CarPropertyChangeMode change_mode = 3;  // confidence: gold [deep_trace]
+    repeated CarAreaId area_ids = 4;  // 16.2: bare CarAreaId (vui). Was CarPropertyAreaConfig in 16.1.  // confidence: gold [deep_trace]
+    CarPropertyType property_type = 5;  // confidence: gold [deep_trace]
+    repeated int32 config_array = 6 [packed = true];  // confidence: gold [deep_trace]
+    repeated CarPropertyAreaConfig area_configs = 7;  // 16.2: CarPropertyAreaConfig (vty). Was CarPropertyValue in 16.1.  // confidence: gold [deep_trace]
+}
+
+// Access mode for CarPropertyConfig field 2
+// No named proto enum class in DB; values from AOSP CarPropertyAccessMode.
+// confidence: silver [apk_static, no named enum class]
+enum CarPropertyAccessMode {
+    CAR_PROPERTY_ACCESS_NONE = 0;
+    CAR_PROPERTY_ACCESS_READ = 1;
+    CAR_PROPERTY_ACCESS_WRITE = 2;
+    CAR_PROPERTY_ACCESS_READ_WRITE = 3;
+}
+
+// Change mode for CarPropertyConfig field 3
+// No named proto enum class in DB; values from AOSP CarPropertyChangeMode.
+// confidence: silver [apk_static, no named enum class]
+enum CarPropertyChangeMode {
+    CAR_PROPERTY_CHANGE_STATIC = 0;
+    CAR_PROPERTY_CHANGE_ON_CHANGE = 1;
+    CAR_PROPERTY_CHANGE_CONTINUOUS = 2;
+}
+
+// Value type for CarPropertyConfig field 5
+// No named proto enum class in DB; values from AOSP.
+// confidence: silver [apk_static, no named enum class]
+enum CarPropertyType {
+    CAR_PROPERTY_TYPE_UNKNOWN = 0;
+    CAR_PROPERTY_TYPE_BOOLEAN = 1;
+    CAR_PROPERTY_TYPE_INT32 = 2;
+    CAR_PROPERTY_TYPE_INT64 = 3;
+    CAR_PROPERTY_TYPE_FLOAT = 4;
+    CAR_PROPERTY_TYPE_STRING = 5;
+    CAR_PROPERTY_TYPE_BYTES = 6;
+    CAR_PROPERTY_TYPE_INT32_VEC = 7;
+    CAR_PROPERTY_TYPE_INT64_VEC = 8;
+    CAR_PROPERTY_TYPE_FLOAT_VEC = 9;
+    CAR_PROPERTY_TYPE_MIXED = 10;
+}
+
+// APK class: vuk (16.2) / vuy (16.1) → SafeParcelable: CarPropertyControl
+// confidence: gold [deep_trace, 16.2 DB verified]
+message CarPropertyControl {
+    CarProperty property = 1;  // confidence: gold [deep_trace]
+    CarAction associated_action = 2;  // confidence: gold [deep_trace]
+    CarProperty associated_property = 3;  // confidence: gold [deep_trace]
+}

@@ -1,0 +1,25 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Open Android Auto contributors
+// Based on works by: f1x.studio (aasdk), opencardev (crankshaft), aa-proxy (aa-proxy-rs)
+syntax="proto2";
+
+import "oaa/av/MediaCodecTypeEnum.proto";
+
+package oaa.proto.messages;
+
+/*
+ * AV channel setup request (wire msg ID 0x8000 on all AV channels)
+ * Sent by phone when an AV channel (audio or video) is opened, declaring
+ * which codec will be used for streaming.
+ *
+ * APK class: wbs (16.2) / vyw (16.1)
+ * Channels: CAR.GAL.MEDIA (qnf), generic AV endpoint (icv)
+ * Direction: Phone -> HU
+ *
+ * Verified: 2026-03-06, proto-verification pipeline
+ */
+// confidence: gold [apk_deep_trace, 2026-03-06]
+message AVChannelSetupRequest
+{
+    required enums.MediaCodecType.Enum media_codec_type = 1;  // confidence: gold [apk_deep_trace]
+}

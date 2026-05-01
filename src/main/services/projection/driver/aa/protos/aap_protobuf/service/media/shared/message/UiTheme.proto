@@ -1,0 +1,9 @@
+syntax="proto2";
+
+package aap_protobuf.service.media.shared.message;
+
+enum UiTheme {
+  UI_THEME_AUTOMATIC = 0;
+  UI_THEME_LIGHT = 1;
+  UI_THEME_DARK = 2;
+}

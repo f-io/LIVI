@@ -1,0 +1,9 @@
+syntax="proto2";
+
+import "aap_protobuf/service/media/shared/message/UiConfig.proto";
+
+package aap_protobuf.service.control.message;
+
+message UpdateUiConfigReply {
+  optional media.shared.message.UiConfig ui_config = 1;
+}

@@ -1,0 +1,11 @@
+syntax="proto2";
+
+option optimize_for=SPEED;
+
+package aap_protobuf.service.radio.message;
+
+enum RdsType {
+    NO_RDS = 0;
+    RDS = 1;
+    RBDS = 2;
+}
