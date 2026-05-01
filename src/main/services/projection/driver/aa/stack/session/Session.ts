@@ -1038,8 +1038,13 @@ export class Session extends EventEmitter {
     // ── Phone Status (ch=14) ──
     channels.push({ id: CH.PHONE_STATUS, phoneStatusService: {} })
 
-    // WiFi Projection (ch=18) intentionally not advertised
-    // and WiFi credentials are handled via RFCOMM WifiInfoResponse at the BT layer.
+    // WiFi Projection (ch=18)
+    if (cfg.wifiBssid) {
+      channels.push({
+        id: CH.WIFI,
+        wifiProjectionService: { carWifiBssid: cfg.wifiBssid }
+      })
+    }
 
     const sdrFields: Record<string, unknown> = {
       driverPosition: cfg.driverPosition ?? 0, // LHD=0 (LEFT), RHD=1 (RIGHT)
@@ -1191,18 +1196,23 @@ export class Session extends EventEmitter {
   // ── WiFi Projection channel (ch=14) ──────────────────────────────────────
 
   private _handleWifiCredentialsRequest(): void {
-    // WifiCredentialsResponse fields:
-    //   f1=car_wifi_password, f2=car_wifi_security_mode (WPA2=5),
-    //   f3=car_wifi_ssid, f4=supported_wifi_channels (repeated int32, MHz),
-    //   f5=access_point_type (DYNAMIC=1). msgId 0x8002.
-    //
-    // Field 4 is what the phone reads to persist the head unit's frequency.
-    // Without it the phone logs "Wi-Fi frequency is not persisted: config
-    // is removed" and re-runs the slow RFCOMM handshake every session.
+    // WifiCredentialsResponse (msgId 0x8002) on the BT/WPP TCP channel.
+    // Mirrors openautolink/external/opencardev-openauto's
+    // WifiProjectionService::onWifiCredentialsRequest exactly:
+    //   f1=car_wifi_password (string)
+    //   f2=car_wifi_security_mode = WifiSecurityMode::WPA2_PERSONAL = 5
+    //                               (new aap_protobuf enum imported by this
+    //                                message; distinct from the legacy
+    //                                aasdk_proto SecurityMode enum used by
+    //                                RFCOMM-side WifiInfoResponse where the
+    //                                value 8 ends up meaning the same thing)
+    //   f3=car_wifi_ssid (string)
+    //   f5=access_point_type = AccessPointType::STATIC = 0
+    //                          STATIC is the persistence trigger — phone
+    //                          treats DYNAMIC as a transient hotspot and
+    //                          drops the config after disconnect.
     const ssid = this._cfg.wifiSsid ?? ''
     const pass = this._cfg.wifiPassword ?? ''
-    const channel = this._cfg.wifiChannel ?? 36
-    const freqMhz = channelToFreqMhz(channel)
 
     if (!ssid) {
       console.warn(
@@ -1212,7 +1222,6 @@ export class Session extends EventEmitter {
 
     const parts: Buffer[] = []
 
-    // field 1: password
     if (pass.length > 0) {
       const passBytes = Buffer.from(pass, 'utf-8')
       parts.push(Buffer.from([0x0a]))
@@ -1220,10 +1229,8 @@ export class Session extends EventEmitter {
       parts.push(passBytes)
     }
 
-    // field 2: security_mode = WPA2_PERSONAL (5)
-    parts.push(Buffer.from([0x10, 0x05]))
+    parts.push(Buffer.from([0x10, 0x05])) // security_mode = WPA2_PERSONAL (new enum)
 
-    // field 3: ssid
     if (ssid.length > 0) {
       const ssidBytes = Buffer.from(ssid, 'utf-8')
       parts.push(Buffer.from([0x1a]))
@@ -1231,21 +1238,11 @@ export class Session extends EventEmitter {
       parts.push(ssidBytes)
     }
 
-    // field 4: supported_wifi_channels = [freqMhz] (packed repeated int32,
-    // tag = (4<<3)|2 = 0x22, length-delimited body of concatenated varints).
-    {
-      const body = _encodeVarint(freqMhz)
-      parts.push(Buffer.from([0x22]))
-      parts.push(_encodeVarint(body.length))
-      parts.push(body)
-    }
-
-    // field 5: access_point_type = DYNAMIC (1)
-    parts.push(Buffer.from([0x28, 0x01]))
+    parts.push(Buffer.from([0x28, 0x00])) // access_point_type = STATIC
 
     const respBuf = Buffer.concat(parts)
     console.log(
-      `[Session] WifiCredentialsResponse: ssid="${ssid}" freq=${freqMhz}MHz security=WPA2 type=DYNAMIC`
+      `[Session] WifiCredentialsResponse: ssid="${ssid}" security=WPA2_PERSONAL(5) type=STATIC`
     )
     this._sendEncrypted(CH.WIFI, FRAME_FLAGS.ENC_SIGNAL, 0x8002, respBuf)
   }
@@ -1317,10 +1314,6 @@ export class Session extends EventEmitter {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function _sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms))
-}
-
 /** Encode a non-negative integer as a protobuf varint. */
 function _encodeVarint(value: number): Buffer {
   const bytes: number[] = []
@@ -1330,12 +1323,4 @@ function _encodeVarint(value: number): Buffer {
   }
   bytes.push(value & 0x7f)
   return Buffer.from(bytes)
-}
-
-/** Convert an 802.11 channel number to its centre frequency in MHz. */
-function channelToFreqMhz(channel: number): number {
-  if (channel <= 13) return 2412 + (channel - 1) * 5
-  if (channel === 14) return 2484
-  if (channel >= 36 && channel <= 177) return 5180 + (channel - 36) * 5
-  return 5180
 }

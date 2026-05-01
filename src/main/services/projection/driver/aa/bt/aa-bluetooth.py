@@ -225,8 +225,16 @@ def _pb_varint(field: int, value: int) -> bytes:
 
 
 def _build_wifi_version_request() -> bytes:
-    """WifiVersionRequest (msgId=4): empty proto body."""
-    return struct.pack(">HH", 0, 4)
+    """WifiVersionRequest (msgId=4): announce modern WPP path (f2=6)."""
+    freq = _channel_to_freq_mhz(CHANNEL)
+    freq_body = _encode_varint(freq)
+    packed_channels = bytes([0x22]) + _encode_varint(len(freq_body)) + freq_body
+    proto = (
+        _pb_varint(1, 6) +    # f1 — version_major (6 = modern PDK 4.5+ path)
+        _pb_varint(2, 0) +    # f2 — version_minor
+        packed_channels       # supported_wifi_channels = [freq]
+    )
+    return struct.pack(">HH", len(proto), 4) + proto
 
 def _build_wifi_start_request(ip: str, port: int) -> bytes:
     proto = _pb_string(1, ip) + _pb_varint(2, port)
@@ -244,15 +252,16 @@ def _channel_to_freq_mhz(channel: int) -> int:
     return 5180  # fallback
 
 def _build_wifi_info_response(ssid: str, key: str, bssid: str) -> bytes:
+    """WifiInfoResponse (msgId=3)"""
     proto = (
         _pb_string(1, ssid) +
         _pb_string(2, key)  +
         _pb_string(3, bssid) +
-        _pb_varint(4, 8)    +   # securityMode = WPA2_PERSONAL
-        _pb_varint(5, 1)        # AccessPointType = DYNAMIC
+        _pb_varint(4, 8)    +   # security_mode (parsed by phone as WPA2_PERSONAL)
+        _pb_varint(5, 0)        # access_point_type = STATIC
     )
     print(f"[aa-bt]   WifiInfoResponse: ssid={ssid!r} bssid={bssid} "
-          f"securityMode=WPA2_PERSONAL(8) type=DYNAMIC(1)", flush=True)
+          f"security=WPA2_PERSONAL(8) type=STATIC(0)", flush=True)
     return struct.pack(">HH", len(proto), 3) + proto
 
 # ── RFCOMM socket helpers ──────────────────────────────────────────────────────
@@ -354,17 +363,23 @@ def _run_wifi_handshake(sock: socket.socket, mac: str):
         sock.sendall(_build_wifi_start_request(AP_IP, AA_PORT))
         print("[aa-bt]   → WifiStartRequest sent (msgId=1)", flush=True)
 
-        # Steps 3-6: receive up to 4 messages until WifiConnectionStatus
+        # Steps 3+: handle WifiInfoRequest/StartResponse/ConnectionStatus
         sock.settimeout(30.0)
-        iterations = 0
-        max_iterations = 5
-        while iterations < max_iterations:
-            iterations += 1
+        wifi_status_seen = False
+        while True:
             if _pending is not None:
                 msg_id, data = _pending
                 _pending = None
             else:
-                msg_id, data = _recv_frame(sock)
+                try:
+                    msg_id, data = _recv_frame(sock)
+                except socket.timeout:
+                    if wifi_status_seen:
+                        # Idle keep-alive after handshake: just keep waiting.
+                        sock.settimeout(60.0)
+                        continue
+                    print("[aa-bt]   timeout waiting for next WPP frame", flush=True)
+                    break
                 print(f"[aa-bt]   ← msgId={msg_id}  ({len(data)} bytes)", flush=True)
 
             if msg_id == 2:      # WifiInfoRequest — phone asks for AP credentials
@@ -374,35 +389,24 @@ def _run_wifi_handshake(sock: socket.socket, mac: str):
             elif msg_id == 7:    # WifiStartResponse — ack
                 print("[aa-bt]   WifiStartResponse (ack)", flush=True)
 
-            elif msg_id == 6:    # WifiConnectionStatus — credentials delivered
+            elif msg_id == 6:    # WifiConnectionStatus
                 status = data[1] if len(data) >= 2 else 0
                 if status == 0:
                     print(f"[aa-bt]   ✓ WifiConnectionStatus OK — phone joining {SSID!r}", flush=True)
                 else:
                     print(f"[aa-bt]   ✗ WifiConnectionStatus FAIL (status={status})", flush=True)
-                break
+                wifi_status_seen = True
 
             elif msg_id == 5:    # late WifiVersionResponse
                 print(f"[aa-bt]   WifiVersionResponse (late): {data.hex()}", flush=True)
 
-            else:
-                print(f"[aa-bt]   unknown msgId={msg_id} len={len(data)} — ignoring", flush=True)
+            elif msg_id == 8:    # Modern WPP ping — echo body back as msgId=9
+                pong = struct.pack(">HH", len(data), 9) + data
+                sock.sendall(pong)
+                print(f"[aa-bt]   ← Ping(8) hex={data.hex()}  → Pong(9) sent", flush=True)
 
-        # The RFCOMM socket stays alive until BT disconnects.  Closing it here
-        # causes WPP_SOCKET_IO_EXCEPTION → WPP restart → RFCOMM retry loop.
-        print(f"[aa-bt]   handshake complete — holding RFCOMM open until BT disconnect", flush=True)
-        sock.settimeout(5.0)
-        while True:
-            try:
-                data = sock.recv(64)
-                if not data:
-                    print(f"[aa-bt]   RFCOMM closed by phone (BT disconnect)", flush=True)
-                    break
-            except socket.timeout:
-                continue   # keepalive — loop back
-            except OSError as e:
-                print(f"[aa-bt]   RFCOMM hold ended: {e}", flush=True)
-                break
+            else:
+                print(f"[aa-bt]   unknown msgId={msg_id} len={len(data)} hex={data.hex()} — ignoring", flush=True)
 
     except ConnectionError as e:
         print(f"[aa-bt] RFCOMM disconnected during handshake: {e}", flush=True)
@@ -1319,6 +1323,30 @@ class HFPProfile(dbus.service.Object):
         pass
 
 
+class BLEAd(dbus.service.Object):
+    """BLE peripheral advertisement carrying the AA wireless UUID."""
+
+    LE_AD_IFACE = "org.bluez.LEAdvertisement1"
+
+    @dbus.service.method("org.freedesktop.DBus.Properties",
+                         in_signature="ss", out_signature="v")
+    def Get(self, iface, prop):
+        return self.GetAll(iface)[prop]
+
+    @dbus.service.method("org.freedesktop.DBus.Properties",
+                         in_signature="s", out_signature="a{sv}")
+    def GetAll(self, iface):
+        return {
+            "Type":         dbus.String("peripheral"),
+            "ServiceUUIDs": dbus.Array([AA_UUID], signature="s"),
+            "LocalName":    dbus.String(BTNAME),
+        }
+
+    @dbus.service.method(LE_AD_IFACE, in_signature="", out_signature="")
+    def Release(self):
+        pass
+
+
 class AAProfile(dbus.service.Object):
     """AA RFCOMM profile — runs the 5-stage WiFi handshake."""
 
@@ -1481,6 +1509,10 @@ def main():
     def _atexit_cleanup():
         print("[aa-bt] atexit cleanup running")
         _set_advertising(False)
+        adm = _bluez_handles.get("ad_manager")
+        if adm is not None:
+            try: adm.UnregisterAdvertisement("/livi/bt/ble")
+            except Exception: pass
         pm = _bluez_handles["profile_manager"]
         if pm is not None:
             for path in ("/livi/bt/aa", "/livi/bt/hfp"):
@@ -1497,6 +1529,23 @@ def main():
     # ── 3. BlueZ ───────────────────────────────────────────────────────────────
     bus = dbus.SystemBus(private=True)
     bluez = bus.get_object(BLUEZ_SERVICE, BLUEZ_OBJ)
+
+    # Power the adapter OFF before we register any profiles. Between Pi boot
+    # and LIVI launch, bluetoothd defaults to Powered=true with no AA SDP
+    # record published — paired phones can Page us during that window, fail
+    # to find AA channel 8, and then back off. Toggling Powered off → full
+    # registration → Powered on guarantees the phone never sees a
+    # half-configured HU.
+    try:
+        adapter_props = dbus.Interface(
+            bus.get_object(BLUEZ_SERVICE, ADAPTER_PATH),
+            dbus.PROPERTIES_IFACE,
+        )
+        adapter_props.Set("org.bluez.Adapter1", "Powered", dbus.Boolean(False))
+        time.sleep(0.3)
+        print("[aa-bt] adapter powered OFF — quiet during profile setup", flush=True)
+    except Exception as e:
+        print(f"[aa-bt] could not pre-power-off adapter: {e} (continuing)", flush=True)
 
     # Register AA RFCOMM profile.
     profile_manager = dbus.Interface(bluez, PROFILE_MANAGER)
@@ -1550,6 +1599,40 @@ def main():
         aa_obj = AAProfile(bus, "/livi/bt/aa")
         _register_aa_profile()
     print("[aa-bt] registered AA RFCOMM profile (ch=8)")
+
+    # ── BLE advertisement of the AA UUID ───────────────────────────────────────
+    # Tells nearby paired phones the HU is online and ready, which is what
+    ble_ad_obj = BLEAd(bus, "/livi/bt/ble")
+    _bluez_handles["ble_ad"] = ble_ad_obj
+    try:
+        objs = dbus.Interface(
+            bus.get_object(BLUEZ_SERVICE, "/"),
+            "org.freedesktop.DBus.ObjectManager",
+        ).GetManagedObjects()
+        ad_manager_path = next(
+            (p for p, ifaces in objs.items()
+             if "org.bluez.LEAdvertisingManager1" in ifaces),
+            None,
+        )
+        if ad_manager_path:
+            ad_manager = dbus.Interface(
+                bus.get_object(BLUEZ_SERVICE, ad_manager_path),
+                "org.bluez.LEAdvertisingManager1",
+            )
+            try:
+                ad_manager.UnregisterAdvertisement("/livi/bt/ble")
+            except dbus.exceptions.DBusException:
+                pass
+            ad_manager.RegisterAdvertisement(
+                "/livi/bt/ble", {},
+                reply_handler=lambda: print("[aa-bt] BLE advertisement registered (AA UUID)", flush=True),
+                error_handler=lambda e: print(f"[aa-bt] BLE advertisement register error: {e}", flush=True),
+            )
+            _bluez_handles["ad_manager"] = ad_manager
+        else:
+            print("[aa-bt] BLE advertising not available on this adapter — skipping")
+    except Exception as e:
+        print(f"[aa-bt] BLE advertisement setup failed: {e} (autoconnect may need manual kick)", flush=True)
 
     # HFP Hands-Free profile — car kit role (Pi = HF, Phone = AG)
     try:
