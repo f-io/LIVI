@@ -97,18 +97,69 @@ def get_security_config() -> str:
     )
 
 
+def _channel_to_vht_centre(primary: int) -> int | None:
+    """Centre frequency segment for 80 MHz VHT, given the primary 20 MHz
+    channel. Returns None if the primary isn't part of an 80 MHz block we
+    can use in AP mode without DFS.
+
+    Non-DFS UNII-1 (36/40/44/48) → centre 42.
+    UNII-3 (149/153/157/161)     → centre 155.
+    Anything else (DFS UNII-2)   → caller must drop to HT40 / HT20.
+    """
+    if 36 <= primary <= 48:
+        return 42
+    if 149 <= primary <= 161:
+        return 155
+    return None
+
+
+def _ht40_secondary(primary: int) -> str:
+    """HT40 secondary channel position for the given 20 MHz primary.
+    5 GHz HT40 pairs adjacent channels (4 apart). The lower of each pair
+    uses HT40+ (secondary above), the upper uses HT40−:
+        36+ / 40−   44+ / 48−   149+ / 153−   157+ / 161−
+    Pattern: (channel // 4) odd → lower of pair → '+', even → upper → '−'."""
+    return "+" if (primary // 4) % 2 == 1 else "-"
+
+
 def write_hostapd_config():
     security_config = get_security_config()
+
+    is_5ghz = CHANNEL >= 36
+    if is_5ghz:
+        # 11ac VHT80 on 5 GHz UNII-1/UNII-3 (non-DFS). Bare minimum config:
+        # channel + bonding width directives
+        ht40_dir = _ht40_secondary(CHANNEL)
+        vht_centre = _channel_to_vht_centre(CHANNEL)
+        radio = (
+            "hw_mode=a\n"
+            f"channel={CHANNEL}\n"
+            "ieee80211n=1\n"
+            "ieee80211ac=1\n"
+            f"ht_capab=[HT40{ht40_dir}]\n"
+        )
+        if vht_centre is not None:
+            radio += (
+                "vht_capab=[SHORT-GI-80]\n"
+                "vht_oper_chwidth=1\n"  # 1 = 80 MHz
+                f"vht_oper_centr_freq_seg0_idx={vht_centre}\n"
+            )
+    else:
+        # 2.4 GHz: 11n HT20 — 40 MHz channels overlap on 2.4, not worth it.
+        radio = (
+            "hw_mode=g\n"
+            f"channel={CHANNEL}\n"
+            "ieee80211n=1\n"
+        )
+
     config = f"""
 interface={WIFI_IFACE}
 driver=nl80211
 ssid={SSID}
-hw_mode=a
-channel={CHANNEL}
 country_code={COUNTRY_CODE}
-ieee80211n=1
-ieee80211ac=1
-ignore_broadcast_ssid=0
+ieee80211d=1
+ieee80211h=0
+{radio}ignore_broadcast_ssid=0
 wmm_enabled=1
 {security_config}
 wpa_passphrase={PASSPHRASE}
