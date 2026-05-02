@@ -1520,6 +1520,15 @@ export class ProjectionService {
         console.warn('[ProjectionService] driver.close() failed (ignored)', e)
       }
 
+      if (this.aaDriver) {
+        this.aaDriver.off('connected', this.onAaConnected)
+        this.aaDriver.off('disconnected', this.onAaDisconnected)
+        this.closeAaBtSubscription()
+        this.detachDriverListeners(this.aaDriver)
+        this.aaDriver = null
+        this.attachDriverListeners(this.dongleDriver)
+      }
+
       this.webUsbDevice = null
       this.audio.resetForSessionStop()
 
