@@ -16,6 +16,12 @@ import {
   type MediaPlaybackStatus
 } from '../channels/MediaInfoChannel.js'
 import { MicChannel } from '../channels/MicChannel.js'
+import {
+  NavigationChannel,
+  type NavigationDistanceUpdate,
+  type NavigationStatusUpdate,
+  type NavigationTurnUpdate
+} from '../channels/NavigationChannel.js'
 import { fieldFloat, fieldLenDelim, fieldVarint } from '../channels/protoEnc.js'
 import { VideoChannel } from '../channels/VideoChannel.js'
 import {
@@ -46,6 +52,11 @@ import { ControlChannel } from './ControlChannel.js'
  *  Set TRACE=1 to see them anyway. */
 const isFrameChannel = (ch: number): boolean =>
   ch === CH.VIDEO || ch === CH.MEDIA_AUDIO || ch === CH.SPEECH_AUDIO || ch === CH.SYSTEM_AUDIO
+
+/** Ping/pong on the control channel runs every 1500 ms in both directions.
+ *  Same idea as isFrameChannel — suppress under DEBUG, show under TRACE. */
+const isPingPong = (ch: number, msgId: number): boolean =>
+  ch === CH.CONTROL && (msgId === CTRL_MSG.PING_REQUEST || msgId === CTRL_MSG.PING_RESPONSE)
 
 // ── Session state machine ─────────────────────────────────────────────────────
 const enum State {
@@ -108,6 +119,7 @@ export class Session extends EventEmitter {
   private _input!: InputChannel
   private _media!: MediaInfoChannel
   private _mic!: MicChannel
+  private _nav!: NavigationChannel
   private _channelMap = new Map<number, number>() // channelId → service type
 
   constructor(
@@ -222,8 +234,9 @@ export class Session extends EventEmitter {
         continue
       }
 
-      // Encrypted: rawPayload is one full TLS-1.2 record.
-      if (DEBUG && (TRACE || !isFrameChannel(channelId))) {
+      // Encrypted: rawPayload is one full TLS-1.2 record. Pure wire-level
+      // detail — only useful for protocol bring-up, hidden behind TRACE.
+      if (TRACE) {
         console.log(
           `[Session] TLS inject ch=${channelId} flags=0x${flags.toString(16)} record=${payloadSize}B`
         )
@@ -278,7 +291,7 @@ export class Session extends EventEmitter {
     msgId: number,
     payload: Buffer
   ): void {
-    if (DEBUG && (TRACE || !isFrameChannel(channelId))) {
+    if (DEBUG && (TRACE || (!isFrameChannel(channelId) && !isPingPong(channelId, msgId)))) {
       const stateName =
         [
           'INIT',
@@ -353,6 +366,11 @@ export class Session extends EventEmitter {
 
     if (channelId === CH.MEDIA_INFO) {
       this._media?.handleMessage(msgId, payload)
+      return
+    }
+
+    if (channelId === CH.NAVIGATION) {
+      this._nav?.handleMessage(msgId, payload)
       return
     }
 
@@ -499,6 +517,15 @@ export class Session extends EventEmitter {
     this._media = new MediaInfoChannel()
     this._media.on('metadata', (m: MediaPlaybackMetadata) => this.emit('media-metadata', m))
     this._media.on('status', (s: MediaPlaybackStatus) => this.emit('media-status', s))
+
+    // Navigation status (turn-by-turn from Maps) — forward to driver
+    this._nav = new NavigationChannel()
+    this._nav.on('nav-start', () => this.emit('nav-start'))
+    this._nav.on('nav-stop', () => this.emit('nav-stop'))
+    this._nav.on('nav-status', (s: NavigationStatusUpdate) => this.emit('nav-status', s))
+    this._nav.on('nav-turn', (t: NavigationTurnUpdate) => this.emit('nav-turn', t))
+    this._nav.on('nav-distance', (d: NavigationDistanceUpdate) => this.emit('nav-distance', d))
+    this._control.on('voice-session', (active: boolean) => this.emit('voice-session', active))
 
     this._control.on('service-discovery-request', (req: Record<string, unknown>) => {
       if (DEBUG) {
@@ -861,7 +888,10 @@ export class Session extends EventEmitter {
         }
         const msgId = chunk.readUInt16BE(0)
         const payload = chunk.subarray(2)
-        if (DEBUG && (TRACE || !isFrameChannel(ctx.channelId))) {
+        if (
+          DEBUG &&
+          (TRACE || (!isFrameChannel(ctx.channelId) && !isPingPong(ctx.channelId, msgId)))
+        ) {
           console.log(
             `[Session] ← ch=${ctx.channelId} msgId=0x${msgId.toString(16).padStart(4, '0')} len=${payload.length}`
           )
@@ -1480,7 +1510,7 @@ export class Session extends EventEmitter {
 
     if (!isEncrypted) {
       const frame = encodeFrame(channelId, flags, msgId, data)
-      if (DEBUG) {
+      if (DEBUG && (TRACE || !isPingPong(channelId, msgId))) {
         console.log(
           `[Session] sock→ PLAIN ch=${channelId} msgId=0x${msgId.toString(16).padStart(4, '0')} ${frame.length}B`
         )

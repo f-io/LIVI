@@ -87,6 +87,10 @@ export class ControlChannel extends EventEmitter {
         this._onBindingRequest(payload)
         break
 
+      case CTRL_MSG.VOICE_SESSION_NOTIFICATION:
+        this._onVoiceSessionNotification(payload)
+        break
+
       // AV setup requests arrive on control channel for some channel IDs
       case AV_MSG.SETUP_REQUEST:
         // This shouldn't arrive on channel 0, but handle defensively
@@ -224,6 +228,16 @@ export class ControlChannel extends EventEmitter {
     } catch (e) {
       console.warn('[ControlChannel] navigation focus response error:', e)
     }
+  }
+
+  private _onVoiceSessionNotification(payload: Buffer): void {
+    // VoiceSessionNotification: f1 status (1=START, 2=END). Pure status info,
+    // no response expected (matches aasdk + openauto behaviour).
+    let status = 0
+    if (payload.length >= 2 && payload[0] === 0x08) status = payload[1]!
+    const name = status === 1 ? 'START' : status === 2 ? 'END' : `?(${status})`
+    console.log(`[ControlChannel] VoiceSessionNotification status=${name}`)
+    this.emit('voice-session', status === 1)
   }
 
   private _onBindingRequest(payload: Buffer): void {

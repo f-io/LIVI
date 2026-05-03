@@ -1,6 +1,11 @@
 import type { AaDriver } from '@projection/driver/aa/aaDriver'
 import type { TelemetryPayload } from '@shared/types/Telemetry'
 
+// Maps doesn't re-route on every VEM update — sending faster than ~10 s is
+// just sensor-channel noise.
+const VEM_MIN_INTERVAL_MS = 10_000
+let lastVemSentAt = 0
+
 /** Map TelemetryPayload.gear (string|number) + reverse-flag → AA Gear enum. */
 export function mapGearToAa(
   gear: string | number | undefined,
@@ -83,22 +88,26 @@ export function pushTelemetryToAa(aa: AaDriver, payload: TelemetryPayload): void
   if (typeof payload.parkingBrake === 'boolean') aa.sendParkingBrakeData(payload.parkingBrake)
 
   // EV VehicleEnergyModel — only when battery info is provided.
-  // Maps' EV range bar + low-range warning depends on this.
+  // Throttled to once per VEM_MIN_INTERVAL_MS; Maps caches the calc anyway.
   if (
     typeof payload.batteryCapacityKwh === 'number' &&
     typeof payload.rangeKm === 'number' &&
     payload.rangeKm > 0
   ) {
-    const capacityWh = Math.round(payload.batteryCapacityKwh * 1000)
-    const currentWh =
-      typeof payload.batteryLevelKwh === 'number'
-        ? Math.round(payload.batteryLevelKwh * 1000)
-        : typeof payload.fuelPct === 'number'
-          ? Math.round((payload.fuelPct / 100) * capacityWh)
-          : 0
-    if (capacityWh > 0 && currentWh > 0) {
-      const rangeM = Math.round(payload.rangeKm * 1000)
-      aa.sendVehicleEnergyModel(capacityWh, currentWh, rangeM)
+    const now = Date.now()
+    if (now - lastVemSentAt >= VEM_MIN_INTERVAL_MS) {
+      const capacityWh = Math.round(payload.batteryCapacityKwh * 1000)
+      const currentWh =
+        typeof payload.batteryLevelKwh === 'number'
+          ? Math.round(payload.batteryLevelKwh * 1000)
+          : typeof payload.fuelPct === 'number'
+            ? Math.round((payload.fuelPct / 100) * capacityWh)
+            : 0
+      if (capacityWh > 0 && currentWh > 0) {
+        const rangeM = Math.round(payload.rangeKm * 1000)
+        aa.sendVehicleEnergyModel(capacityWh, currentWh, rangeM)
+        lastVemSentAt = now
+      }
     }
   }
 
