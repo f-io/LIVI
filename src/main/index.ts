@@ -38,7 +38,7 @@ app.whenReady().then(async () => {
   registerAppProtocol()
   registerIpc(runtimeState, services)
   createMainWindow(runtimeState, services)
-  setupTelemetry(telemetrySocket)
+  setupTelemetry(telemetrySocket, projectionService)
   setupLifecycle(runtimeState, services)
 
   const win = getMainWindow()

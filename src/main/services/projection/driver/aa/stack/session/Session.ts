@@ -16,6 +16,7 @@ import {
   type MediaPlaybackStatus
 } from '../channels/MediaInfoChannel.js'
 import { MicChannel } from '../channels/MicChannel.js'
+import { fieldLenDelim, fieldVarint } from '../channels/protoEnc.js'
 import { VideoChannel } from '../channels/VideoChannel.js'
 import {
   AUDIO_TYPE,
@@ -566,6 +567,82 @@ export class Session extends EventEmitter {
   sendRotary(direction: -1 | 1): void {
     if (this._state !== State.RUNNING || !this._input) return
     this._input.sendRotary(direction)
+  }
+
+  // ── Sensor pushes (HU → Phone) ─────────────────────────────────────────────
+  // All writes go to CH.SENSOR / msgId 0x8003 (SENSOR_MESSAGE_BATCH).
+  // SensorBatch field number = SensorType id.
+
+  private _sendSensorBatch(sensorBatchField: number, innerData: Buffer): void {
+    if (this._state !== State.RUNNING) return
+    const sensorBatch = fieldLenDelim(sensorBatchField, innerData)
+    this._sendEncrypted(CH.SENSOR, FRAME_FLAGS.ENC_SIGNAL, 0x8003, sensorBatch)
+    if (DEBUG) console.log(`[Session] SensorBatch field=${sensorBatchField} ${innerData.length}B`)
+  }
+
+  /** level%, range[m], lowFuelWarning. */
+  sendFuelData(level: number, range?: number, lowFuelWarning?: boolean): void {
+    const parts: Buffer[] = [fieldVarint(1, level)]
+    if (range !== undefined) parts.push(fieldVarint(2, range))
+    if (lowFuelWarning !== undefined) parts.push(fieldVarint(3, lowFuelWarning ? 1 : 0))
+    this._sendSensorBatch(6, Buffer.concat(parts))
+  }
+
+  /** speed in mm/s (m/s × 1000). */
+  sendSpeedData(speedMmS: number, cruiseEngaged?: boolean, cruiseSetSpeedMmS?: number): void {
+    const parts: Buffer[] = [fieldVarint(1, speedMmS)]
+    if (cruiseEngaged !== undefined) parts.push(fieldVarint(2, cruiseEngaged ? 1 : 0))
+    if (cruiseSetSpeedMmS !== undefined) parts.push(fieldVarint(4, cruiseSetSpeedMmS))
+    this._sendSensorBatch(3, Buffer.concat(parts))
+  }
+
+  /** rpm × 1000. */
+  sendRpmData(rpmE3: number): void {
+    this._sendSensorBatch(4, fieldVarint(1, rpmE3))
+  }
+
+  /** Gear enum: NEUTRAL=0, 1..10 manual, DRIVE=100, PARK=101, REVERSE=102. */
+  sendGearData(gear: number): void {
+    this._sendSensorBatch(8, fieldVarint(1, gear))
+  }
+
+  sendNightModeData(nightMode: boolean): void {
+    this._sendSensorBatch(10, fieldVarint(1, nightMode ? 1 : 0))
+  }
+
+  sendParkingBrakeData(engaged: boolean): void {
+    this._sendSensorBatch(7, fieldVarint(1, engaged ? 1 : 0))
+  }
+
+  /** headLight: 1=OFF, 2=ON, 3=HIGH. */
+  sendLightData(headLight?: 1 | 2 | 3, hazardLights?: boolean): void {
+    const parts: Buffer[] = []
+    if (headLight !== undefined) parts.push(fieldVarint(1, headLight))
+    if (hazardLights !== undefined) parts.push(fieldVarint(3, hazardLights ? 1 : 0))
+    if (parts.length === 0) return
+    this._sendSensorBatch(17, Buffer.concat(parts))
+  }
+
+  /** temperature in m°C, pressure in Pa (kPa × 1000). */
+  sendEnvironmentData(temperatureE3?: number, pressureE3?: number, rain?: number): void {
+    const parts: Buffer[] = []
+    if (temperatureE3 !== undefined) parts.push(fieldVarint(1, temperatureE3))
+    if (pressureE3 !== undefined) parts.push(fieldVarint(2, pressureE3))
+    if (rain !== undefined) parts.push(fieldVarint(3, rain))
+    if (parts.length === 0) return
+    this._sendSensorBatch(11, Buffer.concat(parts))
+  }
+
+  /** km × 10. */
+  sendOdometerData(totalKmE1: number, tripKmE1?: number): void {
+    const parts: Buffer[] = [fieldVarint(1, totalKmE1)]
+    if (tripKmE1 !== undefined) parts.push(fieldVarint(2, tripKmE1))
+    this._sendSensorBatch(5, Buffer.concat(parts))
+  }
+
+  /** Restriction bitmask. UNRESTRICTED=0. */
+  sendDrivingStatusData(status: number): void {
+    this._sendSensorBatch(13, fieldVarint(1, status))
   }
 
   /**

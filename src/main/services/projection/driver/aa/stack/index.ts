@@ -43,7 +43,6 @@ export interface AAStackConfig extends SessionConfig {
 }
 
 export class AAStack extends EventEmitter {
-
   private readonly _server: TcpServer
   private _activeSession: Session | null = null
 
@@ -108,6 +107,46 @@ export class AAStack extends EventEmitter {
 
   sendRotary(direction: -1 | 1): void {
     this._activeSession?.sendRotary(direction)
+  }
+
+  sendFuelData(level: number, range?: number, lowFuelWarning?: boolean): void {
+    this._activeSession?.sendFuelData(level, range, lowFuelWarning)
+  }
+
+  sendSpeedData(speedMmS: number, cruiseEngaged?: boolean, cruiseSetSpeedMmS?: number): void {
+    this._activeSession?.sendSpeedData(speedMmS, cruiseEngaged, cruiseSetSpeedMmS)
+  }
+
+  sendRpmData(rpmE3: number): void {
+    this._activeSession?.sendRpmData(rpmE3)
+  }
+
+  sendGearData(gear: number): void {
+    this._activeSession?.sendGearData(gear)
+  }
+
+  sendNightModeData(nightMode: boolean): void {
+    this._activeSession?.sendNightModeData(nightMode)
+  }
+
+  sendParkingBrakeData(engaged: boolean): void {
+    this._activeSession?.sendParkingBrakeData(engaged)
+  }
+
+  sendLightData(headLight?: 1 | 2 | 3, hazardLights?: boolean): void {
+    this._activeSession?.sendLightData(headLight, hazardLights)
+  }
+
+  sendEnvironmentData(temperatureE3?: number, pressureE3?: number, rain?: number): void {
+    this._activeSession?.sendEnvironmentData(temperatureE3, pressureE3, rain)
+  }
+
+  sendOdometerData(totalKmE1: number, tripKmE1?: number): void {
+    this._activeSession?.sendOdometerData(totalKmE1, tripKmE1)
+  }
+
+  sendDrivingStatusData(status: number): void {
+    this._activeSession?.sendDrivingStatusData(status)
   }
 
   sendMicPcm(buf: Buffer, ts?: bigint): void {

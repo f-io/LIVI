@@ -396,6 +396,40 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     this.emit('message', new Plugged(pluggedHdr, pluggedBuf) as Message)
   }
 
+  // ── Vehicle-data push API ──────────────────────────────────────────────────
+  // No-op when no active session. Caller does unit conversion + rate-limiting.
+
+  sendFuelData(level: number, range?: number, lowFuelWarning?: boolean): void {
+    this._aa?.sendFuelData(level, range, lowFuelWarning)
+  }
+  sendSpeedData(speedMmS: number, cruiseEngaged?: boolean, cruiseSetSpeedMmS?: number): void {
+    this._aa?.sendSpeedData(speedMmS, cruiseEngaged, cruiseSetSpeedMmS)
+  }
+  sendRpmData(rpmE3: number): void {
+    this._aa?.sendRpmData(rpmE3)
+  }
+  sendGearData(gear: number): void {
+    this._aa?.sendGearData(gear)
+  }
+  sendNightModeData(nightMode: boolean): void {
+    this._aa?.sendNightModeData(nightMode)
+  }
+  sendParkingBrakeData(engaged: boolean): void {
+    this._aa?.sendParkingBrakeData(engaged)
+  }
+  sendLightData(headLight?: 1 | 2 | 3, hazardLights?: boolean): void {
+    this._aa?.sendLightData(headLight, hazardLights)
+  }
+  sendEnvironmentData(temperatureE3?: number, pressureE3?: number, rain?: number): void {
+    this._aa?.sendEnvironmentData(temperatureE3, pressureE3, rain)
+  }
+  sendOdometerData(totalKmE1: number, tripKmE1?: number): void {
+    this._aa?.sendOdometerData(totalKmE1, tripKmE1)
+  }
+  sendDrivingStatusData(status: number): void {
+    this._aa?.sendDrivingStatusData(status)
+  }
+
   async close(): Promise<void> {
     if (this._closed) return
     this._closed = true
