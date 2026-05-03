@@ -138,7 +138,7 @@ jobs:
           set -euo pipefail
           curl -fL \
             -o gstreamer-runtime.pkg \
-            https://gstreamer.freedesktop.org/data/pkg/osx/1.28.1/gstreamer-1.0-1.28.1-universal.pkg
+            https://gstreamer.freedesktop.org/data/pkg/osx/1.28.2/gstreamer-1.0-1.28.2-universal.pkg
 
       - name: Install GStreamer runtime pkg [macos-arm64]
         if: matrix.os == 'macos' && matrix.arch == 'arm64'
@@ -341,7 +341,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          curl.exe -L 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.1/msvc/gstreamer-1.0-msvc-x86_64-1.28.1.exe' -o 'gstreamer-runtime-x86_64.exe'
+          curl.exe -L 'https://gstreamer.freedesktop.org/data/pkg/windows/1.28.2/msvc/gstreamer-1.0-msvc-x86_64-1.28.2.exe' -o 'gstreamer-runtime-x86_64.exe'
 
       - name: Install GStreamer runtime [windows-x64]
         if: matrix.os == 'windows' && matrix.arch == 'x64'
