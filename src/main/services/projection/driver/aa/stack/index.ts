@@ -21,6 +21,11 @@ import { EventEmitter } from 'node:events'
 import type { AudioChannelType } from './channels/AudioChannel'
 import type { TouchPointer } from './channels/InputChannel'
 import type { MediaPlaybackMetadata, MediaPlaybackStatus } from './channels/MediaInfoChannel'
+import type {
+  NavigationDistanceUpdate,
+  NavigationStatusUpdate,
+  NavigationTurnUpdate
+} from './channels/NavigationChannel'
 import { Session, type SessionConfig } from './session/Session'
 import { detectBtMac, detectWifiBssid } from './system/hwaddr'
 import { TcpServer } from './transport/TcpServer'
@@ -32,6 +37,14 @@ export type {
   MediaPlaybackState,
   MediaPlaybackStatus
 } from './channels/MediaInfoChannel.js'
+export type {
+  NavigationDistanceUpdate,
+  NavigationState,
+  NavigationStatusUpdate,
+  NavigationTurnEvent,
+  NavigationTurnSide,
+  NavigationTurnUpdate
+} from './channels/NavigationChannel.js'
 export { TCP_PORT } from './constants'
 export type { SessionConfig } from './session/Session'
 export { Session } from './session/Session.js'
@@ -43,7 +56,6 @@ export interface AAStackConfig extends SessionConfig {
 }
 
 export class AAStack extends EventEmitter {
-
   private readonly _server: TcpServer
   private _activeSession: Session | null = null
 
@@ -73,9 +85,15 @@ export class AAStack extends EventEmitter {
       )
       session.on('mic-start', (channelId: number) => this.emit('mic-start', channelId))
       session.on('mic-stop', (channelId: number) => this.emit('mic-stop', channelId))
+      session.on('voice-session', (active: boolean) => this.emit('voice-session', active))
       session.on('host-ui-requested', () => this.emit('host-ui-requested'))
       session.on('media-metadata', (m: MediaPlaybackMetadata) => this.emit('media-metadata', m))
       session.on('media-status', (s: MediaPlaybackStatus) => this.emit('media-status', s))
+      session.on('nav-start', () => this.emit('nav-start'))
+      session.on('nav-stop', () => this.emit('nav-stop'))
+      session.on('nav-status', (s: NavigationStatusUpdate) => this.emit('nav-status', s))
+      session.on('nav-turn', (t: NavigationTurnUpdate) => this.emit('nav-turn', t))
+      session.on('nav-distance', (d: NavigationDistanceUpdate) => this.emit('nav-distance', d))
       session.on('connected', () => this.emit('connected'))
       session.on('disconnected', (reason?: string) => this.emit('disconnected', reason))
       session.on('error', (err: Error) => this.emit('error', err))
@@ -108,6 +126,55 @@ export class AAStack extends EventEmitter {
 
   sendRotary(direction: -1 | 1): void {
     this._activeSession?.sendRotary(direction)
+  }
+
+  sendFuelData(level: number, range?: number, lowFuelWarning?: boolean): void {
+    this._activeSession?.sendFuelData(level, range, lowFuelWarning)
+  }
+
+  sendSpeedData(speedMmS: number, cruiseEngaged?: boolean, cruiseSetSpeedMmS?: number): void {
+    this._activeSession?.sendSpeedData(speedMmS, cruiseEngaged, cruiseSetSpeedMmS)
+  }
+
+  sendRpmData(rpmE3: number): void {
+    this._activeSession?.sendRpmData(rpmE3)
+  }
+
+  sendGearData(gear: number): void {
+    this._activeSession?.sendGearData(gear)
+  }
+
+  sendNightModeData(nightMode: boolean): void {
+    this._activeSession?.sendNightModeData(nightMode)
+  }
+
+  sendParkingBrakeData(engaged: boolean): void {
+    this._activeSession?.sendParkingBrakeData(engaged)
+  }
+
+  sendLightData(headLight?: 1 | 2 | 3, hazardLights?: boolean, turnIndicator?: 1 | 2 | 3): void {
+    this._activeSession?.sendLightData(headLight, hazardLights, turnIndicator)
+  }
+
+  sendEnvironmentData(temperatureE3?: number, pressureE3?: number, rain?: number): void {
+    this._activeSession?.sendEnvironmentData(temperatureE3, pressureE3, rain)
+  }
+
+  sendOdometerData(totalKmE1: number, tripKmE1?: number): void {
+    this._activeSession?.sendOdometerData(totalKmE1, tripKmE1)
+  }
+
+  sendDrivingStatusData(status: number): void {
+    this._activeSession?.sendDrivingStatusData(status)
+  }
+
+  sendVehicleEnergyModel(
+    capacityWh: number,
+    currentWh: number,
+    rangeM: number,
+    opts?: { maxChargePowerW?: number; maxDischargePowerW?: number; auxiliaryWhPerKm?: number }
+  ): void {
+    this._activeSession?.sendVehicleEnergyModel(capacityWh, currentWh, rangeM, opts)
   }
 
   sendMicPcm(buf: Buffer, ts?: bigint): void {

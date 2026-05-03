@@ -15,6 +15,7 @@ import {
   MediaType,
   type Message,
   MetaData,
+  NavigationMetaType,
   PhoneType,
   Plugged,
   VideoData
@@ -28,6 +29,7 @@ import {
   SendTouch
 } from '@projection/messages/sendable'
 import type { DongleConfig } from '@shared/types'
+import { CarType } from '@shared/types/DongleConfig'
 import {
   AudioCommand,
   CommandMapping,
@@ -37,6 +39,7 @@ import {
 import { computeAndroidAutoDpi, matchFittingAAResolution } from '@shared/utils'
 import type { IPhoneDriver } from '../IPhoneDriver'
 import { AaBluetoothSupervisor } from './aaBluetoothSupervisor'
+import { turnEventToManeuverType, turnSideToNaviCode } from './stack/channels/navManeuverMap'
 import {
   AAStack,
   type AAStackConfig,
@@ -44,6 +47,9 @@ import {
   BUTTON_KEY,
   type MediaPlaybackMetadata,
   type MediaPlaybackStatus,
+  type NavigationDistanceUpdate,
+  type NavigationStatusUpdate,
+  type NavigationTurnUpdate,
   TOUCH_ACTION,
   type TouchPointer
 } from './stack/index'
@@ -142,6 +148,32 @@ function buildAlbumArtMessage(albumArt: Buffer): MetaData {
 }
 
 /**
+ * Build MetaData(NavigationMetaType.DashboardInfo) — Carlinkit-shaped NaviBag
+ * JSON. Drops into the existing ProjectionService navigation pipeline.
+ */
+function buildNaviJsonMessage(navi: Record<string, unknown>): MetaData {
+  const json = JSON.stringify(navi)
+  const payload = Buffer.from(json + '\0', 'utf8')
+  const data = Buffer.allocUnsafeSlow(4 + payload.length)
+  data.writeUInt32LE(NavigationMetaType.DashboardInfo, 0)
+  payload.copy(data, 4)
+  const header = new MessageHeader(data.length, MessageType.MetaData)
+  return new MetaData(header, data)
+}
+
+/**
+ * Build MetaData(NavigationMetaType.DashboardImage) — turn-icon bitmap.
+ * The image bytes are forwarded verbatim; renderer picks up base64 in NaviBag.
+ */
+function buildNaviImageMessage(image: Buffer): MetaData {
+  const data = Buffer.allocUnsafeSlow(4 + image.length)
+  data.writeUInt32LE(NavigationMetaType.DashboardImage, 0)
+  image.copy(data, 4)
+  const header = new MessageHeader(data.length, MessageType.MetaData)
+  return new MetaData(header, data)
+}
+
+/**
  * Map an AA audio-channel start/stop transition to the corresponding LIVI
  * AudioCommand.
  *
@@ -176,6 +208,21 @@ function mapTouchAction(action: TouchAction): number {
   return TOUCH_ACTION.MOVED
 }
 
+/** Map LIVI's CarType to aap_protobuf FuelType[] for the AA SDR. */
+function mapCarTypeToFuelTypes(carType: CarType | undefined): number[] {
+  switch (carType) {
+    case CarType.HybridGasoline:
+      return [CarType.Gasoline, CarType.Electric]
+    case CarType.HybridDiesel:
+      return [CarType.Diesel, CarType.Electric]
+    case undefined:
+    case CarType.Unknown:
+      return [CarType.Gasoline]
+    default:
+      return [carType]
+  }
+}
+
 export interface AaDriverOptions {
   supervisor?: AaBluetoothSupervisor | null
 }
@@ -189,6 +236,11 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
   private _touchH = 720
   private _mic: Microphone | null = null
   private _micActive = false
+
+  // Accumulating NaviBag — flushed via buildNaviJsonMessage on every patch.
+  private _naviBag: Record<string, unknown> = {}
+  private _naviActive = false
+  private _naviApp: string | undefined
 
   constructor(opts: AaDriverOptions = {}) {
     super()
@@ -261,7 +313,9 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       driverPosition: cfg.hand === 1 ? 1 : 0,
       wifiSsid: name,
       wifiPassword: cfg.wifiPassword || '12345678',
-      wifiChannel: cfg.wifiChannel
+      wifiChannel: cfg.wifiChannel,
+      fuelTypes: mapCarTypeToFuelTypes(cfg.carType),
+      evConnectorTypes: cfg.evConnectorTypes
     }
     const displayAR = cfg.width / cfg.height
     const tierAR = tierW / tierH
@@ -288,6 +342,10 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       console.log(
         `[aaDriver] AAStack disconnected (${reason ?? 'no reason'}) — supervisor stays up for retry`
       )
+      // Drop any accumulated nav state so the next session starts fresh.
+      this._naviBag = {}
+      this._naviActive = false
+      this._naviApp = undefined
     })
 
     aa.on('video-frame', (buf: Buffer, _ts: bigint) => {
@@ -337,6 +395,30 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       this._mic?.stop()
     })
 
+    // Voice-assist trigger: phone signals it expects mic input
+    aa.on('voice-session', (active: boolean) => {
+      if (active) {
+        if (this._micActive) return
+        this._micActive = true
+        if (!this._mic) {
+          this._mic = new Microphone()
+          this._mic.on('data', (chunk: Buffer) => {
+            if (!this._micActive) return
+            // pushPcm drops frames silently while ch=9 isn't open; we still
+            // burn the capture so the user sees the pipeline run.
+            this._aa?.sendMicPcm(chunk)
+          })
+        }
+        console.log('[aaDriver] voice-session START → pre-warming mic capture')
+        this._mic.start(5)
+      } else {
+        if (!this._micActive) return
+        this._micActive = false
+        console.log('[aaDriver] voice-session END → stopping mic capture')
+        this._mic?.stop()
+      }
+    })
+
     // Phone asked HU to swap to its native (host) UI.
     aa.on('host-ui-requested', () => {
       console.log('[aaDriver] host-ui-requested → emitting Command(requestHostUI)')
@@ -371,6 +453,55 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       this.emit('message', buildMediaJsonMessage(media) as Message)
     })
 
+    // Navigation (turn-by-turn) — accumulate state + flush a NaviBag whenever
+    // any field changes, so the existing ProjectionService nav pipeline gets
+    // the same shape it'd see from the dongle.
+    aa.on('nav-start', () => {
+      this._naviApp = 'Google Maps'
+      this._naviActive = true
+      this._publishNavi({ NaviStatus: 1, NaviAPPName: this._naviApp })
+    })
+
+    aa.on('nav-stop', () => {
+      this._naviActive = false
+      this._publishNavi({ NaviStatus: 0 })
+    })
+
+    aa.on('nav-status', (s: NavigationStatusUpdate) => {
+      this._naviActive = s.state === 'active' || s.state === 'rerouting'
+      this._publishNavi({ NaviStatus: this._naviActive ? 1 : 0 })
+    })
+
+    aa.on('nav-turn', (t: NavigationTurnUpdate) => {
+      const patch: Record<string, unknown> = {}
+      if (t.road !== undefined) patch.NaviRoadName = t.road
+      const maneuver = turnEventToManeuverType(t.event, t.turnSide)
+      if (maneuver !== undefined) patch.NaviManeuverType = maneuver
+      const side = turnSideToNaviCode(t.turnSide)
+      if (side !== undefined) patch.NaviTurnSide = side
+      if (t.turnAngle !== undefined) patch.NaviTurnAngle = t.turnAngle
+      if (t.turnNumber !== undefined) patch.NaviRoundaboutExitNumber = t.turnNumber
+      if (Object.keys(patch).length > 0) this._publishNavi(patch)
+      // Turn icon bitmap — forwarded verbatim as DashboardImage.
+      if (t.image && t.image.length > 0) {
+        this.emit('message', buildNaviImageMessage(t.image) as Message)
+      }
+    })
+
+    aa.on('nav-distance', (d: NavigationDistanceUpdate) => {
+      const patch: Record<string, unknown> = {
+        NaviDistanceToDestination: d.distanceMeters,
+        NaviTimeToDestination: d.timeToTurnSeconds
+      }
+      if (d.displayDistanceE3 !== undefined) {
+        patch.NaviDisplayDistanceE3 = d.displayDistanceE3
+      }
+      if (d.displayUnit !== undefined) {
+        patch.NaviDisplayDistanceUnit = d.displayUnit
+      }
+      this._publishNavi(patch)
+    })
+
     aa.on('error', (err: Error) => {
       // Suppress error spam while we're tearing down
       if (this._closed) {
@@ -386,6 +517,19 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
   }
 
   /**
+   * Merge a NaviBag patch into the accumulated state and emit the full bag as
+   * MetaData(DashboardInfo). ProjectionService runs it through normalize +
+   * translate, so partial updates flow correctly into the UI.
+   */
+  private _publishNavi(patch: Record<string, unknown>): void {
+    Object.assign(this._naviBag, patch)
+    if (this._naviApp !== undefined && this._naviBag.NaviAPPName === undefined) {
+      this._naviBag.NaviAPPName = this._naviApp
+    }
+    this.emit('message', buildNaviJsonMessage(this._naviBag) as Message)
+  }
+
+  /**
    * Emit a `Plugged{phoneType=AndroidAuto, wifi=1}` LIVI domain message.
    */
   private _emitPlugged(): void {
@@ -394,6 +538,48 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     pluggedBuf.writeUInt32LE(1, 4) // wifi available
     const pluggedHdr = new MessageHeader(pluggedBuf.length, MessageType.Plugged)
     this.emit('message', new Plugged(pluggedHdr, pluggedBuf) as Message)
+  }
+
+  // ── Vehicle-data push API ──────────────────────────────────────────────────
+  // No-op when no active session. Caller does unit conversion + rate-limiting.
+
+  sendFuelData(level: number, range?: number, lowFuelWarning?: boolean): void {
+    this._aa?.sendFuelData(level, range, lowFuelWarning)
+  }
+  sendSpeedData(speedMmS: number, cruiseEngaged?: boolean, cruiseSetSpeedMmS?: number): void {
+    this._aa?.sendSpeedData(speedMmS, cruiseEngaged, cruiseSetSpeedMmS)
+  }
+  sendRpmData(rpmE3: number): void {
+    this._aa?.sendRpmData(rpmE3)
+  }
+  sendGearData(gear: number): void {
+    this._aa?.sendGearData(gear)
+  }
+  sendNightModeData(nightMode: boolean): void {
+    this._aa?.sendNightModeData(nightMode)
+  }
+  sendParkingBrakeData(engaged: boolean): void {
+    this._aa?.sendParkingBrakeData(engaged)
+  }
+  sendLightData(headLight?: 1 | 2 | 3, hazardLights?: boolean, turnIndicator?: 1 | 2 | 3): void {
+    this._aa?.sendLightData(headLight, hazardLights, turnIndicator)
+  }
+  sendEnvironmentData(temperatureE3?: number, pressureE3?: number, rain?: number): void {
+    this._aa?.sendEnvironmentData(temperatureE3, pressureE3, rain)
+  }
+  sendOdometerData(totalKmE1: number, tripKmE1?: number): void {
+    this._aa?.sendOdometerData(totalKmE1, tripKmE1)
+  }
+  sendDrivingStatusData(status: number): void {
+    this._aa?.sendDrivingStatusData(status)
+  }
+  sendVehicleEnergyModel(
+    capacityWh: number,
+    currentWh: number,
+    rangeM: number,
+    opts?: { maxChargePowerW?: number; maxDischargePowerW?: number; auxiliaryWhPerKm?: number }
+  ): void {
+    this._aa?.sendVehicleEnergyModel(capacityWh, currentWh, rangeM, opts)
   }
 
   async close(): Promise<void> {

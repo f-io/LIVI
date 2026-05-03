@@ -14,6 +14,35 @@ export enum PhoneWorkMode {
   Android = 4
 }
 
+export enum CarType {
+  Unknown = 0,
+  Gasoline = 1,
+  DieselWinter = 3, // US DIESEL_1 — low-temp / kerosene-blend diesel
+  Diesel = 4, // US DIESEL_2 — regular pump diesel
+  Biodiesel = 5,
+  E85 = 6,
+  LPG = 7,
+  CNG = 8,
+  LNG = 9,
+  Electric = 10,
+  HybridGasoline = 101,
+  HybridDiesel = 102,
+  Hydrogen = 11,
+  Other = 12
+}
+
+export enum EvConnectorType {
+  Unknown = 0,
+  J1772 = 1,
+  Mennekes = 2,
+  Chademo = 3,
+  Combo1 = 4,
+  Combo2 = 5,
+  TeslaSupercharger = 8,
+  Gbt = 9,
+  Other = 101
+}
+
 export type PhoneTypeConfig = { frameInterval: number | null }
 
 export type DongleConfig = {
@@ -44,6 +73,8 @@ export type DongleConfig = {
   carName: string
   oemName: string
   hand: HandDriveType
+  carType?: CarType
+  evConnectorTypes?: EvConnectorType[]
   mediaDelay: number
   mediaSound: 0 | 1
   callQuality: 0 | 1 | 2

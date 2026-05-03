@@ -454,13 +454,6 @@ export class SendBoxSettings extends SendableMessageWithPayload {
       GNSSCapability: gnssCapability,
       autoConn: cfg.autoConn ? 1 : 0,
       UseBTPhone: cfg.UseBTPhone ? 1 : 0,
-      // Append " (D)" only on the airwave-visible identifiers (Wi-Fi SSID
-      // and Bluetooth name) — those are the strings the phone disambiguates
-      // by in its "previously connected cars" list when both the dongle
-      // and the native AA stack run on the same head unit.
-      // boxName / OemName stay raw: the box name is internal to the dongle,
-      // and OemName is only the subtitle on the CarPlay back-to-home icon —
-      // neither has a conflict surface against the AA stack.
       wifiName: dongleDisplayName(cfg.carName),
       btName: dongleDisplayName(cfg.carName),
       boxName: cfg.oemName ?? cfg.carName,

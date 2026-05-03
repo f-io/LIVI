@@ -41,6 +41,13 @@ export function fieldLenDelim(fieldNumber: number, data: Buffer): Buffer {
   return Buffer.concat([tag(fieldNumber, 2), encodeVarint(data.length), data])
 }
 
+/** Emit `<tag, 4-byte LE float>` for a fixed32 (float) field. */
+export function fieldFloat(fieldNumber: number, value: number): Buffer {
+  const buf = Buffer.alloc(4)
+  buf.writeFloatLE(value, 0)
+  return Buffer.concat([tag(fieldNumber, 5), buf])
+}
+
 /**
  * Decode a varint at `off`, returning `[value, bytesRead]`. Reads up to 10
  * bytes. Use BigInt return when callers need the full uint64 range; here we

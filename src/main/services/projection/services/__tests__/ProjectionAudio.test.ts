@@ -101,7 +101,6 @@ describe('ProjectionAudio state controls', () => {
     a.musicRampActive = true
     a.nextMusicRampStartAt = 123
     a.lastMusicDataAt = 123
-    a.navMixQueue = [new Int16Array([1])]
     a.lastMusicPlayerKey = '1'
     a.lastNavPlayerKey = '2'
     a.uiCallIncoming = true
@@ -116,7 +115,6 @@ describe('ProjectionAudio state controls', () => {
     expect(a.musicRampActive).toBe(false)
     expect(a.nextMusicRampStartAt).toBe(0)
     expect(a.lastMusicDataAt).toBe(0)
-    expect(a.navMixQueue).toEqual([])
     expect(a.lastMusicPlayerKey).toBeNull()
     expect(a.lastNavPlayerKey).toBeNull()
     expect(a.uiCallIncoming).toBe(false)
@@ -135,7 +133,6 @@ describe('ProjectionAudio state controls', () => {
     a.musicRampActive = true
     a.nextMusicRampStartAt = 123
     a.lastMusicDataAt = 123
-    a.navMixQueue = [new Int16Array([1])]
     a.lastMusicPlayerKey = '1'
     a.lastNavPlayerKey = '2'
     a.uiCallIncoming = true
@@ -150,7 +147,6 @@ describe('ProjectionAudio state controls', () => {
     expect(a.musicRampActive).toBe(false)
     expect(a.nextMusicRampStartAt).toBe(0)
     expect(a.lastMusicDataAt).toBe(0)
-    expect(a.navMixQueue).toEqual([])
     expect(a.lastMusicPlayerKey).toBeNull()
     expect(a.lastNavPlayerKey).toBeNull()
     expect(a.uiCallIncoming).toBe(false)
@@ -189,36 +185,6 @@ describe('ProjectionAudio state controls', () => {
     expect(Array.from(a.applyGain(pcm, 2))).toEqual([32767, -32768, 2000])
   })
 
-  test('processMusicChunk applies plain music gain when nav mixing is disabled', () => {
-    const a = createSubject()
-    const pcm = new Int16Array([1000, -1000])
-
-    expect(Array.from(a.processMusicChunk(pcm, 0.5, 0, false))).toEqual([500, -500])
-  })
-
-  test('processMusicChunk mixes queued nav audio and advances queue state', () => {
-    const a = createSubject()
-    a.navMixQueue = [new Int16Array([100, 200]), new Int16Array([300])]
-    a.navMixOffset = 0
-
-    const out = a.processMusicChunk(new Int16Array([1000, 1000, 1000]), 1, 1, true)
-
-    expect(Array.from(out)).toEqual([1100, 1200, 1300])
-    expect(a.navMixQueue).toEqual([])
-    expect(a.navMixOffset).toBe(0)
-  })
-
-  test('clearNavMix empties queue and resets offset', () => {
-    const a = createSubject()
-    a.navMixQueue = [new Int16Array([1, 2])]
-    a.navMixOffset = 1
-
-    a.clearNavMix()
-
-    expect(a.navMixQueue).toEqual([])
-    expect(a.navMixOffset).toBe(0)
-  })
-
   test('getMediaDelay returns configured non-negative delay', () => {
     const a = createSubject({ mediaDelay: 250 })
     expect(a.getMediaDelay()).toBe(250)
@@ -248,22 +214,25 @@ describe('ProjectionAudio state controls', () => {
   test('getAudioOutputForStream returns null for unknown decode type', () => {
     const a = createSubject()
 
-    const out = a.getAudioOutputForStream({ decodeType: 999 })
+    const out = a.getAudioOutputForStream('music', 1, { decodeType: 999 })
 
     expect(out).toBeNull()
   })
 
-  test('getAudioOutputForStream creates and reuses players by sampleRate and channels', () => {
+  test('getAudioOutputForStream creates and reuses players by (logicalKey, audioType, rate, channels)', () => {
     const a = createSubject()
 
-    const first = a.getAudioOutputForStream({ decodeType: 1 })
-    const second = a.getAudioOutputForStream({ decodeType: 1 })
-    const third = a.getAudioOutputForStream({ decodeType: 2 })
+    const musicA = a.getAudioOutputForStream('music', 1, { decodeType: 1 })
+    const musicB = a.getAudioOutputForStream('music', 1, { decodeType: 1 })
+    const musicC = a.getAudioOutputForStream('music', 1, { decodeType: 2 })
+    // Same wire format but different audioType → separate sink-input.
+    const navSameFormat = a.getAudioOutputForStream('nav', 2, { decodeType: 1 })
 
-    expect(first).toBeTruthy()
-    expect(second).toBe(first)
-    expect(third).not.toBe(first)
-    expect(a.audioPlayers.size).toBe(2)
+    expect(musicA).toBeTruthy()
+    expect(musicB).toBe(musicA)
+    expect(musicC).not.toBe(musicA)
+    expect(navSameFormat).not.toBe(musicA)
+    expect(a.audioPlayers.size).toBe(3)
   })
 
   test('handleAudioData ignores music pcm when media is inactive', () => {
@@ -297,7 +266,9 @@ describe('ProjectionAudio state controls', () => {
     expect(player.write).toHaveBeenCalled()
   })
 
-  test('handleAudioData enqueues nav mix and returns when media is active', () => {
+  test('handleAudioData writes nav PCM to its own player even when media is active', () => {
+    // The OS sink mixes the nav stream with the music stream natively, so we
+    // just write to the nav player directly and let the OS handle the mix.
     const a = createSubject()
     const player = { write: jest.fn() }
     a.getAudioOutputForStream = jest.fn(() => player)
@@ -305,15 +276,12 @@ describe('ProjectionAudio state controls', () => {
     a.mediaActive = true
     a.navActive = true
 
-    const chunk = new Int16Array([1, 2, 3])
     a.handleAudioData({
-      data: chunk,
+      data: new Int16Array([1, 2, 3]),
       decodeType: 1
     })
 
-    expect(a.navMixQueue).toHaveLength(1)
-    expect(Array.from(a.navMixQueue[0])).toEqual([1, 2, 3])
-    expect(player.write).not.toHaveBeenCalled()
+    expect(player.write).toHaveBeenCalled()
   })
 
   test('handleAudioData sends audioInfo only once when metadata is present', () => {
@@ -402,13 +370,11 @@ describe('ProjectionAudio state controls', () => {
     a.mediaActive = true
     a.siriActive = false
     a.phonecallActive = false
-    a.clearNavMix = jest.fn()
 
     a.handleAudioData({ command: 6 })
 
     expect(a.navActive).toBe(true)
     expect(a.navHoldUntil).toBe(0)
-    expect(a.clearNavMix).toHaveBeenCalled()
     expect(a.musicRampActive).toBe(true)
     expect(a.musicFade.target).toBe(a.navDuckingTarget)
   })
@@ -418,14 +384,12 @@ describe('ProjectionAudio state controls', () => {
     a.mediaActive = false
     a.navActive = true
     a.lastNavPlayerKey = 'nav-key'
-    a.clearNavMix = jest.fn()
     a.stopPlayerByKey = jest.fn()
 
     const before = Date.now()
     a.handleAudioData({ command: 8 })
 
     expect(a.navActive).toBe(false)
-    expect(a.clearNavMix).toHaveBeenCalled()
     expect(a.stopPlayerByKey).toHaveBeenCalledWith('nav-key')
     expect(a.lastNavPlayerKey).toBeNull()
     expect(a.navHoldUntil).toBeGreaterThanOrEqual(before)
@@ -561,7 +525,6 @@ describe('ProjectionAudio state controls', () => {
     a.uiNavHintActive = true
     a.navActive = true
     a.lastNavPlayerKey = null
-    a.clearNavMix = jest.fn()
     a.stopPlayerByKey = jest.fn()
 
     a.handleAudioData({ command: 8 }) // AudioNaviStop
@@ -598,9 +561,8 @@ describe('ProjectionAudio state controls', () => {
   test('handleAudioData AudioNaviStop with mediaActive=true does not stop nav player', () => {
     const a = createSubject()
     a.navActive = true
-    a.mediaActive = true // mixing with music — do not kill player
+    a.mediaActive = true // music still playing — let the OS sink drain nav tail naturally
     a.lastNavPlayerKey = 'nav-key'
-    a.clearNavMix = jest.fn()
     a.stopPlayerByKey = jest.fn()
 
     a.handleAudioData({ command: 8 }) // AudioNaviStop
