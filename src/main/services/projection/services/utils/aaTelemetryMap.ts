@@ -57,7 +57,50 @@ export function pushTelemetryToAa(aa: AaDriver, payload: TelemetryPayload): void
 
   if (typeof payload.nightMode === 'boolean') aa.sendNightModeData(payload.nightMode)
 
-  if (typeof payload.lights === 'boolean') aa.sendLightData(payload.lights ? 2 : 1)
+  // Lights / hazards / indicators — all share LightData.
+  // head_light_state: 1=OFF, 2=ON, 3=HIGH. highBeam wins over plain `lights`.
+  if (
+    typeof payload.lights === 'boolean' ||
+    typeof payload.highBeam === 'boolean' ||
+    typeof payload.hazards === 'boolean' ||
+    payload.turn !== undefined
+  ) {
+    let head: 1 | 2 | 3 | undefined
+    if (payload.highBeam === true) head = 3
+    else if (payload.lights === true) head = 2
+    else if (payload.lights === false) head = 1
+    const turn =
+      payload.turn === 'left'
+        ? 2
+        : payload.turn === 'right'
+          ? 3
+          : payload.turn === 'none'
+            ? 1
+            : undefined
+    aa.sendLightData(head, payload.hazards, turn)
+  }
+
+  if (typeof payload.parkingBrake === 'boolean') aa.sendParkingBrakeData(payload.parkingBrake)
+
+  // EV VehicleEnergyModel — only when battery info is provided.
+  // Maps' EV range bar + low-range warning depends on this.
+  if (
+    typeof payload.batteryCapacityKwh === 'number' &&
+    typeof payload.rangeKm === 'number' &&
+    payload.rangeKm > 0
+  ) {
+    const capacityWh = Math.round(payload.batteryCapacityKwh * 1000)
+    const currentWh =
+      typeof payload.batteryLevelKwh === 'number'
+        ? Math.round(payload.batteryLevelKwh * 1000)
+        : typeof payload.fuelPct === 'number'
+          ? Math.round((payload.fuelPct / 100) * capacityWh)
+          : 0
+    if (capacityWh > 0 && currentWh > 0) {
+      const rangeM = Math.round(payload.rangeKm * 1000)
+      aa.sendVehicleEnergyModel(capacityWh, currentWh, rangeM)
+    }
+  }
 
   if (typeof payload.ambientC === 'number' || typeof payload.baroKpa === 'number') {
     const tempE3 =

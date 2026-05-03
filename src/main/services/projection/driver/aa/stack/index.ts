@@ -133,8 +133,8 @@ export class AAStack extends EventEmitter {
     this._activeSession?.sendParkingBrakeData(engaged)
   }
 
-  sendLightData(headLight?: 1 | 2 | 3, hazardLights?: boolean): void {
-    this._activeSession?.sendLightData(headLight, hazardLights)
+  sendLightData(headLight?: 1 | 2 | 3, hazardLights?: boolean, turnIndicator?: 1 | 2 | 3): void {
+    this._activeSession?.sendLightData(headLight, hazardLights, turnIndicator)
   }
 
   sendEnvironmentData(temperatureE3?: number, pressureE3?: number, rain?: number): void {
@@ -147,6 +147,15 @@ export class AAStack extends EventEmitter {
 
   sendDrivingStatusData(status: number): void {
     this._activeSession?.sendDrivingStatusData(status)
+  }
+
+  sendVehicleEnergyModel(
+    capacityWh: number,
+    currentWh: number,
+    rangeM: number,
+    opts?: { maxChargePowerW?: number; maxDischargePowerW?: number; auxiliaryWhPerKm?: number }
+  ): void {
+    this._activeSession?.sendVehicleEnergyModel(capacityWh, currentWh, rangeM, opts)
   }
 
   sendMicPcm(buf: Buffer, ts?: bigint): void {

@@ -28,6 +28,7 @@ import {
   SendTouch
 } from '@projection/messages/sendable'
 import type { DongleConfig } from '@shared/types'
+import { CarType } from '@shared/types/DongleConfig'
 import {
   AudioCommand,
   CommandMapping,
@@ -176,6 +177,21 @@ function mapTouchAction(action: TouchAction): number {
   return TOUCH_ACTION.MOVED
 }
 
+/** Map LIVI's CarType to aap_protobuf FuelType[] for the AA SDR. */
+function mapCarTypeToFuelTypes(carType: CarType | undefined): number[] {
+  switch (carType) {
+    case CarType.HybridGasoline:
+      return [CarType.Gasoline, CarType.Electric]
+    case CarType.HybridDiesel:
+      return [CarType.Diesel, CarType.Electric]
+    case undefined:
+    case CarType.Unknown:
+      return [CarType.Gasoline]
+    default:
+      return [carType]
+  }
+}
+
 export interface AaDriverOptions {
   supervisor?: AaBluetoothSupervisor | null
 }
@@ -261,7 +277,9 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       driverPosition: cfg.hand === 1 ? 1 : 0,
       wifiSsid: name,
       wifiPassword: cfg.wifiPassword || '12345678',
-      wifiChannel: cfg.wifiChannel
+      wifiChannel: cfg.wifiChannel,
+      fuelTypes: mapCarTypeToFuelTypes(cfg.carType),
+      evConnectorTypes: cfg.evConnectorTypes
     }
     const displayAR = cfg.width / cfg.height
     const tierAR = tierW / tierH
@@ -417,8 +435,8 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
   sendParkingBrakeData(engaged: boolean): void {
     this._aa?.sendParkingBrakeData(engaged)
   }
-  sendLightData(headLight?: 1 | 2 | 3, hazardLights?: boolean): void {
-    this._aa?.sendLightData(headLight, hazardLights)
+  sendLightData(headLight?: 1 | 2 | 3, hazardLights?: boolean, turnIndicator?: 1 | 2 | 3): void {
+    this._aa?.sendLightData(headLight, hazardLights, turnIndicator)
   }
   sendEnvironmentData(temperatureE3?: number, pressureE3?: number, rain?: number): void {
     this._aa?.sendEnvironmentData(temperatureE3, pressureE3, rain)
@@ -428,6 +446,14 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
   }
   sendDrivingStatusData(status: number): void {
     this._aa?.sendDrivingStatusData(status)
+  }
+  sendVehicleEnergyModel(
+    capacityWh: number,
+    currentWh: number,
+    rangeM: number,
+    opts?: { maxChargePowerW?: number; maxDischargePowerW?: number; auxiliaryWhPerKm?: number }
+  ): void {
+    this._aa?.sendVehicleEnergyModel(capacityWh, currentWh, rangeM, opts)
   }
 
   async close(): Promise<void> {
