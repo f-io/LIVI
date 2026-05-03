@@ -4,40 +4,6 @@ import type { ExtraConfig } from '@shared/types'
 import { AudioCommand } from '@shared/types/ProjectionEnums'
 import { AudioData, decodeTypeMap } from '../messages'
 
-/**
- * Resample / channel-fan a PCM buffer to match the music stream's format so
- * processMusicChunk's 1:1 sample mixer doesn't pitch-shift it. Nearest-neighbour
- * up-sample is good enough for speech intelligibility.
- */
-function alignToMusicFormat(
-  src: Int16Array,
-  srcRate: number,
-  srcChannels: number,
-  dstRate: number,
-  dstChannels: number
-): Int16Array {
-  const srcFrames = Math.floor(src.length / srcChannels)
-  if (srcFrames === 0) return new Int16Array(0)
-  const ratio = dstRate / srcRate
-  const dstFrames = Math.round(srcFrames * ratio)
-  const out = new Int16Array(dstFrames * dstChannels)
-  for (let f = 0; f < dstFrames; f++) {
-    const sIdx = Math.min(srcFrames - 1, Math.floor(f / ratio))
-    if (srcChannels === 1) {
-      const sample = src[sIdx]!
-      // mono → broadcast across all dst channels
-      for (let c = 0; c < dstChannels; c++) out[f * dstChannels + c] = sample
-    } else {
-      // copy first min(srcChannels, dstChannels) channels; pad excess with last
-      for (let c = 0; c < dstChannels; c++) {
-        const srcC = Math.min(c, srcChannels - 1)
-        out[f * dstChannels + c] = src[sIdx * srcChannels + srcC]!
-      }
-    }
-  }
-  return out
-}
-
 export type PlayerKey = string
 export type LogicalStreamKey = 'music' | 'nav' | 'siri' | 'call'
 
@@ -61,7 +27,9 @@ type SendChunked = (
 type SendMicPcm = (pcm: Int16Array, decodeType: number) => void
 
 export class ProjectionAudio {
-  // One AudioOutput per (sampleRate, channels)
+  // One AudioOutput per (sampleRate, channels). The OS audio sink (PulseAudio
+  // on Linux, CoreAudio on macOS, WASAPI on Windows) mixes all open streams
+  // automatically
   private audioPlayers = new Map<PlayerKey, AudioOutput>()
   private lastStreamLogKey: PlayerKey | null = null
   private lastCallPlaybackLog: { decodeType?: number; audioType?: number } | null = null
@@ -104,8 +72,8 @@ export class ProjectionAudio {
   // Debounce time after nav stop before ramping music back to 1.0
   private readonly navResumeDelayMs = 1500
 
-  // If we see a long gap between music chunks, we hard-reset the music AudioOutput
-  // to avoid PipeWire/pw-play buffer state causing stutter on resume.
+  // If we see a long gap between music chunks, we hard-reset the music
+  // AudioOutput to flush stale buffer state.
   private readonly musicGapResetMs = process.platform === 'darwin' ? 1000 : 500
   private lastMusicDataAt = 0
 
@@ -116,10 +84,11 @@ export class ProjectionAudio {
   private nextMusicRampStartAt = 0
   private musicRampActive = false
 
-  // Tracks whether we have been outputting muted (zero) music frames and should ramp
+  // Tracks whether we have been outputting muted (zero) music frames
   private musicGateMuted = false
 
-  // After AudioMediaStart, keep outputting muted frames for a bit so pw-play can resync
+  // After AudioMediaStart, keep outputting muted frames for a bit so the sink
+  // can resync.
   private readonly musicResumeWarmupMs = 1000
   private musicWarmupUntil = 0
 
@@ -128,10 +97,6 @@ export class ProjectionAudio {
     target: 1,
     remainingSamples: 0
   }
-
-  // Queue for nav PCM that should be mixed into music
-  private navMixQueue: Int16Array[] = []
-  private navMixOffset = 0
 
   private audioInfoSent = false
   private _mic: Microphone | null = null
@@ -170,7 +135,6 @@ export class ProjectionAudio {
   public resetForSessionStart() {
     this.stopAllAudioPlayers()
     this._mic?.stop()
-    this.clearNavMix()
 
     this.siriActive = false
     this.phonecallActive = false
@@ -195,7 +159,6 @@ export class ProjectionAudio {
     this.audioInfoSent = false
     this.currentMicDecodeType = null
 
-    // UI hint state reset
     this.uiCallIncoming = false
     this.uiSiriHintActive = false
     this.uiNavHintActive = false
@@ -205,7 +168,6 @@ export class ProjectionAudio {
   public resetForSessionStop() {
     this.stopAllAudioPlayers()
     this._mic?.stop()
-    this.clearNavMix()
 
     this.siriActive = false
     this.phonecallActive = false
@@ -230,13 +192,11 @@ export class ProjectionAudio {
     this.audioInfoSent = false
     this.currentMicDecodeType = null
 
-    // UI hint state reset
     this.uiCallIncoming = false
     this.uiSiriHintActive = false
     this.uiNavHintActive = false
   }
 
-  // Called from ProjectionService.start() after config is loaded.
   public setInitialVolumes(volumes: Partial<VolumeState>) {
     const next: VolumeState = {
       music: typeof volumes.music === 'number' ? volumes.music : this.volumes.music,
@@ -278,21 +238,24 @@ export class ProjectionAudio {
         return
       }
 
-      // Player selection
-      // music/nav use their normal stream player
-      // siri/call always use their own stream player (PipeWire mixes)
-      let player = this.getAudioOutputForStream(msg)
+      // Player selection — one AudioOutput per (logicalKey, rate, channels).
+      // The OS sink (PulseAudio / CoreAudio / WASAPI) mixes parallel sink-
+      // inputs natively. Including logicalKey in the player key matters when
+      // music and nav share the same wire format (e.g. CarPlay sends nav as
+      // 48 k stereo, identical to music) — without it both streams land on
+      // the same sink-input and interleave instead of mixing.
+      let player = this.getAudioOutputForStream(logicalKey, msg)
       if (!player) return
 
       const volume = this.volumes[logicalKey] ?? 1.0
 
       // Track last player per logical stream for later teardown
       if (meta) {
-        const keyForStream: PlayerKey = `${meta.frequency}:${meta.channel}`
+        const keyForStream: PlayerKey = `${logicalKey}:${meta.frequency}:${meta.channel}`
         if (logicalKey === 'music') {
           this.lastMusicPlayerKey = keyForStream
         } else if (logicalKey === 'nav') {
-          if (!this.mediaActive) this.lastNavPlayerKey = keyForStream
+          this.lastNavPlayerKey = keyForStream
         } else if (logicalKey === 'siri') {
           this.lastSiriPlayerKey = keyForStream
         } else if (logicalKey === 'call') {
@@ -308,36 +271,14 @@ export class ProjectionAudio {
         const channels = meta?.channel ?? 2
         const totalSamples = msg.data.length
 
-        // If music chunks resume after a longer gap,
-        // hard-reset the music AudioOutput to flush any buffered state and resync
-        if (this.lastMusicDataAt > 0 && now - this.lastMusicDataAt > this.musicGapResetMs) {
-          if (this.lastMusicPlayerKey) {
-            this.stopPlayerByKey(this.lastMusicPlayerKey)
-            this.lastMusicPlayerKey = null
-          }
-
-          // Log on the next AudioOutput selection
-          this.lastStreamLogKey = null
-
-          // Reset ramp state
-          this.musicRampActive = false
-          this.musicFade.current = 0
-          this.musicFade.target = 1
-          this.musicFade.remainingSamples = 0
-          this.musicGateMuted = true
-
-          // If we are already receiving chunks again after a gap, do a short warmup
-          this.musicWarmupUntil = Math.max(this.musicWarmupUntil, now + this.musicResumeWarmupMs)
-
-          // Re-acquire player after stopping it
-          player = this.getAudioOutputForStream(msg)
-          if (!player) return
-        }
-
+        // No gap-reset here: while a nav prompt is mixing in, the phone
+        // throttles music chunks (system-side ducking on iOS), which would
+        // false-trigger the reset and kill the music player mid-stream — the
+        // exact "choppy" symptom we hit. The OS sink keeps the stream open
+        // across small gaps; the next chunk just resumes.
         this.lastMusicDataAt = now
 
         const gateUntil = Math.max(this.nextMusicRampStartAt, this.musicWarmupUntil)
-
         const isGatedMute = gateUntil > 0 && now < gateUntil
 
         if (isGatedMute) {
@@ -346,22 +287,18 @@ export class ProjectionAudio {
         } else {
           const fade = this.musicFade
 
-          // If we were previously outputting zeros, start the ramp exactly on the first audio chunk
+          // First chunk after gate-mute → start the ramp from 0.
           if (this.musicGateMuted) {
             this.musicGateMuted = false
-
             fade.current = 0
             fade.target = this.navActive ? this.navDuckingTarget : 1
             fade.remainingSamples = 0
-
             const rampMs = this.getRampMsForTransition(fade.current, fade.target)
             fade.remainingSamples = Math.max(1, Math.round((rampMs / 1000) * sampleRate * channels))
             this.musicRampActive = true
           }
 
-          // Debounce semantics:
-          // - navActive controls whether we are allowed to duck (ramp down)
-          // - navHoldUntil delays restoring (ramp up) after nav stop
+          // Ducking: navActive lowers, navHoldUntil debounces restore.
           const canDuckNow = this.navActive
           const canRestoreNow =
             !this.navActive && (this.navHoldUntil === 0 || now >= this.navHoldUntil)
@@ -372,7 +309,6 @@ export class ProjectionAudio {
           } else if (canRestoreNow) {
             desiredTarget = 1
           } else {
-            // In hold window: keep whatever target we already had
             desiredTarget = fade.target
           }
 
@@ -394,45 +330,23 @@ export class ProjectionAudio {
             fade.remainingSamples = Math.max(1, Math.round((rampMs / 1000) * sampleRate * channels))
           }
 
-          const navVolume = this.volumes.nav ?? 0.5
-          const navGain = this.navActive ? this.gainFromVolume(navVolume) : 0
-          const mixNav = this.navActive && this.navMixQueue.length > 0 && navGain > 0
-
           if (!this.musicRampActive) {
-            const musicGain = baseGain * fade.current
-            pcm = this.processMusicChunk(msg.data, musicGain, navGain, mixNav)
+            // Steady state — single multiplication per sample.
+            pcm = this.applyGain(msg.data, baseGain * fade.current)
           } else {
+            // Ramp in progress — interpolate gain across the chunk.
             pcm = new Int16Array(totalSamples)
-
             let current = fade.current
             let remaining = fade.remainingSamples
             const target = fade.target
             const needsRamp = remaining > 0 && Math.abs(current - target) > 1e-3
             const step = needsRamp ? (target - current) / remaining : 0
 
-            let navChunk = this.navMixQueue[0]
-            let navOffset = this.navMixOffset
-
             for (let i = 0; i < totalSamples; i += 1) {
-              const musicSample = msg.data[i] * (baseGain * current)
-              let navSample = 0
-
-              if (mixNav && navChunk) {
-                navSample = navChunk[navOffset] * navGain
-                navOffset += 1
-
-                if (navOffset >= navChunk.length) {
-                  this.navMixQueue.shift()
-                  navChunk = this.navMixQueue[0] || null
-                  navOffset = 0
-                }
-              }
-
-              let mixed = musicSample + navSample
-              if (mixed > 32767) mixed = 32767
-              else if (mixed < -32768) mixed = -32768
-
-              pcm[i] = mixed
+              let v = msg.data[i] * (baseGain * current)
+              if (v > 32767) v = 32767
+              else if (v < -32768) v = -32768
+              pcm[i] = v
 
               if (needsRamp && remaining > 0) {
                 current += step
@@ -444,7 +358,6 @@ export class ProjectionAudio {
 
             fade.current = current
             fade.remainingSamples = remaining
-            this.navMixOffset = navChunk ? navOffset : 0
 
             if (fade.remainingSamples === 0 || Math.abs(fade.current - fade.target) < 1e-3) {
               fade.current = fade.target
@@ -452,38 +365,9 @@ export class ProjectionAudio {
             }
           }
         }
-      } else if (logicalKey === 'nav') {
-        // Inline nav while music is active — queue for mixing into music chunks.
-        // The original navActive-gate dropped frames when the phone hadn't sent
-        // an explicit AudioNaviStart (AA case). audioType-driven routing already
-        // filters the right frames into here, so the gate is not needed.
-        //
-        // Nav PCM may arrive at a different rate / channel count than music
-        // (typically 16 kHz mono vs 48 kHz stereo). Match it to the music
-        // format BEFORE queueing so processMusicChunk's 1:1 mixer doesn't
-        // chipmunk the speech.
-        if (this.mediaActive) {
-          const navMeta = meta
-          const musicSampleRate = 48000
-          const musicChannels = 2
-          const aligned =
-            navMeta && (navMeta.frequency !== musicSampleRate || navMeta.channel !== musicChannels)
-              ? alignToMusicFormat(
-                  msg.data,
-                  navMeta.frequency,
-                  navMeta.channel,
-                  musicSampleRate,
-                  musicChannels
-                )
-              : msg.data.slice()
-          this.navMixQueue.push(aligned)
-          return
-        }
-
-        // Nav-only playback (no music): own nav player
-        pcm = this.applyGain(msg.data, baseGain)
       } else {
-        // siri / call: no ramp, just volume mapping
+        // nav / siri / call: single multiplication. The OS sink mixes this
+        // stream with whatever music player is also writing.
         pcm = this.applyGain(msg.data, baseGain)
       }
 
@@ -507,7 +391,6 @@ export class ProjectionAudio {
         }
       }
 
-      // Playback
       player.write(pcm)
 
       // Mono only for FFT visualization (optional)
@@ -559,8 +442,6 @@ export class ProjectionAudio {
         })
       }
 
-      // UI attention hints (renderer decides what to do)
-
       // Incoming call: pre-accept / ringing
       if (cmd === AudioCommand.AudioAttentionStart || cmd === AudioCommand.AudioAttentionRinging) {
         if (!this.uiCallIncoming) {
@@ -569,7 +450,6 @@ export class ProjectionAudio {
         }
       }
 
-      // Call ended / rejected / finished
       if (cmd === AudioCommand.AudioPhonecallStop) {
         if (this.uiCallIncoming) {
           this.uiCallIncoming = false
@@ -577,7 +457,6 @@ export class ProjectionAudio {
         }
       }
 
-      // Siri visual feedback
       if (cmd === AudioCommand.AudioSiriStart) {
         if (!this.uiSiriHintActive) {
           this.uiSiriHintActive = true
@@ -589,7 +468,6 @@ export class ProjectionAudio {
         this.siriActive = false
       }
 
-      // Navigation overlay hints
       if (cmd === AudioCommand.AudioNaviStart || cmd === AudioCommand.AudioTurnByTurnStart) {
         if (!this.uiNavHintActive) {
           this.uiNavHintActive = true
@@ -604,23 +482,12 @@ export class ProjectionAudio {
         }
       }
 
-      // Explicit Nav / turn-by-turn start
       if (cmd === AudioCommand.AudioNaviStart || cmd === AudioCommand.AudioTurnByTurnStart) {
         this.navActive = true
         this.navHoldUntil = 0
-        this.clearNavMix()
-
-        // Pre-warm the nav PipeWire stream so the first PCM frames don't get
-        // dropped while the AudioOutput is still opening. Speech is 16k mono in
-        // both AA and dongle paths; if the phone happens to use a different
-        // rate, getAudioOutputForStream will create the right one on demand.
-        const navKey: PlayerKey = '16000:1'
-        if (!this.audioPlayers.has(navKey)) {
-          this.createAndStartAudioPlayer(16000, 1)
-        }
 
         if (this.mediaActive && !this.siriActive && !this.phonecallActive) {
-          // We don't compute remainingSamples here; it will be computed on next music chunk
+          // Trigger ducking — actual ramp recomputation happens on next chunk.
           this.musicRampActive = true
           this.musicFade.target = this.navDuckingTarget
           this.musicFade.remainingSamples = 0
@@ -651,7 +518,6 @@ export class ProjectionAudio {
       if (cmd === AudioCommand.AudioMediaStart) {
         const baseDelay = this.getMediaDelay()
         const totalDelayMs = baseDelay
-
         const now = Date.now()
         const warmupUntil = now + totalDelayMs + this.musicResumeWarmupMs
 
@@ -688,9 +554,8 @@ export class ProjectionAudio {
       }
 
       if (cmd === AudioCommand.AudioMediaStop) {
-        // IMPORTANT: the phone often stops music while Siri/phone is active.
-        // If we keep mediaActive=true, we may ignore the subsequent AudioMediaStart,
-        // forcing the user to press stop/play manually.
+        // The phone often stops music while Siri/phone is active. Don't keep
+        // mediaActive=true — otherwise we ignore the next AudioMediaStart.
         this.mediaActive = false
 
         this.audioOpenArmed = false
@@ -713,16 +578,15 @@ export class ProjectionAudio {
 
       if (cmd === AudioCommand.AudioNaviStop || cmd === AudioCommand.AudioTurnByTurnStop) {
         this.navActive = false
-        this.clearNavMix()
-
-        // Debounce: delay restoring music to 1.0, but do NOT make nav "effectively active"
+        // Debounce restore
         this.navHoldUntil = Date.now() + this.navResumeDelayMs
 
+        // The OS sink will keep the nav stream's tail draining naturally.
+        // Tear the player down only if no music is playing (i.e. nothing else
+        // is using the sink).
         if (!this.mediaActive && this.lastNavPlayerKey) {
           this.stopPlayerByKey(this.lastNavPlayerKey)
           this.lastNavPlayerKey = null
-        } else {
-          // mixing with music -> do not kill shared player, let tail drain
         }
         return
       }
@@ -741,24 +605,19 @@ export class ProjectionAudio {
           })
         }
 
-        // Call/Siri player are stopped by their dedicated stop commands.
-        // Here we mainly clean up generic 48k output paths like music/ring/alert.
         if (!this.phonecallActive && !this.siriActive) {
           if (this.lastMusicPlayerKey) {
             this.stopPlayerByKey(this.lastMusicPlayerKey)
             this.lastMusicPlayerKey = null
           }
-
           if (this.lastNavPlayerKey) {
             this.stopPlayerByKey(this.lastNavPlayerKey)
             this.lastNavPlayerKey = null
           }
-
           if (this.lastSiriPlayerKey) {
             this.stopPlayerByKey(this.lastSiriPlayerKey)
             this.lastSiriPlayerKey = null
           }
-
           if (this.lastCallPlayerKey) {
             this.stopPlayerByKey(this.lastCallPlayerKey)
             this.lastCallPlayerKey = null
@@ -771,7 +630,6 @@ export class ProjectionAudio {
         if (msg.decodeType != null) {
           const nextMicDecodeType = msg.decodeType
           const decodeTypeChanged = this.currentMicDecodeType !== nextMicDecodeType
-
           this.currentMicDecodeType = nextMicDecodeType
 
           if (DEBUG) {
@@ -786,7 +644,6 @@ export class ProjectionAudio {
             this._mic.start(this.currentMicDecodeType)
           }
         }
-
         return
       }
 
@@ -804,7 +661,7 @@ export class ProjectionAudio {
           this.siriActive = false
         }
 
-        // While voice is active, keep music muted
+        // While voice is active, keep music muted via gate.
         this.musicRampActive = false
         this.nextMusicRampStartAt = 0
         this.musicWarmupUntil = 0
@@ -904,8 +761,12 @@ export class ProjectionAudio {
     this.audioPlayers.delete(key)
   }
 
-  private createAndStartAudioPlayer(sampleRate: number, channels: number): AudioOutput {
-    const key: PlayerKey = `${sampleRate}:${channels}`
+  private createAndStartAudioPlayer(
+    logicalKey: LogicalStreamKey,
+    sampleRate: number,
+    channels: number
+  ): AudioOutput {
+    const key: PlayerKey = `${logicalKey}:${sampleRate}:${channels}`
 
     const player = new AudioOutput({
       sampleRate,
@@ -917,7 +778,10 @@ export class ProjectionAudio {
     return player
   }
 
-  private getAudioOutputForStream(msg: AudioData): AudioOutput | null {
+  private getAudioOutputForStream(
+    logicalKey: LogicalStreamKey,
+    msg: AudioData
+  ): AudioOutput | null {
     const meta = msg.decodeType != null ? this.safeDecodeType(msg.decodeType) : null
     if (!meta) {
       if (DEBUG) {
@@ -931,11 +795,16 @@ export class ProjectionAudio {
 
     const sampleRate = meta.frequency
     const channels = meta.channel
-    const key: PlayerKey = `${sampleRate}:${channels}`
+    const key: PlayerKey = `${logicalKey}:${sampleRate}:${channels}`
 
     let player = this.audioPlayers.get(key)
     if (!player) {
-      player = this.createAndStartAudioPlayer(sampleRate, channels)
+      if (DEBUG) {
+        console.log(
+          `[ProjectionAudio] new player logicalKey=${logicalKey} rate=${sampleRate} channels=${channels} decodeType=${msg.decodeType}`
+        )
+      }
+      player = this.createAndStartAudioPlayer(logicalKey, sampleRate, channels)
     }
 
     if (this.lastStreamLogKey !== key) {
@@ -945,18 +814,9 @@ export class ProjectionAudio {
     return player
   }
 
-  private getLogicalStreamKey(msg: AudioData): LogicalStreamKey {
+  private getLogicalStreamKey(_msg: AudioData): LogicalStreamKey {
     if (this.phonecallActive) return 'call'
     if (this.siriActive) return 'siri'
-    // AA streams media/speech/system on parallel channels — route by the
-    // frame's audioType so each channel ends up on the right LIVI player
-    // regardless of when (or whether) the phone sent AudioNaviStart.
-    //   1 = SPEECH (nav, voice prompts)
-    //   2 = SYSTEM (notification chimes)
-    //   3 = MEDIA  (music)
-    if (msg.audioType === 1 || msg.audioType === 2) return 'nav'
-    if (msg.audioType === 3) return 'music'
-    // Dongle / unknown audioType — fall back to flag-driven routing.
     if (this.navActive) return 'nav'
     return 'music'
   }
@@ -986,51 +846,6 @@ export class ProjectionAudio {
       out[i] = v
     }
     return out
-  }
-
-  private processMusicChunk(
-    musicPcm: Int16Array,
-    musicGain: number,
-    navGain: number,
-    mixNav: boolean
-  ): Int16Array {
-    if (!mixNav) {
-      return this.applyGain(musicPcm, musicGain)
-    }
-
-    const out = new Int16Array(musicPcm.length)
-
-    let navChunk = this.navMixQueue[0]
-    let navOffset = this.navMixOffset
-
-    for (let i = 0; i < musicPcm.length; i += 1) {
-      let mixed = musicPcm[i] * musicGain
-
-      if (navChunk) {
-        mixed += navChunk[navOffset] * navGain
-        navOffset += 1
-
-        if (navOffset >= navChunk.length) {
-          this.navMixQueue.shift()
-          navChunk = this.navMixQueue[0] || null
-          navOffset = 0
-        }
-      }
-
-      if (mixed > 32767) mixed = 32767
-      else if (mixed < -32768) mixed = -32768
-
-      out[i] = mixed
-    }
-
-    this.navMixOffset = navChunk ? navOffset : 0
-
-    return out
-  }
-
-  private clearNavMix() {
-    this.navMixQueue = []
-    this.navMixOffset = 0
   }
 
   private getMediaDelay(): number {

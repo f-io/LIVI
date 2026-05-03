@@ -16,6 +16,13 @@ import {
   type MediaPlaybackStatus
 } from '../channels/MediaInfoChannel.js'
 import { MicChannel } from '../channels/MicChannel.js'
+import {
+  NavigationChannel,
+  type NavigationDistanceUpdate,
+  type NavigationStatusUpdate,
+  type NavigationTurnUpdate
+} from '../channels/NavigationChannel.js'
+import { fieldFloat, fieldLenDelim, fieldVarint } from '../channels/protoEnc.js'
 import { VideoChannel } from '../channels/VideoChannel.js'
 import {
   AUDIO_TYPE,
@@ -45,6 +52,11 @@ import { ControlChannel } from './ControlChannel.js'
  *  Set TRACE=1 to see them anyway. */
 const isFrameChannel = (ch: number): boolean =>
   ch === CH.VIDEO || ch === CH.MEDIA_AUDIO || ch === CH.SPEECH_AUDIO || ch === CH.SYSTEM_AUDIO
+
+/** Ping/pong on the control channel runs every 1500 ms in both directions.
+ *  Same idea as isFrameChannel — suppress under DEBUG, show under TRACE. */
+const isPingPong = (ch: number, msgId: number): boolean =>
+  ch === CH.CONTROL && (msgId === CTRL_MSG.PING_REQUEST || msgId === CTRL_MSG.PING_RESPONSE)
 
 // ── Session state machine ─────────────────────────────────────────────────────
 const enum State {
@@ -78,6 +90,9 @@ export interface SessionConfig {
   wifiSsid?: string
   wifiPassword?: string
   wifiChannel?: number
+  /** FuelType enum values from aap_protobuf (UNLEADED=1, DIESEL_2=4, ELECTRIC=10, …).*/
+  fuelTypes?: number[]
+  evConnectorTypes?: number[]
 }
 
 export class Session extends EventEmitter {
@@ -104,6 +119,7 @@ export class Session extends EventEmitter {
   private _input!: InputChannel
   private _media!: MediaInfoChannel
   private _mic!: MicChannel
+  private _nav!: NavigationChannel
   private _channelMap = new Map<number, number>() // channelId → service type
 
   constructor(
@@ -218,8 +234,9 @@ export class Session extends EventEmitter {
         continue
       }
 
-      // Encrypted: rawPayload is one full TLS-1.2 record.
-      if (DEBUG && (TRACE || !isFrameChannel(channelId))) {
+      // Encrypted: rawPayload is one full TLS-1.2 record. Pure wire-level
+      // detail — only useful for protocol bring-up, hidden behind TRACE.
+      if (TRACE) {
         console.log(
           `[Session] TLS inject ch=${channelId} flags=0x${flags.toString(16)} record=${payloadSize}B`
         )
@@ -274,7 +291,7 @@ export class Session extends EventEmitter {
     msgId: number,
     payload: Buffer
   ): void {
-    if (DEBUG && (TRACE || !isFrameChannel(channelId))) {
+    if (DEBUG && (TRACE || (!isFrameChannel(channelId) && !isPingPong(channelId, msgId)))) {
       const stateName =
         [
           'INIT',
@@ -349,6 +366,11 @@ export class Session extends EventEmitter {
 
     if (channelId === CH.MEDIA_INFO) {
       this._media?.handleMessage(msgId, payload)
+      return
+    }
+
+    if (channelId === CH.NAVIGATION) {
+      this._nav?.handleMessage(msgId, payload)
       return
     }
 
@@ -496,6 +518,15 @@ export class Session extends EventEmitter {
     this._media.on('metadata', (m: MediaPlaybackMetadata) => this.emit('media-metadata', m))
     this._media.on('status', (s: MediaPlaybackStatus) => this.emit('media-status', s))
 
+    // Navigation status (turn-by-turn from Maps) — forward to driver
+    this._nav = new NavigationChannel()
+    this._nav.on('nav-start', () => this.emit('nav-start'))
+    this._nav.on('nav-stop', () => this.emit('nav-stop'))
+    this._nav.on('nav-status', (s: NavigationStatusUpdate) => this.emit('nav-status', s))
+    this._nav.on('nav-turn', (t: NavigationTurnUpdate) => this.emit('nav-turn', t))
+    this._nav.on('nav-distance', (d: NavigationDistanceUpdate) => this.emit('nav-distance', d))
+    this._control.on('voice-session', (active: boolean) => this.emit('voice-session', active))
+
     this._control.on('service-discovery-request', (req: Record<string, unknown>) => {
       if (DEBUG) {
         console.log(`[Session] Phone: ${req['labelText'] ?? '?'} / ${req['deviceName'] ?? '?'}`)
@@ -566,6 +597,149 @@ export class Session extends EventEmitter {
   sendRotary(direction: -1 | 1): void {
     if (this._state !== State.RUNNING || !this._input) return
     this._input.sendRotary(direction)
+  }
+
+  // ── Sensor pushes (HU → Phone) ─────────────────────────────────────────────
+  // All writes go to CH.SENSOR / msgId 0x8003 (SENSOR_MESSAGE_BATCH).
+  // SensorBatch field number = SensorType id.
+
+  private _sendSensorBatch(sensorBatchField: number, innerData: Buffer): void {
+    if (this._state !== State.RUNNING) return
+    const sensorBatch = fieldLenDelim(sensorBatchField, innerData)
+    this._sendEncrypted(CH.SENSOR, FRAME_FLAGS.ENC_SIGNAL, 0x8003, sensorBatch)
+    if (DEBUG) console.log(`[Session] SensorBatch field=${sensorBatchField} ${innerData.length}B`)
+  }
+
+  /** level%, range[m], lowFuelWarning. */
+  sendFuelData(level: number, range?: number, lowFuelWarning?: boolean): void {
+    const parts: Buffer[] = [fieldVarint(1, level)]
+    if (range !== undefined) parts.push(fieldVarint(2, range))
+    if (lowFuelWarning !== undefined) parts.push(fieldVarint(3, lowFuelWarning ? 1 : 0))
+    this._sendSensorBatch(6, Buffer.concat(parts))
+  }
+
+  /** speed in mm/s (m/s × 1000). */
+  sendSpeedData(speedMmS: number, cruiseEngaged?: boolean, cruiseSetSpeedMmS?: number): void {
+    const parts: Buffer[] = [fieldVarint(1, speedMmS)]
+    if (cruiseEngaged !== undefined) parts.push(fieldVarint(2, cruiseEngaged ? 1 : 0))
+    if (cruiseSetSpeedMmS !== undefined) parts.push(fieldVarint(4, cruiseSetSpeedMmS))
+    this._sendSensorBatch(3, Buffer.concat(parts))
+  }
+
+  /** rpm × 1000. */
+  sendRpmData(rpmE3: number): void {
+    this._sendSensorBatch(4, fieldVarint(1, rpmE3))
+  }
+
+  /** Gear enum: NEUTRAL=0, 1..10 manual, DRIVE=100, PARK=101, REVERSE=102. */
+  sendGearData(gear: number): void {
+    this._sendSensorBatch(8, fieldVarint(1, gear))
+  }
+
+  sendNightModeData(nightMode: boolean): void {
+    this._sendSensorBatch(10, fieldVarint(1, nightMode ? 1 : 0))
+  }
+
+  sendParkingBrakeData(engaged: boolean): void {
+    this._sendSensorBatch(7, fieldVarint(1, engaged ? 1 : 0))
+  }
+
+  /** headLight: 1=OFF, 2=ON, 3=HIGH. turnIndicator: 1=NONE, 2=LEFT, 3=RIGHT. */
+  sendLightData(headLight?: 1 | 2 | 3, hazardLights?: boolean, turnIndicator?: 1 | 2 | 3): void {
+    const parts: Buffer[] = []
+    if (headLight !== undefined) parts.push(fieldVarint(1, headLight))
+    if (turnIndicator !== undefined) parts.push(fieldVarint(2, turnIndicator))
+    if (hazardLights !== undefined) parts.push(fieldVarint(3, hazardLights ? 1 : 0))
+    if (parts.length === 0) return
+    this._sendSensorBatch(17, Buffer.concat(parts))
+  }
+
+  /** temperature in m°C, pressure in Pa (kPa × 1000). */
+  sendEnvironmentData(temperatureE3?: number, pressureE3?: number, rain?: number): void {
+    const parts: Buffer[] = []
+    if (temperatureE3 !== undefined) parts.push(fieldVarint(1, temperatureE3))
+    if (pressureE3 !== undefined) parts.push(fieldVarint(2, pressureE3))
+    if (rain !== undefined) parts.push(fieldVarint(3, rain))
+    if (parts.length === 0) return
+    this._sendSensorBatch(11, Buffer.concat(parts))
+  }
+
+  /** km × 10. */
+  sendOdometerData(totalKmE1: number, tripKmE1?: number): void {
+    const parts: Buffer[] = [fieldVarint(1, totalKmE1)]
+    if (tripKmE1 !== undefined) parts.push(fieldVarint(2, tripKmE1))
+    this._sendSensorBatch(5, Buffer.concat(parts))
+  }
+
+  /** Restriction bitmask. UNRESTRICTED=0. */
+  sendDrivingStatusData(status: number): void {
+    this._sendSensorBatch(13, fieldVarint(1, status))
+  }
+
+  /**
+   * EV battery / energy model. Sent as SensorBatch.vehicle_energy_model_data
+   * (field 23) — Maps reads min_usable_capacity.watt_hours as the *current*
+   * battery level (not max), per AAOS Maps decompile.
+   *
+   * capacityWh: gross battery capacity (e.g. 50000 = 50 kWh)
+   * currentWh:  current battery level in Wh
+   * rangeM:     remaining range in metres
+   * opts.maxChargePowerW / maxDischargePowerW: defaults to 150 kW each
+   */
+  sendVehicleEnergyModel(
+    capacityWh: number,
+    currentWh: number,
+    rangeM: number,
+    opts: { maxChargePowerW?: number; maxDischargePowerW?: number; auxiliaryWhPerKm?: number } = {}
+  ): void {
+    if (capacityWh <= 0 || currentWh <= 0 || rangeM <= 0) return
+
+    // EnergyValue { watt_hours = 1 }
+    const energyValue = (wh: number): Buffer => fieldVarint(1, wh)
+
+    // BatteryConfig {
+    //   config_id=1, min_usable_capacity=3, max_capacity=4,
+    //   reserve_energy=8, max_charge_power_w=9, max_discharge_power_w=10,
+    //   regen_braking_capable=11
+    // }
+    const reserve = Math.round(capacityWh * 0.05)
+    const maxCharge = opts.maxChargePowerW ?? 150_000
+    const maxDischarge = opts.maxDischargePowerW ?? 150_000
+    const battery = Buffer.concat([
+      fieldVarint(1, 1), // config_id
+      fieldLenDelim(3, energyValue(currentWh)), // min_usable_capacity = current level
+      fieldLenDelim(4, energyValue(capacityWh)), // max_capacity = gross
+      fieldLenDelim(8, energyValue(reserve)), // reserve_energy
+      fieldVarint(9, maxCharge),
+      fieldVarint(10, maxDischarge),
+      fieldVarint(11, 1) // regen_braking_capable = true
+    ])
+
+    // EnergyRate { rate=1 (float) }
+    // EnergyConsumption { driving=1, auxiliary=2, aerodynamic=3 }
+    const whPerKm = (currentWh / rangeM) * 1000
+    const aux = opts.auxiliaryWhPerKm ?? 2.0
+    const consumption = Buffer.concat([
+      fieldLenDelim(1, fieldFloat(1, whPerKm)),
+      fieldLenDelim(2, fieldFloat(1, aux)),
+      fieldLenDelim(3, fieldFloat(1, 0.36))
+    ])
+
+    // ChargingPrefs { mode=3 } — mode 1 = standard
+    const chargingPrefs = fieldVarint(3, 1)
+
+    // VehicleEnergyModel { battery=1, consumption=2, charging_prefs=12 }
+    const vem = Buffer.concat([
+      fieldLenDelim(1, battery),
+      fieldLenDelim(2, consumption),
+      fieldLenDelim(12, chargingPrefs)
+    ])
+
+    this._sendSensorBatch(23, vem)
+    if (DEBUG)
+      console.log(
+        `[Session] SensorBatch: VEM cap=${capacityWh}Wh cur=${currentWh}Wh range=${rangeM}m`
+      )
   }
 
   /**
@@ -714,7 +888,10 @@ export class Session extends EventEmitter {
         }
         const msgId = chunk.readUInt16BE(0)
         const payload = chunk.subarray(2)
-        if (DEBUG && (TRACE || !isFrameChannel(ctx.channelId))) {
+        if (
+          DEBUG &&
+          (TRACE || (!isFrameChannel(ctx.channelId) && !isPingPong(ctx.channelId, msgId)))
+        ) {
           console.log(
             `[Session] ← ch=${ctx.channelId} msgId=0x${msgId.toString(16).padStart(4, '0')} len=${payload.length}`
           )
@@ -864,9 +1041,18 @@ export class Session extends EventEmitter {
       ENV_DATA: 11,
       HVAC: 12,
       DRIVING_STATUS: 13,
+      DOOR_DATA: 16,
+      LIGHT_DATA: 17,
+      TIRE_PRESSURE_DATA: 18,
       ACCELEROMETER: 19,
       GYROSCOPE: 20,
-      GPS_SATELLITE: 21
+      GPS_SATELLITE: 21,
+      // EV / energy-routing sensors. Advertising these triggers the phone to
+      // subscribe to type 23 for battery + range data. Maps' EV range display
+      // depends on at least 23 + supportedFuelTypes containing ELECTRIC.
+      VEHICLE_ENERGY_MODEL: 23,
+      RAW_VEHICLE_ENERGY_MODEL: 25,
+      RAW_EV_TRIP_SETTINGS: 26
     } as const
 
     const channels: object[] = []
@@ -936,28 +1122,44 @@ export class Session extends EventEmitter {
     })
 
     // ── Sensor Source (ch=1) ──
+    // FuelType: UNLEADED=1, LEADED=2, DIESEL_1=3, DIESEL_2=4, BIODIESEL=5,
+    //           E85=6, LPG=7, CNG=8, LNG=9, ELECTRIC=10, HYDROGEN=11, OTHER=12
+    // EV connector: J1772=1, MENNEKES=2, CHADEMO=3, COMBO_1=4, COMBO_2=5,
+    //               TESLA_SUPERCHARGER=8, GBT=9, OTHER=101
+    const fuelTypes = cfg.fuelTypes && cfg.fuelTypes.length > 0 ? cfg.fuelTypes : [1]
+    const evConnectorTypes = cfg.evConnectorTypes ?? []
+
     channels.push({
       id: CH.SENSOR,
       sensorSourceService: {
         sensors: [
-          { sensorType: SENSOR.LOCATION },
-          { sensorType: SENSOR.COMPASS },
-          { sensorType: SENSOR.SPEED },
-          { sensorType: SENSOR.RPM },
-          { sensorType: SENSOR.ODOMETER },
-          { sensorType: SENSOR.FUEL },
-          { sensorType: SENSOR.PARKING_BRAKE },
-          { sensorType: SENSOR.GEAR },
-          { sensorType: SENSOR.NIGHT_MODE },
-          { sensorType: SENSOR.ENV_DATA },
-          { sensorType: SENSOR.HVAC },
           { sensorType: SENSOR.DRIVING_STATUS },
+          { sensorType: SENSOR.LOCATION },
+          { sensorType: SENSOR.NIGHT_MODE },
+          { sensorType: SENSOR.SPEED },
+          { sensorType: SENSOR.GEAR },
+          { sensorType: SENSOR.PARKING_BRAKE },
+          { sensorType: SENSOR.FUEL },
+          { sensorType: SENSOR.ODOMETER },
+          { sensorType: SENSOR.ENV_DATA },
+          { sensorType: SENSOR.DOOR_DATA },
+          { sensorType: SENSOR.LIGHT_DATA },
+          { sensorType: SENSOR.TIRE_PRESSURE_DATA },
+          { sensorType: SENSOR.HVAC },
           { sensorType: SENSOR.ACCELEROMETER },
           { sensorType: SENSOR.GYROSCOPE },
-          { sensorType: SENSOR.GPS_SATELLITE }
+          { sensorType: SENSOR.COMPASS },
+          { sensorType: SENSOR.GPS_SATELLITE },
+          { sensorType: SENSOR.RPM },
+          // EV energy model — triggers phone to request battery routing data
+          { sensorType: SENSOR.VEHICLE_ENERGY_MODEL },
+          { sensorType: SENSOR.RAW_VEHICLE_ENERGY_MODEL },
+          { sensorType: SENSOR.RAW_EV_TRIP_SETTINGS }
         ],
         // RAW_GPS_ONLY=256 | ACCEL=4 | GYRO=2 | COMPASS=8 | CAR_SPEED=64
-        locationCharacterization: 256 | 4 | 2 | 8 | 64
+        locationCharacterization: 256 | 4 | 2 | 8 | 64,
+        supportedFuelTypes: fuelTypes,
+        ...(evConnectorTypes.length > 0 ? { supportedEvConnectorTypes: evConnectorTypes } : {})
       }
     })
 
@@ -1308,7 +1510,7 @@ export class Session extends EventEmitter {
 
     if (!isEncrypted) {
       const frame = encodeFrame(channelId, flags, msgId, data)
-      if (DEBUG) {
+      if (DEBUG && (TRACE || !isPingPong(channelId, msgId))) {
         console.log(
           `[Session] sock→ PLAIN ch=${channelId} msgId=0x${msgId.toString(16).padStart(4, '0')} ${frame.length}B`
         )

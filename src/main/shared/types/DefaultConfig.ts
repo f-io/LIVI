@@ -1,7 +1,7 @@
 import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
 import type { ExtraConfig } from '@shared/types'
 import { DEFAULT_BINDINGS } from '@shared/types'
-import { HandDriveType, MicType, PhoneWorkMode } from '@shared/types/DongleConfig'
+import { CarType, HandDriveType, MicType, PhoneWorkMode } from '@shared/types/DongleConfig'
 
 export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
   width: 800,
@@ -45,6 +45,8 @@ export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
   wifiChannel: 36,
   micType: MicType.CarMic,
   phoneConfig: {},
+  carType: CarType.Gasoline,
+  evConnectorTypes: [],
   aa: false,
   cp: false,
   wifiPassword: '12345678',

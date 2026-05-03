@@ -550,26 +550,59 @@ function ambientCFromT(t: number) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Set once (unchanged)
+// Set once
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function setOnce(socket: Socket) {
-  const speedKph = Number(process.argv[3] ?? 0)
-  const rpm = Number(process.argv[4] ?? 0)
-  const coolantC = Number(process.argv[5] ?? 0)
-  const nightModeArg = process.argv[6]
-  const nightMode =
-    nightModeArg == null ? undefined : nightModeArg === 'true' || nightModeArg === '1'
+// Parse `key=value` into a typed pair. Coerces booleans, numbers, and JSON-y strings
+function parseKv(raw: string): [string, unknown] | null {
+  const eq = raw.indexOf('=')
+  if (eq <= 0) return null
+  const key = raw.slice(0, eq).trim()
+  const value = raw.slice(eq + 1).trim()
+  if (!key) return null
+  if (value === 'true') return [key, true]
+  if (value === 'false') return [key, false]
+  if (value === 'null') return [key, null]
+  if (value === '') return [key, '']
+  const n = Number(value)
+  if (!Number.isNaN(n) && Number.isFinite(n)) return [key, n]
+  return [key, value]
+}
 
-  const payload = {
-    speedKph: clamp(speedKph, 0, 999),
-    rpm: clamp(rpm, 0, 9999),
-    coolantC: clamp(coolantC, -40, 140),
-    ...(nightMode !== undefined ? { nightMode } : {})
+async function setOnce(socket: Socket) {
+  const args = process.argv.slice(3)
+  const payload: Record<string, unknown> = {}
+  let repeatMs = 0
+
+  for (const raw of args) {
+    const kv = parseKv(raw)
+    if (!kv) {
+      console.error(`[telemetry-sim] ignoring malformed arg: ${raw}`)
+      continue
+    }
+    if (kv[0] === '_repeatMs' && typeof kv[1] === 'number') {
+      repeatMs = kv[1]
+      continue
+    }
+    payload[kv[0]] = kv[1]
+  }
+
+  if (Object.keys(payload).length === 0) {
+    console.error('[telemetry-sim] no fields. Example:')
+    console.error('  pnpm --dir scripts/tools telemetry:set fuelPct=75 rangeKm=320 nightMode=true')
+    console.error('  pnpm --dir scripts/tools telemetry:set _repeatMs=1000 speedKph=90 rpm=2500')
+    process.exit(1)
   }
 
   push(socket, payload)
-  console.log('[telemetry-sim] push once:', payload)
+  console.log('[telemetry-sim] push:', payload)
+
+  if (repeatMs > 0) {
+    setInterval(() => push(socket, payload), repeatMs)
+    console.log(`[telemetry-sim] repeating every ${repeatMs}ms — Ctrl+C to stop`)
+    return
+  }
+
   await sleep(200)
   process.exit(0)
 }
@@ -586,7 +619,16 @@ socket.on('connect', async () => {
   console.log(`Usage:
   pnpm --dir scripts/tools telemetry:cycle
   pnpm --dir scripts/tools telemetry:sweep
-  pnpm --dir scripts/tools telemetry:set -- <speedKph> <rpm> <coolantC>
+  pnpm --dir scripts/tools telemetry:set <key>=<value> [<key>=<value> ...]
+
+Set examples:
+  telemetry:set fuelPct=75 rangeKm=320
+  telemetry:set speedKph=90 rpm=2500 gear=D
+  telemetry:set nightMode=true lights=true
+  telemetry:set _repeatMs=1000 speedKph=120  # repeat every 1s
+
+Any TelemetryPayload field is accepted. Values are coerced to number / bool /
+string automatically.
 
 Env:
   TELEMETRY_URL=http://127.0.0.1:4000

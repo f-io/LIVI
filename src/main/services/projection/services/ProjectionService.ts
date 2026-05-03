@@ -2,6 +2,7 @@ import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
 import { configEvents } from '@main/ipc/utils'
 import type { DevListEntry, DongleFirmwareAction, DongleFwApiRaw, ExtraConfig } from '@shared/types'
 import { PhoneWorkMode } from '@shared/types'
+import type { TelemetryPayload } from '@shared/types/Telemetry'
 import type { NavLocale } from '@shared/utils'
 import { translateNavigation } from '@shared/utils'
 import { app, WebContents } from 'electron'
@@ -57,6 +58,7 @@ import {
   PersistedMediaPayload,
   PersistedNavigationPayload
 } from './types'
+import { pushTelemetryToAa } from './utils/aaTelemetryMap'
 import { asDomUSBDevice } from './utils/asDomUSBDevice'
 import { normalizeNavigationPayload } from './utils/normalizeNavigation'
 import { readMediaFile } from './utils/readMediaFile'
@@ -1453,6 +1455,12 @@ export class ProjectionService {
     })()
 
     return this.startPromise
+  }
+
+  /** Forward a TelemetryPayload to the active phone session (AA-only). */
+  public publishVehicleData(payload: TelemetryPayload): void {
+    if (!this.started || !this.aaDriver) return
+    pushTelemetryToAa(this.aaDriver, payload)
   }
 
   public async disconnectPhone(): Promise<boolean> {

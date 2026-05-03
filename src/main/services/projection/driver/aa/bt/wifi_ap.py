@@ -155,6 +155,7 @@ def write_hostapd_config():
     config = f"""
 interface={WIFI_IFACE}
 driver=nl80211
+ctrl_interface=/var/run/hostapd
 ssid={SSID}
 country_code={COUNTRY_CODE}
 ieee80211d=1
@@ -229,22 +230,30 @@ def _is_dhcp_listening() -> bool:
     return False
 
 
+def _hostapd_state() -> str:
+    """Query hostapd's actual state via ctrl-interface. Returns the `state=`
+    value (DISABLED / COUNTRY_UPDATE / HT_SCAN / ENABLED / …) or "" on error."""
+    try:
+        out = subprocess.check_output(
+            ["sudo", "hostapd_cli", "-p", "/var/run/hostapd", "-i", WIFI_IFACE, "status"],
+            text=True, stderr=subprocess.DEVNULL, timeout=2,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return ""
+    for line in out.splitlines():
+        if line.startswith("state="):
+            return line.split("=", 1)[1].strip()
+    return ""
+
+
 def wait_for_ap_ready(timeout_seconds: float = 20.0) -> bool:
-    """Wait for hostapd beaconing (`iw dev`) AND dnsmasq bound to UDP 67."""
+    """Block until hostapd reports state=ENABLED AND dnsmasq is bound to :67."""
     deadline = time.monotonic() + timeout_seconds
     hostapd_ready = False
     dhcp_ready = False
     while time.monotonic() < deadline:
-        if not hostapd_ready:
-            try:
-                out = subprocess.check_output(
-                    ["iw", "dev", WIFI_IFACE, "info"],
-                    text=True, stderr=subprocess.DEVNULL,
-                )
-                if "type AP" in out and "channel " in out:
-                    hostapd_ready = True
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                pass
+        if not hostapd_ready and _hostapd_state() == "ENABLED":
+            hostapd_ready = True
         if hostapd_ready and not dhcp_ready and _is_dhcp_listening():
             dhcp_ready = True
         if hostapd_ready and dhcp_ready:

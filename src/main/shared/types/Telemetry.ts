@@ -20,7 +20,16 @@ export type TelemetryPayload = {
 
   // Convenience booleans for UI state
   reverse?: boolean
+  // Low-beam headlight on/off
   lights?: boolean
+  // High-beam. When true, head-light state goes to HIGH regardless of `lights`.
+  highBeam?: boolean
+  // Hazard lights
+  hazards?: boolean
+  // Turn indicator: 'none' | 'left' | 'right'
+  turn?: 'none' | 'left' | 'right'
+  // Parking brake engaged
+  parkingBrake?: boolean
 
   // ────────────────────────────────────────────────────────────────────────────
   // Temperatures
@@ -52,11 +61,20 @@ export type TelemetryPayload = {
   // Fuel / consumption / range (driver-facing)
   // ────────────────────────────────────────────────────────────────────────────
 
-  // Fuel level in percent (0..100)
+  // Fuel level in percent (0..100). For EVs: state of charge (SoC).
   fuelPct?: number
 
   // Remaining range in km
   rangeKm?: number
+
+  // ── EV battery (only meaningful when carType is Electric / Hybrid) ────────
+  // Gross battery capacity in kWh (e.g. 50 = 50 kWh). When set together with
+  // fuelPct + rangeKm, LIVI also pushes a VehicleEnergyModel sensor batch
+  // (Maps' EV range display + low-range warning rely on this).
+  batteryCapacityKwh?: number
+  // Current battery level in kWh. Optional — derived from fuelPct × capacity
+  // when omitted.
+  batteryLevelKwh?: number
 
   // Instant fuel rate in liters per hour (L/h)
   fuelRateLph?: number
