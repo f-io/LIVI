@@ -18,6 +18,20 @@ function Copy-Required {
   Copy-Item -LiteralPath $Source -Destination $Destination -Force
 }
 
+function Copy-Optional {
+  param(
+    [Parameter(Mandatory = $true)][string]$Source,
+    [Parameter(Mandatory = $true)][string]$Destination
+  )
+
+  if (-not (Test-Path -LiteralPath $Source)) {
+    Write-Host "skip optional: $Source"
+    return
+  }
+
+  Copy-Item -LiteralPath $Source -Destination $Destination -Force
+}
+
 $candidates = @(
   'C:\gstreamer\1.0\msvc_x86_64',
   'C:\Program Files\gstreamer\1.0\msvc_x86_64',
@@ -105,7 +119,7 @@ if (Test-Path -LiteralPath $Scanner) {
   }
 }
 
-# runtime DLLs
+# runtime DLLs (always shipped by upstream)
 $libs = @(
   "gstreamer-1.0-0.dll",
   "gstbase-1.0-0.dll",
@@ -120,18 +134,28 @@ $libs = @(
   "gmodule-2.0-0.dll",
   "gio-2.0-0.dll",
   "gthread-2.0-0.dll",
-  "intl-8.dll",
   "orc-0.4-0.dll",
   "ffi-7.dll",
   "pcre2-8-0.dll",
-  "libiconv-2.dll",
-  "libcharset-1.dll",
   "z-1.dll",
   "bz2.dll"
 )
 
 foreach ($lib in $libs) {
   Copy-Required (Join-Path $GstBin $lib) (Join-Path $Out "bin")
+}
+
+# runtime DLLs that come and go between cerbero builds
+# (e.g. GStreamer 1.28.2 Windows MSVC dropped libiconv-2 / libcharset-1
+# because newer GLib no longer links them on Windows)
+$optionalLibs = @(
+  "intl-8.dll",
+  "libiconv-2.dll",
+  "libcharset-1.dll"
+)
+
+foreach ($lib in $optionalLibs) {
+  Copy-Optional (Join-Path $GstBin $lib) (Join-Path $Out "bin")
 }
 
 # plugins
