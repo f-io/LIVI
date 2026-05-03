@@ -287,15 +287,7 @@ export class AudioOutput {
           ? 'wasapisink'
           : 'pulsesink'
 
-    // provide-clock=false: don't let this gst pipeline export its own clock.
-    // When ProjectionAudio runs multiple AudioOutput instances in parallel
-    // (music + nav), each pipeline would otherwise try to be the master
-    // clock for the same OS sink — leading to continuous re-sync events on
-    // one stream and audible stutter on the mix. With provide-clock=false
-    // the OS sink clock is master and both pipelines slave to it cleanly.
-    const sinkArgs = isRealtime
-      ? [sink, 'sync=false', 'provide-clock=false']
-      : [sink, 'provide-clock=false']
+    const sinkArgs = isRealtime ? [sink, 'sync=false'] : [sink]
 
     return [
       'fdsrc',

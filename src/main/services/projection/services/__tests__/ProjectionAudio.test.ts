@@ -214,20 +214,19 @@ describe('ProjectionAudio state controls', () => {
   test('getAudioOutputForStream returns null for unknown decode type', () => {
     const a = createSubject()
 
-    const out = a.getAudioOutputForStream('music', { decodeType: 999 })
+    const out = a.getAudioOutputForStream('music', 1, { decodeType: 999 })
 
     expect(out).toBeNull()
   })
 
-  test('getAudioOutputForStream creates and reuses players by (logicalKey, rate, channels)', () => {
+  test('getAudioOutputForStream creates and reuses players by (logicalKey, audioType, rate, channels)', () => {
     const a = createSubject()
 
-    const musicA = a.getAudioOutputForStream('music', { decodeType: 1 })
-    const musicB = a.getAudioOutputForStream('music', { decodeType: 1 })
-    const musicC = a.getAudioOutputForStream('music', { decodeType: 2 })
-    // Same wire format as music but different logical stream → must be a
-    // separate sink-input so the OS sink can mix both in parallel.
-    const navSameFormat = a.getAudioOutputForStream('nav', { decodeType: 1 })
+    const musicA = a.getAudioOutputForStream('music', 1, { decodeType: 1 })
+    const musicB = a.getAudioOutputForStream('music', 1, { decodeType: 1 })
+    const musicC = a.getAudioOutputForStream('music', 1, { decodeType: 2 })
+    // Same wire format but different audioType → separate sink-input.
+    const navSameFormat = a.getAudioOutputForStream('nav', 2, { decodeType: 1 })
 
     expect(musicA).toBeTruthy()
     expect(musicB).toBe(musicA)

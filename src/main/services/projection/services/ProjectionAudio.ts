@@ -92,6 +92,10 @@ export class ProjectionAudio {
   private readonly musicResumeWarmupMs = 1000
   private musicWarmupUntil = 0
 
+  // Wire-tag of music / nav stream (learned from *Start commands).
+  private musicAudioType: number | null = null
+  private navAudioType: number | null = null
+
   private musicFade: MusicFadeState = {
     current: 1,
     target: 1,
@@ -148,6 +152,8 @@ export class ProjectionAudio {
     this.lastMusicDataAt = 0
     this.musicGateMuted = false
     this.musicWarmupUntil = 0
+    this.musicAudioType = null
+    this.navAudioType = null
 
     this.lastStreamLogKey = null
     this.lastCallPlaybackLog = null
@@ -181,6 +187,8 @@ export class ProjectionAudio {
     this.lastMusicDataAt = 0
     this.musicGateMuted = false
     this.musicWarmupUntil = 0
+    this.musicAudioType = null
+    this.navAudioType = null
 
     this.lastStreamLogKey = null
     this.lastCallPlaybackLog = null
@@ -238,20 +246,15 @@ export class ProjectionAudio {
         return
       }
 
-      // Player selection — one AudioOutput per (logicalKey, rate, channels).
-      // The OS sink (PulseAudio / CoreAudio / WASAPI) mixes parallel sink-
-      // inputs natively. Including logicalKey in the player key matters when
-      // music and nav share the same wire format (e.g. CarPlay sends nav as
-      // 48 k stereo, identical to music) — without it both streams land on
-      // the same sink-input and interleave instead of mixing.
-      let player = this.getAudioOutputForStream(logicalKey, msg)
+      // One player per (audioType, rate, channels); OS sink mixes parallel streams.
+      const audioTypeKey = msg.audioType ?? 0
+      let player = this.getAudioOutputForStream(logicalKey, audioTypeKey, msg)
       if (!player) return
 
       const volume = this.volumes[logicalKey] ?? 1.0
 
-      // Track last player per logical stream for later teardown
       if (meta) {
-        const keyForStream: PlayerKey = `${logicalKey}:${meta.frequency}:${meta.channel}`
+        const keyForStream: PlayerKey = `${logicalKey}:at${audioTypeKey}:${meta.frequency}:${meta.channel}`
         if (logicalKey === 'music') {
           this.lastMusicPlayerKey = keyForStream
         } else if (logicalKey === 'nav') {
@@ -485,18 +488,18 @@ export class ProjectionAudio {
       if (cmd === AudioCommand.AudioNaviStart || cmd === AudioCommand.AudioTurnByTurnStart) {
         this.navActive = true
         this.navHoldUntil = 0
+        if (msg.audioType != null) this.navAudioType = msg.audioType
 
         if (this.mediaActive && !this.siriActive && !this.phonecallActive) {
-          // Trigger ducking — actual ramp recomputation happens on next chunk.
           this.musicRampActive = true
           this.musicFade.target = this.navDuckingTarget
           this.musicFade.remainingSamples = 0
         }
-
         return
       }
 
-      // 1 == AudioOpen: arm exactly one next AudioMediaStart
+      // AudioOpen — arm next AudioMediaStart. Don't learn musicAudioType here
+      // (fires for every stream open).
       if (cmd === AudioCommand.AudioOutputStart) {
         if (this.mediaActive) {
           return
@@ -516,6 +519,8 @@ export class ProjectionAudio {
       }
 
       if (cmd === AudioCommand.AudioMediaStart) {
+        if (msg.audioType != null) this.musicAudioType = msg.audioType
+
         const baseDelay = this.getMediaDelay()
         const totalDelayMs = baseDelay
         const now = Date.now()
@@ -567,6 +572,7 @@ export class ProjectionAudio {
         this.musicFade.remainingSamples = 0
         this.lastMusicDataAt = 0
         this.musicGateMuted = false
+        this.musicAudioType = null
 
         if (this.lastMusicPlayerKey) {
           this.stopPlayerByKey(this.lastMusicPlayerKey)
@@ -578,12 +584,10 @@ export class ProjectionAudio {
 
       if (cmd === AudioCommand.AudioNaviStop || cmd === AudioCommand.AudioTurnByTurnStop) {
         this.navActive = false
-        // Debounce restore
-        this.navHoldUntil = Date.now() + this.navResumeDelayMs
-
-        // The OS sink will keep the nav stream's tail draining naturally.
-        // Tear the player down only if no music is playing (i.e. nothing else
-        // is using the sink).
+        // Carlinkit fires cmd=7 then cmd=16 ~2s apart — arm timer once.
+        if (this.navHoldUntil === 0) {
+          this.navHoldUntil = Date.now() + this.navResumeDelayMs
+        }
         if (!this.mediaActive && this.lastNavPlayerKey) {
           this.stopPlayerByKey(this.lastNavPlayerKey)
           this.lastNavPlayerKey = null
@@ -592,28 +596,24 @@ export class ProjectionAudio {
       }
 
       if (cmd === AudioCommand.AudioOutputStop) {
-        if (DEBUG) {
-          console.debug('[ProjectionAudio] handling AudioOutputStop', {
-            ts: Date.now(),
-            mediaActive: this.mediaActive,
-            siriActive: this.siriActive,
-            phonecallActive: this.phonecallActive,
-            lastMusicPlayerKey: this.lastMusicPlayerKey,
-            lastNavPlayerKey: this.lastNavPlayerKey,
-            lastSiriPlayerKey: this.lastSiriPlayerKey,
-            lastCallPlayerKey: this.lastCallPlayerKey
-          })
-        }
+        // Only tear down the player for the stream that's closing.
+        const stoppingType = msg.audioType ?? null
 
-        if (!this.phonecallActive && !this.siriActive) {
-          if (this.lastMusicPlayerKey) {
-            this.stopPlayerByKey(this.lastMusicPlayerKey)
-            this.lastMusicPlayerKey = null
-          }
-          if (this.lastNavPlayerKey) {
-            this.stopPlayerByKey(this.lastNavPlayerKey)
-            this.lastNavPlayerKey = null
-          }
+        const stopMusic =
+          stoppingType === null ||
+          (this.musicAudioType != null && stoppingType === this.musicAudioType)
+        const stopNav =
+          stoppingType === null || (this.navAudioType != null && stoppingType === this.navAudioType)
+
+        if (stopMusic && this.lastMusicPlayerKey) {
+          this.stopPlayerByKey(this.lastMusicPlayerKey)
+          this.lastMusicPlayerKey = null
+        }
+        if (stopNav && this.lastNavPlayerKey) {
+          this.stopPlayerByKey(this.lastNavPlayerKey)
+          this.lastNavPlayerKey = null
+        }
+        if (stoppingType === null && !this.phonecallActive && !this.siriActive) {
           if (this.lastSiriPlayerKey) {
             this.stopPlayerByKey(this.lastSiriPlayerKey)
             this.lastSiriPlayerKey = null
@@ -763,10 +763,11 @@ export class ProjectionAudio {
 
   private createAndStartAudioPlayer(
     logicalKey: LogicalStreamKey,
+    audioType: number,
     sampleRate: number,
     channels: number
   ): AudioOutput {
-    const key: PlayerKey = `${logicalKey}:${sampleRate}:${channels}`
+    const key: PlayerKey = `${logicalKey}:at${audioType}:${sampleRate}:${channels}`
 
     const player = new AudioOutput({
       sampleRate,
@@ -780,6 +781,7 @@ export class ProjectionAudio {
 
   private getAudioOutputForStream(
     logicalKey: LogicalStreamKey,
+    audioType: number,
     msg: AudioData
   ): AudioOutput | null {
     const meta = msg.decodeType != null ? this.safeDecodeType(msg.decodeType) : null
@@ -795,16 +797,16 @@ export class ProjectionAudio {
 
     const sampleRate = meta.frequency
     const channels = meta.channel
-    const key: PlayerKey = `${logicalKey}:${sampleRate}:${channels}`
+    const key: PlayerKey = `${logicalKey}:at${audioType}:${sampleRate}:${channels}`
 
     let player = this.audioPlayers.get(key)
     if (!player) {
       if (DEBUG) {
         console.log(
-          `[ProjectionAudio] new player logicalKey=${logicalKey} rate=${sampleRate} channels=${channels} decodeType=${msg.decodeType}`
+          `[ProjectionAudio] new player logicalKey=${logicalKey} audioType=${audioType} rate=${sampleRate} channels=${channels} decodeType=${msg.decodeType}`
         )
       }
-      player = this.createAndStartAudioPlayer(logicalKey, sampleRate, channels)
+      player = this.createAndStartAudioPlayer(logicalKey, audioType, sampleRate, channels)
     }
 
     if (this.lastStreamLogKey !== key) {
@@ -814,7 +816,9 @@ export class ProjectionAudio {
     return player
   }
 
-  private getLogicalStreamKey(_msg: AudioData): LogicalStreamKey {
+  private getLogicalStreamKey(msg: AudioData): LogicalStreamKey {
+    if (this.musicAudioType != null && msg.audioType === this.musicAudioType) return 'music'
+    if (this.navAudioType != null && msg.audioType === this.navAudioType) return 'nav'
     if (this.phonecallActive) return 'call'
     if (this.siriActive) return 'siri'
     if (this.navActive) return 'nav'
