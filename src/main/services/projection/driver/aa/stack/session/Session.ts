@@ -51,7 +51,12 @@ import { ControlChannel } from './ControlChannel.js'
 /** Per-frame chatter is suppressed for these channels under DEBUG=1.
  *  Set TRACE=1 to see them anyway. */
 const isFrameChannel = (ch: number): boolean =>
-  ch === CH.VIDEO || ch === CH.MEDIA_AUDIO || ch === CH.SPEECH_AUDIO || ch === CH.SYSTEM_AUDIO
+  ch === CH.VIDEO ||
+  ch === CH.MEDIA_AUDIO ||
+  ch === CH.SPEECH_AUDIO ||
+  ch === CH.SYSTEM_AUDIO ||
+  ch === CH.INPUT ||
+  ch === CH.MIC_INPUT
 
 /** Ping/pong on the control channel runs every 1500 ms in both directions.
  *  Same idea as isFrameChannel — suppress under DEBUG, show under TRACE. */
@@ -582,7 +587,7 @@ export class Session extends EventEmitter {
    * No-op outside RUNNING or when the mic channel hasn't been opened by the
    * phone — the MicChannel itself drops frames silently in those cases.
    */
-  sendMicPcm(buf: Buffer, ts: bigint = BigInt(Date.now()) * 1_000_000n): void {
+  sendMicPcm(buf: Buffer, ts: bigint = BigInt(Date.now()) * 1_000n): void {
     if (this._state !== State.RUNNING || !this._mic) return
     this._mic.pushPcm(buf, ts)
   }
@@ -1117,7 +1122,8 @@ export class Session extends EventEmitter {
       id: CH.MIC_INPUT,
       mediaSourceService: {
         availableType: MEDIA_CODEC.AUDIO_PCM,
-        audioConfig: { samplingRate: 16000, numberOfBits: 16, numberOfChannels: 1 }
+        audioConfig: { samplingRate: 16000, numberOfBits: 16, numberOfChannels: 1 },
+        availableWhileInCall: true
       }
     })
 
@@ -1242,13 +1248,7 @@ export class Session extends EventEmitter {
           260,
           261,
           262,
-          263, // NAVIGATE_*
-          // ROTARY_CONTROLLER advertised so AA's list/picker views accept our
-          // RelativeEvent.delta scroll messages — that's the ONLY in-list
-          // scrolling path for many AA UIs (Settings list, media pickers).
-          // DPAD_UP/DOWN often only navigates between focusable regions, not
-          // inside a list. arrow keys → DPAD events for region nav (launcher
-          // tabs etc.) PLUS a rotary delta for in-list scrolling.
+          263, // NAVIGATE
           65536 // KEYCODE_ROTARY_CONTROLLER
         ],
         touchscreen: [{ width: touchW, height: touchH }]
@@ -1318,7 +1318,7 @@ export class Session extends EventEmitter {
       headUnitModel: 'LIVI Head Unit',
       headUnitSoftwareBuild: '1',
       headUnitSoftwareVersion: '1.0',
-      canPlayNativeMediaDuringVr: false,
+      canPlayNativeMediaDuringVr: true,
       channels
     }
 

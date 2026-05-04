@@ -69,7 +69,7 @@ let dongleConnected = false
 type VolumeConfig = {
   audioVolume?: number
   navVolume?: number
-  siriVolume?: number
+  voiceAssistantVolume?: number
   callVolume?: number
 }
 
@@ -1374,7 +1374,8 @@ export class ProjectionService {
         this.audio.setInitialVolumes({
           music: typeof ext.audioVolume === 'number' ? ext.audioVolume : undefined,
           nav: typeof ext.navVolume === 'number' ? ext.navVolume : undefined,
-          siri: typeof ext.siriVolume === 'number' ? ext.siriVolume : undefined,
+          voiceAssistant:
+            typeof ext.voiceAssistantVolume === 'number' ? ext.voiceAssistantVolume : undefined,
           call: typeof ext.callVolume === 'number' ? ext.callVolume : undefined
         })
 

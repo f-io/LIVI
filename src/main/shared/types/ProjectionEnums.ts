@@ -4,8 +4,8 @@ export enum CommandMapping {
   stopRecordAudio = 2,
   requestHostUI = 3, // 'Projection interface My Car button clicked'
   disableBluetooth = 4,
-  siri = 5, // 'Siri Button'
-  siriRelease = 6, // 'Siri Release Button'
+  voiceAssistant = 5, // PTT press (VOICE_ASSIST keycode)
+  voiceAssistantRelease = 6, // PTT release
   mic = 7, // 'Car Microphone'
   boxMic = 8, // 'Dongle integrated Microphone'
   frame = 12,
@@ -103,8 +103,8 @@ export enum AudioCommand {
   AudioPhonecallStop = 5,
   AudioNaviStart = 6,
   AudioNaviStop = 7,
-  AudioSiriStart = 8,
-  AudioSiriStop = 9,
+  AudioVoiceAssistantStart = 8,
+  AudioVoiceAssistantStop = 9,
   AudioMediaStart = 10,
   AudioMediaStop = 11,
   AudioAttentionStart = 12,

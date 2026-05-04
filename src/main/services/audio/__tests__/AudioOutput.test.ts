@@ -100,36 +100,100 @@ describe('AudioOutput', () => {
     expect(proc.stdin.write).toHaveBeenCalledTimes(1)
   })
 
-  test('realtime mode adds leaky queues and sync=false sink args', () => {
+  test('realtime mode uses small non-leaky queues and sync=false sink args', () => {
     const proc = makeProc()
     ;(spawn as jest.Mock).mockReturnValue(proc)
 
     const out = new AudioOutput({ sampleRate: 16000, channels: 1, mode: 'realtime' })
     out.start()
 
-    expect(spawn).toHaveBeenCalledWith(
-      '/mock/app/assets/gstreamer/macos-arm64/bin/gst-launch-1.0',
+    const [, args] = (spawn as jest.Mock).mock.calls[0]
+
+    // Realtime queues are small (40 ms input, 20 ms output) but must NOT be
+    // leaky — leaking the oldest buffers would drop the start of every short
+    // announcement during pipeline + pulsesink startup latency.
+    expect(args).toEqual(
       expect.arrayContaining([
-        'leaky=downstream',
+        'max-size-time=40000000',
+        'max-size-time=20000000',
         'sample-rate=16000',
         'num-channels=1',
         'audio/x-raw,format=S16LE,rate=48000,channels=2',
         'sync=false'
-      ]),
-      expect.any(Object)
+      ])
     )
+    expect(args).not.toContain('leaky=downstream')
+    expect(args).not.toContain('leaky=upstream')
   })
 
-  test('stop ends stdin and kills process', () => {
-    const proc = makeProc()
-    ;(spawn as jest.Mock).mockReturnValue(proc)
+  test('stop closes stdin synchronously and SIGTERMs as a fallback after grace period', () => {
+    jest.useFakeTimers()
+    try {
+      const proc = makeProc()
+      ;(spawn as jest.Mock).mockReturnValue(proc)
 
-    const out = new AudioOutput({ sampleRate: 48000, channels: 2, mode: 'music' })
-    out.start()
-    out.stop()
+      const out = new AudioOutput({ sampleRate: 48000, channels: 2, mode: 'music' })
+      out.start()
+      out.stop()
 
-    expect(proc.stdin.end).toHaveBeenCalledTimes(1)
-    expect(proc.kill).toHaveBeenCalledTimes(1)
+      // EOS sent immediately so pulsesink can drain its tail …
+      expect(proc.stdin.end).toHaveBeenCalledTimes(1)
+      // … but the kill is deferred so the drain can actually happen.
+      expect(proc.kill).not.toHaveBeenCalled()
+
+      // After the grace period, if the process hasn't exited on its own, we
+      // fall back to SIGTERM.
+      jest.advanceTimersByTime(500)
+      expect(proc.kill).toHaveBeenCalledTimes(1)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  test('stop fallback SIGTERM is skipped if the process exited cleanly first', () => {
+    jest.useFakeTimers()
+    try {
+      const proc = makeProc()
+      ;(spawn as jest.Mock).mockReturnValue(proc)
+
+      const out = new AudioOutput({ sampleRate: 48000, channels: 2, mode: 'music' })
+      out.start()
+      out.stop()
+
+      // Simulate the process draining and exiting before the grace timer fires.
+      proc.emit('close', 0, null)
+
+      jest.advanceTimersByTime(500)
+      expect(proc.kill).not.toHaveBeenCalled()
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  test('stop fallback SIGTERM is skipped if a new process replaced the old one', () => {
+    jest.useFakeTimers()
+    try {
+      const proc1 = makeProc()
+      const proc2 = makeProc()
+      ;(spawn as jest.Mock).mockReturnValueOnce(proc1).mockReturnValueOnce(proc2)
+
+      const out = new AudioOutput({ sampleRate: 48000, channels: 2, mode: 'music' })
+      out.start()
+      out.stop()
+      // proc1 is now draining; user immediately starts a new playback.
+      out.start()
+
+      // proc1 was force-killed by start()'s killImmediate.
+      expect(proc1.kill).toHaveBeenCalledTimes(1)
+      const proc1KillCallsBefore = proc1.kill.mock.calls.length
+
+      // The deferred fallback fires later but must be a no-op now.
+      jest.advanceTimersByTime(500)
+      expect(proc1.kill).toHaveBeenCalledTimes(proc1KillCallsBefore)
+      expect(proc2.kill).not.toHaveBeenCalled()
+    } finally {
+      jest.useRealTimers()
+    }
   })
 
   test('darwin start without bundled gstreamer logs error and does not spawn', () => {
@@ -370,13 +434,19 @@ describe('AudioOutput', () => {
     expect(out.writing).toBe(false)
   })
 
-  test('dispose delegates to stop', () => {
-    const out = new AudioOutput({ sampleRate: 48000, channels: 2, mode: 'music' })
-    const stopSpy = jest.spyOn(out, 'stop').mockImplementation(() => undefined)
+  test('dispose immediately tears the process down without waiting for drain', () => {
+    // dispose() is used during app shutdown. We want a synchronous kill so
+    // we don't leak a gst-launch zombie past the parent process exit, and we
+    // accept that the tail of any in-flight playback is lost.
+    const proc = makeProc()
+    ;(spawn as jest.Mock).mockReturnValue(proc)
 
+    const out = new AudioOutput({ sampleRate: 48000, channels: 2, mode: 'music' })
+    out.start()
     out.dispose()
 
-    expect(stopSpy).toHaveBeenCalledTimes(1)
+    expect(proc.stdin.end).toHaveBeenCalledTimes(1)
+    expect(proc.kill).toHaveBeenCalledTimes(1)
   })
 
   test('stop is a no-op when there is no active process', () => {
@@ -386,20 +456,28 @@ describe('AudioOutput', () => {
   })
 
   test('stop swallows stdin.end and kill errors', () => {
-    const proc = makeProc()
-    proc.stdin.end.mockImplementation(() => {
-      throw new Error('end fail')
-    })
-    proc.kill.mockImplementation(() => {
-      throw new Error('kill fail')
-    })
-    ;(spawn as jest.Mock).mockReturnValue(proc)
+    jest.useFakeTimers()
+    try {
+      const proc = makeProc()
+      proc.stdin.end.mockImplementation(() => {
+        throw new Error('end fail')
+      })
+      proc.kill.mockImplementation(() => {
+        throw new Error('kill fail')
+      })
+      ;(spawn as jest.Mock).mockReturnValue(proc)
 
-    const out = new AudioOutput({ sampleRate: 48000, channels: 2, mode: 'music' })
+      const out = new AudioOutput({ sampleRate: 48000, channels: 2, mode: 'music' })
 
-    out.start()
+      out.start()
 
-    expect(() => out.stop()).not.toThrow()
+      expect(() => out.stop()).not.toThrow()
+      // The deferred SIGTERM also fires inside the timer callback and must
+      // not propagate the kill error either.
+      expect(() => jest.advanceTimersByTime(500)).not.toThrow()
+    } finally {
+      jest.useRealTimers()
+    }
   })
 
   test('resolveGStreamerRoot returns null for unsupported arch/platform combinations', () => {
@@ -458,17 +536,24 @@ describe('AudioOutput', () => {
     expect(out.queue).toHaveLength(1)
   })
 
-  test('stop does not end stdin when stdin is already destroyed', () => {
-    const proc = makeProc()
-    proc.stdin.destroyed = true
-    ;(spawn as jest.Mock).mockReturnValue(proc)
+  test('stop does not end stdin when stdin is already destroyed but still SIGTERMs as fallback', () => {
+    jest.useFakeTimers()
+    try {
+      const proc = makeProc()
+      proc.stdin.destroyed = true
+      ;(spawn as jest.Mock).mockReturnValue(proc)
 
-    const out = new AudioOutput({ sampleRate: 48000, channels: 2, mode: 'music' })
-    out.start()
-    out.stop()
+      const out = new AudioOutput({ sampleRate: 48000, channels: 2, mode: 'music' })
+      out.start()
+      out.stop()
 
-    expect(proc.stdin.end).not.toHaveBeenCalled()
-    expect(proc.kill).toHaveBeenCalledTimes(1)
+      expect(proc.stdin.end).not.toHaveBeenCalled()
+
+      jest.advanceTimersByTime(500)
+      expect(proc.kill).toHaveBeenCalledTimes(1)
+    } finally {
+      jest.useRealTimers()
+    }
   })
 
   test('resolveGStreamerRoot returns null when supported platform dir does not exist', () => {
@@ -496,13 +581,15 @@ describe('AudioOutput', () => {
     expect(out.writing).toBe(false)
   })
 
-  test('linux realtime buildArgs uses pulsesink with sync=false and leaky queues', () => {
+  test('linux realtime buildArgs uses pulsesink with sync=false and non-leaky queues', () => {
     Object.defineProperty(process, 'platform', { value: 'linux' })
 
     const out = new AudioOutput({ sampleRate: 16000, channels: 1, mode: 'realtime' }) as any
     const args = out.buildArgs()
 
-    expect(args).toEqual(expect.arrayContaining(['pulsesink', 'sync=false', 'leaky=downstream']))
+    expect(args).toEqual(expect.arrayContaining(['pulsesink', 'sync=false']))
+    expect(args).not.toContain('leaky=downstream')
+    expect(args).not.toContain('leaky=upstream')
   })
 
   test('emits debug logs for constructor, spawn, stdin error, drain, stderr, process error and close when DEBUG is enabled', () => {
@@ -721,11 +808,20 @@ describe('AudioOutput', () => {
 
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
 
-    const out = new DebugAudioOutput({ sampleRate: 48000, channels: 2, mode: 'music' })
-    out.start()
-    out.stop()
+    jest.useFakeTimers()
+    try {
+      const out = new DebugAudioOutput({ sampleRate: 48000, channels: 2, mode: 'music' })
+      out.start()
+      out.stop()
 
-    expect(warnSpy).toHaveBeenCalledWith('[AudioOutput] failed to end stdin:', expect.any(Error))
-    expect(warnSpy).toHaveBeenCalledWith('[AudioOutput] failed to kill process:', expect.any(Error))
+      // stdin.end throws synchronously inside stop()
+      expect(warnSpy).toHaveBeenCalledWith('[AudioOutput] failed to end stdin:', expect.any(Error))
+
+      // kill throws inside the deferred SIGTERM callback
+      jest.advanceTimersByTime(500)
+      expect(warnSpy).toHaveBeenCalledWith('[AudioOutput] failed to kill process:', expect.any(Error))
+    } finally {
+      jest.useRealTimers()
+    }
   })
 })

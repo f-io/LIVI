@@ -29,7 +29,7 @@ describe('audioSchema', () => {
     expect(vt.format?.(42)).toBe('42 %')
   })
 
-  test('navigation, siri and call sliders point to expected config paths', () => {
+  test('navigation, voiceAssistant and call sliders point to expected config paths', () => {
     expect(schema.children[1]).toEqual(
       expect.objectContaining({
         type: 'slider',
@@ -41,8 +41,8 @@ describe('audioSchema', () => {
     expect(schema.children[2]).toEqual(
       expect.objectContaining({
         type: 'slider',
-        path: 'siriVolume',
-        label: 'Siri'
+        path: 'voiceAssistantVolume',
+        label: 'Voice Assistant'
       })
     )
 

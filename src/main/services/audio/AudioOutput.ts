@@ -11,6 +11,8 @@ export interface AudioOutputOptions {
 }
 
 export class AudioOutput {
+  private static readonly STOP_GRACE_MS = 500
+
   private process: ChildProcessWithoutNullStreams | null = null
   private readonly sampleRate: number
   private readonly channels: number
@@ -37,7 +39,10 @@ export class AudioOutput {
   }
 
   start(): void {
-    this.stop()
+    // Restart semantics: forcibly tear down any prior process. Don't use the
+    // public stop() here — that drains gracefully, which would briefly leave
+    // two gst-launch processes alive and racing to mutate `this.process`.
+    this.killImmediate()
 
     if (
       process.platform !== 'darwin' &&
@@ -120,6 +125,8 @@ export class AudioOutput {
     })
 
     stdin.on('drain', () => {
+      if (this.process !== proc) return
+
       if (DEBUG) {
         console.debug('[AudioOutput] stdin drain', {
           ts: Date.now(),
@@ -143,7 +150,9 @@ export class AudioOutput {
       if (DEBUG) {
         console.error('[AudioOutput] process error:', err)
       }
-      this.cleanup()
+      if (this.process === proc) {
+        this.cleanup()
+      }
     })
 
     proc.on('close', (code, signal) => {
@@ -156,7 +165,10 @@ export class AudioOutput {
           bytesWritten: this.bytesWritten
         })
       }
-      this.cleanup()
+
+      if (this.process === proc) {
+        this.cleanup()
+      }
     })
 
     if (DEBUG) {
@@ -197,32 +209,31 @@ export class AudioOutput {
     }
   }
 
+  /**
+   * Graceful stop: close stdin so EOS propagates through the gst pipeline,
+   * letting pulsesink drain its tail.
+   */
   stop(): void {
     if (!this.process) return
+    const proc = this.process
 
-    try {
-      if (this.process.stdin && !this.process.stdin.destroyed) {
-        this.process.stdin.end()
-      }
-    } catch (e) {
-      if (DEBUG) {
-        console.warn('[AudioOutput] failed to end stdin:', e)
-      }
-    }
+    this.endStdin(proc)
 
-    try {
-      this.process.kill()
-    } catch (e) {
-      if (DEBUG) {
-        console.warn('[AudioOutput] failed to kill process:', e)
+    const fallback = setTimeout(() => {
+      if (this.process !== proc) return
+      try {
+        proc.kill()
+      } catch (e) {
+        if (DEBUG) {
+          console.warn('[AudioOutput] failed to kill process:', e)
+        }
       }
-    }
-
-    this.cleanup()
+    }, AudioOutput.STOP_GRACE_MS)
+    fallback.unref?.()
   }
 
   dispose(): void {
-    this.stop()
+    this.killImmediate()
   }
 
   private flushQueue(): void {
@@ -265,8 +276,7 @@ export class AudioOutput {
           'queue',
           'max-size-time=40000000', // max 40 ms
           'max-size-bytes=0',
-          'max-size-buffers=0',
-          'leaky=downstream'
+          'max-size-buffers=0'
         ]
       : ['queue', 'max-size-time=200000000', 'max-size-bytes=0', 'max-size-buffers=0'] // max 200ms
 
@@ -275,8 +285,7 @@ export class AudioOutput {
           'queue',
           'max-size-time=20000000', // max 20 ms
           'max-size-bytes=0',
-          'max-size-buffers=0',
-          'leaky=downstream'
+          'max-size-buffers=0'
         ]
       : ['queue', 'max-size-time=100000000', 'max-size-bytes=0', 'max-size-buffers=0'] // max 100ms
 
@@ -318,6 +327,35 @@ export class AudioOutput {
     this.queue = []
     this.writing = false
     this.process = null
+  }
+
+  private killImmediate(): void {
+    if (!this.process) return
+    const proc = this.process
+
+    this.endStdin(proc)
+
+    try {
+      proc.kill()
+    } catch (e) {
+      if (DEBUG) {
+        console.warn('[AudioOutput] failed to kill process:', e)
+      }
+    }
+
+    this.cleanup()
+  }
+
+  private endStdin(proc: ChildProcessWithoutNullStreams): void {
+    try {
+      if (proc.stdin && !proc.stdin.destroyed) {
+        proc.stdin.end()
+      }
+    } catch (e) {
+      if (DEBUG) {
+        console.warn('[AudioOutput] failed to end stdin:', e)
+      }
+    }
   }
 
   private static inferMode(sampleRate: number, channels: number): 'music' | 'realtime' {

@@ -1,7 +1,7 @@
 import type { ExtraConfig, MicType } from '@shared/types'
 import { create } from 'zustand'
 
-type VolumeStreamKey = 'music' | 'nav' | 'siri' | 'call'
+type VolumeStreamKey = 'music' | 'nav' | 'voiceAssistant' | 'call'
 
 export type BluetoothPairedDevice = {
   mac: string
@@ -111,11 +111,11 @@ const getSettingsIpc = async (): Promise<ExtraConfig | null> => {
 const applyDerivedFromSettings = (s: ExtraConfig) => {
   const audioVolume = s.audioVolume ?? 1.0
   const navVolume = s.navVolume ?? 0.5
-  const siriVolume = s.siriVolume ?? 0.5
+  const voiceAssistantVolume = s.voiceAssistantVolume ?? 0.5
   const callVolume = s.callVolume ?? 1.0
   const visualAudioDelayMs = s.visualAudioDelayMs ?? 120
 
-  return { audioVolume, navVolume, siriVolume, callVolume, visualAudioDelayMs }
+  return { audioVolume, navVolume, voiceAssistantVolume, callVolume, visualAudioDelayMs }
 }
 
 const deriveTelemetryEnabled = (cfg: ExtraConfig): boolean => {
@@ -186,14 +186,14 @@ export interface CarplayStore {
   // Audio settings
   audioVolume: number
   navVolume: number
-  siriVolume: number
+  voiceAssistantVolume: number
   callVolume: number
   visualAudioDelayMs: number
 
   // Audio setters
   setAudioVolume: (volume: number) => void
   setNavVolume: (volume: number) => void
-  setSiriVolume: (volume: number) => void
+  setVoiceAssistantVolume: (volume: number) => void
   setCallVolume: (volume: number) => void
 
   // Bluetooth paired list
@@ -264,7 +264,7 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
     // Keep mixer in sync
     sendCarplayVolume('music', derived.audioVolume)
     sendCarplayVolume('nav', derived.navVolume)
-    sendCarplayVolume('siri', derived.siriVolume)
+    sendCarplayVolume('voiceAssistant', derived.voiceAssistantVolume)
     sendCarplayVolume('call', derived.callVolume)
   }
 
@@ -417,7 +417,7 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
           // keep mixer in sync
           sendCarplayVolume('music', derived.audioVolume)
           sendCarplayVolume('nav', derived.navVolume)
-          sendCarplayVolume('siri', derived.siriVolume)
+          sendCarplayVolume('voiceAssistant', derived.voiceAssistantVolume)
           sendCarplayVolume('call', derived.callVolume)
         })
       }
@@ -456,7 +456,7 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
 
         sendCarplayVolume('music', derived.audioVolume)
         sendCarplayVolume('nav', derived.navVolume)
-        sendCarplayVolume('siri', derived.siriVolume)
+        sendCarplayVolume('voiceAssistant', derived.voiceAssistantVolume)
         sendCarplayVolume('call', derived.callVolume)
 
         if (patch.micType !== undefined) {
@@ -535,7 +535,7 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
     // Defaults until first IPC load arrives
     audioVolume: 0.95,
     navVolume: 0.95,
-    siriVolume: 0.95,
+    voiceAssistantVolume: 0.95,
     callVolume: 0.95,
     visualAudioDelayMs: 120,
 
@@ -547,9 +547,9 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
       set({ navVolume })
       void get().saveSettings({ navVolume })
     },
-    setSiriVolume: (siriVolume) => {
-      set({ siriVolume })
-      void get().saveSettings({ siriVolume })
+    setVoiceAssistantVolume: (voiceAssistantVolume) => {
+      set({ voiceAssistantVolume })
+      void get().saveSettings({ voiceAssistantVolume })
     },
     setCallVolume: (callVolume) => {
       set({ callVolume })

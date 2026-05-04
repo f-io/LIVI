@@ -123,9 +123,9 @@ describe('Projection node wrapper', () => {
 
     p.dongleDriver.emit('message', new AudioData(AudioCommand.AudioInputConfig, 3))
 
-    p.dongleDriver.emit('message', new AudioData(AudioCommand.AudioSiriStart))
+    p.dongleDriver.emit('message', new AudioData(AudioCommand.AudioVoiceAssistantStart))
     p.dongleDriver.emit('message', new AudioData(AudioCommand.AudioPhonecallStart))
-    p.dongleDriver.emit('message', new AudioData(AudioCommand.AudioSiriStop))
+    p.dongleDriver.emit('message', new AudioData(AudioCommand.AudioVoiceAssistantStop))
     p.dongleDriver.emit('message', new AudioData(AudioCommand.AudioPhonecallStop))
 
     expect(mic.start).toHaveBeenCalledTimes(2)
@@ -333,7 +333,7 @@ describe('Projection node wrapper', () => {
     const p = new Projection({}) as any
     const mic = micInstances[0]
 
-    p.dongleDriver.emit('message', new AudioData(AudioCommand.AudioSiriStart))
+    p.dongleDriver.emit('message', new AudioData(AudioCommand.AudioVoiceAssistantStart))
     p.dongleDriver.emit('message', new AudioData(AudioCommand.AudioPhonecallStart))
 
     expect(mic.start).not.toHaveBeenCalled()

@@ -176,7 +176,7 @@ const api = {
         audioChunkHandler = null
       }
     },
-    setVolume: (stream: 'music' | 'nav' | 'siri' | 'call', volume: number): void => {
+    setVolume: (stream: 'music' | 'nav' | 'voiceAssistant' | 'call', volume: number): void => {
       ipcRenderer.send('projection-set-volume', { stream, volume })
     },
     setVisualizerEnabled: (enabled: boolean): void => {

@@ -224,10 +224,11 @@ export class InputChannel extends EventEmitter {
    * tab-strip contexts (DPAD_LEFT/RIGHT) and inside lists/pickers
    * (NAVIGATE_PREVIOUS/NEXT) without having to know which one is on screen.
    *
-   * @param keyCode  Android KeyEvent.KEYCODE_*, or array of such
-   * @param down     true on press, false on release. Phone expects DOWN+UP pair.
+   * @param keyCode   Android KeyEvent.KEYCODE_*, or array of such
+   * @param down      true on press, false on release. Phone expects DOWN+UP pair.
+   * @param longpress optional KeyEvent.longpress flag (default false).
    */
-  sendButton(keyCode: number | readonly number[], down: boolean): void {
+  sendButton(keyCode: number | readonly number[], down: boolean, longpress = false): void {
     const codes = Array.isArray(keyCode) ? keyCode : [keyCode as number]
     if (codes.length === 0) return
     const tsMicros = BigInt(Date.now()) * 1_000n
@@ -240,7 +241,7 @@ export class InputChannel extends EventEmitter {
         fieldVarint(1, kc), // keycode
         fieldVarint(2, down ? 1 : 0), // down (bool wire = varint)
         fieldVarint(3, 0), // metastate — no modifiers
-        fieldVarint(4, 0) // longpress = false (explicit)
+        fieldVarint(4, longpress ? 1 : 0) // longpress
       ])
       return fieldLenDelim(1, keyBuf)
     })

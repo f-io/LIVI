@@ -82,13 +82,13 @@ export default class Projection {
         }
 
         switch (message.command) {
-          case AudioCommand.AudioSiriStart:
+          case AudioCommand.AudioVoiceAssistantStart:
           case AudioCommand.AudioPhonecallStart:
             if (currentMicDecodeType != null) {
               mic.start(currentMicDecodeType)
             }
             break
-          case AudioCommand.AudioSiriStop:
+          case AudioCommand.AudioVoiceAssistantStop:
           case AudioCommand.AudioPhonecallStop:
             mic.stop()
             break

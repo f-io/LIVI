@@ -151,6 +151,12 @@ export const useKeyDown = ({
       }
 
       if (settings && isCarPlayActive && mappedAction && !inNav) {
+        // PTT: suppress auto-repeat, release is dispatched on keyup elsewhere.
+        if (mappedAction === 'voiceAssistant' && event.repeat) {
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
         onSetKeyCommand(mappedAction as KeyCommand)
         onSetCommandCounter((p) => p + 1)
         broadcastMediaKey(mappedAction)
@@ -480,7 +486,7 @@ export const useKeyDown = ({
         code === b?.pause ||
         code === b?.acceptPhone ||
         code === b?.rejectPhone ||
-        code === b?.siri
+        code === b?.voiceAssistant
 
       if (settings && !isCarPlayActive && isTransport) {
         const action: KeyCommand =
@@ -498,7 +504,11 @@ export const useKeyDown = ({
                       ? 'acceptPhone'
                       : code === b?.rejectPhone
                         ? 'rejectPhone'
-                        : 'siri'
+                        : 'voiceAssistant'
+
+        if (action === 'voiceAssistant' && event.repeat) {
+          return
+        }
 
         onSetKeyCommand(action)
         onSetCommandCounter((p) => p + 1)

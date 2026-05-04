@@ -99,11 +99,11 @@ export class MicChannel extends EventEmitter {
   }
 
   private _sendFrame(buf: Buffer, ts: bigint): void {
-    // AV_MEDIA_INDICATION layout: 8-byte BE timestamp + raw PCM samples.
+    // AV_MEDIA_WITH_TIMESTAMP layout: 8-byte BE timestamp + raw PCM samples.
     const out = Buffer.allocUnsafe(8 + buf.length)
     out.writeBigUInt64BE(ts, 0)
     buf.copy(out, 8)
-    this._send(this._channelId, FRAME_FLAGS.ENC_SIGNAL, AV_MSG.AV_MEDIA_INDICATION, out)
+    this._send(this._channelId, FRAME_FLAGS.ENC_SIGNAL, AV_MSG.AV_MEDIA_WITH_TIMESTAMP, out)
     this._unacked += 1
   }
 

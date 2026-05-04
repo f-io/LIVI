@@ -55,17 +55,17 @@ export const audioSchema: SettingsNode<ExtraConfig> = {
     },
     {
       type: 'slider',
-      label: 'Siri',
-      labelKey: 'settings.siri',
-      path: 'siriVolume',
+      label: 'Voice Assistant',
+      labelKey: 'settings.voiceAssistant',
+      path: 'voiceAssistantVolume',
       displayValue: true,
       displayValueUnit: '%',
       valueTransform: audioValueTransform,
       page: {
-        title: 'Siri',
-        labelTitle: 'settings.siri',
-        description: 'Siri voice assistant settings',
-        labelDescription: 'settings.siriDescription'
+        title: 'Voice Assistant',
+        labelTitle: 'settings.voiceAssistant',
+        description: 'Voice assistant volume',
+        labelDescription: 'settings.voiceAssistantDescription'
       }
     },
     {

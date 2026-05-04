@@ -463,14 +463,14 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
           label: 'Voice Assistant',
           labelKey: 'settings.voiceAssistant',
           path: 'bindings',
-          bindingKey: 'siri'
+          bindingKey: 'voiceAssistant'
         },
         {
           type: 'keybinding',
           label: 'Voice Assistant Release',
           labelKey: 'settings.voiceAssistantRelease',
           path: 'bindings',
-          bindingKey: 'siriRelease'
+          bindingKey: 'voiceAssistantRelease'
         }
       ]
     },

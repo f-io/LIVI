@@ -153,18 +153,18 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     autoSwitchOnPhoneCallRef.current = Boolean(settings.autoSwitchOnPhoneCall)
   }, [settings.autoSwitchOnPhoneCall])
 
-  // Attention-driven UI switching (call / siri / nav)
-  type AttentionKind = 'call' | 'siri'
+  // Attention-driven UI switching (call / voiceAssistant / nav)
+  type AttentionKind = 'call' | 'voiceAssistant'
   type AttentionPayload = { kind: AttentionKind; active: boolean; phase?: string }
 
   const attentionBackPathRef = useRef<string | null>(null)
   const attentionSwitchedByRef = useRef<AttentionKind | null>(null)
-  const siriReleaseTimerRef = useRef<number | null>(null)
+  const voiceAssistantReleaseTimerRef = useRef<number | null>(null)
 
-  const clearSiriReleaseTimer = useCallback(() => {
-    if (siriReleaseTimerRef.current != null) {
-      window.clearTimeout(siriReleaseTimerRef.current)
-      siriReleaseTimerRef.current = null
+  const clearVoiceAssistantReleaseTimer = useCallback(() => {
+    if (voiceAssistantReleaseTimerRef.current != null) {
+      window.clearTimeout(voiceAssistantReleaseTimerRef.current)
+      voiceAssistantReleaseTimerRef.current = null
     }
   }, [])
 
@@ -174,8 +174,8 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     if (!attentionSwitchedByRef.current) return
 
     attentionSwitchedByRef.current = null
-    clearSiriReleaseTimer()
-  }, [pathname, clearSiriReleaseTimer])
+    clearVoiceAssistantReleaseTimer()
+  }, [pathname, clearVoiceAssistantReleaseTimer])
 
   useEffect(() => {
     // When NAV video overlay is shown on top of the host UI (not on "/")
@@ -488,11 +488,11 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     (p: AttentionPayload) => {
       const inCarplay = location.pathname === '/'
 
-      if (p.kind !== 'call' && p.kind !== 'siri') return
+      if (p.kind !== 'call' && p.kind !== 'voiceAssistant') return
 
       // ACTIVE: switch to projection
       if (p.active) {
-        if (p.kind === 'siri') clearSiriReleaseTimer()
+        if (p.kind === 'voiceAssistant') clearVoiceAssistantReleaseTimer()
 
         // Already on projection -> nothing to do
         if (inCarplay) {
@@ -520,13 +520,13 @@ const CarplayComponent: React.FC<CarplayProps> = ({
         }
       }
 
-      // Siri: debounce return to avoid flicker
-      if (p.kind === 'siri') {
-        clearSiriReleaseTimer()
-        siriReleaseTimerRef.current = window.setTimeout(() => {
-          siriReleaseTimerRef.current = null
+      // Voice assistant: debounce return to avoid flicker
+      if (p.kind === 'voiceAssistant') {
+        clearVoiceAssistantReleaseTimer()
+        voiceAssistantReleaseTimerRef.current = window.setTimeout(() => {
+          voiceAssistantReleaseTimerRef.current = null
 
-          if (attentionSwitchedByRef.current !== 'siri') return
+          if (attentionSwitchedByRef.current !== 'voiceAssistant') return
 
           doReturn()
         }, 120)
@@ -537,7 +537,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
       // Call: return immediately
       doReturn()
     },
-    [location.pathname, navigate, clearSiriReleaseTimer]
+    [location.pathname, navigate, clearVoiceAssistantReleaseTimer]
   )
 
   // Projection worker messages
@@ -786,10 +786,10 @@ const CarplayComponent: React.FC<CarplayProps> = ({
             if (autoSwitchOnPhoneCallRef.current) {
               applyAttention({ kind: 'call', active: true, phase: 'ringing' })
             }
-          } else if (cmd === AudioCommand.AudioSiriStart) {
-            applyAttention({ kind: 'siri', active: true })
-          } else if (cmd === AudioCommand.AudioSiriStop) {
-            applyAttention({ kind: 'siri', active: false })
+          } else if (cmd === AudioCommand.AudioVoiceAssistantStart) {
+            applyAttention({ kind: 'voiceAssistant', active: true })
+          } else if (cmd === AudioCommand.AudioVoiceAssistantStop) {
+            applyAttention({ kind: 'voiceAssistant', active: false })
           }
           break
         }

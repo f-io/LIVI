@@ -108,8 +108,8 @@ export type KeyBindingKey =
   | 'phoneKeyStar'
   | 'phoneKeyHash'
   | 'phoneKeyHookSwitch'
-  | 'siri'
-  | 'siriRelease'
+  | 'voiceAssistant'
+  | 'voiceAssistantRelease'
 
 export type KeyBindingNode = NodeMeta & {
   type: 'keybinding'

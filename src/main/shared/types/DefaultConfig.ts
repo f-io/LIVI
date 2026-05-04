@@ -65,7 +65,7 @@ export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
   visualAudioDelayMs: 120,
   audioVolume: 0.95,
   navVolume: 0.95,
-  siriVolume: 0.95,
+  voiceAssistantVolume: 0.95,
   callVolume: 0.95,
   primaryColorDark: '',
   highlightColorDark: '',

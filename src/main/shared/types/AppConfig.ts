@@ -21,7 +21,7 @@ export type ExtraConfig = DongleConfig & {
   bindings: KeyBindings
   audioVolume: number
   navVolume: number
-  siriVolume: number
+  voiceAssistantVolume: number
   callVolume: number
   autoSwitchOnStream: boolean
   autoSwitchOnPhoneCall: boolean
@@ -79,8 +79,8 @@ export type KeyBindings = {
   phoneKeyHookSwitch: string
 
   // Voice
-  siri: string
-  siriRelease: string
+  voiceAssistant: string
+  voiceAssistantRelease: string
 }
 
 export const DEFAULT_BINDINGS: KeyBindings = {
@@ -125,6 +125,6 @@ export const DEFAULT_BINDINGS: KeyBindings = {
   phoneKeyHookSwitch: '',
 
   // Voice / UI
-  siri: 'KeyV',
-  siriRelease: ''
+  voiceAssistant: 'KeyV',
+  voiceAssistantRelease: ''
 }

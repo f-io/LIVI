@@ -10,6 +10,7 @@ import { AppContext } from './context'
 import { useActiveControl, useFocus, useKeyDown } from './hooks'
 import { appRoutes } from './routes/appRoutes'
 import { useLiviStore, useStatusStore } from './store/store'
+import { broadcastMediaKey } from './utils/broadcastMediaKey'
 import { updateCameras } from './utils/cameraDetection'
 
 const START_PAGE_ROUTE: Record<string, string> = {
@@ -191,6 +192,47 @@ function AppInner() {
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
   }, [onKeyDown, navVideoOverlayActive, location.pathname, settings])
+
+  // PTT release: dispatch on keyup, blur, or visibility loss.
+  useEffect(() => {
+    if (!settings) return
+    const binding = settings.bindings?.voiceAssistant
+    if (!binding) return
+
+    let pressed = false
+
+    const dispatchRelease = () => {
+      if (!pressed) return
+      pressed = false
+      setKeyCommand('voiceAssistantRelease' as KeyCommand)
+      setCommandCounter((p) => p + 1)
+      broadcastMediaKey('voiceAssistantRelease')
+    }
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === binding && !e.repeat) pressed = true
+    }
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === binding) dispatchRelease()
+    }
+    const onBlur = () => dispatchRelease()
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') dispatchRelease()
+    }
+
+    document.addEventListener('keydown', onKeyDown, true)
+    document.addEventListener('keyup', onKeyUp, true)
+    window.addEventListener('blur', onBlur)
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true)
+      document.removeEventListener('keyup', onKeyUp, true)
+      window.removeEventListener('blur', onBlur)
+      document.removeEventListener('visibilitychange', onVisibility)
+      dispatchRelease()
+    }
+  }, [settings])
 
   useEffect(() => {
     if (!settings) return

@@ -5,7 +5,7 @@ import { AudioCommand } from '@shared/types/ProjectionEnums'
 import { AudioData, decodeTypeMap } from '../messages'
 
 export type PlayerKey = string
-export type LogicalStreamKey = 'music' | 'nav' | 'siri' | 'call'
+export type LogicalStreamKey = 'music' | 'nav' | 'voiceAssistant' | 'call'
 
 type VolumeState = Record<LogicalStreamKey, number>
 
@@ -37,25 +37,25 @@ export class ProjectionAudio {
   // Last used players per logical stream (for clean teardown)
   private lastMusicPlayerKey: PlayerKey | null = null
   private lastNavPlayerKey: PlayerKey | null = null
-  private lastSiriPlayerKey: PlayerKey | null = null
+  private lastVoiceAssistantPlayerKey: PlayerKey | null = null
   private lastCallPlayerKey: PlayerKey | null = null
 
   // Logical per-stream volumes, controlled via IPC and config
   private volumes: VolumeState = {
     music: 1.0,
     nav: 1.0,
-    siri: 1.0,
+    voiceAssistant: 1.0,
     call: 1.0
   }
 
-  // Siri / phonecall / nav state
-  private siriActive = false
+  // Voice-assistant / phonecall / nav state
+  private voiceAssistantActive = false
   private phonecallActive = false
   private navActive = false
 
   // UI hint state
   private uiCallIncoming = false
-  private uiSiriHintActive = false
+  private uiVoiceAssistantHintActive = false
   private uiNavHintActive = false
 
   // Media session state (music)
@@ -121,7 +121,7 @@ export class ProjectionAudio {
   }
 
   private emitAttention(
-    kind: 'call' | 'siri' | 'nav',
+    kind: 'call' | 'voiceAssistant' | 'nav',
     active: boolean,
     extra?: Record<string, unknown>
   ) {
@@ -140,7 +140,7 @@ export class ProjectionAudio {
     this.stopAllAudioPlayers()
     this._mic?.stop()
 
-    this.siriActive = false
+    this.voiceAssistantActive = false
     this.phonecallActive = false
     this.navActive = false
     this.navHoldUntil = 0
@@ -159,14 +159,14 @@ export class ProjectionAudio {
     this.lastCallPlaybackLog = null
     this.lastMusicPlayerKey = null
     this.lastNavPlayerKey = null
-    this.lastSiriPlayerKey = null
+    this.lastVoiceAssistantPlayerKey = null
     this.lastCallPlayerKey = null
 
     this.audioInfoSent = false
     this.currentMicDecodeType = null
 
     this.uiCallIncoming = false
-    this.uiSiriHintActive = false
+    this.uiVoiceAssistantHintActive = false
     this.uiNavHintActive = false
   }
 
@@ -175,7 +175,7 @@ export class ProjectionAudio {
     this.stopAllAudioPlayers()
     this._mic?.stop()
 
-    this.siriActive = false
+    this.voiceAssistantActive = false
     this.phonecallActive = false
     this.navActive = false
     this.navHoldUntil = 0
@@ -194,14 +194,14 @@ export class ProjectionAudio {
     this.lastCallPlaybackLog = null
     this.lastMusicPlayerKey = null
     this.lastNavPlayerKey = null
-    this.lastSiriPlayerKey = null
+    this.lastVoiceAssistantPlayerKey = null
     this.lastCallPlayerKey = null
 
     this.audioInfoSent = false
     this.currentMicDecodeType = null
 
     this.uiCallIncoming = false
-    this.uiSiriHintActive = false
+    this.uiVoiceAssistantHintActive = false
     this.uiNavHintActive = false
   }
 
@@ -209,7 +209,10 @@ export class ProjectionAudio {
     const next: VolumeState = {
       music: typeof volumes.music === 'number' ? volumes.music : this.volumes.music,
       nav: typeof volumes.nav === 'number' ? volumes.nav : this.volumes.nav,
-      siri: typeof volumes.siri === 'number' ? volumes.siri : this.volumes.siri,
+      voiceAssistant:
+        typeof volumes.voiceAssistant === 'number'
+          ? volumes.voiceAssistant
+          : this.volumes.voiceAssistant,
       call: typeof volumes.call === 'number' ? volumes.call : this.volumes.call
     }
 
@@ -236,7 +239,7 @@ export class ProjectionAudio {
   public handleAudioData(msg: AudioData) {
     const meta = msg.decodeType != null ? this.safeDecodeType(msg.decodeType) : null
 
-    // PCM downlink / output (music, nav, siri, phone, …)
+    // PCM downlink / output (music, nav, voiceAssistant, phone, …)
     if (msg.data) {
       const now = Date.now()
       const logicalKey = this.getLogicalStreamKey(msg)
@@ -259,8 +262,8 @@ export class ProjectionAudio {
           this.lastMusicPlayerKey = keyForStream
         } else if (logicalKey === 'nav') {
           this.lastNavPlayerKey = keyForStream
-        } else if (logicalKey === 'siri') {
-          this.lastSiriPlayerKey = keyForStream
+        } else if (logicalKey === 'voiceAssistant') {
+          this.lastVoiceAssistantPlayerKey = keyForStream
         } else if (logicalKey === 'call') {
           this.lastCallPlayerKey = keyForStream
         }
@@ -274,11 +277,6 @@ export class ProjectionAudio {
         const channels = meta?.channel ?? 2
         const totalSamples = msg.data.length
 
-        // No gap-reset here: while a nav prompt is mixing in, the phone
-        // throttles music chunks (system-side ducking on iOS), which would
-        // false-trigger the reset and kill the music player mid-stream — the
-        // exact "choppy" symptom we hit. The OS sink keeps the stream open
-        // across small gaps; the next chunk just resumes.
         this.lastMusicDataAt = now
 
         const gateUntil = Math.max(this.nextMusicRampStartAt, this.musicWarmupUntil)
@@ -369,7 +367,7 @@ export class ProjectionAudio {
           }
         }
       } else {
-        // nav / siri / call: single multiplication. The OS sink mixes this
+        // nav / voiceAssistant / call: single multiplication. The OS sink mixes this
         // stream with whatever music player is also writing.
         pcm = this.applyGain(msg.data, baseGain)
       }
@@ -430,7 +428,7 @@ export class ProjectionAudio {
       return
     }
 
-    // Command-only messages: Siri / phone / media / nav control
+    // Command-only messages: voice-assistant / phone / media / nav control
     if (msg.command != null) {
       const cmd = msg.command
 
@@ -440,7 +438,7 @@ export class ProjectionAudio {
           cmd,
           decodeType: msg.decodeType,
           audioType: msg.audioType,
-          siriActive: this.siriActive,
+          voiceAssistantActive: this.voiceAssistantActive,
           phonecallActive: this.phonecallActive
         })
       }
@@ -460,15 +458,15 @@ export class ProjectionAudio {
         }
       }
 
-      if (cmd === AudioCommand.AudioSiriStart) {
-        if (!this.uiSiriHintActive) {
-          this.uiSiriHintActive = true
-          this.emitAttention('siri', true)
+      if (cmd === AudioCommand.AudioVoiceAssistantStart) {
+        if (!this.uiVoiceAssistantHintActive) {
+          this.uiVoiceAssistantHintActive = true
+          this.emitAttention('voiceAssistant', true)
         }
       }
 
-      if (cmd === AudioCommand.AudioSiriStop) {
-        this.siriActive = false
+      if (cmd === AudioCommand.AudioVoiceAssistantStop) {
+        this.voiceAssistantActive = false
       }
 
       if (cmd === AudioCommand.AudioNaviStart || cmd === AudioCommand.AudioTurnByTurnStart) {
@@ -490,7 +488,7 @@ export class ProjectionAudio {
         this.navHoldUntil = 0
         if (msg.audioType != null) this.navAudioType = msg.audioType
 
-        if (this.mediaActive && !this.siriActive && !this.phonecallActive) {
+        if (this.mediaActive && !this.voiceAssistantActive && !this.phonecallActive) {
           this.musicRampActive = true
           this.musicFade.target = this.navDuckingTarget
           this.musicFade.remainingSamples = 0
@@ -559,7 +557,7 @@ export class ProjectionAudio {
       }
 
       if (cmd === AudioCommand.AudioMediaStop) {
-        // The phone often stops music while Siri/phone is active. Don't keep
+        // The phone often stops music while voice-assistant/phone is active. Don't keep
         // mediaActive=true — otherwise we ignore the next AudioMediaStart.
         this.mediaActive = false
 
@@ -613,10 +611,10 @@ export class ProjectionAudio {
           this.stopPlayerByKey(this.lastNavPlayerKey)
           this.lastNavPlayerKey = null
         }
-        if (stoppingType === null && !this.phonecallActive && !this.siriActive) {
-          if (this.lastSiriPlayerKey) {
-            this.stopPlayerByKey(this.lastSiriPlayerKey)
-            this.lastSiriPlayerKey = null
+        if (stoppingType === null && !this.phonecallActive && !this.voiceAssistantActive) {
+          if (this.lastVoiceAssistantPlayerKey) {
+            this.stopPlayerByKey(this.lastVoiceAssistantPlayerKey)
+            this.lastVoiceAssistantPlayerKey = null
           }
           if (this.lastCallPlayerKey) {
             this.stopPlayerByKey(this.lastCallPlayerKey)
@@ -647,18 +645,21 @@ export class ProjectionAudio {
         return
       }
 
-      if (cmd === AudioCommand.AudioSiriStart || cmd === AudioCommand.AudioPhonecallStart) {
+      if (
+        cmd === AudioCommand.AudioVoiceAssistantStart ||
+        cmd === AudioCommand.AudioPhonecallStart
+      ) {
         const cfg = this.getConfig() as ExtraConfig & {
           micType?: number
           audioTransferMode?: boolean
         }
 
-        if (cmd === AudioCommand.AudioSiriStart) {
-          this.siriActive = true
+        if (cmd === AudioCommand.AudioVoiceAssistantStart) {
+          this.voiceAssistantActive = true
           this.phonecallActive = false
         } else if (cmd === AudioCommand.AudioPhonecallStart) {
           this.phonecallActive = true
-          this.siriActive = false
+          this.voiceAssistantActive = false
         }
 
         // While voice is active, keep music muted via gate.
@@ -710,12 +711,12 @@ export class ProjectionAudio {
         return
       }
 
-      if (cmd === AudioCommand.AudioSiriStop || cmd === AudioCommand.AudioPhonecallStop) {
-        if (cmd === AudioCommand.AudioSiriStop) {
-          this.siriActive = false
-          if (this.lastSiriPlayerKey) {
-            this.stopPlayerByKey(this.lastSiriPlayerKey)
-            this.lastSiriPlayerKey = null
+      if (cmd === AudioCommand.AudioVoiceAssistantStop || cmd === AudioCommand.AudioPhonecallStop) {
+        if (cmd === AudioCommand.AudioVoiceAssistantStop) {
+          this.voiceAssistantActive = false
+          if (this.lastVoiceAssistantPlayerKey) {
+            this.stopPlayerByKey(this.lastVoiceAssistantPlayerKey)
+            this.lastVoiceAssistantPlayerKey = null
           }
         } else if (cmd === AudioCommand.AudioPhonecallStop) {
           this.phonecallActive = false
@@ -744,7 +745,7 @@ export class ProjectionAudio {
     this.lastCallPlaybackLog = null
     this.lastMusicPlayerKey = null
     this.lastNavPlayerKey = null
-    this.lastSiriPlayerKey = null
+    this.lastVoiceAssistantPlayerKey = null
     this.lastCallPlayerKey = null
   }
 
@@ -820,7 +821,7 @@ export class ProjectionAudio {
     if (this.musicAudioType != null && msg.audioType === this.musicAudioType) return 'music'
     if (this.navAudioType != null && msg.audioType === this.navAudioType) return 'nav'
     if (this.phonecallActive) return 'call'
-    if (this.siriActive) return 'siri'
+    if (this.voiceAssistantActive) return 'voiceAssistant'
     if (this.navActive) return 'nav'
     return 'music'
   }

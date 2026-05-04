@@ -32,8 +32,8 @@ jest.mock('@shared/types/ProjectionEnums', () => ({
     AudioAttentionStart: 1,
     AudioAttentionRinging: 2,
     AudioPhonecallStop: 3,
-    AudioSiriStart: 4,
-    AudioSiriStop: 5,
+    AudioVoiceAssistantStart: 4,
+    AudioVoiceAssistantStop: 5,
     AudioNaviStart: 6,
     AudioTurnByTurnStart: 7,
     AudioNaviStop: 8,
@@ -60,7 +60,7 @@ describe('ProjectionAudio state controls', () => {
     expect(a.volumes).toEqual({
       music: 0.3,
       nav: 0.4,
-      siri: 1,
+      voiceAssistant: 1,
       call: 1
     })
   })
@@ -93,7 +93,7 @@ describe('ProjectionAudio state controls', () => {
     const a = createSubject()
 
     a.audioPlayers.set('k', { stop: jest.fn() })
-    a.siriActive = true
+    a.voiceAssistantActive = true
     a.phonecallActive = true
     a.navActive = true
     a.mediaActive = true
@@ -107,7 +107,7 @@ describe('ProjectionAudio state controls', () => {
 
     a.resetForSessionStart()
 
-    expect(a.siriActive).toBe(false)
+    expect(a.voiceAssistantActive).toBe(false)
     expect(a.phonecallActive).toBe(false)
     expect(a.navActive).toBe(false)
     expect(a.mediaActive).toBe(false)
@@ -125,7 +125,7 @@ describe('ProjectionAudio state controls', () => {
     const a = createSubject()
 
     a.audioPlayers.set('k', { stop: jest.fn() })
-    a.siriActive = true
+    a.voiceAssistantActive = true
     a.phonecallActive = true
     a.navActive = true
     a.mediaActive = true
@@ -139,7 +139,7 @@ describe('ProjectionAudio state controls', () => {
 
     a.resetForSessionStop()
 
-    expect(a.siriActive).toBe(false)
+    expect(a.voiceAssistantActive).toBe(false)
     expect(a.phonecallActive).toBe(false)
     expect(a.navActive).toBe(false)
     expect(a.mediaActive).toBe(false)
@@ -196,7 +196,7 @@ describe('ProjectionAudio state controls', () => {
     expect(createSubject({}).getMediaDelay()).toBe(0)
   })
 
-  test('getLogicalStreamKey prioritizes call over siri over nav over music', () => {
+  test('getLogicalStreamKey prioritizes call over voiceAssistant over nav over music', () => {
     const a = createSubject()
 
     expect(a.getLogicalStreamKey({})).toBe('music')
@@ -204,8 +204,8 @@ describe('ProjectionAudio state controls', () => {
     a.navActive = true
     expect(a.getLogicalStreamKey({})).toBe('nav')
 
-    a.siriActive = true
-    expect(a.getLogicalStreamKey({})).toBe('siri')
+    a.voiceAssistantActive = true
+    expect(a.getLogicalStreamKey({})).toBe('voiceAssistant')
 
     a.phonecallActive = true
     expect(a.getLogicalStreamKey({})).toBe('call')
@@ -368,7 +368,7 @@ describe('ProjectionAudio state controls', () => {
   test('handleAudioData nav start activates nav and prepares ducking', () => {
     const a = createSubject()
     a.mediaActive = true
-    a.siriActive = false
+    a.voiceAssistantActive = false
     a.phonecallActive = false
 
     a.handleAudioData({ command: 6 })
@@ -395,11 +395,11 @@ describe('ProjectionAudio state controls', () => {
     expect(a.navHoldUntil).toBeGreaterThanOrEqual(before)
   })
 
-  test('handleAudioData AudioOutputStop stops remembered players when no call or siri is active', () => {
+  test('handleAudioData AudioOutputStop stops remembered players when no call or voiceAssistant is active', () => {
     const a = createSubject()
     a.lastMusicPlayerKey = 'music'
     a.lastNavPlayerKey = 'nav'
-    a.lastSiriPlayerKey = 'siri'
+    a.lastVoiceAssistantPlayerKey = 'voiceAssistant'
     a.lastCallPlayerKey = 'call'
     a.stopPlayerByKey = jest.fn()
 
@@ -407,11 +407,11 @@ describe('ProjectionAudio state controls', () => {
 
     expect(a.stopPlayerByKey).toHaveBeenCalledWith('music')
     expect(a.stopPlayerByKey).toHaveBeenCalledWith('nav')
-    expect(a.stopPlayerByKey).toHaveBeenCalledWith('siri')
+    expect(a.stopPlayerByKey).toHaveBeenCalledWith('voiceAssistant')
     expect(a.stopPlayerByKey).toHaveBeenCalledWith('call')
     expect(a.lastMusicPlayerKey).toBeNull()
     expect(a.lastNavPlayerKey).toBeNull()
-    expect(a.lastSiriPlayerKey).toBeNull()
+    expect(a.lastVoiceAssistantPlayerKey).toBeNull()
     expect(a.lastCallPlayerKey).toBeNull()
   })
 
@@ -423,12 +423,12 @@ describe('ProjectionAudio state controls', () => {
     expect(a.currentMicDecodeType).toBe(2)
   })
 
-  test('handleAudioData AudioSiriStart updates siri state and skips mic start without decodeType', () => {
+  test('handleAudioData AudioVoiceAssistantStart updates voiceAssistant state and skips mic start without decodeType', () => {
     const a = createSubject({ micType: 0, audioTransferMode: false })
 
     a.handleAudioData({ command: 4 })
 
-    expect(a.siriActive).toBe(true)
+    expect(a.voiceAssistantActive).toBe(true)
     expect(a.phonecallActive).toBe(false)
     expect(a.currentMicDecodeType).toBeNull()
   })
@@ -440,22 +440,22 @@ describe('ProjectionAudio state controls', () => {
     a.handleAudioData({ command: 15, decodeType: 1 })
 
     expect(a.phonecallActive).toBe(true)
-    expect(a.siriActive).toBe(false)
+    expect(a.voiceAssistantActive).toBe(false)
     expect(a._mic.stop).toHaveBeenCalled()
   })
 
-  test('handleAudioData AudioSiriStop clears siri state and stops siri player/mic', () => {
+  test('handleAudioData AudioVoiceAssistantStop clears state and stops player/mic', () => {
     const a = createSubject()
-    a.siriActive = true
-    a.lastSiriPlayerKey = 'siri-key'
+    a.voiceAssistantActive = true
+    a.lastVoiceAssistantPlayerKey = 'va-key'
     a.stopPlayerByKey = jest.fn()
     a._mic = { stop: jest.fn() }
 
     a.handleAudioData({ command: 5 })
 
-    expect(a.siriActive).toBe(false)
-    expect(a.stopPlayerByKey).toHaveBeenCalledWith('siri-key')
-    expect(a.lastSiriPlayerKey).toBeNull()
+    expect(a.voiceAssistantActive).toBe(false)
+    expect(a.stopPlayerByKey).toHaveBeenCalledWith('va-key')
+    expect(a.lastVoiceAssistantPlayerKey).toBeNull()
     expect(a._mic.stop).toHaveBeenCalled()
   })
 
@@ -594,13 +594,13 @@ describe('ProjectionAudio state controls', () => {
     expect(a._mic.start).not.toHaveBeenCalled()
   })
 
-  test('handleAudioData AudioSiriStart with micType=0 creates mic and starts it with decodeType', () => {
+  test('handleAudioData AudioVoiceAssistantStart with micType=0 creates mic and starts it with decodeType', () => {
     const { Microphone } = require('@main/services/audio')
 
     const a = createSubject({ micType: 0, audioTransferMode: false })
     a._mic = null
 
-    a.handleAudioData({ command: 4, decodeType: 1 }) // AudioSiriStart with decodeType
+    a.handleAudioData({ command: 4, decodeType: 1 }) // AudioVoiceAssistantStart with decodeType
 
     expect(Microphone).toHaveBeenCalled()
     expect(a._mic).not.toBeNull()
@@ -608,20 +608,20 @@ describe('ProjectionAudio state controls', () => {
     expect(a.currentMicDecodeType).toBe(1)
   })
 
-  test('handleAudioData AudioSiriStart skips mic.start when no decodeType available', () => {
+  test('handleAudioData AudioVoiceAssistantStart skips mic.start when no decodeType available', () => {
     const a = createSubject({ micType: 0, audioTransferMode: false })
     a._mic = null
     a.currentMicDecodeType = null
 
-    a.handleAudioData({ command: 4 }) // AudioSiriStart, no decodeType in msg
+    a.handleAudioData({ command: 4 }) // AudioVoiceAssistantStart, no decodeType in msg
 
-    expect(a.siriActive).toBe(true)
+    expect(a.voiceAssistantActive).toBe(true)
     // mic is created but start is NOT called (no decode type)
     expect(a._mic).not.toBeNull()
     expect(a._mic.start).not.toHaveBeenCalled()
   })
 
-  test('handleAudioData AudioSiriStart reuses existing mic and sets decodeType from msg', () => {
+  test('handleAudioData AudioVoiceAssistantStart reuses existing mic and sets decodeType from msg', () => {
     const existingMic = { on: jest.fn(), start: jest.fn(), stop: jest.fn(), isCapturing: jest.fn() }
     const a = createSubject({ micType: 0, audioTransferMode: false })
     a._mic = existingMic

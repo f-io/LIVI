@@ -374,49 +374,13 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     })
 
     // Mic lifecycle: phone opens / closes its mic-input channel.
-    aa.on('mic-start', () => {
-      if (this._micActive) return
-      this._micActive = true
-      if (!this._mic) {
-        this._mic = new Microphone()
-        this._mic.on('data', (chunk: Buffer) => {
-          if (!this._micActive) return
-          this._aa?.sendMicPcm(chunk)
-        })
-      }
-      console.log('[aaDriver] mic-start → starting capture (16 kHz mono)')
-      this._mic.start(5) // decodeType 5 = 16 kHz mono s16le
-    })
-
-    aa.on('mic-stop', () => {
-      if (!this._micActive) return
-      this._micActive = false
-      console.log('[aaDriver] mic-stop → stopping capture')
-      this._mic?.stop()
-    })
+    aa.on('mic-start', () => this._startMicCapture('mic-start'))
+    aa.on('mic-stop', () => this._stopMicCapture('mic-stop'))
 
     // Voice-assist trigger: phone signals it expects mic input
     aa.on('voice-session', (active: boolean) => {
-      if (active) {
-        if (this._micActive) return
-        this._micActive = true
-        if (!this._mic) {
-          this._mic = new Microphone()
-          this._mic.on('data', (chunk: Buffer) => {
-            if (!this._micActive) return
-            // pushPcm drops frames silently while ch=9 isn't open; we still
-            // burn the capture so the user sees the pipeline run.
-            this._aa?.sendMicPcm(chunk)
-          })
-        }
-        console.log('[aaDriver] voice-session START → pre-warming mic capture')
-        this._mic.start(5)
-      } else {
-        if (!this._micActive) return
-        this._micActive = false
-        console.log('[aaDriver] voice-session END → stopping mic capture')
-        this._mic?.stop()
-      }
+      if (active) this._startMicCapture('voice-session START')
+      else this._stopMicCapture('voice-session END')
     })
 
     // Phone asked HU to swap to its native (host) UI.
@@ -582,6 +546,29 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     this._aa?.sendVehicleEnergyModel(capacityWh, currentWh, rangeM, opts)
   }
 
+  // Mltiple sources (mic-start, voice-session START,
+  // PTT keydown) can request capture independently.
+  private _startMicCapture(reason: string): void {
+    if (this._micActive) return
+    this._micActive = true
+    if (!this._mic) {
+      this._mic = new Microphone()
+      this._mic.on('data', (chunk: Buffer) => {
+        if (!this._micActive) return
+        this._aa?.sendMicPcm(chunk)
+      })
+    }
+    console.log(`[aaDriver] ${reason} → starting mic capture`)
+    this._mic.start(5) // decodeType 5 = 16 kHz mono s16le
+  }
+
+  private _stopMicCapture(reason: string): void {
+    if (!this._micActive) return
+    this._micActive = false
+    console.log(`[aaDriver] ${reason} → stopping mic capture`)
+    this._mic?.stop()
+  }
+
   async close(): Promise<void> {
     if (this._closed) return
     this._closed = true
@@ -661,6 +648,18 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
         return true
       }
 
+      // PTT: SEARCH (84)
+      if (cmd === CommandMapping.voiceAssistant) {
+        if (DEBUG) console.log(`[INPUT] → SEARCH press`)
+        this._aa.sendButton(BUTTON_KEY.SEARCH, true)
+        return true
+      }
+      if (cmd === CommandMapping.voiceAssistantRelease) {
+        if (DEBUG) console.log(`[INPUT] → SEARCH release`)
+        this._aa.sendButton(BUTTON_KEY.SEARCH, false)
+        return true
+      }
+
       // Rotary semantics for the rotation axis: left/right + knob rotation
       // → rotary delta (in-container walk). A real rotary controller has
       // only this one rotation axis.
@@ -700,7 +699,6 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
         [CommandMapping.back]: BUTTON_KEY.BACK,
         [CommandMapping.acceptPhone]: BUTTON_KEY.PHONE_ACCEPT,
         [CommandMapping.rejectPhone]: BUTTON_KEY.PHONE_DECLINE,
-        [CommandMapping.siri]: BUTTON_KEY.VOICE_ASSIST,
         // Phone dialer (DTMF) keys
         [CommandMapping.phoneKey0]: BUTTON_KEY.KEY_0,
         [CommandMapping.phoneKey1]: BUTTON_KEY.KEY_1,

@@ -606,7 +606,7 @@ describe('useKeyDown', () => {
     )
   })
 
-  test('transport keys: prev, playPause, play, pause, acceptPhone, rejectPhone, siri', () => {
+  test('transport keys: prev, playPause, play, pause, acceptPhone, rejectPhone, voiceAssistant', () => {
     // covers lines 487-501: full transport action chain
     setupRoots()
     mockPathname = ROUTES.MEDIA
@@ -618,7 +618,7 @@ describe('useKeyDown', () => {
         pause: 'MediaPause',
         acceptPhone: 'KeyA',
         rejectPhone: 'KeyR',
-        siri: 'KeyV'
+        voiceAssistant: 'KeyV'
       }
     }
 
@@ -650,7 +650,7 @@ describe('useKeyDown', () => {
       ['MediaPause', 'pause'],
       ['KeyA', 'acceptPhone'],
       ['KeyR', 'rejectPhone'],
-      ['KeyV', 'siri']
+      ['KeyV', 'voiceAssistant']
     ] as const) {
       onSetKeyCommand.mockClear()
       result.current(makeEvent(code))

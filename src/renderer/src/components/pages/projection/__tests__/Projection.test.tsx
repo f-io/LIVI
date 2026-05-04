@@ -891,7 +891,7 @@ describe('Projection page', () => {
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/', { replace: true }))
   })
 
-  test('AudioSiriStart triggers siri attention switch', async () => {
+  test('AudioVoiceAssistantStart triggers voiceAssistant attention switch', async () => {
     mockPathname = '/media'
 
     render(<Projection {...baseProps()} />)
@@ -899,21 +899,24 @@ describe('Projection page', () => {
     act(() => {
       onEventCb?.(null, {
         type: 'audio',
-        payload: { command: AudioCommand.AudioSiriStart }
+        payload: { command: AudioCommand.AudioVoiceAssistantStart }
       })
     })
 
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/', { replace: true }))
   })
 
-  test('AudioSiriStop returns to previous route via debounce timer', async () => {
+  test('AudioVoiceAssistantStop returns to previous route via debounce timer', async () => {
     jest.useFakeTimers()
     mockPathname = '/media'
 
     const { rerender } = render(<Projection {...baseProps()} />)
 
     act(() => {
-      onEventCb?.(null, { type: 'audio', payload: { command: AudioCommand.AudioSiriStart } })
+      onEventCb?.(null, {
+        type: 'audio',
+        payload: { command: AudioCommand.AudioVoiceAssistantStart }
+      })
     })
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/', { replace: true }))
 
@@ -922,7 +925,10 @@ describe('Projection page', () => {
     rerender(<Projection {...baseProps()} />)
 
     act(() => {
-      onEventCb?.(null, { type: 'audio', payload: { command: AudioCommand.AudioSiriStop } })
+      onEventCb?.(null, {
+        type: 'audio',
+        payload: { command: AudioCommand.AudioVoiceAssistantStop }
+      })
     })
 
     // timer not yet fired
@@ -959,17 +965,20 @@ describe('Projection page', () => {
     expect(navigateMock).not.toHaveBeenCalled()
   })
 
-  // ── clearSiriReleaseTimer when timer is already set ───────────────────────
+  // ── clearVoiceAssistantReleaseTimer when timer is already set ─────────────
 
-  test('clearSiriReleaseTimer cancels pending siri debounce on second siri active', async () => {
+  test('clearVoiceAssistantReleaseTimer cancels pending debounce on second active', async () => {
     jest.useFakeTimers()
     mockPathname = '/media'
 
     const { rerender } = render(<Projection {...baseProps()} />)
 
-    // First siri start → switch to projection
+    // First voiceAssistant start → switch to projection
     act(() => {
-      onEventCb?.(null, { type: 'audio', payload: { command: AudioCommand.AudioSiriStart } })
+      onEventCb?.(null, {
+        type: 'audio',
+        payload: { command: AudioCommand.AudioVoiceAssistantStart }
+      })
     })
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/', { replace: true }))
 
@@ -977,15 +986,21 @@ describe('Projection page', () => {
     mockPathname = '/'
     rerender(<Projection {...baseProps()} />)
 
-    // Siri stop → sets debounce timer
+    // VoiceAssistant stop → sets debounce timer
     act(() => {
-      onEventCb?.(null, { type: 'audio', payload: { command: AudioCommand.AudioSiriStop } })
+      onEventCb?.(null, {
+        type: 'audio',
+        payload: { command: AudioCommand.AudioVoiceAssistantStop }
+      })
     })
 
-    // Siri start again before timer fires → clearSiriReleaseTimer runs with timer set
+    // VoiceAssistant start again before timer fires → clearVoiceAssistantReleaseTimer runs with timer set
     mockPathname = '/'
     act(() => {
-      onEventCb?.(null, { type: 'audio', payload: { command: AudioCommand.AudioSiriStart } })
+      onEventCb?.(null, {
+        type: 'audio',
+        payload: { command: AudioCommand.AudioVoiceAssistantStart }
+      })
     })
 
     // Timer should have been cancelled, so no navigation after advance
@@ -1233,7 +1248,7 @@ describe('Projection page', () => {
 
   // ── requestVideoFocus blocked by attention ────────────────────────────────
 
-  test('requestVideoFocus does not auto-switch while attention (siri) is active', async () => {
+  test('requestVideoFocus does not auto-switch while attention (voiceAssistant) is active', async () => {
     mockPathname = '/media'
 
     render(
@@ -1243,15 +1258,18 @@ describe('Projection page', () => {
       />
     )
 
-    // Arm siri attention (switches to projection)
+    // Arm voiceAssistant attention (switches to projection)
     act(() => {
-      onEventCb?.(null, { type: 'audio', payload: { command: AudioCommand.AudioSiriStart } })
+      onEventCb?.(null, {
+        type: 'audio',
+        payload: { command: AudioCommand.AudioVoiceAssistantStart }
+      })
     })
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/', { replace: true }))
 
     navigateMock.mockClear()
 
-    // requestVideoFocus while siri attention is active → blocked
+    // requestVideoFocus while voiceAssistant attention is active → blocked
     act(() => {
       onEventCb?.(null, {
         type: 'command',
@@ -1567,22 +1585,28 @@ describe('Projection page', () => {
 
     const { rerender } = render(<Projection {...baseProps()} />)
 
-    // Arm siri attention
+    // Arm voiceAssistant attention
     act(() => {
-      onEventCb?.(null, { type: 'audio', payload: { command: AudioCommand.AudioSiriStart } })
+      onEventCb?.(null, {
+        type: 'audio',
+        payload: { command: AudioCommand.AudioVoiceAssistantStart }
+      })
     })
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/', { replace: true }))
 
-    // User manually navigates to '/settings' while siri is active
+    // User manually navigates to '/settings' while voiceAssistant is active
     // → the pathname effect clears attentionSwitchedByRef
     mockPathname = '/settings'
     rerender(<Projection {...baseProps()} />)
 
     navigateMock.mockClear()
 
-    // Siri inactive now: attentionSwitchedByRef is already null → no navigation back
+    // VoiceAssistant inactive now: attentionSwitchedByRef is already null → no navigation back
     act(() => {
-      onEventCb?.(null, { type: 'audio', payload: { command: AudioCommand.AudioSiriStop } })
+      onEventCb?.(null, {
+        type: 'audio',
+        payload: { command: AudioCommand.AudioVoiceAssistantStop }
+      })
     })
 
     // No back-navigation since attentionSwitchedByRef was cleared

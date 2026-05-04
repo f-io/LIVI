@@ -145,8 +145,8 @@ describe('generalSchema', () => {
     expect(bindingKeys).toContain('playPause')
     expect(bindingKeys).toContain('acceptPhone')
     expect(bindingKeys).toContain('rejectPhone')
-    expect(bindingKeys).toContain('siri')
-    expect(bindingKeys).toContain('siriRelease')
+    expect(bindingKeys).toContain('voiceAssistant')
+    expect(bindingKeys).toContain('voiceAssistantRelease')
   })
 
   test('start page select exposes all expected page options', () => {

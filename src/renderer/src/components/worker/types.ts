@@ -47,7 +47,8 @@ export type ValidCommand =
   | 'selectUp'
   | 'acceptPhone'
   | 'rejectPhone'
-  | 'siri'
+  | 'voiceAssistant'
+  | 'voiceAssistantRelease'
   | 'frame'
   | 'mic'
   | 'deviceFound'
@@ -74,7 +75,8 @@ export function isValidCommand(cmd: string): cmd is ValidCommand {
     'selectUp',
     'acceptPhone',
     'rejectPhone',
-    'siri',
+    'voiceAssistant',
+    'voiceAssistantRelease',
     'frame',
     'mic',
     'deviceFound',
@@ -101,7 +103,8 @@ export type KeyCommand =
   | 'prev'
   | 'acceptPhone'
   | 'rejectPhone'
-  | 'siri'
+  | 'voiceAssistant'
+  | 'voiceAssistantRelease'
 
 /** Commands the UI can post to the Projection worker */
 export type Command =

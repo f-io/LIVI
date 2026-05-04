@@ -16,7 +16,7 @@ export type BindKey =
   | 'pause'
   | 'acceptPhone'
   | 'rejectPhone'
-  | 'siri'
+  | 'voiceAssistant'
 
 export type useKeyDownProps = {
   receivingVideo: boolean

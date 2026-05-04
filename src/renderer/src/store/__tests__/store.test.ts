@@ -89,7 +89,7 @@ describe('store', () => {
   const baseSettings = {
     audioVolume: 0.8,
     navVolume: 0.4,
-    siriVolume: 0.5,
+    voiceAssistantVolume: 0.5,
     callVolume: 0.6,
     visualAudioDelayMs: 120,
     nightMode: false,
@@ -144,13 +144,13 @@ describe('store', () => {
     expect(state.restartBaseline).toEqual(baseSettings)
     expect(state.audioVolume).toBe(0.8)
     expect(state.navVolume).toBe(0.4)
-    expect(state.siriVolume).toBe(0.5)
+    expect(state.voiceAssistantVolume).toBe(0.5)
     expect(state.callVolume).toBe(0.6)
     expect(state.visualAudioDelayMs).toBe(120)
 
     expect(projection.ipc.setVolume).toHaveBeenCalledWith('music', 0.8)
     expect(projection.ipc.setVolume).toHaveBeenCalledWith('nav', 0.4)
-    expect(projection.ipc.setVolume).toHaveBeenCalledWith('siri', 0.5)
+    expect(projection.ipc.setVolume).toHaveBeenCalledWith('voiceAssistant', 0.5)
     expect(projection.ipc.setVolume).toHaveBeenCalledWith('call', 0.6)
   })
 
@@ -289,7 +289,7 @@ describe('store', () => {
     })
   })
 
-  test('setAudioVolume/setNavVolume/setSiriVolume/setCallVolume update state and persist', async () => {
+  test('setAudioVolume/setNavVolume/setVoiceAssistantVolume/setCallVolume update state and persist', async () => {
     const projection = makeProjectionApi({
       settings: {
         get: jest.fn().mockResolvedValue(baseSettings),
@@ -303,7 +303,7 @@ describe('store', () => {
 
     useLiviStore.getState().setAudioVolume(0.11)
     useLiviStore.getState().setNavVolume(0.22)
-    useLiviStore.getState().setSiriVolume(0.33)
+    useLiviStore.getState().setVoiceAssistantVolume(0.33)
     useLiviStore.getState().setCallVolume(0.44)
 
     await Promise.resolve()
@@ -312,12 +312,12 @@ describe('store', () => {
     const state = useLiviStore.getState()
     expect(state.audioVolume).toBe(0.11)
     expect(state.navVolume).toBe(0.22)
-    expect(state.siriVolume).toBe(0.33)
+    expect(state.voiceAssistantVolume).toBe(0.33)
     expect(state.callVolume).toBe(0.44)
 
     expect(projection.settings.save).toHaveBeenCalledWith({ audioVolume: 0.11 })
     expect(projection.settings.save).toHaveBeenCalledWith({ navVolume: 0.22 })
-    expect(projection.settings.save).toHaveBeenCalledWith({ siriVolume: 0.33 })
+    expect(projection.settings.save).toHaveBeenCalledWith({ voiceAssistantVolume: 0.33 })
     expect(projection.settings.save).toHaveBeenCalledWith({ callVolume: 0.44 })
   })
 
@@ -563,7 +563,7 @@ describe('store', () => {
     expect(state.settings).toBeNull()
     expect(state.audioVolume).toBe(0.95)
     expect(state.navVolume).toBe(0.95)
-    expect(state.siriVolume).toBe(0.95)
+    expect(state.voiceAssistantVolume).toBe(0.95)
     expect(state.callVolume).toBe(0.95)
   })
 
@@ -886,19 +886,19 @@ describe('store', () => {
       ...baseSettings,
       audioVolume: 0.25,
       navVolume: 0.35,
-      siriVolume: 0.45,
+      voiceAssistantVolume: 0.45,
       callVolume: 0.55
     } as ExtraConfig)
 
     const state = useLiviStore.getState()
     expect(state.audioVolume).toBe(0.25)
     expect(state.navVolume).toBe(0.35)
-    expect(state.siriVolume).toBe(0.45)
+    expect(state.voiceAssistantVolume).toBe(0.45)
     expect(state.callVolume).toBe(0.55)
 
     expect(projection.ipc.setVolume).toHaveBeenCalledWith('music', 0.25)
     expect(projection.ipc.setVolume).toHaveBeenCalledWith('nav', 0.35)
-    expect(projection.ipc.setVolume).toHaveBeenCalledWith('siri', 0.45)
+    expect(projection.ipc.setVolume).toHaveBeenCalledWith('voiceAssistant', 0.45)
     expect(projection.ipc.setVolume).toHaveBeenCalledWith('call', 0.55)
   })
 
@@ -1027,7 +1027,7 @@ describe('store', () => {
           ...baseSettings,
           audioVolume: undefined,
           navVolume: undefined,
-          siriVolume: undefined,
+          voiceAssistantVolume: undefined,
           callVolume: undefined,
           visualAudioDelayMs: undefined
         })
@@ -1041,7 +1041,7 @@ describe('store', () => {
     const state = useLiviStore.getState()
     expect(state.audioVolume).toBe(1)
     expect(state.navVolume).toBe(0.5)
-    expect(state.siriVolume).toBe(0.5)
+    expect(state.voiceAssistantVolume).toBe(0.5)
     expect(state.callVolume).toBe(1)
     expect(state.visualAudioDelayMs).toBe(120)
   })
@@ -1291,7 +1291,7 @@ describe('store', () => {
     expect(useLiviStore.getState().settings).toBeNull()
     expect(useLiviStore.getState().audioVolume).toBe(0.95)
     expect(useLiviStore.getState().navVolume).toBe(0.95)
-    expect(useLiviStore.getState().siriVolume).toBe(0.95)
+    expect(useLiviStore.getState().voiceAssistantVolume).toBe(0.95)
     expect(useLiviStore.getState().callVolume).toBe(0.95)
   })
 
@@ -1733,7 +1733,7 @@ describe('store', () => {
     expect(useLiviStore.getState().settings).toBeNull()
     expect(useLiviStore.getState().audioVolume).toBe(0.95)
     expect(useLiviStore.getState().navVolume).toBe(0.95)
-    expect(useLiviStore.getState().siriVolume).toBe(0.95)
+    expect(useLiviStore.getState().voiceAssistantVolume).toBe(0.95)
     expect(useLiviStore.getState().callVolume).toBe(0.95)
   })
 
