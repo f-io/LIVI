@@ -292,10 +292,20 @@ export class RendererWorker {
         this.rendererSwSupported = caps.sw
         this.hevcHwSupported = caps.hevcHw
         this.hevcSwSupported = caps.hevcSw
+
+        const mode = (hw: boolean, sw: boolean) => (hw ? 'hw' : sw ? 'sw' : 'unsupported')
         console.log(
           `[RENDER.WORKER] Selected renderer: ${r} ` +
-            `(h264 hw=${caps.hw} sw=${caps.sw}, h265 hw=${caps.hevcHw} sw=${caps.hevcSw})`
+            `(h264: ${mode(caps.hw, caps.sw)}, h265: ${mode(caps.hevcHw, caps.hevcSw)})`
         )
+
+        self.postMessage({
+          type: 'codec-capabilities',
+          capabilities: {
+            h264: { hw: caps.hw, sw: caps.sw },
+            h265: { hw: caps.hevcHw, sw: caps.hevcSw }
+          }
+        })
         return
       }
     }

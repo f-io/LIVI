@@ -426,6 +426,13 @@ const CarplayComponent: React.FC<CarplayProps> = ({
         setReceivingVideo(false)
         w.postMessage({ type: 'clear' })
       }
+
+      if (t === 'codec-capabilities') {
+        const caps = (msg as { capabilities?: unknown }).capabilities
+        if (caps && typeof caps === 'object') {
+          void window.projection.ipc.reportCodecCapabilities(caps).catch(() => {})
+        }
+      }
     }
 
     w.addEventListener('message', handler)

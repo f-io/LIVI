@@ -242,12 +242,17 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
   private _naviBag: Record<string, unknown> = {}
   private _naviActive = false
   private _naviApp: string | undefined
+  private _hevcSupported = false
 
   constructor(opts: AaDriverOptions = {}) {
     super()
     // Cap auto-restarts so a deterministic crash (stale BT profile, missing
     // dependency, sudoers regression, …)
     this._supervisor = opts.supervisor ?? new AaBluetoothSupervisor({ maxRestarts: 5 })
+  }
+
+  setHevcSupported(supported: boolean): void {
+    this._hevcSupported = supported
   }
 
   async start(cfg: DongleConfig): Promise<boolean> {
@@ -316,7 +321,8 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       wifiPassword: cfg.wifiPassword || '12345678',
       wifiChannel: cfg.wifiChannel,
       fuelTypes: mapCarTypeToFuelTypes(cfg.carType),
-      evConnectorTypes: cfg.evConnectorTypes
+      evConnectorTypes: cfg.evConnectorTypes,
+      hevcSupported: this._hevcSupported
     }
     const displayAR = cfg.width / cfg.height
     const tierAR = tierW / tierH

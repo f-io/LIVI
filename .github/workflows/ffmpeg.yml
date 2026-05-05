@@ -186,13 +186,31 @@ jobs:
           cd /mnt/build/chromium/src
           python3 build/linux/sysroot_scripts/install-sysroot.py --arch=${{ matrix.gn_cpu }}
 
+      - name: Enable HEVC decoder in chromium ffmpeg config
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${{ github.workspace }}/scripts/ffmpeg/enable-hevc.py" \
+            /mnt/build/chromium/src/third_party/ffmpeg
+
       - name: gn gen + autoninja libffmpeg.so
         shell: bash
         run: |
           set -euo pipefail
           cd /mnt/build/chromium/src
           gn gen out/Default --args='chrome_pgo_phase=0 is_debug=false enable_nacl=false is_component_ffmpeg=true proprietary_codecs=true is_official_build=true target_cpu="${{ matrix.gn_cpu }}" ffmpeg_branding="Chrome"'
-          autoninja -C out/Default libffmpeg.so
+          if ! autoninja -C out/Default libffmpeg.so; then
+            echo "::group::siso_output (last 400 lines)"
+            tail -n 400 out/Default/siso_output 2>/dev/null || true
+            echo "::endgroup::"
+            echo "::group::siso.INFO (last 200 lines)"
+            tail -n 200 out/Default/siso.INFO 2>/dev/null || true
+            echo "::endgroup::"
+            echo "::group::siso_failed_commands.sh"
+            cat out/Default/siso_failed_commands.sh 2>/dev/null || true
+            echo "::endgroup::"
+            exit 1
+          fi
 
       - name: Stage artifact
         shell: bash

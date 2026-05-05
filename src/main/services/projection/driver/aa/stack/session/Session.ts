@@ -98,6 +98,8 @@ export interface SessionConfig {
   // FuelType (UNLEADED=1, DIESEL_2=4, ELECTRIC=10, …)
   fuelTypes?: number[]
   evConnectorTypes?: number[]
+  // True when the renderer's WebCodecs probe reported HEVC HW or SW
+  hevcSupported?: boolean
 }
 
 export type VideoCodec = 'h264' | 'h265'
@@ -1035,12 +1037,13 @@ export class Session extends EventEmitter {
     const channels: object[] = []
 
     // ── Video (ch=3) ──
-    // Advertise H.264 first (configIndex=0) and H.265 second (configIndex=1)
-    // Phone picks one and reports the index back via START_INDICATION
+    // Advertise H.264 always; H.265 only when the renderer's WebCodecs probe
+    // confirmed HEVC HW or SW support. Phone picks one config and reports the
+    // index back via START_INDICATION.
     const videoUiConfig = {
       margins: { top: insetTop, bottom: insetBottom, left: insetLeft, right: insetRight }
     }
-    const videoConfigs = [
+    const videoConfigs: object[] = [
       {
         codecResolution: vRes,
         frameRate: vFps,
@@ -1049,8 +1052,11 @@ export class Session extends EventEmitter {
         density: dpi,
         videoCodecType: MEDIA_CODEC.VIDEO_H264_BP,
         uiConfig: videoUiConfig
-      },
-      {
+      }
+    ]
+    this._videoCodecByIndex = ['h264']
+    if (this._cfg.hevcSupported) {
+      videoConfigs.push({
         codecResolution: vRes,
         frameRate: vFps,
         widthMargin,
@@ -1058,11 +1064,15 @@ export class Session extends EventEmitter {
         density: dpi,
         videoCodecType: MEDIA_CODEC.VIDEO_H265,
         uiConfig: videoUiConfig
-      }
-    ]
-    this._videoCodecByIndex = videoConfigs.map((c) =>
-      c.videoCodecType === MEDIA_CODEC.VIDEO_H265 ? 'h265' : 'h264'
-    )
+      })
+      this._videoCodecByIndex.push('h265')
+    }
+    if (DEBUG) {
+      console.log(
+        `[Session] advertising codecs: ${this._videoCodecByIndex.join(', ')} ` +
+          `(hevcSupported=${!!this._cfg.hevcSupported})`
+      )
+    }
     channels.push({
       id: CH.VIDEO,
       mediaSinkService: {

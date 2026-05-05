@@ -120,6 +120,7 @@ export class ProjectionService {
   private get driver(): IPhoneDriver {
     return this.aaDriver ?? this.dongleDriver
   }
+  private hevcSupported = false
   private webUsbDevice: WebUSBDevice | null = null
   private webContents: WebContents | null = null
   private config: ExtraConfig = DEFAULT_CONFIG as ExtraConfig
@@ -165,6 +166,22 @@ export class ProjectionService {
   private readonly onConfigChanged = (next: ExtraConfig) => {
     if (this.shuttingDown) return
     this.config = { ...this.config, ...next }
+  }
+
+  private applyCodecCapabilities(payload: unknown): void {
+    if (!payload || typeof payload !== 'object') return
+    const h265 = (payload as { h265?: { hw?: unknown; sw?: unknown } }).h265
+    if (!h265 || typeof h265 !== 'object') return
+    const supported = Boolean(h265.hw) || Boolean(h265.sw)
+    if (this.hevcSupported === supported) return
+    this.hevcSupported = supported
+    console.log(`[ProjectionService] hevc support reported by renderer: ${supported}`)
+    this.aaDriver?.setHevcSupported(supported)
+  }
+
+  /** Read by AaDriver right before it starts the AAStack. */
+  public getHevcSupported(): boolean {
+    return this.hevcSupported
   }
 
   private readonly onDriverMessage = (msg: Message): void => {
@@ -580,6 +597,14 @@ export class ProjectionService {
     registerIpcHandle('projection-sendframe', async () =>
       this.driver.send(new SendCommand('frame'))
     )
+
+    // Renderer probed WebCodecs and reports which codecs work in HW/SW. We
+    // remember the result so AaDriver can ask whether to advertise H.265 in
+    // the AA service-discovery response. Pi/ARM platforms without HEVC SW
+    // support fall back to H.264 advertised-only.
+    registerIpcHandle('projection-codec-capabilities', async (_evt, caps: unknown) => {
+      this.applyCodecCapabilities(caps)
+    })
 
     registerIpcHandle('projection-bt-pairedlist-set', async (_evt, listText: string) => {
       if (!this.started) return { ok: false }

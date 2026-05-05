@@ -140,6 +140,7 @@ declare global {
         stop(): Promise<void>
         restart(): Promise<void>
         sendFrame(): Promise<void>
+        reportCodecCapabilities(caps: unknown): Promise<void>
         dongleFirmware(action: DongleFirmwareAction): Promise<DongleFirmwareCheckResult>
 
         sendTouch(x: number, y: number, action: number): void
