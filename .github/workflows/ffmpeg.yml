@@ -1,0 +1,275 @@
+name: ffmpeg assets
+run-name: 'ffmpeg-assets → ${{ github.ref_name }}'
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'chromium/third_party/ffmpeg branch, tag or commit (default: master)'
+        required: false
+        default: 'master'
+      linux_x64:
+        description: 'Build linux-x64'
+        type: boolean
+        default: true
+      linux_arm64:
+        description: 'Build linux-arm64'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  plan:
+    name: Plan asset matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      is_empty: ${{ steps.plan.outputs.is_empty }}
+
+    steps:
+      - id: plan
+        shell: bash
+        env:
+          IN_LINUX_X64: ${{ inputs.linux_x64 }}
+          IN_LINUX_ARM64: ${{ inputs.linux_arm64 }}
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require('fs');
+
+          const isTrue = (v) => String(v).toLowerCase() === 'true';
+
+          const inputs = {
+            linux_x64: isTrue(process.env.IN_LINUX_X64),
+            linux_arm64: isTrue(process.env.IN_LINUX_ARM64),
+          };
+
+          const include = [];
+          const add = (os, runner, arch, dir_name, artifact_name) => {
+            include.push({ os, runner, arch, dir_name, artifact_name });
+          };
+
+          if (inputs.linux_x64) {
+            add(
+              'linux',
+              'ubuntu-24.04',
+              'x64',
+              'linux-x64',
+              'ffmpeg-linux-x64'
+            );
+          }
+
+          if (inputs.linux_arm64) {
+            add(
+              'linux',
+              'ubuntu-24.04-arm',
+              'arm64',
+              'linux-arm64',
+              'ffmpeg-linux-arm64'
+            );
+          }
+
+          const matrixObj = { include };
+          const matrix = JSON.stringify(matrixObj);
+          const isEmpty = include.length === 0 ? 'true' : 'false';
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${matrix}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `is_empty=${isEmpty}\n`);
+
+          console.log('Planned matrix:', matrix);
+          console.log('Empty:', isEmpty);
+          NODE
+
+  build:
+    name: Build libffmpeg.so (${{ matrix.os }}-${{ matrix.arch }})
+    needs: plan
+    if: ${{ needs.plan.outputs.is_empty != 'true' }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read Electron version
+        id: el
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p 'require("./package.json").devDependencies.electron.replace(/^[~^]/, "")')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Electron version: $VERSION"
+
+      - name: Build libffmpeg.so [${{ matrix.dir_name }} via Debian forky]
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "assets/ffmpeg/${{ matrix.dir_name }}"
+
+          DOCKER_PLATFORM="linux/amd64"
+          if [[ "${{ matrix.arch }}" == "arm64" ]]; then
+            DOCKER_PLATFORM="linux/arm64/v8"
+          fi
+
+          docker run --rm --platform="$DOCKER_PLATFORM" \
+            -v "${GITHUB_WORKSPACE}:/work" \
+            -w /work \
+            -e FFMPEG_REF="${{ inputs.ref }}" \
+            -e TARGET_ARCH="${{ matrix.arch }}" \
+            -e DIR_NAME="${{ matrix.dir_name }}" \
+            -e ELECTRON_VERSION="${{ steps.el.outputs.version }}" \
+            debian:forky-slim sh -lc '
+              set -euo pipefail
+
+              export DEBIAN_FRONTEND=noninteractive
+
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                bash coreutils findutils file ca-certificates \
+                git python3 clang lld nasm yasm pkg-config libtool make
+
+              git clone --filter=blob:none --no-checkout \
+                https://chromium.googlesource.com/chromium/third_party/ffmpeg.git /tmp/ffmpeg
+              cd /tmp/ffmpeg
+              git fetch --depth=1 origin "$FFMPEG_REF"
+              git checkout FETCH_HEAD
+              SHA="$(git rev-parse HEAD)"
+              echo "Checked out chromium/third_party/ffmpeg @ $SHA"
+
+              # build_ffmpeg.py invocation: <target_os> <target_arch> <ffmpeg_branding>
+              # Chrome branding enables HEVC (H.265) decoding alongside the
+              # existing H.264/AAC/MP3 set we already get from official Electron.
+              CC=clang CXX=clang++ \
+                python3 chromium/scripts/build_ffmpeg.py linux "$TARGET_ARCH" Chrome
+
+              BUILD_DIR="build.${TARGET_ARCH}.linux/Chrome"
+              if [[ ! -f "$BUILD_DIR/libffmpeg.so" ]]; then
+                echo "::error::libffmpeg.so not produced — expected at $BUILD_DIR/libffmpeg.so"
+                ls -la "$BUILD_DIR" 2>/dev/null || true
+                exit 1
+              fi
+
+              cp "$BUILD_DIR/libffmpeg.so" "/work/assets/ffmpeg/${DIR_NAME}/libffmpeg.so"
+              {
+                echo "ref:      ${FFMPEG_REF}"
+                echo "sha:      ${SHA}"
+                echo "built:    $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                echo "branding: Chrome"
+                echo "electron: ${ELECTRON_VERSION}"
+              } > "/work/assets/ffmpeg/${DIR_NAME}/version.txt"
+              file "/work/assets/ffmpeg/${DIR_NAME}/libffmpeg.so"
+              cat "/work/assets/ffmpeg/${DIR_NAME}/version.txt"
+            '
+
+      - name: Fix file permissions [${{ matrix.dir_name }}]
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo chown -R "$USER:$USER" "assets/ffmpeg/${{ matrix.dir_name }}" 2>/dev/null || true
+          sudo chmod -R a+rX "assets/ffmpeg/${{ matrix.dir_name }}" 2>/dev/null || true
+
+      - name: Upload artifact [${{ matrix.dir_name }}]
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: assets/ffmpeg/${{ matrix.dir_name }}
+          retention-days: 7
+
+  publish:
+    name: Publish ffmpeg assets
+    needs:
+      - plan
+      - build
+    if: ${{ needs.plan.outputs.is_empty != 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout source branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Prepare target dir [linux-x64]
+        if: contains(needs.plan.outputs.matrix, '"artifact_name":"ffmpeg-linux-x64"')
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf assets/ffmpeg/linux-x64
+          mkdir -p assets/ffmpeg
+
+      - name: Download artifact [linux-x64]
+        if: contains(needs.plan.outputs.matrix, '"artifact_name":"ffmpeg-linux-x64"')
+        uses: actions/download-artifact@v8
+        with:
+          name: ffmpeg-linux-x64
+          path: assets/ffmpeg/linux-x64
+
+      - name: Prepare target dir [linux-arm64]
+        if: contains(needs.plan.outputs.matrix, '"artifact_name":"ffmpeg-linux-arm64"')
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf assets/ffmpeg/linux-arm64
+          mkdir -p assets/ffmpeg
+
+      - name: Download artifact [linux-arm64]
+        if: contains(needs.plan.outputs.matrix, '"artifact_name":"ffmpeg-linux-arm64"')
+        uses: actions/download-artifact@v8
+        with:
+          name: ffmpeg-linux-arm64
+          path: assets/ffmpeg/linux-arm64
+
+      - name: Read published version
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          REF=""
+          SHA=""
+          for f in assets/ffmpeg/linux-x64/version.txt \
+                   assets/ffmpeg/linux-arm64/version.txt; do
+            if [[ -f "$f" ]]; then
+              REF="$(awk -F: '/^ref:/ { sub(/^ +/, "", $2); print $2; exit }' "$f")"
+              SHA="$(awk -F: '/^sha:/ { sub(/^ +/, "", $2); print $2; exit }' "$f")"
+              break
+            fi
+          done
+
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push assets
+        id: commit_assets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -f -A assets/ffmpeg
+
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "No asset changes to commit"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          MSG="chore(ffmpeg): rebuild HEVC-enabled libffmpeg.so"
+          if [[ -n "${{ steps.meta.outputs.sha }}" ]]; then
+            MSG="$MSG (${{ steps.meta.outputs.sha }})"
+          fi
+
+          git commit -m "$MSG"
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"

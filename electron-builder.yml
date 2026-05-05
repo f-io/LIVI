@@ -102,6 +102,8 @@ appImage:
 
 npmRebuild: false
 
+afterPack: scripts/build/replaceLibffmpeg.cjs
+
 copyright: 'Copyright © 2026 Lasse Heitgres'
 publish: null
 
