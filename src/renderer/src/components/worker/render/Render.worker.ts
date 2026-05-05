@@ -1,5 +1,11 @@
-import { getDecoderConfig, getNaluFromStream, isKeyFrame, NaluTypes } from './lib/utils'
-import { InitEvent, UpdateFpsEvent, WorkerEvent } from './RenderEvents'
+import { containsParameterSet, getDecoderConfig, getSpsFromStream, isKeyFrame } from './lib/utils'
+import {
+  InitEvent,
+  SetCodecEvent,
+  UpdateFpsEvent,
+  type VideoCodec,
+  WorkerEvent
+} from './RenderEvents'
 import { WebGL2Renderer } from './WebGL2Renderer'
 import { WebGPURenderer } from './WebGPURenderer'
 
@@ -31,6 +37,10 @@ export class RendererWorker {
 
   private rendererHwSupported = false
   private rendererSwSupported = false
+  private hevcHwSupported = false
+  private hevcSwSupported = false
+
+  private codec: VideoCodec = 'h264'
 
   constructor() {
     this.decoder = new VideoDecoder({
@@ -52,6 +62,13 @@ export class RendererWorker {
 
   updateTargetFps(fps?: number) {
     this.setTargetFps(fps)
+  }
+
+  setCodec(codec: VideoCodec) {
+    if (codec === this.codec) return
+    console.log(`[RENDER.WORKER] codec change: ${this.codec} → ${codec}`)
+    this.codec = codec
+    this.resetDecoder()
   }
 
   private hasDecodedFrame = false
@@ -148,8 +165,10 @@ export class RendererWorker {
       this.keyframeRetryCount += 1
       // Log only every 10th retry
       // phone-side stalls — once per ~20 s
-      if (this.keyframeRetryCount % 10 === 0) {
-        console.debug(`[RENDER.WORKER] still waiting for IDR (retry #${this.keyframeRetryCount})`)
+      if (this.keyframeRetryCount % 5 === 0) {
+        console.log(
+          `[RENDER.WORKER] still waiting for IDR (codec=${this.codec}, retry #${this.keyframeRetryCount})`
+        )
       }
       self.postMessage({ type: 'request-keyframe' })
     }, 2000)
@@ -202,6 +221,8 @@ export class RendererWorker {
     this.videoPort.start()
 
     this.setTargetFps(event.targetFps)
+    this.codec = event.codec ?? 'h264'
+    console.log('[RENDER.WORKER] codec:', this.codec)
 
     await this.evaluateRendererCapabilities()
 
@@ -253,7 +274,10 @@ export class RendererWorker {
         ? ['webgl2', 'webgpu'] // Linux x64 -> WebGL2 first
         : ['webgl2', 'webgpu'] // Linux ARM -> WebGL2 first
 
-    const results: Record<string, { hw: boolean; sw: boolean; available: boolean }> = {}
+    const results: Record<
+      string,
+      { hw: boolean; sw: boolean; hevcHw: boolean; hevcSw: boolean; available: boolean }
+    > = {}
 
     for (const r of rendererPriority) {
       results[r] = await this.isRendererSupported(r)
@@ -266,7 +290,12 @@ export class RendererWorker {
         this.hardwareAccelerationTested = true
         this.rendererHwSupported = caps.hw
         this.rendererSwSupported = caps.sw
-        console.debug(`[RENDER.WORKER] Selected renderer: ${r} (hw=${caps.hw}, sw=${caps.sw})`)
+        this.hevcHwSupported = caps.hevcHw
+        this.hevcSwSupported = caps.hevcSw
+        console.log(
+          `[RENDER.WORKER] Selected renderer: ${r} ` +
+            `(h264 hw=${caps.hw} sw=${caps.sw}, h265 hw=${caps.hevcHw} sw=${caps.hevcSw})`
+        )
         return
       }
     }
@@ -275,9 +304,57 @@ export class RendererWorker {
     console.warn('[RENDER.WORKER] No suitable renderer found')
   }
 
-  private async isRendererSupported(
-    renderer: string
-  ): Promise<{ hw: boolean; sw: boolean; available: boolean }> {
+  private async probeCodec(codec: string): Promise<{ hw: boolean; sw: boolean }> {
+    let hw = false
+    let sw = false
+    try {
+      const res = await VideoDecoder.isConfigSupported({
+        codec,
+        hardwareAcceleration: 'prefer-hardware'
+      })
+      hw = !!res.supported
+      console.log(
+        `[RENDER.WORKER] probe ${codec} prefer-hardware → supported=${!!res.supported}`,
+        res.config ?? null
+      )
+    } catch (e) {
+      console.warn(`[RENDER.WORKER] HW-probe error for ${codec}`, e)
+    }
+    try {
+      const res = await VideoDecoder.isConfigSupported({
+        codec,
+        hardwareAcceleration: 'prefer-software'
+      })
+      sw = !!res.supported
+      console.log(
+        `[RENDER.WORKER] probe ${codec} prefer-software → supported=${!!res.supported}`,
+        res.config ?? null
+      )
+    } catch (e) {
+      console.warn(`[RENDER.WORKER] SW-probe error for ${codec}`, e)
+    }
+    // Cross-check with no-preference
+    if (!hw && !sw) {
+      try {
+        const res = await VideoDecoder.isConfigSupported({ codec })
+        console.log(
+          `[RENDER.WORKER] probe ${codec} no-preference → supported=${!!res.supported}`,
+          res.config ?? null
+        )
+      } catch (e) {
+        console.warn(`[RENDER.WORKER] NoPref-probe error for ${codec}`, e)
+      }
+    }
+    return { hw, sw }
+  }
+
+  private async isRendererSupported(renderer: string): Promise<{
+    hw: boolean
+    sw: boolean
+    hevcHw: boolean
+    hevcSw: boolean
+    available: boolean
+  }> {
     const canvas = new OffscreenCanvas(1, 1)
     let context: WebGL2RenderingContext | GPUCanvasContext | null = null
 
@@ -295,54 +372,35 @@ export class RendererWorker {
           const adapter = await navigator.gpu?.requestAdapter()
           if (!adapter) {
             console.debug('[RENDER.WORKER] WebGPU -> adapter is null')
-            return { hw: false, sw: false, available: false }
+            return { hw: false, sw: false, hevcHw: false, hevcSw: false, available: false }
           }
           await adapter.requestDevice()
         } catch (e) {
           console.debug('[RENDER.WORKER] WebGPU -> adapter/device init failed', e)
-          return { hw: false, sw: false, available: false }
+          return { hw: false, sw: false, hevcHw: false, hevcSw: false, available: false }
         }
       }
     }
 
     if (!context) {
       console.debug(`[RENDER.WORKER] ${renderer.toUpperCase()} -> no context`)
-      return { hw: false, sw: false, available: false }
+      return { hw: false, sw: false, hevcHw: false, hevcSw: false, available: false }
     }
 
-    let hwSupported = false
-    let swSupported = false
+    const h264 = await this.probeCodec('avc1.64002A')
+    const h265 = await this.probeCodec('hvc1.1.6.L120.B0')
 
-    const hwConfig: VideoDecoderConfig = {
-      codec: 'avc1.64002A',
-      hardwareAcceleration: 'prefer-hardware'
-    }
-
-    try {
-      const res = await VideoDecoder.isConfigSupported(hwConfig)
-      hwSupported = !!res.supported
-    } catch (e) {
-      console.warn(`[RENDER.WORKER] ${renderer.toUpperCase()} HW-test error`, e)
-    }
-
-    const swConfig: VideoDecoderConfig = {
-      codec: 'avc1.64002A',
-      hardwareAcceleration: 'prefer-software'
-    }
-
-    try {
-      const res = await VideoDecoder.isConfigSupported(swConfig)
-      swSupported = !!res.supported
-    } catch (e) {
-      console.warn(`[RENDER.WORKER] ${renderer.toUpperCase()} SW-test error`, e)
-    }
-
-    console.debug(`[RENDER.WORKER] ${renderer.toUpperCase()}: hw=${hwSupported}, sw=${swSupported}`)
+    console.debug(
+      `[RENDER.WORKER] ${renderer.toUpperCase()}: ` +
+        `h264 hw=${h264.hw} sw=${h264.sw}, h265 hw=${h265.hw} sw=${h265.sw}`
+    )
 
     return {
-      hw: hwSupported,
-      sw: swSupported,
-      available: hwSupported || swSupported
+      hw: h264.hw,
+      sw: h264.sw,
+      hevcHw: h265.hw,
+      hevcSw: h265.sw,
+      available: h264.hw || h264.sw
     }
   }
 
@@ -357,10 +415,10 @@ export class RendererWorker {
     ): Promise<boolean> => {
       const cfg: VideoDecoderConfig = { ...baseConfig, hardwareAcceleration }
       try {
-        console.debug('[RENDER.WORKER] Configuring decoder with:', cfg)
+        console.log('[RENDER.WORKER] Configuring decoder with:', cfg)
         this.decoder.configure(cfg)
         this.isConfigured = true
-        console.debug(`[RENDER.WORKER] Selected decoder mode: ${hardwareAcceleration}`)
+        console.log(`[RENDER.WORKER] Selected decoder mode: ${hardwareAcceleration}`)
         return true
       } catch (err) {
         console.warn(`[RENDER.WORKER] Config ${hardwareAcceleration} error`, err)
@@ -368,15 +426,20 @@ export class RendererWorker {
       }
     }
 
-    if (this.rendererHwSupported) {
+    const hwSupp = this.codec === 'h265' ? this.hevcHwSupported : this.rendererHwSupported
+    const swSupp = this.codec === 'h265' ? this.hevcSwSupported : this.rendererSwSupported
+
+    if (hwSupp) {
       if (await tryConfig('prefer-hardware')) {
         return true
       }
     } else {
-      console.debug('[RENDER.WORKER] Skipping prefer-hardware, not supported for selected renderer')
+      console.debug(
+        `[RENDER.WORKER] Skipping prefer-hardware (${this.codec}), not supported for selected renderer`
+      )
     }
 
-    if (this.rendererSwSupported) {
+    if (swSupp) {
       if (await tryConfig('prefer-software')) {
         return true
       }
@@ -398,8 +461,8 @@ export class RendererWorker {
     const videoData =
       data.length > this.vendorHeaderSize ? data.subarray(this.vendorHeaderSize) : data
 
-    const sps = getNaluFromStream(videoData, NaluTypes.SPS)
-    const key = isKeyFrame(videoData)
+    const sps = getSpsFromStream(videoData, this.codec)
+    const key = isKeyFrame(videoData, this.codec)
     const now = performance.now()
 
     // Detect mid-stream parameter-set change (resolution / profile / level).
@@ -409,11 +472,23 @@ export class RendererWorker {
     }
 
     if (sps && !this.isConfigured) {
-      console.debug('[RENDER.WORKER] SPS detected, length:', sps.rawNalu?.length)
+      console.log('[RENDER.WORKER] SPS detected, length:', sps.rawNalu?.length)
       this.lastSPS = sps.rawNalu
-      if (!key) {
+    }
+
+    // Accumulate every param-set-bearing chunk before the first IDR
+    if (!this.isConfigured && !key && containsParameterSet(videoData, this.codec)) {
+      if (this.pendingExtraData) {
+        const merged = new Uint8Array(this.pendingExtraData.length + videoData.length)
+        merged.set(this.pendingExtraData, 0)
+        merged.set(videoData, this.pendingExtraData.length)
+        this.pendingExtraData = merged
+      } else {
         this.pendingExtraData = videoData
       }
+      console.log(
+        `[RENDER.WORKER] Cached param-set chunk (${videoData.length}B, total ${this.pendingExtraData.length}B)`
+      )
     }
 
     if (this.awaitingValidKeyframe && !key) {
@@ -422,21 +497,22 @@ export class RendererWorker {
     }
 
     if (key && this.lastSPS && !this.isConfigured) {
-      console.debug('[RENDER.WORKER] First keyframe detected, attempting decoder config...')
-      const config = getDecoderConfig(this.lastSPS)
+      console.log(`[RENDER.WORKER] First keyframe detected (${this.codec}), configuring decoder...`)
+      const config = getDecoderConfig(this.lastSPS, this.codec)
       if (config && (await this.configureDecoder(config))) {
         try {
-          // Annex-B mode: ensure SPS+PPS precede the IDR in the same chunk.
-          // If the IDR frame already contains SPS (dongle path), use it as-is;
-          // otherwise prepend the cached parameter-set frame (AA path).
+          // Annex-B mode: parameter sets must precede the IDR in the same chunk.
+          // H.264 needs SPS+PPS, H.265 needs VPS+SPS+PPS. If the IDR frame
+          // already contains the SPS (dongle path), use it as-is; otherwise
+          // prepend the cached parameter-set chunks (AA path).
           let firstChunk = videoData
-          const idrHasSps = getNaluFromStream(videoData, NaluTypes.SPS) !== null
+          const idrHasSps = getSpsFromStream(videoData, this.codec) !== null
           if (!idrHasSps && this.pendingExtraData) {
             firstChunk = new Uint8Array(this.pendingExtraData.length + videoData.length)
             firstChunk.set(this.pendingExtraData, 0)
             firstChunk.set(videoData, this.pendingExtraData.length)
-            console.debug(
-              `[RENDER.WORKER] Prepended ${this.pendingExtraData.length}B SPS+PPS to ${videoData.length}B IDR`
+            console.log(
+              `[RENDER.WORKER] Prepended ${this.pendingExtraData.length}B param-sets to ${videoData.length}B IDR`
             )
           }
           const chunk = new EncodedVideoChunk({
@@ -445,7 +521,7 @@ export class RendererWorker {
             data: firstChunk
           })
           this.decoder.decode(chunk)
-          console.debug('[RENDER.WORKER] SPS+IDR sent')
+          console.log('[RENDER.WORKER] keyframe sent to decoder')
           this.awaitingValidKeyframe = false
           this.pendingExtraData = null
           this.stopKeyframeRetry()
@@ -492,6 +568,10 @@ scope.addEventListener('message', (event: MessageEvent<WorkerEvent>) => {
 
     case 'updateFps':
       worker.updateTargetFps((msg as UpdateFpsEvent).fps)
+      break
+
+    case 'setCodec':
+      worker.setCodec((msg as SetCodecEvent).codec)
       break
 
     case 'reset':

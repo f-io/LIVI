@@ -6,7 +6,8 @@
  *   const aa = new AAStack({ huName: 'LIVI' })
  *
  *   aa.on('session',      (session) => { ... })   // new phone connected
- *   aa.on('video-frame',  (buf, ts) => { ... })   // H.264 NAL unit from first session
+ *   aa.on('video-frame',  (buf, ts) => { ... })   // H.264/H.265 NAL units from first session
+ *   aa.on('video-codec',  (codec) => { ... })     // 'h264' | 'h265' chosen by phone at START_INDICATION
  *   aa.on('audio-frame',  (buf, ts, ch, chId) => { ... })   // PCM samples
  *   aa.on('error',        (err) => { ... })
  *
@@ -26,7 +27,7 @@ import type {
   NavigationStatusUpdate,
   NavigationTurnUpdate
 } from './channels/NavigationChannel'
-import { Session, type SessionConfig } from './session/Session'
+import { Session, type SessionConfig, type VideoCodec } from './session/Session'
 import { detectBtMac, detectWifiBssid } from './system/hwaddr'
 import { TcpServer } from './transport/TcpServer'
 
@@ -46,7 +47,7 @@ export type {
   NavigationTurnUpdate
 } from './channels/NavigationChannel.js'
 export { TCP_PORT } from './constants'
-export type { SessionConfig } from './session/Session'
+export type { SessionConfig, VideoCodec } from './session/Session'
 export { Session } from './session/Session.js'
 export { detectBtMac, detectWifiBssid } from './system/hwaddr'
 export { TcpServer } from './transport/TcpServer'
@@ -72,6 +73,7 @@ export class AAStack extends EventEmitter {
       this._activeSession = session
 
       session.on('video-frame', (buf: Buffer, ts: bigint) => this.emit('video-frame', buf, ts))
+      session.on('video-codec', (codec: VideoCodec) => this.emit('video-codec', codec))
       session.on(
         'audio-frame',
         (buf: Buffer, ts: bigint, channel: AudioChannelType, channelId: number) =>

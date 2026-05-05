@@ -6,7 +6,12 @@ import { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
 import { matchFittingAAResolution } from '@shared/utils'
 import { createProjectionWorker } from '@worker/createProjectionWorker'
 import { createRenderWorker } from '@worker/createRenderWorker'
-import { InitEvent, UpdateFpsEvent } from '@worker/render/RenderEvents'
+import {
+  InitEvent,
+  SetCodecEvent,
+  UpdateFpsEvent,
+  type VideoCodec
+} from '@worker/render/RenderEvents'
 import type { KeyCommand, ProjectionWorker, UsbEvent, WorkerToUI } from '@worker/types'
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
@@ -281,6 +286,9 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   // keep initial FPS for worker init
   const initialFpsRef = useRef(settings.fps)
 
+  // Codec chosen by the phone via AA START_INDICATION
+  const videoCodecRef = useRef<VideoCodec>('h264')
+
   // Visual delay for FFT so spectrum matches audio playback
   const fftVisualDelayMs = 0
 
@@ -317,10 +325,15 @@ const CarplayComponent: React.FC<CarplayProps> = ({
 
       const targetFps = initialFpsRef.current
 
-      w.postMessage(new InitEvent(offscreenCanvasRef.current, videoChannel.port2, targetFps), [
-        offscreenCanvasRef.current,
-        videoChannel.port2
-      ])
+      w.postMessage(
+        new InitEvent(
+          offscreenCanvasRef.current,
+          videoChannel.port2,
+          targetFps,
+          videoCodecRef.current
+        ),
+        [offscreenCanvasRef.current, videoChannel.port2]
+      )
     }
     // Cleanup when canvas is unmounted
     return () => {
@@ -734,6 +747,17 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           setBluetoothPairedList(raw)
           break
         }
+        case 'video-codec': {
+          const payload = d.payload as { codec?: unknown } | undefined
+          const codec = payload?.codec
+          if (codec === 'h264' || codec === 'h265') {
+            if (codec !== videoCodecRef.current) {
+              videoCodecRef.current = codec
+              renderWorkerRef.current?.postMessage(new SetCodecEvent(codec))
+            }
+          }
+          break
+        }
         case 'resolution': {
           const payload = d.payload as { width?: number; height?: number } | undefined
           if (payload && typeof payload.width === 'number' && typeof payload.height === 'number') {
@@ -932,10 +956,8 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           setReceivingVideo(false)
           pendingVideoFocusRef.current = false
           setNavVideoOverlayActive(false)
-          // Blank the render worker too — without this the canvas keeps
-          // showing the last decoded frame from the dead session and a
-          // user navigating to the projection tab during a restart sees a
-          // frozen still that doesn't reflect reality.
+          videoCodecRef.current = 'h264'
+          // Blank the render worker too
           try {
             renderWorkerRef.current?.postMessage({ type: 'reset' })
           } catch {

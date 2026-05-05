@@ -51,7 +51,8 @@ import {
   type NavigationStatusUpdate,
   type NavigationTurnUpdate,
   TOUCH_ACTION,
-  type TouchPointer
+  type TouchPointer,
+  type VideoCodec
 } from './stack/index'
 
 /** Build VideoData message from a raw H.264 NAL unit. */
@@ -352,6 +353,11 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       const w = aaCfg.videoWidth ?? 1280
       const h = aaCfg.videoHeight ?? 720
       this.emit('message', buildVideoDataMessage(buf, w, h) as Message)
+    })
+
+    aa.on('video-codec', (codec: VideoCodec) => {
+      console.log(`[aaDriver] video-codec=${codec} (phone selection)`)
+      this.emit('video-codec', codec)
     })
 
     aa.on(

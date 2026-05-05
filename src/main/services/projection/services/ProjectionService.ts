@@ -493,16 +493,25 @@ export class ProjectionService {
     this.pendingStartupConnectTarget = null
   }
 
+  // 'video-codec' — phone announces H.264 vs H.265 at START_INDICATION.
+  private readonly onDriverVideoCodec = (codec: 'h264' | 'h265'): void => {
+    const wc = this.webContents
+    if (!wc || wc.isDestroyed?.()) return
+    wc.send('projection-event', { type: 'video-codec', payload: { codec } })
+  }
+
   private attachDriverListeners(d: IPhoneDriver): void {
     d.on('message', this.onDriverMessage)
     d.on('failure', this.onDriverFailure)
     d.on('targeted-connect-dispatched', this.onDriverTargetedConnect)
+    d.on('video-codec', this.onDriverVideoCodec)
   }
 
   private detachDriverListeners(d: IPhoneDriver): void {
     d.off('message', this.onDriverMessage)
     d.off('failure', this.onDriverFailure)
     d.off('targeted-connect-dispatched', this.onDriverTargetedConnect)
+    d.off('video-codec', this.onDriverVideoCodec)
   }
 
   private subscribeConfigEvents(): void {
