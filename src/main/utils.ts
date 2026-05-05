@@ -40,7 +40,8 @@ export function linuxPresetAngleVulkan() {
     'AcceleratedVideoDecodeLinuxZeroCopyGL',
     'AcceleratedVideoEncoder',
     'VaapiIgnoreDriverChecks',
-    'UseMultiPlaneFormatForHardwareVideo'
+    'UseMultiPlaneFormatForHardwareVideo',
+    'PlatformHEVCDecoderSupport'
   ])
   app.commandLine.appendSwitch('ozone-platform-hint', 'auto')
 }

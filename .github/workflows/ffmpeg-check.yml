@@ -1,0 +1,73 @@
+name: ffmpeg check
+run-name: 'ffmpeg-check → ${{ github.ref_name }}'
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - package.json
+      - .github/workflows/ffmpeg-check.yml
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  check:
+    name: Check libffmpeg freshness on ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compare bundled vs pinned Electron version
+        id: cmp
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PINNED="$(node -p 'require("./package.json").devDependencies.electron.replace(/^[~^]/, "")')"
+          echo "pinned=$PINNED" >> "$GITHUB_OUTPUT"
+          echo "Pinned Electron version: $PINNED"
+
+          STALE=""
+          for f in assets/ffmpeg/linux-x64/version.txt \
+                   assets/ffmpeg/linux-arm64/version.txt; do
+            if [[ ! -f "$f" ]]; then
+              STALE="${STALE}${f}: missing\n"
+              continue
+            fi
+            BUILT="$(awk -F: '/^electron:/ { sub(/^ +/, "", $2); print $2; exit }' "$f")"
+            if [[ -z "$BUILT" ]]; then
+              STALE="${STALE}${f}: no electron stamp\n"
+            elif [[ "$BUILT" != "$PINNED" ]]; then
+              STALE="${STALE}${f}: built=${BUILT} pinned=${PINNED}\n"
+            else
+              echo "$f → built=$BUILT (matches)"
+            fi
+          done
+
+          if [[ -n "$STALE" ]]; then
+            printf "Stale libffmpeg detected:\n%b" "$STALE"
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "All libffmpeg bundles match the pinned Electron — nothing to do"
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dispatch ffmpeg assets workflow
+        if: steps.cmp.outputs.stale == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run ffmpeg.yml \
+            --ref "${{ github.ref_name }}" \
+            -f linux_x64=true \
+            -f linux_arm64=true
+          echo "Triggered ffmpeg.yml on ${{ github.ref_name }}"

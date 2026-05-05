@@ -1,0 +1,4 @@
+ref:      146.0.7680.216
+built:    2026-05-05T21:06:44Z
+branding: Chrome
+electron: 41.5.0

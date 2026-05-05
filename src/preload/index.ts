@@ -127,6 +127,8 @@ const api = {
     stop: (): Promise<void> => ipcRenderer.invoke('projection-stop'),
     restart: (): Promise<void> => ipcRenderer.invoke('projection-restart'),
     sendFrame: (): Promise<void> => ipcRenderer.invoke('projection-sendframe'),
+    reportCodecCapabilities: (caps: unknown): Promise<void> =>
+      ipcRenderer.invoke('projection-codec-capabilities', caps),
     setBluetoothPairedList: (listText: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('projection-bt-pairedlist-set', listText),
     connectBluetoothPairedDevice: (mac: string): Promise<{ ok: boolean }> =>
