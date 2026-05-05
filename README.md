@@ -152,19 +152,6 @@ pnpm -C scripts/tools run telemetry:cycle
   <img src="docs/images/dash.png" alt="Dashboard" width="70%" />
 </p>
 
-## Dongle Firmware Feature Matrix
-
-The available features depend on the firmware version running on the Carlinkit dongle.
-Listed limitations are firmware-level restrictions and cannot be fixed by the application.
-
-| Firmware Version | Instrument Cluster Video | Nav Auto Switch | Call Auto Switch | Audio Metadata | Web Interface |
-| :--------------: | :----------------------: | :-------------: | :--------------: | :------------: | :-----------: |
-| 2025.10.15.1127  |           🟢            |       🟢        |        🟢        |       🟢       |      🟢       |
-| 2025.02.25.1521  |           🔴            |       🔴        |        🟢        |       🟢       |      🟢       |
-| 2021.02.23.1758  |           🔴            |       🔴        |        🟡        |       🔴       |      🔴       |
-
-`🟢` = Supported, `🔴` = Not supported, `🟡` = Unknown
-
 ## Images
 
 <p align="center">
