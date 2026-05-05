@@ -68,7 +68,6 @@ jobs:
           set -euo pipefail
           gh workflow run ffmpeg.yml \
             --ref "${{ github.ref_name }}" \
-            -f ref=master \
             -f linux_x64=true \
             -f linux_arm64=true
           echo "Triggered ffmpeg.yml on ${{ github.ref_name }}"

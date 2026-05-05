@@ -51,7 +51,8 @@ import {
   type NavigationStatusUpdate,
   type NavigationTurnUpdate,
   TOUCH_ACTION,
-  type TouchPointer
+  type TouchPointer,
+  type VideoCodec
 } from './stack/index'
 
 /** Build VideoData message from a raw H.264 NAL unit. */
@@ -241,12 +242,17 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
   private _naviBag: Record<string, unknown> = {}
   private _naviActive = false
   private _naviApp: string | undefined
+  private _hevcSupported = false
 
   constructor(opts: AaDriverOptions = {}) {
     super()
     // Cap auto-restarts so a deterministic crash (stale BT profile, missing
     // dependency, sudoers regression, …)
     this._supervisor = opts.supervisor ?? new AaBluetoothSupervisor({ maxRestarts: 5 })
+  }
+
+  setHevcSupported(supported: boolean): void {
+    this._hevcSupported = supported
   }
 
   async start(cfg: DongleConfig): Promise<boolean> {
@@ -315,7 +321,8 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       wifiPassword: cfg.wifiPassword || '12345678',
       wifiChannel: cfg.wifiChannel,
       fuelTypes: mapCarTypeToFuelTypes(cfg.carType),
-      evConnectorTypes: cfg.evConnectorTypes
+      evConnectorTypes: cfg.evConnectorTypes,
+      hevcSupported: this._hevcSupported
     }
     const displayAR = cfg.width / cfg.height
     const tierAR = tierW / tierH
@@ -352,6 +359,11 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       const w = aaCfg.videoWidth ?? 1280
       const h = aaCfg.videoHeight ?? 720
       this.emit('message', buildVideoDataMessage(buf, w, h) as Message)
+    })
+
+    aa.on('video-codec', (codec: VideoCodec) => {
+      console.log(`[aaDriver] video-codec=${codec} (phone selection)`)
+      this.emit('video-codec', codec)
     })
 
     aa.on(

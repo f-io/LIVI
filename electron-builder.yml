@@ -102,7 +102,7 @@ appImage:
 
 npmRebuild: false
 
-afterPack: scripts/build/replaceLibffmpeg.cjs
+afterPack: scripts/electron/replaceLibffmpeg.cjs
 
 copyright: 'Copyright © 2026 Lasse Heitgres'
 publish: null

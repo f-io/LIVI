@@ -1,7 +1,7 @@
 import { InitEvent } from '../RenderEvents'
 
 const mockGetDecoderConfig = jest.fn()
-const mockGetNaluFromStream = jest.fn()
+const mockGetSpsFromStream = jest.fn()
 const mockIsKeyFrame = jest.fn()
 
 const mockWebGLDraw = jest.fn()
@@ -15,7 +15,7 @@ jest.mock('../lib/utils', () => {
   return {
     ...actual,
     getDecoderConfig: (...args: unknown[]) => mockGetDecoderConfig(...args),
-    getNaluFromStream: (...args: unknown[]) => mockGetNaluFromStream(...args),
+    getSpsFromStream: (...args: unknown[]) => mockGetSpsFromStream(...args),
     isKeyFrame: (...args: unknown[]) => mockIsKeyFrame(...args)
   }
 })
@@ -162,7 +162,7 @@ describe('Render.worker', () => {
     worker.rendererHwSupported = true
     worker.rendererSwSupported = true
 
-    mockGetNaluFromStream.mockReturnValue({ rawNalu: new Uint8Array([1, 2, 3, 4]) })
+    mockGetSpsFromStream.mockReturnValue({ rawNalu: new Uint8Array([1, 2, 3, 4]) })
     mockGetDecoderConfig.mockReturnValue({
       codec: 'avc1.42001f',
       codedWidth: 800,
@@ -364,7 +364,7 @@ describe('Render.worker', () => {
     worker.renderer = { draw: jest.fn() }
     worker.awaitingValidKeyframe = true
 
-    mockGetNaluFromStream.mockReturnValue(null)
+    mockGetSpsFromStream.mockReturnValue(null)
     mockIsKeyFrame.mockReturnValue(false)
 
     await worker.processRaw(new Uint8Array(64).buffer)
@@ -382,7 +382,7 @@ describe('Render.worker', () => {
     worker.isConfigured = true
     worker.awaitingValidKeyframe = false
 
-    mockGetNaluFromStream.mockReturnValue(null)
+    mockGetSpsFromStream.mockReturnValue(null)
     mockIsKeyFrame.mockReturnValue(true)
 
     decoderDecode.mockImplementation(() => {

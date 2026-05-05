@@ -4,10 +4,6 @@ run-name: 'ffmpeg-assets → ${{ github.ref_name }}'
 on:
   workflow_dispatch:
     inputs:
-      ref:
-        description: 'chromium/third_party/ffmpeg branch, tag or commit (default: master)'
-        required: false
-        default: 'master'
       linux_x64:
         description: 'Build linux-x64'
         type: boolean
@@ -39,46 +35,26 @@ jobs:
 
           node <<'NODE'
           const fs = require('fs');
-
           const isTrue = (v) => String(v).toLowerCase() === 'true';
-
           const inputs = {
             linux_x64: isTrue(process.env.IN_LINUX_X64),
             linux_arm64: isTrue(process.env.IN_LINUX_ARM64),
           };
-
           const include = [];
-          const add = (os, runner, arch, dir_name, artifact_name) => {
-            include.push({ os, runner, arch, dir_name, artifact_name });
+          const add = (os, runner, arch, dir_name, artifact_name, gn_cpu) => {
+            include.push({ os, runner, arch, dir_name, artifact_name, gn_cpu });
           };
-
           if (inputs.linux_x64) {
-            add(
-              'linux',
-              'ubuntu-24.04',
-              'x64',
-              'linux-x64',
-              'ffmpeg-linux-x64'
-            );
+            add('linux', 'ubuntu-24.04', 'x64', 'linux-x64', 'ffmpeg-linux-x64', 'x64');
           }
-
           if (inputs.linux_arm64) {
-            add(
-              'linux',
-              'ubuntu-24.04-arm',
-              'arm64',
-              'linux-arm64',
-              'ffmpeg-linux-arm64'
-            );
+            add('linux', 'ubuntu-24.04', 'arm64', 'linux-arm64', 'ffmpeg-linux-arm64', 'arm64');
           }
-
           const matrixObj = { include };
           const matrix = JSON.stringify(matrixObj);
           const isEmpty = include.length === 0 ? 'true' : 'false';
-
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${matrix}\n`);
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `is_empty=${isEmpty}\n`);
-
           console.log('Planned matrix:', matrix);
           console.log('Empty:', isEmpty);
           NODE
@@ -88,6 +64,7 @@ jobs:
     needs: plan
     if: ${{ needs.plan.outputs.is_empty != 'true' }}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
 
     strategy:
       fail-fast: false
@@ -95,84 +72,166 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+      - name: Install host build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git curl jq python3 python3-pkg-resources python3-distutils-extra \
+            pkg-config nasm yasm lsb-release file ca-certificates xz-utils
 
-      - name: Read Electron version
+      - name: Maximize build disk (mount outside LIVI workspace)
+        uses: easimon/maximize-build-space@v10
+        with:
+          remove-android: 'true'
+          remove-dotnet: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+          root-reserve-mb: 4096
+          build-mount-path: /mnt/build
+
+      - name: Take ownership of /mnt/build
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo chown -R "$USER:$USER" /mnt/build
+
+      - name: Redirect caches and TMPDIR to /mnt/build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /mnt/build/cache /mnt/build/tmp /mnt/build/cache/vpython-root
+          rm -rf "$HOME/.cache"
+          ln -s /mnt/build/cache "$HOME/.cache"
+          {
+            echo "TMPDIR=/mnt/build/tmp"
+            echo "XDG_CACHE_HOME=/mnt/build/cache"
+            echo "VPYTHON_VIRTUALENV_ROOT=/mnt/build/cache/vpython-root"
+          } >> "$GITHUB_ENV"
+          echo "Caches redirected:"
+          echo "  ~/.cache -> $(readlink "$HOME/.cache")"
+          echo "  TMPDIR=/mnt/build/tmp"
+          df -h /mnt/build "$HOME"
+
+      - name: Read Electron + resolve Chromium version
         id: el
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="$(node -p 'require("./package.json").devDependencies.electron.replace(/^[~^]/, "")')"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Electron version: $VERSION"
 
-      - name: Build libffmpeg.so [${{ matrix.dir_name }} via Debian forky]
-        shell: bash
-        run: |
-          set -euo pipefail
+          ELECTRON="$(node -p 'require("./package.json").devDependencies.electron.replace(/^[~^]/, "")')"
+          echo "electron=$ELECTRON" >> "$GITHUB_OUTPUT"
+          echo "Pinned Electron: $ELECTRON"
 
-          mkdir -p "assets/ffmpeg/${{ matrix.dir_name }}"
+          # Resolve Chromium version from the official electron releases JSON.
+          if ! ALL="$(curl -fsSL 'https://releases.electronjs.org/releases.json')"; then
+            echo "::error::Failed to fetch releases.electronjs.org/releases.json"
+            exit 1
+          fi
+          REF="$(printf '%s' "$ALL" | jq -r --arg v "$ELECTRON" '.[] | select(.version == $v) | .chrome' | head -1)"
 
-          DOCKER_PLATFORM="linux/amd64"
-          if [[ "${{ matrix.arch }}" == "arm64" ]]; then
-            DOCKER_PLATFORM="linux/arm64/v8"
+          if [[ -z "$REF" ]]; then
+            echo "::error::No release with version $ELECTRON in releases.electronjs.org/releases.json"
+            exit 1
+          fi
+          if [[ ! "$REF" =~ ^[0-9.]+$ ]]; then
+            echo "::error::Resolved chromium version '$REF' does not look like a tag"
+            exit 1
           fi
 
-          docker run --rm --platform="$DOCKER_PLATFORM" \
-            -v "${GITHUB_WORKSPACE}:/work" \
-            -w /work \
-            -e FFMPEG_REF="${{ inputs.ref }}" \
-            -e TARGET_ARCH="${{ matrix.arch }}" \
-            -e DIR_NAME="${{ matrix.dir_name }}" \
-            -e ELECTRON_VERSION="${{ steps.el.outputs.version }}" \
-            debian:forky-slim sh -lc '
-              set -euo pipefail
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "Resolved chromium version from electron $ELECTRON: $REF"
 
-              export DEBIAN_FRONTEND=noninteractive
-
-              apt-get update
-              apt-get install -y --no-install-recommends \
-                bash coreutils findutils file ca-certificates \
-                git python3 clang lld nasm yasm pkg-config libtool make
-
-              git clone --filter=blob:none --no-checkout \
-                https://chromium.googlesource.com/chromium/third_party/ffmpeg.git /tmp/ffmpeg
-              cd /tmp/ffmpeg
-              git fetch --depth=1 origin "$FFMPEG_REF"
-              git checkout FETCH_HEAD
-              SHA="$(git rev-parse HEAD)"
-              echo "Checked out chromium/third_party/ffmpeg @ $SHA"
-
-              # build_ffmpeg.py invocation: <target_os> <target_arch> <ffmpeg_branding>
-              # Chrome branding enables HEVC (H.265) decoding alongside the
-              # existing H.264/AAC/MP3 set we already get from official Electron.
-              CC=clang CXX=clang++ \
-                python3 chromium/scripts/build_ffmpeg.py linux "$TARGET_ARCH" Chrome
-
-              BUILD_DIR="build.${TARGET_ARCH}.linux/Chrome"
-              if [[ ! -f "$BUILD_DIR/libffmpeg.so" ]]; then
-                echo "::error::libffmpeg.so not produced — expected at $BUILD_DIR/libffmpeg.so"
-                ls -la "$BUILD_DIR" 2>/dev/null || true
-                exit 1
-              fi
-
-              cp "$BUILD_DIR/libffmpeg.so" "/work/assets/ffmpeg/${DIR_NAME}/libffmpeg.so"
-              {
-                echo "ref:      ${FFMPEG_REF}"
-                echo "sha:      ${SHA}"
-                echo "built:    $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-                echo "branding: Chrome"
-                echo "electron: ${ELECTRON_VERSION}"
-              } > "/work/assets/ffmpeg/${DIR_NAME}/version.txt"
-              file "/work/assets/ffmpeg/${DIR_NAME}/libffmpeg.so"
-              cat "/work/assets/ffmpeg/${DIR_NAME}/version.txt"
-            '
-
-      - name: Fix file permissions [${{ matrix.dir_name }}]
+      - name: Install + bootstrap depot_tools
         shell: bash
         run: |
           set -euo pipefail
-          sudo chown -R "$USER:$USER" "assets/ffmpeg/${{ matrix.dir_name }}" 2>/dev/null || true
-          sudo chmod -R a+rX "assets/ffmpeg/${{ matrix.dir_name }}" 2>/dev/null || true
+          cd /mnt/build
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+          echo "/mnt/build/depot_tools" >> "$GITHUB_PATH"
+          /mnt/build/depot_tools/update_depot_tools
+
+      - name: gclient sync chromium/src
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /mnt/build
+          mkdir -p chromium && cd chromium
+          cat > .gclient <<'EOF'
+          solutions = [
+            {
+              "name": "src",
+              "url": "https://chromium.googlesource.com/chromium/src.git",
+              "deps_file": "DEPS",
+              "managed": False,
+              "custom_deps": {},
+              "custom_vars": {
+                "checkout_pgo_profiles": False,
+              },
+            },
+          ]
+          target_os = ["linux"]
+          EOF
+          gclient sync --no-history --shallow --nohooks \
+            --revision "src@${{ steps.el.outputs.ref }}"
+          cd src
+          gclient runhooks
+
+      - name: Install Linux sysroot for ${{ matrix.gn_cpu }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /mnt/build/chromium/src
+          python3 build/linux/sysroot_scripts/install-sysroot.py --arch=${{ matrix.gn_cpu }}
+
+      - name: Enable HEVC decoder in chromium ffmpeg config
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${{ github.workspace }}/scripts/ffmpeg/enable-hevc.py" \
+            /mnt/build/chromium/src/third_party/ffmpeg
+
+      - name: gn gen + autoninja libffmpeg.so
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /mnt/build/chromium/src
+          gn gen out/Default --args='chrome_pgo_phase=0 is_debug=false enable_nacl=false is_component_ffmpeg=true proprietary_codecs=true is_official_build=true target_cpu="${{ matrix.gn_cpu }}" ffmpeg_branding="Chrome"'
+          if ! autoninja -C out/Default libffmpeg.so; then
+            echo "::group::siso_output (last 400 lines)"
+            tail -n 400 out/Default/siso_output 2>/dev/null || true
+            echo "::endgroup::"
+            echo "::group::siso.INFO (last 200 lines)"
+            tail -n 200 out/Default/siso.INFO 2>/dev/null || true
+            echo "::endgroup::"
+            echo "::group::siso_failed_commands.sh"
+            cat out/Default/siso_failed_commands.sh 2>/dev/null || true
+            echo "::endgroup::"
+            exit 1
+          fi
+
+      - name: Stage artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILT="/mnt/build/chromium/src/out/Default/libffmpeg.so"
+          if [[ ! -f "$BUILT" ]]; then
+            echo "::error::libffmpeg.so not produced — expected at $BUILT"
+            ls -la /mnt/build/chromium/src/out/Default 2>/dev/null || true
+            exit 1
+          fi
+          mkdir -p "assets/ffmpeg/${{ matrix.dir_name }}"
+          cp "$BUILT" "assets/ffmpeg/${{ matrix.dir_name }}/libffmpeg.so"
+          {
+            echo "ref:      ${{ steps.el.outputs.ref }}"
+            echo "built:    $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "branding: Chrome"
+            echo "electron: ${{ steps.el.outputs.electron }}"
+          } > "assets/ffmpeg/${{ matrix.dir_name }}/version.txt"
+          file "assets/ffmpeg/${{ matrix.dir_name }}/libffmpeg.so"
+          cat "assets/ffmpeg/${{ matrix.dir_name }}/version.txt"
 
       - name: Upload artifact [${{ matrix.dir_name }}]
         uses: actions/upload-artifact@v6
@@ -233,43 +292,36 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           REF=""
-          SHA=""
+          ELECTRON=""
           for f in assets/ffmpeg/linux-x64/version.txt \
                    assets/ffmpeg/linux-arm64/version.txt; do
             if [[ -f "$f" ]]; then
               REF="$(awk -F: '/^ref:/ { sub(/^ +/, "", $2); print $2; exit }' "$f")"
-              SHA="$(awk -F: '/^sha:/ { sub(/^ +/, "", $2); print $2; exit }' "$f")"
+              ELECTRON="$(awk -F: '/^electron:/ { sub(/^ +/, "", $2); print $2; exit }' "$f")"
               break
             fi
           done
-
           echo "ref=$REF" >> "$GITHUB_OUTPUT"
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "electron=$ELECTRON" >> "$GITHUB_OUTPUT"
 
       - name: Commit and push assets
         id: commit_assets
         shell: bash
         run: |
           set -euo pipefail
-
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           git add -f -A assets/ffmpeg
-
           if [[ -z "$(git status --porcelain)" ]]; then
             echo "No asset changes to commit"
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
           MSG="chore(ffmpeg): rebuild HEVC-enabled libffmpeg.so"
-          if [[ -n "${{ steps.meta.outputs.sha }}" ]]; then
-            MSG="$MSG (${{ steps.meta.outputs.sha }})"
+          if [[ -n "${{ steps.meta.outputs.electron }}" ]]; then
+            MSG="$MSG (electron ${{ steps.meta.outputs.electron }})"
           fi
-
           git commit -m "$MSG"
           git push
           echo "changed=true" >> "$GITHUB_OUTPUT"

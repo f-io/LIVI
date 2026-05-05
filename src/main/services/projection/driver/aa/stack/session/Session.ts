@@ -22,7 +22,7 @@ import {
   type NavigationStatusUpdate,
   type NavigationTurnUpdate
 } from '../channels/NavigationChannel.js'
-import { fieldFloat, fieldLenDelim, fieldVarint } from '../channels/protoEnc.js'
+import { decodeStart, fieldFloat, fieldLenDelim, fieldVarint } from '../channels/protoEnc.js'
 import { VideoChannel } from '../channels/VideoChannel.js'
 import {
   AUDIO_TYPE,
@@ -76,32 +76,36 @@ const enum State {
 }
 
 export interface SessionConfig {
-  /** HU label in SDR */
+  // HU label in SDR
   huName?: string
-  /** AA tier the phone encodes into (800×480 / 1280×720 / 1920×1080 / 2560×1440 / 3840×2160) */
+  // AA tier the phone encodes into (800×480 / 1280×720 / 1920×1080 / 2560×1440 / 3840×2160)
   videoWidth?: number
   videoHeight?: number
   videoDpi?: number
   videoFps?: 30 | 60
-  /** Physical HU display — drives margin / inset computation for non-tier ARs */
+  // Physical HU display
   displayWidth?: number
   displayHeight?: number
-  /** Driver seat position. Matches LIVI HandDriveType (LHD=0 / RHD=1). */
+  // Driver seat position (LHD=0 / RHD=1)
   driverPosition?: 0 | 1
-  /** BT adapter MAC for BT channel */
+  // BT adapter MAC for BT channel
   btMacAddress?: string
-  /** WiFi AP BSSID/SSID/password/channel */
+  // WiFi AP BSSID/SSID/password/channel
   wifiBssid?: string
   wifiSsid?: string
   wifiPassword?: string
   wifiChannel?: number
-  /** FuelType enum values from aap_protobuf (UNLEADED=1, DIESEL_2=4, ELECTRIC=10, …).*/
+  // FuelType (UNLEADED=1, DIESEL_2=4, ELECTRIC=10, …)
   fuelTypes?: number[]
   evConnectorTypes?: number[]
+  // True when the renderer's WebCodecs probe reported HEVC HW or SW
+  hevcSupported?: boolean
 }
 
+export type VideoCodec = 'h264' | 'h265'
+
 export class Session extends EventEmitter {
-  // Events: 'video-frame', 'audio-frame', 'audio-start', 'audio-stop',
+  // Events: 'video-frame', 'video-codec', 'audio-frame', 'audio-start', 'audio-stop',
   //         'mic-start', 'mic-stop',
   //         'host-ui-requested', 'media-metadata', 'media-status',
   //         'connected', 'disconnected', 'error'
@@ -111,11 +115,9 @@ export class Session extends EventEmitter {
   private _bridge!: TlsBridge
   private _tlsSocket!: tls.TLSSocket
   private _pingTimer: ReturnType<typeof setInterval> | null = null
-  // (channelId, flags) for the next TLS record
   private _pendingChannelId = 0
   private _pendingFlags = 0
   private _writeChain: Promise<void> = Promise.resolve()
-  // (channelId, flags) per injected TLS record, consumed in 'data' order
   private _channelQueue: Array<{ channelId: number; flags: number }> = []
   private _proto!: ProtoTypes
   private _control!: ControlChannel
@@ -126,6 +128,8 @@ export class Session extends EventEmitter {
   private _mic!: MicChannel
   private _nav!: NavigationChannel
   private _channelMap = new Map<number, number>() // channelId → service type
+  private _videoCodecByIndex: VideoCodec[] = []
+  private _videoCodec: VideoCodec | null = null
 
   constructor(
     private readonly _sock: net.Socket,
@@ -239,8 +243,7 @@ export class Session extends EventEmitter {
         continue
       }
 
-      // Encrypted: rawPayload is one full TLS-1.2 record. Pure wire-level
-      // detail — only useful for protocol bring-up, hidden behind TRACE.
+      // Encrypted: rawPayload is one full TLS-1.2 record
       if (TRACE) {
         console.log(
           `[Session] TLS inject ch=${channelId} flags=0x${flags.toString(16)} record=${payloadSize}B`
@@ -269,7 +272,6 @@ export class Session extends EventEmitter {
 
       default:
         // Encrypted frame piggy-backed on the same TCP segment as TLS Finished
-        // (e.g. AUTH_COMPLETE immediately following TLS handshake).
         if (this._bridge && this._tlsSocket && (frame.flags & 0x08) !== 0) {
           if (DEBUG) {
             console.log(
@@ -318,9 +320,6 @@ export class Session extends EventEmitter {
       return
     }
 
-    // CHANNEL_OPEN_REQUEST normally arrives on the target service channel,
-    // not ch=0 — aasdk routes by frame channelId; only session-level control
-    // (Version/SDR/Ping/AudioFocus/Shutdown) goes on ch=0.
     if (msgId === CTRL_MSG.CHANNEL_OPEN_REQUEST) {
       if (DEBUG) console.log(`[Session] CHANNEL_OPEN_REQUEST ch=${channelId} → responding OK`)
       const respBuf = encode(this._proto.ChannelOpenResponse, { status: STATUS_OK })
@@ -414,18 +413,18 @@ export class Session extends EventEmitter {
 
     // AV START_INDICATION — phone announces it's about to send media frames.
     if (msgId === AV_MSG.START_INDICATION) {
-      let sessionId = -1
-      let configIdx = -1
-      // Manual decode: field 1 tag=0x08, field 2 tag=0x10
-      let i = 0
-      while (i < payload.length) {
-        const tag = payload[i++]!
-        if (tag === 0x08 && i < payload.length) {
-          sessionId = payload[i++]!
-        } else if (tag === 0x10 && i < payload.length) {
-          configIdx = payload[i++]!
-        } else break
+      const start = decodeStart(payload)
+      const sessionId = start?.sessionId ?? -1
+      const configIdx = start?.configIndex ?? -1
+
+      if (channelId === CH.VIDEO && configIdx >= 0) {
+        const codec = this._videoCodecByIndex[configIdx] ?? 'h264'
+        if (codec !== this._videoCodec) {
+          this._videoCodec = codec
+          this.emit('video-codec', codec)
+        }
       }
+
       if (DEBUG) {
         const label =
           channelId === CH.VIDEO
@@ -435,8 +434,10 @@ export class Session extends EventEmitter {
                 channelId === CH.SYSTEM_AUDIO
               ? 'audio'
               : `ch${channelId}`
+        const codecSuffix =
+          channelId === CH.VIDEO && this._videoCodec ? ` codec=${this._videoCodec}` : ''
         console.log(
-          `[Session] ${label} START_INDICATION ch=${channelId} sessionId=${sessionId} configIdx=${configIdx} — stream starting`
+          `[Session] ${label} START_INDICATION ch=${channelId} sessionId=${sessionId} configIdx=${configIdx}${codecSuffix} — stream starting`
         )
       }
       return
@@ -444,13 +445,9 @@ export class Session extends EventEmitter {
 
     // Input channel: 0x8002 = INPUT_MESSAGE_KEY_BINDING_REQUEST (phone → HU).
     // Phone sends a list of keycodes it wants the HU to bind for input dispatch.
-    // We MUST reply with INPUT_MESSAGE_KEY_BINDING_RESPONSE (0x8003, status=0)
-    // — without that ACK the phone disables key delivery on the input channel,
-    // which is why arrows / NAVIGATE_* don't reach the focused view.
     if (channelId === CH.INPUT && msgId === 0x8002) {
       if (DEBUG) {
-        // KeyBindingRequest body: repeated int32 keycodes = 1 (packed). We only
-        // need to log it — the contract is to ACK regardless of contents.
+        // KeyBindingRequest body: repeated int32 keycodes = 1 (packed)
         console.log(
           `[Session] INPUT KeyBindingRequest (len=${payload.length}) — replying status=OK`
         )
@@ -470,7 +467,7 @@ export class Session extends EventEmitter {
 
   // ── Session startup sequence ──────────────────────────────────────────────
 
-  /** Entry point — called once the TCP connection is accepted. */
+  // Entry point — called once the TCP connection is accepted
   async start(): Promise<void> {
     this._proto = await loadProtos()
 
@@ -485,11 +482,10 @@ export class Session extends EventEmitter {
 
     this._video.on('frame', (buf: Buffer, ts: bigint) => this.emit('video-frame', buf, ts))
 
-    // Exit/Home on AA display — keep session alive so phone can re-request focus.
+    // Exit/Home on AA display — keep session alive so phone can re-request focus
     this._video.on('host-ui-requested', () => this.emit('host-ui-requested'))
 
-    // Audio sinks: media (4), speech/guidance (5), system/notification (6).
-    // 'audio-start'/'audio-stop' drive ProjectionAudio's `mediaActive` gate.
+    // Audio sinks: media (4), speech/guidance (5), system/notification (6)
     for (const channelId of [CH.MEDIA_AUDIO, CH.SPEECH_AUDIO, CH.SYSTEM_AUDIO]) {
       const audio = new AudioChannel(channelId, (ch, flags, msgId, data) =>
         this._sendEncrypted(ch, flags, msgId, data)
@@ -556,7 +552,7 @@ export class Session extends EventEmitter {
       this._openChannels()
     })
 
-    // CHANNEL_OPEN_REQUEST on ch=0 (rare — normally arrives on the target channel)
+    // CHANNEL_OPEN_REQUEST on ch=0
     this._control.on('channel-open-request', (channelId: number) => {
       this._control.sendChannelOpenResponse(channelId, STATUS_OK)
     })
@@ -582,23 +578,19 @@ export class Session extends EventEmitter {
     this._input.sendTouch(action, pointers, actionIndex)
   }
 
-  /**
-   * Push captured mic PCM (s16le, 16 kHz mono) to the phone.
-   * No-op outside RUNNING or when the mic channel hasn't been opened by the
-   * phone — the MicChannel itself drops frames silently in those cases.
-   */
+  // Push captured mic PCM (s16le, 16 kHz mono) to the phone.
   sendMicPcm(buf: Buffer, ts: bigint = BigInt(Date.now()) * 1_000n): void {
     if (this._state !== State.RUNNING || !this._mic) return
     this._mic.pushPcm(buf, ts)
   }
 
-  /** HW button event. Codes in InputChannel.BUTTON_KEY. */
+  // HW button event. Codes in InputChannel.BUTTON_KEY
   sendButton(keyCode: number | readonly number[], down: boolean): void {
     if (this._state !== State.RUNNING || !this._input) return
     this._input.sendButton(keyCode, down)
   }
 
-  /** Rotary-encoder delta event (-1 = previous, +1 = next). For in-list scroll. */
+  // Rotary-encoder delta event (-1 = previous, +1 = next)
   sendRotary(direction: -1 | 1): void {
     if (this._state !== State.RUNNING || !this._input) return
     this._input.sendRotary(direction)
@@ -615,7 +607,7 @@ export class Session extends EventEmitter {
     if (DEBUG) console.log(`[Session] SensorBatch field=${sensorBatchField} ${innerData.length}B`)
   }
 
-  /** level%, range[m], lowFuelWarning. */
+  // level%, range[m], lowFuelWarning
   sendFuelData(level: number, range?: number, lowFuelWarning?: boolean): void {
     const parts: Buffer[] = [fieldVarint(1, level)]
     if (range !== undefined) parts.push(fieldVarint(2, range))
@@ -623,7 +615,7 @@ export class Session extends EventEmitter {
     this._sendSensorBatch(6, Buffer.concat(parts))
   }
 
-  /** speed in mm/s (m/s × 1000). */
+  // speed in mm/s (m/s × 1000)
   sendSpeedData(speedMmS: number, cruiseEngaged?: boolean, cruiseSetSpeedMmS?: number): void {
     const parts: Buffer[] = [fieldVarint(1, speedMmS)]
     if (cruiseEngaged !== undefined) parts.push(fieldVarint(2, cruiseEngaged ? 1 : 0))
@@ -631,12 +623,12 @@ export class Session extends EventEmitter {
     this._sendSensorBatch(3, Buffer.concat(parts))
   }
 
-  /** rpm × 1000. */
+  // rpm × 1000
   sendRpmData(rpmE3: number): void {
     this._sendSensorBatch(4, fieldVarint(1, rpmE3))
   }
 
-  /** Gear enum: NEUTRAL=0, 1..10 manual, DRIVE=100, PARK=101, REVERSE=102. */
+  // Gear enum: NEUTRAL=0, 1..10 manual, DRIVE=100, PARK=101, REVERSE=102
   sendGearData(gear: number): void {
     this._sendSensorBatch(8, fieldVarint(1, gear))
   }
@@ -649,7 +641,7 @@ export class Session extends EventEmitter {
     this._sendSensorBatch(7, fieldVarint(1, engaged ? 1 : 0))
   }
 
-  /** headLight: 1=OFF, 2=ON, 3=HIGH. turnIndicator: 1=NONE, 2=LEFT, 3=RIGHT. */
+  // headLight: 1=OFF, 2=ON, 3=HIGH. turnIndicator: 1=NONE, 2=LEFT, 3=RIGHT
   sendLightData(headLight?: 1 | 2 | 3, hazardLights?: boolean, turnIndicator?: 1 | 2 | 3): void {
     const parts: Buffer[] = []
     if (headLight !== undefined) parts.push(fieldVarint(1, headLight))
@@ -659,7 +651,7 @@ export class Session extends EventEmitter {
     this._sendSensorBatch(17, Buffer.concat(parts))
   }
 
-  /** temperature in m°C, pressure in Pa (kPa × 1000). */
+  // temperature in m°C, pressure in Pa (kPa × 1000)
   sendEnvironmentData(temperatureE3?: number, pressureE3?: number, rain?: number): void {
     const parts: Buffer[] = []
     if (temperatureE3 !== undefined) parts.push(fieldVarint(1, temperatureE3))
@@ -669,14 +661,14 @@ export class Session extends EventEmitter {
     this._sendSensorBatch(11, Buffer.concat(parts))
   }
 
-  /** km × 10. */
+  // km × 10
   sendOdometerData(totalKmE1: number, tripKmE1?: number): void {
     const parts: Buffer[] = [fieldVarint(1, totalKmE1)]
     if (tripKmE1 !== undefined) parts.push(fieldVarint(2, tripKmE1))
     this._sendSensorBatch(5, Buffer.concat(parts))
   }
 
-  /** Restriction bitmask. UNRESTRICTED=0. */
+  // Restriction bitmask. UNRESTRICTED=0
   sendDrivingStatusData(status: number): void {
     this._sendSensorBatch(13, fieldVarint(1, status))
   }
@@ -684,7 +676,7 @@ export class Session extends EventEmitter {
   /**
    * EV battery / energy model. Sent as SensorBatch.vehicle_energy_model_data
    * (field 23) — Maps reads min_usable_capacity.watt_hours as the *current*
-   * battery level (not max), per AAOS Maps decompile.
+   * battery level
    *
    * capacityWh: gross battery capacity (e.g. 50000 = 50 kWh)
    * currentWh:  current battery level in Wh
@@ -747,10 +739,7 @@ export class Session extends EventEmitter {
       )
   }
 
-  /**
-   * Ask the phone to emit a fresh IDR. Same VideoFocusIndication(PROJECTED,
-   * unsolicited=false) aasdk sends after AV setup — phone re-primes its encoder.
-   */
+  // Ask the phone to emit a fresh IDR. Same VideoFocusIndication(PROJECTED, unsolicited=false)
   requestKeyframe(): void {
     if (this._state !== State.RUNNING) return
     // payload: [focus=PROJECTED(1)]; unsolicited defaults to false
@@ -767,10 +756,7 @@ export class Session extends EventEmitter {
     }
   }
 
-  /**
-   * HU-initiated shutdown via ByeByeRequest. Idempotent.
-   * Default reason=1 (USER_SELECTION) — explicit user action in the HU shell.
-   */
+  // HU-initiated shutdown via ByeByeRequest
   requestShutdown(reason = 1 /* USER_SELECTION */): void {
     if (this._state >= State.CLOSED) return
     const payload = Buffer.from([0x08, reason & 0xff])
@@ -819,10 +805,6 @@ export class Session extends EventEmitter {
   }
 
   private async _startTls(): Promise<void> {
-    // Coalesce same-tick TLS handshake chunks into one SSL_HANDSHAKE frame.
-    // Electron's BoringSSL splits the 2nd flight across multiple _write()s;
-    // aasdk on the phone needs the flight as one blob or it FINs with
-    // "bad record mac". setImmediate flush fires once after the tick.
     const hsOutBuf: Buffer[] = []
     let hsFlushScheduled = false
     const flushHs = (): void => {
@@ -844,9 +826,7 @@ export class Session extends EventEmitter {
     const { tlsSocket, bridge } = createTlsClient(
       HU_CERT_PEM,
       HU_KEY_PEM,
-      // Handshake: wrap in SSL_HANDSHAKE frames. Post-handshake: _pendingChannelId/Flags
-      // are set in _sendAA right before tlsSocket.write(); _writeChain serialises so the
-      // pending values always match this record.
+      // Handshake: wrap in SSL_HANDSHAKE frames
       (tlsBytes) => {
         if (this._state === State.TLS_HANDSHAKE) {
           hsOutBuf.push(tlsBytes)
@@ -872,9 +852,7 @@ export class Session extends EventEmitter {
     this._bridge = bridge
     this._tlsSocket = tlsSocket
 
-    // Cleartext per decrypted AA-frame record. ctx is queued 1:1 in _stripHeaderAndInjectTls.
-    // Reassembly: BULK(0x03) emit; FIRST(0x01) start; MIDDLE append; LAST(0x02) concat+emit.
-    // msgId lives in the FIRST fragment's first 2 bytes only.
+    // Cleartext per decrypted AA-frame record
     tlsSocket.on('data', (chunk: Buffer) => {
       const ctx = this._channelQueue.shift()
       if (!ctx) {
@@ -885,7 +863,7 @@ export class Session extends EventEmitter {
       const isFirst = (ctx.flags & 0x01) !== 0
       const isLast = (ctx.flags & 0x02) !== 0
 
-      // BULK — single-frame message, emit immediately.
+      // BULK — single-frame message, emit immediately
       if (isFirst && isLast) {
         if (chunk.length < 2) {
           if (DEBUG) console.warn(`[Session] TLS decrypted payload too short (${chunk.length}B)`)
@@ -905,7 +883,7 @@ export class Session extends EventEmitter {
         return
       }
 
-      // FIRST — start cleartext accumulator for this channel.
+      // FIRST — start cleartext accumulator for this channel
       if (isFirst && !isLast) {
         this._tlsCleartextFragments.set(ctx.channelId, { parts: [chunk], flags: ctx.flags })
         if (DEBUG && (TRACE || !isFrameChannel(ctx.channelId))) {
@@ -916,7 +894,7 @@ export class Session extends EventEmitter {
         return
       }
 
-      // MIDDLE / LAST — append cleartext.
+      // MIDDLE / LAST — append cleartext
       const state = this._tlsCleartextFragments.get(ctx.channelId)
       if (!state) {
         if (DEBUG) {
@@ -936,7 +914,7 @@ export class Session extends EventEmitter {
         return
       }
 
-      // LAST — concat all cleartext fragments and emit.
+      // LAST — concat all cleartext fragments and emit
       this._tlsCleartextFragments.delete(ctx.channelId)
       const full = Buffer.concat(state.parts)
       if (full.length < 2) {
@@ -954,7 +932,7 @@ export class Session extends EventEmitter {
           `[Session] ← ch=${ctx.channelId} msgId=0x${msgId.toString(16).padStart(4, '0')} len=${payload.length} (reassembled from ${state.parts.length} fragments)`
         )
       }
-      // Use FIRST fragment's flags — only first/last bits differ across fragments.
+      // Use FIRST fragment's flags — only first/last bits differ across fragments
       this._handleDecryptedMessage(ctx.channelId, state.flags, msgId, payload)
     })
 
@@ -973,7 +951,7 @@ export class Session extends EventEmitter {
   }
 
   private async _postTlsSetup(): Promise<void> {
-    // AUTH_COMPLETE is sent PLAINTEXT (aasdk EncryptionType for ch=0/0x0004 = PLAIN).
+    // AUTH_COMPLETE is sent PLAINTEXT
     const authBuf = encode(this._proto.AuthCompleteIndication, { status: STATUS_OK })
     if (DEBUG) console.log(`[Session] AUTH_COMPLETE proto bytes: ${authBuf.toString('hex')}`)
     this._sendAA(CH.CONTROL, FRAME_FLAGS.PLAINTEXT, CTRL_MSG.AUTH_COMPLETE, authBuf)
@@ -1004,8 +982,7 @@ export class Session extends EventEmitter {
 
     const vFps = fps === 60 ? VIDEO_FPS._60 : VIDEO_FPS._30
 
-    // Non-tier display fit: phone encodes the full tier with symmetric
-    // black bars; renderer crops them off display-side.
+    // Non-tier display fit: phone encodes the full tier with symmetric black bars
     let widthMargin = 0
     let heightMargin = 0
     if (cfg.displayWidth && cfg.displayHeight && vW > 0 && vH > 0) {
@@ -1021,7 +998,7 @@ export class Session extends EventEmitter {
         widthMargin = Math.max(0, vW - contentW)
       }
     }
-    // UiConfig.margins forces symmetric split; without it the phone top-aligns.
+    // UiConfig.margins forces symmetric split; without it the phone top-aligns
     const insetTop = Math.floor(heightMargin / 2)
     const insetBottom = heightMargin - insetTop
     const insetLeft = Math.floor(widthMargin / 2)
@@ -1032,7 +1009,7 @@ export class Session extends EventEmitter {
       AS_SYSTEM = 2,
       AS_MEDIA = 3
 
-    // SensorType (aasdk numeric values)
+    // SensorType
     const SENSOR = {
       LOCATION: 1,
       COMPASS: 2,
@@ -1052,9 +1029,6 @@ export class Session extends EventEmitter {
       ACCELEROMETER: 19,
       GYROSCOPE: 20,
       GPS_SATELLITE: 21,
-      // EV / energy-routing sensors. Advertising these triggers the phone to
-      // subscribe to type 23 for battery + range data. Maps' EV range display
-      // depends on at least 23 + supportedFuelTypes containing ELECTRIC.
       VEHICLE_ENERGY_MODEL: 23,
       RAW_VEHICLE_ENERGY_MODEL: 25,
       RAW_EV_TRIP_SETTINGS: 26
@@ -1063,24 +1037,48 @@ export class Session extends EventEmitter {
     const channels: object[] = []
 
     // ── Video (ch=3) ──
+    // Advertise H.264 always; H.265 only when the renderer's WebCodecs probe
+    // confirmed HEVC HW or SW support. Phone picks one config and reports the
+    // index back via START_INDICATION.
+    const videoUiConfig = {
+      margins: { top: insetTop, bottom: insetBottom, left: insetLeft, right: insetRight }
+    }
+    const videoConfigs: object[] = [
+      {
+        codecResolution: vRes,
+        frameRate: vFps,
+        widthMargin,
+        heightMargin,
+        density: dpi,
+        videoCodecType: MEDIA_CODEC.VIDEO_H264_BP,
+        uiConfig: videoUiConfig
+      }
+    ]
+    this._videoCodecByIndex = ['h264']
+    if (this._cfg.hevcSupported) {
+      videoConfigs.push({
+        codecResolution: vRes,
+        frameRate: vFps,
+        widthMargin,
+        heightMargin,
+        density: dpi,
+        videoCodecType: MEDIA_CODEC.VIDEO_H265,
+        uiConfig: videoUiConfig
+      })
+      this._videoCodecByIndex.push('h265')
+    }
+    if (DEBUG) {
+      console.log(
+        `[Session] advertising codecs: ${this._videoCodecByIndex.join(', ')} ` +
+          `(hevcSupported=${!!this._cfg.hevcSupported})`
+      )
+    }
     channels.push({
       id: CH.VIDEO,
       mediaSinkService: {
         availableType: MEDIA_CODEC.VIDEO_H264_BP,
         availableWhileInCall: true,
-        videoConfigs: [
-          {
-            codecResolution: vRes,
-            frameRate: vFps,
-            widthMargin,
-            heightMargin,
-            density: dpi,
-            videoCodecType: MEDIA_CODEC.VIDEO_H264_BP,
-            uiConfig: {
-              margins: { top: insetTop, bottom: insetBottom, left: insetLeft, right: insetRight }
-            }
-          }
-        ]
+        videoConfigs
       }
     })
 
@@ -1157,7 +1155,6 @@ export class Session extends EventEmitter {
           { sensorType: SENSOR.COMPASS },
           { sensorType: SENSOR.GPS_SATELLITE },
           { sensorType: SENSOR.RPM },
-          // EV energy model — triggers phone to request battery routing data
           { sensorType: SENSOR.VEHICLE_ENERGY_MODEL },
           { sensorType: SENSOR.RAW_VEHICLE_ENERGY_MODEL },
           { sensorType: SENSOR.RAW_EV_TRIP_SETTINGS }
@@ -1371,11 +1368,21 @@ export class Session extends EventEmitter {
     }
 
     // mediaStatus MUST be OK(2) — NONE(0) is treated as FAIL and drops the session.
-    // max_unacked=1: phone paces to real-time. Higher values cause burst+stall.
+    let configIdx = 0
+    if (channelId === CH.VIDEO) {
+      const want: VideoCodec = codec === MEDIA_CODEC.VIDEO_H265 ? 'h265' : 'h264'
+      const idx = this._videoCodecByIndex.indexOf(want)
+      if (idx >= 0) configIdx = idx
+      if (this._videoCodec !== want) {
+        this._videoCodec = want
+        this.emit('video-codec', want)
+        if (DEBUG) console.log(`[Session] video codec selected: ${want} (configIdx=${configIdx})`)
+      }
+    }
     const respBuf = encode(this._proto.AVChannelSetupResponse, {
       mediaStatus: AV_SETUP_STATUS.OK,
       maxUnacked: 1,
-      configs: [0]
+      configs: [configIdx]
     })
     this._sendEncrypted(channelId, FRAME_FLAGS.ENC_SIGNAL, AV_MSG.SETUP_RESPONSE, respBuf)
     if (DEBUG) {
@@ -1385,8 +1392,7 @@ export class Session extends EventEmitter {
     }
 
     if (channelId === CH.VIDEO) {
-      // VideoFocusIndication(PROJECTED, unsolicited=false) IS the keyframe-request
-      // mechanism in aasdk — triggers a fresh IDR. unsolicited=true would stall.
+      // VideoFocusIndication(PROJECTED, unsolicited=false) keyframe-request
       this._sendEncrypted(
         CH.VIDEO,
         FRAME_FLAGS.ENC_SIGNAL,
@@ -1399,10 +1405,13 @@ export class Session extends EventEmitter {
         )
       }
 
-      // No AVChannelStartIndication — phone sends START_INDICATION when ready.
+      // No AVChannelStartIndication — phone sends START_INDICATION when ready
       this._transition(State.RUNNING)
       this.emit('connected')
-      if (DEBUG) console.log('[Session] Video channel ready — waiting for H.264 frames from phone')
+      if (DEBUG)
+        console.log(
+          `[Session] Video channel ready — waiting for ${this._videoCodec ?? 'h264'} frames from phone`
+        )
     }
   }
 
@@ -1456,9 +1465,6 @@ export class Session extends EventEmitter {
     //        WPA2_PERSONAL = 8 used by the RFCOMM-side WifiInfoResponse)
     //   f3 = car_wifi_ssid (string)
     //   f5 = access_point_type = STATIC (0)
-    //
-    // STATIC at f5 is what makes the phone persist the WifiConfiguration —
-    // DYNAMIC is treated as a transient hotspot and discarded.
     const ssid = this._cfg.wifiSsid ?? ''
     const pass = this._cfg.wifiPassword ?? ''
 
@@ -1479,7 +1485,7 @@ export class Session extends EventEmitter {
       parts.push(passBytes)
     }
 
-    parts.push(Buffer.from([0x10, 0x05])) // security_mode = WPA2_PERSONAL (new enum)
+    parts.push(Buffer.from([0x10, 0x05])) // security_mode = WPA2_PERSONAL
 
     if (ssid.length > 0) {
       const ssidBytes = Buffer.from(ssid, 'utf-8')
@@ -1501,10 +1507,7 @@ export class Session extends EventEmitter {
 
   // ── Frame sending ─────────────────────────────────────────────────────────
 
-  /**
-   * Send an AA frame. Encrypted (flags & 0x08) → TLS via tlsSocket. Plaintext
-   * → raw on TCP (AUTH_COMPLETE / PING are always plaintext per aasdk).
-   */
+  // Send an AA frame. Encrypted (flags & 0x08) → TLS via tlsSocket
   private _sendAA(channelId: number, flags: number, msgId: number, data: Buffer): void {
     const isEncrypted = (flags & 0x08) !== 0
 
@@ -1528,9 +1531,7 @@ export class Session extends EventEmitter {
     msgIdBuf.writeUInt16BE(msgId, 0)
     const cleartext = Buffer.concat([msgIdBuf, data])
 
-    // Serialise — Node's _writev would otherwise merge consecutive writes into
-    // one TLS record, and the bridge would tag it with the last channelId/flags,
-    // dropping earlier messages' headers.
+    // Serialise
     const sock = this._tlsSocket
     this._writeChain = this._writeChain.then(
       () =>
