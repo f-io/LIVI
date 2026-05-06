@@ -5,7 +5,7 @@ let mockState = {
   isStreaming: false,
   isDongleConnected: false,
   cameraFound: true,
-  mapsEnabled: false,
+  clusterEnabled: false,
   telemetryEnabled: false,
   settingsMissing: false
 }
@@ -30,7 +30,7 @@ jest.mock('@store/store', () => ({
       settings: mockState.settingsMissing
         ? undefined
         : {
-            mapsEnabled: mockState.mapsEnabled,
+            clusterEnabled: mockState.clusterEnabled,
             telemetryEnabled: mockState.telemetryEnabled
           }
     })
@@ -42,7 +42,7 @@ describe('useTabsConfig', () => {
       isStreaming: false,
       isDongleConnected: false,
       cameraFound: true,
-      mapsEnabled: false,
+      clusterEnabled: false,
       telemetryEnabled: false,
       settingsMissing: false
     }
@@ -54,12 +54,12 @@ describe('useTabsConfig', () => {
   })
 
   test('adds maps and telemetry tabs when enabled', () => {
-    mockState.mapsEnabled = true
+    mockState.clusterEnabled = true
     mockState.telemetryEnabled = true
     const { result } = renderHook(() => useTabsConfig(false))
     expect(result.current.map((t) => t.path)).toEqual([
       '/',
-      '/maps',
+      '/cluster',
       '/telemetry',
       '/media',
       '/camera',

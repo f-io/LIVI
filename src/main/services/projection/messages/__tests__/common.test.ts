@@ -138,7 +138,7 @@ describe('projection messages common', () => {
 
   test.each([
     [MessageType.AudioData, AudioData, createAudioPayload()],
-    [MessageType.NaviVideoData, VideoData, createVideoPayload()],
+    [MessageType.ClusterVideoData, VideoData, createVideoPayload()],
     [MessageType.MetaData, MetaData, Buffer.from('meta')],
     [MessageType.GnssData, GnssData, Buffer.from('gnss')],
     [MessageType.BluetoothAddress, BluetoothAddress, Buffer.from('aa:bb:cc')],

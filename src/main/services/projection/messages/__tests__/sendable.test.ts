@@ -11,6 +11,8 @@ import {
   SendBoolean,
   SendBoxSettings,
   SendCloseDongle,
+  SendClusterFocusRelease,
+  SendClusterFocusRequest,
   SendCommand,
   SendDisconnectPhone,
   SendFile,
@@ -20,8 +22,6 @@ import {
   SendLiviWeb,
   SendLogoType,
   SendMultiTouch,
-  SendNaviFocusRelease,
-  SendNaviFocusRequest,
   SendNumber,
   SendOpen,
   SendRawMessage,
@@ -262,20 +262,20 @@ describe('sendable messages', () => {
     expect(buf.readUInt32LE(8)).toBe(MessageType.DisconnectPhone)
   })
 
-  test('SendNaviFocusRequest serialises header-only message', () => {
-    const msg = new SendNaviFocusRequest()
+  test('SendClusterFocusRequest serialises header-only message', () => {
+    const msg = new SendClusterFocusRequest()
     const buf = msg.serialise()
 
     expect(buf.readUInt32LE(0)).toBe(0x55aa55aa)
-    expect(buf.readUInt32LE(8)).toBe(MessageType.NaviFocusRequest)
+    expect(buf.readUInt32LE(8)).toBe(MessageType.ClusterFocusRequest)
   })
 
-  test('SendNaviFocusRelease serialises header-only message', () => {
-    const msg = new SendNaviFocusRelease()
+  test('SendClusterFocusRelease serialises header-only message', () => {
+    const msg = new SendClusterFocusRelease()
     const buf = msg.serialise()
 
     expect(buf.readUInt32LE(0)).toBe(0x55aa55aa)
-    expect(buf.readUInt32LE(8)).toBe(MessageType.NaviFocusRelease)
+    expect(buf.readUInt32LE(8)).toBe(MessageType.ClusterFocusRelease)
   })
 
   test('SendIconConfig includes oemIconLabel when oemName is provided', () => {
@@ -329,7 +329,7 @@ describe('sendable messages', () => {
         gnssGlonass: false,
         gnssGalileo: true,
         gnssBeiDou: false,
-        mapsEnabled: false
+        clusterEnabled: false
       } as any,
       123456
     )
@@ -379,14 +379,14 @@ describe('sendable messages', () => {
         gnssGlonass: false,
         gnssGalileo: false,
         gnssBeiDou: false,
-        mapsEnabled: true,
-        naviWidth: 800,
-        naviHeight: 480,
-        naviFps: 30,
-        naviSafeAreaTop: 10,
-        naviSafeAreaBottom: 20,
-        naviSafeAreaLeft: 30,
-        naviSafeAreaRight: 40
+        clusterEnabled: true,
+        clusterWidth: 800,
+        clusterHeight: 480,
+        clusterFps: 30,
+        clusterSafeAreaTop: 10,
+        clusterSafeAreaBottom: 20,
+        clusterSafeAreaLeft: 30,
+        clusterSafeAreaRight: 40
       } as any,
       1
     )
@@ -408,7 +408,7 @@ describe('sendable messages', () => {
     })
   })
 
-  test('SendBoxSettings respects explicit naviSafeAreaDrawOutside=false', () => {
+  test('SendBoxSettings respects explicit clusterSafeAreaDrawOutside=false', () => {
     const msg = new SendBoxSettings(
       {
         width: 1280,
@@ -434,15 +434,15 @@ describe('sendable messages', () => {
         gnssGlonass: false,
         gnssGalileo: false,
         gnssBeiDou: false,
-        mapsEnabled: true,
-        naviWidth: 800,
-        naviHeight: 480,
-        naviFps: 24,
-        naviSafeAreaTop: 10,
-        naviSafeAreaBottom: 0,
-        naviSafeAreaLeft: 0,
-        naviSafeAreaRight: 0,
-        naviSafeAreaDrawOutside: false
+        clusterEnabled: true,
+        clusterWidth: 800,
+        clusterHeight: 480,
+        clusterFps: 24,
+        clusterSafeAreaTop: 10,
+        clusterSafeAreaBottom: 0,
+        clusterSafeAreaLeft: 0,
+        clusterSafeAreaRight: 0,
+        clusterSafeAreaDrawOutside: false
       } as any,
       1
     )
@@ -550,7 +550,7 @@ describe('sendable messages', () => {
           gnssGlonass: false,
           gnssGalileo: false,
           gnssBeiDou: false,
-          mapsEnabled: false
+          clusterEnabled: false
         },
         123
       )
@@ -605,7 +605,7 @@ describe('sendable messages', () => {
           gnssGlonass: false,
           gnssGalileo: false,
           gnssBeiDou: false,
-          mapsEnabled: false
+          clusterEnabled: false
         },
         123
       )
@@ -649,7 +649,7 @@ describe('sendable messages', () => {
         gnssGlonass: false,
         gnssGalileo: false,
         gnssBeiDou: false,
-        mapsEnabled: false
+        clusterEnabled: false
       } as any,
       null
     )
@@ -685,7 +685,7 @@ describe('sendable messages', () => {
         gnssGlonass: false,
         gnssGalileo: false,
         gnssBeiDou: true,
-        mapsEnabled: false
+        clusterEnabled: false
       } as any,
       1
     )
@@ -723,14 +723,14 @@ describe('sendable messages', () => {
         gnssGlonass: false,
         gnssGalileo: false,
         gnssBeiDou: false,
-        mapsEnabled: true,
-        naviWidth: 800,
-        naviHeight: 480,
-        naviFps: 30,
-        naviSafeAreaTop: undefined,
-        naviSafeAreaBottom: undefined,
-        naviSafeAreaLeft: undefined,
-        naviSafeAreaRight: undefined
+        clusterEnabled: true,
+        clusterWidth: 800,
+        clusterHeight: 480,
+        clusterFps: 30,
+        clusterSafeAreaTop: undefined,
+        clusterSafeAreaBottom: undefined,
+        clusterSafeAreaLeft: undefined,
+        clusterSafeAreaRight: undefined
       } as any,
       1
     )
@@ -776,7 +776,7 @@ describe('sendable messages', () => {
       gnssGlonass: false,
       gnssGalileo: false,
       gnssBeiDou: false,
-      mapsEnabled: false
+      clusterEnabled: false
     } as any)
 
     const body = JSON.parse(msg.getPayload().toString('ascii'))
@@ -845,7 +845,7 @@ describe('sendable messages', () => {
         gnssGlonass: true,
         gnssGalileo: false,
         gnssBeiDou: false,
-        mapsEnabled: false
+        clusterEnabled: false
       } as any,
       1
     )

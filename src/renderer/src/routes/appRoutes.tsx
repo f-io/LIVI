@@ -1,5 +1,5 @@
 import { Layout } from '../components/layouts/Layout'
-import { Camera, Home, Maps, Media, Telemetry } from '../components/pages'
+import { Camera, Home, Media, Telemetry } from '../components/pages'
 import { SettingsPage } from '../components/pages/settings/SettingsPage'
 import { settingsRoutes } from './schemas/schema'
 import { RoutePath } from './types'
@@ -18,8 +18,8 @@ export const appRoutes = [
         element: <Telemetry />
       },
       {
-        path: `/${RoutePath.Maps}`,
-        element: <Maps />
+        path: `/${RoutePath.Cluster}`,
+        element: <></>
       },
       {
         path: `/${RoutePath.Media}`,

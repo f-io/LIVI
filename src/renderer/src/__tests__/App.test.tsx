@@ -26,7 +26,8 @@ jest.mock('../components/pages', () => ({
     >
       {String(props.receivingVideo)}
     </div>
-  )
+  ),
+  Cluster: () => <div data-testid="cluster" />
 }))
 
 jest.mock('../components/layouts/AppLayout', () => ({

@@ -50,13 +50,13 @@ export const requiresRestartParams: (keyof ExtraConfig)[] = [
   'projectionSafeAreaRight',
   'projectionSafeAreaDrawOutside',
 
-  'naviWidth',
-  'naviHeight',
-  'naviFps',
-  'naviSafeAreaTop',
-  'naviSafeAreaBottom',
-  'naviSafeAreaLeft',
-  'naviSafeAreaRight',
+  'clusterWidth',
+  'clusterHeight',
+  'clusterFps',
+  'clusterSafeAreaTop',
+  'clusterSafeAreaBottom',
+  'clusterSafeAreaLeft',
+  'clusterSafeAreaRight',
 
   'mediaDelay',
   'wifiType',
@@ -77,5 +77,5 @@ export const requiresRestartParams: (keyof ExtraConfig)[] = [
   'wifiPassword',
   'mediaSound',
   'hand',
-  'mapsEnabled'
+  'clusterEnabled'
 ]

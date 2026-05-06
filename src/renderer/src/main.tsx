@@ -40,8 +40,8 @@ export const Root = () => {
   }, [])
 
   const mode: THEME.DARK | THEME.LIGHT =
-    typeof settings?.nightMode === 'boolean'
-      ? settings.nightMode
+    typeof settings?.darkMode === 'boolean'
+      ? settings.darkMode
         ? THEME.DARK
         : THEME.LIGHT
       : THEME.DARK

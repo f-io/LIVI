@@ -21,7 +21,7 @@ describe('appRoutes', () => {
   test('contains expected top-level app routes', () => {
     const root = appRoutes[0]
     const paths = (root.children ?? []).map((r: any) => r.path)
-    expect(paths).toEqual(['/home', '/telemetry', '/maps', '/media', '/camera', '/settings/*'])
+    expect(paths).toEqual(['/home', '/telemetry', '/cluster', '/media', '/camera', '/settings/*'])
   })
 
   test('falls back to empty settings children when settingsRoutes is missing', () => {

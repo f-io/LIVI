@@ -76,7 +76,7 @@ describe('updateCameras', () => {
     ])
 
     const currentSettings = {
-      nightMode: false
+      darkMode: false
     } as ExtraConfig
 
     await updateCameras(setCameraFound, saveSettings, currentSettings)

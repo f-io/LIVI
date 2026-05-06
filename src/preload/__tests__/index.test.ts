@@ -199,16 +199,16 @@ describe('preload api bridge', () => {
     expect(handler).toHaveBeenCalledTimes(1)
   })
 
-  test('ipc maps handlers flush queued maps payloads', () => {
+  test('ipc cluster handlers flush queued cluster payloads', () => {
     const { projection } = loadPreload()
     const videoHandler = jest.fn()
     const resolutionHandler = jest.fn()
 
-    emit('maps-video-chunk', { chunk: 1 })
-    emit('maps-video-resolution', { width: 800, height: 480 })
+    emit('cluster-video-chunk', { chunk: 1 })
+    emit('cluster-video-resolution', { width: 800, height: 480 })
 
-    projection.ipc.onMapsVideoChunk(videoHandler)
-    projection.ipc.onMapsResolution(resolutionHandler)
+    projection.ipc.onClusterVideoChunk(videoHandler)
+    projection.ipc.onClusterResolution(resolutionHandler)
 
     expect(videoHandler).toHaveBeenCalledWith({ chunk: 1 })
     expect(resolutionHandler).toHaveBeenCalledWith({ width: 800, height: 480 })
@@ -308,7 +308,7 @@ describe('preload api bridge', () => {
     await projection.ipc.dongleFirmware('check')
     await projection.ipc.readMedia()
     await projection.ipc.readNavigation()
-    await projection.ipc.requestMaps(true)
+    await projection.ipc.requestCluster(true)
 
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('usb-force-reset')
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('usb-detect-dongle')
@@ -334,7 +334,7 @@ describe('preload api bridge', () => {
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('dongle-fw', { action: 'check' })
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('projection-media-read')
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('projection-navigation-read')
-    expect(ipcRendererMock.invoke).toHaveBeenCalledWith('maps:request', true)
+    expect(ipcRendererMock.invoke).toHaveBeenCalledWith('cluster:request', true)
   })
 
   test('projection volume and visualizer wrappers send ipc events', () => {
@@ -400,16 +400,16 @@ describe('preload api bridge', () => {
     expect(handler).toHaveBeenCalledWith({ id: 'live-audio' })
   })
 
-  test('ipc maps handlers forward payloads directly when handlers are already registered', () => {
+  test('ipc cluster handlers forward payloads directly when handlers are already registered', () => {
     const { projection } = loadPreload()
     const videoHandler = jest.fn()
     const resolutionHandler = jest.fn()
 
-    projection.ipc.onMapsVideoChunk(videoHandler)
-    projection.ipc.onMapsResolution(resolutionHandler)
+    projection.ipc.onClusterVideoChunk(videoHandler)
+    projection.ipc.onClusterResolution(resolutionHandler)
 
-    emit('maps-video-chunk', { chunk: 2 })
-    emit('maps-video-resolution', { width: 1280, height: 720 })
+    emit('cluster-video-chunk', { chunk: 2 })
+    emit('cluster-video-resolution', { width: 1280, height: 720 })
 
     expect(videoHandler).toHaveBeenCalledTimes(1)
     expect(videoHandler).toHaveBeenCalledWith({ chunk: 2 })

@@ -141,13 +141,13 @@ describe('SettingsFieldControl', () => {
         onChange={onChange}
       />
     )
-    expect(screen.getByTestId('textfield-color')).toHaveValue('#ffffff')
+    expect(screen.getByTestId('textfield-color')).toHaveValue('#00ffff')
     expect(screen.getByTestId('icon-button')).toBeDisabled()
 
     rerender(
       <SettingsFieldControl
         node={{ type: 'color', label: 'Highlight', path: 'highlightColorDark' } as any}
-        value="#ffffff"
+        value="#00ffff"
         onChange={onChange}
       />
     )

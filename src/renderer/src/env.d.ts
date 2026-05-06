@@ -164,9 +164,9 @@ declare global {
         onAudioChunk(handler: (payload: unknown) => void): void
         offAudioChunk(handler: (payload: unknown) => void): void
 
-        requestMaps(enabled: boolean): Promise<{ ok: boolean; enabled: boolean }>
-        onMapsVideoChunk(handler: (payload: unknown) => void): void
-        onMapsResolution(handler: (payload: unknown) => void): void
+        requestCluster(enabled: boolean): Promise<{ ok: boolean; enabled: boolean }>
+        onClusterVideoChunk(handler: (payload: unknown) => void): void
+        onClusterResolution(handler: (payload: unknown) => void): void
       }
     }
 

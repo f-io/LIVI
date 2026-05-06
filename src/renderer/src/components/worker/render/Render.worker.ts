@@ -39,6 +39,10 @@ export class RendererWorker {
   private rendererSwSupported = false
   private hevcHwSupported = false
   private hevcSwSupported = false
+  private vp9HwSupported = false
+  private vp9SwSupported = false
+  private av1HwSupported = false
+  private av1SwSupported = false
 
   private codec: VideoCodec = 'h264'
 
@@ -276,7 +280,17 @@ export class RendererWorker {
 
     const results: Record<
       string,
-      { hw: boolean; sw: boolean; hevcHw: boolean; hevcSw: boolean; available: boolean }
+      {
+        hw: boolean
+        sw: boolean
+        hevcHw: boolean
+        hevcSw: boolean
+        vp9Hw: boolean
+        vp9Sw: boolean
+        av1Hw: boolean
+        av1Sw: boolean
+        available: boolean
+      }
     > = {}
 
     for (const r of rendererPriority) {
@@ -292,18 +306,27 @@ export class RendererWorker {
         this.rendererSwSupported = caps.sw
         this.hevcHwSupported = caps.hevcHw
         this.hevcSwSupported = caps.hevcSw
+        this.vp9HwSupported = caps.vp9Hw
+        this.vp9SwSupported = caps.vp9Sw
+        this.av1HwSupported = caps.av1Hw
+        this.av1SwSupported = caps.av1Sw
 
         const mode = (hw: boolean, sw: boolean) => (hw ? 'hw' : sw ? 'sw' : 'unsupported')
         console.log(
           `[RENDER.WORKER] Selected renderer: ${r} ` +
-            `(h264: ${mode(caps.hw, caps.sw)}, h265: ${mode(caps.hevcHw, caps.hevcSw)})`
+            `(h264: ${mode(caps.hw, caps.sw)}, ` +
+            `h265: ${mode(caps.hevcHw, caps.hevcSw)}, ` +
+            `vp9: ${mode(caps.vp9Hw, caps.vp9Sw)}, ` +
+            `av1: ${mode(caps.av1Hw, caps.av1Sw)})`
         )
 
         self.postMessage({
           type: 'codec-capabilities',
           capabilities: {
             h264: { hw: caps.hw, sw: caps.sw },
-            h265: { hw: caps.hevcHw, sw: caps.hevcSw }
+            h265: { hw: caps.hevcHw, sw: caps.hevcSw },
+            vp9: { hw: caps.vp9Hw, sw: caps.vp9Sw },
+            av1: { hw: caps.av1Hw, sw: caps.av1Sw }
           }
         })
         return
@@ -358,11 +381,39 @@ export class RendererWorker {
     return { hw, sw }
   }
 
+  private emptyRendererCaps(): {
+    hw: boolean
+    sw: boolean
+    hevcHw: boolean
+    hevcSw: boolean
+    vp9Hw: boolean
+    vp9Sw: boolean
+    av1Hw: boolean
+    av1Sw: boolean
+    available: boolean
+  } {
+    return {
+      hw: false,
+      sw: false,
+      hevcHw: false,
+      hevcSw: false,
+      vp9Hw: false,
+      vp9Sw: false,
+      av1Hw: false,
+      av1Sw: false,
+      available: false
+    }
+  }
+
   private async isRendererSupported(renderer: string): Promise<{
     hw: boolean
     sw: boolean
     hevcHw: boolean
     hevcSw: boolean
+    vp9Hw: boolean
+    vp9Sw: boolean
+    av1Hw: boolean
+    av1Sw: boolean
     available: boolean
   }> {
     const canvas = new OffscreenCanvas(1, 1)
@@ -382,27 +433,30 @@ export class RendererWorker {
           const adapter = await navigator.gpu?.requestAdapter()
           if (!adapter) {
             console.debug('[RENDER.WORKER] WebGPU -> adapter is null')
-            return { hw: false, sw: false, hevcHw: false, hevcSw: false, available: false }
+            return this.emptyRendererCaps()
           }
           await adapter.requestDevice()
         } catch (e) {
           console.debug('[RENDER.WORKER] WebGPU -> adapter/device init failed', e)
-          return { hw: false, sw: false, hevcHw: false, hevcSw: false, available: false }
+          return this.emptyRendererCaps()
         }
       }
     }
 
     if (!context) {
       console.debug(`[RENDER.WORKER] ${renderer.toUpperCase()} -> no context`)
-      return { hw: false, sw: false, hevcHw: false, hevcSw: false, available: false }
+      return this.emptyRendererCaps()
     }
 
     const h264 = await this.probeCodec('avc1.64002A')
     const h265 = await this.probeCodec('hvc1.1.6.L120.B0')
+    const vp9 = await this.probeCodec('vp09.00.10.08')
+    const av1 = await this.probeCodec('av01.0.04M.08')
 
     console.debug(
       `[RENDER.WORKER] ${renderer.toUpperCase()}: ` +
-        `h264 hw=${h264.hw} sw=${h264.sw}, h265 hw=${h265.hw} sw=${h265.sw}`
+        `h264 hw=${h264.hw} sw=${h264.sw}, h265 hw=${h265.hw} sw=${h265.sw}, ` +
+        `vp9 hw=${vp9.hw} sw=${vp9.sw}, av1 hw=${av1.hw} sw=${av1.sw}`
     )
 
     return {
@@ -410,6 +464,10 @@ export class RendererWorker {
       sw: h264.sw,
       hevcHw: h265.hw,
       hevcSw: h265.sw,
+      vp9Hw: vp9.hw,
+      vp9Sw: vp9.sw,
+      av1Hw: av1.hw,
+      av1Sw: av1.sw,
       available: h264.hw || h264.sw
     }
   }
@@ -436,8 +494,22 @@ export class RendererWorker {
       }
     }
 
-    const hwSupp = this.codec === 'h265' ? this.hevcHwSupported : this.rendererHwSupported
-    const swSupp = this.codec === 'h265' ? this.hevcSwSupported : this.rendererSwSupported
+    const hwSupp =
+      this.codec === 'h265'
+        ? this.hevcHwSupported
+        : this.codec === 'vp9'
+          ? this.vp9HwSupported
+          : this.codec === 'av1'
+            ? this.av1HwSupported
+            : this.rendererHwSupported
+    const swSupp =
+      this.codec === 'h265'
+        ? this.hevcSwSupported
+        : this.codec === 'vp9'
+          ? this.vp9SwSupported
+          : this.codec === 'av1'
+            ? this.av1SwSupported
+            : this.rendererSwSupported
 
     if (hwSupp) {
       if (await tryConfig('prefer-hardware')) {
@@ -503,6 +575,7 @@ export class RendererWorker {
 
     if (this.awaitingValidKeyframe && !key) {
       console.debug('[RENDER.WORKER] Ignoring delta while awaiting keyframe...')
+      if (this.keyframeRetryTimer === null) this.startKeyframeRetry()
       return
     }
 

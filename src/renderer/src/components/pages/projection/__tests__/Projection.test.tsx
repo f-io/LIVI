@@ -392,7 +392,13 @@ describe('Projection page', () => {
       <Projection
         {...baseProps()}
         settings={
-          { width: 800, height: 480, fps: 60, mapsEnabled: false, autoSwitchOnStream: true } as any
+          {
+            width: 800,
+            height: 480,
+            fps: 60,
+            clusterEnabled: false,
+            autoSwitchOnStream: true
+          } as any
         }
       />
     )
@@ -423,7 +429,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            mapsEnabled: false,
+            clusterEnabled: false,
             autoSwitchOnStream: true
           } as any
         }
@@ -464,7 +470,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            mapsEnabled: false,
+            clusterEnabled: false,
             autoSwitchOnStream: true
           } as any
         }
@@ -493,7 +499,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            mapsEnabled: false,
+            clusterEnabled: false,
             autoSwitchOnStream: true
           } as any
         }
@@ -523,7 +529,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            mapsEnabled: false,
+            clusterEnabled: false,
             autoSwitchOnStream: false
           } as any
         }
@@ -540,7 +546,7 @@ describe('Projection page', () => {
     expect(navigateMock).not.toHaveBeenCalled()
   })
 
-  test('requestNaviFocus shows overlay when maps disabled', () => {
+  test('requestClusterFocus shows overlay when maps disabled', () => {
     mockPathname = '/media'
 
     const setNavVideoOverlayActive = jest.fn()
@@ -553,7 +559,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            mapsEnabled: false,
+            clusterEnabled: false,
             autoSwitchOnGuidance: true
           } as any
         }
@@ -563,14 +569,14 @@ describe('Projection page', () => {
     act(() => {
       onEventCb?.(null, {
         type: 'command',
-        message: { value: CommandMapping.requestNaviFocus }
+        message: { value: CommandMapping.requestClusterFocus }
       })
     })
 
     expect(setNavVideoOverlayActive).toHaveBeenCalledWith(true)
   })
 
-  test('releaseNaviFocus navigates back from maps when maps are enabled', async () => {
+  test('releaseClusterFocus navigates back from maps when maps are enabled', async () => {
     mockPathname = '/media'
 
     const { rerender } = render(
@@ -581,7 +587,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            mapsEnabled: true,
+            clusterEnabled: true,
             autoSwitchOnGuidance: true
           } as any
         }
@@ -591,16 +597,16 @@ describe('Projection page', () => {
     act(() => {
       onEventCb?.(null, {
         type: 'command',
-        message: { value: CommandMapping.requestNaviFocus }
+        message: { value: CommandMapping.requestClusterFocus }
       })
     })
 
     await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith('/maps', { replace: true })
+      expect(navigateMock).toHaveBeenCalledWith('/cluster', { replace: true })
     })
 
     navigateMock.mockClear()
-    mockPathname = '/maps'
+    mockPathname = '/cluster'
 
     rerender(
       <Projection
@@ -610,7 +616,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            mapsEnabled: true,
+            clusterEnabled: true,
             autoSwitchOnGuidance: true
           } as any
         }
@@ -620,7 +626,7 @@ describe('Projection page', () => {
     act(() => {
       onEventCb?.(null, {
         type: 'command',
-        message: { value: CommandMapping.releaseNaviFocus }
+        message: { value: CommandMapping.releaseClusterFocus }
       })
     })
 
@@ -629,7 +635,7 @@ describe('Projection page', () => {
     })
   })
 
-  test('releaseNaviFocus navigates back from maps when maps are enabled', async () => {
+  test('releaseClusterFocus navigates back from maps when maps are enabled', async () => {
     mockPathname = '/media'
 
     const { rerender } = render(
@@ -640,7 +646,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            mapsEnabled: true,
+            clusterEnabled: true,
             autoSwitchOnGuidance: true
           } as any
         }
@@ -650,16 +656,16 @@ describe('Projection page', () => {
     act(() => {
       onEventCb?.(null, {
         type: 'command',
-        message: { value: CommandMapping.requestNaviFocus }
+        message: { value: CommandMapping.requestClusterFocus }
       })
     })
 
     await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith('/maps', { replace: true })
+      expect(navigateMock).toHaveBeenCalledWith('/cluster', { replace: true })
     })
 
     navigateMock.mockClear()
-    mockPathname = '/maps'
+    mockPathname = '/cluster'
 
     rerender(
       <Projection
@@ -669,7 +675,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            mapsEnabled: true,
+            clusterEnabled: true,
             autoSwitchOnGuidance: true
           } as any
         }
@@ -679,7 +685,7 @@ describe('Projection page', () => {
     act(() => {
       onEventCb?.(null, {
         type: 'command',
-        message: { value: CommandMapping.releaseNaviFocus }
+        message: { value: CommandMapping.releaseClusterFocus }
       })
     })
 
@@ -699,7 +705,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            mapsEnabled: false,
+            clusterEnabled: false,
             autoSwitchOnStream: true
           } as any
         }
@@ -728,7 +734,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            mapsEnabled: false,
+            clusterEnabled: false,
             autoSwitchOnStream: true
           } as any
         }
@@ -1280,9 +1286,9 @@ describe('Projection page', () => {
     expect(navigateMock).not.toHaveBeenCalled()
   })
 
-  // ── releaseNaviFocus with mapsEnabled=false dismisses overlay ────────────
+  // ── releaseClusterFocus with clusterEnabled=false dismisses overlay ────────────
 
-  test('releaseNaviFocus with mapsEnabled=false calls setNavVideoOverlayActive(false)', () => {
+  test('releaseClusterFocus with clusterEnabled=false calls setNavVideoOverlayActive(false)', () => {
     mockPathname = '/media'
     const setNavVideoOverlayActive = jest.fn()
 
@@ -1294,7 +1300,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            mapsEnabled: false,
+            clusterEnabled: false,
             autoSwitchOnGuidance: true
           } as any
         }
@@ -1304,7 +1310,7 @@ describe('Projection page', () => {
     act(() => {
       onEventCb?.(null, {
         type: 'command',
-        message: { value: CommandMapping.releaseNaviFocus }
+        message: { value: CommandMapping.releaseClusterFocus }
       })
     })
 
@@ -1313,7 +1319,7 @@ describe('Projection page', () => {
 
   // ── releaseVideoFocus: maps back-navigation ───────────────────────────────
 
-  test('releaseVideoFocus with mapsEnabled navigates back from maps via lastNonMapsPathRef', async () => {
+  test('releaseVideoFocus with clusterEnabled navigates back from maps via lastNonClusterPathRef', async () => {
     mockPathname = '/media'
 
     const { rerender } = render(
@@ -1324,7 +1330,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            mapsEnabled: true,
+            clusterEnabled: true,
             autoSwitchOnGuidance: true,
             autoSwitchOnStream: true
           } as any
@@ -1332,17 +1338,17 @@ describe('Projection page', () => {
       />
     )
 
-    // requestNaviFocus stores lastNonMapsPathRef = '/media' and navigates to '/maps'
+    // requestClusterFocus stores lastNonClusterPathRef = '/media' and navigates to '/cluster'
     act(() => {
       onEventCb?.(null, {
         type: 'command',
-        message: { value: CommandMapping.requestNaviFocus }
+        message: { value: CommandMapping.requestClusterFocus }
       })
     })
-    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/maps', { replace: true }))
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/cluster', { replace: true }))
 
     navigateMock.mockClear()
-    mockPathname = '/maps'
+    mockPathname = '/cluster'
 
     rerender(
       <Projection
@@ -1352,7 +1358,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            mapsEnabled: true,
+            clusterEnabled: true,
             autoSwitchOnGuidance: true,
             autoSwitchOnStream: true
           } as any
@@ -1383,7 +1389,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            mapsEnabled: false,
+            clusterEnabled: false,
             autoSwitchOnStream: true,
             autoSwitchOnPhoneCall: true
           } as any
@@ -1415,7 +1421,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            mapsEnabled: false,
+            clusterEnabled: false,
             autoSwitchOnStream: true,
             autoSwitchOnPhoneCall: true
           } as any
@@ -1665,7 +1671,7 @@ function baseProps(overrides: any = {}) {
   return {
     receivingVideo: false,
     setReceivingVideo: jest.fn(),
-    settings: { width: 800, height: 480, fps: 60, mapsEnabled: false },
+    settings: { width: 800, height: 480, fps: 60, clusterEnabled: false },
     command: '' as any,
     commandCounter: 0,
     navVideoOverlayActive: false,

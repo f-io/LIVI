@@ -1,7 +1,9 @@
+import { containsAv1SequenceHeader, getAv1DecoderConfig, isAv1KeyFrame } from './av1-utils'
 import { Bitstream, NALUStream, SPS, type StreamType } from './h264-utils'
 import { HevcNaluTypes, HevcSPS, isHevcIrapNalType, readHevcNalType } from './h265-utils'
+import { getVp9DecoderConfig, isVp9KeyFrame } from './vp9-utils'
 
-export type VideoCodec = 'h264' | 'h265'
+export type VideoCodec = 'h264' | 'h265' | 'vp9' | 'av1'
 
 export enum NaluTypes {
   NDR = 1,
@@ -70,6 +72,8 @@ export function getDecoderConfig(
   data: Uint8Array,
   codec: VideoCodec = 'h264'
 ): { codec: string; codedWidth: number; codedHeight: number } | null {
+  if (codec === 'vp9') return getVp9DecoderConfig(data)
+  if (codec === 'av1') return getAv1DecoderConfig(data)
   for (const st of ['annexB', 'packet'] as StreamType[]) {
     try {
       const res = getSpsFromStream(data, codec, st)
@@ -88,6 +92,8 @@ export function getDecoderConfig(
 }
 
 export function isKeyFrame(data: Uint8Array, codec: VideoCodec = 'h264'): boolean {
+  if (codec === 'vp9') return isVp9KeyFrame(data)
+  if (codec === 'av1') return isAv1KeyFrame(data)
   if (codec === 'h265') {
     const stream = new NALUStream(data, { type: 'annexB' })
     for (const nalu of stream.nalus()) {
@@ -99,9 +105,14 @@ export function isKeyFrame(data: Uint8Array, codec: VideoCodec = 'h264'): boolea
   return findNalu(data, NaluTypes.IDR, 'h264', 'annexB') !== null
 }
 
-// True if the chunk contains any parameter-set NAL: H.264 needs SPS+PPS,
-// HEVC additionally needs VPS
+// True if the chunk contains any parameter-set unit:
+//   H.264 — SPS or PPS NAL
+//   H.265 — VPS, SPS, or PPS NAL
+//   VP9   — never (each frame is self-contained, no separate param set)
+//   AV1   — SEQUENCE_HEADER OBU
 export function containsParameterSet(data: Uint8Array, codec: VideoCodec): boolean {
+  if (codec === 'vp9') return false
+  if (codec === 'av1') return containsAv1SequenceHeader(data)
   const stream = new NALUStream(data, { type: 'annexB' })
   const minLen = codec === 'h265' ? 2 : 1
   for (const nalu of stream.nalus()) {
@@ -116,5 +127,7 @@ export function containsParameterSet(data: Uint8Array, codec: VideoCodec): boole
   return false
 }
 
+export { Av1SequenceHeader } from './av1-utils'
 export { SPS } from './h264-utils'
 export { HevcSPS } from './h265-utils'
+export { Vp9KeyframeHeader } from './vp9-utils'

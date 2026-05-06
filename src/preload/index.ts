@@ -24,10 +24,10 @@ let videoChunkHandler: ChunkHandler | null = null
 let audioChunkQueue: unknown[] = []
 let audioChunkHandler: ChunkHandler | null = null
 
-let mapsVideoChunkQueue: unknown[] = []
-let mapsVideoChunkHandler: ChunkHandler | null = null
-let mapsResolutionQueue: unknown[] = []
-let mapsResolutionHandler: ChunkHandler | null = null
+let clusterVideoChunkQueue: unknown[] = []
+let clusterVideoChunkHandler: ChunkHandler | null = null
+let clusterResolutionQueue: unknown[] = []
+let clusterResolutionHandler: ChunkHandler | null = null
 
 type TelemetryHandler = (payload: unknown) => void
 let telemetryQueue: unknown[] = []
@@ -45,14 +45,14 @@ ipcRenderer.on('projection-audio-chunk', (_event, payload: unknown) => {
   else audioChunkQueue.push(payload)
 })
 
-ipcRenderer.on('maps-video-chunk', (_event, payload: unknown) => {
-  if (mapsVideoChunkHandler) mapsVideoChunkHandler(payload)
-  else mapsVideoChunkQueue.push(payload)
+ipcRenderer.on('cluster-video-chunk', (_event, payload: unknown) => {
+  if (clusterVideoChunkHandler) clusterVideoChunkHandler(payload)
+  else clusterVideoChunkQueue.push(payload)
 })
 
-ipcRenderer.on('maps-video-resolution', (_event, payload: unknown) => {
-  if (mapsResolutionHandler) mapsResolutionHandler(payload)
-  else mapsResolutionQueue.push(payload)
+ipcRenderer.on('cluster-video-resolution', (_event, payload: unknown) => {
+  if (clusterResolutionHandler) clusterResolutionHandler(payload)
+  else clusterResolutionQueue.push(payload)
 })
 
 ipcRenderer.on('telemetry:update', (_event, payload: unknown) => {
@@ -184,17 +184,17 @@ const api = {
     setVisualizerEnabled: (enabled: boolean): void => {
       ipcRenderer.send('projection-set-visualizer-enabled', !!enabled)
     },
-    requestMaps: (enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> =>
-      ipcRenderer.invoke('maps:request', enabled),
-    onMapsVideoChunk: (handler: ChunkHandler): void => {
-      mapsVideoChunkHandler = handler
-      mapsVideoChunkQueue.forEach((chunk) => handler(chunk))
-      mapsVideoChunkQueue = []
+    requestCluster: (enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> =>
+      ipcRenderer.invoke('cluster:request', enabled),
+    onClusterVideoChunk: (handler: ChunkHandler): void => {
+      clusterVideoChunkHandler = handler
+      clusterVideoChunkQueue.forEach((chunk) => handler(chunk))
+      clusterVideoChunkQueue = []
     },
-    onMapsResolution: (handler: ChunkHandler): void => {
-      mapsResolutionHandler = handler
-      mapsResolutionQueue.forEach((chunk) => handler(chunk))
-      mapsResolutionQueue = []
+    onClusterResolution: (handler: ChunkHandler): void => {
+      clusterResolutionHandler = handler
+      clusterResolutionQueue.forEach((chunk) => handler(chunk))
+      clusterResolutionQueue = []
     },
     onTelemetry: (handler: (payload: unknown) => void): void => {
       telemetryHandlers.push(handler)

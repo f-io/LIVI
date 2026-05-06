@@ -73,7 +73,9 @@ export const CH = {
   MEDIA_INFO: 13, // MEDIA_PLAYBACK_STATUS
   PHONE_STATUS: 14,
   // (15 MEDIA_BROWSER, 16 VENDOR_EXTENSION, 17 GENERIC_NOTIFICATION)
-  WIFI: 18 // WIFI_PROJECTION
+  WIFI: 18, // WIFI_PROJECTION
+  CLUSTER_VIDEO: 19, // secondary display sink (display_type=CLUSTER)
+  CLUSTER_INPUT: 20 // secondary display input stub (display_id=1, non-interactive)
 } as const
 
 // ── Version negotiation ───────────────────────────────────────────────────────
@@ -112,10 +114,11 @@ export const AV_STREAM_TYPE = {
   VIDEO: 3
 } as const
 
+// Source: oaa.proto.enums.DisplayType — proto3 enum (0-based).
 export const DISPLAY_TYPE = {
-  MAIN: 1,
-  CLUSTER: 2,
-  AUXILIARY: 3
+  MAIN: 0,
+  CLUSTER: 1,
+  AUXILIARY: 2
 } as const
 
 export const SENSOR_TYPE = {

@@ -62,18 +62,21 @@ export class AAStack extends EventEmitter {
 
   constructor(private readonly _cfg: AAStackConfig) {
     super()
-    const resolvedCfg: AAStackConfig = {
-      ..._cfg,
-      btMacAddress: _cfg.btMacAddress ?? detectBtMac(),
-      wifiBssid: _cfg.wifiBssid ?? detectWifiBssid()
-    }
-    this._server = new TcpServer(resolvedCfg)
+    _cfg.btMacAddress ??= detectBtMac()
+    _cfg.wifiBssid ??= detectWifiBssid()
+    this._server = new TcpServer(_cfg)
 
     this._server.on('session', (session: Session) => {
       this._activeSession = session
 
       session.on('video-frame', (buf: Buffer, ts: bigint) => this.emit('video-frame', buf, ts))
+      session.on('cluster-video-frame', (buf: Buffer, ts: bigint) =>
+        this.emit('cluster-video-frame', buf, ts)
+      )
       session.on('video-codec', (codec: VideoCodec) => this.emit('video-codec', codec))
+      session.on('cluster-video-codec', (codec: VideoCodec) =>
+        this.emit('cluster-video-codec', codec)
+      )
       session.on(
         'audio-frame',
         (buf: Buffer, ts: bigint, channel: AudioChannelType, channelId: number) =>
@@ -185,6 +188,10 @@ export class AAStack extends EventEmitter {
 
   requestKeyframe(): void {
     this._activeSession?.requestKeyframe()
+  }
+
+  requestClusterKeyframe(): void {
+    this._activeSession?.requestClusterKeyframe()
   }
 
   requestShutdown(): void {

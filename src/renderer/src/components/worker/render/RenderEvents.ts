@@ -1,6 +1,6 @@
 export type WorkerEventType = 'init' | 'frame' | 'renderDone' | 'updateFps' | 'reset' | 'setCodec'
 
-export type VideoCodec = 'h264' | 'h265'
+export type VideoCodec = 'h264' | 'h265' | 'vp9' | 'av1'
 
 export interface WorkerEvent {
   type: WorkerEventType

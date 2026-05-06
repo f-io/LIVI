@@ -1,7 +1,7 @@
 /**
- * Video channel handler (GAL type CH.VIDEO = 2).
+ * Video channel handler — main display (CH.VIDEO=3) or cluster (CH.CLUSTER_VIDEO=19).
  *
- * Receives H.264 NAL units from the phone and emits them as 'frame' events.
+ * Receives H.264/H.265 NAL units from the phone and emits them as 'frame' events.
  * Sends AVMediaAck for flow control.
  *
  * Wire protocol:
@@ -32,9 +32,16 @@ export class VideoChannel extends EventEmitter {
 
   private _session = 0
   private _frameCount = 0
+  private readonly _channelId: number
+  private readonly _label: string
 
-  constructor(private readonly _send: SendFn) {
+  constructor(
+    private readonly _send: SendFn,
+    channelId: number = CH.VIDEO
+  ) {
     super()
+    this._channelId = channelId
+    this._label = channelId === CH.CLUSTER_VIDEO ? 'ClusterVideoChannel' : 'VideoChannel'
   }
 
   handleMessage(msgId: number, payload: Buffer, frame: RawFrame): void {
@@ -57,17 +64,17 @@ export class VideoChannel extends EventEmitter {
         // but we should still send the correct value.
         const start = decodeStart(payload)
         if (start) this._session = start.sessionId
-        console.log(`[VideoChannel] stream started, session=${this._session}`)
+        console.log(`[${this._label}] stream started, session=${this._session}`)
         break
       }
 
       case AV_MSG.STOP_INDICATION:
-        console.log('[VideoChannel] stream stopped')
+        console.log(`[${this._label}] stream stopped`)
         break
 
       case AV_MSG.VIDEO_FOCUS_INDICATION:
         // Phone granted/revoked video focus — nothing to do for passthrough
-        console.debug('[VideoChannel] VideoFocusIndication')
+        console.debug(`[${this._label}] VideoFocusIndication`)
         break
 
       case AV_MSG.VIDEO_FOCUS_REQUEST: {
@@ -93,10 +100,10 @@ export class VideoChannel extends EventEmitter {
         }
         const modeName = mode === 2 ? 'NATIVE' : mode === 3 ? 'NATIVE_TRANSIENT' : 'PROJECTED'
         console.log(
-          `[VideoChannel] VideoFocusRequest mode=${modeName}(${mode}) → responding PROJECTED`
+          `[${this._label}] VideoFocusRequest mode=${modeName}(${mode}) → responding PROJECTED`
         )
         this._send(
-          CH.VIDEO,
+          this._channelId,
           FRAME_FLAGS.ENC_SIGNAL,
           AV_MSG.VIDEO_FOCUS_INDICATION,
           Buffer.from([0x08, 0x01])
@@ -109,7 +116,7 @@ export class VideoChannel extends EventEmitter {
       }
 
       default:
-        console.debug(`[VideoChannel] unhandled msgId=0x${msgId.toString(16)}`)
+        console.debug(`[${this._label}] unhandled msgId=0x${msgId.toString(16)}`)
     }
   }
 
@@ -139,7 +146,11 @@ export class VideoChannel extends EventEmitter {
     //   optional uint32 ack                  = 2;
     //   repeated uint64 receive_timestamp_ns = 3;
     const msgBuf = Buffer.concat([fieldVarint(1, this._session), fieldVarint(2, 1)])
-    this._send(CH.VIDEO, FRAME_FLAGS.ENC_SIGNAL, AV_MSG.AV_MEDIA_ACK, msgBuf)
+    this._send(this._channelId, FRAME_FLAGS.ENC_SIGNAL, AV_MSG.AV_MEDIA_ACK, msgBuf)
+  }
+
+  get channelId(): number {
+    return this._channelId
   }
 
   get frameCount(): number {

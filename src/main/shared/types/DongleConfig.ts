@@ -59,16 +59,19 @@ export type DongleConfig = {
   projectionSafeAreaLeft: number
   projectionSafeAreaRight: number
   projectionSafeAreaDrawOutside: boolean
-  naviWidth: number
-  naviHeight: number
-  naviFps: number
-  naviSafeAreaTop: number
-  naviSafeAreaBottom: number
-  naviSafeAreaLeft: number
-  naviSafeAreaRight: number
-  naviSafeAreaDrawOutside: boolean
+  clusterEnabled: boolean
+  clusterWidth?: number
+  clusterHeight?: number
+  clusterFps?: number
+  clusterDpi?: number
+  clusterSafeAreaTop: number
+  clusterSafeAreaBottom: number
+  clusterSafeAreaLeft: number
+  clusterSafeAreaRight: number
+  clusterSafeAreaDrawOutside: boolean
   lastPhoneWorkMode: PhoneWorkMode
   apkVer: string
+  darkMode: boolean
   nightMode: boolean
   carName: string
   oemName: string
@@ -88,7 +91,6 @@ export type DongleConfig = {
   gnssGalileo: boolean
   gnssBeiDou: boolean
   autoConn: boolean
-  mapsEnabled: boolean
   audioTransferMode: boolean
   wifiType: '2.4ghz' | '5ghz'
   wifiChannel: number

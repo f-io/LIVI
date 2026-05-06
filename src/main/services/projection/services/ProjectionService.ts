@@ -121,6 +121,8 @@ export class ProjectionService {
     return this.aaDriver ?? this.dongleDriver
   }
   private hevcSupported = false
+  private vp9Supported = false
+  private av1Supported = false
   private webUsbDevice: WebUSBDevice | null = null
   private webContents: WebContents | null = null
   private config: ExtraConfig = DEFAULT_CONFIG as ExtraConfig
@@ -154,9 +156,10 @@ export class ProjectionService {
     this.refreshAaBtPairedList().catch(() => {})
   }
 
-  private lastNaviVideoWidth?: number
-  private lastNaviVideoHeight?: number
-  private mapsRequested = false
+  private lastClusterVideoWidth?: number
+  private lastClusterVideoHeight?: number
+  private clusterRequested = false
+  private lastClusterCodec: 'h264' | 'h265' | 'vp9' | 'av1' | null = null
   private lastPluggedPhoneType?: PhoneType
   private aaPlaybackInferred: 1 | 2 = 1
   private pendingStartupConnectTarget: PendingStartupConnectTarget | null = null
@@ -170,13 +173,29 @@ export class ProjectionService {
 
   private applyCodecCapabilities(payload: unknown): void {
     if (!payload || typeof payload !== 'object') return
-    const h265 = (payload as { h265?: { hw?: unknown; sw?: unknown } }).h265
-    if (!h265 || typeof h265 !== 'object') return
-    const supported = Boolean(h265.hw) || Boolean(h265.sw)
-    if (this.hevcSupported === supported) return
-    this.hevcSupported = supported
-    console.log(`[ProjectionService] hevc support reported by renderer: ${supported}`)
-    this.aaDriver?.setHevcSupported(supported)
+    const caps = payload as Record<string, { hw?: unknown; sw?: unknown } | undefined>
+    const isSupported = (c: { hw?: unknown; sw?: unknown } | undefined): boolean =>
+      !!c && (Boolean(c.hw) || Boolean(c.sw))
+
+    const hevc = isSupported(caps.h265)
+    const vp9 = isSupported(caps.vp9)
+    const av1 = isSupported(caps.av1)
+
+    if (this.hevcSupported !== hevc) {
+      this.hevcSupported = hevc
+      console.log(`[ProjectionService] hevc support reported by renderer: ${hevc}`)
+      this.aaDriver?.setHevcSupported(hevc)
+    }
+    if (this.vp9Supported !== vp9) {
+      this.vp9Supported = vp9
+      console.log(`[ProjectionService] vp9 support reported by renderer: ${vp9}`)
+      this.aaDriver?.setVp9Supported(vp9)
+    }
+    if (this.av1Supported !== av1) {
+      this.av1Supported = av1
+      console.log(`[ProjectionService] av1 support reported by renderer: ${av1}`)
+      this.aaDriver?.setAv1Supported(av1)
+    }
   }
 
   /** Read by AaDriver right before it starts the AAStack. */
@@ -231,8 +250,8 @@ export class ProjectionService {
       this.aaPlaybackInferred = 1
       this.lastVideoWidth = undefined
       this.lastVideoHeight = undefined
-      this.lastNaviVideoWidth = undefined
-      this.lastNaviVideoHeight = undefined
+      this.lastClusterVideoWidth = undefined
+      this.lastClusterVideoHeight = undefined
 
       const nextPhoneWorkMode =
         msg.phoneType === PhoneType.CarPlay ? PhoneWorkMode.CarPlay : PhoneWorkMode.Android
@@ -318,21 +337,25 @@ export class ProjectionService {
         }
       }
     } else if (msg instanceof VideoData) {
-      const isNavi = msg.header.type === MessageType.NaviVideoData
-      // navi video stream (0x2c)
-      if (isNavi) {
-        if (!this.mapsRequested) return
+      const isCluster = msg.header.type === MessageType.ClusterVideoData
+      // cluster video stream (0x2c)
+      if (isCluster) {
+        if (!this.clusterRequested) return
 
         const w = msg.width
         const h = msg.height
 
-        if (w > 0 && h > 0 && (w !== this.lastNaviVideoWidth || h !== this.lastNaviVideoHeight)) {
-          this.lastNaviVideoWidth = w
-          this.lastNaviVideoHeight = h
-          this.webContents.send('maps-video-resolution', { width: w, height: h })
+        if (
+          w > 0 &&
+          h > 0 &&
+          (w !== this.lastClusterVideoWidth || h !== this.lastClusterVideoHeight)
+        ) {
+          this.lastClusterVideoWidth = w
+          this.lastClusterVideoHeight = h
+          this.webContents.send('cluster-video-resolution', { width: w, height: h })
         }
 
-        this.sendChunked('maps-video-chunk', msg.data?.buffer as ArrayBuffer, 512 * 1024)
+        this.sendChunked('cluster-video-chunk', msg.data?.buffer as ArrayBuffer, 512 * 1024)
         return
       }
 
@@ -482,9 +505,9 @@ export class ProjectionService {
       // Unknown meta
     } else if (msg instanceof Command) {
       this.webContents.send('projection-event', { type: 'command', message: msg })
-      if (typeof msg.value === 'number' && msg.value === 508 && this.mapsRequested) {
+      if (typeof msg.value === 'number' && msg.value === 508 && this.clusterRequested) {
         try {
-          this.driver.send(new SendCommand('requestNaviScreenFocus'))
+          this.driver.send(new SendCommand('requestClusterStreamFocus'))
         } catch {
           // ignore
         }
@@ -510,11 +533,19 @@ export class ProjectionService {
     this.pendingStartupConnectTarget = null
   }
 
-  // 'video-codec' — phone announces H.264 vs H.265 at START_INDICATION.
-  private readonly onDriverVideoCodec = (codec: 'h264' | 'h265'): void => {
+  // 'video-codec' — phone announces which advertised codec it picked.
+  private readonly onDriverVideoCodec = (codec: 'h264' | 'h265' | 'vp9' | 'av1'): void => {
     const wc = this.webContents
     if (!wc || wc.isDestroyed?.()) return
     wc.send('projection-event', { type: 'video-codec', payload: { codec } })
+  }
+
+  // Cluster channel codec selection
+  private readonly onDriverClusterVideoCodec = (codec: 'h264' | 'h265' | 'vp9' | 'av1'): void => {
+    this.lastClusterCodec = codec
+    const wc = this.webContents
+    if (!wc || wc.isDestroyed?.()) return
+    wc.send('projection-event', { type: 'cluster-video-codec', payload: { codec } })
   }
 
   private attachDriverListeners(d: IPhoneDriver): void {
@@ -522,6 +553,7 @@ export class ProjectionService {
     d.on('failure', this.onDriverFailure)
     d.on('targeted-connect-dispatched', this.onDriverTargetedConnect)
     d.on('video-codec', this.onDriverVideoCodec)
+    d.on('cluster-video-codec', this.onDriverClusterVideoCodec)
   }
 
   private detachDriverListeners(d: IPhoneDriver): void {
@@ -529,6 +561,7 @@ export class ProjectionService {
     d.off('failure', this.onDriverFailure)
     d.off('targeted-connect-dispatched', this.onDriverTargetedConnect)
     d.off('video-codec', this.onDriverVideoCodec)
+    d.off('cluster-video-codec', this.onDriverClusterVideoCodec)
   }
 
   private subscribeConfigEvents(): void {
@@ -718,17 +751,28 @@ export class ProjectionService {
       }
     })
 
-    registerIpcHandle('maps:request', async (_evt, enabled: boolean) => {
-      this.mapsRequested = Boolean(enabled)
+    registerIpcHandle('cluster:request', async (_evt, enabled: boolean) => {
+      this.clusterRequested = Boolean(enabled)
 
-      if (!this.mapsRequested) {
-        this.lastNaviVideoWidth = undefined
-        this.lastNaviVideoHeight = undefined
+      if (!this.clusterRequested) {
+        this.lastClusterVideoWidth = undefined
+        this.lastClusterVideoHeight = undefined
         return { ok: true, enabled: false }
       }
 
+      // Re-emit the cached cluster codec
+      if (this.lastClusterCodec) {
+        const wc = this.webContents
+        if (wc && !wc.isDestroyed?.()) {
+          wc.send('projection-event', {
+            type: 'cluster-video-codec',
+            payload: { codec: this.lastClusterCodec }
+          })
+        }
+      }
+
       try {
-        this.driver.send(new SendCommand('requestNaviScreenFocus'))
+        this.driver.send(new SendCommand('requestClusterStreamFocus'))
       } catch {
         // ignore
       }
@@ -1214,6 +1258,9 @@ export class ProjectionService {
       if (!this.aaDriver) {
         const aa = new AaDriver()
         this.aaDriver = aa
+        aa.setHevcSupported(this.hevcSupported)
+        aa.setVp9Supported(this.vp9Supported)
+        aa.setAv1Supported(this.av1Supported)
         // Stop driving the dongle while AA owns the session.
         this.detachDriverListeners(this.dongleDriver)
         this.attachDriverListeners(aa)
@@ -1423,6 +1470,7 @@ export class ProjectionService {
         this.lastVideoWidth = undefined
         this.lastVideoHeight = undefined
         this.lastPluggedPhoneType = undefined
+        this.lastClusterCodec = null
         this.aaPlaybackInferred = 1
 
         this.resetMediaSnapshot('session-start')

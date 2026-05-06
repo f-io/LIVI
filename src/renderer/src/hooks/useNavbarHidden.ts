@@ -2,7 +2,7 @@ import * as React from 'react'
 
 // TODO move to the AppContext and make it global
 // TODO remove document.getElementById and other and use a more react-y way to do this (ref, etc)
-// TODO Align with code in the AppLayout (mapsNavHidden vs navHidden, etc)
+// TODO Align with code in the AppLayout (clusterNavHidden vs navHidden, etc)
 export const useNavbarHidden = () => {
   const [navHidden, setNavHidden] = React.useState(() => {
     const el = document.getElementById('content-root')

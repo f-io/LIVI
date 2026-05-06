@@ -4,7 +4,7 @@ import i18n from 'i18next'
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { HashRouter as Router, useLocation, useNavigate, useRoutes } from 'react-router'
 import { AppLayout } from './components/layouts/AppLayout'
-import { Projection } from './components/pages'
+import { Cluster, Projection } from './components/pages'
 import { ROUTES } from './constants'
 import { AppContext } from './context'
 import { useActiveControl, useFocus, useKeyDown } from './hooks'
@@ -16,7 +16,7 @@ import { updateCameras } from './utils/cameraDetection'
 const START_PAGE_ROUTE: Record<string, string> = {
   home: ROUTES.HOME,
   media: ROUTES.MEDIA,
-  maps: ROUTES.MAPS,
+  cluster: ROUTES.CLUSTER,
   camera: ROUTES.CAMERA,
   settings: ROUTES.SETTINGS,
   telemetry: ROUTES.TELEMETRY
@@ -260,6 +260,8 @@ function AppInner() {
           setNavVideoOverlayActive={setNavVideoOverlayActive}
         />
       )}
+      {/* Cluster (Maps tab) lives at the App level*/}
+      {settings && <Cluster />}
       <Box sx={{ width: '100%', height: '100%' }}>{element}</Box>
     </AppLayout>
   )

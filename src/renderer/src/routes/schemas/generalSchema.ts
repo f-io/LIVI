@@ -482,7 +482,7 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
       displayValue: true,
       options: [
         { label: 'Home', labelKey: 'settings.startPageHome', value: 'home' },
-        { label: 'Maps', labelKey: 'settings.startPageMaps', value: 'maps' },
+        { label: 'Cluster Stream', labelKey: 'settings.startPageCluster', value: 'cluster' },
         { label: 'Telemetry', labelKey: 'settings.startPageTelemetry', value: 'telemetry' },
         { label: 'Media', labelKey: 'settings.startPageMedia', value: 'media' },
         { label: 'Camera', labelKey: 'settings.startPageCamera', value: 'camera' },
@@ -553,9 +553,9 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
     },
     {
       type: 'checkbox',
-      label: 'Maps',
-      labelKey: 'settings.maps',
-      path: 'mapsEnabled'
+      label: 'Cluster Stream',
+      labelKey: 'settings.clusterStream',
+      path: 'clusterEnabled'
     },
     {
       type: 'checkbox',

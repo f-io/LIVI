@@ -92,7 +92,7 @@ describe('store', () => {
     voiceAssistantVolume: 0.5,
     callVolume: 0.6,
     visualAudioDelayMs: 120,
-    nightMode: false,
+    darkMode: false,
     micType: 0,
     telemetryDashboards: []
   } as unknown as ExtraConfig
@@ -187,7 +187,7 @@ describe('store', () => {
     await waitForStoreSettings(useLiviStore)
 
     useLiviStore.setState({
-      settings: { ...baseSettings, nightMode: true } as ExtraConfig,
+      settings: { ...baseSettings, darkMode: true } as ExtraConfig,
       restartBaseline: null
     })
 
@@ -195,11 +195,11 @@ describe('store', () => {
 
     expect(useLiviStore.getState().restartBaseline).toEqual({
       ...baseSettings,
-      nightMode: true
+      darkMode: true
     })
   })
 
-  test('setNightMode delegates to saveSettings', async () => {
+  test('setDarkMode delegates to saveSettings without touching wire night mode', async () => {
     const projection = makeProjectionApi({
       settings: {
         get: jest.fn().mockResolvedValue(baseSettings),
@@ -210,10 +210,11 @@ describe('store', () => {
     const { useLiviStore } = loadFreshStore(projection)
 
     await waitForStoreSettings(useLiviStore)
-    await useLiviStore.getState().setNightMode(true)
+    await useLiviStore.getState().setDarkMode(true)
 
-    expect(projection.settings.save).toHaveBeenCalledWith({ nightMode: true })
-    expect(projection.ipc.sendCommand).toHaveBeenCalledWith('enableNightMode')
+    expect(projection.settings.save).toHaveBeenCalledWith({ darkMode: true })
+    expect(projection.ipc.sendCommand).not.toHaveBeenCalledWith('enableNightMode')
+    expect(projection.ipc.sendCommand).not.toHaveBeenCalledWith('disableNightMode')
   })
 
   test('saveSettings updates store optimistically, persists patch and refreshes from main', async () => {
@@ -497,7 +498,7 @@ describe('store', () => {
     )
   })
 
-  test('telemetry onTelemetry handler persists incoming nightMode changes', async () => {
+  test('telemetry onTelemetry handler persists incoming nightMode and bridges to wire', async () => {
     let telemetryHandler: ((payload: unknown) => void) | undefined
 
     const projection = makeProjectionApi({
@@ -521,6 +522,7 @@ describe('store', () => {
     await Promise.resolve()
 
     expect(projection.settings.save).toHaveBeenCalledWith({ nightMode: true })
+    expect(projection.ipc.sendCommand).toHaveBeenCalledWith('enableNightMode')
   })
 
   test('status store setters update status flags', () => {

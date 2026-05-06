@@ -3,7 +3,7 @@ import type React from 'react'
 export enum RoutePath {
   Camera = 'camera',
   Home = 'home',
-  Maps = 'maps',
+  Cluster = 'cluster',
   Media = 'media',
   Settings = 'settings',
   Telemetry = 'telemetry'
