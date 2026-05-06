@@ -160,7 +160,7 @@ describe('generalSchema', () => {
     )
     expect(startPage.options).toEqual([
       { label: 'Home', labelKey: 'settings.startPageHome', value: 'home' },
-      { label: 'Maps', labelKey: 'settings.startPageMaps', value: 'maps' },
+      { label: 'Cluster Stream', labelKey: 'settings.startPageCluster', value: 'cluster' },
       { label: 'Telemetry', labelKey: 'settings.startPageTelemetry', value: 'telemetry' },
       { label: 'Media', labelKey: 'settings.startPageMedia', value: 'media' },
       { label: 'Camera', labelKey: 'settings.startPageCamera', value: 'camera' },
@@ -198,7 +198,7 @@ describe('generalSchema', () => {
     expect(schema.children[8]).toEqual(
       expect.objectContaining({
         type: 'checkbox',
-        path: 'mapsEnabled'
+        path: 'clusterEnabled'
       })
     )
 

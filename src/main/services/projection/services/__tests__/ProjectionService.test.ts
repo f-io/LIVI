@@ -82,7 +82,7 @@ jest.mock('../../messages', () => {
       isTerminal = false
       ok = true
     },
-    MessageType: { NaviVideoData: 0x2c },
+    MessageType: { ClusterVideoData: 0x2c },
     decodeTypeMap: {},
     DEFAULT_CONFIG: { apkVer: '1.0.0', language: 'en' }
   }
@@ -751,26 +751,26 @@ describe('ProjectionService', () => {
     expect(result.urls).toHaveLength(3)
   })
 
-  test('maps:request disables maps and clears cached resolution', async () => {
+  test('cluster:request disables cluster and clears cached resolution', async () => {
     const svc = new ProjectionService() as any
-    svc.lastNaviVideoWidth = 123
-    svc.lastNaviVideoHeight = 456
+    svc.lastClusterVideoWidth = 123
+    svc.lastClusterVideoHeight = 456
 
-    const h = getHandle('maps:request')
+    const h = getHandle('cluster:request')
     await expect(h.call(svc, null, false)).resolves.toEqual({ ok: true, enabled: false })
 
-    expect(svc.mapsRequested).toBe(false)
-    expect(svc.lastNaviVideoWidth).toBeUndefined()
-    expect(svc.lastNaviVideoHeight).toBeUndefined()
+    expect(svc.clusterRequested).toBe(false)
+    expect(svc.lastClusterVideoWidth).toBeUndefined()
+    expect(svc.lastClusterVideoHeight).toBeUndefined()
   })
 
-  test('maps:request enables maps and requests focus', async () => {
+  test('cluster:request enables cluster and requests focus', async () => {
     const svc = new ProjectionService() as any
-    const h = getHandle('maps:request')
+    const h = getHandle('cluster:request')
 
     await expect(h.call(svc, null, true)).resolves.toEqual({ ok: true, enabled: true })
 
-    expect(svc.mapsRequested).toBe(true)
+    expect(svc.clusterRequested).toBe(true)
     expect(svc.driver.send).toHaveBeenCalledTimes(1)
   })
 
@@ -2141,7 +2141,7 @@ describe('ProjectionService', () => {
     const svc = new ProjectionService() as any
     const send = jest.fn()
     svc.webContents = { send }
-    svc.mapsRequested = true
+    svc.clusterRequested = true
 
     const msg = new Command(508)
     svc.driver.emit('message', msg)

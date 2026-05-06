@@ -148,7 +148,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const [renderReady, setRenderReady] = useState(false)
   const [rendererError, setRendererError] = useState<string | null>(null)
   const lastNonCarplayPathRef = useRef<string | null>(null)
-  const lastNonMapsPathRef = useRef<string | null>(null)
+  const lastNonClusterPathRef = useRef<string | null>(null)
   const autoSwitchedRef = useRef(false)
   const pendingVideoFocusRef = useRef(false)
 
@@ -870,18 +870,18 @@ const CarplayComponent: React.FC<CarplayProps> = ({
             break
           }
 
-          const mapsEnabled = Boolean(settings.mapsEnabled)
+          const clusterEnabled = Boolean(settings.clusterEnabled)
           const autoSwitchOnStream = autoSwitchOnStreamRef.current
           const autoSwitchOnGuidance = autoSwitchOnGuidanceRef.current
 
-          if (value === CommandMapping.requestNaviFocus) {
+          if (value === CommandMapping.requestClusterFocus) {
             if (!autoSwitchOnGuidance) break
 
-            if (mapsEnabled) {
-              if (pathnameNow === '/' || pathnameNow === '/maps') break
+            if (clusterEnabled) {
+              if (pathnameNow === '/' || pathnameNow === '/cluster') break
 
-              lastNonMapsPathRef.current = pathnameNow
-              navigate('/maps', { replace: true })
+              lastNonClusterPathRef.current = pathnameNow
+              navigate('/cluster', { replace: true })
               break
             }
 
@@ -891,12 +891,12 @@ const CarplayComponent: React.FC<CarplayProps> = ({
             break
           }
 
-          if (value === CommandMapping.releaseNaviFocus) {
+          if (value === CommandMapping.releaseClusterFocus) {
             if (!autoSwitchOnGuidance) break
-            if (mapsEnabled) {
-              const back = lastNonMapsPathRef.current
-              if (back && back !== '/maps' && back !== '/') {
-                lastNonMapsPathRef.current = null
+            if (clusterEnabled) {
+              const back = lastNonClusterPathRef.current
+              if (back && back !== '/cluster' && back !== '/') {
+                lastNonClusterPathRef.current = null
                 navigate(back, { replace: true })
               }
               break
@@ -910,7 +910,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
             if (!autoSwitchOnStream) break
             if (attentionSwitchedByRef.current) break
 
-            if (pathnameNow !== '/' && pathnameNow !== '/maps') {
+            if (pathnameNow !== '/' && pathnameNow !== '/cluster') {
               lastNonCarplayPathRef.current = pathnameNow
               autoSwitchedRef.current = true
             }
@@ -934,17 +934,17 @@ const CarplayComponent: React.FC<CarplayProps> = ({
               break
             }
 
-            const backFromMaps = lastNonMapsPathRef.current
+            const backFromCluster = lastNonClusterPathRef.current
 
             if (
-              mapsEnabled &&
-              pathnameNow === '/maps' &&
-              backFromMaps &&
-              backFromMaps !== '/maps' &&
-              backFromMaps !== '/'
+              clusterEnabled &&
+              pathnameNow === '/cluster' &&
+              backFromCluster &&
+              backFromCluster !== '/cluster' &&
+              backFromCluster !== '/'
             ) {
-              lastNonMapsPathRef.current = null
-              navigate(backFromMaps, { replace: true })
+              lastNonClusterPathRef.current = null
+              navigate(backFromCluster, { replace: true })
               break
             }
 
@@ -1018,7 +1018,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     rendererError,
     setAudioInfo,
     setBluetoothPairedList,
-    settings.mapsEnabled
+    settings.clusterEnabled
   ])
 
   // Resize observer => inform render worker

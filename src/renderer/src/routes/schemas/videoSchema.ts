@@ -149,57 +149,57 @@ export const videoSchema: SettingsNode<ExtraConfig> = {
     },
     {
       type: 'route',
-      label: 'Navigation Screen',
-      labelKey: 'settings.navigationScreen',
-      route: 'navigationScreen',
+      label: 'Cluster Screen',
+      labelKey: 'settings.clusterScreen',
+      route: 'clusterScreen',
       path: '',
       children: [
         {
           type: 'number',
           label: 'Width',
           labelKey: 'settings.width',
-          path: 'naviWidth',
+          path: 'clusterWidth',
           min: MIN_WIDTH,
           max: MAX_WIDTH,
           step: 1,
           displayValue: true,
           page: {
-            title: 'Navigation Screen Width',
+            title: 'Cluster Screen Width',
             labelTitle: 'settings.width',
-            description: 'Navigation screen width in px',
-            labelDescription: 'settings.navigationScreenWidthDescription'
+            description: 'Cluster screen width in px',
+            labelDescription: 'settings.clusterScreenWidthDescription'
           }
         },
         {
           type: 'number',
           label: 'Height',
           labelKey: 'settings.height',
-          path: 'naviHeight',
+          path: 'clusterHeight',
           min: MIN_HEIGHT,
           max: MAX_HEIGHT,
           step: 1,
           displayValue: true,
           page: {
-            title: 'Navigation Screen Height',
+            title: 'Cluster Screen Height',
             labelTitle: 'settings.height',
-            description: 'Navigation screen height in px',
-            labelDescription: 'settings.navigationScreenHeightDescription'
+            description: 'Cluster screen height in px',
+            labelDescription: 'settings.clusterScreenHeightDescription'
           }
         },
         {
           type: 'number',
           label: 'FPS',
           labelKey: 'settings.fps',
-          path: 'naviFps',
+          path: 'clusterFps',
           min: MIN_FPS,
           max: MAX_FPS,
           step: 1,
           displayValue: true,
           page: {
-            title: 'Navigation Screen FPS',
+            title: 'Cluster Screen FPS',
             labelTitle: 'settings.fps',
-            description: 'Navigation screen FPS',
-            labelDescription: 'settings.navigationScreenFpsDescription'
+            description: 'Cluster screen FPS',
+            labelDescription: 'settings.clusterScreenFpsDescription'
           }
         }
         /* does not work, firmware bug?*/
@@ -215,71 +215,71 @@ export const videoSchema: SettingsNode<ExtraConfig> = {
               type: 'number',
               label: 'Top',
               labelKey: 'settings.top',
-              path: 'naviSafeAreaTop',
+              path: 'clusterSafeAreaTop',
               min: SAFE_AREA_MIN,
               max: SAFE_AREA_MAX_HEIGHT,
               step: 1,
               displayValue: true,
               page: {
-                title: 'Navigation Screen Safe Area Top',
+                title: 'Cluster Screen Safe Area Top',
                 labelTitle: 'settings.top',
                 description: 'Top inset in px',
-                labelDescription: 'settings.naviSafeAreaTopDescription'
+                labelDescription: 'settings.clusterSafeAreaTopDescription'
               }
             },
             {
               type: 'number',
               label: 'Bottom',
               labelKey: 'settings.bottom',
-              path: 'naviSafeAreaBottom',
+              path: 'clusterSafeAreaBottom',
               min: SAFE_AREA_MIN,
               max: SAFE_AREA_MAX_HEIGHT,
               step: 1,
               displayValue: true,
               page: {
-                title: 'Navigation Screen Safe Area Bottom',
+                title: 'Cluster Screen Safe Area Bottom',
                 labelTitle: 'settings.bottom',
                 description: 'Bottom inset in px',
-                labelDescription: 'settings.naviSafeAreaBottomDescription'
+                labelDescription: 'settings.clusterSafeAreaBottomDescription'
               }
             },
             {
               type: 'number',
               label: 'Left',
               labelKey: 'settings.left',
-              path: 'naviSafeAreaLeft',
+              path: 'clusterSafeAreaLeft',
               min: SAFE_AREA_MIN,
               max: SAFE_AREA_MAX_WIDTH,
               step: 1,
               displayValue: true,
               page: {
-                title: 'Navigation Screen Safe Area Left',
+                title: 'Cluster Screen Safe Area Left',
                 labelTitle: 'settings.left',
                 description: 'Left inset in px',
-                labelDescription: 'settings.naviSafeAreaLeftDescription'
+                labelDescription: 'settings.clusterSafeAreaLeftDescription'
               }
             },
             {
               type: 'number',
               label: 'Right',
               labelKey: 'settings.right',
-              path: 'naviSafeAreaRight',
+              path: 'clusterSafeAreaRight',
               min: SAFE_AREA_MIN,
               max: SAFE_AREA_MAX_WIDTH,
               step: 1,
               displayValue: true,
               page: {
-                title: 'Navigation Screen Safe Area Right',
+                title: 'Cluster Screen Safe Area Right',
                 labelTitle: 'settings.right',
                 description: 'Right inset in px',
-                labelDescription: 'settings.naviSafeAreaRightDescription'
+                labelDescription: 'settings.clusterSafeAreaRightDescription'
               }
             },
             {
               type: 'checkbox',
               label: 'Draw Outside',
               labelKey: 'settings.drawOutside',
-              path: 'naviSafeAreaDrawOutside'
+              path: 'clusterSafeAreaDrawOutside'
             }
           ]
         }*/

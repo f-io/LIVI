@@ -18,7 +18,7 @@ export const appRoutes = [
         element: <Telemetry />
       },
       {
-        path: `/${RoutePath.Maps}`,
+        path: `/${RoutePath.Cluster}`,
         element: <></>
       },
       {

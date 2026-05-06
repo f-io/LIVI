@@ -60,9 +60,9 @@ export enum MessageType {
   GnssData = 0x29,
   MetaData = 0x2a,
   ShowPinCode = 0x2b,
-  NaviVideoData = 0x2c,
-  NaviFocusRequest = 0x6e,
-  NaviFocusRelease = 0x6f,
+  ClusterVideoData = 0x2c,
+  ClusterFocusRequest = 0x6e,
+  ClusterFocusRelease = 0x6f,
   FactorySetting = 0x77,
   DebugTest = 0x88,
   SendFile = 0x99,
@@ -150,7 +150,7 @@ export class MessageHeader {
           return new AudioData(this, data)
         case MessageType.VideoData:
           return new VideoData(this, data)
-        case MessageType.NaviVideoData:
+        case MessageType.ClusterVideoData:
           return new VideoData(this, data)
         case MessageType.MetaData:
           return new MetaData(this, data)

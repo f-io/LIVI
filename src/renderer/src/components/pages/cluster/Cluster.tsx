@@ -29,10 +29,10 @@ function parseBoxInfo(raw: unknown): BoxInfo | null {
   return null
 }
 
-export const Maps: React.FC = () => {
+export const Cluster: React.FC = () => {
   const theme = useTheme()
   const location = useLocation()
-  const showMaps = location.pathname === '/maps'
+  const showCluster = location.pathname === '/cluster'
 
   const settings = useLiviStore((s) => s.settings)
   const boxInfoRaw = useLiviStore((s) => s.boxInfo)
@@ -50,7 +50,7 @@ export const Maps: React.FC = () => {
   const offscreenCanvasRef = useRef<OffscreenCanvas | null>(null)
   const clusterCodecRef = useRef<VideoCodec>('h264')
 
-  const mapsVideoChannel = useMemo(() => new MessageChannel(), [])
+  const clusterVideoChannel = useMemo(() => new MessageChannel(), [])
 
   useEffect(() => {
     const el = document.getElementById('content-root')
@@ -81,7 +81,7 @@ export const Maps: React.FC = () => {
 
   const supportsNaviScreen = useMemo(() => {
     // AA-native always exposes a cluster sink (ch=19, display_type=CLUSTER)
-    // when mapsEnabled is on — phone streams H.264 cluster frames there.
+    // when clusterEnabled is on — phone streams H.264 cluster frames there.
     if (isAaActive) return true
 
     const box = parseBoxInfo(boxInfoRaw)
@@ -104,11 +104,11 @@ export const Maps: React.FC = () => {
     return false
   }, [boxInfoRaw, isAaActive])
 
-  // Request/Release maps stream + reset worker on disconnect
+  // Request/Release cluster stream + reset worker on disconnect
   const wasStreamingRef = useRef(isStreaming)
   useEffect(() => {
     if (!isStreaming) {
-      void window.projection.ipc.requestMaps(false).catch(() => {})
+      void window.projection.ipc.requestCluster(false).catch(() => {})
       if (wasStreamingRef.current) {
         // Just transitioned from streaming → disconnected. Blank the worker.
         clusterCodecRef.current = 'h264'
@@ -123,12 +123,12 @@ export const Maps: React.FC = () => {
     }
     wasStreamingRef.current = true
     if (!renderReady) {
-      void window.projection.ipc.requestMaps(false).catch(() => {})
+      void window.projection.ipc.requestCluster(false).catch(() => {})
       return
     }
-    void window.projection.ipc.requestMaps(true).catch(() => {})
+    void window.projection.ipc.requestCluster(true).catch(() => {})
     return () => {
-      void window.projection.ipc.requestMaps(false).catch(() => {})
+      void window.projection.ipc.requestCluster(false).catch(() => {})
     }
   }, [isStreaming, renderReady])
 
@@ -144,9 +144,9 @@ export const Maps: React.FC = () => {
     const w = createRenderWorker()
     renderWorkerRef.current = w
 
-    w.postMessage(new InitEvent(offscreenCanvasRef.current, mapsVideoChannel.port2, fps), [
+    w.postMessage(new InitEvent(offscreenCanvasRef.current, clusterVideoChannel.port2, fps), [
       offscreenCanvasRef.current,
-      mapsVideoChannel.port2
+      clusterVideoChannel.port2
     ])
 
     return () => {
@@ -154,7 +154,7 @@ export const Maps: React.FC = () => {
       renderWorkerRef.current = null
       offscreenCanvasRef.current = null
     }
-  }, [mapsVideoChannel, fps])
+  }, [clusterVideoChannel, fps])
 
   // Render.worker ready/error messages
   useEffect(() => {
@@ -173,7 +173,7 @@ export const Maps: React.FC = () => {
       }
 
       if (t === 'awaiting-keyframe' || t === 'request-keyframe') {
-        void window.projection.ipc.requestMaps(true).catch(() => {})
+        void window.projection.ipc.requestCluster(true).catch(() => {})
         return
       }
 
@@ -245,12 +245,12 @@ export const Maps: React.FC = () => {
       const buf = m.chunk?.buffer
       if (!buf) return
 
-      mapsVideoChannel.port1.postMessage(buf, [buf])
+      clusterVideoChannel.port1.postMessage(buf, [buf])
     }
 
-    window.projection.ipc.onMapsVideoChunk(handleVideo)
+    window.projection.ipc.onClusterVideoChunk(handleVideo)
     return () => {}
-  }, [mapsVideoChannel, renderReady, rendererError])
+  }, [clusterVideoChannel, renderReady, rendererError])
 
   const canShowVideo = !rendererError
 
@@ -267,14 +267,14 @@ export const Maps: React.FC = () => {
         justifyContent: 'stretch',
         alignItems: 'stretch',
         backgroundColor: theme.palette.background.default,
-        visibility: showMaps ? 'visible' : 'hidden',
-        opacity: showMaps ? 1 : 0,
-        pointerEvents: showMaps ? 'auto' : 'none',
+        visibility: showCluster ? 'visible' : 'hidden',
+        opacity: showCluster ? 1 : 0,
+        pointerEvents: showCluster ? 'auto' : 'none',
         transition: 'opacity 220ms ease',
-        zIndex: showMaps ? 5 : -1
+        zIndex: showCluster ? 5 : -1
       }}
     >
-      {!isStreaming && showMaps && (
+      {!isStreaming && showCluster && (
         <Box
           sx={{
             position: 'fixed',

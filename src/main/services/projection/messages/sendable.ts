@@ -460,24 +460,30 @@ export class SendBoxSettings extends SendableMessageWithPayload {
       OemName: cfg.oemName ?? cfg.carName
     }
 
-    if (cfg.mapsEnabled) {
+    if (cfg.clusterEnabled) {
       const insets = {
-        top: cfg.naviSafeAreaTop ?? 0,
-        bottom: cfg.naviSafeAreaBottom ?? 0,
-        left: cfg.naviSafeAreaLeft ?? 0,
-        right: cfg.naviSafeAreaRight ?? 0
+        top: cfg.clusterSafeAreaTop ?? 0,
+        bottom: cfg.clusterSafeAreaBottom ?? 0,
+        left: cfg.clusterSafeAreaLeft ?? 0,
+        right: cfg.clusterSafeAreaRight ?? 0
       }
 
-      const safeW = Math.max(0, cfg.naviWidth - insets.left - insets.right)
-      const safeH = Math.max(0, cfg.naviHeight - insets.top - insets.bottom)
+      // Cluster spec defaults to the main panel when not explicitly set.
+      const cW = cfg.clusterWidth ?? cfg.width
+      const cH = cfg.clusterHeight ?? cfg.height
+      const cF = cfg.clusterFps ?? cfg.fps
+
+      const safeW = Math.max(0, cW - insets.left - insets.right)
+      const safeH = Math.max(0, cH - insets.top - insets.bottom)
 
       const hasInsets = (insets.top | insets.bottom | insets.left | insets.right) !== 0
-      const drawOutside = cfg.naviSafeAreaDrawOutside ?? hasInsets
+      const drawOutside = cfg.clusterSafeAreaDrawOutside ?? hasInsets
 
+      // `naviScreenInfo` is the dongle wire-protocol field name.
       body.naviScreenInfo = {
-        width: cfg.naviWidth,
-        height: cfg.naviHeight,
-        fps: cfg.naviFps,
+        width: cW,
+        height: cH,
+        fps: cF,
         safearea: {
           width: safeW,
           height: safeH,
@@ -585,12 +591,12 @@ export class SendForgetBluetoothAddr extends SendableMessageWithPayload {
   }
 }
 
-export class SendNaviFocusRequest extends SendableMessage {
-  type = MessageType.NaviFocusRequest
+export class SendClusterFocusRequest extends SendableMessage {
+  type = MessageType.ClusterFocusRequest
 }
 
-export class SendNaviFocusRelease extends SendableMessage {
-  type = MessageType.NaviFocusRelease
+export class SendClusterFocusRelease extends SendableMessage {
+  type = MessageType.ClusterFocusRelease
 }
 
 export class SendServerCgiScript extends SendFile {

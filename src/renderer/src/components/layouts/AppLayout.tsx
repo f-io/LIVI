@@ -28,13 +28,13 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
   const isVisibleTimeAndWifi = window.innerHeight > UI.MIN_HEIGHT_SHOW_TIME_WIFI
 
   // TODO should be cleaned up and probably moved to a custom hook (useAutoHideNav or something)
-  // TODO also should be aligned with the useNavbarHidden hook (mapsNavHidden vs navHidden, etc)
-  // Auto-hide nav on Maps
+  // TODO also should be aligned with the useNavbarHidden hook (clusterNavHidden vs navHidden, etc)
+  // Auto-hide nav on Cluster Stream
   const NAV_HIDE_DELAY_MS = UI.INACTIVITY_HIDE_DELAY_MS
   const hideTimerRef = useRef<number | null>(null)
-  const [mapsNavHidden, setMapsNavHidden] = useState(false)
+  const [clusterNavHidden, setClusterNavHidden] = useState(false)
 
-  const inAutoHideNavPage = pathname === ROUTES.MAPS || pathname === ROUTES.TELEMETRY
+  const inAutoHideNavPage = pathname === ROUTES.CLUSTER || pathname === ROUTES.TELEMETRY
 
   const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current != null) {
@@ -46,24 +46,24 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
   const scheduleHide = useCallback(() => {
     clearHideTimer()
     hideTimerRef.current = window.setTimeout(() => {
-      setMapsNavHidden(true)
+      setClusterNavHidden(true)
       hideTimerRef.current = null
     }, NAV_HIDE_DELAY_MS)
   }, [clearHideTimer, NAV_HIDE_DELAY_MS])
 
   const showNavAndArmHide = useCallback(() => {
-    setMapsNavHidden(false)
+    setClusterNavHidden(false)
     if (inAutoHideNavPage) scheduleHide()
   }, [inAutoHideNavPage, scheduleHide])
 
   useEffect(() => {
     if (!inAutoHideNavPage) {
       clearHideTimer()
-      setMapsNavHidden(false)
+      setClusterNavHidden(false)
       return
     }
 
-    setMapsNavHidden(false)
+    setClusterNavHidden(false)
     scheduleHide()
 
     return () => {
@@ -103,8 +103,8 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
   // Hide nav column while streaming on home screen
   const hideNavHome = isStreaming && pathname === ROUTES.HOME
 
-  // Auto-hide nav on Maps after inactivity
-  const hideNav = hideNavHome || (inAutoHideNavPage && mapsNavHidden)
+  // Auto-hide nav on Cluster Stream after inactivity
+  const hideNav = hideNavHome || (inAutoHideNavPage && clusterNavHidden)
 
   // Steering wheel position
   const isRhd = Number(settings?.hand ?? 0) === 1

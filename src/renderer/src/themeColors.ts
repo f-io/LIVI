@@ -15,8 +15,8 @@ export const themeColors = {
 
   highlightFocusedFieldLight: '#cccccc',
   highlightFocusedFieldDark: '#bbbbbb',
-  highlightColorLight: '#000000',
-  highlightColorDark: '#ffffff',
+  highlightColorLight: '#ff0000',
+  highlightColorDark: '#00ffff',
 
   // Highlight active projection stream
   successLight: '#81c784',

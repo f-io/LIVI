@@ -345,11 +345,11 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       hevcSupported: this._hevcSupported,
       vp9Supported: this._vp9Supported,
       av1Supported: this._av1Supported,
-      mapsEnabled: Boolean(cfg.mapsEnabled),
-      mapsWidth: cfg.mapsWidth,
-      mapsHeight: cfg.mapsHeight,
-      mapsFps: cfg.mapsFps,
-      mapsDpi: cfg.mapsDpi
+      clusterEnabled: Boolean(cfg.clusterEnabled),
+      clusterWidth: cfg.clusterWidth,
+      clusterHeight: cfg.clusterHeight,
+      clusterFps: cfg.clusterFps,
+      clusterDpi: cfg.clusterDpi
     }
     const displayAR = cfg.width / cfg.height
     const tierAR = tierW / tierH
@@ -395,7 +395,10 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     aa.on('cluster-video-frame', (buf: Buffer, _ts: bigint) => {
       const w = aaCfg.videoWidth ?? 1280
       const h = aaCfg.videoHeight ?? 720
-      this.emit('message', buildVideoDataMessage(buf, w, h, MessageType.NaviVideoData) as Message)
+      this.emit(
+        'message',
+        buildVideoDataMessage(buf, w, h, MessageType.ClusterVideoData) as Message
+      )
     })
 
     aa.on('cluster-video-codec', (codec: VideoCodec) => {
@@ -795,7 +798,7 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
         case CommandMapping.releaseVideoFocus:
           return true
 
-        case CommandMapping.requestNaviScreenFocus:
+        case CommandMapping.requestClusterStreamFocus:
           // Maps tab opened
           this._aa.requestClusterKeyframe()
           return true

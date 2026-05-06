@@ -156,9 +156,9 @@ export class ProjectionService {
     this.refreshAaBtPairedList().catch(() => {})
   }
 
-  private lastNaviVideoWidth?: number
-  private lastNaviVideoHeight?: number
-  private mapsRequested = false
+  private lastClusterVideoWidth?: number
+  private lastClusterVideoHeight?: number
+  private clusterRequested = false
   private lastClusterCodec: 'h264' | 'h265' | 'vp9' | 'av1' | null = null
   private lastPluggedPhoneType?: PhoneType
   private aaPlaybackInferred: 1 | 2 = 1
@@ -250,8 +250,8 @@ export class ProjectionService {
       this.aaPlaybackInferred = 1
       this.lastVideoWidth = undefined
       this.lastVideoHeight = undefined
-      this.lastNaviVideoWidth = undefined
-      this.lastNaviVideoHeight = undefined
+      this.lastClusterVideoWidth = undefined
+      this.lastClusterVideoHeight = undefined
 
       const nextPhoneWorkMode =
         msg.phoneType === PhoneType.CarPlay ? PhoneWorkMode.CarPlay : PhoneWorkMode.Android
@@ -337,21 +337,25 @@ export class ProjectionService {
         }
       }
     } else if (msg instanceof VideoData) {
-      const isNavi = msg.header.type === MessageType.NaviVideoData
-      // navi video stream (0x2c)
-      if (isNavi) {
-        if (!this.mapsRequested) return
+      const isCluster = msg.header.type === MessageType.ClusterVideoData
+      // cluster video stream (0x2c)
+      if (isCluster) {
+        if (!this.clusterRequested) return
 
         const w = msg.width
         const h = msg.height
 
-        if (w > 0 && h > 0 && (w !== this.lastNaviVideoWidth || h !== this.lastNaviVideoHeight)) {
-          this.lastNaviVideoWidth = w
-          this.lastNaviVideoHeight = h
-          this.webContents.send('maps-video-resolution', { width: w, height: h })
+        if (
+          w > 0 &&
+          h > 0 &&
+          (w !== this.lastClusterVideoWidth || h !== this.lastClusterVideoHeight)
+        ) {
+          this.lastClusterVideoWidth = w
+          this.lastClusterVideoHeight = h
+          this.webContents.send('cluster-video-resolution', { width: w, height: h })
         }
 
-        this.sendChunked('maps-video-chunk', msg.data?.buffer as ArrayBuffer, 512 * 1024)
+        this.sendChunked('cluster-video-chunk', msg.data?.buffer as ArrayBuffer, 512 * 1024)
         return
       }
 
@@ -501,9 +505,9 @@ export class ProjectionService {
       // Unknown meta
     } else if (msg instanceof Command) {
       this.webContents.send('projection-event', { type: 'command', message: msg })
-      if (typeof msg.value === 'number' && msg.value === 508 && this.mapsRequested) {
+      if (typeof msg.value === 'number' && msg.value === 508 && this.clusterRequested) {
         try {
-          this.driver.send(new SendCommand('requestNaviScreenFocus'))
+          this.driver.send(new SendCommand('requestClusterStreamFocus'))
         } catch {
           // ignore
         }
@@ -747,12 +751,12 @@ export class ProjectionService {
       }
     })
 
-    registerIpcHandle('maps:request', async (_evt, enabled: boolean) => {
-      this.mapsRequested = Boolean(enabled)
+    registerIpcHandle('cluster:request', async (_evt, enabled: boolean) => {
+      this.clusterRequested = Boolean(enabled)
 
-      if (!this.mapsRequested) {
-        this.lastNaviVideoWidth = undefined
-        this.lastNaviVideoHeight = undefined
+      if (!this.clusterRequested) {
+        this.lastClusterVideoWidth = undefined
+        this.lastClusterVideoHeight = undefined
         return { ok: true, enabled: false }
       }
 
@@ -768,7 +772,7 @@ export class ProjectionService {
       }
 
       try {
-        this.driver.send(new SendCommand('requestNaviScreenFocus'))
+        this.driver.send(new SendCommand('requestClusterStreamFocus'))
       } catch {
         // ignore
       }

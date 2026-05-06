@@ -1,11 +1,11 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
-import { Maps } from '../Maps'
+import { Cluster } from '../Cluster'
 
-const renderMaps = (path = '/maps') =>
+const renderCluster = (path = '/cluster') =>
   render(
     <MemoryRouter initialEntries={[path]}>
-      <Maps />
+      <Cluster />
     </MemoryRouter>
   )
 
@@ -58,8 +58,8 @@ class MockMessageChannel {
   }
 }
 
-describe('Maps page', () => {
-  let mapsVideoCb: AnyFn | undefined
+describe('Cluster page', () => {
+  let clusterVideoCb: AnyFn | undefined
 
   beforeEach(() => {
     const { createRenderWorker } = jest.requireMock('@worker/createRenderWorker')
@@ -67,7 +67,7 @@ describe('Maps page', () => {
 
     MockWorker.instances = []
     MockMessageChannel.instances = []
-    mapsVideoCb = undefined
+    clusterVideoCb = undefined
 
     statusState.isStreaming = true
     liviState.settings = { fps: 60 }
@@ -93,9 +93,9 @@ describe('Maps page', () => {
     document.body.appendChild(contentRoot)
     ;(window as any).projection = {
       ipc: {
-        requestMaps: jest.fn().mockResolvedValue(undefined),
-        onMapsVideoChunk: jest.fn((cb: AnyFn) => {
-          mapsVideoCb = cb
+        requestCluster: jest.fn().mockResolvedValue(undefined),
+        onClusterVideoChunk: jest.fn((cb: AnyFn) => {
+          clusterVideoCb = cb
         }),
         onEvent: jest.fn(),
         offEvent: jest.fn()
@@ -103,30 +103,30 @@ describe('Maps page', () => {
     }
   })
 
-  test('requests maps stream and initializes render worker', async () => {
-    const { unmount } = renderMaps()
+  test('requests cluster stream and initializes render worker', async () => {
+    const { unmount } = renderCluster()
 
     await waitFor(() => {
       expect(MockWorker.instances.length).toBe(1)
     })
 
-    // requestMaps(true) is gated on render-ready
+    // requestCluster(true) is gated on render-ready
     act(() => {
       MockWorker.instances[0].emit({ type: 'render-ready' })
     })
 
     await waitFor(() => {
-      expect((window as any).projection.ipc.requestMaps).toHaveBeenCalledWith(true)
+      expect((window as any).projection.ipc.requestCluster).toHaveBeenCalledWith(true)
     })
 
     unmount()
     await waitFor(() => {
-      expect((window as any).projection.ipc.requestMaps).toHaveBeenCalledWith(false)
+      expect((window as any).projection.ipc.requestCluster).toHaveBeenCalledWith(false)
     })
   })
 
   test('forwards video chunks after render-ready', () => {
-    renderMaps()
+    renderCluster()
     const worker = MockWorker.instances[0]
 
     act(() => {
@@ -135,7 +135,7 @@ describe('Maps page', () => {
 
     const buf = new ArrayBuffer(8)
     act(() => {
-      mapsVideoCb?.({ chunk: { buffer: buf } })
+      clusterVideoCb?.({ chunk: { buffer: buf } })
     })
 
     const channel = MockMessageChannel.instances[0]
@@ -144,7 +144,7 @@ describe('Maps page', () => {
 
   test('shows renderer error and unsupported firmware hint', () => {
     liviState.boxInfo = { supportFeatures: '' }
-    renderMaps()
+    renderCluster()
 
     const worker = MockWorker.instances[0]
     act(() => {

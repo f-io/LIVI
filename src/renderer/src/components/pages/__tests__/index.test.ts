@@ -13,9 +13,9 @@ jest.mock('../home', () => ({
   Home: 'HomeMock'
 }))
 
-jest.mock('../maps', () => ({
+jest.mock('../cluster', () => ({
   __esModule: true,
-  Maps: 'MapsMock'
+  Cluster: 'ClusterMock'
 }))
 
 jest.mock('../media', () => ({
@@ -40,7 +40,7 @@ describe('pages index', () => {
     expect(mod.Camera).toBe('CameraMock')
     expect(mod.Projection).toBe('ProjectionMock')
     expect(mod.Home).toBe('HomeMock')
-    expect(mod.Maps).toBe('MapsMock')
+    expect(mod.Cluster).toBe('ClusterMock')
     expect(mod.Media).toBe('MediaMock')
     expect(mod.SettingsPage).toBe('SettingsPageMock')
     expect(mod.Telemetry).toBe('TelemetryMock')

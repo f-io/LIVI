@@ -8,7 +8,7 @@ const buildRuntimeThemeMock = jest.fn()
 const setStateMock = jest.fn()
 
 let mockedSettings: any = {
-  nightMode: true,
+  darkMode: true,
   primaryColorDark: '#111111',
   highlightColorDark: '#222222'
 }
@@ -119,7 +119,7 @@ describe('renderer main bootstrap', () => {
     capturedRootElement = null
 
     mockedSettings = {
-      nightMode: true,
+      darkMode: true,
       primaryColorDark: '#111111',
       highlightColorDark: '#222222'
     }
@@ -169,7 +169,7 @@ describe('renderer main bootstrap', () => {
 
   test('uses runtime theme when dark mode has color overrides', () => {
     mockedSettings = {
-      nightMode: true,
+      darkMode: true,
       primaryColorDark: '#111111',
       highlightColorDark: '#222222'
     }
@@ -181,7 +181,7 @@ describe('renderer main bootstrap', () => {
 
   test('uses light runtime theme when light mode has overrides', () => {
     mockedSettings = {
-      nightMode: false,
+      darkMode: false,
       primaryColorLight: '#aaaaaa',
       highlightColorLight: '#bbbbbb'
     }
@@ -195,9 +195,9 @@ describe('renderer main bootstrap', () => {
     expect(buildRuntimeThemeMock).toHaveBeenCalledWith('light', '#aaaaaa', '#bbbbbb')
   })
 
-  test('falls back to darkTheme when no overrides exist and nightMode is true', () => {
+  test('falls back to darkTheme when no overrides exist and darkMode is true', () => {
     mockedSettings = {
-      nightMode: true
+      darkMode: true
     }
 
     renderRootDirectly()
@@ -205,9 +205,9 @@ describe('renderer main bootstrap', () => {
     expect(buildRuntimeThemeMock).not.toHaveBeenCalled()
   })
 
-  test('falls back to lightTheme when no overrides exist and nightMode is false', () => {
+  test('falls back to lightTheme when no overrides exist and darkMode is false', () => {
     mockedSettings = {
-      nightMode: false
+      darkMode: false
     }
 
     renderRootDirectly()
@@ -215,7 +215,7 @@ describe('renderer main bootstrap', () => {
     expect(buildRuntimeThemeMock).not.toHaveBeenCalled()
   })
 
-  test('defaults to darkTheme when settings.nightMode is missing', () => {
+  test('defaults to darkTheme when settings.darkMode is missing', () => {
     mockedSettings = {}
 
     renderRootDirectly()

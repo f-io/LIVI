@@ -54,26 +54,24 @@ export type DongleConfig = {
   width: number
   height: number
   fps: number
-  mapsEnabled: boolean
-  mapsWidth?: number
-  mapsHeight?: number
-  mapsFps?: 30 | 60
-  mapsDpi?: number
   projectionSafeAreaTop: number
   projectionSafeAreaBottom: number
   projectionSafeAreaLeft: number
   projectionSafeAreaRight: number
   projectionSafeAreaDrawOutside: boolean
-  naviWidth: number
-  naviHeight: number
-  naviFps: number
-  naviSafeAreaTop: number
-  naviSafeAreaBottom: number
-  naviSafeAreaLeft: number
-  naviSafeAreaRight: number
-  naviSafeAreaDrawOutside: boolean
+  clusterEnabled: boolean
+  clusterWidth?: number
+  clusterHeight?: number
+  clusterFps?: number
+  clusterDpi?: number
+  clusterSafeAreaTop: number
+  clusterSafeAreaBottom: number
+  clusterSafeAreaLeft: number
+  clusterSafeAreaRight: number
+  clusterSafeAreaDrawOutside: boolean
   lastPhoneWorkMode: PhoneWorkMode
   apkVer: string
+  darkMode: boolean
   nightMode: boolean
   carName: string
   oemName: string

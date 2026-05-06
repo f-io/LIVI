@@ -149,7 +149,7 @@ export interface CarplayStore {
 
   // Save patches (main merges them into config.json)
   saveSettings: (patch: Partial<ExtraConfig>) => Promise<void>
-  setNightMode: (nightMode: boolean) => Promise<void>
+  setDarkMode: (darkMode: boolean) => Promise<void>
 
   // Display resolution
   negotiatedWidth: number | null
@@ -433,8 +433,8 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
       await refreshFromMain()
     },
 
-    setNightMode: async (nightMode) => {
-      await get().saveSettings({ nightMode })
+    setDarkMode: async (darkMode) => {
+      await get().saveSettings({ darkMode })
     },
 
     saveSettings: async (patchArg) => {
@@ -463,6 +463,9 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
           sendCarplayMicType(patch.micType as MicType)
         }
 
+        // `nightMode` controls the projection-side UI (AA/CP/dongle). Bridge
+        // to wire IPC. `darkMode` (LIVI UI theme) is intentionally NOT
+        // bridged — those are independent toggles.
         if (patch.nightMode !== undefined) {
           sendCarplayNightMode(Boolean(patch.nightMode))
         }

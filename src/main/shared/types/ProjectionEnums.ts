@@ -71,10 +71,10 @@ export enum CommandMapping {
   releaseVideoFocus = 501,
   requestAudioFocusDuck = 504,
   releaseAudioFocus = 505,
-  requestNaviFocus = 506,
-  releaseNaviFocus = 507,
-  requestNaviScreenFocus = 508,
-  releaseNaviScreenFocus = 509,
+  requestClusterFocus = 506,
+  releaseClusterFocus = 507,
+  requestClusterStreamFocus = 508,
+  releaseClusterStreamFocus = 509,
 
   // Connection Status Commands
   wifiEnable = 1000,

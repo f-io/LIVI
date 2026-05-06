@@ -64,7 +64,7 @@ describe('AppLayout', () => {
   })
 
   test('auto-hides nav after inactivity on maps', () => {
-    mockPathname = '/maps'
+    mockPathname = '/cluster'
     const navRef = createRef<HTMLDivElement>()
     const mainRef = createRef<HTMLDivElement>()
     const { container } = render(
@@ -93,7 +93,7 @@ describe('AppLayout', () => {
   })
 
   test('shows nav again and re-arms hide timer on mousemove in maps mode', () => {
-    mockPathname = '/maps'
+    mockPathname = '/cluster'
     const navRef = createRef<HTMLDivElement>()
     const mainRef = createRef<HTMLDivElement>()
 
@@ -118,8 +118,8 @@ describe('AppLayout', () => {
     expect(container.querySelector('#content-root')?.getAttribute('data-nav-hidden')).toBe('1')
   })
 
-  test('shows nav again when focus moves into nav area on maps page', () => {
-    mockPathname = '/maps'
+  test('shows nav again when focus moves into nav area on cluster page', () => {
+    mockPathname = '/cluster'
     const navRef = createRef<HTMLDivElement>()
     const mainRef = createRef<HTMLDivElement>()
 
@@ -143,7 +143,7 @@ describe('AppLayout', () => {
   })
 
   test('clears auto-hide timer and keeps nav visible when leaving auto-hide pages', () => {
-    mockPathname = '/maps'
+    mockPathname = '/cluster'
     const navRef = createRef<HTMLDivElement>()
     const mainRef = createRef<HTMLDivElement>()
 
@@ -170,7 +170,7 @@ describe('AppLayout', () => {
   })
 
   test('removes wake listeners on unmount for auto-hide pages', () => {
-    mockPathname = '/maps'
+    mockPathname = '/cluster'
     const navRef = createRef<HTMLDivElement>()
     const mainRef = createRef<HTMLDivElement>()
 

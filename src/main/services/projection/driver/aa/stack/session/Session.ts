@@ -115,12 +115,12 @@ export interface SessionConfig {
   vp9Supported?: boolean
   av1Supported?: boolean
   // When true the secondary (CLUSTER) video sink is advertised in the SDR.
-  mapsEnabled?: boolean
-  // Optional cluster spec
-  mapsWidth?: number
-  mapsHeight?: number
-  mapsFps?: 30 | 60
-  mapsDpi?: number
+  clusterEnabled?: boolean
+  // Optional cluster spec — falls back to main panel values when unset.
+  clusterWidth?: number
+  clusterHeight?: number
+  clusterFps?: number
+  clusterDpi?: number
 }
 
 export type VideoCodec = 'h264' | 'h265' | 'vp9' | 'av1'
@@ -1144,20 +1144,20 @@ export class Session extends EventEmitter {
     // ── Cluster Video (ch=19) — secondary display sink for Maps/Navi ──
     // Spec defaults to the main panel (resolution / fps / dpi) and offers
     // the same codec list — phone picks per channel independently. User can
-    // override the cluster spec via DongleConfig mapsWidth / mapsHeight /
-    // mapsFps / mapsDpi.
-    //
-    // CAR.SERVICE validates that every advertised display has a matching
-    // InputSourceService — without it the phone aborts with "No input for
-    // display N". Cluster is non-interactive so we register a stub input
-    // source with no touchscreen / keycodes but the matching display_id.
-    if (this._cfg.mapsEnabled) {
-      const mapsW = this._cfg.mapsWidth
-      const mapsH = this._cfg.mapsHeight
-      const clusterRes = mapsW && mapsH ? (resolutionFromDimensions(mapsW, mapsH) ?? vRes) : vRes
+    // override per-cluster via DongleConfig clusterWidth / clusterHeight /
+    // clusterFps / clusterDpi (only present in config.json once explicitly
+    // set).
+    if (this._cfg.clusterEnabled) {
+      const cW = this._cfg.clusterWidth
+      const cH = this._cfg.clusterHeight
+      const clusterRes = cW && cH ? (resolutionFromDimensions(cW, cH) ?? vRes) : vRes
       const clusterFps =
-        this._cfg.mapsFps === 60 ? VIDEO_FPS._60 : this._cfg.mapsFps === 30 ? VIDEO_FPS._30 : vFps
-      const clusterDpi = this._cfg.mapsDpi ?? dpi
+        this._cfg.clusterFps === 60
+          ? VIDEO_FPS._60
+          : this._cfg.clusterFps === 30
+            ? VIDEO_FPS._30
+            : vFps
+      const clusterDpi = this._cfg.clusterDpi ?? dpi
       const clusterBase = {
         codecResolution: clusterRes,
         frameRate: clusterFps,

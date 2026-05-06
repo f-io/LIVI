@@ -15,7 +15,7 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
   const isStreaming = useStatusStore((s) => s.isStreaming)
   const isDongleConnected = useStatusStore((s) => s.isDongleConnected || s.isAaActive)
   const cameraFound = useStatusStore((s) => s.cameraFound)
-  const mapsEnabled = useLiviStore((s) => s.settings?.mapsEnabled ?? false)
+  const clusterEnabled = useLiviStore((s) => s.settings?.clusterEnabled ?? false)
   const telemetryEnabled = useLiviStore((s) => s.settings?.telemetryEnabled ?? false)
 
   return [
@@ -46,11 +46,11 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
         )
       })()
     },
-    ...(mapsEnabled
+    ...(clusterEnabled
       ? [
           {
-            label: 'Maps',
-            path: ROUTES.MAPS,
+            label: 'Cluster Stream',
+            path: ROUTES.CLUSTER,
             icon: <MapOutlinedIcon sx={{ fontSize: 30 }} />
           }
         ]
