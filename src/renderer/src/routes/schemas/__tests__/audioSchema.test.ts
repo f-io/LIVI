@@ -109,7 +109,7 @@ describe('audioSchema', () => {
         type: 'checkbox',
         label: 'Disable Audio',
         labelKey: 'settings.disableAudio',
-        path: 'audioTransferMode'
+        path: 'disableAudioOutput'
       })
     )
   })

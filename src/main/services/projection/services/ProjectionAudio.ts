@@ -651,7 +651,7 @@ export class ProjectionAudio {
       ) {
         const cfg = this.getConfig() as ExtraConfig & {
           micType?: number
-          audioTransferMode?: boolean
+          disableAudioOutput?: boolean
         }
 
         if (cmd === AudioCommand.AudioVoiceAssistantStart) {
@@ -671,7 +671,7 @@ export class ProjectionAudio {
         this.musicFade.remainingSamples = 0
         this.musicGateMuted = true
 
-        if (cfg.audioTransferMode || cfg.micType !== 0) {
+        if (cfg.disableAudioOutput || cfg.micType !== 0) {
           this._mic?.stop()
           return
         }

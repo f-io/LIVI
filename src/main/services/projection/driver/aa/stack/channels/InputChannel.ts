@@ -74,7 +74,7 @@ export const TOUCH_ACTION = {
 //
 // Volume / mute are advertised even though they don't make sense in the
 // default config (phone is audio source, HU is the sink). When the user
-// enables `audioTransferMode` in settings the phone takes over playback via
+// enables `disableAudioOutput` in settings the phone takes over playback via
 // A2DP / analog out, in which case the user might bind hardware volume
 // keys to control the phone's own stream gain — just like the dongle path.
 export const BUTTON_KEY = {

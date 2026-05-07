@@ -241,6 +241,10 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
   private _closed = false
   private _touchW = 1280
   private _touchH = 720
+  private _touchInsetLeft = 0
+  private _touchInsetRight = 0
+  private _touchInsetTop = 0
+  private _touchInsetBottom = 0
   private _mic: Microphone | null = null
   private _micActive = false
 
@@ -326,7 +330,11 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
             : tierW === 1280
               ? 720
               : 480
-    const aaDpi = computeAndroidAutoDpi(tierW, tierH)
+    const aaDpi = cfg.dpi > 0 ? cfg.dpi : computeAndroidAutoDpi(tierW, tierH)
+    const resolvedClusterDpi =
+      cfg.clusterDpi > 0
+        ? cfg.clusterDpi
+        : computeAndroidAutoDpi(cfg.clusterWidth, cfg.clusterHeight)
     const name = cfg.carName?.trim() ? cfg.carName : 'LIVI'
     const aaCfg: AAStackConfig = {
       huName: name,
@@ -336,6 +344,10 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       videoFps: cfg.fps === 60 ? 60 : 30,
       displayWidth: cfg.width,
       displayHeight: cfg.height,
+      mainSafeAreaTop: cfg.projectionSafeAreaTop,
+      mainSafeAreaBottom: cfg.projectionSafeAreaBottom,
+      mainSafeAreaLeft: cfg.projectionSafeAreaLeft,
+      mainSafeAreaRight: cfg.projectionSafeAreaRight,
       driverPosition: cfg.hand === 1 ? 1 : 0,
       wifiSsid: name,
       wifiPassword: cfg.wifiPassword || '12345678',
@@ -349,7 +361,12 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       clusterWidth: cfg.clusterWidth,
       clusterHeight: cfg.clusterHeight,
       clusterFps: cfg.clusterFps,
-      clusterDpi: cfg.clusterDpi
+      clusterDpi: resolvedClusterDpi,
+      clusterSafeAreaTop: cfg.clusterSafeAreaTop,
+      clusterSafeAreaBottom: cfg.clusterSafeAreaBottom,
+      clusterSafeAreaLeft: cfg.clusterSafeAreaLeft,
+      clusterSafeAreaRight: cfg.clusterSafeAreaRight,
+      disableAudioOutput: Boolean(cfg.disableAudioOutput)
     }
     const displayAR = cfg.width / cfg.height
     const tierAR = tierW / tierH
@@ -359,8 +376,34 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
         `AA tier ${tierW}×${tierH} (AR ${tierAR.toFixed(3)}) @${aaDpi}dpi, PAR e4=${parE4}`
     )
 
+    // Derive total touch insets (AR-fit letterbox/pillarbox + user safe
+    // area), mirroring Session.ts so the InputSourceService advertised
+    // touchscreen and our outgoing coordinates agree on the visible UI
+    // window.
+    let arWMargin = 0
+    let arHMargin = 0
+    if (cfg.width > 0 && cfg.height > 0 && tierW > 0 && tierH > 0) {
+      const displayARf = cfg.width / cfg.height
+      const tierARf = tierW / tierH
+      if (displayARf > tierARf) {
+        const contentH = Math.round(tierW / displayARf) & ~1
+        arHMargin = Math.max(0, tierH - contentH)
+      } else if (displayARf < tierARf) {
+        const contentW = Math.round(tierH * displayARf) & ~1
+        arWMargin = Math.max(0, tierW - contentW)
+      }
+    }
+    const arTop = Math.floor(arHMargin / 2)
+    const arBottom = arHMargin - arTop
+    const arLeft = Math.floor(arWMargin / 2)
+    const arRight = arWMargin - arLeft
+
     this._touchW = tierW
     this._touchH = tierH
+    this._touchInsetTop = arTop + Math.max(0, cfg.projectionSafeAreaTop ?? 0)
+    this._touchInsetBottom = arBottom + Math.max(0, cfg.projectionSafeAreaBottom ?? 0)
+    this._touchInsetLeft = arLeft + Math.max(0, cfg.projectionSafeAreaLeft ?? 0)
+    this._touchInsetRight = arRight + Math.max(0, cfg.projectionSafeAreaRight ?? 0)
 
     this._aaCfg = aaCfg
     const aa = new AAStack(aaCfg)
@@ -677,10 +720,19 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     if (!this._aa) return false
 
     if (msg instanceof SendTouch) {
+      const usableW = this._touchW - this._touchInsetLeft - this._touchInsetRight
+      const usableH = this._touchH - this._touchInsetTop - this._touchInsetBottom
+      const tierX = clamp01(msg.x) * this._touchW
+      const tierY = clamp01(msg.y) * this._touchH
+      const ux = tierX - this._touchInsetLeft
+      const uy = tierY - this._touchInsetTop
+      // Click outside the visible UI window (AR-fit black bars / safe-area
+      // cutouts) — phone has no UI there, drop the event.
+      if (ux < 0 || uy < 0 || ux >= usableW || uy >= usableH) return true
       const pointer: TouchPointer = {
         id: 0,
-        x: Math.round(clamp01(msg.x) * this._touchW),
-        y: Math.round(clamp01(msg.y) * this._touchH)
+        x: Math.round(ux),
+        y: Math.round(uy)
       }
       this._aa.sendTouch(mapTouchAction(msg.action), [pointer])
       return true
@@ -834,11 +886,20 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       }
       const actionIndex = triggerIdx >= 0 ? triggerIdx : 0
 
-      const pointers: TouchPointer[] = msg.touches.map((t) => ({
-        id: t.id,
-        x: Math.round(clamp01(t.x) * this._touchW),
-        y: Math.round(clamp01(t.y) * this._touchH)
-      }))
+      const usableW = this._touchW - this._touchInsetLeft - this._touchInsetRight
+      const usableH = this._touchH - this._touchInsetTop - this._touchInsetBottom
+      const pointers: TouchPointer[] = []
+      for (const t of msg.touches) {
+        const tierX = clamp01(t.x) * this._touchW
+        const tierY = clamp01(t.y) * this._touchH
+        const ux = tierX - this._touchInsetLeft
+        const uy = tierY - this._touchInsetTop
+        // Out-of-window pointer — phone has no UI under that part of the
+        // canvas (AR-fit black bar / safe-area cutout). Skip silently.
+        if (ux < 0 || uy < 0 || ux >= usableW || uy >= usableH) continue
+        pointers.push({ id: t.id, x: Math.round(ux), y: Math.round(uy) })
+      }
+      if (pointers.length === 0) return true
       this._aa.sendTouch(action, pointers, actionIndex)
       return true
     }

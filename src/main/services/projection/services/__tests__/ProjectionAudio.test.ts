@@ -424,7 +424,7 @@ describe('ProjectionAudio state controls', () => {
   })
 
   test('handleAudioData AudioVoiceAssistantStart updates voiceAssistant state and skips mic start without decodeType', () => {
-    const a = createSubject({ micType: 0, audioTransferMode: false })
+    const a = createSubject({ micType: 0, disableAudioOutput: false })
 
     a.handleAudioData({ command: 4 })
 
@@ -434,7 +434,7 @@ describe('ProjectionAudio state controls', () => {
   })
 
   test('handleAudioData AudioPhonecallStart updates phone state and stops mic in transfer mode', () => {
-    const a = createSubject({ micType: 1, audioTransferMode: true })
+    const a = createSubject({ micType: 1, disableAudioOutput: true })
     a._mic = { stop: jest.fn() }
 
     a.handleAudioData({ command: 15, decodeType: 1 })
@@ -597,7 +597,7 @@ describe('ProjectionAudio state controls', () => {
   test('handleAudioData AudioVoiceAssistantStart with micType=0 creates mic and starts it with decodeType', () => {
     const { Microphone } = require('@main/services/audio')
 
-    const a = createSubject({ micType: 0, audioTransferMode: false })
+    const a = createSubject({ micType: 0, disableAudioOutput: false })
     a._mic = null
 
     a.handleAudioData({ command: 4, decodeType: 1 }) // AudioVoiceAssistantStart with decodeType
@@ -609,7 +609,7 @@ describe('ProjectionAudio state controls', () => {
   })
 
   test('handleAudioData AudioVoiceAssistantStart skips mic.start when no decodeType available', () => {
-    const a = createSubject({ micType: 0, audioTransferMode: false })
+    const a = createSubject({ micType: 0, disableAudioOutput: false })
     a._mic = null
     a.currentMicDecodeType = null
 
@@ -623,7 +623,7 @@ describe('ProjectionAudio state controls', () => {
 
   test('handleAudioData AudioVoiceAssistantStart reuses existing mic and sets decodeType from msg', () => {
     const existingMic = { on: jest.fn(), start: jest.fn(), stop: jest.fn(), isCapturing: jest.fn() }
-    const a = createSubject({ micType: 0, audioTransferMode: false })
+    const a = createSubject({ micType: 0, disableAudioOutput: false })
     a._mic = existingMic
     a.currentMicDecodeType = 1
 

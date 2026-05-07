@@ -340,7 +340,8 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           offscreenCanvasRef.current,
           videoChannel.port2,
           targetFps,
-          videoCodecRef.current
+          videoCodecRef.current,
+          Boolean(settings?.disableHwAcceleration)
         ),
         [offscreenCanvasRef.current, videoChannel.port2]
       )

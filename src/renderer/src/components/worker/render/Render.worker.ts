@@ -45,6 +45,7 @@ export class RendererWorker {
   private av1SwSupported = false
 
   private codec: VideoCodec = 'h264'
+  private disableHwAcceleration = false
 
   constructor() {
     this.decoder = new VideoDecoder({
@@ -226,7 +227,10 @@ export class RendererWorker {
 
     this.setTargetFps(event.targetFps)
     this.codec = event.codec ?? 'h264'
-    console.log('[RENDER.WORKER] codec:', this.codec)
+    this.disableHwAcceleration = Boolean(event.disableHwAcceleration)
+    console.log(
+      `[RENDER.WORKER] codec: ${this.codec} (disableHwAcceleration=${this.disableHwAcceleration})`
+    )
 
     await this.evaluateRendererCapabilities()
 
@@ -358,9 +362,12 @@ export class RendererWorker {
         codec,
         hardwareAcceleration: 'prefer-software'
       })
-      sw = !!res.supported
+      const cfgHw = res.config?.hardwareAcceleration
+      const browserOverrodeToHw = cfgHw === 'prefer-hardware'
+      sw = !!res.supported && !browserOverrodeToHw
       console.log(
-        `[RENDER.WORKER] probe ${codec} prefer-software → supported=${!!res.supported}`,
+        `[RENDER.WORKER] probe ${codec} prefer-software → supported=${!!res.supported}` +
+          (browserOverrodeToHw ? ' (browser overrode → prefer-hardware, no real SW path)' : ''),
         res.config ?? null
       )
     } catch (e) {
@@ -511,7 +518,11 @@ export class RendererWorker {
             ? this.av1SwSupported
             : this.rendererSwSupported
 
-    if (hwSupp) {
+    if (this.disableHwAcceleration) {
+      console.log(
+        `[RENDER.WORKER] disableHwAcceleration=true → skipping prefer-hardware for ${this.codec}`
+      )
+    } else if (hwSupp) {
       if (await tryConfig('prefer-hardware')) {
         return true
       }

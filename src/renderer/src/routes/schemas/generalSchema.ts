@@ -92,103 +92,28 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
           label: 'Auto Connect',
           labelKey: 'settings.autoConnect',
           path: 'autoConn'
-        },
-        {
-          type: 'route',
-          route: 'wirelessProjection',
-          label: 'Wireless Projection',
-          labelKey: 'settings.wirelessProjection',
-          path: '',
-          children: [
-            {
-              type: 'checkbox',
-              label: 'Wireless Android Auto',
-              labelKey: 'settings.wirelessAa',
-              path: 'aa'
-            }
-            //{
-            //  type: 'checkbox',
-            //  label: 'Wireless CarPlay',
-            //  labelKey: 'settings.wirelessCp',
-            //  path: 'cp'
-            //}
-          ]
         }
       ]
     },
     {
       type: 'route',
-      route: 'firmwareSettings',
-      label: 'Firmware Settings',
-      labelKey: 'settings.firmwareSettings',
+      route: 'wirelessProjection',
+      label: 'Wireless Projection',
+      labelKey: 'settings.wirelessProjection',
       path: '',
       children: [
         {
-          type: 'route',
-          route: 'dashboardInfo',
-          label: 'Dashboard Info',
-          labelKey: 'settings.DashboardInfo',
-          path: '',
-          children: [
-            {
-              type: 'checkbox',
-              label: 'Media Info',
-              labelKey: 'settings.dashboardMediaInfo',
-              path: 'dashboardMediaInfo'
-            },
-            {
-              type: 'checkbox',
-              label: 'Vehicle Info',
-              labelKey: 'settings.dashboardVehicleInfo',
-              path: 'dashboardVehicleInfo'
-            },
-            {
-              type: 'checkbox',
-              label: 'Route Info',
-              labelKey: 'settings.dashboardRouteInfo',
-              path: 'dashboardRouteInfo'
-            }
-          ]
-        },
-        {
-          type: 'route',
-          route: 'gnss',
-          label: 'GNSS',
-          labelKey: 'settings.GNSS',
-          path: '',
-          children: [
-            {
-              type: 'checkbox',
-              label: 'HU GPS Forwarding',
-              labelKey: 'settings.gps',
-              path: 'gps'
-            },
-            {
-              type: 'checkbox',
-              label: 'GPS',
-              labelKey: 'settings.gnssGps',
-              path: 'gnssGps'
-            },
-            {
-              type: 'checkbox',
-              label: 'GLONASS',
-              labelKey: 'settings.gnssGlonass',
-              path: 'gnssGlonass'
-            },
-            {
-              type: 'checkbox',
-              label: 'Galileo',
-              labelKey: 'settings.gnssGalileo',
-              path: 'gnssGalileo'
-            },
-            {
-              type: 'checkbox',
-              label: 'BeiDou',
-              labelKey: 'settings.gnssBeiDou',
-              path: 'gnssBeiDou'
-            }
-          ]
+          type: 'checkbox',
+          label: 'Wireless Android Auto',
+          labelKey: 'settings.wirelessAa',
+          path: 'aa'
         }
+        //{
+        //  type: 'checkbox',
+        //  label: 'Wireless CarPlay',
+        //  labelKey: 'settings.wirelessCp',
+        //  path: 'cp'
+        //}
       ]
     },
     {
@@ -601,6 +526,84 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
         description: 'Select the application language',
         labelDescription: 'settings.languageDescription'
       }
+    },
+    {
+      // Dongle-side firmware capabilities — kept at the bottom because these
+      // only apply when running with a Carlinkit dongle and rarely need to
+      // change. Above sit the primary day-to-day settings.
+      type: 'route',
+      route: 'dongleFirmwareSettings',
+      label: 'Dongle Firmware Settings',
+      labelKey: 'settings.dongleFirmwareSettings',
+      path: '',
+      children: [
+        {
+          type: 'route',
+          route: 'dashboardInfo',
+          label: 'Dashboard Info',
+          labelKey: 'settings.DashboardInfo',
+          path: '',
+          children: [
+            {
+              type: 'checkbox',
+              label: 'Media Info',
+              labelKey: 'settings.dashboardMediaInfo',
+              path: 'dashboardMediaInfo'
+            },
+            {
+              type: 'checkbox',
+              label: 'Vehicle Info',
+              labelKey: 'settings.dashboardVehicleInfo',
+              path: 'dashboardVehicleInfo'
+            },
+            {
+              type: 'checkbox',
+              label: 'Route Info',
+              labelKey: 'settings.dashboardRouteInfo',
+              path: 'dashboardRouteInfo'
+            }
+          ]
+        },
+        {
+          type: 'route',
+          route: 'gnss',
+          label: 'GNSS',
+          labelKey: 'settings.GNSS',
+          path: '',
+          children: [
+            {
+              type: 'checkbox',
+              label: 'HU GPS Forwarding',
+              labelKey: 'settings.gps',
+              path: 'gps'
+            },
+            {
+              type: 'checkbox',
+              label: 'GPS',
+              labelKey: 'settings.gnssGps',
+              path: 'gnssGps'
+            },
+            {
+              type: 'checkbox',
+              label: 'GLONASS',
+              labelKey: 'settings.gnssGlonass',
+              path: 'gnssGlonass'
+            },
+            {
+              type: 'checkbox',
+              label: 'Galileo',
+              labelKey: 'settings.gnssGalileo',
+              path: 'gnssGalileo'
+            },
+            {
+              type: 'checkbox',
+              label: 'BeiDou',
+              labelKey: 'settings.gnssBeiDou',
+              path: 'gnssBeiDou'
+            }
+          ]
+        }
+      ]
     }
   ]
 }

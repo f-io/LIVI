@@ -54,16 +54,17 @@ export type DongleConfig = {
   width: number
   height: number
   fps: number
+  dpi: number
   projectionSafeAreaTop: number
   projectionSafeAreaBottom: number
   projectionSafeAreaLeft: number
   projectionSafeAreaRight: number
   projectionSafeAreaDrawOutside: boolean
   clusterEnabled: boolean
-  clusterWidth?: number
-  clusterHeight?: number
-  clusterFps?: number
-  clusterDpi?: number
+  clusterWidth: number
+  clusterHeight: number
+  clusterFps: number
+  clusterDpi: number
   clusterSafeAreaTop: number
   clusterSafeAreaBottom: number
   clusterSafeAreaLeft: number
@@ -91,7 +92,8 @@ export type DongleConfig = {
   gnssGalileo: boolean
   gnssBeiDou: boolean
   autoConn: boolean
-  audioTransferMode: boolean
+  disableAudioOutput: boolean
+  disableHwAcceleration: boolean
   wifiType: '2.4ghz' | '5ghz'
   wifiChannel: number
   micType: MicType

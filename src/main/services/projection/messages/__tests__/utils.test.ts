@@ -52,9 +52,9 @@ describe('projection message utils', () => {
   })
 
   test('computeAndroidAutoDpi scales up with resolution', () => {
-    expect(computeAndroidAutoDpi(1280, 720)).toBe(160)
+    expect(computeAndroidAutoDpi(1280, 720)).toBe(180)
     expect(computeAndroidAutoDpi(1920, 1080)).toBe(200)
-    expect(computeAndroidAutoDpi(2560, 1440)).toBe(260)
+    expect(computeAndroidAutoDpi(2560, 1440)).toBe(250)
     expect(computeAndroidAutoDpi(3840, 2160)).toBe(420)
   })
 

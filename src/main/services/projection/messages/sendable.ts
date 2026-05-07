@@ -461,35 +461,22 @@ export class SendBoxSettings extends SendableMessageWithPayload {
     }
 
     if (cfg.clusterEnabled) {
-      const insets = {
-        top: cfg.clusterSafeAreaTop ?? 0,
-        bottom: cfg.clusterSafeAreaBottom ?? 0,
-        left: cfg.clusterSafeAreaLeft ?? 0,
-        right: cfg.clusterSafeAreaRight ?? 0
-      }
-
-      // Cluster spec defaults to the main panel when not explicitly set.
-      const cW = cfg.clusterWidth ?? cfg.width
-      const cH = cfg.clusterHeight ?? cfg.height
-      const cF = cfg.clusterFps ?? cfg.fps
-
-      const safeW = Math.max(0, cW - insets.left - insets.right)
-      const safeH = Math.max(0, cH - insets.top - insets.bottom)
-
-      const hasInsets = (insets.top | insets.bottom | insets.left | insets.right) !== 0
-      const drawOutside = cfg.clusterSafeAreaDrawOutside ?? hasInsets
+      const cW = cfg.clusterWidth
+      const cH = cfg.clusterHeight
+      const cF = cfg.clusterFps
 
       // `naviScreenInfo` is the dongle wire-protocol field name.
+      // NOTE: Cluster safe-area is intentionally NOT forwarded to the dongle.
       body.naviScreenInfo = {
         width: cW,
         height: cH,
         fps: cF,
         safearea: {
-          width: safeW,
-          height: safeH,
-          x: insets.left,
-          y: insets.top,
-          outside: drawOutside ? 1 : 0
+          width: cW,
+          height: cH,
+          x: 0,
+          y: 0,
+          outside: 0
         }
       }
     }

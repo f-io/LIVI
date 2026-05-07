@@ -98,6 +98,10 @@ export interface SessionConfig {
   // Physical HU display
   displayWidth?: number
   displayHeight?: number
+  mainSafeAreaTop?: number
+  mainSafeAreaBottom?: number
+  mainSafeAreaLeft?: number
+  mainSafeAreaRight?: number
   // Driver seat position (LHD=0 / RHD=1)
   driverPosition?: 0 | 1
   // BT adapter MAC for BT channel
@@ -110,17 +114,21 @@ export interface SessionConfig {
   // FuelType (UNLEADED=1, DIESEL_2=4, ELECTRIC=10, …)
   fuelTypes?: number[]
   evConnectorTypes?: number[]
-  // Renderer WebCodecs probe results — only codecs flagged true are advertised.
+  // Renderer WebCodecs probe results — only codecs flagged true are advertised
   hevcSupported?: boolean
   vp9Supported?: boolean
   av1Supported?: boolean
-  // When true the secondary (CLUSTER) video sink is advertised in the SDR.
+  // When true the secondary (CLUSTER) video sink is advertised in the SDR
   clusterEnabled?: boolean
-  // Optional cluster spec — falls back to main panel values when unset.
-  clusterWidth?: number
-  clusterHeight?: number
-  clusterFps?: number
-  clusterDpi?: number
+  clusterWidth: number
+  clusterHeight: number
+  clusterFps: number
+  clusterDpi: number
+  clusterSafeAreaTop?: number
+  clusterSafeAreaBottom?: number
+  clusterSafeAreaLeft?: number
+  clusterSafeAreaRight?: number
+  disableAudioOutput?: boolean
 }
 
 export type VideoCodec = 'h264' | 'h265' | 'vp9' | 'av1'
@@ -1070,16 +1078,24 @@ export class Session extends EventEmitter {
         widthMargin = Math.max(0, vW - contentW)
       }
     }
-    // UiConfig.margins forces symmetric split; without it the phone top-aligns
-    const insetTop = Math.floor(heightMargin / 2)
-    const insetBottom = heightMargin - insetTop
-    const insetLeft = Math.floor(widthMargin / 2)
-    const insetRight = widthMargin - insetLeft
+    // UiConfig.margins forces symmetric split; without it the phone top-aligns.
+    // The user's `projectionSafeArea*` insets (in tier-space px) stack on top
+    // of the AR-fit letterbox/pillarbox margins so the phone keeps UI within
+    // [AR-fit window] ∩ [user safe area].
+    const userTop = Math.max(0, cfg.mainSafeAreaTop ?? 0)
+    const userBottom = Math.max(0, cfg.mainSafeAreaBottom ?? 0)
+    const userLeft = Math.max(0, cfg.mainSafeAreaLeft ?? 0)
+    const userRight = Math.max(0, cfg.mainSafeAreaRight ?? 0)
+    const insetTop = Math.floor(heightMargin / 2) + userTop
+    const insetBottom = heightMargin - Math.floor(heightMargin / 2) + userBottom
+    const insetLeft = Math.floor(widthMargin / 2) + userLeft
+    const insetRight = widthMargin - Math.floor(widthMargin / 2) + userRight
 
     // AudioStreamType: GUIDANCE=1, SYSTEM=2, MEDIA=3, TELEPHONY=4
     const AS_GUIDANCE = 1,
       AS_SYSTEM = 2,
-      AS_MEDIA = 3
+      AS_MEDIA = 3,
+      AS_TELEPHONY = 4
 
     // SensorType
     const SENSOR = {
@@ -1142,29 +1158,33 @@ export class Session extends EventEmitter {
     })
 
     // ── Cluster Video (ch=19) — secondary display sink for Maps/Navi ──
-    // Spec defaults to the main panel (resolution / fps / dpi) and offers
-    // the same codec list — phone picks per channel independently. User can
-    // override per-cluster via DongleConfig clusterWidth / clusterHeight /
-    // clusterFps / clusterDpi (only present in config.json once explicitly
-    // set).
     if (this._cfg.clusterEnabled) {
       const cW = this._cfg.clusterWidth
       const cH = this._cfg.clusterHeight
-      const clusterRes = cW && cH ? (resolutionFromDimensions(cW, cH) ?? vRes) : vRes
+      const clusterRes = resolutionFromDimensions(cW, cH) ?? vRes
       const clusterFps =
         this._cfg.clusterFps === 60
           ? VIDEO_FPS._60
           : this._cfg.clusterFps === 30
             ? VIDEO_FPS._30
             : vFps
-      const clusterDpi = this._cfg.clusterDpi ?? dpi
+      // Resolved at the driver layer (aaDriver.ts) — 0 = auto means the
+      // driver already substituted computeAndroidAutoDpi(cW, cH).
+      const clusterDpi = this._cfg.clusterDpi
+      // Cluster safe-area insets, phone places its UI within these margins
+      const clusterMargins = {
+        top: Math.max(0, this._cfg.clusterSafeAreaTop ?? 0),
+        bottom: Math.max(0, this._cfg.clusterSafeAreaBottom ?? 0),
+        left: Math.max(0, this._cfg.clusterSafeAreaLeft ?? 0),
+        right: Math.max(0, this._cfg.clusterSafeAreaRight ?? 0)
+      }
       const clusterBase = {
         codecResolution: clusterRes,
         frameRate: clusterFps,
         widthMargin: 0,
         heightMargin: 0,
         density: clusterDpi,
-        uiConfig: { margins: { top: 0, bottom: 0, left: 0, right: 0 } }
+        uiConfig: { margins: clusterMargins }
       }
       const clusterConfigs: object[] = [
         { ...clusterBase, videoCodecType: MEDIA_CODEC.VIDEO_H264_BP }
@@ -1200,27 +1220,33 @@ export class Session extends EventEmitter {
       })
     }
 
-    // ── Media Audio (ch=4) ──
-    channels.push({
-      id: CH.MEDIA_AUDIO,
-      mediaSinkService: {
-        availableType: MEDIA_CODEC.AUDIO_PCM,
-        audioType: AS_MEDIA,
-        availableWhileInCall: true,
-        audioConfigs: [{ samplingRate: 48000, numberOfBits: 16, numberOfChannels: 2 }]
-      }
-    })
+    // ── Audio sinks + Microphone (chs 4 / 5 / 6 / 9) ──
+    //
+    void AS_TELEPHONY
 
-    // ── Speech / Guidance Audio (ch=5) ──
-    channels.push({
-      id: CH.SPEECH_AUDIO,
-      mediaSinkService: {
-        availableType: MEDIA_CODEC.AUDIO_PCM,
-        audioType: AS_GUIDANCE,
-        availableWhileInCall: true,
-        audioConfigs: [{ samplingRate: 16000, numberOfBits: 16, numberOfChannels: 1 }]
-      }
-    })
+    // ── Media Audio (ch=4) ──    } omitted entirely when
+    // ── Guidance Audio (ch=5) ──  } disableAudioOutput=true
+    if (!this._cfg.disableAudioOutput) {
+      channels.push({
+        id: CH.MEDIA_AUDIO,
+        mediaSinkService: {
+          availableType: MEDIA_CODEC.AUDIO_PCM,
+          audioType: AS_MEDIA,
+          availableWhileInCall: true,
+          audioConfigs: [{ samplingRate: 48000, numberOfBits: 16, numberOfChannels: 2 }]
+        }
+      })
+
+      channels.push({
+        id: CH.SPEECH_AUDIO,
+        mediaSinkService: {
+          availableType: MEDIA_CODEC.AUDIO_PCM,
+          audioType: AS_GUIDANCE,
+          availableWhileInCall: true,
+          audioConfigs: [{ samplingRate: 16000, numberOfBits: 16, numberOfChannels: 1 }]
+        }
+      })
+    }
 
     // ── System Audio (ch=6) ──
     channels.push({
@@ -1285,32 +1311,10 @@ export class Session extends EventEmitter {
     })
 
     // ── Input Source (ch=8) ──
-    // Touch dims match the AA tier, not the physical display.
-    let touchW = 1920,
-      touchH = 1080
-    switch (vRes) {
-      case 1:
-        touchW = 800
-        touchH = 480
-        break
-      case 2:
-        touchW = 1280
-        touchH = 720
-        break
-      case 3:
-        touchW = 1920
-        touchH = 1080
-        break
-      case 4:
-        touchW = 2560
-        touchH = 1440
-        break
-      case 5:
-        touchW = 3840
-        touchH = 2160
-        break
-    }
-    void vH
+    // Touch surface dims = visible UI window after AR-fit margins AND user
+    // safe-area insets.
+    const touchW = Math.max(1, vW - insetLeft - insetRight)
+    const touchH = Math.max(1, vH - insetTop - insetBottom)
     channels.push({
       id: CH.INPUT,
       inputSourceService: {
@@ -1341,7 +1345,7 @@ export class Session extends EventEmitter {
           22,
           23, // DPAD_LEFT, DPAD_RIGHT, DPAD_CENTER
           24,
-          25, // VOLUME +/− (audioTransferMode)
+          25, // VOLUME +/− (used when disableAudioOutput=true and phone owns audio)
           26,
           66,
           79,

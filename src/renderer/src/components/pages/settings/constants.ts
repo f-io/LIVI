@@ -15,6 +15,10 @@ export const MIN_FPS = 20
 export const MAX_FPS = 60
 export const DEFAULT_FPS = 60
 
+export const MIN_DPI = 0
+export const MAX_DPI = 640
+export const DEFAULT_DPI_AUTO = 0
+
 export const SAFE_AREA_MIN = 0
 export const SAFE_AREA_MAX_WIDTH = MAX_WIDTH
 export const SAFE_AREA_MAX_HEIGHT = MAX_HEIGHT
@@ -44,6 +48,7 @@ export const requiresRestartParams: (keyof ExtraConfig)[] = [
   'width',
   'height',
   'fps',
+  'dpi',
   'projectionSafeAreaTop',
   'projectionSafeAreaBottom',
   'projectionSafeAreaLeft',
@@ -53,6 +58,7 @@ export const requiresRestartParams: (keyof ExtraConfig)[] = [
   'clusterWidth',
   'clusterHeight',
   'clusterFps',
+  'clusterDpi',
   'clusterSafeAreaTop',
   'clusterSafeAreaBottom',
   'clusterSafeAreaLeft',
@@ -60,7 +66,8 @@ export const requiresRestartParams: (keyof ExtraConfig)[] = [
 
   'mediaDelay',
   'wifiType',
-  'audioTransferMode',
+  'disableAudioOutput',
+  'disableHwAcceleration',
   'callQuality',
   'dashboardMediaInfo',
   'dashboardVehicleInfo',

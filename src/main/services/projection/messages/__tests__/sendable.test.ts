@@ -321,7 +321,7 @@ describe('sendable messages', () => {
         oemName: 'OEM',
         hand: 1,
         micType: 1,
-        audioTransferMode: true,
+        disableAudioOutput: true,
         dashboardMediaInfo: true,
         dashboardVehicleInfo: false,
         dashboardRouteInfo: true,
@@ -345,15 +345,13 @@ describe('sendable messages', () => {
     expect(body.UseBTPhone).toBe(0)
     expect(body.DashboardInfo).toBe(5)
     expect(body.GNSSCapability).toBe(5)
-    // wifiName/btName carry the (D) suffix so the user can distinguish the
-    // dongle's BT/AP from the native-AA stack on the same head unit.
     expect(body.wifiName).toBe('CarName (D)')
     expect(body.btName).toBe('CarName (D)')
     expect(body.boxName).toBe('OEM')
     expect(body.OemName).toBe('OEM')
   })
 
-  test('SendBoxSettings adds naviScreenInfo with computed safearea when maps are enabled', () => {
+  test('SendBoxSettings forces a no-inset cluster safearea (dongle FW bug workaround)', () => {
     const msg = new SendBoxSettings(
       {
         width: 1280,
@@ -371,7 +369,7 @@ describe('sendable messages', () => {
         oemName: '',
         hand: 0,
         micType: 0,
-        audioTransferMode: false,
+        disableAudioOutput: false,
         dashboardMediaInfo: false,
         dashboardVehicleInfo: false,
         dashboardRouteInfo: false,
@@ -399,16 +397,18 @@ describe('sendable messages', () => {
       height: 480,
       fps: 30,
       safearea: {
-        width: 730,
-        height: 450,
-        x: 30,
-        y: 10,
-        outside: 1
+        width: 800,
+        height: 480,
+        x: 0,
+        y: 0,
+        outside: 0
       }
     })
   })
 
-  test('SendBoxSettings respects explicit clusterSafeAreaDrawOutside=false', () => {
+  test('SendBoxSettings ignores clusterSafeAreaDrawOutside on dongle path', () => {
+    // drawOutside must always be 0 on the dongle path, regardless of user
+    // setting — see FW-bug workaround above.
     const msg = new SendBoxSettings(
       {
         width: 1280,
@@ -426,7 +426,7 @@ describe('sendable messages', () => {
         oemName: '',
         hand: 0,
         micType: 0,
-        audioTransferMode: false,
+        disableAudioOutput: false,
         dashboardMediaInfo: false,
         dashboardVehicleInfo: false,
         dashboardRouteInfo: false,
@@ -442,7 +442,7 @@ describe('sendable messages', () => {
         clusterSafeAreaBottom: 0,
         clusterSafeAreaLeft: 0,
         clusterSafeAreaRight: 0,
-        clusterSafeAreaDrawOutside: false
+        clusterSafeAreaDrawOutside: true
       } as any,
       1
     )
@@ -542,7 +542,7 @@ describe('sendable messages', () => {
           oemName: 'OEM',
           hand: 0,
           micType: 0,
-          audioTransferMode: false,
+          disableAudioOutput: false,
           dashboardMediaInfo: false,
           dashboardVehicleInfo: false,
           dashboardRouteInfo: false,
@@ -597,7 +597,7 @@ describe('sendable messages', () => {
           oemName: 'OEM',
           hand: 0,
           micType: 0,
-          audioTransferMode: false,
+          disableAudioOutput: false,
           dashboardMediaInfo: false,
           dashboardVehicleInfo: false,
           dashboardRouteInfo: false,
@@ -641,7 +641,7 @@ describe('sendable messages', () => {
         oemName: 'OEM',
         hand: 0,
         micType: 0,
-        audioTransferMode: false,
+        disableAudioOutput: false,
         dashboardMediaInfo: false,
         dashboardVehicleInfo: false,
         dashboardRouteInfo: false,
@@ -677,7 +677,7 @@ describe('sendable messages', () => {
         oemName: undefined,
         hand: 0,
         micType: 0,
-        audioTransferMode: false,
+        disableAudioOutput: false,
         dashboardMediaInfo: false,
         dashboardVehicleInfo: false,
         dashboardRouteInfo: false,
@@ -715,7 +715,7 @@ describe('sendable messages', () => {
         oemName: 'OEM',
         hand: 0,
         micType: 0,
-        audioTransferMode: false,
+        disableAudioOutput: false,
         dashboardMediaInfo: false,
         dashboardVehicleInfo: false,
         dashboardRouteInfo: false,
@@ -768,7 +768,7 @@ describe('sendable messages', () => {
       oemName: 'OEM',
       hand: 0,
       micType: 0,
-      audioTransferMode: false,
+      disableAudioOutput: false,
       dashboardMediaInfo: false,
       dashboardVehicleInfo: false,
       dashboardRouteInfo: false,
@@ -837,7 +837,7 @@ describe('sendable messages', () => {
         oemName: 'OEM',
         hand: 0,
         micType: 0,
-        audioTransferMode: false,
+        disableAudioOutput: false,
         dashboardMediaInfo: false,
         dashboardVehicleInfo: true,
         dashboardRouteInfo: false,

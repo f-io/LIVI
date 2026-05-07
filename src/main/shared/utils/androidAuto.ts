@@ -54,28 +54,47 @@ export function matchFittingAAResolution(userRes: {
 }
 
 /**
- * DPI scaling for Android Auto
- * - 800×480   -> 140 dpi
- * - 1280×720  -> 160 dpi
- * - 1920×1080 -> 200 dpi
- * - 2560×1440 -> 250 dpi
- * - 3840×2160 -> 420 dpi
+ * DPI scaling for Android Auto.
+ *
+ * Calibrated so each canonical AA tier resolution produces the exact target
+ * dpi below (= AA's recommended density per tier on typical car displays):
+ *
+ *   - 800×480    -> 140 dpi
+ *   - 1280×720   -> 180 dpi
+ *   - 1920×1080  -> 200 dpi
+ *   - 2560×1440  -> 250 dpi
+ *   - 3840×2160  -> 420 dpi
+ *
  */
+
+const AA_DPI_TIERS: ReadonlyArray<{ pixels: number; dpi: number }> = [
+  { pixels: 800 * 480, dpi: 140 },
+  { pixels: 1280 * 720, dpi: 180 },
+  { pixels: 1920 * 1080, dpi: 200 },
+  { pixels: 2560 * 1440, dpi: 250 },
+  { pixels: 3840 * 2160, dpi: 420 }
+]
 
 export function computeAndroidAutoDpi(width: number, height: number): number {
   const pixels = width * height
 
-  const minPixels = 800 * 480
-  const maxPixels = 3840 * 2160
+  // Below / at the lowest tier → minimum dpi.
+  if (pixels <= AA_DPI_TIERS[0].pixels) return AA_DPI_TIERS[0].dpi
+  // At / above the highest tier → maximum dpi.
+  const top = AA_DPI_TIERS[AA_DPI_TIERS.length - 1]
+  if (pixels >= top.pixels) return top.dpi
 
-  if (pixels <= minPixels) {
-    return 140
+  // Walk segments to find the bracketing pair.
+  for (let i = 0; i < AA_DPI_TIERS.length - 1; i++) {
+    const lo = AA_DPI_TIERS[i]
+    const hi = AA_DPI_TIERS[i + 1]
+    if (pixels >= lo.pixels && pixels <= hi.pixels) {
+      const t = (pixels - lo.pixels) / (hi.pixels - lo.pixels)
+      const dpi = lo.dpi + t * (hi.dpi - lo.dpi)
+      return Math.round(dpi / 10) * 10
+    }
   }
 
-  const t = Math.min((pixels - minPixels) / (maxPixels - minPixels), 1)
-
-  let dpi = Math.round(140 + t * (420 - 140))
-  dpi = Math.round(dpi / 10) * 10
-
-  return dpi
+  // Unreachable — guarded by the bounds checks above.
+  return top.dpi
 }

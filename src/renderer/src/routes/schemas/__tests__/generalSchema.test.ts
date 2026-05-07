@@ -9,7 +9,7 @@ describe('generalSchema', () => {
     expect(schema.label).toBe('General')
     expect(schema.labelKey).toBe('settings.general')
     expect(schema.path).toBe('')
-    expect(schema.children).toHaveLength(12)
+    expect(schema.children).toHaveLength(13)
   })
 
   test('connections route contains names, wifi and auto connect', () => {
@@ -22,7 +22,7 @@ describe('generalSchema', () => {
       })
     )
 
-    expect(connections.children).toHaveLength(5)
+    expect(connections.children).toHaveLength(4)
 
     expect(connections.children[0]).toEqual(
       expect.objectContaining({
@@ -42,10 +42,21 @@ describe('generalSchema', () => {
         path: 'autoConn'
       })
     )
-    expect(connections.children[4]).toEqual(
+  })
+
+  test('wireless projection lives at General top-level (sibling of connections)', () => {
+    const wireless = schema.children[1]
+    expect(wireless).toEqual(
       expect.objectContaining({
         type: 'route',
-        route: 'wirelessProjection'
+        route: 'wirelessProjection',
+        label: 'Wireless Projection'
+      })
+    )
+    expect(wireless.children[0]).toEqual(
+      expect.objectContaining({
+        type: 'checkbox',
+        path: 'aa'
       })
     )
   })
@@ -73,12 +84,13 @@ describe('generalSchema', () => {
     ])
   })
 
-  test('firmware settings route contains dashboard and gnss sections', () => {
-    const firmware = schema.children[1]
+  test('dongle firmware settings route lives at the bottom with dashboard and gnss sections', () => {
+    const firmware = schema.children[12]
     expect(firmware).toEqual(
       expect.objectContaining({
         type: 'route',
-        route: 'firmwareSettings'
+        route: 'dongleFirmwareSettings',
+        label: 'Dongle Firmware Settings'
       })
     )
     expect(firmware.children).toHaveLength(2)
