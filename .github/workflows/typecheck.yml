@@ -31,7 +31,7 @@ jobs:
           corepack enable
           corepack install
           echo "pnpm version: $(pnpm -v)"
-          node -e "const v=require('child_process').execSync('pnpm -v').toString().trim(); if(!/^10\\./.test(v)){console.error('Expected pnpm 10.x, got', v); process.exit(1);} console.log('pnpm 10 OK');"
+          node -e "const v=require('child_process').execSync('pnpm -v').toString().trim(); if(!/^11\\./.test(v)){console.error('Expected pnpm 11.x, got', v); process.exit(1);} console.log('pnpm 11 OK');"
 
       - name: Resolve pnpm store path
         id: pnpm_store
@@ -88,7 +88,7 @@ jobs:
           corepack enable
           corepack install
           echo "pnpm version: $(pnpm -v)"
-          node -e "const v=require('child_process').execSync('pnpm -v').toString().trim(); if(!/^10\\./.test(v)){console.error('Expected pnpm 10.x, got', v); process.exit(1);} console.log('pnpm 10 OK');"
+          node -e "const v=require('child_process').execSync('pnpm -v').toString().trim(); if(!/^11\\./.test(v)){console.error('Expected pnpm 11.x, got', v); process.exit(1);} console.log('pnpm 11 OK');"
 
       - name: Resolve pnpm store path
         id: pnpm_store
