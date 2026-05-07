@@ -160,7 +160,7 @@ jobs:
         uses: ./.github/actions/pnpm
         with:
           node-version: '24'
-          pnpm-major: '10'
+          pnpm-major: '11'
           pnpm-store-dir: '.pnpm-store'
 
       - name: Read version from package.json

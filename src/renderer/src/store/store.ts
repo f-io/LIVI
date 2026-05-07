@@ -450,23 +450,32 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
           patch = { ...patch, telemetryEnabled: merged.telemetryEnabled }
         }
 
+        const prevDerived = applyDerivedFromSettings(prev)
         const derived = applyDerivedFromSettings(merged)
 
         set({ settings: merged, ...derived })
 
-        sendCarplayVolume('music', derived.audioVolume)
-        sendCarplayVolume('nav', derived.navVolume)
-        sendCarplayVolume('voiceAssistant', derived.voiceAssistantVolume)
-        sendCarplayVolume('call', derived.callVolume)
+        if (derived.audioVolume !== prevDerived.audioVolume) {
+          sendCarplayVolume('music', derived.audioVolume)
+        }
+        if (derived.navVolume !== prevDerived.navVolume) {
+          sendCarplayVolume('nav', derived.navVolume)
+        }
+        if (derived.voiceAssistantVolume !== prevDerived.voiceAssistantVolume) {
+          sendCarplayVolume('voiceAssistant', derived.voiceAssistantVolume)
+        }
+        if (derived.callVolume !== prevDerived.callVolume) {
+          sendCarplayVolume('call', derived.callVolume)
+        }
 
-        if (patch.micType !== undefined) {
+        if (patch.micType !== undefined && patch.micType !== prev.micType) {
           sendCarplayMicType(patch.micType as MicType)
         }
 
         // `nightMode` controls the projection-side UI (AA/CP/dongle). Bridge
         // to wire IPC. `darkMode` (LIVI UI theme) is intentionally NOT
         // bridged — those are independent toggles.
-        if (patch.nightMode !== undefined) {
+        if (patch.nightMode !== undefined && Boolean(patch.nightMode) !== Boolean(prev.nightMode)) {
           sendCarplayNightMode(Boolean(patch.nightMode))
         }
       }

@@ -19,7 +19,8 @@ export class InitEvent implements WorkerEvent {
     public canvas: OffscreenCanvas,
     public videoPort: MessagePort,
     public targetFps: number,
-    public codec: VideoCodec = 'h264'
+    public codec: VideoCodec = 'h264',
+    public disableHwAcceleration: boolean = false
   ) {}
 }
 

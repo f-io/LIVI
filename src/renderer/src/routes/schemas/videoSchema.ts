@@ -1,8 +1,10 @@
 import type { ExtraConfig } from '@shared/types'
 import {
+  MAX_DPI,
   MAX_FPS,
   MAX_HEIGHT,
   MAX_WIDTH,
+  MIN_DPI,
   MIN_FPS,
   MIN_HEIGHT,
   MIN_WIDTH,
@@ -21,129 +23,154 @@ export const videoSchema: SettingsNode<ExtraConfig> = {
   path: '',
   children: [
     {
-      type: 'number',
-      label: 'Width',
-      labelKey: 'settings.width',
-      path: 'width',
-      min: MIN_WIDTH,
-      max: MAX_WIDTH,
-      step: 1,
-      displayValue: true,
-      page: {
-        title: 'Width',
-        labelTitle: 'settings.width',
-        description: 'Stream width in px',
-        labelDescription: 'settings.widthDescription'
-      }
-    },
-    {
-      type: 'number',
-      label: 'Height',
-      labelKey: 'settings.height',
-      path: 'height',
-      min: MIN_HEIGHT,
-      max: MAX_HEIGHT,
-      step: 1,
-      displayValue: true,
-      page: {
-        title: 'Height',
-        labelTitle: 'settings.height',
-        description: 'Stream height in px',
-        labelDescription: 'settings.heightDescription'
-      }
-    },
-    {
-      type: 'number',
-      label: 'FPS',
-      labelKey: 'settings.fps',
-      path: 'fps',
-      min: MIN_FPS,
-      max: MAX_FPS,
-      step: 1,
-      displayValue: true,
-      page: {
-        title: 'FPS',
-        labelTitle: 'settings.fps',
-        description: 'FPS',
-        labelDescription: 'settings.fpsDescription'
-      }
-    },
-    {
       type: 'route',
-      label: 'Safe Area',
-      labelKey: 'settings.safeArea',
-      route: 'safeArea',
+      label: 'Main Screen',
+      labelKey: 'settings.mainScreen',
+      route: 'mainScreen',
       path: '',
       children: [
         {
           type: 'number',
-          label: 'Top',
-          labelKey: 'settings.top',
-          path: 'projectionSafeAreaTop',
-          min: SAFE_AREA_MIN,
-          max: SAFE_AREA_MAX_HEIGHT,
+          label: 'Width',
+          labelKey: 'settings.width',
+          path: 'width',
+          min: MIN_WIDTH,
+          max: MAX_WIDTH,
           step: 1,
           displayValue: true,
           page: {
-            title: 'Projection Safe Area Top',
-            labelTitle: 'settings.top',
-            description: 'Top inset in px',
-            labelDescription: 'settings.safeAreaTopDescription'
+            title: 'Main Screen Width',
+            labelTitle: 'settings.width',
+            description: 'Main stream width in px',
+            labelDescription: 'settings.widthDescription'
           }
         },
         {
           type: 'number',
-          label: 'Bottom',
-          labelKey: 'settings.bottom',
-          path: 'projectionSafeAreaBottom',
-          min: SAFE_AREA_MIN,
-          max: SAFE_AREA_MAX_HEIGHT,
+          label: 'Height',
+          labelKey: 'settings.height',
+          path: 'height',
+          min: MIN_HEIGHT,
+          max: MAX_HEIGHT,
           step: 1,
           displayValue: true,
           page: {
-            title: 'Projection Safe Area Bottom',
-            labelTitle: 'settings.bottom',
-            description: 'Bottom inset in px',
-            labelDescription: 'settings.safeAreaBottomDescription'
+            title: 'Main Screen Height',
+            labelTitle: 'settings.height',
+            description: 'Main stream height in px',
+            labelDescription: 'settings.heightDescription'
           }
         },
         {
           type: 'number',
-          label: 'Left',
-          labelKey: 'settings.left',
-          path: 'projectionSafeAreaLeft',
-          min: SAFE_AREA_MIN,
-          max: SAFE_AREA_MAX_WIDTH,
+          label: 'FPS',
+          labelKey: 'settings.fps',
+          path: 'fps',
+          min: MIN_FPS,
+          max: MAX_FPS,
           step: 1,
           displayValue: true,
           page: {
-            title: 'Projection Safe Area Left',
-            labelTitle: 'settings.left',
-            description: 'Left inset in px',
-            labelDescription: 'settings.safeAreaLeftDescription'
+            title: 'Main Screen FPS',
+            labelTitle: 'settings.fps',
+            description: 'Main stream FPS',
+            labelDescription: 'settings.fpsDescription'
           }
         },
         {
           type: 'number',
-          label: 'Right',
-          labelKey: 'settings.right',
-          path: 'projectionSafeAreaRight',
-          min: SAFE_AREA_MIN,
-          max: SAFE_AREA_MAX_WIDTH,
+          label: 'DPI',
+          labelKey: 'settings.dpi',
+          path: 'dpi',
+          min: MIN_DPI,
+          max: MAX_DPI,
           step: 1,
           displayValue: true,
           page: {
-            title: 'Projection Safe Area Right',
-            labelTitle: 'settings.right',
-            description: 'Right inset in px',
-            labelDescription: 'settings.safeAreaRightDescription'
+            title: 'Main Screen DPI',
+            labelTitle: 'settings.dpi',
+            description: 'Main stream DPI (0 = auto)',
+            labelDescription: 'settings.dpiDescription'
           }
         },
         {
-          type: 'checkbox',
-          label: 'Draw Outside',
-          labelKey: 'settings.drawOutside',
-          path: 'projectionSafeAreaDrawOutside'
+          type: 'route',
+          label: 'Safe Area',
+          labelKey: 'settings.safeArea',
+          route: 'safeArea',
+          path: '',
+          children: [
+            {
+              type: 'number',
+              label: 'Top',
+              labelKey: 'settings.top',
+              path: 'projectionSafeAreaTop',
+              min: SAFE_AREA_MIN,
+              max: SAFE_AREA_MAX_HEIGHT,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Main Screen Safe Area Top',
+                labelTitle: 'settings.top',
+                description: 'Top inset in px',
+                labelDescription: 'settings.safeAreaTopDescription'
+              }
+            },
+            {
+              type: 'number',
+              label: 'Bottom',
+              labelKey: 'settings.bottom',
+              path: 'projectionSafeAreaBottom',
+              min: SAFE_AREA_MIN,
+              max: SAFE_AREA_MAX_HEIGHT,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Main Screen Safe Area Bottom',
+                labelTitle: 'settings.bottom',
+                description: 'Bottom inset in px',
+                labelDescription: 'settings.safeAreaBottomDescription'
+              }
+            },
+            {
+              type: 'number',
+              label: 'Left',
+              labelKey: 'settings.left',
+              path: 'projectionSafeAreaLeft',
+              min: SAFE_AREA_MIN,
+              max: SAFE_AREA_MAX_WIDTH,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Main Screen Safe Area Left',
+                labelTitle: 'settings.left',
+                description: 'Left inset in px',
+                labelDescription: 'settings.safeAreaLeftDescription'
+              }
+            },
+            {
+              type: 'number',
+              label: 'Right',
+              labelKey: 'settings.right',
+              path: 'projectionSafeAreaRight',
+              min: SAFE_AREA_MIN,
+              max: SAFE_AREA_MAX_WIDTH,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Main Screen Safe Area Right',
+                labelTitle: 'settings.right',
+                description: 'Right inset in px',
+                labelDescription: 'settings.safeAreaRightDescription'
+              }
+            },
+            {
+              type: 'checkbox',
+              label: 'Draw Outside',
+              labelKey: 'settings.drawOutside',
+              path: 'projectionSafeAreaDrawOutside'
+            }
+          ]
         }
       ]
     },
@@ -201,9 +228,23 @@ export const videoSchema: SettingsNode<ExtraConfig> = {
             description: 'Cluster screen FPS',
             labelDescription: 'settings.clusterScreenFpsDescription'
           }
-        }
-        /* does not work, firmware bug?*/
-        /*
+        },
+        {
+          type: 'number',
+          label: 'DPI',
+          labelKey: 'settings.dpi',
+          path: 'clusterDpi',
+          min: MIN_DPI,
+          max: MAX_DPI,
+          step: 1,
+          displayValue: true,
+          page: {
+            title: 'Cluster Screen DPI',
+            labelTitle: 'settings.dpi',
+            description: 'Cluster screen DPI (0 = auto)',
+            labelDescription: 'settings.clusterScreenDpiDescription'
+          }
+        },
         {
           type: 'route',
           label: 'Safe Area',
@@ -282,7 +323,7 @@ export const videoSchema: SettingsNode<ExtraConfig> = {
               path: 'clusterSafeAreaDrawOutside'
             }
           ]
-        }*/
+        }
       ]
     },
     {
@@ -316,6 +357,12 @@ export const videoSchema: SettingsNode<ExtraConfig> = {
           path: 'cameraMirror'
         }
       ]
+    },
+    {
+      type: 'checkbox',
+      label: 'Disable HW Acceleration',
+      labelKey: 'settings.disableHwAcceleration',
+      path: 'disableHwAcceleration'
     }
   ]
 }

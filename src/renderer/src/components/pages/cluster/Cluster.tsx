@@ -38,7 +38,12 @@ export const Cluster: React.FC = () => {
   const boxInfoRaw = useLiviStore((s) => s.boxInfo)
   const isStreaming = useStatusStore((s) => s.isStreaming)
   const isAaActive = useStatusStore((s) => s.isAaActive)
-  const fps = settings?.fps
+
+  const initialFpsRef = useRef<number | undefined>(settings?.clusterFps)
+  if (initialFpsRef.current === undefined) {
+    const f = settings?.clusterFps
+    if (typeof f === 'number' && f > 0) initialFpsRef.current = f
+  }
 
   const [renderReady, setRenderReady] = useState(false)
   const [rendererError, setRendererError] = useState<string | null>(null)
@@ -134,7 +139,8 @@ export const Cluster: React.FC = () => {
 
   // Init Render.worker
   useEffect(() => {
-    if (typeof fps !== 'number' || fps <= 0) return
+    const targetFps = initialFpsRef.current
+    if (typeof targetFps !== 'number' || targetFps <= 0) return
 
     if (!canvasRef.current) return
     if (offscreenCanvasRef.current || renderWorkerRef.current) return
@@ -144,17 +150,23 @@ export const Cluster: React.FC = () => {
     const w = createRenderWorker()
     renderWorkerRef.current = w
 
-    w.postMessage(new InitEvent(offscreenCanvasRef.current, clusterVideoChannel.port2, fps), [
-      offscreenCanvasRef.current,
-      clusterVideoChannel.port2
-    ])
+    w.postMessage(
+      new InitEvent(
+        offscreenCanvasRef.current,
+        clusterVideoChannel.port2,
+        targetFps,
+        clusterCodecRef.current,
+        Boolean(settings?.disableHwAcceleration)
+      ),
+      [offscreenCanvasRef.current, clusterVideoChannel.port2]
+    )
 
     return () => {
       renderWorkerRef.current?.terminate()
       renderWorkerRef.current = null
       offscreenCanvasRef.current = null
     }
-  }, [clusterVideoChannel, fps])
+  }, [clusterVideoChannel])
 
   // Render.worker ready/error messages
   useEffect(() => {
@@ -277,7 +289,7 @@ export const Cluster: React.FC = () => {
       {!isStreaming && showCluster && (
         <Box
           sx={{
-            position: 'fixed',
+            position: 'absolute',
             inset: 0,
             display: 'grid',
             placeItems: 'center',

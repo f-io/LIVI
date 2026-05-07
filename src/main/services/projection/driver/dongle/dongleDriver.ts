@@ -476,7 +476,7 @@ export class DongleDriver extends EventEmitter {
       new SendNumber(cfg.hand, FileAddress.HAND_DRIVE_MODE),
       new SendCommand(initMicRouteCommand),
       new SendCommand(cfg.wifiType === '5ghz' ? 'wifi5g' : 'wifi24g'),
-      new SendCommand(cfg.audioTransferMode ? 'audioTransferOn' : 'audioTransferOff')
+      new SendCommand(cfg.disableAudioOutput ? 'audioTransferOn' : 'audioTransferOff')
     ]
 
     for (const m of messages) {

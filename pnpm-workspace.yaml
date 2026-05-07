@@ -1,0 +1,6 @@
+allowBuilds:
+  electron-winstaller: true
+  esbuild: true
+  protobufjs: true
+  unrs-resolver: true
+  usb: true

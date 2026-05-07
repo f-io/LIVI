@@ -19,7 +19,7 @@ const statusState: Record<string, any> = {
   isStreaming: true
 }
 const liviState: Record<string, any> = {
-  settings: { fps: 60 },
+  settings: { fps: 60, clusterFps: 60 },
   boxInfo: null
 }
 
@@ -70,7 +70,7 @@ describe('Cluster page', () => {
     clusterVideoCb = undefined
 
     statusState.isStreaming = true
-    liviState.settings = { fps: 60 }
+    liviState.settings = { fps: 60, clusterFps: 60 }
     liviState.boxInfo = { supportFeatures: '' }
     ;(global as any).Worker = MockWorker
     ;(global as any).MessageChannel = MockMessageChannel
