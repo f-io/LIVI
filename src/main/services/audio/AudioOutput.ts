@@ -271,6 +271,7 @@ export class AudioOutput {
   private buildArgs(): string[] {
     const isRealtime = this.mode === 'realtime'
 
+    // Music path is biased toward stability over latency. (300ms)
     const inputQueueArgs = isRealtime
       ? [
           'queue',
@@ -278,7 +279,7 @@ export class AudioOutput {
           'max-size-bytes=0',
           'max-size-buffers=0'
         ]
-      : ['queue', 'max-size-time=200000000', 'max-size-bytes=0', 'max-size-buffers=0'] // max 200ms
+      : ['queue', 'max-size-time=350000000', 'max-size-bytes=0', 'max-size-buffers=0'] // max 350ms
 
     const outputQueueArgs = isRealtime
       ? [
@@ -287,7 +288,7 @@ export class AudioOutput {
           'max-size-bytes=0',
           'max-size-buffers=0'
         ]
-      : ['queue', 'max-size-time=100000000', 'max-size-bytes=0', 'max-size-buffers=0'] // max 100ms
+      : ['queue', 'max-size-time=200000000', 'max-size-bytes=0', 'max-size-buffers=0'] // max 200ms
 
     const sink =
       process.platform === 'darwin'
@@ -296,7 +297,15 @@ export class AudioOutput {
           ? 'wasapisink'
           : 'pulsesink'
 
-    const sinkArgs = isRealtime ? [sink, 'sync=false'] : [sink]
+    // Sink-specific settings:
+    //   realtime    → sync=false (mic/voice paths must not buffer)
+    //   pulse/wasapi music → 300 ms ALSA/WASAPI ring + 30 ms period
+    //   osxaudiosink music → CoreAudio default
+    const sinkArgs = isRealtime
+      ? [sink, 'sync=false']
+      : sink === 'osxaudiosink'
+        ? [sink]
+        : [sink, 'buffer-time=300000', 'latency-time=30000']
 
     return [
       'fdsrc',
