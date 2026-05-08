@@ -36,6 +36,7 @@
     "autoSwitchOnStream": "Bei Stream-Start",
     "autoSwitchOnPhoneCall": "Bei Anruf",
     "autoSwitchOnGuidance": "Navigation",
+    "autoSwitchOnReverse": "Beim Rückwärtsgang",
     "telemetry": "Telemetrie",
     "clusterStream": "Cluster-Stream",
     "fftDelay": "FFT-Verzögerung",

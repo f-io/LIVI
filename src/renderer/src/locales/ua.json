@@ -36,6 +36,7 @@
     "autoSwitchOnStream": "При старті",
     "autoSwitchOnPhoneCall": "Під час дзвінка",
     "autoSwitchOnGuidance": "Навігація",
+    "autoSwitchOnReverse": "На задній передачі",
     "telemetry": "Телеметрія",
     "clusterStream": "Кластерний потік",
     "fftDelay": "Затримка FFT",

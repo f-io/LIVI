@@ -66,6 +66,7 @@ export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
   autoSwitchOnStream: false,
   autoSwitchOnPhoneCall: true,
   autoSwitchOnGuidance: true,
+  autoSwitchOnReverse: true,
   dongleToolsIp: '',
   visualAudioDelayMs: 120,
   audioVolume: 0.95,

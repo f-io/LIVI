@@ -140,6 +140,12 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
           label: 'Switch on Guidance',
           labelKey: 'settings.autoSwitchOnGuidance',
           path: 'autoSwitchOnGuidance'
+        },
+        {
+          type: 'checkbox',
+          label: 'Switch on Reverse',
+          labelKey: 'settings.autoSwitchOnReverse',
+          path: 'autoSwitchOnReverse'
         }
       ]
     },

@@ -247,6 +247,39 @@ function AppInner() {
     return () => window.projection.usb.unlistenForEvents(usbHandler)
   }, [settings, saveSettings, setCameraFound])
 
+  const reverse = useStatusStore((s) => s.reverse)
+  const cameraFound = useStatusStore((s) => s.cameraFound)
+  const reverseAutoSwitchActiveRef = useRef(false)
+  const reverseBackPathRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!settings?.autoSwitchOnReverse) return
+    const cameraReady = cameraFound && Boolean(settings.camera)
+
+    if (reverse && cameraReady) {
+      if (location.pathname !== ROUTES.CAMERA) {
+        reverseBackPathRef.current = location.pathname
+        reverseAutoSwitchActiveRef.current = true
+        navigate(ROUTES.CAMERA)
+      }
+      return
+    }
+
+    // reverse off: restore the previous route
+    if (reverseAutoSwitchActiveRef.current && location.pathname === ROUTES.CAMERA) {
+      const back = reverseBackPathRef.current ?? ROUTES.HOME
+      reverseAutoSwitchActiveRef.current = false
+      reverseBackPathRef.current = null
+      navigate(back)
+    }
+  }, [
+    reverse,
+    cameraFound,
+    settings?.autoSwitchOnReverse,
+    settings?.camera,
+    location.pathname,
+    navigate
+  ])
+
   return (
     <AppLayout navRef={navRef} mainRef={mainRef} receivingVideo={receivingVideo}>
       {settings && (

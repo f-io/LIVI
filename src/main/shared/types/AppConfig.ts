@@ -39,6 +39,7 @@ export type ExtraConfig = DongleConfig & {
   autoSwitchOnStream: boolean
   autoSwitchOnPhoneCall: boolean
   autoSwitchOnGuidance: boolean
+  autoSwitchOnReverse: boolean
   visualAudioDelayMs: number
   dongleToolsIp?: string
   primaryColorDark?: string

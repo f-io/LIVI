@@ -135,7 +135,8 @@ describe('generalSchema', () => {
     expect(autoSwitch.children.map((x) => x.path)).toEqual([
       'autoSwitchOnStream',
       'autoSwitchOnPhoneCall',
-      'autoSwitchOnGuidance'
+      'autoSwitchOnGuidance',
+      'autoSwitchOnReverse'
     ])
   })
 

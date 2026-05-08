@@ -133,6 +133,26 @@ const applyTelemetryControls = (payload: unknown) => {
   if (typeof msg.nightMode === 'boolean') {
     void useLiviStore.getState().saveSettings({ nightMode: msg.nightMode })
   }
+
+  const explicitReverse =
+    typeof msg.reverse === 'boolean'
+      ? msg.reverse
+      : msg.gear === 'R' || msg.gear === -1
+        ? true
+        : msg.gear !== undefined
+          ? false
+          : null
+  if (explicitReverse !== null) {
+    if (useStatusStore.getState().reverse !== explicitReverse) {
+      useStatusStore.getState().setReverse(explicitReverse)
+    }
+  }
+
+  if (typeof msg.lights === 'boolean') {
+    if (useStatusStore.getState().lights !== msg.lights) {
+      useStatusStore.getState().setLights(msg.lights)
+    }
+  }
 }
 
 // Projection Store

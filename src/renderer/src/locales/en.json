@@ -36,6 +36,7 @@
     "autoSwitchOnStream": "On stream start",
     "autoSwitchOnPhoneCall": "On phone call",
     "autoSwitchOnGuidance": "On guidance",
+    "autoSwitchOnReverse": "On reverse gear",
     "telemetry": "Telemetry",
     "clusterStream": "Cluster Stream",
     "fftDelay": "FFT Delay",
