@@ -199,14 +199,9 @@ export class ProjectionService {
       })
     }
 
-    // Seed AA's initial NIGHT_MODE on every appearance change
+    // Seed AA's initial NIGHT_MODE
     if (next.appearanceMode !== prev?.appearanceMode) {
       this.aaDriver?.setInitialNightMode(deriveInitialNightMode(next.appearanceMode))
-      if (this.aaDriver) {
-        this.aaDriver.restartStack().catch((e) => {
-          console.warn('[ProjectionService] AA stack restart on appearance toggle failed', e)
-        })
-      }
     }
   }
 
