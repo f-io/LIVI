@@ -62,6 +62,7 @@ export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
   kiosk: false,
   uiZoomPercent: 100,
   camera: '',
+  cameraEnabled: false,
   cameraMirror: false,
   autoSwitchOnStream: false,
   autoSwitchOnPhoneCall: true,

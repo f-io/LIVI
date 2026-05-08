@@ -146,6 +146,8 @@
     "clusterSafeAreaRightDescription": "Cluster screen right inset in px.",
     "camera": "Camera",
     "cameraMirror": "Mirroring",
+    "cameraTab": "Camera Tab",
+    "reverseCamera": "Reverse Camera",
     "appearance": "Appearance",
     "darkMode": "Dark Mode",
     "phoneAppearance": "Phone Appearance",

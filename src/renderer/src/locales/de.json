@@ -146,6 +146,8 @@
     "clusterSafeAreaRightDescription": "Rechter Abstand des Cluster-Bildschirms in px.",
     "camera": "Kamera",
     "cameraMirror": "Spiegeln",
+    "cameraTab": "Kamera-Tab",
+    "reverseCamera": "Rückfahrkamera",
     "appearance": "Aussehen",
     "darkMode": "Dark Mode",
     "phoneAppearance": "Erscheinungsbild Telefon",

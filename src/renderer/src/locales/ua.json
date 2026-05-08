@@ -146,6 +146,8 @@
     "clusterSafeAreaRightDescription": "Правий відступ екрана кластера в px.",
     "camera": "Камера",
     "cameraMirror": "Дзеркалювання",
+    "cameraTab": "Вкладка камери",
+    "reverseCamera": "Камера заднього виду",
     "appearance": "Зовнішній вигляд",
     "darkMode": "Темний режим",
     "phoneAppearance": "Вигляд телефону",

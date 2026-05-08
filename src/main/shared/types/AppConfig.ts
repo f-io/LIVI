@@ -25,6 +25,7 @@ export type ExtraConfig = DongleConfig & {
   kiosk: boolean
   uiZoomPercent: number
   camera: string
+  cameraEnabled: boolean
   telemetryEnabled: boolean
   telemetryDashboards?: TelemetryDashboardConfig[]
   appearanceMode: AppearanceMode

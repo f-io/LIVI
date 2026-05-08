@@ -328,12 +328,18 @@ export const videoSchema: SettingsNode<ExtraConfig> = {
     },
     {
       type: 'route',
-      label: 'Camera',
-      labelKey: 'settings.camera',
+      label: 'Reverse Camera',
+      labelKey: 'settings.reverseCamera',
       route: 'camera',
       path: '',
       displayValue: true,
       children: [
+        {
+          type: 'checkbox',
+          label: 'Camera Tab',
+          labelKey: 'settings.cameraTab',
+          path: 'cameraEnabled'
+        },
         {
           type: 'route',
           label: 'Camera',
