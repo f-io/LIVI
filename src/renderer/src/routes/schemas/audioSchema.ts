@@ -1,9 +1,4 @@
 import type { ExtraConfig } from '@shared/types'
-import {
-  MEDIA_DELAY_MAX,
-  MEDIA_DELAY_MIN,
-  MEDIA_DELAY_STEP
-} from '../../components/pages/settings/constants'
 import { SettingsNode, ValueTransform } from '../types'
 
 const audioValueTransform: ValueTransform<number | undefined, number> = {
@@ -102,29 +97,6 @@ export const audioSchema: SettingsNode<ExtraConfig> = {
       }
     },
     {
-      type: 'number',
-      label: 'Audio Buffer',
-      labelKey: 'settings.audioBufferSize',
-      path: 'mediaDelay',
-      step: MEDIA_DELAY_STEP,
-      min: MEDIA_DELAY_MIN,
-      max: MEDIA_DELAY_MAX,
-      default: 1000,
-      displayValue: true,
-      displayValueUnit: 'ms',
-      valueTransform: {
-        toView: (v) => v ?? 1000,
-        fromView: (v: number, prev) => (Number.isFinite(v) ? Math.round(v) : (prev ?? 1000)),
-        format: (v) => `${v} ms`
-      },
-      page: {
-        title: 'Audio Buffer',
-        labelTitle: 'settings.audioBufferSize',
-        description: 'Dongle audio buffer size in ms',
-        labelDescription: 'settings.audioBufferDescription'
-      }
-    },
-    {
       type: 'select',
       label: 'Sampling Frequency',
       labelKey: 'settings.samplingFrequency',
@@ -139,24 +111,6 @@ export const audioSchema: SettingsNode<ExtraConfig> = {
         labelTitle: 'settings.samplingFrequency',
         description: 'Native stream sampling frequency',
         labelDescription: 'settings.samplingFrequencyDescription'
-      }
-    },
-    {
-      type: 'select',
-      label: 'Call Quality',
-      labelKey: 'settings.callQuality',
-      path: 'callQuality',
-      displayValue: true,
-      options: [
-        { label: 'Low', labelKey: 'settings.callQualityLow', value: 0 },
-        { label: 'Medium', labelKey: 'settings.callQualityMedium', value: 1 },
-        { label: 'High', labelKey: 'settings.callQualityHigh', value: 2 }
-      ],
-      page: {
-        title: 'Call Quality',
-        labelTitle: 'settings.callQuality',
-        description: 'Call quality, will affect bandwidth usage',
-        labelDescription: 'settings.callQualityDescription'
       }
     },
     // Currently disabled

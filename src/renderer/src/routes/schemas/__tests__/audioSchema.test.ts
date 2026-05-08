@@ -10,7 +10,7 @@ describe('audioSchema', () => {
     expect(schema.labelKey).toBe('settings.audio')
     expect(schema.path).toBe('')
     expect(Array.isArray(schema.children)).toBe(true)
-    expect(schema.children).toHaveLength(9)
+    expect(schema.children).toHaveLength(7)
   })
 
   test('music slider uses percent transform with sane defaults', () => {
@@ -67,43 +67,18 @@ describe('audioSchema', () => {
     ])
   })
 
-  test('audio buffer number field uses ms transform and fallback values', () => {
-    const node = schema.children[5]
-    expect(node.type).toBe('number')
-    expect(node.path).toBe('mediaDelay')
-    expect(node.default).toBe(1000)
-    expect(node.displayValueUnit).toBe('ms')
-
-    const vt = node.valueTransform!
-    expect(vt.toView?.(undefined)).toBe(1000)
-    expect(vt.toView?.(250)).toBe(250)
-    expect(vt.fromView?.(123.7, undefined)).toBe(124)
-    expect(vt.fromView?.(Number.NaN, 777)).toBe(777)
-    expect(vt.fromView?.(Number.NaN, undefined)).toBe(1000)
-    expect(vt.format?.(321)).toBe('321 ms')
-  })
-
-  test('sampling frequency and call quality selects expose expected options', () => {
-    const sampling = schema.children[6]
+  test('sampling frequency select exposes expected options', () => {
+    const sampling = schema.children[5]
     expect(sampling.type).toBe('select')
     expect(sampling.path).toBe('mediaSound')
     expect(sampling.options).toEqual([
       { label: '44.1 kHz', value: 0 },
       { label: '48 kHz', value: 1 }
     ])
-
-    const quality = schema.children[7]
-    expect(quality.type).toBe('select')
-    expect(quality.path).toBe('callQuality')
-    expect(quality.options).toEqual([
-      { label: 'Low', labelKey: 'settings.callQualityLow', value: 0 },
-      { label: 'Medium', labelKey: 'settings.callQualityMedium', value: 1 },
-      { label: 'High', labelKey: 'settings.callQualityHigh', value: 2 }
-    ])
   })
 
   test('disable audio checkbox is present as final leaf', () => {
-    const node = schema.children[8]
+    const node = schema.children[6]
     expect(node).toEqual(
       expect.objectContaining({
         type: 'checkbox',

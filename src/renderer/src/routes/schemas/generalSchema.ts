@@ -1,4 +1,9 @@
 import type { ExtraConfig } from '@shared/types'
+import {
+  MEDIA_DELAY_MAX,
+  MEDIA_DELAY_MIN,
+  MEDIA_DELAY_STEP
+} from '../../components/pages/settings/constants'
 import { SettingsNode } from '../types'
 
 export const generalSchema: SettingsNode<ExtraConfig> = {
@@ -543,6 +548,32 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
       labelKey: 'settings.dongleFirmwareSettings',
       path: '',
       children: [
+        {
+          // Lives here (not under Audio) because it's a dongle firmware
+          // setting — `mediaDelay` is sent in `SendBoxSettings` to the
+          // Carlinkit firmware and has no effect in AA-native mode.
+          type: 'number',
+          label: 'Audio Buffer',
+          labelKey: 'settings.audioBufferSize',
+          path: 'mediaDelay',
+          step: MEDIA_DELAY_STEP,
+          min: MEDIA_DELAY_MIN,
+          max: MEDIA_DELAY_MAX,
+          default: 1000,
+          displayValue: true,
+          displayValueUnit: 'ms',
+          valueTransform: {
+            toView: (v) => v ?? 1000,
+            fromView: (v: number, prev) => (Number.isFinite(v) ? Math.round(v) : (prev ?? 1000)),
+            format: (v) => `${v} ms`
+          },
+          page: {
+            title: 'Audio Buffer',
+            labelTitle: 'settings.audioBufferSize',
+            description: 'Dongle audio buffer size in ms',
+            labelDescription: 'settings.audioBufferDescription'
+          }
+        },
         {
           type: 'route',
           route: 'dashboardInfo',

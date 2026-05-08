@@ -93,9 +93,18 @@ describe('generalSchema', () => {
         label: 'Dongle Firmware Settings'
       })
     )
-    expect(firmware.children).toHaveLength(2)
+    expect(firmware.children).toHaveLength(3)
 
-    const dashboard = firmware.children[0]
+    const audioBuffer = firmware.children[0]
+    expect(audioBuffer).toEqual(
+      expect.objectContaining({
+        type: 'number',
+        path: 'mediaDelay',
+        labelKey: 'settings.audioBufferSize'
+      })
+    )
+
+    const dashboard = firmware.children[1]
     expect(dashboard).toEqual(
       expect.objectContaining({
         type: 'route',
@@ -108,7 +117,7 @@ describe('generalSchema', () => {
       'dashboardRouteInfo'
     ])
 
-    const gnss = firmware.children[1]
+    const gnss = firmware.children[2]
     expect(gnss).toEqual(
       expect.objectContaining({
         type: 'route',

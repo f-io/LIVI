@@ -68,7 +68,6 @@ export const requiresRestartParams: (keyof ExtraConfig)[] = [
   'wifiType',
   'disableAudioOutput',
   'hwAcceleration',
-  'callQuality',
   'dashboardMediaInfo',
   'dashboardVehicleInfo',
   'dashboardRouteInfo',
