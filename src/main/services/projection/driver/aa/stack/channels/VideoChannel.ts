@@ -111,6 +111,8 @@ export class VideoChannel extends EventEmitter {
         if (mode === 2 || mode === 3) {
           // NATIVE / NATIVE_TRANSIENT — user wants the host UI
           this.emit('host-ui-requested')
+        } else {
+          this.emit('video-focus-projected')
         }
         break
       }

@@ -252,6 +252,8 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
   private _naviBag: Record<string, unknown> = {}
   private _naviActive = false
   private _naviApp: string | undefined
+  private _videoFocusEmitted = false
+  private _clusterFocusEmitted = false
   private _hevcSupported = false
   private _vp9Supported = false
   private _av1Supported = false
@@ -452,17 +454,41 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       this._naviActive = false
       this._naviApp = undefined
 
+      if (this._videoFocusEmitted) {
+        this._emitCommand(CommandMapping.releaseVideoFocus)
+        this._videoFocusEmitted = false
+      }
+
       const hdr = new MessageHeader(0, MessageType.Unplugged)
       this.emit('message', new Unplugged(hdr) as Message)
     })
 
+    // VideoFocusRequest(PROJECTED)
+    aa.on('video-focus-projected', () => {
+      this._videoFocusEmitted = true
+      this._emitCommand(CommandMapping.requestVideoFocus)
+    })
+
+    aa.on('cluster-video-focus-projected', () => {
+      this._clusterFocusEmitted = true
+      this._emitCommand(CommandMapping.requestClusterFocus)
+    })
+
     aa.on('video-frame', (buf: Buffer, _ts: bigint) => {
+      if (!this._videoFocusEmitted) {
+        this._videoFocusEmitted = true
+        this._emitCommand(CommandMapping.requestVideoFocus)
+      }
       const w = aaCfg.videoWidth ?? 1280
       const h = aaCfg.videoHeight ?? 720
       this.emit('message', buildVideoDataMessage(buf, w, h) as Message)
     })
 
     aa.on('cluster-video-frame', (buf: Buffer, _ts: bigint) => {
+      if (!this._clusterFocusEmitted) {
+        this._clusterFocusEmitted = true
+        this._emitCommand(CommandMapping.requestClusterFocus)
+      }
       const w = aaCfg.videoWidth ?? 1280
       const h = aaCfg.videoHeight ?? 720
       this.emit(
@@ -629,6 +655,16 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     pluggedBuf.writeUInt32LE(1, 4) // wifi available
     const pluggedHdr = new MessageHeader(pluggedBuf.length, MessageType.Plugged)
     this.emit('message', new Plugged(pluggedHdr, pluggedBuf) as Message)
+  }
+
+  /**
+   * Emit a `Command(value)` message
+   */
+  private _emitCommand(value: CommandMapping): void {
+    const buf = Buffer.allocUnsafe(4)
+    buf.writeUInt32LE(value, 0)
+    const header = new MessageHeader(buf.length, MessageType.Command)
+    this.emit('message', new Command(header, buf) as Message)
   }
 
   // ── Vehicle-data push API ──────────────────────────────────────────────────

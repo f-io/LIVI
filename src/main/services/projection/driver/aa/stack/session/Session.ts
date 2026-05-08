@@ -555,6 +555,8 @@ export class Session extends EventEmitter {
 
     // Exit/Home on AA display — keep session alive so phone can re-request focus
     this._video.on('host-ui-requested', () => this.emit('host-ui-requested'))
+    // Phone requested PROJECTED focus on the main video sink
+    this._video.on('video-focus-projected', () => this.emit('video-focus-projected'))
 
     // Cluster (secondary) display sink — phone may push a Maps overlay or
     // navigation widget here when display_type=CLUSTER is advertised.
@@ -566,6 +568,8 @@ export class Session extends EventEmitter {
     this._cluster.on('frame', (buf: Buffer, ts: bigint) =>
       this.emit('cluster-video-frame', buf, ts)
     )
+    // Phone requested PROJECTED focus on the cluster sink
+    this._cluster.on('video-focus-projected', () => this.emit('cluster-video-focus-projected'))
 
     // Audio sinks: media (4), speech/guidance (5), system/notification (6)
     for (const channelId of [CH.MEDIA_AUDIO, CH.SPEECH_AUDIO, CH.SYSTEM_AUDIO]) {
