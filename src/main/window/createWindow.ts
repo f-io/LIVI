@@ -1,7 +1,7 @@
 import { is } from '@electron-toolkit/utils'
 import { runtimeStateProps, ServicesProps } from '@main/types'
 import { isMacPlatform, pushSettingsToRenderer } from '@main/utils'
-import { BrowserWindow, screen, session, shell } from 'electron'
+import { app, BrowserWindow, screen, session, shell } from 'electron'
 import { join } from 'path'
 import {
   applyAspectRatioFullscreen,
@@ -143,6 +143,12 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
       } else {
         mainWindow!.hide()
       }
+      return
+    }
+
+    if (!runtimeState.isQuitting) {
+      e.preventDefault()
+      app.quit()
     }
   })
 
