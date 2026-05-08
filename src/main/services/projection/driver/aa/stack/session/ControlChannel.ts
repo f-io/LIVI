@@ -62,7 +62,8 @@ export class ControlChannel extends EventEmitter {
         break
 
       case CTRL_MSG.PING_RESPONSE:
-        // Phone responded to our ping — just log, nothing else needed
+        // Phone responded to our ping
+        this.emit('pong')
         break
 
       case CTRL_MSG.AUDIO_FOCUS_REQUEST:

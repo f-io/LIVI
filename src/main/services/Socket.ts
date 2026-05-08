@@ -1,47 +1,60 @@
-import type { TelemetryPayload } from '@shared/types'
-import { EventEmitter } from 'events'
+/**
+ * Telemetry transport over Socket.IO.
+ *
+ * Inbound:
+ *   socket.on('telemetry:push', payload) → store.merge(payload)
+ *
+ * Outbound (re-broadcast on every store change):
+ *   io.emit('telemetry:update', snapshot)
+ *
+ */
+
+import type { TelemetryPayload } from '@shared/types/Telemetry'
 import http from 'http'
 import { Server } from 'socket.io'
+import type { TelemetryStore } from './telemetry/TelemetryStore'
 
 export enum TelemetryEvents {
   Connection = 'connection',
-
-  // external -> main
   Push = 'telemetry:push',
-
-  // main -> clients
-  Update = 'telemetry:update',
-  Reverse = 'telemetry:reverse',
-  Lights = 'telemetry:lights'
+  Update = 'telemetry:update'
 }
 
-export class TelemetrySocket extends EventEmitter {
+export class TelemetrySocket {
   io: Server | null = null
   httpServer: http.Server | null = null
 
-  private last: TelemetryPayload | null = null
-  private lastReverse: boolean | null = null
-  private lastLights: boolean | null = null
+  private unsubscribeStore: (() => void) | null = null
 
-  constructor(private port = 4000) {
-    super()
+  constructor(
+    private readonly store: TelemetryStore,
+    private port = 4000
+  ) {
     this.startServer()
   }
 
-  private setupListeners() {
+  private setupListeners(): void {
     this.io?.on(TelemetryEvents.Connection, (socket) => {
-      if (this.last) {
-        socket.emit(TelemetryEvents.Update, this.last)
+      const snapshot = this.store.snapshot()
+      if (Object.keys(snapshot).length > 0) {
+        socket.emit(TelemetryEvents.Update, snapshot)
       }
-
       socket.on(TelemetryEvents.Push, (payload: TelemetryPayload) => {
-        this.emit(TelemetryEvents.Push, payload)
-        this.publishTelemetry(payload)
+        this.store.merge(payload)
       })
     })
+
+    // Re-broadcast every merged snapshot to all socket.io clients.
+    const onChange = (_patch: TelemetryPayload, snapshot: TelemetryPayload): void => {
+      this.io?.emit(TelemetryEvents.Update, snapshot)
+    }
+    this.store.on('change', onChange)
+    this.unsubscribeStore = (): void => {
+      this.store.off('change', onChange)
+    }
   }
 
-  private startServer() {
+  private startServer(): void {
     this.httpServer = http.createServer()
     this.io = new Server(this.httpServer, { cors: { origin: '*' } })
     this.setupListeners()
@@ -52,6 +65,8 @@ export class TelemetrySocket extends EventEmitter {
 
   async disconnect(): Promise<void> {
     return new Promise((resolve) => {
+      this.unsubscribeStore?.()
+      this.unsubscribeStore = null
       if (this.io) this.io.close(() => console.log('[TelemetrySocket] IO closed'))
       if (this.httpServer) {
         this.httpServer.close(() => {
@@ -69,42 +84,5 @@ export class TelemetrySocket extends EventEmitter {
   async connect(): Promise<void> {
     await new Promise((r) => setTimeout(r, 200))
     this.startServer()
-  }
-
-  // main -> all clients
-  publishTelemetry(payload: TelemetryPayload) {
-    const msg: TelemetryPayload = { ts: Date.now(), ...payload }
-
-    this.last = msg
-    this.io?.emit(TelemetryEvents.Update, msg)
-
-    const reverse =
-      typeof msg.reverse === 'boolean' ? msg.reverse : msg.gear === 'R' || msg.gear === -1
-
-    if (typeof reverse === 'boolean' && reverse !== this.lastReverse) {
-      this.lastReverse = reverse
-      this.io?.emit(TelemetryEvents.Reverse, reverse)
-    }
-
-    if (typeof msg.lights === 'boolean' && msg.lights !== this.lastLights) {
-      this.lastLights = msg.lights
-      this.io?.emit(TelemetryEvents.Lights, msg.lights)
-    }
-  }
-
-  publishReverse(reverse: boolean) {
-    if (reverse !== this.lastReverse) {
-      this.lastReverse = reverse
-      if (this.last) this.last = { ...this.last, reverse }
-    }
-    this.io?.emit(TelemetryEvents.Reverse, reverse)
-  }
-
-  publishLights(lights: boolean) {
-    if (lights !== this.lastLights) {
-      this.lastLights = lights
-      if (this.last) this.last = { ...this.last, lights }
-    }
-    this.io?.emit(TelemetryEvents.Lights, lights)
   }
 }

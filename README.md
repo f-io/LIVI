@@ -139,13 +139,22 @@ pnpm run build:mac
 
 The Dashboard is currently in an early stage. While the IPC/socket telemetry payload already supports many signals, the UI exposes only a small subset. Widgets and layouts will be extended over time.
 
-### Telemetry Simulator (local)
+### Telemetry CLI (local)
 
-To feed demo telemetry into the app, you can run the simulator from `scripts/tools`:
+To push test data into a running LIVI, use the CLI in `scripts/tools`. The full
+field list and routing (Dash / AA / Dongle) lives in
+`src/main/shared/types/Telemetry.ts`.
 
 ```bash
 pnpm -C scripts/tools install
-pnpm -C scripts/tools run telemetry:cycle
+
+# Realistic all-fields demo push
+pnpm -C scripts/tools run telemetry:demo
+
+# Send single fields or blocks ad-hoc
+pnpm -C scripts/tools run telemetry:set fuelPct=4 rangeKm=38
+pnpm -C scripts/tools run telemetry:set gps.lat=53.5912 gps.lng=10.015
+pnpm -C scripts/tools run telemetry:set _repeatMs=1000 speedKph=90 rpm=2500
 ```
 
 <p align="center">

@@ -7,6 +7,7 @@ import { checkAndInstallAaSudoers } from '@main/services/projection/driver/aa/aa
 import { ProjectionService } from '@main/services/projection/services/ProjectionService'
 import { TelemetrySocket } from '@main/services/Socket'
 import { setupTelemetry } from '@main/services/telemetry/setupTelemetry'
+import { TelemetryStore } from '@main/services/telemetry/TelemetryStore'
 import { runtimeStateProps } from '@main/types'
 import { app } from 'electron'
 import { loadConfig } from './config/loadConfig'
@@ -17,7 +18,8 @@ import { createMainWindow, getMainWindow } from './window/createWindow'
 app.whenReady().then(async () => {
   const projectionService = new ProjectionService()
   const usbService = new USBService(projectionService)
-  const telemetrySocket = new TelemetrySocket(4000)
+  const telemetryStore = new TelemetryStore()
+  const telemetrySocket = new TelemetrySocket(telemetryStore, 4000)
   const runtimeState: runtimeStateProps = {
     config: loadConfig(),
     telemetrySocket: null,
@@ -38,7 +40,11 @@ app.whenReady().then(async () => {
   registerAppProtocol()
   registerIpc(runtimeState, services)
   createMainWindow(runtimeState, services)
-  setupTelemetry(telemetrySocket, projectionService)
+  setupTelemetry({
+    store: telemetryStore,
+    projectionService,
+    initialConfig: runtimeState.config
+  })
   setupLifecycle(runtimeState, services)
 
   const win = getMainWindow()

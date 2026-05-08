@@ -1,7 +1,12 @@
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined'
 import { Box, Typography, useTheme } from '@mui/material'
 import { createRenderWorker } from '@worker/createRenderWorker'
-import { InitEvent, SetCodecEvent, type VideoCodec } from '@worker/render/RenderEvents'
+import {
+  InitEvent,
+  SetCodecEvent,
+  UpdateHwAccelEvent,
+  type VideoCodec
+} from '@worker/render/RenderEvents'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router'
 import { useLiviStore, useStatusStore } from '../../../store/store'
@@ -115,9 +120,9 @@ export const Cluster: React.FC = () => {
     if (!isStreaming) {
       void window.projection.ipc.requestCluster(false).catch(() => {})
       if (wasStreamingRef.current) {
-        // Just transitioned from streaming → disconnected. Blank the worker.
         clusterCodecRef.current = 'h264'
         try {
+          renderWorkerRef.current?.postMessage(new SetCodecEvent('h264'))
           renderWorkerRef.current?.postMessage({ type: 'reset' })
         } catch {
           /* worker not yet alive */
@@ -156,7 +161,7 @@ export const Cluster: React.FC = () => {
         clusterVideoChannel.port2,
         targetFps,
         clusterCodecRef.current,
-        Boolean(settings?.disableHwAcceleration)
+        Boolean(settings?.hwAcceleration)
       ),
       [offscreenCanvasRef.current, clusterVideoChannel.port2]
     )
@@ -167,6 +172,11 @@ export const Cluster: React.FC = () => {
       offscreenCanvasRef.current = null
     }
   }, [clusterVideoChannel])
+
+  useEffect(() => {
+    if (!renderWorkerRef.current) return
+    renderWorkerRef.current.postMessage(new UpdateHwAccelEvent(Boolean(settings?.hwAcceleration)))
+  }, [settings?.hwAcceleration])
 
   // Render.worker ready/error messages
   useEffect(() => {
@@ -326,7 +336,8 @@ export const Cluster: React.FC = () => {
               height: '100%',
               display: 'block',
               userSelect: 'none',
-              pointerEvents: 'none'
+              pointerEvents: 'none',
+              background: '#000'
             }}
           />
         </Box>

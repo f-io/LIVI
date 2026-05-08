@@ -82,7 +82,8 @@ describe('main index bootstrap', () => {
 
     expect(ProjectionService).toHaveBeenCalledTimes(1)
     expect(USBService).toHaveBeenCalledTimes(1)
-    expect(TelemetrySocket).toHaveBeenCalledWith(4000)
+    expect(TelemetrySocket).toHaveBeenCalledTimes(1)
+    expect((TelemetrySocket as jest.Mock).mock.calls[0][1]).toBe(4000)
 
     expect(loadConfig).toHaveBeenCalledTimes(1)
     expect(setupAppIdentity).toHaveBeenCalledTimes(1)

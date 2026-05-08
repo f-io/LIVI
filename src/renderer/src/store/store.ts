@@ -26,6 +26,7 @@ type CarplayIpcApi = {
   sendCommand?: (command: string) => void
   onTelemetry?: (handler: (payload: unknown) => void) => void
   offTelemetry?: (handler: (payload: unknown) => void) => void
+  getTelemetrySnapshot?: () => Promise<unknown>
 }
 
 type ProjectionApi = {
@@ -423,6 +424,14 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
       }
 
       if (api?.ipc?.onTelemetry) {
+        // Hydration
+        if (api.ipc.getTelemetrySnapshot) {
+          void api.ipc.getTelemetrySnapshot().then((snap) => {
+            if (snap && typeof snap === 'object' && Object.keys(snap).length > 0) {
+              applyTelemetryControls(snap)
+            }
+          })
+        }
         api.ipc.onTelemetry((payload) => {
           applyTelemetryControls(payload)
         })

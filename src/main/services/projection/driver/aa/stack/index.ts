@@ -114,6 +114,14 @@ export class AAStack extends EventEmitter {
   }
 
   stop(): void {
+    if (this._activeSession) {
+      try {
+        this._activeSession.close('stack restart')
+      } catch (e) {
+        console.warn('[AAStack] active session close threw (ignored)', e)
+      }
+      this._activeSession = null
+    }
     this._server.close()
   }
 
@@ -171,6 +179,17 @@ export class AAStack extends EventEmitter {
 
   sendDrivingStatusData(status: number): void {
     this._activeSession?.sendDrivingStatusData(status)
+  }
+
+  sendGpsLocationData(opts: {
+    latDeg: number
+    lngDeg: number
+    accuracyM?: number
+    altitudeM?: number
+    speedMs?: number
+    bearingDeg?: number
+  }): void {
+    this._activeSession?.sendGpsLocationData(opts)
   }
 
   sendVehicleEnergyModel(

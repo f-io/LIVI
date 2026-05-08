@@ -360,9 +360,9 @@ export const videoSchema: SettingsNode<ExtraConfig> = {
     },
     {
       type: 'checkbox',
-      label: 'Disable HW Acceleration',
-      labelKey: 'settings.disableHwAcceleration',
-      path: 'disableHwAcceleration'
+      label: 'HW Acceleration',
+      labelKey: 'settings.hwAcceleration',
+      path: 'hwAcceleration'
     }
   ]
 }

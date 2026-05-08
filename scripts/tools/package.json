@@ -2,10 +2,15 @@
   "name": "@livi/tools",
   "private": true,
   "type": "module",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
   "scripts": {
-    "telemetry:cycle": "tsx telemetry-sim.ts cycle",
-    "telemetry:sweep": "tsx telemetry-sim.ts sweep",
-    "telemetry:set": "tsx telemetry-sim.ts set"
+    "telemetry": "tsx telemetry-sim.ts help",
+    "telemetry:set": "tsx telemetry-sim.ts set",
+    "telemetry:demo": "tsx telemetry-sim.ts demo"
   },
   "devDependencies": {
     "socket.io-client": "^4.8.3",

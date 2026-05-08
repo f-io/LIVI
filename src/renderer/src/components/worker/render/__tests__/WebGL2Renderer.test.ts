@@ -89,7 +89,10 @@ describe('WebGL2Renderer', () => {
 
     new WebGL2Renderer(canvas)
 
-    expect(canvas.getContext).toHaveBeenCalledWith('webgl2')
+    expect(canvas.getContext).toHaveBeenCalledWith('webgl2', {
+      alpha: false,
+      premultipliedAlpha: false
+    })
     expect(createShader).toHaveBeenCalledTimes(2)
     expect(shaderSource).toHaveBeenCalledTimes(2)
     expect(compileShader).toHaveBeenCalledTimes(2)

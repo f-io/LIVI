@@ -2,7 +2,6 @@ import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
 import { configEvents } from '@main/ipc/utils'
 import type { DevListEntry, DongleFirmwareAction, DongleFwApiRaw, ExtraConfig } from '@shared/types'
 import { PhoneWorkMode } from '@shared/types'
-import type { TelemetryPayload } from '@shared/types/Telemetry'
 import type { NavLocale } from '@shared/utils'
 import { translateNavigation } from '@shared/utils'
 import { app, WebContents } from 'electron'
@@ -58,7 +57,6 @@ import {
   PersistedMediaPayload,
   PersistedNavigationPayload
 } from './types'
-import { pushTelemetryToAa } from './utils/aaTelemetryMap'
 import { asDomUSBDevice } from './utils/asDomUSBDevice'
 import { normalizeNavigationPayload } from './utils/normalizeNavigation'
 import { readMediaFile } from './utils/readMediaFile'
@@ -99,6 +97,13 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === 'object' && !Array.isArray(v)
 }
 
+/** appearanceMode → initial NIGHT_DATA bit for AA. 'auto' = no override (undefined). */
+function deriveInitialNightMode(mode: string | undefined): boolean | undefined {
+  if (mode === 'night') return true
+  if (mode === 'day') return false
+  return undefined
+}
+
 function pickString(o: Record<string, unknown>, key: string): string | undefined {
   const v = o[key]
   return typeof v === 'string' ? v : undefined
@@ -119,6 +124,12 @@ export class ProjectionService {
   private aaDriver: AaDriver | null = null
   private get driver(): IPhoneDriver {
     return this.aaDriver ?? this.dongleDriver
+  }
+  public getAaDriver(): AaDriver | null {
+    return this.aaDriver
+  }
+  public getDongleDriver(): DongleDriver {
+    return this.dongleDriver
   }
   private hevcSupported = false
   private vp9Supported = false
@@ -156,6 +167,16 @@ export class ProjectionService {
     this.refreshAaBtPairedList().catch(() => {})
   }
 
+  // Hydration
+  private readonly pluggedHooks: Array<(phoneType: PhoneType) => void> = []
+  public addPluggedHook(fn: (phoneType: PhoneType) => void): () => void {
+    this.pluggedHooks.push(fn)
+    return (): void => {
+      const i = this.pluggedHooks.indexOf(fn)
+      if (i >= 0) this.pluggedHooks.splice(i, 1)
+    }
+  }
+
   private lastClusterVideoWidth?: number
   private lastClusterVideoHeight?: number
   private clusterRequested = false
@@ -171,11 +192,21 @@ export class ProjectionService {
     const prev = this.config
     this.config = { ...this.config, ...next }
 
-    if (
-      typeof next.disableHwAcceleration === 'boolean' &&
-      next.disableHwAcceleration !== prev?.disableHwAcceleration
-    ) {
+    if (typeof next.hwAcceleration === 'boolean' && next.hwAcceleration !== prev?.hwAcceleration) {
       this.recomputeCodecCapabilities()
+      this.aaDriver?.restartStack().catch((e) => {
+        console.warn('[ProjectionService] AA stack restart on HW toggle failed', e)
+      })
+    }
+
+    // Seed AA's initial NIGHT_MODE on every appearance change
+    if (next.appearanceMode !== prev?.appearanceMode) {
+      this.aaDriver?.setInitialNightMode(deriveInitialNightMode(next.appearanceMode))
+      if (this.aaDriver) {
+        this.aaDriver.restartStack().catch((e) => {
+          console.warn('[ProjectionService] AA stack restart on appearance toggle failed', e)
+        })
+      }
     }
   }
 
@@ -191,10 +222,10 @@ export class ProjectionService {
   private recomputeCodecCapabilities(): void {
     const caps = this.lastCodecCaps
     if (!caps) return
-    const hwDisabled = Boolean(this.config.disableHwAcceleration)
+    const useHw = Boolean(this.config.hwAcceleration)
     const isSupported = (c: { hw?: unknown; sw?: unknown } | undefined): boolean => {
       if (!c) return false
-      return hwDisabled ? Boolean(c.sw) : Boolean(c.hw) || Boolean(c.sw)
+      return useHw ? Boolean(c.hw) || Boolean(c.sw) : Boolean(c.sw)
     }
 
     const hevc = isSupported(caps.h265)
@@ -204,21 +235,21 @@ export class ProjectionService {
     if (this.hevcSupported !== hevc) {
       this.hevcSupported = hevc
       console.log(
-        `[ProjectionService] hevc support: ${hevc} (hwDisabled=${hwDisabled}, hw=${Boolean(caps.h265?.hw)}, sw=${Boolean(caps.h265?.sw)})`
+        `[ProjectionService] hevc support: ${hevc} (useHw=${useHw}, hw=${Boolean(caps.h265?.hw)}, sw=${Boolean(caps.h265?.sw)})`
       )
       this.aaDriver?.setHevcSupported(hevc)
     }
     if (this.vp9Supported !== vp9) {
       this.vp9Supported = vp9
       console.log(
-        `[ProjectionService] vp9 support: ${vp9} (hwDisabled=${hwDisabled}, hw=${Boolean(caps.vp9?.hw)}, sw=${Boolean(caps.vp9?.sw)})`
+        `[ProjectionService] vp9 support: ${vp9} (useHw=${useHw}, hw=${Boolean(caps.vp9?.hw)}, sw=${Boolean(caps.vp9?.sw)})`
       )
       this.aaDriver?.setVp9Supported(vp9)
     }
     if (this.av1Supported !== av1) {
       this.av1Supported = av1
       console.log(
-        `[ProjectionService] av1 support: ${av1} (hwDisabled=${hwDisabled}, hw=${Boolean(caps.av1?.hw)}, sw=${Boolean(caps.av1?.sw)})`
+        `[ProjectionService] av1 support: ${av1} (useHw=${useHw}, hw=${Boolean(caps.av1?.hw)}, sw=${Boolean(caps.av1?.sw)})`
       )
       this.aaDriver?.setAv1Supported(av1)
     }
@@ -298,6 +329,14 @@ export class ProjectionService {
         }, phoneTypeConfig.frameInterval)
       }
       this.webContents.send('projection-event', { type: 'plugged' })
+      // Hydration
+      for (const fn of this.pluggedHooks) {
+        try {
+          fn(msg.phoneType)
+        } catch (e) {
+          console.warn('[ProjectionService] plugged hook threw (ignored)', e)
+        }
+      }
       if (!this.started && !this.isStarting) {
         this.start().catch(() => {})
       }
@@ -320,7 +359,19 @@ export class ProjectionService {
       })
       this.resetNavigationSnapshot('unplugged')
 
-      if (!this.shuttingDown && !this.stopping) {
+      if (this.aaDriver) {
+        try {
+          this.audio.resetForSessionStop()
+        } catch (e) {
+          console.warn('[ProjectionService] audio reset on Unplugged threw (ignored)', e)
+        }
+        this.resetMediaSnapshot('aa-session-end')
+        this.lastVideoWidth = undefined
+        this.lastVideoHeight = undefined
+        this.lastClusterVideoWidth = undefined
+        this.lastClusterVideoHeight = undefined
+      } else if (!this.shuttingDown && !this.stopping) {
+        // Dongle mode: full stop is correct (no supervisor to keep alive).
         this.stop().catch(() => {})
       }
     } else if (msg instanceof BoxUpdateProgress) {
@@ -1287,6 +1338,7 @@ export class ProjectionService {
         aa.setHevcSupported(this.hevcSupported)
         aa.setVp9Supported(this.vp9Supported)
         aa.setAv1Supported(this.av1Supported)
+        aa.setInitialNightMode(deriveInitialNightMode(this.config.appearanceMode))
         // Stop driving the dongle while AA owns the session.
         this.detachDriverListeners(this.dongleDriver)
         this.attachDriverListeners(aa)
@@ -1564,12 +1616,6 @@ export class ProjectionService {
     })()
 
     return this.startPromise
-  }
-
-  /** Forward a TelemetryPayload to the active phone session (AA-only). */
-  public publishVehicleData(payload: TelemetryPayload): void {
-    if (!this.started || !this.aaDriver) return
-    pushTelemetryToAa(this.aaDriver, payload)
   }
 
   public async disconnectPhone(): Promise<boolean> {

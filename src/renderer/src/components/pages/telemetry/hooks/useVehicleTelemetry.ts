@@ -15,6 +15,8 @@ export function useVehicleTelemetry() {
   const lastTsRef = React.useRef<number>(0)
 
   React.useEffect(() => {
+    let cancelled = false
+
     const onMsg = (payload: unknown) => {
       const msg = asVehicleTelemetry(payload)
       if (!msg) return
@@ -26,9 +28,21 @@ export function useVehicleTelemetry() {
       setTelemetry((prev) => ({ ...(prev ?? {}), ...msg, ts }))
     }
 
+    // Hydration
+    const snapPromise = window.projection?.ipc?.getTelemetrySnapshot?.()
+    if (snapPromise) {
+      void snapPromise.then((snap) => {
+        if (cancelled) return
+        const msg = asVehicleTelemetry(snap)
+        if (!msg || Object.keys(msg).length === 0) return
+        onMsg(msg)
+      })
+    }
+
     window.projection?.ipc?.onTelemetry?.(onMsg)
 
     return () => {
+      cancelled = true
       window.projection?.ipc?.offTelemetry?.(onMsg)
     }
   }, [])

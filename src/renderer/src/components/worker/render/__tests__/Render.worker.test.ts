@@ -325,6 +325,7 @@ describe('Render.worker', () => {
 
     worker.rendererHwSupported = true
     worker.rendererSwSupported = true
+    worker.hwAcceleration = true
 
     const ok = await worker.configureDecoder({
       codec: 'avc1.42001f',
