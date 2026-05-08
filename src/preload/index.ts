@@ -203,7 +203,8 @@ const api = {
     },
     offTelemetry: (handler: (payload: unknown) => void): void => {
       telemetryHandlers = telemetryHandlers.filter((h) => h !== handler)
-    }
+    },
+    getTelemetrySnapshot: (): Promise<unknown> => ipcRenderer.invoke('telemetry:snapshot')
   }
 }
 

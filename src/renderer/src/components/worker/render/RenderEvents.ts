@@ -1,4 +1,11 @@
-export type WorkerEventType = 'init' | 'frame' | 'renderDone' | 'updateFps' | 'reset' | 'setCodec'
+export type WorkerEventType =
+  | 'init'
+  | 'frame'
+  | 'renderDone'
+  | 'updateFps'
+  | 'reset'
+  | 'setCodec'
+  | 'updateHwAccel'
 
 export type VideoCodec = 'h264' | 'h265' | 'vp9' | 'av1'
 
@@ -20,7 +27,7 @@ export class InitEvent implements WorkerEvent {
     public videoPort: MessagePort,
     public targetFps: number,
     public codec: VideoCodec = 'h264',
-    public disableHwAcceleration: boolean = false
+    public hwAcceleration: boolean = false
   ) {}
 }
 
@@ -34,4 +41,10 @@ export class SetCodecEvent implements WorkerEvent {
   type: WorkerEventType = 'setCodec'
 
   constructor(public codec: VideoCodec) {}
+}
+
+export class UpdateHwAccelEvent implements WorkerEvent {
+  type: WorkerEventType = 'updateHwAccel'
+
+  constructor(public hwAcceleration: boolean) {}
 }

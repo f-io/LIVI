@@ -255,6 +255,7 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
   private _hevcSupported = false
   private _vp9Supported = false
   private _av1Supported = false
+  private _initialNightMode: boolean | undefined = undefined
   private _aaCfg: AAStackConfig | null = null
 
   constructor(opts: AaDriverOptions = {}) {
@@ -277,6 +278,31 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
   setAv1Supported(supported: boolean): void {
     this._av1Supported = supported
     if (this._aaCfg) this._aaCfg.av1Supported = supported
+  }
+
+  setInitialNightMode(value: boolean | undefined): void {
+    this._initialNightMode = value
+    if (this._aaCfg) this._aaCfg.initialNightMode = value
+  }
+
+  // Soft restart of the AAStack TCP listener
+  async restartStack(): Promise<void> {
+    if (!this._aa) {
+      console.log('[aaDriver] restartStack: no AAStack to restart')
+      return
+    }
+    console.log('[aaDriver] restartStack — phone will reconnect TCP shortly')
+    try {
+      this._aa.stop()
+    } catch (err) {
+      console.warn(`[aaDriver] AAStack.stop on restartStack threw: ${(err as Error).message}`)
+    }
+    await new Promise((r) => setTimeout(r, 200))
+    try {
+      this._aa.start()
+    } catch (err) {
+      console.warn(`[aaDriver] AAStack.start on restartStack threw: ${(err as Error).message}`)
+    }
   }
 
   async start(cfg: DongleConfig): Promise<boolean> {
@@ -357,6 +383,7 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       hevcSupported: this._hevcSupported,
       vp9Supported: this._vp9Supported,
       av1Supported: this._av1Supported,
+      initialNightMode: this._initialNightMode,
       clusterEnabled: Boolean(cfg.clusterEnabled),
       clusterWidth: cfg.clusterWidth,
       clusterHeight: cfg.clusterHeight,
@@ -636,6 +663,16 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
   }
   sendDrivingStatusData(status: number): void {
     this._aa?.sendDrivingStatusData(status)
+  }
+  sendGpsLocationData(opts: {
+    latDeg: number
+    lngDeg: number
+    accuracyM?: number
+    altitudeM?: number
+    speedMs?: number
+    bearingDeg?: number
+  }): void {
+    this._aa?.sendGpsLocationData(opts)
   }
   sendVehicleEnergyModel(
     capacityWh: number,

@@ -8,6 +8,17 @@ export type TelemetryDashboardConfig = {
   pos: number
 }
 
+// Last known GPS
+export type LastKnownGps = {
+  lat: number
+  lng: number
+  alt?: number
+  heading?: number
+  ts: number
+}
+
+export type AppearanceMode = 'auto' | 'night' | 'day'
+
 export type ExtraConfig = DongleConfig & {
   startPage: 'home' | 'media' | 'maps' | 'telemetry' | 'camera' | 'settings'
   language: string
@@ -16,6 +27,8 @@ export type ExtraConfig = DongleConfig & {
   camera: string
   telemetryEnabled: boolean
   telemetryDashboards?: TelemetryDashboardConfig[]
+  appearanceMode: AppearanceMode
+  lastKnownGps?: LastKnownGps
   lastConnectedAaBtMac?: string
   cameraMirror: boolean
   bindings: KeyBindings

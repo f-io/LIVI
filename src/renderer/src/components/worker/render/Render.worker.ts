@@ -45,7 +45,7 @@ export class RendererWorker {
   private av1SwSupported = false
 
   private codec: VideoCodec = 'h264'
-  private disableHwAcceleration = false
+  private hwAcceleration = false
 
   constructor() {
     this.decoder = new VideoDecoder({
@@ -67,6 +67,12 @@ export class RendererWorker {
 
   updateTargetFps(fps?: number) {
     this.setTargetFps(fps)
+  }
+
+  setHwAcceleration(value: boolean) {
+    if (this.hwAcceleration === value) return
+    this.hwAcceleration = value
+    console.log(`[RENDER.WORKER] hwAcceleration → ${value}`)
   }
 
   setCodec(codec: VideoCodec) {
@@ -227,10 +233,8 @@ export class RendererWorker {
 
     this.setTargetFps(event.targetFps)
     this.codec = event.codec ?? 'h264'
-    this.disableHwAcceleration = Boolean(event.disableHwAcceleration)
-    console.log(
-      `[RENDER.WORKER] codec: ${this.codec} (disableHwAcceleration=${this.disableHwAcceleration})`
-    )
+    this.hwAcceleration = Boolean(event.hwAcceleration)
+    console.log(`[RENDER.WORKER] codec: ${this.codec} (hwAcceleration=${this.hwAcceleration})`)
 
     await this.evaluateRendererCapabilities()
 
@@ -518,9 +522,9 @@ export class RendererWorker {
             ? this.av1SwSupported
             : this.rendererSwSupported
 
-    if (this.disableHwAcceleration) {
+    if (!this.hwAcceleration) {
       console.log(
-        `[RENDER.WORKER] disableHwAcceleration=true → skipping prefer-hardware for ${this.codec}`
+        `[RENDER.WORKER] hwAcceleration=false → skipping prefer-hardware for ${this.codec}`
       )
     } else if (hwSupp) {
       if (await tryConfig('prefer-hardware')) {
@@ -670,6 +674,10 @@ scope.addEventListener('message', (event: MessageEvent<WorkerEvent>) => {
 
     case 'reset':
       worker.handleExternalReset()
+      break
+
+    case 'updateHwAccel':
+      worker.setHwAcceleration((msg as unknown as { hwAcceleration: boolean }).hwAcceleration)
       break
 
     default:

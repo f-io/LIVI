@@ -28,7 +28,10 @@ export class WebGL2Renderer implements FrameRenderer {
 
   constructor(canvas: OffscreenCanvas) {
     this.#canvas = canvas
-    const gl = (this.#ctx = canvas.getContext('webgl2'))
+    const gl = (this.#ctx = canvas.getContext('webgl2', {
+      alpha: false,
+      premultipliedAlpha: false
+    }))
     if (!gl) throw Error('WebGL2 context is null')
 
     const vertexShader = gl.createShader(gl.VERTEX_SHADER)!
@@ -61,6 +64,10 @@ export class WebGL2Renderer implements FrameRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 
     this.#texture = texture
+
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight)
+    gl.clearColor(0, 0, 0, 1)
+    gl.clear(gl.COLOR_BUFFER_BIT)
   }
 
   async draw(frame: VideoFrame): Promise<void> {

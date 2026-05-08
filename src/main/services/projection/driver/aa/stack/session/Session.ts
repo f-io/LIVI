@@ -118,6 +118,7 @@ export interface SessionConfig {
   hevcSupported?: boolean
   vp9Supported?: boolean
   av1Supported?: boolean
+  initialNightMode?: boolean
   // When true the secondary (CLUSTER) video sink is advertised in the SDR
   clusterEnabled?: boolean
   clusterWidth: number
@@ -144,6 +145,8 @@ export class Session extends EventEmitter {
   private _bridge!: TlsBridge
   private _tlsSocket!: tls.TLSSocket
   private _pingTimer: ReturnType<typeof setInterval> | null = null
+  private _lastPongAt = 0
+  private static readonly PING_TIMEOUT_MS = 5_000
   private _pendingChannelId = 0
   private _pendingFlags = 0
   private _writeChain: Promise<void> = Promise.resolve()
@@ -172,9 +175,31 @@ export class Session extends EventEmitter {
     this._setupRawPipeline()
   }
 
+  close(reason = 'manual close'): void {
+    try {
+      this._sock.destroy()
+    } catch {
+      /* already destroyed */
+    }
+    if (this._state !== State.CLOSED) {
+      this._transition(State.CLOSED, reason)
+    }
+  }
+
   // ── Internal wiring ───────────────────────────────────────────────────────
 
   private _setupRawPipeline(): void {
+    // Kernel-level safety net for sudden phone disappearances (battery yank,
+    // hard reboot, Wi-Fi crash). With keepalive on, Linux probes the peer
+    // after 5 s of idle and tears the socket down with ETIMEDOUT after a
+    // few unanswered probes. Without this, the half-open TCP zombie can sit
+    // around for ~2 hours (default tcp_keepalive_time = 7200 s).
+    try {
+      this._sock.setKeepAlive(true, 5_000)
+    } catch (e) {
+      console.warn('[Session] setKeepAlive failed (ignored)', e)
+    }
+
     this._sock.on('data', (chunk: Buffer) => {
       if (TRACE) {
         const fullDump = this._state <= State.TLS_HANDSHAKE
@@ -584,6 +609,9 @@ export class Session extends EventEmitter {
     this._nav.on('nav-turn', (t: NavigationTurnUpdate) => this.emit('nav-turn', t))
     this._nav.on('nav-distance', (d: NavigationDistanceUpdate) => this.emit('nav-distance', d))
     this._control.on('voice-session', (active: boolean) => this.emit('voice-session', active))
+    this._control.on('pong', () => {
+      this._lastPongAt = Date.now()
+    })
 
     this._control.on('service-discovery-request', (req: Record<string, unknown>) => {
       if (DEBUG) {
@@ -597,8 +625,22 @@ export class Session extends EventEmitter {
 
       // Ping after SDR: sendPing() + schedulePing() every 1500ms
       // Ping uses PLAINTEXT (ControlServiceChannel::sendPingRequest uses PLAIN).
+      // The interval also doubles as a keepalive watchdog
+      this._lastPongAt = Date.now()
       const sendPing = (): void => {
         if (this._state >= State.CLOSED) return
+        if (Date.now() - this._lastPongAt > Session.PING_TIMEOUT_MS) {
+          console.log(
+            `[Session] PING timeout (${Session.PING_TIMEOUT_MS}ms without PING_RESPONSE) — closing session`
+          )
+          this._transition(State.CLOSED, 'ping timeout')
+          try {
+            this._sock.destroy()
+          } catch {
+            /* ignore */
+          }
+          return
+        }
         const pingBuf = encode(this._proto.PingRequest, { timestamp: Date.now() * 1000 })
         this._sendAA(CH.CONTROL, FRAME_FLAGS.PLAINTEXT, CTRL_MSG.PING_REQUEST, pingBuf)
       }
@@ -728,6 +770,36 @@ export class Session extends EventEmitter {
   // Restriction bitmask. UNRESTRICTED=0
   sendDrivingStatusData(status: number): void {
     this._sendSensorBatch(13, fieldVarint(1, status))
+  }
+
+  /**
+   * GPS / GNSS fix.  SensorBatch field 1 = repeated LocationData.
+   *
+   * Proto (`LocationData.proto`):
+   *   2  latitude_e7   int32   (REQUIRED, degrees × 1e7)
+   *   3  longitude_e7  int32   (REQUIRED, degrees × 1e7)
+   *   4  accuracy_e3   uint32  (meters × 1000)
+   *   5  altitude_e2   int32   (meters × 100)
+   *   6  speed_e3      int32   (m/s × 1000)
+   *   7  bearing_e6    int32   (degrees × 1e6)
+   */
+  sendGpsLocationData(opts: {
+    latDeg: number
+    lngDeg: number
+    accuracyM?: number
+    altitudeM?: number
+    speedMs?: number
+    bearingDeg?: number
+  }): void {
+    const parts: Buffer[] = [
+      fieldVarint(2, Math.round(opts.latDeg * 1e7)),
+      fieldVarint(3, Math.round(opts.lngDeg * 1e7))
+    ]
+    if (opts.accuracyM !== undefined) parts.push(fieldVarint(4, Math.round(opts.accuracyM * 1000)))
+    if (opts.altitudeM !== undefined) parts.push(fieldVarint(5, Math.round(opts.altitudeM * 100)))
+    if (opts.speedMs !== undefined) parts.push(fieldVarint(6, Math.round(opts.speedMs * 1000)))
+    if (opts.bearingDeg !== undefined) parts.push(fieldVarint(7, Math.round(opts.bearingDeg * 1e6)))
+    this._sendSensorBatch(1, Buffer.concat(parts))
   }
 
   /**
@@ -1594,14 +1666,14 @@ export class Session extends EventEmitter {
       )
       if (DEBUG) console.log('[Session] SensorBatch: DrivingStatus=UNRESTRICTED sent')
     } else if (sensorType === 10) {
-      // NightMode = false
+      const initial = this._cfg.initialNightMode === true
       this._sendEncrypted(
         CH.SENSOR,
         FRAME_FLAGS.ENC_SIGNAL,
         0x8003,
-        Buffer.from([0x52, 0x02, 0x08, 0x00])
+        Buffer.from([0x52, 0x02, 0x08, initial ? 0x01 : 0x00])
       )
-      if (DEBUG) console.log('[Session] SensorBatch: NightMode=false sent')
+      if (DEBUG) console.log(`[Session] SensorBatch: NightMode=${initial} sent`)
     }
     // No-batch sensor types (most of them) emit ack-only — silent under DEBUG.
   }

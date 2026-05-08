@@ -10,6 +10,7 @@ import {
   InitEvent,
   SetCodecEvent,
   UpdateFpsEvent,
+  UpdateHwAccelEvent,
   type VideoCodec
 } from '@worker/render/RenderEvents'
 import type { KeyCommand, ProjectionWorker, UsbEvent, WorkerToUI } from '@worker/types'
@@ -341,7 +342,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           videoChannel.port2,
           targetFps,
           videoCodecRef.current,
-          Boolean(settings?.disableHwAcceleration)
+          Boolean(settings?.hwAcceleration)
         ),
         [offscreenCanvasRef.current, videoChannel.port2]
       )
@@ -358,6 +359,11 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     if (!renderWorkerRef.current) return
     renderWorkerRef.current.postMessage(new UpdateFpsEvent(settings.fps))
   }, [settings.fps])
+
+  useEffect(() => {
+    if (!renderWorkerRef.current) return
+    renderWorkerRef.current.postMessage(new UpdateHwAccelEvent(Boolean(settings?.hwAcceleration)))
+  }, [settings?.hwAcceleration])
 
   useEffect(() => {
     const w = renderWorkerRef.current
@@ -979,8 +985,8 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           pendingVideoFocusRef.current = false
           setNavVideoOverlayActive(false)
           videoCodecRef.current = 'h264'
-          // Blank the render worker too
           try {
+            renderWorkerRef.current?.postMessage(new SetCodecEvent('h264'))
             renderWorkerRef.current?.postMessage({ type: 'reset' })
           } catch {
             /* worker not yet alive — no frame to clear */
@@ -995,7 +1001,9 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           setReceivingVideo(false)
           pendingVideoFocusRef.current = false
           setNavVideoOverlayActive(false)
+          videoCodecRef.current = 'h264'
           try {
+            renderWorkerRef.current?.postMessage(new SetCodecEvent('h264'))
             renderWorkerRef.current?.postMessage({ type: 'reset' })
           } catch {
             /* worker not yet alive */
@@ -1206,7 +1214,11 @@ const CarplayComponent: React.FC<CarplayProps> = ({
             touchAction: 'none',
             userSelect: 'none',
             pointerEvents: 'none',
-            display: 'block'
+            display: 'block',
+            // Mask the brief pre-GL-init window: empty YUV planes rendered
+            // through a BT.601 shader produce green; a black CSS background
+            // covers the canvas area until WebGL paints its first frame.
+            background: '#000'
           }}
         />
       </div>

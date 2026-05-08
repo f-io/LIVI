@@ -16,6 +16,25 @@ export const appearanceSchema: SettingsNode<ExtraConfig> = {
       path: 'darkMode'
     },
     {
+      type: 'select',
+      label: 'Phone Appearance',
+      labelKey: 'settings.phoneAppearance',
+      path: 'appearanceMode',
+      displayValue: true,
+      options: [
+        { label: 'Auto', labelKey: 'settings.phoneAppearanceAuto', value: 'auto' },
+        { label: 'Day', labelKey: 'settings.phoneAppearanceDay', value: 'day' },
+        { label: 'Night', labelKey: 'settings.phoneAppearanceNight', value: 'night' }
+      ],
+      page: {
+        title: 'Phone Appearance',
+        labelTitle: 'settings.phoneAppearance',
+        description:
+          'Light / dark appearance for the connected phone (Android Auto / CarPlay). Auto follows vehicle data (CAN, ambient sensor, dongle hint). Day or Night force the corresponding appearance on the phone when it connects.',
+        labelDescription: 'settings.phoneAppearanceDescription'
+      }
+    },
+    {
       type: 'color',
       label: 'Primary Color Dark',
       labelKey: 'settings.primaryColorDark',

@@ -93,7 +93,7 @@ export type DongleConfig = {
   gnssBeiDou: boolean
   autoConn: boolean
   disableAudioOutput: boolean
-  disableHwAcceleration: boolean
+  hwAcceleration: boolean
   wifiType: '2.4ghz' | '5ghz'
   wifiChannel: number
   micType: MicType
