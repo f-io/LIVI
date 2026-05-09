@@ -6,7 +6,7 @@ let mockState = {
   isDongleConnected: false,
   cameraFound: true,
   clusterEnabled: false,
-  telemetryEnabled: false,
+  telemetryOnMain: false,
   settingsMissing: false
 }
 
@@ -31,7 +31,19 @@ jest.mock('@store/store', () => ({
         ? undefined
         : {
             clusterEnabled: mockState.clusterEnabled,
-            telemetryEnabled: mockState.telemetryEnabled
+            dashboards: mockState.telemetryOnMain
+              ? {
+                  dash1: { main: true, dash: false, aux: false, pos: 1 },
+                  dash2: { main: false, dash: false, aux: false, pos: 2 },
+                  dash3: { main: false, dash: false, aux: false, pos: 3 },
+                  dash4: { main: false, dash: false, aux: false, pos: 4 }
+                }
+              : {
+                  dash1: { main: false, dash: false, aux: false, pos: 1 },
+                  dash2: { main: false, dash: false, aux: false, pos: 2 },
+                  dash3: { main: false, dash: false, aux: false, pos: 3 },
+                  dash4: { main: false, dash: false, aux: false, pos: 4 }
+                }
           }
     })
 }))
@@ -43,7 +55,7 @@ describe('useTabsConfig', () => {
       isDongleConnected: false,
       cameraFound: true,
       clusterEnabled: false,
-      telemetryEnabled: false,
+      telemetryOnMain: false,
       settingsMissing: false
     }
   })
@@ -55,7 +67,7 @@ describe('useTabsConfig', () => {
 
   test('adds maps and telemetry tabs when enabled', () => {
     mockState.clusterEnabled = true
-    mockState.telemetryEnabled = true
+    mockState.telemetryOnMain = true
     const { result } = renderHook(() => useTabsConfig(false))
     expect(result.current.map((t) => t.path)).toEqual([
       '/',

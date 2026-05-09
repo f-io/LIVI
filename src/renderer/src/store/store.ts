@@ -119,12 +119,6 @@ const applyDerivedFromSettings = (s: ExtraConfig) => {
   return { audioVolume, navVolume, voiceAssistantVolume, callVolume, visualAudioDelayMs }
 }
 
-const deriveTelemetryEnabled = (cfg: ExtraConfig): boolean => {
-  const d = cfg.telemetryDashboards
-  if (!Array.isArray(d) || d.length === 0) return false
-  return d.some((x) => x.enabled)
-}
-
 const applyTelemetryControls = (payload: unknown) => {
   if (!payload || typeof payload !== 'object') return
 
@@ -472,12 +466,7 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
       // Optimistic merge so UI updates instantly
       const prev = get().settings
       if (prev) {
-        let merged = { ...prev, ...patch } as ExtraConfig
-
-        if (patch.telemetryDashboards !== undefined) {
-          merged = { ...merged, telemetryEnabled: deriveTelemetryEnabled(merged) }
-          patch = { ...patch, telemetryEnabled: merged.telemetryEnabled }
-        }
+        const merged = { ...prev, ...patch } as ExtraConfig
 
         const prevDerived = applyDerivedFromSettings(prev)
         const derived = applyDerivedFromSettings(merged)

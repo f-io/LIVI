@@ -8,8 +8,9 @@ import {
   type VideoCodec
 } from '@worker/render/RenderEvents'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation } from 'react-router'
 import { useLiviStore, useStatusStore } from '../../../store/store'
+
+type ClusterProps = { visible?: boolean }
 
 type BoxInfo = { supportFeatures?: unknown }
 
@@ -34,10 +35,9 @@ function parseBoxInfo(raw: unknown): BoxInfo | null {
   return null
 }
 
-export const Cluster: React.FC = () => {
+export const Cluster: React.FC<ClusterProps> = ({ visible }) => {
   const theme = useTheme()
-  const location = useLocation()
-  const showCluster = location.pathname === '/cluster'
+  const showCluster = visible === true
 
   const settings = useLiviStore((s) => s.settings)
   const boxInfoRaw = useLiviStore((s) => s.boxInfo)
@@ -53,6 +53,7 @@ export const Cluster: React.FC = () => {
   const [renderReady, setRenderReady] = useState(false)
   const [rendererError, setRendererError] = useState<string | null>(null)
   const [navHidden, setNavHidden] = useState(false)
+  const [clusterStreamActive, setClusterStreamActive] = useState(false)
 
   const rootRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -267,12 +268,25 @@ export const Cluster: React.FC = () => {
       const buf = m.chunk?.buffer
       if (!buf) return
 
+      if (!clusterStreamActive) setClusterStreamActive(true)
       clusterVideoChannel.port1.postMessage(buf, [buf])
     }
 
     window.projection.ipc.onClusterVideoChunk(handleVideo)
     return () => {}
-  }, [clusterVideoChannel, renderReady, rendererError])
+  }, [clusterVideoChannel, renderReady, rendererError, clusterStreamActive])
+
+  // Reset stream-active flag on disconnect so the placeholder reappears.
+  useEffect(() => {
+    const handler = (_evt: unknown, ...args: unknown[]) => {
+      const msg = (args[0] ?? {}) as { type?: string }
+      if (msg.type === 'unplugged' || msg.type === 'failure') {
+        setClusterStreamActive(false)
+      }
+    }
+    window.projection.ipc.onEvent(handler)
+    return () => window.projection.ipc.offEvent(handler)
+  }, [])
 
   const canShowVideo = !rendererError
 
@@ -296,7 +310,7 @@ export const Cluster: React.FC = () => {
         zIndex: showCluster ? 5 : -1
       }}
     >
-      {!isStreaming && showCluster && (
+      {!clusterStreamActive && showCluster && (
         <Box
           sx={{
             position: 'absolute',
@@ -305,7 +319,8 @@ export const Cluster: React.FC = () => {
             placeItems: 'center',
             textAlign: 'center',
             pointerEvents: 'none',
-            zIndex: 6
+            zIndex: 6,
+            backgroundColor: theme.palette.background.default
           }}
         >
           <MapOutlinedIcon sx={{ fontSize: 84, opacity: 0.55 }} />

@@ -1,5 +1,5 @@
 import { NullDeleteKey, runtimeStateProps } from '@main/types'
-import { getMainWindow } from '@main/window/createWindow'
+import { broadcastToRenderers } from '@main/window/broadcast'
 import type { ExtraConfig } from '@shared/types'
 import { app } from 'electron'
 import { NULL_DELETES } from './constants'
@@ -50,8 +50,5 @@ export function pushSettingsToRenderer(
   runtimeState: runtimeStateProps,
   override?: Partial<ExtraConfig>
 ) {
-  const mainWindow = getMainWindow()
-
-  if (!mainWindow || mainWindow.isDestroyed()) return
-  mainWindow.webContents.send('settings', { ...runtimeState.config, ...(override ?? {}) })
+  broadcastToRenderers('settings', { ...runtimeState.config, ...(override ?? {}) })
 }

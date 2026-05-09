@@ -53,6 +53,22 @@ jest.mock('../App.tsx', () => ({
   }
 }))
 
+jest.mock('../DashApp.tsx', () => ({
+  __esModule: true,
+  default: () => {
+    const React = require('react')
+    return React.createElement('div', { 'data-testid': 'dash-app' }, 'dash')
+  }
+}))
+
+jest.mock('../AuxApp.tsx', () => ({
+  __esModule: true,
+  default: () => {
+    const React = require('react')
+    return React.createElement('div', { 'data-testid': 'aux-app' }, 'aux')
+  }
+}))
+
 jest.mock('../store/store', () => ({
   useLiviStore: (selector: (s: any) => unknown) =>
     selector({

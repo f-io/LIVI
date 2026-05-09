@@ -51,6 +51,15 @@ export function applyWindowedContentSize(win: BrowserWindow, w: number, h: numbe
   applyAspectRatioWindowed(win, w, h)
 }
 
+export function getMainKiosk(config: ExtraConfig): boolean {
+  return config.kiosk?.main === true
+}
+
+export function withMainKiosk(config: ExtraConfig, value: boolean): ExtraConfig['kiosk'] {
+  const prev = config.kiosk ?? { main: false, dash: false, aux: false }
+  return { ...prev, main: value }
+}
+
 export function currentKiosk(config: ExtraConfig): boolean {
   const win: BrowserWindow | null = getMainWindow()
   const isMac = isMacPlatform()
@@ -58,17 +67,17 @@ export function currentKiosk(config: ExtraConfig): boolean {
   if (win && !win.isDestroyed()) {
     return isMac ? win.isFullScreen() : win.isKiosk()
   }
-  return config.kiosk
+  return getMainKiosk(config)
 }
 
 export function persistKioskAndBroadcast(kiosk: boolean, runtimeState: runtimeStateProps) {
-  if (runtimeState.config.kiosk === kiosk) {
-    pushSettingsToRenderer(runtimeState, { kiosk })
+  if (getMainKiosk(runtimeState.config) === kiosk) {
+    pushSettingsToRenderer(runtimeState, { kiosk: withMainKiosk(runtimeState.config, kiosk) })
     return
   }
 
   runtimeState.wmExitedKiosk = false
-  saveSettings(runtimeState, { kiosk })
+  saveSettings(runtimeState, { kiosk: withMainKiosk(runtimeState.config, kiosk) })
 }
 
 export function sendKioskSync(kiosk: boolean, mainWindow: BrowserWindow | null = null) {
@@ -88,7 +97,7 @@ export function restoreKioskAfterWmExit(runtimeState: runtimeStateProps) {
     mainWindow.setKiosk(true)
   } catch {}
 
-  saveSettings(runtimeState, { kiosk: true })
+  saveSettings(runtimeState, { kiosk: withMainKiosk(runtimeState.config, true) })
 }
 
 export function attachKioskStateSync(runtimeState: runtimeStateProps) {
@@ -103,15 +112,15 @@ export function attachKioskStateSync(runtimeState: runtimeStateProps) {
     if (lastSent === effectiveKiosk) return
     lastSent = effectiveKiosk
 
-    // WM forced us out -> persist truthful state and mark RAM flag
-    if (!effectiveKiosk && runtimeState.config.kiosk) {
+    if (!effectiveKiosk && getMainKiosk(runtimeState.config)) {
       runtimeState.wmExitedKiosk = true
-      saveSettings(runtimeState, { kiosk: false })
+      saveSettings(runtimeState, { kiosk: withMainKiosk(runtimeState.config, false) })
       return
     }
 
-    // Normal sync
-    pushSettingsToRenderer(runtimeState, { kiosk: effectiveKiosk })
+    pushSettingsToRenderer(runtimeState, {
+      kiosk: withMainKiosk(runtimeState.config, effectiveKiosk)
+    })
   }
 
   const syncFromElectron = () => {

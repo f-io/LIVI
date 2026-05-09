@@ -14,6 +14,7 @@ import { loadConfig } from './config/loadConfig'
 import { USBService } from './services/usb/USBService'
 import { checkAndInstallUdevRule } from './services/usb/udevRule'
 import { createMainWindow, getMainWindow } from './window/createWindow'
+import { setupSecondaryWindows } from './window/secondaryWindows'
 
 app.whenReady().then(async () => {
   const projectionService = new ProjectionService()
@@ -40,6 +41,7 @@ app.whenReady().then(async () => {
   registerAppProtocol()
   registerIpc(runtimeState, services)
   createMainWindow(runtimeState, services)
+  setupSecondaryWindows(runtimeState)
   setupTelemetry({
     store: telemetryStore,
     projectionService,

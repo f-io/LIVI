@@ -43,6 +43,10 @@ jest.mock('electron', () => {
   })
 
   return {
+    app: {
+      quit: jest.fn(),
+      getPath: jest.fn(() => '/tmp')
+    },
     BrowserWindow: Object.assign(BrowserWindow, {
       getAllWindows: jest.fn(() => [])
     }),
@@ -78,6 +82,10 @@ jest.mock('@main/window/utils', () => ({
   persistKioskAndBroadcast: jest.fn()
 }))
 
+jest.mock('@main/ipc/utils', () => ({
+  saveSettings: jest.fn()
+}))
+
 describe('createMainWindow', () => {
   const originalRendererUrl = process.env.ELECTRON_RENDERER_URL
 
@@ -93,7 +101,12 @@ describe('createMainWindow', () => {
 
   test('creates main BrowserWindow and loads app protocol url in production mode', () => {
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, uiZoomPercent: 100 },
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        uiZoomPercent: 100
+      },
       isQuitting: false
     } as any
     const services = { projectionService: { attachRenderer: jest.fn() } } as any
@@ -108,7 +121,12 @@ describe('createMainWindow', () => {
 
   test('attaches kiosk state sync on creation', () => {
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, uiZoomPercent: 100 },
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        uiZoomPercent: 100
+      },
       isQuitting: false
     } as any
     const services = { projectionService: { attachRenderer: jest.fn() } } as any
@@ -120,7 +138,12 @@ describe('createMainWindow', () => {
 
   test('configures permission and usb handlers', () => {
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, uiZoomPercent: 100 },
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        uiZoomPercent: 100
+      },
       isQuitting: false
     } as any
     const services = { projectionService: { attachRenderer: jest.fn() } } as any
@@ -136,7 +159,12 @@ describe('createMainWindow', () => {
 
   test('ready-to-show applies size, shows window, sets zoom and attaches renderer', () => {
     const runtimeState = {
-      config: { width: 900, height: 500, kiosk: false, uiZoomPercent: 125 },
+      config: {
+        width: 900,
+        height: 500,
+        kiosk: { main: false, dash: false, aux: false },
+        uiZoomPercent: 125
+      },
       isQuitting: false
     } as any
     const services = { projectionService: { attachRenderer: jest.fn() } } as any
@@ -154,7 +182,9 @@ describe('createMainWindow', () => {
     expect(applyWindowedContentSize).toHaveBeenCalledWith(win, 900, 500)
     expect(win.show).toHaveBeenCalled()
     expect(win.webContents.setZoomFactor).toHaveBeenCalledWith(1.25)
-    expect(pushSettingsToRenderer).toHaveBeenCalledWith(runtimeState, { kiosk: false })
+    expect(pushSettingsToRenderer).toHaveBeenCalledWith(runtimeState, {
+      kiosk: { main: false, dash: false, aux: false }
+    })
     expect(services.projectionService.attachRenderer).toHaveBeenCalledWith(win.webContents)
   })
 
@@ -162,7 +192,12 @@ describe('createMainWindow', () => {
     ;(is as any).dev = true
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, uiZoomPercent: 100 },
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        uiZoomPercent: 100
+      },
       isQuitting: false
     } as any
     const services = { projectionService: { attachRenderer: jest.fn() } } as any
@@ -184,7 +219,12 @@ describe('createMainWindow', () => {
     process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173'
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, uiZoomPercent: 100 },
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        uiZoomPercent: 100
+      },
       isQuitting: false
     } as any
     const services = { projectionService: { attachRenderer: jest.fn() } } as any
@@ -201,7 +241,12 @@ describe('createMainWindow', () => {
     process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173'
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, uiZoomPercent: 100 },
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        uiZoomPercent: 100
+      },
       isQuitting: false
     } as any
     const services = { projectionService: { attachRenderer: jest.fn() } } as any
@@ -216,7 +261,12 @@ describe('createMainWindow', () => {
 
   test('setWindowOpenHandler opens external urls and denies window creation', () => {
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, uiZoomPercent: 100 },
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        uiZoomPercent: 100
+      },
       isQuitting: false
     } as any
     const services = { projectionService: { attachRenderer: jest.fn() } } as any
@@ -236,7 +286,12 @@ describe('createMainWindow', () => {
     ;(isMacPlatform as jest.Mock).mockReturnValue(true)
 
     const runtimeState = {
-      config: { width: 1000, height: 600, kiosk: false, uiZoomPercent: 100 },
+      config: {
+        width: 1000,
+        height: 600,
+        kiosk: { main: false, dash: false, aux: false },
+        uiZoomPercent: 100
+      },
       isQuitting: false,
       suppressNextFsSync: false
     } as any
@@ -266,7 +321,12 @@ describe('createMainWindow', () => {
     ;(isMacPlatform as jest.Mock).mockReturnValue(true)
 
     const runtimeState = {
-      config: { width: 1000, height: 600, kiosk: false, uiZoomPercent: 100 },
+      config: {
+        width: 1000,
+        height: 600,
+        kiosk: { main: false, dash: false, aux: false },
+        uiZoomPercent: 100
+      },
       isQuitting: false,
       suppressNextFsSync: true
     } as any
@@ -291,7 +351,12 @@ describe('createMainWindow', () => {
     ;(isMacPlatform as jest.Mock).mockReturnValue(true)
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, uiZoomPercent: 100 },
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        uiZoomPercent: 100
+      },
       isQuitting: false,
       suppressNextFsSync: false
     } as any
@@ -314,7 +379,12 @@ describe('createMainWindow', () => {
     ;(isMacPlatform as jest.Mock).mockReturnValue(true)
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, uiZoomPercent: 100 },
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        uiZoomPercent: 100
+      },
       isQuitting: false,
       suppressNextFsSync: false
     } as any
@@ -344,7 +414,12 @@ describe('createMainWindow', () => {
     }) as any)
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: true, uiZoomPercent: 100 },
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: true, dash: false, aux: false },
+        uiZoomPercent: 100
+      },
       isQuitting: false
     } as any
     const services = { projectionService: { attachRenderer: jest.fn() } } as any
@@ -366,7 +441,12 @@ describe('createMainWindow', () => {
 
   test('permission request handler allows supported permission', () => {
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, uiZoomPercent: 100 },
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        uiZoomPercent: 100
+      },
       isQuitting: false
     } as any
     const services = { projectionService: { attachRenderer: jest.fn() } } as any
@@ -384,7 +464,12 @@ describe('createMainWindow', () => {
 
   test('permission request handler rejects unsupported permission', () => {
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, uiZoomPercent: 100 },
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        uiZoomPercent: 100
+      },
       isQuitting: false
     } as any
     const services = { projectionService: { attachRenderer: jest.fn() } } as any
@@ -402,7 +487,12 @@ describe('createMainWindow', () => {
 
   test('usb protected classes handler keeps only allowed classes', () => {
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, uiZoomPercent: 100 },
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        uiZoomPercent: 100
+      },
       isQuitting: false
     } as any
     const services = { projectionService: { attachRenderer: jest.fn() } } as any
@@ -421,7 +511,12 @@ describe('createMainWindow', () => {
 
   test('headers received handler injects COOP COEP and CORP headers', () => {
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, uiZoomPercent: 100 },
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        uiZoomPercent: 100
+      },
       isQuitting: false
     } as any
     const services = { projectionService: { attachRenderer: jest.fn() } } as any
@@ -460,7 +555,12 @@ describe('createMainWindow', () => {
     ;(isMacPlatform as jest.Mock).mockReturnValue(true)
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: true, uiZoomPercent: 100 },
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: true, dash: false, aux: false },
+        uiZoomPercent: 100
+      },
       isQuitting: false
     } as any
     const services = { projectionService: { attachRenderer: jest.fn() } } as any

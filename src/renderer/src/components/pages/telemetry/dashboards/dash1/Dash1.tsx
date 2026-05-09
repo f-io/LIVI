@@ -6,11 +6,11 @@ import { CoolantTemp, FuelLevel, Gear, NavMini, OilTemp, Rpm, RpmRing, Speed } f
 import {
   BASE_H,
   BASE_W,
+  CENTER_X,
   GEAR_X,
   GEAR_Y,
   METRICS_RIGHT,
   METRICS_TOP,
-  NAV_X,
   NAV_Y,
   RPM_RIGHT,
   RPM_TOP,
@@ -34,6 +34,8 @@ export function Dash1() {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [scale, setScale] = useState(1)
 
+  const [sidePush, setSidePush] = useState(0)
+
   useEffect(() => {
     const el = hostRef.current
     if (!el) return
@@ -42,7 +44,9 @@ export function Dash1() {
       const r = entry?.contentRect
       if (!r) return
       const s = Math.min(r.width / BASE_W, r.height / BASE_H)
-      setScale(Number.isFinite(s) && s > 0 ? s : 1)
+      const safe = Number.isFinite(s) && s > 0 ? s : 1
+      setScale(safe)
+      setSidePush(Math.max(0, (r.width / safe - BASE_W) / 2))
     })
 
     ro.observe(el)
@@ -80,7 +84,8 @@ export function Dash1() {
               left: SPEED_GROUP_LEFT,
               top: SPEED_GROUP_TOP,
               width: SPEED_GROUP_W,
-              height: 640
+              height: 640,
+              transform: `translateX(${-sidePush}px)`
             }}
           >
             <Box
@@ -117,11 +122,11 @@ export function Dash1() {
             </Box>
           </Box>
 
-          {/* NAV MINI — centered on stage */}
+          {/* NAV MINI — stays centered on stage */}
           <Box
             sx={{
               position: 'absolute',
-              left: NAV_X,
+              left: CENTER_X,
               top: NAV_Y,
               transform: 'translate(-50%, -50%)',
               width: 220,
@@ -133,11 +138,13 @@ export function Dash1() {
             <NavMini iconSize={84} />
           </Box>
 
-          {/* GEAR */}
+          {/* GEAR — sits at the midpoint between center and the visible
+              right edge, so it follows the metrics outward by half the
+              extra space. */}
           <Box
             sx={{
               position: 'absolute',
-              left: GEAR_X,
+              left: GEAR_X + sidePush / 2,
               top: GEAR_Y,
               transform: 'translate(-50%, -50%)',
               width: 110,
@@ -149,12 +156,19 @@ export function Dash1() {
             <Gear gear={gear} />
           </Box>
 
-          {/* RPM */}
-          <Box sx={{ position: 'absolute', right: RPM_RIGHT, top: RPM_TOP }}>
+          {/* RPM — anchored to ring, follows the speed cluster */}
+          <Box
+            sx={{
+              position: 'absolute',
+              right: RPM_RIGHT,
+              top: RPM_TOP,
+              transform: `translateX(${-sidePush}px)`
+            }}
+          >
             <Rpm rpm={rpm} />
           </Box>
 
-          {/* RIGHT METRICS COLUMN (coolant / oil / fuel) */}
+          {/* RIGHT METRICS COLUMN */}
           <Box
             sx={{
               position: 'absolute',
@@ -164,7 +178,7 @@ export function Dash1() {
               display: 'grid',
               rowGap: 1.6,
               justifyItems: 'end',
-              transform: 'scale(1.45)',
+              transform: `translateX(${sidePush}px) scale(1.45)`,
               transformOrigin: 'right top'
             }}
           >

@@ -18,12 +18,14 @@ import { mediaLayoutArtworksOps } from './utils/mediaLayoutArtworksOps'
 import { mediaProjectionOps } from './utils/mediaProjectionOps'
 import { mediaScaleOps } from './utils/mediaScaleOps'
 
-export const Media = () => {
+type MediaProps = { forceHydrate?: boolean }
+
+export const Media = ({ forceHydrate = false }: MediaProps = {}) => {
   const isStreaming = useStatusStore((s: { isStreaming: boolean }) => s.isStreaming)
 
   // const top = useBelowNavTop()
   const [rootRef, { w, h }] = useElementSize<HTMLDivElement>()
-  const { snap, livePlayMs } = useMediaState(isStreaming)
+  const { snap, livePlayMs } = useMediaState(forceHydrate || isStreaming)
 
   // Scales (base)
   const { titlePx, artistPx, albumPx, pagePad, colGap, sectionGap, ctrlSize, ctrlGap, progressH } =

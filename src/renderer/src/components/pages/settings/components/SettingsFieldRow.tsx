@@ -15,14 +15,29 @@ type Props<T, K> = {
   state: K
   onChange: (v: T) => void
   onClick?: () => void
+  onItemNavigate?: (segment: string) => void
 }
 
-export const SettingsFieldRow = <T, K>({ node, value, state, onChange, onClick }: Props<T, K>) => {
+export const SettingsFieldRow = <T, K>({
+  node,
+  value,
+  state,
+  onChange,
+  onClick,
+  onItemNavigate
+}: Props<T, K>) => {
   const { t } = useTranslation()
   const label = node.labelKey ? t(node.labelKey, node.label) : node.label
 
   if (node.type === 'posList') {
-    return <PosSensitiveList node={node} value={value} onChange={onChange} />
+    return (
+      <PosSensitiveList
+        node={node}
+        value={value}
+        onChange={(v) => onChange(v as unknown as T)}
+        onItemClick={onItemNavigate}
+      />
+    )
   }
 
   if (node.type === 'btDeviceList') {

@@ -246,7 +246,12 @@ describe('ipc utils', () => {
     configEvents.on('changed', onChanged)
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: true, bindings: { prev: 'ArrowLeft' } }
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: true, dash: false, aux: false },
+        bindings: { prev: 'ArrowLeft' }
+      }
     } as never
 
     const patch = { height: 600, bindings: { next: 'ArrowRight' }, language: 'de' } as never
@@ -273,7 +278,7 @@ describe('ipc utils', () => {
       expect.objectContaining({
         width: 800,
         height: 480,
-        kiosk: true,
+        kiosk: { main: true, dash: false, aux: false },
         bindings: { prev: 'ArrowLeft' }
       })
     )
@@ -287,7 +292,12 @@ describe('ipc utils', () => {
     mockedGetMainWindow.mockReturnValue(null)
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, bindings: {} }
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        bindings: {}
+      }
     } as any
 
     saveSettings(runtimeState, { language: 'de' } as any)
@@ -306,7 +316,13 @@ describe('ipc utils', () => {
     mockedSizesEqual.mockReturnValue(true)
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, bindings: {}, uiZoomPercent: 125 }
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        bindings: {},
+        uiZoomPercent: 125
+      }
     } as any
 
     saveSettings(runtimeState, {})
@@ -326,10 +342,19 @@ describe('ipc utils', () => {
     mockedSizesEqual.mockReturnValue(false)
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, bindings: {} }
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        bindings: {}
+      }
     } as any
 
-    saveSettings(runtimeState, { kiosk: true, width: 1280, height: 720 } as any)
+    saveSettings(runtimeState, {
+      kiosk: { main: true, dash: false, aux: false },
+      width: 1280,
+      height: 720
+    } as any)
 
     expect(mockedApplyWindowedContentSize).toHaveBeenCalledWith(mainWindow, 1280, 720)
     expect(mockedApplyAspectRatioFullscreen).toHaveBeenCalledWith(mainWindow, 1280, 720)
@@ -348,10 +373,19 @@ describe('ipc utils', () => {
     mockedSizesEqual.mockReturnValue(false)
 
     const runtimeState = {
-      config: { width: 1280, height: 720, kiosk: true, bindings: {} }
+      config: {
+        width: 1280,
+        height: 720,
+        kiosk: { main: true, dash: false, aux: false },
+        bindings: {}
+      }
     } as any
 
-    saveSettings(runtimeState, { kiosk: false, width: 800, height: 480 } as any)
+    saveSettings(runtimeState, {
+      kiosk: { main: false, dash: false, aux: false },
+      width: 800,
+      height: 480
+    } as any)
 
     expect(mainWindow.setFullScreen).toHaveBeenCalledWith(false)
     expect(mockedApplyWindowedContentSize).toHaveBeenCalledWith(mainWindow, 800, 480)
@@ -369,7 +403,12 @@ describe('ipc utils', () => {
     mockedSizesEqual.mockReturnValue(false)
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: true, bindings: {} }
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: true, dash: false, aux: false },
+        bindings: {}
+      }
     } as any
 
     saveSettings(runtimeState, { width: 1920, height: 1080 } as any)
@@ -391,7 +430,12 @@ describe('ipc utils', () => {
     mockedSizesEqual.mockReturnValue(false)
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, bindings: {} }
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        bindings: {}
+      }
     } as any
 
     saveSettings(runtimeState, { width: 1024, height: 600 } as any)
@@ -416,10 +460,15 @@ describe('ipc utils', () => {
     })
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, bindings: {} }
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        bindings: {}
+      }
     } as any
 
-    saveSettings(runtimeState, { kiosk: true } as any)
+    saveSettings(runtimeState, { kiosk: { main: true, dash: false, aux: false } } as any)
 
     expect(mockedApplyAspectRatioWindowed).toHaveBeenCalledWith(mainWindow, 0, 0)
     expect(mainWindow.setKiosk).toHaveBeenCalledWith(true)
@@ -451,10 +500,19 @@ describe('ipc utils', () => {
     }) as typeof setImmediate)
 
     const runtimeState = {
-      config: { width: 1280, height: 720, kiosk: true, bindings: {} }
+      config: {
+        width: 1280,
+        height: 720,
+        kiosk: { main: true, dash: false, aux: false },
+        bindings: {}
+      }
     } as any
 
-    saveSettings(runtimeState, { kiosk: false, width: 800, height: 480 } as any)
+    saveSettings(runtimeState, {
+      kiosk: { main: false, dash: false, aux: false },
+      width: 800,
+      height: 480
+    } as any)
 
     expect(mockedApplyAspectRatioWindowed).toHaveBeenCalledWith(mainWindow, 0, 0)
     expect(mainWindow.setKiosk).toHaveBeenCalledWith(false)
@@ -488,10 +546,19 @@ describe('ipc utils', () => {
     }) as typeof setImmediate)
 
     const runtimeState = {
-      config: { width: 1280, height: 720, kiosk: true, bindings: {} }
+      config: {
+        width: 1280,
+        height: 720,
+        kiosk: { main: true, dash: false, aux: false },
+        bindings: {}
+      }
     } as any
 
-    saveSettings(runtimeState, { kiosk: false, width: 800, height: 480 } as any)
+    saveSettings(runtimeState, {
+      kiosk: { main: false, dash: false, aux: false },
+      width: 800,
+      height: 480
+    } as any)
 
     expect(mockedApplyWindowedContentSize).not.toHaveBeenCalled()
   })
@@ -507,7 +574,12 @@ describe('ipc utils', () => {
     mockedSizesEqual.mockReturnValue(false)
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, bindings: {} }
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        bindings: {}
+      }
     } as any
 
     saveSettings(runtimeState, { width: 1024, height: 600 } as any)
@@ -527,10 +599,15 @@ describe('ipc utils', () => {
     mockedSizesEqual.mockReturnValue(true)
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: false, bindings: {} }
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: false, dash: false, aux: false },
+        bindings: {}
+      }
     } as any
 
-    saveSettings(runtimeState, { kiosk: true } as any)
+    saveSettings(runtimeState, { kiosk: { main: true, dash: false, aux: false } } as any)
 
     expect(mainWindow.setFullScreen).toHaveBeenCalledWith(true)
     expect(mockedApplyWindowedContentSize).not.toHaveBeenCalled()
@@ -549,10 +626,15 @@ describe('ipc utils', () => {
     mockedSizesEqual.mockReturnValue(true)
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: true, bindings: {} }
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: true, dash: false, aux: false },
+        bindings: {}
+      }
     } as any
 
-    saveSettings(runtimeState, { kiosk: false } as any)
+    saveSettings(runtimeState, { kiosk: { main: false, dash: false, aux: false } } as any)
 
     expect(mainWindow.setFullScreen).toHaveBeenCalledWith(false)
     expect(mockedApplyWindowedContentSize).not.toHaveBeenCalled()
@@ -569,7 +651,12 @@ describe('ipc utils', () => {
     mockedSizesEqual.mockReturnValue(false)
 
     const runtimeState = {
-      config: { width: 800, height: 480, kiosk: true, bindings: {} }
+      config: {
+        width: 800,
+        height: 480,
+        kiosk: { main: true, dash: false, aux: false },
+        bindings: {}
+      }
     } as any
 
     saveSettings(runtimeState, { width: 1024, height: 600 } as any)

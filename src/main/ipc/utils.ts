@@ -83,10 +83,12 @@ export function saveSettings(runtimeState: runtimeStateProps, next: Partial<Extr
   if (!mainWindow) return
 
   const sizeChanged = !sizesEqual(prev, runtimeState.config)
-  const kioskChanged = prev.kiosk !== runtimeState.config.kiosk
+  const prevMainKiosk = prev.kiosk?.main === true
+  const nextMainKiosk = runtimeState.config.kiosk?.main === true
+  const kioskChanged = prevMainKiosk !== nextMainKiosk
 
   if (process.platform === 'darwin') {
-    const wantFs = runtimeState.config.kiosk
+    const wantFs = nextMainKiosk
     const isFs = mainWindow.isFullScreen()
 
     if (kioskChanged) {
@@ -138,12 +140,12 @@ export function saveSettings(runtimeState: runtimeStateProps, next: Partial<Extr
     // Linux
     const win = mainWindow
     if (kioskChanged) {
-      const leavingKiosk = !runtimeState.config.kiosk
+      const leavingKiosk = !nextMainKiosk
 
       // Always drop constraints before switching mode
       applyAspectRatioWindowed(win, 0, 0)
 
-      win.setKiosk(runtimeState.config.kiosk)
+      win.setKiosk(nextMainKiosk)
 
       if (leavingKiosk) {
         const onResize = () => {
@@ -157,7 +159,6 @@ export function saveSettings(runtimeState: runtimeStateProps, next: Partial<Extr
           applyWindowedContentSize(win, runtimeState.config.width, runtimeState.config.height)
         })
       } else {
-        // entering kiosk
         const d = screen.getDisplayMatching(win.getBounds())
         const wa = d.workAreaSize
 
@@ -165,8 +166,7 @@ export function saveSettings(runtimeState: runtimeStateProps, next: Partial<Extr
       }
       return
     }
-    // no kiosk change, only size change in windowed mode
-    if (sizeChanged && !runtimeState.config.kiosk) {
+    if (sizeChanged && !nextMainKiosk) {
       applyWindowedContentSize(win, runtimeState.config.width, runtimeState.config.height)
     }
   }

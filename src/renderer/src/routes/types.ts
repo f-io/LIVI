@@ -137,25 +137,26 @@ export type SettingsCustomNode<TStore, TValue = unknown> = NodeMeta & {
   component: React.ComponentType<SettingsCustomPageProps<TStore, TValue>>
 }
 
-export type PosListItem = {
-  id: string
-  label: string // TODO deleted in favor of i18n
-  labelKey?: string
-}
-
-export type PosListNode = NodeMeta & {
-  type: 'posList'
-  label: string // TODO deleted in favor of i18n
-  labelKey?: string
-  path: string
-  items: PosListItem[]
-}
-
 export type BtDeviceListNode = NodeMeta & {
   type: 'btDeviceList'
   label: string // TODO deleted in favor of i18n
   labelKey?: string
   path: string
+}
+
+export type PosListItem = {
+  id: string
+  label: string
+  labelKey?: string
+  route?: string
+}
+
+export type PosListNode = NodeMeta & {
+  type: 'posList'
+  label: string
+  labelKey?: string
+  path: string
+  items: PosListItem[]
 }
 
 export type RouteNode<TStore> = NodeMeta & {
@@ -165,6 +166,7 @@ export type RouteNode<TStore> = NodeMeta & {
   route: string
   path: string
   children: SettingsNode<TStore>[]
+  hidden?: boolean
 }
 
 export type SettingsNode<TStore> =
@@ -178,5 +180,5 @@ export type SettingsNode<TStore> =
   | SliderNode
   | KeyBindingNode
   | SettingsCustomNode<TStore>
-  | PosListNode
   | BtDeviceListNode
+  | PosListNode

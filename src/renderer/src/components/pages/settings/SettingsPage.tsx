@@ -82,6 +82,7 @@ export function SettingsPage() {
         const _path = child.path as string
 
         if (child.type === 'route') {
+          if (child.hidden) return null
           return (
             <StackItem
               key={index}
@@ -118,6 +119,7 @@ export function SettingsPage() {
             value={getValueByPath(state, _path)}
             onChange={(v) => handleFieldChange(_path, v)}
             onClick={child.page ? () => navigate(_path) : undefined}
+            onItemNavigate={(segment) => navigate(segment)}
           />
         )
       })}

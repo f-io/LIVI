@@ -1,5 +1,7 @@
 import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
 import { configEvents } from '@main/ipc/utils'
+import { broadcastToSecondaryRenderers } from '@main/window/broadcast'
+import { getSecondaryWindow } from '@main/window/secondaryWindows'
 import type { DevListEntry, DongleFirmwareAction, DongleFwApiRaw, ExtraConfig } from '@shared/types'
 import { PhoneWorkMode } from '@shared/types'
 import type { NavLocale } from '@shared/utils'
@@ -207,6 +209,12 @@ export class ProjectionService {
 
   private lastCodecCaps: Record<string, { hw?: unknown; sw?: unknown } | undefined> | null = null
 
+  // Single emit point for `projection-event`
+  private emitProjectionEvent(payload: unknown): void {
+    this.webContents?.send('projection-event', payload)
+    broadcastToSecondaryRenderers('projection-event', payload)
+  }
+
   private applyCodecCapabilities(payload: unknown): void {
     if (!payload || typeof payload !== 'object') return
     const caps = payload as Record<string, { hw?: unknown; sw?: unknown } | undefined>
@@ -277,7 +285,7 @@ export class ProjectionService {
     }
 
     if (msg instanceof GnssData) {
-      this.webContents?.send('projection-event', {
+      this.emitProjectionEvent({
         type: 'gnss',
         payload: {
           text: msg.text
@@ -289,7 +297,7 @@ export class ProjectionService {
     if (!this.webContents) return
 
     if (msg instanceof BluetoothPairedList) {
-      this.webContents.send('projection-event', {
+      this.emitProjectionEvent({
         type: 'bluetoothPairedList',
         payload: msg.data
       })
@@ -323,7 +331,7 @@ export class ProjectionService {
           } catch {}
         }, phoneTypeConfig.frameInterval)
       }
-      this.webContents.send('projection-event', { type: 'plugged' })
+      this.emitProjectionEvent({ type: 'plugged' })
       // Hydration
       for (const fn of this.pluggedHooks) {
         try {
@@ -344,8 +352,8 @@ export class ProjectionService {
         this.boxInfo = { ...this.boxInfo, btMacAddr: '' }
       }
 
-      this.webContents.send('projection-event', { type: 'unplugged' })
-      this.webContents.send('projection-event', {
+      this.emitProjectionEvent({ type: 'unplugged' })
+      this.emitProjectionEvent({
         type: 'dongleInfo',
         payload: {
           dongleFwVersion: this.dongleFwVersion,
@@ -371,14 +379,14 @@ export class ProjectionService {
       }
     } else if (msg instanceof BoxUpdateProgress) {
       // 0xb1 payload: int32 progress
-      this.webContents.send('projection-event', {
+      this.emitProjectionEvent({
         type: 'fwUpdate',
         stage: 'upload:progress',
         progress: msg.progress
       })
     } else if (msg instanceof BoxUpdateState) {
       // 0xbb payload: int32 status (start/success/fail, ota variants)
-      this.webContents.send('projection-event', {
+      this.emitProjectionEvent({
         type: 'fwUpdate',
         stage: 'upload:state',
         status: msg.status,
@@ -390,7 +398,7 @@ export class ProjectionService {
 
       if (msg.isTerminal) {
         // Terminal state decides done vs error
-        this.webContents.send('projection-event', {
+        this.emitProjectionEvent({
           type: 'fwUpdate',
           stage: msg.ok ? 'upload:done' : 'upload:error',
           message: msg.statusText || (msg.ok ? 'Update finished' : 'Update failed'),
@@ -417,6 +425,8 @@ export class ProjectionService {
         const w = msg.width
         const h = msg.height
 
+        const clusterTargets = this.getClusterTargetWebContents()
+
         if (
           w > 0 &&
           h > 0 &&
@@ -424,10 +434,18 @@ export class ProjectionService {
         ) {
           this.lastClusterVideoWidth = w
           this.lastClusterVideoHeight = h
-          this.webContents.send('cluster-video-resolution', { width: w, height: h })
+          for (const wc of clusterTargets) {
+            if (!wc.isDestroyed()) wc.send('cluster-video-resolution', { width: w, height: h })
+          }
         }
 
-        this.sendChunked('cluster-video-chunk', msg.data?.buffer as ArrayBuffer, 512 * 1024)
+        this.sendChunked(
+          'cluster-video-chunk',
+          msg.data?.buffer as ArrayBuffer,
+          512 * 1024,
+          undefined,
+          clusterTargets
+        )
         return
       }
 
@@ -444,7 +462,7 @@ export class ProjectionService {
         this.lastVideoWidth = w
         this.lastVideoHeight = h
 
-        this.webContents.send('projection-event', {
+        this.emitProjectionEvent({
           type: 'resolution',
           payload: { width: w, height: h }
         })
@@ -466,7 +484,7 @@ export class ProjectionService {
           }
         }
 
-        this.webContents.send('projection-event', {
+        this.emitProjectionEvent({
           type: 'audio',
           payload: {
             command: msg.command,
@@ -484,7 +502,7 @@ export class ProjectionService {
       if (key === this.lastAudioMetaEmitKey) return
       this.lastAudioMetaEmitKey = key
 
-      this.webContents.send('projection-event', {
+      this.emitProjectionEvent({
         type: 'audioInfo',
         payload: {
           codec: fmt.format ?? msg.decodeType ?? 'unknown',
@@ -501,7 +519,7 @@ export class ProjectionService {
         const mediaMsg = inner.message
         if (!mediaMsg.payload) return
 
-        this.webContents.send('projection-event', { type: 'media', payload: mediaMsg })
+        this.emitProjectionEvent({ type: 'media', payload: mediaMsg })
 
         const file = path.join(app.getPath('userData'), 'mediaData.json')
         const existing = readMediaFile(file)
@@ -538,7 +556,7 @@ export class ProjectionService {
         if (!this.started) return
         const navMsg = inner.message
 
-        this.webContents.send('projection-event', { type: 'navigation', payload: navMsg })
+        this.emitProjectionEvent({ type: 'navigation', payload: navMsg })
 
         const file = path.join(app.getPath('userData'), 'navigationData.json')
         const existing = readNavigationFile(file)
@@ -576,7 +594,7 @@ export class ProjectionService {
       }
       // Unknown meta
     } else if (msg instanceof Command) {
-      this.webContents.send('projection-event', { type: 'command', message: msg })
+      this.emitProjectionEvent({ type: 'command', message: msg })
       if (typeof msg.value === 'number' && msg.value === 508 && this.clusterRequested) {
         try {
           this.driver.send(new SendCommand('requestClusterStreamFocus'))
@@ -653,7 +671,7 @@ export class ProjectionService {
     this.audio = new ProjectionAudio(
       () => this.config,
       (payload) => {
-        this.webContents?.send('projection-event', payload)
+        this.emitProjectionEvent(payload)
       },
       (channel, data, chunkSize, extra) => {
         this.sendChunked(channel, data, chunkSize, extra)
@@ -910,14 +928,9 @@ export class ProjectionService {
 
     registerIpcHandle('projection-navigation-read', async () => {
       try {
-        if (!this.started) {
-          return DEFAULT_NAVIGATION_DATA_RESPONSE
-        }
-
         const file = path.join(app.getPath('userData'), 'navigationData.json')
 
         if (!fs.existsSync(file)) {
-          console.log('[projection-navigation-read] Error: ENOENT: no such file or directory')
           return DEFAULT_NAVIGATION_DATA_RESPONSE
         }
 
@@ -979,7 +992,7 @@ export class ProjectionService {
         const action = req?.action
 
         if (action === 'check') {
-          this.webContents?.send('projection-event', { type: 'fwUpdate', stage: 'check:start' })
+          this.emitProjectionEvent({ type: 'fwUpdate', stage: 'check:start' })
 
           const result = await this.firmware.checkForUpdate({
             appVer: this.getApkVer(),
@@ -989,7 +1002,7 @@ export class ProjectionService {
 
           const shaped = toRendererShape(result)
 
-          this.webContents?.send('projection-event', {
+          this.emitProjectionEvent({
             type: 'fwUpdate',
             stage: 'check:done',
             result: shaped
@@ -1000,7 +1013,7 @@ export class ProjectionService {
 
         if (action === 'download') {
           try {
-            this.webContents?.send('projection-event', {
+            this.emitProjectionEvent({
               type: 'fwUpdate',
               stage: 'download:start'
             })
@@ -1015,7 +1028,7 @@ export class ProjectionService {
 
             if (!check.ok) {
               const msg = check.error || 'checkForUpdate failed'
-              this.webContents?.send('projection-event', {
+              this.emitProjectionEvent({
                 type: 'fwUpdate',
                 stage: 'download:error',
                 message: msg
@@ -1024,7 +1037,7 @@ export class ProjectionService {
             }
 
             if (!check.hasUpdate) {
-              this.webContents?.send('projection-event', {
+              this.emitProjectionEvent({
                 type: 'fwUpdate',
                 stage: 'download:done',
                 path: null,
@@ -1036,7 +1049,7 @@ export class ProjectionService {
             const dl = await this.firmware.downloadFirmwareToHost(check, {
               overwrite: true,
               onProgress: (p) => {
-                this.webContents?.send('projection-event', {
+                this.emitProjectionEvent({
                   type: 'fwUpdate',
                   stage: 'download:progress',
                   received: p.received,
@@ -1048,7 +1061,7 @@ export class ProjectionService {
 
             if (!dl.ok) {
               const msg = dl.error || 'download failed'
-              this.webContents?.send('projection-event', {
+              this.emitProjectionEvent({
                 type: 'fwUpdate',
                 stage: 'download:error',
                 message: msg
@@ -1056,7 +1069,7 @@ export class ProjectionService {
               return asError(msg)
             }
 
-            this.webContents?.send('projection-event', {
+            this.emitProjectionEvent({
               type: 'fwUpdate',
               stage: 'download:done',
               path: dl.path,
@@ -1066,7 +1079,7 @@ export class ProjectionService {
             return shapedCheck
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e)
-            this.webContents?.send('projection-event', {
+            this.emitProjectionEvent({
               type: 'fwUpdate',
               stage: 'download:error',
               message: msg
@@ -1079,7 +1092,7 @@ export class ProjectionService {
           try {
             if (!this.started) return asError('Projection not started / dongle not connected')
 
-            this.webContents?.send('projection-event', { type: 'fwUpdate', stage: 'upload:start' })
+            this.emitProjectionEvent({ type: 'fwUpdate', stage: 'upload:start' })
 
             const st = await this.firmware.getLocalFirmwareStatus({
               appVer: this.getApkVer(),
@@ -1089,7 +1102,7 @@ export class ProjectionService {
 
             if (!st || st.ok !== true) {
               const msg = String(st?.error || 'Local firmware status failed')
-              this.webContents?.send('projection-event', {
+              this.emitProjectionEvent({
                 type: 'fwUpdate',
                 stage: 'upload:error',
                 message: msg
@@ -1099,7 +1112,7 @@ export class ProjectionService {
 
             if (!st.ready) {
               const msg = String(st.reason || 'No firmware ready to upload')
-              this.webContents?.send('projection-event', {
+              this.emitProjectionEvent({
                 type: 'fwUpdate',
                 stage: 'upload:error',
                 message: msg
@@ -1113,7 +1126,7 @@ export class ProjectionService {
             const ok = await this.driver.send(new SendFile(fwBuf, remotePath))
             if (!ok) {
               const msg = 'Dongle upload failed (SendFile returned false)'
-              this.webContents?.send('projection-event', {
+              this.emitProjectionEvent({
                 type: 'fwUpdate',
                 stage: 'upload:error',
                 message: msg
@@ -1121,7 +1134,7 @@ export class ProjectionService {
               return asError(msg)
             }
 
-            this.webContents?.send('projection-event', {
+            this.emitProjectionEvent({
               type: 'fwUpdate',
               stage: 'upload:file-sent',
               path: remotePath,
@@ -1137,7 +1150,7 @@ export class ProjectionService {
             }
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e)
-            this.webContents?.send('projection-event', {
+            this.emitProjectionEvent({
               type: 'fwUpdate',
               stage: 'upload:error',
               message: msg
@@ -1298,7 +1311,7 @@ export class ProjectionService {
     if (key === this.lastDongleInfoEmitKey) return
     this.lastDongleInfoEmitKey = key
 
-    this.webContents.send('projection-event', {
+    this.emitProjectionEvent({
       type: 'dongleInfo',
       payload: {
         dongleFwVersion: this.dongleFwVersion,
@@ -1334,15 +1347,13 @@ export class ProjectionService {
         aa.setVp9Supported(this.vp9Supported)
         aa.setAv1Supported(this.av1Supported)
         aa.setInitialNightMode(deriveInitialNightMode(this.config.appearanceMode))
-        // Stop driving the dongle while AA owns the session.
         this.detachDriverListeners(this.dongleDriver)
         this.attachDriverListeners(aa)
         aa.on('connected', this.onAaConnected)
         aa.on('disconnected', this.onAaDisconnected)
         this.openAaBtSubscription()
         // Initial populate, then attempt autoconnect to the first trusted
-        // paired device. tryAutoConnect bails fast if anyone is already
-        // connected (e.g. because the user manually clicked connect first).
+        // paired device.
         this.populateAaBtPairedListInitial()
           .then(() => this.tryAutoConnect())
           .catch(() => {})
@@ -1401,7 +1412,7 @@ export class ProjectionService {
       const raw = devices.length
         ? devices.map((d) => `${d.mac}${d.name ?? ''}`).join('\n') + '\n'
         : ''
-      this.webContents.send('projection-event', {
+      this.emitProjectionEvent({
         type: 'bluetoothPairedList',
         payload: raw
       })
@@ -1733,7 +1744,7 @@ export class ProjectionService {
 
       fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
 
-      this.webContents?.send('projection-event', {
+      this.emitProjectionEvent({
         type: 'media',
         payload: {
           mediaType: MediaType.Data,
@@ -1764,7 +1775,7 @@ export class ProjectionService {
       console.warn('[ProjectionService] resetMediaSnapshot failed (ignored)', reason, e)
     }
 
-    this.webContents?.send('projection-event', { type: 'media-reset', reason })
+    this.emitProjectionEvent({ type: 'media-reset', reason })
   }
 
   private resetNavigationSnapshot(reason: string): void {
@@ -1781,7 +1792,7 @@ export class ProjectionService {
       console.warn('[ProjectionService] resetNavigationSnapshot failed (ignored)', reason, e)
     }
 
-    this.webContents?.send('projection-event', { type: 'navigation-reset', reason })
+    this.emitProjectionEvent({ type: 'navigation-reset', reason })
   }
 
   private clearTimeouts() {
@@ -1799,9 +1810,11 @@ export class ProjectionService {
     channel: string,
     data?: ArrayBuffer,
     chunkSize = 512 * 1024,
-    extra?: Record<string, unknown>
+    extra?: Record<string, unknown>,
+    targets?: WebContents[]
   ) {
-    if (!this.webContents || !data) return
+    const wcs = targets ?? (this.webContents ? [this.webContents] : [])
+    if (wcs.length === 0 || !data) return
     let offset = 0
     const total = data.byteLength
     const id = Math.random().toString(36).slice(2)
@@ -1825,9 +1838,46 @@ export class ProjectionService {
         ...(extra ?? {})
       }
 
-      this.webContents.send(channel, envelope)
+      for (const wc of wcs) {
+        try {
+          if (typeof wc.isDestroyed === 'function' && wc.isDestroyed()) continue
+          wc.send(channel, envelope)
+        } catch {
+          // ignored: detached webContents
+        }
+      }
       offset = end
     }
+  }
+
+  // Cluster video routing: list of webContents that should receive cluster
+  // video chunks + resolution events, derived from settings.cluster.{main,
+  // dash, aux}. Falls back to the bound main webContents when settings are
+  // missing so the path stays compatible with existing tests / startup.
+  private getClusterTargetWebContents(): WebContents[] {
+    const cfg = this.config?.cluster ?? { main: true, dash: false, aux: false }
+    const isAlive = (wc: WebContents | null | undefined): wc is WebContents => {
+      if (!wc) return false
+      try {
+        return typeof wc.isDestroyed !== 'function' || !wc.isDestroyed()
+      } catch {
+        return true
+      }
+    }
+    const out: WebContents[] = []
+    if (cfg.main && isAlive(this.webContents)) out.push(this.webContents as WebContents)
+    if (cfg.dash) {
+      const w = getSecondaryWindow('dash')
+      if (w && !w.isDestroyed() && isAlive(w.webContents)) out.push(w.webContents)
+    }
+    if (cfg.aux) {
+      const w = getSecondaryWindow('aux')
+      if (w && !w.isDestroyed() && isAlive(w.webContents)) out.push(w.webContents)
+    }
+    if (out.length === 0 && isAlive(this.webContents)) {
+      out.push(this.webContents as WebContents)
+    }
+    return out
   }
 }
 
