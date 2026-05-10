@@ -294,7 +294,7 @@ function AppInner() {
         />
       )}
       {/* Cluster (Maps tab) lives at the App level*/}
-      {settings && <Cluster />}
+      {settings && <Cluster visible={location.pathname === ROUTES.CLUSTER} />}
       <Box sx={{ width: '100%', height: '100%' }}>{element}</Box>
     </AppLayout>
   )

@@ -221,6 +221,14 @@ export function NavMini({ className, iconSize = 56 }: NavMiniProps) {
 
     const handler = (_event: unknown, ...args: unknown[]) => {
       const msg = (args[0] ?? {}) as ProjectionEventMsg
+      if (msg.type === 'plugged') {
+        void hydrate()
+        return
+      }
+      if (msg.type === 'unplugged') {
+        setNavi(null)
+        return
+      }
       if (msg.type !== 'navigation') return
 
       const patch = unwrapNaviPatch(msg)
@@ -237,8 +245,14 @@ export function NavMini({ className, iconSize = 56 }: NavMiniProps) {
   const maneuverType = t.codes.ManeuverType
   const turnSide = t.codes.TurnSide
   const remainDistanceText = t.RemainDistanceText
+  const maneuverText =
+    typeof t.ManeuverTypeText === 'string' && t.ManeuverTypeText !== 'Unknown'
+      ? t.ManeuverTypeText
+      : undefined
   const etaText = t.TimeRemainingToDestinationText
   const destinationDistanceText = t.DistanceRemainingDisplayStringText
+  const distanceLineText =
+    remainDistanceText && remainDistanceText !== '—' ? remainDistanceText : (maneuverText ?? '—')
 
   const maneuverImageBase64 =
     typeof navi?.NaviImageBase64 === 'string' && navi.NaviImageBase64.length > 0
@@ -342,7 +356,7 @@ export function NavMini({ className, iconSize = 56 }: NavMiniProps) {
           opacity: 1
         }}
       >
-        {remainDistanceText ?? '—'}
+        {distanceLineText}
       </Typography>
 
       {/* divider line */}

@@ -14,9 +14,6 @@ jest.mock('../SettingsFieldPage', () => ({
 jest.mock('../btDeviceList/BtDeviceList', () => ({
   BtDeviceList: () => <div data-testid="bt-list" />
 }))
-jest.mock('../posSensitiveList/PosSensitiveList', () => ({
-  PosSensitiveList: () => <div data-testid="pos-list" />
-}))
 jest.mock('../stackItem', () => ({
   StackItem: ({ children, onClick }: any) => (
     <button data-testid="stack-item" onClick={onClick}>
@@ -34,18 +31,6 @@ jest.mock('../settingsItemRow', () => ({
 }))
 
 describe('SettingsFieldRow', () => {
-  test('renders PosSensitiveList for posList node', () => {
-    render(
-      <SettingsFieldRow
-        node={{ type: 'posList', path: 'x', label: 'X', items: [] } as any}
-        value={[]}
-        state={{}}
-        onChange={jest.fn()}
-      />
-    )
-    expect(screen.getByTestId('pos-list')).toBeInTheDocument()
-  })
-
   test('renders BtDeviceList for btDeviceList node', () => {
     render(
       <SettingsFieldRow

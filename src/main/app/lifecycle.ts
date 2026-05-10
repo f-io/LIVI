@@ -1,5 +1,6 @@
 import { runtimeStateProps, ServicesProps } from '@main/types'
 import { createMainWindow, getMainWindow } from '@main/window/createWindow'
+import { closeAllSecondaryWindows } from '@main/window/secondaryWindows'
 import { app, BrowserWindow } from 'electron'
 
 export function setupLifecycle(runtimeState: runtimeStateProps, services: ServicesProps) {
@@ -67,6 +68,7 @@ export function setupLifecycle(runtimeState: runtimeStateProps, services: Servic
     }, watchdogMs)
 
     try {
+      closeAllSecondaryWindows()
       projectionService.beginShutdown()
 
       // Block hotplug callbacks ASAP

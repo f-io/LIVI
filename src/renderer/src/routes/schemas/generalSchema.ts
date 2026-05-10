@@ -1,8 +1,12 @@
 import type { ExtraConfig } from '@shared/types'
 import {
+  MAX_HEIGHT,
+  MAX_WIDTH,
   MEDIA_DELAY_MAX,
   MEDIA_DELAY_MIN,
-  MEDIA_DELAY_STEP
+  MEDIA_DELAY_STEP,
+  MIN_HEIGHT,
+  MIN_WIDTH
 } from '../../components/pages/settings/constants'
 import { SettingsNode } from '../types'
 
@@ -119,6 +123,271 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
         //  labelKey: 'settings.wirelessCp',
         //  path: 'cp'
         //}
+      ]
+    },
+    {
+      type: 'route',
+      route: 'windowSettings',
+      label: 'Window Settings',
+      labelKey: 'settings.windowSettings',
+      path: '',
+      children: [
+        {
+          type: 'route',
+          label: 'Main Screen',
+          labelKey: 'settings.mainScreen',
+          route: 'mainScreen',
+          path: '',
+          children: [
+            {
+              type: 'number',
+              label: 'Width',
+              labelKey: 'settings.width',
+              path: 'width',
+              min: MIN_WIDTH,
+              max: MAX_WIDTH,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Main Screen Width',
+                labelTitle: 'settings.width',
+                description: 'Main window width in px',
+                labelDescription: 'settings.widthDescription'
+              }
+            },
+            {
+              type: 'number',
+              label: 'Height',
+              labelKey: 'settings.height',
+              path: 'height',
+              min: MIN_HEIGHT,
+              max: MAX_HEIGHT,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Main Screen Height',
+                labelTitle: 'settings.height',
+                description: 'Main window height in px',
+                labelDescription: 'settings.heightDescription'
+              }
+            },
+            {
+              type: 'checkbox',
+              label: 'Fullscreen',
+              labelKey: 'settings.fullscreen',
+              path: 'kiosk.main'
+            }
+          ]
+        },
+        {
+          type: 'route',
+          label: 'Dash Screen',
+          labelKey: 'settings.dashScreen',
+          route: 'dashScreen',
+          path: '',
+          children: [
+            {
+              type: 'checkbox',
+              label: 'Active',
+              labelKey: 'settings.dashScreenActive',
+              path: 'dashScreenActive'
+            },
+            {
+              type: 'number',
+              label: 'Width',
+              labelKey: 'settings.width',
+              path: 'dashScreenWidth',
+              min: MIN_WIDTH,
+              max: MAX_WIDTH,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Dash Screen Width',
+                labelTitle: 'settings.width',
+                description: 'Dash window width in px',
+                labelDescription: 'settings.dashScreenWidthDescription'
+              }
+            },
+            {
+              type: 'number',
+              label: 'Height',
+              labelKey: 'settings.height',
+              path: 'dashScreenHeight',
+              min: MIN_HEIGHT,
+              max: MAX_HEIGHT,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Dash Screen Height',
+                labelTitle: 'settings.height',
+                description: 'Dash window height in px',
+                labelDescription: 'settings.dashScreenHeightDescription'
+              }
+            },
+            {
+              type: 'checkbox',
+              label: 'Fullscreen',
+              labelKey: 'settings.fullscreen',
+              path: 'kiosk.dash'
+            }
+          ]
+        },
+        {
+          type: 'route',
+          label: 'Aux Screen',
+          labelKey: 'settings.auxScreen',
+          route: 'auxScreen',
+          path: '',
+          children: [
+            {
+              type: 'checkbox',
+              label: 'Active',
+              labelKey: 'settings.auxScreenActive',
+              path: 'auxScreenActive'
+            },
+            {
+              type: 'number',
+              label: 'Width',
+              labelKey: 'settings.width',
+              path: 'auxScreenWidth',
+              min: MIN_WIDTH,
+              max: MAX_WIDTH,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Aux Screen Width',
+                labelTitle: 'settings.width',
+                description: 'Aux window width in px',
+                labelDescription: 'settings.auxScreenWidthDescription'
+              }
+            },
+            {
+              type: 'number',
+              label: 'Height',
+              labelKey: 'settings.height',
+              path: 'auxScreenHeight',
+              min: MIN_HEIGHT,
+              max: MAX_HEIGHT,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Aux Screen Height',
+                labelTitle: 'settings.height',
+                description: 'Aux window height in px',
+                labelDescription: 'settings.auxScreenHeightDescription'
+              }
+            },
+            {
+              type: 'checkbox',
+              label: 'Fullscreen',
+              labelKey: 'settings.fullscreen',
+              path: 'kiosk.aux'
+            }
+          ]
+        }
+      ]
+    },
+    {
+      type: 'route',
+      label: 'Media',
+      labelKey: 'settings.media',
+      route: 'media',
+      path: '',
+      children: [
+        {
+          type: 'checkbox',
+          label: 'Main',
+          labelKey: 'settings.mainScreen',
+          path: 'media.main'
+        },
+        {
+          type: 'checkbox',
+          label: 'Dash',
+          labelKey: 'settings.dashScreen',
+          path: 'media.dash'
+        },
+        {
+          type: 'checkbox',
+          label: 'Aux',
+          labelKey: 'settings.auxScreen',
+          path: 'media.aux'
+        }
+      ]
+    },
+    {
+      type: 'route',
+      label: 'Cluster',
+      labelKey: 'settings.clusterStream',
+      route: 'cluster',
+      path: '',
+      children: [
+        {
+          type: 'checkbox',
+          label: 'Main',
+          labelKey: 'settings.mainScreen',
+          path: 'cluster.main'
+        },
+        {
+          type: 'checkbox',
+          label: 'Dash',
+          labelKey: 'settings.dashScreen',
+          path: 'cluster.dash'
+        },
+        {
+          type: 'checkbox',
+          label: 'Aux',
+          labelKey: 'settings.auxScreen',
+          path: 'cluster.aux'
+        }
+      ]
+    },
+    {
+      type: 'route',
+      label: 'Dashboards',
+      labelKey: 'settings.telemetryDashboards',
+      route: 'dashboards',
+      path: '',
+      children: [
+        {
+          type: 'posList',
+          label: 'Dashboards',
+          labelKey: 'settings.telemetryDashboards',
+          path: 'dashboards',
+          items: [
+            { id: 'dash1', label: 'Dash 1', labelKey: 'settings.telemetryDash1' },
+            { id: 'dash2', label: 'Dash 2', labelKey: 'settings.telemetryDash2' },
+            { id: 'dash3', label: 'Dash 3', labelKey: 'settings.telemetryDash3' },
+            { id: 'dash4', label: 'Dash 4', labelKey: 'settings.telemetryDash4' }
+          ]
+        },
+        ...(['dash1', 'dash2', 'dash3', 'dash4'] as const).map((id, i) => ({
+          type: 'route' as const,
+          label: `Dash ${i + 1}`,
+          labelKey: `settings.telemetry${id.charAt(0).toUpperCase()}${id.slice(1)}`,
+          route: id,
+          path: '',
+          hidden: true,
+          children: [
+            {
+              type: 'checkbox' as const,
+              label: 'Main',
+              labelKey: 'settings.mainScreen',
+              path: `dashboards.${id}.main`
+            },
+            {
+              type: 'checkbox' as const,
+              label: 'Dash',
+              labelKey: 'settings.dashScreen',
+              path: `dashboards.${id}.dash`
+            },
+            {
+              type: 'checkbox' as const,
+              label: 'Aux',
+              labelKey: 'settings.auxScreen',
+              path: `dashboards.${id}.aux`
+            }
+          ]
+        }))
       ]
     },
     {
@@ -467,39 +736,6 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
       }
     },
     {
-      type: 'route',
-      label: 'Telemetry',
-      labelKey: 'settings.telemetry',
-      route: 'telemetry',
-      path: '',
-      children: [
-        {
-          type: 'posList',
-          label: 'Dashboards',
-          labelKey: 'settings.telemetryDashboards',
-          path: 'telemetryDashboards',
-          items: [
-            { id: 'dash1', label: 'Dash 1', labelKey: 'settings.telemetryDash1' },
-            { id: 'dash2', label: 'Dash 2', labelKey: 'settings.telemetryDash2' },
-            { id: 'dash3', label: 'Dash 3', labelKey: 'settings.telemetryDash3' },
-            { id: 'dash4', label: 'Dash 4', labelKey: 'settings.telemetryDash4' }
-          ]
-        }
-      ]
-    },
-    {
-      type: 'checkbox',
-      label: 'Cluster Stream',
-      labelKey: 'settings.clusterStream',
-      path: 'clusterEnabled'
-    },
-    {
-      type: 'checkbox',
-      label: 'Fullscreen',
-      labelKey: 'settings.fullscreen',
-      path: 'kiosk'
-    },
-    {
       type: 'number',
       label: 'UI Zoom',
       labelKey: 'settings.uiZoom',
@@ -539,9 +775,6 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
       }
     },
     {
-      // Dongle-side firmware capabilities — kept at the bottom because these
-      // only apply when running with a Carlinkit dongle and rarely need to
-      // change. Above sit the primary day-to-day settings.
       type: 'route',
       route: 'dongleFirmwareSettings',
       label: 'Dongle Firmware Settings',
@@ -549,9 +782,6 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
       path: '',
       children: [
         {
-          // Lives here (not under Audio) because it's a dongle firmware
-          // setting — `mediaDelay` is sent in `SendBoxSettings` to the
-          // Carlinkit firmware and has no effect in AA-native mode.
           type: 'number',
           label: 'Audio Buffer',
           labelKey: 'settings.audioBufferSize',

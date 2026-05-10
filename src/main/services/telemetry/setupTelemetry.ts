@@ -18,7 +18,7 @@
 import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
 import { configEvents } from '@main/ipc/utils'
 import type { ProjectionService } from '@main/services/projection/services/ProjectionService'
-import { getMainWindow } from '@main/window/createWindow'
+import { getAllRendererWebContents } from '@main/window/broadcast'
 import type { ExtraConfig } from '@shared/types'
 import type { TelemetryPayload } from '@shared/types/Telemetry'
 import { ipcMain } from 'electron'
@@ -74,7 +74,7 @@ export function setupTelemetry({
 
   const offDash = attachLiviDashAdapter({
     store,
-    getWebContents: () => getMainWindow()?.webContents ?? null
+    getWebContents: () => getAllRendererWebContents()
   })
 
   let offAa: (() => void) | null = null

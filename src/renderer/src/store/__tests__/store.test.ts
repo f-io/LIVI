@@ -94,7 +94,12 @@ describe('store', () => {
     visualAudioDelayMs: 120,
     darkMode: false,
     micType: 0,
-    telemetryDashboards: []
+    dashboards: {
+      dash1: { main: false, dash: false, aux: false, pos: 1 },
+      dash2: { main: false, dash: false, aux: false, pos: 2 },
+      dash3: { main: false, dash: false, aux: false, pos: 3 },
+      dash4: { main: false, dash: false, aux: false, pos: 4 }
+    }
   } as unknown as ExtraConfig
 
   const loadFreshStore = (projectionOverrides?: ProjectionApiOverrides) => {
@@ -262,7 +267,14 @@ describe('store', () => {
     })
   })
 
-  test('saveSettings derives telemetryEnabled from telemetryDashboards', async () => {
+  test('saveSettings persists dashboards patch as-is', async () => {
+    const dashboardsOn: ExtraConfig['dashboards'] = {
+      dash1: { main: true, dash: false, aux: false, pos: 1 },
+      dash2: { main: false, dash: false, aux: false, pos: 2 },
+      dash3: { main: false, dash: false, aux: false, pos: 3 },
+      dash4: { main: false, dash: false, aux: false, pos: 4 }
+    }
+
     const projection = makeProjectionApi({
       settings: {
         get: jest
@@ -270,7 +282,7 @@ describe('store', () => {
           .mockResolvedValueOnce(baseSettings)
           .mockResolvedValueOnce({
             ...baseSettings,
-            telemetryDashboards: [{ enabled: true }]
+            dashboards: dashboardsOn
           }),
         save: jest.fn().mockResolvedValue(undefined)
       }
@@ -280,14 +292,9 @@ describe('store', () => {
 
     await waitForStoreSettings(useLiviStore)
 
-    await useLiviStore.getState().saveSettings({
-      telemetryDashboards: [{ enabled: true }] as ExtraConfig['telemetryDashboards']
-    })
+    await useLiviStore.getState().saveSettings({ dashboards: dashboardsOn })
 
-    expect(projection.settings.save).toHaveBeenCalledWith({
-      telemetryDashboards: [{ enabled: true }],
-      telemetryEnabled: true
-    })
+    expect(projection.settings.save).toHaveBeenCalledWith({ dashboards: dashboardsOn })
   })
 
   test('setAudioVolume/setNavVolume/setVoiceAssistantVolume/setCallVolume update state and persist', async () => {
@@ -1545,34 +1552,6 @@ describe('store', () => {
     expect(projection.settings.save).not.toHaveBeenCalled()
   })
 
-  test('saveSettings derives telemetryEnabled false when all telemetry dashboards are disabled', async () => {
-    const projection = makeProjectionApi({
-      settings: {
-        get: jest
-          .fn()
-          .mockResolvedValueOnce(baseSettings)
-          .mockResolvedValueOnce({
-            ...baseSettings,
-            telemetryDashboards: [{ enabled: false }]
-          }),
-        save: jest.fn().mockResolvedValue(undefined)
-      }
-    })
-
-    const { useLiviStore } = loadFreshStore(projection)
-
-    await waitForStoreSettings(useLiviStore)
-
-    await useLiviStore.getState().saveSettings({
-      telemetryDashboards: [{ enabled: false }] as ExtraConfig['telemetryDashboards']
-    })
-
-    expect(projection.settings.save).toHaveBeenCalledWith({
-      telemetryDashboards: [{ enabled: false }],
-      telemetryEnabled: false
-    })
-  })
-
   test('forgetBluetoothPairedDevice returns false when ipc api is missing', async () => {
     const { useLiviStore } = loadFreshStore()
 
@@ -1701,12 +1680,19 @@ describe('store', () => {
     expect(useLiviStore.getState().audioVolume).toBe(0.8)
   })
 
-  test('saveSettings persists telemetry dashboards even when current settings are null', async () => {
+  test('saveSettings persists dashboards even when current settings are null', async () => {
+    const dashboardsOff: ExtraConfig['dashboards'] = {
+      dash1: { main: false, dash: false, aux: false, pos: 1 },
+      dash2: { main: false, dash: false, aux: false, pos: 2 },
+      dash3: { main: false, dash: false, aux: false, pos: 3 },
+      dash4: { main: false, dash: false, aux: false, pos: 4 }
+    }
+
     const projection = makeProjectionApi({
       settings: {
         get: jest.fn().mockResolvedValue({
           ...baseSettings,
-          telemetryDashboards: [{ enabled: false }]
+          dashboards: dashboardsOff
         }),
         save: jest.fn().mockResolvedValue(undefined)
       }
@@ -1718,13 +1704,9 @@ describe('store', () => {
       settings: null
     })
 
-    await useLiviStore.getState().saveSettings({
-      telemetryDashboards: [{ enabled: false }] as ExtraConfig['telemetryDashboards']
-    })
+    await useLiviStore.getState().saveSettings({ dashboards: dashboardsOff })
 
-    expect(projection.settings.save).toHaveBeenCalledWith({
-      telemetryDashboards: [{ enabled: false }]
-    })
+    expect(projection.settings.save).toHaveBeenCalledWith({ dashboards: dashboardsOff })
   })
 
   test('getSettings keeps defaults when projection api is completely missing', async () => {
@@ -1760,34 +1742,6 @@ describe('store', () => {
     expect(useLiviStore.getState().settings).toBeNull()
 
     global.window = originalWindow
-  })
-
-  test('saveSettings derives telemetryEnabled false when telemetryDashboards is not an array', async () => {
-    const projection = makeProjectionApi({
-      settings: {
-        get: jest
-          .fn()
-          .mockResolvedValueOnce(baseSettings)
-          .mockResolvedValueOnce({
-            ...baseSettings,
-            telemetryDashboards: null
-          }),
-        save: jest.fn().mockResolvedValue(undefined)
-      }
-    })
-
-    const { useLiviStore } = loadFreshStore(projection)
-
-    await waitForStoreSettings(useLiviStore)
-
-    await useLiviStore.getState().saveSettings({
-      telemetryDashboards: null as never
-    })
-
-    expect(projection.settings.save).toHaveBeenCalledWith({
-      telemetryDashboards: null,
-      telemetryEnabled: false
-    })
   })
 
   test('setBluetoothPairedList handles undefined raw input', async () => {

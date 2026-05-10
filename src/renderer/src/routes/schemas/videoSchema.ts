@@ -24,9 +24,9 @@ export const videoSchema: SettingsNode<ExtraConfig> = {
   children: [
     {
       type: 'route',
-      label: 'Main Screen',
-      labelKey: 'settings.mainScreen',
-      route: 'mainScreen',
+      label: 'Main Video',
+      labelKey: 'settings.mainVideo',
+      route: 'mainVideo',
       path: '',
       children: [
         {
@@ -176,11 +176,17 @@ export const videoSchema: SettingsNode<ExtraConfig> = {
     },
     {
       type: 'route',
-      label: 'Cluster Screen',
-      labelKey: 'settings.clusterScreen',
-      route: 'clusterScreen',
+      label: 'Cluster Video',
+      labelKey: 'settings.clusterVideo',
+      route: 'clusterVideo',
       path: '',
       children: [
+        {
+          type: 'checkbox',
+          label: 'Active',
+          labelKey: 'settings.clusterStream',
+          path: 'clusterEnabled'
+        },
         {
           type: 'number',
           label: 'Width',

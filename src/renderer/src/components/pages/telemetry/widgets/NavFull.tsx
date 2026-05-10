@@ -283,6 +283,14 @@ export function NavFull({ className }: NavFullProps) {
 
     const handler = (_event: unknown, ...args: unknown[]) => {
       const msg = (args[0] ?? {}) as ProjectionEventMsg
+      if (msg.type === 'plugged') {
+        void hydrate()
+        return
+      }
+      if (msg.type === 'unplugged') {
+        setNavi(null)
+        return
+      }
       if (msg.type !== 'navigation') return
 
       const patch = unwrapNaviPatch(msg)

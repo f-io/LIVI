@@ -4,9 +4,10 @@ import Box from '@mui/material/Box'
 import { useTheme } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
 import { useLiviStore, useStatusStore } from '@store/store'
-import { FC, PropsWithChildren, useCallback, useEffect, useRef, useState } from 'react'
+import { FC, PropsWithChildren, useCallback } from 'react'
 import { useLocation } from 'react-router'
 import { ROUTES, UI } from '../../constants'
+import { useAutoHideNav } from '../../hooks/useAutoHideNav'
 import { useBlinkingTime } from '../../hooks/useBlinkingTime'
 import { useNetworkStatus } from '../../hooks/useNetworkStatus'
 import { Nav } from '../navigation'
@@ -27,83 +28,11 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
 
   const isVisibleTimeAndWifi = window.innerHeight > UI.MIN_HEIGHT_SHOW_TIME_WIFI
 
-  // TODO should be cleaned up and probably moved to a custom hook (useAutoHideNav or something)
-  // TODO also should be aligned with the useNavbarHidden hook (clusterNavHidden vs navHidden, etc)
-  // Auto-hide nav on Cluster Stream
-  const NAV_HIDE_DELAY_MS = UI.INACTIVITY_HIDE_DELAY_MS
-  const hideTimerRef = useRef<number | null>(null)
-  const [clusterNavHidden, setClusterNavHidden] = useState(false)
-
   const inAutoHideNavPage = pathname === ROUTES.CLUSTER || pathname === ROUTES.TELEMETRY
 
-  const clearHideTimer = useCallback(() => {
-    if (hideTimerRef.current != null) {
-      window.clearTimeout(hideTimerRef.current)
-      hideTimerRef.current = null
-    }
-  }, [])
+  const { hidden: clusterNavHidden } = useAutoHideNav(inAutoHideNavPage, navRef.current)
 
-  const scheduleHide = useCallback(() => {
-    clearHideTimer()
-    hideTimerRef.current = window.setTimeout(() => {
-      setClusterNavHidden(true)
-      hideTimerRef.current = null
-    }, NAV_HIDE_DELAY_MS)
-  }, [clearHideTimer, NAV_HIDE_DELAY_MS])
-
-  const showNavAndArmHide = useCallback(() => {
-    setClusterNavHidden(false)
-    if (inAutoHideNavPage) scheduleHide()
-  }, [inAutoHideNavPage, scheduleHide])
-
-  useEffect(() => {
-    if (!inAutoHideNavPage) {
-      clearHideTimer()
-      setClusterNavHidden(false)
-      return
-    }
-
-    setClusterNavHidden(false)
-    scheduleHide()
-
-    return () => {
-      clearHideTimer()
-    }
-  }, [inAutoHideNavPage, scheduleHide, clearHideTimer])
-
-  useEffect(() => {
-    if (!inAutoHideNavPage) return
-
-    const wake: EventListener = () => {
-      showNavAndArmHide()
-    }
-
-    const onFocusIn: EventListener = () => {
-      const navEl = navRef.current
-      const active = document.activeElement as HTMLElement | null
-
-      if (navEl && active && navEl.contains(active)) {
-        showNavAndArmHide()
-      }
-    }
-
-    window.addEventListener('keydown', wake, { passive: true })
-    document.addEventListener('mousemove', wake, { passive: true })
-    document.addEventListener('wheel', wake, { passive: true })
-    document.addEventListener('focusin', onFocusIn)
-
-    return () => {
-      window.removeEventListener('keydown', wake)
-      document.removeEventListener('mousemove', wake)
-      document.removeEventListener('wheel', wake)
-      document.removeEventListener('focusin', onFocusIn)
-    }
-  }, [inAutoHideNavPage, showNavAndArmHide, navRef])
-
-  // Hide nav column while streaming on home screen
   const hideNavHome = isStreaming && pathname === ROUTES.HOME
-
-  // Auto-hide nav on Cluster Stream after inactivity
   const hideNav = hideNavHome || (inAutoHideNavPage && clusterNavHidden)
 
   // Steering wheel position

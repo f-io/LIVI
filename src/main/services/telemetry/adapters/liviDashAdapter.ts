@@ -7,18 +7,22 @@ import type { WebContents } from 'electron'
 import type { TelemetryStore } from '../TelemetryStore'
 
 export type LiviDashAdapterDeps = {
-  getWebContents: () => WebContents | null
+  getWebContents: () => WebContents | WebContents[] | null
   store: TelemetryStore
 }
 
 export function attachLiviDashAdapter({ store, getWebContents }: LiviDashAdapterDeps): () => void {
   const onChange = (_patch: TelemetryPayload, snapshot: TelemetryPayload): void => {
-    const wc = getWebContents()
-    if (!wc || wc.isDestroyed()) return
-    try {
-      wc.send('telemetry:update', snapshot)
-    } catch (e) {
-      console.warn('[liviDashAdapter] webContents.send failed (ignored)', e)
+    const wcs = getWebContents()
+    if (!wcs) return
+    const list = Array.isArray(wcs) ? wcs : [wcs]
+    for (const wc of list) {
+      if (!wc || wc.isDestroyed()) continue
+      try {
+        wc.send('telemetry:update', snapshot)
+      } catch (e) {
+        console.warn('[liviDashAdapter] webContents.send failed (ignored)', e)
+      }
     }
   }
 

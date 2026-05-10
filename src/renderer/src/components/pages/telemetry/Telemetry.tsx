@@ -5,19 +5,24 @@ import { DashboardConfig } from '@renderer/components/pages/telemetry/config'
 import { normalizeDashComponents } from '@renderer/components/pages/telemetry/utils'
 import { AppContext } from '@renderer/context'
 import { useNavbarHidden } from '@renderer/hooks/useNavbarHidden'
+import type { WindowId } from '@shared/types'
 import { useLiviStore } from '@store/store'
 import { clamp } from '@utils/index'
 import * as React from 'react'
 import { FC, useContext, useEffect, useState } from 'react'
 import { useKeyboardNavigation } from './hooks/useKeyboardNavigation'
 
-export const Telemetry: FC = () => {
+type TelemetryProps = {
+  windowRole?: WindowId
+}
+
+export const Telemetry: FC<TelemetryProps> = ({ windowRole = 'main' }) => {
   const theme = useTheme()
   const settings = useLiviStore((s) => s.settings)
   const { onSetAppContext } = useContext(AppContext)
   const [index, setIndex] = useState(0)
 
-  const { dashboards } = normalizeDashComponents(settings?.telemetryDashboards)
+  const { dashboards } = normalizeDashComponents(settings?.dashboards, windowRole)
   const { isNavbarHidden } = useNavbarHidden()
   const { prev, next, canPrev, canNext, onPointerDown, onPointerUp } = useKeyboardNavigation({
     dashboards,

@@ -16,8 +16,14 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
   const isDongleConnected = useStatusStore((s) => s.isDongleConnected || s.isAaActive)
   const cameraFound = useStatusStore((s) => s.cameraFound)
   const clusterEnabled = useLiviStore((s) => s.settings?.clusterEnabled ?? false)
+  const clusterOnMain = useLiviStore((s) => s.settings?.cluster?.main ?? true)
   const cameraEnabled = useLiviStore((s) => s.settings?.cameraEnabled ?? true)
-  const telemetryEnabled = useLiviStore((s) => s.settings?.telemetryEnabled ?? false)
+  const mediaOnMain = useLiviStore((s) => s.settings?.media?.main ?? true)
+  const telemetryOnMain = useLiviStore((s) => {
+    const d = s.settings?.dashboards
+    if (!d) return false
+    return Object.values(d).some((slot) => slot?.main === true)
+  })
 
   return [
     {
@@ -47,7 +53,7 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
         )
       })()
     },
-    ...(clusterEnabled
+    ...(clusterEnabled && clusterOnMain
       ? [
           {
             label: 'Cluster Stream',
@@ -56,7 +62,7 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
           }
         ]
       : []),
-    ...(telemetryEnabled
+    ...(telemetryOnMain
       ? [
           {
             label: 'Telemetry',
@@ -65,7 +71,15 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
           }
         ]
       : []),
-    { label: 'Media', path: ROUTES.MEDIA, icon: <PlayCircleOutlinedIcon sx={{ fontSize: 30 }} /> },
+    ...(mediaOnMain
+      ? [
+          {
+            label: 'Media',
+            path: ROUTES.MEDIA,
+            icon: <PlayCircleOutlinedIcon sx={{ fontSize: 30 }} />
+          }
+        ]
+      : []),
     ...(cameraEnabled
       ? [
           {

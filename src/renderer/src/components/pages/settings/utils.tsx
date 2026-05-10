@@ -10,6 +10,10 @@ function isRecord(v: unknown): v is AnyRecord {
 export const getValueByPath = (obj: unknown, path: string): unknown => {
   if (!path) return undefined
 
+  if (isRecord(obj) && Object.prototype.hasOwnProperty.call(obj, path)) {
+    return (obj as Record<string, unknown>)[path]
+  }
+
   const keys = path.split('.').filter(Boolean)
   let cur: unknown = obj
 

@@ -1,13 +1,10 @@
-import { useTheme } from '@mui/material/styles'
-import Tab from '@mui/material/Tab'
-import Tabs from '@mui/material/Tabs'
 import type { ExtraConfig } from '@shared/types'
-import React from 'react'
 import { useLocation, useNavigate } from 'react-router'
-import { ROUTES, UI } from '../../constants'
+import { ROUTES } from '../../constants'
 import { useBlinkingTime } from '../../hooks/useBlinkingTime'
 import { useNetworkStatus } from '../../hooks/useNetworkStatus'
 import { useStatusStore } from '../../store/store'
+import { NavRail, type NavRailItem } from './NavRail'
 import { useTabsConfig } from './useTabsConfig'
 
 interface NavProps {
@@ -18,7 +15,6 @@ interface NavProps {
 export const Nav = ({ receivingVideo }: NavProps) => {
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const theme = useTheme()
 
   useBlinkingTime()
   useNetworkStatus()
@@ -28,91 +24,41 @@ export const Nav = ({ receivingVideo }: NavProps) => {
 
   if (isStreaming && pathname === ROUTES.HOME) return null
 
-  const activeIndex = tabs.findIndex((t) => {
-    if (t.path === ROUTES.HOME) {
-      return pathname === ROUTES.HOME
-    }
-    return pathname.startsWith(t.path)
-  })
+  const items: NavRailItem[] = tabs.map((t) => ({
+    key: t.path,
+    icon: t.icon,
+    label: t.label,
+    disabled: t.disabled
+  }))
 
-  const value = activeIndex >= 0 ? activeIndex : 0
+  const activeKey =
+    items.find((t) => {
+      if (t.key === ROUTES.HOME) return pathname === ROUTES.HOME
+      return pathname.startsWith(t.key)
+    })?.key ??
+    items[0]?.key ??
+    ROUTES.HOME
 
-  const handleChange = (_: React.SyntheticEvent, newIndex: number) => {
-    const tab = tabs[newIndex]
-
-    if (tab.path === ROUTES.QUIT) {
+  const handleSelect = (key: string) => {
+    if (key === ROUTES.QUIT) {
       window.projection.quit().catch(console.error)
       return
     }
 
-    if (tab.path === ROUTES.SETTINGS && pathname.startsWith(ROUTES.SETTINGS)) {
+    if (key === ROUTES.SETTINGS && pathname.startsWith(ROUTES.SETTINGS)) {
       navigate(ROUTES.SETTINGS, { replace: true })
       return
     }
 
-    navigate(tab.path)
+    navigate(key)
   }
 
-  const isXSIcons = window.innerHeight <= UI.XS_ICON_MAX_HEIGHT
-
-  const tabSx = {
-    minWidth: 0,
-    flex: '1 1 0',
-    padding: isXSIcons ? '5px 0' : '10px 0',
-    '& .MuiTab-iconWrapper': { display: 'grid', placeItems: 'center' },
-    '& .MuiSvgIcon-root': {
-      fontSize: isXSIcons ? '1.5rem' : '2rem',
-      transition: 'color 120ms ease-out'
-    },
-    minHeight: 'auto',
-
-    '&.Mui-focusVisible, &:hover': {
-      opacity: 1
-    },
-    '&.Mui-focusVisible .MuiSvgIcon-root, &:hover .MuiSvgIcon-root': {
-      color: `${theme.palette.primary.main} !important`
-    }
-  } as const
-
   return (
-    <Tabs
-      value={value}
-      onChange={handleChange}
-      aria-label="Navigation Tabs"
-      variant="fullWidth"
-      textColor="inherit"
-      visibleScrollbar={false}
-      selectionFollowsFocus={false}
-      orientation="vertical"
-      sx={{
-        '& .MuiTabs-indicator': { display: 'none' },
-        '& .MuiTabs-list': { height: '100%' },
-        height: '100%'
-      }}
-    >
-      {tabs.map((tab) => (
-        <Tab
-          key={tab.path}
-          sx={tabSx}
-          icon={tab.icon}
-          disabled={tab.disabled}
-          aria-label={tab.label}
-          disableRipple
-          disableFocusRipple
-          disableTouchRipple
-          onClick={() => {
-            if (tab.path === ROUTES.SETTINGS && pathname.startsWith(ROUTES.SETTINGS)) {
-              navigate(ROUTES.SETTINGS, { replace: true })
-              return
-            }
-            if (tab.path === ROUTES.QUIT) {
-              window.projection.quit().catch(console.error)
-              return
-            }
-            navigate(tab.path)
-          }}
-        />
-      ))}
-    </Tabs>
+    <NavRail
+      items={items}
+      activeKey={activeKey}
+      onSelect={handleSelect}
+      ariaLabel="Navigation Tabs"
+    />
   )
 }

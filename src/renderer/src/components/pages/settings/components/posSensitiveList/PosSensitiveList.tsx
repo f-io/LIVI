@@ -1,128 +1,100 @@
+import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import { IconButton, Switch, Typography } from '@mui/material'
+import { Box, IconButton, Typography } from '@mui/material'
 import type { PosListNode } from '@renderer/routes/types'
-import type { TelemetryDashboardConfig, TelemetryDashboardId } from '@shared/types'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { StackItem } from '../stackItem'
 
-type Props<T> = {
+type SlotWithPos = { pos?: number } & Record<string, unknown>
+type PosMap = Record<string, SlotWithPos>
+
+type Props = {
   node: PosListNode
-  value: T
-  onChange: (v: T) => void
+  value: unknown
+  onChange: (next: PosMap) => void
+  onItemClick?: (route: string) => void
 }
 
-const isDashId = (id: string): id is TelemetryDashboardId =>
-  id === 'dash1' || id === 'dash2' || id === 'dash3' || id === 'dash4'
+const iconSx = { fontSize: 'clamp(22px, 4.2vh, 34px)' } as const
+const btnSx = { padding: 'clamp(4px, 1.2vh, 10px)' } as const
 
-const defaultDashboardsFromNode = (node: PosListNode): TelemetryDashboardConfig[] => {
-  const ids = node.items.map((i) => i.id).filter(isDashId)
-  return ids.map((id, idx) => ({ id, enabled: false, pos: idx + 1 }))
-}
+const isPosMap = (v: unknown): v is PosMap =>
+  typeof v === 'object' && v !== null && !Array.isArray(v)
 
-const iconSx = {
-  fontSize: 'clamp(22px, 4.2vh, 34px)'
-} as const
-
-const btnSx = {
-  padding: 'clamp(4px, 1.2vh, 10px)'
-} as const
-
-const normalizeDashboards = (node: PosListNode, raw: unknown): TelemetryDashboardConfig[] => {
-  const base = defaultDashboardsFromNode(node)
-
-  // nothing stored yet -> defaults
-  if (!Array.isArray(raw)) return base
-
-  // merge stored values into defaults
-  const map = new Map<TelemetryDashboardId, TelemetryDashboardConfig>()
-  for (const d of base) map.set(d.id, d)
-
-  for (const v of raw) {
-    if (!v || typeof v !== 'object') continue
-    const obj = v as Partial<TelemetryDashboardConfig> & { id?: unknown }
-
-    if (typeof obj.id !== 'string' || !isDashId(obj.id)) continue
-
-    const prev = map.get(obj.id)
-    if (!prev) continue
-
-    map.set(obj.id, {
-      id: obj.id,
-      enabled: Boolean(obj.enabled),
-      pos: typeof obj.pos === 'number' && Number.isFinite(obj.pos) ? Math.round(obj.pos) : prev.pos
+// Returns items in their persisted order, fixing duplicate / missing pos
+// values along the way so two entries can never share the same slot.
+const orderedItems = (node: PosListNode, raw: unknown) => {
+  const map: PosMap = isPosMap(raw) ? raw : {}
+  return node.items
+    .map((item, idx) => {
+      const slot = map[item.id]
+      const persisted = typeof slot?.pos === 'number' && Number.isFinite(slot.pos) ? slot.pos : null
+      return {
+        item,
+        slot: slot ?? {},
+        pos: persisted ?? idx + 1
+      }
     })
-  }
-
-  // ensure unique + stable positions: sort by pos then renumber 1..n
-  const sorted = Array.from(map.values()).sort((a, b) => a.pos - b.pos)
-  return sorted.map((d, idx) => ({ ...d, pos: idx + 1 }))
+    .sort((a, b) => a.pos - b.pos)
+    .map((entry, idx) => ({ ...entry, pos: idx + 1 }))
 }
 
-export const PosSensitiveList = <T,>({ node, value, onChange }: Props<T>) => {
+export const PosSensitiveList = ({ node, value, onChange, onItemClick }: Props) => {
   const { t } = useTranslation()
 
-  const dashboards = useMemo(() => {
-    return normalizeDashboards(node, value as unknown)
-  }, [node, value])
+  const ordered = useMemo(() => orderedItems(node, value), [node, value])
 
-  const commit = (next: TelemetryDashboardConfig[]) => {
-    const sorted = next.slice().sort((a, b) => a.pos - b.pos)
-    onChange(sorted as unknown as T)
-  }
+  const swap = (idxA: number, idxB: number) => {
+    if (idxA < 0 || idxB < 0 || idxA >= ordered.length || idxB >= ordered.length) return
 
-  const move = (id: TelemetryDashboardId, dir: 'up' | 'down') => {
-    const sorted = dashboards.slice().sort((a, b) => a.pos - b.pos)
-    const idx = sorted.findIndex((d) => d.id === id)
-    if (idx < 0) return
-
-    const swapWith = dir === 'up' ? idx - 1 : idx + 1
-    if (swapWith < 0 || swapWith >= sorted.length) return
-
-    const a = sorted[idx]
-    const b = sorted[swapWith]
-
-    const next = sorted.map((d) => {
-      if (d.id === a.id) return { ...d, pos: b.pos }
-      if (d.id === b.id) return { ...d, pos: a.pos }
-      return d
+    const next: PosMap = isPosMap(value) ? { ...value } : {}
+    ordered.forEach((entry, i) => {
+      let pos = i + 1
+      if (i === idxA) pos = idxB + 1
+      else if (i === idxB) pos = idxA + 1
+      next[entry.item.id] = { ...entry.slot, pos }
     })
-
-    commit(next)
+    onChange(next)
   }
-
-  const setEnabled = (id: TelemetryDashboardId, enabled: boolean) => {
-    const next = dashboards.map((d) => (d.id === id ? { ...d, enabled } : d))
-    commit(next)
-  }
-
-  const sorted = dashboards.slice().sort((a, b) => a.pos - b.pos)
 
   return (
     <>
-      {sorted.map((d, index) => {
-        const meta = node.items.find((i) => i.id === d.id)
-        const label = meta ? (meta.labelKey ? t(meta.labelKey, meta.label) : meta.label) : d.id
-
+      {ordered.map((entry, index) => {
+        const { item } = entry
+        const label = item.labelKey ? t(item.labelKey, item.label) : item.label
+        const target = item.route ?? item.id
         const canUp = index > 0
-        const canDown = index < sorted.length - 1
+        const canDown = index < ordered.length - 1
 
         return (
-          <StackItem key={d.id}>
+          <StackItem key={item.id} onClick={onItemClick ? () => onItemClick(target) : undefined}>
             <Typography>{label}</Typography>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <IconButton sx={btnSx} disabled={!canUp} onClick={() => move(d.id, 'up')}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <IconButton
+                sx={btnSx}
+                disabled={!canUp}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  swap(index, index - 1)
+                }}
+              >
                 <ExpandLessIcon sx={iconSx} />
               </IconButton>
-
-              <IconButton sx={btnSx} disabled={!canDown} onClick={() => move(d.id, 'down')}>
+              <IconButton
+                sx={btnSx}
+                disabled={!canDown}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  swap(index, index + 1)
+                }}
+              >
                 <ExpandMoreIcon sx={iconSx} />
               </IconButton>
-
-              <Switch checked={Boolean(d.enabled)} onChange={(_, v) => setEnabled(d.id, v)} />
-            </div>
+              {onItemClick && <ChevronRightIcon sx={iconSx} />}
+            </Box>
           </StackItem>
         )
       })}

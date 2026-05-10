@@ -2,11 +2,6 @@
   "name": "@livi/tools",
   "private": true,
   "type": "module",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
-  },
   "scripts": {
     "telemetry": "tsx telemetry-sim.ts help",
     "telemetry:set": "tsx telemetry-sim.ts set",

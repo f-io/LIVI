@@ -2,11 +2,19 @@ import type { DongleConfig } from './DongleConfig'
 
 export type TelemetryDashboardId = 'dash1' | 'dash2' | 'dash3' | 'dash4'
 
-export type TelemetryDashboardConfig = {
-  id: TelemetryDashboardId
-  enabled: boolean
+export type WindowId = 'main' | 'dash' | 'aux'
+
+export type WindowAssignment = {
+  main: boolean
+  dash: boolean
+  aux: boolean
+}
+
+export type DashboardSlotConfig = WindowAssignment & {
   pos: number
 }
+
+export type DashboardsConfig = Record<TelemetryDashboardId, DashboardSlotConfig>
 
 // Last known GPS
 export type LastKnownGps = {
@@ -19,15 +27,26 @@ export type LastKnownGps = {
 
 export type AppearanceMode = 'auto' | 'night' | 'day'
 
+export type WindowBounds = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 export type ExtraConfig = DongleConfig & {
   startPage: 'home' | 'media' | 'maps' | 'telemetry' | 'camera' | 'settings'
   language: string
-  kiosk: boolean
+  kiosk: WindowAssignment
   uiZoomPercent: number
   camera: string
   cameraEnabled: boolean
-  telemetryEnabled: boolean
-  telemetryDashboards?: TelemetryDashboardConfig[]
+  dashboards: DashboardsConfig
+  media: WindowAssignment
+  cluster: WindowAssignment
+  mainScreenBounds?: WindowBounds
+  dashScreenBounds?: WindowBounds
+  auxScreenBounds?: WindowBounds
   appearanceMode: AppearanceMode
   lastKnownGps?: LastKnownGps
   lastConnectedAaBtMac?: string
@@ -41,6 +60,12 @@ export type ExtraConfig = DongleConfig & {
   autoSwitchOnPhoneCall: boolean
   autoSwitchOnGuidance: boolean
   autoSwitchOnReverse: boolean
+  dashScreenActive: boolean
+  dashScreenWidth: number
+  dashScreenHeight: number
+  auxScreenActive: boolean
+  auxScreenWidth: number
+  auxScreenHeight: number
   visualAudioDelayMs: number
   dongleToolsIp?: string
   primaryColorDark?: string

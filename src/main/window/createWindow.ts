@@ -1,7 +1,9 @@
 import { is } from '@electron-toolkit/utils'
+import { saveSettings } from '@main/ipc/utils'
 import { runtimeStateProps, ServicesProps } from '@main/types'
 import { isMacPlatform, pushSettingsToRenderer } from '@main/utils'
-import { BrowserWindow, screen, session, shell } from 'electron'
+import type { WindowBounds } from '@shared/types'
+import { app, BrowserWindow, screen, session, shell } from 'electron'
 import { join } from 'path'
 import {
   applyAspectRatioFullscreen,
@@ -14,13 +16,32 @@ import {
 
 let mainWindow: BrowserWindow | null = null
 
+function readMainBounds(rs: runtimeStateProps): WindowBounds | undefined {
+  const b = rs.config.mainScreenBounds
+  if (
+    b &&
+    typeof b === 'object' &&
+    typeof b.x === 'number' &&
+    typeof b.y === 'number' &&
+    typeof b.width === 'number' &&
+    typeof b.height === 'number'
+  ) {
+    return b
+  }
+  return undefined
+}
+
 export function createMainWindow(runtimeState: runtimeStateProps, services: ServicesProps) {
   const { projectionService } = services
   const isMac = isMacPlatform()
 
+  const savedBounds = readMainBounds(runtimeState)
+
   mainWindow = new BrowserWindow({
-    width: runtimeState.config.width,
-    height: runtimeState.config.height,
+    width: savedBounds?.width ?? runtimeState.config.width,
+    height: savedBounds?.height ?? runtimeState.config.height,
+    x: savedBounds?.x,
+    y: savedBounds?.y,
     frame: true,
     useContentSize: true,
     kiosk: false,
@@ -39,6 +60,58 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
       experimentalFeatures: true
     }
   })
+
+  // Re-apply bounds after the compositor shows the window
+  if (savedBounds) {
+    mainWindow.once('ready-to-show', () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return
+      mainWindow.setBounds({
+        x: savedBounds.x,
+        y: savedBounds.y,
+        width: savedBounds.width,
+        height: savedBounds.height
+      })
+    })
+  }
+
+  // Persist last-known geometry on move/resize
+  let boundsTimer: NodeJS.Timeout | null = null
+  const persistMainBounds = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    try {
+      if (mainWindow.isFullScreen()) return
+      if (typeof mainWindow.isKiosk === 'function' && mainWindow.isKiosk()) return
+    } catch {
+      // mock / shim
+    }
+    if (typeof mainWindow.getPosition !== 'function') return
+    if (typeof mainWindow.getContentSize !== 'function') return
+    const [x, y] = mainWindow.getPosition()
+    const [width, height] = mainWindow.getContentSize()
+    const next: WindowBounds = { x, y, width, height }
+    const prev = runtimeState.config.mainScreenBounds
+    if (
+      prev &&
+      prev.x === next.x &&
+      prev.y === next.y &&
+      prev.width === next.width &&
+      prev.height === next.height
+    ) {
+      return
+    }
+    saveSettings(runtimeState, { mainScreenBounds: next })
+  }
+  const scheduleMainBoundsSave = () => {
+    if (boundsTimer) clearTimeout(boundsTimer)
+    boundsTimer = setTimeout(() => {
+      boundsTimer = null
+      persistMainBounds()
+    }, 500)
+  }
+  mainWindow.on('move', scheduleMainBoundsSave)
+  mainWindow.on('moved', scheduleMainBoundsSave)
+  mainWindow.on('resize', scheduleMainBoundsSave)
+  mainWindow.on('resized', scheduleMainBoundsSave)
 
   // keep in sync with WM
   attachKioskStateSync(runtimeState)
@@ -75,7 +148,10 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
     applyWindowedContentSize(mainWindow, baseW, baseH)
     mainWindow.show()
 
-    if (runtimeState.config.kiosk) {
+    // Snapshot the geometry
+    scheduleMainBoundsSave()
+
+    if (runtimeState.config.kiosk?.main) {
       setImmediate(() => {
         if (!mainWindow || mainWindow.isDestroyed()) return
 
@@ -93,7 +169,9 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
     }
 
     mainWindow.webContents.setZoomFactor((runtimeState.config.uiZoomPercent ?? 100) / 100)
-    pushSettingsToRenderer(runtimeState, { kiosk: currentKiosk(runtimeState.config) })
+    pushSettingsToRenderer(runtimeState, {
+      kiosk: { ...runtimeState.config.kiosk, main: currentKiosk(runtimeState.config) }
+    })
 
     if (is.dev) mainWindow.webContents.openDevTools({ mode: 'detach' })
     projectionService.attachRenderer(mainWindow.webContents)
@@ -143,6 +221,12 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
       } else {
         mainWindow!.hide()
       }
+      return
+    }
+
+    if (!runtimeState.isQuitting) {
+      e.preventDefault()
+      app.quit()
     }
   })
 

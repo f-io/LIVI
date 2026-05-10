@@ -2,6 +2,8 @@ import { CssBaseline, ThemeProvider } from '@mui/material'
 import { useCallback, useMemo, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import AuxApp from './AuxApp'
+import DashApp from './DashApp'
 import { useLiviStore } from './store/store'
 import {
   buildRuntimeTheme,
@@ -17,9 +19,15 @@ import '@fontsource/roboto/700.css'
 import { THEME } from './constants'
 import { AppContext, type AppContextProps } from './context'
 import './i18n'
+import { getWindowRole } from './utils/windowRole'
 
-initUiBreatheClock()
-initCursorHider()
+const role = getWindowRole()
+if (role === 'main') {
+  initUiBreatheClock()
+  initCursorHider()
+}
+if (role === 'dash') document.title = 'Dash'
+else if (role === 'aux') document.title = 'Auxiliary'
 
 export const Root = () => {
   const settings = useLiviStore((s) => s.settings)
@@ -68,11 +76,13 @@ export const Root = () => {
     [appContext, handleChangeAppContext]
   )
 
+  const RoleApp = role === 'dash' ? DashApp : role === 'aux' ? AuxApp : App
+
   return (
     <AppContext.Provider value={providerValue}>
       <ThemeProvider theme={theme}>
         <CssBaseline enableColorScheme />
-        <App />
+        <RoleApp />
       </ThemeProvider>
     </AppContext.Provider>
   )

@@ -145,7 +145,7 @@ describe('window utils', () => {
   test('currentKiosk returns runtime config when main window is absent', () => {
     ;(getMainWindow as jest.Mock).mockReturnValue(null)
 
-    expect(currentKiosk({ kiosk: true } as any)).toBe(true)
+    expect(currentKiosk({ kiosk: { main: true, dash: false, aux: false } } as any)).toBe(true)
   })
 
   test('currentKiosk returns runtime config when window is destroyed', () => {
@@ -153,7 +153,7 @@ describe('window utils', () => {
       isDestroyed: jest.fn(() => true)
     })
 
-    expect(currentKiosk({ kiosk: false } as any)).toBe(false)
+    expect(currentKiosk({ kiosk: { main: false, dash: false, aux: false } } as any)).toBe(false)
   })
 
   test('currentKiosk reads kiosk state from native window on non-mac', () => {
@@ -163,7 +163,7 @@ describe('window utils', () => {
       isKiosk: jest.fn(() => true)
     })
 
-    expect(currentKiosk({ kiosk: false } as any)).toBe(true)
+    expect(currentKiosk({ kiosk: { main: false, dash: false, aux: false } } as any)).toBe(true)
   })
 
   test('currentKiosk reads fullscreen state from native window on mac', () => {
@@ -173,25 +173,35 @@ describe('window utils', () => {
       isFullScreen: jest.fn(() => true)
     })
 
-    expect(currentKiosk({ kiosk: false } as any)).toBe(true)
+    expect(currentKiosk({ kiosk: { main: false, dash: false, aux: false } } as any)).toBe(true)
   })
 
   test('persistKioskAndBroadcast only pushes when kiosk unchanged', () => {
-    const runtimeState = { config: { kiosk: true }, wmExitedKiosk: true } as any
+    const runtimeState = {
+      config: { kiosk: { main: true, dash: false, aux: false } },
+      wmExitedKiosk: true
+    } as any
 
     persistKioskAndBroadcast(true, runtimeState)
 
-    expect(pushSettingsToRenderer).toHaveBeenCalledWith(runtimeState, { kiosk: true })
+    expect(pushSettingsToRenderer).toHaveBeenCalledWith(runtimeState, {
+      kiosk: { main: true, dash: false, aux: false }
+    })
     expect(saveSettings).not.toHaveBeenCalled()
   })
 
   test('persistKioskAndBroadcast saves when kiosk changed', () => {
-    const runtimeState = { config: { kiosk: true }, wmExitedKiosk: true } as any
+    const runtimeState = {
+      config: { kiosk: { main: true, dash: false, aux: false } },
+      wmExitedKiosk: true
+    } as any
 
     persistKioskAndBroadcast(false, runtimeState)
 
     expect(runtimeState.wmExitedKiosk).toBe(false)
-    expect(saveSettings).toHaveBeenCalledWith(runtimeState, { kiosk: false })
+    expect(saveSettings).toHaveBeenCalledWith(runtimeState, {
+      kiosk: { main: false, dash: false, aux: false }
+    })
   })
 
   test('sendKioskSync emits kiosk sync event', () => {
@@ -207,7 +217,10 @@ describe('window utils', () => {
   test('restoreKioskAfterWmExit returns early on non-linux', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' })
 
-    const runtimeState = { wmExitedKiosk: true, config: { kiosk: false } } as any
+    const runtimeState = {
+      wmExitedKiosk: true,
+      config: { kiosk: { main: false, dash: false, aux: false } }
+    } as any
 
     restoreKioskAfterWmExit(runtimeState)
 
@@ -218,7 +231,10 @@ describe('window utils', () => {
     Object.defineProperty(process, 'platform', { value: 'linux' })
     ;(getMainWindow as jest.Mock).mockReturnValue(null)
 
-    const runtimeState = { wmExitedKiosk: true, config: { kiosk: false } } as any
+    const runtimeState = {
+      wmExitedKiosk: true,
+      config: { kiosk: { main: false, dash: false, aux: false } }
+    } as any
 
     restoreKioskAfterWmExit(runtimeState)
 
@@ -231,7 +247,10 @@ describe('window utils', () => {
       isDestroyed: jest.fn(() => true)
     })
 
-    const runtimeState = { wmExitedKiosk: true, config: { kiosk: false } } as any
+    const runtimeState = {
+      wmExitedKiosk: true,
+      config: { kiosk: { main: false, dash: false, aux: false } }
+    } as any
 
     restoreKioskAfterWmExit(runtimeState)
 
@@ -245,7 +264,10 @@ describe('window utils', () => {
       setKiosk: jest.fn()
     })
 
-    const runtimeState = { wmExitedKiosk: false, config: { kiosk: false } } as any
+    const runtimeState = {
+      wmExitedKiosk: false,
+      config: { kiosk: { main: false, dash: false, aux: false } }
+    } as any
 
     restoreKioskAfterWmExit(runtimeState)
 
@@ -263,11 +285,16 @@ describe('window utils', () => {
     }
     ;(getMainWindow as jest.Mock).mockReturnValue(win)
 
-    const runtimeState = { wmExitedKiosk: true, config: { kiosk: false } } as any
+    const runtimeState = {
+      wmExitedKiosk: true,
+      config: { kiosk: { main: false, dash: false, aux: false } }
+    } as any
 
     expect(() => restoreKioskAfterWmExit(runtimeState)).not.toThrow()
     expect(runtimeState.wmExitedKiosk).toBe(false)
-    expect(saveSettings).toHaveBeenCalledWith(runtimeState, { kiosk: true })
+    expect(saveSettings).toHaveBeenCalledWith(runtimeState, {
+      kiosk: { main: true, dash: false, aux: false }
+    })
   })
 
   test('restoreKioskAfterWmExit re-enters kiosk and persists on linux', () => {
@@ -279,19 +306,27 @@ describe('window utils', () => {
     }
     ;(getMainWindow as jest.Mock).mockReturnValue(win)
 
-    const runtimeState = { wmExitedKiosk: true, config: { kiosk: false } } as any
+    const runtimeState = {
+      wmExitedKiosk: true,
+      config: { kiosk: { main: false, dash: false, aux: false } }
+    } as any
 
     restoreKioskAfterWmExit(runtimeState)
 
     expect(runtimeState.wmExitedKiosk).toBe(false)
     expect(win.setKiosk).toHaveBeenCalledWith(true)
-    expect(saveSettings).toHaveBeenCalledWith(runtimeState, { kiosk: true })
+    expect(saveSettings).toHaveBeenCalledWith(runtimeState, {
+      kiosk: { main: true, dash: false, aux: false }
+    })
   })
 
   test('attachKioskStateSync returns early on non-linux', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' })
 
-    const runtimeState = { config: { kiosk: false }, wmExitedKiosk: false } as any
+    const runtimeState = {
+      config: { kiosk: { main: false, dash: false, aux: false } },
+      wmExitedKiosk: false
+    } as any
 
     expect(() => attachKioskStateSync(runtimeState)).not.toThrow()
   })
@@ -300,7 +335,10 @@ describe('window utils', () => {
     Object.defineProperty(process, 'platform', { value: 'linux' })
     ;(getMainWindow as jest.Mock).mockReturnValue(null)
 
-    const runtimeState = { config: { kiosk: false }, wmExitedKiosk: false } as any
+    const runtimeState = {
+      config: { kiosk: { main: false, dash: false, aux: false } },
+      wmExitedKiosk: false
+    } as any
 
     attachKioskStateSync(runtimeState)
 
@@ -320,7 +358,10 @@ describe('window utils', () => {
     }
     ;(getMainWindow as jest.Mock).mockReturnValue(win)
 
-    const runtimeState = { config: { kiosk: false }, wmExitedKiosk: false } as any
+    const runtimeState = {
+      config: { kiosk: { main: false, dash: false, aux: false } },
+      wmExitedKiosk: false
+    } as any
 
     attachKioskStateSync(runtimeState)
 
@@ -334,7 +375,9 @@ describe('window utils', () => {
     expect(win.on).toHaveBeenCalledWith('restore', expect.anything())
     expect(win.on).toHaveBeenCalledWith('minimize', expect.anything())
 
-    expect(pushSettingsToRenderer).toHaveBeenCalledWith(runtimeState, { kiosk: false })
+    expect(pushSettingsToRenderer).toHaveBeenCalledWith(runtimeState, {
+      kiosk: { main: false, dash: false, aux: false }
+    })
     expect(handlers.focus).toBeDefined()
   })
 
@@ -351,7 +394,10 @@ describe('window utils', () => {
     }
     ;(getMainWindow as jest.Mock).mockReturnValue(win)
 
-    const runtimeState = { config: { kiosk: false }, wmExitedKiosk: false } as any
+    const runtimeState = {
+      config: { kiosk: { main: false, dash: false, aux: false } },
+      wmExitedKiosk: false
+    } as any
 
     attachKioskStateSync(runtimeState)
     handlers.resize()
@@ -372,12 +418,17 @@ describe('window utils', () => {
     }
     ;(getMainWindow as jest.Mock).mockReturnValue(win)
 
-    const runtimeState = { config: { kiosk: true }, wmExitedKiosk: false } as any
+    const runtimeState = {
+      config: { kiosk: { main: true, dash: false, aux: false } },
+      wmExitedKiosk: false
+    } as any
 
     attachKioskStateSync(runtimeState)
 
     expect(runtimeState.wmExitedKiosk).toBe(true)
-    expect(saveSettings).toHaveBeenCalledWith(runtimeState, { kiosk: false })
+    expect(saveSettings).toHaveBeenCalledWith(runtimeState, {
+      kiosk: { main: false, dash: false, aux: false }
+    })
     expect(pushSettingsToRenderer).not.toHaveBeenCalled()
   })
 
@@ -394,7 +445,10 @@ describe('window utils', () => {
     }
     ;(getMainWindow as jest.Mock).mockReturnValue(win)
 
-    const runtimeState = { config: { kiosk: false }, wmExitedKiosk: false } as any
+    const runtimeState = {
+      config: { kiosk: { main: false, dash: false, aux: false } },
+      wmExitedKiosk: false
+    } as any
 
     attachKioskStateSync(runtimeState)
 
@@ -417,12 +471,17 @@ describe('window utils', () => {
     }
     ;(getMainWindow as jest.Mock).mockReturnValue(win)
 
-    const runtimeState = { config: { kiosk: false }, wmExitedKiosk: true } as any
+    const runtimeState = {
+      config: { kiosk: { main: false, dash: false, aux: false } },
+      wmExitedKiosk: true
+    } as any
 
     attachKioskStateSync(runtimeState)
     handlers.focus()
 
     expect(win.setKiosk).toHaveBeenCalledWith(true)
-    expect(saveSettings).toHaveBeenCalledWith(runtimeState, { kiosk: true })
+    expect(saveSettings).toHaveBeenCalledWith(runtimeState, {
+      kiosk: { main: true, dash: false, aux: false }
+    })
   })
 })
