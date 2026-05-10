@@ -10,7 +10,9 @@ import { ROUTES, UI } from '../../constants'
 import { useAutoHideNav } from '../../hooks/useAutoHideNav'
 import { useBlinkingTime } from '../../hooks/useBlinkingTime'
 import { useNetworkStatus } from '../../hooks/useNetworkStatus'
+import { getWindowRole } from '../../utils/windowRole'
 import { Nav } from '../navigation'
+import { useTabsConfig } from '../navigation/useTabsConfig'
 import { AppLayoutProps } from './types'
 
 export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
@@ -26,11 +28,16 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
   const network = useNetworkStatus()
   const theme = useTheme()
 
-  const isVisibleTimeAndWifi = window.innerHeight > UI.MIN_HEIGHT_SHOW_TIME_WIFI
+  // Time + Wi-Fi widget only on the Main window
+  const isVisibleTimeAndWifi =
+    getWindowRole() === 'main' && window.innerHeight > UI.MIN_HEIGHT_SHOW_TIME_WIFI
 
   const inAutoHideNavPage = pathname === ROUTES.CLUSTER || pathname === ROUTES.TELEMETRY
 
   const { hidden: clusterNavHidden } = useAutoHideNav(inAutoHideNavPage, navRef.current)
+
+  const tabs = useTabsConfig(receivingVideo)
+  const singleTab = tabs.length <= 1
 
   const hideNavHome = isStreaming && pathname === ROUTES.HOME
   const hideNav = hideNavHome || (inAutoHideNavPage && clusterNavHidden)
@@ -56,56 +63,62 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
       }}
     >
       {/* NAV COLUMN */}
-      <div
-        ref={navRef}
-        id="nav-root"
-        style={{
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          borderRight: isRhd ? undefined : '1px solid #444',
-          borderLeft: isRhd ? '1px solid #444' : undefined,
-          flex: '0 0 auto',
-          position: 'relative',
-          zIndex: 10,
-          opacity: hideNav ? 0 : 1,
-          transform: hideNav ? (isRhd ? 'translateX(10px)' : 'translateX(-10px)') : 'translateX(0)',
-          transition: 'opacity 220ms ease, transform 220ms ease',
-          pointerEvents: hideNav ? 'none' : 'auto'
-        }}
-      >
-        {isVisibleTimeAndWifi && (
-          <div
-            style={{
-              paddingTop: '1rem',
-              background: theme.palette.background.paper
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', flexDirection: 'column' }}>
-              <Typography style={{ fontSize: '1.5rem' }}>{time}</Typography>
+      {!singleTab && (
+        <div
+          ref={navRef}
+          id="nav-root"
+          style={{
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            borderRight: isRhd ? undefined : '1px solid #444',
+            borderLeft: isRhd ? '1px solid #444' : undefined,
+            flex: '0 0 auto',
+            position: 'relative',
+            zIndex: 10,
+            opacity: hideNav ? 0 : 1,
+            transform: hideNav
+              ? isRhd
+                ? 'translateX(10px)'
+                : 'translateX(-10px)'
+              : 'translateX(0)',
+            transition: 'opacity 220ms ease, transform 220ms ease',
+            pointerEvents: hideNav ? 'none' : 'auto'
+          }}
+        >
+          {isVisibleTimeAndWifi && (
+            <div
+              style={{
+                paddingTop: '1rem',
+                background: theme.palette.background.paper
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', flexDirection: 'column' }}>
+                <Typography style={{ fontSize: '1.5rem' }}>{time}</Typography>
 
-              <div>
-                {network.type === 'wifi' ? (
-                  <WifiIcon fontSize="small" style={{ fontSize: '1rem' }} />
-                ) : !network.online ? (
-                  <WifiOffIcon fontSize="small" style={{ fontSize: '1rem', opacity: 0.7 }} />
-                ) : null}
-              </div>
-            </Box>
+                <div>
+                  {network.type === 'wifi' ? (
+                    <WifiIcon fontSize="small" style={{ fontSize: '1rem' }} />
+                  ) : !network.online ? (
+                    <WifiOffIcon fontSize="small" style={{ fontSize: '1rem', opacity: 0.7 }} />
+                  ) : null}
+                </div>
+              </Box>
+            </div>
+          )}
+
+          {/* Nav should fill remaining height */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+            <Nav receivingVideo={receivingVideo} settings={settings} />
           </div>
-        )}
-
-        {/* Nav should fill remaining height */}
-        <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-          <Nav receivingVideo={receivingVideo} settings={settings} />
         </div>
-      </div>
+      )}
 
       {/* CONTENT COLUMN */}
       <div
         ref={mainRef}
         id="content-root"
-        data-nav-hidden={hideNav ? '1' : '0'}
+        data-nav-hidden={hideNav || singleTab ? '1' : '0'}
         style={{
           flex: 1,
           minWidth: 0,

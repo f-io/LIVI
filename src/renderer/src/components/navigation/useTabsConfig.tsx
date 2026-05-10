@@ -8,26 +8,65 @@ import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined'
 import { useTheme } from '@mui/material/styles'
 import { ROUTES } from '../../constants'
 import { useLiviStore, useStatusStore } from '../../store/store'
+import { getWindowRole } from '../../utils/windowRole'
 import { TabConfig } from './types'
 
 export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivingVideo) => {
   const theme = useTheme()
+  const role = getWindowRole()
   const isStreaming = useStatusStore((s) => s.isStreaming)
   const isDongleConnected = useStatusStore((s) => s.isDongleConnected || s.isAaActive)
   const cameraFound = useStatusStore((s) => s.cameraFound)
   const clusterEnabled = useLiviStore((s) => s.settings?.clusterEnabled ?? false)
-  const clusterOnMain = useLiviStore((s) => s.settings?.cluster?.main ?? true)
+  const clusterOnRole = useLiviStore((s) =>
+    role === 'main' ? (s.settings?.cluster?.main ?? true) : (s.settings?.cluster?.[role] ?? false)
+  )
   const cameraEnabled = useLiviStore((s) => s.settings?.cameraEnabled ?? true)
-  const mediaOnMain = useLiviStore((s) => s.settings?.media?.main ?? true)
-  const telemetryOnMain = useLiviStore((s) => {
+  const mediaOnRole = useLiviStore((s) =>
+    role === 'main' ? (s.settings?.media?.main ?? true) : (s.settings?.media?.[role] ?? false)
+  )
+  const telemetryOnRole = useLiviStore((s) => {
     const d = s.settings?.dashboards
     if (!d) return false
-    return Object.values(d).some((slot) => slot?.main === true)
+    return Object.values(d).some((slot) => slot?.[role] === true)
   })
+
+  // Secondary windows only show tabs that are routed to that role
+  if (role !== 'main') {
+    return [
+      ...(clusterEnabled && clusterOnRole
+        ? [
+            {
+              label: 'Cluster Stream',
+              path: ROUTES.CLUSTER,
+              icon: <MapOutlinedIcon sx={{ fontSize: 30 }} />
+            }
+          ]
+        : []),
+      ...(telemetryOnRole
+        ? [
+            {
+              label: 'Telemetry',
+              path: ROUTES.TELEMETRY,
+              icon: <SpeedOutlinedIcon sx={{ fontSize: 30 }} />
+            }
+          ]
+        : []),
+      ...(mediaOnRole
+        ? [
+            {
+              label: 'Media',
+              path: ROUTES.MEDIA,
+              icon: <PlayCircleOutlinedIcon sx={{ fontSize: 30 }} />
+            }
+          ]
+        : [])
+    ]
+  }
 
   return [
     {
-      label: 'CarPlay',
+      label: 'Projection',
       path: ROUTES.HOME,
       icon: (() => {
         const usbConnected = isDongleConnected
@@ -53,7 +92,7 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
         )
       })()
     },
-    ...(clusterEnabled && clusterOnMain
+    ...(clusterEnabled && clusterOnRole
       ? [
           {
             label: 'Cluster Stream',
@@ -62,7 +101,7 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
           }
         ]
       : []),
-    ...(telemetryOnMain
+    ...(telemetryOnRole
       ? [
           {
             label: 'Telemetry',
@@ -71,7 +110,7 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
           }
         ]
       : []),
-    ...(mediaOnMain
+    ...(mediaOnRole
       ? [
           {
             label: 'Media',

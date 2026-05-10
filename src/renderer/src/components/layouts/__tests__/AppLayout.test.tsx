@@ -14,6 +14,12 @@ jest.mock('../../navigation', () => ({
   Nav: () => <div data-testid="nav">Nav</div>
 }))
 
+let mockTabCount = 4
+jest.mock('../../navigation/useTabsConfig', () => ({
+  useTabsConfig: () =>
+    Array.from({ length: mockTabCount }, (_, i) => ({ path: `/${i}`, label: `t${i}`, icon: null }))
+}))
+
 jest.mock('@store/store', () => ({
   useLiviStore: (selector: (s: any) => unknown) => selector({ settings: { hand: mockHand } }),
   useStatusStore: (selector: (s: any) => unknown) => selector({ isStreaming: mockStreaming })
