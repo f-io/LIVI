@@ -10,16 +10,6 @@
   ],
   "homepage": "https://f-io.dev",
   "packageManager": "pnpm@11.0.9",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "electron",
-      "electron-winstaller",
-      "esbuild",
-      "protobufjs",
-      "unrs-resolver",
-      "usb"
-    ]
-  },
   "scripts": {
     "prepare": "husky",
     "dev": "vite",
