@@ -785,12 +785,21 @@ describe('Projection page', () => {
     expect((window as any).projection.ipc.sendCommand).toHaveBeenCalledWith('home')
   })
 
-  test('does not send key command when stream is inactive', () => {
+  test('does not re-send last key command on isStreaming flicker', () => {
+    statusState.isStreaming = true
+
+    const { rerender } = render(
+      <Projection {...baseProps()} command={'home' as any} commandCounter={1} />
+    )
+    expect((window as any).projection.ipc.sendCommand).toHaveBeenCalledTimes(1)
+    expect((window as any).projection.ipc.sendCommand).toHaveBeenCalledWith('home')
+
     statusState.isStreaming = false
+    rerender(<Projection {...baseProps()} command={'home' as any} commandCounter={1} />)
+    statusState.isStreaming = true
+    rerender(<Projection {...baseProps()} command={'home' as any} commandCounter={1} />)
 
-    render(<Projection {...baseProps()} command={'home' as any} commandCounter={1} />)
-
-    expect((window as any).projection.ipc.sendCommand).not.toHaveBeenCalled()
+    expect((window as any).projection.ipc.sendCommand).toHaveBeenCalledTimes(1)
   })
 
   // ── IPC plugged / unplugged / failure events ──────────────────────────────

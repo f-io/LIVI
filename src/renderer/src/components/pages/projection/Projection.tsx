@@ -1034,13 +1034,14 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     return () => obs.disconnect()
   }, [carplayWorker])
 
-  // Key commands
+  // Key commands. Fire only when the counter actually advances
+  const lastSentCommandCounterRef = useRef(0)
   useEffect(() => {
     if (!commandCounter) return
-    if (!isStreaming) return
-
+    if (commandCounter === lastSentCommandCounterRef.current) return
+    lastSentCommandCounterRef.current = commandCounter
     window.projection.ipc.sendCommand(command)
-  }, [command, commandCounter, isStreaming])
+  }, [command, commandCounter])
 
   // Cleanup
   useEffect(() => {
