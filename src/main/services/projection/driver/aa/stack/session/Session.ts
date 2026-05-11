@@ -95,6 +95,7 @@ export interface SessionConfig {
   videoHeight?: number
   videoDpi?: number
   videoFps?: 30 | 60
+  pixelAspectRatioE4?: number
   // Physical HU display
   displayWidth?: number
   displayHeight?: number
@@ -123,6 +124,9 @@ export interface SessionConfig {
   clusterEnabled?: boolean
   clusterWidth: number
   clusterHeight: number
+  clusterTierWidth?: number
+  clusterTierHeight?: number
+  clusterPixelAspectRatioE4?: number
   clusterFps: number
   clusterDpi: number
   clusterSafeAreaTop?: number
@@ -672,6 +676,23 @@ export class Session extends EventEmitter {
     // Step 1: send version request
     this._transition(State.VERSION)
     this._sendVersionRequest()
+
+    // Pre-RUNNING watchdog
+    setTimeout(() => {
+      if (this._state >= State.RUNNING || this._state === State.CLOSED) return
+      console.warn(
+        `[Session] pre-RUNNING watchdog fired: stuck in state ${this._state} after 5s — aborting to trigger USB recovery`
+      )
+      const err = new Error(
+        `session stalled in pre-RUNNING state — phone-side AA service likely zombie`
+      )
+      try {
+        this.emit('error', err)
+      } catch {
+        /* ignore */
+      }
+      this.close('pre-RUNNING watchdog')
+    }, 5_000)
   }
 
   // ── Public outbound API (HU → Phone) ─────────────────────────────────────
@@ -872,48 +893,36 @@ export class Session extends EventEmitter {
       )
   }
 
-  // Ask the phone to emit a fresh IDR. Same VideoFocusIndication(PROJECTED, unsolicited=false)
+  // Tell the phone we have PROJECTED focus on the main video channel.
+  // Sent on AA-UI entry and whenever the renderer's decoder needs a keyframe.
+  // Phone resumes streaming (if it had stopped) and emits an IDR when ready.
   requestKeyframe(): void {
     if (this._state !== State.RUNNING) return
-    // payload: [focus=PROJECTED(1)]; unsolicited defaults to false
     this._sendEncrypted(
       CH.VIDEO,
       FRAME_FLAGS.ENC_SIGNAL,
       AV_MSG.VIDEO_FOCUS_INDICATION,
       Buffer.from([0x08, 0x01])
     )
-    if (DEBUG) {
-      console.log(
-        '[Session] keyframe requested via VideoFocusIndication(PROJECTED, unsolicited=false)'
-      )
-    }
+    if (DEBUG) console.log('[Session] main video focus indication (PROJECTED) sent')
   }
 
-  // Same as above but for the secondary (cluster) display sink (ch=19).
+  // Tell the phone we have PROJECTED focus on the cluster channel. Same
+  // shape as main: a single VideoFocusIndication. Repeated calls are
+  // idempotent and don't interrupt the running stream.
   requestClusterKeyframe(): void {
     if (this._state !== State.RUNNING) return
-    // 1. Surrender focus: focus_mode=NATIVE(2), unsolicited=true
     this._sendEncrypted(
       CH.CLUSTER_VIDEO,
       FRAME_FLAGS.ENC_SIGNAL,
       AV_MSG.VIDEO_FOCUS_INDICATION,
-      Buffer.from([0x08, 0x02, 0x10, 0x01])
+      Buffer.from([0x08, 0x01])
     )
-    // 2. Re-acquire shortly after: focus_mode=PROJECTED(1), unsolicited=true
-    setTimeout(() => {
-      if (this._state !== State.RUNNING) return
-      this._sendEncrypted(
-        CH.CLUSTER_VIDEO,
-        FRAME_FLAGS.ENC_SIGNAL,
-        AV_MSG.VIDEO_FOCUS_INDICATION,
-        Buffer.from([0x08, 0x01, 0x10, 0x01])
-      )
-    }, 50)
-    if (DEBUG) console.log('[Session] cluster keyframe requested (NATIVE→PROJECTED toggle)')
+    if (DEBUG) console.log('[Session] cluster video focus indication (PROJECTED) sent')
   }
 
   // HU-initiated shutdown via ByeByeRequest
-  requestShutdown(reason = 1 /* USER_SELECTION */): void {
+  async requestShutdown(reason = 1 /* USER_SELECTION */): Promise<void> {
     if (this._state >= State.CLOSED) return
     const payload = Buffer.from([0x08, reason & 0xff])
     if (DEBUG) console.log(`[Session] requesting shutdown reason=${reason}`)
@@ -921,6 +930,19 @@ export class Session extends EventEmitter {
       this._sendEncrypted(CH.CONTROL, FRAME_FLAGS.ENC_SIGNAL, CTRL_MSG.SHUTDOWN_REQUEST, payload)
     } catch (err) {
       if (DEBUG) console.warn(`[Session] shutdown send failed: ${(err as Error).message}`)
+    }
+    // Wait for the encrypted ByeBye to actually leave the TLS stack and hit
+    // the underlying socket buffer
+    let writeTimer: NodeJS.Timeout | null = null
+    try {
+      await Promise.race([
+        this._writeChain,
+        new Promise<void>((resolve) => {
+          writeTimer = setTimeout(resolve, 500)
+        })
+      ])
+    } finally {
+      if (writeTimer) clearTimeout(writeTimer)
     }
     this._transition(State.CLOSED, 'hu-initiated shutdown')
     try {
@@ -1138,26 +1160,20 @@ export class Session extends EventEmitter {
 
     const vFps = fps === 60 ? VIDEO_FPS._60 : VIDEO_FPS._30
 
-    // Non-tier display fit: phone encodes the full tier with symmetric black bars
     let widthMargin = 0
     let heightMargin = 0
     if (cfg.displayWidth && cfg.displayHeight && vW > 0 && vH > 0) {
       const displayAR = cfg.displayWidth / cfg.displayHeight
       const tierAR = vW / vH
       if (displayAR > tierAR) {
-        // wider display → letterbox
         const contentH = Math.round(vW / displayAR) & ~1
         heightMargin = Math.max(0, vH - contentH)
       } else if (displayAR < tierAR) {
-        // narrower display → pillarbox
         const contentW = Math.round(vH * displayAR) & ~1
         widthMargin = Math.max(0, vW - contentW)
       }
     }
-    // UiConfig.margins forces symmetric split; without it the phone top-aligns.
-    // The user's `projectionSafeArea*` insets (in tier-space px) stack on top
-    // of the AR-fit letterbox/pillarbox margins so the phone keeps UI within
-    // [AR-fit window] ∩ [user safe area].
+
     const userTop = Math.max(0, cfg.mainSafeAreaTop ?? 0)
     const userBottom = Math.max(0, cfg.mainSafeAreaBottom ?? 0)
     const userLeft = Math.max(0, cfg.mainSafeAreaLeft ?? 0)
@@ -1201,6 +1217,7 @@ export class Session extends EventEmitter {
     const channels: object[] = []
 
     // ── Video (ch=3) ──
+    const parE4 = cfg.pixelAspectRatioE4 ?? 10000
     const videoUiConfig = {
       margins: { top: insetTop, bottom: insetBottom, left: insetLeft, right: insetRight }
     }
@@ -1210,6 +1227,7 @@ export class Session extends EventEmitter {
       widthMargin,
       heightMargin,
       density: dpi,
+      pixelAspectRatioE4: parE4,
       uiConfig: videoUiConfig
     }
     const videoConfigs: object[] = [
@@ -1237,7 +1255,9 @@ export class Session extends EventEmitter {
     if (this._cfg.clusterEnabled) {
       const cW = this._cfg.clusterWidth
       const cH = this._cfg.clusterHeight
-      const clusterRes = resolutionFromDimensions(cW, cH) ?? vRes
+      const cTierW = this._cfg.clusterTierWidth ?? cW
+      const cTierH = this._cfg.clusterTierHeight ?? cH
+      const clusterRes = resolutionFromDimensions(cTierW, cTierH) ?? vRes
       const clusterFps =
         this._cfg.clusterFps === 60
           ? VIDEO_FPS._60
@@ -1245,21 +1265,41 @@ export class Session extends EventEmitter {
             ? VIDEO_FPS._30
             : vFps
       // Resolved at the driver layer (aaDriver.ts) — 0 = auto means the
-      // driver already substituted computeAndroidAutoDpi(cW, cH).
+      // driver already substituted computeAndroidAutoDpi(cTierW, cTierH).
       const clusterDpi = this._cfg.clusterDpi
-      // Cluster safe-area insets, phone places its UI within these margins
-      const clusterMargins = {
-        top: Math.max(0, this._cfg.clusterSafeAreaTop ?? 0),
-        bottom: Math.max(0, this._cfg.clusterSafeAreaBottom ?? 0),
-        left: Math.max(0, this._cfg.clusterSafeAreaLeft ?? 0),
-        right: Math.max(0, this._cfg.clusterSafeAreaRight ?? 0)
+
+      let cWMargin = 0
+      let cHMargin = 0
+      if (cW > 0 && cH > 0 && cTierW > 0 && cTierH > 0) {
+        const cAR = cW / cH
+        const cTierAR = cTierW / cTierH
+        if (cAR > cTierAR) {
+          const contentH = Math.round(cTierW / cAR) & ~1
+          cHMargin = Math.max(0, cTierH - contentH)
+        } else if (cAR < cTierAR) {
+          const contentW = Math.round(cTierH * cAR) & ~1
+          cWMargin = Math.max(0, cTierW - contentW)
+        }
       }
+
+      const userClusterTop = Math.max(0, this._cfg.clusterSafeAreaTop ?? 0)
+      const userClusterBottom = Math.max(0, this._cfg.clusterSafeAreaBottom ?? 0)
+      const userClusterLeft = Math.max(0, this._cfg.clusterSafeAreaLeft ?? 0)
+      const userClusterRight = Math.max(0, this._cfg.clusterSafeAreaRight ?? 0)
+      const clusterMargins = {
+        top: Math.floor(cHMargin / 2) + userClusterTop,
+        bottom: cHMargin - Math.floor(cHMargin / 2) + userClusterBottom,
+        left: Math.floor(cWMargin / 2) + userClusterLeft,
+        right: cWMargin - Math.floor(cWMargin / 2) + userClusterRight
+      }
+
       const clusterBase = {
         codecResolution: clusterRes,
         frameRate: clusterFps,
-        widthMargin: 0,
-        heightMargin: 0,
+        widthMargin: cWMargin,
+        heightMargin: cHMargin,
         density: clusterDpi,
+        pixelAspectRatioE4: this._cfg.clusterPixelAspectRatioE4 ?? 10000,
         uiConfig: { margins: clusterMargins }
       }
       const clusterConfigs: object[] = [

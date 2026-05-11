@@ -13,6 +13,7 @@ import {
   computeAndroidAutoDpi,
   dongleDisplayName,
   getCurrentTimeInMs,
+  isClusterDisplayed,
   matchFittingAAResolution
 } from '@shared/utils'
 import { buildServerCgiScript } from '../assets/LIVI_cgi.js'
@@ -460,7 +461,7 @@ export class SendBoxSettings extends SendableMessageWithPayload {
       OemName: cfg.oemName ?? cfg.carName
     }
 
-    if (cfg.clusterEnabled) {
+    if (isClusterDisplayed(cfg)) {
       const cW = cfg.clusterWidth
       const cH = cfg.clusterHeight
       const cF = cfg.clusterFps

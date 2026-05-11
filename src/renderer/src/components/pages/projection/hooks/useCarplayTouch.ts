@@ -52,8 +52,8 @@ const norm = (
     transform.visibleWidth > 0 &&
     transform.visibleHeight > 0
   ) {
-    const streamX = (localX / r.width) * transform.visibleWidth
-    const streamY = (localY / r.height) * transform.visibleHeight
+    const streamX = transform.cropLeft + (localX / r.width) * transform.visibleWidth
+    const streamY = transform.cropTop + (localY / r.height) * transform.visibleHeight
 
     return {
       x: clamp01(streamX / transform.streamWidth),

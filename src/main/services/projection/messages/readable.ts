@@ -1,3 +1,4 @@
+import { PhoneType } from '@shared/types/DongleConfig'
 import { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
 import { MessageHeader } from './common.js'
 
@@ -111,13 +112,7 @@ export class BluetoothPairedList extends Message {
   }
 }
 
-export enum PhoneType {
-  AndroidMirror = 1,
-  CarPlay = 3,
-  iPhoneMirror = 4,
-  AndroidAuto = 5,
-  HiCar = 6
-}
+export { PhoneType }
 
 export class Plugged extends Message {
   phoneType: PhoneType

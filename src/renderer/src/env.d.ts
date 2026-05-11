@@ -183,6 +183,8 @@ declare global {
       beginInstall(): Promise<void>
       abortUpdate(): Promise<void>
       openExternal(url: string): Promise<{ ok: boolean; error?: string }>
+      broadcastMediaKey(command: string): void
+      onMediaKey(handler: (command: string) => void): () => void
     }
   }
 }

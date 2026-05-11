@@ -14,6 +14,14 @@ export enum PhoneWorkMode {
   Android = 4
 }
 
+export enum PhoneType {
+  AndroidMirror = 1,
+  CarPlay = 3,
+  iPhoneMirror = 4,
+  AndroidAuto = 5,
+  HiCar = 6
+}
+
 export enum CarType {
   Unknown = 0,
   Gasoline = 1,
@@ -60,7 +68,7 @@ export type DongleConfig = {
   projectionSafeAreaLeft: number
   projectionSafeAreaRight: number
   projectionSafeAreaDrawOutside: boolean
-  clusterEnabled: boolean
+  cluster?: { main?: boolean; dash?: boolean; aux?: boolean }
   clusterWidth: number
   clusterHeight: number
   clusterFps: number

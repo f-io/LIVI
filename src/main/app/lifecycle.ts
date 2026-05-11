@@ -61,7 +61,6 @@ export function setupLifecycle(runtimeState: runtimeStateProps, services: Servic
     const tCarplayStop = 6000
 
     // Global watchdog: log only
-    // TODO replace by isMac fn
     const watchdogMs = process.platform === 'darwin' ? 10000 : 3000
     const watchdog = setTimeout(() => {
       console.warn(`[MAIN] before-quit watchdog: giving up waiting after ${watchdogMs}ms`)
@@ -102,7 +101,8 @@ export function setupLifecycle(runtimeState: runtimeStateProps, services: Servic
       console.warn('[MAIN] Error while quitting:', err)
     } finally {
       setTimeout(() => clearTimeout(watchdog), 250)
-      setImmediate(() => app.quit())
+
+      setImmediate(() => process.kill(process.pid, 'SIGKILL'))
     }
   })
 

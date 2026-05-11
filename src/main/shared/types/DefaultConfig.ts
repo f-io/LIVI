@@ -78,7 +78,6 @@ export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
   highlightColorDark: '',
   primaryColorLight: '',
   highlightColorLight: '',
-  clusterEnabled: true,
   dashScreenActive: false,
   dashScreenWidth: 1280,
   dashScreenHeight: 720,
@@ -92,7 +91,7 @@ export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
     dash4: { main: true, dash: false, aux: false, pos: 4 }
   },
   media: { main: true, dash: false, aux: false },
-  cluster: { main: true, dash: false, aux: false },
+  cluster: { main: false, dash: false, aux: false },
   bindings: DEFAULT_BINDINGS,
   dongleIcon120: ICON_120_B64,
   dongleIcon180: ICON_180_B64,

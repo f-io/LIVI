@@ -9,11 +9,19 @@ jest.mock('@main/window/createWindow', () => ({
 
 describe('setupLifecycle', () => {
   const originalPlatform = process.platform
+  let killSpy: jest.SpyInstance
 
   beforeEach(() => {
     jest.clearAllMocks()
     jest.useRealTimers()
     Object.defineProperty(process, 'platform', { value: originalPlatform })
+    // before-quit ends with `process.kill(process.pid, 'SIGKILL')`; stub it
+    // out so the test runner survives.
+    killSpy = jest.spyOn(process, 'kill').mockImplementation(() => true)
+  })
+
+  afterEach(() => {
+    killSpy.mockRestore()
   })
 
   afterAll(() => {
@@ -169,7 +177,7 @@ describe('setupLifecycle', () => {
     expect(projectionService.disconnectPhone).toHaveBeenCalledTimes(1)
     expect(telemetrySocket.disconnect).toHaveBeenCalledTimes(1)
     expect(projectionService.stop).toHaveBeenCalledTimes(1)
-    expect(app.quit).toHaveBeenCalledTimes(1)
+    expect(killSpy).toHaveBeenCalledWith(process.pid, 'SIGKILL')
   })
 
   test('before-quit logs warning when a shutdown step throws', async () => {
@@ -202,7 +210,7 @@ describe('setupLifecycle', () => {
     await new Promise<void>((resolve) => setImmediate(resolve))
 
     expect(warnSpy).toHaveBeenCalledWith('[MAIN] Error while quitting:', expect.any(Error))
-    expect(app.quit).toHaveBeenCalledTimes(1)
+    expect(killSpy).toHaveBeenCalledWith(process.pid, 'SIGKILL')
   })
 
   test('before-quit logs timeout warning when a step exceeds timeout', async () => {
@@ -251,7 +259,7 @@ describe('setupLifecycle', () => {
     expect(logSpy).toHaveBeenCalledWith(
       expect.stringContaining('[MAIN] before-quit step:start projection.disconnectPhone()')
     )
-    expect(app.quit).toHaveBeenCalledTimes(1)
+    expect(killSpy).toHaveBeenCalledWith(process.pid, 'SIGKILL')
   })
 
   test('before-quit logs watchdog warning when shutdown takes too long', async () => {
@@ -300,7 +308,7 @@ describe('setupLifecycle', () => {
     await jest.advanceTimersByTimeAsync(10000)
     await promise
 
-    expect(app.quit).toHaveBeenCalledTimes(1)
+    expect(killSpy).toHaveBeenCalledWith(process.pid, 'SIGKILL')
   })
 
   test('before-quit uses fallback resolved promises when usb stop and telemetry disconnect are missing', async () => {
@@ -347,6 +355,6 @@ describe('setupLifecycle', () => {
       expect.stringContaining('[MAIN] before-quit step:start projection.disconnectPhone()')
     )
 
-    expect(app.quit).toHaveBeenCalledTimes(1)
+    expect(killSpy).toHaveBeenCalledWith(process.pid, 'SIGKILL')
   })
 })

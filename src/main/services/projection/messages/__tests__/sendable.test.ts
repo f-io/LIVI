@@ -328,8 +328,7 @@ describe('sendable messages', () => {
         gnssGps: true,
         gnssGlonass: false,
         gnssGalileo: true,
-        gnssBeiDou: false,
-        clusterEnabled: false
+        gnssBeiDou: false
       } as any,
       123456
     )
@@ -377,7 +376,7 @@ describe('sendable messages', () => {
         gnssGlonass: false,
         gnssGalileo: false,
         gnssBeiDou: false,
-        clusterEnabled: true,
+        cluster: { main: true, dash: false, aux: false },
         clusterWidth: 800,
         clusterHeight: 480,
         clusterFps: 30,
@@ -434,7 +433,7 @@ describe('sendable messages', () => {
         gnssGlonass: false,
         gnssGalileo: false,
         gnssBeiDou: false,
-        clusterEnabled: true,
+        cluster: { main: true, dash: false, aux: false },
         clusterWidth: 800,
         clusterHeight: 480,
         clusterFps: 24,
@@ -549,8 +548,7 @@ describe('sendable messages', () => {
           gnssGps: false,
           gnssGlonass: false,
           gnssGalileo: false,
-          gnssBeiDou: false,
-          clusterEnabled: false
+          gnssBeiDou: false
         },
         123
       )
@@ -604,8 +602,7 @@ describe('sendable messages', () => {
           gnssGps: false,
           gnssGlonass: false,
           gnssGalileo: false,
-          gnssBeiDou: false,
-          clusterEnabled: false
+          gnssBeiDou: false
         },
         123
       )
@@ -648,8 +645,7 @@ describe('sendable messages', () => {
         gnssGps: false,
         gnssGlonass: false,
         gnssGalileo: false,
-        gnssBeiDou: false,
-        clusterEnabled: false
+        gnssBeiDou: false
       } as any,
       null
     )
@@ -684,8 +680,7 @@ describe('sendable messages', () => {
         gnssGps: false,
         gnssGlonass: false,
         gnssGalileo: false,
-        gnssBeiDou: true,
-        clusterEnabled: false
+        gnssBeiDou: true
       } as any,
       1
     )
@@ -723,7 +718,7 @@ describe('sendable messages', () => {
         gnssGlonass: false,
         gnssGalileo: false,
         gnssBeiDou: false,
-        clusterEnabled: true,
+        cluster: { main: true, dash: false, aux: false },
         clusterWidth: 800,
         clusterHeight: 480,
         clusterFps: 30,
@@ -775,8 +770,7 @@ describe('sendable messages', () => {
       gnssGps: false,
       gnssGlonass: false,
       gnssGalileo: false,
-      gnssBeiDou: false,
-      clusterEnabled: false
+      gnssBeiDou: false
     } as any)
 
     const body = JSON.parse(msg.getPayload().toString('ascii'))
@@ -844,8 +838,7 @@ describe('sendable messages', () => {
         gnssGps: false,
         gnssGlonass: true,
         gnssGalileo: false,
-        gnssBeiDou: false,
-        clusterEnabled: false
+        gnssBeiDou: false
       } as any,
       1
     )

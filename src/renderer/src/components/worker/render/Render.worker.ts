@@ -24,10 +24,12 @@ export class RendererWorker {
   private decoder: VideoDecoder
   private isConfigured = false
   private lastSPS: Uint8Array | null = null
-  private keyframeRetryTimer: ReturnType<typeof setInterval> | null = null
-  private keyframeRetryCount = 0
   private pendingExtraData: Uint8Array | null = null
   private awaitingValidKeyframe = true
+
+  private lastKeyframeRequestAt = 0
+  private static readonly KEYFRAME_REQUEST_MIN_INTERVAL_MS = 500
+
   private hardwareAccelerationTested = false
   private selectedRenderer: string | null = null
   private renderScheduled = false
@@ -160,40 +162,19 @@ export class RendererWorker {
     // its `isStreaming` flag off so the streaming overlay shows again and
     // tab navigation works normally instead of trapping the user.
     self.postMessage({ type: 'awaiting-keyframe' })
-    this.startKeyframeRetry()
   }
 
-  private startKeyframeRetry = () => {
-    this.stopKeyframeRetry()
-    this.keyframeRetryCount = 0
-    self.postMessage({ type: 'request-keyframe' })
-    this.keyframeRetryCount += 1
-    this.keyframeRetryTimer = setInterval(() => {
-      if (!this.awaitingValidKeyframe || this.isConfigured) {
-        this.stopKeyframeRetry()
-        return
-      }
-      this.keyframeRetryCount += 1
-      // Log only every 10th retry
-      // phone-side stalls — once per ~20 s
-      if (this.keyframeRetryCount % 5 === 0) {
-        console.log(
-          `[RENDER.WORKER] still waiting for IDR (codec=${this.codec}, retry #${this.keyframeRetryCount})`
-        )
-      }
-      self.postMessage({ type: 'request-keyframe' })
-    }, 2000)
-  }
-
-  private stopKeyframeRetry = () => {
-    if (this.keyframeRetryTimer !== null) {
-      clearInterval(this.keyframeRetryTimer)
-      this.keyframeRetryTimer = null
+  // Ask the host for a keyframe
+  private maybeRequestKeyframe = () => {
+    const now = performance.now()
+    if (now - this.lastKeyframeRequestAt < RendererWorker.KEYFRAME_REQUEST_MIN_INTERVAL_MS) {
+      return
     }
+    this.lastKeyframeRequestAt = now
+    self.postMessage({ type: 'request-keyframe' })
   }
 
   handleExternalReset(): void {
-    this.stopKeyframeRetry()
     try {
       this.decoder.close()
     } catch {
@@ -573,7 +554,9 @@ export class RendererWorker {
       this.lastSPS = sps.rawNalu
     }
 
-    // Accumulate every param-set-bearing chunk before the first IDR
+    // Accumulate every param-set-bearing chunk before the first IDR — the
+    // phone may split SPS and PPS across multiple chunks, and the decoder
+    // needs both prepended to the IDR.
     if (!this.isConfigured && !key && containsParameterSet(videoData, this.codec)) {
       if (this.pendingExtraData) {
         const merged = new Uint8Array(this.pendingExtraData.length + videoData.length)
@@ -590,7 +573,7 @@ export class RendererWorker {
 
     if (this.awaitingValidKeyframe && !key) {
       console.debug('[RENDER.WORKER] Ignoring delta while awaiting keyframe...')
-      if (this.keyframeRetryTimer === null) this.startKeyframeRetry()
+      this.maybeRequestKeyframe()
       return
     }
 
@@ -622,7 +605,6 @@ export class RendererWorker {
           console.log('[RENDER.WORKER] keyframe sent to decoder')
           this.awaitingValidKeyframe = false
           this.pendingExtraData = null
-          this.stopKeyframeRetry()
           return
         } catch (e) {
           console.warn('[RENDER.WORKER] Failed to decode first keyframe', e)

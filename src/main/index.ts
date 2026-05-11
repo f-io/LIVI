@@ -1,6 +1,10 @@
 import './app/gpu'
+import { installMainProcessErrorHandlers } from '@main/app/errorHandler'
 import { setupAppIdentity } from '@main/app/init'
 import { setupLifecycle } from '@main/app/lifecycle'
+
+installMainProcessErrorHandlers()
+
 import { registerIpc } from '@main/ipc'
 import { registerAppProtocol } from '@main/protocol/appProtocol'
 import { checkAndInstallAaSudoers } from '@main/services/projection/driver/aa/aaSudoers'

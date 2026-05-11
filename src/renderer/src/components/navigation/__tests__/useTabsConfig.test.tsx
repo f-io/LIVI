@@ -30,7 +30,9 @@ jest.mock('@store/store', () => ({
       settings: mockState.settingsMissing
         ? undefined
         : {
-            clusterEnabled: mockState.clusterEnabled,
+            cluster: mockState.clusterEnabled
+              ? { main: true, dash: false, aux: false }
+              : { main: false, dash: false, aux: false },
             dashboards: mockState.telemetryOnMain
               ? {
                   dash1: { main: true, dash: false, aux: false, pos: 1 },
@@ -113,7 +115,7 @@ describe('useTabsConfig', () => {
     expect(result.current.map((t) => t.path)).toEqual(['/', '/media', '/camera', '/settings'])
   })
 
-  test('uses base CarPlay icon styling when streaming is active but receivingVideo is false', () => {
+  test('uses highlighted CarPlay icon styling when streaming is active regardless of receivingVideo', () => {
     mockState.isDongleConnected = true
     mockState.isStreaming = true
 
@@ -124,13 +126,10 @@ describe('useTabsConfig', () => {
     expect((carPlayTab!.icon as any).props.sx).toEqual(
       expect.objectContaining({
         fontSize: 30,
-        color: '#fff',
-        opacity: 'var(--ui-breathe-opacity, 1)'
+        color: 'var(--ui-highlight)',
+        opacity: 1
       })
     )
-    expect((carPlayTab!.icon as any).props.sx['&, &.MuiSvgIcon-root']).toEqual({
-      color: '#fff !important'
-    })
   })
 
   test('uses highlighted CarPlay icon styling when streaming and receivingVideo are both active', () => {

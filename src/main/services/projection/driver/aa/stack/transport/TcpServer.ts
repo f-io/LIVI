@@ -8,7 +8,6 @@ import { TCP_PORT } from '../constants.js'
 import { Session, type SessionConfig } from '../session/Session.js'
 
 export class TcpServer extends EventEmitter {
-
   private _server: net.Server | null = null
 
   constructor(private readonly _cfg: SessionConfig) {

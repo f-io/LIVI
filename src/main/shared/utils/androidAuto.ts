@@ -7,50 +7,84 @@ export function getCurrentTimeInMs() {
 }
 
 export type AndroidAutoResolution = {
+  // Canonical 16:9 tier the phone encodes into (`videoWidth`/`videoHeight`).
   width: number
   height: number
+}
+
+const roundEven = (n: number): number => Math.max(2, Math.floor(n) & ~1)
+
+// AR-preserved content area within an AA encoder frame.
+export function aaContentArea(
+  frame: { width: number; height: number },
+  user: { width: number; height: number }
+): { contentWidth: number; contentHeight: number } {
+  const userAR = Math.max(1, user.width) / Math.max(1, user.height)
+  const frameAR = Math.max(1, frame.width) / Math.max(1, frame.height)
+  if (userAR <= frameAR) {
+    return { contentWidth: roundEven(frame.height * userAR), contentHeight: frame.height }
+  }
+  return { contentWidth: frame.width, contentHeight: roundEven(frame.width / userAR) }
 }
 
 export function dongleDisplayName(name: string): string {
   return `${name} (D)`
 }
 
-/**
- * Android Auto resolution selection
- * - tier chosen by width
- * - height derived from display aspect ratio
- * - height forced even
- * - clamped to tier height
- */
-export function matchFittingAAResolution(userRes: {
-  width: number
-  height: number
-}): AndroidAutoResolution {
-  const w = userRes.width
-  const h = userRes.height
-  const displayAR = w / h
+// Android Auto only encodes into these canonical 16:9 frames.
+const AA_TIERS: ReadonlyArray<{ w: number; h: number }> = [
+  { w: 800, h: 480 },
+  { w: 1280, h: 720 },
+  { w: 1920, h: 1080 },
+  { w: 2560, h: 1440 },
+  { w: 3840, h: 2160 }
+]
 
-  let tierWidth = 800
-  let tierHeight = 480
+// Phones reject AA sessions that request a tier above 1920×1080 unless
+// the HU also advertises a codec other than H.264 (HEVC / VP9 / AV1).
+const H264_MAX_TIER_WIDTH = 1920
 
-  if (w >= 3840) {
-    tierWidth = 3840
-    tierHeight = 2160
-  } else if (w >= 2560) {
-    tierWidth = 2560
-    tierHeight = 1440
-  } else if (w >= 1920) {
-    tierWidth = 1920
-    tierHeight = 1080
-  } else if (w >= 1280) {
-    tierWidth = 1280
-    tierHeight = 720
+export type AAResolutionOptions = {
+  h264Only?: boolean
+}
+
+const MAX_TIER_UPSCALE = 1.2
+
+export function matchFittingAAResolution(
+  userRes: { width: number; height: number },
+  options?: AAResolutionOptions
+): AndroidAutoResolution {
+  const userW = Math.max(1, userRes.width)
+  const userH = Math.max(1, userRes.height)
+  const maxTierW = options?.h264Only ? H264_MAX_TIER_WIDTH : Infinity
+
+  let chosen = AA_TIERS[0]
+  for (const tier of AA_TIERS) {
+    if (tier.w > maxTierW) break
+    chosen = tier
+    const { contentWidth, contentHeight } = aaContentArea(
+      { width: tier.w, height: tier.h },
+      { width: userW, height: userH }
+    )
+    const upscale = Math.max(userW / contentWidth, userH / contentHeight)
+    if (upscale <= MAX_TIER_UPSCALE) break
   }
 
-  const width = tierWidth
-  const height = Math.min(Math.floor(tierWidth / displayAR) & ~1, tierHeight)
+  return { width: chosen.w, height: chosen.h }
+}
 
-  return { width, height }
+export function pixelAspectRatioE4(
+  display: { width: number; height: number },
+  tier: { width: number; height: number }
+): number {
+  const dW = Math.max(1, display.width)
+  const dH = Math.max(1, display.height)
+  const tW = Math.max(1, tier.width)
+  const tH = Math.max(1, tier.height)
+  const displayAR = dW / dH
+  const tierAR = tW / tH
+  if (Math.abs(displayAR - tierAR) < 1e-6) return 10000
+  return Math.round((displayAR / tierAR) * 10000)
 }
 
 /**
@@ -78,13 +112,10 @@ const AA_DPI_TIERS: ReadonlyArray<{ pixels: number; dpi: number }> = [
 export function computeAndroidAutoDpi(width: number, height: number): number {
   const pixels = width * height
 
-  // Below / at the lowest tier → minimum dpi.
   if (pixels <= AA_DPI_TIERS[0].pixels) return AA_DPI_TIERS[0].dpi
-  // At / above the highest tier → maximum dpi.
   const top = AA_DPI_TIERS[AA_DPI_TIERS.length - 1]
   if (pixels >= top.pixels) return top.dpi
 
-  // Walk segments to find the bracketing pair.
   for (let i = 0; i < AA_DPI_TIERS.length - 1; i++) {
     const lo = AA_DPI_TIERS[i]
     const hi = AA_DPI_TIERS[i + 1]
@@ -95,6 +126,5 @@ export function computeAndroidAutoDpi(width: number, height: number): number {
     }
   }
 
-  // Unreachable — guarded by the bounds checks above.
   return top.dpi
 }

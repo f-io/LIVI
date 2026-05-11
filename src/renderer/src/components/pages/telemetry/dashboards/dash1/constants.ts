@@ -12,7 +12,7 @@ export const RPM_RIGHT = 620
 export const RPM_TOP = 82
 
 export const NAV_X = CENTER_X
-export const NAV_Y = 560
+export const NAV_Y = 540
 
 export const GEAR_X = CENTER_X + CENTER_X / 2
 export const GEAR_Y = 580

@@ -47,6 +47,13 @@ function AppInner() {
   const prevPathRef = useRef<string>(location.pathname)
   const cameFromSettingsSubRef = useRef(false)
 
+  // Subscribe to main-process media key broadcasts
+  useEffect(() => {
+    return window.app?.onMediaKey?.((command) => {
+      window.dispatchEvent(new CustomEvent('car-media-key', { detail: { command } }))
+    })
+  }, [])
+
   // Track input mode globally (for CSS that must behave differently on touch vs mouse)
   useEffect(() => {
     const setMode = (mode: 'mouse' | 'touch' | 'keys') => {

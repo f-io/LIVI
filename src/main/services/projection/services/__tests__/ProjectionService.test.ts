@@ -764,14 +764,26 @@ describe('ProjectionService', () => {
     expect(svc.lastClusterVideoHeight).toBeUndefined()
   })
 
-  test('cluster:request enables cluster and requests focus', async () => {
+  test('cluster:request enables cluster and requests focus when at least one display targets it', async () => {
     const svc = new ProjectionService() as any
+    svc.config = { ...svc.config, cluster: { main: true, dash: false, aux: false } }
     const h = getHandle('cluster:request')
 
     await expect(h.call(svc, null, true)).resolves.toEqual({ ok: true, enabled: true })
 
     expect(svc.clusterRequested).toBe(true)
     expect(svc.driver.send).toHaveBeenCalledTimes(1)
+  })
+
+  test('cluster:request refuses to enable cluster when no display targets it', async () => {
+    const svc = new ProjectionService() as any
+    svc.config = { ...svc.config, cluster: { main: false, dash: false, aux: false } }
+    const h = getHandle('cluster:request')
+
+    await expect(h.call(svc, null, true)).resolves.toEqual({ ok: true, enabled: false })
+
+    expect(svc.clusterRequested).toBe(false)
+    expect(svc.driver.send).not.toHaveBeenCalled()
   })
 
   test('projection-touch forwards touch payload as message', () => {
@@ -2027,7 +2039,10 @@ describe('ProjectionService', () => {
     expect((configEvents as any).emit).toHaveBeenCalledWith('requestSave', {
       lastPhoneWorkMode: PhoneWorkMode.CarPlay
     })
-    expect(send).toHaveBeenCalledWith('projection-event', { type: 'plugged' })
+    expect(send).toHaveBeenCalledWith('projection-event', {
+      type: 'plugged',
+      phoneType: PhoneType.CarPlay
+    })
     expect(svc.start).toHaveBeenCalledTimes(1)
 
     jest.useRealTimers()

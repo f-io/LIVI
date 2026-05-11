@@ -1,6 +1,7 @@
 import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
 import { runtimeStateProps, ServicesProps } from '@main/types'
 import { isMacPlatform } from '@main/utils'
+import { broadcastToRenderers } from '@main/window/broadcast'
 import { getMainWindow } from '@main/window/createWindow'
 import { restoreKioskAfterWmExit } from '@main/window/utils'
 import { spawn } from 'child_process'
@@ -30,9 +31,11 @@ export function registerAppIpc(runtimeState: runtimeStateProps, services: Servic
   })
 
   // App Restart
+  let restartInProgress = false
   registerIpcHandle('app:restartApp', async () => {
+    if (restartInProgress) return
     if (runtimeState.isQuitting) return
-    runtimeState.isQuitting = true
+    restartInProgress = true
 
     try {
       usbService?.beginShutdown()
@@ -56,18 +59,22 @@ export function registerAppIpc(runtimeState: runtimeStateProps, services: Servic
       delete cleanEnv.OWD
 
       spawn(appImage, [], { detached: true, stdio: 'ignore', env: cleanEnv }).unref()
-
-      app.exit(0)
-      return
+    } else {
+      app.relaunch()
     }
 
-    app.relaunch()
-    app.exit(0)
+    app.quit()
   })
 
   // User activity (touch/click)
   registerIpcOn('app:user-activity', () => {
     restoreKioskAfterWmExit(runtimeState)
+  })
+
+  // Fan-out a media key event to all renderer windows
+  registerIpcOn('app:media-key', (_evt, command: string) => {
+    if (typeof command !== 'string' || !command) return
+    broadcastToRenderers('app:media-key', command)
   })
 
   registerIpcHandle('app:openExternal', async (_evt, rawUrl: string) => {

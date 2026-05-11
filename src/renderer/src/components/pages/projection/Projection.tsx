@@ -2,8 +2,9 @@
 import CropPortraitOutlinedIcon from '@mui/icons-material/CropPortraitOutlined'
 import { Box, useTheme } from '@mui/material'
 import type { ExtraConfig } from '@shared/types'
+import { PhoneType } from '@shared/types/DongleConfig'
 import { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
-import { matchFittingAAResolution } from '@shared/utils'
+import { aaContentArea } from '@shared/utils'
 import { createProjectionWorker } from '@worker/createProjectionWorker'
 import { createRenderWorker } from '@worker/createRenderWorker'
 import {
@@ -117,13 +118,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const isAaActiveFlag = useStatusStore((s) => s.isAaActive)
   const negotiatedWidth = useLiviStore((s) => s.negotiatedWidth)
   const negotiatedHeight = useLiviStore((s) => s.negotiatedHeight)
-  const boxInfo = useLiviStore((s) => s.boxInfo)
   const aaActive = useLiviStore((s) => Boolean((s.settings as { aa?: boolean } | undefined)?.aa))
-
-  useEffect(() => {
-    if (pathname !== '/') return
-    void window.projection.ipc.sendFrame().catch(() => {})
-  }, [pathname])
 
   const prevPathnameRef = useRef(pathname)
   useEffect(() => {
@@ -132,11 +127,12 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     if (pathname !== '/' || prev === '/') return
     if (!isDongleConnected) return
     window.projection.ipc.sendCommand('home')
+    void window.projection.ipc.sendFrame().catch(() => {})
   }, [pathname, isDongleConnected])
 
   useEffect(() => {
-    const mode = isAaActiveFlag ? 'AA-native' : 'dongle'
-    console.log(`[CARPLAY] phone connected (${mode}):`, isDongleConnected)
+    const mode = isAaActiveFlag ? 'AA' : 'dongle'
+    console.log(`[PROJECTION] phone connected (${mode}):`, isDongleConnected)
   }, [isDongleConnected, isAaActiveFlag])
 
   // Refs
@@ -152,6 +148,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const lastNonClusterPathRef = useRef<string | null>(null)
   const autoSwitchedRef = useRef(false)
   const pendingVideoFocusRef = useRef(false)
+  const streamingFromChunkRef = useRef(false)
 
   const autoSwitchOnStreamRef = useRef(Boolean(settings.autoSwitchOnStream))
   const autoSwitchOnGuidanceRef = useRef(Boolean(settings.autoSwitchOnGuidance))
@@ -392,43 +389,30 @@ const CarplayComponent: React.FC<CarplayProps> = ({
       const t = msg?.type
 
       if (t === 'render-ready') {
-        console.log('[CARPLAY] Render worker ready message received')
+        console.log('[PROJECTION] Render worker ready message received')
         setRenderReady(true)
         setRendererError(null)
-        // Immediately ask the phone for a fresh IDR. The pathname-driven
-        // `sendFrame` further up runs at mount time, before the worker has
-        // its videoPort wired — a keyframe arriving in that window is lost
-        // (render worker drops everything until it sees its own SPS+IDR).
-        // Firing here guarantees we ask *after* the worker can actually
-        // consume the response.
-        void window.projection.ipc.sendFrame().catch(() => {})
         return
       }
 
       if (t === 'request-keyframe') {
         // The render worker tore down its decoder (resolution change or error)
-        // and now needs a fresh SPS+IDR to re-init. Phone won't volunteer one
-        // until its next scheduled intra-refresh — kick it via the same path
-        // the tab-mount keyframe-request uses.
+        // and now needs a fresh SPS+IDR to re-init
         void window.projection.ipc.sendFrame().catch(() => {})
         return
       }
 
       if (t === 'awaiting-keyframe') {
-        // Worker has reset its decoder and is waiting for a new keyframe —
-        // mark streaming as inactive so the overlay shows up and tab nav
-        // doesn't get stuck behind a stale "streaming" UI. We'll be told
-        // to flip it back via 'streaming' once the worker decodes a frame.
+        // Worker has reset its decoder and is waiting for a new keyframe
         setStreaming(false)
         setReceivingVideo(false)
         return
       }
 
       if (t === 'streaming') {
-        // Worker decoded its first frame after init/reset. Now it's safe
-        // to mark the projection as live — the user will see real video,
-        // not a frozen still or a misleading loading state.
+        // Worker decoded its first frame after init/reset
         setStreaming(true)
+        setReceivingVideo(true)
         return
       }
 
@@ -436,7 +420,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
         const message = msg && typeof msg.message === 'string' ? msg.message.trim() : ''
         const text = message ? message : 'No renderer available'
 
-        console.warn('[CARPLAY] Render worker error:', msg)
+        console.warn('[PROJECTION] Render worker error:', msg)
 
         setRendererError(text)
         setRenderReady(false)
@@ -460,19 +444,26 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     return () => w.removeEventListener('message', handler)
   }, [setReceivingVideo])
 
-  // Forward video chunks to worker port
+  // Forward video chunks to Render.worker port. Register only once the
+  // worker is ready so the initial SPS+IDR isn't dropped while it's still
+  // spinning up — preload queues chunks until the handler is attached.
   useEffect(() => {
+    if (!renderReady || rendererError) return
     const handleVideo = (payload: unknown) => {
-      if (rendererError) return
-      if (!renderReady || !payload || typeof payload !== 'object') return
+      if (!payload || typeof payload !== 'object') return
       const m = payload as { chunk?: { buffer?: ArrayBuffer } }
       const buf = m.chunk?.buffer
       if (!buf) return
       videoChannel.port1.postMessage(buf, [buf])
+      if (!streamingFromChunkRef.current) {
+        streamingFromChunkRef.current = true
+        setStreaming(true)
+        setReceivingVideo(true)
+      }
     }
     window.projection.ipc.onVideoChunk(handleVideo)
     return () => window.projection.ipc.offVideoChunk(handleVideo)
-  }, [videoChannel, renderReady, rendererError])
+  }, [videoChannel, renderReady, rendererError, setStreaming, setReceivingVideo])
 
   // Forward audio chunks to FFT
   useEffect(() => {
@@ -653,7 +644,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
         try {
           info = await window.projection.usb.getDeviceInfo()
         } catch (e) {
-          console.warn('[CARPLAY] usb.getDeviceInfo() failed', e)
+          console.warn('[PROJECTION] usb.getDeviceInfo() failed', e)
         }
 
         if (disposed || token !== usbOpTokenRef.current) return
@@ -679,6 +670,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
       setStreaming(false)
       setDongleConnected(false)
       hasStartedRef.current = false
+      streamingFromChunkRef.current = false
       resetInfo()
       await window.projection.ipc.stop()
 
@@ -794,14 +786,9 @@ const CarplayComponent: React.FC<CarplayProps> = ({
               negotiatedHeight: payload.height
             })
 
-            // Don't set isStreaming here — that's the moment ProjectionService
-            // first sees a VideoData header, NOT the moment the renderer
-            // actually decoded a frame. Setting it here drops the streaming
-            // overlay before frames are showing, trapping the user on a
-            // black projection page until a keyframe arrives. Wait for the
-            // worker's 'streaming' postMessage instead.
             if (!rendererError) {
               setReceivingVideo(true)
+              setStreaming(true)
             }
 
             if (pendingVideoFocusRef.current) {
@@ -877,7 +864,10 @@ const CarplayComponent: React.FC<CarplayProps> = ({
             break
           }
 
-          const clusterEnabled = Boolean(settings.clusterEnabled)
+          const clusterEnabled =
+            settings.cluster?.main === true ||
+            settings.cluster?.dash === true ||
+            settings.cluster?.aux === true
           const autoSwitchOnStream = autoSwitchOnStreamRef.current
           const autoSwitchOnGuidance = autoSwitchOnGuidanceRef.current
 
@@ -972,16 +962,19 @@ const CarplayComponent: React.FC<CarplayProps> = ({
         }
 
         case 'plugged': {
-          if (aaActive) setAaActive(true)
+          const phoneType = (d as { phoneType?: number }).phoneType
+          const useAa = phoneType !== undefined ? phoneType === PhoneType.AndroidAuto : aaActive
+          if (useAa) setAaActive(true)
           else setDongleConnected(true)
           break
         }
 
         case 'unplugged': {
           setStreaming(false)
-          if (aaActive) setAaActive(false)
-          else setDongleConnected(false)
+          setAaActive(false)
+          setDongleConnected(false)
           setReceivingVideo(false)
+          streamingFromChunkRef.current = false
           pendingVideoFocusRef.current = false
           setNavVideoOverlayActive(false)
           videoCodecRef.current = 'h264'
@@ -996,9 +989,10 @@ const CarplayComponent: React.FC<CarplayProps> = ({
 
         case 'failure': {
           setStreaming(false)
-          if (aaActive) setAaActive(false)
-          else setDongleConnected(false)
+          setAaActive(false)
+          setDongleConnected(false)
           setReceivingVideo(false)
+          streamingFromChunkRef.current = false
           pendingVideoFocusRef.current = false
           setNavVideoOverlayActive(false)
           videoCodecRef.current = 'h264'
@@ -1027,7 +1021,9 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     rendererError,
     setAudioInfo,
     setBluetoothPairedList,
-    settings.clusterEnabled
+    settings.cluster?.main,
+    settings.cluster?.dash,
+    settings.cluster?.aux
   ])
 
   // Resize observer => inform render worker
@@ -1067,6 +1063,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
         canvasRef.current.style.height = '0'
       }
       renderWorkerRef.current?.postMessage({ type: 'clear' })
+      streamingFromChunkRef.current = false
     }
   }, [isStreaming, setReceivingVideo])
 
@@ -1083,59 +1080,31 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const viewportWidth = viewportSize.width
   const viewportHeight = viewportSize.height
 
-  const mdLinkType =
-    boxInfo && typeof boxInfo === 'object' && 'MDLinkType' in boxInfo
-      ? String((boxInfo as { MDLinkType?: unknown }).MDLinkType ?? '')
-      : ''
-
-  const normalizedLinkType = mdLinkType.trim().toLowerCase()
-  // Both the USB dongle and the native AA driver use the same on-wire
-  // contract for non-tier displays: the phone streams a full tier (e.g.
-  // 1280×720) and we tell it via `width_margin`/`height_margin` +
-  // `UiConfig.margins` to centre its actual UI inside an AR-matched
-  // rectangle, leaving symmetric black borders. The renderer then strips
-  // those borders with `cropLeft`/`cropTop`. The native AA path goes
-  // through `isAaActiveFlag` (no MDLinkType is set there since nothing
-  // pretends to be an iPhone), so we OR both detection paths.
-  const isAndroidAutoActive = normalizedLinkType.includes('android') || isAaActiveFlag
-
-  const aaVisibleSize =
-    settings.width > 0 && settings.height > 0
-      ? matchFittingAAResolution({
-          width: settings.width,
-          height: settings.height
-        })
-      : null
-
-  const isAndroidAutoTiered =
-    isAndroidAutoActive &&
-    aaVisibleSize !== null &&
+  const aaContent =
     resolvedNegotiatedWidth > 0 &&
     resolvedNegotiatedHeight > 0 &&
-    (resolvedNegotiatedWidth !== aaVisibleSize.width ||
-      resolvedNegotiatedHeight !== aaVisibleSize.height)
+    settings.width > 0 &&
+    settings.height > 0
+      ? aaContentArea(
+          { width: resolvedNegotiatedWidth, height: resolvedNegotiatedHeight },
+          { width: settings.width, height: settings.height }
+        )
+      : null
 
-  const visibleWidth = isAndroidAutoTiered
-    ? Math.min(aaVisibleSize.width, resolvedNegotiatedWidth)
-    : resolvedNegotiatedWidth
+  const visibleWidth = aaContent?.contentWidth ?? resolvedNegotiatedWidth
+  const visibleHeight = aaContent?.contentHeight ?? resolvedNegotiatedHeight
+  const cropLeft = Math.max(0, (resolvedNegotiatedWidth - visibleWidth) / 2)
+  const cropTop = Math.max(0, (resolvedNegotiatedHeight - visibleHeight) / 2)
 
-  const visibleHeight = isAndroidAutoTiered
-    ? Math.min(aaVisibleSize.height, resolvedNegotiatedHeight)
-    : resolvedNegotiatedHeight
-
-  const cropLeft =
-    isAndroidAutoTiered && resolvedNegotiatedWidth > visibleWidth
-      ? (resolvedNegotiatedWidth - visibleWidth) / 2
-      : 0
-
-  const cropTop =
-    isAndroidAutoTiered && resolvedNegotiatedHeight > visibleHeight
-      ? (resolvedNegotiatedHeight - visibleHeight) / 2
-      : 0
+  const scaleX = visibleWidth > 0 && viewportWidth > 0 ? viewportWidth / visibleWidth : 0
+  const scaleY = visibleHeight > 0 && viewportHeight > 0 ? viewportHeight / visibleHeight : 0
 
   const touchHandlers = useCarplayMultiTouch(
     videoContainerRef,
-    isAndroidAutoTiered
+    aaContent &&
+      (cropLeft > 0 || cropTop > 0) &&
+      resolvedNegotiatedWidth > 0 &&
+      resolvedNegotiatedHeight > 0
       ? {
           streamWidth: resolvedNegotiatedWidth,
           streamHeight: resolvedNegotiatedHeight,
@@ -1146,9 +1115,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
         }
       : undefined
   )
-
-  const scaleX = visibleWidth > 0 && viewportWidth > 0 ? viewportWidth / visibleWidth : 0
-  const scaleY = visibleHeight > 0 && viewportHeight > 0 ? viewportHeight / visibleHeight : 0
 
   const canvasCssWidth = scaleX > 0 ? `${resolvedNegotiatedWidth * scaleX}px` : '0px'
   const canvasCssHeight = scaleY > 0 ? `${resolvedNegotiatedHeight * scaleY}px` : '0px'
