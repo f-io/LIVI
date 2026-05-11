@@ -15,9 +15,15 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
   const theme = useTheme()
   const role = getWindowRole()
   const isStreaming = useStatusStore((s) => s.isStreaming)
+  const isAaActive = useStatusStore((s) => s.isAaActive)
   const isDongleConnected = useStatusStore((s) => s.isDongleConnected || s.isAaActive)
   const cameraFound = useStatusStore((s) => s.cameraFound)
-  const clusterEnabled = useLiviStore((s) => s.settings?.clusterEnabled ?? false)
+  const clusterEnabled = useLiviStore(
+    (s) =>
+      s.settings?.cluster?.main === true ||
+      s.settings?.cluster?.dash === true ||
+      s.settings?.cluster?.aux === true
+  )
   const clusterOnRole = useLiviStore((s) =>
     role === 'main' ? (s.settings?.cluster?.main ?? true) : (s.settings?.cluster?.[role] ?? false)
   )
@@ -70,7 +76,7 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
       path: ROUTES.HOME,
       icon: (() => {
         const usbConnected = isDongleConnected
-        const phoneActive = isStreaming && receivingVideo
+        const phoneActive = isStreaming || isAaActive
         const baseColor = usbConnected ? theme.palette.text.primary : theme.palette.text.disabled
         const activeColor = 'var(--ui-highlight)'
 

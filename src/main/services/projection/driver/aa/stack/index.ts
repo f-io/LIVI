@@ -19,6 +19,7 @@
  */
 
 import { EventEmitter } from 'node:events'
+import type * as net from 'node:net'
 import type { AudioChannelType } from './channels/AudioChannel'
 import type { TouchPointer } from './channels/InputChannel'
 import type { MediaPlaybackMetadata, MediaPlaybackStatus } from './channels/MediaInfoChannel'
@@ -66,53 +67,68 @@ export class AAStack extends EventEmitter {
     _cfg.wifiBssid ??= detectWifiBssid()
     this._server = new TcpServer(_cfg)
 
-    this._server.on('session', (session: Session) => {
-      this._activeSession = session
-
-      session.on('video-frame', (buf: Buffer, ts: bigint) => this.emit('video-frame', buf, ts))
-      session.on('cluster-video-frame', (buf: Buffer, ts: bigint) =>
-        this.emit('cluster-video-frame', buf, ts)
-      )
-      session.on('video-codec', (codec: VideoCodec) => this.emit('video-codec', codec))
-      session.on('cluster-video-codec', (codec: VideoCodec) =>
-        this.emit('cluster-video-codec', codec)
-      )
-      session.on(
-        'audio-frame',
-        (buf: Buffer, ts: bigint, channel: AudioChannelType, channelId: number) =>
-          this.emit('audio-frame', buf, ts, channel, channelId)
-      )
-      session.on('audio-start', (channel: AudioChannelType, channelId: number) =>
-        this.emit('audio-start', channel, channelId)
-      )
-      session.on('audio-stop', (channel: AudioChannelType, channelId: number) =>
-        this.emit('audio-stop', channel, channelId)
-      )
-      session.on('mic-start', (channelId: number) => this.emit('mic-start', channelId))
-      session.on('mic-stop', (channelId: number) => this.emit('mic-stop', channelId))
-      session.on('voice-session', (active: boolean) => this.emit('voice-session', active))
-      session.on('host-ui-requested', () => this.emit('host-ui-requested'))
-      session.on('video-focus-projected', () => this.emit('video-focus-projected'))
-      session.on('cluster-video-focus-projected', () => this.emit('cluster-video-focus-projected'))
-      session.on('media-metadata', (m: MediaPlaybackMetadata) => this.emit('media-metadata', m))
-      session.on('media-status', (s: MediaPlaybackStatus) => this.emit('media-status', s))
-      session.on('nav-start', () => this.emit('nav-start'))
-      session.on('nav-stop', () => this.emit('nav-stop'))
-      session.on('nav-status', (s: NavigationStatusUpdate) => this.emit('nav-status', s))
-      session.on('nav-turn', (t: NavigationTurnUpdate) => this.emit('nav-turn', t))
-      session.on('nav-distance', (d: NavigationDistanceUpdate) => this.emit('nav-distance', d))
-      session.on('connected', () => this.emit('connected'))
-      session.on('disconnected', (reason?: string) => this.emit('disconnected', reason))
-      session.on('error', (err: Error) => this.emit('error', err))
-
-      this.emit('session', session)
-    })
-
+    this._server.on('session', (session: Session) => this._adoptSession(session))
     this._server.on('error', (err: Error) => this.emit('error', err))
+  }
+
+  private _adoptSession(session: Session): void {
+    this._activeSession = session
+
+    session.on('video-frame', (buf: Buffer, ts: bigint) => this.emit('video-frame', buf, ts))
+    session.on('cluster-video-frame', (buf: Buffer, ts: bigint) =>
+      this.emit('cluster-video-frame', buf, ts)
+    )
+    session.on('video-codec', (codec: VideoCodec) => this.emit('video-codec', codec))
+    session.on('cluster-video-codec', (codec: VideoCodec) =>
+      this.emit('cluster-video-codec', codec)
+    )
+    session.on(
+      'audio-frame',
+      (buf: Buffer, ts: bigint, channel: AudioChannelType, channelId: number) =>
+        this.emit('audio-frame', buf, ts, channel, channelId)
+    )
+    session.on('audio-start', (channel: AudioChannelType, channelId: number) =>
+      this.emit('audio-start', channel, channelId)
+    )
+    session.on('audio-stop', (channel: AudioChannelType, channelId: number) =>
+      this.emit('audio-stop', channel, channelId)
+    )
+    session.on('mic-start', (channelId: number) => this.emit('mic-start', channelId))
+    session.on('mic-stop', (channelId: number) => this.emit('mic-stop', channelId))
+    session.on('voice-session', (active: boolean) => this.emit('voice-session', active))
+    session.on('host-ui-requested', () => this.emit('host-ui-requested'))
+    session.on('video-focus-projected', () => this.emit('video-focus-projected'))
+    session.on('cluster-video-focus-projected', () => this.emit('cluster-video-focus-projected'))
+    session.on('media-metadata', (m: MediaPlaybackMetadata) => this.emit('media-metadata', m))
+    session.on('media-status', (s: MediaPlaybackStatus) => this.emit('media-status', s))
+    session.on('nav-start', () => this.emit('nav-start'))
+    session.on('nav-stop', () => this.emit('nav-stop'))
+    session.on('nav-status', (s: NavigationStatusUpdate) => this.emit('nav-status', s))
+    session.on('nav-turn', (t: NavigationTurnUpdate) => this.emit('nav-turn', t))
+    session.on('nav-distance', (d: NavigationDistanceUpdate) => this.emit('nav-distance', d))
+    session.on('connected', () => this.emit('connected'))
+    session.on('disconnected', (reason?: string) => this.emit('disconnected', reason))
+    session.on('error', (err: Error) => this.emit('error', err))
+
+    this.emit('session', session)
   }
 
   start(): void {
     this._server.listen(this._cfg.port)
+  }
+
+  attachSocket(socket: net.Socket): Session {
+    socket.setNoDelay(true)
+    const session = new Session(socket, this._cfg)
+    session.on('error', (err: Error) => console.error('[Session loopback] error:', err.message))
+    session.on('disconnected', (reason?: string) =>
+      console.log(`[Session loopback] disconnected: ${reason ?? ''}`)
+    )
+    this._adoptSession(session)
+    void session.start().catch((err: Error) => {
+      console.error('[Session loopback] start error:', err.message)
+    })
+    return session
   }
 
   stop(): void {
@@ -215,7 +231,7 @@ export class AAStack extends EventEmitter {
     this._activeSession?.requestClusterKeyframe()
   }
 
-  requestShutdown(): void {
-    this._activeSession?.requestShutdown()
+  async requestShutdown(): Promise<void> {
+    await this._activeSession?.requestShutdown()
   }
 }

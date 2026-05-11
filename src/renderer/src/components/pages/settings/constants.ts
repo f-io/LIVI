@@ -82,6 +82,5 @@ export const requiresRestartParams: (keyof ExtraConfig)[] = [
   'oemName',
   'wifiPassword',
   'mediaSound',
-  'hand',
-  'clusterEnabled'
+  'hand'
 ]

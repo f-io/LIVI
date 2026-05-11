@@ -9,7 +9,7 @@ describe('generalSchema', () => {
     expect(schema.label).toBe('General')
     expect(schema.labelKey).toBe('settings.general')
     expect(schema.path).toBe('')
-    expect(schema.children).toHaveLength(14)
+    expect(schema.children).toHaveLength(12)
   })
 
   test('connections route contains names, wifi and auto connect', () => {
@@ -85,7 +85,7 @@ describe('generalSchema', () => {
   })
 
   test('dongle firmware settings route lives at the bottom with dashboard and gnss sections', () => {
-    const firmware = schema.children[13]
+    const firmware = schema.children[11]
     expect(firmware).toEqual(
       expect.objectContaining({
         type: 'route',
@@ -134,7 +134,7 @@ describe('generalSchema', () => {
   })
 
   test('auto switch route contains all three toggles', () => {
-    const autoSwitch = schema.children[6]
+    const autoSwitch = schema.children[4]
     expect(autoSwitch).toEqual(
       expect.objectContaining({
         type: 'route',
@@ -150,7 +150,7 @@ describe('generalSchema', () => {
   })
 
   test('key bindings route contains representative binding entries', () => {
-    const keyBindings = schema.children[7]
+    const keyBindings = schema.children[5]
     expect(keyBindings).toEqual(
       expect.objectContaining({
         type: 'route',
@@ -172,7 +172,7 @@ describe('generalSchema', () => {
   })
 
   test('start page select exposes all expected page options', () => {
-    const startPage = schema.children[8]
+    const startPage = schema.children[6]
     expect(startPage).toEqual(
       expect.objectContaining({
         type: 'select',
@@ -190,7 +190,7 @@ describe('generalSchema', () => {
     ])
   })
 
-  test('window settings + media + dashboards live as siblings under General', () => {
+  test('window settings + tab settings live as siblings, tab settings hosts cluster/dashboards/media/camera', () => {
     const windowSettings = schema.children[2]
     expect(windowSettings).toEqual(
       expect.objectContaining({
@@ -198,45 +198,31 @@ describe('generalSchema', () => {
         route: 'windowSettings'
       })
     )
-    const wsKeys = windowSettings.children.map((c) => (c.type === 'route' ? c.route : c.path))
-    expect(wsKeys).toEqual(['mainScreen', 'dashScreen', 'auxScreen'])
-
-    const mediaRoute = schema.children[3]
-    expect(mediaRoute).toEqual(
-      expect.objectContaining({
-        type: 'route',
-        route: 'media'
-      })
-    )
-    expect(mediaRoute.children.map((c) => c.path)).toEqual([
-      'media.main',
-      'media.dash',
-      'media.aux'
+    expect(windowSettings.children.map((c) => c.route)).toEqual([
+      'mainScreen',
+      'dashScreen',
+      'auxScreen'
     ])
 
-    const clusterRoute = schema.children[4]
-    expect(clusterRoute).toEqual(
+    const tabSettings = schema.children[3]
+    expect(tabSettings).toEqual(
       expect.objectContaining({
         type: 'route',
-        route: 'cluster'
+        route: 'tabSettings'
       })
     )
+    const tabRoutes = tabSettings.children.map((c) => c.route)
+    expect(tabRoutes).toEqual(['cluster', 'dashboards', 'media', 'camera'])
+
+    const clusterRoute = tabSettings.children[0]
     expect(clusterRoute.children.map((c) => c.path)).toEqual([
       'cluster.main',
       'cluster.dash',
       'cluster.aux'
     ])
 
-    const dashboardsRoute = schema.children[5]
-    expect(dashboardsRoute).toEqual(
-      expect.objectContaining({
-        type: 'route',
-        route: 'dashboards'
-      })
-    )
-    // 1 visible posList + 4 hidden per-dashboard sub-routes
+    const dashboardsRoute = tabSettings.children[1]
     expect(dashboardsRoute.children).toHaveLength(5)
-
     const posList = dashboardsRoute.children[0]
     expect(posList).toEqual(
       expect.objectContaining({
@@ -256,24 +242,37 @@ describe('generalSchema', () => {
           hidden: true
         })
       )
-      const paths = dashRoute.children.map((c) => c.path)
-      expect(paths).toEqual([
+      expect(dashRoute.children.map((c) => c.path)).toEqual([
         `dashboards.${id}.main`,
         `dashboards.${id}.dash`,
         `dashboards.${id}.aux`
       ])
     })
+
+    const mediaRoute = tabSettings.children[2]
+    expect(mediaRoute.children.map((c) => c.path)).toEqual([
+      'media.main',
+      'media.dash',
+      'media.aux'
+    ])
+
+    const cameraRoute = tabSettings.children[3]
+    expect(cameraRoute.children.map((c) => (c.type === 'route' ? c.route : c.path))).toEqual([
+      'cameraEnabled',
+      'select',
+      'cameraMirror'
+    ])
   })
 
   test('fft delay, steering wheel, fullscreen, zoom and language nodes are configured', () => {
-    const fftDelay = schema.children[9]
+    const fftDelay = schema.children[7]
     expect(fftDelay.type).toBe('number')
     expect(fftDelay.path).toBe('visualAudioDelayMs')
     expect(fftDelay.valueTransform?.toView?.(150)).toBe(150)
     expect(fftDelay.valueTransform?.fromView?.(160)).toBe(160)
     expect(fftDelay.valueTransform?.format?.(170)).toBe('170 ms')
 
-    const steering = schema.children[10]
+    const steering = schema.children[8]
     expect(steering.type).toBe('select')
     expect(steering.path).toBe('hand')
     expect(steering.options).toEqual([
@@ -281,7 +280,7 @@ describe('generalSchema', () => {
       { label: 'RHD', labelKey: 'settings.rhdr', value: 1 }
     ])
 
-    expect(schema.children[11]).toEqual(
+    expect(schema.children[9]).toEqual(
       expect.objectContaining({
         type: 'number',
         path: 'uiZoomPercent',
@@ -292,18 +291,18 @@ describe('generalSchema', () => {
       })
     )
 
-    expect(schema.children[11].valueTransform?.toView?.(120)).toBe(120)
-    expect(schema.children[11].valueTransform?.fromView?.(130)).toBe(130)
-    expect(schema.children[11].valueTransform?.format?.(140)).toBe('140%')
+    expect(schema.children[9].valueTransform?.toView?.(120)).toBe(120)
+    expect(schema.children[9].valueTransform?.fromView?.(130)).toBe(130)
+    expect(schema.children[9].valueTransform?.format?.(140)).toBe('140%')
 
-    expect(schema.children[12]).toEqual(
+    expect(schema.children[10]).toEqual(
       expect.objectContaining({
         type: 'select',
         path: 'language',
         displayValue: true
       })
     )
-    expect(schema.children[12].options).toEqual([
+    expect(schema.children[10].options).toEqual([
       { label: 'English', labelKey: 'settings.english', value: 'en' },
       { label: 'German', labelKey: 'settings.german', value: 'de' },
       { label: 'Ukrainian', labelKey: 'settings.ukrainian', value: 'ua' }

@@ -1,5 +1,6 @@
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined'
 import { Box, Typography, useTheme } from '@mui/material'
+import { aaContentArea } from '@shared/utils'
 import { createRenderWorker } from '@worker/createRenderWorker'
 import {
   InitEvent,
@@ -52,8 +53,8 @@ export const Cluster: React.FC<ClusterProps> = ({ visible }) => {
 
   const [renderReady, setRenderReady] = useState(false)
   const [rendererError, setRendererError] = useState<string | null>(null)
-  const [navHidden, setNavHidden] = useState(false)
   const [clusterStreamActive, setClusterStreamActive] = useState(false)
+  const [clusterFrameSize, setClusterFrameSize] = useState<{ w: number; h: number } | null>(null)
 
   const rootRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -62,16 +63,6 @@ export const Cluster: React.FC<ClusterProps> = ({ visible }) => {
   const clusterCodecRef = useRef<VideoCodec>('h264')
 
   const clusterVideoChannel = useMemo(() => new MessageChannel(), [])
-
-  useEffect(() => {
-    const el = document.getElementById('content-root')
-    if (!el) return
-    const read = () => setNavHidden(el.getAttribute('data-nav-hidden') === '1')
-    read()
-    const mo = new MutationObserver(read)
-    mo.observe(el, { attributes: true, attributeFilter: ['data-nav-hidden'] })
-    return () => mo.disconnect()
-  }, [])
 
   // Render.worker message typing
   type RenderWorkerMsg =
@@ -91,8 +82,7 @@ export const Cluster: React.FC<ClusterProps> = ({ visible }) => {
   }, [])
 
   const supportsNaviScreen = useMemo(() => {
-    // AA-native always exposes a cluster sink (ch=19, display_type=CLUSTER)
-    // when clusterEnabled is on — phone streams H.264 cluster frames there.
+    // AA-native exposes a cluster sink (ch=19, display_type=CLUSTER) when any cluster display is active
     if (isAaActive) return true
 
     const box = parseBoxInfo(boxInfoRaw)
@@ -115,33 +105,37 @@ export const Cluster: React.FC<ClusterProps> = ({ visible }) => {
     return false
   }, [boxInfoRaw, isAaActive])
 
-  // Request/Release cluster stream + reset worker on disconnect
-  const wasStreamingRef = useRef(isStreaming)
+  const wantCluster =
+    settings?.cluster?.main === true ||
+    settings?.cluster?.dash === true ||
+    settings?.cluster?.aux === true
+
   useEffect(() => {
-    if (!isStreaming) {
-      void window.projection.ipc.requestCluster(false).catch(() => {})
-      if (wasStreamingRef.current) {
-        clusterCodecRef.current = 'h264'
-        try {
-          renderWorkerRef.current?.postMessage(new SetCodecEvent('h264'))
-          renderWorkerRef.current?.postMessage({ type: 'reset' })
-        } catch {
-          /* worker not yet alive */
-        }
-      }
-      wasStreamingRef.current = false
-      return
-    }
-    wasStreamingRef.current = true
-    if (!renderReady) {
-      void window.projection.ipc.requestCluster(false).catch(() => {})
-      return
-    }
+    if (!wantCluster) return
+    if (!renderReady) return
     void window.projection.ipc.requestCluster(true).catch(() => {})
-    return () => {
-      void window.projection.ipc.requestCluster(false).catch(() => {})
+  }, [renderReady, wantCluster])
+
+  const prevClusterVisibleRef = useRef(false)
+  useEffect(() => {
+    const wasVisible = prevClusterVisibleRef.current
+    prevClusterVisibleRef.current = showCluster
+    if (!showCluster || wasVisible) return
+    if (!wantCluster || !renderReady) return
+    void window.projection.ipc.requestCluster(true).catch(() => {})
+  }, [showCluster, wantCluster, renderReady])
+
+  useEffect(() => {
+    const handler = (_evt: unknown, ...args: unknown[]) => {
+      const msg = (args[0] ?? {}) as { type?: string }
+      if (msg.type !== 'plugged') return
+      if (!wantCluster) return
+      if (!renderReady) return
+      void window.projection.ipc.requestCluster(true).catch(() => {})
     }
-  }, [isStreaming, renderReady])
+    window.projection.ipc.onEvent(handler)
+    return () => window.projection.ipc.offEvent(handler)
+  }, [renderReady, wantCluster])
 
   // Init Render.worker
   useEffect(() => {
@@ -171,6 +165,7 @@ export const Cluster: React.FC<ClusterProps> = ({ visible }) => {
       renderWorkerRef.current?.terminate()
       renderWorkerRef.current = null
       offscreenCanvasRef.current = null
+      setRenderReady(false)
     }
   }, [clusterVideoChannel])
 
@@ -196,7 +191,9 @@ export const Cluster: React.FC<ClusterProps> = ({ visible }) => {
       }
 
       if (t === 'awaiting-keyframe' || t === 'request-keyframe') {
-        void window.projection.ipc.requestCluster(true).catch(() => {})
+        if (wantCluster) {
+          void window.projection.ipc.requestCluster(true).catch(() => {})
+        }
         return
       }
 
@@ -211,7 +208,7 @@ export const Cluster: React.FC<ClusterProps> = ({ visible }) => {
 
     w.addEventListener('message', handler)
     return () => w.removeEventListener('message', handler)
-  }, [readWorkerMsg])
+  }, [readWorkerMsg, wantCluster])
 
   // resize
   useEffect(() => {
@@ -258,11 +255,13 @@ export const Cluster: React.FC<ClusterProps> = ({ visible }) => {
     return () => window.projection.ipc.offEvent(handler)
   }, [])
 
-  // Forward maps video chunks to Render.worker port
+  // Forward video chunks to Render.worker port. Register only once the
+  // worker is ready so the initial SPS+IDR isn't dropped while it's still
+  // spinning up — preload queues chunks until the handler is attached.
   useEffect(() => {
+    if (!renderReady || rendererError) return
     const handleVideo = (payload: unknown) => {
-      if (rendererError) return
-      if (!renderReady || !payload || typeof payload !== 'object') return
+      if (!payload || typeof payload !== 'object') return
 
       const m = payload as { chunk?: { buffer?: ArrayBuffer } }
       const buf = m.chunk?.buffer
@@ -276,13 +275,32 @@ export const Cluster: React.FC<ClusterProps> = ({ visible }) => {
     return () => {}
   }, [clusterVideoChannel, renderReady, rendererError, clusterStreamActive])
 
-  // Reset stream-active flag on disconnect so the placeholder reappears.
+  // Track the negotiated cluster frame dims so the canvas crop math below
+  // matches whatever tier the phone actually picked.
+  useEffect(() => {
+    const ipc = (window.projection?.ipc ?? {}) as {
+      onClusterResolution?: (cb: (payload: unknown) => void) => void
+    }
+    if (typeof ipc.onClusterResolution !== 'function') return
+    ipc.onClusterResolution((payload: unknown) => {
+      const d = payload as { width?: number; height?: number } | undefined
+      const w = typeof d?.width === 'number' ? d.width : 0
+      const h = typeof d?.height === 'number' ? d.height : 0
+      if (w > 0 && h > 0) setClusterFrameSize({ w, h })
+    })
+  }, [])
+
   useEffect(() => {
     const handler = (_evt: unknown, ...args: unknown[]) => {
       const msg = (args[0] ?? {}) as { type?: string }
-      if (msg.type === 'unplugged' || msg.type === 'failure') {
-        setClusterStreamActive(false)
-      }
+      if (msg.type !== 'unplugged' && msg.type !== 'failure') return
+      setClusterStreamActive(false)
+      clusterCodecRef.current = 'h264'
+      try {
+        renderWorkerRef.current?.postMessage(new SetCodecEvent('h264'))
+        renderWorkerRef.current?.postMessage({ type: 'reset' })
+      } catch {}
+      void window.projection.ipc.requestCluster(false).catch(() => {})
     }
     window.projection.ipc.onEvent(handler)
     return () => window.projection.ipc.offEvent(handler)
@@ -290,11 +308,28 @@ export const Cluster: React.FC<ClusterProps> = ({ visible }) => {
 
   const canShowVideo = !rendererError
 
+  const userClusterW = settings?.clusterWidth ?? 0
+  const userClusterH = settings?.clusterHeight ?? 0
+  const clusterCrop = (() => {
+    if (!clusterFrameSize || userClusterW <= 0 || userClusterH <= 0) return null
+    const frameW = clusterFrameSize.w
+    const frameH = clusterFrameSize.h
+    const content = aaContentArea(
+      { width: frameW, height: frameH },
+      { width: userClusterW, height: userClusterH }
+    )
+    const overX = frameW > content.contentWidth ? frameW / content.contentWidth : 1
+    const overY = frameH > content.contentHeight ? frameH / content.contentHeight : 1
+    const leftPct = ((frameW - content.contentWidth) / 2 / content.contentWidth) * 100
+    const topPct = ((frameH - content.contentHeight) / 2 / content.contentHeight) * 100
+    return { overX, overY, leftPct, topPct }
+  })()
+
   return (
     <Box
       ref={rootRef}
       sx={{
-        position: navHidden ? 'fixed' : 'absolute',
+        position: 'fixed',
         inset: 0,
         width: '100%',
         height: '100%',
@@ -341,14 +376,19 @@ export const Cluster: React.FC<ClusterProps> = ({ visible }) => {
           sx={{
             width: '100%',
             height: '100%',
-            maxWidth: '100%'
+            maxWidth: '100%',
+            position: 'relative',
+            overflow: 'hidden'
           }}
         >
           <canvas
             ref={canvasRef}
             style={{
-              width: '100%',
-              height: '100%',
+              position: 'absolute',
+              width: clusterCrop ? `${clusterCrop.overX * 100}%` : '100%',
+              height: clusterCrop ? `${clusterCrop.overY * 100}%` : '100%',
+              left: clusterCrop ? `-${clusterCrop.leftPct}%` : '0',
+              top: clusterCrop ? `-${clusterCrop.topPct}%` : '0',
               display: 'block',
               userSelect: 'none',
               pointerEvents: 'none',

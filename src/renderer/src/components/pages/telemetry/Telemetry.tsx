@@ -80,7 +80,7 @@ export const Telemetry: FC<TelemetryProps> = ({ windowRole = 'main' }) => {
   return (
     <Box
       sx={{
-        position: isNavbarHidden ? 'fixed' : 'absolute',
+        position: 'fixed',
         inset: 0,
         width: '100%',
         height: '100%',

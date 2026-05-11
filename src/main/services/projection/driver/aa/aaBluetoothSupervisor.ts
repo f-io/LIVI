@@ -223,14 +223,9 @@ export class AaBluetoothSupervisor extends EventEmitter {
     const env = envFromConfig(this._cfg)
     const useSudo = process.platform === 'linux'
     const cmd = useSudo ? 'sudo' : this._python
-    // Forward DEBUG explicitly via sudo's VAR=value syntax so the Python child
-    // inherits it regardless of env_keep policy. Requires SETENV: in sudoers
-    // (see aaSudoers.ts), which is already there.
     const sudoEnvArgs: string[] = []
     if (useSudo && DEBUG) sudoEnvArgs.push('DEBUG=1')
-    const args = useSudo
-      ? ['-n', '-E', ...sudoEnvArgs, this._python, '-u', script]
-      : ['-u', script]
+    const args = useSudo ? ['-n', '-E', ...sudoEnvArgs, this._python, '-u', script] : ['-u', script]
 
     if (DEBUG) {
       console.log(

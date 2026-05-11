@@ -19,7 +19,7 @@ const statusState: Record<string, any> = {
   isStreaming: true
 }
 const liviState: Record<string, any> = {
-  settings: { fps: 60, clusterFps: 60 },
+  settings: { fps: 60, clusterFps: 60, cluster: { main: true, dash: false, aux: false } },
   boxInfo: null
 }
 
@@ -70,7 +70,11 @@ describe('Cluster page', () => {
     clusterVideoCb = undefined
 
     statusState.isStreaming = true
-    liviState.settings = { fps: 60, clusterFps: 60 }
+    liviState.settings = {
+      fps: 60,
+      clusterFps: 60,
+      cluster: { main: true, dash: false, aux: false }
+    }
     liviState.boxInfo = { supportFeatures: '' }
     ;(global as any).Worker = MockWorker
     ;(global as any).MessageChannel = MockMessageChannel
@@ -104,7 +108,16 @@ describe('Cluster page', () => {
   })
 
   test('requests cluster stream and initializes render worker', async () => {
-    const { unmount } = renderCluster()
+    const projectionEventCbs: AnyFn[] = []
+    ;(window as any).projection.ipc.onEvent = jest.fn((cb: AnyFn) => {
+      projectionEventCbs.push(cb)
+    })
+    ;(window as any).projection.ipc.offEvent = jest.fn((cb: AnyFn) => {
+      const i = projectionEventCbs.indexOf(cb)
+      if (i >= 0) projectionEventCbs.splice(i, 1)
+    })
+
+    renderCluster()
 
     await waitFor(() => {
       expect(MockWorker.instances.length).toBe(1)
@@ -119,7 +132,11 @@ describe('Cluster page', () => {
       expect((window as any).projection.ipc.requestCluster).toHaveBeenCalledWith(true)
     })
 
-    unmount()
+    // Release happens on phone disconnect, not on unmount — the worker is
+    // permanently mounted at the App level.
+    act(() => {
+      projectionEventCbs.forEach((cb) => cb(undefined, { type: 'unplugged' }))
+    })
     await waitFor(() => {
       expect((window as any).projection.ipc.requestCluster).toHaveBeenCalledWith(false)
     })
@@ -140,6 +157,25 @@ describe('Cluster page', () => {
 
     const channel = MockMessageChannel.instances[0]
     expect(channel.port1.postMessage).toHaveBeenCalled()
+  })
+
+  test('does not request the cluster stream when no display targets it', async () => {
+    liviState.settings = {
+      fps: 60,
+      clusterFps: 60,
+      cluster: { main: false, dash: false, aux: false }
+    }
+
+    renderCluster()
+
+    // Give React a tick to flush effects.
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // Worker still spawns (same pattern as the main projection worker, so the
+    // initial IDR is never missed if cluster gets enabled later), but no
+    // requestCluster IPC fires while no display targets it.
+    expect((window as any).projection.ipc.requestCluster).not.toHaveBeenCalled()
   })
 
   test('shows renderer error and unsupported firmware hint', () => {

@@ -1,13 +1,26 @@
 import { Box, Typography } from '@mui/material'
 import type { WindowId } from '@shared/types'
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { ROUTES } from '../../constants'
+import type { BindKey } from '../../hooks/keysControl/types'
 import { useLiviStore } from '../../store/store'
+import { broadcastMediaKey } from '../../utils/broadcastMediaKey'
 import { AppLayout } from '../layouts/AppLayout'
 import { Cluster } from '../pages/cluster/Cluster'
 import { Media } from '../pages/media'
 import { Telemetry } from '../pages/telemetry'
+
+const TRANSPORT_ACTIONS: BindKey[] = [
+  'next',
+  'prev',
+  'playPause',
+  'play',
+  'pause',
+  'acceptPhone',
+  'rejectPhone',
+  'home'
+]
 
 type Props = {
   role: Exclude<WindowId, 'main'>
@@ -21,7 +34,7 @@ export const SecondaryAppShell = ({ role, emptyLabel }: Props) => {
     !!settings?.dashboards &&
     Object.values(settings.dashboards).some((slot) => slot?.[role] === true)
   const hasMedia = settings?.media?.[role] === true
-  const hasCluster = settings?.clusterEnabled === true && settings?.cluster?.[role] === true
+  const hasCluster = settings?.cluster?.[role] === true
 
   if (!settings) return <Box sx={{ width: '100vw', height: '100vh', bgcolor: '#000' }} />
 
@@ -61,6 +74,84 @@ const SecondaryShellInner = ({ role, hasCluster }: InnerProps) => {
   const mainRef = useRef<HTMLDivElement | null>(null)
   const { pathname } = useLocation()
   const settings = useLiviStore((s) => s.settings)
+
+  // Receive media-key broadcasts from main so this window's Media UI also flashes.
+  useEffect(() => {
+    return window.app?.onMediaKey?.((command) => {
+      window.dispatchEvent(new CustomEvent('car-media-key', { detail: { command } }))
+    })
+  }, [])
+
+  useEffect(() => {
+    const bindings = settings?.bindings
+    if (!bindings) return
+
+    const codeToAction = new Map<string, BindKey>()
+    for (const [action, code] of Object.entries(bindings)) {
+      if (typeof code === 'string' && code) codeToAction.set(code, action as BindKey)
+    }
+
+    let pttPressed = false
+
+    const dispatch = (cmd: string) => {
+      try {
+        window.projection.ipc.sendCommand(cmd)
+      } catch (e) {
+        console.warn('[secondary keys] sendCommand failed', e)
+      }
+      broadcastMediaKey(cmd)
+    }
+
+    const releasePtt = () => {
+      if (!pttPressed) return
+      pttPressed = false
+      dispatch('voiceAssistantRelease')
+    }
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const action = codeToAction.get(e.code)
+      if (!action) return
+
+      if (action === 'voiceAssistant') {
+        if (e.repeat) {
+          e.preventDefault()
+          return
+        }
+        pttPressed = true
+        dispatch('voiceAssistant')
+        e.preventDefault()
+        return
+      }
+
+      if (TRANSPORT_ACTIONS.includes(action)) {
+        dispatch(action)
+        e.preventDefault()
+      }
+    }
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      const action = codeToAction.get(e.code)
+      if (action === 'voiceAssistant') releasePtt()
+    }
+
+    const onBlur = () => releasePtt()
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') releasePtt()
+    }
+
+    document.addEventListener('keydown', onKeyDown, true)
+    document.addEventListener('keyup', onKeyUp, true)
+    window.addEventListener('blur', onBlur)
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true)
+      document.removeEventListener('keyup', onKeyUp, true)
+      window.removeEventListener('blur', onBlur)
+      document.removeEventListener('visibilitychange', onVisibility)
+      releasePtt()
+    }
+  }, [settings])
 
   return (
     <AppLayout navRef={navRef} mainRef={mainRef} receivingVideo={false}>

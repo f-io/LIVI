@@ -18,7 +18,7 @@ export function SettingsPage() {
   const { '*': splat } = useParams()
   const { t } = useTranslation()
 
-  const isDongleConnected = useStatusStore((s) => s.isDongleConnected)
+  const isDongleConnected = useStatusStore((s) => s.isDongleConnected || s.isAaActive)
 
   const path = splat ? splat.split('/') : []
   const node = getNodeByPath(settingsSchema, path)

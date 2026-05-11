@@ -8,6 +8,7 @@ import {
   MIN_HEIGHT,
   MIN_WIDTH
 } from '../../components/pages/settings/constants'
+import { Camera } from '../../components/pages/settings/pages/camera'
 import { SettingsNode } from '../types'
 
 export const generalSchema: SettingsNode<ExtraConfig> = {
@@ -289,105 +290,152 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
     },
     {
       type: 'route',
-      label: 'Media',
-      labelKey: 'settings.media',
-      route: 'media',
+      label: 'Tab Settings',
+      labelKey: 'settings.tabSettings',
+      route: 'tabSettings',
       path: '',
       children: [
         {
-          type: 'checkbox',
-          label: 'Main',
-          labelKey: 'settings.mainScreen',
-          path: 'media.main'
-        },
-        {
-          type: 'checkbox',
-          label: 'Dash',
-          labelKey: 'settings.dashScreen',
-          path: 'media.dash'
-        },
-        {
-          type: 'checkbox',
-          label: 'Aux',
-          labelKey: 'settings.auxScreen',
-          path: 'media.aux'
-        }
-      ]
-    },
-    {
-      type: 'route',
-      label: 'Cluster',
-      labelKey: 'settings.clusterStream',
-      route: 'cluster',
-      path: '',
-      children: [
-        {
-          type: 'checkbox',
-          label: 'Main',
-          labelKey: 'settings.mainScreen',
-          path: 'cluster.main'
-        },
-        {
-          type: 'checkbox',
-          label: 'Dash',
-          labelKey: 'settings.dashScreen',
-          path: 'cluster.dash'
-        },
-        {
-          type: 'checkbox',
-          label: 'Aux',
-          labelKey: 'settings.auxScreen',
-          path: 'cluster.aux'
-        }
-      ]
-    },
-    {
-      type: 'route',
-      label: 'Dashboards',
-      labelKey: 'settings.telemetryDashboards',
-      route: 'dashboards',
-      path: '',
-      children: [
-        {
-          type: 'posList',
-          label: 'Dashboards',
-          labelKey: 'settings.telemetryDashboards',
-          path: 'dashboards',
-          items: [
-            { id: 'dash1', label: 'Dash 1', labelKey: 'settings.telemetryDash1' },
-            { id: 'dash2', label: 'Dash 2', labelKey: 'settings.telemetryDash2' },
-            { id: 'dash3', label: 'Dash 3', labelKey: 'settings.telemetryDash3' },
-            { id: 'dash4', label: 'Dash 4', labelKey: 'settings.telemetryDash4' }
-          ]
-        },
-        ...(['dash1', 'dash2', 'dash3', 'dash4'] as const).map((id, i) => ({
-          type: 'route' as const,
-          label: `Dash ${i + 1}`,
-          labelKey: `settings.telemetry${id.charAt(0).toUpperCase()}${id.slice(1)}`,
-          route: id,
+          type: 'route',
+          label: 'Cluster Stream',
+          labelKey: 'settings.clusterStream',
+          route: 'cluster',
           path: '',
-          hidden: true,
           children: [
             {
-              type: 'checkbox' as const,
+              type: 'checkbox',
               label: 'Main',
               labelKey: 'settings.mainScreen',
-              path: `dashboards.${id}.main`
+              path: 'cluster.main'
             },
             {
-              type: 'checkbox' as const,
+              type: 'checkbox',
               label: 'Dash',
               labelKey: 'settings.dashScreen',
-              path: `dashboards.${id}.dash`
+              path: 'cluster.dash'
             },
             {
-              type: 'checkbox' as const,
+              type: 'checkbox',
               label: 'Aux',
               labelKey: 'settings.auxScreen',
-              path: `dashboards.${id}.aux`
+              path: 'cluster.aux'
             }
           ]
-        }))
+        },
+        {
+          type: 'route',
+          label: 'Dashboards',
+          labelKey: 'settings.telemetryDashboards',
+          route: 'dashboards',
+          path: '',
+          children: [
+            {
+              type: 'posList',
+              label: 'Dashboards',
+              labelKey: 'settings.telemetryDashboards',
+              path: 'dashboards',
+              items: [
+                { id: 'dash1', label: 'Dash 1', labelKey: 'settings.telemetryDash1' },
+                { id: 'dash2', label: 'Dash 2', labelKey: 'settings.telemetryDash2' },
+                { id: 'dash3', label: 'Dash 3', labelKey: 'settings.telemetryDash3' },
+                { id: 'dash4', label: 'Dash 4', labelKey: 'settings.telemetryDash4' }
+              ]
+            },
+            ...(['dash1', 'dash2', 'dash3', 'dash4'] as const).map((id, i) => ({
+              type: 'route' as const,
+              label: `Dash ${i + 1}`,
+              labelKey: `settings.telemetry${id.charAt(0).toUpperCase()}${id.slice(1)}`,
+              route: id,
+              path: '',
+              hidden: true,
+              children: [
+                {
+                  type: 'checkbox' as const,
+                  label: 'Main',
+                  labelKey: 'settings.mainScreen',
+                  path: `dashboards.${id}.main`
+                },
+                {
+                  type: 'checkbox' as const,
+                  label: 'Dash',
+                  labelKey: 'settings.dashScreen',
+                  path: `dashboards.${id}.dash`
+                },
+                {
+                  type: 'checkbox' as const,
+                  label: 'Aux',
+                  labelKey: 'settings.auxScreen',
+                  path: `dashboards.${id}.aux`
+                }
+              ]
+            }))
+          ]
+        },
+        {
+          type: 'route',
+          label: 'Media',
+          labelKey: 'settings.media',
+          route: 'media',
+          path: '',
+          children: [
+            {
+              type: 'checkbox',
+              label: 'Main',
+              labelKey: 'settings.mainScreen',
+              path: 'media.main'
+            },
+            {
+              type: 'checkbox',
+              label: 'Dash',
+              labelKey: 'settings.dashScreen',
+              path: 'media.dash'
+            },
+            {
+              type: 'checkbox',
+              label: 'Aux',
+              labelKey: 'settings.auxScreen',
+              path: 'media.aux'
+            }
+          ]
+        },
+        {
+          type: 'route',
+          label: 'Reverse Camera',
+          labelKey: 'settings.reverseCamera',
+          route: 'camera',
+          path: '',
+          displayValue: true,
+          children: [
+            {
+              type: 'checkbox',
+              label: 'Camera Tab',
+              labelKey: 'settings.cameraTab',
+              path: 'cameraEnabled'
+            },
+            {
+              type: 'route',
+              label: 'Camera',
+              labelKey: 'settings.camera',
+              route: 'select',
+              path: '',
+              children: [
+                {
+                  path: 'camera',
+                  type: 'custom',
+                  label: 'Camera',
+                  labelKey: 'settings.camera',
+                  component: Camera
+                }
+              ]
+            },
+            {
+              type: 'checkbox',
+              label: 'Mirror',
+              labelKey: 'settings.cameraMirror',
+              path: 'cameraMirror'
+            }
+          ]
+        }
       ]
     },
     {

@@ -5,11 +5,11 @@ import { getSecondaryWindow } from '@main/window/secondaryWindows'
 import type { DevListEntry, DongleFirmwareAction, DongleFwApiRaw, ExtraConfig } from '@shared/types'
 import { PhoneWorkMode } from '@shared/types'
 import type { NavLocale } from '@shared/utils'
-import { translateNavigation } from '@shared/utils'
+import { isClusterDisplayed, translateNavigation } from '@shared/utils'
 import { app, WebContents } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { usb, WebUSBDevice } from 'usb'
+import { type Device, usb, WebUSBDevice } from 'usb'
 import { AaBtSockClient } from '../driver/aa/AaBtSockClient'
 import { AaDriver } from '../driver/aa/aaDriver'
 import type { IPhoneDriver } from '../driver/IPhoneDriver'
@@ -65,6 +65,9 @@ import { readMediaFile } from './utils/readMediaFile'
 import { readNavigationFile } from './utils/readNavigationFile'
 
 let dongleConnected = false
+let wiredPhoneConnected = false
+let wiredPhoneDevice: Device | null = null
+let expectingPhoneReenumUntil = 0
 
 type VolumeConfig = {
   audioVolume?: number
@@ -158,8 +161,6 @@ export class ProjectionService {
   private lastAudioMetaEmitKey = ''
   private firmware = new FirmwareUpdateService()
   private readonly aaBtSock = new AaBtSockClient()
-  // Persistent event subscription on /tmp/aa-bt.sock — BlueZ PropertiesChanged
-  // for Connected/Paired arrives here and triggers a list refresh.
   private aaBtSubscription: { close: () => void } | null = null
 
   private readonly onAaConnected = (): void => {
@@ -183,6 +184,13 @@ export class ProjectionService {
   private lastClusterVideoHeight?: number
   private clusterRequested = false
   private lastClusterCodec: 'h264' | 'h265' | 'vp9' | 'av1' | null = null
+
+  // Per-channel buffers for video chunks that arrive from the phone before
+  // the renderer is attached. Keeping main and cluster separate matters:
+  // at 60fps main video would otherwise push the cluster's initial SPS/IDR
+  // out of a shared FIFO before the renderer is up.
+  private earlyVideoQueues: Map<string, Array<Record<string, unknown>>> = new Map()
+  private static readonly EARLY_QUEUE_MAX_PER_CHANNEL = 256
   private lastPluggedPhoneType?: PhoneType
   private aaPlaybackInferred: 1 | 2 = 1
   private pendingStartupConnectTarget: PendingStartupConnectTarget | null = null
@@ -194,11 +202,32 @@ export class ProjectionService {
     const prev = this.config
     this.config = { ...this.config, ...next }
 
-    if (typeof next.hwAcceleration === 'boolean' && next.hwAcceleration !== prev?.hwAcceleration) {
+    const hwToggled =
+      typeof next.hwAcceleration === 'boolean' && next.hwAcceleration !== prev?.hwAcceleration
+    const prevClusterActive = isClusterDisplayed(prev)
+    const nextClusterActive = isClusterDisplayed(this.config)
+    const clusterToggled = prevClusterActive !== nextClusterActive
+
+    if (hwToggled) {
       this.recomputeCodecCapabilities()
+    }
+
+    if (hwToggled || clusterToggled) {
+      console.log(
+        `[ProjectionService] config change requires AA restart (hw=${hwToggled}, cluster=${clusterToggled})`
+      )
       this.aaDriver?.restartStack().catch((e) => {
-        console.warn('[ProjectionService] AA stack restart on HW toggle failed', e)
+        console.warn('[ProjectionService] AA stack restart on config toggle failed', e)
       })
+    }
+
+    if (clusterToggled && !nextClusterActive) {
+      // Drop any in-flight cluster request so we stop forwarding cluster chunks
+      // to the renderer until the next explicit request.
+      this.clusterRequested = false
+      this.lastClusterCodec = null
+      this.lastClusterVideoWidth = undefined
+      this.lastClusterVideoHeight = undefined
     }
 
     // Seed AA's initial NIGHT_MODE
@@ -331,7 +360,7 @@ export class ProjectionService {
           } catch {}
         }, phoneTypeConfig.frameInterval)
       }
-      this.emitProjectionEvent({ type: 'plugged' })
+      this.emitProjectionEvent({ type: 'plugged', phoneType: msg.phoneType })
       // Hydration
       for (const fn of this.pluggedHooks) {
         try {
@@ -420,7 +449,7 @@ export class ProjectionService {
       const isCluster = msg.header.type === MessageType.ClusterVideoData
       // cluster video stream (0x2c)
       if (isCluster) {
-        if (!this.clusterRequested) return
+        if (!isClusterDisplayed(this.config)) return
 
         const w = msg.width
         const h = msg.height
@@ -606,19 +635,11 @@ export class ProjectionService {
   }
 
   private readonly onDriverFailure = (): void => {
-    // Late AA-stack socket errors can fire after before-quit destroyed
-    // webContents — `?.send` doesn't catch the destroyed-but-not-null case,
-    // so guard explicitly. `isDestroyed?.()` keeps test mocks happy too.
     const wc = this.webContents
     if (!wc || wc.isDestroyed?.()) return
     wc.send('projection-event', { type: 'failure' })
   }
 
-  /**
-   * `'targeted-connect-dispatched'` is dongle-only; AaDriver never emits it.
-   * We attach unconditionally so swapping drivers doesn't require a switch in
-   * the wiring; on AaDriver the listener simply never fires.
-   */
   private readonly onDriverTargetedConnect = (): void => {
     this.pendingStartupConnectTarget = null
   }
@@ -633,9 +654,13 @@ export class ProjectionService {
   // Cluster channel codec selection
   private readonly onDriverClusterVideoCodec = (codec: 'h264' | 'h265' | 'vp9' | 'av1'): void => {
     this.lastClusterCodec = codec
-    const wc = this.webContents
-    if (!wc || wc.isDestroyed?.()) return
-    wc.send('projection-event', { type: 'cluster-video-codec', payload: { codec } })
+    for (const wc of this.getClusterTargetWebContents()) {
+      try {
+        wc.send('projection-event', { type: 'cluster-video-codec', payload: { codec } })
+      } catch {
+        /* detached webContents */
+      }
+    }
   }
 
   private attachDriverListeners(d: IPhoneDriver): void {
@@ -689,26 +714,11 @@ export class ProjectionService {
 
     // TODO move IPC registration to dedicated IPC modules instead of service constructor
     registerIpcHandle('projection-start', async () => this.start())
-    // In AA-native mode the lifecycle is owned by the main process: we
-    // auto-start at app boot (no USB hot-plug trigger) and tear down only on
-    // before-quit. The renderer's Projection page, however, still emits a
-    // synthetic 'unplugged' on first mount via `usb-last-event` (because no
-    // CPC200 dongle is attached), and its onUsbDisconnect handler unconditionally
-    // calls `ipc.stop()`. In USB mode that's a harmless no-op (this.started is
-    // false), but in AA mode main has already started the python BT/Wi-Fi stack,
-    // so the spurious stop() kills it via SIGTERM mid-handshake. Gate the IPC
-    // here — full teardown still happens correctly via lifecycle.before-quit.
     registerIpcHandle('projection-stop', async () => {
       if (this.wantsAaDriver()) return
       return this.stop()
     })
 
-    // Driver-agnostic "apply settings & restart". The dongle path used
-    // `usb.forceReset()` which is meaningless for AA (no USB device); this
-    // IPC just bounces the projection service so whichever driver is active
-    // picks up the new config. Settings page calls it when the user hits the
-    // restart button after changing AA-affecting fields (width/height/fps,
-    // wifi password, hostname, …).
     registerIpcHandle('projection-restart', async () => {
       try {
         await this.stop()
@@ -721,20 +731,13 @@ export class ProjectionService {
       this.driver.send(new SendCommand('frame'))
     )
 
-    // Renderer probed WebCodecs and reports which codecs work in HW/SW. We
-    // remember the result so AaDriver can ask whether to advertise H.265 in
-    // the AA service-discovery response. Pi/ARM platforms without HEVC SW
-    // support fall back to H.264 advertised-only.
     registerIpcHandle('projection-codec-capabilities', async (_evt, caps: unknown) => {
       this.applyCodecCapabilities(caps)
     })
 
     registerIpcHandle('projection-bt-pairedlist-set', async (_evt, listText: string) => {
       if (!this.started) return { ok: false }
-      // Bulk-set is a dongle-only concept — the dongle keeps its own paired
-      // list and we push the desired state to it. BlueZ is authoritative on
-      // the host-BT (AaDriver) path, so per-device removal goes through
-      // projection-bt-forget-device and the bulk call is a no-op there.
+
       if (this.driver instanceof DongleDriver) {
         const ok = await this.driver.sendBluetoothPairedList(String(listText ?? ''))
         return { ok }
@@ -842,7 +845,8 @@ export class ProjectionService {
     })
 
     registerIpcHandle('cluster:request', async (_evt, enabled: boolean) => {
-      this.clusterRequested = Boolean(enabled)
+      const allowed = Boolean(enabled) && isClusterDisplayed(this.config)
+      this.clusterRequested = allowed
 
       if (!this.clusterRequested) {
         this.lastClusterVideoWidth = undefined
@@ -850,17 +854,23 @@ export class ProjectionService {
         return { ok: true, enabled: false }
       }
 
-      // Re-emit the cached cluster codec
+      // Re-emit the cached cluster codec to every cluster target
       if (this.lastClusterCodec) {
-        const wc = this.webContents
-        if (wc && !wc.isDestroyed?.()) {
-          wc.send('projection-event', {
-            type: 'cluster-video-codec',
-            payload: { codec: this.lastClusterCodec }
-          })
+        for (const wc of this.getClusterTargetWebContents()) {
+          try {
+            wc.send('projection-event', {
+              type: 'cluster-video-codec',
+              payload: { codec: this.lastClusterCodec }
+            })
+          } catch {
+            /* detached webContents */
+          }
         }
       }
 
+      // Always re-send the focus indication. Phone now receives a single
+      // PROJECTED indication on ch=19 — idempotent, safe to call on each
+      // cluster route entry.
       try {
         this.driver.send(new SendCommand('requestClusterStreamFocus'))
       } catch {
@@ -1289,6 +1299,26 @@ export class ProjectionService {
 
   public attachRenderer(webContents: WebContents) {
     this.webContents = webContents
+
+    // Drain any video chunks that arrived from the phone before the renderer
+    // window had finished loading. Per-channel so cluster IDR is preserved.
+    if (this.earlyVideoQueues.size > 0) {
+      const queues = this.earlyVideoQueues
+      this.earlyVideoQueues = new Map()
+      for (const [channel, queued] of queues) {
+        console.log(
+          `[ProjectionService] draining ${queued.length} early '${channel}' chunk(s) to attached renderer`
+        )
+        for (const envelope of queued) {
+          try {
+            if (typeof webContents.isDestroyed === 'function' && webContents.isDestroyed()) return
+            webContents.send(channel, envelope)
+          } catch {
+            /* detached */
+          }
+        }
+      }
+    }
   }
 
   public applyConfigPatch(patch: Partial<ExtraConfig>): void {
@@ -1324,13 +1354,40 @@ export class ProjectionService {
     dongleConnected = connected
   }
 
-  /**
-   * The AA driver is Linux-only and gated behind `cfg.aa`.
-   * On macOS / Windows the python BT/Wi-Fi stack does not run, so we ignore
-   * the flag and fall back to the USB DongleDriver. This is intentional:
-   * dev / debug builds on a Mac stay usable.
-   */
+  public markPhoneConnected(connected: boolean, device?: Device): void {
+    wiredPhoneConnected = connected
+    wiredPhoneDevice = connected ? (device ?? null) : null
+    if (connected) {
+      console.log('[ProjectionService] wired phone marked connected')
+      this.autoStartIfNeeded().catch(console.error)
+    } else {
+      console.log('[ProjectionService] wired phone marked disconnected')
+      if (this.started && this.aaDriver?.isWiredMode()) {
+        void this.stop().catch((e) =>
+          console.warn('[ProjectionService] stop after wired unplug threw', e)
+        )
+      }
+    }
+  }
+
+  public getWiredPhoneDevice(): Device | null {
+    return wiredPhoneDevice
+  }
+
+  public isWiredPhoneConnected(): boolean {
+    return wiredPhoneConnected
+  }
+
+  public expectPhoneReenumeration(durationMs: number): void {
+    expectingPhoneReenumUntil = Date.now() + durationMs
+  }
+
+  public isExpectingPhoneReenumeration(): boolean {
+    return Date.now() < expectingPhoneReenumUntil
+  }
+
   private wantsAaDriver(): boolean {
+    if (wiredPhoneConnected) return true
     return this.config.aa === true && process.platform === 'linux'
   }
 
@@ -1341,7 +1398,9 @@ export class ProjectionService {
   private selectDriverFor(useAa: boolean): IPhoneDriver {
     if (useAa) {
       if (!this.aaDriver) {
-        const aa = new AaDriver()
+        const aa = new AaDriver({
+          onWillReenumerate: (ms) => this.expectPhoneReenumeration(ms)
+        })
         this.aaDriver = aa
         aa.setHevcSupported(this.hevcSupported)
         aa.setVp9Supported(this.vp9Supported)
@@ -1351,12 +1410,12 @@ export class ProjectionService {
         this.attachDriverListeners(aa)
         aa.on('connected', this.onAaConnected)
         aa.on('disconnected', this.onAaDisconnected)
-        this.openAaBtSubscription()
-        // Initial populate, then attempt autoconnect to the first trusted
-        // paired device.
-        this.populateAaBtPairedListInitial()
-          .then(() => this.tryAutoConnect())
-          .catch(() => {})
+        if (process.platform === 'linux') {
+          this.openAaBtSubscription()
+          this.populateAaBtPairedListInitial()
+            .then(() => this.tryAutoConnect())
+            .catch(() => {})
+        }
       }
       return this.aaDriver
     }
@@ -1520,6 +1579,12 @@ export class ProjectionService {
 
   public async autoStartIfNeeded() {
     if (this.shuttingDown) return
+    if (this.isStopping && this.stopPromise) {
+      try {
+        await this.stopPromise
+      } catch {}
+    }
+    if (this.shuttingDown) return
     if (this.started || this.isStarting) return
     if (this.wantsAaDriver() || dongleConnected) {
       await this.start()
@@ -1564,15 +1629,34 @@ export class ProjectionService {
         const active = this.selectDriverFor(useAa)
 
         if (useAa) {
-          // Native wireless AA: no USB enumeration, no pairTimeout. The python
-          // BT/Wi-Fi supervisor inside AaDriver brings up the AP and waits for
-          // the phone; AAStack emits 'connected' once TCP 5277 hands shake.
+          // Two AA paths share the same driver: Wireless + Wired
+          const wiredDevice = wiredPhoneDevice
+          const aaDriver = active as AaDriver
+          aaDriver.setWiredDevice(wiredDevice)
+
+          if (wiredDevice) {
+            const d = wiredDevice.deviceDescriptor
+            console.log(
+              `[ProjectionService] wired AA bring-up with device vid=0x${d.idVendor.toString(16)} pid=0x${d.idProduct.toString(16)}`
+            )
+          } else {
+            console.log('[ProjectionService] wireless AA bring-up (no wired device)')
+          }
+
           try {
-            await active.start(this.config)
-            this.started = true
-            console.log('[ProjectionService] started in AA-native mode (linux)')
+            const ok = await aaDriver.start(this.config)
+            this.started = Boolean(ok)
+            if (this.started) {
+              console.log(
+                `[ProjectionService] started in AA mode (${wiredDevice ? 'wired' : 'wireless'})`
+              )
+            } else {
+              console.warn(
+                '[ProjectionService] aaDriver.start returned false — session not running'
+              )
+            }
           } catch (e) {
-            console.warn('[ProjectionService] AA-native start failed', e)
+            console.warn('[ProjectionService] AA start failed', e)
             this.started = false
           }
           return
@@ -1655,13 +1739,6 @@ export class ProjectionService {
     this.stopPromise = (async () => {
       this.clearTimeouts()
 
-      // Tell the renderer the projection session is going away NOW. Without
-      // this, the renderer keeps its last decoded frame on screen and its
-      // streaming flag set, so a user navigating to the projection tab
-      // during a settings-driven restart sees a frozen still from the
-      // previous session. The renderer reacts to 'unplugged' by clearing
-      // the canvas + tearing down its decoder via the render-worker reset
-      // path — see Projection.tsx.
       try {
         const wc = this.webContents
         if (wc && !wc.isDestroyed()) {
@@ -1813,8 +1890,11 @@ export class ProjectionService {
     extra?: Record<string, unknown>,
     targets?: WebContents[]
   ) {
+    if (!data) return
     const wcs = targets ?? (this.webContents ? [this.webContents] : [])
-    if (wcs.length === 0 || !data) return
+    const isVideoChannel = channel === 'projection-video-chunk' || channel === 'cluster-video-chunk'
+    const noTargets = wcs.length === 0
+
     let offset = 0
     const total = data.byteLength
     const id = Math.random().toString(36).slice(2)
@@ -1838,12 +1918,27 @@ export class ProjectionService {
         ...(extra ?? {})
       }
 
-      for (const wc of wcs) {
-        try {
-          if (typeof wc.isDestroyed === 'function' && wc.isDestroyed()) continue
-          wc.send(channel, envelope)
-        } catch {
-          // ignored: detached webContents
+      if (noTargets && isVideoChannel) {
+        // Buffer the chunk so it can be replayed once the renderer attaches.
+        // Per-channel cap so a 60fps main stream can't push the cluster's
+        // initial SPS/IDR out of the queue before the renderer connects.
+        let q = this.earlyVideoQueues.get(channel)
+        if (!q) {
+          q = []
+          this.earlyVideoQueues.set(channel, q)
+        }
+        q.push(envelope)
+        if (q.length > ProjectionService.EARLY_QUEUE_MAX_PER_CHANNEL) {
+          q.shift()
+        }
+      } else {
+        for (const wc of wcs) {
+          try {
+            if (typeof wc.isDestroyed === 'function' && wc.isDestroyed()) continue
+            wc.send(channel, envelope)
+          } catch {
+            // ignored: detached webContents
+          }
         }
       }
       offset = end

@@ -2,13 +2,29 @@ import { registerIpcHandle } from '@main/ipc/register'
 import { Microphone } from '@main/services/audio'
 import { BrowserWindow } from 'electron'
 import { type Device, usb } from 'usb'
+import { isAccessoryMode, probeAaCapable } from '../projection/driver/aa/stack/aoap/handshake.js'
 import { ProjectionService } from '../projection/services/ProjectionService'
 import { findDongle } from './helpers'
 
 const getDeviceList = () => usb.getDeviceList()
 
+const SKIP_PROBE_DEVICE_CLASSES = new Set<number>([
+  0x03, // HID (keyboard, mouse, gamepad)
+  0x07, // Printer
+  0x08, // Mass Storage (USB stick)
+  0x09, // Hub
+  0x0e, // Video (UVC webcam)
+  0x11 // Billboard (USB-C alt-mode advertising)
+])
+
+// Suppress detach/attach noise during the AOAP handshake cycle.
+const PHONE_REENUM_SUPPRESS_MS = 2_500
+
 export class USBService {
   private lastDongleState: boolean = false
+  private lastPhoneState: boolean = false
+  private connectedPhoneDevice: Device | null = null
+  private phoneSuspendUntil = 0
   private stopped = false
   private resetInProgress = false
   private shutdownInProgress = false
@@ -43,6 +59,46 @@ export class USBService {
       this.notifyDeviceChange(device, true)
       this.projection.autoStartIfNeeded().catch(console.error)
     }
+
+    void this._scanForExistingPhone().catch((err) => {
+      console.debug('[USBService] startup phone scan threw', err)
+    })
+  }
+
+  private async _scanForExistingPhone(): Promise<void> {
+    if (this.stopped || this.lastPhoneState) return
+
+    // Normal shutdown path resets the phone out of accessory mode
+    const accessory = getDeviceList().find((d) => isAccessoryMode(d))
+    if (accessory) {
+      console.log('[USBService] Phone already in accessory mode at startup — claiming directly')
+      this.markPhoneAttached(accessory)
+      return
+    }
+
+    const candidates = getDeviceList().filter((d) => this.isPhoneCandidate(d))
+    if (candidates.length === 0) return
+    console.log(`[USBService] Probing ${candidates.length} startup USB candidate(s) for AOAP`)
+    for (const dev of candidates) {
+      if (this.stopped || this.lastPhoneState) return
+      try {
+        const proto = await probeAaCapable(dev)
+        if (proto < 1) continue
+        if (this.stopped || this.lastPhoneState) return
+        const vid = dev.deviceDescriptor.idVendor
+        const pid = dev.deviceDescriptor.idProduct
+        console.log(
+          `[USBService] AOAP-capable phone found on startup (vid=0x${vid.toString(16)}, pid=0x${pid.toString(16)}, proto=${proto})`
+        )
+        this.markPhoneAttached(dev)
+        return
+      } catch (err) {
+        console.debug(
+          `[USBService] startup probe threw for vid=0x${dev.deviceDescriptor.idVendor.toString(16)}`,
+          err
+        )
+      }
+    }
   }
 
   private listenToUsbEvents() {
@@ -55,6 +111,33 @@ export class USBService {
         this.projection.markDongleConnected(true)
         this.notifyDeviceChange(device, true)
         this.projection.autoStartIfNeeded().catch(console.error)
+        return
+      }
+
+      // Post-handshake fast path: phone already enumerated as an accessory.
+      if (isAccessoryMode(device)) {
+        const inSuspend = this.lastPhoneState && this.isPhoneSuspendWindow()
+        const expectingReenum =
+          this.lastPhoneState && this.projection.isExpectingPhoneReenumeration()
+        if (inSuspend || expectingReenum) {
+          console.log(
+            `[USBService] Accessory-mode re-attach during re-enumeration window — bridge owns it (${inSuspend ? 'suspend' : 'reset'})`
+          )
+          this.connectedPhoneDevice = device
+          this.projection.markPhoneConnected(true, device)
+          return
+        }
+        if (!this.lastPhoneState) {
+          console.log('[USBService] Phone connected (accessory mode)')
+          this.markPhoneAttached(device)
+        }
+        return
+      }
+
+      if (!this.lastPhoneState && this.isPhoneCandidate(device)) {
+        this.tryProbePhone(device).catch((err) => {
+          console.debug('[USBService] AOAP probe threw', err)
+        })
       }
     })
 
@@ -66,8 +149,68 @@ export class USBService {
         this.lastDongleState = false
         this.projection.markDongleConnected(false)
         this.notifyDeviceChange(device, false)
+        return
+      }
+
+      if (this.lastPhoneState && this.isSamePhoneDevice(device)) {
+        if (this.isPhoneSuspendWindow() || this.projection.isExpectingPhoneReenumeration()) {
+          // Either the AOAP handshake or a bridge-driven bus reset
+          console.log('[USBService] Phone detach during re-enumeration window — suppressed')
+          return
+        }
+        console.log('[USBService] Phone disconnected')
+        this.markPhoneDetached(device)
       }
     })
+  }
+
+  private isPhoneSuspendWindow(): boolean {
+    return Date.now() < this.phoneSuspendUntil
+  }
+
+  private markPhoneAttached(device: Device): void {
+    this.lastPhoneState = true
+    this.connectedPhoneDevice = device
+    this.phoneSuspendUntil = Date.now() + PHONE_REENUM_SUPPRESS_MS
+    this.projection.markPhoneConnected(true, device)
+  }
+
+  private markPhoneDetached(_device: Device): void {
+    this.lastPhoneState = false
+    this.connectedPhoneDevice = null
+    this.phoneSuspendUntil = 0
+    this.projection.markPhoneConnected(false)
+  }
+
+  private isPhoneCandidate(device: Device): boolean {
+    if (this.isDongle(device)) return false
+    const cls = device.deviceDescriptor?.bDeviceClass
+    if (cls === undefined) return false
+    if (SKIP_PROBE_DEVICE_CLASSES.has(cls)) return false
+    return cls === 0x00 || cls === 0xff
+  }
+
+  private async tryProbePhone(device: Device): Promise<void> {
+    // Skip if state changed while waiting on the event loop.
+    if (this.stopped || this.lastPhoneState) return
+    const proto = await probeAaCapable(device)
+    if (proto < 1) return
+    if (this.stopped || this.lastPhoneState) return
+
+    const vid = device.deviceDescriptor.idVendor
+    const pid = device.deviceDescriptor.idProduct
+    console.log(
+      `[USBService] AOAP-capable phone detected (vid=0x${vid.toString(16)}, pid=0x${pid.toString(16)}, proto=${proto})`
+    )
+    this.markPhoneAttached(device)
+  }
+
+  private isSamePhoneDevice(device: Device): boolean {
+    const cur = this.connectedPhoneDevice
+    if (!cur) return false
+    const a = device.deviceDescriptor
+    const b = cur.deviceDescriptor
+    return a.idVendor === b.idVendor && a.idProduct === b.idProduct
   }
 
   private notifyDeviceChange(device: Device, connected: boolean): void {

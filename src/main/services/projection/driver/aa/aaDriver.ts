@@ -5,6 +5,7 @@
  */
 
 import { EventEmitter } from 'node:events'
+import * as net from 'node:net'
 import { DEBUG } from '@main/constants'
 import { Microphone } from '@main/services/audio'
 import { MessageHeader, MessageType } from '@projection/messages/common'
@@ -37,9 +38,16 @@ import {
   MultiTouchAction,
   TouchAction
 } from '@shared/types/ProjectionEnums'
-import { computeAndroidAutoDpi, matchFittingAAResolution } from '@shared/utils'
+import {
+  computeAndroidAutoDpi,
+  isClusterDisplayed,
+  matchFittingAAResolution,
+  pixelAspectRatioE4
+} from '@shared/utils'
+import type { Device } from 'usb'
 import type { IPhoneDriver } from '../IPhoneDriver'
 import { AaBluetoothSupervisor } from './aaBluetoothSupervisor'
+import { AOAP_LOOPBACK_HOST, AOAP_LOOPBACK_PORT } from './stack/aoap/constants'
 import { turnEventToManeuverType, turnSideToNaviCode } from './stack/channels/navManeuverMap'
 import {
   AAStack,
@@ -55,16 +63,14 @@ import {
   type TouchPointer,
   type VideoCodec
 } from './stack/index'
+import { UsbAoapBridge } from './stack/transport/UsbAoapBridge'
 
-/** Build VideoData message from a raw H.264 NAL unit. */
 function buildVideoDataMessage(
   buf: Buffer,
   width: number,
   height: number,
   type: MessageType = MessageType.VideoData
 ): VideoData {
-  // VideoData wire layout (LIVI):
-  //   u32 width, u32 height, u32 flags, u32 length, u32 unknown, then payload.
   const HEADER = 20
   const data = Buffer.allocUnsafeSlow(HEADER + buf.length)
   data.writeUInt32LE(width, 0)
@@ -77,25 +83,13 @@ function buildVideoDataMessage(
   return new VideoData(header, data)
 }
 
-/**
- * AA channel type → LIVI audio classifier mapping.
- *   'media'  → MEDIA   (audioType=3) at 48 kHz stereo s16le → decodeType 4
- *   'speech' → SPEECH  (audioType=1) at 16 kHz mono s16le   → decodeType 5
- *   'phone'  → SYSTEM  (audioType=2) at 16 kHz mono s16le   → decodeType 5
- */
 const AUDIO_MAP: Record<AudioChannelType, { audioType: number; decodeType: number }> = {
   media: { audioType: 3, decodeType: 4 },
   speech: { audioType: 1, decodeType: 5 },
   phone: { audioType: 2, decodeType: 5 }
 }
 
-/** Build AudioData message from raw PCM s16le samples. */
 function buildAudioDataMessage(buf: Buffer, channel: AudioChannelType): AudioData {
-  // AudioData wire layout (LIVI readable.ts):
-  //   u32 LE decodeType (selects sample rate / channel count / format)
-  //   f32 LE volume     (0 = use system default; we don't volume-shape here)
-  //   u32 LE audioType  (1=SPEECH, 2=SYSTEM, 3=MEDIA — drives routing)
-  //   …Int16Array s16le payload (must be Int16-aligned — AA always sends 16-bit)
   const { audioType, decodeType } = AUDIO_MAP[channel]
   const HEADER = 12
   const sampleBytes = buf.length - (buf.length % 2)
@@ -108,16 +102,6 @@ function buildAudioDataMessage(buf: Buffer, channel: AudioChannelType): AudioDat
   return new AudioData(header, data)
 }
 
-/**
- * Build AudioData "command" message for stream lifecycle events.
- *
- * Wire layout (1-byte payload after the 12-byte header):
- *   u32 LE decodeType
- *   f32 LE volume
- *   u32 LE audioType
- *   u8     command          - AudioCommand enum value
- *
- */
 function buildAudioCommandMessage(channel: AudioChannelType, command: AudioCommand): AudioData {
   const { audioType, decodeType } = AUDIO_MAP[channel]
   const HEADER = 12
@@ -130,9 +114,6 @@ function buildAudioCommandMessage(channel: AudioChannelType, command: AudioComma
   return new AudioData(header, data)
 }
 
-/**
- * Build MetaData(MediaType.Data)
- */
 function buildMediaJsonMessage(media: Record<string, unknown>): MetaData {
   const json = JSON.stringify(media)
   const payload = Buffer.from(json + '\0', 'utf8')
@@ -143,9 +124,6 @@ function buildMediaJsonMessage(media: Record<string, unknown>): MetaData {
   return new MetaData(header, data)
 }
 
-/**
- * Build MetaData(MediaType.AlbumCover)
- */
 function buildAlbumArtMessage(albumArt: Buffer): MetaData {
   const data = Buffer.allocUnsafeSlow(4 + albumArt.length)
   data.writeUInt32LE(MediaType.AlbumCover, 0)
@@ -154,10 +132,6 @@ function buildAlbumArtMessage(albumArt: Buffer): MetaData {
   return new MetaData(header, data)
 }
 
-/**
- * Build MetaData(NavigationMetaType.DashboardInfo) — Carlinkit-shaped NaviBag
- * JSON. Drops into the existing ProjectionService navigation pipeline.
- */
 function buildNaviJsonMessage(navi: Record<string, unknown>): MetaData {
   const json = JSON.stringify(navi)
   const payload = Buffer.from(json + '\0', 'utf8')
@@ -168,10 +142,6 @@ function buildNaviJsonMessage(navi: Record<string, unknown>): MetaData {
   return new MetaData(header, data)
 }
 
-/**
- * Build MetaData(NavigationMetaType.DashboardImage) — turn-icon bitmap.
- * The image bytes are forwarded verbatim; renderer picks up base64 in NaviBag.
- */
 function buildNaviImageMessage(image: Buffer): MetaData {
   const data = Buffer.allocUnsafeSlow(4 + image.length)
   data.writeUInt32LE(NavigationMetaType.DashboardImage, 0)
@@ -180,15 +150,7 @@ function buildNaviImageMessage(image: Buffer): MetaData {
   return new MetaData(header, data)
 }
 
-/**
- * Map an AA audio-channel start/stop transition to the corresponding LIVI
- * AudioCommand.
- *
- *   media  → AudioMediaStart / AudioMediaStop      (Spotify, YouTube Music, …)
- *   speech → AudioNaviStart  / AudioNaviStop       (Maps voice, voice assist replies)
- *   phone  → AudioOutputStart / AudioOutputStop    (system notifications)
- *
- */
+// Map an AA audio-channel start/stop transition to the corresponding LIVI
 function audioLifecycleCommand(channel: AudioChannelType, starting: boolean): AudioCommand {
   switch (channel) {
     case 'media':
@@ -201,7 +163,7 @@ function audioLifecycleCommand(channel: AudioChannelType, starting: boolean): Au
 }
 
 /**
- * Map a single-pointer TouchAction to PointerAction enum.
+ * Map a single-pointer TouchAction to PointerAction enum
  */
 function mapTouchAction(action: TouchAction): number {
   switch (action) {
@@ -232,6 +194,7 @@ function mapCarTypeToFuelTypes(carType: CarType | undefined): number[] {
 
 export interface AaDriverOptions {
   supervisor?: AaBluetoothSupervisor | null
+  onWillReenumerate?: (durationMs: number) => void
 }
 
 export class AaDriver extends EventEmitter implements IPhoneDriver {
@@ -259,12 +222,15 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
   private _av1Supported = false
   private _initialNightMode: boolean | undefined = undefined
   private _aaCfg: AAStackConfig | null = null
+  private _wiredDevice: Device | null = null
+  private _wiredBridge: UsbAoapBridge | null = null
+  private _wiredClientSocket: net.Socket | null = null
+  private readonly _onWillReenumerate: ((durationMs: number) => void) | undefined
 
   constructor(opts: AaDriverOptions = {}) {
     super()
-    // Cap auto-restarts so a deterministic crash (stale BT profile, missing
-    // dependency, sudoers regression, …)
     this._supervisor = opts.supervisor ?? new AaBluetoothSupervisor({ maxRestarts: 5 })
+    this._onWillReenumerate = opts.onWillReenumerate
   }
 
   setHevcSupported(supported: boolean): void {
@@ -285,6 +251,14 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
   setInitialNightMode(value: boolean | undefined): void {
     this._initialNightMode = value
     if (this._aaCfg) this._aaCfg.initialNightMode = value
+  }
+
+  setWiredDevice(device: Device | null): void {
+    this._wiredDevice = device
+  }
+
+  isWiredMode(): boolean {
+    return this._wiredDevice !== null
   }
 
   // Soft restart of the AAStack TCP listener
@@ -312,8 +286,10 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     this._started = true
     this._closed = false
 
-    // 1. Bring up python BT/Wi-Fi stack first
-    if (this._supervisor) {
+    const wired = this._wiredDevice !== null
+
+    // 1. Bring up python BT/Wi-Fi stack first — only for the wireless path.
+    if (this._supervisor && !wired) {
       this._supervisor.on('stdout', (line) => console.log(`[aa-bt] ${line}`))
       this._supervisor.on('stderr', (line) => console.warn(`[aa-bt!] ${line}`))
       this._supervisor.on('error', (err) => {
@@ -323,46 +299,19 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     }
 
     // 2. AAStackConfig
-    //
-    // Resolution strategy:
-    //   - Pick the AA tier (800 / 1280 / 1920 / 2560 / 3840 wide).
-    //   - Advertise that full tier as videoWidth/videoHeight, with
-    //     width_margin = height_margin = 0 in the SDR. Phone always renders
-    //     into the full tier.
-    //   - LIVI renderer-side already does symmetric cropLeft/cropTop based
-    //     on `matchFittingAAResolution(settings)` versus negotiatedWidth/
-    //     Height (= tier here), so display-AR mismatches are handled in
-    //     the renderer pipeline.
-    //   - Touch coords therefore use the full tier as denormalisation
-    //     base — that's what `useCarplayMultiTouch` already produces for
-    //     this layout (streamWidth/streamHeight = negotiated).
-    //   - DPI scales with the tier.
-    //
-    const tierW =
-      cfg.width >= 3840
-        ? 3840
-        : cfg.width >= 2560
-          ? 2560
-          : cfg.width >= 1920
-            ? 1920
-            : cfg.width >= 1280
-              ? 1280
-              : 800
-    const tierH =
-      tierW === 3840
-        ? 2160
-        : tierW === 2560
-          ? 1440
-          : tierW === 1920
-            ? 1080
-            : tierW === 1280
-              ? 720
-              : 480
+    const h264Only = !(this._hevcSupported || this._vp9Supported || this._av1Supported)
+    const aaFit = matchFittingAAResolution({ width: cfg.width, height: cfg.height }, { h264Only })
+    const tierW = aaFit.width
+    const tierH = aaFit.height
     const aaDpi = cfg.dpi > 0 ? cfg.dpi : computeAndroidAutoDpi(tierW, tierH)
+    const clusterFit = matchFittingAAResolution(
+      { width: cfg.clusterWidth, height: cfg.clusterHeight },
+      { h264Only }
+    )
+    const clusterTierW = clusterFit.width
+    const clusterTierH = clusterFit.height
     const resolvedClusterDpi =
-      cfg.clusterDpi > 0
-        ? cfg.clusterDpi
-        : computeAndroidAutoDpi(cfg.clusterWidth, cfg.clusterHeight)
+      cfg.clusterDpi > 0 ? cfg.clusterDpi : computeAndroidAutoDpi(clusterTierW, clusterTierH)
     const name = cfg.carName?.trim() ? cfg.carName : 'LIVI'
     const aaCfg: AAStackConfig = {
       huName: name,
@@ -370,6 +319,10 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       videoHeight: tierH,
       videoDpi: aaDpi,
       videoFps: cfg.fps === 60 ? 60 : 30,
+      pixelAspectRatioE4: pixelAspectRatioE4(
+        { width: cfg.width, height: cfg.height },
+        { width: tierW, height: tierH }
+      ),
       displayWidth: cfg.width,
       displayHeight: cfg.height,
       mainSafeAreaTop: cfg.projectionSafeAreaTop,
@@ -386,9 +339,15 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       vp9Supported: this._vp9Supported,
       av1Supported: this._av1Supported,
       initialNightMode: this._initialNightMode,
-      clusterEnabled: Boolean(cfg.clusterEnabled),
+      clusterEnabled: isClusterDisplayed(cfg),
       clusterWidth: cfg.clusterWidth,
       clusterHeight: cfg.clusterHeight,
+      clusterTierWidth: clusterTierW,
+      clusterTierHeight: clusterTierH,
+      clusterPixelAspectRatioE4: pixelAspectRatioE4(
+        { width: cfg.clusterWidth, height: cfg.clusterHeight },
+        { width: clusterTierW, height: clusterTierH }
+      ),
       clusterFps: cfg.clusterFps,
       clusterDpi: resolvedClusterDpi,
       clusterSafeAreaTop: cfg.clusterSafeAreaTop,
@@ -399,26 +358,35 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     }
     const displayAR = cfg.width / cfg.height
     const tierAR = tierW / tierH
-    const parE4 = displayAR !== tierAR ? Math.round((displayAR / tierAR) * 10000) : 10000
     console.log(
       `[aaDriver] display ${cfg.width}×${cfg.height} (AR ${displayAR.toFixed(3)}) → ` +
-        `AA tier ${tierW}×${tierH} (AR ${tierAR.toFixed(3)}) @${aaDpi}dpi, PAR e4=${parE4}`
+        `AA tier ${tierW}×${tierH} (AR ${tierAR.toFixed(3)}) @${aaDpi}dpi, ` +
+        `PAR e4=${aaCfg.pixelAspectRatioE4}`
     )
+    const clusterActive = isClusterDisplayed(cfg)
+    console.log(
+      `[aaDriver] clusterDisplayed=${clusterActive} ` +
+        `(cluster main=${cfg.cluster?.main ?? false} dash=${cfg.cluster?.dash ?? false} ` +
+        `aux=${cfg.cluster?.aux ?? false}; channel will ${clusterActive ? 'be advertised' : 'NOT be advertised'} in SDR)`
+    )
+    if (clusterActive) {
+      const cAR = cfg.clusterWidth / cfg.clusterHeight
+      const cTierAR = clusterTierW / clusterTierH
+      console.log(
+        `[aaDriver] cluster ${cfg.clusterWidth}×${cfg.clusterHeight} (AR ${cAR.toFixed(3)}) → ` +
+          `AA tier ${clusterTierW}×${clusterTierH} (AR ${cTierAR.toFixed(3)}) @${resolvedClusterDpi}dpi, ` +
+          `PAR e4=${aaCfg.clusterPixelAspectRatioE4}`
+      )
+    }
 
-    // Derive total touch insets (AR-fit letterbox/pillarbox + user safe
-    // area), mirroring Session.ts so the InputSourceService advertised
-    // touchscreen and our outgoing coordinates agree on the visible UI
-    // window.
     let arWMargin = 0
     let arHMargin = 0
     if (cfg.width > 0 && cfg.height > 0 && tierW > 0 && tierH > 0) {
-      const displayARf = cfg.width / cfg.height
-      const tierARf = tierW / tierH
-      if (displayARf > tierARf) {
-        const contentH = Math.round(tierW / displayARf) & ~1
+      if (displayAR > tierAR) {
+        const contentH = Math.round(tierW / displayAR) & ~1
         arHMargin = Math.max(0, tierH - contentH)
-      } else if (displayARf < tierARf) {
-        const contentW = Math.round(tierH * displayARf) & ~1
+      } else if (displayAR < tierAR) {
+        const contentW = Math.round(tierH * displayAR) & ~1
         arWMargin = Math.max(0, tierW - contentW)
       }
     }
@@ -461,6 +429,25 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
 
       const hdr = new MessageHeader(0, MessageType.Unplugged)
       this.emit('message', new Unplugged(hdr) as Message)
+
+      // Watchdog recovery: tear down the bridge with a USB re-enum kick
+      if (reason === 'pre-RUNNING watchdog' && this._wiredBridge) {
+        const bridge = this._wiredBridge
+        this._wiredBridge = null
+        console.log('[aaDriver] watchdog disconnect — forcing USB re-enumeration')
+        void (async () => {
+          try {
+            await bridge.forceReenum()
+          } catch (err) {
+            console.warn(`[aaDriver] watchdog forceReenum threw: ${(err as Error).message}`)
+          }
+          try {
+            await bridge.stop()
+          } catch (err) {
+            console.warn(`[aaDriver] watchdog bridge stop threw: ${(err as Error).message}`)
+          }
+        })()
+      }
     })
 
     // VideoFocusRequest(PROJECTED)
@@ -570,9 +557,6 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       this.emit('message', buildMediaJsonMessage(media) as Message)
     })
 
-    // Navigation (turn-by-turn) — accumulate state + flush a NaviBag whenever
-    // any field changes, so the existing ProjectionService nav pipeline gets
-    // the same shape it'd see from the dongle.
     aa.on('nav-start', () => {
       this._naviApp = 'Google Maps'
       this._naviActive = true
@@ -628,16 +612,76 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       console.warn(`[aaDriver] AAStack transient error: ${err.message}`)
     })
 
+    if (wired) {
+      const ok = await this._startWiredBridge(aa)
+      if (!ok) {
+        this._started = false
+        return false
+      }
+      return true
+    }
+
     aa.start()
     console.log('[aaDriver] AA stack listening on TCP 5277')
     return true
   }
 
-  /**
-   * Merge a NaviBag patch into the accumulated state and emit the full bag as
-   * MetaData(DashboardInfo). ProjectionService runs it through normalize +
-   * translate, so partial updates flow correctly into the UI.
-   */
+  private async _startWiredBridge(aa: AAStack): Promise<boolean> {
+    const device = this._wiredDevice
+    if (!device) return false
+
+    const bridge = new UsbAoapBridge(device, this._onWillReenumerate)
+    this._wiredBridge = bridge
+
+    bridge.on('error', (err: Error) => {
+      if (this._closed) return
+      console.warn(`[aaDriver] wired bridge error: ${err.message}`)
+    })
+    bridge.on('closed', () => {
+      console.log('[aaDriver] wired bridge closed')
+    })
+    bridge.once('ready', ({ host, port }: { host: string; port: number }) => {
+      if (this._closed) return
+      console.log(`[aaDriver] wired bridge ready on ${host}:${port}, dialling AAStack`)
+      const sock = net.createConnection({ host, port, allowHalfOpen: true })
+      this._wiredClientSocket = sock
+      sock.once('connect', () => {
+        if (this._closed) {
+          try {
+            sock.destroy()
+          } catch {
+            /* ignore */
+          }
+          return
+        }
+        console.log('[aaDriver] wired loopback connected → AAStack.attachSocket')
+        try {
+          aa.attachSocket(sock)
+        } catch (err) {
+          console.error(`[aaDriver] AAStack.attachSocket threw: ${(err as Error).message}`)
+        }
+      })
+      sock.on('error', (err: Error) => {
+        console.warn(`[aaDriver] wired loopback socket error: ${err.message}`)
+      })
+    })
+
+    try {
+      await bridge.start(AOAP_LOOPBACK_PORT)
+      console.log('[aaDriver] wired AA bridge started on loopback')
+      return true
+    } catch (err) {
+      console.error(`[aaDriver] wired bridge start failed: ${(err as Error).message}`)
+      try {
+        await bridge.stop()
+      } catch {
+        /* ignore */
+      }
+      this._wiredBridge = null
+      return false
+    }
+  }
+
   private _publishNavi(patch: Record<string, unknown>): void {
     Object.assign(this._naviBag, patch)
     if (this._naviApp !== undefined && this._naviBag.NaviAPPName === undefined) {
@@ -646,9 +690,6 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     this.emit('message', buildNaviJsonMessage(this._naviBag) as Message)
   }
 
-  /**
-   * Emit a `Plugged{phoneType=AndroidAuto, wifi=1}` LIVI domain message.
-   */
   private _emitPlugged(): void {
     const pluggedBuf = Buffer.allocUnsafe(8)
     pluggedBuf.writeUInt32LE(PhoneType.AndroidAuto, 0)
@@ -657,9 +698,6 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     this.emit('message', new Plugged(pluggedHdr, pluggedBuf) as Message)
   }
 
-  /**
-   * Emit a `Command(value)` message
-   */
   private _emitCommand(value: CommandMapping): void {
     const buf = Buffer.allocUnsafe(4)
     buf.writeUInt32LE(value, 0)
@@ -757,9 +795,17 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
 
     // Best-effort graceful goodbye to the phone
     try {
-      this._aa?.requestShutdown()
+      await this._aa?.requestShutdown()
     } catch (err) {
       console.warn(`[aaDriver] requestShutdown threw: ${(err as Error).message}`)
+    }
+
+    if (this._wiredBridge) {
+      try {
+        await this._wiredBridge.drain(500)
+      } catch (err) {
+        console.warn(`[aaDriver] wired bridge drain threw: ${(err as Error).message}`)
+      }
     }
 
     try {
@@ -769,6 +815,23 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     }
     this._aa = null
     this._aaCfg = null
+
+    try {
+      this._wiredClientSocket?.destroy()
+    } catch {
+      /* already destroyed */
+    }
+    this._wiredClientSocket = null
+
+    if (this._wiredBridge) {
+      try {
+        await this._wiredBridge.stop()
+      } catch (err) {
+        console.warn(`[aaDriver] wired bridge stop threw: ${(err as Error).message}`)
+      }
+    }
+    this._wiredBridge = null
+    this._wiredDevice = null
 
     if (this._supervisor) {
       try {
@@ -799,8 +862,6 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       const tierY = clamp01(msg.y) * this._touchH
       const ux = tierX - this._touchInsetLeft
       const uy = tierY - this._touchInsetTop
-      // Click outside the visible UI window (AR-fit black bars / safe-area
-      // cutouts) — phone has no UI there, drop the event.
       if (ux < 0 || uy < 0 || ux >= usableW || uy >= usableH) return true
       const pointer: TouchPointer = {
         id: 0,
@@ -815,11 +876,6 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       const cmd = (msg as SendCommand).getPayload().readUInt32LE(0)
       if (DEBUG) console.log(`[INPUT] cmd=${cmd} (${CommandMapping[cmd] ?? '?'})`)
 
-      // selectDown/selectUp and knobDown/knobUp arrive as press/release pairs
-      // from the renderer (see useKeyDown.ts — ~200ms between them). They ARE
-      // the press and release of a center button (Enter / rotary push).
-      // Don't run them through the buttonMap path below, which fires a full
-      // press+release per event and would generate a double-click on the phone.
       if (cmd === CommandMapping.selectDown || cmd === CommandMapping.knobDown) {
         if (DEBUG) console.log(`[INPUT] → DPAD_CENTER press`)
         this._aa.sendButton(BUTTON_KEY.DPAD_CENTER, true)
@@ -843,9 +899,7 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
         return true
       }
 
-      // Rotary semantics for the rotation axis: left/right + knob rotation
-      // → rotary delta (in-container walk). A real rotary controller has
-      // only this one rotation axis.
+      // Rotary
       const rotaryDelta: Partial<Record<number, -1 | 1>> = {
         [CommandMapping.left]: -1,
         [CommandMapping.right]: 1,
@@ -873,9 +927,7 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
         return true
       }
 
-      // LIVI domain command → AA HW key event mapping. Arrow keys + knob
-      // rotation handled above (dual DPAD+rotary / pure rotary). selectDown/Up
-      // and knobDown/Up handled above as DPAD_CENTER press/release pairs.
+      // LIVI domain command
       const buttonMap: Partial<Record<number, number>> = {
         // System / phone
         [CommandMapping.home]: BUTTON_KEY.HOME,
@@ -934,7 +986,7 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     }
 
     if (msg instanceof SendDisconnectPhone || msg instanceof SendCloseDongle) {
-      this._aa.requestShutdown()
+      await this._aa.requestShutdown()
       return true
     }
 

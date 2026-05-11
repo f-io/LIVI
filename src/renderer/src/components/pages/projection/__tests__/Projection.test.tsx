@@ -18,8 +18,10 @@ type AnyFn = (...args: any[]) => any
 const statusState: Record<string, any> = {
   isStreaming: true,
   isDongleConnected: true,
+  isAaActive: false,
   setStreaming: jest.fn(),
-  setDongleConnected: jest.fn()
+  setDongleConnected: jest.fn(),
+  setAaActive: jest.fn()
 }
 
 const liviState: Record<string, any> = {
@@ -396,7 +398,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            clusterEnabled: false,
+            cluster: { main: false, dash: false, aux: false },
             autoSwitchOnStream: true
           } as any
         }
@@ -429,7 +431,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            clusterEnabled: false,
+            cluster: { main: false, dash: false, aux: false },
             autoSwitchOnStream: true
           } as any
         }
@@ -470,7 +472,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            clusterEnabled: false,
+            cluster: { main: false, dash: false, aux: false },
             autoSwitchOnStream: true
           } as any
         }
@@ -499,7 +501,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            clusterEnabled: false,
+            cluster: { main: false, dash: false, aux: false },
             autoSwitchOnStream: true
           } as any
         }
@@ -529,7 +531,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            clusterEnabled: false,
+            cluster: { main: false, dash: false, aux: false },
             autoSwitchOnStream: false
           } as any
         }
@@ -559,7 +561,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            clusterEnabled: false,
+            cluster: { main: false, dash: false, aux: false },
             autoSwitchOnGuidance: true
           } as any
         }
@@ -587,7 +589,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            clusterEnabled: true,
+            cluster: { main: true, dash: false, aux: false },
             autoSwitchOnGuidance: true
           } as any
         }
@@ -616,7 +618,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            clusterEnabled: true,
+            cluster: { main: true, dash: false, aux: false },
             autoSwitchOnGuidance: true
           } as any
         }
@@ -646,7 +648,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            clusterEnabled: true,
+            cluster: { main: true, dash: false, aux: false },
             autoSwitchOnGuidance: true
           } as any
         }
@@ -675,7 +677,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            clusterEnabled: true,
+            cluster: { main: true, dash: false, aux: false },
             autoSwitchOnGuidance: true
           } as any
         }
@@ -705,7 +707,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            clusterEnabled: false,
+            cluster: { main: false, dash: false, aux: false },
             autoSwitchOnStream: true
           } as any
         }
@@ -734,7 +736,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            clusterEnabled: false,
+            cluster: { main: false, dash: false, aux: false },
             autoSwitchOnStream: true
           } as any
         }
@@ -1286,9 +1288,9 @@ describe('Projection page', () => {
     expect(navigateMock).not.toHaveBeenCalled()
   })
 
-  // ── releaseClusterFocus with clusterEnabled=false dismisses overlay ────────────
+  // ── releaseClusterFocus with no cluster display dismisses overlay ────────────
 
-  test('releaseClusterFocus with clusterEnabled=false calls setNavVideoOverlayActive(false)', () => {
+  test('releaseClusterFocus with no cluster display calls setNavVideoOverlayActive(false)', () => {
     mockPathname = '/media'
     const setNavVideoOverlayActive = jest.fn()
 
@@ -1300,7 +1302,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            clusterEnabled: false,
+            cluster: { main: false, dash: false, aux: false },
             autoSwitchOnGuidance: true
           } as any
         }
@@ -1319,7 +1321,7 @@ describe('Projection page', () => {
 
   // ── releaseVideoFocus: maps back-navigation ───────────────────────────────
 
-  test('releaseVideoFocus with clusterEnabled navigates back from maps via lastNonClusterPathRef', async () => {
+  test('releaseVideoFocus with cluster display navigates back from maps via lastNonClusterPathRef', async () => {
     mockPathname = '/media'
 
     const { rerender } = render(
@@ -1330,7 +1332,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            clusterEnabled: true,
+            cluster: { main: true, dash: false, aux: false },
             autoSwitchOnGuidance: true,
             autoSwitchOnStream: true
           } as any
@@ -1358,7 +1360,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            clusterEnabled: true,
+            cluster: { main: true, dash: false, aux: false },
             autoSwitchOnGuidance: true,
             autoSwitchOnStream: true
           } as any
@@ -1389,7 +1391,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            clusterEnabled: false,
+            cluster: { main: false, dash: false, aux: false },
             autoSwitchOnStream: true,
             autoSwitchOnPhoneCall: true
           } as any
@@ -1421,7 +1423,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            clusterEnabled: false,
+            cluster: { main: false, dash: false, aux: false },
             autoSwitchOnStream: true,
             autoSwitchOnPhoneCall: true
           } as any
@@ -1520,7 +1522,10 @@ describe('Projection page', () => {
       await usbCb?.(null, { type: 'plugged' })
     })
 
-    expect(warnSpy).toHaveBeenCalledWith('[CARPLAY] usb.getDeviceInfo() failed', expect.any(Error))
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[PROJECTION] usb.getDeviceInfo() failed',
+      expect.any(Error)
+    )
 
     warnSpy.mockRestore()
   })
@@ -1671,7 +1676,12 @@ function baseProps(overrides: any = {}) {
   return {
     receivingVideo: false,
     setReceivingVideo: jest.fn(),
-    settings: { width: 800, height: 480, fps: 60, clusterEnabled: false },
+    settings: {
+      width: 800,
+      height: 480,
+      fps: 60,
+      cluster: { main: false, dash: false, aux: false }
+    },
     command: '' as any,
     commandCounter: 0,
     navVideoOverlayActive: false,

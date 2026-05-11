@@ -12,7 +12,6 @@ import {
   SAFE_AREA_MAX_WIDTH,
   SAFE_AREA_MIN
 } from '../../components/pages/settings/constants'
-import { Camera } from '../../components/pages/settings/pages/camera'
 import { SettingsNode } from '../types'
 
 export const videoSchema: SettingsNode<ExtraConfig> = {
@@ -182,12 +181,6 @@ export const videoSchema: SettingsNode<ExtraConfig> = {
       path: '',
       children: [
         {
-          type: 'checkbox',
-          label: 'Active',
-          labelKey: 'settings.clusterStream',
-          path: 'clusterEnabled'
-        },
-        {
           type: 'number',
           label: 'Width',
           labelKey: 'settings.width',
@@ -329,44 +322,6 @@ export const videoSchema: SettingsNode<ExtraConfig> = {
               path: 'clusterSafeAreaDrawOutside'
             }
           ]
-        }
-      ]
-    },
-    {
-      type: 'route',
-      label: 'Reverse Camera',
-      labelKey: 'settings.reverseCamera',
-      route: 'camera',
-      path: '',
-      displayValue: true,
-      children: [
-        {
-          type: 'checkbox',
-          label: 'Camera Tab',
-          labelKey: 'settings.cameraTab',
-          path: 'cameraEnabled'
-        },
-        {
-          type: 'route',
-          label: 'Camera',
-          labelKey: 'settings.camera',
-          route: 'select',
-          path: '',
-          children: [
-            {
-              path: 'camera',
-              type: 'custom',
-              label: 'Camera',
-              labelKey: 'settings.camera',
-              component: Camera
-            }
-          ]
-        },
-        {
-          type: 'checkbox',
-          label: 'Mirror',
-          labelKey: 'settings.cameraMirror',
-          path: 'cameraMirror'
         }
       ]
     },

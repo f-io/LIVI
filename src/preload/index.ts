@@ -71,6 +71,20 @@ ipcRenderer.on('projection-event', (event, ...args: unknown[]) => {
   }
 })
 
+// Main broadcasts media key events
+type MediaKeyHandler = (command: string) => void
+const mediaKeyHandlers: MediaKeyHandler[] = []
+let mediaKeyQueue: string[] = []
+
+ipcRenderer.on('app:media-key', (_event, command: unknown) => {
+  if (typeof command !== 'string' || !command) return
+  if (mediaKeyHandlers.length) {
+    mediaKeyHandlers.forEach((h) => h(command))
+  } else {
+    mediaKeyQueue.push(command)
+  }
+})
+
 type UsbDeviceInfo =
   | { device: false; vendorId: null; productId: null; usbFwVersion: string }
   | { device: true; vendorId: number; productId: number; usbFwVersion: string }
@@ -248,6 +262,23 @@ const appApi = {
 
   notifyUserActivity: (): void => {
     ipcRenderer.send('app:user-activity')
+  },
+
+  broadcastMediaKey: (command: string): void => {
+    ipcRenderer.send('app:media-key', command)
+  },
+
+  onMediaKey: (handler: MediaKeyHandler): (() => void) => {
+    mediaKeyHandlers.push(handler)
+    if (mediaKeyQueue.length) {
+      const drained = mediaKeyQueue
+      mediaKeyQueue = []
+      drained.forEach((cmd) => handler(cmd))
+    }
+    return () => {
+      const i = mediaKeyHandlers.indexOf(handler)
+      if (i >= 0) mediaKeyHandlers.splice(i, 1)
+    }
   }
 }
 

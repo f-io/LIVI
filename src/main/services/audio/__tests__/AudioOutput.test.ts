@@ -819,7 +819,10 @@ describe('AudioOutput', () => {
 
       // kill throws inside the deferred SIGTERM callback
       jest.advanceTimersByTime(500)
-      expect(warnSpy).toHaveBeenCalledWith('[AudioOutput] failed to kill process:', expect.any(Error))
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[AudioOutput] failed to kill process:',
+        expect.any(Error)
+      )
     } finally {
       jest.useRealTimers()
     }

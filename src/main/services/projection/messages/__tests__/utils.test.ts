@@ -18,31 +18,31 @@ describe('projection message utils', () => {
     nowSpy.mockRestore()
   })
 
-  test('matchFittingAAResolution picks 1080p tier for 1920x1080', () => {
+  test('matchFittingAAResolution picks 1080p tier for 1920×1080', () => {
     expect(matchFittingAAResolution({ width: 1920, height: 1080 })).toEqual({
       width: 1920,
       height: 1080
     })
   })
 
-  test('matchFittingAAResolution picks 720p tier and derives height from aspect ratio', () => {
+  test('matchFittingAAResolution 1600×600 (ultrawide) — picks 1920 tier for quality', () => {
     expect(matchFittingAAResolution({ width: 1600, height: 600 })).toEqual({
-      width: 1280,
-      height: 480
+      width: 1920,
+      height: 1080
     })
   })
 
-  test('matchFittingAAResolution falls back to smallest tier when display too small', () => {
+  test('matchFittingAAResolution tiny 300×200 — base tier', () => {
     expect(matchFittingAAResolution({ width: 300, height: 200 })).toEqual({
       width: 800,
       height: 480
     })
   })
 
-  test('matchFittingAAResolution keeps height even and clamps to tier height', () => {
+  test('matchFittingAAResolution beyond max tier — caps at 3840×2160', () => {
     expect(matchFittingAAResolution({ width: 4000, height: 1000 })).toEqual({
       width: 3840,
-      height: 960
+      height: 2160
     })
   })
 

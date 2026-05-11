@@ -1,6 +1,7 @@
 import { registerAppIpc } from '@main/ipc/app'
 import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
 import { isMacPlatform } from '@main/utils'
+import { broadcastToRenderers } from '@main/window/broadcast'
 import { getMainWindow } from '@main/window/createWindow'
 import { restoreKioskAfterWmExit } from '@main/window/utils'
 import { spawn } from 'child_process'
@@ -18,6 +19,10 @@ jest.mock('@main/window/utils', () => ({
   restoreKioskAfterWmExit: jest.fn()
 }))
 
+jest.mock('@main/window/broadcast', () => ({
+  broadcastToRenderers: jest.fn()
+}))
+
 jest.mock('@main/ipc/register', () => ({
   registerIpcHandle: jest.fn(),
   registerIpcOn: jest.fn()
@@ -32,6 +37,7 @@ const mockedIsMacPlatform = isMacPlatform as jest.Mock
 const mockedRegisterIpcHandle = registerIpcHandle as jest.Mock
 const mockedRegisterIpcOn = registerIpcOn as jest.Mock
 const mockedSpawn = spawn as jest.Mock
+const mockedBroadcastToRenderers = broadcastToRenderers as jest.Mock
 
 describe('registerAppIpc', () => {
   const originalPlatform = process.platform
@@ -81,7 +87,7 @@ describe('registerAppIpc', () => {
     expect(registeredHandles).toEqual(
       expect.arrayContaining(['quit', 'app:quitApp', 'app:restartApp', 'app:openExternal'])
     )
-    expect(registeredOn).toContain('app:user-activity')
+    expect(registeredOn).toEqual(expect.arrayContaining(['app:user-activity', 'app:media-key']))
   })
 
   test('quit handler calls app.quit on non-mac platforms', () => {
@@ -168,6 +174,38 @@ describe('registerAppIpc', () => {
     expect(app.quit).not.toHaveBeenCalled()
   })
 
+  test('app:media-key fans the command out to all renderers', () => {
+    const runtimeState = { isQuitting: false, suppressNextFsSync: false } as never
+    const services = { usbService: {} } as never
+
+    registerAppIpc(runtimeState, services)
+
+    const mediaKeyListener = getOn('app:media-key') as
+      | ((evt: unknown, cmd: string) => void)
+      | undefined
+    expect(mediaKeyListener).toBeDefined()
+
+    mediaKeyListener?.(undefined, 'playPause')
+    expect(mockedBroadcastToRenderers).toHaveBeenCalledWith('app:media-key', 'playPause')
+  })
+
+  test('app:media-key ignores empty or non-string commands', () => {
+    const runtimeState = { isQuitting: false, suppressNextFsSync: false } as never
+    const services = { usbService: {} } as never
+
+    registerAppIpc(runtimeState, services)
+
+    const mediaKeyListener = getOn('app:media-key') as
+      | ((evt: unknown, cmd: unknown) => void)
+      | undefined
+
+    mediaKeyListener?.(undefined, '')
+    mediaKeyListener?.(undefined, undefined)
+    mediaKeyListener?.(undefined, 42)
+
+    expect(mockedBroadcastToRenderers).not.toHaveBeenCalled()
+  })
+
   test('app:user-activity triggers kiosk restore sync', () => {
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as never
     const services = { usbService: {} } as never
@@ -182,7 +220,7 @@ describe('registerAppIpc', () => {
     expect(restoreKioskAfterWmExit).toHaveBeenCalledWith(runtimeState)
   })
 
-  test('app:restartApp marks quitting, shuts down usb service, relaunches and exits', async () => {
+  test('app:restartApp shuts down usb service, relaunches and quits', async () => {
     jest.spyOn(global, 'setTimeout').mockImplementation(((fn: TimerHandler) => {
       if (typeof fn === 'function') fn()
       return 0 as any
@@ -204,11 +242,37 @@ describe('registerAppIpc', () => {
     const restartHandler = getHandle('app:restartApp') as (() => Promise<void>) | undefined
     await restartHandler?.()
 
-    expect(runtimeState.isQuitting).toBe(true)
     expect(beginShutdown).toHaveBeenCalledTimes(1)
     expect(gracefulReset).toHaveBeenCalledTimes(1)
     expect(unref).toHaveBeenCalledTimes(1)
-    expect(app.exit).toHaveBeenCalledWith(0)
+    expect(app.quit).toHaveBeenCalledTimes(1)
+  })
+
+  test('app:restartApp ignores re-entrant calls while a restart is already in flight', async () => {
+    jest.spyOn(global, 'setTimeout').mockImplementation(((fn: TimerHandler) => {
+      if (typeof fn === 'function') fn()
+      return 0 as any
+    }) as typeof setTimeout)
+
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+    delete process.env.APPIMAGE
+
+    const beginShutdown = jest.fn()
+    const gracefulReset = jest.fn().mockResolvedValue(undefined)
+
+    const runtimeState = { isQuitting: false, suppressNextFsSync: false } as any
+    const services = { usbService: { beginShutdown, gracefulReset } } as any
+
+    registerAppIpc(runtimeState, services)
+
+    const restartHandler = getHandle('app:restartApp') as (() => Promise<void>) | undefined
+
+    await Promise.all([restartHandler?.(), restartHandler?.(), restartHandler?.()])
+
+    expect(beginShutdown).toHaveBeenCalledTimes(1)
+    expect(gracefulReset).toHaveBeenCalledTimes(1)
+    expect(app.relaunch).toHaveBeenCalledTimes(1)
+    expect(app.quit).toHaveBeenCalledTimes(1)
   })
 
   test('app:restartApp continues when gracefulReset fails', async () => {
@@ -241,7 +305,7 @@ describe('registerAppIpc', () => {
       '[MAIN] gracefulReset failed (continuing restart):',
       expect.any(Error)
     )
-    expect(app.exit).toHaveBeenCalledWith(0)
+    expect(app.quit).toHaveBeenCalledTimes(1)
   })
 
   test('app:restartApp returns early when already quitting', async () => {
@@ -254,7 +318,7 @@ describe('registerAppIpc', () => {
     await restartHandler?.()
 
     expect(app.relaunch).not.toHaveBeenCalled()
-    expect(app.exit).not.toHaveBeenCalled()
+    expect(app.quit).not.toHaveBeenCalled()
   })
 
   test('app:restartApp uses APPIMAGE relaunch path on linux', async () => {
@@ -302,7 +366,7 @@ describe('registerAppIpc', () => {
 
     expect(unref).toHaveBeenCalledTimes(1)
     expect(app.relaunch).not.toHaveBeenCalled()
-    expect(app.exit).toHaveBeenCalledWith(0)
+    expect(app.quit).toHaveBeenCalledTimes(1)
   })
 
   test('app:openExternal rejects empty urls', async () => {
@@ -355,7 +419,7 @@ describe('registerAppIpc', () => {
     expect(shell.openExternal).toHaveBeenCalledWith('https://example.com')
   })
 
-  test('app:restartApp relaunches and exits on non-APPIMAGE path', async () => {
+  test('app:restartApp relaunches and quits on non-APPIMAGE path', async () => {
     jest.spyOn(global, 'setTimeout').mockImplementation(((fn: TimerHandler) => {
       if (typeof fn === 'function') fn()
       return 0 as any
@@ -375,12 +439,11 @@ describe('registerAppIpc', () => {
     const restartHandler = getHandle('app:restartApp') as (() => Promise<void>) | undefined
     await restartHandler?.()
 
-    expect(runtimeState.isQuitting).toBe(true)
     expect(beginShutdown).toHaveBeenCalledTimes(1)
     expect(gracefulReset).toHaveBeenCalledTimes(1)
     expect(mockedSpawn).not.toHaveBeenCalled()
     expect(app.relaunch).toHaveBeenCalledTimes(1)
-    expect(app.exit).toHaveBeenCalledWith(0)
+    expect(app.quit).toHaveBeenCalledTimes(1)
   })
 
   test('app:openExternal rejects undefined urls via nullish fallback', async () => {

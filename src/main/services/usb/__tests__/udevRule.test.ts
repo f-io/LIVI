@@ -17,12 +17,14 @@ jest.mock('child_process', () => ({
 }))
 
 jest.mock('fs', () => ({
-  existsSync: jest.fn()
+  existsSync: jest.fn(),
+  readFileSync: jest.fn()
 }))
 
 describe('udevRule', () => {
   const originalPlatform = process.platform
   const mockExistsSync = fs.existsSync as jest.Mock
+  const mockReadFileSync = fs.readFileSync as jest.Mock
   const mockExecFileSync = execFileSync as jest.Mock
   const mockSpawn = spawn as jest.Mock
   const mockShowMessageBox = dialog.showMessageBox as jest.Mock
@@ -42,6 +44,7 @@ describe('udevRule', () => {
     jest.clearAllMocks()
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
     mockExistsSync.mockReturnValue(false)
+    mockReadFileSync.mockReturnValue('')
     mockExecFileSync.mockReturnValue(undefined)
     mockShowMessageBox.mockResolvedValue({ response: 0 })
     mockSpawn.mockReturnValue(mkProc(0))
@@ -77,10 +80,39 @@ describe('udevRule', () => {
       expect(mockShowMessageBox).not.toHaveBeenCalled()
     })
 
-    test('does nothing when rule file already exists', async () => {
+    test('does nothing when rule file already exists with a current version marker', async () => {
       mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue('# LIVI-RULE-VERSION=3\n...rest of file...')
       await checkAndInstallUdevRule(mockWindow)
       expect(mockShowMessageBox).not.toHaveBeenCalled()
+    })
+
+    test('prompts for an upgrade when an outdated rule file is present', async () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(
+        'SUBSYSTEM=="usb", ATTR{idVendor}=="1314", ATTR{idProduct}=="152*", MODE="0660", OWNER="me"\n'
+      )
+      await checkAndInstallUdevRule(mockWindow)
+      expect(mockShowMessageBox).toHaveBeenCalledWith(
+        mockWindow,
+        expect.objectContaining({
+          title: 'USB Permission Update',
+          buttons: ['Update', 'Skip']
+        })
+      )
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'pkexec',
+        ['bash', '-c', expect.stringContaining('LIVI-RULE-VERSION=')],
+        { stdio: 'ignore' }
+      )
+    })
+
+    test('skips the upgrade when the user declines', async () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue('outdated content')
+      mockShowMessageBox.mockResolvedValue({ response: 1 })
+      await checkAndInstallUdevRule(mockWindow)
+      expect(mockSpawn).not.toHaveBeenCalled()
     })
 
     test('does nothing when pkexec is not available', async () => {
@@ -163,5 +195,32 @@ describe('udevRule', () => {
     await checkAndInstallUdevRule(mockWindow)
     const script = mockSpawn.mock.calls[0][1][2] as string
     expect(script).toContain('OWNER="')
+  })
+
+  test('rule covers the Carlinkit dongle, AOAP accessory PIDs and common phone vendors', async () => {
+    await checkAndInstallUdevRule(mockWindow)
+    const script = mockSpawn.mock.calls[0][1][2] as string
+
+    // Carlinkit dongle
+    expect(script).toContain('ATTR{idVendor}=="1314", ATTR{idProduct}=="152*"')
+    // Android Open Accessory Protocol re-enumeration PIDs
+    expect(script).toContain('ATTR{idVendor}=="18d1", ATTR{idProduct}=="2d0[0-5]"')
+    // A representative slice of phone vendors
+    for (const vid of ['18d1', '04e8', '22b8', '0fce', '12d1', '2717', '2a70']) {
+      expect(script).toContain(`ATTR{idVendor}=="${vid}"`)
+    }
+  })
+
+  test('phone and accessory entries opt out of desktop auto-mount (gvfs-mtp, udisks2, ModemManager)', async () => {
+    await checkAndInstallUdevRule(mockWindow)
+    const script = mockSpawn.mock.calls[0][1][2] as string
+
+    // The desktop ignore env vars prevent the "Couldn't find matching udev
+    // device" notification that gvfs-mtp pops when the phone switches to
+    // accessory mode mid-mount.
+    expect(script).toContain('ENV{ID_MTP_DEVICE}=""')
+    expect(script).toContain('ENV{ID_MEDIA_PLAYER}=""')
+    expect(script).toContain('ENV{UDISKS_IGNORE}="1"')
+    expect(script).toContain('ENV{ID_MM_DEVICE_IGNORE}="1"')
   })
 })
