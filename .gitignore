@@ -27,6 +27,7 @@ __pycache__/
 .eslintcache
 .stylelintcache
 .rpt2_cache/
+.pnpm-store/
 *.tsbuildinfo
 
 # Electron-builder artifacts

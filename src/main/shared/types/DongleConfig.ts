@@ -53,9 +53,12 @@ export enum EvConnectorType {
 
 export type PhoneTypeConfig = { frameInterval: number | null }
 
+export type ConnectionPreference = 'auto' | 'dongle' | 'native'
+
 export type DongleConfig = {
   aa: boolean
   cp: boolean
+  connectionPreference: ConnectionPreference
   wifiPassword: string
   btAdapter: string
   wifiInterface: string

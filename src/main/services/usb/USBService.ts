@@ -57,7 +57,6 @@ export class USBService {
       this.lastDongleState = true
       this.projection.markDongleConnected(true)
       this.notifyDeviceChange(device, true)
-      this.projection.autoStartIfNeeded().catch(console.error)
     }
 
     void this._scanForExistingPhone().catch((err) => {
@@ -76,40 +75,68 @@ export class USBService {
       return
     }
 
-    const candidates = getDeviceList().filter((d) => this.isPhoneCandidate(d))
+    const allDevices = getDeviceList()
+    console.log(
+      `[USBService] startup scan: ${allDevices.length} USB devices on bus: ${allDevices
+        .map(
+          (d) =>
+            `vid=0x${d.deviceDescriptor?.idVendor?.toString(16) ?? '??'} pid=0x${d.deviceDescriptor?.idProduct?.toString(16) ?? '??'} cls=0x${d.deviceDescriptor?.bDeviceClass?.toString(16) ?? '??'}`
+        )
+        .join(', ')}`
+    )
+    const candidates = allDevices.filter((d) => this.isPhoneCandidate(d))
     if (candidates.length === 0) return
     console.log(`[USBService] Probing ${candidates.length} startup USB candidate(s) for AOAP`)
     for (const dev of candidates) {
       if (this.stopped || this.lastPhoneState) return
+      const vid = dev.deviceDescriptor.idVendor
+      const pid = dev.deviceDescriptor.idProduct
       try {
         const proto = await probeAaCapable(dev)
-        if (proto < 1) continue
+        if (proto < 1) {
+          console.log(
+            `[USBService] startup probe: vid=0x${vid.toString(16)} pid=0x${pid.toString(16)} returned proto=${proto} — not AOAP-capable (phone locked / no USB confirmation?)`
+          )
+          continue
+        }
         if (this.stopped || this.lastPhoneState) return
-        const vid = dev.deviceDescriptor.idVendor
-        const pid = dev.deviceDescriptor.idProduct
         console.log(
           `[USBService] AOAP-capable phone found on startup (vid=0x${vid.toString(16)}, pid=0x${pid.toString(16)}, proto=${proto})`
         )
         this.markPhoneAttached(dev)
         return
       } catch (err) {
-        console.debug(
-          `[USBService] startup probe threw for vid=0x${dev.deviceDescriptor.idVendor.toString(16)}`,
+        console.log(
+          `[USBService] startup probe THREW for vid=0x${vid.toString(16)} pid=0x${pid.toString(16)}`,
           err
         )
       }
     }
   }
 
+  // Inactive-transport USB events must not surface to the renderer.
+  private shouldSuppressDongleEvents(): boolean {
+    return this.projection.getActiveTransport() === 'aa'
+  }
+
   private listenToUsbEvents() {
     usb.on('attach', (device) => {
       if (this.stopped || this.resetInProgress || this.shutdownInProgress) return
-      this.broadcastGenericUsbEvent({ type: 'attach', device })
-      if (this.isDongle(device) && !this.lastDongleState) {
+      const isDongleDev = this.isDongle(device)
+      const dd = device.deviceDescriptor
+      console.log(
+        `[USBService] attach vid=0x${dd?.idVendor?.toString(16) ?? '??'} pid=0x${dd?.idProduct?.toString(16) ?? '??'} cls=0x${dd?.bDeviceClass?.toString(16) ?? '??'} → dongle=${isDongleDev} accessory=${isAccessoryMode(device)} phoneCandidate=${this.isPhoneCandidate(device)} lastPhone=${this.lastPhoneState}`
+      )
+      if (!(isDongleDev && this.shouldSuppressDongleEvents())) {
+        this.broadcastGenericUsbEvent({ type: 'attach', device })
+      }
+      if (isDongleDev && !this.lastDongleState) {
         console.log('[USBService] Dongle connected')
         this.lastDongleState = true
         this.projection.markDongleConnected(true)
-        this.notifyDeviceChange(device, true)
+        if (!this.shouldSuppressDongleEvents()) {
+          this.notifyDeviceChange(device, true)
+        }
         this.projection.autoStartIfNeeded().catch(console.error)
         return
       }
@@ -135,20 +162,28 @@ export class USBService {
       }
 
       if (!this.lastPhoneState && this.isPhoneCandidate(device)) {
+        console.log(
+          `[USBService] phone candidate detected — running AOAP probe vid=0x${dd?.idVendor?.toString(16)} pid=0x${dd?.idProduct?.toString(16)}`
+        )
         this.tryProbePhone(device).catch((err) => {
-          console.debug('[USBService] AOAP probe threw', err)
+          console.log('[USBService] AOAP probe threw', err)
         })
       }
     })
 
     usb.on('detach', (device) => {
       if (this.stopped || this.resetInProgress || this.shutdownInProgress) return
-      this.broadcastGenericUsbEvent({ type: 'detach', device })
-      if (this.isDongle(device) && this.lastDongleState) {
+      const isDongleDev = this.isDongle(device)
+      if (!(isDongleDev && this.shouldSuppressDongleEvents())) {
+        this.broadcastGenericUsbEvent({ type: 'detach', device })
+      }
+      if (isDongleDev && this.lastDongleState) {
         console.log('[USBService] Dongle disconnected')
         this.lastDongleState = false
         this.projection.markDongleConnected(false)
-        this.notifyDeviceChange(device, false)
+        if (!this.shouldSuppressDongleEvents()) {
+          this.notifyDeviceChange(device, false)
+        }
         return
       }
 
@@ -222,7 +257,6 @@ export class USBService {
     }
     BrowserWindow.getAllWindows().forEach((win) => {
       win.webContents.send('usb-event', payload)
-      win.webContents.send('projection-event', payload)
     })
   }
 
@@ -251,7 +285,6 @@ export class USBService {
     }
     BrowserWindow.getAllWindows().forEach((win) => {
       win.webContents.send('usb-event', payload)
-      win.webContents.send('projection-event', payload)
     })
   }
 

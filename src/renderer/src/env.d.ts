@@ -168,6 +168,14 @@ declare global {
         requestCluster(enabled: boolean): Promise<{ ok: boolean; enabled: boolean }>
         onClusterVideoChunk(handler: (payload: unknown) => void): void
         onClusterResolution(handler: (payload: unknown) => void): void
+
+        flipTransport(): Promise<{ ok: boolean; active: 'dongle' | 'aa' | null }>
+        getTransportState(): Promise<{
+          active: 'dongle' | 'aa' | null
+          dongleDetected: boolean
+          nativeDetected: boolean
+          preference: 'auto' | 'dongle' | 'native'
+        }>
       }
     }
 

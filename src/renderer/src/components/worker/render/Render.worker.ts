@@ -86,10 +86,20 @@ export class RendererWorker {
 
   private hasDecodedFrame = false
 
+  // Defer the awaiting-keyframe surface so transient decoder resets stay silent
+  private static readonly RECOVERY_DEFER_MS = 1500
+  private recoveryDeferTimer: ReturnType<typeof setTimeout> | null = null
+  private uiAwaitingKeyframe = false
+
   private onVideoDecoderOutput = (frame: VideoFrame) => {
+    if (this.recoveryDeferTimer) {
+      clearTimeout(this.recoveryDeferTimer)
+      this.recoveryDeferTimer = null
+    }
     if (!this.hasDecodedFrame) {
       this.hasDecodedFrame = true
       self.postMessage({ type: 'streaming' })
+      this.uiAwaitingKeyframe = false
     }
     this.renderFrame(frame)
   }
@@ -141,27 +151,29 @@ export class RendererWorker {
     this.lastSPS = null
     this.pendingExtraData = null
     this.hasDecodedFrame = false
-    // Drop the last decoded frame and blank the canvas so the user doesn't
-    // see a frozen still from the previous session while we wait for the
-    // phone to send a new SPS+IDR.
-    if (this.pendingFrame) {
-      try {
-        this.pendingFrame.close()
-      } catch {
-        /* already closed */
-      }
-      this.pendingFrame = null
-    }
-    try {
-      this.renderer?.clear()
-    } catch {
-      /* renderer not yet ready */
-    }
     console.debug('[RENDER.WORKER] decoder reset — awaiting next SPS+IDR')
-    // Tell the host UI we're not actually streaming — Projection.tsx flips
-    // its `isStreaming` flag off so the streaming overlay shows again and
-    // tab navigation works normally instead of trapping the user.
-    self.postMessage({ type: 'awaiting-keyframe' })
+
+    // Keep the last decoded frame on the canvas while we wait for the next
+    // SPS+IDR, and defer surfacing 'awaiting-keyframe' to the UI
+    if (this.recoveryDeferTimer) clearTimeout(this.recoveryDeferTimer)
+    this.recoveryDeferTimer = setTimeout(() => {
+      this.recoveryDeferTimer = null
+      if (this.pendingFrame) {
+        try {
+          this.pendingFrame.close()
+        } catch {
+          /* already closed */
+        }
+        this.pendingFrame = null
+      }
+      try {
+        this.renderer?.clear()
+      } catch {
+        /* renderer not yet ready */
+      }
+      this.uiAwaitingKeyframe = true
+      self.postMessage({ type: 'awaiting-keyframe' })
+    }, RendererWorker.RECOVERY_DEFER_MS)
   }
 
   // Ask the host for a keyframe
@@ -175,6 +187,10 @@ export class RendererWorker {
   }
 
   handleExternalReset(): void {
+    if (this.recoveryDeferTimer) {
+      clearTimeout(this.recoveryDeferTimer)
+      this.recoveryDeferTimer = null
+    }
     try {
       this.decoder.close()
     } catch {
@@ -189,6 +205,7 @@ export class RendererWorker {
     this.lastSPS = null
     this.pendingExtraData = null
     this.hasDecodedFrame = false
+    this.uiAwaitingKeyframe = false
     if (this.pendingFrame) {
       try {
         this.pendingFrame.close()

@@ -169,14 +169,15 @@ describe('Projection page', () => {
     }
   })
 
-  test('usb plugged starts projection', async () => {
+  test('usb plugged sets dongle-connected state (main owns session start)', async () => {
     render(<Projection {...baseProps()} />)
 
     await act(async () => {
       await usbCb?.(null, { type: 'plugged' })
     })
 
-    expect((window as any).projection.ipc.start).toHaveBeenCalled()
+    expect((window as any).projection.ipc.start).not.toHaveBeenCalled()
+    expect(statusState.setDongleConnected).toHaveBeenCalledWith(true)
   })
 
   test('usb unplugged stops projection and clears streaming state', async () => {

@@ -1,5 +1,5 @@
-import CameraswitchOutlinedIcon from '@mui/icons-material/CameraswitchOutlined'
 // Icons
+import CameraOutlinedIcon from '@mui/icons-material/CameraOutlined'
 import CropPortraitOutlinedIcon from '@mui/icons-material/CropPortraitOutlined'
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined'
 import PlayCircleOutlinedIcon from '@mui/icons-material/PlayCircleOutlined'
@@ -9,7 +9,9 @@ import { useTheme } from '@mui/material/styles'
 import { ROUTES } from '../../constants'
 import { useLiviStore, useStatusStore } from '../../store/store'
 import { getWindowRole } from '../../utils/windowRole'
+import { TransportFlipIcon } from './TransportFlipIcon'
 import { TabConfig } from './types'
+import { useTransportState } from './useTransportState'
 
 export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivingVideo) => {
   const theme = useTheme()
@@ -18,6 +20,8 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
   const isAaActive = useStatusStore((s) => s.isAaActive)
   const isDongleConnected = useStatusStore((s) => s.isDongleConnected || s.isAaActive)
   const cameraFound = useStatusStore((s) => s.cameraFound)
+  const transport = useTransportState()
+  const showFlip = role === 'main' && transport.dongleDetected && transport.nativeDetected
   const clusterEnabled = useLiviStore(
     (s) =>
       s.settings?.cluster?.main === true ||
@@ -130,8 +134,17 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
           {
             label: 'Camera',
             path: ROUTES.CAMERA,
-            icon: <CameraswitchOutlinedIcon sx={{ fontSize: 30 }} />,
+            icon: <CameraOutlinedIcon sx={{ fontSize: 30 }} />,
             disabled: !cameraFound
+          }
+        ]
+      : []),
+    ...(showFlip
+      ? [
+          {
+            label: 'Switch transport',
+            path: ROUTES.TRANSPORT_FLIP,
+            icon: <TransportFlipIcon active={transport.active} fontSize={30} />
           }
         ]
       : []),

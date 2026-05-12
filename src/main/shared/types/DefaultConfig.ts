@@ -53,6 +53,7 @@ export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
   evConnectorTypes: [],
   aa: false,
   cp: false,
+  connectionPreference: 'auto',
   wifiPassword: '12345678',
   btAdapter: 'hci0',
   wifiInterface: 'wlan0',

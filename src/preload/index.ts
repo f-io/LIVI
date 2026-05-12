@@ -151,6 +151,14 @@ const api = {
       ipcRenderer.invoke('projection-bt-forget-device', mac),
     dongleFirmware: (action: 'check' | 'download' | 'upload' | 'status'): Promise<unknown> =>
       ipcRenderer.invoke('dongle-fw', { action }),
+    flipTransport: (): Promise<{ ok: boolean; active: 'dongle' | 'aa' | null }> =>
+      ipcRenderer.invoke('transport:flip'),
+    getTransportState: (): Promise<{
+      active: 'dongle' | 'aa' | null
+      dongleDetected: boolean
+      nativeDetected: boolean
+      preference: 'auto' | 'dongle' | 'native'
+    }> => ipcRenderer.invoke('transport:state'),
     sendTouch: (x: number, y: number, action: number): void =>
       ipcRenderer.send('projection-touch', { x, y, action }),
     sendMultiTouch: (points: MultiTouchPoint[]): void =>

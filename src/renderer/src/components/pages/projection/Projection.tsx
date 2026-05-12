@@ -659,7 +659,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
 
         setDongleConnected(true)
         hasStartedRef.current = true
-        await window.projection.ipc.start()
       }
     }
 

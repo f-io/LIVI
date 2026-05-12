@@ -423,16 +423,185 @@ describe('ProjectionService', () => {
   })
 
   test('markDongleConnected updates shared dongle connection state', async () => {
-    const svc = new ProjectionService() as any
-    svc.start = jest.fn(async () => undefined)
+    jest.useFakeTimers()
+    try {
+      const svc = new ProjectionService() as any
+      svc.start = jest.fn(async () => undefined)
+      svc.markDongleConnected(false)
+      jest.runOnlyPendingTimers() // flush detach debounce
+      await svc.autoStartIfNeeded()
+      expect(svc.start).not.toHaveBeenCalled()
 
-    svc.markDongleConnected(false)
-    await svc.autoStartIfNeeded()
-    expect(svc.start).not.toHaveBeenCalled()
+      svc.markDongleConnected(true)
+      await svc.autoStartIfNeeded()
+      expect(svc.start).toHaveBeenCalledTimes(1)
+    } finally {
+      jest.runOnlyPendingTimers()
+      jest.useRealTimers()
+    }
+  })
 
-    svc.markDongleConnected(true)
-    await svc.autoStartIfNeeded()
-    expect(svc.start).toHaveBeenCalledTimes(1)
+  describe('transport arbiter', () => {
+    beforeEach(() => {
+      jest.useFakeTimers()
+    })
+    afterEach(() => {
+      jest.runOnlyPendingTimers()
+      jest.useRealTimers()
+    })
+
+    function fakePhoneDevice(): any {
+      return {
+        deviceDescriptor: { idVendor: 0x18d1, idProduct: 0x2d00 }
+      }
+    }
+
+    function freshSvc(): any {
+      const svc = new ProjectionService() as any
+      svc.markPhoneConnected(false)
+      svc.markDongleConnected(false)
+      jest.runOnlyPendingTimers() // flush detach debounces
+      return svc
+    }
+
+    test('pickPreferredTransport returns null when nothing is detected', () => {
+      const svc = freshSvc()
+      svc.config = { aa: false, connectionPreference: 'auto' }
+      expect(svc.pickPreferredTransport()).toBeNull()
+    })
+
+    test('auto: dongle-only → dongle; phone-only → aa', () => {
+      const svc = freshSvc()
+      svc.config = { aa: false, connectionPreference: 'auto' }
+
+      svc.markDongleConnected(true)
+      expect(svc.pickPreferredTransport()).toBe('dongle')
+
+      svc.markDongleConnected(false)
+      jest.runOnlyPendingTimers() // flush detach debounce
+      svc.markPhoneConnected(true, fakePhoneDevice())
+      expect(svc.pickPreferredTransport()).toBe('aa')
+    })
+
+    test('auto: when both present, dongle wins tiebreaker on cold pick', () => {
+      const svc = freshSvc()
+      svc.config = { aa: false, connectionPreference: 'auto' }
+      svc.start = jest.fn(async () => undefined)
+
+      svc.markDongleConnected(true)
+      svc.markPhoneConnected(true, fakePhoneDevice())
+      expect(svc.pickPreferredTransport()).toBe('dongle')
+    })
+
+    test("preference 'dongle' picks dongle even when phone is present first", () => {
+      const svc = freshSvc()
+      svc.config = { aa: false, connectionPreference: 'dongle' }
+
+      svc.markPhoneConnected(true, fakePhoneDevice())
+      // phone-only → aa (dongle isn't there)
+      expect(svc.pickPreferredTransport()).toBe('aa')
+
+      svc.markDongleConnected(true)
+      // both present + preference dongle → dongle
+      expect(svc.pickPreferredTransport()).toBe('dongle')
+    })
+
+    test("preference 'native' picks aa when phone is present", () => {
+      const svc = freshSvc()
+      svc.config = { aa: false, connectionPreference: 'native' }
+
+      svc.markDongleConnected(true)
+      expect(svc.pickPreferredTransport()).toBe('dongle')
+
+      svc.markPhoneConnected(true, fakePhoneDevice())
+      expect(svc.pickPreferredTransport()).toBe('aa')
+    })
+
+    test('flipTransport is a no-op when only one transport is present', async () => {
+      const svc = freshSvc()
+      svc.config = { aa: false, connectionPreference: 'auto' }
+      svc.markDongleConnected(true)
+      svc.start = jest.fn(async () => undefined)
+      svc.stop = jest.fn(async () => undefined)
+
+      const res = await svc.flipTransport()
+      expect(res.ok).toBe(false)
+      expect(svc.stop).not.toHaveBeenCalled()
+    })
+
+    test('flipTransport restarts on the opposite transport when both are present', async () => {
+      const svc = freshSvc()
+      svc.config = { aa: false, connectionPreference: 'auto' }
+      svc.markDongleConnected(true)
+      svc.markPhoneConnected(true, fakePhoneDevice())
+      svc.started = true
+      svc.aaDriver = null // dongle is active
+      svc.stop = jest.fn(async () => {
+        svc.started = false
+      })
+      svc.start = jest.fn(async () => undefined)
+
+      const res = await svc.flipTransport()
+      expect(svc.stop).toHaveBeenCalledTimes(1)
+      // override sticks → next pick is 'aa'
+      expect(svc.pickPreferredTransport()).toBe('aa')
+      expect(res.ok).toBe(true)
+    })
+
+    test('override clears when the chosen transport goes away', async () => {
+      const svc = freshSvc()
+      svc.config = { aa: false, connectionPreference: 'auto' }
+      svc.markDongleConnected(true)
+      svc.markPhoneConnected(true, fakePhoneDevice())
+      svc.started = true
+      svc.aaDriver = null
+      svc.stop = jest.fn(async () => {
+        svc.started = false
+      })
+      svc.start = jest.fn(async () => undefined)
+
+      await svc.flipTransport()
+      expect(svc.pickPreferredTransport()).toBe('aa')
+
+      svc.markPhoneConnected(false)
+      jest.runOnlyPendingTimers() // flush detach debounce
+      expect(svc.pickPreferredTransport()).toBe('dongle')
+    })
+
+    test("preference 'native': defers dongle so the AOAP probe can win the race", async () => {
+      const svc = freshSvc()
+      svc.config = { aa: false, connectionPreference: 'native' }
+      svc.start = jest.fn(async () => undefined)
+
+      svc.markDongleConnected(true)
+      await svc.autoStartIfNeeded()
+      expect(svc.start).not.toHaveBeenCalled() // deferred
+
+      // Phone probe completes during the defer window — autoStart re-fires
+      // synchronously here and picks 'aa'.
+      svc.markPhoneConnected(true, fakePhoneDevice())
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(svc.pickPreferredTransport()).toBe('aa')
+    })
+
+    test("preference 'native': commits to dongle if the probe never surfaces", async () => {
+      const svc = freshSvc()
+      svc.config = { aa: false, connectionPreference: 'native' }
+      svc.start = jest.fn(async () => undefined)
+
+      svc.markDongleConnected(true)
+      await svc.autoStartIfNeeded()
+      expect(svc.start).not.toHaveBeenCalled() // deferred
+
+      jest.advanceTimersByTime(3500)
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(svc.start).toHaveBeenCalledTimes(1) // fallback to dongle
+    })
   })
 
   test('disconnectPhone returns false when service is not started', async () => {

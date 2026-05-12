@@ -102,6 +102,25 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
           label: 'Auto Connect',
           labelKey: 'settings.autoConnect',
           path: 'autoConn'
+        },
+        {
+          type: 'select',
+          label: 'Preferred Connection',
+          labelKey: 'settings.preferredConnection',
+          path: 'connectionPreference',
+          displayValue: true,
+          options: [
+            { label: 'Auto', labelKey: 'settings.preferredConnectionAuto', value: 'auto' },
+            { label: 'Dongle', labelKey: 'settings.preferredConnectionDongle', value: 'dongle' },
+            { label: 'Native', labelKey: 'settings.preferredConnectionNative', value: 'native' }
+          ],
+          page: {
+            title: 'Preferred Connection',
+            labelTitle: 'settings.preferredConnection',
+            description:
+              'Which transport to bring up when both a dongle and a phone are detected. Auto: first-plug wins. Dongle / Native: that side is preferred.',
+            labelDescription: 'settings.preferredConnectionDescription'
+          }
         }
       ]
     },

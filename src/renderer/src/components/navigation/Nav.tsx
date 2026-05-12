@@ -45,6 +45,11 @@ export const Nav = ({ receivingVideo }: NavProps) => {
       return
     }
 
+    if (key === ROUTES.TRANSPORT_FLIP) {
+      void window.projection.ipc.flipTransport?.().catch(console.error)
+      return
+    }
+
     if (key === ROUTES.SETTINGS && pathname.startsWith(ROUTES.SETTINGS)) {
       navigate(ROUTES.SETTINGS, { replace: true })
       return

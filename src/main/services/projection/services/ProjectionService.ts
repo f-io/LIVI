@@ -234,6 +234,15 @@ export class ProjectionService {
     if (next.appearanceMode !== prev?.appearanceMode) {
       this.aaDriver?.setInitialNightMode(deriveInitialNightMode(next.appearanceMode))
     }
+
+    const prefChanged =
+      (prev as { connectionPreference?: unknown })?.connectionPreference !==
+      (next as { connectionPreference?: unknown })?.connectionPreference
+    if (prefChanged) {
+      this.nativeProbeDeferred = false
+      this.nativeProbeDeadline = 0
+      this.emitTransportState()
+    }
   }
 
   private lastCodecCaps: Record<string, { hw?: unknown; sw?: unknown } | undefined> | null = null
@@ -727,6 +736,9 @@ export class ProjectionService {
       }
       return this.start()
     })
+
+    registerIpcHandle('transport:flip', async () => this.flipTransport())
+    registerIpcHandle('transport:state', async () => this.getTransportState())
     registerIpcHandle('projection-sendframe', async () =>
       this.driver.send(new SendCommand('frame'))
     )
@@ -1350,24 +1362,74 @@ export class ProjectionService {
     })
   }
 
+  // Detach debounce. The bus produces transient detach events during:
+  //   - libusb power-cycling the Carlinkit while idle (every ~10s on macOS,
+  //     each "away" window 2-4s)
+  //   - the AOAP reset inside stop() and during transport flips
+  //   - Android phones cycling between OEM- and accessory-PID
+  private static readonly DONGLE_DETACH_DEBOUNCE_MS = 4_000
+  private static readonly PHONE_DETACH_DEBOUNCE_MS = 2_000
+  private dongleDetachDebounce: NodeJS.Timeout | null = null
+  private phoneDetachDebounce: NodeJS.Timeout | null = null
+
   public markDongleConnected(connected: boolean) {
-    dongleConnected = connected
+    if (connected) {
+      if (this.dongleDetachDebounce) {
+        clearTimeout(this.dongleDetachDebounce)
+        this.dongleDetachDebounce = null
+      }
+      if (dongleConnected) return
+      dongleConnected = true
+      this.emitTransportState()
+      return
+    }
+
+    if (!dongleConnected) return
+    if (this.dongleDetachDebounce) return
+    this.dongleDetachDebounce = setTimeout(() => {
+      this.dongleDetachDebounce = null
+      dongleConnected = false
+      if (this.transportOverride === 'dongle') this.transportOverride = null
+      this.emitTransportState()
+    }, ProjectionService.DONGLE_DETACH_DEBOUNCE_MS)
   }
 
   public markPhoneConnected(connected: boolean, device?: Device): void {
-    wiredPhoneConnected = connected
-    wiredPhoneDevice = connected ? (device ?? null) : null
     if (connected) {
-      console.log('[ProjectionService] wired phone marked connected')
-      this.autoStartIfNeeded().catch(console.error)
-    } else {
+      if (this.phoneDetachDebounce) {
+        clearTimeout(this.phoneDetachDebounce)
+        this.phoneDetachDebounce = null
+      }
+      const wasConnected = wiredPhoneConnected
+      wiredPhoneConnected = true
+      wiredPhoneDevice = device ?? wiredPhoneDevice
+      if (!wasConnected) {
+        console.log('[ProjectionService] wired phone marked connected')
+        this.autoStartIfNeeded().catch(console.error)
+      }
+      this.emitTransportState()
+      return
+    }
+
+    if (!wiredPhoneConnected) return
+
+    // While AA is the active path, USB-layer blips (dongle restart cycle)
+    if (this.getActiveTransport() === 'aa') return
+
+    if (this.phoneDetachDebounce) return
+    this.phoneDetachDebounce = setTimeout(() => {
+      this.phoneDetachDebounce = null
+      wiredPhoneConnected = false
+      wiredPhoneDevice = null
       console.log('[ProjectionService] wired phone marked disconnected')
+      if (this.transportOverride === 'aa') this.transportOverride = null
       if (this.started && this.aaDriver?.isWiredMode()) {
         void this.stop().catch((e) =>
           console.warn('[ProjectionService] stop after wired unplug threw', e)
         )
       }
-    }
+      this.emitTransportState()
+    }, ProjectionService.PHONE_DETACH_DEBOUNCE_MS)
   }
 
   public getWiredPhoneDevice(): Device | null {
@@ -1387,8 +1449,92 @@ export class ProjectionService {
   }
 
   private wantsAaDriver(): boolean {
+    return this.pickPreferredTransport() === 'aa'
+  }
+
+  // Transport arbiter. Decides whether the next session should be brought up
+  // on the dongle path or on the native path (wired or wireless).
+  private transportOverride: 'dongle' | 'aa' | null = null
+
+  private getConnectionPreference(): 'auto' | 'dongle' | 'native' {
+    const raw = (this.config as { connectionPreference?: unknown }).connectionPreference
+    return raw === 'dongle' || raw === 'native' ? raw : 'auto'
+  }
+
+  private hasNativeCandidate(): boolean {
     if (wiredPhoneConnected) return true
     return this.config.aa === true && process.platform === 'linux'
+  }
+
+  public pickPreferredTransport(): 'dongle' | 'aa' | null {
+    const dongle = dongleConnected
+    const native = this.hasNativeCandidate()
+    if (!dongle && !native) return null
+
+    // Explicit user override (from flip) wins, as long as the picked side is
+    // still actually present.
+    if (this.transportOverride === 'dongle' && dongle) return 'dongle'
+    if (this.transportOverride === 'aa' && native) return 'aa'
+    if (this.transportOverride) this.transportOverride = null
+
+    const pref = this.getConnectionPreference()
+    if (pref === 'dongle') return dongle ? 'dongle' : 'aa'
+    if (pref === 'native') return native ? 'aa' : 'dongle'
+
+    // 'auto' — sticky to whatever is already active
+    const active = this.getActiveTransport()
+    if (active === 'dongle' && dongle) return 'dongle'
+    if (active === 'aa' && native) return 'aa'
+    return dongle ? 'dongle' : 'aa'
+  }
+
+  public getActiveTransport(): 'dongle' | 'aa' | null {
+    if (!this.started) return null
+    return this.aaDriver ? 'aa' : 'dongle'
+  }
+
+  public getTransportState(): {
+    active: 'dongle' | 'aa' | null
+    dongleDetected: boolean
+    nativeDetected: boolean
+    preference: 'auto' | 'dongle' | 'native'
+  } {
+    return {
+      active: this.getActiveTransport(),
+      dongleDetected: dongleConnected,
+      nativeDetected: this.hasNativeCandidate(),
+      preference: this.getConnectionPreference()
+    }
+  }
+
+  private emitTransportState(): void {
+    this.emitProjectionEvent({
+      type: 'transportState',
+      payload: this.getTransportState()
+    })
+  }
+
+  public async flipTransport(): Promise<{ ok: boolean; active: 'dongle' | 'aa' | null }> {
+    const dongle = dongleConnected
+    const native = this.hasNativeCandidate()
+    if (!(dongle && native)) {
+      // Flip only makes sense when both transports are present.
+      return { ok: false, active: this.getActiveTransport() }
+    }
+
+    const current = this.getActiveTransport() ?? this.pickPreferredTransport()
+    const target: 'dongle' | 'aa' = current === 'dongle' ? 'aa' : 'dongle'
+    this.transportOverride = target
+
+    if (this.started) {
+      try {
+        await this.stop()
+      } catch (e) {
+        console.warn('[ProjectionService] flipTransport: stop threw (ignored)', e)
+      }
+    }
+    await this.autoStartIfNeeded()
+    return { ok: true, active: this.getActiveTransport() }
   }
 
   /**
@@ -1577,6 +1723,13 @@ export class ProjectionService {
     this.aaBtSubscription = null
   }
 
+  // With preference='native', a synchronously detected dongle can otherwise
+  // win the start-race against the async AOAP phone probe.
+  private static readonly NATIVE_PROBE_POLL_MS = 250
+  private static readonly NATIVE_PROBE_DEADLINE_MS = 3000
+  private nativeProbeDeferred = false
+  private nativeProbeDeadline = 0
+
   public async autoStartIfNeeded() {
     if (this.shuttingDown) return
     if (this.isStopping && this.stopPromise) {
@@ -1586,9 +1739,35 @@ export class ProjectionService {
     }
     if (this.shuttingDown) return
     if (this.started || this.isStarting) return
-    if (this.wantsAaDriver() || dongleConnected) {
-      await this.start()
+
+    const target = this.pickPreferredTransport()
+    if (target === null) return
+
+    if (
+      target === 'dongle' &&
+      !this.transportOverride &&
+      this.getConnectionPreference() === 'native'
+    ) {
+      const now = Date.now()
+      if (!this.nativeProbeDeferred) {
+        this.nativeProbeDeferred = true
+        this.nativeProbeDeadline = now + ProjectionService.NATIVE_PROBE_DEADLINE_MS
+        console.log(
+          `[ProjectionService] preference=native — blocking dongle for up to ${ProjectionService.NATIVE_PROBE_DEADLINE_MS}ms`
+        )
+      }
+      if (now < this.nativeProbeDeadline) {
+        setTimeout(() => {
+          this.autoStartIfNeeded().catch(console.error)
+        }, ProjectionService.NATIVE_PROBE_POLL_MS)
+        return
+      }
+      console.log(
+        '[ProjectionService] preference=native — deadline hit, no native candidate, starting dongle'
+      )
     }
+
+    await this.start()
   }
 
   private async start() {
@@ -1702,6 +1881,7 @@ export class ProjectionService {
       } finally {
         this.isStarting = false
         this.startPromise = null
+        this.emitTransportState()
       }
     })()
 
@@ -1735,6 +1915,8 @@ export class ProjectionService {
 
     this.stopping = true
     this.isStopping = true
+    this.nativeProbeDeferred = false
+    this.nativeProbeDeadline = 0
 
     this.stopPromise = (async () => {
       this.clearTimeouts()
@@ -1795,6 +1977,7 @@ export class ProjectionService {
       this.stopping = false
       this.isStopping = false
       this.stopPromise = null
+      this.emitTransportState()
     })
 
     return this.stopPromise

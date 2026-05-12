@@ -41,7 +41,8 @@ describe('USBService', () => {
   const projection = {
     markDongleConnected: jest.fn(),
     autoStartIfNeeded: jest.fn(async () => undefined),
-    stop: jest.fn(async () => undefined)
+    stop: jest.fn(async () => undefined),
+    getActiveTransport: jest.fn(() => null)
   } as any
 
   const mkDevice = (idVendor = 0x1314, idProduct = 0x1520, bcdDevice = 0x0102) =>
@@ -100,14 +101,18 @@ describe('USBService', () => {
     new USBService(projection)
 
     expect(projection.markDongleConnected).toHaveBeenCalledWith(true)
-    expect(projection.autoStartIfNeeded).toHaveBeenCalledTimes(1)
+    // Session start is owned by main/index.ts after applyConfigPatch — the
+    // constructor must not race past that with its own autoStart call.
+    expect(projection.autoStartIfNeeded).not.toHaveBeenCalled()
     expect(windows[0].webContents.send).toHaveBeenCalledWith(
       'usb-event',
       expect.objectContaining({ type: 'plugged' })
     )
-    expect(windows[0].webContents.send).toHaveBeenCalledWith(
+    // USBService no longer drives projection-event lifecycle — that comes from
+    // the active driver's AAP messages via ProjectionService.
+    expect(windows[0].webContents.send).not.toHaveBeenCalledWith(
       'projection-event',
-      expect.objectContaining({ type: 'plugged' })
+      expect.any(Object)
     )
   })
 
@@ -284,8 +289,14 @@ describe('USBService', () => {
     expect(projection.markDongleConnected).toHaveBeenCalledWith(true)
     expect(projection.autoStartIfNeeded).toHaveBeenCalledTimes(1)
     expect(windows[0].webContents.send).toHaveBeenCalledWith(
-      'projection-event',
+      'usb-event',
       expect.objectContaining({ type: 'plugged' })
+    )
+    // Session lifecycle on projection-event is owned by the active driver,
+    // not the USB layer.
+    expect(windows[0].webContents.send).not.toHaveBeenCalledWith(
+      'projection-event',
+      expect.any(Object)
     )
   })
 
@@ -337,8 +348,14 @@ describe('USBService', () => {
 
     expect(projection.markDongleConnected).toHaveBeenCalledWith(false)
     expect(windows[0].webContents.send).toHaveBeenCalledWith(
-      'projection-event',
+      'usb-event',
       expect.objectContaining({ type: 'unplugged' })
+    )
+    // No projection-event lifecycle from USB — session loss propagates from
+    // the active driver only.
+    expect(windows[0].webContents.send).not.toHaveBeenCalledWith(
+      'projection-event',
+      expect.any(Object)
     )
   })
 
@@ -385,12 +402,9 @@ describe('USBService', () => {
         device: { vendorId: null, productId: null, deviceName: '' }
       })
     )
-    expect(windows[0].webContents.send).toHaveBeenCalledWith(
+    expect(windows[0].webContents.send).not.toHaveBeenCalledWith(
       'projection-event',
-      expect.objectContaining({
-        type: 'unplugged',
-        device: { vendorId: null, productId: null, deviceName: '' }
-      })
+      expect.any(Object)
     )
     expect(windows[0].webContents.send).toHaveBeenCalledWith('usb-reset-done', false)
     expect(s.resetInProgress).toBe(false)
@@ -415,12 +429,9 @@ describe('USBService', () => {
         device: { vendorId: 0x1314, productId: 0x1520, deviceName: '' }
       })
     )
-    expect(windows[0].webContents.send).toHaveBeenCalledWith(
+    expect(windows[0].webContents.send).not.toHaveBeenCalledWith(
       'projection-event',
-      expect.objectContaining({
-        type: 'unplugged',
-        device: { vendorId: 0x1314, productId: 0x1520, deviceName: '' }
-      })
+      expect.any(Object)
     )
     expect(windows[0].webContents.send).toHaveBeenCalledWith('usb-reset-done', true)
   })
