@@ -1369,7 +1369,7 @@ export class ProjectionService {
   //   - the AOAP reset inside stop() and during transport flips
   //   - Android phones cycling between OEM- and accessory-PID
   private static readonly DONGLE_DETACH_DEBOUNCE_MS = 4_000
-  private static readonly PHONE_DETACH_DEBOUNCE_MS = 500
+  private static readonly PHONE_DETACH_DEBOUNCE_MS = 1_000
   private dongleDetachDebounce: NodeJS.Timeout | null = null
   private phoneDetachDebounce: NodeJS.Timeout | null = null
 
@@ -1387,12 +1387,30 @@ export class ProjectionService {
 
     if (!dongleConnected) return
     if (this.dongleDetachDebounce) return
-    this.dongleDetachDebounce = setTimeout(() => {
+    // The dongle silently re-enumerates itself whenever it's not in use
+    const usingDongle = this.started && !this.aaDriver
+    const delay = usingDongle ? 0 : ProjectionService.DONGLE_DETACH_DEBOUNCE_MS
+    this.dongleDetachDebounce = setTimeout(async () => {
       this.dongleDetachDebounce = null
       dongleConnected = false
+      console.log('[ProjectionService] dongle marked disconnected')
       if (this.transportOverride === 'dongle') this.transportOverride = null
+
+      if (this.started && !this.aaDriver) {
+        try {
+          await this.stop()
+        } catch (e) {
+          console.warn('[ProjectionService] stop after dongle unplug threw', e)
+        }
+      }
+
       this.emitTransportState()
-    }, ProjectionService.DONGLE_DETACH_DEBOUNCE_MS)
+
+      // Auto-switch to native if a candidate is still around
+      if (this.hasNativeCandidate()) {
+        this.autoStartIfNeeded().catch(console.error)
+      }
+    }, delay)
   }
 
   public markPhoneConnected(connected: boolean, device?: Device): void {
