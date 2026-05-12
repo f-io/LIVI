@@ -87,7 +87,6 @@ export const Controls = ({
           onMouseEnter={() => setHover((h) => ({ ...h, prev: true }))}
           onMouseLeave={() => setHover((h) => ({ ...h, prev: false }))}
           onClick={onPrev}
-          title="Previous"
           aria-label="Previous"
           style={circleBtnStyle(ctrlSize, {
             pressed: !!press.prev,
@@ -108,7 +107,6 @@ export const Controls = ({
           onMouseEnter={() => setHover((h) => ({ ...h, play: true }))}
           onMouseLeave={() => setHover((h) => ({ ...h, play: false }))}
           onClick={onPlayPause}
-          title={uiPlaying ? 'Pause' : 'Play'}
           aria-label="Play/Pause"
           aria-pressed={uiPlaying}
           style={circleBtnStyle(Math.round(ctrlSize * 1.1), {
@@ -141,7 +139,6 @@ export const Controls = ({
           onMouseEnter={() => setHover((h) => ({ ...h, next: true }))}
           onMouseLeave={() => setHover((h) => ({ ...h, next: false }))}
           onClick={onNext}
-          title="Next"
           aria-label="Next"
           style={circleBtnStyle(ctrlSize, {
             pressed: !!press.next,

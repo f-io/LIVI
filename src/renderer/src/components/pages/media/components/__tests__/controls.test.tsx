@@ -110,7 +110,6 @@ describe('Controls', () => {
 
     expect(screen.getByTestId('pause-icon')).toBeInTheDocument()
     expect(screen.queryByTestId('play-icon')).not.toBeInTheDocument()
-    expect(playPauseButton).toHaveAttribute('title', 'Pause')
     expect(playPauseButton).toHaveAttribute('aria-pressed', 'true')
   })
 

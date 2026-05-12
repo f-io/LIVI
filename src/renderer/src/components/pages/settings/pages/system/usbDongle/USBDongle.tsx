@@ -863,11 +863,10 @@ export function USBDongle() {
       {
         label: 'Local FW',
         value: localLabel,
-        mono: true,
-        tooltip: localReady ? localPath : localReason
+        mono: true
       }
     ],
-    [dongleFwVersion, latestFwLabel, fwStatusText, localLabel, localReady, localPath, localReason]
+    [dongleFwVersion, latestFwLabel, fwStatusText, localLabel]
   )
 
   const rowsDongleInfo = useMemo<Row[]>(
@@ -988,7 +987,6 @@ export function USBDongle() {
     <Stack spacing={0.5}>
       {rows.map((r) => {
         const text = r.value != null && String(r.value).trim() ? String(r.value) : '—'
-        const title = r.tooltip ?? (typeof r.value === 'string' ? r.value : '')
 
         return (
           <Box
@@ -1014,7 +1012,6 @@ export function USBDongle() {
             </Typography>
 
             <Typography
-              title={title}
               sx={{
                 ...(r.mono ? Mono : null),
                 whiteSpace: 'nowrap',
@@ -1119,11 +1116,6 @@ export function USBDongle() {
           size="small"
           disabled={!canUpload}
           onClick={() => handleFwAction('upload')}
-          title={
-            !canUpload
-              ? localReason || 'No matching firmware downloaded for this dongle.'
-              : localPath
-          }
         >
           {fwBusy === 'upload' ? (
             <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>

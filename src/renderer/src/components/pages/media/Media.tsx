@@ -245,7 +245,6 @@ export const Media = ({ forceHydrate = false }: MediaProps = {}) => {
       onKeyDown={onArtworkKeyDown}
       style={artworkBoxStyle}
       aria-label={showFft ? 'Show artwork' : 'Show spectrum'}
-      title={showFft ? 'Show artwork' : 'Show spectrum'}
     >
       {showFft ? (
         <div

@@ -16,7 +16,6 @@ type Row = {
   label: string
   value: string
   mono?: boolean
-  tooltip?: string
 }
 
 const contributorsValue: unknown = contributors as unknown
@@ -92,7 +91,7 @@ export const About = () => {
 
     const out: Row[] = [
       { label: t('settings.name'), value: appName },
-      { label: t('settings.description'), value: appDesc, tooltip: appDesc },
+      { label: t('settings.description'), value: appDesc },
       { label: t('settings.version'), value: appVersion, mono: true }
     ]
 
@@ -103,9 +102,9 @@ export const About = () => {
     out.push({ label: t('settings.commit', 'Commit'), value: commitShaStr, mono: true })
 
     out.push(
-      { label: t('settings.url'), value: appHomepage, tooltip: appHomepage },
-      { label: t('settings.author'), value: appAuthor, tooltip: appAuthor },
-      { label: t('settings.contributors'), value: appContrib, tooltip: appContrib }
+      { label: t('settings.url'), value: appHomepage },
+      { label: t('settings.author'), value: appAuthor },
+      { label: t('settings.contributors'), value: appContrib }
     )
 
     return out
@@ -126,7 +125,6 @@ export const About = () => {
             </Typography>
 
             <Typography
-              title={r.tooltip ?? r.value}
               sx={{
                 ...(r.mono ? Mono : null),
                 whiteSpace: 'nowrap',
