@@ -161,7 +161,13 @@ export class USBService {
         return
       }
 
-      if (!this.lastPhoneState && this.isPhoneCandidate(device)) {
+      if (this.isPhoneCandidate(device)) {
+        if (this.lastPhoneState) {
+          console.log(
+            '[USBService] OEM-PID phone re-attach while lastPhone=true — assuming stale state, resetting'
+          )
+          this.markPhoneDetached(device)
+        }
         console.log(
           `[USBService] phone candidate detected — running AOAP probe vid=0x${dd?.idVendor?.toString(16)} pid=0x${dd?.idProduct?.toString(16)}`
         )

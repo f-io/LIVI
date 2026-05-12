@@ -1369,7 +1369,7 @@ export class ProjectionService {
   //   - the AOAP reset inside stop() and during transport flips
   //   - Android phones cycling between OEM- and accessory-PID
   private static readonly DONGLE_DETACH_DEBOUNCE_MS = 4_000
-  private static readonly PHONE_DETACH_DEBOUNCE_MS = 2_000
+  private static readonly PHONE_DETACH_DEBOUNCE_MS = 500
   private dongleDetachDebounce: NodeJS.Timeout | null = null
   private phoneDetachDebounce: NodeJS.Timeout | null = null
 
@@ -1400,6 +1400,17 @@ export class ProjectionService {
       if (this.phoneDetachDebounce) {
         clearTimeout(this.phoneDetachDebounce)
         this.phoneDetachDebounce = null
+        wiredPhoneConnected = false
+        wiredPhoneDevice = null
+        console.log(
+          '[ProjectionService] wired phone re-attach during detach debounce — committing detach inline'
+        )
+        if (this.transportOverride === 'aa') this.transportOverride = null
+        if (this.started && this.aaDriver?.isWiredMode()) {
+          void this.stop().catch((e) =>
+            console.warn('[ProjectionService] stop on phone re-attach threw', e)
+          )
+        }
       }
       const wasConnected = wiredPhoneConnected
       wiredPhoneConnected = true
@@ -1413,9 +1424,6 @@ export class ProjectionService {
     }
 
     if (!wiredPhoneConnected) return
-
-    // While AA is the active path, USB-layer blips (dongle restart cycle)
-    if (this.getActiveTransport() === 'aa') return
 
     if (this.phoneDetachDebounce) return
     this.phoneDetachDebounce = setTimeout(() => {
