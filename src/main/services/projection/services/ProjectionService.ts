@@ -2,6 +2,7 @@ import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
 import { configEvents } from '@main/ipc/utils'
 import { broadcastToSecondaryRenderers } from '@main/window/broadcast'
 import { getSecondaryWindow } from '@main/window/secondaryWindows'
+import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
 import type { DevListEntry, DongleFirmwareAction, DongleFwApiRaw, ExtraConfig } from '@shared/types'
 import { PhoneWorkMode } from '@shared/types'
 import type { NavLocale } from '@shared/utils'
@@ -1286,12 +1287,12 @@ export class ProjectionService {
         )
       }
 
-      const b120 = cfg.dongleIcon120 ? cfg.dongleIcon120.trim() : ''
-      const b180 = cfg.dongleIcon180 ? cfg.dongleIcon180.trim() : ''
-      const b256 = cfg.dongleIcon256 ? cfg.dongleIcon256.trim() : ''
+      const b120 = (cfg.dongleIcon120?.trim() || ICON_120_B64).trim()
+      const b180 = (cfg.dongleIcon180?.trim() || ICON_180_B64).trim()
+      const b256 = (cfg.dongleIcon256?.trim() || ICON_256_B64).trim()
 
       if (!b120 || !b180 || !b256) {
-        console.error('[ProjectionService] Icon fields missing in config.json — upload cancelled')
+        console.error('[ProjectionService] Icon assets missing — upload cancelled')
         return
       }
 

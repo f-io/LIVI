@@ -10,8 +10,8 @@ export async function updateCameras(
     const cams = devs.filter((d) => d.kind === 'videoinput')
     setCameraFound(cams.length > 0)
 
-    if (!currentSettings.camera && cams.length > 0) {
-      const updated = { ...currentSettings, camera: cams[0].deviceId }
+    if (!currentSettings.cameraId && cams.length > 0) {
+      const updated = { ...currentSettings, cameraId: cams[0].deviceId }
       saveSettings(updated)
     }
 

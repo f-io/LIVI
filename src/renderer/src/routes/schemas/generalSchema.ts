@@ -427,9 +427,21 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
           children: [
             {
               type: 'checkbox',
-              label: 'Camera Tab',
-              labelKey: 'settings.cameraTab',
-              path: 'cameraEnabled'
+              label: 'Main',
+              labelKey: 'settings.mainScreen',
+              path: 'camera.main'
+            },
+            {
+              type: 'checkbox',
+              label: 'Dash',
+              labelKey: 'settings.dashScreen',
+              path: 'camera.dash'
+            },
+            {
+              type: 'checkbox',
+              label: 'Aux',
+              labelKey: 'settings.auxScreen',
+              path: 'camera.aux'
             },
             {
               type: 'route',
@@ -439,7 +451,7 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
               path: '',
               children: [
                 {
-                  path: 'camera',
+                  path: 'cameraId',
                   type: 'custom',
                   label: 'Camera',
                   labelKey: 'settings.camera',

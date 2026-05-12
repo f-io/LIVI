@@ -22,13 +22,13 @@ export const Camera: React.FC<SettingsCustomPageProps<ExtraConfig, string>> = ({
   const setCameraFound = useStatusStore((s) => s.setCameraFound)
 
   const safeCameraPersist = useCallback(
-    async (cfgOrId: string | { camera?: string } | null | undefined) => {
-      if (state.camera && state.camera !== '') return
-      const cameraId = typeof cfgOrId === 'string' ? cfgOrId : cfgOrId?.camera
+    async (cfgOrId: string | { cameraId?: string } | null | undefined) => {
+      if (state.cameraId && state.cameraId !== '') return
+      const cameraId = typeof cfgOrId === 'string' ? cfgOrId : cfgOrId?.cameraId
 
       if (cameraId && cameraId !== '') onChange(cameraId)
     },
-    [onChange, state.camera]
+    [onChange, state.cameraId]
   )
 
   useEffect(() => {
@@ -55,7 +55,7 @@ export const Camera: React.FC<SettingsCustomPageProps<ExtraConfig, string>> = ({
     () => cameraOptions.map((c) => c.deviceId),
     [cameraOptions]
   )
-  const cameraValue = coerceSelectValue(state.camera ?? '', cameraIds)
+  const cameraValue = coerceSelectValue(state.cameraId ?? '', cameraIds)
 
   return (
     <>

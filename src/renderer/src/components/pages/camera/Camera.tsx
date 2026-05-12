@@ -31,7 +31,7 @@ export const Camera: React.FC<CameraProps> = ({
   const currentStreamRef = useRef<MediaStream | null>(null)
   const [status, setStatus] = useState<OpenStatus>({ state: 'idle' })
 
-  const savedId: CameraId | '' = useMemo(() => settings?.camera ?? '', [settings?.camera])
+  const savedId: CameraId | '' = useMemo(() => settings?.cameraId ?? '', [settings?.cameraId])
 
   const stopActiveStream = useCallback(() => {
     const stream = currentStreamRef.current

@@ -264,7 +264,9 @@ describe('generalSchema', () => {
 
     const cameraRoute = tabSettings.children[3]
     expect(cameraRoute.children.map((c) => (c.type === 'route' ? c.route : c.path))).toEqual([
-      'cameraEnabled',
+      'camera.main',
+      'camera.dash',
+      'camera.aux',
       'select',
       'cameraMirror'
     ])

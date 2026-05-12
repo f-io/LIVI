@@ -1,5 +1,6 @@
 import { Box, Button, CircularProgress, Stack, Typography } from '@mui/material'
 import type { SettingsCustomPageProps } from '@renderer/routes/types'
+import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
 import type { ExtraConfig } from '@shared/types'
 import { useLiviStore, useStatusStore } from '@store/store'
 import React, { useCallback, useMemo, useRef, useState } from 'react'
@@ -40,10 +41,16 @@ export function IconUploader(props: SettingsCustomPageProps<ExtraConfig, unknown
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const iconPreviewSrc = useMemo(() => {
-    const base64 =
-      settings?.dongleIcon180 || settings?.dongleIcon120 || settings?.dongleIcon256 || ''
-    if (!base64.trim()) return ''
-    return `data:image/png;base64,${base64.trim()}`
+    const base64 = (
+      settings?.dongleIcon180 ||
+      settings?.dongleIcon120 ||
+      settings?.dongleIcon256 ||
+      ICON_180_B64 ||
+      ICON_120_B64 ||
+      ICON_256_B64
+    ).trim()
+    if (!base64) return ''
+    return `data:image/png;base64,${base64}`
   }, [settings?.dongleIcon120, settings?.dongleIcon180, settings?.dongleIcon256])
 
   const pickFile = useCallback(() => {

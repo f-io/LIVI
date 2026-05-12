@@ -22,19 +22,15 @@ export function registerSettingsIpc(runtimeState: runtimeStateProps) {
   })
 
   registerIpcHandle('settings:reset-dongle-icons', () => {
-    const next: ExtraConfig = {
-      ...runtimeState.config,
+    saveSettings(runtimeState, {
+      dongleIcon120: '',
+      dongleIcon180: '',
+      dongleIcon256: ''
+    })
+    return {
       dongleIcon120: ICON_120_B64,
       dongleIcon180: ICON_180_B64,
       dongleIcon256: ICON_256_B64
-    }
-
-    saveSettings(runtimeState, next)
-
-    return {
-      dongleIcon120: next.dongleIcon120,
-      dongleIcon180: next.dongleIcon180,
-      dongleIcon256: next.dongleIcon256
     }
   })
 

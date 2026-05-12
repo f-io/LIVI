@@ -139,6 +139,12 @@ function spawn(spec: SecondaryWindowSpec, runtimeState: runtimeStateProps) {
     return { action: 'deny' }
   })
 
+  const ses = win.webContents.session
+  ses.setPermissionCheckHandler((_w, p) => ['usb', 'hid', 'media', 'display-capture'].includes(p))
+  ses.setPermissionRequestHandler((_w, p, cb) =>
+    cb(['usb', 'hid', 'media', 'display-capture'].includes(p))
+  )
+
   const url =
     is.dev && process.env.ELECTRON_RENDERER_URL
       ? `${process.env.ELECTRON_RENDERER_URL}?role=${spec.role}`

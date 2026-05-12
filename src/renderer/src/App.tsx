@@ -12,6 +12,7 @@ import { appRoutes } from './routes/appRoutes'
 import { useLiviStore, useStatusStore } from './store/store'
 import { broadcastMediaKey } from './utils/broadcastMediaKey'
 import { updateCameras } from './utils/cameraDetection'
+import { getWindowRole } from './utils/windowRole'
 
 const START_PAGE_ROUTE: Record<string, string> = {
   home: ROUTES.HOME,
@@ -258,9 +259,14 @@ function AppInner() {
   const cameraFound = useStatusStore((s) => s.cameraFound)
   const reverseAutoSwitchActiveRef = useRef(false)
   const reverseBackPathRef = useRef<string | null>(null)
+  const cameraOnRole = (() => {
+    const role = getWindowRole()
+    return role === 'main' ? (settings?.camera?.main ?? true) : (settings?.camera?.[role] ?? false)
+  })()
   useEffect(() => {
     if (!settings?.autoSwitchOnReverse) return
-    const cameraReady = cameraFound && Boolean(settings.camera)
+    if (!cameraOnRole) return
+    const cameraReady = cameraFound && Boolean(settings.cameraId)
 
     if (reverse && cameraReady) {
       if (location.pathname !== ROUTES.CAMERA) {
@@ -281,8 +287,9 @@ function AppInner() {
   }, [
     reverse,
     cameraFound,
+    cameraOnRole,
     settings?.autoSwitchOnReverse,
-    settings?.camera,
+    settings?.cameraId,
     location.pathname,
     navigate
   ])

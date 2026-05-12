@@ -20,6 +20,8 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
   const isAaActive = useStatusStore((s) => s.isAaActive)
   const isDongleConnected = useStatusStore((s) => s.isDongleConnected || s.isAaActive)
   const cameraFound = useStatusStore((s) => s.cameraFound)
+  const cameraConfigured = useLiviStore((s) => Boolean(s.settings?.cameraId))
+  const cameraReady = cameraFound || cameraConfigured
   const transport = useTransportState()
   const showFlip = role === 'main' && transport.dongleDetected && transport.nativeDetected
   const clusterEnabled = useLiviStore(
@@ -31,7 +33,9 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
   const clusterOnRole = useLiviStore((s) =>
     role === 'main' ? (s.settings?.cluster?.main ?? true) : (s.settings?.cluster?.[role] ?? false)
   )
-  const cameraEnabled = useLiviStore((s) => s.settings?.cameraEnabled ?? true)
+  const cameraOnRole = useLiviStore((s) =>
+    role === 'main' ? (s.settings?.camera?.main ?? true) : (s.settings?.camera?.[role] ?? false)
+  )
   const mediaOnRole = useLiviStore((s) =>
     role === 'main' ? (s.settings?.media?.main ?? true) : (s.settings?.media?.[role] ?? false)
   )
@@ -68,6 +72,16 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
               label: 'Media',
               path: ROUTES.MEDIA,
               icon: <PlayCircleOutlinedIcon sx={{ fontSize: 30 }} />
+            }
+          ]
+        : []),
+      ...(cameraOnRole
+        ? [
+            {
+              label: 'Camera',
+              path: ROUTES.CAMERA,
+              icon: <CameraOutlinedIcon sx={{ fontSize: 30 }} />,
+              disabled: !cameraReady
             }
           ]
         : [])
@@ -129,13 +143,13 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
           }
         ]
       : []),
-    ...(cameraEnabled
+    ...(cameraOnRole
       ? [
           {
             label: 'Camera',
             path: ROUTES.CAMERA,
             icon: <CameraOutlinedIcon sx={{ fontSize: 30 }} />,
-            disabled: !cameraFound
+            disabled: !cameraReady
           }
         ]
       : []),

@@ -83,7 +83,7 @@ describe('updateCameras', () => {
 
     expect(saveSettings).toHaveBeenCalledWith({
       ...currentSettings,
-      camera: 'cam-1'
+      cameraId: 'cam-1'
     })
   })
 
@@ -96,7 +96,7 @@ describe('updateCameras', () => {
     ])
 
     const currentSettings = {
-      camera: 'existing-cam'
+      cameraId: 'existing-cam'
     } as ExtraConfig
 
     await updateCameras(setCameraFound, saveSettings, currentSettings)

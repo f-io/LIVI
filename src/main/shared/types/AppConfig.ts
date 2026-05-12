@@ -39,11 +39,11 @@ export type ExtraConfig = DongleConfig & {
   language: string
   kiosk: WindowAssignment
   uiZoomPercent: number
-  camera: string
-  cameraEnabled: boolean
-  dashboards: DashboardsConfig
-  media: WindowAssignment
+  cameraId: string
+  camera: WindowAssignment
   cluster: WindowAssignment
+  media: WindowAssignment
+  dashboards: DashboardsConfig
   mainScreenBounds?: WindowBounds
   dashScreenBounds?: WindowBounds
   auxScreenBounds?: WindowBounds

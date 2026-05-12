@@ -7,6 +7,7 @@ import type { BindKey } from '../../hooks/keysControl/types'
 import { useLiviStore } from '../../store/store'
 import { broadcastMediaKey } from '../../utils/broadcastMediaKey'
 import { AppLayout } from '../layouts/AppLayout'
+import { Camera } from '../pages/camera'
 import { Cluster } from '../pages/cluster/Cluster'
 import { Media } from '../pages/media'
 import { Telemetry } from '../pages/telemetry'
@@ -35,10 +36,11 @@ export const SecondaryAppShell = ({ role, emptyLabel }: Props) => {
     Object.values(settings.dashboards).some((slot) => slot?.[role] === true)
   const hasMedia = settings?.media?.[role] === true
   const hasCluster = settings?.cluster?.[role] === true
+  const hasCamera = settings?.camera?.[role] === true
 
   if (!settings) return <Box sx={{ width: '100vw', height: '100vh', bgcolor: '#000' }} />
 
-  if (!hasCluster && !hasTelemetry && !hasMedia) {
+  if (!hasCluster && !hasTelemetry && !hasMedia && !hasCamera) {
     return (
       <Box
         sx={{
@@ -55,7 +57,13 @@ export const SecondaryAppShell = ({ role, emptyLabel }: Props) => {
     )
   }
 
-  const initialPath = hasCluster ? ROUTES.CLUSTER : hasTelemetry ? ROUTES.TELEMETRY : ROUTES.MEDIA
+  const initialPath = hasCluster
+    ? ROUTES.CLUSTER
+    : hasTelemetry
+      ? ROUTES.TELEMETRY
+      : hasMedia
+        ? ROUTES.MEDIA
+        : ROUTES.CAMERA
 
   return (
     <MemoryRouter initialEntries={[initialPath]}>
@@ -159,6 +167,7 @@ const SecondaryShellInner = ({ role, hasCluster }: InnerProps) => {
       <Routes>
         <Route path={ROUTES.TELEMETRY} element={<Telemetry windowRole={role} />} />
         <Route path={ROUTES.MEDIA} element={<Media forceHydrate />} />
+        <Route path={ROUTES.CAMERA} element={<Camera />} />
         <Route path={ROUTES.CLUSTER} element={null} />
         <Route path="*" element={null} />
       </Routes>

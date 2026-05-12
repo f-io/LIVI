@@ -1,4 +1,3 @@
-import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
 import type { ExtraConfig } from '@shared/types'
 import { DEFAULT_BINDINGS } from '@shared/types'
 import { CarType, HandDriveType, MicType, PhoneWorkMode } from '@shared/types/DongleConfig'
@@ -62,8 +61,8 @@ export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
   language: 'en',
   kiosk: { main: false, dash: false, aux: false },
   uiZoomPercent: 100,
-  camera: '',
-  cameraEnabled: true,
+  cameraId: '',
+  camera: { main: true, dash: false, aux: false },
   cameraMirror: false,
   autoSwitchOnStream: false,
   autoSwitchOnPhoneCall: false,
@@ -94,7 +93,7 @@ export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
   media: { main: true, dash: false, aux: false },
   cluster: { main: false, dash: false, aux: false },
   bindings: DEFAULT_BINDINGS,
-  dongleIcon120: ICON_120_B64,
-  dongleIcon180: ICON_180_B64,
-  dongleIcon256: ICON_256_B64
+  dongleIcon120: '',
+  dongleIcon180: '',
+  dongleIcon256: ''
 }

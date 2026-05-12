@@ -24,7 +24,7 @@ describe('pages/camera Camera', () => {
 
   beforeEach(() => {
     jest.clearAllMocks()
-    mockSettings = { camera: 'cam-1', cameraMirror: false }
+    mockSettings = { cameraId: 'cam-1', cameraMirror: false }
 
     Object.defineProperty(navigator, 'mediaDevices', {
       configurable: true,
@@ -86,7 +86,7 @@ describe('pages/camera Camera', () => {
   })
 
   test('shows error when camera not configured and fallback disabled', async () => {
-    mockSettings = { camera: '' }
+    mockSettings = { cameraId: '' }
 
     render(<Camera allowFallback={false} />)
 

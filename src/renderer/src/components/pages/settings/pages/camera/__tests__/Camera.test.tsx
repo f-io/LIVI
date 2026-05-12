@@ -34,7 +34,7 @@ describe('Settings Camera page', () => {
 
   test('loads camera options and subscribes to usb events', async () => {
     const onChange = jest.fn()
-    const { unmount } = render(<Camera state={{ camera: '' } as any} onChange={onChange} />)
+    const { unmount } = render(<Camera state={{ cameraId: '' } as any} onChange={onChange} />)
 
     await waitFor(() => {
       expect(detectCameras).toHaveBeenCalled()
@@ -47,9 +47,9 @@ describe('Settings Camera page', () => {
   })
 
   test('safeCameraPersist skips onChange when camera is already configured', async () => {
-    // lines 26-27: if (state.camera && state.camera !== '') return early
+    // lines 26-27: if (state.cameraId && state.cameraId !== '') return early
     const onChange = jest.fn()
-    render(<Camera state={{ camera: 'cam-1' } as any} onChange={onChange} />)
+    render(<Camera state={{ cameraId: 'cam-1' } as any} onChange={onChange} />)
 
     await waitFor(() => expect(detectCameras).toHaveBeenCalled())
 
@@ -62,7 +62,7 @@ describe('Settings Camera page', () => {
   test('safeCameraPersist calls onChange when camera is not yet set', async () => {
     // lines 28-29: cameraId && onChange(cameraId)
     const onChange = jest.fn()
-    render(<Camera state={{ camera: '' } as any} onChange={onChange} />)
+    render(<Camera state={{ cameraId: '' } as any} onChange={onChange} />)
 
     await waitFor(() => expect(detectCameras).toHaveBeenCalled())
 
@@ -71,21 +71,21 @@ describe('Settings Camera page', () => {
     expect(onChange).toHaveBeenCalledWith('cam-1')
   })
 
-  test('safeCameraPersist accepts object with camera property', async () => {
-    // line 27: cfgOrId?.camera branch
+  test('safeCameraPersist accepts object with cameraId property', async () => {
+    // line 27: cfgOrId?.cameraId branch
     const onChange = jest.fn()
-    render(<Camera state={{ camera: '' } as any} onChange={onChange} />)
+    render(<Camera state={{ cameraId: '' } as any} onChange={onChange} />)
 
     await waitFor(() => expect(detectCameras).toHaveBeenCalled())
 
     const [, persistFn] = detectCameras.mock.calls[0]
-    await persistFn({ camera: 'cam-1' })
+    await persistFn({ cameraId: 'cam-1' })
     expect(onChange).toHaveBeenCalledWith('cam-1')
   })
 
   test('USB attach event triggers camera re-detection', async () => {
     // lines 38-40: usbHandler fires detectCameras again on attach
-    render(<Camera state={{ camera: '' } as any} onChange={jest.fn()} />)
+    render(<Camera state={{ cameraId: '' } as any} onChange={jest.fn()} />)
 
     await waitFor(() => expect(listenForEvents).toHaveBeenCalled())
 
@@ -98,7 +98,7 @@ describe('Settings Camera page', () => {
 
   test('USB event with irrelevant type does not re-detect cameras', async () => {
     // line 39: type not in list → no detectCameras call
-    render(<Camera state={{ camera: '' } as any} onChange={jest.fn()} />)
+    render(<Camera state={{ cameraId: '' } as any} onChange={jest.fn()} />)
 
     await waitFor(() => expect(listenForEvents).toHaveBeenCalled())
 
@@ -113,7 +113,7 @@ describe('Settings Camera page', () => {
     // line 50: c.label || 'Camera'
     detectCameras.mockResolvedValueOnce([{ deviceId: 'cam-x', label: '' }])
     // set camera to cam-x so the Select shows the selected label
-    render(<Camera state={{ camera: 'cam-x' } as any} onChange={jest.fn()} />)
+    render(<Camera state={{ cameraId: 'cam-x' } as any} onChange={jest.fn()} />)
 
     await waitFor(() => {
       // MUI Select renders the selected option's label in the DOM
@@ -124,7 +124,7 @@ describe('Settings Camera page', () => {
   test('shows "No camera" option label when no cameras detected', async () => {
     // cameras.length === 0 → cameraOptions = [{deviceId:'', label:'No camera'}]
     detectCameras.mockResolvedValueOnce([])
-    render(<Camera state={{ camera: '' } as any} onChange={jest.fn()} />)
+    render(<Camera state={{ cameraId: '' } as any} onChange={jest.fn()} />)
 
     await waitFor(() => expect(detectCameras).toHaveBeenCalled())
 
