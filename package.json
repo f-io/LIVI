@@ -9,7 +9,7 @@
     "Lasse Heitgres"
   ],
   "homepage": "https://f-io.dev",
-  "packageManager": "pnpm@11.1.0",
+  "packageManager": "pnpm@11.1.1",
   "scripts": {
     "prepare": "husky",
     "dev": "vite",
@@ -81,7 +81,7 @@
     "@vitejs/plugin-react": "^6.0.1",
     "@webgpu/types": "^0.1.70",
     "electron": "^42.0.1",
-    "electron-builder": "^26.9.1",
+    "electron-builder": "^26.10.0",
     "esbuild": "^0.28.0",
     "globals": "^17.6.0",
     "husky": "^9.1.7",
