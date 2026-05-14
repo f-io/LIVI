@@ -14,6 +14,7 @@ import { type Device, usb, WebUSBDevice } from 'usb'
 import { AaBtSockClient } from '../driver/aa/AaBtSockClient'
 import { AaDriver } from '../driver/aa/aaDriver'
 import type { IPhoneDriver } from '../driver/IPhoneDriver'
+import { ProjectionDriverManager } from '../drivers/ProjectionDriverManager'
 import {
   AudioData,
   BluetoothPairedList,
@@ -123,30 +124,22 @@ function pickStringOrNumber(o: Record<string, unknown>, key: string): string | n
 }
 
 export class ProjectionService {
-  private readonly dongleDriver = new DongleDriver()
-  private aaDriver: AaDriver | null = null
-  private readonly arbiter = new TransportArbiter({
-    getPreference: () => this.getConnectionPreference(),
-    isAaEligible: () => this.config.aa === true && process.platform === 'linux',
-    getActiveTransport: () => this.getActiveTransport(),
-    isDongleSessionActive: () => this.started && !this.aaDriver,
-    isWiredAaSessionActive: () => this.started && this.aaDriver?.isWiredMode() === true,
-    onChange: () => this.emitTransportState(),
-    onShouldStop: async () => {
-      await this.stop()
-    },
-    onShouldAutoStart: () => {
-      this.autoStartIfNeeded().catch(console.error)
-    }
-  })
+  private readonly drivers: ProjectionDriverManager
+  private readonly arbiter: TransportArbiter
   private get driver(): IPhoneDriver {
-    return this.aaDriver ?? this.dongleDriver
+    return this.drivers.getActive()
+  }
+  private get aaDriver(): AaDriver | null {
+    return this.drivers.getAa()
+  }
+  private get dongleDriver(): DongleDriver {
+    return this.drivers.getDongle()
   }
   public getAaDriver(): AaDriver | null {
-    return this.aaDriver
+    return this.drivers.getAa()
   }
   public getDongleDriver(): DongleDriver {
-    return this.dongleDriver
+    return this.drivers.getDongle()
   }
   private hevcSupported = false
   private vp9Supported = false
@@ -683,22 +676,6 @@ export class ProjectionService {
     }
   }
 
-  private attachDriverListeners(d: IPhoneDriver): void {
-    d.on('message', this.onDriverMessage)
-    d.on('failure', this.onDriverFailure)
-    d.on('targeted-connect-dispatched', this.onDriverTargetedConnect)
-    d.on('video-codec', this.onDriverVideoCodec)
-    d.on('cluster-video-codec', this.onDriverClusterVideoCodec)
-  }
-
-  private detachDriverListeners(d: IPhoneDriver): void {
-    d.off('message', this.onDriverMessage)
-    d.off('failure', this.onDriverFailure)
-    d.off('targeted-connect-dispatched', this.onDriverTargetedConnect)
-    d.off('video-codec', this.onDriverVideoCodec)
-    d.off('cluster-video-codec', this.onDriverClusterVideoCodec)
-  }
-
   private subscribeConfigEvents(): void {
     configEvents.on('changed', this.onConfigChanged)
   }
@@ -713,6 +690,49 @@ export class ProjectionService {
   }
 
   constructor() {
+    this.drivers = new ProjectionDriverManager({
+      handlers: {
+        onMessage: (msg) => this.onDriverMessage(msg as Message),
+        onFailure: () => this.onDriverFailure(),
+        onTargetedConnect: () => this.onDriverTargetedConnect(),
+        onVideoCodec: (c) => this.onDriverVideoCodec(c),
+        onClusterVideoCodec: (c) => this.onDriverClusterVideoCodec(c)
+      },
+      onAaConnected: () => this.onAaConnected(),
+      onAaDisconnected: () => this.onAaDisconnected(),
+      onAaCreated: () => {
+        if (process.platform === 'linux') {
+          this.openAaBtSubscription()
+          this.populateAaBtPairedListInitial()
+            .then(() => this.tryAutoConnect())
+            .catch(() => {})
+        }
+      },
+      onAaReleased: () => this.closeAaBtSubscription(),
+      getAaConfigSeed: () => ({
+        hevcSupported: this.hevcSupported,
+        vp9Supported: this.vp9Supported,
+        av1Supported: this.av1Supported,
+        initialNightMode: deriveInitialNightMode(this.config.appearanceMode)
+      }),
+      onPhoneReenumerate: (ms) => this.expectPhoneReenumeration(ms)
+    })
+
+    this.arbiter = new TransportArbiter({
+      getPreference: () => this.getConnectionPreference(),
+      isAaEligible: () => this.config.aa === true && process.platform === 'linux',
+      getActiveTransport: () => this.getActiveTransport(),
+      isDongleSessionActive: () => this.started && !this.drivers.getAa(),
+      isWiredAaSessionActive: () => this.started && this.drivers.getAa()?.isWiredMode() === true,
+      onChange: () => this.emitTransportState(),
+      onShouldStop: async () => {
+        await this.stop()
+      },
+      onShouldAutoStart: () => {
+        this.autoStartIfNeeded().catch(console.error)
+      }
+    })
+
     this.audio = new ProjectionAudio(
       () => this.config,
       (payload) => {
@@ -729,8 +749,6 @@ export class ProjectionService {
         }
       }
     )
-
-    this.attachDriverListeners(this.dongleDriver)
 
     // TODO move IPC registration to dedicated IPC modules instead of service constructor
     registerIpcHandle('projection-start', async () => this.start())
@@ -1437,49 +1455,8 @@ export class ProjectionService {
     return { ok: true, active: this.getActiveTransport() }
   }
 
-  /**
-   * Pick the right driver for the upcoming session.
-   * On switch, detach listeners from the old one, swap, attach to the new one.
-   */
-  private selectDriverFor(useAa: boolean): IPhoneDriver {
-    if (useAa) {
-      if (!this.aaDriver) {
-        const aa = new AaDriver({
-          onWillReenumerate: (ms) => this.expectPhoneReenumeration(ms)
-        })
-        this.aaDriver = aa
-        aa.setHevcSupported(this.hevcSupported)
-        aa.setVp9Supported(this.vp9Supported)
-        aa.setAv1Supported(this.av1Supported)
-        aa.setInitialNightMode(deriveInitialNightMode(this.config.appearanceMode))
-        this.detachDriverListeners(this.dongleDriver)
-        this.attachDriverListeners(aa)
-        aa.on('connected', this.onAaConnected)
-        aa.on('disconnected', this.onAaDisconnected)
-        if (process.platform === 'linux') {
-          this.openAaBtSubscription()
-          this.populateAaBtPairedListInitial()
-            .then(() => this.tryAutoConnect())
-            .catch(() => {})
-        }
-      }
-      return this.aaDriver
-    }
-    // useAa === false → return to dongle.
-    if (this.aaDriver) {
-      this.aaDriver.off('connected', this.onAaConnected)
-      this.aaDriver.off('disconnected', this.onAaDisconnected)
-      this.closeAaBtSubscription()
-      this.detachDriverListeners(this.aaDriver)
-      try {
-        this.aaDriver.close()
-      } catch (e) {
-        console.warn('[ProjectionService] aaDriver.close threw on swap-out', e)
-      }
-      this.aaDriver = null
-      this.attachDriverListeners(this.dongleDriver)
-    }
-    return this.dongleDriver
+  private selectDriverFor(transport: Transport): IPhoneDriver {
+    return this.drivers.selectFor(transport)
   }
 
   private async refreshAaBtPairedList(opts: { throwOnError?: boolean } = {}): Promise<void> {
@@ -1679,8 +1656,9 @@ export class ProjectionService {
         this.resetMediaSnapshot('session-start')
         this.resetNavigationSnapshot('session-start')
 
-        const useAa = this.arbiter.pickPreferred() === 'aa'
-        const active = this.selectDriverFor(useAa)
+        const target: Transport = this.arbiter.pickPreferred() === 'aa' ? 'aa' : 'dongle'
+        const active = this.selectDriverFor(target)
+        const useAa = target === 'aa'
 
         if (useAa) {
           // Two AA paths share the same driver: Wireless + Wired
@@ -1822,14 +1800,7 @@ export class ProjectionService {
         console.warn('[ProjectionService] driver.close() failed (ignored)', e)
       }
 
-      if (this.aaDriver) {
-        this.aaDriver.off('connected', this.onAaConnected)
-        this.aaDriver.off('disconnected', this.onAaDisconnected)
-        this.closeAaBtSubscription()
-        this.detachDriverListeners(this.aaDriver)
-        this.aaDriver = null
-        this.attachDriverListeners(this.dongleDriver)
-      }
+      this.drivers.releaseAa()
 
       this.webUsbDevice = null
       this.audio.resetForSessionStop()
