@@ -9,19 +9,7 @@ import * as net from 'node:net'
 import { DEBUG } from '@main/constants'
 import { Microphone } from '@main/services/audio'
 import { MessageHeader, MessageType } from '@projection/messages/common'
-import {
-  AudioData,
-  Command,
-  DongleReady,
-  MediaType,
-  type Message,
-  MetaData,
-  NavigationMetaType,
-  PhoneType,
-  Plugged,
-  Unplugged,
-  VideoData
-} from '@projection/messages/readable'
+import { type Message } from '@projection/messages/readable'
 import {
   type SendableMessage,
   SendCloseDongle,
@@ -32,12 +20,7 @@ import {
 } from '@projection/messages/sendable'
 import type { DongleConfig } from '@shared/types'
 import { CarType } from '@shared/types/DongleConfig'
-import {
-  AudioCommand,
-  CommandMapping,
-  MultiTouchAction,
-  TouchAction
-} from '@shared/types/ProjectionEnums'
+import { CommandMapping, MultiTouchAction, TouchAction } from '@shared/types/ProjectionEnums'
 import {
   computeAndroidAutoDpi,
   isClusterDisplayed,
@@ -46,121 +29,17 @@ import {
 } from '@shared/utils'
 import type { Device } from 'usb'
 import type { IPhoneDriver } from '../IPhoneDriver'
+import { AaEventBridge } from './AaEventBridge'
 import { AaBluetoothSupervisor } from './aaBluetoothSupervisor'
 import { AOAP_LOOPBACK_HOST, AOAP_LOOPBACK_PORT } from './stack/aoap/constants'
-import { turnEventToManeuverType, turnSideToNaviCode } from './stack/channels/navManeuverMap'
 import {
   AAStack,
   type AAStackConfig,
-  type AudioChannelType,
   BUTTON_KEY,
-  type MediaPlaybackMetadata,
-  type MediaPlaybackStatus,
-  type NavigationDistanceUpdate,
-  type NavigationStatusUpdate,
-  type NavigationTurnUpdate,
   TOUCH_ACTION,
-  type TouchPointer,
-  type VideoCodec
+  type TouchPointer
 } from './stack/index'
 import { UsbAoapBridge } from './stack/transport/UsbAoapBridge'
-
-function buildVideoDataMessage(
-  buf: Buffer,
-  width: number,
-  height: number,
-  type: MessageType = MessageType.VideoData
-): VideoData {
-  const HEADER = 20
-  const data = Buffer.allocUnsafeSlow(HEADER + buf.length)
-  data.writeUInt32LE(width, 0)
-  data.writeUInt32LE(height, 4)
-  data.writeUInt32LE(0, 8) // flags
-  data.writeUInt32LE(buf.length, 12)
-  data.writeUInt32LE(0, 16) // unknown
-  buf.copy(data, HEADER)
-  const header = new MessageHeader(data.length, type)
-  return new VideoData(header, data)
-}
-
-const AUDIO_MAP: Record<AudioChannelType, { audioType: number; decodeType: number }> = {
-  media: { audioType: 3, decodeType: 4 },
-  speech: { audioType: 1, decodeType: 5 },
-  phone: { audioType: 2, decodeType: 5 }
-}
-
-function buildAudioDataMessage(buf: Buffer, channel: AudioChannelType): AudioData {
-  const { audioType, decodeType } = AUDIO_MAP[channel]
-  const HEADER = 12
-  const sampleBytes = buf.length - (buf.length % 2)
-  const data = Buffer.allocUnsafeSlow(HEADER + sampleBytes)
-  data.writeUInt32LE(decodeType, 0)
-  data.writeFloatLE(0, 4)
-  data.writeUInt32LE(audioType, 8)
-  buf.copy(data, HEADER, 0, sampleBytes)
-  const header = new MessageHeader(data.length, MessageType.AudioData)
-  return new AudioData(header, data)
-}
-
-function buildAudioCommandMessage(channel: AudioChannelType, command: AudioCommand): AudioData {
-  const { audioType, decodeType } = AUDIO_MAP[channel]
-  const HEADER = 12
-  const data = Buffer.allocUnsafeSlow(HEADER + 1)
-  data.writeUInt32LE(decodeType, 0)
-  data.writeFloatLE(0, 4)
-  data.writeUInt32LE(audioType, 8)
-  data.writeUInt8(command, HEADER)
-  const header = new MessageHeader(data.length, MessageType.AudioData)
-  return new AudioData(header, data)
-}
-
-function buildMediaJsonMessage(media: Record<string, unknown>): MetaData {
-  const json = JSON.stringify(media)
-  const payload = Buffer.from(json + '\0', 'utf8')
-  const data = Buffer.allocUnsafeSlow(4 + payload.length)
-  data.writeUInt32LE(MediaType.Data, 0)
-  payload.copy(data, 4)
-  const header = new MessageHeader(data.length, MessageType.MetaData)
-  return new MetaData(header, data)
-}
-
-function buildAlbumArtMessage(albumArt: Buffer): MetaData {
-  const data = Buffer.allocUnsafeSlow(4 + albumArt.length)
-  data.writeUInt32LE(MediaType.AlbumCover, 0)
-  albumArt.copy(data, 4)
-  const header = new MessageHeader(data.length, MessageType.MetaData)
-  return new MetaData(header, data)
-}
-
-function buildNaviJsonMessage(navi: Record<string, unknown>): MetaData {
-  const json = JSON.stringify(navi)
-  const payload = Buffer.from(json + '\0', 'utf8')
-  const data = Buffer.allocUnsafeSlow(4 + payload.length)
-  data.writeUInt32LE(NavigationMetaType.DashboardInfo, 0)
-  payload.copy(data, 4)
-  const header = new MessageHeader(data.length, MessageType.MetaData)
-  return new MetaData(header, data)
-}
-
-function buildNaviImageMessage(image: Buffer): MetaData {
-  const data = Buffer.allocUnsafeSlow(4 + image.length)
-  data.writeUInt32LE(NavigationMetaType.DashboardImage, 0)
-  image.copy(data, 4)
-  const header = new MessageHeader(data.length, MessageType.MetaData)
-  return new MetaData(header, data)
-}
-
-// Map an AA audio-channel start/stop transition to the corresponding LIVI
-function audioLifecycleCommand(channel: AudioChannelType, starting: boolean): AudioCommand {
-  switch (channel) {
-    case 'media':
-      return starting ? AudioCommand.AudioMediaStart : AudioCommand.AudioMediaStop
-    case 'speech':
-      return starting ? AudioCommand.AudioNaviStart : AudioCommand.AudioNaviStop
-    case 'phone':
-      return starting ? AudioCommand.AudioOutputStart : AudioCommand.AudioOutputStop
-  }
-}
 
 /**
  * Map a single-pointer TouchAction to PointerAction enum
@@ -211,12 +90,7 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
   private _mic: Microphone | null = null
   private _micActive = false
 
-  // Accumulating NaviBag — flushed via buildNaviJsonMessage on every patch.
-  private _naviBag: Record<string, unknown> = {}
-  private _naviActive = false
-  private _naviApp: string | undefined
-  private _videoFocusEmitted = false
-  private _clusterFocusEmitted = false
+  private _bridge: AaEventBridge | null = null
   private _hevcSupported = false
   private _vp9Supported = false
   private _av1Supported = false
@@ -406,211 +280,19 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     const aa = new AAStack(aaCfg)
     this._aa = aa
 
-    aa.on('connected', () => {
-      console.log('[aaDriver] AAStack connected → DongleReady + Plugged(AndroidAuto)')
-      const readyHdr = new MessageHeader(0, MessageType.Open)
-      this.emit('message', new DongleReady(readyHdr) as Message)
-      this._emitPlugged()
-    })
-
-    aa.on('disconnected', (reason?: string) => {
-      console.log(
-        `[aaDriver] AAStack disconnected (${reason ?? 'no reason'}) — supervisor stays up for retry`
-      )
-      // Drop any accumulated nav state so the next session starts fresh
-      this._naviBag = {}
-      this._naviActive = false
-      this._naviApp = undefined
-
-      if (this._videoFocusEmitted) {
-        this._emitCommand(CommandMapping.releaseVideoFocus)
-        this._videoFocusEmitted = false
-      }
-
-      const hdr = new MessageHeader(0, MessageType.Unplugged)
-      this.emit('message', new Unplugged(hdr) as Message)
-
-      // Watchdog recovery: tear down the bridge with a USB re-enum kick
-      if (reason === 'pre-RUNNING watchdog' && this._wiredBridge) {
-        const bridge = this._wiredBridge
+    this._bridge = new AaEventBridge(aa, aaCfg, {
+      emitMessage: (msg) => this.emit('message', msg),
+      emitCodec: (kind, codec) => this.emit(kind, codec),
+      startMic: (reason) => this._startMicCapture(reason),
+      stopMic: (reason) => this._stopMicCapture(reason),
+      consumeWiredBridge: () => {
+        const b = this._wiredBridge
         this._wiredBridge = null
-        console.log('[aaDriver] watchdog disconnect — forcing USB re-enumeration')
-        void (async () => {
-          try {
-            await bridge.forceReenum()
-          } catch (err) {
-            console.warn(`[aaDriver] watchdog forceReenum threw: ${(err as Error).message}`)
-          }
-          try {
-            await bridge.stop()
-          } catch (err) {
-            console.warn(`[aaDriver] watchdog bridge stop threw: ${(err as Error).message}`)
-          }
-        })()
-      }
+        return b
+      },
+      isClosed: () => this._closed
     })
-
-    // VideoFocusRequest(PROJECTED)
-    aa.on('video-focus-projected', () => {
-      this._videoFocusEmitted = true
-      this._emitCommand(CommandMapping.requestVideoFocus)
-    })
-
-    aa.on('cluster-video-focus-projected', () => {
-      this._clusterFocusEmitted = true
-      this._emitCommand(CommandMapping.requestClusterFocus)
-    })
-
-    aa.on('video-frame', (buf: Buffer, _ts: bigint) => {
-      if (!this._videoFocusEmitted) {
-        this._videoFocusEmitted = true
-        this._emitCommand(CommandMapping.requestVideoFocus)
-      }
-      const w = aaCfg.videoWidth ?? 1280
-      const h = aaCfg.videoHeight ?? 720
-      this.emit('message', buildVideoDataMessage(buf, w, h) as Message)
-    })
-
-    aa.on('cluster-video-frame', (buf: Buffer, _ts: bigint) => {
-      if (!this._clusterFocusEmitted) {
-        this._clusterFocusEmitted = true
-        this._emitCommand(CommandMapping.requestClusterFocus)
-      }
-      const w = aaCfg.videoWidth ?? 1280
-      const h = aaCfg.videoHeight ?? 720
-      this.emit(
-        'message',
-        buildVideoDataMessage(buf, w, h, MessageType.ClusterVideoData) as Message
-      )
-    })
-
-    aa.on('cluster-video-codec', (codec: VideoCodec) => {
-      console.log(`[aaDriver] cluster-video-codec=${codec} (phone selection)`)
-      this.emit('cluster-video-codec', codec)
-    })
-
-    aa.on('video-codec', (codec: VideoCodec) => {
-      console.log(`[aaDriver] video-codec=${codec} (phone selection)`)
-      this.emit('video-codec', codec)
-    })
-
-    aa.on(
-      'audio-frame',
-      (buf: Buffer, _ts: bigint, channel: AudioChannelType, _channelId: number) => {
-        this.emit('message', buildAudioDataMessage(buf, channel) as Message)
-      }
-    )
-
-    aa.on('audio-start', (channel: AudioChannelType, _channelId: number) => {
-      const cmd = audioLifecycleCommand(channel, true)
-      console.log(`[aaDriver] audio-start ${channel} → AudioCommand=${AudioCommand[cmd]}`)
-      this.emit('message', buildAudioCommandMessage(channel, cmd) as Message)
-    })
-
-    aa.on('audio-stop', (channel: AudioChannelType, _channelId: number) => {
-      const cmd = audioLifecycleCommand(channel, false)
-      console.log(`[aaDriver] audio-stop ${channel} → AudioCommand=${AudioCommand[cmd]}`)
-      this.emit('message', buildAudioCommandMessage(channel, cmd) as Message)
-    })
-
-    // Mic lifecycle: phone opens / closes its mic-input channel.
-    aa.on('mic-start', () => this._startMicCapture('mic-start'))
-    aa.on('mic-stop', () => this._stopMicCapture('mic-stop'))
-
-    // Voice-assist trigger: phone signals it expects mic input
-    aa.on('voice-session', (active: boolean) => {
-      if (active) this._startMicCapture('voice-session START')
-      else this._stopMicCapture('voice-session END')
-    })
-
-    // Phone asked HU to swap to its native (host) UI.
-    aa.on('host-ui-requested', () => {
-      console.log('[aaDriver] host-ui-requested → emitting Command(requestHostUI)')
-      const buf = Buffer.allocUnsafe(4)
-      buf.writeUInt32LE(CommandMapping.requestHostUI, 0)
-      const header = new MessageHeader(buf.length, MessageType.Command)
-      this.emit('message', new Command(header, buf) as Message)
-    })
-
-    aa.on('media-metadata', (m: MediaPlaybackMetadata) => {
-      // MediaPlaybackMetadata (track info) → LIVI MediaData JSON keys.
-      const media: Record<string, unknown> = {}
-      if (m.song !== undefined) media.MediaSongName = m.song
-      if (m.artist !== undefined) media.MediaArtistName = m.artist
-      if (m.album !== undefined) media.MediaAlbumName = m.album
-      if (m.durationSeconds !== undefined) media.MediaSongDuration = m.durationSeconds * 1000
-      if (Object.keys(media).length > 0) {
-        this.emit('message', buildMediaJsonMessage(media) as Message)
-      }
-      if (m.albumArt && m.albumArt.length > 0) {
-        this.emit('message', buildAlbumArtMessage(m.albumArt) as Message)
-      }
-    })
-
-    aa.on('media-status', (s: MediaPlaybackStatus) => {
-      // MediaPlaybackStatus (per-tick playback state)
-      const playStatus = s.state === 'playing' ? 1 : 0
-      const media: Record<string, unknown> = { MediaPlayStatus: playStatus }
-      if (s.mediaSource !== undefined) media.MediaAPPName = s.mediaSource
-      // ms — see comment in media-metadata listener.
-      if (s.playbackSeconds !== undefined) media.MediaSongPlayTime = s.playbackSeconds * 1000
-      this.emit('message', buildMediaJsonMessage(media) as Message)
-    })
-
-    aa.on('nav-start', () => {
-      this._naviApp = 'Google Maps'
-      this._naviActive = true
-      this._publishNavi({ NaviStatus: 1, NaviAPPName: this._naviApp })
-    })
-
-    aa.on('nav-stop', () => {
-      this._naviActive = false
-      this._publishNavi({ NaviStatus: 0 })
-    })
-
-    aa.on('nav-status', (s: NavigationStatusUpdate) => {
-      this._naviActive = s.state === 'active' || s.state === 'rerouting'
-      this._publishNavi({ NaviStatus: this._naviActive ? 1 : 0 })
-    })
-
-    aa.on('nav-turn', (t: NavigationTurnUpdate) => {
-      const patch: Record<string, unknown> = {}
-      if (t.road !== undefined) patch.NaviRoadName = t.road
-      const maneuver = turnEventToManeuverType(t.event, t.turnSide)
-      if (maneuver !== undefined) patch.NaviManeuverType = maneuver
-      const side = turnSideToNaviCode(t.turnSide)
-      if (side !== undefined) patch.NaviTurnSide = side
-      if (t.turnAngle !== undefined) patch.NaviTurnAngle = t.turnAngle
-      if (t.turnNumber !== undefined) patch.NaviRoundaboutExitNumber = t.turnNumber
-      if (Object.keys(patch).length > 0) this._publishNavi(patch)
-      // Turn icon bitmap — forwarded verbatim as DashboardImage.
-      if (t.image && t.image.length > 0) {
-        this.emit('message', buildNaviImageMessage(t.image) as Message)
-      }
-    })
-
-    aa.on('nav-distance', (d: NavigationDistanceUpdate) => {
-      const patch: Record<string, unknown> = {
-        NaviDistanceToDestination: d.distanceMeters,
-        NaviTimeToDestination: d.timeToTurnSeconds
-      }
-      if (d.displayDistanceE3 !== undefined) {
-        patch.NaviDisplayDistanceE3 = d.displayDistanceE3
-      }
-      if (d.displayUnit !== undefined) {
-        patch.NaviDisplayDistanceUnit = d.displayUnit
-      }
-      this._publishNavi(patch)
-    })
-
-    aa.on('error', (err: Error) => {
-      // Suppress error spam while we're tearing down
-      if (this._closed) {
-        console.debug(`[aaDriver] suppressed AAStack error during close: ${err.message}`)
-        return
-      }
-      console.warn(`[aaDriver] AAStack transient error: ${err.message}`)
-    })
+    this._bridge.wire()
 
     if (wired) {
       const ok = await this._startWiredBridge(aa)
@@ -680,29 +362,6 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       this._wiredBridge = null
       return false
     }
-  }
-
-  private _publishNavi(patch: Record<string, unknown>): void {
-    Object.assign(this._naviBag, patch)
-    if (this._naviApp !== undefined && this._naviBag.NaviAPPName === undefined) {
-      this._naviBag.NaviAPPName = this._naviApp
-    }
-    this.emit('message', buildNaviJsonMessage(this._naviBag) as Message)
-  }
-
-  private _emitPlugged(): void {
-    const pluggedBuf = Buffer.allocUnsafe(8)
-    pluggedBuf.writeUInt32LE(PhoneType.AndroidAuto, 0)
-    pluggedBuf.writeUInt32LE(1, 4) // wifi available
-    const pluggedHdr = new MessageHeader(pluggedBuf.length, MessageType.Plugged)
-    this.emit('message', new Plugged(pluggedHdr, pluggedBuf) as Message)
-  }
-
-  private _emitCommand(value: CommandMapping): void {
-    const buf = Buffer.allocUnsafe(4)
-    buf.writeUInt32LE(value, 0)
-    const header = new MessageHeader(buf.length, MessageType.Command)
-    this.emit('message', new Command(header, buf) as Message)
   }
 
   // ── Vehicle-data push API ──────────────────────────────────────────────────
@@ -815,6 +474,7 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     }
     this._aa = null
     this._aaCfg = null
+    this._bridge = null
 
     try {
       this._wiredClientSocket?.destroy()
@@ -967,7 +627,7 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       switch (cmd) {
         case CommandMapping.frame:
         case CommandMapping.requestVideoFocus:
-          this._emitPlugged()
+          this._bridge?.emitPlugged()
           this._aa.requestKeyframe()
           setTimeout(() => this._aa?.requestKeyframe(), 500)
           return true
