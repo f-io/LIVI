@@ -64,7 +64,8 @@ runs:
             { encoding: 'utf8' }
           );
           process.stdout.write((out || 'unknown').trim());
-        " || echo "unknown")"
+        " 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | tail -n 1)"
+        CHROMIUM_VER="${CHROMIUM_VER:-unknown}"
 
         ELECTRON_DATE_DE="$(node -e "
           const cp = require('child_process');
