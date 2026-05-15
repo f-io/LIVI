@@ -345,8 +345,10 @@ describe('Session — pre-TLS data dispatch (raw parser)', () => {
 
   test('routes SSL_HANDSHAKE bytes through the TLS bridge', async () => {
     const { session } = makeSession()
-    const injectBytes = jest.fn()
-    ;(session as unknown as { _bridge?: { injectBytes: jest.Mock } })._bridge = { injectBytes }
+    const injectHandshakeBytes = jest.fn()
+    ;(session as unknown as { _tls?: { injectHandshakeBytes: jest.Mock } })._tls = {
+      injectHandshakeBytes
+    }
     await (
       session as unknown as { _handleRawFrame: (f: unknown) => Promise<void> }
     )._handleRawFrame({
@@ -356,7 +358,7 @@ describe('Session — pre-TLS data dispatch (raw parser)', () => {
       payload: Buffer.from([1, 2, 3]),
       rawPayload: Buffer.alloc(4)
     })
-    expect(injectBytes).toHaveBeenCalledWith(Buffer.from([1, 2, 3]))
+    expect(injectHandshakeBytes).toHaveBeenCalledWith(Buffer.from([1, 2, 3]))
   })
 })
 
@@ -456,8 +458,8 @@ describe('Session — _stripHeaderAndInjectTls header parsing', () => {
 
   test('encrypted frames are pushed into the TLS bridge', () => {
     const { session } = makeSession()
-    const injectBytes = jest.fn()
-    ;(session as unknown as { _bridge?: { injectBytes: jest.Mock } })._bridge = { injectBytes }
+    const injectEncrypted = jest.fn()
+    ;(session as unknown as { _tls?: { injectEncrypted: jest.Mock } })._tls = { injectEncrypted }
 
     // bit 3 (0x08) set marks the frame as encrypted
     const buf = Buffer.alloc(4 + 2)
@@ -468,7 +470,7 @@ describe('Session — _stripHeaderAndInjectTls header parsing', () => {
     ;(
       session as unknown as { _stripHeaderAndInjectTls: (b: Buffer) => void }
     )._stripHeaderAndInjectTls(buf)
-    expect(injectBytes).toHaveBeenCalled()
+    expect(injectEncrypted).toHaveBeenCalled()
   })
 })
 

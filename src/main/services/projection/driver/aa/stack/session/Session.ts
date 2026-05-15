@@ -6,7 +6,6 @@
 
 import { EventEmitter } from 'node:events'
 import * as net from 'node:net'
-import * as tls from 'node:tls'
 import { DEBUG, TRACE } from '@main/constants'
 import { AudioChannel, type AudioChannelType } from '../channels/AudioChannel.js'
 import { InputChannel, type TouchPointer } from '../channels/InputChannel.js'
@@ -42,12 +41,11 @@ import {
   VIDEO_FPS,
   VIDEO_RESOLUTION
 } from '../constants.js'
-import { HU_CERT_PEM, HU_KEY_PEM } from '../crypto/cert.js'
-import { createTlsClient, TlsBridge } from '../crypto/TlsBridge.js'
 import { encodeFrame, FrameParser, type RawFrame } from '../frame/codec.js'
 import { decode, encode, loadProtos, type ProtoTypes } from '../proto/index.js'
 import { ControlChannel } from './ControlChannel.js'
 import { buildServiceDiscoveryResponse } from './ServiceDiscoveryBuilder.js'
+import { SessionTls } from './SessionTls.js'
 
 /** Per-frame chatter is suppressed for these channels under DEBUG=1.
  *  Set TRACE=1 to see them anyway. SENSOR is included because the phone
@@ -138,15 +136,10 @@ export class Session extends EventEmitter {
 
   private _state: State = State.INIT
   private _rawParser = new FrameParser()
-  private _bridge!: TlsBridge
-  private _tlsSocket!: tls.TLSSocket
+  private _tls: SessionTls | null = null
   private _pingTimer: ReturnType<typeof setInterval> | null = null
   private _lastPongAt = 0
   private static readonly PING_TIMEOUT_MS = 5_000
-  private _pendingChannelId = 0
-  private _pendingFlags = 0
-  private _writeChain: Promise<void> = Promise.resolve()
-  private _channelQueue: Array<{ channelId: number; flags: number }> = []
   private _proto!: ProtoTypes
   private _control!: ControlChannel
   private _video!: VideoChannel
@@ -252,11 +245,6 @@ export class Session extends EventEmitter {
 
   private _tlsBuf = Buffer.allocUnsafe(0)
 
-  /**
-   * Per-channel cleartext reassembly for multi-fragment encrypted messages.
-   */
-  private _tlsCleartextFragments = new Map<number, { parts: Buffer[]; flags: number }>()
-
   private _stripHeaderAndInjectTls(chunk: Buffer): void {
     this._tlsBuf = Buffer.concat([this._tlsBuf, chunk])
 
@@ -303,8 +291,7 @@ export class Session extends EventEmitter {
           `[Session] TLS inject ch=${channelId} flags=0x${flags.toString(16)} record=${payloadSize}B`
         )
       }
-      this._channelQueue.push({ channelId, flags })
-      this._bridge.injectBytes(rawPayload)
+      this._tls?.injectEncrypted(channelId, flags, rawPayload)
     }
   }
 
@@ -321,19 +308,18 @@ export class Session extends EventEmitter {
       case CTRL_MSG.SSL_HANDSHAKE:
         // Feed TLS handshake bytes into the TLS engine
         if (DEBUG) console.log(`[Session] TLS ← phone: ${payload.length} bytes (SSL_HANDSHAKE)`)
-        if (this._bridge) this._bridge.injectBytes(payload)
+        this._tls?.injectHandshakeBytes(payload)
         break
 
       default:
         // Encrypted frame piggy-backed on the same TCP segment as TLS Finished
-        if (this._bridge && this._tlsSocket && (frame.flags & 0x08) !== 0) {
+        if (this._tls && (frame.flags & 0x08) !== 0) {
           if (DEBUG) {
             console.log(
               `[Session] pre-TLS encrypted frame ch=${frame.channelId} flags=0x${frame.flags.toString(16)} — routing to TLS`
             )
           }
-          this._channelQueue.push({ channelId: frame.channelId, flags: frame.flags })
-          this._bridge.injectBytes(frame.rawPayload)
+          this._tls.injectEncrypted(frame.channelId, frame.flags, frame.rawPayload)
         } else {
           if (DEBUG) {
             console.log(
@@ -931,7 +917,7 @@ export class Session extends EventEmitter {
     let writeTimer: NodeJS.Timeout | null = null
     try {
       await Promise.race([
-        this._writeChain,
+        this._tls?.drain() ?? Promise.resolve(),
         new Promise<void>((resolve) => {
           writeTimer = setTimeout(resolve, 500)
         })
@@ -978,149 +964,16 @@ export class Session extends EventEmitter {
   }
 
   private async _startTls(): Promise<void> {
-    const hsOutBuf: Buffer[] = []
-    let hsFlushScheduled = false
-    const flushHs = (): void => {
-      hsFlushScheduled = false
-      if (hsOutBuf.length === 0) return
-      const all = Buffer.concat(hsOutBuf)
-      const n = hsOutBuf.length
-      hsOutBuf.length = 0
-      if (DEBUG) {
-        const note = n > 1 ? ` coalesced from ${n} chunks` : ''
-        console.log(
-          `[Session] TLS → phone: ${all.length}B (SSL_HANDSHAKE${note}): ${all.toString('hex')}`
-        )
-      }
-      const frame = encodeFrame(CH.CONTROL, FRAME_FLAGS.PLAINTEXT, CTRL_MSG.SSL_HANDSHAKE, all)
-      this._sock.write(frame)
-    }
-
-    const { tlsSocket, bridge } = createTlsClient(
-      HU_CERT_PEM,
-      HU_KEY_PEM,
-      // Handshake: wrap in SSL_HANDSHAKE frames
-      (tlsBytes) => {
-        if (this._state === State.TLS_HANDSHAKE) {
-          hsOutBuf.push(tlsBytes)
-          if (!hsFlushScheduled) {
-            hsFlushScheduled = true
-            setImmediate(flushHs)
-          }
-        } else {
-          const header = Buffer.allocUnsafe(4)
-          header.writeUInt8(this._pendingChannelId, 0)
-          header.writeUInt8(this._pendingFlags, 1)
-          header.writeUInt16BE(tlsBytes.length, 2)
-          if (DEBUG && (TRACE || !isFrameChannel(this._pendingChannelId))) {
-            console.log(
-              `[Session] sock→ ENC ch=${this._pendingChannelId} flags=0x${this._pendingFlags.toString(16)} ${tlsBytes.length}B`
-            )
-          }
-          this._sock.write(Buffer.concat([header, tlsBytes]))
-        }
-      }
-    )
-
-    this._bridge = bridge
-    this._tlsSocket = tlsSocket
-
-    // Cleartext per decrypted AA-frame record
-    tlsSocket.on('data', (chunk: Buffer) => {
-      const ctx = this._channelQueue.shift()
-      if (!ctx) {
-        if (DEBUG)
-          console.warn(`[Session] TLS data (${chunk.length}B) without channel ctx — dropping`)
-        return
-      }
-      const isFirst = (ctx.flags & 0x01) !== 0
-      const isLast = (ctx.flags & 0x02) !== 0
-
-      // BULK — single-frame message, emit immediately
-      if (isFirst && isLast) {
-        if (chunk.length < 2) {
-          if (DEBUG) console.warn(`[Session] TLS decrypted payload too short (${chunk.length}B)`)
-          return
-        }
-        const msgId = chunk.readUInt16BE(0)
-        const payload = chunk.subarray(2)
-        if (
-          DEBUG &&
-          (TRACE || (!isFrameChannel(ctx.channelId) && !isPingPong(ctx.channelId, msgId)))
-        ) {
-          console.log(
-            `[Session] ← ch=${ctx.channelId} msgId=0x${msgId.toString(16).padStart(4, '0')} len=${payload.length}`
-          )
-        }
-        this._handleDecryptedMessage(ctx.channelId, ctx.flags, msgId, payload)
-        return
-      }
-
-      // FIRST — start cleartext accumulator for this channel
-      if (isFirst && !isLast) {
-        this._tlsCleartextFragments.set(ctx.channelId, { parts: [chunk], flags: ctx.flags })
-        if (DEBUG && (TRACE || !isFrameChannel(ctx.channelId))) {
-          console.log(
-            `[Session] TLS cleartext frag-start ch=${ctx.channelId} have=${chunk.length}B`
-          )
-        }
-        return
-      }
-
-      // MIDDLE / LAST — append cleartext
-      const state = this._tlsCleartextFragments.get(ctx.channelId)
-      if (!state) {
-        if (DEBUG) {
-          console.warn(
-            `[Session] ch=${ctx.channelId} cleartext continuation without first fragment — dropping`
-          )
-        }
-        return
-      }
-      state.parts.push(chunk)
-
-      if (!isLast) {
-        if (DEBUG && (TRACE || !isFrameChannel(ctx.channelId))) {
-          const have = state.parts.reduce((n, p) => n + p.length, 0)
-          console.log(`[Session] TLS cleartext frag-cont  ch=${ctx.channelId} have=${have}B`)
-        }
-        return
-      }
-
-      // LAST — concat all cleartext fragments and emit
-      this._tlsCleartextFragments.delete(ctx.channelId)
-      const full = Buffer.concat(state.parts)
-      if (full.length < 2) {
-        if (DEBUG) {
-          console.warn(
-            `[Session] ch=${ctx.channelId} reassembled cleartext too short (${full.length}B)`
-          )
-        }
-        return
-      }
-      const msgId = full.readUInt16BE(0)
-      const payload = full.subarray(2)
-      if (DEBUG && (TRACE || !isFrameChannel(ctx.channelId))) {
-        console.log(
-          `[Session] ← ch=${ctx.channelId} msgId=0x${msgId.toString(16).padStart(4, '0')} len=${payload.length} (reassembled from ${state.parts.length} fragments)`
-        )
-      }
-      // Use FIRST fragment's flags — only first/last bits differ across fragments
-      this._handleDecryptedMessage(ctx.channelId, state.flags, msgId, payload)
+    this._tls = new SessionTls({
+      writeRaw: (frame) => this._sock.write(frame),
+      onDecryptedMessage: (ch, fl, mid, p) => this._handleDecryptedMessage(ch, fl, mid, p),
+      onSecureConnect: () => {
+        this._transition(State.AUTH)
+        void this._postTlsSetup()
+      },
+      onError: (err) => this.emit('error', err),
+      isHandshakePhase: () => this._state === State.TLS_HANDSHAKE
     })
-
-    tlsSocket.on('error', (err) => {
-      if (DEBUG) console.error('[Session] TLS error:', err.message)
-      this.emit('error', err)
-    })
-
-    tlsSocket.on('secureConnect', () => {
-      if (DEBUG) console.log('[Session] TLS handshake complete')
-      this._transition(State.AUTH)
-      void this._postTlsSetup()
-    })
-
-    // tls.connect() starts the handshake automatically.
   }
 
   private async _postTlsSetup(): Promise<void> {
@@ -1353,7 +1206,7 @@ export class Session extends EventEmitter {
       return
     }
 
-    if (!this._tlsSocket || this._state < State.AUTH) {
+    if (!this._tls || this._state < State.AUTH) {
       if (DEBUG) console.warn('[Session] _sendAA: TLS not ready for encrypted frame')
       return
     }
@@ -1361,20 +1214,7 @@ export class Session extends EventEmitter {
     const msgIdBuf = Buffer.allocUnsafe(2)
     msgIdBuf.writeUInt16BE(msgId, 0)
     const cleartext = Buffer.concat([msgIdBuf, data])
-
-    // Serialise
-    const sock = this._tlsSocket
-    this._writeChain = this._writeChain.then(
-      () =>
-        new Promise<void>((resolve) => {
-          this._pendingChannelId = channelId
-          this._pendingFlags = flags
-          sock.write(cleartext, () => resolve())
-        })
-    )
-    this._writeChain.catch((err) => {
-      if (DEBUG) console.warn('[Session] _writeChain rejected:', err)
-    })
+    this._tls.sendEncrypted(channelId, flags, cleartext)
   }
 
   private _sendEncrypted(channelId: number, flags: number, msgId: number, data: Buffer): void {
