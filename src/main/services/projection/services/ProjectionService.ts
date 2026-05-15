@@ -10,6 +10,7 @@ import { app, WebContents } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { type Device, usb, WebUSBDevice } from 'usb'
+import { StatusFileWriter } from '../../status/StatusFileWriter'
 import { AaBtSockClient } from '../driver/aa/AaBtSockClient'
 import { AaDriver } from '../driver/aa/aaDriver'
 import type { IPhoneDriver } from '../driver/IPhoneDriver'
@@ -124,6 +125,7 @@ export class ProjectionService {
   private firmware = new FirmwareUpdateService()
   private readonly aaBtSock = new AaBtSockClient()
   private aaBtSubscription: { close: () => void } | null = null
+  private readonly statusFile = new StatusFileWriter()
 
   private readonly onAaConnected = (): void => {
     this.refreshAaBtPairedList().catch(() => {})
@@ -331,6 +333,10 @@ export class ProjectionService {
         }, phoneTypeConfig.frameInterval)
       }
       this.emitProjectionEvent({ type: 'plugged', phoneType: msg.phoneType })
+      this.statusFile.setProjection(
+        this.getActiveTransport(),
+        msg.phoneType === PhoneType.CarPlay ? 'CarPlay' : 'AndroidAuto'
+      )
       // Hydration
       for (const fn of this.pluggedHooks) {
         try {
@@ -352,6 +358,8 @@ export class ProjectionService {
       }
 
       this.emitProjectionEvent({ type: 'unplugged' })
+      this.statusFile.setProjection(null, null)
+      this.statusFile.setStreaming(false)
       this.emitProjectionEvent({
         type: 'dongleInfo',
         payload: {
@@ -453,6 +461,7 @@ export class ProjectionService {
         this.firstFrameLogged = true
         const dt = Date.now() - APP_START_TS
         console.log(`[Perf] AppStart→FirstFrame: ${dt} ms`)
+        this.statusFile.setStreaming(true)
       }
 
       const w = msg.width
@@ -472,6 +481,7 @@ export class ProjectionService {
       this.audio.handleAudioData(msg)
 
       if (msg.command != null) {
+        this.statusFile.applyAudioCommand(msg.command)
         if (this.lastPluggedPhoneType === PhoneType.AndroidAuto) {
           if (msg.command === 10) {
             this.aaPlaybackInferred = 1
@@ -871,10 +881,12 @@ export class ProjectionService {
 
   public markDongleConnected(connected: boolean): void {
     this.arbiter.markDongleConnected(connected)
+    this.statusFile.setUsbState(this.arbiter.isPhoneConnected(), connected)
   }
 
   public markPhoneConnected(connected: boolean, device?: Device): void {
     this.arbiter.markPhoneConnected(connected, device)
+    this.statusFile.setUsbState(connected, this.arbiter.getSnapshot().dongleDetected)
   }
 
   public getWiredPhoneDevice(): Device | null {
