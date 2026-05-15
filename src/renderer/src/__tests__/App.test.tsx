@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import App from '../App'
 import { AppContext } from '../context'
 
@@ -56,20 +56,31 @@ jest.mock('../hooks', () => ({
   useKeyDown: () => useKeyDownHandler
 }))
 
+const liviState: any = {
+  settings: {
+    startPage: 'media',
+    language: 'en',
+    bindings: { back: 'KeyB', selectDown: 'Enter' }
+  },
+  saveSettings: jest.fn()
+}
+const statusState: any = {
+  setCameraFound: jest.fn(),
+  reverse: false,
+  cameraFound: false
+}
+
 jest.mock('../store/store', () => ({
-  useLiviStore: (selector: (s: any) => unknown) =>
-    selector({
-      settings: {
-        startPage: 'media',
-        language: 'en',
-        bindings: { back: 'KeyB', selectDown: 'Enter' }
-      },
-      saveSettings: jest.fn()
-    }),
-  useStatusStore: (selector: (s: any) => unknown) =>
-    selector({
-      setCameraFound: jest.fn()
-    })
+  useLiviStore: (selector: (s: any) => unknown) => selector(liviState),
+  useStatusStore: (selector: (s: any) => unknown) => selector(statusState)
+}))
+
+jest.mock('../utils/broadcastMediaKey', () => ({
+  broadcastMediaKey: jest.fn()
+}))
+
+jest.mock('../utils/windowRole', () => ({
+  getWindowRole: jest.fn(() => 'main')
 }))
 
 jest.mock('i18next', () => ({
@@ -85,12 +96,21 @@ describe('App', () => {
     unlistenForEvents.mockReset()
     focusFirstInMainMock.mockReset()
     mockPathname = '/'
+    liviState.settings = {
+      startPage: 'media',
+      language: 'en',
+      bindings: { back: 'KeyB', selectDown: 'Enter' }
+    }
+    liviState.saveSettings = jest.fn()
+    statusState.reverse = false
+    statusState.cameraFound = false
     ;(window as any).projection = {
       usb: {
         listenForEvents,
         unlistenForEvents
       }
     }
+    ;(window as any).app = undefined
   })
 
   test('does not redirect from configured start page when current route is not home', () => {
@@ -290,5 +310,158 @@ describe('App', () => {
         current: screen.getByTestId('main-slot')
       })
     )
+  })
+
+  test('window.app.onMediaKey forwards incoming commands to a car-media-key event', () => {
+    let captured: ((cmd: string) => void) | null = null
+    ;(window as any).app = {
+      onMediaKey: jest.fn((cb: (c: string) => void) => {
+        captured = cb
+        return () => {}
+      })
+    }
+    render(<App />)
+    expect((window as any).app.onMediaKey).toHaveBeenCalled()
+    const listener = jest.fn()
+    window.addEventListener('car-media-key', listener as never)
+    captured!('next')
+    expect(listener).toHaveBeenCalled()
+    window.removeEventListener('car-media-key', listener as never)
+  })
+
+  test('mounts cleanly when window.app is missing', () => {
+    expect(() => render(<App />)).not.toThrow()
+  })
+
+  test('PTT keyup after keydown fires voiceAssistantRelease', () => {
+    liviState.settings = {
+      ...liviState.settings,
+      bindings: { ...liviState.settings.bindings, voiceAssistant: 'KeyV' }
+    }
+    const { broadcastMediaKey } = jest.requireMock('../utils/broadcastMediaKey')
+    render(<App />)
+    act(() => {
+      fireEvent.keyDown(document, { code: 'KeyV' })
+    })
+    broadcastMediaKey.mockClear()
+    act(() => {
+      fireEvent.keyUp(document, { code: 'KeyV' })
+    })
+    expect(broadcastMediaKey).toHaveBeenCalledWith('voiceAssistantRelease')
+  })
+
+  test('PTT repeat keydown does not arm a release on a fresh press', () => {
+    liviState.settings = {
+      ...liviState.settings,
+      bindings: { ...liviState.settings.bindings, voiceAssistant: 'KeyV' }
+    }
+    const { broadcastMediaKey } = jest.requireMock('../utils/broadcastMediaKey')
+    render(<App />)
+    // Only repeat keydowns — never armed → keyup is a no-op
+    fireEvent.keyDown(document, { code: 'KeyV', repeat: true })
+    broadcastMediaKey.mockClear()
+    fireEvent.keyUp(document, { code: 'KeyV' })
+    expect(broadcastMediaKey).not.toHaveBeenCalled()
+  })
+
+  test('PTT release fires on window blur after a press', () => {
+    liviState.settings = {
+      ...liviState.settings,
+      bindings: { ...liviState.settings.bindings, voiceAssistant: 'KeyV' }
+    }
+    const { broadcastMediaKey } = jest.requireMock('../utils/broadcastMediaKey')
+    render(<App />)
+    act(() => {
+      fireEvent.keyDown(document, { code: 'KeyV' })
+    })
+    broadcastMediaKey.mockClear()
+    act(() => {
+      window.dispatchEvent(new Event('blur'))
+    })
+    expect(broadcastMediaKey).toHaveBeenCalledWith('voiceAssistantRelease')
+  })
+
+  test('PTT release fires when document goes hidden', () => {
+    liviState.settings = {
+      ...liviState.settings,
+      bindings: { ...liviState.settings.bindings, voiceAssistant: 'KeyV' }
+    }
+    const { broadcastMediaKey } = jest.requireMock('../utils/broadcastMediaKey')
+    render(<App />)
+    act(() => {
+      fireEvent.keyDown(document, { code: 'KeyV' })
+    })
+    broadcastMediaKey.mockClear()
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'hidden'
+    })
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(broadcastMediaKey).toHaveBeenCalledWith('voiceAssistantRelease')
+  })
+
+  test('reverse + camera ready auto-switches to /camera', () => {
+    liviState.settings = {
+      ...liviState.settings,
+      autoSwitchOnReverse: true,
+      cameraId: 'cam-1',
+      camera: { main: true }
+    }
+    statusState.reverse = true
+    statusState.cameraFound = true
+    mockPathname = '/media'
+    render(<App />)
+    expect(navigateMock).toHaveBeenCalledWith('/camera')
+  })
+
+  test('does not auto-switch when autoSwitchOnReverse is off', () => {
+    liviState.settings = {
+      ...liviState.settings,
+      autoSwitchOnReverse: false,
+      cameraId: 'cam-1',
+      camera: { main: true }
+    }
+    statusState.reverse = true
+    statusState.cameraFound = true
+    mockPathname = '/media'
+    render(<App />)
+    expect(navigateMock).not.toHaveBeenCalledWith('/camera')
+  })
+
+  test('does not auto-switch when the camera tab is not enabled for the role', () => {
+    liviState.settings = {
+      ...liviState.settings,
+      autoSwitchOnReverse: true,
+      cameraId: 'cam-1',
+      camera: { main: false }
+    }
+    statusState.reverse = true
+    statusState.cameraFound = true
+    mockPathname = '/media'
+    render(<App />)
+    expect(navigateMock).not.toHaveBeenCalledWith('/camera')
+  })
+
+  test('reverse off after an auto-switch navigates back to the prior route', () => {
+    liviState.settings = {
+      ...liviState.settings,
+      autoSwitchOnReverse: true,
+      cameraId: 'cam-1',
+      camera: { main: true }
+    }
+    statusState.reverse = true
+    statusState.cameraFound = true
+    mockPathname = '/media'
+    const { rerender } = render(<App />)
+    expect(navigateMock).toHaveBeenCalledWith('/camera')
+
+    // Pretend the router has actually moved us to /camera, then reverse drops
+    mockPathname = '/camera'
+    statusState.reverse = false
+    navigateMock.mockClear()
+    rerender(<App />)
+    expect(navigateMock).toHaveBeenCalledWith('/media')
   })
 })

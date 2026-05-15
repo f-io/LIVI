@@ -7,6 +7,20 @@ const handleFieldChange = jest.fn()
 const restartMock = jest.fn()
 const applyBtList = jest.fn()
 
+const statusState = { isDongleConnected: true, isAaActive: false }
+const liviState = {
+  settings: { some: 'settings', aa: false } as Record<string, unknown>,
+  bluetoothPairedDirty: false,
+  applyBluetoothPairedList: applyBtList
+}
+const smartState = {
+  state: { audio: { mute: false } } as unknown,
+  handleFieldChange,
+  needsRestart: false as boolean,
+  restart: restartMock,
+  requestRestart: jest.fn()
+}
+
 jest.mock('react-router', () => ({
   useNavigate: () => navigateMock,
   useParams: () => ({ '*': 'audio' })
@@ -17,23 +31,12 @@ jest.mock('react-i18next', () => ({
 }))
 
 jest.mock('@store/store', () => ({
-  useStatusStore: (selector: (s: any) => unknown) => selector({ isDongleConnected: true }),
-  useLiviStore: (selector: (s: any) => unknown) =>
-    selector({
-      settings: { some: 'settings' },
-      bluetoothPairedDirty: false,
-      applyBluetoothPairedList: applyBtList
-    })
+  useStatusStore: (selector: (s: any) => unknown) => selector(statusState),
+  useLiviStore: (selector: (s: any) => unknown) => selector(liviState)
 }))
 
 jest.mock('../hooks/useSmartSettingsFromSchema', () => ({
-  useSmartSettingsFromSchema: () => ({
-    state: { audio: { mute: false } },
-    handleFieldChange,
-    needsRestart: false,
-    restart: restartMock,
-    requestRestart: jest.fn()
-  })
+  useSmartSettingsFromSchema: () => smartState
 }))
 
 jest.mock('../utils', () => ({
@@ -51,11 +54,27 @@ jest.mock('../components', () => ({
 }))
 
 jest.mock('../components/SettingsFieldPage', () => ({
-  SettingsFieldPage: () => <div data-testid="field-page" />
+  SettingsFieldPage: ({ onChange }: { onChange: (v: unknown) => void }) => (
+    <button data-testid="field-page" onClick={() => onChange('next-page-value')} />
+  )
 }))
 
 jest.mock('../components/SettingsFieldRow', () => ({
-  SettingsFieldRow: () => <div data-testid="field-row" />
+  SettingsFieldRow: ({
+    onChange,
+    onClick,
+    onItemNavigate
+  }: {
+    onChange: (v: unknown) => void
+    onClick?: () => void
+    onItemNavigate: (s: string) => void
+  }) => (
+    <div data-testid="field-row">
+      <button data-testid="field-row-change" onClick={() => onChange('next')} />
+      <button data-testid="field-row-click" onClick={() => onClick?.()} disabled={!onClick} />
+      <button data-testid="field-row-navigate" onClick={() => onItemNavigate('child')} />
+    </div>
+  )
 }))
 
 jest.mock('../../../layouts', () => ({
@@ -74,6 +93,12 @@ describe('SettingsPage', () => {
     navigateMock.mockReset()
     restartMock.mockReset()
     applyBtList.mockReset()
+    handleFieldChange.mockReset()
+    statusState.isDongleConnected = true
+    statusState.isAaActive = false
+    liviState.settings = { some: 'settings', aa: false }
+    liviState.bluetoothPairedDirty = false
+    smartState.needsRestart = false
   })
 
   test('returns null when node is not found', () => {
@@ -113,5 +138,98 @@ describe('SettingsPage', () => {
 
     fireEvent.click(screen.getByTestId('stack-item'))
     expect(navigateMock).toHaveBeenCalledWith('advanced')
+  })
+
+  test('hidden route children are not rendered', () => {
+    mockNode = {
+      type: 'route',
+      label: 'Audio',
+      children: [
+        { type: 'route', route: 'gone', label: 'Hidden', path: '', hidden: true },
+        { type: 'route', route: 'shown', label: 'Shown', path: '' }
+      ]
+    }
+    render(<SettingsPage />)
+    const items = screen.getAllByTestId('stack-item')
+    expect(items).toHaveLength(1)
+    expect(items[0]).toHaveTextContent('Shown')
+  })
+
+  test('page field passes onChange through to handleFieldChange', () => {
+    mockNode = { type: 'string', label: 'Name', path: 'name', page: { title: 'Name' } }
+    render(<SettingsPage />)
+    fireEvent.click(screen.getByTestId('field-page'))
+    expect(handleFieldChange).toHaveBeenCalledWith('name', 'next-page-value')
+  })
+
+  test('field row click navigates to the child path when the child has a page', () => {
+    mockNode = {
+      type: 'route',
+      label: 'Audio',
+      children: [{ type: 'string', label: 'Field', path: 'field', page: { title: 'X' } }]
+    }
+    render(<SettingsPage />)
+    fireEvent.click(screen.getByTestId('field-row-change'))
+    expect(handleFieldChange).toHaveBeenCalledWith('field', 'next')
+
+    fireEvent.click(screen.getByTestId('field-row-click'))
+    expect(navigateMock).toHaveBeenCalledWith('field')
+
+    fireEvent.click(screen.getByTestId('field-row-navigate'))
+    expect(navigateMock).toHaveBeenCalledWith('child')
+  })
+
+  test('custom child forwards onChange to handleFieldChange', () => {
+    let captured: ((v: unknown) => void) | null = null
+    const CustomCmp = (props: { onChange: (v: unknown) => void }) => {
+      captured = props.onChange
+      return <div data-testid="custom" />
+    }
+    mockNode = {
+      type: 'route',
+      label: 'Audio',
+      children: [{ type: 'custom', label: 'Custom', path: 'cx', component: CustomCmp }]
+    }
+    render(<SettingsPage />)
+    captured!('changed')
+    expect(handleFieldChange).toHaveBeenCalledWith('cx', 'changed')
+  })
+
+  test('handleRestart no-ops when neither dongle nor AA is connected', () => {
+    statusState.isDongleConnected = false
+    statusState.isAaActive = false
+    mockNode = { type: 'route', label: 'Audio', children: [] }
+    render(<SettingsPage />)
+    fireEvent.click(screen.getByTestId('restart'))
+    expect(restartMock).not.toHaveBeenCalled()
+    expect(applyBtList).not.toHaveBeenCalled()
+  })
+
+  test('handleRestart calls restart() when needsRestart is true', () => {
+    smartState.needsRestart = true
+    mockNode = { type: 'route', label: 'Audio', children: [] }
+    render(<SettingsPage />)
+    fireEvent.click(screen.getByTestId('restart'))
+    expect(restartMock).toHaveBeenCalled()
+    expect(applyBtList).not.toHaveBeenCalled()
+  })
+
+  test('handleRestart applies the BT list when dirty and no restart is pending', () => {
+    liviState.bluetoothPairedDirty = true
+    mockNode = { type: 'route', label: 'Audio', children: [] }
+    render(<SettingsPage />)
+    fireEvent.click(screen.getByTestId('restart'))
+    expect(applyBtList).toHaveBeenCalled()
+    expect(restartMock).not.toHaveBeenCalled()
+  })
+
+  test('AA-active alone is enough to enable restart', () => {
+    statusState.isDongleConnected = false
+    liviState.settings = { aa: true }
+    smartState.needsRestart = true
+    mockNode = { type: 'route', label: 'Audio', children: [] }
+    render(<SettingsPage />)
+    fireEvent.click(screen.getByTestId('restart'))
+    expect(restartMock).toHaveBeenCalled()
   })
 })

@@ -519,4 +519,50 @@ describe('NavMini', () => {
       expect(screen.getByTestId('TurnSharpRightIcon')).toBeInTheDocument()
     })
   })
+
+  // Compact coverage for the remaining ManeuverIcon switch cases.
+  // turnSide=1 (left side); turnSide=2 paths are covered separately above.
+  test.each([
+    [1, 'TurnLeftIcon'],
+    [3, 'StraightIcon'],
+    [5, 'StraightIcon'],
+    [18, 'UTurnLeftIcon'],
+    [26, 'UTurnLeftIcon'],
+    [7, 'RoundaboutRightIcon'],
+    [19, 'RoundaboutRightIcon'],
+    [22, 'ExitToAppIcon'],
+    [23, 'ExitToAppIcon'],
+    [9, 'MergeIcon'],
+    [10, 'FlagIcon'],
+    [12, 'FlagIcon'],
+    [24, 'FlagIcon'],
+    [25, 'FlagIcon'],
+    [27, 'FlagIcon'],
+    [13, 'ForkLeftIcon'],
+    [14, 'ForkRightIcon'],
+    [20, 'SubdirectoryArrowLeftIcon'],
+    [21, 'SubdirectoryArrowRightIcon'],
+    [47, 'TurnSharpLeftIcon'],
+    [49, 'TurnSlightLeftIcon'],
+    [50, 'TurnSlightRightIcon'],
+    [52, 'ForkLeftIcon'],
+    [53, 'ForkRightIcon']
+  ])('NavMini maneuver code %i renders %s', async (code, iconTestId) => {
+    translateNavigationMock.mockImplementation(() => ({
+      RemainDistanceText: '',
+      TimeRemainingToDestinationText: '',
+      DistanceRemainingDisplayStringText: '',
+      CurrentRoadName: '',
+      codes: { ManeuverType: code, TurnSide: 1 }
+    }))
+    ;(
+      window as { projection: { ipc: { readNavigation: jest.Mock } } }
+    ).projection.ipc.readNavigation = jest
+      .fn()
+      .mockResolvedValue({ payload: { navi: { NaviStatus: 1 } } })
+    render(<NavMini />)
+    await waitFor(() => {
+      expect(screen.getByTestId(iconTestId)).toBeInTheDocument()
+    })
+  })
 })

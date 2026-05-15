@@ -446,4 +446,108 @@ describe('NavFull', () => {
     expect(screen.queryByText('Berlin')).not.toBeInTheDocument()
     expect(screen.queryByText('Maps')).not.toBeInTheDocument()
   })
+
+  // One assertion per maneuver code → keeps the switch's branches honest.
+  // turnSide=1 (left). turnSide=2 paths are already covered above.
+  test.each([
+    [1, 'TurnLeftIcon'],
+    [2, 'TurnRightIcon'],
+    [3, 'StraightIcon'],
+    [5, 'StraightIcon'],
+    [4, 'UTurnLeftIcon'],
+    [18, 'UTurnLeftIcon'],
+    [26, 'UTurnLeftIcon'],
+    [6, 'RoundaboutRightIcon'],
+    [7, 'RoundaboutRightIcon'],
+    [19, 'RoundaboutRightIcon'],
+    [8, 'ExitToAppIcon'],
+    [22, 'ExitToAppIcon'],
+    [23, 'ExitToAppIcon'],
+    [9, 'MergeIcon'],
+    [10, 'FlagIcon'],
+    [12, 'FlagIcon'],
+    [24, 'FlagIcon'],
+    [25, 'FlagIcon'],
+    [27, 'FlagIcon'],
+    [11, 'WrongLocationIcon'],
+    [13, 'ForkLeftIcon'],
+    [14, 'ForkRightIcon'],
+    [15, 'DirectionsBoatIcon'],
+    [16, 'DirectionsBoatIcon'],
+    [17, 'DirectionsBoatIcon'],
+    [20, 'SubdirectoryArrowLeftIcon'],
+    [21, 'SubdirectoryArrowRightIcon'],
+    [47, 'TurnSharpLeftIcon'],
+    [48, 'TurnSharpRightIcon'],
+    [49, 'TurnSlightLeftIcon'],
+    [50, 'TurnSlightRightIcon'],
+    [51, 'SwapHorizIcon'],
+    [52, 'ForkLeftIcon'],
+    [53, 'ForkRightIcon']
+  ])('maneuver code %i renders %s', async (code, iconTestId) => {
+    translateNavigationMock.mockImplementation(() => ({
+      ManeuverTypeText: 'X',
+      RemainDistanceText: '',
+      CurrentRoadName: '',
+      TimeRemainingToDestinationText: '',
+      DistanceRemainingDisplayStringText: '',
+      DestinationName: '',
+      SourceName: '',
+      codes: { ManeuverType: code, TurnSide: 1 }
+    }))
+    ;(
+      window as { projection: { ipc: { readNavigation: jest.Mock } } }
+    ).projection.ipc.readNavigation = jest
+      .fn()
+      .mockResolvedValue({ payload: { navi: { NaviStatus: 1 } } })
+    render(<NavFull />)
+    await waitFor(() => {
+      expect(screen.getByTestId(iconTestId)).toBeInTheDocument()
+    })
+  })
+
+  test('extracts navi from a top-level NaviStatus payload (no payload/navi wrappers)', async () => {
+    ;(
+      window as { projection: { ipc: { readNavigation: jest.Mock; onEvent: jest.Mock } } }
+    ).projection.ipc.readNavigation = jest
+      .fn()
+      .mockResolvedValue({ NaviStatus: 1, NaviManeuverType: 2, NaviTurnSide: 2 })
+
+    render(<NavFull />)
+    await waitFor(() => {
+      expect(screen.getByText('Turn right')).toBeInTheDocument()
+    })
+  })
+
+  test('live IPC update merges with hydrated navi', async () => {
+    ;(
+      window as { projection: { ipc: { readNavigation: jest.Mock; onEvent: jest.Mock } } }
+    ).projection.ipc.readNavigation = jest
+      .fn()
+      .mockResolvedValue({ payload: { navi: { NaviStatus: 1, NaviManeuverType: 1 } } })
+
+    render(<NavFull />)
+    await waitFor(() => {
+      expect(onEventCb).toBeDefined()
+    })
+
+    translateNavigationMock.mockImplementation(() => ({
+      ManeuverTypeText: 'Now sharper',
+      RemainDistanceText: '',
+      CurrentRoadName: '',
+      TimeRemainingToDestinationText: '',
+      DistanceRemainingDisplayStringText: '',
+      DestinationName: '',
+      SourceName: '',
+      codes: { ManeuverType: 47, TurnSide: 1 }
+    }))
+
+    act(() => {
+      onEventCb!({}, { type: 'navigation', payload: { navi: { NaviManeuverType: 47 } } })
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Now sharper')).toBeInTheDocument()
+    })
+  })
 })

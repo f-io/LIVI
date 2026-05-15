@@ -156,34 +156,40 @@ describe('Controls', () => {
     expect(nextFocusOff).toEqual({ play: false, next: false, prev: false })
   })
 
-  test('blurs button on mouse up', () => {
+  test('blurs every button on mouse up', () => {
     renderControls()
 
+    const prevButton = screen.getByLabelText('Previous')
     const playButton = screen.getByLabelText('Play/Pause')
-    const blurSpy = jest.spyOn(playButton, 'blur')
-
-    fireEvent.mouseUp(playButton)
-
-    expect(blurSpy).toHaveBeenCalledTimes(1)
-  })
-
-  test('updates hover state through circleBtnStyle calls', () => {
-    renderControls()
-
     const nextButton = screen.getByLabelText('Next')
 
-    const beforeHoverCalls = circleBtnStyleMock.mock.calls.length
-    fireEvent.mouseEnter(nextButton)
-    fireEvent.mouseLeave(nextButton)
+    const prevBlur = jest.spyOn(prevButton, 'blur')
+    const playBlur = jest.spyOn(playButton, 'blur')
+    const nextBlur = jest.spyOn(nextButton, 'blur')
 
-    const afterCalls = circleBtnStyleMock.mock.calls.slice(beforeHoverCalls)
+    fireEvent.mouseUp(prevButton)
+    fireEvent.mouseUp(playButton)
+    fireEvent.mouseUp(nextButton)
 
-    expect(afterCalls.some(([, state]) => (state as { hovered?: boolean }).hovered === true)).toBe(
-      true
-    )
-    expect(afterCalls.some(([, state]) => (state as { hovered?: boolean }).hovered === false)).toBe(
-      true
-    )
+    expect(prevBlur).toHaveBeenCalledTimes(1)
+    expect(playBlur).toHaveBeenCalledTimes(1)
+    expect(nextBlur).toHaveBeenCalledTimes(1)
+  })
+
+  test('updates hover state through circleBtnStyle calls for every button', () => {
+    renderControls()
+    const prevButton = screen.getByLabelText('Previous')
+    const playButton = screen.getByLabelText('Play/Pause')
+    const nextButton = screen.getByLabelText('Next')
+
+    for (const btn of [prevButton, playButton, nextButton]) {
+      const before = circleBtnStyleMock.mock.calls.length
+      fireEvent.mouseEnter(btn)
+      fireEvent.mouseLeave(btn)
+      const after = circleBtnStyleMock.mock.calls.slice(before)
+      expect(after.some(([, s]) => (s as { hovered?: boolean }).hovered === true)).toBe(true)
+      expect(after.some(([, s]) => (s as { hovered?: boolean }).hovered === false)).toBe(true)
+    }
   })
 
   test('passes ring color, sizes, press and focus state to circleBtnStyle', () => {

@@ -35,7 +35,12 @@ interface KeyframeOpts {
   height: number
 }
 
-function buildVp9Keyframe(opts: KeyframeOpts): Uint8Array {
+function buildVp9Keyframe(
+  opts: KeyframeOpts & {
+    renderWidth?: number
+    renderHeight?: number
+  }
+): Uint8Array {
   const profile = opts.profile ?? 0
   const b = new BitBuilder()
   b.put(0b10, 2) // frame_marker
@@ -71,11 +76,36 @@ function buildVp9Keyframe(opts: KeyframeOpts): Uint8Array {
   // frame_size
   b.put(opts.width - 1, 16)
   b.put(opts.height - 1, 16)
-  b.put(0, 1) // render_and_frame_size_different
+  const renderDifferent = opts.renderWidth || opts.renderHeight ? 1 : 0
+  b.put(renderDifferent, 1)
+  if (renderDifferent) {
+    b.put((opts.renderWidth ?? opts.width) - 1, 16)
+    b.put((opts.renderHeight ?? opts.height) - 1, 16)
+  }
+  return b.toBytes()
+}
+
+function buildVp9NonKeyframe(): Uint8Array {
+  const b = new BitBuilder()
+  b.put(0b10, 2) // frame_marker
+  b.put(0, 1) // profile_low
+  b.put(0, 1) // profile_high
+  b.put(0, 1) // show_existing_frame
+  b.put(1, 1) // frame_type = NON_KEY
+  b.put(1, 1) // show_frame
+  b.put(0, 1) // error_resilient
+  b.put(0x49, 8)
+  b.put(0x83, 8)
+  b.put(0x42, 8)
   return b.toBytes()
 }
 
 describe('vp9-utils', () => {
+  beforeEach(() => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterEach(() => jest.restoreAllMocks())
+
   test('isVp9KeyFrame detects keyframe', () => {
     const frame = buildVp9Keyframe({ width: 1920, height: 1080 })
     expect(isVp9KeyFrame(frame)).toBe(true)
@@ -155,5 +185,91 @@ describe('vp9-utils', () => {
 
   test('getVp9DecoderConfig returns null on garbage', () => {
     expect(getVp9DecoderConfig(new Uint8Array([0, 0, 0, 0]))).toBeNull()
+  })
+
+  test('isVp9KeyFrame returns false for an empty buffer', () => {
+    expect(isVp9KeyFrame(new Uint8Array(0))).toBe(false)
+  })
+
+  test('vp9Level falls back to 62 for resolutions above all listed levels', () => {
+    // 16K @ 120 fps — beyond every entry in the table
+    expect(vp9Level(15360, 8640, 120)).toBe(62)
+  })
+
+  test('Vp9KeyframeHeader rejects show_existing_frame=1', () => {
+    const b = new BitBuilder()
+    b.put(0b10, 2) // marker
+    b.put(0, 1) // profile_lo
+    b.put(0, 1) // profile_hi
+    b.put(1, 1) // show_existing_frame
+    expect(() => new Vp9KeyframeHeader(b.toBytes())).toThrow(/show_existing_frame/)
+  })
+
+  test('Vp9KeyframeHeader rejects non-key frames', () => {
+    expect(() => new Vp9KeyframeHeader(buildVp9NonKeyframe())).toThrow(/not a keyframe/)
+  })
+
+  test('Vp9KeyframeHeader rejects bad frame_marker', () => {
+    const b = new BitBuilder()
+    b.put(0b00, 2)
+    expect(() => new Vp9KeyframeHeader(b.toBytes())).toThrow(/frame_marker/)
+  })
+
+  test('Vp9KeyframeHeader parses profile 1 (reads explicit subsampling)', () => {
+    const frame = buildVp9Keyframe({
+      profile: 1,
+      width: 640,
+      height: 480,
+      subsamplingX: 1,
+      subsamplingY: 0
+    })
+    const hdr = new Vp9KeyframeHeader(frame)
+    expect(hdr.profile).toBe(1)
+    expect(hdr.subsampling_x).toBe(1)
+    expect(hdr.subsampling_y).toBe(0)
+  })
+
+  test('Vp9KeyframeHeader handles SRGB color space (forces full range + 4:4:4)', () => {
+    const frame = buildVp9Keyframe({
+      profile: 1,
+      colorSpace: Vp9ColorSpace.SRGB,
+      width: 256,
+      height: 256
+    })
+    const hdr = new Vp9KeyframeHeader(frame)
+    expect(hdr.color_space).toBe(Vp9ColorSpace.SRGB)
+    expect(hdr.color_range).toBe(1)
+    expect(hdr.subsampling_x).toBe(0)
+    expect(hdr.subsampling_y).toBe(0)
+  })
+
+  test('Vp9KeyframeHeader handles profile 0 + SRGB gracefully (subsampling=0,0)', () => {
+    const frame = buildVp9Keyframe({
+      profile: 0,
+      colorSpace: Vp9ColorSpace.SRGB,
+      width: 100,
+      height: 100
+    })
+    const hdr = new Vp9KeyframeHeader(frame)
+    expect(hdr.subsampling_x).toBe(0)
+    expect(hdr.subsampling_y).toBe(0)
+  })
+
+  test('Vp9KeyframeHeader reads explicit render size when it differs', () => {
+    const frame = buildVp9Keyframe({
+      width: 1920,
+      height: 1080,
+      renderWidth: 1280,
+      renderHeight: 720
+    })
+    const hdr = new Vp9KeyframeHeader(frame)
+    expect(hdr.render_width).toBe(1280)
+    expect(hdr.render_height).toBe(720)
+  })
+
+  test('Vp9KeyframeHeader stream getter returns the underlying buffer', () => {
+    const frame = buildVp9Keyframe({ width: 1920, height: 1080 })
+    const hdr = new Vp9KeyframeHeader(frame)
+    expect(hdr.stream).toBeInstanceOf(Uint8Array)
   })
 })

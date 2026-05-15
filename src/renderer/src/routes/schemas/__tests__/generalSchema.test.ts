@@ -109,6 +109,16 @@ describe('generalSchema', () => {
         labelKey: 'settings.audioBufferSize'
       })
     )
+    // valueTransform: toView falls back to the default 1000, fromView rounds
+    // finite numbers and falls back to prev on NaN, format appends ' ms'.
+    const vt = (audioBuffer as { valueTransform: Record<string, (...a: unknown[]) => unknown> })
+      .valueTransform
+    expect(vt.toView(undefined)).toBe(1000)
+    expect(vt.toView(700)).toBe(700)
+    expect(vt.fromView(123.7, 999)).toBe(124)
+    expect(vt.fromView(Number.NaN, 555)).toBe(555)
+    expect(vt.fromView(Number.NaN, undefined)).toBe(1000)
+    expect(vt.format(800)).toBe('800 ms')
 
     const dashboard = firmware.children[1]
     expect(dashboard).toEqual(

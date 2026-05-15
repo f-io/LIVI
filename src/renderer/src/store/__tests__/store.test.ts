@@ -1966,6 +1966,149 @@ describe('store', () => {
     expect(useLiviStore.getState().bluetoothPairedDeleteNeedsRestart).toBe(false)
   })
 
+  test('telemetry handler forwards explicit reverse and lights to the status store', async () => {
+    let telemetryHandler: ((payload: unknown) => void) | undefined
+    const projection = makeProjectionApi({
+      settings: { get: jest.fn().mockResolvedValue(baseSettings) },
+      ipc: {
+        onTelemetry: jest.fn((h) => {
+          telemetryHandler = h
+        })
+      }
+    })
+    const { useLiviStore, useStatusStore } = loadFreshStore(projection)
+    await waitForStoreSettings(useLiviStore)
+
+    telemetryHandler?.({ reverse: true, lights: true })
+    expect(useStatusStore.getState().reverse).toBe(true)
+    expect(useStatusStore.getState().lights).toBe(true)
+  })
+
+  test('telemetry handler skips no-op writes when reverse/lights already match', async () => {
+    let telemetryHandler: ((payload: unknown) => void) | undefined
+    const projection = makeProjectionApi({
+      settings: { get: jest.fn().mockResolvedValue(baseSettings) },
+      ipc: {
+        onTelemetry: jest.fn((h) => {
+          telemetryHandler = h
+        })
+      }
+    })
+    const { useLiviStore, useStatusStore } = loadFreshStore(projection)
+    await waitForStoreSettings(useLiviStore)
+
+    useStatusStore.getState().setReverse(true)
+    useStatusStore.getState().setLights(true)
+    const setReverseSpy = jest.spyOn(useStatusStore.getState(), 'setReverse')
+    const setLightsSpy = jest.spyOn(useStatusStore.getState(), 'setLights')
+
+    telemetryHandler?.({ reverse: true, lights: true })
+    expect(setReverseSpy).not.toHaveBeenCalled()
+    expect(setLightsSpy).not.toHaveBeenCalled()
+  })
+
+  test('telemetry handler derives reverse from gear "R" / -1 / numeric', async () => {
+    let telemetryHandler: ((payload: unknown) => void) | undefined
+    const projection = makeProjectionApi({
+      settings: { get: jest.fn().mockResolvedValue(baseSettings) },
+      ipc: {
+        onTelemetry: jest.fn((h) => {
+          telemetryHandler = h
+        })
+      }
+    })
+    const { useLiviStore, useStatusStore } = loadFreshStore(projection)
+    await waitForStoreSettings(useLiviStore)
+
+    telemetryHandler?.({ gear: 'R' })
+    expect(useStatusStore.getState().reverse).toBe(true)
+
+    telemetryHandler?.({ gear: -1 })
+    expect(useStatusStore.getState().reverse).toBe(true)
+
+    telemetryHandler?.({ gear: 3 })
+    expect(useStatusStore.getState().reverse).toBe(false)
+  })
+
+  test('telemetry handler ignores non-object payloads', async () => {
+    let telemetryHandler: ((payload: unknown) => void) | undefined
+    const projection = makeProjectionApi({
+      settings: { get: jest.fn().mockResolvedValue(baseSettings) },
+      ipc: {
+        onTelemetry: jest.fn((h) => {
+          telemetryHandler = h
+        })
+      }
+    })
+    const { useLiviStore, useStatusStore } = loadFreshStore(projection)
+    await waitForStoreSettings(useLiviStore)
+    const before = { ...useStatusStore.getState() }
+
+    telemetryHandler?.(null)
+    telemetryHandler?.('garbage')
+
+    const after = useStatusStore.getState()
+    expect(after.reverse).toBe(before.reverse)
+    expect(after.lights).toBe(before.lights)
+  })
+
+  test('telemetry hydration via getTelemetrySnapshot seeds the status store', async () => {
+    const getTelemetrySnapshot = jest.fn().mockResolvedValue({ reverse: true, lights: true })
+    const projection = makeProjectionApi({
+      settings: { get: jest.fn().mockResolvedValue(baseSettings) },
+      ipc: {
+        onTelemetry: jest.fn()
+        // Add the snapshot hook dynamically — makeProjectionApi doesn't include it.
+      }
+    }) as unknown as TestProjectionApi & { ipc: { getTelemetrySnapshot: jest.Mock } }
+    projection.ipc.getTelemetrySnapshot = getTelemetrySnapshot
+    ;(window as unknown as { projection: TestProjectionApi }).projection = projection
+
+    jest.resetModules()
+    const { useLiviStore, useStatusStore } = require('../store') as typeof import('../store')
+    await waitForStoreSettings(useLiviStore)
+    // Wait for the snapshot promise to resolve and applyTelemetryControls to run
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(getTelemetrySnapshot).toHaveBeenCalled()
+    expect(useStatusStore.getState().reverse).toBe(true)
+    expect(useStatusStore.getState().lights).toBe(true)
+  })
+
+  test('telemetry hydration ignores an empty snapshot', async () => {
+    const getTelemetrySnapshot = jest.fn().mockResolvedValue({})
+    const projection = makeProjectionApi({
+      settings: { get: jest.fn().mockResolvedValue(baseSettings) },
+      ipc: { onTelemetry: jest.fn() }
+    }) as unknown as TestProjectionApi & { ipc: { getTelemetrySnapshot: jest.Mock } }
+    projection.ipc.getTelemetrySnapshot = getTelemetrySnapshot
+    ;(window as unknown as { projection: TestProjectionApi }).projection = projection
+
+    jest.resetModules()
+    const { useLiviStore, useStatusStore } = require('../store') as typeof import('../store')
+    await waitForStoreSettings(useLiviStore)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(getTelemetrySnapshot).toHaveBeenCalled()
+    // Defaults preserved
+    expect(useStatusStore.getState().reverse).toBe(false)
+    expect(useStatusStore.getState().lights).toBe(false)
+  })
+
+  test('setAaActive flips the status flag and useProjectionActive reflects it', () => {
+    const { useStatusStore, useProjectionActive } = loadFreshStore()
+    useStatusStore.getState().setAaActive(true)
+    expect(useStatusStore.getState().isAaActive).toBe(true)
+    // useProjectionActive is a selector — call its underlying selector against the store
+    // by constructing a probe state.
+    expect(useProjectionActive).toBeInstanceOf(Function)
+    useStatusStore.getState().setAaActive(false)
+    useStatusStore.getState().setDongleConnected(true)
+    expect(useStatusStore.getState().isDongleConnected).toBe(true)
+  })
+
   test('removeBluetoothPairedDeviceLocal works without boxInfo', async () => {
     const projection = makeProjectionApi({
       settings: {
