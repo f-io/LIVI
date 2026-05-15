@@ -680,6 +680,37 @@ describe('ProjectionAudio state controls', () => {
     expect(a.audioPlayers.size).toBe(0)
   })
 
+  test('handleAudioData with music data drops the chunk when mediaActive=false', () => {
+    const a = createSubject()
+    a.mediaActive = false
+    const player = { write: jest.fn(), stop: jest.fn() }
+    a.audioPlayers.set('music:at1:48000:2', player)
+    a.handleAudioData({
+      audioType: 1,
+      decodeType: 1,
+      data: new Int16Array(8)
+    })
+    expect(player.write).not.toHaveBeenCalled()
+  })
+
+  test('getAudioOutputForStream returns null for an unknown decodeType', () => {
+    const a = createSubject()
+    const player = a.getAudioOutputForStream('music', 1, { decodeType: 9999 })
+    expect(player).toBeNull()
+  })
+
+  test('handleAudioData with unknown decodeType is a silent no-op', () => {
+    const a = createSubject()
+    a.mediaActive = true
+    expect(() =>
+      a.handleAudioData({
+        audioType: 1,
+        decodeType: 9999,
+        data: new Int16Array(8)
+      })
+    ).not.toThrow()
+  })
+
   test('stopPlayerByKey swallows errors when player.stop throws', () => {
     const a = createSubject()
     const badPlayer = {
