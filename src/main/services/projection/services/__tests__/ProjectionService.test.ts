@@ -535,7 +535,7 @@ describe('ProjectionService', () => {
       svc.markDongleConnected(true)
       svc.markPhoneConnected(true, fakePhoneDevice())
       svc.started = true
-      svc.aaDriver = null // dongle is active
+      // dongle is active by default — no AA driver was ever created
       svc.stop = jest.fn(async () => {
         svc.started = false
       })
@@ -554,7 +554,7 @@ describe('ProjectionService', () => {
       svc.markDongleConnected(true)
       svc.markPhoneConnected(true, fakePhoneDevice())
       svc.started = true
-      svc.aaDriver = null
+      // dongle is active by default — no AA driver was ever created
       svc.stop = jest.fn(async () => {
         svc.started = false
       })

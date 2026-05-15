@@ -46,6 +46,10 @@ jest.mock('../services/usb/udevRule', () => ({
   checkAndInstallUdevRule: jest.fn(() => Promise.resolve())
 }))
 
+jest.mock('@main/services/projection/driver/aa/aaSudoers', () => ({
+  checkAndInstallAaSudoers: jest.fn(() => Promise.resolve())
+}))
+
 describe('main index bootstrap', () => {
   beforeEach(() => {
     jest.resetModules()
@@ -92,5 +96,55 @@ describe('main index bootstrap', () => {
     expect(createMainWindow).toHaveBeenCalledTimes(1)
     expect(setupTelemetry).toHaveBeenCalledTimes(1)
     expect(setupLifecycle).toHaveBeenCalledTimes(1)
+  })
+
+  test('runs the AA sudoers installer when aa=true on linux', async () => {
+    const { app } = require('electron')
+    ;(app.whenReady as jest.Mock).mockImplementation(
+      () =>
+        ({
+          then: (cb: () => void) => {
+            cb()
+            return Promise.resolve()
+          }
+        }) as Promise<void>
+    )
+
+    const { loadConfig } = require('../config/loadConfig')
+    ;(loadConfig as jest.Mock).mockReturnValue({
+      width: 800,
+      height: 480,
+      kiosk: false,
+      aa: true
+    })
+
+    const original = process.platform
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
+
+    const { checkAndInstallAaSudoers } = require('@main/services/projection/driver/aa/aaSudoers')
+    require('@main/index')
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(checkAndInstallAaSudoers).toHaveBeenCalled()
+    Object.defineProperty(process, 'platform', { value: original, configurable: true })
+  })
+
+  test('skips the AA sudoers installer when aa=false', async () => {
+    const { app } = require('electron')
+    ;(app.whenReady as jest.Mock).mockImplementation(
+      () =>
+        ({
+          then: (cb: () => void) => {
+            cb()
+            return Promise.resolve()
+          }
+        }) as Promise<void>
+    )
+    const { checkAndInstallAaSudoers } = require('@main/services/projection/driver/aa/aaSudoers')
+    require('@main/index')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(checkAndInstallAaSudoers).not.toHaveBeenCalled()
   })
 })

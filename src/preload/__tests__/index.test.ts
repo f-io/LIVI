@@ -450,4 +450,111 @@ describe('preload api bridge', () => {
 
     expect(activeHandler).toHaveBeenCalledTimes(1)
   })
+
+  describe('media-key bridge', () => {
+    test('app:media-key ignores non-string payloads', () => {
+      const { app } = loadPreload()
+      const handler = jest.fn()
+      app.onMediaKey(handler)
+      emit('app:media-key', 123)
+      emit('app:media-key', '')
+      emit('app:media-key', null)
+      expect(handler).not.toHaveBeenCalled()
+    })
+
+    test('app:media-key dispatches to registered handlers', () => {
+      const { app } = loadPreload()
+      const handler = jest.fn()
+      app.onMediaKey(handler)
+      emit('app:media-key', 'playPause')
+      expect(handler).toHaveBeenCalledWith('playPause')
+    })
+
+    test('app:media-key queues commands until a handler subscribes, then flushes', () => {
+      const { app } = loadPreload()
+      // Fire before any handler is registered → queued
+      emit('app:media-key', 'next')
+      emit('app:media-key', 'prev')
+
+      const handler = jest.fn()
+      app.onMediaKey(handler)
+      expect(handler).toHaveBeenCalledWith('next')
+      expect(handler).toHaveBeenCalledWith('prev')
+    })
+
+    test('onMediaKey return value detaches the handler', () => {
+      const { app } = loadPreload()
+      const handler = jest.fn()
+      const off = app.onMediaKey(handler)
+      off()
+      emit('app:media-key', 'playPause')
+      expect(handler).not.toHaveBeenCalled()
+    })
+
+    test('broadcastMediaKey forwards the command via ipcRenderer.send', () => {
+      const { app } = loadPreload()
+      app.broadcastMediaKey('next')
+      expect(ipcRendererMock.send).toHaveBeenCalledWith('app:media-key', 'next')
+    })
+
+    test('notifyUserActivity sends app:user-activity', () => {
+      const { app } = loadPreload()
+      app.notifyUserActivity()
+      expect(ipcRendererMock.send).toHaveBeenCalledWith('app:user-activity')
+    })
+  })
+
+  describe('projection ipc wrappers — additional', () => {
+    test('restart, reportCodecCapabilities, flipTransport, getTransportState, getTelemetrySnapshot forward to invoke', async () => {
+      const { projection } = loadPreload()
+      ipcRendererMock.invoke.mockResolvedValue(undefined)
+
+      await projection.ipc.restart()
+      await projection.ipc.reportCodecCapabilities({ h264: true })
+      await projection.ipc.flipTransport()
+      await projection.ipc.getTransportState()
+      await projection.ipc.getTelemetrySnapshot()
+
+      expect(ipcRendererMock.invoke).toHaveBeenCalledWith('projection-restart')
+      expect(ipcRendererMock.invoke).toHaveBeenCalledWith('projection-codec-capabilities', {
+        h264: true
+      })
+      expect(ipcRendererMock.invoke).toHaveBeenCalledWith('transport:flip')
+      expect(ipcRendererMock.invoke).toHaveBeenCalledWith('transport:state')
+      expect(ipcRendererMock.invoke).toHaveBeenCalledWith('telemetry:snapshot')
+    })
+
+    test('sendMultiTouch and sendCommand forward through send', () => {
+      const { projection } = loadPreload()
+      projection.ipc.sendMultiTouch([{ id: 0, x: 0.5, y: 0.5, action: 0 }])
+      projection.ipc.sendCommand('play')
+      expect(ipcRendererMock.send).toHaveBeenCalledWith('projection-multi-touch', [
+        { id: 0, x: 0.5, y: 0.5, action: 0 }
+      ])
+      expect(ipcRendererMock.send).toHaveBeenCalledWith('projection-command', 'play')
+    })
+  })
+
+  describe('app ipc wrappers — additional', () => {
+    test('all simple invoke wrappers forward correctly', async () => {
+      const { app } = loadPreload()
+      ipcRendererMock.invoke.mockResolvedValue(undefined)
+
+      await app.getVersion()
+      await app.performUpdate('http://x')
+      await app.resetDongleIcons()
+      await app.beginInstall()
+      await app.abortUpdate()
+      await app.quitApp()
+      await app.restartApp()
+
+      expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:getVersion')
+      expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:performUpdate', 'http://x')
+      expect(ipcRendererMock.invoke).toHaveBeenCalledWith('settings:reset-dongle-icons')
+      expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:beginInstall')
+      expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:abortUpdate')
+      expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:quitApp')
+      expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:restartApp')
+    })
+  })
 })

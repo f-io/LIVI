@@ -546,6 +546,167 @@ describe('createMainWindow', () => {
     })
   })
 
+  test('savedBounds: ready-to-show re-applies position+size', () => {
+    const runtimeState = {
+      config: {
+        width: 800,
+        height: 480,
+        mainScreenBounds: { x: 50, y: 60, width: 1024, height: 768 }
+      },
+      isQuitting: false
+    } as any
+    const services = { projectionService: { attachRenderer: jest.fn() } } as any
+    createMainWindow(runtimeState, services)
+    const win = browserWindowInstances[browserWindowInstances.length - 1]
+    expect(win.__opts.x).toBe(50)
+    expect(win.__opts.width).toBe(1024)
+    win.setBounds = jest.fn()
+    const restoreCb = win.once.mock.calls.find(([e]: any[]) => e === 'ready-to-show')?.[1]
+    restoreCb()
+    expect(win.setBounds).toHaveBeenCalledWith({ x: 50, y: 60, width: 1024, height: 768 })
+  })
+
+  test('savedBounds: destroyed window skips the restore', () => {
+    const runtimeState = {
+      config: {
+        width: 800,
+        height: 480,
+        mainScreenBounds: { x: 50, y: 60, width: 1024, height: 768 }
+      },
+      isQuitting: false
+    } as any
+    createMainWindow(runtimeState, {
+      projectionService: { attachRenderer: jest.fn() }
+    } as any)
+    const win = browserWindowInstances[browserWindowInstances.length - 1]
+    win.isDestroyed = jest.fn(() => true)
+    win.setBounds = jest.fn()
+    const restoreCb = win.once.mock.calls.find(([e]: any[]) => e === 'ready-to-show')?.[1]
+    restoreCb()
+    expect(win.setBounds).not.toHaveBeenCalled()
+  })
+
+  test('invalid mainScreenBounds shape in config is ignored', () => {
+    const runtimeState = {
+      config: { width: 800, height: 480, mainScreenBounds: { x: 1 } },
+      isQuitting: false
+    } as any
+    createMainWindow(runtimeState, {
+      projectionService: { attachRenderer: jest.fn() }
+    } as any)
+    const win = browserWindowInstances[browserWindowInstances.length - 1]
+    expect(win.__opts.width).toBe(800)
+  })
+
+  test('move event saves geometry after debounce', () => {
+    jest.useFakeTimers()
+    const { saveSettings } = jest.requireMock('@main/ipc/utils') as {
+      saveSettings: jest.Mock
+    }
+    saveSettings.mockClear()
+    const runtimeState = { config: { width: 800, height: 480 }, isQuitting: false } as any
+    createMainWindow(runtimeState, {
+      projectionService: { attachRenderer: jest.fn() }
+    } as any)
+    const win = browserWindowInstances[browserWindowInstances.length - 1]
+    win.getPosition = jest.fn(() => [10, 20])
+    win.getContentSize = jest.fn(() => [800, 480])
+    const moveCb = win.on.mock.calls.find(([e]: any[]) => e === 'move')?.[1]
+    moveCb()
+    jest.advanceTimersByTime(500)
+    expect(saveSettings).toHaveBeenCalledWith(
+      runtimeState,
+      expect.objectContaining({
+        mainScreenBounds: { x: 10, y: 20, width: 800, height: 480 }
+      })
+    )
+    jest.useRealTimers()
+  })
+
+  test('move event with unchanged bounds skips save', () => {
+    jest.useFakeTimers()
+    const { saveSettings } = jest.requireMock('@main/ipc/utils') as {
+      saveSettings: jest.Mock
+    }
+    const runtimeState = {
+      config: {
+        width: 800,
+        height: 480,
+        mainScreenBounds: { x: 10, y: 20, width: 800, height: 480 }
+      },
+      isQuitting: false
+    } as any
+    createMainWindow(runtimeState, {
+      projectionService: { attachRenderer: jest.fn() }
+    } as any)
+    const win = browserWindowInstances[browserWindowInstances.length - 1]
+    win.getPosition = jest.fn(() => [10, 20])
+    win.getContentSize = jest.fn(() => [800, 480])
+    saveSettings.mockClear()
+    const moveCb = win.on.mock.calls.find(([e]: any[]) => e === 'move')?.[1]
+    moveCb()
+    jest.advanceTimersByTime(500)
+    expect(saveSettings).not.toHaveBeenCalled()
+    jest.useRealTimers()
+  })
+
+  test('move event skips save when window is in full-screen', () => {
+    jest.useFakeTimers()
+    const { saveSettings } = jest.requireMock('@main/ipc/utils') as {
+      saveSettings: jest.Mock
+    }
+    const runtimeState = { config: { width: 800, height: 480 }, isQuitting: false } as any
+    createMainWindow(runtimeState, {
+      projectionService: { attachRenderer: jest.fn() }
+    } as any)
+    const win = browserWindowInstances[browserWindowInstances.length - 1]
+    win.isFullScreen = jest.fn(() => true)
+    saveSettings.mockClear()
+    const moveCb = win.on.mock.calls.find(([e]: any[]) => e === 'move')?.[1]
+    moveCb()
+    jest.advanceTimersByTime(500)
+    expect(saveSettings).not.toHaveBeenCalled()
+    jest.useRealTimers()
+  })
+
+  test('close calls app.quit when isQuitting=false on linux', () => {
+    const { app } = jest.requireMock('electron') as { app: { quit: jest.Mock } }
+    app.quit.mockClear()
+    const runtimeState = { config: { width: 800, height: 480 }, isQuitting: false } as any
+    createMainWindow(runtimeState, {
+      projectionService: { attachRenderer: jest.fn() }
+    } as any)
+    const win = browserWindowInstances[browserWindowInstances.length - 1]
+    const closeCb = win.on.mock.calls.find(([e]: any[]) => e === 'close')?.[1]
+    const evt = { preventDefault: jest.fn() }
+    closeCb(evt)
+    expect(evt.preventDefault).toHaveBeenCalled()
+    expect(app.quit).toHaveBeenCalled()
+  })
+
+  test('close lets the window die when isQuitting=true', () => {
+    const { app } = jest.requireMock('electron') as { app: { quit: jest.Mock } }
+    app.quit.mockClear()
+    const runtimeState = { config: { width: 800, height: 480 }, isQuitting: true } as any
+    createMainWindow(runtimeState, {
+      projectionService: { attachRenderer: jest.fn() }
+    } as any)
+    const win = browserWindowInstances[browserWindowInstances.length - 1]
+    const closeCb = win.on.mock.calls.find(([e]: any[]) => e === 'close')?.[1]
+    const evt = { preventDefault: jest.fn() }
+    closeCb(evt)
+    expect(evt.preventDefault).not.toHaveBeenCalled()
+    expect(app.quit).not.toHaveBeenCalled()
+  })
+
+  test('getMainWindow returns the most recently created window', () => {
+    const runtimeState = { config: { width: 800, height: 480 }, isQuitting: false } as any
+    createMainWindow(runtimeState, {
+      projectionService: { attachRenderer: jest.fn() }
+    } as any)
+    expect(getMainWindow()).toBe(browserWindowInstances[browserWindowInstances.length - 1])
+  })
+
   test('ready-to-show enters fullscreen on mac when kiosk is configured', () => {
     const setImmediateSpy = jest.spyOn(global, 'setImmediate').mockImplementation(((fn: any) => {
       fn()
