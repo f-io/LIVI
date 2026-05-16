@@ -503,17 +503,28 @@ jobs:
           set -euo pipefail
 
           VERSION=""
-          if [[ -f assets/gstreamer/macos-arm64/version.txt ]]; then
-            VERSION="$(cat assets/gstreamer/macos-arm64/version.txt)"
-          elif [[ -f assets/gstreamer/linux-x64/version.txt ]]; then
+          if [[ -f assets/gstreamer/linux-x64/version.txt ]]; then
             VERSION="$(cat assets/gstreamer/linux-x64/version.txt)"
           elif [[ -f assets/gstreamer/linux-arm64/version.txt ]]; then
             VERSION="$(cat assets/gstreamer/linux-arm64/version.txt)"
+          elif [[ -f assets/gstreamer/macos-arm64/version.txt ]]; then
+            VERSION="$(cat assets/gstreamer/macos-arm64/version.txt)"
           elif [[ -f assets/gstreamer/windows-x64/version.txt ]]; then
             VERSION="$(cat assets/gstreamer/windows-x64/version.txt)"
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          {
+            echo 'body<<__BODY_EOF__'
+            for plat in linux-x64 linux-arm64 macos-arm64 windows-x64; do
+              if [[ -f "assets/gstreamer/${plat}/version.txt" ]]; then
+                v="$(cat "assets/gstreamer/${plat}/version.txt")"
+                printf -- '- %-12s %s\n' "${plat}:" "$v"
+              fi
+            done
+            echo '__BODY_EOF__'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Commit and push assets
         id: commit_assets
@@ -533,7 +544,10 @@ jobs:
           fi
 
           if [[ -n "${{ steps.meta.outputs.version }}" ]]; then
-            git commit -m "chore(gstreamer): update bundled assets to ${{ steps.meta.outputs.version }}"
+            git commit \
+              -m "chore(gstreamer): update bundled assets to ${{ steps.meta.outputs.version }}" \
+              -m "Per-platform versions:" \
+              -m "${{ steps.meta.outputs.body }}"
           else
             git commit -m "chore(gstreamer): update bundled assets"
           fi
