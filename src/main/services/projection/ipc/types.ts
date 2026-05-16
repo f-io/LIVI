@@ -1,4 +1,4 @@
-import type { DongleFirmwareAction, DongleFwApiRaw, ExtraConfig } from '@shared/types'
+import type { Config, DongleFirmwareAction, DongleFwApiRaw } from '@shared/types'
 import type { WebContents } from 'electron'
 import type { SendableMessage } from '../messages/sendable'
 import type { FirmwareUpdateService } from '../services/FirmwareUpdateService'
@@ -55,7 +55,7 @@ export interface ProjectionIpcHost {
   setPendingStartupConnectTarget(t: PendingStartupConnectTarget | null): void
 
   // Cluster
-  getConfig(): ExtraConfig
+  getConfig(): Config
   setClusterRequested(v: boolean): void
   resetLastClusterVideoSize(): void
   getLastClusterCodec(): string | null

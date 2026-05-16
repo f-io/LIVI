@@ -1,7 +1,7 @@
 import { Box, Button, CircularProgress, Stack, Typography } from '@mui/material'
 import type { SettingsCustomPageProps } from '@renderer/routes/types'
 import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { useLiviStore, useStatusStore } from '@store/store'
 import React, { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -24,7 +24,7 @@ function getResetDongleIconsFn(w: unknown): (() => Promise<ResetDongleIconsResul
   return fn as () => Promise<ResetDongleIconsResult>
 }
 
-export function IconUploader(props: SettingsCustomPageProps<ExtraConfig, unknown>) {
+export function IconUploader(props: SettingsCustomPageProps<Config, unknown>) {
   const { requestRestart } = props
 
   const { t } = useTranslation()
@@ -73,7 +73,7 @@ export function IconUploader(props: SettingsCustomPageProps<ExtraConfig, unknown
         const b180 = resizeImageToBase64Png(img, 180)
         const b256 = resizeImageToBase64Png(img, 256)
 
-        const updated: ExtraConfig = {
+        const updated: Config = {
           ...settings,
           dongleIcon120: b120,
           dongleIcon180: b180,
@@ -124,7 +124,7 @@ export function IconUploader(props: SettingsCustomPageProps<ExtraConfig, unknown
       }
 
       const result = await fn()
-      const updated: ExtraConfig = {
+      const updated: Config = {
         ...settings,
         dongleIcon120: result.dongleIcon120 ?? settings.dongleIcon120,
         dongleIcon180: result.dongleIcon180 ?? settings.dongleIcon180,

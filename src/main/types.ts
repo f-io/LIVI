@@ -2,7 +2,7 @@ import { NULL_DELETES } from '@main/constants'
 import { ProjectionService } from '@main/services/projection/services/ProjectionService'
 import { TelemetrySocket } from '@main/services/Socket'
 import { USBService } from '@main/services/usb/USBService'
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 
 export type UpdateSessionState = 'idle' | 'downloading' | 'ready' | 'installing'
 
@@ -31,7 +31,7 @@ export interface ServicesProps {
 }
 
 export interface runtimeStateProps {
-  config: ExtraConfig
+  config: Config
   telemetrySocket: TelemetrySocket | null
   isQuitting: boolean
   suppressNextFsSync: boolean
@@ -47,7 +47,7 @@ export interface Stream {
 }
 
 export interface ServerToClientEvents {
-  settings: (config: ExtraConfig) => void
+  settings: (config: Config) => void
   reverse: (reverse: boolean) => void
   lights: (lights: boolean) => void
 }
@@ -55,6 +55,6 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
   connection: () => void
   getSettings: () => void
-  saveSettings: (settings: ExtraConfig) => void
+  saveSettings: (settings: Config) => void
   stream: (stream: Stream) => void
 }

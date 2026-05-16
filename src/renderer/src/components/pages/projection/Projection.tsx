@@ -1,8 +1,8 @@
 // Icons
 import CropPortraitOutlinedIcon from '@mui/icons-material/CropPortraitOutlined'
 import { Box, useTheme } from '@mui/material'
-import type { ExtraConfig } from '@shared/types'
-import { PhoneType } from '@shared/types/DongleConfig'
+import type { Config } from '@shared/types'
+import { PhoneType } from '@shared/types/Config'
 import { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
 import { aaContentArea } from '@shared/utils'
 import { createProjectionWorker } from '@worker/createProjectionWorker'
@@ -25,7 +25,7 @@ const RETRY_DELAY_MS = 3000
 interface CarplayProps {
   receivingVideo: boolean
   setReceivingVideo: (v: boolean) => void
-  settings: ExtraConfig
+  settings: Config
   command: KeyCommand
   commandCounter: number
 

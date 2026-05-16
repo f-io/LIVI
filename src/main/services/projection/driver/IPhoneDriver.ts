@@ -1,5 +1,5 @@
 import type { EventEmitter } from 'node:events'
-import type { DongleConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import type { Message } from '../messages/readable.js'
 import type { SendableMessage } from '../messages/sendable.js'
 
@@ -14,7 +14,7 @@ import type { SendableMessage } from '../messages/sendable.js'
  * Required events
  * ---------------
  *   'message'        (msg: Message)        — decoded LIVI-domain message
- *   'config-changed' (patch: Partial<DongleConfig>)
+ *   'config-changed' (patch: Partial<Config>)
  *                                          — phone reported a config delta
  *   'failure'        ()                    — driver layer is dead, restart needed
  *
@@ -26,7 +26,7 @@ export interface IPhoneDriver extends EventEmitter {
    * Bring the driver up with the given runtime config.
    * Resolves to `true` on success, `false` (or rejects) on failure.
    */
-  start(cfg: DongleConfig): Promise<boolean | void>
+  start(cfg: Config): Promise<boolean | void>
 
   /** Tear down all driver resources. Idempotent. */
   close(): Promise<void>
@@ -36,5 +36,5 @@ export interface IPhoneDriver extends EventEmitter {
 }
 
 export type DriverMessageEvent = (msg: Message) => void
-export type DriverConfigChangedEvent = (patch: Partial<DongleConfig>) => void
+export type DriverConfigChangedEvent = (patch: Partial<Config>) => void
 export type DriverFailureEvent = () => void

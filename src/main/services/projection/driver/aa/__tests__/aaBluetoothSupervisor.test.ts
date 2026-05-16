@@ -46,10 +46,10 @@ jest.mock('electron', () => ({
   app: { getPath: jest.fn(() => '/tmp/livi-test') }
 }))
 
-import type { DongleConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { AaBluetoothSupervisor } from '../aaBluetoothSupervisor'
 
-const baseCfg = (over: Partial<DongleConfig> = {}): DongleConfig =>
+const baseCfg = (over: Partial<Config> = {}): Config =>
   ({
     carName: 'TestHU',
     wifiPassword: 'pw',
@@ -58,7 +58,7 @@ const baseCfg = (over: Partial<DongleConfig> = {}): DongleConfig =>
     wifiInterface: 'wlan0',
     btAdapter: 'hci0',
     ...over
-  }) as unknown as DongleConfig
+  }) as unknown as Config
 
 beforeEach(() => {
   spawnMock.mockReset()
@@ -117,7 +117,7 @@ describe('AaBluetoothSupervisor.start', () => {
 
   test('2.4ghz defaults to channel 6 when wifiChannel is missing', () => {
     const sup = new AaBluetoothSupervisor()
-    sup.start(baseCfg({ wifiChannel: 0, wifiType: '2.4ghz' } as Partial<DongleConfig>))
+    sup.start(baseCfg({ wifiChannel: 0, wifiType: '2.4ghz' } as Partial<Config>))
     const env = (spawnMock.mock.calls[0][2] as { env: Record<string, string> }).env
     expect(env.LIVI_CHANNEL).toBe('6')
   })

@@ -1,9 +1,9 @@
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { RouteObject } from 'react-router'
 import { SettingsPage } from '../components/pages/settings/SettingsPage'
 import { SettingsNode } from '../routes'
 
-export const generateRoutes = (node: SettingsNode<ExtraConfig>): RouteObject | null => {
+export const generateRoutes = (node: SettingsNode<Config>): RouteObject | null => {
   if (node.type !== 'route') return null
 
   return {

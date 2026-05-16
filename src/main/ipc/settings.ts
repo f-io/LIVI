@@ -4,7 +4,7 @@ import { configEvents, saveSettings } from '@main/ipc/utils'
 import { GhRelease, runtimeStateProps } from '@main/types'
 import { currentKiosk } from '@main/window/utils'
 import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { app } from 'electron'
 
 export function registerSettingsIpc(runtimeState: runtimeStateProps) {
@@ -12,12 +12,12 @@ export function registerSettingsIpc(runtimeState: runtimeStateProps) {
 
   registerIpcHandle('getSettings', () => runtimeState.config)
 
-  registerIpcHandle('save-settings', (_evt, settings: Partial<ExtraConfig>) => {
+  registerIpcHandle('save-settings', (_evt, settings: Partial<Config>) => {
     saveSettings(runtimeState, settings)
     return true
   })
 
-  configEvents.on('requestSave', (settings: Partial<ExtraConfig>) => {
+  configEvents.on('requestSave', (settings: Partial<Config>) => {
     saveSettings(runtimeState, settings)
   })
 

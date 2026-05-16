@@ -1,4 +1,4 @@
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import {
   MAX_HEIGHT,
   MAX_WIDTH,
@@ -11,7 +11,7 @@ import {
 import { Camera } from '../../components/pages/settings/pages/camera'
 import { SettingsNode } from '../types'
 
-export const generalSchema: SettingsNode<ExtraConfig> = {
+export const generalSchema: SettingsNode<Config> = {
   route: 'general',
   label: 'General',
   labelKey: 'settings.general',
@@ -881,6 +881,24 @@ export const generalSchema: SettingsNode<ExtraConfig> = {
             labelTitle: 'settings.audioBufferSize',
             description: 'Dongle audio buffer size in ms',
             labelDescription: 'settings.audioBufferDescription'
+          }
+        },
+        {
+          type: 'select',
+          label: 'Microphone',
+          labelKey: 'settings.microphone',
+          path: 'micType',
+          displayValue: true,
+          options: [
+            { label: 'Car mic', labelKey: 'settings.micCar', value: 0 },
+            { label: 'Dongle mic', labelKey: 'settings.micDongle', value: 1 },
+            { label: 'Phone mic', labelKey: 'settings.micPhone', value: 2 }
+          ],
+          page: {
+            title: 'Microphone',
+            labelTitle: 'settings.microphone',
+            description: 'Microphone selection',
+            labelDescription: 'settings.microphoneDescription'
           }
         },
         {

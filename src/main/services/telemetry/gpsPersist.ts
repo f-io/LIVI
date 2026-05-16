@@ -3,7 +3,7 @@
  */
 
 import { configEvents } from '@main/ipc/utils'
-import type { ExtraConfig, LastKnownGps } from '@shared/types'
+import type { Config, LastKnownGps } from '@shared/types'
 import type { GpsPayload, TelemetryPayload } from '@shared/types/Telemetry'
 import type { TelemetryStore } from './TelemetryStore'
 
@@ -55,7 +55,7 @@ export function attachGpsPersist({ store, initialGps }: GpsPersistDeps): GpsPers
     lastWrittenAt = Date.now()
 
     try {
-      configEvents.emit('requestSave', { lastKnownGps: payload } satisfies Partial<ExtraConfig>)
+      configEvents.emit('requestSave', { lastKnownGps: payload } satisfies Partial<Config>)
     } catch (e) {
       console.warn('[gpsPersist] requestSave failed (ignored)', e)
     }

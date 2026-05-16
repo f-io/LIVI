@@ -99,7 +99,7 @@ describe('generalSchema', () => {
         label: 'Dongle Firmware Settings'
       })
     )
-    expect(firmware.children).toHaveLength(3)
+    expect(firmware.children).toHaveLength(4)
 
     const audioBuffer = firmware.children[0]
     expect(audioBuffer).toEqual(
@@ -120,7 +120,21 @@ describe('generalSchema', () => {
     expect(vt.fromView(Number.NaN, undefined)).toBe(1000)
     expect(vt.format(800)).toBe('800 ms')
 
-    const dashboard = firmware.children[1]
+    const microphone = firmware.children[1]
+    expect(microphone).toEqual(
+      expect.objectContaining({
+        type: 'select',
+        path: 'micType',
+        labelKey: 'settings.microphone'
+      })
+    )
+    expect(microphone.options).toEqual([
+      { label: 'Car mic', labelKey: 'settings.micCar', value: 0 },
+      { label: 'Dongle mic', labelKey: 'settings.micDongle', value: 1 },
+      { label: 'Phone mic', labelKey: 'settings.micPhone', value: 2 }
+    ])
+
+    const dashboard = firmware.children[2]
     expect(dashboard).toEqual(
       expect.objectContaining({
         type: 'route',
@@ -133,7 +147,7 @@ describe('generalSchema', () => {
       'dashboardRouteInfo'
     ])
 
-    const gnss = firmware.children[2]
+    const gnss = firmware.children[3]
     expect(gnss).toEqual(
       expect.objectContaining({
         type: 'route',

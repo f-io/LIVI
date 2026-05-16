@@ -1,11 +1,11 @@
 import { Typography } from '@mui/material'
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { useTranslation } from 'react-i18next'
 import { SettingsNode } from '../../../../routes'
 import { SettingsFieldControl } from './SettingsFieldControl'
 
 type Props<T> = {
-  node: SettingsNode<ExtraConfig>
+  node: SettingsNode<Config>
   value: T
   onChange: (v: T) => void
 }

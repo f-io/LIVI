@@ -16,3 +16,4 @@ if (Test-Path -LiteralPath $scanner) {
 & (Join-Path $Bundle 'bin\gst-launch-1.0.exe') --version
 & (Join-Path $Bundle 'bin\gst-inspect-1.0.exe') coreelements
 & (Join-Path $Bundle 'bin\gst-launch-1.0.exe') fakesrc num-buffers=1 ! fakesink
+& (Join-Path $Bundle 'bin\gst-device-monitor-1.0.exe') --version

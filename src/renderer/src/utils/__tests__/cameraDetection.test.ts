@@ -1,4 +1,4 @@
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { updateCameras } from '../cameraDetection'
 
 describe('updateCameras', () => {
@@ -48,7 +48,7 @@ describe('updateCameras', () => {
       makeVideoInput('cam-2', 'Camera 2')
     ])
 
-    const currentSettings = {} as ExtraConfig
+    const currentSettings = {} as Config
 
     const result = await updateCameras(setCameraFound, saveSettings, currentSettings)
 
@@ -77,7 +77,7 @@ describe('updateCameras', () => {
 
     const currentSettings = {
       darkMode: false
-    } as ExtraConfig
+    } as Config
 
     await updateCameras(setCameraFound, saveSettings, currentSettings)
 
@@ -97,7 +97,7 @@ describe('updateCameras', () => {
 
     const currentSettings = {
       cameraId: 'existing-cam'
-    } as ExtraConfig
+    } as Config
 
     await updateCameras(setCameraFound, saveSettings, currentSettings)
 
@@ -112,7 +112,7 @@ describe('updateCameras', () => {
       makeAudioInput('mic-1')
     ])
 
-    const currentSettings = {} as ExtraConfig
+    const currentSettings = {} as Config
 
     const result = await updateCameras(setCameraFound, saveSettings, currentSettings)
 
@@ -130,7 +130,7 @@ describe('updateCameras', () => {
 
     ;(navigator.mediaDevices.enumerateDevices as jest.Mock).mockRejectedValue(error)
 
-    const currentSettings = {} as ExtraConfig
+    const currentSettings = {} as Config
 
     const result = await updateCameras(setCameraFound, saveSettings, currentSettings)
 

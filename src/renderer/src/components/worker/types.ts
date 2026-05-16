@@ -1,4 +1,4 @@
-import type { DongleConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import type { CoreAudioData } from '@shared/types/AudioMessageTypes'
 import { TouchAction } from '@shared/types/ProjectionEnums'
 
@@ -26,7 +26,7 @@ export type AudioPlayerPayload = {
 
 /** Start command payload */
 export type StartPayload = {
-  config: Partial<DongleConfig>
+  config: Partial<Config>
 }
 
 /** Command strings accepted by the worker */

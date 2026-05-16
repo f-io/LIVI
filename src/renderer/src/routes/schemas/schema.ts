@@ -1,4 +1,4 @@
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { generateRoutes } from '../../utils/generateRoutes'
 import { SettingsNode } from '../types'
 import { appearanceSchema } from './appearanceSchema'
@@ -8,7 +8,7 @@ import { generalSchema } from './generalSchema'
 import { systemSchema } from './systemSchema'
 import { videoSchema } from './videoSchema'
 
-export const settingsSchema: SettingsNode<ExtraConfig> = {
+export const settingsSchema: SettingsNode<Config> = {
   type: 'route',
   route: 'new-settings',
   label: 'Settings', // TODO deleted in favor of i18n

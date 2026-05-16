@@ -131,6 +131,7 @@ if ! grep -q "$KIOSK_MARKER" "$USER_HOME/.bash_profile" 2>/dev/null; then
 $KIOSK_MARKER
 if [ -z "\$WAYLAND_DISPLAY" ] && [ "\$(tty)" = "/dev/tty1" ]; then
   export ELECTRON_OZONE_PLATFORM_HINT=wayland
+  export LIVI_KIOSK=1
   exec cage -- "$APPIMAGE_PATH"
 fi
 EOF

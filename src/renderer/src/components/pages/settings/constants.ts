@@ -1,4 +1,4 @@
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 
 export const MEDIA_DELAY_MIN = 300
 export const MEDIA_DELAY_MAX = 2000
@@ -24,7 +24,7 @@ export const SAFE_AREA_MAX_WIDTH = MAX_WIDTH
 export const SAFE_AREA_MAX_HEIGHT = MAX_HEIGHT
 export const SAFE_AREA_DEFAULT = 0
 
-export const UI_DEBOUNCED_KEYS = new Set<keyof ExtraConfig>([
+export const UI_DEBOUNCED_KEYS = new Set<keyof Config>([
   'primaryColorDark',
   'primaryColorLight',
   'highlightColorDark',
@@ -41,7 +41,7 @@ export enum WiFiValues {
   '5ghz' = '5ghz'
 }
 
-export const requiresRestartParams: (keyof ExtraConfig)[] = [
+export const requiresRestartParams: (keyof Config)[] = [
   'aa',
   'cp',
 
@@ -81,6 +81,6 @@ export const requiresRestartParams: (keyof ExtraConfig)[] = [
   'carName',
   'oemName',
   'wifiPassword',
-  'mediaSound',
+  'samplingFrequency',
   'hand'
 ]

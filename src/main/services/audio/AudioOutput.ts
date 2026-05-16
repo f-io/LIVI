@@ -1,13 +1,13 @@
 import { DEBUG } from '@main/constants'
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
-import { app } from 'electron'
-import fs from 'fs'
 import path from 'path'
+import { audioDeviceProp, audioSinkElement, gstEnv, resolveGStreamerRoot } from './gstreamer'
 
 export interface AudioOutputOptions {
   sampleRate: number
   channels: number
   mode?: 'music' | 'realtime'
+  device?: string
 }
 
 export class AudioOutput {
@@ -17,6 +17,7 @@ export class AudioOutput {
   private readonly sampleRate: number
   private readonly channels: number
   private readonly mode: 'music' | 'realtime'
+  private device: string | undefined
 
   private bytesWritten = 0
   private queue: Buffer[] = []
@@ -27,21 +28,24 @@ export class AudioOutput {
     this.sampleRate = opts.sampleRate
     this.channels = Math.max(1, opts.channels | 0)
     this.mode = opts.mode ?? AudioOutput.inferMode(this.sampleRate, this.channels)
+    this.device = opts.device
 
     if (DEBUG) {
       console.debug('[AudioOutput] Init', {
         sampleRate: this.sampleRate,
         channels: this.channels,
         mode: this.mode,
+        device: this.device ?? 'default',
         platform: process.platform
       })
     }
   }
 
+  setDevice(device: string | undefined): void {
+    this.device = device
+  }
+
   start(): void {
-    // Restart semantics: forcibly tear down any prior process. Don't use the
-    // public stop() here — that drains gracefully, which would briefly leave
-    // two gst-launch processes alive and racing to mutate `this.process`.
     this.killImmediate()
 
     if (
@@ -53,7 +57,7 @@ export class AudioOutput {
       return
     }
 
-    const gstRoot = AudioOutput.resolveGStreamerRoot()
+    const gstRoot = resolveGStreamerRoot()
     if (!gstRoot) {
       console.error('[AudioOutput] Bundled GStreamer not found')
       return
@@ -65,41 +69,7 @@ export class AudioOutput {
       process.platform === 'win32' ? 'gst-launch-1.0.exe' : 'gst-launch-1.0'
     )
     const args = this.buildArgs()
-
-    const pluginPath = path.join(gstRoot, 'lib', 'gstreamer-1.0')
-    const pluginScanner = path.join(
-      gstRoot,
-      'libexec',
-      'gstreamer-1.0',
-      process.platform === 'win32' ? 'gst-plugin-scanner.exe' : 'gst-plugin-scanner'
-    )
-
-    let env: NodeJS.ProcessEnv
-    if (process.platform === 'darwin') {
-      env = {
-        ...process.env,
-        DYLD_LIBRARY_PATH: path.join(gstRoot, 'lib'),
-        GST_PLUGIN_SYSTEM_PATH: '',
-        GST_PLUGIN_PATH: pluginPath,
-        GST_PLUGIN_SCANNER: pluginScanner
-      }
-    } else if (process.platform === 'linux') {
-      env = {
-        ...process.env,
-        LD_LIBRARY_PATH: path.join(gstRoot, 'lib'),
-        GST_PLUGIN_SYSTEM_PATH: '',
-        GST_PLUGIN_PATH: pluginPath,
-        GST_PLUGIN_SCANNER: pluginScanner
-      }
-    } else {
-      env = {
-        ...process.env,
-        PATH: `${path.join(gstRoot, 'bin')};${process.env.PATH ?? ''}`,
-        GST_PLUGIN_SYSTEM_PATH: '',
-        GST_PLUGIN_PATH: pluginPath,
-        GST_PLUGIN_SCANNER: pluginScanner
-      }
-    }
+    const env = gstEnv(gstRoot)
 
     if (DEBUG) {
       console.debug('[AudioOutput] Spawning', cmd, args.join(' '))
@@ -290,12 +260,7 @@ export class AudioOutput {
         ]
       : ['queue', 'max-size-time=200000000', 'max-size-bytes=0', 'max-size-buffers=0'] // max 200ms
 
-    const sink =
-      process.platform === 'darwin'
-        ? 'osxaudiosink'
-        : process.platform === 'win32'
-          ? 'wasapisink'
-          : 'pulsesink'
+    const sink = audioSinkElement()
 
     // Sink-specific settings:
     //   realtime    → sync=false (mic/voice paths must not buffer)
@@ -306,6 +271,10 @@ export class AudioOutput {
       : sink === 'osxaudiosink'
         ? [sink]
         : [sink, 'buffer-time=300000', 'latency-time=30000']
+
+    if (this.device) {
+      sinkArgs.push(`${audioDeviceProp()}=${this.device}`)
+    }
 
     return [
       'fdsrc',
@@ -371,32 +340,5 @@ export class AudioOutput {
     if (channels === 1) return 'realtime'
     if (sampleRate <= 24000) return 'realtime'
     return 'music'
-  }
-
-  private static resolveGStreamerRoot(): string | null {
-    const isPackaged = app.isPackaged
-    const base = isPackaged ? process.resourcesPath : path.join(app.getAppPath(), 'assets')
-
-    const platformDir =
-      process.platform === 'darwin'
-        ? process.arch === 'arm64'
-          ? 'macos-arm64'
-          : null
-        : process.platform === 'linux'
-          ? process.arch === 'arm64'
-            ? 'linux-arm64'
-            : process.arch === 'x64'
-              ? 'linux-x64'
-              : null
-          : process.platform === 'win32'
-            ? process.arch === 'x64'
-              ? 'windows-x64'
-              : null
-            : null
-
-    if (!platformDir) return null
-
-    const bundled = path.join(base, 'gstreamer', platformDir)
-    return fs.existsSync(bundled) ? bundled : null
   }
 }

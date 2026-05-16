@@ -1,5 +1,5 @@
-import type { ExtraConfig } from '@shared/types'
-import { SettingsNode, ValueTransform } from '../types'
+import type { Config } from '@shared/types'
+import { SelectOption, SettingsNode, ValueTransform } from '../types'
 
 const audioValueTransform: ValueTransform<number | undefined, number> = {
   toView: (v) => Math.round((v ?? 1) * 100),
@@ -11,7 +11,27 @@ const audioValueTransform: ValueTransform<number | undefined, number> = {
   format: (v) => `${v} %`
 }
 
-export const audioSchema: SettingsNode<ExtraConfig> = {
+const systemDefaultOption: SelectOption = {
+  value: '',
+  label: 'System default',
+  labelKey: 'settings.audioDeviceSystemDefault'
+}
+
+async function loadAudioOutputDevices(): Promise<SelectOption[]> {
+  const api = window.projection?.audio
+  if (!api?.listSinks) return [systemDefaultOption]
+  const list = await api.listSinks()
+  return [systemDefaultOption, ...list.map((d) => ({ value: d.id, label: d.name }))]
+}
+
+async function loadAudioInputDevices(): Promise<SelectOption[]> {
+  const api = window.projection?.audio
+  if (!api?.listSources) return [systemDefaultOption]
+  const list = await api.listSources()
+  return [systemDefaultOption, ...list.map((d) => ({ value: d.id, label: d.name }))]
+}
+
+export const audioSchema: SettingsNode<Config> = {
   type: 'route',
   route: 'audio',
   label: 'Audio',
@@ -80,27 +100,39 @@ export const audioSchema: SettingsNode<ExtraConfig> = {
     },
     {
       type: 'select',
-      label: 'Microphone',
-      labelKey: 'settings.microphone',
-      path: 'micType',
+      label: 'Audio Output',
+      labelKey: 'settings.audioOutputDevice',
+      path: 'audioOutputDevice',
       displayValue: true,
-      options: [
-        { label: 'Car mic', labelKey: 'settings.micCar', value: 0 },
-        { label: 'Dongle mic', labelKey: 'settings.micDongle', value: 1 },
-        { label: 'Phone mic', labelKey: 'settings.micPhone', value: 2 }
-      ],
+      options: [systemDefaultOption],
+      loadOptions: loadAudioOutputDevices,
       page: {
-        title: 'Microphone',
-        labelTitle: 'settings.microphone',
-        description: 'Microphone selection',
-        labelDescription: 'settings.microphoneDescription'
+        title: 'Audio Output',
+        labelTitle: 'settings.audioOutputDevice',
+        description: 'Pick the audio sink.',
+        labelDescription: 'settings.audioOutputDeviceDescription'
+      }
+    },
+    {
+      type: 'select',
+      label: 'Audio Input',
+      labelKey: 'settings.audioInputDevice',
+      path: 'audioInputDevice',
+      displayValue: true,
+      options: [systemDefaultOption],
+      loadOptions: loadAudioInputDevices,
+      page: {
+        title: 'Audio Input',
+        labelTitle: 'settings.audioInputDevice',
+        description: 'Pick the microphone source.',
+        labelDescription: 'settings.audioInputDeviceDescription'
       }
     },
     {
       type: 'select',
       label: 'Sampling Frequency',
       labelKey: 'settings.samplingFrequency',
-      path: 'mediaSound',
+      path: 'samplingFrequency',
       displayValue: true,
       options: [
         { label: '44.1 kHz', value: 0 },
@@ -109,7 +141,7 @@ export const audioSchema: SettingsNode<ExtraConfig> = {
       page: {
         title: 'Sampling Frequency',
         labelTitle: 'settings.samplingFrequency',
-        description: 'Native stream sampling frequency',
+        description: 'Phone main-audio stream sampling frequency.',
         labelDescription: 'settings.samplingFrequencyDescription'
       }
     },

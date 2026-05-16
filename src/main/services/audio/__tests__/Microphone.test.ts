@@ -266,85 +266,6 @@ describe('Microphone', () => {
     expect(cls.toGstRawFormat({ format: 'pcm' })).toBe('PCM')
   })
 
-  test('resolveGStreamerRoot returns null when platform/arch combo is unsupported', () => {
-    const cls = Microphone as any
-
-    Object.defineProperty(process, 'platform', {
-      value: 'darwin',
-      configurable: true
-    })
-    Object.defineProperty(process, 'arch', {
-      value: 'x64',
-      configurable: true
-    })
-
-    expect(cls.resolveGStreamerRoot()).toBeNull()
-  })
-
-  test('resolveGStreamerRoot returns linux-x64 asset path in dev mode', () => {
-    const cls = Microphone as any
-
-    Object.defineProperty(process, 'platform', {
-      value: 'linux',
-      configurable: true
-    })
-    Object.defineProperty(process, 'arch', {
-      value: 'x64',
-      configurable: true
-    })
-    ;(app as any).isPackaged = false
-    ;(app.getAppPath as jest.Mock).mockReturnValue('/mock/app')
-    ;(fs.existsSync as jest.Mock).mockImplementation((p: fs.PathLike) =>
-      String(p).includes('/mock/app/assets/gstreamer/linux-x64')
-    )
-
-    expect(cls.resolveGStreamerRoot()).toBe('/mock/app/assets/gstreamer/linux-x64')
-  })
-
-  test('resolveGStreamerRoot returns windows-x64 asset path in dev mode', () => {
-    const cls = Microphone as any
-
-    Object.defineProperty(process, 'platform', {
-      value: 'win32',
-      configurable: true
-    })
-    Object.defineProperty(process, 'arch', {
-      value: 'x64',
-      configurable: true
-    })
-    ;(app as any).isPackaged = false
-    ;(app.getAppPath as jest.Mock).mockReturnValue('/mock/app')
-    ;(fs.existsSync as jest.Mock).mockImplementation((p: fs.PathLike) =>
-      String(p).includes('/mock/app/assets/gstreamer/windows-x64')
-    )
-
-    expect(cls.resolveGStreamerRoot()).toBe('/mock/app/assets/gstreamer/windows-x64')
-  })
-
-  test('resolveGStreamerRoot uses resourcesPath when app is packaged', () => {
-    const cls = Microphone as any
-
-    Object.defineProperty(process, 'platform', {
-      value: 'linux',
-      configurable: true
-    })
-    Object.defineProperty(process, 'arch', {
-      value: 'x64',
-      configurable: true
-    })
-    Object.defineProperty(process, 'resourcesPath', {
-      value: '/mock/resources',
-      configurable: true
-    })
-    ;(app as any).isPackaged = true
-    ;(fs.existsSync as jest.Mock).mockImplementation((p: fs.PathLike) =>
-      String(p).includes('/mock/resources/gstreamer/linux-x64')
-    )
-
-    expect(cls.resolveGStreamerRoot()).toBe('/mock/resources/gstreamer/linux-x64')
-    ;(app as any).isPackaged = false
-  })
-
   test('start spawns gst-launch on linux with pulsesrc and linux env', () => {
     const proc = makeProc()
     ;(spawn as jest.Mock).mockReturnValue(proc)
@@ -625,21 +546,9 @@ describe('Microphone', () => {
     expect(mic.chunkSeq).toBe(34)
   })
 
-  test('toGstRawFormat uses fallback when format is nullish and resolveGStreamerRoot returns null for unsupported linux arch', () => {
+  test('toGstRawFormat uses fallback when format is nullish', () => {
     const cls = Microphone as any
-
     expect(cls.toGstRawFormat({ format: undefined })).toBe('S16LE')
-
-    Object.defineProperty(process, 'platform', {
-      value: 'linux',
-      configurable: true
-    })
-    Object.defineProperty(process, 'arch', {
-      value: 'arm',
-      configurable: true
-    })
-
-    expect(cls.resolveGStreamerRoot()).toBeNull()
   })
 
   test('logs debug chunk message for first stdout chunk when DEBUG is enabled', () => {
@@ -791,38 +700,5 @@ describe('Microphone', () => {
     second.emit('close', 0, null)
 
     expect(mic.isCapturing()).toBe(false)
-  })
-
-  test('resolveGStreamerRoot returns null for unsupported win32 arch', () => {
-    const cls = Microphone as any
-
-    Object.defineProperty(process, 'platform', {
-      value: 'win32',
-      configurable: true
-    })
-    Object.defineProperty(process, 'arch', {
-      value: 'arm64',
-      configurable: true
-    })
-
-    expect(cls.resolveGStreamerRoot()).toBeNull()
-  })
-
-  test('resolveGStreamerRoot returns null when supported platform path does not exist', () => {
-    const cls = Microphone as any
-
-    Object.defineProperty(process, 'platform', {
-      value: 'linux',
-      configurable: true
-    })
-    Object.defineProperty(process, 'arch', {
-      value: 'x64',
-      configurable: true
-    })
-    ;(app as any).isPackaged = false
-    ;(app.getAppPath as jest.Mock).mockReturnValue('/mock/app')
-    ;(fs.existsSync as jest.Mock).mockReturnValue(false)
-
-    expect(cls.resolveGStreamerRoot()).toBeNull()
   })
 })

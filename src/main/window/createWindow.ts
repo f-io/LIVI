@@ -151,7 +151,8 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
     // Snapshot the geometry
     scheduleMainBoundsSave()
 
-    if (runtimeState.config.kiosk?.main) {
+    const forceKiosk = process.env.LIVI_KIOSK === '1'
+    if (runtimeState.config.kiosk?.main || forceKiosk) {
       setImmediate(() => {
         if (!mainWindow || mainWindow.isDestroyed()) return
 

@@ -60,6 +60,7 @@ $ScannerDir = Join-Path $GstRoot "libexec\gstreamer-1.0"
 
 $GstLaunch = Join-Path $GstBin "gst-launch-1.0.exe"
 $GstInspect = Join-Path $GstBin "gst-inspect-1.0.exe"
+$GstDeviceMonitor = Join-Path $GstBin "gst-device-monitor-1.0.exe"
 $Scanner = Join-Path $ScannerDir "gst-plugin-scanner.exe"
 
 if (-not (Test-Path -LiteralPath $GstLaunch)) {
@@ -72,14 +73,20 @@ if (-not (Test-Path -LiteralPath $GstInspect)) {
   exit 1
 }
 
+if (-not (Test-Path -LiteralPath $GstDeviceMonitor)) {
+  Write-Error "gst-device-monitor-1.0.exe not found: $GstDeviceMonitor"
+  exit 1
+}
+
 if (-not (Test-Path -LiteralPath $PluginDir)) {
   Write-Error "gstreamer plugin directory not found: $PluginDir"
   exit 1
 }
 
-Write-Host "Using gst-launch:  $GstLaunch"
-Write-Host "Using gst-inspect: $GstInspect"
-Write-Host "Using plugin dir:  $PluginDir"
+Write-Host "Using gst-launch:         $GstLaunch"
+Write-Host "Using gst-inspect:        $GstInspect"
+Write-Host "Using gst-device-monitor: $GstDeviceMonitor"
+Write-Host "Using plugin dir:         $PluginDir"
 
 if (Test-Path -LiteralPath $Scanner) {
   Write-Host "Using scanner:     $Scanner"
@@ -98,6 +105,7 @@ New-Item -ItemType Directory -Force -Path `
 # bin tools
 Copy-Required $GstLaunch (Join-Path $Out "bin\gst-launch-1.0.exe")
 Copy-Required $GstInspect (Join-Path $Out "bin\gst-inspect-1.0.exe")
+Copy-Required $GstDeviceMonitor (Join-Path $Out "bin\gst-device-monitor-1.0.exe")
 
 # scanner
 if (Test-Path -LiteralPath $Scanner) {
@@ -111,6 +119,10 @@ if (-not (Test-Path -LiteralPath (Join-Path $Out "bin\gst-launch-1.0.exe"))) {
 
 if (-not (Test-Path -LiteralPath (Join-Path $Out "bin\gst-inspect-1.0.exe"))) {
   throw "gst-inspect-1.0.exe missing after copy"
+}
+
+if (-not (Test-Path -LiteralPath (Join-Path $Out "bin\gst-device-monitor-1.0.exe"))) {
+  throw "gst-device-monitor-1.0.exe missing after copy"
 }
 
 if (Test-Path -LiteralPath $Scanner) {

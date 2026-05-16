@@ -1,7 +1,7 @@
 /// <reference types="@webgpu/types" />
 
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { DongleFirmwareAction, ExtraConfig } from '@shared/types'
+import type { Config, DongleFirmwareAction } from '@shared/types'
 import type { MultiTouchPoint } from '@shared/types/TouchTypes'
 
 // Should move to src/types/usb.ts
@@ -129,11 +129,15 @@ declare global {
       }
 
       settings: {
-        get(): Promise<ExtraConfig>
-        save(settings: Partial<ExtraConfig>): Promise<void>
+        get(): Promise<Config>
+        save(settings: Partial<Config>): Promise<void>
         onUpdate(
-          callback: (event: import('electron').IpcRendererEvent, settings: ExtraConfig) => void
+          callback: (event: import('electron').IpcRendererEvent, settings: Config) => void
         ): () => void
+      }
+      audio: {
+        listSinks(): Promise<Array<{ id: string; name: string; isDefault: boolean }>>
+        listSources(): Promise<Array<{ id: string; name: string; isDefault: boolean }>>
       }
       ipc: {
         start(): Promise<void>

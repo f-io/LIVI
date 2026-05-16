@@ -1,4 +1,4 @@
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 
 export const DEBUG = process.env.DEBUG === '1'
 export const TRACE = process.env.TRACE === '1'
@@ -8,7 +8,7 @@ export const MIN_HEIGHT = 200
 export const DEFAULT_WIDTH = 800
 export const DEFAULT_HEIGHT = 480
 
-export const NULL_DELETES: (keyof ExtraConfig)[] = [
+export const NULL_DELETES: (keyof Config)[] = [
   'primaryColorDark',
   'primaryColorLight',
   'highlightColorDark',

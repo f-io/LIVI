@@ -206,6 +206,7 @@ find_scanner() {
 
 GST_LAUNCH="$(command -v gst-launch-1.0 || true)"
 GST_INSPECT="$(command -v gst-inspect-1.0 || true)"
+GST_DEVICE_MONITOR="$(command -v gst-device-monitor-1.0 || true)"
 PLUGIN_DIR="$(find_plugin_dir || true)"
 SCANNER="$(find_scanner || true)"
 
@@ -219,16 +220,22 @@ if [[ -z "$GST_INSPECT" ]]; then
   exit 1
 fi
 
+if [[ -z "$GST_DEVICE_MONITOR" ]]; then
+  echo "gst-device-monitor-1.0 not found" >&2
+  exit 1
+fi
+
 if [[ -z "$PLUGIN_DIR" ]]; then
   echo "gstreamer plugin directory not found" >&2
   exit 1
 fi
 
-echo "Using gst-launch:   $GST_LAUNCH"
-echo "Using gst-inspect:  $GST_INSPECT"
-echo "Using plugin dir:   $PLUGIN_DIR"
+echo "Using gst-launch:         $GST_LAUNCH"
+echo "Using gst-inspect:        $GST_INSPECT"
+echo "Using gst-device-monitor: $GST_DEVICE_MONITOR"
+echo "Using plugin dir:         $PLUGIN_DIR"
 if [[ -n "$SCANNER" ]]; then
-  echo "Using scanner:      $SCANNER"
+  echo "Using scanner:            $SCANNER"
 else
   echo "No gst-plugin-scanner found; continuing without it"
 fi
@@ -246,6 +253,7 @@ declare -a PENDING_LIBS=()
 # bin
 copy_binary_and_deps "$GST_LAUNCH" "gst-launch-1.0"
 copy_binary_and_deps "$GST_INSPECT" "gst-inspect-1.0"
+copy_binary_and_deps "$GST_DEVICE_MONITOR" "gst-device-monitor-1.0"
 
 # libexec
 if [[ -n "$SCANNER" ]]; then

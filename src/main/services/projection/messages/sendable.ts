@@ -1,5 +1,5 @@
 import { DEBUG } from '@main/constants'
-import type { DongleConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { PhoneWorkMode } from '@shared/types'
 import {
   CommandMapping,
@@ -20,7 +20,7 @@ import { buildServerCgiScript } from '../assets/LIVI_cgi.js'
 import { buildLiviWeb } from '../assets/LIVI_web.js'
 import { MessageHeader, MessageType } from './common.js'
 
-export type OpenConfig = Pick<DongleConfig, 'width' | 'height' | 'fps'>
+export type OpenConfig = Pick<Config, 'width' | 'height' | 'fps'>
 
 export abstract class SendableMessage {
   abstract type: MessageType
@@ -355,7 +355,7 @@ export class SendOpen extends SendableMessageWithPayload {
   type = MessageType.Open
 
   constructor(
-    public config: Pick<DongleConfig, 'width' | 'height' | 'fps'>,
+    public config: Pick<Config, 'width' | 'height' | 'fps'>,
     public phoneWorkMode: PhoneWorkMode.CarPlay | PhoneWorkMode.Android
   ) {
     super()
@@ -416,7 +416,7 @@ type BoxSettingsBody = {
 export class SendBoxSettings extends SendableMessageWithPayload {
   type = MessageType.BoxSettings
   private syncTime: number | null
-  private config: DongleConfig
+  private config: Config
 
   getPayload(): Buffer {
     const cfg = this.config
@@ -448,7 +448,7 @@ export class SendBoxSettings extends SendableMessageWithPayload {
       androidAutoSizeW: aaAdjusted.width,
       androidAutoSizeH: aaAdjusted.height,
       wifiChannel: channel,
-      mediaSound: cfg.mediaSound,
+      mediaSound: cfg.samplingFrequency,
       callQuality: cfg.callQuality,
       gps: cfg.gps ? 1 : 0,
       DashboardInfo: dashboardInfo,
@@ -487,7 +487,7 @@ export class SendBoxSettings extends SendableMessageWithPayload {
     return Buffer.from(JSON.stringify(body), 'ascii')
   }
 
-  constructor(config: DongleConfig, syncTime: number | null = null) {
+  constructor(config: Config, syncTime: number | null = null) {
     super()
     this.config = config
     this.syncTime = syncTime

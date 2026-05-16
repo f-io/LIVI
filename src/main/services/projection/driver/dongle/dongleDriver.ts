@@ -34,8 +34,8 @@ import {
   SendString,
   SendViewArea
 } from '@projection/messages/sendable'
-import type { DongleConfig } from '@shared/types'
-import { DEFAULT_EXTRA_CONFIG, MicType, PhoneWorkMode } from '@shared/types'
+import type { Config } from '@shared/types'
+import { DEFAULT_CONFIG, MicType, PhoneWorkMode } from '@shared/types'
 import type { CommandValue } from '@shared/types/ProjectionEnums'
 import { matchFittingAAResolution } from '@shared/utils'
 import EventEmitter from 'events'
@@ -62,8 +62,6 @@ export enum AndroidWorkMode {
   Search = 7
 }
 
-export const DEFAULT_CONFIG: DongleConfig = DEFAULT_EXTRA_CONFIG
-
 export class DriverStateError extends Error {}
 
 export class DongleDriver extends EventEmitter {
@@ -83,7 +81,7 @@ export class DongleDriver extends EventEmitter {
   private _boxInfo?: BoxInfoSettings
   private _lastDongleInfoEmitKey = ''
 
-  private _cfg: DongleConfig | null = null
+  private _cfg: Config | null = null
   private _postOpenConfigSent = false
 
   private _wifiConnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -623,7 +621,7 @@ export class DongleDriver extends EventEmitter {
     }
   }
 
-  start = async (cfg: DongleConfig) => {
+  start = async (cfg: Config) => {
     if (!this._device) throw new DriverStateError('initialise() first')
     if (!this._device.opened) return
     if (this._started) return

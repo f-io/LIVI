@@ -2,7 +2,7 @@ import { configEvents } from '@main/ipc/utils'
 import { broadcastToSecondaryRenderers } from '@main/window/broadcast'
 import { getSecondaryWindow } from '@main/window/secondaryWindows'
 import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
-import type { DevListEntry, ExtraConfig } from '@shared/types'
+import type { Config, DevListEntry } from '@shared/types'
 import { PhoneWorkMode } from '@shared/types'
 import type { NavLocale } from '@shared/utils'
 import { isClusterDisplayed, translateNavigation } from '@shared/utils'
@@ -105,7 +105,7 @@ export class ProjectionService {
   private av1Supported = false
   private webUsbDevice: WebUSBDevice | null = null
   private webContents: WebContents | null = null
-  private config: ExtraConfig = DEFAULT_CONFIG as ExtraConfig
+  private config: Config = DEFAULT_CONFIG as Config
   private pairTimeout: NodeJS.Timeout | null = null
   private frameInterval: NodeJS.Timeout | null = null
 
@@ -162,7 +162,7 @@ export class ProjectionService {
 
   private audio: ProjectionAudio
 
-  private readonly onConfigChanged = (next: ExtraConfig) => {
+  private readonly onConfigChanged = (next: Config) => {
     if (this.shuttingDown) return
     const prev = this.config
     this.config = { ...this.config, ...next }
@@ -187,8 +187,6 @@ export class ProjectionService {
     }
 
     if (clusterToggled && !nextClusterActive) {
-      // Drop any in-flight cluster request so we stop forwarding cluster chunks
-      // to the renderer until the next explicit request.
       this.clusterRequested = false
       this.lastClusterCodec = null
       this.lastClusterVideoWidth = undefined
@@ -206,6 +204,12 @@ export class ProjectionService {
     if (prefChanged) {
       this.arbiter.resetNativeProbeDefer()
       this.emitTransportState()
+    }
+
+    const outChanged = next.audioOutputDevice !== prev?.audioOutputDevice
+    const inChanged = next.audioInputDevice !== prev?.audioInputDevice
+    if (outChanged || inChanged) {
+      this.audio.onAudioDeviceChanged()
     }
   }
 
@@ -260,7 +264,7 @@ export class ProjectionService {
     }
   }
 
-  /** Read by AaDriver right before it starts the AAStack. */
+  // Read by AaDriver right before it starts the AAStack
   public getHevcSupported(): boolean {
     return this.hevcSupported
   }
@@ -769,7 +773,7 @@ export class ProjectionService {
     try {
       const configPath = path.join(app.getPath('userData'), 'config.json')
       if (!fs.existsSync(configPath)) return
-      const userConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')) as ExtraConfig
+      const userConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')) as Config
       this.config = { ...this.config, ...userConfig }
     } catch {
       // ignore
@@ -789,11 +793,11 @@ export class ProjectionService {
     try {
       const configPath = path.join(app.getPath('userData'), 'config.json')
 
-      let cfg: ExtraConfig = { ...(DEFAULT_CONFIG as ExtraConfig), ...this.config }
+      let cfg: Config = { ...(DEFAULT_CONFIG as Config), ...this.config }
 
       try {
         if (fs.existsSync(configPath)) {
-          const diskCfg = JSON.parse(fs.readFileSync(configPath, 'utf8')) as ExtraConfig
+          const diskCfg = JSON.parse(fs.readFileSync(configPath, 'utf8')) as Config
           cfg = { ...cfg, ...diskCfg }
           this.config = cfg
         }
@@ -851,7 +855,7 @@ export class ProjectionService {
     }
   }
 
-  public applyConfigPatch(patch: Partial<ExtraConfig>): void {
+  public applyConfigPatch(patch: Partial<Config>): void {
     this.config = { ...this.config, ...patch }
   }
 
@@ -1021,10 +1025,7 @@ export class ProjectionService {
     )
   }
 
-  /** Pick a target from the paired list and fire a single Connect.
-   *
-   *  Preference: last-connected MAC (config), first trusted, first paired.
-   *  Bails immediately if any device is already connected. */
+  // Pick a target from the paired list and fire a single Connect
   private async tryAutoConnect(): Promise<void> {
     if (!this.aaDriver) return
 
@@ -1059,9 +1060,7 @@ export class ProjectionService {
     }
   }
 
-  /** Open the long-lived aa-bt event subscription. Each device-changed event
-   *  triggers a refresh. If the sock isn't bindable yet, retry once after
-   *  the initial population finishes (~30 s budget). */
+  // Open the long-lived aa-bt event subscription
   private openAaBtSubscription(): void {
     if (this.aaBtSubscription) return
     const open = (): void => {
@@ -1072,8 +1071,7 @@ export class ProjectionService {
         },
         () => {
           this.aaBtSubscription = null
-          // Reopen if AaDriver is still active — typically means python
-          // restarted or temporarily lost the connection.
+          // Reopen if AaDriver is still active
           if (this.aaDriver) setTimeout(open, 1000)
         }
       )

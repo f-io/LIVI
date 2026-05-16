@@ -1,6 +1,6 @@
 import { Box, Typography } from '@mui/material'
 import type { SettingsNode } from '@renderer/routes/types'
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { useLiviStore, useStatusStore } from '@store/store'
 import type { Key } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -23,7 +23,7 @@ export function SettingsPage() {
   const path = splat ? splat.split('/') : []
   const node = getNodeByPath(settingsSchema, path)
 
-  const settings = useLiviStore((s) => s.settings) as ExtraConfig
+  const settings = useLiviStore((s) => s.settings) as Config
 
   const { state, handleFieldChange, needsRestart, restart, requestRestart } =
     useSmartSettingsFromSchema(settingsSchema, settings)
@@ -78,7 +78,7 @@ export function SettingsPage() {
 
   return (
     <SettingsLayout title={title} showRestart={showRestart} onRestart={handleRestart}>
-      {children.map((child: SettingsNode<ExtraConfig>, index: Key | null | undefined) => {
+      {children.map((child: SettingsNode<Config>, index: Key | null | undefined) => {
         const _path = child.path as string
 
         if (child.type === 'route') {

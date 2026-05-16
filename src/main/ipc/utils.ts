@@ -9,7 +9,7 @@ import {
   applyAspectRatioWindowed,
   applyWindowedContentSize
 } from '@main/window/utils'
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { DEFAULT_BINDINGS } from '@shared/types'
 import { screen } from 'electron'
 import { EventEmitter } from 'events'
@@ -51,9 +51,9 @@ export function sendUpdateProgress(payload: Extract<UpdateEventPayload, { phase:
   mainWindow?.webContents.send('update:progress', payload)
 }
 
-export function saveSettings(runtimeState: runtimeStateProps, next: Partial<ExtraConfig>) {
+export function saveSettings(runtimeState: runtimeStateProps, next: Partial<Config>) {
   const mainWindow = getMainWindow()
-  const merged: ExtraConfig = {
+  const merged: Config = {
     ...runtimeState.config,
     ...next,
     bindings: {
@@ -61,7 +61,7 @@ export function saveSettings(runtimeState: runtimeStateProps, next: Partial<Extr
       ...(runtimeState.config.bindings ?? {}),
       ...(next.bindings ?? {})
     }
-  } as ExtraConfig
+  } as Config
 
   applyNullDeletes(merged, next)
 

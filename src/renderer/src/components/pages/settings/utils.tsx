@@ -1,4 +1,4 @@
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { SettingsNode } from '../../../routes'
 
 type AnyRecord = Record<string, unknown>
@@ -46,18 +46,18 @@ export const setValueByPath = (obj: AnyRecord, path: string, value: unknown): vo
 }
 
 export const getNodeByPath = (
-  root: SettingsNode<ExtraConfig>,
+  root: SettingsNode<Config>,
   segments: string[]
-): SettingsNode<ExtraConfig> | null => {
-  let current: SettingsNode<ExtraConfig> | null = root
+): SettingsNode<Config> | null => {
+  let current: SettingsNode<Config> | null = root
 
   for (let i = 0; i < segments.length; i++) {
     if (!current || current.type !== 'route') return null
 
     const segment = segments[i]
 
-    const routeChild: SettingsNode<ExtraConfig> | undefined = current.children.find(
-      (c: SettingsNode<ExtraConfig>) => c.type === 'route' && c.route === segment
+    const routeChild: SettingsNode<Config> | undefined = current.children.find(
+      (c: SettingsNode<Config>) => c.type === 'route' && c.route === segment
     )
 
     if (routeChild) {
@@ -65,8 +65,8 @@ export const getNodeByPath = (
       continue
     }
 
-    const leafChild: SettingsNode<ExtraConfig> | undefined = current.children.find(
-      (c: SettingsNode<ExtraConfig>) => 'path' in c && c.path === segment
+    const leafChild: SettingsNode<Config> | undefined = current.children.find(
+      (c: SettingsNode<Config>) => 'path' in c && c.path === segment
     )
 
     if (leafChild) {

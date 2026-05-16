@@ -3,7 +3,7 @@ import { saveSettings } from '@main/ipc/utils'
 import { runtimeStateProps } from '@main/types'
 import { isMacPlatform, pushSettingsToRenderer } from '@main/utils'
 import { getMainWindow } from '@main/window/createWindow'
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { BrowserWindow, screen } from 'electron'
 
 export function applyAspectRatioFullscreen(
@@ -51,16 +51,16 @@ export function applyWindowedContentSize(win: BrowserWindow, w: number, h: numbe
   applyAspectRatioWindowed(win, w, h)
 }
 
-export function getMainKiosk(config: ExtraConfig): boolean {
+export function getMainKiosk(config: Config): boolean {
   return config.kiosk?.main === true
 }
 
-export function withMainKiosk(config: ExtraConfig, value: boolean): ExtraConfig['kiosk'] {
+export function withMainKiosk(config: Config, value: boolean): Config['kiosk'] {
   const prev = config.kiosk ?? { main: false, dash: false, aux: false }
   return { ...prev, main: value }
 }
 
-export function currentKiosk(config: ExtraConfig): boolean {
+export function currentKiosk(config: Config): boolean {
   const win: BrowserWindow | null = getMainWindow()
   const isMac = isMacPlatform()
 

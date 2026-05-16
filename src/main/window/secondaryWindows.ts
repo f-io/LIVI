@@ -1,7 +1,7 @@
 import { is } from '@electron-toolkit/utils'
 import { configEvents, saveSettings } from '@main/ipc/utils'
 import { runtimeStateProps } from '@main/types'
-import type { ExtraConfig, WindowBounds } from '@shared/types'
+import type { Config, WindowBounds } from '@shared/types'
 import { BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 
@@ -9,9 +9,9 @@ export type SecondaryWindowRole = 'dash' | 'aux'
 
 type SecondaryWindowSpec = {
   role: SecondaryWindowRole
-  activeKey: keyof ExtraConfig
-  widthKey: keyof ExtraConfig
-  heightKey: keyof ExtraConfig
+  activeKey: keyof Config
+  widthKey: keyof Config
+  heightKey: keyof Config
   boundsKey: 'dashScreenBounds' | 'auxScreenBounds'
   title: string
 }
@@ -38,18 +38,18 @@ const SPECS: SecondaryWindowSpec[] = [
 const windows = new Map<SecondaryWindowRole, BrowserWindow>()
 const boundsTimers = new Map<SecondaryWindowRole, NodeJS.Timeout>()
 
-function getSize(cfg: ExtraConfig, spec: SecondaryWindowSpec) {
+function getSize(cfg: Config, spec: SecondaryWindowSpec) {
   return {
     w: Math.max(1, Number(cfg[spec.widthKey]) || 800),
     h: Math.max(1, Number(cfg[spec.heightKey]) || 480)
   }
 }
 
-function getKioskFor(cfg: ExtraConfig, role: SecondaryWindowRole): boolean {
+function getKioskFor(cfg: Config, role: SecondaryWindowRole): boolean {
   return cfg.kiosk?.[role] === true
 }
 
-function readBounds(cfg: ExtraConfig, spec: SecondaryWindowSpec): WindowBounds | undefined {
+function readBounds(cfg: Config, spec: SecondaryWindowSpec): WindowBounds | undefined {
   const b = cfg[spec.boundsKey]
   if (
     b &&
@@ -81,7 +81,7 @@ function persistBounds(spec: SecondaryWindowSpec, runtimeState: runtimeStateProp
   ) {
     return
   }
-  saveSettings(runtimeState, { [spec.boundsKey]: next } as Partial<ExtraConfig>)
+  saveSettings(runtimeState, { [spec.boundsKey]: next } as Partial<Config>)
 }
 
 function scheduleBoundsSave(spec: SecondaryWindowSpec, runtimeState: runtimeStateProps) {
@@ -167,7 +167,7 @@ function spawn(spec: SecondaryWindowSpec, runtimeState: runtimeStateProps) {
     }
     if (runtimeState.isQuitting) return
     if (runtimeState.config[spec.activeKey] === true) {
-      saveSettings(runtimeState, { [spec.activeKey]: false } as Partial<ExtraConfig>)
+      saveSettings(runtimeState, { [spec.activeKey]: false } as Partial<Config>)
     }
   })
 
@@ -203,7 +203,7 @@ function applyKiosk(spec: SecondaryWindowSpec, runtimeState: runtimeStateProps) 
   }
 }
 
-export function syncSecondaryWindows(runtimeState: runtimeStateProps, prev?: ExtraConfig) {
+export function syncSecondaryWindows(runtimeState: runtimeStateProps, prev?: Config) {
   if (runtimeState.isQuitting) return
   const cfg = runtimeState.config
   for (const spec of SPECS) {
@@ -226,7 +226,7 @@ export function syncSecondaryWindows(runtimeState: runtimeStateProps, prev?: Ext
 
 export function setupSecondaryWindows(runtimeState: runtimeStateProps) {
   syncSecondaryWindows(runtimeState)
-  configEvents.on('changed', (next: ExtraConfig, prev: ExtraConfig) => {
+  configEvents.on('changed', (next: Config, prev: Config) => {
     void next
     syncSecondaryWindows(runtimeState, prev)
   })

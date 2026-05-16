@@ -1,12 +1,12 @@
 import { NullDeleteKey, runtimeStateProps } from '@main/types'
 import { broadcastToRenderers } from '@main/window/broadcast'
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { app } from 'electron'
 import { NULL_DELETES } from './constants'
 
 export const isMacPlatform = () => process.platform === 'darwin'
 
-export function applyNullDeletes(merged: ExtraConfig, next: Partial<ExtraConfig>) {
+export function applyNullDeletes(merged: Config, next: Partial<Config>) {
   const nextAny = next as Record<string, unknown>
   const mergedAny = merged as Record<string, unknown>
 
@@ -17,7 +17,7 @@ export function applyNullDeletes(merged: ExtraConfig, next: Partial<ExtraConfig>
   }
 }
 
-export function sizesEqual(a: ExtraConfig, b: ExtraConfig) {
+export function sizesEqual(a: Config, b: Config) {
   const aw = Number(a.width) || 0
   const ah = Number(a.height) || 0
   const bw = Number(b.width) || 0
@@ -48,7 +48,7 @@ export function linuxPresetAngleVulkan() {
 
 export function pushSettingsToRenderer(
   runtimeState: runtimeStateProps,
-  override?: Partial<ExtraConfig>
+  override?: Partial<Config>
 ) {
   broadcastToRenderers('settings', { ...runtimeState.config, ...(override ?? {}) })
 }

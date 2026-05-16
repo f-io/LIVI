@@ -1,4 +1,4 @@
-import { PhoneType } from '@shared/types/DongleConfig'
+import { PhoneType } from '@shared/types/Config'
 import { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
 import { MessageHeader } from './common.js'
 

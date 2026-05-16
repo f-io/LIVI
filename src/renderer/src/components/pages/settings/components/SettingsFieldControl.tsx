@@ -1,13 +1,16 @@
 import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined'
 import { IconButton, MenuItem, Select, Slider, Switch, TextField } from '@mui/material'
 import { themeColors } from '@renderer/themeColors'
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SettingsNode } from '../../../../routes'
+import type { SelectOption } from '../../../../routes/types'
 import NumberSpinner from './numberSpinner/numberSpinner'
+import { getCachedOptions, resolveOptions } from './selectOptionsCache'
 
 type Props<T> = {
-  node: SettingsNode<ExtraConfig>
+  node: SettingsNode<Config>
   value: T
   onChange: (v: T) => void
 }
@@ -39,8 +42,6 @@ const marks = [
 ]
 
 export const SettingsFieldControl = <T,>({ node, value, onChange }: Props<T>) => {
-  const { t } = useTranslation()
-
   switch (node.type) {
     case 'string':
       return (
@@ -109,29 +110,11 @@ export const SettingsFieldControl = <T,>({ node, value, onChange }: Props<T>) =>
 
     case 'select':
       return (
-        <Select
-          size="small"
-          variant="outlined"
+        <DynamicSelect
+          node={node}
           value={value as unknown as string | number}
-          sx={{
-            minWidth: 200,
-
-            '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-              borderColor: 'primary.main',
-              borderWidth: '1px'
-            }
-          }}
-          onChange={(e) => onChange(e.target.value as T)}
-        >
-          {node.options.map((o) => {
-            const label = o.labelKey ? t(o.labelKey) : o.label
-            return (
-              <MenuItem key={o.value} value={o.value}>
-                {label}
-              </MenuItem>
-            )
-          })}
-        </Select>
+          onChange={onChange as (v: unknown) => void}
+        />
       )
 
     case 'color': {
@@ -183,4 +166,55 @@ export const SettingsFieldControl = <T,>({ node, value, onChange }: Props<T>) =>
     default:
       return null
   }
+}
+
+type DynamicSelectProps = {
+  node: Extract<SettingsNode<Config>, { type: 'select' }>
+  value: string | number
+  onChange: (v: unknown) => void
+}
+
+function DynamicSelect({ node, value, onChange }: DynamicSelectProps) {
+  const { t } = useTranslation()
+  const [options, setOptions] = useState<SelectOption[]>(
+    () => getCachedOptions(node) ?? node.options
+  )
+
+  useEffect(() => {
+    if (!node.loadOptions) return
+    let alive = true
+    void resolveOptions(node).then((opts) => {
+      if (alive) setOptions(opts)
+    })
+    return () => {
+      alive = false
+    }
+  }, [node])
+
+  const inList = options.some((o) => o.value === value)
+
+  return (
+    <Select
+      size="small"
+      variant="outlined"
+      value={inList ? value : ''}
+      sx={{
+        minWidth: 200,
+        '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+          borderColor: 'primary.main',
+          borderWidth: '1px'
+        }
+      }}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      {options.map((o) => {
+        const label = o.labelKey ? t(o.labelKey, o.label) : o.label
+        return (
+          <MenuItem key={String(o.value)} value={o.value}>
+            {label}
+          </MenuItem>
+        )
+      })}
+    </Select>
+  )
 }

@@ -10,7 +10,7 @@ describe('audioSchema', () => {
     expect(schema.labelKey).toBe('settings.audio')
     expect(schema.path).toBe('')
     expect(Array.isArray(schema.children)).toBe(true)
-    expect(schema.children).toHaveLength(7)
+    expect(schema.children).toHaveLength(8)
   })
 
   test('music slider uses percent transform with sane defaults', () => {
@@ -37,7 +37,6 @@ describe('audioSchema', () => {
         label: 'Navigation'
       })
     )
-
     expect(schema.children[2]).toEqual(
       expect.objectContaining({
         type: 'slider',
@@ -45,7 +44,6 @@ describe('audioSchema', () => {
         label: 'Voice Assistant'
       })
     )
-
     expect(schema.children[3]).toEqual(
       expect.objectContaining({
         type: 'slider',
@@ -55,30 +53,58 @@ describe('audioSchema', () => {
     )
   })
 
-  test('microphone select exposes all expected options', () => {
-    const node = schema.children[4]
-    expect(node.type).toBe('select')
-    expect(node.path).toBe('micType')
-    expect(node.displayValue).toBe(true)
-    expect(node.options).toEqual([
-      { label: 'Car mic', labelKey: 'settings.micCar', value: 0 },
-      { label: 'Dongle mic', labelKey: 'settings.micDongle', value: 1 },
-      { label: 'Phone mic', labelKey: 'settings.micPhone', value: 2 }
-    ])
+  test('audio output device is a select with loadOptions + page', () => {
+    const out = schema.children[4]
+    expect(out).toEqual(
+      expect.objectContaining({
+        type: 'select',
+        path: 'audioOutputDevice',
+        label: 'Audio Output',
+        displayValue: true
+      })
+    )
+    expect(typeof out.loadOptions).toBe('function')
+    expect(out.options[0]).toEqual(
+      expect.objectContaining({
+        value: '',
+        labelKey: 'settings.audioDeviceSystemDefault'
+      })
+    )
+    expect(out.page).toEqual(
+      expect.objectContaining({ title: 'Audio Output', labelTitle: 'settings.audioOutputDevice' })
+    )
   })
 
-  test('sampling frequency select exposes expected options', () => {
-    const sampling = schema.children[5]
-    expect(sampling.type).toBe('select')
-    expect(sampling.path).toBe('mediaSound')
-    expect(sampling.options).toEqual([
+  test('audio input device is a select with loadOptions + page', () => {
+    const inp = schema.children[5]
+    expect(inp).toEqual(
+      expect.objectContaining({
+        type: 'select',
+        path: 'audioInputDevice',
+        label: 'Audio Input',
+        displayValue: true
+      })
+    )
+    expect(typeof inp.loadOptions).toBe('function')
+  })
+
+  test('sampling frequency select sits between audio input and disable audio', () => {
+    const node = schema.children[6]
+    expect(node).toEqual(
+      expect.objectContaining({
+        type: 'select',
+        path: 'samplingFrequency',
+        labelKey: 'settings.samplingFrequency'
+      })
+    )
+    expect(node.options).toEqual([
       { label: '44.1 kHz', value: 0 },
       { label: '48 kHz', value: 1 }
     ])
   })
 
   test('disable audio checkbox is present as final leaf', () => {
-    const node = schema.children[6]
+    const node = schema.children[7]
     expect(node).toEqual(
       expect.objectContaining({
         type: 'checkbox',
@@ -87,5 +113,10 @@ describe('audioSchema', () => {
         path: 'disableAudioOutput'
       })
     )
+  })
+
+  test('does not contain Microphone (lives in dongle firmware route)', () => {
+    const paths = schema.children.map((c: { path?: string }) => c.path)
+    expect(paths).not.toContain('micType')
   })
 })

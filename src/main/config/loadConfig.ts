@@ -1,11 +1,11 @@
-import type { ExtraConfig } from '@shared/types'
-import { DEFAULT_EXTRA_CONFIG } from '@shared/types'
+import type { Config } from '@shared/types'
+import { DEFAULT_CONFIG } from '@shared/types'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { CONFIG_PATH } from './paths'
 import { validate } from './validateConfig'
 
-export function loadConfig(): ExtraConfig {
-  let fileConfig: Partial<ExtraConfig> = {}
+export function loadConfig(): Config {
+  let fileConfig: Partial<Config> = {}
 
   if (existsSync(CONFIG_PATH)) {
     try {
@@ -15,7 +15,7 @@ export function loadConfig(): ExtraConfig {
     }
   }
 
-  const merged = validate(fileConfig, DEFAULT_EXTRA_CONFIG)
+  const merged = validate(fileConfig, DEFAULT_CONFIG)
 
   const needWrite =
     !existsSync(CONFIG_PATH) || JSON.stringify(fileConfig) !== JSON.stringify(merged)

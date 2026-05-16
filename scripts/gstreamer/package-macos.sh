@@ -25,6 +25,7 @@ mkdir -p \
 
 # bin
 copy_required "$GST_ROOT/bin/gst-launch-1.0" "$OUT/bin/"
+copy_required "$GST_ROOT/bin/gst-device-monitor-1.0" "$OUT/bin/"
 
 # libexec
 copy_required \

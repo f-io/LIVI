@@ -1,4 +1,4 @@
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { useCallback, useMemo } from 'react'
 import type { SettingsNode } from '../../../../routes'
 import { getValueByPath } from '../utils'
@@ -33,7 +33,7 @@ function hasTransform(node: unknown): node is NodeWithTransform {
 }
 
 const walkSchema = (
-  node: SettingsNode<ExtraConfig>,
+  node: SettingsNode<Config>,
   settings: unknown,
   initial: FlatSettings,
   overrides: Overrides
@@ -52,8 +52,8 @@ const walkSchema = (
 }
 
 export const useSmartSettingsFromSchema = (
-  rootSchema: SettingsNode<ExtraConfig>,
-  settings: ExtraConfig | null | undefined
+  rootSchema: SettingsNode<Config>,
+  settings: Config | null | undefined
 ) => {
   const { initialState, overrides } = useMemo(() => {
     const initialState: FlatSettings = {}
@@ -64,7 +64,7 @@ export const useSmartSettingsFromSchema = (
     return { initialState, overrides }
   }, [rootSchema, settings])
 
-  const smart = useSmartSettings(initialState, settings ?? ({} as ExtraConfig), { overrides })
+  const smart = useSmartSettings(initialState, settings ?? ({} as Config), { overrides })
 
   const requestRestart = useCallback(
     (path?: string) => {

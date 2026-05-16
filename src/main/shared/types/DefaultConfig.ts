@@ -1,8 +1,8 @@
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { DEFAULT_BINDINGS } from '@shared/types'
-import { CarType, HandDriveType, MicType, PhoneWorkMode } from '@shared/types/DongleConfig'
+import { CarType, HandDriveType, MicType, PhoneWorkMode } from '@shared/types/Config'
 
-export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
+export const DEFAULT_CONFIG: Config = {
   width: 1280,
   height: 720,
   fps: 60,
@@ -30,7 +30,7 @@ export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
   nightMode: true,
   hand: HandDriveType.LHD,
   mediaDelay: 1000,
-  mediaSound: 1,
+  samplingFrequency: 1,
   callQuality: 1,
   autoConn: true,
   UseBTPhone: false,
@@ -74,6 +74,8 @@ export const DEFAULT_EXTRA_CONFIG: ExtraConfig = {
   navVolume: 0.95,
   voiceAssistantVolume: 0.95,
   callVolume: 0.95,
+  audioOutputDevice: '',
+  audioInputDevice: '',
   primaryColorDark: '',
   highlightColorDark: '',
   primaryColorLight: '',

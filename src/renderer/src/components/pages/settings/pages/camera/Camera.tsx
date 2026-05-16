@@ -1,5 +1,5 @@
 import { MenuItem, Select, Typography } from '@mui/material'
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { useStatusStore } from '@store/store'
 import { updateCameras as detectCameras } from '@utils/cameraDetection'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -13,10 +13,7 @@ function coerceSelectValue<T extends string | number>(
   return value != null && options.includes(value as T) ? (value as T) : ''
 }
 
-export const Camera: React.FC<SettingsCustomPageProps<ExtraConfig, string>> = ({
-  state,
-  onChange
-}) => {
+export const Camera: React.FC<SettingsCustomPageProps<Config, string>> = ({ state, onChange }) => {
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([])
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   const setCameraFound = useStatusStore((s) => s.setCameraFound)

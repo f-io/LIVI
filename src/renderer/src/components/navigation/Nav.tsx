@@ -1,4 +1,4 @@
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { useLocation, useNavigate } from 'react-router'
 import { ROUTES } from '../../constants'
 import { useBlinkingTime } from '../../hooks/useBlinkingTime'
@@ -8,7 +8,7 @@ import { NavRail, type NavRailItem } from './NavRail'
 import { useTabsConfig } from './useTabsConfig'
 
 interface NavProps {
-  settings: ExtraConfig | null
+  settings: Config | null
   receivingVideo: boolean
 }
 

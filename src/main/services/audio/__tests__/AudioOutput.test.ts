@@ -480,40 +480,6 @@ describe('AudioOutput', () => {
     }
   })
 
-  test('resolveGStreamerRoot returns null for unsupported arch/platform combinations', () => {
-    const cls = AudioOutput as any
-
-    Object.defineProperty(process, 'platform', { value: 'darwin' })
-    Object.defineProperty(process, 'arch', { value: 'x64' })
-    expect(cls.resolveGStreamerRoot()).toBeNull()
-
-    Object.defineProperty(process, 'platform', { value: 'linux' })
-    Object.defineProperty(process, 'arch', { value: 'ppc64' })
-    expect(cls.resolveGStreamerRoot()).toBeNull()
-
-    Object.defineProperty(process, 'platform', { value: 'win32' })
-    Object.defineProperty(process, 'arch', { value: 'arm64' })
-    expect(cls.resolveGStreamerRoot()).toBeNull()
-  })
-
-  test('resolveGStreamerRoot uses resourcesPath when app is packaged', () => {
-    const cls = AudioOutput as any
-
-    Object.defineProperty(process, 'platform', { value: 'linux' })
-    Object.defineProperty(process, 'arch', { value: 'x64' })
-    Object.defineProperty(process, 'resourcesPath', {
-      value: '/mock/resources',
-      configurable: true
-    })
-    ;(app as any).isPackaged = true
-    ;(fs.existsSync as jest.Mock).mockImplementation((p: fs.PathLike) =>
-      String(p).includes('/mock/resources/gstreamer/linux-x64')
-    )
-
-    expect(cls.resolveGStreamerRoot()).toBe('/mock/resources/gstreamer/linux-x64')
-    ;(app as any).isPackaged = false
-  })
-
   test('constructor normalizes fractional and negative channel counts', () => {
     const a = new AudioOutput({ sampleRate: 48000, channels: 2.9, mode: 'music' }) as any
     const b = new AudioOutput({ sampleRate: 48000, channels: -3, mode: 'music' }) as any
@@ -554,18 +520,6 @@ describe('AudioOutput', () => {
     } finally {
       jest.useRealTimers()
     }
-  })
-
-  test('resolveGStreamerRoot returns null when supported platform dir does not exist', () => {
-    const cls = AudioOutput as any
-
-    Object.defineProperty(process, 'platform', { value: 'linux' })
-    Object.defineProperty(process, 'arch', { value: 'x64' })
-    ;(app as any).isPackaged = false
-    ;(app.getAppPath as jest.Mock).mockReturnValue('/mock/app')
-    ;(fs.existsSync as jest.Mock).mockReturnValue(false)
-
-    expect(cls.resolveGStreamerRoot()).toBeNull()
   })
 
   test('cleanup clears queue, writing flag and process', () => {

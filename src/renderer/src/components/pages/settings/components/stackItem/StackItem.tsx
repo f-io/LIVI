@@ -1,9 +1,11 @@
 import ArrowForwardIosOutlinedIcon from '@mui/icons-material/ArrowForwardIosOutlined'
 import Paper from '@mui/material/Paper'
 import { styled } from '@mui/material/styles'
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { SelectNode } from '../../../../../routes/types'
 import { StackItemProps } from '../../type'
+import { getCachedOptions, resolveOptions } from '../selectOptionsCache'
 
 const Item = styled(Paper)(({ theme }) => {
   const activeColor = theme.palette.primary.main
@@ -118,8 +120,27 @@ export const StackItem = ({
     ? node.valueTransform.format(viewValue)
     : `${viewValue}${node?.displayValueUnit ?? ''}`
 
+  const [dynamicOpts, setDynamicOpts] = useState(() =>
+    node?.type === 'select' ? getCachedOptions(node as SelectNode) : undefined
+  )
+  useEffect(() => {
+    if (node?.type !== 'select') return
+    const sel = node as SelectNode
+    if (!sel.loadOptions) return
+    if (getCachedOptions(sel)) return
+    let alive = true
+    void resolveOptions(sel).then((opts) => {
+      if (alive) setDynamicOpts(opts)
+    })
+    return () => {
+      alive = false
+    }
+  }, [node])
+
   if (node?.type === 'select') {
-    const option = node?.options.find((o) => o.value === value)
+    const sel = node as SelectNode
+    const pool = dynamicOpts ?? getCachedOptions(sel) ?? sel.options
+    const option = pool.find((o) => o.value === value)
     displayValue = option ? (option.labelKey ? t(option.labelKey, option.label) : option.label) : ''
   }
 

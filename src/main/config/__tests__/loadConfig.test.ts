@@ -12,7 +12,7 @@ jest.mock('@main/config/paths', () => ({
 }))
 
 jest.mock('@shared/types', () => ({
-  DEFAULT_EXTRA_CONFIG: {
+  DEFAULT_CONFIG: {
     width: 800,
     height: 480,
     kiosk: true,

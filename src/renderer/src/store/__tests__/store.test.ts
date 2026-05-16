@@ -1,4 +1,4 @@
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 
 type ProjectionApiOverrides = {
   settings?: {
@@ -100,7 +100,7 @@ describe('store', () => {
       dash3: { main: false, dash: false, aux: false, pos: 3 },
       dash4: { main: false, dash: false, aux: false, pos: 4 }
     }
-  } as unknown as ExtraConfig
+  } as unknown as Config
 
   const loadFreshStore = (projectionOverrides?: ProjectionApiOverrides) => {
     jest.resetModules()
@@ -116,7 +116,7 @@ describe('store', () => {
   }
 
   const waitForStoreSettings = async (useLiviStore: {
-    getState: () => { settings: ExtraConfig | null }
+    getState: () => { settings: Config | null }
   }) => {
     for (let i = 0; i < 10; i += 1) {
       if (useLiviStore.getState().settings) return
@@ -192,7 +192,7 @@ describe('store', () => {
     await waitForStoreSettings(useLiviStore)
 
     useLiviStore.setState({
-      settings: { ...baseSettings, darkMode: true } as ExtraConfig,
+      settings: { ...baseSettings, darkMode: true } as Config,
       restartBaseline: null
     })
 
@@ -268,7 +268,7 @@ describe('store', () => {
   })
 
   test('saveSettings persists dashboards patch as-is', async () => {
-    const dashboardsOn: ExtraConfig['dashboards'] = {
+    const dashboardsOn: Config['dashboards'] = {
       dash1: { main: true, dash: false, aux: false, pos: 1 },
       dash2: { main: false, dash: false, aux: false, pos: 2 },
       dash3: { main: false, dash: false, aux: false, pos: 3 },
@@ -875,7 +875,7 @@ describe('store', () => {
   })
 
   test('init applies live settings updates from settings.onUpdate', async () => {
-    let onUpdateHandler: ((event: unknown, settings: ExtraConfig) => void) | undefined
+    let onUpdateHandler: ((event: unknown, settings: Config) => void) | undefined
 
     const projection = makeProjectionApi({
       settings: {
@@ -897,7 +897,7 @@ describe('store', () => {
       navVolume: 0.35,
       voiceAssistantVolume: 0.45,
       callVolume: 0.55
-    } as ExtraConfig)
+    } as Config)
 
     const state = useLiviStore.getState()
     expect(state.audioVolume).toBe(0.25)
@@ -1131,7 +1131,7 @@ describe('store', () => {
   })
 
   test('init live update preserves existing restartBaseline', async () => {
-    let onUpdateHandler: ((event: unknown, settings: ExtraConfig) => void) | undefined
+    let onUpdateHandler: ((event: unknown, settings: Config) => void) | undefined
 
     const projection = makeProjectionApi({
       settings: {
@@ -1150,7 +1150,7 @@ describe('store', () => {
     const existingBaseline = {
       ...baseSettings,
       audioVolume: 0.99
-    } as ExtraConfig
+    } as Config
 
     useLiviStore.setState({
       restartBaseline: existingBaseline
@@ -1159,7 +1159,7 @@ describe('store', () => {
     onUpdateHandler?.(undefined, {
       ...baseSettings,
       audioVolume: 0.25
-    } as ExtraConfig)
+    } as Config)
 
     expect(useLiviStore.getState().restartBaseline).toEqual(existingBaseline)
     expect(useLiviStore.getState().audioVolume).toBe(0.25)
@@ -1681,7 +1681,7 @@ describe('store', () => {
   })
 
   test('saveSettings persists dashboards even when current settings are null', async () => {
-    const dashboardsOff: ExtraConfig['dashboards'] = {
+    const dashboardsOff: Config['dashboards'] = {
       dash1: { main: false, dash: false, aux: false, pos: 1 },
       dash2: { main: false, dash: false, aux: false, pos: 2 },
       dash3: { main: false, dash: false, aux: false, pos: 3 },
@@ -1780,7 +1780,7 @@ describe('store', () => {
   })
 
   test('init live update sets restartBaseline to incoming settings when baseline is null', async () => {
-    let onUpdateHandler: ((event: unknown, settings: ExtraConfig) => void) | undefined
+    let onUpdateHandler: ((event: unknown, settings: Config) => void) | undefined
 
     const projection = makeProjectionApi({
       settings: {
@@ -1803,7 +1803,7 @@ describe('store', () => {
     const nextSettings = {
       ...baseSettings,
       audioVolume: 0.25
-    } as ExtraConfig
+    } as Config
 
     onUpdateHandler?.(undefined, nextSettings)
 

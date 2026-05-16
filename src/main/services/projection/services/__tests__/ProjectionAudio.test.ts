@@ -5,12 +5,14 @@ jest.mock('@main/services/audio', () => ({
     on: jest.fn(),
     start: jest.fn(),
     stop: jest.fn(),
-    isCapturing: jest.fn(() => false)
+    isCapturing: jest.fn(() => false),
+    setDevice: jest.fn()
   })),
   AudioOutput: jest.fn().mockImplementation(() => ({
     start: jest.fn(),
     stop: jest.fn(),
-    write: jest.fn()
+    write: jest.fn(),
+    setDevice: jest.fn()
   })),
   downsampleToMono: jest.fn(() => new Int16Array([1, 2, 3]))
 }))

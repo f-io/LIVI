@@ -1,9 +1,9 @@
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 
 export async function updateCameras(
   setCameraFound: (found: boolean) => void,
-  saveSettings: (cfg: ExtraConfig) => void,
-  currentSettings: ExtraConfig
+  saveSettings: (cfg: Config) => void,
+  currentSettings: Config
 ): Promise<MediaDeviceInfo[]> {
   try {
     const devs = await navigator.mediaDevices.enumerateDevices()

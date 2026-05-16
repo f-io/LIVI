@@ -1,4 +1,4 @@
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import type { MultiTouchPoint } from '@shared/types/TouchTypes'
 import { contextBridge, IpcRendererEvent, ipcRenderer } from 'electron'
 
@@ -126,14 +126,21 @@ const api = {
   },
 
   settings: {
-    get: (): Promise<ExtraConfig> => ipcRenderer.invoke('getSettings'),
-    save: (settings: Partial<ExtraConfig>): Promise<void> =>
+    get: (): Promise<Config> => ipcRenderer.invoke('getSettings'),
+    save: (settings: Partial<Config>): Promise<void> =>
       ipcRenderer.invoke('save-settings', settings),
-    onUpdate: (callback: ApiCallback<[ExtraConfig]>): (() => void) => {
+    onUpdate: (callback: ApiCallback<[Config]>): (() => void) => {
       const ch = 'settings'
       ipcRenderer.on(ch, callback)
       return () => ipcRenderer.removeListener(ch, callback)
     }
+  },
+
+  audio: {
+    listSinks: (): Promise<Array<{ id: string; name: string; isDefault: boolean }>> =>
+      ipcRenderer.invoke('audio:listSinks'),
+    listSources: (): Promise<Array<{ id: string; name: string; isDefault: boolean }>> =>
+      ipcRenderer.invoke('audio:listSources')
   },
 
   ipc: {

@@ -58,13 +58,16 @@ export type ColorNode = BaseFieldNode & {
   type: 'color'
 }
 
+export type SelectOption = {
+  label: string // TODO deleted in favor of i18n
+  labelKey?: string
+  value: string | number
+}
+
 export type SelectNode = BaseFieldNode & {
   type: 'select'
-  options: Array<{
-    label: string // TODO deleted in favor of i18n
-    labelKey?: string
-    value: string | number
-  }>
+  options: SelectOption[]
+  loadOptions?: () => Promise<SelectOption[]>
 }
 
 export type ToggleNode = BaseFieldNode & {

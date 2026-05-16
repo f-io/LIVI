@@ -19,7 +19,7 @@ import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
 import { configEvents } from '@main/ipc/utils'
 import type { ProjectionService } from '@main/services/projection/services/ProjectionService'
 import { getAllRendererWebContents } from '@main/window/broadcast'
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import type { TelemetryPayload } from '@shared/types/Telemetry'
 import { ipcMain } from 'electron'
 import { attachAaAdapter } from './adapters/aaAdapter'
@@ -31,7 +31,7 @@ import type { TelemetryStore } from './TelemetryStore'
 export type SetupTelemetryDeps = {
   store: TelemetryStore
   projectionService?: ProjectionService
-  initialConfig?: ExtraConfig
+  initialConfig?: Config
 }
 
 export type TelemetryHandle = {
@@ -62,7 +62,7 @@ export function setupTelemetry({
   })
 
   let lastAppearanceMode: string | undefined = initialConfig?.appearanceMode
-  const onConfigChanged = (merged: ExtraConfig): void => {
+  const onConfigChanged = (merged: Config): void => {
     if (merged.appearanceMode !== lastAppearanceMode) {
       lastAppearanceMode = merged.appearanceMode
       applyAppearanceMode(store, merged.appearanceMode)

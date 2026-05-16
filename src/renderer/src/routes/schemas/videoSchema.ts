@@ -1,4 +1,4 @@
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import {
   MAX_DPI,
   MAX_FPS,
@@ -14,7 +14,7 @@ import {
 } from '../../components/pages/settings/constants'
 import { SettingsNode } from '../types'
 
-export const videoSchema: SettingsNode<ExtraConfig> = {
+export const videoSchema: SettingsNode<Config> = {
   type: 'route',
   route: 'video',
   label: 'Video',

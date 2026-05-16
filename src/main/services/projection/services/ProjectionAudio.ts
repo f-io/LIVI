@@ -1,6 +1,6 @@
 import { DEBUG } from '@main/constants'
 import { AudioOutput, downsampleToMono, Microphone } from '@main/services/audio'
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { AudioCommand } from '@shared/types/ProjectionEnums'
 import { AudioData, decodeTypeMap } from '../messages'
 
@@ -110,7 +110,7 @@ export class ProjectionAudio {
   private visualizerEnabled = false
 
   constructor(
-    private readonly getConfig: () => ExtraConfig,
+    private readonly getConfig: () => Config,
     private readonly sendProjectionEvent: SendProjectionEvent,
     private readonly sendChunked: SendChunked,
     private readonly sendMicPcm: SendMicPcm
@@ -649,7 +649,7 @@ export class ProjectionAudio {
         cmd === AudioCommand.AudioVoiceAssistantStart ||
         cmd === AudioCommand.AudioPhonecallStart
       ) {
-        const cfg = this.getConfig() as ExtraConfig & {
+        const cfg = this.getConfig() as Config & {
           micType?: number
           disableAudioOutput?: boolean
         }
@@ -678,6 +678,7 @@ export class ProjectionAudio {
 
         if (!this._mic) {
           this._mic = new Microphone()
+          this._mic.setDevice(this.getConfig().audioInputDevice || undefined)
 
           this._mic.on('data', (data: Buffer) => {
             if (!data || data.byteLength === 0) return
@@ -772,12 +773,27 @@ export class ProjectionAudio {
 
     const player = new AudioOutput({
       sampleRate,
-      channels
+      channels,
+      device: this.getConfig().audioOutputDevice || undefined
     })
     player.start()
     this.audioPlayers.set(key, player)
 
     return player
+  }
+
+  // Called when audioOutputDevice / audioInputDevice changed in config
+  public onAudioDeviceChanged(): void {
+    if (DEBUG) console.debug('[ProjectionAudio] audio device changed, resetting streams')
+    this.stopAllAudioPlayers()
+    if (this._mic) {
+      const wasRunning = this._mic.isCapturing()
+      this._mic.stop()
+      this._mic.setDevice(this.getConfig().audioInputDevice || undefined)
+      if (wasRunning && this.currentMicDecodeType != null) {
+        this._mic.start(this.currentMicDecodeType)
+      }
+    }
   }
 
   private getAudioOutputForStream(
@@ -854,7 +870,7 @@ export class ProjectionAudio {
   }
 
   private getMediaDelay(): number {
-    const cfg = this.getConfig() as ExtraConfig & { mediaDelay?: number }
+    const cfg = this.getConfig() as Config & { mediaDelay?: number }
     const raw = cfg.mediaDelay
     return typeof raw === 'number' && Number.isFinite(raw) && raw >= 0 ? raw : 0
   }

@@ -1,5 +1,5 @@
 import type { SettingsNode } from '@renderer/routes/types'
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { StackItem } from '../StackItem'
 
@@ -16,7 +16,7 @@ describe('StackItem', () => {
       label: 'Theme',
       path: 'theme',
       options: [{ value: 'light', label: 'Light', labelKey: 'settings.theme.light' }]
-    } as SettingsNode<ExtraConfig>
+    } as SettingsNode<Config>
 
     render(
       <StackItem node={node} showValue value="light">
@@ -33,7 +33,7 @@ describe('StackItem', () => {
       label: 'Speed',
       path: 'speed',
       valueTransform: { format: () => 'undefined' }
-    } as SettingsNode<ExtraConfig>
+    } as SettingsNode<Config>
 
     render(
       <StackItem node={node} showValue value={42}>
@@ -65,7 +65,7 @@ describe('StackItem', () => {
       label: 'Theme',
       path: 'theme',
       options: [{ value: 'light', label: 'Light', labelKey: 'settings.theme.light' }]
-    } as SettingsNode<ExtraConfig>
+    } as SettingsNode<Config>
 
     render(
       <StackItem node={node} showValue value="dark">
@@ -84,7 +84,7 @@ describe('StackItem', () => {
       label: 'Speed',
       path: 'speed',
       valueTransform: { format: () => 'null' }
-    } as SettingsNode<ExtraConfig>
+    } as SettingsNode<Config>
 
     render(
       <StackItem node={node} showValue value={42}>
@@ -129,7 +129,7 @@ describe('StackItem', () => {
         toView: (v: number) => v / 2,
         format: (v: number) => `${v} km/h`
       }
-    } as SettingsNode<ExtraConfig>
+    } as SettingsNode<Config>
 
     render(
       <StackItem node={node} showValue value={100}>
@@ -146,7 +146,7 @@ describe('StackItem', () => {
       label: 'Theme',
       path: 'theme',
       options: [{ value: 'light', label: 'Light' }]
-    } as SettingsNode<ExtraConfig>
+    } as SettingsNode<Config>
 
     render(
       <StackItem node={node} showValue value="light">

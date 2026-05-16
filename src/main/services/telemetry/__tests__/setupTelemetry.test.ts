@@ -30,7 +30,7 @@ jest.mock('electron', () => ({
 }))
 
 import type { ProjectionService } from '@main/services/projection/services/ProjectionService'
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { setupTelemetry } from '../setupTelemetry'
 import { TelemetryStore } from '../TelemetryStore'
 
@@ -83,23 +83,23 @@ describe('setupTelemetry', () => {
 
   test('appearanceMode "night" seeds nightMode=true', () => {
     const store = new TelemetryStore()
-    setupTelemetry({ store, initialConfig: { appearanceMode: 'night' } as ExtraConfig })
+    setupTelemetry({ store, initialConfig: { appearanceMode: 'night' } as Config })
     expect(store.snapshot().nightMode).toBe(true)
   })
 
   test('appearanceMode "day" seeds nightMode=false', () => {
     const store = new TelemetryStore()
-    setupTelemetry({ store, initialConfig: { appearanceMode: 'day' } as ExtraConfig })
+    setupTelemetry({ store, initialConfig: { appearanceMode: 'day' } as Config })
     expect(store.snapshot().nightMode).toBe(false)
   })
 
   test('appearanceMode change is forwarded to the store', () => {
     const store = new TelemetryStore()
-    setupTelemetry({ store, initialConfig: { appearanceMode: 'day' } as ExtraConfig })
+    setupTelemetry({ store, initialConfig: { appearanceMode: 'day' } as Config })
     const onChange = configEvents.on.mock.calls.find((c) => c[0] === 'changed')![1] as (
-      cfg: ExtraConfig
+      cfg: Config
     ) => void
-    onChange({ appearanceMode: 'night' } as ExtraConfig)
+    onChange({ appearanceMode: 'night' } as Config)
     expect(store.snapshot().nightMode).toBe(true)
   })
 
@@ -109,7 +109,7 @@ describe('setupTelemetry', () => {
       store,
       initialConfig: {
         lastKnownGps: { lat: 52, lng: 13, ts: 1_700_000_000 }
-      } as unknown as ExtraConfig
+      } as unknown as Config
     })
     expect(store.snapshot().gps).toMatchObject({ lat: 52, lng: 13 })
   })

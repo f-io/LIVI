@@ -18,8 +18,8 @@ import {
   SendMultiTouch,
   SendTouch
 } from '@projection/messages/sendable'
-import type { DongleConfig } from '@shared/types'
-import { CarType } from '@shared/types/DongleConfig'
+import type { Config } from '@shared/types'
+import { CarType } from '@shared/types/Config'
 import { CommandMapping, MultiTouchAction, TouchAction } from '@shared/types/ProjectionEnums'
 import {
   computeAndroidAutoDpi,
@@ -155,7 +155,7 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     }
   }
 
-  async start(cfg: DongleConfig): Promise<boolean> {
+  async start(cfg: Config): Promise<boolean> {
     if (this._started) return true
     this._started = true
     this._closed = false

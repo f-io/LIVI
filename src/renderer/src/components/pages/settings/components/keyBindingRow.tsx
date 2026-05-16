@@ -1,7 +1,7 @@
 import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined'
 import { Box, IconButton, Modal, Paper, Typography } from '@mui/material'
 import type { KeyBindingNode } from '@renderer/routes/types'
-import type { ExtraConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { DEFAULT_BINDINGS } from '@shared/types'
 import { useLiviStore } from '@store/store'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -41,7 +41,7 @@ function normalize(v: unknown) {
 export function KeyBindingRow({ node }: { node: KeyBindingNode }) {
   const { t } = useTranslation()
   const saveSettings = useLiviStore((s) => s.saveSettings)
-  const settings = useLiviStore((s) => s.settings) as ExtraConfig | null
+  const settings = useLiviStore((s) => s.settings) as Config | null
 
   const [capturing, setCapturing] = useState(false)
 
@@ -72,7 +72,7 @@ export function KeyBindingRow({ node }: { node: KeyBindingNode }) {
     async (code: string) => {
       if (!settings) return
 
-      const next: ExtraConfig = {
+      const next: Config = {
         ...settings,
         bindings: {
           ...(settings.bindings ?? {}),

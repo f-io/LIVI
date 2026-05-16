@@ -1,8 +1,9 @@
 import { Microphone } from '@main/services/audio'
-import type { DongleConfig } from '@shared/types'
+import type { Config } from '@shared/types'
+import { DEFAULT_CONFIG } from '@shared/types'
 import { AudioCommand, type CommandValue } from '@shared/types/ProjectionEnums'
 import { webusb } from 'usb'
-import { DEFAULT_CONFIG, DongleDriver } from '../driver/dongle/dongleDriver'
+import { DongleDriver } from '../driver/dongle/dongleDriver'
 import {
   AudioData,
   Command,
@@ -29,13 +30,13 @@ export type ProjectionMessage =
 export default class Projection {
   private _pairTimeout: NodeJS.Timeout | null = null
   private _frameInterval: ReturnType<typeof setInterval> | null = null
-  private _config: DongleConfig
+  private _config: Config
   public dongleDriver: DongleDriver
 
   public onmessage: ((ev: ProjectionMessage) => void) | null = null
   public onReconnectReady: (() => void) | null = null
 
-  constructor(config: Partial<DongleConfig>) {
+  constructor(config: Partial<Config>) {
     this._config = Object.assign({}, DEFAULT_CONFIG, config)
     const mic = new Microphone()
     const driver = new DongleDriver()

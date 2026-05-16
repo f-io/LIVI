@@ -24,7 +24,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import { DEBUG } from '@main/constants'
-import type { DongleConfig } from '@shared/types'
+import type { Config } from '@shared/types'
 import { app } from 'electron'
 
 function isInsideAppImageMount(p: string): boolean {
@@ -109,8 +109,8 @@ function resolveBtRoot(): string {
   return devPath
 }
 
-/** Map a flat LIVI DongleConfig into the ENV variables aa-bluetooth.py reads. */
-function envFromConfig(cfg: DongleConfig): NodeJS.ProcessEnv {
+/** Map a flat LIVI Config into the ENV variables aa-bluetooth.py reads. */
+function envFromConfig(cfg: Config): NodeJS.ProcessEnv {
   const channel =
     Number.isFinite(cfg.wifiChannel) && cfg.wifiChannel > 0
       ? String(cfg.wifiChannel)
@@ -165,7 +165,7 @@ export class AaBluetoothSupervisor extends EventEmitter {
   private _stopped = false
   private _restartCount = 0
   private _restartTimer: NodeJS.Timeout | null = null
-  private _cfg: DongleConfig | null = null
+  private _cfg: Config | null = null
   private readonly _python: string
   private readonly _restartDelayMs: number
   private readonly _maxRestarts: number
@@ -178,7 +178,7 @@ export class AaBluetoothSupervisor extends EventEmitter {
   }
 
   /** Bring the supervisor up. Returns immediately; spawn happens async. */
-  start(cfg: DongleConfig): void {
+  start(cfg: Config): void {
     this._stopped = false
     this._cfg = cfg
     this._restartCount = 0

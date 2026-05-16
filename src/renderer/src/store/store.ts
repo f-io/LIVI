@@ -1,4 +1,4 @@
-import type { ExtraConfig, MicType } from '@shared/types'
+import type { Config, MicType } from '@shared/types'
 import { create } from 'zustand'
 
 type VolumeStreamKey = 'music' | 'nav' | 'voiceAssistant' | 'call'
@@ -9,9 +9,9 @@ export type BluetoothPairedDevice = {
 }
 
 type CarplaySettingsApi = {
-  get?: () => Promise<ExtraConfig>
-  save?: (settings: Partial<ExtraConfig>) => Promise<void>
-  onUpdate?: (cb: (event: unknown, settings: ExtraConfig) => void) => () => void
+  get?: () => Promise<Config>
+  save?: (settings: Partial<Config>) => Promise<void>
+  onUpdate?: (cb: (event: unknown, settings: Config) => void) => () => void
 }
 
 type CarplayUsbApi = {
@@ -88,7 +88,7 @@ const sendCarplayNightMode = (nightMode: boolean) => {
   }
 }
 
-const saveSettingsIpc = async (patch: Partial<ExtraConfig>) => {
+const saveSettingsIpc = async (patch: Partial<Config>) => {
   const api = getProjectionApi()
   if (!api?.settings?.save) return
   try {
@@ -98,7 +98,7 @@ const saveSettingsIpc = async (patch: Partial<ExtraConfig>) => {
   }
 }
 
-const getSettingsIpc = async (): Promise<ExtraConfig | null> => {
+const getSettingsIpc = async (): Promise<Config | null> => {
   const api = getProjectionApi()
   if (!api?.settings?.get) return null
   try {
@@ -109,7 +109,7 @@ const getSettingsIpc = async (): Promise<ExtraConfig | null> => {
   }
 }
 
-const applyDerivedFromSettings = (s: ExtraConfig) => {
+const applyDerivedFromSettings = (s: Config) => {
   const audioVolume = s.audioVolume ?? 1.0
   const navVolume = s.navVolume ?? 0.5
   const voiceAssistantVolume = s.voiceAssistantVolume ?? 0.5
@@ -152,10 +152,10 @@ const applyTelemetryControls = (payload: unknown) => {
 // Projection Store
 export interface CarplayStore {
   // Full app config (from main, includes defaults)
-  settings: ExtraConfig | null
+  settings: Config | null
 
   // Used by "requires restart" logic
-  restartBaseline: ExtraConfig | null
+  restartBaseline: Config | null
   markRestartBaseline: () => void
 
   // Bootstrapping
@@ -163,7 +163,7 @@ export interface CarplayStore {
   getSettings: () => Promise<void>
 
   // Save patches (main merges them into config.json)
-  saveSettings: (patch: Partial<ExtraConfig>) => Promise<void>
+  saveSettings: (patch: Partial<Config>) => Promise<void>
   setDarkMode: (darkMode: boolean) => Promise<void>
 
   // Display resolution
@@ -466,7 +466,7 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
       // Optimistic merge so UI updates instantly
       const prev = get().settings
       if (prev) {
-        const merged = { ...prev, ...patch } as ExtraConfig
+        const merged = { ...prev, ...patch } as Config
 
         const prevDerived = applyDerivedFromSettings(prev)
         const derived = applyDerivedFromSettings(merged)

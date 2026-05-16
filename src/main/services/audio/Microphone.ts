@@ -1,16 +1,16 @@
 import { DEBUG } from '@main/constants'
 import { type AudioFormat, decodeTypeMap } from '@shared/types'
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
-import { app } from 'electron'
 import { EventEmitter } from 'events'
-import fs from 'fs'
 import path from 'path'
+import { audioDeviceProp, audioSourceElement, gstEnv, resolveGStreamerRoot } from './gstreamer'
 
 export default class Microphone extends EventEmitter {
   private process: ChildProcessWithoutNullStreams | null = null
   private currentDecodeType = 5
   private bytesRead = 0
   private chunkSeq = 0
+  private device: string | undefined
 
   constructor() {
     super()
@@ -20,6 +20,10 @@ export default class Microphone extends EventEmitter {
         platform: process.platform
       })
     }
+  }
+
+  setDevice(device: string | undefined): void {
+    this.device = device
   }
 
   start(decodeType = 5): void {
@@ -34,7 +38,7 @@ export default class Microphone extends EventEmitter {
       return
     }
 
-    const gstRoot = Microphone.resolveGStreamerRoot()
+    const gstRoot = resolveGStreamerRoot()
     if (!gstRoot) {
       console.error('[Microphone] Bundled GStreamer not found')
       return
@@ -49,12 +53,8 @@ export default class Microphone extends EventEmitter {
       process.platform === 'win32' ? 'gst-launch-1.0.exe' : 'gst-launch-1.0'
     )
 
-    const sourceArgs =
-      process.platform === 'darwin'
-        ? ['osxaudiosrc']
-        : process.platform === 'win32'
-          ? ['wasapisrc']
-          : ['pulsesrc']
+    const sourceArgs: string[] = [audioSourceElement()]
+    if (this.device) sourceArgs.push(`${audioDeviceProp()}=${this.device}`)
 
     const args = [
       '-q',
@@ -76,40 +76,7 @@ export default class Microphone extends EventEmitter {
       'fd=1'
     ]
 
-    const pluginPath = path.join(gstRoot, 'lib', 'gstreamer-1.0')
-    const pluginScanner = path.join(
-      gstRoot,
-      'libexec',
-      'gstreamer-1.0',
-      process.platform === 'win32' ? 'gst-plugin-scanner.exe' : 'gst-plugin-scanner'
-    )
-
-    let env: NodeJS.ProcessEnv
-    if (process.platform === 'darwin') {
-      env = {
-        ...process.env,
-        DYLD_LIBRARY_PATH: path.join(gstRoot, 'lib'),
-        GST_PLUGIN_SYSTEM_PATH: '',
-        GST_PLUGIN_PATH: pluginPath,
-        GST_PLUGIN_SCANNER: pluginScanner
-      }
-    } else if (process.platform === 'linux') {
-      env = {
-        ...process.env,
-        LD_LIBRARY_PATH: path.join(gstRoot, 'lib'),
-        GST_PLUGIN_SYSTEM_PATH: '',
-        GST_PLUGIN_PATH: pluginPath,
-        GST_PLUGIN_SCANNER: pluginScanner
-      }
-    } else {
-      env = {
-        ...process.env,
-        PATH: `${path.join(gstRoot, 'bin')};${process.env.PATH ?? ''}`,
-        GST_PLUGIN_SYSTEM_PATH: '',
-        GST_PLUGIN_PATH: pluginPath,
-        GST_PLUGIN_SCANNER: pluginScanner
-      }
-    }
+    const env = gstEnv(gstRoot)
 
     if (DEBUG) {
       console.debug('[Microphone] Spawning', cmd, args.join(' '))
@@ -252,33 +219,6 @@ export default class Microphone extends EventEmitter {
     }
 
     return raw.toUpperCase()
-  }
-
-  private static resolveGStreamerRoot(): string | null {
-    const isPackaged = app.isPackaged
-    const base = isPackaged ? process.resourcesPath : path.join(app.getAppPath(), 'assets')
-
-    const platformDir =
-      process.platform === 'darwin'
-        ? process.arch === 'arm64'
-          ? 'macos-arm64'
-          : null
-        : process.platform === 'linux'
-          ? process.arch === 'arm64'
-            ? 'linux-arm64'
-            : process.arch === 'x64'
-              ? 'linux-x64'
-              : null
-          : process.platform === 'win32'
-            ? process.arch === 'x64'
-              ? 'windows-x64'
-              : null
-            : null
-
-    if (!platformDir) return null
-
-    const bundled = path.join(base, 'gstreamer', platformDir)
-    return fs.existsSync(bundled) ? bundled : null
   }
 
   static getSysdefaultPrettyName(): string {

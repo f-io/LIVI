@@ -10,3 +10,4 @@ export DYLD_LIBRARY_PATH="$ROOT/lib:${DYLD_LIBRARY_PATH:-}"
 
 "$ROOT/bin/gst-launch-1.0" --version
 "$ROOT/bin/gst-launch-1.0" fakesrc num-buffers=1 ! fakesink
+"$ROOT/bin/gst-device-monitor-1.0" --version
