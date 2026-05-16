@@ -35,6 +35,8 @@ linux:
       to: livi.apparmor
     - from: assets/linux/dev.f-io.livi.metainfo.xml
       to: ../share/metainfo/dev.f-io.livi.metainfo.xml
+    - from: assets/linux/99-LIVI.rules.template
+      to: 99-LIVI.rules.template
     - from: assets/gstreamer/linux-x64
       to: gstreamer/linux-x64
       filter:

@@ -11,6 +11,7 @@ import fs from 'fs'
 import path from 'path'
 import { type Device, usb, WebUSBDevice } from 'usb'
 import { StatusFileWriter } from '../../status/StatusFileWriter'
+import { isCarlinkitDongle } from '../../usb/constants'
 import { AaBtSockClient } from '../driver/aa/AaBtSockClient'
 import { AaDriver } from '../driver/aa/aaDriver'
 import type { IPhoneDriver } from '../driver/IPhoneDriver'
@@ -1187,11 +1188,7 @@ export class ProjectionService {
         // Dongle (USB CPC200) path.
         const device = usb
           .getDeviceList()
-          .find(
-            (d) =>
-              d.deviceDescriptor.idVendor === 0x1314 &&
-              [0x1520, 0x1521].includes(d.deviceDescriptor.idProduct)
-          )
+          .find((d) => isCarlinkitDongle(d.deviceDescriptor.idVendor, d.deviceDescriptor.idProduct))
         if (!device) return
 
         try {

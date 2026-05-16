@@ -4,6 +4,7 @@ import { BrowserWindow } from 'electron'
 import { type Device, usb } from 'usb'
 import { isAccessoryMode, probeAaCapable } from '../projection/driver/aa/stack/aoap/handshake.js'
 import { ProjectionService } from '../projection/services/ProjectionService'
+import { isCarlinkitDongle } from './constants'
 import { findDongle } from './helpers'
 
 const getDeviceList = () => usb.getDeviceList()
@@ -391,10 +392,7 @@ export class USBService {
   private isDongle(
     device: Partial<Device> & { deviceDescriptor?: { idVendor: number; idProduct: number } }
   ) {
-    return (
-      device.deviceDescriptor?.idVendor === 0x1314 &&
-      [0x1520, 0x1521].includes(device.deviceDescriptor?.idProduct ?? -1)
-    )
+    return isCarlinkitDongle(device.deviceDescriptor?.idVendor, device.deviceDescriptor?.idProduct)
   }
 
   private notifyReset(type: 'usb-reset-start' | 'usb-reset-done', ok: boolean) {

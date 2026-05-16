@@ -1,6 +1,7 @@
 import { DEBUG } from '@main/constants'
 import { decryptVendorSessionText } from '@main/helpers/vendorSessionInfo'
 import type { PendingStartupConnectTarget } from '@main/services/projection/services/types'
+import { CARLINKIT_PIDS, CARLINKIT_VID } from '@main/services/usb/constants'
 import { HeaderBuildError, MessageHeader } from '@projection/messages/common'
 import {
   BluetoothPeerConnected,
@@ -174,10 +175,10 @@ export class DongleDriver extends EventEmitter {
     await this._modeSwitchInFlight
   }
 
-  static knownDevices = [
-    { vendorId: 0x1314, productId: 0x1520 },
-    { vendorId: 0x1314, productId: 0x1521 }
-  ]
+  static knownDevices = CARLINKIT_PIDS.map((productId) => ({
+    vendorId: CARLINKIT_VID,
+    productId
+  }))
 
   private scheduleWifiConnect(delayMs: number) {
     if (this._wifiConnectTimer) {

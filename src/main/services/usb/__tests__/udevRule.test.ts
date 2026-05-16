@@ -1,6 +1,7 @@
 import { execFileSync, spawn } from 'child_process'
 import { BrowserWindow, dialog } from 'electron'
 import fs from 'fs'
+import os from 'os'
 import { checkAndInstallUdevRule, udevRuleExists } from '../udevRule'
 
 jest.mock('electron', () => ({
@@ -16,10 +17,18 @@ jest.mock('child_process', () => ({
   spawn: jest.fn()
 }))
 
-jest.mock('fs', () => ({
-  existsSync: jest.fn(),
-  readFileSync: jest.fn()
-}))
+jest.mock('fs', () => {
+  const real = jest.requireActual('fs') as typeof import('fs')
+  return {
+    existsSync: jest.fn(),
+    readFileSync: jest.fn((p: string, enc?: string) => {
+      if (typeof p === 'string' && p.endsWith('.rules.template')) {
+        return real.readFileSync(p, (enc as BufferEncoding) ?? 'utf8')
+      }
+      return ''
+    })
+  }
+})
 
 describe('udevRule', () => {
   const originalPlatform = process.platform
@@ -40,11 +49,25 @@ describe('udevRule', () => {
     }
   }
 
+  const realFs = jest.requireActual('fs') as typeof fs
+
+  const ruleFileFake = (content = '') => {
+    mockReadFileSync.mockImplementation((p: string, enc?: string) => {
+      if (typeof p === 'string' && p.endsWith('.rules.template')) {
+        return realFs.readFileSync(p, (enc as BufferEncoding) ?? 'utf8')
+      }
+      return content
+    })
+  }
+
   beforeEach(() => {
     jest.clearAllMocks()
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
-    mockExistsSync.mockReturnValue(false)
-    mockReadFileSync.mockReturnValue('')
+    mockExistsSync.mockImplementation((p: string) => {
+      if (typeof p === 'string' && p.endsWith('.rules.template')) return true
+      return false
+    })
+    ruleFileFake('')
     mockExecFileSync.mockReturnValue(undefined)
     mockShowMessageBox.mockResolvedValue({ response: 0 })
     mockSpawn.mockReturnValue(mkProc(0))
@@ -54,14 +77,21 @@ describe('udevRule', () => {
     Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true })
   })
 
+  const existsFake = (ruleFileExists: boolean) => {
+    mockExistsSync.mockImplementation((p: string) => {
+      if (typeof p === 'string' && p.endsWith('.rules.template')) return true
+      return ruleFileExists
+    })
+  }
+
   describe('udevRuleExists', () => {
     test('returns true when rule file exists', () => {
-      mockExistsSync.mockReturnValue(true)
+      existsFake(true)
       expect(udevRuleExists()).toBe(true)
     })
 
     test('returns false when rule file does not exist', () => {
-      mockExistsSync.mockReturnValue(false)
+      existsFake(false)
       expect(udevRuleExists()).toBe(false)
     })
 
@@ -81,15 +111,20 @@ describe('udevRule', () => {
     })
 
     test('does nothing when rule file already exists with a current version marker', async () => {
-      mockExistsSync.mockReturnValue(true)
-      mockReadFileSync.mockReturnValue('# LIVI-RULE-VERSION=3\n...rest of file...')
+      const template = realFs.readFileSync(
+        `${process.cwd()}/assets/linux/99-LIVI.rules.template`,
+        'utf8'
+      )
+      const marker = template.match(/^# LIVI-RULE-VERSION=\d+$/m)![0]
+      existsFake(true)
+      ruleFileFake(`${marker}\n...rest of file...`)
       await checkAndInstallUdevRule(mockWindow)
       expect(mockShowMessageBox).not.toHaveBeenCalled()
     })
 
     test('prompts for an upgrade when an outdated rule file is present', async () => {
-      mockExistsSync.mockReturnValue(true)
-      mockReadFileSync.mockReturnValue(
+      existsFake(true)
+      ruleFileFake(
         'SUBSYSTEM=="usb", ATTR{idVendor}=="1314", ATTR{idProduct}=="152*", MODE="0660", OWNER="me"\n'
       )
       await checkAndInstallUdevRule(mockWindow)
@@ -108,8 +143,8 @@ describe('udevRule', () => {
     })
 
     test('skips the upgrade when the user declines', async () => {
-      mockExistsSync.mockReturnValue(true)
-      mockReadFileSync.mockReturnValue('outdated content')
+      existsFake(true)
+      ruleFileFake('outdated content')
       mockShowMessageBox.mockResolvedValue({ response: 1 })
       await checkAndInstallUdevRule(mockWindow)
       expect(mockSpawn).not.toHaveBeenCalled()
@@ -197,30 +232,18 @@ describe('udevRule', () => {
     expect(script).toContain('OWNER="')
   })
 
-  test('rule covers the Carlinkit dongle, AOAP accessory PIDs and common phone vendors', async () => {
+  test('install script writes the template content with username substituted', async () => {
     await checkAndInstallUdevRule(mockWindow)
     const script = mockSpawn.mock.calls[0][1][2] as string
 
-    // Carlinkit dongle
-    expect(script).toContain('ATTR{idVendor}=="1314", ATTR{idProduct}=="152*"')
-    // Android Open Accessory Protocol re-enumeration PIDs
-    expect(script).toContain('ATTR{idVendor}=="18d1", ATTR{idProduct}=="2d0[0-5]"')
-    // A representative slice of phone vendors
-    for (const vid of ['18d1', '04e8', '22b8', '0fce', '12d1', '2717', '2a70']) {
-      expect(script).toContain(`ATTR{idVendor}=="${vid}"`)
-    }
-  })
+    const template = realFs.readFileSync(
+      `${process.cwd()}/assets/linux/99-LIVI.rules.template`,
+      'utf8'
+    )
+    const username = os.userInfo().username
+    const rendered = template.replace(/__USERNAME__/g, username).trim()
 
-  test('phone and accessory entries opt out of desktop auto-mount (gvfs-mtp, udisks2, ModemManager)', async () => {
-    await checkAndInstallUdevRule(mockWindow)
-    const script = mockSpawn.mock.calls[0][1][2] as string
-
-    // The desktop ignore env vars prevent the "Couldn't find matching udev
-    // device" notification that gvfs-mtp pops when the phone switches to
-    // accessory mode mid-mount.
-    expect(script).toContain('ENV{ID_MTP_DEVICE}=""')
-    expect(script).toContain('ENV{ID_MEDIA_PLAYER}=""')
-    expect(script).toContain('ENV{UDISKS_IGNORE}="1"')
-    expect(script).toContain('ENV{ID_MM_DEVICE_IGNORE}="1"')
+    expect(script).not.toContain('__USERNAME__')
+    expect(script).toContain(rendered)
   })
 })

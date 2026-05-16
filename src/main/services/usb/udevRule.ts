@@ -2,69 +2,44 @@ import { execFileSync, spawn } from 'child_process'
 import { BrowserWindow, dialog } from 'electron'
 import fs from 'fs'
 import os from 'os'
+import path from 'path'
 
 const RULE_FILE = '/etc/udev/rules.d/99-LIVI.rules'
 
-// Bumped whenever buildRuleContent's output changes — forces existing
-// installs to re-prompt for an upgrade.
-const RULE_VERSION = 3
-const RULE_VERSION_MARKER = `# LIVI-RULE-VERSION=${RULE_VERSION}`
+const TEMPLATE_FILENAME = '99-LIVI.rules.template'
 
-const IGNORE_VARS =
-  'ENV{ID_MTP_DEVICE}="", ENV{ID_MEDIA_PLAYER}="", ENV{UDISKS_IGNORE}="1", ENV{ID_MM_DEVICE_IGNORE}="1"'
+function resolveTemplatePath(): string {
+  const resources = process.resourcesPath
+  if (typeof resources === 'string' && resources.length > 0) {
+    const packaged = path.join(resources, TEMPLATE_FILENAME)
+    if (fs.existsSync(packaged)) return packaged
+  }
+  return path.join(__dirname, '..', '..', '..', '..', 'assets', 'linux', TEMPLATE_FILENAME)
+}
 
-function buildRuleContent(): string {
-  let username = ''
+function loadTemplate(): string {
+  return fs.readFileSync(resolveTemplatePath(), 'utf8')
+}
 
+function templateMarker(template: string): string {
+  const m = template.match(/^# LIVI-RULE-VERSION=\d+$/m)
+  return m ? m[0] : '# LIVI-RULE-VERSION=0'
+}
+
+function resolveUsername(): string {
   if (process.env.PKEXEC_UID) {
     try {
-      username = execFileSync('id', ['-nu', process.env.PKEXEC_UID], {
-        encoding: 'utf8'
-      }).trim()
+      return execFileSync('id', ['-nu', process.env.PKEXEC_UID], { encoding: 'utf8' }).trim()
     } catch {
       // fall through
     }
   }
+  if (process.env.SUDO_USER) return process.env.SUDO_USER
+  return os.userInfo().username
+}
 
-  if (!username && process.env.SUDO_USER) {
-    username = process.env.SUDO_USER
-  }
-
-  if (!username) {
-    username = os.userInfo().username
-  }
-
-  // Carlinkit dongle + AOAP accessory mode + common Android phone vendors.
-  const phoneVendors = [
-    '18d1', // Google / generic Android
-    '04e8', // Samsung
-    '22b8', // Motorola
-    '0fce', // Sony
-    '12d1', // Huawei
-    '2717', // Xiaomi
-    '2a70', // OnePlus
-    '0bb4', // HTC / Sharp
-    '1004', // LG
-    '19d2', // ZTE
-    '109b', // Hisense
-    '0e8d', // MediaTek (reference phones)
-    '17ef', // Lenovo / Motorola
-    '04dd', // Sharp
-    '0489', // Foxconn / OEM Asus
-    '0b05' // Asus
-  ]
-
-  const lines: string[] = [
-    RULE_VERSION_MARKER,
-    `SUBSYSTEM=="usb", ATTR{idVendor}=="1314", ATTR{idProduct}=="152*", MODE="0660", OWNER="${username}"`,
-    `SUBSYSTEM=="usb", ATTR{idVendor}=="18d1", ATTR{idProduct}=="2d0[0-5]", MODE="0660", OWNER="${username}", ${IGNORE_VARS}`,
-    ...phoneVendors.map(
-      (vid) =>
-        `SUBSYSTEM=="usb", ATTR{idVendor}=="${vid}", MODE="0660", OWNER="${username}", ${IGNORE_VARS}`
-    )
-  ]
-
-  return lines.join('\n') + '\n'
+function buildRuleContent(): string {
+  return loadTemplate().replace(/__USERNAME__/g, resolveUsername())
 }
 
 export function udevRuleExists(): boolean {
@@ -79,7 +54,7 @@ function udevRuleIsCurrent(): boolean {
   try {
     if (!fs.existsSync(RULE_FILE)) return false
     const content = fs.readFileSync(RULE_FILE, 'utf8')
-    return content.includes(RULE_VERSION_MARKER)
+    return content.includes(templateMarker(loadTemplate()))
   } catch {
     return false
   }
