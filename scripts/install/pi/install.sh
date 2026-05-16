@@ -14,30 +14,20 @@ echo "→ Creating target directory: $APPIMAGE_DIR"
 mkdir -p "$APPIMAGE_DIR"
 
 # Ensure required tools are installed
-echo "→ Checking for required tools: curl, xdg-user-dir"
-for tool in curl xdg-user-dir; do
+echo "→ Checking for required tools: curl, xdg-user-dir, pkexec"
+for tool in curl xdg-user-dir pkexec; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "   $tool not found, installing…"
     sudo apt-get update
-    if [ "$tool" = "xdg-user-dir" ]; then
-      sudo apt-get --yes install xdg-user-dirs
-    else
-      sudo apt-get --yes install "$tool"
-    fi
+    case "$tool" in
+      xdg-user-dir) sudo apt-get --yes install xdg-user-dirs ;;
+      pkexec)       sudo apt-get --yes install policykit-1 ;;
+      *)            sudo apt-get --yes install "$tool" ;;
+    esac
   else
     echo "   $tool found"
   fi
 done
-
-# Create udev rule for Carlinkit dongle
-echo "→ Writing udev rule"
-UDEV_FILE="/etc/udev/rules.d/52-carplay.rules"
-sudo tee "$UDEV_FILE" > /dev/null <<EOF
-SUBSYSTEM=="usb", ATTR{idVendor}=="1314", ATTR{idProduct}=="152*", MODE="0660", GROUP="plugdev"
-EOF
-echo "   Reloading udev rules"
-sudo udevadm control --reload-rules
-sudo udevadm trigger
 
 # ICON INSTALLATION
 ICON_URL="https://raw.githubusercontent.com/f-io/LIVI/main/assets/icons/linux/livi.png"

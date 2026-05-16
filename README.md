@@ -46,11 +46,12 @@ chmod +x install.sh
 
 The `install.sh` script performs the following tasks:
 
-1. checks for required tools: curl and xdg-user-dir
-2. configures udev rules to ensure proper access rights for the CarPlay dongle
-3. downloads the latest LIVI AppImage
-4. creates an autostart entry so the application launches automatically on boot
-5. creates a desktop shortcut for easy access
+1. checks for required tools: curl, xdg-user-dir and pkexec
+2. downloads the latest LIVI AppImage
+3. creates an autostart entry so the application launches automatically on boot
+4. creates a desktop shortcut for easy access
+
+On first launch, LIVI will detect if the udev rule for USB access is missing and prompt you to install it automatically.
 
 _This install script is not actively tested on other Linux distributions._
 
