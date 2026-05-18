@@ -262,8 +262,10 @@ export class ProjectionService {
 
   private setWirelessPhoneInRange(value: boolean): void {
     if (this.wirelessPhoneInRange === value) return
+    const becameAvailable = !this.wirelessPhoneInRange && value
     this.wirelessPhoneInRange = value
     this.emitTransportState()
+    if (becameAvailable) this.autoStartIfNeeded().catch(console.error)
   }
 
   private lastCodecCaps: Record<string, { hw?: unknown; sw?: unknown } | undefined> | null = null
