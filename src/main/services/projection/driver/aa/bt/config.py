@@ -56,5 +56,12 @@ PORT         = int(_get_value("LIVI_PORT",     "port",          "5277"))
 WIFI_IFACE   = _get_value("LIVI_WIFI_IFACE",   "wifiInterface", "wlan0")
 
 # ── Bluetooth ─────────────────────────────────────────────────────────────────
-BTNAME       = _get_value("LIVI_BTNAME",       "carName",       "LIVI")
-BT_ADAPTER   = _get_value("LIVI_BT_ADAPTER",   "btAdapter",     "hci0")
+BTNAME            = _get_value("LIVI_BTNAME",            "carName",          "LIVI")
+BT_ADAPTER        = _get_value("LIVI_BT_ADAPTER",        "btAdapter",        "hci0")
+# Args for the bluetoothd drop-in written by setup_bluetoothd_dropin().
+# Default `-P *` disables ALL bluez plugins (preserves historical behavior).
+# Set to `--noplugin=sap` to only disable the SIM-Access plugin: that frees
+# RFCOMM channel 8 for the AA-Custom-Profile while keeping `audio` loaded,
+# so `org.bluez.Media1` stays available and a paralleler A2DP-stream to an
+# external BT-speaker / car-radio remains possible during projection.
+BT_BLUETOOTHD_ARGS = _get_value("LIVI_BT_BLUETOOTHD_ARGS", "btBluetoothdArgs", "-P *")

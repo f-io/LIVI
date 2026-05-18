@@ -29,7 +29,7 @@ import dbus.mainloop.glib
 from gi.repository import GLib
 
 from wifi_ap import setup_ap, teardown_ap, get_wlan_mac, AP_IP
-from config import SSID, PASSPHRASE, CHANNEL, PORT as AA_PORT, BTNAME, WIFI_IFACE, BT_ADAPTER
+from config import SSID, PASSPHRASE, CHANNEL, PORT as AA_PORT, BTNAME, WIFI_IFACE, BT_ADAPTER, BT_BLUETOOTHD_ARGS
 
 # ── Debug gate ────────────────────────────────────────────────────────────────
 DEBUG = os.environ.get("DEBUG") == "1"
@@ -89,12 +89,12 @@ def _find_bluetoothd() -> str:
 
 
 def _ensure_noplugins_dropin() -> bool:
-    """Write the `bluetoothd -P *` drop-in."""
+    """Write the bluetoothd drop-in. Args come from BT_BLUETOOTHD_ARGS — see config.py."""
     bluetoothd = _find_bluetoothd()
     content = (
         "[Service]\n"
         "ExecStart=\n"
-        f"ExecStart={bluetoothd} -P *\n"
+        f"ExecStart={bluetoothd} {BT_BLUETOOTHD_ARGS}\n"
     )
 
     restart_needed = False
@@ -108,10 +108,10 @@ def _ensure_noplugins_dropin() -> bool:
         os.makedirs(_DROPIN_DIR, exist_ok=True)
         with open(_DROPIN_CFG, "w") as f:
             f.write(content)
-        dprint(f"[aa-bt] wrote {_DROPIN_CFG} ({bluetoothd} -P *)")
+        dprint(f"[aa-bt] wrote {_DROPIN_CFG} ({bluetoothd} {BT_BLUETOOTHD_ARGS})")
         restart_needed = True
     else:
-        dprint(f"[aa-bt] bluetoothd -P * drop-in already in place ({bluetoothd})")
+        dprint(f"[aa-bt] bluetoothd drop-in already in place ({bluetoothd} {BT_BLUETOOTHD_ARGS})")
 
     return restart_needed
 
