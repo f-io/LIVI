@@ -56,9 +56,8 @@ app.whenReady().then(async () => {
   const win = getMainWindow()
   if (win) await checkAndInstallUdevRule(win)
 
-  // Wireless AA needs root for BlueZ + hostapd + dnsmasq. We install the
-  // sudoers drop-in once, on first run with `aa: true`.
-  if (win && runtimeState.config.aa === true && process.platform === 'linux') {
+  // Wireless AA needs root for BlueZ + hostapd + dnsmasq.
+  if (win && runtimeState.config.wirelessEnabled === true && process.platform === 'linux') {
     await checkAndInstallAaSudoers(win)
   }
 

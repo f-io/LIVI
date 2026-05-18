@@ -20,6 +20,7 @@ class MockDevice {
   open = jest.fn()
   close = jest.fn()
   interface = jest.fn(() => null as MockInterface | null)
+  reset = jest.fn((cb: (err?: Error) => void) => process.nextTick(() => cb()))
   controlTransfer = jest.fn(
     (
       _bm: number,

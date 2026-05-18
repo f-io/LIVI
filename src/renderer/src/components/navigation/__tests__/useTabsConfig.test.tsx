@@ -81,11 +81,11 @@ describe('useTabsConfig', () => {
     ])
   })
 
-  test('disables camera tab when camera is not found', () => {
+  test('hides camera tab when camera is not found', () => {
     mockState.cameraFound = false
     const { result } = renderHook(() => useTabsConfig(false))
     const camera = result.current.find((t) => t.path === '/camera')
-    expect(camera?.disabled).toBe(true)
+    expect(camera).toBeUndefined()
   })
 
   test('returns active CarPlay icon variant when dongle is connected', () => {
@@ -97,7 +97,7 @@ describe('useTabsConfig', () => {
     expect(carPlayTab).toBeDefined()
     expect((carPlayTab!.icon as any).props.sx).toEqual(
       expect.objectContaining({
-        fontSize: 30,
+        fontSize: 32,
         color: '#fff',
         opacity: 'var(--ui-breathe-opacity, 1)'
       })
@@ -125,7 +125,7 @@ describe('useTabsConfig', () => {
     expect(carPlayTab).toBeDefined()
     expect((carPlayTab!.icon as any).props.sx).toEqual(
       expect.objectContaining({
-        fontSize: 30,
+        fontSize: 32,
         color: 'var(--ui-highlight)',
         opacity: 1
       })
@@ -142,7 +142,7 @@ describe('useTabsConfig', () => {
     expect(carPlayTab).toBeDefined()
     expect((carPlayTab!.icon as any).props.sx).toEqual(
       expect.objectContaining({
-        fontSize: 30,
+        fontSize: 32,
         color: 'var(--ui-highlight)',
         opacity: 1
       })

@@ -120,12 +120,19 @@ type FakeAa = {
   close: jest.Mock
 }
 
-function newSvc(): { svc: ProjectionService; setAa: (aa: FakeAa | null) => void } {
+function newSvc(): {
+  svc: ProjectionService
+  setAa: (aa: FakeAa | null) => void
+  setSupervisor: (sup: object | null) => void
+} {
   const svc = new ProjectionService()
   const setAa = (aa: FakeAa | null): void => {
     ;(svc as unknown as { drivers: { aa: FakeAa | null } }).drivers.aa = aa
   }
-  return { svc, setAa }
+  const setSupervisor = (sup: object | null): void => {
+    ;(svc as unknown as { aaBtSupervisor: object | null }).aaBtSupervisor = sup
+  }
+  return { svc, setAa, setSupervisor }
 }
 
 function fakeAa(): FakeAa {
@@ -145,10 +152,11 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks())
 
 describe('refreshAaBtPairedList', () => {
-  test('no-op when no AA driver is active', async () => {
+  test('still queries BT presence when no AA driver is active', async () => {
     const { svc } = newSvc()
+    aaBtSockMock.listPaired.mockResolvedValueOnce([])
     await (svc as unknown as { refreshAaBtPairedList: () => Promise<void> }).refreshAaBtPairedList()
-    expect(aaBtSockMock.listPaired).not.toHaveBeenCalled()
+    expect(aaBtSockMock.listPaired).toHaveBeenCalled()
   })
 
   test('listPaired error is swallowed unless throwOnError', async () => {
@@ -204,31 +212,31 @@ describe('refreshAaBtPairedList', () => {
 })
 
 describe('tryAutoConnect', () => {
-  test('no-op when no AA driver', async () => {
+  test('no-op without active supervisor', async () => {
     const { svc } = newSvc()
     await (svc as unknown as { tryAutoConnect: () => Promise<void> }).tryAutoConnect()
     expect(aaBtSockMock.listPaired).not.toHaveBeenCalled()
   })
 
   test('bails when something is already connected', async () => {
-    const { svc, setAa } = newSvc()
-    setAa(fakeAa())
+    const { svc, setSupervisor } = newSvc()
+    setSupervisor({})
     aaBtSockMock.listPaired.mockResolvedValueOnce([{ mac: 'AA:BB', connected: true }])
     await (svc as unknown as { tryAutoConnect: () => Promise<void> }).tryAutoConnect()
     expect(aaBtSockMock.connect).not.toHaveBeenCalled()
   })
 
   test('logs and bails when paired list is empty', async () => {
-    const { svc, setAa } = newSvc()
-    setAa(fakeAa())
+    const { svc, setSupervisor } = newSvc()
+    setSupervisor({})
     aaBtSockMock.listPaired.mockResolvedValueOnce([])
     await (svc as unknown as { tryAutoConnect: () => Promise<void> }).tryAutoConnect()
     expect(aaBtSockMock.connect).not.toHaveBeenCalled()
   })
 
   test('prefers lastConnectedAaBtMac when present', async () => {
-    const { svc, setAa } = newSvc()
-    setAa(fakeAa())
+    const { svc, setSupervisor } = newSvc()
+    setSupervisor({})
     ;(svc as unknown as { config: { lastConnectedAaBtMac: string } }).config.lastConnectedAaBtMac =
       'AA:BB'
     aaBtSockMock.listPaired.mockResolvedValueOnce([
@@ -240,8 +248,8 @@ describe('tryAutoConnect', () => {
   })
 
   test('falls back to first trusted device', async () => {
-    const { svc, setAa } = newSvc()
-    setAa(fakeAa())
+    const { svc, setSupervisor } = newSvc()
+    setSupervisor({})
     aaBtSockMock.listPaired.mockResolvedValueOnce([
       { mac: 'CC:DD', connected: false, trusted: false },
       { mac: 'AA:BB', connected: false, trusted: true }
@@ -251,8 +259,8 @@ describe('tryAutoConnect', () => {
   })
 
   test('connect error is swallowed', async () => {
-    const { svc, setAa } = newSvc()
-    setAa(fakeAa())
+    const { svc, setSupervisor } = newSvc()
+    setSupervisor({})
     aaBtSockMock.listPaired.mockResolvedValueOnce([{ mac: 'AA:BB', trusted: true }])
     aaBtSockMock.connect.mockImplementationOnce(async () => {
       throw new Error('busy')
@@ -263,8 +271,8 @@ describe('tryAutoConnect', () => {
   })
 
   test('connect resp.ok=false logs but does not throw', async () => {
-    const { svc, setAa } = newSvc()
-    setAa(fakeAa())
+    const { svc, setSupervisor } = newSvc()
+    setSupervisor({})
     aaBtSockMock.listPaired.mockResolvedValueOnce([{ mac: 'AA:BB', trusted: true }])
     aaBtSockMock.connect.mockResolvedValueOnce({ ok: false, error: 'no agent' })
     await expect(
@@ -274,23 +282,23 @@ describe('tryAutoConnect', () => {
 })
 
 describe('openAaBtSubscription / closeAaBtSubscription', () => {
-  test('open is a no-op without an AA driver', () => {
+  test('open is a no-op without an active supervisor', () => {
     const { svc } = newSvc()
     ;(svc as unknown as { openAaBtSubscription: () => void }).openAaBtSubscription()
     expect(aaBtSockMock.subscribe).not.toHaveBeenCalled()
   })
 
-  test('open with an AA driver creates a subscription', () => {
-    const { svc, setAa } = newSvc()
-    setAa(fakeAa())
+  test('open with an active supervisor creates a subscription', () => {
+    const { svc, setSupervisor } = newSvc()
+    setSupervisor({})
     aaBtSockMock.subscribe.mockReturnValueOnce({ close: jest.fn() })
     ;(svc as unknown as { openAaBtSubscription: () => void }).openAaBtSubscription()
     expect(aaBtSockMock.subscribe).toHaveBeenCalledTimes(1)
   })
 
   test('open is idempotent', () => {
-    const { svc, setAa } = newSvc()
-    setAa(fakeAa())
+    const { svc, setSupervisor } = newSvc()
+    setSupervisor({})
     aaBtSockMock.subscribe.mockReturnValueOnce({ close: jest.fn() })
     ;(svc as unknown as { openAaBtSubscription: () => void }).openAaBtSubscription()
     ;(svc as unknown as { openAaBtSubscription: () => void }).openAaBtSubscription()
@@ -298,8 +306,8 @@ describe('openAaBtSubscription / closeAaBtSubscription', () => {
   })
 
   test('close ends the subscription', () => {
-    const { svc, setAa } = newSvc()
-    setAa(fakeAa())
+    const { svc, setSupervisor } = newSvc()
+    setSupervisor({})
     const closeFn = jest.fn()
     aaBtSockMock.subscribe.mockReturnValueOnce({ close: closeFn })
     ;(svc as unknown as { openAaBtSubscription: () => void }).openAaBtSubscription()
@@ -331,8 +339,8 @@ describe('openAaBtSubscription / closeAaBtSubscription', () => {
 
 describe('populateAaBtPairedListInitial', () => {
   test('exits immediately on first non-empty list', async () => {
-    const { svc, setAa } = newSvc()
-    setAa(fakeAa())
+    const { svc, setSupervisor } = newSvc()
+    setSupervisor({})
     aaBtSockMock.listPaired.mockResolvedValueOnce([{ mac: 'AA:BB' }])
     await (
       svc as unknown as { populateAaBtPairedListInitial: () => Promise<void> }
@@ -340,9 +348,9 @@ describe('populateAaBtPairedListInitial', () => {
     expect(aaBtSockMock.listPaired).toHaveBeenCalled()
   })
 
-  test('bails fast when AA driver disappears mid-loop', async () => {
-    const { svc, setAa } = newSvc()
-    setAa(null)
+  test('bails fast when supervisor disappears mid-loop', async () => {
+    const { svc, setSupervisor } = newSvc()
+    setSupervisor(null)
     await (
       svc as unknown as { populateAaBtPairedListInitial: () => Promise<void> }
     ).populateAaBtPairedListInitial()

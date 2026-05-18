@@ -32,7 +32,7 @@ const tabItemBase = {
   minHeight: 64,
   color: 'inherit',
   cursor: 'default',
-  '& svg': { color: 'inherit', fontSize: '36px' },
+  '& svg': { color: 'inherit' },
   '&.Mui-selected svg': { color: 'inherit' }
 }
 const buttonBaseRoot = { cursor: 'default' }

@@ -1,7 +1,6 @@
 /**
- * aaDriver — IPhoneDriver for native wireless Android Auto.
- * Owns AaBluetoothSupervisor (BT/Wi-Fi pairing) + AAStack (TCP 5277 protocol).
- * Translates AAStack events to LIVI domain messages.
+ * aaDriver — IPhoneDriver for native Android Auto (wired AOAP + wireless TCP).
+. * Owns the AAStack (TCP 5277 protocol)
  */
 
 import { EventEmitter } from 'node:events'
@@ -30,7 +29,6 @@ import {
 import type { Device } from 'usb'
 import type { IPhoneDriver } from '../IPhoneDriver'
 import { AaEventBridge } from './AaEventBridge'
-import { AaBluetoothSupervisor } from './aaBluetoothSupervisor'
 import { AOAP_LOOPBACK_HOST, AOAP_LOOPBACK_PORT } from './stack/aoap/constants'
 import {
   AAStack,
@@ -72,13 +70,11 @@ function mapCarTypeToFuelTypes(carType: CarType | undefined): number[] {
 }
 
 export interface AaDriverOptions {
-  supervisor?: AaBluetoothSupervisor | null
   onWillReenumerate?: (durationMs: number) => void
 }
 
 export class AaDriver extends EventEmitter implements IPhoneDriver {
   private _aa: AAStack | null = null
-  private _supervisor: AaBluetoothSupervisor | null
   private _started = false
   private _closed = false
   private _touchW = 1280
@@ -103,7 +99,6 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
 
   constructor(opts: AaDriverOptions = {}) {
     super()
-    this._supervisor = opts.supervisor ?? new AaBluetoothSupervisor({ maxRestarts: 5 })
     this._onWillReenumerate = opts.onWillReenumerate
   }
 
@@ -162,17 +157,6 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
 
     const wired = this._wiredDevice !== null
 
-    // 1. Bring up python BT/Wi-Fi stack first — only for the wireless path.
-    if (this._supervisor && !wired) {
-      this._supervisor.on('stdout', (line) => console.log(`[aa-bt] ${line}`))
-      this._supervisor.on('stderr', (line) => console.warn(`[aa-bt!] ${line}`))
-      this._supervisor.on('error', (err) => {
-        console.warn(`[aaDriver] supervisor error: ${err.message}`)
-      })
-      this._supervisor.start(cfg)
-    }
-
-    // 2. AAStackConfig
     const h264Only = !(this._hevcSupported || this._vp9Supported || this._av1Supported)
     const aaFit = matchFittingAAResolution({ width: cfg.width, height: cfg.height }, { h264Only })
     const tierW = aaFit.width
@@ -492,14 +476,6 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     }
     this._wiredBridge = null
     this._wiredDevice = null
-
-    if (this._supervisor) {
-      try {
-        await this._supervisor.stop()
-      } catch (err) {
-        console.warn(`[aaDriver] supervisor stop threw: ${(err as Error).message}`)
-      }
-    }
   }
 
   /**

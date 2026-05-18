@@ -1,16 +1,28 @@
 import { useEffect, useState } from 'react'
 
 export type TransportState = {
-  active: 'dongle' | 'aa' | null
+  active: 'dongle' | 'aa' | 'cp' | null
+  targetTransport: 'dongle' | 'aa' | 'cp' | null
+  targetMode: 'wired' | 'wireless' | null
+  switchPending: boolean
   dongleDetected: boolean
-  nativeDetected: boolean
+  wiredPhoneDetected: boolean
+  wirelessPhoneDetected: boolean
+  wirelessPhoneActive: boolean
+  wiredPhoneActive: boolean
   preference: 'auto' | 'dongle' | 'native'
 }
 
 const INITIAL: TransportState = {
   active: null,
+  targetTransport: null,
+  targetMode: null,
+  switchPending: false,
   dongleDetected: false,
-  nativeDetected: false,
+  wiredPhoneDetected: false,
+  wirelessPhoneDetected: false,
+  wirelessPhoneActive: false,
+  wiredPhoneActive: false,
   preference: 'auto'
 }
 

@@ -13,6 +13,7 @@ import { type Device, usb, WebUSBDevice } from 'usb'
 import { StatusFileWriter } from '../../status/StatusFileWriter'
 import { isCarlinkitDongle } from '../../usb/constants'
 import { AaBtSockClient } from '../driver/aa/AaBtSockClient'
+import { AaBluetoothSupervisor } from '../driver/aa/aaBluetoothSupervisor'
 import { AaDriver } from '../driver/aa/aaDriver'
 import type { IPhoneDriver } from '../driver/IPhoneDriver'
 import { ProjectionDriverManager } from '../drivers/ProjectionDriverManager'
@@ -128,11 +129,23 @@ export class ProjectionService {
   private aaBtSubscription: { close: () => void } | null = null
   private readonly statusFile = new StatusFileWriter()
 
+  private aaBtSupervisor: AaBluetoothSupervisor | null = null
+  private wirelessPhoneInRange = false
+  private btInitialQueryDone = false
+  private isSwitching = false
+
   private readonly onAaConnected = (): void => {
     this.refreshAaBtPairedList().catch(() => {})
   }
   private readonly onAaDisconnected = (): void => {
     this.refreshAaBtPairedList().catch(() => {})
+
+    if (this.started && !this.stopping && !this.isStopping && !this.shuttingDown) {
+      console.log('[ProjectionService] AA disconnected externally — teardown + re-arbitrate')
+      this.stop()
+        .then(() => this.autoStartIfNeeded())
+        .catch((e) => console.warn('[ProjectionService] teardown after AA disconnect threw', e))
+    }
   }
 
   // Hydration
@@ -151,9 +164,7 @@ export class ProjectionService {
   private lastClusterCodec: 'h264' | 'h265' | 'vp9' | 'av1' | null = null
 
   // Per-channel buffers for video chunks that arrive from the phone before
-  // the renderer is attached. Keeping main and cluster separate matters:
-  // at 60fps main video would otherwise push the cluster's initial SPS/IDR
-  // out of a shared FIFO before the renderer is up.
+  // the renderer is attached.
   private earlyVideoQueues: Map<string, Array<Record<string, unknown>>> = new Map()
   private static readonly EARLY_QUEUE_MAX_PER_CHANNEL = 256
   private lastPluggedPhoneType?: PhoneType
@@ -206,11 +217,53 @@ export class ProjectionService {
       this.emitTransportState()
     }
 
+    if (
+      typeof next.wirelessEnabled === 'boolean' &&
+      next.wirelessEnabled !== prev?.wirelessEnabled
+    ) {
+      this.syncAaBtSupervisor()
+      this.emitTransportState()
+    }
+
     const outChanged = next.audioOutputDevice !== prev?.audioOutputDevice
     const inChanged = next.audioInputDevice !== prev?.audioInputDevice
     if (outChanged || inChanged) {
       this.audio.onAudioDeviceChanged()
     }
+  }
+
+  private syncAaBtSupervisor(): void {
+    const want = this.config.wirelessEnabled === true && process.platform === 'linux'
+
+    if (want && !this.aaBtSupervisor) {
+      const sup = new AaBluetoothSupervisor({ maxRestarts: 5 })
+      sup.on('stdout', (line) => console.log(`[aa-bt] ${line}`))
+      sup.on('stderr', (line) => console.warn(`[aa-bt!] ${line}`))
+      sup.on('error', (err) => console.warn(`[aa-bt] supervisor error: ${err.message}`))
+      this.aaBtSupervisor = sup
+      console.log('[ProjectionService] starting AA BT/Wi-Fi supervisor')
+      sup.start(this.config)
+      this.openAaBtSubscription()
+      this.populateAaBtPairedListInitial()
+        .then(() => this.tryAutoConnect())
+        .catch(() => {})
+      return
+    }
+    if (!want && this.aaBtSupervisor) {
+      console.log('[ProjectionService] stopping AA BT/Wi-Fi supervisor')
+      const sup = this.aaBtSupervisor
+      this.aaBtSupervisor = null
+      sup.stop().catch((e) => console.warn('[ProjectionService] supervisor stop threw', e))
+      this.closeAaBtSubscription()
+      this.setWirelessPhoneInRange(false)
+      this.btInitialQueryDone = false
+    }
+  }
+
+  private setWirelessPhoneInRange(value: boolean): void {
+    if (this.wirelessPhoneInRange === value) return
+    this.wirelessPhoneInRange = value
+    this.emitTransportState()
   }
 
   private lastCodecCaps: Record<string, { hw?: unknown; sw?: unknown } | undefined> | null = null
@@ -659,6 +712,11 @@ export class ProjectionService {
   public beginShutdown(): void {
     this.shuttingDown = true
     this.unsubscribeConfigEvents()
+    if (this.aaBtSupervisor) {
+      const sup = this.aaBtSupervisor
+      this.aaBtSupervisor = null
+      sup.stop().catch(() => {})
+    }
   }
 
   constructor() {
@@ -672,15 +730,8 @@ export class ProjectionService {
       },
       onAaConnected: () => this.onAaConnected(),
       onAaDisconnected: () => this.onAaDisconnected(),
-      onAaCreated: () => {
-        if (process.platform === 'linux') {
-          this.openAaBtSubscription()
-          this.populateAaBtPairedListInitial()
-            .then(() => this.tryAutoConnect())
-            .catch(() => {})
-        }
-      },
-      onAaReleased: () => this.closeAaBtSubscription(),
+      onAaCreated: () => {},
+      onAaReleased: () => {},
       getAaConfigSeed: () => ({
         hevcSupported: this.hevcSupported,
         vp9Supported: this.vp9Supported,
@@ -692,10 +743,12 @@ export class ProjectionService {
 
     this.arbiter = new TransportArbiter({
       getPreference: () => this.getConnectionPreference(),
-      isAaEligible: () => this.config.aa === true && process.platform === 'linux',
+      isWirelessEnabled: () => this.config.wirelessEnabled === true && process.platform === 'linux',
+      isWirelessPhoneInRange: () => this.wirelessPhoneInRange,
       getActiveTransport: () => this.getActiveTransport(),
       isDongleSessionActive: () => this.started && !this.drivers.getAa(),
       isWiredAaSessionActive: () => this.started && this.drivers.getAa()?.isWiredMode() === true,
+      isWiredCpSessionActive: () => false,
       onChange: () => this.emitTransportState(),
       onShouldStop: async () => {
         await this.stop()
@@ -725,8 +778,8 @@ export class ProjectionService {
     const ipcHost: ProjectionIpcHost = {
       start: () => this.start(),
       stop: () => this.stop(),
-      pickPreferredTransport: () => this.arbiter.pickPreferred(),
-      flipTransport: () => this.flipTransport(),
+      pickPreferredTransport: () => this.pickPreferredTransport(),
+      switchTransport: () => this.switchTransport(),
       getTransportState: () => this.getTransportState(),
       applyCodecCapabilities: (caps) => this.applyCodecCapabilities(caps),
       send: (msg) => this.driver.send(msg),
@@ -857,6 +910,7 @@ export class ProjectionService {
 
   public applyConfigPatch(patch: Partial<Config>): void {
     this.config = { ...this.config, ...patch }
+    this.syncAaBtSupervisor()
   }
 
   private emitDongleInfoIfChanged() {
@@ -916,7 +970,7 @@ export class ProjectionService {
   }
 
   public pickPreferredTransport(): Transport | null {
-    return this.arbiter.pickPreferred()
+    return this.arbiter.pickPreferred()?.transport ?? null
   }
 
   public getActiveTransport(): Transport | null {
@@ -935,19 +989,61 @@ export class ProjectionService {
     })
   }
 
-  public async flipTransport(): Promise<{ ok: boolean; active: Transport | null }> {
-    const { ok, target } = this.arbiter.prepareFlip()
-    if (!ok) return { ok: false, active: target }
+  public async switchTransport(): Promise<{ ok: boolean; active: Transport | null }> {
+    const { ok, target } = this.arbiter.prepareSwitch()
+    if (!ok) return { ok: false, active: target?.transport ?? null }
 
-    if (this.started) {
+    if (this.isSwitching) {
+      return { ok: true, active: target?.transport ?? null }
+    }
+
+    this.isSwitching = true
+    try {
+      while (true) {
+        const desired = this.arbiter.getOverride()
+        if (!desired) break
+
+        if (this.started) {
+          try {
+            await this.stop()
+          } catch (e) {
+            console.warn('[ProjectionService] switchTransport: stop threw (ignored)', e)
+          }
+        }
+
+        if (desired.transport === 'aa' && desired.mode === 'wireless') {
+          await this.bounceAaBtConnections()
+        }
+
+        await this.autoStartIfNeeded()
+
+        const newOverride = this.arbiter.getOverride()
+        if (!newOverride) break
+        if (newOverride.transport === desired.transport && newOverride.mode === desired.mode) break
+      }
+    } finally {
+      this.isSwitching = false
+    }
+    return { ok: true, active: this.getActiveTransport() }
+  }
+
+  private async bounceAaBtConnections(): Promise<void> {
+    if (process.platform !== 'linux') return
+    let devices
+    try {
+      devices = await this.aaBtSock.listPaired()
+    } catch {
+      return
+    }
+    for (const d of devices) {
+      if (!d.connected) continue
       try {
-        await this.stop()
+        console.log(`[ProjectionService] bounce BT ${d.mac} to retrigger wireless AA`)
+        await this.aaBtSock.disconnect(d.mac)
       } catch (e) {
-        console.warn('[ProjectionService] flipTransport: stop threw (ignored)', e)
+        console.warn('[ProjectionService] BT disconnect during bounce threw', e)
       }
     }
-    await this.autoStartIfNeeded()
-    return { ok: true, active: this.getActiveTransport() }
   }
 
   private selectDriverFor(transport: Transport): IPhoneDriver {
@@ -955,7 +1051,6 @@ export class ProjectionService {
   }
 
   private async refreshAaBtPairedList(opts: { throwOnError?: boolean } = {}): Promise<void> {
-    if (!this.aaDriver) return
     let devices
     try {
       devices = await this.aaBtSock.listPaired()
@@ -964,35 +1059,40 @@ export class ProjectionService {
       return
     }
 
-    const entries: DevListEntry[] = devices.map((d) => ({
-      id: d.mac,
-      name: d.name || d.mac,
-      type: 'AndroidAuto',
-      source: 'host'
-    }))
     const connected = devices.find((d) => d.connected)?.mac ?? ''
-    if (connected && this.config.lastConnectedAaBtMac !== connected) {
-      configEvents.emit('requestSave', { lastConnectedAaBtMac: connected })
-    }
+    const wasSettled = this.btInitialQueryDone
+    this.btInitialQueryDone = true
+    this.setWirelessPhoneInRange(connected !== '')
+    if (!wasSettled) this.autoStartIfNeeded().catch(console.error)
 
-    const prev = isRecord(this.boxInfo) ? this.boxInfo : {}
-    this.boxInfo = {
-      ...prev,
-      DevList: entries,
-      btMacAddr: connected
-    }
-    this.emitDongleInfoIfChanged()
+    if (this.aaDriver) {
+      const entries: DevListEntry[] = devices.map((d) => ({
+        id: d.mac,
+        name: d.name || d.mac,
+        type: 'AndroidAuto',
+        source: 'host'
+      }))
+      if (connected && this.config.lastConnectedAaBtMac !== connected) {
+        configEvents.emit('requestSave', { lastConnectedAaBtMac: connected })
+      }
 
-    // Also feed the renderer's bluetoothPairedDevices store. Format expected
-    // by parseBluetoothPairedList: "<17-char MAC><name>\n" per device.
-    if (this.webContents) {
-      const raw = devices.length
-        ? devices.map((d) => `${d.mac}${d.name ?? ''}`).join('\n') + '\n'
-        : ''
-      this.emitProjectionEvent({
-        type: 'bluetoothPairedList',
-        payload: raw
-      })
+      const prev = isRecord(this.boxInfo) ? this.boxInfo : {}
+      this.boxInfo = {
+        ...prev,
+        DevList: entries,
+        btMacAddr: connected
+      }
+      this.emitDongleInfoIfChanged()
+
+      if (this.webContents) {
+        const raw = devices.length
+          ? devices.map((d) => `${d.mac}${d.name ?? ''}`).join('\n') + '\n'
+          : ''
+        this.emitProjectionEvent({
+          type: 'bluetoothPairedList',
+          payload: raw
+        })
+      }
     }
   }
 
@@ -1000,18 +1100,14 @@ export class ProjectionService {
     const totalTimeoutMs = 30_000
     const intervalMs = 2_000
     const deadline = Date.now() + totalTimeoutMs
-    // If config has a remembered MAC, we expect at least that device to
-    // surface in BlueZ. Treat an empty list as "still loading" until the
-    // budget runs out, instead of accepting it as the final answer.
     const expectDevice = !!this.config.lastConnectedAaBtMac
 
     while (Date.now() < deadline) {
-      if (!this.aaDriver) return
+      if (!this.aaBtSupervisor) return
       try {
-        await this.refreshAaBtPairedList({ throwOnError: true })
-        const dev = (this.boxInfo as { DevList?: unknown[] } | undefined)?.DevList
-        const isEmpty = !Array.isArray(dev) || dev.length === 0
-        if (isEmpty && expectDevice) {
+        const devices = await this.aaBtSock.listPaired()
+        await this.refreshAaBtPairedList().catch(() => {})
+        if (devices.length === 0 && expectDevice) {
           await new Promise((r) => setTimeout(r, intervalMs))
           continue
         }
@@ -1027,7 +1123,7 @@ export class ProjectionService {
 
   // Pick a target from the paired list and fire a single Connect
   private async tryAutoConnect(): Promise<void> {
-    if (!this.aaDriver) return
+    if (!this.aaBtSupervisor) return
 
     let devices
     try {
@@ -1064,15 +1160,14 @@ export class ProjectionService {
   private openAaBtSubscription(): void {
     if (this.aaBtSubscription) return
     const open = (): void => {
-      if (!this.aaDriver) return
+      if (!this.aaBtSupervisor) return
       this.aaBtSubscription = this.aaBtSock.subscribe(
         () => {
           this.refreshAaBtPairedList().catch(() => {})
         },
         () => {
           this.aaBtSubscription = null
-          // Reopen if AaDriver is still active
-          if (this.aaDriver) setTimeout(open, 1000)
+          if (this.aaBtSupervisor) setTimeout(open, 1000)
         }
       )
     }
@@ -1145,13 +1240,15 @@ export class ProjectionService {
         this.resetMediaSnapshot('session-start')
         this.resetNavigationSnapshot('session-start')
 
-        const target: Transport = this.arbiter.pickPreferred() === 'aa' ? 'aa' : 'dongle'
+        const candidate = this.arbiter.pickPreferred()
+        const target: Transport = candidate?.transport === 'aa' ? 'aa' : 'dongle'
         const active = this.selectDriverFor(target)
         const useAa = target === 'aa'
 
         if (useAa) {
           // Two AA paths share the same driver: Wireless + Wired
-          const wiredDevice = this.arbiter.getPhoneDevice()
+          const wantWired = candidate?.mode === 'wired'
+          const wiredDevice = wantWired ? this.arbiter.getPhoneDevice() : null
           const aaDriver = active as AaDriver
           aaDriver.setWiredDevice(wiredDevice)
 
@@ -1175,10 +1272,12 @@ export class ProjectionService {
               console.warn(
                 '[ProjectionService] aaDriver.start returned false — session not running'
               )
+              this.drivers.releaseAa()
             }
           } catch (e) {
             console.warn('[ProjectionService] AA start failed', e)
             this.started = false
+            this.drivers.releaseAa()
           }
           return
         }

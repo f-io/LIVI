@@ -25,8 +25,14 @@ describe('useTransportState', () => {
     const { result } = renderHook(() => useTransportState())
     expect(result.current).toEqual({
       active: null,
+      targetTransport: null,
+      targetMode: null,
+      switchPending: false,
       dongleDetected: false,
-      nativeDetected: false,
+      wiredPhoneDetected: false,
+      wirelessPhoneDetected: false,
+      wirelessPhoneActive: false,
+      wiredPhoneActive: false,
       preference: 'auto'
     })
   })
@@ -40,7 +46,9 @@ describe('useTransportState', () => {
     const initial = {
       active: 'aa' as const,
       dongleDetected: false,
-      nativeDetected: true,
+      wiredPhoneDetected: false,
+      wirelessPhoneActive: true,
+      wiredPhoneActive: false,
       preference: 'native' as const
     }
     installProjection({ getState: jest.fn(async () => initial) })
@@ -73,7 +81,9 @@ describe('useTransportState', () => {
     const payload = {
       active: 'dongle' as const,
       dongleDetected: true,
-      nativeDetected: false,
+      wiredPhoneDetected: false,
+      wirelessPhoneActive: false,
+      wiredPhoneActive: false,
       preference: 'dongle' as const
     }
     act(() => {

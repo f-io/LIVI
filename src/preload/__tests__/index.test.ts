@@ -508,13 +508,13 @@ describe('preload api bridge', () => {
   })
 
   describe('projection ipc wrappers — additional', () => {
-    test('restart, reportCodecCapabilities, flipTransport, getTransportState, getTelemetrySnapshot forward to invoke', async () => {
+    test('restart, reportCodecCapabilities, switchTransport, getTransportState, getTelemetrySnapshot forward to invoke', async () => {
       const { projection } = loadPreload()
       ipcRendererMock.invoke.mockResolvedValue(undefined)
 
       await projection.ipc.restart()
       await projection.ipc.reportCodecCapabilities({ h264: true })
-      await projection.ipc.flipTransport()
+      await projection.ipc.switchTransport()
       await projection.ipc.getTransportState()
       await projection.ipc.getTelemetrySnapshot()
 
@@ -522,7 +522,7 @@ describe('preload api bridge', () => {
       expect(ipcRendererMock.invoke).toHaveBeenCalledWith('projection-codec-capabilities', {
         h264: true
       })
-      expect(ipcRendererMock.invoke).toHaveBeenCalledWith('transport:flip')
+      expect(ipcRendererMock.invoke).toHaveBeenCalledWith('transport:switch')
       expect(ipcRendererMock.invoke).toHaveBeenCalledWith('transport:state')
       expect(ipcRendererMock.invoke).toHaveBeenCalledWith('telemetry:snapshot')
     })

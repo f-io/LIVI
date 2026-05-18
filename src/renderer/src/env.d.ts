@@ -171,17 +171,20 @@ declare global {
         onClusterVideoChunk(handler: (payload: unknown) => void): void
         onClusterResolution(handler: (payload: unknown) => void): void
 
-        flipTransport(): Promise<{ ok: boolean; active: 'dongle' | 'aa' | null }>
+        switchTransport(): Promise<{ ok: boolean; active: 'dongle' | 'aa' | 'cp' | null }>
         getTransportState(): Promise<{
-          active: 'dongle' | 'aa' | null
+          active: 'dongle' | 'aa' | 'cp' | null
           dongleDetected: boolean
-          nativeDetected: boolean
+          wiredPhoneDetected: boolean
+          wirelessPhoneActive: boolean
+          wiredPhoneActive: boolean
           preference: 'auto' | 'dongle' | 'native'
         }>
       }
     }
 
     app: {
+      platform: NodeJS.Platform
       notifyUserActivity(): void
       quitApp(): Promise<void>
       restartApp(): Promise<void>

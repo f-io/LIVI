@@ -89,9 +89,7 @@ export type WindowBounds = {
 }
 
 export type Config = {
-  // Backend selection
-  aa: boolean
-  cp: boolean
+  wirelessEnabled: boolean
   connectionPreference: ConnectionPreference
 
   // Wi-Fi + Bluetooth

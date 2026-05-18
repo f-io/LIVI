@@ -30,11 +30,6 @@ class MockAAStack extends EventEmitter {
   }
 }
 
-class MockSupervisor extends EventEmitter {
-  start = jest.fn()
-  stop = jest.fn(async () => undefined)
-}
-
 class MockUsbAoapBridge extends EventEmitter {
   start = jest.fn(async () => undefined)
   stop = jest.fn(async () => undefined)
@@ -68,10 +63,6 @@ jest.mock('../stack/index', () => {
     })
   }
 })
-
-jest.mock('../aaBluetoothSupervisor', () => ({
-  AaBluetoothSupervisor: jest.fn().mockImplementation(() => new MockSupervisor())
-}))
 
 jest.mock('../stack/transport/UsbAoapBridge', () => ({
   UsbAoapBridge: jest.fn().mockImplementation(() => {
@@ -158,13 +149,6 @@ describe('AaDriver.start — wireless', () => {
     expect(lastAaStack.instance!.start).toHaveBeenCalled()
   })
 
-  test('starts the BT supervisor on the wireless path', async () => {
-    const supervisor = new MockSupervisor()
-    const d = new AaDriver({ supervisor: supervisor as unknown as never })
-    await d.start(baseCfg())
-    expect(supervisor.start).toHaveBeenCalled()
-  })
-
   test('idempotent: a second start returns true without re-constructing AAStack', async () => {
     const d = new AaDriver()
     await d.start(baseCfg())
@@ -219,14 +203,12 @@ describe('AaDriver.start — wireless', () => {
 })
 
 describe('AaDriver.start — wired', () => {
-  test('starts the UsbAoapBridge instead of the supervisor', async () => {
-    const supervisor = new MockSupervisor()
-    const d = new AaDriver({ supervisor: supervisor as unknown as never })
+  test('starts the UsbAoapBridge for wired AA', async () => {
+    const d = new AaDriver()
     d.setWiredDevice(fakeUsbDevice())
 
     const ok = await d.start(baseCfg())
     expect(ok).toBe(true)
-    expect(supervisor.start).not.toHaveBeenCalled()
     expect(lastBridge.instance).not.toBeNull()
     expect(lastBridge.instance!.start).toHaveBeenCalled()
   })
@@ -293,9 +275,8 @@ describe('AaDriver.restartStack', () => {
 })
 
 describe('AaDriver.close', () => {
-  test('stops mic + bridge + supervisor + AAStack and clears refs', async () => {
-    const supervisor = new MockSupervisor()
-    const d = new AaDriver({ supervisor: supervisor as unknown as never })
+  test('stops mic + bridge + AAStack and clears refs', async () => {
+    const d = new AaDriver()
     d.setWiredDevice(fakeUsbDevice())
     await d.start(baseCfg())
 
@@ -303,7 +284,6 @@ describe('AaDriver.close', () => {
     expect(lastAaStack.instance!.requestShutdown).toHaveBeenCalled()
     expect(lastAaStack.instance!.stop).toHaveBeenCalled()
     expect(lastBridge.instance!.drain).toHaveBeenCalled()
-    expect(supervisor.stop).toHaveBeenCalled()
   })
 
   test('idempotent — second close is a no-op', async () => {
@@ -728,7 +708,7 @@ describe('AaDriver — touch out-of-window handling', () => {
   })
 })
 
-describe('AaDriver.close — wired-bridge + supervisor teardown errors', () => {
+describe('AaDriver.close — wired-bridge teardown errors', () => {
   test('wired bridge.stop() throwing is swallowed', async () => {
     const d = new AaDriver()
     d.setWiredDevice(fakeUsbDevice())
@@ -736,16 +716,6 @@ describe('AaDriver.close — wired-bridge + supervisor teardown errors', () => {
     lastBridge.instance!.stop.mockImplementationOnce(async () => {
       throw new Error('USB hung')
     })
-    await expect(d.close()).resolves.toBeUndefined()
-  })
-
-  test('supervisor.stop() throwing is swallowed', async () => {
-    const supervisor = new MockSupervisor()
-    supervisor.stop = jest.fn(async () => {
-      throw new Error('python crashed')
-    })
-    const d = new AaDriver({ supervisor: supervisor as unknown as never })
-    await d.start(baseCfg())
     await expect(d.close()).resolves.toBeUndefined()
   })
 })

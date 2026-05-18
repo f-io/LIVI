@@ -9,7 +9,7 @@ describe('generalSchema', () => {
     expect(schema.label).toBe('General')
     expect(schema.labelKey).toBe('settings.general')
     expect(schema.path).toBe('')
-    expect(schema.children).toHaveLength(12)
+    expect(schema.children).toHaveLength(11)
   })
 
   test('connections route contains names, wifi and auto connect', () => {
@@ -22,7 +22,7 @@ describe('generalSchema', () => {
       })
     )
 
-    expect(connections.children).toHaveLength(5)
+    expect(connections.children).toHaveLength(6)
 
     expect(connections.children[0]).toEqual(
       expect.objectContaining({
@@ -39,30 +39,19 @@ describe('generalSchema', () => {
     expect(connections.children[3]).toEqual(
       expect.objectContaining({
         type: 'checkbox',
-        path: 'autoConn'
+        path: 'wirelessEnabled'
       })
     )
     expect(connections.children[4]).toEqual(
       expect.objectContaining({
+        type: 'checkbox',
+        path: 'autoConn'
+      })
+    )
+    expect(connections.children[5]).toEqual(
+      expect.objectContaining({
         type: 'select',
         path: 'connectionPreference'
-      })
-    )
-  })
-
-  test('wireless projection lives at General top-level (sibling of connections)', () => {
-    const wireless = schema.children[1]
-    expect(wireless).toEqual(
-      expect.objectContaining({
-        type: 'route',
-        route: 'wirelessProjection',
-        label: 'Wireless Projection'
-      })
-    )
-    expect(wireless.children[0]).toEqual(
-      expect.objectContaining({
-        type: 'checkbox',
-        path: 'aa'
       })
     )
   })
@@ -91,7 +80,7 @@ describe('generalSchema', () => {
   })
 
   test('dongle firmware settings route lives at the bottom with dashboard and gnss sections', () => {
-    const firmware = schema.children[11]
+    const firmware = schema.children[10]
     expect(firmware).toEqual(
       expect.objectContaining({
         type: 'route',
@@ -164,7 +153,7 @@ describe('generalSchema', () => {
   })
 
   test('auto switch route contains all three toggles', () => {
-    const autoSwitch = schema.children[4]
+    const autoSwitch = schema.children[3]
     expect(autoSwitch).toEqual(
       expect.objectContaining({
         type: 'route',
@@ -180,7 +169,7 @@ describe('generalSchema', () => {
   })
 
   test('key bindings route contains representative binding entries', () => {
-    const keyBindings = schema.children[5]
+    const keyBindings = schema.children[4]
     expect(keyBindings).toEqual(
       expect.objectContaining({
         type: 'route',
@@ -202,7 +191,7 @@ describe('generalSchema', () => {
   })
 
   test('start page select exposes all expected page options', () => {
-    const startPage = schema.children[6]
+    const startPage = schema.children[5]
     expect(startPage).toEqual(
       expect.objectContaining({
         type: 'select',
@@ -221,7 +210,7 @@ describe('generalSchema', () => {
   })
 
   test('window settings + tab settings live as siblings, tab settings hosts cluster/dashboards/media/camera', () => {
-    const windowSettings = schema.children[2]
+    const windowSettings = schema.children[1]
     expect(windowSettings).toEqual(
       expect.objectContaining({
         type: 'route',
@@ -234,7 +223,7 @@ describe('generalSchema', () => {
       'auxScreen'
     ])
 
-    const tabSettings = schema.children[3]
+    const tabSettings = schema.children[2]
     expect(tabSettings).toEqual(
       expect.objectContaining({
         type: 'route',
@@ -291,20 +280,20 @@ describe('generalSchema', () => {
       'camera.main',
       'camera.dash',
       'camera.aux',
-      'select',
-      'cameraMirror'
+      'cameraMirror',
+      'select'
     ])
   })
 
   test('fft delay, steering wheel, fullscreen, zoom and language nodes are configured', () => {
-    const fftDelay = schema.children[7]
+    const fftDelay = schema.children[6]
     expect(fftDelay.type).toBe('number')
     expect(fftDelay.path).toBe('visualAudioDelayMs')
     expect(fftDelay.valueTransform?.toView?.(150)).toBe(150)
     expect(fftDelay.valueTransform?.fromView?.(160)).toBe(160)
     expect(fftDelay.valueTransform?.format?.(170)).toBe('170 ms')
 
-    const steering = schema.children[8]
+    const steering = schema.children[7]
     expect(steering.type).toBe('select')
     expect(steering.path).toBe('hand')
     expect(steering.options).toEqual([
@@ -312,7 +301,7 @@ describe('generalSchema', () => {
       { label: 'RHD', labelKey: 'settings.rhdr', value: 1 }
     ])
 
-    expect(schema.children[9]).toEqual(
+    expect(schema.children[8]).toEqual(
       expect.objectContaining({
         type: 'number',
         path: 'uiZoomPercent',
@@ -323,18 +312,18 @@ describe('generalSchema', () => {
       })
     )
 
-    expect(schema.children[9].valueTransform?.toView?.(120)).toBe(120)
-    expect(schema.children[9].valueTransform?.fromView?.(130)).toBe(130)
-    expect(schema.children[9].valueTransform?.format?.(140)).toBe('140%')
+    expect(schema.children[8].valueTransform?.toView?.(120)).toBe(120)
+    expect(schema.children[8].valueTransform?.fromView?.(130)).toBe(130)
+    expect(schema.children[8].valueTransform?.format?.(140)).toBe('140%')
 
-    expect(schema.children[10]).toEqual(
+    expect(schema.children[9]).toEqual(
       expect.objectContaining({
         type: 'select',
         path: 'language',
         displayValue: true
       })
     )
-    expect(schema.children[10].options).toEqual([
+    expect(schema.children[9].options).toEqual([
       { label: 'English', labelKey: 'settings.english', value: 'en' },
       { label: 'German', labelKey: 'settings.german', value: 'de' },
       { label: 'Ukrainian', labelKey: 'settings.ukrainian', value: 'ua' }

@@ -6,7 +6,7 @@ export enum ROUTES {
   SETTINGS = '/settings',
   TELEMETRY = '/telemetry',
   QUIT = 'quit',
-  TRANSPORT_FLIP = 'transport-flip'
+  TRANSPORT_SWITCH = 'transport-switch'
 }
 
 export const FOCUSABLE_SELECTOR = [

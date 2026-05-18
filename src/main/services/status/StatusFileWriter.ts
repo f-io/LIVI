@@ -5,7 +5,7 @@ import path from 'path'
 
 export type LiviStatus = {
   projection: {
-    active: 'aa' | 'dongle' | null
+    active: 'aa' | 'cp' | 'dongle' | null
     streaming: boolean
     phoneType: 'CarPlay' | 'AndroidAuto' | null
   }

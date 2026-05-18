@@ -35,7 +35,7 @@ export interface ProjectionIpcHost {
   start(): Promise<void>
   stop(): Promise<void>
   pickPreferredTransport(): Transport | null
-  flipTransport(): Promise<{ ok: boolean; active: Transport | null }>
+  switchTransport(): Promise<{ ok: boolean; active: Transport | null }>
   getTransportState(): TransportSnapshot
   applyCodecCapabilities(caps: unknown): void
 

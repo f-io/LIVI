@@ -36,6 +36,7 @@ export type BaseFieldNode = NodeMeta & {
   label: string // TODO deleted in favor of i18n
   labelKey?: string
   path: string
+  disabled?: boolean
 }
 
 export type CheckboxNode = BaseFieldNode & {

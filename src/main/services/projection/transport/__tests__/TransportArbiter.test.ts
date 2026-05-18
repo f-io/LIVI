@@ -4,10 +4,12 @@ import type { ArbiterDeps, ConnectionPreference, Transport } from '../types'
 
 type DepStubs = {
   preference: ConnectionPreference
-  aaEligible: boolean
+  wirelessEnabled: boolean
+  wirelessPhoneInRange: boolean
   active: Transport | null
   dongleSessionActive: boolean
   wiredAaSessionActive: boolean
+  wiredCpSessionActive: boolean
   onChange: jest.Mock
   onShouldStop: jest.Mock
   onShouldAutoStart: jest.Mock
@@ -16,10 +18,12 @@ type DepStubs = {
 function makeArbiter(overrides: Partial<DepStubs> = {}) {
   const stubs: DepStubs = {
     preference: 'auto',
-    aaEligible: false,
+    wirelessEnabled: false,
+    wirelessPhoneInRange: true,
     active: null,
     dongleSessionActive: false,
     wiredAaSessionActive: false,
+    wiredCpSessionActive: false,
     onChange: jest.fn(),
     onShouldStop: jest.fn(async () => {}),
     onShouldAutoStart: jest.fn(),
@@ -27,10 +31,12 @@ function makeArbiter(overrides: Partial<DepStubs> = {}) {
   }
   const deps: ArbiterDeps = {
     getPreference: () => stubs.preference,
-    isAaEligible: () => stubs.aaEligible,
+    isWirelessEnabled: () => stubs.wirelessEnabled,
+    isWirelessPhoneInRange: () => stubs.wirelessPhoneInRange,
     getActiveTransport: () => stubs.active,
     isDongleSessionActive: () => stubs.dongleSessionActive,
     isWiredAaSessionActive: () => stubs.wiredAaSessionActive,
+    isWiredCpSessionActive: () => stubs.wiredCpSessionActive,
     onChange: stubs.onChange,
     onShouldStop: stubs.onShouldStop,
     onShouldAutoStart: stubs.onShouldAutoStart
@@ -203,6 +209,10 @@ describe('TransportArbiter', () => {
   })
 
   describe('pickPreferred', () => {
+    const DONGLE = { transport: 'dongle', mode: 'wired' }
+    const AA_WIRED = { transport: 'aa', mode: 'wired' }
+    const AA_WIRELESS = { transport: 'aa', mode: 'wireless' }
+
     test('returns null when nothing is present', () => {
       const { arbiter } = makeArbiter()
       expect(arbiter.pickPreferred()).toBeNull()
@@ -211,116 +221,159 @@ describe('TransportArbiter', () => {
     test('returns dongle when only dongle is present', () => {
       const { arbiter } = makeArbiter()
       arbiter.markDongleConnected(true)
-      expect(arbiter.pickPreferred()).toBe('dongle')
+      expect(arbiter.pickPreferred()).toEqual(DONGLE)
     })
 
-    test('returns aa when only a wired phone is present', () => {
+    test('returns wired aa when only a wired phone is present', () => {
       const { arbiter } = makeArbiter()
       arbiter.markPhoneConnected(true, fakeDevice())
-      expect(arbiter.pickPreferred()).toBe('aa')
+      expect(arbiter.pickPreferred()).toEqual(AA_WIRED)
     })
 
-    test('returns aa when wireless AA is eligible even without a phone', () => {
-      const { arbiter } = makeArbiter({ aaEligible: true })
+    test('returns wireless aa when only wireless is eligible', () => {
+      const { arbiter } = makeArbiter({ wirelessEnabled: true })
+      expect(arbiter.pickPreferred()).toEqual(AA_WIRELESS)
+    })
+
+    test("preference='auto' with dongle+wireless prefers dongle when no session yet", () => {
+      const { arbiter } = makeArbiter({ wirelessEnabled: true })
       arbiter.markDongleConnected(true)
-      // preference='auto' falls back to dongle since no active transport yet
-      expect(arbiter.pickPreferred()).toBe('dongle')
+      expect(arbiter.pickPreferred()).toEqual(DONGLE)
     })
 
     test("preference 'dongle' picks dongle when both transports present", () => {
       const { arbiter } = makeArbiter({ preference: 'dongle' })
       arbiter.markDongleConnected(true)
       arbiter.markPhoneConnected(true, fakeDevice())
-      expect(arbiter.pickPreferred()).toBe('dongle')
+      expect(arbiter.pickPreferred()).toEqual(DONGLE)
     })
 
     test("preference 'native' picks aa when both transports present", () => {
       const { arbiter } = makeArbiter({ preference: 'native' })
       arbiter.markDongleConnected(true)
       arbiter.markPhoneConnected(true, fakeDevice())
-      expect(arbiter.pickPreferred()).toBe('aa')
+      expect(arbiter.pickPreferred()).toEqual(AA_WIRED)
     })
 
     test("preference 'dongle' falls back to aa when no dongle", () => {
       const { arbiter } = makeArbiter({ preference: 'dongle' })
       arbiter.markPhoneConnected(true, fakeDevice())
-      expect(arbiter.pickPreferred()).toBe('aa')
+      expect(arbiter.pickPreferred()).toEqual(AA_WIRED)
     })
 
     test("'auto' sticks to the active transport", () => {
       const { arbiter } = makeArbiter({ active: 'dongle' })
       arbiter.markDongleConnected(true)
       arbiter.markPhoneConnected(true, fakeDevice())
-      expect(arbiter.pickPreferred()).toBe('dongle')
+      expect(arbiter.pickPreferred()).toEqual(DONGLE)
     })
 
     test('override beats preference', () => {
       const { arbiter } = makeArbiter({ preference: 'dongle' })
       arbiter.markDongleConnected(true)
       arbiter.markPhoneConnected(true, fakeDevice())
-      arbiter.prepareFlip()
-      expect(arbiter.pickPreferred()).toBe('aa')
+      arbiter.prepareSwitch()
+      expect(arbiter.pickPreferred()).toEqual(AA_WIRED)
     })
 
-    test('override is dropped when the chosen side disappears', () => {
-      const { arbiter } = makeArbiter()
+    test('override is dropped when the chosen candidate disappears', () => {
+      const { arbiter } = makeArbiter({ preference: 'dongle' })
       arbiter.markDongleConnected(true)
       arbiter.markPhoneConnected(true, fakeDevice())
-      arbiter.prepareFlip() // override = 'aa'
+      arbiter.prepareSwitch() // anchor=DONGLE (pref), cycles to AA_WIRED
 
       arbiter.markPhoneConnected(false)
       jest.advanceTimersByTime(1_000)
 
       expect(arbiter.getOverride()).toBeNull()
-      expect(arbiter.pickPreferred()).toBe('dongle')
+      expect(arbiter.pickPreferred()).toEqual(DONGLE)
     })
   })
 
   describe('decideNextStart', () => {
+    const DONGLE = { transport: 'dongle', mode: 'wired' }
+    const AA_WIRED = { transport: 'aa', mode: 'wired' }
+
     test('none when nothing is present', () => {
       const { arbiter } = makeArbiter()
       expect(arbiter.decideNextStart()).toEqual({ kind: 'none' })
     })
 
-    test('start with the preferred transport', () => {
+    test('start with the preferred candidate', () => {
       const { arbiter } = makeArbiter()
       arbiter.markPhoneConnected(true, fakeDevice())
-      expect(arbiter.decideNextStart()).toEqual({ kind: 'start', transport: 'aa' })
+      expect(arbiter.decideNextStart()).toEqual({ kind: 'start', candidate: AA_WIRED })
     })
 
-    test("preference='native' defers dongle to give the AOAP probe a chance", () => {
-      const { arbiter } = makeArbiter({ preference: 'native' })
+    test("preference='native' defers dongle while wireless is enabled but no phone in range", () => {
+      const { arbiter } = makeArbiter({
+        preference: 'native',
+        wirelessEnabled: true,
+        wirelessPhoneInRange: false
+      })
       arbiter.markDongleConnected(true)
       const decision = arbiter.decideNextStart()
       expect(decision.kind).toBe('defer')
     })
 
-    test('defer eventually expires and falls through to dongle', () => {
+    test('defer falls through to dongle once wireless phone is in range', () => {
       const t0 = Date.now()
       jest.setSystemTime(t0)
-      const { arbiter } = makeArbiter({ preference: 'native' })
+      const { arbiter, stubs } = makeArbiter({
+        preference: 'native',
+        wirelessEnabled: true,
+        wirelessPhoneInRange: false
+      })
       arbiter.markDongleConnected(true)
       expect(arbiter.decideNextStart().kind).toBe('defer')
-      jest.setSystemTime(t0 + 3_001)
-      expect(arbiter.decideNextStart()).toEqual({ kind: 'start', transport: 'dongle' })
+      // Note: once phone is in range, pickPreferred picks AA_WIRELESS, not dongle
+      stubs.wirelessPhoneInRange = true
+      jest.setSystemTime(t0 + 600)
+      const decision = arbiter.decideNextStart()
+      expect(decision.kind).toBe('start')
+      if (decision.kind === 'start') {
+        expect(decision.candidate.transport).toBe('aa')
+      }
+    })
+
+    test('defer eventually expires after the safety deadline', () => {
+      const t0 = Date.now()
+      jest.setSystemTime(t0)
+      const { arbiter } = makeArbiter({
+        preference: 'native',
+        wirelessEnabled: true,
+        wirelessPhoneInRange: false
+      })
+      arbiter.markDongleConnected(true)
+      expect(arbiter.decideNextStart().kind).toBe('defer')
+      jest.setSystemTime(t0 + 15_001)
+      expect(arbiter.decideNextStart()).toEqual({ kind: 'start', candidate: DONGLE })
     })
 
     test('explicit override skips the defer', () => {
-      const { arbiter } = makeArbiter({ preference: 'native' })
+      const { arbiter } = makeArbiter({
+        preference: 'native',
+        wirelessEnabled: true,
+        wirelessPhoneInRange: false
+      })
       arbiter.markDongleConnected(true)
       arbiter.markPhoneConnected(true, fakeDevice())
-      arbiter.prepareFlip() // override → dongle
-      expect(arbiter.decideNextStart()).toEqual({ kind: 'start', transport: 'dongle' })
+      arbiter.prepareSwitch()
+      expect(arbiter.decideNextStart()).toEqual({ kind: 'start', candidate: DONGLE })
     })
 
     test('resetNativeProbeDefer re-opens the defer window', () => {
       const t0 = Date.now()
       jest.setSystemTime(t0)
-      const { arbiter } = makeArbiter({ preference: 'native' })
+      const { arbiter } = makeArbiter({
+        preference: 'native',
+        wirelessEnabled: true,
+        wirelessPhoneInRange: false
+      })
       arbiter.markDongleConnected(true)
-      arbiter.decideNextStart() // sets deadline at t0+3000
+      arbiter.decideNextStart()
 
-      jest.setSystemTime(t0 + 3_001)
+      jest.setSystemTime(t0 + 15_001)
       expect(arbiter.decideNextStart().kind).toBe('start')
 
       arbiter.resetNativeProbeDefer()
@@ -328,29 +381,57 @@ describe('TransportArbiter', () => {
     })
   })
 
-  describe('prepareFlip', () => {
-    test('refuses to flip when only one transport is present', () => {
+  describe('prepareSwitch', () => {
+    const DONGLE = { transport: 'dongle', mode: 'wired' }
+    const AA_WIRED = { transport: 'aa', mode: 'wired' }
+    const AA_WIRELESS = { transport: 'aa', mode: 'wireless' }
+
+    test('refuses to switch when only one candidate is present', () => {
       const { arbiter } = makeArbiter({ active: 'dongle' })
       arbiter.markDongleConnected(true)
-      const r = arbiter.prepareFlip()
+      const r = arbiter.prepareSwitch()
       expect(r.ok).toBe(false)
     })
 
-    test('flips dongle → aa', () => {
-      const { arbiter } = makeArbiter({ active: 'dongle' })
+    test('switches dongle → wired aa', () => {
+      const { arbiter, stubs } = makeArbiter({ active: 'dongle', dongleSessionActive: true })
       arbiter.markDongleConnected(true)
       arbiter.markPhoneConnected(true, fakeDevice())
-      const r = arbiter.prepareFlip()
-      expect(r).toEqual({ ok: true, target: 'aa' })
-      expect(arbiter.getOverride()).toBe('aa')
+      const r = arbiter.prepareSwitch()
+      expect(r).toEqual({ ok: true, target: AA_WIRED })
+      expect(arbiter.getOverride()).toEqual(AA_WIRED)
+      // sanity: the underlying snapshot session-active stub is what determines current
+      expect(stubs.dongleSessionActive).toBe(true)
     })
 
-    test('flips aa → dongle', () => {
-      const { arbiter } = makeArbiter({ active: 'aa' })
+    test('switches wired aa → dongle', () => {
+      const { arbiter } = makeArbiter({ active: 'aa', wiredAaSessionActive: true })
       arbiter.markDongleConnected(true)
       arbiter.markPhoneConnected(true, fakeDevice())
-      const r = arbiter.prepareFlip()
-      expect(r).toEqual({ ok: true, target: 'dongle' })
+      const r = arbiter.prepareSwitch()
+      expect(r).toEqual({ ok: true, target: DONGLE })
+    })
+
+    test('cycles wired aa → wireless aa when both are eligible without dongle', () => {
+      const { arbiter } = makeArbiter({
+        active: 'aa',
+        wiredAaSessionActive: true,
+        wirelessEnabled: true
+      })
+      arbiter.markPhoneConnected(true, fakeDevice())
+      const r = arbiter.prepareSwitch()
+      expect(r).toEqual({ ok: true, target: AA_WIRELESS })
+    })
+
+    test('cycles wireless aa → wired aa when phone is still plugged', () => {
+      const { arbiter } = makeArbiter({
+        active: 'aa',
+        wiredAaSessionActive: false,
+        wirelessEnabled: true
+      })
+      arbiter.markPhoneConnected(true, fakeDevice())
+      const r = arbiter.prepareSwitch()
+      expect(r).toEqual({ ok: true, target: AA_WIRED })
     })
   })
 
@@ -363,8 +444,14 @@ describe('TransportArbiter', () => {
       const snap = arbiter.getSnapshot()
       expect(snap).toEqual({
         active: 'aa',
+        targetTransport: 'aa',
+        targetMode: 'wireless',
+        switchPending: false,
         dongleDetected: true,
-        nativeDetected: true,
+        wiredPhoneDetected: true,
+        wirelessPhoneDetected: false,
+        wirelessPhoneActive: true,
+        wiredPhoneActive: false,
         preference: 'native'
       })
       expect(stubs.onChange).toHaveBeenCalled()

@@ -158,12 +158,14 @@ const api = {
       ipcRenderer.invoke('projection-bt-forget-device', mac),
     dongleFirmware: (action: 'check' | 'download' | 'upload' | 'status'): Promise<unknown> =>
       ipcRenderer.invoke('dongle-fw', { action }),
-    flipTransport: (): Promise<{ ok: boolean; active: 'dongle' | 'aa' | null }> =>
-      ipcRenderer.invoke('transport:flip'),
+    switchTransport: (): Promise<{ ok: boolean; active: 'dongle' | 'aa' | 'cp' | null }> =>
+      ipcRenderer.invoke('transport:switch'),
     getTransportState: (): Promise<{
-      active: 'dongle' | 'aa' | null
+      active: 'dongle' | 'aa' | 'cp' | null
       dongleDetected: boolean
-      nativeDetected: boolean
+      wiredPhoneDetected: boolean
+      wirelessPhoneActive: boolean
+      wiredPhoneActive: boolean
       preference: 'auto' | 'dongle' | 'native'
     }> => ipcRenderer.invoke('transport:state'),
     sendTouch: (x: number, y: number, action: number): void =>
@@ -243,6 +245,7 @@ type UpdateEvent = { phase: string; message?: string }
 type UpdateProgress = { phase?: string; percent?: number; received?: number; total?: number }
 
 const appApi = {
+  platform: process.platform,
   getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
   getLatestRelease: (): Promise<{ version?: string; url?: string }> =>
     ipcRenderer.invoke('app:getLatestRelease'),

@@ -192,6 +192,9 @@ export class UsbAoapBridge extends EventEmitter {
 
     // Kick the phone back out of accessory mode
     if (dev) {
+      // Notify the arbiter so the USB detach during reset isn't read as unplug.
+      this._onWillReenumerate?.(AOAP_RE_ENUMERATE_TIMEOUT_MS + 2_000)
+
       await withWatchdog((done) => {
         try {
           dev.controlTransfer(0x00, 0x09, 0, 0, Buffer.alloc(0), () => done())
@@ -199,6 +202,22 @@ export class UsbAoapBridge extends EventEmitter {
           done()
         }
       }, 500)
+
+      await withWatchdog((done) => {
+        try {
+          dev.reset((err: unknown) => {
+            if (err) {
+              console.warn(`[UsbAoapBridge] usb reset failed: ${String(err)}`)
+            } else {
+              console.log('[UsbAoapBridge] usb reset ok — phone will re-enumerate')
+            }
+            done()
+          })
+        } catch (err) {
+          console.warn(`[UsbAoapBridge] usb reset threw: ${(err as Error).message}`)
+          done()
+        }
+      }, 1500)
     }
 
     try {
@@ -237,10 +256,21 @@ export class UsbAoapBridge extends EventEmitter {
         )
       }
     } else {
-      try {
-        this._device.open()
-      } catch (err) {
-        throw new Error(`Failed to open AOAP device: ${(err as Error).message}`)
+      let opened = false
+      let lastOpenErr: unknown
+      for (let attempt = 0; attempt < 5 && !opened; attempt++) {
+        try {
+          this._device.open()
+          opened = true
+        } catch (err) {
+          lastOpenErr = err
+          await new Promise((r) => setTimeout(r, 100))
+        }
+      }
+      if (!opened) {
+        throw new Error(
+          `Failed to open AOAP device: ${(lastOpenErr as Error)?.message ?? 'unknown'}`
+        )
       }
 
       const reenumerated = waitForAccessoryAttach(AOAP_RE_ENUMERATE_TIMEOUT_MS)

@@ -483,14 +483,14 @@ describe('ProjectionService', () => {
       expect(svc.pickPreferredTransport()).toBe('aa')
     })
 
-    test('auto: when both present, dongle wins tiebreaker on cold pick', () => {
+    test('auto: when both present, wired AA wins tiebreaker on cold pick', () => {
       const svc = freshSvc()
       svc.config = { aa: false, connectionPreference: 'auto' }
       svc.start = jest.fn(async () => undefined)
 
       svc.markDongleConnected(true)
       svc.markPhoneConnected(true, fakePhoneDevice())
-      expect(svc.pickPreferredTransport()).toBe('dongle')
+      expect(svc.pickPreferredTransport()).toBe('aa')
     })
 
     test("preference 'dongle' picks dongle even when phone is present first", () => {
@@ -517,19 +517,19 @@ describe('ProjectionService', () => {
       expect(svc.pickPreferredTransport()).toBe('aa')
     })
 
-    test('flipTransport is a no-op when only one transport is present', async () => {
+    test('switchTransport is a no-op when only one transport is present', async () => {
       const svc = freshSvc()
       svc.config = { aa: false, connectionPreference: 'auto' }
       svc.markDongleConnected(true)
       svc.start = jest.fn(async () => undefined)
       svc.stop = jest.fn(async () => undefined)
 
-      const res = await svc.flipTransport()
+      const res = await svc.switchTransport()
       expect(res.ok).toBe(false)
       expect(svc.stop).not.toHaveBeenCalled()
     })
 
-    test('flipTransport restarts on the opposite transport when both are present', async () => {
+    test('switchTransport restarts on the opposite transport when both are present', async () => {
       const svc = freshSvc()
       svc.config = { aa: false, connectionPreference: 'auto' }
       svc.markDongleConnected(true)
@@ -541,7 +541,7 @@ describe('ProjectionService', () => {
       })
       svc.start = jest.fn(async () => undefined)
 
-      const res = await svc.flipTransport()
+      const res = await svc.switchTransport()
       expect(svc.stop).toHaveBeenCalledTimes(1)
       // override sticks → next pick is 'aa'
       expect(svc.pickPreferredTransport()).toBe('aa')
@@ -560,7 +560,7 @@ describe('ProjectionService', () => {
       })
       svc.start = jest.fn(async () => undefined)
 
-      await svc.flipTransport()
+      await svc.switchTransport()
       expect(svc.pickPreferredTransport()).toBe('aa')
 
       svc.markPhoneConnected(false)
@@ -595,7 +595,7 @@ describe('ProjectionService', () => {
       await svc.autoStartIfNeeded()
       expect(svc.start).not.toHaveBeenCalled() // deferred
 
-      jest.advanceTimersByTime(3500)
+      jest.advanceTimersByTime(15_500)
       await Promise.resolve()
       await Promise.resolve()
       await Promise.resolve()

@@ -99,6 +99,13 @@ export const generalSchema: SettingsNode<Config> = {
         },
         {
           type: 'checkbox',
+          label: 'Wireless',
+          labelKey: 'settings.wirelessEnabled',
+          path: 'wirelessEnabled',
+          disabled: window.app?.platform !== 'linux'
+        },
+        {
+          type: 'checkbox',
           label: 'Auto Connect',
           labelKey: 'settings.autoConnect',
           path: 'autoConn'
@@ -122,27 +129,6 @@ export const generalSchema: SettingsNode<Config> = {
             labelDescription: 'settings.preferredConnectionDescription'
           }
         }
-      ]
-    },
-    {
-      type: 'route',
-      route: 'wirelessProjection',
-      label: 'Wireless Projection',
-      labelKey: 'settings.wirelessProjection',
-      path: '',
-      children: [
-        {
-          type: 'checkbox',
-          label: 'Wireless Android Auto',
-          labelKey: 'settings.wirelessAa',
-          path: 'aa'
-        }
-        //{
-        //  type: 'checkbox',
-        //  label: 'Wireless CarPlay',
-        //  labelKey: 'settings.wirelessCp',
-        //  path: 'cp'
-        //}
       ]
     },
     {
@@ -444,6 +430,12 @@ export const generalSchema: SettingsNode<Config> = {
               path: 'camera.aux'
             },
             {
+              type: 'checkbox',
+              label: 'Mirror',
+              labelKey: 'settings.cameraMirror',
+              path: 'cameraMirror'
+            },
+            {
               type: 'route',
               label: 'Camera',
               labelKey: 'settings.camera',
@@ -458,12 +450,6 @@ export const generalSchema: SettingsNode<Config> = {
                   component: Camera
                 }
               ]
-            },
-            {
-              type: 'checkbox',
-              label: 'Mirror',
-              labelKey: 'settings.cameraMirror',
-              path: 'cameraMirror'
             }
           ]
         }

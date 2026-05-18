@@ -86,7 +86,13 @@ export const SettingsFieldControl = <T,>({ node, value, onChange }: Props<T>) =>
     }
 
     case 'checkbox':
-      return <Switch checked={Boolean(value)} onChange={(_, v) => onChange(v as T)} />
+      return (
+        <Switch
+          checked={Boolean(value)}
+          disabled={node.disabled === true}
+          onChange={(_, v) => onChange(v as T)}
+        />
+      )
 
     case 'slider':
       return (

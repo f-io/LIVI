@@ -42,8 +42,7 @@ export enum WiFiValues {
 }
 
 export const requiresRestartParams: (keyof Config)[] = [
-  'aa',
-  'cp',
+  'wirelessEnabled',
 
   'width',
   'height',

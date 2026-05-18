@@ -31,10 +31,7 @@ export const NavRail = ({ items, activeKey, onSelect, ariaLabel = 'Navigation' }
     flex: '1 1 0',
     padding: isXSIcons ? '5px 0' : '10px 0',
     '& .MuiTab-iconWrapper': { display: 'grid', placeItems: 'center' },
-    '& .MuiSvgIcon-root': {
-      fontSize: isXSIcons ? '1.5rem' : '2rem',
-      transition: 'color 120ms ease-out'
-    },
+    '& .MuiSvgIcon-root': { transition: 'color 120ms ease-out' },
     minHeight: 'auto',
 
     '&.Mui-focusVisible, &:hover': { opacity: 1 },

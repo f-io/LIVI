@@ -13,14 +13,14 @@ import { registerTransportIpc } from '../transport'
 describe('transport ipc', () => {
   beforeEach(() => handlers.clear())
 
-  test('transport:flip delegates to host.flipTransport', async () => {
+  test('transport:switch delegates to host.switchTransport', async () => {
     const host = {
-      flipTransport: jest.fn(async () => ({ ok: true, active: 'aa' as const })),
+      switchTransport: jest.fn(async () => ({ ok: true, active: 'aa' as const })),
       getTransportState: jest.fn()
     }
     registerTransportIpc(host)
-    const r = await handlers.get('transport:flip')!(null)
-    expect(host.flipTransport).toHaveBeenCalled()
+    const r = await handlers.get('transport:switch')!(null)
+    expect(host.switchTransport).toHaveBeenCalled()
     expect(r).toEqual({ ok: true, active: 'aa' })
   })
 
@@ -32,7 +32,7 @@ describe('transport ipc', () => {
       preference: 'auto' as const
     }
     const host = {
-      flipTransport: jest.fn(),
+      switchTransport: jest.fn(),
       getTransportState: jest.fn(() => state)
     }
     registerTransportIpc(host)

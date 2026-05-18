@@ -6,10 +6,11 @@ import PlayCircleOutlinedIcon from '@mui/icons-material/PlayCircleOutlined'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
 import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined'
 import { useTheme } from '@mui/material/styles'
-import { ROUTES } from '../../constants'
+import { useEffect, useState } from 'react'
+import { ROUTES, UI } from '../../constants'
 import { useLiviStore, useStatusStore } from '../../store/store'
 import { getWindowRole } from '../../utils/windowRole'
-import { TransportFlipIcon } from './TransportFlipIcon'
+import { TransportSwitchIcon } from './TransportSwitchIcon'
 import { TabConfig } from './types'
 import { useTransportState } from './useTransportState'
 
@@ -23,7 +24,14 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
   const cameraConfigured = useLiviStore((s) => Boolean(s.settings?.cameraId))
   const cameraReady = cameraFound || cameraConfigured
   const transport = useTransportState()
-  const showFlip = role === 'main' && transport.dongleDetected && transport.nativeDetected
+  const isXSIcons = typeof window !== 'undefined' && window.innerHeight <= UI.XS_ICON_MAX_HEIGHT
+  const iconFontSize = isXSIcons ? 24 : 32
+  const detectedCount =
+    Number(transport.dongleDetected) +
+    Number(transport.wiredPhoneDetected) +
+    Number(transport.wirelessPhoneDetected)
+  const rawShowSwitch = role === 'main' && (detectedCount >= 2 || transport.switchPending)
+  const showSwitch = useDelayedHide(rawShowSwitch, 300)
   const clusterEnabled = useLiviStore(
     (s) =>
       s.settings?.cluster?.main === true ||
@@ -53,7 +61,7 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
             {
               label: 'Cluster Stream',
               path: ROUTES.CLUSTER,
-              icon: <MapOutlinedIcon sx={{ fontSize: 30 }} />
+              icon: <MapOutlinedIcon sx={{ fontSize: iconFontSize }} />
             }
           ]
         : []),
@@ -62,7 +70,7 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
             {
               label: 'Telemetry',
               path: ROUTES.TELEMETRY,
-              icon: <SpeedOutlinedIcon sx={{ fontSize: 30 }} />
+              icon: <SpeedOutlinedIcon sx={{ fontSize: iconFontSize }} />
             }
           ]
         : []),
@@ -71,17 +79,16 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
             {
               label: 'Media',
               path: ROUTES.MEDIA,
-              icon: <PlayCircleOutlinedIcon sx={{ fontSize: 30 }} />
+              icon: <PlayCircleOutlinedIcon sx={{ fontSize: iconFontSize }} />
             }
           ]
         : []),
-      ...(cameraOnRole
+      ...(cameraOnRole && cameraReady
         ? [
             {
               label: 'Camera',
               path: ROUTES.CAMERA,
-              icon: <CameraOutlinedIcon sx={{ fontSize: 30 }} />,
-              disabled: !cameraReady
+              icon: <CameraOutlinedIcon sx={{ fontSize: iconFontSize }} />
             }
           ]
         : [])
@@ -99,13 +106,13 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
         const activeColor = 'var(--ui-highlight)'
 
         if (!usbConnected) {
-          return <CropPortraitOutlinedIcon sx={{ color: baseColor, fontSize: 30 }} />
+          return <CropPortraitOutlinedIcon sx={{ color: baseColor, fontSize: iconFontSize }} />
         }
 
         return (
           <CropPortraitOutlinedIcon
             sx={{
-              fontSize: 30,
+              fontSize: iconFontSize,
               color: phoneActive ? activeColor : baseColor,
               '&, &.MuiSvgIcon-root': {
                 color: `${phoneActive ? activeColor : baseColor} !important`
@@ -121,7 +128,7 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
           {
             label: 'Cluster Stream',
             path: ROUTES.CLUSTER,
-            icon: <MapOutlinedIcon sx={{ fontSize: 30 }} />
+            icon: <MapOutlinedIcon sx={{ fontSize: iconFontSize }} />
           }
         ]
       : []),
@@ -130,7 +137,7 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
           {
             label: 'Telemetry',
             path: ROUTES.TELEMETRY,
-            icon: <SpeedOutlinedIcon sx={{ fontSize: 30 }} />
+            icon: <SpeedOutlinedIcon sx={{ fontSize: iconFontSize }} />
           }
         ]
       : []),
@@ -139,33 +146,55 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
           {
             label: 'Media',
             path: ROUTES.MEDIA,
-            icon: <PlayCircleOutlinedIcon sx={{ fontSize: 30 }} />
+            icon: <PlayCircleOutlinedIcon sx={{ fontSize: iconFontSize }} />
           }
         ]
       : []),
-    ...(cameraOnRole
+    ...(cameraOnRole && cameraReady
       ? [
           {
             label: 'Camera',
             path: ROUTES.CAMERA,
-            icon: <CameraOutlinedIcon sx={{ fontSize: 30 }} />,
-            disabled: !cameraReady
+            icon: <CameraOutlinedIcon sx={{ fontSize: iconFontSize }} />
           }
         ]
       : []),
-    ...(showFlip
+    ...(showSwitch
       ? [
           {
             label: 'Switch transport',
-            path: ROUTES.TRANSPORT_FLIP,
-            icon: <TransportFlipIcon active={transport.active} fontSize={30} />
+            path: ROUTES.TRANSPORT_SWITCH,
+            icon: (
+              <TransportSwitchIcon
+                active={transport.targetTransport ?? transport.active}
+                wiredPhoneActive={
+                  transport.targetMode
+                    ? transport.targetMode === 'wired'
+                    : transport.wiredPhoneActive
+                }
+                fontSize={iconFontSize}
+              />
+            )
           }
         ]
       : []),
     {
       label: 'Settings',
       path: ROUTES.SETTINGS,
-      icon: <SettingsOutlinedIcon sx={{ fontSize: 30 }} />
+      icon: <SettingsOutlinedIcon sx={{ fontSize: iconFontSize }} />
     }
   ]
+}
+
+function useDelayedHide(value: boolean, delayMs: number): boolean {
+  const [held, setHeld] = useState(value)
+  useEffect(() => {
+    if (value) {
+      setHeld(true)
+      return
+    }
+    const t = setTimeout(() => setHeld(false), delayMs)
+    return () => clearTimeout(t)
+  }, [value, delayMs])
+  return held
 }

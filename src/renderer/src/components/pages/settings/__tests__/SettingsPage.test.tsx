@@ -9,7 +9,7 @@ const applyBtList = jest.fn()
 
 const statusState = { isDongleConnected: true, isAaActive: false }
 const liviState = {
-  settings: { some: 'settings', aa: false } as Record<string, unknown>,
+  settings: { some: 'settings', wirelessEnabled: false } as Record<string, unknown>,
   bluetoothPairedDirty: false,
   applyBluetoothPairedList: applyBtList
 }
@@ -96,7 +96,7 @@ describe('SettingsPage', () => {
     handleFieldChange.mockReset()
     statusState.isDongleConnected = true
     statusState.isAaActive = false
-    liviState.settings = { some: 'settings', aa: false }
+    liviState.settings = { some: 'settings', wirelessEnabled: false }
     liviState.bluetoothPairedDirty = false
     smartState.needsRestart = false
   })
@@ -225,7 +225,7 @@ describe('SettingsPage', () => {
 
   test('AA-active alone is enough to enable restart', () => {
     statusState.isDongleConnected = false
-    liviState.settings = { aa: true }
+    liviState.settings = { wirelessEnabled: true }
     smartState.needsRestart = true
     mockNode = { type: 'route', label: 'Audio', children: [] }
     render(<SettingsPage />)
