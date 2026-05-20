@@ -9,3 +9,15 @@ minimumReleaseAgeExclude:
   - '@types/node@25.9.0'
   - protobufjs@8.4.0
   - ts-jest@29.4.10
+  - '@base-ui/react@1.5.0'
+  - '@base-ui/utils@0.2.9'
+  - '@types/node@25.9.1'
+  - '@types/react@19.2.15'
+  - app-builder-lib@26.11.0
+  - builder-util-runtime@9.6.1
+  - builder-util@26.11.0
+  - dmg-builder@26.11.0
+  - electron-builder-squirrel-windows@26.11.0
+  - electron-builder@26.11.0
+  - electron-publish@26.11.0
+  - electron@42.2.0
