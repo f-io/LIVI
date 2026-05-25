@@ -9,7 +9,7 @@
     "Lasse Heitgres"
   ],
   "homepage": "https://f-io.dev",
-  "packageManager": "pnpm@11.2.2",
+  "packageManager": "pnpm@11.3.0",
   "scripts": {
     "prepare": "husky",
     "dev": "vite",
