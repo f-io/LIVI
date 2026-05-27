@@ -1053,7 +1053,10 @@ export class ProjectionService {
       await this.aaBtSock.setSessionActive(active)
     } catch (e) {
       this.sessionActiveSent = null
-      console.warn(`[ProjectionService] setSessionActive(${active}) failed`, e)
+      // ENOENT during early startup is expected; supervisor IPC socket not up yet
+      if (!(e instanceof Error && e.message.includes('ENOENT'))) {
+        console.warn(`[ProjectionService] setSessionActive(${active}) failed`, e)
+      }
     }
   }
 

@@ -180,7 +180,6 @@ def disable_existing_wifi_network_services():
     subprocess.run(["sudo", "systemctl", "stop", f"wpa_supplicant@{WIFI_IFACE}"], check=False)
     subprocess.run(["sudo", "systemctl", "disable", f"wpa_supplicant@{WIFI_IFACE}"], check=False)
     subprocess.run(["sudo", "ip", "addr", "flush", "dev", WIFI_IFACE], check=False)
-    subprocess.run(["sudo", "dhcpcd", "-k", WIFI_IFACE], check=False)
     subprocess.run(["sudo", "ip", "link", "set", WIFI_IFACE, "up"], check=False)
     time.sleep(1)
 
@@ -188,7 +187,9 @@ def disable_existing_wifi_network_services():
 def kill_network_manager_and_supplicant():
     # Only release {WIFI_IFACE} — leave NM running for other interfaces
     subprocess.run(["sudo", "nmcli", "device", "set", WIFI_IFACE, "managed", "no"], check=False)
-    subprocess.run(["sudo", "nmcli", "device", "disconnect", WIFI_IFACE], check=False)
+    # Already-disconnected wlan0 returns "device not active"; suppress stderr noise
+    subprocess.run(["sudo", "nmcli", "device", "disconnect", WIFI_IFACE],
+                   check=False, stderr=subprocess.DEVNULL)
     subprocess.run(["sudo", "systemctl", "stop", f"wpa_supplicant@{WIFI_IFACE}"], check=False)
     subprocess.run(["sudo", "rfkill", "unblock", "wifi"], check=False)
     time.sleep(1)
