@@ -527,6 +527,8 @@ export function buildRuntimeTheme(
 export function initCursorHider() {
   const inactivityMs = UI.INACTIVITY_HIDE_DELAY_MS
   let timer: ReturnType<typeof setTimeout>
+  let lastX: number | null = null
+  let lastY: number | null = null
   const setCursor = (value: string) => {
     const elems = [
       document.body,
@@ -541,12 +543,19 @@ export function initCursorHider() {
   }
   function reset() {
     clearTimeout(timer)
-    window.app?.notifyUserActivity?.()
     setCursor('default')
     timer = setTimeout(() => setCursor('none'), inactivityMs)
   }
-  document.addEventListener('mousemove', reset)
-  reset()
+  // Touch emits synthetic mouse events, only a real mouse reveals the pointer
+  document.addEventListener('pointermove', (e) => {
+    window.app?.notifyUserActivity?.()
+    if (e.pointerType !== 'mouse') return
+    const moved = lastX !== null && (e.clientX !== lastX || e.clientY !== lastY)
+    lastX = e.clientX
+    lastY = e.clientY
+    if (moved) reset()
+  })
+  setCursor('none')
 }
 
 // CarPlay-style LED

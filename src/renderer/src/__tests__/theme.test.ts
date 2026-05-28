@@ -25,7 +25,19 @@ describe('theme module', () => {
     expect(typeof theme.palette.primary.main).toBe('string')
   })
 
-  test('initCursorHider updates cursor and notifies activity', () => {
+  const pointerMove = (pointerType: string, x = 0, y = 0) => {
+    const ev = new Event('pointermove') as Event & {
+      pointerType?: string
+      clientX?: number
+      clientY?: number
+    }
+    Object.defineProperty(ev, 'pointerType', { value: pointerType })
+    Object.defineProperty(ev, 'clientX', { value: x })
+    Object.defineProperty(ev, 'clientY', { value: y })
+    document.dispatchEvent(ev)
+  }
+
+  test('initCursorHider reveals pointer on real mouse movement, hides after inactivity', () => {
     jest.useFakeTimers()
     const notify = jest.fn()
     ;(window as any).app = { notifyUserActivity: notify }
@@ -38,12 +50,29 @@ describe('theme module', () => {
     document.body.appendChild(btn)
 
     initCursorHider()
+    expect(document.body.style.cursor).toBe('none')
+
+    pointerMove('mouse', 100, 100)
+    expect(document.body.style.cursor).toBe('none')
+
+    pointerMove('mouse', 150, 150)
     expect(notify).toHaveBeenCalled()
     expect(document.body.style.cursor).toBe('default')
 
     jest.advanceTimersByTime(3000)
     expect(document.body.style.cursor).toBe('none')
     jest.useRealTimers()
+  })
+
+  test('initCursorHider keeps pointer hidden on touch', () => {
+    const notify = jest.fn()
+    ;(window as any).app = { notifyUserActivity: notify }
+
+    initCursorHider()
+    pointerMove('touch', 10, 10)
+    pointerMove('touch', 50, 50)
+    expect(notify).toHaveBeenCalled()
+    expect(document.body.style.cursor).toBe('none')
   })
 
   test('initUiBreatheClock writes css variable', () => {
