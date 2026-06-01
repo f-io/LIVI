@@ -85,7 +85,7 @@ export default defineConfig({
           build: {
             outDir: resolve(__dirname, 'out/main'),
             emptyOutDir: false,
-            rollupOptions: {
+            rolldownOptions: {
               external: ['electron', 'usb', 'node-gyp-build', ...NODE_BUILTINS],
               input: {
                 main: resolve(__dirname, 'src/main/index.ts'),
