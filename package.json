@@ -82,8 +82,8 @@
     "@types/w3c-web-usb": "^1.0.14",
     "@vitejs/plugin-react": "^6.0.2",
     "@webgpu/types": "^0.1.70",
-    "electron": "^42.3.1",
-    "electron-builder": "^26.11.1",
+    "electron": "^42.3.2",
+    "electron-builder": "^26.14.0",
     "esbuild": "^0.28.0",
     "globals": "^17.6.0",
     "husky": "^9.1.7",
@@ -100,7 +100,7 @@
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3",
     "vite": "^8.0.16",
-    "vite-plugin-electron": "^1.0.0",
+    "vite-plugin-electron": "^1.0.1",
     "vite-plugin-electron-renderer": "^1.0.0"
   }
 }
