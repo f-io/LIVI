@@ -150,6 +150,7 @@ export type Config = {
   navVolume: number
   voiceAssistantVolume: number
   callVolume: number
+  systemSoundsVolume?: number
   audioOutputDevice?: string
   audioOutputDeviceLabel?: string
   audioInputDevice?: string

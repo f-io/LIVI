@@ -120,6 +120,8 @@
     "voiceAssistantDescription": "",
     "phoneCalls": "Anrufe",
     "phoneCallsDescription": "",
+    "systemSounds": "Systemklänge",
+    "systemSoundsDescription": "Lautstärke der Systemklänge, z. B. das Blinker-Relais-Klicken.",
     "microphone": "Mikrofon",
     "microphoneDescription": "Mikrofonauswahl.",
     "micCar": "LIVI",

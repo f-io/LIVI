@@ -1,23 +1,46 @@
 import { Box, useTheme } from '@mui/material'
+import { CarType } from '@shared/types'
+import { useLiviStore } from '@store/store'
 import { useEffect, useRef, useState } from 'react'
 import { DashShell } from '../../components/DashShell'
 import { useVehicleTelemetry } from '../../hooks/useVehicleTelemetry'
-import { CoolantTemp, FuelLevel, Gear, NavMini, OilTemp, Rpm, RpmRing, Speed } from '../../widgets'
+import {
+  FuelGauge,
+  GaugeArc,
+  NavMini,
+  normalizeGear,
+  SoftReadout,
+  TelltaleBar,
+  TempGauge
+} from '../../widgets'
 import {
   BASE_H,
   BASE_W,
   CENTER_X,
-  GEAR_X,
-  GEAR_Y,
-  METRICS_RIGHT,
-  METRICS_TOP,
+  FUEL_SEGMENTS,
+  GAUGE_ARM_TICKS,
+  GAUGE_BAR_TOP,
+  GAUGE_BAR_W,
+  GAUGE_GAP_DEG,
+  GAUGE_MAJOR_COUNT,
+  GAUGE_RADIUS,
+  GAUGE_TICKS,
+  LEFT_RING_LEFT,
+  MAX_SPEED_KPH,
   NAV_Y,
-  RPM_RIGHT,
-  RPM_TOP,
-  SPEED_GROUP_LEFT,
-  SPEED_GROUP_TOP,
-  SPEED_GROUP_W
+  READOUT_DX,
+  RIGHT_RING_LEFT,
+  RING_H,
+  RING_TOP,
+  RING_W,
+  RPM_LABELS,
+  RPM_REDLINE,
+  RPM_SCALE_MAX,
+  SPEED_LABELS,
+  SPEED_SCALE_MAX
 } from './constants'
+
+const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v))
 
 export function Dash1() {
   const theme = useTheme()
@@ -25,15 +48,24 @@ export function Dash1() {
 
   const speedKph = typeof telemetry?.speedKph === 'number' ? telemetry.speedKph : 0
   const rpm = typeof telemetry?.rpm === 'number' ? telemetry.rpm : 0
-  const coolantC = typeof telemetry?.coolantC === 'number' ? telemetry.coolantC : 0
-  const oilC = typeof telemetry?.oilC === 'number' ? telemetry.oilC : 0
-  const fuelPct = typeof telemetry?.fuelPct === 'number' ? telemetry.fuelPct : 0
 
   const gear: string | number = telemetry?.gear ?? 'P'
 
+  const turn = telemetry?.turn === 'left' || telemetry?.turn === 'right' ? telemetry.turn : 'none'
+  const hazards = telemetry?.hazards === true
+  const lights = telemetry?.lights === true
+  const highBeam = telemetry?.highBeam === true
+  const parkingBrake = telemetry?.parkingBrake === true
+  const ambientC = typeof telemetry?.ambientC === 'number' ? telemetry.ambientC : undefined
+  const fuelPct = typeof telemetry?.fuelPct === 'number' ? telemetry.fuelPct : 0
+  const oilC = typeof telemetry?.oilC === 'number' ? telemetry.oilC : 0
+
+  // Battery vs fuel icon, driven by the configured car type (controllable in settings).
+  const carType = useLiviStore((s) => s.settings?.carType)
+  const fuelMode: 'fuel' | 'battery' = carType === CarType.Electric ? 'battery' : 'fuel'
+
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [scale, setScale] = useState(1)
-
   const [sidePush, setSidePush] = useState(0)
 
   useEffect(() => {
@@ -77,52 +109,117 @@ export function Dash1() {
             transition: 'transform 0.05s ease-out'
           }}
         >
-          {/* SPEED + RING GROUP */}
+          {/* LEFT RING — speed (arc fills with km/h, no redline) */}
           <Box
             sx={{
               position: 'absolute',
-              left: SPEED_GROUP_LEFT,
-              top: SPEED_GROUP_TOP,
-              width: SPEED_GROUP_W,
-              height: 640,
+              left: LEFT_RING_LEFT,
+              top: RING_TOP,
+              width: RING_W,
+              height: RING_H,
               transform: `translateX(${-sidePush}px)`
             }}
           >
-            <Box
-              sx={{
-                position: 'absolute',
-                inset: 0,
-                pointerEvents: 'none',
-                transform: 'translate(-36px, -22px)',
-                transformOrigin: 'center'
-              }}
-            >
-              <RpmRing
-                rpm={rpm}
-                maxRpm={5000}
-                redlineRpm={4500}
-                ticks={44}
-                startDeg={90}
-                arcDeg={240}
-                colorOff={theme.palette.text.disabled}
-                colorOn={theme.palette.text.primary}
+            <Box sx={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+              <GaugeArc
+                value={speedKph}
+                scaleMax={SPEED_SCALE_MAX}
+                ticks={GAUGE_TICKS}
+                radius={GAUGE_RADIUS}
+                gapDeg={GAUGE_GAP_DEG}
+                armTicks={GAUGE_ARM_TICKS}
+                majorCount={GAUGE_MAJOR_COUNT}
+                labels={SPEED_LABELS}
+                colorScale={theme.palette.text.disabled}
+                colorMajor={theme.palette.text.secondary}
+                colorPointer={theme.palette.text.primary}
                 colorRedline={theme.palette.error.main}
               />
             </Box>
-
             <Box
               sx={{
                 position: 'absolute',
                 left: '50%',
                 top: '50%',
-                transform: 'translate(-50%, -50%)'
+                width: 200,
+                height: 130,
+                transform: `translate(calc(-50% + ${READOUT_DX}px), -50%)`
               }}
             >
-              <Speed speedKph={speedKph} />
+              <SoftReadout
+                value={clamp(Math.round(speedKph), 0, 999)}
+                label="KPH"
+                align="end"
+                maxChars={3}
+              />
             </Box>
           </Box>
 
-          {/* NAV MINI — stays centered on stage */}
+          {/* RIGHT RING — RPM (same arc, mirrored so it opens toward the centre) */}
+          <Box
+            sx={{
+              position: 'absolute',
+              left: RIGHT_RING_LEFT,
+              top: RING_TOP,
+              width: RING_W,
+              height: RING_H,
+              transform: `translateX(${sidePush}px)`
+            }}
+          >
+            <Box sx={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+              <GaugeArc
+                value={rpm}
+                scaleMax={RPM_SCALE_MAX}
+                redline={RPM_REDLINE}
+                ticks={GAUGE_TICKS}
+                radius={GAUGE_RADIUS}
+                gapDeg={GAUGE_GAP_DEG}
+                armTicks={GAUGE_ARM_TICKS}
+                majorCount={GAUGE_MAJOR_COUNT}
+                labels={RPM_LABELS}
+                mirror
+                colorScale={theme.palette.text.disabled}
+                colorMajor={theme.palette.text.secondary}
+                colorPointer={theme.palette.text.primary}
+                colorRedline={theme.palette.error.main}
+              />
+            </Box>
+            <Box
+              sx={{
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                width: 200,
+                height: 130,
+                transform: `translate(calc(-50% - ${READOUT_DX}px), -50%)`
+              }}
+            >
+              <SoftReadout value={normalizeGear(gear)} label="GEAR" align="start" maxChars={3} />
+            </Box>
+          </Box>
+
+          {/* TELLTALE BAR — full-width top strip: turn arrows on the outer edges. */}
+          <Box
+            sx={{
+              position: 'absolute',
+              left: CENTER_X,
+              top: 12,
+              transform: 'translateX(-50%)',
+              width: 1140
+            }}
+          >
+            <TelltaleBar
+              lights={lights}
+              highBeam={highBeam}
+              parkingBrake={parkingBrake}
+              turn={turn}
+              hazards={hazards}
+              ambientC={ambientC}
+              size={30}
+            />
+          </Box>
+
+          {/* NAV MINI — turn-by-turn at its original lower-centre position */}
           <Box
             sx={{
               position: 'absolute',
@@ -138,53 +235,22 @@ export function Dash1() {
             <NavMini iconSize={84} />
           </Box>
 
-          {/* GEAR — sits at the midpoint between center and the visible
-              right edge, so it follows the metrics outward by half the
-              extra space. */}
+          {/* BOTTOM BAR — oil temp (left) + fuel/charge (right), pushed to the sides so the
+              centre column stays free for the cluster stream. */}
           <Box
             sx={{
               position: 'absolute',
-              left: GEAR_X + sidePush / 2,
-              top: GEAR_Y,
-              transform: 'translate(-50%, -50%)',
-              width: 110,
-              height: 120,
-              display: 'grid',
-              placeItems: 'center'
+              left: CENTER_X,
+              top: GAUGE_BAR_TOP,
+              transform: 'translateX(-50%)',
+              width: GAUGE_BAR_W,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
             }}
           >
-            <Gear gear={gear} />
-          </Box>
-
-          {/* RPM — anchored to ring, follows the speed cluster */}
-          <Box
-            sx={{
-              position: 'absolute',
-              right: RPM_RIGHT,
-              top: RPM_TOP,
-              transform: `translateX(${-sidePush}px)`
-            }}
-          >
-            <Rpm rpm={rpm} />
-          </Box>
-
-          {/* RIGHT METRICS COLUMN */}
-          <Box
-            sx={{
-              position: 'absolute',
-              right: METRICS_RIGHT,
-              top: METRICS_TOP,
-              width: 'fit-content',
-              display: 'grid',
-              rowGap: 1.6,
-              justifyItems: 'end',
-              transform: `translateX(${sidePush}px) scale(1.45)`,
-              transformOrigin: 'right top'
-            }}
-          >
-            <CoolantTemp coolantC={coolantC} />
-            <OilTemp oilC={oilC} />
-            <FuelLevel fuelPct={fuelPct} />
+            <TempGauge value={oilC} segments={FUEL_SEGMENTS} />
+            <FuelGauge level={fuelPct} mode={fuelMode} segments={FUEL_SEGMENTS} />
           </Box>
         </Box>
       </Box>

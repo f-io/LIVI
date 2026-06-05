@@ -120,6 +120,8 @@
     "voiceAssistantDescription": "",
     "phoneCalls": "Телефонні дзвінки",
     "phoneCallsDescription": "",
+    "systemSounds": "Системні звуки",
+    "systemSoundsDescription": "Гучність системних звуків, напр. клацання реле поворотника.",
     "microphone": "Мікрофон",
     "microphoneDescription": "Виберіть пристрій введення мікрофона.",
     "micCar": "LIVI",
