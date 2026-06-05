@@ -1,4 +1,5 @@
 import { configEvents } from '@main/ipc/utils'
+import { SystemSound } from '@main/services/audio'
 import { broadcastToSecondaryRenderers } from '@main/window/broadcast'
 import { getSecondaryWindow } from '@main/window/secondaryWindows'
 import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
@@ -210,6 +211,7 @@ export class ProjectionService {
   private pendingStartupConnectTarget: PendingStartupConnectTarget | null = null
 
   private audio: ProjectionAudio
+  private systemSound = new SystemSound(() => this.config)
 
   private readonly onConfigChanged = (next: Config) => {
     if (this.shuttingDown) return
@@ -261,6 +263,7 @@ export class ProjectionService {
     const inChanged = next.audioInputDevice !== prev?.audioInputDevice
     if (outChanged || inChanged) {
       this.audio.onAudioDeviceChanged()
+      if (outChanged) this.systemSound.onDeviceChanged()
       this.connectConfiguredAudioDevices().catch(() => {})
     }
   }
@@ -870,9 +873,16 @@ export class ProjectionService {
     configEvents.off('changed', this.onConfigChanged)
   }
 
+  /** Drive the system-sound blinker click (called from the telemetry store, page/window
+   *  independent). */
+  public setBlinkerSoundActive(active: boolean): void {
+    this.systemSound.setBlinkerActive(active)
+  }
+
   public beginShutdown(): void {
     this.shuttingDown = true
     this.unsubscribeConfigEvents()
+    this.systemSound.dispose()
     this.audioMonitor?.stop()
     this.audioMonitor = null
     if (this.aaBtSupervisor) {

@@ -10,7 +10,7 @@ describe('audioSchema', () => {
     expect(schema.labelKey).toBe('settings.audio')
     expect(schema.path).toBe('')
     expect(Array.isArray(schema.children)).toBe(true)
-    expect(schema.children).toHaveLength(8)
+    expect(schema.children).toHaveLength(9)
   })
 
   test('music slider uses percent transform with sane defaults', () => {
@@ -51,10 +51,17 @@ describe('audioSchema', () => {
         label: 'Phone Calls'
       })
     )
+    expect(schema.children[4]).toEqual(
+      expect.objectContaining({
+        type: 'slider',
+        path: 'systemSoundsVolume',
+        label: 'System Sounds'
+      })
+    )
   })
 
   test('audio output device is a select with loadOptions + page', () => {
-    const out = schema.children[4]
+    const out = schema.children[5]
     expect(out).toEqual(
       expect.objectContaining({
         type: 'select',
@@ -76,7 +83,7 @@ describe('audioSchema', () => {
   })
 
   test('audio input device is a select with loadOptions + page', () => {
-    const inp = schema.children[5]
+    const inp = schema.children[6]
     expect(inp).toEqual(
       expect.objectContaining({
         type: 'select',
@@ -89,7 +96,7 @@ describe('audioSchema', () => {
   })
 
   test('sampling frequency select sits between audio input and disable audio', () => {
-    const node = schema.children[6]
+    const node = schema.children[7]
     expect(node).toEqual(
       expect.objectContaining({
         type: 'select',
@@ -104,7 +111,7 @@ describe('audioSchema', () => {
   })
 
   test('disable audio checkbox is present as final leaf', () => {
-    const node = schema.children[7]
+    const node = schema.children[8]
     expect(node).toEqual(
       expect.objectContaining({
         type: 'checkbox',

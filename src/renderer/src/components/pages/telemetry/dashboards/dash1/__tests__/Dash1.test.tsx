@@ -19,14 +19,25 @@ jest.mock('../../../components/DashShell', () => ({
 }))
 
 jest.mock('../../../widgets', () => ({
-  Speed: ({ speedKph }: { speedKph: number }) => <div>Speed:{speedKph}</div>,
-  Rpm: ({ rpm }: { rpm: number }) => <div>Rpm:{rpm}</div>,
-  RpmRing: ({ rpm }: { rpm: number }) => <div>RpmRing:{rpm}</div>,
-  Gear: ({ gear }: { gear: string | number }) => <div>Gear:{String(gear)}</div>,
-  CoolantTemp: ({ coolantC }: { coolantC: number }) => <div>Coolant:{coolantC}</div>,
-  OilTemp: ({ oilC }: { oilC: number }) => <div>Oil:{oilC}</div>,
-  FuelLevel: ({ fuelPct }: { fuelPct: number }) => <div>Fuel:{fuelPct}</div>,
-  NavMini: ({ iconSize }: { iconSize: number }) => <div>NavMini:{iconSize}</div>
+  GaugeArc: ({ value }: { value: number }) => <div>Gauge:{value}</div>,
+  FuelGauge: ({ level, mode }: { level: number; mode: string }) => (
+    <div>
+      Fuel:{mode}:{level}
+    </div>
+  ),
+  TempGauge: ({ value }: { value: number }) => <div>Temp:{value}</div>,
+  NavMini: ({ iconSize }: { iconSize: number }) => <div>NavMini:{iconSize}</div>,
+  SoftReadout: ({ value, label }: { value: string | number; label: string }) => (
+    <div>
+      Soft:{label}:{String(value)}
+    </div>
+  ),
+  normalizeGear: (g: string | number) => String(g),
+  TelltaleBar: ({ turn, hazards }: { turn: string; hazards: boolean }) => (
+    <div>
+      Telltale:{turn}:{String(hazards)}
+    </div>
+  )
 }))
 
 describe('Dash1', () => {
@@ -59,14 +70,14 @@ describe('Dash1', () => {
   test('renders all dashboard widgets with telemetry values', () => {
     render(<Dash1 />)
 
-    expect(screen.getByText('Speed:123')).toBeInTheDocument()
-    expect(screen.getByText('Rpm:3456')).toBeInTheDocument()
-    expect(screen.getByText('RpmRing:3456')).toBeInTheDocument()
-    expect(screen.getByText('Gear:D')).toBeInTheDocument()
-    expect(screen.getByText('Coolant:91')).toBeInTheDocument()
-    expect(screen.getByText('Oil:103')).toBeInTheDocument()
-    expect(screen.getByText('Fuel:67')).toBeInTheDocument()
+    // left ring is fed speed, right ring is fed rpm
+    expect(screen.getByText('Gauge:123')).toBeInTheDocument()
+    expect(screen.getByText('Gauge:3456')).toBeInTheDocument()
+    // soft readouts: speed in the left ring, gear in the right ring
+    expect(screen.getByText('Soft:KPH:123')).toBeInTheDocument()
+    expect(screen.getByText('Soft:GEAR:D')).toBeInTheDocument()
     expect(screen.getByText('NavMini:84')).toBeInTheDocument()
+    expect(screen.getByText('Telltale:none:false')).toBeInTheDocument()
   })
 
   test('falls back to default values when telemetry fields are missing', () => {
@@ -76,13 +87,10 @@ describe('Dash1', () => {
 
     render(<Dash1 />)
 
-    expect(screen.getByText('Speed:0')).toBeInTheDocument()
-    expect(screen.getByText('Rpm:0')).toBeInTheDocument()
-    expect(screen.getByText('RpmRing:0')).toBeInTheDocument()
-    expect(screen.getByText('Gear:P')).toBeInTheDocument()
-    expect(screen.getByText('Coolant:0')).toBeInTheDocument()
-    expect(screen.getByText('Oil:0')).toBeInTheDocument()
-    expect(screen.getByText('Fuel:0')).toBeInTheDocument()
+    // both rings read 0 (speed + rpm)
+    expect(screen.getAllByText('Gauge:0')).toHaveLength(2)
+    expect(screen.getByText('Soft:KPH:0')).toBeInTheDocument()
+    expect(screen.getByText('Soft:GEAR:P')).toBeInTheDocument()
   })
 
   test('accepts numeric gear value', () => {
@@ -94,7 +102,7 @@ describe('Dash1', () => {
 
     render(<Dash1 />)
 
-    expect(screen.getByText('Gear:3')).toBeInTheDocument()
+    expect(screen.getByText('Soft:GEAR:3')).toBeInTheDocument()
   })
 
   test('observes host element with ResizeObserver', () => {
@@ -109,8 +117,8 @@ describe('Dash1', () => {
     resizeObserverCallback?.([{ contentRect: { width: 640, height: 360 } }])
 
     await waitFor(() => {
-      expect(screen.getByText('Speed:123')).toBeInTheDocument()
-      expect(screen.getByText('Rpm:3456')).toBeInTheDocument()
+      expect(screen.getByText('Soft:KPH:123')).toBeInTheDocument()
+      expect(screen.getByText('Gauge:3456')).toBeInTheDocument()
       expect(screen.getByText('NavMini:84')).toBeInTheDocument()
     })
   })
@@ -121,9 +129,9 @@ describe('Dash1', () => {
     resizeObserverCallback?.([{ contentRect: { width: 0, height: 0 } }])
 
     await waitFor(() => {
-      expect(screen.getByText('Speed:123')).toBeInTheDocument()
-      expect(screen.getByText('RpmRing:3456')).toBeInTheDocument()
-      expect(screen.getByText('Fuel:67')).toBeInTheDocument()
+      expect(screen.getByText('Soft:KPH:123')).toBeInTheDocument()
+      expect(screen.getByText('Gauge:3456')).toBeInTheDocument()
+      expect(screen.getByText('NavMini:84')).toBeInTheDocument()
     })
   })
 
@@ -141,9 +149,9 @@ describe('Dash1', () => {
     resizeObserverCallback?.([{} as never])
 
     await waitFor(() => {
-      expect(screen.getByText('Speed:123')).toBeInTheDocument()
-      expect(screen.getByText('Rpm:3456')).toBeInTheDocument()
-      expect(screen.getByText('Fuel:67')).toBeInTheDocument()
+      expect(screen.getByText('Soft:KPH:123')).toBeInTheDocument()
+      expect(screen.getByText('Gauge:3456')).toBeInTheDocument()
+      expect(screen.getByText('NavMini:84')).toBeInTheDocument()
     })
   })
 })

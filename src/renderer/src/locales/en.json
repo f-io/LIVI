@@ -122,6 +122,8 @@
     "microphoneDescription": "Select Microphone.",
     "phoneCalls": "Phone Calls",
     "phoneCallsDescription": "",
+    "systemSounds": "System Sounds",
+    "systemSoundsDescription": "Volume of system sounds, e.g. the turn-signal relay click.",
     "micCar": "LIVI",
     "micDongle": "Dongle mic",
     "micPhone": "Phone mic",

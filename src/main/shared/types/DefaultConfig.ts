@@ -73,6 +73,7 @@ export const DEFAULT_CONFIG: Config = {
   navVolume: 0.95,
   voiceAssistantVolume: 0.95,
   callVolume: 0.95,
+  systemSoundsVolume: 0.75,
   audioOutputDevice: '',
   audioOutputDeviceLabel: '',
   audioInputDevice: '',

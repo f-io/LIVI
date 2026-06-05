@@ -5,7 +5,7 @@ export type GearProps = {
   className?: string
 }
 
-function normalizeGear(g: string | number | undefined) {
+export function normalizeGear(g: string | number | undefined) {
   const s = String(g ?? '')
     .trim()
     .toUpperCase()

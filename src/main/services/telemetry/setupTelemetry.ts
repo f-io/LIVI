@@ -23,6 +23,7 @@ import type { Config } from '@shared/types'
 import type { TelemetryPayload } from '@shared/types/Telemetry'
 import { ipcMain } from 'electron'
 import { attachAaAdapter } from './adapters/aaAdapter'
+import { attachBlinkerSound } from './adapters/blinkerSoundAdapter'
 import { attachDongleAdapter } from './adapters/dongleAdapter'
 import { attachLiviDashAdapter } from './adapters/liviDashAdapter'
 import { attachGpsPersist } from './gpsPersist'
@@ -80,7 +81,13 @@ export function setupTelemetry({
   let offAa: (() => void) | null = null
   let offDongle: (() => void) | null = null
   let offPlugHook: (() => void) | null = null
+  let offBlinker: (() => void) | null = null
   if (projectionService) {
+    offBlinker = attachBlinkerSound({
+      store,
+      setActive: (active) => projectionService.setBlinkerSoundActive(active)
+    })
+
     const aa = attachAaAdapter({
       store,
       getAaDriver: () => projectionService.getAaDriver()
@@ -117,6 +124,7 @@ export function setupTelemetry({
       offAa?.()
       offDongle?.()
       offPlugHook?.()
+      offBlinker?.()
     }
   }
 }

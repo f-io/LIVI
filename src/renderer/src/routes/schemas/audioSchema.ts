@@ -105,6 +105,21 @@ export const audioSchema: SettingsNode<Config> = {
       }
     },
     {
+      type: 'slider',
+      label: 'System Sounds',
+      labelKey: 'settings.systemSounds',
+      path: 'systemSoundsVolume',
+      displayValue: true,
+      displayValueUnit: '%',
+      valueTransform: audioValueTransform,
+      page: {
+        title: 'System Sounds',
+        labelTitle: 'settings.systemSounds',
+        description: 'Volume of LIVI system sounds (e.g. the turn-signal relay click).',
+        labelDescription: 'settings.systemSoundsDescription'
+      }
+    },
+    {
       type: 'select',
       label: 'Audio Output',
       labelKey: 'settings.audioOutputDevice',
