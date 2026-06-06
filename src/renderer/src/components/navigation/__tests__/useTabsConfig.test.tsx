@@ -5,7 +5,6 @@ let mockState = {
   isStreaming: false,
   isDongleConnected: false,
   cameraFound: true,
-  clusterEnabled: false,
   telemetryOnMain: false,
   settingsMissing: false
 }
@@ -30,9 +29,6 @@ jest.mock('@store/store', () => ({
       settings: mockState.settingsMissing
         ? undefined
         : {
-            cluster: mockState.clusterEnabled
-              ? { main: true, dash: false, aux: false }
-              : { main: false, dash: false, aux: false },
             dashboards: mockState.telemetryOnMain
               ? {
                   dash1: { main: true, dash: false, aux: false, pos: 1 },
@@ -56,7 +52,6 @@ describe('useTabsConfig', () => {
       isStreaming: false,
       isDongleConnected: false,
       cameraFound: true,
-      clusterEnabled: false,
       telemetryOnMain: false,
       settingsMissing: false
     }
@@ -67,13 +62,11 @@ describe('useTabsConfig', () => {
     expect(result.current.map((t) => t.path)).toEqual(['/', '/media', '/camera', '/settings'])
   })
 
-  test('adds maps and telemetry tabs when enabled', () => {
-    mockState.clusterEnabled = true
+  test('adds the telemetry tab when a dashboard is routed to main', () => {
     mockState.telemetryOnMain = true
     const { result } = renderHook(() => useTabsConfig(false))
     expect(result.current.map((t) => t.path)).toEqual([
       '/',
-      '/cluster',
       '/telemetry',
       '/media',
       '/camera',
@@ -107,7 +100,7 @@ describe('useTabsConfig', () => {
     })
   })
 
-  test('falls back to false for maps and telemetry when settings are missing', () => {
+  test('falls back to no telemetry tab when settings are missing', () => {
     mockState.settingsMissing = true
 
     const { result } = renderHook(() => useTabsConfig(false))

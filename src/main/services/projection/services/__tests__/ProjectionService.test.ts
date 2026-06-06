@@ -128,15 +128,8 @@ jest.mock('electron', () => ({
 }))
 
 jest.mock('usb', () => ({
-  WebUSBDevice: {
-    createInstance: jest.fn(async () => ({
-      open: jest.fn(async () => undefined),
-      close: jest.fn(async () => undefined),
-      reset: jest.fn(async () => undefined)
-    }))
-  },
   usb: {
-    getDeviceList: jest.fn(() => [])
+    getDevices: jest.fn(async () => [])
   }
 }))
 
@@ -166,7 +159,7 @@ jest.mock('../utils/readNavigationFile', () => ({
 import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
 import { configEvents } from '@main/ipc/utils'
 import { ProjectionService } from '@main/services/projection/services/ProjectionService'
-import { usb, WebUSBDevice } from 'usb'
+import { usb } from 'usb'
 import { readMediaFile } from '../utils/readMediaFile'
 import { readNavigationFile } from '../utils/readNavigationFile'
 
@@ -751,14 +744,11 @@ describe('ProjectionService', () => {
     expect(svc.boxInfo.btMacAddr).toBe('')
   })
 
-  test('stop on darwin resets webUsbDevice if present', async () => {
-    Object.defineProperty(process, 'platform', { value: 'darwin' })
-
+  test('stop clears webUsbDevice reference and marks service stopped', async () => {
     const svc = new ProjectionService() as any
     svc.started = true
     svc.stopping = false
-    const reset = jest.fn(async () => undefined)
-    svc.webUsbDevice = { reset, close: jest.fn(async () => undefined) }
+    svc.webUsbDevice = { vendorId: 0x1314, productId: 0x1520 }
     svc.disconnectPhone = jest.fn(async () => false)
     svc.driver.close = jest.fn(async () => undefined)
     svc.audio.resetForSessionStop = jest.fn()
@@ -768,38 +758,9 @@ describe('ProjectionService', () => {
 
     await svc.stop()
 
-    expect(reset).toHaveBeenCalled()
+    expect(svc.webUsbDevice).toBeNull()
+    expect(svc.driver.close).toHaveBeenCalled()
     expect(svc.started).toBe(false)
-
-    Object.defineProperty(process, 'platform', { value: 'linux' })
-  })
-
-  test('stop swallows webUsbDevice.reset errors on darwin', async () => {
-    Object.defineProperty(process, 'platform', { value: 'darwin' })
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
-
-    const svc = new ProjectionService() as any
-    svc.started = true
-    svc.stopping = false
-    svc.webUsbDevice = {
-      reset: jest.fn(async () => {
-        throw new Error('reset failed')
-      })
-    }
-    svc.disconnectPhone = jest.fn(async () => false)
-    svc.driver.close = jest.fn(async () => undefined)
-    svc.audio.resetForSessionStop = jest.fn()
-    svc.clearTimeouts = jest.fn()
-    svc.resetMediaSnapshot = jest.fn()
-    svc.resetNavigationSnapshot = jest.fn()
-
-    await expect(svc.stop()).resolves.toBeUndefined()
-    expect(warnSpy).toHaveBeenCalledWith(
-      '[ProjectionService] webUsbDevice.reset() failed (ignored)',
-      expect.any(Error)
-    )
-
-    Object.defineProperty(process, 'platform', { value: 'linux' })
   })
 
   test('stop swallows driver.close errors', async () => {
@@ -935,7 +896,10 @@ describe('ProjectionService', () => {
 
   test('cluster:request enables cluster and requests focus when at least one display targets it', async () => {
     const svc = new ProjectionService() as any
-    svc.config = { ...svc.config, cluster: { main: true, dash: false, aux: false } }
+    svc.config = {
+      ...svc.config,
+      dashboards: { dash3: { main: true, dash: false, aux: false } }
+    }
     const h = getHandle('cluster:request')
 
     await expect(h.call(svc, null, true)).resolves.toEqual({ ok: true, enabled: true })
@@ -946,7 +910,10 @@ describe('ProjectionService', () => {
 
   test('cluster:request refuses to enable cluster when no display targets it', async () => {
     const svc = new ProjectionService() as any
-    svc.config = { ...svc.config, cluster: { main: false, dash: false, aux: false } }
+    svc.config = {
+      ...svc.config,
+      dashboards: { dash3: { main: false, dash: false, aux: false } }
+    }
     const h = getHandle('cluster:request')
 
     await expect(h.call(svc, null, true)).resolves.toEqual({ ok: true, enabled: false })
@@ -1129,7 +1096,7 @@ describe('ProjectionService', () => {
 
   test('start returns early when no matching usb dongle exists', async () => {
     const svc = new ProjectionService() as any
-    ;(usb.getDeviceList as jest.Mock).mockReturnValue([])
+    ;(usb.getDevices as jest.Mock).mockResolvedValue([])
     svc.audio.setInitialVolumes = jest.fn()
     svc.audio.resetForSessionStart = jest.fn()
     svc.resetMediaSnapshot = jest.fn()
@@ -1146,13 +1113,15 @@ describe('ProjectionService', () => {
 
   test('start initialises webusb, driver and marks service started', async () => {
     const svc = new ProjectionService() as any
-    ;(usb.getDeviceList as jest.Mock).mockReturnValue([
-      { deviceDescriptor: { idVendor: 0x1314, idProduct: 0x1520 } }
+    const open = jest.fn(async () => undefined)
+    ;(usb.getDevices as jest.Mock).mockResolvedValue([
+      { vendorId: 0x1314, productId: 0x1520, open }
     ])
 
     await svc.start()
 
-    expect(WebUSBDevice.createInstance).toHaveBeenCalled()
+    expect(open).toHaveBeenCalled()
+    expect(svc.webUsbDevice).toEqual(expect.objectContaining({ vendorId: 0x1314 }))
     expect(svc.driver.initialise).toHaveBeenCalled()
     expect(svc.driver.start).toHaveBeenCalled()
     expect(svc.started).toBe(true)
@@ -1163,8 +1132,8 @@ describe('ProjectionService', () => {
 
   test('start sets pendingStartupConnectTarget on driver when configured', async () => {
     const svc = new ProjectionService() as any
-    ;(usb.getDeviceList as jest.Mock).mockReturnValue([
-      { deviceDescriptor: { idVendor: 0x1314, idProduct: 0x1520 } }
+    ;(usb.getDevices as jest.Mock).mockResolvedValue([
+      { vendorId: 0x1314, productId: 0x1520, open: jest.fn(async () => undefined) }
     ])
     svc.pendingStartupConnectTarget = 'my-target'
 
@@ -1178,7 +1147,7 @@ describe('ProjectionService', () => {
 
   test('start clears btMacAddr from boxInfo when boxInfo is a record', async () => {
     const svc = new ProjectionService() as any
-    ;(usb.getDeviceList as jest.Mock).mockReturnValue([])
+    ;(usb.getDevices as jest.Mock).mockResolvedValue([])
     svc.boxInfo = { uuid: 'u1', MFD: 'm1', productType: 'A15W', btMacAddr: 'AA:BB:CC' }
     svc.audio.setInitialVolumes = jest.fn()
     svc.audio.resetForSessionStart = jest.fn()
@@ -1194,8 +1163,8 @@ describe('ProjectionService', () => {
     jest.useFakeTimers()
 
     const svc = new ProjectionService() as any
-    ;(usb.getDeviceList as jest.Mock).mockReturnValue([
-      { deviceDescriptor: { idVendor: 0x1314, idProduct: 0x1520 } }
+    ;(usb.getDevices as jest.Mock).mockResolvedValue([
+      { vendorId: 0x1314, productId: 0x1520, open: jest.fn(async () => undefined) }
     ])
 
     await svc.start()
@@ -1212,8 +1181,9 @@ describe('ProjectionService', () => {
 
   test('start closes webUsbDevice and leaves started=false when driver init fails', async () => {
     const svc = new ProjectionService() as any
-    ;(usb.getDeviceList as jest.Mock).mockReturnValue([
-      { deviceDescriptor: { idVendor: 0x1314, idProduct: 0x1520 } }
+    const close = jest.fn(async () => undefined)
+    ;(usb.getDevices as jest.Mock).mockResolvedValue([
+      { vendorId: 0x1314, productId: 0x1520, open: jest.fn(async () => undefined), close }
     ])
     svc.driver.initialise = jest.fn(async () => {
       throw new Error('init fail')
@@ -1221,6 +1191,7 @@ describe('ProjectionService', () => {
 
     await svc.start()
 
+    expect(close).toHaveBeenCalled()
     expect(svc.started).toBe(false)
     expect(svc.webUsbDevice).toBeNull()
   })

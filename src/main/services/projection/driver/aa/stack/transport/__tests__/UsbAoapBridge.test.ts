@@ -1,43 +1,91 @@
 import { EventEmitter } from 'node:events'
 
-class MockEndpoint extends EventEmitter {
-  pollActive = false
-  transferType = 0x02
-  address = 0
-  startPoll = jest.fn()
-  stopPoll = jest.fn((cb?: () => void) => cb?.())
-  transfer = jest.fn((_buf: Buffer, cb: (err?: Error) => void) => cb())
-}
-
-class MockInterface {
-  endpoints: MockEndpoint[] = []
-  claim = jest.fn()
-  release = jest.fn((_reset: boolean, cb?: (err?: Error) => void) => cb?.())
-}
+// ── WebUSB-shaped device mock (usb@3 / node-usb-rs) ────────────────────────────
+//
+// The bridge talks to a `USBDevice`: async open/close/reset, selectConfiguration,
+// claimInterface/releaseInterface, transferIn/transferOut, clearHalt. Endpoints
+// live under configuration.interfaces[].alternate.endpoints[] with { type,
+// direction, endpointNumber }.
 
 class MockDevice {
-  deviceDescriptor = { idVendor: 0x18d1, idProduct: 0x4ee1 }
-  open = jest.fn()
-  close = jest.fn()
-  interface = jest.fn(() => null as MockInterface | null)
-  reset = jest.fn((cb: (err?: Error) => void) => process.nextTick(() => cb()))
-  controlTransfer = jest.fn(
-    (
-      _bm: number,
-      _br: number,
-      _wv: number,
-      _wi: number,
-      _data: Buffer | number,
-      cb: (err: Error | null, data?: Buffer) => void
-    ) => {
-      process.nextTick(() => cb(null))
-    }
+  vendorId = 0x18d1
+  productId = 0x4ee1
+
+  configuration: USBConfiguration | undefined
+
+  open = jest.fn(async () => undefined)
+  close = jest.fn(async () => undefined)
+  reset = jest.fn(async () => undefined)
+  selectConfiguration = jest.fn(async (value: number) => {
+    this.configuration = makeConfig(value)
+  })
+  claimInterface = jest.fn(async (_n: number) => undefined)
+  releaseInterface = jest.fn(async (_n: number) => undefined)
+  clearHalt = jest.fn(async (_dir: USBDirection, _ep: number) => undefined)
+
+  // transferIn is gated so the test controls when an IN read resolves. By default
+  // it parks forever (a real bulk IN blocks until data or timeout) so the pump
+  // loop doesn't busy-spin during the test.
+  private _inResolvers: ((r: USBInTransferResult) => void)[] = []
+  transferIn = jest.fn(
+    (_ep: number, _len: number, _timeoutMs?: number): Promise<USBInTransferResult> =>
+      new Promise<USBInTransferResult>((resolve) => {
+        this._inResolvers.push(resolve)
+      })
   )
+
+  transferOut = jest.fn(
+    async (_ep: number, data: BufferSource): Promise<USBOutTransferResult> =>
+      ({ status: 'ok', bytesWritten: (data as ArrayBufferView).byteLength }) as USBOutTransferResult
+  )
+
+  /** Resolve the oldest pending transferIn with the given bytes (or empty/no-data). */
+  resolveIn(data?: Buffer, status: 'ok' | 'stall' = 'ok'): void {
+    const resolve = this._inResolvers.shift()
+    if (!resolve) return
+    resolve({
+      status,
+      data: data ? new DataView(data.buffer, data.byteOffset, data.byteLength) : undefined
+    } as USBInTransferResult)
+  }
+
+  constructor(withEndpoints = true) {
+    this.configuration = withEndpoints ? makeConfig(1) : makeConfig(1, false)
+  }
 }
+
+function makeConfig(configurationValue: number, withBulk = true): USBConfiguration {
+  const endpoints = withBulk
+    ? [
+        { endpointNumber: 1, direction: 'in', type: 'bulk', packetSize: 512 },
+        { endpointNumber: 2, direction: 'out', type: 'bulk', packetSize: 512 }
+      ]
+    : []
+  return {
+    configurationValue,
+    configurationName: undefined,
+    interfaces: [
+      {
+        interfaceNumber: 0,
+        claimed: false,
+        alternate: { alternateSetting: 0, endpoints },
+        alternates: []
+      }
+    ]
+  } as unknown as USBConfiguration
+}
+
+// ── net mock ───────────────────────────────────────────────────────────────────
 
 class MockServer extends EventEmitter {
   listen = jest.fn((_port: number, _addr: string, cb: () => void) => cb())
   close = jest.fn((cb?: () => void) => cb?.())
+}
+
+class MockLoopbackSocket extends EventEmitter {
+  setNoDelay = jest.fn()
+  write = jest.fn(() => true)
+  destroy = jest.fn()
 }
 
 const createServer = jest.fn()
@@ -46,13 +94,15 @@ jest.mock('net', () => ({
   createServer: (...a: unknown[]) => createServer(...a)
 }))
 
+// The bridge imports the `usb` singleton only for hotplug events during the
+// non-accessory boot path (waitForAccessoryAttach). Our tests always start from
+// accessory mode, so addEventListener/removeEventListener are never exercised —
+// stub them so the import resolves.
 jest.mock('usb', () => ({
   __esModule: true,
   usb: {
-    on: jest.fn(),
-    off: jest.fn(),
-    addListener: jest.fn(),
-    removeListener: jest.fn()
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn()
   }
 }))
 
@@ -63,8 +113,9 @@ jest.mock('../../aoap/handshake', () => ({
   runAoapHandshake: (...a: unknown[]) => runAoapHandshakeMock(...a)
 }))
 
-import type { Device } from 'usb'
 import { UsbAoapBridge } from '../UsbAoapBridge'
+
+type Device = USBDevice
 
 beforeEach(() => {
   createServer.mockReset()
@@ -76,28 +127,26 @@ beforeEach(() => {
 })
 afterEach(() => jest.restoreAllMocks())
 
-function deviceWithInterface(): {
+/** Wires createServer so the test can grab the connection handler. */
+function newBridge(dev: MockDevice = new MockDevice()): {
   dev: MockDevice
-  iface: MockInterface
-  inEp: MockEndpoint
-  outEp: MockEndpoint
+  srv: MockServer
+  connect: () => (s: MockLoopbackSocket) => void
 } {
-  const dev = new MockDevice()
-  const iface = new MockInterface()
-  const inEp = new MockEndpoint()
-  inEp.transferType = 0x02
-  inEp.address = 0x81 // bulk IN
-  const outEp = new MockEndpoint()
-  outEp.transferType = 0x02
-  outEp.address = 0x02 // bulk OUT
-  iface.endpoints = [inEp, outEp]
-  dev.interface.mockReturnValue(iface)
-  return { dev, iface, inEp, outEp }
+  const srv = new MockServer()
+  let connHandler: ((s: MockLoopbackSocket) => void) | null = null
+  createServer.mockImplementationOnce((_opts: unknown, h: (s: unknown) => void) => {
+    connHandler = h as (s: MockLoopbackSocket) => void
+    return srv
+  })
+  return { dev, srv, connect: () => connHandler! }
 }
+
+const flush = (): Promise<void> => new Promise((r) => setImmediate(r))
 
 describe('UsbAoapBridge — start', () => {
   test('refuses double-start', async () => {
-    const { dev } = deviceWithInterface()
+    const dev = new MockDevice()
     createServer.mockImplementationOnce(() => new MockServer())
     const bridge = new UsbAoapBridge(dev as unknown as Device)
     await bridge.start()
@@ -106,15 +155,15 @@ describe('UsbAoapBridge — start', () => {
     expect(createServer).not.toHaveBeenCalled()
   })
 
-  test('emits ready when loopback server listens', async () => {
-    const { dev } = deviceWithInterface()
-    const srv = new MockServer()
-    createServer.mockImplementationOnce(() => srv)
+  test('opens the accessory device, selects config, claims iface, emits ready', async () => {
+    const dev = new MockDevice()
+    createServer.mockImplementationOnce(() => new MockServer())
     const bridge = new UsbAoapBridge(dev as unknown as Device)
     const ready = jest.fn()
     bridge.on('ready', ready)
     await bridge.start(5278)
-    // listen() invokes the callback synchronously, which emits ready
+    expect(dev.open).toHaveBeenCalled()
+    expect(dev.claimInterface).toHaveBeenCalledWith(0)
     expect(ready).toHaveBeenCalledWith(
       expect.objectContaining({ host: expect.any(String), port: 5278 })
     )
@@ -123,9 +172,7 @@ describe('UsbAoapBridge — start', () => {
   test('open failure surfaces as a thrown error and resets running flag', async () => {
     isAccessoryModeMock.mockReturnValue(true)
     const dev = new MockDevice()
-    dev.open.mockImplementation(() => {
-      throw new Error('not found')
-    })
+    dev.open.mockRejectedValue(new Error('not found'))
     const onError = jest.fn()
     const bridge = new UsbAoapBridge(dev as unknown as Device)
     bridge.on('error', onError)
@@ -133,21 +180,10 @@ describe('UsbAoapBridge — start', () => {
     expect(onError).toHaveBeenCalled()
   })
 
-  test('throws when interface 0 is missing', async () => {
-    const dev = new MockDevice()
-    dev.interface.mockReturnValue(null)
+  test('throws when bulk IN/OUT endpoints are missing', async () => {
+    const dev = new MockDevice(false) // no bulk endpoints
     const bridge = new UsbAoapBridge(dev as unknown as Device)
-    await expect(bridge.start()).rejects.toThrow(/interface 0 missing/)
-  })
-
-  test('throws when bulk IN or OUT endpoint is missing', async () => {
-    const dev = new MockDevice()
-    const iface = new MockInterface()
-    iface.endpoints = [
-      Object.assign(new MockEndpoint(), { transferType: 0x02, address: 0x81 }) // only IN
-    ]
-    dev.interface.mockReturnValue(iface)
-    const bridge = new UsbAoapBridge(dev as unknown as Device)
+    bridge.on('error', () => {}) // swallow the emitted error
     await expect(bridge.start()).rejects.toThrow(/bulk IN\/OUT/)
   })
 })
@@ -159,19 +195,17 @@ describe('UsbAoapBridge — stop', () => {
     await expect(bridge.stop()).resolves.toBeUndefined()
   })
 
-  test('after a successful start, stop tears everything down and emits "closed"', async () => {
-    const { dev, iface, inEp } = deviceWithInterface()
-    const srv = new MockServer()
-    createServer.mockImplementationOnce(() => srv)
-    inEp.pollActive = true
+  test('after a successful start, stop releases, resets, closes and emits "closed"', async () => {
+    const dev = new MockDevice()
+    createServer.mockImplementationOnce(() => new MockServer())
     const bridge = new UsbAoapBridge(dev as unknown as Device)
     await bridge.start()
 
     const closed = jest.fn()
     bridge.on('closed', closed)
     await bridge.stop()
-    expect(inEp.stopPoll).toHaveBeenCalled()
-    expect(iface.release).toHaveBeenCalled()
+    expect(dev.releaseInterface).toHaveBeenCalledWith(0)
+    expect(dev.reset).toHaveBeenCalled()
     expect(dev.close).toHaveBeenCalled()
     expect(closed).toHaveBeenCalled()
   })
@@ -185,7 +219,7 @@ describe('UsbAoapBridge — drain', () => {
   })
 
   test('resolves within the timeout when outChain is idle', async () => {
-    const { dev } = deviceWithInterface()
+    const dev = new MockDevice()
     createServer.mockImplementationOnce(() => new MockServer())
     const bridge = new UsbAoapBridge(dev as unknown as Device)
     await bridge.start()
@@ -195,9 +229,6 @@ describe('UsbAoapBridge — drain', () => {
   })
 })
 
-// (skip the full non-accessory boot test — exercises libusb re-enumeration
-// internals that aren't worth simulating in a unit test)
-
 describe('UsbAoapBridge — forceReenum', () => {
   test('no-op when nothing has been started', async () => {
     const dev = new MockDevice()
@@ -205,70 +236,25 @@ describe('UsbAoapBridge — forceReenum', () => {
     await expect(bridge.forceReenum()).resolves.toBeUndefined()
   })
 
-  test('after a successful start, forceReenum tears down endpoints + server', async () => {
-    const { dev, iface, inEp } = deviceWithInterface()
-    const srv = new MockServer()
-    createServer.mockImplementationOnce(() => srv)
+  test('after start, forceReenum tears down the loopback server', async () => {
+    const { dev, srv } = newBridge()
     const bridge = new UsbAoapBridge(dev as unknown as Device)
     await bridge.start()
-    inEp.stopPoll.mockClear()
     await bridge.forceReenum()
-    expect(inEp.stopPoll).toHaveBeenCalled()
-    expect(iface.release).toHaveBeenCalled()
     expect(srv.close).toHaveBeenCalled()
-  })
-
-  test('forceReenum control-transfer failure is swallowed', async () => {
-    const { dev } = deviceWithInterface()
-    createServer.mockImplementationOnce(() => new MockServer())
-    const bridge = new UsbAoapBridge(dev as unknown as Device)
-    await bridge.start()
-    dev.controlTransfer.mockImplementation(
-      (
-        _bm: number,
-        _br: number,
-        _wv: number,
-        _wi: number,
-        _data: Buffer | number,
-        cb: (err: Error | null, data?: Buffer) => void
-      ) => {
-        process.nextTick(() => cb(new Error('stalled')))
-      }
-    )
-    await expect(bridge.forceReenum()).resolves.toBeUndefined()
   })
 })
 
 describe('UsbAoapBridge — loopback server + pump', () => {
-  class MockLoopbackSocket extends EventEmitter {
-    setNoDelay = jest.fn()
-    write = jest.fn(() => true)
-    destroy = jest.fn()
-    once(event: string, listener: (...args: unknown[]) => void): this {
-      super.once(event, listener)
-      return this
-    }
-  }
-
-  function newBridge() {
-    const { dev, iface, inEp, outEp } = deviceWithInterface()
-    const srv = new MockServer()
-    let connHandler: ((s: MockLoopbackSocket) => void) | null = null
-    createServer.mockImplementationOnce((_opts: unknown, h: (s: unknown) => void) => {
-      connHandler = h as (s: MockLoopbackSocket) => void
-      return srv
-    })
-    return { dev, iface, inEp, outEp, srv, connect: () => connHandler! }
-  }
-
-  test('client connect → setNoDelay + startPump → polling kicks off', async () => {
-    const { dev, inEp, connect } = newBridge()
+  test('client connect → setNoDelay + IN pump starts', async () => {
+    const { dev, connect } = newBridge()
     const bridge = new UsbAoapBridge(dev as unknown as Device)
     await bridge.start()
     const sock = new MockLoopbackSocket()
-    connect()(sock)
+    connect()(sock as never)
     expect(sock.setNoDelay).toHaveBeenCalledWith(true)
-    expect(inEp.startPoll).toHaveBeenCalled()
+    // The pump issues a blocking transferIn on the bulk IN endpoint.
+    expect(dev.transferIn).toHaveBeenCalledWith(1, expect.any(Number), expect.any(Number))
   })
 
   test('second client tears down the first', async () => {
@@ -276,55 +262,60 @@ describe('UsbAoapBridge — loopback server + pump', () => {
     const bridge = new UsbAoapBridge(dev as unknown as Device)
     await bridge.start()
     const a = new MockLoopbackSocket()
-    connect()(a)
+    connect()(a as never)
     const b = new MockLoopbackSocket()
-    connect()(b)
+    connect()(b as never)
     expect(a.destroy).toHaveBeenCalled()
   })
 
   test('USB IN → socket write', async () => {
-    const { dev, inEp, connect } = newBridge()
+    const { dev, connect } = newBridge()
     const bridge = new UsbAoapBridge(dev as unknown as Device)
     await bridge.start()
     const sock = new MockLoopbackSocket()
-    connect()(sock)
-    inEp.emit('data', Buffer.from([1, 2, 3]))
+    connect()(sock as never)
+    // Resolve the pending bulk IN with a chunk; the pump writes it to the socket.
+    dev.resolveIn(Buffer.from([1, 2, 3]))
+    await flush()
     expect(sock.write).toHaveBeenCalledWith(Buffer.from([1, 2, 3]))
   })
 
-  test('socket → USB OUT.transfer', async () => {
-    const { dev, outEp, connect } = newBridge()
+  test('socket → USB OUT.transferOut', async () => {
+    const { dev, connect } = newBridge()
     const bridge = new UsbAoapBridge(dev as unknown as Device)
     await bridge.start()
     const sock = new MockLoopbackSocket()
-    connect()(sock)
+    connect()(sock as never)
     sock.emit('data', Buffer.from([0xaa]))
-    await new Promise((r) => setImmediate(r))
-    expect(outEp.transfer).toHaveBeenCalled()
+    await flush()
+    expect(dev.transferOut).toHaveBeenCalledWith(2, Buffer.from([0xaa]))
   })
 
-  test('USB IN error → emit error + destroy socket', async () => {
-    const { dev, inEp, connect } = newBridge()
+  test('USB IN disconnect error → emit error + destroy socket', async () => {
+    const { dev, connect } = newBridge()
     const bridge = new UsbAoapBridge(dev as unknown as Device)
     const onErr = jest.fn()
     bridge.on('error', onErr)
     await bridge.start()
     const sock = new MockLoopbackSocket()
-    connect()(sock)
-    inEp.emit('error', new Error('libusb timeout'))
+    // First transferIn rejects with a fatal "no device" — pump tears the socket down.
+    dev.transferIn.mockImplementationOnce(async () => {
+      throw new Error('LIBUSB_ERROR_NO_DEVICE: device gone')
+    })
+    connect()(sock as never)
+    await flush()
     expect(onErr).toHaveBeenCalled()
     expect(sock.destroy).toHaveBeenCalled()
   })
 
   test('socket close pauses the pump and clears _client', async () => {
-    const { dev, inEp, connect } = newBridge()
+    const { dev, connect } = newBridge()
     const bridge = new UsbAoapBridge(dev as unknown as Device)
     await bridge.start()
     const sock = new MockLoopbackSocket()
-    connect()(sock)
-    inEp.stopPoll.mockClear()
+    connect()(sock as never)
     sock.emit('close')
-    expect(inEp.stopPoll).toHaveBeenCalled()
+    expect((bridge as unknown as { _client: unknown })._client).toBeNull()
   })
 
   test('socket error is forwarded', async () => {
@@ -334,17 +325,17 @@ describe('UsbAoapBridge — loopback server + pump', () => {
     bridge.on('error', onErr)
     await bridge.start()
     const sock = new MockLoopbackSocket()
-    connect()(sock)
+    connect()(sock as never)
     sock.emit('error', new Error('reset'))
     expect(onErr).toHaveBeenCalled()
   })
 })
 
 describe('UsbAoapBridge — accessory open retry', () => {
-  test('first 4 opens throw, fifth succeeds', async () => {
-    const { dev } = deviceWithInterface()
+  test('first 4 opens reject, fifth succeeds', async () => {
+    const dev = new MockDevice()
     let attempts = 0
-    dev.open.mockImplementation(() => {
+    dev.open.mockImplementation(async () => {
       attempts++
       if (attempts < 5) throw new Error('udev not ready')
     })
@@ -354,93 +345,83 @@ describe('UsbAoapBridge — accessory open retry', () => {
     expect(dev.open).toHaveBeenCalledTimes(5)
   })
 
-  test('5 failed opens throw with the last error message', async () => {
+  test('5 failed opens throw with the descriptive error', async () => {
     isAccessoryModeMock.mockReturnValue(true)
     const dev = new MockDevice()
-    dev.open.mockImplementation(() => {
-      throw new Error('udev not ready')
-    })
-    dev.interface.mockReturnValue(null)
+    dev.open.mockRejectedValue(new Error('udev not ready'))
     const bridge = new UsbAoapBridge(dev as unknown as Device)
+    bridge.on('error', () => {})
     await expect(bridge.start()).rejects.toThrow(/Failed to open AOAP accessory/)
   })
 
-  test('claim retry: first call throws, second succeeds', async () => {
-    const { dev, iface } = deviceWithInterface()
+  test('claim retry: first call rejects, second succeeds', async () => {
+    const dev = new MockDevice()
     let attempts = 0
-    iface.claim.mockImplementation(() => {
+    dev.claimInterface.mockImplementation(async () => {
       attempts++
       if (attempts < 2) throw new Error('udev claim race')
     })
     createServer.mockImplementationOnce(() => new MockServer())
     const bridge = new UsbAoapBridge(dev as unknown as Device)
     await bridge.start()
-    expect(iface.claim).toHaveBeenCalledTimes(2)
+    expect(dev.claimInterface).toHaveBeenCalledTimes(2)
   })
 
   test('5 failed claims throw a descriptive error', async () => {
-    const { dev, iface } = deviceWithInterface()
-    iface.claim.mockImplementation(() => {
-      throw new Error('busy')
-    })
+    const dev = new MockDevice()
+    dev.claimInterface.mockRejectedValue(new Error('busy'))
     const bridge = new UsbAoapBridge(dev as unknown as Device)
+    bridge.on('error', () => {})
     await expect(bridge.start()).rejects.toThrow(/Failed to claim AOAP accessory/)
   })
 })
 
 describe('UsbAoapBridge — pump edge cases', () => {
-  class MockLoopbackSocket extends EventEmitter {
-    setNoDelay = jest.fn()
-    write = jest.fn(() => true)
-    destroy = jest.fn()
-    once(event: string, listener: (...args: unknown[]) => void): this {
-      super.once(event, listener)
-      return this
-    }
-  }
-
-  function newBridge() {
-    const dev = new MockDevice()
-    const iface = new MockInterface()
-    const inEp = Object.assign(new MockEndpoint(), { transferType: 0x02, address: 0x81 })
-    const outEp = Object.assign(new MockEndpoint(), { transferType: 0x02, address: 0x02 })
-    iface.endpoints = [inEp, outEp]
-    dev.interface.mockReturnValue(iface)
-    const srv = new MockServer()
-    let connHandler: ((s: MockLoopbackSocket) => void) | null = null
-    createServer.mockImplementationOnce((_opts: unknown, h: (s: unknown) => void) => {
-      connHandler = h as (s: MockLoopbackSocket) => void
-      return srv
-    })
-    return { dev, iface, inEp, outEp, srv, connect: () => connHandler! }
-  }
-
-  test('USB IN with backpressure pauses + resumes on drain', async () => {
-    const { dev, inEp, connect } = newBridge()
+  test('USB IN with backpressure awaits drain before the next read', async () => {
+    const { dev, connect } = newBridge()
     const bridge = new UsbAoapBridge(dev as unknown as Device)
     await bridge.start()
     const sock = new MockLoopbackSocket()
     sock.write = jest.fn(() => false) // signal backpressure
-    connect()(sock)
-    inEp.stopPoll.mockClear()
-    inEp.startPoll.mockClear()
-    inEp.emit('data', Buffer.from([1]))
-    expect(inEp.stopPoll).toHaveBeenCalled()
+    connect()(sock as never)
+
+    dev.transferIn.mockClear()
+    // Deliver a chunk; sock.write returns false so the pump parks on 'drain'.
+    dev.resolveIn(Buffer.from([1]))
+    await flush()
+    expect(sock.write).toHaveBeenCalled()
+    // No further read is issued while backpressured.
+    expect(dev.transferIn).not.toHaveBeenCalled()
+
+    // Releasing backpressure lets the pump issue its next read.
     sock.emit('drain')
-    expect(inEp.startPoll).toHaveBeenCalled()
+    await flush()
+    expect(dev.transferIn).toHaveBeenCalled()
   })
 
-  test('outChain transfer error → emit error + destroy socket', async () => {
-    const { dev, outEp, connect } = newBridge()
-    outEp.transfer = jest.fn((_b: Buffer, cb: (err?: Error) => void) => cb(new Error('USB stall')))
+  test('IN stall clears the halt and keeps pumping', async () => {
+    const { dev, connect } = newBridge()
+    const bridge = new UsbAoapBridge(dev as unknown as Device)
+    await bridge.start()
+    const sock = new MockLoopbackSocket()
+    connect()(sock as never)
+
+    dev.resolveIn(undefined, 'stall')
+    await flush()
+    expect(dev.clearHalt).toHaveBeenCalledWith('in', 1)
+  })
+
+  test('outChain transferOut error → emit error + destroy socket', async () => {
+    const { dev, connect } = newBridge()
+    dev.transferOut.mockRejectedValue(new Error('USB stall'))
     const bridge = new UsbAoapBridge(dev as unknown as Device)
     const onErr = jest.fn()
     bridge.on('error', onErr)
     await bridge.start()
     const sock = new MockLoopbackSocket()
-    connect()(sock)
+    connect()(sock as never)
     sock.emit('data', Buffer.from([0xaa]))
-    await new Promise((r) => setImmediate(r))
+    await flush()
     expect(onErr).toHaveBeenCalled()
     expect(sock.destroy).toHaveBeenCalled()
   })

@@ -554,7 +554,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            cluster: { main: true, dash: false, aux: false },
+            dashboards: { dash3: { main: true, dash: false, aux: false } },
             autoSwitchOnGuidance: true
           } as any
         }
@@ -583,7 +583,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            cluster: { main: true, dash: false, aux: false },
+            dashboards: { dash3: { main: true, dash: false, aux: false } },
             autoSwitchOnGuidance: true
           } as any
         }
@@ -613,7 +613,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            cluster: { main: true, dash: false, aux: false },
+            dashboards: { dash3: { main: true, dash: false, aux: false } },
             autoSwitchOnGuidance: true
           } as any
         }
@@ -642,7 +642,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            cluster: { main: true, dash: false, aux: false },
+            dashboards: { dash3: { main: true, dash: false, aux: false } },
             autoSwitchOnGuidance: true
           } as any
         }
@@ -1238,7 +1238,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            cluster: { main: true, dash: false, aux: false },
+            dashboards: { dash3: { main: true, dash: false, aux: false } },
             autoSwitchOnGuidance: true,
             autoSwitchOnStream: true
           } as any
@@ -1266,7 +1266,7 @@ describe('Projection page', () => {
             width: 800,
             height: 480,
             fps: 60,
-            cluster: { main: true, dash: false, aux: false },
+            dashboards: { dash3: { main: true, dash: false, aux: false } },
             autoSwitchOnGuidance: true,
             autoSwitchOnStream: true
           } as any

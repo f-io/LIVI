@@ -3,30 +3,28 @@ import { usb } from 'usb'
 
 jest.mock('usb', () => ({
   usb: {
-    getDeviceList: jest.fn(() => [])
+    getDevices: jest.fn(async () => [])
   }
 }))
 
 describe('findDongle', () => {
+  const getDevices = usb.getDevices as jest.Mock
+
   beforeEach(() => {
     jest.clearAllMocks()
   })
 
-  test('returns matching dongle when supported VID/PID is present', () => {
-    ;(usb.getDeviceList as jest.Mock).mockReturnValue([
-      { deviceDescriptor: { idVendor: 0x1111, idProduct: 0x2222 } },
-      { deviceDescriptor: { idVendor: 0x1314, idProduct: 0x1521 } }
-    ])
+  test('returns matching dongle when supported VID/PID is present', async () => {
+    const dongle = { vendorId: 0x1314, productId: 0x1521 }
+    getDevices.mockResolvedValue([{ vendorId: 0x1111, productId: 0x2222 }, dongle])
 
-    const found = findDongle()
-    expect(found).toEqual({ deviceDescriptor: { idVendor: 0x1314, idProduct: 0x1521 } })
+    const found = await findDongle()
+    expect(found).toBe(dongle)
   })
 
-  test('returns null when no matching dongle found', () => {
-    ;(usb.getDeviceList as jest.Mock).mockReturnValue([
-      { deviceDescriptor: { idVendor: 0x1111, idProduct: 0x2222 } }
-    ])
+  test('returns null when no matching dongle found', async () => {
+    getDevices.mockResolvedValue([{ vendorId: 0x1111, productId: 0x2222 }])
 
-    expect(findDongle()).toBeNull()
+    await expect(findDongle()).resolves.toBeNull()
   })
 })

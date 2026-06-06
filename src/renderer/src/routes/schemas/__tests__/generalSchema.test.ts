@@ -201,7 +201,6 @@ describe('generalSchema', () => {
     )
     expect(startPage.options).toEqual([
       { label: 'Home', labelKey: 'settings.startPageHome', value: 'home' },
-      { label: 'Cluster Stream', labelKey: 'settings.startPageCluster', value: 'cluster' },
       { label: 'Telemetry', labelKey: 'settings.startPageTelemetry', value: 'telemetry' },
       { label: 'Media', labelKey: 'settings.startPageMedia', value: 'media' },
       { label: 'Camera', labelKey: 'settings.startPageCamera', value: 'camera' },
@@ -209,7 +208,7 @@ describe('generalSchema', () => {
     ])
   })
 
-  test('window settings + tab settings live as siblings, tab settings hosts cluster/dashboards/media/camera', () => {
+  test('window settings + tab settings live as siblings, tab settings hosts dashboards/media/camera', () => {
     const windowSettings = schema.children[1]
     expect(windowSettings).toEqual(
       expect.objectContaining({
@@ -231,16 +230,9 @@ describe('generalSchema', () => {
       })
     )
     const tabRoutes = tabSettings.children.map((c) => c.route)
-    expect(tabRoutes).toEqual(['cluster', 'dashboards', 'media', 'camera'])
+    expect(tabRoutes).toEqual(['dashboards', 'media', 'camera'])
 
-    const clusterRoute = tabSettings.children[0]
-    expect(clusterRoute.children.map((c) => c.path)).toEqual([
-      'cluster.main',
-      'cluster.dash',
-      'cluster.aux'
-    ])
-
-    const dashboardsRoute = tabSettings.children[1]
+    const dashboardsRoute = tabSettings.children[0]
     expect(dashboardsRoute.children).toHaveLength(5)
     const posList = dashboardsRoute.children[0]
     expect(posList).toEqual(
@@ -268,14 +260,14 @@ describe('generalSchema', () => {
       ])
     })
 
-    const mediaRoute = tabSettings.children[2]
+    const mediaRoute = tabSettings.children[1]
     expect(mediaRoute.children.map((c) => c.path)).toEqual([
       'media.main',
       'media.dash',
       'media.aux'
     ])
 
-    const cameraRoute = tabSettings.children[3]
+    const cameraRoute = tabSettings.children[2]
     expect(cameraRoute.children.map((c) => (c.type === 'route' ? c.route : c.path))).toEqual([
       'camera.main',
       'camera.dash',

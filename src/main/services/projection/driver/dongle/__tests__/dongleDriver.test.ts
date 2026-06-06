@@ -1376,7 +1376,7 @@ describe('DongleDriver core behavior', () => {
     await expect(result).resolves.toBeUndefined()
   })
 
-  test('close ignores darwin reset errors for LIBUSB_ERROR_NOT_FOUND without warning', async () => {
+  test('close releases the interface then closes the device (no reset) on darwin', async () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
     const originalPlatform = process.platform
 
@@ -1388,9 +1388,7 @@ describe('DongleDriver core behavior', () => {
     const d = new DongleDriver() as any
     const dev = {
       opened: true,
-      reset: jest.fn(async () => {
-        throw new Error('LIBUSB_ERROR_NOT_FOUND')
-      }),
+      reset: jest.fn(async () => undefined),
       releaseInterface: jest.fn(async () => undefined),
       close: jest.fn(async () => undefined)
     }
@@ -1403,11 +1401,11 @@ describe('DongleDriver core behavior', () => {
 
     await d.close()
 
-    expect(dev.reset).toHaveBeenCalled()
-    expect(warnSpy).not.toHaveBeenCalledWith(
-      '[DongleDriver] device.reset() failed (ignored)',
-      expect.anything()
-    )
+    // The WebUSB-shaped close path is release → close. It no longer calls reset().
+    expect(dev.releaseInterface).toHaveBeenCalledWith(1)
+    expect(dev.close).toHaveBeenCalled()
+    expect(dev.reset).not.toHaveBeenCalled()
+    expect(d._device).toBeNull()
 
     Object.defineProperty(process, 'platform', {
       value: originalPlatform,
@@ -1631,22 +1629,16 @@ describe('DongleDriver core behavior', () => {
     expect(d.applyPhoneWorkMode).not.toHaveBeenCalled()
   })
 
-  test('close warns when darwin device.reset fails with non-benign error', async () => {
+  test('close warns and continues to device.close when releaseInterface fails', async () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
-    const originalPlatform = process.platform
-
-    Object.defineProperty(process, 'platform', {
-      value: 'darwin',
-      configurable: true
-    })
 
     const d = new DongleDriver() as any
     const dev = {
       opened: true,
-      reset: jest.fn(async () => {
-        throw new Error('reset exploded')
+      reset: jest.fn(async () => undefined),
+      releaseInterface: jest.fn(async () => {
+        throw new Error('release exploded')
       }),
-      releaseInterface: jest.fn(async () => undefined),
       close: jest.fn(async () => undefined)
     }
 
@@ -1659,14 +1651,11 @@ describe('DongleDriver core behavior', () => {
     await d.close()
 
     expect(warnSpy).toHaveBeenCalledWith(
-      '[DongleDriver] device.reset() failed (ignored)',
+      '[DongleDriver] releaseInterface() failed (ignored)',
       expect.any(Error)
     )
+    expect(dev.close).toHaveBeenCalled()
 
-    Object.defineProperty(process, 'platform', {
-      value: originalPlatform,
-      configurable: true
-    })
     warnSpy.mockRestore()
   })
 
@@ -1963,42 +1952,36 @@ describe('DongleDriver core behavior', () => {
     jest.dontMock('@main/helpers/vendorSessionInfo')
   })
 
-  test('close warns when darwin reset fails with non-Error value', async () => {
+  test('close drains the reader before releasing the interface', async () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
-    const originalPlatform = process.platform
 
-    Object.defineProperty(process, 'platform', {
-      value: 'darwin',
-      configurable: true
-    })
+    const order: string[] = []
 
     const d = new DongleDriver() as any
     const dev = {
       opened: true,
-      reset: jest.fn(async () => {
-        throw 'plain reset failure'
+      reset: jest.fn(async () => undefined),
+      releaseInterface: jest.fn(async () => {
+        order.push('release')
       }),
-      releaseInterface: jest.fn(async () => undefined),
-      close: jest.fn(async () => undefined)
+      close: jest.fn(async () => {
+        order.push('close')
+      })
     }
 
     d._device = dev
     d._ifaceNumber = 1
     d._readerActive = true
     d._started = true
-    d.waitForReaderStop = jest.fn(async () => undefined)
+    d.waitForReaderStop = jest.fn(async () => {
+      order.push('waitForReaderStop')
+    })
 
     await d.close()
 
-    expect(warnSpy).toHaveBeenCalledWith(
-      '[DongleDriver] device.reset() failed (ignored)',
-      'plain reset failure'
-    )
+    expect(d.waitForReaderStop).toHaveBeenCalled()
+    expect(order).toEqual(['waitForReaderStop', 'release', 'close'])
 
-    Object.defineProperty(process, 'platform', {
-      value: originalPlatform,
-      configurable: true
-    })
     warnSpy.mockRestore()
   })
 

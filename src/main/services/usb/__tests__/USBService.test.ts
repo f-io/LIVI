@@ -23,35 +23,60 @@ jest.mock('@main/services/audio', () => ({
 
 jest.mock('usb', () => ({
   usb: {
-    on: jest.fn(),
-    removeAllListeners: jest.fn(),
-    unrefHotplugEvents: jest.fn(),
-    getDeviceList: jest.fn(() => [])
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    getDevices: jest.fn(async () => [])
   }
 }))
 
+jest.mock('../../projection/driver/aa/stack/aoap/handshake', () => ({
+  probeAaCapable: jest.fn(async () => 0),
+  isAccessoryMode: jest.fn(() => false)
+}))
+
 jest.mock('../helpers', () => ({
-  findDongle: jest.fn(() => null)
+  findDongle: jest.fn(async () => null)
 }))
 
 describe('USBService', () => {
-  const getDeviceList = usb.getDeviceList as jest.Mock
+  const getDevices = usb.getDevices as jest.Mock
+  const addEventListener = usb.addEventListener as jest.Mock
   const mockedFindDongle = findDongle as jest.Mock
 
   const projection = {
     markDongleConnected: jest.fn(),
+    markPhoneConnected: jest.fn(),
     autoStartIfNeeded: jest.fn(async () => undefined),
     stop: jest.fn(async () => undefined),
-    getActiveTransport: jest.fn(() => null)
+    getActiveTransport: jest.fn(() => null),
+    isExpectingPhoneReenumeration: jest.fn(() => false)
   } as any
 
-  const mkDevice = (idVendor = 0x1314, idProduct = 0x1520, bcdDevice = 0x0102) =>
+  // usb@3 USBDevice: flat fields, async methods.
+  const mkDevice = (
+    vendorId = 0x1314,
+    productId = 0x1520,
+    { major = 1, minor = 0, subminor = 2, deviceClass = 0x00 } = {}
+  ) =>
     ({
-      deviceDescriptor: { idVendor, idProduct, bcdDevice },
-      open: jest.fn(),
-      close: jest.fn(),
-      reset: jest.fn((cb: (err?: unknown) => void) => cb())
+      vendorId,
+      productId,
+      deviceClass,
+      deviceVersionMajor: major,
+      deviceVersionMinor: minor,
+      deviceVersionSubminor: subminor,
+      open: jest.fn(async () => undefined),
+      close: jest.fn(async () => undefined),
+      reset: jest.fn(async () => undefined)
     }) as any
+
+  // A USBConnectionEvent wraps the device under `.device`.
+  const evt = (device: unknown) => ({ device }) as any
+
+  const getConnectCb = () =>
+    addEventListener.mock.calls.find(([e]: [string]) => e === 'connect')?.[1]
+  const getDisconnectCb = () =>
+    addEventListener.mock.calls.find(([e]: [string]) => e === 'disconnect')?.[1]
 
   const windows = [
     { webContents: { send: jest.fn() } },
@@ -64,8 +89,8 @@ describe('USBService', () => {
     jest.clearAllMocks()
     jest.useFakeTimers()
     ;(BrowserWindow.getAllWindows as jest.Mock).mockReturnValue(windows)
-    getDeviceList.mockReturnValue([])
-    mockedFindDongle.mockReturnValue(null)
+    getDevices.mockResolvedValue([])
+    mockedFindDongle.mockResolvedValue(null)
   })
 
   afterEach(() => {
@@ -73,6 +98,8 @@ describe('USBService', () => {
     jest.useRealTimers()
     Object.defineProperty(process, 'platform', { value: originalPlatform })
   })
+
+  const flush = () => Promise.resolve().then(() => Promise.resolve())
 
   function getHandler<T = (...args: unknown[]) => unknown>(channel: string): T {
     const row = (registerIpcHandle as jest.Mock).mock.calls.find(([ch]) => ch === channel)
@@ -95,10 +122,11 @@ describe('USBService', () => {
     )
   })
 
-  test('constructor detects already connected dongle on startup', () => {
-    getDeviceList.mockReturnValue([mkDevice(0x1314, 0x1520)])
+  test('constructor detects already connected dongle on startup', async () => {
+    getDevices.mockResolvedValue([mkDevice(0x1314, 0x1520)])
 
     new USBService(projection)
+    await flush()
 
     expect(projection.markDongleConnected).toHaveBeenCalledWith(true)
     // Session start is owned by main/index.ts after applyConfigPatch — the
@@ -116,25 +144,16 @@ describe('USBService', () => {
     )
   })
 
-  test('constructor unrefs hotplug events on non-darwin platforms', () => {
-    Object.defineProperty(process, 'platform', { value: 'linux' })
-
+  test('constructor registers connect/disconnect hotplug listeners', () => {
     new USBService(projection)
 
-    expect(usb.unrefHotplugEvents).toHaveBeenCalledTimes(1)
-  })
-
-  test('constructor does not unref hotplug events on darwin', () => {
-    Object.defineProperty(process, 'platform', { value: 'darwin' })
-
-    new USBService(projection)
-
-    expect(usb.unrefHotplugEvents).not.toHaveBeenCalled()
+    expect(addEventListener).toHaveBeenCalledWith('connect', expect.any(Function))
+    expect(addEventListener).toHaveBeenCalledWith('disconnect', expect.any(Function))
   })
 
   test('usb-detect-dongle handler checks known VID/PID devices', async () => {
     new USBService(projection)
-    getDeviceList.mockReturnValue([mkDevice(0x1111, 0x2222), mkDevice(0x1314, 0x1521)])
+    getDevices.mockResolvedValue([mkDevice(0x1111, 0x2222), mkDevice(0x1314, 0x1521)])
 
     const h = getHandler<() => Promise<boolean>>('usb-detect-dongle')
     await expect(h()).resolves.toBe(true)
@@ -154,7 +173,8 @@ describe('USBService', () => {
 
   test('projection:usbDevice returns formatted usb fw version', async () => {
     new USBService(projection)
-    getDeviceList.mockReturnValue([mkDevice(0x1314, 0x1520, 0x0110)])
+    // bcdDevice 1.16 → major=1, lowByte=(minor<<4)|subminor=0x10=16
+    getDevices.mockResolvedValue([mkDevice(0x1314, 0x1520, { major: 1, minor: 1, subminor: 0 })])
 
     const h = getHandler<() => Promise<any>>('projection:usbDevice')
     await expect(h()).resolves.toEqual({
@@ -187,7 +207,7 @@ describe('USBService', () => {
     })
 
     s.resetInProgress = false
-    getDeviceList.mockReturnValue([])
+    getDevices.mockResolvedValue([])
     await expect(h()).resolves.toEqual({
       device: false,
       vendorId: null,
@@ -199,7 +219,7 @@ describe('USBService', () => {
   test('usb-last-event returns plugged payload when last dongle is still present', async () => {
     const s = new USBService(projection) as any
     s.lastDongleState = true
-    getDeviceList.mockReturnValue([mkDevice(0x1314, 0x1521)])
+    getDevices.mockResolvedValue([mkDevice(0x1314, 0x1521)])
 
     const h = getHandler<() => Promise<any>>('usb-last-event')
 
@@ -237,28 +257,12 @@ describe('USBService', () => {
     expect(Microphone.getSysdefaultPrettyName).toHaveBeenCalledTimes(1)
   })
 
-  test('usb-force-reset uses forceReset on darwin', async () => {
-    Object.defineProperty(process, 'platform', {
-      value: 'darwin',
-      configurable: true
-    })
-
+  test('usb-force-reset delegates to forceReset', async () => {
     const s = new USBService(projection) as any
     s.forceReset = jest.fn(async () => true)
 
     const h = getHandler<() => Promise<boolean>>('usb-force-reset')
 
-    await expect(h()).resolves.toBe(true)
-    expect(s.forceReset).toHaveBeenCalledTimes(1)
-  })
-
-  test('usb-force-reset uses forceReset on non-darwin', async () => {
-    Object.defineProperty(process, 'platform', { value: 'linux' })
-
-    const s = new USBService(projection) as any
-    s.forceReset = jest.fn(async () => true)
-
-    const h = getHandler<() => Promise<boolean>>('usb-force-reset')
     await expect(h()).resolves.toBe(true)
     expect(s.forceReset).toHaveBeenCalledTimes(1)
   })
@@ -275,16 +279,13 @@ describe('USBService', () => {
     await expect(h()).resolves.toBe(false)
   })
 
-  test('attach event for dongle updates projection and notifies renderer', async () => {
+  test('connect event for dongle updates projection and notifies renderer', async () => {
     new USBService(projection)
 
-    const attachCb = (usb.on as jest.Mock).mock.calls.find(
-      ([evt]: [string]) => evt === 'attach'
-    )?.[1]
-    expect(attachCb).toBeDefined()
+    const connectCb = getConnectCb()
+    expect(connectCb).toBeDefined()
 
-    const device = mkDevice(0x1314, 0x1520)
-    await attachCb(device)
+    connectCb(evt(mkDevice(0x1314, 0x1520)))
 
     expect(projection.markDongleConnected).toHaveBeenCalledWith(true)
     expect(projection.autoStartIfNeeded).toHaveBeenCalledTimes(1)
@@ -300,51 +301,46 @@ describe('USBService', () => {
     )
   })
 
-  test('attach event ignores non-dongle devices', async () => {
+  test('connect event ignores non-dongle, non-phone-candidate devices', () => {
     new USBService(projection)
 
-    const attachCb = (usb.on as jest.Mock).mock.calls.find(
-      ([evt]: [string]) => evt === 'attach'
-    )?.[1]
-
-    await attachCb(mkDevice(0x1111, 0x2222))
+    const connectCb = getConnectCb()
+    // deviceClass 0x09 (hub) is a skip class, so no probe/markPhoneConnected
+    connectCb(evt(mkDevice(0x1111, 0x2222, { deviceClass: 0x09 })))
 
     expect(projection.markDongleConnected).not.toHaveBeenCalled()
     expect(projection.autoStartIfNeeded).not.toHaveBeenCalled()
+    expect(projection.markPhoneConnected).not.toHaveBeenCalled()
   })
 
-  test('attach event is ignored when stopped, resetting or shutting down', async () => {
+  test('connect event is ignored when stopped, resetting or shutting down', () => {
     const s = new USBService(projection) as any
 
-    const attachCb = (usb.on as jest.Mock).mock.calls.find(
-      ([evt]: [string]) => evt === 'attach'
-    )?.[1]
+    const connectCb = getConnectCb()
 
     s.stopped = true
-    await attachCb(mkDevice())
+    connectCb(evt(mkDevice()))
     expect(projection.markDongleConnected).not.toHaveBeenCalled()
 
     s.stopped = false
     s.resetInProgress = true
-    await attachCb(mkDevice())
+    connectCb(evt(mkDevice()))
     expect(projection.markDongleConnected).not.toHaveBeenCalled()
 
     s.resetInProgress = false
     s.shutdownInProgress = true
-    await attachCb(mkDevice())
+    connectCb(evt(mkDevice()))
     expect(projection.markDongleConnected).not.toHaveBeenCalled()
   })
 
-  test('detach event for dongle updates projection and notifies renderer', async () => {
+  test('disconnect event for dongle updates projection and notifies renderer', () => {
     const s = new USBService(projection) as any
     s.lastDongleState = true
 
-    const detachCb = (usb.on as jest.Mock).mock.calls.find(
-      ([evt]: [string]) => evt === 'detach'
-    )?.[1]
-    expect(detachCb).toBeDefined()
+    const disconnectCb = getDisconnectCb()
+    expect(disconnectCb).toBeDefined()
 
-    await detachCb(mkDevice(0x1314, 0x1520))
+    disconnectCb(evt(mkDevice(0x1314, 0x1520)))
 
     expect(projection.markDongleConnected).toHaveBeenCalledWith(false)
     expect(windows[0].webContents.send).toHaveBeenCalledWith(
@@ -359,14 +355,17 @@ describe('USBService', () => {
     )
   })
 
-  test('stop removes attach/detach listeners and is idempotent', async () => {
+  test('stop removes connect/disconnect listeners and is idempotent', async () => {
     const s = new USBService(projection)
 
     await s.stop()
     await s.stop()
 
-    expect(usb.removeAllListeners).toHaveBeenCalledWith('attach')
-    expect(usb.removeAllListeners).toHaveBeenCalledWith('detach')
+    expect(usb.removeEventListener).toHaveBeenCalledWith('connect', expect.any(Function))
+    expect(usb.removeEventListener).toHaveBeenCalledWith('disconnect', expect.any(Function))
+    // Idempotent: handlers are cleared after the first stop, so removeEventListener
+    // is not invoked again.
+    expect((usb.removeEventListener as jest.Mock).mock.calls.length).toBe(2)
   })
 
   test('forceReset returns false when shutdown/reset already active', async () => {
@@ -382,12 +381,9 @@ describe('USBService', () => {
 
   test('forceReset handles missing dongle and emits detach without device', async () => {
     const s = new USBService(projection) as any
-    mockedFindDongle.mockReturnValue(null)
+    mockedFindDongle.mockResolvedValue(null)
 
     const promise = s.forceReset()
-
-    await Promise.resolve()
-    await Promise.resolve()
 
     await jest.advanceTimersByTimeAsync(200)
 
@@ -413,7 +409,7 @@ describe('USBService', () => {
   test('forceReset resets dongle when found and notifies detach for concrete device', async () => {
     const s = new USBService(projection) as any
     const dongle = mkDevice(0x1314, 0x1520)
-    mockedFindDongle.mockReturnValue(dongle)
+    mockedFindDongle.mockResolvedValue(dongle)
     s.resetDongle = jest.fn(async () => true)
 
     const promise = s.forceReset()
@@ -482,17 +478,15 @@ describe('USBService', () => {
   test('resetDongle returns false when device open fails', async () => {
     const s = new USBService(projection) as any
     const dongle = mkDevice()
-    dongle.open.mockImplementation(() => {
-      throw new Error('cannot open')
-    })
+    dongle.open.mockRejectedValue(new Error('cannot open'))
 
     await expect(s.resetDongle(dongle)).resolves.toBe(false)
   })
 
-  test('resetDongle treats LIBUSB disconnect errors as success', async () => {
+  test('resetDongle treats disconnect errors as success', async () => {
     const s = new USBService(projection) as any
     const dongle = mkDevice()
-    dongle.reset = jest.fn((cb: (err?: unknown) => void) => cb(new Error('LIBUSB_ERROR_NO_DEVICE')))
+    dongle.reset.mockRejectedValue(new Error('LIBUSB_ERROR_NO_DEVICE'))
 
     await expect(s.resetDongle(dongle)).resolves.toBe(true)
     expect(dongle.close).toHaveBeenCalledTimes(1)
@@ -501,7 +495,7 @@ describe('USBService', () => {
   test('resetDongle returns false on real reset error and still closes device', async () => {
     const s = new USBService(projection) as any
     const dongle = mkDevice()
-    dongle.reset = jest.fn((cb: (err?: unknown) => void) => cb(new Error('real reset error')))
+    dongle.reset.mockRejectedValue(new Error('real reset error'))
 
     await expect(s.resetDongle(dongle)).resolves.toBe(false)
     expect(dongle.close).toHaveBeenCalledTimes(1)
