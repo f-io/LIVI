@@ -114,6 +114,20 @@ export function setCompositorBackdrop(darkMode: boolean): void {
   compositorControl.setBackdrop(darkMode)
 }
 
+// macOS only: paint the window's content view (below the video subviews) with the theme colour
+export function setMacBackdrop(win: BrowserWindow, darkMode: boolean): void {
+  if (process.platform !== 'darwin') return
+  if (!win || win.isDestroyed()) return
+  const a = load()
+  if (!a || typeof a.setBackdrop !== 'function') return
+  const [r, g, b] = darkMode ? [0, 0, 0] : [0xd4 / 255, 0xd4 / 255, 0xd4 / 255]
+  try {
+    a.setBackdrop(win.getNativeWindowHandle(), r, g, b)
+  } catch {
+    // older addon build without setBackdrop, or no handle yet
+  }
+}
+
 // Open/close a secondary screen's nested output window (Linux/compositor only).
 // Optional w/h sizes the output to that screen's own configured resolution.
 export function setCompositorScreen(role: string, on: boolean, w?: number, h?: number): void {
@@ -145,6 +159,7 @@ interface GstAddon {
     tierW: number,
     tierH: number
   ): void
+  setBackdrop(windowHandle: Buffer, r: number, g: number, b: number): void
   stop(player: unknown): void
 }
 
@@ -263,8 +278,7 @@ export class GstVideo {
   }
 
   // Set the AA content region inside the decoded tier. The native view crops to it by
-  // sizing + positioning the GL render (zero-copy); bars appear only on a window-AR
-  // mismatch. Buffered and re-applied when the player is (re)created.
+  // sizing + positioning the GL render (zero-copy).
   setContentRegion(
     cropL: number,
     cropT: number,

@@ -4,7 +4,7 @@ import { Box, useTheme } from '@mui/material'
 import type { Config } from '@shared/types'
 import { PhoneType } from '@shared/types/Config'
 import { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
-import { aaContentArea } from '@shared/utils'
+import { aaContentArea, isClusterDisplayed } from '@shared/utils'
 import { createProjectionWorker } from '@worker/createProjectionWorker'
 import type { KeyCommand, ProjectionWorker, UsbEvent, WorkerToUI } from '@worker/types'
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -611,10 +611,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
             break
           }
 
-          const clusterEnabled =
-            settings.cluster?.main === true ||
-            settings.cluster?.dash === true ||
-            settings.cluster?.aux === true
+          const clusterEnabled = isClusterDisplayed(settings)
           const autoSwitchOnStream = autoSwitchOnStreamRef.current
           const autoSwitchOnGuidance = autoSwitchOnGuidanceRef.current
 
@@ -754,9 +751,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     setAudioInfo,
     setBluetoothPairedList,
     bumpAudioDevicesRevision,
-    settings.cluster?.main,
-    settings.cluster?.dash,
-    settings.cluster?.aux
+    settings.dashboards
   ])
 
   // Resize observer => inform render worker

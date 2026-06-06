@@ -9,8 +9,13 @@
 @public
   NSView* _gl;  // the GL sink's render target (child view)
   double _cropL, _cropT, _visW, _visH, _tierW, _tierH;  // content region in tier px
+@private
+  BOOL _relayoutPending;  // coalesce deferred relayouts during a live window resize
+  BOOL _inLiveResize;     // window is in an interactive drag-resize (plane suspended)
+  BOOL _userHidden;       // logical visibility from livi_set_view_hidden (restored after resize)
 }
 - (void)relayout;
+- (void)setUserHidden:(BOOL)hidden;
 @end
 
 @implementation LIVIClipView
@@ -45,6 +50,37 @@
 
 - (void)superviewResized:(NSNotification*)note {
   (void)note;
+  // While the window is in an interactive live resize the plane is hidden and we relayout once at
+  // the end (windowDidEndLiveResize:), so skip the per-frame churn entirely here.
+  if (_inLiveResize) return;
+  // Defer + coalesce. Changing our frame synchronously inside AppKit's live window resize trips
+  // the NSView visible-rect cache assertion (-[NSView setFrameSize:] ->
+  // NSViewHierarchyInvalidateVisibleRect), which aborts on drag-resize. Running the relayout on
+  // the next main-loop turn keeps it out of AppKit's in-progress resize pass.
+  if (_relayoutPending) return;
+  _relayoutPending = YES;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    self->_relayoutPending = NO;
+    [self relayout];
+  });
+}
+
+// Logical visibility (cluster shown/hidden)
+- (void)setUserHidden:(BOOL)hidden {
+  _userHidden = hidden;
+  if (!_inLiveResize) [self setHidden:hidden];
+}
+
+- (void)windowWillStartLiveResize:(NSNotification*)note {
+  (void)note;
+  _inLiveResize = YES;
+  [self setHidden:YES];
+}
+
+- (void)windowDidEndLiveResize:(NSNotification*)note {
+  (void)note;
+  _inLiveResize = NO;
+  [self setHidden:_userHidden];
   [self relayout];
 }
 @end
@@ -73,6 +109,20 @@ extern "C" guintptr livi_attach_view(guintptr parent, void** outView) {
                                            selector:@selector(superviewResized:)
                                                name:NSViewFrameDidChangeNotification
                                              object:p];
+
+  // Suspend the plane during an interactive window drag-resize (see windowWillStartLiveResize:).
+  NSWindow* win = [p window];
+  if (win) {
+    NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
+    [nc addObserver:clip
+           selector:@selector(windowWillStartLiveResize:)
+               name:NSWindowWillStartLiveResizeNotification
+             object:win];
+    [nc addObserver:clip
+           selector:@selector(windowDidEndLiveResize:)
+               name:NSWindowDidEndLiveResizeNotification
+             object:win];
+  }
 
   *outView = (void*)clip;       // tracked view; region/hide/remove operate on the clip
   return (guintptr)(void*)gl;   // the GL sink renders into the child
@@ -104,5 +154,18 @@ extern "C" void livi_remove_view(void* view) {
 extern "C" void livi_set_view_hidden(void* view, bool hidden) {
   if (!view) return;
   NSView* v = (NSView*)view;
+  if ([v isKindOfClass:[LIVIClipView class]]) {
+    [(LIVIClipView*)v setUserHidden:hidden];
+    return;
+  }
   [v setHidden:hidden];
+}
+
+extern "C" void livi_set_backdrop(guintptr parent, double r, double g, double b) {
+  NSView* p = (NSView*)(void*)parent;
+  if (!p) return;
+  [p setWantsLayer:YES];
+  if (!p.layer) return;
+  NSColor* col = [NSColor colorWithSRGBRed:r green:g blue:b alpha:1.0];
+  p.layer.backgroundColor = col.CGColor;
 }

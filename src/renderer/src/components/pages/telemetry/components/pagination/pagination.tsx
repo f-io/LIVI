@@ -34,8 +34,7 @@ export const DashboardsPagination: FC<DashboardsPaginationProps> = ({
           px: 'clamp(10px, 2svh, 14px)',
           py: 'clamp(6px, 1.4svh, 10px)',
           borderRadius: 999,
-          backgroundColor: theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.18)',
-          backdropFilter: 'blur(6px)'
+          backgroundColor: theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.55)' : 'rgba(0,0,0,0.30)'
         }}
       >
         {Array(dotsLength)

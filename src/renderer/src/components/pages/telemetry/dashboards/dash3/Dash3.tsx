@@ -1,4 +1,6 @@
-import * as React from 'react'
-import { DashPlaceholder } from '../../components/DashPlaceholder'
+import { DashFrame } from '../dash1/DashFrame'
 
-export const Dash3: React.FC = () => <DashPlaceholder title="Dash 3" />
+/** Gauges + telltales floating over the full-screen cluster stream. */
+export function Dash3() {
+  return <DashFrame clusterFull />
+}

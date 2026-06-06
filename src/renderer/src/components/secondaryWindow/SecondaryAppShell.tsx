@@ -1,11 +1,12 @@
 import { Box, Typography } from '@mui/material'
 import type { WindowId } from '@shared/types'
+import { isClusterOnScreen } from '@shared/utils'
 import { useEffect, useRef } from 'react'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
+import { MemoryRouter, Route, Routes } from 'react-router'
 import { ROUTES } from '../../constants'
 import type { BindKey } from '../../hooks/keysControl/types'
 import { useFftPcm } from '../../hooks/useFftPcm'
-import { useLiviStore } from '../../store/store'
+import { useLiviStore, useStatusStore } from '../../store/store'
 import { broadcastMediaKey } from '../../utils/broadcastMediaKey'
 import { AppLayout } from '../layouts/AppLayout'
 import { Camera } from '../pages/camera'
@@ -36,12 +37,11 @@ export const SecondaryAppShell = ({ role, emptyLabel }: Props) => {
     !!settings?.dashboards &&
     Object.values(settings.dashboards).some((slot) => slot?.[role] === true)
   const hasMedia = settings?.media?.[role] === true
-  const hasCluster = settings?.cluster?.[role] === true
   const hasCamera = settings?.camera?.[role] === true
 
   if (!settings) return <Box sx={{ width: '100vw', height: '100vh', bgcolor: '#000' }} />
 
-  if (!hasCluster && !hasTelemetry && !hasMedia && !hasCamera) {
+  if (!hasTelemetry && !hasMedia && !hasCamera) {
     return (
       <Box
         sx={{
@@ -58,31 +58,25 @@ export const SecondaryAppShell = ({ role, emptyLabel }: Props) => {
     )
   }
 
-  const initialPath = hasCluster
-    ? ROUTES.CLUSTER
-    : hasTelemetry
-      ? ROUTES.TELEMETRY
-      : hasMedia
-        ? ROUTES.MEDIA
-        : ROUTES.CAMERA
+  const initialPath = hasTelemetry ? ROUTES.TELEMETRY : hasMedia ? ROUTES.MEDIA : ROUTES.CAMERA
 
   return (
     <MemoryRouter initialEntries={[initialPath]}>
-      <SecondaryShellInner role={role} hasCluster={hasCluster} />
+      <SecondaryShellInner role={role} />
     </MemoryRouter>
   )
 }
 
 type InnerProps = {
   role: Exclude<WindowId, 'main'>
-  hasCluster: boolean
 }
 
-const SecondaryShellInner = ({ role, hasCluster }: InnerProps) => {
+const SecondaryShellInner = ({ role }: InnerProps) => {
   const navRef = useRef<HTMLDivElement | null>(null)
   const mainRef = useRef<HTMLDivElement | null>(null)
-  const { pathname } = useLocation()
   const settings = useLiviStore((s) => s.settings)
+  const clusterDashActive = useStatusStore((s) => s.clusterDashActive)
+  const hasClusterDash = isClusterOnScreen(settings, role)
 
   useFftPcm()
 
@@ -166,12 +160,13 @@ const SecondaryShellInner = ({ role, hasCluster }: InnerProps) => {
 
   return (
     <AppLayout navRef={navRef} mainRef={mainRef} receivingVideo={false}>
-      {hasCluster && settings && <Cluster visible={pathname === ROUTES.CLUSTER} />}
+      {hasClusterDash && settings && (
+        <Cluster visible={clusterDashActive} showLoadingPlaceholder={!clusterDashActive} />
+      )}
       <Routes>
         <Route path={ROUTES.TELEMETRY} element={<Telemetry windowRole={role} />} />
         <Route path={ROUTES.MEDIA} element={<Media forceHydrate />} />
         <Route path={ROUTES.CAMERA} element={<Camera />} />
-        <Route path={ROUTES.CLUSTER} element={null} />
         <Route path="*" element={null} />
       </Routes>
     </AppLayout>

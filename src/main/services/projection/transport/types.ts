@@ -1,4 +1,4 @@
-import type { Device } from 'usb'
+type Device = USBDevice
 
 export type Transport = 'dongle' | 'aa' | 'cp'
 

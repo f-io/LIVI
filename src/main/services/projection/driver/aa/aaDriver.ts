@@ -22,12 +22,12 @@ import { CarType } from '@shared/types/Config'
 import { InputCommand } from '@shared/types/InputCommand'
 import { CommandMapping, MultiTouchAction, TouchAction } from '@shared/types/ProjectionEnums'
 import {
+  clusterTargetScreens,
   computeAndroidAutoDpi,
   isClusterDisplayed,
   matchFittingAAResolution,
   pixelAspectRatioE4
 } from '@shared/utils'
-import type { Device } from 'usb'
 import type { IPhoneDriver } from '../IPhoneDriver'
 import { AaEventBridge } from './AaEventBridge'
 import { AOAP_LOOPBACK_HOST, AOAP_LOOPBACK_PORT } from './stack/aoap/constants'
@@ -39,6 +39,8 @@ import {
   type TouchPointer
 } from './stack/index'
 import { UsbAoapBridge } from './stack/transport/UsbAoapBridge'
+
+type Device = USBDevice
 
 /**
  * Map a single-pointer TouchAction to PointerAction enum
@@ -158,6 +160,27 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
 
     const wired = this._wiredDevice !== null
 
+    const aaCfg = this._buildStackConfig(cfg)
+    const aa = new AAStack(aaCfg)
+    this._aa = aa
+    this._bridge = this._makeEventBridge(aa, aaCfg)
+
+    if (wired) {
+      const ok = await this._startWiredBridge(aa)
+      if (!ok) {
+        this._started = false
+        return false
+      }
+      return true
+    }
+
+    aa.start()
+    console.log('[aaDriver] AA stack listening on TCP 5277')
+    return true
+  }
+
+  /** Build the AAStack config from the runtime Config and refresh the touch-mapping insets. */
+  private _buildStackConfig(cfg: Config): AAStackConfig {
     const h264Only = !(this._hevcSupported || this._vp9Supported || this._av1Supported)
     const aaFit = matchFittingAAResolution({ width: cfg.width, height: cfg.height }, { h264Only })
     const tierW = aaFit.width
@@ -222,11 +245,11 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
         `AA tier ${tierW}×${tierH} (AR ${tierAR.toFixed(3)}) @${aaDpi}dpi, ` +
         `PAR e4=${aaCfg.pixelAspectRatioE4}`
     )
-    const clusterActive = isClusterDisplayed(cfg)
+    const clusterScreens = clusterTargetScreens(cfg)
+    const clusterActive = clusterScreens.length > 0
     console.log(
-      `[aaDriver] clusterDisplayed=${clusterActive} ` +
-        `(cluster main=${cfg.cluster?.main ?? false} dash=${cfg.cluster?.dash ?? false} ` +
-        `aux=${cfg.cluster?.aux ?? false}; channel will ${clusterActive ? 'be advertised' : 'NOT be advertised'} in SDR)`
+      `[aaDriver] clusterDisplayed=${clusterActive} (screens=[${clusterScreens.join(',')}]; ` +
+        `channel will ${clusterActive ? 'be advertised' : 'NOT be advertised'} in SDR)`
     )
     if (clusterActive) {
       const cAR = cfg.clusterWidth / cfg.clusterHeight
@@ -262,10 +285,12 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
     this._touchInsetRight = arRight + Math.max(0, cfg.projectionSafeAreaRight ?? 0)
 
     this._aaCfg = aaCfg
-    const aa = new AAStack(aaCfg)
-    this._aa = aa
+    return aaCfg
+  }
 
-    this._bridge = new AaEventBridge(aa, aaCfg, {
+  /** Create + wire the AAStack→LIVI event bridge with the standard dependency callbacks. */
+  private _makeEventBridge(aa: AAStack, aaCfg: AAStackConfig): AaEventBridge {
+    const bridge = new AaEventBridge(aa, aaCfg, {
       emitMessage: (msg) => this.emit('message', msg),
       emitCodec: (kind, codec) => this.emit(kind, codec),
       startMic: (reason) => this._startMicCapture(reason),
@@ -277,20 +302,8 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       },
       isClosed: () => this._closed
     })
-    this._bridge.wire()
-
-    if (wired) {
-      const ok = await this._startWiredBridge(aa)
-      if (!ok) {
-        this._started = false
-        return false
-      }
-      return true
-    }
-
-    aa.start()
-    console.log('[aaDriver] AA stack listening on TCP 5277')
-    return true
+    bridge.wire()
+    return bridge
   }
 
   private async _startWiredBridge(aa: AAStack): Promise<boolean> {

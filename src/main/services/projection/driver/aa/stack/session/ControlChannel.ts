@@ -18,7 +18,8 @@ export class ControlChannel extends EventEmitter {
   //   'av-setup-request'           (channelId: number, payload: Buffer)
   //   'ping'                       (timestamp: number)
   //   'audio-focus-request'        (req: object)
-  //   'shutdown'                   (reason: number)
+  //   'shutdown'                   (reason: number)   — phone-initiated ByeByeRequest
+  //   'shutdown-complete'          ()                 — phone's ByeByeResponse to our shutdown
 
   constructor(
     private readonly _proto: ProtoTypes,
@@ -82,6 +83,11 @@ export class ControlChannel extends EventEmitter {
         } catch {
           this.emit('shutdown', 0)
         }
+        break
+
+      case CTRL_MSG.SHUTDOWN_RESPONSE:
+        // Phone's ByeByeResponse
+        this.emit('shutdown-complete')
         break
 
       case CTRL_MSG.BINDING_REQUEST:

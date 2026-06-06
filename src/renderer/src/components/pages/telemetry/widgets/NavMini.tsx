@@ -7,7 +7,8 @@ import { NavLocale, translateNavigation } from '@shared/utils/translateNavigatio
 
 import { useLiviStore } from '@store/store'
 import * as React from 'react'
-import { useBlinkingTime } from '../../../../hooks/useBlinkingTime'
+import { CENTER_X, NAV_DIVIDER_Y, NAV_Y } from '../dashboards/constants'
+import { Clock } from './Clock'
 import { ManeuverGraphic } from './ManeuverIcon'
 
 type ProjectionEventMsg = { type: string; payload?: unknown }
@@ -59,12 +60,11 @@ export type NavMiniProps = {
 }
 
 /**
- * Mini widget layout:
- * - Maneuver icon
- * - RemainDistanceText
+ * Mini widget layout (divider anchored at NAV_DIVIDER_Y, same line as the full nav):
+ * - Maneuver icon + RemainDistanceText, anchored above the divider
  * - divider
  * - bottom row: ETA + remaining distance
- * - if no route data => bottom row shows centered clock only
+ * - if no route data => centered clock only (on NAV_Y)
  */
 export function NavMini({ className, iconSize = 56 }: NavMiniProps) {
   const theme = useTheme()
@@ -135,45 +135,22 @@ export function NavMini({ className, iconSize = 56 }: NavMiniProps) {
         ? t.CurrentRoadName
         : '—'
 
-  const clockText = useBlinkingTime()
-  const showColon = clockText.includes(':')
-  const timeWithColon = clockText.replace(' ', ':')
-  const [hh, mm] = timeWithColon.split(':')
-
   if (!isActive) {
+    // No route guidance → just the clock, centred on NAV_Y.
     return (
       <Box
-        className={className}
         sx={{
-          width: '100%',
-          height: '100%',
+          position: 'absolute',
+          left: CENTER_X,
+          top: NAV_Y,
+          transform: 'translate(-50%, -50%)',
+          width: 280,
+          height: 120,
           display: 'grid',
           placeItems: 'center'
         }}
       >
-        <Typography
-          sx={{
-            fontSize: 30,
-            fontWeight: 400,
-            lineHeight: 1,
-            color: theme.palette.text.primary,
-            fontVariantNumeric: 'tabular-nums',
-            letterSpacing: 1.9,
-            opacity: 0.55
-          }}
-        >
-          {hh}
-          <Box
-            component="span"
-            sx={{
-              opacity: showColon ? 1 : 0,
-              transition: 'opacity 120ms linear'
-            }}
-          >
-            :
-          </Box>
-          {mm}
-        </Typography>
+        <Clock className={className} />
       </Box>
     )
   }
@@ -182,54 +159,56 @@ export function NavMini({ className, iconSize = 56 }: NavMiniProps) {
     <Box
       className={className}
       sx={{
-        width: '100%',
-        height: '100%',
-        minWidth: 0,
-        minHeight: 0,
-        display: 'grid',
-        gridTemplateRows: 'auto auto auto auto',
-        alignItems: 'center',
-        justifyItems: 'center',
-        rowGap: 1.6
+        position: 'absolute',
+        left: CENTER_X,
+        top: NAV_DIVIDER_Y,
+        transform: 'translateX(-50%)',
+        width: 280,
+        minWidth: 0
       }}
     >
-      {/* ICON */}
+      {/* Icon + distance, anchored above the divider so the divider stays fixed at NAV_DIVIDER_Y. */}
       <Box
         sx={{
-          width: '100%',
-          display: 'grid',
-          placeItems: 'center',
-          color: theme.palette.text.primary,
-          opacity: 1
+          position: 'absolute',
+          bottom: '100%',
+          left: 0,
+          right: 0,
+          pb: 1.6,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          color: theme.palette.text.primary
         }}
       >
-        <ManeuverGraphic
-          imageBase64={maneuverImageBase64}
-          type={maneuverType}
-          turnSide={turnSide}
-          size={iconSize}
-        />
+        <Box sx={{ display: 'grid', placeItems: 'center' }}>
+          <ManeuverGraphic
+            imageBase64={maneuverImageBase64}
+            type={maneuverType}
+            turnSide={turnSide}
+            size={iconSize}
+          />
+        </Box>
+
+        <Typography
+          sx={{
+            mt: 1.6,
+            fontSize: 22,
+            fontWeight: 600,
+            lineHeight: 1,
+            textAlign: 'center',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          {distanceLineText}
+        </Typography>
       </Box>
 
-      {/* distance to next maneuver */}
-      <Typography
-        sx={{
-          fontSize: 22,
-          fontWeight: 600,
-          lineHeight: 1,
-          textAlign: 'center',
-          color: theme.palette.text.primary,
-          whiteSpace: 'nowrap',
-          opacity: 1
-        }}
-      >
-        {distanceLineText}
-      </Typography>
-
-      {/* divider line */}
+      {/* Divider line at NAV_DIVIDER_Y (matches the full nav). */}
       <Box
         sx={{
           width: hasManeuverImage ? '72%' : '100%',
+          mx: 'auto',
           height: 1.4,
           borderRadius: 999,
           bgcolor: theme.palette.text.secondary,
@@ -237,9 +216,10 @@ export function NavMini({ className, iconSize = 56 }: NavMiniProps) {
         }}
       />
 
-      {/* bottom row */}
+      {/* Bottom row: ETA / road + remaining distance. */}
       <Box
         sx={{
+          pt: 1.6,
           width: '100%',
           display: 'flex',
           alignItems: 'center',

@@ -1,23 +1,31 @@
 type ClusterDisplayMap = { main?: boolean; dash?: boolean; aux?: boolean }
 
 type ClusterAwareConfig = {
-  cluster?: ClusterDisplayMap | null
-}
-
-export function isClusterDisplayed(cfg: ClusterAwareConfig | null | undefined): boolean {
-  const c = cfg?.cluster
-  if (!c) return false
-  return c.main === true || c.dash === true || c.aux === true
+  dashboards?: {
+    dash3?: ClusterDisplayMap | null
+    dash4?: ClusterDisplayMap | null
+  } | null
 }
 
 export type ClusterScreen = 'main' | 'dash' | 'aux'
 
 export function clusterTargetScreens(cfg: ClusterAwareConfig | null | undefined): ClusterScreen[] {
-  const c = cfg?.cluster
-  if (!c) return []
+  const d3 = cfg?.dashboards?.dash3
+  const d4 = cfg?.dashboards?.dash4
   const out: ClusterScreen[] = []
-  if (c.main === true) out.push('main')
-  if (c.dash === true) out.push('dash')
-  if (c.aux === true) out.push('aux')
+  for (const role of ['main', 'dash', 'aux'] as const) {
+    if (d3?.[role] === true || d4?.[role] === true) out.push(role)
+  }
   return out
+}
+
+export function isClusterOnScreen(
+  cfg: ClusterAwareConfig | null | undefined,
+  role: ClusterScreen
+): boolean {
+  return clusterTargetScreens(cfg).includes(role)
+}
+
+export function isClusterDisplayed(cfg: ClusterAwareConfig | null | undefined): boolean {
+  return clusterTargetScreens(cfg).length > 0
 }

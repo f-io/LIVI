@@ -62,6 +62,7 @@ export interface ProjectionIpcHost {
   setClusterVisible(v: boolean): void
   resetLastClusterVideoSize(): void
   getLastClusterCodec(): string | null
+  getLastClusterVideoSize(): { width: number; height: number } | null
   getClusterTargetWebContents(): WebContents[]
 
   // Dongle ops

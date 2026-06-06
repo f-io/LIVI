@@ -5,16 +5,14 @@
  * carrying the AA byte stream.
  *
  * Lifecycle:
- *   start()  → AOAP handshake (if needed) + claim accessory iface +
- *              open loopback server on 127.0.0.1:5278
- *   <client connects>
- *              → bidirectional pump runs until either side closes
- *   stop()   → close socket, release iface, close server
+ *   start()  → AOAP handshake (if needed) + claim accessory iface + open loopback server on :5278
+ *   <client connects> → bidirectional pump runs until either side closes
+ *   stop()   → drain pump, release iface, reset() (re-enumerates the phone), close
  */
 
 import { EventEmitter } from 'node:events'
 import * as net from 'node:net'
-import { type Device, type InEndpoint, type Interface, type OutEndpoint, usb } from 'usb'
+import { usb } from 'usb'
 import {
   ACCESSORY_PIDS,
   AOAP_LOOPBACK_HOST,
@@ -24,18 +22,19 @@ import {
 } from '../aoap/constants.js'
 import { isAccessoryMode, runAoapHandshake } from '../aoap/handshake.js'
 
+type Device = USBDevice
+
 const BULK_READ_CHUNK = 16 * 1024
-// libusb endpoint flags
-const USB_ENDPOINT_IN = 0x80
-const USB_TRANSFER_TYPE_BULK = 0x02
+const IN_TRANSFER_TIMEOUT_MS = 1_000
 
 export class UsbAoapBridge extends EventEmitter {
   private _server: net.Server | null = null
   private _client: net.Socket | null = null
   private _accessoryDevice: Device | null = null
-  private _iface: Interface | null = null
-  private _inEp: InEndpoint | null = null
-  private _outEp: OutEndpoint | null = null
+  private _ifaceNum: number | null = null
+  private _inEpNum: number | null = null
+  private _outEpNum: number | null = null
+  private _pumpDone: Promise<void> = Promise.resolve()
   private _running = false
   private _pumping = false
   private _outChain: Promise<void> = Promise.resolve()
@@ -82,14 +81,8 @@ export class UsbAoapBridge extends EventEmitter {
   }
 
   async forceReenum(): Promise<void> {
-    const dev = this._accessoryDevice
-    const iface = this._iface
-    if (!dev) return
-
+    // Stop the pump + loopback so stop() can release/reset cleanly.
     this._pumping = false
-    try {
-      this._inEp?.stopPoll()
-    } catch {}
     try {
       this._client?.destroy()
     } catch {}
@@ -98,35 +91,6 @@ export class UsbAoapBridge extends EventEmitter {
       this._server?.close()
     } catch {}
     this._server = null
-
-    if (iface) {
-      await new Promise<void>((resolve) => {
-        try {
-          iface.release(true, () => resolve())
-        } catch {
-          resolve()
-        }
-      })
-    }
-    this._iface = null
-    this._inEp = null
-    this._outEp = null
-
-    await new Promise<void>((resolve) => {
-      try {
-        dev.controlTransfer(0x00, 0x09, 0, 0, Buffer.alloc(0), (err: unknown) => {
-          if (err) {
-            console.warn(`[UsbAoapBridge] SET_CONFIGURATION(0) failed: ${String(err)}`)
-          } else {
-            console.log('[UsbAoapBridge] SET_CONFIGURATION(0) ok')
-          }
-          resolve()
-        })
-      } catch (err) {
-        console.warn(`[UsbAoapBridge] SET_CONFIGURATION(0) threw: ${(err as Error).message}`)
-        resolve()
-      }
-    })
   }
 
   async stop(): Promise<void> {
@@ -134,14 +98,13 @@ export class UsbAoapBridge extends EventEmitter {
     this._running = false
     this._pumping = false
 
-    const inEp = this._inEp
-    const outChain = this._outChain
-    const iface = this._iface
     const dev = this._accessoryDevice
-    this._iface = null
-    this._inEp = null
-    this._outEp = null
+    const ifaceNum = this._ifaceNum
+    const outChain = this._outChain
     this._accessoryDevice = null
+    this._ifaceNum = null
+    this._inEpNum = null
+    this._outEpNum = null
 
     try {
       this._client?.destroy()
@@ -157,73 +120,42 @@ export class UsbAoapBridge extends EventEmitter {
     }
     this._server = null
 
-    const withWatchdog = (op: (done: () => void) => void, ms: number): Promise<void> =>
-      new Promise<void>((resolve) => {
-        let settled = false
-        const finish = (): void => {
-          if (settled) return
-          settled = true
-          resolve()
-        }
-        const t = setTimeout(finish, ms)
-        try {
-          op(() => {
-            clearTimeout(t)
-            finish()
-          })
-        } catch {
-          clearTimeout(t)
-          finish()
-        }
-      })
+    const withWatchdog = <T>(p: Promise<T>, ms: number): Promise<void> =>
+      Promise.race([
+        p.then(
+          () => undefined,
+          () => undefined
+        ),
+        new Promise<void>((r) => setTimeout(r, ms))
+      ])
 
-    if (inEp && inEp.pollActive) {
-      await withWatchdog((done) => inEp.stopPoll(done), 750)
-    }
+    // Drop the in-flight read so the interface is free for release/reset
+    await withWatchdog(this._pumpDone, IN_TRANSFER_TIMEOUT_MS + 750)
+    this._pumpDone = Promise.resolve()
 
-    await Promise.race([
-      outChain.catch(() => undefined),
-      new Promise<void>((r) => setTimeout(r, 500))
-    ])
+    // Let any in-flight OUT settle (bounded)
+    await withWatchdog(outChain, 500)
 
-    if (iface) {
-      await withWatchdog((done) => iface.release(false, done), 750)
-    }
-
-    // Kick the phone back out of accessory mode
     if (dev) {
-      // Notify the arbiter so the USB detach during reset isn't read as unplug.
-      this._onWillReenumerate?.(AOAP_RE_ENUMERATE_TIMEOUT_MS + 2_000)
+      if (ifaceNum != null) {
+        await withWatchdog(dev.releaseInterface(ifaceNum), 750)
+      }
 
-      await withWatchdog((done) => {
-        try {
-          dev.controlTransfer(0x00, 0x09, 0, 0, Buffer.alloc(0), () => done())
-        } catch {
-          done()
-        }
-      }, 500)
+      await withWatchdog(
+        dev.reset().then(
+          () => console.log('[UsbAoapBridge] device reset ok — phone should re-enumerate'),
+          (err: unknown) => console.warn(`[UsbAoapBridge] device reset failed: ${String(err)}`)
+        ),
+        1500
+      )
 
-      await withWatchdog((done) => {
-        try {
-          dev.reset((err: unknown) => {
-            if (err) {
-              console.warn(`[UsbAoapBridge] usb reset failed: ${String(err)}`)
-            } else {
-              console.log('[UsbAoapBridge] usb reset ok — phone will re-enumerate')
-            }
-            done()
-          })
-        } catch (err) {
-          console.warn(`[UsbAoapBridge] usb reset threw: ${(err as Error).message}`)
-          done()
-        }
-      }, 1500)
-    }
-
-    try {
-      dev?.close()
-    } catch {
-      /* ignore */
+      await withWatchdog(
+        dev.close().then(
+          () => console.log('[UsbAoapBridge] accessory device closed'),
+          (err: unknown) => console.warn(`[UsbAoapBridge] device close failed: ${String(err)}`)
+        ),
+        1500
+      )
     }
 
     this.emit('closed')
@@ -233,72 +165,46 @@ export class UsbAoapBridge extends EventEmitter {
     let accessoryDev: Device
 
     if (isAccessoryMode(this._device)) {
-      console.log(
-        `[UsbAoapBridge] accessory-mode start path: vid=0x${this._device.deviceDescriptor.idVendor.toString(16)} pid=0x${this._device.deviceDescriptor.idProduct.toString(16)} — claiming endpoints directly`
-      )
       accessoryDev = this._device
-      // libusb sometimes fails the first open with "Couldn't find matching udev
-      // device" if the kernel/udev hasn't finished publishing /dev/bus/usb yet
-      let opened = false
-      let lastErr: unknown
-      for (let attempt = 0; attempt < 5 && !opened; attempt++) {
-        try {
-          accessoryDev.open()
-          opened = true
-        } catch (err) {
-          lastErr = err
-          await new Promise((r) => setTimeout(r, 100))
-        }
-      }
-      if (!opened) {
-        throw new Error(
-          `Failed to open AOAP accessory device: ${(lastErr as Error)?.message ?? 'unknown'}`
-        )
-      }
+      await this._openWithRetry(accessoryDev, 'AOAP accessory device')
     } else {
-      let opened = false
-      let lastOpenErr: unknown
-      for (let attempt = 0; attempt < 5 && !opened; attempt++) {
-        try {
-          this._device.open()
-          opened = true
-        } catch (err) {
-          lastOpenErr = err
-          await new Promise((r) => setTimeout(r, 100))
-        }
-      }
-      if (!opened) {
-        throw new Error(
-          `Failed to open AOAP device: ${(lastOpenErr as Error)?.message ?? 'unknown'}`
-        )
-      }
+      await this._openWithRetry(this._device, 'AOAP device')
 
       const reenumerated = waitForAccessoryAttach(AOAP_RE_ENUMERATE_TIMEOUT_MS)
+      void reenumerated.catch(() => {}) // avoid an unhandled rejection if the handshake throws first
       this._onWillReenumerate?.(AOAP_RE_ENUMERATE_TIMEOUT_MS + 2_000)
       await runAoapHandshake(this._device)
 
       try {
-        this._device.close()
+        await this._device.close()
       } catch {
         /* ignore */
       }
 
       accessoryDev = await reenumerated
-      accessoryDev.open()
+      await this._openWithRetry(accessoryDev, 'AOAP accessory device (post-handshake)')
     }
 
-    const iface = accessoryDev.interface(0)
-    if (!iface) {
-      throw new Error('AOAP accessory: interface 0 missing')
+    // WebUSB does not auto-select a configuration on open.
+    try {
+      if (accessoryDev.configuration?.configurationValue !== 1) {
+        await accessoryDev.selectConfiguration(1)
+      }
+    } catch (err) {
+      console.warn(`[UsbAoapBridge] selectConfiguration(1) failed: ${(err as Error).message}`)
     }
 
-    // Same udev race as open(): immediately after enumeration libusb may
-    // refuse claim() with "could not find matching udev device". Retry.
+    const eps = findBulkEndpoints(accessoryDev)
+    if (!eps) {
+      throw new Error('AOAP accessory: bulk IN/OUT endpoints not found')
+    }
+
+    // Right after enumeration the OS may briefly refuse the claim.
     let claimed = false
     let claimErr: unknown
     for (let attempt = 0; attempt < 5 && !claimed; attempt++) {
       try {
-        iface.claim()
+        await accessoryDev.claimInterface(eps.interfaceNumber)
         claimed = true
       } catch (err) {
         claimErr = err
@@ -311,25 +217,24 @@ export class UsbAoapBridge extends EventEmitter {
       )
     }
 
-    let inEp: InEndpoint | null = null
-    let outEp: OutEndpoint | null = null
-    for (const ep of iface.endpoints) {
-      if (ep.transferType !== USB_TRANSFER_TYPE_BULK) continue
-      if ((ep.address & USB_ENDPOINT_IN) === USB_ENDPOINT_IN) {
-        inEp = ep as InEndpoint
-      } else {
-        outEp = ep as OutEndpoint
+    this._accessoryDevice = accessoryDev
+    this._ifaceNum = eps.interfaceNumber
+    this._inEpNum = eps.inEndpoint
+    this._outEpNum = eps.outEndpoint
+  }
+
+  private async _openWithRetry(dev: Device, label: string): Promise<void> {
+    let lastErr: unknown
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await dev.open()
+        return
+      } catch (err) {
+        lastErr = err
+        await new Promise((r) => setTimeout(r, 100))
       }
     }
-
-    if (!inEp || !outEp) {
-      throw new Error('AOAP accessory: bulk IN/OUT endpoints not found')
-    }
-
-    this._accessoryDevice = accessoryDev
-    this._iface = iface
-    this._inEp = inEp
-    this._outEp = outEp
+    throw new Error(`Failed to open ${label}: ${(lastErr as Error)?.message ?? 'unknown'}`)
   }
 
   private async _startLoopbackServer(port: number): Promise<void> {
@@ -361,76 +266,41 @@ export class UsbAoapBridge extends EventEmitter {
   }
 
   private _startPump(sock: net.Socket): void {
-    if (!this._inEp || !this._outEp) {
+    const dev = this._accessoryDevice
+    if (!dev || this._inEpNum == null || this._outEpNum == null) {
       sock.destroy(new Error('AOAP bridge endpoints not initialised'))
       return
     }
-    const inEp = this._inEp
-    const outEp = this._outEp
+    const inEpNum = this._inEpNum
+    const outEpNum = this._outEpNum
 
     this._pumping = true
-
-    // USB IN -> socket
-    inEp.on('data', (chunk: Buffer) => {
-      if (!this._pumping) return
-      const ok = sock.write(chunk)
-      if (!ok) {
-        try {
-          inEp.stopPoll()
-        } catch {
-          /* ignore */
-        }
-        sock.once('drain', () => {
-          if (!this._pumping) return
-          try {
-            inEp.startPoll(2, BULK_READ_CHUNK)
-          } catch {
-            /* device may have been torn down */
-          }
-        })
-      }
-    })
-
-    inEp.on('error', (err: Error) => {
-      this.emit('error', err)
-      try {
-        sock.destroy(err)
-      } catch {
-        /* ignore */
-      }
-    })
-
-    inEp.startPoll(2, BULK_READ_CHUNK)
-
-    // socket -> USB OUT
     this._outChain = Promise.resolve()
+
+    // USB IN -> socket. stop() awaits _pumpDone so the interface is free before reset().
+    this._pumpDone = this._pumpIn(sock, dev, inEpNum)
+
+    // socket -> USB OUT, serialised through _outChain.
     sock.on('data', (chunk: Buffer) => {
       if (!this._pumping) return
-      this._outChain = this._outChain.then(
-        () =>
-          new Promise<void>((resolve) => {
-            outEp.transfer(chunk, (err) => {
-              if (err) {
-                this.emit('error', err)
-                try {
-                  sock.destroy(err)
-                } catch {
-                  /* ignore */
-                }
-              }
-              resolve()
-            })
-          })
-      )
+      this._outChain = this._outChain.then(async () => {
+        if (!this._pumping || this._client !== sock) return
+        try {
+          await dev.transferOut(outEpNum, chunk)
+        } catch (err) {
+          this.emit('error', err as Error)
+          try {
+            sock.destroy(err as Error)
+          } catch {
+            /* ignore */
+          }
+        }
+      })
     })
 
     sock.once('close', () => {
+      if (this._client !== sock) return
       this._pumping = false
-      try {
-        inEp.stopPoll()
-      } catch {
-        /* ignore */
-      }
       this._client = null
     })
 
@@ -439,29 +309,107 @@ export class UsbAoapBridge extends EventEmitter {
     })
   }
 
+  private async _pumpIn(sock: net.Socket, dev: Device, inEpNum: number): Promise<void> {
+    // transferIn's 3rd arg (timeout) is outside the standard WebUSB typings.
+    const transferIn = dev.transferIn.bind(dev) as (
+      ep: number,
+      len: number,
+      timeoutMs?: number
+    ) => Promise<USBInTransferResult>
+
+    while (this._pumping && this._client === sock) {
+      let data: DataView | null
+      try {
+        const r = await transferIn(inEpNum, BULK_READ_CHUNK, IN_TRANSFER_TIMEOUT_MS)
+        if (r.status === 'stall') {
+          try {
+            await dev.clearHalt('in', inEpNum)
+          } catch {
+            /* ignore */
+          }
+          continue
+        }
+        data = r.data ?? null
+      } catch (err) {
+        if (!this._pumping || this._client !== sock) return
+        const msg = err instanceof Error ? err.message : String(err)
+        if (/disconnect|no[\s_-]?device|not[\s_-]?found|gone/i.test(msg)) {
+          this.emit('error', err as Error)
+          try {
+            sock.destroy(err as Error)
+          } catch {
+            /* ignore */
+          }
+          return
+        }
+        // Timeout / cancel: re-issue the read (lossless for bulk).
+        continue
+      }
+
+      if (!this._pumping || this._client !== sock) return
+      if (!data || data.byteLength === 0) continue
+
+      const buf = Buffer.from(data.buffer, data.byteOffset, data.byteLength)
+      if (!sock.write(buf)) {
+        await new Promise<void>((resolve) => sock.once('drain', resolve))
+      }
+    }
+  }
+
   get device(): Device {
     return this._device
   }
 }
 
+interface BulkEndpoints {
+  interfaceNumber: number
+  inEndpoint: number
+  outEndpoint: number
+}
+
+function findBulkEndpoints(dev: Device): BulkEndpoints | null {
+  const config = dev.configuration
+  if (!config) return null
+  for (const iface of config.interfaces) {
+    const alt = iface.alternate
+    let inEp = -1
+    let outEp = -1
+    for (const ep of alt.endpoints) {
+      if (ep.type !== 'bulk') continue
+      if (ep.direction === 'in') inEp = ep.endpointNumber
+      else if (ep.direction === 'out') outEp = ep.endpointNumber
+    }
+    if (inEp >= 0 && outEp >= 0) {
+      return { interfaceNumber: iface.interfaceNumber, inEndpoint: inEp, outEndpoint: outEp }
+    }
+  }
+  return null
+}
+
 function waitForAccessoryAttach(timeoutMs: number): Promise<Device> {
   return new Promise((resolve, reject) => {
-    const t = setTimeout(() => {
-      usb.removeListener('attach', onAttach)
-      reject(new Error('AOAP re-enumerate timeout'))
-    }, timeoutMs)
-
-    const onAttach = (dev: Device) => {
-      const desc = dev.deviceDescriptor
+    const onConnect = (ev: USBConnectionEvent): void => {
+      const dev = ev.device as Device
       if (
-        desc.idVendor === GOOGLE_VID &&
-        (ACCESSORY_PIDS as readonly number[]).includes(desc.idProduct)
+        dev.vendorId === GOOGLE_VID &&
+        (ACCESSORY_PIDS as readonly number[]).includes(dev.productId)
       ) {
-        clearTimeout(t)
-        usb.removeListener('attach', onAttach)
+        cleanup()
         resolve(dev)
       }
     }
-    usb.on('attach', onAttach)
+    const t = setTimeout(() => {
+      cleanup()
+      reject(new Error('AOAP re-enumerate timeout'))
+    }, timeoutMs)
+    const cleanup = (): void => {
+      clearTimeout(t)
+      try {
+        usb.removeEventListener('connect', onConnect)
+      } catch {
+        /* ignore */
+      }
+    }
+    usb.addEventListener('connect', onConnect)
   })
 }

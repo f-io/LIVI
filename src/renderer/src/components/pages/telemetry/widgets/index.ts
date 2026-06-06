@@ -1,3 +1,4 @@
+export * from './Clock'
 export * from './CoolantTemp'
 export * from './FuelGauge'
 export * from './FuelLevel'

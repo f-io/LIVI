@@ -10,6 +10,7 @@ import type { NaviBag } from '@shared/types'
 import { NavLocale, translateNavigation } from '@shared/utils/translateNavigation'
 import { useLiviStore } from '@store/store'
 import * as React from 'react'
+import { CENTER_X, NAV_DIVIDER_Y, NAV_Y } from '../dashboards/constants'
 import { ManeuverGraphic } from './ManeuverIcon'
 
 export type NavFullProps = {
@@ -152,212 +153,205 @@ export function NavFull({ className }: NavFullProps) {
   const maneuverText =
     maneuverImageBase64 && t.ManeuverTypeText === 'Unknown' ? undefined : t.ManeuverTypeText
 
-  return (
-    <Box
-      className={className}
-      sx={{
-        width: '100%',
-        height: '100%',
-        display: 'grid',
-        placeItems: 'center'
-      }}
-    >
+  if (!isActive) {
+    // No guidance → a single nav glyph centred on NAV_Y
+    return (
       <Box
+        className={className}
         sx={{
-          width: 'min(920px, 100%)',
+          position: 'absolute',
+          left: CENTER_X,
+          top: NAV_Y,
+          transform: 'translate(-50%, -50%)',
+          pointerEvents: 'none',
           display: 'grid',
           placeItems: 'center'
         }}
       >
-        {!isActive ? (
-          <NavigationOutlinedIcon sx={{ fontSize: 84, opacity: 0.55 }} />
-        ) : (
-          <Stack spacing={2.6} sx={{ alignItems: 'center', textAlign: 'center' }}>
-            {hasManeuverImage ? (
-              <Stack spacing={1.2} sx={{ alignItems: 'center', justifyContent: 'center' }}>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    minWidth: 92
-                  }}
-                >
-                  <ManeuverGraphic
-                    imageBase64={maneuverImageBase64}
-                    type={t.codes.ManeuverType}
-                    turnSide={t.codes.TurnSide}
-                    size={72}
-                  />
+        <NavigationOutlinedIcon sx={{ fontSize: 84, opacity: 0.55 }} />
+      </Box>
+    )
+  }
 
-                  {remainDistanceText && (
-                    <Typography
-                      sx={{
-                        mt: 0.5,
-                        fontSize: 20,
-                        fontWeight: 600,
-                        letterSpacing: 0.2,
-                        lineHeight: 1
-                      }}
-                    >
-                      {remainDistanceText}
-                    </Typography>
-                  )}
-                </Box>
+  // Maneuver block that sits above the divider (icon + distance, with the maneuver text below or
+  // beside it depending on whether the phone supplied a maneuver image).
+  const maneuverBlock = hasManeuverImage ? (
+    <Stack spacing={1.2} sx={{ alignItems: 'center', justifyContent: 'center' }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 92 }}>
+        <ManeuverGraphic
+          imageBase64={maneuverImageBase64}
+          type={t.codes.ManeuverType}
+          turnSide={t.codes.TurnSide}
+          size={72}
+        />
 
-                {maneuverText && (
-                  <Typography variant="h5" sx={{ lineHeight: 1.1, textAlign: 'center' }}>
-                    {maneuverText}
-                  </Typography>
-                )}
-              </Stack>
-            ) : (
-              <Stack
-                direction="row"
-                spacing={2}
-                sx={{
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                <Box
-                  sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    minWidth: 92
-                  }}
-                >
-                  <ManeuverGraphic
-                    imageBase64={maneuverImageBase64}
-                    type={t.codes.ManeuverType}
-                    turnSide={t.codes.TurnSide}
-                    size={72}
-                  />
+        {remainDistanceText && (
+          <Typography
+            sx={{ mt: 0.5, fontSize: 20, fontWeight: 600, letterSpacing: 0.2, lineHeight: 1 }}
+          >
+            {remainDistanceText}
+          </Typography>
+        )}
+      </Box>
 
-                  {remainDistanceText && (
-                    <Typography
-                      sx={{
-                        mt: 0.5,
-                        fontSize: 20,
-                        fontWeight: 600,
-                        letterSpacing: 0.2,
-                        lineHeight: 1
-                      }}
-                    >
-                      {remainDistanceText}
-                    </Typography>
-                  )}
-                </Box>
+      {maneuverText && (
+        <Typography variant="h5" sx={{ lineHeight: 1.1, textAlign: 'center' }}>
+          {maneuverText}
+        </Typography>
+      )}
+    </Stack>
+  ) : (
+    <Stack direction="row" spacing={2} sx={{ alignItems: 'center', justifyContent: 'center' }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 92 }}>
+        <ManeuverGraphic
+          imageBase64={maneuverImageBase64}
+          type={t.codes.ManeuverType}
+          turnSide={t.codes.TurnSide}
+          size={72}
+        />
 
-                <Box sx={{ minWidth: 0, textAlign: 'left' }}>
-                  {maneuverText && (
-                    <Typography variant="h5" sx={{ lineHeight: 1.1 }}>
-                      {maneuverText}
-                    </Typography>
-                  )}
+        {remainDistanceText && (
+          <Typography
+            sx={{ mt: 0.5, fontSize: 20, fontWeight: 600, letterSpacing: 0.2, lineHeight: 1 }}
+          >
+            {remainDistanceText}
+          </Typography>
+        )}
+      </Box>
 
-                  {t.CurrentRoadName && (
-                    <Stack
-                      direction="row"
-                      spacing={1}
-                      component="div"
-                      sx={{ mt: 0.6, alignItems: 'center' }}
-                    >
-                      <SignpostIcon fontSize="small" sx={{ opacity: 0.85 }} />
-                      <Typography variant="body2" sx={{ opacity: 0.85 }} noWrap>
-                        {t.CurrentRoadName}
-                      </Typography>
-                    </Stack>
-                  )}
-                </Box>
-              </Stack>
-            )}
+      <Box sx={{ minWidth: 0, textAlign: 'left' }}>
+        {maneuverText && (
+          <Typography variant="h5" sx={{ lineHeight: 1.1 }}>
+            {maneuverText}
+          </Typography>
+        )}
 
-            <Box
-              sx={{
-                width: hasManeuverImage ? '72%' : '100%',
-                height: 1.4,
-                borderRadius: 999,
-                bgcolor: 'text.secondary',
-                opacity: 0.35
-              }}
-            />
-
-            <Stack
-              direction="row"
-              spacing={3}
-              sx={{
-                flexWrap: 'wrap',
-                justifyContent: 'center',
-                rowGap: 1
-              }}
-            >
-              {hasManeuverImage && t.CurrentRoadName && (
-                <Stack
-                  direction="row"
-                  spacing={1}
-                  sx={{
-                    alignItems: 'center',
-                    minWidth: 0
-                  }}
-                >
-                  <SignpostIcon fontSize="small" sx={{ opacity: 0.85 }} />
-                  <Typography variant="body2" sx={{ opacity: 0.85 }} noWrap>
-                    {t.CurrentRoadName}
-                  </Typography>
-                </Stack>
-              )}
-
-              {t.TimeRemainingToDestinationText && (
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                  <AccessTimeIcon fontSize="small" />
-                  <Typography variant="body1">{t.TimeRemainingToDestinationText}</Typography>
-                </Stack>
-              )}
-
-              {t.DistanceRemainingDisplayStringText && (
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                  <RouteIcon fontSize="small" />
-                  <Typography variant="body1">{t.DistanceRemainingDisplayStringText}</Typography>
-                </Stack>
-              )}
-
-              {t.DestinationName && (
-                <Stack
-                  direction="row"
-                  spacing={1}
-                  sx={{
-                    alignItems: 'center',
-                    minWidth: 0
-                  }}
-                >
-                  <PlaceIcon fontSize="small" />
-                  <Typography variant="body1" noWrap sx={{ minWidth: 0 }}>
-                    {t.DestinationName}
-                  </Typography>
-                </Stack>
-              )}
-
-              {t.SourceName && (
-                <Stack
-                  direction="row"
-                  spacing={1}
-                  sx={{
-                    alignItems: 'center',
-                    minWidth: 0
-                  }}
-                >
-                  <AppsIcon fontSize="small" />
-                  <Typography variant="body2" sx={{ opacity: 0.85 }} noWrap>
-                    {t.SourceName}
-                  </Typography>
-                </Stack>
-              )}
-            </Stack>
+        {t.CurrentRoadName && (
+          <Stack direction="row" spacing={1} component="div" sx={{ mt: 0.6, alignItems: 'center' }}>
+            <SignpostIcon fontSize="small" sx={{ opacity: 0.85 }} />
+            <Typography variant="body2" sx={{ opacity: 0.85 }} noWrap>
+              {t.CurrentRoadName}
+            </Typography>
           </Stack>
         )}
       </Box>
+    </Stack>
+  )
+
+  return (
+    <Box
+      className={className}
+      sx={{
+        position: 'absolute',
+        left: CENTER_X,
+        top: NAV_DIVIDER_Y,
+        transform: 'translateX(-50%)',
+        // Size to the content (the info row) so the divider matches it, not a fixed 920px band.
+        width: 'fit-content',
+        maxWidth: 'min(920px, 100%)',
+        pointerEvents: 'none'
+      }}
+    >
+      {/* Above the divider, anchored upward so the divider line stays fixed at NAV_DIVIDER_Y. */}
+      <Box
+        sx={{
+          position: 'absolute',
+          bottom: '100%',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          pb: 2.6,
+          display: 'flex',
+          justifyContent: 'center'
+        }}
+      >
+        {maneuverBlock}
+      </Box>
+
+      {/* Divider line at NAV_DIVIDER_Y (matches the mini nav). */}
+      <Box
+        sx={{
+          width: hasManeuverImage ? '72%' : '100%',
+          mx: 'auto',
+          height: 1.4,
+          borderRadius: 999,
+          bgcolor: 'text.secondary',
+          opacity: 0.35
+        }}
+      />
+
+      {/* Below the divider: ETA / remaining distance / destination row. */}
+      <Stack
+        direction="row"
+        spacing={3}
+        sx={{
+          pt: 2.6,
+          flexWrap: 'wrap',
+          justifyContent: 'center',
+          rowGap: 1
+        }}
+      >
+        {hasManeuverImage && t.CurrentRoadName && (
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{
+              alignItems: 'center',
+              minWidth: 0
+            }}
+          >
+            <SignpostIcon fontSize="small" sx={{ opacity: 0.85 }} />
+            <Typography variant="body2" sx={{ opacity: 0.85 }} noWrap>
+              {t.CurrentRoadName}
+            </Typography>
+          </Stack>
+        )}
+
+        {t.TimeRemainingToDestinationText && (
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            <AccessTimeIcon fontSize="small" />
+            <Typography variant="body1">{t.TimeRemainingToDestinationText}</Typography>
+          </Stack>
+        )}
+
+        {t.DistanceRemainingDisplayStringText && (
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            <RouteIcon fontSize="small" />
+            <Typography variant="body1">{t.DistanceRemainingDisplayStringText}</Typography>
+          </Stack>
+        )}
+
+        {t.DestinationName && (
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{
+              alignItems: 'center',
+              minWidth: 0
+            }}
+          >
+            <PlaceIcon fontSize="small" />
+            <Typography variant="body1" noWrap sx={{ minWidth: 0 }}>
+              {t.DestinationName}
+            </Typography>
+          </Stack>
+        )}
+
+        {t.SourceName && (
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{
+              alignItems: 'center',
+              minWidth: 0
+            }}
+          >
+            <AppsIcon fontSize="small" />
+            <Typography variant="body2" sx={{ opacity: 0.85 }} noWrap>
+              {t.SourceName}
+            </Typography>
+          </Stack>
+        )}
+      </Stack>
     </Box>
   )
 }

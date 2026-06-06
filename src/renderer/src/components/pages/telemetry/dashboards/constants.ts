@@ -35,8 +35,24 @@ export const READOUT_DX = 34
 export const NAV_X = CENTER_X
 export const NAV_Y = 460
 
-// Oil-temp (left) + fuel/charge (right) sit in one bottom bar, pushed to the sides so the centre
-// column stays free for the cluster stream (only the mini-nav lives in the inner area).
+export const NAV_DIVIDER_Y = 532
+
+// Full-map cluster dash. `ring` is the soft elliptical backdrop behind each gauge (see SoftPanel),
+// centred on the gauge box so the left/right shadows are mirror-symmetric and the 0/P readout stays
+// legible over the map. soft/end = % radius where the glow is still solid / fully faded.
+export const VIGNETTE = {
+  bandTopPct: 9,
+  bandBottomPct: 10,
+  bandAlpha: 0.55,
+  ring: {
+    alpha: 0.85,
+    soft: 44,
+    end: 84,
+    shape: 'ellipse 58% 56%'
+  }
+}
+
+// Oil-temp (left) + fuel/charge (right) sit in one bottom bar
 export const GAUGE_BAR_TOP = 672
 export const GAUGE_BAR_W = 1000
 export const FUEL_SEGMENTS = 8

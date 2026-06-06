@@ -1,13 +1,13 @@
 import { registerIpcHandle } from '@main/ipc/register'
 import { Microphone } from '@main/services/audio'
 import { BrowserWindow } from 'electron'
-import { type Device, usb } from 'usb'
+import { usb } from 'usb'
 import { isAccessoryMode, probeAaCapable } from '../projection/driver/aa/stack/aoap/handshake.js'
 import { ProjectionService } from '../projection/services/ProjectionService'
 import { isCarlinkitDongle } from './constants'
 import { findDongle } from './helpers'
 
-const getDeviceList = () => usb.getDeviceList()
+type Device = USBDevice
 
 const SKIP_PROBE_DEVICE_CLASSES = new Set<number>([
   0x03, // HID (keyboard, mouse, gamepad)
@@ -29,6 +29,8 @@ export class USBService {
   private stopped = false
   private resetInProgress = false
   private shutdownInProgress = false
+  private _onConnect: ((ev: USBConnectionEvent) => void) | null = null
+  private _onDisconnect: ((ev: USBConnectionEvent) => void) | null = null
 
   public beginShutdown(): void {
     this.shutdownInProgress = true
@@ -38,21 +40,23 @@ export class USBService {
     if (this.stopped) return
     this.stopped = true
     try {
-      usb.removeAllListeners('attach')
+      if (this._onConnect) usb.removeEventListener('connect', this._onConnect)
+      if (this._onDisconnect) usb.removeEventListener('disconnect', this._onDisconnect)
     } catch {}
-    try {
-      usb.removeAllListeners('detach')
-    } catch {}
+    this._onConnect = null
+    this._onDisconnect = null
   }
 
   constructor(private projection: ProjectionService) {
     this.registerIpcHandlers()
     this.listenToUsbEvents()
-    try {
-      if (process.platform !== 'darwin') usb.unrefHotplugEvents()
-    } catch {}
+    void this._init().catch((err) => {
+      console.debug('[USBService] startup init threw', err)
+    })
+  }
 
-    const device = getDeviceList().find(this.isDongle)
+  private async _init(): Promise<void> {
+    const device = (await usb.getDevices()).find((d) => this.isDongle(d))
     if (device) {
       console.log('[USBService] Dongle was already connected on startup')
       this.lastDongleState = true
@@ -60,28 +64,27 @@ export class USBService {
       this.notifyDeviceChange(device, true)
     }
 
-    void this._scanForExistingPhone().catch((err) => {
-      console.debug('[USBService] startup phone scan threw', err)
-    })
+    await this._scanForExistingPhone()
   }
 
   private async _scanForExistingPhone(): Promise<void> {
     if (this.stopped || this.lastPhoneState) return
 
+    const allDevices = await usb.getDevices()
+
     // Normal shutdown path resets the phone out of accessory mode
-    const accessory = getDeviceList().find((d) => isAccessoryMode(d))
+    const accessory = allDevices.find((d) => isAccessoryMode(d))
     if (accessory) {
       console.log('[USBService] Phone already in accessory mode at startup — claiming directly')
       this.markPhoneAttached(accessory)
       return
     }
 
-    const allDevices = getDeviceList()
     console.log(
       `[USBService] startup scan: ${allDevices.length} USB devices on bus: ${allDevices
         .map(
           (d) =>
-            `vid=0x${d.deviceDescriptor?.idVendor?.toString(16) ?? '??'} pid=0x${d.deviceDescriptor?.idProduct?.toString(16) ?? '??'} cls=0x${d.deviceDescriptor?.bDeviceClass?.toString(16) ?? '??'}`
+            `vid=0x${d.vendorId?.toString(16) ?? '??'} pid=0x${d.productId?.toString(16) ?? '??'} cls=0x${d.deviceClass?.toString(16) ?? '??'}`
         )
         .join(', ')}`
     )
@@ -90,10 +93,12 @@ export class USBService {
     console.log(`[USBService] Probing ${candidates.length} startup USB candidate(s) for AOAP`)
     for (const dev of candidates) {
       if (this.stopped || this.lastPhoneState) return
-      const vid = dev.deviceDescriptor.idVendor
-      const pid = dev.deviceDescriptor.idProduct
+      const vid = dev.vendorId
+      const pid = dev.productId
       try {
-        const proto = await probeAaCapable(dev)
+        // resetOnBusy: if a previous run left the interface exclusively held, force a clean
+        // re-enumeration so the hotplug path re-probes a fresh handle (self-healing, no replug).
+        const proto = await probeAaCapable(dev, { resetOnBusy: true })
         if (proto < 1) {
           console.log(
             `[USBService] startup probe: vid=0x${vid.toString(16)} pid=0x${pid.toString(16)} returned proto=${proto} — not AOAP-capable (phone locked / no USB confirmation?)`
@@ -121,12 +126,12 @@ export class USBService {
   }
 
   private listenToUsbEvents() {
-    usb.on('attach', (device) => {
+    const onConnect = (ev: USBConnectionEvent): void => {
+      const device = ev.device as Device
       if (this.stopped || this.resetInProgress || this.shutdownInProgress) return
       const isDongleDev = this.isDongle(device)
-      const dd = device.deviceDescriptor
       console.log(
-        `[USBService] attach vid=0x${dd?.idVendor?.toString(16) ?? '??'} pid=0x${dd?.idProduct?.toString(16) ?? '??'} cls=0x${dd?.bDeviceClass?.toString(16) ?? '??'} → dongle=${isDongleDev} accessory=${isAccessoryMode(device)} phoneCandidate=${this.isPhoneCandidate(device)} lastPhone=${this.lastPhoneState}`
+        `[USBService] attach vid=0x${device.vendorId?.toString(16) ?? '??'} pid=0x${device.productId?.toString(16) ?? '??'} cls=0x${device.deviceClass?.toString(16) ?? '??'} → dongle=${isDongleDev} accessory=${isAccessoryMode(device)} phoneCandidate=${this.isPhoneCandidate(device)} lastPhone=${this.lastPhoneState}`
       )
       if (!(isDongleDev && this.shouldSuppressDongleEvents())) {
         this.broadcastGenericUsbEvent({ type: 'attach', device })
@@ -155,10 +160,13 @@ export class USBService {
           this.projection.markPhoneConnected(true, device)
           return
         }
-        if (!this.lastPhoneState) {
-          console.log('[USBService] Phone connected (accessory mode)')
-          this.markPhoneAttached(device)
+        if (this.lastPhoneState) {
+          // Stale handle from a re-enumerated device (e.g. settings-restart reset()) — re-claim fresh.
+          console.log('[USBService] Accessory re-attach outside reenum window — fresh device')
+          this.markPhoneDetached(device)
         }
+        console.log('[USBService] Phone connected (accessory mode)')
+        this.markPhoneAttached(device)
         return
       }
 
@@ -170,15 +178,16 @@ export class USBService {
           this.markPhoneDetached(device)
         }
         console.log(
-          `[USBService] phone candidate detected — running AOAP probe vid=0x${dd?.idVendor?.toString(16)} pid=0x${dd?.idProduct?.toString(16)}`
+          `[USBService] phone candidate detected — running AOAP probe vid=0x${device.vendorId?.toString(16)} pid=0x${device.productId?.toString(16)}`
         )
         this.tryProbePhone(device).catch((err) => {
           console.log('[USBService] AOAP probe threw', err)
         })
       }
-    })
+    }
 
-    usb.on('detach', (device) => {
+    const onDisconnect = (ev: USBConnectionEvent): void => {
+      const device = ev.device as Device
       if (this.stopped || this.resetInProgress || this.shutdownInProgress) return
       const isDongleDev = this.isDongle(device)
       if (!(isDongleDev && this.shouldSuppressDongleEvents())) {
@@ -203,7 +212,12 @@ export class USBService {
         console.log('[USBService] Phone disconnected')
         this.markPhoneDetached(device)
       }
-    })
+    }
+
+    this._onConnect = onConnect
+    this._onDisconnect = onDisconnect
+    usb.addEventListener('connect', onConnect)
+    usb.addEventListener('disconnect', onDisconnect)
   }
 
   private isPhoneSuspendWindow(): boolean {
@@ -226,7 +240,7 @@ export class USBService {
 
   private isPhoneCandidate(device: Device): boolean {
     if (this.isDongle(device)) return false
-    const cls = device.deviceDescriptor?.bDeviceClass
+    const cls = device.deviceClass
     if (cls === undefined) return false
     if (SKIP_PROBE_DEVICE_CLASSES.has(cls)) return false
     return cls === 0x00 || cls === 0xff
@@ -239,8 +253,8 @@ export class USBService {
     if (proto < 1) return
     if (this.stopped || this.lastPhoneState) return
 
-    const vid = device.deviceDescriptor.idVendor
-    const pid = device.deviceDescriptor.idProduct
+    const vid = device.vendorId
+    const pid = device.productId
     console.log(
       `[USBService] AOAP-capable phone detected (vid=0x${vid.toString(16)}, pid=0x${pid.toString(16)}, proto=${proto})`
     )
@@ -250,14 +264,12 @@ export class USBService {
   private isSamePhoneDevice(device: Device): boolean {
     const cur = this.connectedPhoneDevice
     if (!cur) return false
-    const a = device.deviceDescriptor
-    const b = cur.deviceDescriptor
-    return a.idVendor === b.idVendor && a.idProduct === b.idProduct
+    return device.vendorId === cur.vendorId && device.productId === cur.productId
   }
 
   private notifyDeviceChange(device: Device, connected: boolean): void {
-    const vendorId = device.deviceDescriptor.idVendor
-    const productId = device.deviceDescriptor.idProduct
+    const vendorId = device.vendorId
+    const productId = device.productId
     const payload = {
       type: connected ? 'plugged' : 'unplugged',
       device: { vendorId, productId, deviceName: '' }
@@ -268,8 +280,8 @@ export class USBService {
   }
 
   private broadcastGenericUsbEvent(event: { type: 'attach' | 'detach'; device: Device }) {
-    const vendorId = event.device.deviceDescriptor.idVendor
-    const productId = event.device.deviceDescriptor.idProduct
+    const vendorId = event.device.vendorId
+    const productId = event.device.productId
     const payload = {
       type: event.type,
       device: { vendorId, productId, deviceName: '' }
@@ -300,8 +312,8 @@ export class USBService {
       if (this.shutdownInProgress || this.resetInProgress) {
         return false
       }
-      const devices = getDeviceList()
-      return devices.some(this.isDongle)
+      const devices = await usb.getDevices()
+      return devices.some((d) => this.isDongle(d))
     })
 
     registerIpcHandle('projection:usbDevice', async () => {
@@ -314,8 +326,8 @@ export class USBService {
         }
       }
 
-      const devices = getDeviceList()
-      const detectDev = devices.find(this.isDongle)
+      const devices = await usb.getDevices()
+      const detectDev = devices.find((d) => this.isDongle(d))
       if (!detectDev) {
         return {
           device: false,
@@ -354,14 +366,14 @@ export class USBService {
       }
 
       if (this.lastDongleState) {
-        const devices = getDeviceList()
-        const dev = devices.find(this.isDongle)
+        const devices = await usb.getDevices()
+        const dev = devices.find((d) => this.isDongle(d))
         if (dev) {
           return {
             type: 'plugged',
             device: {
-              vendorId: dev.deviceDescriptor.idVendor,
-              productId: dev.deviceDescriptor.idProduct,
+              vendorId: dev.vendorId,
+              productId: dev.productId,
               deviceName: ''
             }
           }
@@ -374,8 +386,8 @@ export class USBService {
         return {
           type: 'plugged',
           device: {
-            vendorId: dev.deviceDescriptor.idVendor,
-            productId: dev.deviceDescriptor.idProduct,
+            vendorId: dev.vendorId,
+            productId: dev.productId,
             deviceName: ''
           }
         }
@@ -388,13 +400,12 @@ export class USBService {
   }
 
   private getDongleUsbBasics(device: Device) {
-    const usbFwVersion = device.deviceDescriptor.bcdDevice
-      ? `${device.deviceDescriptor.bcdDevice >> 8}.${(device.deviceDescriptor.bcdDevice & 0xff)
-          .toString()
-          .padStart(2, '0')}`
-      : 'Unknown'
-    const vendorId = device.deviceDescriptor.idVendor
-    const productId = device.deviceDescriptor.idProduct
+    const major = device.deviceVersionMajor
+    const lowByte = (device.deviceVersionMinor << 4) | device.deviceVersionSubminor
+    const bcd = (major << 8) | lowByte
+    const usbFwVersion = bcd ? `${major}.${lowByte.toString().padStart(2, '0')}` : 'Unknown'
+    const vendorId = device.vendorId
+    const productId = device.productId
 
     return {
       vendorId,
@@ -403,10 +414,8 @@ export class USBService {
     }
   }
 
-  private isDongle(
-    device: Partial<Device> & { deviceDescriptor?: { idVendor: number; idProduct: number } }
-  ) {
-    return isCarlinkitDongle(device.deviceDescriptor?.idVendor, device.deviceDescriptor?.idProduct)
+  private isDongle(device: Pick<Device, 'vendorId' | 'productId'>) {
+    return isCarlinkitDongle(device.vendorId, device.productId)
   }
 
   private notifyReset(type: 'usb-reset-start' | 'usb-reset-done', ok: boolean) {
@@ -431,7 +440,7 @@ export class USBService {
 
       if (this.shutdownInProgress) return false
 
-      const dongle = findDongle()
+      const dongle = await findDongle()
       if (!dongle) {
         console.warn('[USB] Dongle not found')
         this.lastDongleState = false
@@ -483,10 +492,10 @@ export class USBService {
   }
 
   private async resetDongle(dongle: Device): Promise<boolean> {
-    let opened: boolean
+    let opened = false
 
     try {
-      dongle.open()
+      await dongle.open()
       opened = true
     } catch (openErr) {
       console.warn('[USB] Could not open device for reset:', openErr)
@@ -494,40 +503,22 @@ export class USBService {
     }
 
     try {
-      await new Promise<void>((resolve, reject) => {
-        dongle.reset((err?: unknown) => {
-          if (!err) {
-            console.log('[USB] reset ok')
-            resolve()
-            return
-          }
-
-          const msg =
-            err instanceof Error ? err.message : typeof err === 'string' ? err : String(err)
-
-          if (
-            msg.includes('LIBUSB_ERROR_NOT_FOUND') ||
-            msg.includes('LIBUSB_ERROR_NO_DEVICE') ||
-            msg.includes('LIBUSB_TRANSFER_NO_DEVICE')
-          ) {
-            console.warn('[USB] reset triggered disconnect – treating as success')
-            resolve()
-            return
-          }
-
-          console.error('[USB] reset error', err)
-          reject(new Error('Reset failed'))
-        })
-      })
-
+      await dongle.reset()
+      console.log('[USB] reset ok')
       return true
-    } catch (e) {
-      console.error('[USB] Exception during resetDongle()', e)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : typeof err === 'string' ? err : String(err)
+      // A reset that drops the device off the bus is the intended outcome.
+      if (/not[\s_-]?found|no[\s_-]?device|disconnect/i.test(msg)) {
+        console.warn('[USB] reset triggered disconnect – treating as success')
+        return true
+      }
+      console.error('[USB] reset error', err)
       return false
     } finally {
       if (opened) {
         try {
-          dongle.close()
+          await dongle.close()
         } catch (e) {
           console.warn('[USB] Failed to close dongle after reset:', e)
         }

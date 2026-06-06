@@ -17,7 +17,6 @@ import { getWindowRole } from './utils/windowRole'
 const START_PAGE_ROUTE: Record<string, string> = {
   home: ROUTES.HOME,
   media: ROUTES.MEDIA,
-  cluster: ROUTES.CLUSTER,
   camera: ROUTES.CAMERA,
   settings: ROUTES.SETTINGS,
   telemetry: ROUTES.TELEMETRY
@@ -38,6 +37,7 @@ function AppInner() {
   const settings = useLiviStore((s) => s.settings)
   const saveSettings = useLiviStore((s) => s.saveSettings)
   const setCameraFound = useStatusStore((s) => s.setCameraFound)
+  const clusterDashActive = useStatusStore((s) => s.clusterDashActive)
 
   const navRef = useRef<HTMLDivElement | null>(null)
   const mainRef = useRef<HTMLDivElement | null>(null)
@@ -307,8 +307,14 @@ function AppInner() {
           setNavVideoOverlayActive={setNavVideoOverlayActive}
         />
       )}
-      {/* Cluster (Maps tab) lives at the App level*/}
-      {settings && <Cluster visible={location.pathname === ROUTES.CLUSTER} />}
+      {/* Single cluster overlay, owns the plane reveal. Driven by the guidance auto-switch
+          route (/cluster) OR by a telemetry dash that hosts the cluster (clusterDashActive).*/}
+      {settings && (
+        <Cluster
+          visible={location.pathname === ROUTES.CLUSTER || clusterDashActive}
+          showLoadingPlaceholder={!clusterDashActive}
+        />
+      )}
       <Box sx={{ width: '100%', height: '100%' }}>{element}</Box>
     </AppLayout>
   )

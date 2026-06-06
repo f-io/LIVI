@@ -16,7 +16,7 @@ import {
 import { app, WebContents } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { type Device, usb, WebUSBDevice } from 'usb'
+import { usb } from 'usb'
 import {
   type AudioDeviceMonitorHandle,
   startAudioDeviceMonitor
@@ -77,6 +77,8 @@ import { normalizeNavigationPayload } from './utils/normalizeNavigation'
 import { readMediaFile } from './utils/readMediaFile'
 import { readNavigationFile } from './utils/readNavigationFile'
 
+type Device = USBDevice
+
 type VolumeConfig = {
   audioVolume?: number
   navVolume?: number
@@ -122,7 +124,7 @@ export class ProjectionService {
   private hevcSupported = false
   private vp9Supported = false
   private av1Supported = false
-  private webUsbDevice: WebUSBDevice | null = null
+  private webUsbDevice: Device | null = null
   private webContents: WebContents | null = null
   private config: Config = DEFAULT_CONFIG as Config
   private pairTimeout: NodeJS.Timeout | null = null
@@ -846,7 +848,7 @@ export class ProjectionService {
     this.gstVideo?.setVisible(visible)
   }
 
-  // Cluster tab visibility (cluster:request) drives the main-screen plane only
+  // Cluster plane visibility (cluster:request) drives the main-screen plane only
   public setClusterVisible(visible: boolean): void {
     this.clusterVisible = visible
     this.gstVideoClusters.get('main')?.setVisible(visible)
@@ -985,6 +987,11 @@ export class ProjectionService {
         this.lastClusterVideoHeight = undefined
       },
       getLastClusterCodec: () => this.lastClusterCodec,
+      getLastClusterVideoSize: () => {
+        const w = this.lastClusterVideoWidth ?? 0
+        const h = this.lastClusterVideoHeight ?? 0
+        return w > 0 && h > 0 ? { width: w, height: h } : null
+      },
       getClusterTargetWebContents: () => this.getClusterTargetWebContents(),
       uploadIcons: () => this.uploadIcons(),
       getDevToolsUrlCandidates: () => this.getDevToolsUrlCandidates(),
@@ -1270,8 +1277,9 @@ export class ProjectionService {
 
   // Restart the session to apply a config change that needs fresh negotiation
   public async restartSession(): Promise<void> {
-    const wasWired = this.started && this.drivers.getAa()?.isWiredMode() === true
-    const wasWireless = this.started && this.drivers.getAa()?.isWiredMode() === false
+    const aa = this.drivers.getAa()
+    const wasWired = this.started && aa?.isWiredMode() === true
+    const wasWireless = this.started && aa?.isWiredMode() === false
 
     try {
       await this.stop()
@@ -1279,7 +1287,9 @@ export class ProjectionService {
       console.warn('[ProjectionService] restartSession: stop threw (ignored)', e)
     }
 
-    if (wasWired) return
+    if (wasWired) {
+      return
+    }
 
     if (wasWireless) {
       await this.bounceAaBtConnections()
@@ -1707,9 +1717,8 @@ export class ProjectionService {
           aaDriver.setWiredDevice(wiredDevice)
 
           if (wiredDevice) {
-            const d = wiredDevice.deviceDescriptor
             console.log(
-              `[ProjectionService] wired AA bring-up with device vid=0x${d.idVendor.toString(16)} pid=0x${d.idProduct.toString(16)}`
+              `[ProjectionService] wired AA bring-up with device vid=0x${wiredDevice.vendorId.toString(16)} pid=0x${wiredDevice.productId.toString(16)}`
             )
           } else {
             console.log('[ProjectionService] wireless AA bring-up (no wired device)')
@@ -1737,17 +1746,16 @@ export class ProjectionService {
         }
 
         // Dongle (USB CPC200) path.
-        const device = usb
-          .getDeviceList()
-          .find((d) => isCarlinkitDongle(d.deviceDescriptor.idVendor, d.deviceDescriptor.idProduct))
+        const device = (await usb.getDevices()).find((d) =>
+          isCarlinkitDongle(d.vendorId, d.productId)
+        )
         if (!device) return
 
         try {
-          const webUsbDevice = await WebUSBDevice.createInstance(device)
-          await webUsbDevice.open()
-          this.webUsbDevice = webUsbDevice
+          await device.open()
+          this.webUsbDevice = device
 
-          await this.dongleDriver.initialise(asDomUSBDevice(webUsbDevice))
+          await this.dongleDriver.initialise(asDomUSBDevice(device))
 
           if (this.pendingStartupConnectTarget) {
             this.dongleDriver.setPendingStartupConnectTarget(this.pendingStartupConnectTarget)
@@ -1762,7 +1770,8 @@ export class ProjectionService {
           }, 15000)
 
           this.started = true
-        } catch {
+        } catch (e) {
+          console.warn('[ProjectionService] dongle bring-up failed', e)
           try {
             await this.webUsbDevice?.close()
           } catch {}
@@ -1823,14 +1832,6 @@ export class ProjectionService {
       try {
         await this.disconnectPhone()
       } catch {}
-
-      try {
-        if (process.platform === 'darwin' && this.webUsbDevice) {
-          await this.webUsbDevice.reset()
-        }
-      } catch (e) {
-        console.warn('[ProjectionService] webUsbDevice.reset() failed (ignored)', e)
-      }
 
       const wasDongleSession = this.driver instanceof DongleDriver
 
@@ -2027,11 +2028,11 @@ export class ProjectionService {
   }
 
   // Cluster video routing: list of webContents that should receive cluster
-  // video chunks + resolution events, derived from settings.cluster.{main,
-  // dash, aux}. Falls back to the bound main webContents when settings are
-  // missing so the path stays compatible with existing tests / startup.
+  // video chunks + resolution events, derived from the cluster dashboards
+  // (dash3/dash4) per screen. Falls back to the bound main webContents when
+  // settings are missing so the path stays compatible with tests / startup.
   private getClusterTargetWebContents(): WebContents[] {
-    const cfg = this.config?.cluster ?? { main: true, dash: false, aux: false }
+    const screens = clusterTargetScreens(this.config)
     const isAlive = (wc: WebContents | null | undefined): wc is WebContents => {
       if (!wc) return false
       try {
@@ -2041,12 +2042,14 @@ export class ProjectionService {
       }
     }
     const out: WebContents[] = []
-    if (cfg.main && isAlive(this.webContents)) out.push(this.webContents as WebContents)
-    if (cfg.dash) {
+    if (screens.includes('main') && isAlive(this.webContents)) {
+      out.push(this.webContents as WebContents)
+    }
+    if (screens.includes('dash')) {
       const w = getSecondaryWindow('dash')
       if (w && !w.isDestroyed() && isAlive(w.webContents)) out.push(w.webContents)
     }
-    if (cfg.aux) {
+    if (screens.includes('aux')) {
       const w = getSecondaryWindow('aux')
       if (w && !w.isDestroyed() && isAlive(w.webContents)) out.push(w.webContents)
     }

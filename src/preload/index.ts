@@ -22,8 +22,8 @@ type ChunkHandler = (payload: unknown) => void
 let audioChunkQueue: unknown[] = []
 let audioChunkHandler: ChunkHandler | null = null
 
-let clusterResolutionQueue: unknown[] = []
-let clusterResolutionHandler: ChunkHandler | null = null
+let lastClusterResolution: unknown = null
+let clusterResolutionHandlers: ChunkHandler[] = []
 
 type TelemetryHandler = (payload: unknown) => void
 let telemetryQueue: unknown[] = []
@@ -42,8 +42,8 @@ ipcRenderer.on('projection-audio-chunk', (_event, payload: unknown) => {
 })
 
 ipcRenderer.on('cluster-video-resolution', (_event, payload: unknown) => {
-  if (clusterResolutionHandler) clusterResolutionHandler(payload)
-  else clusterResolutionQueue.push(payload)
+  lastClusterResolution = payload
+  for (const h of clusterResolutionHandlers) h(payload)
 })
 
 ipcRenderer.on('telemetry:update', (_event, payload: unknown) => {
@@ -200,10 +200,17 @@ const api = {
     },
     requestCluster: (enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> =>
       ipcRenderer.invoke('cluster:request', enabled),
-    onClusterResolution: (handler: ChunkHandler): void => {
-      clusterResolutionHandler = handler
-      clusterResolutionQueue.forEach((chunk) => handler(chunk))
-      clusterResolutionQueue = []
+    // macOS-only: nudge the window a pixel to force a surface repaint, clearing the
+    // transparent-window stale-paint that otherwise hides the cluster plane until a manual resize.
+    clusterRepaintNudge: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('cluster:repaint-nudge'),
+    onClusterResolution: (handler: ChunkHandler): (() => void) => {
+      clusterResolutionHandlers.push(handler)
+      // replay the latest so a late subscriber immediately knows the stream is live
+      if (lastClusterResolution != null) handler(lastClusterResolution)
+      return () => {
+        clusterResolutionHandlers = clusterResolutionHandlers.filter((h) => h !== handler)
+      }
     },
     onTelemetry: (handler: (payload: unknown) => void): void => {
       telemetryHandlers.push(handler)

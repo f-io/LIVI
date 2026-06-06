@@ -309,33 +309,6 @@ export const generalSchema: SettingsNode<Config> = {
       children: [
         {
           type: 'route',
-          label: 'Cluster Stream',
-          labelKey: 'settings.clusterStream',
-          route: 'cluster',
-          path: '',
-          children: [
-            {
-              type: 'checkbox',
-              label: 'Main',
-              labelKey: 'settings.mainScreen',
-              path: 'cluster.main'
-            },
-            {
-              type: 'checkbox',
-              label: 'Dash',
-              labelKey: 'settings.dashScreen',
-              path: 'cluster.dash'
-            },
-            {
-              type: 'checkbox',
-              label: 'Aux',
-              labelKey: 'settings.auxScreen',
-              path: 'cluster.aux'
-            }
-          ]
-        },
-        {
-          type: 'route',
           label: 'Dashboards',
           labelKey: 'settings.telemetryDashboards',
           route: 'dashboards',
@@ -759,7 +732,6 @@ export const generalSchema: SettingsNode<Config> = {
       displayValue: true,
       options: [
         { label: 'Home', labelKey: 'settings.startPageHome', value: 'home' },
-        { label: 'Cluster Stream', labelKey: 'settings.startPageCluster', value: 'cluster' },
         { label: 'Telemetry', labelKey: 'settings.startPageTelemetry', value: 'telemetry' },
         { label: 'Media', labelKey: 'settings.startPageMedia', value: 'media' },
         { label: 'Camera', labelKey: 'settings.startPageCamera', value: 'camera' },

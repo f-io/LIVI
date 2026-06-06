@@ -18,6 +18,7 @@ function freshHost() {
     setClusterVisible: jest.fn(),
     resetLastClusterVideoSize: jest.fn(),
     getLastClusterCodec: jest.fn(() => 'h264' as 'h264' | null),
+    getLastClusterVideoSize: jest.fn(() => null as { width: number; height: number } | null),
     getClusterTargetWebContents: jest.fn(() => []),
     send: jest.fn(async () => true)
   }

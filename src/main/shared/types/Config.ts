@@ -111,8 +111,7 @@ export type Config = {
   projectionSafeAreaRight: number
   projectionSafeAreaDrawOutside: boolean
 
-  // Cluster window
-  cluster?: WindowAssignment
+  // Cluster stream (advertised when the cluster dashboards dash3/dash4 are enabled )
   clusterWidth: number
   clusterHeight: number
   clusterFps: number

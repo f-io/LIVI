@@ -1,4 +1,3 @@
-import type { Device } from 'usb'
 import {
   type ArbiterDeps,
   type Candidate,
@@ -9,6 +8,8 @@ import {
   type Transport,
   type TransportSnapshot
 } from './types'
+
+type Device = USBDevice
 
 const DONGLE_DETACH_DEBOUNCE_MS = 4_000
 const PHONE_DETACH_DEBOUNCE_MS = 1_000

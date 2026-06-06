@@ -1,14 +1,25 @@
 import { render, screen } from '@testing-library/react'
-import { Dash2 } from '../Dash2'
+import type { ReactNode } from 'react'
 
-jest.mock('../../../components/DashPlaceholder', () => ({
-  DashPlaceholder: ({ title }: { title: string }) => <div>{title}</div>
+jest.mock('../../dash1/NavMiniCenter', () => ({
+  NavMiniCenter: () => <div>MiniNav</div>
 }))
 
-describe('Dash2', () => {
-  test('renders DashPlaceholder with Dash 2 title', () => {
-    render(<Dash2 />)
+jest.mock('../../dash1/DashFrame', () => ({
+  DashFrame: ({ backdropMask, children }: { backdropMask?: string; children?: ReactNode }) => (
+    <div>
+      <span>mask:{backdropMask ? 'yes' : 'no'}</span>
+      <span>{children}</span>
+    </div>
+  )
+}))
 
-    expect(screen.getByText('Dash 2')).toBeInTheDocument()
+import { Dash2 } from '../Dash2'
+
+describe('Dash2', () => {
+  test('renders the mini-nav, no cluster cut-out', () => {
+    render(<Dash2 />)
+    expect(screen.getByText('mask:no')).toBeInTheDocument()
+    expect(screen.getByText('MiniNav')).toBeInTheDocument()
   })
 })

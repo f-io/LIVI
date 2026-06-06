@@ -93,12 +93,11 @@ export const DEFAULT_CONFIG: Config = {
   auxScreenBounds: { x: 0, y: 0, width: 0, height: 0 },
   dashboards: {
     dash1: { main: true, dash: false, aux: false, pos: 1 },
-    dash2: { main: false, dash: false, aux: false, pos: 2 },
-    dash3: { main: false, dash: false, aux: false, pos: 3 },
+    dash2: { main: true, dash: false, aux: false, pos: 2 },
+    dash3: { main: true, dash: false, aux: false, pos: 3 },
     dash4: { main: true, dash: false, aux: false, pos: 4 }
   },
   media: { main: true, dash: false, aux: false },
-  cluster: { main: false, dash: false, aux: false },
   bindings: DEFAULT_BINDINGS,
   dongleIcon120: '',
   dongleIcon180: '',

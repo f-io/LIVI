@@ -11,16 +11,16 @@ type OutgoingMsg =
 parentPort.on('message', (msg: IncomingMsg) => {
   if (msg !== 'check-dongle') return
 
-  const dongle = findDongle()
+  void findDongle().then((dongle) => {
+    const response: OutgoingMsg = dongle
+      ? {
+          type: 'dongle-status',
+          connected: true,
+          vendorId: dongle.vendorId,
+          productId: dongle.productId
+        }
+      : { type: 'dongle-status', connected: false }
 
-  const response: OutgoingMsg = dongle
-    ? {
-        type: 'dongle-status',
-        connected: true,
-        vendorId: dongle.deviceDescriptor.idVendor,
-        productId: dongle.deviceDescriptor.idProduct
-      }
-    : { type: 'dongle-status', connected: false }
-
-  parentPort!.postMessage(response)
+    parentPort!.postMessage(response)
+  })
 })

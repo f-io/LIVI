@@ -1,11 +1,7 @@
 import { usb } from 'usb'
 import { isCarlinkitDongle } from './constants'
 
-export function findDongle() {
-  return (
-    usb
-      .getDeviceList()
-      .find((d) => isCarlinkitDongle(d.deviceDescriptor.idVendor, d.deviceDescriptor.idProduct)) ??
-    null
-  )
+export async function findDongle() {
+  const devices = await usb.getDevices()
+  return devices.find((d) => isCarlinkitDongle(d.vendorId, d.productId)) ?? null
 }

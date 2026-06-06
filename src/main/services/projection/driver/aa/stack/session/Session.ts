@@ -690,7 +690,7 @@ export class Session extends EventEmitter {
         /* ignore */
       }
       this.close('pre-RUNNING watchdog')
-    }, 5_000)
+    }, 30_000)
   }
 
   // ── Public outbound API (HU → Phone) ─────────────────────────────────────
@@ -948,6 +948,23 @@ export class Session extends EventEmitter {
     } finally {
       if (writeTimer) clearTimeout(writeTimer)
     }
+
+    // Wait for the phone's ByeByeResponse (SHUTDOWN_RESPONSE) before closing
+    await new Promise<void>((resolve) => {
+      let settled = false
+      const finish = (how: string): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(ackTimer)
+        this._control?.removeListener('shutdown-complete', onAck)
+        console.log(`[Session] shutdown ${how}`)
+        resolve()
+      }
+      const onAck = (): void => finish('acked by phone (ByeByeResponse)')
+      const ackTimer = setTimeout(() => finish('fallback timeout (no ByeByeResponse)'), 1_000)
+      this._control?.once('shutdown-complete', onAck)
+    })
+
     this._transition(State.CLOSED, 'hu-initiated shutdown')
     try {
       this._sock.end()

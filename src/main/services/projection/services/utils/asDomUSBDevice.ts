@@ -1,6 +1,4 @@
-import { WebUSBDevice } from 'usb'
-
-export function asDomUSBDevice(dev: WebUSBDevice): USBDevice {
+export function asDomUSBDevice(dev: USBDevice): USBDevice {
   const d = dev as unknown as USBDevice & {
     manufacturerName?: string | null
     productName?: string | null

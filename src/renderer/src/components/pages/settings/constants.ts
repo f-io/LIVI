@@ -55,7 +55,6 @@ export const requiresRestartParams: (keyof Config)[] = [
   'projectionSafeAreaRight',
   'projectionSafeAreaDrawOutside',
 
-  'cluster',
   'clusterWidth',
   'clusterHeight',
   'clusterFps',

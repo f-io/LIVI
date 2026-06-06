@@ -3,7 +3,10 @@ import { Box, Typography, useTheme } from '@mui/material'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useLiviStore, useStatusStore } from '../../../store/store'
 
-type ClusterProps = { visible?: boolean }
+type ClusterProps = {
+  visible?: boolean
+  showLoadingPlaceholder?: boolean
+}
 
 type BoxInfo = { supportFeatures?: unknown }
 
@@ -28,14 +31,14 @@ function parseBoxInfo(raw: unknown): BoxInfo | null {
   return null
 }
 
-export const Cluster: React.FC<ClusterProps> = ({ visible }) => {
+export const Cluster: React.FC<ClusterProps> = ({ visible, showLoadingPlaceholder = true }) => {
   const theme = useTheme()
   const showCluster = visible === true
 
-  const settings = useLiviStore((s) => s.settings)
   const boxInfoRaw = useLiviStore((s) => s.boxInfo)
   const isStreaming = useStatusStore((s) => s.isStreaming)
   const isAaActive = useStatusStore((s) => s.isAaActive)
+  const clusterDashActive = useStatusStore((s) => s.clusterDashActive)
 
   const [rendererError] = useState<string | null>(null)
   const [clusterStreamActive, setClusterStreamActive] = useState(false)
@@ -67,12 +70,7 @@ export const Cluster: React.FC<ClusterProps> = ({ visible }) => {
     return false
   }, [boxInfoRaw, isAaActive])
 
-  const wantCluster =
-    settings?.cluster?.main === true ||
-    settings?.cluster?.dash === true ||
-    settings?.cluster?.aux === true
-
-  // Request the cluster (stream + plane) ONLY while the cluster view is actually shown
+  // Request the cluster (stream + plane) ONLY while the cluster view is actually shown.
   const showClusterRef = useRef(showCluster)
   useEffect(() => {
     showClusterRef.current = showCluster
@@ -80,32 +78,33 @@ export const Cluster: React.FC<ClusterProps> = ({ visible }) => {
 
   useEffect(() => {
     if (!renderReady) return
-    void window.projection.ipc.requestCluster(showCluster && wantCluster).catch(() => {})
-  }, [showCluster, wantCluster, renderReady])
+    void window.projection.ipc.requestCluster(showCluster).catch(() => {})
+  }, [showCluster, renderReady])
 
   useEffect(() => {
     const handler = (_evt: unknown, ...args: unknown[]) => {
       const msg = (args[0] ?? {}) as { type?: string }
       if (msg.type !== 'plugged') return
-      if (!wantCluster || !renderReady) return
+      if (!renderReady) return
       void window.projection.ipc.requestCluster(showClusterRef.current).catch(() => {})
     }
     const unsubscribe = window.projection.ipc.onEvent(handler)
     return unsubscribe
-  }, [renderReady, wantCluster])
+  }, [renderReady])
 
   // Cluster frames negotiated -> the compositor renders the cluster plane
   useEffect(() => {
     const ipc = (window.projection?.ipc ?? {}) as {
-      onClusterResolution?: (cb: (payload: unknown) => void) => void
+      onClusterResolution?: (cb: (payload: unknown) => void) => (() => void) | void
     }
     if (typeof ipc.onClusterResolution !== 'function') return
-    ipc.onClusterResolution((payload: unknown) => {
+    const off = ipc.onClusterResolution((payload: unknown) => {
       const d = payload as { width?: number; height?: number } | undefined
       const w = typeof d?.width === 'number' ? d.width : 0
       const h = typeof d?.height === 'number' ? d.height : 0
       if (w > 0 && h > 0) setClusterStreamActive(true)
     })
+    return typeof off === 'function' ? off : undefined
   }, [])
 
   useEffect(() => {
@@ -118,6 +117,15 @@ export const Cluster: React.FC<ClusterProps> = ({ visible }) => {
     const unsubscribe = window.projection.ipc.onEvent(handler)
     return unsubscribe
   }, [])
+
+  useEffect(() => {
+    if (!clusterStreamActive || !clusterDashActive) return
+    const ipc = window.projection?.ipc as { clusterRepaintNudge?: () => Promise<unknown> }
+    const id = setTimeout(() => {
+      void ipc?.clusterRepaintNudge?.().catch(() => {})
+    }, 120)
+    return () => clearTimeout(id)
+  }, [clusterStreamActive, clusterDashActive])
 
   // The cluster is a video plane below the UI (compositor plane on Linux, NSView on mac).
   useEffect(() => {
@@ -147,7 +155,7 @@ export const Cluster: React.FC<ClusterProps> = ({ visible }) => {
         zIndex: showCluster ? 0 : -1
       }}
     >
-      {!clusterStreamActive && showCluster && (
+      {showLoadingPlaceholder && !clusterStreamActive && showCluster && (
         <Box
           sx={{
             position: 'absolute',

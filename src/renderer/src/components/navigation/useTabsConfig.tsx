@@ -1,7 +1,6 @@
 // Icons
 import CameraOutlinedIcon from '@mui/icons-material/CameraOutlined'
 import CropPortraitOutlinedIcon from '@mui/icons-material/CropPortraitOutlined'
-import MapOutlinedIcon from '@mui/icons-material/MapOutlined'
 import PlayCircleOutlinedIcon from '@mui/icons-material/PlayCircleOutlined'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
 import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined'
@@ -32,15 +31,6 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
     Number(transport.wirelessPhoneDetected)
   const rawShowSwitch = role === 'main' && (detectedCount >= 2 || transport.switchPending)
   const showSwitch = useDelayedHide(rawShowSwitch, 300)
-  const clusterEnabled = useLiviStore(
-    (s) =>
-      s.settings?.cluster?.main === true ||
-      s.settings?.cluster?.dash === true ||
-      s.settings?.cluster?.aux === true
-  )
-  const clusterOnRole = useLiviStore((s) =>
-    role === 'main' ? (s.settings?.cluster?.main ?? true) : (s.settings?.cluster?.[role] ?? false)
-  )
   const cameraOnRole = useLiviStore((s) =>
     role === 'main' ? (s.settings?.camera?.main ?? true) : (s.settings?.camera?.[role] ?? false)
   )
@@ -56,15 +46,6 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
   // Secondary windows only show tabs that are routed to that role
   if (role !== 'main') {
     return [
-      ...(clusterEnabled && clusterOnRole
-        ? [
-            {
-              label: 'Cluster Stream',
-              path: ROUTES.CLUSTER,
-              icon: <MapOutlinedIcon sx={{ fontSize: iconFontSize }} />
-            }
-          ]
-        : []),
       ...(telemetryOnRole
         ? [
             {
@@ -123,15 +104,6 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
         )
       })()
     },
-    ...(clusterEnabled && clusterOnRole
-      ? [
-          {
-            label: 'Cluster Stream',
-            path: ROUTES.CLUSTER,
-            icon: <MapOutlinedIcon sx={{ fontSize: iconFontSize }} />
-          }
-        ]
-      : []),
     ...(telemetryOnRole
       ? [
           {

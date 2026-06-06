@@ -10,7 +10,4 @@ allowBuilds:
   esbuild: true
   protobufjs: true
   unrs-resolver: true
-  usb: true
 minimumReleaseAge: 0
-patchedDependencies:
-  usb@2.17.0: patches/usb@2.17.0.patch

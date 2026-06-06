@@ -17,6 +17,7 @@ extern "C" void livi_remove_view(void* view);
 extern "C" void livi_set_view_hidden(void* view, bool hidden);
 extern "C" void livi_set_content_region(void* view, void* sink, double cropL,
     double cropT, double visW, double visH, double tierW, double tierH);
+extern "C" void livi_set_backdrop(guintptr parent, double r, double g, double b);
 #else
 static guintptr livi_attach_view(guintptr parent, void** outView) {
   *outView = nullptr;
@@ -26,6 +27,7 @@ static void livi_remove_view(void*) {}
 static void livi_set_view_hidden(void*, bool) {}
 static void livi_set_content_region(void*, void*, double, double, double, double,
     double, double) {}
+static void livi_set_backdrop(guintptr, double, double, double) {}
 #endif
 
 struct Player {
@@ -518,6 +520,33 @@ static napi_value SetContentRegion(napi_env env, napi_callback_info info) {
   return undef;
 }
 
+// setBackdrop(windowHandle: Buffer, r, g, b)  -- r/g/b in 0..1. Paints the window's content
+// view (under the video subviews) so the theme colour shows where the UI is transparent and no
+// video covers, instead of the desktop.
+static napi_value SetBackdrop(napi_env env, napi_callback_info info) {
+  size_t argc = 4;
+  napi_value argv[4];
+  napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+  guintptr handle = 0;
+  if (argc >= 1) {
+    void* data = nullptr;
+    size_t len = 0;
+    if (napi_get_buffer_info(env, argv[0], &data, &len) == napi_ok && data &&
+        len >= sizeof(void*)) {
+      memcpy(&handle, data, sizeof(void*));
+    }
+  }
+  auto d = [&](size_t idx) -> double {
+    double v = 0;
+    if (argc > idx) napi_get_value_double(env, argv[idx], &v);
+    return v;
+  };
+  if (handle) livi_set_backdrop(handle, d(1), d(2), d(3));
+  napi_value undef;
+  napi_get_undefined(env, &undef);
+  return undef;
+}
+
 static napi_value Init(napi_env env, napi_value exports) {
   napi_value fn;
   napi_create_function(env, "version", NAPI_AUTO_LENGTH, Version, NULL, &fn);
@@ -534,6 +563,8 @@ static napi_value Init(napi_env env, napi_value exports) {
   napi_set_named_property(env, exports, "setVisible", fn);
   napi_create_function(env, "setContentRegion", NAPI_AUTO_LENGTH, SetContentRegion, NULL, &fn);
   napi_set_named_property(env, exports, "setContentRegion", fn);
+  napi_create_function(env, "setBackdrop", NAPI_AUTO_LENGTH, SetBackdrop, NULL, &fn);
+  napi_set_named_property(env, exports, "setBackdrop", fn);
   napi_create_function(env, "stop", NAPI_AUTO_LENGTH, Stop, NULL, &fn);
   napi_set_named_property(env, exports, "stop", fn);
   return exports;

@@ -168,7 +168,7 @@ declare global {
         offAudioChunk(handler: (payload: unknown) => void): void
 
         requestCluster(enabled: boolean): Promise<{ ok: boolean; enabled: boolean }>
-        onClusterResolution(handler: (payload: unknown) => void): void
+        onClusterResolution(handler: (payload: unknown) => void): () => void
 
         connectBluetoothPairedDevice(mac: string): Promise<{ ok: boolean }>
 

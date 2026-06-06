@@ -42,6 +42,7 @@ import EventEmitter from 'events'
 
 const CONFIG_NUMBER = 1
 const MAX_ERROR_COUNT = 5
+const READ_TIMEOUT_MS = 1_000
 
 type UnknownRecord = Record<string, unknown>
 
@@ -221,13 +222,7 @@ export class DongleDriver extends EventEmitter {
     }
   }
 
-  /**
-   * NOTE: This driver talks to the node-usb "WebUSB" compatibility layer.
-   * It's still node-usb/libusb, but the device object follows the WebUSB-shaped API
-   * (transferIn/transferOut returning Promises).
-   * Pending transfers on macOS can block close() and may crash libusb/node-usb finalizers.
-   */
-
+  // The device follows the WebUSB-shaped API (usb@3 / nusb).
   private isBenignUsbShutdownError(err: unknown): boolean {
     const msg = err instanceof Error ? err.message : String(err)
 
@@ -366,7 +361,17 @@ export class DongleDriver extends EventEmitter {
     const inEp = this._inEP
     if (!dev || !inEp) return null
 
-    const headerRes = await dev.transferIn(inEp.endpointNumber, MessageHeader.dataLength)
+    const transferIn = dev.transferIn.bind(dev) as (
+      ep: number,
+      len: number,
+      timeoutMs?: number
+    ) => Promise<USBInTransferResult>
+
+    const headerRes = await transferIn(
+      inEp.endpointNumber,
+      MessageHeader.dataLength,
+      READ_TIMEOUT_MS
+    )
     if (this._closing) return null
 
     const headerData = headerRes?.data
@@ -381,7 +386,7 @@ export class DongleDriver extends EventEmitter {
 
     let extra: Buffer | undefined
     if (header.length) {
-      const extraRes = await dev.transferIn(inEp.endpointNumber, header.length)
+      const extraRes = await transferIn(inEp.endpointNumber, header.length, READ_TIMEOUT_MS)
       if (this._closing) return null
       const extraData = extraRes?.data
       if (!extraData) throw new Error('Failed to read extra data')
@@ -619,9 +624,13 @@ export class DongleDriver extends EventEmitter {
 
           if (this.errorCount !== 0) this.errorCount = 0
         } catch (err) {
-          if (this._closing || !this._device?.opened || this.isBenignUsbShutdownError(err)) {
-            break
-          }
+          if (this._closing || !this._device?.opened) break
+
+          const msg = err instanceof Error ? err.message : String(err)
+          // Idle read timeout / cancel by the timeout — re-issue (lossless for bulk).
+          if (/cancel|timed?\s*out|timeout/i.test(msg)) continue
+          // Device really went away.
+          if (this.isBenignUsbShutdownError(err)) break
 
           if (err instanceof HeaderBuildError) {
             console.warn('[DongleDriver] HeaderBuildError', err.message)
@@ -695,23 +704,9 @@ export class DongleDriver extends EventEmitter {
 
       try {
         if (dev && dev.opened) {
-          // Best effort: abort pending transferIn on macOS
-          try {
-            if (process.platform === 'darwin') {
-              await dev.reset()
-            }
-          } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e)
-            if (
-              !msg.includes('LIBUSB_ERROR_NOT_FOUND') &&
-              !msg.includes('LIBUSB_ERROR_NO_DEVICE')
-            ) {
-              console.warn('[DongleDriver] device.reset() failed (ignored)', e)
-            }
-          }
-
-          // Give readLoop a moment to unwind after reset
-          await this.waitForReaderStop(1500)
+          // _closing is set; the read loop drops its in-flight read on the next timeout and exits.
+          // Wait for it so the interface is free (a pending transfer blocks releaseInterface/close).
+          await this.waitForReaderStop(READ_TIMEOUT_MS + 500)
 
           if (iface != null) {
             try {

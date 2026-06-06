@@ -79,6 +79,7 @@ export const Telemetry: FC<TelemetryProps> = ({ windowRole = 'main' }) => {
 
   return (
     <Box
+      id="telemetry-root"
       sx={{
         position: 'fixed',
         inset: 0,
