@@ -489,16 +489,34 @@ describe('Session — _stripHeaderAndInjectTls header parsing', () => {
 })
 
 describe('Session.requestShutdown — write-and-end semantics', () => {
-  test('hits the timeout escape hatch when writeChain never resolves', async () => {
+  test('falls back through the timeouts when the phone never sends ByeByeResponse', async () => {
     jest.useFakeTimers()
     const { session, sock } = makeSession()
     forceRunning(session)
     captureEncrypted(session)
-    // Replace writeChain with a never-resolving promise
-    ;(session as unknown as { _writeChain: Promise<void> })._writeChain = new Promise(() => {})
     const p = session.requestShutdown()
-    jest.advanceTimersByTime(600)
+    await jest.advanceTimersByTimeAsync(2_000)
     await p
+    expect((session as unknown as { _state: number })._state).toBe(7) // CLOSED
+    expect(sock.end).toHaveBeenCalled()
+    jest.useRealTimers()
+  })
+
+  test('closes promptly once the phone acks with shutdown-complete', async () => {
+    jest.useFakeTimers()
+    const { session, sock } = makeSession()
+    forceRunning(session)
+    captureEncrypted(session)
+    // Provide a ControlChannel stub so requestShutdown can await its ByeByeResponse ack.
+    const control = new (require('node:events').EventEmitter)()
+    ;(session as unknown as { _control: unknown })._control = control
+
+    const p = session.requestShutdown()
+    // Let the drain race settle, then have the phone ack.
+    await jest.advanceTimersByTimeAsync(600)
+    control.emit('shutdown-complete')
+    await p
+
     expect((session as unknown as { _state: number })._state).toBe(7) // CLOSED
     expect(sock.end).toHaveBeenCalled()
     jest.useRealTimers()
@@ -512,7 +530,7 @@ describe('Session.requestShutdown — write-and-end semantics', () => {
       throw new Error('not writable')
     })
     const p = session.requestShutdown()
-    jest.advanceTimersByTime(600)
+    await jest.advanceTimersByTimeAsync(2_000)
     await p
     expect(sock.end).toHaveBeenCalled()
     jest.useRealTimers()

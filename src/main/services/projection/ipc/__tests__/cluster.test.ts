@@ -13,7 +13,9 @@ import { registerClusterIpc } from '../cluster'
 
 function freshHost() {
   return {
-    getConfig: jest.fn(() => ({ cluster: { main: true, dash: false, aux: false } })) as jest.Mock,
+    getConfig: jest.fn(() => ({
+      dashboards: { dash3: { main: true, dash: false, aux: false } }
+    })) as jest.Mock,
     setClusterRequested: jest.fn(),
     setClusterVisible: jest.fn(),
     resetLastClusterVideoSize: jest.fn(),
@@ -38,7 +40,9 @@ describe('cluster ipc — cluster:request', () => {
 
   test('enabled=true with cluster off in config still resets', async () => {
     const host = freshHost()
-    host.getConfig.mockReturnValue({ cluster: { main: false, dash: false, aux: false } } as never)
+    host.getConfig.mockReturnValue({
+      dashboards: { dash3: { main: false, dash: false, aux: false } }
+    } as never)
     registerClusterIpc(host)
     const r = await handlers.get('cluster:request')!(null, true)
     expect(host.setClusterRequested).toHaveBeenCalledWith(false)

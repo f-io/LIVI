@@ -1,14 +1,34 @@
-import { render, screen } from '@testing-library/react'
-import { Dash4 } from '../Dash4'
+import { render } from '@testing-library/react'
 
-jest.mock('../../../widgets', () => ({
-  NavFull: () => <div>NavFull</div>
+const setClusterDashActive = jest.fn()
+
+jest.mock('@store/store', () => ({
+  useStatusStore: (selector: (s: { setClusterDashActive: (v: boolean) => void }) => unknown) =>
+    selector({ setClusterDashActive })
 }))
 
-describe('Dash4', () => {
-  test('renders NavFull component', () => {
-    render(<Dash4 />)
+import { Dash4 } from '../Dash4'
 
-    expect(screen.getByText('NavFull')).toBeInTheDocument()
+describe('Dash4', () => {
+  beforeEach(() => {
+    setClusterDashActive.mockClear()
+  })
+
+  test('marks the cluster dash active on mount and inactive on unmount', () => {
+    const { unmount } = render(<Dash4 />)
+
+    expect(setClusterDashActive).toHaveBeenCalledWith(true)
+
+    setClusterDashActive.mockClear()
+    unmount()
+
+    expect(setClusterDashActive).toHaveBeenCalledWith(false)
+  })
+
+  test('renders an empty cluster-only box', () => {
+    const { container } = render(<Dash4 />)
+
+    expect(container.textContent).toBe('')
+    expect(container.querySelector('div')).not.toBeNull()
   })
 })

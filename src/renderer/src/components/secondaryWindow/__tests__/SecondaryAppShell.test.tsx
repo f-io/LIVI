@@ -1,20 +1,22 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { ROUTES } from '../../../constants'
 
 const state: {
   settings:
     | (Partial<{
-        dashboards: Record<string, Partial<Record<'dash' | 'aux', boolean>>>
+        dashboards: Record<string, Partial<Record<'main' | 'dash' | 'aux', boolean>>>
         media: Partial<Record<'dash' | 'aux', boolean>>
-        cluster: Partial<Record<'dash' | 'aux', boolean>>
         camera: Partial<Record<'dash' | 'aux', boolean>>
         bindings: Record<string, string>
       }> & { dashboards?: unknown })
     | undefined
 } = { settings: undefined }
 
+let clusterDashActive = false
+
 jest.mock('../../../store/store', () => ({
-  useLiviStore: (selector: (s: { settings: unknown }) => unknown) => selector(state)
+  useLiviStore: (selector: (s: { settings: unknown }) => unknown) => selector(state),
+  useStatusStore: (selector: (s: { clusterDashActive: boolean }) => unknown) =>
+    selector({ clusterDashActive })
 }))
 
 // Stub the page components so the shell logic is what we exercise.
@@ -48,6 +50,7 @@ const onMediaKeyMock = jest.fn()
 
 beforeEach(() => {
   state.settings = undefined
+  clusterDashActive = false
   sendCommandMock.mockReset()
   onMediaKeyMock.mockReset().mockReturnValue(() => {})
   ;(window as unknown as { projection: unknown }).projection = {
@@ -73,24 +76,28 @@ describe('SecondaryAppShell — empty / loading states', () => {
   })
 
   test('renders the empty-label panel when no slot is enabled for the role', () => {
-    state.settings = { dashboards: {}, media: {}, cluster: {}, camera: {} }
+    state.settings = { dashboards: {}, media: {}, camera: {} }
     renderShell('dash', 'Dash Window')
     expect(screen.getByText('Dash Window')).toBeInTheDocument()
   })
 })
 
 describe('SecondaryAppShell — initial route selection', () => {
-  test('cluster wins when cluster is enabled for the role', () => {
-    state.settings = { cluster: { dash: true } }
+  test('a cluster dash (dash3/dash4) renders the cluster overlay and routes to telemetry', () => {
+    // Cluster capability now derives from a cluster dash routed to the role.
+    state.settings = { dashboards: { dash3: { dash: true } } }
     renderShell('dash')
-    const cluster = screen.getByTestId('cluster-page')
-    expect(cluster).toHaveAttribute('data-visible', 'true')
+    // Cluster dash is also a dashboard slot, so the initial route is telemetry.
+    expect(screen.getByTestId('telemetry-page')).toHaveAttribute('data-role', 'dash')
+    expect(screen.getByTestId('cluster-page')).toBeInTheDocument()
   })
 
-  test('telemetry routes when no cluster but a dashboard slot is set', () => {
-    state.settings = { dashboards: { d1: { dash: true } } }
+  test('telemetry routes when a non-cluster dashboard slot is set', () => {
+    state.settings = { dashboards: { dash1: { dash: true } } }
     renderShell('dash')
     expect(screen.getByTestId('telemetry-page')).toHaveAttribute('data-role', 'dash')
+    // No cluster dash → no cluster overlay.
+    expect(screen.queryByTestId('cluster-page')).toBeNull()
   })
 
   test('media routes when only media is enabled', () => {
@@ -105,11 +112,18 @@ describe('SecondaryAppShell — initial route selection', () => {
     expect(screen.getByTestId('camera-page')).toBeInTheDocument()
   })
 
-  test('cluster overlay is always rendered when cluster is enabled', () => {
-    state.settings = { cluster: { aux: true }, media: { aux: true } }
+  test('cluster overlay visibility follows clusterDashActive', () => {
+    clusterDashActive = true
+    state.settings = { dashboards: { dash4: { aux: true } } }
     renderShell('aux')
-    // Initial route is CLUSTER, so visible=true
     expect(screen.getByTestId('cluster-page')).toHaveAttribute('data-visible', 'true')
+  })
+
+  test('cluster overlay is hidden while the cluster dash has not signalled active', () => {
+    clusterDashActive = false
+    state.settings = { dashboards: { dash4: { aux: true } } }
+    renderShell('aux')
+    expect(screen.getByTestId('cluster-page')).toHaveAttribute('data-visible', 'false')
   })
 
   test('aux role ignores slots that belong to dash', () => {

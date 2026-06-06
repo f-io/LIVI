@@ -4,6 +4,8 @@ describe('USBWorker', () => {
     jest.clearAllMocks()
   })
 
+  const flush = () => new Promise((r) => setImmediate(r))
+
   test('throws if parentPort is missing', () => {
     jest.doMock('worker_threads', () => ({ parentPort: null }))
 
@@ -14,7 +16,7 @@ describe('USBWorker', () => {
     }).toThrow('No parent port found')
   })
 
-  test('posts connected status on check-dongle when helper finds device', () => {
+  test('posts connected status on check-dongle when helper finds device', async () => {
     const on = jest.fn()
     const postMessage = jest.fn()
 
@@ -23,8 +25,9 @@ describe('USBWorker', () => {
     }))
 
     jest.doMock('@main/services/usb/helpers', () => ({
-      findDongle: jest.fn(() => ({
-        deviceDescriptor: { idVendor: 0x1314, idProduct: 0x1520 }
+      findDongle: jest.fn(async () => ({
+        vendorId: 0x1314,
+        productId: 0x1520
       }))
     }))
 
@@ -36,6 +39,7 @@ describe('USBWorker', () => {
     expect(cb).toBeDefined()
 
     cb('check-dongle')
+    await flush()
 
     expect(postMessage).toHaveBeenCalledWith({
       type: 'dongle-status',
@@ -45,7 +49,7 @@ describe('USBWorker', () => {
     })
   })
 
-  test('posts disconnected status on check-dongle when no device', () => {
+  test('posts disconnected status on check-dongle when no device', async () => {
     const on = jest.fn()
     const postMessage = jest.fn()
 
@@ -54,7 +58,7 @@ describe('USBWorker', () => {
     }))
 
     jest.doMock('@main/services/usb/helpers', () => ({
-      findDongle: jest.fn(() => null)
+      findDongle: jest.fn(async () => null)
     }))
 
     jest.isolateModules(() => {
@@ -63,11 +67,12 @@ describe('USBWorker', () => {
 
     const cb = on.mock.calls.find(([evt]: [string]) => evt === 'message')?.[1]
     cb('check-dongle')
+    await flush()
 
     expect(postMessage).toHaveBeenCalledWith({ type: 'dongle-status', connected: false })
   })
 
-  test('ignores unknown worker messages', () => {
+  test('ignores unknown worker messages', async () => {
     const on = jest.fn()
     const postMessage = jest.fn()
 
@@ -76,7 +81,7 @@ describe('USBWorker', () => {
     }))
 
     jest.doMock('@main/services/usb/helpers', () => ({
-      findDongle: jest.fn(() => null)
+      findDongle: jest.fn(async () => null)
     }))
 
     jest.isolateModules(() => {
@@ -85,6 +90,7 @@ describe('USBWorker', () => {
 
     const cb = on.mock.calls.find(([evt]: [string]) => evt === 'message')?.[1]
     cb('noop')
+    await flush()
 
     expect(postMessage).not.toHaveBeenCalled()
   })
