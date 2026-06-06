@@ -11,7 +11,7 @@
 
     <meta
       name="description"
-      content="Carplay and Android Auto head unit for Linux. Hardware-accelerated video, low-latency audio, touchscreen and D-pad friendly."
+      content="Carplay and Android Auto head unit for Linux. Native zero-copy GStreamer video pipeline with hardware-accelerated decoding, low-latency audio, touchscreen and D-pad friendly."
     />
     <meta property="og:site_name" content="LIVI" />
     <meta property="og:title" content="LIVI - Linux In-Vehicle Infotainment" />
@@ -19,7 +19,7 @@
     <meta property="og:type" content="website" />
     <meta
       property="og:description"
-      content="Carplay and Android Auto head unit for Linux. Hardware-accelerated video, low-latency audio, touchscreen and D-pad friendly."
+      content="Carplay and Android Auto head unit for Linux. Native zero-copy GStreamer video pipeline with hardware-accelerated decoding, low-latency audio, touchscreen and D-pad friendly."
     />
     <meta property="og:image" content="https://f-io.github.io/LIVI/images/banner.png" />
     <meta property="og:image:alt" content="LIVI banner" />
@@ -27,7 +27,7 @@
     <meta name="twitter:title" content="LIVI - Linux In-Vehicle Infotainment" />
     <meta
       name="twitter:description"
-      content="Carplay and Android Auto head unit for Linux. Hardware-accelerated video, low-latency audio, touchscreen and D-pad friendly."
+      content="Carplay and Android Auto head unit for Linux. Native zero-copy GStreamer video pipeline with hardware-accelerated decoding, low-latency audio, touchscreen and D-pad friendly."
     />
     <meta name="twitter:image" content="https://f-io.github.io/LIVI/images/banner.png" />
     <meta name="twitter:image:alt" content="LIVI banner" />
@@ -196,7 +196,7 @@
         <li><strong>Android Auto</strong> (wireless) on Linux</li>
         <li><strong>Android Auto</strong> (wired &amp; wireless) via Carlinkit dongle on all platforms</li>
         <li><strong>CarPlay</strong> (wired &amp; wireless) via Carlinkit dongle on all platforms</li>
-        <li>Hardware-accelerated video pipeline</li>
+        <li>Native, zero-copy video pipeline via GStreamer (hardware-accelerated decoding)</li>
         <li>Instrument cluster video stream support</li>
         <li>Device switching</li>
         <li>iAP2 turn-by-turn navigation data support</li>
@@ -206,7 +206,7 @@
         <li>Touchscreen and multi-touch support</li>
         <li>Full non-touch navigation via D-Pad and button controls</li>
         <li>UI optimized for low-resolution OEM in-car displays</li>
-        <li>Hardware accellerated H.264, H.265, VP9 and AV1</li>
+        <li>Hardware-accelerated H.264, H.265, VP9 and AV1 (where the platform provides a decoder)</li>
       </ul>
 
       <h2>Dashboard</h2>
@@ -223,6 +223,11 @@
         <li>Other ARM64 Linux devices capable of running Electron (AppImage)</li>
         <li>Windows</li>
       </ul>
+
+      <p>
+        On Raspberry Pi 4 and 5, video is decoded on the SoC's hardware decoder and stays on the
+        GPU end to end through the zero-copy GStreamer pipeline.
+      </p>
 
       <p>Android Auto is supported natively — wired on all platforms, wireless on Linux.</p>
       <p>Additionally, compatible USB dongles provide CarPlay and dongle-mediated Android Auto (wired &amp; wireless) on all platforms.</p>
