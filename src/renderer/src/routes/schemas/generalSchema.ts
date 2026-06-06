@@ -809,7 +809,8 @@ export const generalSchema: SettingsNode<Config> = {
       options: [
         { label: 'English', labelKey: 'settings.english', value: 'en' },
         { label: 'German', labelKey: 'settings.german', value: 'de' },
-        { label: 'Ukrainian', labelKey: 'settings.ukrainian', value: 'ua' }
+        { label: 'Ukrainian', labelKey: 'settings.ukrainian', value: 'ua' },
+        { label: 'French', labelKey: 'settings.french', value: 'fr' },
       ],
       page: {
         title: 'Language',
