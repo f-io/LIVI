@@ -90,7 +90,7 @@
     "@types/w3c-web-usb": "^1.0.14",
     "@vitejs/plugin-react": "^6.0.2",
     "electron": "^42.3.3",
-    "electron-builder": "^26.15.0",
+    "electron-builder": "^26.15.1",
     "esbuild": "^0.28.0",
     "globals": "^17.6.0",
     "husky": "^9.1.7",
