@@ -210,6 +210,35 @@ foreach ($plugin in $plugins) {
   Copy-Required (Join-Path $PluginDir $plugin) (Join-Path $Out "lib\gstreamer-1.0")
 }
 
+# Recursively pull every DLL our tools/libs/plugins reference that ships in the GStreamer bin
+function Get-DllRefs {
+  param([Parameter(Mandatory = $true)][string]$File)
+  $text = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($File))
+  [regex]::Matches($text, '[A-Za-z0-9_\.\-]+\.dll') | ForEach-Object { $_.Value } | Sort-Object -Unique
+}
+
+Write-Host "Resolving transitive DLL dependencies from $GstBin"
+$seen = @{}
+$queue = New-Object System.Collections.Queue
+foreach ($f in (Get-ChildItem -Path (Join-Path $Out "bin\*.dll"), (Join-Path $Out "lib\gstreamer-1.0\*.dll") -File -ErrorAction SilentlyContinue)) {
+  $queue.Enqueue($f.FullName)
+}
+while ($queue.Count -gt 0) {
+  $file = $queue.Dequeue()
+  foreach ($ref in (Get-DllRefs -File $file)) {
+    $key = $ref.ToLowerInvariant()
+    if ($seen.ContainsKey($key)) { continue }
+    $seen[$key] = $true
+    $src = Join-Path $GstBin $ref
+    $dst = Join-Path $Out "bin\$ref"
+    if ((Test-Path -LiteralPath $src) -and -not (Test-Path -LiteralPath $dst)) {
+      Write-Host "  + transitive dep: $ref"
+      Copy-Item -LiteralPath $src -Destination $dst -Force
+      $queue.Enqueue($dst)
+    }
+  }
+}
+
 Write-Host "Created Windows GStreamer bundle at: $Out"
 Write-Host "Bundle size:"
 $size = (Get-ChildItem -LiteralPath $Out -Recurse -File | Measure-Object -Property Length -Sum).Sum
