@@ -45,8 +45,6 @@ chmod +x install.sh
 ./install.sh
 ```
 
-> Raspberry Pi OS **Trixie or newer** is required.
-
 The `install.sh` script performs the following tasks:
 
 1. checks for required tools: curl, xdg-user-dir and pkexec
@@ -55,28 +53,26 @@ The `install.sh` script performs the following tasks:
 4. creates a desktop shortcut for easy access
 5. applies the Raspberry Pi HEVC decoder patch if the system GStreamer is affected (see note below)
 
-On first launch, LIVI will detect if the udev rule for USB access is missing and prompt you to install it automatically.
-
 > [!NOTE]
 > **Raspberry Pi HEVC (1080p) hardware decode** uses the system GStreamer `v4l2codecs` plugin. GStreamer **1.26.x before 1.26.11** (currently shipped by Raspberry Pi OS) has a SAND-crop bug that breaks zero-copy at 1080p and leaves the main video layer black. The installer detects an affected version and rebuilds the patched plugin from the distribution source automatically. If you do not use the installer, apply it manually from a LIVI checkout on the Pi:
 >
 > ```bash
 > bash scripts/gstreamer/patch-pi-v4l2codecs.sh
 > ```
->
-> This step is skipped automatically once Raspberry Pi OS ships GStreamer 1.26.11 / 1.28 or newer.
+
+On first launch, LIVI detects if the udev rule for USB access is missing and prompts you to install it. The rule grants USB access to connected Android phones (for wired Android Auto) and to the USB dongle.
 
 _This install script is not actively tested on other Linux distributions._
 
 ## Linux (x86_64)
 
-This AppImage has been tested on Debian Trixie (13) with Wayland, Ubuntu/Kubuntu 25 and Fedora 44. No additional software is required, just download the `-x86_64.AppImage` and make it executable:
+This AppImage has been tested on Debian Trixie (13) with Wayland, Ubuntu 26.04 and Fedora 44 (GMNOME).
 
 ```bash
 chmod +x LIVI-*-x86_64.AppImage
 ```
 
-On first launch, LIVI will detect if the udev rule for the USB dongle is missing and prompt you to install it automatically.
+On first launch, LIVI detects if the udev rule for USB access is missing and prompts you to install it. The rule grants USB access to connected Android phones (for wired Android Auto) and to the USB dongle.
 
 > **Hardware video decode (optional):** LIVI uses the system VA-API driver for GPU video decode (it is not bundled, since it must match your GPU and kernel). Most desktops ship it, a minimal install may not. Without it LIVI still works via software decode. For HW decode install the driver for your GPU and verify with `vainfo`: `i965-va-driver` (older Intel, e.g. Broadwell), `intel-media-va-driver` (Gen9+ Intel), `mesa-va-drivers` (AMD).
 
@@ -100,9 +96,7 @@ After this, the app will launch normally and future updates will work without ad
 ## Windows (x64)
 
 > [!NOTE]
-> The Windows build is provided on a **best-effort basis**.
-> Windows is **not a primary target platform** of this project and receives limited testing.
->
+> The Windows build is provided on a **best-effort basis**. Windows is **not a primary target platform** of this project and receives limited testing.
 > It is mainly intended for development, experimentation, and desktop testing.
 
 ### USB Driver Requirement
