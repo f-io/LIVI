@@ -45,8 +45,8 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
   const savedBounds = compositorMode ? undefined : sanitizeBounds(readMainBounds(runtimeState))
 
   mainWindow = new BrowserWindow({
-    width: winKioskBounds?.width ?? savedBounds?.width ?? runtimeState.config.width,
-    height: winKioskBounds?.height ?? savedBounds?.height ?? runtimeState.config.height,
+    width: winKioskBounds?.width ?? savedBounds?.width ?? runtimeState.config.displayWidth,
+    height: winKioskBounds?.height ?? savedBounds?.height ?? runtimeState.config.displayHeight,
     x: winKioskBounds?.x ?? savedBounds?.x,
     y: winKioskBounds?.y ?? savedBounds?.y,
     frame: !compositorMode && !isWin,
@@ -152,8 +152,8 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
   mainWindow.once('ready-to-show', () => {
     if (!mainWindow) return
 
-    const baseW = savedBounds?.width || runtimeState.config.width || 1200
-    const baseH = savedBounds?.height || runtimeState.config.height || 720
+    const baseW = savedBounds?.width || runtimeState.config.displayWidth || 1200
+    const baseH = savedBounds?.height || runtimeState.config.displayHeight || 720
 
     // Windows kiosk is created already full-screen (no resize, see winKioskBounds); everyone
     // else starts windowed. In compositor mode the compositor owns the size (tiled toplevel).
@@ -217,8 +217,8 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
       if (runtimeState.suppressNextFsSync) return
       applyAspectRatioFullscreen(
         mainWindow!,
-        runtimeState.config.width || 800,
-        runtimeState.config.height || 480
+        runtimeState.config.displayWidth || 800,
+        runtimeState.config.displayHeight || 480
       )
       persistKioskAndBroadcast(true, runtimeState)
     })
@@ -230,8 +230,8 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
       }
       applyAspectRatioWindowed(
         mainWindow!,
-        runtimeState.config.width || 800,
-        runtimeState.config.height || 480
+        runtimeState.config.displayWidth || 800,
+        runtimeState.config.displayHeight || 480
       )
       persistKioskAndBroadcast(false, runtimeState)
     })

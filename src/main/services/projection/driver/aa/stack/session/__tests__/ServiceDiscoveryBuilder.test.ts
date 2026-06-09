@@ -178,7 +178,7 @@ describe('buildServiceDiscoveryResponse', () => {
     }
   })
 
-  test('input source touchscreen reflects video tier minus margins/insets', () => {
+  test('input source touchscreen reflects video tier minus view area margins', () => {
     const { proto, capture } = stubProto()
     buildServiceDiscoveryResponse(
       baseConfig({
@@ -186,10 +186,10 @@ describe('buildServiceDiscoveryResponse', () => {
         videoHeight: 720,
         displayWidth: 1280,
         displayHeight: 720,
-        mainSafeAreaLeft: 10,
-        mainSafeAreaRight: 20,
-        mainSafeAreaTop: 5,
-        mainSafeAreaBottom: 15
+        mainViewAreaLeft: 10,
+        mainViewAreaRight: 20,
+        mainViewAreaTop: 5,
+        mainViewAreaBottom: 15
       }),
       proto
     )

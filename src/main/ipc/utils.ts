@@ -96,13 +96,13 @@ export function saveSettings(runtimeState: runtimeStateProps, next: Partial<Conf
         if (sizeChanged) {
           applyWindowedContentSize(
             mainWindow,
-            runtimeState.config.width || 800,
-            runtimeState.config.height || 480
+            runtimeState.config.displayWidth || 800,
+            runtimeState.config.displayHeight || 480
           )
           applyAspectRatioFullscreen(
             mainWindow,
-            runtimeState.config.width || 800,
-            runtimeState.config.height || 480
+            runtimeState.config.displayWidth || 800,
+            runtimeState.config.displayHeight || 480
           )
         }
         if (!isFs) mainWindow.setFullScreen(true)
@@ -111,8 +111,8 @@ export function saveSettings(runtimeState: runtimeStateProps, next: Partial<Conf
         if (sizeChanged) {
           applyWindowedContentSize(
             mainWindow,
-            runtimeState.config.width || 800,
-            runtimeState.config.height || 480
+            runtimeState.config.displayWidth || 800,
+            runtimeState.config.displayHeight || 480
           )
         }
       }
@@ -120,19 +120,19 @@ export function saveSettings(runtimeState: runtimeStateProps, next: Partial<Conf
       if (wantFs) {
         applyWindowedContentSize(
           mainWindow,
-          runtimeState.config.width || 800,
-          runtimeState.config.height || 480
+          runtimeState.config.displayWidth || 800,
+          runtimeState.config.displayHeight || 480
         )
         applyAspectRatioFullscreen(
           mainWindow,
-          runtimeState.config.width || 800,
-          runtimeState.config.height || 480
+          runtimeState.config.displayWidth || 800,
+          runtimeState.config.displayHeight || 480
         )
       } else {
         applyWindowedContentSize(
           mainWindow,
-          runtimeState.config.width || 800,
-          runtimeState.config.height || 480
+          runtimeState.config.displayWidth || 800,
+          runtimeState.config.displayHeight || 480
         )
       }
     }
@@ -157,13 +157,21 @@ export function saveSettings(runtimeState: runtimeStateProps, next: Partial<Conf
       if (leavingKiosk) {
         const onResize = () => {
           win.removeListener('resize', onResize)
-          applyWindowedContentSize(win, runtimeState.config.width, runtimeState.config.height)
+          applyWindowedContentSize(
+            win,
+            runtimeState.config.displayWidth,
+            runtimeState.config.displayHeight
+          )
         }
         win.on('resize', onResize)
 
         setImmediate(() => {
           if (win.isDestroyed()) return
-          applyWindowedContentSize(win, runtimeState.config.width, runtimeState.config.height)
+          applyWindowedContentSize(
+            win,
+            runtimeState.config.displayWidth,
+            runtimeState.config.displayHeight
+          )
         })
       } else {
         const d = screen.getDisplayMatching(win.getBounds())
@@ -174,7 +182,11 @@ export function saveSettings(runtimeState: runtimeStateProps, next: Partial<Conf
       return
     }
     if (sizeChanged && !nextMainKiosk) {
-      applyWindowedContentSize(win, runtimeState.config.width, runtimeState.config.height)
+      applyWindowedContentSize(
+        win,
+        runtimeState.config.displayWidth,
+        runtimeState.config.displayHeight
+      )
     }
   }
 }

@@ -405,9 +405,8 @@ describe('sendable messages', () => {
     })
   })
 
-  test('SendBoxSettings ignores clusterSafeAreaDrawOutside on dongle path', () => {
-    // drawOutside must always be 0 on the dongle path, regardless of user
-    // setting — see FW-bug workaround above.
+  test('SendBoxSettings hardcodes cluster safearea.outside to 0 on dongle path', () => {
+    // The dongle never forwards the cluster view/safe area, outside is always 0.
     const msg = new SendBoxSettings(
       {
         width: 1280,
@@ -437,11 +436,10 @@ describe('sendable messages', () => {
         clusterWidth: 800,
         clusterHeight: 480,
         clusterFps: 24,
-        clusterSafeAreaTop: 10,
-        clusterSafeAreaBottom: 0,
-        clusterSafeAreaLeft: 0,
-        clusterSafeAreaRight: 0,
-        clusterSafeAreaDrawOutside: true
+        clusterViewAreaTop: 10,
+        clusterViewAreaBottom: 0,
+        clusterViewAreaLeft: 0,
+        clusterViewAreaRight: 0
       } as any,
       1
     )

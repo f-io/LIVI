@@ -100,27 +100,36 @@ export type Config = {
   wifiType: '2.4ghz' | '5ghz'
   wifiChannel: number
 
-  // Main projection resolution + safe area
-  width: number
-  height: number
-  fps: number
-  dpi: number
+  // Main display
+  displayWidth: number
+  displayHeight: number
+  displayFps: number
+  displayDpi: number
+  // View Area = the rendered stream region
+  projectionViewAreaTop: number
+  projectionViewAreaBottom: number
+  projectionViewAreaLeft: number
+  projectionViewAreaRight: number
+  projectionViewAreaDrawOutside: boolean
+  // Safe Area = where the phone keeps nav hints/UI inside the view area
   projectionSafeAreaTop: number
   projectionSafeAreaBottom: number
   projectionSafeAreaLeft: number
   projectionSafeAreaRight: number
-  projectionSafeAreaDrawOutside: boolean
 
-  // Cluster stream (advertised when the cluster dashboards dash3/dash4 are enabled )
+  // Cluster stream
   clusterWidth: number
   clusterHeight: number
   clusterFps: number
   clusterDpi: number
+  clusterViewAreaTop: number
+  clusterViewAreaBottom: number
+  clusterViewAreaLeft: number
+  clusterViewAreaRight: number
   clusterSafeAreaTop: number
   clusterSafeAreaBottom: number
   clusterSafeAreaLeft: number
   clusterSafeAreaRight: number
-  clusterSafeAreaDrawOutside: boolean
 
   // Phone session state
   lastPhoneWorkMode: PhoneWorkMode

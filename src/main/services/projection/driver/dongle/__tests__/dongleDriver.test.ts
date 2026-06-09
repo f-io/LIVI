@@ -818,7 +818,7 @@ describe('DongleDriver core behavior', () => {
       projectionSafeAreaBottom: 0,
       projectionSafeAreaLeft: 0,
       projectionSafeAreaRight: 0,
-      projectionSafeAreaDrawOutside: false
+      projectionViewAreaDrawOutside: false
     }
     d._device = { opened: true }
     d._closing = false
@@ -851,7 +851,7 @@ describe('DongleDriver core behavior', () => {
       projectionSafeAreaBottom: 0,
       projectionSafeAreaLeft: 0,
       projectionSafeAreaRight: 0,
-      projectionSafeAreaDrawOutside: false
+      projectionViewAreaDrawOutside: false
     }
     d._device = { opened: true }
     d._closing = false
@@ -907,7 +907,7 @@ describe('DongleDriver core behavior', () => {
         projectionSafeAreaBottom: 0,
         projectionSafeAreaLeft: 0,
         projectionSafeAreaRight: 0,
-        projectionSafeAreaDrawOutside: false
+        projectionViewAreaDrawOutside: false
       }
       d._device = { opened: true }
       d._closing = false
@@ -1527,7 +1527,7 @@ describe('DongleDriver core behavior', () => {
       projectionSafeAreaBottom: 0,
       projectionSafeAreaLeft: 0,
       projectionSafeAreaRight: 0,
-      projectionSafeAreaDrawOutside: false
+      projectionViewAreaDrawOutside: false
     }
     d._device = { opened: true }
     d._closing = false
@@ -1567,7 +1567,7 @@ describe('DongleDriver core behavior', () => {
       projectionSafeAreaBottom: 0,
       projectionSafeAreaLeft: 0,
       projectionSafeAreaRight: 0,
-      projectionSafeAreaDrawOutside: false
+      projectionViewAreaDrawOutside: false
     }
     d._device = { opened: true }
     d._closing = false
@@ -1734,7 +1734,7 @@ describe('DongleDriver core behavior', () => {
       projectionSafeAreaBottom: 0,
       projectionSafeAreaLeft: 0,
       projectionSafeAreaRight: 0,
-      projectionSafeAreaDrawOutside: false
+      projectionViewAreaDrawOutside: false
     }
     d._device = { opened: true }
     d._closing = false

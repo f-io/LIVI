@@ -18,10 +18,10 @@ export function applyNullDeletes(merged: Config, next: Partial<Config>) {
 }
 
 export function sizesEqual(a: Config, b: Config) {
-  const aw = Number(a.width) || 0
-  const ah = Number(a.height) || 0
-  const bw = Number(b.width) || 0
-  const bh = Number(b.height) || 0
+  const aw = Number(a.displayWidth) || 0
+  const ah = Number(a.displayHeight) || 0
+  const bw = Number(b.displayWidth) || 0
+  const bh = Number(b.displayHeight) || 0
   return aw === bw && ah === bh
 }
 

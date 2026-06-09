@@ -91,6 +91,11 @@ export interface SessionConfig {
   // Physical HU display
   displayWidth?: number
   displayHeight?: number
+  // View Area -> margins, Safe Area -> content_insets
+  mainViewAreaTop?: number
+  mainViewAreaBottom?: number
+  mainViewAreaLeft?: number
+  mainViewAreaRight?: number
   mainSafeAreaTop?: number
   mainSafeAreaBottom?: number
   mainSafeAreaLeft?: number
@@ -121,6 +126,10 @@ export interface SessionConfig {
   clusterPixelAspectRatioE4?: number
   clusterFps: number
   clusterDpi: number
+  clusterViewAreaTop?: number
+  clusterViewAreaBottom?: number
+  clusterViewAreaLeft?: number
+  clusterViewAreaRight?: number
   clusterSafeAreaTop?: number
   clusterSafeAreaBottom?: number
   clusterSafeAreaLeft?: number

@@ -729,8 +729,8 @@ export class ProjectionService {
   private updateVideoCrop(): void {
     const tw = this.lastVideoWidth ?? 0
     const th = this.lastVideoHeight ?? 0
-    const dw = this.config.width ?? 0
-    const dh = this.config.height ?? 0
+    const dw = this.config.displayWidth ?? 0
+    const dh = this.config.displayHeight ?? 0
     if (tw > 0 && th > 0 && dw > 0 && dh > 0) {
       const { contentWidth, contentHeight } = aaContentArea(
         { width: tw, height: th },

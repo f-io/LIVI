@@ -165,7 +165,7 @@ export class DongleDriver extends EventEmitter {
       this._postOpenConfigSent = false
       await this.send(
         new SendOpen(
-          { width: cfg.width, height: cfg.height, fps: cfg.fps },
+          { width: cfg.displayWidth, height: cfg.displayHeight, fps: cfg.displayFps },
           this._phoneWorkModeRuntime
         )
       )
@@ -467,20 +467,20 @@ export class DongleDriver extends EventEmitter {
           ? 'phoneMic'
           : 'mic'
     const aaResolution = matchFittingAAResolution({
-      width: cfg.width,
-      height: cfg.height
+      width: cfg.displayWidth,
+      height: cfg.displayHeight
     })
 
     const projectionAreaMessages: SendableMessage[] = [
-      new SendViewArea(cfg.width, cfg.height),
-      new SendSafeArea(cfg.width, cfg.height, {
+      new SendViewArea(cfg.displayWidth, cfg.displayHeight),
+      new SendSafeArea(cfg.displayWidth, cfg.displayHeight, {
         insets: {
-          top: cfg.projectionSafeAreaTop,
-          bottom: cfg.projectionSafeAreaBottom,
-          left: cfg.projectionSafeAreaLeft,
-          right: cfg.projectionSafeAreaRight
+          top: cfg.projectionViewAreaTop,
+          bottom: cfg.projectionViewAreaBottom,
+          left: cfg.projectionViewAreaLeft,
+          right: cfg.projectionViewAreaRight
         },
-        drawOutside: cfg.projectionSafeAreaDrawOutside
+        drawOutside: cfg.projectionViewAreaDrawOutside
       })
     ]
 
@@ -665,7 +665,7 @@ export class DongleDriver extends EventEmitter {
 
     const messages: SendableMessage[] = [
       new SendOpen(
-        { width: cfg.width, height: cfg.height, fps: cfg.fps },
+        { width: cfg.displayWidth, height: cfg.displayHeight, fps: cfg.displayFps },
         this._phoneWorkModeRuntime
       )
     ]

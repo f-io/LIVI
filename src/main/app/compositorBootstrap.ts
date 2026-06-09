@@ -30,8 +30,8 @@ export function bootstrapCompositor(): boolean {
   let outputSize: string | undefined
   try {
     const cfg = loadConfig()
-    const ow = Math.round(Number(cfg.width))
-    const oh = Math.round(Number(cfg.height))
+    const ow = Math.round(Number(cfg.displayWidth))
+    const oh = Math.round(Number(cfg.displayHeight))
     const wantKiosk = cfg.kiosk?.main === true || process.env.LIVI_KIOSK === '1'
     if (ow > 0 && oh > 0) outputSize = `${ow}x${oh + (wantKiosk ? 0 : COMPOSITOR_TITLEBAR_H)}`
   } catch {

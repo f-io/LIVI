@@ -20,7 +20,8 @@ import { buildServerCgiScript } from '../assets/LIVI_cgi.js'
 import { buildLiviWeb } from '../assets/LIVI_web.js'
 import { MessageHeader, MessageType } from './common.js'
 
-export type OpenConfig = Pick<Config, 'width' | 'height' | 'fps'>
+// Dongle Open wire payload (projection resolution sent to the dongle).
+export type OpenConfig = { width: number; height: number; fps: number }
 
 export abstract class SendableMessage {
   abstract type: MessageType
@@ -355,7 +356,7 @@ export class SendOpen extends SendableMessageWithPayload {
   type = MessageType.Open
 
   constructor(
-    public config: Pick<Config, 'width' | 'height' | 'fps'>,
+    public config: OpenConfig,
     public phoneWorkMode: PhoneWorkMode.CarPlay | PhoneWorkMode.Android
   ) {
     super()
@@ -427,8 +428,8 @@ export class SendBoxSettings extends SendableMessageWithPayload {
         : 1
 
     const aaAdjusted = matchFittingAAResolution({
-      width: cfg.width,
-      height: cfg.height
+      width: cfg.displayWidth,
+      height: cfg.displayHeight
     })
 
     const dashboardInfo =

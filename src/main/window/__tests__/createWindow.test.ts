@@ -106,8 +106,8 @@ describe('createMainWindow', () => {
   test('creates main BrowserWindow and loads app protocol url in production mode', () => {
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         kiosk: { main: false, dash: false, aux: false },
         uiZoomPercent: 100
       },
@@ -126,8 +126,8 @@ describe('createMainWindow', () => {
   test('attaches kiosk state sync on creation', () => {
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         kiosk: { main: false, dash: false, aux: false },
         uiZoomPercent: 100
       },
@@ -143,8 +143,8 @@ describe('createMainWindow', () => {
   test('configures permission and usb handlers', () => {
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         kiosk: { main: false, dash: false, aux: false },
         uiZoomPercent: 100
       },
@@ -164,8 +164,8 @@ describe('createMainWindow', () => {
   test('ready-to-show applies size, shows window, sets zoom and attaches renderer', () => {
     const runtimeState = {
       config: {
-        width: 900,
-        height: 500,
+        displayWidth: 900,
+        displayHeight: 500,
         kiosk: { main: false, dash: false, aux: false },
         uiZoomPercent: 125
       },
@@ -197,8 +197,8 @@ describe('createMainWindow', () => {
 
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         kiosk: { main: false, dash: false, aux: false },
         uiZoomPercent: 100
       },
@@ -224,8 +224,8 @@ describe('createMainWindow', () => {
 
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         kiosk: { main: false, dash: false, aux: false },
         uiZoomPercent: 100
       },
@@ -246,8 +246,8 @@ describe('createMainWindow', () => {
 
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         kiosk: { main: false, dash: false, aux: false },
         uiZoomPercent: 100
       },
@@ -266,8 +266,8 @@ describe('createMainWindow', () => {
   test('setWindowOpenHandler opens external urls and denies window creation', () => {
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         kiosk: { main: false, dash: false, aux: false },
         uiZoomPercent: 100
       },
@@ -291,8 +291,8 @@ describe('createMainWindow', () => {
 
     const runtimeState = {
       config: {
-        width: 1000,
-        height: 600,
+        displayWidth: 1000,
+        displayHeight: 600,
         kiosk: { main: false, dash: false, aux: false },
         uiZoomPercent: 100
       },
@@ -326,8 +326,8 @@ describe('createMainWindow', () => {
 
     const runtimeState = {
       config: {
-        width: 1000,
-        height: 600,
+        displayWidth: 1000,
+        displayHeight: 600,
         kiosk: { main: false, dash: false, aux: false },
         uiZoomPercent: 100
       },
@@ -356,8 +356,8 @@ describe('createMainWindow', () => {
 
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         kiosk: { main: false, dash: false, aux: false },
         uiZoomPercent: 100
       },
@@ -384,8 +384,8 @@ describe('createMainWindow', () => {
 
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         kiosk: { main: false, dash: false, aux: false },
         uiZoomPercent: 100
       },
@@ -419,8 +419,8 @@ describe('createMainWindow', () => {
 
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         kiosk: { main: true, dash: false, aux: false },
         uiZoomPercent: 100
       },
@@ -446,8 +446,8 @@ describe('createMainWindow', () => {
   test('permission request handler allows supported permission', () => {
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         kiosk: { main: false, dash: false, aux: false },
         uiZoomPercent: 100
       },
@@ -469,8 +469,8 @@ describe('createMainWindow', () => {
   test('permission request handler rejects unsupported permission', () => {
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         kiosk: { main: false, dash: false, aux: false },
         uiZoomPercent: 100
       },
@@ -492,8 +492,8 @@ describe('createMainWindow', () => {
   test('usb protected classes handler keeps only allowed classes', () => {
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         kiosk: { main: false, dash: false, aux: false },
         uiZoomPercent: 100
       },
@@ -516,8 +516,8 @@ describe('createMainWindow', () => {
   test('headers received handler injects COOP COEP and CORP headers', () => {
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         kiosk: { main: false, dash: false, aux: false },
         uiZoomPercent: 100
       },
@@ -553,8 +553,8 @@ describe('createMainWindow', () => {
   test('savedBounds: ready-to-show re-applies position+size', () => {
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         mainScreenBounds: { x: 50, y: 60, width: 1024, height: 768 }
       },
       isQuitting: false
@@ -573,8 +573,8 @@ describe('createMainWindow', () => {
   test('savedBounds: destroyed window skips the restore', () => {
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         mainScreenBounds: { x: 50, y: 60, width: 1024, height: 768 }
       },
       isQuitting: false
@@ -592,7 +592,7 @@ describe('createMainWindow', () => {
 
   test('invalid mainScreenBounds shape in config is ignored', () => {
     const runtimeState = {
-      config: { width: 800, height: 480, mainScreenBounds: { x: 1 } },
+      config: { displayWidth: 800, displayHeight: 480, mainScreenBounds: { x: 1 } },
       isQuitting: false
     } as any
     createMainWindow(runtimeState, {
@@ -608,7 +608,10 @@ describe('createMainWindow', () => {
       saveSettings: jest.Mock
     }
     saveSettings.mockClear()
-    const runtimeState = { config: { width: 800, height: 480 }, isQuitting: false } as any
+    const runtimeState = {
+      config: { displayWidth: 800, displayHeight: 480 },
+      isQuitting: false
+    } as any
     createMainWindow(runtimeState, {
       projectionService: { attachRenderer: jest.fn() }
     } as any)
@@ -634,8 +637,8 @@ describe('createMainWindow', () => {
     }
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         mainScreenBounds: { x: 10, y: 20, width: 800, height: 480 }
       },
       isQuitting: false
@@ -659,7 +662,10 @@ describe('createMainWindow', () => {
     const { saveSettings } = jest.requireMock('@main/ipc/utils') as {
       saveSettings: jest.Mock
     }
-    const runtimeState = { config: { width: 800, height: 480 }, isQuitting: false } as any
+    const runtimeState = {
+      config: { displayWidth: 800, displayHeight: 480 },
+      isQuitting: false
+    } as any
     createMainWindow(runtimeState, {
       projectionService: { attachRenderer: jest.fn() }
     } as any)
@@ -676,7 +682,10 @@ describe('createMainWindow', () => {
   test('close calls app.quit when isQuitting=false on linux', () => {
     const { app } = jest.requireMock('electron') as { app: { quit: jest.Mock } }
     app.quit.mockClear()
-    const runtimeState = { config: { width: 800, height: 480 }, isQuitting: false } as any
+    const runtimeState = {
+      config: { displayWidth: 800, displayHeight: 480 },
+      isQuitting: false
+    } as any
     createMainWindow(runtimeState, {
       projectionService: { attachRenderer: jest.fn() }
     } as any)
@@ -691,7 +700,10 @@ describe('createMainWindow', () => {
   test('close lets the window die when isQuitting=true', () => {
     const { app } = jest.requireMock('electron') as { app: { quit: jest.Mock } }
     app.quit.mockClear()
-    const runtimeState = { config: { width: 800, height: 480 }, isQuitting: true } as any
+    const runtimeState = {
+      config: { displayWidth: 800, displayHeight: 480 },
+      isQuitting: true
+    } as any
     createMainWindow(runtimeState, {
       projectionService: { attachRenderer: jest.fn() }
     } as any)
@@ -704,7 +716,10 @@ describe('createMainWindow', () => {
   })
 
   test('getMainWindow returns the most recently created window', () => {
-    const runtimeState = { config: { width: 800, height: 480 }, isQuitting: false } as any
+    const runtimeState = {
+      config: { displayWidth: 800, displayHeight: 480 },
+      isQuitting: false
+    } as any
     createMainWindow(runtimeState, {
       projectionService: { attachRenderer: jest.fn() }
     } as any)
@@ -721,8 +736,8 @@ describe('createMainWindow', () => {
 
     const runtimeState = {
       config: {
-        width: 800,
-        height: 480,
+        displayWidth: 800,
+        displayHeight: 480,
         kiosk: { main: true, dash: false, aux: false },
         uiZoomPercent: 100
       },

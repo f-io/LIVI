@@ -182,10 +182,13 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
   /** Build the AAStack config from the runtime Config and refresh the touch-mapping insets. */
   private _buildStackConfig(cfg: Config): AAStackConfig {
     const h264Only = !(this._hevcSupported || this._vp9Supported || this._av1Supported)
-    const aaFit = matchFittingAAResolution({ width: cfg.width, height: cfg.height }, { h264Only })
+    const aaFit = matchFittingAAResolution(
+      { width: cfg.displayWidth, height: cfg.displayHeight },
+      { h264Only }
+    )
     const tierW = aaFit.width
     const tierH = aaFit.height
-    const aaDpi = cfg.dpi > 0 ? cfg.dpi : computeAndroidAutoDpi(tierW, tierH)
+    const aaDpi = cfg.displayDpi > 0 ? cfg.displayDpi : computeAndroidAutoDpi(tierW, tierH)
     const clusterFit = matchFittingAAResolution(
       { width: cfg.clusterWidth, height: cfg.clusterHeight },
       { h264Only }
@@ -200,13 +203,17 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       videoWidth: tierW,
       videoHeight: tierH,
       videoDpi: aaDpi,
-      videoFps: cfg.fps === 60 ? 60 : 30,
+      videoFps: cfg.displayFps === 60 ? 60 : 30,
       pixelAspectRatioE4: pixelAspectRatioE4(
-        { width: cfg.width, height: cfg.height },
+        { width: cfg.displayWidth, height: cfg.displayHeight },
         { width: tierW, height: tierH }
       ),
-      displayWidth: cfg.width,
-      displayHeight: cfg.height,
+      displayWidth: cfg.displayWidth,
+      displayHeight: cfg.displayHeight,
+      mainViewAreaTop: cfg.projectionViewAreaTop,
+      mainViewAreaBottom: cfg.projectionViewAreaBottom,
+      mainViewAreaLeft: cfg.projectionViewAreaLeft,
+      mainViewAreaRight: cfg.projectionViewAreaRight,
       mainSafeAreaTop: cfg.projectionSafeAreaTop,
       mainSafeAreaBottom: cfg.projectionSafeAreaBottom,
       mainSafeAreaLeft: cfg.projectionSafeAreaLeft,
@@ -232,16 +239,20 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
       ),
       clusterFps: cfg.clusterFps,
       clusterDpi: resolvedClusterDpi,
+      clusterViewAreaTop: cfg.clusterViewAreaTop,
+      clusterViewAreaBottom: cfg.clusterViewAreaBottom,
+      clusterViewAreaLeft: cfg.clusterViewAreaLeft,
+      clusterViewAreaRight: cfg.clusterViewAreaRight,
       clusterSafeAreaTop: cfg.clusterSafeAreaTop,
       clusterSafeAreaBottom: cfg.clusterSafeAreaBottom,
       clusterSafeAreaLeft: cfg.clusterSafeAreaLeft,
       clusterSafeAreaRight: cfg.clusterSafeAreaRight,
       disableAudioOutput: Boolean(cfg.disableAudioOutput)
     }
-    const displayAR = cfg.width / cfg.height
+    const displayAR = cfg.displayWidth / cfg.displayHeight
     const tierAR = tierW / tierH
     console.log(
-      `[aaDriver] display ${cfg.width}×${cfg.height} (AR ${displayAR.toFixed(3)}) → ` +
+      `[aaDriver] display ${cfg.displayWidth}×${cfg.displayHeight} (AR ${displayAR.toFixed(3)}) → ` +
         `AA tier ${tierW}×${tierH} (AR ${tierAR.toFixed(3)}) @${aaDpi}dpi, ` +
         `PAR e4=${aaCfg.pixelAspectRatioE4}`
     )
@@ -263,7 +274,7 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
 
     let arWMargin = 0
     let arHMargin = 0
-    if (cfg.width > 0 && cfg.height > 0 && tierW > 0 && tierH > 0) {
+    if (cfg.displayWidth > 0 && cfg.displayHeight > 0 && tierW > 0 && tierH > 0) {
       if (displayAR > tierAR) {
         const contentH = Math.round(tierW / displayAR) & ~1
         arHMargin = Math.max(0, tierH - contentH)
@@ -279,10 +290,10 @@ export class AaDriver extends EventEmitter implements IPhoneDriver {
 
     this._touchW = tierW
     this._touchH = tierH
-    this._touchInsetTop = arTop + Math.max(0, cfg.projectionSafeAreaTop ?? 0)
-    this._touchInsetBottom = arBottom + Math.max(0, cfg.projectionSafeAreaBottom ?? 0)
-    this._touchInsetLeft = arLeft + Math.max(0, cfg.projectionSafeAreaLeft ?? 0)
-    this._touchInsetRight = arRight + Math.max(0, cfg.projectionSafeAreaRight ?? 0)
+    this._touchInsetTop = arTop + Math.max(0, cfg.projectionViewAreaTop ?? 0)
+    this._touchInsetBottom = arBottom + Math.max(0, cfg.projectionViewAreaBottom ?? 0)
+    this._touchInsetLeft = arLeft + Math.max(0, cfg.projectionViewAreaLeft ?? 0)
+    this._touchInsetRight = arRight + Math.max(0, cfg.projectionViewAreaRight ?? 0)
 
     this._aaCfg = aaCfg
     return aaCfg

@@ -76,19 +76,35 @@ describe('main utils', () => {
 
   test('sizesEqual compares normalized width and height', () => {
     expect(
-      sizesEqual({ width: 800, height: 480 } as any, { width: '800', height: 480 } as any)
+      sizesEqual(
+        { displayWidth: 800, displayHeight: 480 } as any,
+        { displayWidth: '800', displayHeight: 480 } as any
+      )
     ).toBe(true)
-    expect(sizesEqual({ width: 800, height: 480 } as any, { width: 801, height: 480 } as any)).toBe(
-      false
-    )
+    expect(
+      sizesEqual(
+        { displayWidth: 800, displayHeight: 480 } as any,
+        { displayWidth: 801, displayHeight: 480 } as any
+      )
+    ).toBe(false)
   })
 
   test('sizesEqual treats missing or invalid dimensions as zero', () => {
-    expect(sizesEqual({ width: undefined, height: undefined } as any, {} as any)).toBe(true)
-    expect(sizesEqual({ width: 'abc', height: null } as any, { width: 0, height: 0 } as any)).toBe(
-      true
-    )
-    expect(sizesEqual({ width: '', height: 5 } as any, { width: 0, height: 0 } as any)).toBe(false)
+    expect(
+      sizesEqual({ displayWidth: undefined, displayHeight: undefined } as any, {} as any)
+    ).toBe(true)
+    expect(
+      sizesEqual(
+        { displayWidth: 'abc', displayHeight: null } as any,
+        { displayWidth: 0, displayHeight: 0 } as any
+      )
+    ).toBe(true)
+    expect(
+      sizesEqual(
+        { displayWidth: '', displayHeight: 5 } as any,
+        { displayWidth: 0, displayHeight: 0 } as any
+      )
+    ).toBe(false)
   })
 
   test('setFeatureFlags emits comma-joined enable-features switch', () => {

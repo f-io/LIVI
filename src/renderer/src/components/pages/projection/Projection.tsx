@@ -802,11 +802,11 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const aaContent =
     resolvedNegotiatedWidth > 0 &&
     resolvedNegotiatedHeight > 0 &&
-    settings.width > 0 &&
-    settings.height > 0
+    settings.displayWidth > 0 &&
+    settings.displayHeight > 0
       ? aaContentArea(
           { width: resolvedNegotiatedWidth, height: resolvedNegotiatedHeight },
-          { width: settings.width, height: settings.height }
+          { width: settings.displayWidth, height: settings.displayHeight }
         )
       : null
 

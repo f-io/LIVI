@@ -60,14 +60,21 @@ export function buildServiceDiscoveryResponse(
     }
   }
 
-  const userTop = Math.max(0, cfg.mainSafeAreaTop ?? 0)
-  const userBottom = Math.max(0, cfg.mainSafeAreaBottom ?? 0)
-  const userLeft = Math.max(0, cfg.mainSafeAreaLeft ?? 0)
-  const userRight = Math.max(0, cfg.mainSafeAreaRight ?? 0)
-  const insetTop = Math.floor(heightMargin / 2) + userTop
-  const insetBottom = heightMargin - Math.floor(heightMargin / 2) + userBottom
-  const insetLeft = Math.floor(widthMargin / 2) + userLeft
-  const insetRight = widthMargin - Math.floor(widthMargin / 2) + userRight
+  // View Area -> margins (AR letterbox + user view inset). Safe Area -> content_insets.
+  const viewTop = Math.max(0, cfg.mainViewAreaTop ?? 0)
+  const viewBottom = Math.max(0, cfg.mainViewAreaBottom ?? 0)
+  const viewLeft = Math.max(0, cfg.mainViewAreaLeft ?? 0)
+  const viewRight = Math.max(0, cfg.mainViewAreaRight ?? 0)
+  const insetTop = Math.floor(heightMargin / 2) + viewTop
+  const insetBottom = heightMargin - Math.floor(heightMargin / 2) + viewBottom
+  const insetLeft = Math.floor(widthMargin / 2) + viewLeft
+  const insetRight = widthMargin - Math.floor(widthMargin / 2) + viewRight
+  const mainContentInsets = {
+    top: Math.max(0, cfg.mainSafeAreaTop ?? 0),
+    bottom: Math.max(0, cfg.mainSafeAreaBottom ?? 0),
+    left: Math.max(0, cfg.mainSafeAreaLeft ?? 0),
+    right: Math.max(0, cfg.mainSafeAreaRight ?? 0)
+  }
 
   // AudioStreamType: GUIDANCE=1, SYSTEM=2, MEDIA=3, TELEPHONY=4
   const AS_GUIDANCE = 1,
@@ -104,7 +111,9 @@ export function buildServiceDiscoveryResponse(
   // ── Video (ch=3) ──
   const parE4 = cfg.pixelAspectRatioE4 ?? 10000
   const videoUiConfig = {
-    margins: { top: insetTop, bottom: insetBottom, left: insetLeft, right: insetRight }
+    margins: { top: insetTop, bottom: insetBottom, left: insetLeft, right: insetRight },
+    contentInsets: mainContentInsets,
+    stableContentInsets: mainContentInsets
   }
   const baseVideoConfig = {
     codecResolution: vRes,
@@ -159,15 +168,22 @@ export function buildServiceDiscoveryResponse(
       }
     }
 
-    const userClusterTop = Math.max(0, cfg.clusterSafeAreaTop ?? 0)
-    const userClusterBottom = Math.max(0, cfg.clusterSafeAreaBottom ?? 0)
-    const userClusterLeft = Math.max(0, cfg.clusterSafeAreaLeft ?? 0)
-    const userClusterRight = Math.max(0, cfg.clusterSafeAreaRight ?? 0)
+    // View Area -> margins (AR letterbox + user view inset). Safe Area -> content_insets.
+    const clusterViewTop = Math.max(0, cfg.clusterViewAreaTop ?? 0)
+    const clusterViewBottom = Math.max(0, cfg.clusterViewAreaBottom ?? 0)
+    const clusterViewLeft = Math.max(0, cfg.clusterViewAreaLeft ?? 0)
+    const clusterViewRight = Math.max(0, cfg.clusterViewAreaRight ?? 0)
     const clusterMargins = {
-      top: Math.floor(cHMargin / 2) + userClusterTop,
-      bottom: cHMargin - Math.floor(cHMargin / 2) + userClusterBottom,
-      left: Math.floor(cWMargin / 2) + userClusterLeft,
-      right: cWMargin - Math.floor(cWMargin / 2) + userClusterRight
+      top: Math.floor(cHMargin / 2) + clusterViewTop,
+      bottom: cHMargin - Math.floor(cHMargin / 2) + clusterViewBottom,
+      left: Math.floor(cWMargin / 2) + clusterViewLeft,
+      right: cWMargin - Math.floor(cWMargin / 2) + clusterViewRight
+    }
+    const clusterContentInsets = {
+      top: Math.max(0, cfg.clusterSafeAreaTop ?? 0),
+      bottom: Math.max(0, cfg.clusterSafeAreaBottom ?? 0),
+      left: Math.max(0, cfg.clusterSafeAreaLeft ?? 0),
+      right: Math.max(0, cfg.clusterSafeAreaRight ?? 0)
     }
 
     const clusterBase = {
@@ -177,7 +193,11 @@ export function buildServiceDiscoveryResponse(
       heightMargin: cHMargin,
       density: clusterDpi,
       pixelAspectRatioE4: cfg.clusterPixelAspectRatioE4 ?? 10000,
-      uiConfig: { margins: clusterMargins }
+      uiConfig: {
+        margins: clusterMargins,
+        contentInsets: clusterContentInsets,
+        stableContentInsets: clusterContentInsets
+      }
     }
     const clusterConfigs: object[] = [{ ...clusterBase, videoCodecType: MEDIA_CODEC.VIDEO_H264_BP }]
     clusterCodecByIndex.push('h264')

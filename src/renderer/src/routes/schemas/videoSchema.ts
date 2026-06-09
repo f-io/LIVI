@@ -32,7 +32,7 @@ export const videoSchema: SettingsNode<Config> = {
           type: 'number',
           label: 'Width',
           labelKey: 'settings.width',
-          path: 'width',
+          path: 'displayWidth',
           min: MIN_WIDTH,
           max: MAX_WIDTH,
           step: 1,
@@ -48,7 +48,7 @@ export const videoSchema: SettingsNode<Config> = {
           type: 'number',
           label: 'Height',
           labelKey: 'settings.height',
-          path: 'height',
+          path: 'displayHeight',
           min: MIN_HEIGHT,
           max: MAX_HEIGHT,
           step: 1,
@@ -64,7 +64,7 @@ export const videoSchema: SettingsNode<Config> = {
           type: 'number',
           label: 'FPS',
           labelKey: 'settings.fps',
-          path: 'fps',
+          path: 'displayFps',
           min: MIN_FPS,
           max: MAX_FPS,
           step: 1,
@@ -80,7 +80,7 @@ export const videoSchema: SettingsNode<Config> = {
           type: 'number',
           label: 'DPI',
           labelKey: 'settings.dpi',
-          path: 'dpi',
+          path: 'displayDpi',
           min: MIN_DPI,
           max: MAX_DPI,
           step: 1,
@@ -91,6 +91,85 @@ export const videoSchema: SettingsNode<Config> = {
             description: 'Main stream DPI (0 = auto)',
             labelDescription: 'settings.dpiDescription'
           }
+        },
+        {
+          type: 'route',
+          label: 'View Area',
+          labelKey: 'settings.viewArea',
+          route: 'viewArea',
+          path: '',
+          children: [
+            {
+              type: 'number',
+              label: 'Top',
+              labelKey: 'settings.top',
+              path: 'projectionViewAreaTop',
+              min: SAFE_AREA_MIN,
+              max: SAFE_AREA_MAX_HEIGHT,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Main Screen View Area Top',
+                labelTitle: 'settings.top',
+                description: 'Top inset in px',
+                labelDescription: 'settings.viewAreaTopDescription'
+              }
+            },
+            {
+              type: 'number',
+              label: 'Bottom',
+              labelKey: 'settings.bottom',
+              path: 'projectionViewAreaBottom',
+              min: SAFE_AREA_MIN,
+              max: SAFE_AREA_MAX_HEIGHT,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Main Screen View Area Bottom',
+                labelTitle: 'settings.bottom',
+                description: 'Bottom inset in px',
+                labelDescription: 'settings.viewAreaBottomDescription'
+              }
+            },
+            {
+              type: 'number',
+              label: 'Left',
+              labelKey: 'settings.left',
+              path: 'projectionViewAreaLeft',
+              min: SAFE_AREA_MIN,
+              max: SAFE_AREA_MAX_WIDTH,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Main Screen View Area Left',
+                labelTitle: 'settings.left',
+                description: 'Left inset in px',
+                labelDescription: 'settings.viewAreaLeftDescription'
+              }
+            },
+            {
+              type: 'number',
+              label: 'Right',
+              labelKey: 'settings.right',
+              path: 'projectionViewAreaRight',
+              min: SAFE_AREA_MIN,
+              max: SAFE_AREA_MAX_WIDTH,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Main Screen View Area Right',
+                labelTitle: 'settings.right',
+                description: 'Right inset in px',
+                labelDescription: 'settings.viewAreaRightDescription'
+              }
+            },
+            {
+              type: 'checkbox',
+              label: 'Draw Outside',
+              labelKey: 'settings.drawOutside',
+              path: 'projectionViewAreaDrawOutside'
+            }
+          ]
         },
         {
           type: 'route',
@@ -162,12 +241,6 @@ export const videoSchema: SettingsNode<Config> = {
                 description: 'Right inset in px',
                 labelDescription: 'settings.safeAreaRightDescription'
               }
-            },
-            {
-              type: 'checkbox',
-              label: 'Draw Outside',
-              labelKey: 'settings.drawOutside',
-              path: 'projectionSafeAreaDrawOutside'
             }
           ]
         }
@@ -246,6 +319,79 @@ export const videoSchema: SettingsNode<Config> = {
         },
         {
           type: 'route',
+          label: 'View Area',
+          labelKey: 'settings.viewArea',
+          route: 'viewArea',
+          path: '',
+          children: [
+            {
+              type: 'number',
+              label: 'Top',
+              labelKey: 'settings.top',
+              path: 'clusterViewAreaTop',
+              min: SAFE_AREA_MIN,
+              max: SAFE_AREA_MAX_HEIGHT,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Cluster Screen View Area Top',
+                labelTitle: 'settings.top',
+                description: 'Top inset in px',
+                labelDescription: 'settings.clusterViewAreaTopDescription'
+              }
+            },
+            {
+              type: 'number',
+              label: 'Bottom',
+              labelKey: 'settings.bottom',
+              path: 'clusterViewAreaBottom',
+              min: SAFE_AREA_MIN,
+              max: SAFE_AREA_MAX_HEIGHT,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Cluster Screen View Area Bottom',
+                labelTitle: 'settings.bottom',
+                description: 'Bottom inset in px',
+                labelDescription: 'settings.clusterViewAreaBottomDescription'
+              }
+            },
+            {
+              type: 'number',
+              label: 'Left',
+              labelKey: 'settings.left',
+              path: 'clusterViewAreaLeft',
+              min: SAFE_AREA_MIN,
+              max: SAFE_AREA_MAX_WIDTH,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Cluster Screen View Area Left',
+                labelTitle: 'settings.left',
+                description: 'Left inset in px',
+                labelDescription: 'settings.clusterViewAreaLeftDescription'
+              }
+            },
+            {
+              type: 'number',
+              label: 'Right',
+              labelKey: 'settings.right',
+              path: 'clusterViewAreaRight',
+              min: SAFE_AREA_MIN,
+              max: SAFE_AREA_MAX_WIDTH,
+              step: 1,
+              displayValue: true,
+              page: {
+                title: 'Cluster Screen View Area Right',
+                labelTitle: 'settings.right',
+                description: 'Right inset in px',
+                labelDescription: 'settings.clusterViewAreaRightDescription'
+              }
+            }
+          ]
+        },
+        {
+          type: 'route',
           label: 'Safe Area',
           labelKey: 'settings.safeArea',
           route: 'safeArea',
@@ -314,12 +460,6 @@ export const videoSchema: SettingsNode<Config> = {
                 description: 'Right inset in px',
                 labelDescription: 'settings.clusterSafeAreaRightDescription'
               }
-            },
-            {
-              type: 'checkbox',
-              label: 'Draw Outside',
-              labelKey: 'settings.drawOutside',
-              path: 'clusterSafeAreaDrawOutside'
             }
           ]
         }
