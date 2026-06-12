@@ -298,8 +298,9 @@ jobs:
 
       # Runtime + devel framework so node-gyp can build the gst-video addon
       # (devel = headers + pkg-config, runtime = the dylibs to link against)
-      - name: Install GStreamer (runtime + devel) [macos-arm64]
+      - name: Resolve GStreamer version [macos-arm64]
         if: matrix.os == 'macos' && matrix.arch == 'arm64'
+        id: gst-mac
         shell: bash
         run: |
           set -euo pipefail
@@ -310,9 +311,26 @@ jobs:
             | sort -V \
             | tail -1)
           echo "GStreamer: $GST_VERSION"
+          echo "version=$GST_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Cache GStreamer packages [macos-arm64]
+        if: matrix.os == 'macos' && matrix.arch == 'arm64'
+        uses: actions/cache@v5
+        with:
+          path: |
+            gst-runtime.pkg
+            gst-devel.pkg
+          key: gst-pkg-macos-universal-${{ steps.gst-mac.outputs.version }}
+
+      - name: Install GStreamer (runtime + devel) [macos-arm64]
+        if: matrix.os == 'macos' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          GST_VERSION='${{ steps.gst-mac.outputs.version }}'
           base="https://gstreamer.freedesktop.org/data/pkg/osx/${GST_VERSION}"
-          curl -fL -o gst-runtime.pkg "${base}/gstreamer-1.0-${GST_VERSION}-universal.pkg"
-          curl -fL -o gst-devel.pkg "${base}/gstreamer-1.0-devel-${GST_VERSION}-universal.pkg"
+          [ -f gst-runtime.pkg ] || curl -fL -o gst-runtime.pkg "${base}/gstreamer-1.0-${GST_VERSION}-universal.pkg"
+          [ -f gst-devel.pkg ] || curl -fL -o gst-devel.pkg "${base}/gstreamer-1.0-devel-${GST_VERSION}-universal.pkg"
           sudo installer -pkg gst-runtime.pkg -target /
           sudo installer -pkg gst-devel.pkg -target /
 
@@ -334,12 +352,12 @@ jobs:
       # ----------------------------
       # Windows x64
       # ----------------------------
-      - name: Install GStreamer (runtime + devel) [windows-x64]
+      - name: Resolve GStreamer version [windows-x64]
         if: matrix.os == 'windows' && matrix.arch == 'x64'
+        id: gst-win
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-
           # GStreamer uses GNOME-style versioning: even minor = stable, odd = dev.
           $listing = (Invoke-WebRequest -Uri 'https://gstreamer.freedesktop.org/data/pkg/windows/' -UseBasicParsing).Content
           $versions = [regex]::Matches($listing, 'href="([0-9]+\.[0-9]+\.[0-9]+)/"') |
@@ -351,9 +369,26 @@ jobs:
           }
           $gstVersion = $versions[-1].ToString()
           Write-Host "Resolved Windows GStreamer: $gstVersion"
+          "version=$gstVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-          $url = "https://gstreamer.freedesktop.org/data/pkg/windows/$gstVersion/msvc/gstreamer-1.0-msvc-x86_64-$gstVersion.exe"
-          curl.exe -L $url -o 'gstreamer-msvc-x86_64.exe'
+      - name: Cache GStreamer installer [windows-x64]
+        if: matrix.os == 'windows' && matrix.arch == 'x64'
+        uses: actions/cache@v5
+        with:
+          path: gstreamer-msvc-x86_64.exe
+          key: gst-exe-windows-msvc-x86_64-${{ steps.gst-win.outputs.version }}
+
+      - name: Install GStreamer (runtime + devel) [windows-x64]
+        if: matrix.os == 'windows' && matrix.arch == 'x64'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $gstVersion = '${{ steps.gst-win.outputs.version }}'
+          if (-not (Test-Path 'gstreamer-msvc-x86_64.exe')) {
+            $url = "https://gstreamer.freedesktop.org/data/pkg/windows/$gstVersion/msvc/gstreamer-1.0-msvc-x86_64-$gstVersion.exe"
+            curl.exe -L $url -o 'gstreamer-msvc-x86_64.exe'
+          }
 
           $p = Start-Process `
             -FilePath '.\gstreamer-msvc-x86_64.exe' `
