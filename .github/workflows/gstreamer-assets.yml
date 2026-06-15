@@ -522,35 +522,21 @@ jobs:
           set -euo pipefail
           cp -a .artifacts/windows-x64 assets/gstreamer/windows-x64
 
-      - name: Read published version
+      - name: Read Linux version for badge
         id: meta
         shell: bash
         run: |
           set -euo pipefail
 
+          # The badge tracks the Linux version
           VERSION=""
           if [[ -f assets/gstreamer/linux-x64/version.txt ]]; then
             VERSION="$(cat assets/gstreamer/linux-x64/version.txt)"
           elif [[ -f assets/gstreamer/linux-arm64/version.txt ]]; then
             VERSION="$(cat assets/gstreamer/linux-arm64/version.txt)"
-          elif [[ -f assets/gstreamer/macos-arm64/version.txt ]]; then
-            VERSION="$(cat assets/gstreamer/macos-arm64/version.txt)"
-          elif [[ -f assets/gstreamer/windows-x64/version.txt ]]; then
-            VERSION="$(cat assets/gstreamer/windows-x64/version.txt)"
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-          {
-            echo 'body<<__BODY_EOF__'
-            for plat in linux-x64 linux-arm64 macos-arm64 windows-x64; do
-              if [[ -f "assets/gstreamer/${plat}/version.txt" ]]; then
-                v="$(cat "assets/gstreamer/${plat}/version.txt")"
-                printf -- '- %-12s %s\n' "${plat}:" "$v"
-              fi
-            done
-            echo '__BODY_EOF__'
-          } >> "$GITHUB_OUTPUT"
 
       - name: Commit and push assets
         id: commit_assets
@@ -561,25 +547,31 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -f -A assets/gstreamer
+          # One commit per platform
+          changed=false
+          for plat in linux-x64 linux-arm64 macos-arm64 windows-x64; do
+            dir="assets/gstreamer/${plat}"
+            [[ -d "$dir" ]] || continue
+            git add -f -A "$dir"
+            if git diff --cached --quiet -- "$dir"; then
+              continue
+            fi
+            ver=""
+            [[ -f "$dir/version.txt" ]] && ver="$(cat "$dir/version.txt")"
+            if [[ -n "$ver" ]]; then
+              git commit -m "chore(gstreamer): update ${plat} bundle to ${ver}"
+            else
+              git commit -m "chore(gstreamer): update ${plat} bundle"
+            fi
+            changed=true
+          done
 
-          if git diff --cached --quiet; then
-            echo "No asset changes to commit"
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [[ -n "${{ steps.meta.outputs.version }}" ]]; then
-            git commit \
-              -m "chore(gstreamer): update bundled assets to ${{ steps.meta.outputs.version }}" \
-              -m "Per-platform versions:" \
-              -m "${{ steps.meta.outputs.body }}"
+          if [[ "$changed" == "true" ]]; then
+            git push
           else
-            git commit -m "chore(gstreamer): update bundled assets"
+            echo "No asset changes to commit"
           fi
-
-          git push
-          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "changed=${changed}" >> "$GITHUB_OUTPUT"
 
       - name: Push gstreamer badge
         if: steps.commit_assets.outputs.changed == 'true' && steps.meta.outputs.version != '' && (github.ref_name == 'main' || github.ref_name == 'dev')
