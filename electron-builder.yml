@@ -28,7 +28,6 @@ asarUnpack:
 linux:
   target:
     - AppImage
-    - deb
   icon: icons/linux/livi.png
   maintainer: 'Lasse Heitgres <hello@f-io.dev>'
   category: Utility
@@ -36,8 +35,6 @@ linux:
   extraResources:
     - from: out/compositor
       to: compositor
-    - from: assets/linux/livi.apparmor
-      to: livi.apparmor
     - from: assets/linux/dev.f-io.livi.metainfo.xml
       to: ../share/metainfo/dev.f-io.livi.metainfo.xml
     - from: assets/linux/99-LIVI.rules.template
@@ -60,25 +57,6 @@ linux:
         - '**/*'
         - '!__pycache__/**'
         - '!*.pyc'
-
-deb:
-  packageName: livi
-  artifactName: ${name}-${version}-linux-${arch}.${ext}
-  synopsis: 'LIVI - Linux In-Vehicle Infotainment'
-  appArmorProfile: assets/linux/livi.apparmor
-  afterInstall: assets/linux/after-install.sh
-  afterRemove: assets/linux/after-remove.sh
-  fpm:
-    - "assets/linux/dev.f-io.livi.metainfo.xml=/usr/share/metainfo/dev.f-io.livi.metainfo.xml"
-  depends:
-    - libgtk-3-0 | libgtk-3-0t64
-    - libnss3
-    - libxss1
-    - libxtst6
-    - xdg-utils
-    - libatspi2.0-0
-    - libuuid1
-    - libsecret-1-0
 
 mac:
   identity: '-'

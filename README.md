@@ -181,20 +181,15 @@ pnpm run install:ci
 
 # --- Build targets ---
 
-# Linux x86_64 (AppImage + deb)
+# Linux x86_64 (AppImage)
 pnpm run build:linux
 
-# Linux ARM64 (AppImage + deb)
+# Linux ARM64 (AppImage)
 pnpm run build:armLinux
 
-# Single-format variants
-pnpm run build:linux:appimage      # x86_64 AppImage
-pnpm run build:linux:deb           # x86_64 deb
-pnpm run build:armLinux:appimage   # ARM64 AppImage
-pnpm run build:armLinux:deb        # ARM64 deb
-
-# macOS (arm64 dmg)
-pnpm run build:mac
+# macOS (dmg)
+pnpm run build:mac:arm64           # Apple Silicon
+pnpm run build:mac:x64             # Intel
 ```
 
 ## Dashboard
