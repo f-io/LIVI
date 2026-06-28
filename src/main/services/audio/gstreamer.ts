@@ -37,8 +37,11 @@ export function gstEnv(gstRoot: string): NodeJS.ProcessEnv {
     'gstreamer-1.0',
     process.platform === 'win32' ? 'gst-plugin-scanner.exe' : 'gst-plugin-scanner'
   )
+  const lcUtf8 = process.platform === 'darwin' ? 'en_US.UTF-8' : 'C.UTF-8'
   const base = {
     ...process.env,
+    LANG: lcUtf8,
+    LC_ALL: lcUtf8,
     GST_PLUGIN_SYSTEM_PATH: '',
     GST_PLUGIN_PATH: pluginPath,
     GST_PLUGIN_SCANNER: pluginScanner
