@@ -8,5 +8,5 @@ export function registerIpc(runtimeState: runtimeStateProps, services: ServicesP
   registerAppIpc(runtimeState, services)
   registerAudioIpc()
   registerSettingsIpc(runtimeState)
-  registerUpdateIpc(services)
+  registerUpdateIpc(runtimeState, services)
 }

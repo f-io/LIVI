@@ -1,10 +1,11 @@
 import os from 'node:os'
+import { restartApp } from '@main/ipc/app'
 import { downloadWithProgress } from '@main/ipc/update/downloader'
 import { installOnLinuxFromFile } from '@main/ipc/update/install.linux'
 import { installOnMacFromFile } from '@main/ipc/update/install.mac'
 import { pickAssetForPlatform } from '@main/ipc/update/pickAsset'
 import { sendUpdateEvent, sendUpdateProgress } from '@main/ipc/utils'
-import { GhRelease, ServicesProps, UpdateSessionState } from '@main/types'
+import { GhRelease, runtimeStateProps, ServicesProps, UpdateSessionState } from '@main/types'
 import type { IpcMainInvokeEvent } from 'electron'
 import { existsSync, promises as fsp } from 'fs'
 import { join } from 'path'
@@ -17,7 +18,10 @@ let updateSession: {
 } = { state: 'idle' }
 
 export class Updater {
-  constructor(private services: ServicesProps) {}
+  constructor(
+    private runtimeState: runtimeStateProps,
+    private services: ServicesProps
+  ) {}
 
   perform = async (_evt: IpcMainInvokeEvent, directUrl?: string) => {
     try {
@@ -94,18 +98,22 @@ export class Updater {
         throw new Error('No downloaded update ready')
       }
 
-      try {
-        await this.services.usbService.gracefulReset()
-      } catch (e) {
-        console.warn('[MAIN] gracefulReset failed (continuing install):', e)
-      }
-
-      await new Promise((r) => setTimeout(r, 150))
-
       const file = updateSession.tmpFile
       updateSession.state = 'installing'
-      if (updateSession.platform === 'darwin') await installOnMacFromFile(file)
-      else await installOnLinuxFromFile(file)
+
+      if (updateSession.platform === 'darwin') {
+        try {
+          await this.services.usbService.gracefulReset()
+        } catch (e) {
+          console.warn('[MAIN] gracefulReset failed (continuing install):', e)
+        }
+        await new Promise((r) => setTimeout(r, 150))
+        await installOnMacFromFile(file)
+        return
+      }
+
+      await installOnLinuxFromFile(file)
+      await restartApp(this.runtimeState, this.services)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       updateSession = { state: 'idle' }

@@ -28,6 +28,6 @@ describe('registerIpc', () => {
 
     expect(registerAppIpc).toHaveBeenCalledWith(runtimeState, services)
     expect(registerSettingsIpc).toHaveBeenCalledWith(runtimeState)
-    expect(registerUpdateIpc).toHaveBeenCalledWith(services)
+    expect(registerUpdateIpc).toHaveBeenCalledWith(runtimeState, services)
   })
 })

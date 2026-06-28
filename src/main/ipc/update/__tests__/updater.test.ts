@@ -21,7 +21,11 @@ describe('Updater', () => {
     })
     const unlink = vi.fn(() => Promise.resolve())
     const existsSync = vi.fn(() => true)
+    const restartApp = vi.fn(() => Promise.resolve())
 
+    vi.doMock('@main/ipc/app', () => ({
+      restartApp
+    }))
     vi.doMock('@main/ipc/utils', () => ({
       sendUpdateEvent,
       sendUpdateProgress
@@ -54,7 +58,8 @@ describe('Updater', () => {
       installOnLinuxFromFile,
       pickAssetForPlatform,
       unlink,
-      existsSync
+      existsSync,
+      restartApp
     }
   }
 
@@ -62,7 +67,7 @@ describe('Updater', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' })
     const { Updater, sendUpdateEvent } = await loadSubject()
 
-    const updater = new Updater({} as never)
+    const updater = new Updater({} as never, {} as never)
     await updater.perform({} as never)
 
     expect(sendUpdateEvent).toHaveBeenCalledWith({ phase: 'start' })
@@ -83,7 +88,7 @@ describe('Updater', () => {
       return { promise: Promise.resolve(), cancel }
     })
 
-    const updater = new Updater({} as never)
+    const updater = new Updater({} as never, {} as never)
     await updater.perform({} as never, 'https://example.com/LIVI.AppImage')
 
     expect(downloadWithProgress).toHaveBeenCalledWith(
@@ -108,7 +113,7 @@ describe('Updater', () => {
     downloadWithProgress.mockReturnValue({ promise: Promise.resolve(), cancel: vi.fn() })
     existsSync.mockReturnValue(true)
 
-    const updater = new Updater({} as never)
+    const updater = new Updater({} as never, {} as never)
     await updater.perform({} as never, 'https://example.com/LIVI.AppImage')
     await updater.abort()
 
@@ -119,7 +124,7 @@ describe('Updater', () => {
   test('install emits error when no downloaded update is ready', async () => {
     const { Updater, sendUpdateEvent } = await loadSubject()
 
-    const updater = new Updater({ usbService: { gracefulReset: vi.fn() } } as never)
+    const updater = new Updater({} as never, { usbService: { gracefulReset: vi.fn() } } as never)
     await updater.install()
 
     expect(sendUpdateEvent).toHaveBeenCalledWith({
@@ -130,26 +135,23 @@ describe('Updater', () => {
 
   test('install runs graceful reset and linux installer when update is ready', async () => {
     Object.defineProperty(process, 'platform', { value: 'linux' })
-    const { Updater, downloadWithProgress, installOnLinuxFromFile, installOnMacFromFile } =
-      await loadSubject()
+    const {
+      Updater,
+      downloadWithProgress,
+      installOnLinuxFromFile,
+      installOnMacFromFile,
+      restartApp
+    } = await loadSubject()
 
     downloadWithProgress.mockReturnValue({ promise: Promise.resolve(), cancel: vi.fn() })
-    const timeoutSpy = vi.spyOn(global, 'setTimeout').mockImplementation(((
-      cb: (...args: unknown[]) => void
-    ) => {
-      cb()
-      return 0 as unknown as NodeJS.Timeout
-    }) as typeof setTimeout)
-    const gracefulReset = vi.fn(() => Promise.resolve())
-    const updater = new Updater({ usbService: { gracefulReset } } as never)
+    const updater = new Updater({} as never, {} as never)
 
     await updater.perform({} as never, 'https://example.com/LIVI.AppImage')
     await updater.install()
 
-    expect(gracefulReset).toHaveBeenCalledTimes(1)
     expect(installOnLinuxFromFile).toHaveBeenCalledWith(expect.stringMatching(/\.AppImage$/))
+    expect(restartApp).toHaveBeenCalledTimes(1)
     expect(installOnMacFromFile).not.toHaveBeenCalled()
-    timeoutSpy.mockRestore()
   })
 
   test('perform fetches latest release when directUrl is missing and downloads picked asset', async () => {
@@ -169,7 +171,7 @@ describe('Updater', () => {
     })
     pickAssetForPlatform.mockReturnValue({ url: 'https://example.com/from-feed' })
 
-    const updater = new Updater({} as never)
+    const updater = new Updater({} as never, {} as never)
     await updater.perform({} as never)
 
     expect(fetchSpy).toHaveBeenCalledWith(
@@ -197,7 +199,7 @@ describe('Updater', () => {
       status: 503
     } as Response)
 
-    const updater = new Updater({} as never)
+    const updater = new Updater({} as never, {} as never)
     await updater.perform({} as never)
 
     expect(sendUpdateEvent).toHaveBeenCalledWith({
@@ -221,7 +223,7 @@ describe('Updater', () => {
 
     pickAssetForPlatform.mockReturnValue({ url: undefined })
 
-    const updater = new Updater({} as never)
+    const updater = new Updater({} as never, {} as never)
     await updater.perform({} as never)
 
     expect(sendUpdateEvent).toHaveBeenCalledWith({
@@ -246,7 +248,7 @@ describe('Updater', () => {
       cancel
     })
 
-    const updater = new Updater({} as never)
+    const updater = new Updater({} as never, {} as never)
 
     const performPromise = updater.perform({} as never, 'https://example.com/LIVI.AppImage')
     await Promise.resolve()
@@ -259,9 +261,9 @@ describe('Updater', () => {
     expect(sendUpdateEvent).toHaveBeenCalledWith({ phase: 'error', message: 'Aborted' })
   })
 
-  test('install continues with linux installer when gracefulReset fails', async () => {
-    Object.defineProperty(process, 'platform', { value: 'linux' })
-    const { Updater, downloadWithProgress, installOnLinuxFromFile } = await loadSubject()
+  test('install continues with the mac installer when gracefulReset fails', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+    const { Updater, downloadWithProgress, installOnMacFromFile } = await loadSubject()
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
@@ -277,7 +279,7 @@ describe('Updater', () => {
       return 0 as unknown as NodeJS.Timeout
     }) as typeof setTimeout)
     const gracefulReset = vi.fn().mockRejectedValue(new Error('reset failed'))
-    const updater = new Updater({ usbService: { gracefulReset } } as never)
+    const updater = new Updater({} as never, { usbService: { gracefulReset } } as never)
 
     await updater.perform({} as never, 'https://example.com/LIVI.AppImage')
     await updater.install()
@@ -286,7 +288,7 @@ describe('Updater', () => {
       '[MAIN] gracefulReset failed (continuing install):',
       expect.any(Error)
     )
-    expect(installOnLinuxFromFile).toHaveBeenCalledWith(expect.stringMatching(/\.AppImage$/))
+    expect(installOnMacFromFile).toHaveBeenCalledWith(expect.stringMatching(/\.dmg$/))
 
     timeoutSpy.mockRestore()
     warnSpy.mockRestore()
@@ -304,7 +306,7 @@ describe('Updater', () => {
       cancel: vi.fn()
     })
 
-    const updater = new Updater({} as never)
+    const updater = new Updater({} as never, {} as never)
 
     const firstPerform = updater.perform({} as never, 'https://example.com/LIVI.AppImage')
     await Promise.resolve()
@@ -331,7 +333,7 @@ describe('Updater', () => {
 
     pickAssetForPlatform.mockReturnValue({ url: undefined })
 
-    const updater = new Updater({} as never)
+    const updater = new Updater({} as never, {} as never)
     await updater.perform({} as never)
 
     expect(pickAssetForPlatform).toHaveBeenCalledWith([])
@@ -356,7 +358,7 @@ describe('Updater', () => {
       }
     })
 
-    const updater = new Updater({} as never)
+    const updater = new Updater({} as never, {} as never)
     await updater.perform({} as never, 'https://example.com/LIVI.dmg')
 
     expect(downloadWithProgress).toHaveBeenCalledWith(
@@ -390,7 +392,7 @@ describe('Updater', () => {
       return 0 as unknown as NodeJS.Timeout
     }) as typeof setTimeout)
     const gracefulReset = vi.fn().mockResolvedValue(undefined)
-    const updater = new Updater({ usbService: { gracefulReset } } as never)
+    const updater = new Updater({} as never, { usbService: { gracefulReset } } as never)
 
     await updater.perform({} as never, 'https://example.com/LIVI.dmg')
     await updater.install()
@@ -419,7 +421,7 @@ describe('Updater', () => {
       return 0 as unknown as NodeJS.Timeout
     }) as typeof setTimeout)
     const gracefulReset = vi.fn().mockResolvedValue(undefined)
-    const updater = new Updater({ usbService: { gracefulReset } } as never)
+    const updater = new Updater({} as never, { usbService: { gracefulReset } } as never)
 
     await updater.perform({} as never, 'https://example.com/LIVI.dmg')
     await updater.install()
@@ -441,7 +443,7 @@ describe('Updater', () => {
       cancel: vi.fn()
     })
 
-    const updater = new Updater({} as never)
+    const updater = new Updater({} as never, {} as never)
     await updater.perform({} as never, 'https://example.com/LIVI.AppImage')
 
     expect(sendUpdateEvent).toHaveBeenCalledWith({
@@ -461,7 +463,7 @@ describe('Updater', () => {
     })
     existsSync.mockReturnValue(false)
 
-    const updater = new Updater({} as never)
+    const updater = new Updater({} as never, {} as never)
     await updater.perform({} as never, 'https://example.com/LIVI.AppImage')
     await updater.abort()
 
@@ -488,7 +490,7 @@ describe('Updater', () => {
       return 0 as unknown as NodeJS.Timeout
     }) as typeof setTimeout)
     const gracefulReset = vi.fn().mockResolvedValue(undefined)
-    const updater = new Updater({ usbService: { gracefulReset } } as never)
+    const updater = new Updater({} as never, { usbService: { gracefulReset } } as never)
 
     await updater.perform({} as never, 'https://example.com/LIVI.dmg')
     await updater.install()

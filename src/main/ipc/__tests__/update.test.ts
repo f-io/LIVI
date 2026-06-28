@@ -23,11 +23,12 @@ describe('registerUpdateIpc', () => {
   })
 
   test('creates Updater and registers update handlers', () => {
+    const runtimeState = { config: {} } as never
     const services = { projectionService: {}, usbService: {}, telemetrySocket: {} } as never
 
-    registerUpdateIpc(services)
+    registerUpdateIpc(runtimeState, services)
 
-    expect(Updater).toHaveBeenCalledWith(services)
+    expect(Updater).toHaveBeenCalledWith(runtimeState, services)
 
     const updaterInstance = (Updater as Mock).mock.results[0].value
 
