@@ -70,8 +70,6 @@ enum tinywl_cursor_mode {
 // Each screen role gets its own non-overlapping x-slot in the scene
 #define LIVI_SCREEN_X_SLOT 100000
 
-// Compositor-drawn server-side decoration: a titlebar with the screen title and round minimize,
-// fullscreen and close buttons. Hidden in fullscreen/kiosk.
 #define LIVI_TITLEBAR_H 32
 #define LIVI_BTN_W 32
 #define LIVI_BTN_GAP 2
@@ -91,8 +89,8 @@ struct livi_video_cfg {
 
 struct tinywl_server {
 	struct wl_display *wl_display;
-	struct wlr_backend *backend;     // multi-backend from autocreate
-	struct wlr_backend *wl_backend;  // the nested wayland sub-backend (for new outputs)
+	struct wlr_backend *backend;
+	struct wlr_backend *wl_backend;
 	struct wlr_renderer *renderer;
 	struct wlr_allocator *allocator;
 	struct wlr_scene *scene;
@@ -102,7 +100,7 @@ struct tinywl_server {
 	struct wlr_scene_tree *layer_video;
 	struct wlr_scene_tree *layer_ui;
 	struct wlr_scene_tree *layer_deco;
-	struct wlr_scene_tree *layer_overlay;   // modal dialogs, above the UI
+	struct wlr_scene_tree *layer_overlay;
 
 	struct wlr_xdg_shell *xdg_shell;
 	struct wl_listener new_xdg_toplevel;
@@ -139,13 +137,12 @@ struct tinywl_server {
 	struct wl_list outputs;
 	struct wl_listener new_output;
 
-	// one screen per role (LIVI_SCREENS: main, dash, aux ...)
 	struct livi_screen *screens;
 	int n_screens;
 	struct livi_screen *pending_screen;   // next new output binds here (NULL -> main)
 	char pending_video_tags[LIVI_MAX_VIDEO_CFGS][64];
 	int n_pending_video_tags;
-	struct wl_list videos;        // video toplevels, found by tag
+	struct wl_list videos;
 	struct livi_video_cfg video_cfgs[LIVI_MAX_VIDEO_CFGS];
 	int ctrl_fd;
 
@@ -156,7 +153,6 @@ struct tinywl_server {
 	GLint cal_loc_gamma, cal_loc_contrast, cal_loc_gain, cal_loc_tex;
 	bool cal_prog_failed;
 
-	// inner UI child (the -s startup command)
 	char *startup_cmd;
 	const char *ui_socket;   // WAYLAND_DISPLAY the inner UI connects to (set per-child only)
 	pid_t startup_pid;
@@ -187,7 +183,7 @@ struct tinywl_toplevel {
 	struct wlr_xdg_toplevel_decoration_v1 *decoration;  // forced server-side on initial commit
 	bool is_video;
 	bool is_dialog;   // modal dialog: lives in layer_overlay, kept centered
-	// video plane: tag (claim) + AA crop region, placed by apply_video_layout
+	// video plane: tag (claim) + crop region, placed by apply_video_layout
 	char tag[64];
 	bool has_crop;
 	double crop_l, crop_t, vis_w, vis_h, tier_w, tier_h;
@@ -226,23 +222,21 @@ struct livi_screen {
 	int32_t width, height;
 	int32_t req_width, req_height;   // host-requested output size (0 -> LIVI_OUTPUT_SIZE)
 
-	struct tinywl_toplevel *ui;      // UI plane (Electron), on top
+	struct tinywl_toplevel *ui;
 
 	struct wlr_scene_rect *backdrop;
 	float backdrop_color[4];
 	bool has_backdrop_color;
 
-	// compositor-drawn titlebar (cairo), above the UI, hidden while fullscreen
-	struct wlr_scene_buffer *titlebar;   // dark rounded-top bar, re-drawn on width change
-	struct wlr_scene_buffer *title;      // screen title text
+	struct wlr_scene_buffer *titlebar;
+	struct wlr_scene_buffer *title;
 	struct wlr_scene_buffer *btn_min;
 	struct wlr_scene_buffer *btn_fs;
 	struct wlr_scene_buffer *btn_close;
-	int titlebar_w;                      // last width the bar was drawn at
-	bool fullscreen;                 // host output is fullscreen -> no titlebar, UI fills
+	int titlebar_w;
+	bool fullscreen;
 };
 
-// Top inset the UI/video planes leave for the titlebar (0 while fullscreen).
 static int screen_top_inset(const struct livi_screen *s) {
 	return s->fullscreen ? 0 : LIVI_TITLEBAR_H;
 }
@@ -256,7 +250,6 @@ static struct livi_screen *screen_by_role(struct tinywl_server *server, const ch
 	return NULL;
 }
 
-// Map a touch/pointer device's output name (each nested output has its own) to its screen.
 static struct livi_screen *screen_for_output_name(struct tinywl_server *server,
 		const char *name) {
 	if (name == NULL) {
@@ -308,7 +301,6 @@ static struct livi_video_cfg *cfg_for_tag(struct tinywl_server *server, const ch
 	return NULL;
 }
 
-// Apply a cached cfg (screen + crop + visibility) to a video toplevel.
 static void apply_cfg_to_video(struct tinywl_server *server, struct livi_video_cfg *cfg,
 		struct tinywl_toplevel *v) {
 	if (cfg->screen[0]) {
@@ -649,12 +641,11 @@ static enum livi_deco_hit deco_hit_test(struct tinywl_server *server, double lx,
 			return LIVI_DECO_MOVE;
 		}
 		if (edges != 0) { *out = s; *out_edges = edges; return LIVI_DECO_RESIZE; }
-		return LIVI_DECO_NONE;   // inside the UI surface
+		return LIVI_DECO_NONE;
 	}
 	return LIVI_DECO_NONE;
 }
 
-// xcursor name for a resize-edge bitmask (only bottom/left/right + bottom corners are used).
 static const char *resize_cursor_name(uint32_t edges) {
 	bool b = (edges & WLR_EDGE_BOTTOM) != 0;
 	bool l = (edges & WLR_EDGE_LEFT) != 0;
@@ -676,7 +667,6 @@ static void process_cursor_motion(struct tinywl_server *server, uint32_t time) {
 		return;
 	}
 
-	// Decoration hover feedback: resize cursors over the borders, default over the titlebar.
 	struct livi_screen *ds = NULL;
 	uint32_t dedges = 0;
 	enum livi_deco_hit dh = deco_hit_test(server, server->cursor->x, server->cursor->y,
@@ -859,7 +849,7 @@ static void output_frame(struct wl_listener *listener, void *data) {
 	wlr_scene_output_send_frame_done(scene_output, &now);
 }
 
-// Size+position a video plane so its AA content region fills the screen, margins
+// Size+position a video plane so its content region fills the screen, margins
 // overflowing off the output edge (the scene clips them). Zero-copy.
 static void apply_video_layout(struct tinywl_toplevel *video) {
 	struct livi_screen *s = video->screen;
@@ -867,7 +857,7 @@ static void apply_video_layout(struct tinywl_toplevel *video) {
 		return;
 	}
 	int top = screen_top_inset(s);
-	int ow = s->width, oh = s->height - top;   // area below the titlebar
+	int ow = s->width, oh = s->height - top;
 	if (ow <= 0 || oh <= 0) {
 		return;
 	}
@@ -890,8 +880,6 @@ static void apply_video_layout(struct tinywl_toplevel *video) {
 	wlr_xdg_toplevel_set_size(video->xdg_toplevel, tw, th);
 	wlr_scene_node_set_position(&video->scene_tree->node, px, py);
 }
-
-// Per-video GLES2 shader pass: gamma/contrast/per-channel RGB on the video plane.
 
 static const char CAL_VERT_SRC[] =
 	"attribute vec2 pos;\n"
@@ -969,7 +957,6 @@ static bool cal_ensure_program(struct tinywl_server *server) {
 	return true;
 }
 
-// EGL/GLES image extension entry points, resolved at runtime via eglGetProcAddress.
 static PFNEGLCREATEIMAGEKHRPROC p_eglCreateImageKHR;
 static PFNEGLDESTROYIMAGEKHRPROC p_eglDestroyImageKHR;
 static PFNGLEGLIMAGETARGETTEXTURE2DOESPROC p_glEGLImageTargetTexture2DOES;
@@ -1199,7 +1186,6 @@ static const struct wlr_buffer_impl livi_deco_buffer_impl = {
 	.end_data_ptr_access = livi_deco_buffer_end_data_ptr_access,
 };
 
-// Take ownership of a drawn cairo surface and hand it to a scene buffer.
 static void livi_scene_set_cairo(struct wlr_scene_buffer *sb, cairo_surface_t *surface) {
 	struct livi_deco_buffer *b = calloc(1, sizeof(*b));
 	if (b == NULL) {
@@ -1215,13 +1201,11 @@ static void livi_scene_set_cairo(struct wlr_scene_buffer *sb, cairo_surface_t *s
 
 enum livi_btn_sym { LIVI_SYM_MIN, LIVI_SYM_FS, LIVI_SYM_CLOSE };
 
-// A round, monochrome window-control button (subtle light disc + a light glyph), like the
-// typical GNOME controls. The slot is w x h, the disc is centred.
 static cairo_surface_t *livi_draw_button(enum livi_btn_sym sym, int w, int h) {
 	cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
 	cairo_t *cr = cairo_create(s);
 	double cx = w / 2.0, cy = h / 2.0;
-	double rad = h * 0.34;   // disc radius, independent of the slot width
+	double rad = h * 0.34;
 	cairo_arc(cr, cx, cy, rad, 0, 2 * M_PI);
 	cairo_set_source_rgba(cr, 1, 1, 1, 0.10);
 	cairo_fill(cr);
@@ -1230,7 +1214,7 @@ static cairo_surface_t *livi_draw_button(enum livi_btn_sym sym, int w, int h) {
 	cairo_set_line_width(cr, 1.5);
 	cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
 	cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
-	double g = rad * 0.33;   // glyph half-extent, leaves clear padding to the disc edge
+	double g = rad * 0.33;
 	switch (sym) {
 	case LIVI_SYM_CLOSE:
 		cairo_move_to(cr, cx - g, cy - g); cairo_line_to(cr, cx + g, cy + g);
@@ -1242,11 +1226,9 @@ static cairo_surface_t *livi_draw_button(enum livi_btn_sym sym, int w, int h) {
 		cairo_stroke(cr);
 		break;
 	case LIVI_SYM_FS: {
-		double e = g * 0.8;   // corner-bracket leg length
-		// bracket in the top-left corner
+		double e = g * 0.8;
 		cairo_move_to(cr, cx - g + e, cy - g); cairo_line_to(cr, cx - g, cy - g);
 		cairo_line_to(cr, cx - g, cy - g + e);
-		// bracket in the bottom-right corner
 		cairo_move_to(cr, cx + g - e, cy + g); cairo_line_to(cr, cx + g, cy + g);
 		cairo_line_to(cr, cx + g, cy + g - e);
 		cairo_stroke(cr);
@@ -1258,7 +1240,6 @@ static cairo_surface_t *livi_draw_button(enum livi_btn_sym sym, int w, int h) {
 	return s;
 }
 
-// The screen's title text, light on transparent, vertically centred in a h-tall strip.
 static cairo_surface_t *livi_draw_title(const char *text, int h) {
 	cairo_surface_t *probe = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
 	cairo_t *pc = cairo_create(probe);
@@ -1284,7 +1265,6 @@ static cairo_surface_t *livi_draw_title(const char *text, int h) {
 	return s;
 }
 
-// The titlebar background: a flat dark bar
 static cairo_surface_t *livi_draw_titlebar(int w, int h) {
 	cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
 	cairo_t *cr = cairo_create(s);
@@ -1295,8 +1275,6 @@ static cairo_surface_t *livi_draw_titlebar(int w, int h) {
 	return s;
 }
 
-// Lay out a screen's UI plane and its titlebar. Windowed: titlebar on top, UI pushed down by
-// its height. Fullscreen/kiosk: titlebar hidden, UI fills the whole output.
 static void apply_ui_layout(struct livi_screen *s) {
 	if (s == NULL) {
 		return;
@@ -1343,8 +1321,6 @@ static void apply_ui_layout(struct livi_screen *s) {
 	}
 }
 
-// Toggle the host output between windowed (with titlebar) and fullscreen. Reflected onto the
-// inner Electron toplevel so its kiosk/UI state follows.
 static void livi_toggle_fullscreen(struct livi_screen *s) {
 	if (s == NULL || s->ui == NULL) {
 		return;
@@ -1369,7 +1345,6 @@ static void output_request_state(struct wl_listener *listener, void *data) {
 	if (s == NULL) {
 		return;
 	}
-	/* LIVI: track the screen size and reflow its UI + every video plane on it + backdrop */
 	s->width = output->wlr_output->width;
 	s->height = output->wlr_output->height;
 	struct tinywl_toplevel *v;
@@ -1426,7 +1401,6 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 	free(output);
 }
 
-// Branded display title per role (role stays the lowercase identifier).
 static const char *role_title(const char *role) {
 	if (strcmp(role, "main") == 0) return "LIVI";
 	if (strcmp(role, "dash") == 0) return "Dash";
@@ -1508,7 +1482,6 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 	struct wlr_scene_output *scene_output = wlr_scene_output_create(server->scene, wlr_output);
 	wlr_scene_output_layout_add_output(server->scene_layout, l_output, scene_output);
 
-	/* per-screen opaque backdrop at the screen's x-offset, lowered to the very bottom */
 	float black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 	float magenta[4] = {0.55f, 0.0f, 0.55f, 1.0f};
 	const float *color = getenv("LIVI_DEBUG_BG") ? magenta
@@ -1560,7 +1533,6 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
 		return;
 	}
 
-	/* UI plane: pin it under its screen's titlebar, size it to fit, then focus it */
 	apply_ui_layout(s);
 	focus_toplevel(toplevel);
 }
@@ -1598,7 +1570,7 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 				s = screen_by_role(server, title + 5);
 			}
 			if (s == NULL) {
-				s = &server->screens[0];   // untitled UI (main) -> main
+				s = &server->screens[0];
 			}
 			toplevel->is_video = false;
 			const char *ui_app = getenv("LIVI_OUTPUT_APP_ID");
@@ -1628,7 +1600,6 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 			wl_list_insert(&server->videos, &toplevel->video_link);
 		}
 		toplevel->screen = s;
-		// fixed z-order: overlay dialogs on top, then UI, then video, then backdrop
 		struct wlr_scene_tree *layer = toplevel->is_dialog ? server->layer_overlay
 			: toplevel->is_video ? server->layer_video : server->layer_ui;
 		wlr_scene_node_reparent(&toplevel->scene_tree->node, layer);
@@ -1636,7 +1607,6 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 			app_id ? app_id : "(null)", title ? title : "(null)", toplevel->tag,
 			toplevel->is_dialog ? "dialog" : toplevel->is_video ? "video" : "ui", s->role);
 
-		/* lay the new plane out: UI gets a titlebar, video fills the area below it */
 		if (toplevel->is_video) {
 			apply_video_layout(toplevel);
 		} else {
@@ -1654,7 +1624,6 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 
 	if (toplevel->is_dialog && toplevel->screen != NULL
 			&& !toplevel->xdg_toplevel->base->initial_commit) {
-		// keep the modal dialog centered on its screen
 		int w = toplevel->xdg_toplevel->base->geometry.width;
 		int h = toplevel->xdg_toplevel->base->geometry.height;
 		if (w <= 0 || h <= 0) {
@@ -1743,7 +1712,6 @@ static void xdg_toplevel_request_fullscreen(
 		if (s->ui == toplevel && s->wlr_output != NULL &&
 				wlr_output_is_wl(s->wlr_output)) {
 			wlr_wl_output_set_fullscreen(s->wlr_output, want);
-			// Track the mode so the titlebar shows/hides, then re-lay the UI for it.
 			s->fullscreen = want;
 			apply_ui_layout(s);
 			wlr_log(WLR_INFO, "livi: request_fullscreen=%d screen '%s' output %dx%d",
@@ -1845,7 +1813,6 @@ static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
 	wl_signal_add(&xdg_popup->events.destroy, &popup->destroy);
 }
 
-// (Re)spawn the inner UI child (the -s startup command). Used at boot and on "restart".
 static void spawn_startup(struct tinywl_server *server) {
 	if (server->startup_cmd == NULL) {
 		return;
@@ -1888,10 +1855,7 @@ static void ctrl_handle_line(struct tinywl_server *server, const char *line) {
 	double cl, ct, vw, vh, tw, th;
 	int onoff, swidth, sheight;
 
-	// restart the inner UI: kill the current child and re-spawn it. The compositor (and
-	// thus the host output windows) stays up, only the Electron app relaunches.
 	if (strcmp(line, "restart") == 0) {
-		// Full restart
 		wlr_log(WLR_INFO, "livi: restart requested -> waiting for inner UI to quit, then re-exec");
 		server->full_restart = true;
 		if (server->startup_pid > 0) {
@@ -2105,7 +2069,6 @@ int main(int argc, char *argv[]) {
 
 	struct tinywl_server server = {0};
 
-	/* LIVI: known screen roles from LIVI_SCREENS, outputs are opened on demand per role */
 	char screens_buf[256];
 	const char *screens_env = getenv("LIVI_SCREENS");
 	snprintf(screens_buf, sizeof(screens_buf), "%s",
@@ -2260,7 +2223,6 @@ int main(int argc, char *argv[]) {
 		wlr_log(WLR_ERROR, "livi: re-exec failed: %s", strerror(errno));
 	}
 
-	/* LIVI: take the spawned UI down with us */
 	if (server.startup_pid > 0) {
 		kill(server.startup_pid, SIGTERM);
 	}
