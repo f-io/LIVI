@@ -75,8 +75,8 @@ importers:
         specifier: ^3.0.0
         version: 3.0.0
       usb:
-        specifier: 3.0.0
-        version: 3.0.0
+        specifier: 3.0.1
+        version: 3.0.1
       vite-plugin-esmodule:
         specifier: ^1.5.0
         version: 1.5.0
@@ -116,7 +116,7 @@ importers:
         version: 1.0.14
       '@vitejs/plugin-react':
         specifier: ^6.0.3
-        version: 6.0.3(vite@8.1.1(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
+        version: 6.0.3(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
       '@vitest/coverage-v8':
         specifier: ^4.1.9
         version: 4.1.9(vitest@4.1.9)
@@ -166,8 +166,8 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
       vite:
-        specifier: ^8.1.1
-        version: 8.1.1(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
+        specifier: ^8.1.2
+        version: 8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
       vite-plugin-electron:
         specifier: ^1.1.0
         version: 1.1.0(vite-plugin-electron-renderer@1.0.0)
@@ -176,23 +176,23 @@ importers:
         version: 1.0.0
       vitest:
         specifier: ^4.1.9
-        version: 4.1.9(@types/node@26.0.1)(@vitest/coverage-v8@4.1.9)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.1(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
+        version: 4.1.9(@types/node@26.0.1)(@vitest/coverage-v8@4.1.9)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
     optionalDependencies:
       '@node-usb/usb-darwin-arm64':
-        specifier: 3.0.0
-        version: 3.0.0
+        specifier: 3.0.1
+        version: 3.0.1
       '@node-usb/usb-darwin-x64':
-        specifier: 3.0.0
-        version: 3.0.0
+        specifier: 3.0.1
+        version: 3.0.1
       '@node-usb/usb-linux-arm64-gnu':
-        specifier: 3.0.0
-        version: 3.0.0
+        specifier: 3.0.1
+        version: 3.0.1
       '@node-usb/usb-linux-x64-gnu':
-        specifier: 3.0.0
-        version: 3.0.0
+        specifier: 3.0.1
+        version: 3.0.1
       '@node-usb/usb-win32-x64-msvc':
-        specifier: 3.0.0
-        version: 3.0.0
+        specifier: 3.0.1
+        version: 3.0.1
 
   native/gst-video: {}
 
@@ -826,66 +826,66 @@ packages:
     resolution: {integrity: sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg==}
     engines: {node: '>= 20.19.0'}
 
-  '@node-usb/usb-darwin-arm64@3.0.0':
-    resolution: {integrity: sha512-wBnK74ToiFpH8QGsOSkxjx2BllHIaeW57AUIrAEd1ZWdulbR7l63e07efUSi+iQDf7Qd8HLkD1DnA4w92lagcQ==}
+  '@node-usb/usb-darwin-arm64@3.0.1':
+    resolution: {integrity: sha512-GB+MGKaXvEtaDOWng7nCPxWvnXWhZtbFL0FW9ncDmGYtFl3OW+xfLZGhd5Y9VKG6GXXIYS3x1FsBI+zkcxVMhA==}
     engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
     cpu: [arm64]
     os: [darwin]
 
-  '@node-usb/usb-darwin-x64@3.0.0':
-    resolution: {integrity: sha512-myCWHDMSO7Xo6bSmCprTAuIj/KBD+z2YpKVnDCv65ZB5vF83gqz+7Qlnbqgr92IarAjPLldkyM5dgpHxGF9l5A==}
+  '@node-usb/usb-darwin-x64@3.0.1':
+    resolution: {integrity: sha512-oTY8vLoigjYFwNft1nZNNje0zAXjSQy9u3swe+pcCfZp6qQbEoSLegLEBr94arEgQloQabaq4VA2JZVA8cUQqQ==}
     engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
     cpu: [x64]
     os: [darwin]
 
-  '@node-usb/usb-linux-arm-gnueabihf@3.0.0':
-    resolution: {integrity: sha512-EOQOP7QQf92Nr37jaBlL7W4pkB+9YCVxI/l1PZ19KZr/kqBIArdVw4DbkADmJmLwYl4yIeDsJLuQ2O9xLbYcvA==}
+  '@node-usb/usb-linux-arm-gnueabihf@3.0.1':
+    resolution: {integrity: sha512-GN5dTxc/FhjmC9NP7Xx1esGAhpIhnNvAf02kk/0i7Cz0w1VaJ/I0XbIVAYIJ5zhDg/oSYkhdILHbOS9+mlWCRQ==}
     engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
     cpu: [arm]
     os: [linux]
 
-  '@node-usb/usb-linux-arm64-gnu@3.0.0':
-    resolution: {integrity: sha512-H6TLWmgeK0QSDUUCR1KRGQiNWFnSsv9Ec2Bnet8LQJrRtdb0np92oObgzn7X7nz4rpcuahfxH8H2xnLQatZnWA==}
+  '@node-usb/usb-linux-arm64-gnu@3.0.1':
+    resolution: {integrity: sha512-7cL85qb/yrBXvssZwL3k62duBxT/LaCY/Vcfv/Du9MLFdHhqU0zdYX5fLch/zaW5euYXQE0gmCoTfimfAjlxGQ==}
     engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@node-usb/usb-linux-arm64-musl@3.0.0':
-    resolution: {integrity: sha512-d2ROSTlGh0axwSVw3cGXlUEzCW8vJsJOI6T/82xsB/mO+Wy8IC6eRaVzIyEx+hrBiW/TNVI8d9QrIHWG8I9/5A==}
+  '@node-usb/usb-linux-arm64-musl@3.0.1':
+    resolution: {integrity: sha512-EweA4HeTwzLiRHsU2DRFflJ3vx0shB5Z9Lt5/P/bkoUtSNt8uGjFCmsCjqoO068ul9oejsBMJg22rNLD3+iFqQ==}
     engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
     cpu: [arm64]
     os: [linux]
     libc: [musl]
 
-  '@node-usb/usb-linux-x64-gnu@3.0.0':
-    resolution: {integrity: sha512-r3I6kGKiIm6J5qpdte4aHvMXXizLPonwq5f2ZGZGBY9VJUrUVjV5g1wW5spPZoq5E+R1V+metup1zMWd1Topew==}
+  '@node-usb/usb-linux-x64-gnu@3.0.1':
+    resolution: {integrity: sha512-cEE7GyMhtfq5OM/MXZn3RmYBqPvId0CMuoBx7biazPvlnf0iEWYjpma0WvVMWad/f1QIcC45WgrazHaVv6gAPw==}
     engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@node-usb/usb-linux-x64-musl@3.0.0':
-    resolution: {integrity: sha512-Qtzms0RQ4XXsuVwiNSDxXsuubfbzVELB4WH4MyP1ABigibA+yslMLHJLZbZyZA1NpOP32Pikmz6C7o9Ho6Z2LQ==}
+  '@node-usb/usb-linux-x64-musl@3.0.1':
+    resolution: {integrity: sha512-zGWlk1mzElTPO4wxlRcd1C7xd7xDxzgpOXbQfE+NbClOUJ71NkbnahWN2ef2LcJvFESYg/CV9Dv/ULKSpJWEEw==}
     engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
     cpu: [x64]
     os: [linux]
     libc: [musl]
 
-  '@node-usb/usb-win32-arm64-msvc@3.0.0':
-    resolution: {integrity: sha512-w4WfwMY07MPHF+393sCUTLl8cZMqyUlEvsxVZjDefXe3LsC/EKhxLWYqVOFszlhYGDpe5YLs2VjFLi5miq0ZjQ==}
+  '@node-usb/usb-win32-arm64-msvc@3.0.1':
+    resolution: {integrity: sha512-ayXNeb+KvdkZLXzTWyttNONUPG8/x9PwuP+GvUeiYCQuyLMqmbGeMsO7IiuBWTnxLFtCdep+UBpcL8XMcYdTiA==}
     engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
     cpu: [arm64]
     os: [win32]
 
-  '@node-usb/usb-win32-ia32-msvc@3.0.0':
-    resolution: {integrity: sha512-2531uD4hB1ccesjyapYB//VDEARnhx8u1oljBDy5O7o7qZh74KjNtlYXBZBAmCjtZfqIEH+L+YaBFVg39VdTUQ==}
+  '@node-usb/usb-win32-ia32-msvc@3.0.1':
+    resolution: {integrity: sha512-U5281i6yY7gtoTwLom8nLF2o+ILI/g4OFpbAJBr4GbVPOTu+CSNF2Ea+dLEAG30148mp8v79NEsIiAbWXS/1aw==}
     engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
     cpu: [ia32]
     os: [win32]
 
-  '@node-usb/usb-win32-x64-msvc@3.0.0':
-    resolution: {integrity: sha512-8wbRBW1WKzmOWyTJs9n7/rYytYjL+/hvxaW6rlYuHcj0gLDupDJb9l64FhPI8ZZtF19+LVatQeoNtQLoKVRAuQ==}
+  '@node-usb/usb-win32-x64-msvc@3.0.1':
+    resolution: {integrity: sha512-T1jzCBwgnA6E5otxJS/j44b//6fGzHSDmLQtNN1fX6JvdQIisgtbf2+iKD/YI7E247j6Yi9Ixt+MKjHt64hugA==}
     engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
     cpu: [x64]
     os: [win32]
@@ -3004,8 +3004,8 @@ packages:
   unzipper@0.12.3:
     resolution: {integrity: sha512-PZ8hTS+AqcGxsaQntl3IRBw65QrBI6lxzqDEL7IAo/XCEqRTKGfOX56Vea5TH9SZczRVxuzk1re04z/YjuYCJA==}
 
-  usb@3.0.0:
-    resolution: {integrity: sha512-oKHicfd16YtVrh+icdjjTE+CNpAohAjbt8ecanLhA0F9mVjXnGsu1UoV9vZg9sWQ51Lyc5XVI/jFdqXw5IjNFQ==}
+  usb@3.0.1:
+    resolution: {integrity: sha512-IQIi5EraqmKssMNcXe7afKhriHFAE5WdfykhvgkOschJyHBkJXtk/PDx/DzVNyfI7qdr+BUbmLziXA+I3z02lw==}
     engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
 
   use-sync-external-store@1.6.0:
@@ -3048,8 +3048,8 @@ packages:
   vite-plugin-optimizer@1.4.3:
     resolution: {integrity: sha512-m1AFakemDxSNIwxsTYykBFuQxkKJLI8207RNAg33N5km2aE29cP+Jt41xbfdrALOU2VKYWGFlBz64GMbIser4A==}
 
-  vite@8.1.1:
-    resolution: {integrity: sha512-X/05/cT+VITy2AeDc1der6smvGWWREtL4hPbPTaVbjSBuuWkmNOjR6HP3NzqcQA2nF6VHGUPaFRJyft/2AE9Kg==}
+  vite@8.1.2:
+    resolution: {integrity: sha512-6YYPbRXTxx6bRXmOn7XdnQAy5DQNHhDgtjhDHI13oe4pY93kkcdGJWxpGwOm++/Wh0QpQhDrpIoVMrmrsI5AGQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -3887,34 +3887,34 @@ snapshots:
 
   '@noble/hashes@2.2.0': {}
 
-  '@node-usb/usb-darwin-arm64@3.0.0':
+  '@node-usb/usb-darwin-arm64@3.0.1':
     optional: true
 
-  '@node-usb/usb-darwin-x64@3.0.0':
+  '@node-usb/usb-darwin-x64@3.0.1':
     optional: true
 
-  '@node-usb/usb-linux-arm-gnueabihf@3.0.0':
+  '@node-usb/usb-linux-arm-gnueabihf@3.0.1':
     optional: true
 
-  '@node-usb/usb-linux-arm64-gnu@3.0.0':
+  '@node-usb/usb-linux-arm64-gnu@3.0.1':
     optional: true
 
-  '@node-usb/usb-linux-arm64-musl@3.0.0':
+  '@node-usb/usb-linux-arm64-musl@3.0.1':
     optional: true
 
-  '@node-usb/usb-linux-x64-gnu@3.0.0':
+  '@node-usb/usb-linux-x64-gnu@3.0.1':
     optional: true
 
-  '@node-usb/usb-linux-x64-musl@3.0.0':
+  '@node-usb/usb-linux-x64-musl@3.0.1':
     optional: true
 
-  '@node-usb/usb-win32-arm64-msvc@3.0.0':
+  '@node-usb/usb-win32-arm64-msvc@3.0.1':
     optional: true
 
-  '@node-usb/usb-win32-ia32-msvc@3.0.0':
+  '@node-usb/usb-win32-ia32-msvc@3.0.1':
     optional: true
 
-  '@node-usb/usb-win32-x64-msvc@3.0.0':
+  '@node-usb/usb-win32-x64-msvc@3.0.1':
     optional: true
 
   '@oxc-project/types@0.137.0': {}
@@ -4218,10 +4218,10 @@ snapshots:
     dependencies:
       '@types/node': 26.0.1
 
-  '@vitejs/plugin-react@6.0.3(vite@8.1.1(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))':
+  '@vitejs/plugin-react@6.0.3(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
-      vite: 8.1.1(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
+      vite: 8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
 
   '@vitest/coverage-v8@4.1.9(vitest@4.1.9)':
     dependencies:
@@ -4235,7 +4235,7 @@ snapshots:
       obug: 2.1.3
       std-env: 4.1.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.9(@types/node@26.0.1)(@vitest/coverage-v8@4.1.9)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.1(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
+      vitest: 4.1.9(@types/node@26.0.1)(@vitest/coverage-v8@4.1.9)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
 
   '@vitest/expect@4.1.9':
     dependencies:
@@ -4246,13 +4246,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.0
 
-  '@vitest/mocker@4.1.9(vite@8.1.1(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))':
+  '@vitest/mocker@4.1.9(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))':
     dependencies:
       '@vitest/spy': 4.1.9
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 8.1.1(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
+      vite: 8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
 
   '@vitest/pretty-format@4.1.9':
     dependencies:
@@ -6029,20 +6029,20 @@ snapshots:
       graceful-fs: 4.2.11
       node-int64: 0.4.0
 
-  usb@3.0.0:
+  usb@3.0.1:
     dependencies:
       '@types/w3c-web-usb': 1.0.14
     optionalDependencies:
-      '@node-usb/usb-darwin-arm64': 3.0.0
-      '@node-usb/usb-darwin-x64': 3.0.0
-      '@node-usb/usb-linux-arm-gnueabihf': 3.0.0
-      '@node-usb/usb-linux-arm64-gnu': 3.0.0
-      '@node-usb/usb-linux-arm64-musl': 3.0.0
-      '@node-usb/usb-linux-x64-gnu': 3.0.0
-      '@node-usb/usb-linux-x64-musl': 3.0.0
-      '@node-usb/usb-win32-arm64-msvc': 3.0.0
-      '@node-usb/usb-win32-ia32-msvc': 3.0.0
-      '@node-usb/usb-win32-x64-msvc': 3.0.0
+      '@node-usb/usb-darwin-arm64': 3.0.1
+      '@node-usb/usb-darwin-x64': 3.0.1
+      '@node-usb/usb-linux-arm-gnueabihf': 3.0.1
+      '@node-usb/usb-linux-arm64-gnu': 3.0.1
+      '@node-usb/usb-linux-arm64-musl': 3.0.1
+      '@node-usb/usb-linux-x64-gnu': 3.0.1
+      '@node-usb/usb-linux-x64-musl': 3.0.1
+      '@node-usb/usb-win32-arm64-msvc': 3.0.1
+      '@node-usb/usb-win32-ia32-msvc': 3.0.1
+      '@node-usb/usb-win32-x64-msvc': 3.0.1
 
   use-sync-external-store@1.6.0(react@19.2.7):
     dependencies:
@@ -6071,7 +6071,7 @@ snapshots:
 
   vite-plugin-optimizer@1.4.3: {}
 
-  vite@8.1.1(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0):
+  vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0):
     dependencies:
       lightningcss: 1.32.0
       picomatch: 4.0.4
@@ -6085,10 +6085,10 @@ snapshots:
       jiti: 2.7.0
       yaml: 2.9.0
 
-  vitest@4.1.9(@types/node@26.0.1)(@vitest/coverage-v8@4.1.9)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.1(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)):
+  vitest@4.1.9(@types/node@26.0.1)(@vitest/coverage-v8@4.1.9)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)):
     dependencies:
       '@vitest/expect': 4.1.9
-      '@vitest/mocker': 4.1.9(vite@8.1.1(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
+      '@vitest/mocker': 4.1.9(vite@8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
       '@vitest/pretty-format': 4.1.9
       '@vitest/runner': 4.1.9
       '@vitest/snapshot': 4.1.9
@@ -6105,7 +6105,7 @@ snapshots:
       tinyexec: 1.2.4
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.0
-      vite: 8.1.1(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
+      vite: 8.1.2(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 26.0.1

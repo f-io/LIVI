@@ -67,16 +67,16 @@
     "react-router": "^8.1.0",
     "socket.io": "^4.8.3",
     "stream-browserify": "^3.0.0",
-    "usb": "3.0.0",
+    "usb": "3.0.1",
     "vite-plugin-esmodule": "^1.5.0",
     "zustand": "^5.0.14"
   },
   "optionalDependencies": {
-    "@node-usb/usb-darwin-arm64": "3.0.0",
-    "@node-usb/usb-darwin-x64": "3.0.0",
-    "@node-usb/usb-linux-arm64-gnu": "3.0.0",
-    "@node-usb/usb-linux-x64-gnu": "3.0.0",
-    "@node-usb/usb-win32-x64-msvc": "3.0.0"
+    "@node-usb/usb-darwin-arm64": "3.0.1",
+    "@node-usb/usb-darwin-x64": "3.0.1",
+    "@node-usb/usb-linux-arm64-gnu": "3.0.1",
+    "@node-usb/usb-linux-x64-gnu": "3.0.1",
+    "@node-usb/usb-win32-x64-msvc": "3.0.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",
@@ -106,7 +106,7 @@
     "rollup-plugin-visualizer": "^7.0.1",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3",
-    "vite": "^8.1.1",
+    "vite": "^8.1.2",
     "vite-plugin-electron": "^1.1.0",
     "vite-plugin-electron-renderer": "^1.0.0",
     "vitest": "^4.1.9"
