@@ -11,7 +11,7 @@
   ],
   "homepage": "https://f-io.dev",
   "license": "GPL-3.0-or-later",
-  "packageManager": "pnpm@11.11.0",
+  "packageManager": "pnpm@11.12.0",
   "scripts": {
     "prepare": "husky",
     "dev": "vite",
@@ -92,7 +92,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "@vitest/coverage-v8": "^4.1.10",
     "electron": "^43.1.0",
-    "electron-builder": "^26.15.3",
+    "electron-builder": "^26.15.6",
     "esbuild": "^0.28.1",
     "globals": "^17.7.0",
     "husky": "^9.1.7",
