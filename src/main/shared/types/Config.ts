@@ -190,6 +190,7 @@ export type Config = {
   // LIVI UI
   startPage: 'home' | 'media' | 'maps' | 'telemetry' | 'camera' | 'settings'
   language: string
+  bootSplashId: string
   kiosk: WindowAssignment
   uiZoomPercent: number
   appearanceMode: AppearanceMode

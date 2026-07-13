@@ -53,6 +53,37 @@ The `install.sh` script performs the following tasks:
 4. creates a desktop shortcut for easy access
 5. applies the Raspberry Pi HEVC decoder patch if the system GStreamer is affected (see note below)
 
+### Optional: animated splash on Raspberry Pi
+
+If you want a branded splash sequence during boot instead of the standard Raspberry Pi splash, the `scripts/install/pi-splash` directory contains a dedicated `plymouth`-based flow:
+
+- `install.sh` installs `plymouth`, `ffmpeg`, the LIVI theme scaffold, and a root helper that converts the selected `.h264` files into boot animation frames
+- `assets/images/` contains the fallback static image asset
+- `assets/videos/` contains the brand-specific `.h264` source videos
+- `installers/` contains the system-level helper used to rebuild the animated `plymouth` theme
+- `tools/` contains operator-facing helpers such as the splash selector
+
+```bash
+sudo scripts/install/pi-splash/install.sh
+scripts/install/pi-splash/tools/set-splashscreen.sh "Nissan"
+sudo reboot
+```
+
+To roll the splash setup back to the standard Raspberry Pi boot flow:
+
+```bash
+sudo scripts/install/pi-splash/uninstal.sh
+sudo reboot
+```
+
+This boot path works like this:
+
+1. `plymouth` replaces the standard Raspberry Pi splash from the earliest possible boot stage.
+2. The selected splash id is stored in `~/.config/LIVI/config.json` as `bootSplashId`, and the selected `.h264` files are automatically converted into PNG frames and baked into the LIVI `plymouth` theme.
+3. On every boot, `plymouth` plays `*1.h264` once, then loops `*2.h264` until the graphical session and LIVI are ready.
+
+For more detail, see [`scripts/install/pi-splash/README.md`](scripts/install/pi-splash/README.md).
+
 > [!NOTE]
 > **Raspberry Pi HEVC (1080p) hardware decode** uses the system GStreamer `v4l2codecs` plugin. GStreamer **1.26.x before 1.26.11** (currently shipped by Raspberry Pi OS) has a SAND-crop bug that breaks zero-copy at 1080p and leaves the main video layer black. The installer detects an affected version and rebuilds the patched plugin from the distribution source automatically. If you do not use the installer, apply it manually from a LIVI checkout on the Pi:
 >

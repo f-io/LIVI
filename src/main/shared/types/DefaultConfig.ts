@@ -70,6 +70,7 @@ export const DEFAULT_CONFIG: Config = {
   displayColorB: 1.0,
   startPage: 'home',
   language: 'en',
+  bootSplashId: 'default',
   kiosk: { main: false, dash: false, aux: false },
   uiZoomPercent: 100,
   cameraId: '',
