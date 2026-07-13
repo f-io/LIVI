@@ -22,6 +22,9 @@ type ChunkHandler = (payload: unknown) => void
 let audioChunkQueue: unknown[] = []
 let audioChunkHandler: ChunkHandler | null = null
 
+let videoChunkQueue: unknown[] = []
+let videoChunkHandler: ChunkHandler | null = null
+
 let lastClusterResolution: unknown = null
 let clusterResolutionHandlers: ChunkHandler[] = []
 
@@ -37,6 +40,15 @@ ipcRenderer.on('projection-audio-chunk', (_event, payload: unknown) => {
     // a window that never shows the visualizer would buffer forever; keep it bounded
     audioChunkQueue.push(payload)
     if (audioChunkQueue.length > 32) audioChunkQueue.shift()
+  }
+})
+
+ipcRenderer.on('projection-video-chunk', (_event, payload: unknown) => {
+  if (videoChunkHandler) videoChunkHandler(payload)
+  else {
+    // buffer video chunks similar to audio
+    videoChunkQueue.push(payload)
+    if (videoChunkQueue.length > 32) videoChunkQueue.shift()
   }
 })
 
@@ -108,6 +120,9 @@ const api = {
       return () => {
         usbEventHandlers = usbEventHandlers.filter((cb) => cb !== callback)
       }
+    },
+    unlistenForEvents: (callback: ApiCallback): void => {
+      usbEventHandlers = usbEventHandlers.filter((cb) => cb !== callback)
     }
   },
 
@@ -185,6 +200,16 @@ const api = {
     offAudioChunk: (handler: ChunkHandler): void => {
       if (audioChunkHandler === handler) {
         audioChunkHandler = null
+      }
+    },
+    onVideoChunk: (handler: ChunkHandler): void => {
+      videoChunkHandler = handler
+      videoChunkQueue.forEach((chunk) => handler(chunk))
+      videoChunkQueue = []
+    },
+    offVideoChunk: (handler: ChunkHandler): void => {
+      if (videoChunkHandler === handler) {
+        videoChunkHandler = null
       }
     },
     setVolume: (stream: 'music' | 'nav' | 'voiceAssistant' | 'call', volume: number): void => {

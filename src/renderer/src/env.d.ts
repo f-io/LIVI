@@ -123,6 +123,7 @@ declare global {
         uploadIcons(): Promise<void>
         uploadLiviScripts(): Promise<DevToolsUploadResult>
         listenForEvents(callback: (event: unknown, ...args: unknown[]) => void): () => void
+        unlistenForEvents(callback: (event: unknown, ...args: unknown[]) => void): void
       }
 
       settings: {
@@ -166,6 +167,9 @@ declare global {
 
         onAudioChunk(handler: (payload: unknown) => void): void
         offAudioChunk(handler: (payload: unknown) => void): void
+
+        onVideoChunk(handler: (payload: unknown) => void): void
+        offVideoChunk(handler: (payload: unknown) => void): void
 
         requestCluster(enabled: boolean): Promise<{ ok: boolean; enabled: boolean }>
         onClusterResolution(handler: (payload: unknown) => void): () => void
