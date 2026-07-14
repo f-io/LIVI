@@ -9,7 +9,6 @@ set -euo pipefail
 USER_HOME="$HOME"
 APPIMAGE_PATH="$USER_HOME/LIVI/LIVI.AppImage"
 APPIMAGE_DIR="$(dirname "$APPIMAGE_PATH")"
-APP_LAUNCHER_PATH="$APPIMAGE_DIR/launch-livi.sh"
 
 echo "→ Creating target directory: $APPIMAGE_DIR"
 mkdir -p "$APPIMAGE_DIR"
@@ -29,18 +28,6 @@ for tool in curl xdg-user-dir pkexec; do
     echo "   $tool found"
   fi
 done
-
-echo "→ Ensuring $USER is in groups needed for DRM/KMS splash playback"
-WANTED_GROUPS=(video render input plugdev)
-EXISTING_GROUPS=()
-for g in "${WANTED_GROUPS[@]}"; do
-  if getent group "$g" >/dev/null; then
-    EXISTING_GROUPS+=("$g")
-  fi
-done
-if [ ${#EXISTING_GROUPS[@]} -gt 0 ]; then
-  sudo usermod -aG "$(IFS=,; echo "${EXISTING_GROUPS[*]}")" "$USER"
-fi
 
 # Ensure the runtime deps LIVI needs: GStreamer video pipeline,
 # wireless AP (hostapd/dnsmasq) and Bluetooth pairing stack
@@ -98,15 +85,6 @@ echo "   Download complete: $APPIMAGE_PATH"
 echo "→ Setting executable flag"
 chmod +x "$APPIMAGE_PATH"
 
-echo "→ Creating LIVI launcher wrapper"
-cat > "$APP_LAUNCHER_PATH" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-
-exec "$APPIMAGE_PATH" "\$@"
-EOF
-chmod +x "$APP_LAUNCHER_PATH"
-
 # Create per-user autostart entry
 echo "→ Creating autostart entry"
 AUTOSTART_DIR="$USER_HOME/.config/autostart"
@@ -117,7 +95,7 @@ cat > "$AUTOSTART_DIR/LIVI.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=LIVI
-Exec=sh -c '"$APP_LAUNCHER_PATH" >"$AUTOSTART_LOG" 2>&1'
+Exec=sh -c '"$APPIMAGE_PATH" >"$AUTOSTART_LOG" 2>&1'
 Icon=${ICON_DEST:-livi}
 Terminal=false
 X-GNOME-Autostart-enabled=true
@@ -141,7 +119,7 @@ cat > "$DESKTOP_DIR/LIVI.desktop" <<EOF
 Type=Application
 Name=LIVI
 Comment=Launch LIVI AppImage
-Exec=$APP_LAUNCHER_PATH
+Exec=$APPIMAGE_PATH
 Icon=${ICON_DEST:-livi}
 Terminal=false
 Categories=AudioVideo;
@@ -161,7 +139,7 @@ cat > "$APPLICATIONS_DIR/dev.f-io.livi.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=LIVI
-Exec=$APP_LAUNCHER_PATH
+Exec=$APPIMAGE_PATH
 Icon=livi
 Terminal=false
 Categories=AudioVideo;

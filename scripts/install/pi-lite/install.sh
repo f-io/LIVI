@@ -23,7 +23,6 @@ fi
 USER_HOME="$HOME"
 APPIMAGE_PATH="$USER_HOME/LIVI/LIVI.AppImage"
 APPIMAGE_DIR="$(dirname "$APPIMAGE_PATH")"
-APP_LAUNCHER_PATH="$APPIMAGE_DIR/launch-livi.sh"
 RULE_FILE="/etc/udev/rules.d/99-LIVI.rules"
 TEMPLATE_NAME="99-LIVI.rules.template"
 
@@ -138,15 +137,6 @@ fi
 
 chmod +x "$APPIMAGE_PATH"
 
-echo "→ Creating LIVI launcher wrapper"
-cat > "$APP_LAUNCHER_PATH" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-
-exec "$APPIMAGE_PATH" "\$@"
-EOF
-chmod +x "$APP_LAUNCHER_PATH"
-
 # Extract the udev template from inside the AppImage so the rule version
 # we install always matches what the app on this disk expects.
 echo "→ Extracting udev template from the AppImage"
@@ -212,7 +202,7 @@ if [ -z "\$WAYLAND_DISPLAY" ] && [ "\$(tty)" = "/dev/tty1" ]; then
     ) &
   fi
 
-  exec cage -- "$APP_LAUNCHER_PATH" >"$APPIMAGE_DIR/LIVI.log" 2>&1
+  exec cage -- "$APPIMAGE_PATH" >"$APPIMAGE_DIR/LIVI.log" 2>&1
 fi
 EOF
 else
