@@ -73,7 +73,7 @@ sudo reboot
 To roll the splash setup back to the standard Raspberry Pi boot flow:
 
 ```bash
-sudo scripts/install/pi-splash/uninstal.sh
+sudo scripts/install/pi-splash/uninstall.sh
 sudo reboot
 ```
 
