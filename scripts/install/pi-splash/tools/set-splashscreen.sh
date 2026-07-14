@@ -29,7 +29,7 @@ print_help() {
   echo "  ${APP_CONFIG_FILE}"
   echo
   echo "If the Plymouth helper is installed, the script also asks sudo to rebuild"
-  echo "the animated boot splash immediately."
+  echo "the boot splash immediately."
   echo
   echo "Available names:"
   list_names
@@ -38,8 +38,9 @@ print_help() {
 list_names() {
   local source_dir slug pretty
 
+  echo "  Default"
+
   if ! source_dir="$(livi_splash_pick_video_dir "${REPO_VIDEO_DIR}")"; then
-    echo "  (no splash videos found)"
     return 0
   fi
 
@@ -62,14 +63,17 @@ if [[ -z "${INPUT}" ]]; then
 fi
 
 SLUG="$(livi_splash_to_slug "${INPUT}")"
-if ! VIDEO_DIR="$(livi_splash_pick_video_dir "${REPO_VIDEO_DIR}")"; then
-  echo "No splash videos found. Run sudo scripts/install/pi-splash/install.sh first." >&2
-  exit 2
-fi
 
-if ! livi_splash_pair_exists "${VIDEO_DIR}" "${SLUG}"; then
-  echo "Name \"${INPUT}\" is not available. Try './set-splashscreen.sh --help' for more information." >&2
-  exit 2
+if ! livi_splash_is_static_id "${SLUG}"; then
+  if ! VIDEO_DIR="$(livi_splash_pick_video_dir "${REPO_VIDEO_DIR}")"; then
+    echo "No splash videos found. Run sudo scripts/install/pi-splash/install.sh first." >&2
+    exit 2
+  fi
+
+  if ! livi_splash_pair_exists "${VIDEO_DIR}" "${SLUG}"; then
+    echo "Name \"${INPUT}\" is not available. Try './set-splashscreen.sh --help' for more information." >&2
+    exit 2
+  fi
 fi
 
 install -d -m 0755 "${TARGET_DIR}"

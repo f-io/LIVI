@@ -53,12 +53,12 @@ The `install.sh` script performs the following tasks:
 4. creates a desktop shortcut for easy access
 5. applies the Raspberry Pi HEVC decoder patch if the system GStreamer is affected (see note below)
 
-### Optional: animated splash on Raspberry Pi
+### Optional: boot splash on Raspberry Pi
 
 If you want a branded splash sequence during boot instead of the standard Raspberry Pi splash, the `scripts/install/pi-splash` directory contains a dedicated `plymouth`-based flow:
 
-- `install.sh` installs `plymouth`, `ffmpeg`, the LIVI theme scaffold, and a root helper that converts the selected `.h264` files into boot animation frames
-- `assets/images/` contains the fallback static image asset
+- `install.sh` installs `plymouth`, `ffmpeg`, the LIVI theme scaffold, and a root helper that applies the selected boot splash
+- `assets/images/` contains the static image asset used by the `Default` splash and fallback state
 - `assets/videos/` contains the brand-specific `.h264` source videos, which are installed into `/usr/local/share/livi/pi-splash/assets/`
 - `installers/` contains the system-level helper used to rebuild the animated `plymouth` theme
 - `lib/` contains shared shell helpers for splash ids, config access, and video-pair validation
@@ -80,8 +80,9 @@ sudo reboot
 This boot path works like this:
 
 1. `plymouth` replaces the standard Raspberry Pi splash from the earliest possible boot stage.
-2. The selected splash id is stored in `~/.config/LIVI/config.json` as `bootSplashId`, and the matching installed `.h264` files are automatically converted into PNG frames and baked into the LIVI `plymouth` theme.
-3. On every boot, `plymouth` plays `*1.h264` once, then loops `*2.h264` until the graphical session and LIVI are ready.
+2. The selected splash id is stored in `~/.config/LIVI/config.json` as `bootSplashId`.
+3. `Default` shows `assets/images/livi-splash.png`; brand splashes automatically convert the matching installed `.h264` files into PNG frames and bake them into the LIVI `plymouth` theme.
+4. On every boot, brand splashes play `*1.h264` once, then loop `*2.h264` until the graphical session and LIVI are ready.
 
 For more detail, see [`scripts/install/pi-splash/README.md`](scripts/install/pi-splash/README.md).
 

@@ -11,6 +11,7 @@ livi_splash_to_slug() {
 
 livi_splash_slug_to_name() {
   case "$1" in
+    default) echo "Default" ;;
     alfaromeo) echo "Alfa Romeo" ;;
     bmw) echo "BMW" ;;
     bmwm) echo "BMW M" ;;
@@ -21,6 +22,10 @@ livi_splash_slug_to_name() {
     rangerover) echo "Range Rover" ;;
     *) printf '%s\n' "$1" | awk '{ print toupper(substr($0, 1, 1)) substr($0, 2) }' ;;
   esac
+}
+
+livi_splash_is_static_id() {
+  [[ "$1" == "default" ]]
 }
 
 livi_splash_pair_exists() {
@@ -55,6 +60,8 @@ livi_splash_list_slugs() {
   while IFS= read -r file; do
     slug="${file##*/}"
     slug="${slug%1.h264}"
+    [[ "${slug}" == _* ]] && continue
+    livi_splash_is_static_id "${slug}" && continue
     if livi_splash_pair_exists "${video_dir}" "${slug}"; then
       printf '%s\n' "${slug}"
     fi

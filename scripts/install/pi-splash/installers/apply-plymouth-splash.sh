@@ -235,6 +235,13 @@ rm -rf "${FRAMES_DIR}"
 rm -rf "${THEME_DIR}/spinner"
 install -d -m 0755 "${FRAMES_DIR}"
 
+if livi_splash_is_static_id "${splash_id}"; then
+  write_static_script
+  echo "Applied static Plymouth splash: ${splash_id}"
+  plymouth-set-default-theme "${THEME_NAME}" -R
+  exit 0
+fi
+
 if [[ ! -d "${SYSTEM_VIDEO_DIR}" ]]; then
   echo "Installed splash assets not found at ${SYSTEM_VIDEO_DIR}; keeping static logo."
   write_static_script

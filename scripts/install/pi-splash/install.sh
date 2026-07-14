@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the LIVI animated Plymouth boot splash on Raspberry Pi OS.
+# Install the LIVI Plymouth boot splash on Raspberry Pi OS.
 # Run as root (or via sudo) on the Pi.
 set -euo pipefail
 
@@ -19,8 +19,6 @@ THEME_DIR="/usr/share/plymouth/themes/${THEME_NAME}"
 SYSTEM_ASSETS_DIR="${LIVI_SPLASH_SYSTEM_ASSETS_DIR}"
 ASSETS_SRC="${SCRIPT_DIR}/assets"
 LOGO_SRC="${ASSETS_SRC}/images/livi-splash.png"
-DEFAULT_VIDEO_1="${ASSETS_SRC}/videos/default1.h264"
-DEFAULT_VIDEO_2="${ASSETS_SRC}/videos/default2.h264"
 APPLY_SPLASH_SRC="${SCRIPT_DIR}/installers/apply-plymouth-splash.sh"
 APPLY_SPLASH_DEST="/usr/local/bin/livi-plymouth-apply-splash.sh"
 COMMON_DEST="/usr/local/lib/livi/pi-splash/pi-splash-common.sh"
@@ -36,11 +34,6 @@ fi
 if [[ ! -f "${LOGO_SRC}" ]]; then
   echo "Missing ${LOGO_SRC}" >&2
   echo "Place a transparent-background PNG." >&2
-  exit 1
-fi
-
-if [[ ! -f "${DEFAULT_VIDEO_1}" || ! -f "${DEFAULT_VIDEO_2}" ]]; then
-  echo "Missing default splash videos in ${SCRIPT_DIR}/assets/videos" >&2
   exit 1
 fi
 
@@ -75,7 +68,7 @@ install -m 0755 "${APPLY_SPLASH_SRC}" "${APPLY_SPLASH_DEST}"
 cat > "${THEME_DIR}/${THEME_NAME}.plymouth" <<EOF
 [Plymouth Theme]
 Name=LIVI
-Description=LIVI animated boot splash
+Description=LIVI boot splash
 ModuleName=script
 
 [script]
@@ -185,7 +178,7 @@ add_flag "vt.global_cursor_default=0"
 
 echo "${LINE}" > "${CMDLINE_TXT}"
 
-echo "[6/6] Installing default animated splash"
+echo "[6/6] Installing default static splash"
 systemctl disable --now livi-boot-video.service 2>/dev/null || true
 rm -f /etc/systemd/system/livi-boot-video.service /usr/local/bin/livi-boot-video-player.sh /etc/livi-boot-video.env
 systemctl daemon-reload
@@ -208,4 +201,4 @@ else
 fi
 
 echo
-echo "Done. Reboot to see the new animated splash."
+echo "Done. Reboot to see the new boot splash."
