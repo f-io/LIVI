@@ -12,6 +12,8 @@ Raspberry Pi boot splash support for `LIVI`, built around an animated `plymouth`
   Brand-specific `.h264` source videos.
 - `installers/`
   System-level helpers used by `install.sh`.
+- `lib/`
+  Shared shell helpers for splash ids, config access, and video-pair validation.
 - `tools/`
   Operator-facing helper scripts such as splash selection.
 
@@ -29,11 +31,14 @@ sudo scripts/install/pi-splash/install.sh
 scripts/install/pi-splash/tools/set-splashscreen.sh "Range Rover"
 ```
 
-The selector copies the chosen `.h264` pair into `~/.config/LIVI/splashscreen/videos/`
-and then runs the installed root helper, which converts the videos into animation frames
-and rebuilds the `plymouth` initramfs.
+The installer copies splash assets into `/usr/local/share/livi/pi-splash/assets/`
+and installs the shared helper library into `/usr/local/lib/livi/pi-splash/`.
+The selector stores the selected splash id in `~/.config/LIVI/config.json` and then
+runs the installed root helper, which reads that id, converts the matching videos into
+animation frames, and rebuilds the `plymouth` initramfs.
 
-It also stores the selected splash id in `~/.config/LIVI/config.json` as `bootSplashId`.
+`~/.config/LIVI/config.json` is the source of truth for the selected splash via
+`bootSplashId`. `selection.txt` is kept only as a legacy/diagnostic fallback.
 
 Video behavior:
 
@@ -60,7 +65,7 @@ per-user splash selection.
 ## What happens during boot
 
 1. `plymouth` suppresses the standard Raspberry Pi splash from the earliest boot stage.
-2. The selected `.h264` files are converted into PNG frames and written into the LIVI `plymouth` theme.
+2. The selected splash id is read from `~/.config/LIVI/config.json`, then the matching `.h264` files from `/usr/local/share/livi/pi-splash/assets/videos/` are converted into PNG frames and written into the LIVI `plymouth` theme.
 3. On boot, `plymouth` plays `*1.h264` once, then loops `*2.h264` until the graphical session takes over.
 
 ## Key files
@@ -68,4 +73,5 @@ per-user splash selection.
 - Main installer: [install.sh](scripts/install/pi-splash/install.sh)
 - Rollback script: [uninstal.sh](scripts/install/pi-splash/uninstal.sh)
 - Plymouth animation helper: [apply-plymouth-splash.sh](scripts/install/pi-splash/installers/apply-plymouth-splash.sh)
+- Shared shell helpers: [pi-splash-common.sh](scripts/install/pi-splash/lib/pi-splash-common.sh)
 - Splash selector: [set-splashscreen.sh](scripts/install/pi-splash/tools/set-splashscreen.sh)

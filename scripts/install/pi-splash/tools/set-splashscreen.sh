@@ -3,11 +3,21 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-VIDEO_DIR="${ROOT_DIR}/assets/videos"
+COMMON_SRC="${ROOT_DIR}/lib/pi-splash-common.sh"
+
+if [[ ! -f "${COMMON_SRC}" ]]; then
+  echo "Missing ${COMMON_SRC}" >&2
+  exit 1
+fi
+
+# shellcheck source=../lib/pi-splash-common.sh
+source "${COMMON_SRC}"
+
+REPO_VIDEO_DIR="${ROOT_DIR}/assets/videos"
+SYSTEM_VIDEO_DIR="${LIVI_SPLASH_SYSTEM_VIDEO_DIR}"
 CONFIG_ROOT="${XDG_CONFIG_HOME:-$HOME/.config}/LIVI"
 APP_CONFIG_FILE="${CONFIG_ROOT}/config.json"
 TARGET_DIR="${CONFIG_ROOT}/splashscreen"
-TARGET_VIDEO_DIR="${TARGET_DIR}/videos"
 SELECTION_FILE="${TARGET_DIR}/selection.txt"
 APPLY_HELPER="/usr/local/bin/livi-plymouth-apply-splash.sh"
 
@@ -15,8 +25,8 @@ print_help() {
   echo "Usage: ./set-splashscreen.sh \"NAME\""
   echo "Example: ./set-splashscreen.sh \"Range Rover\""
   echo
-  echo "Installs the selected startup splash videos for LIVI into:"
-  echo "  ${TARGET_DIR}"
+  echo "Stores the selected startup splash id in:"
+  echo "  ${APP_CONFIG_FILE}"
   echo
   echo "If the Plymouth helper is installed, the script also asks sudo to rebuild"
   echo "the animated boot splash immediately."
@@ -26,60 +36,17 @@ print_help() {
 }
 
 list_names() {
-  local file slug pretty
-  while IFS= read -r file; do
-    slug="${file##*/}"
-    slug="${slug%1.h264}"
-    pretty="$(slug_to_name "$slug")"
-    printf '  %s\n' "$pretty"
-  done < <(find "${VIDEO_DIR}" -maxdepth 1 -type f -name '*1.h264' | sort)
-}
+  local source_dir slug pretty
 
-slug_to_name() {
-  case "$1" in
-    alfaromeo) echo "Alfa Romeo" ;;
-    bmwm) echo "BMW M" ;;
-    fordmustang) echo "Ford Mustang" ;;
-    landrover) echo "Land Rover" ;;
-    rangerover) echo "Range Rover" ;;
-    *) echo "$1" | sed -E 's/(^|[^[:alpha:]])([[:alpha:]])/\1\u\2/g' ;;
-  esac
-}
-
-to_slug() {
-  echo "$1" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]-'
-}
-
-write_boot_splash_id() {
-  local splash_id="$1"
-  install -d -m 0755 "${CONFIG_ROOT}"
-
-  if command -v python3 >/dev/null 2>&1; then
-    python3 - "${APP_CONFIG_FILE}" "${splash_id}" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-config_path = Path(sys.argv[1])
-splash_id = sys.argv[2]
-
-data = {}
-if config_path.exists():
-    try:
-        data = json.loads(config_path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            data = {}
-    except Exception:
-        data = {}
-
-data["bootSplashId"] = splash_id
-config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-PY
+  if ! source_dir="$(livi_splash_pick_video_dir "${REPO_VIDEO_DIR}")"; then
+    echo "  (no splash videos found)"
     return 0
   fi
 
-  echo "Warning: python3 not found; bootSplashId was not written to ${APP_CONFIG_FILE}" >&2
-  return 1
+  while IFS= read -r slug; do
+    pretty="$(livi_splash_slug_to_name "$slug")"
+    printf '  %s\n' "$pretty"
+  done < <(livi_splash_list_slugs "${source_dir}")
 }
 
 INPUT="${1:-}"
@@ -94,20 +61,20 @@ if [[ -z "${INPUT}" ]]; then
   exit 1
 fi
 
-SLUG="$(to_slug "${INPUT}")"
-SPLASH_FILE_1="${VIDEO_DIR}/${SLUG}1.h264"
-SPLASH_FILE_2="${VIDEO_DIR}/${SLUG}2.h264"
+SLUG="$(livi_splash_to_slug "${INPUT}")"
+if ! VIDEO_DIR="$(livi_splash_pick_video_dir "${REPO_VIDEO_DIR}")"; then
+  echo "No splash videos found. Run sudo scripts/install/pi-splash/install.sh first." >&2
+  exit 2
+fi
 
-if [[ ! -f "${SPLASH_FILE_1}" || ! -f "${SPLASH_FILE_2}" ]]; then
+if ! livi_splash_pair_exists "${VIDEO_DIR}" "${SLUG}"; then
   echo "Name \"${INPUT}\" is not available. Try './set-splashscreen.sh --help' for more information." >&2
   exit 2
 fi
 
-install -d -m 0755 "${TARGET_VIDEO_DIR}"
-install -m 0644 "${SPLASH_FILE_1}" "${TARGET_VIDEO_DIR}/splash1.h264"
-install -m 0644 "${SPLASH_FILE_2}" "${TARGET_VIDEO_DIR}/splash2.h264"
+install -d -m 0755 "${TARGET_DIR}"
 printf '%s\n' "${INPUT}" > "${SELECTION_FILE}"
-write_boot_splash_id "${SLUG}" || true
+livi_splash_write_boot_splash_id "${APP_CONFIG_FILE}" "${SLUG}"
 
 echo "Installed LIVI startup splash: ${INPUT}"
 echo "Selection saved to: ${SELECTION_FILE}"

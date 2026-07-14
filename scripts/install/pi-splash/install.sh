@@ -3,14 +3,27 @@
 # Run as root (or via sudo) on the Pi.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMMON_SRC="${SCRIPT_DIR}/lib/pi-splash-common.sh"
+
+if [[ ! -f "${COMMON_SRC}" ]]; then
+  echo "Missing ${COMMON_SRC}" >&2
+  exit 1
+fi
+
+# shellcheck source=lib/pi-splash-common.sh
+source "${COMMON_SRC}"
+
 THEME_NAME="livi"
 THEME_DIR="/usr/share/plymouth/themes/${THEME_NAME}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOGO_SRC="${SCRIPT_DIR}/assets/images/livi-splash.png"
-DEFAULT_VIDEO_1="${SCRIPT_DIR}/assets/videos/default1.h264"
-DEFAULT_VIDEO_2="${SCRIPT_DIR}/assets/videos/default2.h264"
+SYSTEM_ASSETS_DIR="${LIVI_SPLASH_SYSTEM_ASSETS_DIR}"
+ASSETS_SRC="${SCRIPT_DIR}/assets"
+LOGO_SRC="${ASSETS_SRC}/images/livi-splash.png"
+DEFAULT_VIDEO_1="${ASSETS_SRC}/videos/default1.h264"
+DEFAULT_VIDEO_2="${ASSETS_SRC}/videos/default2.h264"
 APPLY_SPLASH_SRC="${SCRIPT_DIR}/installers/apply-plymouth-splash.sh"
 APPLY_SPLASH_DEST="/usr/local/bin/livi-plymouth-apply-splash.sh"
+COMMON_DEST="/usr/local/lib/livi/pi-splash/pi-splash-common.sh"
 
 CONFIG_TXT=""
 CMDLINE_TXT=""
@@ -19,38 +32,6 @@ if [[ $EUID -ne 0 ]]; then
   echo "Run with sudo: sudo $0" >&2
   exit 1
 fi
-
-write_boot_splash_id() {
-  local config_file="$1"
-  local splash_id="$2"
-
-  install -d -m 0755 "$(dirname "${config_file}")"
-
-  if command -v python3 >/dev/null 2>&1; then
-    python3 - "${config_file}" "${splash_id}" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-config_path = Path(sys.argv[1])
-splash_id = sys.argv[2]
-
-data = {}
-if config_path.exists():
-    try:
-        data = json.loads(config_path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            data = {}
-    except Exception:
-        data = {}
-
-data["bootSplashId"] = splash_id
-config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-PY
-  else
-    echo "Warning: python3 not found; bootSplashId was not written to ${config_file}" >&2
-  fi
-}
 
 if [[ ! -f "${LOGO_SRC}" ]]; then
   echo "Missing ${LOGO_SRC}" >&2
@@ -77,9 +58,16 @@ fi
 
 echo "[1/6] Installing Plymouth + ffmpeg"
 apt-get update -qq
-apt-get install -y plymouth plymouth-themes ffmpeg
+apt-get install -y plymouth plymouth-themes ffmpeg python3
 
-echo "[2/6] Writing theme scaffold to ${THEME_DIR}"
+echo "[2/6] Installing assets and theme scaffold"
+install -d -m 0755 "${SYSTEM_ASSETS_DIR}"
+cp -a "${ASSETS_SRC}/." "${SYSTEM_ASSETS_DIR}/"
+find "${SYSTEM_ASSETS_DIR}" -type d -exec chmod 0755 {} +
+find "${SYSTEM_ASSETS_DIR}" -type f -exec chmod 0644 {} +
+
+install -d -m 0755 "$(dirname "${COMMON_DEST}")"
+install -m 0644 "${COMMON_SRC}" "${COMMON_DEST}"
 install -d -m 0755 "${THEME_DIR}"
 install -m 0644 "${LOGO_SRC}" "${THEME_DIR}/logo.png"
 install -m 0755 "${APPLY_SPLASH_SRC}" "${APPLY_SPLASH_DEST}"
@@ -206,13 +194,11 @@ if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
   TARGET_USER="${SUDO_USER}"
   TARGET_HOME="$(getent passwd "${TARGET_USER}" | cut -d: -f6)"
   TARGET_CONFIG_FILE="${TARGET_HOME}/.config/LIVI/config.json"
-  TARGET_DIR="${TARGET_HOME}/.config/LIVI/splashscreen/videos"
-  install -d -m 0755 -o "${TARGET_USER}" -g "${TARGET_USER}" "${TARGET_DIR}"
-  install -m 0644 -o "${TARGET_USER}" -g "${TARGET_USER}" "${DEFAULT_VIDEO_1}" "${TARGET_DIR}/splash1.h264"
-  install -m 0644 -o "${TARGET_USER}" -g "${TARGET_USER}" "${DEFAULT_VIDEO_2}" "${TARGET_DIR}/splash2.h264"
-  printf '%s\n' "Default" > "${TARGET_HOME}/.config/LIVI/splashscreen/selection.txt"
+  install -d -m 0755 -o "${TARGET_USER}" -g "${TARGET_USER}" "${TARGET_HOME}/.config/LIVI"
+  install -d -m 0755 -o "${TARGET_USER}" -g "${TARGET_USER}" "${TARGET_HOME}/.config/LIVI/splashscreen"
+  printf '%s\n' "default" > "${TARGET_HOME}/.config/LIVI/splashscreen/selection.txt"
   chown "${TARGET_USER}:${TARGET_USER}" "${TARGET_HOME}/.config/LIVI/splashscreen/selection.txt"
-  write_boot_splash_id "${TARGET_CONFIG_FILE}" "default"
+  livi_splash_write_boot_splash_id "${TARGET_CONFIG_FILE}" "default"
   chown "${TARGET_USER}:${TARGET_USER}" "${TARGET_CONFIG_FILE}"
   "${APPLY_SPLASH_DEST}" "${TARGET_USER}"
 else

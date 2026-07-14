@@ -59,8 +59,9 @@ If you want a branded splash sequence during boot instead of the standard Raspbe
 
 - `install.sh` installs `plymouth`, `ffmpeg`, the LIVI theme scaffold, and a root helper that converts the selected `.h264` files into boot animation frames
 - `assets/images/` contains the fallback static image asset
-- `assets/videos/` contains the brand-specific `.h264` source videos
+- `assets/videos/` contains the brand-specific `.h264` source videos, which are installed into `/usr/local/share/livi/pi-splash/assets/`
 - `installers/` contains the system-level helper used to rebuild the animated `plymouth` theme
+- `lib/` contains shared shell helpers for splash ids, config access, and video-pair validation
 - `tools/` contains operator-facing helpers such as the splash selector
 
 ```bash
@@ -79,7 +80,7 @@ sudo reboot
 This boot path works like this:
 
 1. `plymouth` replaces the standard Raspberry Pi splash from the earliest possible boot stage.
-2. The selected splash id is stored in `~/.config/LIVI/config.json` as `bootSplashId`, and the selected `.h264` files are automatically converted into PNG frames and baked into the LIVI `plymouth` theme.
+2. The selected splash id is stored in `~/.config/LIVI/config.json` as `bootSplashId`, and the matching installed `.h264` files are automatically converted into PNG frames and baked into the LIVI `plymouth` theme.
 3. On every boot, `plymouth` plays `*1.h264` once, then loops `*2.h264` until the graphical session and LIVI are ready.
 
 For more detail, see [`scripts/install/pi-splash/README.md`](scripts/install/pi-splash/README.md).

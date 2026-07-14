@@ -3,6 +3,8 @@ set -euo pipefail
 
 THEME_NAME="livi"
 THEME_DIR="/usr/share/plymouth/themes/${THEME_NAME}"
+SYSTEM_SPLASH_DIR="/usr/local/share/livi/pi-splash"
+COMMON_DIR="/usr/local/lib/livi/pi-splash"
 SERVICE_PATH="/etc/systemd/system/livi-boot-video.service"
 PLAYER_PATH="/usr/local/bin/livi-boot-video-player.sh"
 APPLY_HELPER="/usr/local/bin/livi-plymouth-apply-splash.sh"
@@ -80,6 +82,8 @@ systemctl daemon-reload
 
 echo "[2/6] Removing LIVI Plymouth theme"
 rm -rf "${THEME_DIR}"
+rm -rf "${SYSTEM_SPLASH_DIR}"
+rm -rf "${COMMON_DIR}"
 rm -f "${APPLY_HELPER}"
 
 echo "[3/6] Restoring default Plymouth theme"

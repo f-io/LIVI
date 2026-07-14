@@ -1,15 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALLED_COMMON="/usr/local/lib/livi/pi-splash/pi-splash-common.sh"
+LOCAL_COMMON="${SCRIPT_DIR}/../lib/pi-splash-common.sh"
+
+if [[ -f "${INSTALLED_COMMON}" ]]; then
+  # shellcheck source=/usr/local/lib/livi/pi-splash/pi-splash-common.sh
+  source "${INSTALLED_COMMON}"
+elif [[ -f "${LOCAL_COMMON}" ]]; then
+  # shellcheck source=../lib/pi-splash-common.sh
+  source "${LOCAL_COMMON}"
+else
+  echo "Missing pi-splash common library. Run pi-splash/install.sh first." >&2
+  exit 1
+fi
+
 THEME_NAME="livi"
 THEME_DIR="/usr/share/plymouth/themes/${THEME_NAME}"
 FRAMES_DIR="${THEME_DIR}/frames"
 SCRIPT_PATH="${THEME_DIR}/${THEME_NAME}.script"
 PLYMOUTH_PATH="${THEME_DIR}/${THEME_NAME}.plymouth"
-CONFIG_REL=".config/LIVI/config.json"
+SYSTEM_VIDEO_DIR="${LIVI_SPLASH_SYSTEM_VIDEO_DIR}"
 SELECTION_ROOT_REL=".config/LIVI/splashscreen"
 SELECTION_FILE="selection.txt"
-VIDEOS_SUBDIR="videos"
 TARGET_FPS="${LIVI_SPLASH_FPS:-10}"
 MAX_WIDTH="${LIVI_SPLASH_MAX_WIDTH:-0}"
 MAX_HEIGHT="${LIVI_SPLASH_MAX_HEIGHT:-0}"
@@ -29,30 +43,6 @@ detect_target_user() {
     echo "${SUDO_USER}"
     return 0
   fi
-  return 1
-}
-
-read_boot_splash_id() {
-  local config_file="$1"
-  [[ -f "${config_file}" ]] || return 1
-
-  if command -v python3 >/dev/null 2>&1; then
-    python3 - "${config_file}" <<'PY'
-import json
-import sys
-
-try:
-    with open(sys.argv[1], "r", encoding="utf-8") as fh:
-        data = json.load(fh)
-    value = data.get("bootSplashId", "")
-    if isinstance(value, str) and value.strip():
-        print(value.strip())
-except Exception:
-    pass
-PY
-    return 0
-  fi
-
   return 1
 }
 
@@ -223,11 +213,18 @@ if [[ -z "${TARGET_USER}" ]] || ! id "${TARGET_USER}" >/dev/null 2>&1; then
 fi
 
 TARGET_HOME="$(getent passwd "${TARGET_USER}" | cut -d: -f6)"
-APP_CONFIG_FILE="${TARGET_HOME}/${CONFIG_REL}"
+APP_CONFIG_FILE="$(livi_splash_config_file_for_home "${TARGET_HOME}")"
 SELECTION_ROOT="${TARGET_HOME}/${SELECTION_ROOT_REL}"
-VIDEO_DIR="${SELECTION_ROOT}/${VIDEOS_SUBDIR}"
-VIDEO_ONE="${VIDEO_DIR}/splash1.h264"
-VIDEO_TWO="${VIDEO_DIR}/splash2.h264"
+
+splash_id=""
+if splash_id_from_config="$(livi_splash_read_boot_splash_id "${APP_CONFIG_FILE}" 2>/dev/null)" && [[ -n "${splash_id_from_config}" ]]; then
+  splash_id="${splash_id_from_config}"
+elif [[ -f "${SELECTION_ROOT}/${SELECTION_FILE}" ]]; then
+  splash_id="$(tr -d '\n' < "${SELECTION_ROOT}/${SELECTION_FILE}")"
+fi
+splash_id="$(livi_splash_to_slug "${splash_id:-default}")"
+VIDEO_ONE="${SYSTEM_VIDEO_DIR}/${splash_id}1.h264"
+VIDEO_TWO="${SYSTEM_VIDEO_DIR}/${splash_id}2.h264"
 
 if [[ ! -d "${THEME_DIR}" || ! -f "${PLYMOUTH_PATH}" ]]; then
   echo "Plymouth theme ${THEME_NAME} is not installed. Run pi-splash/install.sh first." >&2
@@ -238,8 +235,15 @@ rm -rf "${FRAMES_DIR}"
 rm -rf "${THEME_DIR}/spinner"
 install -d -m 0755 "${FRAMES_DIR}"
 
-if [[ ! -f "${VIDEO_ONE}" || ! -f "${VIDEO_TWO}" ]]; then
-  echo "Selected splash videos were not found for user ${TARGET_USER}; keeping static logo."
+if [[ ! -d "${SYSTEM_VIDEO_DIR}" ]]; then
+  echo "Installed splash assets not found at ${SYSTEM_VIDEO_DIR}; keeping static logo."
+  write_static_script
+  plymouth-set-default-theme "${THEME_NAME}" -R
+  exit 0
+fi
+
+if ! livi_splash_pair_exists "${SYSTEM_VIDEO_DIR}" "${splash_id}"; then
+  echo "Splash \"${splash_id}\" was not found in ${SYSTEM_VIDEO_DIR}; keeping static logo."
   write_static_script
   plymouth-set-default-theme "${THEME_NAME}" -R
   exit 0
@@ -323,12 +327,5 @@ frame_list="$(find "${FRAMES_DIR}" -maxdepth 1 -type f -name 'frame-*.png' -prin
 
 generate_script "${intro_count}" "${loop_count}" "${frame_width}" "${frame_height}" "${frame_list}" "${frame_hold}"
 
-selection_name="Custom"
-if selection_name_from_config="$(read_boot_splash_id "${APP_CONFIG_FILE}" 2>/dev/null)" && [[ -n "${selection_name_from_config}" ]]; then
-  selection_name="${selection_name_from_config}"
-elif [[ -f "${SELECTION_ROOT}/${SELECTION_FILE}" ]]; then
-  selection_name="$(tr -d '\n' < "${SELECTION_ROOT}/${SELECTION_FILE}")"
-fi
-
-echo "Applied animated Plymouth splash: ${selection_name} (intro=${intro_count}, loop=${loop_count}, ${frame_width}x${frame_height}, hold=${frame_hold})"
+echo "Applied animated Plymouth splash: ${splash_id} (intro=${intro_count}, loop=${loop_count}, ${frame_width}x${frame_height}, hold=${frame_hold})"
 plymouth-set-default-theme "${THEME_NAME}" -R
