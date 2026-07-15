@@ -3,7 +3,7 @@ import { PhoneWorkMode } from '@shared/types'
 import type { AudioCommand } from '@shared/types/ProjectionEnums'
 import type { NavLocale } from '@shared/utils'
 import type { DongleFwResponse } from '../ipc/types'
-import type { Command, MediaData, NavigationData, PhoneType } from '../messages'
+import type { Command, NavigationData, PhoneType } from '../messages'
 import { MediaType, NavigationMetaType } from '../messages'
 import type { TransportSnapshot } from '../transport/types'
 import type { SessionProtocol, VideoCodec } from './SessionManager'
@@ -110,12 +110,7 @@ export type ProjectionEvent =
   | { type: 'bluetoothPairedList'; payload: string }
   | { type: 'session'; protocol: SessionProtocol | null; position: number; total: number }
   | { type: 'devices'; payload: DeviceView[] }
-  | {
-      type: 'media'
-      payload:
-        | MediaData
-        | { mediaType: MediaType; payload: { type: MediaType; media: { MediaPlayStatus: number } } }
-    }
+  | { type: 'media'; payload: { payload: PersistedMediaPayload } }
   | { type: 'media-reset'; reason: string }
   | { type: 'navigation'; payload: NavigationData }
   | { type: 'navigation-reset'; reason: string }

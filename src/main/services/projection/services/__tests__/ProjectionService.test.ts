@@ -543,11 +543,17 @@ describe('ProjectionService', () => {
     expect(send).toHaveBeenCalledWith('projection-event', {
       type: 'media',
       payload: {
-        mediaType: 1,
         payload: {
           type: 1,
           media: {
-            MediaPlayStatus: 2
+            MediaSongName: '-',
+            MediaAlbumName: '-',
+            MediaArtistName: '-',
+            MediaAPPName: '-',
+            MediaSongDuration: 0,
+            MediaSongPlayTime: 0,
+            MediaPlayStatus: 2,
+            MediaLyrics: '-'
           }
         }
       }

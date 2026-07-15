@@ -16,8 +16,18 @@ export type MediaStoreDeps = {
 // Persists and emits the phone's media (now-playing) snapshot, per session.
 export class MediaStore {
   private readonly pending = new Map<IPhoneDriver, PersistedMediaPayload>()
+  private lastEmittedImage: string | undefined = undefined
 
   constructor(private readonly deps: MediaStoreDeps) {}
+
+  private emitActive(payload: PersistedMediaPayload): void {
+    const out: PersistedMediaPayload = { type: payload.type, media: payload.media }
+    if (payload.base64Image !== this.lastEmittedImage) {
+      out.base64Image = payload.base64Image
+      this.lastEmittedImage = payload.base64Image
+    }
+    this.deps.emit({ type: 'media', payload: { payload: out } })
+  }
 
   private file(): string {
     return path.join(app.getPath('userData'), 'mediaData.json')
@@ -64,8 +74,8 @@ export class MediaStore {
       session.media = newPayload
       this.pending.delete(driver)
       if (isActive) {
-        this.deps.emit({ type: 'media', payload: msg })
         this.write(newPayload)
+        this.emitActive(newPayload)
       }
     } else {
       this.pending.set(driver, newPayload)
@@ -89,31 +99,20 @@ export class MediaStore {
 
       session.media = nextPayload
       this.write(nextPayload)
-
-      this.deps.emit({
-        type: 'media',
-        payload: {
-          mediaType: MediaType.Data,
-          payload: {
-            type: MediaType.Data,
-            media: {
-              MediaPlayStatus: status
-            }
-          }
-        }
-      })
+      this.emitActive(nextPayload)
     } catch (e) {
       console.warn('[MediaStore] patchAaPlayStatus failed (ignored)', e)
     }
   }
 
   hydrate(session: ProjectionSession): void {
+    const payload: PersistedMediaPayload = session.media ?? DEFAULT_MEDIA_DATA_RESPONSE.payload
     try {
-      this.write(session.media ?? DEFAULT_MEDIA_DATA_RESPONSE.payload)
+      this.write(payload)
     } catch (e) {
       console.warn('[MediaStore] hydrate failed (ignored)', e)
     }
-
+    this.lastEmittedImage = payload.base64Image
     this.deps.emit({ type: 'media-reset', reason: 'session-switch' })
   }
 
@@ -123,7 +122,7 @@ export class MediaStore {
     } catch (e) {
       console.warn('[MediaStore] reset failed (ignored)', reason, e)
     }
-
+    this.lastEmittedImage = undefined
     this.deps.emit({ type: 'media-reset', reason })
   }
 }

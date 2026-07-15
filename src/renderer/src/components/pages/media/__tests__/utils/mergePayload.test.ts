@@ -12,7 +12,7 @@ describe('mergePayload', () => {
     expect(mergePayload(undefined, inc)).toEqual(inc)
   })
 
-  it('merges media objects correctly', () => {
+  it('takes media from incoming as-is (main is authoritative), carrying the cover', () => {
     const prev: MediaPayload = {
       type: 1,
       media: {
@@ -25,16 +25,12 @@ describe('mergePayload', () => {
 
     const inc: MediaPayload = {
       type: 2,
-      media: { MediaArtistName: 'New Artist' }
+      media: { MediaSongName: 'New Song', MediaArtistName: 'New Artist' }
     }
 
     expect(mergePayload(prev, inc)).toEqual({
       type: 2,
-      media: {
-        MediaSongName: 'Old Song',
-        MediaArtistName: 'New Artist',
-        MediaAlbumName: 'Old Album'
-      },
+      media: { MediaSongName: 'New Song', MediaArtistName: 'New Artist' },
       base64Image: 'old-image'
     })
   })
@@ -46,11 +42,11 @@ describe('mergePayload', () => {
     expect(mergePayload(prev, inc).type).toBe(3)
   })
 
-  it('sets media to undefined when both are empty', () => {
-    const prev: MediaPayload = { type: 1, media: {} }
+  it('uses the incoming media even when it is empty', () => {
+    const prev: MediaPayload = { type: 1, media: { MediaSongName: 'Old' } }
     const inc: MediaPayload = { type: 2, media: {} }
 
-    expect(mergePayload(prev, inc).media).toBeUndefined()
+    expect(mergePayload(prev, inc).media).toEqual({})
   })
 
   it('uses incoming base64Image if provided (even null)', () => {
