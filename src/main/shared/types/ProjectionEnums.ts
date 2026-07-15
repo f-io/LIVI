@@ -66,6 +66,10 @@ export enum CommandMapping {
   phoneKeyHash = 313,
   phoneKeyHookSwitch = 314,
 
+  // Internal projection UI (main -> renderer): CarPlay Siri speech-mode attention.
+  voiceAssistantUiActive = 600, // speech mode recognizing/speaking
+  voiceAssistantUiIdle = 601, // speech mode none (Siri fully done, incl. response)
+
   // Android Auto
   requestVideoFocus = 500,
   releaseVideoFocus = 501,

@@ -182,6 +182,8 @@ export class CpStack extends EventEmitter {
   private _fbN = 0
   private _clusterWantActive = false
   private _nightMode: boolean | null = null
+  /** Last Siri speech-mode state, so we emit 'speech-active' only on transitions. */
+  private _speechActive = false
   /** Mic uplinks whose MainAudio stream is currently active (fed by writeMic). */
   private readonly _activeUplinks = new Set<CpMicUplink>()
 
@@ -449,6 +451,26 @@ export class CpStack extends EventEmitter {
   }
 
   /** Control-channel commands from the phone (POST /command). */
+  /** Track the Siri speech mode from modesChanged appStates (appStateID 1). speechMode
+   *  is Recognizing(2)/Speaking(1) while Siri is active and None(-1) once it is done  */
+  private _handleModesChanged(body: Record<string, PlistValue>): void {
+    const params = (body.params ?? {}) as Record<string, PlistValue>
+    const appStates = params.appStates
+    if (!Array.isArray(appStates)) return
+    let active = this._speechActive
+    for (const s of appStates) {
+      const st = (s ?? {}) as Record<string, PlistValue>
+      if (Number(st.appStateID) !== 1 || st.speechMode === undefined) continue
+      const mode = Number(st.speechMode)
+      active = mode === 1 || mode === 2
+    }
+    if (active !== this._speechActive) {
+      this._speechActive = active
+      console.log(`[cpStack] Siri speech ${active ? 'active' : 'done'}`)
+      this.emit('speech-active', active)
+    }
+  }
+
   private _handleCommand(req: RtspRequest, session: CpSession): RtspResponse {
     let body: Record<string, PlistValue> = {}
     try {
@@ -467,13 +489,16 @@ export class CpStack extends EventEmitter {
       const deviceID = String(params.deviceID ?? '')
       console.log(`[cpStack] disableBluetooth (deviceID=${deviceID}) — disconnecting BT`)
       this.emit('disable-bluetooth', deviceID)
-    } else if (type === 'modesChanged' && DEBUG) {
-      // Log who currently owns each resource so we can see if the phone granted us
-      // main audio (resourceID 2, entity: 1 = device/controller, 2 = accessory).
-      const j = JSON.stringify(body.params ?? body, (_k, v) =>
-        typeof v === 'bigint' ? Number(v) : v
-      )
-      console.log(`[cpStack] modesChanged ${j}`)
+    } else if (type === 'modesChanged') {
+      this._handleModesChanged(body)
+      if (DEBUG) {
+        // Log who currently owns each resource so we can see if the phone granted us
+        // main audio (resourceID 2, entity: 1 = device/controller, 2 = accessory).
+        const j = JSON.stringify(body.params ?? body, (_k, v) =>
+          typeof v === 'bigint' ? Number(v) : v
+        )
+        console.log(`[cpStack] modesChanged ${j}`)
+      }
     } else if (type === 'iAPSendMessage') {
       const p = (body.params ?? {}) as Record<string, PlistValue>
       const d = p.data
@@ -716,17 +741,19 @@ export class CpStack extends EventEmitter {
     this._sendHidReport(TELEPHONY_HID_UID, telephonyReport(0))
   }
 
-  /** Ask the phone to start/stop Siri (push-to-talk). */
-  requestSiri(down: boolean): void {
+  /** Invoke Siri as a dedicated Siri button (R6 3.3.7.1.2): buttonDown(2) then buttonUp(3).
+   *  Sent as an immediate momentary click, not tied to the physical hold, so the phone
+   *  sees a tap and starts a conversational session (listens via VAD and replies) rather
+   *  than push-to-talk that submits on release before the user has spoken. */
+  invokeSiri(): void {
     const s = this._active
-    if (!s) return
-    this._sendEventCommand(
-      s,
-      encodeBplist({
-        type: 'requestSiri',
-        params: { siriAction: down ? 2 : 3 }
-      })
-    )
+    if (!s) {
+      console.log('[cpStack] invokeSiri: no active event connection, ignoring')
+      return
+    }
+    console.log('[cpStack] invokeSiri: requestSiri buttonDown+buttonUp (click)')
+    this._sendEventCommand(s, encodeBplist({ type: 'requestSiri', params: { siriAction: 2 } }))
+    this._sendEventCommand(s, encodeBplist({ type: 'requestSiri', params: { siriAction: 3 } }))
   }
 
   /** Send a bplist command to the phone over the encrypted event channel. */

@@ -279,6 +279,14 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
       buf.writeUInt32LE(CommandMapping.requestHostUI, 0)
       this.emit('message', new Command(new MessageHeader(buf.length, MessageType.Command), buf))
     })
+    stack.on('speech-active', (active: boolean) => {
+      const buf = Buffer.allocUnsafe(4)
+      buf.writeUInt32LE(
+        active ? CommandMapping.voiceAssistantUiActive : CommandMapping.voiceAssistantUiIdle,
+        0
+      )
+      this.emit('message', new Command(new MessageHeader(buf.length, MessageType.Command), buf))
+    })
     stack.on('disable-bluetooth', (deviceID: string) => {
       const mac = deviceID.trim()
       if (!mac) return
@@ -545,10 +553,10 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
         stack.sendTelephony(TelephonyButton.hookSwitch)
         return true
       case CommandMapping.voiceAssistant:
-        stack.requestSiri(true)
+        stack.invokeSiri()
         return true
       case CommandMapping.voiceAssistantRelease:
-        stack.requestSiri(false)
+        // Voice activation: the release is a no-op (this is not push-to-talk).
         return true
       default:
         return false

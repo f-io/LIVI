@@ -107,13 +107,22 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const negotiatedWidth = useLiviStore((s) => s.negotiatedWidth)
   const negotiatedHeight = useLiviStore((s) => s.negotiatedHeight)
 
+  // Attention-driven UI switching (call / voiceAssistant)
+  type AttentionKind = 'call' | 'voiceAssistant'
+  type AttentionPayload = { kind: AttentionKind; active: boolean; phase?: string }
+
+  const attentionBackPathRef = useRef<string | null>(null)
+  const attentionSwitchedByRef = useRef<AttentionKind | null>(null)
+
   const prevPathnameRef = useRef(pathname)
   useEffect(() => {
     const prev = prevPathnameRef.current
     prevPathnameRef.current = pathname
     if (pathname !== '/' || prev === '/') return
     if (!isProjectionActive) return
-    window.projection.ipc.sendCommand('home')
+    // Attention-driven switches (Siri / call) must NOT press the CarPlay home button:
+    // 'home' dismisses an in-progress Siri session immediately.
+    if (!attentionSwitchedByRef.current) window.projection.ipc.sendCommand('home')
     void window.projection.ipc.sendFrame().catch(() => {})
   }, [pathname, isProjectionActive])
 
@@ -137,29 +146,12 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const hasStartedRef = useRef(false)
   const [rendererError] = useState<string | null>(null)
 
-  // Attention-driven UI switching (call / voiceAssistant)
-  type AttentionKind = 'call' | 'voiceAssistant'
-  type AttentionPayload = { kind: AttentionKind; active: boolean; phase?: string }
-
-  const attentionBackPathRef = useRef<string | null>(null)
-  const attentionSwitchedByRef = useRef<AttentionKind | null>(null)
-  const voiceAssistantReleaseTimerRef = useRef<number | null>(null)
-
-  const clearVoiceAssistantReleaseTimer = useCallback(() => {
-    if (voiceAssistantReleaseTimerRef.current != null) {
-      window.clearTimeout(voiceAssistantReleaseTimerRef.current)
-      voiceAssistantReleaseTimerRef.current = null
-    }
-  }, [])
-
-  // Keep track of the last host UI route (anything except "/")
+  // If the user manually navigates away from projection, drop the return arm.
   useEffect(() => {
     if (pathname === '/') return
     if (!attentionSwitchedByRef.current) return
-
     attentionSwitchedByRef.current = null
-    clearVoiceAssistantReleaseTimer()
-  }, [pathname, clearVoiceAssistantReleaseTimer])
+  }, [pathname])
 
   // Overlay offset
   const [overlayX, setOverlayX] = useState(0)
@@ -249,8 +241,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
 
       // ACTIVE: switch to projection
       if (p.active) {
-        if (p.kind === 'voiceAssistant') clearVoiceAssistantReleaseTimer()
-
         // Already on projection: keep the arm if this kind switched us here (ring -> active).
         if (inProjection) {
           if (attentionSwitchedByRef.current !== p.kind) {
@@ -272,31 +262,14 @@ const CarplayComponent: React.FC<CarplayProps> = ({
 
       const back = attentionBackPathRef.current
 
-      const doReturn = () => {
-        attentionSwitchedByRef.current = null
-        if (back && back !== '/' && location.pathname === '/') {
-          navigate(back, { replace: true })
-        }
+      // Return immediately. Siri's end is message-driven (speechMode -> none covers the
+      // full session incl. the response), so there is nothing to debounce.
+      attentionSwitchedByRef.current = null
+      if (back && back !== '/' && location.pathname === '/') {
+        navigate(back, { replace: true })
       }
-
-      // Voice assistant: debounce return to avoid flicker
-      if (p.kind === 'voiceAssistant') {
-        clearVoiceAssistantReleaseTimer()
-        voiceAssistantReleaseTimerRef.current = window.setTimeout(() => {
-          voiceAssistantReleaseTimerRef.current = null
-
-          if (attentionSwitchedByRef.current !== 'voiceAssistant') return
-
-          doReturn()
-        }, 120)
-
-        return
-      }
-
-      // Call: return immediately
-      doReturn()
     },
-    [location.pathname, navigate, clearVoiceAssistantReleaseTimer]
+    [location.pathname, navigate]
   )
 
   // Projection worker messages
@@ -326,6 +299,10 @@ const CarplayComponent: React.FC<CarplayProps> = ({
         case 'command': {
           const val = (msg as Extract<WorkerToUI, { type: 'command' }>).message?.value
           if (val === CommandMapping.requestHostUI) gotoHostUI()
+          else if (val === CommandMapping.voiceAssistantUiActive)
+            applyAttention({ kind: 'voiceAssistant', active: true })
+          else if (val === CommandMapping.voiceAssistantUiIdle)
+            applyAttention({ kind: 'voiceAssistant', active: false })
           break
         }
 
@@ -348,6 +325,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     carplayWorker,
     clearRetryTimeout,
     gotoHostUI,
+    applyAttention,
     setDeviceInfo,
     setAudioInfo,
     setPcmData,
@@ -508,16 +486,14 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           const cmd = (d as { payload?: { command?: number } }).payload?.command
           if (typeof cmd !== 'number') break
 
+          // Siri UI attention is driven by speechMode (voiceAssistantUi* commands), not
+          // the speech audio stream, so it covers the full session incl. the response.
           if (cmd === AudioCommand.AudioPhonecallStart) {
             applyAttention({ kind: 'call', active: true, phase: 'active' })
           } else if (cmd === AudioCommand.AudioPhonecallStop) {
             applyAttention({ kind: 'call', active: false, phase: 'ended' })
           } else if (cmd === AudioCommand.AudioAttentionRinging) {
             applyAttention({ kind: 'call', active: true, phase: 'ringing' })
-          } else if (cmd === AudioCommand.AudioVoiceAssistantStart) {
-            applyAttention({ kind: 'voiceAssistant', active: true })
-          } else if (cmd === AudioCommand.AudioVoiceAssistantStop) {
-            applyAttention({ kind: 'voiceAssistant', active: false })
           }
           break
         }
@@ -550,6 +526,14 @@ const CarplayComponent: React.FC<CarplayProps> = ({
 
           if (value === CommandMapping.requestHostUI) {
             gotoHostUI()
+            break
+          }
+          if (value === CommandMapping.voiceAssistantUiActive) {
+            applyAttention({ kind: 'voiceAssistant', active: true })
+            break
+          }
+          if (value === CommandMapping.voiceAssistantUiIdle) {
+            applyAttention({ kind: 'voiceAssistant', active: false })
             break
           }
 

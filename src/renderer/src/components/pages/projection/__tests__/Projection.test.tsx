@@ -514,31 +514,30 @@ describe('Projection page', () => {
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/', { replace: true }))
   })
 
-  test('AudioVoiceAssistantStart triggers voiceAssistant attention switch', async () => {
+  test('voiceAssistantUiActive triggers voiceAssistant attention switch', async () => {
     mockPathname = '/media'
 
     render(<Projection {...baseProps()} />)
 
     act(() => {
       onEventCb?.(null, {
-        type: 'audio',
-        payload: { command: AudioCommand.AudioVoiceAssistantStart }
+        type: 'command',
+        message: { value: CommandMapping.voiceAssistantUiActive }
       })
     })
 
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/', { replace: true }))
   })
 
-  test('AudioVoiceAssistantStop returns to previous route via debounce timer', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
+  test('voiceAssistantUiIdle returns to previous route immediately (no timer)', async () => {
     mockPathname = '/media'
 
     const { rerender } = render(<Projection {...baseProps()} />)
 
     act(() => {
       onEventCb?.(null, {
-        type: 'audio',
-        payload: { command: AudioCommand.AudioVoiceAssistantStart }
+        type: 'command',
+        message: { value: CommandMapping.voiceAssistantUiActive }
       })
     })
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/', { replace: true }))
@@ -549,21 +548,12 @@ describe('Projection page', () => {
 
     act(() => {
       onEventCb?.(null, {
-        type: 'audio',
-        payload: { command: AudioCommand.AudioVoiceAssistantStop }
+        type: 'command',
+        message: { value: CommandMapping.voiceAssistantUiIdle }
       })
     })
 
-    // timer not yet fired
-    expect(navigateMock).not.toHaveBeenCalled()
-
-    act(() => {
-      vi.advanceTimersByTime(200)
-    })
-
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/media', { replace: true }))
-
-    vi.useRealTimers()
   })
 
   // ── applyAttention: already on projection path ────────────────────────────
@@ -586,51 +576,6 @@ describe('Projection page', () => {
     })
 
     expect(navigateMock).not.toHaveBeenCalled()
-  })
-
-  // ── clearVoiceAssistantReleaseTimer when timer is already set ─────────────
-
-  test('clearVoiceAssistantReleaseTimer cancels pending debounce on second active', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
-    mockPathname = '/media'
-
-    const { rerender } = render(<Projection {...baseProps()} />)
-
-    // First voiceAssistant start → switch to projection
-    act(() => {
-      onEventCb?.(null, {
-        type: 'audio',
-        payload: { command: AudioCommand.AudioVoiceAssistantStart }
-      })
-    })
-    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/', { replace: true }))
-
-    navigateMock.mockClear()
-    mockPathname = '/'
-    rerender(<Projection {...baseProps()} />)
-
-    // VoiceAssistant stop → sets debounce timer
-    act(() => {
-      onEventCb?.(null, {
-        type: 'audio',
-        payload: { command: AudioCommand.AudioVoiceAssistantStop }
-      })
-    })
-
-    // VoiceAssistant start again before timer fires → clearVoiceAssistantReleaseTimer runs with timer set
-    mockPathname = '/'
-    act(() => {
-      onEventCb?.(null, {
-        type: 'audio',
-        payload: { command: AudioCommand.AudioVoiceAssistantStart }
-      })
-    })
-
-    // Timer should have been cancelled, so no navigation after advance
-    act(() => vi.advanceTimersByTime(200))
-    expect(navigateMock).not.toHaveBeenCalledWith('/media', expect.anything())
-
-    vi.useRealTimers()
   })
 
   // ── mergeBoxInfo: string variants ────────────────────────────────────────
@@ -959,8 +904,8 @@ describe('Projection page', () => {
     // Arm voiceAssistant attention
     act(() => {
       onEventCb?.(null, {
-        type: 'audio',
-        payload: { command: AudioCommand.AudioVoiceAssistantStart }
+        type: 'command',
+        message: { value: CommandMapping.voiceAssistantUiActive }
       })
     })
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/', { replace: true }))
@@ -975,8 +920,8 @@ describe('Projection page', () => {
     // VoiceAssistant inactive now: attentionSwitchedByRef is already null → no navigation back
     act(() => {
       onEventCb?.(null, {
-        type: 'audio',
-        payload: { command: AudioCommand.AudioVoiceAssistantStop }
+        type: 'command',
+        message: { value: CommandMapping.voiceAssistantUiIdle }
       })
     })
 
