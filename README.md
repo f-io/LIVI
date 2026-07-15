@@ -10,8 +10,41 @@ It is a standalone cross-platform Electron head unit with a native, zero-copy GS
 
 ## Native Connectivity
 
+- **Apple CarPlay** (wired & wireless) on Linux — requires [MFi Authentication](#mfi-authentication)
 - **Android Auto** (wired) on all platforms
 - **Android Auto** (wireless) on Linux
+
+## Native Apple CarPlay
+
+LIVI implements the CarPlay accessory side natively on Linux. Wireless sessions run over LIVI's own Wi-Fi access point with Bluetooth pairing, wired sessions run directly over the USB cable (no OTG required).
+
+- main + instrument cluster video (H.264/H.265, hardware decoded, zero-copy)
+- audio playback, phone calls, microphone uplink
+- now-playing metadata incl. album art, turn-by-turn navigation data
+- touch, knob/D-Pad and hard-key input
+- day/night mode and GPS forwarding to the phone
+- multi-session: several phones are tracked in parallel, the active projection is switchable
+
+Wireless CarPlay requires a Bluetooth adapter and a Wi-Fi interface dedicated to the access point. Wired CarPlay works on any USB port.
+
+## MFi Authentication
+
+CarPlay requires the accessory to authenticate against the phone using an Apple **MFi authentication coprocessor**. This is a hardware chip, it cannot be emulated in software, and LIVI does not ship or bypass it. You need a physical coprocessor (e.g. salvaged from a certified CarPlay accessory or sourced as a module) wired to the I²C bus of your board.
+
+LIVI talks to the chip directly. Configuration (`config.json`):
+
+| Key                   | Default | Description                          |
+| --------------------- | ------- | ------------------------------------ |
+| `carPlayMfiI2cBus`    | `2`     | I²C bus number the coprocessor is on |
+| `carPlayMfiPowerGpio` | `21`    | GPIO that powers the coprocessor     |
+
+Without a coprocessor, native CarPlay is unavailable. Dongle-based CarPlay (the dongle carries its own auth chip) and all Android Auto paths work regardless.
+
+### Example Rasperry Pi config
+```bash
+# CP3.0
+dtoverlay=i2c-gpio,bus=2,i2c_gpio_sda=19,i2c_gpio_scl=26,i2c_gpio_delay_us=50
+```
 
 ## Dongle-based Connectivity
 
@@ -60,7 +93,7 @@ The `install.sh` script performs the following tasks:
 > bash scripts/gstreamer/patch-pi-v4l2codecs.sh
 > ```
 
-On first launch, LIVI detects if the udev rule for USB access is missing and prompts you to install it. The rule grants USB access to connected Android phones (for wired Android Auto) and to the USB dongle.
+On first launch, LIVI detects if the udev rule for USB access is missing and prompts you to install it. The rule grants USB access to connected Android phones (wired Android Auto), iPhones (wired CarPlay) and to the USB dongle.
 
 _This install script is not actively tested on other Linux distributions._
 
@@ -72,7 +105,7 @@ This AppImage has been tested on Debian Trixie (13) with Wayland, Fedora 44 (GNO
 chmod +x LIVI-*-x86_64.AppImage
 ```
 
-On first launch, LIVI detects if the udev rule for USB access is missing and prompts you to install it. The rule grants USB access to connected Android phones (for wired Android Auto) and to the USB dongle.
+On first launch, LIVI detects if the udev rule for USB access is missing and prompts you to install it. The rule grants USB access to connected Android phones (wired Android Auto), iPhones (wired CarPlay) and to the USB dongle.
 
 > **Hardware video decode (optional):** LIVI uses the system VA-API driver for GPU video decode (it is not bundled, since it must match your GPU and kernel). Most desktops ship it, a minimal install may not. Without it LIVI still works via software decode. For HW decode install the driver for your GPU and verify with `vainfo`: `i965-va-driver` (older Intel, e.g. Broadwell), `intel-media-va-driver` (Gen9+ Intel), `mesa-va-drivers` (AMD).
 
