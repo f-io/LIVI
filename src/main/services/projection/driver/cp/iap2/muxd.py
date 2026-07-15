@@ -451,7 +451,6 @@ class Muxd:
         self.socket_path = "/tmp/livi-usbmux-%s.sock" % serial[:8]
 
     def start(self):
-        self._stop_system_usbmuxd()
         self._config_carplay()
         self.host = MuxHost(self.serial)
         self.host.open()
@@ -488,7 +487,6 @@ class Muxd:
         except Exception:
             pass
         self._restore_config4()
-        self._start_system_usbmuxd()
         self.log("[muxd] usbmux down for %s" % self.serial[:8])
 
     def _config_carplay(self):
@@ -512,7 +510,6 @@ class Muxd:
                 raise RuntimeError("iphone %s did not expose CarPlay configs" % self.serial[:8])
         if open(path + "bConfigurationValue").read().strip() != CP_CONFIG:
             open(path + "bConfigurationValue", "w").write(CP_CONFIG)
-            time.sleep(2)
 
     def _restore_config4(self):
         dev = find_dev(self.serial)
@@ -522,10 +519,3 @@ class Muxd:
             except OSError:
                 pass
 
-    def _stop_system_usbmuxd(self):
-        subprocess.run(["systemctl", "stop", "usbmuxd"], capture_output=True)
-        subprocess.run(["pkill", "-x", "usbmuxd"], capture_output=True)
-        time.sleep(1)
-
-    def _start_system_usbmuxd(self):
-        subprocess.run(["systemctl", "start", "usbmuxd"], capture_output=True)
