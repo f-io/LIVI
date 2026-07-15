@@ -74,9 +74,6 @@ const PCM_FORMAT: Record<number, { rate: number; channels: number }> = {
   0x8000: { rate: 48000, channels: 2 }
 }
 
-// Fixed RTP SSRC for the outgoing mic stream (one uplink per session).
-const MIC_UPLINK_SSRC = 0x4c495649
-
 // Generic DataStream (used for the iAP2-over-CarPlay tunnel) and the iAP channel UUID.
 const STREAM_TYPE_DATA = 130
 const IAP_DATASTREAM_UUID = 'E9459FD0-BCAD-4C45-820F-1E72447EF2F2'
@@ -844,9 +841,20 @@ export class CpStack extends EventEmitter {
     }
     // MainAudio is bidirectional: a send port in the phone's request means it wants
     // mic. Derive the input key (mirror of the output key), build the uplink, and
-    // bracket mic capture on this stream's active/stop.
+    // bracket mic capture on this stream's active/stop. Over wireless the phone picks
+    // OPUS for the mic (PCM is USB-only), so the uplink encodes; the encode/capture rate
+    // is the negotiated OPUS rate (16k/24k/48k), independent of the downlink 48k.
     let uplink: CpMicUplink | null = null
     const phoneMicPort = type === STREAM_TYPE_MAIN_AUDIO ? Number(sd.dataPort) || 0 : 0
+    // Frame duration from the phone's framesPerPacket (falls back to 20ms).
+    const opusRate =
+      fmt & 0x40000000 ? 48000 : fmt & 0x20000000 ? 24000 : fmt & 0x10000000 ? 16000 : 24000
+    const micRate = isOpus ? opusRate : sampleRate
+    const micChannels = isOpus ? 1 : channels
+    const framesPerPacket = Number(sd.framesPerPacket) || 0
+    const frameMs = framesPerPacket > 0 ? Math.round((framesPerPacket / micRate) * 1000) : 20
+    // OPUS low-latency bitrate tiers (R6): 48k ≤24kHz, 64k ≤32kHz, 96k at 48kHz.
+    const bitrate = micRate <= 24000 ? 48000 : micRate <= 32000 ? 64000 : 96000
     if (phoneMicPort > 0) {
       const inputKey = hkdfSha512(
         shared,
@@ -854,15 +862,18 @@ export class CpStack extends EventEmitter {
         'DataStream-Input-Encryption-Key',
         32
       )
-      uplink = new CpMicUplink(
-        inputKey,
-        session.peerHost,
-        phoneMicPort,
-        sampleRate,
-        channels,
-        type,
-        MIC_UPLINK_SSRC
-      )
+      uplink = new CpMicUplink({
+        key: inputKey,
+        host: session.peerHost,
+        port: phoneMicPort,
+        sampleRate: micRate,
+        channels: micChannels,
+        payloadType: type,
+        codec: isOpus ? 'opus' : 'pcm',
+        frameMs,
+        bitrate,
+        label: prof.label
+      })
     }
     stream.on('active', (active: boolean) => {
       this.emit('audio-active', prof, active)
@@ -870,7 +881,7 @@ export class CpStack extends EventEmitter {
       if (active) {
         uplink.start()
         this._activeUplinks.add(uplink)
-        this.emit('mic-active', true, sampleRate, channels)
+        this.emit('mic-active', true, micRate, micChannels)
       } else {
         uplink.stop()
         this._activeUplinks.delete(uplink)
