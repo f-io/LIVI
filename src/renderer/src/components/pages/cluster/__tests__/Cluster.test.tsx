@@ -114,12 +114,12 @@ describe('Cluster page', () => {
     expect(screen.queryByText('Not supported by firmware')).not.toBeInTheDocument()
   })
 
-  test('isAaActive overrides missing firmware support', async () => {
+  test('activeProtocol androidauto overrides missing firmware support', async () => {
     liviState.boxInfo = null
-    statusState.isAaActive = true
+    statusState.activeProtocol = 'androidauto'
     renderCluster()
     expect(screen.queryByText('Not supported by firmware')).not.toBeInTheDocument()
-    statusState.isAaActive = false
+    statusState.activeProtocol = null
   })
 
   test('onClusterResolution hides the map placeholder once cluster frames arrive', async () => {

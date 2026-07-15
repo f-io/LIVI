@@ -19,13 +19,13 @@ import {
   MediaData,
   MediaType,
   Message,
-  MetaData,
   NavigationData,
   NavigationMetaType,
   Opened,
   Phase,
   PhoneType,
   Plugged,
+  parseMetaMessage,
   parseNaviInfoFromBuffer,
   SoftwareVersion,
   Unplugged,
@@ -319,51 +319,42 @@ describe('readable messages', () => {
     expect(msg.data.length).toBe(4)
   })
 
-  test('MetaData wraps navigation payloads', () => {
+  test('parseMetaMessage returns NavigationData for navigation payloads', () => {
     const innerType = Buffer.alloc(4)
     innerType.writeUInt32LE(NavigationMetaType.DashboardInfo, 0)
     const body = Buffer.from('{"NaviStatus":1}\0', 'utf8')
 
-    const msg = new MetaData(fakeHeader() as any, Buffer.concat([innerType, body]))
+    const msg = parseMetaMessage(fakeHeader() as any, Buffer.concat([innerType, body]))
 
-    expect(msg.innerType).toBe(NavigationMetaType.DashboardInfo)
-    expect(msg.inner.kind).toBe('navigation')
-    if (msg.inner.kind === 'navigation') {
-      expect(msg.inner.message.navi).toEqual({ NaviStatus: 1 })
-    }
+    expect(msg).toBeInstanceOf(NavigationData)
+    expect((msg as NavigationData).metaType).toBe(NavigationMetaType.DashboardInfo)
+    expect((msg as NavigationData).navi).toEqual({ NaviStatus: 1 })
   })
 
-  test('MetaData wraps media payloads', () => {
+  test('parseMetaMessage returns MediaData for media payloads', () => {
     const innerType = Buffer.alloc(4)
     innerType.writeUInt32LE(MediaType.AlbumCoverAlt, 0)
     const body = Buffer.from(Buffer.from('cover').toString('base64') + '\0', 'ascii')
 
-    const msg = new MetaData(fakeHeader() as any, Buffer.concat([innerType, body]))
+    const msg = parseMetaMessage(fakeHeader() as any, Buffer.concat([innerType, body]))
 
-    expect(msg.innerType).toBe(MediaType.AlbumCoverAlt)
-    expect(msg.inner.kind).toBe('media')
-    if (msg.inner.kind === 'media') {
-      expect(msg.inner.message.payload).toEqual({
-        type: MediaType.AlbumCoverAlt,
-        base64Image: Buffer.from('cover').toString('base64')
-      })
-    }
+    expect(msg).toBeInstanceOf(MediaData)
+    expect((msg as MediaData).mediaType).toBe(MediaType.AlbumCoverAlt)
+    expect((msg as MediaData).payload).toEqual({
+      type: MediaType.AlbumCoverAlt,
+      base64Image: Buffer.from('cover').toString('base64')
+    })
   })
 
-  test('MetaData keeps unknown payloads as unknown inner kind', () => {
+  test('parseMetaMessage returns null for unknown payloads', () => {
     const infoSpy = vi.spyOn(console, 'info').mockImplementation(function () {})
     const innerType = Buffer.alloc(4)
     innerType.writeUInt32LE(999, 0)
     const body = Buffer.from('mystery\0', 'utf8')
 
-    const msg = new MetaData(fakeHeader() as any, Buffer.concat([innerType, body]))
+    const msg = parseMetaMessage(fakeHeader() as any, Buffer.concat([innerType, body]))
 
-    expect(msg.innerType).toBe(999)
-    expect(msg.inner).toEqual({
-      kind: 'unknown',
-      metaType: 999,
-      raw: body
-    })
+    expect(msg).toBeNull()
     expect(infoSpy).toHaveBeenCalled()
 
     infoSpy.mockRestore()

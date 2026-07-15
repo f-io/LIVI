@@ -17,7 +17,7 @@ files:
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml,CHANGELOG.md,README.md}'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!src/**'
-  - '!out/main/bt/**'
+  - '!out/main/driver/**'
   - '!out/compositor/**'
 
 asarUnpack:
@@ -51,10 +51,30 @@ linux:
         - '**/*'
         - '!**/*.a'
         - '!share/**'
-    - from: src/main/services/projection/driver/aa/bt
-      to: aa/bt
+    - from: src/main/services/projection/driver/cp/iap2
+      to: driver/cp/iap2
       filter:
         - '**/*'
+        - '!__pycache__/**'
+        - '!*.pyc'
+    - from: src/main/services/projection/driver/shared
+      to: driver/shared
+      filter:
+        - '**/*'
+        - '!__pycache__/**'
+        - '!*.pyc'
+    - from: src/main/services/projection/driver/bt
+      to: driver/bt
+      filter:
+        - '**/*'
+        - '!**/*.ts'
+        - '!__pycache__/**'
+        - '!*.pyc'
+    - from: src/main/services/projection/driver/helper
+      to: driver/helper
+      filter:
+        - '**/*'
+        - '!**/*.ts'
         - '!__pycache__/**'
         - '!*.pyc'
 

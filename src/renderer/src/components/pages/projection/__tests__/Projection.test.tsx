@@ -13,11 +13,11 @@ type AnyFn = (...args: any[]) => any
 
 const statusState: Record<string, any> = {
   isStreaming: true,
-  isDongleConnected: true,
-  isAaActive: false,
+  isDongleHardwarePresent: true,
+  activeProtocol: null,
   setStreaming: vi.fn(),
-  setDongleConnected: vi.fn(),
-  setAaActive: vi.fn()
+  setDongleHardwarePresent: vi.fn(),
+  setActiveProtocol: vi.fn()
 }
 
 const liviState: Record<string, any> = {
@@ -50,7 +50,10 @@ vi.mock('../../../../store/store', async () => {
     }
   }
 
-  return { useStatusStore, useLiviStore }
+  const useProjectionActive = () =>
+    statusState.isDongleHardwarePresent || statusState.activeProtocol != null
+
+  return { useStatusStore, useLiviStore, useProjectionActive }
 })
 
 vi.mock('../hooks/useProjectionTouch', () => ({
@@ -105,9 +108,11 @@ describe('Projection page', () => {
     mockPathname = '/'
 
     statusState.isStreaming = true
-    statusState.isDongleConnected = true
+    statusState.isDongleHardwarePresent = true
+    statusState.activeProtocol = null
     statusState.setStreaming.mockClear()
-    statusState.setDongleConnected.mockClear()
+    statusState.setDongleHardwarePresent.mockClear()
+    statusState.setActiveProtocol.mockClear()
 
     liviState.negotiatedWidth = 0
     liviState.negotiatedHeight = 0
@@ -125,7 +130,8 @@ describe('Projection page', () => {
     liviState.setPcmData.mockClear()
     liviState.setBluetoothPairedList.mockClear()
     statusState.setStreaming.mockClear()
-    statusState.setDongleConnected.mockClear()
+    statusState.setDongleHardwarePresent.mockClear()
+    statusState.setActiveProtocol.mockClear()
 
     const { createProjectionWorker } = await vi.importMock('@worker/createProjectionWorker')
 
@@ -172,10 +178,10 @@ describe('Projection page', () => {
     })
 
     expect((window as any).projection.ipc.start).not.toHaveBeenCalled()
-    expect(statusState.setDongleConnected).toHaveBeenCalledWith(true)
+    expect(statusState.setDongleHardwarePresent).toHaveBeenCalledWith(true)
   })
 
-  test('usb unplugged stops projection and clears streaming state', async () => {
+  test('usb unplugged clears dongle state without touching the video plane', async () => {
     const setReceivingVideo = vi.fn()
 
     render(<Projection {...baseProps({ setReceivingVideo })} receivingVideo />)
@@ -184,22 +190,27 @@ describe('Projection page', () => {
       await usbCb?.(null, { type: 'unplugged' })
     })
 
-    expect((window as any).projection.ipc.stop).toHaveBeenCalled()
-    expect(setReceivingVideo).toHaveBeenCalledWith(false)
-    expect(statusState.setStreaming).toHaveBeenCalledWith(false)
-    expect(statusState.setDongleConnected).toHaveBeenCalledWith(false)
+    expect((window as any).projection.ipc.stop).not.toHaveBeenCalled()
+    expect(setReceivingVideo).not.toHaveBeenCalled()
+    expect(statusState.setStreaming).not.toHaveBeenCalled()
+    expect(statusState.setDongleHardwarePresent).toHaveBeenCalledWith(false)
     expect(liviState.resetInfo).toHaveBeenCalled()
   })
 
-  test('forces video hidden when streaming becomes false', async () => {
+  test('projection event drives video visibility', async () => {
     const setReceivingVideo = vi.fn()
 
-    const { rerender } = render(<Projection {...baseProps({ setReceivingVideo })} receivingVideo />)
+    render(<Projection {...baseProps({ setReceivingVideo })} />)
 
-    statusState.isStreaming = false
+    await act(async () => {
+      onEventCb?.(null, { type: 'projection', shown: true })
+    })
+    expect(setReceivingVideo).toHaveBeenCalledWith(true)
 
-    rerender(<Projection {...baseProps({ setReceivingVideo })} receivingVideo />)
-
+    setReceivingVideo.mockClear()
+    await act(async () => {
+      onEventCb?.(null, { type: 'projection', shown: false })
+    })
     expect(setReceivingVideo).toHaveBeenCalledWith(false)
   })
 
@@ -354,374 +365,6 @@ describe('Projection page', () => {
     })
   })
 
-  test('requestVideoFocus navigates to projection', async () => {
-    mockPathname = '/media'
-
-    render(
-      <Projection
-        {...baseProps()}
-        settings={
-          {
-            width: 800,
-            height: 480,
-            fps: 60,
-            cluster: { main: false, dash: false, aux: false },
-            autoSwitchOnStream: true
-          } as any
-        }
-      />
-    )
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.requestVideoFocus }
-      })
-    })
-
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith('/', { replace: true })
-    })
-  })
-
-  test('requestVideoFocus waits for resolution when stream is not active', async () => {
-    mockPathname = '/media'
-    statusState.isStreaming = false
-
-    const setReceivingVideo = vi.fn()
-
-    render(
-      <Projection
-        {...baseProps({ setReceivingVideo })}
-        settings={
-          {
-            width: 800,
-            height: 480,
-            fps: 60,
-            cluster: { main: false, dash: false, aux: false },
-            autoSwitchOnStream: true
-          } as any
-        }
-      />
-    )
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.requestVideoFocus }
-      })
-    })
-
-    expect(navigateMock).not.toHaveBeenCalled()
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'resolution',
-        payload: { width: 1280, height: 720 }
-      })
-    })
-
-    expect(setReceivingVideo).toHaveBeenCalledWith(true)
-
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith('/', { replace: true })
-    })
-  })
-
-  test('releaseVideoFocus navigates back after auto switch', async () => {
-    mockPathname = '/media'
-
-    const { rerender } = render(
-      <Projection
-        {...baseProps()}
-        settings={
-          {
-            width: 800,
-            height: 480,
-            fps: 60,
-            cluster: { main: false, dash: false, aux: false },
-            autoSwitchOnStream: true
-          } as any
-        }
-      />
-    )
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.requestVideoFocus }
-      })
-    })
-
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith('/', { replace: true })
-    })
-
-    navigateMock.mockClear()
-    mockPathname = '/'
-
-    rerender(
-      <Projection
-        {...baseProps()}
-        settings={
-          {
-            width: 800,
-            height: 480,
-            fps: 60,
-            cluster: { main: false, dash: false, aux: false },
-            autoSwitchOnStream: true
-          } as any
-        }
-      />
-    )
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.releaseVideoFocus }
-      })
-    })
-
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith('/media', { replace: true })
-    })
-  })
-
-  test('releaseVideoFocus does nothing when auto switch on stream is disabled', async () => {
-    mockPathname = '/'
-
-    render(
-      <Projection
-        {...baseProps()}
-        settings={
-          {
-            width: 800,
-            height: 480,
-            fps: 60,
-            cluster: { main: false, dash: false, aux: false },
-            autoSwitchOnStream: false
-          } as any
-        }
-      />
-    )
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.releaseVideoFocus }
-      })
-    })
-
-    expect(navigateMock).not.toHaveBeenCalled()
-  })
-
-  test('requestClusterFocus shows overlay when maps disabled', async () => {
-    mockPathname = '/media'
-
-    const setNavVideoOverlayActive = vi.fn()
-
-    render(
-      <Projection
-        {...baseProps({ setNavVideoOverlayActive })}
-        settings={
-          {
-            width: 800,
-            height: 480,
-            fps: 60,
-            cluster: { main: false, dash: false, aux: false },
-            autoSwitchOnGuidance: true
-          } as any
-        }
-      />
-    )
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.requestClusterFocus }
-      })
-    })
-
-    expect(setNavVideoOverlayActive).toHaveBeenCalledWith(true)
-  })
-
-  test('releaseClusterFocus navigates back from maps when maps are enabled', async () => {
-    mockPathname = '/media'
-
-    const { rerender } = render(
-      <Projection
-        {...baseProps()}
-        settings={
-          {
-            width: 800,
-            height: 480,
-            fps: 60,
-            dashboards: { dash3: { main: true, dash: false, aux: false } },
-            autoSwitchOnGuidance: true
-          } as any
-        }
-      />
-    )
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.requestClusterFocus }
-      })
-    })
-
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith('/cluster', { replace: true })
-    })
-
-    navigateMock.mockClear()
-    mockPathname = '/cluster'
-
-    rerender(
-      <Projection
-        {...baseProps()}
-        settings={
-          {
-            width: 800,
-            height: 480,
-            fps: 60,
-            dashboards: { dash3: { main: true, dash: false, aux: false } },
-            autoSwitchOnGuidance: true
-          } as any
-        }
-      />
-    )
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.releaseClusterFocus }
-      })
-    })
-
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith('/media', { replace: true })
-    })
-  })
-
-  test('releaseClusterFocus navigates back from maps when maps are enabled', async () => {
-    mockPathname = '/media'
-
-    const { rerender } = render(
-      <Projection
-        {...baseProps()}
-        settings={
-          {
-            width: 800,
-            height: 480,
-            fps: 60,
-            dashboards: { dash3: { main: true, dash: false, aux: false } },
-            autoSwitchOnGuidance: true
-          } as any
-        }
-      />
-    )
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.requestClusterFocus }
-      })
-    })
-
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith('/cluster', { replace: true })
-    })
-
-    navigateMock.mockClear()
-    mockPathname = '/cluster'
-
-    rerender(
-      <Projection
-        {...baseProps()}
-        settings={
-          {
-            width: 800,
-            height: 480,
-            fps: 60,
-            dashboards: { dash3: { main: true, dash: false, aux: false } },
-            autoSwitchOnGuidance: true
-          } as any
-        }
-      />
-    )
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.releaseClusterFocus }
-      })
-    })
-
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith('/media', { replace: true })
-    })
-  })
-
-  test('releaseVideoFocus navigates back after auto switch', async () => {
-    mockPathname = '/media'
-
-    const { rerender } = render(
-      <Projection
-        {...baseProps()}
-        settings={
-          {
-            width: 800,
-            height: 480,
-            fps: 60,
-            cluster: { main: false, dash: false, aux: false },
-            autoSwitchOnStream: true
-          } as any
-        }
-      />
-    )
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.requestVideoFocus }
-      })
-    })
-
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith('/', { replace: true })
-    })
-
-    navigateMock.mockClear()
-    mockPathname = '/'
-
-    rerender(
-      <Projection
-        {...baseProps()}
-        settings={
-          {
-            width: 800,
-            height: 480,
-            fps: 60,
-            cluster: { main: false, dash: false, aux: false },
-            autoSwitchOnStream: true
-          } as any
-        }
-      />
-    )
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.releaseVideoFocus }
-      })
-    })
-
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith('/media', { replace: true })
-    })
-  })
-
   test('handles phone call start (auto switch)', async () => {
     mockPathname = '/media'
 
@@ -771,46 +414,42 @@ describe('Projection page', () => {
 
   // ── IPC plugged / unplugged / failure events ──────────────────────────────
 
-  test('IPC plugged event marks dongle connected', async () => {
+  test('IPC session event marks dongle protocol active', async () => {
     render(<Projection {...baseProps()} />)
 
     act(() => {
-      onEventCb?.(null, { type: 'plugged' })
+      onEventCb?.(null, { type: 'session', protocol: 'dongle' })
     })
 
-    expect(statusState.setDongleConnected).toHaveBeenCalledWith(true)
+    expect(statusState.setActiveProtocol).toHaveBeenCalledWith('dongle')
   })
 
-  test('IPC unplugged event clears all streaming state', async () => {
+  test('IPC session end clears the active protocol, not the video plane', async () => {
     const setReceivingVideo = vi.fn()
-    const setNavVideoOverlayActive = vi.fn()
 
-    render(<Projection {...baseProps({ setReceivingVideo, setNavVideoOverlayActive })} />)
+    render(<Projection {...baseProps({ setReceivingVideo })} />)
 
     act(() => {
-      onEventCb?.(null, { type: 'unplugged' })
+      onEventCb?.(null, { type: 'session', protocol: null })
     })
 
-    expect(statusState.setStreaming).toHaveBeenCalledWith(false)
-    expect(statusState.setDongleConnected).toHaveBeenCalledWith(false)
-    expect(setReceivingVideo).toHaveBeenCalledWith(false)
-    expect(setNavVideoOverlayActive).toHaveBeenCalledWith(false)
+    expect(statusState.setActiveProtocol).toHaveBeenCalledWith(null)
+    expect(setReceivingVideo).not.toHaveBeenCalled()
+    expect(statusState.setStreaming).not.toHaveBeenCalled()
   })
 
   test('IPC failure event clears all streaming state', async () => {
     const setReceivingVideo = vi.fn()
-    const setNavVideoOverlayActive = vi.fn()
 
-    render(<Projection {...baseProps({ setReceivingVideo, setNavVideoOverlayActive })} />)
+    render(<Projection {...baseProps({ setReceivingVideo })} />)
 
     act(() => {
       onEventCb?.(null, { type: 'failure' })
     })
 
     expect(statusState.setStreaming).toHaveBeenCalledWith(false)
-    expect(statusState.setDongleConnected).toHaveBeenCalledWith(false)
+    expect(statusState.setActiveProtocol).toHaveBeenCalledWith(null)
     expect(setReceivingVideo).toHaveBeenCalledWith(false)
-    expect(setNavVideoOverlayActive).toHaveBeenCalledWith(false)
   })
 
   // ── Audio command events ──────────────────────────────────────────────────
@@ -1162,193 +801,6 @@ describe('Projection page', () => {
     vi.useRealTimers()
   })
 
-  // ── requestVideoFocus blocked by attention ────────────────────────────────
-
-  test('requestVideoFocus does not auto-switch while attention (voiceAssistant) is active', async () => {
-    mockPathname = '/media'
-
-    render(
-      <Projection
-        {...baseProps()}
-        settings={{ width: 800, height: 480, fps: 60, autoSwitchOnStream: true } as any}
-      />
-    )
-
-    // Arm voiceAssistant attention (switches to projection)
-    act(() => {
-      onEventCb?.(null, {
-        type: 'audio',
-        payload: { command: AudioCommand.AudioVoiceAssistantStart }
-      })
-    })
-    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/', { replace: true }))
-
-    navigateMock.mockClear()
-
-    // requestVideoFocus while voiceAssistant attention is active → blocked
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.requestVideoFocus }
-      })
-    })
-
-    expect(navigateMock).not.toHaveBeenCalled()
-  })
-
-  // ── releaseClusterFocus with no cluster display dismisses overlay ────────────
-
-  test('releaseClusterFocus with no cluster display calls setNavVideoOverlayActive(false)', async () => {
-    mockPathname = '/media'
-    const setNavVideoOverlayActive = vi.fn()
-
-    render(
-      <Projection
-        {...baseProps({ setNavVideoOverlayActive })}
-        settings={
-          {
-            width: 800,
-            height: 480,
-            fps: 60,
-            cluster: { main: false, dash: false, aux: false },
-            autoSwitchOnGuidance: true
-          } as any
-        }
-      />
-    )
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.releaseClusterFocus }
-      })
-    })
-
-    expect(setNavVideoOverlayActive).toHaveBeenCalledWith(false)
-  })
-
-  // ── releaseVideoFocus: maps back-navigation ───────────────────────────────
-
-  test('releaseVideoFocus with cluster display navigates back from maps via lastNonClusterPathRef', async () => {
-    mockPathname = '/media'
-
-    const { rerender } = render(
-      <Projection
-        {...baseProps()}
-        settings={
-          {
-            width: 800,
-            height: 480,
-            fps: 60,
-            dashboards: { dash3: { main: true, dash: false, aux: false } },
-            autoSwitchOnGuidance: true,
-            autoSwitchOnStream: true
-          } as any
-        }
-      />
-    )
-
-    // requestClusterFocus stores lastNonClusterPathRef = '/media' and navigates to '/cluster'
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.requestClusterFocus }
-      })
-    })
-    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/cluster', { replace: true }))
-
-    navigateMock.mockClear()
-    mockPathname = '/cluster'
-
-    rerender(
-      <Projection
-        {...baseProps()}
-        settings={
-          {
-            width: 800,
-            height: 480,
-            fps: 60,
-            dashboards: { dash3: { main: true, dash: false, aux: false } },
-            autoSwitchOnGuidance: true,
-            autoSwitchOnStream: true
-          } as any
-        }
-      />
-    )
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.releaseVideoFocus }
-      })
-    })
-
-    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/media', { replace: true }))
-  })
-
-  // ── releaseVideoFocus: blocked by attention ───────────────────────────────
-
-  test('releaseVideoFocus does not navigate when attention switch is active', async () => {
-    mockPathname = '/media'
-
-    const { rerender } = render(
-      <Projection
-        {...baseProps()}
-        settings={
-          {
-            width: 800,
-            height: 480,
-            fps: 60,
-            cluster: { main: false, dash: false, aux: false },
-            autoSwitchOnStream: true,
-            autoSwitchOnPhoneCall: true
-          } as any
-        }
-      />
-    )
-
-    // requestVideoFocus: auto-switch
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.requestVideoFocus }
-      })
-    })
-    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/', { replace: true }))
-
-    // call attention fires on top of that
-    act(() => {
-      onEventCb?.(null, { type: 'audio', payload: { command: AudioCommand.AudioPhonecallStart } })
-    })
-
-    navigateMock.mockClear()
-    mockPathname = '/'
-    rerender(
-      <Projection
-        {...baseProps()}
-        settings={
-          {
-            width: 800,
-            height: 480,
-            fps: 60,
-            cluster: { main: false, dash: false, aux: false },
-            autoSwitchOnStream: true,
-            autoSwitchOnPhoneCall: true
-          } as any
-        }
-      />
-    )
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'command',
-        message: { value: CommandMapping.releaseVideoFocus }
-      })
-    })
-
-    expect(navigateMock).not.toHaveBeenCalledWith('/media', expect.anything())
-  })
-
   // ── projection worker: audioInfo / pcmData / command / unknown ───────────
 
   test('projection worker audioInfo message calls setAudioInfo', async () => {
@@ -1561,23 +1013,6 @@ describe('Projection page', () => {
 
     document.body.removeChild(anchor)
   })
-
-  // ── navVideoOverlayActive pointerdown dismiss ─────────────────────────────
-
-  test('navVideoOverlayActive pointerdown dismisses overlay', async () => {
-    mockPathname = '/media'
-    const setNavVideoOverlayActive = vi.fn()
-
-    render(<Projection {...baseProps({ setNavVideoOverlayActive })} navVideoOverlayActive={true} />)
-
-    act(() => {
-      const evt = document.createEvent('Event')
-      evt.initEvent('pointerdown', true, true)
-      window.dispatchEvent(evt)
-    })
-
-    expect(setNavVideoOverlayActive).toHaveBeenCalledWith(false)
-  })
 })
 
 function baseProps(overrides: any = {}) {
@@ -1592,8 +1027,6 @@ function baseProps(overrides: any = {}) {
     },
     command: '' as any,
     commandCounter: 0,
-    navVideoOverlayActive: false,
-    setNavVideoOverlayActive: vi.fn(),
     ...overrides
   }
 }

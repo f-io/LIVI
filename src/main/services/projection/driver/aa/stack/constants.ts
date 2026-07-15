@@ -32,6 +32,7 @@ export const CTRL_MSG = {
   VOICE_SESSION_NOTIFICATION: 0x0011, // phone → HU (1=START, 2=END)
   AUDIO_FOCUS_REQUEST: 0x0012,
   AUDIO_FOCUS_RESPONSE: 0x0013,
+  BATTERY_STATUS_NOTIFICATION: 0x0017, // phone → HU (battery_level, critical)
   BINDING_REQUEST: 0x0019, // phone → HU (scan codes)
   BINDING_RESPONSE: 0x001a // HU → phone
 } as const

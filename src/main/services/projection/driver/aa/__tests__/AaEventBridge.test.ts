@@ -3,13 +3,9 @@ import { MessageType } from '@projection/messages/common'
 import {
   AudioData,
   Command,
-  DongleReady,
-  type MediaData,
+  MediaData,
   type Message,
-  MetaData,
-  type NavigationData,
-  Plugged,
-  Unplugged,
+  NavigationData,
   VideoData
 } from '@projection/messages/readable'
 import { CommandMapping } from '@shared/types/ProjectionEnums'
@@ -77,46 +73,43 @@ function commands(emitMessage: Mock): Command[] {
   return messagesOfType(emitMessage, MessageType.Command) as Command[]
 }
 
-function metas(emitMessage: Mock): MetaData[] {
-  return messagesOfType(emitMessage, MessageType.MetaData) as MetaData[]
+function metas(emitMessage: Mock): (MediaData | NavigationData)[] {
+  return messagesOfType(emitMessage, MessageType.MetaData) as (MediaData | NavigationData)[]
 }
 
-function asMedia(m: MetaData): MediaData {
-  if (m.inner.kind !== 'media') throw new Error('not a media meta')
-  return m.inner.message
+function asMedia(m: MediaData | NavigationData): MediaData {
+  if (!(m instanceof MediaData)) throw new Error('not a media meta')
+  return m
 }
 
-function asNavi(m: MetaData): NavigationData {
-  if (m.inner.kind !== 'navigation') throw new Error('not a navi meta')
-  return m.inner.message
+function asNavi(m: MediaData | NavigationData): NavigationData {
+  if (!(m instanceof NavigationData)) throw new Error('not a navi meta')
+  return m
 }
 
 describe('AaEventBridge', () => {
   describe('connect / disconnect lifecycle', () => {
-    test('connected emits DongleReady + Plugged(AndroidAuto)', async () => {
+    test('connected emits no dongle-protocol lifecycle message', async () => {
       const { aa, emitMessage } = makeBridge()
       aa.emit('connected')
 
       const types = emitMessage.mock.calls.map((c) => (c[0] as Message).header.type)
-      expect(types).toContain(MessageType.Open)
-      expect(types).toContain(MessageType.Plugged)
-      const plugged = messagesOfType(emitMessage, MessageType.Plugged)[0] as Plugged
-      expect(plugged).toBeInstanceOf(Plugged)
+      expect(types).not.toContain(MessageType.Open)
+      expect(types).not.toContain(MessageType.Plugged)
     })
 
-    test('disconnected emits Unplugged + releases video focus if it was held', async () => {
+    test('disconnected releases video focus if it was held and emits no Unplugged', async () => {
       const { aa, emitMessage } = makeBridge()
       aa.emit('video-focus-projected')
       emitMessage.mockClear()
 
       aa.emit('disconnected', 'phone gone')
 
-      const unplugged = messagesOfType(emitMessage, MessageType.Unplugged)
-      expect(unplugged).toHaveLength(1)
       const releaseEmitted = commands(emitMessage).some(
         (c) => c.value === CommandMapping.releaseVideoFocus
       )
       expect(releaseEmitted).toBe(true)
+      expect(messagesOfType(emitMessage, MessageType.Unplugged)).toHaveLength(0)
     })
 
     test('disconnected without prior video focus does not emit releaseVideoFocus', async () => {
@@ -270,7 +263,7 @@ describe('AaEventBridge', () => {
   })
 
   describe('media metadata / status', () => {
-    function mediaJson(m: MetaData): Record<string, unknown> {
+    function mediaJson(m: MediaData | NavigationData): Record<string, unknown> {
       const p = asMedia(m).payload as { media?: Record<string, unknown> } | undefined
       return p?.media ?? {}
     }
@@ -321,7 +314,7 @@ describe('AaEventBridge', () => {
   })
 
   describe('navigation', () => {
-    function naviInfo(m: MetaData): Record<string, unknown> {
+    function naviInfo(m: MediaData | NavigationData): Record<string, unknown> {
       return (asNavi(m).navi ?? {}) as Record<string, unknown>
     }
 
@@ -446,24 +439,6 @@ describe('AaEventBridge', () => {
     })
   })
 
-  describe('emitPlugged (manual)', () => {
-    test('publicly callable, emits a Plugged message', async () => {
-      const { bridge, emitMessage } = makeBridge()
-      emitMessage.mockClear()
-      bridge.emitPlugged()
-      expect(messagesOfType(emitMessage, MessageType.Plugged)).toHaveLength(1)
-    })
-  })
-
-  test('verifies DongleReady is the message class for the Open header', async () => {
-    const { aa, emitMessage } = makeBridge()
-    aa.emit('connected')
-    const open = emitMessage.mock.calls
-      .map((c) => c[0] as Message)
-      .find((m) => m.header.type === MessageType.Open)
-    expect(open).toBeInstanceOf(DongleReady)
-  })
-
   test('audio lifecycle command for "phone" channel emits AudioOutput* commands', () => {
     const { aa, emitMessage } = makeBridge()
     aa.emit('audio-start', 'phone', 0)
@@ -514,14 +489,5 @@ describe('AaEventBridge', () => {
     aa.emit('nav-status', { state: 'active' })
     const meta = metas(emitMessage)[0]
     expect(asNavi(meta).navi?.NaviAPPName).toBe('Google Maps')
-  })
-
-  test('Unplugged message class on disconnect', async () => {
-    const { aa, emitMessage } = makeBridge()
-    aa.emit('disconnected')
-    const u = emitMessage.mock.calls
-      .map((c) => c[0] as Message)
-      .find((m) => m.header.type === MessageType.Unplugged)
-    expect(u).toBeInstanceOf(Unplugged)
   })
 })

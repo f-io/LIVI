@@ -1,7 +1,7 @@
 import { DEBUG } from '@main/constants'
 import { decryptVendorSessionText } from '@main/helpers/vendorSessionInfo'
 import type { PendingStartupConnectTarget } from '@main/services/projection/services/types'
-import { CARLINKIT_PIDS, CARLINKIT_VID } from '@main/services/usb/constants'
+import { CARLINKIT_PIDS, CARLINKIT_VID, isCarlinkitDongle } from '@main/services/usb/constants'
 import { HeaderBuildError, MessageHeader } from '@projection/messages/common'
 import {
   BluetoothPeerConnected,
@@ -13,19 +13,23 @@ import {
   Plugged,
   SoftwareVersion,
   Unplugged,
-  VendorSessionInfo
+  VendorSessionInfo,
+  VideoData
 } from '@projection/messages/readable'
 import {
   FileAddress,
   HeartBeat,
   SendAndroidAutoDpi,
+  SendAudio,
   SendAutoConnectByBtAddress,
   SendableMessage,
   SendBluetoothPairedList,
   SendBoolean,
   SendBoxSettings,
+  SendCloseDongle,
   SendCommand,
   SendDisconnectPhone,
+  SendFile,
   SendGnssData,
   SendIconConfig,
   SendNumber,
@@ -34,11 +38,13 @@ import {
   SendString,
   SendViewArea
 } from '@projection/messages/sendable'
+import { asDomUSBDevice } from '@projection/services/utils/asDomUSBDevice'
 import type { Config } from '@shared/types'
 import { InputCommand, MicType, PhoneWorkMode } from '@shared/types'
 import type { CommandValue } from '@shared/types/ProjectionEnums'
 import { isClusterDisplayed, matchFittingAAResolution } from '@shared/utils'
 import EventEmitter from 'events'
+import { usb } from 'usb'
 
 const CONFIG_NUMBER = 1
 const MAX_ERROR_COUNT = 5
@@ -96,6 +102,10 @@ export class DongleDriver extends EventEmitter {
 
   // centralised detection signals
   private _lastPluggedPhoneType: PhoneType | null = null
+  private _linkUp = false
+  private _videoFlowing = false
+  private _frameTimer: ReturnType<typeof setInterval> | null = null
+  private _pairTimer: ReturnType<typeof setTimeout> | null = null
   private _pendingModeHintFromBoxInfo: PhoneWorkMode | null = null
 
   // Logging PhoneWorkMode
@@ -285,6 +295,32 @@ export class DongleDriver extends EventEmitter {
     this.emit('dongle-info', { dongleFwVersion: fw, boxInfo: box })
   }
 
+  get isUp(): boolean {
+    return this._device !== null
+  }
+
+  bringUp = async (
+    cfg: Config,
+    pendingTarget?: PendingStartupConnectTarget | null
+  ): Promise<void> => {
+    if (this._device) return
+    const device = (await usb.getDevices()).find((d) => isCarlinkitDongle(d.vendorId, d.productId))
+    if (!device) return
+    try {
+      await device.open()
+      await this.initialise(asDomUSBDevice(device))
+      if (pendingTarget) this.setPendingStartupConnectTarget(pendingTarget)
+      else this.clearPendingStartupConnectTarget()
+      await this.start(cfg)
+      this._pairTimer = setTimeout(() => {
+        void this.send(new SendCommand('wifiPair'))
+      }, 15000)
+    } catch (e) {
+      console.warn('[DongleDriver] bring-up failed', e)
+      await this.close()
+    }
+  }
+
   initialise = async (device: USBDevice) => {
     if (this._device) return
 
@@ -327,6 +363,8 @@ export class DongleDriver extends EventEmitter {
       return res.status === 'ok'
     } catch (err) {
       console.error('[DongleDriver] Send error', msg?.constructor?.name, err)
+      const detail = err instanceof Error ? err.message : String(err)
+      if (/disconnect/i.test(detail)) void this.close()
       return false
     }
   }
@@ -353,6 +391,60 @@ export class DongleDriver extends EventEmitter {
       return
     }
     void this.send(new SendCommand(value))
+  }
+
+  requestKeyframe(): void {
+    void this.send(new SendCommand('frame'))
+  }
+
+  private _frameWatchdog(): void {
+    if (this._frameTimer) return
+    this._frameTimer = setInterval(() => {
+      if (!this._started) return
+      if (this._videoFlowing) {
+        this._videoFlowing = false
+        return
+      }
+      void this.send(new SendCommand('frame'))
+    }, 700)
+  }
+
+  private _clearFramePoke(): void {
+    if (this._frameTimer) {
+      clearInterval(this._frameTimer)
+      this._frameTimer = null
+    }
+    this._videoFlowing = false
+  }
+
+  disconnectPhone = async (): Promise<boolean> => {
+    let ok = false
+    try {
+      ok = (await this.send(new SendDisconnectPhone())) || ok
+    } catch (e) {
+      console.warn('[DongleDriver] SendDisconnectPhone failed', e)
+    }
+    try {
+      ok = (await this.send(new SendCloseDongle())) || ok
+    } catch (e) {
+      console.warn('[DongleDriver] SendCloseDongle failed', e)
+    }
+    if (ok) await this.sleep(150)
+    return ok
+  }
+
+  sendPhoneAudio(pcm: Int16Array, decodeType: number): void {
+    void this.send(new SendAudio(pcm, decodeType))
+  }
+
+  uploadHostIcons(icon120: Buffer, icon180: Buffer, icon256: Buffer): void {
+    void this.send(new SendFile(icon120, FileAddress.ICON_120))
+    void this.send(new SendFile(icon180, FileAddress.ICON_180))
+    void this.send(new SendFile(icon256, FileAddress.ICON_256))
+  }
+
+  requestClusterFocus(): void {
+    void this.send(new SendCommand('requestClusterStreamFocus'))
   }
 
   // isolate framing/decoding
@@ -430,6 +522,16 @@ export class DongleDriver extends EventEmitter {
       await this.onBoxInfo(msg)
       this.emit('message', msg)
       return
+    }
+
+    if (msg instanceof VideoData) {
+      this._videoFlowing = true
+      this._frameWatchdog()
+      if (!this._linkUp) {
+        this._linkUp = true
+        console.log('[DongleDriver] first frame — link up')
+        this.emit('phone-connected')
+      }
     }
 
     // Everything else: emit raw first
@@ -567,16 +669,25 @@ export class DongleDriver extends EventEmitter {
 
   private onUnplugged() {
     this._lastPluggedPhoneType = null
+    this._linkUp = false
     this._pendingModeHintFromBoxInfo = null
+    this._clearFramePoke()
 
     if (this._heartbeatInterval) {
       clearInterval(this._heartbeatInterval)
       this._heartbeatInterval = null
     }
+    this.emit('phone-disconnected')
   }
 
   private async onPlugged(msg: Plugged) {
     this._lastPluggedPhoneType = msg.phoneType
+    const frameInterval = this._cfg?.phoneConfig?.[msg.phoneType]?.frameInterval
+    if (frameInterval && frameInterval > 0 && !this._frameTimer) {
+      this._frameTimer = setInterval(() => {
+        if (this._started) void this.send(new SendCommand('frame'))
+      }, frameInterval)
+    }
     await this.reconcileModes('plugged')
 
     const cfg = this._cfg
@@ -588,7 +699,7 @@ export class DongleDriver extends EventEmitter {
       }
     }
 
-    console.log('[DongleDriver] Link established')
+    console.log('[DongleDriver] dongle plugged (awaiting first frame)')
   }
 
   private async onBoxInfo(msg: BoxInfo) {
@@ -720,7 +831,14 @@ export class DongleDriver extends EventEmitter {
       // Nothing to do?
       if (!this._device && !this._readerActive && !this._started) return
 
+      const wasPresent = this._device !== null
       this._closing = true
+      this._clearFramePoke()
+
+      if (this._pairTimer) {
+        clearTimeout(this._pairTimer)
+        this._pairTimer = null
+      }
 
       if (this._wifiConnectTimer) {
         clearTimeout(this._wifiConnectTimer)
@@ -813,6 +931,8 @@ export class DongleDriver extends EventEmitter {
 
         this._closing = false
       }
+
+      if (wasPresent) this.emit('phone-disconnected')
     })().finally(() => {
       this._closePromise = null
     })

@@ -3,7 +3,8 @@ import { useTabsConfig } from '../useTabsConfig'
 
 let mockState = {
   isStreaming: false,
-  isDongleConnected: false,
+  isDongleHardwarePresent: false,
+  activeProtocol: null as 'carplay' | 'androidauto' | 'dongle' | null,
   cameraFound: true,
   telemetryOnMain: false,
   settingsMissing: false
@@ -21,9 +22,10 @@ vi.mock('@store/store', () => ({
   useStatusStore: (selector: (s: any) => unknown) =>
     selector({
       isStreaming: mockState.isStreaming,
-      isDongleConnected: mockState.isDongleConnected,
+      activeProtocol: mockState.activeProtocol,
       cameraFound: mockState.cameraFound
     }),
+  useProjectionActive: () => mockState.isDongleHardwarePresent || mockState.activeProtocol != null,
   useLiviStore: (selector: (s: any) => unknown) =>
     selector({
       settings: mockState.settingsMissing
@@ -50,7 +52,8 @@ describe('useTabsConfig', () => {
   beforeEach(() => {
     mockState = {
       isStreaming: false,
-      isDongleConnected: false,
+      isDongleHardwarePresent: false,
+      activeProtocol: null,
       cameraFound: true,
       telemetryOnMain: false,
       settingsMissing: false
@@ -82,7 +85,7 @@ describe('useTabsConfig', () => {
   })
 
   test('returns active CarPlay icon variant when dongle is connected', () => {
-    mockState.isDongleConnected = true
+    mockState.isDongleHardwarePresent = true
 
     const { result } = renderHook(() => useTabsConfig(false))
     const carPlayTab = result.current.find((t) => t.path === '/')
@@ -109,7 +112,7 @@ describe('useTabsConfig', () => {
   })
 
   test('uses highlighted CarPlay icon styling when streaming is active regardless of receivingVideo', () => {
-    mockState.isDongleConnected = true
+    mockState.isDongleHardwarePresent = true
     mockState.isStreaming = true
 
     const { result } = renderHook(() => useTabsConfig(false))
@@ -126,7 +129,7 @@ describe('useTabsConfig', () => {
   })
 
   test('uses highlighted CarPlay icon styling when streaming and receivingVideo are both active', () => {
-    mockState.isDongleConnected = true
+    mockState.isDongleHardwarePresent = true
     mockState.isStreaming = true
 
     const { result } = renderHook(() => useTabsConfig(true))

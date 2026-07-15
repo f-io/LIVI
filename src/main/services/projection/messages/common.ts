@@ -15,10 +15,10 @@ import {
   HiCarLink,
   ManufacturerInfo,
   Message,
-  MetaData,
   Opened,
   Phase,
   Plugged,
+  parseMetaMessage,
   SoftwareVersion,
   Unplugged,
   VendorSessionInfo,
@@ -76,20 +76,6 @@ export enum MessageType {
   DebugTrace = 0xff
 }
 
-export type ProjectionyMessageTapPayload = {
-  type: number
-  length: number
-  dataLength: number
-  data?: Buffer
-}
-
-type ProjectionyMessageTap = (p: ProjectionyMessageTapPayload) => void
-let projectionMessageTap: ProjectionyMessageTap | null = null
-
-export function setProjectionyMessageTap(tap: ProjectionyMessageTap | null) {
-  projectionMessageTap = tap
-}
-
 export class HeaderBuildError extends Error {}
 
 export class MessageHeader {
@@ -133,17 +119,6 @@ export class MessageHeader {
   toMessage(data?: Buffer): Message | null {
     const { type } = this
 
-    if (projectionMessageTap) {
-      try {
-        projectionMessageTap({
-          type,
-          length: this.length,
-          dataLength: data?.length ?? 0,
-          data
-        })
-      } catch {}
-    }
-
     if (data) {
       switch (type) {
         case MessageType.AudioData:
@@ -153,7 +128,7 @@ export class MessageHeader {
         case MessageType.ClusterVideoData:
           return new VideoData(this, data)
         case MessageType.MetaData:
-          return new MetaData(this, data)
+          return parseMetaMessage(this, data)
         case MessageType.GnssData:
           return new GnssData(this, data)
         case MessageType.BluetoothAddress:

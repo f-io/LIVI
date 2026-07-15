@@ -37,6 +37,21 @@ export interface IPhoneDriver extends EventEmitter {
 
   /** Forward an abstract input command (from BT AVRCP, CAN bridge, etc.) */
   handleInput(command: InputCommand): void
+
+  /** Ask the phone to emit a fresh video keyframe (IDR) so a rebuilt decoder can start. */
+  requestKeyframe?(): void
+
+  /** Request focus for the secondary (cluster) video stream. */
+  requestClusterFocus?(): void
+
+  /** Forward host-side audio (mic, TTS) towards the phone. */
+  sendPhoneAudio?(pcm: Int16Array, decodeType: number): void
+
+  /** Upload the host app icons (120/180/256) to the phone. */
+  uploadHostIcons?(icon120: Buffer, icon180: Buffer, icon256: Buffer): void
+
+  /** Soft-disconnect the current phone while keeping the driver armed. */
+  disconnectPhone?(): Promise<boolean>
 }
 
 export type DriverMessageEvent = (msg: Message) => void

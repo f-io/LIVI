@@ -31,7 +31,7 @@ export function IconUploader(props: SettingsCustomPageProps<Config, unknown>) {
 
   const settings = useLiviStore((s) => s.settings)
   const saveSettings = useLiviStore((s) => s.saveSettings)
-  const isDongleConnected = useStatusStore((s) => s.isDongleConnected)
+  const isDongleConnected = useStatusStore((s) => s.isDongleHardwarePresent)
 
   const [isImporting, setIsImporting] = useState(false)
   const [isUploading, setIsUploading] = useState(false)

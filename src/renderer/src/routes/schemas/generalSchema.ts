@@ -9,6 +9,7 @@ import {
   MIN_WIDTH
 } from '../../components/pages/settings/constants'
 import { Camera } from '../../components/pages/settings/pages/camera'
+import { USBDongle } from '../../components/pages/settings/pages/system/usbDongle/USBDongle'
 import { SettingsNode } from '../types'
 
 export const generalSchema: SettingsNode<Config> = {
@@ -95,34 +96,18 @@ export const generalSchema: SettingsNode<Config> = {
           path: 'wirelessAaEnabled',
           disabled: window.app?.platform !== 'linux'
         },
-        // {
-        //   type: 'checkbox',
-        //   label: 'Wireless CarPlay',
-        //   labelKey: 'settings.wirelessCpEnabled',
-        //   path: 'wirelessCpEnabled',
-        //   disabled: window.app?.platform !== 'linux'
-        // },
+        {
+          type: 'checkbox',
+          label: 'Wireless CarPlay',
+          labelKey: 'settings.wirelessCpEnabled',
+          path: 'wirelessCpEnabled',
+          disabled: window.app?.platform !== 'linux'
+        },
         {
           type: 'checkbox',
           label: 'Auto Connect',
           labelKey: 'settings.autoConnect',
           path: 'autoConn'
-        },
-        {
-          type: 'select',
-          label: 'Preferred Connection',
-          labelKey: 'settings.preferredConnection',
-          path: 'connectionPreference',
-          displayValue: true,
-          options: [
-            { label: 'Auto', labelKey: 'settings.preferredConnectionAuto', value: 'auto' },
-            { label: 'Dongle', labelKey: 'settings.preferredConnectionDongle', value: 'dongle' },
-            { label: 'Native', labelKey: 'settings.preferredConnectionNative', value: 'native' }
-          ],
-          page: {
-            title: 'Preferred Connection',
-            labelTitle: 'settings.preferredConnection'
-          }
         }
       ]
     },
@@ -369,6 +354,12 @@ export const generalSchema: SettingsNode<Config> = {
           children: [
             {
               type: 'checkbox',
+              label: 'Automatic on reverse gear',
+              labelKey: 'settings.autoSwitchOnReverse',
+              path: 'autoSwitchOnReverse'
+            },
+            {
+              type: 'checkbox',
               label: 'Main',
               labelKey: 'settings.mainScreen',
               path: 'camera.main'
@@ -408,39 +399,6 @@ export const generalSchema: SettingsNode<Config> = {
               ]
             }
           ]
-        }
-      ]
-    },
-    {
-      type: 'route',
-      route: 'autoSwitch',
-      label: 'Auto Switch',
-      labelKey: 'settings.autoSwitch',
-      path: '',
-      children: [
-        {
-          type: 'checkbox',
-          label: 'Switch on Stream Start',
-          labelKey: 'settings.autoSwitchOnStream',
-          path: 'autoSwitchOnStream'
-        },
-        {
-          type: 'checkbox',
-          label: 'Switch on Phone Call',
-          labelKey: 'settings.autoSwitchOnPhoneCall',
-          path: 'autoSwitchOnPhoneCall'
-        },
-        {
-          type: 'checkbox',
-          label: 'Switch on Guidance',
-          labelKey: 'settings.autoSwitchOnGuidance',
-          path: 'autoSwitchOnGuidance'
-        },
-        {
-          type: 'checkbox',
-          label: 'Switch on Reverse',
-          labelKey: 'settings.autoSwitchOnReverse',
-          path: 'autoSwitchOnReverse'
         }
       ]
     },
@@ -538,6 +496,13 @@ export const generalSchema: SettingsNode<Config> = {
           labelKey: 'settings.home',
           path: 'bindings',
           bindingKey: 'home'
+        },
+        {
+          type: 'keybinding',
+          label: 'Cycle Session',
+          labelKey: 'settings.cycleSession',
+          path: 'bindings',
+          bindingKey: 'cycleSession'
         },
 
         {
@@ -787,11 +752,81 @@ export const generalSchema: SettingsNode<Config> = {
     },
     {
       type: 'route',
-      route: 'dongleFirmwareSettings',
-      label: 'Dongle Firmware Settings',
-      labelKey: 'settings.dongleFirmwareSettings',
+      label: 'MFi',
+      labelKey: 'settings.mfi',
+      route: 'mfi',
       path: '',
       children: [
+        {
+          type: 'number',
+          label: 'CP Gen',
+          labelKey: 'settings.cpGen',
+          path: 'carPlayCpGen',
+          min: 2,
+          max: 3,
+          step: 1,
+          default: 3,
+          displayValue: true,
+          page: {
+            title: 'CP Gen',
+            labelTitle: 'settings.cpGen'
+          }
+        },
+        {
+          type: 'number',
+          label: 'I2C Bus',
+          labelKey: 'settings.i2cBus',
+          path: 'carPlayMfiI2cBus',
+          min: 0,
+          max: 20,
+          step: 1,
+          default: 2,
+          displayValue: true,
+          page: {
+            title: 'I2C Bus',
+            labelTitle: 'settings.i2cBus'
+          }
+        },
+        {
+          type: 'number',
+          label: 'Power Pin',
+          labelKey: 'settings.mfiPowerGpio',
+          path: 'carPlayMfiPowerGpio',
+          min: 0,
+          max: 27,
+          step: 1,
+          default: 21,
+          displayValue: true,
+          page: {
+            title: 'Power Pin',
+            labelTitle: 'settings.mfiPowerGpio'
+          }
+        }
+      ]
+    },
+    {
+      type: 'route',
+      route: 'dongleSettings',
+      label: 'Dongle Settings',
+      labelKey: 'settings.dongleSettings',
+      path: '',
+      children: [
+        {
+          type: 'route',
+          label: 'USB Dongle',
+          labelKey: 'settings.usbDongle',
+          route: 'usbDongle',
+          path: '',
+          children: [
+            {
+              type: 'custom',
+              label: 'USB Dongle',
+              labelKey: 'settings.usbDongle',
+              path: 'carName',
+              component: USBDongle
+            }
+          ]
+        },
         {
           type: 'number',
           label: 'Audio Buffer',

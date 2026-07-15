@@ -5,32 +5,22 @@ import PlayCircleOutlinedIcon from '@mui/icons-material/PlayCircleOutlined'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
 import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined'
 import { useTheme } from '@mui/material/styles'
-import { useEffect, useState } from 'react'
 import { ROUTES, UI } from '../../constants'
-import { useLiviStore, useStatusStore } from '../../store/store'
+import { useLiviStore, useProjectionActive, useStatusStore } from '../../store/store'
 import { getWindowRole } from '../../utils/windowRole'
-import { TransportSwitchIcon } from './TransportSwitchIcon'
 import { TabConfig } from './types'
-import { useTransportState } from './useTransportState'
 
 export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivingVideo) => {
   const theme = useTheme()
   const role = getWindowRole()
   const isStreaming = useStatusStore((s) => s.isStreaming)
-  const isAaActive = useStatusStore((s) => s.isAaActive)
-  const isDongleConnected = useStatusStore((s) => s.isDongleConnected || s.isAaActive)
+  const activeProtocol = useStatusStore((s) => s.activeProtocol)
+  const isProjectionActive = useProjectionActive()
   const cameraFound = useStatusStore((s) => s.cameraFound)
   const cameraConfigured = useLiviStore((s) => Boolean(s.settings?.cameraId))
   const cameraReady = cameraFound || cameraConfigured
-  const transport = useTransportState()
   const isXSIcons = typeof window !== 'undefined' && window.innerHeight <= UI.XS_ICON_MAX_HEIGHT
   const iconFontSize = isXSIcons ? 24 : 32
-  const detectedCount =
-    Number(transport.dongleDetected) +
-    Number(transport.wiredPhoneDetected) +
-    Number(transport.wirelessPhoneDetected)
-  const rawShowSwitch = role === 'main' && (detectedCount >= 2 || transport.switchPending)
-  const showSwitch = useDelayedHide(rawShowSwitch, 300)
   const cameraOnRole = useLiviStore((s) =>
     role === 'main' ? (s.settings?.camera?.main ?? true) : (s.settings?.camera?.[role] ?? false)
   )
@@ -81,8 +71,9 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
       label: 'Projection',
       path: ROUTES.HOME,
       icon: (() => {
-        const usbConnected = isDongleConnected
-        const phoneActive = isStreaming || isAaActive
+        const usbConnected = isProjectionActive
+        const phoneActive =
+          isStreaming || activeProtocol === 'androidauto' || activeProtocol === 'carplay'
         const baseColor = usbConnected ? theme.palette.text.primary : theme.palette.text.disabled
         const activeColor = 'var(--ui-highlight)'
 
@@ -131,42 +122,10 @@ export const useTabsConfig: (receivingVideo: boolean) => TabConfig[] = (receivin
           }
         ]
       : []),
-    ...(showSwitch
-      ? [
-          {
-            label: 'Switch transport',
-            path: ROUTES.TRANSPORT_SWITCH,
-            icon: (
-              <TransportSwitchIcon
-                active={transport.targetTransport ?? transport.active}
-                wiredPhoneActive={
-                  transport.targetMode
-                    ? transport.targetMode === 'wired'
-                    : transport.wiredPhoneActive
-                }
-                fontSize={iconFontSize}
-              />
-            )
-          }
-        ]
-      : []),
     {
       label: 'Settings',
       path: ROUTES.SETTINGS,
       icon: <SettingsOutlinedIcon sx={{ fontSize: iconFontSize }} />
     }
   ]
-}
-
-function useDelayedHide(value: boolean, delayMs: number): boolean {
-  const [held, setHeld] = useState(value)
-  useEffect(() => {
-    if (value) {
-      setHeld(true)
-      return
-    }
-    const t = setTimeout(() => setHeld(false), delayMs)
-    return () => clearTimeout(t)
-  }, [value, delayMs])
-  return held
 }

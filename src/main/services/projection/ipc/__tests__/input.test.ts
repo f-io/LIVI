@@ -12,7 +12,7 @@ vi.mock('@main/ipc/register', () => ({
   }
 }))
 
-import { SendCommand, SendMultiTouch, SendRawMessage, SendTouch } from '../../messages/sendable'
+import { SendCommand, SendMultiTouch, SendTouch } from '../../messages/sendable'
 import { registerInputIpc } from '../input'
 
 function freshHost() {
@@ -75,21 +75,6 @@ describe('input ipc', () => {
     registerInputIpc(host)
     onHandlers.get('projection-multi-touch')!(null, null as never)
     expect(host.send).not.toHaveBeenCalled()
-  })
-
-  test('projection-raw-message requires isStarted=true', async () => {
-    const host = freshHost()
-    host.isStarted.mockReturnValue(false)
-    registerInputIpc(host)
-    onHandlers.get('projection-raw-message')!(null, { type: 1, data: [1, 2, 3] })
-    expect(host.send).not.toHaveBeenCalled()
-  })
-
-  test('projection-raw-message when started sends a SendRawMessage', async () => {
-    const host = freshHost()
-    registerInputIpc(host)
-    onHandlers.get('projection-raw-message')!(null, { type: 1, data: [1, 2, 3] })
-    expect(host.send).toHaveBeenCalledWith(expect.any(SendRawMessage))
   })
 
   test('projection-command forwards a SendCommand', async () => {

@@ -229,7 +229,6 @@ export interface CarplayStore {
   // warning forget does have a dongle firmware bug!
   forgetBluetoothPairedDevice: (mac: string) => Promise<boolean>
   connectBluetoothPairedDevice: (mac: string) => Promise<boolean>
-  removeBluetoothPairedDeviceLocal: (mac: string) => void
 
   // Reconstruct text payload to send back to dongle
   buildBluetoothPairedListText: () => string
@@ -348,33 +347,6 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
         return false
       }
     },
-
-    removeBluetoothPairedDeviceLocal: (mac) =>
-      set((s) => {
-        const next = s.bluetoothPairedDevices.filter((d) => d.mac !== mac)
-
-        const boxInfo = get().boxInfo
-        const connected =
-          boxInfo &&
-          typeof boxInfo === 'object' &&
-          'btMacAddr' in boxInfo &&
-          typeof (boxInfo as { btMacAddr?: unknown }).btMacAddr === 'string'
-            ? (boxInfo as { btMacAddr: string }).btMacAddr
-            : undefined
-
-        const connectedMac = typeof connected === 'string' ? connected.trim().toUpperCase() : null
-        const deletedMac = String(mac).trim().toUpperCase()
-
-        const deletedIsConnected = connectedMac != null && deletedMac === connectedMac
-
-        return {
-          bluetoothPairedDevices: next,
-          bluetoothPairedListRaw: buildBluetoothPairedListFromDevices(next),
-          bluetoothPairedDirty: true,
-          bluetoothPairedDeleteNeedsRestart:
-            s.bluetoothPairedDeleteNeedsRestart || deletedIsConnected
-        }
-      }),
 
     buildBluetoothPairedListText: () => {
       const { bluetoothPairedDevices } = get()
@@ -616,18 +588,20 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
 useLiviStore.getState().init()
 
 // Status store
+export type ActiveProtocol = 'carplay' | 'androidauto' | 'dongle' | null
+
 export interface StatusStore {
   reverse: boolean
   lights: boolean
-  isDongleConnected: boolean
-  isAaActive: boolean
+  activeProtocol: ActiveProtocol
+  isDongleHardwarePresent: boolean
   isStreaming: boolean
   cameraFound: boolean
   clusterDashActive: boolean
 
   setCameraFound: (found: boolean) => void
-  setDongleConnected: (connected: boolean) => void
-  setAaActive: (active: boolean) => void
+  setActiveProtocol: (protocol: ActiveProtocol) => void
+  setDongleHardwarePresent: (present: boolean) => void
   setStreaming: (streaming: boolean) => void
   setReverse: (reverse: boolean) => void
   setLights: (lights: boolean) => void
@@ -637,22 +611,24 @@ export interface StatusStore {
 export const useStatusStore = create<StatusStore>((set, get) => ({
   reverse: false,
   lights: false,
-  isDongleConnected: false,
-  isAaActive: false,
+  activeProtocol: null,
+  isDongleHardwarePresent: false,
   isStreaming: false,
   cameraFound: false,
   clusterDashActive: false,
 
   setCameraFound: (found) => set({ cameraFound: found }),
-  setDongleConnected: (connected) => {
-    const wasActive = get().isDongleConnected || get().isAaActive
-    set({ isDongleConnected: connected })
-    if (connected && !wasActive) useLiviStore.getState().markRestartBaseline()
+  setActiveProtocol: (protocol) => {
+    const wasPresent = get().isDongleHardwarePresent || get().activeProtocol !== null
+    set({ activeProtocol: protocol })
+    const nowPresent = get().isDongleHardwarePresent || protocol !== null
+    if (nowPresent && !wasPresent) useLiviStore.getState().markRestartBaseline()
   },
-  setAaActive: (active) => {
-    const wasActive = get().isDongleConnected || get().isAaActive
-    set({ isAaActive: active })
-    if (active && !wasActive) useLiviStore.getState().markRestartBaseline()
+  setDongleHardwarePresent: (present) => {
+    const wasPresent = get().isDongleHardwarePresent || get().activeProtocol !== null
+    set({ isDongleHardwarePresent: present })
+    const nowPresent = present || get().activeProtocol !== null
+    if (nowPresent && !wasPresent) useLiviStore.getState().markRestartBaseline()
   },
   setStreaming: (streaming) => set({ isStreaming: streaming }),
   setReverse: (reverse) => set({ reverse }),
@@ -661,4 +637,4 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
 }))
 
 export const useProjectionActive = (): boolean =>
-  useStatusStore((s) => s.isDongleConnected || s.isAaActive)
+  useStatusStore((s) => s.isDongleHardwarePresent || s.activeProtocol !== null)

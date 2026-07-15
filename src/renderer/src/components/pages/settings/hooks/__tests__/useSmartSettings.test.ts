@@ -3,7 +3,7 @@ import { useSmartSettings } from '../useSmartSettings'
 
 const saveSettings = vi.fn()
 const markRestartBaseline = vi.fn()
-let isDongleConnected = true
+let isDongleHardwarePresent = true
 
 vi.mock('@store/store', () => ({
   useLiviStore: (selector: (s: any) => unknown) =>
@@ -12,14 +12,15 @@ vi.mock('@store/store', () => ({
       restartBaseline: { projectionWidth: 800, bindings: { back: 'KeyB' } },
       markRestartBaseline
     }),
-  useStatusStore: (selector: (s: any) => unknown) => selector({ isDongleConnected })
+  useStatusStore: (selector: (s: any) => unknown) =>
+    selector({ isDongleHardwarePresent, activeProtocol: null })
 }))
 
 describe('useSmartSettings', () => {
   beforeEach(async () => {
     saveSettings.mockReset()
     markRestartBaseline.mockReset()
-    isDongleConnected = true
+    isDongleHardwarePresent = true
     ;(window as any).projection = { usb: { forceReset: vi.fn().mockResolvedValue(true) } }
   })
 
@@ -60,7 +61,7 @@ describe('useSmartSettings', () => {
     expect((window as any).projection.usb.forceReset).toHaveBeenCalled()
     expect(markRestartBaseline).toHaveBeenCalled()
 
-    isDongleConnected = false
+    isDongleHardwarePresent = false
     const h2 = renderHook(() => useSmartSettings(initial, settings))
     await act(async () => {
       expect(await h2.result.current.restart()).toBe(false)

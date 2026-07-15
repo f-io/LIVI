@@ -152,14 +152,6 @@ export const audioSchema: SettingsNode<Config> = {
         labelTitle: 'settings.samplingFrequency'
       }
     },
-    // Currently disabled
-    /*
-    {
-      type: 'checkbox',
-      label: 'Play on Connect',
-      labelKey: 'settings.playOnConnect',
-      path: 'autoPlay'
-    },*/
     {
       type: 'checkbox',
       label: 'Disable Audio',

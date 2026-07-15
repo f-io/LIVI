@@ -2,7 +2,6 @@
 import CropPortraitOutlinedIcon from '@mui/icons-material/CropPortraitOutlined'
 import { Box, useTheme } from '@mui/material'
 import type { Config } from '@shared/types'
-import { PhoneType } from '@shared/types/Config'
 import { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
 import { aaContentArea, isClusterDisplayed } from '@shared/utils'
 import { createProjectionWorker } from '@worker/createProjectionWorker'
@@ -10,7 +9,12 @@ import type { KeyCommand, ProjectionWorker, UsbEvent, WorkerToUI } from '@worker
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { useFftPcm } from '../../../hooks/useFftPcm'
-import { useLiviStore, useStatusStore } from '../../../store/store'
+import {
+  type ActiveProtocol,
+  useLiviStore,
+  useProjectionActive,
+  useStatusStore
+} from '../../../store/store'
 import { useProjectionMultiTouch } from './hooks/useProjectionTouch'
 import { ViewAreaMask } from './ViewAreaMask'
 
@@ -22,9 +26,6 @@ interface CarplayProps {
   settings: Config
   command: KeyCommand
   commandCounter: number
-
-  navVideoOverlayActive: boolean
-  setNavVideoOverlayActive: (v: boolean) => void
 }
 
 function StatusOverlay({
@@ -83,60 +84,50 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   setReceivingVideo,
   settings,
   command,
-  commandCounter,
-  navVideoOverlayActive,
-  setNavVideoOverlayActive
+  commandCounter
 }) => {
   const navigate = useNavigate()
   const location = useLocation()
   const pathname = location.pathname
-
-  const pathnameRef = useRef(pathname)
-  useEffect(() => {
-    pathnameRef.current = pathname
-  }, [pathname])
 
   const theme = useTheme()
 
   // Zustand store
   const isStreaming = useStatusStore((s) => s.isStreaming)
   const setStreaming = useStatusStore((s) => s.setStreaming)
-  const setDongleConnected = useStatusStore((s) => s.setDongleConnected)
-  const setAaActive = useStatusStore((s) => s.setAaActive)
-  const isDongleConnected = useStatusStore((s) => s.isDongleConnected || s.isAaActive)
+  const setActiveProtocol = useStatusStore((s) => s.setActiveProtocol)
+  const setDongleHardwarePresent = useStatusStore((s) => s.setDongleHardwarePresent)
+  const isProjectionActive = useProjectionActive()
   const resetInfo = useLiviStore((s) => s.resetInfo)
   const setDeviceInfo = useLiviStore((s) => s.setDeviceInfo)
   const setAudioInfo = useLiviStore((s) => s.setAudioInfo)
   const setPcmData = useLiviStore((s) => s.setPcmData)
   const setBluetoothPairedList = useLiviStore((s) => s.setBluetoothPairedList)
   const bumpAudioDevicesRevision = useLiviStore((s) => s.bumpAudioDevicesRevision)
-  const isAaActiveFlag = useStatusStore((s) => s.isAaActive)
   const negotiatedWidth = useLiviStore((s) => s.negotiatedWidth)
   const negotiatedHeight = useLiviStore((s) => s.negotiatedHeight)
-  const wirelessAaEnabled = useLiviStore((s) => Boolean(s.settings?.wirelessAaEnabled))
 
   const prevPathnameRef = useRef(pathname)
   useEffect(() => {
     const prev = prevPathnameRef.current
     prevPathnameRef.current = pathname
     if (pathname !== '/' || prev === '/') return
-    if (!isDongleConnected) return
+    if (!isProjectionActive) return
     window.projection.ipc.sendCommand('home')
     void window.projection.ipc.sendFrame().catch(() => {})
-  }, [pathname, isDongleConnected])
+  }, [pathname, isProjectionActive])
 
   // Tell main when the projection surface is shown/hidden so the native
   // GStreamer video can be shown over the UI or hidden behind it
   useEffect(() => {
-    const visible = pathname === '/' || navVideoOverlayActive
+    const visible = pathname === '/'
     void window.projection.ipc.setVisible(visible).catch(() => {})
     document.documentElement.classList.toggle('show-video', visible && receivingVideo)
-  }, [pathname, navVideoOverlayActive, receivingVideo])
+  }, [pathname, receivingVideo])
 
   useEffect(() => {
-    const mode = isAaActiveFlag ? 'AA' : 'dongle'
-    console.log(`[PROJECTION] phone connected (${mode}):`, isDongleConnected)
-  }, [isDongleConnected, isAaActiveFlag])
+    console.log('[PROJECTION] projection active:', isProjectionActive)
+  }, [isProjectionActive])
 
   // Refs
   const mainElem = useRef<HTMLDivElement>(null)
@@ -145,28 +136,8 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const usbOpTokenRef = useRef(0)
   const hasStartedRef = useRef(false)
   const [rendererError] = useState<string | null>(null)
-  const lastNonCarplayPathRef = useRef<string | null>(null)
-  const lastNonClusterPathRef = useRef<string | null>(null)
-  const autoSwitchedRef = useRef(false)
-  const pendingVideoFocusRef = useRef(false)
 
-  const autoSwitchOnStreamRef = useRef(Boolean(settings.autoSwitchOnStream))
-  const autoSwitchOnGuidanceRef = useRef(Boolean(settings.autoSwitchOnGuidance))
-  const autoSwitchOnPhoneCallRef = useRef(Boolean(settings.autoSwitchOnPhoneCall))
-
-  useEffect(() => {
-    autoSwitchOnStreamRef.current = Boolean(settings.autoSwitchOnStream)
-  }, [settings.autoSwitchOnStream])
-
-  useEffect(() => {
-    autoSwitchOnGuidanceRef.current = Boolean(settings.autoSwitchOnGuidance)
-  }, [settings.autoSwitchOnGuidance])
-
-  useEffect(() => {
-    autoSwitchOnPhoneCallRef.current = Boolean(settings.autoSwitchOnPhoneCall)
-  }, [settings.autoSwitchOnPhoneCall])
-
-  // Attention-driven UI switching (call / voiceAssistant / nav)
+  // Attention-driven UI switching (call / voiceAssistant)
   type AttentionKind = 'call' | 'voiceAssistant'
   type AttentionPayload = { kind: AttentionKind; active: boolean; phase?: string }
 
@@ -189,24 +160,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     attentionSwitchedByRef.current = null
     clearVoiceAssistantReleaseTimer()
   }, [pathname, clearVoiceAssistantReleaseTimer])
-
-  useEffect(() => {
-    // When NAV video overlay is shown on top of the host UI (not on "/")
-    if (!navVideoOverlayActive || pathname === '/') return
-
-    const dismiss = () => {
-      setNavVideoOverlayActive(false)
-    }
-
-    // Any touch/click/pen should immediately dismiss
-    window.addEventListener('pointerdown', dismiss, { capture: true, passive: true })
-
-    return () => {
-      window.removeEventListener('pointerdown', dismiss, {
-        capture: true
-      } as AddEventListenerOptions)
-    }
-  }, [navVideoOverlayActive, pathname, setNavVideoOverlayActive])
 
   // Overlay offset
   const [overlayX, setOverlayX] = useState(0)
@@ -298,9 +251,11 @@ const CarplayComponent: React.FC<CarplayProps> = ({
       if (p.active) {
         if (p.kind === 'voiceAssistant') clearVoiceAssistantReleaseTimer()
 
-        // Already on projection -> nothing to do
+        // Already on projection: keep the arm if this kind switched us here (ring -> active).
         if (inProjection) {
-          attentionSwitchedByRef.current = null
+          if (attentionSwitchedByRef.current !== p.kind) {
+            attentionSwitchedByRef.current = null
+          }
           return
         }
 
@@ -429,20 +384,17 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           })
         }
 
-        setDongleConnected(true)
+        setDongleHardwarePresent(true)
         hasStartedRef.current = true
       }
     }
 
-    const onUsbDisconnect = async () => {
+    const onUsbDisconnect = () => {
       usbOpTokenRef.current += 1
       clearRetryTimeout()
-      setReceivingVideo(false)
-      setStreaming(false)
-      setDongleConnected(false)
+      setDongleHardwarePresent(false)
       hasStartedRef.current = false
       resetInfo()
-      await window.projection.ipc.stop()
     }
     const usbHandler = (_evt: unknown, ...args: unknown[]) => {
       const data = args[0] as UsbEvent | undefined
@@ -460,7 +412,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     }
   }, [
     setReceivingVideo,
-    setDongleConnected,
+    setDongleHardwarePresent,
     setStreaming,
     clearRetryTimeout,
     navigate,
@@ -503,8 +455,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     }
 
     const handler = (_evt: unknown, data: unknown) => {
-      const pathnameNow = pathnameRef.current
-
       const d = (data ?? {}) as Record<string, unknown>
       const t = typeof d.type === 'string' ? d.type : undefined
 
@@ -533,19 +483,14 @@ const CarplayComponent: React.FC<CarplayProps> = ({
               negotiatedWidth: payload.width,
               negotiatedHeight: payload.height
             })
-
-            if (!rendererError) {
-              setReceivingVideo(true)
-              setStreaming(true)
-            }
-
-            if (pendingVideoFocusRef.current) {
-              pendingVideoFocusRef.current = false
-              if (pathnameNow !== '/') {
-                navigate('/', { replace: true })
-              }
-            }
           }
+          break
+        }
+
+        case 'projection': {
+          const shown = (d as { shown?: boolean }).shown === true
+          setReceivingVideo(shown)
+          setStreaming(shown)
           break
         }
 
@@ -564,15 +509,11 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           if (typeof cmd !== 'number') break
 
           if (cmd === AudioCommand.AudioPhonecallStart) {
-            if (autoSwitchOnPhoneCallRef.current) {
-              applyAttention({ kind: 'call', active: true, phase: 'active' })
-            }
+            applyAttention({ kind: 'call', active: true, phase: 'active' })
           } else if (cmd === AudioCommand.AudioPhonecallStop) {
             applyAttention({ kind: 'call', active: false, phase: 'ended' })
           } else if (cmd === AudioCommand.AudioAttentionRinging) {
-            if (autoSwitchOnPhoneCallRef.current) {
-              applyAttention({ kind: 'call', active: true, phase: 'ringing' })
-            }
+            applyAttention({ kind: 'call', active: true, phase: 'ringing' })
           } else if (cmd === AudioCommand.AudioVoiceAssistantStart) {
             applyAttention({ kind: 'voiceAssistant', active: true })
           } else if (cmd === AudioCommand.AudioVoiceAssistantStop) {
@@ -612,126 +553,19 @@ const CarplayComponent: React.FC<CarplayProps> = ({
             break
           }
 
-          const clusterEnabled = isClusterDisplayed(settings)
-          const autoSwitchOnStream = autoSwitchOnStreamRef.current
-          const autoSwitchOnGuidance = autoSwitchOnGuidanceRef.current
-
-          if (value === CommandMapping.requestClusterFocus) {
-            if (!autoSwitchOnGuidance) break
-
-            if (clusterEnabled) {
-              if (pathnameNow === '/' || pathnameNow === '/cluster') break
-
-              lastNonClusterPathRef.current = pathnameNow
-              navigate('/cluster', { replace: true })
-              break
-            }
-
-            if (pathnameNow !== '/') {
-              setNavVideoOverlayActive(true)
-            }
-            break
-          }
-
-          if (value === CommandMapping.releaseClusterFocus) {
-            if (!autoSwitchOnGuidance) break
-            if (clusterEnabled) {
-              const back = lastNonClusterPathRef.current
-              if (back && back !== '/cluster' && back !== '/') {
-                lastNonClusterPathRef.current = null
-                navigate(back, { replace: true })
-              }
-              break
-            }
-
-            setNavVideoOverlayActive(false)
-            break
-          }
-
-          if (value === CommandMapping.requestVideoFocus) {
-            if (!autoSwitchOnStream) break
-            if (attentionSwitchedByRef.current) break
-
-            if (pathnameNow !== '/' && pathnameNow !== '/cluster') {
-              lastNonCarplayPathRef.current = pathnameNow
-              autoSwitchedRef.current = true
-            }
-
-            if (!isStreaming) {
-              pendingVideoFocusRef.current = true
-              break
-            }
-
-            if (pathnameNow !== '/') {
-              navigate('/', { replace: true })
-            }
-            break
-          }
-
-          if (value === CommandMapping.releaseVideoFocus) {
-            if (!autoSwitchOnStream) {
-              pendingVideoFocusRef.current = false
-              autoSwitchedRef.current = false
-              lastNonCarplayPathRef.current = null
-              break
-            }
-
-            const backFromCluster = lastNonClusterPathRef.current
-
-            if (
-              clusterEnabled &&
-              pathnameNow === '/cluster' &&
-              backFromCluster &&
-              backFromCluster !== '/cluster' &&
-              backFromCluster !== '/'
-            ) {
-              lastNonClusterPathRef.current = null
-              navigate(backFromCluster, { replace: true })
-              break
-            }
-
-            if (attentionSwitchedByRef.current) {
-              autoSwitchedRef.current = false
-              lastNonCarplayPathRef.current = null
-              break
-            }
-
-            if (autoSwitchedRef.current && lastNonCarplayPathRef.current) {
-              navigate(lastNonCarplayPathRef.current, { replace: true })
-            }
-            autoSwitchedRef.current = false
-            lastNonCarplayPathRef.current = null
-            break
-          }
           break
         }
 
-        case 'plugged': {
-          const phoneType = (d as { phoneType?: number }).phoneType
-          const useAa =
-            phoneType !== undefined ? phoneType === PhoneType.AndroidAuto : wirelessAaEnabled
-          if (useAa) setAaActive(true)
-          else setDongleConnected(true)
-          break
-        }
-
-        case 'unplugged': {
-          setStreaming(false)
-          setAaActive(false)
-          setDongleConnected(false)
-          setReceivingVideo(false)
-          pendingVideoFocusRef.current = false
-          setNavVideoOverlayActive(false)
+        case 'session': {
+          const protocol = (d as { protocol?: ActiveProtocol }).protocol ?? null
+          setActiveProtocol(protocol)
           break
         }
 
         case 'failure': {
           setStreaming(false)
-          setAaActive(false)
-          setDongleConnected(false)
+          setActiveProtocol(null)
           setReceivingVideo(false)
-          pendingVideoFocusRef.current = false
-          setNavVideoOverlayActive(false)
           break
         }
       }
@@ -745,8 +579,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     navigate,
     setStreaming,
     isStreaming,
-    setDongleConnected,
-    setNavVideoOverlayActive,
+    setActiveProtocol,
     applyAttention,
     rendererError,
     setAudioInfo,
@@ -784,17 +617,12 @@ const CarplayComponent: React.FC<CarplayProps> = ({
     }
   }, [carplayWorker])
 
-  // Force-hide video when not streaming
-  useEffect(() => {
-    if (!isStreaming) setReceivingVideo(false)
-  }, [isStreaming, setReceivingVideo])
-
   /* ------------------------------- UI binding ------------------------------ */
 
-  const mode: 'dongle' | 'phone' = !isDongleConnected ? 'dongle' : 'phone'
+  const mode: 'dongle' | 'phone' = !isProjectionActive ? 'dongle' : 'phone'
 
   const inProjection = pathname === '/'
-  const showProjectionOverlay = inProjection || navVideoOverlayActive
+  const showProjectionOverlay = inProjection
 
   const resolvedNegotiatedWidth = negotiatedWidth ?? 0
   const resolvedNegotiatedHeight = negotiatedHeight ?? 0
@@ -846,12 +674,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
       }}
     >
       {pathname === '/' && (
-        <StatusOverlay
-          show={!isDongleConnected || !isStreaming}
-          mode={mode}
-          offsetX={overlayX}
-          offsetY={overlayY}
-        />
+        <StatusOverlay show={!receivingVideo} mode={mode} offsetX={overlayX} offsetY={overlayY} />
       )}
 
       <div

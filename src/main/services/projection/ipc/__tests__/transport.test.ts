@@ -28,8 +28,7 @@ describe('transport ipc', () => {
     const state = {
       active: 'dongle' as const,
       dongleDetected: true,
-      nativeDetected: false,
-      preference: 'auto' as const
+      nativeDetected: false
     }
     const host = {
       switchTransport: vi.fn(),

@@ -71,6 +71,13 @@ describe('udevRule', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
+    vi.spyOn(os, 'userInfo').mockReturnValue({
+      username: 'testuser',
+      uid: 1000,
+      gid: 1000,
+      shell: '/bin/sh',
+      homedir: '/home/testuser'
+    })
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
     mockExistsSync.mockImplementation(function (p: string) {
       if (typeof p === 'string' && p.endsWith('.rules.template')) return true

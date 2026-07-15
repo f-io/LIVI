@@ -264,13 +264,17 @@ export class AudioOutput {
 
     // Sink-specific settings:
     //   realtime    → sync=false (mic/voice paths must not buffer)
-    //   pulse/wasapi music → 300 ms ALSA/WASAPI ring + 30 ms period
+    //   pulse/wasapi music → sync=false + 300 ms ALSA/WASAPI ring + 30 ms period
     //   osxaudiosink music → CoreAudio default
+    // Music uses sync=false too: pacing is done upstream (decoder jitterbuffer +
+    // clocksync), so the sink must not wait on buffer timestamps. With sync=true the
+    // sink stalled feeding ALSA after a burst-gap timestamp discontinuity and starved
+    // (RUNNING but silent until a realtime stream re-drove the graph).
     const sinkArgs = isRealtime
       ? [sink, 'sync=false']
       : sink === 'osxaudiosink'
         ? [sink]
-        : [sink, 'buffer-time=300000', 'latency-time=30000']
+        : [sink, 'sync=false', 'buffer-time=300000', 'latency-time=30000']
 
     if (this.device) {
       sinkArgs.push(`${audioDeviceProp()}=${this.device}`)

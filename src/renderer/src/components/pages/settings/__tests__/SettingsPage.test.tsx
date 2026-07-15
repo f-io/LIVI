@@ -7,7 +7,10 @@ const handleFieldChange = vi.fn()
 const restartMock = vi.fn()
 const applyBtList = vi.fn()
 
-const statusState = { isDongleConnected: true, isAaActive: false }
+const statusState = {
+  isDongleHardwarePresent: true,
+  activeProtocol: null as 'carplay' | 'androidauto' | 'dongle' | null
+}
 const liviState = {
   settings: { some: 'settings', wirelessAaEnabled: false } as Record<string, unknown>,
   bluetoothPairedDirty: false,
@@ -32,7 +35,9 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('@store/store', () => ({
   useStatusStore: (selector: (s: any) => unknown) => selector(statusState),
-  useLiviStore: (selector: (s: any) => unknown) => selector(liviState)
+  useLiviStore: (selector: (s: any) => unknown) => selector(liviState),
+  useProjectionActive: () =>
+    statusState.isDongleHardwarePresent || statusState.activeProtocol !== null
 }))
 
 vi.mock('../hooks/useSmartSettingsFromSchema', () => ({
@@ -94,8 +99,8 @@ describe('SettingsPage', () => {
     restartMock.mockReset()
     applyBtList.mockReset()
     handleFieldChange.mockReset()
-    statusState.isDongleConnected = true
-    statusState.isAaActive = false
+    statusState.isDongleHardwarePresent = true
+    statusState.activeProtocol = null
     liviState.settings = { some: 'settings', wirelessAaEnabled: false }
     liviState.bluetoothPairedDirty = false
     smartState.needsRestart = false
@@ -196,8 +201,8 @@ describe('SettingsPage', () => {
   })
 
   test('handleRestart no-ops when neither dongle nor AA is connected', () => {
-    statusState.isDongleConnected = false
-    statusState.isAaActive = false
+    statusState.isDongleHardwarePresent = false
+    statusState.activeProtocol = null
     mockNode = { type: 'route', label: 'Audio', children: [] }
     render(<SettingsPage />)
     fireEvent.click(screen.getByTestId('restart'))
@@ -224,7 +229,7 @@ describe('SettingsPage', () => {
   })
 
   test('AA-active alone is enough to enable restart', () => {
-    statusState.isDongleConnected = false
+    statusState.isDongleHardwarePresent = false
     liviState.settings = { wirelessAaEnabled: true }
     smartState.needsRestart = true
     mockNode = { type: 'route', label: 'Audio', children: [] }

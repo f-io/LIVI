@@ -1,3 +1,4 @@
+import { stopPhoneSuppression } from '@main/services/gvfsPhoneGuard'
 import { runtimeStateProps, ServicesProps } from '@main/types'
 import { createMainWindow, getMainWindow } from '@main/window/createWindow'
 import { closeAllSecondaryWindows } from '@main/window/secondaryWindows'
@@ -72,6 +73,8 @@ export function setupLifecycle(runtimeState: runtimeStateProps, services: Servic
 
       // Block hotplug callbacks ASAP
       usbService?.beginShutdown()
+
+      stopPhoneSuppression()
 
       await measureStep('usbService.stop()', async () => {
         await withTimeout('usbService.stop()', usbService?.stop?.() ?? Promise.resolve(), tUsbStop)

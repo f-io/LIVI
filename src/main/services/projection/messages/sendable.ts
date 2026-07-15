@@ -44,21 +44,6 @@ export abstract class SendableMessageWithPayload extends SendableMessage {
   }
 }
 
-export class SendRawMessage extends SendableMessageWithPayload {
-  type: MessageType
-  private payload: Buffer
-
-  constructor(type: number, payload: Uint8Array) {
-    super()
-    this.type = type as MessageType
-    this.payload = Buffer.from(payload)
-  }
-
-  getPayload(): Buffer {
-    return this.payload
-  }
-}
-
 export class SendCommand extends SendableMessageWithPayload {
   type = MessageType.Command
   value: CommandMapping

@@ -24,7 +24,6 @@ import {
   SendMultiTouch,
   SendNumber,
   SendOpen,
-  SendRawMessage,
   SendSafeArea,
   SendServerCgiScript,
   SendString,
@@ -551,20 +550,6 @@ describe('sendable messages', () => {
 
     expect(name).toBe(FileAddress.LIVI_WEB)
     expect(body.byteLength).toBeGreaterThan(0)
-  })
-
-  test('SendRawMessage keeps type and raw payload', async () => {
-    const raw = new Uint8Array([0xde, 0xad, 0xbe, 0xef])
-    const msg = new SendRawMessage(MessageType.DebugTrace, raw)
-
-    expect(msg.type).toBe(MessageType.DebugTrace)
-    expect(msg.getPayload()).toEqual(Buffer.from(raw))
-
-    const buf = msg.serialise()
-    expect(buf.readUInt32LE(0)).toBe(0x55aa55aa)
-    expect(buf.readUInt32LE(4)).toBe(4)
-    expect(buf.readUInt32LE(8)).toBe(MessageType.DebugTrace)
-    expect(buf.subarray(16)).toEqual(Buffer.from(raw))
   })
 
   test('SendAutoConnectByBtAddress stores ascii bluetooth address payload', async () => {

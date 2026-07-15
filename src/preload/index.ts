@@ -1,4 +1,4 @@
-import type { Config } from '@shared/types'
+import type { Config, TransportSnapshot } from '@shared/types'
 import type { MultiTouchPoint } from '@shared/types/TouchTypes'
 import { contextBridge, IpcRendererEvent, ipcRenderer } from 'electron'
 
@@ -148,25 +148,31 @@ const api = {
       ipcRenderer.invoke('dongle-fw', { action }),
     switchTransport: (): Promise<{ ok: boolean; active: 'dongle' | 'aa' | 'cp' | null }> =>
       ipcRenderer.invoke('transport:switch'),
-    getTransportState: (): Promise<{
-      active: 'dongle' | 'aa' | 'cp' | null
-      dongleDetected: boolean
-      wiredPhoneDetected: boolean
-      wirelessPhoneActive: boolean
-      wiredPhoneActive: boolean
-      preference: 'auto' | 'dongle' | 'native'
-    }> => ipcRenderer.invoke('transport:state'),
+    getTransportState: (): Promise<TransportSnapshot> => ipcRenderer.invoke('transport:state'),
+    getDevices: (): Promise<
+      Array<{
+        id: string
+        name?: string
+        model?: string
+        protocol?: 'carplay' | 'androidauto'
+        lastTransport?: string
+        status: 'active' | 'available' | 'offline'
+        batteryLevel?: number
+        batteryCharging?: boolean
+        signalStrength?: number
+        carrierName?: string
+      }>
+    > => ipcRenderer.invoke('devices:list'),
+    selectDevice: (id: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('devices:select', id),
+    cycleSession: (): Promise<void> => ipcRenderer.invoke('devices:cycle'),
+    forgetDevice: (id: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('devices:forget', id),
     sendTouch: (x: number, y: number, action: number): void =>
       ipcRenderer.send('projection-touch', { x, y, action }),
     sendMultiTouch: (points: MultiTouchPoint[]): void =>
       ipcRenderer.send('projection-multi-touch', points),
     sendCommand: (key: string): void => ipcRenderer.send('projection-command', key),
-    sendRawMessage: (type: number, data: Uint8Array): void => {
-      ipcRenderer.send('projection-raw-message', {
-        type,
-        data: Array.from(data)
-      })
-    },
     onEvent: (callback: ApiCallback): (() => void) => {
       projectionEventHandlers.push(callback)
       projectionEventQueue.forEach(([evt, ...args]) => callback(evt, ...args))

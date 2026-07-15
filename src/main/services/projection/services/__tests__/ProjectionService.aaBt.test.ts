@@ -1,10 +1,4 @@
-import type { Mock } from 'vitest'
 
-// Reuse the same mocking style as the main ProjectionService.test.ts but
-// add a stubbed AaBtSockClient so we can exercise the AA-BT helpers
-// (refreshAaBtPairedList / populateAaBtPairedListInitial / tryAutoConnect /
-// openAaBtSubscription / closeAaBtSubscription) without involving the
-// real Python sock.
 
 const aaBtSockMock = {
   listPaired: vi.fn(
@@ -48,14 +42,14 @@ vi.mock('../../messages', async () => {
     BluetoothPairedList: class {},
     VideoData: class {},
     AudioData: class {},
-    MetaData: class {},
+    MediaData: class {},
+    NavigationData: class {},
     MediaType: { Data: 1 },
     NavigationMetaType: { DashboardInfo: 200 },
     Command: class {},
     BoxInfo: class {},
     SoftwareVersion: class {},
     GnssData: class {},
-    SendRawMessage: Stub,
     SendCommand: Stub,
     SendTouch: Stub,
     SendMultiTouch: Stub,
@@ -125,28 +119,15 @@ vi.mock('usb', () => ({
 
 import { ProjectionService } from '../ProjectionService'
 
-type FakeAa = {
-  isWiredMode: Mock
-  close: Mock
-}
-
 function newSvc(): {
   svc: ProjectionService
-  setAa: (aa: FakeAa | null) => void
   setSupervisor: (sup: object | null) => void
 } {
   const svc = new ProjectionService()
-  const setAa = (aa: FakeAa | null): void => {
-    ;(svc as unknown as { drivers: { aa: FakeAa | null } }).drivers.aa = aa
-  }
   const setSupervisor = (sup: object | null): void => {
-    ;(svc as unknown as { aaBtSupervisor: object | null }).aaBtSupervisor = sup
+    ;(svc as unknown as { aaBtActive: boolean }).aaBtActive = sup !== null
   }
-  return { svc, setAa, setSupervisor }
-}
-
-function fakeAa(): FakeAa {
-  return { isWiredMode: vi.fn(() => false), close: vi.fn() }
+  return { svc, setSupervisor }
 }
 
 beforeEach(async () => {
@@ -170,8 +151,7 @@ describe('refreshAaBtPairedList', () => {
   })
 
   test('listPaired error is swallowed unless throwOnError', async () => {
-    const { svc, setAa } = newSvc()
-    setAa(fakeAa())
+    const { svc } = newSvc()
     aaBtSockMock.listPaired.mockImplementationOnce(async () => {
       throw new Error('sock down')
     })
@@ -181,8 +161,7 @@ describe('refreshAaBtPairedList', () => {
   })
 
   test('listPaired error rethrows when throwOnError=true', async () => {
-    const { svc, setAa } = newSvc()
-    setAa(fakeAa())
+    const { svc } = newSvc()
     aaBtSockMock.listPaired.mockImplementationOnce(async () => {
       throw new Error('sock down')
     })
@@ -196,8 +175,8 @@ describe('refreshAaBtPairedList', () => {
   })
 
   test('a new connected device is persisted via configEvents', async () => {
-    const { svc, setAa } = newSvc()
-    setAa(fakeAa())
+    const { svc, setSupervisor } = newSvc()
+    setSupervisor({})
     aaBtSockMock.listPaired.mockResolvedValueOnce([
       { mac: 'AA:BB', name: 'Phone', connected: true, trusted: true }
     ])
@@ -208,16 +187,15 @@ describe('refreshAaBtPairedList', () => {
     )
   })
 
-  test('builds DevList in boxInfo from paired devices', async () => {
-    const { svc, setAa } = newSvc()
-    setAa(fakeAa())
+  test('builds host DevList from paired devices', async () => {
+    const { svc } = newSvc()
     aaBtSockMock.listPaired.mockResolvedValueOnce([
       { mac: 'AA:BB', name: 'P1', connected: false },
       { mac: 'CC:DD', name: 'P2', connected: false }
     ])
     await (svc as unknown as { refreshAaBtPairedList: () => Promise<void> }).refreshAaBtPairedList()
-    const box = (svc as unknown as { boxInfo: { DevList?: unknown[] } }).boxInfo
-    expect(box.DevList).toHaveLength(2)
+    const hostDevList = (svc as unknown as { hostDevList: unknown[] }).hostDevList
+    expect(hostDevList).toHaveLength(2)
   })
 })
 
@@ -333,8 +311,8 @@ describe('openAaBtSubscription / closeAaBtSubscription', () => {
   })
 
   test('close swallows a throw from the underlying handle', async () => {
-    const { svc, setAa } = newSvc()
-    setAa(fakeAa())
+    const { svc, setSupervisor } = newSvc()
+    setSupervisor({})
     aaBtSockMock.subscribe.mockReturnValueOnce({
       close: () => {
         throw new Error('already closed')

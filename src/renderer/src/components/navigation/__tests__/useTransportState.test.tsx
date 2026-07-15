@@ -31,8 +31,7 @@ describe('useTransportState', () => {
       wiredPhoneDetected: false,
       wirelessPhoneDetected: false,
       wirelessPhoneActive: false,
-      wiredPhoneActive: false,
-      preference: 'auto'
+      wiredPhoneActive: false
     })
   })
 
@@ -47,8 +46,7 @@ describe('useTransportState', () => {
       dongleDetected: false,
       wiredPhoneDetected: false,
       wirelessPhoneActive: true,
-      wiredPhoneActive: false,
-      preference: 'native' as const
+      wiredPhoneActive: false
     }
     installProjection({ getState: vi.fn(async () => initial) })
     const { result } = renderHook(() => useTransportState())
@@ -82,8 +80,7 @@ describe('useTransportState', () => {
       dongleDetected: true,
       wiredPhoneDetected: false,
       wirelessPhoneActive: false,
-      wiredPhoneActive: false,
-      preference: 'dongle' as const
+      wiredPhoneActive: false
     }
     act(() => {
       captured!({}, { type: 'transportState', payload })

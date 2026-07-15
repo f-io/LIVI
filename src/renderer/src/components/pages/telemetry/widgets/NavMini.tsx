@@ -88,12 +88,9 @@ export function NavMini({ className, iconSize = 56 }: NavMiniProps) {
 
     const handler = (_event: unknown, ...args: unknown[]) => {
       const msg = (args[0] ?? {}) as ProjectionEventMsg
-      if (msg.type === 'plugged') {
-        void hydrate()
-        return
-      }
-      if (msg.type === 'unplugged') {
+      if (msg.type === 'navigation-reset') {
         setNavi(null)
+        void hydrate()
         return
       }
       if (msg.type !== 'navigation') return

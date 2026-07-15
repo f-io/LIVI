@@ -1,7 +1,10 @@
 # LIVI udev rules. Managed by LIVI. Do not edit by hand.
 # Single source of truth for udevRule.ts and the Pi-Lite installer.
-# LIVI-RULE-VERSION=2
+# LIVI-RULE-VERSION=3
 SUBSYSTEM=="usb", ATTR{idVendor}=="1314", ATTR{idProduct}=="152*", MODE="0660", OWNER="__USERNAME__"
+# Apple: wired CarPlay uses usbmux + NCM only. Stop the desktop from auto-mounting
+# the iPhone's camera (PTP/gphoto2). No MODE/OWNER override so usbmuxd keeps access.
+SUBSYSTEM=="usb", ATTR{idVendor}=="05ac", ENV{ID_GPHOTO2}="", ENV{GPHOTO2_DRIVER}="none", ENV{ID_MEDIA_PLAYER}="", ENV{UDISKS_IGNORE}="1", ENV{ID_MM_DEVICE_IGNORE}="1"
 SUBSYSTEM=="usb", ATTR{idVendor}=="18d1", ATTR{idProduct}=="2d0[0-5]", MODE="0660", OWNER="__USERNAME__", ENV{ID_MTP_DEVICE}="", ENV{ID_MEDIA_PLAYER}="", ENV{UDISKS_IGNORE}="1", ENV{ID_MM_DEVICE_IGNORE}="1"
 SUBSYSTEM=="usb", ATTR{idVendor}=="18d1", MODE="0660", OWNER="__USERNAME__", ENV{ID_MTP_DEVICE}="", ENV{ID_MEDIA_PLAYER}="", ENV{UDISKS_IGNORE}="1", ENV{ID_MM_DEVICE_IGNORE}="1"
 SUBSYSTEM=="usb", ATTR{idVendor}=="04e8", MODE="0660", OWNER="__USERNAME__", ENV{ID_MTP_DEVICE}="", ENV{ID_MEDIA_PLAYER}="", ENV{UDISKS_IGNORE}="1", ENV{ID_MM_DEVICE_IGNORE}="1"

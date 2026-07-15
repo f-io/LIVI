@@ -164,7 +164,11 @@ export class UsbAoapBridge extends EventEmitter {
   private async _switchAndOpenAccessory(): Promise<void> {
     let accessoryDev: Device
 
-    if (isAccessoryMode(this._device)) {
+    const acc = isAccessoryMode(this._device)
+    console.log(
+      `[UsbAoapBridge] switchAndOpen isAccessoryMode=${acc} vid=0x${this._device.vendorId?.toString(16)} pid=0x${this._device.productId?.toString(16)}`
+    )
+    if (acc) {
       accessoryDev = this._device
       await this._openWithRetry(accessoryDev, 'AOAP accessory device')
     } else {
@@ -173,8 +177,10 @@ export class UsbAoapBridge extends EventEmitter {
       const reenumerated = waitForAccessoryAttach(AOAP_RE_ENUMERATE_TIMEOUT_MS)
       void reenumerated.catch(() => {}) // avoid an unhandled rejection if the handshake throws first
       this._onWillReenumerate?.(AOAP_RE_ENUMERATE_TIMEOUT_MS + 2_000)
+      console.log('[UsbAoapBridge] AOAP handshake starting')
       try {
         await runAoapHandshake(this._device)
+        console.log('[UsbAoapBridge] AOAP handshake sent — awaiting accessory re-enumeration')
       } finally {
         // Close even on failure, a leaked handle would block the next attempt.
         try {
@@ -185,6 +191,7 @@ export class UsbAoapBridge extends EventEmitter {
       }
 
       accessoryDev = await reenumerated
+      console.log('[UsbAoapBridge] accessory re-enumerated — opening')
       await this._openWithRetry(accessoryDev, 'AOAP accessory device (post-handshake)')
     }
 

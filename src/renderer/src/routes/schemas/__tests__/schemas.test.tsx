@@ -10,9 +10,6 @@ vi.mock('@renderer/components/pages/settings/pages/system/softwareUpdate/Softwar
 vi.mock('@renderer/components/pages/settings/pages/system/usbDongle/USBDongle', () => ({
   USBDongle: () => null
 }))
-vi.mock('@renderer/components/pages/settings/pages/system/debug/Debug', () => ({
-  Debug: () => null
-}))
 vi.mock('@renderer/components/pages/settings/pages/system/About', () => ({
   About: () => null
 }))

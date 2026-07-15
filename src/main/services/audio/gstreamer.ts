@@ -76,6 +76,15 @@ export function audioDeviceProp(): 'device' | 'device-name' | 'unique-id' {
   return 'device'
 }
 
+export type AudioCodec = 'aac-lc' | 'opus'
+
+// AAC-LC decode: faad on linux (tiny, bundled for the Pi), avdec_aac on mac/win
+// (libav is already bundled there for video). Opus decodes via opusdec everywhere.
+export function audioDecoderElement(codec: AudioCodec): string {
+  if (codec === 'opus') return 'opusdec'
+  return process.platform === 'linux' ? 'faad' : 'avdec_aac'
+}
+
 export type VideoCodec = 'h264' | 'h265'
 
 export function videoParseElement(codec: VideoCodec): string {

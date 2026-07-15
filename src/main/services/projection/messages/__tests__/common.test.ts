@@ -1,4 +1,4 @@
-import { HeaderBuildError, MessageHeader, MessageType, setProjectionyMessageTap } from '../common'
+import { HeaderBuildError, MessageHeader, MessageType } from '../common'
 import {
   AudioData,
   BluetoothAddress,
@@ -15,7 +15,7 @@ import {
   GnssData,
   HiCarLink,
   ManufacturerInfo,
-  MetaData,
+  MediaData,
   Opened,
   Phase,
   Plugged,
@@ -79,10 +79,15 @@ const createBoxSettingsPayload = () => {
   return Buffer.from(JSON.stringify({}), 'utf8')
 }
 
+const createMetaPayload = () => {
+  const data = Buffer.alloc(4)
+  data.writeUInt32LE(1, 0) // innerType = media Data
+  return data
+}
+
 describe('projection messages common', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    setProjectionyMessageTap(null)
   })
 
   test('MessageHeader.asBuffer builds a valid 16-byte header', () => {
@@ -139,7 +144,7 @@ describe('projection messages common', () => {
   test.each([
     [MessageType.AudioData, AudioData, createAudioPayload()],
     [MessageType.ClusterVideoData, VideoData, createVideoPayload()],
-    [MessageType.MetaData, MetaData, Buffer.from('meta')],
+    [MessageType.MetaData, MediaData, createMetaPayload()],
     [MessageType.GnssData, GnssData, Buffer.from('gnss')],
     [MessageType.BluetoothAddress, BluetoothAddress, Buffer.from('aa:bb:cc')],
     [MessageType.BluetoothDeviceName, BluetoothDeviceName, Buffer.from('phone-name\0')],
@@ -242,41 +247,6 @@ describe('projection messages common', () => {
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('utf8="hello"'))
 
     warnSpy.mockRestore()
-  })
-
-  test('projection message tap receives payload metadata', () => {
-    const tap = vi.fn()
-    setProjectionyMessageTap(tap)
-
-    const data = createVideoPayload()
-
-    const header = new MessageHeader(data.length, MessageType.VideoData)
-
-    header.toMessage(data)
-
-    expect(tap).toHaveBeenCalledWith({
-      type: MessageType.VideoData,
-      length: data.length,
-      dataLength: data.length,
-      data
-    })
-  })
-
-  test('projection message tap errors are swallowed', () => {
-    const tap = vi.fn(function () {
-      throw new Error('boom')
-    })
-    setProjectionyMessageTap(tap)
-
-    const header = new MessageHeader(0, MessageType.Open)
-
-    expect(() => header.toMessage()).not.toThrow()
-    expect(tap).toHaveBeenCalledWith({
-      type: MessageType.Open,
-      length: 0,
-      dataLength: 0,
-      data: undefined
-    })
   })
 
   test('toMessage does not log utf8 text for unknown payloads with empty trimmed text', () => {

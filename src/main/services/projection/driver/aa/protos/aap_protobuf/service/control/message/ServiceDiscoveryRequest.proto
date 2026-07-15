@@ -9,7 +9,7 @@ message ServiceDiscoveryRequest
     optional bytes small_icon = 1;
     optional bytes medium_icon = 2;
     optional bytes large_icon = 3;
-    optional string label_text = 4;
-    optional string device_name = 5;
+    optional string device_name = 4;
+    optional string device_brand = 5;
     optional shared.PhoneInfo phone_info = 6;
 }

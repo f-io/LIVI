@@ -59,5 +59,12 @@ export const decodeTypeMap: DecodeTypeMapping = {
     bitDepth: 16,
     format: 's16le',
     mimeType: 'audio/L16; rate=16000; channels=2'
+  },
+  8: {
+    frequency: 48000,
+    channel: 1,
+    bitDepth: 16,
+    format: 's16le',
+    mimeType: 'audio/L16; rate=48000; channels=1'
   }
 }

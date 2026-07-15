@@ -91,12 +91,11 @@ function pkexecAvailable(): boolean {
 
 function installRule(): Promise<void> {
   return new Promise((resolve, reject) => {
-    const ruleContent = buildRuleContent()
-    const script = [
-      `echo '${ruleContent.trim()}' > ${RULE_FILE}`,
-      'udevadm control --reload-rules',
+    const script =
+      'set -e\n' +
+      `cat > ${RULE_FILE} <<'LIVI_RULE_EOF'\n${buildRuleContent().trim()}\nLIVI_RULE_EOF\n` +
+      'udevadm control --reload-rules\n' +
       'udevadm trigger'
-    ].join(' && ')
 
     const proc = spawn('pkexec', ['bash', '-c', script], { stdio: 'ignore' })
 
@@ -152,8 +151,7 @@ export async function checkAndInstallUdevRule(window: BrowserWindow): Promise<bo
         type: 'error',
         title: 'Installation Failed',
         message: 'Could not install the udev rule.',
-        detail:
-          'The authorization was cancelled or the password was wrong. This step is required for USB device access.',
+        detail: `${err instanceof Error ? err.message : String(err)}\n\nThis step is required for USB device access.`,
         buttons: ['Retry', 'Skip'],
         defaultId: 0,
         cancelId: 1

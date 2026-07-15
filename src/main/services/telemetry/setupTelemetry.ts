@@ -24,6 +24,7 @@ import type { TelemetryPayload } from '@shared/types/Telemetry'
 import { ipcMain } from 'electron'
 import { attachAaAdapter } from './adapters/aaAdapter'
 import { attachBlinkerSound } from './adapters/blinkerSoundAdapter'
+import { attachCpAdapter } from './adapters/cpAdapter'
 import { attachDongleAdapter } from './adapters/dongleAdapter'
 import { attachLiviDashAdapter } from './adapters/liviDashAdapter'
 import { attachGpsPersist } from './gpsPersist'
@@ -80,6 +81,7 @@ export function setupTelemetry({
 
   let offAa: (() => void) | null = null
   let offDongle: (() => void) | null = null
+  let offCp: (() => void) | null = null
   let offPlugHook: (() => void) | null = null
   let offBlinker: (() => void) | null = null
   if (projectionService) {
@@ -96,8 +98,13 @@ export function setupTelemetry({
       store,
       getDongleDriver: () => projectionService.getDongleDriver()
     })
+    const cp = attachCpAdapter({
+      store,
+      getCpDriver: () => projectionService.getCpDriver()
+    })
     offAa = aa.off
     offDongle = dongle.off
+    offCp = cp.off
 
     offPlugHook = projectionService.addPluggedHook(() => {
       try {
@@ -109,6 +116,11 @@ export function setupTelemetry({
         dongle.hydrate()
       } catch (e) {
         console.warn('[setupTelemetry] dongle.hydrate threw (ignored)', e)
+      }
+      try {
+        cp.hydrate()
+      } catch (e) {
+        console.warn('[setupTelemetry] cp.hydrate threw (ignored)', e)
       }
     })
   }
@@ -123,6 +135,7 @@ export function setupTelemetry({
       offDash()
       offAa?.()
       offDongle?.()
+      offCp?.()
       offPlugHook?.()
       offBlinker?.()
     }

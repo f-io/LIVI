@@ -2,6 +2,7 @@ vi.mock('../../components/pages', () => ({
   Home: () => null,
   Media: () => null,
   Camera: () => null,
+  Devices: () => null,
   Maps: () => null,
   Telemetry: () => null
 }))
@@ -31,6 +32,7 @@ describe('appRoutes', () => {
       Home: () => null,
       Media: () => null,
       Camera: () => null,
+      Devices: () => null,
       Maps: () => null,
       Telemetry: () => null
     }))

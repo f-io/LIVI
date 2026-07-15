@@ -9,20 +9,7 @@ export type Candidate = { transport: Transport; mode: ConnectionMode }
 export const candidateEquals = (a: Candidate, b: Candidate): boolean =>
   a.transport === b.transport && a.mode === b.mode
 
-export type ConnectionPreference = 'auto' | 'dongle' | 'native'
-
-export type TransportSnapshot = {
-  active: Transport | null
-  targetTransport: Transport | null
-  targetMode: ConnectionMode | null
-  switchPending: boolean
-  dongleDetected: boolean
-  wiredPhoneDetected: boolean
-  wirelessPhoneDetected: boolean
-  wiredPhoneActive: boolean
-  wirelessPhoneActive: boolean
-  preference: ConnectionPreference
-}
+export type { TransportSnapshot } from '@shared/types'
 
 export type StartDecision =
   | { kind: 'none' }
@@ -30,7 +17,6 @@ export type StartDecision =
   | { kind: 'defer'; retryMs: number }
 
 export type ArbiterDeps = {
-  getPreference: () => ConnectionPreference
   isWirelessEnabled: () => boolean
   isWirelessPhoneInRange: () => boolean
   getActiveTransport: () => Transport | null
@@ -40,6 +26,8 @@ export type ArbiterDeps = {
   onChange: () => void
   onShouldStop: () => Promise<void>
   onShouldAutoStart: () => void
+  onShouldBringUpWiredBeside: () => void
+  onWiredPhoneGone: () => void
 }
 
 export type WiredPhone = {

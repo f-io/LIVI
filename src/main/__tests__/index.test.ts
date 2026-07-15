@@ -58,8 +58,8 @@ vi.mock('../services/usb/udevRule', () => ({
   checkAndInstallUdevRule: vi.fn(() => Promise.resolve())
 }))
 
-vi.mock('@main/services/projection/driver/aa/aaSudoers', () => ({
-  checkAndInstallAaSudoers: vi.fn(() => Promise.resolve())
+vi.mock('@main/services/projection/driver/helper/helperSudoers', () => ({
+  checkAndInstallHelperSudoers: vi.fn(() => Promise.resolve())
 }))
 
 describe('main index bootstrap', () => {
@@ -136,7 +136,7 @@ describe('main index bootstrap', () => {
     expect(TelemetrySocket).not.toHaveBeenCalled()
   })
 
-  test('runs the AA sudoers installer when aa=true on linux', async () => {
+  test('runs the BT sudoers installer when aa=true on linux', async () => {
     const { app } = await import('electron')
     ;(app.whenReady as Mock).mockImplementation(
       () =>
@@ -158,17 +158,17 @@ describe('main index bootstrap', () => {
 
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
 
-    const { checkAndInstallAaSudoers } = await import(
-      '@main/services/projection/driver/aa/aaSudoers'
+    const { checkAndInstallHelperSudoers } = await import(
+      '@main/services/projection/driver/helper/helperSudoers'
     )
     await import('@main/index')
     await Promise.resolve()
     await Promise.resolve()
 
-    expect(checkAndInstallAaSudoers).toHaveBeenCalled()
+    expect(checkAndInstallHelperSudoers).toHaveBeenCalled()
   })
 
-  test('skips the AA sudoers installer when aa=false', async () => {
+  test('skips the BT sudoers installer when aa=false and cp=false', async () => {
     const { app } = await import('electron')
     ;(app.whenReady as Mock).mockImplementation(
       () =>
@@ -179,12 +179,12 @@ describe('main index bootstrap', () => {
           }
         }) as Promise<void>
     )
-    const { checkAndInstallAaSudoers } = await import(
-      '@main/services/projection/driver/aa/aaSudoers'
+    const { checkAndInstallHelperSudoers } = await import(
+      '@main/services/projection/driver/helper/helperSudoers'
     )
     await import('@main/index')
     await Promise.resolve()
     await Promise.resolve()
-    expect(checkAndInstallAaSudoers).not.toHaveBeenCalled()
+    expect(checkAndInstallHelperSudoers).not.toHaveBeenCalled()
   })
 })

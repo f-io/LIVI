@@ -32,6 +32,10 @@ class CompositorControl {
   private readonly state = new Map<string, string>() // videocfg/videoshow/backdrop, resent
   private outbox: string[] = [] // one-shot lines (claims), sent once
   private readonly path = process.env.LIVI_COMPOSITOR_CTRL ?? ''
+  private claimQueue: Array<{ role: string; onClaimed: () => void }> = []
+  private claimInFlight: string | null = null
+  private claimTimer: ReturnType<typeof setTimeout> | null = null
+  private inbox = ''
 
   private get enabled(): boolean {
     return process.platform === 'linux' && this.path.length > 0
@@ -42,6 +46,66 @@ class CompositorControl {
     if (!this.enabled) return
     this.outbox.push(`claim ${tag}\n`)
     this.flush()
+  }
+
+  private unclaim(tag: string): void {
+    if (!this.enabled) return
+    this.outbox.push(`unclaim ${tag}\n`)
+    this.flush()
+  }
+
+  serializedClaim(role: string, onClaimed: () => void): void {
+    if (!this.enabled) {
+      onClaimed()
+      return
+    }
+    this.claimQueue.push({ role, onClaimed })
+    this.pumpClaims()
+  }
+
+  releaseClaim(role: string): void {
+    if (!this.enabled) return
+    this.claimQueue = this.claimQueue.filter((c) => c.role !== role)
+    if (this.claimInFlight === role) this.abortInFlightClaim()
+  }
+
+  private pumpClaims(): void {
+    if (this.claimInFlight || this.claimQueue.length === 0) return
+    const next = this.claimQueue.shift()
+    if (!next) return
+    this.claimInFlight = next.role
+    this.claim(next.role)
+    if (this.claimTimer) clearTimeout(this.claimTimer)
+    this.claimTimer = setTimeout(() => {
+      if (this.claimInFlight === next.role) this.abortInFlightClaim()
+    }, 3000)
+    next.onClaimed()
+  }
+
+  private abortInFlightClaim(): void {
+    if (this.claimInFlight) this.unclaim(this.claimInFlight)
+    this.endClaim()
+  }
+
+  private endClaim(): void {
+    if (this.claimTimer) {
+      clearTimeout(this.claimTimer)
+      this.claimTimer = null
+    }
+    this.claimInFlight = null
+    this.pumpClaims()
+  }
+
+  private onCtrlData(chunk: Buffer | string): void {
+    this.inbox += typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+    let nl = this.inbox.indexOf('\n')
+    while (nl >= 0) {
+      const line = this.inbox.slice(0, nl)
+      this.inbox = this.inbox.slice(nl + 1)
+      const m = /^bound (.+)$/.exec(line)
+      if (m && this.claimInFlight === m[1]) this.endClaim()
+      nl = this.inbox.indexOf('\n')
+    }
   }
 
   // Place + crop the tagged plane on a screen (fullscreen with its own AA content region).
@@ -121,8 +185,10 @@ class CompositorControl {
     s.on('connect', () => {
       this.connecting = false
       this.socket = s
+      this.inbox = ''
       this.flush()
     })
+    s.on('data', (chunk) => this.onCtrlData(chunk))
     s.on('error', () => {
       this.connecting = false
     })
@@ -268,6 +334,9 @@ export function probeGstCodecs(): GstCodecProbe {
 export class GstVideo {
   private readonly id = nextPlayerId++
   private started = false
+  private claiming = false
+  private setupGen = 0
+  private pendingBuffers: Buffer[] = []
   private player: unknown = null
   private codec: GstVideoCodec | null = null
   private visible = true
@@ -309,12 +378,20 @@ export class GstVideo {
   private ensure(codec: GstVideoCodec): void {
     if (useHostProcess) {
       if (this.started && this.codec === codec) return
+      if (this.claiming) return
       this.dispose()
-      compositorControl.claim(this.role) // tag the waylandsink toplevel the host process creates next
-      gstHost.createPlayer(this.id, codec)
-      this.codec = codec
-      this.started = true
-      this.applyGamma()
+      this.claiming = true
+      const gen = ++this.setupGen
+      compositorControl.serializedClaim(this.role, () => {
+        if (this.setupGen !== gen) return
+        this.claiming = false
+        gstHost.createPlayer(this.id, codec)
+        this.codec = codec
+        this.started = true
+        this.applyGamma()
+        for (const b of this.pendingBuffers) gstHost.pushBuffer(this.id, b)
+        this.pendingBuffers = []
+      })
       return
     }
     const a = load()
@@ -337,7 +414,12 @@ export class GstVideo {
   push(codec: GstVideoCodec, nal: Buffer): void {
     if (useHostProcess) {
       this.ensure(codec)
-      if (this.started) gstHost.pushBuffer(this.id, nal)
+      if (this.started) {
+        gstHost.pushBuffer(this.id, nal)
+      } else if (this.claiming) {
+        if (this.pendingBuffers.length >= 240) this.pendingBuffers.shift()
+        this.pendingBuffers.push(nal)
+      }
       return
     }
     const a = load()
@@ -385,6 +467,10 @@ export class GstVideo {
 
   dispose(): void {
     if (useHostProcess) {
+      this.setupGen++
+      this.claiming = false
+      this.pendingBuffers = []
+      compositorControl.releaseClaim(this.role)
       if (this.started) gstHost.stop(this.id)
       this.started = false
       this.codec = null

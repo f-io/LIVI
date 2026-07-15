@@ -27,6 +27,8 @@ const NON_PHONE_INTERFACE_CLASSES = new Set<number>([
 // Suppress detach/attach noise during the AOAP handshake cycle
 const PHONE_REENUM_SUPPRESS_MS = 2_500
 
+const APPLE_VENDOR_ID = 0x05ac
+
 export class USBService {
   private lastDongleState: boolean = false
   private lastPhoneState: boolean = false
@@ -94,7 +96,9 @@ export class USBService {
         )
         .join(', ')}`
     )
-    const candidate = allDevices.find((d) => this.isPhoneCandidate(d))
+    const candidate = allDevices.find(
+      (d) => this.isPhoneCandidate(d) && d.vendorId !== APPLE_VENDOR_ID
+    )
     if (!candidate) return
     console.log(
       `[USBService] phone candidate present at startup — kicking off bring-up vid=0x${candidate.vendorId.toString(16)} pid=0x${candidate.productId.toString(16)}`
@@ -153,6 +157,10 @@ export class USBService {
       }
 
       if (this.isPhoneCandidate(device)) {
+        if (device.vendorId === APPLE_VENDOR_ID) {
+          console.log('[USBService] Apple phone detected')
+          return
+        }
         if (this.lastPhoneState) {
           console.log(
             '[USBService] OEM-PID phone re-attach while lastPhone=true — assuming stale state, resetting'
@@ -160,7 +168,7 @@ export class USBService {
           this.markPhoneDetached(device)
         }
         console.log(
-          `[USBService] phone candidate detected — kicking off wired AA bring-up vid=0x${device.vendorId?.toString(16)} pid=0x${device.productId?.toString(16)}`
+          `[USBService] phone candidate detected — kicking off wired bring-up vid=0x${device.vendorId?.toString(16)} pid=0x${device.productId?.toString(16)}`
         )
         this.markPhoneAttached(device)
       }
@@ -223,6 +231,7 @@ export class USBService {
     const cls = device.deviceClass
     if (cls === undefined) return false
     if (cls !== 0x00 && cls !== 0xff) return false
+    if (device.vendorId === APPLE_VENDOR_ID) return true
     if (this.hasOnlyNonPhoneInterfaces(device)) return false
     // Linux: only probe vendors the udev rules grant access to
     if (process.platform === 'linux') {
@@ -233,9 +242,13 @@ export class USBService {
   }
 
   private hasOnlyNonPhoneInterfaces(device: Device): boolean {
-    const ifaces = device.configuration?.interfaces ?? []
-    if (ifaces.length === 0) return false
-    return ifaces.every((i) => NON_PHONE_INTERFACE_CLASSES.has(i.alternate.interfaceClass))
+    try {
+      const ifaces = device.configuration?.interfaces ?? []
+      if (ifaces.length === 0) return false
+      return ifaces.every((i) => NON_PHONE_INTERFACE_CLASSES.has(i.alternate.interfaceClass))
+    } catch {
+      return true
+    }
   }
 
   private isSamePhoneDevice(device: Device): boolean {

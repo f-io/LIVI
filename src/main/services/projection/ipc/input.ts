@@ -1,5 +1,5 @@
 import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
-import { SendCommand, SendMultiTouch, SendRawMessage, SendTouch } from '../messages/sendable'
+import { SendCommand, SendMultiTouch, SendTouch } from '../messages/sendable'
 import type { ProjectionIpcHost } from './types'
 
 type MultiTouchPoint = { id: number; x: number; y: number; action: number }
@@ -36,15 +36,6 @@ export function registerInputIpc(host: Deps): void {
       host.send(new SendMultiTouch(safe))
     } catch {
       // ignore
-    }
-  })
-
-  registerIpcOn('projection-raw-message', (_evt, payload: { type: number; data: number[] }) => {
-    try {
-      if (!host.isStarted()) return
-      host.send(new SendRawMessage(payload.type, new Uint8Array(payload.data ?? [])))
-    } catch (e) {
-      console.error('[projection-ipc] raw-message failed', e)
     }
   })
 

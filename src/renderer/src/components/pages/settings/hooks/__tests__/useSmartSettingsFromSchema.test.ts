@@ -5,7 +5,6 @@ const smartResult = {
   state: {},
   isDirty: false,
   needsRestart: false,
-  isDongleConnected: true,
   handleFieldChange: vi.fn(),
   resetState: vi.fn(),
   restart: vi.fn(),

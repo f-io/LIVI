@@ -65,12 +65,13 @@ export class AAStack extends EventEmitter {
   private readonly _server: TcpServer
   private _activeSession: Session | null = null
   private _clusterStreamActive = true
+  private _configRefresh: (() => void) | null = null
 
   constructor(private readonly _cfg: AAStackConfig) {
     super()
     _cfg.btMacAddress ??= detectBtMac()
     _cfg.wifiBssid ??= detectWifiBssid()
-    this._server = new TcpServer(_cfg)
+    this._server = new TcpServer(_cfg, () => this._configRefresh?.())
 
     this._server.on('session', (session: Session) => this._adoptSession(session))
     this._server.on('error', (err: Error) => this.emit('error', err))
@@ -103,6 +104,12 @@ export class AAStack extends EventEmitter {
     session.on('mic-stop', (channelId: number) => this.emit('mic-stop', channelId))
     session.on('voice-session', (active: boolean) => this.emit('voice-session', active))
     session.on('host-ui-requested', () => this.emit('host-ui-requested'))
+    session.on(
+      'device-info',
+      (d: { name: string; model: string; instanceId: string; ip: string }) =>
+        this.emit('device-info', d)
+    )
+    session.on('device-status', (s: Record<string, unknown>) => this.emit('device-status', s))
     session.on('video-focus-projected', () => this.emit('video-focus-projected'))
     session.on('cluster-video-focus-projected', () => this.emit('cluster-video-focus-projected'))
     session.on('media-metadata', (m: MediaPlaybackMetadata) => this.emit('media-metadata', m))
@@ -125,8 +132,17 @@ export class AAStack extends EventEmitter {
     this._server.listen(this._cfg.port)
   }
 
+  applyDisplayConfig(next: AAStackConfig): void {
+    Object.assign(this._cfg, next)
+  }
+
+  setConfigRefresh(fn: () => void): void {
+    this._configRefresh = fn
+  }
+
   attachSocket(socket: net.Socket): Session {
     socket.setNoDelay(true)
+    this._configRefresh?.()
     const session = new Session(socket, this._cfg)
     session.on('error', (err: Error) => console.error('[Session loopback] error:', err.message))
     session.on('disconnected', (reason?: string) =>
@@ -235,8 +251,16 @@ export class AAStack extends EventEmitter {
     this._activeSession?.requestVideoFocus()
   }
 
+  requestMainKeyframe(): void {
+    this._activeSession?.requestMainKeyframe()
+  }
+
   requestClusterKeyframe(): void {
     this._activeSession?.requestClusterKeyframe()
+  }
+
+  forceClusterKeyframe(): void {
+    this._activeSession?.forceClusterKeyframe()
   }
 
   setClusterStreamActive(active: boolean): void {

@@ -26,13 +26,25 @@ function isBenignUsbError(err: unknown): boolean {
   return BENIGN_USB_PATTERNS.some((re) => re.test(text))
 }
 
+function isBrokenPipe(err: unknown): boolean {
+  return (err as NodeJS.ErrnoException | null)?.code === 'EPIPE'
+}
+
 let installed = false
 
 export function installMainProcessErrorHandlers(): void {
   if (installed) return
   installed = true
 
+  // stdout/stderr are best-effort logging: when the launching terminal/pipe closes, a write
+  // fails with EPIPE. Without an 'error' listener Node turns that into an uncaughtException,
+  // which the handler below would console.error onto the same broken stream — looping
+  // uncaughtException -> console.error -> EPIPE -> uncaughtException at 100% CPU. Swallow it.
+  process.stdout.on('error', () => {})
+  process.stderr.on('error', () => {})
+
   process.on('uncaughtException', (err) => {
+    if (isBrokenPipe(err)) return
     if (isBenignUsbError(err)) {
       console.warn('[errorHandler] suppressed USB teardown noise:', describe(err))
       return
@@ -41,6 +53,7 @@ export function installMainProcessErrorHandlers(): void {
   })
 
   process.on('unhandledRejection', (reason) => {
+    if (isBrokenPipe(reason)) return
     if (isBenignUsbError(reason)) {
       console.warn('[errorHandler] suppressed USB teardown rejection:', describe(reason))
       return

@@ -12,10 +12,18 @@ const BUILD_BRANCH = process.env.BUILD_BRANCH || ''
 
 function copyAaResourcesPlugin(): Plugin {
   const aaRoot = resolve(__dirname, 'src/main/services/projection/driver/aa')
+  const cpRoot = resolve(__dirname, 'src/main/services/projection/driver/cp')
   const protosSrc = path.join(aaRoot, 'protos')
-  const btSrc = path.join(aaRoot, 'bt')
+  const cpIap2Src = path.join(cpRoot, 'iap2')
+  const sharedSrc = resolve(__dirname, 'src/main/services/projection/driver/shared')
+  const btSrc = resolve(__dirname, 'src/main/services/projection/driver/bt')
+  const helperSrc = resolve(__dirname, 'src/main/services/projection/driver/helper')
   const protosDst = resolve(__dirname, 'out/main/protos')
-  const btDst = resolve(__dirname, 'out/main/bt')
+  const driverDst = resolve(__dirname, 'out/main/driver')
+  const btDst = resolve(__dirname, 'out/main/driver/bt')
+  const cpIap2Dst = resolve(__dirname, 'out/main/driver/cp/iap2')
+  const sharedDst = resolve(__dirname, 'out/main/driver/shared')
+  const helperDst = resolve(__dirname, 'out/main/driver/helper')
 
   // Skip Python build droppings; the live process will recreate __pycache__.
   const filter = (src: string): boolean => !/[\\/]__pycache__([\\/]|$)/.test(src)
@@ -31,11 +39,22 @@ function copyAaResourcesPlugin(): Plugin {
       } catch {}
       cpSync(protosSrc, protosDst, { recursive: true, filter })
     }
+    // Wipe the whole driver/ tree once (no stale files).
+    try {
+      rmSync(driverDst, { recursive: true, force: true })
+    } catch {}
+    const noTs = (src: string): boolean => filter(src) && !src.endsWith('.ts')
     if (existsSync(btSrc)) {
-      try {
-        rmSync(btDst, { recursive: true, force: true })
-      } catch {}
-      cpSync(btSrc, btDst, { recursive: true, filter })
+      cpSync(btSrc, btDst, { recursive: true, filter: noTs })
+    }
+    if (existsSync(helperSrc)) {
+      cpSync(helperSrc, helperDst, { recursive: true, filter: noTs })
+    }
+    if (existsSync(sharedSrc)) {
+      cpSync(sharedSrc, sharedDst, { recursive: true, filter })
+    }
+    if (existsSync(cpIap2Src)) {
+      cpSync(cpIap2Src, cpIap2Dst, { recursive: true, filter })
     }
   }
 

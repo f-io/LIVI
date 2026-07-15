@@ -19,7 +19,7 @@ vi.mock('@store/store', () => ({
       settings: { dongleIcon120: '', dongleIcon180: '', dongleIcon256: '' },
       saveSettings
     }),
-  useStatusStore: (selector: (s: any) => unknown) => selector({ isDongleConnected: true })
+  useStatusStore: (selector: (s: any) => unknown) => selector({ isDongleHardwarePresent: true })
 }))
 
 describe('IconUploader', () => {
@@ -171,7 +171,7 @@ describe('IconUploader', () => {
           settings: { dongleIcon120: '', dongleIcon180: 'abc', dongleIcon256: '' },
           saveSettings
         }),
-      useStatusStore: (selector: (s: any) => unknown) => selector({ isDongleConnected: true })
+      useStatusStore: (selector: (s: any) => unknown) => selector({ isDongleHardwarePresent: true })
     }))
     const { IconUploader: FreshIconUploader } = await import('../IconUploader')
 

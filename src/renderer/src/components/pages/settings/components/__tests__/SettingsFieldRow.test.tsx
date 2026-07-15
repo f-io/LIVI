@@ -11,8 +11,8 @@ vi.mock('../SettingsFieldControl', () => ({
 vi.mock('../SettingsFieldPage', () => ({
   SettingsFieldPage: () => <div data-testid="field-page" />
 }))
-vi.mock('../btDeviceList/BtDeviceList', () => ({
-  BtDeviceList: () => <div data-testid="bt-list" />
+vi.mock('../../../devices', () => ({
+  Devices: () => <div data-testid="devices-tiles" />
 }))
 vi.mock('../stackItem', () => ({
   StackItem: ({ children, onClick }: any) => (
@@ -31,7 +31,7 @@ vi.mock('../settingsItemRow', () => ({
 }))
 
 describe('SettingsFieldRow', () => {
-  test('renders BtDeviceList for btDeviceList node', () => {
+  test('renders the device tiles for btDeviceList node', () => {
     render(
       <SettingsFieldRow
         node={{ type: 'btDeviceList', path: 'bt', label: 'BT' } as any}
@@ -40,7 +40,7 @@ describe('SettingsFieldRow', () => {
         onChange={vi.fn()}
       />
     )
-    expect(screen.getByTestId('bt-list')).toBeInTheDocument()
+    expect(screen.getByTestId('devices-tiles')).toBeInTheDocument()
   })
 
   test('renders StackItem when onClick is provided', () => {

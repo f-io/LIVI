@@ -5,6 +5,7 @@ import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState }
 import { HashRouter as Router, useLocation, useNavigate, useRoutes } from 'react-router'
 import { AppLayout } from './components/layouts/AppLayout'
 import { Cluster, Projection } from './components/pages'
+import { SessionSwitchOverlay } from './components/SessionSwitchOverlay'
 import { ROUTES } from './constants'
 import { AppContext } from './context'
 import { useActiveControl, useFocus, useKeyDown } from './hooks'
@@ -27,7 +28,6 @@ function AppInner() {
   const [receivingVideo, setReceivingVideo] = useState(false)
   const [commandCounter, setCommandCounter] = useState(0)
   const [keyCommand, setKeyCommand] = useState('')
-  const [navVideoOverlayActive, setNavVideoOverlayActive] = useState(false)
   const editingField = appContext?.keyboardNavigation?.focusedElId
   const location = useLocation()
 
@@ -182,24 +182,12 @@ function AppInner() {
       lastInputModeRef.current = 'keys'
       document.documentElement.dataset.input = 'keys'
 
-      if (navVideoOverlayActive && location.pathname !== ROUTES.HOME) {
-        const back = settings?.bindings?.back
-        const enter = settings?.bindings?.selectDown
-
-        if (e.code === back || e.code === enter || e.key === 'Escape') {
-          setNavVideoOverlayActive(false)
-          e.preventDefault()
-          e.stopPropagation()
-          return
-        }
-      }
-
       onKeyDown(e)
     }
 
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
-  }, [onKeyDown, navVideoOverlayActive, location.pathname, settings])
+  }, [onKeyDown])
 
   // PTT release: dispatch on keyup, blur, or visibility loss.
   useEffect(() => {
@@ -303,8 +291,6 @@ function AppInner() {
           settings={settings}
           command={keyCommand as KeyCommand}
           commandCounter={commandCounter}
-          navVideoOverlayActive={navVideoOverlayActive}
-          setNavVideoOverlayActive={setNavVideoOverlayActive}
         />
       )}
       {/* Single cluster overlay, owns the plane reveal. Driven by the guidance auto-switch
@@ -316,6 +302,7 @@ function AppInner() {
         />
       )}
       <Box sx={{ width: '100%', height: '100%' }}>{element}</Box>
+      <SessionSwitchOverlay />
     </AppLayout>
   )
 }

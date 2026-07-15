@@ -145,6 +145,7 @@ struct tinywl_server {
 	struct wl_list videos;
 	struct livi_video_cfg video_cfgs[LIVI_MAX_VIDEO_CFGS];
 	int ctrl_fd;
+	int ctrl_client_fd;   // current control-socket client, for the bound-tag ack channel
 
 	// Display calibration state for the full-output shader pass. cal_active gates it.
 	bool cal_active;
@@ -263,6 +264,8 @@ static struct livi_screen *screen_for_output_name(struct tinywl_server *server,
 	}
 	return NULL;
 }
+
+static void ctrl_send(struct tinywl_server *server, const char *line);
 
 static struct tinywl_toplevel *find_video_by_tag(struct tinywl_server *server,
 		const char *tag) {
@@ -1586,7 +1589,8 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 		} else {
 			toplevel->is_video = true;
 			if (server->n_pending_video_tags > 0) {
-				// take the oldest claim (FIFO, claims arrive in plane-creation order)
+				// take the oldest claim; the host serialises claims (bound-ack below) so at
+				// most one is ever pending, making this assignment race-free
 				snprintf(toplevel->tag, sizeof(toplevel->tag), "%s",
 					server->pending_video_tags[0]);
 				for (int i = 1; i < server->n_pending_video_tags; i++) {
@@ -1595,6 +1599,18 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 						sizeof(server->pending_video_tags[0]));
 				}
 				server->n_pending_video_tags--;
+				char ack[80];
+				snprintf(ack, sizeof(ack), "bound %s\n", toplevel->tag);
+				ctrl_send(server, ack);
+			}
+			if (toplevel->tag[0]) {
+				struct tinywl_toplevel *stale;
+				wl_list_for_each(stale, &server->videos, video_link) {
+					if (stale->tag[0] && strcmp(stale->tag, toplevel->tag) == 0) {
+						stale->tag[0] = '\0';
+						wlr_scene_node_set_enabled(&stale->scene_tree->node, false);
+					}
+				}
 			}
 			s = &server->screens[0];   // default; videocfg moves it to its target screen
 			wl_list_insert(&server->videos, &toplevel->video_link);
@@ -1834,9 +1850,20 @@ static void spawn_startup(struct tinywl_server *server) {
 struct livi_ctrl_client {
 	struct tinywl_server *server;
 	struct wl_event_source *source;
+	int fd;
 	char buf[512];
 	size_t len;
 };
+
+// Send a line to the current control client (best-effort, non-blocking).
+static void ctrl_send(struct tinywl_server *server, const char *line) {
+	if (server->ctrl_client_fd < 0) {
+		return;
+	}
+	size_t n = strlen(line);
+	ssize_t w = write(server->ctrl_client_fd, line, n);
+	(void)w;
+}
 
 // Fallback: if the inner UI never quits, SIGKILL it
 static int restart_timeout(void *data) {
@@ -1896,6 +1923,20 @@ static void ctrl_handle_line(struct tinywl_server *server, const char *line) {
 			snprintf(server->pending_video_tags[server->n_pending_video_tags],
 				sizeof(server->pending_video_tags[0]), "%s", tag);
 			server->n_pending_video_tags++;
+		}
+		return;
+	}
+	if (sscanf(line, "unclaim %63s", tag) == 1) {
+		for (int i = 0; i < server->n_pending_video_tags; i++) {
+			if (strcmp(server->pending_video_tags[i], tag) == 0) {
+				for (int j = i + 1; j < server->n_pending_video_tags; j++) {
+					memcpy(server->pending_video_tags[j - 1],
+						server->pending_video_tags[j],
+						sizeof(server->pending_video_tags[0]));
+				}
+				server->n_pending_video_tags--;
+				break;
+			}
 		}
 		return;
 	}
@@ -1983,6 +2024,9 @@ static int ctrl_client_readable(int fd, uint32_t mask, void *data) {
 	return 0;
 
 close_client:
+	if (c->server->ctrl_client_fd == c->fd) {
+		c->server->ctrl_client_fd = -1;
+	}
 	wl_event_source_remove(c->source);
 	close(fd);
 	free(c);
@@ -1998,6 +2042,8 @@ static int ctrl_accept(int fd, uint32_t mask, void *data) {
 	}
 	struct livi_ctrl_client *c = calloc(1, sizeof(*c));
 	c->server = server;
+	c->fd = client;
+	server->ctrl_client_fd = client;
 	struct wl_event_loop *loop = wl_display_get_event_loop(server->wl_display);
 	c->source = wl_event_loop_add_fd(loop, client, WL_EVENT_READABLE,
 		ctrl_client_readable, c);
@@ -2006,6 +2052,7 @@ static int ctrl_accept(int fd, uint32_t mask, void *data) {
 
 static void ctrl_init(struct tinywl_server *server) {
 	server->ctrl_fd = -1;
+	server->ctrl_client_fd = -1;
 	const char *path = getenv("LIVI_COMPOSITOR_CTRL");
 	if (!path || !*path) {
 		return;

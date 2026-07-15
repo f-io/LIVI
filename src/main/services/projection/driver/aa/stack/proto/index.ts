@@ -65,6 +65,10 @@ export interface ProtoTypes {
   NavigationStatusService: protobuf.Type
   MediaPlaybackStatusService: protobuf.Type
   PhoneStatusService: protobuf.Type
+  /** aap_protobuf.service.control.message.BatteryStatusNotification (battery_level, critical) */
+  BatteryStatusNotification: protobuf.Type
+  /** aap_protobuf.service.phonestatus.message.PhoneStatus (signal_strength, calls) */
+  PhoneStatus: protobuf.Type
 
   // ── AV channels (still oaa — wire-compatible, migrate in phase 2) ────────
   AVChannelSetupRequest: protobuf.Type
@@ -99,6 +103,8 @@ export async function loadProtos(): Promise<ProtoTypes> {
     path.join(PROTO_ROOT, 'aap_protobuf/service/control/message/PingRequest.proto'),
     path.join(PROTO_ROOT, 'aap_protobuf/service/control/message/PingResponse.proto'),
     path.join(PROTO_ROOT, 'aap_protobuf/service/control/message/AuthResponse.proto'),
+    path.join(PROTO_ROOT, 'aap_protobuf/service/control/message/BatteryStatusNotification.proto'),
+    path.join(PROTO_ROOT, 'aap_protobuf/service/phonestatus/message/PhoneStatus.proto'),
 
     // --- legacy oaa/ AV setup + misc (wire-compatible with aap_protobuf) --
     path.join(PROTO_ROOT, 'oaa/av/AVChannelSetupRequestMessage.proto'),
@@ -132,6 +138,8 @@ export async function loadProtos(): Promise<ProtoTypes> {
     NavigationStatusService: root.lookupType(`${svc}.navigationstatus.NavigationStatusService`),
     MediaPlaybackStatusService: root.lookupType(`${svc}.mediaplayback.MediaPlaybackStatusService`),
     PhoneStatusService: root.lookupType(`${svc}.phonestatus.PhoneStatusService`),
+    BatteryStatusNotification: root.lookupType(`${ctrl}.BatteryStatusNotification`),
+    PhoneStatus: root.lookupType(`${svc}.phonestatus.message.PhoneStatus`),
 
     AVChannelSetupRequest: root.lookupType('oaa.proto.messages.AVChannelSetupRequest'),
     AVChannelSetupResponse: root.lookupType('oaa.proto.messages.AVChannelSetupResponse'),

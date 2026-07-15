@@ -67,7 +67,7 @@ describe('useKeyDown', () => {
 
     mockSettings = {
       bindings: {
-        selectDown: 'KeyS'
+        selectDown: 'Enter'
       }
     }
 
@@ -102,7 +102,7 @@ describe('useKeyDown', () => {
       { wrapper }
     )
 
-    const event = makeEvent('KeyS')
+    const event = makeEvent('Enter')
     result.current(event)
 
     expect(onSetKeyCommand).toHaveBeenCalledWith('selectDown')
@@ -168,7 +168,7 @@ describe('useKeyDown', () => {
   test('nav container remaps left/right to up/down and handles enter', () => {
     const { navRoot } = setupRoots()
     mockPathname = ROUTES.MEDIA
-    mockSettings = { bindings: { selectDown: 'KeyS' } }
+    mockSettings = { bindings: { selectDown: 'Enter' } }
     const prevRaf = window.requestAnimationFrame
     window.requestAnimationFrame = ((cb: FrameRequestCallback) => {
       cb(0)
@@ -214,8 +214,6 @@ describe('useKeyDown', () => {
     result.current(makeEvent('ArrowLeft'))
     result.current(makeEvent('ArrowRight'))
     result.current(makeEvent('Enter'))
-
-    result.current(makeEvent('KeyS'))
 
     expect(dispatchSpy).toHaveBeenCalled()
     expect(activateControl).toHaveBeenCalled()

@@ -95,6 +95,13 @@ export const useKeyDown = ({
       const isEnter = code === 'Enter' || code === 'NumpadEnter'
       const isSelectDown = code === (b?.selectDown || '')
 
+      if (code === (b?.cycleSession || 'KeyS') && !event.repeat && !isFormField(active)) {
+        void window.projection?.ipc?.cycleSession?.()?.catch(() => {})
+        event.preventDefault()
+        event.stopPropagation()
+        return
+      }
+
       const navRoot = readRefCurrent<HTMLElement>(navRef) ?? document.getElementById('nav-root')
       const mainRoot =
         readRefCurrent<HTMLElement>(mainRef) ?? document.getElementById('content-root')

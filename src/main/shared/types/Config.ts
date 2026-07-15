@@ -53,8 +53,6 @@ export enum EvConnectorType {
 
 export type PhoneTypeConfig = { frameInterval: number | null }
 
-export type ConnectionPreference = 'auto' | 'dongle' | 'native'
-
 export type TelemetryDashboardId = 'dash1' | 'dash2' | 'dash3' | 'dash4'
 
 export type WindowId = 'main' | 'dash' | 'aux'
@@ -91,7 +89,6 @@ export type WindowBounds = {
 export type Config = {
   wirelessAaEnabled: boolean
   wirelessCpEnabled: boolean
-  connectionPreference: ConnectionPreference
 
   // Wi-Fi + Bluetooth
   wifiPassword: string
@@ -99,6 +96,11 @@ export type Config = {
   wifiInterface: string
   wifiType: '2.4ghz' | '5ghz'
   wifiChannel: number
+
+  // CarPlay MFi coprocessor: chip generation, i2c bus, power-enable GPIO
+  carPlayCpGen: number
+  carPlayMfiI2cBus: number
+  carPlayMfiPowerGpio: number
 
   // Main stream
   projectionWidth: number
@@ -182,9 +184,6 @@ export type Config = {
 
   // Auto-connect + auto-switch
   autoConn: boolean
-  autoSwitchOnStream: boolean
-  autoSwitchOnPhoneCall: boolean
-  autoSwitchOnGuidance: boolean
   autoSwitchOnReverse: boolean
 
   // LIVI UI
@@ -260,6 +259,7 @@ export type KeyBindings = {
 
   // Media Control
   home: string
+  cycleSession: string
   playPause: string
   play: string
   pause: string
@@ -306,6 +306,7 @@ export const DEFAULT_BINDINGS: KeyBindings = {
 
   // Media Control
   home: 'KeyH',
+  cycleSession: 'KeyS',
   playPause: 'KeyP',
   play: '',
   pause: '',

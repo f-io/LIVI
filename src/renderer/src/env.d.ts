@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { Config, DongleFirmwareAction } from '@shared/types'
+import type { Config, DeviceView, DongleFirmwareAction, TransportSnapshot } from '@shared/types'
 import type { MultiTouchPoint } from '@shared/types/TouchTypes'
 
 // Should move to src/types/usb.ts
@@ -151,7 +151,6 @@ declare global {
         sendTouch(x: number, y: number, action: number): void
         sendMultiTouch(points: MultiTouchPoint[]): void
         sendCommand(key: string): void
-        sendRawMessage(type: number, data: Uint8Array): void
 
         onEvent(callback: (event: unknown, ...args: unknown[]) => void): () => void
 
@@ -173,14 +172,9 @@ declare global {
         connectBluetoothPairedDevice(mac: string): Promise<{ ok: boolean }>
 
         switchTransport(): Promise<{ ok: boolean; active: 'dongle' | 'aa' | 'cp' | null }>
-        getTransportState(): Promise<{
-          active: 'dongle' | 'aa' | 'cp' | null
-          dongleDetected: boolean
-          wiredPhoneDetected: boolean
-          wirelessPhoneActive: boolean
-          wiredPhoneActive: boolean
-          preference: 'auto' | 'dongle' | 'native'
-        }>
+        cycleSession(): Promise<void>
+        getTransportState(): Promise<TransportSnapshot>
+        getDevices(): Promise<DeviceView[]>
       }
     }
 

@@ -18,19 +18,12 @@ vi.mock('react-router', () => ({
 }))
 
 vi.mock('../components/pages', () => ({
-  Projection: (props: any) => (
-    <div
-      data-testid="projection"
-      data-nav-overlay-active={String(props.navVideoOverlayActive)}
-      onClick={() => props.setNavVideoOverlayActive(true)}
-    >
-      {String(props.receivingVideo)}
-    </div>
-  ),
+  Projection: (props: any) => <div data-testid="projection">{String(props.receivingVideo)}</div>,
   Cluster: () => <div data-testid="cluster" />,
   Home: () => <div data-testid="home" />,
   Media: () => <div data-testid="media" />,
   Camera: () => <div data-testid="camera" />,
+  Devices: () => <div data-testid="devices" />,
   Maps: () => <div data-testid="maps" />,
   Telemetry: () => <div data-testid="telemetry" />
 }))
@@ -178,26 +171,6 @@ describe('App', () => {
     expect(focusFirstInMainMock).toHaveBeenCalled()
 
     rafSpy.mockRestore()
-  })
-
-  test('closes nav video overlay on bound back key', async () => {
-    mockPathname = '/media'
-
-    render(
-      <AppContext.Provider value={{ isTouchDevice: false } as any}>
-        <App />
-      </AppContext.Provider>
-    )
-
-    useKeyDownHandler.mockClear()
-
-    fireEvent.click(screen.getByTestId('projection'))
-    expect(screen.getByTestId('projection')).toHaveAttribute('data-nav-overlay-active', 'true')
-
-    fireEvent.keyDown(document, { code: 'KeyB', key: 'b' })
-
-    expect(useKeyDownHandler).not.toHaveBeenCalled()
-    expect(screen.getByTestId('projection')).toHaveAttribute('data-nav-overlay-active', 'false')
   })
 
   test('updates cameras again for matching usb event types only', async () => {

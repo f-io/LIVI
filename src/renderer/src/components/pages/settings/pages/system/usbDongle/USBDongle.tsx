@@ -84,7 +84,7 @@ function isValidIpv4(raw: string): boolean {
 
 export function USBDongle() {
   const { t } = useTranslation()
-  const isDongleConnected = useStatusStore((s) => s.isDongleConnected)
+  const isDongleConnected = useStatusStore((s) => s.isDongleHardwarePresent)
   const isStreaming = useStatusStore((s) => s.isStreaming)
   const settings = useLiviStore((s) => s.settings)
   const saveSettings = useLiviStore((s) => s.saveSettings)
@@ -128,10 +128,6 @@ export function USBDongle() {
 
   // Parsed box info
   const boxInfo = useMemo(() => normalizeBoxInfo(boxInfoRaw), [boxInfoRaw])
-  const devList = useMemo(
-    () => (Array.isArray(boxInfo?.DevList) ? (boxInfo?.DevList ?? []) : []),
-    [boxInfo]
-  )
 
   const resolution =
     negotiatedWidth && negotiatedHeight ? `${negotiatedWidth}×${negotiatedHeight}` : EMPTY_STRING
@@ -905,82 +901,6 @@ export function USBDongle() {
     [resolution, audioLine]
   )
 
-  const renderDeviceList = () => {
-    if (devList.length === 0) {
-      return renderRows([{ label: 'Device List', value: '—' }])
-    }
-
-    return (
-      <Stack spacing={1}>
-        {devList.map((d, i) => {
-          const idx = fmt(d.index) ?? String(i + 1)
-          const name = fmt(d.name) ?? '—'
-          const type = fmt(d.type) ?? '—'
-          const id = fmt(d.id) ?? '—'
-          const time = fmt(d.time) ?? '—'
-          const rfcomm = fmt(d.rfcomm) ?? '—'
-
-          return (
-            <Box
-              key={`${idx}-${id}-${i}`}
-              tabIndex={0}
-              role="group"
-              aria-label={`Device ${idx}`}
-              sx={{
-                px: 1,
-                py: 0.75,
-                borderRadius: 1.25,
-                outline: 'none',
-                '&:focus-visible': {
-                  bgcolor: 'action.selected'
-                }
-              }}
-            >
-              <Typography sx={{ mb: 0.5 }}>Device {idx}:</Typography>
-
-              <Stack spacing={0.5} sx={{ pl: 2 }}>
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                  <Typography sx={{ minWidth: 120 }} color="text.secondary">
-                    Name:
-                  </Typography>
-                  <Typography sx={{ ...Mono }}>{name}</Typography>
-                </Box>
-
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                  <Typography sx={{ minWidth: 120 }} color="text.secondary">
-                    Type:
-                  </Typography>
-                  <Typography sx={{ ...Mono }}>{type}</Typography>
-                </Box>
-
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                  <Typography sx={{ minWidth: 120 }} color="text.secondary">
-                    ID:
-                  </Typography>
-                  <Typography sx={{ ...Mono }}>{id}</Typography>
-                </Box>
-
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                  <Typography sx={{ minWidth: 120 }} color="text.secondary">
-                    Time:
-                  </Typography>
-                  <Typography sx={{ ...Mono }}>{time}</Typography>
-                </Box>
-
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                  <Typography sx={{ minWidth: 120 }} color="text.secondary">
-                    RFCOMM:
-                  </Typography>
-                  <Typography sx={{ ...Mono }}>{rfcomm}</Typography>
-                </Box>
-              </Stack>
-            </Box>
-          )
-        })}
-      </Stack>
-    )
-  }
-
   const renderRows = (rows: Row[]) => (
     <Stack spacing={0.5}>
       {rows.map((r) => {
@@ -1062,10 +982,6 @@ export function USBDongle() {
       </Typography>
 
       {renderRows(rowsPhoneInfo)}
-
-      <Divider />
-
-      {renderDeviceList()}
 
       <Divider />
 

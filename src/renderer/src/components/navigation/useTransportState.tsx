@@ -1,19 +1,7 @@
+import type { TransportSnapshot } from '@shared/types'
 import { useEffect, useState } from 'react'
 
-export type TransportState = {
-  active: 'dongle' | 'aa' | 'cp' | null
-  targetTransport: 'dongle' | 'aa' | 'cp' | null
-  targetMode: 'wired' | 'wireless' | null
-  switchPending: boolean
-  dongleDetected: boolean
-  wiredPhoneDetected: boolean
-  wirelessPhoneDetected: boolean
-  wirelessPhoneActive: boolean
-  wiredPhoneActive: boolean
-  preference: 'auto' | 'dongle' | 'native'
-}
-
-const INITIAL: TransportState = {
+const INITIAL: TransportSnapshot = {
   active: null,
   targetTransport: null,
   targetMode: null,
@@ -22,21 +10,20 @@ const INITIAL: TransportState = {
   wiredPhoneDetected: false,
   wirelessPhoneDetected: false,
   wirelessPhoneActive: false,
-  wiredPhoneActive: false,
-  preference: 'auto'
+  wiredPhoneActive: false
 }
 
 type TransportEventHandler = (evt: unknown, ...args: unknown[]) => void
 type TransportApi = {
   ipc?: {
-    getTransportState?(): Promise<TransportState>
+    getTransportState?(): Promise<TransportSnapshot>
     onEvent?(handler: TransportEventHandler): unknown
     offEvent?(handler: TransportEventHandler): void
   }
 }
 
-export function useTransportState(): TransportState {
-  const [state, setState] = useState<TransportState>(INITIAL)
+export function useTransportState(): TransportSnapshot {
+  const [state, setState] = useState<TransportSnapshot>(INITIAL)
 
   useEffect(() => {
     let cancelled = false
@@ -46,13 +33,13 @@ export function useTransportState(): TransportState {
 
     api.ipc
       .getTransportState()
-      .then((s: TransportState) => {
+      .then((s: TransportSnapshot) => {
         if (!cancelled && s) setState(s)
       })
       .catch(() => {})
 
     const handler = (_evt: unknown, ...args: unknown[]) => {
-      const msg = args[0] as { type?: string; payload?: TransportState } | undefined
+      const msg = args[0] as { type?: string; payload?: TransportSnapshot } | undefined
       if (msg?.type !== 'transportState' || !msg.payload) return
       setState(msg.payload)
     }

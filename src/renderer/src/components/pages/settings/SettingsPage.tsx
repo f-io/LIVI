@@ -1,7 +1,7 @@
 import { Box, Typography } from '@mui/material'
 import type { SettingsNode } from '@renderer/routes/types'
 import type { Config } from '@shared/types'
-import { useLiviStore, useStatusStore } from '@store/store'
+import { useLiviStore, useProjectionActive } from '@store/store'
 import type { Key } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router'
@@ -18,8 +18,6 @@ export function SettingsPage() {
   const { '*': splat } = useParams()
   const { t } = useTranslation()
 
-  const isDongleConnected = useStatusStore((s) => s.isDongleConnected || s.isAaActive)
-
   const path = splat ? splat.split('/') : []
   const node = getNodeByPath(settingsSchema, path)
 
@@ -32,7 +30,8 @@ export function SettingsPage() {
   const applyBtList = useLiviStore((s) => s.applyBluetoothPairedList)
 
   const wirelessAaEnabled = Boolean(settings?.wirelessAaEnabled)
-  const restartAvailable = isDongleConnected || wirelessAaEnabled
+  const wirelessCpEnabled = Boolean(settings?.wirelessCpEnabled)
+  const restartAvailable = useProjectionActive() || wirelessAaEnabled || wirelessCpEnabled
 
   const handleRestart = async () => {
     if (!restartAvailable) return

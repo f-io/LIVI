@@ -1,3 +1,4 @@
+import './logTimestamps'
 import './app/gpu'
 import { bootstrapCompositor } from '@main/app/compositorBootstrap'
 import { installMainProcessErrorHandlers } from '@main/app/errorHandler'
@@ -9,7 +10,8 @@ installMainProcessErrorHandlers()
 import { registerIpc } from '@main/ipc'
 import { configEvents } from '@main/ipc/utils'
 import { registerAppProtocol } from '@main/protocol/appProtocol'
-import { checkAndInstallAaSudoers } from '@main/services/projection/driver/aa/aaSudoers'
+import { checkAndInstallGvfsGuard, startPhoneSuppression } from '@main/services/gvfsPhoneGuard'
+import { checkAndInstallHelperSudoers } from '@main/services/projection/driver/helper/helperSudoers'
 import { ProjectionService } from '@main/services/projection/services/ProjectionService'
 import { TelemetrySocket } from '@main/services/Socket'
 import { setupTelemetry } from '@main/services/telemetry/setupTelemetry'
@@ -112,9 +114,18 @@ app.whenReady().then(async () => {
     return
   }
 
-  // Wireless AA needs root for BlueZ + hostapd + dnsmasq.
-  if (win && runtimeState.config.wirelessAaEnabled === true && process.platform === 'linux') {
-    await checkAndInstallAaSudoers(win)
+  if (
+    win &&
+    process.platform === 'linux' &&
+    (runtimeState.config.wirelessAaEnabled === true ||
+      runtimeState.config.wirelessCpEnabled === true)
+  ) {
+    await checkAndInstallHelperSudoers(win)
+  }
+
+  if (win && process.platform === 'linux') {
+    await checkAndInstallGvfsGuard(win)
+    startPhoneSuppression()
   }
 
   projectionService.applyConfigPatch(runtimeState.config)

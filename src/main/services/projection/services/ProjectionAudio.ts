@@ -2,7 +2,8 @@ import { DEBUG } from '@main/constants'
 import { AudioOutput, downsampleToMono, Microphone } from '@main/services/audio'
 import type { Config } from '@shared/types'
 import { AudioCommand } from '@shared/types/ProjectionEnums'
-import { AudioData, decodeTypeMap } from '../messages'
+import { AudioData } from '../messages'
+import type { ProjectionEvent } from './types'
 
 export type PlayerKey = string
 export type LogicalStreamKey = 'music' | 'nav' | 'voiceAssistant' | 'call'
@@ -15,7 +16,7 @@ type MusicFadeState = {
   remainingSamples: number
 }
 
-type SendProjectionEvent = (payload: unknown) => void
+type SendProjectionEvent = (payload: ProjectionEvent) => void
 
 type SendChunked = (
   channel: string,
@@ -32,7 +33,11 @@ export class ProjectionAudio {
   // automatically
   private audioPlayers = new Map<PlayerKey, AudioOutput>()
   private lastStreamLogKey: PlayerKey | null = null
-  private lastCallPlaybackLog: { decodeType?: number; audioType?: number } | null = null
+  private lastCallPlaybackLog: {
+    sampleRate?: number
+    channels?: number
+    audioType?: number
+  } | null = null
 
   // Last used players per logical stream (for clean teardown)
   private lastMusicPlayerKey: PlayerKey | null = null
@@ -128,7 +133,7 @@ export class ProjectionAudio {
   private emitAttention(
     kind: 'call' | 'voiceAssistant' | 'nav',
     active: boolean,
-    extra?: Record<string, unknown>
+    extra?: { phase?: 'incoming' | 'ended' }
   ) {
     this.sendProjectionEvent({
       type: 'attention',
@@ -242,17 +247,12 @@ export class ProjectionAudio {
 
   // Main entrypoint from ProjectionService for audio messages.
   public handleAudioData(msg: AudioData) {
-    const meta = msg.decodeType != null ? this.safeDecodeType(msg.decodeType) : null
+    const meta = this.audioMeta(msg)
 
     // PCM downlink / output (music, nav, voiceAssistant, phone, …)
     if (msg.data) {
       const now = Date.now()
       const logicalKey = this.getLogicalStreamKey(msg)
-
-      // drain buffer
-      if (logicalKey === 'music' && !this.mediaActive) {
-        return
-      }
 
       // One player per (audioType, rate, channels); OS sink mixes parallel streams.
       const audioTypeKey = msg.audioType ?? 0
@@ -379,13 +379,15 @@ export class ProjectionAudio {
 
       if (DEBUG && logicalKey === 'call') {
         const nextLogState = {
-          decodeType: msg.decodeType,
+          sampleRate: msg.sampleRate,
+          channels: msg.channels,
           audioType: msg.audioType
         }
 
         const changed =
           !this.lastCallPlaybackLog ||
-          this.lastCallPlaybackLog.decodeType !== nextLogState.decodeType ||
+          this.lastCallPlaybackLog.sampleRate !== nextLogState.sampleRate ||
+          this.lastCallPlaybackLog.channels !== nextLogState.channels ||
           this.lastCallPlaybackLog.audioType !== nextLogState.audioType
 
         if (changed) {
@@ -734,8 +736,16 @@ export class ProjectionAudio {
     }
   }
 
-  private safeDecodeType(decodeType: number) {
-    return decodeTypeMap[decodeType]
+  private audioMeta(msg: AudioData) {
+    const frequency = msg.sampleRate
+    const channel = msg.channels
+    return {
+      frequency,
+      channel,
+      bitDepth: 16,
+      format: 's16le',
+      mimeType: `audio/L16; rate=${frequency}; channels=${channel}`
+    }
   }
 
   private stopAllAudioPlayers() {
@@ -806,26 +816,17 @@ export class ProjectionAudio {
     audioType: number,
     msg: AudioData
   ): AudioOutput | null {
-    const meta = msg.decodeType != null ? this.safeDecodeType(msg.decodeType) : null
-    if (!meta) {
-      if (DEBUG) {
-        console.warn('[ProjectionAudio] unknown decodeType in AudioData', {
-          decodeType: msg.decodeType,
-          audioType: msg.audioType
-        })
-      }
-      return null
-    }
-
+    const meta = this.audioMeta(msg)
     const sampleRate = meta.frequency
     const channels = meta.channel
+    if (!sampleRate || !channels) return null
     const key: PlayerKey = `${logicalKey}:at${audioType}:${sampleRate}:${channels}`
 
     let player = this.audioPlayers.get(key)
     if (!player) {
       if (DEBUG) {
         console.log(
-          `[ProjectionAudio] new player logicalKey=${logicalKey} audioType=${audioType} rate=${sampleRate} channels=${channels} decodeType=${msg.decodeType}`
+          `[ProjectionAudio] new player logicalKey=${logicalKey} audioType=${audioType} rate=${sampleRate} channels=${channels}`
         )
       }
       player = this.createAndStartAudioPlayer(logicalKey, audioType, sampleRate, channels)

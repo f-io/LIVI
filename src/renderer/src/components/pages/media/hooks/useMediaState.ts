@@ -17,11 +17,20 @@ export function useMediaState(allowInitialHydrate: boolean) {
   useEffect(() => {
     const handler = (_evt: unknown, ...args: unknown[]) => {
       const ev = (args[0] ?? {}) as UsbEvent
-      if (ev?.type === 'unplugged') {
-        hydratedOnceRef.current = false
-        setSnap(null)
-        setLivePlayMs(0)
-        livePlayMsRef.current = 0
+      if (ev?.type === 'media-reset') {
+        void (async () => {
+          try {
+            const next = await window.projection.ipc.readMedia()
+            if (next) {
+              setSnap(next)
+              const t0 = next.payload.media?.MediaSongPlayTime ?? 0
+              setLivePlayMs(t0)
+              livePlayMsRef.current = t0
+              lastTick.current = performance.now()
+              lastUiUpdateRef.current = lastTick.current
+            }
+          } catch {}
+        })()
         return
       }
       const inc = payloadFromLiveEvent(ev)

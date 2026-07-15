@@ -39,7 +39,12 @@ describe('Media component', () => {
     // — expand the global window
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     window.projection = {
-      ipc: { sendCommand: vi.fn(), setVisualizerEnabled: vi.fn() },
+      ipc: {
+        sendCommand: vi.fn(),
+        setVisualizerEnabled: vi.fn(),
+        onEvent: vi.fn(() => vi.fn()),
+        readMedia: vi.fn(() => Promise.resolve(null))
+      },
       usb: {
         listenForEvents: vi.fn(() => vi.fn())
       }
@@ -55,13 +60,15 @@ describe('Media component', () => {
     window.projection = {
       ipc: {
         sendCommand: vi.fn(),
-        setVisualizerEnabled: vi.fn()
-      },
-      usb: {
-        listenForEvents: vi.fn((cb: any) => {
+        setVisualizerEnabled: vi.fn(),
+        onEvent: vi.fn((cb: any) => {
           usbEventCb = cb
           return vi.fn()
-        })
+        }),
+        readMedia: vi.fn(() => Promise.resolve(null))
+      },
+      usb: {
+        listenForEvents: vi.fn(() => vi.fn())
       }
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     } as unknown as typeof window.projection
@@ -113,10 +120,10 @@ describe('Media component', () => {
     expect(window.projection.ipc.sendCommand).toHaveBeenCalledWith('prev')
   })
 
-  it('cleans up USB listeners on unmount', async () => {
+  it('cleans up listeners on unmount', async () => {
     const unsub = vi.fn()
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    ;(window.projection.usb.listenForEvents as Mock).mockImplementationOnce(() => unsub)
+    ;(window.projection.ipc.onEvent as Mock).mockImplementationOnce(() => unsub)
 
     const { unmount } = render(<Media />)
     unmount()
@@ -196,7 +203,7 @@ describe('Media component', () => {
     expect(screen.getByLabelText('Play/Pause')).toBeInTheDocument()
   })
 
-  it('USB unplugged event resets showFft to false', async () => {
+  it('media-reset event resets showFft to false', async () => {
     render(<Media />)
 
     // First enable FFT
@@ -205,9 +212,9 @@ describe('Media component', () => {
     })
     expect(screen.getByRole('button', { name: /Show artwork/i })).toBeInTheDocument()
 
-    // USB unplug resets showFft to false
+    // Session change resets showFft to false
     await act(async () => {
-      usbEventCb?.(null, { type: 'unplugged' })
+      usbEventCb?.(null, { type: 'media-reset' })
     })
     expect(screen.getByRole('button', { name: /Show spectrum/i })).toBeInTheDocument()
   })

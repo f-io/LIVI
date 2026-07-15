@@ -73,17 +73,6 @@ describe('preload api bridge', () => {
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('quit')
   })
 
-  test('projection ipc sendRawMessage converts Uint8Array to number array', async () => {
-    const { projection } = await loadPreload()
-
-    projection.ipc.sendRawMessage(7, new Uint8Array([1, 2, 255]))
-
-    expect(ipcRendererMock.send).toHaveBeenCalledWith('projection-raw-message', {
-      type: 7,
-      data: [1, 2, 255]
-    })
-  })
-
   test('projection ipc sendTouch forwards payload', async () => {
     const { projection } = await loadPreload()
 

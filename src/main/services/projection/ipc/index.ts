@@ -14,7 +14,7 @@ export function registerProjectionIpc(host: ProjectionIpcHost): void {
   registerInputIpc(host)
   registerBluetoothIpc(host)
   registerClusterIpc(host)
-  registerDataIpc()
+  registerDataIpc(host)
   registerDongleIpc(host)
   registerAudioIpc(host)
 }

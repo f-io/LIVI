@@ -1,9 +1,8 @@
 /**
- * Maps AA navigation events to LIVI's Carlinkit-compatible NaviBag codes so
- * the existing `translateNavigation` UI pipeline keeps working unchanged.
+ * Maps AA navigation events to LIVI's NaviBag codes
  *
  * AA's deprecated NextTurnEnum (used in INSTRUMENT_CLUSTER_NAVIGATION_TURN_EVENT)
- * is coarser than the Carlinkit ManeuverType (0–53). We pick the closest match
+ * is coarser than the ManeuverType (0–53). We pick the closest match
  * and use turn_side to disambiguate left/right variants where it exists.
  */
 

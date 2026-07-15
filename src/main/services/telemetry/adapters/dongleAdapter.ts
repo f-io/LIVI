@@ -15,6 +15,7 @@
 import type { DongleDriver } from '@projection/driver/dongle/dongleDriver'
 import { FileAddress, SendBoolean } from '@projection/messages/sendable'
 import { isWired, type TelemetryPayload } from '@shared/types/Telemetry'
+import { encodeNmea } from '../nmea'
 import type { TelemetryStore } from '../TelemetryStore'
 
 export type DongleAdapterDeps = {
@@ -53,7 +54,15 @@ export function attachDongleAdapter({
     if ('gps' in patch && isWired('dongle', 'gps')) {
       const gps = snap.gps
       if (gps && typeof gps.lat === 'number' && typeof gps.lng === 'number') {
-        const nmea = encodeNmea(gps.lat, gps.lng, gps.alt, gps.heading, gps.speedMs, gps.fixTs)
+        const nmea = encodeNmea(
+          gps.lat,
+          gps.lng,
+          gps.alt,
+          gps.heading,
+          gps.speedMs,
+          gps.fixTs,
+          gps.accuracyM
+        )
         if (nmea) void dongle.sendGnssData(nmea)
       }
     }
@@ -71,73 +80,4 @@ export function attachDongleAdapter({
       onChange(snap, snap)
     }
   }
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// NMEA-0183 encoder
-// ──────────────────────────────────────────────────────────────────────────
-
-/**
- * Build a `$GPGGA` + `$GPRMC` pair from a fix.
- *
- * Spec refs:
- *   GGA: hhmmss.ss,llll.ll,a,yyyyy.yy,a,x,xx,x.x,x.x,M,x.x,M,,
- *   RMC: hhmmss.ss,A,llll.ll,a,yyyyy.yy,a,x.x,x.x,ddmmyy,,,
- */
-function encodeNmea(
-  latDeg: number,
-  lngDeg: number,
-  altM: number | undefined,
-  headingDeg: number | undefined,
-  speedMs: number | undefined,
-  fixTs: number | undefined
-): string {
-  const ts = fixTs && Number.isFinite(fixTs) ? new Date(fixTs) : new Date()
-  const hh = pad2(ts.getUTCHours())
-  const mm = pad2(ts.getUTCMinutes())
-  const ss = pad2(ts.getUTCSeconds())
-  const time = `${hh}${mm}${ss}.00`
-  const date = `${pad2(ts.getUTCDate())}${pad2(ts.getUTCMonth() + 1)}${String(
-    ts.getUTCFullYear()
-  ).slice(-2)}`
-
-  const { ddmm: latDdmm, hemi: latHemi } = degToNmea(latDeg, true)
-  const { ddmm: lngDdmm, hemi: lngHemi } = degToNmea(lngDeg, false)
-
-  // GGA: fix-quality=1 (GPS fix), satellites=8 (synthetic), HDOP=1.0
-  const altStr = typeof altM === 'number' ? altM.toFixed(1) : '0.0'
-  const ggaBody = `GPGGA,${time},${latDdmm},${latHemi},${lngDdmm},${lngHemi},1,08,1.0,${altStr},M,0.0,M,,`
-  const gga = `$${ggaBody}*${nmeaChecksum(ggaBody)}`
-
-  // RMC: status A (active). Speed in knots, course in degrees.
-  const speedKn = typeof speedMs === 'number' ? (speedMs * 1.94384449).toFixed(2) : '0.00'
-  const courseStr = typeof headingDeg === 'number' ? headingDeg.toFixed(2) : '0.00'
-  const rmcBody = `GPRMC,${time},A,${latDdmm},${latHemi},${lngDdmm},${lngHemi},${speedKn},${courseStr},${date},,`
-  const rmc = `$${rmcBody}*${nmeaChecksum(rmcBody)}`
-
-  return `${gga}\r\n${rmc}\r\n`
-}
-
-function degToNmea(deg: number, isLat: boolean): { ddmm: string; hemi: string } {
-  const abs = Math.abs(deg)
-  const d = Math.floor(abs)
-  const m = (abs - d) * 60
-  // Latitude: ddmm.mmmm (2-digit deg). Longitude: dddmm.mmmm (3-digit deg).
-  const dStr = isLat ? pad2(d) : pad3(d)
-  const mStr = m.toFixed(4).padStart(7, '0') // mm.mmmm zero-padded
-  const hemi = isLat ? (deg >= 0 ? 'N' : 'S') : deg >= 0 ? 'E' : 'W'
-  return { ddmm: `${dStr}${mStr}`, hemi }
-}
-
-function nmeaChecksum(body: string): string {
-  let cs = 0
-  for (let i = 0; i < body.length; i++) cs ^= body.charCodeAt(i)
-  return cs.toString(16).toUpperCase().padStart(2, '0')
-}
-
-function pad2(n: number): string {
-  return String(n).padStart(2, '0')
-}
-function pad3(n: number): string {
-  return String(n).padStart(3, '0')
 }

@@ -1,10 +1,8 @@
 import type { Config } from '@shared/types'
 import { About } from '../../components/pages/settings/pages/system/About'
-import { Debug } from '../../components/pages/settings/pages/system/debug/Debug'
 import { PowerOff } from '../../components/pages/settings/pages/system/PowerOff'
 import { Restart } from '../../components/pages/settings/pages/system/Restart'
 import { SoftwareUpdate } from '../../components/pages/settings/pages/system/softwareUpdate/SoftwareUpdate'
-import { USBDongle } from '../../components/pages/settings/pages/system/usbDongle/USBDongle'
 import type { SettingsNode } from '../types'
 
 export const systemSchema: SettingsNode<Config> = {
@@ -27,38 +25,6 @@ export const systemSchema: SettingsNode<Config> = {
           labelKey: 'settings.about',
           path: 'carName',
           component: About
-        }
-      ]
-    },
-    {
-      type: 'route',
-      label: 'Debug',
-      labelKey: 'settings.debug',
-      route: 'debug',
-      path: '',
-      children: [
-        {
-          type: 'custom',
-          label: 'Debug',
-          labelKey: 'settings.debug',
-          path: 'carName',
-          component: Debug
-        }
-      ]
-    },
-    {
-      type: 'route',
-      label: 'USB Dongle',
-      labelKey: 'settings.usbDongle',
-      route: 'usbDongle',
-      path: '',
-      children: [
-        {
-          type: 'custom',
-          label: 'USB Dongle',
-          labelKey: 'settings.usbDongle',
-          path: 'carName',
-          component: USBDongle
         }
       ]
     },

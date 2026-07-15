@@ -41,7 +41,12 @@ sudo apt-get install -y \
   gstreamer1.0-libav \
   gstreamer1.0-tools \
   python3-dbus python3-gi \
-  bluez hostapd dnsmasq-base iw rfkill
+  bluez hostapd dnsmasq-base iw rfkill \
+  usbmuxd
+
+# pymobiledevice3 drives wired CarPlay over usbmux/lockdown
+pip3 install --break-system-packages --ignore-installed -q pymobiledevice3 \
+  || echo "   pymobiledevice3 install failed — wired CarPlay will be disabled"
 
 # ICON INSTALLATION
 ICON_URL="https://raw.githubusercontent.com/f-io/LIVI/main/assets/icons/linux/livi.png"

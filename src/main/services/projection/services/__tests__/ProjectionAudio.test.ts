@@ -233,10 +233,10 @@ describe('ProjectionAudio state controls', () => {
     expect(a.getLogicalStreamKey({})).toBe('call')
   })
 
-  test('getAudioOutputForStream returns null for unknown decode type', async () => {
+  test('getAudioOutputForStream returns null for a message without a sample rate', async () => {
     const a = createSubject()
 
-    const out = a.getAudioOutputForStream('music', 1, { decodeType: 999 })
+    const out = a.getAudioOutputForStream('music', 1, {})
 
     expect(out).toBeNull()
   })
@@ -244,11 +244,11 @@ describe('ProjectionAudio state controls', () => {
   test('getAudioOutputForStream creates and reuses players by (logicalKey, audioType, rate, channels)', async () => {
     const a = createSubject()
 
-    const musicA = a.getAudioOutputForStream('music', 1, { decodeType: 1 })
-    const musicB = a.getAudioOutputForStream('music', 1, { decodeType: 1 })
-    const musicC = a.getAudioOutputForStream('music', 1, { decodeType: 2 })
-    // Same wire format but different audioType → separate sink-input.
-    const navSameFormat = a.getAudioOutputForStream('nav', 2, { decodeType: 1 })
+    const musicA = a.getAudioOutputForStream('music', 1, { sampleRate: 44100, channels: 2 })
+    const musicB = a.getAudioOutputForStream('music', 1, { sampleRate: 44100, channels: 2 })
+    const musicC = a.getAudioOutputForStream('music', 1, { sampleRate: 48000, channels: 2 })
+    // Same format but different audioType → separate sink-input.
+    const navSameFormat = a.getAudioOutputForStream('nav', 2, { sampleRate: 44100, channels: 2 })
 
     expect(musicA).toBeTruthy()
     expect(musicB).toBe(musicA)
@@ -257,7 +257,7 @@ describe('ProjectionAudio state controls', () => {
     expect(a.audioPlayers.size).toBe(3)
   })
 
-  test('handleAudioData ignores music pcm when media is inactive', async () => {
+  test('handleAudioData writes music pcm even when media is inactive', async () => {
     const a = createSubject()
     const player = { write: vi.fn() }
     a.getAudioOutputForStream = vi.fn(() => player)
@@ -266,10 +266,11 @@ describe('ProjectionAudio state controls', () => {
 
     a.handleAudioData({
       data: new Int16Array([1, 2, 3]),
-      decodeType: 1
+      sampleRate: 44100,
+      channels: 2
     })
 
-    expect(player.write).not.toHaveBeenCalled()
+    expect(player.write).toHaveBeenCalled()
   })
 
   test('handleAudioData writes pcm for nav-only playback when media is inactive', async () => {
@@ -282,7 +283,8 @@ describe('ProjectionAudio state controls', () => {
 
     a.handleAudioData({
       data: new Int16Array([1, 2, 3]),
-      decodeType: 1
+      sampleRate: 44100,
+      channels: 2
     })
 
     expect(player.write).toHaveBeenCalled()
@@ -300,7 +302,8 @@ describe('ProjectionAudio state controls', () => {
 
     a.handleAudioData({
       data: new Int16Array([1, 2, 3]),
-      decodeType: 1
+      sampleRate: 44100,
+      channels: 2
     })
 
     expect(player.write).toHaveBeenCalled()
@@ -322,12 +325,14 @@ describe('ProjectionAudio state controls', () => {
 
     a.handleAudioData({
       data: new Int16Array([1, 2]),
-      decodeType: 1
+      sampleRate: 44100,
+      channels: 2
     })
 
     a.handleAudioData({
       data: new Int16Array([3, 4]),
-      decodeType: 1
+      sampleRate: 44100,
+      channels: 2
     })
 
     const audioInfoCalls = sendProjectionEvent.mock.calls.filter(
@@ -716,19 +721,18 @@ describe('ProjectionAudio state controls', () => {
     expect(player.write).not.toHaveBeenCalled()
   })
 
-  test('getAudioOutputForStream returns null for an unknown decodeType', async () => {
+  test('getAudioOutputForStream returns null for a message missing channels', async () => {
     const a = createSubject()
-    const player = a.getAudioOutputForStream('music', 1, { decodeType: 9999 })
+    const player = a.getAudioOutputForStream('music', 1, { sampleRate: 44100 })
     expect(player).toBeNull()
   })
 
-  test('handleAudioData with unknown decodeType is a silent no-op', async () => {
+  test('handleAudioData with a rate-less message is a silent no-op', async () => {
     const a = createSubject()
     a.mediaActive = true
     expect(() =>
       a.handleAudioData({
         audioType: 1,
-        decodeType: 9999,
         data: new Int16Array(8)
       })
     ).not.toThrow()

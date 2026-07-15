@@ -14,7 +14,7 @@
  *
  */
 
-import type { AaDriver } from '@projection/driver/aa/aaDriver'
+import type { AaSession } from '@projection/driver/aa/AaSession'
 import { type GpsPayload, isWired, type TelemetryPayload } from '@shared/types/Telemetry'
 import type { TelemetryStore } from '../TelemetryStore'
 
@@ -22,7 +22,7 @@ import type { TelemetryStore } from '../TelemetryStore'
 const VEM_MIN_INTERVAL_MS = 10_000
 
 export type AaAdapterDeps = {
-  getAaDriver: () => AaDriver | null
+  getAaDriver: () => AaSession | null
   store: TelemetryStore
 }
 

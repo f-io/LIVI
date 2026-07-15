@@ -46,7 +46,7 @@ export const Nav = ({ receivingVideo }: NavProps) => {
     }
 
     if (key === ROUTES.TRANSPORT_SWITCH) {
-      void window.projection.ipc.switchTransport?.().catch(console.error)
+      navigate(ROUTES.DEVICES)
       return
     }
 

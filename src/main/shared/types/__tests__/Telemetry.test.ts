@@ -6,7 +6,7 @@ describe('routes', () => {
   })
 
   test('returns a fully-false fallback for an unknown key', () => {
-    expect(routes('bogus')).toEqual({ dash: false, aa: false, dongle: false })
+    expect(routes('bogus')).toEqual({ dash: false, aa: false, cp: false, dongle: false })
   })
 })
 
@@ -35,7 +35,7 @@ describe('isWired', () => {
       [string, Record<TelemetryReceiver, unknown>]
     >
     for (const [key, route] of allRoutes) {
-      for (const receiver of ['dash', 'aa', 'dongle'] as TelemetryReceiver[]) {
+      for (const receiver of ['dash', 'aa', 'cp', 'dongle'] as TelemetryReceiver[]) {
         const isTrue = route[receiver] === true
         expect(isWired(receiver, key)).toBe(isTrue)
       }

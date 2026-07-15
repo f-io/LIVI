@@ -10,7 +10,10 @@ import { Session, type SessionConfig } from '../session/Session.js'
 export class TcpServer extends EventEmitter {
   private _server: net.Server | null = null
 
-  constructor(private readonly _cfg: SessionConfig) {
+  constructor(
+    private readonly _cfg: SessionConfig,
+    private readonly _onBeforeSession?: () => void
+  ) {
     super()
   }
 
@@ -22,6 +25,7 @@ export class TcpServer extends EventEmitter {
       sock.setNoDelay(true)
       sock.setTimeout(30_000)
 
+      this._onBeforeSession?.()
       const session = new Session(sock, this._cfg)
 
       session.on('error', (err: Error) => console.error(`[Session ${remote}] error:`, err.message))

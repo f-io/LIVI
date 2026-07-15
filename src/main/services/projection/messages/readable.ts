@@ -1,3 +1,4 @@
+import { decodeTypeMap } from '@shared/types/AudioDecode'
 import { PhoneType } from '@shared/types/Config'
 import { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
 import { MessageHeader } from './common.js'
@@ -139,6 +140,8 @@ export class Unplugged extends Message {
 export class AudioData extends Message {
   command?: AudioCommand
   decodeType: number
+  sampleRate: number
+  channels: number
   volume: number
   volumeDuration?: number
   audioType: number
@@ -147,6 +150,9 @@ export class AudioData extends Message {
   constructor(header: MessageHeader, data: Buffer) {
     super(header)
     this.decodeType = data.readUInt32LE(0)
+    const fmt = decodeTypeMap[this.decodeType]
+    this.sampleRate = fmt?.frequency ?? 48000
+    this.channels = fmt?.channel ?? 2
     this.volume = data.readFloatLE(4)
     this.audioType = data.readUInt32LE(8)
 
@@ -320,58 +326,44 @@ export class NavigationData extends Message {
   }
 }
 
-export type MetaInner =
-  | { kind: 'media'; message: MediaData }
-  | { kind: 'navigation'; message: NavigationData }
-  | { kind: 'unknown'; metaType: number; raw: Buffer }
+export function parseMetaMessage(
+  header: MessageHeader,
+  data: Buffer
+): MediaData | NavigationData | null {
+  const innerType = data.readUInt32LE(0)
+  const payloadOnly = data.subarray(4)
 
-export class MetaData extends Message {
-  innerType: number
-  inner: MetaInner
-
-  constructor(header: MessageHeader, data: Buffer) {
-    super(header)
-
-    this.innerType = data.readUInt32LE(0)
-    const payloadOnly = data.subarray(4)
-
-    // Navigation
-    if (
-      this.innerType === NavigationMetaType.DashboardInfo ||
-      this.innerType === NavigationMetaType.DashboardImage
-    ) {
-      const msg = new NavigationData(header, this.innerType as NavigationMetaType, payloadOnly)
-      this.inner = { kind: 'navigation', message: msg }
-      return
-    }
-
-    // known media types
-    if (
-      this.innerType === MediaType.Data ||
-      this.innerType === MediaType.AlbumCover ||
-      this.innerType === MediaType.AlbumCoverAlt ||
-      this.innerType === MediaType.ControlAutoplayTrigger
-    ) {
-      const msg = new MediaData(header, this.innerType as MediaType, payloadOnly)
-      this.inner = { kind: 'media', message: msg }
-      return
-    }
-
-    // Unknown
-    this.inner = { kind: 'unknown', metaType: this.innerType, raw: payloadOnly }
-
-    const head = data.subarray(0, Math.min(64, data.length))
-    console.info(
-      `Unexpected meta innerType: ${this.innerType}, bytes=${data.length}, head=${head.toString('hex')}`
-    )
-    const text = payloadOnly.toString('utf8')
-    const trimmed = text.replace(/\0+$/g, '').trim()
-    if (trimmed.length > 0) {
-      console.info(
-        `Unexpected meta innerType: ${this.innerType}, utf8=${JSON.stringify(trimmed.slice(0, 200))}`
-      )
-    }
+  // Navigation
+  if (
+    innerType === NavigationMetaType.DashboardInfo ||
+    innerType === NavigationMetaType.DashboardImage
+  ) {
+    return new NavigationData(header, innerType as NavigationMetaType, payloadOnly)
   }
+
+  // known media types
+  if (
+    innerType === MediaType.Data ||
+    innerType === MediaType.AlbumCover ||
+    innerType === MediaType.AlbumCoverAlt ||
+    innerType === MediaType.ControlAutoplayTrigger
+  ) {
+    return new MediaData(header, innerType as MediaType, payloadOnly)
+  }
+
+  // Unknown
+  const head = data.subarray(0, Math.min(64, data.length))
+  console.info(
+    `Unexpected meta innerType: ${innerType}, bytes=${data.length}, head=${head.toString('hex')}`
+  )
+  const text = payloadOnly.toString('utf8')
+  const trimmed = text.replace(/\0+$/g, '').trim()
+  if (trimmed.length > 0) {
+    console.info(
+      `Unexpected meta innerType: ${innerType}, utf8=${JSON.stringify(trimmed.slice(0, 200))}`
+    )
+  }
+  return null
 }
 
 export class BluetoothPeerConnecting extends Message {

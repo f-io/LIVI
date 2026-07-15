@@ -5,6 +5,7 @@ export enum RoutePath {
   Home = 'home',
   Cluster = 'cluster',
   Media = 'media',
+  Devices = 'devices',
   Settings = 'settings',
   Telemetry = 'telemetry'
 }
@@ -93,6 +94,7 @@ export type KeyBindingKey =
   | 'knobUp'
   | 'knobDown'
   | 'home'
+  | 'cycleSession'
   | 'playPause'
   | 'play'
   | 'pause'

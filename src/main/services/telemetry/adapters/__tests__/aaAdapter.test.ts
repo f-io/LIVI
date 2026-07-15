@@ -1,4 +1,4 @@
-import type { AaDriver } from '@projection/driver/aa/aaDriver'
+import type { AaSession } from '@projection/driver/aa/AaSession'
 import { TelemetryStore } from '../../TelemetryStore'
 import { attachAaAdapter, mapGearToAa } from '../aaAdapter'
 
@@ -24,7 +24,7 @@ function setup() {
   const driver = fakeDriver()
   const handle = attachAaAdapter({
     store,
-    getAaDriver: () => driver as unknown as AaDriver
+    getAaDriver: () => driver as unknown as AaSession
   })
   return { store, driver, handle }
 }

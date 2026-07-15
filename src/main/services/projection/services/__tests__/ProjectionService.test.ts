@@ -12,8 +12,7 @@ import {
   GnssData,
   PhoneType,
   Plugged,
-  SoftwareVersion,
-  Unplugged
+  SoftwareVersion
 } from '../../messages'
 
 vi.mock('../../messages', async () => {
@@ -24,6 +23,13 @@ vi.mock('../../messages', async () => {
     start = vi.fn(async () => undefined)
     stop = vi.fn(async () => undefined)
     close = vi.fn(async () => undefined)
+    bringUp = vi.fn(async () => undefined)
+    isUp = false
+    disconnectPhone = vi.fn(async () => true)
+    sendPhoneAudio = vi.fn()
+    uploadHostIcons = vi.fn()
+    requestClusterFocus = vi.fn()
+    requestKeyframe = vi.fn()
     sendBluetoothPairedList = vi.fn(async () => true)
     setPendingStartupConnectTarget = vi.fn()
     clearPendingStartupConnectTarget = vi.fn()
@@ -47,7 +53,8 @@ vi.mock('../../messages', async () => {
     },
     VideoData: class {},
     AudioData: class {},
-    MetaData: class {},
+    MediaData: class MediaData {},
+    NavigationData: class NavigationData {},
     MediaType: { Data: 1 },
     NavigationMetaType: { DashboardInfo: 200 },
     Command: class {
@@ -62,7 +69,6 @@ vi.mock('../../messages', async () => {
     GnssData: class {
       constructor(public text?: string) {}
     },
-    SendRawMessage: StubMsg,
     SendCommand: StubMsg,
     SendTouch: StubMsg,
     SendMultiTouch: StubMsg,
@@ -145,39 +151,10 @@ vi.mock('usb', () => ({
   }
 }))
 
-vi.mock('../utils/readMediaFile', () => ({
-  readMediaFile: vi.fn(function () {
-    return {
-      timestamp: 't',
-      payload: {
-        type: 1,
-        media: { MediaSongName: 'Song', MediaPlayStatus: 1 },
-        base64Image: 'img'
-      }
-    }
-  })
-}))
-
-vi.mock('../utils/readNavigationFile', () => ({
-  readNavigationFile: vi.fn(function () {
-    return {
-      timestamp: 't',
-      payload: {
-        metaType: 200,
-        navi: null,
-        rawUtf8: '',
-        error: false
-      }
-    }
-  })
-}))
-
 import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
 import { configEvents } from '@main/ipc/utils'
 import { ProjectionService } from '@main/services/projection/services/ProjectionService'
-import { usb } from 'usb'
-import { readMediaFile } from '../utils/readMediaFile'
-import { readNavigationFile } from '../utils/readNavigationFile'
+import { DEFAULT_MEDIA_DATA_RESPONSE, DEFAULT_NAVIGATION_DATA_RESPONSE } from '../constants'
 
 describe('ProjectionService', () => {
   beforeEach(async () => {
@@ -367,22 +344,6 @@ describe('ProjectionService', () => {
     expect(third.isLast).toBe(true)
   })
 
-  test('clearTimeouts clears pair timeout and frame interval', async () => {
-    const svc = new ProjectionService() as any
-    const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout')
-    const clearIntervalSpy = vi.spyOn(global, 'clearInterval')
-
-    svc.pairTimeout = setTimeout(() => {}, 1000)
-    svc.frameInterval = setInterval(() => {}, 1000)
-
-    svc.clearTimeouts()
-
-    expect(clearTimeoutSpy).toHaveBeenCalled()
-    expect(clearIntervalSpy).toHaveBeenCalled()
-    expect(svc.pairTimeout).toBeNull()
-    expect(svc.frameInterval).toBeNull()
-  })
-
   test('reloadConfigFromDisk returns when file is missing', async () => {
     const svc = new ProjectionService() as any
     const existsSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(false)
@@ -492,40 +453,6 @@ describe('ProjectionService', () => {
       expect(svc.pickPreferredTransport()).toBe('aa')
     })
 
-    test('auto: when both present, wired AA wins tiebreaker on cold pick', async () => {
-      const svc = freshSvc()
-      svc.config = { aa: false, connectionPreference: 'auto' }
-      svc.start = vi.fn(async () => undefined)
-
-      svc.markDongleConnected(true)
-      svc.markPhoneConnected(true, fakePhoneDevice())
-      expect(svc.pickPreferredTransport()).toBe('aa')
-    })
-
-    test("preference 'dongle' picks dongle even when phone is present first", () => {
-      const svc = freshSvc()
-      svc.config = { aa: false, connectionPreference: 'dongle' }
-
-      svc.markPhoneConnected(true, fakePhoneDevice())
-      // phone-only → aa (dongle isn't there)
-      expect(svc.pickPreferredTransport()).toBe('aa')
-
-      svc.markDongleConnected(true)
-      // both present + preference dongle → dongle
-      expect(svc.pickPreferredTransport()).toBe('dongle')
-    })
-
-    test("preference 'native' picks aa when phone is present", () => {
-      const svc = freshSvc()
-      svc.config = { aa: false, connectionPreference: 'native' }
-
-      svc.markDongleConnected(true)
-      expect(svc.pickPreferredTransport()).toBe('dongle')
-
-      svc.markPhoneConnected(true, fakePhoneDevice())
-      expect(svc.pickPreferredTransport()).toBe('aa')
-    })
-
     test('switchTransport is a no-op when only one transport is present', async () => {
       const svc = freshSvc()
       svc.config = { aa: false, connectionPreference: 'auto' }
@@ -576,41 +503,6 @@ describe('ProjectionService', () => {
       vi.runOnlyPendingTimers() // flush detach debounce
       expect(svc.pickPreferredTransport()).toBe('dongle')
     })
-
-    test("preference 'native': defers dongle so the AOAP probe can win the race", async () => {
-      const svc = freshSvc()
-      svc.config = { aa: false, connectionPreference: 'native' }
-      svc.start = vi.fn(async () => undefined)
-
-      svc.markDongleConnected(true)
-      await svc.autoStartIfNeeded()
-      expect(svc.start).not.toHaveBeenCalled() // deferred
-
-      // Phone probe completes during the defer window — autoStart re-fires
-      // synchronously here and picks 'aa'.
-      svc.markPhoneConnected(true, fakePhoneDevice())
-      await Promise.resolve()
-      await Promise.resolve()
-
-      expect(svc.pickPreferredTransport()).toBe('aa')
-    })
-
-    test("preference 'native': commits to dongle if the probe never surfaces", async () => {
-      const svc = freshSvc()
-      svc.config = { aa: false, connectionPreference: 'native' }
-      svc.start = vi.fn(async () => undefined)
-
-      svc.markDongleConnected(true)
-      await svc.autoStartIfNeeded()
-      expect(svc.start).not.toHaveBeenCalled() // deferred
-
-      vi.advanceTimersByTime(15_500)
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
-
-      expect(svc.start).toHaveBeenCalledTimes(1) // fallback to dongle
-    })
   })
 
   test('disconnectPhone returns false when service is not started', async () => {
@@ -620,29 +512,22 @@ describe('ProjectionService', () => {
     await expect(svc.disconnectPhone()).resolves.toBe(false)
   })
 
-  test('disconnectPhone sends disconnect and close commands and waits on success', async () => {
+  test('disconnectPhone delegates to the driver and returns its result', async () => {
     const svc = new ProjectionService() as any
     svc.started = true
-    svc.driver.send = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+    svc.driver.disconnectPhone = vi.fn(async () => true)
 
-    const setTimeoutSpy = vi.spyOn(global, 'setTimeout').mockImplementation(((
-      fn: (...args: any[]) => void
-    ) => {
-      fn()
-      return 0 as any
-    }) as typeof setTimeout)
     await expect(svc.disconnectPhone()).resolves.toBe(true)
-    expect(svc.driver.send).toHaveBeenCalledTimes(2)
-    expect(setTimeoutSpy).toHaveBeenCalled()
+    expect(svc.driver.disconnectPhone).toHaveBeenCalledTimes(1)
   })
 
-  test('disconnectPhone swallows command errors and returns false when both fail', async () => {
+  test('disconnectPhone returns false when the driver reports failure', async () => {
     const svc = new ProjectionService() as any
     svc.started = true
-    svc.driver.send = vi.fn().mockRejectedValue(new Error('boom'))
+    svc.driver.disconnectPhone = vi.fn(async () => false)
 
     await expect(svc.disconnectPhone()).resolves.toBe(false)
-    expect(svc.driver.send).toHaveBeenCalledTimes(2)
+    expect(svc.driver.disconnectPhone).toHaveBeenCalledTimes(1)
   })
 
   test('patchAaMediaPlayStatus writes media snapshot and emits projection event', async () => {
@@ -652,7 +537,7 @@ describe('ProjectionService', () => {
 
     vi.spyOn(fs, 'writeFileSync').mockImplementation(function () {})
 
-    svc.patchAaMediaPlayStatus(2)
+    svc.mediaStore.patchAaPlayStatus({ media: null, nav: null }, 2)
 
     expect(fs.writeFileSync).toHaveBeenCalled()
     expect(send).toHaveBeenCalledWith('projection-event', {
@@ -675,7 +560,7 @@ describe('ProjectionService', () => {
       throw new Error('disk fail')
     })
 
-    expect(() => svc.patchAaMediaPlayStatus(1)).not.toThrow()
+    expect(() => svc.mediaStore.patchAaPlayStatus({ media: null, nav: null }, 1)).not.toThrow()
   })
 
   test('resetMediaSnapshot writes default media payload and emits reset event', async () => {
@@ -684,7 +569,7 @@ describe('ProjectionService', () => {
     svc.webContents = { send }
     vi.spyOn(fs, 'writeFileSync').mockImplementation(function () {})
 
-    svc.resetMediaSnapshot('test')
+    svc.mediaStore.reset('test')
 
     expect(fs.writeFileSync).toHaveBeenCalled()
     expect(send).toHaveBeenCalledWith('projection-event', {
@@ -699,7 +584,7 @@ describe('ProjectionService', () => {
     svc.webContents = { send }
     vi.spyOn(fs, 'writeFileSync').mockImplementation(function () {})
 
-    svc.resetNavigationSnapshot('test')
+    svc.navStore.reset('test')
 
     expect(fs.writeFileSync).toHaveBeenCalled()
     expect(send).toHaveBeenCalledWith('projection-event', {
@@ -729,8 +614,8 @@ describe('ProjectionService', () => {
     svc.driver.close = vi.fn(async () => undefined)
     svc.audio.resetForSessionStop = vi.fn()
     svc.clearTimeouts = vi.fn()
-    svc.resetMediaSnapshot = vi.fn()
-    svc.resetNavigationSnapshot = vi.fn()
+    svc.mediaStore.reset = vi.fn()
+    svc.navStore.reset = vi.fn()
 
     await svc.stop()
 
@@ -751,29 +636,27 @@ describe('ProjectionService', () => {
     svc.driver.close = vi.fn(async () => undefined)
     svc.audio.resetForSessionStop = vi.fn()
     svc.clearTimeouts = vi.fn()
-    svc.resetMediaSnapshot = vi.fn()
-    svc.resetNavigationSnapshot = vi.fn()
+    svc.mediaStore.reset = vi.fn()
+    svc.navStore.reset = vi.fn()
 
     await svc.stop()
 
     expect(svc.boxInfo.btMacAddr).toBe('')
   })
 
-  test('stop clears webUsbDevice reference and marks service stopped', async () => {
+  test('stop closes the driver and marks service stopped', async () => {
     const svc = new ProjectionService() as any
     svc.started = true
     svc.stopping = false
-    svc.webUsbDevice = { vendorId: 0x1314, productId: 0x1520 }
     svc.disconnectPhone = vi.fn(async () => false)
     svc.driver.close = vi.fn(async () => undefined)
     svc.audio.resetForSessionStop = vi.fn()
     svc.clearTimeouts = vi.fn()
-    svc.resetMediaSnapshot = vi.fn()
-    svc.resetNavigationSnapshot = vi.fn()
+    svc.mediaStore.reset = vi.fn()
+    svc.navStore.reset = vi.fn()
 
     await svc.stop()
 
-    expect(svc.webUsbDevice).toBeNull()
     expect(svc.driver.close).toHaveBeenCalled()
     expect(svc.started).toBe(false)
   })
@@ -790,12 +673,12 @@ describe('ProjectionService', () => {
     })
     svc.audio.resetForSessionStop = vi.fn()
     svc.clearTimeouts = vi.fn()
-    svc.resetMediaSnapshot = vi.fn()
-    svc.resetNavigationSnapshot = vi.fn()
+    svc.mediaStore.reset = vi.fn()
+    svc.navStore.reset = vi.fn()
 
     await expect(svc.stop()).resolves.toBeUndefined()
     expect(warnSpy).toHaveBeenCalledWith(
-      '[ProjectionService] driver.close() failed (ignored)',
+      '[ProjectionService] dongle close() failed (ignored)',
       expect.any(Error)
     )
   })
@@ -861,7 +744,7 @@ describe('ProjectionService', () => {
   test('projection-upload-icons calls uploadIcons when ready', async () => {
     const svc = new ProjectionService() as any
     svc.started = true
-    svc.webUsbDevice = {}
+    svc.drivers.getDongle().isUp = true
     svc.uploadIcons = vi.fn()
     const h = getHandle('projection-upload-icons')
 
@@ -884,7 +767,7 @@ describe('ProjectionService', () => {
   test('projection-upload-livi-scripts uploads both assets and returns result object', async () => {
     const svc = new ProjectionService() as any
     svc.started = true
-    svc.webUsbDevice = {}
+    svc.drivers.getDongle().isUp = true
     svc.driver.send = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false)
 
     const h = getHandle('projection-upload-livi-scripts')
@@ -973,26 +856,6 @@ describe('ProjectionService', () => {
     expect(svc.driver.send).toHaveBeenCalledTimes(1)
   })
 
-  test('projection-raw-message ignores payload when not started', async () => {
-    const svc = new ProjectionService() as any
-    svc.started = false
-    const on = getOn('projection-raw-message')
-
-    on.call(svc, null, { type: 1, data: [1, 2, 3] })
-
-    expect(svc.driver.send).not.toHaveBeenCalled()
-  })
-
-  test('projection-raw-message sends raw message when started', async () => {
-    const svc = new ProjectionService() as any
-    svc.started = true
-    const on = getOn('projection-raw-message')
-
-    on.call(svc, null, { type: 9, data: [1, 2, 3] })
-
-    expect(svc.driver.send).toHaveBeenCalledTimes(1)
-  })
-
   test('projection-command forwards command message', async () => {
     const svc = new ProjectionService() as any
     const on = getOn('projection-command')
@@ -1020,76 +883,44 @@ describe('ProjectionService', () => {
     expect(svc.audio.setVisualizerEnabled).toHaveBeenCalledWith(true, undefined)
   })
 
-  test('projection-media-read returns default response when file is missing', async () => {
+  test('projection-media-read returns the default payload when there is no active session', async () => {
     const svc = new ProjectionService() as any
-    vi.spyOn(fs, 'existsSync').mockReturnValue(false)
+    vi.spyOn(svc.sessions, 'active').mockReturnValue(null)
 
-    const h = getHandle('projection-media-read')
-    const out = await h.call(svc)
+    const out = await getHandle('projection-media-read').call(svc)
 
-    expect(out).toEqual(expect.objectContaining({ payload: expect.any(Object) }))
-    expect(readMediaFile).not.toHaveBeenCalled()
+    expect(typeof out.timestamp).toBe('string')
+    expect(out.payload).toEqual(DEFAULT_MEDIA_DATA_RESPONSE.payload)
   })
 
-  test('projection-media-read reads file when it exists', async () => {
+  test('projection-media-read returns the active session media snapshot', async () => {
     const svc = new ProjectionService() as any
-    vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+    const media = { type: 1, media: { MediaSongName: 'Song' } }
+    vi.spyOn(svc.sessions, 'active').mockReturnValue({ media, nav: null } as any)
 
-    const h = getHandle('projection-media-read')
-    const out = await h.call(svc)
+    const out = await getHandle('projection-media-read').call(svc)
 
-    expect(readMediaFile).toHaveBeenCalledWith('/tmp/appdata/mediaData.json')
-    expect(out).toEqual({
-      timestamp: 't',
-      payload: {
-        type: 1,
-        media: { MediaSongName: 'Song', MediaPlayStatus: 1 },
-        base64Image: 'img'
-      }
-    })
+    expect(out.payload).toEqual(media)
   })
 
-  test('projection-navigation-read returns default response when service is not started', async () => {
+  test('projection-navigation-read returns the default payload when there is no active session', async () => {
     const svc = new ProjectionService() as any
-    svc.started = false
+    vi.spyOn(svc.sessions, 'active').mockReturnValue(null)
 
-    const h = getHandle('projection-navigation-read')
-    const out = await h.call(svc)
+    const out = await getHandle('projection-navigation-read').call(svc)
 
-    expect(out).toEqual(expect.objectContaining({ payload: expect.any(Object) }))
-    expect(readNavigationFile).not.toHaveBeenCalled()
+    expect(typeof out.timestamp).toBe('string')
+    expect(out.payload).toEqual(DEFAULT_NAVIGATION_DATA_RESPONSE.payload)
   })
 
-  test('projection-navigation-read returns default response when file is missing', async () => {
+  test('projection-navigation-read returns the active session navigation snapshot', async () => {
     const svc = new ProjectionService() as any
-    svc.started = true
-    vi.spyOn(fs, 'existsSync').mockReturnValue(false)
+    const nav = { metaType: 200, navi: null }
+    vi.spyOn(svc.sessions, 'active').mockReturnValue({ media: null, nav } as any)
 
-    const h = getHandle('projection-navigation-read')
-    const out = await h.call(svc)
+    const out = await getHandle('projection-navigation-read').call(svc)
 
-    expect(out).toEqual(expect.objectContaining({ payload: expect.any(Object) }))
-    expect(readNavigationFile).not.toHaveBeenCalled()
-  })
-
-  test('projection-navigation-read reads file when started and file exists', async () => {
-    const svc = new ProjectionService() as any
-    svc.started = true
-    vi.spyOn(fs, 'existsSync').mockReturnValue(true)
-
-    const h = getHandle('projection-navigation-read')
-    const out = await h.call(svc)
-
-    expect(readNavigationFile).toHaveBeenCalledWith('/tmp/appdata/navigationData.json')
-    expect(out).toEqual({
-      timestamp: 't',
-      payload: {
-        metaType: 200,
-        navi: null,
-        rawUtf8: '',
-        error: false
-      }
-    })
+    expect(out.payload).toEqual(nav)
   })
 
   test('uploadIcons reloads disk config and sends 3 icon files', async () => {
@@ -1105,7 +936,7 @@ describe('ProjectionService', () => {
 
     svc.uploadIcons()
 
-    expect(svc.driver.send).toHaveBeenCalledTimes(3)
+    expect(svc.driver.uploadHostIcons).toHaveBeenCalledTimes(1)
   })
 
   test('uploadIcons cancels when icon fields are missing', async () => {
@@ -1118,105 +949,6 @@ describe('ProjectionService', () => {
     expect(svc.driver.send).not.toHaveBeenCalled()
   })
 
-  test('start returns early when no matching usb dongle exists', async () => {
-    const svc = new ProjectionService() as any
-    ;(usb.getDevices as Mock).mockResolvedValue([])
-    svc.audio.setInitialVolumes = vi.fn()
-    svc.audio.resetForSessionStart = vi.fn()
-    svc.resetMediaSnapshot = vi.fn()
-    svc.resetNavigationSnapshot = vi.fn()
-
-    await svc.start()
-
-    expect(svc.audio.setInitialVolumes).toHaveBeenCalled()
-    expect(svc.audio.resetForSessionStart).toHaveBeenCalled()
-    expect(svc.resetMediaSnapshot).toHaveBeenCalledWith('session-start')
-    expect(svc.resetNavigationSnapshot).toHaveBeenCalledWith('session-start')
-    expect(svc.started).toBe(false)
-  })
-
-  test('start initialises webusb, driver and marks service started', async () => {
-    const svc = new ProjectionService() as any
-    const open = vi.fn(async () => undefined)
-    ;(usb.getDevices as Mock).mockResolvedValue([{ vendorId: 0x1314, productId: 0x1520, open }])
-
-    await svc.start()
-
-    expect(open).toHaveBeenCalled()
-    expect(svc.webUsbDevice).toEqual(expect.objectContaining({ vendorId: 0x1314 }))
-    expect(svc.driver.initialise).toHaveBeenCalled()
-    expect(svc.driver.start).toHaveBeenCalled()
-    expect(svc.started).toBe(true)
-
-    // Clear the pairTimeout to avoid open handles in Jest worker
-    svc.clearTimeouts()
-  })
-
-  test('start sets pendingStartupConnectTarget on driver when configured', async () => {
-    const svc = new ProjectionService() as any
-    ;(usb.getDevices as Mock).mockResolvedValue([
-      { vendorId: 0x1314, productId: 0x1520, open: vi.fn(async () => undefined) }
-    ])
-    svc.pendingStartupConnectTarget = 'my-target'
-
-    await svc.start()
-
-    expect(svc.driver.setPendingStartupConnectTarget).toHaveBeenCalledWith('my-target')
-    expect(svc.started).toBe(true)
-
-    svc.clearTimeouts()
-  })
-
-  test('start clears btMacAddr from boxInfo when boxInfo is a record', async () => {
-    const svc = new ProjectionService() as any
-    ;(usb.getDevices as Mock).mockResolvedValue([])
-    svc.boxInfo = { uuid: 'u1', MFD: 'm1', productType: 'A15W', btMacAddr: 'AA:BB:CC' }
-    svc.audio.setInitialVolumes = vi.fn()
-    svc.audio.resetForSessionStart = vi.fn()
-    svc.resetMediaSnapshot = vi.fn()
-    svc.resetNavigationSnapshot = vi.fn()
-
-    await svc.start()
-
-    expect(svc.boxInfo.btMacAddr).toBe('')
-  })
-
-  test('start pairTimeout callback sends wifiPair command after 15 seconds', async () => {
-    vi.useFakeTimers()
-
-    const svc = new ProjectionService() as any
-    ;(usb.getDevices as Mock).mockResolvedValue([
-      { vendorId: 0x1314, productId: 0x1520, open: vi.fn(async () => undefined) }
-    ])
-
-    await svc.start()
-
-    expect(svc.started).toBe(true)
-    const sendCallsBefore = (svc.driver.send as Mock).mock.calls.length
-
-    vi.advanceTimersByTime(15000)
-
-    expect((svc.driver.send as Mock).mock.calls.length).toBeGreaterThan(sendCallsBefore)
-
-    vi.useRealTimers()
-  })
-
-  test('start closes webUsbDevice and leaves started=false when driver init fails', async () => {
-    const svc = new ProjectionService() as any
-    const close = vi.fn(async () => undefined)
-    ;(usb.getDevices as Mock).mockResolvedValue([
-      { vendorId: 0x1314, productId: 0x1520, open: vi.fn(async () => undefined), close }
-    ])
-    svc.driver.initialise = vi.fn(async () => {
-      throw new Error('init fail')
-    })
-
-    await svc.start()
-
-    expect(close).toHaveBeenCalled()
-    expect(svc.started).toBe(false)
-    expect(svc.webUsbDevice).toBeNull()
-  })
   test('dongle-fw check emits start/done events and returns shaped success result', async () => {
     const svc = new ProjectionService() as any
     const send = vi.fn()
@@ -2211,24 +1943,20 @@ describe('ProjectionService', () => {
     vi.useRealTimers()
   })
 
-  test('driver Unplugged message emits unplugged, resets navigation and stops service', async () => {
+  test('dongle phone-disconnected emits unplugged and resets navigation', async () => {
     const svc = new ProjectionService() as any
     const send = vi.fn()
     svc.webContents = { send }
-    svc.shuttingDown = false
-    svc.stopping = false
-    svc.stop = vi.fn(async () => undefined)
-    svc.resetNavigationSnapshot = vi.fn()
+    svc.navStore.reset = vi.fn()
     svc.lastPluggedPhoneType = PhoneType.AndroidAuto
     svc.aaPlaybackInferred = 2
 
-    svc.driver.emit('message', new Unplugged())
+    svc.drivers.getDongle().emit('phone-disconnected')
 
     expect(svc.lastPluggedPhoneType).toBeUndefined()
     expect(svc.aaPlaybackInferred).toBe(1)
     expect(send).toHaveBeenCalledWith('projection-event', { type: 'unplugged' })
-    expect(svc.resetNavigationSnapshot).toHaveBeenCalledWith('unplugged')
-    expect(svc.stop).toHaveBeenCalledTimes(1)
+    expect(svc.navStore.reset).toHaveBeenCalledWith('phone-disconnect')
   })
 
   test('driver BoxUpdateProgress message emits fw upload progress', async () => {
@@ -2279,7 +2007,7 @@ describe('ProjectionService', () => {
     })
 
     expect(svc.lastDongleInfoEmitKey).toBe('')
-    expect(svc.driver.send).toHaveBeenCalledTimes(1)
+    expect(svc.driver.requestKeyframe).toHaveBeenCalledTimes(1)
   })
 
   test('driver BoxUpdateState terminal failure emits upload:error', async () => {
@@ -2328,7 +2056,7 @@ describe('ProjectionService', () => {
       type: 'command',
       message: msg
     })
-    expect(svc.driver.send).toHaveBeenCalledTimes(1)
+    expect(svc.driver.requestClusterFocus).toHaveBeenCalledTimes(1)
   })
 
   test('uploadIcons logs warning when config.json reload throws', async () => {
@@ -2350,7 +2078,7 @@ describe('ProjectionService', () => {
       expect.stringContaining('failed to reload config.json'),
       expect.any(Error)
     )
-    expect(svc.driver.send).toHaveBeenCalledTimes(3)
+    expect(svc.driver.uploadHostIcons).toHaveBeenCalledTimes(1)
   })
 
   test('uploadIcons swallows errors in outer catch', async () => {
@@ -2364,7 +2092,7 @@ describe('ProjectionService', () => {
         dongleIcon256: Buffer.from('256').toString('base64')
       }) as any
     )
-    svc.driver.send = vi.fn(function () {
+    svc.driver.uploadHostIcons = vi.fn(function () {
       throw new Error('send failed')
     })
 

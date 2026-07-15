@@ -98,9 +98,10 @@ export const SettingsLayout = ({
     >
       <Box
         sx={{
-          display: 'grid',
-          gridTemplateColumns: `${px.slotLeftW}px 1fr ${px.slotRightW}px`,
+          position: 'relative',
+          display: 'flex',
           alignItems: 'center',
+          justifyContent: 'space-between',
           height: `${px.headerH}px`,
           px: '0.5rem',
           boxSizing: 'border-box',
@@ -113,7 +114,8 @@ export const SettingsLayout = ({
             height: '100%',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'flex-start'
+            justifyContent: 'flex-start',
+            flex: '0 0 auto'
           }}
         >
           {showBack ? (
@@ -136,18 +138,20 @@ export const SettingsLayout = ({
             >
               <ArrowBackIosOutlinedIcon sx={{ fontSize: `${px.iconPx}px` }} />
             </IconButton>
-          ) : (
-            <Box sx={{ width: `${px.slotLeftW}px`, height: '100%' }} />
-          )}
+          ) : null}
         </Box>
 
         <Box
           sx={{
-            height: '100%',
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            left: `${Math.max(px.slotLeftW, px.slotRightW)}px`,
+            right: `${Math.max(px.slotLeftW, px.slotRightW)}px`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            minWidth: 0
+            pointerEvents: 'none'
           }}
         >
           <Typography
@@ -172,7 +176,8 @@ export const SettingsLayout = ({
             height: '100%',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'flex-end'
+            justifyContent: 'flex-end',
+            flex: '0 0 auto'
           }}
         >
           {showRestart ? (
@@ -204,9 +209,7 @@ export const SettingsLayout = ({
                 <RestartAltOutlinedIcon sx={{ fontSize: `${px.iconPx}px` }} />
               </Box>
             </IconButton>
-          ) : (
-            <Box sx={{ width: `${px.slotRightW}px`, height: '100%' }} />
-          )}
+          ) : null}
         </Box>
       </Box>
 
@@ -221,7 +224,7 @@ export const SettingsLayout = ({
           touchAction: 'pan-y'
         }}
       >
-        <Stack spacing={0} sx={{ minHeight: '100%', padding: '0 0 0 0.5rem' }}>
+        <Stack spacing={0} sx={{ minHeight: '100%', padding: '0 0.5rem' }}>
           {children}
         </Stack>
       </Box>

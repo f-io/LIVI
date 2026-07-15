@@ -27,9 +27,10 @@ export function useSmartSettings<T extends Record<string, unknown>>(
   const saveSettings = useLiviStore((s) => s.saveSettings)
   const restartBaseline = useLiviStore((s) => s.restartBaseline)
   const markRestartBaseline = useLiviStore((s) => s.markRestartBaseline)
-  const isDongleConnected = useStatusStore((s) => s.isDongleConnected || s.isAaActive)
-  const isAaActive = useStatusStore((s) => s.isAaActive)
+  const isDongleHardwarePresent = useStatusStore((s) => s.isDongleHardwarePresent)
+  const activeProtocol = useStatusStore((s) => s.activeProtocol)
   const wirelessAaEnabled = useLiviStore((s) => Boolean(s.settings?.wirelessAaEnabled))
+  const wirelessCpEnabled = useLiviStore((s) => Boolean(s.settings?.wirelessCpEnabled))
 
   useEffect(() => {
     setState({ ...initial })
@@ -88,11 +89,18 @@ export function useSmartSettings<T extends Record<string, unknown>>(
   const restart = async () => {
     if (!needsRestart) return false
 
-    if (wirelessAaEnabled || isAaActive) {
+    const nativeOrWireless =
+      wirelessAaEnabled ||
+      wirelessCpEnabled ||
+      activeProtocol === 'androidauto' ||
+      activeProtocol === 'carplay'
+
+    if (nativeOrWireless) {
       await window.projection.ipc.restart()
-    } else {
-      if (!isDongleConnected) return false
+    } else if (isDongleHardwarePresent) {
       await window.projection.usb.forceReset()
+    } else {
+      return false
     }
 
     markRestartBaseline()
@@ -105,7 +113,6 @@ export function useSmartSettings<T extends Record<string, unknown>>(
     state,
     isDirty,
     needsRestart,
-    isDongleConnected,
     handleFieldChange,
     resetState,
     restart,

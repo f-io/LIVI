@@ -26,7 +26,7 @@ export default class Microphone extends EventEmitter {
     this.device = device
   }
 
-  start(decodeType = 5): void {
+  start(decodeType = 5, override?: { frequency: number; channels: number }): void {
     this.stop()
 
     if (
@@ -44,7 +44,10 @@ export default class Microphone extends EventEmitter {
       return
     }
 
-    const format = Microphone.resolveFormat(decodeType)
+    const resolved = Microphone.resolveFormat(decodeType)
+    const rate = override ? override.frequency : resolved.frequency
+    const channels = override ? override.channels : resolved.channel
+    const gstFormat = override ? 'S16LE' : Microphone.toGstRawFormat(resolved)
     this.currentDecodeType = decodeType
 
     const cmd = path.join(
@@ -70,7 +73,7 @@ export default class Microphone extends EventEmitter {
       '!',
       'audioresample',
       '!',
-      `audio/x-raw,format=${Microphone.toGstRawFormat(format)},rate=${format.frequency},channels=${format.channel}`,
+      `audio/x-raw,format=${gstFormat},rate=${rate},channels=${channels}`,
       '!',
       'fdsink',
       'fd=1'
@@ -143,10 +146,10 @@ export default class Microphone extends EventEmitter {
       console.debug('[Microphone] Recording started', {
         ts: Date.now(),
         decodeType: this.currentDecodeType,
-        frequency: format.frequency,
-        channel: format.channel,
-        bitDepth: format.bitDepth,
-        format: format.format,
+        frequency: rate,
+        channel: channels,
+        bitDepth: 16,
+        format: 's16le',
         device:
           process.platform === 'linux'
             ? 'pulse-default'

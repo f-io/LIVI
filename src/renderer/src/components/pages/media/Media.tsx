@@ -3,13 +3,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { Controls, ProgressBar } from './components'
 import { FFTSpectrum } from './components/createFFTSpectrum'
 import { EXTRA_SMALL_SCREEN, MIN_SCREEN_SIZE_FOR_ATRWORK, MIN_TEXT_COL } from './constants'
-import {
-  // useBelowNavTop,
-  useElementSize,
-  useMediaState,
-  useOptimisticPlaying,
-  usePressFeedback
-} from './hooks'
+import { useElementSize, useMediaState, useOptimisticPlaying, usePressFeedback } from './hooks'
 import { MediaEventType, UsbEvent } from './types'
 import { clamp } from './utils'
 import { flash } from './utils/flash'
@@ -23,7 +17,6 @@ type MediaProps = { forceHydrate?: boolean }
 export const Media = ({ forceHydrate = false }: MediaProps = {}) => {
   const isStreaming = useStatusStore((s: { isStreaming: boolean }) => s.isStreaming)
 
-  // const top = useBelowNavTop()
   const [rootRef, { w, h }] = useElementSize<HTMLDivElement>()
   const { snap, livePlayMs } = useMediaState(forceHydrate || isStreaming)
 
@@ -156,17 +149,17 @@ export const Media = ({ forceHydrate = false }: MediaProps = {}) => {
     return () => window.removeEventListener('car-media-key', handler as EventListener)
   }, [bump])
 
-  // Clear overrides on unplug
+  // Clear overrides on session change
   useEffect(() => {
-    const usbHandler = (_evt: unknown, ...args: unknown[]) => {
+    const handler = (_evt: unknown, ...args: unknown[]) => {
       const data = (args[0] ?? {}) as UsbEvent
-      if (data?.type === 'unplugged') {
+      if (data?.type === 'media-reset') {
         clearOverride()
         resetPress()
         setShowFft(false)
       }
     }
-    const unsubscribe = window.projection.usb.listenForEvents(usbHandler)
+    const unsubscribe = window.projection.ipc.onEvent(handler)
     return unsubscribe
   }, [clearOverride, resetPress])
 

@@ -39,7 +39,7 @@ export const Cluster: React.FC<ClusterProps> = ({ visible, showLoadingPlaceholde
   const boxInfoRaw = useLiviStore((s) => s.boxInfo)
   const settings = useLiviStore((s) => s.settings)
   const isStreaming = useStatusStore((s) => s.isStreaming)
-  const isAaActive = useStatusStore((s) => s.isAaActive)
+  const activeProtocol = useStatusStore((s) => s.activeProtocol)
   const clusterDashActive = useStatusStore((s) => s.clusterDashActive)
 
   const [rendererError] = useState<string | null>(null)
@@ -49,8 +49,8 @@ export const Cluster: React.FC<ClusterProps> = ({ visible, showLoadingPlaceholde
   const rootRef = useRef<HTMLDivElement>(null)
 
   const supportsNaviScreen = useMemo(() => {
-    // AA-native exposes a cluster sink (ch=19, display_type=CLUSTER) when any cluster display is active
-    if (isAaActive) return true
+    // AA-native and CarPlay-native expose a cluster sink (alt screen) when a cluster display is active
+    if (activeProtocol === 'androidauto' || activeProtocol === 'carplay') return true
 
     const box = parseBoxInfo(boxInfoRaw)
     if (!box) return false
@@ -70,7 +70,7 @@ export const Cluster: React.FC<ClusterProps> = ({ visible, showLoadingPlaceholde
     }
 
     return false
-  }, [boxInfoRaw, isAaActive])
+  }, [boxInfoRaw, activeProtocol])
 
   // Request the cluster (stream + plane) ONLY while the cluster view is actually shown.
   const showClusterRef = useRef(showCluster)

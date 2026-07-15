@@ -71,6 +71,19 @@ export class ControlChannel extends EventEmitter {
         this._onAudioFocusRequest(payload)
         break
 
+      case CTRL_MSG.BATTERY_STATUS_NOTIFICATION:
+        try {
+          const b = decode(this._proto.BatteryStatusNotification, payload)
+          this.emit('battery', {
+            level: typeof b['batteryLevel'] === 'number' ? b['batteryLevel'] : undefined,
+            critical: b['criticalBattery'] === true,
+            timeRemaining: typeof b['timeRemainingS'] === 'number' ? b['timeRemainingS'] : undefined
+          })
+        } catch (e) {
+          console.warn('[ControlChannel] battery parse error:', e)
+        }
+        break
+
       case CTRL_MSG.NAVIGATION_FOCUS_REQUEST:
         this._onNavigationFocusRequest(payload)
         break
@@ -131,13 +144,13 @@ export class ControlChannel extends EventEmitter {
   private _onServiceDiscoveryRequest(payload: Buffer): void {
     try {
       const req = decode(this._proto.ServiceDiscoveryRequest, payload)
-      // aasdk ServiceDiscoveryRequest fields (after camelCase conversion):
-      //   smallIcon, mediumIcon, largeIcon (bytes), labelText, deviceName, phoneInfo
+      // ServiceDiscoveryRequest: device_name (4) = the phone's own name, device_brand
+      // (5) = brand/model, phone_info (6) = session id.
       const devName = (req['deviceName'] ?? '?') as string
-      const label = (req['labelText'] ?? '?') as string
+      const brand = (req['deviceBrand'] ?? '?') as string
       const phoneInfo = req['phoneInfo'] as Record<string, unknown> | undefined
       console.log(
-        `[ControlChannel] ServiceDiscoveryRequest device="${devName}" label="${label}" phone_info=${JSON.stringify(phoneInfo ?? {})}`
+        `[ControlChannel] ServiceDiscoveryRequest device_name="${devName}" brand="${brand}" phone_info=${JSON.stringify(phoneInfo ?? {})}`
       )
       this.emit('service-discovery-request', req)
     } catch (e) {

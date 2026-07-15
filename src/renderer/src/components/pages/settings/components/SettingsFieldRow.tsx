@@ -2,8 +2,8 @@ import { Typography } from '@mui/material'
 import type { Config } from '@shared/types'
 import { useTranslation } from 'react-i18next'
 import { SettingsNode } from '../../../../routes'
+import { Devices } from '../../devices'
 import { getValueByPath } from '../utils'
-import { BtDeviceList } from './btDeviceList/BtDeviceList'
 import { PosSensitiveList } from './posSensitiveList/PosSensitiveList'
 import { SettingsFieldControl } from './SettingsFieldControl'
 import { SettingsItemRow } from './settingsItemRow'
@@ -45,7 +45,7 @@ export const SettingsFieldRow = <T, K>({
   }
 
   if (node.type === 'btDeviceList') {
-    return <BtDeviceList />
+    return <Devices />
   }
 
   if (onClick) {

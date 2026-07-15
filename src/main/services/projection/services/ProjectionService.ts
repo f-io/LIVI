@@ -7,26 +7,21 @@ import type { Config, DevListEntry } from '@shared/types'
 import { PhoneWorkMode } from '@shared/types'
 import { isInputCommand } from '@shared/types/InputCommand'
 import type { ClusterScreen, NavLocale } from '@shared/utils'
-import {
-  aaContentArea,
-  clusterTargetScreens,
-  isClusterDisplayed,
-  translateNavigation
-} from '@shared/utils'
+import { aaContentArea, clusterTargetScreens, isClusterDisplayed } from '@shared/utils'
 import { app, WebContents, webContents } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { usb } from 'usb'
 import {
   type AudioDeviceMonitorHandle,
   startAudioDeviceMonitor
 } from '../../audio/AudioDeviceEnumerator'
 import { StatusFileWriter } from '../../status/StatusFileWriter'
-import { isCarlinkitDongle } from '../../usb/constants'
 import { GstVideo, type GstVideoCodec, probeGstCodecs } from '../../video/GstVideo'
 import { AaBtSockClient } from '../driver/aa/AaBtSockClient'
-import { AaBluetoothSupervisor } from '../driver/aa/aaBluetoothSupervisor'
-import { AaDriver } from '../driver/aa/aaDriver'
+import type { AaSession } from '../driver/aa/AaSession'
+import type { CpManager } from '../driver/cp/CpManager'
+import type { CpSession } from '../driver/cp/CpSession'
+import { HelperSupervisor } from '../driver/helper/helperSupervisor'
 import type { IPhoneDriver } from '../driver/IPhoneDriver'
 import { ProjectionDriverManager } from '../drivers/ProjectionDriverManager'
 import { type ProjectionIpcHost, registerProjectionIpc } from '../ipc'
@@ -40,44 +35,39 @@ import {
   DEFAULT_CONFIG,
   DongleDriver,
   decodeTypeMap,
-  FileAddress,
   GnssData,
+  MediaData,
   MediaType,
   type Message,
   MessageType,
-  MetaData,
+  NavigationData,
   PhoneType,
   Plugged,
-  SendAudio,
-  SendCloseDongle,
-  SendCommand,
-  SendDisconnectPhone,
-  SendFile,
   SoftwareVersion,
-  Unplugged,
   VideoData
 } from '../messages'
 import { TransportArbiter } from '../transport/TransportArbiter'
-import type { ConnectionPreference, Transport } from '../transport/types'
+import type { Transport } from '../transport/types'
+import { CodecCapabilityService } from './CodecCapabilityService'
 import {
   APP_START_TS,
   DEFAULT_MEDIA_DATA_RESPONSE,
   DEFAULT_NAVIGATION_DATA_RESPONSE,
   DEVTOOLS_IP_CANDIDATES
 } from './constants'
+import { DeviceController } from './DeviceController'
+import { DeviceRegistry, type DeviceView } from './DeviceRegistry'
 import { FirmwareUpdateService } from './FirmwareUpdateService'
+import { MediaStore } from './MediaStore'
+import { NavStore } from './NavStore'
 import { ProjectionAudio } from './ProjectionAudio'
-import {
-  type PendingStartupConnectTarget,
-  PersistedMediaPayload,
-  PersistedNavigationPayload
-} from './types'
-import { asDomUSBDevice } from './utils/asDomUSBDevice'
-import { normalizeNavigationPayload } from './utils/normalizeNavigation'
-import { readMediaFile } from './utils/readMediaFile'
-import { readNavigationFile } from './utils/readNavigationFile'
+import { type ProjectionSession, SessionManager, type SessionTransport } from './SessionManager'
+import { type PendingStartupConnectTarget, type ProjectionEvent } from './types'
+import { isPhoneLikeCod } from './utils/isPhoneLikeCod'
 
 type Device = USBDevice
+
+const APPLE_VENDOR_ID = 0x05ac
 
 type VolumeConfig = {
   audioVolume?: number
@@ -88,12 +78,6 @@ type VolumeConfig = {
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === 'object' && !Array.isArray(v)
-}
-
-// 0x04 = Audio/Video CoD major class
-function isPhoneLikeCod(cod: number | undefined): boolean {
-  if (typeof cod !== 'number' || cod <= 0) return true
-  return ((cod >> 8) & 0x1f) !== 0x04
 }
 
 /** appearanceMode → initial NIGHT_DATA bit for AA. 'auto' = no override (undefined). */
@@ -114,27 +98,55 @@ export class ProjectionService {
   private get driver(): IPhoneDriver {
     return this.drivers.getActive()
   }
-  private get aaDriver(): AaDriver | null {
-    return this.drivers.getAa()
-  }
   private get dongleDriver(): DongleDriver {
     return this.drivers.getDongle()
   }
-  public getAaDriver(): AaDriver | null {
-    return this.drivers.getAa()
+  private activeAaSession(): AaSession | null {
+    const a = this.sessions.active()
+    return a?.protocol === 'androidauto' ? (a.driver as AaSession) : null
+  }
+  private isActiveAaWired(): boolean {
+    const a = this.sessions.active()
+    return a?.protocol === 'androidauto' && a.transport === 'usb'
+  }
+  private isActiveCpWired(): boolean {
+    const a = this.sessions.active()
+    return a?.protocol === 'carplay' && a.transport === 'usb'
+  }
+  public getAaDriver(): AaSession | null {
+    return this.activeAaSession()
   }
   public getDongleDriver(): DongleDriver {
     return this.drivers.getDongle()
   }
-  private hevcSupported = false
-  private vp9Supported = false
-  private av1Supported = false
-  private webUsbDevice: Device | null = null
+  public getCpDriver(): CpManager | null {
+    return this.drivers.getCpManager()
+  }
+  private readonly codecCaps = new CodecCapabilityService((codec, supported) => {
+    if (codec === 'hevc') {
+      this.drivers.setAaHevcSupported(supported)
+      this.drivers.setCpHevcSupported(supported)
+    } else if (codec === 'vp9') {
+      this.drivers.setAaVp9Supported(supported)
+      this.drivers.setCpVp9Supported(supported)
+    } else {
+      this.drivers.setAaAv1Supported(supported)
+      this.drivers.setCpAv1Supported(supported)
+    }
+  })
+
+  private readonly mediaStore = new MediaStore({
+    emit: (p) => this.emitProjectionEvent(p),
+    getPlaybackInferred: () => this.aaPlaybackInferred,
+    getLastPhoneType: () => this.lastPluggedPhoneType
+  })
+  private readonly navStore = new NavStore({
+    emit: (p) => this.emitProjectionEvent(p),
+    getLanguage: () => this.config.language,
+    isStarted: () => this.started
+  })
   private webContents: WebContents | null = null
   private config: Config = DEFAULT_CONFIG as Config
-  private pairTimeout: NodeJS.Timeout | null = null
-  private frameInterval: NodeJS.Timeout | null = null
-  private videoFlowing = false
   private startRetryTimer: NodeJS.Timeout | null = null
   private startRetryAttempt = 0
 
@@ -161,12 +173,15 @@ export class ProjectionService {
   } | null = null
   private gstVideoClusters = new Map<ClusterScreen, GstVideo>()
   private gstVideoClusterCodec: GstVideoCodec = 'h264'
+  private lastMainCodecByDriver = new Map<IPhoneDriver, GstVideoCodec>()
+  private lastClusterCodecByDriver = new Map<IPhoneDriver, GstVideoCodec>()
   private clusterVisible = false
   private clusterStreamActive: boolean | null = null
   private dongleFwVersion?: string
   private boxInfo?: unknown
   private hostDevList: DevListEntry[] = []
   private dongleDevList: DevListEntry[] = []
+  private dongleConnectedMac = ''
   private hostPairedRaw = ''
   private donglePairedRaw = ''
   private lastDongleInfoEmitKey = ''
@@ -174,27 +189,239 @@ export class ProjectionService {
   private firmware = new FirmwareUpdateService()
   private readonly aaBtSock = new AaBtSockClient()
   private aaBtSubscription: { close: () => void } | null = null
+  private aaBtNameByMac = new Map<string, string>()
+  private connectedAaBtMac = ''
   private audioMonitor: AudioDeviceMonitorHandle | null = null
   private readonly statusFile = new StatusFileWriter()
 
-  private aaBtSupervisor: AaBluetoothSupervisor | null = null
+  private helperSupervisor: HelperSupervisor | null = null
+  private btEnableKey = ''
+  private btAaWireless = false
+  private btCpWireless = false
+  private readonly deviceRegistry = new DeviceRegistry()
+  private sessions!: SessionManager
+  private readonly deviceController = new DeviceController({
+    deviceRegistry: this.deviceRegistry,
+    sessions: () => this.sessions,
+    getDongleSession: () => this.sessions.byDriver(this.drivers.getDongle()),
+    aaBtSock: this.aaBtSock,
+    getAaBtName: (mac) => this.aaBtNameByMac.get(mac),
+    getAaBtMac: () => this.connectedAaBtMac,
+    getDongleConnectedMac: () => this.dongleConnectedMac,
+    getDongleDevList: () => this.dongleDevList,
+    emit: (p) => this.emitProjectionEvent(p)
+  })
+  private aaBtActive = false
+  private cpActive = false
   private wirelessPhoneInRange = false
   private btInitialQueryDone = false
   private isSwitching = false
   private sessionActiveSent: boolean | null = null
 
-  private readonly onAaConnected = (): void => {
-    this.refreshAaBtPairedList().catch(() => {})
+  private aaTransport(session: AaSession): SessionTransport {
+    return session.isWiredMode() ? 'usb' : 'wifi'
   }
-  private readonly onAaDisconnected = (): void => {
+  private maybeAutoActivate(s: ProjectionSession): void {
+    if (!this.sessions.active()) this.sessions.activate(s.index)
+  }
+  private readonly onAaConnected = (session: AaSession): void => {
     this.refreshAaBtPairedList().catch(() => {})
-
-    if (this.started && !this.stopping && !this.isStopping && !this.shuttingDown) {
-      console.log('[ProjectionService] AA disconnected externally — teardown + re-arbitrate')
-      this.stop()
-        .then(() => this.autoStartIfNeeded())
-        .catch((e) => console.warn('[ProjectionService] teardown after AA disconnect threw', e))
+    this.maybeAutoActivate(
+      this.sessions.upsert(session, 'androidauto', this.aaTransport(session), {})
+    )
+    this.onPhoneConnected(PhoneType.AndroidAuto)
+  }
+  private readonly onAaDisconnected = (session: AaSession): void => {
+    this.refreshAaBtPairedList().catch(() => {})
+    const closed = this.sessions.byDriver(session)
+    this.sessions.closeByDriver(session)
+    if (closed) {
+      this.deviceRegistry.clearPresence(closed.device)
     }
+    this.lastMainCodecByDriver.delete(session)
+    this.lastClusterCodecByDriver.delete(session)
+    // Only tear down the shared audio + media when no session is left active. A held phone
+    // dropping must not reset the ACTIVE phone's audio/UI; the active-session change (or
+    // teardown-to-idle) owns that.
+    if (!this.sessions.active()) {
+      try {
+        this.audio.resetForSessionStop()
+      } catch (e) {
+        console.warn('[ProjectionService] audio reset on AA disconnect threw (ignored)', e)
+      }
+      this.mediaStore.reset('aa-session-end')
+    }
+    this.onPhoneDisconnected()
+  }
+
+  private readonly onCpConnected = (session: CpSession): void => {
+    this.maybeAutoActivate(
+      this.sessions.upsert(session, 'carplay', 'wifi', {
+        controllerId: session.getControllerId() ?? undefined
+      })
+    )
+    this.onPhoneConnected(PhoneType.CarPlay)
+  }
+  private readonly onCpDisconnected = (session: CpSession): void => {
+    const closed = this.sessions.byDriver(session)
+    this.sessions.closeByDriver(session)
+    if (closed) {
+      this.deviceRegistry.clearPresence(closed.device)
+    }
+    this.lastMainCodecByDriver.delete(session)
+    this.lastClusterCodecByDriver.delete(session)
+    this.onPhoneDisconnected()
+  }
+
+  // Registry-level helper presence (hostapd wifi + Bonjour/carkit device): tracks
+  // phones in range independent of any projecting session.
+  private onCpHelperPresence(p: Record<string, unknown>): void {
+    const ip = typeof p.ip === 'string' ? p.ip : ''
+    if (p.kind === 'wifi') {
+      const wifiMac = typeof p.wifiMac === 'string' ? p.wifiMac : undefined
+      const up = p.connected === true
+      this.deviceRegistry.noteLink({ wifiMac, ip: ip || undefined }, 'wifi', up)
+      if (!up) this.sessions.closeByDeviceOnTransport({ wifiMac, ip: ip || undefined }, 'wifi')
+      return
+    }
+    if (p.kind === 'device') {
+      const btMac = typeof p.btMac === 'string' ? p.btMac : undefined
+      const usbUdid = typeof p.usbUdid === 'string' ? p.usbUdid : undefined
+      this.deviceRegistry.noteDevice({
+        btMac,
+        ip: ip || undefined,
+        usbUdid,
+        name: typeof p.name === 'string' ? p.name : undefined,
+        protocol: 'carplay',
+        transport: usbUdid ? 'usb' : 'wifi'
+      })
+    }
+    if (p.kind === 'device-gone') {
+      const usbUdid = typeof p.usbUdid === 'string' ? p.usbUdid : undefined
+      if (!usbUdid) return
+      this.sessions.closeByDeviceOnTransport({ usbUdid }, 'usb')
+    }
+  }
+
+  private onCpPresence(session: CpSession, p: Record<string, unknown>): void {
+    const ip = typeof p.ip === 'string' ? p.ip : ''
+    switch (p.kind) {
+      case 'device': {
+        const btMac = typeof p.btMac === 'string' ? p.btMac : undefined
+        const usbUdid = typeof p.usbUdid === 'string' ? p.usbUdid : undefined
+        const wifiMacRaw = typeof p.wifiMac === 'string' ? p.wifiMac : undefined
+        // Wiredness follows the phone's udid, sticky across a later wifi-only device-info presence.
+        const wired =
+          !!usbUdid ||
+          this.sessions.byIdentity('carplay', {
+            btMac,
+            wifiMac: wifiMacRaw,
+            usbUdid,
+            ip: ip || undefined
+          })?.transport === 'usb'
+        const wifiMac = wired ? undefined : wifiMacRaw
+        this.deviceRegistry.noteDevice({
+          btMac,
+          wifiMac,
+          ip: ip || undefined,
+          usbUdid,
+          name: typeof p.name === 'string' ? p.name : undefined,
+          model: typeof p.model === 'string' ? p.model : undefined,
+          protocol: 'carplay',
+          transport: wired ? 'usb' : 'wifi'
+        })
+        // A session born at iAP2 identification (socket-less metadata driver) is taken over
+        // by this AirPlay transport: hand it the identity + accumulated media/nav, then drop
+        // the placeholder, so the phone stays ONE session, not two.
+        const born = this.sessions.byIdentity('carplay', {
+          btMac,
+          wifiMac,
+          usbUdid,
+          ip: ip || undefined
+        })
+        if (born && born.driver !== session) {
+          const placeholder = born.driver
+          this.sessions.reassignDriver(placeholder, session)
+          void placeholder.close()
+        }
+        this.maybeAutoActivate(
+          this.sessions.upsert(session, 'carplay', 'wifi', {
+            btMac,
+            wifiMac,
+            usbUdid,
+            ip: ip || undefined
+          })
+        )
+        break
+      }
+      case 'active': {
+        const s = this.sessions.byDriver(session)
+        if (s) this.maybeAutoActivate(s)
+        break
+      }
+      case 'status': {
+        const ids = this.sessions.byDriver(session)?.device ?? {}
+        this.deviceRegistry.noteStatus(ids, {
+          batteryLevel: typeof p.batteryLevel === 'number' ? p.batteryLevel : undefined,
+          batteryCharging: typeof p.batteryCharging === 'boolean' ? p.batteryCharging : undefined,
+          signalStrength: typeof p.signalStrength === 'number' ? p.signalStrength : undefined,
+          carrierName: typeof p.carrierName === 'string' ? p.carrierName : undefined
+        })
+        break
+      }
+    }
+  }
+
+  private onAaPresence(session: AaSession, p: Record<string, unknown>): void {
+    const ip = typeof p.ip === 'string' ? p.ip : ''
+    if (p.kind === 'status') {
+      const ids = this.sessions.byDriver(session)?.device ?? {}
+      this.deviceRegistry.noteStatus(ids, {
+        batteryLevel: typeof p.batteryLevel === 'number' ? p.batteryLevel : undefined,
+        batteryCritical: typeof p.batteryCritical === 'boolean' ? p.batteryCritical : undefined,
+        batteryTimeRemaining:
+          typeof p.batteryTimeRemaining === 'number' ? p.batteryTimeRemaining : undefined,
+        signalStrength: typeof p.signalStrength === 'number' ? p.signalStrength : undefined
+      })
+      return
+    }
+    if (p.kind !== 'device') return
+    const wired = session.isWiredMode()
+    const instanceId = typeof p.instanceId === 'string' ? p.instanceId : undefined
+    const wifiMac = !wired && typeof p.wifiMac === 'string' ? p.wifiMac : undefined
+    const btMac =
+      !wired &&
+      this.connectedAaBtMac &&
+      !this.cpClaimedBtMacs().has(this.connectedAaBtMac.toUpperCase())
+        ? this.connectedAaBtMac
+        : undefined
+    this.deviceRegistry.noteDevice({
+      btMac,
+      instanceId,
+      wifiMac,
+      name: typeof p.name === 'string' && p.name ? p.name : undefined,
+      model: typeof p.model === 'string' && p.model ? p.model : undefined,
+      ip: ip || undefined,
+      protocol: 'androidauto',
+      transport: wired ? 'usb' : 'wifi'
+    })
+    this.maybeAutoActivate(
+      this.sessions.upsert(session, 'androidauto', this.aaTransport(session), {
+        btMac,
+        instanceId,
+        wifiMac,
+        ip: ip || undefined
+      })
+    )
+  }
+
+  private disposeGstPlanes(): void {
+    this.gstVideo?.dispose()
+    this.gstVideo = null
+    this.gstVideoCodec = 'h264'
+    for (const plane of this.gstVideoClusters.values()) plane.dispose()
+    this.gstVideoClusters.clear()
+    this.gstVideoClusterCodec = 'h264'
   }
 
   // Hydration
@@ -251,22 +478,16 @@ export class ProjectionService {
 
     // Seed AA's initial NIGHT_MODE
     if (next.appearanceMode !== prev?.appearanceMode) {
-      this.aaDriver?.setInitialNightMode(deriveInitialNightMode(next.appearanceMode))
-    }
-
-    const prefChanged =
-      (prev as { connectionPreference?: unknown })?.connectionPreference !==
-      (next as { connectionPreference?: unknown })?.connectionPreference
-    if (prefChanged) {
-      this.arbiter.resetNativeProbeDefer()
-      this.emitTransportState()
+      this.drivers.setAaInitialNightMode(deriveInitialNightMode(next.appearanceMode))
     }
 
     if (
-      typeof next.wirelessAaEnabled === 'boolean' &&
-      next.wirelessAaEnabled !== prev?.wirelessAaEnabled
+      (typeof next.wirelessAaEnabled === 'boolean' &&
+        next.wirelessAaEnabled !== prev?.wirelessAaEnabled) ||
+      (typeof next.wirelessCpEnabled === 'boolean' &&
+        next.wirelessCpEnabled !== prev?.wirelessCpEnabled)
     ) {
-      this.syncAaBtSupervisor()
+      this.syncHelperSupervisor()
       this.emitTransportState()
     }
 
@@ -279,42 +500,85 @@ export class ProjectionService {
     }
   }
 
-  private syncAaBtSupervisor(): void {
-    // The root BT/Wi-Fi helper is only needed for wireless AA (BlueZ pairing + hostapd/dnsmasq).
-    //Supervisor stays off while wireless AA is disabled.
-    const want = process.platform === 'linux' && this.config.wirelessAaEnabled === true
+  private syncHelperSupervisor(): void {
+    const linux = process.platform === 'linux'
+    const wantAaWireless = linux && this.config.wirelessAaEnabled === true
+    const wantCpWireless = linux && this.config.wirelessCpEnabled === true
+    // Wired CP (carkit) always runs on Linux, like wired AA. Wireless (Wi-Fi AP +
+    // BT profiles) is toggled live over the control socket; the helper process never
+    // restarts for a wireless config change, so wired sessions survive the toggle.
+    const wantCp = linux
+    const want = wantAaWireless || wantCp
+    const enableKey = want ? 'h' : ''
+    // The spawn env only carries the initial AA/CP wireless state; later changes go
+    // over the control socket.
+    const restarting = want && (!this.helperSupervisor || this.btEnableKey !== enableKey)
 
-    if (want && !this.aaBtSupervisor) {
-      const sup = new AaBluetoothSupervisor({ maxRestarts: 5 })
-      sup.on('stdout', (line) => console.log(`[aa-bt] ${line}`))
-      sup.on('stderr', (line) => console.warn(`[aa-bt!] ${line}`))
-      sup.on('error', (err) => console.warn(`[aa-bt] supervisor error: ${err.message}`))
-      this.aaBtSupervisor = sup
-      this.sessionActiveSent = null
-      console.log('[ProjectionService] starting AA BT supervisor')
+    if (restarting) {
+      if (this.helperSupervisor) {
+        const old = this.helperSupervisor
+        this.helperSupervisor = null
+        old.stop().catch(() => {})
+      }
+      const sup = new HelperSupervisor({ maxRestarts: 5 })
+      sup.on('stdout', (line) => console.log(`[helper] ${line}`))
+      sup.on('stderr', (line) => console.warn(`[helper!] ${line}`))
+      sup.on('error', (err) => console.warn(`[bt] supervisor error: ${err.message}`))
+      this.helperSupervisor = sup
+      this.btEnableKey = enableKey
+      console.log(
+        `[ProjectionService] starting unified BT supervisor (aaWireless=${wantAaWireless} cpWireless=${wantCpWireless})`
+      )
       sup.start(this.config)
+    } else if (!want && this.helperSupervisor) {
+      console.log('[ProjectionService] stopping unified BT supervisor')
+      const sup = this.helperSupervisor
+      this.helperSupervisor = null
+      this.btEnableKey = ''
+      sup.stop().catch((e) => console.warn('[ProjectionService] bt supervisor stop threw', e))
+    } else if (this.helperSupervisor && this.btAaWireless !== wantAaWireless) {
+      console.log(`[ProjectionService] toggling wireless AA live (aaWireless=${wantAaWireless})`)
+      this.drivers.getCpManager()?.setAaWireless(wantAaWireless)
+    }
+    this.btAaWireless = wantAaWireless
+
+    if (wantAaWireless && !this.aaBtActive) {
+      this.aaBtActive = true
+      this.sessionActiveSent = null
+      this.drivers.startAaWireless()
       this.openAaBtSubscription()
       this.populateAaBtPairedListInitial()
         .then(() => {
           this.emitTransportState()
-          // Phone wake and audio reconnect in parallel so the native probe
-          // sees Connected:true before its 15s deadline expires
           this.connectConfiguredAudioDevices().catch(() => {})
           return this.tryAutoConnect()
         })
         .catch(() => {})
-      return
-    }
-    if (!want && this.aaBtSupervisor) {
-      console.log('[ProjectionService] stopping AA BT supervisor')
-      const sup = this.aaBtSupervisor
-      this.aaBtSupervisor = null
-      sup.stop().catch((e) => console.warn('[ProjectionService] supervisor stop threw', e))
+    } else if (!wantAaWireless && this.aaBtActive) {
+      this.aaBtActive = false
       this.closeAaBtSubscription()
       this.setWirelessPhoneInRange(false)
       this.btInitialQueryDone = false
       this.sessionActiveSent = null
+      this.drivers.stopAaWireless()
     }
+
+    // CpManager owns the CarPlay :7000 listener + the helper event feed, which WIRED CP
+    // needs as much as wireless (the phone reaches :7000 over the USB link-local too), so it
+    // runs whenever wired CP is possible (wantCp) — not gated on cpWireless.
+    if (wantCp && !this.cpActive) {
+      this.cpActive = true
+      this.drivers.startCp()
+    } else if (!wantCp && this.cpActive) {
+      this.cpActive = false
+      this.drivers.releaseCp()
+    }
+    // cpWireless only toggles the wireless CP BT profile live over the control socket.
+    if (this.cpActive && !restarting && this.btCpWireless !== wantCpWireless) {
+      console.log(`[ProjectionService] toggling wireless CP live (cpWireless=${wantCpWireless})`)
+      this.drivers.getCpManager()?.setCpWireless(wantCpWireless)
+    }
+    this.btCpWireless = wantCpWireless
   }
 
   private setWirelessPhoneInRange(value: boolean): void {
@@ -325,397 +589,328 @@ export class ProjectionService {
     if (becameAvailable) this.autoStartIfNeeded().catch(console.error)
   }
 
-  private lastCodecCaps: Record<string, { hw?: unknown; sw?: unknown } | undefined> | null = null
-
   // Single emit point for `projection-event`
-  private emitProjectionEvent(payload: unknown): void {
+  private emitProjectionEvent(payload: ProjectionEvent): void {
     this.webContents?.send('projection-event', payload)
     broadcastToSecondaryRenderers('projection-event', payload)
   }
 
-  private applyCodecCapabilities(payload: unknown): void {
-    if (!payload || typeof payload !== 'object') return
-    const caps = payload as Record<string, { hw?: unknown; sw?: unknown } | undefined>
-    this.lastCodecCaps = caps
-    this.recomputeCodecCapabilities()
-  }
-
-  private recomputeCodecCapabilities(): void {
-    const caps = this.lastCodecCaps
-    if (!caps) return
-    // applyGstCodecCaps already drops optional codecs without a HW decoder to
-    // undefined, so a present entry means the codec is advertised
-    const isSupported = (c: { hw?: unknown; sw?: unknown } | undefined): boolean => Boolean(c)
-
-    const hevc = isSupported(caps.h265)
-    const vp9 = isSupported(caps.vp9)
-    const av1 = isSupported(caps.av1)
-
-    if (this.hevcSupported !== hevc) {
-      this.hevcSupported = hevc
-      console.log(`[ProjectionService] hevc support: ${hevc}`)
-      this.aaDriver?.setHevcSupported(hevc)
-    }
-    if (this.vp9Supported !== vp9) {
-      this.vp9Supported = vp9
-      console.log(`[ProjectionService] vp9 support: ${vp9}`)
-      this.aaDriver?.setVp9Supported(vp9)
-    }
-    if (this.av1Supported !== av1) {
-      this.av1Supported = av1
-      console.log(`[ProjectionService] av1 support: ${av1}`)
-      this.aaDriver?.setAv1Supported(av1)
-    }
-  }
-
-  // Read by AaDriver right before it starts the AAStack
+  // Reflects the current HEVC decode capability seeded into each AA session
   public getHevcSupported(): boolean {
-    return this.hevcSupported
+    return this.codecCaps.hevc
+  }
+
+  private handleSoftwareVersion(msg: SoftwareVersion): void {
+    this.dongleFwVersion = msg.version
+    this.emitDongleInfoIfChanged()
+  }
+
+  private handleBoxInfo(msg: BoxInfo): void {
+    const settings = msg.settings as { DevList?: Array<Record<string, unknown>> }
+    if (this.setDongleDevListFromSettings(settings)) {
+      settings.DevList = this.mergedDevList() as unknown as Array<Record<string, unknown>>
+    }
+    const rawBtMac = (msg.settings as { btMacAddr?: unknown }).btMacAddr
+    if (typeof rawBtMac === 'string' && rawBtMac.trim()) {
+      this.dongleConnectedMac = rawBtMac.trim()
+    }
+    this.boxInfo = mergePreferExisting(this.boxInfo, msg.settings)
+    this.emitDongleInfoIfChanged()
+    this.deviceController.emitDevices()
+  }
+
+  private setDongleDevListFromSettings(settings: {
+    DevList?: Array<Record<string, unknown>>
+  }): boolean {
+    if (!Array.isArray(settings.DevList)) return false
+    this.dongleDevList = settings.DevList.map((entry) => ({
+      ...(entry as DevListEntry),
+      source: 'dongle' as const
+    }))
+    return true
+  }
+
+  // Dongle lifecycle over always-on driver events (not the routed 'message' path),
+  // so a held dongle still appears + is selectable in the picker while native sessions run.
+  private onDonglePhoneConnected(): void {
+    this.maybeAutoActivate(this.sessions.upsert(this.drivers.getDongle(), 'dongle', 'usb', {}))
+    this.deviceController.emitDevices()
+  }
+
+  private onDonglePhoneDisconnected(): void {
+    const dongle = this.drivers.getDongle()
+    const hadOther = this.sessions.all().some((s) => s.driver !== dongle)
+    this.sessions.closeByDriver(dongle)
+    this.dongleDevList = []
+    this.donglePairedRaw = ''
+    this.dongleConnectedMac = ''
+    if (isRecord(this.boxInfo)) {
+      this.boxInfo = { ...this.boxInfo, btMacAddr: '' }
+    }
+    this.emitProjectionEvent({
+      type: 'dongleInfo',
+      payload: {
+        dongleFwVersion: this.dongleFwVersion,
+        boxInfo: this.boxInfo
+      }
+    })
+    if (hadOther) this.deviceController.emitDevices()
+    else this.onPhoneDisconnected()
+  }
+
+  private onDongleInfo(info: { boxInfo?: unknown }): void {
+    const settings = info.boxInfo as { DevList?: Array<Record<string, unknown>> } | undefined
+    if (settings && this.setDongleDevListFromSettings(settings)) {
+      this.deviceController.emitDevices()
+    }
+  }
+
+  private handleGnssData(msg: GnssData): void {
+    this.emitProjectionEvent({
+      type: 'gnss',
+      payload: {
+        text: msg.text
+      }
+    })
+  }
+
+  private handleBluetoothPairedList(msg: BluetoothPairedList): void {
+    this.donglePairedRaw = msg.data
+    this.emitCombinedBtPairedList()
+  }
+
+  private handleBoxUpdateProgress(msg: BoxUpdateProgress): void {
+    // 0xb1 payload: int32 progress
+    this.emitProjectionEvent({
+      type: 'fwUpdate',
+      stage: 'upload:progress',
+      progress: msg.progress
+    })
+  }
+
+  private handleBoxUpdateState(msg: BoxUpdateState): void {
+    // 0xbb payload: int32 status (start/success/fail, ota variants)
+    this.emitProjectionEvent({
+      type: 'fwUpdate',
+      stage: 'upload:state',
+      status: msg.status,
+      statusText: msg.statusText,
+      isOta: msg.isOta,
+      isTerminal: msg.isTerminal,
+      ok: msg.ok
+    })
+
+    if (msg.isTerminal) {
+      // Terminal state decides done vs error
+      this.emitProjectionEvent({
+        type: 'fwUpdate',
+        stage: msg.ok ? 'upload:done' : 'upload:error',
+        message: msg.statusText || (msg.ok ? 'Update finished' : 'Update failed'),
+        status: msg.status,
+        isOta: msg.isOta
+      })
+
+      // Ensure the next SoftwareVersion/BoxInfo triggers a fresh emit.
+      this.lastDongleInfoEmitKey = ''
+
+      this.driver.requestKeyframe?.()
+    }
+  }
+
+  private handlePlugged(msg: Plugged): void {
+    this.onPhoneConnected(msg.phoneType)
+    if (!this.started && !this.isStarting && this.getActiveTransport() !== 'cp') {
+      this.start().catch(() => {})
+    }
+  }
+
+  private onPhoneConnected(phoneType: PhoneType): void {
+    this.clearTimeouts()
+    this.lastPluggedPhoneType = phoneType
+    this.aaPlaybackInferred = 1
+    this.lastVideoWidth = undefined
+    this.lastVideoHeight = undefined
+    this.lastClusterVideoWidth = undefined
+    this.lastClusterVideoHeight = undefined
+
+    const nextPhoneWorkMode =
+      phoneType === PhoneType.CarPlay ? PhoneWorkMode.CarPlay : PhoneWorkMode.Android
+
+    try {
+      configEvents.emit('requestSave', { lastPhoneWorkMode: nextPhoneWorkMode })
+    } catch (e) {
+      console.warn('[ProjectionService] failed to persist lastPhoneWorkMode (ignored)', e)
+    }
+
+    this.emitProjectionEvent({ type: 'plugged', phoneType })
+    this.statusFile.setProjection(
+      this.getActiveTransport(),
+      phoneType === PhoneType.CarPlay ? 'CarPlay' : 'AndroidAuto'
+    )
+    for (const fn of this.pluggedHooks) {
+      try {
+        fn(phoneType)
+      } catch (e) {
+        console.warn('[ProjectionService] plugged hook threw (ignored)', e)
+      }
+    }
+  }
+
+  private onPhoneDisconnected(): void {
+    this.clearTimeouts()
+    this.lastPluggedPhoneType = undefined
+    this.aaPlaybackInferred = 1
+    // A held phone dropping must not blank the ACTIVE phone's projection: clear the
+    // UI/status/nav only when no session is left active (onActiveSessionChanged /
+    // teardownToIdle drives the active-session case).
+    if (!this.sessions.active()) {
+      this.emitProjectionEvent({ type: 'unplugged' })
+      this.statusFile.setProjection(null, null)
+      this.statusFile.setStreaming(false)
+      this.navStore.reset('phone-disconnect')
+    }
+    this.deviceController.emitDevices()
+  }
+
+  private handleVideoData(msg: VideoData): void {
+    const isCluster = msg.header.type === MessageType.ClusterVideoData
+    // cluster video stream (0x2c)
+    if (isCluster) {
+      if (!isClusterDisplayed(this.config)) return
+
+      const w = msg.width
+      const h = msg.height
+
+      const clusterTargets = this.getClusterTargetWebContents()
+
+      if (
+        w > 0 &&
+        h > 0 &&
+        (w !== this.lastClusterVideoWidth || h !== this.lastClusterVideoHeight)
+      ) {
+        this.lastClusterVideoWidth = w
+        this.lastClusterVideoHeight = h
+        const active = this.sessions.active()
+        if (active) {
+          active.video.cluster.width = w
+          active.video.cluster.height = h
+        }
+        for (const wc of clusterTargets) {
+          if (!wc.isDestroyed()) wc.send('cluster-video-resolution', { width: w, height: h })
+        }
+        for (const plane of this.gstVideoClusters.values()) this.applyClusterCrop(plane)
+      }
+
+      if (msg.data) this.pushGstVideoCluster(msg.data)
+      return
+    }
+
+    // main video stream (0x06)
+    if (!this.firstFrameLogged) {
+      this.firstFrameLogged = true
+      const dt = Date.now() - APP_START_TS
+      console.log(`[Perf] AppStart→FirstFrame: ${dt} ms`)
+      this.statusFile.setStreaming(true)
+    }
+
+    const w = msg.width
+    const h = msg.height
+    if (w > 0 && h > 0 && (w !== this.lastVideoWidth || h !== this.lastVideoHeight)) {
+      this.lastVideoWidth = w
+      this.lastVideoHeight = h
+      const active = this.sessions.active()
+      if (active) {
+        active.video.main.width = w
+        active.video.main.height = h
+      }
+      this.updateVideoCrop()
+
+      this.emitProjectionEvent({
+        type: 'resolution',
+        payload: { width: w, height: h }
+      })
+    }
+
+    if (msg.data) this.pushGstVideo(msg.data)
+  }
+
+  private handleAudioData(msg: AudioData): void {
+    this.audio.handleAudioData(msg)
+
+    if (msg.command != null) {
+      this.statusFile.applyAudioCommand(msg.command)
+      if (this.lastPluggedPhoneType === PhoneType.AndroidAuto) {
+        if (msg.command === 10) {
+          this.aaPlaybackInferred = 1
+          this.mediaStore.patchAaPlayStatus(this.sessions.active(), 1)
+        }
+        if (msg.command === 11 || msg.command === 2) {
+          this.aaPlaybackInferred = 2
+          this.mediaStore.patchAaPlayStatus(this.sessions.active(), 2)
+        }
+      }
+
+      this.emitProjectionEvent({
+        type: 'audio',
+        payload: {
+          command: msg.command,
+          audioType: msg.audioType,
+          decodeType: msg.decodeType,
+          volume: msg.volume
+        }
+      })
+    }
+
+    const fmt = decodeTypeMap[msg.decodeType]
+    if (!fmt) return
+
+    const key = `${msg.decodeType}|${msg.audioType}|${fmt.frequency}|${fmt.channel}|${fmt.bitDepth}`
+    if (key === this.lastAudioMetaEmitKey) return
+    this.lastAudioMetaEmitKey = key
+
+    this.emitProjectionEvent({
+      type: 'audioInfo',
+      payload: {
+        codec: fmt.format ?? msg.decodeType ?? 'unknown',
+        sampleRate: fmt.frequency,
+        channels: fmt.channel,
+        bitDepth: fmt.bitDepth
+      }
+    })
+  }
+
+  private handleCommand(msg: Command): void {
+    this.emitProjectionEvent({ type: 'command', message: msg })
+    if (typeof msg.value === 'number' && msg.value === 508 && this.anyClusterRequested()) {
+      this.driver.requestClusterFocus?.()
+    }
   }
 
   private readonly onDriverMessage = (msg: Message): void => {
     // Always keep updater-relevant state, even if renderer is not attached yet.
-    if (msg instanceof SoftwareVersion) {
-      this.dongleFwVersion = msg.version
-      this.emitDongleInfoIfChanged()
-      return
-    }
+    if (msg instanceof SoftwareVersion) return this.handleSoftwareVersion(msg)
 
-    if (msg instanceof BoxInfo) {
-      const settings = msg.settings as { DevList?: Array<Record<string, unknown>> }
-      if (Array.isArray(settings.DevList)) {
-        this.dongleDevList = settings.DevList.map((entry) => ({
-          ...(entry as DevListEntry),
-          source: 'dongle' as const
-        }))
-        settings.DevList = this.mergedDevList() as unknown as Array<Record<string, unknown>>
-      }
-      this.boxInfo = mergePreferExisting(this.boxInfo, msg.settings)
-      this.emitDongleInfoIfChanged()
-      return
-    }
+    if (msg instanceof BoxInfo) return this.handleBoxInfo(msg)
 
-    if (msg instanceof GnssData) {
-      this.emitProjectionEvent({
-        type: 'gnss',
-        payload: {
-          text: msg.text
-        }
-      })
-      return
-    }
+    if (msg instanceof GnssData) return this.handleGnssData(msg)
 
     if (!this.webContents) return
 
-    if (msg instanceof BluetoothPairedList) {
-      this.donglePairedRaw = msg.data
-      this.emitCombinedBtPairedList()
-      return
-    }
+    if (msg instanceof BluetoothPairedList) return this.handleBluetoothPairedList(msg)
 
-    if (msg instanceof Plugged) {
-      this.clearTimeouts()
-      this.lastPluggedPhoneType = msg.phoneType
-      this.aaPlaybackInferred = 1
-      this.lastVideoWidth = undefined
-      this.lastVideoHeight = undefined
-      this.lastClusterVideoWidth = undefined
-      this.lastClusterVideoHeight = undefined
+    if (msg instanceof Plugged) return this.handlePlugged(msg)
+    if (msg instanceof BoxUpdateProgress) return this.handleBoxUpdateProgress(msg)
+    if (msg instanceof BoxUpdateState) return this.handleBoxUpdateState(msg)
+    if (msg instanceof VideoData) return this.handleVideoData(msg)
+    if (msg instanceof AudioData) return this.handleAudioData(msg)
+    if (msg instanceof Command) return this.handleCommand(msg)
+  }
 
-      const nextPhoneWorkMode =
-        msg.phoneType === PhoneType.CarPlay ? PhoneWorkMode.CarPlay : PhoneWorkMode.Android
-
-      try {
-        configEvents.emit('requestSave', { lastPhoneWorkMode: nextPhoneWorkMode })
-      } catch (e) {
-        console.warn('[ProjectionService] failed to persist lastPhoneWorkMode (ignored)', e)
-      }
-
-      const phoneTypeConfig = this.config.phoneConfig?.[msg.phoneType]
-      if (phoneTypeConfig?.frameInterval) {
-        this.frameInterval = setInterval(() => {
-          if (!this.started) return
-          try {
-            this.driver.send(new SendCommand('frame'))
-          } catch {}
-        }, phoneTypeConfig.frameInterval)
-      }
-      this.emitProjectionEvent({ type: 'plugged', phoneType: msg.phoneType })
-      this.statusFile.setProjection(
-        this.getActiveTransport(),
-        msg.phoneType === PhoneType.CarPlay ? 'CarPlay' : 'AndroidAuto'
-      )
-      // Hydration
-      for (const fn of this.pluggedHooks) {
-        try {
-          fn(msg.phoneType)
-        } catch (e) {
-          console.warn('[ProjectionService] plugged hook threw (ignored)', e)
-        }
-      }
-      if (!this.started && !this.isStarting) {
-        this.start().catch(() => {})
-      }
-    } else if (msg instanceof Unplugged) {
-      this.clearTimeouts()
-      this.lastPluggedPhoneType = undefined
-      this.aaPlaybackInferred = 1
-
-      if (isRecord(this.boxInfo)) {
-        this.boxInfo = { ...this.boxInfo, btMacAddr: '' }
-      }
-
-      this.emitProjectionEvent({ type: 'unplugged' })
-      this.statusFile.setProjection(null, null)
-      this.statusFile.setStreaming(false)
-      this.emitProjectionEvent({
-        type: 'dongleInfo',
-        payload: {
-          dongleFwVersion: this.dongleFwVersion,
-          boxInfo: this.boxInfo
-        }
-      })
-      this.resetNavigationSnapshot('unplugged')
-
-      if (this.aaDriver) {
-        try {
-          this.audio.resetForSessionStop()
-        } catch (e) {
-          console.warn('[ProjectionService] audio reset on Unplugged threw (ignored)', e)
-        }
-        this.resetMediaSnapshot('aa-session-end')
-        this.lastVideoWidth = undefined
-        this.lastVideoHeight = undefined
-        this.lastClusterVideoWidth = undefined
-        this.lastClusterVideoHeight = undefined
-      } else if (!this.shuttingDown && !this.stopping) {
-        // Dongle mode: full stop is correct (no supervisor to keep alive).
-        this.stop().catch(() => {})
-      }
-    } else if (msg instanceof BoxUpdateProgress) {
-      // 0xb1 payload: int32 progress
-      this.emitProjectionEvent({
-        type: 'fwUpdate',
-        stage: 'upload:progress',
-        progress: msg.progress
-      })
-    } else if (msg instanceof BoxUpdateState) {
-      // 0xbb payload: int32 status (start/success/fail, ota variants)
-      this.emitProjectionEvent({
-        type: 'fwUpdate',
-        stage: 'upload:state',
-        status: msg.status,
-        statusText: msg.statusText,
-        isOta: msg.isOta,
-        isTerminal: msg.isTerminal,
-        ok: msg.ok
-      })
-
-      if (msg.isTerminal) {
-        // Terminal state decides done vs error
-        this.emitProjectionEvent({
-          type: 'fwUpdate',
-          stage: msg.ok ? 'upload:done' : 'upload:error',
-          message: msg.statusText || (msg.ok ? 'Update finished' : 'Update failed'),
-          status: msg.status,
-          isOta: msg.isOta
-        })
-
-        // Ensure the next SoftwareVersion/BoxInfo triggers a fresh emit.
-        this.lastDongleInfoEmitKey = ''
-
-        // Force a fresh dongleInfo emit AFTER the dongle reports new SoftwareVersion/BoxInfo.
-        try {
-          this.driver.send(new SendCommand('frame'))
-        } catch {
-          // ignore
-        }
-      }
-    } else if (msg instanceof VideoData) {
-      const isCluster = msg.header.type === MessageType.ClusterVideoData
-      // cluster video stream (0x2c)
-      if (isCluster) {
-        if (!isClusterDisplayed(this.config)) return
-
-        const w = msg.width
-        const h = msg.height
-
-        const clusterTargets = this.getClusterTargetWebContents()
-
-        if (
-          w > 0 &&
-          h > 0 &&
-          (w !== this.lastClusterVideoWidth || h !== this.lastClusterVideoHeight)
-        ) {
-          this.lastClusterVideoWidth = w
-          this.lastClusterVideoHeight = h
-          for (const wc of clusterTargets) {
-            if (!wc.isDestroyed()) wc.send('cluster-video-resolution', { width: w, height: h })
-          }
-          for (const plane of this.gstVideoClusters.values()) this.applyClusterCrop(plane)
-        }
-
-        if (msg.data) this.pushGstVideoCluster(msg.data)
-        return
-      }
-
-      // main video stream (0x06)
-      if (!this.firstFrameLogged) {
-        this.firstFrameLogged = true
-        const dt = Date.now() - APP_START_TS
-        console.log(`[Perf] AppStart→FirstFrame: ${dt} ms`)
-        this.statusFile.setStreaming(true)
-      }
-
-      const w = msg.width
-      const h = msg.height
-      if (w > 0 && h > 0 && (w !== this.lastVideoWidth || h !== this.lastVideoHeight)) {
-        this.lastVideoWidth = w
-        this.lastVideoHeight = h
-        this.updateVideoCrop()
-
-        this.emitProjectionEvent({
-          type: 'resolution',
-          payload: { width: w, height: h }
-        })
-      }
-
-      if (msg.data) this.pushGstVideo(msg.data)
-    } else if (msg instanceof AudioData) {
-      this.audio.handleAudioData(msg)
-
-      if (msg.command != null) {
-        this.statusFile.applyAudioCommand(msg.command)
-        if (this.lastPluggedPhoneType === PhoneType.AndroidAuto) {
-          if (msg.command === 10) {
-            this.aaPlaybackInferred = 1
-            this.patchAaMediaPlayStatus(1)
-          }
-          if (msg.command === 11 || msg.command === 2) {
-            this.aaPlaybackInferred = 2
-            this.patchAaMediaPlayStatus(2)
-          }
-        }
-
-        this.emitProjectionEvent({
-          type: 'audio',
-          payload: {
-            command: msg.command,
-            audioType: msg.audioType,
-            decodeType: msg.decodeType,
-            volume: msg.volume
-          }
-        })
-      }
-
-      const fmt = decodeTypeMap[msg.decodeType]
-      if (!fmt) return
-
-      const key = `${msg.decodeType}|${msg.audioType}|${fmt.frequency}|${fmt.channel}|${fmt.bitDepth}`
-      if (key === this.lastAudioMetaEmitKey) return
-      this.lastAudioMetaEmitKey = key
-
-      this.emitProjectionEvent({
-        type: 'audioInfo',
-        payload: {
-          codec: fmt.format ?? msg.decodeType ?? 'unknown',
-          sampleRate: fmt.frequency,
-          channels: fmt.channel,
-          bitDepth: fmt.bitDepth
-        }
-      })
-    } else if (msg instanceof MetaData) {
-      const inner = msg.inner
-
-      // Media metadata (innerType 1/3/100)
-      if (inner.kind === 'media') {
-        const mediaMsg = inner.message
-        if (!mediaMsg.payload) return
-
-        this.emitProjectionEvent({ type: 'media', payload: mediaMsg })
-
-        const file = path.join(app.getPath('userData'), 'mediaData.json')
-        const existing = readMediaFile(file)
-        const existingPayload = existing.payload
-        const newPayload: PersistedMediaPayload = { type: mediaMsg.payload.type }
-
-        if (mediaMsg.payload.type === MediaType.Data && mediaMsg.payload.media) {
-          const mergedMedia = { ...existingPayload.media, ...mediaMsg.payload.media }
-
-          if (
-            this.lastPluggedPhoneType === PhoneType.AndroidAuto &&
-            mergedMedia.MediaPlayStatus === undefined
-          ) {
-            mergedMedia.MediaPlayStatus = this.aaPlaybackInferred
-          }
-
-          newPayload.media = mergedMedia
-          if (existingPayload.base64Image) newPayload.base64Image = existingPayload.base64Image
-        } else if ('base64Image' in mediaMsg.payload && mediaMsg.payload.base64Image) {
-          newPayload.base64Image = mediaMsg.payload.base64Image
-          if (existingPayload.media) newPayload.media = existingPayload.media
-        } else {
-          newPayload.media = existingPayload.media
-          newPayload.base64Image = existingPayload.base64Image
-        }
-
-        const out = { timestamp: new Date().toISOString(), payload: newPayload }
-        fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
-        return
-      }
-
-      // Navigation metadata (innerType 200/201)
-      if (inner.kind === 'navigation') {
-        if (!this.started) return
-        const navMsg = inner.message
-
-        this.emitProjectionEvent({ type: 'navigation', payload: navMsg })
-
-        const file = path.join(app.getPath('userData'), 'navigationData.json')
-        const existing = readNavigationFile(file)
-
-        const locale: NavLocale =
-          this.config.language === 'de'
-            ? 'de'
-            : this.config.language === 'ua' ||
-                this.config.language === 'uk' ||
-                this.config.language === 'uk-UA'
-              ? 'ua'
-              : 'en'
-
-        const normalized = normalizeNavigationPayload(existing.payload, navMsg)
-        const translated = translateNavigation(normalized.navi, locale)
-
-        const nextPayload: PersistedNavigationPayload = {
-          ...normalized,
-          display: {
-            locale,
-            appName: translated.SourceName,
-            destinationName: translated.DestinationName,
-            roadName: translated.CurrentRoadName,
-            maneuverText: translated.ManeuverTypeText,
-            timeToDestinationText: translated.TimeRemainingToDestinationText,
-            distanceToDestinationText: translated.DistanceRemainingDisplayStringText,
-            remainDistanceText: translated.RemainDistanceText
-          }
-        }
-
-        const out = { timestamp: new Date().toISOString(), payload: nextPayload }
-        fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
-
-        return
-      }
-      // Unknown meta
-    } else if (msg instanceof Command) {
-      this.emitProjectionEvent({ type: 'command', message: msg })
-      if (typeof msg.value === 'number' && msg.value === 508 && this.anyClusterRequested()) {
-        try {
-          this.driver.send(new SendCommand('requestClusterStreamFocus'))
-        } catch {
-          // ignore
-        }
-      }
-    }
+  private onMetaMessage(driver: IPhoneDriver, msg: Message): void {
+    const session = this.sessions.byDriver(driver)
+    const isActive = session != null && session === this.sessions.active()
+    if (msg instanceof MediaData) this.mediaStore.handle(driver, session, msg, isActive)
+    else if (msg instanceof NavigationData) this.navStore.handle(driver, session, msg, isActive)
   }
 
   private readonly onDriverFailure = (): void => {
@@ -734,6 +929,25 @@ export class ProjectionService {
     const wc = this.webContents
     if (!wc || wc.isDestroyed?.()) return
     wc.send('projection-event', { type: 'video-codec', payload: { codec } })
+  }
+
+  private attachCodecCapture(d: IPhoneDriver): void {
+    d.on('video-codec', (c: GstVideoCodec) => {
+      this.lastMainCodecByDriver.set(d, c)
+      const s = this.sessions.byDriver(d)
+      if (s) s.video.main.codec = c
+      this.sessions.dump(
+        `video-codec ${c} → ${s ? `stored on #${s.index}` : 'NO session (map only)'}`
+      )
+    })
+    d.on('cluster-video-codec', (c: GstVideoCodec) => {
+      this.lastClusterCodecByDriver.set(d, c)
+      const s = this.sessions.byDriver(d)
+      if (s) s.video.cluster.codec = c
+      this.sessions.dump(
+        `cluster-codec ${c} → ${s ? `stored on #${s.index}` : 'NO session (map only)'}`
+      )
+    })
   }
 
   private updateVideoCrop(): void {
@@ -775,30 +989,13 @@ export class ProjectionService {
   private pushGstVideo(nal: Buffer): void {
     const wc = this.webContents
     if (!wc || wc.isDestroyed?.()) return
-    this.videoFlowing = true
-    this.ensureFramePoke()
     if (!this.gstVideo) {
       this.gstVideo = new GstVideo(wc)
       this.gstVideo.setVisible(this.gstVideoVisible)
       this.applyVideoCrop()
+      this.emitProjectionEvent({ type: 'projection', shown: true })
     }
     this.gstVideo.push(this.gstVideoCodec, nal)
-  }
-
-  // A decoder can hold the last frame until the next arrives, so a single static frame never
-  // shows. Re-request a keyframe while the stream is stalled to flush it, continuous video none.
-  private ensureFramePoke(): void {
-    if (this.frameInterval) return
-    this.frameInterval = setInterval(() => {
-      if (!this.started) return
-      if (this.videoFlowing) {
-        this.videoFlowing = false
-        return
-      }
-      try {
-        this.driver.send(new SendCommand('frame'))
-      } catch {}
-    }, 700)
   }
 
   private clusterPlaneVisible(screen: ClusterScreen): boolean {
@@ -821,7 +1018,8 @@ export class ProjectionService {
     const want = this.clusterStreamWanted()
     if (want === this.clusterStreamActive) return
     this.clusterStreamActive = want
-    this.aaDriver?.setClusterStreamActive(want)
+    this.drivers.setAaClusterStreamActive(want)
+    this.drivers.setCpClusterStreamActive(want)
   }
 
   // The window a cluster plane belongs to: main → main window, dash/aux → ... window
@@ -921,50 +1119,89 @@ export class ProjectionService {
     this.systemSound.dispose()
     this.audioMonitor?.stop()
     this.audioMonitor = null
-    if (this.aaBtSupervisor) {
-      const sup = this.aaBtSupervisor
-      this.aaBtSupervisor = null
+    if (this.helperSupervisor) {
+      const sup = this.helperSupervisor
+      this.helperSupervisor = null
       sup.stop().catch(() => {})
     }
+    this.drivers.releaseCp()
   }
 
   constructor() {
+    void this.deviceRegistry.load()
     this.drivers = new ProjectionDriverManager({
       handlers: {
         onMessage: (msg) => this.onDriverMessage(msg as Message),
+        onMetaMessage: (driver, msg) => this.onMetaMessage(driver, msg),
         onFailure: () => this.onDriverFailure(),
         onTargetedConnect: () => this.onDriverTargetedConnect(),
         onVideoCodec: (c) => this.onDriverVideoCodec(c),
         onClusterVideoCodec: (c) => this.onDriverClusterVideoCodec(c)
       },
-      onAaConnected: () => this.onAaConnected(),
-      onAaDisconnected: () => this.onAaDisconnected(),
-      onAaCreated: () => {},
+      onAaConnected: (s) => this.onAaConnected(s as AaSession),
+      onAaDisconnected: (s) => this.onAaDisconnected(s as AaSession),
+      onAaPresence: (s, p) => this.onAaPresence(s as AaSession, p),
+      onAaCreated: (s) => this.attachCodecCapture(s),
       onAaReleased: () => {},
       getAaConfigSeed: () => ({
-        hevcSupported: this.hevcSupported,
-        vp9Supported: this.vp9Supported,
-        av1Supported: this.av1Supported,
+        hevcSupported: this.codecCaps.hevc,
+        vp9Supported: this.codecCaps.vp9,
+        av1Supported: this.codecCaps.av1,
         initialNightMode: deriveInitialNightMode(this.config.appearanceMode)
       }),
-      onPhoneReenumerate: (ms) => this.expectPhoneReenumeration(ms)
+      onCpConnected: (s) => this.onCpConnected(s as CpSession),
+      onCpDisconnected: (s) => this.onCpDisconnected(s as CpSession),
+      onCpPresence: (s, p) => this.onCpPresence(s as CpSession, p),
+      onCpHelperPresence: (p) => this.onCpHelperPresence(p),
+      onCpCreated: (s) => this.attachCodecCapture(s as CpSession),
+      onCpReleased: () => {},
+      getCpConfigSeed: () => ({
+        hevcSupported: this.codecCaps.hevc,
+        vp9Supported: this.codecCaps.vp9,
+        av1Supported: this.codecCaps.av1,
+        initialNightMode: deriveInitialNightMode(this.config.appearanceMode)
+      }),
+      onPhoneReenumerate: (ms) => this.expectPhoneReenumeration(ms),
+      getConfig: () => this.config
     })
 
+    const dongle = this.drivers.getDongle()
+    dongle.on('phone-connected', () => this.onDonglePhoneConnected())
+    dongle.on('phone-disconnected', () => this.onDonglePhoneDisconnected())
+    dongle.on('dongle-info', (info: { boxInfo?: unknown }) => this.onDongleInfo(info))
+
+    this.sessions = new SessionManager({
+      route: (d) => this.drivers.route(d),
+      onChange: () => {
+        this.deviceController.emitDevices()
+        this.emitSessionState()
+      },
+      onActiveChanged: (next, prev) => this.onActiveSessionChanged(next, prev)
+    })
+
+    this.deviceRegistry.onChange(() => this.deviceController.emitDevices())
+
     this.arbiter = new TransportArbiter({
-      getPreference: () => this.getConnectionPreference(),
       isWirelessEnabled: () =>
         this.config.wirelessAaEnabled === true && process.platform === 'linux',
       isWirelessPhoneInRange: () => this.wirelessPhoneInRange,
       getActiveTransport: () => this.getActiveTransport(),
-      isDongleSessionActive: () => this.started && !this.drivers.getAa(),
-      isWiredAaSessionActive: () => this.started && this.drivers.getAa()?.isWiredMode() === true,
-      isWiredCpSessionActive: () => false,
+      isDongleSessionActive: () => this.getActiveTransport() === 'dongle',
+      isWiredAaSessionActive: () => this.started && this.isActiveAaWired(),
+      isWiredCpSessionActive: () => this.started && this.isActiveCpWired(),
       onChange: () => this.emitTransportState(),
       onShouldStop: async () => {
-        await this.stop()
+        const a = this.sessions.active()
+        if (a) this.sessions.close(a.index)
       },
       onShouldAutoStart: () => {
         this.autoStartIfNeeded().catch(console.error)
+      },
+      onShouldBringUpWiredBeside: () => {
+        this.maybeBringUpWiredBeside().catch(console.error)
+      },
+      onWiredPhoneGone: () => {
+        this.closeWiredPhoneSession()
       }
     })
 
@@ -978,11 +1215,7 @@ export class ProjectionService {
         this.sendChunked(channel, data, chunkSize, extra, this.getAllUiWebContents())
       },
       (pcm, decodeType) => {
-        try {
-          this.driver.send(new SendAudio(pcm, decodeType))
-        } catch (e) {
-          console.error('[ProjectionService] failed to send mic audio', e)
-        }
+        this.driver.sendPhoneAudio?.(pcm, decodeType)
       }
     )
 
@@ -994,12 +1227,16 @@ export class ProjectionService {
       pickPreferredTransport: () => this.pickPreferredTransport(),
       switchTransport: () => this.switchTransport(),
       getTransportState: () => this.getTransportState(),
-      applyCodecCapabilities: (caps) => this.applyCodecCapabilities(caps),
+      getDevices: () => this.getDevices(),
+      selectDevice: (id) => this.selectDevice(id),
+      cycleSession: () => this.sessions.activateNext(),
+      forgetDevice: (id) => this.forgetDevice(id),
+      applyCodecCapabilities: (caps) => this.codecCaps.applyCodecCapabilities(caps),
       send: (msg) => this.driver.send(msg),
       isUsingDongle: () => this.driver instanceof DongleDriver,
-      isUsingAa: () => this.drivers.getAa() !== null,
+      isUsingAa: () => this.getActiveTransport() === 'aa',
       isStarted: () => this.started,
-      hasWebUsbDevice: () => this.webUsbDevice !== null,
+      hasWebUsbDevice: () => this.dongleDriver.isUp,
       sendBluetoothPairedList: (text) => this.dongleDriver.sendBluetoothPairedList(text),
       connectAaBt: (mac) => this.connectPairedDevice(mac),
       removeAaBt: (mac) => this.aaBtSock.remove(mac),
@@ -1037,6 +1274,14 @@ export class ProjectionService {
       getApkVer: () => this.getApkVer(),
       getDongleFwVersion: () => this.dongleFwVersion,
       emitProjectionEvent: (p) => this.emitProjectionEvent(p),
+      readActiveMedia: () => ({
+        timestamp: new Date().toISOString(),
+        payload: this.sessions.active()?.media ?? DEFAULT_MEDIA_DATA_RESPONSE.payload
+      }),
+      readActiveNav: () => ({
+        timestamp: new Date().toISOString(),
+        payload: this.sessions.active()?.nav ?? DEFAULT_NAVIGATION_DATA_RESPONSE.payload
+      }),
       setAudioStreamVolume: (s, v) => this.audio.setStreamVolume(s, v),
       setAudioVisualizerEnabled: (e, id) => this.audio.setVisualizerEnabled(e, id)
     }
@@ -1047,30 +1292,7 @@ export class ProjectionService {
       this.emitProjectionEvent({ type: 'audioDevicesChanged' })
     })
 
-    this.applyGstCodecCaps()
-  }
-
-  // Advertise the codecs the bundled GStreamer can decode. Optional codecs are
-  // offered only when a HW decoder exists, h264 is the always-on AA baseline
-  private applyGstCodecCaps(): void {
-    const p = probeGstCodecs()
-    const hwCap = (s: { hw: boolean }): { hw?: unknown; sw?: unknown } | undefined =>
-      s.hw ? { hw: true, sw: true } : undefined
-    const h265Cap = p.h265.hw || (p.h265.sw && !p.h264.hw) ? { hw: true, sw: true } : undefined
-    this.lastCodecCaps = {
-      h264: { hw: true, sw: true },
-      h265: h265Cap,
-      vp9: hwCap(p.vp9),
-      av1: hwCap(p.av1)
-    }
-    console.log(
-      `[ProjectionService] GStreamer codecs: ` +
-        `h264(hw=${p.h264.hw} sw=${p.h264.sw}) ` +
-        `h265(hw=${p.h265.hw} sw=${p.h265.sw}) ` +
-        `vp9(hw=${p.vp9.hw} sw=${p.vp9.sw}) ` +
-        `av1(hw=${p.av1.hw} sw=${p.av1.sw})`
-    )
-    this.recomputeCodecCapabilities()
+    this.codecCaps.applyGstCodecCaps()
   }
 
   private async reloadConfigFromDisk(): Promise<void> {
@@ -1125,9 +1347,7 @@ export class ProjectionService {
       const buf180 = Buffer.from(b180, 'base64')
       const buf256 = Buffer.from(b256, 'base64')
 
-      this.driver.send(new SendFile(buf120, FileAddress.ICON_120))
-      this.driver.send(new SendFile(buf180, FileAddress.ICON_180))
-      this.driver.send(new SendFile(buf256, FileAddress.ICON_256))
+      this.driver.uploadHostIcons?.(buf120, buf180, buf256)
 
       console.debug('[ProjectionService] uploaded icons from fresh config.json')
     } catch (err) {
@@ -1161,7 +1381,7 @@ export class ProjectionService {
 
   public applyConfigPatch(patch: Partial<Config>): void {
     this.config = { ...this.config, ...patch }
-    this.syncAaBtSupervisor()
+    this.syncHelperSupervisor()
   }
 
   private emitDongleInfoIfChanged() {
@@ -1192,6 +1412,8 @@ export class ProjectionService {
   public markDongleConnected(connected: boolean): void {
     this.arbiter.markDongleConnected(connected)
     this.statusFile.setUsbState(this.arbiter.isPhoneConnected(), connected)
+    if (connected) void this.dongleDriver.bringUp(this.config, this.pendingStartupConnectTarget)
+    else void this.dongleDriver.close()
   }
 
   public markPhoneConnected(connected: boolean, device?: Device): void {
@@ -1216,22 +1438,30 @@ export class ProjectionService {
     return this.arbiter.isExpectingPhoneReenumeration()
   }
 
-  private getConnectionPreference(): ConnectionPreference {
-    const raw = (this.config as { connectionPreference?: unknown }).connectionPreference
-    return raw === 'dongle' || raw === 'native' ? raw : 'auto'
-  }
-
   public pickPreferredTransport(): Transport | null {
     return this.arbiter.pickPreferred()?.transport ?? null
   }
 
   public getActiveTransport(): Transport | null {
-    if (!this.started) return null
-    return this.aaDriver ? 'aa' : 'dongle'
+    const a = this.sessions.active()
+    if (a) return a.protocol === 'carplay' ? 'cp' : a.protocol === 'dongle' ? 'dongle' : 'aa'
+    return this.started ? 'dongle' : null
   }
 
   public getTransportState() {
     return this.arbiter.getSnapshot()
+  }
+
+  public getDevices(): DeviceView[] {
+    return this.deviceController.getDevices()
+  }
+
+  public forgetDevice(id: string): { ok: boolean } {
+    return this.deviceController.forgetDevice(id)
+  }
+
+  public selectDevice(id: string): { ok: boolean } {
+    return this.deviceController.selectDevice(id)
   }
 
   private emitTransportState(): void {
@@ -1239,15 +1469,15 @@ export class ProjectionService {
       type: 'transportState',
       payload: this.arbiter.getSnapshot()
     })
-    if (this.aaBtSupervisor) {
-      const aaActive = this.started && this.drivers.getAa() !== null
+    if (this.aaBtActive) {
+      const aaActive = this.getActiveTransport() === 'aa'
       void this.setSessionActive(aaActive)
     }
   }
 
   /** Tell the BT reconnect worker to pause while an AA session is active. */
   private async setSessionActive(active: boolean): Promise<void> {
-    if (!this.aaBtSupervisor || this.sessionActiveSent === active) return
+    if (!this.aaBtActive || this.sessionActiveSent === active) return
     this.sessionActiveSent = active
     try {
       await this.aaBtSock.setSessionActive(active)
@@ -1274,10 +1504,7 @@ export class ProjectionService {
         const desired = this.arbiter.getOverride()
         if (!desired) break
 
-        const wasWireless =
-          this.started &&
-          this.drivers.getAa() !== null &&
-          this.drivers.getAa()?.isWiredMode() === false
+        const wasWireless = this.getActiveTransport() === 'aa' && !this.isActiveAaWired()
 
         if (this.started) {
           try {
@@ -1313,9 +1540,9 @@ export class ProjectionService {
 
   // Restart the session to apply a config change that needs fresh negotiation
   public async restartSession(): Promise<void> {
-    const aa = this.drivers.getAa()
-    const wasWired = this.started && aa?.isWiredMode() === true
-    const wasWireless = this.started && aa?.isWiredMode() === false
+    const aaRouted = this.getActiveTransport() === 'aa'
+    const wasWired = aaRouted && this.isActiveAaWired()
+    const wasWireless = aaRouted && !this.isActiveAaWired()
 
     try {
       await this.stop()
@@ -1354,10 +1581,7 @@ export class ProjectionService {
     if (this.isSwitching) return { ok: false, error: 'switch in progress' }
     this.isSwitching = true
     try {
-      const wasWireless =
-        this.started &&
-        this.drivers.getAa() !== null &&
-        this.drivers.getAa()?.isWiredMode() === false
+      const wasWireless = this.getActiveTransport() === 'aa' && !this.isActiveAaWired()
 
       if (this.started) {
         try {
@@ -1425,11 +1649,19 @@ export class ProjectionService {
     }
   }
 
-  private selectDriverFor(transport: Transport): IPhoneDriver {
-    return this.drivers.selectFor(transport)
+  /** BT MACs held by a CarPlay session, so the AA name correlation skips them. */
+  private cpClaimedBtMacs(): Set<string> {
+    return new Set(
+      this.sessions
+        .all()
+        .filter((s) => s.protocol === 'carplay' && s.device.btMac)
+        .map((s) => (s.device.btMac as string).toUpperCase())
+    )
   }
 
-  private async refreshAaBtPairedList(opts: { throwOnError?: boolean } = {}): Promise<void> {
+  private async refreshAaBtPairedList(
+    opts: { throwOnError?: boolean; preferMac?: string } = {}
+  ): Promise<void> {
     let devices
     try {
       devices = await this.aaBtSock.listPaired()
@@ -1439,11 +1671,21 @@ export class ProjectionService {
     }
 
     const phones = devices.filter((d) => isPhoneLikeCod(d.class))
-    const connected = phones.find((d) => d.connected)?.mac ?? ''
+    const cpBtMacs = this.cpClaimedBtMacs()
+    const connected =
+      phones.find((d) => d.connected && !cpBtMacs.has(d.mac.toUpperCase()))?.mac ?? ''
+    this.aaBtNameByMac = new Map(devices.map((d) => [d.mac.toUpperCase(), d.name || '']))
+    for (const p of phones) if (p.name) this.deviceRegistry.noteName(p.mac, p.name)
+    const preferUp = Boolean(
+      opts.preferMac &&
+        phones.some((d) => d.connected && d.mac.toUpperCase() === opts.preferMac?.toUpperCase())
+    )
+    if (preferUp && opts.preferMac) this.connectedAaBtMac = opts.preferMac
+    else if (connected) this.connectedAaBtMac = connected
     const wasSettled = this.btInitialQueryDone
     this.btInitialQueryDone = true
     // Wired AA doesn't wake the phone over BT — treat any paired phone as in-range
-    const wiredAaActive = this.started && this.drivers.getAa()?.isWiredMode() === true
+    const wiredAaActive = this.started && this.isActiveAaWired()
     const offerable = connected !== '' || (wiredAaActive && phones.length > 0)
     this.setWirelessPhoneInRange(offerable)
     if (!wasSettled) this.autoStartIfNeeded().catch(console.error)
@@ -1465,17 +1707,11 @@ export class ProjectionService {
         : ''
     }
 
-    const prev = isRecord(this.boxInfo) ? this.boxInfo : {}
-    const boxUpdate: Record<string, unknown> = { ...prev, DevList: this.mergedDevList() }
-    if (this.aaDriver) {
-      boxUpdate.btMacAddr = connected
-      if (connected && this.config.lastConnectedAaBtMac !== connected) {
-        configEvents.emit('requestSave', { lastConnectedAaBtMac: connected })
-      }
+    if (this.aaBtActive && connected && this.config.lastConnectedAaBtMac !== connected) {
+      configEvents.emit('requestSave', { lastConnectedAaBtMac: connected })
     }
-    this.boxInfo = boxUpdate
-    this.emitDongleInfoIfChanged()
     this.emitCombinedBtPairedList()
+    this.deviceController.emitDevices()
   }
 
   private async populateAaBtPairedListInitial(): Promise<void> {
@@ -1485,7 +1721,7 @@ export class ProjectionService {
     const expectDevice = !!this.config.lastConnectedAaBtMac
 
     while (Date.now() < deadline) {
-      if (!this.aaBtSupervisor) return
+      if (!this.aaBtActive) return
       try {
         const devices = await this.aaBtSock.listPaired()
         await this.refreshAaBtPairedList().catch(() => {})
@@ -1540,7 +1776,7 @@ export class ProjectionService {
   }
 
   private async connectConfiguredAudioDevices(): Promise<void> {
-    if (!this.aaBtSupervisor) return
+    if (!this.aaBtActive) return
     const macs = new Set<string>()
     const outMac = this.extractBluezMac(this.config.audioOutputDevice)
     const inMac = this.extractBluezMac(this.config.audioInputDevice)
@@ -1594,9 +1830,9 @@ export class ProjectionService {
 
   // Pick a target from the paired list and fire a single Connect
   private async tryAutoConnect(opts: { force?: boolean } = {}): Promise<void> {
-    if (!this.aaBtSupervisor) return
+    if (!this.aaBtActive) return
     // Don't poke the phone over BT while a wired session is already running
-    if (this.started && this.drivers.getAa()?.isWiredMode() === true) {
+    if (this.started && this.isActiveAaWired()) {
       console.log('[ProjectionService] autoconnect: skipped (wired AA session active)')
       return
     }
@@ -1656,18 +1892,20 @@ export class ProjectionService {
   private openAaBtSubscription(): void {
     if (this.aaBtSubscription) return
     const open = (): void => {
-      if (!this.aaBtSupervisor) return
+      if (!this.aaBtActive) return
       this.aaBtSubscription = this.aaBtSock.subscribe(
         (ev) => {
           if (ev.event === 'input' && ev.command) {
             this.dispatchRemoteInput(ev.command)
             return
           }
-          this.refreshAaBtPairedList().catch(() => {})
+          this.refreshAaBtPairedList({
+            preferMac: typeof ev.mac === 'string' ? ev.mac : undefined
+          }).catch(() => {})
         },
         () => {
           this.aaBtSubscription = null
-          if (this.aaBtSupervisor) setTimeout(open, 1000)
+          if (this.aaBtActive) setTimeout(open, 1000)
         }
       )
     }
@@ -1684,6 +1922,39 @@ export class ProjectionService {
     this.aaBtSubscription = null
   }
 
+  private async armWiredAa(device: Device): Promise<boolean> {
+    return this.drivers.bringUpAaWired(device)
+  }
+
+  private async maybeBringUpWiredBeside(): Promise<void> {
+    const device = this.arbiter.getPhoneDevice()
+    if (!device) return
+    if (device.vendorId === APPLE_VENDOR_ID) return
+    const aaSessions = this.sessions.all().filter((s) => s.protocol === 'androidauto')
+    // A live WIRED AA session = a 2nd Android already streaming (Tier B) → skip.
+    if (aaSessions.some((s) => s.transport === 'usb')) return
+    // A WIRELESS AA session is the same phone moving to USB. Close it so the wired
+    // bring-up transitions and auto-activates; left open it lingers as a dead
+    // "active" session with no video (the black stream).
+    for (const s of aaSessions) void (s.driver as AaSession).close()
+    console.log('[ProjectionService] wired AA bring-up beside active session')
+    try {
+      await this.armWiredAa(device)
+    } catch (e) {
+      console.warn('[ProjectionService] wired-beside AA bring-up failed', e)
+    }
+  }
+
+  private closeWiredPhoneSession(): void {
+    const wired = this.sessions
+      .all()
+      .find((s) => s.protocol === 'androidauto' && s.transport === 'usb')
+    if (!wired) return
+    // Closing the wired AaSession tears down its bridge. The AaManager keeps the
+    // :5277 wireless listener up, so the phone can come back over WiFi on its own.
+    void (wired.driver as AaSession).close()
+  }
+
   public async autoStartIfNeeded() {
     if (this.shuttingDown) return
     if (this.isStopping && this.stopPromise) {
@@ -1692,6 +1963,7 @@ export class ProjectionService {
       } catch {}
     }
     if (this.shuttingDown) return
+    if (this.sessions.all().length > 0) return
     if (this.started || this.isStarting) return
 
     const decision = this.arbiter.decideNextStart()
@@ -1713,6 +1985,12 @@ export class ProjectionService {
     this.isStarting = true
     this.startPromise = (async () => {
       try {
+        const candidate = this.arbiter.pickPreferred()
+        const target: Transport =
+          candidate?.transport === 'aa' ? 'aa' : candidate?.transport === 'cp' ? 'cp' : 'dongle'
+        // Dongle is brought up on USB attach (bringUpDongle), never through start().
+        if (target === 'dongle') return
+
         await this.reloadConfigFromDisk()
 
         const ext = this.config as VolumeConfig
@@ -1737,19 +2015,29 @@ export class ProjectionService {
         this.lastClusterCodec = null
         this.aaPlaybackInferred = 1
 
-        this.resetMediaSnapshot('session-start')
-        this.resetNavigationSnapshot('session-start')
+        this.mediaStore.reset('session-start')
+        this.navStore.reset('session-start')
 
-        const candidate = this.arbiter.pickPreferred()
-        const target: Transport = candidate?.transport === 'aa' ? 'aa' : 'dongle'
-        const active = this.selectDriverFor(target)
         const useAa = target === 'aa'
 
+        if (target === 'cp') {
+          // The CarPlay :7000 listener + helper feed are owned by CpManager. Ensure
+          // they are up; a CpSession spawns and auto-activates when the phone connects.
+          this.drivers.startCp()
+          this.started = true
+          this.clearStartRetry()
+          console.log(
+            `[ProjectionService] started in CP mode (${candidate?.mode === 'wired' ? 'wired' : 'wireless'})`
+          )
+          this.clusterStreamActive = null
+          this.syncClusterStreamFocus()
+          return
+        }
+
         if (useAa) {
-          // Two AA paths share the same driver: Wireless + Wired
+          // Two AA paths: Wired (per-device AOAP bring-up) + Wireless (:5277 listener)
           const wantWired = candidate?.mode === 'wired'
           const wiredDevice = wantWired ? this.arbiter.getPhoneDevice() : null
-          const aaDriver = active as AaDriver
 
           if (wantWired && !wiredDevice) {
             console.warn('[ProjectionService] wired phone has no live handle yet — retrying')
@@ -1758,75 +2046,42 @@ export class ProjectionService {
             return
           }
 
-          aaDriver.setWiredDevice(wiredDevice)
-
           if (wiredDevice) {
             console.log(
               `[ProjectionService] wired AA bring-up with device vid=0x${wiredDevice.vendorId.toString(16)} pid=0x${wiredDevice.productId.toString(16)}`
             )
-          } else {
-            console.log('[ProjectionService] wireless AA bring-up (no wired device)')
-          }
-
-          try {
-            const ok = await aaDriver.start(this.config)
-            this.started = Boolean(ok)
-            if (this.started) {
-              this.clearStartRetry()
-              console.log(
-                `[ProjectionService] started in AA mode (${wiredDevice ? 'wired' : 'wireless'})`
-              )
-              // Fresh AAStack defaults to an active cluster stream, re-apply visibility state
-              this.clusterStreamActive = null
-              this.syncClusterStreamFocus()
-            } else {
-              console.warn(
-                '[ProjectionService] aaDriver.start returned false — session not running, retrying'
-              )
-              this.drivers.releaseAa()
+            try {
+              const ok = await this.drivers.bringUpAaWired(wiredDevice)
+              this.started = ok
+              if (this.started) {
+                this.clearStartRetry()
+                console.log('[ProjectionService] started in AA mode (wired)')
+                // Fresh AAStack defaults to an active cluster stream, re-apply visibility state
+                this.clusterStreamActive = null
+                this.syncClusterStreamFocus()
+              } else {
+                console.warn(
+                  '[ProjectionService] wired AA bring-up returned false — session not running, retrying'
+                )
+                this.scheduleStartRetry()
+              }
+            } catch (e) {
+              console.warn('[ProjectionService] AA wired start failed, retrying', e)
+              this.started = false
               this.scheduleStartRetry()
             }
-          } catch (e) {
-            console.warn('[ProjectionService] AA start failed, retrying', e)
-            this.started = false
-            this.drivers.releaseAa()
-            this.scheduleStartRetry()
+          } else {
+            // The AaManager's :5277 wireless listener is already armed by
+            // syncHelperSupervisor; ensure it is up and mark the session running.
+            console.log('[ProjectionService] wireless AA bring-up (listener already armed)')
+            this.drivers.startAaWireless()
+            this.started = true
+            this.clearStartRetry()
+            // Fresh AAStack defaults to an active cluster stream, re-apply visibility state
+            this.clusterStreamActive = null
+            this.syncClusterStreamFocus()
           }
           return
-        }
-
-        // Dongle (USB CPC200) path.
-        const device = (await usb.getDevices()).find((d) =>
-          isCarlinkitDongle(d.vendorId, d.productId)
-        )
-        if (!device) return
-
-        try {
-          await device.open()
-          this.webUsbDevice = device
-
-          await this.dongleDriver.initialise(asDomUSBDevice(device))
-
-          if (this.pendingStartupConnectTarget) {
-            this.dongleDriver.setPendingStartupConnectTarget(this.pendingStartupConnectTarget)
-          } else {
-            this.dongleDriver.clearPendingStartupConnectTarget()
-          }
-
-          await this.dongleDriver.start(this.config)
-
-          this.pairTimeout = setTimeout(() => {
-            this.dongleDriver.send(new SendCommand('wifiPair'))
-          }, 15000)
-
-          this.started = true
-        } catch (e) {
-          console.warn('[ProjectionService] dongle bring-up failed', e)
-          try {
-            await this.webUsbDevice?.close()
-          } catch {}
-          this.webUsbDevice = null
-          this.started = false
         }
       } finally {
         this.isStarting = false
@@ -1840,23 +2095,81 @@ export class ProjectionService {
 
   public async disconnectPhone(): Promise<boolean> {
     if (!this.started) return false
+    return (await this.driver.disconnectPhone?.()) ?? false
+  }
 
-    let ok = false
+  private lastSessionKey = ''
 
-    try {
-      ok = (await this.driver.send(new SendDisconnectPhone())) || ok
-    } catch (e) {
-      console.warn('[ProjectionService] SendDisconnectPhone failed', e)
+  private emitSessionState(): void {
+    const ordered = this.sessions.all().sort((a, b) => a.index - b.index)
+    const active = this.sessions.active()
+    const protocol = active?.protocol ?? null
+    const position = active ? ordered.findIndex((s) => s === active) + 1 : 0
+    const key = `${protocol}:${position}:${ordered.length}`
+    if (key === this.lastSessionKey) return
+    this.lastSessionKey = key
+    this.emitProjectionEvent({ type: 'session', protocol, position, total: ordered.length })
+  }
+
+  private onActiveSessionChanged(
+    next: ProjectionSession | null,
+    prev: ProjectionSession | null
+  ): void {
+    this.emitSessionState()
+    if (next) {
+      console.log(`[ProjectionService] active session -> #${next.index} ${next.protocol}`)
+      if (next.protocol === 'dongle') {
+        this.started = true
+        if (prev) {
+          this.disposeGstPlanes()
+          if (!this.isStarting) next.driver.requestKeyframe?.()
+        }
+        if (!prev) this.audio.resetForSessionStart()
+        this.mediaStore.hydrate(next)
+        this.navStore.hydrate(next)
+        return
+      }
+      this.disposeGstPlanes()
+      this.mediaStore.hydrate(next)
+      this.navStore.hydrate(next)
+      const mc = next.video.main.codec ?? this.lastMainCodecByDriver.get(next.driver)
+      const cc = next.video.cluster.codec ?? this.lastClusterCodecByDriver.get(next.driver)
+      if (mc) this.gstVideoCodec = mc
+      if (cc) this.gstVideoClusterCodec = cc
+      console.log(
+        `[SESSIONS] codec-restore #${next.index} ${next.protocol}: session=${next.video.main.codec ?? '-'} map=${this.lastMainCodecByDriver.get(next.driver) ?? '-'} → gstVideoCodec=${this.gstVideoCodec}`
+      )
+      this.lastVideoWidth = next.video.main.width
+      this.lastVideoHeight = next.video.main.height
+      this.lastClusterVideoWidth = next.video.cluster.width
+      this.lastClusterVideoHeight = next.video.cluster.height
+      this.updateVideoCrop()
+      if (!this.isStarting) {
+        if (!prev) this.audio.resetForSessionStart()
+        next.driver.requestKeyframe?.()
+      }
+    } else {
+      this.teardownToIdle()
     }
+  }
 
-    try {
-      ok = (await this.driver.send(new SendCloseDongle())) || ok
-    } catch (e) {
-      console.warn('[ProjectionService] SendCloseDongle failed', e)
+  private teardownToIdle(): void {
+    if (this.stopping || this.isStopping || this.shuttingDown) return
+    this.disposeGstPlanes()
+    this.emitProjectionEvent({ type: 'projection', shown: false })
+    this.audio.resetForSessionStop()
+    this.started = false
+    this.statusFile.setStreaming(false)
+    this.mediaStore.reset('session-idle')
+    this.navStore.reset('session-idle')
+    const wc = this.webContents
+    if (wc && !wc.isDestroyed()) {
+      try {
+        wc.send('projection-event', { type: 'unplugged' })
+      } catch {}
     }
-
-    if (ok) await new Promise((r) => setTimeout(r, 150))
-    return ok
+    this.emitProjectionEvent({ type: 'unplugged' })
+    this.autoStartIfNeeded().catch(() => {})
   }
 
   public async stop(): Promise<void> {
@@ -1865,6 +2178,7 @@ export class ProjectionService {
 
     this.stopping = true
     this.isStopping = true
+    this.sessions.clear()
     this.arbiter.resetNativeProbeDefer()
 
     this.stopPromise = (async () => {
@@ -1885,33 +2199,28 @@ export class ProjectionService {
 
       const wasDongleSession = this.driver instanceof DongleDriver
 
-      try {
-        await this.driver.close()
-      } catch (e) {
-        console.warn('[ProjectionService] driver.close() failed (ignored)', e)
+      if (wasDongleSession) {
+        try {
+          await this.driver.close()
+        } catch (e) {
+          console.warn('[ProjectionService] dongle close() failed (ignored)', e)
+        }
       }
-
-      this.drivers.releaseAa()
 
       if (wasDongleSession) {
         // Dongle gone — drop its stale DevList
         this.dongleDevList = []
         this.donglePairedRaw = ''
+        this.dongleConnectedMac = ''
       }
 
-      this.webUsbDevice = null
       this.audio.resetForSessionStop()
 
-      this.gstVideo?.dispose()
-      this.gstVideo = null
-      this.gstVideoCodec = 'h264'
-      for (const plane of this.gstVideoClusters.values()) plane.dispose()
-      this.gstVideoClusters.clear()
-      this.gstVideoClusterCodec = 'h264'
+      this.disposeGstPlanes()
 
       this.started = false
-      this.resetMediaSnapshot('session-stop')
-      this.resetNavigationSnapshot('session-stop')
+      this.mediaStore.reset('session-stop')
+      this.navStore.reset('session-stop')
 
       this.dongleFwVersion = undefined
       if (isRecord(this.boxInfo)) {
@@ -1930,78 +2239,6 @@ export class ProjectionService {
     })
 
     return this.stopPromise
-  }
-
-  private patchAaMediaPlayStatus(status: 1 | 2): void {
-    try {
-      const file = path.join(app.getPath('userData'), 'mediaData.json')
-      const existing = readMediaFile(file)
-
-      const nextPayload: PersistedMediaPayload = {
-        ...existing.payload,
-        type: MediaType.Data,
-        media: {
-          ...existing.payload.media,
-          MediaPlayStatus: status
-        }
-      }
-
-      const out = {
-        timestamp: new Date().toISOString(),
-        payload: nextPayload
-      }
-
-      fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
-
-      this.emitProjectionEvent({
-        type: 'media',
-        payload: {
-          mediaType: MediaType.Data,
-          payload: {
-            type: MediaType.Data,
-            media: {
-              MediaPlayStatus: status
-            }
-          }
-        }
-      })
-    } catch (e) {
-      console.warn('[ProjectionService] patchAaMediaPlayStatus failed (ignored)', e)
-    }
-  }
-
-  private resetMediaSnapshot(reason: string): void {
-    try {
-      const file = path.join(app.getPath('userData'), 'mediaData.json')
-
-      const out = {
-        timestamp: new Date().toISOString(),
-        payload: DEFAULT_MEDIA_DATA_RESPONSE.payload
-      }
-
-      fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
-    } catch (e) {
-      console.warn('[ProjectionService] resetMediaSnapshot failed (ignored)', reason, e)
-    }
-
-    this.emitProjectionEvent({ type: 'media-reset', reason })
-  }
-
-  private resetNavigationSnapshot(reason: string): void {
-    try {
-      const file = path.join(app.getPath('userData'), 'navigationData.json')
-
-      const out = {
-        timestamp: new Date().toISOString(),
-        payload: DEFAULT_NAVIGATION_DATA_RESPONSE.payload
-      }
-
-      fs.writeFileSync(file, JSON.stringify(out, null, 2), 'utf8')
-    } catch (e) {
-      console.warn('[ProjectionService] resetNavigationSnapshot failed (ignored)', reason, e)
-    }
-
-    this.emitProjectionEvent({ type: 'navigation-reset', reason })
   }
 
   // Bring-up can fail transiently (USB interface still busy, phone still locked). Keep retrying
@@ -2028,14 +2265,6 @@ export class ProjectionService {
 
   private clearTimeouts() {
     this.clearStartRetry()
-    if (this.pairTimeout) {
-      clearTimeout(this.pairTimeout)
-      this.pairTimeout = null
-    }
-    if (this.frameInterval) {
-      clearInterval(this.frameInterval)
-      this.frameInterval = null
-    }
   }
 
   private sendChunked(

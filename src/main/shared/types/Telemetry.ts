@@ -47,37 +47,36 @@
 //  Every field is routed by the table below. ✓ = receiver consumes the
 //  field, · = ignored, TODO = wiring still missing on that side.
 //
-//    Field                          Dash  AA-native  Dongle
-//    ─────────────────────────────────────────────────────
-//    speedKph                        ✓     ✓          ·
-//    rpm                             ✓     ✓          ·
-//    gear                            ✓     ✓          ·
-//    reverse                         ✓     ✓ (gear)   ·
-//    steeringDeg                     ✓     ·          ·
-//    turn (blinker)                  ✓     ✓          ·
-//    lights / highBeam / hazards     ✓     ✓          ·
-//    parkingBrake                    ✓     ✓          ·
-//    nightMode                       ✓     ✓          ✓
-//    fuelPct / rangeKm               ✓     ✓          ·
-//    fuelRateLph / consumption*      ✓     ·          ·
-//    batteryCapacityKwh / Lvl        ·     ✓ (VEM)    ·
-//    coolantC / oilC / iatC          ✓     ·          ·
-//    transmissionC                   ✓     ·          ·
-//    ambientC                        ✓     ✓          ·
-//    baroKpa                         ✓     ✓          ·
-//    mapKpa / boostKpa               ✓     ·          ·
-//    lambda / afr                    ✓     ·          ·
-//    batteryV                        ✓     ·          ·
-//    ambientLux                      ✓     ·          ·
-//    odometerKm / odometerTripKm     ✓     ✓          ·
-//    drivingStatus                   ✓     ✓          ·
-//    gps.lat / lng / alt / heading   ✓     ✓          ✓
-//    gps.speedMs / accuracyM         ✓     ✓          ·
-//    can { id, data, bus }           ✓     ·          ·
+//    Field                          Dash  AA-native  CP-native  Dongle
+//    ─────────────────────────────────────────────────────────────────
+//    speedKph                        ✓     ✓          TODO       ·
+//    rpm                             ✓     ✓          TODO       ·
+//    gear                            ✓     ✓          TODO       ·
+//    reverse                         ✓     ✓ (gear)   TODO       ·
+//    steeringDeg                     ✓     ·          TODO       ·
+//    turn (blinker)                  ✓     ✓          TODO       ·
+//    lights / highBeam / hazards     ✓     ✓          TODO       ·
+//    parkingBrake                    ✓     ✓          TODO       ·
+//    nightMode                       ✓     ✓          ✓          ✓
+//    fuelPct                         ✓     ✓          TODO       ·
+//    rangeKm                         ✓     ✓          ✓          ·
+//    fuelRateLph / consumption*      ✓     ·          TODO       ·
+//    batteryCapacityKwh / Lvl        ·     ✓ (VEM)    TODO (EV)  ·
+//    coolantC / oilC / iatC          ✓     ·          TODO       ·
+//    transmissionC                   ✓     ·          TODO       ·
+//    ambientC                        ✓     ✓          ✓          ·
+//    baroKpa                         ✓     ✓          TODO       ·
+//    mapKpa / boostKpa               ✓     ·          TODO       ·
+//    lambda / afr                    ✓     ·          TODO       ·
+//    batteryV                        ✓     ·          TODO       ·
+//    ambientLux                      ✓     ·          ·          ·
+//    odometerKm / odometerTripKm     ✓     ✓          TODO       ·
+//    drivingStatus                   ✓     ✓          ·          ·
+//    gps.lat / lng / alt / heading   ✓     ✓          ✓          ✓
+//    gps.speedMs / accuracyM         ✓     ✓          ✓          ·
+//    can { id, data, bus }           ✓     ·          ·          ·
 //
-//  The dongle is a CarPlay/AA bridge box, not a vehicle bus — the only
-//  vehicle-side data it consumes are GPS (NMEA over `SendGnssData`) and the
-//  night-mode boolean. Everything else is HU-side.
+//  `TODO` = intended, not yet wired. `·` = not sent
 //
 //
 //  ADDING NEW FIELDS
@@ -248,7 +247,7 @@ export type TelemetryPayload = {
 // ──────────────────────────────────────────────────────────────────────────
 
 /** A telemetry sink. Adapters identify themselves with one of these. */
-export type TelemetryReceiver = 'dash' | 'aa' | 'dongle'
+export type TelemetryReceiver = 'dash' | 'aa' | 'cp' | 'dongle'
 
 /** Routing flag value: receiver consumes the field, doesn't, or has wiring TODO. */
 export type RouteFlag = true | false | 'TODO'
@@ -267,70 +266,70 @@ export type TelemetryRoute = Readonly<Record<TelemetryReceiver, RouteFlag>>
  */
 export const TELEMETRY_ROUTES = {
   // Motion / cluster basics
-  speedKph: { dash: true, aa: true, dongle: false },
-  rpm: { dash: true, aa: true, dongle: false },
-  gear: { dash: true, aa: true, dongle: false },
-  steeringDeg: { dash: true, aa: false, dongle: false },
+  speedKph: { dash: true, aa: true, dongle: false, cp: 'TODO' },
+  rpm: { dash: true, aa: true, dongle: false, cp: 'TODO' },
+  gear: { dash: true, aa: true, dongle: false, cp: 'TODO' },
+  steeringDeg: { dash: true, aa: false, dongle: false, cp: 'TODO' },
 
   // Driver-facing booleans
-  reverse: { dash: true, aa: true, dongle: false },
-  lights: { dash: true, aa: true, dongle: false },
-  highBeam: { dash: true, aa: true, dongle: false },
-  hazards: { dash: true, aa: true, dongle: false },
-  turn: { dash: true, aa: true, dongle: false },
-  parkingBrake: { dash: true, aa: true, dongle: false },
+  reverse: { dash: true, aa: true, dongle: false, cp: 'TODO' },
+  lights: { dash: true, aa: true, dongle: false, cp: 'TODO' },
+  highBeam: { dash: true, aa: true, dongle: false, cp: 'TODO' },
+  hazards: { dash: true, aa: true, dongle: false, cp: 'TODO' },
+  turn: { dash: true, aa: true, dongle: false, cp: 'TODO' },
+  parkingBrake: { dash: true, aa: true, dongle: false, cp: 'TODO' },
 
   // Temperatures
-  coolantC: { dash: true, aa: false, dongle: false },
-  oilC: { dash: true, aa: false, dongle: false },
-  transmissionC: { dash: true, aa: false, dongle: false },
-  iatC: { dash: true, aa: false, dongle: false },
-  ambientC: { dash: true, aa: true, dongle: false },
+  coolantC: { dash: true, aa: false, dongle: false, cp: 'TODO' },
+  oilC: { dash: true, aa: false, dongle: false, cp: 'TODO' },
+  transmissionC: { dash: true, aa: false, dongle: false, cp: 'TODO' },
+  iatC: { dash: true, aa: false, dongle: false, cp: 'TODO' },
+  ambientC: { dash: true, aa: true, cp: true, dongle: false },
 
   // Electrical
-  batteryV: { dash: true, aa: false, dongle: false },
+  batteryV: { dash: true, aa: false, dongle: false, cp: 'TODO' },
 
   // Fuel / consumption / range
-  fuelPct: { dash: true, aa: true, dongle: false },
-  rangeKm: { dash: true, aa: true, dongle: false },
-  fuelRateLph: { dash: true, aa: false, dongle: false },
-  consumptionLPer100Km: { dash: true, aa: false, dongle: false },
-  consumptionAvgLPer100Km: { dash: true, aa: false, dongle: false },
-  batteryCapacityKwh: { dash: false, aa: true, dongle: false },
-  batteryLevelKwh: { dash: false, aa: true, dongle: false },
+  fuelPct: { dash: true, aa: true, dongle: false, cp: 'TODO' },
+  rangeKm: { dash: true, aa: true, cp: true, dongle: false },
+  fuelRateLph: { dash: true, aa: false, dongle: false, cp: 'TODO' },
+  consumptionLPer100Km: { dash: true, aa: false, dongle: false, cp: 'TODO' },
+  consumptionAvgLPer100Km: { dash: true, aa: false, dongle: false, cp: 'TODO' },
+  batteryCapacityKwh: { dash: false, aa: true, dongle: false, cp: 'TODO' },
+  batteryLevelKwh: { dash: false, aa: true, dongle: false, cp: 'TODO' },
 
   // Engine air / boost / fueling
-  mapKpa: { dash: true, aa: false, dongle: false },
-  baroKpa: { dash: true, aa: true, dongle: false },
-  boostKpa: { dash: true, aa: false, dongle: false },
-  lambda: { dash: true, aa: false, dongle: false },
-  afr: { dash: true, aa: false, dongle: false },
+  mapKpa: { dash: true, aa: false, dongle: false, cp: 'TODO' },
+  baroKpa: { dash: true, aa: true, dongle: false, cp: 'TODO' },
+  boostKpa: { dash: true, aa: false, dongle: false, cp: 'TODO' },
+  lambda: { dash: true, aa: false, dongle: false, cp: 'TODO' },
+  afr: { dash: true, aa: false, dongle: false, cp: 'TODO' },
 
   // Distance / driving status
-  odometerKm: { dash: true, aa: true, dongle: false },
-  odometerTripKm: { dash: true, aa: true, dongle: false },
-  drivingStatus: { dash: true, aa: true, dongle: false },
+  odometerKm: { dash: true, aa: true, dongle: false, cp: 'TODO' },
+  odometerTripKm: { dash: true, aa: true, dongle: false, cp: 'TODO' },
+  drivingStatus: { dash: true, aa: true, dongle: false, cp: false },
 
   // Environment
-  ambientLux: { dash: true, aa: false, dongle: false },
+  ambientLux: { dash: true, aa: false, dongle: false, cp: false },
 
   // External overrides
-  nightMode: { dash: true, aa: true, dongle: true },
+  nightMode: { dash: true, aa: true, dongle: true, cp: true },
 
   // GNSS — whole sub-block consumed; per-field availability documented in GpsPayload.
-  gps: { dash: true, aa: true, dongle: true },
+  gps: { dash: true, aa: true, cp: true, dongle: true },
 
   // Raw passthrough
-  can: { dash: true, aa: false, dongle: false },
+  can: { dash: true, aa: false, dongle: false, cp: false },
 
   // Producer timestamp — purely metadata
-  ts: { dash: true, aa: false, dongle: false }
+  ts: { dash: true, aa: false, dongle: false, cp: false }
 } as const satisfies Record<keyof TelemetryPayload, TelemetryRoute>
 
 /** Look up a routing entry; safe for the open `[key: string]: unknown` extension point. */
 export function routes(key: string): TelemetryRoute {
   const entry = (TELEMETRY_ROUTES as Record<string, TelemetryRoute | undefined>)[key]
-  return entry ?? { dash: false, aa: false, dongle: false }
+  return entry ?? { dash: false, aa: false, dongle: false, cp: false }
 }
 
 /** Resolve `'TODO'` to runtime-effective `false`. */

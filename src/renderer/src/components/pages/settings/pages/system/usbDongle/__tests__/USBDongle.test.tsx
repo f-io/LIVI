@@ -13,7 +13,7 @@ type DevListItem = {
 }
 
 const state = {
-  isDongleConnected: true,
+  isDongleHardwarePresent: true,
   isStreaming: false,
   settings: { dongleToolsIp: '' },
   saveSettings: vi.fn().mockResolvedValue(undefined),
@@ -46,7 +46,10 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('@store/store', () => ({
   useStatusStore: (selector: (s: any) => unknown) =>
-    selector({ isDongleConnected: state.isDongleConnected, isStreaming: state.isStreaming }),
+    selector({
+      isDongleHardwarePresent: state.isDongleHardwarePresent,
+      isStreaming: state.isStreaming
+    }),
   useLiviStore: (selector: (s: any) => unknown) =>
     selector({
       settings: state.settings,
@@ -72,7 +75,7 @@ vi.mock('@renderer/hooks/useNetworkStatus', () => ({
 describe('USBDongle', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
-    state.isDongleConnected = true
+    state.isDongleHardwarePresent = true
     state.isStreaming = false
     state.settings = { dongleToolsIp: '' }
     state.boxInfo = { uuid: 'u1', MFD: 'mfd', productType: 'p1', DevList: [] }
@@ -137,44 +140,6 @@ describe('USBDongle', () => {
     expect(screen.getByText('Dongle Firmware')).toBeInTheDocument()
     expect(screen.getByText('Downloading')).toBeInTheDocument()
     expect(screen.getByText('50% • 1 KB / 2 KB')).toBeInTheDocument()
-  })
-
-  test('renders device list entries from box info', async () => {
-    state.boxInfo = {
-      uuid: 'u1',
-      MFD: 'mfd',
-      productType: 'p1',
-      DevList: [
-        {
-          index: 1,
-          name: 'Phone A',
-          type: 'CarPlay',
-          id: 'AA:BB',
-          time: '123',
-          rfcomm: '5'
-        }
-      ]
-    }
-
-    render(<USBDongle />)
-
-    expect(screen.getByText('Device 1:')).toBeInTheDocument()
-    expect(screen.getByText('Phone A')).toBeInTheDocument()
-    expect(screen.getByText('CarPlay')).toBeInTheDocument()
-    expect(screen.getByText('AA:BB')).toBeInTheDocument()
-  })
-
-  test('renders fallback device list row when no devices exist', async () => {
-    state.boxInfo = {
-      uuid: 'u1',
-      MFD: 'mfd',
-      productType: 'p1',
-      DevList: [] as DevListItem[]
-    }
-
-    render(<USBDongle />)
-
-    expect(screen.getByLabelText('Device List: —')).toBeInTheDocument()
   })
 
   test('shows changelog button enabled and opens vendor changelog dialog', async () => {
@@ -350,7 +315,7 @@ describe('USBDongle', () => {
       expect((window as any).projection.usb.uploadLiviScripts).toHaveBeenCalled()
     })
 
-    state.isDongleConnected = false
+    state.isDongleHardwarePresent = false
     rerender(<USBDongle />)
 
     expect(screen.queryByText('settings.devToolsEnabled')).not.toBeInTheDocument()
@@ -459,10 +424,10 @@ describe('USBDongle', () => {
     expect(screen.getByText('Dongle Firmware')).toBeInTheDocument()
     expect(screen.getByText('Upload complete')).toBeInTheDocument()
 
-    state.isDongleConnected = false
+    state.isDongleHardwarePresent = false
     rerender(<USBDongle />)
 
-    state.isDongleConnected = true
+    state.isDongleHardwarePresent = true
     rerender(<USBDongle />)
 
     await waitFor(() => {

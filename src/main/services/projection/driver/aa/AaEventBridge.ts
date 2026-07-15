@@ -1,11 +1,15 @@
 import { MessageHeader, MessageType } from '@projection/messages/common'
 import {
+  buildAlbumArtMessage,
+  buildMediaJsonMessage,
+  buildNaviImageMessage,
+  buildNaviJsonMessage
+} from '@projection/messages/metaBuilders'
+import {
   AudioData,
   Command,
   DongleReady,
-  MediaType,
   type Message,
-  MetaData,
   NavigationMetaType,
   PhoneType,
   Plugged,
@@ -40,7 +44,7 @@ const AUDIO_MAP: Record<AudioChannelType, { audioType: number; decodeType: numbe
   phone: { audioType: 2, decodeType: 5 }
 }
 
-function buildVideoDataMessage(
+export function buildVideoDataMessage(
   buf: Buffer,
   width: number,
   height: number,
@@ -83,42 +87,6 @@ function buildAudioCommandMessage(channel: AudioChannelType, command: AudioComma
   return new AudioData(header, data)
 }
 
-function buildMediaJsonMessage(media: Record<string, unknown>): MetaData {
-  const json = JSON.stringify(media)
-  const payload = Buffer.from(json + '\0', 'utf8')
-  const data = Buffer.allocUnsafeSlow(4 + payload.length)
-  data.writeUInt32LE(MediaType.Data, 0)
-  payload.copy(data, 4)
-  const header = new MessageHeader(data.length, MessageType.MetaData)
-  return new MetaData(header, data)
-}
-
-function buildAlbumArtMessage(albumArt: Buffer): MetaData {
-  const data = Buffer.allocUnsafeSlow(4 + albumArt.length)
-  data.writeUInt32LE(MediaType.AlbumCover, 0)
-  albumArt.copy(data, 4)
-  const header = new MessageHeader(data.length, MessageType.MetaData)
-  return new MetaData(header, data)
-}
-
-function buildNaviJsonMessage(navi: Record<string, unknown>): MetaData {
-  const json = JSON.stringify(navi)
-  const payload = Buffer.from(json + '\0', 'utf8')
-  const data = Buffer.allocUnsafeSlow(4 + payload.length)
-  data.writeUInt32LE(NavigationMetaType.DashboardInfo, 0)
-  payload.copy(data, 4)
-  const header = new MessageHeader(data.length, MessageType.MetaData)
-  return new MetaData(header, data)
-}
-
-function buildNaviImageMessage(image: Buffer): MetaData {
-  const data = Buffer.allocUnsafeSlow(4 + image.length)
-  data.writeUInt32LE(NavigationMetaType.DashboardImage, 0)
-  image.copy(data, 4)
-  const header = new MessageHeader(data.length, MessageType.MetaData)
-  return new MetaData(header, data)
-}
-
 function audioLifecycleCommand(channel: AudioChannelType, starting: boolean): AudioCommand {
   switch (channel) {
     case 'media':
@@ -133,6 +101,10 @@ function audioLifecycleCommand(channel: AudioChannelType, starting: boolean): Au
 export type AaEventBridgeDeps = {
   emitMessage: (msg: Message) => void
   emitCodec: (kind: 'video-codec' | 'cluster-video-codec', codec: VideoCodec) => void
+  emitDevicePresence: (d: { name: string; model: string; instanceId: string; ip: string }) => void
+  emitDeviceStatus: (s: Record<string, unknown>) => void
+  emitConnected?: () => void
+  emitDisconnected?: (reason?: string) => void
   startMic: (reason: string) => void
   stopMic: (reason: string) => void
   consumeWiredBridge: () => UsbAoapBridge | null
@@ -156,16 +128,15 @@ export class AaEventBridge {
     const { aa, cfg, deps } = this
 
     aa.on('connected', () => {
-      console.log('[AaEventBridge] AAStack connected → DongleReady + Plugged(AndroidAuto)')
-      const readyHdr = new MessageHeader(0, MessageType.Open)
-      deps.emitMessage(new DongleReady(readyHdr) as Message)
-      this.emitPlugged()
+      console.log('[AaEventBridge] AAStack connected')
+      deps.emitConnected?.()
     })
 
     aa.on('disconnected', (reason?: string) => {
       console.log(
         `[AaEventBridge] AAStack disconnected (${reason ?? 'no reason'}) — supervisor stays up for retry`
       )
+      deps.emitDisconnected?.(reason)
       this.naviBag = {}
       this.naviActive = false
       this.naviApp = undefined
@@ -174,9 +145,6 @@ export class AaEventBridge {
         this.emitCommand(CommandMapping.releaseVideoFocus)
         this.videoFocusEmitted = false
       }
-
-      const hdr = new MessageHeader(0, MessageType.Unplugged)
-      deps.emitMessage(new Unplugged(hdr) as Message)
 
       if (reason === 'pre-RUNNING watchdog') {
         const bridge = deps.consumeWiredBridge()
@@ -196,6 +164,14 @@ export class AaEventBridge {
           })()
         }
       }
+    })
+
+    aa.on('device-info', (d: { name: string; model: string; instanceId: string; ip: string }) => {
+      deps.emitDevicePresence(d)
+    })
+
+    aa.on('device-status', (s: Record<string, unknown>) => {
+      deps.emitDeviceStatus(s)
     })
 
     aa.on('video-focus-projected', () => {
@@ -369,14 +345,6 @@ export class AaEventBridge {
       }
       console.warn(`[AaEventBridge] AAStack transient error: ${err.message}`)
     })
-  }
-
-  emitPlugged(): void {
-    const buf = Buffer.allocUnsafe(8)
-    buf.writeUInt32LE(PhoneType.AndroidAuto, 0)
-    buf.writeUInt32LE(1, 4)
-    const header = new MessageHeader(buf.length, MessageType.Plugged)
-    this.deps.emitMessage(new Plugged(header, buf) as Message)
   }
 
   private emitCommand(value: CommandMapping): void {

@@ -442,6 +442,25 @@ export class Session extends EventEmitter {
       return
     }
 
+    if (channelId === CH.PHONE_STATUS) {
+      if (msgId === 0x8001) {
+        try {
+          const ps = decode(this._proto.PhoneStatus, payload)
+          const signal =
+            typeof ps['signalStrength'] === 'number' ? (ps['signalStrength'] as number) : undefined
+          if (signal !== undefined) {
+            const peer = (this._sock.remoteAddress ?? '')
+              .replace(/^::ffff:/i, '')
+              .replace(/%.*$/, '')
+            this.emit('device-status', { ip: peer, signalStrength: signal })
+          }
+        } catch (e) {
+          if (DEBUG) console.warn('[Session] phone-status parse error:', e)
+        }
+      }
+      return
+    }
+
     if (channelId === CH.NAVIGATION) {
       this._nav?.handleMessage(msgId, payload)
       return
@@ -622,13 +641,37 @@ export class Session extends EventEmitter {
     this._nav.on('nav-state', (s: NavigationStateUpdate) => this.emit('nav-state', s))
     this._nav.on('nav-position', (p: NavigationPositionUpdate) => this.emit('nav-position', p))
     this._control.on('voice-session', (active: boolean) => this.emit('voice-session', active))
+    this._control.on(
+      'battery',
+      (b: { level?: number; critical: boolean; timeRemaining?: number }) => {
+        const peer = (this._sock.remoteAddress ?? '').replace(/^::ffff:/i, '').replace(/%.*$/, '')
+        this.emit('device-status', {
+          ip: peer,
+          batteryLevel: b.level,
+          batteryCritical: b.critical,
+          batteryTimeRemaining: b.timeRemaining
+        })
+      }
+    )
     this._control.on('pong', () => {
       this._lastPongAt = Date.now()
     })
 
     this._control.on('service-discovery-request', (req: Record<string, unknown>) => {
       if (DEBUG) {
-        console.log(`[Session] Phone: ${req['labelText'] ?? '?'} / ${req['deviceName'] ?? '?'}`)
+        console.log(`[Session] Phone: ${req['deviceName'] ?? '?'} / ${req['deviceBrand'] ?? '?'}`)
+      }
+      // Identity from the ServiceDiscoveryRequest: device_name (field 4, the phone's
+      // own name, e.g. "Android"), device_brand (field 5, e.g. "Google Pixel 8"),
+      // phone_info.instance_id the stable id.
+      const name = typeof req['deviceName'] === 'string' ? (req['deviceName'] as string) : ''
+      const brand = typeof req['deviceBrand'] === 'string' ? (req['deviceBrand'] as string) : ''
+      const pInfo = req['phoneInfo'] as Record<string, unknown> | undefined
+      const instId =
+        pInfo && typeof pInfo['instanceId'] === 'string' ? (pInfo['instanceId'] as string) : ''
+      const peer = (this._sock.remoteAddress ?? '').replace(/^::ffff:/i, '').replace(/%.*$/, '')
+      if (name || brand || instId) {
+        this.emit('device-info', { name, model: brand, instanceId: instId, ip: peer })
       }
       const sdr = buildServiceDiscoveryResponse(this._cfg, this._proto)
       this._videoCodecByIndex = sdr.videoCodecByIndex
@@ -913,10 +956,48 @@ export class Session extends EventEmitter {
     if (DEBUG) console.log('[Session] main video focus request (PROJECTED) sent')
   }
 
+  requestMainKeyframe(): void {
+    if (this._state !== State.RUNNING) return
+    this._sendEncrypted(
+      CH.VIDEO,
+      FRAME_FLAGS.ENC_SIGNAL,
+      AV_MSG.VIDEO_FOCUS_INDICATION,
+      Buffer.from([0x08, 0x02])
+    )
+    setTimeout(() => {
+      if (this._state !== State.RUNNING) return
+      this._sendEncrypted(
+        CH.VIDEO,
+        FRAME_FLAGS.ENC_SIGNAL,
+        AV_MSG.VIDEO_FOCUS_INDICATION,
+        Buffer.from([0x08, 0x01])
+      )
+    }, 60)
+  }
+
   // Tell the phone we have PROJECTED focus on the cluster channel. Same
   // shape as main: a single VideoFocusIndication.
   requestClusterKeyframe(): void {
     this._requestClusterStream()
+  }
+
+  forceClusterKeyframe(): void {
+    if (this._state !== State.RUNNING || !this._clusterStreamWanted) return
+    this._sendEncrypted(
+      CH.CLUSTER_VIDEO,
+      FRAME_FLAGS.ENC_SIGNAL,
+      AV_MSG.VIDEO_FOCUS_INDICATION,
+      Buffer.from([0x08, 0x02])
+    )
+    setTimeout(() => {
+      if (this._state !== State.RUNNING || !this._clusterStreamWanted) return
+      this._sendEncrypted(
+        CH.CLUSTER_VIDEO,
+        FRAME_FLAGS.ENC_SIGNAL,
+        AV_MSG.VIDEO_FOCUS_INDICATION,
+        Buffer.from([0x08, 0x01])
+      )
+    }, 60)
   }
 
   // Visibility-gated cluster stream: NATIVE focus stops the phone-side encode and

@@ -1,9 +1,15 @@
 import type { Config, DongleFirmwareAction, DongleFwApiRaw } from '@shared/types'
 import type { WebContents } from 'electron'
 import type { SendableMessage } from '../messages/sendable'
+import type { DeviceView } from '../services/DeviceRegistry'
 import type { FirmwareUpdateService } from '../services/FirmwareUpdateService'
 import type { LogicalStreamKey } from '../services/ProjectionAudio'
-import type { PendingStartupConnectTarget } from '../services/types'
+import type {
+  PendingStartupConnectTarget,
+  PersistedMediaFile,
+  PersistedNavigationFile,
+  ProjectionEvent
+} from '../services/types'
 import type { Transport, TransportSnapshot } from '../transport/types'
 
 export type AaBtSockResponse = { ok: boolean; error?: string }
@@ -39,6 +45,10 @@ export interface ProjectionIpcHost {
   pickPreferredTransport(): Transport | null
   switchTransport(): Promise<{ ok: boolean; active: Transport | null }>
   getTransportState(): TransportSnapshot
+  getDevices(): DeviceView[]
+  selectDevice(id: string): { ok: boolean }
+  cycleSession(): void
+  forgetDevice(id: string): { ok: boolean }
   applyCodecCapabilities(caps: unknown): void
 
   // Driver send
@@ -76,7 +86,9 @@ export interface ProjectionIpcHost {
   getFirmware(): FirmwareUpdateService
   getApkVer(): string
   getDongleFwVersion(): string | undefined
-  emitProjectionEvent(payload: unknown): void
+  emitProjectionEvent(payload: ProjectionEvent): void
+  readActiveMedia(): PersistedMediaFile
+  readActiveNav(): PersistedNavigationFile
 
   // Audio
   setAudioStreamVolume(stream: LogicalStreamKey, volume: number): void
