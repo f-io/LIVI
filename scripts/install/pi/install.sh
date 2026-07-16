@@ -40,9 +40,9 @@ sudo apt-get install -y \
   gstreamer1.0-gl \
   gstreamer1.0-libav \
   gstreamer1.0-tools \
-  python3-dbus python3-gi \
-  bluez hostapd dnsmasq-base iw rfkill \
-  usbmuxd
+  avahi-daemon \
+  python3-dbus python3-gi python3-avahi \
+  bluez hostapd dnsmasq-base iw rfkill
 
 # pymobiledevice3 drives wired CarPlay over usbmux/lockdown
 pip3 install --break-system-packages --ignore-installed -q pymobiledevice3 \
