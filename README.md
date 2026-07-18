@@ -257,8 +257,6 @@ Video: 1280x720 - View Area: 0/0/0/0 (T/B/L/R) - Safe Area: 60/20/350/350 (T/B/L
   <img src="docs/images/area/dash_safe_area_aa.png" alt="Safe area cluster stream Android Auto" width="70%" />
 </p>
 
-
-
 ## Multi-Display
 
 LIVI can run as multiple windows at once, each placeable on its own physical display.
@@ -290,6 +288,10 @@ Settings → General → Tab Settings.
   &emsp;
   <img src="docs/images/settings.png" alt="Settings" width="42%" align="top" />
 </p>
+
+## Debugging
+
+Diagnostic environment flags and where to find the logs are documented in [DEBUGGING.md](DEBUGGING.md).
 
 ## Credits
 
