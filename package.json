@@ -11,7 +11,7 @@
   ],
   "homepage": "https://f-io.dev",
   "license": "GPL-3.0-or-later",
-  "packageManager": "pnpm@11.13.1",
+  "packageManager": "pnpm@11.14.0",
   "scripts": {
     "prepare": "husky",
     "dev": "vite",
