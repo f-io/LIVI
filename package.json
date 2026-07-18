@@ -11,7 +11,7 @@
   ],
   "homepage": "https://f-io.dev",
   "license": "GPL-3.0-or-later",
-  "packageManager": "pnpm@11.14.0",
+  "packageManager": "pnpm@11.15.0",
   "scripts": {
     "prepare": "husky",
     "dev": "vite",
@@ -92,7 +92,7 @@
     "globals": "^17.7.0",
     "husky": "^9.1.7",
     "jsdom": "^29.1.1",
-    "lint-staged": "^17.0.8",
+    "lint-staged": "^17.1.0",
     "lodash": "^4.18.1",
     "node-gyp": "^13.0.1",
     "react": "^19.2.7",
