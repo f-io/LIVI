@@ -43,7 +43,7 @@ Without a coprocessor, native CarPlay is unavailable. Dongle-based CarPlay (the 
 ### Example Rasperry Pi config
 ```bash
 # CP3.0 or CP2.0
-dtoverlay=i2c-gpio,bus=2,i2c_gpio_sda=19,i2c_gpio_scl=26,i2c_gpio_delay_us=50
+dtoverlay=i2c-gpio,bus=2,i2c_gpio_sda=19,i2c_gpio_scl=26,i2c_gpio_delay_us=5
 ```
 
 ## Dongle-based Connectivity

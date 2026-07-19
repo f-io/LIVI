@@ -133,8 +133,10 @@ def _i2c_retry(op, what):
             time.sleep(_BUSY_RETRY_S)
 
 def _read_i2c(addr, n):
+    _i2c_retry(lambda: bus.i2c_rdwr(smbus2.i2c_msg.write(DEV_ADDR, [addr])),
+               f"register select 0x{addr:02X}")
+
     def _op():
-        bus.i2c_rdwr(smbus2.i2c_msg.write(DEV_ADDR, [addr]))
         read_msg = smbus2.i2c_msg.read(DEV_ADDR, n)
         bus.i2c_rdwr(read_msg)
         return bytes(read_msg)
