@@ -7,6 +7,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync
 } from 'node:fs'
@@ -60,6 +61,8 @@ function stageHelperDir(sourceRoot: string): string {
     }
   }
 
+  // cleanup files
+  rmSync(stageRoot, { recursive: true, force: true })
   mkdirSync(stageRoot, { recursive: true })
   cpSync(sourceRoot, stageRoot, { recursive: true, force: true })
   writeFileSync(sigPath, `${wantSig}\n`, { mode: 0o644 })

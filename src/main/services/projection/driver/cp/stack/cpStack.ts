@@ -373,9 +373,15 @@ export class CpStack extends EventEmitter {
       console.log(`[cpStack] < ${req.method} ${req.path} (body ${req.body.length}B)`)
       if (DEBUG && req.body.length > 0) {
         try {
-          console.log('[cpStack]   body:', JSON.stringify(decodeBplist(req.body)))
+          const decoded = decodeBplist(req.body)
+          console.log(
+            '[cpStack]   body:',
+            JSON.stringify(decoded, (_k, v) =>
+              typeof v === 'bigint' ? Number(v) : Buffer.isBuffer(v) ? `<${v.length}B>` : v
+            )
+          )
         } catch {
-          console.log('[cpStack]   body (text):', JSON.stringify(req.body.toString('utf8')))
+          console.log(`[cpStack]   body: not a plist (${req.body.length}B)`)
         }
       }
     }
