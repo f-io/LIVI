@@ -97,6 +97,9 @@ export type Config = {
   wifiType: '2.4ghz' | '5ghz'
   wifiChannel: number
 
+  /** AirPlay protocol version we advertise */
+  carPlaySourceVersion: string
+
   // CarPlay MFi coprocessor: i2c bus, power-enable GPIO
   carPlayMfiI2cBus: number
   carPlayMfiPowerGpio: number
@@ -158,6 +161,8 @@ export type Config = {
   UseBTPhone: boolean
   micType: MicType
   disableAudioOutput: boolean
+  huVolume: number
+  huVolumeLinkSystem: boolean
   audioVolume: number
   navVolume: number
   voiceAssistantVolume: number

@@ -10,7 +10,7 @@ try:
 except ImportError:
     avahi = None
 
-from shared.config import AIRPLAY_PORT, PK, PI
+from shared.config import AIRPLAY_PORT, CARPLAY_SOURCE_VERSION, PK, PI
 
 SERVICE_NAME = "LIVI"
 
@@ -94,7 +94,7 @@ def _connect_worker(address, port, ifname, mac_int, ckey, akey):
     req = (
         f"GET /ctrl-int/1/connect HTTP/1.1\r\n"
         f"Host: {hosthdr}\r\n"
-        f"User-Agent: AirPlay/280.33.8\r\n"
+        f"User-Agent: AirPlay/{CARPLAY_SOURCE_VERSION}\r\n"
         f"AirPlay-Receiver-Device-ID: {mac_int}\r\n"
         f"Connection: close\r\n\r\n"
     ).encode()
@@ -183,7 +183,7 @@ def start_service(device_id):
         "features=0x44540380,0x61",
         "flags=0x4",
         "model=LIVI",
-        "srcvers=280.33.8",
+        f"srcvers={CARPLAY_SOURCE_VERSION}",
         "protovers=1.1",
     ]
     if PI:

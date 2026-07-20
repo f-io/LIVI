@@ -100,6 +100,8 @@
     "uiZoom": "UI Zoom",
     "audio": "Audio",
     "media": "Media",
+    "huVolume": "Head Unit",
+    "huVolumeLinkSystem": "Link Head Unit to System Volume",
     "music": "Music",
     "navigation": "Navigation",
     "microphone": "Microphone",

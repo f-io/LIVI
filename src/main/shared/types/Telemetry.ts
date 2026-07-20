@@ -59,6 +59,7 @@
 //    parkingBrake                    ✓     ✓          TODO       ·
 //    nightMode                       ✓     ✓          ✓          ✓
 //    view (navigate UI)              ✓     ·          ·          ·
+//    volume (head-unit level)        ✓     ·          ·          ·
 //    fuelPct                         ✓     ✓          TODO       ·
 //    rangeKm                         ✓     ✓          ✓          ·
 //    fuelRateLph / consumption*      ✓     ·          TODO       ·
@@ -232,6 +233,10 @@ export type TelemetryPayload = {
   /** Navigate LIVI's UI straight to a screen. */
   view?: 'projection' | 'dash' | 'media' | 'camera' | 'settings' | 'devices'
 
+  /** Head-unit level, 0.0 to 1.0. Sets `huVolume`, which drives the amplifier and,
+   *  when the link is on, the system mixer. */
+  volume?: number
+
   // ── GNSS sub-block ─────────────────────────────────────────────────────
 
   /** GPS / GNSS fix data. See `GpsPayload`. */
@@ -320,6 +325,7 @@ export const TELEMETRY_ROUTES = {
   // External overrides
   nightMode: { dash: true, aa: true, dongle: true, cp: true },
   view: { dash: true, aa: false, dongle: false, cp: false },
+  volume: { dash: true, aa: false, dongle: false, cp: false },
 
   // GNSS — whole sub-block consumed; per-field availability documented in GpsPayload.
   gps: { dash: true, aa: true, cp: true, dongle: true },

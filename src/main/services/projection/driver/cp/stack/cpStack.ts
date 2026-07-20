@@ -375,7 +375,7 @@ export class CpStack extends EventEmitter {
         try {
           console.log('[cpStack]   body:', JSON.stringify(decodeBplist(req.body)))
         } catch {
-          /* not a plist */
+          console.log('[cpStack]   body (text):', JSON.stringify(req.body.toString('utf8')))
         }
       }
     }
@@ -423,6 +423,19 @@ export class CpStack extends EventEmitter {
 
     if (path.endsWith('/info')) {
       this._configRefresh?.()
+      // The phone sends its own dictionary with the request; log what it tells us about itself.
+      if (req.body.length > 0) {
+        try {
+          const ask = decodeBplist(req.body)
+          console.log(
+            `[cpStack] /info request from phone: ${JSON.stringify(ask, (_k, v) =>
+              typeof v === 'bigint' ? Number(v) : Buffer.isBuffer(v) ? `<${v.length}B>` : v
+            )}`
+          )
+        } catch {
+          console.log(`[cpStack] /info request body not a plist (${req.body.length}B)`)
+        }
+      }
       const info = buildInfoPlist(this.cfg)
       const i = info as Record<string, unknown>
       console.log(
@@ -440,8 +453,9 @@ export class CpStack extends EventEmitter {
       return this._buildFeedback(session)
     }
 
-    // Everything else is simply acknowledged with a bare 200.
-    if (DEBUG) console.log(`[cpStack] 200 ${req.method} ${req.path}`)
+    // Unrouted request: acknowledged with a bare 200, and always logged so nothing
+    // the phone sends stays invisible.
+    console.log(`[cpStack] unhandled request ${req.method} ${req.path} (ack 200)`)
     return { status: 200 }
   }
 
@@ -494,14 +508,21 @@ export class CpStack extends EventEmitter {
         )
         console.log(`[cpStack] modesChanged ${j}`)
       }
+    } else if (type === 'suggestUI') {
+      // The phone offers URLs the head unit may show; LIVI shows its own UI instead.
+      const params = (body.params ?? {}) as Record<string, PlistValue>
+      const urls = Array.isArray(params.urls) ? params.urls : []
+      console.log(`[cpStack] suggestUI (${urls.length} urls, not shown)`)
     } else if (type === 'iAPSendMessage') {
       const p = (body.params ?? {}) as Record<string, PlistValue>
       const d = p.data
       if (Buffer.isBuffer(d)) {
         session.iapRelay?.write(d)
       }
-    } else if (type && DEBUG) {
-      console.log(`[cpStack] command '${type}' (ack 200)`)
+    } else if (type) {
+      // Unrouted command: log the whole body so a new message type can be identified.
+      const j = JSON.stringify(body, (_k, v) => (typeof v === 'bigint' ? Number(v) : v))
+      console.log(`[cpStack] unhandled command '${type}' (ack 200) ${j}`)
     }
     return { status: 200 }
   }

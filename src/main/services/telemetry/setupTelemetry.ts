@@ -29,6 +29,7 @@ import { attachDongleAdapter } from './adapters/dongleAdapter'
 import { attachLiviDashAdapter } from './adapters/liviDashAdapter'
 import { attachGpsPersist } from './gpsPersist'
 import type { TelemetryStore } from './TelemetryStore'
+import { attachVolumePersist } from './volumePersist'
 
 export type SetupTelemetryDeps = {
   store: TelemetryStore
@@ -61,6 +62,11 @@ export function setupTelemetry({
   const gpsPersist = attachGpsPersist({
     store,
     initialGps: initialConfig?.lastKnownGps
+  })
+
+  const volumePersist = attachVolumePersist({
+    store,
+    initialVolume: initialConfig?.huVolume
   })
 
   let lastAppearanceMode: string | undefined = initialConfig?.appearanceMode
@@ -132,6 +138,7 @@ export function setupTelemetry({
       ipcMain.removeHandler('telemetry:snapshot')
       configEvents.off('changed', onConfigChanged)
       gpsPersist.off()
+      volumePersist.off()
       offDash()
       offAa?.()
       offDongle?.()

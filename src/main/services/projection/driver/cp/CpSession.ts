@@ -14,6 +14,7 @@ import type * as net from 'node:net'
 import { Microphone } from '@main/services/audio'
 import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
 import type { Config } from '@shared/types'
+import { DEFAULT_CONFIG } from '@shared/types'
 import type { InputCommand } from '@shared/types/InputCommand'
 import {
   AudioCommand,
@@ -591,10 +592,8 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
       // correlate the Bluetooth bond with the CarPlay session, so the phone recognises
       // the car and auto-reconnects (pair-verify) instead of re-pairing every time.
       deviceId: detectBtMac(cfg.btAdapter || undefined) ?? 'AA:BB:CC:DD:EE:FF',
-      // AirPlay protocol version. 320.17 (AirLib) made the phone stop POSTing
-      // /feedback entirely (it switched to a newer timing mechanism we don't handle),
-      // which broke the media clock. 280.33.8 keeps the phone polling /feedback.
-      sourceVersion: '280.33.8',
+      // AirPlay protocol version we announce.
+      sourceVersion: cfg.carPlaySourceVersion?.trim() || DEFAULT_CONFIG.carPlaySourceVersion,
       hevc: this._hevc,
       h264: !this._hevc,
       main: {

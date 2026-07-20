@@ -64,7 +64,7 @@ if AVAILABLE_CURRENT_MA not in _ALLOWED_CURRENTS_MA:
 
 CARPLAY_WIRED_START_SESSION = _get_value(
     "LIVI_CP_WIRED_START_SESSION", "carPlayWiredStartSession", "1") not in ("", "0", "false", "False")
-CARPLAY_SOURCE_VERSION = _get_value("LIVI_CP_SOURCE_VERSION", "carPlaySourceVersion", "280.33.8")
+CARPLAY_SOURCE_VERSION = _get_value("LIVI_CP_SOURCE_VERSION", "carPlaySourceVersion", "950.7.1")
 
 # CarPlay AirPlay / Bonjour
 AIRPLAY_PORT = 7000

@@ -10,11 +10,30 @@ describe('audioSchema', () => {
     expect(schema.labelKey).toBe('settings.audio')
     expect(schema.path).toBe('')
     expect(Array.isArray(schema.children)).toBe(true)
-    expect(schema.children).toHaveLength(9)
+    expect(schema.children).toHaveLength(11)
+  })
+
+  test('head unit slider is first and writes huVolume', () => {
+    const node = schema.children[0]
+    expect(node.type).toBe('slider')
+    expect(node.path).toBe('huVolume')
+    expect(node.labelKey).toBe('settings.huVolume')
+    expect(node.displayValueUnit).toBe('%')
+  })
+
+  test('system volume link sits above disable audio', () => {
+    const node = schema.children[9]
+    expect(node).toEqual(
+      expect.objectContaining({
+        type: 'checkbox',
+        path: 'huVolumeLinkSystem',
+        labelKey: 'settings.huVolumeLinkSystem'
+      })
+    )
   })
 
   test('music slider uses percent transform with sane defaults', () => {
-    const node = schema.children[0]
+    const node = schema.children[1]
     expect(node.type).toBe('slider')
     expect(node.path).toBe('audioVolume')
     expect(node.displayValue).toBe(true)
@@ -30,28 +49,28 @@ describe('audioSchema', () => {
   })
 
   test('navigation, voiceAssistant and call sliders point to expected config paths', () => {
-    expect(schema.children[1]).toEqual(
+    expect(schema.children[2]).toEqual(
       expect.objectContaining({
         type: 'slider',
         path: 'navVolume',
         label: 'Navigation'
       })
     )
-    expect(schema.children[2]).toEqual(
+    expect(schema.children[3]).toEqual(
       expect.objectContaining({
         type: 'slider',
         path: 'voiceAssistantVolume',
         label: 'Voice Assistant'
       })
     )
-    expect(schema.children[3]).toEqual(
+    expect(schema.children[4]).toEqual(
       expect.objectContaining({
         type: 'slider',
         path: 'callVolume',
         label: 'Phone Calls'
       })
     )
-    expect(schema.children[4]).toEqual(
+    expect(schema.children[5]).toEqual(
       expect.objectContaining({
         type: 'slider',
         path: 'systemSoundsVolume',
@@ -61,7 +80,7 @@ describe('audioSchema', () => {
   })
 
   test('audio output device is a select with loadOptions + page', () => {
-    const out = schema.children[5]
+    const out = schema.children[6]
     expect(out).toEqual(
       expect.objectContaining({
         type: 'select',
@@ -83,7 +102,7 @@ describe('audioSchema', () => {
   })
 
   test('audio input device is a select with loadOptions + page', () => {
-    const inp = schema.children[6]
+    const inp = schema.children[7]
     expect(inp).toEqual(
       expect.objectContaining({
         type: 'select',
@@ -96,7 +115,7 @@ describe('audioSchema', () => {
   })
 
   test('sampling frequency select sits between audio input and disable audio', () => {
-    const node = schema.children[7]
+    const node = schema.children[8]
     expect(node).toEqual(
       expect.objectContaining({
         type: 'select',
@@ -111,7 +130,7 @@ describe('audioSchema', () => {
   })
 
   test('disable audio checkbox is present as final leaf', () => {
-    const node = schema.children[8]
+    const node = schema.children[10]
     expect(node).toEqual(
       expect.objectContaining({
         type: 'checkbox',
@@ -135,7 +154,7 @@ describe('audio device loaders', () => {
 
   test('output loader returns only the system default without an audio api', async () => {
     ;(window as any).projection = {}
-    const opts = await schema.children[5].loadOptions()
+    const opts = await schema.children[6].loadOptions()
     expect(opts).toHaveLength(1)
     expect(opts[0].value).toBe('')
   })
@@ -144,7 +163,7 @@ describe('audio device loaders', () => {
     ;(window as any).projection = {
       audio: { listSinks: vi.fn(async () => [{ id: 'sink1', name: 'Speakers', offline: false }]) }
     }
-    const opts = await schema.children[5].loadOptions()
+    const opts = await schema.children[6].loadOptions()
     expect(opts).toHaveLength(2)
     expect(opts[0].value).toBe('')
     expect(opts[1]).toMatchObject({ value: 'sink1', label: 'Speakers' })
@@ -154,14 +173,14 @@ describe('audio device loaders', () => {
     ;(window as any).projection = {
       audio: { listSources: vi.fn(async () => [{ id: 'mic1', name: 'Mic', offline: true }]) }
     }
-    const opts = await schema.children[6].loadOptions()
+    const opts = await schema.children[7].loadOptions()
     expect(opts).toHaveLength(2)
     expect(opts[1]).toMatchObject({ value: 'mic1', label: 'Mic', offline: true })
   })
 
   test('input loader falls back to the system default without an audio api', async () => {
     ;(window as any).projection = {}
-    const opts = await schema.children[6].loadOptions()
+    const opts = await schema.children[7].loadOptions()
     expect(opts).toHaveLength(1)
   })
 })

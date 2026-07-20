@@ -1,3 +1,4 @@
+import { stopSystemVolumeMonitor } from '@main/services/audio/SystemVolume'
 import { stopPhoneSuppression } from '@main/services/gvfsPhoneGuard'
 import { runtimeStateProps, ServicesProps } from '@main/types'
 import { createMainWindow, getMainWindow } from '@main/window/createWindow'
@@ -76,6 +77,7 @@ export function setupLifecycle(runtimeState: runtimeStateProps, services: Servic
       usbService?.beginShutdown()
 
       stopPhoneSuppression()
+      stopSystemVolumeMonitor()
 
       await measureStep('projection.shutdownWirelessSessions()', async () => {
         await withTimeout(

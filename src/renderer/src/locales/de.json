@@ -100,6 +100,8 @@
     "french": "Französisch",
     "audio": "Audio",
     "media": "Medien",
+    "huVolume": "Head-Unit",
+    "huVolumeLinkSystem": "Head-Unit mit Systemlautstärke koppeln",
     "music": "Musik",
     "navigation": "Navigation",
     "phoneCalls": "Anrufe",

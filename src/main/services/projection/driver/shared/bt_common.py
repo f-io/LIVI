@@ -83,7 +83,7 @@ def disconnect(adapter, mac, timeout=10):
 
 
 def start_reconnect_worker(adapter, is_active, log, interval=2.0, stale_secs=10.0,
-                           should_nudge=None, profile_for=None):
+                           should_nudge=None, profile_for=None, max_backoff=60.0):
     """Daemon thread. Every `interval`s, for each paired device (both branches skipped
     while `is_active()` is true):
 
@@ -91,16 +91,30 @@ def start_reconnect_worker(adapter, is_active, log, interval=2.0, stale_secs=10.
     - connected but no session for `stale_secs` -> Device1.Disconnect.
 
     `should_nudge(mac)` selects which macs to nudge; `profile_for(mac)` gives the
-    ConnectProfile UUID (None -> generic Connect)."""
+    ConnectProfile UUID (None -> generic Connect).
+
+    A failed nudge doubles that device's retry delay up to `max_backoff`, so a phone
+    that is out of range falls back to one attempt per minute instead of hammering
+    BlueZ. A success resets it."""
 
     inflight = set()      # macs with a nudge thread running
     stale_since = {}      # mac -> monotonic time it went connected-but-no-session
+    backoff = {}          # mac -> current retry delay in seconds
+    next_try = {}         # mac -> monotonic time the next nudge is allowed
 
     def _connect_async(mac):
         try:
             uuid = profile_for(mac) if profile_for else None
             ok, err = connect(adapter, mac, uuid=uuid, timeout=25)
-            log(f"reconnect: {mac} " + ("connected" if ok else f"connect nudge failed: {err}"))
+            if ok:
+                backoff.pop(mac, None)
+                next_try.pop(mac, None)
+                log(f"reconnect: {mac} connected")
+            else:
+                delay = min(max_backoff, max(interval, backoff.get(mac, interval) * 2))
+                backoff[mac] = delay
+                next_try[mac] = time.monotonic() + delay
+                log(f"reconnect: {mac} connect nudge failed: {err} (retry in {delay:.0f}s)")
         finally:
             inflight.discard(mac)
 
@@ -128,6 +142,8 @@ def start_reconnect_worker(adapter, is_active, log, interval=2.0, stale_secs=10.
                                 log("reconnect: %s skip (not known for enabled protocol)" % mac)
                             continue
                         if mac in inflight:
+                            continue
+                        if time.monotonic() < next_try.get(mac, 0.0):
                             continue
                         inflight.add(mac)
                         log(f"reconnect: {mac} paired+disconnected -> nudge")

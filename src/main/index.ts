@@ -10,6 +10,11 @@ installMainProcessErrorHandlers()
 import { registerIpc } from '@main/ipc'
 import { configEvents, saveSettings } from '@main/ipc/utils'
 import { registerAppProtocol } from '@main/protocol/appProtocol'
+import {
+  setSystemVolume,
+  startSystemVolumeMonitor,
+  stopSystemVolumeMonitor
+} from '@main/services/audio/SystemVolume'
 import { checkAndInstallGvfsGuard, startPhoneSuppression } from '@main/services/gvfsPhoneGuard'
 import { checkMissingPackages } from '@main/services/packageCheck'
 import { checkAndInstallHelperSudoers } from '@main/services/projection/driver/helper/helperSudoers'
@@ -102,6 +107,31 @@ app.whenReady().then(async () => {
   }
   applyGamma(runtimeState.config)
   configEvents.on('changed', (next: Config) => applyGamma(next))
+
+  // Head-unit level, optionally coupled to the system mixer.
+  let appliedHuVolume: number | null = null
+  const applyHuVolume = (cfg: Config): void => {
+    if (cfg.huVolumeLinkSystem !== true) {
+      appliedHuVolume = null
+      stopSystemVolumeMonitor()
+      return
+    }
+    startSystemVolumeMonitor(
+      () => runtimeState.config.audioOutputDevice,
+      (level) => {
+        if (runtimeState.config.huVolumeLinkSystem !== true) return
+        if (Math.abs(level - runtimeState.config.huVolume) < 0.005) return
+        appliedHuVolume = level
+        console.log(`[SystemVolume] head unit follows system → ${Math.round(level * 100)} %`)
+        saveSettings(runtimeState, { huVolume: level })
+      }
+    )
+    if (appliedHuVolume !== null && Math.abs(cfg.huVolume - appliedHuVolume) < 0.005) return
+    appliedHuVolume = cfg.huVolume
+    void setSystemVolume(cfg.huVolume, cfg.audioOutputDevice)
+  }
+  applyHuVolume(runtimeState.config)
+  configEvents.on('changed', (next: Config) => applyHuVolume(next))
   setupTelemetry({
     store: telemetryStore,
     projectionService,

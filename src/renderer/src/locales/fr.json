@@ -100,6 +100,8 @@
     "uiZoom": "Zoom de l'UI",
     "audio": "Audio",
     "media": "Médias",
+    "huVolume": "Autoradio",
+    "huVolumeLinkSystem": "Lier l'autoradio au volume du système",
     "music": "Musique",
     "navigation": "Navigation",
     "microphone": "Microphone",

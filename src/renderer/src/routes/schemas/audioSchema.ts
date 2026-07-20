@@ -46,6 +46,19 @@ export const audioSchema: SettingsNode<Config> = {
   children: [
     {
       type: 'slider',
+      label: 'Head Unit',
+      labelKey: 'settings.huVolume',
+      path: 'huVolume',
+      displayValue: true,
+      displayValueUnit: '%',
+      valueTransform: audioValueTransform,
+      page: {
+        title: 'Head Unit',
+        labelTitle: 'settings.huVolume'
+      }
+    },
+    {
+      type: 'slider',
       label: 'Music',
       labelKey: 'settings.music',
       path: 'audioVolume',
@@ -151,6 +164,12 @@ export const audioSchema: SettingsNode<Config> = {
         title: 'Sampling Frequency',
         labelTitle: 'settings.samplingFrequency'
       }
+    },
+    {
+      type: 'checkbox',
+      label: 'Link Head Unit to System Volume',
+      labelKey: 'settings.huVolumeLinkSystem',
+      path: 'huVolumeLinkSystem'
     },
     {
       type: 'checkbox',
