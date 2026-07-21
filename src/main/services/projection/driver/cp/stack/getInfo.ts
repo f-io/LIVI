@@ -142,14 +142,18 @@ function areaDict(d: CpDisplayConfig): PlistValue | null {
 }
 
 function displayEntry(d: CpDisplayConfig, type: number, uuid: string): PlistValue {
+  const widthPhysical = d.widthPhysicalMm ?? 200
+  const heightPhysical =
+    d.heightPhysicalMm ??
+    Math.max(1, Math.round((widthPhysical * d.heightPixels) / Math.max(1, d.widthPixels)))
   const entry: Record<string, PlistValue> = {
     uuid,
     type,
     maxFPS: d.fps ?? 60,
     widthPixels: d.widthPixels,
     heightPixels: d.heightPixels,
-    widthPhysical: d.widthPhysicalMm ?? 200,
-    heightPhysical: d.heightPhysicalMm ?? 113,
+    widthPhysical,
+    heightPhysical,
     features: DISPLAY_FEATURE_HIGH_FIDELITY_TOUCH | DISPLAY_FEATURE_KNOBS,
     primaryInputDevice: d.primaryInputDevice ?? PRIMARY_INPUT_KNOBS
   }

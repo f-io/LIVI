@@ -27,8 +27,7 @@ import {
   clusterTargetScreens,
   computeAndroidAutoDpi,
   isClusterDisplayed,
-  matchFittingAAResolution,
-  pixelAspectRatioE4
+  matchFittingAAResolution
 } from '@shared/utils'
 import type { IPhoneDriver } from '../IPhoneDriver'
 import { AaEventBridge } from './AaEventBridge'
@@ -40,6 +39,9 @@ import {
   type TouchPointer
 } from './stack/index'
 import type { UsbAoapBridge } from './stack/transport/UsbAoapBridge'
+
+/** Pixel aspect ratio in ten-thousandths: square pixels. */
+const SQUARE_PIXEL_E4 = 10000
 
 /**
  * Map a single-pointer TouchAction to PointerAction enum
@@ -201,10 +203,7 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
       videoHeight: tierH,
       videoDpi: aaDpi,
       videoFps: cfg.projectionFps === 60 ? 60 : 30,
-      pixelAspectRatioE4: pixelAspectRatioE4(
-        { width: cfg.projectionWidth, height: cfg.projectionHeight },
-        { width: tierW, height: tierH }
-      ),
+      pixelAspectRatioE4: SQUARE_PIXEL_E4,
       displayWidth: cfg.projectionWidth,
       displayHeight: cfg.projectionHeight,
       mainViewAreaTop: cfg.projectionViewAreaTop,
@@ -230,10 +229,7 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
       clusterHeight: cfg.clusterHeight,
       clusterTierWidth: clusterTierW,
       clusterTierHeight: clusterTierH,
-      clusterPixelAspectRatioE4: pixelAspectRatioE4(
-        { width: cfg.clusterWidth, height: cfg.clusterHeight },
-        { width: clusterTierW, height: clusterTierH }
-      ),
+      clusterPixelAspectRatioE4: SQUARE_PIXEL_E4,
       clusterFps: cfg.clusterFps,
       clusterDpi: resolvedClusterDpi,
       clusterViewAreaTop: cfg.clusterViewAreaTop,

@@ -12,6 +12,7 @@
 import { EventEmitter } from 'node:events'
 import type * as net from 'node:net'
 import { Microphone } from '@main/services/audio'
+import { panelPhysicalMm } from '@main/services/video/GstVideo'
 import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
 import type { Config } from '@shared/types'
 import { DEFAULT_CONFIG } from '@shared/types'
@@ -583,6 +584,10 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
   }
 
   private _buildStackConfig(cfg: Config): CpStackConfig {
+    const mainW = cfg.projectionWidth || 1920
+    const mainH = cfg.projectionHeight || 1080
+    const mainPanel = panelPhysicalMm('main', mainW, mainH)
+    const clusterPanel = panelPhysicalMm('cluster', cfg.clusterWidth, cfg.clusterHeight)
     const name = cfg.carName?.trim() ? cfg.carName : 'LIVI'
     return {
       deviceName: name,
@@ -597,8 +602,11 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
       hevc: this._hevc,
       h264: !this._hevc,
       main: {
-        widthPixels: cfg.projectionWidth || 1920,
-        heightPixels: cfg.projectionHeight || 1080,
+        widthPixels: mainW,
+        heightPixels: mainH,
+        ...(mainPanel
+          ? { widthPhysicalMm: mainPanel.widthMm, heightPhysicalMm: mainPanel.heightMm }
+          : {}),
         fps: cfg.projectionFps || 60,
         primaryInputDevice: 1,
         viewArea: {
@@ -619,6 +627,9 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
         ? {
             widthPixels: cfg.clusterWidth,
             heightPixels: cfg.clusterHeight,
+            ...(clusterPanel
+              ? { widthPhysicalMm: clusterPanel.widthMm, heightPhysicalMm: clusterPanel.heightMm }
+              : {}),
             fps: cfg.projectionFps || 60,
             viewArea: {
               top: cfg.clusterViewAreaTop,

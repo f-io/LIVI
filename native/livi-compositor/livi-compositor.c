@@ -1461,6 +1461,15 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 	s->width = wlr_output->width;
 	s->height = wlr_output->height;
 	s->x = (int32_t)(s - server->screens) * LIVI_SCREEN_X_SLOT;
+	// Report the panels millimetres per pixel
+	if (wlr_output->phys_width > 0 && wlr_output->phys_height > 0 &&
+			wlr_output->width > 0 && wlr_output->height > 0) {
+		char panel[128];
+		snprintf(panel, sizeof(panel), "panel %s %d %d %d %d\n", s->role,
+			wlr_output->phys_width, wlr_output->phys_height,
+			wlr_output->width, wlr_output->height);
+		ctrl_send(server, panel);
+	}
 	wlr_log(WLR_INFO, "livi: new output -> screen '%s' at x=%d (%dx%d)",
 		s->role, s->x, s->width, s->height);
 

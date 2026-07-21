@@ -27,6 +27,23 @@ const livePlayers = new Set<GstVideo>()
 
 // Linux: control channel to livi-compositor. Video planes are addressed by tag (claim),
 // then placed (videocfg) and toggled (videoshow). `state` is resent on reconnect.
+/** Millimetres per pixel per screen role, reported by the compositor from the panel's EDID. */
+const panelMmPerPx = new Map<string, { x: number; y: number }>()
+
+/** Physical size in mm for a pixel count on that screen, or null when the panel is unknown. */
+export function panelPhysicalMm(
+  role: string,
+  widthPixels: number,
+  heightPixels: number
+): { widthMm: number; heightMm: number } | null {
+  const p = panelMmPerPx.get(role)
+  if (!p || !(p.x > 0) || !(p.y > 0)) return null
+  const widthMm = Math.round(widthPixels * p.x)
+  const heightMm = Math.round(heightPixels * p.y)
+  if (widthMm <= 0 || heightMm <= 0) return null
+  return { widthMm, heightMm }
+}
+
 class CompositorControl {
   private socket: net.Socket | null = null
   private connecting = false
@@ -105,6 +122,15 @@ class CompositorControl {
       this.inbox = this.inbox.slice(nl + 1)
       const m = /^bound (.+)$/.exec(line)
       if (m && this.claimInFlight === m[1]) this.endClaim()
+      const p = /^panel (\S+) (\d+) (\d+) (\d+) (\d+)$/.exec(line)
+      if (p) {
+        const [, role, mmW, mmH, pxW, pxH] = p
+        panelMmPerPx.set(role, {
+          x: Number(mmW) / Number(pxW),
+          y: Number(mmH) / Number(pxH)
+        })
+        console.log(`[compositor] panel '${role}': ${mmW}x${mmH} mm over ${pxW}x${pxH} px`)
+      }
       nl = this.inbox.indexOf('\n')
     }
   }
