@@ -60,9 +60,12 @@ function stageHelperDir(sourceRoot: string): string {
       /* re-stage */
     }
   }
-
   // cleanup files
-  rmSync(stageRoot, { recursive: true, force: true })
+  try {
+    rmSync(stageRoot, { recursive: true, force: true })
+  } catch (err) {
+    console.warn(`[helper] could not clear ${stageRoot}: ${(err as Error).message}`)
+  }
   mkdirSync(stageRoot, { recursive: true })
   cpSync(sourceRoot, stageRoot, { recursive: true, force: true })
   writeFileSync(sigPath, `${wantSig}\n`, { mode: 0o644 })
@@ -100,6 +103,7 @@ function envFromConfig(cfg: Config): NodeJS.ProcessEnv {
 
   return {
     ...process.env,
+    PYTHONDONTWRITEBYTECODE: '1',
     LIVI_AA_WIRELESS: wantAaWireless ? '1' : '',
     LIVI_CP_WIRELESS: wantCpWireless ? '1' : '',
     DEBUG: DEBUG ? '1' : '',
