@@ -20,6 +20,7 @@ export type DeviceControllerDeps = {
 
 // The phone's iAP service UUID, used as the CarPlay reconnect ConnectProfile target.
 const IAP_PROFILE_UUID = '00000000-deca-fade-deca-deafdecacafe'
+const HSP_AG_UUID = '00001112-0000-1000-8000-00805f9b34fb'
 
 // Builds the unified device-picker view (native registry + dongle list) and
 // serves the picker commands: select routes to a session, forget unpairs BT.
@@ -100,7 +101,12 @@ export class DeviceController {
         ip: e.currentIp
       })
       if (sess) continue
-      targets[e.btMac.toUpperCase()] = e.protocol === 'carplay' ? IAP_PROFILE_UUID : null
+      targets[e.btMac.toUpperCase()] =
+        e.protocol === 'carplay'
+          ? IAP_PROFILE_UUID
+          : e.protocol === 'androidauto'
+            ? HSP_AG_UUID
+            : null
     }
     const sig = Object.keys(targets)
       .sort()

@@ -88,6 +88,12 @@ def is_timeout(err):
 # Rounds of 'In Progress' after which BlueZ's attempt is treated as wedged.
 _STUCK_ROUNDS = 3
 
+# A wake-up is a short profile connect, so it fails fast when the phone is not there.
+WAKE_TIMEOUT_S = 10
+# Phones commonly answer only on the second or third try, so burst before backing off.
+BURST_ATTEMPTS = 5
+BURST_INTERVAL_S = 3.0
+
 
 def disconnect(adapter, mac, timeout=10):
     rc, _, err = _busctl("call", "org.bluez", _dev_path(adapter, mac),
@@ -96,25 +102,31 @@ def disconnect(adapter, mac, timeout=10):
 
 
 def start_reconnect_worker(adapter, is_active, log, interval=2.0, stale_secs=10.0,
-                           should_nudge=None, profile_for=None, max_backoff=60.0):
+                           should_nudge=None, profile_for=None, max_backoff=60.0,
+                           wake_timeout=WAKE_TIMEOUT_S, burst_attempts=BURST_ATTEMPTS,
+                           burst_interval=BURST_INTERVAL_S):
     """Daemon thread. Every `interval`s, for each paired device (both branches skipped
     while `is_active()` is true):
 
-    - disconnected -> Device1.Connect/ConnectProfile nudge (one in flight per device).
+    - disconnected -> Device1.Connect/ConnectProfile nudge.
     - connected but no session for `stale_secs` -> Device1.Disconnect.
 
     `should_nudge(mac)` selects which macs to nudge; `profile_for(mac)` gives the
     ConnectProfile UUID (None -> generic Connect).
 
-    A failed nudge doubles that device's retry delay up to `max_backoff`, so a phone
-    that is out of range falls back to one attempt per minute instead of hammering
-    BlueZ. A success resets it."""
+    Waking a phone usually needs a couple of quick attempts, so a device gets a burst of
+    `burst_attempts` tries `burst_interval` apart before its retry delay starts doubling
+    up to `max_backoff`. A success resets both.
 
-    inflight = set()      # macs with a nudge thread running
+    Only ONE attempt runs at a time across all devices: the controller can page a single
+    device at a time, so parallel attempts only starve each other."""
+
+    inflight = set()      # macs with a nudge thread running (at most one)
     stale_since = {}      # mac -> monotonic time it went connected-but-no-session
     backoff = {}          # mac -> current retry delay in seconds
     next_try = {}         # mac -> monotonic time the next nudge is allowed
     stuck = {}            # mac -> consecutive 'In Progress' replies
+    burst = {}            # mac -> attempts used in the current burst
 
     def _clear_pending(mac, why):
         """Abort BlueZ's own connection attempt, which otherwise blocks the device."""
@@ -124,11 +136,12 @@ def start_reconnect_worker(adapter, is_active, log, interval=2.0, stale_secs=10.
     def _connect_async(mac):
         try:
             uuid = profile_for(mac) if profile_for else None
-            ok, err = connect(adapter, mac, uuid=uuid)
+            ok, err = connect(adapter, mac, uuid=uuid, timeout=wake_timeout)
             if ok:
                 backoff.pop(mac, None)
                 next_try.pop(mac, None)
                 stuck.pop(mac, None)
+                burst.pop(mac, None)
                 log(f"reconnect: {mac} connected")
                 return
             if is_connect_in_progress(err):
@@ -146,6 +159,13 @@ def start_reconnect_worker(adapter, is_active, log, interval=2.0, stale_secs=10.
             stuck.pop(mac, None)
             if is_timeout(err):
                 _clear_pending(mac, "connect timed out")
+            tries = burst.get(mac, 0) + 1
+            if tries < burst_attempts:
+                burst[mac] = tries
+                next_try[mac] = time.monotonic() + burst_interval
+                log(f"reconnect: {mac} wake-up attempt {tries}/{burst_attempts} failed: {err}")
+                return
+            burst.pop(mac, None)
             delay = min(max_backoff, max(interval, backoff.get(mac, interval) * 2))
             backoff[mac] = delay
             next_try[mac] = time.monotonic() + delay
@@ -176,7 +196,7 @@ def start_reconnect_worker(adapter, is_active, log, interval=2.0, stale_secs=10.
                             if _DBG:
                                 log("reconnect: %s skip (not known for enabled protocol)" % mac)
                             continue
-                        if mac in inflight:
+                        if inflight:
                             continue
                         if time.monotonic() < next_try.get(mac, 0.0):
                             continue
