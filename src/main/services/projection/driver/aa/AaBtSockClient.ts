@@ -107,6 +107,11 @@ export class AaBtSockClient {
     return (await this.request(`remove ${mac}`, timeoutMs)) as ActionResponse
   }
 
+  // Phones that already project over USB. The helper refuses to hand them the AP credentials
+  async setWiredPhones(ids: string[], timeoutMs = 5000): Promise<ActionResponse> {
+    return (await this.request(`wired-phones ${JSON.stringify(ids)}`, timeoutMs)) as ActionResponse
+  }
+
   // Kick every associated Wi-Fi station off the AP
   async deauthApClients(timeoutMs = 5000): Promise<ActionResponse> {
     return (await this.request('deauth-ap', timeoutMs)) as ActionResponse
@@ -121,8 +126,10 @@ export class AaBtSockClient {
       command?: string
       btMac?: string
       instanceId?: string
+      usbSerial?: string
     }) => void,
-    onClose?: () => void
+    onClose?: () => void,
+    onOpen?: () => void
   ): { close: () => void } {
     const sock = net.createConnection(this.path)
     let buf = ''
@@ -130,6 +137,7 @@ export class AaBtSockClient {
 
     sock.on('connect', () => {
       sock.write('subscribe\n')
+      onOpen?.()
     })
     sock.on('data', (data: Buffer) => {
       buf += data.toString('utf8')

@@ -8,6 +8,7 @@ export interface DeviceEntry {
   btMac?: string
   wifiMac?: string
   usbUdid?: string
+  usbSerial?: string
   instanceId?: string
   name?: string
   model?: string
@@ -29,6 +30,7 @@ type StoredDevice = {
   btMac?: string
   wifiMac?: string
   usbUdid?: string
+  usbSerial?: string
   instanceId?: string
   name?: string
   model?: string
@@ -40,7 +42,14 @@ type StoredDevice = {
 
 export type { DeviceView } from '@shared/types'
 
-type Ids = { btMac?: string; wifiMac?: string; usbUdid?: string; instanceId?: string; ip?: string }
+type Ids = {
+  btMac?: string
+  wifiMac?: string
+  usbUdid?: string
+  usbSerial?: string
+  instanceId?: string
+  ip?: string
+}
 
 function normMac(v?: string): string | undefined {
   if (!v) return v
@@ -53,6 +62,7 @@ const IDENTITY_KEYS = [
   'btMac',
   'wifiMac',
   'usbUdid',
+  'usbSerial',
   'instanceId',
   'name',
   'model',
@@ -107,6 +117,7 @@ export class DeviceRegistry {
           btMac: e.btMac,
           wifiMac: e.wifiMac,
           usbUdid: e.usbUdid,
+          usbSerial: e.usbSerial,
           instanceId: e.instanceId
         })
         if (dups.length) {
@@ -134,7 +145,7 @@ export class DeviceRegistry {
   }
 
   private stableKey(e: DeviceEntry): string | null {
-    return e.btMac ?? e.usbUdid ?? e.wifiMac ?? e.instanceId ?? null
+    return e.btMac ?? e.usbUdid ?? e.usbSerial ?? e.wifiMac ?? e.instanceId ?? null
   }
 
   private persist(): void {
@@ -163,6 +174,7 @@ export class DeviceRegistry {
         (!!btMac && normMac(e.btMac) === btMac) ||
         (!!wifiMac && normMac(e.wifiMac) === wifiMac) ||
         (!!ids.usbUdid && e.usbUdid === ids.usbUdid) ||
+        (!!ids.usbSerial && e.usbSerial === ids.usbSerial) ||
         (!!ids.instanceId && e.instanceId === ids.instanceId) ||
         (!!ids.ip && e.currentIp === ids.ip)
     )
@@ -175,6 +187,7 @@ export class DeviceRegistry {
       primary.btMac ??= o.btMac
       primary.wifiMac ??= o.wifiMac
       primary.usbUdid ??= o.usbUdid
+      primary.usbSerial ??= o.usbSerial
       primary.instanceId ??= o.instanceId
       primary.name ??= o.name
       primary.model ??= o.model
@@ -236,6 +249,7 @@ export class DeviceRegistry {
     wifiMac?: string
     ip?: string
     usbUdid?: string
+    usbSerial?: string
     instanceId?: string
     name?: string
     model?: string
@@ -246,12 +260,14 @@ export class DeviceRegistry {
       btMac: d.btMac,
       wifiMac: d.wifiMac,
       usbUdid: d.usbUdid,
+      usbSerial: d.usbSerial,
       instanceId: d.instanceId,
       ip: d.ip
     })
     if (d.btMac) e.btMac = normMac(d.btMac)
     if (d.wifiMac) e.wifiMac = normMac(d.wifiMac)
     if (d.usbUdid) e.usbUdid = d.usbUdid
+    if (d.usbSerial) e.usbSerial = d.usbSerial
     if (d.instanceId) e.instanceId = d.instanceId
     if (d.name) e.name = d.name
     if (d.model) e.model = d.model

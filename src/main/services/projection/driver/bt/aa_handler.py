@@ -130,8 +130,14 @@ def _read_varint(buf: bytes, i: int) -> tuple[int, int]:
             return val, i
         shift += 7
 
-def _wpp_instance_id(data: bytes) -> str:
-    """WifiVersionResponse field 6 (message) -> field 1 (string) = instanceId."""
+def _wpp_identity(data: bytes):
+    """WifiVersionResponse -> (instanceId, serial).
+
+    Field 3 (string) is the device serial, which is also the USB descriptor serial.
+    Field 6 (message) -> field 1 (string) is the instanceId.
+    """
+    instance_id = ""
+    serial = ""
     try:
         i, n = 0, len(data)
         while i < n:
@@ -141,7 +147,9 @@ def _wpp_instance_id(data: bytes) -> str:
                 ln, i = _read_varint(data, i)
                 val = data[i:i + ln]
                 i += ln
-                if field == 6:
+                if field == 3:
+                    serial = val.decode("utf-8", "replace")
+                elif field == 6:
                     j = 0
                     while j < len(val):
                         t2, j = _read_varint(val, j)
@@ -150,7 +158,7 @@ def _wpp_instance_id(data: bytes) -> str:
                             v2 = val[j:j + l2]
                             j += l2
                             if t2 >> 3 == 1:
-                                return v2.decode("utf-8", "replace")
+                                instance_id = v2.decode("utf-8", "replace")
                         elif t2 & 7 == 0:
                             _, j = _read_varint(val, j)
                         else:
@@ -161,12 +169,34 @@ def _wpp_instance_id(data: bytes) -> str:
                 break
     except Exception:
         pass
-    return ""
+    return instance_id, serial
 
 def _emit_aa_device(mac: str, data: bytes) -> None:
-    iid = _wpp_instance_id(data)
-    if iid:
-        _push_event({"event": "aa-device", "btMac": mac.upper(), "instanceId": iid})
+    iid, serial = _wpp_identity(data)
+    if iid or serial:
+        dprint(f"[aa-bt] WPP: identified {mac.upper()} instanceId={iid or '-'} "
+              f"serial={serial or '-'}", flush=True)
+        _push_event({"event": "aa-device", "btMac": mac.upper(),
+                     "instanceId": iid, "usbSerial": serial})
+
+
+# Phones that already project over USB. They must never be invited onto the AP: a wired
+# session outranks a wireless one.
+_wired_phones: set = set()
+
+
+def _set_wired_phones(arg: str) -> None:
+    global _wired_phones
+    try:
+        ids = json.loads(arg) if arg.strip() else []
+    except Exception:
+        ids = []
+    _wired_phones = {str(x).upper() for x in ids if x}
+    dprint(f"[aa-bt] wired phones: {sorted(_wired_phones)}", flush=True)
+
+
+def _is_wired(*ids) -> bool:
+    return any(str(i).upper() in _wired_phones for i in ids if i)
 
 # ── WiFi handshake ──────────────────────
 
@@ -234,6 +264,11 @@ def _run_wifi_handshake(sock: socket.socket, mac: str):
                 dprint(f"[aa-bt] WPP: WifiVersionResponse hex={data.hex()}",
                       flush=True)
                 _emit_aa_device(mac, data)
+                iid, serial = _wpp_identity(data)
+                if _is_wired(mac, iid, serial):
+                    dprint(f"[aa-bt] WPP: {mac} already projecting over USB — "
+                          f"not offering the AP", flush=True)
+                    return
                 _pending = None
             else:
                 _pending = (msg_id, data)
@@ -951,6 +986,9 @@ def _start_event_server() -> None:
                     return {"ok": False, "error": "remove requires a MAC argument"}
                 ok, err = _device_remove(arg)
                 return {"ok": ok} if ok else {"ok": False, "error": err}
+            if cmd == "wired-phones":
+                _set_wired_phones(arg)
+                return {"ok": True}
             if cmd == "deauth-ap":
                 count = deauth_all_clients()
                 dprint(f"[aa-bt] deauth-ap: kicked {count} client(s)", flush=True)

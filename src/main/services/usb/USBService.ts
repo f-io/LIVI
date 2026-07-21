@@ -117,7 +117,7 @@ export class USBService {
       if (this.stopped || this.resetInProgress || this.shutdownInProgress) return
       const isDongleDev = this.isDongle(device)
       console.log(
-        `[USBService] attach vid=0x${device.vendorId?.toString(16) ?? '??'} pid=0x${device.productId?.toString(16) ?? '??'} cls=0x${device.deviceClass?.toString(16) ?? '??'} → dongle=${isDongleDev} accessory=${isAccessoryMode(device)} phoneCandidate=${this.isPhoneCandidate(device)} lastPhone=${this.lastPhoneState}`
+        `[USBService] attach vid=0x${device.vendorId?.toString(16) ?? '??'} pid=0x${device.productId?.toString(16) ?? '??'} cls=0x${device.deviceClass?.toString(16) ?? '??'} serial=${device.serialNumber || '-'} → dongle=${isDongleDev} accessory=${isAccessoryMode(device)} phoneCandidate=${this.isPhoneCandidate(device)} lastPhone=${this.lastPhoneState}`
       )
       if (!(isDongleDev && this.shouldSuppressDongleEvents())) {
         this.broadcastGenericUsbEvent({ type: 'attach', device })

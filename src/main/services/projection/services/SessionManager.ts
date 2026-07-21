@@ -11,6 +11,7 @@ export interface SessionDeviceIds {
   btMac?: string
   wifiMac?: string
   usbUdid?: string
+  usbSerial?: string
   instanceId?: string
   controllerId?: string
   ip?: string
@@ -50,6 +51,7 @@ function idsOverlap(a: SessionDeviceIds, b: SessionDeviceIds): boolean {
     (!!a.btMac && normMac(a.btMac) === normMac(b.btMac)) ||
     (!!a.wifiMac && normMac(a.wifiMac) === normMac(b.wifiMac)) ||
     (!!a.usbUdid && a.usbUdid === b.usbUdid) ||
+    (!!a.usbSerial && a.usbSerial === b.usbSerial) ||
     (!!a.instanceId && a.instanceId === b.instanceId) ||
     (!!a.controllerId && a.controllerId === b.controllerId) ||
     (!!a.ip && a.ip === b.ip)
@@ -100,6 +102,7 @@ export class SessionManager {
       ids.btMac ||
       ids.wifiMac ||
       ids.usbUdid ||
+      ids.usbSerial ||
       ids.instanceId ||
       ids.controllerId ||
       ids.ip
@@ -121,7 +124,10 @@ export class SessionManager {
     transport: SessionTransport,
     device: SessionDeviceIds
   ): ProjectionSession {
-    let s = this.byIdentity(protocol, device) ?? this.byDriver(driver)
+    const byId = this.byIdentity(protocol, device)
+    const stealsWired =
+      byId !== null && byId.driver !== driver && byId.transport === 'usb' && transport !== 'usb'
+    let s = byId && !stealsWired ? byId : this.byDriver(driver)
     const created = !s
     if (!s) {
       s = {

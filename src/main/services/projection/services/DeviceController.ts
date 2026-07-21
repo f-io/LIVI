@@ -16,6 +16,7 @@ export type DeviceControllerDeps = {
   getDongleDevList: () => DevListEntry[]
   emit: (payload: ProjectionEvent) => void
   pushReconnectTargets: (targets: Record<string, string | null>) => void
+  pushWiredPhones: (ids: string[]) => void
 }
 
 // The phone's iAP service UUID, used as the CarPlay reconnect ConnectProfile target.
@@ -27,6 +28,7 @@ const HSP_AG_UUID = '00001112-0000-1000-8000-00805f9b34fb'
 export class DeviceController {
   private lastDeviceViewsSig = ''
   private lastReconnectSig = ''
+  private lastWiredPhonesSig = ''
 
   constructor(private readonly deps: DeviceControllerDeps) {}
 
@@ -77,6 +79,7 @@ export class DeviceController {
 
   emitDevices(): void {
     this.reconcileReconnectTargets()
+    this.reconcileWiredPhones()
     const views = this.buildDeviceViews()
     const sig = JSON.stringify(views)
     if (sig === this.lastDeviceViewsSig) return
@@ -86,6 +89,24 @@ export class DeviceController {
 
   resendReconnectTargets(): void {
     this.reconcileReconnectTargets(true)
+    this.reconcileWiredPhones(true)
+  }
+
+  /** Tell the helper which phones already project over USB, so it never offers them the
+   *  AP: a wired session outranks a wireless one, the other direction stays open. */
+  private reconcileWiredPhones(force = false): void {
+    const ids = new Set<string>()
+    for (const s of this.deps.sessions().all()) {
+      if (s.protocol !== 'androidauto' || s.transport !== 'usb') continue
+      if (s.device.instanceId) ids.add(s.device.instanceId.toUpperCase())
+      if (s.device.btMac) ids.add(s.device.btMac.toUpperCase())
+      if (s.device.usbSerial) ids.add(s.device.usbSerial.toUpperCase())
+    }
+    const list = [...ids].sort()
+    const sig = list.join(',')
+    if (!force && sig === this.lastWiredPhonesSig) return
+    this.lastWiredPhonesSig = sig
+    this.deps.pushWiredPhones(list)
   }
 
   private reconcileReconnectTargets(force = false): void {

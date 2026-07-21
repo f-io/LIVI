@@ -192,6 +192,7 @@ export class ProjectionService {
   private aaBtNameByMac = new Map<string, string>()
   private connectedAaBtMac = ''
   private readonly aaBtMacByInstance = new Map<string, string>()
+  private readonly aaSerialByInstance = new Map<string, string>()
   private audioMonitor: AudioDeviceMonitorHandle | null = null
   private readonly statusFile = new StatusFileWriter()
 
@@ -216,6 +217,9 @@ export class ProjectionService {
         .getCpManager()
         ?.helper.sendReconnectTargets(targets)
         .catch(() => {})
+    },
+    pushWiredPhones: (ids) => {
+      this.aaBtSock.setWiredPhones(ids).catch(() => {})
     }
   })
   private aaBtActive = false
@@ -396,9 +400,11 @@ export class ProjectionService {
     const instanceId = typeof p.instanceId === 'string' ? p.instanceId : undefined
     const wifiMac = !wired && typeof p.wifiMac === 'string' ? p.wifiMac : undefined
     const btMac = !wired && instanceId ? this.aaBtMacByInstance.get(instanceId) : undefined
+    const usbSerial = instanceId ? this.aaSerialByInstance.get(instanceId) : undefined
     this.deviceRegistry.noteDevice({
       btMac,
       instanceId,
+      usbSerial,
       wifiMac,
       name: typeof p.name === 'string' && p.name ? p.name : undefined,
       model: typeof p.model === 'string' && p.model ? p.model : undefined,
@@ -410,6 +416,7 @@ export class ProjectionService {
       this.sessions.upsert(session, 'androidauto', this.aaTransport(session), {
         btMac,
         instanceId,
+        usbSerial,
         wifiMac,
         ip: ip || undefined
       })
@@ -1909,6 +1916,9 @@ export class ProjectionService {
             if (typeof ev.btMac === 'string' && typeof ev.instanceId === 'string') {
               this.aaBtMacByInstance.set(ev.instanceId, ev.btMac)
             }
+            if (typeof ev.usbSerial === 'string' && ev.usbSerial && ev.instanceId) {
+              this.aaSerialByInstance.set(ev.instanceId, ev.usbSerial)
+            }
             return
           }
           this.refreshAaBtPairedList({
@@ -1918,7 +1928,8 @@ export class ProjectionService {
         () => {
           this.aaBtSubscription = null
           if (this.aaBtActive) setTimeout(open, 1000)
-        }
+        },
+        () => this.deviceController.resendReconnectTargets()
       )
     }
     open()
