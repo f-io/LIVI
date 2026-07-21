@@ -23,10 +23,11 @@ export interface AaManagerOptions {
 }
 
 function deviceKey(device: Device): string {
+  const serial = device.serialNumber ?? ''
+  if (serial) return `serial:${serial}`
   const vid = device.vendorId ?? 0
   const pid = device.productId ?? 0
-  const serial = device.serialNumber ?? ''
-  return `${vid}:${pid}:${serial}`
+  return `${vid}:${pid}`
 }
 
 export class AaManager {
@@ -185,7 +186,7 @@ export class AaManager {
           return
         }
         console.log('[AaManager] wired loopback connected → spawning AaSession')
-        this._spawn(sock, true, bridge, key)
+        this._spawn(sock, true, bridge, key, undefined, device.serialNumber ?? undefined)
       })
       sock.on('error', (err: Error) => {
         console.warn(`[AaManager] wired loopback socket error: ${err.message}`)
@@ -213,13 +214,15 @@ export class AaManager {
     wired: boolean,
     wiredBridge: UsbAoapBridge | null,
     key?: string,
-    wirelessIp?: string
+    wirelessIp?: string,
+    usbSerial?: string
   ): void {
     const session = new AaSession({
       socket,
       getConfig: this._getConfig,
       wired,
       wiredBridge,
+      usbSerial,
       seed: this._seed()
     })
     this._sessions.add(session)

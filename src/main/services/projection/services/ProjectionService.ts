@@ -400,7 +400,8 @@ export class ProjectionService {
     const instanceId = typeof p.instanceId === 'string' ? p.instanceId : undefined
     const wifiMac = !wired && typeof p.wifiMac === 'string' ? p.wifiMac : undefined
     const btMac = !wired && instanceId ? this.aaBtMacByInstance.get(instanceId) : undefined
-    const usbSerial = instanceId ? this.aaSerialByInstance.get(instanceId) : undefined
+    const usbSerial =
+      session.usbSerial() || (instanceId ? this.aaSerialByInstance.get(instanceId) : undefined)
     this.deviceRegistry.noteDevice({
       btMac,
       instanceId,
@@ -1956,10 +1957,9 @@ export class ProjectionService {
     const aaSessions = this.sessions.all().filter((s) => s.protocol === 'androidauto')
     // A live WIRED AA session = a 2nd Android already streaming (Tier B) → skip.
     if (aaSessions.some((s) => s.transport === 'usb')) return
-    // A WIRELESS AA session is the same phone moving to USB. Close it so the wired
-    // bring-up transitions and auto-activates; left open it lingers as a dead
-    // "active" session with no video (the black stream).
-    for (const s of aaSessions) void (s.driver as AaSession).close()
+    // The wireless session stays up until the wired one has identified. The
+    // SessionManager then hands the entry to the wired driver and retires the
+    // wireless one, so the phone never tears down and re-enumerates at once.
     console.log('[ProjectionService] wired AA bring-up beside active session')
     try {
       await this.armWiredAa(device)

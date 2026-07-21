@@ -86,6 +86,7 @@ export interface AaSessionOptions {
   getConfig: () => Config
   wired: boolean
   wiredBridge?: UsbAoapBridge | null
+  usbSerial?: string
   seed: AaSessionSeed
 }
 
@@ -110,6 +111,7 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
   private _initialNightMode: boolean | undefined
   private _aaCfg: AAStackConfig | null = null
   private readonly _wired: boolean
+  private readonly _usbSerial: string
   private _wiredBridge: UsbAoapBridge | null
   private _wiredClientSocket: net.Socket | null
   private readonly _getConfig: () => Config
@@ -118,6 +120,7 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
     super()
     this._getConfig = opts.getConfig
     this._wired = opts.wired
+    this._usbSerial = opts.usbSerial ?? ''
     this._wiredBridge = opts.wiredBridge ?? null
     this._wiredClientSocket = opts.wired ? opts.socket : null
     this._hevcSupported = opts.seed.hevcSupported
@@ -176,6 +179,11 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
 
   isWiredMode(): boolean {
     return this._wired
+  }
+
+  /** Device serial from the USB descriptor, empty for a wireless session. */
+  usbSerial(): string {
+    return this._usbSerial
   }
 
   /** Build the AAStack config from the runtime Config and refresh the touch-mapping insets. */

@@ -129,6 +129,15 @@ export class SessionManager {
       byId !== null && byId.driver !== driver && byId.transport === 'usb' && transport !== 'usb'
     let s = byId && !stealsWired ? byId : this.byDriver(driver)
     const created = !s
+    // A wired driver adopting a non-wired session of the same phone is a transport
+    // handover: wireless -> wired. Take over the entry and retire the wireless driver,
+    // so the session keeps its index, media and nav instead of being torn down.
+    let superseded: IPhoneDriver | null = null
+    if (s && s.driver !== driver && transport === 'usb' && s.transport !== 'usb') {
+      superseded = s.driver
+      s.driver = driver
+      if (s.state === 'active') this.deps.route(driver)
+    }
     if (!s) {
       s = {
         index: this.nextIndex++,
@@ -158,6 +167,7 @@ export class SessionManager {
     this.emitChange(
       `${created ? 'create' : 'upsert'} #${s.index} ${protocol} in=${JSON.stringify(device)}`
     )
+    if (superseded) void superseded.close()
     return s
   }
 
