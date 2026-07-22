@@ -120,6 +120,8 @@ struct tinywl_server {
 	struct wl_listener touch_motion;
 	struct wl_listener touch_frame;
 	bool has_touch;
+	bool pointer_seen;
+	bool kiosk;
 
 	struct wlr_seat *seat;
 	struct wl_listener new_input;
@@ -513,12 +515,20 @@ static void seat_request_cursor(struct wl_listener *listener, void *data) {
 	}
 }
 
+static void livi_set_cursor(struct tinywl_server *server, const char *name) {
+	if (!server->pointer_seen) {
+		wlr_cursor_set_surface(server->cursor, NULL, 0, 0);
+		return;
+	}
+	wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, name);
+}
+
 static void seat_pointer_focus_change(struct wl_listener *listener, void *data) {
 	struct tinywl_server *server = wl_container_of(
 			listener, server, pointer_focus_change);
 	struct wlr_seat_pointer_focus_change_event *event = data;
 	if (event->new_surface == NULL) {
-		wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "default");
+		livi_set_cursor(server, "default");
 	}
 }
 
@@ -675,7 +685,7 @@ static void process_cursor_motion(struct tinywl_server *server, uint32_t time) {
 	enum livi_deco_hit dh = deco_hit_test(server, server->cursor->x, server->cursor->y,
 			&ds, &dedges);
 	if (ds != NULL) {
-		wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr,
+		livi_set_cursor(server,
 			dh == LIVI_DECO_RESIZE ? resize_cursor_name(dedges) : "default");
 		wlr_seat_pointer_clear_focus(server->seat);
 		return;
@@ -687,7 +697,7 @@ static void process_cursor_motion(struct tinywl_server *server, uint32_t time) {
 	struct tinywl_toplevel *toplevel = desktop_toplevel_at(server,
 			server->cursor->x, server->cursor->y, &surface, &sx, &sy);
 	if (!toplevel) {
-		wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "default");
+		livi_set_cursor(server, "default");
 	}
 	if (surface) {
 		wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
@@ -700,6 +710,7 @@ static void process_cursor_motion(struct tinywl_server *server, uint32_t time) {
 static void server_cursor_motion(struct wl_listener *listener, void *data) {
 	struct tinywl_server *server =
 		wl_container_of(listener, server, cursor_motion);
+	server->pointer_seen = true;
 	struct wlr_pointer_motion_event *event = data;
 	wlr_cursor_move(server->cursor, &event->pointer->base,
 			event->delta_x, event->delta_y);
@@ -710,6 +721,7 @@ static void server_cursor_motion_absolute(
 		struct wl_listener *listener, void *data) {
 	struct tinywl_server *server =
 		wl_container_of(listener, server, cursor_motion_absolute);
+	server->pointer_seen = true;
 	struct wlr_pointer_motion_absolute_event *event = data;
 	wlr_cursor_warp_absolute(server->cursor, &event->pointer->base, event->x,
 		event->y);
@@ -2126,6 +2138,9 @@ int main(int argc, char *argv[]) {
 	struct tinywl_server server = {0};
 
 	char screens_buf[256];
+	const char *kiosk_env = getenv("LIVI_KIOSK");
+	server.kiosk = kiosk_env != NULL && strcmp(kiosk_env, "0") != 0;
+
 	const char *screens_env = getenv("LIVI_SCREENS");
 	snprintf(screens_buf, sizeof(screens_buf), "%s",
 		screens_env && *screens_env ? screens_env : "main,dash,aux");
@@ -2134,10 +2149,12 @@ int main(int argc, char *argv[]) {
 			tok = strtok(NULL, ",")) {
 		snprintf(server.screens[server.n_screens].role,
 			sizeof(server.screens[0].role), "%s", tok);
+		server.screens[server.n_screens].fullscreen = server.kiosk;
 		server.n_screens++;
 	}
 	if (server.n_screens == 0) {
 		snprintf(server.screens[0].role, sizeof(server.screens[0].role), "main");
+		server.screens[0].fullscreen = server.kiosk;
 		server.n_screens = 1;
 	}
 

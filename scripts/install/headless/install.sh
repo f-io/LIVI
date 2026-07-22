@@ -119,26 +119,6 @@ $KIOSK_MARKER
 if [ -z "\$WAYLAND_DISPLAY" ] && [ "\$(tty)" = "/dev/tty1" ]; then
   export ELECTRON_OZONE_PLATFORM_HINT=wayland
   export LIVI_KIOSK=1
-  LIVI_KIOSK_MODE="\${LIVI_KIOSK_MODE:-native}"
-
-  # Default: Cage uses the display's preferred mode.
-  # Set LIVI_KIOSK_MODE=WxH@Hz to force a mode (e.g. cap a 4K panel at 1080p).
-  if [ "\$LIVI_KIOSK_MODE" != "native" ]; then
-    (
-      export XDG_RUNTIME_DIR=/run/user/\$(id -u)
-      for _ in \$(seq 1 40); do
-        if [ -S "\$XDG_RUNTIME_DIR/wayland-0" ]; then
-          OUT=\$(WAYLAND_DISPLAY=wayland-0 wlr-randr 2>/dev/null \\
-            | awk 'NR==1 {print \$1; exit}')
-          [ -n "\$OUT" ] && WAYLAND_DISPLAY=wayland-0 \\
-            wlr-randr --output "\$OUT" --mode "\$LIVI_KIOSK_MODE" 2>/dev/null
-          break
-        fi
-        sleep 0.25
-      done
-    ) &
-  fi
-
   exec cage -- "$APPIMAGE_PATH" >"$APPIMAGE_DIR/LIVI.log" 2>&1
 fi
 EOF

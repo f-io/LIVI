@@ -130,6 +130,8 @@
     "drawOutside": "Afficher en dehors",
     "drawOutsideDescription": "Laisser le fond déborder de la zone safe.",
     "mainScreen": "Affichage Principal",
+    "displayMode": "Mode d'affichage",
+    "displayModeDefault": "Réglage du panneau",
     "mainScreenWidth": "Largeur",
     "mainScreenHeight": "Hauteur",
     "clusterScreen": "Affichage du Compteur",

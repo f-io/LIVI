@@ -9,6 +9,7 @@ import {
   MIN_WIDTH
 } from '../../components/pages/settings/constants'
 import { Camera } from '../../components/pages/settings/pages/camera'
+import { DisplayMode } from '../../components/pages/settings/pages/display/DisplayMode'
 import { USBDongle } from '../../components/pages/settings/pages/system/usbDongle/USBDongle'
 import { SettingsNode } from '../types'
 
@@ -125,6 +126,13 @@ export const generalSchema: SettingsNode<Config> = {
           route: 'mainScreen',
           path: '',
           children: [
+            {
+              type: 'custom',
+              label: 'Display Mode',
+              labelKey: 'settings.displayMode',
+              path: '',
+              component: DisplayMode
+            },
             {
               type: 'number',
               label: 'Width',

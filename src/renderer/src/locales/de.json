@@ -130,6 +130,8 @@
     "drawOutside": "Außerhalb zeichnen",
     "drawOutsideDescription": "Hintergrund über die Safe Area hinaus zeichnen.",
     "mainScreen": "Hauptbildschirm",
+    "displayMode": "Bildschirmmodus",
+    "displayModeDefault": "Panel-Standard",
     "mainScreenWidth": "Breite",
     "mainScreenHeight": "Höhe",
     "clusterScreen": "Cluster-Bildschirm",

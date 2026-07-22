@@ -232,6 +232,7 @@ const appApi = {
   platform: process.platform,
   compositor: process.env.LIVI_COMPOSITOR === '1',
   getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
+  listDisplayModes: (): Promise<string[]> => ipcRenderer.invoke('app:listDisplayModes'),
   getLatestRelease: (): Promise<{ version?: string; url?: string }> =>
     ipcRenderer.invoke('app:getLatestRelease'),
   performUpdate: (imageUrl?: string): Promise<void> =>

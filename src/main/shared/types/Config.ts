@@ -200,6 +200,9 @@ export type Config = {
   uiZoomPercent: number
   appearanceMode: AppearanceMode
 
+  // Panel mode as "WIDTHxHEIGHT", empty leaves the display at the mode it came up in
+  displayMode: string
+
   // Display calibration, applied as the Pi compositor output gamma LUT
   displayGamma: number
   displayContrast: number

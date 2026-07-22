@@ -130,6 +130,8 @@
     "drawOutside": "Малювати за межами",
     "drawOutsideDescription": "Дозволити фону виходити за безпечну зону.",
     "mainScreen": "Головний екран",
+    "displayMode": "Режим дисплея",
+    "displayModeDefault": "Стандарт панелі",
     "mainScreenWidth": "Ширина",
     "mainScreenHeight": "Висота",
     "clusterScreen": "Екран кластера",

@@ -185,6 +185,7 @@ declare global {
       quitApp(): Promise<void>
       restartApp(): Promise<void>
       getVersion(): Promise<string>
+      listDisplayModes(): Promise<string[]>
       getLatestRelease(): Promise<{
         version?: string
         url?: string

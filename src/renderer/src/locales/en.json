@@ -130,6 +130,8 @@
     "drawOutside": "Draw Outside",
     "drawOutsideDescription": "Let the wallpaper bleed past the safe area.",
     "mainScreen": "Main Screen",
+    "displayMode": "Display Mode",
+    "displayModeDefault": "Panel default",
     "mainScreenWidth": "Width",
     "mainScreenHeight": "Height",
     "clusterScreen": "Cluster Screen",
