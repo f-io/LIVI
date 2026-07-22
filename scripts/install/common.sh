@@ -18,6 +18,7 @@ LIVI_BOOT_CONFIG="${LIVI_BOOT_CONFIG:-/boot/firmware/config.txt}"
 LIVI_MFI_I2C_BUS="2"
 LIVI_MFI_OVERLAY="dtoverlay=i2c-gpio,bus=${LIVI_MFI_I2C_BUS},i2c_gpio_sda=19,i2c_gpio_scl=26,i2c_gpio_delay_us=5"
 LIVI_MODULES_LOAD="${LIVI_MODULES_LOAD:-/etc/modules-load.d/livi-i2c.conf}"
+LIVI_NM_POWERSAVE_FILE="/etc/NetworkManager/conf.d/99-LIVI-wifi-powersave.conf"
 
 # Pixel repetition for RGB/VGA panels below HDMI's clock floor
 LIVI_HDMI_PR_SCRIPT="setup-hdmi-pr-display.sh"
@@ -284,6 +285,14 @@ livi_apply_hdmi_pr() {
   }
 
   bash "$script" --edid "$edid"
+}
+
+# The radio's power saving drops an idle link after a few minutes, which takes the
+# host off the network. Applies from the next boot, so no running session is cut.
+livi_disable_wifi_powersave() {
+  echo "→ Writing $LIVI_NM_POWERSAVE_FILE"
+  sudo mkdir -p "$(dirname "$LIVI_NM_POWERSAVE_FILE")"
+  printf '[connection]\nwifi.powersave = 2\n' | sudo tee "$LIVI_NM_POWERSAVE_FILE" >/dev/null
 }
 
 livi_write_udev_rule() {
