@@ -8,17 +8,33 @@ const RULE_FILE = '/etc/udev/rules.d/99-LIVI.rules'
 
 const TEMPLATE_FILENAME = '99-LIVI.rules.template'
 
-function resolveTemplatePath(): string {
+const TOUCH_FILTER_FILENAME = 'livi-touch-filter'
+const TOUCH_FILTER_FILE = '/usr/local/lib/livi/livi-touch-filter'
+
+function resolveAssetPath(name: string): string {
   const resources = process.resourcesPath
   if (typeof resources === 'string' && resources.length > 0) {
-    const packaged = path.join(resources, TEMPLATE_FILENAME)
+    const packaged = path.join(resources, name)
     if (fs.existsSync(packaged)) return packaged
   }
-  return path.join(__dirname, '..', '..', '..', '..', 'assets', 'linux', TEMPLATE_FILENAME)
+  return path.join(__dirname, '..', '..', '..', '..', 'assets', 'linux', name)
+}
+
+function resolveTemplatePath(): string {
+  return resolveAssetPath(TEMPLATE_FILENAME)
 }
 
 function loadTemplate(): string {
   return fs.readFileSync(resolveTemplatePath(), 'utf8')
+}
+
+// The rule calls this to tell a real mouse from a touch panel's mouse interface.
+function loadTouchFilter(): string | null {
+  try {
+    return fs.readFileSync(resolveAssetPath(TOUCH_FILTER_FILENAME), 'utf8')
+  } catch {
+    return null
+  }
 }
 
 let cachedPhoneVendorIds: Set<number> | null | undefined
@@ -91,9 +107,15 @@ function pkexecAvailable(): boolean {
 
 function installRule(): Promise<void> {
   return new Promise((resolve, reject) => {
+    const filter = loadTouchFilter()
     const script =
       'set -e\n' +
       `cat > ${RULE_FILE} <<'LIVI_RULE_EOF'\n${buildRuleContent().trim()}\nLIVI_RULE_EOF\n` +
+      (filter
+        ? `mkdir -p ${path.dirname(TOUCH_FILTER_FILE)}\n` +
+          `cat > ${TOUCH_FILTER_FILE} <<'LIVI_FILTER_EOF'\n${filter.trim()}\nLIVI_FILTER_EOF\n` +
+          `chmod 0755 ${TOUCH_FILTER_FILE}\n`
+        : '') +
       'udevadm control --reload-rules\n' +
       'udevadm trigger'
 

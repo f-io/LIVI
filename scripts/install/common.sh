@@ -8,6 +8,8 @@ LIVI_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 LIVI_UDEV_FILE="/etc/udev/rules.d/99-LIVI.rules"
 LIVI_UDEV_TEMPLATE="99-LIVI.rules.template"
+LIVI_TOUCH_FILTER_TEMPLATE="livi-touch-filter"
+LIVI_TOUCH_FILTER_FILE="/usr/local/lib/livi/livi-touch-filter"
 LIVI_SUDOERS_FILE="/etc/sudoers.d/99-LIVI-bt"
 LIVI_SUDOERS_TEMPLATE="99-LIVI-bt.sudoers.template"
 LIVI_BOOT_CONFIG="${LIVI_BOOT_CONFIG:-/boot/firmware/config.txt}"
@@ -154,6 +156,14 @@ livi_fetch_template() {
     curl -fL "$LIVI_RAW/assets/linux/$name" -o "$path" >/dev/null 2>&1 || return 1
   fi
   printf '%s\n' "$path"
+}
+
+# The udev rule calls this to tell a real mouse from a touch panel's mouse interface.
+livi_install_touch_filter() {
+  local script="$1"
+  echo "→ Installing $LIVI_TOUCH_FILTER_FILE"
+  sudo mkdir -p "$(dirname "$LIVI_TOUCH_FILTER_FILE")"
+  sudo install -m 0755 -o root -g root "$script" "$LIVI_TOUCH_FILTER_FILE"
 }
 
 livi_write_udev_rule() {

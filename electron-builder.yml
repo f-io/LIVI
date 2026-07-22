@@ -41,6 +41,8 @@ linux:
       to: 99-LIVI.rules.template
     - from: assets/linux/99-LIVI-bt.sudoers.template
       to: 99-LIVI-bt.sudoers.template
+    - from: assets/linux/livi-touch-filter
+      to: livi-touch-filter
     - from: scripts/install/packages.txt
       to: packages.txt
     - from: assets/gstreamer/linux-x64

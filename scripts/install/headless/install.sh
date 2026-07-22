@@ -83,6 +83,12 @@ SUDOERS_TEMPLATE="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_SUDOERS_TEMPLATE
   exit 1
 }
 
+TOUCH_FILTER="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_TOUCH_FILTER_TEMPLATE")" || {
+  echo "Error: cannot obtain $LIVI_TOUCH_FILTER_TEMPLATE" >&2
+  exit 1
+}
+
+livi_install_touch_filter "$TOUCH_FILTER"
 livi_write_udev_rule "$UDEV_TEMPLATE"
 livi_write_sudoers "$SUDOERS_TEMPLATE"
 livi_apply_mfi

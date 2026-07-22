@@ -1,0 +1,40 @@
+#!/bin/sh
+# Called from the LIVI udev rule with the sysfs path of an input event device that
+# udev already tagged as a mouse. Exits 0 when that device is the mouse interface of
+# a panel whose other interface is a multitouch digitizer, which tells the rule to
+# hide it from libinput. Exits non-zero for everything else, so a real mouse stays.
+set -eu
+
+dev="${1:-}"
+[ -n "$dev" ] && [ -d "$dev" ] || exit 1
+
+# Bit 47 is ABS_MT_SLOT. The capabilities file holds 64 bit words, least significant last.
+has_mt_slots() {
+  [ -f "$1" ] || return 1
+  word="$(awk '{print $NF}' "$1" 2>/dev/null)"
+  case "$word" in
+    '' | *[!0-9a-fA-F]*) return 1 ;;
+  esac
+  [ "$(( (0x$word >> 47) & 1 ))" -eq 1 ]
+}
+
+self="$(dirname "$dev")"
+# A digitizer must never be hidden, whatever else udev decided about it.
+has_mt_slots "$self/capabilities/abs" && exit 1
+
+# Walk up to the USB device so the search covers its other interfaces.
+usb="$dev"
+while [ "$usb" != "/" ] && [ "$usb" != "/sys" ]; do
+  [ -f "$usb/idVendor" ] && break
+  usb="$(dirname "$usb")"
+done
+[ -f "$usb/idVendor" ] || exit 1
+
+for abs in "$usb"/*/input/input*/capabilities/abs "$usb"/*/*/input/input*/capabilities/abs; do
+  [ -f "$abs" ] || continue
+  sibling="$(dirname "$(dirname "$abs")")"
+  [ "$sibling" = "$self" ] && continue
+  has_mt_slots "$abs" && exit 0
+done
+
+exit 1
