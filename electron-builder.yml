@@ -39,6 +39,8 @@ linux:
       to: ../share/metainfo/dev.f-io.livi.metainfo.xml
     - from: assets/linux/99-LIVI.rules.template
       to: 99-LIVI.rules.template
+    - from: assets/linux/99-LIVI-bt.sudoers.template
+      to: 99-LIVI-bt.sudoers.template
     - from: scripts/install/packages.txt
       to: packages.txt
     - from: assets/gstreamer/linux-x64

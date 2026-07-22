@@ -1,13 +1,27 @@
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog } from 'electron'
 
 const RULE_FILE = '/etc/sudoers.d/99-LIVI-bt'
+const TEMPLATE_FILENAME = '99-LIVI-bt.sudoers.template'
 const SENTINEL_VERSION = 'v1'
 function sentinelPath(): string {
   return join(app.getPath('userData'), `bt-sudoers-${SENTINEL_VERSION}.installed`)
+}
+
+function resolveTemplatePath(): string {
+  const resources = process.resourcesPath
+  if (typeof resources === 'string' && resources.length > 0) {
+    const packaged = join(resources, TEMPLATE_FILENAME)
+    if (existsSync(packaged)) return packaged
+  }
+  return join(app.getAppPath(), 'assets', 'linux', TEMPLATE_FILENAME)
+}
+
+function loadTemplate(): string {
+  return readFileSync(resolveTemplatePath(), 'utf8')
 }
 
 function pythonPath(): string {
@@ -32,15 +46,9 @@ function resolveUsername(): string {
 }
 
 function buildRuleContent(): string {
-  const user = resolveUsername()
-  const py = pythonPath()
-  return [
-    `# Installed by LIVI — allows ${user} to run livi-helper.py as root`,
-    `# without a password prompt. Remove this file to revoke.`,
-    `Cmnd_Alias LIVI_BT = ${py} *livi-helper.py`,
-    `${user} ALL=(root) NOPASSWD: SETENV: LIVI_BT`,
-    ''
-  ].join('\n')
+  return loadTemplate()
+    .replace(/__USERNAME__/g, resolveUsername())
+    .replace(/__PYTHON__/g, pythonPath())
 }
 
 function ruleActiveInSudo(): boolean {
@@ -77,7 +85,9 @@ function installRule(): Promise<void> {
   return new Promise((resolve, reject) => {
     const content = buildRuleContent()
     const tmpFile = `${RULE_FILE}.livi-tmp`
+    // set -e keeps a file that fails validation from ever reaching sudoers.d.
     const script = [
+      'set -e',
       `cat > ${tmpFile} <<'EOF'`,
       content.trimEnd(),
       'EOF',
