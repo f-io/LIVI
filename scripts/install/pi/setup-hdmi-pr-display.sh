@@ -19,7 +19,7 @@ set -euo pipefail
 CONNECTOR="HDMI-A-1"
 EDID_SRC=""
 DO_BUILD=1
-KSRC="${HOME}/linux"
+KSRC=""   # set by fetch_and_sync from the running kernel version
 STATE_DIR="/var/lib/livi/hdmi-pr"
 FW_EDID="/lib/firmware/edid/livi-display.edid"
 CMDLINE="/boot/firmware/cmdline.txt"
@@ -46,14 +46,38 @@ require_pi() {
   fi
 }
 
+# The kernel source comes from apt, in the same version as the running kernel, so it
+# is the tree the binary was built from. The config comes from the installed headers.
 fetch_and_sync() {
-  local vc4src="${KSRC}/drivers/gpu/drm/vc4/vc4_hdmi.c"
+  local series pkg tarball vc4src
+
+  series="$(uname -r | cut -d. -f1,2)"
+  pkg="linux-source-${series}"
+  tarball="/usr/src/${pkg}.tar.xz"
+  KSRC="${HOME}/${pkg}"
+  vc4src="${KSRC}/drivers/gpu/drm/vc4/vc4_hdmi.c"
+
   if [[ ! -f "$vc4src" ]]; then
-    echo "→ Fetching matching kernel source (rpi-source)"
-    rm -rf "$KSRC" "$HOME"/linux-*
-    yes '' | rpi-source --skip-gcc || true
+    if [[ ! -f "$tarball" ]]; then
+      echo "→ Installing ${pkg}"
+      sudo apt-get install -y --no-install-recommends "$pkg"
+    fi
+    [[ -f "$tarball" ]] || { echo "kernel source package left no ${tarball}" >&2; exit 1; }
+    echo "→ Unpacking ${tarball}"
+    rm -rf "$KSRC"
+    tar -xf "$tarball" -C "$HOME"
   fi
-  [[ -f "$vc4src" ]] || { echo "kernel source not found at $KSRC after rpi-source" >&2; exit 1; }
+  [[ -f "$vc4src" ]] || { echo "kernel source not found at $KSRC" >&2; exit 1; }
+
+  echo "→ Taking the running kernel's config"
+  if [[ -f "/lib/modules/$(uname -r)/build/.config" ]]; then
+    cp "/lib/modules/$(uname -r)/build/.config" "${KSRC}/.config"
+  elif [[ -f "/boot/config-$(uname -r)" ]]; then
+    cp "/boot/config-$(uname -r)" "${KSRC}/.config"
+  else
+    echo "no kernel config found for $(uname -r)" >&2
+    exit 1
+  fi
 
   echo "→ Resolving kernel config (non-interactive)"
   make -C "$KSRC" olddefconfig >/dev/null
@@ -79,19 +103,11 @@ build_vc4() {
   echo "→ Installing build dependencies"
   sudo apt-get update
   sudo apt-get install -y --no-install-recommends \
-    git bc bison flex libssl-dev make gcc kmod xz-utils zstd
-
-  if ! command -v rpi-source >/dev/null 2>&1; then
-    sudo wget -q https://raw.githubusercontent.com/RPi-Distro/rpi-source/master/rpi-source \
-      -O /usr/local/bin/rpi-source
-    sudo chmod +x /usr/local/bin/rpi-source
-  fi
-
-  f="${KSRC}/drivers/gpu/drm/vc4/vc4_hdmi.c"
+    bc bison flex libssl-dev make gcc kmod xz-utils zstd
 
   fetch_and_sync
+  f="${KSRC}/drivers/gpu/drm/vc4/vc4_hdmi.c"
 
-  # rpi-source unpacks a tarball
   rm -f "$KSRC/.scmversion"
   base="$(make -C "$KSRC" -s kernelrelease 2>/dev/null || true)"
   lv=""
@@ -174,8 +190,7 @@ PY
     echo "ERROR: built module does not match the running kernel, not installing." >&2
     echo "  built:   ${new_vm:-<none>}" >&2
     echo "  running: ${run_vm:-<none>}" >&2
-    echo "If you changed kernels, run 'rm -rf ~/linux ~/linux-*' and re-run." >&2
-    echo "On a brand-new rpi-update kernel the source may not be published yet." >&2
+    echo "If you changed kernels, run 'rm -rf ~/linux-source-*' and re-run." >&2
     exit 1
   fi
   echo "   vermagic OK: ${new_vm}"

@@ -237,6 +237,7 @@ livi_ask_hdmi_pr() {
   esac
 
   [ "$LIVI_HDMI_PR" = "yes" ] || return 0
+
   [ -z "${LIVI_HDMI_PR_EDID:-}" ] || return 0
 
   profiles="$(livi_list_display_profiles)"
@@ -273,18 +274,20 @@ livi_apply_hdmi_pr() {
   [ "${LIVI_HDMI_PR:-no}" = "yes" ] || return 0
 
   echo "→ Setting up $LIVI_HDMI_PR_EDID"
-  script="$(livi_fetch_resource "$appimage" "$LIVI_HDMI_PR_SCRIPT" \
-    "scripts/install/pi/$LIVI_HDMI_PR_SCRIPT")" || {
-    echo "Error: cannot obtain $LIVI_HDMI_PR_SCRIPT" >&2
-    return 1
-  }
-  edid="$(livi_fetch_resource "$appimage" "$LIVI_DISPLAYS_DIR/$LIVI_HDMI_PR_EDID" \
-    "assets/$LIVI_DISPLAYS_DIR/$LIVI_HDMI_PR_EDID")" || {
-    echo "Error: cannot obtain $LIVI_HDMI_PR_EDID" >&2
-    return 1
-  }
-
-  bash "$script" --edid "$edid"
+  if ! script="$(livi_fetch_resource "$appimage" "$LIVI_HDMI_PR_SCRIPT" \
+      "scripts/install/pi/$LIVI_HDMI_PR_SCRIPT")"; then
+    echo "   cannot obtain $LIVI_HDMI_PR_SCRIPT, the panel stays as it is"
+    return 0
+  fi
+  if ! edid="$(livi_fetch_resource "$appimage" "$LIVI_DISPLAYS_DIR/$LIVI_HDMI_PR_EDID" \
+      "assets/$LIVI_DISPLAYS_DIR/$LIVI_HDMI_PR_EDID")"; then
+    echo "   cannot obtain $LIVI_HDMI_PR_EDID, the panel stays as it is"
+    return 0
+  fi
+  if ! bash "$script" --edid "$edid"; then
+    echo "   display setup did not complete, the panel stays as it is"
+  fi
+  return 0
 }
 
 # The radio's power saving drops an idle link after a few minutes, which takes the
