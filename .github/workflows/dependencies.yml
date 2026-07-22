@@ -33,7 +33,7 @@ jobs:
 
     steps:
       - name: Checkout target branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
         with:
           fetch-depth: 0
           ref: ${{ env.TARGET_BRANCH }}
@@ -112,7 +112,7 @@ jobs:
 
       - name: Create Pull Request
         if: steps.changes.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1  # v8
         with:
           base: ${{ env.TARGET_BRANCH }}
           branch: ${{ steps.meta.outputs.branch }}
