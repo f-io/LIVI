@@ -20,6 +20,7 @@ core|dnsmasq-base|cmd:dnsmasq|DHCP for the wireless access point
 core|iw|cmd:iw|Wi-Fi interface control
 core|rfkill|cmd:rfkill|Wi-Fi and Bluetooth radio control
 core|python3-pip|cmd:pip3|Installing pymobiledevice3 for wired CarPlay
+core|pulseaudio-utils|cmd:pactl|Reading and setting the system volume
 core|python3-dbus|py:dbus|Bluetooth and Wi-Fi helper
 core|python3-gi|py:gi|Bluetooth and Wi-Fi helper
 core|avahi-daemon|cmd:avahi-daemon|CarPlay discovery over Wi-Fi

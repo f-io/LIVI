@@ -50,8 +50,12 @@ export async function setSystemVolume(level: number, configuredDevice?: string):
   const clamped = Math.min(1, Math.max(0, level))
   const pct = Math.round(clamped * 100)
   lastWriteAt = Date.now()
-  const out = await run(['set-sink-volume', sinkName(configuredDevice), `${pct}%`])
-  if (out === null) return false
+  const sink = sinkName(configuredDevice)
+  const out = await run(['set-sink-volume', sink, `${pct}%`])
+  if (out === null) {
+    console.warn(`[SystemVolume] could not set ${sink} to ${pct} %, is pactl installed?`)
+    return false
+  }
   lastWriteAt = Date.now()
   console.log(`[SystemVolume] system volume → ${pct} %`)
   return true
