@@ -67,6 +67,7 @@ APPIMAGE_SRC="${1:-}"
 livi_pick_channel "$APPIMAGE_SRC"
 livi_ask_mfi
 livi_ask_splash
+livi_ask_hdmi_pr
 
 livi_fetch_appimage "$APPIMAGE_PATH" "$APPIMAGE_SRC"
 
@@ -93,6 +94,7 @@ livi_write_udev_rule "$UDEV_TEMPLATE"
 livi_write_sudoers "$SUDOERS_TEMPLATE"
 livi_apply_mfi
 livi_apply_splash
+livi_apply_hdmi_pr "$APPIMAGE_PATH"
 
 echo "→ Enabling seatd"
 sudo systemctl enable --now seatd

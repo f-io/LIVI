@@ -43,6 +43,10 @@ linux:
       to: 99-LIVI-bt.sudoers.template
     - from: assets/linux/livi-touch-filter
       to: livi-touch-filter
+    - from: assets/displays
+      to: displays
+    - from: scripts/install/pi/setup-hdmi-pr-display.sh
+      to: setup-hdmi-pr-display.sh
     - from: scripts/install/packages.txt
       to: packages.txt
     - from: assets/gstreamer/linux-x64

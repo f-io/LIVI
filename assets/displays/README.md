@@ -14,7 +14,11 @@ It patches the vc4 KMS driver to apply HDMI pixel repetition to every mode under
 
 ## Use
 
-Copy the profile to the Pi and run:
+The installer asks for this on a Raspberry Pi and offers the profiles below, so a new
+profile only has to be dropped into this directory to show up there. Answering no skips
+the whole step.
+
+By hand, copy the profile to the Pi and run:
 
 ```bash
 bash scripts/install/pi/setup-hdmi-pr-display.sh --edid assets/displays/VOLVO_RTI_SHARP_400_234.edid

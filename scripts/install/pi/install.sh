@@ -71,12 +71,14 @@ APPIMAGE_SRC="${1:-}"
 livi_pick_channel "$APPIMAGE_SRC"
 livi_ask_mfi
 livi_ask_splash
+livi_ask_hdmi_pr
 
 livi_fetch_appimage "$APPIMAGE_PATH" "$APPIMAGE_SRC"
 echo "   Download complete: $APPIMAGE_PATH"
 
 livi_apply_mfi
 livi_apply_splash
+livi_apply_hdmi_pr "$APPIMAGE_PATH"
 
 echo "→ Creating autostart entry"
 AUTOSTART_DIR="$USER_HOME/.config/autostart"

@@ -19,6 +19,10 @@ LIVI_MFI_I2C_BUS="2"
 LIVI_MFI_OVERLAY="dtoverlay=i2c-gpio,bus=${LIVI_MFI_I2C_BUS},i2c_gpio_sda=19,i2c_gpio_scl=26,i2c_gpio_delay_us=5"
 LIVI_MODULES_LOAD="${LIVI_MODULES_LOAD:-/etc/modules-load.d/livi-i2c.conf}"
 
+# Pixel repetition for RGB/VGA panels below HDMI's clock floor
+LIVI_HDMI_PR_SCRIPT="setup-hdmi-pr-display.sh"
+LIVI_DISPLAYS_DIR="displays"
+
 livi_lower() { printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]'; }
 
 livi_require_regular_user() {
@@ -164,6 +168,122 @@ livi_install_touch_filter() {
   echo "→ Installing $LIVI_TOUCH_FILTER_FILE"
   sudo mkdir -p "$(dirname "$LIVI_TOUCH_FILTER_FILE")"
   sudo install -m 0755 -o root -g root "$script" "$LIVI_TOUCH_FILTER_FILE"
+}
+
+# livi_fetch_resource <appimage> <path inside resources> <path in the repository>
+# Prints the path to the extracted file. Same order as livi_fetch_template: the
+# AppImage on disk first, the repository only for releases that predate the file.
+livi_fetch_resource() {
+  local appimage="$1" res="$2" repo="$3" dir path
+  dir="${LIVI_EXTRACT_DIR:-$(mktemp -d)}/$(printf '%s' "$res" | tr '/' '_').d"
+  mkdir -p "$dir"
+  ( cd "$dir" && "$appimage" --appimage-extract "resources/$res" >/dev/null 2>&1 ) || true
+  path="$dir/squashfs-root/resources/$res"
+  if [ ! -f "$path" ]; then
+    path="$dir/$(basename "$res")"
+    curl -fL "$LIVI_RAW/$repo" -o "$path" >/dev/null 2>&1 || return 1
+  fi
+  printf '%s\n' "$path"
+}
+
+livi_is_raspberry_pi() {
+  grep -qi "raspberry pi" /proc/device-tree/model 2>/dev/null
+}
+
+# Prints one EDID profile name per line, read from the repository because the
+# question comes before the AppImage is on disk.
+livi_list_display_profiles() {
+  curl -fsSL "$LIVI_API/contents/assets/$LIVI_DISPLAYS_DIR?ref=$LIVI_BRANCH" 2>/dev/null \
+    | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*\.edid"' \
+    | sed 's/.*"\([^"]*\.edid\)"/\1/'
+}
+
+# Sets LIVI_HDMI_PR to yes or no and LIVI_HDMI_PR_EDID to the chosen profile.
+# Both skip the prompt when already set.
+livi_ask_hdmi_pr() {
+  local reply profiles count i name
+  LIVI_HDMI_PR="$(livi_lower "${LIVI_HDMI_PR:-}")"
+
+  if ! livi_is_raspberry_pi; then
+    LIVI_HDMI_PR="no"
+    return 0
+  fi
+
+  if [ -z "$LIVI_HDMI_PR" ]; then
+    if [ -t 0 ]; then
+      echo ""
+      echo "Is the display an RGB or VGA panel below HDMI's 25 MHz clock floor?"
+      echo "  Such a panel cannot be driven over HDMI as it is. LIVI can rebuild the"
+      echo "  vc4 driver so it repeats pixels, which lifts the wire clock while the"
+      echo "  panel keeps its native resolution. This downloads the kernel source and"
+      echo "  compiles one module, so it takes a while."
+      read -r -p "Set the display up this way? [y/N]: " reply || true
+      case "$(livi_lower "${reply:-}")" in
+        y|yes) LIVI_HDMI_PR="yes" ;;
+        *)     LIVI_HDMI_PR="no" ;;
+      esac
+    else
+      LIVI_HDMI_PR="no"
+    fi
+  fi
+
+  case "$LIVI_HDMI_PR" in
+    yes|no) ;;
+    *)
+      echo "Error: unknown LIVI_HDMI_PR '$LIVI_HDMI_PR'. Use yes or no." >&2
+      return 1
+      ;;
+  esac
+
+  [ "$LIVI_HDMI_PR" = "yes" ] || return 0
+  [ -z "${LIVI_HDMI_PR_EDID:-}" ] || return 0
+
+  profiles="$(livi_list_display_profiles)"
+  if [ -z "$profiles" ]; then
+    echo "Error: no display profiles found, cannot continue without one." >&2
+    return 1
+  fi
+
+  count="$(printf '%s\n' "$profiles" | wc -l | tr -d ' ')"
+  echo ""
+  echo "Which display?"
+  i=1
+  printf '%s\n' "$profiles" | while IFS= read -r name; do
+    echo "  $i) $name"
+    i=$((i + 1))
+  done
+
+  if [ ! -t 0 ]; then
+    LIVI_HDMI_PR_EDID="$(printf '%s\n' "$profiles" | head -1)"
+    return 0
+  fi
+
+  read -r -p "Choice [1]: " reply || true
+  case "${reply:-1}" in
+    ''|*[!0-9]*) reply=1 ;;
+  esac
+  [ "$reply" -ge 1 ] 2>/dev/null && [ "$reply" -le "$count" ] || reply=1
+  LIVI_HDMI_PR_EDID="$(printf '%s\n' "$profiles" | sed -n "${reply}p")"
+}
+
+# Runs the pixel repetition setup for the chosen panel.
+livi_apply_hdmi_pr() {
+  local appimage="$1" script edid
+  [ "${LIVI_HDMI_PR:-no}" = "yes" ] || return 0
+
+  echo "→ Setting up $LIVI_HDMI_PR_EDID"
+  script="$(livi_fetch_resource "$appimage" "$LIVI_HDMI_PR_SCRIPT" \
+    "scripts/install/pi/$LIVI_HDMI_PR_SCRIPT")" || {
+    echo "Error: cannot obtain $LIVI_HDMI_PR_SCRIPT" >&2
+    return 1
+  }
+  edid="$(livi_fetch_resource "$appimage" "$LIVI_DISPLAYS_DIR/$LIVI_HDMI_PR_EDID" \
+    "assets/$LIVI_DISPLAYS_DIR/$LIVI_HDMI_PR_EDID")" || {
+    echo "Error: cannot obtain $LIVI_HDMI_PR_EDID" >&2
+    return 1
+  }
+
+  bash "$script" --edid "$edid"
 }
 
 livi_write_udev_rule() {
