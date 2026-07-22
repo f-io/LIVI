@@ -509,10 +509,15 @@ static void seat_request_cursor(struct wl_listener *listener, void *data) {
 	struct wlr_seat_pointer_request_set_cursor_event *event = data;
 	struct wlr_seat_client *focused_client =
 		server->seat->pointer_state.focused_client;
-	if (focused_client == event->seat_client) {
-		wlr_cursor_set_surface(server->cursor, event->surface,
-				event->hotspot_x, event->hotspot_y);
+	if (focused_client != event->seat_client) {
+		return;
 	}
+	if (!server->pointer_seen) {
+		wlr_cursor_set_surface(server->cursor, NULL, 0, 0);
+		return;
+	}
+	wlr_cursor_set_surface(server->cursor, event->surface,
+			event->hotspot_x, event->hotspot_y);
 }
 
 static void livi_set_cursor(struct tinywl_server *server, const char *name) {
