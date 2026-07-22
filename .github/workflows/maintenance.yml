@@ -14,11 +14,47 @@ jobs:
     name: Garbage Collection
     runs-on: ubuntu-latest
     steps:
-      - uses: Mattraks/delete-workflow-runs@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          retain_days: 7
-          keep_minimum_runs: 1
+      - name: Cleanup workflow runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RETAIN_DAYS: '7'
+          KEEP_MINIMUM_RUNS: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CUTOFF="$(date -u -d "${RETAIN_DAYS} days ago" +%s)"
+
+          # Newest first, so the first KEEP_MINIMUM_RUNS of each workflow survive.
+          RUNS="$(gh api -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/actions/runs" \
+            --paginate \
+            --jq '.workflow_runs[]
+              | select(.status == "completed")
+              | "\(.id) \(.created_at) \(.workflow_id)"' \
+            | sort -k2 -r || true)"
+
+          if [ -z "${RUNS}" ]; then
+            exit 0
+          fi
+
+          declare -A SEEN_FOR_WORKFLOW=()
+
+          while read -r ID CREATED WORKFLOW; do
+            [ -n "${ID}" ] || continue
+
+            SEEN_FOR_WORKFLOW["${WORKFLOW}"]=$(( ${SEEN_FOR_WORKFLOW[${WORKFLOW}]:-0} + 1 ))
+            if [ "${SEEN_FOR_WORKFLOW[${WORKFLOW}]}" -le "${KEEP_MINIMUM_RUNS}" ]; then
+              continue
+            fi
+
+            if [ "$(date -u -d "${CREATED}" +%s)" -ge "${CUTOFF}" ]; then
+              continue
+            fi
+
+            gh api -X DELETE -H "Accept: application/vnd.github+json" \
+              "/repos/${GITHUB_REPOSITORY}/actions/runs/${ID}" >/dev/null
+          done <<< "${RUNS}"
 
       - name: Cleanup caches
         env:

@@ -4,7 +4,7 @@ run-name: 'dependencies → ${{ github.event_name == ''workflow_dispatch'' && (i
 on:
   schedule:
    - cron: '0 20 * * 0'
-  
+
   workflow_dispatch:
     inputs:
       branch:
@@ -110,23 +110,50 @@ jobs:
             echo "title=chore(deps): update dependencies" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Create Pull Request
+      - name: Create or update the pull request
         if: steps.changes.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v8
-        with:
-          base: ${{ env.TARGET_BRANCH }}
-          branch: ${{ steps.meta.outputs.branch }}
-          delete-branch: true
-          commit-message: ${{ steps.meta.outputs.title }}
-          title: ${{ steps.meta.outputs.title }}
-          body: |
-            Automated dependency update.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.meta.outputs.branch }}
+          TITLE: ${{ steps.meta.outputs.title }}
+          REPORT: ${{ steps.report.outputs.report }}
+          INCLUDE_MAJOR: ${{ github.event_name == 'workflow_dispatch' && inputs.include_major || false }}
+        shell: bash
+        run: |
+          set -euo pipefail
 
-            Target branch: `${{ env.TARGET_BRANCH }}`
-            Include major updates: `${{ github.event_name == 'workflow_dispatch' && inputs.include_major || false }}`
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-            Available updates before applying changes:
+          # Written line by line because the report may carry backticks, which a
+          # heredoc would run as command substitution.
+          BODY_FILE="$(mktemp)"
+          {
+            echo 'Automated dependency update.'
+            echo
+            echo "Target branch: \`${TARGET_BRANCH}\`"
+            echo "Include major updates: \`${INCLUDE_MAJOR}\`"
+            echo
+            echo 'Available updates before applying changes:'
+            echo
+            echo '```text'
+            printf '%s\n' "${REPORT}"
+            echo '```'
+          } > "${BODY_FILE}"
 
-            ```text
-            ${{ steps.report.outputs.report }}
-            ```
+          # The branch is rebuilt from the target branch on every run, so a run
+          # that drops an update leaves nothing stale behind.
+          git switch -C "${BRANCH}"
+          git add package.json pnpm-lock.yaml
+          git commit -m "${TITLE}"
+          git push --force origin "${BRANCH}"
+
+          PR="$(gh pr list --head "${BRANCH}" --base "${TARGET_BRANCH}" --state open \
+            --json number --jq '.[0].number // empty')"
+
+          if [ -n "${PR}" ]; then
+            gh pr edit "${PR}" --title "${TITLE}" --body-file "${BODY_FILE}"
+          else
+            gh pr create --base "${TARGET_BRANCH}" --head "${BRANCH}" \
+              --title "${TITLE}" --body-file "${BODY_FILE}"
+          fi
