@@ -12,8 +12,10 @@ LIVI_SUDOERS_FILE="/etc/sudoers.d/99-LIVI-bt"
 LIVI_SUDOERS_TEMPLATE="99-LIVI-bt.sudoers.template"
 LIVI_BOOT_CONFIG="${LIVI_BOOT_CONFIG:-/boot/firmware/config.txt}"
 
-# I2C for the Apple MFi coprocessor, matching carPlayMfiI2cBus=2 in config.json
-LIVI_MFI_OVERLAY="dtoverlay=i2c-gpio,bus=2,i2c_gpio_sda=19,i2c_gpio_scl=26,i2c_gpio_delay_us=5"
+# I2C for the Apple MFi coprocessor, matching carPlayMfiI2cBus in config.json
+LIVI_MFI_I2C_BUS="2"
+LIVI_MFI_OVERLAY="dtoverlay=i2c-gpio,bus=${LIVI_MFI_I2C_BUS},i2c_gpio_sda=19,i2c_gpio_scl=26,i2c_gpio_delay_us=5"
+LIVI_MODULES_LOAD="${LIVI_MODULES_LOAD:-/etc/modules-load.d/livi-i2c.conf}"
 
 livi_lower() { printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]'; }
 
@@ -194,15 +196,30 @@ livi_ask_mfi() {
 
 livi_apply_mfi() {
   [ "${LIVI_MFI:-no}" = "yes" ] || return 0
-  if [ ! -f "$LIVI_BOOT_CONFIG" ]; then
-    echo "→ Skipping the MFi overlay, no $LIVI_BOOT_CONFIG on this host"
+  local dev="/dev/i2c-${LIVI_MFI_I2C_BUS}"
+
+  echo "→ Enabling I2C for the MFi coprocessor"
+
+  if [ -f "$LIVI_BOOT_CONFIG" ]; then
+    if grep -qF "$LIVI_MFI_OVERLAY" "$LIVI_BOOT_CONFIG"; then
+      echo "   overlay already in $LIVI_BOOT_CONFIG"
+    else
+      printf '%s\n' "$LIVI_MFI_OVERLAY" | sudo tee -a "$LIVI_BOOT_CONFIG" >/dev/null
+      echo "   overlay added to $LIVI_BOOT_CONFIG"
+    fi
+  else
+    echo "   no $LIVI_BOOT_CONFIG on this host, skipping the overlay"
+  fi
+
+  # The overlay registers the bus, but the helper opens /dev/i2c-N and that node
+  # only exists once i2c-dev is loaded.
+  echo i2c-dev | sudo tee "$LIVI_MODULES_LOAD" >/dev/null
+  sudo modprobe i2c-dev 2>/dev/null || true
+
+  if [ ! -e "$dev" ]; then
+    echo "   $dev appears after a reboot"
     return 0
   fi
-  echo "→ Wiring I2C for the MFi coprocessor in $LIVI_BOOT_CONFIG"
-  if grep -qF "$LIVI_MFI_OVERLAY" "$LIVI_BOOT_CONFIG"; then
-    echo "   already present, leaving as is"
-  else
-    printf '%s\n' "$LIVI_MFI_OVERLAY" | sudo tee -a "$LIVI_BOOT_CONFIG" >/dev/null
-    echo "   added, takes effect after a reboot"
-  fi
+
+  echo "   $dev is present"
 }

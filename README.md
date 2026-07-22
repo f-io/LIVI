@@ -89,6 +89,38 @@ On first launch, LIVI detects if the udev rule for USB access is missing and pro
 
 _This install script is not actively tested on other Linux distributions._
 
+## Headless (kiosk)
+
+For a host with no desktop session. Written for Raspberry Pi OS Lite, and it should work the same on Debian or any other apt-based headless Linux, on arm64 and x86_64 alike.
+
+```bash
+curl -fL -o install.sh https://raw.githubusercontent.com/f-io/LIVI/main/scripts/install/headless/install.sh
+chmod +x install.sh
+./install.sh
+```
+
+The script asks which build to install, picks the AppImage matching this machine's architecture, and then:
+
+1. installs Cage (the Wayland kiosk compositor), seatd and PipeWire
+2. writes the udev rule and the sudoers drop-in from the templates inside the AppImage, so the first launch needs no dialog
+3. asks whether an Apple MFi coprocessor is wired up, and if so enables I²C for it and reports whether the chip answers
+4. configures tty1 autologin and starts LIVI under Cage on boot
+
+Reboot when it finishes. LIVI then runs fullscreen on tty1 and logs to `~/LIVI/LIVI.log`, overwritten on every start. To leave the kiosk for debugging, switch to another virtual terminal with Ctrl+Alt+F2.
+
+The prompts can be skipped for an unattended run:
+
+```bash
+LIVI_CHANNEL=nightly LIVI_MFI=no ./install.sh
+```
+
+`LIVI_CHANNEL` takes `release` (the default) or `nightly`, the rolling build of `main`. `LIVI_MFI` takes `yes` or `no`.
+
+> [!NOTE]
+> The script sets the boot target to `multi-user.target` so the kiosk owns the screen. On a host that boots into a desktop, that disables the graphical login. Undo it with `sudo systemctl set-default graphical.target`.
+
+The older `scripts/install/pi-lite/install.sh` path still works and forwards to this installer.
+
 ## Linux (x86_64)
 
 This AppImage has been tested on Debian Trixie (13) with Wayland, Fedora 44 (GNOME) and Ubuntu 26.04.
