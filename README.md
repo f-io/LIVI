@@ -67,13 +67,15 @@ dtoverlay=i2c-gpio,bus=2,i2c_gpio_sda=19,i2c_gpio_scl=26,i2c_gpio_delay_us=5
 > [!IMPORTANT]
 > LIVI requires **OpenGL ES 3.x**.
 
-## Raspberry Pi OS
+## Desktop session
+
+For a host that already runs a desktop session. Written for Raspberry Pi OS, and it should work the same on Debian or any other apt-based Linux with a desktop.
 
 > [!NOTE]
 > The Pi 4, CM 4, Pi 5 and CM 5 require Trixie (Debian 13) for OpenGL ES 3.x. Pi 3 and earlier use the VideoCore IV GPU, which only supports OpenGL ES 2.0 and is therefore unsupported.
 
 ```bash
-curl -fL -o install.sh https://raw.githubusercontent.com/f-io/LIVI/main/scripts/install/pi/install.sh
+curl -fL -o install.sh https://raw.githubusercontent.com/f-io/LIVI/main/scripts/install/desktop/install.sh
 chmod +x install.sh
 ./install.sh
 ```
@@ -119,8 +121,6 @@ LIVI_CHANNEL=nightly LIVI_MFI=no LIVI_SPLASH=no ./install.sh
 
 > [!NOTE]
 > The script sets the boot target to `multi-user.target` so the kiosk owns the screen. On a host that boots into a desktop, that disables the graphical login. Undo it with `sudo systemctl set-default graphical.target`.
-
-The older `scripts/install/pi-lite/install.sh` path still works and forwards to this installer.
 
 ## Linux (x86_64)
 

@@ -96,7 +96,7 @@ if ! grep -qE '^\s*disable_splash=1' "${CONFIG_TXT}"; then
   echo "disable_splash=1" >> "${CONFIG_TXT}"
 fi
 # Firmware mode-set must run early; otherwise plymouth renders into offline HDMI
-sed -i 's/^disable_fw_kms_setup=1$/# disable_fw_kms_setup=1     # disabled by pi-splash for early HDMI/' "${CONFIG_TXT}"
+sed -i 's/^disable_fw_kms_setup=1$/# disable_fw_kms_setup=1     # disabled by the LIVI splash for early HDMI/' "${CONFIG_TXT}"
 
 echo "[5/5] Patching ${CMDLINE_TXT}"
 cp -a "${CMDLINE_TXT}" "${CMDLINE_TXT}.bak.$(date +%s)"

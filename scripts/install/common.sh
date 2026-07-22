@@ -381,7 +381,7 @@ livi_ask_splash() {
   esac
 }
 
-# Hands over to scripts/install/pi-splash/install.sh, which needs root and the
+# Hands over to scripts/install/pi/splash/install.sh, which needs root and the
 # logo next to it. Prefers the checkout, otherwise fetches both.
 livi_apply_splash() {
   [ "${LIVI_SPLASH:-no}" = "yes" ] || return 0
@@ -393,10 +393,10 @@ livi_apply_splash() {
   fi
 
   echo "→ Installing the LIVI boot splash"
-  dir="$LIVI_LIB_DIR/pi-splash"
+  dir="$LIVI_LIB_DIR/pi/splash"
   if [ ! -f "$dir/install.sh" ] || [ ! -f "$dir/livi-splash.png" ]; then
     dir="$(mktemp -d)"
-    curl -fsSL "$LIVI_RAW/scripts/install/pi-splash/install.sh" -o "$dir/install.sh"       && curl -fsSL "$LIVI_RAW/scripts/install/pi-splash/livi-splash.png" -o "$dir/livi-splash.png"       || { echo "   could not obtain the splash installer, skipping" >&2; return 0; }
+    curl -fsSL "$LIVI_RAW/scripts/install/pi/splash/install.sh" -o "$dir/install.sh"       && curl -fsSL "$LIVI_RAW/scripts/install/pi/splash/livi-splash.png" -o "$dir/livi-splash.png"       || { echo "   could not obtain the splash installer, skipping" >&2; return 0; }
   fi
 
   script="$dir/install.sh"
