@@ -212,6 +212,7 @@
     "devToolsLogOpenDone": "Demande d'ouveture du navigateur: {{opened}}/{{total}}"
   },
   "softwareUpdate": {
+    "channelNightly": "Nightly",
     "couldNotCheckLatestRelease": "Impossible de verifier la dernière màj.",
     "updateFailed": "Mise à jour echouée",
     "installedVersion": "Version Installée",

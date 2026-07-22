@@ -185,7 +185,12 @@ declare global {
       quitApp(): Promise<void>
       restartApp(): Promise<void>
       getVersion(): Promise<string>
-      getLatestRelease(): Promise<{ version?: string; url?: string }>
+      getLatestRelease(): Promise<{
+        version?: string
+        url?: string
+        commit?: string
+        run?: string
+      }>
       performUpdate(imageUrl?: string): Promise<void>
       onUpdateEvent(cb: (payload: UpdateEvent) => void): () => void
       onUpdateProgress(cb: (payload: UpdateProgress) => void): () => void

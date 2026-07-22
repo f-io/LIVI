@@ -212,6 +212,7 @@
     "devToolsLogOpenDone": "Запити на відкриття в браузері надіслано: {{opened}}/{{total}}"
   },
   "softwareUpdate": {
+    "channelNightly": "Nightly",
     "couldNotCheckLatestRelease": "Не вдалося перевірити останній випуск.",
     "updateFailed": "Оновлення не вдалося",
     "installedVersion": "Встановлена версія",

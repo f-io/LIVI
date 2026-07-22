@@ -8,20 +8,31 @@ import {
   DialogTitle,
   LinearProgress,
   Stack,
+  Switch,
   Typography
 } from '@mui/material'
 import { EMPTY_STRING } from '@renderer/constants'
+import type { Config } from '@shared/types'
+import { useLiviStore } from '@store/store'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CMP_CONFIG, INSTALL_PHASES } from './constants'
 import { phaseMap, UpdatePhases, UpgradeText } from './types'
-import { cmpSemver, human, parseSemver } from './utils'
+import { buildTag, cmpSemver, human, parseSemver, sameNightlyBuild } from './utils'
 
 export function SoftwareUpdate() {
   const { t } = useTranslation()
   const [installedVersion, setInstalledVersion] = useState<string>(EMPTY_STRING)
   const [latestVersion, setLatestVersion] = useState<string>(EMPTY_STRING)
   const [latestUrl, setLatestUrl] = useState<string | undefined>(undefined)
+  const [latestCommit, setLatestCommit] = useState<string>(EMPTY_STRING)
+  const [latestRun, setLatestRun] = useState<string>(EMPTY_STRING)
+
+  const settings = useLiviStore((s) => s.settings) as Config | null
+  const saveSettings = useLiviStore((s) => s.saveSettings)
+  const isNightly = settings?.updateNightly === true
+  const installedSha = typeof __BUILD_SHA__ === 'string' ? __BUILD_SHA__ : EMPTY_STRING
+  const installedRun = typeof __BUILD_RUN__ === 'string' ? __BUILD_RUN__ : EMPTY_STRING
 
   const [message, setMessage] = useState<string>('')
 
@@ -38,8 +49,14 @@ export function SoftwareUpdate() {
   const installedSem = parseSemver(installedVersion)
   const latestSem = parseSemver(latestVersion)
 
-  const hasLatest = Boolean(latestUrl && latestSem && installedSem)
-  const cmp = hasLatest ? cmpSemver(installedSem!, latestSem!) : null
+  const hasLatest = isNightly ? Boolean(latestUrl) : Boolean(latestUrl && latestSem && installedSem)
+  const cmp = !hasLatest
+    ? null
+    : isNightly
+      ? sameNightlyBuild(installedSha, latestCommit)
+        ? 0
+        : -1
+      : cmpSemver(installedSem!, latestSem!)
   const isDowngrade = cmp != null && cmp > 0
   const pct = percent != null ? Math.round(percent * 100) : null
   const phaseText = phaseMap[phase] ?? 'Working…'
@@ -67,19 +84,34 @@ export function SoftwareUpdate() {
       if (r?.version) setLatestVersion(r.version)
       else setLatestVersion(EMPTY_STRING)
       setLatestUrl(r?.url)
-      if (!r?.version) setMessage(t('softwareUpdate.couldNotCheckLatestRelease'))
+      setLatestCommit(r?.commit ?? EMPTY_STRING)
+      setLatestRun(r?.run ?? EMPTY_STRING)
+      if (!r?.url) setMessage(t('softwareUpdate.couldNotCheckLatestRelease'))
     } catch (err) {
       console.warn('[SoftwareUpdate] getLatestRelease failed', err)
       setLatestVersion(EMPTY_STRING)
       setLatestUrl(undefined)
+      setLatestCommit(EMPTY_STRING)
+      setLatestRun(EMPTY_STRING)
       setMessage(t('softwareUpdate.couldNotCheckLatestRelease'))
     }
   }, [t])
 
+  const handleNightlyChange = useCallback(
+    (_e: unknown, nightly: boolean) => {
+      if (!settings || nightly === isNightly) return
+      saveSettings({ ...settings, updateNightly: nightly })
+    },
+    [isNightly, saveSettings, settings]
+  )
+
   useEffect(() => {
     window.app?.getVersion?.().then((v) => v && setInstalledVersion(v))
+  }, [])
+
+  useEffect(() => {
     handleRecheckLatest()
-  }, [handleRecheckLatest])
+  }, [handleRecheckLatest, isNightly])
 
   useEffect(() => {
     if (phase === UpdatePhases.ready && !upDialogOpen) setUpDialogOpen(true)
@@ -156,14 +188,20 @@ export function SoftwareUpdate() {
           <Typography sx={{ minWidth: 96 }} color="text.secondary">
             {t('softwareUpdate.installedVersion')}:
           </Typography>
-          <Typography sx={{ fontVariantNumeric: 'tabular-nums' }}>{installedVersion}</Typography>
+          <Typography sx={{ fontVariantNumeric: 'tabular-nums' }}>
+            {installedVersion}
+            {isNightly ? buildTag(installedRun, installedSha) : ''}
+          </Typography>
         </Stack>
 
         <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline' }}>
           <Typography sx={{ minWidth: 96 }} color="text.secondary">
             {t('softwareUpdate.availableVersion')}:
           </Typography>
-          <Typography sx={{ fontVariantNumeric: 'tabular-nums' }}>{latestVersion}</Typography>
+          <Typography sx={{ fontVariantNumeric: 'tabular-nums' }}>
+            {latestVersion}
+            {isNightly ? buildTag(latestRun, latestCommit.slice(0, 7)) : ''}
+          </Typography>
         </Stack>
 
         <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline' }}>
@@ -173,6 +211,18 @@ export function SoftwareUpdate() {
           <Typography variant="body2" color="text.secondary">
             {versionInfo.status}
           </Typography>
+        </Stack>
+
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          <Typography sx={{ minWidth: 96 }} color="text.secondary">
+            {t('softwareUpdate.channelNightly')}:
+          </Typography>
+          <Switch
+            checked={isNightly}
+            disabled={inFlight}
+            onChange={handleNightlyChange}
+            slotProps={{ input: { 'aria-label': t('softwareUpdate.channelNightly') } }}
+          />
         </Stack>
       </Stack>
 

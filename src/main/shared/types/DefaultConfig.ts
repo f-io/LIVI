@@ -4,6 +4,7 @@ import { CarType, HandDriveType, MicType, PhoneWorkMode } from '@shared/types/Co
 
 export const DEFAULT_CONFIG: Config = {
   dismissedPackages: [],
+  updateNightly: false,
   projectionWidth: 1280,
   projectionHeight: 720,
   projectionFps: 60,

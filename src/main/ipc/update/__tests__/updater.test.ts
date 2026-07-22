@@ -67,7 +67,7 @@ describe('Updater', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' })
     const { Updater, sendUpdateEvent } = await loadSubject()
 
-    const updater = new Updater({} as never, {} as never)
+    const updater = new Updater({ config: { updateNightly: false } } as never, {} as never)
     await updater.perform({} as never)
 
     expect(sendUpdateEvent).toHaveBeenCalledWith({ phase: 'start' })
@@ -174,7 +174,7 @@ describe('Updater', () => {
     })
     pickAssetForPlatform.mockReturnValue({ url: 'https://example.com/from-feed' })
 
-    const updater = new Updater({} as never, {} as never)
+    const updater = new Updater({ config: { updateNightly: false } } as never, {} as never)
     await updater.perform({} as never)
 
     expect(fetchSpy).toHaveBeenCalledWith(
@@ -202,7 +202,7 @@ describe('Updater', () => {
       status: 503
     } as Response)
 
-    const updater = new Updater({} as never, {} as never)
+    const updater = new Updater({ config: { updateNightly: false } } as never, {} as never)
     await updater.perform({} as never)
 
     expect(sendUpdateEvent).toHaveBeenCalledWith({
@@ -226,7 +226,7 @@ describe('Updater', () => {
 
     pickAssetForPlatform.mockReturnValue({ url: undefined })
 
-    const updater = new Updater({} as never, {} as never)
+    const updater = new Updater({ config: { updateNightly: false } } as never, {} as never)
     await updater.perform({} as never)
 
     expect(sendUpdateEvent).toHaveBeenCalledWith({
@@ -336,7 +336,7 @@ describe('Updater', () => {
 
     pickAssetForPlatform.mockReturnValue({ url: undefined })
 
-    const updater = new Updater({} as never, {} as never)
+    const updater = new Updater({ config: { updateNightly: false } } as never, {} as never)
     await updater.perform({} as never)
 
     expect(pickAssetForPlatform).toHaveBeenCalledWith([])

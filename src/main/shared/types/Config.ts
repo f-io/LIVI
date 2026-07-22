@@ -241,6 +241,9 @@ export type Config = {
   dongleIcon180?: string
   dongleIcon256?: string
 
+  // Take the rolling build of main instead of the latest release
+  updateNightly: boolean
+
   // System packages the user chose not to be asked about again
   dismissedPackages: string[]
 

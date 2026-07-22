@@ -21,6 +21,7 @@ export interface GhAsset {
 export interface GhRelease {
   tag_name?: string
   name?: string
+  target_commitish?: string
   assets?: GhAsset[]
 }
 

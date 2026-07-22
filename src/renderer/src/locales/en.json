@@ -212,6 +212,7 @@
     "devToolsLogOpenDone": "Browser open requests sent: {{opened}}/{{total}}"
   },
   "softwareUpdate": {
+    "channelNightly": "Nightly",
     "couldNotCheckLatestRelease": "Could not check latest release.",
     "updateFailed": "Update failed",
     "installedVersion": "Installed Version",

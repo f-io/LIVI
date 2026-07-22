@@ -535,6 +535,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN: ${{ github.run_number }}
         run: |
           BUILT_AT="$(TZ=Europe/Berlin date +'%Y-%m-%d %H:%M %Z')"
 
@@ -543,9 +544,10 @@ jobs:
             --repo "$REPO"
             --target "$SHA"
             --prerelease
-            --title "Nightly (${SHA:0:7})"
+            --title "Nightly #${RUN} (${SHA:0:7})"
             --notes "Rolling build of \`main\`.
 
+          Run: #${RUN}
           Commit: \`${SHA}\`
           Built: ${BUILT_AT}"
           )

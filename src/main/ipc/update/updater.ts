@@ -1,6 +1,7 @@
 import os from 'node:os'
 import { restartApp } from '@main/ipc/app'
 import { downloadWithProgress } from '@main/ipc/update/downloader'
+import { releaseFeedUrl } from '@main/ipc/update/feed'
 import { installOnLinuxFromFile } from '@main/ipc/update/install.linux'
 import { installOnMacFromFile } from '@main/ipc/update/install.mac'
 import { pickAssetForPlatform } from '@main/ipc/update/pickAsset'
@@ -37,9 +38,7 @@ export class Updater {
 
       let url = directUrl
       if (!url) {
-        const repo = process.env.UPDATE_REPO || 'f-io/LIVI'
-        const feed =
-          process.env.UPDATE_FEED || `https://api.github.com/repos/${repo}/releases/latest`
+        const feed = releaseFeedUrl(this.runtimeState.config.updateNightly === true)
         const res = await fetch(feed, { headers: { 'User-Agent': 'LIVI-updater' } })
         if (!res.ok) throw new Error(`feed ${res.status}`)
         const json = (await res.json()) as unknown as GhRelease

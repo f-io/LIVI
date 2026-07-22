@@ -13,5 +13,19 @@ export const cmpSemver = (a: number[], b: number[]) => {
   return 0
 }
 
+export const sameNightlyBuild = (installedSha?: string, releaseCommit?: string): boolean => {
+  const a = (installedSha || '').trim().toLowerCase()
+  const b = (releaseCommit || '').trim().toLowerCase()
+  if (!a || !b || a === 'dev') return false
+  const len = Math.min(a.length, b.length)
+  return len > 0 && a.slice(0, len) === b.slice(0, len)
+}
+
+/** " (#123 · 0f404b2)" for a nightly, dropping whichever part is missing. */
+export const buildTag = (run?: string, sha?: string): string => {
+  const parts = [run ? `#${run}` : '', (sha || '').trim()].filter(Boolean)
+  return parts.length ? ` (${parts.join(' · ')})` : ''
+}
+
 export const human = (n: number) =>
   n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`

@@ -4,6 +4,14 @@ import { SoftwareUpdate } from '../SoftwareUpdate'
 let updateEventCb: ((e: any) => void) | undefined
 let progressCb: ((p: any) => void) | undefined
 
+const mockSaveSettings = vi.fn()
+let mockSettings: any = null
+
+vi.mock('@store/store', () => ({
+  useLiviStore: (selector: (s: any) => unknown) =>
+    selector({ saveSettings: mockSaveSettings, settings: mockSettings })
+}))
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string) => k })
 }))
@@ -12,6 +20,8 @@ describe('SoftwareUpdate', () => {
   beforeEach(async () => {
     updateEventCb = undefined
     progressCb = undefined
+    mockSaveSettings.mockClear()
+    mockSettings = { updateNightly: false }
     ;(window as any).app = {
       getVersion: vi.fn().mockResolvedValue('1.0.0'),
       getLatestRelease: vi.fn().mockResolvedValue({ version: '1.1.0', url: 'https://u' }),
@@ -148,5 +158,45 @@ describe('SoftwareUpdate', () => {
     await waitFor(() => {
       expect(screen.getByText('softwareUpdate.couldNotCheckLatestRelease')).toBeInTheDocument()
     })
+  })
+  test('nightly offers an update when the version matches but the commit differs', async () => {
+    mockSettings = { updateNightly: true }
+    ;(window as any).app.getVersion = vi.fn().mockResolvedValue('8.0.0')
+    ;(window as any).app.getLatestRelease = vi.fn().mockResolvedValue({
+      version: '8.0.0',
+      url: 'https://nightly',
+      commit: 'abcdef0123456789',
+      run: '123'
+    })
+
+    render(<SoftwareUpdate />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Update' })).toBeEnabled()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Update' }))
+    expect((window as any).app.performUpdate).toHaveBeenCalledWith('https://nightly')
+  })
+
+  test('the nightly switch turns the channel on', async () => {
+    render(<SoftwareUpdate />)
+
+    const sw = await screen.findByRole('switch', { name: 'softwareUpdate.channelNightly' })
+    expect(sw).not.toBeChecked()
+
+    fireEvent.click(sw)
+    expect(mockSaveSettings).toHaveBeenCalledWith(expect.objectContaining({ updateNightly: true }))
+  })
+
+  test('the nightly switch turns the channel back off', async () => {
+    mockSettings = { updateNightly: true }
+    render(<SoftwareUpdate />)
+
+    const sw = await screen.findByRole('switch', { name: 'softwareUpdate.channelNightly' })
+    expect(sw).toBeChecked()
+
+    fireEvent.click(sw)
+    expect(mockSaveSettings).toHaveBeenCalledWith(expect.objectContaining({ updateNightly: false }))
   })
 })

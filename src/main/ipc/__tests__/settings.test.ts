@@ -105,7 +105,12 @@ describe('registerSettingsIpc', () => {
       headers: { 'User-Agent': 'LIVI-updater' }
     })
     expect(pickAssetForPlatform).toHaveBeenCalled()
-    expect(result).toEqual({ version: '1.2.3', url: 'https://example.com/LIVI.AppImage' })
+    expect(result).toEqual({
+      version: '1.2.3',
+      url: 'https://example.com/LIVI.AppImage',
+      commit: '',
+      run: ''
+    })
   })
 
   test('app:getLatestRelease returns empty payload when fetch fails', async () => {
@@ -117,7 +122,12 @@ describe('registerSettingsIpc', () => {
     const handler =
       getHandler<() => Promise<{ version: string; url?: string }>>('app:getLatestRelease')
 
-    await expect(handler()).resolves.toEqual({ version: '', url: undefined })
+    await expect(handler()).resolves.toEqual({
+      version: '',
+      url: undefined,
+      commit: '',
+      run: ''
+    })
     expect(warnSpy).toHaveBeenCalled()
 
     warnSpy.mockRestore()
@@ -199,7 +209,12 @@ describe('registerSettingsIpc', () => {
     expect(pickAssetForPlatform).toHaveBeenCalledWith([
       { name: 'LIVI-x86_64.AppImage', browser_download_url: 'https://example.com/a' }
     ])
-    expect(result).toEqual({ version: '2.3.4', url: 'https://example.com/LIVI.AppImage' })
+    expect(result).toEqual({
+      version: '2.3.4',
+      url: 'https://example.com/LIVI.AppImage',
+      commit: '',
+      run: ''
+    })
   })
 
   test('app:getLatestRelease falls back to empty version and empty assets array', async () => {
@@ -217,6 +232,6 @@ describe('registerSettingsIpc', () => {
     const result = await handler()
 
     expect(pickAssetForPlatform).toHaveBeenCalledWith([])
-    expect(result).toEqual({ version: '', url: undefined })
+    expect(result).toEqual({ version: '', url: undefined, commit: '', run: '' })
   })
 })
