@@ -304,16 +304,31 @@ interface GstAddon {
 let addon: GstAddon | null = null
 let loadFailed = false
 
-function runningGstVersion(fallback: string): string {
+/** Names the GStreamer the pipeline will run on. A missing bundle falls back to the system install silently. */
+function logGstRuntime(systemVersion?: string): void {
+  const root = resolveGStreamerRoot()
+  const bin = resolveBinary('gst-launch-1.0')
+
+  if (!root || !bin) {
+    console.warn(
+      `[GstVideo] no bundled GStreamer for ${process.platform}-${process.arch}, using the system install${systemVersion ? ` ${systemVersion}` : ''}`
+    )
+    return
+  }
+
   try {
-    const root = resolveGStreamerRoot()
-    const bin = resolveBinary('gst-launch-1.0')
-    if (!root || !bin) return fallback
     const out = execFileSync(bin, ['--version'], { env: gstEnv(root), encoding: 'utf8' })
     const m = out.match(/GStreamer\s+(\S+)/)
-    if (m) return `GStreamer ${m[1]} (bundled)`
-  } catch {}
-  return fallback
+    if (m) {
+      console.log(`[GstVideo] GStreamer ${m[1]} (bundled: ${root})`)
+      return
+    }
+    console.warn(`[GstVideo] bundled GStreamer at ${root} reported no version: ${out.trim()}`)
+  } catch (e) {
+    console.warn(
+      `[GstVideo] bundled GStreamer at ${root} could not be run: ${(e as Error).message}`
+    )
+  }
 }
 
 // Windows has no system GStreamer
@@ -347,14 +362,14 @@ function load(): GstAddon | null {
   // that the bundle replaces). Log the bundled version and skip the load.
   if (useHostProcess) {
     loadFailed = true
-    console.log('[GstVideo]', runningGstVersion('GStreamer (bundled)'))
+    logGstRuntime()
     return null
   }
   try {
     prepareWindowsRuntime()
     prepareMacRuntime()
     addon = require('gst-video') as GstAddon
-    console.log('[GstVideo]', runningGstVersion(addon.version()))
+    logGstRuntime(addon.version())
   } catch (e) {
     loadFailed = true
     console.error('[GstVideo] native addon load failed:', (e as Error).message)

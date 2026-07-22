@@ -5,25 +5,28 @@ set -euo pipefail
 # LIVI Headless Installer (any systemd + apt host)
 # ----------------------------------------
 # Kiosk-style install for a host with no desktop session. Works on Raspberry Pi
-# OS Lite and on x86 Debian alike.
+# OS Lite and on x86 Debian alike. Everything it shares with the desktop
+# installer lives in scripts/install/common.sh.
 #
 #   - Installs Cage (Wayland kiosk compositor), seatd, PipeWire
-#   - Asks for the release or the nightly channel and picks the AppImage
-#     matching this machine's architecture (LIVI_CHANNEL skips the prompt)
-#   - Extracts the bundled udev rule template from the AppImage and writes
-#     /etc/udev/rules.d/99-LIVI.rules with the matching version marker so the
-#     in-app pkexec dialog stays silent on first launch
-#   - Writes /etc/sudoers.d/99-LIVI-bt from the bundled template so the BT/Wi-Fi
-#     helper can run as root, which a headless host cannot set up from the app
+#   - Writes the udev rule and the sudoers drop-in from the templates inside the
+#     AppImage, so first launch needs no pkexec dialog
 #   - Configures tty1 autologin through a systemd getty drop-in and a Cage
 #     autostart in ~/.bash_profile
 #
 # Re-runnable. Refuses to run as root (sudo is used internally).
 
-if [[ $EUID -eq 0 ]]; then
-  echo "Run as a regular user. sudo is used internally where needed." >&2
-  exit 1
+LIVI_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../common.sh"
+if [ ! -f "$LIVI_LIB" ]; then
+  LIVI_LIB="$(mktemp)"
+  curl -fsSL \
+    "https://raw.githubusercontent.com/${LIVI_REPO:-f-io/LIVI}/${LIVI_INSTALLER_BRANCH:-main}/scripts/install/common.sh" \
+    -o "$LIVI_LIB" || { echo "Error: cannot obtain common.sh" >&2; exit 1; }
 fi
+# shellcheck source=../common.sh
+. "$LIVI_LIB"
+
+livi_require_regular_user
 
 if ! command -v apt-get >/dev/null; then
   echo "Error: this installer needs apt. Install the packages from" >&2
@@ -34,39 +37,9 @@ fi
 USER_HOME="$HOME"
 APPIMAGE_PATH="$USER_HOME/LIVI/LIVI.AppImage"
 APPIMAGE_DIR="$(dirname "$APPIMAGE_PATH")"
-RULE_FILE="/etc/udev/rules.d/99-LIVI.rules"
-TEMPLATE_NAME="99-LIVI.rules.template"
-SUDOERS_FILE="/etc/sudoers.d/99-LIVI-bt"
-SUDOERS_TEMPLATE_NAME="99-LIVI-bt.sudoers.template"
 GETTY_DROPIN="/etc/systemd/system/getty@tty1.service.d/livi-autologin.conf"
 
-# Release assets are named LIVI-<version>-linux-<arch>.AppImage, where <arch> is
-# electron-builder's spelling: x86_64 or arm64.
-case "$(uname -m)" in
-  x86_64|amd64)   ASSET_ARCH="x86_64" ;;
-  aarch64|arm64)  ASSET_ARCH="arm64" ;;
-  *)
-    echo "Error: unsupported architecture $(uname -m). LIVI ships x86_64 and arm64." >&2
-    exit 1
-    ;;
-esac
-echo "→ Architecture: $(uname -m) → ${ASSET_ARCH}.AppImage"
-
-# Package list comes from scripts/install/packages.txt, the single source the app checks too.
-MANIFEST_URL="https://raw.githubusercontent.com/f-io/LIVI/main/scripts/install/packages.txt"
-livi_packages() {
-  local here manifest tmp section
-  here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  manifest="$here/../packages.txt"
-  if [ ! -f "$manifest" ]; then
-    tmp="$(mktemp)"
-    curl -fsSL "$MANIFEST_URL" -o "$tmp" || { echo "Error: cannot obtain packages.txt" >&2; return 1; }
-    manifest="$tmp"
-  fi
-  for section in "$@"; do
-    grep -E "^${section}\|" "$manifest" | cut -d '|' -f2
-  done
-}
+echo "→ Architecture: $(uname -m) → $(livi_asset_arch).AppImage"
 
 echo "→ Installing required packages"
 sudo apt-get update
@@ -90,126 +63,30 @@ if [ ${#EXISTING_GROUPS[@]} -gt 0 ]; then
   sudo usermod -aG "$(IFS=,; echo "${EXISTING_GROUPS[*]}")" "$USER"
 fi
 
-echo "→ Creating target directory: $APPIMAGE_DIR"
-mkdir -p "$APPIMAGE_DIR"
-
 # Optional positional arg: local AppImage file path or http(s) URL
 APPIMAGE_SRC="${1:-}"
 
-# release = the latest tagged release, nightly = the rolling prerelease the CI
-# replaces on every green build of main. LIVI_CHANNEL skips the prompt so
-# unattended runs keep working.
-lowercase() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+livi_pick_channel "$APPIMAGE_SRC"
+livi_ask_mfi
 
-CHANNEL="$(lowercase "${LIVI_CHANNEL:-}")"
-if [ -z "$APPIMAGE_SRC" ] && [ -z "$CHANNEL" ]; then
-  if [ -t 0 ]; then
-    echo ""
-    echo "Which build should be installed?"
-    echo "  1) release   the latest tagged release"
-    echo "  2) nightly   the latest build of main"
-    read -r -p "Choice [1]: " CHANNEL_REPLY || true
-    case "$(lowercase "${CHANNEL_REPLY:-}")" in
-      2|n|nightly) CHANNEL="nightly" ;;
-      *)           CHANNEL="release" ;;
-    esac
-  else
-    CHANNEL="release"
-  fi
-fi
-CHANNEL="${CHANNEL:-release}"
+livi_fetch_appimage "$APPIMAGE_PATH" "$APPIMAGE_SRC"
 
-case "$CHANNEL" in
-  release) RELEASE_API="https://api.github.com/repos/f-io/LIVI/releases/latest" ;;
-  nightly) RELEASE_API="https://api.github.com/repos/f-io/LIVI/releases/tags/nightly" ;;
-  *)
-    echo "Error: unknown channel '$CHANNEL'. Use release or nightly." >&2
-    exit 1
-    ;;
-esac
-
-if [ -n "$APPIMAGE_SRC" ]; then
-  if [[ "$APPIMAGE_SRC" =~ ^https?:// ]]; then
-    echo "→ Downloading AppImage from $APPIMAGE_SRC"
-    curl -L "$APPIMAGE_SRC" --output "$APPIMAGE_PATH"
-  elif [ -f "$APPIMAGE_SRC" ]; then
-    echo "→ Using local AppImage at $APPIMAGE_SRC"
-    cp "$APPIMAGE_SRC" "$APPIMAGE_PATH"
-  else
-    echo "Error: AppImage source not found: $APPIMAGE_SRC" >&2
-    exit 1
-  fi
-else
-  echo "→ Fetching the latest $CHANNEL build"
-  latest_url=$(curl -s "$RELEASE_API" \
-    | grep "browser_download_url" \
-    | grep "${ASSET_ARCH}.AppImage" \
-    | cut -d '"' -f 4)
-
-  if [ -z "$latest_url" ]; then
-    echo "Error: no ${ASSET_ARCH} AppImage in the latest $CHANNEL build" >&2
-    exit 1
-  fi
-
-  echo "   Download URL: $latest_url"
-  if ! curl -L "$latest_url" --output "$APPIMAGE_PATH"; then
-    echo "Error: Download failed" >&2
-    exit 1
-  fi
-fi
-
-chmod +x "$APPIMAGE_PATH"
-
-EXTRACT_DIR="$(mktemp -d)"
-trap "rm -rf '$EXTRACT_DIR'" EXIT
-
-# Take a template from inside the AppImage so what we install always matches the
-# app on this disk.
-fetch_template() {
-  local name="$1" dir path branch url
-  dir="$EXTRACT_DIR/$name.d"
-  mkdir -p "$dir"
-  ( cd "$dir" && "$APPIMAGE_PATH" --appimage-extract "resources/$name" >/dev/null 2>&1 ) || true
-  path="$dir/squashfs-root/resources/$name"
-  if [ ! -f "$path" ]; then
-    branch="${LIVI_TEMPLATE_BRANCH:-main}"
-    url="https://raw.githubusercontent.com/f-io/LIVI/${branch}/assets/linux/${name}"
-    echo "   $name not in AppImage (likely older release), falling back to $url" >&2
-    path="$dir/$name"
-    curl -fL "$url" -o "$path" >/dev/null 2>&1 || return 1
-  fi
-  printf '%s\n' "$path"
-}
+LIVI_EXTRACT_DIR="$(mktemp -d)"
+trap "rm -rf '$LIVI_EXTRACT_DIR'" EXIT
 
 echo "→ Extracting rule templates from the AppImage"
-UDEV_TEMPLATE="$(fetch_template "$TEMPLATE_NAME")" || {
-  echo "Error: cannot obtain $TEMPLATE_NAME" >&2
+UDEV_TEMPLATE="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_UDEV_TEMPLATE")" || {
+  echo "Error: cannot obtain $LIVI_UDEV_TEMPLATE" >&2
   exit 1
 }
-SUDOERS_TEMPLATE="$(fetch_template "$SUDOERS_TEMPLATE_NAME")" || {
-  echo "Error: cannot obtain $SUDOERS_TEMPLATE_NAME" >&2
+SUDOERS_TEMPLATE="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_SUDOERS_TEMPLATE")" || {
+  echo "Error: cannot obtain $LIVI_SUDOERS_TEMPLATE" >&2
   exit 1
 }
 
-echo "→ Writing $RULE_FILE"
-sed "s/__USERNAME__/$USER/g" "$UDEV_TEMPLATE" | sudo tee "$RULE_FILE" >/dev/null
-sudo udevadm control --reload-rules
-sudo udevadm trigger
-
-# Lets the helper run as root without a password, which a headless host needs
-# because the in-app pkexec dialog has no agent to display it.
-echo "→ Writing $SUDOERS_FILE"
-PYTHON_BIN="$(command -v python3 || echo /usr/bin/python3)"
-STAGED="$EXTRACT_DIR/sudoers.staged"
-sed -e "s/__USERNAME__/$USER/g" -e "s#__PYTHON__#$PYTHON_BIN#g" "$SUDOERS_TEMPLATE" > "$STAGED"
-sudo install -m 0440 -o root -g root "$STAGED" "$SUDOERS_FILE.livi-tmp"
-if sudo visudo -c -f "$SUDOERS_FILE.livi-tmp" >/dev/null; then
-  sudo mv "$SUDOERS_FILE.livi-tmp" "$SUDOERS_FILE"
-else
-  sudo rm -f "$SUDOERS_FILE.livi-tmp"
-  echo "Error: the generated sudoers file failed validation and was not installed" >&2
-  exit 1
-fi
+livi_write_udev_rule "$UDEV_TEMPLATE"
+livi_write_sudoers "$SUDOERS_TEMPLATE"
+livi_apply_mfi
 
 echo "→ Enabling seatd"
 sudo systemctl enable --now seatd

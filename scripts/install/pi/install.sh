@@ -2,10 +2,24 @@
 set -euo pipefail
 
 # ----------------------------------------
-# LIVI Installer & Shortcut Creator
+# LIVI Installer & Shortcut Creator (desktop session)
 # ----------------------------------------
+# For a host that already has a desktop session, so it adds an autostart entry,
+# a desktop shortcut and an application entry. Everything it shares with the
+# headless installer lives in scripts/install/common.sh.
+#
+# Re-runnable.
 
-# 0) Variables
+LIVI_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../common.sh"
+if [ ! -f "$LIVI_LIB" ]; then
+  LIVI_LIB="$(mktemp)"
+  curl -fsSL \
+    "https://raw.githubusercontent.com/${LIVI_REPO:-f-io/LIVI}/${LIVI_INSTALLER_BRANCH:-main}/scripts/install/common.sh" \
+    -o "$LIVI_LIB" || { echo "Error: cannot obtain common.sh" >&2; exit 1; }
+fi
+# shellcheck source=../common.sh
+. "$LIVI_LIB"
+
 USER_HOME="$HOME"
 APPIMAGE_PATH="$USER_HOME/LIVI/LIVI.AppImage"
 APPIMAGE_DIR="$(dirname "$APPIMAGE_PATH")"
@@ -13,7 +27,6 @@ APPIMAGE_DIR="$(dirname "$APPIMAGE_PATH")"
 echo "→ Creating target directory: $APPIMAGE_DIR"
 mkdir -p "$APPIMAGE_DIR"
 
-# Ensure required tools are installed
 echo "→ Checking for required tools: curl, xdg-user-dir, pkexec"
 for tool in curl xdg-user-dir pkexec; do
   if ! command -v "$tool" >/dev/null 2>&1; then
@@ -29,23 +42,7 @@ for tool in curl xdg-user-dir pkexec; do
   fi
 done
 
-# Package list comes from scripts/install/packages.txt, the single source the app checks too.
-MANIFEST_URL="https://raw.githubusercontent.com/f-io/LIVI/main/scripts/install/packages.txt"
-livi_packages() {
-  local here manifest tmp section
-  here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  manifest="$here/../packages.txt"
-  if [ ! -f "$manifest" ]; then
-    tmp="$(mktemp)"
-    curl -fsSL "$MANIFEST_URL" -o "$tmp" || { echo "Error: cannot obtain packages.txt" >&2; return 1; }
-    manifest="$tmp"
-  fi
-  for section in "$@"; do
-    grep -E "^${section}\|" "$manifest" | cut -d '|' -f2
-  done
-}
-
-# Raspberry Pi OS ships a desktop session, so only the core packages are needed here.
+# A desktop session is already present, so only the core packages are needed here.
 echo "→ Ensuring GStreamer, wireless AP and Bluetooth runtime packages"
 sudo apt-get update
 sudo apt-get install -y $(livi_packages core | tr '\n' ' ')
@@ -54,14 +51,11 @@ sudo apt-get install -y $(livi_packages core | tr '\n' ' ')
 pip3 install --break-system-packages --ignore-installed -q pymobiledevice3 \
   || echo "   pymobiledevice3 install failed — wired CarPlay will be disabled"
 
-# ICON INSTALLATION
-ICON_URL="https://raw.githubusercontent.com/f-io/LIVI/main/assets/icons/linux/livi.png"
+ICON_URL="$LIVI_RAW/assets/icons/linux/livi.png"
 ICON_DEST="$USER_HOME/.local/share/icons/livi.png"
 
 echo "→ Installing icon to $ICON_DEST"
 mkdir -p "$(dirname "$ICON_DEST")"
-
-echo "   Downloading icon from $ICON_URL..."
 if curl -fL "$ICON_URL" -o "$ICON_DEST"; then
   echo "   App icon downloaded and installed successfully."
   HICOLOR_ICON="$USER_HOME/.local/share/icons/hicolor/256x256/apps/livi.png"
@@ -73,30 +67,17 @@ else
   ICON_DEST=""
 fi
 
-# Fetch latest ARM64 AppImage from GitHub
-echo "→ Fetching latest LIVI release"
-latest_url=$(curl -s https://api.github.com/repos/f-io/LIVI/releases/latest \
-  | grep "browser_download_url" \
-  | grep "arm64.AppImage" \
-  | cut -d '"' -f 4)
+# Optional positional arg: local AppImage file path or http(s) URL
+APPIMAGE_SRC="${1:-}"
 
-if [ -z "$latest_url" ]; then
-  echo "Error: Could not find ARM64 AppImage URL" >&2
-  exit 1
-fi
+livi_pick_channel "$APPIMAGE_SRC"
+livi_ask_mfi
 
-echo "   Download URL: $latest_url"
-if ! curl -L "$latest_url" --output "$APPIMAGE_PATH"; then
-  echo "Error: Download failed" >&2
-  exit 1
-fi
+livi_fetch_appimage "$APPIMAGE_PATH" "$APPIMAGE_SRC"
 echo "   Download complete: $APPIMAGE_PATH"
 
-# Mark AppImage as executable
-echo "→ Setting executable flag"
-chmod +x "$APPIMAGE_PATH"
+livi_apply_mfi
 
-# Create per-user autostart entry
 echo "→ Creating autostart entry"
 AUTOSTART_DIR="$USER_HOME/.config/autostart"
 mkdir -p "$AUTOSTART_DIR"
@@ -116,7 +97,6 @@ EOF
 echo "Autostart entry at $AUTOSTART_DIR/LIVI.desktop"
 echo "Autostart log at $AUTOSTART_LOG"
 
-# Create Desktop shortcut
 echo "→ Creating desktop shortcut"
 if command -v xdg-user-dir >/dev/null 2>&1; then
   DESKTOP_DIR="$(xdg-user-dir DESKTOP)"
@@ -158,13 +138,5 @@ StartupWMClass=dev.f-io.livi
 EOF
 update-desktop-database "$APPLICATIONS_DIR" 2>/dev/null || true
 echo "Application entry at $APPLICATIONS_DIR/dev.f-io.livi.desktop"
-
-# Remove the USB re-enumerate service from earlier installs, it cycles port power and disrupts mouse/touch
-if [ -f /etc/systemd/system/livi-usb-rescan.service ]; then
-  echo "→ Removing legacy USB re-enumerate service"
-  sudo systemctl disable --now livi-usb-rescan.service 2>/dev/null || true
-  sudo rm -f /etc/systemd/system/livi-usb-rescan.service /usr/local/bin/livi-usb-rescan.sh
-  sudo systemctl daemon-reload
-fi
 
 echo "✅ Installation complete!"

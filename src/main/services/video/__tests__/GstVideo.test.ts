@@ -20,7 +20,11 @@ const { gstHost } = vi.hoisted(() => ({
 }))
 vi.mock('../gstHost', () => ({ gstHost }))
 
-vi.mock('../../audio/gstreamer', () => ({ resolveGStreamerRoot: vi.fn(() => '/gst') }))
+vi.mock('../../audio/gstreamer', () => ({
+  resolveGStreamerRoot: vi.fn(() => '/gst'),
+  resolveBinary: vi.fn(() => '/gst/bin/gst-launch-1.0'),
+  gstEnv: vi.fn(() => ({}))
+}))
 
 const { addon } = vi.hoisted(() => ({
   addon: {
