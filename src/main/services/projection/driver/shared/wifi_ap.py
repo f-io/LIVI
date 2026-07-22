@@ -1,3 +1,4 @@
+import os
 import re
 import shutil
 import subprocess
@@ -207,10 +208,49 @@ def setup_network_interface() -> None:
 
 def disable_existing_wifi_network_services() -> None:
     subprocess.run(["sudo", "systemctl", "stop", f"wpa_supplicant@{WIFI_IFACE}"], check=False)
-    subprocess.run(["sudo", "systemctl", "disable", f"wpa_supplicant@{WIFI_IFACE}"], check=False)
     subprocess.run(["sudo", "ip", "addr", "flush", "dev", WIFI_IFACE], check=False)
     subprocess.run(["sudo", "ip", "link", "set", WIFI_IFACE, "up"], check=False)
     time.sleep(1)
+
+
+RUN_NM_DIR = "/run/NetworkManager/system-connections"
+ETC_NM_DIR = "/etc/NetworkManager/system-connections"
+
+
+def persist_generated_wifi_profiles() -> None:
+    """Write runtime-only Wi-Fi profiles to disk before the interface is taken.
+
+    A profile rendered from netplan or cloud-init lives only under /run and is lost
+    once the interface leaves NetworkManager. Whether anything ever recreates it is
+    out of our hands. A copy in /etc belongs to NetworkManager and stays.
+    """
+    try:
+        listing = subprocess.run(
+            ["nmcli", "-t", "-f", "TYPE,FILENAME", "connection", "show"],
+            capture_output=True, text=True, timeout=10).stdout
+    except Exception as e:
+        print(f"[wifi_ap] cannot list connections: {e!r}")
+        return
+
+    copied = []
+    for line in listing.splitlines():
+        conn_type, _, path = line.partition(":")
+        if conn_type != "802-11-wireless" or not path.startswith(RUN_NM_DIR + "/"):
+            continue
+        dest = os.path.join(ETC_NM_DIR, os.path.basename(path))
+        if os.path.exists(dest):
+            continue
+        r = subprocess.run(
+            ["sudo", "install", "-m", "600", "-o", "root", "-g", "root", path, dest],
+            capture_output=True, text=True, timeout=10)
+        if r.returncode == 0:
+            copied.append(os.path.basename(path))
+        else:
+            print(f"[wifi_ap] cannot persist {path}: {r.stderr.strip()}")
+
+    if copied:
+        print(f"[wifi_ap] persisted runtime Wi-Fi profiles: {', '.join(copied)}")
+        subprocess.run(["sudo", "nmcli", "connection", "reload"], check=False)
 
 
 def kill_network_manager_and_supplicant() -> None:
@@ -324,6 +364,7 @@ def setup_ap() -> bool:
     subprocess.run(["sudo", "pkill", "-f", f"dnsmasq.*{DNSMASQ_CONFIG_PATH}"], check=False)
     time.sleep(0.3)
 
+    persist_generated_wifi_profiles()
     kill_network_manager_and_supplicant()
     disable_existing_wifi_network_services()
     setup_network_interface()
@@ -349,4 +390,91 @@ def teardown_ap() -> None:
 
     # Hand WIFI_IFACE back to NetworkManager
     subprocess.run(["sudo", "nmcli", "device", "set", WIFI_IFACE, "managed", "yes"], check=False)
+    restore_wifi_client()
     print("[wifi_ap] AP down")
+
+
+def saved_wifi_profiles() -> list:
+    """Names of the stored Wi-Fi profiles NetworkManager can reconnect with."""
+    try:
+        out = subprocess.run(
+            ["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"],
+            capture_output=True, text=True, timeout=10).stdout
+    except Exception:
+        return []
+    return [ln.rsplit(":", 1)[0] for ln in out.splitlines() if ln.endswith(":802-11-wireless")]
+
+
+IMAGER_NETWORK_CONFIG = "/boot/firmware/network-config"
+
+
+def imager_wifi_credentials() -> tuple:
+    """SSID and key from the boot partition config the imager wrote, or (None, None).
+
+    On a Lite image the imager stores the network as netplan YAML that cloud-init
+    renders, so there is no NetworkManager profile of its own to fall back on.
+    """
+    try:
+        text = subprocess.run(["sudo", "cat", IMAGER_NETWORK_CONFIG],
+                              capture_output=True, text=True, timeout=10).stdout
+    except Exception:
+        return (None, None)
+    if not text.strip():
+        return (None, None)
+
+    try:
+        import yaml
+        aps = ((yaml.safe_load(text) or {}).get("network", {})
+               .get("wifis", {}).get(WIFI_IFACE, {}).get("access-points", {}))
+        for ssid, opts in (aps or {}).items():
+            key = (opts or {}).get("password")
+            if ssid and key:
+                return (str(ssid), str(key))
+        return (None, None)
+    except ImportError:
+        pass
+
+    ssid = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if ssid is None:
+            m = re.match(r'^"?([^"#:]+)"?:$', stripped)
+            if m and not stripped.startswith(("network", "wifis", "ethernets", "access-points")):
+                ssid = m.group(1)
+            continue
+        m = re.match(r'^password:\s*"?([^"\s]+)"?$', stripped)
+        if m:
+            return (ssid, m.group(1))
+    return (None, None)
+
+
+def restore_imager_wifi_profile() -> bool:
+    """Recreate the imager's network as a NetworkManager profile of its own."""
+    ssid, key = imager_wifi_credentials()
+    if not ssid or not key:
+        return False
+    r = subprocess.run(
+        ["sudo", "nmcli", "connection", "add", "type", "wifi",
+         "ifname", WIFI_IFACE, "con-name", ssid, "ssid", ssid,
+         "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", key,
+         "connection.autoconnect", "yes"],
+        capture_output=True, text=True, timeout=20)
+    if r.returncode != 0:
+        print(f"[wifi_ap] restoring {ssid!r} from the imager config failed: {r.stderr.strip()}")
+        return False
+    print(f"[wifi_ap] restored Wi-Fi profile {ssid!r} from {IMAGER_NETWORK_CONFIG}")
+    return True
+
+
+def restore_wifi_client() -> None:
+    """Re-read the stored profiles and let NetworkManager reconnect the interface."""
+    subprocess.run(["sudo", "nmcli", "connection", "reload"], check=False)
+    saved = saved_wifi_profiles()
+    if not saved and restore_imager_wifi_profile():
+        saved = saved_wifi_profiles()
+    if not saved:
+        print(f"[wifi_ap] WARNING: no saved Wi-Fi profile left, {WIFI_IFACE} stays offline")
+        return
+    print(f"[wifi_ap] saved Wi-Fi profiles: {', '.join(saved)}")
+    subprocess.run(["sudo", "nmcli", "device", "connect", WIFI_IFACE],
+                   check=False, capture_output=True, timeout=30)

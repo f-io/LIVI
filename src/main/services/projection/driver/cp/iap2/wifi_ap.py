@@ -171,7 +171,6 @@ def setup_network_interface():
 
 def disable_existing_wifi_network_services():
     subprocess.run(["sudo", "systemctl", "stop", f"wpa_supplicant@{WIFI_IFACE}"], check=False)
-    subprocess.run(["sudo", "systemctl", "disable", f"wpa_supplicant@{WIFI_IFACE}"], check=False)
     subprocess.run(["sudo", "ip", "addr", "flush", "dev", WIFI_IFACE], check=False)
     subprocess.run(["sudo", "ip", "link", "set", WIFI_IFACE, "up"], check=False)
     time.sleep(1)
