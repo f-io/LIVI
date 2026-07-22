@@ -306,8 +306,15 @@ let loadFailed = false
 
 /** Names the GStreamer the pipeline will run on. A missing bundle falls back to the system install silently. */
 function logGstRuntime(systemVersion?: string): void {
-  const root = resolveGStreamerRoot()
-  const bin = resolveBinary('gst-launch-1.0')
+  let root: string | null = null
+  let bin: string | null = null
+  // Naming the runtime must never break startup, so a failed lookup reads as "no bundle".
+  try {
+    root = resolveGStreamerRoot()
+    bin = resolveBinary('gst-launch-1.0')
+  } catch {
+    root = null
+  }
 
   if (!root || !bin) {
     console.warn(

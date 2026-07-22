@@ -1,5 +1,3 @@
-
-
 const aaBtSockMock = {
   listPaired: vi.fn(
     async () => [] as Array<{ mac: string; name?: string; connected?: boolean; trusted?: boolean }>

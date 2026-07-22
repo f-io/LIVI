@@ -45,9 +45,7 @@ echo "→ Installing required packages"
 sudo apt-get update
 sudo apt-get install -y $(livi_packages core lite | tr '\n' ' ')
 
-# pymobiledevice3 drives wired CarPlay over usbmux/lockdown
-pip3 install --break-system-packages --ignore-installed -q pymobiledevice3 \
-  || echo "   pymobiledevice3 install failed — wired CarPlay will be disabled"
+livi_install_pymobiledevice3
 
 echo "→ Adding $USER to required groups"
 WANTED_GROUPS=(video render input plugdev)
@@ -68,6 +66,7 @@ APPIMAGE_SRC="${1:-}"
 
 livi_pick_channel "$APPIMAGE_SRC"
 livi_ask_mfi
+livi_ask_splash
 
 livi_fetch_appimage "$APPIMAGE_PATH" "$APPIMAGE_SRC"
 
@@ -87,6 +86,7 @@ SUDOERS_TEMPLATE="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_SUDOERS_TEMPLATE
 livi_write_udev_rule "$UDEV_TEMPLATE"
 livi_write_sudoers "$SUDOERS_TEMPLATE"
 livi_apply_mfi
+livi_apply_splash
 
 echo "→ Enabling seatd"
 sudo systemctl enable --now seatd

@@ -56,14 +56,10 @@ describe('hslToHex', () => {
 })
 
 describe('hex/hsl round-trip', () => {
-  test.each([
-    '#ff0000',
-    '#00ff00',
-    '#0000ff',
-    '#00ffff',
-    '#ff00ff',
-    '#ffff00'
-  ])('preserves %s through hexToHsl → hslToHex', (hex) => {
-    expect(hslToHex(hexToHsl(hex))).toBe(hex)
-  })
+  test.each(['#ff0000', '#00ff00', '#0000ff', '#00ffff', '#ff00ff', '#ffff00'])(
+    'preserves %s through hexToHsl → hslToHex',
+    (hex) => {
+      expect(hslToHex(hexToHsl(hex))).toBe(hex)
+    }
+  )
 })

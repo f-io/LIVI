@@ -27,6 +27,9 @@ _protocol_major = None
 _i2c_lock = threading.Lock()
 # GPIO that powers the coprocessor. Default BCM 21, override with LIVI_CP_MFI_POWER_GPIO.
 CHIP_POWER = int(MFI_POWER_GPIO) if MFI_POWER_GPIO else 21
+# The chip stays powered for as long as the helper runs
+_gpio_handle = None
+_powered_soc = None
 
 # SoC-detection
 def _get_soc_model():
@@ -56,14 +59,13 @@ def _get_soc_model():
 
 
 def _power_on(soc):
+    global _gpio_handle, _powered_soc
     if soc == "BCM2712":
         # Raspberry Pi 5 / CM5
         import lgpio
 
-        h = lgpio.gpiochip_open(0)
-        lgpio.gpio_claim_output(h, CHIP_POWER, 1)
-        time.sleep(0.1)
-        lgpio.gpiochip_close(h)
+        _gpio_handle = lgpio.gpiochip_open(0)
+        lgpio.gpio_claim_output(_gpio_handle, CHIP_POWER, 1)
     elif soc == "BCM2711":
         # Raspberry Pi 4 / CM4
         import RPi.GPIO as GPIO
@@ -72,9 +74,33 @@ def _power_on(soc):
         GPIO.setmode(GPIO.BCM)
         GPIO.setup(CHIP_POWER, GPIO.OUT)
         GPIO.output(CHIP_POWER, GPIO.HIGH)
-        time.sleep(0.1)
     else:
         raise RuntimeError(f"unknown SoC type: {soc}")
+    _powered_soc = soc
+    time.sleep(0.1)
+
+
+def power_off():
+    """Drop the coprocessor's supply. Called when the helper shuts down."""
+    global _gpio_handle, _powered_soc, bus
+    if _powered_soc == "BCM2712" and _gpio_handle is not None:
+        import lgpio
+
+        lgpio.gpio_write(_gpio_handle, CHIP_POWER, 0)
+        lgpio.gpiochip_close(_gpio_handle)
+        _gpio_handle = None
+    elif _powered_soc == "BCM2711":
+        import RPi.GPIO as GPIO
+
+        GPIO.output(CHIP_POWER, GPIO.LOW)
+        GPIO.cleanup(CHIP_POWER)
+    _powered_soc = None
+    if bus is not None:
+        try:
+            bus.close()
+        except Exception:
+            pass
+        bus = None
 
 
 def _probe_dev_addr():

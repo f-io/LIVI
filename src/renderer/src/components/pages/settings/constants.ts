@@ -36,7 +36,6 @@ export const UI_DEBOUNCED_KEYS = new Set<keyof Config>([
 
 export const PRIMARY_KEYS = ['primaryColorDark', 'primaryColorLight'] as const
 export const EDITABLE_KEYS = ['highlightColorDark', 'highlightColorLight'] as const
-export const CAR_NAME_MAX = 20
 export const OEM_LABEL_MAX = 13
 
 export enum WiFiValues {

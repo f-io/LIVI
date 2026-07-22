@@ -73,7 +73,12 @@ from iap2.control_session_message.wifi import (
 )
 from iap2.file_transfer import FileTransferReceiver
 from iap2.link_layer import IAP2Connection
-from iap2.mfi_auth_coprocessor import generate_challenge_response, init as mfi_init, read_certificate
+from iap2.mfi_auth_coprocessor import (
+    generate_challenge_response,
+    init as mfi_init,
+    power_off as mfi_power_off,
+    read_certificate,
+)
 from iap2.transport.bluetooth import (
     CHANNEL as IAP_CHANNEL, IAP_CLIENT_UUID, IAP_RECORD, IAP_SERVER_UUID, IAPProfile,
 )
@@ -1105,6 +1110,10 @@ class CpHandler:
         except Exception as e:
             self._log("teardown error:", repr(e))
         self._carkit_link_local_cleanup()
+        try:
+            mfi_power_off()
+        except Exception as e:
+            self._log("mfi power-off error:", repr(e))
 
 def create(ctx):
     return CpHandler(ctx)

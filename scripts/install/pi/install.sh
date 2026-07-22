@@ -47,9 +47,7 @@ echo "→ Ensuring GStreamer, wireless AP and Bluetooth runtime packages"
 sudo apt-get update
 sudo apt-get install -y $(livi_packages core | tr '\n' ' ')
 
-# pymobiledevice3 drives wired CarPlay over usbmux/lockdown
-pip3 install --break-system-packages --ignore-installed -q pymobiledevice3 \
-  || echo "   pymobiledevice3 install failed — wired CarPlay will be disabled"
+livi_install_pymobiledevice3
 
 ICON_URL="$LIVI_RAW/assets/icons/linux/livi.png"
 ICON_DEST="$USER_HOME/.local/share/icons/livi.png"
@@ -72,11 +70,13 @@ APPIMAGE_SRC="${1:-}"
 
 livi_pick_channel "$APPIMAGE_SRC"
 livi_ask_mfi
+livi_ask_splash
 
 livi_fetch_appimage "$APPIMAGE_PATH" "$APPIMAGE_SRC"
 echo "   Download complete: $APPIMAGE_PATH"
 
 livi_apply_mfi
+livi_apply_splash
 
 echo "→ Creating autostart entry"
 AUTOSTART_DIR="$USER_HOME/.config/autostart"

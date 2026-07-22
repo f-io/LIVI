@@ -79,6 +79,9 @@ export type LastKnownGps = {
 
 export type AppearanceMode = 'auto' | 'night' | 'day'
 
+/** carName is the Wi-Fi AP, Bluetooth and head-unit name, so it stays short. */
+export const CAR_NAME_MAX = 20
+
 export type WindowBounds = {
   x: number
   y: number

@@ -12,8 +12,10 @@ LIVI_SUDOERS_FILE="/etc/sudoers.d/99-LIVI-bt"
 LIVI_SUDOERS_TEMPLATE="99-LIVI-bt.sudoers.template"
 LIVI_BOOT_CONFIG="${LIVI_BOOT_CONFIG:-/boot/firmware/config.txt}"
 
-# I2C for the Apple MFi coprocessor, matching carPlayMfiI2cBus=2 in config.json
-LIVI_MFI_OVERLAY="dtoverlay=i2c-gpio,bus=2,i2c_gpio_sda=19,i2c_gpio_scl=26,i2c_gpio_delay_us=5"
+# I2C for the Apple MFi coprocessor, matching carPlayMfiI2cBus in config.json
+LIVI_MFI_I2C_BUS="2"
+LIVI_MFI_OVERLAY="dtoverlay=i2c-gpio,bus=${LIVI_MFI_I2C_BUS},i2c_gpio_sda=19,i2c_gpio_scl=26,i2c_gpio_delay_us=5"
+LIVI_MODULES_LOAD="${LIVI_MODULES_LOAD:-/etc/modules-load.d/livi-i2c.conf}"
 
 livi_lower() { printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]'; }
 
@@ -50,6 +52,23 @@ livi_packages() {
   for section in "$@"; do
     grep -E "^${section}\|" "$manifest" | cut -d '|' -f2
   done
+}
+
+# Wired CarPlay drives the phone over usbmux, which needs pymobiledevice3.
+livi_install_pymobiledevice3() {
+  echo "→ Installing pymobiledevice3 for wired CarPlay"
+  if ! command -v pip3 >/dev/null; then
+    echo "   WARNING: pip3 missing, wired CarPlay stays disabled" >&2
+    return 0
+  fi
+  local out
+  # pip is loud even with -q, so keep its output for the failure case only.
+  if out="$(pip3 install --break-system-packages --ignore-installed -q pymobiledevice3 2>&1)"; then
+    echo "   installed"
+  else
+    echo "   WARNING: install failed, wired CarPlay stays disabled" >&2
+    printf '%s\n' "$out" | tail -5 >&2
+  fi
 }
 
 # Sets LIVI_CHANNEL and LIVI_RELEASE_API. Skips the prompt when LIVI_CHANNEL is
@@ -192,17 +211,82 @@ livi_ask_mfi() {
   esac
 }
 
-livi_apply_mfi() {
-  [ "${LIVI_MFI:-no}" = "yes" ] || return 0
+# LIVI_SPLASH
+livi_ask_splash() {
+  local reply
+  LIVI_SPLASH="$(livi_lower "${LIVI_SPLASH:-}")"
+  if [ -z "$LIVI_SPLASH" ]; then
+    if [ -t 0 ]; then
+      echo ""
+      echo "Install the LIVI boot splash?"
+      echo "  Replaces the Pi rainbow and the boot text with the LIVI logo."
+      read -r -p "Install it? [y/N]: " reply || true
+      case "$(livi_lower "${reply:-}")" in
+        y|yes) LIVI_SPLASH="yes" ;;
+        *)     LIVI_SPLASH="no" ;;
+      esac
+    else
+      LIVI_SPLASH="no"
+    fi
+  fi
+
+  case "$LIVI_SPLASH" in
+    yes|no) ;;
+    *)
+      echo "Error: unknown LIVI_SPLASH '$LIVI_SPLASH'. Use yes or no." >&2
+      return 1
+      ;;
+  esac
+}
+
+# Hands over to scripts/install/pi-splash/install.sh, which needs root and the
+# logo next to it. Prefers the checkout, otherwise fetches both.
+livi_apply_splash() {
+  [ "${LIVI_SPLASH:-no}" = "yes" ] || return 0
+  local dir script
+
   if [ ! -f "$LIVI_BOOT_CONFIG" ]; then
-    echo "→ Skipping the MFi overlay, no $LIVI_BOOT_CONFIG on this host"
+    echo "→ Skipping the boot splash, no $LIVI_BOOT_CONFIG on this host"
     return 0
   fi
-  echo "→ Wiring I2C for the MFi coprocessor in $LIVI_BOOT_CONFIG"
-  if grep -qF "$LIVI_MFI_OVERLAY" "$LIVI_BOOT_CONFIG"; then
-    echo "   already present, leaving as is"
-  else
-    printf '%s\n' "$LIVI_MFI_OVERLAY" | sudo tee -a "$LIVI_BOOT_CONFIG" >/dev/null
-    echo "   added, takes effect after a reboot"
+
+  echo "→ Installing the LIVI boot splash"
+  dir="$LIVI_LIB_DIR/pi-splash"
+  if [ ! -f "$dir/install.sh" ] || [ ! -f "$dir/livi-splash.png" ]; then
+    dir="$(mktemp -d)"
+    curl -fsSL "$LIVI_RAW/scripts/install/pi-splash/install.sh" -o "$dir/install.sh"       && curl -fsSL "$LIVI_RAW/scripts/install/pi-splash/livi-splash.png" -o "$dir/livi-splash.png"       || { echo "   could not obtain the splash installer, skipping" >&2; return 0; }
   fi
+
+  script="$dir/install.sh"
+  sudo bash "$script" || echo "   splash install failed, continuing" >&2
+}
+
+livi_apply_mfi() {
+  [ "${LIVI_MFI:-no}" = "yes" ] || return 0
+  local dev="/dev/i2c-${LIVI_MFI_I2C_BUS}"
+
+  echo "→ Enabling I2C for the MFi coprocessor"
+
+  if [ -f "$LIVI_BOOT_CONFIG" ]; then
+    if grep -qF "$LIVI_MFI_OVERLAY" "$LIVI_BOOT_CONFIG"; then
+      echo "   overlay already in $LIVI_BOOT_CONFIG"
+    else
+      printf '%s\n' "$LIVI_MFI_OVERLAY" | sudo tee -a "$LIVI_BOOT_CONFIG" >/dev/null
+      echo "   overlay added to $LIVI_BOOT_CONFIG"
+    fi
+  else
+    echo "   no $LIVI_BOOT_CONFIG on this host, skipping the overlay"
+  fi
+
+  # The overlay registers the bus, but the helper opens /dev/i2c-N and that node
+  # only exists once i2c-dev is loaded.
+  echo i2c-dev | sudo tee "$LIVI_MODULES_LOAD" >/dev/null
+  sudo modprobe i2c-dev 2>/dev/null || true
+
+  if [ ! -e "$dev" ]; then
+    echo "   $dev appears after a reboot"
+    return 0
+  fi
+
+  echo "   $dev is present"
 }
