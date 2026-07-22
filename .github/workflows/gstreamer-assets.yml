@@ -193,7 +193,7 @@ jobs:
 
       - name: Upload artifact [macos-arm64]
         if: matrix.os == 'macos' && matrix.arch == 'arm64'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.archive_name }}
@@ -267,7 +267,7 @@ jobs:
 
       - name: Upload artifact [linux-x64]
         if: matrix.os == 'linux' && matrix.arch == 'x64'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.archive_name }}
@@ -344,7 +344,7 @@ jobs:
 
       - name: Upload artifact [linux-arm64]
         if: matrix.os == 'linux' && matrix.arch == 'arm64'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.archive_name }}
@@ -432,7 +432,7 @@ jobs:
 
       - name: Upload artifact [windows-x64]
         if: matrix.os == 'windows' && matrix.arch == 'x64'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: ${{ matrix.artifact_name }}
           path: assets/gstreamer/${{ matrix.dir_name }}
@@ -450,14 +450,14 @@ jobs:
 
     steps:
       - name: Checkout source branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
         with:
           fetch-depth: 0
           ref: ${{ github.ref }}
 
       - name: Download artifact [macos-arm64]
         if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-macos-arm64"')
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           name: gstreamer-macos-arm64
           path: .artifacts/macos-arm64
@@ -473,7 +473,7 @@ jobs:
 
       - name: Download artifact [linux-x64]
         if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-x64"')
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           name: gstreamer-linux-x64
           path: .artifacts/linux-x64
@@ -489,7 +489,7 @@ jobs:
 
       - name: Download artifact [linux-arm64]
         if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-arm64"')
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           name: gstreamer-linux-arm64
           path: .artifacts/linux-arm64
@@ -513,7 +513,7 @@ jobs:
 
       - name: Download artifact [windows-x64]
         if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-windows-x64"')
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           name: gstreamer-windows-x64
           path: .artifacts/windows-x64

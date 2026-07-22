@@ -127,7 +127,7 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || github.event.workflow_run.head_sha }}
 
       - name: Cache pnpm store
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
           path: .pnpm-store
           key: pnpm-store-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -136,7 +136,7 @@ jobs:
 
       - name: Cache build caches (vite/esbuild)
         if: ${{ matrix.os != 'windows' }}
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
           path: |
             node_modules/.vite
@@ -146,7 +146,7 @@ jobs:
             build-cache-${{ matrix.os }}-${{ matrix.arch }}-
 
       - name: Cache Electron downloads
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
           path: .cache/electron
           key: electron-cache-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('package.json', 'pnpm-lock.yaml') }}
@@ -154,7 +154,7 @@ jobs:
             electron-cache-${{ matrix.os }}-${{ matrix.arch }}-
 
       - name: Cache electron-builder binaries
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
           path: .cache/electron-builder
           key: eb-cache-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('package.json', 'pnpm-lock.yaml', 'electron-builder.yml') }}
@@ -286,7 +286,7 @@ jobs:
       - name: Cache GStreamer pkgs [macos-arm64]
         id: gstcache_mac
         if: matrix.os == 'macos'
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
           path: |
             gst-runtime.pkg
@@ -355,7 +355,7 @@ jobs:
       - name: Cache GStreamer installer [windows-x64]
         id: gstcache_win
         if: matrix.os == 'windows' && matrix.arch == 'x64'
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
           path: gstreamer-msvc-x86_64.exe
           key: gst-exe-windows-msvc-x86_64-${{ steps.gstver_win.outputs.version }}
@@ -417,7 +417,7 @@ jobs:
       # ----------------------------
       - name: Upload AppImage [linux-x64]
         if: matrix.os == 'linux' && matrix.arch == 'x64'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: LIVI-${{ steps.pkg.outputs.version }}-linux-x64.AppImage
           path: dist/*.AppImage
@@ -425,7 +425,7 @@ jobs:
 
       - name: Upload AppImage [linux-arm64]
         if: matrix.os == 'linux' && matrix.arch == 'arm64'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: LIVI-${{ steps.pkg.outputs.version }}-linux-arm64.AppImage
           path: dist/*.AppImage
@@ -433,7 +433,7 @@ jobs:
 
       - name: Upload Artifacts
         if: matrix.os != 'linux'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: ${{ matrix.os == 'windows' && format('LIVI-{0}-windows-{1}.exe', steps.pkg.outputs.version, matrix.arch) || format('LIVI-{0}-{1}-{2}.{3}', steps.pkg.outputs.version, matrix.os, matrix.arch, matrix.artifact_ext)}}
           path: |
@@ -526,7 +526,7 @@ jobs:
 
     steps:
       - name: Download build artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           path: nightly-assets
 
