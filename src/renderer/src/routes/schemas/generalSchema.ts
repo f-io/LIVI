@@ -9,9 +9,20 @@ import {
   MIN_WIDTH
 } from '../../components/pages/settings/constants'
 import { Camera } from '../../components/pages/settings/pages/camera'
-import { DisplayMode } from '../../components/pages/settings/pages/display/DisplayMode'
 import { USBDongle } from '../../components/pages/settings/pages/system/usbDongle/USBDongle'
-import { SettingsNode } from '../types'
+import { SelectOption, SettingsNode } from '../types'
+
+const panelDefaultOption: SelectOption = {
+  value: '',
+  label: 'Panel default',
+  labelKey: 'settings.displayModeDefault'
+}
+
+async function loadDisplayModes(): Promise<SelectOption[]> {
+  const list = await window.app?.listDisplayModes?.()
+  if (!Array.isArray(list)) return [panelDefaultOption]
+  return [panelDefaultOption, ...list.map((m) => ({ value: m, label: m }))]
+}
 
 export const generalSchema: SettingsNode<Config> = {
   route: 'general',
@@ -127,11 +138,17 @@ export const generalSchema: SettingsNode<Config> = {
           path: '',
           children: [
             {
-              type: 'custom',
+              type: 'select',
               label: 'Display Mode',
               labelKey: 'settings.displayMode',
-              path: '',
-              component: DisplayMode
+              path: 'displayMode',
+              displayValue: true,
+              options: [panelDefaultOption],
+              loadOptions: loadDisplayModes,
+              page: {
+                title: 'Display Mode',
+                labelTitle: 'settings.displayMode'
+              }
             },
             {
               type: 'number',
