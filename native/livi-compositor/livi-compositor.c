@@ -474,10 +474,59 @@ static void server_new_pointer(struct tinywl_server *server,
 	}
 }
 
+static const char *input_type_name(enum wlr_input_device_type type) {
+	switch (type) {
+	case WLR_INPUT_DEVICE_KEYBOARD: return "keyboard";
+	case WLR_INPUT_DEVICE_POINTER:  return "pointer";
+	case WLR_INPUT_DEVICE_TOUCH:    return "touch";
+	case WLR_INPUT_DEVICE_TABLET:   return "tablet";
+	case WLR_INPUT_DEVICE_TABLET_PAD: return "tablet-pad";
+	case WLR_INPUT_DEVICE_SWITCH:   return "switch";
+	}
+	return "other";
+}
+
+/* LIVI: names the seat capabilities in the log so a lost touch device is visible. */
+static void livi_log_seat_caps(struct tinywl_server *server, uint32_t caps) {
+	wlr_log(WLR_INFO, "livi: seat capabilities pointer=%d keyboard=%d touch=%d",
+		(caps & WL_SEAT_CAPABILITY_POINTER) != 0,
+		(caps & WL_SEAT_CAPABILITY_KEYBOARD) != 0,
+		(caps & WL_SEAT_CAPABILITY_TOUCH) != 0);
+}
+
+struct livi_input_watch {
+	struct wl_listener destroy;
+	enum wlr_input_device_type type;
+	char *name;
+};
+
+static void livi_input_watch_destroy(struct wl_listener *listener, void *data) {
+	struct livi_input_watch *watch = wl_container_of(listener, watch, destroy);
+	wlr_log(WLR_INFO, "livi: input device gone  type=%s name='%s'",
+		input_type_name(watch->type), watch->name ? watch->name : "");
+	wl_list_remove(&watch->destroy.link);
+	free(watch->name);
+	free(watch);
+}
+
+/* Only observes. The seat keeps its capabilities so nothing downstream changes. */
+static void livi_watch_input_device(struct wlr_input_device *device) {
+	struct livi_input_watch *watch = calloc(1, sizeof(*watch));
+	if (watch == NULL) {
+		return;
+	}
+	watch->type = device->type;
+	watch->name = device->name != NULL ? strdup(device->name) : NULL;
+	watch->destroy.notify = livi_input_watch_destroy;
+	wl_signal_add(&device->events.destroy, &watch->destroy);
+}
+
 static void server_new_input(struct wl_listener *listener, void *data) {
 	struct tinywl_server *server =
 		wl_container_of(listener, server, new_input);
 	struct wlr_input_device *device = data;
+	wlr_log(WLR_INFO, "livi: input device added type=%s name='%s'",
+		input_type_name(device->type), device->name ? device->name : "");
 	switch (device->type) {
 	case WLR_INPUT_DEVICE_KEYBOARD:
 		server_new_keyboard(server, device);
@@ -493,6 +542,7 @@ static void server_new_input(struct wl_listener *listener, void *data) {
 	default:
 		break;
 	}
+	livi_watch_input_device(device);
 	uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
 	if (!wl_list_empty(&server->keyboards)) {
 		caps |= WL_SEAT_CAPABILITY_KEYBOARD;
@@ -501,6 +551,7 @@ static void server_new_input(struct wl_listener *listener, void *data) {
 		caps |= WL_SEAT_CAPABILITY_TOUCH;
 	}
 	wlr_seat_set_capabilities(server->seat, caps);
+	livi_log_seat_caps(server, caps);
 }
 
 static void seat_request_cursor(struct wl_listener *listener, void *data) {
@@ -816,6 +867,9 @@ static void server_touch_down(struct wl_listener *listener, void *data) {
 	double sx, sy;
 	struct wlr_surface *surface = NULL;
 	desktop_toplevel_at(server, lx, ly, &surface, &sx, &sy);
+	wlr_log(WLR_DEBUG, "livi: touch down id=%d screen='%s' at %.0f,%.0f surface=%s",
+		event->touch_id, ts != NULL ? ts->role : "none", lx, ly,
+		surface != NULL ? "yes" : "NONE (dropped)");
 	if (surface) {
 		wlr_seat_touch_notify_down(server->seat, surface,
 			event->time_msec, event->touch_id, sx, sy);
@@ -844,6 +898,7 @@ static void server_touch_motion(struct wl_listener *listener, void *data) {
 static void server_touch_up(struct wl_listener *listener, void *data) {
 	struct tinywl_server *server = wl_container_of(listener, server, touch_up);
 	struct wlr_touch_up_event *event = data;
+	wlr_log(WLR_DEBUG, "livi: touch up   id=%d", event->touch_id);
 	wlr_seat_touch_notify_up(server->seat, event->time_msec, event->touch_id);
 }
 
