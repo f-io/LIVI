@@ -12,7 +12,7 @@
 #
 # Sections:
 #   core = required on every LIVI host
-#   lite = additionally required on Raspberry Pi OS Lite, which ships no desktop session
+#   lite = additionally required on a host with no desktop session (Pi OS Lite, headless x86)
 
 core|bluez|cmd:bluetoothctl|Bluetooth pairing for wireless Android Auto and CarPlay
 core|hostapd|cmd:hostapd|Wi-Fi access point for wireless Android Auto and CarPlay

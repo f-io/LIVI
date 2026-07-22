@@ -514,3 +514,45 @@ jobs:
           gstreamer: ${{ steps.gst.outputs.version }}
           repo: ${{ github.repository }}
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  nightly:
+    name: Publish rolling nightly
+    needs: build
+    # Only the automatic main build publishes, a dispatch can build a partial matrix.
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: nightly-assets
+
+      - name: Replace the nightly prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          BUILT_AT="$(TZ=Europe/Berlin date +'%Y-%m-%d %H:%M %Z')"
+
+          args=(
+            nightly
+            --repo "$REPO"
+            --target "$SHA"
+            --prerelease
+            --title "Nightly (${SHA:0:7})"
+            --notes "Rolling build of \`main\`, replaced on every green build.
+
+          Commit: \`${SHA}\`
+          Built: ${BUILT_AT}"
+          )
+
+          while IFS= read -r -d '' file; do
+            args+=("$file")
+          done < <(find nightly-assets -type f -print0)
+
+          gh release delete nightly --repo "$REPO" --yes --cleanup-tag || true
+          gh release create "${args[@]}"

@@ -1,0 +1,6 @@
+# LIVI sudoers drop-in. Managed by LIVI. Do not edit by hand.
+# Single source of truth for helperSudoers.ts and the headless installer.
+# Lets __USERNAME__ run livi-helper.py as root without a password prompt,
+# which the Bluetooth and Wi-Fi helper needs. Remove this file to revoke.
+Cmnd_Alias LIVI_BT = __PYTHON__ *livi-helper.py
+__USERNAME__ ALL=(root) NOPASSWD: SETENV: LIVI_BT

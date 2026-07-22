@@ -1,5 +1,5 @@
 # LIVI udev rules. Managed by LIVI. Do not edit by hand.
-# Single source of truth for udevRule.ts and the Pi-Lite installer.
+# Single source of truth for udevRule.ts and the headless installer.
 # LIVI-RULE-VERSION=4
 SUBSYSTEM=="usb", ATTR{idVendor}=="1314", ATTR{idProduct}=="152*", MODE="0660", OWNER="__USERNAME__"
 # Apple: wired CarPlay uses usbmux + NCM only. Stop the desktop from auto-mounting

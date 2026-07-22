@@ -4,189 +4,31 @@ set -euo pipefail
 # ----------------------------------------
 # LIVI Lite Installer (Raspberry Pi OS Lite)
 # ----------------------------------------
-# Kiosk-style install for headless Pi OS Lite.
+# Kept so older instructions keep working. The headless installer took over and
+# is the only one maintained and tested, so this hands every argument to it.
 #
-#   - Installs Cage (Wayland kiosk compositor), seatd, PipeWire
-#   - Downloads the latest LIVI AppImage
-#   - Extracts the bundled udev rule template from the AppImage and writes
-#     /etc/udev/rules.d/99-LIVI.rules with the matching version marker so the
-#     in-app pkexec dialog stays silent on first launch
-#   - Configures tty1 autologin and a Cage autostart in ~/.bash_profile
+#   scripts/install/headless/install.sh
 #
-# Re-runnable. Refuses to run as root (sudo is used internally).
+# Prefers the copy next to this file, otherwise fetches it from the repository.
+# LIVI_INSTALLER_BRANCH picks a branch other than main.
 
-if [[ $EUID -eq 0 ]]; then
-  echo "Run as a regular user. sudo is used internally where needed." >&2
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL="$HERE/../headless/install.sh"
+
+if [ -f "$LOCAL" ]; then
+  exec bash "$LOCAL" "$@"
+fi
+
+BRANCH="${LIVI_INSTALLER_BRANCH:-main}"
+URL="https://raw.githubusercontent.com/f-io/LIVI/${BRANCH}/scripts/install/headless/install.sh"
+
+echo "→ This installer moved to scripts/install/headless/install.sh"
+echo "   Fetching it from ${BRANCH}"
+
+TMP="$(mktemp)"
+trap 'rm -f "$TMP"' EXIT
+curl -fsSL "$URL" -o "$TMP" || {
+  echo "Error: cannot fetch $URL" >&2
   exit 1
-fi
-
-USER_HOME="$HOME"
-APPIMAGE_PATH="$USER_HOME/LIVI/LIVI.AppImage"
-APPIMAGE_DIR="$(dirname "$APPIMAGE_PATH")"
-RULE_FILE="/etc/udev/rules.d/99-LIVI.rules"
-TEMPLATE_NAME="99-LIVI.rules.template"
-
-# Package list comes from scripts/install/packages.txt, the single source the app checks too.
-MANIFEST_URL="https://raw.githubusercontent.com/f-io/LIVI/main/scripts/install/packages.txt"
-livi_packages() {
-  local here manifest tmp section
-  here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  manifest="$here/../packages.txt"
-  if [ ! -f "$manifest" ]; then
-    tmp="$(mktemp)"
-    curl -fsSL "$MANIFEST_URL" -o "$tmp" || { echo "Error: cannot obtain packages.txt" >&2; return 1; }
-    manifest="$tmp"
-  fi
-  for section in "$@"; do
-    grep -E "^${section}\|" "$manifest" | cut -d '|' -f2
-  done
 }
-
-echo "→ Installing required packages"
-sudo apt-get update
-sudo apt-get install -y $(livi_packages core lite | tr '\n' ' ')
-
-# pymobiledevice3 drives wired CarPlay over usbmux/lockdown
-pip3 install --break-system-packages --ignore-installed -q pymobiledevice3 \
-  || echo "   pymobiledevice3 install failed — wired CarPlay will be disabled"
-
-echo "→ Adding $USER to required groups"
-WANTED_GROUPS=(video render input plugdev)
-EXISTING_GROUPS=()
-for g in "${WANTED_GROUPS[@]}"; do
-  if getent group "$g" >/dev/null; then
-    EXISTING_GROUPS+=("$g")
-  else
-    echo "   skipping group '$g' (not present on this system)"
-  fi
-done
-if [ ${#EXISTING_GROUPS[@]} -gt 0 ]; then
-  sudo usermod -aG "$(IFS=,; echo "${EXISTING_GROUPS[*]}")" "$USER"
-fi
-
-echo "→ Creating target directory: $APPIMAGE_DIR"
-mkdir -p "$APPIMAGE_DIR"
-
-# Optional positional arg: local AppImage file path or http(s) URL
-APPIMAGE_SRC="${1:-}"
-
-if [ -n "$APPIMAGE_SRC" ]; then
-  if [[ "$APPIMAGE_SRC" =~ ^https?:// ]]; then
-    echo "→ Downloading AppImage from $APPIMAGE_SRC"
-    curl -L "$APPIMAGE_SRC" --output "$APPIMAGE_PATH"
-  elif [ -f "$APPIMAGE_SRC" ]; then
-    echo "→ Using local AppImage at $APPIMAGE_SRC"
-    cp "$APPIMAGE_SRC" "$APPIMAGE_PATH"
-  else
-    echo "Error: AppImage source not found: $APPIMAGE_SRC" >&2
-    exit 1
-  fi
-else
-  echo "→ Fetching latest LIVI release"
-  latest_url=$(curl -s https://api.github.com/repos/f-io/LIVI/releases/latest \
-    | grep "browser_download_url" \
-    | grep "arm64.AppImage" \
-    | cut -d '"' -f 4)
-
-  if [ -z "$latest_url" ]; then
-    echo "Error: Could not find ARM64 AppImage URL" >&2
-    exit 1
-  fi
-
-  echo "   Download URL: $latest_url"
-  if ! curl -L "$latest_url" --output "$APPIMAGE_PATH"; then
-    echo "Error: Download failed" >&2
-    exit 1
-  fi
-fi
-
-chmod +x "$APPIMAGE_PATH"
-
-# Extract the udev template from inside the AppImage so the rule version
-# we install always matches what the app on this disk expects.
-echo "→ Extracting udev template from the AppImage"
-EXTRACT_DIR="$(mktemp -d)"
-trap "rm -rf '$EXTRACT_DIR'" EXIT
-pushd "$EXTRACT_DIR" >/dev/null
-"$APPIMAGE_PATH" --appimage-extract "resources/$TEMPLATE_NAME" >/dev/null 2>&1 || true
-TEMPLATE_PATH="$EXTRACT_DIR/squashfs-root/resources/$TEMPLATE_NAME"
-popd >/dev/null
-
-if [ ! -f "$TEMPLATE_PATH" ]; then
-  BRANCH="${LIVI_TEMPLATE_BRANCH:-main}"
-  TEMPLATE_URL="https://raw.githubusercontent.com/f-io/LIVI/${BRANCH}/assets/linux/${TEMPLATE_NAME}"
-  echo "→ Template not in AppImage (likely older release). Falling back to ${TEMPLATE_URL}"
-  TEMPLATE_PATH="$EXTRACT_DIR/${TEMPLATE_NAME}"
-  if ! curl -fL "$TEMPLATE_URL" -o "$TEMPLATE_PATH"; then
-    echo "Error: udev template not in AppImage and download from $TEMPLATE_URL failed" >&2
-    exit 1
-  fi
-  echo "   Note: LIVI may prompt for a udev rule upgrade on first launch if the AppImage version differs."
-fi
-
-echo "→ Writing $RULE_FILE"
-sed "s/__USERNAME__/$USER/g" "$TEMPLATE_PATH" | sudo tee "$RULE_FILE" >/dev/null
-sudo udevadm control --reload-rules
-sudo udevadm trigger
-
-echo "→ Enabling seatd"
-sudo systemctl enable --now seatd
-
-echo "→ Enabling lingering for PipeWire user services"
-sudo loginctl enable-linger "$USER"
-
-echo "→ Configuring tty1 autologin"
-sudo raspi-config nonint do_boot_behaviour B2
-
-KIOSK_MARKER="# LIVI-KIOSK-AUTOSTART"
-if ! grep -q "$KIOSK_MARKER" "$USER_HOME/.bash_profile" 2>/dev/null; then
-  echo "→ Wiring Cage kiosk autostart into ~/.bash_profile"
-  cat >> "$USER_HOME/.bash_profile" <<EOF
-
-$KIOSK_MARKER
-if [ -z "\$WAYLAND_DISPLAY" ] && [ "\$(tty)" = "/dev/tty1" ]; then
-  export ELECTRON_OZONE_PLATFORM_HINT=wayland
-  export LIVI_KIOSK=1
-  LIVI_KIOSK_MODE="\${LIVI_KIOSK_MODE:-native}"
-
-  # Default: Cage uses the display's preferred mode.
-  # Set LIVI_KIOSK_MODE=WxH@Hz to force a mode (e.g. cap a 4K panel at 1080p).
-  if [ "\$LIVI_KIOSK_MODE" != "native" ]; then
-    (
-      export XDG_RUNTIME_DIR=/run/user/\$(id -u)
-      for _ in \$(seq 1 40); do
-        if [ -S "\$XDG_RUNTIME_DIR/wayland-0" ]; then
-          OUT=\$(WAYLAND_DISPLAY=wayland-0 wlr-randr 2>/dev/null \\
-            | awk 'NR==1 {print \$1; exit}')
-          [ -n "\$OUT" ] && WAYLAND_DISPLAY=wayland-0 \\
-            wlr-randr --output "\$OUT" --mode "\$LIVI_KIOSK_MODE" 2>/dev/null
-          break
-        fi
-        sleep 0.25
-      done
-    ) &
-  fi
-
-  exec cage -- "$APPIMAGE_PATH" >"$APPIMAGE_DIR/LIVI.log" 2>&1
-fi
-EOF
-else
-  echo "→ Kiosk autostart already present in ~/.bash_profile, leaving as is"
-fi
-
-# Remove the USB re-enumerate service from earlier installs, it cycles port power and disrupts mouse/touch
-if [ -f /etc/systemd/system/livi-usb-rescan.service ]; then
-  echo "→ Removing legacy USB re-enumerate service"
-  sudo systemctl disable --now livi-usb-rescan.service 2>/dev/null || true
-  sudo rm -f /etc/systemd/system/livi-usb-rescan.service /usr/local/bin/livi-usb-rescan.sh
-  sudo systemctl daemon-reload
-fi
-
-echo ""
-echo "✅ LIVI Lite installation complete."
-echo ""
-echo "Reboot to launch LIVI in kiosk mode on tty1:"
-echo "    sudo reboot"
-echo ""
-echo "To exit kiosk for debugging, switch to a different VT (Ctrl+Alt+F2)."
-echo "To disable kiosk autostart, remove the '$KIOSK_MARKER' block from ~/.bash_profile."
+bash "$TMP" "$@"
