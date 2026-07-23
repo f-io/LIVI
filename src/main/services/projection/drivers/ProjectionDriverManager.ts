@@ -12,8 +12,8 @@ export type DriverEventHandlers = {
   onMetaMessage: (driver: IPhoneDriver, msg: Message) => void
   onFailure: (...args: unknown[]) => void
   onTargetedConnect: (...args: unknown[]) => void
-  onVideoCodec: (codec: 'h264' | 'h265' | 'vp9' | 'av1') => void
-  onClusterVideoCodec: (codec: 'h264' | 'h265' | 'vp9' | 'av1') => void
+  onVideoCodec: (codec: 'h264' | 'h265' | 'vp9' | 'av1', codecData?: Buffer) => void
+  onClusterVideoCodec: (codec: 'h264' | 'h265' | 'vp9' | 'av1', codecData?: Buffer) => void
 }
 
 export type AaConfigSeed = {

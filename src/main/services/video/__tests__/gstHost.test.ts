@@ -104,10 +104,11 @@ describe('gstHost framing + transport', () => {
 
     expect(sock.write).toHaveBeenCalledTimes(1)
     const f = sock.write.mock.calls[0][0] as Buffer
-    expect(f.readUInt32LE(0)).toBe(5 + 'h264'.length) // [len]
+    expect(f.readUInt32LE(0)).toBe(5 + 1 + 'h264'.length) // [len]: op+id + [1B codecLen] + codec
     expect(f.readUInt8(4)).toBe(1) // op = create
     expect(f.readUInt32LE(5)).toBe(7) // id
-    expect(f.subarray(9).toString('utf8')).toBe('h264')
+    expect(f.readUInt8(9)).toBe('h264'.length) // codec length prefix
+    expect(f.subarray(10).toString('utf8')).toBe('h264')
   })
 
   test('writes directly once the socket is live', async () => {

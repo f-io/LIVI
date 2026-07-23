@@ -265,7 +265,9 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
       // closes it and releases the video plane. Fires 'disconnected' exactly once.
       this._emitDisconnected()
     })
-    stack.on('video-codec', (codec: string) => this.emit('video-codec', codec))
+    stack.on('video-codec', (codec: string, codecData?: Buffer) =>
+      this.emit('video-codec', codec, codecData)
+    )
     stack.on('audio-frame', (pcm: Buffer, prof: CpStreamProfile) => {
       this.emit('message', buildCpAudioData(pcm, prof.sampleRate, prof.channels, prof.audioType))
     })
@@ -307,7 +309,9 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
       }
       this.emit('message', buildVideoDataMessage(nal, w, h))
     })
-    stack.on('cluster-video-codec', (codec: string) => this.emit('cluster-video-codec', codec))
+    stack.on('cluster-video-codec', (codec: string, codecData?: Buffer) =>
+      this.emit('cluster-video-codec', codec, codecData)
+    )
     stack.on('cluster-video-frame', (nal: Buffer) => {
       const cfg = this._getConfig()
       const w = cfg.clusterWidth || 1280

@@ -267,6 +267,21 @@ static std::string caps_for(const std::string& c) {
   return "video/x-h264,stream-format=byte-stream";
 }
 
+// CarPlay ships the parameter sets once as an hvcC/avcC record and every frame as
+// length-prefixed NALs, which is the hvc1/avc stream format.
+static void set_length_prefixed_caps(GstElement* appsrc, const std::string& codec,
+                                     const guint8* codec_data, gsize codec_data_len) {
+  const char* media = codec == "h265" ? "video/x-h265" : "video/x-h264";
+  const char* stream_format = codec == "h265" ? "hvc1" : "avc";
+  GstCaps* caps = gst_caps_new_simple(media, "stream-format", G_TYPE_STRING, stream_format,
+                                      "alignment", G_TYPE_STRING, "au", NULL);
+  GstBuffer* cd = gst_buffer_new_memdup(codec_data, codec_data_len);
+  gst_caps_set_simple(caps, "codec_data", GST_TYPE_BUFFER, cd, NULL);
+  gst_buffer_unref(cd);
+  g_object_set(appsrc, "caps", caps, NULL);
+  gst_caps_unref(caps);
+}
+
 #ifndef LIVI_GST_HOST_STANDALONE
 static std::string get_string_arg(napi_env env, napi_value v) {
   size_t len = 0;
@@ -312,6 +327,11 @@ static void livi_free_player(Player* p) {
   if (!p) return;
   if (p->pipeline) {
     gst_element_set_state(p->pipeline, GST_STATE_NULL);
+    // Wait for NULL to complete: the stateless v4l2 decoder frees its kernel buffers only
+    // when the transition finishes, and unreffing before that leaks a decoder instance per
+    // teardown, so rapid session switching exhausts the pool and planes go black. Bounded so
+    // a stuck transition cannot deadlock the teardown.
+    gst_element_get_state(p->pipeline, NULL, NULL, 2 * GST_SECOND);
     if (p->appsrc) gst_object_unref(p->appsrc);
     if (p->sink) gst_object_unref(p->sink);
     if (p->glshader) gst_object_unref(p->glshader);
@@ -383,7 +403,8 @@ static GstPadProbeReturn decoded_caps_log_probe(GstPad*, GstPadProbeInfo* info, 
 
 // Build the decode + waylandsink pipeline for a codec. handle is the native window for the
 // mac/Windows overlay, unused on Linux. Returns NULL on parse failure.
-static Player* livi_create_player(const std::string& codec, guintptr handle) {
+static Player* livi_create_player(const std::string& codec, guintptr handle,
+                                  const guint8* codec_data = nullptr, gsize codec_data_len = 0) {
   // Two queues: before the decoder non-leaky (a stateless HW decoder needs every
   // frame for its reference chain), after the decoder leaky=downstream.
   const char* decoder = decoder_for(codec);
@@ -440,6 +461,9 @@ static Player* livi_create_player(const std::string& codec, guintptr handle) {
   Player* p = new Player();
   p->pipeline = pipeline;
   p->appsrc = gst_bin_get_by_name(GST_BIN(pipeline), "src");
+  if (p->appsrc && codec_data && codec_data_len > 0 && (codec == "h265" || codec == "h264")) {
+    set_length_prefixed_caps(p->appsrc, codec, codec_data, codec_data_len);
+  }
   p->sink = gst_bin_get_by_name(GST_BIN(pipeline), "sink");
   p->glshader = gst_bin_get_by_name(GST_BIN(pipeline), "cal");
   if (p->glshader) {
@@ -491,8 +515,8 @@ static Player* livi_create_player(const std::string& codec, guintptr handle) {
 static napi_value CreatePlayer(napi_env env, napi_callback_info info) {
   ensure_init();
 
-  size_t argc = 2;
-  napi_value argv[2];
+  size_t argc = 3;
+  napi_value argv[3];
   napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
 
   std::string codec = argc >= 1 ? get_string_arg(env, argv[0]) : "h264";
@@ -506,7 +530,18 @@ static napi_value CreatePlayer(napi_env env, napi_callback_info info) {
     }
   }
 
-  Player* p = livi_create_player(codec, handle);
+  const guint8* codec_data = nullptr;
+  gsize codec_data_len = 0;
+  if (argc >= 3) {
+    void* data = nullptr;
+    size_t len = 0;
+    if (napi_get_buffer_info(env, argv[2], &data, &len) == napi_ok && data && len > 0) {
+      codec_data = static_cast<const guint8*>(data);
+      codec_data_len = len;
+    }
+  }
+
+  Player* p = livi_create_player(codec, handle, codec_data, codec_data_len);
   if (!p) {
     napi_value n;
     napi_get_null(env, &n);
@@ -656,16 +691,21 @@ struct LiviHost {
 static void livi_host_dispatch(LiviHost* h, guint8 op, guint32 id, const guint8* rest, gsize rlen) {
   gpointer key = GUINT_TO_POINTER(id);
   if (op == 1) {
+    // [1B codecLen][codec ascii][codec_data]. codec_data is empty for byte-stream sources.
     char codec[16];
-    gsize n = rlen < sizeof(codec) - 1 ? rlen : sizeof(codec) - 1;
-    memcpy(codec, rest, n);
-    codec[n] = '\0';
+    gsize clen = rlen >= 1 ? rest[0] : 0;
+    if (clen > sizeof(codec) - 1) clen = sizeof(codec) - 1;
+    if (rlen < 1 + clen) return;
+    memcpy(codec, rest + 1, clen);
+    codec[clen] = '\0';
+    const guint8* codec_data = rlen > 1 + clen ? rest + 1 + clen : nullptr;
+    gsize codec_data_len = rlen > 1 + clen ? rlen - 1 - clen : 0;
     Player* old = (Player*)g_hash_table_lookup(h->players, key);
     if (old) {
       g_hash_table_remove(h->players, key);
       livi_free_player(old);
     }
-    Player* p = livi_create_player(codec, 0);
+    Player* p = livi_create_player(codec, 0, codec_data, codec_data_len);
     if (p) {
       gst_element_set_state(p->pipeline, GST_STATE_PLAYING);
       g_hash_table_insert(h->players, key, p);

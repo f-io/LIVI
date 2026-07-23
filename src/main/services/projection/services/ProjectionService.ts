@@ -162,6 +162,8 @@ export class ProjectionService {
   private lastVideoHeight?: number
   private gstVideo: GstVideo | null = null
   private gstVideoCodec: GstVideoCodec = 'h264'
+  private gstVideoCodecData: Buffer | null = null
+  private gstVideoClusterCodecData: Buffer | null = null
   private gstVideoVisible = true
   private videoCrop: {
     cropL: number
@@ -429,9 +431,11 @@ export class ProjectionService {
     this.gstVideo?.dispose()
     this.gstVideo = null
     this.gstVideoCodec = 'h264'
+    this.gstVideoCodecData = null
     for (const plane of this.gstVideoClusters.values()) plane.dispose()
     this.gstVideoClusters.clear()
     this.gstVideoClusterCodec = 'h264'
+    this.gstVideoClusterCodecData = null
   }
 
   // Hydration
@@ -930,27 +934,40 @@ export class ProjectionService {
     this.pendingStartupConnectTarget = null
   }
 
-  // 'video-codec' — phone announces which advertised codec it picked
-  private readonly onDriverVideoCodec = (codec: 'h264' | 'h265' | 'vp9' | 'av1'): void => {
+  // 'video-codec' — phone announces the codec it picked; for CarPlay the config atom also
+  // carries codec_data (hvcC/avcC), which the plane needs before its first frame so it is
+  // built for a length-prefixed source. Null codec_data means a byte-stream source (AA).
+  private readonly onDriverVideoCodec = (
+    codec: 'h264' | 'h265' | 'vp9' | 'av1',
+    codecData?: Buffer
+  ): void => {
     this.gstVideoCodec = codec
+    this.gstVideoCodecData = codecData ?? null
+    if (codecData) this.gstVideo?.setCodecData(codecData)
     const wc = this.webContents
     if (!wc || wc.isDestroyed?.()) return
     wc.send('projection-event', { type: 'video-codec', payload: { codec } })
   }
 
   private attachCodecCapture(d: IPhoneDriver): void {
-    d.on('video-codec', (c: GstVideoCodec) => {
+    d.on('video-codec', (c: GstVideoCodec, cd?: Buffer) => {
       this.lastMainCodecByDriver.set(d, c)
       const s = this.sessions.byDriver(d)
-      if (s) s.video.main.codec = c
+      if (s) {
+        s.video.main.codec = c
+        if (cd) s.video.main.codecData = cd
+      }
       this.sessions.dump(
         `video-codec ${c} → ${s ? `stored on #${s.index}` : 'NO session (map only)'}`
       )
     })
-    d.on('cluster-video-codec', (c: GstVideoCodec) => {
+    d.on('cluster-video-codec', (c: GstVideoCodec, cd?: Buffer) => {
       this.lastClusterCodecByDriver.set(d, c)
       const s = this.sessions.byDriver(d)
-      if (s) s.video.cluster.codec = c
+      if (s) {
+        s.video.cluster.codec = c
+        if (cd) s.video.cluster.codecData = cd
+      }
       this.sessions.dump(
         `cluster-codec ${c} → ${s ? `stored on #${s.index}` : 'NO session (map only)'}`
       )
@@ -999,6 +1016,7 @@ export class ProjectionService {
     if (!this.gstVideo) {
       this.gstVideo = new GstVideo(wc)
       this.gstVideo.setVisible(this.gstVideoVisible)
+      if (this.gstVideoCodecData) this.gstVideo.setCodecData(this.gstVideoCodecData)
       this.applyVideoCrop()
       this.emitProjectionEvent({ type: 'projection', shown: true })
     }
@@ -1073,6 +1091,7 @@ export class ProjectionService {
         if (!wc || wc.isDestroyed?.()) continue
         plane = new GstVideo(wc, `cluster-${screen}`, screen)
         plane.setVisible(this.clusterPlaneVisible(screen))
+        if (this.gstVideoClusterCodecData) plane.setCodecData(this.gstVideoClusterCodecData)
         this.applyClusterCrop(plane) // fit to the configured cluster-stream AR
         this.gstVideoClusters.set(screen, plane)
       }
@@ -1094,9 +1113,14 @@ export class ProjectionService {
   }
 
   // Cluster channel codec selection
-  private readonly onDriverClusterVideoCodec = (codec: 'h264' | 'h265' | 'vp9' | 'av1'): void => {
+  private readonly onDriverClusterVideoCodec = (
+    codec: 'h264' | 'h265' | 'vp9' | 'av1',
+    codecData?: Buffer
+  ): void => {
     this.lastClusterCodec = codec
     this.gstVideoClusterCodec = codec
+    this.gstVideoClusterCodecData = codecData ?? null
+    if (codecData) for (const plane of this.gstVideoClusters.values()) plane.setCodecData(codecData)
     for (const wc of this.getClusterTargetWebContents()) {
       try {
         wc.send('projection-event', { type: 'cluster-video-codec', payload: { codec } })
@@ -1151,8 +1175,8 @@ export class ProjectionService {
         onMetaMessage: (driver, msg) => this.onMetaMessage(driver, msg),
         onFailure: () => this.onDriverFailure(),
         onTargetedConnect: () => this.onDriverTargetedConnect(),
-        onVideoCodec: (c) => this.onDriverVideoCodec(c),
-        onClusterVideoCodec: (c) => this.onDriverClusterVideoCodec(c)
+        onVideoCodec: (c, cd) => this.onDriverVideoCodec(c, cd),
+        onClusterVideoCodec: (c, cd) => this.onDriverClusterVideoCodec(c, cd)
       },
       onAaConnected: (s) => this.onAaConnected(s as AaSession),
       onAaDisconnected: (s) => this.onAaDisconnected(s as AaSession),
@@ -2161,6 +2185,9 @@ export class ProjectionService {
       const cc = next.video.cluster.codec ?? this.lastClusterCodecByDriver.get(next.driver)
       if (mc) this.gstVideoCodec = mc
       if (cc) this.gstVideoClusterCodec = cc
+      // Restore the length-prefixed codec_data for this session (null for byte-stream sources).
+      this.gstVideoCodecData = next.video.main.codecData ?? null
+      this.gstVideoClusterCodecData = next.video.cluster.codecData ?? null
       console.log(
         `[SESSIONS] codec-restore #${next.index} ${next.protocol}: session=${next.video.main.codec ?? '-'} map=${this.lastMainCodecByDriver.get(next.driver) ?? '-'} → gstVideoCodec=${this.gstVideoCodec}`
       )

@@ -165,7 +165,7 @@ describe('GstVideo — linux host-process path', () => {
 
     v.push('h264', Buffer.from([1, 2, 3]))
 
-    expect(gstHost.createPlayer).toHaveBeenCalledWith(expect.any(Number), 'h264')
+    expect(gstHost.createPlayer).toHaveBeenCalledWith(expect.any(Number), 'h264', undefined)
     expect(gstHost.pushBuffer).toHaveBeenCalledTimes(1)
     sockets[0].emit('connect')
     expect(sockets[0].write).toHaveBeenCalledWith('claim main\n')

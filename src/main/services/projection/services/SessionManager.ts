@@ -19,6 +19,7 @@ export interface SessionDeviceIds {
 
 export interface KeyframeCache {
   codec?: VideoCodec
+  codecData?: Buffer
   width?: number
   height?: number
   keyframe?: Buffer
