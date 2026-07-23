@@ -1064,7 +1064,7 @@ def _subscribe_device_signals(bus: dbus.Bus) -> None:
         mac = ""
         if "/dev_" in path:
             mac = path.rsplit("/dev_", 1)[-1].replace("_", ":").upper()
-        if changed.get("Connected") is True:
+        if changed.get("Connected") is True or changed.get("Paired") is True:
             try:
                 obj = bus.get_object("org.bluez", str(path))
                 dbus.Interface(obj, dbus.PROPERTIES_IFACE).Set(

@@ -46,7 +46,7 @@ describe('the shipped manifest', () => {
 
   it('gives every package a probe kind the checker understands', () => {
     for (const e of entries) {
-      expect(e.probe, `${e.name} has no probe`).toMatch(/^(cmd|py|gst):.+/)
+      expect(e.probe, `${e.name} has no probe`).toMatch(/^(cmd|py|gst|file):.+/)
     }
   })
 

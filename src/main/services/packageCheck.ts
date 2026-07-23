@@ -1,5 +1,5 @@
 import { execFile, execFileSync, spawn } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { app, type BrowserWindow, dialog } from 'electron'
@@ -61,6 +61,21 @@ export function requiredPackages(entries = readManifest()): PackageEntry[] {
   return entries.filter((e) => e.section === 'core' || (lite && e.section === 'lite'))
 }
 
+/** Existence test for a path holding at most one `*`, which stands in for a single
+ * directory name. Libraries sit under a multiarch directory that differs per host. */
+export function pathPresent(pattern: string): boolean {
+  const star = pattern.indexOf('*')
+  if (star < 0) return existsSync(pattern)
+  const base = pattern.slice(0, pattern.lastIndexOf('/', star))
+  const slash = pattern.indexOf('/', star)
+  const rest = slash < 0 ? '' : pattern.slice(slash + 1)
+  try {
+    return readdirSync(base).some((entry) => existsSync(join(base, entry, rest)))
+  } catch {
+    return false
+  }
+}
+
 /** Run one manifest probe. Unknown probe kinds count as present, so a typo never nags. */
 async function probeSatisfied(probe: string): Promise<boolean> {
   const [kind, arg] = [probe.slice(0, probe.indexOf(':')), probe.slice(probe.indexOf(':') + 1)]
@@ -80,6 +95,7 @@ async function probeSatisfied(probe: string): Promise<boolean> {
       await execFileAsync('gst-inspect-1.0', ['--exists', arg])
       return true
     }
+    if (kind === 'file') return pathPresent(arg)
     return true
   } catch {
     return false

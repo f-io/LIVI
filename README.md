@@ -159,7 +159,7 @@ Make sure the following packages and tools are installed on your system before b
 - **libgstreamer1.0-dev** + **libgstreamer-plugins-base1.0-dev** (required to build the `gst-video` addon)
 - **meson** (≥ 1.4), **ninja**, **pkg-config**, **bison**, **cmake** and the wlroots/EGL stack: **libwayland-dev**, **wayland-protocols**, **libxkbcommon-dev** (≥ 1.8.0), **libpixman-1-dev**, **libcairo2-dev**, **libegl-dev** / **libgles-dev** / **libgbm-dev** / **libffi-dev** / **libexpat1-dev** (Linux only: to build the embedded wlroots compositor)
 - **fuse3** (required to run AppImages)
-- runtime packages for native CarPlay and wireless Android Auto: **bluez**, **hostapd**, **dnsmasq-base**, **iw**, **rfkill**, **avahi-daemon**, **avahi-utils**, **pulseaudio-utils**, **python3-dbus**, **python3-gi**, **python3-smbus2**, and **pymobiledevice3** from pip for wired CarPlay
+- runtime packages for native CarPlay and wireless Android Auto: **bluez**, **libspa-0.2-bluetooth**, **hostapd**, **dnsmasq-base**, **iw**, **rfkill**, **avahi-daemon**, **avahi-utils**, **pulseaudio-utils**, **python3-dbus**, **python3-gi**, **python3-smbus2**, and **pymobiledevice3** from pip for wired CarPlay
 
 On Debian/Ubuntu/Raspberry Pi OS, install everything with:
 
@@ -170,8 +170,8 @@ sudo apt-get install -y git build-essential python3 python3-dev python3-pip \
   libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
   libegl-dev libgles-dev libgbm-dev libffi-dev libexpat1-dev \
   libwayland-dev wayland-protocols libxkbcommon-dev libpixman-1-dev libcairo2-dev \
-  fuse3 bluez hostapd dnsmasq-base iw rfkill avahi-daemon avahi-utils pulseaudio-utils \
-  python3-dbus python3-gi python3-smbus2
+  fuse3 bluez libspa-0.2-bluetooth hostapd dnsmasq-base iw rfkill avahi-daemon avahi-utils \
+  pulseaudio-utils python3-dbus python3-gi python3-smbus2
 pip3 install --user --break-system-packages 'meson>=1.4' pymobiledevice3
 curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt-get install -y nodejs
@@ -206,7 +206,7 @@ sudo corepack enable
 ```
 
 
-Fedora has no `rfkill` package, the command comes with `util-linux`, and `python3-smbus2` does not exist there either, so `smbus2` comes from pip above. Everything else, including wireless CarPlay, works the same.
+Fedora has no `rfkill` package, the command comes with `util-linux`, and `python3-smbus2` does not exist there either, so `smbus2` comes from pip above. `libspa-0.2-bluetooth` is a Debian name too: it holds PipeWire's Bluetooth plugin, which Fedora ships inside `pipewire-libs`. Wireless Android Auto needs that plugin because the phone will only start a session over an HFP connection, and PipeWire is what puts HFP into the adapter's service record. LIVI's package check probes for the plugin's directory rather than a package name, so it reports the gap on any distro. Everything else, including wireless CarPlay, works the same.
 
 On macOS, the `gst-video` addon links against the **GStreamer.framework**. Install
 both the runtime and development packages (matching versions) from

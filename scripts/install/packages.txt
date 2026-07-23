@@ -9,12 +9,15 @@
 # Probes:
 #   cmd:<name>  the binary is on PATH, /usr/sbin or /sbin
 #   py:<module> python3 can import the module
+#   gst:<name>  gst-inspect-1.0 finds the element
+#   file:<path> the path exists, one * standing in for a single directory name
 #
 # Sections:
 #   core = required on every LIVI host
 #   lite = additionally required on a host with no desktop session (Pi OS Lite, headless x86)
 
 core|bluez|cmd:bluetoothctl|Bluetooth pairing for wireless Android Auto and CarPlay
+core|libspa-0.2-bluetooth|file:/usr/lib/*/spa-0.2/bluez5|Bluetooth audio profiles, wireless Android Auto needs HFP
 core|hostapd|cmd:hostapd|Wi-Fi access point for wireless Android Auto and CarPlay
 core|dnsmasq-base|cmd:dnsmasq|DHCP for the wireless access point
 core|iw|cmd:iw|Wi-Fi interface control
