@@ -102,6 +102,9 @@ livi_apply_hdmi_pr "$APPIMAGE_PATH"
 echo "→ Enabling seatd"
 sudo systemctl enable --now seatd
 
+echo "→ Disabling NetworkManager-wait-online"
+sudo systemctl disable NetworkManager-wait-online.service >/dev/null 2>&1 || true
+
 echo "→ Enabling lingering for PipeWire user services"
 sudo loginctl enable-linger "$USER"
 
@@ -162,7 +165,7 @@ StandardError=inherit
 Environment=ELECTRON_OZONE_PLATFORM_HINT=wayland
 Environment=LIVI_KIOSK=1
 ExecStart=$CAGE_BIN -s -- $APPIMAGE_PATH
-ExecStopPost=-$SYSTEMCTL_BIN start getty@tty1.service
+ExecStopPost=+$SYSTEMCTL_BIN --no-block start getty@tty1.service
 Restart=no
 
 [Install]

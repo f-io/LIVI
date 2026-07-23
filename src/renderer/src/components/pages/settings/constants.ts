@@ -47,6 +47,8 @@ export const requiresRestartParams: (keyof Config)[] = [
   'wirelessAaEnabled',
   'wirelessCpEnabled',
 
+  'displayMode',
+
   'projectionWidth',
   'projectionHeight',
   'projectionFps',

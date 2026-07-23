@@ -766,6 +766,9 @@ static void process_cursor_motion(struct tinywl_server *server, uint32_t time) {
 static void server_cursor_motion(struct wl_listener *listener, void *data) {
 	struct tinywl_server *server =
 		wl_container_of(listener, server, cursor_motion);
+	if (!server->pointer_seen) {
+		wlr_log(WLR_INFO, "livi: first pointer motion (relative), cursor becomes visible");
+	}
 	server->pointer_seen = true;
 	struct wlr_pointer_motion_event *event = data;
 	wlr_cursor_move(server->cursor, &event->pointer->base,
@@ -777,6 +780,9 @@ static void server_cursor_motion_absolute(
 		struct wl_listener *listener, void *data) {
 	struct tinywl_server *server =
 		wl_container_of(listener, server, cursor_motion_absolute);
+	if (!server->pointer_seen) {
+		wlr_log(WLR_INFO, "livi: first pointer motion (absolute), cursor becomes visible");
+	}
 	server->pointer_seen = true;
 	struct wlr_pointer_motion_absolute_event *event = data;
 	wlr_cursor_warp_absolute(server->cursor, &event->pointer->base, event->x,
