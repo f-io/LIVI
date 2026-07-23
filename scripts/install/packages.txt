@@ -23,8 +23,8 @@ core|python3-pip|cmd:pip3|Installing pymobiledevice3 for wired CarPlay
 core|pulseaudio-utils|cmd:pactl|Reading and setting the system volume
 core|python3-dbus|py:dbus|Bluetooth and Wi-Fi helper
 core|python3-gi|py:gi|Bluetooth and Wi-Fi helper
+core|python3-smbus2|py:smbus2|MFi coprocessor for native CarPlay, the helper imports it at startup
 core|avahi-daemon|cmd:avahi-daemon|CarPlay discovery over Wi-Fi
-core|python3-avahi|py:avahi|CarPlay discovery over Wi-Fi
 lite|cage|cmd:cage|Kiosk compositor
 lite|seatd|cmd:seatd|Seat and session management
 lite|wlr-randr|cmd:wlr-randr|Display configuration

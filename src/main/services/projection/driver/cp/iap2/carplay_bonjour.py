@@ -5,12 +5,22 @@ import time
 import dbus
 from gi.repository import GLib
 
-try:
-    import avahi
-except ImportError:
-    avahi = None
-
 from shared.config import AIRPLAY_PORT, CARPLAY_SOURCE_VERSION, PK, PI
+
+AVAHI_DBUS_NAME = "org.freedesktop.Avahi"
+AVAHI_DBUS_PATH_SERVER = "/"
+AVAHI_DBUS_INTERFACE_SERVER = "org.freedesktop.Avahi.Server"
+AVAHI_DBUS_INTERFACE_ENTRY_GROUP = "org.freedesktop.Avahi.EntryGroup"
+AVAHI_IF_UNSPEC = -1
+AVAHI_PROTO_UNSPEC = -1
+AVAHI_PROTO_INET6 = 1
+
+
+def _txt_array(entries):
+    return dbus.Array(
+        [[dbus.Byte(b) for b in e.encode("utf-8")] for e in entries],
+        signature="aay",
+    )
 
 SERVICE_NAME = "LIVI"
 
@@ -47,8 +57,6 @@ def kick():
     loop: a fresh ServiceBrowser queries the network, the phone answers with its
     current port, and the next probe hits it. Stops once a connect succeeds. Only
     probes while the latch is clear, so it is a no-op during a live session."""
-    if avahi is None:
-        return
     GLib.idle_add(_start_kick)
 
 
@@ -143,13 +151,13 @@ def _publish(bus, server, name, txt):
     # On restart the just-evicted old helper's entry group can still linger in
     # avahi-daemon; retry the same name until that ghost expires, then fall back
     # to an alternative name as a last resort.
-    group = dbus.Interface(bus.get_object(avahi.DBUS_NAME, server.EntryGroupNew()),
-                           avahi.DBUS_INTERFACE_ENTRY_GROUP)
+    group = dbus.Interface(bus.get_object(AVAHI_DBUS_NAME, server.EntryGroupNew()),
+                           AVAHI_DBUS_INTERFACE_ENTRY_GROUP)
     for attempt in range(16):
         try:
-            group.AddService(avahi.IF_UNSPEC, avahi.PROTO_UNSPEC, dbus.UInt32(0),
+            group.AddService(AVAHI_IF_UNSPEC, AVAHI_PROTO_UNSPEC, dbus.UInt32(0),
                              name, "_airplay._tcp", '', '', dbus.UInt16(AIRPLAY_PORT),
-                             avahi.string_array_to_txt_array(txt))
+                             _txt_array(txt))
             group.Commit()
             if name != SERVICE_NAME:
                 print(f"[cp] avahi published as '{name}'", flush=True)
@@ -169,11 +177,8 @@ def _publish(bus, server, name, txt):
 
 
 def start_service(device_id):
-    if avahi is None:
-        print("[cp] python3-avahi not installed, CarPlay discovery disabled", flush=True)
-        return
     bus = dbus.SystemBus()
-    server = dbus.Interface(bus.get_object(avahi.DBUS_NAME, avahi.DBUS_PATH_SERVER), avahi.DBUS_INTERFACE_SERVER)
+    server = dbus.Interface(bus.get_object(AVAHI_DBUS_NAME, AVAHI_DBUS_PATH_SERVER), AVAHI_DBUS_INTERFACE_SERVER)
 
     # features2 must be 0x61 = isCarplay(0x01) | carPlayControl(0x20) |
     # CoreUtilsPairingAndEncryption(0x40). pi/pk carry the AirPlay-2 pairing
@@ -202,13 +207,13 @@ def start_service(device_id):
         try:
             (interface, protocol, name, type, domain, host, aprotocol,
              address, port, txt, flags) = server.ResolveService(
-                interface, protocol, name, type, domain, avahi.PROTO_UNSPEC, 0)
+                interface, protocol, name, type, domain, AVAHI_PROTO_UNSPEC, 0)
             txt = [''.join(str(t) for t in entry) for entry in txt]
             address = str(address)
 
             # CarPlay wireless uses IPv6 link-local; bracket it and add the
             # interface zone id for fe80:: reachability.
-            is_v6 = int(aprotocol) == int(avahi.PROTO_INET6)
+            is_v6 = int(aprotocol) == int(AVAHI_PROTO_INET6)
             try:
                 ifname = socket.if_indextoname(int(interface))
             except OSError:
@@ -271,7 +276,7 @@ def start_service(device_id):
             except Exception:
                 pass
         browser = server.ServiceBrowserNew(
-            avahi.IF_UNSPEC, avahi.PROTO_UNSPEC, '_carplay-ctrl._tcp', 'local', 0)
+            AVAHI_IF_UNSPEC, AVAHI_PROTO_UNSPEC, '_carplay-ctrl._tcp', 'local', 0)
         receiver = bus.add_signal_receiver(on_service, "ItemNew", path=browser)
 
     global _rebrowse_fn
