@@ -36,7 +36,7 @@ export function bootstrapCompositor(): boolean {
     const oh = Math.round(Number(cfg.mainScreenHeight))
     const wantKiosk = cfg.kiosk?.main === true || process.env.LIVI_KIOSK === '1'
     if (ow > 0 && oh > 0) outputSize = `${ow}x${oh + (wantKiosk ? 0 : COMPOSITOR_TITLEBAR_H)}`
-    if (wantKiosk) applyHostOutputMode(cfg.displayMode)
+    if (process.env.LIVI_KIOSK === '1') applyHostOutputMode(cfg.displayMode)
   } catch {
     // fall back to the compositor's built-in default
   }
