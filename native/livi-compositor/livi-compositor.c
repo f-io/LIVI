@@ -118,6 +118,7 @@ struct tinywl_server {
 	struct wl_listener touch_down;
 	struct wl_listener touch_up;
 	struct wl_listener touch_motion;
+	struct wl_listener touch_cancel;
 	struct wl_listener touch_frame;
 	bool has_touch;
 	bool pointer_seen;
@@ -906,6 +907,22 @@ static void server_touch_up(struct wl_listener *listener, void *data) {
 	struct wlr_touch_up_event *event = data;
 	wlr_log(WLR_DEBUG, "livi: touch up   id=%d", event->touch_id);
 	wlr_seat_touch_notify_up(server->seat, event->time_msec, event->touch_id);
+}
+
+/* LIVI: the host cancels every touch point it still holds when it takes the input away.
+ * Ending them here keeps the seat from carrying fingers that never lift. */
+static void server_touch_cancel(struct wl_listener *listener, void *data) {
+	struct tinywl_server *server = wl_container_of(listener, server, touch_cancel);
+	struct wlr_touch_cancel_event *event = data;
+
+	struct wlr_touch_point *point =
+		wlr_seat_touch_get_point(server->seat, event->touch_id);
+	if (point == NULL || point->client == NULL) {
+		return;
+	}
+	wlr_log(WLR_DEBUG, "livi: touch cancel id=%d (%d point(s) down)",
+		event->touch_id, wlr_seat_touch_num_points(server->seat));
+	wlr_seat_touch_notify_cancel(server->seat, point->client);
 }
 
 static void server_touch_frame(struct wl_listener *listener, void *data) {
@@ -2310,6 +2327,8 @@ int main(int argc, char *argv[]) {
 	wl_signal_add(&server.cursor->events.touch_up, &server.touch_up);
 	server.touch_motion.notify = server_touch_motion;
 	wl_signal_add(&server.cursor->events.touch_motion, &server.touch_motion);
+	server.touch_cancel.notify = server_touch_cancel;
+	wl_signal_add(&server.cursor->events.touch_cancel, &server.touch_cancel);
 	server.touch_frame.notify = server_touch_frame;
 	wl_signal_add(&server.cursor->events.touch_frame, &server.touch_frame);
 
