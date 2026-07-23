@@ -1,4 +1,5 @@
 import type { Config } from '@shared/types'
+import { WIFI_PASSWORD_MAX, WIFI_PASSWORD_MIN } from '@shared/types/Config'
 import {
   MAX_HEIGHT,
   MAX_WIDTH,
@@ -93,6 +94,8 @@ export const generalSchema: SettingsNode<Config> = {
               label: 'Wi-Fi Password',
               labelKey: 'settings.wifiPassword',
               path: 'wifiPassword',
+              minLength: WIFI_PASSWORD_MIN,
+              maxLength: WIFI_PASSWORD_MAX,
               displayValue: true,
               page: {
                 title: 'Wi-Fi Password',

@@ -82,6 +82,10 @@ export type AppearanceMode = 'auto' | 'night' | 'day'
 /** carName is the Wi-Fi AP, Bluetooth and head-unit name, so it stays short. */
 export const CAR_NAME_MAX = 20
 
+/** WPA passphrase bounds. */
+export const WIFI_PASSWORD_MIN = 8
+export const WIFI_PASSWORD_MAX = 63
+
 export type WindowBounds = {
   x: number
   y: number

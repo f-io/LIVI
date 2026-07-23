@@ -42,13 +42,18 @@ export const SettingsFieldControl = <T,>({
   onDone
 }: Props<T>) => {
   switch (node.type) {
-    case 'string':
+    case 'string': {
+      const text = String(value ?? '')
+      const tooShort = node.minLength !== undefined && text.length < node.minLength
       return (
         <TextField
-          value={String(value ?? '')}
+          value={text}
           onChange={(e) => onChange(e.target.value as T)}
           fullWidth
           variant="outlined"
+          error={tooShort}
+          helperText={tooShort ? `min. ${node.minLength}` : undefined}
+          slotProps={{ htmlInput: { maxLength: node.maxLength } }}
           sx={{
             '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
               borderColor: 'primary.main',
@@ -60,6 +65,7 @@ export const SettingsFieldControl = <T,>({
           }}
         />
       )
+    }
 
     case 'number': {
       const min = node.min ?? 0

@@ -1,7 +1,7 @@
 import { hostname } from 'node:os'
 import type { Config } from '@shared/types'
 import { DEFAULT_CONFIG } from '@shared/types'
-import { CAR_NAME_MAX } from '@shared/types/Config'
+import { CAR_NAME_MAX, WIFI_PASSWORD_MAX, WIFI_PASSWORD_MIN } from '@shared/types/Config'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { CONFIG_PATH } from './paths'
 import { validate } from './validateConfig'
@@ -33,6 +33,15 @@ export function loadConfig(): Config {
       : DEFAULT_CONFIG
 
   const merged = validate(fileConfig, defaults)
+
+  const pass = merged.wifiPassword ?? ''
+  if (pass.length < WIFI_PASSWORD_MIN || pass.length > WIFI_PASSWORD_MAX) {
+    console.warn(
+      `[config] wifiPassword is ${pass.length} characters, hostapd needs ` +
+        `${WIFI_PASSWORD_MIN}..${WIFI_PASSWORD_MAX}, falling back to the default`
+    )
+    merged.wifiPassword = DEFAULT_CONFIG.wifiPassword
+  }
 
   const needWrite =
     !existsSync(CONFIG_PATH) || JSON.stringify(fileConfig) !== JSON.stringify(merged)
