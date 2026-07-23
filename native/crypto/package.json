@@ -1,0 +1,8 @@
+{
+  "name": "livi-crypto",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LIVI native ChaCha20-Poly1305 (RFC 8439) for CarPlay video frame decryption",
+  "main": "index.js",
+  "gypfile": true
+}

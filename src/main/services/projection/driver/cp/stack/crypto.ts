@@ -5,8 +5,9 @@
  * ChaCha20-Poly1305 AEAD. Node's KeyObjects wrap raw keys in DER, so this also
  * provides raw<->KeyObject helpers since the wire uses bare 32-byte keys.
  *
- * ChaCha20-Poly1305 runs on @noble/ciphers: Electron's BoringSSL exposes it only
- * as EVP_AEAD, which node:crypto's createCipheriv (EVP_CIPHER) cannot reach.
+ * ChaCha20-Poly1305 runs in the livi-crypto native addon: Electron's BoringSSL exposes
+ * it only as EVP_AEAD, which node:crypto's createCipheriv (EVP_CIPHER) cannot reach, and
+ * a JS AEAD is too slow for the CarPlay video frame rate.
  */
 
 import {
@@ -22,7 +23,17 @@ import {
   type KeyObject,
   randomBytes
 } from 'node:crypto'
-import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
+
+// ChaCha20-Poly1305 (RFC 8439) runs in the livi-crypto native addon (Monocypher-backed).
+type NativeAead = {
+  open(key: Buffer, nonce: Buffer, ct: Buffer, aad?: Buffer): Buffer | null
+  seal(key: Buffer, nonce: Buffer, pt: Buffer, aad?: Buffer): Buffer
+}
+let nativeAead: NativeAead | undefined
+function aead(): NativeAead {
+  if (nativeAead === undefined) nativeAead = require('livi-crypto') as NativeAead
+  return nativeAead
+}
 
 // DER wrappers for bare 32-byte X25519/Ed25519 keys.
 const X25519_SPKI = Buffer.from('302a300506032b656e032100', 'hex')
@@ -120,12 +131,14 @@ export function hkdfSha512(
 
 /** Seal: returns ciphertext concatenated with the 16-byte auth tag. */
 export function chachaSeal(key: Buffer, nonce: Buffer, plaintext: Buffer, aad?: Buffer): Buffer {
-  return Buffer.from(chacha20poly1305(key, nonce, aad).encrypt(plaintext))
+  return aead().seal(key, nonce, plaintext, aad)
 }
 
 /** Open: input is ciphertext concatenated with the 16-byte tag. Throws on auth failure. */
 export function chachaOpen(key: Buffer, nonce: Buffer, data: Buffer, aad?: Buffer): Buffer {
-  return Buffer.from(chacha20poly1305(key, nonce, aad).decrypt(data))
+  const out = aead().open(key, nonce, data, aad)
+  if (!out) throw new Error('chacha20poly1305: authentication failed')
+  return out
 }
 
 /** 12-byte nonce: 4 zero bytes + an 8-byte little-endian counter (AirPlay style). */
