@@ -11,8 +11,8 @@ set -euo pipefail
 #   - Installs Cage (Wayland kiosk compositor), seatd, PipeWire
 #   - Writes the udev rule and the sudoers drop-in from the templates inside the
 #     AppImage, so first launch needs no pkexec dialog
-#   - Configures tty1 autologin through a systemd getty drop-in and a Cage
-#     autostart in ~/.bash_profile
+#   - Configures tty1 autologin through a systemd getty drop-in and starts Cage
+#     from the livi-kiosk service
 #
 # Re-runnable. Refuses to run as root (sudo is used internally).
 
@@ -38,6 +38,8 @@ USER_HOME="$HOME"
 APPIMAGE_PATH="$USER_HOME/LIVI/LIVI.AppImage"
 APPIMAGE_DIR="$(dirname "$APPIMAGE_PATH")"
 GETTY_DROPIN="/etc/systemd/system/getty@tty1.service.d/livi-autologin.conf"
+KIOSK_UNIT="/etc/systemd/system/livi-kiosk.service"
+KIOSK_PAM="/etc/pam.d/livi-kiosk"
 
 echo "→ Architecture: $(uname -m) → $(livi_asset_arch).AppImage"
 
@@ -120,20 +122,55 @@ if [ "$PREVIOUS_TARGET" != "multi-user.target" ]; then
 fi
 
 KIOSK_MARKER="# LIVI-KIOSK-AUTOSTART"
-if ! grep -q "$KIOSK_MARKER" "$USER_HOME/.bash_profile" 2>/dev/null; then
-  echo "→ Wiring Cage kiosk autostart into ~/.bash_profile"
-  cat >> "$USER_HOME/.bash_profile" <<EOF
+if grep -q "$KIOSK_MARKER" "$USER_HOME/.bash_profile" 2>/dev/null; then
+  echo "→ Removing the old kiosk autostart from ~/.bash_profile"
+  cp -p "$USER_HOME/.bash_profile" "$USER_HOME/.bash_profile.livi-bak"
+  awk -v marker="$KIOSK_MARKER" '
+    $0 == marker { skip = 1; next }
+    skip && /^fi$/ { skip = 0; next }
+    !skip { print }
+  ' "$USER_HOME/.bash_profile.livi-bak" > "$USER_HOME/.bash_profile"
+fi
 
-$KIOSK_MARKER
-if [ -z "\$WAYLAND_DISPLAY" ] && [ "\$(tty)" = "/dev/tty1" ]; then
-  export ELECTRON_OZONE_PLATFORM_HINT=wayland
-  export LIVI_KIOSK=1
-  exec cage -- "$APPIMAGE_PATH" >"$APPIMAGE_DIR/LIVI.log" 2>&1
-fi
+echo "→ Writing $KIOSK_PAM"
+sudo tee "$KIOSK_PAM" >/dev/null <<'EOF'
+auth      required  pam_permit.so
+@include  common-account
+@include  common-session
 EOF
-else
-  echo "→ Kiosk autostart already present in ~/.bash_profile, leaving as is"
-fi
+
+echo "→ Writing $KIOSK_UNIT"
+CAGE_BIN="$(command -v cage || echo /usr/bin/cage)"
+SYSTEMCTL_BIN="$(command -v systemctl || echo /usr/bin/systemctl)"
+sudo tee "$KIOSK_UNIT" >/dev/null <<EOF
+[Unit]
+Description=LIVI kiosk
+After=systemd-user-sessions.service seatd.service getty@tty1.service
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+User=$USER
+PAMName=livi-kiosk
+WorkingDirectory=$USER_HOME
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty-fail
+StandardOutput=append:$APPIMAGE_DIR/LIVI.log
+StandardError=inherit
+Environment=ELECTRON_OZONE_PLATFORM_HINT=wayland
+Environment=LIVI_KIOSK=1
+ExecStart=$CAGE_BIN -s -- $APPIMAGE_PATH
+ExecStopPost=-$SYSTEMCTL_BIN start getty@tty1.service
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable livi-kiosk.service
 
 echo ""
 echo "✅ LIVI headless installation complete."
@@ -142,6 +179,7 @@ echo "Reboot to launch LIVI in kiosk mode on tty1:"
 echo "    sudo reboot"
 echo ""
 echo "To exit kiosk for debugging, switch to a different VT (Ctrl+Alt+F2)."
-echo "To disable kiosk autostart, remove the '$KIOSK_MARKER' block from ~/.bash_profile."
+echo "Shutting LIVI down from its own menu ends the service and leaves you on tty1."
+echo "To disable kiosk autostart, run 'sudo systemctl disable livi-kiosk.service'."
 echo "To disable autologin, remove $GETTY_DROPIN and run 'sudo systemctl daemon-reload'."
 echo "To get a graphical login back, run 'sudo systemctl set-default graphical.target'."

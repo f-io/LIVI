@@ -107,9 +107,9 @@ The script asks which build to install, picks the AppImage matching this machine
 2. writes the udev rule and the sudoers drop-in from the templates inside the AppImage, so the first launch needs no dialog
 3. asks whether an Apple MFi coprocessor is wired up, and if so enables I²C for it
 4. asks whether to install the LIVI boot splash
-5. configures tty1 autologin and starts LIVI under Cage on boot
+5. configures tty1 autologin and installs the `livi-kiosk` service, which starts LIVI under Cage on boot
 
-Reboot when it finishes. LIVI then runs fullscreen on tty1 and logs to `~/LIVI/LIVI.log`, overwritten on every start. To leave the kiosk for debugging, switch to another virtual terminal with Ctrl+Alt+F2.
+Reboot when it finishes. LIVI then runs fullscreen on tty1 and logs to `~/LIVI/LIVI.log`. To leave the kiosk for debugging, switch to another virtual terminal with Ctrl+Alt+F2. Shutting LIVI down from its own menu ends the service and hands tty1 back to the login shell, so a reboot brings the kiosk back.
 
 The prompts can be skipped for an unattended run:
 
