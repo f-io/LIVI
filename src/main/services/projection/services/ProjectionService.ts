@@ -212,6 +212,7 @@ export class ProjectionService {
     getDongleConnectedMac: () => this.dongleConnectedMac,
     getDongleDevList: () => this.dongleDevList,
     emit: (p) => this.emitProjectionEvent(p),
+    autoConnect: () => this.config.autoConn !== false,
     pushReconnectTargets: (targets) => {
       this.drivers
         .getCpManager()
@@ -1405,6 +1406,7 @@ export class ProjectionService {
 
   public applyConfigPatch(patch: Partial<Config>): void {
     this.config = { ...this.config, ...patch }
+    this.deviceController.resendReconnectTargets()
     this.syncHelperSupervisor()
   }
 

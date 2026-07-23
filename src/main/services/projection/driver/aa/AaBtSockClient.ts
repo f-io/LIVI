@@ -87,9 +87,10 @@ export class AaBtSockClient {
     return resp.devices
   }
 
-  // Initiate a BT connection to the given MAC (BlueZ Device1.Connect)
-  async connect(mac: string, timeoutMs = 32000): Promise<ActionResponse> {
-    return (await this.request(`connect ${mac}`, timeoutMs)) as ActionResponse
+  // Initiate a BT connection to the given MAC (BlueZ Device1.ConnectProfile).
+  async connect(mac: string, timeoutMs = 32000, uuid?: string): Promise<ActionResponse> {
+    const line = uuid ? `connect ${mac} ${uuid}` : `connect ${mac}`
+    return (await this.request(line, timeoutMs)) as ActionResponse
   }
 
   // Connect all auto-connect profiles (A2DP + HFP + HSP)

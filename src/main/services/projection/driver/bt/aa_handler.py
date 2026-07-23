@@ -828,8 +828,8 @@ def _device_call(path: str, iface: str, method: str,
     return False, (r.stderr or r.stdout).strip()
 
 
-def _device_connect(mac: str) -> tuple[bool, str]:
-    """Wake the phone via ConnectProfile(HSP_AG_UUID), with async retry."""
+def _device_connect(mac: str, uuid: str = HSP_AG_UUID) -> tuple[bool, str]:
+    """Wake the phone via ConnectProfile, with async retry."""
     target = mac.upper()
     max_attempts = 5
     interval_s = 3.0
@@ -837,18 +837,18 @@ def _device_connect(mac: str) -> tuple[bool, str]:
     def _attempt() -> tuple[bool, str]:
         return _device_call(
             _device_path(mac), "org.bluez.Device1", "ConnectProfile",
-            "s", HSP_AG_UUID,
+            "s", uuid,
             timeout=10.0,
         )
 
-    dprint(f"[aa-bt] wake-up → {mac} (HSP_AG, up to {max_attempts} attempts)",
+    dprint(f"[aa-bt] wake-up → {mac} (uuid={uuid}, up to {max_attempts} attempts)",
           flush=True)
     ok, err = _attempt()
 
     def _retry_loop() -> None:
         for attempt in range(2, max_attempts + 1):
             time.sleep(interval_s)
-            if _last_phone_mac.upper() == target:
+            if uuid == HSP_AG_UUID and _last_phone_mac.upper() == target:
                 dprint(f"[aa-bt] wake-up: AA RFCOMM up after {attempt - 1} retr"
                       f"{'y' if attempt - 1 == 1 else 'ies'}", flush=True)
                 return
@@ -969,7 +969,8 @@ def _start_event_server() -> None:
             if cmd == "connect":
                 if not arg:
                     return {"ok": False, "error": "connect requires a MAC argument"}
-                ok, err = _device_connect(arg)
+                parts = arg.split()
+                ok, err = _device_connect(*parts[:2])
                 return {"ok": ok} if ok else {"ok": False, "error": err}
             if cmd == "connect-full":
                 if not arg:

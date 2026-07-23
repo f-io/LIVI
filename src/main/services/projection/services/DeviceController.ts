@@ -15,6 +15,7 @@ export type DeviceControllerDeps = {
   getDongleConnectedMac: () => string
   getDongleDevList: () => DevListEntry[]
   emit: (payload: ProjectionEvent) => void
+  autoConnect: () => boolean
   pushReconnectTargets: (targets: Record<string, string | null>) => void
   pushWiredPhones: (ids: string[]) => void
 }
@@ -22,6 +23,13 @@ export type DeviceControllerDeps = {
 // The phone's iAP service UUID, used as the CarPlay reconnect ConnectProfile target.
 const IAP_PROFILE_UUID = '00000000-deca-fade-deca-deafdecacafe'
 const HSP_AG_UUID = '00001112-0000-1000-8000-00805f9b34fb'
+
+/** The profile a phone of this protocol is woken on. */
+function wakeUuid(protocol: string | undefined): string | null {
+  if (protocol === 'carplay') return IAP_PROFILE_UUID
+  if (protocol === 'androidauto') return HSP_AG_UUID
+  return null
+}
 
 // Builds the unified device-picker view (native registry + dongle list) and
 // serves the picker commands: select routes to a session, forget unpairs BT.
@@ -72,8 +80,22 @@ export class DeviceController {
       : { btMac: id, wifiMac: id, usbUdid: id, instanceId: id }
     const s = this.deps.sessions().byDevice(ids)
     console.log(`[DeviceController] selectDevice ${id} -> session #${s?.index ?? 'none'}`)
-    if (!s) return { ok: false }
+    if (!s) return this.wakeDevice(e?.btMac ?? (id.includes(':') ? id : undefined), e?.protocol)
     this.deps.sessions().activate(s.index)
+    return { ok: true }
+  }
+
+  /** Wake a known phone that has no session yet. This goes past the reconnect worker
+   *  and its target list, so picking a device by hand works with autoconnect off. */
+  private wakeDevice(btMac: string | undefined, protocol: string | undefined): { ok: boolean } {
+    if (!btMac) return { ok: false }
+    const uuid = wakeUuid(protocol)
+    console.log(`[DeviceController] wake ${btMac} (${protocol ?? 'unknown protocol'})`)
+    void this.deps.aaBtSock
+      .connect(btMac, undefined, uuid ?? undefined)
+      .catch((err) =>
+        console.warn(`[DeviceController] wake ${btMac} failed: ${(err as Error).message}`)
+      )
     return { ok: true }
   }
 
@@ -112,7 +134,7 @@ export class DeviceController {
   private reconcileReconnectTargets(force = false): void {
     const reg = this.deps.deviceRegistry
     const targets: Record<string, string | null> = {}
-    for (const e of reg.list()) {
+    for (const e of this.deps.autoConnect() ? reg.list() : []) {
       if (!e.btMac || !(e.protocol || e.name)) continue
       const sess = this.deps.sessions().byDevice({
         btMac: e.btMac,
@@ -122,12 +144,7 @@ export class DeviceController {
         ip: e.currentIp
       })
       if (sess) continue
-      targets[e.btMac.toUpperCase()] =
-        e.protocol === 'carplay'
-          ? IAP_PROFILE_UUID
-          : e.protocol === 'androidauto'
-            ? HSP_AG_UUID
-            : null
+      targets[e.btMac.toUpperCase()] = wakeUuid(e.protocol)
     }
     const sig = Object.keys(targets)
       .sort()
