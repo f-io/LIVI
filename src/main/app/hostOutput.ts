@@ -44,8 +44,8 @@ export function listHostOutputModes(): string[] {
 
 /**
  * Put the panel into the given mode, given as "WIDTHxHEIGHT". An empty mode leaves the
- * display at whatever it came up in. A mode the panel does not offer is refused by
- * wlr-randr and leaves it untouched.
+ * display at whatever it came up in. Applying a mode the output does not list leaves the
+ * host compositor unable to test its swapchain, so the mode is checked before it is sent.
  */
 export function applyHostOutputMode(mode: string): void {
   if (!/^\d+x\d+$/.test(mode)) return
@@ -54,8 +54,16 @@ export function applyHostOutputMode(mode: string): void {
     console.warn('[hostOutput] no host output found, leaving the panel at its own mode')
     return
   }
+  const modes = listHostOutputModes()
+  if (!modes.includes(mode)) {
+    console.warn(
+      `[hostOutput] ${name} does not offer ${mode}, leaving it as it is ` +
+        `(offered: ${modes.join(', ') || 'none'})`
+    )
+    return
+  }
   if (run(['--output', name, '--mode', mode]) === null) {
-    console.warn(`[hostOutput] ${name} does not take ${mode}, leaving it as it is`)
+    console.warn(`[hostOutput] ${name} refused ${mode}, leaving it as it is`)
     return
   }
   console.log(`[hostOutput] ${name} → ${mode}`)
