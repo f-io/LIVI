@@ -266,6 +266,10 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
       this._emitDisconnected()
     })
     stack.on('video-codec', (codec: string) => this.emit('video-codec', codec))
+    stack.on('video-config', (codecData: Buffer) => this.emit('video-config', codecData))
+    stack.on('cluster-video-config', (codecData: Buffer) =>
+      this.emit('cluster-video-config', codecData)
+    )
     stack.on('audio-frame', (pcm: Buffer, prof: CpStreamProfile) => {
       this.emit('message', buildCpAudioData(pcm, prof.sampleRate, prof.channels, prof.audioType))
     })

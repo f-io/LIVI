@@ -13,8 +13,8 @@ function crashLogPath(): string {
   return path.join(dir, 'livi-gst-host-crash.log')
 }
 
-// Frame: [uint32 LE len][uint8 op][uint32 LE id][rest]. op 1 create(codec), 2 data, 3 stop,
-// 4 setGamma (5 float64).
+// Frame: [uint32 LE len][uint8 op][uint32 LE id][rest]. op 1 create([1B codecLen][codec]
+// [codec_data]), 2 data, 3 stop, 4 setGamma (5 float64).
 function frame(op: number, id: number, rest: Buffer): Buffer {
   const head = Buffer.allocUnsafe(9)
   head.writeUInt32LE(5 + rest.length, 0)
@@ -110,8 +110,12 @@ class GstHost {
     else this.queue.push(buf)
   }
 
-  createPlayer(id: number, codec: string): void {
-    this.send(frame(1, id, Buffer.from(codec, 'utf8')))
+  createPlayer(id: number, codec: string, codecData?: Buffer): void {
+    const c = Buffer.from(codec, 'utf8')
+    const head = Buffer.from([c.length])
+    const rest =
+      codecData && codecData.length ? Buffer.concat([head, c, codecData]) : Buffer.concat([head, c])
+    this.send(frame(1, id, rest))
   }
 
   pushBuffer(id: number, nal: Buffer): void {

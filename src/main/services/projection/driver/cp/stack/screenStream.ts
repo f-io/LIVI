@@ -4,14 +4,15 @@
  * After SETUP the phone opens a TCP connection to the port we advertised. Each
  * message is a 128-byte AirPlayScreenHeader followed by a body: VideoConfig
  * (avcC/hvcC) or VideoFrame (length-prefixed NALUs), ChaCha20-Poly1305 encrypted
- * with the header as AAD. We decrypt, rewrite to Annex-B, and emit it for the
- * gst-host pipeline. No frame data is decoded here.
+ * with the header as AAD. The config is emitted as codec_data and each frame is
+ * decrypted and emitted verbatim (length-prefixed); the pipeline parser handles the
+ * framing, so no frame data is decoded or rewritten here.
  */
 
 import { EventEmitter } from 'node:events'
 import net from 'node:net'
 import { chachaOpen, nonce64 } from './crypto'
-import { avccFrameToAnnexB, configToAnnexB } from './nalu'
+import { configToCodecData } from './nalu'
 
 const HEADER_LEN = 128
 const OP_VIDEO_FRAME = 0
@@ -22,10 +23,7 @@ export class ScreenStream extends EventEmitter {
   private _server: net.Server | null = null
   private _counter = 0n
 
-  constructor(
-    private codec: 'h264' | 'h265',
-    private readonly key: Buffer
-  ) {
+  constructor(private readonly key: Buffer) {
     super()
   }
 
@@ -79,23 +77,24 @@ export class ScreenStream extends EventEmitter {
     const opcode = header[4]
 
     if (opcode === OP_VIDEO_CONFIG) {
-      // VideoConfig is sent in the clear (the avcC/hvcC atom); detect the real
-      // codec from it (the phone may pick H.264 even when H.265 is offered).
-      const { codec, annexB } = configToAnnexB(body)
-      this.codec = codec
+      // VideoConfig is sent in the clear (the avcC/hvcC atom); detect the real codec from
+      // it (the phone may pick H.264 even when H.265 is offered) and hand the record on as
+      // codec_data for the pipeline parser.
+      const { codec, codecData } = configToCodecData(body)
       this.emit('codec', codec)
-      console.log(`[cpScreen] video config (${codec}, ${annexB.length}B annexB)`)
-      this.emit('config', annexB)
+      console.log(`[cpScreen] video config (${codec}, ${codecData.length}B codec_data)`)
+      this.emit('config', codecData)
     } else if (opcode === OP_VIDEO_FRAME) {
-      // VideoFrame is ChaCha20-Poly1305 sealed with the 128-byte header as AAD;
-      // the nonce is an 8-byte LE counter that advances only on decoded frames.
-      let payload = body
+      // VideoFrame is ChaCha20-Poly1305 sealed with the 128-byte header as AAD; the nonce
+      // is an 8-byte LE counter that advances only on decoded frames. Emit the decrypted
+      // length-prefixed NALs verbatim; the parser reframes them.
       if (body.length >= 16) {
-        payload = chachaOpen(this.key, nonce64(this._counter), body, header)
+        const payload = chachaOpen(this.key, nonce64(this._counter), body, header)
         this._counter++
+        this.emit('frame', payload)
+      } else {
+        this.emit('frame', body)
       }
-      const annexB = avccFrameToAnnexB(payload)
-      this.emit('frame', annexB)
     }
     // KeepAlive / ForceKeyFrame / Ignore carry no displayable payload.
   }

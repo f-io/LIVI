@@ -17,6 +17,7 @@ import {
 } from '../../audio/AudioDeviceEnumerator'
 import { StatusFileWriter } from '../../status/StatusFileWriter'
 import { GstVideo, type GstVideoCodec, probeGstCodecs } from '../../video/GstVideo'
+import { classifyNal } from '../../video/keyframe'
 import { AaBtSockClient } from '../driver/aa/AaBtSockClient'
 import type { AaSession } from '../driver/aa/AaSession'
 import type { CpManager } from '../driver/cp/CpManager'
@@ -162,6 +163,10 @@ export class ProjectionService {
   private lastVideoHeight?: number
   private gstVideo: GstVideo | null = null
   private gstVideoCodec: GstVideoCodec = 'h264'
+  private gstVideoCodecData: Buffer | null = null
+  private gstVideoClusterCodecData: Buffer | null = null
+  private mainAwaitingKeyframe = true
+  private clusterAwaitingKeyframe = true
   private gstVideoVisible = true
   private videoCrop: {
     cropL: number
@@ -429,9 +434,13 @@ export class ProjectionService {
     this.gstVideo?.dispose()
     this.gstVideo = null
     this.gstVideoCodec = 'h264'
+    this.gstVideoCodecData = null
+    this.mainAwaitingKeyframe = true
     for (const plane of this.gstVideoClusters.values()) plane.dispose()
     this.gstVideoClusters.clear()
     this.gstVideoClusterCodec = 'h264'
+    this.gstVideoClusterCodecData = null
+    this.clusterAwaitingKeyframe = true
   }
 
   // Hydration
@@ -938,6 +947,24 @@ export class ProjectionService {
     wc.send('projection-event', { type: 'video-codec', payload: { codec } })
   }
 
+  // 'video-config' — CarPlay's codec_data record, in before the first frame so the plane is
+  // created for a length-prefixed source. Applied live if the plane already exists.
+  private readonly onDriverVideoConfig = (codecData: Buffer): void => {
+    if (!this.gstVideoCodecData || !this.gstVideoCodecData.equals(codecData)) {
+      this.mainAwaitingKeyframe = true
+    }
+    this.gstVideoCodecData = codecData
+    this.gstVideo?.setCodecData(codecData)
+  }
+
+  private readonly onDriverClusterVideoConfig = (codecData: Buffer): void => {
+    if (!this.gstVideoClusterCodecData || !this.gstVideoClusterCodecData.equals(codecData)) {
+      this.clusterAwaitingKeyframe = true
+    }
+    this.gstVideoClusterCodecData = codecData
+    for (const plane of this.gstVideoClusters.values()) plane.setCodecData(codecData)
+  }
+
   private attachCodecCapture(d: IPhoneDriver): void {
     d.on('video-codec', (c: GstVideoCodec) => {
       this.lastMainCodecByDriver.set(d, c)
@@ -954,6 +981,14 @@ export class ProjectionService {
       this.sessions.dump(
         `cluster-codec ${c} → ${s ? `stored on #${s.index}` : 'NO session (map only)'}`
       )
+    })
+    d.on('video-config', (cd: Buffer) => {
+      const s = this.sessions.byDriver(d)
+      if (s) s.video.main.codecData = cd
+    })
+    d.on('cluster-video-config', (cd: Buffer) => {
+      const s = this.sessions.byDriver(d)
+      if (s) s.video.cluster.codecData = cd
     })
   }
 
@@ -996,9 +1031,15 @@ export class ProjectionService {
   private pushGstVideo(nal: Buffer): void {
     const wc = this.webContents
     if (!wc || wc.isDestroyed?.()) return
+    if (this.mainAwaitingKeyframe) {
+      const kind = classifyNal(nal, this.gstVideoCodec, this.gstVideoCodecData !== null)
+      if (kind === 'delta') return
+      if (kind === 'keyframe') this.mainAwaitingKeyframe = false
+    }
     if (!this.gstVideo) {
       this.gstVideo = new GstVideo(wc)
       this.gstVideo.setVisible(this.gstVideoVisible)
+      if (this.gstVideoCodecData) this.gstVideo.setCodecData(this.gstVideoCodecData)
       this.applyVideoCrop()
       this.emitProjectionEvent({ type: 'projection', shown: true })
     }
@@ -1065,6 +1106,15 @@ export class ProjectionService {
     // Focus-stopped: ignore in-flight tail frames. Safe for the decoder because the
     // resume (PROJECTED indication) always restarts the stream at a fresh keyframe.
     if (this.clusterStreamActive === false) return
+    if (this.clusterAwaitingKeyframe) {
+      const kind = classifyNal(
+        nal,
+        this.gstVideoClusterCodec,
+        this.gstVideoClusterCodecData !== null
+      )
+      if (kind === 'delta') return
+      if (kind === 'keyframe') this.clusterAwaitingKeyframe = false
+    }
     // one plane per configured screen, all fed the same cluster stream
     for (const screen of clusterTargetScreens(this.config)) {
       let plane = this.gstVideoClusters.get(screen)
@@ -1073,6 +1123,7 @@ export class ProjectionService {
         if (!wc || wc.isDestroyed?.()) continue
         plane = new GstVideo(wc, `cluster-${screen}`, screen)
         plane.setVisible(this.clusterPlaneVisible(screen))
+        if (this.gstVideoClusterCodecData) plane.setCodecData(this.gstVideoClusterCodecData)
         this.applyClusterCrop(plane) // fit to the configured cluster-stream AR
         this.gstVideoClusters.set(screen, plane)
       }
@@ -1152,7 +1203,9 @@ export class ProjectionService {
         onFailure: () => this.onDriverFailure(),
         onTargetedConnect: () => this.onDriverTargetedConnect(),
         onVideoCodec: (c) => this.onDriverVideoCodec(c),
-        onClusterVideoCodec: (c) => this.onDriverClusterVideoCodec(c)
+        onClusterVideoCodec: (c) => this.onDriverClusterVideoCodec(c),
+        onVideoConfig: (cd) => this.onDriverVideoConfig(cd),
+        onClusterVideoConfig: (cd) => this.onDriverClusterVideoConfig(cd)
       },
       onAaConnected: (s) => this.onAaConnected(s as AaSession),
       onAaDisconnected: (s) => this.onAaDisconnected(s as AaSession),
@@ -2161,6 +2214,9 @@ export class ProjectionService {
       const cc = next.video.cluster.codec ?? this.lastClusterCodecByDriver.get(next.driver)
       if (mc) this.gstVideoCodec = mc
       if (cc) this.gstVideoClusterCodec = cc
+      // Restore the length-prefixed codec_data for this session (null for byte-stream sources).
+      this.gstVideoCodecData = next.video.main.codecData ?? null
+      this.gstVideoClusterCodecData = next.video.cluster.codecData ?? null
       console.log(
         `[SESSIONS] codec-restore #${next.index} ${next.protocol}: session=${next.video.main.codec ?? '-'} map=${this.lastMainCodecByDriver.get(next.driver) ?? '-'} → gstVideoCodec=${this.gstVideoCodec}`
       )

@@ -1009,12 +1009,13 @@ export class CpStack extends EventEmitter {
       32
     )
     const codec = this.cfg.hevc ? 'h265' : 'h264'
-    const screen = new ScreenStream(codec, key)
+    const screen = new ScreenStream(key)
     const codecEvent = isCluster ? 'cluster-video-codec' : 'video-codec'
+    const configEvent = isCluster ? 'cluster-video-config' : 'video-config'
     const frameEvent = isCluster ? 'cluster-video-frame' : 'video-frame'
     let firstFrame = true
-    // The stream announces its real codec from the config atom; emit it once,
-    // before any frame, so gst-host builds the matching pipeline.
+    // The stream announces its real codec from the config atom; emit it once, before any
+    // frame, so gst-host builds the matching pipeline.
     screen.on('codec', (c: 'h264' | 'h265') => {
       if (isCluster) {
         if (!session.clusterCodecEmitted) {
@@ -1026,7 +1027,9 @@ export class CpStack extends EventEmitter {
         session.codecEmitted = true
       }
     })
-    const forward = (annexB: Buffer): void => {
+    // config carries the codec_data record; frames carry the decrypted length-prefixed NALs.
+    screen.on('config', (codecData: Buffer) => this.emit(configEvent, codecData))
+    screen.on('frame', (raw: Buffer): void => {
       if (firstFrame) {
         firstFrame = false
         if (!isCluster && !session.mainStreamReady) {
@@ -1034,10 +1037,8 @@ export class CpStack extends EventEmitter {
           if (this._clusterWantActive) this._activateClusterStream(session)
         }
       }
-      this.emit(frameEvent, annexB)
-    }
-    screen.on('config', forward)
-    screen.on('frame', forward)
+      this.emit(frameEvent, raw)
+    })
     const port = await screen.listen()
     if (isCluster) session.clusterScreen = screen
     else session.screen = screen

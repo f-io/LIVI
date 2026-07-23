@@ -14,6 +14,8 @@ export type DriverEventHandlers = {
   onTargetedConnect: (...args: unknown[]) => void
   onVideoCodec: (codec: 'h264' | 'h265' | 'vp9' | 'av1') => void
   onClusterVideoCodec: (codec: 'h264' | 'h265' | 'vp9' | 'av1') => void
+  onVideoConfig: (codecData: Buffer) => void
+  onClusterVideoConfig: (codecData: Buffer) => void
 }
 
 export type AaConfigSeed = {
@@ -240,6 +242,8 @@ export class ProjectionDriverManager {
     d.on('targeted-connect-dispatched', handlers.onTargetedConnect)
     d.on('video-codec', handlers.onVideoCodec)
     d.on('cluster-video-codec', handlers.onClusterVideoCodec)
+    d.on('video-config', handlers.onVideoConfig)
+    d.on('cluster-video-config', handlers.onClusterVideoConfig)
   }
 
   private detachListeners(d: IPhoneDriver): void {
@@ -249,6 +253,8 @@ export class ProjectionDriverManager {
     d.off('targeted-connect-dispatched', handlers.onTargetedConnect)
     d.off('video-codec', handlers.onVideoCodec)
     d.off('cluster-video-codec', handlers.onClusterVideoCodec)
+    d.off('video-config', handlers.onVideoConfig)
+    d.off('cluster-video-config', handlers.onClusterVideoConfig)
   }
 
   private attachMetaListener(d: IPhoneDriver): void {

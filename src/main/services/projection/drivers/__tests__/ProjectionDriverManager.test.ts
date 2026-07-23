@@ -97,7 +97,9 @@ function buildDeps(over: Partial<DriverManagerDeps> = {}): {
     onFailure: vi.fn(),
     onTargetedConnect: vi.fn(),
     onVideoCodec: vi.fn(),
-    onClusterVideoCodec: vi.fn()
+    onClusterVideoCodec: vi.fn(),
+    onVideoConfig: vi.fn(),
+    onClusterVideoConfig: vi.fn()
   }
   const onAaConnected = vi.fn()
   const onAaDisconnected = vi.fn()

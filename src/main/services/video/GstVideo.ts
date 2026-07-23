@@ -283,7 +283,7 @@ export type GstCodecProbe = Record<GstVideoCodec, GstCodecSupport>
 interface GstAddon {
   version(): string
   probeCodecs(): GstCodecProbe
-  createPlayer(codec: string, windowHandle: Buffer): unknown
+  createPlayer(codec: string, windowHandle: Buffer, codecData?: Buffer): unknown
   start(player: unknown): void
   pushBuffer(player: unknown, buffer: Buffer): boolean
   setVisible(player: unknown, visible: boolean): void
@@ -419,6 +419,9 @@ export class GstVideo {
   private pendingBuffers: Buffer[] = []
   private player: unknown = null
   private codec: GstVideoCodec | null = null
+  // hvcC/avcC record for a length-prefixed source (CarPlay). When set, the pipeline reads
+  // codec_data and the parser converts, so frames are never rewritten to Annex-B.
+  private codecData: Buffer | null = null
   private visible = true
   // AA content region inside the decoded tier (so the user-chosen AR fills the display)
   private region: {
@@ -465,7 +468,7 @@ export class GstVideo {
       compositorControl.serializedClaim(this.role, () => {
         if (this.setupGen !== gen) return
         this.claiming = false
-        gstHost.createPlayer(this.id, codec)
+        gstHost.createPlayer(this.id, codec, this.codecData ?? undefined)
         this.codec = codec
         this.started = true
         this.applyGamma()
@@ -481,7 +484,7 @@ export class GstVideo {
     const handle = this.windowHandle()
     if (!handle) return
     compositorControl.claim(this.role)
-    this.player = a.createPlayer(codec, handle)
+    this.player = a.createPlayer(codec, handle, this.codecData ?? undefined)
     this.codec = codec
     if (this.player) {
       a.start(this.player)
@@ -506,6 +509,14 @@ export class GstVideo {
     if (!a) return
     this.ensure(codec)
     if (this.player) a.pushBuffer(this.player, nal)
+  }
+
+  // Set the length-prefixed codec_data (CarPlay hvcC/avcC). Arrives before the first frame,
+  // so it is in place when the pipeline is created. A later change recreates the pipeline.
+  setCodecData(codecData: Buffer): void {
+    if (this.codecData && this.codecData.equals(codecData)) return
+    this.codecData = codecData
+    if (this.started || this.claiming) this.dispose()
   }
 
   // Show/hide the video surface as the user navigates in/out of projection
