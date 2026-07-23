@@ -38,7 +38,7 @@ LIVI talks to the chip directly. Configuration (`config.json`):
 | `carPlayMfiI2cBus`    | `2`     | I²C bus number the coprocessor is on |
 | `carPlayMfiPowerGpio` | `21`    | GPIO that powers the coprocessor     |
 
-Without a coprocessor, native CarPlay is unavailable. Dongle-based CarPlay (the dongle carries its own auth chip) and all Android Auto paths work regardless.
+Without a coprocessor, native CarPlay is unavailable. Dongle-based CarPlay and all Android Auto paths work regardless.
 
 ### Example Rasperry Pi config
 ```bash
@@ -80,18 +80,9 @@ chmod +x install.sh
 ./install.sh
 ```
 
-The `install.sh` script performs the following tasks:
-
-1. checks for required tools: curl, xdg-user-dir and pkexec
-2. downloads the latest LIVI AppImage
-3. creates an autostart entry so the application launches automatically on boot
-4. creates a desktop shortcut for easy access
-
-On first launch, LIVI detects if the udev rule for USB access is missing and prompts you to install it. The rule grants USB access to connected Android phones (wired Android Auto), iPhones (wired CarPlay) and to the USB dongle.
-
 _This install script is not actively tested on other Linux distributions._
 
-## Headless (kiosk)
+## Headless
 
 For a host with no desktop session. Written for Raspberry Pi OS Lite, and it should work the same on Debian or any other apt-based headless Linux, on arm64 and x86_64 alike.
 
@@ -101,23 +92,8 @@ chmod +x install.sh
 ./install.sh
 ```
 
-The script asks which build to install, picks the AppImage matching this machine's architecture, and then:
+Reboot when it finishes. LIVI then runs fullscreen on tty1 and logs to `~/LIVI/LIVI.log`. Shutting LIVI down from its own menu ends the service and hands tty1 back to the login shell, so a reboot brings the kiosk back.
 
-1. installs Cage (the Wayland kiosk compositor), seatd and PipeWire
-2. writes the udev rule and the sudoers drop-in from the templates inside the AppImage, so the first launch needs no dialog
-3. asks whether an Apple MFi coprocessor is wired up, and if so enables I²C for it
-4. asks whether to install the LIVI boot splash
-5. configures tty1 autologin and installs the `livi-kiosk` service, which starts LIVI under Cage on boot
-
-Reboot when it finishes. LIVI then runs fullscreen on tty1 and logs to `~/LIVI/LIVI.log`. To leave the kiosk for debugging, switch to another virtual terminal with Ctrl+Alt+F2. Shutting LIVI down from its own menu ends the service and hands tty1 back to the login shell, so a reboot brings the kiosk back.
-
-The prompts can be skipped for an unattended run:
-
-```bash
-LIVI_CHANNEL=nightly LIVI_MFI=no LIVI_SPLASH=no ./install.sh
-```
-
-`LIVI_CHANNEL` takes `release` (the default) or `nightly`, the rolling build of `main`. `LIVI_MFI` and `LIVI_SPLASH` take `yes` or `no`.
 
 > [!NOTE]
 > The script sets the boot target to `multi-user.target` so the kiosk owns the screen. On a host that boots into a desktop, that disables the graphical login. Undo it with `sudo systemctl set-default graphical.target`.
@@ -130,11 +106,7 @@ This AppImage has been tested on Debian Trixie (13) with Wayland, Fedora 44 (GNO
 chmod +x LIVI-*-x86_64.AppImage
 ```
 
-On first launch, LIVI detects if the udev rule for USB access is missing and prompts you to install it. The rule grants USB access to connected Android phones (wired Android Auto), iPhones (wired CarPlay) and to the USB dongle.
-
 > **Hardware video decode (optional):** LIVI uses the system VA-API driver for GPU video decode (it is not bundled, since it must match your GPU and kernel). Most desktops ship it, a minimal install may not. Without it LIVI still works via software decode. For HW decode install the driver for your GPU and verify with `vainfo`: `i965-va-driver` (older Intel, e.g. Broadwell), `intel-media-va-driver` (Gen9+ Intel), `mesa-va-drivers` (AMD).
-
-> **Ubuntu / Kubuntu users:** On Ubuntu 24.04 AppArmor blocks the Chromium sandbox for AppImages, start it with `--no-sandbox` as a workaround. Ubuntu 24.10 and newer run the AppImage out of the box.
 
 ## Mac (arm64)
 
@@ -149,7 +121,6 @@ In that case:
 4. Confirm the dialog
 
 After this, the app will launch normally and future updates will work without additional steps.
-
 
 ## Windows (x64)
 
@@ -180,14 +151,15 @@ Steps:
 
 ### System Requirements (build)
 
-Make sure the following packages and tools are installed on your system before building:
+Make sure the following packages and tools are installed on your system before building. The lists below cover both building and running, including everything native CarPlay needs:
 
 - **Node.js 24.x** (with `corepack` for `pnpm`)
 - **Python 3.x** (for native module builds via `node-gyp`)
 - **build-essential** (Linux: includes `gcc`, `g++`, `make`, etc.)
 - **libgstreamer1.0-dev** + **libgstreamer-plugins-base1.0-dev** (required to build the `gst-video` addon)
 - **meson** (≥ 1.4), **ninja**, **pkg-config**, **bison**, **cmake** and the wlroots/EGL stack: **libwayland-dev**, **wayland-protocols**, **libxkbcommon-dev** (≥ 1.8.0), **libpixman-1-dev**, **libcairo2-dev**, **libegl-dev** / **libgles-dev** / **libgbm-dev** / **libffi-dev** / **libexpat1-dev** (Linux only: to build the embedded wlroots compositor)
-- **fuse** (required to run AppImages)
+- **fuse3** (required to run AppImages)
+- runtime packages for native CarPlay and wireless Android Auto: **bluez**, **hostapd**, **dnsmasq-base**, **iw**, **rfkill**, **avahi-daemon**, **avahi-utils**, **pulseaudio-utils**, **python3-dbus**, **python3-gi**, **python3-avahi**, **python3-smbus2**, and **pymobiledevice3** from pip for wired CarPlay
 
 On Debian/Ubuntu/Raspberry Pi OS, install everything with:
 
@@ -197,12 +169,22 @@ sudo apt-get install -y git build-essential python3 python3-dev python3-pip \
   pkg-config bison ninja-build cmake \
   libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
   libegl-dev libgles-dev libgbm-dev libffi-dev libexpat1-dev \
-  libwayland-dev wayland-protocols libxkbcommon-dev libpixman-1-dev libcairo2-dev
-pip3 install --user --break-system-packages 'meson>=1.4'
+  libwayland-dev wayland-protocols libxkbcommon-dev libpixman-1-dev libcairo2-dev \
+  fuse3 bluez hostapd dnsmasq-base iw rfkill avahi-daemon avahi-utils pulseaudio-utils \
+  python3-dbus python3-gi python3-avahi python3-smbus2
+pip3 install --user --break-system-packages 'meson>=1.4' pymobiledevice3
 curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt-get install -y nodejs
 sudo corepack enable
 ```
+
+On a Raspberry Pi, the MFi coprocessor is powered from a GPIO, which needs one more package:
+
+```bash
+sudo apt-get install -y python3-lgpio python3-rpi-lgpio
+```
+
+Raspberry Pi OS ships both already, a plain Debian on a Pi does not.
 
 On Fedora, install everything with:
 
@@ -214,12 +196,17 @@ sudo dnf install -y git gcc gcc-c++ make python3 python3-devel \
   wlroots-devel wayland-devel wayland-protocols-devel libxkbcommon-devel \
   pixman-devel cairo-devel \
   mesa-libEGL-devel mesa-libGLES-devel mesa-libgbm-devel libffi-devel expat-devel \
-  fuse fuse-libs
+  fuse3 fuse3-libs \
+  bluez hostapd dnsmasq iw avahi avahi-tools pulseaudio-utils \
+  python3-dbus python3-gobject
+pip3 install --user pymobiledevice3 smbus2
 curl -fsSL https://rpm.nodesource.com/setup_24.x | sudo bash -
 sudo dnf install -y nodejs
 sudo corepack enable
 ```
 
+
+Fedora has no `rfkill` package, the command comes with `util-linux`, and neither `python3-avahi` nor `python3-smbus2` exist there. `smbus2` therefore comes from pip above. Wireless CarPlay therefore does not run on Fedora at the moment, because LIVI still reaches for that module to publish its service and switches discovery off when it is missing. The daemon and its D-Bus interface are present, so this is simply not implemented yet on our side rather than a limit of the platform. Wired CarPlay and Android Auto are unaffected.
 
 On macOS, the `gst-video` addon links against the **GStreamer.framework**. Install
 both the runtime and development packages (matching versions) from
