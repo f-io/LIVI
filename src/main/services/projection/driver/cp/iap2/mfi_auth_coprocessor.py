@@ -77,12 +77,15 @@ def _power_on(soc):
     else:
         raise RuntimeError(f"unknown SoC type: {soc}")
     _powered_soc = soc
+    print(f"[mfi] power on  gpio={CHIP_POWER} soc={soc}", flush=True)
     time.sleep(0.1)
 
 
 def power_off():
     """Drop the coprocessor's supply. Called when the helper shuts down."""
     global _gpio_handle, _powered_soc, bus
+    if _powered_soc is not None:
+        print(f"[mfi] power off gpio={CHIP_POWER} soc={_powered_soc}", flush=True)
     if _powered_soc == "BCM2712" and _gpio_handle is not None:
         import lgpio
 
