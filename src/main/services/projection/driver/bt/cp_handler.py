@@ -691,7 +691,15 @@ class CpHandler:
                 ),
                 wireless_car_play_transport_component=wl_comp,
                 route_guidance_display_component=[
-                    RouteGuidanceDisplayComponent(id=Uint16(0), name=NAME),
+                    RouteGuidanceDisplayComponent(
+                        id=Uint16(0),
+                        name=NAME,
+                        max_current_road_name_length=Uint16(128),
+                        max_destination_name_length=Uint16(128),
+                        max_after_maneuver_road_name_length=Uint16(128),
+                        max_maneuver_description_length=Uint16(128),
+                        max_guidance_maneuver_storage_capacity=Uint16(0),
+                    ),
                 ],
             )
             for key in exclude:

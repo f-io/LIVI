@@ -37,6 +37,7 @@ export interface PersistedNavigationPayload {
     appName?: string
     destinationName?: string
     roadName?: string
+    afterRoadName?: string
     maneuverText?: string
     timeToDestinationText?: string
     distanceToDestinationText?: string

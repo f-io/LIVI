@@ -277,6 +277,7 @@ export type NaviInfo = {
   NaviRemainDistance?: number
 
   NaviRoadName?: string
+  NaviAfterRoadName?: string
   NaviOrderType?: number
   NaviManeuverType?: number
   NaviTurnAngle?: number

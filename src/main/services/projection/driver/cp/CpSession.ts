@@ -382,6 +382,7 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
     if (typeof ev.status === 'number') navi.NaviStatus = ev.status === 0 ? 0 : 1
     if (typeof ev.orderType === 'number') navi.NaviOrderType = ev.orderType
     if (typeof ev.roadName === 'string') navi.NaviRoadName = ev.roadName
+    if (typeof ev.afterRoadName === 'string') navi.NaviAfterRoadName = ev.afterRoadName
     if (typeof ev.destinationName === 'string') navi.NaviDestinationName = ev.destinationName
     if (typeof ev.timeToDestination === 'number') navi.NaviTimeToDestination = ev.timeToDestination
     if (typeof ev.distanceToDestination === 'number')

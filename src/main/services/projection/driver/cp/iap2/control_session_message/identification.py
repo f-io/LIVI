@@ -85,6 +85,13 @@ class VehicleStatusComponent:
 class RouteGuidanceDisplayComponent:
     id: Uint16
     name: str
+    max_current_road_name_length: Annotated[Optional[Uint16], 2] = None
+    max_destination_name_length: Annotated[Optional[Uint16], 3] = None
+    max_after_maneuver_road_name_length: Annotated[Optional[Uint16], 4] = None
+    max_maneuver_description_length: Annotated[Optional[Uint16], 5] = None
+    max_guidance_maneuver_storage_capacity: Annotated[Optional[Uint16], 6] = None
+    max_lane_guidance_description_length: Annotated[Optional[Uint16], 7] = None
+    max_lane_guidance_storage_capacity: Annotated[Optional[Uint16], 8] = None
 
 
 @dataclass

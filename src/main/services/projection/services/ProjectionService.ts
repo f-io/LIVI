@@ -143,8 +143,7 @@ export class ProjectionService {
   })
   private readonly navStore = new NavStore({
     emit: (p) => this.emitProjectionEvent(p),
-    getLanguage: () => this.config.language,
-    isStarted: () => this.started
+    getLanguage: () => this.config.language
   })
   private webContents: WebContents | null = null
   private config: Config = DEFAULT_CONFIG as Config

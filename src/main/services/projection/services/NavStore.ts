@@ -13,7 +13,6 @@ import { normalizeNavigationPayload } from './utils/normalizeNavigation'
 export type NavStoreDeps = {
   emit: (payload: ProjectionEvent) => void
   getLanguage: () => string | undefined
-  isStarted: () => boolean
 }
 
 // Persists and emits the phone's navigation (turn-by-turn) snapshot, per session.
@@ -37,8 +36,6 @@ export class NavStore {
     msg: NavigationData,
     isActive: boolean
   ): void {
-    if (!this.deps.isStarted()) return
-
     const existingPayload: PersistedNavigationPayload =
       session?.nav ?? this.pending.get(driver) ?? DEFAULT_NAVIGATION_DATA_RESPONSE.payload
 
@@ -60,6 +57,7 @@ export class NavStore {
         appName: translated.SourceName,
         destinationName: translated.DestinationName,
         roadName: translated.CurrentRoadName,
+        afterRoadName: translated.AfterManeuverRoadName,
         maneuverText: translated.ManeuverTypeText,
         timeToDestinationText: translated.TimeRemainingToDestinationText,
         distanceToDestinationText: translated.DistanceRemainingDisplayStringText,

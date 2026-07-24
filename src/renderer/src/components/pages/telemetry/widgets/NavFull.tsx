@@ -218,7 +218,7 @@ export function NavFull({ className }: NavFullProps) {
 
       <Box sx={{ minWidth: 0, textAlign: 'left' }}>
         {maneuverText && (
-          <Typography variant="h5" sx={{ lineHeight: 1.1 }}>
+          <Typography variant="h5" sx={{ lineHeight: 1.1, whiteSpace: 'nowrap' }}>
             {maneuverText}
           </Typography>
         )}
@@ -230,6 +230,16 @@ export function NavFull({ className }: NavFullProps) {
               {t.CurrentRoadName}
             </Typography>
           </Stack>
+        )}
+
+        {t.AfterManeuverRoadName && (
+          <Typography
+            variant="body1"
+            noWrap
+            sx={{ display: 'block', mt: 0.9, lineHeight: 1.1, textAlign: 'left' }}
+          >
+            {t.AfterManeuverRoadName}
+          </Typography>
         )}
       </Box>
     </Stack>
@@ -254,8 +264,8 @@ export function NavFull({ className }: NavFullProps) {
         sx={{
           position: 'absolute',
           bottom: '100%',
-          left: '50%',
-          transform: 'translateX(-50%)',
+          left: 0,
+          right: 0,
           pb: 2.6,
           display: 'flex',
           justifyContent: 'center'

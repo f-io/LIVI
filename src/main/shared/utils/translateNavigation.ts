@@ -425,6 +425,8 @@ export function translateNavigation(navi: NaviBag | null | undefined, locale: Na
   const destinationName =
     typeof obj.NaviDestinationName === 'string' ? obj.NaviDestinationName : undefined
   const currentRoadName = typeof obj.NaviRoadName === 'string' ? obj.NaviRoadName : undefined
+  const afterManeuverRoadName =
+    typeof obj.NaviAfterRoadName === 'string' ? obj.NaviAfterRoadName : undefined
 
   const timeRemainingToDestinationText = fmtRemainingTime(obj.NaviTimeToDestination)
   const distanceRemainingDisplayStringText = fmtMeters(obj.NaviDistanceToDestination)
@@ -452,6 +454,7 @@ export function translateNavigation(navi: NaviBag | null | undefined, locale: Na
     SourceName: sourceName,
     DestinationName: destinationName,
     CurrentRoadName: currentRoadName,
+    AfterManeuverRoadName: afterManeuverRoadName,
 
     TimeRemainingToDestinationText: timeRemainingToDestinationText,
     DistanceRemainingDisplayStringText: distanceRemainingDisplayStringText,
