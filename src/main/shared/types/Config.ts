@@ -101,6 +101,7 @@ export type Config = {
   wifiPassword: string
   btAdapter: string
   wifiInterface: string
+  wifiDedicatedInterface: boolean
   wifiType: '2.4ghz' | '5ghz'
   wifiChannel: number
   country: string

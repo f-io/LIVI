@@ -174,6 +174,13 @@ export const generalSchema: SettingsNode<Config> = {
                 title: 'Bluetooth Interface',
                 labelTitle: 'settings.btAdapter'
               }
+            },
+            {
+              type: 'checkbox',
+              label: 'Dedicated Interface',
+              labelKey: 'settings.wifiDedicatedInterface',
+              path: 'wifiDedicatedInterface',
+              disabled: window.app?.platform !== 'linux'
             }
           ]
         },

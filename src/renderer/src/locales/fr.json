@@ -22,6 +22,7 @@
     "wifiCountry": "Pays Wi-Fi",
     "wifiInterface": "Interface Wi-Fi",
     "btAdapter": "Interface Bluetooth",
+    "wifiDedicatedInterface": "Interface dédiée",
     "wirelessAaEnabled": "Android Auto sans-fil",
     "wirelessCpEnabled": "CarPlay sans-fil",
     "dongleSettings": "Réglages du dongle",

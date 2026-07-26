@@ -22,6 +22,7 @@
     "wifiCountry": "Wi-Fi Land",
     "wifiInterface": "Wi-Fi Schnittstelle",
     "btAdapter": "Bluetooth Schnittstelle",
+    "wifiDedicatedInterface": "Dedizierte Schnittstelle",
     "wirelessAaEnabled": "Wireless Android Auto",
     "wirelessCpEnabled": "Wireless CarPlay",
     "dongleSettings": "Dongle-Einstellungen",

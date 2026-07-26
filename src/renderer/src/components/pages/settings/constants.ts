@@ -75,6 +75,7 @@ export const requiresRestartParams: (keyof Config)[] = [
   'wifiType',
   'wifiInterface',
   'btAdapter',
+  'wifiDedicatedInterface',
   'disableAudioOutput',
   'autoConn',
   'carName',

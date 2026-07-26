@@ -15,7 +15,13 @@ from dbus.mainloop.glib import DBusGMainLoop
 from gi.repository import GLib
 
 from shared import bt_common, wifi_ap
-from shared.config import BT_ADAPTER, BTNAME, WIFI_IFACE
+from shared.config import BT_ADAPTER, BTNAME, WIFI_DEDICATED, WIFI_IFACE
+
+
+def _teardown_ap_if_owned() -> None:
+    # A dedicated AP is owned by the boot service, LIVI must not tear it down.
+    if not WIFI_DEDICATED:
+        wifi_ap.teardown_ap()
 
 AA_WIRELESS = os.environ.get("LIVI_AA_WIRELESS") == "1"
 CP_WIRELESS = os.environ.get("LIVI_CP_WIRELESS", "1") == "1"
@@ -231,6 +237,10 @@ def _setup_bluetoothd():
 
 def main():
     _prepare_process()
+    try:
+        wifi_ap.reconcile_boot_service(WIFI_DEDICATED)
+    except Exception as e:
+        log("boot-service reconcile failed:", repr(e))
     DBusGMainLoop(set_as_default=True)
 
     aio = asyncio.new_event_loop()
@@ -307,14 +317,18 @@ def main():
             return
         ap_ready = False
         try:
-            log(f"bringing up Wi-Fi AP (iface={WIFI_IFACE})")
-            ap_ready = wifi_ap.setup_ap()
+            if WIFI_DEDICATED and wifi_ap.is_ap_running():
+                log(f"Wi-Fi AP already up (boot service owns it), adopting (iface={WIFI_IFACE})")
+                ap_ready = wifi_ap.wait_for_ap_ready()
+            else:
+                log(f"bringing up Wi-Fi AP (iface={WIFI_IFACE})")
+                ap_ready = wifi_ap.setup_ap()
         except Exception as e:
             log("Wi-Fi AP setup failed:", repr(e))
         log("Wi-Fi AP ready" if ap_ready else "Wi-Fi AP NOT ready")
         if stopping.is_set():
             try:
-                wifi_ap.teardown_ap()
+                _teardown_ap_if_owned()
             except Exception:
                 pass
             return
@@ -378,7 +392,7 @@ def main():
 
         def _ap_down():
             try:
-                wifi_ap.teardown_ap()
+                _teardown_ap_if_owned()
             except Exception as e:
                 log("AP teardown error:", repr(e))
             GLib.idle_add(_teardown_done)
@@ -424,7 +438,7 @@ def main():
             except Exception:
                 pass
         try:
-            wifi_ap.teardown_ap()
+            _teardown_ap_if_owned()
         except Exception as e:
             log("teardown error:", repr(e))
         try:

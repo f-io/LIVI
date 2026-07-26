@@ -2,9 +2,12 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 
 from .config import BT_ADAPTER, CHANNEL, COUNTRY_CODE, PASSPHRASE, SSID, WIFI_IFACE
+
+BOOT_SERVICE_UNIT = "/etc/systemd/system/livi-wifi-ap.service"
 
 HOSTAPD_CONFIG_PATH = "/tmp/livi-hostapd.conf"
 DNSMASQ_CONFIG_PATH = "/tmp/livi-dnsmasq.conf"
@@ -268,6 +271,33 @@ def kill_network_manager_and_supplicant() -> None:
     time.sleep(1)
 
 
+NM_UNMANAGED_CONF = "/etc/NetworkManager/conf.d/99-livi-ap-unmanaged.conf"
+
+
+def set_ap_interface_unmanaged(enabled: bool) -> None:
+    """Persistently mark the AP interface unmanaged so NetworkManager never
+    reclaims it, independent of boot ordering. Reloads NM if it is running."""
+    if enabled:
+        content = f"[keyfile]\nunmanaged-devices=interface-name:{WIFI_IFACE}\n"
+        try:
+            existing = open(NM_UNMANAGED_CONF).read() if os.path.exists(NM_UNMANAGED_CONF) else ""
+        except OSError:
+            existing = ""
+        if existing == content:
+            return
+        os.makedirs(os.path.dirname(NM_UNMANAGED_CONF), exist_ok=True)
+        with open(NM_UNMANAGED_CONF, "w") as f:
+            f.write(content)
+    elif os.path.exists(NM_UNMANAGED_CONF):
+        try:
+            os.remove(NM_UNMANAGED_CONF)
+        except OSError:
+            return
+    else:
+        return
+    subprocess.run(["nmcli", "general", "reload"], check=False)
+
+
 def start_dnsmasq() -> None:
     dnsmasq_config = f"""
 interface={WIFI_IFACE}
@@ -364,6 +394,11 @@ def wait_for_ap_ready(timeout_seconds: float = 20.0) -> bool:
     print(f"[wifi_ap] AP readiness timeout: hostapd={hostapd_ready} dhcp={dhcp_ready}",
           flush=True)
     return False
+
+
+def is_ap_running() -> bool:
+    """True iff a hostapd instance is already beaconing on WIFI_IFACE."""
+    return _hostapd_state() == "ENABLED"
 
 
 def setup_ap() -> bool:
@@ -487,3 +522,74 @@ def restore_wifi_client() -> None:
     print(f"[wifi_ap] saved Wi-Fi profiles: {', '.join(saved)}")
     subprocess.run(["sudo", "nmcli", "device", "connect", WIFI_IFACE],
                    check=False, capture_output=True, timeout=30)
+
+
+def reconcile_boot_service(enabled: bool) -> None:
+    """Enable/disable the boot-time dedicated-AP service to match the config.
+    Runs from the root helper, so no extra elevation. Uses `enable`/`disable`
+    without --now, so the current session's AP is never disrupted."""
+    if enabled:
+        user = os.environ.get("SUDO_USER", "")
+        workdir = os.getcwd()
+        content = (
+            "[Unit]\n"
+            "Description=LIVI dedicated Wi-Fi AP (early boot start)\n"
+            "After=network-pre.target\n"
+            "Wants=network-pre.target\n"
+            f"ConditionPathExists={workdir}/shared/wifi_ap.py\n"
+            "\n"
+            "[Service]\n"
+            "Type=simple\n"
+            f"Environment=SUDO_USER={user}\n"
+            "Environment=PYTHONDONTWRITEBYTECODE=1\n"
+            f"WorkingDirectory={workdir}\n"
+            f"ExecStart={sys.executable} -m shared.wifi_ap\n"
+            "Restart=on-failure\n"
+            "RestartSec=5\n"
+            "\n"
+            "[Install]\n"
+            "WantedBy=multi-user.target\n"
+        )
+        try:
+            existing = open(BOOT_SERVICE_UNIT).read() if os.path.exists(BOOT_SERVICE_UNIT) else ""
+        except OSError:
+            existing = ""
+        if existing != content:
+            with open(BOOT_SERVICE_UNIT, "w") as f:
+                f.write(content)
+            subprocess.run(["systemctl", "daemon-reload"], check=False)
+        subprocess.run(["systemctl", "enable", "livi-wifi-ap.service"], check=False)
+        set_ap_interface_unmanaged(True)
+    elif os.path.exists(BOOT_SERVICE_UNIT):
+        subprocess.run(["systemctl", "disable", "--now", "livi-wifi-ap.service"], check=False)
+        try:
+            os.remove(BOOT_SERVICE_UNIT)
+        except OSError:
+            pass
+        subprocess.run(["systemctl", "daemon-reload"], check=False)
+        set_ap_interface_unmanaged(False)
+        subprocess.run(["nmcli", "device", "set", WIFI_IFACE, "managed", "yes"], check=False)
+        restore_wifi_client()
+
+
+def _run_dedicated_service() -> int:
+    """Boot-time entry (systemd): bring the AP up and own it until stopped."""
+    import signal
+    import sys
+
+    def _on_term(_signum, _frame):
+        teardown_ap()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _on_term)
+    signal.signal(signal.SIGINT, _on_term)
+
+    if not setup_ap():
+        print("[wifi_ap] dedicated AP failed to come up")
+        return 1
+    while True:
+        signal.pause()
+
+
+if __name__ == "__main__":
+    raise SystemExit(_run_dedicated_service())

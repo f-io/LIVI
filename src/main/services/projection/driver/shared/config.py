@@ -63,6 +63,15 @@ def _resolve_iface(configured: str, available: list) -> str:
     return available[0]
 
 
+def _get_bool(json_key: str, default: bool) -> bool:
+    val = _JSON_CONFIG.get(json_key, None)
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.strip().lower() in ("1", "true", "yes", "on")
+    return default
+
+
 # Wi-Fi AP
 SSID = _get_value("LIVI_SSID", "carName", "LIVI")
 PASSPHRASE = _get_value("LIVI_PASSPHRASE", "wifiPassword", "12345678")
@@ -71,6 +80,9 @@ COUNTRY_CODE = _get_value("LIVI_COUNTRY", "country", "DE")
 WIFI_IFACE = _resolve_iface(
     _get_value("LIVI_WIFI_IFACE", "wifiInterface", "wlan0"), _list_wifi_ifaces()
 )
+# When the AP owns a dedicated interface it is brought up at boot by a systemd
+# service, so LIVI adopts the running AP instead of starting/stopping it.
+WIFI_DEDICATED = _get_bool("wifiDedicatedInterface", False)
 SECURITY_TYPE = "WPA_WPA2"
 
 # Bluetooth

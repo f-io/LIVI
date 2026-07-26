@@ -22,6 +22,7 @@
     "wifiCountry": "Країна Wi-Fi",
     "wifiInterface": "Інтерфейс Wi-Fi",
     "btAdapter": "Інтерфейс Bluetooth",
+    "wifiDedicatedInterface": "Виділений інтерфейс",
     "wirelessAaEnabled": "Бездротовий Android Auto",
     "wirelessCpEnabled": "Бездротовий CarPlay",
     "dongleSettings": "Налаштування донгла",
