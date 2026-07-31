@@ -26,6 +26,10 @@ on:
         description: 'Build macOS x64 (dmg)'
         type: boolean
         default: true
+      publish_nightly:
+        description: 'Publish nightly release'
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -425,8 +429,8 @@ jobs:
   nightly:
     name: Publish rolling nightly
     needs: build
-    # Only the automatic main build publishes, a dispatch can build a partial matrix.
-    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main' }}
+    # Manual dispatch only
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_nightly }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -441,7 +445,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          SHA: ${{ github.event.workflow_run.head_sha }}
+          SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
           RUN: ${{ github.run_number }}
         run: |
           BUILT_AT="$(TZ=Europe/Berlin date +'%Y-%m-%d %H:%M %Z')"
@@ -451,8 +456,8 @@ jobs:
             --repo "$REPO"
             --target "$SHA"
             --prerelease
-            --title "Nightly #${RUN} (${SHA:0:7})"
-            --notes "Rolling build of \`main\`.
+            --title "Nightly #${RUN} · ${BRANCH} (${SHA:0:7})"
+            --notes "Rolling build of \`${BRANCH}\`.
 
           Run: #${RUN}
           Commit: \`${SHA}\`
