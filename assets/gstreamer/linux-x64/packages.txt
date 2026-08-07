@@ -1,7 +1,7 @@
 gstreamer1.0-alsa:amd64 1.28.5-1
 gstreamer1.0-gl:amd64 1.28.5-1
 gstreamer1.0-libav:amd64 1.28.5-1
-gstreamer1.0-plugins-bad:amd64 1.28.5-1
+gstreamer1.0-plugins-bad:amd64 1.28.5-2
 gstreamer1.0-plugins-base-apps 1.28.5-1
 gstreamer1.0-plugins-base:amd64 1.28.5-1
 gstreamer1.0-plugins-good:amd64 1.28.5-1
@@ -9,6 +9,6 @@ gstreamer1.0-pulseaudio:amd64 1.28.5-1
 gstreamer1.0-tools 1.28.4-2
 gstreamer1.0-x:amd64 1.28.5-1
 libgstreamer-gl1.0-0:amd64 1.28.5-1
-libgstreamer-plugins-bad1.0-0:amd64 1.28.5-1
+libgstreamer-plugins-bad1.0-0:amd64 1.28.5-2
 libgstreamer-plugins-base1.0-0:amd64 1.28.5-1
 libgstreamer1.0-0:amd64 1.28.4-2
