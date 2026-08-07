@@ -1,7 +1,7 @@
 gstreamer1.0-alsa:arm64 1.28.5-1
 gstreamer1.0-gl:arm64 1.28.5-1
 gstreamer1.0-libav:arm64 1.28.5-1
-gstreamer1.0-plugins-bad:arm64 1.28.5-1
+gstreamer1.0-plugins-bad:arm64 1.28.5-2
 gstreamer1.0-plugins-base-apps 1.28.5-1
 gstreamer1.0-plugins-base:arm64 1.28.5-1
 gstreamer1.0-plugins-good:arm64 1.28.5-1
@@ -9,7 +9,7 @@ gstreamer1.0-pulseaudio:arm64 1.28.5-1
 gstreamer1.0-tools 1.28.4-2
 gstreamer1.0-x:arm64 1.28.5-1
 libgstreamer-gl1.0-0:arm64 1.28.5-1
-libgstreamer-plugins-bad1.0-0:arm64 1.28.5-1
+libgstreamer-plugins-bad1.0-0:arm64 1.28.5-2
 libgstreamer-plugins-base1.0-0:arm64 1.28.5-1
 libgstreamer-plugins-base1.0-dev:arm64 1.28.5-1
 libgstreamer1.0-0:arm64 1.28.4-2
