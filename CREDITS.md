@@ -18,7 +18,7 @@ during development.
 ### Legacy / dongle related
 
 - **rhysmorgan134/node-carplay** by Rhys Morgan
-- Various Carlinkit / CPC200 reverse-engineering projects, websites, and community write-ups
+- Various reverse-engineering projects, websites, and community write-ups
 
 This list is likely incomplete, many thanks to everyone whose work contributed,
 directly or indirectly.
