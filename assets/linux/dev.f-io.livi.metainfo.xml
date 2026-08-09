@@ -5,9 +5,9 @@
   <summary>LIVI - Linux In-Vehicle Infotainment</summary>
   <description>
     <p>
-      LIVI is an open-source Apple CarPlay and Android Auto head unit for Linux.
+      LIVI is an open-source native Apple CarPlay and Android Auto head unit for Linux.
       It supports hardware-accelerated video decoding, low-latency audio, multitouch
-      and D-Pad navigation using CPC200-CCPA and CPC200-CCPW dongles.
+      and D-Pad navigation.
     </p>
   </description>
   <metadata_license>FSFAP</metadata_license>
