@@ -47,7 +47,9 @@ vi.mock('@main/services/projection/services/ProjectionService', () => ({
   ProjectionService: vi.fn().mockImplementation(function () {
     return {
       applyConfigPatch: vi.fn(),
-      autoStartIfNeeded: vi.fn(async () => undefined)
+      autoStartIfNeeded: vi.fn(async () => undefined),
+      onProjectionEvent: vi.fn(() => () => undefined),
+      dispatchRemoteInput: vi.fn()
     }
   })
 }))
@@ -100,6 +102,12 @@ vi.mock('../services/video/GstVideo', () => ({
 
 vi.mock('../window/secondaryWindows', () => ({
   setupSecondaryWindows: vi.fn()
+}))
+
+vi.mock('../services/carBridge/CarBridgeService', () => ({
+  CarBridgeService: vi.fn().mockImplementation(function () {
+    return { start: vi.fn(), stop: vi.fn(), handleEvent: vi.fn() }
+  })
 }))
 
 async function mockReadyRunsCallback(): Promise<void> {
@@ -175,6 +183,20 @@ describe('main index bootstrap', () => {
     const service = (ProjectionService as Mock).mock.results[0].value
     expect(service.applyConfigPatch).toHaveBeenCalledTimes(1)
     expect(service.autoStartIfNeeded).toHaveBeenCalledTimes(1)
+
+    // the bridge wiring: projection events flow in, HU keys flow back
+    const { CarBridgeService } = await import('../services/carBridge/CarBridgeService')
+    const bridge = (CarBridgeService as unknown as Mock).mock.results[0].value
+    expect(bridge.start).toHaveBeenCalledTimes(1)
+    const tap = service.onProjectionEvent.mock.calls[0][0]
+    tap({ type: 'media-reset', reason: 'test' })
+    expect(bridge.handleEvent).toHaveBeenCalledWith({ type: 'media-reset', reason: 'test' })
+    bridge.onKey('next')
+    expect(service.dispatchRemoteInput).toHaveBeenCalledWith('next')
+    const { TelemetryStore } = await import('@main/services/telemetry/TelemetryStore')
+    const mergeSpy = vi.spyOn(TelemetryStore.prototype, 'merge')
+    bridge.onTelemetry({ speedKph: 73 })
+    expect(mergeSpy).toHaveBeenCalledWith({ speedKph: 73 })
   })
 
   test('exits without booting when the outer launcher hands off to the compositor', async () => {

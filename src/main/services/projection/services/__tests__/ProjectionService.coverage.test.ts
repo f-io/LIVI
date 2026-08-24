@@ -1772,6 +1772,20 @@ describe('ProjectionService linux BT disconnect flows', () => {
   })
 })
 
+describe('main-side projection event subscribers', () => {
+  test('listeners receive emitted events until unsubscribed', () => {
+    const svc = makeSvc()
+    svc.webContents = null
+    const seen: unknown[] = []
+    const unsubscribe = svc.onProjectionEvent((payload: unknown) => seen.push(payload))
+    svc.emitProjectionEvent({ type: 'media-reset', reason: 'test' })
+    expect(seen).toEqual([{ type: 'media-reset', reason: 'test' }])
+    unsubscribe()
+    svc.emitProjectionEvent({ type: 'media-reset', reason: 'again' })
+    expect(seen).toHaveLength(1)
+  })
+})
+
 describe('ProjectionService constructor wiring closures', () => {
   test('collaborator dependency closures delegate back to the service', () => {
     const svc = makeSvc()

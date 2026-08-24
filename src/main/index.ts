@@ -28,6 +28,7 @@ import type { Config } from '@shared/types'
 import { app, BrowserWindow } from 'electron'
 import { loadConfig } from './config/loadConfig'
 import { restartApp } from './ipc/app'
+import { CarBridgeService } from './services/carBridge/CarBridgeService'
 import { USBService } from './services/usb/USBService'
 import { checkAndInstallUdevRule } from './services/usb/udevRule'
 import {
@@ -72,6 +73,12 @@ app.whenReady().then(async () => {
     wmExitedKiosk: false
   }
   setDebugLogging(runtimeState.config.debugLogging === true)
+
+  const carBridge = new CarBridgeService(runtimeState.config.language)
+  carBridge.start()
+  projectionService.onProjectionEvent((payload) => carBridge.handleEvent(payload))
+  carBridge.onKey = (command) => projectionService.dispatchRemoteInput(command)
+  carBridge.onTelemetry = (payload) => telemetryStore.merge(payload)
 
   runtimeState.telemetrySocket = telemetrySocket
 

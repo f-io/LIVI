@@ -573,8 +573,18 @@ export class ProjectionService {
     if (becameAvailable) this.autoStartIfNeeded().catch(console.error)
   }
 
+  // Main-side subscribers on the same stream the renderer windows get over
+  // IPC. Returns an unsubscribe function.
+  private readonly projectionEventListeners = new Set<(payload: ProjectionEvent) => void>()
+
+  public onProjectionEvent(listener: (payload: ProjectionEvent) => void): () => void {
+    this.projectionEventListeners.add(listener)
+    return () => this.projectionEventListeners.delete(listener)
+  }
+
   // Single emit point for `projection-event`
   private emitProjectionEvent(payload: ProjectionEvent): void {
+    for (const listener of this.projectionEventListeners) listener(payload)
     this.webContents?.send('projection-event', payload)
     broadcastToSecondaryRenderers('projection-event', payload)
   }
@@ -1753,7 +1763,7 @@ export class ProjectionService {
     }
   }
 
-  private dispatchRemoteInput(command: string): void {
+  public dispatchRemoteInput(command: string): void {
     if (!isInputCommand(command)) {
       console.warn(`[ProjectionService] remote input: unknown command "${command}"`)
       return

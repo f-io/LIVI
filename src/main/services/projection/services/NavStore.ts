@@ -43,9 +43,11 @@ export class NavStore {
     const locale: NavLocale =
       language === 'de'
         ? 'de'
-        : language === 'ua' || language === 'uk' || language === 'uk-UA'
-          ? 'ua'
-          : 'en'
+        : language === 'fr'
+          ? 'fr'
+          : language === 'ua' || language === 'uk' || language === 'uk-UA'
+            ? 'ua'
+            : 'en'
 
     const normalized = normalizeNavigationPayload(existingPayload, msg)
     const translated = translateNavigation(normalized.navi, locale)

@@ -139,7 +139,7 @@ describe('translateNavigation', () => {
   })
 
   test('falls back to english dictionary for unsupported locale', () => {
-    const result = translateNavigation({ NaviManeuverType: 2 }, 'fr' as never)
+    const result = translateNavigation({ NaviManeuverType: 2 }, 'xx' as never)
     expect(result.ManeuverTypeText).toBe('Turn right')
   })
 

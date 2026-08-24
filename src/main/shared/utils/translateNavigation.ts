@@ -6,7 +6,7 @@ import {
   roundaboutExitNumber
 } from '@shared/types/NavigationTypes'
 
-export type NavLocale = 'en' | 'de' | 'ua'
+export type NavLocale = 'en' | 'de' | 'ua' | 'fr'
 
 type Dict = {
   // generic UI strings
@@ -22,6 +22,7 @@ type Dict = {
   // status + direction
   statusIdle: string
   statusActive: string
+  noRoute: string
   drivingSideLeft: string
   drivingSideRight: string
   junctionIntersection: string
@@ -91,6 +92,7 @@ const DICT: Record<NavLocale, Dict> = {
     // status + direction
     statusIdle: 'Idle',
     statusActive: 'Active',
+    noRoute: 'No Route',
     drivingSideLeft: 'Left',
     drivingSideRight: 'Right',
     junctionIntersection: 'Intersection',
@@ -159,6 +161,7 @@ const DICT: Record<NavLocale, Dict> = {
     // status + direction
     statusIdle: 'Inaktiv',
     statusActive: 'Aktiv',
+    noRoute: 'Zielführung aus',
     drivingSideLeft: 'Linksverkehr',
     drivingSideRight: 'Rechtsverkehr',
     junctionIntersection: 'Kreuzung',
@@ -227,6 +230,7 @@ const DICT: Record<NavLocale, Dict> = {
     // status + direction
     statusIdle: 'Неактивно',
     statusActive: 'Активно',
+    noRoute: 'Немає маршруту',
     drivingSideLeft: 'Лівосторонній рух',
     drivingSideRight: 'Правосторонній рух',
     junctionIntersection: 'Перехрестя',
@@ -279,6 +283,75 @@ const DICT: Record<NavLocale, Dict> = {
     changeHighway: 'Зміна автомагістралі', // 51
     changeHighwayLeft: 'Зміна автомагістралі (ліворуч)', // 52
     changeHighwayRight: 'Зміна автомагістралі (праворуч)' // 53
+  },
+
+  fr: {
+    // generic UI strings
+    unknown: 'Inconnu',
+    app: 'App',
+    destination: 'Destination',
+    eta: 'Arrivée',
+    timeRemaining: 'Temps restant',
+    distanceRemaining: 'Distance restante',
+    onRoad: 'Route',
+    maneuver: 'Manœuvre',
+
+    // status + direction
+    statusIdle: 'Inactif',
+    statusActive: 'Actif',
+    noRoute: 'Aucun itinéraire',
+    drivingSideLeft: 'Conduite à gauche',
+    drivingSideRight: 'Conduite à droite',
+    junctionIntersection: 'Intersection',
+    junctionRoundabout: 'Rond-point',
+
+    // OrderType
+    orderContinue: 'Continuez',
+    orderTurn: 'Tournez',
+    orderExit: 'Sortie',
+    orderRoundabout: 'Rond-point',
+    orderUturn: 'Demi-tour',
+    orderKeepLeft: 'Restez à gauche',
+    orderKeepRight: 'Restez à droite',
+    orderUnknown: 'Inconnu',
+
+    // ManeuverType (Table 15-16)
+    noTurn: 'Pas de virage', // 0
+    left: 'Tournez à gauche', // 1
+    right: 'Tournez à droite', // 2
+    straight: 'Continuez tout droit', // 3
+    uTurn: 'Faites demi-tour', // 4
+    followRoad: 'Continuez sur la route actuelle', // 5
+    enterRoundabout: 'Entrez dans le rond-point', // 6
+    exitRoundabout: 'Sortez du rond-point', // 7
+    rampOff: "Quittez l'autoroute", // 8
+    rampOn: "Rejoignez l'autoroute", // 9
+    endOfNavigation: 'Fin de la navigation', // 10
+    proceedToRoute: "Rejoignez l'itinéraire", // 11
+    arrived: 'Arrivé', // 12
+    keepLeft: 'Restez à gauche', // 13
+    keepRight: 'Restez à droite', // 14
+    enterFerry: 'Embarquez sur le ferry', // 15
+    exitFerry: 'Quittez le ferry', // 16
+    changeFerry: 'Changez de ferry', // 17
+    uTurnToRoute: "Faites demi-tour pour rejoindre l'itinéraire", // 18
+    roundaboutUTurn: 'Faites demi-tour au rond-point', // 19
+    endOfRoadLeft: 'Au bout de la route, tournez à gauche', // 20
+    endOfRoadRight: 'Au bout de la route, tournez à droite', // 21
+    rampOffLeft: "Quittez l'autoroute à gauche", // 22
+    rampOffRight: "Quittez l'autoroute à droite", // 23
+    arrivedLeft: 'Arrivé (à gauche)', // 24
+    arrivedRight: 'Arrivé (à droite)', // 25
+    uTurnWhenPossible: 'Faites demi-tour dès que possible', // 26
+    endOfDirections: 'Fin du guidage', // 27
+    roundaboutExit: 'Sortie', // 28..46
+    sharpLeft: 'Virage serré à gauche', // 47
+    sharpRight: 'Virage serré à droite', // 48
+    slightLeft: 'Légèrement à gauche', // 49
+    slightRight: 'Légèrement à droite', // 50
+    changeHighway: "Changement d'autoroute", // 51
+    changeHighwayLeft: "Changement d'autoroute (à gauche)", // 52
+    changeHighwayRight: "Changement d'autoroute (à droite)" // 53
   }
 }
 
@@ -429,4 +502,9 @@ export function translateNavigation(navi: NaviBag | null | undefined, locale: Na
       JunctionType: junctionType
     }
   }
+}
+
+/** Line shown while no guidance is active. */
+export function navIdleText(locale: NavLocale): string {
+  return DICT[locale].noRoute
 }

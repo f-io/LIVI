@@ -81,6 +81,7 @@ describe('NavStore', () => {
   test.each([
     ['de', 'de'],
     ['ua', 'ua'],
+    ['fr', 'fr'],
     ['uk', 'ua'],
     ['uk-UA', 'ua'],
     ['en', 'en'],
