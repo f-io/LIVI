@@ -29,7 +29,7 @@
     "build:native:x64": "node scripts/build-native.mjs --arch=x64",
     "build": "pnpm run typecheck && pnpm run build:app",
     "build:helperd": "cd native/livi-helperd && cargo build --release -p livi-helperd",
-    "postinstall": "node scripts/sync-biome-schema.mjs && electron-builder install-app-deps",
+    "postinstall": "node scripts/sync-biome-schema.mjs && electron-builder install-app-deps && node scripts/build-native.mjs --only=crypto",
     "build:mac": "pnpm run build:mac:arm64",
     "build:mac:arm64": "pnpm run build:native:arm64 && pnpm run build:app && bash scripts/gstreamer/package-macos.sh --relocate-node && electron-builder --mac --arm64 --publish never --config",
     "build:mac:x64": "pnpm run build:native:x64 && pnpm run build:app && bash scripts/gstreamer/package-macos.sh --relocate-node && electron-builder --mac --x64 --publish never --config",

@@ -1,0 +1,9 @@
+[package]
+name = "livi-video-nal"
+version = "0.1.0"
+edition.workspace = true
+
+# Codec detection and NAL classification for the CarPlay screen stream, called
+# from cp_screen_receiver.cc and gst_video.cc through cp_video_nal.h.
+[lib]
+crate-type = ["rlib"]

@@ -21,14 +21,7 @@ fn main() {
         .includes(&includes)
         .link_lib_modifier("+whole-archive")
         .file("../../src/gst_video.cc")
-        .file("../../src/cp_screen_receiver.cc")
         .compile("gst_video_host_cpp");
-
-    // The screen receiver's AEAD comes from the livi-crypto-node dependency.
-    let mut c = cc::Build::new();
-    c.includes(&includes)
-        .file("../../src/cp_video_nal.c")
-        .compile("gst_video_host_c");
 
     // Link flags go last: GNU ld resolves left to right, and shared libs
     // emitted before the archives are dropped under --as-needed. Only the first

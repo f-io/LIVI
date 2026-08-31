@@ -339,11 +339,6 @@ jobs:
           sudo installer -pkg gst-runtime.pkg -target /
           sudo installer -pkg gst-devel.pkg -target /
 
-      - name: Install deps (pnpm) [macos-arm64]
-        if: matrix.os == 'macos'
-        shell: bash
-        run: pnpm install --frozen-lockfile
-
       - name: Setup Rust [macos]
         if: matrix.os == 'macos'
         shell: bash
@@ -366,6 +361,11 @@ jobs:
             native/livi-gst-video/rust/target
           key: cargo-macos-${{ matrix.arch }}-${{ hashFiles('native/livi-helperd/**/Cargo.toml', 'native/livi-compositor/rust/Cargo.toml', 'native/livi-crypto/rust/Cargo.toml', 'native/livi-gst-video/rust/**/Cargo.toml') }}
           restore-keys: cargo-macos-${{ matrix.arch }}-
+
+      - name: Install deps (pnpm) [macos-arm64]
+        if: matrix.os == 'macos'
+        shell: bash
+        run: pnpm install --frozen-lockfile
 
       - name: Build for macOS (arm64 native, x64 cross-compiled)
         if: matrix.os == 'macos'

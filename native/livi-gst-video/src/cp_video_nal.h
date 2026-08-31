@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Implemented by the livi-video-nal crate (rust/nal); the enum order is part of the ABI.
+
 #ifdef __cplusplus
 extern "C" {
 #endif

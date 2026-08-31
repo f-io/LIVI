@@ -41,7 +41,11 @@ describe('pages/custom Custom', () => {
 
     fireEvent.load(frame)
 
-    expect(frame.style.visibility).toBe('visible')
+    await waitFor(() =>
+      expect((container.querySelector('iframe') as HTMLIFrameElement).style.visibility).toBe(
+        'visible'
+      )
+    )
   })
 
   test('hides the frame again when the address changes', async () => {

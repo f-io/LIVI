@@ -53,14 +53,6 @@ fn main() {
         .std("c++17")
         // napi callbacks legitimately ignore their info parameter
         .flag_if_supported("-Wno-unused-parameter")
-        .define("NAPI_VERSION", "8")
-        .define("BUILDING_NODE_EXTENSION", None)
-        .define("NODE_GYP_MODULE_NAME", "gst_video")
-        // rustc trims cdylib exports to Rust-declared symbols, so the module
-        // entry points are renamed here and re-exported from lib.rs.
-        .define("napi_register_module_v1", "livi_gst_register_module_v1")
-        .define("node_api_module_get_api_version_v1", "livi_gst_module_api_version_v1")
-        .include("../napi-headers")
         .includes(&includes)
         .link_lib_modifier("+whole-archive")
         .file("../../src/gst_video.cc");
@@ -72,13 +64,7 @@ fn main() {
         println!("cargo:rustc-link-lib=framework=Cocoa");
         println!("cargo:rustc-link-lib=framework=QuartzCore");
     } else {
-        // linux: the screen receiver rides along; its AEAD comes from the
-        // livi-crypto-node dependency (C ABI).
-        cpp.file("../../src/cp_screen_receiver.cc").compile("gst_video_cpp");
-        let mut c = cc::Build::new();
-        c.includes(&includes)
-            .file("../../src/cp_video_nal.c")
-            .compile("gst_video_c");
+        cpp.compile("gst_video_cpp");
     }
 
     emit_gst_link_flags();

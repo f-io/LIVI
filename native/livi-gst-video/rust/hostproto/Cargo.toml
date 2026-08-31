@@ -1,0 +1,9 @@
+[package]
+name = "livi-host-proto"
+version = "0.1.0"
+edition.workspace = true
+
+# Framing of the gst-host control protocol, used by gst_video.cc through
+# cp_host_proto.h.
+[lib]
+crate-type = ["rlib"]

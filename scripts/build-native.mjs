@@ -22,13 +22,26 @@ const triple = wantArch === 'x64' ? 'x86_64-apple-darwin' : 'aarch64-apple-darwi
 const dylib = (name) =>
   process.platform === 'darwin' ? `lib${name}.dylib` : `lib${name}.so`
 
+// macOS keeps GStreamer in a framework, so pkg-config has to be pointed at it.
+const GST_FRAMEWORK_PC = '/Library/Frameworks/GStreamer.framework/Versions/1.0/lib/pkgconfig'
+
+function cargoEnv() {
+  const env = { ...process.env, PKG_CONFIG_ALLOW_CROSS: '1' }
+  if (process.platform === 'darwin') {
+    env.PKG_CONFIG_PATH = [GST_FRAMEWORK_PC, process.env.PKG_CONFIG_PATH]
+      .filter(Boolean)
+      .join(':')
+  }
+  return env
+}
+
 function cargoBuild(manifest, pkg) {
   const args = ['build', '--release', '-p', pkg, '--manifest-path', manifest]
   if (cross) {
     execFileSync('rustup', ['target', 'add', triple], { stdio: 'inherit' })
     args.push('--target', triple)
   }
-  execFileSync('cargo', args, { stdio: 'inherit', env: { ...process.env, PKG_CONFIG_ALLOW_CROSS: '1' } })
+  execFileSync('cargo', args, { stdio: 'inherit', env: cargoEnv() })
   return join(dirname(manifest), 'target', ...(cross ? [triple] : []), 'release')
 }
 

@@ -9,8 +9,16 @@ edition.workspace = true
 name = "livi-gst-host"
 path = "src/main.rs"
 
+[dependencies]
+livi-video-codec = { path = "../codec" }
+livi-video-player = { path = "../player" }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 livi-crypto-node = { path = "../../../livi-crypto/rust", default-features = false }
+livi-video-nal = { path = "../nal" }
+livi-screen-stream = { path = "../screen" }
+livi-video-fanout = { path = "../fanout" }
+livi-host-proto = { path = "../hostproto" }
 
 [build-dependencies]
 cc = "1"

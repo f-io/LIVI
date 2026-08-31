@@ -2,7 +2,7 @@
 # native/livi-helperd so its workspace-wide checks never need GStreamer headers.
 [workspace]
 resolver = "2"
-members = ["addon", "host"]
+members = ["addon", "codec", "fanout", "host", "hostproto", "nal", "player", "screen"]
 
 [workspace.package]
 edition = "2024"
