@@ -3,6 +3,9 @@ export enum HandDriveType {
   RHD = 1
 }
 
+/** Where LIVI gets its telemetry from: hosting its own socket, or dialing out to one. */
+export type TelemetryMode = 'host' | 'client'
+
 export enum MicType {
   CarMic = 0,
   DongleMic = 1,
@@ -240,6 +243,11 @@ export type Config = {
   lastKnownGps?: LastKnownGps
 
   dongleToolsIp?: string
+
+  // Telemetry (IPC) transport
+  telemetryMode: TelemetryMode
+  telemetryClientIp: string
+  telemetryClientPort: number
 
   // Theme overrides
   primaryColorDark?: string

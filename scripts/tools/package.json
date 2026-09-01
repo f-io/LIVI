@@ -5,9 +5,11 @@
   "scripts": {
     "telemetry": "tsx telemetry-sim.ts help",
     "telemetry:set": "tsx telemetry-sim.ts set",
-    "telemetry:demo": "tsx telemetry-sim.ts demo"
+    "telemetry:demo": "tsx telemetry-sim.ts demo",
+    "telemetry:serve": "tsx telemetry-sim.ts serve"
   },
   "devDependencies": {
+    "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
     "tsx": "^4.23.1"
   }

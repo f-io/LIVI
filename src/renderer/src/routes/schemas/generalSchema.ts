@@ -10,6 +10,7 @@ import {
 import { Camera } from '../../components/pages/settings/pages/camera'
 import { GpsHwInfo } from '../../components/pages/settings/pages/general/gps/GpsHwInfo'
 import { GpsInfo } from '../../components/pages/settings/pages/general/gps/GpsInfo'
+import { TelemetryIpcClientFields } from '../../components/pages/settings/pages/general/telemetryIpc/TelemetryIpcClientFields'
 import { USBDongle } from '../../components/pages/settings/pages/system/usbDongle/USBDongle'
 import { SelectOption, SettingsNode } from '../types'
 
@@ -1126,6 +1127,29 @@ export const generalSchema: SettingsNode<Config> = {
           ]
         }
       ]
+    },
+    {
+      type: 'select',
+      label: 'Telemetry (IPC)',
+      labelKey: 'settings.telemetryIpc',
+      icon: 'telemetryIpc',
+      path: 'telemetryMode',
+      displayValue: true,
+      options: [
+        { label: 'Host', labelKey: 'settings.telemetryIpcHost', value: 'host' },
+        { label: 'Client', labelKey: 'settings.telemetryIpcClient', value: 'client' }
+      ],
+      page: {
+        title: 'Telemetry (IPC)',
+        labelTitle: 'settings.telemetryIpc'
+      }
+    },
+    {
+      type: 'custom',
+      label: 'Telemetry (IPC) Client',
+      labelKey: 'settings.telemetryIpcClientFields',
+      path: 'telemetryClientIp',
+      component: TelemetryIpcClientFields
     },
     {
       type: 'route',

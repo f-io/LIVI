@@ -61,6 +61,7 @@
     "react-i18next": "^17.0.12",
     "react-router": "^8.3.1",
     "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "usb": "3.1.0",
     "zustand": "^5.0.15"
   },

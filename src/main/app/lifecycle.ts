@@ -7,7 +7,7 @@ import { closeAllSecondaryWindows } from '@main/window/secondaryWindows'
 import { app, BrowserWindow } from 'electron'
 
 export function setupLifecycle(runtimeState: runtimeStateProps, services: ServicesProps) {
-  const { projectionService, usbService, telemetrySocket } = services
+  const { projectionService, usbService } = services
   const mainWindow = getMainWindow()
 
   app.on('window-all-closed', () => {
@@ -112,13 +112,9 @@ export function setupLifecycle(runtimeState: runtimeStateProps, services: Servic
       await measureStep('telemetrySocket.disconnect()', async () => {
         await withTimeout(
           'telemetrySocket.disconnect()',
-          telemetrySocket?.disconnect?.() ?? Promise.resolve(),
+          services.telemetrySocket?.disconnect?.() ?? Promise.resolve(),
           300
         )
-      })
-
-      await measureStep('projection.stopHelper()', async () => {
-        await withTimeout('projection.stopHelper()', projectionService.stopHelper(), 2500)
       })
 
       await measureStep('projection.stop()', async () => {

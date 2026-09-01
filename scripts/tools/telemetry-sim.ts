@@ -1,16 +1,28 @@
 /**
- * LIVI Telemetry CLI — push test data into the running app.
+ * LIVI Telemetry CLI — push test data into the running app, or simulate a remote
+ * telemetry source for LIVI's "Client" (Telemetry (IPC)) mode.
  *
  * The full API surface lives in `src/main/shared/types/Telemetry.ts`.
- * This script is just a thin Socket.IO client that hits `ws://127.0.0.1:4000` event `telemetry:push`.
+ *
+ * This script can play either side of LIVI's telemetry socket:
+ *
+ *   - `set` / `demo` — a Socket.IO CLIENT that connects to a LIVI running in
+ *     "Host" mode and pushes data in via `telemetry:push`. (LIVI owns the socket;
+ *     this script is one of potentially many things feeding it.)
+ *
+ *   - `serve` — a Socket.IO SERVER that a LIVI running in "Client" mode can point
+ *     at (Settings → General → Telemetry (IPC) → Client → IP/Port) and receive
+ *     `telemetry:update` broadcasts from, exactly like it would from a remote LIVI
+ *     in Host mode. Useful for exercising client mode without a second real LIVI.
  *
  * USAGE
  * ─────
  *
  *   pnpm --dir scripts/tools telemetry:set <field>=<value> [<field>=<value> …]
  *   pnpm --dir scripts/tools telemetry:demo
+ *   pnpm --dir scripts/tools telemetry:serve [<field>=<value> …]
  *
- * SEND A SINGLE FIELD
+ * SEND A SINGLE FIELD (into a Host-mode LIVI)
  *
  *   telemetry:set speedKph=73
  *   telemetry:set nightMode=true
@@ -45,12 +57,25 @@
  *   telemetry:demo
  *
  *
+ * SIMULATE A REMOTE HOST  (for LIVI's "Client" telemetry mode)
+ *
+ *   telemetry:serve                                 # serves the demo payload once per connection
+ *   telemetry:serve speedKph=73 rpm=2100             # serves a custom payload instead
+ *   telemetry:serve _repeatMs=1000 speedKph=90       # keeps broadcasting on a timer
+ *
+ *   Point LIVI at this process: Settings → General → Telemetry (IPC) → Client,
+ *   IP = this machine's address, Port = TELEMETRY_URL's port (4000 by default).
+ *
+ *
  * ENV
  *
- *   TELEMETRY_URL=http://127.0.0.1:4000
+ *   TELEMETRY_URL=http://127.0.0.1:4000   (for `set`/`demo`: where to connect to.
+ *                                           for `serve`: which port to listen on.)
  *   TELEMETRY_SOURCE=sim
  */
 
+import { createServer } from 'http'
+import { Server as IOServer } from 'socket.io'
 import { io, type Socket } from 'socket.io-client'
 
 const URL = process.env.TELEMETRY_URL ?? 'http://127.0.0.1:4000'
@@ -166,8 +191,10 @@ async function setOnce(socket: Socket): Promise<void> {
 // `demo` — one push filling every meaningful field with realistic values
 // ──────────────────────────────────────────────────────────────────────────
 
-async function demo(socket: Socket): Promise<void> {
-  const payload = {
+/** Realistic values for every meaningful field — shared by `demo` (push once into a
+ *  Host-mode LIVI) and `serve` with no fields given (broadcast to a Client-mode LIVI). */
+function buildDemoPayload(): Record<string, unknown> {
+  return {
     // Motion / cluster basics
     speedKph: 50,
     rpm: 1500,
@@ -228,6 +255,10 @@ async function demo(socket: Socket): Promise<void> {
       satellites: 11
     }
   }
+}
+
+async function demo(socket: Socket): Promise<void> {
+  const payload = buildDemoPayload()
 
   push(socket, payload)
   console.log('[telemetry] demo push:')
@@ -235,6 +266,79 @@ async function demo(socket: Socket): Promise<void> {
 
   await sleep(200)
   process.exit(0)
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// `serve` — host a Socket.IO server that a Client-mode LIVI can connect to
+// ──────────────────────────────────────────────────────────────────────────
+
+/** Same `key=value [...]` parsing as `set`, but for building the payload `serve`
+ *  broadcasts rather than pushing it anywhere. Falls back to the demo payload when
+ *  no fields are given, so `telemetry:serve` alone is a useful smoke test on its own. */
+function parseServeArgs(): { payload: Record<string, unknown>; repeatMs: number } {
+  const args = process.argv.slice(3)
+  const flat: Record<string, unknown> = {}
+  let repeatMs = 0
+
+  for (const raw of args) {
+    const kv = parseKv(raw)
+    if (!kv) {
+      console.error(`[telemetry] ignoring malformed arg: ${raw}`)
+      continue
+    }
+    if (kv[0] === '_repeatMs' && typeof kv[1] === 'number') {
+      repeatMs = kv[1]
+      continue
+    }
+    flat[kv[0]] = kv[1]
+  }
+
+  const payload = Object.keys(flat).length > 0 ? inflate(flat) : buildDemoPayload()
+  return { payload, repeatMs }
+}
+
+async function serve(): Promise<void> {
+  const port = (() => {
+    try {
+      const parsed = new globalThis.URL(URL).port
+      return parsed ? Number(parsed) : 4000
+    } catch {
+      return 4000
+    }
+  })()
+
+  const { payload, repeatMs } = parseServeArgs()
+  const envelope = (): Record<string, unknown> => ({ ts: Date.now(), source: SOURCE, ...payload })
+
+  const httpServer = createServer()
+  const ioServer = new IOServer(httpServer, { cors: { origin: '*' } })
+
+  ioServer.on('connection', (socket) => {
+    console.log(`[telemetry] LIVI client connected (${socket.id}) — sending telemetry:update`)
+    socket.emit('telemetry:update', envelope())
+    socket.on('disconnect', (reason) => {
+      console.log(`[telemetry] LIVI client disconnected: ${reason}`)
+    })
+  })
+
+  httpServer.on('error', (err: NodeJS.ErrnoException) => {
+    console.error(`[telemetry] server error on port ${port}:`, err.message)
+  })
+
+  httpServer.listen(port, () => {
+    console.log(`[telemetry] serving telemetry:update on :${port} (source=${SOURCE})`)
+    console.log(
+      '[telemetry] point a LIVI "Client" telemetry setting at this machine\'s IP and this port'
+    )
+    console.log('[telemetry] payload:', JSON.stringify(payload))
+  })
+
+  if (repeatMs > 0) {
+    setInterval(() => ioServer.emit('telemetry:update', envelope()), repeatMs)
+    console.log(`[telemetry] broadcasting every ${repeatMs} ms — Ctrl+C to stop`)
+  } else {
+    console.log('[telemetry] broadcasting the same payload to each new connection — Ctrl+C to stop')
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -246,13 +350,16 @@ function help(): never {
 
   pnpm --dir scripts/tools telemetry:set <field>=<value> [<field>=<value> …]
   pnpm --dir scripts/tools telemetry:demo
+  pnpm --dir scripts/tools telemetry:serve [<field>=<value> …]
 
 Examples
-  telemetry:set speedKph=73                       # one field
+  telemetry:set speedKph=73                       # one field → Host-mode LIVI
   telemetry:set fuelPct=4 rangeKm=38              # block (low-fuel warning)
   telemetry:set gps.lat=53.5912 gps.lng=10.015    # nested block (gps)
   telemetry:set _repeatMs=1000 speedKph=90        # repeat every 1 s
   telemetry:demo                                  # one realistic all-fields push
+  telemetry:serve                                 # simulate a remote host for Client-mode LIVI
+  telemetry:serve _repeatMs=500 speedKph=90       # ...broadcasting on a timer
 
 Reference
   src/main/shared/types/Telemetry.ts              # full field list + routing
@@ -268,10 +375,14 @@ Env
 // Dispatch
 // ──────────────────────────────────────────────────────────────────────────
 
-const socket = connect()
+if (cmd === 'serve') {
+  void serve()
+} else {
+  const socket = connect()
 
-socket.on('connect', async () => {
-  if (cmd === 'set') return setOnce(socket)
-  if (cmd === 'demo') return demo(socket)
-  help()
-})
+  socket.on('connect', async () => {
+    if (cmd === 'set') return setOnce(socket)
+    if (cmd === 'demo') return demo(socket)
+    help()
+  })
+}

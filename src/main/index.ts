@@ -28,9 +28,10 @@ import { checkAndInstallHelperSudoers } from '@main/services/projection/driver/h
 import { checkAndInstallWifiApUnit } from '@main/services/projection/driver/helper/wifiApUnit'
 import { ProjectionService } from '@main/services/projection/services/ProjectionService'
 import { TelemetrySocket } from '@main/services/Socket'
+import { TelemetrySocketClient } from '@main/services/SocketClient'
 import { setupTelemetry } from '@main/services/telemetry/setupTelemetry'
 import { TelemetryStore } from '@main/services/telemetry/TelemetryStore'
-import { runtimeStateProps } from '@main/types'
+import { runtimeStateProps, TelemetryTransport } from '@main/types'
 import type { Config } from '@shared/types'
 import { app, BrowserWindow } from 'electron'
 import { loadConfig } from './config/loadConfig'
@@ -66,13 +67,19 @@ if (bootstrapCompositor()) {
   })
 }
 
+// Telemetry (IPC): host (own the socket) or client (dial out to a remote one).
+function createTelemetryTransport(cfg: Config, store: TelemetryStore): TelemetryTransport {
+  if (cfg.telemetryMode === 'client' && cfg.telemetryClientIp) {
+    return new TelemetrySocketClient(store, cfg.telemetryClientIp, cfg.telemetryClientPort)
+  }
+  return new TelemetrySocket(store, 4000)
+}
+
 app.whenReady().then(async () => {
   if (!bootAllowed) return
   const projectionService = new ProjectionService()
   const usbService = new USBService(projectionService)
   const telemetryStore = new TelemetryStore()
-  const telemetrySocket = new TelemetrySocket(telemetryStore, 4000)
-
   const runtimeState: runtimeStateProps = {
     config: loadConfig(),
     telemetrySocket: null,
@@ -81,6 +88,11 @@ app.whenReady().then(async () => {
     wmExitedKiosk: false
   }
   setDebugLogging(runtimeState.config.debugLogging === true)
+
+  let telemetrySocket: TelemetryTransport = createTelemetryTransport(
+    runtimeState.config,
+    telemetryStore
+  )
 
   setCustomPageConfig(() => runtimeState.config)
   seedCustomPage()
@@ -172,6 +184,30 @@ app.whenReady().then(async () => {
   }
   applyHuVolume(runtimeState.config)
   configEvents.on('changed', (next: Config) => applyHuVolume(next))
+
+  // Telemetry (IPC) transport: swap host ⇄ client live, no restart required.
+  let lastTelemetryMode = runtimeState.config.telemetryMode
+  let lastTelemetryIp = runtimeState.config.telemetryClientIp
+  let lastTelemetryPort = runtimeState.config.telemetryClientPort
+  const applyTelemetryTransport = async (cfg: Config): Promise<void> => {
+    const changed =
+      cfg.telemetryMode !== lastTelemetryMode ||
+      (cfg.telemetryMode === 'client' &&
+        (cfg.telemetryClientIp !== lastTelemetryIp ||
+          cfg.telemetryClientPort !== lastTelemetryPort))
+    if (!changed) return
+
+    lastTelemetryMode = cfg.telemetryMode
+    lastTelemetryIp = cfg.telemetryClientIp
+    lastTelemetryPort = cfg.telemetryClientPort
+
+    await telemetrySocket.disconnect()
+    telemetrySocket = createTelemetryTransport(cfg, telemetryStore)
+    runtimeState.telemetrySocket = telemetrySocket
+    services.telemetrySocket = telemetrySocket
+  }
+  configEvents.on('changed', (next: Config) => void applyTelemetryTransport(next))
+
   setupTelemetry({
     store: telemetryStore,
     projectionService,

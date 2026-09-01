@@ -1,8 +1,14 @@
 import { NULL_DELETES } from '@main/constants'
 import { ProjectionService } from '@main/services/projection/services/ProjectionService'
-import { TelemetrySocket } from '@main/services/Socket'
 import { USBService } from '@main/services/usb/USBService'
 import type { Config } from '@shared/types'
+
+/** Either side of the Telemetry (IPC) transport — hosting a socket, or dialing out to
+ *  one — implements this, so callers can hold/swap either without caring which. */
+export interface TelemetryTransport {
+  connect(): Promise<void>
+  disconnect(): Promise<void>
+}
 
 export type UpdateSessionState = 'idle' | 'downloading' | 'ready' | 'installing'
 
@@ -28,12 +34,12 @@ export interface GhRelease {
 export interface ServicesProps {
   projectionService: ProjectionService
   usbService: USBService
-  telemetrySocket: TelemetrySocket
+  telemetrySocket: TelemetryTransport
 }
 
 export interface runtimeStateProps {
   config: Config
-  telemetrySocket: TelemetrySocket | null
+  telemetrySocket: TelemetryTransport | null
   isQuitting: boolean
   suppressNextFsSync: boolean
   wmExitedKiosk: boolean
