@@ -6,8 +6,15 @@ vi.mock('@main/services/video/gstHost', () => ({
     openAudio: vi.fn(),
     setAudioActive: vi.fn(),
     pushAudio: vi.fn(),
+    setAudioVolume: vi.fn(),
     closeAudio: vi.fn()
   }
+}))
+
+// The host path, whatever platform runs the tests.
+vi.mock('@main/services/video/GstVideo', () => ({
+  useHostProcess: true,
+  gstAddon: () => null
 }))
 
 const mocked = vi.mocked(gstHost)
@@ -47,6 +54,23 @@ describe('HostAudioOutput', () => {
     out.start()
 
     expect(mocked.openAudio).toHaveBeenCalledTimes(1)
+  })
+
+  test('the host stream volume is set on the host', async () => {
+    const out = new HostAudioOutput({ sampleRate: 48000, channels: 2 })
+    out.start()
+    await vi.waitFor(() => expect(out.hostStreamId).toBe(5))
+    out.setVolume(0.4, 60)
+    expect(mocked.setAudioVolume).toHaveBeenCalledWith(5, 0.4, 60)
+  })
+
+  test('samples written after the stream opens go straight to the host', async () => {
+    const out = new HostAudioOutput({ sampleRate: 48000, channels: 2 })
+    out.start()
+    await vi.waitFor(() => expect(out.hostStreamId).toBe(5))
+    mocked.pushAudio.mockClear()
+    out.write(new Int16Array([1, 2, 3]))
+    expect(mocked.pushAudio).toHaveBeenCalledWith(5, expect.any(Buffer))
   })
 
   test('samples written before the stream is open follow once it is', async () => {

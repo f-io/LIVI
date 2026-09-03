@@ -428,7 +428,7 @@ livi_set_wifi_pmf_optional() {
 livi_write_udev_rule() {
   local template="$1"
   echo "→ Writing $LIVI_UDEV_FILE"
-  sed "s/__USERNAME__/$USER/g" "$template" | sudo tee "$LIVI_UDEV_FILE" >/dev/null
+  sudo tee "$LIVI_UDEV_FILE" <"$template" >/dev/null
   sudo udevadm control --reload-rules
   sudo udevadm trigger
 }

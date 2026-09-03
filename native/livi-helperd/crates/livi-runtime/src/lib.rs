@@ -8,6 +8,7 @@ pub mod events;
 pub mod file_transfer;
 pub mod framing;
 pub mod hfp;
+#[cfg(target_os = "linux")]
 pub mod sco;
 pub mod wifi_ap;
 pub mod ident;

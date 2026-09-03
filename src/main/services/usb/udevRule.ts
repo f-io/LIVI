@@ -1,7 +1,6 @@
 import { execFileSync, spawn } from 'child_process'
 import { BrowserWindow, dialog } from 'electron'
 import fs from 'fs'
-import os from 'os'
 import path from 'path'
 
 const RULE_FILE = '/etc/udev/rules.d/99-LIVI.rules'
@@ -37,45 +36,13 @@ function loadTouchFilter(): string | null {
   }
 }
 
-let cachedPhoneVendorIds: Set<number> | null | undefined
-
-// Android vendor allowlist parsed from the udev template.
-// Lines that also match an idProduct (dongle) are skipped.
-export function phoneVendorIdsFromUdevTemplate(): Set<number> | null {
-  if (cachedPhoneVendorIds !== undefined) return cachedPhoneVendorIds
-  try {
-    const ids = new Set<number>()
-    for (const line of loadTemplate().split('\n')) {
-      if (line.includes('ATTR{idProduct}')) continue
-      const m = line.match(/ATTR\{idVendor\}=="([0-9a-fA-F]+)"/)
-      if (m) ids.add(Number.parseInt(m[1], 16))
-    }
-    cachedPhoneVendorIds = ids.size > 0 ? ids : null
-  } catch {
-    cachedPhoneVendorIds = null
-  }
-  return cachedPhoneVendorIds
-}
-
 function templateMarker(template: string): string {
   const m = template.match(/^# LIVI-RULE-VERSION=\d+$/m)
   return m ? m[0] : '# LIVI-RULE-VERSION=0'
 }
 
-function resolveUsername(): string {
-  if (process.env.PKEXEC_UID) {
-    try {
-      return execFileSync('id', ['-nu', process.env.PKEXEC_UID], { encoding: 'utf8' }).trim()
-    } catch {
-      // fall through
-    }
-  }
-  if (process.env.SUDO_USER) return process.env.SUDO_USER
-  return os.userInfo().username
-}
-
 function buildRuleContent(): string {
-  return loadTemplate().replace(/__USERNAME__/g, resolveUsername())
+  return loadTemplate()
 }
 
 export function udevRuleExists(): boolean {
@@ -148,12 +115,12 @@ export async function checkAndInstallUdevRule(window: BrowserWindow): Promise<bo
   const isUpgrade = exists && !isCurrent
   const { response } = await dialog.showMessageBox(window, {
     type: 'question',
-    title: isUpgrade ? 'USB Permission Update' : 'USB Permission Required',
+    title: isUpgrade ? 'udev Rule Update' : 'udev Rule Required',
     message: isUpgrade
-      ? 'LIVI needs to update its udev rule for USB device access.'
-      : 'LIVI needs permission to access USB devices.',
+      ? 'LIVI needs to update its udev rule.'
+      : 'LIVI needs a udev rule for its touch panels and phones.',
     detail: isUpgrade
-      ? `The existing rule at ${RULE_FILE} is outdated (wired Android Auto needs additional phone vendor entries). It will be replaced.`
+      ? `The existing rule at ${RULE_FILE} is outdated. It will be replaced.`
       : `A udev rule will be installed to ${RULE_FILE}.`,
     buttons: [isUpgrade ? 'Update' : 'Install', 'Skip'],
     defaultId: 0,
@@ -173,7 +140,7 @@ export async function checkAndInstallUdevRule(window: BrowserWindow): Promise<bo
         type: 'error',
         title: 'Installation Failed',
         message: 'Could not install the udev rule.',
-        detail: `${err instanceof Error ? err.message : String(err)}\n\nThis step is required for USB device access.`,
+        detail: `${err instanceof Error ? err.message : String(err)}`,
         buttons: ['Retry', 'Skip'],
         defaultId: 0,
         cancelId: 1

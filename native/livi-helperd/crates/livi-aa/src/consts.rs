@@ -17,6 +17,7 @@ pub const CH_VIDEO: u8 = 3;
 pub const CH_MEDIA_AUDIO: u8 = 4;
 pub const CH_SPEECH_AUDIO: u8 = 5;
 pub const CH_SYSTEM_AUDIO: u8 = 6;
+pub const CH_MIC_INPUT: u8 = 9;
 pub const CH_CLUSTER_VIDEO: u8 = 19;
 
 // Control channel message ids.

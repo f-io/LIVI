@@ -54,17 +54,9 @@ The license text is included in the `assets/gstreamer/LICENSES` directory.
 
 https://gstreamer.freedesktop.org/
 
-### node-usb-rs
-
-This application bundles **node-usb-rs**.
-
-node-usb-rs is licensed under the **MIT License**.
-
-https://github.com/node-usb/node-usb-rs
-
 ### nusb
 
-This application bundles **nusb** (compiled into the node-usb-rs prebuilt binaries).
+This application bundles **nusb** (compiled into the `livi-helperd` binary, which talks to phones over USB).
 
 nusb is dual-licensed under the **MIT OR Apache-2.0** license.
 

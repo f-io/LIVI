@@ -22,7 +22,7 @@ function makeFw(over: Record<string, unknown> = {}) {
 function fakeHost(fw: ReturnType<typeof makeFw>, over: Record<string, unknown> = {}) {
   return {
     isStarted: vi.fn(() => true),
-    hasWebUsbDevice: vi.fn(() => true),
+    isDongleUp: vi.fn(() => true),
     uploadIcons: vi.fn(),
     getDevToolsUrlCandidates: vi.fn(() => ['http://192.168.1.1/dev']),
     sendToDongle: vi.fn(async () => true),

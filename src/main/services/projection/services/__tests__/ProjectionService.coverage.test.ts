@@ -11,8 +11,7 @@ import {
   MediaData,
   NavigationData,
   Plugged,
-  SoftwareVersion,
-  VideoData
+  SoftwareVersion
 } from '../../messages'
 
 const bluezMock = {
@@ -22,6 +21,7 @@ const bluezMock = {
   disconnect: vi.fn(async (_mac: string) => ({ ok: true })),
   disconnectProfile: vi.fn(async (_mac: string, _uuid: string) => ({ ok: true })),
   setPlaybackStatus: vi.fn(async () => ({ ok: true })),
+  setScoSink: vi.fn(async () => ({ ok: true })),
   deauthApClients: vi.fn(async () => undefined),
   setWiredPhones: vi.fn(async () => undefined),
   subscribe: vi.fn(() => ({ close: vi.fn() }))
@@ -61,14 +61,15 @@ vi.mock('../../messages', async () => {
   const EventEmitter = require('events')
   class MockDongleDriver extends EventEmitter {
     send = vi.fn(async () => true)
-    initialise = vi.fn(async () => undefined)
+    attachHelper = vi.fn()
+    detachHelper = vi.fn()
+    setMediaSink = vi.fn()
+    usbDevice = vi.fn(() => null)
     start = vi.fn(async () => undefined)
     stop = vi.fn(async () => undefined)
     close = vi.fn(async () => undefined)
-    bringUp = vi.fn(async () => undefined)
     isUp = false
     disconnectPhone = vi.fn(async () => true)
-    sendPhoneAudio = vi.fn()
     uploadHostIcons = vi.fn()
     requestClusterFocus = vi.fn()
     requestKeyframe = vi.fn()
@@ -93,7 +94,6 @@ vi.mock('../../messages', async () => {
     BluetoothPeerConnected: class {
       constructor(public address?: string) {}
     },
-    VideoData: class {},
     AudioData: class {},
     DuckAudio: class {},
     MediaData: class MediaData {},
@@ -113,7 +113,6 @@ vi.mock('../../messages', async () => {
     SendCommand: StubMsg,
     SendTouch: StubMsg,
     SendMultiTouch: StubMsg,
-    SendAudio: StubMsg,
     SendFile: StubMsg,
     SendServerCgiScript: StubMsg,
     SendLiviWeb: StubMsg,
@@ -181,7 +180,11 @@ vi.mock('@main/ipc/utils', () => ({ configEvents: configEventsMock }))
 const playerCreatedHook: { cb: (() => void) | null } = { cb: null }
 vi.mock('../../../video/GstVideo', async (importOriginal) => {
   const orig = await importOriginal<typeof import('../../../video/GstVideo')>()
-  return { ...orig, setOnPlayerCreated: (cb: (() => void) | null) => (playerCreatedHook.cb = cb) }
+  return {
+    ...orig,
+    setOnPlayerCreated: (cb: (() => void) | null) => (playerCreatedHook.cb = cb),
+    openMediaFeed: vi.fn(async () => '/tmp/media.feed')
+  }
 })
 
 vi.mock('@shared/assets/carIcons', () => ({
@@ -194,11 +197,6 @@ vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => '/tmp/appdata') },
   WebContents: class {},
   webContents: { fromId: vi.fn((id: number) => ({ id, isDestroyed: () => false })) }
-}))
-
-vi.mock('usb', () => ({
-  usb: { getDeviceList: vi.fn(() => []) },
-  WebUSBDevice: { createInstance: vi.fn(async () => ({})) }
 }))
 
 vi.mock('@main/window/secondaryWindows', () => ({
@@ -355,7 +353,6 @@ describe('ProjectionService message dispatch', () => {
     svc.handlePlugged = vi.fn()
     svc.handleBoxUpdateProgress = vi.fn()
     svc.handleBoxUpdateState = vi.fn()
-    svc.handleVideoData = vi.fn()
     svc.handleAudioData = vi.fn()
     svc.handleCommand = vi.fn()
 
@@ -364,7 +361,6 @@ describe('ProjectionService message dispatch', () => {
     svc.onDriverMessage(new Plugged(5))
     svc.onDriverMessage(new BoxUpdateProgress(1))
     svc.onDriverMessage(new BoxUpdateState())
-    svc.onDriverMessage(new VideoData())
     svc.onDriverMessage(new AudioData())
     svc.onDriverMessage(new Command(1))
 
@@ -373,7 +369,6 @@ describe('ProjectionService message dispatch', () => {
     expect(svc.handlePlugged).toHaveBeenCalled()
     expect(svc.handleBoxUpdateProgress).toHaveBeenCalled()
     expect(svc.handleBoxUpdateState).toHaveBeenCalled()
-    expect(svc.handleVideoData).toHaveBeenCalled()
     expect(svc.handleAudioData).toHaveBeenCalled()
     expect(svc.handleCommand).toHaveBeenCalled()
   })
@@ -426,19 +421,6 @@ describe('ProjectionService message dispatch', () => {
 
     expect(svc.deviceController.emitDevices).not.toHaveBeenCalled()
     expect(svc.disconnectPhone).not.toHaveBeenCalled()
-  })
-
-  test('the audio mic uplink gate only opens for the dongle driver', async () => {
-    const svc = makeSvc()
-    const { ProjectionAudio: PA } = await import('../ProjectionAudio')
-    const gate = (PA as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[4] as
-      | (() => boolean)
-      | undefined
-    expect(gate).toBeTypeOf('function')
-    // The dongle driver is the startup default, so the gate opens right away
-    expect(gate!()).toBe(true)
-    svc.drivers.getActive = vi.fn(() => ({}))
-    expect(gate!()).toBe(false)
   })
 
   test('handleBoxUpdateProgress emits an upload:progress event', () => {
@@ -581,67 +563,143 @@ describe('ProjectionService video handling', () => {
   const MAIN = 0x7a000001
   const CLUSTER = 0x7a000010
 
-  test('handleVideoData ignores cluster frames when cluster is not displayed', () => {
+  test('noteVideoGeometry on the main plane records size, emits resolution and marks first frame', () => {
     const svc = makeSvc()
-    svc.config = { dashboards: null }
-    svc.planes.pushCluster = vi.fn()
-    const msg = Object.assign(new VideoData(), {
-      cluster: true,
-      width: 100,
-      height: 50,
-      data: Buffer.from([1])
+    const send = vi.fn()
+    svc.webContents = { send, isDestroyed: () => false }
+    svc.config = { projectionWidth: 800, projectionHeight: 480 }
+    svc.planes.updateMainCrop = vi.fn()
+    svc.markFirstFrame = vi.fn()
+    const active = fakeDriver()
+    const s = svc.sessions.upsert(active, 'androidauto', 'wifi', {})
+    svc.sessions.activate(s.index)
+    svc.noteVideoGeometry(false, 1280, 720)
+    expect(svc.markFirstFrame).toHaveBeenCalled()
+    expect(svc.planes.updateMainCrop).toHaveBeenCalled()
+    expect(s.video.main.width).toBe(1280)
+    expect(send).toHaveBeenCalledWith('projection-event', {
+      type: 'resolution',
+      payload: { width: 1280, height: 720 }
     })
-    svc.handleVideoData(msg)
-    expect(svc.planes.pushCluster).not.toHaveBeenCalled()
+    svc.planes.updateMainCrop.mockClear()
+    svc.noteVideoGeometry(false, 1280, 720)
+    expect(svc.planes.updateMainCrop).not.toHaveBeenCalled()
   })
 
-  test('handleVideoData pushes cluster frames and emits resolution changes', () => {
+  test('noteVideoGeometry on the cluster plane records size and recrops', () => {
     const svc = makeSvc()
-    svc.config = { dashboards: { dash3: { main: true } } }
-    svc.planes.pushCluster = vi.fn()
+    svc.config = {
+      projectionWidth: 800,
+      projectionHeight: 480,
+      dashboards: { dash4: { dash: true } }
+    }
     svc.planes.recropAllClusters = vi.fn()
     svc.getClusterTargetWebContents = vi.fn(() => [{ isDestroyed: () => false, send: vi.fn() }])
     const active = fakeDriver()
     const s = svc.sessions.upsert(active, 'androidauto', 'wifi', {})
     svc.sessions.activate(s.index)
-
-    const msg = Object.assign(new VideoData(), {
-      cluster: true,
-      width: 320,
-      height: 180,
-      data: Buffer.from([1, 2])
-    })
-    svc.handleVideoData(msg)
-
-    expect(svc.lastClusterVideoWidth).toBe(320)
+    svc.noteVideoGeometry(true, 400, 240)
+    expect(s.video.cluster.width).toBe(400)
     expect(svc.planes.recropAllClusters).toHaveBeenCalled()
-    expect(svc.planes.pushCluster).toHaveBeenCalled()
-    expect(s.video.cluster.width).toBe(320)
+    svc.planes.recropAllClusters.mockClear()
+    svc.noteVideoGeometry(true, 400, 240)
+    expect(svc.planes.recropAllClusters).not.toHaveBeenCalled()
   })
 
-  test('handleVideoData handles main frames, resolution change, and first-frame marking', () => {
+  test('a dongle attach marks it connected and tells the renderer, detach reverses it', () => {
     const svc = makeSvc()
     const send = vi.fn()
     svc.webContents = { send, isDestroyed: () => false }
-    svc.planes.pushMain = vi.fn()
-    svc.planes.updateMainCrop = vi.fn()
-    svc.statusFile.setStreaming = vi.fn()
-    const active = fakeDriver()
-    const s = svc.sessions.upsert(active, 'androidauto', 'wifi', {})
-    svc.sessions.activate(s.index)
-
-    const msg = Object.assign(new VideoData(), {
-      cluster: false,
-      width: 1920,
-      height: 1080,
-      data: Buffer.from([9])
+    const dongle = svc.drivers.getDongle()
+    dongle.usbDevice = vi.fn(() => ({
+      vendorId: 0x1314,
+      productId: 0x1520,
+      usbFwVersion: '1.00',
+      deviceName: 'Carlinkit'
+    }))
+    svc.arbiter.markDongleConnected = vi.fn()
+    dongle.emit('attached')
+    expect(svc.arbiter.markDongleConnected).toHaveBeenCalledWith(true)
+    expect(send).toHaveBeenCalledWith('usb-event', {
+      type: 'plugged',
+      device: { vendorId: 0x1314, productId: 0x1520, deviceName: 'Carlinkit' }
     })
-    svc.handleVideoData(msg)
+    dongle.emit('detached')
+    expect(svc.arbiter.markDongleConnected).toHaveBeenCalledWith(false)
+    expect(send).toHaveBeenLastCalledWith('usb-event', { type: 'unplugged', device: null })
+  })
 
-    expect(svc.firstFrameLogged).toBe(true)
+  test('the AA/dongle media sink wires video into the planes and audio into the engine', async () => {
+    const svc = makeSvc()
+    const sink = svc.drivers.deps.mediaSink
+    svc.planes.primeMain = vi.fn()
+    svc.planes.primeClusters = vi.fn()
+    svc.noteVideoGeometry = vi.fn()
+    svc.audio.hostOutputs = vi.fn(() => [{ audioType: 3, streamId: 5, tag: 'media' }])
+    svc.audio.onHostOutput = vi.fn(() => () => {})
+    svc.audio.primeOutput = vi.fn()
+    svc.audio.setHostStreamVolume = vi.fn()
+
+    expect(sink.videoPlaneId(true)).toBe(0x7a000010)
+    expect(sink.videoPlaneId(false)).toBe(0x7a000001)
+    sink.primeVideo(false)
+    expect(svc.planes.primeMain).toHaveBeenCalled()
+    sink.primeVideo(true)
+    expect(svc.planes.primeClusters).toHaveBeenCalled()
+
+    svc.config = { dashboards: { dash4: { dash: true } } }
+    sink.noteVideoStarted(false, 800, 480)
+    expect(svc.noteVideoGeometry).toHaveBeenCalledWith(false, 800, 480)
+    sink.noteVideoStarted(true, 400, 240)
+    expect(svc.noteVideoGeometry).toHaveBeenCalledTimes(2)
+    // A cluster start while no screen shows it is dropped.
+    svc.config = {}
+    sink.noteVideoStarted(true, 400, 240)
+    expect(svc.noteVideoGeometry).toHaveBeenCalledTimes(2)
+
+    expect(sink.audioOutputs()).toEqual([{ audioType: 3, streamId: 5, tag: 'media' }])
+    expect(typeof sink.onAudioOutput(() => {})).toBe('function')
+    sink.primeAudio(4, 16000, 1, 'speech')
+    expect(svc.audio.primeOutput).toHaveBeenCalledWith(4, 16000, 1, 'speech')
+    sink.setHostVolume(3, 0.5, 80)
+    expect(svc.audio.setHostStreamVolume).toHaveBeenCalledWith(3, 0.5, 80)
+    await expect(sink.feedPath()).resolves.toBe('/tmp/media.feed')
+  })
+
+  test('noteVideoGeometry tolerates no active session and a destroyed cluster target', () => {
+    const svc = makeSvc()
+    svc.webContents = { send: vi.fn(), isDestroyed: () => false }
+    svc.config = {
+      projectionWidth: 800,
+      projectionHeight: 480,
+      dashboards: { dash4: { dash: true } }
+    }
+    svc.planes.recropAllClusters = vi.fn()
+    svc.planes.updateMainCrop = vi.fn()
+    svc.markFirstFrame = vi.fn()
+    svc.getClusterTargetWebContents = vi.fn(() => [{ isDestroyed: () => true, send: vi.fn() }])
+    // No active session: both the cluster and the main paths skip the session write.
+    svc.noteVideoGeometry(true, 400, 240)
+    expect(svc.planes.recropAllClusters).toHaveBeenCalled()
+    svc.noteVideoGeometry(false, 1280, 720)
     expect(svc.planes.updateMainCrop).toHaveBeenCalled()
-    expect(svc.planes.pushMain).toHaveBeenCalled()
-    expect(s.video.main.width).toBe(1920)
+  })
+
+  test('the media store playback bridge forwards to the helper AVRCP player', () => {
+    const svc = makeSvc()
+    svc.bluez.setPlaybackStatus = vi.fn(() => Promise.resolve({ ok: true }))
+    svc.mediaStore.deps.onPlaybackStatus('playing')
+    expect(svc.bluez.setPlaybackStatus).toHaveBeenCalledWith('playing')
+    // A rejecting call is swallowed.
+    svc.bluez.setPlaybackStatus = vi.fn(() => Promise.reject(new Error('down')))
+    expect(() => svc.mediaStore.deps.onPlaybackStatus('paused')).not.toThrow()
+  })
+
+  test('sendUsbEvent stays quiet without a live renderer', () => {
+    const svc = makeSvc()
+    svc.webContents = { send: vi.fn(), isDestroyed: () => true }
+    expect(() => svc.sendUsbEvent('plugged')).not.toThrow()
+    expect(svc.webContents.send).not.toHaveBeenCalled()
   })
 
   test('markFirstFrame is idempotent', () => {
@@ -998,8 +1056,19 @@ describe('ProjectionService phone + dongle lifecycle events', () => {
   test('onDonglePhoneConnected upserts and activates a dongle session', () => {
     const svc = makeSvc()
     svc.deviceController.emitDevices = vi.fn()
+    svc.drivers.getDongle().requestClusterFocus = vi.fn()
     svc.onDonglePhoneConnected()
     expect(svc.sessions.active()?.protocol).toBe('dongle')
+    expect(svc.drivers.getDongle().requestClusterFocus).not.toHaveBeenCalled()
+  })
+
+  test('onDonglePhoneConnected re-asserts cluster focus when the cluster is requested', () => {
+    const svc = makeSvc()
+    svc.deviceController.emitDevices = vi.fn()
+    svc.anyClusterRequested = vi.fn(() => true)
+    svc.drivers.getDongle().requestClusterFocus = vi.fn()
+    svc.onDonglePhoneConnected()
+    expect(svc.drivers.getDongle().requestClusterFocus).toHaveBeenCalled()
   })
 
   test('onDonglePhoneDisconnected with another session emits devices only', () => {
@@ -1063,7 +1132,7 @@ describe('ProjectionService session connect / disconnect handlers', () => {
     svc.refreshBtPairedList = vi.fn(async () => 0)
   }
 
-  test('onAaConnected registers, activates and marks the phone connected', () => {
+  test('onAaConnected registers and activates the session', () => {
     const svc = makeSvc()
     primeConnect(svc)
     const session = fakeDriver({ isWiredMode: () => false })
@@ -1285,19 +1354,11 @@ describe('ProjectionService presence handlers', () => {
 describe('ProjectionService delegations and ipc host', () => {
   test('simple arbiter/controller delegations', () => {
     const svc = makeSvc()
-    svc.arbiter.getPhoneDevice = vi.fn(() => ({ id: 'dev' }))
-    svc.arbiter.isPhoneConnected = vi.fn(() => true)
-    svc.arbiter.expectPhoneReenumeration = vi.fn()
-    svc.arbiter.isExpectingPhoneReenumeration = vi.fn(() => true)
     svc.arbiter.getSnapshot = vi.fn(() => ({ snap: 1 }))
     svc.deviceController.getDevices = vi.fn(() => [])
     svc.deviceController.forgetDevice = vi.fn(() => ({ ok: true }))
     svc.deviceController.selectDevice = vi.fn(() => ({ ok: true }))
 
-    expect(svc.getWiredPhoneDevice()).toEqual({ id: 'dev' })
-    expect(svc.isWiredPhoneConnected()).toBe(true)
-    svc.expectPhoneReenumeration(100)
-    expect(svc.isExpectingPhoneReenumeration()).toBe(true)
     expect(svc.getTransportState()).toEqual({ snap: 1 })
     expect(svc.getDevices()).toEqual([])
     expect(svc.forgetDevice('id')).toEqual({ ok: true })
@@ -1624,7 +1685,8 @@ describe('ProjectionService syncHelperSupervisor (linux)', () => {
   function primeDrivers(svc: any) {
     svc.drivers.startCp = vi.fn()
     svc.drivers.releaseCp = vi.fn(async () => undefined)
-    svc.drivers.startAaWireless = vi.fn()
+    svc.drivers.attachHelper = vi.fn()
+    svc.drivers.detachHelper = vi.fn()
     svc.drivers.stopAaWireless = vi.fn()
     svc.drivers.getCpManager = vi.fn(() => ({ setAaWireless: vi.fn(), setCpWireless: vi.fn() }))
     svc.openAaBtSubscription = vi.fn()
@@ -1635,7 +1697,7 @@ describe('ProjectionService syncHelperSupervisor (linux)', () => {
     svc.setWirelessPhoneInRange = vi.fn()
   }
 
-  test('starts a fresh supervisor, wireless AA and CP when enabled', async () => {
+  test('starts a fresh supervisor, attaches the AA helper feed and starts CP when enabled', async () => {
     const svc = makeSvc()
     primeDrivers(svc)
     svc.config = { wirelessAaEnabled: true, wirelessCpEnabled: true }
@@ -1643,13 +1705,13 @@ describe('ProjectionService syncHelperSupervisor (linux)', () => {
     svc.syncHelperSupervisor()
 
     expect(svc.helperSupervisor).not.toBeNull()
-    expect(svc.drivers.startAaWireless).toHaveBeenCalled()
+    expect(svc.drivers.attachHelper).toHaveBeenCalledWith(bluezMock)
     expect(svc.drivers.startCp).toHaveBeenCalled()
     expect(svc.cpActive).toBe(true)
     await Promise.resolve()
   })
 
-  test('stops wireless AA and CP when disabled after being active', () => {
+  test('stops wireless AA sessions and keeps the helper feed when wireless is disabled', () => {
     const svc = makeSvc()
     primeDrivers(svc)
     svc.config = { wirelessAaEnabled: true, wirelessCpEnabled: true }
@@ -1659,19 +1721,22 @@ describe('ProjectionService syncHelperSupervisor (linux)', () => {
     svc.syncHelperSupervisor()
 
     expect(svc.drivers.stopAaWireless).toHaveBeenCalled()
+    expect(svc.drivers.detachHelper).not.toHaveBeenCalled()
     expect(svc.aaBtActive).toBe(false)
   })
 
-  test('stops the supervisor entirely when nothing is wanted', () => {
+  test('keeps the supervisor for USB Android Auto when wireless and CP are off', () => {
     const svc = makeSvc()
     primeDrivers(svc)
-    // force a supervisor to exist, then request nothing (no linux want)
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
-    svc.helperSupervisor = { stop: vi.fn(async () => undefined) }
+    const sup = { stop: vi.fn(async () => undefined) }
+    svc.helperSupervisor = sup
     svc.btEnableKey = 'h'
     svc.config = {}
     svc.syncHelperSupervisor()
-    expect(svc.helperSupervisor).toBeNull()
+    expect(svc.helperSupervisor).toBe(sup)
+    expect(sup.stop).not.toHaveBeenCalled()
+    expect(svc.drivers.detachHelper).not.toHaveBeenCalled()
   })
 
   test('toggles wireless CP live when only the CP flag changes', () => {
@@ -1946,7 +2011,6 @@ describe('ProjectionService constructor wiring closures', () => {
     svc.onCpPresence = vi.fn()
     svc.onCpHelperPresence = vi.fn()
     svc.deviceController.resendReconnectTargets = vi.fn()
-    svc.expectPhoneReenumeration = vi.fn()
 
     const d = fakeDriver()
     deps.handlers.onMetaMessage(d, new MediaData())
@@ -1970,21 +2034,17 @@ describe('ProjectionService constructor wiring closures', () => {
     deps.onCpCreated(d)
     deps.onCpReleased(d)
     expect(deps.getCpConfigSeed()).toMatchObject({ vp9Supported: expect.any(Boolean) })
-    deps.onPhoneReenumerate(100)
     expect(deps.getConfig()).toBe(svc.config)
 
     expect(svc.onMetaMessage).toHaveBeenCalled()
     expect(svc.onAaConnected).toHaveBeenCalled()
     expect(svc.attachCodecCapture).toHaveBeenCalled()
-    expect(svc.expectPhoneReenumeration).toHaveBeenCalledWith(100)
   })
 
   test('arbiter dependency closures reflect service state and drive callbacks', () => {
     const svc = makeSvc()
     svc.emitTransportState = vi.fn()
     svc.autoStartIfNeeded = vi.fn(async () => undefined)
-    svc.maybeBringUpWiredBeside = vi.fn(async () => undefined)
-    svc.closeWiredPhoneSession = vi.fn()
     svc.sessions.active = vi.fn(() => ({ index: 3 }))
     svc.sessions.close = vi.fn()
     svc.getActiveTransport = vi.fn(() => 'dongle')
@@ -2000,37 +2060,37 @@ describe('ProjectionService constructor wiring closures', () => {
     expect(deps.isDongleSessionActive()).toBe(true)
     expect(typeof deps.isWiredAaSessionActive()).toBe('boolean')
     expect(typeof deps.isWiredCpSessionActive()).toBe('boolean')
-    expect(typeof deps.hasWiredSession()).toBe('boolean')
+    expect(deps.hasWiredAaSession()).toBe(false)
+    expect(deps.hasWiredCpSession()).toBe(false)
     deps.onChange()
     deps.onShouldStop()
     deps.onShouldAutoStart()
-    deps.onShouldBringUpWiredBeside()
-    deps.onWiredPhoneGone()
 
     expect(svc.emitTransportState).toHaveBeenCalled()
     expect(svc.sessions.close).toHaveBeenCalledWith(3)
     expect(svc.autoStartIfNeeded).toHaveBeenCalled()
-    expect(svc.maybeBringUpWiredBeside).toHaveBeenCalled()
-    expect(svc.closeWiredPhoneSession).toHaveBeenCalled()
   })
 
-  test('audio closures wire projection events, chunking and mic audio back to the service', () => {
+  test('audio closures wire projection events, chunking and stream levels back to the service', () => {
     const svc = makeSvc()
     svc.emitProjectionEvent = vi.fn()
     svc.sendChunked = vi.fn()
     svc.getAllUiWebContents = vi.fn(() => [])
-    svc.drivers.getActive().sendPhoneAudio = vi.fn()
+    const withVolume = { setStreamVolume: vi.fn() }
+    svc.drivers.getActive = vi.fn(() => withVolume)
 
     const args = (ProjectionAudio as unknown as Mock).mock.calls.at(-1)!
-    const [getConfig, sendProjectionEvent, sendChunked, sendMicPcm] = args
+    // Control only: config, events, chunks and the level hook, no microphone
+    expect(args).toHaveLength(4)
+    const [getConfig, sendProjectionEvent, sendChunked, applyStreamVolume] = args
     expect(getConfig()).toBe(svc.config)
     sendProjectionEvent({ type: 'audio' })
     sendChunked('projection-audio-chunk', new ArrayBuffer(2), 64, { a: 1 })
-    sendMicPcm(new Int16Array([1]), 1)
+    applyStreamVolume(3, 0.5, 250)
 
     expect(svc.emitProjectionEvent).toHaveBeenCalledWith({ type: 'audio' })
     expect(svc.sendChunked).toHaveBeenCalled()
-    expect(svc.drivers.getActive().sendPhoneAudio).toHaveBeenCalled()
+    expect(withVolume.setStreamVolume).toHaveBeenCalledWith(3, 0.5, 250)
   })
 
   test('dongle event listeners and audio monitor callback are wired', () => {
@@ -2091,58 +2151,39 @@ describe('ProjectionService start / autoStart', () => {
     expect(svc.started).toBe(true)
   })
 
-  test('start brings up wired AA when a device is available', async () => {
+  test('start activates the wired AA session the helper announced', async () => {
     const svc = makeSvc()
     primeStart(svc)
-    svc.arbiter.pickPreferred = vi.fn(() => ({ transport: 'aa', mode: 'wired' }))
-    svc.arbiter.getPhoneDevice = vi.fn(() => ({ vendorId: 0x18d1, productId: 0x2d00 }))
-    svc.drivers.bringUpAaWired = vi.fn(async () => true)
+    const wired = fakeDriver({ isWiredMode: () => true, usbSerial: () => 'serial-1' })
+    const held = svc.sessions.upsert(wired, 'androidauto', 'usb', { usbSerial: 'serial-1' })
+    expect(svc.sessions.active()).toBeNull()
+
+    // The arbiter derives the wired candidate from that session on its own
     await svc.start()
-    expect(svc.drivers.bringUpAaWired).toHaveBeenCalled()
+
+    expect(svc.sessions.active()).toBe(held)
     expect(svc.started).toBe(true)
+    expect(svc.clearStartRetry).toHaveBeenCalled()
+    expect(svc.scheduleStartRetry).not.toHaveBeenCalled()
   })
 
-  test('start schedules a retry when wired AA has no live device handle', async () => {
+  test('start schedules a retry when the wired AA session is not there yet', async () => {
     const svc = makeSvc()
     primeStart(svc)
     svc.arbiter.pickPreferred = vi.fn(() => ({ transport: 'aa', mode: 'wired' }))
-    svc.arbiter.getPhoneDevice = vi.fn(() => null)
     await svc.start()
     expect(svc.scheduleStartRetry).toHaveBeenCalled()
     expect(svc.started).toBe(false)
   })
 
-  test('start schedules a retry when wired AA bring-up returns false', async () => {
+  test('start attaches the helper feed for wireless AA', async () => {
     const svc = makeSvc()
     primeStart(svc)
-    svc.arbiter.pickPreferred = vi.fn(() => ({ transport: 'aa', mode: 'wired' }))
-    svc.arbiter.getPhoneDevice = vi.fn(() => ({ vendorId: 1, productId: 2 }))
-    svc.drivers.bringUpAaWired = vi.fn(async () => false)
-    await svc.start()
-    expect(svc.scheduleStartRetry).toHaveBeenCalled()
-  })
-
-  test('start schedules a retry when wired AA bring-up throws', async () => {
-    const svc = makeSvc()
-    primeStart(svc)
-    svc.arbiter.pickPreferred = vi.fn(() => ({ transport: 'aa', mode: 'wired' }))
-    svc.arbiter.getPhoneDevice = vi.fn(() => ({ vendorId: 1, productId: 2 }))
-    svc.drivers.bringUpAaWired = vi.fn(async () => {
-      throw new Error('bring-up boom')
-    })
-    await svc.start()
-    expect(svc.scheduleStartRetry).toHaveBeenCalled()
-    expect(svc.started).toBe(false)
-  })
-
-  test('start brings up wireless AA when no wired device is targeted', async () => {
-    const svc = makeSvc()
-    primeStart(svc)
+    svc.helperSupervisor = { stop: vi.fn(async () => undefined) }
     svc.arbiter.pickPreferred = vi.fn(() => ({ transport: 'aa', mode: 'wireless' }))
-    svc.arbiter.getPhoneDevice = vi.fn(() => null)
-    svc.drivers.startAaWireless = vi.fn()
+    svc.drivers.attachHelper = vi.fn()
     await svc.start()
-    expect(svc.drivers.startAaWireless).toHaveBeenCalled()
+    expect(svc.drivers.attachHelper).toHaveBeenCalledWith(bluezMock)
     expect(svc.started).toBe(true)
   })
 
@@ -2528,54 +2569,7 @@ describe('ProjectionService active-session, teardown, stop and retry', () => {
   })
 })
 
-describe('ProjectionService wired-beside and tryAutoConnect guards', () => {
-  test('maybeBringUpWiredBeside brings up a wired AA session beside the active one', async () => {
-    const svc = makeSvc()
-    svc.arbiter.getPhoneDevice = vi.fn(() => ({ vendorId: 0x18d1 }))
-    svc.drivers.bringUpAaWired = vi.fn(async () => true)
-    await svc.maybeBringUpWiredBeside()
-    expect(svc.drivers.bringUpAaWired).toHaveBeenCalled()
-  })
-
-  test('maybeBringUpWiredBeside skips apple devices and missing handles', async () => {
-    const svc = makeSvc()
-    svc.drivers.bringUpAaWired = vi.fn(async () => true)
-    svc.arbiter.getPhoneDevice = vi.fn(() => null)
-    await svc.maybeBringUpWiredBeside()
-    svc.arbiter.getPhoneDevice = vi.fn(() => ({ vendorId: 0x05ac }))
-    await svc.maybeBringUpWiredBeside()
-    expect(svc.drivers.bringUpAaWired).not.toHaveBeenCalled()
-  })
-
-  test('maybeBringUpWiredBeside skips when a wired AA session already exists', async () => {
-    const svc = makeSvc()
-    svc.arbiter.getPhoneDevice = vi.fn(() => ({ vendorId: 0x18d1 }))
-    svc.drivers.bringUpAaWired = vi.fn(async () => true)
-    svc.sessions.upsert(fakeDriver(), 'androidauto', 'usb', { usbSerial: 'x' })
-    await svc.maybeBringUpWiredBeside()
-    expect(svc.drivers.bringUpAaWired).not.toHaveBeenCalled()
-  })
-
-  test('maybeBringUpWiredBeside swallows a bring-up failure', async () => {
-    const svc = makeSvc()
-    svc.arbiter.getPhoneDevice = vi.fn(() => ({ vendorId: 0x18d1 }))
-    svc.drivers.bringUpAaWired = vi.fn(async () => {
-      throw new Error('beside boom')
-    })
-    await expect(svc.maybeBringUpWiredBeside()).resolves.toBeUndefined()
-  })
-
-  test('closeWiredPhoneSession closes a wired AA session and no-ops otherwise', () => {
-    const svc = makeSvc()
-    const wired = fakeDriver()
-    svc.sessions.upsert(wired, 'androidauto', 'usb', { usbSerial: 'x' })
-    svc.closeWiredPhoneSession()
-    expect(wired.close).toHaveBeenCalled()
-
-    const svc2 = makeSvc()
-    expect(() => svc2.closeWiredPhoneSession()).not.toThrow()
-  })
-
+describe('ProjectionService tryAutoConnect guards', () => {
   test('tryAutoConnect skips while a wired AA session is active', async () => {
     const svc = makeSvc()
     svc.aaBtActive = true
@@ -2706,70 +2700,6 @@ describe('ProjectionService branch coverage fill', () => {
     expect(noted.usbSerial).toBe('serial-x')
   })
 
-  test('handleVideoData cluster path skips resolution + push when unchanged and dataless', () => {
-    const svc = makeSvc()
-    svc.config = { dashboards: { dash3: { main: true } } }
-    svc.lastClusterVideoWidth = 320
-    svc.lastClusterVideoHeight = 180
-    svc.planes.pushCluster = vi.fn()
-    svc.planes.recropAllClusters = vi.fn()
-    const msg = Object.assign(new VideoData(), { cluster: true, width: 320, height: 180 })
-    svc.handleVideoData(msg)
-    expect(svc.planes.recropAllClusters).not.toHaveBeenCalled()
-    expect(svc.planes.pushCluster).not.toHaveBeenCalled()
-  })
-
-  test('handleVideoData cluster path tolerates no active session and a destroyed target', () => {
-    const svc = makeSvc()
-    svc.config = { dashboards: { dash3: { main: true } } }
-    svc.planes.pushCluster = vi.fn()
-    svc.planes.recropAllClusters = vi.fn()
-    svc.getClusterTargetWebContents = vi.fn(() => [{ isDestroyed: () => true, send: vi.fn() }])
-    const msg = Object.assign(new VideoData(), {
-      cluster: true,
-      width: 640,
-      height: 360,
-      data: Buffer.from([1])
-    })
-    svc.handleVideoData(msg)
-    expect(svc.planes.pushCluster).toHaveBeenCalled()
-  })
-
-  test('handleVideoData main path skips resolution + push when unchanged and dataless', () => {
-    const svc = makeSvc()
-    svc.firstFrameLogged = true
-    svc.lastVideoWidth = 1920
-    svc.lastVideoHeight = 1080
-    svc.planes.pushMain = vi.fn()
-    svc.planes.updateMainCrop = vi.fn()
-    const msg = Object.assign(new VideoData(), {
-      cluster: false,
-      width: 1920,
-      height: 1080
-    })
-    svc.handleVideoData(msg)
-    expect(svc.planes.updateMainCrop).not.toHaveBeenCalled()
-    expect(svc.planes.pushMain).not.toHaveBeenCalled()
-  })
-
-  test('handleVideoData main path tolerates no active session', () => {
-    const svc = makeSvc()
-    const send = vi.fn()
-    svc.webContents = { send, isDestroyed: () => false }
-    svc.firstFrameLogged = true
-    svc.planes.pushMain = vi.fn()
-    svc.planes.updateMainCrop = vi.fn()
-    const msg = Object.assign(new VideoData(), {
-      cluster: false,
-      width: 800,
-      height: 600,
-      data: Buffer.from([1])
-    })
-    svc.handleVideoData(msg)
-    expect(svc.planes.updateMainCrop).toHaveBeenCalled()
-    expect(svc.planes.pushMain).toHaveBeenCalled()
-  })
-
   test('onDriverMessage ignores unrecognized message types', () => {
     const svc = makeSvc()
     svc.webContents = { send: vi.fn() }
@@ -2793,8 +2723,7 @@ describe('ProjectionService branch coverage fill', () => {
     svc.emitTransportState = vi.fn()
     svc.config = { audioVolume: 0.5, navVolume: 0.4, voiceAssistantVolume: 0.3, callVolume: 0.2 }
     svc.arbiter.pickPreferred = vi.fn(() => ({ transport: 'aa', mode: 'wireless' }))
-    svc.arbiter.getPhoneDevice = vi.fn(() => null)
-    svc.drivers.startAaWireless = vi.fn()
+    svc.drivers.attachHelper = vi.fn()
 
     await svc.start()
 
@@ -2820,7 +2749,7 @@ describe('ProjectionService syncHelperSupervisor edge branches', () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
     const svc = makeSvc()
     svc.drivers.startCp = vi.fn()
-    svc.drivers.startAaWireless = vi.fn()
+    svc.drivers.attachHelper = vi.fn()
     svc.openAaBtSubscription = vi.fn()
     svc.populateAaBtPairedListInitial = vi.fn(async () => undefined)
     const oldSup = { stop: vi.fn(async () => undefined) }
@@ -3053,7 +2982,7 @@ describe('ProjectionService error-lambda and small-branch coverage', () => {
     try {
       const svc = makeSvc()
       svc.drivers.startCp = vi.fn()
-      svc.drivers.startAaWireless = vi.fn()
+      svc.drivers.attachHelper = vi.fn()
       svc.openAaBtSubscription = vi.fn()
       svc.populateAaBtPairedListInitial = vi.fn(async () => undefined)
       svc.config = { wirelessAaEnabled: true }
@@ -3071,7 +3000,7 @@ describe('ProjectionService error-lambda and small-branch coverage', () => {
     try {
       const svc = makeSvc()
       svc.drivers.startCp = vi.fn()
-      svc.drivers.startAaWireless = vi.fn()
+      svc.drivers.attachHelper = vi.fn()
       svc.openAaBtSubscription = vi.fn()
       svc.populateAaBtPairedListInitial = vi.fn(async () => undefined)
       svc.helperSupervisor = { stop: vi.fn(() => Promise.reject(new Error('old boom'))) }
@@ -3097,7 +3026,7 @@ describe('ProjectionService error-lambda and small-branch coverage', () => {
     try {
       const svc = makeSvc()
       svc.drivers.startCp = vi.fn()
-      svc.drivers.startAaWireless = vi.fn()
+      svc.drivers.attachHelper = vi.fn()
       svc.openAaBtSubscription = vi.fn()
       svc.emitTransportState = vi.fn()
       svc.connectConfiguredAudioDevices = vi.fn(async () => undefined)
@@ -3112,11 +3041,20 @@ describe('ProjectionService error-lambda and small-branch coverage', () => {
     }
   })
 
-  test('hasWiredSession closure reports a wired AA/CP session', () => {
+  test('hasWiredAaSession / hasWiredCpSession closures follow the usb sessions', () => {
     const svc = makeSvc()
-    svc.started = true
+    const deps = svc.arbiter.deps
+    expect(deps.hasWiredAaSession()).toBe(false)
+    expect(deps.hasWiredCpSession()).toBe(false)
+
+    // A held session counts, the phone need not be active
     svc.sessions.upsert(fakeDriver(), 'androidauto', 'usb', { usbSerial: 'x' })
-    expect(svc.arbiter.deps.hasWiredSession()).toBe(true)
+    expect(svc.sessions.active()).toBeNull()
+    expect(deps.hasWiredAaSession()).toBe(true)
+    expect(deps.hasWiredCpSession()).toBe(false)
+
+    svc.sessions.upsert(fakeDriver(), 'carplay', 'usb', { usbUdid: 'udid' })
+    expect(deps.hasWiredCpSession()).toBe(true)
   })
 
   test('onCpHelperPresence wifi link-down closes on the reported ip', () => {
@@ -3268,11 +3206,13 @@ describe('ProjectionService final branch fill', () => {
     expect(svc.planes.deps.getClusterVideoSize()).toEqual({ width: 0, height: 0 })
   })
 
-  test('hasWiredSession closure evaluates the carplay branch for a non-AA usb session', () => {
+  test('wired session closures ignore dongle and wireless sessions', () => {
     const svc = makeSvc()
-    svc.started = true
     svc.sessions.upsert(fakeDriver(), 'dongle', 'usb', { usbSerial: 'x' })
-    expect(svc.arbiter.deps.hasWiredSession()).toBe(false)
+    svc.sessions.upsert(fakeDriver(), 'androidauto', 'wifi', { wifiMac: 'aa:bb' })
+    svc.sessions.upsert(fakeDriver(), 'carplay', 'wifi', { wifiMac: 'cc:dd' })
+    expect(svc.arbiter.deps.hasWiredAaSession()).toBe(false)
+    expect(svc.arbiter.deps.hasWiredCpSession()).toBe(false)
   })
 
   test('arbiter onShouldStop closure is a no-op without an active session', () => {
@@ -3576,7 +3516,7 @@ describe('ProjectionService last-mile coverage', () => {
     try {
       const svc = makeSvc()
       svc.drivers.startCp = vi.fn()
-      svc.drivers.startAaWireless = vi.fn()
+      svc.drivers.attachHelper = vi.fn()
       svc.openAaBtSubscription = vi.fn()
       svc.emitTransportState = vi.fn()
       svc.connectConfiguredAudioDevices = vi.fn(() => Promise.reject(new Error('cfg boom')))
@@ -3596,7 +3536,7 @@ describe('ProjectionService last-mile coverage', () => {
     try {
       const svc = makeSvc()
       svc.drivers.startCp = vi.fn()
-      svc.drivers.startAaWireless = vi.fn()
+      svc.drivers.attachHelper = vi.fn()
       svc.openAaBtSubscription = vi.fn()
       svc.emitTransportState = vi.fn(() => {
         throw new Error('emit boom')
@@ -4073,5 +4013,34 @@ describe('HFP keeper, SCO and battery wiring', () => {
     expect(deps.getMicDevice()).toBe('mic7')
     svc.config.audioInputDevice = ''
     expect(deps.getMicDevice()).toBeUndefined()
+  })
+
+  test('the ScoAudio deps prime and drop the call stream and hand its id to the helper', async () => {
+    const svc = makeSvc()
+    svc.audio.primeOutput = vi.fn()
+    svc.audio.dropPrimed = vi.fn()
+    const hostOutputs: Array<(audioType: number, streamId: number, tag?: string) => void> = []
+    svc.audio.onHostOutput = vi.fn((cb: (typeof hostOutputs)[number]) => {
+      hostOutputs.push(cb)
+      return () => {}
+    })
+    const deps = svc.scoAudio.deps
+
+    deps.primeCall()
+    expect(svc.audio.primeOutput).toHaveBeenCalledWith(2, 8000, 1, 'call')
+    deps.dropCall()
+    expect(svc.audio.dropPrimed).toHaveBeenCalledWith('call')
+
+    // Only the call stream reaches the subscriber, the other tags stay out
+    const seen: number[] = []
+    deps.onCallStream((id: number) => seen.push(id))
+    hostOutputs[0](3, 41, 'media')
+    hostOutputs[0](2, 42, 'call')
+    expect(seen).toEqual([42])
+
+    await expect(deps.feedPath()).resolves.toBe('/tmp/media.feed')
+    await deps.setScoSink('/tmp/feed.sock', 42)
+    expect(bluezMock.setScoSink).toHaveBeenCalledWith('/tmp/feed.sock', 42)
+    expect(deps.feedPath).toBeTypeOf('function')
   })
 })

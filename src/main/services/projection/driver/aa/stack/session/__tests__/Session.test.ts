@@ -1,20 +1,29 @@
 import { EventEmitter } from 'node:events'
 import type { Mock } from 'vitest'
-
-class MockSocket extends EventEmitter {
-  destroy = vi.fn()
-  end = vi.fn()
-  setKeepAlive = vi.fn()
-  write = vi.fn((_data: Buffer, cb?: () => void) => {
-    cb?.()
-    return true
-  })
-}
-
 import { AV_MSG, CH, CTRL_MSG, FRAME_FLAGS } from '../../constants'
+import * as protoIndex from '../../proto/index'
+import type { HelperSessionLink } from '../../transport/HelperSessionLink'
 import { Session, type SessionConfig } from '../Session'
 
-const RUNNING_STATE = 6
+// Mirrors the private State enum in Session.ts
+const STATE = {
+  INIT: 0,
+  AUTH: 1,
+  SERVICE_DISCOVERY: 2,
+  CHANNEL_SETUP: 3,
+  RUNNING: 4,
+  CLOSED: 5
+} as const
+
+// Stands in for the helper session socket, the session only sends, controls, ends and destroys it
+class FakeLink extends EventEmitter {
+  peer = '10.0.0.2'
+  closed = false
+  send = vi.fn()
+  control = vi.fn()
+  end = vi.fn()
+  destroy = vi.fn()
+}
 
 function baseCfg(over: Partial<SessionConfig> = {}): SessionConfig {
   return {
@@ -34,14 +43,22 @@ function baseCfg(over: Partial<SessionConfig> = {}): SessionConfig {
   } as SessionConfig
 }
 
-function makeSession(): { session: Session; sock: MockSocket } {
-  const sock = new MockSocket()
-  const session = new Session(sock as unknown as import('net').Socket, baseCfg())
-  return { session, sock }
+function makeSession(over: Partial<SessionConfig> = {}): { session: Session; link: FakeLink } {
+  const link = new FakeLink()
+  const session = new Session(link as unknown as HelperSessionLink, baseCfg(over))
+  return { session, link }
+}
+
+function stateOf(session: Session): number {
+  return (session as unknown as { _state: number })._state
+}
+
+function setState(session: Session, state: number): void {
+  ;(session as unknown as { _state: number })._state = state
 }
 
 function forceRunning(session: Session): void {
-  ;(session as unknown as { _state: number })._state = RUNNING_STATE
+  setState(session, STATE.RUNNING)
 }
 
 function captureEncrypted(session: Session): Mock {
@@ -50,82 +67,175 @@ function captureEncrypted(session: Session): Mock {
   return fn
 }
 
-beforeEach(async () => {
-  vi.spyOn(console, 'log').mockImplementation(function () {})
-  vi.spyOn(console, 'warn').mockImplementation(function () {})
-  vi.spyOn(console, 'error').mockImplementation(function () {})
-})
-afterEach(async () => vi.restoreAllMocks())
+function sendAA(
+  session: Session
+): (ch: number, flags: number, msgId: number, data: Buffer) => void {
+  return (session as unknown as { _sendAA: (...a: unknown[]) => void })._sendAA.bind(session)
+}
 
-describe('Session — construction', () => {
-  test('sets TCP keepalive on the socket', async () => {
-    const { sock } = makeSession()
-    expect(sock.setKeepAlive).toHaveBeenCalledWith(true, 5_000)
-  })
+function protoStub(): Record<string, unknown> {
+  const codec = {
+    verify: () => null,
+    create: (f: Record<string, unknown>) => f,
+    encode: () => ({ finish: () => new Uint8Array([0x08, 0x00]) }),
+    decode: () => ({}),
+    toObject: (m: unknown) => m
+  }
+  return {
+    AuthCompleteIndication: codec,
+    ChannelOpenResponse: codec,
+    AVChannelSetupRequest: codec,
+    AVChannelSetupResponse: codec,
+    ServiceDiscoveryResponse: codec,
+    PingRequest: codec
+  }
+}
 
-  test('keepalive failure is swallowed', async () => {
-    const sock = new MockSocket()
-    sock.setKeepAlive = vi.fn(function () {
-      throw new Error('not a real socket')
-    })
-    expect(() => new Session(sock as unknown as import('net').Socket, baseCfg())).not.toThrow()
-  })
+// start() with the proto loader stubbed, the link has not reported ready yet
+async function started(): Promise<{ session: Session; link: FakeLink }> {
+  const { session, link } = makeSession()
+  const spy = vi.spyOn(protoIndex, 'loadProtos').mockResolvedValue(protoStub() as never)
+  await session.start()
+  spy.mockRestore()
+  return { session, link }
+}
+
+beforeEach(() => {
+  vi.spyOn(console, 'log').mockImplementation(() => {})
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  vi.spyOn(console, 'error').mockImplementation(() => {})
 })
+afterEach(() => vi.restoreAllMocks())
 
 describe('Session.close', () => {
-  test('destroys the socket and transitions to CLOSED', async () => {
-    const { session, sock } = makeSession()
+  test('destroys the link and transitions to CLOSED', () => {
+    const { session, link } = makeSession()
+    const down = vi.fn()
+    session.on('disconnected', down)
     session.close()
-    expect(sock.destroy).toHaveBeenCalled()
-    expect((session as unknown as { _state: number })._state).toBe(7) // CLOSED
+    expect(link.destroy).toHaveBeenCalled()
+    expect(stateOf(session)).toBe(STATE.CLOSED)
+    expect(down).toHaveBeenCalledWith('manual close')
   })
 
-  test('is idempotent — second close is silent', async () => {
-    const { session, sock } = makeSession()
+  test('a second close destroys the link again but reports nothing', () => {
+    const { session, link } = makeSession()
+    const down = vi.fn()
+    session.on('disconnected', down)
     session.close()
-    sock.destroy.mockClear()
+    link.destroy.mockClear()
     session.close()
-    expect(sock.destroy).toHaveBeenCalled() // still calls destroy
+    expect(link.destroy).toHaveBeenCalled()
+    expect(down).toHaveBeenCalledTimes(1)
   })
 
-  test('survives destroy() throwing', async () => {
-    const { session, sock } = makeSession()
-    sock.destroy = vi.fn(function () {
+  test('survives destroy() throwing', () => {
+    const { session, link } = makeSession()
+    link.destroy = vi.fn(() => {
       throw new Error('already destroyed')
     })
     expect(() => session.close()).not.toThrow()
+    expect(stateOf(session)).toBe(STATE.CLOSED)
   })
 })
 
-describe('Session — socket events', () => {
-  test('socket "close" event transitions to CLOSED', () => {
-    const { session, sock } = makeSession()
-    sock.emit('close')
-    expect((session as unknown as { _state: number })._state).toBe(7)
+describe('Session — link events', () => {
+  test('link "close" transitions to CLOSED', () => {
+    const { session, link } = makeSession()
+    const down = vi.fn()
+    session.on('disconnected', down)
+    link.emit('close')
+    expect(stateOf(session)).toBe(STATE.CLOSED)
+    expect(down).toHaveBeenCalledWith('socket closed')
   })
 
-  test('socket "error" event emits + transitions to CLOSED', () => {
-    const { session, sock } = makeSession()
+  test('link "error" emits error and transitions to CLOSED', () => {
+    const { session, link } = makeSession()
     const onError = vi.fn()
     session.on('error', onError)
-    sock.emit('error', new Error('reset'))
+    link.emit('error', new Error('reset'))
     expect(onError).toHaveBeenCalledWith(new Error('reset'))
-    expect((session as unknown as { _state: number })._state).toBe(7)
+    expect(stateOf(session)).toBe(STATE.CLOSED)
   })
 
-  test('socket "end" event before RUNNING half-closes the socket', () => {
-    const { session, sock } = makeSession()
-    sock.emit('end')
-    expect(sock.end).toHaveBeenCalled()
-    // Make TypeScript happy
-    void session
+  test("control 'closed' transitions to CLOSED with the helper's reason", () => {
+    const { session, link } = makeSession()
+    const down = vi.fn()
+    session.on('disconnected', down)
+    link.emit('control', { type: 'closed', reason: 'phone went away' })
+    expect(stateOf(session)).toBe(STATE.CLOSED)
+    expect(down).toHaveBeenCalledWith('phone went away')
   })
 
-  test('socket "end" event in RUNNING leaves the write side open', () => {
-    const { session, sock } = makeSession()
+  test("control 'closed' without a string reason reports 'helper closed'", () => {
+    const { session, link } = makeSession()
+    const down = vi.fn()
+    session.on('disconnected', down)
+    link.emit('control', { type: 'closed', reason: 7 })
+    expect(down).toHaveBeenCalledWith('helper closed')
+  })
+
+  test("control 'eof' before RUNNING ends the link", () => {
+    const { session, link } = makeSession()
+    link.emit('control', { type: 'eof' })
+    expect(link.end).toHaveBeenCalled()
+    expect(stateOf(session)).toBe(STATE.INIT)
+  })
+
+  test("control 'eof' in RUNNING leaves the write side open", () => {
+    const { session, link } = makeSession()
     forceRunning(session)
-    sock.emit('end')
-    expect(sock.end).not.toHaveBeenCalled()
+    link.emit('control', { type: 'eof' })
+    expect(link.end).not.toHaveBeenCalled()
+  })
+
+  test("control 'first-frame' drives video-started and cluster-video-started", () => {
+    const { session, link } = makeSession()
+    const video = vi.fn()
+    const cluster = vi.fn()
+    session.on('video-started', video)
+    session.on('cluster-video-started', cluster)
+    link.emit('control', { type: 'first-frame', ch: CH.VIDEO })
+    link.emit('control', { type: 'first-frame', ch: CH.CLUSTER_VIDEO })
+    link.emit('control', { type: 'first-frame', ch: CH.MEDIA_AUDIO })
+    expect(video).toHaveBeenCalledTimes(1)
+    expect(cluster).toHaveBeenCalledTimes(1)
+  })
+
+  test('the first main frame releases a held cluster stream request', () => {
+    const { session, link } = makeSession()
+    forceRunning(session)
+    const sent = captureEncrypted(session)
+    session.requestClusterKeyframe()
+    expect(sent).not.toHaveBeenCalled()
+    link.emit('control', { type: 'first-frame', ch: CH.VIDEO })
+    const clusterFocus = sent.mock.calls.find(
+      (c) => c[0] === CH.CLUSTER_VIDEO && c[2] === AV_MSG.VIDEO_FOCUS_INDICATION
+    )
+    expect(clusterFocus).toBeDefined()
+  })
+
+  test("control 'ready' without a mic socket leaves none", () => {
+    const { session, link } = makeSession()
+    expect(session.micSocketPath()).toBeNull()
+    link.emit('control', { type: 'ready', mic: 7 })
+    expect(session.micSocketPath()).toBeNull()
+  })
+
+  test('unknown controls are ignored', () => {
+    const { session, link } = makeSession()
+    expect(() => link.emit('control', { type: 'whatever' })).not.toThrow()
+    expect(stateOf(session)).toBe(STATE.INIT)
+  })
+
+  test('sendMediaSink forwards a sink control to the link', () => {
+    const { session, link } = makeSession()
+    session.sendMediaSink({ path: '/run/livi/feed.sock', plane: 1 })
+    expect(link.control).toHaveBeenCalledWith({
+      type: 'sink',
+      path: '/run/livi/feed.sock',
+      plane: 1
+    })
   })
 })
 
@@ -164,21 +274,6 @@ describe('Session — outbound input API gated by state', () => {
     ;(session as unknown as { _input: typeof input })._input = input
     session.sendRotary(1)
     expect(input.sendRotary).toHaveBeenCalledWith(1)
-  })
-
-  test('sendMicPcm delegates to MicChannel when RUNNING', async () => {
-    const { session } = makeSession()
-    forceRunning(session)
-    const mic = { pushPcm: vi.fn() }
-    ;(session as unknown as { _mic: typeof mic })._mic = mic
-    session.sendMicPcm(Buffer.from([1, 2, 3]), 42n)
-    expect(mic.pushPcm).toHaveBeenCalledWith(Buffer.from([1, 2, 3]), 42n)
-  })
-
-  test('sendMicPcm without _mic is a no-op even in RUNNING', async () => {
-    const { session } = makeSession()
-    forceRunning(session)
-    expect(() => session.sendMicPcm(Buffer.alloc(0))).not.toThrow()
   })
 
   test('requestVideoFocus / requestClusterKeyframe are no-ops outside RUNNING', async () => {
@@ -333,51 +428,7 @@ describe('Session.requestShutdown', () => {
   })
 })
 
-describe('Session — pre-TLS data dispatch (raw parser)', () => {
-  test('passes raw socket data to the frame parser before TLS handshake', async () => {
-    const { session, sock } = makeSession()
-    const push = vi.fn()
-    ;(session as unknown as { _rawParser: { push: Mock } })._rawParser.push = push
-    sock.emit('data', Buffer.from([0xde, 0xad]))
-    expect(push).toHaveBeenCalled()
-  })
-
-  test('routes raw VERSION_RESPONSE frames through _onVersionResponse', async () => {
-    const { session } = makeSession()
-    const onVer = vi.fn(async () => {})
-    ;(session as unknown as { _onVersionResponse: Mock })._onVersionResponse = onVer
-    await (
-      session as unknown as { _handleRawFrame: (f: unknown) => Promise<void> }
-    )._handleRawFrame({
-      channelId: 0,
-      flags: 0,
-      msgId: CTRL_MSG.VERSION_RESPONSE,
-      payload: Buffer.from([0x00, 0x01]),
-      rawPayload: Buffer.alloc(4)
-    })
-    expect(onVer).toHaveBeenCalled()
-  })
-
-  test('routes SSL_HANDSHAKE bytes through the TLS bridge', async () => {
-    const { session } = makeSession()
-    const injectHandshakeBytes = vi.fn()
-    ;(session as unknown as { _tls?: { injectHandshakeBytes: Mock } })._tls = {
-      injectHandshakeBytes
-    }
-    await (
-      session as unknown as { _handleRawFrame: (f: unknown) => Promise<void> }
-    )._handleRawFrame({
-      channelId: 0,
-      flags: 0,
-      msgId: CTRL_MSG.SSL_HANDSHAKE,
-      payload: Buffer.from([1, 2, 3]),
-      rawPayload: Buffer.alloc(4)
-    })
-    expect(injectHandshakeBytes).toHaveBeenCalledWith(Buffer.from([1, 2, 3]))
-  })
-})
-
-describe('Session — post-TLS dispatch (control channel)', () => {
+describe('Session — decrypted message dispatch', () => {
   test('CONTROL channel forwards to ControlChannel.handleMessage', async () => {
     const { session } = makeSession()
     const handleMessage = vi.fn()
@@ -394,8 +445,8 @@ describe('Session — post-TLS dispatch (control channel)', () => {
 
   test('CH.BLUETOOTH pairing decode error is swallowed without DEBUG', () => {
     const { session } = makeSession()
-    const sendAA = vi.fn()
-    ;(session as unknown as { _sendAA: Mock })._sendAA = sendAA
+    const sendAAFn = vi.fn()
+    ;(session as unknown as { _sendAA: Mock })._sendAA = sendAAFn
     ;(session as unknown as { _proto: unknown })._proto = {
       BluetoothPairingRequest: {
         decode: () => {
@@ -411,7 +462,12 @@ describe('Session — post-TLS dispatch (control channel)', () => {
     ;(
       session as unknown as { _handleDecryptedMessage: (...args: unknown[]) => void }
     )._handleDecryptedMessage(CH.BLUETOOTH, 0, 0x8001, Buffer.alloc(0))
-    expect(sendAA).toHaveBeenCalledWith(CH.BLUETOOTH, expect.any(Number), 0x8002, expect.anything())
+    expect(sendAAFn).toHaveBeenCalledWith(
+      CH.BLUETOOTH,
+      expect.any(Number),
+      0x8002,
+      expect.anything()
+    )
   })
 
   test('CHANNEL_OPEN_REQUEST on a service channel triggers an encrypted response', async () => {
@@ -474,115 +530,83 @@ describe('Session — post-TLS dispatch (control channel)', () => {
   })
 })
 
-describe('Session — _stripHeaderAndInjectTls header parsing', () => {
-  test('routes plaintext frames through _handleDecryptedMessage', async () => {
-    const { session } = makeSession()
-    const handle = vi.fn()
-    ;(session as unknown as { _handleDecryptedMessage: Mock })._handleDecryptedMessage = handle
-
-    // SHORT frame: [ch=3][flags=0x03 (FIRST|LAST)][payloadSize=4 BE][msgId=0x1234 BE][2-byte data]
-    const buf = Buffer.alloc(4 + 2 + 2)
-    buf.writeUInt8(3, 0)
-    buf.writeUInt8(0x03, 1) // not encrypted
-    buf.writeUInt16BE(4, 2)
-    buf.writeUInt16BE(0x1234, 4)
-    buf.writeUInt16BE(0x5678, 6)
-    ;(
-      session as unknown as { _stripHeaderAndInjectTls: (b: Buffer) => void }
-    )._stripHeaderAndInjectTls(buf)
-    expect(handle).toHaveBeenCalledWith(3, 0x03, 0x1234, expect.any(Buffer))
-  })
-
-  test('encrypted frames are pushed into the TLS bridge', async () => {
-    const { session } = makeSession()
-    const injectEncrypted = vi.fn()
-    ;(session as unknown as { _tls?: { injectEncrypted: Mock } })._tls = { injectEncrypted }
-
-    // bit 3 (0x08) set marks the frame as encrypted
-    const buf = Buffer.alloc(4 + 2)
-    buf.writeUInt8(3, 0)
-    buf.writeUInt8(0x08 | 0x03, 1)
-    buf.writeUInt16BE(2, 2)
-    buf.writeUInt16BE(0xdead, 4)
-    ;(
-      session as unknown as { _stripHeaderAndInjectTls: (b: Buffer) => void }
-    )._stripHeaderAndInjectTls(buf)
-    expect(injectEncrypted).toHaveBeenCalled()
-  })
-})
-
-describe('Session.requestShutdown — write-and-end semantics', () => {
-  test('falls back through the timeouts when the phone never sends ByeByeResponse', async () => {
+describe('Session.requestShutdown — ack and end semantics', () => {
+  test('falls back through the timeout when the phone never sends ByeByeResponse', async () => {
     vi.useFakeTimers()
-    const { session, sock } = makeSession()
+    const { session, link } = makeSession()
     forceRunning(session)
     captureEncrypted(session)
     const p = session.requestShutdown()
     await vi.advanceTimersByTimeAsync(2_000)
     await p
-    expect((session as unknown as { _state: number })._state).toBe(7) // CLOSED
-    expect(sock.end).toHaveBeenCalled()
+    expect(stateOf(session)).toBe(STATE.CLOSED)
+    expect(link.end).toHaveBeenCalled()
     vi.useRealTimers()
   })
 
   test('closes promptly once the phone acks with shutdown-complete', async () => {
     vi.useFakeTimers()
-    const { session, sock } = makeSession()
+    const { session, link } = makeSession()
     forceRunning(session)
     captureEncrypted(session)
-    // Provide a ControlChannel stub so requestShutdown can await its ByeByeResponse ack.
-    const { EventEmitter } = await import('node:events')
+    // A ControlChannel stub so requestShutdown can await the ByeByeResponse ack
     const control = new EventEmitter()
     ;(session as unknown as { _control: unknown })._control = control
 
     const p = session.requestShutdown()
-    // Let the drain race settle, then have the phone ack.
-    await vi.advanceTimersByTimeAsync(600)
+    await vi.advanceTimersByTimeAsync(10)
     control.emit('shutdown-complete')
     await p
 
-    expect((session as unknown as { _state: number })._state).toBe(7) // CLOSED
-    expect(sock.end).toHaveBeenCalled()
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('acked by phone'))
+    expect(stateOf(session)).toBe(STATE.CLOSED)
+    expect(link.end).toHaveBeenCalled()
     vi.useRealTimers()
   })
 
   test('still closes when the encrypted send throws', async () => {
     vi.useFakeTimers()
-    const { session, sock } = makeSession()
+    const { session, link } = makeSession()
     forceRunning(session)
-    ;(session as unknown as { _sendEncrypted: Mock })._sendEncrypted = vi.fn(function () {
+    ;(session as unknown as { _sendEncrypted: Mock })._sendEncrypted = vi.fn(() => {
       throw new Error('not writable')
     })
     const p = session.requestShutdown()
     await vi.advanceTimersByTimeAsync(2_000)
     await p
-    expect(sock.end).toHaveBeenCalled()
+    expect(link.end).toHaveBeenCalled()
     vi.useRealTimers()
   })
 })
 
 describe('Session._sendAA / _sendEncrypted', () => {
-  test('plaintext flags → write frame on socket', async () => {
-    const { session, sock } = makeSession()
-    ;(session as unknown as { _sendAA: (...args: unknown[]) => void })._sendAA(
-      0,
-      /* FRAME_FLAGS.PLAINTEXT */ 0x03,
+  test('plaintext frames go to the link straight from INIT', () => {
+    const { session, link } = makeSession()
+    sendAA(session)(CH.CONTROL, FRAME_FLAGS.PLAINTEXT, 0xabcd, Buffer.from([1, 2]))
+    expect(link.send).toHaveBeenCalledWith(
+      CH.CONTROL,
+      FRAME_FLAGS.PLAINTEXT,
       0xabcd,
       Buffer.from([1, 2])
     )
-    expect(sock.write).toHaveBeenCalled()
   })
 
-  test('encrypted flags without TLS state warn and drop', async () => {
-    const { session, sock } = makeSession()
-    ;(session as unknown as { _sendAA: (...args: unknown[]) => void })._sendAA(
-      3,
-      /* ENC_SIGNAL */ 0x0b,
+  test('encrypted frames are dropped before AUTH', () => {
+    const { session, link } = makeSession()
+    sendAA(session)(CH.VIDEO, FRAME_FLAGS.ENC_SIGNAL, 0xabcd, Buffer.from([1, 2]))
+    expect(link.send).not.toHaveBeenCalled()
+  })
+
+  test('encrypted frames go to the link from AUTH on', () => {
+    const { session, link } = makeSession()
+    setState(session, STATE.AUTH)
+    sendAA(session)(CH.VIDEO, FRAME_FLAGS.ENC_SIGNAL, 0xabcd, Buffer.from([1, 2]))
+    expect(link.send).toHaveBeenCalledWith(
+      CH.VIDEO,
+      FRAME_FLAGS.ENC_SIGNAL,
       0xabcd,
       Buffer.from([1, 2])
     )
-    // Should not have written anything because TLS is not set up
-    expect(sock.write).not.toHaveBeenCalled()
   })
 })
 
@@ -591,7 +615,10 @@ describe('Session._transition', () => {
     const { session } = makeSession()
     const cb = vi.fn()
     session.on('disconnected', cb)
-    ;(session as unknown as { _transition: (s: number, r?: string) => void })._transition(7, 'why')
+    ;(session as unknown as { _transition: (s: number, r?: string) => void })._transition(
+      STATE.CLOSED,
+      'why'
+    )
     expect(cb).toHaveBeenCalledWith('why')
   })
 
@@ -599,72 +626,17 @@ describe('Session._transition', () => {
     const { session } = makeSession()
     const cb = vi.fn()
     session.on('disconnected', cb)
-    ;(session as unknown as { _transition: (s: number, r?: string) => void })._transition(3)
+    ;(session as unknown as { _transition: (s: number, r?: string) => void })._transition(
+      STATE.CHANNEL_SETUP
+    )
     expect(cb).not.toHaveBeenCalled()
   })
 })
 
-describe('Session._onVersionResponse', () => {
-  test('short payload is ignored', async () => {
-    const { session } = makeSession()
-    const transition = vi.fn()
-    ;(session as unknown as { _transition: Mock })._transition = transition
-    await (
-      session as unknown as { _onVersionResponse: (b: Buffer) => Promise<void> }
-    )._onVersionResponse(Buffer.alloc(2))
-    expect(transition).not.toHaveBeenCalled()
-  })
-
-  test('version mismatch transitions to CLOSED', async () => {
-    const { session } = makeSession()
-    const transition = vi.fn()
-    ;(session as unknown as { _transition: Mock })._transition = transition
-    const payload = Buffer.alloc(6)
-    payload.writeUInt16BE(1, 0)
-    payload.writeUInt16BE(0, 2)
-    payload.writeUInt16BE(/* VERSION.STATUS_MISMATCH = */ 0xffff, 4)
-    await (
-      session as unknown as { _onVersionResponse: (b: Buffer) => Promise<void> }
-    )._onVersionResponse(payload)
-    expect(transition).toHaveBeenCalledWith(7, expect.stringContaining('version mismatch'))
-  })
-
-  test('happy path transitions to TLS_HANDSHAKE + invokes _startTls', async () => {
-    const { session } = makeSession()
-    const transition = vi.fn()
-    const startTls = vi.fn(async () => undefined)
-    ;(session as unknown as { _transition: Mock })._transition = transition
-    ;(session as unknown as { _startTls: Mock })._startTls = startTls
-
-    const payload = Buffer.alloc(6)
-    payload.writeUInt16BE(1, 0)
-    payload.writeUInt16BE(0, 2)
-    payload.writeUInt16BE(0, 4) // status OK
-    await (
-      session as unknown as { _onVersionResponse: (b: Buffer) => Promise<void> }
-    )._onVersionResponse(payload)
-    expect(transition).toHaveBeenCalledWith(2) // TLS_HANDSHAKE
-    expect(startTls).toHaveBeenCalled()
-  })
-})
-
-describe('Session._sendVersionRequest', () => {
-  test('writes a VERSION_REQUEST frame on the socket', async () => {
-    const { session, sock } = makeSession()
-    ;(session as unknown as { _sendVersionRequest: () => void })._sendVersionRequest()
-    expect(sock.write).toHaveBeenCalled()
-  })
-})
-
 describe('Session._handleSensorStartRequest', () => {
-  function setupForSensor(session: Session): Mock {
-    const sent = captureEncrypted(session)
-    return sent
-  }
-
   test('responds with SUCCESS for an unknown sensor type', async () => {
     const { session } = makeSession()
-    const sent = setupForSensor(session)
+    const sent = captureEncrypted(session)
     ;(
       session as unknown as { _handleSensorStartRequest: (b: Buffer) => void }
     )._handleSensorStartRequest(Buffer.from([0x08, 99]))
@@ -684,9 +656,7 @@ describe('Session._handleSensorStartRequest', () => {
   })
 
   test('NightMode sensor (type=10) uses initialNightMode from config', async () => {
-    const sock = new MockSocket()
-    const cfg = baseCfg({ initialNightMode: true })
-    const session = new Session(sock as unknown as import('net').Socket, cfg)
+    const { session } = makeSession({ initialNightMode: true })
     const sent = captureEncrypted(session)
     ;(
       session as unknown as { _handleSensorStartRequest: (b: Buffer) => void }
@@ -699,9 +669,7 @@ describe('Session._handleSensorStartRequest', () => {
 
 describe('Session._handleWifiCredentialsRequest', () => {
   test('sends a WifiCredentialsResponse including ssid + password + security + type', async () => {
-    const sock = new MockSocket()
-    const cfg = baseCfg({ wifiSsid: 'LIVI-AP', wifiPassword: 'secret123' })
-    const session = new Session(sock as unknown as import('net').Socket, cfg)
+    const { session } = makeSession({ wifiSsid: 'LIVI-AP', wifiPassword: 'secret123' })
     const sent = captureEncrypted(session)
     ;(
       session as unknown as { _handleWifiCredentialsRequest: () => void }
@@ -713,9 +681,7 @@ describe('Session._handleWifiCredentialsRequest', () => {
   })
 
   test('omits empty password field', async () => {
-    const sock = new MockSocket()
-    const cfg = baseCfg({ wifiSsid: 'LIVI', wifiPassword: '' })
-    const session = new Session(sock as unknown as import('net').Socket, cfg)
+    const { session } = makeSession({ wifiSsid: 'LIVI', wifiPassword: '' })
     const sent = captureEncrypted(session)
     ;(
       session as unknown as { _handleWifiCredentialsRequest: () => void }
@@ -725,9 +691,7 @@ describe('Session._handleWifiCredentialsRequest', () => {
   })
 
   test('warns when ssid is missing', async () => {
-    const sock = new MockSocket()
-    const cfg = baseCfg({ wifiSsid: '', wifiPassword: 'x' })
-    const session = new Session(sock as unknown as import('net').Socket, cfg)
+    const { session } = makeSession({ wifiSsid: '', wifiPassword: 'x' })
     captureEncrypted(session)
     expect(() =>
       (
@@ -768,7 +732,7 @@ describe('Session._handleAVSetupRequest', () => {
     expect(cb).toHaveBeenCalled()
     // SETUP_RESPONSE + VIDEO_FOCUS_INDICATION
     expect(sent.mock.calls.length).toBeGreaterThanOrEqual(2)
-    expect((session as unknown as { _state: number })._state).toBe(6) // RUNNING
+    expect(stateOf(session)).toBe(STATE.RUNNING)
   })
 
   test('cluster channel selects + emits cluster-video-codec, holds focus until main frame', async () => {
@@ -816,11 +780,8 @@ describe('Session._handleAVSetupRequest', () => {
 })
 
 describe('Session._postTlsSetup', () => {
-  test('sends AUTH_COMPLETE and transitions to SERVICE_DISCOVERY', async () => {
-    const { session } = makeSession()
-    const sent = captureEncrypted(session)
-    const sendAA = vi.fn()
-    ;(session as unknown as { _sendAA: Mock })._sendAA = sendAA
+  test('sends AUTH_COMPLETE in plaintext and transitions to SERVICE_DISCOVERY', async () => {
+    const { session, link } = makeSession()
     ;(session as unknown as { _proto: Record<string, unknown> })._proto = {
       AuthCompleteIndication: {
         verify: () => null,
@@ -828,10 +789,14 @@ describe('Session._postTlsSetup', () => {
         encode: () => ({ finish: () => new Uint8Array([0x08, 0x00]) })
       }
     }
-    void sent
     await (session as unknown as { _postTlsSetup: () => Promise<void> })._postTlsSetup()
-    expect(sendAA).toHaveBeenCalled()
-    expect((session as unknown as { _state: number })._state).toBe(4) // SERVICE_DISCOVERY
+    expect(link.send).toHaveBeenCalledWith(
+      CH.CONTROL,
+      FRAME_FLAGS.PLAINTEXT,
+      CTRL_MSG.AUTH_COMPLETE,
+      expect.any(Buffer)
+    )
+    expect(stateOf(session)).toBe(STATE.SERVICE_DISCOVERY)
   })
 })
 
@@ -839,80 +804,113 @@ describe('Session._openChannels', () => {
   test('transitions to CHANNEL_SETUP', async () => {
     const { session } = makeSession()
     ;(session as unknown as { _openChannels: () => void })._openChannels()
-    expect((session as unknown as { _state: number })._state).toBe(5) // CHANNEL_SETUP
+    expect(stateOf(session)).toBe(STATE.CHANNEL_SETUP)
   })
 })
 
-describe('Session.start() — channel wiring', () => {
-  function patchProto(session: Session): void {
-    ;(session as unknown as { _proto: Record<string, unknown> })._proto = {
-      ServiceDiscoveryResponse: {
-        verify: () => null,
-        create: (f: Record<string, unknown>) => f,
-        encode: () => ({ finish: () => new Uint8Array([0x08, 0x00]) })
-      },
-      AVChannelSetupRequest: {},
-      AVChannelSetupResponse: {
-        verify: () => null,
-        create: (f: Record<string, unknown>) => f,
-        encode: () => ({ finish: () => new Uint8Array([0x08, 0x02]) })
-      },
-      ChannelOpenResponse: {
-        verify: () => null,
-        create: (f: Record<string, unknown>) => f,
-        encode: () => ({ finish: () => new Uint8Array([0x08, 0x00]) })
-      },
-      AuthCompleteIndication: {
-        verify: () => null,
-        create: (f: Record<string, unknown>) => f,
-        encode: () => ({ finish: () => new Uint8Array([0x08, 0x00]) })
-      }
-    }
-  }
-
-  test('start() wires every channel and sends VERSION_REQUEST', async () => {
+describe('Session.start() — link handshake', () => {
+  test('start() wires the channels but waits for the link to report ready', async () => {
     vi.useFakeTimers()
-    const { session } = makeSession()
-    const send = vi.fn()
-    ;(session as unknown as { _sendVersionRequest: Mock })._sendVersionRequest = send
-    const loadProtosMod = (await vi.importActual(
-      '../../proto/index'
-    )) as typeof import('../../proto/index')
-    const spy = vi.spyOn(loadProtosMod, 'loadProtos').mockResolvedValue({} as never)
-    patchProto(session)
-    await session.start()
-    expect(send).toHaveBeenCalled()
-    spy.mockRestore()
+    const { session, link } = await started()
+    expect((session as unknown as { _control: unknown })._control).toBeDefined()
+    expect((session as unknown as { _video: unknown })._video).toBeDefined()
+    expect(link.send).not.toHaveBeenCalled()
+    expect(stateOf(session)).toBe(STATE.INIT)
     session.close()
     vi.clearAllTimers()
     vi.useRealTimers()
   })
 
-  test('first main frame releases a held cluster stream request', async () => {
+  test('link ready after start() sends AUTH_COMPLETE and moves on to SERVICE_DISCOVERY', async () => {
     vi.useFakeTimers()
-    const { session } = makeSession()
-    ;(session as unknown as { _sendVersionRequest: Mock })._sendVersionRequest = vi.fn()
-    const loadProtosMod = (await vi.importActual(
-      '../../proto/index'
-    )) as typeof import('../../proto/index')
-    const spy = vi.spyOn(loadProtosMod, 'loadProtos').mockResolvedValue({} as never)
-    patchProto(session)
+    const { session, link } = await started()
+    link.emit('control', { type: 'ready' })
+    expect(link.send).toHaveBeenCalledWith(
+      CH.CONTROL,
+      FRAME_FLAGS.PLAINTEXT,
+      CTRL_MSG.AUTH_COMPLETE,
+      expect.any(Buffer)
+    )
+    expect(stateOf(session)).toBe(STATE.SERVICE_DISCOVERY)
+    session.close()
+    vi.clearAllTimers()
+    vi.useRealTimers()
+  })
+
+  test('link ready before start() is picked up once the channels exist', async () => {
+    vi.useFakeTimers()
+    const { session, link } = makeSession()
+    link.emit('control', { type: 'ready' })
+    expect(link.send).not.toHaveBeenCalled()
+    expect(stateOf(session)).toBe(STATE.INIT)
+
+    const spy = vi.spyOn(protoIndex, 'loadProtos').mockResolvedValue(protoStub() as never)
     await session.start()
     spy.mockRestore()
-
-    forceRunning(session)
-    const sent = captureEncrypted(session)
-    // Cluster requested before any main frame → held back
-    session.requestClusterKeyframe()
-    expect(sent).not.toHaveBeenCalled()
-
-    // The first main frame claims the main plane, then releases the held cluster request
-    const video = (session as unknown as { _video: import('node:events').EventEmitter })._video
-    video.emit('frame', Buffer.from([0xaa]), 0n)
-    const clusterFocus = sent.mock.calls.find(
-      (c) => c[0] === CH.CLUSTER_VIDEO && c[2] === AV_MSG.VIDEO_FOCUS_INDICATION
+    expect(link.send).toHaveBeenCalledWith(
+      CH.CONTROL,
+      FRAME_FLAGS.PLAINTEXT,
+      CTRL_MSG.AUTH_COMPLETE,
+      expect.any(Buffer)
     )
-    expect(clusterFocus).toBeDefined()
+    expect(stateOf(session)).toBe(STATE.SERVICE_DISCOVERY)
+    session.close()
+    vi.clearAllTimers()
+    vi.useRealTimers()
+  })
+
+  test('the ready control carries the mic socket the helper listens on', async () => {
+    vi.useFakeTimers()
+    const { session, link } = await started()
+    link.emit('control', { type: 'ready', mic: '/run/livi/aa-mic.sock' })
+    expect(session.micSocketPath()).toBe('/run/livi/aa-mic.sock')
+    expect(stateOf(session)).toBe(STATE.SERVICE_DISCOVERY)
+    session.close()
+    vi.clearAllTimers()
+    vi.useRealTimers()
+  })
+
+  test('a repeated ready does not restart the handshake', async () => {
+    vi.useFakeTimers()
+    const { session, link } = await started()
+    link.emit('control', { type: 'ready' })
+    link.emit('control', { type: 'ready' })
+    expect(link.send).toHaveBeenCalledTimes(1)
+    expect(stateOf(session)).toBe(STATE.SERVICE_DISCOVERY)
+    session.close()
+    vi.clearAllTimers()
+    vi.useRealTimers()
+  })
+
+  test('messages that arrive before start() are queued and replayed after the handshake', async () => {
+    vi.useFakeTimers()
+    const { session, link } = makeSession()
+    link.emit('control', { type: 'ready' })
+    // KeyBindingRequest on the input channel, answered with an encrypted KeyBindingResponse
+    link.emit('message', CH.INPUT, FRAME_FLAGS.ENC_SIGNAL, 0x8002, Buffer.alloc(0))
+    expect(link.send).not.toHaveBeenCalled()
+
+    const spy = vi.spyOn(protoIndex, 'loadProtos').mockResolvedValue(protoStub() as never)
+    await session.start()
+    spy.mockRestore()
+    expect(link.send).toHaveBeenCalledWith(
+      CH.INPUT,
+      FRAME_FLAGS.ENC_SIGNAL,
+      0x8003,
+      Buffer.from([0x08, 0x00])
+    )
+    session.close()
+    vi.clearAllTimers()
+    vi.useRealTimers()
+  })
+
+  test('messages after start() reach the dispatcher directly', async () => {
+    vi.useFakeTimers()
+    const { session, link } = await started()
+    const handle = vi.fn()
+    ;(session as unknown as { _handleDecryptedMessage: Mock })._handleDecryptedMessage = handle
+    link.emit('message', CH.CONTROL, 0, 0xabcd, Buffer.from([1]))
+    expect(handle).toHaveBeenCalledWith(CH.CONTROL, 0, 0xabcd, Buffer.from([1]))
     session.close()
     vi.clearAllTimers()
     vi.useRealTimers()
@@ -926,45 +924,6 @@ describe('Session — RUNNING state guarded methods', () => {
     const sent = captureEncrypted(session)
     session.requestVideoFocus()
     expect(sent).not.toHaveBeenCalled()
-  })
-})
-
-describe('Session._stripHeaderAndInjectTls — EXTENDED frames', () => {
-  test('parses an EXTENDED (FIRST-only) frame', async () => {
-    const { session } = makeSession()
-    const handle = vi.fn()
-    ;(session as unknown as { _handleDecryptedMessage: Mock })._handleDecryptedMessage = handle
-
-    // EXTENDED header is 8 bytes: ch + flags(FIRST) + payloadSize(2) + totalSize(4)
-    const buf = Buffer.alloc(8 + 4)
-    buf.writeUInt8(3, 0)
-    buf.writeUInt8(0x01, 1) // FIRST only, not LAST → EXTENDED
-    buf.writeUInt16BE(4, 2)
-    buf.writeUInt32BE(8, 4) // totalSize
-    buf.writeUInt16BE(0x1234, 8)
-    buf.writeUInt16BE(0x5678, 10)
-    ;(
-      session as unknown as { _stripHeaderAndInjectTls: (b: Buffer) => void }
-    )._stripHeaderAndInjectTls(buf)
-    // FIRST-only plaintext is delivered to _handleDecryptedMessage too
-    expect(handle).toHaveBeenCalled()
-  })
-
-  test('plaintext payload shorter than 2 bytes is logged + skipped', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(function () {})
-    const { session } = makeSession()
-    const handle = vi.fn()
-    ;(session as unknown as { _handleDecryptedMessage: Mock })._handleDecryptedMessage = handle
-    const buf = Buffer.alloc(4 + 1)
-    buf.writeUInt8(3, 0)
-    buf.writeUInt8(0x03, 1)
-    buf.writeUInt16BE(1, 2)
-    buf.writeUInt8(0xff, 4)
-    ;(
-      session as unknown as { _stripHeaderAndInjectTls: (b: Buffer) => void }
-    )._stripHeaderAndInjectTls(buf)
-    expect(handle).not.toHaveBeenCalled()
-    warn.mockRestore()
   })
 })
 

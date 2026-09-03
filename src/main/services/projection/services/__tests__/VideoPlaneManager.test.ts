@@ -88,6 +88,19 @@ describe('VideoPlaneManager', () => {
   })
 
   describe('main plane', () => {
+    test('primeMain builds the main plane and prepares it', () => {
+      const { mgr } = mkMgr()
+      expect(mgr.primeMain()).toBe(true)
+      expect(planes()[0].prepare).toHaveBeenCalled()
+    })
+
+    test('primeMain returns false without usable webContents', () => {
+      const { mgr, wc } = mkMgr()
+      wc.isDestroyed.mockReturnValue(true)
+      expect(mgr.primeMain()).toBe(false)
+      expect(planes()).toHaveLength(0)
+    })
+
     test('pushMain does nothing without usable webContents', () => {
       const { mgr, wc } = mkMgr()
       wc.isDestroyed.mockReturnValue(true)
@@ -251,6 +264,38 @@ describe('VideoPlaneManager', () => {
       mgr.primeClusters()
       expect(gstMock).toHaveBeenCalledTimes(2)
       expect(planes()[0].prepare).toHaveBeenCalledWith('h265')
+    })
+
+    test('primeClusters builds a plane per screen once the codec is known', () => {
+      const { mgr } = mkMgr({ getConfig: vi.fn(() => CLUSTER_CFG) })
+      secondaryMock.mockReturnValue(mkSecondary() as never)
+      mgr.setClusterCodec('h265')
+      mgr.setClusterCodecData(Buffer.from([1, 2]))
+      mgr.primeClusters()
+      expect(gstMock).toHaveBeenCalledTimes(2)
+      expect(planes()[0].setVisible).toHaveBeenCalled()
+      expect(planes()[0].setCodecData).toHaveBeenCalledWith(Buffer.from([1, 2]))
+    })
+
+    test('primeClusters only prepares a plane that already exists', () => {
+      const { mgr } = mkMgr({ getConfig: vi.fn(() => CLUSTER_CFG) })
+      secondaryMock.mockReturnValue(mkSecondary() as never)
+      mgr.setClusterCodec('h265')
+      mgr.primeClusters()
+      const built = gstMock.mock.calls.length
+      mgr.primeClusters()
+      expect(gstMock.mock.calls.length).toBe(built)
+      expect(planes()[0].prepare).toHaveBeenCalledTimes(2)
+    })
+
+    test('primeClusters skips a screen whose window is gone', () => {
+      const { mgr } = mkMgr({
+        getConfig: vi.fn(() => mkCfg({ dashboards: { dash4: { dash: true } } }))
+      })
+      secondaryMock.mockReturnValue({ isDestroyed: () => true, webContents: {} } as never)
+      mgr.setClusterCodec('h265')
+      mgr.primeClusters()
+      expect(gstMock).not.toHaveBeenCalled()
     })
 
     test('ensureClusterPlanes adds a plane for a screen that appears later', () => {

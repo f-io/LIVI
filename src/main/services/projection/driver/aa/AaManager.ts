@@ -1,24 +1,27 @@
 /**
  * AaManager, shared Android Auto infrastructure (singleton).
  *
- * Owns the wireless sessions the helper announces once it carries TCP and TLS,
- * and the wired AOAP bring-up (one UsbAoapBridge per device). Every helper
- * session, and every wired loopback socket after the AOAP handshake, spawns ONE
- * AaSession handed off via onSpawn. Holds the codec-capability seed applied to
- * each new AaSession.
+ * The helper carries every phone, over WiFi after the WPP bootstrap and over USB
+ * after the AOAP switch, and announces each session. Every announcement spawns ONE
+ * AaSession handed off via onSpawn. Holds the codec-capability seed applied to each
+ * new AaSession.
  */
 
-import * as net from 'node:net'
 import type { Config } from '@shared/types'
 import type { AaMediaSinkDeps } from './AaEventBridge'
 import { AaSession, type AaSessionSeed } from './AaSession'
-import { AOAP_LOOPBACK_PORT } from './stack/aoap/constants'
 import { HelperSessionLink } from './stack/transport/HelperSessionLink'
-import { UsbAoapBridge } from './stack/transport/UsbAoapBridge'
 
-type Device = USBDevice
-
-export type HelperSessionEvent = { event: string; socket?: string; peer?: string }
+export type HelperSessionEvent = {
+  event: string
+  socket?: string
+  peer?: string
+  transport?: string
+  serial?: string
+  product?: number
+  version?: number
+  name?: string
+}
 
 /** The helper's event stream, where new phone sessions are announced. */
 export type HelperSessionSource = {
@@ -29,23 +32,13 @@ const HELPER_RESUBSCRIBE_MS = 2000
 
 export interface AaManagerOptions {
   getConfig: () => Config
-  onWillReenumerate?: (durationMs: number) => void
   onSpawn: (session: AaSession) => void
   mediaSink?: AaMediaSinkDeps
-}
-
-function deviceKey(device: Device): string {
-  const serial = device.serialNumber ?? ''
-  if (serial) return `serial:${serial}`
-  const vid = device.vendorId ?? 0
-  const pid = device.productId ?? 0
-  return `${vid}:${pid}`
 }
 
 export class AaManager {
   private _helper: HelperSessionSource | null = null
   private _helperSub: { close: () => void } | null = null
-  private readonly _wiredBridges = new Map<string, UsbAoapBridge>()
   private readonly _sessions = new Set<AaSession>()
   private readonly _wirelessPeer = new Map<AaSession, string>()
 
@@ -56,13 +49,11 @@ export class AaManager {
   private _clusterStreamActive = true
 
   private readonly _getConfig: () => Config
-  private readonly _onWillReenumerate: ((durationMs: number) => void) | undefined
   private readonly _onSpawn: (session: AaSession) => void
   private readonly _mediaSink: AaMediaSinkDeps | undefined
 
   constructor(opts: AaManagerOptions) {
     this._getConfig = opts.getConfig
-    this._onWillReenumerate = opts.onWillReenumerate
     this._onSpawn = opts.onSpawn
     this._mediaSink = opts.mediaSink
   }
@@ -152,17 +143,17 @@ export class AaManager {
     }
   }
 
-  // ── Wireless sessions from the helper ──────────────────────────────────────
+  // ── Sessions from the helper ───────────────────────────────────────────────
 
-  startWireless(helper: HelperSessionSource | undefined): void {
+  attachHelper(helper: HelperSessionSource | undefined): void {
     if (this._helper) return
     if (!helper) {
-      console.warn('[AaManager] wireless AA needs the helper, none is running')
+      console.warn('[AaManager] Android Auto needs the helper, none is running')
       return
     }
     this._helper = helper
     this._openHelperSub()
-    console.log('[AaManager] wireless AA sessions come from the helper')
+    console.log('[AaManager] Android Auto sessions come from the helper')
   }
 
   private _openHelperSub(): void {
@@ -173,15 +164,17 @@ export class AaManager {
         if (ev.event !== 'aa-session' || typeof ev.socket !== 'string') return
         const socket = ev.socket
         const peer = typeof ev.peer === 'string' ? ev.peer : ''
-        console.log(`[AaManager] helper session ${socket} from ${peer}`)
+        const wired = ev.transport === 'usb'
+        const usbSerial = wired && typeof ev.serial === 'string' ? ev.serial : undefined
+        console.log(`[AaManager] helper session ${socket} from ${peer}${wired ? ' (usb)' : ''}`)
         HelperSessionLink.connect(socket, peer)
           .then((link) => {
             if (!this._helper) {
               link.destroy()
               return
             }
-            this._supersedeWireless(peer)
-            this._spawn(link, false, null, undefined, peer)
+            if (!wired) this._supersedeWireless(peer)
+            this._spawn(link, wired, usbSerial, wired ? undefined : peer)
           })
           .catch((err: Error) => {
             console.warn(`[AaManager] helper session ${socket}: ${err.message}`)
@@ -205,8 +198,14 @@ export class AaManager {
     }
   }
 
-  stopWireless(): void {
+  /** The helper is gone, and with it every session it carried. */
+  detachHelper(): void {
     this._closeHelperSub()
+    for (const s of [...this._sessions]) void s.close()
+  }
+
+  /** Wireless AA was switched off. Its sessions end, the USB ones stay. */
+  stopWireless(): void {
     for (const s of [...this._sessions]) {
       if (!s.isWiredMode()) void s.close()
     }
@@ -225,89 +224,18 @@ export class AaManager {
           )
       )
     )
-    const bridges = [...this._wiredBridges.values()]
-    this._wiredBridges.clear()
-    await Promise.all(
-      bridges.map((b) =>
-        b
-          .stop()
-          .catch((e) =>
-            console.warn(`[AaManager] wired bridge stop threw on close: ${(e as Error).message}`)
-          )
-      )
-    )
-  }
-
-  // ── Wired AOAP bring-up ────────────────────────────────────────────────────
-
-  async bringUpWired(device: Device): Promise<boolean> {
-    const key = deviceKey(device)
-    if (this._wiredBridges.has(key)) {
-      console.log('[AaManager] bringUpWired: bridge already in-flight/up for device, skipping')
-      return true
-    }
-    console.log('[AaManager] _startWiredBridge: bringing up wired AOAP bridge')
-
-    const bridge = new UsbAoapBridge(device, this._onWillReenumerate)
-    this._wiredBridges.set(key, bridge)
-
-    bridge.on('error', (err: Error) => {
-      console.warn(`[AaManager] wired bridge error: ${err.message}`)
-    })
-    bridge.on('closed', () => {
-      console.log('[AaManager] wired bridge closed')
-      if (this._wiredBridges.get(key) === bridge) this._wiredBridges.delete(key)
-    })
-    bridge.once('ready', ({ host, port }: { host: string; port: number }) => {
-      if (this._wiredBridges.get(key) !== bridge) return
-      console.log(`[AaManager] wired bridge ready on ${host}:${port}, dialling loopback`)
-      const sock = net.createConnection({ host, port, allowHalfOpen: true })
-      sock.once('connect', () => {
-        if (this._wiredBridges.get(key) !== bridge) {
-          try {
-            sock.destroy()
-          } catch {
-            /* ignore */
-          }
-          return
-        }
-        console.log('[AaManager] wired loopback connected → spawning AaSession')
-        this._spawn(sock, true, bridge, key, undefined, device.serialNumber ?? undefined)
-      })
-      sock.on('error', (err: Error) => {
-        console.warn(`[AaManager] wired loopback socket error: ${err.message}`)
-      })
-    })
-
-    try {
-      await bridge.start(AOAP_LOOPBACK_PORT)
-      console.log('[AaManager] wired AA bridge started on loopback')
-      return true
-    } catch (err) {
-      console.error(`[AaManager] wired bridge start failed: ${(err as Error).message}`)
-      try {
-        await bridge.stop()
-      } catch {
-        /* ignore */
-      }
-      this._wiredBridges.delete(key)
-      return false
-    }
   }
 
   private _spawn(
-    transport: net.Socket | HelperSessionLink,
+    link: HelperSessionLink,
     wired: boolean,
-    wiredBridge: UsbAoapBridge | null,
-    key?: string,
-    wirelessIp?: string,
-    usbSerial?: string
+    usbSerial: string | undefined,
+    wirelessIp?: string
   ): void {
     const session = new AaSession({
-      transport,
+      transport: link,
       getConfig: this._getConfig,
       wired,
-      wiredBridge,
       usbSerial,
       seed: this._seed(),
       mediaSink: this._mediaSink
@@ -317,9 +245,6 @@ export class AaManager {
     session.once('disconnected', () => {
       this._sessions.delete(session)
       this._wirelessPeer.delete(session)
-      if (wired && key && this._wiredBridges.get(key) === wiredBridge) {
-        this._wiredBridges.delete(key)
-      }
     })
     this._onSpawn(session)
   }

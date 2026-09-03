@@ -36,8 +36,8 @@ import { app, BrowserWindow } from 'electron'
 import { loadConfig } from './config/loadConfig'
 import { restartApp } from './ipc/app'
 import { CarBridgeService } from './services/carBridge/CarBridgeService'
-import { USBService } from './services/usb/USBService'
 import { checkAndInstallUdevRule } from './services/usb/udevRule'
+import { registerUsbIpc } from './services/usb/usbIpc'
 import {
   backdropHex,
   setCompositorBackdrop,
@@ -69,7 +69,7 @@ if (bootstrapCompositor()) {
 app.whenReady().then(async () => {
   if (!bootAllowed) return
   const projectionService = new ProjectionService()
-  const usbService = new USBService(projectionService)
+  registerUsbIpc(() => projectionService.getDongleDriver())
   const telemetryStore = new TelemetryStore()
   const telemetrySocket = new TelemetrySocket(telemetryStore, 4000)
 
@@ -115,7 +115,6 @@ app.whenReady().then(async () => {
 
   const services = {
     projectionService,
-    usbService,
     telemetrySocket
   }
 

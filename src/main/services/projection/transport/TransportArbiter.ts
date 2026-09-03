@@ -8,10 +8,7 @@ import {
   type TransportSnapshot
 } from './types'
 
-type Device = USBDevice
-
 const DONGLE_DETACH_DEBOUNCE_MS = 4_000
-const PHONE_DETACH_DEBOUNCE_MS = 1_000
 
 const AA_WIRED: Candidate = { transport: 'aa', mode: 'wired' }
 const AA_WIRELESS: Candidate = { transport: 'aa', mode: 'wireless' }
@@ -19,17 +16,11 @@ const CP_WIRED: Candidate = { transport: 'cp', mode: 'wired' }
 const CP_WIRELESS: Candidate = { transport: 'cp', mode: 'wireless' }
 const DONGLE: Candidate = { transport: 'dongle', mode: 'wired' }
 
-const APPLE_VENDOR_ID = 0x05ac
-
 export class TransportArbiter {
   private dongleConnected = false
-  private phoneConnected = false
-  private phoneDevice: Device | null = null
-  private reenumUntil = 0
   private override: Candidate | null = null
 
   private dongleDetachDebounce: NodeJS.Timeout | null = null
-  private phoneDetachDebounce: NodeJS.Timeout | null = null
 
   private nativeProbeDeferred = false
   private nativeProbeStartedAt = 0
@@ -77,78 +68,10 @@ export class TransportArbiter {
     }, delay)
   }
 
-  markPhoneConnected(connected: boolean, device?: Device): void {
-    if (connected) {
-      if (this.phoneDetachDebounce) {
-        clearTimeout(this.phoneDetachDebounce)
-        this.phoneDetachDebounce = null
-        this.phoneConnected = false
-        this.phoneDevice = null
-        console.log(
-          '[TransportArbiter] wired phone re-attach during detach debounce — committing detach inline'
-        )
-        this.clearOverrideIfUndetected()
-        if (this.deps.hasWiredSession()) {
-          this.deps.onWiredPhoneGone()
-          this.deps.onShouldAutoStart()
-        }
-      }
-      const wasConnected = this.phoneConnected
-      this.phoneConnected = true
-      this.phoneDevice = device ?? this.phoneDevice
-      if (!wasConnected) {
-        console.log('[TransportArbiter] wired phone marked connected')
-        if (this.deps.getActiveTransport() !== null) {
-          console.log('[TransportArbiter] session active — building wired phone beside it')
-          this.deps.onShouldBringUpWiredBeside()
-        } else {
-          this.deps.onShouldAutoStart()
-        }
-      }
-      this.deps.onChange()
-      return
-    }
-
-    if (!this.phoneConnected) return
-    if (this.phoneDetachDebounce) return
-
-    this.phoneDetachDebounce = setTimeout(() => {
-      this.phoneDetachDebounce = null
-      this.phoneConnected = false
-      this.phoneDevice = null
-      console.log('[TransportArbiter] wired phone marked disconnected')
-      this.clearOverrideIfUndetected()
-
-      if (this.deps.hasWiredSession()) {
-        this.deps.onWiredPhoneGone()
-      }
-
-      this.deps.onChange()
-
-      if (this.detectedCandidates().length > 0) this.deps.onShouldAutoStart()
-    }, PHONE_DETACH_DEBOUNCE_MS)
-  }
-
-  expectPhoneReenumeration(durationMs: number): void {
-    this.reenumUntil = Date.now() + durationMs
-  }
-
-  isExpectingPhoneReenumeration(): boolean {
-    return Date.now() < this.reenumUntil
-  }
-
   // Queries -----------------------------------------------------------------
 
   isDongleDetected(): boolean {
     return this.dongleConnected
-  }
-
-  isPhoneConnected(): boolean {
-    return this.phoneConnected
-  }
-
-  getPhoneDevice(): Device | null {
-    return this.phoneDevice
   }
 
   getOverride(): Candidate | null {
@@ -156,15 +79,15 @@ export class TransportArbiter {
   }
 
   hasNativeCandidate(): boolean {
-    if (this.phoneConnected) return true
+    if (this.deps.hasWiredAaSession() || this.deps.hasWiredCpSession()) return true
     return this.deps.isWirelessEnabled() && this.deps.isWirelessPhoneInRange()
   }
 
   detectedCandidates(): Candidate[] {
     const list: Candidate[] = []
-    if (this.phoneConnected) {
-      list.push(this.phoneDevice?.vendorId === APPLE_VENDOR_ID ? CP_WIRED : AA_WIRED)
-    }
+    // A wired session the helper announced is a candidate, active or beside.
+    if (this.deps.hasWiredAaSession()) list.push(AA_WIRED)
+    if (this.deps.hasWiredCpSession()) list.push(CP_WIRED)
     const offerWireless =
       this.deps.isWirelessEnabled() &&
       (this.deps.isWirelessPhoneInRange() || this.deps.isWiredAaSessionActive())
@@ -234,7 +157,7 @@ export class TransportArbiter {
       targetMode: intended?.mode ?? null,
       switchPending,
       dongleDetected: this.dongleConnected,
-      wiredPhoneDetected: this.phoneConnected,
+      wiredPhoneDetected: this.deps.hasWiredAaSession() || this.deps.hasWiredCpSession(),
       wirelessPhoneDetected:
         this.deps.isWirelessEnabled() &&
         (this.deps.isWirelessPhoneInRange() ||

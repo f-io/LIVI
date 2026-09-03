@@ -31,8 +31,8 @@
     "build:helperd": "cd native/livi-helperd && cargo build --release -p livi-helperd",
     "postinstall": "node scripts/sync-biome-schema.mjs && electron-builder install-app-deps && node scripts/build-native.mjs --only=crypto",
     "build:mac": "pnpm run build:mac:arm64",
-    "build:mac:arm64": "pnpm run build:native:arm64 && pnpm run build:app && bash scripts/gstreamer/package-macos.sh --relocate-node && electron-builder --mac --arm64 --publish never --config",
-    "build:mac:x64": "pnpm run build:native:x64 && pnpm run build:app && bash scripts/gstreamer/package-macos.sh --relocate-node && electron-builder --mac --x64 --publish never --config",
+    "build:mac:arm64": "pnpm run build:native:arm64 && pnpm run build:app && bash scripts/gstreamer/package-macos.sh --relocate-node && pnpm run build:helperd && electron-builder --mac --arm64 --publish never --config",
+    "build:mac:x64": "pnpm run build:native:x64 && pnpm run build:app && bash scripts/gstreamer/package-macos.sh --relocate-node && pnpm run build:helperd && electron-builder --mac --x64 --publish never --config",
     "build:linux": "pnpm run build:linux:x64",
     "build:linux:x64": "pnpm run build:native:x64 && pnpm run build:app && pnpm run build:helperd && electron-builder --linux AppImage --x64 --publish never --config",
     "build:linux:arm64": "pnpm run build:native:arm64 && pnpm run build:app && pnpm run build:helperd && electron-builder --linux AppImage --arm64 --publish never --config",
@@ -41,7 +41,7 @@
     "test:renderer": "vitest run --project renderer",
     "coverage": "pnpm run coverage:main && pnpm run coverage:renderer",
     "coverage:main": "vitest run --project main --coverage --coverage.reportsDirectory=coverage/main",
-    "coverage:renderer": "vitest run --project renderer --coverage --coverage.reportsDirectory=coverage/renderer --coverage.include='src/renderer/**'"
+    "coverage:renderer": "vitest run --project renderer --coverage --coverage.reportsDirectory=coverage/renderer --coverage.include='src/renderer/**/*.{ts,tsx}'"
   },
   "lint-staged": {
     "*.{js,jsx,cjs,mjs,ts,tsx,cts,mts,json,jsonc,css,scss,md,yml,yaml}": "biome check --write --no-errors-on-unmatched"
@@ -54,32 +54,24 @@
     "@mui/icons-material": "^9.4.0",
     "@mui/material": "^9.4.0",
     "@mui/system": "^9.4.0",
-    "i18next": "^26.4.1",
+    "i18next": "^26.4.2",
     "livi-crypto": "workspace:*",
     "livi-gst-video": "workspace:*",
     "protobufjs": "^8.8.0",
     "react-i18next": "^17.0.13",
     "react-router": "^8.3.1",
     "socket.io": "^4.8.3",
-    "usb": "3.1.0",
     "zustand": "^5.0.15"
   },
-  "optionalDependencies": {
-    "@node-usb/usb-darwin-arm64": "3.1.0",
-    "@node-usb/usb-darwin-x64": "3.1.0",
-    "@node-usb/usb-linux-arm64-gnu": "3.1.0",
-    "@node-usb/usb-linux-x64-gnu": "3.1.0"
-  },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.11",
+    "@biomejs/biome": "^2.5.12",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^26.4.1",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
-    "@types/w3c-web-usb": "^1.0.14",
+    "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.0",
     "electron": "^44.1.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
@@ -92,6 +84,6 @@
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vite-plugin-electron": "^1.1.2",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.0"
   }
 }

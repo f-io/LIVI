@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import net from 'node:net'
+import os from 'node:os'
 import { app, BrowserWindow, type WebContents } from 'electron'
 import path from 'path'
 import { gstEnv, resolveBinary, resolveGStreamerRoot } from '../audio/gstreamer'
@@ -18,7 +19,7 @@ function hexToRgb255(hex: string): [number, number, number] {
 
 // Linux runs the pipeline in the gstHost child process (its own GLib loop so waylandsink resizes
 // live, and out of reach of the Electron-vs-system libffi crash). mac/Windows render in-process.
-const useHostProcess = process.platform === 'linux'
+export const useHostProcess = process.platform === 'linux'
 let nextPlayerId = 1
 
 // Display calibration applied as a glshader pass in each video pipeline.
@@ -285,10 +286,10 @@ export function compositorRestart(): boolean {
 export type GstCodecSupport = { hw: boolean; sw: boolean }
 export type GstCodecProbe = Record<GstVideoCodec, GstCodecSupport>
 
-interface GstAddon {
+export interface GstAddon {
   version(): string
   probeCodecs(): GstCodecProbe
-  createPlayer(codec: string, windowHandle: Buffer, codecData?: Buffer): unknown
+  createPlayer(codec: string, windowHandle: Buffer, codecData?: Buffer, planeId?: number): unknown
   start(player: unknown): void
   pushBuffer(player: unknown, buffer: Buffer): boolean
   setVisible(player: unknown, visible: boolean): void
@@ -304,6 +305,16 @@ interface GstAddon {
   setBackdrop(windowHandle: Buffer, r: number, g: number, b: number): void
   setGamma(player: unknown, gamma: number, contrast: number, r: number, g: number, b: number): void
   stop(player: unknown): void
+  /** Binds the socket the helper streams media into. */
+  openFeed(path: string): boolean
+  openAudio(sampleRate: number, channels: number, device?: string, realtime?: boolean): unknown
+  audioStreamId(stream: unknown): number
+  pushAudio(stream: unknown, buffer: Buffer): boolean
+  setAudioActive(stream: unknown, active: boolean): void
+  setAudioVolume(stream: unknown, level: number, rampMs: number): void
+  closeAudio(stream: unknown): void
+  openMicTap(path: string, sampleRate: number, channels: number, device?: string): unknown
+  closeMicTap(tap: unknown): void
 }
 
 let addon: GstAddon | null = null
@@ -370,6 +381,29 @@ function load(): GstAddon | null {
     console.error('[GstVideo] native addon load failed:', (e as Error).message)
   }
   return addon
+}
+
+/** The in-process pipeline addon, null on Linux and when it failed to load. */
+export function gstAddon(): GstAddon | null {
+  return load()
+}
+
+let mediaFeed: Promise<string> | null = null
+
+/** The socket the helper streams media into: the host's on Linux, the addon's elsewhere. */
+export function openMediaFeed(): Promise<string> {
+  if (useHostProcess) return gstHost.openFeed()
+  if (mediaFeed) return mediaFeed
+  const a = load()
+  const feedPath = path.join(os.tmpdir(), `livi-gst-${process.pid}.feed`)
+  const bound = a?.openFeed(feedPath) === true
+  console.log(
+    bound
+      ? `[GstVideo] media feed at ${feedPath}`
+      : '[GstVideo] no media feed, the addon did not load or could not bind'
+  )
+  mediaFeed = Promise.resolve(bound ? feedPath : '')
+  return mediaFeed
 }
 
 // Which codecs the bundled/loaded GStreamer can decode on this platform,
@@ -483,7 +517,7 @@ export class GstVideo {
     const handle = this.windowHandle()
     if (!handle) return
     compositorControl.claim(this.role)
-    this.player = a.createPlayer(codec, handle, this.codecData ?? undefined)
+    this.player = a.createPlayer(codec, handle, this.codecData ?? undefined, this.id)
     this.codec = codec
     if (this.player) {
       a.start(this.player)

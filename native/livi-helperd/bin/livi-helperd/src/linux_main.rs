@@ -134,6 +134,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let aa_events = Broadcaster::default();
     let state = Arc::new(HelperState::default());
     let wired_phones = crate::aa::WiredPhones::default();
+    let sco_sink = livi_runtime::sco::ScoSink::default();
 
     livi_runtime::bluetoothd::setup();
     println!("[helperd] starting BlueZ profile on {adapter}");
@@ -179,7 +180,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         let events = aa_events.clone();
         tokio::spawn(livi_aa::server::run(env_or("LIVI_PORT", 5277u16), move |socket, peer| {
             events.push_json(format!(
-                "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\"}}"
+                "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\",\"transport\":\"wifi\"}}"
             ));
         }));
         match bt::start_aa(&conn).await {
@@ -197,7 +198,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
                 if let Err(e) = bt::start_hfp(&conn, hfp.clone()).await {
                     eprintln!("[hfp] profile registration failed: {e}");
                 }
-                livi_runtime::sco::serve(aa_events.clone());
+                livi_runtime::sco::serve(aa_events.clone(), sco_sink.clone());
                 if let Err(e) = bt::start_ble_ad(&conn, &adapter, &identity.name).await {
                     eprintln!("[aa] BLE advertisement failed: {e}");
                 }
@@ -207,6 +208,29 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    if std::env::var("LIVI_AA_USB").unwrap_or_else(|_| "1".into()) != "0" {
+        // Phones on USB are switched to accessory mode and served here as well.
+        let events = aa_events.clone();
+        tokio::spawn(livi_aa::usb::run(move |socket, peer, serial| {
+            events.push_json(format!(
+                "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\",\"transport\":\"usb\",\"serial\":\"{serial}\"}}"
+            ));
+        }));
+        println!("[helperd] Android Auto USB watcher started");
+    }
+    if std::env::var("LIVI_DONGLE").unwrap_or_else(|_| "1".into()) != "0" {
+        let events = aa_events.clone();
+        tokio::spawn(livi_dongle::run(move |socket, a| {
+            events.push_json(
+                serde_json::json!({
+                    "event": "dongle-session", "socket": socket, "serial": a.serial,
+                    "product": a.product, "version": a.version, "name": a.name
+                })
+                .to_string(),
+            );
+        }));
+        println!("[helperd] dongle watcher started");
+    }
     let mpris = match bt::start_media_player(&conn, &adapter, aa_events.clone()).await {
         Ok(handle) => Some(handle),
         Err(e) => {
@@ -223,6 +247,10 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             wifi_iface: wifi_iface.clone(),
             set_wired_phones: Box::new(move |ids| wired.set(ids)),
             events: aa_events.clone(),
+            set_sco_sink: Box::new({
+                let sink = sco_sink.clone();
+                move |target| sink.set(target)
+            }),
             set_playback_status: Box::new(move |state| {
                 let Some(h) = mpris.clone() else { return };
                 let status = match state {
@@ -234,7 +262,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             }),
         };
         tokio::spawn(async move {
-            if let Err(e) = livi_runtime::aa_sock::serve(bus, deps).await {
+            if let Err(e) = livi_runtime::aa_sock::serve(Some(bus), deps).await {
                 eprintln!("[aa-sock] ended: {e}");
             }
         });

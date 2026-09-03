@@ -4,7 +4,6 @@ import { DEBUG } from '@main/constants'
 import { buildServerCgiScript } from '@projection/assets/LIVI_cgi.js'
 import { buildLiviWeb } from '@projection/assets/LIVI_web.js'
 import {
-  SendAudio,
   SendAutoConnectByBtAddress,
   SendableMessage,
   SendBluetoothPairedList,
@@ -35,7 +34,7 @@ import {
   DONGLE_GPS,
   DONGLE_MEDIA_DELAY
 } from '../dongleConfig'
-import { MessageHeader, MessageType } from './wire.js'
+import { MessageType } from './wire.js'
 
 // Dongle Open wire payload (projection resolution sent to the dongle).
 export type OpenConfig = { width: number; height: number; fps: number }
@@ -43,19 +42,16 @@ export type OpenConfig = { width: number; height: number; fps: number }
 export abstract class DongleSendable extends SendableMessage {
   abstract type: MessageType
 
-  serialise() {
-    return MessageHeader.asBuffer(this.type, 0)
+  payload(): Buffer {
+    return Buffer.alloc(0)
   }
 }
 
 export abstract class DongleSendableWithPayload extends DongleSendable {
   abstract getPayload(): Buffer
 
-  override serialise() {
-    const data = this.getPayload()
-    const byteLength = Buffer.byteLength(data)
-    const header = MessageHeader.asBuffer(this.type, byteLength)
-    return Buffer.concat([header, data])
+  override payload(): Buffer {
+    return this.getPayload()
   }
 }
 
@@ -434,24 +430,16 @@ export class SendLiviWeb extends SendFile {
   }
 }
 
-function withHeader(type: MessageType, data: Buffer): Buffer {
-  return Buffer.concat([MessageHeader.asBuffer(type, Buffer.byteLength(data)), data])
-}
+export type DongleMessage = { type: MessageType; payload: Buffer }
 
-function headerOnly(type: MessageType): Buffer {
-  return MessageHeader.asBuffer(type, 0)
-}
-
-/** Wire frame for any sendable, generic command or dongle-specific. */
-export function encodeSendable(msg: SendableMessage): Buffer {
-  if (msg instanceof DongleSendable) return msg.serialise()
-
+/** Message type and payload for any sendable, generic command or dongle-specific. */
+export function encodeDongle(msg: SendableMessage): DongleMessage {
+  if (msg instanceof DongleSendable) return { type: msg.type, payload: msg.payload() }
   if (msg instanceof SendCommand) {
     const data = Buffer.alloc(4)
     data.writeUInt32LE(msg.value)
-    return withHeader(MessageType.Command, data)
+    return { type: MessageType.Command, payload: data }
   }
-
   if (msg instanceof SendTouch) {
     const actionB = Buffer.alloc(4)
     const xB = Buffer.alloc(4)
@@ -460,9 +448,8 @@ export function encodeSendable(msg: SendableMessage): Buffer {
     actionB.writeUInt32LE(msg.action)
     xB.writeUInt32LE(clamp(10000 * msg.x, 0, 10000))
     yB.writeUInt32LE(clamp(10000 * msg.y, 0, 10000))
-    return withHeader(MessageType.Touch, Buffer.concat([actionB, xB, yB, flags]))
+    return { type: MessageType.Touch, payload: Buffer.concat([actionB, xB, yB, flags]) }
   }
-
   if (msg instanceof SendMultiTouch) {
     const items = msg.touches.map((t) => {
       const b = Buffer.alloc(16)
@@ -472,37 +459,27 @@ export function encodeSendable(msg: SendableMessage): Buffer {
       b.writeUInt32LE(t.id, 12)
       return b
     })
-    return withHeader(MessageType.MultiTouch, Buffer.concat(items))
+    return { type: MessageType.MultiTouch, payload: Buffer.concat(items) }
   }
-
-  if (msg instanceof SendAudio) {
-    const audioData = Buffer.alloc(12)
-    audioData.writeUInt32LE(msg.decodeType, 0)
-    audioData.writeFloatLE(0.0, 4)
-    audioData.writeUInt32LE(3, 8)
-    return withHeader(
-      MessageType.AudioData,
-      Buffer.concat([audioData, Buffer.from(msg.data.buffer)])
-    )
-  }
-
   if (msg instanceof SendBluetoothPairedList) {
     const withNul = msg.listText.endsWith('\0') ? msg.listText : msg.listText + '\0'
-    return withHeader(MessageType.BluetoothPairedList, Buffer.from(withNul, 'utf8'))
+    return { type: MessageType.BluetoothPairedList, payload: Buffer.from(withNul, 'utf8') }
   }
-
   if (msg instanceof SendAutoConnectByBtAddress) {
-    return withHeader(MessageType.WifiStatusData, Buffer.from(msg.btMac, 'ascii'))
+    return { type: MessageType.WifiStatusData, payload: Buffer.from(msg.btMac, 'ascii') }
   }
-
   if (msg instanceof SendForgetBluetoothAddr) {
-    return withHeader(MessageType.ForgetBluetoothAddr, Buffer.from(msg.btMac, 'ascii'))
+    return { type: MessageType.ForgetBluetoothAddr, payload: Buffer.from(msg.btMac, 'ascii') }
   }
-
-  if (msg instanceof SendCloseDongle) return headerOnly(MessageType.CloseDongle)
-  if (msg instanceof SendDisconnectPhone) return headerOnly(MessageType.DisconnectPhone)
-  if (msg instanceof SendClusterFocusRequest) return headerOnly(MessageType.ClusterFocusRequest)
-  if (msg instanceof SendClusterFocusRelease) return headerOnly(MessageType.ClusterFocusRelease)
-
+  const empty = Buffer.alloc(0)
+  if (msg instanceof SendCloseDongle) return { type: MessageType.CloseDongle, payload: empty }
+  if (msg instanceof SendDisconnectPhone)
+    return { type: MessageType.DisconnectPhone, payload: empty }
+  if (msg instanceof SendClusterFocusRequest) {
+    return { type: MessageType.ClusterFocusRequest, payload: empty }
+  }
+  if (msg instanceof SendClusterFocusRelease) {
+    return { type: MessageType.ClusterFocusRelease, payload: empty }
+  }
   throw new Error(`No dongle wire encoding for ${msg.constructor.name}`)
 }

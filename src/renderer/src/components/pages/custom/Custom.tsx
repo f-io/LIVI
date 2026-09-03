@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 export function Custom() {
   const theme = useTheme()
   const [url, setUrl] = useState<string | null | undefined>(undefined)
-  const [loaded, setLoaded] = useState(false)
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
   const customUrl = useLiviStore((s) => s.settings?.customUrl)
   const dark = useLiviStore((s) => s.settings?.darkMode !== false)
 
@@ -22,9 +22,7 @@ export function Custom() {
     }
   }, [customUrl])
 
-  useEffect(() => {
-    setLoaded(false)
-  }, [url, dark])
+  const frameKey = `${url}-${dark ? 'dark' : 'light'}`
 
   return (
     <div
@@ -42,10 +40,10 @@ export function Custom() {
     >
       {url ? (
         <iframe
-          key={`${url}-${dark ? 'dark' : 'light'}`}
+          key={frameKey}
           title="custom"
           src={url}
-          onLoad={() => setLoaded(true)}
+          onLoad={() => setLoadedKey(frameKey)}
           style={{
             position: 'absolute',
             inset: 0,
@@ -53,7 +51,7 @@ export function Custom() {
             height: '100%',
             border: 0,
             backgroundColor: theme.palette.background.default,
-            visibility: loaded ? 'visible' : 'hidden'
+            visibility: loadedKey === frameKey ? 'visible' : 'hidden'
           }}
         />
       ) : (

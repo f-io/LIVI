@@ -7,7 +7,7 @@ import { closeAllSecondaryWindows } from '@main/window/secondaryWindows'
 import { app, BrowserWindow } from 'electron'
 
 export function setupLifecycle(runtimeState: runtimeStateProps, services: ServicesProps) {
-  const { projectionService, usbService, telemetrySocket } = services
+  const { projectionService, telemetrySocket } = services
   const mainWindow = getMainWindow()
 
   app.on('window-all-closed', () => {
@@ -59,7 +59,6 @@ export function setupLifecycle(runtimeState: runtimeStateProps, services: Servic
     }
 
     // Safeguards based on measured timings
-    const tUsbStop = 500
     const tDisconnect = 800
     const tCarplayStop = 6000
     const tWirelessShutdown = 8000
@@ -74,9 +73,6 @@ export function setupLifecycle(runtimeState: runtimeStateProps, services: Servic
       closeAllSecondaryWindows()
       projectionService.beginShutdown()
 
-      // Block hotplug callbacks ASAP
-      usbService?.beginShutdown()
-
       stopPhoneSuppression()
       stopSystemVolumeMonitor()
 
@@ -86,10 +82,6 @@ export function setupLifecycle(runtimeState: runtimeStateProps, services: Servic
           projectionService.shutdownWirelessSessions(),
           tWirelessShutdown
         )
-      })
-
-      await measureStep('usbService.stop()', async () => {
-        await withTimeout('usbService.stop()', usbService?.stop?.() ?? Promise.resolve(), tUsbStop)
       })
 
       await measureStep('projection.disconnectPhone()', async () => {

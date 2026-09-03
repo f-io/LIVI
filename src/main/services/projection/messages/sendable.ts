@@ -67,17 +67,6 @@ export class SendMultiTouch extends SendableMessage {
   }
 }
 
-export class SendAudio extends SendableMessage {
-  data: Int16Array
-  decodeType: number
-
-  constructor(data: Int16Array, decodeType: number) {
-    super()
-    this.data = data
-    this.decodeType = decodeType
-  }
-}
-
 export class SendCloseDongle extends SendableMessage {}
 
 export class SendDisconnectPhone extends SendableMessage {}

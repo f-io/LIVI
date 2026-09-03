@@ -69,6 +69,22 @@ pub fn encode_reply(op: u8, id: u32, rest: &[u8]) -> Vec<u8> {
     out
 }
 
+/// The plane the main stream is drawn on.
+pub const PLANE_MAIN: u32 = 0x7a00_0001;
+/// The receiver id whose frames every cluster plane shares.
+pub const CLUSTER_RECV_ID: u32 = 0x7a00_0010;
+pub const CLUSTER_PLANE_MIN: u32 = 0x7a00_0011;
+pub const CLUSTER_PLANE_MAX: u32 = 0x7a00_0013;
+
+pub fn is_cluster_plane(id: u32) -> bool {
+    (CLUSTER_PLANE_MIN..=CLUSTER_PLANE_MAX).contains(&id)
+}
+
+/// The stream a plane is fed from: cluster planes share one, any other has its own.
+pub fn feeder_of(plane_id: u32) -> u32 {
+    if is_cluster_plane(plane_id) { CLUSTER_RECV_ID } else { plane_id }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

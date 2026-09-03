@@ -22,7 +22,13 @@ const { netConnect, sockets } = vi.hoisted(() => {
 vi.mock('node:net', () => ({ default: { connect: netConnect }, connect: netConnect }))
 
 const { gstHost, probeViaHostMock } = vi.hoisted(() => ({
-  gstHost: { createPlayer: vi.fn(), pushBuffer: vi.fn(), stop: vi.fn(), setGamma: vi.fn() },
+  gstHost: {
+    createPlayer: vi.fn(),
+    pushBuffer: vi.fn(),
+    stop: vi.fn(),
+    setGamma: vi.fn(),
+    openFeed: vi.fn(() => Promise.resolve('/host/feed'))
+  },
   probeViaHostMock: vi.fn((): Record<string, { hw: boolean; sw: boolean }> | null => null)
 }))
 vi.mock('../gstHost', () => ({ gstHost, probeCodecsViaHost: probeViaHostMock }))
@@ -59,7 +65,8 @@ const { addon, loadState } = vi.hoisted(() => ({
     setContentRegion: vi.fn(),
     setBackdrop: vi.fn() as unknown,
     setGamma: vi.fn(),
-    stop: vi.fn()
+    stop: vi.fn(),
+    openFeed: vi.fn(() => true)
   },
   loadState: { fail: false }
 }))
@@ -552,7 +559,12 @@ describe('GstVideo — darwin in-process addon path', () => {
     const v = new m.GstVideo({} as never)
     v.push('h264', Buffer.from([1]))
 
-    expect(addon.createPlayer).toHaveBeenCalledWith('h264', Buffer.from([1, 2, 3, 4]), undefined)
+    expect(addon.createPlayer).toHaveBeenCalledWith(
+      'h264',
+      Buffer.from([1, 2, 3, 4]),
+      undefined,
+      expect.any(Number)
+    )
     expect(addon.start).toHaveBeenCalledTimes(1)
     expect(addon.setVisible).toHaveBeenCalledWith({ handle: 1 }, true)
     expect(addon.setGamma).toHaveBeenCalledWith({ handle: 1 }, 1, 1, 1, 1, 1)
@@ -587,7 +599,12 @@ describe('GstVideo — darwin in-process addon path', () => {
     const v = new m.GstVideo({} as never)
     const cd = Buffer.from([9, 9])
     v.prepare('h265', cd)
-    expect(addon.createPlayer).toHaveBeenCalledWith('h265', Buffer.from([1, 2, 3, 4]), cd)
+    expect(addon.createPlayer).toHaveBeenCalledWith(
+      'h265',
+      Buffer.from([1, 2, 3, 4]),
+      cd,
+      expect.any(Number)
+    )
   })
 
   test('a preset content region is applied when the player is created', async () => {
@@ -874,5 +891,33 @@ describe('backdrop helpers', () => {
     expect(m.backdropHex(false, '#111111', '#eeeeee')).toBe('#eeeeee')
     expect(m.backdropHex(true)).toBe('#000000')
     expect(m.backdropHex(false)).toBe('#d4d4d4')
+  })
+})
+
+describe('media feed', () => {
+  test('on linux the media feed comes from the host process', async () => {
+    const mod = await loadModule('linux')
+    expect(mod.useHostProcess).toBe(true)
+    await expect(mod.openMediaFeed()).resolves.toBe('/host/feed')
+    expect(gstHost.openFeed).toHaveBeenCalled()
+    expect(mod.gstAddon()).toBeNull()
+  })
+
+  test('on darwin the addon binds the feed once and reuses it', async () => {
+    const mod = await loadModule('darwin')
+    expect(mod.useHostProcess).toBe(false)
+    const first = await mod.openMediaFeed()
+    expect(first).toMatch(/livi-gst-\d+\.feed$/)
+    expect(addon.openFeed).toHaveBeenCalledWith(first)
+    ;(addon.openFeed as ReturnType<typeof vi.fn>).mockClear()
+    await expect(mod.openMediaFeed()).resolves.toBe(first)
+    expect(addon.openFeed).not.toHaveBeenCalled()
+    expect(mod.gstAddon()).toBe(addon)
+  })
+
+  test('on darwin an unbound addon feed is empty', async () => {
+    ;(addon.openFeed as ReturnType<typeof vi.fn>).mockReturnValueOnce(false)
+    const mod = await loadModule('darwin')
+    await expect(mod.openMediaFeed()).resolves.toBe('')
   })
 })

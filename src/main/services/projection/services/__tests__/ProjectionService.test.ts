@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events'
 import { PhoneWorkMode } from '@shared/types'
 import fs from 'fs'
 import type { Mock } from 'vitest'
@@ -18,14 +19,15 @@ vi.mock('../../messages', async () => {
   const EventEmitter = require('events')
   class MockDongleDriver extends EventEmitter {
     send = vi.fn(async () => true)
-    initialise = vi.fn(async () => undefined)
+    attachHelper = vi.fn()
+    detachHelper = vi.fn()
+    setMediaSink = vi.fn()
+    usbDevice = vi.fn(() => null)
     start = vi.fn(async () => undefined)
     stop = vi.fn(async () => undefined)
     close = vi.fn(async () => undefined)
-    bringUp = vi.fn(async () => undefined)
     isUp = false
     disconnectPhone = vi.fn(async () => true)
-    sendPhoneAudio = vi.fn()
     uploadHostIcons = vi.fn()
     requestClusterFocus = vi.fn()
     requestKeyframe = vi.fn()
@@ -53,7 +55,6 @@ vi.mock('../../messages', async () => {
     BluetoothPeerConnected: class {
       constructor(public address?: string) {}
     },
-    VideoData: class {},
     AudioData: class {},
     DuckAudio: class {},
     MediaData: class MediaData {},
@@ -75,7 +76,6 @@ vi.mock('../../messages', async () => {
     SendCommand: StubMsg,
     SendTouch: StubMsg,
     SendMultiTouch: StubMsg,
-    SendAudio: StubMsg,
     SendFile: StubMsg,
     SendServerCgiScript: StubMsg,
     SendLiviWeb: StubMsg,
@@ -150,12 +150,6 @@ vi.mock('electron', () => ({
   },
   WebContents: class {},
   webContents: { fromId: vi.fn((id: number) => ({ id, isDestroyed: () => false })) }
-}))
-
-vi.mock('usb', () => ({
-  usb: {
-    getDevices: vi.fn(async () => [])
-  }
 }))
 
 import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
@@ -383,17 +377,23 @@ describe('ProjectionService', () => {
       vi.useRealTimers()
     })
 
-    function fakePhoneDevice(): any {
-      return {
-        deviceDescriptor: { idVendor: 0x18d1, idProduct: 0x2d00 }
-      }
+    // The helper announced a phone on USB, the session stays held until activated
+    function plugWiredAa(svc: any): number {
+      const driver = Object.assign(new EventEmitter(), {
+        isWiredMode: () => true,
+        usbSerial: () => 'serial-1',
+        close: vi.fn(async () => undefined),
+        requestKeyframe: vi.fn(),
+        setVideoActive: vi.fn(),
+        send: vi.fn(async () => true)
+      })
+      return svc.sessions.upsert(driver, 'androidauto', 'usb', { usbSerial: 'serial-1' }).index
     }
 
     function freshSvc(): any {
       const svc = new ProjectionService() as any
-      svc.markPhoneConnected(false)
       svc.markDongleConnected(false)
-      vi.runOnlyPendingTimers() // flush detach debounces
+      vi.runOnlyPendingTimers() // flush detach debounce
       return svc
     }
 
@@ -403,7 +403,7 @@ describe('ProjectionService', () => {
       expect(svc.pickPreferredTransport()).toBeNull()
     })
 
-    test('auto: dongle-only → dongle; phone-only → aa', async () => {
+    test('auto: dongle-only → dongle; wired AA session only → aa', async () => {
       const svc = freshSvc()
       svc.config = { aa: false, connectionPreference: 'auto' }
 
@@ -412,7 +412,7 @@ describe('ProjectionService', () => {
 
       svc.markDongleConnected(false)
       vi.runOnlyPendingTimers() // flush detach debounce
-      svc.markPhoneConnected(true, fakePhoneDevice())
+      plugWiredAa(svc)
       expect(svc.pickPreferredTransport()).toBe('aa')
     })
 
@@ -432,9 +432,9 @@ describe('ProjectionService', () => {
       const svc = freshSvc()
       svc.config = { aa: false, connectionPreference: 'auto' }
       svc.markDongleConnected(true)
-      svc.markPhoneConnected(true, fakePhoneDevice())
+      plugWiredAa(svc)
       svc.started = true
-      // dongle is active by default — no AA driver was ever created
+      // dongle is active by default, the wired AA session is still held
       svc.stop = vi.fn(async () => {
         svc.started = false
       })
@@ -442,7 +442,7 @@ describe('ProjectionService', () => {
 
       const res = await svc.switchTransport()
       expect(svc.stop).toHaveBeenCalledTimes(1)
-      // override sticks → next pick is 'aa'
+      // override sticks, next pick is 'aa'
       expect(svc.pickPreferredTransport()).toBe('aa')
       expect(res.ok).toBe(true)
     })
@@ -451,9 +451,8 @@ describe('ProjectionService', () => {
       const svc = freshSvc()
       svc.config = { aa: false, connectionPreference: 'auto' }
       svc.markDongleConnected(true)
-      svc.markPhoneConnected(true, fakePhoneDevice())
+      const wired = plugWiredAa(svc)
       svc.started = true
-      // dongle is active by default — no AA driver was ever created
       svc.stop = vi.fn(async () => {
         svc.started = false
       })
@@ -462,8 +461,8 @@ describe('ProjectionService', () => {
       await svc.switchTransport()
       expect(svc.pickPreferredTransport()).toBe('aa')
 
-      svc.markPhoneConnected(false)
-      vi.runOnlyPendingTimers() // flush detach debounce
+      // The wired candidate follows the helper session, no detach debounce
+      svc.sessions.close(wired)
       expect(svc.pickPreferredTransport()).toBe('dongle')
     })
   })
@@ -846,7 +845,7 @@ describe('ProjectionService', () => {
   test('a stream level reaches the driver that plays it out', async () => {
     const { ProjectionAudio } = await import('../ProjectionAudio')
     const svc = new ProjectionService() as any
-    const applyStreamVolume = vi.mocked(ProjectionAudio).mock.calls.at(-1)?.[5] as (
+    const applyStreamVolume = vi.mocked(ProjectionAudio).mock.calls.at(-1)?.[3] as (
       audioType: number,
       level: number,
       rampMs: number
@@ -2093,7 +2092,6 @@ describe('ProjectionService', () => {
     msg.command = 10
     msg.audioType = 4
     msg.decodeType = 7
-    msg.volume = 0.75
 
     svc.driver.emit('message', msg)
     svc.driver.emit('message', msg)
@@ -2105,8 +2103,7 @@ describe('ProjectionService', () => {
       payload: {
         command: 10,
         audioType: 4,
-        decodeType: 7,
-        volume: 0.75
+        decodeType: 7
       }
     })
 

@@ -57,7 +57,7 @@ export interface ProjectionIpcHost {
   isUsingDongle(): boolean
   isUsingAa(): boolean
   isStarted(): boolean
-  hasWebUsbDevice(): boolean
+  isDongleUp(): boolean
 
   // Bluetooth
   sendBluetoothPairedList(text: string): Promise<boolean>

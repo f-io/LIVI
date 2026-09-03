@@ -1,144 +1,213 @@
 import { AudioCommand } from '@shared/types/ProjectionEnums'
-import { afterEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import type { AudioData } from '../messages'
 
-const net = vi.hoisted(() => {
-  const { EventEmitter } = require('node:events')
-  const sockets: any[] = []
-  class FakeSocket extends EventEmitter {
-    written: Buffer[] = []
-    destroyed = false
-    constructor() {
-      super()
-      sockets.push(this)
-    }
-    write(b: Buffer): void {
-      this.written.push(b)
-    }
-    destroy(): void {
-      this.destroyed = true
-      this.emit('close')
-    }
-  }
-  return { sockets, connect: vi.fn(() => new FakeSocket()) }
+const micTap = vi.hoisted(() => {
+  const taps: Array<{ close: ReturnType<typeof vi.fn> }> = []
+  const open = vi.fn(() => {
+    const tap = { close: vi.fn() }
+    taps.push(tap)
+    return tap
+  })
+  return { taps, open }
 })
 
-const mic = vi.hoisted(() => {
-  const { EventEmitter } = require('node:events')
-  const mics: any[] = []
-  class FakeMic extends EventEmitter {
-    device?: string
-    started?: number
-    stopped = false
-    constructor() {
-      super()
-      mics.push(this)
-    }
-    setDevice(d?: string): void {
-      this.device = d
-    }
-    start(decode: number): void {
-      this.started = decode
-    }
-    stop(): void {
-      this.stopped = true
-    }
-  }
-  return { mics, FakeMic }
-})
-
-vi.mock('node:net', () => ({ connect: net.connect }))
-vi.mock('@main/services/audio/Microphone', () => ({ default: mic.FakeMic }))
+vi.mock('@main/services/audio/micTap', () => ({ MicTap: { open: micTap.open } }))
 
 import { ScoAudio } from '../ScoAudio'
 
+type Deps = ConstructorParameters<typeof ScoAudio>[0]
+
+// Deps around a call stream registry, announce() plays the host opening the stream
+function makeDeps(over: Partial<Deps> = {}) {
+  const listeners = new Set<(streamId: number) => void>()
+  const emitted: AudioData[] = []
+  const mocks = {
+    emitAudio: vi.fn((m: AudioData) => {
+      emitted.push(m)
+    }),
+    getMicDevice: vi.fn((): string | undefined => 'mic0'),
+    primeCall: vi.fn(),
+    dropCall: vi.fn(),
+    onCallStream: vi.fn((cb: (streamId: number) => void) => {
+      listeners.add(cb)
+      return () => {
+        listeners.delete(cb)
+      }
+    }),
+    feedPath: vi.fn(async () => '/tmp/feed.sock'),
+    setScoSink: vi.fn(async (): Promise<unknown> => ({ ok: true }))
+  }
+  const deps: Deps = { ...mocks, ...over }
+  const announce = (streamId: number) => {
+    for (const cb of listeners) cb(streamId)
+  }
+  return { deps, mocks, emitted, announce, listeners }
+}
+
+// Lets the feed lookup and the sink call settle
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
 describe('ScoAudio', () => {
+  let warn: ReturnType<typeof vi.spyOn>
+  let log: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    log = vi.spyOn(console, 'log').mockImplementation(() => {})
+  })
+
   afterEach(() => {
-    net.sockets.length = 0
-    mic.mics.length = 0
+    warn.mockRestore()
+    log.mockRestore()
+    micTap.taps.length = 0
     vi.clearAllMocks()
   })
 
-  test('on connect emits phonecall start and starts the mic; a full frame emits PCM', () => {
-    const emitted: any[] = []
-    const sco = new ScoAudio({ emitAudio: (m) => emitted.push(m), getMicDevice: () => 'mic0' })
-    sco.start()
-    const sock = net.sockets[0]
-    sock.emit('connect')
+  test('start announces the call, primes the call stream and opens the tap', () => {
+    const { deps, mocks, emitted } = makeDeps()
+    const sco = new ScoAudio(deps)
 
+    sco.start()
+
+    expect(emitted).toHaveLength(1)
     expect(emitted[0].command).toBe(AudioCommand.AudioPhonecallStart)
-    expect(mic.mics[0].started).toBe(3)
-    expect(mic.mics[0].device).toBe('mic0')
-
-    mic.mics[0].emit('data', Buffer.alloc(160))
-    expect(sock.written.length).toBe(1)
-
-    emitted.length = 0
-    sock.emit('data', Buffer.alloc(320))
-    expect(emitted).toHaveLength(1)
-    expect(emitted[0].data).toBeInstanceOf(Int16Array)
-    expect(emitted[0].data.length).toBe(160)
+    expect(emitted[0].audioType).toBe(2)
+    expect(mocks.primeCall).toHaveBeenCalledTimes(1)
+    expect(micTap.open).toHaveBeenCalledWith('/tmp/aa-sco.mic', {
+      sampleRate: 8000,
+      channels: 1,
+      device: 'mic0'
+    })
+    expect(mocks.setScoSink).not.toHaveBeenCalled()
   })
 
-  test('partial data is buffered until a full frame arrives', () => {
-    const emitted: any[] = []
-    const sco = new ScoAudio({ emitAudio: (m) => emitted.push(m), getMicDevice: () => undefined })
+  test('the call stream id reaches the helper together with the feed', async () => {
+    const { deps, mocks, announce } = makeDeps()
+    const sco = new ScoAudio(deps)
     sco.start()
-    net.sockets[0].emit('connect')
-    emitted.length = 0
-    net.sockets[0].emit('data', Buffer.alloc(200))
-    expect(emitted).toHaveLength(0)
-    net.sockets[0].emit('data', Buffer.alloc(200))
-    expect(emitted).toHaveLength(1)
+
+    announce(17)
+    await flush()
+
+    expect(mocks.feedPath).toHaveBeenCalledTimes(1)
+    expect(mocks.setScoSink).toHaveBeenCalledWith('/tmp/feed.sock', 17)
   })
 
-  test('stop tears down the mic and emits phonecall stop', () => {
-    const emitted: any[] = []
-    const sco = new ScoAudio({ emitAudio: (m) => emitted.push(m), getMicDevice: () => undefined })
+  test('stop closes the tap, clears the sink, drops the call and announces the end', () => {
+    const { deps, mocks, emitted, listeners } = makeDeps()
+    const sco = new ScoAudio(deps)
     sco.start()
-    net.sockets[0].emit('connect')
     emitted.length = 0
+
     sco.stop()
-    expect(mic.mics[0].stopped).toBe(true)
-    expect(net.sockets[0].destroyed).toBe(true)
-    expect(emitted.at(-1).command).toBe(AudioCommand.AudioPhonecallStop)
+
+    expect(micTap.taps[0].close).toHaveBeenCalledTimes(1)
+    expect(mocks.setScoSink).toHaveBeenCalledWith()
+    expect(mocks.dropCall).toHaveBeenCalledTimes(1)
+    expect(listeners.size).toBe(0)
+    expect(emitted).toHaveLength(1)
+    expect(emitted[0].command).toBe(AudioCommand.AudioPhonecallStop)
   })
 
-  test('a socket error stops cleanly', () => {
-    const sco = new ScoAudio({ emitAudio: () => {}, getMicDevice: () => undefined })
+  test('a stream id that arrives after stop goes nowhere', async () => {
+    const { deps, mocks, announce } = makeDeps()
+    const sco = new ScoAudio(deps)
     sco.start()
-    net.sockets[0].emit('connect')
-    net.sockets[0].emit('error', new Error('boom'))
-    expect(mic.mics[0].stopped).toBe(true)
-  })
-
-  test('stale socket data and mic frames after stop are ignored', () => {
-    const emitted: any[] = []
-    const sco = new ScoAudio({ emitAudio: (m) => emitted.push(m), getMicDevice: () => undefined })
-    sco.start()
-    const sock = net.sockets[0]
-    sock.emit('connect')
-    const m = mic.mics[0]
     sco.stop()
-    emitted.length = 0
-    sock.written.length = 0
-    // Both sides are detached; late events must not route anywhere.
-    sock.emit('data', Buffer.alloc(320))
-    m.emit('data', Buffer.alloc(160))
-    expect(emitted).toHaveLength(0)
-    expect(sock.written).toHaveLength(0)
+
+    announce(17)
+    await flush()
+
+    // Only the clear from stop, no sink for the late id
+    expect(mocks.setScoSink).toHaveBeenCalledTimes(1)
+    expect(mocks.setScoSink).toHaveBeenCalledWith()
+  })
+
+  test('a stop during the feed lookup leaves the sink alone', async () => {
+    let resolveFeed: (path: string) => void = () => {}
+    const feedPath = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveFeed = resolve
+        })
+    )
+    const { deps, mocks, announce } = makeDeps({ feedPath })
+    const sco = new ScoAudio(deps)
+    sco.start()
+    announce(17)
+    sco.stop()
+
+    resolveFeed('/tmp/feed.sock')
+    await flush()
+
+    expect(mocks.setScoSink).toHaveBeenCalledTimes(1)
+    expect(mocks.setScoSink).toHaveBeenCalledWith()
+  })
+
+  test('without a feed the helper is not told and the caller stays silent', async () => {
+    const { deps, mocks, announce } = makeDeps({ feedPath: vi.fn(async () => '') })
+    const sco = new ScoAudio(deps)
+    sco.start()
+
+    announce(5)
+    await flush()
+
+    expect(mocks.setScoSink).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no media feed'))
+  })
+
+  test('a helper that refuses the sink is logged, the call and its end go on', async () => {
+    const setScoSink = vi.fn(async () => {
+      throw new Error('busy')
+    })
+    const { deps, mocks, announce } = makeDeps({ setScoSink })
+    const sco = new ScoAudio(deps)
+    sco.start()
+
+    announce(5)
+    await flush()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('busy'))
+
+    expect(() => sco.stop()).not.toThrow()
+    await flush()
+    expect(mocks.dropCall).toHaveBeenCalledTimes(1)
+  })
+
+  test('a missing tap is logged, the call itself goes on', () => {
+    micTap.open.mockReturnValueOnce(null as never)
+    const { deps, mocks, emitted } = makeDeps()
+    const sco = new ScoAudio(deps)
+
+    sco.start()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no microphone tap'))
+    expect(mocks.primeCall).toHaveBeenCalledTimes(1)
+
+    sco.stop()
+    expect(mocks.dropCall).toHaveBeenCalledTimes(1)
+    expect(emitted.at(-1)?.command).toBe(AudioCommand.AudioPhonecallStop)
   })
 
   test('start is idempotent', () => {
-    const sco = new ScoAudio({ emitAudio: () => {}, getMicDevice: () => undefined })
+    const { deps, mocks, emitted } = makeDeps()
+    const sco = new ScoAudio(deps)
+
     sco.start()
     sco.start()
-    expect(net.sockets).toHaveLength(1)
+
+    expect(micTap.open).toHaveBeenCalledTimes(1)
+    expect(mocks.primeCall).toHaveBeenCalledTimes(1)
+    expect(emitted).toHaveLength(1)
   })
 
-  test('stop before connect is a no-op', () => {
-    const emitted: any[] = []
-    const sco = new ScoAudio({ emitAudio: (m) => emitted.push(m), getMicDevice: () => undefined })
+  test('stop before start is a no-op', () => {
+    const { deps, mocks, emitted } = makeDeps()
+    const sco = new ScoAudio(deps)
+
     sco.stop()
+
     expect(emitted).toHaveLength(0)
+    expect(mocks.setScoSink).not.toHaveBeenCalled()
+    expect(mocks.dropCall).not.toHaveBeenCalled()
   })
 })

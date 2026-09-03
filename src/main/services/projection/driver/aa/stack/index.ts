@@ -6,9 +6,7 @@
  *   const aa = new AAStack({ huName: 'LIVI' })
  *
  *   aa.on('session',      (session) => { ... })   // new phone connected
- *   aa.on('video-frame',  (buf, ts) => { ... })   // H.264/H.265 NAL units from first session
  *   aa.on('video-codec',  (codec) => { ... })     // 'h264' | 'h265' chosen by phone at START_INDICATION
- *   aa.on('audio-frame',  (buf, ts, ch, chId) => { ... })   // PCM samples
  *   aa.on('error',        (err) => { ... })
  *
  *   aa.stop()                           // closes the active session
@@ -18,7 +16,6 @@
  */
 
 import { EventEmitter } from 'node:events'
-import type * as net from 'node:net'
 import type { AudioChannelType } from './channels/AudioChannel'
 import type { TouchPointer } from './channels/InputChannel'
 import type { MediaPlaybackMetadata, MediaPlaybackStatus } from './channels/MediaInfoChannel'
@@ -71,18 +68,9 @@ export class AAStack extends EventEmitter {
     this._activeSession = session
     session.setClusterStreamActive(this._clusterStreamActive)
 
-    session.on('video-frame', (buf: Buffer, ts: bigint) => this.emit('video-frame', buf, ts))
-    session.on('cluster-video-frame', (buf: Buffer, ts: bigint) =>
-      this.emit('cluster-video-frame', buf, ts)
-    )
     session.on('video-codec', (codec: VideoCodec) => this.emit('video-codec', codec))
     session.on('cluster-video-codec', (codec: VideoCodec) =>
       this.emit('cluster-video-codec', codec)
-    )
-    session.on(
-      'audio-frame',
-      (buf: Buffer, ts: bigint, channel: AudioChannelType, channelId: number) =>
-        this.emit('audio-frame', buf, ts, channel, channelId)
     )
     session.on('audio-setup', (channel: AudioChannelType, sampleRate: number, channels: number) =>
       this.emit('audio-setup', channel, sampleRate, channels)
@@ -132,19 +120,11 @@ export class AAStack extends EventEmitter {
     this._configRefresh = fn
   }
 
-  attachSocket(socket: net.Socket): Session {
-    socket.setNoDelay(true)
-    return this._attach(socket, 'loopback')
-  }
-
-  /** A session the helper carries: it did TCP, version and TLS already. */
+  /** A session the helper carries: it did the transport, version and TLS already. */
   attachLink(link: HelperSessionLink): Session {
-    return this._attach(link, `helper ${link.peer}`)
-  }
-
-  private _attach(transport: net.Socket | HelperSessionLink, label: string): Session {
+    const label = `helper ${link.peer}`
     this._configRefresh?.()
-    const session = new Session(transport, this._cfg)
+    const session = new Session(link, this._cfg)
     session.on('error', (err: Error) => console.error(`[Session ${label}] error:`, err.message))
     session.on('disconnected', (reason?: string) =>
       console.log(`[Session ${label}] disconnected: ${reason ?? ''}`)
@@ -154,10 +134,6 @@ export class AAStack extends EventEmitter {
       console.error(`[Session ${label}] start error:`, err.message)
     })
     return session
-  }
-
-  get helperBacked(): boolean {
-    return this._activeSession?.helperBacked ?? false
   }
 
   sendMediaSink(cfg: Record<string, unknown>): void {
@@ -251,8 +227,9 @@ export class AAStack extends EventEmitter {
     this._activeSession?.sendVehicleEnergyModel(capacityWh, currentWh, rangeM, opts)
   }
 
-  sendMicPcm(buf: Buffer, ts?: bigint): void {
-    this._activeSession?.sendMicPcm(buf, ts)
+  /** Where the pipeline's microphone tap has to deliver, known once the session is ready. */
+  micSocketPath(): string | null {
+    return this._activeSession?.micSocketPath() ?? null
   }
 
   requestVideoFocus(): void {

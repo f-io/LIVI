@@ -7,7 +7,7 @@
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "lib": ["dom", "dom.iterable", "es2024", "webworker"],
-    "types": ["vitest/globals", "@testing-library/jest-dom", "node", "w3c-web-usb", "vite/client"],
+    "types": ["vitest/globals", "@testing-library/jest-dom", "node", "vite/client"],
     "skipLibCheck": true,
     "noEmit": true
   },

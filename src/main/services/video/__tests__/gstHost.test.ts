@@ -680,6 +680,87 @@ describe('gstHost audio', () => {
     expect(body.length).toBe(51)
   })
 
+  test('openFeed asks the host to bind the feed socket and resolves the path it returns', async () => {
+    const gstHost = await freshHost()
+    const promise = gstHost.openFeed()
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+    const f = sock.write.mock.calls[0][0] as Buffer
+    expect(f.readUInt8(4)).toBe(16)
+
+    sock.emit('data', reverse(7, 0, Buffer.from('/tmp/livi.feed', 'utf8')))
+    await expect(promise).resolves.toBe('/tmp/livi.feed')
+    // The bound path is cached, a second call does not re-ask the host.
+    sock.write.mockClear()
+    await expect(gstHost.openFeed()).resolves.toBe('/tmp/livi.feed')
+    expect(sock.write).not.toHaveBeenCalled()
+  })
+
+  test('openFeed resolves empty when the host never answers', async () => {
+    vi.useFakeTimers()
+    const gstHost = await freshHost()
+    const promise = gstHost.openFeed()
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+    await vi.advanceTimersByTimeAsync(4000)
+    await expect(promise).resolves.toBe('')
+  })
+
+  test('a child spawn error makes the host unavailable and empties a pending feed', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const gstHost = await freshHost()
+    const promise = gstHost.openFeed()
+    children[0].emit('error', new Error('spawn failed'))
+    await expect(promise).resolves.toBe('')
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('cannot start the host'))
+    errSpy.mockRestore()
+  })
+
+  test('openMicTap names the format, the device and the socket the tap feeds', async () => {
+    const gstHost = await freshHost()
+    gstHost.closeAudio(0)
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+    sock.write.mockClear()
+
+    const id = gstHost.openMicTap('/run/livi/aa-mic.sock', {
+      sampleRate: 24000,
+      channels: 2,
+      device: 'src0'
+    })
+
+    const f = sock.write.mock.calls[0][0] as Buffer
+    expect(f.readUInt8(4)).toBe(20)
+    expect(f.readUInt32LE(5)).toBe(id)
+    const body = f.subarray(9)
+    expect(f.readUInt32LE(0)).toBe(5 + body.length)
+    expect(body.readUInt32LE(0)).toBe(24000)
+    expect(body.readUInt8(4)).toBe(2)
+    expect(body.readUInt8(5)).toBe('src0'.length)
+    expect(body.subarray(6, 10).toString('utf8')).toBe('src0')
+    expect(body.subarray(10).toString('utf8')).toBe('/run/livi/aa-mic.sock')
+  })
+
+  test('closeMicTap ends the tap it opened, a tap without a device names none', async () => {
+    const gstHost = await freshHost()
+    gstHost.closeAudio(0)
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+    sock.write.mockClear()
+
+    const id = gstHost.openMicTap('/tmp/mic.sock', { sampleRate: 16000, channels: 1 })
+    gstHost.closeMicTap(id)
+
+    const open = (sock.write.mock.calls[0][0] as Buffer).subarray(9)
+    expect(open.readUInt8(5)).toBe(0)
+    expect(open.subarray(6).toString('utf8')).toBe('/tmp/mic.sock')
+    const close = sock.write.mock.calls[1][0] as Buffer
+    expect(close.readUInt32LE(0)).toBe(5)
+    expect(close.readUInt8(4)).toBe(21)
+    expect(close.readUInt32LE(5)).toBe(id)
+    expect(close).toHaveLength(9)
+  })
+
   test('setVisualizerTap toggles the tap and viz samples reach the listener with their rate', async () => {
     const gstHost = await freshHost()
     gstHost.closeAudio(0)

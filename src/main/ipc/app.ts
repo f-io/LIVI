@@ -35,10 +35,6 @@ export async function restartApp(
     }
 
     try {
-      services.usbService?.beginShutdown()
-    } catch {}
-
-    try {
       const teardown = services.projectionService.shutdownWirelessSessions()
       await Promise.race([teardown, new Promise((r) => setTimeout(r, 8000))])
     } catch (e) {
@@ -50,12 +46,6 @@ export async function restartApp(
       await services.projectionService.stopHelper()
     } catch (e) {
       console.warn('[MAIN] stopHelper failed (continuing restart):', e)
-    }
-
-    try {
-      await services.usbService?.gracefulReset()
-    } catch (e) {
-      console.warn('[MAIN] gracefulReset failed (continuing restart):', e)
     }
 
     await new Promise((r) => setTimeout(r, 150))

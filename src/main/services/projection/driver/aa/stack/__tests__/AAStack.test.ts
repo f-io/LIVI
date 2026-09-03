@@ -17,14 +17,15 @@ class MockSession extends EventEmitter {
   sendDrivingStatusData = vi.fn()
   sendGpsLocationData = vi.fn()
   sendVehicleEnergyModel = vi.fn()
-  sendMicPcm = vi.fn()
   micFormat = vi.fn(() => ({ sampleRate: 24000, channels: 2 }))
+  micSocketPath = vi.fn((): string | null => '/run/livi/aa-mic.sock')
   requestVideoFocus = vi.fn()
   requestMainKeyframe = vi.fn()
   requestClusterKeyframe = vi.fn()
   forceClusterKeyframe = vi.fn()
   setClusterStreamActive = vi.fn()
   requestShutdown = vi.fn(async () => undefined)
+  sendMediaSink = vi.fn()
   start = vi.fn(async () => undefined)
   close = vi.fn()
 }
@@ -40,8 +41,20 @@ vi.mock('../system/hwaddr', () => ({
   detectWifiBssid: vi.fn(() => '11:22:33:44:55:66')
 }))
 
-import type * as net from 'node:net'
 import { AAStack, type AAStackConfig } from '../index'
+import type { HelperSessionLink } from '../transport/HelperSessionLink'
+
+/** The helper's session link, as far as the mocked session needs it. */
+class FakeLink extends EventEmitter {
+  readonly peer = '10.0.0.2'
+  closed = false
+  send = vi.fn()
+  control = vi.fn()
+  end = vi.fn()
+  destroy = vi.fn()
+}
+
+const fakeLink = (): HelperSessionLink => new FakeLink() as unknown as HelperSessionLink
 
 beforeEach(async () => {
   vi.spyOn(console, 'log').mockImplementation(function () {})
@@ -69,9 +82,9 @@ function baseCfg(over: Partial<AAStackConfig> = {}): AAStackConfig {
 
 function setup() {
   const stack = new AAStack(baseCfg())
-  const sock = { setNoDelay: vi.fn() } as unknown as net.Socket
-  const session = stack.attachSocket(sock) as unknown as MockSession
-  return { stack, session }
+  const link = fakeLink()
+  const session = stack.attachLink(link) as unknown as MockSession
+  return { stack, session, link }
 }
 
 describe('AAStack: construction', () => {
@@ -113,15 +126,12 @@ describe('AAStack: lifecycle', () => {
 })
 
 describe('AAStack: event forwarding', () => {
-  test('forwards video / audio / nav events from the active session', async () => {
+  test('forwards codec / audio / nav events from the active session', async () => {
     const { session, stack } = setup()
     const events: string[] = []
     const expected = [
-      'video-frame',
-      'cluster-video-frame',
       'video-codec',
       'cluster-video-codec',
-      'audio-frame',
       'audio-setup',
       'audio-start',
       'audio-stop',
@@ -153,6 +163,15 @@ describe('AAStack: event forwarding', () => {
     expect(events).toEqual(expected)
   })
 
+  test('the media itself never passes through the stack', () => {
+    const { session, stack } = setup()
+    const seen = vi.fn()
+    for (const e of ['video-frame', 'cluster-video-frame', 'audio-frame']) stack.on(e, seen)
+    session.emit('video-frame', Buffer.alloc(1), 0n)
+    session.emit('audio-frame', Buffer.alloc(1), 0n, 'media', 4)
+    expect(seen).not.toHaveBeenCalled()
+  })
+
   test('session "error" is forwarded', () => {
     const { session, stack } = setup()
     const onError = vi.fn()
@@ -175,6 +194,21 @@ describe('AAStack: mic format', () => {
   })
 })
 
+describe('AAStack: mic socket', () => {
+  test('has no socket without an active session', () => {
+    const stack = new AAStack(baseCfg())
+    expect(stack.micSocketPath()).toBeNull()
+  })
+
+  test('delegates micSocketPath to the active session', () => {
+    const { stack, session } = setup()
+    expect(stack.micSocketPath()).toBe('/run/livi/aa-mic.sock')
+    expect(session.micSocketPath).toHaveBeenCalledTimes(1)
+    session.micSocketPath.mockReturnValue(null)
+    expect(stack.micSocketPath()).toBeNull()
+  })
+})
+
 describe('AAStack: outbound API delegates to active session', () => {
   test('without an active session, calls are silently dropped', async () => {
     const stack = new AAStack(baseCfg())
@@ -194,7 +228,6 @@ describe('AAStack: outbound API delegates to active session', () => {
       stack.sendDrivingStatusData(0)
       stack.sendGpsLocationData({ latDeg: 52, lngDeg: 13 })
       stack.sendVehicleEnergyModel(50_000, 30_000, 200_000)
-      stack.sendMicPcm(Buffer.alloc(0))
       stack.requestVideoFocus()
       stack.requestClusterKeyframe()
     }).not.toThrow()
@@ -217,7 +250,6 @@ describe('AAStack: outbound API delegates to active session', () => {
     stack.sendDrivingStatusData(0)
     stack.sendGpsLocationData({ latDeg: 52, lngDeg: 13 })
     stack.sendVehicleEnergyModel(50_000, 30_000, 200_000)
-    stack.sendMicPcm(Buffer.from([1]))
     stack.requestVideoFocus()
     stack.requestClusterKeyframe()
     await stack.requestShutdown()
@@ -237,7 +269,6 @@ describe('AAStack: outbound API delegates to active session', () => {
     expect(session.sendDrivingStatusData).toHaveBeenCalled()
     expect(session.sendGpsLocationData).toHaveBeenCalled()
     expect(session.sendVehicleEnergyModel).toHaveBeenCalled()
-    expect(session.sendMicPcm).toHaveBeenCalled()
     expect(session.requestVideoFocus).toHaveBeenCalled()
     expect(session.requestClusterKeyframe).toHaveBeenCalled()
     expect(session.requestShutdown).toHaveBeenCalled()
@@ -256,7 +287,7 @@ describe('AAStack: config + keyframe API', () => {
     const stack = new AAStack(baseCfg())
     const fn = vi.fn()
     stack.setConfigRefresh(fn)
-    stack.attachSocket({ setNoDelay: vi.fn() } as unknown as net.Socket)
+    stack.attachLink(fakeLink())
     expect(fn).toHaveBeenCalledTimes(1)
   })
 
@@ -287,57 +318,53 @@ describe('AAStack: config + keyframe API', () => {
   })
 })
 
-describe('AAStack.attachSocket', () => {
-  test('constructs a Session and starts it', async () => {
+describe('AAStack.attachLink', () => {
+  test('constructs a Session on the link and starts it', async () => {
     const stack = new AAStack(baseCfg())
-    const sock = { setNoDelay: vi.fn() } as unknown as net.Socket
-    const session = stack.attachSocket(sock)
-    expect((sock as unknown as { setNoDelay: Mock }).setNoDelay).toHaveBeenCalledWith(true)
-    expect(session).toBeDefined()
+    const link = fakeLink()
+    const { Session } = (await vi.importMock('../session/Session')) as { Session: Mock }
+    const session = stack.attachLink(link)
+    expect(Session).toHaveBeenCalledWith(link, expect.anything())
     expect((session as unknown as MockSession).start).toHaveBeenCalled()
   })
 
-  test('attachSocket session "error" + "disconnected" are logged with the loopback tag', () => {
+  test('sendMediaSink forwards to the active session and is a no-op without one', () => {
+    const stack = new AAStack(baseCfg())
+    expect(() => stack.sendMediaSink({ feed: '/tmp/f' })).not.toThrow()
+    const session = stack.attachLink(fakeLink()) as unknown as MockSession
+    stack.sendMediaSink({ feed: '/tmp/f', video: [] })
+    expect(session.sendMediaSink).toHaveBeenCalledWith({ feed: '/tmp/f', video: [] })
+  })
+
+  test('session "error" + "disconnected" are logged with the helper peer', () => {
     const errLog = vi.spyOn(console, 'error').mockImplementation(function () {})
     const log = vi.spyOn(console, 'log').mockImplementation(function () {})
     const stack = new AAStack(baseCfg())
     stack.on('error', () => {})
-    const sock = { setNoDelay: vi.fn() } as unknown as net.Socket
-    const session = stack.attachSocket(sock) as unknown as MockSession
+    const session = stack.attachLink(fakeLink()) as unknown as MockSession
     session.emit('error', new Error('reset'))
     session.emit('disconnected', 'phone closed')
-    session.emit('disconnected') // no reason → '' fallback
-    expect(errLog).toHaveBeenCalled()
-    expect(log).toHaveBeenCalled()
+    session.emit('disconnected')
+    expect(errLog).toHaveBeenCalledWith(expect.stringContaining('helper 10.0.0.2'), 'reset')
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('helper 10.0.0.2'))
     errLog.mockRestore()
     log.mockRestore()
   })
 
-  test('attachSocket session.start rejecting is caught and logged', async () => {
+  test('session.start rejecting is caught and logged', async () => {
     const errLog = vi.spyOn(console, 'error').mockImplementation(function () {})
     const { Session } = (await vi.importMock('../session/Session')) as { Session: Mock }
     Session.mockImplementationOnce(function () {
       const s = new MockSession()
       s.start = vi.fn(async () => {
-        throw new Error('TLS rejected')
+        throw new Error('setup rejected')
       })
       return s
     })
     const stack = new AAStack(baseCfg())
-    const sock = { setNoDelay: vi.fn() } as unknown as net.Socket
-    stack.attachSocket(sock)
+    stack.attachLink(fakeLink())
     await new Promise((r) => setImmediate(r))
-    expect(errLog).toHaveBeenCalledWith(expect.stringContaining('start error'), 'TLS rejected')
+    expect(errLog).toHaveBeenCalledWith(expect.stringContaining('start error'), 'setup rejected')
     errLog.mockRestore()
-  })
-
-  test('attachSocket session.disconnected with no reason yields empty-string log', async () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(function () {})
-    const stack = new AAStack(baseCfg())
-    const sock = { setNoDelay: vi.fn() } as unknown as net.Socket
-    const session = stack.attachSocket(sock) as unknown as MockSession
-    session.emit('disconnected', undefined)
-    expect(log).toHaveBeenCalled()
-    log.mockRestore()
   })
 })

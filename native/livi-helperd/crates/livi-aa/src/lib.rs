@@ -8,4 +8,5 @@ pub mod proto;
 pub mod server;
 pub mod session;
 pub mod tls;
+pub mod usb;
 pub mod wpp;

@@ -12,6 +12,8 @@ pub const KIND_AUDIO: u8 = 2;
 /// Announces the codec of the video stream: payload is one byte, 0 for H.264,
 /// 1 for H.265.
 pub const KIND_VIDEO_START: u8 = 3;
+/// Captured microphone samples, from the pipeline to whoever asked for the tap.
+pub const KIND_MIC: u8 = 4;
 
 /// One complete record.
 #[derive(Debug, PartialEq, Eq)]

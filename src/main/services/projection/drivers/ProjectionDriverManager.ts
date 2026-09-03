@@ -43,7 +43,6 @@ export type DriverManagerDeps = {
   onCpCreated?: (session: IPhoneDriver) => void
   onCpReleased?: (session: IPhoneDriver) => void
   getCpConfigSeed: () => AaConfigSeed
-  onPhoneReenumerate: (ms: number) => void
   getConfig: () => Config
   mediaSink?: AaMediaSinkDeps
 }
@@ -59,6 +58,7 @@ export class ProjectionDriverManager {
     this.routed = this.dongle
     this.attachListeners(this.dongle)
     this.attachMetaListener(this.dongle)
+    if (deps.mediaSink) this.dongle.setMediaSink(deps.mediaSink)
   }
 
   getActive(): IPhoneDriver {
@@ -97,7 +97,6 @@ export class ProjectionDriverManager {
     if (this.aaManager) return this.aaManager
     const mgr = new AaManager({
       getConfig: this.deps.getConfig,
-      onWillReenumerate: (ms) => this.deps.onPhoneReenumerate(ms),
       onSpawn: (session) => this.onAaSpawn(session),
       mediaSink: this.deps.mediaSink
     })
@@ -111,16 +110,18 @@ export class ProjectionDriverManager {
     return mgr
   }
 
-  startAaWireless(helper: HelperSessionSource | undefined): void {
-    this.ensureAaManager().startWireless(helper)
+  attachHelper(helper: HelperSessionSource | undefined): void {
+    this.ensureAaManager().attachHelper(helper)
+    this.dongle.attachHelper(helper)
+  }
+
+  detachHelper(): void {
+    this.aaManager?.detachHelper()
+    this.dongle.detachHelper()
   }
 
   stopAaWireless(): void {
     this.aaManager?.stopWireless()
-  }
-
-  bringUpAaWired(device: USBDevice): Promise<boolean> {
-    return this.ensureAaManager().bringUpWired(device)
   }
 
   setAaHevcSupported(supported: boolean): void {

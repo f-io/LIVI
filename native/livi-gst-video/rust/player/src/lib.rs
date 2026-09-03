@@ -210,10 +210,9 @@ pub struct Player {
     #[cfg(target_os = "macos")]
     sink: Option<gst::Element>,
     #[cfg(target_os = "macos")]
-    view: *mut core::ffi::c_void,
+    view: core::sync::atomic::AtomicPtr<core::ffi::c_void>,
 }
 
-unsafe impl Send for Player {}
 
 impl Player {
     /// Builds the pipeline for `codec` and hangs it in the window `handle`
@@ -251,7 +250,7 @@ impl Player {
             #[cfg(target_os = "macos")]
             sink: pipeline.by_name("sink"),
             #[cfg(target_os = "macos")]
-            view: core::ptr::null_mut(),
+            view: core::sync::atomic::AtomicPtr::new(core::ptr::null_mut()),
             appsrc,
             pipeline,
         };
@@ -316,7 +315,9 @@ impl Player {
         if handle == 0 {
             return;
         }
-        let overlay = unsafe { livi_attach_view(handle, &mut self.view) };
+        let mut view = core::ptr::null_mut();
+        let overlay = unsafe { livi_attach_view(handle, &mut view) };
+        self.view.store(view, core::sync::atomic::Ordering::Release);
         if overlay == 0 {
             return;
         }
@@ -329,7 +330,7 @@ impl Player {
         let _ = self.pipeline.set_state(gst::State::Playing);
     }
 
-    pub fn stop(&mut self) {
+    pub fn stop(&self) {
         let _ = self.pipeline.set_state(gst::State::Null);
         self.remove_view();
     }
@@ -346,7 +347,7 @@ impl Player {
     pub fn set_visible(&self, visible: bool) {
         #[cfg(target_os = "macos")]
         unsafe {
-            livi_set_view_hidden(self.view, !visible)
+            livi_set_view_hidden(self.view_ptr(), !visible)
         };
         #[cfg(not(target_os = "macos"))]
         let _ = visible;
@@ -364,14 +365,15 @@ impl Player {
     ) {
         #[cfg(target_os = "macos")]
         {
-            if self.view.is_null() {
+            let view = self.view_ptr();
+            if view.is_null() {
                 return;
             }
             let sink = self.sink.as_ref().map_or(core::ptr::null_mut(), |s| {
                 s.as_ptr() as *mut core::ffi::c_void
             });
             unsafe {
-                livi_set_content_region(self.view, sink, crop_l, crop_t, vis_w, vis_h, tier_w, tier_h)
+                livi_set_content_region(view, sink, crop_l, crop_t, vis_w, vis_h, tier_w, tier_h)
             }
         }
         #[cfg(not(target_os = "macos"))]
@@ -398,11 +400,19 @@ impl Player {
         shader.set_property("uniforms", uniforms);
     }
 
-    fn remove_view(&mut self) {
+    #[cfg(target_os = "macos")]
+    fn view_ptr(&self) -> *mut core::ffi::c_void {
+        self.view.load(core::sync::atomic::Ordering::Acquire)
+    }
+
+    // The view is swapped out atomically, so a shared player can be stopped from any thread.
+    fn remove_view(&self) {
         #[cfg(target_os = "macos")]
-        if !self.view.is_null() {
-            unsafe { livi_remove_view(self.view) };
-            self.view = core::ptr::null_mut();
+        {
+            let view = self.view.swap(core::ptr::null_mut(), core::sync::atomic::Ordering::AcqRel);
+            if !view.is_null() {
+                unsafe { livi_remove_view(view) };
+            }
         }
     }
 }

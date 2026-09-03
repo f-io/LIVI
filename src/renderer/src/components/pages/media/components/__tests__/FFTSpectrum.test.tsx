@@ -43,7 +43,10 @@ vi.mock('@store/store', () => ({
 describe('FFTSpectrum', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
-    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.useFakeTimers({
+      shouldAdvanceTime: true,
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date']
+    })
 
     mockState = {
       audioSampleRate: 48000,
@@ -65,31 +68,37 @@ describe('FFTSpectrum', () => {
 
     Object.defineProperty(globalThis, 'requestAnimationFrame', {
       configurable: true,
+      writable: true,
       value: requestAnimationFrameMock
     })
 
     Object.defineProperty(globalThis, 'cancelAnimationFrame', {
       configurable: true,
+      writable: true,
       value: cancelAnimationFrameMock
     })
 
     Object.defineProperty(window, 'requestAnimationFrame', {
       configurable: true,
+      writable: true,
       value: requestAnimationFrameMock
     })
 
     Object.defineProperty(window, 'cancelAnimationFrame', {
       configurable: true,
+      writable: true,
       value: cancelAnimationFrameMock
     })
 
     Object.defineProperty(global, 'requestAnimationFrame', {
       configurable: true,
+      writable: true,
       value: requestAnimationFrameMock
     })
 
     Object.defineProperty(global, 'cancelAnimationFrame', {
       configurable: true,
+      writable: true,
       value: cancelAnimationFrameMock
     })
     ;(global as any).ResizeObserver = vi.fn(function (cb: ResizeObserverCallback) {
@@ -469,8 +478,8 @@ describe('FFTSpectrum', () => {
       vi.runOnlyPendingTimers()
     })
 
-    expect(canvas.width).toBe(300)
-    expect(canvas.height).toBe(150)
+    expect(canvas.width).toBe(320)
+    expect(canvas.height).toBe(180)
   })
 
   test('uses css variable when present for barColor', async () => {

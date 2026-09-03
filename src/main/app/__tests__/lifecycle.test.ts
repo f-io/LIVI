@@ -53,7 +53,7 @@ describe('setupLifecycle', () => {
     ;(getMainWindow as Mock).mockReturnValue(null)
 
     const runtimeState = { isQuitting: false } as never
-    const services = { projectionService: {}, usbService: {}, telemetrySocket: {} } as never
+    const services = { projectionService: {}, telemetrySocket: {} } as never
 
     setupLifecycle(runtimeState, services)
 
@@ -71,7 +71,7 @@ describe('setupLifecycle', () => {
     ;(getMainWindow as Mock).mockReturnValue({ show })
 
     const runtimeState = { isQuitting: false } as never
-    const services = { projectionService: {}, usbService: {}, telemetrySocket: {} } as never
+    const services = { projectionService: {}, telemetrySocket: {} } as never
 
     setupLifecycle(runtimeState, services)
 
@@ -121,16 +121,12 @@ describe('setupLifecycle', () => {
       stopHelper: vi.fn(() => Promise.resolve()),
       stop: vi.fn(() => Promise.resolve())
     }
-    const usbService = {
-      beginShutdown: vi.fn(),
-      stop: vi.fn(() => Promise.resolve())
-    }
     const telemetrySocket = {
       disconnect: vi.fn(() => Promise.resolve())
     }
 
     const runtimeState = { isQuitting: true } as never
-    setupLifecycle(runtimeState, { projectionService, usbService, telemetrySocket } as never)
+    setupLifecycle(runtimeState, { projectionService, telemetrySocket } as never)
 
     const beforeQuit = getRegisteredHandler('before-quit') as
       | ((e: { preventDefault: Mock }) => Promise<void>)
@@ -141,7 +137,6 @@ describe('setupLifecycle', () => {
 
     expect(event.preventDefault).not.toHaveBeenCalled()
     expect(projectionService.beginShutdown).not.toHaveBeenCalled()
-    expect(usbService.beginShutdown).not.toHaveBeenCalled()
     expect(app.quit).not.toHaveBeenCalled()
   })
 
@@ -158,16 +153,12 @@ describe('setupLifecycle', () => {
       stopHelper: vi.fn(() => Promise.resolve()),
       stop: vi.fn(() => Promise.resolve())
     }
-    const usbService = {
-      beginShutdown: vi.fn(),
-      stop: vi.fn(() => Promise.resolve())
-    }
     const telemetrySocket = {
       disconnect: vi.fn(() => Promise.resolve())
     }
 
     const runtimeState = { isQuitting: false } as never
-    setupLifecycle(runtimeState, { projectionService, usbService, telemetrySocket } as never)
+    setupLifecycle(runtimeState, { projectionService, telemetrySocket } as never)
 
     const beforeQuit = getRegisteredHandler('before-quit') as
       | ((e: { preventDefault: Mock }) => Promise<void>)
@@ -183,8 +174,6 @@ describe('setupLifecycle', () => {
     expect(runtimeState.isQuitting).toBe(true)
 
     expect(projectionService.beginShutdown).toHaveBeenCalledTimes(1)
-    expect(usbService.beginShutdown).toHaveBeenCalledTimes(1)
-    expect(usbService.stop).toHaveBeenCalledTimes(1)
     expect(projectionService.disconnectPhone).toHaveBeenCalledTimes(1)
     expect(telemetrySocket.disconnect).toHaveBeenCalledTimes(1)
     expect(projectionService.stop).toHaveBeenCalledTimes(1)
@@ -204,16 +193,12 @@ describe('setupLifecycle', () => {
       stopHelper: vi.fn(() => Promise.resolve()),
       stop: vi.fn(() => Promise.resolve())
     }
-    const usbService = {
-      beginShutdown: vi.fn(),
-      stop: vi.fn(() => Promise.resolve())
-    }
     const telemetrySocket = {
       disconnect: vi.fn(() => Promise.resolve())
     }
 
     const runtimeState = { isQuitting: false } as never
-    setupLifecycle(runtimeState, { projectionService, usbService, telemetrySocket } as never)
+    setupLifecycle(runtimeState, { projectionService, telemetrySocket } as never)
 
     const beforeQuit = getRegisteredHandler('before-quit') as
       | ((e: { preventDefault: Mock }) => Promise<void>)
@@ -247,17 +232,12 @@ describe('setupLifecycle', () => {
       stop: vi.fn(() => Promise.resolve())
     }
 
-    const usbService = {
-      beginShutdown: vi.fn(),
-      stop: vi.fn(() => Promise.resolve())
-    }
-
     const telemetrySocket = {
       disconnect: vi.fn(() => Promise.resolve())
     }
 
     const runtimeState = { isQuitting: false } as never
-    setupLifecycle(runtimeState, { projectionService, usbService, telemetrySocket } as never)
+    setupLifecycle(runtimeState, { projectionService, telemetrySocket } as never)
 
     const beforeQuit = getRegisteredHandler('before-quit') as
       | ((e: { preventDefault: Mock }) => Promise<void>)
@@ -301,17 +281,12 @@ describe('setupLifecycle', () => {
       )
     }
 
-    const usbService = {
-      beginShutdown: vi.fn(),
-      stop: vi.fn(() => Promise.resolve())
-    }
-
     const telemetrySocket = {
       disconnect: vi.fn(() => Promise.resolve())
     }
 
     const runtimeState = { isQuitting: false } as never
-    setupLifecycle(runtimeState, { projectionService, usbService, telemetrySocket } as never)
+    setupLifecycle(runtimeState, { projectionService, telemetrySocket } as never)
 
     const beforeQuit = getRegisteredHandler('before-quit') as
       | ((e: { preventDefault: Mock }) => Promise<void>)
@@ -331,7 +306,7 @@ describe('setupLifecycle', () => {
     expect(killSpy).toHaveBeenCalledWith(process.pid, 'SIGKILL')
   })
 
-  test('before-quit uses fallback resolved promises when usb stop and telemetry disconnect are missing', async () => {
+  test('before-quit uses a resolved fallback when telemetry disconnect is missing', async () => {
     vi.useFakeTimers()
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(function () {})
@@ -345,14 +320,10 @@ describe('setupLifecycle', () => {
       stop: vi.fn(() => Promise.resolve())
     }
 
-    const usbService = {
-      beginShutdown: vi.fn()
-    }
-
     const telemetrySocket = {}
 
     const runtimeState = { isQuitting: false } as never
-    setupLifecycle(runtimeState, { projectionService, usbService, telemetrySocket } as never)
+    setupLifecycle(runtimeState, { projectionService, telemetrySocket } as never)
 
     const beforeQuit = getRegisteredHandler('before-quit') as
       | ((e: { preventDefault: Mock }) => Promise<void>)
@@ -364,13 +335,9 @@ describe('setupLifecycle', () => {
     await promise
 
     expect(projectionService.beginShutdown).toHaveBeenCalledTimes(1)
-    expect(usbService.beginShutdown).toHaveBeenCalledTimes(1)
     expect(projectionService.disconnectPhone).toHaveBeenCalledTimes(1)
     expect(projectionService.stop).toHaveBeenCalledTimes(1)
 
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('[MAIN] before-quit step:start usbService.stop()')
-    )
     expect(logSpy).toHaveBeenCalledWith(
       expect.stringContaining('[MAIN] before-quit step:start telemetrySocket.disconnect()')
     )

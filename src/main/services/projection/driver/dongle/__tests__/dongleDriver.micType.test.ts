@@ -3,8 +3,6 @@ import { MicType } from '@shared/types'
 vi.mock('@main/helpers/vendorSessionInfo', () => ({
   decryptVendorSessionText: vi.fn(async () => 'decrypted-session')
 }))
-vi.mock('usb', () => ({ usb: { getDevices: vi.fn(async () => []) } }))
-
 function cfg(): Record<string, unknown> {
   return {
     projectionWidth: 800,
@@ -32,8 +30,7 @@ async function runWithMic(micType: MicType): Promise<Record<string, unknown>[]> 
   const { DongleDriver, AndroidWorkMode } = await import('../dongleDriver')
   const d = new DongleDriver() as unknown as {
     _cfg: unknown
-    _device: unknown
-    _closing: boolean
+    _link: unknown
     _androidWorkModeRuntime: unknown
     send: (m: unknown) => Promise<boolean>
     sleep: () => Promise<void>
@@ -42,8 +39,7 @@ async function runWithMic(micType: MicType): Promise<Record<string, unknown>[]> 
   }
   const sent: Record<string, unknown>[] = []
   d._cfg = cfg()
-  d._device = { opened: true }
-  d._closing = false
+  d._link = { closed: false }
   d._androidWorkModeRuntime = AndroidWorkMode.AndroidAuto
   d.send = vi.fn(async (m: unknown) => {
     sent.push(m as Record<string, unknown>)

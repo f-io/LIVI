@@ -32,7 +32,7 @@ function pickStringOrNumber(o: Record<string, unknown>, key: string): string | n
 type Deps = Pick<
   ProjectionIpcHost,
   | 'isStarted'
-  | 'hasWebUsbDevice'
+  | 'isDongleUp'
   | 'uploadIcons'
   | 'getDevToolsUrlCandidates'
   | 'sendToDongle'
@@ -46,14 +46,14 @@ type Deps = Pick<
 
 export function registerDongleIpc(host: Deps): void {
   registerIpcHandle('projection-upload-icons', async () => {
-    if (!host.isStarted() || !host.hasWebUsbDevice()) {
+    if (!host.isStarted() || !host.isDongleUp()) {
       throw new Error('[ProjectionService] Projection is not started or dongle not connected')
     }
     host.uploadIcons()
   })
 
   registerIpcHandle('projection-upload-livi-scripts', async (): Promise<DevToolsUploadResult> => {
-    if (!host.isStarted() || !host.hasWebUsbDevice()) {
+    if (!host.isStarted() || !host.isDongleUp()) {
       throw new Error('[ProjectionService] Projection is not started or dongle not connected')
     }
 

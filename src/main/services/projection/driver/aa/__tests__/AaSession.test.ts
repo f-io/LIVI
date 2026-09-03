@@ -2,22 +2,22 @@ import { EventEmitter } from 'node:events'
 
 class MockAAStack extends EventEmitter {
   cfg: unknown
-  start = vi.fn()
   stop = vi.fn()
-  attachSocket = vi.fn()
+  attachLink = vi.fn()
+  sendMediaSink = vi.fn()
   setConfigRefresh = vi.fn()
   setClusterStreamActive = vi.fn()
   applyDisplayConfig = vi.fn()
   requestVideoFocus = vi.fn()
   requestMainKeyframe = vi.fn()
   micFormat = vi.fn(() => ({ sampleRate: 16000, channels: 1 }))
+  micSocketPath = vi.fn((): string | null => '/run/livi/aa-mic.sock')
   requestClusterKeyframe = vi.fn()
   forceClusterKeyframe = vi.fn()
   requestShutdown = vi.fn(async () => undefined)
   sendTouch = vi.fn()
   sendButton = vi.fn()
   sendRotary = vi.fn()
-  sendMicPcm = vi.fn()
   sendFuelData = vi.fn()
   sendSpeedData = vi.fn()
   sendRpmData = vi.fn()
@@ -36,20 +36,25 @@ class MockAAStack extends EventEmitter {
   }
 }
 
-class MockUsbAoapBridge extends EventEmitter {
-  start = vi.fn(async () => undefined)
-  stop = vi.fn(async () => undefined)
-  drain = vi.fn(async () => undefined)
-  forceReenum = vi.fn(async () => undefined)
+/** The pipeline's microphone tap, the session only opens and closes it. */
+class MockMicTap {
+  close = vi.fn()
 }
 
-class MockMicrophone extends EventEmitter {
-  start = vi.fn()
-  stop = vi.fn()
-  setDevice = vi.fn()
-}
+const openedTaps: MockMicTap[] = []
+const micTapOpen = vi.fn((_path: string, _opts: unknown): MockMicTap | null => {
+  const tap = new MockMicTap()
+  openedTaps.push(tap)
+  return tap
+})
 
-class MockSocket extends EventEmitter {
+/** The helper's session link, as far as the mocked stack needs it. */
+class FakeLink extends EventEmitter {
+  readonly peer = '10.0.0.2'
+  closed = false
+  send = vi.fn()
+  control = vi.fn()
+  end = vi.fn()
   destroy = vi.fn()
 }
 
@@ -67,13 +72,10 @@ vi.mock('../stack/index', async () => {
   }
 })
 
-vi.mock('@main/services/audio', () => ({
-  Microphone: vi.fn().mockImplementation(function () {
-    return new MockMicrophone()
-  })
+vi.mock('@main/services/audio/micTap', () => ({
+  MicTap: { open: (path: string, opts: unknown) => micTapOpen(path, opts) }
 }))
 
-import type * as net from 'node:net'
 import type { Config } from '@shared/types'
 import { CarType } from '@shared/types/Config'
 import { InputCommand } from '@shared/types/InputCommand'
@@ -87,7 +89,7 @@ import {
 } from '../../../messages/sendable'
 import { AaSession, type AaSessionSeed } from '../AaSession'
 import { TOUCH_ACTION } from '../stack/index'
-import type { UsbAoapBridge } from '../stack/transport/UsbAoapBridge'
+import type { HelperSessionLink } from '../stack/transport/HelperSessionLink'
 
 const TOUCH_MOVED = TOUCH_ACTION.MOVED
 const TOUCH_UP = TOUCH_ACTION.UP
@@ -132,26 +134,24 @@ const baseSeed = (over: Partial<AaSessionSeed> = {}): AaSessionSeed => ({
   ...over
 })
 
+const fakeLink = (): HelperSessionLink => new FakeLink() as unknown as HelperSessionLink
+
 function makeSession(
-  opts: {
-    cfg?: Config
-    wired?: boolean
-    wiredBridge?: MockUsbAoapBridge | null
-    seed?: AaSessionSeed
-  } = {}
+  opts: { cfg?: Config; wired?: boolean; usbSerial?: string; seed?: AaSessionSeed } = {}
 ): AaSession {
   const cfg = opts.cfg ?? baseCfg()
   return new AaSession({
-    transport: new MockSocket() as unknown as net.Socket,
+    transport: fakeLink(),
     getConfig: () => cfg,
     wired: opts.wired ?? false,
-    wiredBridge: (opts.wiredBridge ?? null) as unknown as UsbAoapBridge | null,
+    usbSerial: opts.usbSerial,
     seed: opts.seed ?? baseSeed()
   })
 }
 
 beforeEach(() => {
   lastAaStack.instance = null
+  openedTaps.length = 0
   vi.clearAllMocks()
   vi.spyOn(console, 'log').mockImplementation(function () {})
   vi.spyOn(console, 'warn').mockImplementation(function () {})
@@ -165,10 +165,9 @@ describe('AaSession: host volume hook', () => {
   test('setStreamVolume forwards to the media sink, the same shape CarPlay uses', () => {
     const setHostVolume = vi.fn()
     const s = new AaSession({
-      transport: new MockSocket() as unknown as net.Socket,
+      transport: fakeLink(),
       getConfig: () => baseCfg(),
       wired: false,
-      wiredBridge: null,
       seed: baseSeed(),
       mediaSink: {
         feedPath: async () => '',
@@ -187,19 +186,17 @@ describe('AaSession: host volume hook', () => {
 })
 
 describe('AaSession: construction', () => {
-  test('constructs an AAStack and adopts the socket via attachSocket', () => {
-    const sock = new MockSocket() as unknown as net.Socket
+  test('constructs an AAStack and adopts the helper link via attachLink', () => {
+    const link = fakeLink()
     const d = new AaSession({
-      transport: sock,
+      transport: link,
       getConfig: () => baseCfg(),
       wired: false,
       seed: baseSeed()
     })
     expect(d).toBeInstanceOf(AaSession)
     expect(lastAaStack.instance).not.toBeNull()
-    expect(lastAaStack.instance!.attachSocket).toHaveBeenCalledWith(sock)
-    // Per-connection: it must NOT open its own :5277 listener.
-    expect(lastAaStack.instance!.start).not.toHaveBeenCalled()
+    expect(lastAaStack.instance!.attachLink).toHaveBeenCalledWith(link)
   })
 
   test('config seed: hevc/vp9/av1/nightMode are propagated to AAStackConfig', () => {
@@ -247,29 +244,23 @@ describe('AaSession: construction', () => {
 
   test('isWiredMode reflects the ctor flag', () => {
     expect(makeSession({ wired: false }).isWiredMode()).toBe(false)
-    expect(makeSession({ wired: true, wiredBridge: new MockUsbAoapBridge() }).isWiredMode()).toBe(
-      true
-    )
+    expect(makeSession({ wired: true }).isWiredMode()).toBe(true)
   })
 
-  test('start() is a no-op that never opens a listener', async () => {
+  test('start() resolves true, the link was adopted at construction already', async () => {
     const d = makeSession()
-    lastAaStack.instance!.start.mockClear()
     await expect(d.start(baseCfg())).resolves.toBe(true)
-    expect(lastAaStack.instance!.start).not.toHaveBeenCalled()
+    expect(lastAaStack.instance!.attachLink).toHaveBeenCalledTimes(1)
   })
 })
 
 describe('AaSession.close', () => {
-  test('stops mic + AAStack, drains the wired bridge and destroys the socket', async () => {
-    const bridge = new MockUsbAoapBridge()
-    const d = makeSession({ wired: true, wiredBridge: bridge })
+  test('says goodbye to the phone and stops the AAStack', async () => {
+    const d = makeSession({ wired: true })
 
     await d.close()
     expect(lastAaStack.instance!.requestShutdown).toHaveBeenCalled()
     expect(lastAaStack.instance!.stop).toHaveBeenCalled()
-    expect(bridge.drain).toHaveBeenCalled()
-    expect(bridge.stop).toHaveBeenCalled()
   })
 
   test('idempotent: second close is a no-op', async () => {
@@ -289,7 +280,7 @@ describe('AaSession.close', () => {
   })
 
   test('closing a never-connected session still signals "disconnected" (frees its owner)', async () => {
-    const d = makeSession({ wired: true, wiredBridge: new MockUsbAoapBridge() })
+    const d = makeSession({ wired: true })
     const cb = vi.fn()
     d.on('disconnected', cb)
     await d.close()
@@ -301,7 +292,7 @@ describe('AaSession.close', () => {
     const cb = vi.fn()
     d.on('disconnected', cb)
     // Stack drops mid-handshake (never emitted "connected").
-    lastAaStack.instance!.emit('disconnected', 'pre-RUNNING watchdog')
+    lastAaStack.instance!.emit('disconnected', 'handshake stalled')
     await d.close()
     expect(cb).toHaveBeenCalledTimes(1)
   })
@@ -522,99 +513,109 @@ describe('AaSession: vehicle-data passthrough', () => {
 })
 
 describe('AaSession: microphone lifecycle', () => {
-  test('mic capture falls back to 16 kHz mono when the stack reports no format', () => {
-    const d = makeSession()
+  type MicInternals = {
+    _startMicCapture: (reason: string) => void
+    _stopMicCapture: (reason: string) => void
+    _micTap: MockMicTap | null
+    _micActive: boolean
+  }
+  const internals = (d: AaSession): MicInternals => d as unknown as MicInternals
+
+  test('capture opens a tap at the stack mic socket with the negotiated format', () => {
+    const cfg = { ...baseCfg(), audioInputDevice: 'alsa_input.usb-mic' } as Config
+    const d = makeSession({ cfg })
     const aa = lastAaStack.instance!
-    aa.micFormat.mockReturnValue(undefined as never)
-    const internal = d as unknown as {
-      _startMicCapture: (r: string) => void
-      _mic: MockMicrophone | null
-    }
-    internal._startMicCapture('mic-start')
-    expect(internal._mic!.start).toHaveBeenCalledWith(5, { frequency: 16000, channels: 1 })
+    aa.micSocketPath.mockReturnValue('/run/livi/aa-mic.sock')
+    aa.micFormat.mockReturnValue({ sampleRate: 24000, channels: 2 })
+
+    internals(d)._startMicCapture('mic-start')
+
+    expect(micTapOpen).toHaveBeenCalledWith('/run/livi/aa-mic.sock', {
+      sampleRate: 24000,
+      channels: 2,
+      device: 'alsa_input.usb-mic'
+    })
+    expect(internals(d)._micActive).toBe(true)
+    expect(internals(d)._micTap).toBe(openedTaps[0])
   })
 
-  test('voice-session START twice only starts mic once', () => {
+  test('mic capture falls back to 16 kHz mono when the stack reports no format', () => {
     const d = makeSession()
-    const internal = d as unknown as {
-      _startMicCapture: (reason: string) => void
-      _mic: MockMicrophone | null
-    }
-    internal._startMicCapture('a')
-    const micA = internal._mic
-    internal._startMicCapture('b')
-    expect(internal._mic).toBe(micA)
-    expect(micA!.start).toHaveBeenCalledTimes(1)
+    lastAaStack.instance!.micFormat.mockReturnValue(undefined as never)
+    internals(d)._startMicCapture('mic-start')
+    expect(micTapOpen).toHaveBeenCalledWith('/run/livi/aa-mic.sock', {
+      sampleRate: 16000,
+      channels: 1,
+      device: undefined
+    })
+  })
+
+  test('no tap without a mic socket from the helper', () => {
+    const d = makeSession()
+    lastAaStack.instance!.micSocketPath.mockReturnValue(null)
+    internals(d)._startMicCapture('mic-start')
+    expect(micTapOpen).not.toHaveBeenCalled()
+    expect(internals(d)._micActive).toBe(false)
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('no mic socket'))
+  })
+
+  test('a tap that does not open leaves the capture inactive', () => {
+    const d = makeSession()
+    micTapOpen.mockReturnValueOnce(null)
+    internals(d)._startMicCapture('mic-start')
+    expect(internals(d)._micActive).toBe(false)
+    expect(internals(d)._micTap).toBeNull()
+  })
+
+  test('voice-session START twice only opens the tap once', () => {
+    const d = makeSession()
+    internals(d)._startMicCapture('a')
+    internals(d)._startMicCapture('b')
+    expect(micTapOpen).toHaveBeenCalledTimes(1)
+    expect(internals(d)._micTap).toBe(openedTaps[0])
   })
 
   test('mic-stop when never started is a no-op', () => {
     const d = makeSession()
-    expect(() =>
-      (d as unknown as { _stopMicCapture: (r: string) => void })._stopMicCapture('x')
-    ).not.toThrow()
+    expect(() => internals(d)._stopMicCapture('x')).not.toThrow()
+    expect(openedTaps).toHaveLength(0)
   })
 
-  test('mic data is forwarded to AAStack.sendMicPcm while active', () => {
+  test('stop closes the tap', () => {
     const d = makeSession()
-    const aa = lastAaStack.instance!
-    const internal = d as unknown as {
-      _startMicCapture: (r: string) => void
-      _mic: MockMicrophone | null
-    }
-    internal._startMicCapture('mic-start')
-    internal._mic!.emit('data', Buffer.from([1, 2]))
-    expect(aa.sendMicPcm).toHaveBeenCalledWith(Buffer.from([1, 2]))
+    internals(d)._startMicCapture('mic-start')
+    internals(d)._stopMicCapture('mic-stop')
+    expect(openedTaps[0].close).toHaveBeenCalledTimes(1)
+    expect(internals(d)._micActive).toBe(false)
+    expect(internals(d)._micTap).toBeNull()
   })
 
-  test('mic data is dropped after _micActive flips off', () => {
+  test('a mic tap that throws on close is swallowed', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const d = makeSession()
-    const aa = lastAaStack.instance!
-    const internal = d as unknown as {
-      _startMicCapture: (r: string) => void
-      _stopMicCapture: (r: string) => void
-      _mic: MockMicrophone | null
-    }
-    internal._startMicCapture('mic-start')
-    internal._stopMicCapture('mic-stop')
-    aa.sendMicPcm.mockClear()
-    internal._mic!.emit('data', Buffer.from([3, 4]))
-    expect(aa.sendMicPcm).not.toHaveBeenCalled()
+    internals(d)._startMicCapture('mic-start')
+    openedTaps[0].close.mockImplementation(() => {
+      throw new Error('down')
+    })
+    expect(() => internals(d)._stopMicCapture('mic-stop')).not.toThrow()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('mic tap close failed'))
+    warn.mockRestore()
+  })
+
+  test('close closes the tap', async () => {
+    const d = makeSession()
+    internals(d)._startMicCapture('mic-start')
+    await d.close()
+    expect(openedTaps[0].close).toHaveBeenCalledTimes(1)
+    expect(internals(d)._micActive).toBe(false)
+    expect(internals(d)._micTap).toBeNull()
   })
 })
 
 describe('AaSession: close error swallowing', () => {
-  test('mic.stop throwing is swallowed', async () => {
-    const d = makeSession()
-    const internal = d as unknown as {
-      _startMicCapture: (r: string) => void
-      _mic: MockMicrophone | null
-    }
-    internal._startMicCapture('x')
-    internal._mic!.stop.mockImplementation(function () {
-      throw new Error('alsa eof')
-    })
-    await expect(d.close()).resolves.toBeUndefined()
-  })
-
   test('AAStack.requestShutdown rejecting is swallowed', async () => {
     const d = makeSession()
     lastAaStack.instance!.requestShutdown.mockRejectedValueOnce(new Error('no peer'))
-    await expect(d.close()).resolves.toBeUndefined()
-  })
-
-  test('wired bridge drain rejecting is swallowed', async () => {
-    const bridge = new MockUsbAoapBridge()
-    const d = makeSession({ wired: true, wiredBridge: bridge })
-    bridge.drain.mockRejectedValueOnce(new Error('hung'))
-    await expect(d.close()).resolves.toBeUndefined()
-  })
-
-  test('wired bridge.stop() throwing is swallowed', async () => {
-    const bridge = new MockUsbAoapBridge()
-    const d = makeSession({ wired: true, wiredBridge: bridge })
-    bridge.stop.mockImplementationOnce(async () => {
-      throw new Error('USB hung')
-    })
     await expect(d.close()).resolves.toBeUndefined()
   })
 
@@ -633,8 +634,8 @@ describe('AaSession: bridge dep callbacks', () => {
     const aa = lastAaStack.instance!
     const cb = vi.fn()
     d.on('message', cb)
-    aa.emit('video-frame', Buffer.alloc(64), 0n) // Bridge → deps.emitMessage(VideoData)
-    expect(cb).toHaveBeenCalled()
+    aa.emit('host-ui-requested') // Bridge → deps.emitMessage(Command(requestHostUI))
+    expect(cb).toHaveBeenCalledTimes(1)
   })
 
   test('emitCodec closure forwards video-codec from the AA stack', () => {
@@ -790,14 +791,7 @@ describe('AaSession: codec/night-mode setters during an active session', () => {
   })
 
   test('usbSerial returns the descriptor serial for a wired session', () => {
-    const wired = new AaSession({
-      transport: new MockSocket() as unknown as net.Socket,
-      getConfig: () => baseCfg(),
-      wired: true,
-      wiredBridge: new MockUsbAoapBridge() as unknown as UsbAoapBridge,
-      usbSerial: 'SN-42',
-      seed: baseSeed()
-    })
+    const wired = makeSession({ wired: true, usbSerial: 'SN-42' })
     expect(wired.usbSerial()).toBe('SN-42')
     expect(makeSession().usbSerial()).toBe('')
   })
@@ -894,19 +888,19 @@ describe('AaSession: bridge presence/lifecycle callbacks', () => {
     expect(() => lastAaStack.instance!.emit('error', new Error('transient'))).not.toThrow()
   })
 
-  test('restarting mic capture after a stop reuses the existing Microphone', () => {
+  test('restarting the capture after a stop opens a fresh tap', () => {
     const d = makeSession()
     const internal = d as unknown as {
       _startMicCapture: (r: string) => void
       _stopMicCapture: (r: string) => void
-      _mic: MockMicrophone | null
+      _micTap: MockMicTap | null
     }
     internal._startMicCapture('a')
-    const mic = internal._mic
     internal._stopMicCapture('b')
     internal._startMicCapture('c')
-    expect(internal._mic).toBe(mic)
-    expect(mic!.start).toHaveBeenCalledTimes(2)
+    expect(micTapOpen).toHaveBeenCalledTimes(2)
+    expect(openedTaps[0].close).toHaveBeenCalledTimes(1)
+    expect(internal._micTap).toBe(openedTaps[1])
   })
 })
 

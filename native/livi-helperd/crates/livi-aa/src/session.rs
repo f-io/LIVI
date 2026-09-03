@@ -3,13 +3,13 @@
 // the main process over the session socket.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::net::SocketAddr;
+use std::net::IpAddr;
+use std::os::unix::fs::PermissionsExt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use livi_host_proto::feed as feedproto;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::tcp::OwnedWriteHalf;
-use tokio::net::{TcpStream, UnixListener};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::UnixListener;
 use tokio::sync::mpsc;
 
 use crate::av;
@@ -33,6 +33,19 @@ impl Drop for SocketPath {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
     }
+}
+
+/// The phone behind a session: a label for the logs and the main process, and the
+/// address the TLS client is built for. USB sessions carry a placeholder address.
+pub struct Peer {
+    pub label: String,
+    pub ip: IpAddr,
+}
+
+/// How a session ended, for the transport that carried it.
+pub struct SessionEnd {
+    /// The main process asked for the end, so the phone should stay put.
+    pub closed_by_node: bool,
 }
 
 #[derive(PartialEq, Eq)]
@@ -134,9 +147,11 @@ impl Sinks {
     }
 }
 
-struct Session {
-    peer: SocketAddr,
-    wr: OwnedWriteHalf,
+struct Session<W> {
+    peer: Peer,
+    /// Where the microphone tap delivers, told to the main process at ready.
+    mic_path: String,
+    wr: W,
     node_tx: mpsc::Sender<Vec<u8>>,
     phase: Phase,
     parser: FrameParser,
@@ -147,20 +162,36 @@ struct Session {
     session_ids: HashMap<u8, u32>,
     announced: HashSet<u8>,
     closed_sent: bool,
+    closed_by_node: bool,
     video_frames: u64,
     audio_frames: u64,
 }
 
-pub async fn run(tcp: TcpStream, peer: SocketAddr, node: UnixListener, node_path: String) {
+pub async fn run<T>(io: T, peer: Peer, node: UnixListener, node_path: String) -> SessionEnd
+where
+    T: AsyncRead + AsyncWrite + Send + 'static,
+{
     let _path = SocketPath(node_path.clone());
     let node_stream = match tokio::time::timeout(NODE_ACCEPT_TIMEOUT, node.accept()).await {
         Ok(Ok((s, _))) => s,
         _ => {
-            eprintln!("[aa-tcp] {peer}: main process did not attach to {node_path}");
-            return;
+            eprintln!("[aa-session] {}: main process did not attach to {node_path}", peer.label);
+            return SessionEnd { closed_by_node: false };
         }
     };
     drop(node);
+
+    // The microphone tap the main process opens in the pipeline connects here.
+    let mic_path = format!("{node_path}.mic");
+    let _mic_path = SocketPath(mic_path.clone());
+    let (mic_tx, mut mic_rx) = mpsc::channel::<(u64, Vec<u8>)>(64);
+    match UnixListener::bind(&mic_path) {
+        Ok(listener) => {
+            let _ = std::fs::set_permissions(&mic_path, std::fs::Permissions::from_mode(0o666));
+            tokio::spawn(listen_mic(listener, mic_tx));
+        }
+        Err(e) => eprintln!("[aa-session] {}: mic socket {mic_path}: {e}", peer.label),
+    }
 
     let (mut node_rd, mut node_wr) = node_stream.into_split();
     let (node_tx, mut node_rx) = mpsc::channel::<Vec<u8>>(1024);
@@ -189,9 +220,10 @@ pub async fn run(tcp: TcpStream, peer: SocketAddr, node: UnixListener, node_path
         }
     });
 
-    let (mut rd, wr) = tcp.into_split();
+    let (mut rd, wr) = tokio::io::split(io);
     let mut s = Session {
         peer,
+        mic_path,
         wr,
         node_tx,
         phase: Phase::Version,
@@ -202,23 +234,24 @@ pub async fn run(tcp: TcpStream, peer: SocketAddr, node: UnixListener, node_path
         session_ids: HashMap::new(),
         announced: HashSet::new(),
         closed_sent: false,
+        closed_by_node: false,
         video_frames: 0,
         audio_frames: 0,
     };
 
     if let Err(e) = s.send_version_request().await {
         s.closed(&e).await;
-        return;
+        return SessionEnd { closed_by_node: false };
     }
 
     let mut buf = vec![0u8; READ_CHUNK];
-    let mut tcp_open = true;
+    let mut phone_open = true;
     loop {
         let setting_up = s.phase != Phase::Running;
         tokio::select! {
-            r = rd.read(&mut buf), if tcp_open => match r {
+            r = rd.read(&mut buf), if phone_open => match r {
                 Ok(0) => {
-                    tcp_open = false;
+                    phone_open = false;
                     if !s.control("{\"type\":\"eof\"}").await {
                         break;
                     }
@@ -248,6 +281,14 @@ pub async fn run(tcp: TcpStream, peer: SocketAddr, node: UnixListener, node_path
                 }
                 None => break,
             },
+            mic = mic_rx.recv() => {
+                if let Some((ts, pcm)) = mic
+                    && let Err(e) = s.send_mic(ts, &pcm).await
+                {
+                    s.closed(&e).await;
+                    break;
+                }
+            }
             _ = tokio::time::sleep(SETUP_TIMEOUT), if setting_up => {
                 s.closed("setup timeout").await;
                 break;
@@ -255,12 +296,13 @@ pub async fn run(tcp: TcpStream, peer: SocketAddr, node: UnixListener, node_path
         }
     }
     println!(
-        "[aa-tcp] {}: session over, video={} audio={}",
-        s.peer, s.video_frames, s.audio_frames
+        "[aa-session] {}: session over, video={} audio={}",
+        s.peer.label, s.video_frames, s.audio_frames
     );
+    SessionEnd { closed_by_node: s.closed_by_node }
 }
 
-impl Session {
+impl<W: AsyncWrite + Unpin + Send> Session<W> {
     async fn send_version_request(&mut self) -> Result<(), String> {
         let mut data = VERSION_MAJOR.to_be_bytes().to_vec();
         data.extend_from_slice(&VERSION_MINOR.to_be_bytes());
@@ -288,7 +330,7 @@ impl Session {
             return;
         }
         self.closed_sent = true;
-        println!("[aa-tcp] {}: closed ({reason})", self.peer);
+        println!("[aa-session] {}: closed ({reason})", self.peer.label);
         let json = serde_json::json!({ "type": "closed", "reason": reason }).to_string();
         self.control(&json).await;
     }
@@ -326,7 +368,7 @@ impl Session {
                 if status == VERSION_STATUS_MISMATCH {
                     return Err(format!("version mismatch {}.{}", u16::from_be_bytes([body[0], body[1]]), u16::from_be_bytes([body[2], body[3]])));
                 }
-                let mut tls = TlsEngine::new(self.peer.ip()).map_err(|e| e.to_string())?;
+                let mut tls = TlsEngine::new(self.peer.ip).map_err(|e| e.to_string())?;
                 let hello = tls.take_output();
                 self.tls = Some(tls);
                 self.phase = Phase::Handshake;
@@ -353,8 +395,10 @@ impl Session {
     async fn become_running(&mut self) -> Result<(), String> {
         self.splitter = std::mem::take(&mut self.parser).into_splitter();
         self.phase = Phase::Running;
-        println!("[aa-tcp] {}: tls up", self.peer);
-        let json = serde_json::json!({ "type": "ready", "peer": self.peer.ip().to_string() }).to_string();
+        println!("[aa-session] {}: tls up", self.peer.label);
+        let json =
+            serde_json::json!({ "type": "ready", "peer": self.peer.label, "mic": self.mic_path })
+                .to_string();
         if !self.control(&json).await {
             return Err("main process gone".into());
         }
@@ -421,10 +465,26 @@ impl Session {
         Ok(())
     }
 
+    /// Captured samples go to the phone's microphone channel, stamped in microseconds.
+    async fn send_mic(&mut self, ts_ns: u64, pcm: &[u8]) -> Result<(), String> {
+        if self.phase != Phase::Running || pcm.is_empty() {
+            return Ok(());
+        }
+        let mut payload = (ts_ns / 1000).to_be_bytes().to_vec();
+        payload.extend_from_slice(pcm);
+        let wire = self
+            .tls
+            .as_mut()
+            .ok_or("no tls")?
+            .encrypt(CH_MIC_INPUT, FLAGS_ENC_SIGNAL, AV_MEDIA_WITH_TIMESTAMP, &payload)
+            .map_err(|e| e.to_string())?;
+        self.write(&wire).await
+    }
+
     async fn on_node_message(&mut self, ch: u8, flags: u8, msg_id: u16, payload: &[u8]) -> Result<(), String> {
         let wire = if flags & FLAG_ENCRYPTED != 0 {
             let Some(tls) = self.tls.as_mut() else {
-                eprintln!("[aa-tcp] {}: encrypted message before tls, dropped", self.peer);
+                eprintln!("[aa-session] {}: encrypted message before tls, dropped", self.peer.label);
                 return Ok(());
             };
             tls.encrypt(ch, flags, msg_id, payload).map_err(|e| e.to_string())?
@@ -439,13 +499,40 @@ impl Session {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else { return true };
         match v.get("type").and_then(|t| t.as_str()) {
             Some("sink") => self.sinks.apply(&v),
+            // A session the main process ends before it ran is a failed bring-up,
+            // which the transport may retry.
             Some("end") => {
+                self.closed_by_node = self.phase == Phase::Running;
                 let _ = self.wr.shutdown().await;
             }
-            Some("close") => return false,
+            Some("close") => {
+                self.closed_by_node = self.phase == Phase::Running;
+                return false;
+            }
             _ => {}
         }
         true
+    }
+}
+
+/// Takes the microphone records the pipeline streams in, one connection at a time.
+async fn listen_mic(listener: UnixListener, tx: mpsc::Sender<(u64, Vec<u8>)>) {
+    while let Ok((mut sock, _)) = listener.accept().await {
+        let mut framer = feedproto::Framer::new();
+        let mut buf = vec![0u8; 16384];
+        loop {
+            let n = match sock.read(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => n,
+            };
+            framer.push(&buf[..n]);
+            while let Some(record) = framer.next_record() {
+                // a slow session drops samples rather than piling them up
+                if record.kind == feedproto::KIND_MIC && tx.try_send((record.ts, record.payload)).is_err() {
+                    continue;
+                }
+            }
+        }
     }
 }
 

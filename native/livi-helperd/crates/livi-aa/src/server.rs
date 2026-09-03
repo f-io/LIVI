@@ -9,6 +9,8 @@ use std::time::Duration;
 use socket2::{SockRef, TcpKeepalive};
 use tokio::net::{TcpListener, TcpStream, UnixListener};
 
+use crate::session::Peer;
+
 const BIND_RETRY: Duration = Duration::from_secs(5);
 const KEEPALIVE: Duration = Duration::from_secs(5);
 
@@ -39,21 +41,30 @@ pub async fn run(port: u16, on_session: impl Fn(&str, IpAddr) + Send + Sync + 's
             eprintln!("[aa-tcp] {peer}: socket options: {e}");
         }
 
-        let n = NEXT_SESSION.fetch_add(1, Ordering::Relaxed);
-        let path = format!("/tmp/aa-session-{n}.sock");
-        let _ = std::fs::remove_file(&path);
-        let node = match UnixListener::bind(&path) {
-            Ok(l) => l,
-            Err(e) => {
-                eprintln!("[aa-tcp] session socket {path}: {e}");
-                continue;
-            }
-        };
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o666));
+        let Some((node, path)) = bind_session_socket("aa-session") else { continue };
         println!("[aa-tcp] connection from {peer}, session socket {path}");
         on_session(&path, peer.ip());
-        tokio::spawn(crate::session::run(tcp, peer, node, path));
+        let phone = Peer { label: peer.to_string(), ip: peer.ip() };
+        tokio::spawn(async move {
+            crate::session::run(tcp, phone, node, path).await;
+        });
     }
+}
+
+/// A fresh socket for the main process to attach to one session on.
+pub fn bind_session_socket(stem: &str) -> Option<(UnixListener, String)> {
+    let n = NEXT_SESSION.fetch_add(1, Ordering::Relaxed);
+    let path = format!("/tmp/{stem}-{n}.sock");
+    let _ = std::fs::remove_file(&path);
+    let node = match UnixListener::bind(&path) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("[aa] session socket {path}: {e}");
+            return None;
+        }
+    };
+    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o666));
+    Some((node, path))
 }
 
 /// Keepalive probes after 5 s idle, so a vanished phone tears the socket down

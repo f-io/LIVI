@@ -1,19 +1,15 @@
 import { EventEmitter } from 'node:events'
 import type { Mock } from 'vitest'
 
-class MockSocket extends EventEmitter {
-  destroy = vi.fn()
+/** The helper's session link, as far as these branches need it. */
+class FakeLink extends EventEmitter {
+  readonly peer = '10.0.0.2'
+  closed = false
+  send = vi.fn()
+  control = vi.fn()
   end = vi.fn()
-  setKeepAlive = vi.fn()
-  writable = true
-  remoteAddress = '10.0.0.2'
-  write = vi.fn((_d: Buffer, cb?: () => void) => {
-    cb?.()
-    return true
-  })
+  destroy = vi.fn()
 }
-
-vi.mock('../SessionTls', () => ({ SessionTls: vi.fn() }))
 
 const ORIG_DEBUG = process.env.DEBUG
 const ORIG_TRACE = process.env.TRACE
@@ -47,10 +43,10 @@ beforeEach(() => {
 })
 afterEach(() => vi.restoreAllMocks())
 
-function make(): { session: InstanceType<SessionModule['Session']>; sock: MockSocket } {
-  const sock = new MockSocket()
+function make(): { session: InstanceType<SessionModule['Session']>; link: FakeLink } {
+  const link = new FakeLink()
   const session = new Session(
-    sock as unknown as import('net').Socket,
+    link as unknown as import('../../transport/HelperSessionLink').HelperSessionLink,
     {
       huName: 'LIVI',
       clusterWidth: 0,
@@ -59,7 +55,7 @@ function make(): { session: InstanceType<SessionModule['Session']>; sock: MockSo
       clusterDpi: 0
     } as import('../Session').SessionConfig
   )
-  return { session, sock }
+  return { session, link }
 }
 
 function dispatch(session: unknown): (ch: number, mid: number, p?: Buffer) => void {
@@ -100,19 +96,6 @@ describe('frame-channel + ping/pong log gating (DEBUG on, TRACE off)', () => {
     d(C.CH.CONTROL, C.CTRL_MSG.PING_RESPONSE)
     d(C.CH.CONTROL, 0x1234)
   })
-
-  test('plaintext sendAA gates its log with isPingPong', () => {
-    const { session } = make()
-    const send = (mid: number): void =>
-      (session as unknown as { _sendAA: (...a: unknown[]) => void })._sendAA(
-        C.CH.CONTROL,
-        0x03,
-        mid,
-        Buffer.alloc(0)
-      )
-    send(C.CTRL_MSG.PING_REQUEST)
-    send(0xabcd)
-  })
 })
 
 describe('remaining reachable branches', () => {
@@ -132,37 +115,13 @@ describe('remaining reachable branches', () => {
     expect(avSetup).toHaveBeenCalled()
   })
 
-  test('the real _sendEncrypted hands off to the TLS bridge', () => {
-    const { session } = make()
-    ;(session as unknown as { _state: number })._state = 6
-    const sendEncrypted = vi.fn()
-    ;(session as unknown as { _tls: unknown })._tls = { sendEncrypted }
-    session.requestVideoFocus()
-    expect(sendEncrypted).toHaveBeenCalled()
-  })
-
-  test('socket end clears a running ping timer', () => {
-    const { session, sock } = make()
+  test('the eof control clears a running ping timer', () => {
+    const { session, link } = make()
     ;(session as unknown as { _pingTimer: ReturnType<typeof setInterval> })._pingTimer =
       setInterval(() => {}, 1000)
-    ;(session as unknown as { _state: number })._state = 6
-    sock.emit('end')
+    ;(session as unknown as { _state: number })._state = 4
+    link.emit('control', { type: 'eof' })
     expect((session as unknown as { _pingTimer: unknown })._pingTimer).toBeNull()
-  })
-
-  test('a full frame through the raw parser reaches the wired _handleRawFrame', () => {
-    const { session, sock } = make()
-    const onVer = vi.fn(async () => {})
-    ;(session as unknown as { _onVersionResponse: Mock })._onVersionResponse = onVer
-    const frame = Buffer.alloc(10)
-    frame.writeUInt8(0, 0)
-    frame.writeUInt8(0x03, 1)
-    frame.writeUInt16BE(6, 2)
-    frame.writeUInt16BE(C.CTRL_MSG.VERSION_RESPONSE, 4)
-    frame.writeUInt16BE(0, 6)
-    frame.writeUInt16BE(0, 8)
-    sock.emit('data', frame)
-    expect(onVer).toHaveBeenCalled()
   })
 
   test('PHONE_STATUS decode error is logged under DEBUG', () => {
@@ -196,31 +155,9 @@ describe('remaining reachable branches', () => {
     expect(() => dispatch(session)(0x7d, 0x4444, Buffer.alloc(0))).not.toThrow()
   })
 
-  test('stripHeaderAndInjectTls breaks on partial extended header and partial body', () => {
-    const { session } = make()
-    const handle = vi.fn()
-    ;(session as unknown as { _handleDecryptedMessage: Mock })._handleDecryptedMessage = handle
-    const strip = (b: Buffer): void =>
-      (
-        session as unknown as { _stripHeaderAndInjectTls: (x: Buffer) => void }
-      )._stripHeaderAndInjectTls(b)
-    const extended = Buffer.alloc(4)
-    extended.writeUInt8(3, 0)
-    extended.writeUInt8(0x01, 1)
-    extended.writeUInt16BE(4, 2)
-    strip(extended)
-
-    const partialBody = Buffer.alloc(4)
-    partialBody.writeUInt8(3, 0)
-    partialBody.writeUInt8(0x03, 1)
-    partialBody.writeUInt16BE(100, 2)
-    strip(partialBody)
-    expect(handle).not.toHaveBeenCalled()
-  })
-
   test('sensor methods emit their optional fields when RUNNING', () => {
     const { session } = make()
-    ;(session as unknown as { _state: number })._state = 6
+    ;(session as unknown as { _state: number })._state = 4
     const sent = vi.fn()
     ;(session as unknown as { _sendEncrypted: Mock })._sendEncrypted = sent
     session.sendSpeedData(13_000, true, 25_000)

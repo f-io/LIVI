@@ -285,6 +285,11 @@ name = "gst-video-addon"
 version = "0.1.0"
 dependencies = [
  "cc",
+ "livi-audio-player",
+ "livi-audio-stream",
+ "livi-host-proto",
+ "livi-video-fanout",
+ "livi-video-nal",
  "livi-video-player",
  "napi",
  "napi-build",
@@ -561,6 +566,7 @@ dependencies = [
  "gstreamer-controller",
  "livi-audio-stream",
  "livi-audio-uplink",
+ "livi-host-proto",
 ]
 
 [[package]]

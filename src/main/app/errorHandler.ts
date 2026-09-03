@@ -1,11 +1,3 @@
-const BENIGN_USB_PATTERNS: RegExp[] = [
-  /udev/i,
-  /No such device/i,
-  /device (has been )?disconnected/i,
-  /\berrno 19\b/i,
-  /transferIn error/i
-]
-
 function describe(err: unknown): string {
   if (err instanceof Error) {
     return `${err.message}\n${err.stack ?? ''}`
@@ -15,11 +7,6 @@ function describe(err: unknown): string {
   } catch {
     return '<unprintable error>'
   }
-}
-
-function isBenignUsbError(err: unknown): boolean {
-  const text = describe(err)
-  return BENIGN_USB_PATTERNS.some((re) => re.test(text))
 }
 
 function isBrokenPipe(err: unknown): boolean {
@@ -41,19 +28,11 @@ export function installMainProcessErrorHandlers(): void {
 
   process.on('uncaughtException', (err) => {
     if (isBrokenPipe(err)) return
-    if (isBenignUsbError(err)) {
-      console.warn('[errorHandler] suppressed USB teardown noise:', describe(err))
-      return
-    }
     console.error('[errorHandler] uncaughtException:', describe(err))
   })
 
   process.on('unhandledRejection', (reason) => {
     if (isBrokenPipe(reason)) return
-    if (isBenignUsbError(reason)) {
-      console.warn('[errorHandler] suppressed USB teardown rejection:', describe(reason))
-      return
-    }
     console.error('[errorHandler] unhandledRejection:', describe(reason))
   })
 }

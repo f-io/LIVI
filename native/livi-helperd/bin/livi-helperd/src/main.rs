@@ -6,6 +6,8 @@ mod linux_main;
 mod wired;
 #[cfg(target_os = "linux")]
 mod aa;
+#[cfg(target_os = "macos")]
+mod mac_main;
 
 fn main() -> ExitCode {
     #[cfg(target_os = "linux")]
@@ -15,9 +17,13 @@ fn main() -> ExitCode {
         }
         linux_main::run()
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     {
-        eprintln!("cp-bringup needs BlueZ and i2c; build and run it on the Pi");
+        mac_main::run()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        eprintln!("livi-helperd runs on Linux and macOS");
         ExitCode::FAILURE
     }
 }

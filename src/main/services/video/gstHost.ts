@@ -92,9 +92,11 @@ class GstHost {
   private nextReceiverId = 0x7b000000
   private feedWaiter: ((path: string) => void) | null = null
   private feedPath: Promise<string> | null = null
+  // Set once the host binary is missing, this platform has no host process.
+  private unavailable = false
 
   private start(): void {
-    if (this.child || this.starting) return
+    if (this.child || this.starting || this.unavailable) return
     this.starting = true
 
     let addonPath: string
@@ -153,6 +155,20 @@ class GstHost {
         // no log dir: keep the inherited stdio
       }
       this.child = spawn(hostBin, [sockPath, crashPath], { env, stdio })
+      this.child.on('error', (e: Error) => {
+        console.error(
+          `[gstHost] cannot start the host, media fed by the helper has nowhere to go: ${e.message}`
+        )
+        this.unavailable = true
+        this.child = null
+        this.sock = null
+        this.starting = false
+        this.feedPath = null
+        const waiter = this.feedWaiter
+        this.feedWaiter = null
+        waiter?.('')
+        server.close()
+      })
       this.child.on('exit', (code, signal) => {
         console.error('[gstHost] child exited:', code, signal ?? '')
         if (signal && existsSync(crashPath)) {
@@ -363,6 +379,22 @@ class GstHost {
 
   closeMic(streamId: number): void {
     this.send(frame(12, streamId, Buffer.alloc(0)))
+  }
+
+  /** Captures the microphone and streams raw samples into the socket at `path`. */
+  openMicTap(path: string, o: { sampleRate: number; channels: number; device?: string }): number {
+    const tapId = this.nextReceiverId++
+    const head = Buffer.alloc(6)
+    head.writeUInt32LE(o.sampleRate, 0)
+    head.writeUInt8(o.channels, 4)
+    const device = Buffer.from(o.device ?? '', 'utf8')
+    head.writeUInt8(device.length, 5)
+    this.send(frame(20, tapId, Buffer.concat([head, device, Buffer.from(path, 'utf8')])))
+    return tapId
+  }
+
+  closeMicTap(tapId: number): void {
+    this.send(frame(21, tapId, Buffer.alloc(0)))
   }
 
   onAudioStarted(cb: ReverseEvents['audioStarted']): void {

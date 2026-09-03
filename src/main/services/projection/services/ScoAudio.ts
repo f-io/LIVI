@@ -1,76 +1,82 @@
-import { connect, type Socket } from 'node:net'
-import Microphone from '@main/services/audio/Microphone'
+import { MicTap } from '@main/services/audio/micTap'
 import { AudioCommand } from '@shared/types/ProjectionEnums'
 import { AudioData } from '../messages'
 
-const SOCK_PATH = '/tmp/aa-sco.sock'
-// 20 ms at 8 kHz mono s16le.
-const CHUNK_BYTES = 320
+/** Where the helper's call bridge takes the microphone from. */
+const MIC_SOCK = '/tmp/aa-sco.mic'
 const SCO_AUDIO_TYPE = 2
 const SCO_DECODE_TYPE = 3
+const SCO_RATE = 8000
+const SCO_CHANNELS = 1
 
-// HFP call audio, PCM duplex with the helper's SCO bridge (/tmp/aa-sco.sock).
-// Downlink feeds ProjectionAudio as the call stream (volume/ducking apply),
-// uplink captures the configured mic at 8 kHz.
+/**
+ * HFP call audio, the control side. The helper streams the caller into the
+ * pipeline's feed as the call stream and takes the microphone from the
+ * pipeline's tap. This only says which stream and where the tap goes.
+ */
 export class ScoAudio {
-  private sock: Socket | null = null
-  private mic: Microphone | null = null
-  private rx: Buffer = Buffer.alloc(0)
+  private active = false
+  private tap: MicTap | null = null
+  private unsubscribe: (() => void) | null = null
 
   constructor(
     private readonly deps: {
       emitAudio: (msg: AudioData) => void
       getMicDevice: () => string | undefined
+      /** Opens the call stream in the pipeline, it announces its id through onCallStream. */
+      primeCall: () => void
+      dropCall: () => void
+      onCallStream: (cb: (streamId: number) => void) => () => void
+      feedPath: () => Promise<string>
+      setScoSink: (feed?: string, streamId?: number) => Promise<unknown>
     }
   ) {}
 
   start(): void {
-    if (this.sock) return
-    const sock = connect(SOCK_PATH)
-    this.sock = sock
-    sock.on('connect', () => {
-      console.log('[ScoAudio] attached to SCO bridge')
-      this.deps.emitAudio(
-        new AudioData({
-          audioType: SCO_AUDIO_TYPE,
-          decodeType: SCO_DECODE_TYPE,
-          command: AudioCommand.AudioPhonecallStart
-        })
-      )
-      const mic = new Microphone()
-      this.mic = mic
-      mic.setDevice(this.deps.getMicDevice())
-      mic.on('data', (chunk: Buffer) => {
-        if (this.sock === sock) sock.write(chunk)
+    if (this.active) return
+    this.active = true
+    console.log('[ScoAudio] call audio up')
+    this.deps.emitAudio(
+      new AudioData({
+        audioType: SCO_AUDIO_TYPE,
+        decodeType: SCO_DECODE_TYPE,
+        command: AudioCommand.AudioPhonecallStart
       })
-      mic.start(SCO_DECODE_TYPE)
+    )
+    this.unsubscribe = this.deps.onCallStream((streamId) => void this.announce(streamId))
+    this.deps.primeCall()
+    this.tap = MicTap.open(MIC_SOCK, {
+      sampleRate: SCO_RATE,
+      channels: SCO_CHANNELS,
+      device: this.deps.getMicDevice()
     })
-    sock.on('data', (chunk: Buffer) => {
-      if (this.sock !== sock) return
-      this.rx = Buffer.concat([this.rx, chunk])
-      while (this.rx.length >= CHUNK_BYTES) {
-        const part = this.rx.subarray(0, CHUNK_BYTES)
-        this.rx = this.rx.subarray(CHUNK_BYTES)
-        const pcm = new Int16Array(
-          part.buffer.slice(part.byteOffset, part.byteOffset + part.byteLength)
-        )
-        this.deps.emitAudio(
-          new AudioData({ audioType: SCO_AUDIO_TYPE, decodeType: SCO_DECODE_TYPE, data: pcm })
-        )
-      }
-    })
-    sock.on('error', () => this.stop())
-    sock.on('close', () => this.stop())
+    if (!this.tap) console.warn('[ScoAudio] no microphone tap, the caller hears nothing')
+  }
+
+  private async announce(streamId: number): Promise<void> {
+    const feed = await this.deps.feedPath()
+    if (!this.active) return
+    if (!feed) {
+      console.warn('[ScoAudio] host has no media feed, the caller stays silent')
+      return
+    }
+    try {
+      await this.deps.setScoSink(feed, streamId)
+    } catch (e) {
+      console.warn(`[ScoAudio] helper did not take the call sink: ${(e as Error).message}`)
+    }
   }
 
   stop(): void {
-    if (!this.sock && !this.mic) return
-    this.mic?.stop()
-    this.mic = null
-    const s = this.sock
-    this.sock = null
-    this.rx = Buffer.alloc(0)
-    s?.destroy()
+    if (!this.active) return
+    this.active = false
+    console.log('[ScoAudio] call audio down')
+    this.unsubscribe?.()
+    this.unsubscribe = null
+    this.tap?.close()
+    this.tap = null
+    void this.deps.setScoSink().catch(() => {})
+    this.deps.dropCall()
     this.deps.emitAudio(
       new AudioData({
         audioType: SCO_AUDIO_TYPE,

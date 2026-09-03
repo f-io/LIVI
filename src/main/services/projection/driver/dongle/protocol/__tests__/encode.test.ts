@@ -1,5 +1,4 @@
 import {
-  SendAudio,
   SendAutoConnectByBtAddress,
   SendableMessage,
   SendBluetoothPairedList,
@@ -14,7 +13,7 @@ import {
 } from '@projection/messages/sendable'
 import {
   boxTmpPath,
-  encodeSendable,
+  encodeDongle,
   FileAddress,
   HeartBeat,
   LogoType,
@@ -34,21 +33,19 @@ import {
   SendTmpFile,
   SendViewArea
 } from '../sendables.js'
-import { MessageHeader, MessageType } from '../wire.js'
+import { MessageType } from '../wire.js'
 
-/** Wire payload without the 16-byte header. */
 function payloadOf(msg: SendableMessage): Buffer {
-  return encodeSendable(msg).subarray(MessageHeader.dataLength)
+  return encodeDongle(msg).payload
 }
 
 describe('dongle protocol encode', () => {
-  test('SendCommand serialises message header + mapped payload', async () => {
+  test('SendCommand maps to the command type with its value', async () => {
     const msg = new SendCommand('frame')
-    const buf = encodeSendable(msg)
+    const { type, payload } = encodeDongle(msg)
 
-    expect(buf.readUInt32LE(0)).toBe(0x55aa55aa)
-    expect(buf.readUInt32LE(8)).toBe(MessageType.Command)
-    expect(buf.readUInt32LE(16)).toBeGreaterThanOrEqual(0)
+    expect(type).toBe(MessageType.Command)
+    expect(payload.readUInt32LE(0)).toBeGreaterThanOrEqual(0)
   })
 
   test('SendBluetoothPairedList appends NUL terminator', async () => {
@@ -95,16 +92,6 @@ describe('dongle protocol encode', () => {
 
     const payload = payloadOf(msg)
     expect(payload.length).toBe(32)
-  })
-
-  test('SendAudio serializes decodeType and pcm payload', async () => {
-    const pcm = new Int16Array([100, -200])
-    const msg = new SendAudio(pcm, 7)
-    const payload = payloadOf(msg)
-
-    expect(payload.readUInt32LE(0)).toBe(7)
-    expect(payload.readUInt32LE(8)).toBe(3)
-    expect(payload.subarray(12).length).toBe(pcm.byteLength)
   })
 
   test('SendFile encodes file name and content lengths', async () => {
@@ -340,58 +327,43 @@ describe('dongle protocol encode', () => {
 
   test('HeartBeat serialises header-only message', async () => {
     const msg = new HeartBeat()
-    const buf = encodeSendable(msg)
-
-    expect(buf.readUInt32LE(0)).toBe(0x55aa55aa)
-    expect(buf.readUInt32LE(8)).toBe(MessageType.HeartBeat)
+    expect(encodeDongle(msg).type).toBe(MessageType.HeartBeat)
   })
 
   test('SendCloseDongle serialises header-only message', async () => {
     const msg = new SendCloseDongle()
-    const buf = encodeSendable(msg)
-
-    expect(buf.readUInt32LE(0)).toBe(0x55aa55aa)
-    expect(buf.readUInt32LE(8)).toBe(MessageType.CloseDongle)
+    expect(encodeDongle(msg).type).toBe(MessageType.CloseDongle)
   })
 
   test('SendDisconnectPhone serialises header-only message', async () => {
     const msg = new SendDisconnectPhone()
-    const buf = encodeSendable(msg)
-
-    expect(buf.readUInt32LE(0)).toBe(0x55aa55aa)
-    expect(buf.readUInt32LE(8)).toBe(MessageType.DisconnectPhone)
+    expect(encodeDongle(msg).type).toBe(MessageType.DisconnectPhone)
   })
 
   test('SendClusterFocusRequest serialises header-only message', async () => {
     const msg = new SendClusterFocusRequest()
-    const buf = encodeSendable(msg)
-
-    expect(buf.readUInt32LE(0)).toBe(0x55aa55aa)
-    expect(buf.readUInt32LE(8)).toBe(MessageType.ClusterFocusRequest)
+    expect(encodeDongle(msg).type).toBe(MessageType.ClusterFocusRequest)
   })
 
   test('SendClusterFocusRelease serialises header-only message', async () => {
     const msg = new SendClusterFocusRelease()
-    const buf = encodeSendable(msg)
-
-    expect(buf.readUInt32LE(0)).toBe(0x55aa55aa)
-    expect(buf.readUInt32LE(8)).toBe(MessageType.ClusterFocusRelease)
+    expect(encodeDongle(msg).type).toBe(MessageType.ClusterFocusRelease)
   })
 
   test('SendAutoConnectByBtAddress stores ascii bluetooth address payload', async () => {
     const msg = new SendAutoConnectByBtAddress('AA:BB:CC:DD:EE:FF')
-    const buf = encodeSendable(msg)
+    const { type, payload } = encodeDongle(msg)
 
-    expect(buf.readUInt32LE(8)).toBe(MessageType.WifiStatusData)
-    expect(buf.subarray(16).toString('ascii')).toBe('AA:BB:CC:DD:EE:FF')
+    expect(type).toBe(MessageType.WifiStatusData)
+    expect(payload.toString('ascii')).toBe('AA:BB:CC:DD:EE:FF')
   })
 
   test('SendForgetBluetoothAddr stores ascii bluetooth address payload', async () => {
     const msg = new SendForgetBluetoothAddr('11:22:33:44:55:66')
-    const buf = encodeSendable(msg)
+    const { type, payload } = encodeDongle(msg)
 
-    expect(buf.readUInt32LE(8)).toBe(MessageType.ForgetBluetoothAddr)
-    expect(buf.subarray(16).toString('ascii')).toBe('11:22:33:44:55:66')
+    expect(type).toBe(MessageType.ForgetBluetoothAddr)
+    expect(payload.toString('ascii')).toBe('11:22:33:44:55:66')
   })
 
   test('SendIconConfig includes oemIconLabel when oemName is provided', async () => {
@@ -620,7 +592,7 @@ describe('dongle protocol encode', () => {
         DEBUG: true
       }))
 
-      const { SendBoxSettings, encodeSendable } = await import(
+      const { SendBoxSettings, encodeDongle } = await import(
         '@main/services/projection/driver/dongle/protocol/sendables'
       )
 
@@ -653,7 +625,7 @@ describe('dongle protocol encode', () => {
         123
       )
 
-      const payload = encodeSendable(msg).subarray(16)
+      const payload = encodeDongle(msg).payload
       const body = JSON.parse(payload.toString('ascii'))
 
       expect(body.syncTime).toBe(123)
@@ -864,6 +836,6 @@ describe('dongle protocol encode', () => {
   test('throws for a sendable without a wire encoding', () => {
     class Unwired extends SendableMessage {}
 
-    expect(() => encodeSendable(new Unwired())).toThrow('No dongle wire encoding for Unwired')
+    expect(() => encodeDongle(new Unwired())).toThrow('No dongle wire encoding for Unwired')
   })
 })

@@ -1,45 +1,52 @@
+/**
+ * CarlinKit dongle driver. The helper owns the USB pipe and the framing, streams
+ * video and audio into the pipeline's feed and takes the microphone from its tap.
+ * This side runs the protocol: open, box settings, work modes, pairing, and hands
+ * the remaining messages to the app.
+ */
 import { DEBUG } from '@main/constants'
+import { MicTap } from '@main/services/audio/micTap'
 import { decryptVendorSessionText } from '@main/services/projection/driver/dongle/vendorSessionInfo'
 import type { PendingStartupConnectTarget } from '@main/services/projection/services/types'
-import { CARLINKIT_PIDS, CARLINKIT_VID, isCarlinkitDongle } from '@main/services/usb/constants'
 import {
   AudioData,
-  BluetoothPeerConnected,
   BoxInfo,
   type BoxInfoSettings,
   DongleReady,
   DuckAudio,
+  decodeTypeMap,
   Opened,
   PhoneType,
   Plugged,
   SoftwareVersion,
   Unplugged,
-  VendorSessionInfo,
-  VideoData
+  VendorSessionInfo
 } from '@projection/messages'
 import {
-  SendAudio,
   SendAutoConnectByBtAddress,
-  SendableMessage,
+  type SendableMessage,
   SendBluetoothPairedList,
   SendCloseDongle,
   SendCommand,
   SendDisconnectPhone
 } from '@projection/messages/sendable'
-import { asDomUSBDevice } from '@projection/services/utils/asDomUSBDevice'
 import type { Config } from '@shared/types'
 import { InputCommand, MicType, PhoneWorkMode } from '@shared/types'
 import type { CommandValue } from '@shared/types/ProjectionEnums'
 import { AudioCommand } from '@shared/types/ProjectionEnums'
 import { isClusterDisplayed, matchFittingAAResolution } from '@shared/utils'
 import EventEmitter from 'events'
-import { usb } from 'usb'
+import type { AaMediaSinkDeps } from '../aa/AaEventBridge'
+import type { HelperSessionEvent, HelperSessionSource } from '../aa/AaManager'
+import {
+  type HelperSessionControl,
+  HelperSessionLink
+} from '../aa/stack/transport/HelperSessionLink'
 import { DONGLE_MIC_TYPE } from './dongleConfig'
 import { decodeMessage } from './protocol/decode.js'
 import {
-  encodeSendable,
+  encodeDongle,
   FileAddress,
-  HeartBeat,
   SendAndroidAutoDpi,
   SendBoolean,
   SendBoxSettings,
@@ -52,22 +59,16 @@ import {
   SendString,
   SendViewArea
 } from './protocol/sendables.js'
-import { HeaderBuildError, MessageHeader } from './protocol/wire.js'
+import type { MessageType } from './protocol/wire.js'
 
-const CONFIG_NUMBER = 1
-const MAX_ERROR_COUNT = 5
-const READ_TIMEOUT_MS = 1_000
-
-type UnknownRecord = Record<string, unknown>
-
-function isRecord(v: unknown): v is UnknownRecord {
-  return typeof v === 'object' && v !== null
-}
-
-function readProp<T = unknown>(obj: unknown, key: string): T | undefined {
-  if (!isRecord(obj)) return undefined
-  return obj[key] as T
-}
+export const DONGLE_VENDOR_ID = 0x1314
+const HELPER_RESUBSCRIBE_MS = 2000
+/** With no phone connected this long after the open, the dongle is told to pair. */
+const PAIR_AFTER_MS = 15000
+const MIC_STOP_COMMANDS = new Set<number>([
+  AudioCommand.AudioPhonecallStop,
+  AudioCommand.AudioVoiceAssistantStop
+])
 
 export enum AndroidWorkMode {
   Off = 0,
@@ -77,30 +78,52 @@ export enum AndroidWorkMode {
   Search = 7
 }
 
-export class DriverStateError extends Error {}
+type UsbIds = { product?: number; version?: number; name?: string }
+
+export type UsbDevice = {
+  vendorId: number
+  productId: number
+  usbFwVersion: string
+  deviceName: string
+}
+
+/** The device version the bus reports, as major.minor. */
+function bcdVersion(v: number): string {
+  return `${(v >> 8).toString(16)}.${(v & 0xff).toString(16).padStart(2, '0')}`
+}
+
+/** Tag of a host audio stream opened for one dongle format. */
+function audioTag(decodeType: number, audioType: number): string {
+  return `dongle:${decodeType}:${audioType}`
+}
+
+function parseAudioTag(tag: string | undefined): { decodeType: number; audioType: number } | null {
+  const m = /^dongle:(\d+):(\d+)$/.exec(tag ?? '')
+  return m ? { decodeType: Number(m[1]), audioType: Number(m[2]) } : null
+}
 
 export class DongleDriver extends EventEmitter {
-  private _heartbeatInterval: ReturnType<typeof setInterval> | null = null
-  private _device: USBDevice | null = null
-  private _inEP: USBEndpoint | null = null
-  private _outEP: USBEndpoint | null = null
-  private _ifaceNumber: number | null = null
-
-  private errorCount = 0
-  private _closing = false
+  // Events: 'message', 'config-changed', 'failure', 'attached', 'detached',
+  // 'phone-connected', 'phone-disconnected', 'dongle-info', 'targeted-connect-dispatched'
+  private _helper: HelperSessionSource | null = null
+  private _helperSub: { close: () => void } | null = null
+  private _link: HelperSessionLink | null = null
+  private _serial = ''
+  private _productId: number | null = null
+  private _usbVersion = ''
+  private _deviceName = ''
+  private _mediaSink: AaMediaSinkDeps | undefined
+  private _offAudioOutput: (() => void) | null = null
+  private _micPath = ''
+  private _micTap: MicTap | null = null
   private _started = false
-  private _readerActive = false
-  private _closePromise: Promise<void> | null = null
-
+  private _videoSinkSent = false
   private _dongleFwVersion?: string
   private _boxInfo?: BoxInfoSettings
   private _lastDongleInfoEmitKey = ''
-
   private _cfg: Config | null = null
   private _postOpenConfigSent = false
-
   private _wifiConnectTimer: ReturnType<typeof setTimeout> | null = null
-  private _bringUpInFlight: Promise<void> | null = null
   private _pendingStartupConnectTarget: PendingStartupConnectTarget | null = null
   private _modeSwitchInFlight: Promise<void> = Promise.resolve()
   private _lastModeSwitchAt = 0
@@ -112,12 +135,144 @@ export class DongleDriver extends EventEmitter {
   // centralised detection signals
   private _lastPluggedPhoneType: PhoneType | null = null
   private _linkUp = false
-  private _videoFlowing = false
   private _frameTimer: ReturnType<typeof setInterval> | null = null
   private _pairTimer: ReturnType<typeof setTimeout> | null = null
   private _pendingModeHintFromBoxInfo: PhoneWorkMode | null = null
+  private _duckNavActive = false
+  private _duckVoiceActive = false
 
-  // Logging PhoneWorkMode
+  // ── Sessions from the helper ───────────────────────────────────────────────
+
+  attachHelper(helper: HelperSessionSource | undefined): void {
+    if (this._helper || !helper) return
+    this._helper = helper
+    this._openHelperSub()
+  }
+
+  detachHelper(): void {
+    this._helper = null
+    const sub = this._helperSub
+    this._helperSub = null
+    try {
+      sub?.close()
+    } catch {
+      /* already closed */
+    }
+    this._dropLink('helper gone')
+  }
+
+  private _openHelperSub(): void {
+    const helper = this._helper
+    if (!helper) return
+    this._helperSub = helper.subscribe(
+      (ev: HelperSessionEvent) => {
+        if (ev.event !== 'dongle-session' || typeof ev.socket !== 'string') return
+        const socket = ev.socket
+        const serial = typeof ev.serial === 'string' ? ev.serial : ''
+        HelperSessionLink.connect(socket, serial)
+          .then((link) => {
+            if (!this._helper) {
+              link.destroy()
+              return
+            }
+            this.attach(link, serial, { product: ev.product, version: ev.version, name: ev.name })
+          })
+          .catch((err: Error) => {
+            console.warn(`[DongleDriver] helper session ${socket}: ${err.message}`)
+          })
+      },
+      () => {
+        this._helperSub = null
+        if (this._helper) setTimeout(() => this._openHelperSub(), HELPER_RESUBSCRIBE_MS)
+      }
+    )
+  }
+
+  /** Takes over the session the helper opened for a dongle. */
+  attach(link: HelperSessionLink, serial: string, ids?: UsbIds): void {
+    if (this._link) this._dropLink('replaced by a new session')
+    this._link = link
+    this._serial = serial
+    this._productId = typeof ids?.product === 'number' ? ids.product : null
+    this._usbVersion = typeof ids?.version === 'number' ? bcdVersion(ids.version) : ''
+    this._deviceName = typeof ids?.name === 'string' ? ids.name : ''
+    link.on('message', (_ch: number, _flags: number, type: number, payload: Buffer) => {
+      void this._onMessage(type, payload)
+    })
+    link.on('control', (c: HelperSessionControl) => this._onControl(c))
+    link.on('error', (err: Error) => console.warn(`[DongleDriver] session error: ${err.message}`))
+    link.on('close', () => {
+      if (this._link === link) this._dropLink('session closed by the helper')
+    })
+    const sink = this._mediaSink
+    if (sink) {
+      this._offAudioOutput = sink.onAudioOutput((_audioType, streamId, tag) =>
+        this._pushAudioSink(streamId, tag)
+      )
+      for (const o of sink.audioOutputs()) this._pushAudioSink(o.streamId, o.tag)
+    }
+    console.log(`[DongleDriver] dongle ${serial || '(no serial)'} attached`)
+    this.emit('attached')
+  }
+
+  setMediaSink(sink: AaMediaSinkDeps): void {
+    this._mediaSink = sink
+  }
+
+  get isUp(): boolean {
+    return this._link !== null && !this._link.closed
+  }
+
+  get serial(): string {
+    return this._serial
+  }
+
+  /** The dongle on the bus, while its session is up. */
+  usbDevice(): UsbDevice | null {
+    if (!this.isUp || this._productId == null) return null
+    return {
+      vendorId: DONGLE_VENDOR_ID,
+      productId: this._productId,
+      usbFwVersion: this._usbVersion,
+      deviceName: this._deviceName
+    }
+  }
+
+  /** Asks the helper to reset the dongle on the bus, the session ends with it. */
+  resetDongle(): boolean {
+    const link = this._link
+    if (!link || link.closed) return false
+    link.control({ type: 'reset' })
+    return true
+  }
+
+  private _dropLink(reason: string): void {
+    const link = this._link
+    if (!link) return
+    this._link = null
+    console.log(`[DongleDriver] ${reason}`)
+    link.destroy()
+    this._offAudioOutput?.()
+    this._offAudioOutput = null
+    this._stopMic()
+    this._clearTimers()
+    const wasStarted = this._started
+    this._started = false
+    this._linkUp = false
+    this._lastPluggedPhoneType = null
+    this._pendingModeHintFromBoxInfo = null
+    this._dongleFwVersion = undefined
+    this._boxInfo = undefined
+    this._lastDongleInfoEmitKey = ''
+    this._postOpenConfigSent = false
+    this._micPath = ''
+    this._videoSinkSent = false
+    if (wasStarted) this.emit('phone-disconnected')
+    this.emit('detached')
+  }
+
+  // ── Logging ────────────────────────────────────────────────────────────────
+
   private logPhoneWorkModeChange(
     reason: string,
     from: PhoneWorkMode,
@@ -129,7 +284,6 @@ export class DongleDriver extends EventEmitter {
     )
   }
 
-  // Logging AndroidWorkMode
   private logAndroidWorkModeChange(
     reason: string,
     from: AndroidWorkMode,
@@ -141,11 +295,11 @@ export class DongleDriver extends EventEmitter {
     )
   }
 
+  // ── Work modes ─────────────────────────────────────────────────────────────
+
   private async applyAndroidWorkMode(next: AndroidWorkMode) {
     if (next === this._androidWorkModeRuntime) return
-
     this._androidWorkModeRuntime = next
-
     await this.send(new SendNumber(this._androidWorkModeRuntime, FileAddress.ANDROID_WORK_MODE))
     await this.send(new SendCommand('wifiEnable'))
     this.scheduleWifiConnect(150)
@@ -168,19 +322,14 @@ export class DongleDriver extends EventEmitter {
     const now = Date.now()
     if (next === this._phoneWorkModeRuntime) return
     if (now - this._lastModeSwitchAt < 800) return
-
     this._phoneWorkModeRuntime = next
     this._lastModeSwitchAt = now
-
     const cfg = this._cfg
     if (!cfg) return
-
     this._modeSwitchInFlight = this._modeSwitchInFlight.then(async () => {
-      if (this._closing || !this._device?.opened) return
-
+      if (!this.isUp) return
       await this.send(new SendDisconnectPhone())
       await this.sleep(120)
-
       this._postOpenConfigSent = false
       await this.send(
         new SendOpen(
@@ -189,14 +338,8 @@ export class DongleDriver extends EventEmitter {
         )
       )
     })
-
     await this._modeSwitchInFlight
   }
-
-  static knownDevices = CARLINKIT_PIDS.map((productId) => ({
-    vendorId: CARLINKIT_VID,
-    productId
-  }))
 
   private scheduleWifiConnect(delayMs: number) {
     if (this._wifiConnectTimer) {
@@ -213,13 +356,11 @@ export class DongleDriver extends EventEmitter {
       this._pendingStartupConnectTarget = null
       return
     }
-
     const btMac = String(target.btMac ?? '').trim()
     if (!btMac) {
       this._pendingStartupConnectTarget = null
       return
     }
-
     this._pendingStartupConnectTarget = {
       btMac,
       phoneWorkMode: target.phoneWorkMode
@@ -234,57 +375,9 @@ export class DongleDriver extends EventEmitter {
     return new Promise<void>((r) => setTimeout(r, ms))
   }
 
-  private async waitForReaderStop(timeoutMs = 1500) {
-    const t0 = Date.now()
-    while (this._readerActive && Date.now() - t0 < timeoutMs) {
-      await this.sleep(10)
-    }
-  }
-
-  // The device follows the WebUSB-shaped API (usb@3 / nusb).
-  private isBenignUsbShutdownError(err: unknown): boolean {
-    const msg = err instanceof Error ? err.message : String(err)
-
-    // Unplug and shutdown fallout, which macOS produces liberally.
-    return (
-      msg.includes('transferIn error') ||
-      /device (has been )?disconnected/i.test(msg) ||
-      /\berrno 19\b/i.test(msg) ||
-      msg.includes('No such device')
-    )
-  }
-
-  private async tryResetUnderlyingUsbDevice(dev: USBDevice): Promise<boolean> {
-    const candidates: unknown[] = [
-      readProp(dev, 'device'),
-      readProp(dev, '_device'),
-      readProp(dev, 'usbDevice'),
-      readProp(dev, 'rawDevice')
-    ]
-
-    const raw = candidates.find(isRecord)
-    if (!raw) return false
-
-    const resetFn = readProp(raw, 'reset')
-    if (typeof resetFn !== 'function') return false
-
-    try {
-      await new Promise<void>((resolve, reject) => {
-        ;(resetFn as (cb: (err: unknown) => void) => void).call(raw, (err: unknown) =>
-          err ? reject(err) : resolve()
-        )
-      })
-      return true
-    } catch (e) {
-      console.warn('[DongleDriver] underlying usb reset() failed', e)
-      return false
-    }
-  }
-
   private emitDongleInfoIfChanged() {
     const fw = this._dongleFwVersion
     const box = this._boxInfo
-
     let boxKey = ''
     if (box != null) {
       try {
@@ -293,95 +386,60 @@ export class DongleDriver extends EventEmitter {
         boxKey = String(box)
       }
     }
-
     const key = `${fw ?? ''}||${boxKey}`
     if (key === this._lastDongleInfoEmitKey) return
     this._lastDongleInfoEmitKey = key
-
     this.emit('dongle-info', { dongleFwVersion: fw, boxInfo: box })
   }
 
-  get isUp(): boolean {
-    return this._device !== null
-  }
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
 
-  // Duplicate USB attach events fire within milliseconds. A second bring-up while the
-  // first is still awaiting would double start() and leak an uncancellable pair timer.
-  bringUp = (cfg: Config, pendingTarget?: PendingStartupConnectTarget | null): Promise<void> => {
-    if (this._bringUpInFlight) return this._bringUpInFlight
-    this._bringUpInFlight = this.doBringUp(cfg, pendingTarget).finally(() => {
-      this._bringUpInFlight = null
-    })
-    return this._bringUpInFlight
-  }
-
-  private doBringUp = async (
+  /** Opens the dongle with the projection geometry, once per session. */
+  start = async (
     cfg: Config,
     pendingTarget?: PendingStartupConnectTarget | null
   ): Promise<void> => {
-    if (this._device) return
-    const device = (await usb.getDevices()).find((d) => isCarlinkitDongle(d.vendorId, d.productId))
-    if (!device) return
-    try {
-      await device.open()
-      await this.initialise(asDomUSBDevice(device))
-      if (pendingTarget) this.setPendingStartupConnectTarget(pendingTarget)
-      else this.clearPendingStartupConnectTarget()
-      await this.start(cfg)
-      this._clearPairTimer()
-      this._pairTimer = setTimeout(() => {
-        void this.send(new SendCommand('wifiPair'))
-      }, 15000)
-    } catch (e) {
-      console.warn('[DongleDriver] bring-up failed', e)
-      await this.close()
-    }
+    if (!this.isUp || this._started) return
+    this._started = true
+    this._cfg = cfg
+    if (pendingTarget) this.setPendingStartupConnectTarget(pendingTarget)
+    else this.clearPendingStartupConnectTarget()
+    this._phoneWorkModeRuntime =
+      cfg.lastPhoneWorkMode === PhoneWorkMode.Android
+        ? PhoneWorkMode.Android
+        : PhoneWorkMode.CarPlay
+    this._androidWorkModeRuntime = AndroidWorkMode.AndroidAuto
+    this._postOpenConfigSent = false
+    this._videoSinkSent = false
+    // The dongle only ever produces H.264.
+    this.emit('video-codec', 'h264')
+    this.emit('cluster-video-codec', 'h264')
+    await this.send(
+      new SendOpen(
+        { width: cfg.projectionWidth, height: cfg.projectionHeight, fps: cfg.projectionFps },
+        this._phoneWorkModeRuntime
+      )
+    )
+    await this.sleep(120)
+    this._clearPairTimer()
+    this._pairTimer = setTimeout(() => {
+      void this.send(new SendCommand('wifiPair'))
+    }, PAIR_AFTER_MS)
   }
 
-  initialise = async (device: USBDevice) => {
-    if (this._device) return
-
-    try {
-      this._device = device
-      if (!device.opened) throw new DriverStateError('Device not opened')
-
-      await device.selectConfiguration(CONFIG_NUMBER)
-      const cfg = device.configuration
-      if (!cfg) throw new DriverStateError('Device has no configuration')
-
-      const intf = cfg.interfaces[0]
-      if (!intf) throw new DriverStateError('No interface 0')
-
-      this._ifaceNumber = intf.interfaceNumber
-      await device.claimInterface(this._ifaceNumber)
-
-      const alt = intf.alternate
-      if (!alt) throw new DriverStateError('No active alternate on interface')
-
-      this._inEP = alt.endpoints.find((e) => e.direction === 'in') || null
-      this._outEP = alt.endpoints.find((e) => e.direction === 'out') || null
-      if (!this._inEP || !this._outEP) throw new DriverStateError('Endpoints missing')
-      if (!this._readerActive) void this.readLoop()
-    } catch (err) {
-      await this.close()
-      throw err
-    }
+  close = async (): Promise<void> => {
+    this._dropLink('closed')
   }
 
   send = async (msg: SendableMessage): Promise<boolean> => {
-    const dev = this._device
-    if (!dev || !dev.opened || this._closing) return false
-    if (!this._outEP) return false
-
+    const link = this._link
+    if (!link || link.closed) return false
     try {
-      const buf = encodeSendable(msg)
-      const view = new Uint8Array(buf.buffer as ArrayBuffer, buf.byteOffset, buf.byteLength)
-      const res = await dev.transferOut(this._outEP.endpointNumber, view)
-      return res.status === 'ok'
+      const { type, payload } = encodeDongle(msg)
+      link.send(0, 0, type, payload)
+      return true
     } catch (err) {
       console.error('[DongleDriver] Send error', msg?.constructor?.name, err)
-      const detail = err instanceof Error ? err.message : String(err)
-      if (/disconnect/i.test(detail)) void this.close()
       return false
     }
   }
@@ -392,6 +450,16 @@ export class DongleDriver extends EventEmitter {
 
   public sendGnssData = async (nmeaText: string): Promise<boolean> => {
     return this.send(new SendGnssData(nmeaText))
+  }
+
+  uploadHostIcons(icon120: Buffer, icon180: Buffer, icon256: Buffer): void {
+    void this.send(new SendFile(icon120, FileAddress.ICON_120))
+    void this.send(new SendFile(icon180, FileAddress.ICON_180))
+    void this.send(new SendFile(icon256, FileAddress.ICON_256))
+  }
+
+  requestClusterFocus(): void {
+    void this.send(new SendCommand('requestClusterStreamFocus'))
   }
 
   handleInput = (command: InputCommand): void => {
@@ -414,31 +482,8 @@ export class DongleDriver extends EventEmitter {
     void this.send(new SendCommand('frame'))
   }
 
-  private _frameWatchdog(): void {
-    if (this._frameTimer) return
-    this._frameTimer = setInterval(() => {
-      if (!this._started) return
-      if (this._videoFlowing) {
-        this._videoFlowing = false
-        return
-      }
-      void this.send(new SendCommand('frame'))
-    }, 700)
-  }
-
-  private _clearFramePoke(): void {
-    if (this._frameTimer) {
-      clearInterval(this._frameTimer)
-      this._frameTimer = null
-    }
-    this._videoFlowing = false
-  }
-
-  private _clearPairTimer(): void {
-    if (this._pairTimer) {
-      clearTimeout(this._pairTimer)
-      this._pairTimer = null
-    }
+  setStreamVolume(audioType: number, level: number, rampMs: number): void {
+    this._mediaSink?.setHostVolume(audioType, level, rampMs)
   }
 
   disconnectPhone = async (): Promise<boolean> => {
@@ -457,64 +502,131 @@ export class DongleDriver extends EventEmitter {
     return ok
   }
 
-  sendPhoneAudio(pcm: Int16Array, decodeType: number): void {
-    void this.send(new SendAudio(pcm, decodeType))
-  }
+  // ── Media sinks ────────────────────────────────────────────────────────────
 
-  uploadHostIcons(icon120: Buffer, icon180: Buffer, icon256: Buffer): void {
-    void this.send(new SendFile(icon120, FileAddress.ICON_120))
-    void this.send(new SendFile(icon180, FileAddress.ICON_180))
-    void this.send(new SendFile(icon256, FileAddress.ICON_256))
-  }
-
-  requestClusterFocus(): void {
-    void this.send(new SendCommand('requestClusterStreamFocus'))
-  }
-
-  // isolate framing/decoding
-  private async readOneMessage() {
-    const dev = this._device
-    const inEp = this._inEP
-    if (!dev || !inEp) return null
-
-    const transferIn = dev.transferIn.bind(dev) as (
-      ep: number,
-      len: number,
-      timeoutMs?: number
-    ) => Promise<USBInTransferResult>
-
-    const headerRes = await transferIn(
-      inEp.endpointNumber,
-      MessageHeader.dataLength,
-      READ_TIMEOUT_MS
-    )
-    if (this._closing) return null
-
-    const headerData = headerRes?.data
-    if (!headerData) throw new HeaderBuildError('Empty header')
-
-    const headerBuffer = Buffer.from(
-      headerData.buffer,
-      headerData.byteOffset,
-      headerData.byteLength
-    )
-    const header = MessageHeader.fromBuffer(headerBuffer)
-
-    let extra: Buffer | undefined
-    if (header.length) {
-      const extraRes = await transferIn(inEp.endpointNumber, header.length, READ_TIMEOUT_MS)
-      if (this._closing) return null
-      const extraData = extraRes?.data
-      if (!extraData) throw new Error('Failed to read extra data')
-      extra = Buffer.from(extraData.buffer, extraData.byteOffset, extraData.byteLength)
+  /** Tells the helper which planes take the video. */
+  private _pushVideoSink(): void {
+    const sink = this._mediaSink
+    const cfg = this._cfg
+    if (!sink || !cfg) return
+    sink.primeVideo(false)
+    const video = [{ cluster: false, id: sink.videoPlaneId(false), codec: 'h264' }]
+    if (isClusterDisplayed(cfg)) {
+      sink.primeVideo(true)
+      video.push({ cluster: true, id: sink.videoPlaneId(true), codec: 'h264' })
     }
-
-    return decodeMessage(header, extra)
+    void sink.feedPath().then((feed) => {
+      if (!this.isUp) return
+      if (!feed) console.warn('[DongleDriver] host has no media feed, video will not show')
+      this._link?.control({ type: 'sink', feed, video })
+    })
   }
 
-  // entral message dispatch
-  private _duckNavActive = false
-  private _duckVoiceActive = false
+  /** Routes a host stream to the dongle format it was opened for. */
+  private _pushAudioSink(streamId: number, tag: string | undefined): void {
+    const sink = this._mediaSink
+    const format = parseAudioTag(tag)
+    if (!sink || !format) return
+    void sink.feedPath().then((feed) => {
+      if (!this.isUp) return
+      this._link?.control({ type: 'sink', feed, audio: [{ ...format, id: streamId }] })
+    })
+  }
+
+  // ── Microphone ─────────────────────────────────────────────────────────────
+
+  private _startMic(decodeType: number): void {
+    if (this._micTap) return
+    const fmt = decodeTypeMap[decodeType]
+    if (!fmt || !this._micPath) {
+      console.warn(`[DongleDriver] no microphone for decode type ${decodeType}`)
+      return
+    }
+    this._micTap = MicTap.open(this._micPath, {
+      sampleRate: fmt.frequency,
+      channels: fmt.channel,
+      device: this._cfg?.audioInputDevice || undefined
+    })
+    if (!this._micTap) {
+      console.warn('[DongleDriver] microphone tap could not open')
+      return
+    }
+    this._link?.control({ type: 'mic', decodeType })
+    console.log(`[DongleDriver] microphone on, ${fmt.frequency} Hz ${fmt.channel} ch`)
+  }
+
+  private _stopMic(): void {
+    const tap = this._micTap
+    if (!tap) return
+    this._micTap = null
+    try {
+      tap.close()
+    } catch (err) {
+      console.warn(`[DongleDriver] microphone tap close failed: ${(err as Error).message}`)
+    }
+    if (this.isUp) this._link?.control({ type: 'mic' })
+    console.log('[DongleDriver] microphone off')
+  }
+
+  // ── Messages ───────────────────────────────────────────────────────────────
+
+  private async _onMessage(type: number, payload: Buffer): Promise<void> {
+    let msg: unknown
+    try {
+      msg = decodeMessage(type as MessageType, payload.length ? payload : undefined)
+    } catch (err) {
+      console.warn(
+        `[DongleDriver] message 0x${type.toString(16)} not decodable: ${(err as Error).message}`
+      )
+      return
+    }
+    if (msg) await this.handleMessage(msg)
+  }
+
+  private _onControl(c: HelperSessionControl): void {
+    switch (c.type) {
+      case 'ready':
+        this._micPath = typeof c.mic === 'string' ? c.mic : ''
+        break
+      case 'video': {
+        const cluster = c.cluster === true
+        const width = typeof c.width === 'number' ? c.width : 0
+        const height = typeof c.height === 'number' ? c.height : 0
+        if (!this._videoSinkSent) {
+          this._videoSinkSent = true
+          this._pushVideoSink()
+        }
+        if (!cluster && !this._linkUp) {
+          this._linkUp = true
+          console.log('[DongleDriver] first frame, link up')
+          this.emit('phone-connected')
+        }
+        this._mediaSink?.noteVideoStarted(cluster, width, height)
+        break
+      }
+      case 'audio-setup': {
+        const decodeType = typeof c.decodeType === 'number' ? c.decodeType : 0
+        const audioType = typeof c.audioType === 'number' ? c.audioType : 0
+        const fmt = decodeTypeMap[decodeType]
+        if (!fmt) {
+          console.warn(
+            `[DongleDriver] audio decode type ${decodeType} unknown, stream stays silent`
+          )
+          break
+        }
+        this._mediaSink?.primeAudio(
+          audioType,
+          fmt.frequency,
+          fmt.channel,
+          audioTag(decodeType, audioType)
+        )
+        break
+      }
+      case 'closed':
+        this._dropLink(`session ended: ${typeof c.reason === 'string' ? c.reason : 'unknown'}`)
+        break
+    }
+  }
 
   private translateDuck(cmd: number): void {
     switch (cmd) {
@@ -545,85 +657,60 @@ export class DongleDriver extends EventEmitter {
     if (msg instanceof VendorSessionInfo) {
       try {
         const decrypted = await decryptVendorSessionText(msg.raw)
-
         if (DEBUG) {
           console.log(`[DongleDriver] VendorSessionInfo ${decrypted}`)
         }
       } catch (e) {
         console.warn('[DongleDriver] VendorSessionInfo decrypt failed', e)
       }
-
       this.emit('message', msg)
       return
     }
-
     if (msg instanceof DongleReady) {
       console.log('[DongleDriver] Dongle ready')
       this.emit('message', msg)
       return
     }
-
-    // Track info
     if (msg instanceof SoftwareVersion) {
       this._dongleFwVersion = msg.version
       this.emitDongleInfoIfChanged()
     }
-
-    // BoxInfo: store + signal extraction + reconcile
     if (msg instanceof BoxInfo) {
       await this.onBoxInfo(msg)
       this.emit('message', msg)
       return
     }
-
-    if (msg instanceof VideoData) {
-      this._videoFlowing = true
-      this._frameWatchdog()
-      if (!this._linkUp) {
-        this._linkUp = true
-        console.log('[DongleDriver] first frame — link up')
-        this.emit('phone-connected')
-      }
-    }
-
-    // Everything else: emit raw first
     this.emit('message', msg)
-
     if (msg instanceof AudioData && msg.command != null) {
       this.translateDuck(msg.command)
+      if (msg.command === AudioCommand.AudioInputConfig) this._startMic(msg.decodeType)
+      else if (MIC_STOP_COMMANDS.has(msg.command)) this._stopMic()
     }
-
-    if (msg instanceof BluetoothPeerConnected) {
-      // intentionally no-op
-    }
-
     if (msg instanceof Opened) this.onOpened()
     if (msg instanceof Unplugged) this.onUnplugged()
     if (msg instanceof Plugged) await this.onPlugged(msg)
   }
 
   private onOpened() {
-    if (!this._heartbeatInterval) {
-      this._heartbeatInterval = setInterval(() => void this.send(new HeartBeat()), 2000)
-    }
     void this.sendPostOpenConfig()
   }
 
   private async sendPostOpenConfig() {
     if (this._postOpenConfigSent) return
-
     const cfg = this._cfg
     if (!cfg) return
-    if (this._closing || !this._device?.opened) return
+    if (!this.isUp) return
 
     const ui = (cfg.oemName ?? '').trim()
     const label = ui.length > 0 ? ui : cfg.carName
+
     const initMicRouteCommand: CommandValue =
       DONGLE_MIC_TYPE === MicType.DongleMic
         ? 'boxMici2s'
         : DONGLE_MIC_TYPE === MicType.PhoneMic
           ? 'phoneMic'
           : 'mic'
+
     const aaResolution = matchFittingAAResolution({
       width: cfg.projectionWidth,
       height: cfg.projectionHeight
@@ -699,27 +786,23 @@ export class DongleDriver extends EventEmitter {
     }
 
     const pendingTarget = this._pendingStartupConnectTarget
-
     if (pendingTarget) {
       if (this._wifiConnectTimer) {
         clearTimeout(this._wifiConnectTimer)
         this._wifiConnectTimer = null
       }
-
       if (DEBUG) {
         console.debug('[DongleDriver] sendPostOpenConfig uses targeted auto-connect', {
           btMac: pendingTarget.btMac,
           phoneWorkMode: pendingTarget.phoneWorkMode
         })
       }
-
       await this.send(new SendAutoConnectByBtAddress(pendingTarget.btMac))
       this.emit('targeted-connect-dispatched', pendingTarget)
       this._pendingStartupConnectTarget = null
     } else {
       this.scheduleWifiConnect(150)
     }
-
     this._postOpenConfigSent = true
   }
 
@@ -727,24 +810,22 @@ export class DongleDriver extends EventEmitter {
     this._lastPluggedPhoneType = null
     this._linkUp = false
     this._pendingModeHintFromBoxInfo = null
-    this._clearFramePoke()
-
-    if (this._heartbeatInterval) {
-      clearInterval(this._heartbeatInterval)
-      this._heartbeatInterval = null
-    }
+    this._clearFrameTimer()
+    this._stopMic()
     this.emit('phone-disconnected')
   }
 
   private async onPlugged(msg: Plugged) {
     this._clearPairTimer()
     this._lastPluggedPhoneType = msg.phoneType
+
     const frameInterval = this._cfg?.phoneConfig?.[msg.phoneType]?.frameInterval
     if (frameInterval && frameInterval > 0 && !this._frameTimer) {
       this._frameTimer = setInterval(() => {
         if (this._started) void this.send(new SendCommand('frame'))
       }, frameInterval)
     }
+
     await this.reconcileModes('plugged')
 
     const cfg = this._cfg
@@ -755,7 +836,6 @@ export class DongleDriver extends EventEmitter {
         this.emit('config-changed', { lastPhoneWorkMode: connectedMode })
       }
     }
-
     console.log('[DongleDriver] dongle plugged (awaiting first frame)')
   }
 
@@ -777,7 +857,6 @@ export class DongleDriver extends EventEmitter {
         await this.applyPhoneWorkMode(next)
       }
     }
-
     this.emitDongleInfoIfChanged()
   }
 
@@ -807,194 +886,28 @@ export class DongleDriver extends EventEmitter {
     }
   }
 
-  // --- readLoop rewritten to be simple ---
-  private async readLoop() {
-    if (this._readerActive) return
-    this._readerActive = true
+  // ── Timers ─────────────────────────────────────────────────────────────────
 
-    try {
-      while (this._device?.opened && !this._closing) {
-        if (this.errorCount >= MAX_ERROR_COUNT) {
-          await this.close()
-          this.emit('failure')
-          return
-        }
-
-        try {
-          const msg = await this.readOneMessage()
-          if (!msg) continue
-
-          await this.handleMessage(msg)
-
-          if (this.errorCount !== 0) this.errorCount = 0
-        } catch (err) {
-          if (this._closing || !this._device?.opened) break
-
-          const msg = err instanceof Error ? err.message : String(err)
-          // Idle read timeout / cancel by the timeout — re-issue (lossless for bulk).
-          if (/cancel|timed?\s*out|timeout/i.test(msg)) continue
-          // Device really went away.
-          if (this.isBenignUsbShutdownError(err)) break
-
-          if (err instanceof HeaderBuildError) {
-            console.warn('[DongleDriver] HeaderBuildError', err.message)
-          } else {
-            console.error('[DongleDriver] readLoop error', err)
-          }
-
-          this.errorCount++
-        }
-      }
-    } finally {
-      this._readerActive = false
+  private _clearFrameTimer(): void {
+    if (this._frameTimer) {
+      clearInterval(this._frameTimer)
+      this._frameTimer = null
     }
   }
 
-  start = async (cfg: Config) => {
-    if (!this._device) throw new DriverStateError('initialise() first')
-    if (!this._device.opened) return
-    if (this._started) return
-
-    this.errorCount = 0
-    this._started = true
-    this._cfg = cfg
-
-    this._phoneWorkModeRuntime =
-      cfg.lastPhoneWorkMode === PhoneWorkMode.Android
-        ? PhoneWorkMode.Android
-        : PhoneWorkMode.CarPlay
-    this._androidWorkModeRuntime = AndroidWorkMode.AndroidAuto
-
-    this._postOpenConfigSent = false
-
-    const messages: SendableMessage[] = [
-      new SendOpen(
-        { width: cfg.projectionWidth, height: cfg.projectionHeight, fps: cfg.projectionFps },
-        this._phoneWorkModeRuntime
-      )
-    ]
-
-    for (const m of messages) {
-      await this.send(m)
-      await this.sleep(120)
+  private _clearPairTimer(): void {
+    if (this._pairTimer) {
+      clearTimeout(this._pairTimer)
+      this._pairTimer = null
     }
   }
 
-  close = async (): Promise<void> => {
-    // Serialize close() calls
-    if (this._closePromise) return this._closePromise
-
-    this._closePromise = (async () => {
-      // Nothing to do?
-      if (!this._device && !this._readerActive && !this._started) return
-
-      const wasPresent = this._device !== null
-      this._closing = true
-      this._clearFramePoke()
-
-      this._clearPairTimer()
-
-      if (this._wifiConnectTimer) {
-        clearTimeout(this._wifiConnectTimer)
-        this._wifiConnectTimer = null
-      }
-
-      if (this._heartbeatInterval) {
-        clearInterval(this._heartbeatInterval)
-        this._heartbeatInterval = null
-      }
-
-      const dev = this._device
-      const iface = this._ifaceNumber
-
-      // If we end up in the "pending request" situation, we may intentionally keep the device ref.
-      let keepDeviceRefToAvoidGcFinalizerCrash = false
-
-      try {
-        if (dev && dev.opened) {
-          // _closing is set; the read loop drops its in-flight read on the next timeout and exits.
-          // Wait for it so the interface is free (a pending transfer blocks releaseInterface/close).
-          await this.waitForReaderStop(READ_TIMEOUT_MS + 500)
-
-          if (iface != null) {
-            try {
-              await dev.releaseInterface(iface)
-            } catch (e) {
-              console.warn('[DongleDriver] releaseInterface() failed (ignored)', e)
-            }
-          }
-
-          try {
-            await dev.close()
-          } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : String(e)
-
-            if (/pending request/i.test(msg)) {
-              console.warn(
-                '[DongleDriver] device.close(): pending request -> trying underlying usb reset()'
-              )
-
-              // Cancel the in-flight transfer through the device's own handle
-              const resetOk = await this.tryResetUnderlyingUsbDevice(dev)
-              if (resetOk) {
-                await this.sleep(50)
-                await this.waitForReaderStop(1500)
-              }
-
-              // Try close once more (best-effort)
-              try {
-                await dev.close()
-              } catch (e2: unknown) {
-                const msg2 = e2 instanceof Error ? e2.message : String(e2)
-                if (/pending request/i.test(msg2)) {
-                  console.warn(
-                    '[DongleDriver] device.close(): pending request did not resolve before deadline'
-                  )
-                  // Keep the reference so a GC finalizer cannot close the device mid-transfer
-                  keepDeviceRefToAvoidGcFinalizerCrash = true
-                } else {
-                  console.warn('[DongleDriver] device.close() failed', e2)
-                }
-              }
-            } else {
-              console.warn('[DongleDriver] device.close() failed', e)
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('[DongleDriver] close() outer error', err)
-      } finally {
-        // Always reset logical state
-        this._heartbeatInterval = null
-        this._inEP = null
-        this._outEP = null
-        this._ifaceNumber = null
-        this._started = false
-        this._readerActive = false
-        this.errorCount = 0
-
-        this._linkUp = false
-        this._lastPluggedPhoneType = null
-        this._pendingModeHintFromBoxInfo = null
-
-        this._dongleFwVersion = undefined
-        this._boxInfo = undefined
-        this._lastDongleInfoEmitKey = ''
-        this._postOpenConfigSent = false
-
-        // Only clear the device ref if we successfully closed OR we are sure it won't crash later.
-        if (!keepDeviceRefToAvoidGcFinalizerCrash) {
-          this._device = null
-        }
-
-        this._closing = false
-      }
-
-      if (wasPresent) this.emit('phone-disconnected')
-    })().finally(() => {
-      this._closePromise = null
-    })
-
-    return this._closePromise
+  private _clearTimers(): void {
+    this._clearFrameTimer()
+    this._clearPairTimer()
+    if (this._wifiConnectTimer) {
+      clearTimeout(this._wifiConnectTimer)
+      this._wifiConnectTimer = null
+    }
   }
 }

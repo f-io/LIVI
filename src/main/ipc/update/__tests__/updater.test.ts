@@ -124,7 +124,7 @@ describe('Updater', () => {
   test('install emits error when no downloaded update is ready', async () => {
     const { Updater, sendUpdateEvent } = await loadSubject()
 
-    const updater = new Updater({} as never, { usbService: { gracefulReset: vi.fn() } } as never)
+    const updater = new Updater({} as never, {} as never)
     await updater.install()
 
     expect(sendUpdateEvent).toHaveBeenCalledWith({
@@ -133,7 +133,7 @@ describe('Updater', () => {
     })
   })
 
-  test('install runs graceful reset and linux installer when update is ready', async () => {
+  test('install runs the linux installer and restarts when update is ready', async () => {
     Object.defineProperty(process, 'platform', { value: 'linux' })
     const {
       Updater,
@@ -273,7 +273,7 @@ describe('Updater', () => {
     expect(sendUpdateEvent).toHaveBeenCalledWith({ phase: 'error', message: 'Aborted' })
   })
 
-  test('install continues with the mac installer when gracefulReset fails', async () => {
+  test('install continues with the mac installer when the projection stop fails', async () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' })
     const { Updater, downloadWithProgress, installOnMacFromFile } = await loadSubject()
 
@@ -290,14 +290,15 @@ describe('Updater', () => {
       cb()
       return 0 as unknown as NodeJS.Timeout
     }) as typeof setTimeout)
-    const gracefulReset = vi.fn().mockRejectedValue(new Error('reset failed'))
-    const updater = new Updater({} as never, { usbService: { gracefulReset } } as never)
+    const stop = vi.fn().mockRejectedValue(new Error('stop failed'))
+    const updater = new Updater({} as never, { projectionService: { stop } } as never)
 
     await updater.perform({} as never, 'https://example.com/LIVI.AppImage')
     await updater.install()
 
+    expect(stop).toHaveBeenCalledTimes(1)
     expect(warnSpy).toHaveBeenCalledWith(
-      '[MAIN] gracefulReset failed (continuing install):',
+      '[MAIN] projection stop failed (continuing install):',
       expect.any(Error)
     )
     expect(installOnMacFromFile).toHaveBeenCalledWith(expect.stringMatching(/\.dmg$/))
@@ -403,12 +404,13 @@ describe('Updater', () => {
       cb()
       return 0 as unknown as NodeJS.Timeout
     }) as typeof setTimeout)
-    const gracefulReset = vi.fn().mockResolvedValue(undefined)
-    const updater = new Updater({} as never, { usbService: { gracefulReset } } as never)
+    const stop = vi.fn().mockResolvedValue(undefined)
+    const updater = new Updater({} as never, { projectionService: { stop } } as never)
 
     await updater.perform({} as never, 'https://example.com/LIVI.dmg')
     await updater.install()
 
+    expect(stop).toHaveBeenCalledTimes(1)
     expect(installOnMacFromFile).toHaveBeenCalledWith(expect.stringMatching(/\.dmg$/))
     expect(installOnLinuxFromFile).not.toHaveBeenCalled()
 
@@ -432,8 +434,8 @@ describe('Updater', () => {
       cb()
       return 0 as unknown as NodeJS.Timeout
     }) as typeof setTimeout)
-    const gracefulReset = vi.fn().mockResolvedValue(undefined)
-    const updater = new Updater({} as never, { usbService: { gracefulReset } } as never)
+    const stop = vi.fn().mockResolvedValue(undefined)
+    const updater = new Updater({} as never, { projectionService: { stop } } as never)
 
     await updater.perform({} as never, 'https://example.com/LIVI.dmg')
     await updater.install()
@@ -501,8 +503,8 @@ describe('Updater', () => {
       cb()
       return 0 as unknown as NodeJS.Timeout
     }) as typeof setTimeout)
-    const gracefulReset = vi.fn().mockResolvedValue(undefined)
-    const updater = new Updater({} as never, { usbService: { gracefulReset } } as never)
+    const stop = vi.fn().mockResolvedValue(undefined)
+    const updater = new Updater({} as never, { projectionService: { stop } } as never)
 
     await updater.perform({} as never, 'https://example.com/LIVI.dmg')
     await updater.install()

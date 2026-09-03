@@ -40,14 +40,6 @@ describe('readable messages', () => {
     expect(new DuckAudio(-1, 0).level).toBe(0)
   })
 
-  test('AudioData falls back to 48kHz stereo for an unknown decodeType', () => {
-    const msg = new AudioData({ decodeType: 999, audioType: 2, volume: 1.0 })
-
-    expect(msg.decodeType).toBe(999)
-    expect(msg.sampleRate).toBe(48000)
-    expect(msg.channels).toBe(2)
-  })
-
   test('boxPhaseToString returns enum name and fallback for unknown values', () => {
     expect(boxPhaseToString(BoxPhase.EVT_BOX_READY)).toBe('EVT_BOX_READY')
     expect(boxPhaseToString(9999)).toBe('UNKNOWN_PHASE_9999')

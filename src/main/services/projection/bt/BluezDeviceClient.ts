@@ -118,6 +118,12 @@ export class BluezDeviceClient {
     return (await this.request(`wired-phones ${JSON.stringify(ids)}`, timeoutMs)) as ActionResponse
   }
 
+  // Where the call audio goes: the pipeline's feed and stream id, nothing to stop
+  async setScoSink(feed?: string, streamId?: number, timeoutMs = 5000): Promise<ActionResponse> {
+    const arg = feed && streamId != null ? ` ${feed} ${streamId}` : ''
+    return (await this.request(`sco-sink${arg}`, timeoutMs)) as ActionResponse
+  }
+
   // Kick every associated Wi-Fi station off the AP
   async deauthApClients(timeoutMs = 5000): Promise<ActionResponse> {
     return (await this.request('deauth-ap', timeoutMs)) as ActionResponse

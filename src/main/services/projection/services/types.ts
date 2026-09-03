@@ -90,7 +90,7 @@ export type ProjectionEvent =
   | { type: 'resolution'; payload: { width: number; height: number } }
   | {
       type: 'audio'
-      payload: { command: AudioCommand; audioType: number; decodeType: number; volume: number }
+      payload: { command: AudioCommand; audioType: number; decodeType: number }
     }
   | { type: 'audioInfo'; payload: ProjectionEventAudioInfo }
   | { type: 'command'; message: Command }

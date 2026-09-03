@@ -2,8 +2,6 @@ vi.mock('@main/helpers/vendorSessionInfo', () => ({
   decryptVendorSessionText: vi.fn(async () => 'decrypted-session')
 }))
 
-vi.mock('usb', () => ({ usb: { getDevices: vi.fn(async () => []) } }))
-
 const ORIG_DEBUG = process.env.DEBUG
 
 type DriverModule = typeof import('../dongleDriver')

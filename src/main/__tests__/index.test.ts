@@ -51,15 +51,14 @@ vi.mock('@main/services/projection/services/ProjectionService', () => ({
       applyConfigPatch: vi.fn(),
       autoStartIfNeeded: vi.fn(async () => undefined),
       onProjectionEvent: vi.fn(() => () => undefined),
-      dispatchRemoteInput: vi.fn()
+      dispatchRemoteInput: vi.fn(),
+      getDongleDriver: vi.fn(() => ({ isUp: false }))
     }
   })
 }))
 
-vi.mock('../services/usb/USBService', () => ({
-  USBService: vi.fn().mockImplementation(function () {
-    return {}
-  })
+vi.mock('../services/usb/usbIpc', () => ({
+  registerUsbIpc: vi.fn()
 }))
 
 vi.mock('@main/services/Socket', () => ({
@@ -164,7 +163,7 @@ describe('main index bootstrap', () => {
     const { ProjectionService } = await import(
       '@main/services/projection/services/ProjectionService'
     )
-    const { USBService } = await import('../services/usb/USBService')
+    const { registerUsbIpc } = await import('../services/usb/usbIpc')
     const { TelemetrySocket } = await import('@main/services/Socket')
     const { seedCustomPage, setCustomPageConfig } = await import('@main/protocol/appProtocol')
 
@@ -178,7 +177,9 @@ describe('main index bootstrap', () => {
     expect(app.whenReady as Mock).toHaveBeenCalledTimes(1)
 
     expect(ProjectionService).toHaveBeenCalledTimes(1)
-    expect(USBService).toHaveBeenCalledTimes(1)
+    expect(registerUsbIpc).toHaveBeenCalledTimes(1)
+    const getDongle = (registerUsbIpc as Mock).mock.calls[0][0] as () => unknown
+    expect(getDongle()).toBeDefined()
     expect(TelemetrySocket).toHaveBeenCalledTimes(1)
     expect((TelemetrySocket as Mock).mock.calls[0][1]).toBe(4000)
 

@@ -14,76 +14,54 @@ import {
 import { CpSession } from '../CpSession'
 import { MediaButton, TelephonyButton } from '../stack/hid'
 
-const { StackMock, stackInstances, MicMock, micInstances, panelMock, wifiMock, btMock } =
-  vi.hoisted(() => {
-    const stackInstances: Record<string, unknown>[] = []
-    const micInstances: Record<string, unknown>[] = []
+const { StackMock, stackInstances, panelMock, wifiMock, btMock } = vi.hoisted(() => {
+  const stackInstances: Record<string, unknown>[] = []
 
-    class StackMock {
-      cfg: unknown
-      activeControllerId: string | null = null
-      private readonly _l: Record<string, ((...a: unknown[]) => void)[]> = {}
-      attachSocket = vi.fn()
-      setConfigRefresh = vi.fn()
-      applyDisplayConfig = vi.fn()
-      setNightMode = vi.fn()
-      setClusterStreamActive = vi.fn()
-      setVideoActive = vi.fn()
-      setAudioActive = vi.fn()
-      setStreamVolume = vi.fn()
-      forceMainKeyframe = vi.fn()
-      forceClusterKeyframe = vi.fn()
-      sendTouches = vi.fn()
-      sendMedia = vi.fn()
-      sendKnob = vi.fn()
-      sendKnobSelect = vi.fn()
-      sendTelephony = vi.fn()
-      invokeSiri = vi.fn()
-      writeMic = vi.fn()
-      stop = vi.fn()
-      constructor(cfg: unknown) {
-        this.cfg = cfg
-        stackInstances.push(this as unknown as Record<string, unknown>)
-      }
-      on(ev: string, cb: (...a: unknown[]) => void): this {
-        ;(this._l[ev] ||= []).push(cb)
-        return this
-      }
-      fire(ev: string, ...args: unknown[]): void {
-        for (const f of this._l[ev] || []) f(...args)
-      }
+  class StackMock {
+    cfg: unknown
+    activeControllerId: string | null = null
+    private readonly _l: Record<string, ((...a: unknown[]) => void)[]> = {}
+    attachSocket = vi.fn()
+    setConfigRefresh = vi.fn()
+    applyDisplayConfig = vi.fn()
+    setNightMode = vi.fn()
+    setClusterStreamActive = vi.fn()
+    setVideoActive = vi.fn()
+    setAudioActive = vi.fn()
+    setStreamVolume = vi.fn()
+    forceMainKeyframe = vi.fn()
+    forceClusterKeyframe = vi.fn()
+    sendTouches = vi.fn()
+    sendMedia = vi.fn()
+    sendKnob = vi.fn()
+    sendKnobSelect = vi.fn()
+    sendTelephony = vi.fn()
+    invokeSiri = vi.fn()
+    writeMic = vi.fn()
+    stop = vi.fn()
+    constructor(cfg: unknown) {
+      this.cfg = cfg
+      stackInstances.push(this as unknown as Record<string, unknown>)
     }
+    on(ev: string, cb: (...a: unknown[]) => void): this {
+      ;(this._l[ev] ||= []).push(cb)
+      return this
+    }
+    fire(ev: string, ...args: unknown[]): void {
+      for (const f of this._l[ev] || []) f(...args)
+    }
+  }
 
-    class MicMock {
-      private readonly _l: Record<string, ((...a: unknown[]) => void)[]> = {}
-      start = vi.fn()
-      stop = vi.fn()
-      setDevice = vi.fn()
-      constructor() {
-        micInstances.push(this as unknown as Record<string, unknown>)
-      }
-      on(ev: string, cb: (...a: unknown[]) => void): this {
-        ;(this._l[ev] ||= []).push(cb)
-        return this
-      }
-      fire(ev: string, ...args: unknown[]): void {
-        for (const f of this._l[ev] || []) f(...args)
-      }
-    }
-
-    return {
-      StackMock,
-      stackInstances,
-      MicMock,
-      micInstances,
-      panelMock: vi.fn(),
-      wifiMock: vi.fn(),
-      btMock: vi.fn()
-    }
-  })
+  return {
+    StackMock,
+    stackInstances,
+    panelMock: vi.fn(),
+    wifiMock: vi.fn(),
+    btMock: vi.fn()
+  }
+})
 
 vi.mock('../stack/cpStack', () => ({ CpStack: StackMock }))
-vi.mock('@main/services/audio', () => ({ Microphone: MicMock }))
 vi.mock('@main/services/video/GstVideo', () => ({ panelPhysicalMm: panelMock }))
 vi.mock('../../aa/stack/system/hwaddr', () => ({
   detectBtMac: btMock,
@@ -146,7 +124,6 @@ let warnSpy: ReturnType<typeof vi.spyOn>
 
 beforeEach(() => {
   stackInstances.length = 0
-  micInstances.length = 0
   panelMock.mockReturnValue({ widthMm: 100, heightMm: 60 })
   wifiMock.mockReturnValue('WF:00:11:22:33:44')
   btMock.mockReturnValue('BT:00:11:22:33:44')
@@ -440,43 +417,12 @@ describe('CpSession stack event bridge', () => {
     expect(connected).toHaveBeenCalledTimes(1)
   })
 
-  it('emits a video message and connects on the first video frame', () => {
-    const { session, stack } = makeSession()
-    const connected = vi.fn()
-    const msgs: unknown[] = []
-    session.on('connected', connected)
-    session.on('message', (m) => msgs.push(m))
-    stack.fire('video-frame', Buffer.from([0, 0, 1]))
-    expect(connected).toHaveBeenCalledTimes(1)
-    expect(msgs).toHaveLength(1)
-  })
-
-  it('uses default dimensions for video frames when config lacks them', () => {
-    const { session, stack } = makeSession({
-      config: baseConfig({
-        projectionWidth: 0,
-        projectionHeight: 0,
-        clusterWidth: 0,
-        clusterHeight: 0
-      } as Partial<Config>)
-    })
-    const msgs: unknown[] = []
-    session.on('message', (m) => msgs.push(m))
-    stack.fire('video-frame', Buffer.from([1]))
-    stack.fire('cluster-video-frame', Buffer.from([2]))
-    expect(msgs).toHaveLength(2)
-  })
-
-  it('bridges cluster codec and frame events', () => {
+  it('bridges the cluster codec event', () => {
     const { session, stack } = makeSession()
     const codec = vi.fn()
-    const msgs: unknown[] = []
     session.on('cluster-video-codec', codec)
-    session.on('message', (m) => msgs.push(m))
     stack.fire('cluster-video-codec', 'h265')
-    stack.fire('cluster-video-frame', Buffer.from([9]))
     expect(codec).toHaveBeenCalledWith('h265')
-    expect(msgs).toHaveLength(1)
   })
 
   it('ends the session exactly once on session-ended', () => {
@@ -721,15 +667,6 @@ describe('CpSession branch completion', () => {
     ;(socket as unknown as { remoteAddress: string | undefined }).remoteAddress = undefined
     const { session } = makeSession({ socket })
     expect(session.peerIp).toBe('')
-  })
-
-  it('does not re-announce connected on a later video frame', () => {
-    const { session, stack } = makeSession()
-    const connected = vi.fn()
-    session.on('connected', connected)
-    stack.fire('video-frame', Buffer.from([1]))
-    stack.fire('video-frame', Buffer.from([2]))
-    expect(connected).toHaveBeenCalledTimes(1)
   })
 
   it('drops mistyped power and cellular fields', () => {

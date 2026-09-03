@@ -10,7 +10,9 @@ use std::sync::Arc;
 
 use livi_audio_stream::{AudioSink, Codec as AudioCodec};
 use livi_audio_uplink::UplinkCodec;
-use livi_host_proto::{Framer, feed as feedproto};
+use livi_host_proto::{
+    CLUSTER_PLANE_MAX, CLUSTER_PLANE_MIN, CLUSTER_RECV_ID, Framer, feed as feedproto, feeder_of,
+};
 use livi_screen_stream::ScreenSink;
 use livi_video_fanout::Fanout;
 use livi_video_nal::CpCodec;
@@ -20,11 +22,6 @@ pub mod feed;
 pub mod gst;
 #[cfg(target_os = "linux")]
 pub mod process;
-
-/// The receiver every cluster plane is fed from.
-const CLUSTER_RECV_ID: u32 = 0x7a00_0010;
-const CLUSTER_PLANE_MIN: u32 = 0x7a00_0011;
-const CLUSTER_PLANE_MAX: u32 = 0x7a00_0013;
 
 const OP_CREATE: u8 = 1;
 const OP_DATA: u8 = 2;
@@ -38,6 +35,8 @@ const OP_AUDIO_VOLUME: u8 = 9;
 const OP_AUDIO_STOP: u8 = 10;
 const OP_MIC_OPEN: u8 = 11;
 const OP_MIC_STOP: u8 = 12;
+const OP_TAP_OPEN: u8 = 20;
+const OP_TAP_STOP: u8 = 21;
 const OP_AUDIO_ACTIVE: u8 = 13;
 const OP_AUDIO_DATA: u8 = 14;
 const OP_VISUALIZER: u8 = 15;
@@ -50,10 +49,6 @@ const REPLY_AUDIO_PORTS: u8 = 4;
 const REPLY_AUDIO_STARTED: u8 = 5;
 const REPLY_VISUALIZER: u8 = 6;
 const REPLY_FEED: u8 = 7;
-
-fn is_cluster_plane(id: u32) -> bool {
-    (CLUSTER_PLANE_MIN..=CLUSTER_PLANE_MAX).contains(&id)
-}
 
 /// One audio stream from its RTP packets to the sink.
 pub trait Speaker: Send + Sync + 'static {
@@ -95,6 +90,14 @@ pub struct UplinkConfig {
     pub device: Option<String>,
 }
 
+/// A microphone tap: raw samples of this format go to whoever listens on the path.
+pub struct TapConfig {
+    pub sample_rate: u32,
+    pub channels: u8,
+    pub device: Option<String>,
+    pub path: String,
+}
+
 /// One decoding pipeline.
 pub trait Plane: 'static {
     fn start(&self);
@@ -127,6 +130,9 @@ pub trait Outside: 'static {
     fn create_speaker(&self, cfg: &AudioConfig) -> Option<Self::Speaker>;
 
     fn open_uplink(&self, cfg: UplinkConfig) -> Option<Self::Uplink>;
+    /// The capture that hands its samples to a socket, running for as long as it is held.
+    type Tap;
+    fn open_tap(&self, cfg: TapConfig) -> Option<Self::Tap>;
 
     /// Binds the audio ports and answers with data and control port.
     fn listen_audio(
@@ -336,6 +342,7 @@ pub struct Host<O: Outside> {
     receivers: HashMap<u32, Receiver<O::Ears>>,
     audio: Streams<O::Speaker, O::AudioEars>,
     uplinks: HashMap<u32, O::Uplink>,
+    taps: HashMap<u32, O::Tap>,
     feed_fans: FeedFans,
     helper_feed: Option<O::FeedEars>,
     /// A window wants the pre-fader tap.
@@ -352,6 +359,7 @@ impl<O: Outside> Host<O> {
             receivers: HashMap::new(),
             audio: Rc::new(RefCell::new(HashMap::new())),
             uplinks: HashMap::new(),
+            taps: HashMap::new(),
             feed_fans: Rc::new(RefCell::new(HashMap::new())),
             helper_feed: None,
             visualizer_enabled: false,
@@ -407,6 +415,10 @@ impl<O: Outside> Host<O> {
             OP_MIC_STOP => {
                 self.uplinks.remove(&id);
             }
+            OP_TAP_OPEN => self.open_tap(id, rest),
+            OP_TAP_STOP => {
+                self.taps.remove(&id);
+            }
             OP_AUDIO_DATA => {
                 if let Some(a) = self.audio.borrow().get(&id)
                     && a.active.load(Ordering::Relaxed)
@@ -442,7 +454,7 @@ impl<O: Outside> Host<O> {
         };
         plane.start();
 
-        let feeder = if is_cluster_plane(id) { CLUSTER_RECV_ID } else { id };
+        let feeder = feeder_of(id);
         if let Some(state) = self.active_feeder(feeder) {
             for frame in state.borrow().fan.cached() {
                 plane.push(frame);
@@ -668,6 +680,34 @@ impl<O: Outside> Host<O> {
             None => eprintln!("livi: open microphone 0x{id:x} FAILED"),
         }
     }
+    /// [rate u32][channels u8][device length u8][device][path]
+    fn open_tap(&mut self, id: u32, rest: &[u8]) {
+        const FIXED: usize = 6;
+        if rest.len() < FIXED {
+            return;
+        }
+        let device_len = usize::from(rest[FIXED - 1]);
+        if rest.len() < FIXED + device_len {
+            return;
+        }
+        let (device, path) = rest[FIXED..].split_at(device_len);
+        let Ok(path) = core::str::from_utf8(path) else { return };
+        let cfg = TapConfig {
+            sample_rate: u32::from_le_bytes(rest[0..4].try_into().unwrap()),
+            channels: rest[4],
+            device: match core::str::from_utf8(device) {
+                Ok("") | Err(_) => None,
+                Ok(name) => Some(name.to_owned()),
+            },
+            path: path.to_owned(),
+        };
+        match self.outside.open_tap(cfg) {
+            Some(tap) => {
+                self.taps.insert(id, tap);
+            }
+            None => eprintln!("livi: open microphone tap 0x{id:x} FAILED"),
+        }
+    }
 
     /// Toggles the tap on every audio stream.
     fn set_visualizer_enabled(&mut self, on: bool) {
@@ -824,6 +864,15 @@ mod tests {
         }
     }
 
+    /// A microphone tap that says when it was dropped.
+    struct FakeTap(Rc<RefCell<usize>>);
+
+    impl Drop for FakeTap {
+        fn drop(&mut self) {
+            *self.0.borrow_mut() += 1;
+        }
+    }
+
     impl Speaker for FakeSpeaker {
         fn push_rtp(&self, rtp: &[u8]) {
             self.0.lock().unwrap().pushed.push(rtp.to_vec());
@@ -866,6 +915,9 @@ mod tests {
         refuse_plane: bool,
         uplinks: Vec<OpenedUplink>,
         uplinks_dropped: Rc<RefCell<usize>>,
+        taps: Vec<(u32, u8, Option<String>, String)>,
+        taps_dropped: Rc<RefCell<usize>>,
+        refuse_tap: bool,
         refuse_speaker: bool,
         refuse_uplink: bool,
         deaf: bool,
@@ -889,6 +941,16 @@ mod tests {
         type Speaker = FakeSpeaker;
         type AudioEars = SharedAudioSink;
         type Uplink = FakeUplink;
+        type Tap = FakeTap;
+
+        fn open_tap(&self, cfg: TapConfig) -> Option<FakeTap> {
+            if self.0.borrow().refuse_tap {
+                return None;
+            }
+            let mut w = self.0.borrow_mut();
+            w.taps.push((cfg.sample_rate, cfg.channels, cfg.device, cfg.path));
+            Some(FakeTap(w.taps_dropped.clone()))
+        }
 
         fn create_plane(&self, codec: &str, codec_data: &[u8]) -> Option<FakePlane> {
             if self.0.borrow().refuse_plane {
@@ -1914,5 +1976,34 @@ mod tests {
         assert!(first[0].contains("recv 0x7a000001: in=1 dropped=1 pushed=0"));
         assert!(first[0].ends_with("awaiting_kf=1 active=1"));
         assert!(f.host.take_stats().is_empty());
+    }
+    fn tap_body(rate: u32, channels: u8, device: &str, path: &str) -> Vec<u8> {
+        let mut b = rate.to_le_bytes().to_vec();
+        b.push(channels);
+        b.push(device.len() as u8);
+        b.extend_from_slice(device.as_bytes());
+        b.extend_from_slice(path.as_bytes());
+        b
+    }
+
+    #[test]
+    fn a_tap_message_opens_a_capture_to_the_path_and_stop_drops_it() {
+        let mut f = Fixture::new();
+        f.send(OP_TAP_OPEN, 0x7c01, &tap_body(16000, 1, "mic0", "/tmp/aa.mic"));
+        assert_eq!(
+            f.world.0.borrow().taps,
+            vec![(16000, 1, Some("mic0".to_owned()), "/tmp/aa.mic".to_owned())]
+        );
+
+        f.send(OP_TAP_STOP, 0x7c01, &[]);
+
+        assert_eq!(*f.world.0.borrow().taps_dropped.borrow(), 1);
+    }
+
+    #[test]
+    fn a_tap_message_short_of_its_device_opens_nothing() {
+        let mut f = Fixture::new();
+        f.send(OP_TAP_OPEN, 0x7c01, &[0, 0, 0, 0, 1, 9]);
+        assert!(f.world.0.borrow().taps.is_empty());
     }
 }

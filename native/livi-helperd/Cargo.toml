@@ -8,6 +8,7 @@ members = [
     "crates/iap2-usbmux",
     "crates/iap2-wired",
     "crates/livi-aa",
+    "crates/livi-dongle",
     "bin/mfi-probe",
     "bin/livi-helperd",
     "bin/muxd-probe",

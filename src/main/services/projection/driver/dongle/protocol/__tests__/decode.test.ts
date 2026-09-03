@@ -3,6 +3,8 @@ import {
   BluetoothAddress,
   BluetoothDeviceName,
   BluetoothPairedList,
+  BluetoothPeerConnected,
+  BluetoothPeerConnecting,
   BluetoothPIN,
   BoxInfo,
   BoxPhase,
@@ -10,6 +12,7 @@ import {
   BoxUpdateState,
   BoxUpdateStatus,
   Command,
+  DongleReady,
   GnssData,
   HiCarLink,
   ManufacturerInfo,
@@ -22,15 +25,15 @@ import {
   PhoneType,
   Plugged,
   SoftwareVersion,
+  Unplugged,
   VendorSessionInfo,
-  VideoData,
   WifiDeviceName
 } from '@projection/messages'
 import { decodeMessage, parseMetaMessage, parseNaviInfoFromBuffer } from '../decode.js'
-import { MessageHeader, MessageType } from '../wire.js'
+import { MessageType } from '../wire.js'
 
 function decode(type: MessageType, data: Buffer) {
-  return decodeMessage(new MessageHeader(data.length, type), data)
+  return decodeMessage(type, data)
 }
 
 function metaPayload(innerType: number, body: Buffer): Buffer {
@@ -219,6 +222,15 @@ describe('dongle protocol decode', () => {
     expect(msg.payload).toEqual({ type: MediaType.ControlAutoplayTrigger })
   })
 
+  test('decodeMessage routes MetaData through parseMetaMessage', () => {
+    const body = Buffer.from(JSON.stringify({ MediaSongName: 'x' }), 'utf8')
+    const msg = decode(
+      MessageType.MetaData,
+      metaPayload(1, Buffer.concat([body, Buffer.from([0])]))
+    )
+    expect(msg).not.toBeNull()
+  })
+
   test('parseMetaMessage returns null for unknown payloads', () => {
     const infoSpy = vi.spyOn(console, 'info').mockImplementation(function () {})
     const body = Buffer.from('mystery\0', 'utf8')
@@ -321,95 +333,28 @@ describe('dongle protocol decode', () => {
     expect(msg.wifi).toBe(1)
   })
 
-  test('AudioData without extra payload only reads header fields', () => {
-    const buf = Buffer.alloc(12)
-    buf.writeUInt32LE(5, 0)
-    buf.writeFloatLE(0.75, 4)
-    buf.writeUInt32LE(9, 8)
-
-    const msg = decode(MessageType.AudioData, buf) as AudioData
-
-    expect(msg.decodeType).toBe(5)
-    expect(msg.volume).toBeCloseTo(0.75)
-    expect(msg.audioType).toBe(9)
-    expect(msg.command).toBeUndefined()
-    expect(msg.volumeDuration).toBeUndefined()
-    expect(msg.data).toBeUndefined()
-  })
-
-  test('AudioData reads 1-byte command payload', () => {
+  test('AudioData carries a one byte command', () => {
     const buf = Buffer.alloc(13)
     buf.writeUInt32LE(5, 0)
-    buf.writeFloatLE(1.0, 4)
+    buf.writeFloatLE(0.5, 4)
     buf.writeUInt32LE(2, 8)
-    buf.writeUInt8(7, 12)
-
+    buf.writeUInt8(4, 12)
     const msg = decode(MessageType.AudioData, buf) as AudioData
-
-    expect(msg.command).toBe(7)
-    expect(msg.data).toBeUndefined()
+    expect(msg).toBeInstanceOf(AudioData)
+    expect(msg.decodeType).toBe(5)
+    expect(msg.audioType).toBe(2)
+    expect(msg.command).toBe(4)
   })
 
-  test('AudioData reads 4-byte volumeDuration payload', () => {
-    const buf = Buffer.alloc(16)
-    buf.writeUInt32LE(5, 0)
-    buf.writeFloatLE(1.0, 4)
-    buf.writeUInt32LE(2, 8)
-    buf.writeFloatLE(2.5, 12)
-
-    const msg = decode(MessageType.AudioData, buf) as AudioData
-
-    expect(msg.volumeDuration).toBeCloseTo(2.5)
-    expect(msg.command).toBeUndefined()
-  })
-
-  test('AudioData reads pcm data payload into Int16Array', () => {
-    const pcm = new Int16Array([100, -200, 300])
+  test('AudioData without a command is nothing for this side', () => {
     const head = Buffer.alloc(12)
     head.writeUInt32LE(5, 0)
-    head.writeFloatLE(1.0, 4)
     head.writeUInt32LE(2, 8)
-
-    const msg = decode(
-      MessageType.AudioData,
-      Buffer.concat([head, Buffer.from(pcm.buffer)])
-    ) as AudioData
-
-    expect(Array.from(msg.data ?? [])).toEqual([100, -200, 300])
-  })
-
-  test('AudioData reads non-command non-duration extra payload as Int16Array', () => {
-    const head = Buffer.alloc(12)
-    head.writeUInt32LE(5, 0)
-    head.writeFloatLE(1.0, 4)
-    head.writeUInt32LE(2, 8)
-
-    const pcmBytes = Buffer.from([0x34, 0x12]) // ein Int16-Wert = 0x1234
-    const msg = decode(MessageType.AudioData, Buffer.concat([head, pcmBytes])) as AudioData
-
-    expect(msg.command).toBeUndefined()
-    expect(msg.volumeDuration).toBeUndefined()
-    expect(msg.data).toBeInstanceOf(Int16Array)
-    expect(Array.from(msg.data ?? [])).toEqual([0x1234])
-  })
-
-  test('VideoData reads dimensions, flags and binary payload', () => {
-    const buf = Buffer.alloc(24)
-    buf.writeUInt32LE(800, 0)
-    buf.writeUInt32LE(480, 4)
-    buf.writeUInt32LE(1, 8)
-    buf.writeUInt32LE(4, 12)
-    buf.writeUInt32LE(99, 16)
-    buf.writeUInt32LE(0xaabbccdd, 20)
-
-    const msg = decode(MessageType.VideoData, buf) as VideoData
-
-    expect(msg.width).toBe(800)
-    expect(msg.height).toBe(480)
-    expect(msg.flags).toBe(1)
-    expect(msg.length).toBe(4)
-    expect(msg.unknown).toBe(99)
-    expect(msg.data.length).toBe(4)
+    expect(decode(MessageType.AudioData, head)).toBeNull()
+    const ramp = Buffer.concat([head, Buffer.alloc(4)])
+    expect(decode(MessageType.AudioData, ramp)).toBeNull()
+    const pcm = Buffer.concat([head, Buffer.from([1, 0, 2, 0, 3, 0])])
+    expect(decode(MessageType.AudioData, pcm)).toBeNull()
   })
 
   test('Opened reads open payload fields', () => {
@@ -488,5 +433,35 @@ describe('dongle protocol decode', () => {
 
     expect(msg.status).toBe(BoxUpdateStatus.BoxUpdateSuccess)
     expect(msg.statusText).toBe('EVT_BOX_UPDATE_SUCCESS')
+  })
+  test('peer bluetooth addresses become connecting and connected events', () => {
+    const connecting = decode(MessageType.PeerBluetoothAddress, Buffer.from('AA:BB', 'ascii'))
+    const connected = decode(MessageType.PeerBluetoothAddressAlt, Buffer.from('CC:DD', 'ascii'))
+    expect(connecting).toBeInstanceOf(BluetoothPeerConnecting)
+    expect((connecting as BluetoothPeerConnecting).address).toBe('AA:BB')
+    expect(connected).toBeInstanceOf(BluetoothPeerConnected)
+    expect((connected as BluetoothPeerConnected).address).toBe('CC:DD')
+  })
+
+  test('an unknown type with a payload is logged and returns null', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(decode(0x7777 as MessageType, Buffer.from('hello', 'ascii'))).toBeNull()
+    expect(decode(0x7777 as MessageType, Buffer.from([0, 0, 0]))).toBeNull()
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  test('a payloadless Open is a DongleReady and Unplugged an Unplugged', () => {
+    expect(decodeMessage(MessageType.Open)).toBeInstanceOf(DongleReady)
+    expect(decodeMessage(MessageType.Unplugged)).toBeInstanceOf(Unplugged)
+  })
+
+  test('the payloadless UI hints and unknown types are ignored', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(decodeMessage(MessageType.UiHidePeerInfo)).toBeNull()
+    expect(decodeMessage(MessageType.UiBringToForeground)).toBeNull()
+    expect(decodeMessage(0x7777 as MessageType)).toBeNull()
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
   })
 })

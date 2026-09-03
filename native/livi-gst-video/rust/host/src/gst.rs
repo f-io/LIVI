@@ -1,13 +1,16 @@
 //! What the host reaches for when it runs for real: GStreamer pipelines and a
 //! listening socket for the phone's screen stream.
 
-use livi_audio_player::uplink::{Uplink, UplinkConfig as UplinkPipeline};
+use livi_audio_player::uplink::{SocketTap, Uplink, UplinkConfig as UplinkPipeline};
 use livi_audio_player::{Config as AudioPipeline, Player as AudioPipelinePlayer};
 use livi_audio_stream::AudioSink;
 use livi_screen_stream::ScreenSink;
 use livi_video_player::Player;
 
-use crate::{AudioConfig, MediaSink, Outside, Plane, Speaker, UplinkConfig};
+use crate::{AudioConfig, MediaSink, Outside, Plane, Speaker, TapConfig, UplinkConfig};
+
+/// A running microphone tap, its samples go to the socket for as long as it is held.
+pub struct Tap(#[allow(dead_code)] SocketTap);
 
 impl Plane for Player {
     fn start(&self) {
@@ -78,6 +81,11 @@ impl Outside for Gst {
     type Speaker = AudioPipelinePlayer;
     type AudioEars = AudioEars;
     type Uplink = Uplink;
+    type Tap = Tap;
+
+    fn open_tap(&self, cfg: TapConfig) -> Option<Tap> {
+        SocketTap::open(&cfg.path, cfg.sample_rate, cfg.channels, cfg.device.as_deref(), "tap").map(Tap)
+    }
 
     fn create_plane(&self, codec: &str, codec_data: &[u8]) -> Option<Player> {
         // the window comes from the sink, so the player needs no handle

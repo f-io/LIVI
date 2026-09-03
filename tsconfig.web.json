@@ -14,7 +14,7 @@
     "target": "es2024",
     "module": "es2022",
     "lib": ["dom", "dom.iterable", "es2024", "webworker"],
-    "types": ["w3c-web-usb", "vite/client"],
+    "types": ["vite/client"],
     "allowJs": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,

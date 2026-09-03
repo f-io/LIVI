@@ -8,8 +8,10 @@ const { MockDongleDriver, MockAaManager, MockCpManager, lastManager, lastCpManag
     class MockDongleDriver extends EventEmitter {
       send = vi.fn(async () => true)
       close = vi.fn(async () => undefined)
-      initialise = vi.fn(async () => undefined)
       start = vi.fn(async () => undefined)
+      attachHelper = vi.fn()
+      detachHelper = vi.fn()
+      setMediaSink = vi.fn()
     }
 
     const lastManager: { instance: unknown } = { instance: null }
@@ -17,10 +19,10 @@ const { MockDongleDriver, MockAaManager, MockCpManager, lastManager, lastCpManag
 
     class MockAaManager {
       opts: { onSpawn: (s: unknown) => void }
-      startWireless = vi.fn()
+      attachHelper = vi.fn()
+      detachHelper = vi.fn()
       close = vi.fn(async () => undefined)
       stopWireless = vi.fn()
-      bringUpWired = vi.fn(async () => true)
       setHevcSupported = vi.fn()
       setVp9Supported = vi.fn()
       setAv1Supported = vi.fn()
@@ -87,7 +89,6 @@ type Spies = {
   onCpHelperConnect: Mock
   onCpCreated: Mock
   onCpReleased: Mock
-  onPhoneReenumerate: Mock
 }
 
 function buildDeps(over: Partial<DriverManagerDeps> = {}): {
@@ -116,7 +117,6 @@ function buildDeps(over: Partial<DriverManagerDeps> = {}): {
   const onCpHelperConnect = vi.fn()
   const onCpCreated = vi.fn()
   const onCpReleased = vi.fn()
-  const onPhoneReenumerate = vi.fn()
   const deps: DriverManagerDeps = {
     handlers,
     onAaConnected,
@@ -143,7 +143,6 @@ function buildDeps(over: Partial<DriverManagerDeps> = {}): {
       av1Supported: false,
       initialNightMode: undefined
     }),
-    onPhoneReenumerate,
     getConfig: () => ({}) as never,
     ...over
   }
@@ -162,8 +161,7 @@ function buildDeps(over: Partial<DriverManagerDeps> = {}): {
       onCpHelperPresence,
       onCpHelperConnect,
       onCpCreated,
-      onCpReleased,
-      onPhoneReenumerate
+      onCpReleased
     }
   }
 }
@@ -224,20 +222,28 @@ describe('ProjectionDriverManager', () => {
     expect(mgr.ensureAaManager()).toBe(m)
   })
 
-  test('startAaWireless / stopAaWireless / bringUpAaWired delegate to the manager', async () => {
+  test('attachHelper / detachHelper / stopAaWireless delegate to the manager', () => {
     const { deps } = buildDeps()
     const mgr = new ProjectionDriverManager(deps)
 
-    mgr.startAaWireless()
+    const helper = { subscribe: vi.fn(() => ({ close: vi.fn() })) }
+    mgr.attachHelper(helper)
     const m = lastManager.instance as unknown as InstanceType<typeof MockAaManager>
-    expect(m.startWireless).toHaveBeenCalled()
+    expect(m.attachHelper).toHaveBeenCalledWith(helper)
 
     mgr.stopAaWireless()
     expect(m.stopWireless).toHaveBeenCalled()
 
-    const device = {} as USBDevice
-    await mgr.bringUpAaWired(device)
-    expect(m.bringUpWired).toHaveBeenCalledWith(device)
+    mgr.detachHelper()
+    expect(m.detachHelper).toHaveBeenCalled()
+  })
+
+  test('detachHelper and stopAaWireless are no-ops before a manager exists', () => {
+    const { deps } = buildDeps()
+    const mgr = new ProjectionDriverManager(deps)
+    mgr.detachHelper()
+    mgr.stopAaWireless()
+    expect(mgr.getAaManager()).toBeNull()
   })
 
   test('capability setters forward to the live manager', () => {
@@ -257,16 +263,6 @@ describe('ProjectionDriverManager', () => {
     expect(m.setAv1Supported).toHaveBeenLastCalledWith(true)
     expect(m.setInitialNightMode).toHaveBeenLastCalledWith(true)
     expect(m.setClusterStreamActive).toHaveBeenLastCalledWith(false)
-  })
-
-  test('AA manager is constructed with the onWillReenumerate forwarder', () => {
-    const { deps, spies } = buildDeps()
-    const mgr = new ProjectionDriverManager(deps)
-    mgr.ensureAaManager()
-    const opts = (lastManager.instance as { opts: { onWillReenumerate?: (ms: number) => void } })
-      .opts
-    opts.onWillReenumerate?.(1234)
-    expect(spies.onPhoneReenumerate).toHaveBeenCalledWith(1234)
   })
 
   test('a spawned session fires onAaCreated and forwards connected/presence/disconnected', () => {

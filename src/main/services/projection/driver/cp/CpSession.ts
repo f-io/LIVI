@@ -30,8 +30,7 @@ import {
   MediaData,
   MediaType,
   NavigationData,
-  NavigationMetaType,
-  VideoData
+  NavigationMetaType
 } from '../../messages/readable'
 import {
   type SendableMessage,
@@ -277,23 +276,7 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
         this.emit('connected')
       }
     })
-    stack.on('video-frame', (nal: Buffer) => {
-      const cfg = this._getConfig()
-      const w = cfg.projectionWidth || 1920
-      const h = cfg.projectionHeight || 1080
-      if (!this._connected) {
-        this._connected = true
-        this.emit('connected')
-      }
-      this.emit('message', new VideoData({ width: w, height: h, data: nal }))
-    })
     stack.on('cluster-video-codec', (codec: string) => this.emit('cluster-video-codec', codec))
-    stack.on('cluster-video-frame', (nal: Buffer) => {
-      const cfg = this._getConfig()
-      const w = cfg.clusterWidth || 1280
-      const h = cfg.clusterHeight || 720
-      this.emit('message', new VideoData({ width: w, height: h, data: nal, cluster: true }))
-    })
   }
 
   /**

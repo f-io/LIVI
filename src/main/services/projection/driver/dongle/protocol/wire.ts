@@ -1,5 +1,4 @@
-/** CarlinKit dongle wire framing: 16-byte header with magic, length and type. */
-
+/** CarlinKit message types. The helper frames them, this side only sees type and payload. */
 export enum MessageType {
   Open = 0x01,
   Plugged = 0x02,
@@ -49,48 +48,4 @@ export enum MessageType {
   EnableCrypt = 0xf0,
   DebugTrace = 0xff,
   DuckAudio = 0x1000
-}
-
-export class HeaderBuildError extends Error {}
-
-export class MessageHeader {
-  length: number
-  type: MessageType
-
-  public constructor(length: number, type: MessageType) {
-    this.length = length
-    this.type = type
-  }
-
-  static fromBuffer(data: Buffer): MessageHeader {
-    if (data.length !== 16) {
-      throw new HeaderBuildError(`Invalid buffer size - Expecting 16, got ${data.length}`)
-    }
-    const magic = data.readUInt32LE(0)
-    if (magic !== MessageHeader.magic) {
-      throw new HeaderBuildError(`Invalid magic number, received ${magic}`)
-    }
-    const length = data.readUInt32LE(4)
-    const msgType: MessageType = data.readUInt32LE(8)
-    const typeCheck = data.readUInt32LE(12)
-    if (typeCheck != ((msgType ^ -1) & 0xffffffff) >>> 0) {
-      throw new HeaderBuildError(`Invalid type check, received ${typeCheck}`)
-    }
-    return new MessageHeader(length, msgType)
-  }
-
-  static asBuffer(messageType: MessageType, byteLength: number): Buffer {
-    const dataLen = Buffer.alloc(4)
-    dataLen.writeUInt32LE(byteLength)
-    const type = Buffer.alloc(4)
-    type.writeUInt32LE(messageType)
-    const typeCheck = Buffer.alloc(4)
-    typeCheck.writeUInt32LE(((messageType ^ -1) & 0xffffffff) >>> 0)
-    const magicNumber = Buffer.alloc(4)
-    magicNumber.writeUInt32LE(MessageHeader.magic)
-    return Buffer.concat([magicNumber, dataLen, type, typeCheck])
-  }
-
-  static dataLength = 16
-  static magic = 0x55aa55aa
 }

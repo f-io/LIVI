@@ -28,45 +28,22 @@ import {
   SoftwareVersion,
   Unplugged,
   VendorSessionInfo,
-  VideoData,
   WifiDeviceName
 } from '@projection/messages'
 import type { NaviInfo } from '@shared/types/NavigationTypes'
-import { MessageHeader, MessageType } from './wire.js'
+import { MessageType } from './wire.js'
 
 function ascii(data: Buffer): string {
   return data.toString('ascii')
 }
 
-function decodeAudioData(data: Buffer): AudioData {
-  const decodeType = data.readUInt32LE(0)
-  const volume = data.readFloatLE(4)
-  const audioType = data.readUInt32LE(8)
-
-  const payloadBytes = data.length - 12
-  if (payloadBytes === 1) {
-    return new AudioData({ decodeType, audioType, volume, command: data.readUInt8(12) })
-  }
-  if (payloadBytes === 4) {
-    return new AudioData({ decodeType, audioType, volume, volumeDuration: data.readFloatLE(12) })
-  }
-  if (payloadBytes > 0) {
-    const byteOffset = data.byteOffset + 12
-    const sampleCount = payloadBytes / Int16Array.BYTES_PER_ELEMENT
-    const samples = new Int16Array(data.buffer, byteOffset, sampleCount)
-    return new AudioData({ decodeType, audioType, volume, data: samples })
-  }
-  return new AudioData({ decodeType, audioType, volume })
-}
-
-function decodeVideoData(data: Buffer, cluster: boolean): VideoData {
-  return new VideoData({
-    width: data.readUInt32LE(0),
-    height: data.readUInt32LE(4),
-    flags: data.readUInt32LE(8),
-    unknown: data.readUInt32LE(16),
-    data: data.subarray(20),
-    cluster
+// The helper keeps the samples, only the one byte commands reach this side.
+function decodeAudioData(data: Buffer): AudioData | null {
+  if (data.length !== 13) return null
+  return new AudioData({
+    decodeType: data.readUInt32LE(0),
+    audioType: data.readUInt32LE(8),
+    command: data.readUInt8(12)
   })
 }
 
@@ -168,17 +145,11 @@ export function parseMetaMessage(data: Buffer): MediaData | NavigationData | nul
   return null
 }
 
-export function decodeMessage(header: MessageHeader, data?: Buffer): Message | null {
-  const { type } = header
-
+export function decodeMessage(type: MessageType, data?: Buffer): Message | null {
   if (data) {
     switch (type) {
       case MessageType.AudioData:
         return decodeAudioData(data)
-      case MessageType.VideoData:
-        return decodeVideoData(data, false)
-      case MessageType.ClusterVideoData:
-        return decodeVideoData(data, true)
       case MessageType.MetaData:
         return parseMetaMessage(data)
       case MessageType.GnssData:
@@ -238,7 +209,7 @@ export function decodeMessage(header: MessageHeader, data?: Buffer): Message | n
       default: {
         const head = data.subarray(0, Math.min(64, data.length))
         console.warn(
-          `[PROJECTION][MSG] Unknown type=0x${type.toString(16)} (${type}) len=${header.length} dataLen=${data.length} head=${head.toString('hex')}`
+          `[PROJECTION][MSG] Unknown type=0x${type.toString(16)} (${type}) len=${data.length} head=${head.toString('hex')}`
         )
         const text = data.toString('utf8').replace(/\0+$/g, '').trim()
         if (text.length > 0) {
@@ -262,7 +233,7 @@ export function decodeMessage(header: MessageHeader, data?: Buffer): Message | n
       return null
     default: {
       console.warn(
-        `[PROJECTION][MSG] Unknown type without payload=0x${type.toString(16)} (${type}) len=${header.length}`
+        `[PROJECTION][MSG] Unknown type without payload=0x${type.toString(16)} (${type})`
       )
       return null
     }

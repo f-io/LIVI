@@ -9,6 +9,11 @@ edition.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
+livi-audio-player = { path = "../audioplayer" }
+livi-audio-stream = { path = "../audio" }
+livi-host-proto = { path = "../hostproto" }
+livi-video-fanout = { path = "../fanout" }
+livi-video-nal = { path = "../nal" }
 livi-video-player = { path = "../player" }
 napi = { version = "2", default-features = false, features = ["napi8"] }
 napi-derive = "2"

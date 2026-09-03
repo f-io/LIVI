@@ -24,7 +24,6 @@ files:
 
 asarUnpack:
   - resources/**
-  - node_modules/usb/**
   - node_modules/livi-gst-video/**
   - node_modules/livi-crypto/**
 
@@ -87,6 +86,8 @@ mac:
         - '**/*'
         - '!**/*.a'
         - '!share/**'
+    - from: native/livi-helperd/target/release/livi-helperd
+      to: driver/livi-helperd
 
 dmg:
   artifactName: ${name}-${version}-macos-${arch}.${ext}

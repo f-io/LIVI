@@ -221,6 +221,10 @@ impl Player {
         let _ = self.pipeline.set_state(gst::State::Playing);
     }
 
+    pub fn stop(&self) {
+        let _ = self.pipeline.set_state(gst::State::Null);
+    }
+
     /// Feeds one decrypted RTP packet. False when the source no longer takes it.
     pub fn push_rtp(&self, rtp: &[u8]) -> bool {
         let packet = match self.codec {

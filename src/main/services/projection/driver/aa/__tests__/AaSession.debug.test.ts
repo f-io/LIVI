@@ -2,9 +2,8 @@ import { EventEmitter } from 'node:events'
 
 class MockAAStack extends EventEmitter {
   cfg: unknown
-  start = vi.fn()
   stop = vi.fn()
-  attachSocket = vi.fn()
+  attachLink = vi.fn()
   setConfigRefresh = vi.fn()
   setClusterStreamActive = vi.fn()
   applyDisplayConfig = vi.fn()
@@ -23,7 +22,13 @@ class MockAAStack extends EventEmitter {
   }
 }
 
-class MockSocket extends EventEmitter {
+/** The helper's session link, as far as the mocked stack needs it. */
+class FakeLink extends EventEmitter {
+  readonly peer = '10.0.0.2'
+  closed = false
+  send = vi.fn()
+  control = vi.fn()
+  end = vi.fn()
   destroy = vi.fn()
 }
 
@@ -40,20 +45,6 @@ vi.mock('../stack/index', async () => {
     })
   }
 })
-
-vi.mock('@main/services/audio', () => ({
-  Microphone: vi.fn().mockImplementation(function () {
-    const m = new EventEmitter() as EventEmitter & {
-      setDevice?: unknown
-      start?: unknown
-      stop?: unknown
-    }
-    m.setDevice = vi.fn()
-    m.start = vi.fn()
-    m.stop = vi.fn()
-    return m
-  })
-}))
 
 const ORIG_DEBUG = process.env.DEBUG
 
@@ -115,7 +106,7 @@ const baseCfg = () =>
 
 function make() {
   return new AaSession({
-    transport: new MockSocket() as never,
+    transport: new FakeLink() as never,
     getConfig: () => baseCfg(),
     wired: false,
     seed: {

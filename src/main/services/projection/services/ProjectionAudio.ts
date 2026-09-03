@@ -1,48 +1,37 @@
 import { DEBUG } from '@main/constants'
-import { HostAudioOutput, Microphone } from '@main/services/audio'
+import { HostAudioOutput } from '@main/services/audio'
 import { gstHost } from '@main/services/video/gstHost'
 import type { Config } from '@shared/types'
 import { AudioCommand } from '@shared/types/ProjectionEnums'
-import { AudioData } from '../messages'
+import type { AudioData } from '../messages'
 import type { ProjectionEvent } from './types'
 
 export type PlayerKey = string
 export type LogicalStreamKey = 'music' | 'nav' | 'voiceAssistant' | 'call'
-
 type VolumeState = Record<LogicalStreamKey, number>
-
-type MusicFadeState = {
-  current: number
-  target: number
-  remainingSamples: number
-}
-
 type SendProjectionEvent = (payload: ProjectionEvent) => void
-
 type SendChunked = (
   channel: string,
   data: ArrayBuffer,
   chunkSize: number,
   extra?: Record<string, unknown>
 ) => void
+type HostOutputListener = (audioType: number, streamId: number, tag?: string) => void
+type PrimedOutput = { audioType: number; sampleRate: number; channels: number; tag?: string }
+type HostOutput = { audioType: number; streamId: number; tag?: string }
 
-type SendMicPcm = (pcm: Int16Array, decodeType: number) => void
-
+/**
+ * The host streams the drivers feed, their levels, and the attention hints the
+ * renderer shows. No samples pass through here.
+ */
 export class ProjectionAudio {
-  // One stream per (sampleRate, channels). The OS audio sink (PulseAudio
-  // on Linux, CoreAudio on macOS) mixes all open streams automatically
-  private audioPlayers = new Map<PlayerKey, HostAudioOutput>()
-  private lastCallPlaybackLog: {
-    sampleRate?: number
-    channels?: number
-    audioType?: number
-  } | null = null
-
-  // Last used players per logical stream (for clean teardown)
-  private lastMusicPlayerKey: PlayerKey | null = null
-  private lastNavPlayerKey: PlayerKey | null = null
-  private lastVoiceAssistantPlayerKey: PlayerKey | null = null
-  private lastCallPlayerKey: PlayerKey | null = null
+  private readonly players = new Map<PlayerKey, HostAudioOutput>()
+  private readonly outputAudioTypes = new WeakMap<HostAudioOutput, number>()
+  /** The driver's channel a stream was opened for. */
+  private readonly outputTags = new WeakMap<HostAudioOutput, string>()
+  private readonly hostOutputListeners = new Set<HostOutputListener>()
+  /** What the drivers primed, so a device change reopens the same streams. */
+  private readonly primed = new Map<PlayerKey, PrimedOutput>()
 
   // Logical per-stream volumes, controlled via IPC and config
   private volumes: VolumeState = {
@@ -51,65 +40,15 @@ export class ProjectionAudio {
     voiceAssistant: 1.0,
     call: 1.0
   }
-
-  // Voice-assistant / phonecall / nav state
-  private voiceAssistantActive = false
-  private phonecallActive = false
+  private readonly rampDownMs = 500
+  private readonly rampUpMs = 1500
+  private duckLevel = 1
+  private duckRampMs = this.rampUpMs
 
   // UI hint state
   private uiCallIncoming = false
   private uiVoiceAssistantHintActive = false
   private uiNavHintActive = false
-
-  // Media session state (music)
-  private mediaActive = false
-  private audioOpenArmed = false
-
-  // Ramp configuration (asymmetric)
-  private readonly musicRampDownMs = 500
-  private readonly musicRampUpMs = 1500
-
-  // If we see a long gap between music chunks, we hard-reset the music
-  // the stream to flush stale buffer state.
-  private readonly musicGapResetMs = process.platform === 'darwin' ? 1000 : 500
-  private lastMusicDataAt = 0
-
-  // When to start the next music ramp
-  private nextMusicRampStartAt = 0
-  private musicRampActive = false
-
-  // Tracks whether we have been outputting muted (zero) music frames
-  private musicGateMuted = false
-
-  // After AudioMediaStart, keep outputting muted frames for a bit so the sink
-  // can resync.
-  private readonly musicResumeWarmupMs = 1000
-  private musicWarmupUntil = 0
-
-  private duckLevel = 1
-  private duckRampMs = this.musicRampUpMs
-
-  // Wire-tag of music / nav stream (learned from *Start commands).
-  private musicAudioType: number | null = null
-  private navAudioType: number | null = null
-
-  private musicFade: MusicFadeState = {
-    current: 1,
-    target: 1,
-    remainingSamples: 0
-  }
-
-  private audioInfoSent = false
-  private readonly outputAudioTypes = new WeakMap<HostAudioOutput, number>()
-  private readonly hostOutputListeners = new Set<
-    (audioType: number, streamId: number, tag?: string) => void
-  >()
-  // Streams a driver feeds in the host. Their level is set there, Node-fed ones get it on the PCM.
-  private readonly hostFedPlayers = new WeakSet<HostAudioOutput>()
-  // The driver's channel a host-fed stream was opened for.
-  private readonly outputTags = new WeakMap<HostAudioOutput, string>()
-  private _mic: Microphone | null = null
-  private currentMicDecodeType: number | null = null
 
   private visualizerWindows = new Set<number>()
 
@@ -117,8 +56,6 @@ export class ProjectionAudio {
     private readonly getConfig: () => Config,
     private readonly sendProjectionEvent: SendProjectionEvent,
     private readonly sendChunked: SendChunked,
-    private readonly sendMicPcm: SendMicPcm,
-    private readonly micUplinkWanted: () => boolean = () => true,
     private readonly applyStreamVolume: (
       audioType: number,
       level: number,
@@ -195,33 +132,9 @@ export class ProjectionAudio {
   }
 
   private resetAudioState() {
-    this.stopAllAudioPlayers()
-    this._mic?.stop()
-
-    this.voiceAssistantActive = false
-    this.phonecallActive = false
+    this.stopAllPlayers()
     this.duckLevel = 1
-    this.duckRampMs = this.musicRampUpMs
-    this.mediaActive = false
-    this.audioOpenArmed = false
-    this.musicRampActive = false
-    this.nextMusicRampStartAt = 0
-    this.musicFade = { current: 1, target: 1, remainingSamples: 0 }
-    this.lastMusicDataAt = 0
-    this.musicGateMuted = false
-    this.musicWarmupUntil = 0
-    this.musicAudioType = null
-    this.navAudioType = null
-
-    this.lastCallPlaybackLog = null
-    this.lastMusicPlayerKey = null
-    this.lastNavPlayerKey = null
-    this.lastVoiceAssistantPlayerKey = null
-    this.lastCallPlayerKey = null
-
-    this.audioInfoSent = false
-    this.currentMicDecodeType = null
-
+    this.duckRampMs = this.rampUpMs
     this.uiCallIncoming = false
     this.uiVoiceAssistantHintActive = false
     this.uiNavHintActive = false
@@ -237,7 +150,6 @@ export class ProjectionAudio {
           : this.volumes.voiceAssistant,
       call: typeof volumes.call === 'number' ? volumes.call : this.volumes.call
     }
-
     this.volumes = next
     this.pushAllStreamVolumes()
   }
@@ -246,17 +158,15 @@ export class ProjectionAudio {
     if (!stream) return
     const v = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0))
     const prev = this.volumes[stream]
-
     if (Math.abs(prev - v) < 0.0001) {
       return
     }
-
     this.volumes[stream] = v
     this.pushStreamVolume(stream, this.getRampMsForTransition(prev, v))
   }
 
   private getRampMsForTransition(from: number, to: number): number {
-    return from > to ? this.musicRampDownMs : this.musicRampUpMs
+    return from > to ? this.rampDownMs : this.rampUpMs
   }
 
   public duck(level: number, durationMs: number): void {
@@ -271,487 +181,88 @@ export class ProjectionAudio {
     this.pushStreamVolume('music', this.duckRampMs)
   }
 
+  /** The duck level of the session that just became active. */
   public restoreDuck(level: number, durationMs: number): void {
     this.duckLevel = Math.max(0, Math.min(1, level))
     this.duckRampMs = Math.max(0, durationMs)
-    this.musicGateMuted = false
-    this.musicRampActive = false
-    this.musicFade = { current: this.duckLevel, target: this.duckLevel, remainingSamples: 0 }
-    this.nextMusicRampStartAt = 0
-    this.musicWarmupUntil = 0
+    this.pushStreamVolume('music', this.duckRampMs)
   }
 
-  // Main entrypoint from ProjectionService for audio messages.
+  /** Audio commands drive the attention hints, each driver keeps its own stream state. */
   public handleAudioData(msg: AudioData) {
-    const meta = this.audioMeta(msg)
-
-    // PCM downlink / output (music, nav, voiceAssistant, phone, …)
-    if (msg.data) {
-      const now = Date.now()
-      const logicalKey = this.getLogicalStreamKey(msg)
-
-      // One player per (audioType, rate, channels). OS sink mixes parallel streams.
-      const audioTypeKey = msg.audioType ?? 0
-      let player = this.getAudioOutputForStream(logicalKey, audioTypeKey, msg)
-      if (!player) return
-
-      const volume = this.volumes[logicalKey]
-
-      const keyForStream: PlayerKey = `${logicalKey}:at${audioTypeKey}:${meta.frequency}:${meta.channel}`
-      if (logicalKey === 'music') {
-        this.lastMusicPlayerKey = keyForStream
-      } else if (logicalKey === 'nav') {
-        this.lastNavPlayerKey = keyForStream
-      } else if (logicalKey === 'voiceAssistant') {
-        this.lastVoiceAssistantPlayerKey = keyForStream
-      } else {
-        this.lastCallPlayerKey = keyForStream
-      }
-
-      const baseGain = this.gainFromVolume(volume)
-      let pcm: Int16Array
-
-      if (logicalKey === 'music') {
-        const sampleRate = meta?.frequency ?? 48000
-        const channels = meta?.channel ?? 2
-        const totalSamples = msg.data.length
-
-        this.lastMusicDataAt = now
-
-        const gateUntil = Math.max(this.nextMusicRampStartAt, this.musicWarmupUntil)
-        const isGatedMute = gateUntil > 0 && now < gateUntil
-
-        if (isGatedMute) {
-          this.musicGateMuted = true
-          pcm = new Int16Array(totalSamples)
-        } else {
-          const fade = this.musicFade
-
-          // First chunk after gate-mute → start the ramp from 0.
-          if (this.musicGateMuted) {
-            this.musicGateMuted = false
-            fade.current = 0
-            fade.target = this.duckLevel
-            fade.remainingSamples = 0
-            const rampMs = this.getRampMsForTransition(fade.current, fade.target)
-            fade.remainingSamples = Math.max(1, Math.round((rampMs / 1000) * sampleRate * channels))
-            this.musicRampActive = true
-          }
-
-          const desiredTarget = this.duckLevel
-
-          if (fade.target !== desiredTarget) {
-            const rampMs = this.duckRampMs
-            fade.target = desiredTarget
-            fade.remainingSamples = Math.max(1, Math.round((rampMs / 1000) * sampleRate * channels))
-            this.musicRampActive = true
-          }
-
-          if (
-            Math.abs(fade.current - fade.target) > 1e-3 &&
-            (!this.musicRampActive || fade.remainingSamples === 0)
-          ) {
-            const rampMs = this.getRampMsForTransition(fade.current, fade.target)
-            this.musicRampActive = true
-            fade.remainingSamples = Math.max(1, Math.round((rampMs / 1000) * sampleRate * channels))
-          }
-
-          if (!this.musicRampActive) {
-            // Steady state, single multiplication per sample.
-            pcm = this.applyGain(msg.data, baseGain * fade.current)
-          } else {
-            // Ramp in progress, interpolate gain across the chunk.
-            pcm = new Int16Array(totalSamples)
-            let current = fade.current
-            let remaining = fade.remainingSamples
-            const target = fade.target
-            const needsRamp = remaining > 0 && Math.abs(current - target) > 1e-3
-            const step = needsRamp ? (target - current) / remaining : 0
-
-            for (let i = 0; i < totalSamples; i += 1) {
-              let v = msg.data[i] * (baseGain * current)
-              if (v > 32767) v = 32767
-              else if (v < -32768) v = -32768
-              pcm[i] = v
-
-              if (needsRamp && remaining > 0) {
-                current += step
-                remaining -= 1
-              } else {
-                current = target
-              }
-            }
-
-            fade.current = current
-            fade.remainingSamples = remaining
-
-            if (fade.remainingSamples === 0 || Math.abs(fade.current - fade.target) < 1e-3) {
-              fade.current = fade.target
-              this.musicRampActive = false
-            }
-          }
-        }
-      } else {
-        // nav / voiceAssistant / call: single multiplication. The OS sink mixes this
-        // stream with whatever music player is also writing.
-        pcm = this.applyGain(msg.data, baseGain)
-      }
-
-      if (DEBUG && logicalKey === 'call') {
-        const nextLogState = {
-          sampleRate: msg.sampleRate,
-          channels: msg.channels,
-          audioType: msg.audioType
-        }
-
-        const changed =
-          !this.lastCallPlaybackLog ||
-          this.lastCallPlaybackLog.sampleRate !== nextLogState.sampleRate ||
-          this.lastCallPlaybackLog.channels !== nextLogState.channels ||
-          this.lastCallPlaybackLog.audioType !== nextLogState.audioType
-
-        if (changed) {
-          console.debug('[ProjectionAudio] call playback write', {
-            ...nextLogState,
-            samples: pcm.length
-          })
-          this.lastCallPlaybackLog = nextLogState
-        }
-      }
-
-      player.write(pcm)
-
-      if (!this.audioInfoSent) {
-        this.sendProjectionEvent({
-          type: 'audioInfo',
-          payload: { sampleRate: meta.frequency }
-        })
-        this.audioInfoSent = true
-      }
-
-      return
+    const cmd = msg.command
+    if (cmd == null) return
+    if (DEBUG) {
+      console.debug('[ProjectionAudio] audio command', {
+        ts: Date.now(),
+        cmd,
+        decodeType: msg.decodeType,
+        audioType: msg.audioType
+      })
     }
-
-    // Command-only messages: voice-assistant / phone / media / nav control
-    if (msg.command != null) {
-      const cmd = msg.command
-
-      if (DEBUG) {
-        console.debug('[ProjectionAudio] audio command', {
-          ts: Date.now(),
-          cmd,
-          decodeType: msg.decodeType,
-          audioType: msg.audioType,
-          voiceAssistantActive: this.voiceAssistantActive,
-          phonecallActive: this.phonecallActive
-        })
+    // Incoming call: pre-accept / ringing
+    if (cmd === AudioCommand.AudioAttentionStart || cmd === AudioCommand.AudioAttentionRinging) {
+      if (!this.uiCallIncoming) {
+        this.uiCallIncoming = true
+        this.emitAttention('call', true, { phase: 'incoming' })
       }
-
-      // Incoming call: pre-accept / ringing
-      if (cmd === AudioCommand.AudioAttentionStart || cmd === AudioCommand.AudioAttentionRinging) {
-        if (!this.uiCallIncoming) {
-          this.uiCallIncoming = true
-          this.emitAttention('call', true, { phase: 'incoming' })
-        }
+    }
+    if (cmd === AudioCommand.AudioPhonecallStop) {
+      if (this.uiCallIncoming) {
+        this.uiCallIncoming = false
+        this.emitAttention('call', false, { phase: 'ended' })
       }
-
-      if (cmd === AudioCommand.AudioPhonecallStop) {
-        if (this.uiCallIncoming) {
-          this.uiCallIncoming = false
-          this.emitAttention('call', false, { phase: 'ended' })
-        }
+    }
+    if (cmd === AudioCommand.AudioVoiceAssistantStart) {
+      if (!this.uiVoiceAssistantHintActive) {
+        this.uiVoiceAssistantHintActive = true
+        this.emitAttention('voiceAssistant', true)
       }
-
-      if (cmd === AudioCommand.AudioVoiceAssistantStart) {
-        if (!this.uiVoiceAssistantHintActive) {
-          this.uiVoiceAssistantHintActive = true
-          this.emitAttention('voiceAssistant', true)
-        }
+    }
+    if (cmd === AudioCommand.AudioNaviStop || cmd === AudioCommand.AudioTurnByTurnStop) {
+      if (this.uiNavHintActive) {
+        this.uiNavHintActive = false
+        this.emitAttention('nav', false)
       }
-
-      if (cmd === AudioCommand.AudioNaviStop || cmd === AudioCommand.AudioTurnByTurnStop) {
-        if (this.uiNavHintActive) {
-          this.uiNavHintActive = false
-          this.emitAttention('nav', false)
-        }
-      }
-
-      if (cmd === AudioCommand.AudioNaviStart || cmd === AudioCommand.AudioTurnByTurnStart) {
-        if (!this.uiNavHintActive) {
-          this.uiNavHintActive = true
-          this.emitAttention('nav', true)
-        }
-        if (msg.audioType != null) this.navAudioType = msg.audioType
-        return
-      }
-
-      // AudioOpen: arm next AudioMediaStart. Don't learn musicAudioType here
-      // (fires for every stream open).
-      if (cmd === AudioCommand.AudioOutputStart) {
-        if (this.mediaActive) {
-          return
-        }
-
-        this.audioOpenArmed = true
-        this.mediaActive = false
-        this.musicRampActive = false
-        this.nextMusicRampStartAt = 0
-        this.musicFade.current = 0
-        this.musicFade.target = 1
-        this.musicFade.remainingSamples = 0
-        this.lastMusicDataAt = 0
-        this.musicGateMuted = true
-        this.musicWarmupUntil = 0
-        return
-      }
-
-      if (cmd === AudioCommand.AudioMediaStart) {
-        if (msg.audioType != null) this.musicAudioType = msg.audioType
-
-        const now = Date.now()
-        const warmupUntil = now + this.musicResumeWarmupMs
-
-        if (!this.audioOpenArmed) {
-          if (!this.mediaActive) {
-            // 10 without 1: treat as implicit open+start
-            this.mediaActive = true
-            this.musicRampActive = false
-            this.musicFade.current = 0
-            this.musicFade.target = 1
-            this.musicFade.remainingSamples = 0
-            this.nextMusicRampStartAt = now
-            this.musicWarmupUntil = warmupUntil
-            this.musicGateMuted = true
-          }
-          return
-        }
-
-        if (this.mediaActive) {
-          return
-        }
-
-        this.audioOpenArmed = false
-        this.mediaActive = true
-        this.musicRampActive = false
-        this.musicFade.current = 0
-        this.musicFade.target = 1
-        this.musicFade.remainingSamples = 0
-        this.nextMusicRampStartAt = now
-        this.musicWarmupUntil = warmupUntil
-        this.musicGateMuted = true
-
-        return
-      }
-
-      if (cmd === AudioCommand.AudioMediaStop) {
-        // The phone often stops music while voice-assistant/phone is active. Don't keep
-        // mediaActive=true, otherwise we ignore the next AudioMediaStart.
-        this.mediaActive = false
-
-        this.audioOpenArmed = false
-        this.musicRampActive = false
-        this.nextMusicRampStartAt = 0
-        this.musicWarmupUntil = 0
-        this.musicFade.current = 0
-        this.musicFade.target = 1
-        this.musicFade.remainingSamples = 0
-        this.lastMusicDataAt = 0
-        this.musicGateMuted = false
-        this.musicAudioType = null
-
-        if (this.lastMusicPlayerKey) {
-          this.stopPlayerByKey(this.lastMusicPlayerKey)
-          this.lastMusicPlayerKey = null
-        }
-
-        return
-      }
-
-      if (cmd === AudioCommand.AudioNaviStop || cmd === AudioCommand.AudioTurnByTurnStop) {
-        if (!this.mediaActive && this.lastNavPlayerKey) {
-          this.stopPlayerByKey(this.lastNavPlayerKey)
-          this.lastNavPlayerKey = null
-        }
-        return
-      }
-
-      if (cmd === AudioCommand.AudioOutputStop) {
-        // Only tear down the player for the stream that's closing.
-        const stoppingType = msg.audioType ?? null
-
-        const stopMusic =
-          stoppingType === null ||
-          (this.musicAudioType != null && stoppingType === this.musicAudioType)
-        const stopNav =
-          stoppingType === null || (this.navAudioType != null && stoppingType === this.navAudioType)
-
-        if (stopMusic && this.lastMusicPlayerKey) {
-          this.stopPlayerByKey(this.lastMusicPlayerKey)
-          this.lastMusicPlayerKey = null
-        }
-        if (stopNav && this.lastNavPlayerKey) {
-          this.stopPlayerByKey(this.lastNavPlayerKey)
-          this.lastNavPlayerKey = null
-        }
-        if (stoppingType === null && !this.phonecallActive && !this.voiceAssistantActive) {
-          if (this.lastVoiceAssistantPlayerKey) {
-            this.stopPlayerByKey(this.lastVoiceAssistantPlayerKey)
-            this.lastVoiceAssistantPlayerKey = null
-          }
-          if (this.lastCallPlayerKey) {
-            this.stopPlayerByKey(this.lastCallPlayerKey)
-            this.lastCallPlayerKey = null
-          }
-        }
-        return
-      }
-
-      if (cmd === AudioCommand.AudioInputConfig) {
-        if (msg.decodeType != null) {
-          const nextMicDecodeType = msg.decodeType
-          const decodeTypeChanged = this.currentMicDecodeType !== nextMicDecodeType
-          this.currentMicDecodeType = nextMicDecodeType
-
-          if (DEBUG) {
-            console.debug('[ProjectionAudio] mic decodeType updated', {
-              ts: Date.now(),
-              decodeType: this.currentMicDecodeType,
-              decodeTypeChanged
-            })
-          }
-
-          if (decodeTypeChanged && this._mic && this._mic.isCapturing()) {
-            this._mic.start(this.currentMicDecodeType)
-          }
-        }
-        return
-      }
-
-      if (
-        cmd === AudioCommand.AudioVoiceAssistantStart ||
-        cmd === AudioCommand.AudioPhonecallStart
-      ) {
-        const cfg = this.getConfig() as Config & {
-          disableAudioOutput?: boolean
-        }
-
-        if (cmd === AudioCommand.AudioVoiceAssistantStart) {
-          this.voiceAssistantActive = true
-          this.phonecallActive = false
-        } else {
-          this.phonecallActive = true
-          this.voiceAssistantActive = false
-        }
-
-        if (cfg.disableAudioOutput) {
-          this._mic?.stop()
-          return
-        }
-
-        if (!this.micUplinkWanted()) return
-
-        if (!this._mic) {
-          this._mic = new Microphone()
-          this._mic.setDevice(this.getConfig().audioInputDevice || undefined)
-
-          this._mic.on('data', (data: Buffer) => {
-            if (!data || data.byteLength === 0) return
-            if (this.currentMicDecodeType == null) return
-
-            const pcm16 = new Int16Array(data.buffer, data.byteOffset, data.byteLength / 2)
-
-            try {
-              this.sendMicPcm(pcm16, this.currentMicDecodeType)
-            } catch (e) {
-              console.error('[ProjectionAudio] failed to send mic audio', e)
-            }
-          })
-        }
-
-        if (msg.decodeType != null) {
-          this.currentMicDecodeType = msg.decodeType
-        }
-
-        if (this.currentMicDecodeType == null) {
-          if (DEBUG) {
-            console.debug('[ProjectionAudio] skip mic start without decodeType', {
-              ts: Date.now(),
-              cmd
-            })
-          }
-          return
-        }
-
-        this._mic.start(this.currentMicDecodeType)
-        return
-      }
-
-      if (cmd === AudioCommand.AudioVoiceAssistantStop || cmd === AudioCommand.AudioPhonecallStop) {
-        if (cmd === AudioCommand.AudioVoiceAssistantStop) {
-          this.voiceAssistantActive = false
-          if (this.lastVoiceAssistantPlayerKey) {
-            this.stopPlayerByKey(this.lastVoiceAssistantPlayerKey)
-            this.lastVoiceAssistantPlayerKey = null
-          }
-        } else {
-          this.phonecallActive = false
-        }
-
-        if (!this.voiceAssistantActive && !this.phonecallActive) {
-          this._mic?.stop()
-        }
-        return
+    }
+    if (cmd === AudioCommand.AudioNaviStart || cmd === AudioCommand.AudioTurnByTurnStart) {
+      if (!this.uiNavHintActive) {
+        this.uiNavHintActive = true
+        this.emitAttention('nav', true)
       }
     }
   }
 
-  private audioMeta(msg: AudioData) {
-    const frequency = msg.sampleRate
-    const channel = msg.channels
-    return {
-      frequency,
-      channel,
-      bitDepth: 16,
-      format: 's16le',
-      mimeType: `audio/L16; rate=${frequency}; channels=${channel}`
-    }
-  }
-
-  private stopAllAudioPlayers() {
-    for (const player of this.audioPlayers.values()) {
+  private stopAllPlayers() {
+    for (const player of this.players.values()) {
       try {
         player.stop()
       } catch {
         // ignore
       }
     }
-    this.audioPlayers.clear()
-    this.lastCallPlaybackLog = null
-    this.lastMusicPlayerKey = null
-    this.lastNavPlayerKey = null
-    this.lastVoiceAssistantPlayerKey = null
-    this.lastCallPlayerKey = null
+    this.players.clear()
+    this.primed.clear()
   }
 
   private stopPlayerByKey(key: PlayerKey | null) {
     if (!key) return
-    const player = this.audioPlayers.get(key)
+    const player = this.players.get(key)
     if (!player) return
-
     try {
       player.stop()
     } catch {
       // ignore
     }
-    this.audioPlayers.delete(key)
+    this.players.delete(key)
+    this.primed.delete(key)
   }
 
-  private createAndStartAudioPlayer(
+  private createPlayer(
     key: PlayerKey,
     audioType: number,
     sampleRate: number,
     channels: number,
-    hostFed = false,
     tag?: string
   ): HostAudioOutput {
     const player: HostAudioOutput = new HostAudioOutput({
@@ -760,18 +271,14 @@ export class ProjectionAudio {
       device: this.getConfig().audioOutputDevice || undefined,
       onOpened: (streamId) => {
         for (const cb of this.hostOutputListeners) cb(audioType, streamId, tag)
-        // A host-fed stream opens at the current level instead of the host default.
-        if (this.hostFedPlayers.has(player)) {
-          gstHost.setAudioVolume(streamId, this.levelForType(audioType), 0)
-        }
+        // The stream opens at the current level instead of the host default.
+        player.setVolume(this.levelForType(audioType), 0)
       }
     })
     this.outputAudioTypes.set(player, audioType)
-    if (hostFed) this.hostFedPlayers.add(player)
     if (tag) this.outputTags.set(player, tag)
     player.start()
-    this.audioPlayers.set(key, player)
-
+    this.players.set(key, player)
     return player
   }
 
@@ -779,18 +286,24 @@ export class ProjectionAudio {
   public primeOutput(audioType: number, sampleRate: number, channels: number, tag?: string): void {
     if (!sampleRate || !channels) return
     const suffix = tag ? `:${tag}` : ''
-    const key: PlayerKey = `${this.logicalKeyForType(audioType)}:at${audioType}:${sampleRate}:${channels}${suffix}`
-    if (this.audioPlayers.has(key)) return
-    this.createAndStartAudioPlayer(key, audioType, sampleRate, channels, true, tag)
+    const key: PlayerKey = `at${audioType}:${sampleRate}:${channels}${suffix}`
+    if (this.players.has(key)) return
+    this.createPlayer(key, audioType, sampleRate, channels, tag)
+    this.primed.set(key, { audioType, sampleRate, channels, tag })
   }
 
-  /** Sets the level of the host-fed streams of this audioType, the driver's volume hook. */
+  /** Drops the streams opened for this tag, the call when it ended. */
+  public dropPrimed(tag: string): void {
+    for (const [key, p] of [...this.primed]) {
+      if (p.tag === tag) this.stopPlayerByKey(key)
+    }
+  }
+
+  /** Sets the level of the streams of this audioType, the driver's volume hook. */
   public setHostStreamVolume(audioType: number, level: number, rampMs: number): void {
-    for (const player of this.audioPlayers.values()) {
-      if (!this.hostFedPlayers.has(player)) continue
+    for (const player of this.players.values()) {
       if (this.outputAudioTypes.get(player) !== audioType) continue
-      const streamId = player.hostStreamId
-      if (streamId != null) gstHost.setAudioVolume(streamId, level, rampMs)
+      if (player.hostStreamId != null) player.setVolume(level, rampMs)
     }
   }
 
@@ -803,11 +316,10 @@ export class ProjectionAudio {
     return this.volumes[stream] * duck
   }
 
-  /** The host's driver-fed streams with their channel tag, for a driver feeding the host itself. */
-  public hostOutputs(): Array<{ audioType: number; streamId: number; tag?: string }> {
-    const out: Array<{ audioType: number; streamId: number; tag?: string }> = []
-    for (const player of this.audioPlayers.values()) {
-      if (!this.hostFedPlayers.has(player)) continue
+  /** The open host streams with their channel tag, for a driver feeding the host itself. */
+  public hostOutputs(): HostOutput[] {
+    const out: HostOutput[] = []
+    for (const player of this.players.values()) {
       const streamId = player.hostStreamId
       const audioType = this.outputAudioTypes.get(player)
       if (streamId == null || audioType == null) continue
@@ -816,7 +328,7 @@ export class ProjectionAudio {
     return out
   }
 
-  public onHostOutput(cb: (audioType: number, streamId: number, tag?: string) => void): () => void {
+  public onHostOutput(cb: HostOutputListener): () => void {
     this.hostOutputListeners.add(cb)
     return () => {
       this.hostOutputListeners.delete(cb)
@@ -826,77 +338,9 @@ export class ProjectionAudio {
   // Called when audioOutputDevice / audioInputDevice changed in config
   public onAudioDeviceChanged(): void {
     if (DEBUG) console.debug('[ProjectionAudio] audio device changed, resetting streams')
-    this.stopAllAudioPlayers()
-    if (this._mic) {
-      const wasRunning = this._mic.isCapturing()
-      this._mic.stop()
-      this._mic.setDevice(this.getConfig().audioInputDevice || undefined)
-      if (wasRunning && this.currentMicDecodeType != null) {
-        this._mic.start(this.currentMicDecodeType)
-      }
-    }
-  }
-
-  private getAudioOutputForStream(
-    logicalKey: LogicalStreamKey,
-    audioType: number,
-    msg: AudioData
-  ): HostAudioOutput | null {
-    const meta = this.audioMeta(msg)
-    const sampleRate = meta.frequency
-    const channels = meta.channel
-    if (!sampleRate || !channels) return null
-    const key: PlayerKey = `${logicalKey}:at${audioType}:${sampleRate}:${channels}`
-
-    let player = this.audioPlayers.get(key)
-    if (!player) {
-      if (DEBUG) {
-        console.log(
-          `[ProjectionAudio] new player logicalKey=${logicalKey} audioType=${audioType} rate=${sampleRate} channels=${channels}`
-        )
-      }
-      player = this.createAndStartAudioPlayer(key, audioType, sampleRate, channels)
-    }
-
-    return player
-  }
-
-  private getLogicalStreamKey(msg: AudioData): LogicalStreamKey {
-    return this.logicalKeyForType(msg.audioType)
-  }
-
-  private logicalKeyForType(audioType: number | undefined): LogicalStreamKey {
-    if (this.musicAudioType != null && audioType === this.musicAudioType) return 'music'
-    if (this.navAudioType != null && audioType === this.navAudioType) return 'nav'
-    if (this.phonecallActive) return 'call'
-    if (this.voiceAssistantActive) return 'voiceAssistant'
-    return 'music'
-  }
-
-  private gainFromVolume(volume: number): number {
-    const v = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0))
-    if (v <= 0) return 0
-    const minDb = -60
-    const maxDb = 0
-    const db = minDb + (maxDb - minDb) * v
-    return Math.pow(10, db / 20)
-  }
-
-  private applyGain(pcm: Int16Array, gain: number): Int16Array {
-    if (!Number.isFinite(gain) || gain === 1.0) {
-      return pcm
-    }
-    if (gain <= 0) {
-      return new Int16Array(pcm.length)
-    }
-
-    const out = new Int16Array(pcm.length)
-    for (let i = 0; i < pcm.length; i += 1) {
-      let v = pcm[i] * gain
-      if (v > 32767) v = 32767
-      else if (v < -32768) v = -32768
-      out[i] = v
-    }
-    return out
+    // The streams are reopened on the new device and announce their new ids to the driver.
+    const primed = [...this.primed.values()]
+    this.stopAllPlayers()
+    for (const p of primed) this.primeOutput(p.audioType, p.sampleRate, p.channels, p.tag)
   }
 }

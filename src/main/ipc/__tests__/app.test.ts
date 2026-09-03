@@ -100,9 +100,17 @@ describe('registerAppIpc', () => {
     return mockedRegisterIpcOn.mock.calls.find(([name]) => name === channel)?.[1]
   }
 
+  // The restart path tears these two projection steps down before it relaunches.
+  function projectionStub() {
+    return {
+      shutdownWirelessSessions: vi.fn().mockResolvedValue(undefined),
+      stopHelper: vi.fn().mockResolvedValue(undefined)
+    }
+  }
+
   test('registers app handlers and listener', async () => {
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as never
-    const services = { usbService: {} } as never
+    const services = {} as never
 
     registerAppIpc(runtimeState, services)
 
@@ -117,7 +125,7 @@ describe('registerAppIpc', () => {
 
   test('quit handler calls app.quit on non-mac platforms', async () => {
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as never
-    const services = { usbService: {} } as never
+    const services = {} as never
 
     registerAppIpc(runtimeState, services)
 
@@ -138,7 +146,7 @@ describe('registerAppIpc', () => {
     })
 
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as never
-    const services = { usbService: {} } as never
+    const services = {} as never
 
     registerAppIpc(runtimeState, services)
 
@@ -161,7 +169,7 @@ describe('registerAppIpc', () => {
     })
 
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as any
-    const services = { usbService: {} } as never
+    const services = {} as never
 
     registerAppIpc(runtimeState, services)
 
@@ -226,7 +234,7 @@ describe('registerAppIpc', () => {
 
   test('app:quitApp calls app.quit when app is not quitting', async () => {
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as never
-    const services = { usbService: {} } as never
+    const services = {} as never
 
     registerAppIpc(runtimeState, services)
 
@@ -240,7 +248,7 @@ describe('registerAppIpc', () => {
 
   test('app:quitApp does nothing when already quitting', async () => {
     const runtimeState = { isQuitting: true, suppressNextFsSync: false } as never
-    const services = { usbService: {} } as never
+    const services = {} as never
 
     registerAppIpc(runtimeState, services)
 
@@ -252,7 +260,7 @@ describe('registerAppIpc', () => {
 
   test('app:media-key fans the command out to all renderers', async () => {
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as never
-    const services = { usbService: {} } as never
+    const services = {} as never
 
     registerAppIpc(runtimeState, services)
 
@@ -267,7 +275,7 @@ describe('registerAppIpc', () => {
 
   test('app:media-key ignores empty or non-string commands', async () => {
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as never
-    const services = { usbService: {} } as never
+    const services = {} as never
 
     registerAppIpc(runtimeState, services)
 
@@ -284,7 +292,7 @@ describe('registerAppIpc', () => {
 
   test('app:user-activity triggers kiosk restore sync', async () => {
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as never
-    const services = { usbService: {} } as never
+    const services = {} as never
 
     registerAppIpc(runtimeState, services)
 
@@ -299,7 +307,7 @@ describe('registerAppIpc', () => {
   test('ui:path forwards the router path to the projection service', () => {
     const runtimeState = {} as never
     const setUiPath = vi.fn()
-    const services = { usbService: {}, projectionService: { setUiPath } } as never
+    const services = { projectionService: { setUiPath } } as never
 
     registerAppIpc(runtimeState, services)
     const listener = getOn('ui:path') as ((evt: unknown, path: string) => void) | undefined
@@ -312,7 +320,7 @@ describe('registerAppIpc', () => {
     expect(setUiPath).toHaveBeenCalledWith('')
   })
 
-  test('app:restartApp shuts down usb service, relaunches and quits', async () => {
+  test('app:restartApp tears down the projection helper, relaunches and quits', async () => {
     vi.spyOn(global, 'setTimeout').mockImplementation(function (fn: TimerHandler) {
       if (typeof fn === 'function') fn()
       return 0 as any
@@ -322,27 +330,52 @@ describe('registerAppIpc', () => {
     Object.defineProperty(process, 'platform', { value: 'linux' })
     process.env.APPIMAGE = '/tmp/app.AppImage'
 
-    const beginShutdown = vi.fn()
-    const gracefulReset = vi.fn().mockResolvedValue(undefined)
-
+    const projectionService = projectionStub()
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as any
-    const services = { usbService: { beginShutdown, gracefulReset } } as any
+    const services = { projectionService } as any
 
     registerAppIpc(runtimeState, services)
 
     const restartHandler = getHandle('app:restartApp') as (() => Promise<void>) | undefined
     await restartHandler?.()
 
-    expect(beginShutdown).toHaveBeenCalledTimes(1)
-    expect(gracefulReset).toHaveBeenCalledTimes(1)
+    expect(projectionService.shutdownWirelessSessions).toHaveBeenCalledTimes(1)
+    expect(projectionService.stopHelper).toHaveBeenCalledTimes(1)
     expect(unref).toHaveBeenCalledTimes(1)
     expect(app.quit).toHaveBeenCalledTimes(1)
+  })
+
+  test('a failing wireless teardown does not stop the restart', async () => {
+    vi.spyOn(global, 'setTimeout').mockImplementation(function (fn: TimerHandler) {
+      if (typeof fn === 'function') fn()
+      return 0 as never
+    } as typeof setTimeout)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mockedSpawn.mockReturnValue({ unref: vi.fn() })
+    Object.defineProperty(process, 'platform', { value: 'linux' })
+    process.env.APPIMAGE = '/tmp/app.AppImage'
+    const projectionService = projectionStub()
+    projectionService.shutdownWirelessSessions = vi
+      .fn()
+      .mockRejectedValue(new Error('teardown boom'))
+    registerAppIpc(
+      { isQuitting: false, suppressNextFsSync: false } as never,
+      { projectionService } as never
+    )
+    const restartHandler = getHandle('app:restartApp') as (() => Promise<void>) | undefined
+    await restartHandler?.()
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('shutdownWirelessSessions failed'),
+      expect.any(Error)
+    )
+    expect(app.quit).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
   })
 
   test('on the appliance app:quitApp powers the host off instead of just quitting', async () => {
     mockedHostPowerAvailable.mockReturnValue(true)
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as never
-    registerAppIpc(runtimeState, { usbService: {} } as never)
+    registerAppIpc(runtimeState, {} as never)
 
     const quitAppHandler = getHandle('app:quitApp') as (() => void) | undefined
     quitAppHandler?.()
@@ -354,7 +387,7 @@ describe('registerAppIpc', () => {
   test('on a desktop app:quitApp asks for no power action', async () => {
     mockedHostPowerAvailable.mockReturnValue(false)
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as never
-    registerAppIpc(runtimeState, { usbService: {} } as never)
+    registerAppIpc(runtimeState, {} as never)
 
     const quitAppHandler = getHandle('app:quitApp') as (() => void) | undefined
     quitAppHandler?.()
@@ -365,13 +398,9 @@ describe('registerAppIpc', () => {
 
   test('on the appliance app:restartApp reboots the host and skips the app teardown', async () => {
     mockedHostPowerAvailable.mockReturnValue(true)
-    const beginShutdown = vi.fn()
-    const gracefulReset = vi.fn().mockResolvedValue(undefined)
+    const projectionService = projectionStub()
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as never
-    const services = {
-      usbService: { beginShutdown, gracefulReset },
-      projectionService: { shutdownWirelessSessions: vi.fn().mockResolvedValue(undefined) }
-    } as never
+    const services = { projectionService } as never
 
     registerAppIpc(runtimeState, services)
     const restartHandler = getHandle('app:restartApp') as (() => Promise<void>) | undefined
@@ -380,8 +409,8 @@ describe('registerAppIpc', () => {
     expect(mockedRequestPowerAction).toHaveBeenCalledWith('reboot')
     expect(app.quit).toHaveBeenCalledTimes(1)
     // before-quit owns the teardown, so the restart path must not start its own
-    expect(beginShutdown).not.toHaveBeenCalled()
-    expect(gracefulReset).not.toHaveBeenCalled()
+    expect(projectionService.shutdownWirelessSessions).not.toHaveBeenCalled()
+    expect(projectionService.stopHelper).not.toHaveBeenCalled()
   })
 
   test('app:restartApp ignores re-entrant calls while a restart is already in flight', async () => {
@@ -392,11 +421,9 @@ describe('registerAppIpc', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' })
     delete process.env.APPIMAGE
 
-    const beginShutdown = vi.fn()
-    const gracefulReset = vi.fn().mockResolvedValue(undefined)
-
+    const projectionService = projectionStub()
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as any
-    const services = { usbService: { beginShutdown, gracefulReset } } as any
+    const services = { projectionService } as any
 
     registerAppIpc(runtimeState, services)
 
@@ -404,13 +431,13 @@ describe('registerAppIpc', () => {
 
     await Promise.all([restartHandler?.(), restartHandler?.(), restartHandler?.()])
 
-    expect(beginShutdown).toHaveBeenCalledTimes(1)
-    expect(gracefulReset).toHaveBeenCalledTimes(1)
+    expect(projectionService.shutdownWirelessSessions).toHaveBeenCalledTimes(1)
+    expect(projectionService.stopHelper).toHaveBeenCalledTimes(1)
     expect(app.relaunch).toHaveBeenCalledTimes(1)
     expect(app.quit).toHaveBeenCalledTimes(1)
   })
 
-  test('app:restartApp continues when gracefulReset fails', async () => {
+  test('app:restartApp continues when stopHelper fails', async () => {
     vi.spyOn(global, 'setTimeout').mockImplementation(function (fn: TimerHandler) {
       if (typeof fn === 'function') fn()
       return 0 as any
@@ -422,22 +449,21 @@ describe('registerAppIpc', () => {
     Object.defineProperty(process, 'platform', { value: 'linux' })
     process.env.APPIMAGE = '/tmp/app.AppImage'
 
-    const beginShutdown = vi.fn()
-    const gracefulReset = vi.fn().mockRejectedValue(new Error('boom'))
+    const projectionService = projectionStub()
+    projectionService.stopHelper.mockRejectedValue(new Error('boom'))
 
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as any
-    const services = { usbService: { beginShutdown, gracefulReset } } as any
+    const services = { projectionService } as any
 
     registerAppIpc(runtimeState, services)
 
     const restartHandler = getHandle('app:restartApp') as (() => Promise<void>) | undefined
     await restartHandler?.()
 
-    expect(beginShutdown).toHaveBeenCalledTimes(1)
-    expect(gracefulReset).toHaveBeenCalledTimes(1)
+    expect(projectionService.stopHelper).toHaveBeenCalledTimes(1)
     expect(unref).toHaveBeenCalledTimes(1)
     expect(warnSpy).toHaveBeenCalledWith(
-      '[MAIN] gracefulReset failed (continuing restart):',
+      '[MAIN] stopHelper failed (continuing restart):',
       expect.any(Error)
     )
     expect(app.quit).toHaveBeenCalledTimes(1)
@@ -445,7 +471,7 @@ describe('registerAppIpc', () => {
 
   test('app:restartApp returns early when already quitting', async () => {
     const runtimeState = { isQuitting: true, suppressNextFsSync: false } as any
-    const services = { usbService: { beginShutdown: vi.fn(), gracefulReset: vi.fn() } } as any
+    const services = { projectionService: projectionStub() } as any
 
     registerAppIpc(runtimeState, services)
 
@@ -471,12 +497,7 @@ describe('registerAppIpc', () => {
     process.env.OWD = '/tmp/owd'
 
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as any
-    const services = {
-      usbService: {
-        beginShutdown: vi.fn(),
-        gracefulReset: vi.fn().mockResolvedValue(undefined)
-      }
-    } as any
+    const services = { projectionService: projectionStub() } as any
 
     registerAppIpc(runtimeState, services)
 
@@ -505,7 +526,7 @@ describe('registerAppIpc', () => {
 
   test('app:openExternal rejects empty urls', async () => {
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as never
-    const services = { usbService: {} } as never
+    const services = {} as never
 
     registerAppIpc(runtimeState, services)
 
@@ -521,7 +542,7 @@ describe('registerAppIpc', () => {
 
   test('app:openExternal rejects non-http urls', async () => {
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as never
-    const services = { usbService: {} } as never
+    const services = {} as never
 
     registerAppIpc(runtimeState, services)
 
@@ -539,7 +560,7 @@ describe('registerAppIpc', () => {
     ;(shell.openExternal as Mock).mockResolvedValue(undefined)
 
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as never
-    const services = { usbService: {} } as never
+    const services = {} as never
 
     registerAppIpc(runtimeState, services)
 
@@ -561,19 +582,14 @@ describe('registerAppIpc', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' })
     delete process.env.APPIMAGE
 
-    const beginShutdown = vi.fn()
-    const gracefulReset = vi.fn().mockResolvedValue(undefined)
-
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as any
-    const services = { usbService: { beginShutdown, gracefulReset } } as any
+    const services = { projectionService: projectionStub() } as any
 
     registerAppIpc(runtimeState, services)
 
     const restartHandler = getHandle('app:restartApp') as (() => Promise<void>) | undefined
     await restartHandler?.()
 
-    expect(beginShutdown).toHaveBeenCalledTimes(1)
-    expect(gracefulReset).toHaveBeenCalledTimes(1)
     expect(mockedSpawn).not.toHaveBeenCalled()
     expect(app.relaunch).toHaveBeenCalledTimes(1)
     expect(app.quit).toHaveBeenCalledTimes(1)
@@ -588,9 +604,7 @@ describe('registerAppIpc', () => {
     ;(compositorRestart as Mock).mockReturnValueOnce(true)
 
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as any
-    const services = {
-      usbService: { beginShutdown: vi.fn(), gracefulReset: vi.fn().mockResolvedValue(undefined) }
-    } as any
+    const services = { projectionService: projectionStub() } as any
 
     registerAppIpc(runtimeState, services)
     const restartHandler = getHandle('app:restartApp') as (() => Promise<void>) | undefined
@@ -610,27 +624,21 @@ describe('registerAppIpc', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' })
     delete process.env.APPIMAGE
 
-    const shutdownWirelessSessions = vi.fn().mockResolvedValue(undefined)
+    const projectionService = projectionStub()
     const disconnect = vi.fn().mockResolvedValue(undefined)
-    const beginShutdown = vi.fn(() => {
-      throw new Error('already down')
-    })
 
     const runtimeState = {
       isQuitting: false,
       suppressNextFsSync: false,
       telemetrySocket: { disconnect }
     } as any
-    const services = {
-      usbService: { beginShutdown, gracefulReset: vi.fn().mockResolvedValue(undefined) },
-      projectionService: { shutdownWirelessSessions }
-    } as any
+    const services = { projectionService } as any
 
     registerAppIpc(runtimeState, services)
     const restartHandler = getHandle('app:restartApp') as (() => Promise<void>) | undefined
     await restartHandler?.()
 
-    expect(shutdownWirelessSessions).toHaveBeenCalledTimes(1)
+    expect(projectionService.shutdownWirelessSessions).toHaveBeenCalledTimes(1)
     expect(disconnect).toHaveBeenCalledTimes(1)
     expect(app.relaunch).toHaveBeenCalledTimes(1)
     expect(app.quit).toHaveBeenCalledTimes(1)
@@ -649,10 +657,7 @@ describe('registerAppIpc', () => {
       suppressNextFsSync: false,
       telemetrySocket: { disconnect: vi.fn().mockRejectedValue(new Error('gone')) }
     } as any
-    const services = {
-      usbService: { beginShutdown: vi.fn(), gracefulReset: vi.fn().mockResolvedValue(undefined) },
-      projectionService: { shutdownWirelessSessions: vi.fn().mockResolvedValue(undefined) }
-    } as any
+    const services = { projectionService: projectionStub() } as any
 
     registerAppIpc(runtimeState, services)
     const restartHandler = getHandle('app:restartApp') as (() => Promise<void>) | undefined
@@ -663,7 +668,7 @@ describe('registerAppIpc', () => {
 
   test('app:openExternal rejects undefined urls via nullish fallback', async () => {
     const runtimeState = { isQuitting: false, suppressNextFsSync: false } as never
-    const services = { usbService: {} } as never
+    const services = {} as never
 
     registerAppIpc(runtimeState, services)
 
