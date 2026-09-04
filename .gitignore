@@ -15,10 +15,7 @@ tmp/
 temp/
 
 # Cargo
-native/livi-compositor/rust/target/
-native/livi-crypto/rust/target/
-native/livi-helperd/target/
-native/livi-gst-video/rust/target/
+native/**/target/
 
 # Test/coverage
 coverage/

@@ -4,8 +4,8 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
-livi-aa = { path = "../livi-aa" }
-livi-host-proto = { path = "../../../livi-gst-video/rust/hostproto" }
+livi-session-io = { path = "../livi-session-io" }
+livi-host-proto = { path = "../../../livi-host-proto/rust" }
 futures-util = "0.3"
 nusb = { version = "0.2", features = ["tokio"] }
 serde_json = "1"

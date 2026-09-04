@@ -7,8 +7,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use livi_aa::feed::FeedWriter;
-use livi_aa::link::{self, Item};
+use livi_session_io::feed::FeedWriter;
+use livi_session_io::link::{self, Item};
 use livi_host_proto::feed as feedproto;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UnixListener;

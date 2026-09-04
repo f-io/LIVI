@@ -801,6 +801,7 @@ version = "0.1.0"
 dependencies = [
  "futures-util",
  "livi-host-proto",
+ "livi-session-io",
  "nusb",
  "rustls",
  "rustls-pemfile",
@@ -815,8 +816,8 @@ name = "livi-dongle"
 version = "0.1.0"
 dependencies = [
  "futures-util",
- "livi-aa",
  "livi-host-proto",
+ "livi-session-io",
  "nusb",
  "serde_json",
  "tokio",
@@ -857,6 +858,14 @@ dependencies = [
  "socket2 0.5.10",
  "tokio",
  "zbus",
+]
+
+[[package]]
+name = "livi-session-io"
+version = "0.1.0"
+dependencies = [
+ "nusb",
+ "tokio",
 ]
 
 [[package]]

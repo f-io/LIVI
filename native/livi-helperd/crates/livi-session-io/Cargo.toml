@@ -1,0 +1,10 @@
+[package]
+name = "livi-session-io"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+nusb = { version = "0.2", features = ["tokio"] }
+tokio = { version = "1", features = ["rt", "macros", "time", "sync", "io-util", "net"] }
+
+[dev-dependencies]

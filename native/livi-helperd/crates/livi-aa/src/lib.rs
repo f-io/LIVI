@@ -1,9 +1,7 @@
 pub mod av;
 pub mod cert;
 pub mod consts;
-pub mod feed;
 pub mod frame;
-pub mod link;
 pub mod proto;
 pub mod server;
 pub mod session;

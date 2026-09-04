@@ -4,7 +4,8 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
-livi-host-proto = { path = "../../../livi-gst-video/rust/hostproto" }
+livi-host-proto = { path = "../../../livi-host-proto/rust" }
+livi-session-io = { path = "../livi-session-io" }
 futures-util = "0.3"
 nusb = { version = "0.2", features = ["tokio"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }

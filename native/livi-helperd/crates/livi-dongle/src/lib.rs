@@ -9,7 +9,7 @@ use tokio::sync::Notify;
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use livi_aa::usb::{UsbStream, open_pipe};
+use livi_session_io::usb::{UsbStream, open_pipe};
 use nusb::hotplug::HotplugEvent;
 use nusb::{DeviceId, DeviceInfo};
 
@@ -131,7 +131,7 @@ async fn serve(dongles: &Shared, on_session: &Arc<OnSession>, info: &DeviceInfo,
                 return;
             }
         };
-        let Some((node, path)) = livi_aa::server::bind_session_socket("dongle-session") else { return };
+        let Some((node, path)) = livi_session_io::sock::bind_session_socket("dongle-session") else { return };
         println!("[dongle] {label}: session socket {path}");
         on_session(&path, &announce);
         let end = session::run(UsbStream::new(pipe), &label, node, path, cancel.clone()).await;

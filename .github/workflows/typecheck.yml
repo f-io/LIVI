@@ -68,6 +68,7 @@ jobs:
             native/livi-crypto/rust/target
             native/livi-gst-video/rust/target
             native/livi-helperd/target
+            native/livi-host-proto/rust/target
           key: cargo-check-${{ hashFiles('native/**/Cargo.toml') }}
           restore-keys: cargo-check-
 
@@ -81,6 +82,11 @@ jobs:
               libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
               cmake libwayland-dev libxkbcommon-dev
           sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Check the host protocol (clippy, tests)
+        run: |
+          cargo clippy --manifest-path native/livi-host-proto/rust/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path native/livi-host-proto/rust/Cargo.toml
 
       - name: Check the helper (clippy, tests)
         working-directory: native/livi-helperd

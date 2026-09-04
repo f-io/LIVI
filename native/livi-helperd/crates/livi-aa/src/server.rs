@@ -1,20 +1,18 @@
 // The TCP listener a phone reaches after the WPP bootstrap. Every connection
-// gets a session socket the main process is told about.
+// gets a session socket (livi_session_io::sock) the main process is told about.
 
 use std::net::IpAddr;
-use std::os::unix::fs::PermissionsExt;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use socket2::{SockRef, TcpKeepalive};
-use tokio::net::{TcpListener, TcpStream, UnixListener};
+use tokio::net::{TcpListener, TcpStream};
+
+use livi_session_io::sock::bind_session_socket;
 
 use crate::session::Peer;
 
 const BIND_RETRY: Duration = Duration::from_secs(5);
 const KEEPALIVE: Duration = Duration::from_secs(5);
-
-static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 
 pub async fn run(port: u16, on_session: impl Fn(&str, IpAddr) + Send + Sync + 'static) {
     let listener = loop {
@@ -49,22 +47,6 @@ pub async fn run(port: u16, on_session: impl Fn(&str, IpAddr) + Send + Sync + 's
             crate::session::run(tcp, phone, node, path).await;
         });
     }
-}
-
-/// A fresh socket for the main process to attach to one session on.
-pub fn bind_session_socket(stem: &str) -> Option<(UnixListener, String)> {
-    let n = NEXT_SESSION.fetch_add(1, Ordering::Relaxed);
-    let path = format!("/tmp/{stem}-{n}.sock");
-    let _ = std::fs::remove_file(&path);
-    let node = match UnixListener::bind(&path) {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("[aa] session socket {path}: {e}");
-            return None;
-        }
-    };
-    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o666));
-    Some((node, path))
 }
 
 /// Keepalive probes after 5 s idle, so a vanished phone tears the socket down
