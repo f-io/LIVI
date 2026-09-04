@@ -28,8 +28,8 @@ fi
 
 livi_require_regular_user
 
-if ! command -v apt-get >/dev/null; then
-  echo "Error: this installer needs apt. Install the packages from" >&2
+if [ -z "$(livi_pm)" ]; then
+  echo "Error: this installer needs apt or dnf. Install the packages from" >&2
   echo "scripts/install/packages.txt by hand, then run the remaining steps." >&2
   exit 1
 fi
@@ -44,8 +44,7 @@ KIOSK_PAM="/etc/pam.d/livi-kiosk"
 echo "→ Architecture: $(uname -m) → $(livi_asset_arch).AppImage"
 
 echo "→ Installing required packages"
-sudo apt-get update
-sudo apt-get install -y $(livi_packages core lite | tr '\n' ' ')
+livi_pm_install $(livi_packages core lite | tr '\n' ' ')
 
 echo "→ Adding $USER to required groups"
 WANTED_GROUPS=(video render input plugdev)

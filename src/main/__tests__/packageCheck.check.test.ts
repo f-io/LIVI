@@ -76,9 +76,15 @@ afterEach(() => {
 
 describe('readManifest', () => {
   test('parses the manifest next to the app resources', () => {
-    manifest('core|bluez|cmd:bluetoothctl|Bluetooth')
+    manifest('core|bluez|cmd:bluetoothctl|Bluetooth|bluez')
     expect(readManifest()).toEqual([
-      { section: 'core', name: 'bluez', probe: 'cmd:bluetoothctl', purpose: 'Bluetooth' }
+      {
+        section: 'core',
+        name: 'bluez',
+        probe: 'cmd:bluetoothctl',
+        purpose: 'Bluetooth',
+        fedora: 'bluez'
+      }
     ])
   })
 
@@ -111,6 +117,11 @@ describe('pathPresent', () => {
     expect(pathPresent('/usr/lib/*/gstreamer-1.0/libgstopus.so')).toBe(true)
   })
 
+  test('finds a library under the flat lib64 layout Fedora uses', () => {
+    mockedExists.mockImplementation((p: string) => String(p) === '/usr/lib64/libva.so.2')
+    expect(pathPresent('/usr/lib/*/libva.so.2')).toBe(true)
+  })
+
   test('handles a trailing * without a rest path', () => {
     mockedReaddir.mockReturnValue(['some-dir'])
     mockedExists.mockImplementation((p: string) => String(p) === '/opt/livi/some-dir')
@@ -130,7 +141,8 @@ describe('missingPackages', () => {
     section: 'core' as const,
     name,
     probe,
-    purpose: ''
+    purpose: '',
+    fedora: ''
   })
 
   test('probes cmd, py, gst, file and tolerates unknown kinds', async () => {
@@ -191,10 +203,12 @@ describe('checkMissingPackages', () => {
     expect(mockedDialog).not.toHaveBeenCalled()
   })
 
-  test('without apt it only reports and can dismiss forever', async () => {
+  test('with no supported package manager it only reports and can dismiss forever', async () => {
     manifest('core|foo|file:/nope|Feature X')
-    mockedExecFileSync.mockImplementation(() => {
-      throw new Error('no apt-get')
+    // pkexec is present, but neither apt-get nor dnf, so there is nothing to install with.
+    mockedExecFileSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === 'apt-get' || args[0] === 'dnf') throw new Error(`no ${args[0]}`)
+      return ''
     })
     mockedDialog.mockResolvedValueOnce({ response: 0 })
 
@@ -263,6 +277,33 @@ describe('checkMissingPackages', () => {
     const followUp = mockedDialog.mock.calls[1][1]
     expect(followUp.type).toBe('info')
     expect(followUp.message).toContain('All packages installed')
+  })
+
+  test('on a dnf host installs the fedora names, de-duplicated, and hints dnf', async () => {
+    // Two entries map to one rpm (libva), a third has no fedora package.
+    manifest(
+      'core|libva2|file:/nope|A|libva\ncore|libva-drm2|file:/nope|B|libva\ncore|extra|file:/nope|C|'
+    )
+    // apt-get absent, dnf + pkexec present.
+    mockedExecFileSync.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === 'apt-get') throw new Error('no apt-get')
+      return ''
+    })
+    const proc = makeProc()
+    mockedSpawn.mockReturnValue(proc)
+
+    const done = checkMissingPackages(win, [])
+    await new Promise((r) => setImmediate(r))
+    proc.emit('close', 0)
+    await expect(done).resolves.toEqual({})
+
+    expect(mockedSpawn).toHaveBeenCalledWith('pkexec', ['bash', '-c', 'dnf install -y libva'], {
+      stdio: 'ignore'
+    })
+    // Still missing afterwards → warn path uses the dnf manual hint.
+    const followUp = mockedDialog.mock.calls[1][1]
+    expect(followUp.type).toBe('warning')
+    expect(followUp.detail).toContain('sudo dnf install libva')
   })
 
   test('Now warns when packages stay missing after the install', async () => {

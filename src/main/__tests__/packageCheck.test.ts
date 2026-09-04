@@ -10,21 +10,27 @@ describe('parseManifest', () => {
     expect(parseManifest('# a comment\n\n   \n')).toEqual([])
   })
 
-  it('reads section, name, probe and purpose', () => {
-    expect(parseManifest('core|bluez|cmd:bluetoothctl|Bluetooth pairing')).toEqual([
-      { section: 'core', name: 'bluez', probe: 'cmd:bluetoothctl', purpose: 'Bluetooth pairing' }
+  it('reads section, name, probe, purpose and the fedora name', () => {
+    expect(parseManifest('core|dnsmasq-base|cmd:dnsmasq|DHCP|dnsmasq')).toEqual([
+      {
+        section: 'core',
+        name: 'dnsmasq-base',
+        probe: 'cmd:dnsmasq',
+        purpose: 'DHCP',
+        fedora: 'dnsmasq'
+      }
     ])
   })
 
-  it('tolerates a missing purpose', () => {
+  it('tolerates a missing purpose and fedora name', () => {
     expect(parseManifest('lite|cage|cmd:cage|')).toEqual([
-      { section: 'lite', name: 'cage', probe: 'cmd:cage', purpose: '' }
+      { section: 'lite', name: 'cage', probe: 'cmd:cage', purpose: '', fedora: '' }
     ])
   })
 
   it('tolerates an absent purpose field', () => {
     expect(parseManifest('core|bluez|cmd:bluetoothctl')).toEqual([
-      { section: 'core', name: 'bluez', probe: 'cmd:bluetoothctl', purpose: '' }
+      { section: 'core', name: 'bluez', probe: 'cmd:bluetoothctl', purpose: '', fedora: '' }
     ])
   })
 

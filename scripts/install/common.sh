@@ -50,9 +50,26 @@ livi_asset_arch() {
   esac
 }
 
-# Package names for the given sections of packages.txt, the single source the app checks too.
+# Host package manager: apt or dnf.
+livi_pm() {
+  if command -v apt-get >/dev/null 2>&1; then echo apt
+  elif command -v dnf >/dev/null 2>&1; then echo dnf
+  fi
+}
+
+# Install packages with the detected manager.
+livi_pm_install() {
+  [ "$#" -gt 0 ] || return 0
+  case "$(livi_pm)" in
+    apt) sudo apt-get update && sudo apt-get install -y "$@" ;;
+    dnf) sudo dnf install -y "$@" ;;
+    *)   echo "Error: no supported package manager (apt/dnf) found" >&2; return 1 ;;
+  esac
+}
+
+# Package names for the given sections (col 2 apt, col 5 dnf), deduped.
 livi_packages() {
-  local manifest tmp section
+  local manifest tmp section field
   manifest="$LIVI_LIB_DIR/packages.txt"
   if [ ! -f "$manifest" ]; then
     tmp="$(mktemp)"
@@ -60,9 +77,10 @@ livi_packages() {
       || { echo "Error: cannot obtain packages.txt" >&2; return 1; }
     manifest="$tmp"
   fi
+  field=2; [ "$(livi_pm)" = dnf ] && field=5
   for section in "$@"; do
-    grep -E "^${section}\|" "$manifest" | cut -d '|' -f2
-  done
+    grep -E "^${section}\|" "$manifest" | cut -d '|' -f"$field"
+  done | awk 'NF && !seen[$0]++'
 }
 
 # Sets LIVI_CHANNEL and LIVI_RELEASE_API. Skips the prompt when LIVI_CHANNEL is

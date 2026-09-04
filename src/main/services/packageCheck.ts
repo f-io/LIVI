@@ -11,6 +11,8 @@ export type PackageEntry = {
   name: string
   probe: string
   purpose: string
+  /** Fedora/dnf package name. */
+  fedora: string
 }
 
 /** Manifest ships next to the app in production and lives in scripts/install during dev. */
@@ -28,13 +30,14 @@ export function parseManifest(text: string): PackageEntry[] {
   for (const raw of text.split('\n')) {
     const line = raw.trim()
     if (!line || line.startsWith('#')) continue
-    const [section, name, probe, purpose] = line.split('|')
+    const [section, name, probe, purpose, fedora] = line.split('|')
     if ((section !== 'core' && section !== 'lite') || !name || !probe) continue
     out.push({
       section,
       name: name.trim(),
       probe: probe.trim(),
-      purpose: (purpose ?? '').trim()
+      purpose: (purpose ?? '').trim(),
+      fedora: (fedora ?? '').trim()
     })
   }
   return out
@@ -72,6 +75,8 @@ export function pathPresent(pattern: string): boolean {
   const base = pattern.slice(0, pattern.lastIndexOf('/', star))
   const slash = pattern.indexOf('/', star)
   const rest = slash < 0 ? '' : pattern.slice(slash + 1)
+  // Fedora keeps libraries flat in /usr/lib64.
+  if (existsSync(join(`${base}64`, rest))) return true
   try {
     return readdirSync(base).some((entry) => existsSync(join(base, entry, rest)))
   } catch {
@@ -108,27 +113,42 @@ export async function missingPackages(required: PackageEntry[]): Promise<Package
   return checked.filter((c) => !c.ok).map((c) => c.entry)
 }
 
-function pkexecAvailable(): boolean {
+function hasCommand(name: string): boolean {
   try {
-    execFileSync('which', ['pkexec'], { stdio: 'ignore' })
+    execFileSync('which', [name], { stdio: 'ignore' })
     return true
   } catch {
     return false
   }
 }
 
-function aptAvailable(): boolean {
-  try {
-    execFileSync('which', ['apt-get'], { stdio: 'ignore' })
-    return true
-  } catch {
-    return false
-  }
+type PackageManager = 'apt' | 'dnf'
+
+/** Host package manager, apt before dnf. */
+function packageManager(): PackageManager | null {
+  if (hasCommand('apt-get')) return 'apt'
+  if (hasCommand('dnf')) return 'dnf'
+  return null
 }
 
-function installPackages(names: string[]): Promise<void> {
+/** Package names for the manager, deduped, empties dropped. */
+function installNames(missing: PackageEntry[], pm: PackageManager): string[] {
+  const names = missing.map((e) => (pm === 'dnf' ? e.fedora : e.name)).filter((n) => n.length > 0)
+  return [...new Set(names)]
+}
+
+function manualCommand(names: string[], pm: PackageManager): string {
+  return pm === 'dnf'
+    ? `sudo dnf install ${names.join(' ')}`
+    : `sudo apt install ${names.join(' ')}`
+}
+
+function installPackages(names: string[], pm: PackageManager): Promise<void> {
   return new Promise((resolve, reject) => {
-    const script = `apt-get update && apt-get install -y ${names.join(' ')}`
+    const script =
+      pm === 'dnf'
+        ? `dnf install -y ${names.join(' ')}`
+        : `apt-get update && apt-get install -y ${names.join(' ')}`
     const proc = spawn('pkexec', ['bash', '-c', script], { stdio: 'ignore' })
     proc.on('close', (code) => {
       if (code === 0) resolve()
@@ -161,11 +181,11 @@ export async function checkMissingPackages(
   const missing = (await missingPackages(required)).filter((e) => !declined.has(e.name))
   if (!missing.length) return {}
 
-  const names = missing.map((e) => e.name)
-  // Probes are distro-neutral, the package names are Debian's. Only offer to install where
-  // those names apply, elsewhere report the gap and let the user pick their own packages.
-  const canInstall = aptAvailable() && pkexecAvailable()
-  const manualCmd = `sudo apt install ${names.join(' ')}`
+  // Dismissal keys on the Debian name; install uses the host PM's names.
+  const dismissKeys = missing.map((e) => e.name)
+  const pm = hasCommand('pkexec') ? packageManager() : null
+  const canInstall = pm !== null
+  const pkgNames = pm ? installNames(missing, pm) : dismissKeys
 
   const { response } = await dialog.showMessageBox(window, {
     type: 'question',
@@ -173,9 +193,9 @@ export async function checkMissingPackages(
     message: `${missing.length} component${missing.length > 1 ? 's are' : ' is'} missing for a complete LIVI setup.`,
     detail:
       `${describe(missing)}\n\nLIVI runs without them, but the listed features stay unavailable.` +
-      (canInstall
+      (pm
         ? '\n\nInstall?'
-        : '\n\nPackage names above are Debian’s, your distro may name them differently.'),
+        : '\n\nNo supported package manager (apt/dnf) found — install the equivalents for your distro.'),
     // Later sits rightmost and is the cancel action: a reflex click on the far button or
     // an Esc defers instead of deciding, the next start asks again.
     buttons: canInstall ? ['Now', 'Never', 'Later'] : ['Never', 'Later'],
@@ -183,21 +203,21 @@ export async function checkMissingPackages(
     cancelId: canInstall ? 2 : 1
   })
 
-  if (!canInstall) {
-    return response === 0 ? { dismissed: [...alreadyDismissed, ...names] } : {}
+  if (!canInstall || !pm) {
+    return response === 0 ? { dismissed: [...alreadyDismissed, ...dismissKeys] } : {}
   }
-  if (response === 1) return { dismissed: [...alreadyDismissed, ...names] }
+  if (response === 1) return { dismissed: [...alreadyDismissed, ...dismissKeys] }
   if (response !== 0) return {}
 
   try {
-    await installPackages(names)
+    await installPackages(pkgNames, pm)
     const stillMissing = await missingPackages(missing)
     if (stillMissing.length) {
       await dialog.showMessageBox(window, {
         type: 'warning',
         title: 'LIVI — Missing Packages',
         message: 'Some packages are still missing after the installation.',
-        detail: `${describe(stillMissing)}\n\nRun this manually:\n\n${manualCmd}`,
+        detail: `${describe(stillMissing)}\n\nRun this manually:\n\n${manualCommand(pkgNames, pm)}`,
         buttons: ['OK']
       })
       return {}
@@ -214,7 +234,7 @@ export async function checkMissingPackages(
       type: 'error',
       title: 'LIVI — Missing Packages',
       message: 'Could not install the packages.',
-      detail: `${(err as Error).message}\n\nRun this manually:\n\n${manualCmd}`,
+      detail: `${(err as Error).message}\n\nRun this manually:\n\n${manualCommand(pkgNames, pm)}`,
       buttons: ['OK']
     })
   }

@@ -1,38 +1,30 @@
-# LIVI system package manifest, read by the installers and by the in-app check.
+# LIVI system package manifest, read by the installers and the in-app check.
 #
-# Format: <section>|<package>|<probe>|<what it is needed for>
+# Format: <section>|<package>|<probe>|<purpose>|<fedora-package>
+#   <package>        Debian name (apt)
+#   <fedora-package> Fedora name (dnf); may be empty or repeat, deduped before install
+#   <probe>          cmd:<bin> | gst:<element> | file:<path> (one * for a dir, also /usr/lib64)
 #
-# <package> is the Debian name, used by the installers and for one-click install on apt hosts.
-# <probe> tests the capability itself and works on any distro, so the check can still tell a
-# Fedora or Arch user what is missing even though the package is named differently there.
-#
-# Probes:
-#   cmd:<name>  the binary is on PATH, /usr/sbin or /sbin
-#   gst:<name>  gst-inspect-1.0 finds the element
-#   file:<path> the path exists, one * standing in for a single directory name
-#
-# Sections:
-#   core = required on every LIVI host
-#   lite = additionally required on a host with no desktop session (Pi OS Lite, headless x86)
+# Sections: core = every host; lite = host with no desktop session
 
-core|bluez|cmd:bluetoothctl|Bluetooth pairing for wireless Android Auto and CarPlay
-core|libspa-0.2-bluetooth|file:/usr/lib/*/spa-0.2/bluez5|Bluetooth audio profiles, wireless Android Auto needs HFP
-core|hostapd|cmd:hostapd|Wi-Fi access point for wireless Android Auto and CarPlay
-core|dnsmasq-base|cmd:dnsmasq|DHCP for the wireless access point
-core|iw|cmd:iw|Wi-Fi interface control
-core|rfkill|cmd:rfkill|Wi-Fi and Bluetooth radio control
-core|pulseaudio-utils|cmd:pactl|Reading and setting the system volume
-core|avahi-daemon|cmd:avahi-daemon|CarPlay discovery over Wi-Fi
-core|avahi-utils|cmd:avahi-publish-service|CarPlay mDNS publish and browse, the helper spawns avahi-publish-service and avahi-browse
-core|libva2|file:/usr/lib/*/libva.so.2|Host VA-API runtime, the bundled H.264 software decoder links it
-core|libva-drm2|file:/usr/lib/*/libva-drm.so.2|Host VA-API DRM runtime for the bundled decoder
-core|libva-x11-2|file:/usr/lib/*/libva-x11.so.2|Host VA-API X11 runtime for the bundled decoder
-core|libssh-4|file:/usr/lib/*/libssh.so.4|Host libssh, the bundled FFmpeg protocol layer links it
-lite|cage|cmd:cage|Kiosk compositor
-lite|seatd|cmd:seatd|Seat and session management
-lite|wlr-randr|cmd:wlr-randr|Display configuration
-lite|pipewire|cmd:pipewire|Audio
-lite|pipewire-pulse|cmd:pipewire-pulse|Audio
-lite|wireplumber|cmd:wireplumber|Audio
-lite|xdg-user-dirs|cmd:xdg-user-dir|User directory lookup
-lite|curl|cmd:curl|Downloading the AppImage and assets
+core|bluez|cmd:bluetoothctl|Bluetooth pairing for wireless Android Auto and CarPlay|bluez
+core|libspa-0.2-bluetooth|file:/usr/lib/*/spa-0.2/bluez5|Bluetooth audio profiles, wireless Android Auto needs HFP|pipewire-libs
+core|hostapd|cmd:hostapd|Wi-Fi access point for wireless Android Auto and CarPlay|hostapd
+core|dnsmasq-base|cmd:dnsmasq|DHCP for the wireless access point|dnsmasq
+core|iw|cmd:iw|Wi-Fi interface control|iw
+core|rfkill|cmd:rfkill|Wi-Fi and Bluetooth radio control|util-linux
+core|pulseaudio-utils|cmd:pactl|Reading and setting the system volume|pulseaudio-utils
+core|avahi-daemon|cmd:avahi-daemon|CarPlay discovery over Wi-Fi|avahi
+core|avahi-utils|cmd:avahi-publish-service|CarPlay mDNS publish and browse, the helper spawns avahi-publish-service and avahi-browse|avahi-tools
+core|libva2|file:/usr/lib/*/libva.so.2|Host VA-API runtime, the bundled H.264 software decoder links it|libva
+core|libva-drm2|file:/usr/lib/*/libva-drm.so.2|Host VA-API DRM runtime for the bundled decoder|libva
+core|libva-x11-2|file:/usr/lib/*/libva-x11.so.2|Host VA-API X11 runtime for the bundled decoder|libva
+core|libssh-4|file:/usr/lib/*/libssh.so.4|Host libssh, the bundled FFmpeg protocol layer links it|libssh
+lite|cage|cmd:cage|Kiosk compositor|cage
+lite|seatd|cmd:seatd|Seat and session management|seatd
+lite|wlr-randr|cmd:wlr-randr|Display configuration|wlr-randr
+lite|pipewire|cmd:pipewire|Audio|pipewire
+lite|pipewire-pulse|cmd:pipewire-pulse|Audio|pipewire-pulseaudio
+lite|wireplumber|cmd:wireplumber|Audio|wireplumber
+lite|xdg-user-dirs|cmd:xdg-user-dir|User directory lookup|xdg-user-dirs
+lite|curl|cmd:curl|Downloading the AppImage and assets|curl

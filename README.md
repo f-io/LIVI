@@ -221,38 +221,21 @@ Video: 1920x1080 - View Area: 0/0/0/0 (T/B/L/R) - Safe Area: 120/20/500/500 (T/B
 > [!IMPORTANT]
 > LIVI requires **OpenGL ES 3.x**.
 
-
-## Desktop
-
-For a host that already runs a desktop session. Written for Raspberry Pi OS, and it should work the same on Debian or any other apt-based Linux with a desktop.
-
-> [!NOTE]
-> The Pi 4, CM 4, Pi 5 and CM 5 require Trixie (Debian 13) for OpenGL ES 3.x. Pi 3 and earlier use the VideoCore IV GPU, which only supports OpenGL ES 2.0 and is therefore unsupported.
+One script installs LIVI on both desktop and headless hosts, auto-detecting which (override with `--desktop` / `--headless`). It uses apt or dnf, so beyond Raspberry Pi OS it also runs on Debian/Ubuntu, Fedora and likely other distros, on arm64 and x86_64.
 
 ```bash
-curl -fL -o install.sh https://raw.githubusercontent.com/f-io/LIVI/main/scripts/install/desktop/install.sh
+curl -fL -o install.sh https://raw.githubusercontent.com/f-io/LIVI/main/scripts/install/install.sh
 chmod +x install.sh
 ./install.sh
 ```
 
-_This install script is not actively tested on other Linux distributions._
-
-
-## Headless
-
-For a host with no desktop session. Written for Raspberry Pi OS Lite, and it should work the same on Debian or any other apt-based headless Linux, on arm64 and x86_64 alike.
-
-```bash
-curl -fL -o install.sh https://raw.githubusercontent.com/f-io/LIVI/main/scripts/install/headless/install.sh
-chmod +x install.sh
-./install.sh
-```
-
-Reboot when it finishes. LIVI then runs fullscreen on tty1 and logs to `~/LIVI/LIVI.log`. Shutting LIVI down from its own menu ends the service and hands tty1 back to the login shell, so a reboot brings the kiosk back.
-
+_Tested on Raspberry Pi OS, Ubuntu 26.04 and Fedora 44._
 
 > [!NOTE]
-> The script sets the boot target to `multi-user.target` so the kiosk owns the screen. On a host that boots into a desktop, that disables the graphical login. Undo it with `sudo systemctl set-default graphical.target`.
+> The Pi 4, CM 4, Pi 5 and CM 5 require Trixie (Debian 13) for OpenGL ES 3.x. Pi 3 and earlier use the VideoCore IV GPU (OpenGL ES 2.0 only) and are unsupported.
+
+> [!NOTE]
+> The headless flow sets the boot target to `multi-user.target`, disabling a graphical login. Undo with `sudo systemctl set-default graphical.target`.
 
 
 ## Linux (x86_64)

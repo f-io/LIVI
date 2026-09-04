@@ -31,11 +31,10 @@ echo "→ Checking for required tools: curl, xdg-user-dir, pkexec"
 for tool in curl xdg-user-dir pkexec; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "   $tool not found, installing…"
-    sudo apt-get update
     case "$tool" in
-      xdg-user-dir) sudo apt-get --yes install xdg-user-dirs ;;
-      pkexec)       sudo apt-get --yes install pkexec ;;
-      *)            sudo apt-get --yes install "$tool" ;;
+      xdg-user-dir) livi_pm_install xdg-user-dirs ;;
+      pkexec)       [ "$(livi_pm)" = dnf ] && livi_pm_install polkit || livi_pm_install pkexec ;;
+      *)            livi_pm_install "$tool" ;;
     esac
   else
     echo "   $tool found"
@@ -44,8 +43,7 @@ done
 
 # A desktop session is already present, so only the core packages are needed here.
 echo "→ Ensuring GStreamer, wireless AP and Bluetooth runtime packages"
-sudo apt-get update
-sudo apt-get install -y $(livi_packages core | tr '\n' ' ')
+livi_pm_install $(livi_packages core | tr '\n' ' ')
 
 ICON_URL="$LIVI_RAW/assets/icons/linux/livi.png"
 ICON_DEST="$USER_HOME/.local/share/icons/livi.png"
