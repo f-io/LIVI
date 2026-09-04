@@ -25,7 +25,7 @@ import { customProxy } from '@main/services/custom/CustomProxy'
 import { checkAndInstallGvfsGuard, startPhoneSuppression } from '@main/services/gvfsPhoneGuard'
 import { checkMissingPackages } from '@main/services/packageCheck'
 import { checkAndInstallHelperSudoers } from '@main/services/projection/driver/helper/helperSudoers'
-import { checkAndInstallWifiApUnit } from '@main/services/projection/driver/helper/wifiApUnit'
+import { reconcileWifiAp } from '@main/services/projection/driver/helper/wifiApUnit'
 import { ProjectionService } from '@main/services/projection/services/ProjectionService'
 import { TelemetrySocket } from '@main/services/Socket'
 import { setupTelemetry } from '@main/services/telemetry/setupTelemetry'
@@ -87,6 +87,7 @@ app.whenReady().then(async () => {
   await customProxy.start(runtimeState.config.customUrl)
   configEvents.on('changed', (next: Config) => {
     void customProxy.start(next.customUrl)
+    void reconcileWifiAp(next)
   })
 
   const carBridge = new CarBridgeService(runtimeState.config.language)
@@ -191,10 +192,10 @@ app.whenReady().then(async () => {
       runtimeState.config.wirelessCpEnabled === true)
   ) {
     await checkAndInstallHelperSudoers(win)
-    await checkAndInstallWifiApUnit(win)
   }
 
   if (win && process.platform === 'linux') {
+    void reconcileWifiAp(runtimeState.config, win)
     await checkAndInstallGvfsGuard(win)
     startPhoneSuppression()
     ensureWireplumberBtRoles()

@@ -138,6 +138,18 @@ fn release_iface_from_nm(iface: &str) {
     run_cmd("rfkill", &["unblock", "wifi"]);
 }
 
+/// Return the interface to NetworkManager and stop the AP.
+pub fn teardown(iface: &str) {
+    run_cmd("pkill", &["-f", &format!("hostapd.*{HOSTAPD_CONF}")]);
+    run_cmd("pkill", &["-f", &format!("dnsmasq.*{DNSMASQ_CONF}")]);
+    run_cmd("ip", &["addr", "flush", "dev", iface, "scope", "global"]);
+    let _ = std::fs::remove_file(NM_UNMANAGED_CONF);
+    run_cmd("nmcli", &["general", "reload"]);
+    run_cmd("nmcli", &["device", "set", iface, "managed", "yes"]);
+    // Let NM bring the client Wi-Fi back on the profiles persist_nm_profiles kept.
+    run_cmd("nmcli", &["device", "connect", iface]);
+}
+
 fn iface_mac(iface: &str) -> Option<[u8; 6]> {
     let raw = std::fs::read_to_string(format!("/sys/class/net/{iface}/address")).ok()?;
     let mut mac = [0u8; 6];

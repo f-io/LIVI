@@ -1,6 +1,7 @@
 import { stopSystemVolumeMonitor } from '@main/services/audio/SystemVolume'
 import { stopPhoneSuppression } from '@main/services/gvfsPhoneGuard'
 import { runPendingPowerAction } from '@main/services/power/hostPower'
+import { releaseWifiApForQuit } from '@main/services/projection/driver/helper/wifiApUnit'
 import { runtimeStateProps, ServicesProps } from '@main/types'
 import { createMainWindow, getMainWindow } from '@main/window/createWindow'
 import { closeAllSecondaryWindows } from '@main/window/secondaryWindows'
@@ -115,6 +116,10 @@ export function setupLifecycle(runtimeState: runtimeStateProps, services: Servic
 
       await measureStep('projection.stop()', async () => {
         await withTimeout('projection.stop()', projectionService.stop(), tCarplayStop)
+      })
+
+      await measureStep('wifiAp.release()', async () => {
+        await withTimeout('wifiAp.release()', releaseWifiApForQuit(runtimeState.config), 2000)
       })
     } catch (err) {
       console.warn('[MAIN] Error while quitting:', err)

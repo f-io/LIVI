@@ -77,6 +77,13 @@ pub fn run_wifi_ap() -> ExitCode {
     livi_runtime::wifi_ap::run(cfg)
 }
 
+pub fn run_wifi_ap_teardown() -> ExitCode {
+    let dc = DeviceConfig::load();
+    let iface = dc.string("wifiInterface", "LIVI_WIFI_IFACE", "wlan0");
+    livi_runtime::wifi_ap::teardown(&iface);
+    ExitCode::SUCCESS
+}
+
 pub fn run() -> ExitCode {
     let rt = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
         Ok(rt) => rt,

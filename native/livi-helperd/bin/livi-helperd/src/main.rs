@@ -12,6 +12,9 @@ mod mac_main;
 fn main() -> ExitCode {
     #[cfg(target_os = "linux")]
     {
+        if std::env::args().any(|a| a == "--wifi-ap-teardown") {
+            return linux_main::run_wifi_ap_teardown();
+        }
         if std::env::args().any(|a| a == "--wifi-ap") {
             return linux_main::run_wifi_ap();
         }
