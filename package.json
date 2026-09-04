@@ -72,7 +72,7 @@
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "@vitest/coverage-v8": "^5.0.0",
-    "electron": "^44.1.1",
+    "electron": "^44.2.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "globals": "^17.12.0",
