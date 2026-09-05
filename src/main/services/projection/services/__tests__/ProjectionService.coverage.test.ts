@@ -308,6 +308,7 @@ describe('ProjectionService driver getters and codec caps', () => {
     svc.drivers.setAaAv1Supported = vi.fn()
     svc.drivers.setCpAv1Supported = vi.fn()
 
+    svc.codecCaps.applyCodecCapabilities({})
     svc.codecCaps.applyCodecCapabilities({
       h265: { hw: true },
       vp9: { hw: true },

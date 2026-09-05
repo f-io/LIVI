@@ -87,11 +87,14 @@ export class CpHelperSock implements MfiSigner {
     return Buffer.from(res.data ?? '', 'base64')
   }
 
-  /** Auth protocol major version reported by the chip (2 = SHA-1, 3 = SHA-256). Reads the
-   *  certificate once to learn it; defaults to 3 if the chip did not report a version. */
+  /** Auth protocol major version reported by the chip (2 = SHA-1, 3 = SHA-256), learnt from
+   *  the certificate; unknown is an error. */
   async protocolMajor(): Promise<number> {
     if (this._protocolMajor == null) await this.certificate()
-    return this._protocolMajor ?? 3
+    if (this._protocolMajor == null) {
+      throw new CpHelperSockError('MFi auth protocol version unknown')
+    }
+    return this._protocolMajor
   }
 
   /** Sign a digest with the coprocessor's private key. */
@@ -105,8 +108,8 @@ export class CpHelperSock implements MfiSigner {
     if (!res.ok) throw new CpHelperSockError(res.error)
   }
 
-  /** Hand NMEA sentences to the iAP2 stack for a LocationInformation update (base64,
-   *  since a fix carries embedded CR/LF). Best-effort: dropped if no phone subscribed. */
+  /** Hands NMEA sentences (base64) to the iAP2 stack for a LocationInformation update;
+   *  dropped when no phone subscribed. */
   async sendLocation(nmea: string): Promise<void> {
     await this.request(`location ${Buffer.from(nmea, 'utf8').toString('base64')}`)
   }

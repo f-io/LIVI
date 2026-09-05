@@ -51,7 +51,7 @@ pub struct LiviSockConfig {
 pub async fn serve<A>(
     cfg: LiviSockConfig,
     auth: A,
-    bus: zbus::Connection,
+    bus: Option<zbus::Connection>,
     bcast: Broadcaster,
     state: Arc<HelperState>,
 ) -> io::Result<()>
@@ -103,7 +103,7 @@ async fn handle<A>(
     mut stream: UnixStream,
     mut auth: A,
     cfg: LiviSockConfig,
-    bus: zbus::Connection,
+    bus: Option<zbus::Connection>,
     bcast: Broadcaster,
     state: Arc<HelperState>,
 ) -> io::Result<()>
@@ -136,13 +136,14 @@ where
             Ok(())
         }
         "certificate" => {
+            // An unknown generation is an error, not a guess.
             let json = match (auth.read_certificate().await, auth.protocol_major().await) {
-                (Ok(cert), major) => format!(
+                (Ok(cert), Ok(major)) => format!(
                     "{{\"ok\":true,\"data\":\"{}\",\"protocolMajor\":{}}}",
                     STANDARD.encode(&cert),
-                    major.unwrap_or(3)
+                    major
                 ),
-                (Err(e), _) => err_json(&e),
+                (Err(e), _) | (_, Err(e)) => err_json(&format!("MFi: {e}")),
             };
             reply(&mut stream, &json).await
         }
@@ -160,9 +161,12 @@ where
             let json = if arg.is_empty() {
                 err_json("disconnect requires a MAC")
             } else {
-                match device_disconnect(&bus, &cfg.adapter, arg).await {
-                    Ok(()) => "{\"ok\":true}".to_string(),
-                    Err(e) => err_json(&e),
+                match bus.as_ref() {
+                    Some(bus) => match device_disconnect(bus, &cfg.adapter, arg).await {
+                        Ok(()) => "{\"ok\":true}".to_string(),
+                        Err(e) => err_json(&e),
+                    },
+                    None => err_json("disconnect unavailable without BlueZ"),
                 }
             };
             reply(&mut stream, &json).await
@@ -266,8 +270,7 @@ pub async fn pump_events(rx: mpsc::Receiver<BringupEvent>, bcast: Broadcaster, t
 }
 
 /// Forwards bring-up telemetry to the UI: decodes incoming CSM into JSON and broadcasts it.
-/// `usb_udid` marks a wired session; every metadata event carries the phone's iAP2 identity
-/// so the UI routes it to the right session.
+/// `usb_udid` marks a wired session; every metadata event carries the phone's iAP2 identity.
 pub async fn pump_events_for(
     mut rx: mpsc::Receiver<BringupEvent>,
     bcast: Broadcaster,

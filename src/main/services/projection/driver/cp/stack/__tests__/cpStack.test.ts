@@ -1,4 +1,10 @@
 import { EventEmitter } from 'node:events'
+import {
+  closeMicUplink,
+  onAudioReceiverStarted,
+  openAudioReceiver,
+  openMicUplink
+} from '@main/services/video/GstVideo'
 
 type CpStackControl = {
   setStreamVolume(audioType: number, level: number, rampMs: number): void
@@ -62,6 +68,22 @@ vi.mock('@main/services/video/gstHost', () => ({
   gstHost: reg.gst,
   VIDEO_PLANE_MAIN: 0x7a000001,
   VIDEO_PLANE_CLUSTER_RECV: 0x7a000010
+}))
+
+// In-process receiver mock: 0 = not available (the ScreenStream fallback); a test sets a port
+// to enable it.
+const inProcPort = { value: 0 }
+vi.mock('@main/services/video/GstVideo', () => ({
+  openScreenReceiver: vi.fn(() => inProcPort.value),
+  closeScreenReceiver: vi.fn(),
+  // null means "no in-process receiver", so the host path stays the default in tests
+  openAudioReceiver: vi.fn(() => null),
+  onAudioReceiverStarted: vi.fn(),
+  setAudioReceiverActive: vi.fn(),
+  setAudioReceiverVolume: vi.fn(),
+  closeAudioReceiver: vi.fn(),
+  openMicUplink: vi.fn(() => null),
+  closeMicUplink: vi.fn()
 }))
 
 vi.mock('../screenStream', async () => {
@@ -675,6 +697,36 @@ describe('CpStack audio setup formats', () => {
     expect(active).toHaveBeenCalledWith(true, expect.any(Number), 1)
   })
 
+  it('opens the microphone in-process when the addon plays the stream', async () => {
+    vi.mocked(openAudioReceiver).mockReturnValueOnce({
+      streamId: 0x7c000001,
+      dataPort: 5001,
+      controlPort: 5002
+    })
+    vi.mocked(openMicUplink).mockReturnValueOnce(0x7d000001)
+    const { stack, session } = await setupAudio({
+      streamConnectionID: 1,
+      audioType: 'speechRecognition',
+      audioFormat: 0x20000000,
+      dataPort: 6000,
+      framesPerPacket: 480
+    })
+    expect(reg.gst.openAudio).not.toHaveBeenCalled()
+
+    const active = vi.fn()
+    stack.on('mic-active', active)
+    vi.mocked(onAudioReceiverStarted).mock.calls.at(-1)?.[0](0x7c000001, 4242)
+
+    expect(openMicUplink).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(openMicUplink).mock.calls[0][1]).toMatchObject({ codec: 'opus', port: 6000 })
+    expect(reg.gst.openMic).not.toHaveBeenCalled()
+    expect(active).toHaveBeenCalledWith(true, expect.any(Number), 1)
+
+    internals(stack)._closeAudio(session.audioMeta[0])
+    expect(closeMicUplink).toHaveBeenCalledWith(0x7d000001)
+    expect(reg.gst.closeMic).not.toHaveBeenCalled()
+  })
+
   it('opens LPCM as samples on the wire', async () => {
     await setupAudio(
       { streamConnectionID: 1, audioType: 'telephony', audioFormat: 0x800, dataPort: 0 },
@@ -740,6 +792,28 @@ describe('CpStack screen setup', () => {
     expect(clusterPort).toBe(40000)
     expect(ready).toHaveBeenCalled()
     expect(reg.gst.setActiveFeeder).toHaveBeenCalled()
+  })
+
+  it('uses the in-process receiver off linux when the addon offers one', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+    inProcPort.value = 40500
+    try {
+      const { stack, session } = await stackWith({ hevc: false })
+      const codec = vi.fn()
+      const ready = vi.fn()
+      stack.on('video-codec', codec)
+      stack.on('main-screen-ready', ready)
+
+      const port = await internals(stack)._setupScreen({ streamConnectionID: 1 }, session)
+
+      expect(port).toBe(40500)
+      expect(codec).toHaveBeenCalledWith('h264')
+      expect(ready).toHaveBeenCalled()
+      // the frames reach the plane inside the addon, so no ScreenStream is built here
+      expect(session.screen).toBeFalsy()
+    } finally {
+      inProcPort.value = 0
+    }
   })
 
   it('reports the advertised codec once per native screen on linux', async () => {

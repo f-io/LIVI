@@ -2,7 +2,8 @@ use std::process::ExitCode;
 
 #[cfg(target_os = "linux")]
 mod linux_main;
-#[cfg(target_os = "linux")]
+// The wired watcher drives a phone on this machine's USB or one on a LIVI Link dongle.
+mod link;
 mod wired;
 #[cfg(target_os = "linux")]
 mod aa;

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::linux::{ensure_carplay_config, find_iphones, restore_default_config};
+use crate::backend::{ensure_carplay_config, find_iphones, restore_default_config};
 use crate::mux::MuxHost;
 
 pub fn socket_path(serial: &str) -> String {

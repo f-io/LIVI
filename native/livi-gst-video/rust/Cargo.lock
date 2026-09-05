@@ -287,7 +287,9 @@ dependencies = [
  "cc",
  "livi-audio-player",
  "livi-audio-stream",
+ "livi-audio-uplink",
  "livi-host-proto",
+ "livi-screen-stream",
  "livi-video-fanout",
  "livi-video-nal",
  "livi-video-player",
@@ -295,6 +297,7 @@ dependencies = [
  "napi-build",
  "napi-derive",
  "pkg-config",
+ "socket2",
 ]
 
 [[package]]

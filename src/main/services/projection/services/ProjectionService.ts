@@ -19,6 +19,7 @@ import {
 import { StatusFileWriter } from '../../status/StatusFileWriter'
 import {
   type GstVideoCodec,
+  onScreenReceiverConfig,
   openMediaFeed,
   probeGstCodecs,
   setOnPlayerCreated
@@ -391,9 +392,8 @@ export class ProjectionService {
           protocol: 'carplay',
           transport: wired ? 'usb' : 'wifi'
         })
-        // A session born at iAP2 identification (socket-less metadata driver) is taken over
-        // by this AirPlay transport: hand it the identity + accumulated media/nav, then drop
-        // the placeholder, so the phone stays ONE session, not two.
+        // A session born at iAP2 identification is taken over by this AirPlay transport: it gets
+        // the identity and the accumulated media/nav, the placeholder is dropped.
         const born = this.sessions.byIdentity('carplay', {
           btMac,
           wifiMac,
@@ -549,13 +549,13 @@ export class ProjectionService {
 
   private syncHelperSupervisor(): void {
     const linux = process.platform === 'linux'
+    const isMac = process.platform === 'darwin'
     const wantAaWireless = linux && this.config.wirelessAaEnabled === true
     const wantCpWireless = linux && this.config.wirelessCpEnabled === true
-    const wantCp = linux
-    // Wired CP (carkit) always runs on Linux. Wireless (Wi-Fi AP +
-    // BT profiles) is toggled live over the control socket. The helper process never
-    // restarts for a wireless config change, so wired sessions survive the toggle.
-    // The helper is wanted on every platform (USB AA), so it always runs.
+    // The CarPlay receiver runs on Linux and, via the LIVI Link dongle, on macOS.
+    const wantCp = linux || isMac
+    // Wired CP (carkit) always runs on Linux; wireless (Wi-Fi AP + BT profiles) is toggled
+    // live over the control socket, without restarting the helper. The helper runs everywhere.
     const enableKey = 'h'
     // The spawn env only carries the initial AA/CP wireless state. Later changes go
     // over the control socket.
@@ -603,9 +603,8 @@ export class ProjectionService {
       this.drivers.stopAaWireless()
     }
 
-    // CpManager owns the CarPlay :7000 listener + the helper event feed, which WIRED CP
-    // needs as much as wireless (the phone reaches :7000 over the USB link-local too), so it
-    // runs whenever wired CP is possible (wantCp), not gated on cpWireless.
+    // CpManager owns the CarPlay :7000 listener and the helper event feed; it runs whenever
+    // CarPlay is possible (wantCp), wired or wireless.
     if (wantCp && !this.cpActive) {
       this.cpActive = true
       this.drivers.startCp()
@@ -662,13 +661,10 @@ export class ProjectionService {
     this.deviceController.emitDevices()
   }
 
-  // Dongle lifecycle over always-on driver events (not the routed 'message' path),
-  // so a held dongle still appears + is selectable in the picker while native sessions run.
+  // Dongle lifecycle over the always-on driver events, not the routed 'message' path.
   private onDonglePhoneConnected(): void {
     this.maybeAutoActivate(this.sessions.upsert(this.drivers.getDongle(), 'dongle', 'usb', {}))
-    // A cluster request from the renderer may have gone out before the link was up (the
-    // cluster page was already open at plug-in), so it never reached the dongle. Re-assert
-    // it now that the session can carry it.
+    // Re-asserts the renderer's cluster request now that the session can carry it.
     if (this.anyClusterRequested()) this.dongleDriver.requestClusterFocus()
     this.deviceController.emitDevices()
   }
@@ -779,9 +775,8 @@ export class ProjectionService {
     this.clearTimeouts()
     this.lastPluggedPhoneType = undefined
     this.aaPlaybackInferred = 1
-    // A held phone dropping must not blank the ACTIVE phone's projection: clear the
-    // UI/status/nav only when no session is left active (onActiveSessionChanged /
-    // teardownToIdle drives the active-session case).
+    // UI/status/nav are cleared only when no session is left active; the active-session case
+    // runs through onActiveSessionChanged / teardownToIdle.
     if (!this.sessions.active()) {
       this.emitProjectionEvent({ type: 'unplugged' })
       this.statusFile.setProjection(null, null)
@@ -927,8 +922,8 @@ export class ProjectionService {
     this.planes.setMainCodec(codec)
   }
 
-  // 'video-config': CarPlay's codec_data record, in before the first frame so the plane is
-  // created for a length-prefixed source. Applied live if the plane already exists.
+  // 'video-config': CarPlay's codec_data record, ahead of the first frame; applied live if
+  // the plane already exists.
   private readonly onDriverVideoConfig = (codecData: Buffer): void => {
     this.planes.setMainCodecData(codecData)
   }
@@ -1143,6 +1138,8 @@ export class ProjectionService {
 
     gstHost.onVideoReceiverConfig(this.onNativeVideoConfig)
     gstHost.onVideoReceiverStarted(this.onNativeVideoStarted)
+    // Same reverse path where the addon receives instead of the host process.
+    onScreenReceiverConfig(this.onNativeVideoConfig)
     // A cluster screen window that opens mid-session needs its plane created.
     secondaryWindowEvents.on('ready', () => {
       this.planes.ensureClusterPlanes()
@@ -1248,9 +1245,7 @@ export class ProjectionService {
       },
       noteDonglePairForgotten: (btMac) => {
         if (this.dongleState.removeFromDevList(btMac)) this.deviceController.emitDevices()
-        // Forgetting the connected phone ends its session right away. The dongle's own
-        // Unplugged only arrives after an internal timeout and would leave the UI stuck
-        // on the last frame.
+        // Forgetting the connected phone ends its session right away.
         const up = btMac.trim().toUpperCase()
         const connected = this.dongleState.getConnectedMac().trim().toUpperCase()
         if (up && connected === up) {
@@ -2249,8 +2244,7 @@ export class ProjectionService {
     return this.stopPromise
   }
 
-  // Bring-up can fail transiently (USB interface still busy, phone still locked). Keep retrying
-  // so a connection eventually establishes, the arbiter stops us once the phone is gone.
+  // Retries the bring-up until it succeeds or the arbiter stops it.
   private scheduleStartRetry() {
     if (this.shuttingDown || this.stopPromise) return
     if (this.startRetryTimer) return
@@ -2311,9 +2305,7 @@ export class ProjectionService {
       }
 
       if (noTargets && isVideoChannel) {
-        // Buffer the chunk so it can be replayed once the renderer attaches.
-        // Per-channel cap so a 60fps main stream can't push the cluster's
-        // initial SPS/IDR out of the queue before the renderer connects.
+        // Buffers the chunk for replay once the renderer attaches, capped per channel.
         let q = this.earlyVideoQueues.get(channel)
         if (!q) {
           q = []
@@ -2337,10 +2329,9 @@ export class ProjectionService {
     }
   }
 
-  // Cluster video routing: list of webContents that should receive cluster
-  // video chunks + resolution events, derived from the cluster dashboards
-  // (dash3/dash4) per screen. Falls back to the bound main webContents when
-  // settings are missing so the path stays compatible with tests / startup.
+  // Cluster video routing: the webContents receiving cluster video chunks and resolution
+  // events, from the cluster dashboards (dash3/dash4) per screen; without settings the main
+  // webContents.
   private getClusterTargetWebContents(): WebContents[] {
     const screens = clusterTargetScreens(this.config)
     const isAlive = (wc: WebContents | null | undefined): wc is WebContents => {
@@ -2369,8 +2360,8 @@ export class ProjectionService {
     return out
   }
 
-  // Every live UI window (main + secondary). Used for data every window may render,
-  // e.g. the FFT audio chunks, which otherwise only reach the main window.
+  // Every live UI window (main + secondary), for data every window may render, e.g. the FFT
+  // audio chunks.
   private getAllUiWebContents(): WebContents[] {
     const alive = (wc: WebContents | null | undefined): wc is WebContents => {
       try {

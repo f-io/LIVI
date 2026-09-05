@@ -832,9 +832,11 @@ dependencies = [
  "iap2-mfi",
  "iap2-usbmux",
  "iap2-wired",
+ "libc",
  "livi-aa",
  "livi-dongle",
  "livi-runtime",
+ "nusb",
  "serde_json",
  "tokio",
 ]
@@ -866,6 +868,13 @@ version = "0.1.0"
 dependencies = [
  "nusb",
  "tokio",
+]
+
+[[package]]
+name = "livi-usbproxy"
+version = "0.1.0"
+dependencies = [
+ "iap2-usbmux",
 ]
 
 [[package]]

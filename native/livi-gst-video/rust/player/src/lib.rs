@@ -235,7 +235,7 @@ impl Player {
         };
 
         let with_cal = !livi_video_codec::calibration().is_empty();
-        let pipeline = Self::parse(codec, decoder, with_cal)?;
+        let pipeline = Self::parse(codec, decoder, with_cal, handle)?;
 
         let appsrc = pipeline.by_name("src").and_then(|e| e.downcast::<gst_app::AppSrc>().ok());
         if let Some(src) = &appsrc
@@ -262,6 +262,17 @@ impl Player {
 
         force_sinks_realtime(&player.pipeline);
         if let Some(dec) = player.pipeline.by_name("dec") {
+            // avdec_h265 runs single-threaded on macOS (libavcodec 61 deadlocks in HEVC slice
+            // threading).
+            if cfg!(target_os = "macos") && decoder == "avdec_h265" {
+                dec.set_property_from_str("thread-type", "frame");
+                dec.set_property("max-threads", 1i32);
+                eprintln!(
+                    "[gst_video] {decoder} thread-type={} max-threads={}",
+                    dec.property_value("thread-type").serialize().map(|s| s.to_string()).unwrap_or_default(),
+                    dec.property::<i32>("max-threads")
+                );
+            }
             install_decoder_probes(&dec, decoder);
         }
         log_bus_messages(&player.pipeline);
@@ -272,7 +283,7 @@ impl Player {
 
     /// Parses the description, and drops the calibration pass when the platform
     /// announces one the elements cannot deliver.
-    fn parse(codec: &str, decoder: &str, with_cal: bool) -> Option<gst::Pipeline> {
+    fn parse(codec: &str, decoder: &str, with_cal: bool, handle: usize) -> Option<gst::Pipeline> {
         let describe = |cal: bool| {
             livi_video_codec::pipeline_desc(
                 codec,
@@ -284,7 +295,7 @@ impl Player {
 
         let desc = describe(with_cal);
         eprintln!(
-            "[gst_video] codec={codec} decoder={decoder} ({}) | {desc}",
+            "[gst_video] window={handle:#x} codec={codec} decoder={decoder} ({}) | {desc}",
             if livi_video_codec::is_hw_decoder(decoder) { "hw" } else { "sw" }
         );
 

@@ -64,11 +64,11 @@ describe('CpHelperSock request', () => {
     expect(sockets).toHaveLength(1)
   })
 
-  it('reads the certificate once for protocolMajor and defaults to 3', async () => {
+  it('reads the certificate once for protocolMajor and refuses to guess', async () => {
     const helper = new CpHelperSock()
     const p = helper.protocolMajor()
     reply(sockets[0], { ok: true, data: '' })
-    await expect(p).resolves.toBe(3)
+    await expect(p).rejects.toThrow('MFi auth protocol version unknown')
   })
 
   it('returns an empty certificate when the reply omits data', async () => {

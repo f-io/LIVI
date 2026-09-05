@@ -14,9 +14,10 @@ iap2-mfi = { path = "../../crates/iap2-mfi" }
 iap2-link = { path = "../../crates/iap2-link" }
 livi-aa = { path = "../../crates/livi-aa" }
 livi-dongle = { path = "../../crates/livi-dongle" }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
-serde_json = "1"
-
-[target.'cfg(target_os = "linux")'.dependencies]
 iap2-usbmux = { path = "../../crates/iap2-usbmux" }
 iap2-wired = { path = "../../crates/iap2-wired" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
+serde_json = "1"
+libc = "0.2"
+nusb = "0.2"
+

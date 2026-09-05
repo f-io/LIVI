@@ -19,7 +19,6 @@ pub mod state;
 
 #[cfg(target_os = "linux")]
 pub mod bt;
-#[cfg(target_os = "linux")]
 pub mod mfi_async;
 
 use std::future::Future;

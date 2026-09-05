@@ -1,0 +1,11 @@
+[package]
+name = "livi-usbproxy"
+version = "0.1.0"
+edition.workspace = true
+
+[[bin]]
+name = "livi-usbproxy"
+path = "src/main.rs"
+
+[dependencies]
+iap2-usbmux = { path = "../../crates/iap2-usbmux" }

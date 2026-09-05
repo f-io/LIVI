@@ -4,8 +4,6 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
-
-[target.'cfg(target_os = "linux")'.dependencies]
 iap2-usbmux = { path = "../iap2-usbmux" }
 idevice = { version = "0.1", features = ["pair"] }
 plist = "1"

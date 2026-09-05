@@ -3,6 +3,9 @@
 //! streams media into ends here as well on the platforms without a host process.
 
 mod feed;
+mod audio_recv;
+mod mic_uplink;
+mod screen_recv;
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -239,4 +242,205 @@ pub fn close_audio(stream: External<AudioStream>) {
     feed::unregister_audio(stream.0.id);
     stream.0.active.store(false, Ordering::Relaxed);
     stream.0.player.stop()
+}
+
+/// Binds a port for the phone's CarPlay screen stream and feeds the decrypted frames into the
+/// plane. `on_config` reports the stream's codec and configuration record.
+#[napi]
+pub fn open_video_receiver(
+    plane_id: u32,
+    key: Buffer,
+    on_config: napi::JsFunction,
+) -> napi::Result<u32> {
+    let key: [u8; 32] = key
+        .as_ref()
+        .try_into()
+        .map_err(|_| napi::Error::from_reason("screen key must be 32 bytes"))?;
+
+    let tsfn: napi::threadsafe_function::ThreadsafeFunction<
+        (u32, Vec<u8>),
+        napi::threadsafe_function::ErrorStrategy::Fatal,
+    > = on_config.create_threadsafe_function(0, |ctx| {
+        let (codec, atom): (u32, Vec<u8>) = ctx.value;
+        let codec = ctx.env.create_uint32(codec)?;
+        let atom = ctx.env.create_buffer_with_data(atom)?.into_raw();
+        Ok(vec![codec.into_unknown(), atom.into_unknown()])
+    })?;
+
+    let port = screen_recv::open(
+        plane_id,
+        key,
+        Box::new(move |codec, atom| {
+            tsfn.call(
+                (codec as u32, atom),
+                napi::threadsafe_function::ThreadsafeFunctionCallMode::NonBlocking,
+            );
+        }),
+    )
+    .map_err(|e| napi::Error::from_reason(format!("screen receiver: {e}")))?;
+    Ok(u32::from(port))
+}
+
+#[napi]
+pub fn close_video_receiver(plane_id: u32) {
+    screen_recv::close(plane_id)
+}
+
+#[napi(object)]
+pub struct AudioReceiverPorts {
+    pub stream_id: u32,
+    pub data_port: u32,
+    pub control_port: u32,
+}
+
+/// Binds the two ports of one CarPlay audio stream and plays it here. Codec names match the
+/// wire: "aac-lc" and "opus" over Wi-Fi, "pcm" for the wired LPCM stream.
+#[napi]
+#[allow(clippy::too_many_arguments)]
+pub fn open_audio_receiver(
+    key: Buffer,
+    codec: String,
+    payload_type: u32,
+    clock_rate: u32,
+    channels: u32,
+    latency_ms: u32,
+    realtime: bool,
+    device: Option<String>,
+    on_started: napi::JsFunction,
+) -> napi::Result<Option<AudioReceiverPorts>> {
+    let key: [u8; 32] = key
+        .as_ref()
+        .try_into()
+        .map_err(|_| napi::Error::from_reason("audio key must be 32 bytes"))?;
+    let codec = match codec.as_str() {
+        "aac-lc" => AudioCodec::AacLc,
+        "opus" => AudioCodec::Opus,
+        "pcm" => AudioCodec::Lpcm,
+        "pcm-le" => AudioCodec::PcmLe,
+        other => return Err(napi::Error::from_reason(format!("unknown audio codec {other}"))),
+    };
+
+    let tsfn: napi::threadsafe_function::ThreadsafeFunction<
+        (u32, u32),
+        napi::threadsafe_function::ErrorStrategy::Fatal,
+    > = on_started.create_threadsafe_function(0, |ctx| {
+        let (id, first_sample): (u32, u32) = ctx.value;
+        Ok(vec![ctx.env.create_uint32(id)?, ctx.env.create_uint32(first_sample)?])
+    })?;
+
+    let cfg = AudioConfig {
+        codec,
+        payload_type: payload_type as u8,
+        clock_rate,
+        channels: channels as u8,
+        latency_ms,
+        realtime,
+        device,
+        label: format!("{codec:?}"),
+    };
+    Ok(audio_recv::open(
+        &cfg,
+        key,
+        Box::new(move |id, first_sample| {
+            tsfn.call(
+                (id, first_sample),
+                napi::threadsafe_function::ThreadsafeFunctionCallMode::NonBlocking,
+            );
+        }),
+    )
+    .map(|(stream_id, data_port, control_port)| AudioReceiverPorts {
+        stream_id,
+        data_port: u32::from(data_port),
+        control_port: u32::from(control_port),
+    }))
+}
+
+/// A held session keeps its stream, but its samples stop at the sink.
+#[napi]
+pub fn set_audio_receiver_active(stream_id: u32, active: bool) {
+    audio_recv::set_active(stream_id, active)
+}
+
+#[napi]
+pub fn set_audio_receiver_volume(stream_id: u32, level: f64, ramp_ms: u32) {
+    audio_recv::set_volume(stream_id, level, ramp_ms)
+}
+
+#[napi]
+pub fn close_audio_receiver(stream_id: u32) {
+    audio_recv::close(stream_id)
+}
+
+/// Captures the microphone and sends it to the phone as sealed RTP. Codec names match the
+/// wire: "opus" over Wi-Fi, "pcm" for a wired phone. Returns the uplink's id.
+#[napi]
+#[allow(clippy::too_many_arguments)]
+pub fn open_mic_uplink(
+    key: Buffer,
+    codec: String,
+    payload_type: u32,
+    sample_rate: u32,
+    channels: u32,
+    bitrate: u32,
+    frame_ms: u32,
+    port: u32,
+    phone: String,
+    device: Option<String>,
+) -> napi::Result<Option<u32>> {
+    let key: [u8; 32] = key
+        .as_ref()
+        .try_into()
+        .map_err(|_| napi::Error::from_reason("mic key must be 32 bytes"))?;
+    let codec = match codec.as_str() {
+        "opus" => livi_audio_uplink::UplinkCodec::Opus,
+        "pcm" => livi_audio_uplink::UplinkCodec::Pcm,
+        other => return Err(napi::Error::from_reason(format!("unknown mic codec {other}"))),
+    };
+    Ok(mic_uplink::open(livi_audio_player::uplink::UplinkConfig {
+        codec,
+        payload_type: payload_type as u8,
+        sample_rate,
+        channels: channels as u8,
+        bitrate,
+        frame_ms,
+        key,
+        device: device.filter(|d| !d.is_empty()),
+        phone,
+        port: port as u16,
+        label: String::from("mic"),
+    }))
+}
+
+#[napi]
+pub fn close_mic_uplink(id: u32) {
+    mic_uplink::close(id)
+}
+
+/// Turns the visualizer tap on or off and takes the callback the samples go to.
+#[napi]
+pub fn set_audio_visualizer_tap(
+    on: bool,
+    on_samples: Option<napi::JsFunction>,
+) -> napi::Result<()> {
+    let cb: Option<feed::VizCb> = match on_samples {
+        Some(f) => {
+            let tsfn: napi::threadsafe_function::ThreadsafeFunction<
+                (Vec<u8>, u32),
+                napi::threadsafe_function::ErrorStrategy::Fatal,
+            > = f.create_threadsafe_function(0, |ctx| {
+                let (samples, rate): (Vec<u8>, u32) = ctx.value;
+                let samples = ctx.env.create_buffer_with_data(samples)?.into_raw();
+                Ok(vec![samples.into_unknown(), ctx.env.create_uint32(rate)?.into_unknown()])
+            })?;
+            Some(Box::new(move |samples, rate| {
+                tsfn.call(
+                    (samples, rate),
+                    napi::threadsafe_function::ThreadsafeFunctionCallMode::NonBlocking,
+                );
+            }))
+        }
+        None => None,
+    };
+    feed::set_visualizer(on, cb);
+    Ok(())
 }

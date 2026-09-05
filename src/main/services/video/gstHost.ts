@@ -97,6 +97,11 @@ class GstHost {
 
   private start(): void {
     if (this.child || this.starting || this.unavailable) return
+    if (process.platform !== 'linux') {
+      this.unavailable = true
+      console.warn('[gstHost] no host process on this platform, call ignored')
+      return
+    }
     this.starting = true
 
     let addonPath: string
@@ -192,6 +197,7 @@ class GstHost {
 
   private send(buf: Buffer): void {
     this.start()
+    if (this.unavailable) return
     if (this.sock?.writable) this.sock.write(buf)
     else this.queue.push(buf)
   }

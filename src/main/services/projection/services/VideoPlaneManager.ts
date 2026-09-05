@@ -5,7 +5,6 @@ import { aaContentArea, clusterTargetScreens } from '@shared/utils'
 import { WebContents } from 'electron'
 import { GstVideo, type GstVideoCodec } from '../../video/GstVideo'
 import { clusterPlaneId, VIDEO_PLANE_MAIN } from '../../video/gstHost'
-import { classifyNal } from '../../video/keyframe'
 import type { ProjectionEvent } from './types'
 
 type Region = {
@@ -27,17 +26,14 @@ export type VideoPlaneManagerDeps = {
 }
 
 /**
- * Owns the GstVideo decode/render planes (main + one per cluster screen) and their
- * codec / keyframe-gate / crop / visibility state. Frame bytes pass through untouched
- * (zero-copy): pushMain/pushCluster hand the same Buffer reference to GstVideo.push.
+ * Owns the GstVideo planes (main + one per cluster screen) and their codec / crop / visibility
+ * state. Frames do not pass through here; the native receiver feeds the planes.
  */
 export class VideoPlaneManager {
   private gstVideo: GstVideo | null = null
   private gstVideoCodec: GstVideoCodec = 'h264'
   private gstVideoCodecData: Buffer | null = null
   private gstVideoClusterCodecData: Buffer | null = null
-  private mainAwaitingKeyframe = true
-  private clusterAwaitingKeyframe = true
   private gstVideoVisible = true
   private videoCrop: Region | null = null
   private gstVideoClusters = new Map<ClusterScreen, GstVideo>()
@@ -53,13 +49,11 @@ export class VideoPlaneManager {
     this.gstVideo = null
     this.gstVideoCodec = 'h264'
     this.gstVideoCodecData = null
-    this.mainAwaitingKeyframe = true
     for (const plane of this.gstVideoClusters.values()) plane.dispose()
     this.gstVideoClusters.clear()
     this.gstVideoClusterCodec = 'h264'
     this.clusterCodecKnown = false
     this.gstVideoClusterCodecData = null
-    this.clusterAwaitingKeyframe = true
   }
 
   setMainCodec(codec: GstVideoCodec): void {
@@ -73,17 +67,11 @@ export class VideoPlaneManager {
 
   // CarPlay's codec_data record, in before the first frame. Applied live if the plane exists.
   setMainCodecData(codecData: Buffer): void {
-    if (!this.gstVideoCodecData || !this.gstVideoCodecData.equals(codecData)) {
-      this.mainAwaitingKeyframe = true
-    }
     this.gstVideoCodecData = codecData
     this.gstVideo?.setCodecData(codecData)
   }
 
   setClusterCodecData(codecData: Buffer): void {
-    if (!this.gstVideoClusterCodecData || !this.gstVideoClusterCodecData.equals(codecData)) {
-      this.clusterAwaitingKeyframe = true
-    }
     this.gstVideoClusterCodecData = codecData
     for (const plane of this.gstVideoClusters.values()) plane.setCodecData(codecData)
   }
@@ -166,17 +154,6 @@ export class VideoPlaneManager {
     return this.gstVideo
   }
 
-  pushMain(nal: Buffer): void {
-    const wc = this.deps.getWebContents()
-    if (!wc || wc.isDestroyed?.()) return
-    if (this.mainAwaitingKeyframe) {
-      const kind = classifyNal(nal, this.gstVideoCodec, this.gstVideoCodecData !== null)
-      if (kind === 'delta') return
-      if (kind === 'keyframe') this.mainAwaitingKeyframe = false
-    }
-    this.ensureMainPlane(wc).push(this.gstVideoCodec, nal)
-  }
-
   /** Creates the main plane ahead of the frames the helper feeds into the host. */
   primeMain(): boolean {
     const wc = this.deps.getWebContents()
@@ -201,36 +178,6 @@ export class VideoPlaneManager {
         this.gstVideoClusters.set(screen, plane)
       }
       plane.prepare(this.gstVideoClusterCodec)
-    }
-  }
-
-  pushCluster(nal: Buffer): void {
-    // Focus-stopped: ignore in-flight tail frames. Safe for the decoder because the
-    // resume (PROJECTED indication) always restarts the stream at a fresh keyframe.
-    if (this.clusterStreamActive === false) return
-    if (this.clusterAwaitingKeyframe) {
-      const kind = classifyNal(
-        nal,
-        this.gstVideoClusterCodec,
-        this.gstVideoClusterCodecData !== null
-      )
-      if (kind === 'delta') return
-      if (kind === 'keyframe') this.clusterAwaitingKeyframe = false
-    }
-    // One plane per configured screen. The fixed per-screen id is what the
-    // native receiver's fan-out addresses.
-    for (const screen of clusterTargetScreens(this.deps.getConfig())) {
-      let plane = this.gstVideoClusters.get(screen)
-      if (!plane) {
-        const wc = this.clusterScreenWebContents(screen)
-        if (!wc || wc.isDestroyed?.()) continue
-        plane = new GstVideo(wc, `cluster-${screen}`, screen, clusterPlaneId(screen))
-        plane.setVisible(this.clusterPlaneVisible(screen))
-        if (this.gstVideoClusterCodecData) plane.setCodecData(this.gstVideoClusterCodecData)
-        this.applyClusterCrop(plane) // fit to the configured cluster-stream AR
-        this.gstVideoClusters.set(screen, plane)
-      }
-      plane.push(this.gstVideoClusterCodec, nal)
     }
   }
 

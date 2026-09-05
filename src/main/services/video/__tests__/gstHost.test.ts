@@ -115,7 +115,11 @@ function blockGstVideoResolve(): () => void {
   }
 }
 
+const realPlatform = process.platform
+
 beforeEach(() => {
+  // the host process is a Linux thing; these tests describe it wherever they run
+  Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
   vi.clearAllMocks()
   children.length = 0
   servers.length = 0
@@ -129,6 +133,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true })
   vi.useRealTimers()
 })
 

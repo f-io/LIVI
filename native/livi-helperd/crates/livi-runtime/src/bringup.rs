@@ -14,8 +14,7 @@ use crate::framing::frame_msg_id;
 use crate::ident::{build_identification, Identity, Transport, DROPPABLE};
 use crate::{net, AsyncAuth, ControlChannel};
 
-/// Wireless CarPlay parameters handed to the phone so it can join the AP and reach the
-/// AirPlay receiver.
+/// Wireless CarPlay parameters handed to the phone: the AP and the AirPlay receiver.
 #[derive(Debug, Clone)]
 pub struct CpConfig {
     pub wifi_iface: String,
@@ -220,13 +219,15 @@ fn wifi_config(cp: &CpConfig) -> AccessoryWiFiConfigurationInformation {
 
 fn carplay_start_session(cp: &CpConfig) -> Option<CarPlayStartSession> {
     if cp.transport == Transport::Wired {
-        let iface = cp.av_iface.as_deref()?;
-        let fe80 = net::wlan_link_local(iface)?;
+        // The link-local the phone connects to: the A/V interface's.
+        let fe80 = net::wlan_link_local(cp.av_iface.as_deref()?)?;
         return Some(CarPlayStartSession {
             wired_attributes: Some(CarPlayStartSessionWiredAttributes { ip_address: vec![fe80] }),
             wireless_attributes: None,
             port: Some(cp.airplay_port),
-            device_identifier: net::wlan_mac(&cp.wifi_iface),
+            // No AP interface: the A/V interface stands in.
+            device_identifier: net::wlan_mac(&cp.wifi_iface)
+                .or_else(|| cp.av_iface.as_deref().and_then(net::wlan_mac)),
             public_key: Some(cp.public_key.clone()),
             source_version: Some(cp.source_version.clone()),
         });
@@ -303,6 +304,21 @@ pub async fn run_accessory<C: ControlChannel, A: AsyncAuth>(
             }
             0x4300 => match carplay_start_session(&cp) {
                 Some(start) => {
+                    // Logs the phone's offer and our answer.
+                    match CarPlayAvailability::decode(&frame) {
+                        Ok(a) => println!(
+                            "[cp] CarPlayAvailability wired={:?} wireless={:?}",
+                            a.wired_attributes, a.wireless_attributes
+                        ),
+                        Err(e) => println!("[cp] CarPlayAvailability undecodable: {e}"),
+                    }
+                    println!(
+                        "[cp] CarPlayStartSession ip={:?} port={:?} device_id={:?} pk_len={}",
+                        start.wired_attributes.as_ref().map(|w| &w.ip_address),
+                        start.port,
+                        start.device_identifier,
+                        start.public_key.as_deref().unwrap_or("").len()
+                    );
                     if ch.send(start.encode()).await.is_err() {
                         break;
                     }
