@@ -12,6 +12,7 @@ members = [
     "crates/livi-dongle",
     "bin/mfi-probe",
     "bin/livi-helperd",
+    "bin/livi-usbproxy",
     "bin/muxd-probe",
     "bin/usb-probe",
 ]

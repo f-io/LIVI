@@ -66,7 +66,7 @@ async fn certificate_sign_and_subscribe() {
     };
     let bcast = Broadcaster::default();
     let state = Arc::new(HelperState::default());
-    let server = tokio::spawn(serve(config(&path), MockAuth, bus, bcast.clone(), state));
+    let server = tokio::spawn(serve(config(&path), MockAuth, Some(bus), bcast.clone(), state));
 
     for _ in 0..50 {
         if UnixStream::connect(&path).await.is_ok() {

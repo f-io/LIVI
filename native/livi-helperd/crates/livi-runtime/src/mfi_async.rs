@@ -1,17 +1,24 @@
 use std::sync::{Arc, Mutex};
 
-use iap2_mfi::{AuthCoprocessor, I2cCoprocessor};
+use iap2_mfi::AuthCoprocessor;
 
 use crate::AsyncAuth;
 
+/// Backend-agnostic shared MFi coprocessor: local i2c (`I2cCoprocessor`) or the
+/// remote LIVI Link dongle over NCM (`NcmCoprocessor`) — both implement `AuthCoprocessor`.
 #[derive(Clone)]
 pub struct SharedCoprocessor {
-    inner: Arc<Mutex<I2cCoprocessor>>,
+    inner: Arc<Mutex<Box<dyn AuthCoprocessor + Send>>>,
 }
 
 impl SharedCoprocessor {
-    pub fn new(chip: I2cCoprocessor) -> Self {
+    pub fn new(chip: Box<dyn AuthCoprocessor + Send>) -> Self {
         Self { inner: Arc::new(Mutex::new(chip)) }
+    }
+
+    /// Puts another chip behind every clone of this handle.
+    pub fn replace(&self, chip: Box<dyn AuthCoprocessor + Send>) {
+        *self.inner.lock().unwrap() = chip;
     }
 }
 

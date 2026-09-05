@@ -50,12 +50,26 @@ impl core::fmt::Display for MfiError {
 
 impl std::error::Error for MfiError {}
 
-/// Abstracts the coprocessor so the bring-up path is the same whether the chip sits on a
-/// local i2c bus or behind the STM bridge.
+/// The MFi coprocessor, on a local i2c bus or behind the STM bridge.
 pub trait AuthCoprocessor {
     fn protocol_major(&mut self) -> Result<u8, MfiError>;
     fn read_certificate(&mut self) -> Result<Vec<u8>, MfiError>;
     fn generate_challenge_response(&mut self, challenge: &[u8]) -> Result<Vec<u8>, MfiError>;
+}
+
+/// No coprocessor at hand: every operation fails.
+pub struct NoCoprocessor;
+
+impl AuthCoprocessor for NoCoprocessor {
+    fn protocol_major(&mut self) -> Result<u8, MfiError> {
+        Err(MfiError::Io("no MFi coprocessor".into()))
+    }
+    fn read_certificate(&mut self) -> Result<Vec<u8>, MfiError> {
+        Err(MfiError::Io("no MFi coprocessor".into()))
+    }
+    fn generate_challenge_response(&mut self, _challenge: &[u8]) -> Result<Vec<u8>, MfiError> {
+        Err(MfiError::Io("no MFi coprocessor".into()))
+    }
 }
 
 pub const BUSY_RETRY: Duration = Duration::from_micros(500);
@@ -68,3 +82,7 @@ pub const AUTH_TIMEOUT: Duration = Duration::from_secs(3);
 mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::I2cCoprocessor;
+
+// Remote coprocessor over TCP (LIVI Link dongle across the USB-NCM link).
+pub mod ncm;
+pub use ncm::NcmCoprocessor;

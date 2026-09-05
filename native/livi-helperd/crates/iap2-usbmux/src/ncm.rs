@@ -11,7 +11,7 @@ use std::time::Duration;
 use nusb::transfer::{Bulk, Buffer, ControlIn, ControlType, In, Out, Recipient};
 use nusb::{Device, Endpoint, MaybeFuture};
 
-use crate::linux::{find_iphones, open_by_address};
+use crate::linux::{find_iphones, open_by_address}; // NcmBridge is local-USB only
 use crate::ntb::{build_ntb, parse_ntb};
 
 const NCM_CONTROL_CLASS: u8 = 0x02;
@@ -77,9 +77,8 @@ fn find_ncm_function(device: &Device) -> Option<NcmFunction> {
     None
 }
 
-/// The interface the kernel's cdc_ncm driver already created for this phone, if any. Newer
-/// models are bound by the kernel, and then that interface carries the AV link instead of a
-/// userspace bridge.
+/// The interface the kernel's cdc_ncm driver created for this phone, if any; it carries the
+/// AV link.
 fn kernel_ncm_iface(sysfs: &Path) -> Option<String> {
     let root = sysfs.canonicalize().ok()?;
     for e in fs::read_dir("/sys/class/net").ok()?.flatten() {
@@ -255,8 +254,8 @@ fn write_fd(fd: RawFd, buf: &[u8]) -> std::io::Result<()> {
     }
 }
 
-/// The MAC the host side of the link must use, named by the CDC Ethernet functional
-/// descriptor and stored as a USB string.
+/// The host-side MAC of the link, from the USB string the CDC Ethernet functional descriptor
+/// names.
 fn host_mac(device: &Device, sysfs: &Path, control_if: u8) -> Option<String> {
     let raw = fs::read(sysfs.join("descriptors")).ok()?;
     let mut idx = 0usize;

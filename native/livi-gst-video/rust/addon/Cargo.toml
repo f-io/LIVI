@@ -10,11 +10,14 @@ crate-type = ["cdylib"]
 
 [dependencies]
 livi-audio-player = { path = "../audioplayer" }
+livi-audio-uplink = { path = "../mic" }
 livi-audio-stream = { path = "../audio" }
 livi-host-proto = { path = "../../../livi-host-proto/rust" }
 livi-video-fanout = { path = "../fanout" }
+livi-screen-stream = { path = "../screen" }
 livi-video-nal = { path = "../nal" }
 livi-video-player = { path = "../player" }
+socket2 = "0.6"
 napi = { version = "2", default-features = false, features = ["napi8"] }
 napi-derive = "2"
 

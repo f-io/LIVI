@@ -3,6 +3,11 @@ import { HostAudioOutput } from '@main/services/audio'
 import { gstHost } from '@main/services/video/gstHost'
 import type { Config } from '@shared/types'
 import { AudioCommand } from '@shared/types/ProjectionEnums'
+import {
+  onAudioReceiverVisualizer,
+  setAudioReceiverVisualizerTap,
+  useHostProcess
+} from '../../video/GstVideo'
 import type { AudioData } from '../messages'
 import type { ProjectionEvent } from './types'
 
@@ -62,13 +67,16 @@ export class ProjectionAudio {
       rampMs: number
     ) => void = () => {}
   ) {
-    // Forward the host's pre-fader mono tap to the renderer.
-    gstHost.onVisualizerAudio((samples, sampleRate) => {
-      if (this.visualizerWindows.size === 0 || samples.length === 0) return
-      this.sendChunked('projection-audio-chunk', samples.buffer as ArrayBuffer, 64 * 1024, {
-        sampleRate,
-        channels: 1
-      })
+    // Forward the pre-fader mono tap to the renderer, wherever the audio was received.
+    gstHost.onVisualizerAudio((samples, rate) => this.onVisualizerSamples(samples, rate))
+    onAudioReceiverVisualizer((samples, rate) => this.onVisualizerSamples(samples, rate))
+  }
+
+  private onVisualizerSamples(samples: Uint8Array, sampleRate: number): void {
+    if (this.visualizerWindows.size === 0 || samples.length === 0) return
+    this.sendChunked('projection-audio-chunk', samples.buffer as ArrayBuffer, 64 * 1024, {
+      sampleRate,
+      channels: 1
     })
   }
 
@@ -98,7 +106,10 @@ export class ProjectionAudio {
     if (enabled) this.visualizerWindows.add(sourceId)
     else this.visualizerWindows.delete(sourceId)
     const wants = this.visualizerWindows.size > 0
-    if (wants !== had) gstHost.setVisualizerTap(wants)
+    if (wants !== had) {
+      if (useHostProcess) gstHost.setVisualizerTap(wants)
+      else setAudioReceiverVisualizerTap(wants)
+    }
   }
 
   // True while any window wants the FFT chunks

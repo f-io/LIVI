@@ -6,11 +6,8 @@ use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use nusb::transfer::{Bulk, Buffer, In, Out};
-use nusb::{Endpoint, Interface, MaybeFuture};
-
-use crate::linux::{find_iphones, open_by_address};
-use crate::{EP_IN, EP_OUT};
+use crate::backend;
+use crate::pipe::{MuxReader, MuxWriter};
 
 const P_VERSION: u32 = 0;
 const P_SETUP: u32 = 2;
@@ -18,8 +15,6 @@ const P_TCP: u32 = 6;
 const MUX_MAGIC: u32 = 0xFEED_FACE;
 const TX_WIN: u32 = 131072;
 const MAX_PAYLOAD: usize = 16384;
-const USBMUX_IFACE: u8 = 1;
-const READ_CHUNK: usize = 65536;
 
 pub const LOCKDOWN_PORT: u16 = 62078;
 
@@ -144,8 +139,8 @@ impl MuxTcpConn {
 }
 
 pub struct MuxHost {
-    ep_out: Mutex<Endpoint<Bulk, Out>>,
-    ep_in: Mutex<Option<Endpoint<Bulk, In>>>,
+    ep_out: Mutex<Box<dyn MuxWriter>>,
+    ep_in: Mutex<Option<Box<dyn MuxReader>>>,
     tx: Mutex<u16>,
     conns: Mutex<HashMap<u16, Arc<MuxTcpConn>>>,
     next_sport: AtomicU16,
@@ -154,35 +149,7 @@ pub struct MuxHost {
 
 impl MuxHost {
     pub fn open(serial: &str) -> Result<Arc<Self>, String> {
-        let dev = find_iphones()
-            .into_iter()
-            .find(|d| d.serial == serial)
-            .ok_or_else(|| format!("iphone {serial} not found"))?;
-        let device = open_by_address(dev.bus, dev.address)?;
-
-        // The phone needs a moment after the config switch before it hands out the interface.
-        let mut last = String::new();
-        let mut iface: Option<Interface> = None;
-        for _ in 0..12 {
-            match device.claim_interface(USBMUX_IFACE).wait() {
-                Ok(i) => {
-                    iface = Some(i);
-                    break;
-                }
-                Err(e) => {
-                    last = e.to_string();
-                    std::thread::sleep(Duration::from_millis(300));
-                }
-            }
-        }
-        let iface = iface.ok_or_else(|| format!("claim usbmux interface: {last}"))?;
-
-        let mut ep_out = iface
-            .endpoint::<Bulk, Out>(EP_OUT)
-            .map_err(|e| format!("usbmux out endpoint: {e}"))?;
-        let mut ep_in = iface
-            .endpoint::<Bulk, In>(EP_IN)
-            .map_err(|e| format!("usbmux in endpoint: {e}"))?;
+        let (mut ep_out, mut ep_in) = backend::open_pipes(serial)?;
 
         // Version handshake (protocol 2), then SETUP.
         let mut version = Vec::new();
@@ -190,8 +157,8 @@ impl MuxHost {
         version.extend_from_slice(&20u32.to_be_bytes());
         version.extend_from_slice(&2u32.to_be_bytes());
         version.extend_from_slice(&[0u8; 8]);
-        write_bulk(&mut ep_out, &version)?;
-        let _ = ep_in.transfer_blocking(Buffer::new(READ_CHUNK), Duration::from_millis(2000));
+        ep_out.write(&version)?;
+        let _ = ep_in.read(Duration::from_millis(2000));
 
         let host = Arc::new(Self {
             ep_out: Mutex::new(ep_out),
@@ -216,7 +183,7 @@ impl MuxHost {
         pkt.extend_from_slice(&0u16.to_be_bytes());
         pkt.extend_from_slice(payload);
         *tx = tx.wrapping_add(1);
-        let _ = write_bulk(&mut self.ep_out.lock().unwrap(), &pkt);
+        let _ = self.ep_out.lock().unwrap().write(&pkt);
     }
 
     fn spawn_reader(self: Arc<Self>) {
@@ -226,12 +193,10 @@ impl MuxHost {
         std::thread::spawn(move || {
             let mut rxbuf: Vec<u8> = Vec::new();
             while self.run.load(Ordering::SeqCst) {
-                let completion =
-                    ep_in.transfer_blocking(Buffer::new(READ_CHUNK), Duration::from_millis(1000));
-                if completion.status.is_err() {
-                    continue;
-                }
-                let data = completion.buffer;
+                let data = match ep_in.read(Duration::from_millis(1000)) {
+                    Ok(d) => d,
+                    Err(_) => break,
+                };
                 if data.is_empty() {
                     continue;
                 }
@@ -294,13 +259,6 @@ impl MuxHost {
         }
         Ok(conn)
     }
-}
-
-fn write_bulk(ep: &mut Endpoint<Bulk, Out>, data: &[u8]) -> Result<(), String> {
-    let mut buf = Buffer::new(data.len());
-    buf.extend_from_slice(data);
-    let completion = ep.transfer_blocking(buf, Duration::from_millis(2000));
-    completion.status.map_err(|e| format!("bulk write: {e}"))
 }
 
 impl Drop for MuxHost {

@@ -2,10 +2,12 @@
 // gets a session socket (livi_session_io::sock) the main process is told about.
 
 use std::net::IpAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use socket2::{SockRef, TcpKeepalive};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Notify;
 
 use livi_session_io::sock::bind_session_socket;
 
@@ -44,13 +46,12 @@ pub async fn run(port: u16, on_session: impl Fn(&str, IpAddr) + Send + Sync + 's
         on_session(&path, peer.ip());
         let phone = Peer { label: peer.to_string(), ip: peer.ip() };
         tokio::spawn(async move {
-            crate::session::run(tcp, phone, node, path).await;
+            crate::session::run(tcp, phone, node, path, Arc::new(Notify::new())).await;
         });
     }
 }
 
-/// Keepalive probes after 5 s idle, so a vanished phone tears the socket down
-/// instead of lingering half-open.
+/// TCP keepalive: probes after 5 s idle.
 fn tune(tcp: &TcpStream) -> std::io::Result<()> {
     tcp.set_nodelay(true)?;
     let sock = SockRef::from(tcp);

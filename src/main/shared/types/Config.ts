@@ -122,8 +122,7 @@ export type Config = {
   gpsEnabled: boolean
   gpsDevice: string
   gpsBaudRate: number
-  /** Last zone derived from a fix. Applied at startup so the clock reads right
-   *  before the receiver has a position again. */
+  /** Last zone derived from a fix, applied at startup. */
   timezone: string
 
   // Main stream

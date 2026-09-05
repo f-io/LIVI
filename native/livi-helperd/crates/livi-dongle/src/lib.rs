@@ -1,5 +1,6 @@
 // CarlinKit dongle on USB.
 
+pub mod link;
 pub mod session;
 pub mod wire;
 
@@ -28,6 +29,8 @@ pub struct Announce {
 }
 
 pub type OnSession = dyn Fn(&str, &Announce) + Send + Sync;
+/// Presence of the LIVI Link dongle: on the bus, and its serial.
+pub type OnLink = dyn Fn(bool, &str) + Send + Sync;
 
 #[derive(Default)]
 struct Dongles {
@@ -35,6 +38,8 @@ struct Dongles {
     busy: HashSet<DeviceId>,
     /// Per device, notified when it is unplugged so its session ends promptly.
     cancel: HashMap<DeviceId, Arc<Notify>>,
+    /// The LIVI Link dongle, while it is on the bus.
+    link: Option<DeviceId>,
 }
 
 type Shared = Arc<Mutex<Dongles>>;
@@ -43,7 +48,18 @@ pub fn is_dongle(info: &DeviceInfo) -> bool {
     info.vendor_id() == VENDOR && PRODUCTS.contains(&info.product_id())
 }
 
-pub async fn run(on_session: impl Fn(&str, &Announce) + Send + Sync + 'static) {
+/// The product string a dongle carries once provisioned as LIVI Link (an NCM bridge).
+pub const LINK_PRODUCT: &str = "LIVI Link";
+
+pub fn is_livi_link(info: &DeviceInfo) -> bool {
+    is_dongle(info) && info.product_string() == Some(LINK_PRODUCT)
+}
+
+pub async fn run(
+    on_link: impl Fn(bool, &str) + Send + Sync + 'static,
+    on_session: impl Fn(&str, &Announce) + Send + Sync + 'static,
+) {
+    let on_link: Arc<OnLink> = Arc::new(on_link);
     let on_session: Arc<OnSession> = Arc::new(on_session);
     let dongles: Shared = Arc::default();
     let mut watch = loop {
@@ -58,7 +74,7 @@ pub async fn run(on_session: impl Fn(&str, &Announce) + Send + Sync + 'static) {
     match nusb::list_devices().await {
         Ok(list) => {
             for info in list {
-                seen(&dongles, &on_session, info);
+                seen(&dongles, &on_link, &on_session, info);
             }
         }
         Err(e) => eprintln!("[dongle] list devices: {e}"),
@@ -66,12 +82,19 @@ pub async fn run(on_session: impl Fn(&str, &Announce) + Send + Sync + 'static) {
     println!("[dongle] watching for dongles");
     while let Some(ev) = watch.next().await {
         match ev {
-            HotplugEvent::Connected(info) => seen(&dongles, &on_session, info),
+            HotplugEvent::Connected(info) => seen(&dongles, &on_link, &on_session, info),
             HotplugEvent::Disconnected(id) => {
-                let mut d = dongles.lock().unwrap();
-                d.present.remove(&id);
-                if let Some(c) = d.cancel.get(&id) {
-                    c.notify_waiters();
+                let link_gone = {
+                    let mut d = dongles.lock().unwrap();
+                    d.present.remove(&id);
+                    if let Some(c) = d.cancel.get(&id) {
+                        c.notify_waiters();
+                    }
+                    d.link == Some(id) && d.link.take().is_some()
+                };
+                if link_gone {
+                    println!("[dongle] LIVI Link left the bus");
+                    on_link(false, "");
                 }
             }
         }
@@ -79,7 +102,20 @@ pub async fn run(on_session: impl Fn(&str, &Announce) + Send + Sync + 'static) {
     eprintln!("[dongle] hotplug watch ended");
 }
 
-fn seen(dongles: &Shared, on_session: &Arc<OnSession>, info: DeviceInfo) {
+fn seen(dongles: &Shared, on_link: &Arc<OnLink>, on_session: &Arc<OnSession>, info: DeviceInfo) {
+    if is_livi_link(&info) {
+        let serial = info.serial_number().unwrap_or("").to_owned();
+        {
+            let mut d = dongles.lock().unwrap();
+            if d.link.is_some() {
+                return;
+            }
+            d.link = Some(info.id());
+        }
+        println!("[dongle] LIVI Link {serial} on the bus");
+        on_link(true, &serial);
+        return;
+    }
     if !is_dongle(&info) {
         return;
     }

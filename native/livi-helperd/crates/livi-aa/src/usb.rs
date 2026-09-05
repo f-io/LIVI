@@ -6,6 +6,8 @@
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
+
+use tokio::sync::Notify;
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
@@ -46,8 +48,7 @@ const AOAP_STRINGS: [(u16, &str); 6] = [
 
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
 const WATCH_RETRY: Duration = Duration::from_secs(5);
-/// The main process subscribes to the announcements right after starting the helper.
-/// A phone already on the bus waits for that, or its session would find nobody.
+/// Delay before the first bus scan, for the main process to subscribe to the announcements.
 const STARTUP_SCAN_DELAY: Duration = Duration::from_secs(3);
 /// The reset out of accessory mode re-enumerates the phone within this time.
 const RESET_WINDOW: Duration = Duration::from_secs(3);
@@ -66,6 +67,8 @@ struct Phones {
     parked: HashSet<String>,
     /// Serials being reset out of accessory mode, whose next disconnect is no unplug.
     resetting: HashMap<String, Instant>,
+    /// Per device serving a session, notified when it is unplugged so the session ends.
+    cancel: HashMap<DeviceId, Arc<Notify>>,
 }
 
 type Shared = Arc<Mutex<Phones>>;
@@ -150,9 +153,13 @@ fn seen(phones: &Shared, on_session: &Arc<OnSession>, info: DeviceInfo) {
     let phones = phones.clone();
     if accessory {
         let on_session = on_session.clone();
+        let cancel = Arc::new(Notify::new());
+        phones.lock().unwrap().cancel.insert(id, cancel.clone());
         tokio::spawn(async move {
-            serve(&phones, &on_session, info, serial).await;
-            phones.lock().unwrap().busy.remove(&id);
+            serve(&phones, &on_session, info, serial, cancel).await;
+            let mut p = phones.lock().unwrap();
+            p.busy.remove(&id);
+            p.cancel.remove(&id);
         });
     } else {
         tokio::spawn(async move {
@@ -176,6 +183,9 @@ fn seen(phones: &Shared, on_session: &Arc<OnSession>, info: DeviceInfo) {
 
 fn gone(phones: &Shared, id: DeviceId) {
     let mut p = phones.lock().unwrap();
+    if let Some(c) = p.cancel.get(&id) {
+        c.notify_waiters();
+    }
     p.busy.remove(&id);
     p.failed.remove(&id);
     let Some(serial) = p.serial_of.remove(&id) else { return };
@@ -240,7 +250,13 @@ async fn vendor_out(dev: &Device, request: u8, index: u16, data: &[u8]) -> Resul
 }
 
 /// Runs one session over the accessory, then puts the phone back into its plain mode.
-async fn serve(phones: &Shared, on_session: &Arc<OnSession>, info: DeviceInfo, serial: String) {
+async fn serve(
+    phones: &Shared,
+    on_session: &Arc<OnSession>,
+    info: DeviceInfo,
+    serial: String,
+    cancel: Arc<Notify>,
+) {
     let l = label(&serial);
     let dev = match info.open().await {
         Ok(d) => d,
@@ -260,7 +276,7 @@ async fn serve(phones: &Shared, on_session: &Arc<OnSession>, info: DeviceInfo, s
     println!("[aa-usb] {l}: accessory up, session socket {path}");
     on_session(&path, &l, &serial);
     let peer = Peer { label: l.clone(), ip: IpAddr::V4(Ipv4Addr::LOCALHOST) };
-    let end = session::run(UsbStream::new(pipe), peer, node, path).await;
+    let end = session::run(UsbStream::new(pipe), peer, node, path, cancel).await;
     if !serial.is_empty() {
         let mut p = phones.lock().unwrap();
         if end.closed_by_node {

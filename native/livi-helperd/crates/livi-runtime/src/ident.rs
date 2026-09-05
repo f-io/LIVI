@@ -82,7 +82,12 @@ pub fn build_identification(
                 id: 0,
                 name: "USBHostTransport".into(),
                 supports_iap2_connection: true,
-                car_play_interface_number: Some(3),
+                car_play_interface_number: Some(
+                    std::env::var("LIVI_CP_USB_IFACE")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(3),
+                ),
                 supports_car_play: true,
             }]
         } else {

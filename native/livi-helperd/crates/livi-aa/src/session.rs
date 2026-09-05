@@ -5,12 +5,13 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::IpAddr;
 use std::os::unix::fs::PermissionsExt;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use livi_host_proto::feed as feedproto;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UnixListener;
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 
 use crate::av;
 use crate::consts::*;
@@ -167,7 +168,13 @@ struct Session<W> {
     audio_frames: u64,
 }
 
-pub async fn run<T>(io: T, peer: Peer, node: UnixListener, node_path: String) -> SessionEnd
+pub async fn run<T>(
+    io: T,
+    peer: Peer,
+    node: UnixListener,
+    node_path: String,
+    cancel: Arc<Notify>,
+) -> SessionEnd
 where
     T: AsyncRead + AsyncWrite + Send + 'static,
 {
@@ -291,6 +298,10 @@ where
             }
             _ = tokio::time::sleep(SETUP_TIMEOUT), if setting_up => {
                 s.closed("setup timeout").await;
+                break;
+            }
+            _ = cancel.notified() => {
+                s.closed("phone unplugged").await;
                 break;
             }
         }

@@ -101,71 +101,6 @@ describe('VideoPlaneManager', () => {
       expect(planes()).toHaveLength(0)
     })
 
-    test('pushMain does nothing without usable webContents', () => {
-      const { mgr, wc } = mkMgr()
-      wc.isDestroyed.mockReturnValue(true)
-      mgr.pushMain(Buffer.from([1]))
-
-      const { mgr: mgr2 } = mkMgr({ getWebContents: vi.fn(() => null) })
-      mgr2.pushMain(Buffer.from([1]))
-
-      expect(gstMock).not.toHaveBeenCalled()
-    })
-
-    test('pushMain tolerates webContents without an isDestroyed method', () => {
-      const { mgr } = mkMgr({ getWebContents: vi.fn(() => ({}) as unknown as WebContents) })
-
-      mgr.pushMain(Buffer.from([1]))
-
-      expect(gstMock).toHaveBeenCalledTimes(1)
-    })
-
-    test('pushMain gates on a keyframe, creates the plane once and emits shown', () => {
-      const { mgr, deps } = mkMgr()
-
-      classifyMock.mockReturnValue('delta')
-      mgr.pushMain(Buffer.from([1]))
-      expect(gstMock).not.toHaveBeenCalled()
-
-      classifyMock.mockReturnValue('params')
-      mgr.pushMain(Buffer.from([2]))
-      expect(gstMock).toHaveBeenCalledTimes(1)
-      expect(planes()[0].push).toHaveBeenCalledTimes(1)
-      expect(planes()[0].setCodecData).not.toHaveBeenCalled()
-      expect(deps.emit).toHaveBeenCalledWith({ type: 'projection', shown: true })
-
-      classifyMock.mockReturnValue('delta')
-      mgr.pushMain(Buffer.from([3]))
-      expect(planes()[0].push).toHaveBeenCalledTimes(1)
-
-      classifyMock.mockReturnValue('keyframe')
-      mgr.pushMain(Buffer.from([4]))
-      classifyMock.mockReturnValue('delta')
-      mgr.pushMain(Buffer.from([5]))
-      expect(gstMock).toHaveBeenCalledTimes(1)
-      expect(planes()[0].push).toHaveBeenCalledTimes(3)
-    })
-
-    test('setMainCodecData re-arms the keyframe gate only on new data', () => {
-      const { mgr } = mkMgr()
-      const atomA = Buffer.from('aaaa')
-      const atomB = Buffer.from('bbbb')
-
-      mgr.setMainCodecData(atomA)
-      mgr.pushMain(Buffer.from([1]))
-      expect(planes()[0].setCodecData).toHaveBeenCalledWith(atomA)
-
-      mgr.setMainCodecData(Buffer.from('aaaa'))
-      classifyMock.mockReturnValue('delta')
-      mgr.pushMain(Buffer.from([2]))
-      expect(planes()[0].push).toHaveBeenCalledTimes(2)
-
-      mgr.setMainCodecData(atomB)
-      expect(planes()[0].setCodecData).toHaveBeenCalledWith(atomB)
-      mgr.pushMain(Buffer.from([3]))
-      expect(planes()[0].push).toHaveBeenCalledTimes(2)
-    })
-
     test('prepareMain creates the plane via the native-config path', () => {
       const { mgr } = mkMgr()
       const atom = Buffer.from('atom')
@@ -194,7 +129,7 @@ describe('VideoPlaneManager', () => {
       const { mgr } = mkMgr()
       mgr.setVideoVisible(false)
 
-      mgr.pushMain(Buffer.from([1]))
+      mgr.primeMain()
       expect(planes()[0].setVisible).toHaveBeenCalledWith(false)
 
       mgr.setVideoVisible(true)
@@ -206,7 +141,7 @@ describe('VideoPlaneManager', () => {
         getMainVideoSize: vi.fn(() => ({ width: 1920, height: 1080 })),
         getConfig: vi.fn(() => mkCfg({ projectionWidth: 960, projectionHeight: 1080 }))
       })
-      mgr.pushMain(Buffer.from([1]))
+      mgr.primeMain()
 
       mgr.updateMainCrop()
       expect(planes()[0].setContentRegion).toHaveBeenLastCalledWith(480, 0, 960, 1080, 1920, 1080)
@@ -231,7 +166,7 @@ describe('VideoPlaneManager', () => {
       })
       mgr.updateMainCrop()
 
-      mgr.pushMain(Buffer.from([1]))
+      mgr.primeMain()
 
       expect(planes()[0].setContentRegion).toHaveBeenCalledWith(0, 0, 1920, 1080, 1920, 1080)
     })
@@ -271,6 +206,7 @@ describe('VideoPlaneManager', () => {
       secondaryMock.mockReturnValue(mkSecondary() as never)
       mgr.setClusterCodec('h265')
       mgr.setClusterCodecData(Buffer.from([1, 2]))
+      mgr.setClusterCodec('h264')
       mgr.primeClusters()
       expect(gstMock).toHaveBeenCalledTimes(2)
       expect(planes()[0].setVisible).toHaveBeenCalled()
@@ -281,8 +217,10 @@ describe('VideoPlaneManager', () => {
       const { mgr } = mkMgr({ getConfig: vi.fn(() => CLUSTER_CFG) })
       secondaryMock.mockReturnValue(mkSecondary() as never)
       mgr.setClusterCodec('h265')
+      mgr.setClusterCodec('h264')
       mgr.primeClusters()
       const built = gstMock.mock.calls.length
+      mgr.setClusterCodec('h264')
       mgr.primeClusters()
       expect(gstMock.mock.calls.length).toBe(built)
       expect(planes()[0].prepare).toHaveBeenCalledTimes(2)
@@ -294,6 +232,7 @@ describe('VideoPlaneManager', () => {
       })
       secondaryMock.mockReturnValue({ isDestroyed: () => true, webContents: {} } as never)
       mgr.setClusterCodec('h265')
+      mgr.setClusterCodec('h264')
       mgr.primeClusters()
       expect(gstMock).not.toHaveBeenCalled()
     })
@@ -332,99 +271,13 @@ describe('VideoPlaneManager', () => {
       expect(gstMock).not.toHaveBeenCalled()
     })
 
-    test('pushCluster gates on a keyframe and feeds every configured screen', () => {
-      const { mgr, deps } = mkMgr({ getConfig: vi.fn(() => CLUSTER_CFG) })
-      secondaryMock.mockReturnValue(mkSecondary() as never)
-
-      classifyMock.mockReturnValue('delta')
-      mgr.pushCluster(Buffer.from([1]))
-      expect(gstMock).not.toHaveBeenCalled()
-
-      classifyMock.mockReturnValue('params')
-      mgr.pushCluster(Buffer.from([2]))
-      expect(gstMock).toHaveBeenCalledTimes(2)
-      expect(planes()[0].push).toHaveBeenCalledTimes(1)
-      expect(planes()[0].setCodecData).not.toHaveBeenCalled()
-
-      classifyMock.mockReturnValue('keyframe')
-      mgr.pushCluster(Buffer.from([3]))
-      classifyMock.mockReturnValue('delta')
-      mgr.pushCluster(Buffer.from([4]))
-      expect(gstMock).toHaveBeenCalledTimes(2)
-      expect(planes()[0].push).toHaveBeenCalledTimes(3)
-      expect(planes()[1].push).toHaveBeenCalledTimes(3)
-      expect(deps.emit).not.toHaveBeenCalled()
-    })
-
-    test('pushCluster applies stored codec data to lazily spawned planes', () => {
-      const { mgr } = mkMgr({ getConfig: vi.fn(() => CLUSTER_CFG) })
-      secondaryMock.mockReturnValue(mkSecondary() as never)
-      const atom = Buffer.from('catom')
-      mgr.setClusterCodecData(atom)
-      mgr.setClusterCodec('vp9')
-
-      mgr.pushCluster(Buffer.from([1]))
-
-      expect(planes()[0].setCodecData).toHaveBeenCalledWith(atom)
-      expect(planes()[1].setCodecData).toHaveBeenCalledWith(atom)
-      expect(planes()[0].push).toHaveBeenCalledWith('vp9', Buffer.from([1]))
-    })
-
-    test('pushCluster skips screens without a live window', () => {
-      const { mgr } = mkMgr({
-        getWebContents: vi.fn(() => null),
-        getConfig: vi.fn(() => CLUSTER_CFG)
-      })
-      secondaryMock.mockReturnValue(undefined as never)
-
-      mgr.pushCluster(Buffer.from([1]))
-
-      expect(gstMock).not.toHaveBeenCalled()
-    })
-
-    test('pushCluster drops tail frames while the stream is focus-stopped', () => {
-      const { mgr } = mkMgr({ getConfig: vi.fn(() => CLUSTER_CFG) })
-      secondaryMock.mockReturnValue(mkSecondary() as never)
-
-      expect(mgr.updateClusterStreamActive(false)).toBe(true)
-      expect(mgr.updateClusterStreamActive(false)).toBe(false)
-      mgr.pushCluster(Buffer.from([1]))
-      expect(gstMock).not.toHaveBeenCalled()
-
-      expect(mgr.updateClusterStreamActive(true)).toBe(true)
-      mgr.pushCluster(Buffer.from([2]))
-      expect(gstMock).toHaveBeenCalledTimes(2)
-
-      mgr.resetClusterStreamActive()
-      expect(mgr.updateClusterStreamActive(false)).toBe(true)
-    })
-
-    test('setClusterCodecData re-arms the gate only on new data and applies it live', () => {
-      const { mgr } = mkMgr({ getConfig: vi.fn(() => CLUSTER_CFG) })
-      secondaryMock.mockReturnValue(mkSecondary() as never)
-      mgr.pushCluster(Buffer.from([1]))
-      const atom = Buffer.from('x1')
-
-      mgr.setClusterCodecData(atom)
-      expect(planes()[0].setCodecData).toHaveBeenCalledWith(atom)
-      classifyMock.mockReturnValue('delta')
-      mgr.pushCluster(Buffer.from([2]))
-      expect(planes()[0].push).toHaveBeenCalledTimes(1)
-
-      classifyMock.mockReturnValue('keyframe')
-      mgr.pushCluster(Buffer.from([3]))
-      mgr.setClusterCodecData(Buffer.from('x1'))
-      classifyMock.mockReturnValue('delta')
-      mgr.pushCluster(Buffer.from([4]))
-      expect(planes()[0].push).toHaveBeenCalledTimes(3)
-    })
-
     test('setClusterVisible drives only the main-screen plane', () => {
       const { mgr } = mkMgr({ getConfig: vi.fn(() => CLUSTER_CFG) })
       secondaryMock.mockReturnValue(mkSecondary() as never)
       mgr.setClusterVisible(true)
 
-      mgr.pushCluster(Buffer.from([1]))
+      mgr.setClusterCodec('h264')
+      mgr.primeClusters()
       expect(planes()[0].setVisible).toHaveBeenCalledWith(true)
       expect(planes()[1].setVisible).toHaveBeenCalledWith(true)
 
@@ -439,7 +292,8 @@ describe('VideoPlaneManager', () => {
         getClusterVideoSize: vi.fn(() => ({ width: 1920, height: 1080 }))
       })
       secondaryMock.mockReturnValue(mkSecondary() as never)
-      mgr.pushCluster(Buffer.from([1]))
+      mgr.setClusterCodec('h264')
+      mgr.primeClusters()
       expect(planes()[0].setContentRegion).toHaveBeenCalledWith(0, 0, 1920, 1080, 1920, 1080)
 
       deps.getConfig.mockReturnValue(CLUSTER_CFG)
@@ -451,7 +305,8 @@ describe('VideoPlaneManager', () => {
     test('retainScreens disposes planes for screens no longer targeted', () => {
       const { mgr, deps } = mkMgr({ getConfig: vi.fn(() => CLUSTER_CFG) })
       secondaryMock.mockReturnValue(mkSecondary() as never)
-      mgr.pushCluster(Buffer.from([1]))
+      mgr.setClusterCodec('h264')
+      mgr.primeClusters()
       expect(gstMock).toHaveBeenCalledTimes(2)
 
       deps.getConfig.mockReturnValue(mkCfg({ dashboards: { dash3: { main: true } } }))
@@ -460,7 +315,8 @@ describe('VideoPlaneManager', () => {
       expect(planes()[1].dispose).toHaveBeenCalledTimes(1)
       expect(planes()[0].dispose).not.toHaveBeenCalled()
 
-      mgr.pushCluster(Buffer.from([2]))
+      mgr.setClusterCodec('h264')
+      mgr.primeClusters()
       expect(gstMock).toHaveBeenCalledTimes(2)
     })
   })
@@ -478,8 +334,9 @@ describe('VideoPlaneManager', () => {
       const { mgr } = mkMgr({ getConfig: vi.fn(() => CLUSTER_CFG) })
       secondaryMock.mockReturnValue(mkSecondary() as never)
       mgr.setMainCodec('av1')
-      mgr.pushMain(Buffer.from([1]))
-      mgr.pushCluster(Buffer.from([2]))
+      mgr.primeMain()
+      mgr.setClusterCodec('h264')
+      mgr.primeClusters()
 
       mgr.dispose()
 
@@ -495,13 +352,13 @@ describe('VideoPlaneManager', () => {
       mgr.restoreCodecs('h265', 'vp9', mainAtom, null)
       expect(mgr.getMainCodec()).toBe('h265')
 
-      mgr.pushMain(Buffer.from([1]))
+      mgr.primeMain()
       expect(planes()[0].setCodecData).toHaveBeenCalledWith(mainAtom)
-      expect(planes()[0].push).toHaveBeenCalledWith('h265', Buffer.from([1]))
+      expect(planes()[0].prepare).toHaveBeenCalledWith('h265')
 
-      mgr.pushCluster(Buffer.from([2]))
+      mgr.primeClusters()
       expect(planes()[1].setCodecData).not.toHaveBeenCalled()
-      expect(planes()[1].push).toHaveBeenCalledWith('vp9', Buffer.from([2]))
+      expect(planes()[1].prepare).toHaveBeenCalledWith('vp9')
 
       mgr.restoreCodecs(undefined, undefined, null, null)
       expect(mgr.getMainCodec()).toBe('h265')

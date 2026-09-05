@@ -15,6 +15,12 @@ const gstHostMock = vi.hoisted(() => {
 
 vi.mock('@main/services/video/gstHost', () => ({ gstHost: gstHostMock }))
 
+vi.mock('@main/services/video/GstVideo', () => ({
+  useHostProcess: true,
+  onAudioReceiverVisualizer: vi.fn(),
+  setAudioReceiverVisualizerTap: vi.fn()
+}))
+
 vi.mock('@main/services/audio', () => ({
   HostAudioOutput: vi.fn().mockImplementation(function () {
     return {

@@ -65,11 +65,10 @@ pub fn decoder_candidates(codec: &str, sw_only: bool) -> &'static [&'static CStr
     }
     #[cfg(target_os = "macos")]
     {
-        // HEVC on macOS goes through avdec_h265. vtdec ignores
-        // sps_max_num_reorder_pics and adds output latency.
+        // vtdec first, avdec_h265 as the fallback. vtdec adds output latency on HEVC:
         // https://gitlab.freedesktop.org/gstreamer/gstreamer/-/work_items/5133
         match codec {
-            "h265" => &[c"avdec_h265", c"vtdec"],
+            "h265" => &[c"vtdec", c"avdec_h265"],
             "vp9" => &[c"vp9dec"],
             "av1" => &[c"dav1ddec"],
             _ => &[c"vtdec", c"avdec_h264"],

@@ -2,7 +2,7 @@ use std::process::ExitCode;
 
 use iap2_csm::messages::wifi::SecurityType;
 use iap2_link::LinkConfig;
-use iap2_mfi::I2cCoprocessor;
+use iap2_mfi::{I2cCoprocessor, NcmCoprocessor, NoCoprocessor};
 use std::sync::Arc;
 
 use livi_runtime::bonjour::Bonjour;
@@ -125,15 +125,28 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let pk = std::env::var("LIVI_CP_PK").unwrap_or_default();
     let pi = std::env::var("LIVI_CP_PI").unwrap_or_default();
 
+    // MFi backend: the local i2c coprocessor, else the chip of a LIVI Link dongle while it is
+    // on the bus.
     println!("[helperd] opening MFi bus={bus_num} gpio={gpio}");
-    let auth = match I2cCoprocessor::open(bus_num, gpio) {
+    let (auth, mfi_link) = match I2cCoprocessor::open(bus_num, gpio) {
         Ok(chip) => {
             println!("[helperd] MFi addr=0x{:02X}", chip.address());
-            Some(SharedCoprocessor::new(chip))
+            (Some(SharedCoprocessor::new(Box::new(chip))), crate::link::LinkPresence::always())
         }
         Err(e) => {
-            eprintln!("[helperd] MFi coprocessor unavailable ({e}); CarPlay off, Android Auto only");
-            None
+            println!("[helperd] no local MFi ({e}); a LIVI Link dongle's chip serves once on the bus");
+            let auth = SharedCoprocessor::new(Box::new(NoCoprocessor));
+            let link = crate::link::LinkPresence::new();
+            let (up_auth, down_auth) = (auth.clone(), auth.clone());
+            tokio::spawn(link.clone().resolve(
+                move || {
+                    up_auth.replace(Box::new(NcmCoprocessor::new(&livi_dongle::link::addr(
+                        iap2_mfi::ncm::DEFAULT_PORT,
+                    ))))
+                },
+                move || down_auth.replace(Box::new(NoCoprocessor)),
+            ));
+            (Some(auth), link)
         }
     };
 
@@ -165,14 +178,14 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         match auth.clone() {
             Some(auth) => {
                 tokio::spawn(async move {
-                    if let Err(e) = livi_sock::serve(sock_cfg, auth, bus, bcast, state).await {
+                    if let Err(e) = livi_sock::serve(sock_cfg, auth, Some(bus), bcast, state).await {
                         eprintln!("[helperd] livi_sock ended: {e}");
                     }
                 });
             }
             None => {
                 tokio::spawn(async move {
-                    if let Err(e) = livi_sock::serve(sock_cfg, NoAuth, bus, bcast, state).await {
+                    if let Err(e) = livi_sock::serve(sock_cfg, NoAuth, Some(bus), bcast, state).await {
                         eprintln!("[helperd] livi_sock ended: {e}");
                     }
                 });
@@ -227,7 +240,8 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     }
     if std::env::var("LIVI_DONGLE").unwrap_or_else(|_| "1".into()) != "0" {
         let events = aa_events.clone();
-        tokio::spawn(livi_dongle::run(move |socket, a| {
+        let mfi_link_state = mfi_link.clone();
+        tokio::spawn(livi_dongle::run(move |on, _serial| mfi_link_state.set_on_bus(on), move |socket, a| {
             events.push_json(
                 serde_json::json!({
                     "event": "dongle-session", "socket": socket, "serial": a.serial,
@@ -279,7 +293,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         && std::env::var("LIVI_CP_WIRED").unwrap_or_else(|_| "1".into()) != "0" {
             let wired_cp = CpConfig {
                 transport: Transport::Wired,
-                av_iface: std::env::var("LIVI_CP_AV_IFACE").ok(),
+                av_iface: None,
                 ..cp.clone()
             };
             tokio::spawn(crate::wired::watch(
@@ -288,6 +302,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
                 wired_cp,
                 bcast.clone(),
                 state.clone(),
+                mfi_link.clone(),
             ));
             println!("[helperd] wired CarPlay watcher started");
         }
