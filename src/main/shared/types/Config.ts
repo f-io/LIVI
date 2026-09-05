@@ -238,8 +238,6 @@ export type Config = {
 
   lastKnownGps?: LastKnownGps
 
-  dongleToolsIp?: string
-
   // Theme overrides
   primaryColorDark?: string
   primaryColorLight?: string

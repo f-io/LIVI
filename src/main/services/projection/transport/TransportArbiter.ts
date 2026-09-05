@@ -8,19 +8,13 @@ import {
   type TransportSnapshot
 } from './types'
 
-const DONGLE_DETACH_DEBOUNCE_MS = 4_000
-
 const AA_WIRED: Candidate = { transport: 'aa', mode: 'wired' }
 const AA_WIRELESS: Candidate = { transport: 'aa', mode: 'wireless' }
 const CP_WIRED: Candidate = { transport: 'cp', mode: 'wired' }
 const CP_WIRELESS: Candidate = { transport: 'cp', mode: 'wireless' }
-const DONGLE: Candidate = { transport: 'dongle', mode: 'wired' }
 
 export class TransportArbiter {
-  private dongleConnected = false
   private override: Candidate | null = null
-
-  private dongleDetachDebounce: NodeJS.Timeout | null = null
 
   private nativeProbeDeferred = false
   private nativeProbeStartedAt = 0
@@ -28,51 +22,7 @@ export class TransportArbiter {
 
   constructor(private readonly deps: ArbiterDeps) {}
 
-  // Presence ----------------------------------------------------------------
-
-  markDongleConnected(connected: boolean): void {
-    if (connected) {
-      if (this.dongleDetachDebounce) {
-        clearTimeout(this.dongleDetachDebounce)
-        this.dongleDetachDebounce = null
-      }
-      if (this.dongleConnected) return
-      this.dongleConnected = true
-      this.deps.onChange()
-      return
-    }
-
-    if (!this.dongleConnected) return
-    if (this.dongleDetachDebounce) return
-
-    // The dongle silently re-enumerates itself whenever it's not in use
-    const usingDongle = this.deps.isDongleSessionActive()
-    const delay = usingDongle ? 0 : DONGLE_DETACH_DEBOUNCE_MS
-    this.dongleDetachDebounce = setTimeout(async () => {
-      this.dongleDetachDebounce = null
-      this.dongleConnected = false
-      console.log('[TransportArbiter] dongle marked disconnected')
-      this.clearOverrideIfUndetected()
-
-      if (this.deps.isDongleSessionActive()) {
-        try {
-          await this.deps.onShouldStop()
-        } catch (e) {
-          console.warn('[TransportArbiter] stop after dongle unplug threw', e)
-        }
-      }
-
-      this.deps.onChange()
-
-      if (this.detectedCandidates().length > 0) this.deps.onShouldAutoStart()
-    }, delay)
-  }
-
   // Queries -----------------------------------------------------------------
-
-  isDongleDetected(): boolean {
-    return this.dongleConnected
-  }
 
   getOverride(): Candidate | null {
     return this.override
@@ -92,25 +42,14 @@ export class TransportArbiter {
       this.deps.isWirelessEnabled() &&
       (this.deps.isWirelessPhoneInRange() || this.deps.isWiredAaSessionActive())
     if (offerWireless) list.push(AA_WIRELESS)
-    // The dongle is the fallback transport and ranks last.
-    if (this.dongleConnected) list.push(DONGLE)
     return list
   }
 
   private currentCandidate(): Candidate | null {
     const active = this.deps.getActiveTransport()
-    if (active === 'dongle') return DONGLE
     if (active === 'aa') return this.deps.isWiredAaSessionActive() ? AA_WIRED : AA_WIRELESS
     if (active === 'cp') return this.deps.isWiredCpSessionActive() ? CP_WIRED : CP_WIRELESS
     return null
-  }
-
-  private clearOverrideIfUndetected(): void {
-    if (!this.override) return
-    const detected = this.detectedCandidates()
-    if (!detected.some((c) => candidateEquals(c, this.override!))) {
-      this.override = null
-    }
   }
 
   pickPreferred(): Candidate | null {
@@ -156,7 +95,6 @@ export class TransportArbiter {
       targetTransport: intended?.transport ?? null,
       targetMode: intended?.mode ?? null,
       switchPending,
-      dongleDetected: this.dongleConnected,
       wiredPhoneDetected: this.deps.hasWiredAaSession() || this.deps.hasWiredCpSession(),
       wirelessPhoneDetected:
         this.deps.isWirelessEnabled() &&

@@ -71,14 +71,6 @@ ipcRenderer.on('app:media-key', (_event, command: unknown) => {
   }
 })
 
-type UsbDeviceInfo =
-  | { device: false; vendorId: null; productId: null; usbFwVersion: string }
-  | { device: true; vendorId: number; productId: number; usbFwVersion: string }
-
-type UsbLastEvent =
-  | { type: 'unplugged'; device: null }
-  | { type: 'plugged'; device: { vendorId: number; productId: number; deviceName: string } }
-
 const api = {
   quit: (): Promise<void> => ipcRenderer.invoke('quit'),
 
@@ -94,13 +86,7 @@ const api = {
   },
 
   usb: {
-    forceReset: (): Promise<boolean> => ipcRenderer.invoke('usb-force-reset'),
-    detectDongle: (): Promise<boolean> => ipcRenderer.invoke('usb-detect-dongle'),
-    getDeviceInfo: (): Promise<UsbDeviceInfo> => ipcRenderer.invoke('projection:usbDevice'),
-    getLastEvent: (): Promise<UsbLastEvent> => ipcRenderer.invoke('usb-last-event'),
     getSysdefaultPrettyName: (): Promise<string> => ipcRenderer.invoke('get-sysdefault-mic-label'),
-    uploadIcons: () => ipcRenderer.invoke('projection-upload-icons'),
-    uploadLiviScripts: () => ipcRenderer.invoke('projection-upload-livi-scripts'),
     listenForEvents: (callback: ApiCallback): (() => void) => {
       usbEventHandlers.push(callback)
       usbEventQueue.forEach(([evt, ...args]) => callback(evt, ...args))
@@ -144,9 +130,7 @@ const api = {
       ipcRenderer.invoke('projection-bt-connect-device', mac),
     forgetBluetoothPairedDevice: (mac: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('projection-bt-forget-device', mac),
-    dongleFirmware: (action: 'check' | 'download' | 'upload' | 'status'): Promise<unknown> =>
-      ipcRenderer.invoke('dongle-fw', { action }),
-    switchTransport: (): Promise<{ ok: boolean; active: 'dongle' | 'aa' | 'cp' | null }> =>
+    switchTransport: (): Promise<{ ok: boolean; active: 'aa' | 'cp' | null }> =>
       ipcRenderer.invoke('transport:switch'),
     getTransportState: (): Promise<TransportSnapshot> => ipcRenderer.invoke('transport:state'),
     getDevices: (): Promise<
@@ -254,12 +238,6 @@ const appApi = {
     ipcRenderer.on(ch, handler)
     return () => ipcRenderer.removeListener(ch, handler)
   },
-
-  resetDongleIcons: (): Promise<{
-    dongleIcon120?: string
-    dongleIcon180?: string
-    dongleIcon256?: string
-  }> => ipcRenderer.invoke('settings:reset-dongle-icons'),
 
   beginInstall: (): Promise<void> => ipcRenderer.invoke('app:beginInstall'),
   abortUpdate: (): Promise<void> => ipcRenderer.invoke('app:abortUpdate'),

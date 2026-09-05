@@ -69,7 +69,7 @@ if (bootstrapCompositor()) {
 app.whenReady().then(async () => {
   if (!bootAllowed) return
   const projectionService = new ProjectionService()
-  registerUsbIpc(() => projectionService.getDongleDriver())
+  registerUsbIpc()
   const telemetryStore = new TelemetryStore()
   const telemetrySocket = new TelemetrySocket(telemetryStore, 4000)
 

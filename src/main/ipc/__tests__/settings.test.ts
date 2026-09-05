@@ -59,7 +59,6 @@ describe('registerSettingsIpc', () => {
         'settings:get-kiosk',
         'getSettings',
         'save-settings',
-        'settings:reset-dongle-icons',
         'app:getVersion',
         'app:getLatestRelease'
       ])
@@ -160,46 +159,6 @@ describe('registerSettingsIpc', () => {
     requestSaveHandler(patch)
 
     expect(saveSettings).toHaveBeenCalledWith(runtimeState, patch)
-  })
-
-  test('settings:reset-dongle-icons restores bundled icon defaults and returns them', async () => {
-    const richRuntimeState = {
-      config: {
-        kiosk: true,
-        dongleIcon120: 'old-120',
-        dongleIcon180: 'old-180',
-        dongleIcon256: 'old-256'
-      }
-    } as never
-
-    registerSettingsIpc(richRuntimeState)
-
-    const handler = getHandler<
-      () => {
-        dongleIcon120: string
-        dongleIcon180: string
-        dongleIcon256: string
-      }
-    >('settings:reset-dongle-icons')
-
-    const result = handler()
-
-    expect(saveSettings).toHaveBeenCalledWith(
-      richRuntimeState,
-      expect.objectContaining({
-        dongleIcon120: expect.any(String),
-        dongleIcon180: expect.any(String),
-        dongleIcon256: expect.any(String)
-      })
-    )
-
-    expect(result).toEqual(
-      expect.objectContaining({
-        dongleIcon120: expect.any(String),
-        dongleIcon180: expect.any(String),
-        dongleIcon256: expect.any(String)
-      })
-    )
   })
 
   test('app:getLatestRelease falls back to json.name when tag_name is missing', async () => {

@@ -10,7 +10,6 @@ import {
 import { Camera } from '../../components/pages/settings/pages/camera'
 import { GpsHwInfo } from '../../components/pages/settings/pages/general/gps/GpsHwInfo'
 import { GpsInfo } from '../../components/pages/settings/pages/general/gps/GpsInfo'
-import { USBDongle } from '../../components/pages/settings/pages/system/usbDongle/USBDongle'
 import { SelectOption, SettingsNode } from '../types'
 
 const panelDefaultOption: SelectOption = {
@@ -1124,23 +1123,6 @@ export const generalSchema: SettingsNode<Config> = {
               component: GpsHwInfo
             }
           ]
-        }
-      ]
-    },
-    {
-      type: 'route',
-      label: 'USB Dongle',
-      labelKey: 'settings.usbDongle',
-      icon: 'usbDongle',
-      route: 'usbDongle',
-      path: '',
-      children: [
-        {
-          type: 'custom',
-          label: 'USB Dongle',
-          labelKey: 'settings.usbDongle',
-          path: 'carName',
-          component: USBDongle
         }
       ]
     }

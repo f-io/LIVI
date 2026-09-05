@@ -3,7 +3,7 @@ import { DebouncedJsonFile } from './DebouncedJsonFile'
 
 export type LiviStatus = {
   projection: {
-    active: 'aa' | 'cp' | 'dongle' | null
+    active: 'aa' | 'cp' | null
     streaming: boolean
     phoneType: 'CarPlay' | 'AndroidAuto' | null
   }

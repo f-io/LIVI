@@ -1,57 +1,44 @@
 import { EventEmitter } from 'node:events'
 import type { Mock } from 'vitest'
 
-const { MockDongleDriver, MockAaManager, MockCpManager, lastManager, lastCpManager } = vi.hoisted(
-  () => {
-    const { EventEmitter } = require('node:events')
+const { MockAaManager, MockCpManager, lastManager, lastCpManager } = vi.hoisted(() => {
+  const lastManager: { instance: unknown } = { instance: null }
+  const lastCpManager: { instance: unknown } = { instance: null }
 
-    class MockDongleDriver extends EventEmitter {
-      send = vi.fn(async () => true)
-      close = vi.fn(async () => undefined)
-      start = vi.fn(async () => undefined)
-      attachHelper = vi.fn()
-      detachHelper = vi.fn()
-      setMediaSink = vi.fn()
+  class MockAaManager {
+    opts: { onSpawn: (s: unknown) => void }
+    attachHelper = vi.fn()
+    detachHelper = vi.fn()
+    close = vi.fn(async () => undefined)
+    stopWireless = vi.fn()
+    setHevcSupported = vi.fn()
+    setVp9Supported = vi.fn()
+    setAv1Supported = vi.fn()
+    setInitialNightMode = vi.fn()
+    setClusterStreamActive = vi.fn()
+    constructor(opts: { onSpawn: (s: unknown) => void }) {
+      this.opts = opts
+      lastManager.instance = this
     }
-
-    const lastManager: { instance: unknown } = { instance: null }
-    const lastCpManager: { instance: unknown } = { instance: null }
-
-    class MockAaManager {
-      opts: { onSpawn: (s: unknown) => void }
-      attachHelper = vi.fn()
-      detachHelper = vi.fn()
-      close = vi.fn(async () => undefined)
-      stopWireless = vi.fn()
-      setHevcSupported = vi.fn()
-      setVp9Supported = vi.fn()
-      setAv1Supported = vi.fn()
-      setInitialNightMode = vi.fn()
-      setClusterStreamActive = vi.fn()
-      constructor(opts: { onSpawn: (s: unknown) => void }) {
-        this.opts = opts
-        lastManager.instance = this
-      }
-    }
-
-    class MockCpManager {
-      opts: { onSpawn: (s: unknown) => void; onHelperPresence: (p: unknown) => void }
-      start = vi.fn()
-      close = vi.fn()
-      setHevcSupported = vi.fn()
-      setVp9Supported = vi.fn()
-      setAv1Supported = vi.fn()
-      setInitialNightMode = vi.fn()
-      setClusterStreamActive = vi.fn()
-      constructor(opts: { onSpawn: (s: unknown) => void; onHelperPresence: (p: unknown) => void }) {
-        this.opts = opts
-        lastCpManager.instance = this
-      }
-    }
-
-    return { MockDongleDriver, MockAaManager, MockCpManager, lastManager, lastCpManager }
   }
-)
+
+  class MockCpManager {
+    opts: { onSpawn: (s: unknown) => void; onHelperPresence: (p: unknown) => void }
+    start = vi.fn()
+    close = vi.fn()
+    setHevcSupported = vi.fn()
+    setVp9Supported = vi.fn()
+    setAv1Supported = vi.fn()
+    setInitialNightMode = vi.fn()
+    setClusterStreamActive = vi.fn()
+    constructor(opts: { onSpawn: (s: unknown) => void; onHelperPresence: (p: unknown) => void }) {
+      this.opts = opts
+      lastCpManager.instance = this
+    }
+  }
+
+  return { MockAaManager, MockCpManager, lastManager, lastCpManager }
+})
 
 vi.mock('../../driver/aa/AaManager', () => ({
   AaManager: vi.fn().mockImplementation(function (opts) {
@@ -66,7 +53,6 @@ vi.mock('../../driver/cp/CpManager', () => ({
 }))
 
 vi.mock('../../messages', () => ({
-  DongleDriver: MockDongleDriver,
   DuckAudio: class DuckAudio {},
   MediaData: class MediaData {},
   NavigationData: class NavigationData {}
@@ -187,24 +173,47 @@ describe('ProjectionDriverManager', () => {
     vi.clearAllMocks()
   })
 
-  test('starts with a dongle as the active driver and forwards driver events to handlers', () => {
+  test("starts with no active driver and forwards a routed driver's events to handlers", () => {
     const { deps, spies } = buildDeps()
     const mgr = new ProjectionDriverManager(deps)
 
-    expect(mgr.getActive()).toBe(mgr.dongle)
+    expect(mgr.getActive()).toBeNull()
     expect(mgr.getAaManager()).toBeNull()
 
-    mgr.dongle.emit('message', { type: 1 })
-    mgr.dongle.emit('failure')
-    mgr.dongle.emit('targeted-connect-dispatched')
-    mgr.dongle.emit('video-codec', 'h264')
-    mgr.dongle.emit('cluster-video-codec', 'h265')
+    mgr.ensureAaManager()
+    const session = spawnSession()
+    mgr.route(session as never)
+
+    session.emit('message', { type: 1 })
+    session.emit('failure')
+    session.emit('targeted-connect-dispatched')
+    session.emit('video-codec', 'h264')
+    session.emit('cluster-video-codec', 'h265')
 
     expect(spies.handlers.onMessage).toHaveBeenCalledWith({ type: 1 })
     expect(spies.handlers.onFailure).toHaveBeenCalled()
     expect(spies.handlers.onTargetedConnect).toHaveBeenCalled()
     expect(spies.handlers.onVideoCodec).toHaveBeenCalledWith('h264')
     expect(spies.handlers.onClusterVideoCodec).toHaveBeenCalledWith('h265')
+  })
+
+  test('exposes the dongle uploader, idle until a stock dongle is on the bus', () => {
+    const { deps } = buildDeps()
+    const mgr = new ProjectionDriverManager(deps)
+    expect(mgr.getDongleUpload().available).toBe(false)
+  })
+
+  test('routing to the already-routed target is a no-op', () => {
+    const { deps, spies } = buildDeps()
+    const mgr = new ProjectionDriverManager(deps)
+    mgr.ensureAaManager()
+    const session = spawnSession()
+    mgr.route(session as never)
+    spies.handlers.onMessage.mockClear()
+
+    mgr.route(session as never) // same target → early return, no re-wiring
+    session.emit('message', { type: 7 })
+    expect(spies.handlers.onMessage).toHaveBeenCalledTimes(1)
   })
 
   test('ensureAaManager creates the manager once and seeds it from the config seed', () => {
@@ -309,7 +318,7 @@ describe('ProjectionDriverManager', () => {
     mgr.ensureAaManager()
     const session = spawnSession()
 
-    // Held (not routed): the dongle still feeds the front end.
+    // Held (not routed): its plain messages do not reach the routed handler.
     session.emit('message', { type: 2 })
     expect(spies.handlers.onMessage).not.toHaveBeenCalled()
 
@@ -324,7 +333,7 @@ describe('ProjectionDriverManager', () => {
     expect(spies.handlers.onMessage).toHaveBeenCalledWith({ type: 3 })
   })
 
-  test('a routed session that disconnects re-routes to the dongle and detaches its meta', () => {
+  test('a routed session that disconnects re-routes to no driver and detaches its meta', () => {
     const { deps, spies } = buildDeps()
     const mgr = new ProjectionDriverManager(deps)
     mgr.ensureAaManager()
@@ -332,21 +341,11 @@ describe('ProjectionDriverManager', () => {
     mgr.route(session as never)
 
     session.emit('disconnected')
-    expect(mgr.getActive()).toBe(mgr.dongle)
+    expect(mgr.getActive()).toBeNull()
 
     spies.handlers.onMetaMessage.mockClear()
     session.emit('message', new MediaData())
     expect(spies.handlers.onMetaMessage).not.toHaveBeenCalled()
-
-    spies.handlers.onMessage.mockClear()
-    mgr.dongle.emit('message', { type: 9 })
-    expect(spies.handlers.onMessage).toHaveBeenCalledWith({ type: 9 })
-  })
-
-  test('selectFor("dongle") routes the dongle', () => {
-    const { deps } = buildDeps()
-    const mgr = new ProjectionDriverManager(deps)
-    expect(mgr.selectFor('dongle')).toBe(mgr.dongle)
   })
 
   test('ensureCpManager creates the manager once and seeds it from the CP config seed', () => {
@@ -395,7 +394,7 @@ describe('ProjectionDriverManager', () => {
     session.emit('disconnected')
     expect(spies.onCpDisconnected).toHaveBeenCalledWith(session)
     expect(spies.onCpReleased).toHaveBeenCalledWith(session)
-    expect(mgr.getActive()).toBe(mgr.dongle)
+    expect(mgr.getActive()).toBeNull()
   })
 
   test('helper connect flows to onCpHelperConnect', () => {
@@ -487,7 +486,7 @@ describe('ProjectionDriverManager', () => {
     warn.mockRestore()
   })
 
-  test('an unrouted CP session that disconnects leaves the dongle routed', () => {
+  test('an unrouted CP session that disconnects leaves no driver routed', () => {
     const { deps, spies } = buildDeps()
     const mgr = new ProjectionDriverManager(deps)
     mgr.ensureCpManager()
@@ -495,7 +494,7 @@ describe('ProjectionDriverManager', () => {
 
     session.emit('disconnected')
     expect(spies.onCpDisconnected).toHaveBeenCalledWith(session)
-    expect(mgr.getActive()).toBe(mgr.dongle)
+    expect(mgr.getActive()).toBeNull()
   })
 
   test('spawning the same session twice attaches its meta listener only once', () => {
@@ -512,7 +511,7 @@ describe('ProjectionDriverManager', () => {
 
     session.emit('disconnected')
     expect(spies.onAaDisconnected).toHaveBeenCalledTimes(2)
-    expect(mgr.getActive()).toBe(mgr.dongle)
+    expect(mgr.getActive()).toBeNull()
   })
 
   test('helper presence flows to onCpHelperPresence (registry-level, session-independent)', () => {

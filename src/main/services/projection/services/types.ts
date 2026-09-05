@@ -2,7 +2,6 @@ import type { DeviceView, NaviBag } from '@shared/types'
 import { PhoneWorkMode } from '@shared/types'
 import type { AudioCommand } from '@shared/types/ProjectionEnums'
 import type { NavLocale } from '@shared/utils'
-import type { DongleFwResponse } from '../ipc/types'
 import type { Command, NavigationData, PhoneType } from '../messages'
 import { MediaType, NavigationMetaType } from '../messages'
 import type { TransportSnapshot } from '../transport/types'
@@ -55,36 +54,6 @@ export type ProjectionEventAudioInfo = {
 }
 
 export type ProjectionEvent =
-  | { type: 'dongleInfo'; payload: { dongleFwVersion: string | undefined; boxInfo: unknown } }
-  | {
-      type: 'fwUpdate'
-      stage:
-        | 'check:start'
-        | 'check:done'
-        | 'download:start'
-        | 'download:progress'
-        | 'download:done'
-        | 'download:error'
-        | 'upload:start'
-        | 'upload:progress'
-        | 'upload:state'
-        | 'upload:file-sent'
-        | 'upload:done'
-        | 'upload:error'
-      message?: string
-      status?: number
-      statusText?: string
-      isOta?: boolean
-      isTerminal?: boolean
-      ok?: boolean
-      progress?: number
-      result?: DongleFwResponse
-      path?: string | null
-      bytes?: number
-      received?: number
-      total?: number
-      percent?: number
-    }
   | { type: 'plugged'; phoneType: PhoneType }
   | { type: 'unplugged' }
   | { type: 'resolution'; payload: { width: number; height: number } }

@@ -1,7 +1,6 @@
 import type { Config } from '@shared/types'
 import { ColorCalibration } from '../../components/pages/settings/pages/displayCalibration/ColorCalibration'
 import { ContrastGammaCalibration } from '../../components/pages/settings/pages/displayCalibration/ContrastGammaCalibration'
-import { IconUploader } from '../../components/pages/settings/pages/system/iconUploader/IconUploader'
 import { SettingsNode, ValueTransform } from '../types'
 
 const brightnessValueTransform: ValueTransform<number | undefined, number> = {
@@ -161,15 +160,7 @@ export const appearanceSchema: SettingsNode<Config> = {
       icon: 'uiIcon',
       route: 'ui-icon',
       path: '',
-      children: [
-        {
-          type: 'custom',
-          label: 'UI Icon',
-          labelKey: 'settings.uiIcon',
-          path: 'dongleIcon180',
-          component: IconUploader
-        }
-      ]
+      children: []
     }
   ]
 }

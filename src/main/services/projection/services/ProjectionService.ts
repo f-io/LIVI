@@ -3,7 +3,6 @@ import { configEvents } from '@main/ipc/utils'
 import { SystemSound } from '@main/services/audio'
 import { broadcastToSecondaryRenderers } from '@main/window/broadcast'
 import { getSecondaryWindow, secondaryWindowEvents } from '@main/window/secondaryWindows'
-import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
 import type { Config, DevListEntry } from '@shared/types'
 import { PhoneWorkMode } from '@shared/types'
 import { isInputCommand } from '@shared/types/InputCommand'
@@ -31,21 +30,12 @@ import type { AaManager, HelperSessionSource } from '../driver/aa/AaManager'
 import type { AaSession } from '../driver/aa/AaSession'
 import type { CpManager } from '../driver/cp/CpManager'
 import type { CpSession } from '../driver/cp/CpSession'
-import { DongleState } from '../driver/dongle/DongleState'
-import { DONGLE_APK_VER } from '../driver/dongle/dongleConfig'
-import { DongleDriver } from '../driver/dongle/dongleDriver'
-import { FirmwareUpdateService } from '../driver/dongle/FirmwareUpdateService'
 import { HelperSupervisor } from '../driver/helper/helperSupervisor'
 import type { IPhoneDriver } from '../driver/IPhoneDriver'
 import { ProjectionDriverManager } from '../drivers/ProjectionDriverManager'
 import { type ProjectionIpcHost, registerProjectionIpc } from '../ipc'
 import {
   AudioData,
-  BluetoothPairedList,
-  BluetoothPeerConnected,
-  BoxInfo,
-  BoxUpdateProgress,
-  BoxUpdateState,
   Command,
   DEFAULT_CONFIG,
   DuckAudio,
@@ -54,9 +44,7 @@ import {
   MediaType,
   type Message,
   NavigationData,
-  PhoneType,
-  Plugged,
-  SoftwareVersion
+  PhoneType
 } from '../messages'
 import { TransportArbiter } from '../transport/TransportArbiter'
 import type { Transport } from '../transport/types'
@@ -64,8 +52,7 @@ import { CodecCapabilityService } from './CodecCapabilityService'
 import {
   APP_START_TS,
   DEFAULT_MEDIA_DATA_RESPONSE,
-  DEFAULT_NAVIGATION_DATA_RESPONSE,
-  DEVTOOLS_IP_CANDIDATES
+  DEFAULT_NAVIGATION_DATA_RESPONSE
 } from './constants'
 import { DeviceController } from './DeviceController'
 import { DeviceRegistry, type DeviceView } from './DeviceRegistry'
@@ -103,11 +90,8 @@ const START_RETRY_CAP_MS = 15000
 export class ProjectionService {
   private readonly drivers: ProjectionDriverManager
   private readonly arbiter: TransportArbiter
-  private get driver(): IPhoneDriver {
+  private get driver(): IPhoneDriver | null {
     return this.drivers.getActive()
-  }
-  private get dongleDriver(): DongleDriver {
-    return this.drivers.getDongle()
   }
   private isActiveAaWired(): boolean {
     const a = this.sessions.active()
@@ -119,9 +103,6 @@ export class ProjectionService {
   }
   public getAaDriver(): AaManager | null {
     return this.drivers.getAaManager()
-  }
-  public getDongleDriver(): DongleDriver {
-    return this.drivers.getDongle()
   }
   public getCpDriver(): CpManager | null {
     return this.drivers.getCpManager()
@@ -179,16 +160,10 @@ export class ProjectionService {
   })
   private hostDevList: DevListEntry[] = []
   private lastAudioMetaEmitKey = ''
-  private firmware = new FirmwareUpdateService()
   private readonly bluez = new BluezDeviceClient()
   private readonly btPaired = new BtPairedRegistry({
     emit: (p) => this.emitProjectionEvent(p),
     hasRenderer: () => this.webContents != null
-  })
-  private readonly dongleState = new DongleState({
-    emit: (p) => this.emitProjectionEvent(p),
-    hasRenderer: () => this.webContents != null,
-    getHostDevList: () => this.hostDevList
   })
   private aaBtSubscription: { close: () => void } | null = null
   private readonly aaBtMacByInstance = new Map<string, string>()
@@ -223,12 +198,9 @@ export class ProjectionService {
   private readonly deviceController = new DeviceController({
     deviceRegistry: this.deviceRegistry,
     sessions: () => this.sessions,
-    getDongleSession: () => this.sessions.byDriver(this.drivers.getDongle()),
     bluez: this.bluez,
     getBtName: (mac) => this.btPaired.getName(mac),
     getConnectedBtMac: () => this.btPaired.getConnectedMac(),
-    getDongleConnectedMac: () => this.dongleState.getConnectedMac(),
-    getDongleDevList: () => this.dongleState.getDongleDevList(),
     emit: (p) => this.emitProjectionEvent(p),
     autoConnect: () => this.config.autoConn !== false,
     pushReconnectTargets: (targets) => {
@@ -497,9 +469,8 @@ export class ProjectionService {
   private earlyVideoQueues: Map<string, Array<Record<string, unknown>>> = new Map()
   private static readonly EARLY_QUEUE_MAX_PER_CHANNEL = 256
   private lastPluggedPhoneType?: PhoneType
-  /** Canonical MediaPlayStatus (1 = playing, 0 = paused), inferred from dongle audio commands. */
+  /** Canonical MediaPlayStatus (1 = playing, 0 = paused), inferred from AA audio commands. */
   private aaPlaybackInferred: 1 | 0 = 1
-  private pendingStartupConnectTarget: PendingStartupConnectTarget | null = null
 
   private audio: ProjectionAudio
   private systemSound = new SystemSound(() => this.config)
@@ -652,93 +623,6 @@ export class ProjectionService {
     return this.codecCaps.hevc
   }
 
-  private handleSoftwareVersion(msg: SoftwareVersion): void {
-    this.dongleState.handleSoftwareVersion(msg)
-  }
-
-  private handleBoxInfo(msg: BoxInfo): void {
-    this.dongleState.handleBoxInfo(msg)
-    this.deviceController.emitDevices()
-  }
-
-  // Dongle lifecycle over the always-on driver events, not the routed 'message' path.
-  private onDonglePhoneConnected(): void {
-    this.maybeAutoActivate(this.sessions.upsert(this.drivers.getDongle(), 'dongle', 'usb', {}))
-    // Re-asserts the renderer's cluster request now that the session can carry it.
-    if (this.anyClusterRequested()) this.dongleDriver.requestClusterFocus()
-    this.deviceController.emitDevices()
-  }
-
-  private onDonglePhoneDisconnected(): void {
-    const dongle = this.drivers.getDongle()
-    const hadOther = this.sessions.all().some((s) => s.driver !== dongle)
-    this.sessions.closeByDriver(dongle)
-    this.btPaired.clearDongleRaw()
-    this.dongleState.clearOnDongleGone()
-    if (hadOther) this.deviceController.emitDevices()
-    else this.onPhoneDisconnected()
-  }
-
-  private onDongleInfo(info: { boxInfo?: unknown }): void {
-    if (this.dongleState.applyDongleInfo(info)) {
-      this.deviceController.emitDevices()
-    }
-  }
-
-  private handleBluetoothPairedList(msg: BluetoothPairedList): void {
-    this.btPaired.setDonglePairedRaw(msg.data)
-    if (this.dongleState.reconcileWithPairedRaw(msg.data)) this.deviceController.emitDevices()
-  }
-
-  private handleBtPeerConnected(msg: BluetoothPeerConnected): void {
-    if (this.dongleState.setConnectedMac(msg.address)) this.deviceController.emitDevices()
-  }
-
-  private handleBoxUpdateProgress(msg: BoxUpdateProgress): void {
-    // 0xb1 payload: int32 progress
-    this.emitProjectionEvent({
-      type: 'fwUpdate',
-      stage: 'upload:progress',
-      progress: msg.progress
-    })
-  }
-
-  private handleBoxUpdateState(msg: BoxUpdateState): void {
-    // 0xbb payload: int32 status (start/success/fail, ota variants)
-    this.emitProjectionEvent({
-      type: 'fwUpdate',
-      stage: 'upload:state',
-      status: msg.status,
-      statusText: msg.statusText,
-      isOta: msg.isOta,
-      isTerminal: msg.isTerminal,
-      ok: msg.ok
-    })
-
-    if (msg.isTerminal) {
-      // Terminal state decides done vs error
-      this.emitProjectionEvent({
-        type: 'fwUpdate',
-        stage: msg.ok ? 'upload:done' : 'upload:error',
-        message: msg.statusText || (msg.ok ? 'Update finished' : 'Update failed'),
-        status: msg.status,
-        isOta: msg.isOta
-      })
-
-      // Ensure the next SoftwareVersion/BoxInfo triggers a fresh emit.
-      this.dongleState.invalidateDongleInfoKey()
-
-      this.driver.requestKeyframe?.()
-    }
-  }
-
-  private handlePlugged(msg: Plugged): void {
-    this.onPhoneConnected(msg.phoneType)
-    if (!this.started && !this.startPromise && this.getActiveTransport() !== 'cp') {
-      this.start().catch(() => {})
-    }
-  }
-
   private onPhoneConnected(phoneType: PhoneType): void {
     this.clearTimeouts()
     this.lastPluggedPhoneType = phoneType
@@ -868,24 +752,14 @@ export class ProjectionService {
   private handleCommand(msg: Command): void {
     this.emitProjectionEvent({ type: 'command', message: msg })
     if (typeof msg.value === 'number' && msg.value === 508 && this.anyClusterRequested()) {
-      this.driver.requestClusterFocus?.()
+      this.driver?.requestClusterFocus?.()
     }
   }
 
   private readonly onDriverMessage = (msg: Message): void => {
     // Always keep updater-relevant state, even if renderer is not attached yet.
-    if (msg instanceof SoftwareVersion) return this.handleSoftwareVersion(msg)
-
-    if (msg instanceof BoxInfo) return this.handleBoxInfo(msg)
-
     if (!this.webContents) return
 
-    if (msg instanceof BluetoothPairedList) return this.handleBluetoothPairedList(msg)
-    if (msg instanceof BluetoothPeerConnected) return this.handleBtPeerConnected(msg)
-
-    if (msg instanceof Plugged) return this.handlePlugged(msg)
-    if (msg instanceof BoxUpdateProgress) return this.handleBoxUpdateProgress(msg)
-    if (msg instanceof BoxUpdateState) return this.handleBoxUpdateState(msg)
     if (msg instanceof AudioData) return this.handleAudioData(msg)
     if (msg instanceof Command) return this.handleCommand(msg)
   }
@@ -914,7 +788,7 @@ export class ProjectionService {
   }
 
   private readonly onDriverTargetedConnect = (): void => {
-    this.pendingStartupConnectTarget = null
+    /* native drivers don't dispatch targeted connects; nothing to do */
   }
 
   // phone announces which advertised codec it picked
@@ -1145,20 +1019,7 @@ export class ProjectionService {
       this.planes.ensureClusterPlanes()
     })
     // A new player starts mid-stream, so the phone is asked for a keyframe.
-    setOnPlayerCreated(() => this.driver.requestKeyframe?.())
-
-    const dongle = this.drivers.getDongle()
-    dongle.on('phone-connected', () => this.onDonglePhoneConnected())
-    dongle.on('phone-disconnected', () => this.onDonglePhoneDisconnected())
-    dongle.on('dongle-info', (info: { boxInfo?: unknown }) => this.onDongleInfo(info))
-    dongle.on('attached', () => {
-      this.markDongleConnected(true)
-      this.sendUsbEvent('plugged')
-    })
-    dongle.on('detached', () => {
-      this.markDongleConnected(false)
-      this.sendUsbEvent('unplugged')
-    })
+    setOnPlayerCreated(() => this.driver?.requestKeyframe?.())
 
     this.sessions = new SessionManager({
       route: (d) => this.drivers.route(d),
@@ -1177,7 +1038,6 @@ export class ProjectionService {
         this.config.wirelessAaEnabled === true && process.platform === 'linux',
       isWirelessPhoneInRange: () => this.wirelessPhoneInRange,
       getActiveTransport: () => this.getActiveTransport(),
-      isDongleSessionActive: () => this.getActiveTransport() === 'dongle',
       isWiredAaSessionActive: () => this.started && this.isActiveAaWired(),
       isWiredCpSessionActive: () => this.started && this.isActiveCpWired(),
       hasWiredAaSession: () =>
@@ -1204,7 +1064,7 @@ export class ProjectionService {
         this.sendChunked(channel, data, chunkSize, extra, this.getAllUiWebContents())
       },
       (audioType, level, rampMs) => {
-        this.driver.setStreamVolume?.(audioType, level, rampMs)
+        this.driver?.setStreamVolume?.(audioType, level, rampMs)
       }
     )
 
@@ -1232,30 +1092,12 @@ export class ProjectionService {
       cycleSession: () => this.sessions.activateNext(),
       forgetDevice: (id) => this.forgetDevice(id),
       applyCodecCapabilities: (caps) => this.codecCaps.applyCodecCapabilities(caps),
-      send: (msg) => this.driver.send(msg),
-      sendToDongle: (msg) => this.dongleDriver.send(msg),
-      isUsingDongle: () => this.driver instanceof DongleDriver,
+      send: (msg) => this.driver?.send(msg) ?? Promise.resolve(false),
       isUsingAa: () => this.getActiveTransport() === 'aa',
       isStarted: () => this.started,
-      isDongleUp: () => this.dongleDriver.isUp,
-      sendBluetoothPairedList: (text) => this.dongleDriver.sendBluetoothPairedList(text),
       connectBt: (mac) => this.connectPairedDevice(mac),
       refreshBtPaired: () => {
         this.refreshBtPairedList().catch(() => {})
-      },
-      noteDonglePairForgotten: (btMac) => {
-        if (this.dongleState.removeFromDevList(btMac)) this.deviceController.emitDevices()
-        // Forgetting the connected phone ends its session right away.
-        const up = btMac.trim().toUpperCase()
-        const connected = this.dongleState.getConnectedMac().trim().toUpperCase()
-        if (up && connected === up) {
-          console.log(`[ProjectionService] forget ${btMac} hits the connected phone, disconnecting`)
-          void this.disconnectPhone().finally(() => this.onDonglePhoneDisconnected())
-        }
-      },
-      getBoxInfo: () => this.dongleState.getBoxInfo(),
-      setPendingStartupConnectTarget: (t) => {
-        this.pendingStartupConnectTarget = t
       },
       getConfig: () => this.config,
       setClusterRequested: (id, wanted) => {
@@ -1276,12 +1118,7 @@ export class ProjectionService {
         return w > 0 && h > 0 ? { width: w, height: h } : null
       },
       getClusterTargetWebContents: () => this.getClusterTargetWebContents(),
-      uploadIcons: () => this.uploadIcons(),
-      getDevToolsUrlCandidates: () => this.getDevToolsUrlCandidates(),
       reloadConfigFromDisk: () => this.reloadConfigFromDisk(),
-      getFirmware: () => this.firmware,
-      getApkVer: () => this.getApkVer(),
-      getDongleFwVersion: () => this.dongleState.getFwVersion(),
       emitProjectionEvent: (p) => this.emitProjectionEvent(p),
       readActiveMedia: () => ({
         timestamp: new Date().toISOString(),
@@ -1304,55 +1141,6 @@ export class ProjectionService {
       this.config = { ...this.config, ...userConfig }
     } catch {
       // ignore
-    }
-  }
-
-  private getApkVer(): string {
-    return DONGLE_APK_VER
-  }
-
-  private getDevToolsUrlCandidates(): string[] {
-    const paths = ['/', '/index.html', '/cgi-bin/server.cgi?action=ls&path=/']
-    return DEVTOOLS_IP_CANDIDATES.flatMap((host) => paths.map((p) => `http://${host}${p}`))
-  }
-
-  private uploadIcons() {
-    try {
-      const configPath = path.join(app.getPath('userData'), 'config.json')
-
-      let cfg: Config = { ...(DEFAULT_CONFIG as Config), ...this.config }
-
-      try {
-        if (fs.existsSync(configPath)) {
-          const diskCfg = JSON.parse(fs.readFileSync(configPath, 'utf8')) as Config
-          cfg = { ...cfg, ...diskCfg }
-          this.config = cfg
-        }
-      } catch (err) {
-        console.warn(
-          '[ProjectionService] failed to reload config.json before icon upload, using in-memory config',
-          err
-        )
-      }
-
-      const b120 = (cfg.dongleIcon120?.trim() || ICON_120_B64).trim()
-      const b180 = (cfg.dongleIcon180?.trim() || ICON_180_B64).trim()
-      const b256 = (cfg.dongleIcon256?.trim() || ICON_256_B64).trim()
-
-      if (!b120 || !b180 || !b256) {
-        console.error('[ProjectionService] Icon assets missing, upload cancelled')
-        return
-      }
-
-      const buf120 = Buffer.from(b120, 'base64')
-      const buf180 = Buffer.from(b180, 'base64')
-      const buf256 = Buffer.from(b256, 'base64')
-
-      this.driver.uploadHostIcons?.(buf120, buf180, buf256)
-
-      console.debug('[ProjectionService] uploaded icons from fresh config.json')
-    } catch (err) {
-      console.error('[ProjectionService] failed to upload icons', err)
     }
   }
 
@@ -1386,22 +1174,6 @@ export class ProjectionService {
     this.syncHelperSupervisor()
   }
 
-  /** The renderer's dongle views follow the helper's session. */
-  private sendUsbEvent(type: 'plugged' | 'unplugged'): void {
-    const wc = this.webContents
-    if (!wc || wc.isDestroyed()) return
-    const dev = type === 'plugged' ? this.dongleDriver.usbDevice() : null
-    const device = dev
-      ? { vendorId: dev.vendorId, productId: dev.productId, deviceName: dev.deviceName }
-      : null
-    wc.send('usb-event', { type, device })
-  }
-
-  public markDongleConnected(connected: boolean): void {
-    this.arbiter.markDongleConnected(connected)
-    if (connected) void this.dongleDriver.start(this.config, this.pendingStartupConnectTarget)
-  }
-
   public setUiPath(path: string): void {
     this.statusFile.setPath(path)
   }
@@ -1412,8 +1184,8 @@ export class ProjectionService {
 
   public getActiveTransport(): Transport | null {
     const a = this.sessions.active()
-    if (a) return a.protocol === 'carplay' ? 'cp' : a.protocol === 'dongle' ? 'dongle' : 'aa'
-    return this.started ? 'dongle' : null
+    if (a) return a.protocol === 'carplay' ? 'cp' : 'aa'
+    return null
   }
 
   public getTransportState() {
@@ -1492,15 +1264,6 @@ export class ProjectionService {
     console.log('[ProjectionService] restartSession requested (settings/IPC)')
     // Native CarPlay renegotiates the advertised displays on reconnect.
     if (this.cpActive) this.drivers.getCpManager()?.dropSessions()
-
-    if (this.getActiveTransport() === 'dongle') {
-      try {
-        await this.driver.disconnectPhone?.()
-      } catch (e) {
-        console.warn('[ProjectionService] restartSession: dongle disconnect threw (ignored)', e)
-      }
-      return
-    }
 
     const aaRouted = this.getActiveTransport() === 'aa'
     const wasWired = aaRouted && this.isActiveAaWired()
@@ -1884,10 +1647,10 @@ export class ProjectionService {
       return
     }
     console.log(
-      `[ProjectionService] remote input "${command}" → ${active ? `#${active.index} ${active.protocol}` : 'dongle'}`
+      `[ProjectionService] remote input "${command}" → ${active ? `#${active.index} ${active.protocol}` : 'none'}`
     )
     try {
-      this.driver.handleInput(command)
+      this.driver?.handleInput(command)
     } catch (e) {
       console.warn(`[ProjectionService] remote input "${command}" failed`, e)
     }
@@ -2014,10 +1777,8 @@ export class ProjectionService {
     this.startPromise = (async () => {
       try {
         const candidate = this.arbiter.pickPreferred()
-        const target: Transport =
-          candidate?.transport === 'aa' ? 'aa' : candidate?.transport === 'cp' ? 'cp' : 'dongle'
-        // Dongle is brought up on USB attach (bringUpDongle), never through start().
-        if (target === 'dongle') return
+        if (!candidate) return
+        const target: Transport = candidate.transport === 'cp' ? 'cp' : 'aa'
 
         await this.reloadConfigFromDisk()
 
@@ -2031,8 +1792,6 @@ export class ProjectionService {
         })
 
         this.audio.resetForSessionStart()
-
-        this.dongleState.resetForTeardown()
         this.lastVideoWidth = undefined
         this.lastVideoHeight = undefined
         this.lastPluggedPhoneType = undefined
@@ -2055,7 +1814,7 @@ export class ProjectionService {
           return
         }
 
-        // Reaching here means target === 'aa' (cp + dongle returned above). Both AA
+        // Reaching here means target === 'aa' (cp returned above). Both AA
         // paths are helper sessions, the wired one is already up and only needs activating.
         {
           if (candidate?.mode === 'wired') {
@@ -2092,7 +1851,7 @@ export class ProjectionService {
 
   public async disconnectPhone(): Promise<boolean> {
     if (!this.started) return false
-    return (await this.driver.disconnectPhone?.()) ?? false
+    return (await this.driver?.disconnectPhone?.()) ?? false
   }
 
   private lastSessionKey = ''
@@ -2116,17 +1875,6 @@ export class ProjectionService {
     if (next) {
       console.log(`[ProjectionService] active session -> #${next.index} ${next.protocol}`)
       this.audio.restoreDuck(next.audio.duckLevel, next.audio.duckRampMs)
-      if (next.protocol === 'dongle') {
-        this.started = true
-        if (prev) {
-          this.planes.dispose()
-          if (!this.startPromise) next.driver.requestKeyframe?.()
-        }
-        if (!prev) this.audio.resetForSessionStart()
-        this.mediaStore.hydrate(next)
-        this.navStore.hydrate(next)
-        return
-      }
       this.planes.dispose()
       this.mediaStore.hydrate(next)
       this.navStore.hydrate(next)
@@ -2210,19 +1958,6 @@ export class ProjectionService {
         await this.disconnectPhone()
       } catch {}
 
-      const wasDongleSession = this.driver instanceof DongleDriver
-
-      if (wasDongleSession) {
-        try {
-          await this.driver.close()
-        } catch (e) {
-          console.warn('[ProjectionService] dongle close() failed (ignored)', e)
-        }
-        // Dongle gone, drop its stale DevList
-        this.btPaired.clearDongleRaw()
-        this.dongleState.clearDongleSessionState()
-      }
-
       this.audio.resetForSessionStop()
 
       this.planes.dispose()
@@ -2230,8 +1965,6 @@ export class ProjectionService {
       this.started = false
       this.mediaStore.reset('session-stop')
       this.navStore.reset('session-stop')
-
-      this.dongleState.resetForTeardown()
       this.lastVideoWidth = undefined
       this.lastVideoHeight = undefined
       this.lastPluggedPhoneType = undefined

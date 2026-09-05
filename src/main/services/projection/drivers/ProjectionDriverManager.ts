@@ -1,13 +1,12 @@
+import { DongleUpload } from '@main/services/link/dongleUpload'
 import type { Config } from '@shared/types'
 import type { AaMediaSinkDeps } from '../driver/aa/AaEventBridge'
 import { AaManager, type HelperSessionSource } from '../driver/aa/AaManager'
 import type { AaSession } from '../driver/aa/AaSession'
 import { CpManager } from '../driver/cp/CpManager'
 import type { CpSession } from '../driver/cp/CpSession'
-import { DongleDriver } from '../driver/dongle/dongleDriver'
 import type { IPhoneDriver } from '../driver/IPhoneDriver'
 import { DuckAudio, MediaData, type Message, NavigationData } from '../messages'
-import type { Transport } from '../transport/types'
 
 export type DriverEventHandlers = {
   onMessage: (...args: unknown[]) => void
@@ -48,20 +47,15 @@ export type DriverManagerDeps = {
 }
 
 export class ProjectionDriverManager {
-  readonly dongle = new DongleDriver()
+  readonly dongleUpload = new DongleUpload()
   private aaManager: AaManager | null = null
   private cpManager: CpManager | null = null
-  private routed: IPhoneDriver
+  private routed: IPhoneDriver | null = null
   private readonly metaListeners = new Map<IPhoneDriver, (msg: Message) => void>()
 
-  constructor(private readonly deps: DriverManagerDeps) {
-    this.routed = this.dongle
-    this.attachListeners(this.dongle)
-    this.attachMetaListener(this.dongle)
-    if (deps.mediaSink) this.dongle.setMediaSink(deps.mediaSink)
-  }
+  constructor(private readonly deps: DriverManagerDeps) {}
 
-  getActive(): IPhoneDriver {
+  getActive(): IPhoneDriver | null {
     return this.routed
   }
 
@@ -73,21 +67,14 @@ export class ProjectionDriverManager {
     return this.cpManager
   }
 
-  getDongle(): DongleDriver {
-    return this.dongle
+  getDongleUpload(): DongleUpload {
+    return this.dongleUpload
   }
 
-  selectFor(_transport: Transport): IPhoneDriver {
-    // CarPlay + AA are session-routed via SessionManager. Only the dongle is
-    // selected directly (start() short-circuits before selecting a native driver).
-    this.route(this.dongle)
-    return this.dongle
-  }
-
-  route(target: IPhoneDriver): void {
+  route(target: IPhoneDriver | null): void {
     if (this.routed === target) return
-    this.detachListeners(this.routed)
-    this.attachListeners(target)
+    if (this.routed) this.detachListeners(this.routed)
+    if (target) this.attachListeners(target)
     this.routed = target
   }
 
@@ -112,12 +99,12 @@ export class ProjectionDriverManager {
 
   attachHelper(helper: HelperSessionSource | undefined): void {
     this.ensureAaManager().attachHelper(helper)
-    this.dongle.attachHelper(helper)
+    this.dongleUpload.attachHelper(helper)
   }
 
   detachHelper(): void {
     this.aaManager?.detachHelper()
-    this.dongle.detachHelper()
+    this.dongleUpload.detachHelper()
   }
 
   stopAaWireless(): void {
@@ -157,7 +144,7 @@ export class ProjectionDriverManager {
     session.on('disconnected', () => {
       this.deps.onAaDisconnected(session)
       this.detachMetaListener(session)
-      if (this.routed === session) this.route(this.dongle)
+      if (this.routed === session) this.route(null)
       this.deps.onAaReleased?.(session)
     })
   }
@@ -238,7 +225,7 @@ export class ProjectionDriverManager {
     session.once('disconnected', () => {
       this.deps.onCpDisconnected(session)
       this.detachMetaListener(session)
-      if (this.routed === session) this.route(this.dongle)
+      if (this.routed === session) this.route(null)
       this.deps.onCpReleased?.(session)
     })
   }

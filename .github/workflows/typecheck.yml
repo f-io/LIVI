@@ -33,7 +33,7 @@ jobs:
           corepack enable
           corepack install
           echo "pnpm version: $(pnpm -v)"
-          node -e "const v=require('child_process').execSync('pnpm -v').toString().trim(); if(!/^11\\./.test(v)){console.error('Expected pnpm 11.x, got', v); process.exit(1);} console.log('pnpm 11 OK');"
+          node -e "const v=require('child_process').execSync('pnpm -v').toString().trim(); if(!/^12\\./.test(v)){console.error('Expected pnpm 12.x, got', v); process.exit(1);} console.log('pnpm 12 OK');"
 
       - name: Resolve pnpm store path
         id: pnpm_store

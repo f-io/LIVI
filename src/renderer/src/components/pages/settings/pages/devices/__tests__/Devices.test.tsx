@@ -1,10 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { DeviceView } from '../useDevices'
 
-const { deviceState, navigateMock, forgetDongleMock, selectMock, forgetMock } = vi.hoisted(() => ({
+const { deviceState, navigateMock, selectMock, forgetMock } = vi.hoisted(() => ({
   deviceState: { list: [] as unknown[] },
   navigateMock: vi.fn(),
-  forgetDongleMock: vi.fn(),
   selectMock: vi.fn(async () => ({ ok: true })),
   forgetMock: vi.fn()
 }))
@@ -18,8 +17,7 @@ vi.mock('../useDevices', () => ({
 vi.mock('react-router', () => ({ useNavigate: () => navigateMock }))
 
 vi.mock('@renderer/store/store', () => ({
-  useLiviStore: (selector: (s: unknown) => unknown) =>
-    selector({ forgetBluetoothPairedDevice: forgetDongleMock })
+  useLiviStore: (selector: (s: unknown) => unknown) => selector({})
 }))
 
 import { Devices } from '../Devices'
@@ -37,7 +35,6 @@ function dev(over: Partial<DeviceView> = {}): DeviceView {
 beforeEach(() => {
   deviceState.list = []
   navigateMock.mockReset()
-  forgetDongleMock.mockReset()
   forgetMock.mockReset()
   selectMock.mockReset().mockResolvedValue({ ok: true })
 })
@@ -54,7 +51,6 @@ describe('Devices', () => {
         id: 'a',
         name: 'iPhone',
         protocol: 'carplay',
-        source: 'dongle',
         status: 'active',
         session: 1,
         batteryLevel: 50,
@@ -89,7 +85,6 @@ describe('Devices', () => {
     expect(container.querySelector('svg[data-testid="PhoneIphoneIcon"]')).toBeTruthy()
     expect(container.querySelector('svg[data-testid="AndroidIcon"]')).toBeTruthy()
     expect(container.querySelector('svg[data-testid="DirectionsCarIcon"]')).toBeTruthy()
-    expect(container.querySelector('svg[data-testid="DeviceHubIcon"]')).toBeTruthy()
     expect(container.querySelector('svg[data-testid="CableOutlinedIcon"]')).toBeTruthy()
     expect(container.querySelector('svg[data-testid="WifiOutlinedIcon"]')).toBeTruthy()
     const dots = screen.getAllByRole('status')
@@ -131,16 +126,16 @@ describe('Devices', () => {
     expect(selectMock).not.toHaveBeenCalled()
   })
 
-  test('delete routes dongle devices to the store and others to forgetDevice', () => {
+  test('delete routes devices to forgetDevice', () => {
     deviceState.list = [
-      dev({ id: 'dg', name: 'Dongle', source: 'dongle', session: 1 }),
+      dev({ id: 'a', name: 'Phone', session: 1 }),
       dev({ id: 'bt', name: 'BtPhone', session: 2 })
     ]
     render(<Devices />)
     const deleteButtons = screen.getAllByLabelText('Delete device')
     fireEvent.click(deleteButtons[0])
     fireEvent.click(deleteButtons[1])
-    expect(forgetDongleMock).toHaveBeenCalledWith('dg')
+    expect(forgetMock).toHaveBeenCalledWith('a')
     expect(forgetMock).toHaveBeenCalledWith('bt')
     expect(selectMock).not.toHaveBeenCalled()
   })

@@ -1,11 +1,9 @@
-import type { Config, DongleFirmwareAction, DongleFwApiRaw } from '@shared/types'
+import type { Config } from '@shared/types'
 import type { WebContents } from 'electron'
-import type { FirmwareUpdateService } from '../driver/dongle/FirmwareUpdateService'
 import type { SendableMessage } from '../messages/sendable'
 import type { DeviceView } from '../services/DeviceRegistry'
 import type { LogicalStreamKey } from '../services/ProjectionAudio'
 import type {
-  PendingStartupConnectTarget,
   PersistedMediaFile,
   PersistedNavigationFile,
   ProjectionEvent
@@ -13,28 +11,6 @@ import type {
 import type { Transport, TransportSnapshot } from '../transport/types'
 
 export type BtActionResponse = { ok: boolean; error?: string }
-
-export type DongleFwResponse = {
-  ok: boolean
-  hasUpdate: boolean
-  size: string | number
-  token?: string
-  request?: Record<string, unknown>
-  raw: DongleFwApiRaw
-  error?: string
-}
-
-export type DongleFwRequest = { action: DongleFirmwareAction }
-
-export type DevToolsUploadResult = {
-  ok: boolean
-  cgiOk: boolean
-  webOk: boolean
-  urls: string[]
-  startedAt: string
-  finishedAt: string
-  durationMs: number
-}
 
 export interface ProjectionIpcHost {
   // Lifecycle / transport
@@ -53,19 +29,12 @@ export interface ProjectionIpcHost {
 
   // Driver send
   send(msg: SendableMessage): Promise<boolean>
-  sendToDongle(msg: SendableMessage): Promise<boolean>
-  isUsingDongle(): boolean
   isUsingAa(): boolean
   isStarted(): boolean
-  isDongleUp(): boolean
 
   // Bluetooth
-  sendBluetoothPairedList(text: string): Promise<boolean>
   connectBt(mac: string): Promise<BtActionResponse>
   refreshBtPaired(): void
-  noteDonglePairForgotten(btMac: string): void
-  getBoxInfo(): unknown
-  setPendingStartupConnectTarget(t: PendingStartupConnectTarget | null): void
 
   // Cluster
   getConfig(): Config
@@ -77,15 +46,7 @@ export interface ProjectionIpcHost {
   getLastClusterVideoSize(): { width: number; height: number } | null
   getClusterTargetWebContents(): WebContents[]
 
-  // Dongle ops
-  uploadIcons(): void
-  getDevToolsUrlCandidates(): string[]
-
-  // Firmware
   reloadConfigFromDisk(): Promise<void>
-  getFirmware(): FirmwareUpdateService
-  getApkVer(): string
-  getDongleFwVersion(): string | undefined
   emitProjectionEvent(payload: ProjectionEvent): void
   readActiveMedia(): PersistedMediaFile
   readActiveNav(): PersistedNavigationFile

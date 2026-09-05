@@ -41,7 +41,6 @@ import { TelemetryStore } from '../TelemetryStore'
 function fakeProjection(): ProjectionService {
   return {
     getAaDriver: vi.fn(() => null),
-    getDongleDriver: vi.fn(() => null),
     getCpDriver: vi.fn(() => null),
     setBlinkerSoundActive: vi.fn(),
     addPluggedHook: vi.fn(() => () => {})
@@ -153,7 +152,6 @@ describe('setupTelemetry', () => {
 
     const hook = (proj.addPluggedHook as Mock).mock.calls[0][0] as () => void
     hook()
-    expect(proj.getDongleDriver).toHaveBeenCalled()
   })
 
   test('a throwing hydrate is contained per adapter', () => {
@@ -161,9 +159,6 @@ describe('setupTelemetry', () => {
     const proj = fakeProjection()
     ;(proj.getAaDriver as Mock).mockImplementation(() => {
       throw new Error('aa gone')
-    })
-    ;(proj.getDongleDriver as Mock).mockImplementation(() => {
-      throw new Error('dongle gone')
     })
     ;(proj.getCpDriver as Mock).mockImplementation(() => {
       throw new Error('cp gone')
@@ -175,10 +170,6 @@ describe('setupTelemetry', () => {
     expect(() => hook()).not.toThrow()
     expect(console.warn).toHaveBeenCalledWith(
       '[setupTelemetry] aa.hydrate threw (ignored)',
-      expect.any(Error)
-    )
-    expect(console.warn).toHaveBeenCalledWith(
-      '[setupTelemetry] dongle.hydrate threw (ignored)',
       expect.any(Error)
     )
     expect(console.warn).toHaveBeenCalledWith(

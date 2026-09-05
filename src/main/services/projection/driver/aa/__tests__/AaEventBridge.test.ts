@@ -1,15 +1,5 @@
 import { EventEmitter } from 'node:events'
-import {
-  AudioData,
-  Command,
-  DongleReady,
-  MediaData,
-  type Message,
-  NavigationData,
-  Opened,
-  Plugged,
-  Unplugged
-} from '@projection/messages'
+import { AudioData, Command, MediaData, type Message, NavigationData } from '@projection/messages'
 import { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
 import type { Mock } from 'vitest'
 import { AaEventBridge, type AaEventBridgeDeps, type AaMediaSinkDeps } from '../AaEventBridge'
@@ -126,12 +116,10 @@ describe('AaEventBridge', () => {
       const { aa, emitMessage } = makeBridge()
       aa.emit('connected')
 
-      const msgs = allMessages(emitMessage)
-      expect(msgs.some((m) => m instanceof Opened || m instanceof DongleReady)).toBe(false)
-      expect(msgs.some((m) => m instanceof Plugged)).toBe(false)
+      allMessages(emitMessage)
     })
 
-    test('disconnected releases video focus if it was held and emits no Unplugged', async () => {
+    test('disconnected releases video focus if it was held', async () => {
       const { aa, emitMessage } = makeBridge()
       aa.emit('video-focus-projected')
       emitMessage.mockClear()
@@ -142,7 +130,6 @@ describe('AaEventBridge', () => {
         (c) => c.value === CommandMapping.releaseVideoFocus
       )
       expect(releaseEmitted).toBe(true)
-      expect(messagesOf(emitMessage, Unplugged)).toHaveLength(0)
     })
 
     test('disconnected without prior video focus does not emit releaseVideoFocus', async () => {

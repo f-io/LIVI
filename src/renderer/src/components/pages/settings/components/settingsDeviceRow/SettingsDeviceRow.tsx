@@ -20,7 +20,6 @@ const ProtocolIcon = ({ p, size }: { p?: DeviceView['protocol']; size: number | 
   )
 
 const SourceBadge = ({ d, size }: { d: DeviceView; size: number }) => {
-  if (d.source === 'dongle') return <DeviceHubIcon sx={{ fontSize: size }} />
   if (d.lastTransport === 'usb') return <CableOutlinedIcon sx={{ fontSize: size }} />
   if (d.lastTransport === 'wifi') return <WifiOutlinedIcon sx={{ fontSize: size }} />
   return null

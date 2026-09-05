@@ -11,7 +11,6 @@ import { pickAssetForPlatform } from '@main/ipc/update/pickAsset'
 import { configEvents, saveSettings } from '@main/ipc/utils'
 import { GhRelease, runtimeStateProps } from '@main/types'
 import { currentKiosk } from '@main/window/utils'
-import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
 import type { Config } from '@shared/types'
 import { app } from 'electron'
 
@@ -27,19 +26,6 @@ export function registerSettingsIpc(runtimeState: runtimeStateProps) {
 
   configEvents.on('requestSave', (settings: Partial<Config>) => {
     saveSettings(runtimeState, settings)
-  })
-
-  registerIpcHandle('settings:reset-dongle-icons', () => {
-    saveSettings(runtimeState, {
-      dongleIcon120: '',
-      dongleIcon180: '',
-      dongleIcon256: ''
-    })
-    return {
-      dongleIcon120: ICON_120_B64,
-      dongleIcon180: ICON_180_B64,
-      dongleIcon256: ICON_256_B64
-    }
   })
 
   registerIpcHandle('app:getVersion', () => app.getVersion())

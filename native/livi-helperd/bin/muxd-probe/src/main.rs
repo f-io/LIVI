@@ -12,8 +12,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     for p in &phones {
         println!(
-            "[muxd-probe] iphone serial={} bus={} addr={} nConfigs={} config={:?}",
-            p.serial, p.bus, p.address, p.num_configs, p.config_value
+            "[muxd-probe] iphone serial={} nConfigs={} config={:?}",
+            p.serial, p.num_configs, p.config_value
         );
     }
 

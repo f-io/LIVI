@@ -34,7 +34,7 @@ function StatusOverlay({
   offsetX = 0,
   offsetY = 0
 }: {
-  mode: 'dongle' | 'phone'
+  mode: 'idle' | 'phone'
   show: boolean
   offsetX?: number
   offsetY?: number
@@ -96,9 +96,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const isStreaming = useStatusStore((s) => s.isStreaming)
   const setStreaming = useStatusStore((s) => s.setStreaming)
   const setActiveProtocol = useStatusStore((s) => s.setActiveProtocol)
-  const setDongleHardwarePresent = useStatusStore((s) => s.setDongleHardwarePresent)
   const isProjectionActive = useProjectionActive()
-  const resetInfo = useLiviStore((s) => s.resetInfo)
   const setDeviceInfo = useLiviStore((s) => s.setDeviceInfo)
   const setAudioInfo = useLiviStore((s) => s.setAudioInfo)
   const setPcmData = useLiviStore((s) => s.setPcmData)
@@ -142,7 +140,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   const mainElem = useRef<HTMLDivElement>(null)
   const videoContainerRef = useRef<HTMLDivElement>(null)
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const usbOpTokenRef = useRef(0)
   const hasStartedRef = useRef(false)
   const [rendererError] = useState<string | null>(null)
 
@@ -307,10 +304,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           break
         }
 
-        case 'dongleInfo': {
-          break
-        }
-
         case 'failure':
           hasStartedRef.current = false
           if (!retryTimeoutRef.current) {
@@ -334,105 +327,9 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   ])
 
   // USB events
-  useEffect(() => {
-    let disposed = false
-
-    const onUsbConnect = async () => {
-      const token = ++usbOpTokenRef.current
-      if (!hasStartedRef.current) {
-        resetInfo()
-
-        let info:
-          | { device: false; vendorId: null; productId: null; usbFwVersion: string }
-          | { device: true; vendorId: number; productId: number; usbFwVersion: string }
-          | null = null
-
-        try {
-          info = await window.projection.usb.getDeviceInfo()
-        } catch (e) {
-          console.warn('[PROJECTION] usb.getDeviceInfo() failed', e)
-        }
-
-        if (disposed || token !== usbOpTokenRef.current) return
-
-        if (info?.device) {
-          setDeviceInfo({
-            vendorId: info.vendorId,
-            productId: info.productId,
-            usbFwVersion: info.usbFwVersion ?? ''
-          })
-        }
-
-        setDongleHardwarePresent(true)
-        hasStartedRef.current = true
-      }
-    }
-
-    const onUsbDisconnect = () => {
-      usbOpTokenRef.current += 1
-      clearRetryTimeout()
-      setDongleHardwarePresent(false)
-      hasStartedRef.current = false
-      resetInfo()
-    }
-    const usbHandler = (_evt: unknown, ...args: unknown[]) => {
-      const data = args[0] as UsbEvent | undefined
-      if (!data) return
-      if (data.type === 'plugged') onUsbConnect()
-      else if (data.type === 'unplugged') onUsbDisconnect()
-    }
-
-    const unsubscribe = window.projection.usb.listenForEvents(usbHandler)
-
-    return () => {
-      disposed = true
-      unsubscribe?.()
-      window.electron?.ipcRenderer.removeListener('usb-event', usbHandler)
-    }
-  }, [
-    setReceivingVideo,
-    setDongleHardwarePresent,
-    setStreaming,
-    clearRetryTimeout,
-    navigate,
-    resetInfo,
-    setDeviceInfo
-  ])
 
   // Settings/events from main
   useEffect(() => {
-    const mergeBoxInfo = (prev: unknown, next: unknown): unknown => {
-      if (next == null) return prev
-      if (typeof next === 'string') {
-        const s = next.trim()
-        if (!s) return prev
-        try {
-          next = JSON.parse(s)
-        } catch {
-          return prev
-        }
-      }
-      if (typeof prev === 'string') {
-        const s = prev.trim()
-        if (s) {
-          try {
-            prev = JSON.parse(s)
-          } catch {
-            prev = null
-          }
-        } else {
-          prev = null
-        }
-      }
-      const isRecord = (v: unknown): v is Record<string, unknown> =>
-        typeof v === 'object' && v !== null
-
-      if (isRecord(prev) && isRecord(next)) {
-        return { ...prev, ...next }
-      }
-      return next
-    }
-
     const handler = (_evt: unknown, data: unknown) => {
       const d = (data ?? {}) as Record<string, unknown>
       const t = typeof d.type === 'string' ? d.type : undefined
@@ -470,16 +367,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
           const shown = (d as { shown?: boolean }).shown === true
           setReceivingVideo(shown)
           setStreaming(shown)
-          break
-        }
-
-        case 'dongleInfo': {
-          const p = d.payload as { dongleFwVersion?: string; boxInfo?: unknown } | undefined
-          if (!p) break
-          useLiviStore.setState((s) => ({
-            dongleFwVersion: p.dongleFwVersion ?? s.dongleFwVersion,
-            boxInfo: mergeBoxInfo(s.boxInfo, p.boxInfo)
-          }))
           break
         }
 
@@ -589,7 +476,7 @@ const CarplayComponent: React.FC<CarplayProps> = ({
 
   /* ------------------------------- UI binding ------------------------------ */
 
-  const mode: 'dongle' | 'phone' = !isProjectionActive ? 'dongle' : 'phone'
+  const mode: 'idle' | 'phone' = !isProjectionActive ? 'idle' : 'phone'
 
   const inProjection = pathname === '/'
   const showProjectionOverlay = inProjection

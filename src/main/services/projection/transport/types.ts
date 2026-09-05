@@ -1,4 +1,4 @@
-export type Transport = 'dongle' | 'aa' | 'cp'
+export type Transport = 'aa' | 'cp'
 
 export type ConnectionMode = 'wired' | 'wireless'
 
@@ -18,7 +18,6 @@ export type ArbiterDeps = {
   isWirelessEnabled: () => boolean
   isWirelessPhoneInRange: () => boolean
   getActiveTransport: () => Transport | null
-  isDongleSessionActive: () => boolean
   isWiredAaSessionActive: () => boolean
   isWiredCpSessionActive: () => boolean
   hasWiredAaSession: () => boolean

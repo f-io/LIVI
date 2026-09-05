@@ -26,8 +26,7 @@ describe('transport ipc', () => {
 
   test('transport:state delegates to host.getTransportState', async () => {
     const state = {
-      active: 'dongle' as const,
-      dongleDetected: true,
+      active: 'cp' as const,
       nativeDetected: false
     }
     const host = {

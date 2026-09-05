@@ -9,12 +9,9 @@ import { isPhoneLikeCod } from './utils/isPhoneLikeCod'
 export type DeviceControllerDeps = {
   deviceRegistry: DeviceRegistry
   sessions: () => SessionManager
-  getDongleSession: () => ProjectionSession | null
   bluez: BluezDeviceClient
   getBtName: (macUpper: string) => string | undefined
   getConnectedBtMac: () => string
-  getDongleConnectedMac: () => string
-  getDongleDevList: () => DevListEntry[]
   emit: (payload: ProjectionEvent) => void
   autoConnect: () => boolean
   pushReconnectTargets: (targets: Array<[string, string | null]>) => void
@@ -81,12 +78,6 @@ export class DeviceController {
   }
 
   selectDevice(id: string): { ok: boolean } {
-    if (this.deps.getDongleDevList().some((d) => d.id === id)) {
-      const ds = this.deps.getDongleSession()
-      if (!ds) return { ok: false }
-      this.deps.sessions().activate(ds.index)
-      return { ok: true }
-    }
     const reg = this.deps.deviceRegistry
     const e = reg.list().find((x) => reg.deviceId(x) === id)
     const ids = e
@@ -223,28 +214,6 @@ export class DeviceController {
       }
       out.push(view)
       lastSeenOf.set(view, e.lastSeen ?? 0)
-    }
-    const connectedDongleMac = this.deps.getDongleConnectedMac().trim().toUpperCase()
-    const dongleSession = this.deps.getDongleSession()
-    const dongleActive = dongleSession?.state === 'active'
-    const phoneLikeDongle = this.deps
-      .getDongleDevList()
-      .filter((d): d is DevListEntry & { id: string } => !!d.id && isPhoneLikeCod(d.class))
-    for (const d of phoneLikeDongle) {
-      const isConnected =
-        (!!connectedDongleMac && d.id.trim().toUpperCase() === connectedDongleMac) ||
-        !!d.connected ||
-        (dongleActive && phoneLikeDongle.length === 1)
-      const view: DeviceView = {
-        id: d.id,
-        name: d.name || d.id,
-        protocol: d.type === 'AndroidAuto' ? 'androidauto' : 'carplay',
-        status: !dongleSession ? 'offline' : dongleActive && isConnected ? 'active' : 'available',
-        source: 'dongle',
-        session: dongleSession ? ordered.indexOf(dongleSession) + 1 || undefined : undefined
-      }
-      out.push(view)
-      lastSeenOf.set(view, 0)
     }
     out.sort((a, b) => {
       const as = a.session

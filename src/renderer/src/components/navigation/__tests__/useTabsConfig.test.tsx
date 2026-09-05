@@ -7,7 +7,7 @@ let mockRole = 'main'
 let mockState = {
   isStreaming: false,
   isDongleHardwarePresent: false,
-  activeProtocol: null as 'carplay' | 'androidauto' | 'dongle' | null,
+  activeProtocol: null as 'carplay' | 'androidauto' | null,
   cameraFound: true,
   telemetryOnMain: false,
   settingsMissing: false,

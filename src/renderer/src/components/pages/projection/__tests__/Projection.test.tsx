@@ -13,18 +13,14 @@ type AnyFn = (...args: any[]) => any
 
 const statusState: Record<string, any> = {
   isStreaming: true,
-  isDongleHardwarePresent: true,
   activeProtocol: null,
   setStreaming: vi.fn(),
-  setDongleHardwarePresent: vi.fn(),
   setActiveProtocol: vi.fn()
 }
 
 const liviState: Record<string, any> = {
   negotiatedWidth: 0,
   negotiatedHeight: 0,
-  dongleFwVersion: '',
-  boxInfo: null,
   resetInfo: vi.fn(),
   setDeviceInfo: vi.fn(),
   setAudioInfo: vi.fn(),
@@ -51,8 +47,7 @@ vi.mock('../../../../store/store', async () => {
     }
   }
 
-  const useProjectionActive = () =>
-    statusState.isDongleHardwarePresent || statusState.activeProtocol != null
+  const useProjectionActive = () => statusState.activeProtocol != null
 
   return { useStatusStore, useLiviStore, useProjectionActive }
 })
@@ -109,15 +104,12 @@ describe('Projection page', () => {
     mockPathname = '/'
 
     statusState.isStreaming = true
-    statusState.isDongleHardwarePresent = true
     statusState.activeProtocol = null
     statusState.setStreaming.mockClear()
-    statusState.setDongleHardwarePresent.mockClear()
     statusState.setActiveProtocol.mockClear()
 
     liviState.negotiatedWidth = 0
     liviState.negotiatedHeight = 0
-    liviState.dongleFwVersion = ''
     liviState.boxInfo = null
     liviState.resetInfo.mockClear()
     liviState.setDeviceInfo.mockClear()
@@ -132,7 +124,6 @@ describe('Projection page', () => {
     liviState.setBluetoothPairedList.mockClear()
     liviState.bumpAudioDevicesRevision.mockClear()
     statusState.setStreaming.mockClear()
-    statusState.setDongleHardwarePresent.mockClear()
     statusState.setActiveProtocol.mockClear()
 
     const { createProjectionWorker } = await vi.importMock('@worker/createProjectionWorker')
@@ -170,33 +161,6 @@ describe('Projection page', () => {
         unlistenForEvents: vi.fn()
       }
     }
-  })
-
-  test('usb plugged sets dongle-connected state (main owns session start)', async () => {
-    render(<Projection {...baseProps()} />)
-
-    await act(async () => {
-      await usbCb?.(null, { type: 'plugged' })
-    })
-
-    expect((window as any).projection.ipc.start).not.toHaveBeenCalled()
-    expect(statusState.setDongleHardwarePresent).toHaveBeenCalledWith(true)
-  })
-
-  test('usb unplugged clears dongle state without touching the video plane', async () => {
-    const setReceivingVideo = vi.fn()
-
-    render(<Projection {...baseProps({ setReceivingVideo })} receivingVideo />)
-
-    await act(async () => {
-      await usbCb?.(null, { type: 'unplugged' })
-    })
-
-    expect((window as any).projection.ipc.stop).not.toHaveBeenCalled()
-    expect(setReceivingVideo).not.toHaveBeenCalled()
-    expect(statusState.setStreaming).not.toHaveBeenCalled()
-    expect(statusState.setDongleHardwarePresent).toHaveBeenCalledWith(false)
-    expect(liviState.resetInfo).toHaveBeenCalled()
   })
 
   test('projection event drives video visibility', async () => {
@@ -252,30 +216,6 @@ describe('Projection page', () => {
     expect(liviState.setBluetoothPairedList).toHaveBeenCalledWith('device-a\ndevice-b')
   })
 
-  test('handles dongleInfo event and merges box info', async () => {
-    liviState.boxInfo = { existing: 'keep', MDLinkType: 'CarPlay' }
-    liviState.dongleFwVersion = 'old-fw'
-
-    render(<Projection {...baseProps()} />)
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'dongleInfo',
-        payload: {
-          dongleFwVersion: 'new-fw',
-          boxInfo: { foo: 'bar', MDLinkType: 'AndroidAuto' }
-        }
-      })
-    })
-
-    expect(liviState.dongleFwVersion).toBe('new-fw')
-    expect(liviState.boxInfo).toEqual({
-      existing: 'keep',
-      MDLinkType: 'AndroidAuto',
-      foo: 'bar'
-    })
-  })
-
   test('handles audioInfo event', async () => {
     render(<Projection {...baseProps()} />)
 
@@ -320,23 +260,6 @@ describe('Projection page', () => {
     })
 
     expect(liviState.setBluetoothPairedList).toHaveBeenCalledWith('device-a\ndevice-b')
-  })
-
-  test('handles dongleInfo event', async () => {
-    render(<Projection {...baseProps()} />)
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'dongleInfo',
-        payload: {
-          dongleFwVersion: '2025.02.01',
-          boxInfo: { MDLinkType: 'AndroidAuto', foo: 'bar' }
-        }
-      })
-    })
-
-    expect(liviState.dongleFwVersion).toBe('2025.02.01')
-    expect(liviState.boxInfo).toEqual({ MDLinkType: 'AndroidAuto', foo: 'bar' })
   })
 
   test('handles audioInfo event', async () => {
@@ -405,16 +328,6 @@ describe('Projection page', () => {
   })
 
   // ── IPC plugged / unplugged / failure events ──────────────────────────────
-
-  test('IPC session event marks dongle protocol active', async () => {
-    render(<Projection {...baseProps()} />)
-
-    act(() => {
-      onEventCb?.(null, { type: 'session', protocol: 'dongle' })
-    })
-
-    expect(statusState.setActiveProtocol).toHaveBeenCalledWith('dongle')
-  })
 
   test('IPC session end clears the active protocol, not the video plane', async () => {
     const setReceivingVideo = vi.fn()
@@ -571,57 +484,6 @@ describe('Projection page', () => {
   })
 
   // ── mergeBoxInfo: string variants ────────────────────────────────────────
-
-  test('mergeBoxInfo merges when boxInfo payload arrives as JSON string', async () => {
-    liviState.boxInfo = { existing: 'keep' }
-
-    render(<Projection {...baseProps()} />)
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'dongleInfo',
-        payload: {
-          dongleFwVersion: 'fw1',
-          boxInfo: '{"MDLinkType":"CarPlay"}'
-        }
-      })
-    })
-
-    expect(liviState.boxInfo).toMatchObject({ existing: 'keep', MDLinkType: 'CarPlay' })
-  })
-
-  test('mergeBoxInfo merges when existing boxInfo is a JSON string', async () => {
-    liviState.boxInfo = '{"old":"data"}'
-
-    render(<Projection {...baseProps()} />)
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'dongleInfo',
-        payload: {
-          dongleFwVersion: 'fw2',
-          boxInfo: { MDLinkType: 'AndroidAuto' }
-        }
-      })
-    })
-
-    expect(liviState.boxInfo).toMatchObject({ old: 'data', MDLinkType: 'AndroidAuto' })
-  })
-
-  test('mergeBoxInfo returns prev when boxInfo payload is an empty string', async () => {
-    liviState.boxInfo = { preserved: true }
-
-    render(<Projection {...baseProps()} />)
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'dongleInfo',
-        payload: { dongleFwVersion: 'fw3', boxInfo: '   ' }
-      })
-    })
-
-    expect(liviState.boxInfo).toMatchObject({ preserved: true })
-  })
 
   // ── handleAudio: PCM conversion ───────────────────────────────────────────
 
@@ -801,85 +663,9 @@ describe('Projection page', () => {
 
   // ── USB getDeviceInfo failure ─────────────────────────────────────────────
 
-  test('USB connect logs warning when getDeviceInfo throws', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-    ;(window as any).projection.usb.getDeviceInfo = vi
-      .fn()
-      .mockRejectedValue(new Error('no device'))
-
-    render(<Projection {...baseProps()} />)
-
-    await act(async () => {
-      await usbCb?.(null, { type: 'plugged' })
-    })
-
-    expect(warnSpy).toHaveBeenCalledWith(
-      '[PROJECTION] usb.getDeviceInfo() failed',
-      expect.any(Error)
-    )
-
-    warnSpy.mockRestore()
-  })
-
   // ── mergeBoxInfo edge cases ───────────────────────────────────────────────
 
-  test('mergeBoxInfo returns prev when boxInfo is an invalid JSON string', async () => {
-    liviState.boxInfo = { preserved: true }
-
-    render(<Projection {...baseProps()} />)
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'dongleInfo',
-        payload: { dongleFwVersion: 'fw', boxInfo: '{invalid json' }
-      })
-    })
-
-    expect(liviState.boxInfo).toMatchObject({ preserved: true })
-  })
-
-  test('mergeBoxInfo sets prev to null when existing boxInfo is invalid JSON string', async () => {
-    liviState.boxInfo = '{bad json'
-
-    render(<Projection {...baseProps()} />)
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'dongleInfo',
-        payload: { dongleFwVersion: 'fw', boxInfo: { MDLinkType: 'CarPlay' } }
-      })
-    })
-
-    expect(liviState.boxInfo).toMatchObject({ MDLinkType: 'CarPlay' })
-  })
-
-  test('mergeBoxInfo sets prev to null when existing boxInfo is an empty string', async () => {
-    liviState.boxInfo = '   '
-
-    render(<Projection {...baseProps()} />)
-
-    act(() => {
-      onEventCb?.(null, {
-        type: 'dongleInfo',
-        payload: { dongleFwVersion: 'fw', boxInfo: { MDLinkType: 'CarPlay' } }
-      })
-    })
-
-    // prev was empty string → prev=null → result is next object
-    expect(liviState.boxInfo).toMatchObject({ MDLinkType: 'CarPlay' })
-  })
-
   // ── projection worker: dongleInfo no-op case ─────────────────────────────
-
-  test('projection worker dongleInfo message is silently ignored', async () => {
-    render(<Projection {...baseProps()} />)
-
-    // Should not throw
-    act(() => {
-      MockWorker.instances[0]?.emit({ type: 'dongleInfo', payload: {} })
-    })
-  })
 
   // ── attention back-path cleared when user navigates manually ─────────────
 
@@ -948,6 +734,7 @@ describe('Projection page', () => {
 
   test('navigating back to projection presses home and requests a frame', async () => {
     mockPathname = '/media'
+    statusState.activeProtocol = 'carplay'
 
     const { rerender } = render(<Projection {...baseProps()} />)
     ;(window as any).projection.ipc.sendCommand.mockClear()
@@ -963,7 +750,6 @@ describe('Projection page', () => {
   })
 
   test('navigating back to projection is a no-op while projection is inactive', async () => {
-    statusState.isDongleHardwarePresent = false
     statusState.activeProtocol = null
 
     mockPathname = '/media'
@@ -980,6 +766,7 @@ describe('Projection page', () => {
     ;(window as any).projection.ipc.sendFrame = vi.fn().mockRejectedValue(new Error('no frame'))
 
     mockPathname = '/media'
+    statusState.activeProtocol = 'carplay'
     const { rerender } = render(<Projection {...baseProps()} />)
 
     mockPathname = '/'
@@ -1097,46 +884,6 @@ describe('Projection page', () => {
       value: originalLocation
     })
     vi.useRealTimers()
-  })
-
-  test('ipc dongleInfo without boxInfo keeps the previous box info', async () => {
-    liviState.boxInfo = { keep: true }
-    liviState.dongleFwVersion = 'old'
-
-    render(<Projection {...baseProps()} />)
-
-    act(() => {
-      onEventCb?.(null, { type: 'dongleInfo', payload: { dongleFwVersion: 'fw' } })
-    })
-
-    expect(liviState.dongleFwVersion).toBe('fw')
-    expect(liviState.boxInfo).toEqual({ keep: true })
-  })
-
-  test('ipc dongleInfo without a firmware version keeps the previous one', async () => {
-    liviState.boxInfo = null
-    liviState.dongleFwVersion = 'keep-fw'
-
-    render(<Projection {...baseProps()} />)
-
-    act(() => {
-      onEventCb?.(null, { type: 'dongleInfo', payload: { boxInfo: { a: 1 } } })
-    })
-
-    expect(liviState.dongleFwVersion).toBe('keep-fw')
-    expect(liviState.boxInfo).toEqual({ a: 1 })
-  })
-
-  test('ipc dongleInfo without a payload is ignored', async () => {
-    liviState.dongleFwVersion = 'unchanged'
-
-    render(<Projection {...baseProps()} />)
-
-    act(() => {
-      onEventCb?.(null, { type: 'dongleInfo' })
-    })
-
-    expect(liviState.dongleFwVersion).toBe('unchanged')
   })
 
   test('bluetoothPairedList reads a nested payload.data string', async () => {
@@ -1446,56 +1193,6 @@ describe('Projection page', () => {
 
     setTimeoutSpy.mockRestore()
     vi.useRealTimers()
-  })
-
-  test('a second usb plugged event does not re-run device setup', async () => {
-    render(<Projection {...baseProps()} />)
-
-    await act(async () => {
-      await usbCb?.(null, { type: 'plugged' })
-    })
-
-    liviState.resetInfo.mockClear()
-
-    await act(async () => {
-      await usbCb?.(null, { type: 'plugged' })
-    })
-
-    expect(liviState.resetInfo).not.toHaveBeenCalled()
-  })
-
-  test('usb connect bails out when the component unmounts mid-lookup', async () => {
-    let resolveInfo: ((v: unknown) => void) | undefined
-    ;(window as any).projection.usb.getDeviceInfo = vi.fn(
-      () =>
-        new Promise((r) => {
-          resolveInfo = r
-        })
-    )
-
-    const { unmount } = render(<Projection {...baseProps()} />)
-
-    await act(async () => {
-      usbCb?.(null, { type: 'plugged' })
-    })
-
-    unmount()
-
-    await act(async () => {
-      resolveInfo?.({ device: true, vendorId: 1, productId: 2, usbFwVersion: 'x' })
-    })
-
-    expect(statusState.setDongleHardwarePresent).not.toHaveBeenCalledWith(true)
-  })
-
-  test('an unknown usb event type is ignored', async () => {
-    render(<Projection {...baseProps()} />)
-
-    await act(async () => {
-      usbCb?.(null, { type: 'other' })
-    })
-
-    expect(statusState.setDongleHardwarePresent).not.toHaveBeenCalled()
   })
 
   test('audio event with an unrecognized numeric command is ignored', async () => {

@@ -5,12 +5,7 @@ import type { Config } from '@shared/types'
 import { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AudioData, Command, DuckAudio } from '../../../messages/readable'
-import {
-  SendBluetoothPairedList,
-  SendCommand,
-  SendMultiTouch,
-  SendTouch
-} from '../../../messages/sendable'
+import { SendableMessage, SendCommand, SendMultiTouch, SendTouch } from '../../../messages/sendable'
 import { CpSession } from '../CpSession'
 import { MediaButton, TelephonyButton } from '../stack/hid'
 
@@ -446,7 +441,7 @@ describe('CpSession send', () => {
 
   it('returns false for an unhandled message type', async () => {
     const { session } = makeSession()
-    await expect(session.send(new SendBluetoothPairedList('x'))).resolves.toBe(false)
+    await expect(session.send(new (class extends SendableMessage {})())).resolves.toBe(false)
   })
 
   it('returns false once the stack is gone', async () => {

@@ -122,10 +122,6 @@ export type WorkerToUI =
     }
   | { type: 'pcmData'; payload: ArrayBuffer }
   | { type: 'command'; message?: { value?: number } }
-  | {
-      type: 'dongleInfo'
-      payload: { serial?: string; manufacturer?: string; product?: string; fwVersion?: string }
-    }
   | { type: 'resolution'; payload: { width: number; height: number } }
 
 /** Back-compat alias */
@@ -143,4 +139,3 @@ export type UsbEvent =
   | { type: 'resolution'; payload: { width: number; height: number } }
   | { type: 'audioInfo'; payload?: unknown }
   | { type: 'command'; message?: { value?: number } }
-  | { type: 'dongleInfo'; payload?: unknown }

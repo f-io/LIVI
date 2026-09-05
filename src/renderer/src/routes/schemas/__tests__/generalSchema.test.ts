@@ -9,7 +9,7 @@ describe('generalSchema', () => {
     expect(schema.label).toBe('General')
     expect(schema.labelKey).toBe('settings.general')
     expect(schema.path).toBe('')
-    expect(schema.children).toHaveLength(12)
+    expect(schema.children).toHaveLength(11)
   })
 
   test('connections route contains names, wifi and auto connect', () => {
@@ -112,24 +112,6 @@ describe('generalSchema', () => {
     for (const page of [gps.children[3], gps.children[4]]) {
       expect(page.children[0]).toEqual(expect.objectContaining({ type: 'custom' }))
     }
-  })
-
-  test('usb dongle route lives at the bottom with a single custom entry', () => {
-    const usbDongle = schema.children[11]
-    expect(usbDongle).toEqual(
-      expect.objectContaining({
-        type: 'route',
-        route: 'usbDongle',
-        labelKey: 'settings.usbDongle'
-      })
-    )
-    expect(usbDongle.children).toHaveLength(1)
-    expect(usbDongle.children[0]).toEqual(
-      expect.objectContaining({
-        type: 'custom',
-        path: 'carName'
-      })
-    )
   })
 
   test('key bindings route contains representative binding entries', () => {

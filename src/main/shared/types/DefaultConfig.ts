@@ -82,7 +82,6 @@ export const DEFAULT_CONFIG: Config = {
   cameraMirror: false,
   cameraRotation: 0,
   autoSwitchOnReverse: true,
-  dongleToolsIp: '',
   visualAudioDelayMs: 0,
   huVolume: 0.95,
   huVolumeLinkSystem: true,

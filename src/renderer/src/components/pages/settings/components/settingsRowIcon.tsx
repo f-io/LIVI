@@ -150,7 +150,6 @@ const ICONS: Record<string, SvgIconComponent> = {
   uiZoom: ZoomInOutlinedIcon,
   language: TranslateOutlinedIcon,
   mfi: DeveloperBoardOutlinedIcon,
-  usbDongle: UsbOutlinedIcon,
 
   huVolume: VolumeUpOutlinedIcon,
   music: MusicNoteOutlinedIcon,

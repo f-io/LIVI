@@ -2,7 +2,7 @@ import type { IPhoneDriver } from '../driver/IPhoneDriver'
 import { logSessions } from './sessionLog'
 import type { PersistedMediaPayload, PersistedNavigationPayload } from './types'
 
-export type SessionProtocol = 'carplay' | 'androidauto' | 'dongle'
+export type SessionProtocol = 'carplay' | 'androidauto'
 export type SessionTransport = 'usb' | 'wifi' | 'bt'
 export type SessionState = 'active' | 'held'
 export type VideoCodec = 'h264' | 'h265' | 'vp9' | 'av1'

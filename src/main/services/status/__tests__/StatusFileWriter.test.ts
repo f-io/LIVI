@@ -61,13 +61,13 @@ describe('StatusFileWriter — setters mutate state and write', () => {
   test('setStreaming preserves the rest of the projection block', () => {
     const file = tmpFile()
     const w = new StatusFileWriter(file, { debounceMs: 0 })
-    w.setProjection('dongle', 'CarPlay')
+    w.setProjection('cp', 'CarPlay')
     w.setStreaming(true)
     w.flush()
     const s = readStatus(file).payload as {
       projection: { active: string; phoneType: string; streaming: boolean }
     }
-    expect(s.projection).toEqual({ active: 'dongle', phoneType: 'CarPlay', streaming: true })
+    expect(s.projection).toEqual({ active: 'cp', phoneType: 'CarPlay', streaming: true })
     fs.unlinkSync(file)
   })
 

@@ -6,11 +6,7 @@ import {
 } from '@shared/types/ProjectionEnums'
 import type { MultiTouchPoint } from '@shared/types/TouchTypes'
 
-/**
- * Driver-agnostic commands towards the phone. Every driver interprets these
- * in its own protocol; the dongle's wire encoding lives in
- * driver/dongle/protocol.
- */
+/** Driver-agnostic commands towards the phone; each driver encodes them in its own protocol. */
 export abstract class SendableMessage {}
 
 export class SendCommand extends SendableMessage {
@@ -19,15 +15,6 @@ export class SendCommand extends SendableMessage {
   constructor(value: CommandValue) {
     super()
     this.value = CommandMapping[value]
-  }
-}
-
-export class SendBluetoothPairedList extends SendableMessage {
-  readonly listText: string
-
-  constructor(listText: string) {
-    super()
-    this.listText = listText
   }
 }
 
@@ -70,25 +57,3 @@ export class SendMultiTouch extends SendableMessage {
 export class SendCloseDongle extends SendableMessage {}
 
 export class SendDisconnectPhone extends SendableMessage {}
-
-export class SendAutoConnectByBtAddress extends SendableMessage {
-  readonly btMac: string
-
-  constructor(btMac: string) {
-    super()
-    this.btMac = btMac
-  }
-}
-
-export class SendForgetBluetoothAddr extends SendableMessage {
-  readonly btMac: string
-
-  constructor(btMac: string) {
-    super()
-    this.btMac = btMac
-  }
-}
-
-export class SendClusterFocusRequest extends SendableMessage {}
-
-export class SendClusterFocusRelease extends SendableMessage {}
