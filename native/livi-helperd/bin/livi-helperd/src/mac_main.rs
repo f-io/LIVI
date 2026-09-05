@@ -163,7 +163,7 @@ pub fn run() -> ExitCode {
         tokio::spawn(livi_dongle::run(move |on, _serial| link_state.set_on_bus(on), move |socket, a| {
             events.push_json(
                 serde_json::json!({
-                    "event": "dongle-session", "socket": socket, "serial": a.serial,
+                    "event": "dongle-upload", "socket": socket, "serial": a.serial,
                     "product": a.product, "version": a.version, "name": a.name
                 })
                 .to_string(),

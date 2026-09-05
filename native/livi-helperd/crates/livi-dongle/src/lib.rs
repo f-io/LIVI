@@ -1,7 +1,7 @@
 // CarlinKit dongle on USB.
 
 pub mod link;
-pub mod session;
+pub mod upload;
 pub mod wire;
 
 use std::collections::{HashMap, HashSet};
@@ -167,17 +167,16 @@ async fn serve(dongles: &Shared, on_session: &Arc<OnSession>, info: &DeviceInfo,
                 return;
             }
         };
-        let Some((node, path)) = livi_session_io::sock::bind_session_socket("dongle-session") else { return };
-        println!("[dongle] {label}: session socket {path}");
+        let Some((node, path)) = livi_session_io::sock::bind_session_socket("dongle-upload") else { return };
+        println!("[dongle] {label}: upload socket {path}");
         on_session(&path, &announce);
-        let end = session::run(UsbStream::new(pipe), &label, node, path, cancel.clone()).await;
-        if end.reset
-            && let Err(e) = dev.reset().await
-        {
+        upload::run(UsbStream::new(pipe), &label, node, cancel.clone()).await;
+        let _ = std::fs::remove_file(&path);
+        if let Err(e) = dev.reset().await {
             eprintln!("[dongle] {label}: reset: {e}");
         }
         drop(dev);
-        println!("[dongle] {label}: session ended{}", if end.by_node { " by the main process" } else { "" });
+        println!("[dongle] {label}: upload session ended");
         tokio::select! {
             _ = tokio::time::sleep(REOFFER) => {}
             _ = cancel.notified() => return,

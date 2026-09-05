@@ -816,7 +816,6 @@ name = "livi-dongle"
 version = "0.1.0"
 dependencies = [
  "futures-util",
- "livi-host-proto",
  "livi-session-io",
  "nusb",
  "serde_json",

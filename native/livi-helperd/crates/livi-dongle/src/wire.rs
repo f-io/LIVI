@@ -6,18 +6,6 @@ pub const HEADER_LEN: usize = 16;
 /// A longer payload is a framing error, not a message.
 pub const MAX_PAYLOAD: usize = 16 << 20;
 
-pub const OPEN: u32 = 0x01;
-pub const UNPLUGGED: u32 = 0x04;
-pub const VIDEO: u32 = 0x06;
-pub const AUDIO: u32 = 0x07;
-pub const CLUSTER_VIDEO: u32 = 0x2c;
-pub const HEARTBEAT: u32 = 0xaa;
-
-/// Width, height, flags, length and one unknown word precede the H.264 data.
-pub const VIDEO_HEAD: usize = 20;
-/// Decode type, volume and audio type precede the samples.
-pub const AUDIO_HEAD: usize = 12;
-
 pub fn header(kind: u32, len: usize) -> [u8; HEADER_LEN] {
     let mut h = [0u8; HEADER_LEN];
     h[..4].copy_from_slice(&MAGIC.to_le_bytes());
@@ -53,6 +41,9 @@ pub fn parse_header(h: &[u8; HEADER_LEN]) -> Result<(u32, usize), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    const VIDEO: u32 = 0x06;
+    const AUDIO: u32 = 0x07;
+    const HEARTBEAT: u32 = 0xaa;
 
     #[test]
     fn a_message_round_trips_through_its_header() {

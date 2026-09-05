@@ -5,7 +5,6 @@ edition.workspace = true
 
 [dependencies]
 livi-session-io = { path = "../livi-session-io" }
-livi-host-proto = { path = "../../../livi-host-proto/rust" }
 futures-util = "0.3"
 nusb = { version = "0.2", features = ["tokio"] }
 serde_json = "1"
