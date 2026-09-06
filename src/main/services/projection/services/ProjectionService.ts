@@ -321,13 +321,17 @@ export class ProjectionService {
     if (p.kind === 'device') {
       const btMac = typeof p.btMac === 'string' ? p.btMac : undefined
       const usbUdid = typeof p.usbUdid === 'string' ? p.usbUdid : undefined
+      const wired =
+        !!usbUdid ||
+        this.sessions.byIdentity('carplay', { btMac, usbUdid, ip: ip || undefined })?.transport ===
+          'usb'
       this.deviceRegistry.noteDevice({
         btMac,
         ip: ip || undefined,
         usbUdid,
         name: typeof p.name === 'string' ? p.name : undefined,
         protocol: 'carplay',
-        transport: usbUdid ? 'usb' : 'wifi'
+        transport: wired ? 'usb' : 'wifi'
       })
     }
     if (p.kind === 'device-gone') {
@@ -1875,11 +1879,13 @@ export class ProjectionService {
     if (next) {
       console.log(`[ProjectionService] active session -> #${next.index} ${next.protocol}`)
       this.audio.restoreDuck(next.audio.duckLevel, next.audio.duckRampMs)
-      this.planes.dispose()
-      this.mediaStore.hydrate(next)
-      this.navStore.hydrate(next)
       const mc = next.video.main.codec ?? this.lastMainCodecByDriver.get(next.driver)
       const cc = next.video.cluster.codec ?? this.lastClusterCodecByDriver.get(next.driver)
+      // A same-codec switch keeps the running decoder — the host flushes it and replays the
+      // new session's cached GOP. Tearing it down mid-decode wedges the HEVC STREAMOFF.
+      if (mc !== undefined && mc !== this.planes.getMainCodec()) this.planes.dispose()
+      this.mediaStore.hydrate(next)
+      this.navStore.hydrate(next)
       // Restore the length-prefixed codec_data for this session (null for byte-stream sources).
       this.planes.restoreCodecs(
         mc,
@@ -1897,11 +1903,20 @@ export class ProjectionService {
       this.planes.updateMainCrop()
       if (!this.startPromise) {
         if (!prev) this.audio.resetForSessionStart()
-        next.driver.requestKeyframe?.()
+        this.scheduleActiveKeyframe()
       }
     } else {
       this.teardownToIdle()
     }
+  }
+
+  private keyframeDebounce?: NodeJS.Timeout
+  private scheduleActiveKeyframe(): void {
+    if (this.keyframeDebounce) clearTimeout(this.keyframeDebounce)
+    this.keyframeDebounce = setTimeout(() => {
+      this.keyframeDebounce = undefined
+      this.sessions.active()?.driver.requestKeyframe?.()
+    }, 150)
   }
 
   private teardownToIdle(): void {

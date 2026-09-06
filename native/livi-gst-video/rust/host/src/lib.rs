@@ -565,20 +565,11 @@ impl<O: Outside> Host<O> {
         {
             let mut st = r.state.borrow_mut();
             st.fan.set_active(true);
+            st.fan.restart();
             if !st.config.is_empty() {
                 self.wire.reply(REPLY_CONFIG, plane_id, &st.config);
             }
         }
-
-        // The held receiver kept its GOP, so the new plane is primed from it.
-        let planes = self.planes.borrow();
-        let st = r.state.borrow();
-        st.for_each_target(&planes, |p| {
-            p.flush();
-            for frame in st.fan.cached() {
-                p.push(frame);
-            }
-        });
     }
 
     /// `[1B codec: 0 aac-lc, 1 opus, 2 lpcm][1B payloadType][4B clockRate]
@@ -1517,7 +1508,7 @@ mod tests {
     }
 
     #[test]
-    fn a_receiver_made_active_feeds_its_plane_the_running_gop_at_once() {
+    fn a_receiver_made_active_waits_for_the_next_keyframe() {
         let mut f = Fixture::new();
         f.send(OP_LISTEN, 42, &listen_body(MAIN_PLANE, false, 1));
         f.send(OP_CREATE, MAIN_PLANE, &create_body("h264", &[]));
@@ -1528,7 +1519,12 @@ mod tests {
 
         f.send(OP_SET_ACTIVE, 42, &[1]);
 
-        assert_eq!(f.plane(0).pushed(), vec![nal(KEYFRAME, 1), nal(DELTA, 2)]);
+        // the cached GOP is not replayed, and deltas are dropped until a keyframe arrives
+        assert!(f.plane(0).pushed().is_empty());
+        f.frame_in(0, &nal(DELTA, 3));
+        assert!(f.plane(0).pushed().is_empty());
+        f.frame_in(0, &nal(KEYFRAME, 4));
+        assert_eq!(f.plane(0).pushed(), vec![nal(KEYFRAME, 4)]);
     }
 
     #[test]
