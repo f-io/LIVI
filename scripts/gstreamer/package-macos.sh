@@ -179,8 +179,17 @@ plugins=(
   libgstosxvideo.dylib
 )
 
+# PATCHED_APPLEMEDIA (from build-patched-macos.sh) replaces the prebuilt applemedia plugin
+# with the locally built, patched one (vtdec low-latency + full-range HEVC). Same @rpath deps,
+# so dep scanning and the later rpath/signing pass treat it like any other plugin.
 for plugin in "${plugins[@]}"; do
-  copy_plugin_and_deps "$GST_ROOT/lib/gstreamer-1.0/$plugin"
+  src="$GST_ROOT/lib/gstreamer-1.0/$plugin"
+  if [[ "$plugin" == libgstapplemedia.dylib && -n "${PATCHED_APPLEMEDIA:-}" ]]; then
+    copy_required "$PATCHED_APPLEMEDIA" "$OUT/lib/gstreamer-1.0/$plugin"
+    while read -r dep; do queue_dep "$dep"; done < <(scan_deps "$PATCHED_APPLEMEDIA")
+    continue
+  fi
+  copy_plugin_and_deps "$src"
 done
 
 # Umbrella framework binary (kept for parity with prior bundles)

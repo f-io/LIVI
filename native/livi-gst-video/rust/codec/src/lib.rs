@@ -65,7 +65,8 @@ pub fn decoder_candidates(codec: &str, sw_only: bool) -> &'static [&'static CStr
     }
     #[cfg(target_os = "macos")]
     {
-        // vtdec first, avdec_h265 as the fallback. vtdec adds output latency on HEVC:
+        // The bundled vtdec carries scripts/gstreamer/patches/gst-plugins-bad/0007,
+        // so HEVC decodes low-latency in hardware.
         // https://gitlab.freedesktop.org/gstreamer/gstreamer/-/work_items/5133
         match codec {
             "h265" => &[c"vtdec", c"avdec_h265"],

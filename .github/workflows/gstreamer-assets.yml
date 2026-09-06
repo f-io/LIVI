@@ -131,16 +131,30 @@ jobs:
             exit 1
           fi
           echo "Resolved macOS GStreamer: $GST_VERSION"
-          curl -fL \
-            -o gstreamer-runtime.pkg \
-            "https://gstreamer.freedesktop.org/data/pkg/osx/${GST_VERSION}/gstreamer-1.0-${GST_VERSION}-universal.pkg"
+          echo "GST_VERSION=$GST_VERSION" >> "$GITHUB_ENV"
+          base="https://gstreamer.freedesktop.org/data/pkg/osx/${GST_VERSION}"
+          curl -fL -o gstreamer-runtime.pkg "${base}/gstreamer-1.0-${GST_VERSION}-universal.pkg"
+          # devel pkg carries the headers and .pc files build-patched-macos.sh needs
+          curl -fL -o gstreamer-devel.pkg "${base}/gstreamer-1.0-devel-${GST_VERSION}-universal.pkg"
 
-      - name: Install GStreamer runtime pkg [macos-arm64]
+      - name: Install GStreamer runtime + devel pkg [macos-arm64]
         if: matrix.os == 'macos' && matrix.arch == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
           sudo installer -pkg gstreamer-runtime.pkg -target /
+          sudo installer -pkg gstreamer-devel.pkg -target /
+
+      - name: Build patched applemedia (vtdec) [macos-arm64]
+        if: matrix.os == 'macos' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # glib generator tools (the framework's carry a dead cerbero shebang) + build system
+          brew install glib meson ninja
+          chmod +x scripts/gstreamer/build-patched-macos.sh
+          scripts/gstreamer/build-patched-macos.sh "$RUNNER_TEMP/applemedia"
+          echo "PATCHED_APPLEMEDIA=$RUNNER_TEMP/applemedia/libgstapplemedia.dylib" >> "$GITHUB_ENV"
 
       - name: Build bundle [macos-arm64]
         if: matrix.os == 'macos' && matrix.arch == 'arm64'
