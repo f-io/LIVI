@@ -1204,6 +1204,52 @@ describe('Projection page', () => {
 
     expect(navigateMock).not.toHaveBeenCalled()
   })
+
+  // ── receivingVideo=true: overlay hides, video plane reveals ──────────────
+
+  test('receiving video hides the status overlay and reveals the video plane', () => {
+    mockPathname = '/'
+
+    const { container } = render(<Projection {...baseProps({ receivingVideo: true })} />)
+
+    const overlay = container.querySelector('[role="status"]') as HTMLElement
+    expect(overlay).toHaveStyle({ display: 'none' })
+
+    const videoContainer = container.querySelector('#videoContainer') as HTMLElement
+    expect(videoContainer.style.backgroundColor).toBe('transparent')
+    expect(videoContainer.style.visibility).toBe('visible')
+    expect(videoContainer.style.zIndex).toBe('1')
+  })
+
+  // ── returning to projection while attention already switched us there ────
+
+  test('does not press home when attention already switched us to projection', async () => {
+    mockPathname = '/media'
+    statusState.activeProtocol = 'carplay'
+
+    const settings = { width: 800, height: 480, fps: 60, autoSwitchOnPhoneCall: true } as any
+
+    const { rerender } = render(<Projection {...baseProps({ settings })} />)
+
+    // Arm call attention (calls navigate('/', ...), attentionSwitchedByRef.current = 'call')
+    act(() => {
+      onEventCb?.(null, {
+        type: 'audio',
+        payload: { command: AudioCommand.AudioPhonecallStart }
+      })
+    })
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/', { replace: true }))
+
+    ;(window as any).projection.ipc.sendCommand.mockClear()
+
+    // Pathname actually flips to '/' while attentionSwitchedByRef.current is still 'call' and
+    // isProjectionActive stays true: the 'home' press must be skipped so an in-progress
+    // Siri/call session isn't dismissed.
+    mockPathname = '/'
+    rerender(<Projection {...baseProps({ settings })} />)
+
+    expect((window as any).projection.ipc.sendCommand).not.toHaveBeenCalledWith('home')
+  })
 })
 
 function baseSettings(overrides: any = {}) {

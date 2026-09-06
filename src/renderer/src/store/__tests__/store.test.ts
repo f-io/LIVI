@@ -1764,11 +1764,21 @@ describe('store', () => {
 
   test('setActiveProtocol flips the status flag and useProjectionActive reflects it', async () => {
     const { useStatusStore, useProjectionActive } = await loadFreshStore()
-    useStatusStore.getState().setActiveProtocol('androidauto')
+
+    const { result } = renderHook(() => useProjectionActive())
+    expect(result.current).toBe(false)
+
+    act(() => {
+      useStatusStore.getState().setActiveProtocol('androidauto')
+    })
     expect(useStatusStore.getState().activeProtocol).toBe('androidauto')
-    expect(useProjectionActive).toBeInstanceOf(Function)
-    useStatusStore.getState().setActiveProtocol(null)
+    expect(result.current).toBe(true)
+
+    act(() => {
+      useStatusStore.getState().setActiveProtocol(null)
+    })
     expect(useStatusStore.getState().activeProtocol).toBe(null)
+    expect(result.current).toBe(false)
   })
 
   test('audio-devices revision and cluster-dash setters update state', async () => {
