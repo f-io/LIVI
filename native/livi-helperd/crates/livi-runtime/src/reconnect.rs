@@ -35,7 +35,11 @@ pub async fn run(conn: Connection, adapter: String, state: Arc<HelperState>) {
         rr = rr.wrapping_add(1);
 
         let path = device_path(&adapter, &mac);
-        let connected = device_connected(&conn, &path).await.unwrap_or(false);
+        // No BlueZ device object for this MAC
+        let connected = match device_connected(&conn, &path).await {
+            Some(c) => c,
+            None => continue,
+        };
 
         if connected {
             // Out of the rotation: nudge the profile, disconnect after STALE so it re-pages.
