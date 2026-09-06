@@ -30,7 +30,10 @@ const clampInt = (n: number, min: number, max: number, step = 1) => {
 const SLIDER_SETTLE_MS = 40
 const SLIDER_MAX_WAIT_MS = 200
 
-const toPercent = (v: unknown): number => Math.round((Number(v ?? 1.0) || 1.0) * 100)
+const toPercent = (v: unknown): number => {
+  const n = Number(v ?? 1.0)
+  return Math.round((Number.isFinite(n) ? n : 1.0) * 100)
+}
 
 function VolumeSlider<T>({ value, onChange }: { value: T; onChange: (v: T) => void }) {
   const [draft, setDraft] = useState(() => toPercent(value))

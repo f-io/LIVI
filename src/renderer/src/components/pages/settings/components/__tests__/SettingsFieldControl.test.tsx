@@ -324,6 +324,7 @@ describe('SettingsFieldControl', () => {
       />
     )
     expect(screen.getByTestId('slider')).toBeInTheDocument()
+    expect(capturedSlider.value).toBe(0)
     rerender(
       <SettingsFieldControl
         node={{ type: 'slider', label: 'Scale', path: 'scale' } as any}
@@ -332,6 +333,15 @@ describe('SettingsFieldControl', () => {
       />
     )
     expect(screen.getByTestId('slider')).toBeInTheDocument()
+    expect(capturedSlider.value).toBe(100)
+    rerender(
+      <SettingsFieldControl
+        node={{ type: 'slider', label: 'Scale', path: 'scale' } as any}
+        value={Number.NaN as any}
+        onChange={vi.fn()}
+      />
+    )
+    expect(capturedSlider.value).toBe(100)
   })
 
   test('slider value label shows mute icon at zero and percent otherwise', () => {
