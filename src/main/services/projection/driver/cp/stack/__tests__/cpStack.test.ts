@@ -1,9 +1,12 @@
 import { EventEmitter } from 'node:events'
 import {
   closeMicUplink,
+  closeScreenReceiver,
   onAudioReceiverStarted,
   openAudioReceiver,
-  openMicUplink
+  openMicUplink,
+  setAudioReceiverActive,
+  setAudioReceiverVolume
 } from '@main/services/video/GstVideo'
 
 type CpStackControl = {
@@ -727,6 +730,30 @@ describe('CpStack audio setup formats', () => {
     expect(reg.gst.closeMic).not.toHaveBeenCalled()
   })
 
+  it('warns and skips mic-active when the in-process mic uplink fails to open', async () => {
+    vi.mocked(openAudioReceiver).mockReturnValueOnce({
+      streamId: 0x7c000002,
+      dataPort: 5003,
+      controlPort: 5004
+    })
+    // openMicUplink defaults to returning null (no in-process uplink available).
+    const { stack } = await setupAudio({
+      streamConnectionID: 1,
+      audioType: 'speechRecognition',
+      audioFormat: 0x20000000,
+      dataPort: 6000,
+      framesPerPacket: 480
+    })
+
+    const active = vi.fn()
+    stack.on('mic-active', active)
+    vi.mocked(onAudioReceiverStarted).mock.calls.at(-1)?.[0](0x7c000002, 4242)
+
+    expect(openMicUplink).toHaveBeenCalledTimes(1)
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('mic uplink failed to open'))
+    expect(active).not.toHaveBeenCalled()
+  })
+
   it('opens LPCM as samples on the wire', async () => {
     await setupAudio(
       { streamConnectionID: 1, audioType: 'telephony', audioFormat: 0x800, dataPort: 0 },
@@ -811,6 +838,59 @@ describe('CpStack screen setup', () => {
       expect(ready).toHaveBeenCalled()
       // the frames reach the plane inside the addon, so no ScreenStream is built here
       expect(session.screen).toBeFalsy()
+    } finally {
+      inProcPort.value = 0
+    }
+  })
+
+  it('uses the in-process receiver off linux for the cluster screen', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+    inProcPort.value = 40600
+    try {
+      const { stack, session } = await stackWith({ hevc: false })
+      const clusterCodec = vi.fn()
+      stack.on('cluster-video-codec', clusterCodec)
+
+      const port = await internals(stack)._setupScreen({ streamConnectionID: 2 }, session, true)
+
+      expect(port).toBe(40600)
+      expect(session.clusterScreenNativeId).toBeTruthy()
+      expect(session.clusterScreenInProcess).toBe(true)
+      expect(clusterCodec).toHaveBeenCalledWith('h264')
+      expect(session.clusterScreen).toBeFalsy()
+    } finally {
+      inProcPort.value = 0
+    }
+  })
+
+  it('reports h265 for the in-process path, activates a pending cluster once, then settles', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+    inProcPort.value = 40700
+    try {
+      // default cfg.hevc is true; this exercises the h265 arm of the in-process codec pick
+      const { stack, session } = await stackWith()
+      internals(stack)._clusterWantActive = true
+      const evSock = eventReady(session)
+      const codec = vi.fn()
+      const clusterCodec = vi.fn()
+      stack.on('video-codec', codec)
+      stack.on('cluster-video-codec', clusterCodec)
+
+      await internals(stack)._setupScreen({ streamConnectionID: 1 }, session)
+      expect(codec).toHaveBeenCalledWith('h265')
+      // main screen just became ready, with a cluster pending: activated at once
+      expect(evSock.write).toHaveBeenCalled()
+
+      evSock.write.mockClear()
+      await internals(stack)._setupScreen({ streamConnectionID: 1 }, session)
+      // codec and readiness are already tracked: no repeat emit, no repeat activation
+      expect(codec).toHaveBeenCalledTimes(1)
+      expect(evSock.write).not.toHaveBeenCalled()
+
+      await internals(stack)._setupScreen({ streamConnectionID: 2 }, session, true)
+      await internals(stack)._setupScreen({ streamConnectionID: 2 }, session, true)
+      expect(clusterCodec).toHaveBeenCalledTimes(1)
+      expect(clusterCodec).toHaveBeenCalledWith('h265')
     } finally {
       inProcPort.value = 0
     }
@@ -1448,6 +1528,71 @@ describe('CpStack audio control', () => {
 
     expect(reg.gst.setAudioActive).toHaveBeenCalledWith(1, true)
   })
+
+  it('an in-process stream opened while the phone is active is switched through directly', async () => {
+    vi.mocked(openAudioReceiver).mockReturnValueOnce({
+      streamId: 0x7c000010,
+      dataPort: 5011,
+      controlPort: 5012
+    })
+    const CpStack = await loadStack()
+    const stack = new CpStack(baseCfg())
+    const { session } = attach(stack)
+    stubVerify(session)
+    ;(stack as unknown as CpStackControl).setAudioActive(true)
+
+    await internals(stack)._setupAudio(
+      { streamConnectionID: 1, audioType: 'media', audioFormat: 0x800000 },
+      session,
+      100
+    )
+
+    expect(setAudioReceiverActive).toHaveBeenCalledWith(0x7c000010, true)
+    expect(reg.gst.setAudioActive).not.toHaveBeenCalled()
+  })
+
+  it('sets the level of an in-process stream directly, without going through the host', async () => {
+    vi.mocked(openAudioReceiver).mockReturnValueOnce({
+      streamId: 0x7c000011,
+      dataPort: 5013,
+      controlPort: 5014
+    })
+    const CpStack = await loadStack()
+    const stack = new CpStack(baseCfg())
+    const { session } = attach(stack)
+    stubVerify(session)
+    await internals(stack)._setupAudio(
+      { streamConnectionID: 1, audioType: 'media', audioFormat: 0x800000 },
+      session,
+      100
+    )
+
+    ;(stack as unknown as CpStackControl).setStreamVolume(3, 0.5, 250)
+
+    expect(setAudioReceiverVolume).toHaveBeenCalledWith(0x7c000011, 0.5, 250)
+    expect(reg.gst.setAudioVolume).not.toHaveBeenCalled()
+  })
+
+  it('switches an already-open in-process stream active directly through setAudioActive', async () => {
+    vi.mocked(openAudioReceiver).mockReturnValueOnce({
+      streamId: 0x7c000012,
+      dataPort: 5015,
+      controlPort: 5016
+    })
+    const CpStack = await loadStack()
+    const stack = new CpStack(baseCfg())
+    const { session } = attach(stack)
+    stubVerify(session)
+    await internals(stack)._setupAudio(
+      { streamConnectionID: 1, audioType: 'media', audioFormat: 0x800000 },
+      session,
+      100
+    )
+
+    ;(stack as unknown as CpStackControl).setAudioActive(true)
+
+    expect(setAudioReceiverActive).toHaveBeenCalledWith(0x7c000012, true)
+  })
 })
 
 describe('CpStack teardown', () => {
@@ -1540,6 +1685,20 @@ describe('CpStack teardown', () => {
       session
     )
     expect(res).toMatchObject({ status: 200 })
+  })
+
+  it('closes in-process screen receivers directly, without going through the host', async () => {
+    const { stack, session } = await fresh()
+    session.screenNativeId = 11
+    session.screenInProcess = true
+    session.clusterScreenNativeId = 22
+    session.clusterScreenInProcess = true
+
+    internals(stack)._teardown(session)
+
+    expect(closeScreenReceiver).toHaveBeenCalledWith(11)
+    expect(closeScreenReceiver).toHaveBeenCalledWith(22)
+    expect(reg.gst.closeVideoReceiver).not.toHaveBeenCalled()
   })
 
   it('a stream without a microphone reports nothing about it', async () => {

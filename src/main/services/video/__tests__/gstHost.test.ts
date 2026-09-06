@@ -872,6 +872,28 @@ describe('gstHost child lifecycle', () => {
     hook()
     expect(children[0].kill).toHaveBeenCalled()
   })
+
+  test('off linux the host never starts, and every later call is a silent no-op', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const gstHost = await freshHost()
+
+    gstHost.createPlayer(1, 'h264')
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('no host process on this platform')
+    )
+    expect(createServerMock).not.toHaveBeenCalled()
+    expect(spawnMock).not.toHaveBeenCalled()
+
+    // A second call finds `unavailable` already set: send() returns before queuing anything.
+    warnSpy.mockClear()
+    gstHost.createPlayer(2, 'h264')
+    expect(warnSpy).not.toHaveBeenCalled()
+    expect(createServerMock).not.toHaveBeenCalled()
+
+    warnSpy.mockRestore()
+  })
 })
 
 describe('clusterPlaneId', () => {

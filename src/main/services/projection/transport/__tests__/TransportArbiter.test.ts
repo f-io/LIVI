@@ -287,5 +287,21 @@ describe('TransportArbiter', () => {
         wiredPhoneActive: false
       })
     })
+
+    test('switchPending is true for an override set while nothing is active', () => {
+      const { arbiter } = makeArbiter({ active: null })
+      arbiter.setOverride(AA_WIRELESS)
+      expect(arbiter.getSnapshot().switchPending).toBe(true)
+    })
+
+    test('switchPending follows whether the override matches the current session', () => {
+      const { arbiter } = makeArbiter({ active: 'aa', wiredAaSessionActive: true })
+
+      arbiter.setOverride(AA_WIRED)
+      expect(arbiter.getSnapshot().switchPending).toBe(false)
+
+      arbiter.setOverride(CP_WIRED)
+      expect(arbiter.getSnapshot().switchPending).toBe(true)
+    })
   })
 })

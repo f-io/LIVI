@@ -159,6 +159,34 @@ describe('VideoPlaneManager', () => {
       expect(gstMock).not.toHaveBeenCalled()
     })
 
+    test('primeMain reuses the existing plane instead of building a second one', () => {
+      const { mgr, deps } = mkMgr()
+      expect(mgr.primeMain()).toBe(true)
+      expect(gstMock).toHaveBeenCalledTimes(1)
+      expect(deps.emit).toHaveBeenCalledTimes(1)
+
+      expect(mgr.primeMain()).toBe(true)
+
+      expect(gstMock).toHaveBeenCalledTimes(1)
+      expect(deps.emit).toHaveBeenCalledTimes(1)
+      expect(planes()[0].prepare).toHaveBeenCalledTimes(2)
+    })
+
+    test('setMainCodecData stores the atom and pushes it to a live plane', () => {
+      const { mgr } = mkMgr()
+      const atom = Buffer.from('atom')
+
+      // No plane yet: only the stored codec data is updated, nothing to push to.
+      mgr.setMainCodecData(atom)
+
+      mgr.primeMain()
+      expect(planes()[0].setCodecData).toHaveBeenCalledWith(atom)
+
+      const atom2 = Buffer.from('atom2')
+      mgr.setMainCodecData(atom2)
+      expect(planes()[0].setCodecData).toHaveBeenCalledWith(atom2)
+    })
+
     test('a stored crop is applied when the plane spawns', () => {
       const { mgr } = mkMgr({
         getMainVideoSize: vi.fn(() => ({ width: 1920, height: 1080 })),
@@ -271,6 +299,22 @@ describe('VideoPlaneManager', () => {
       expect(gstMock).not.toHaveBeenCalled()
     })
 
+    test('setClusterCodecData pushes the atom to every live cluster plane', () => {
+      const { mgr } = mkMgr({ getConfig: vi.fn(() => CLUSTER_CFG) })
+      secondaryMock.mockReturnValue(mkSecondary() as never)
+
+      // No planes yet: the loop body has nothing to iterate over.
+      mgr.setClusterCodecData(Buffer.from('none'))
+
+      mgr.setClusterCodec('h264')
+      mgr.primeClusters()
+      const atom = Buffer.from('atom')
+      mgr.setClusterCodecData(atom)
+
+      expect(planes()[0].setCodecData).toHaveBeenCalledWith(atom)
+      expect(planes()[1].setCodecData).toHaveBeenCalledWith(atom)
+    })
+
     test('setClusterVisible drives only the main-screen plane', () => {
       const { mgr } = mkMgr({ getConfig: vi.fn(() => CLUSTER_CFG) })
       secondaryMock.mockReturnValue(mkSecondary() as never)
@@ -318,6 +362,25 @@ describe('VideoPlaneManager', () => {
       mgr.setClusterCodec('h264')
       mgr.primeClusters()
       expect(gstMock).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  describe('cluster stream active flag', () => {
+    test('updateClusterStreamActive reports a change once, then no-ops on a repeat', () => {
+      const { mgr } = mkMgr()
+
+      expect(mgr.updateClusterStreamActive(true)).toBe(true)
+      expect(mgr.updateClusterStreamActive(true)).toBe(false)
+      expect(mgr.updateClusterStreamActive(false)).toBe(true)
+    })
+
+    test('resetClusterStreamActive clears the flag so the next update reports a change again', () => {
+      const { mgr } = mkMgr()
+      mgr.updateClusterStreamActive(true)
+
+      mgr.resetClusterStreamActive()
+
+      expect(mgr.updateClusterStreamActive(true)).toBe(true)
     })
   })
 

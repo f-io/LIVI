@@ -49,6 +49,13 @@ vi.mock('../../audio/gstreamer', () => ({
   gstEnv: gstEnvMock
 }))
 
+const { sysfsPanelGeometryMock } = vi.hoisted(() => ({
+  sysfsPanelGeometryMock: vi.fn(
+    (): { widthMm: number; heightMm: number; widthPx: number; heightPx: number } | null => null
+  )
+}))
+vi.mock('../panelEdid', () => ({ sysfsPanelGeometry: sysfsPanelGeometryMock }))
+
 const { addon, loadState } = vi.hoisted(() => ({
   addon: {
     version: vi.fn(() => '1.0-test'),
@@ -66,7 +73,16 @@ const { addon, loadState } = vi.hoisted(() => ({
     setBackdrop: vi.fn() as unknown,
     setGamma: vi.fn(),
     stop: vi.fn(),
-    openFeed: vi.fn(() => true)
+    openFeed: vi.fn(() => true),
+    openVideoReceiver: vi.fn(() => 1234) as unknown,
+    closeVideoReceiver: vi.fn() as unknown,
+    openAudioReceiver: vi.fn(() => ({ streamId: 1, dataPort: 2, controlPort: 3 })) as unknown,
+    setAudioReceiverActive: vi.fn() as unknown,
+    setAudioReceiverVolume: vi.fn() as unknown,
+    closeAudioReceiver: vi.fn() as unknown,
+    openMicUplink: vi.fn(() => 99) as unknown,
+    closeMicUplink: vi.fn() as unknown,
+    setAudioVisualizerTap: vi.fn() as unknown
   },
   loadState: { fail: false }
 }))
@@ -130,6 +146,20 @@ beforeEach(() => {
   resolveBinaryMock.mockImplementation(() => '/gst/bin/gst-launch-1.0')
   execFileSyncMock.mockImplementation(() => 'GStreamer 1.24.5\n')
   addon.createPlayer.mockImplementation(() => ({ handle: 1 }))
+  ;(addon.openVideoReceiver as ReturnType<typeof vi.fn>).mockImplementation(() => 1234)
+  ;(addon.closeVideoReceiver as ReturnType<typeof vi.fn>).mockImplementation(() => {})
+  ;(addon.openAudioReceiver as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+    streamId: 1,
+    dataPort: 2,
+    controlPort: 3
+  }))
+  ;(addon.setAudioReceiverActive as ReturnType<typeof vi.fn>).mockImplementation(() => {})
+  ;(addon.setAudioReceiverVolume as ReturnType<typeof vi.fn>).mockImplementation(() => {})
+  ;(addon.closeAudioReceiver as ReturnType<typeof vi.fn>).mockImplementation(() => {})
+  ;(addon.openMicUplink as ReturnType<typeof vi.fn>).mockImplementation(() => 99)
+  ;(addon.closeMicUplink as ReturnType<typeof vi.fn>).mockImplementation(() => {})
+  ;(addon.setAudioVisualizerTap as ReturnType<typeof vi.fn>).mockImplementation(() => {})
+  sysfsPanelGeometryMock.mockImplementation(() => null)
   logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
   warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
   errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -304,6 +334,20 @@ describe('compositor control (linux + control path)', () => {
     expect(m.panelPhysicalMm('ok', 0, 100)).toBeNull()
     expect(m.panelPhysicalMm('ok', 1000, 500)).toEqual({ widthMm: 100, heightMm: 50 })
     expect(m.panelPhysicalMm('ok', 16000, 8000)).toEqual({ widthMm: 800, heightMm: 400 })
+  })
+
+  test('an unclaimed "main" role falls back to the sysfs EDID panel geometry', async () => {
+    const m = await loadModule('linux', '/sock')
+    expect(m.panelPhysicalMm('main', 100, 100)).toBeNull()
+    expect(sysfsPanelGeometryMock).toHaveBeenCalledTimes(1)
+
+    sysfsPanelGeometryMock.mockReturnValueOnce({
+      widthMm: 100,
+      heightMm: 50,
+      widthPx: 1000,
+      heightPx: 500
+    })
+    expect(m.panelPhysicalMm('main', 1000, 500)).toEqual({ widthMm: 100, heightMm: 50 })
   })
 })
 
@@ -919,5 +963,324 @@ describe('media feed', () => {
     ;(addon.openFeed as ReturnType<typeof vi.fn>).mockReturnValueOnce(false)
     const mod = await loadModule('darwin')
     await expect(mod.openMediaFeed()).resolves.toBe('')
+  })
+})
+
+describe('openScreenReceiver / closeScreenReceiver', () => {
+  test('returns 0 when the addon failed to load', async () => {
+    loadState.fail = true
+    const m = await loadModule('darwin')
+    expect(m.openScreenReceiver(1, Buffer.from([1]))).toBe(0)
+  })
+
+  test('returns 0 when the loaded addon has no receiver method', async () => {
+    const m = await loadModule('darwin')
+    const original = addon.openVideoReceiver
+    addon.openVideoReceiver = undefined as never
+    expect(m.openScreenReceiver(1, Buffer.from([1]))).toBe(0)
+    addon.openVideoReceiver = original
+  })
+
+  test('binds the receiver and forwards config atoms to the registered callback', async () => {
+    const m = await loadModule('darwin')
+    const onConfig = vi.fn()
+    m.onScreenReceiverConfig(onConfig)
+    const key = Buffer.from([9, 9])
+    const port = m.openScreenReceiver(7, key)
+    expect(port).toBe(1234)
+    expect(addon.openVideoReceiver).toHaveBeenCalledWith(7, key, expect.any(Function))
+
+    const cb = (addon.openVideoReceiver as ReturnType<typeof vi.fn>).mock.calls[0][2] as (
+      codec: number,
+      atom: Buffer
+    ) => void
+    const atom = Buffer.from([1, 2])
+    cb(1, atom)
+    expect(onConfig).toHaveBeenCalledWith(7, 'h265', atom)
+    cb(0, atom)
+    expect(onConfig).toHaveBeenCalledWith(7, 'h264', atom)
+  })
+
+  test('a config atom with no registered callback is silently dropped', async () => {
+    const m = await loadModule('darwin')
+    m.openScreenReceiver(7, Buffer.from([1]))
+    const cb = (addon.openVideoReceiver as ReturnType<typeof vi.fn>).mock.calls[0][2] as (
+      codec: number,
+      atom: Buffer
+    ) => void
+    expect(() => cb(1, Buffer.from([1]))).not.toThrow()
+  })
+
+  test('a throwing addon call is caught and returns 0', async () => {
+    const m = await loadModule('darwin')
+    ;(addon.openVideoReceiver as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+      throw new Error('bind failed')
+    })
+    expect(m.openScreenReceiver(1, Buffer.from([1]))).toBe(0)
+    expect(errorSpy).toHaveBeenCalledWith('[GstVideo] screen receiver failed:', 'bind failed')
+  })
+
+  test('closeScreenReceiver is a no-op when the addon failed to load', async () => {
+    loadState.fail = true
+    const m = await loadModule('darwin')
+    expect(() => m.closeScreenReceiver(1)).not.toThrow()
+  })
+
+  test('closeScreenReceiver is a no-op when the addon has no close method', async () => {
+    const m = await loadModule('darwin')
+    const original = addon.closeVideoReceiver
+    addon.closeVideoReceiver = undefined as never
+    expect(() => m.closeScreenReceiver(1)).not.toThrow()
+    addon.closeVideoReceiver = original
+  })
+
+  test('closeScreenReceiver forwards to the addon', async () => {
+    const m = await loadModule('darwin')
+    m.closeScreenReceiver(5)
+    expect(addon.closeVideoReceiver).toHaveBeenCalledWith(5)
+  })
+})
+
+describe('openAudioReceiver and related controls', () => {
+  const opts = {
+    codec: 'opus',
+    payloadType: 96,
+    clockRate: 48000,
+    channels: 2,
+    latencyMs: 40,
+    realtime: true,
+    device: 'hw:0'
+  }
+
+  test('returns null when the addon failed to load', async () => {
+    loadState.fail = true
+    const m = await loadModule('darwin')
+    expect(m.openAudioReceiver(Buffer.from([1]), opts)).toBeNull()
+  })
+
+  test('returns null when the loaded addon has no receiver method', async () => {
+    const m = await loadModule('darwin')
+    const original = addon.openAudioReceiver
+    addon.openAudioReceiver = undefined as never
+    expect(m.openAudioReceiver(Buffer.from([1]), opts)).toBeNull()
+    addon.openAudioReceiver = original
+  })
+
+  test('opens the receiver, forwards options and the started callback', async () => {
+    const m = await loadModule('darwin')
+    const started = vi.fn()
+    m.onAudioReceiverStarted(started)
+    const key = Buffer.from([2])
+    const result = m.openAudioReceiver(key, opts)
+    expect(result).toEqual({ streamId: 1, dataPort: 2, controlPort: 3 })
+    expect(addon.openAudioReceiver).toHaveBeenCalledWith(
+      key,
+      'opus',
+      96,
+      48000,
+      2,
+      40,
+      true,
+      'hw:0',
+      expect.any(Function)
+    )
+
+    const cb = (addon.openAudioReceiver as ReturnType<typeof vi.fn>).mock.calls[0][8] as (
+      id: number,
+      firstSample: number
+    ) => void
+    cb(3, 1000)
+    expect(started).toHaveBeenCalledWith(3, 1000)
+  })
+
+  test('a started callback with no registered listener is silently dropped', async () => {
+    const m = await loadModule('darwin')
+    m.openAudioReceiver(Buffer.from([1]), opts)
+    const cb = (addon.openAudioReceiver as ReturnType<typeof vi.fn>).mock.calls[0][8] as (
+      id: number,
+      firstSample: number
+    ) => void
+    expect(() => cb(1, 1)).not.toThrow()
+  })
+
+  test('an undefined addon result is normalised to null', async () => {
+    const m = await loadModule('darwin')
+    ;(addon.openAudioReceiver as ReturnType<typeof vi.fn>).mockReturnValueOnce(undefined)
+    expect(m.openAudioReceiver(Buffer.from([1]), opts)).toBeNull()
+  })
+
+  test('a throwing addon call is caught and returns null', async () => {
+    const m = await loadModule('darwin')
+    ;(addon.openAudioReceiver as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+      throw new Error('rtp bind failed')
+    })
+    expect(m.openAudioReceiver(Buffer.from([1]), opts)).toBeNull()
+    expect(errorSpy).toHaveBeenCalledWith('[GstVideo] audio receiver failed:', 'rtp bind failed')
+  })
+
+  test('setAudioReceiverActive no-ops without an addon or method, forwards otherwise', async () => {
+    loadState.fail = true
+    const failed = await loadModule('darwin')
+    expect(() => failed.setAudioReceiverActive(1, true)).not.toThrow()
+
+    loadState.fail = false
+    const m = await loadModule('darwin')
+    const original = addon.setAudioReceiverActive
+    addon.setAudioReceiverActive = undefined as never
+    expect(() => m.setAudioReceiverActive(1, true)).not.toThrow()
+    addon.setAudioReceiverActive = original
+
+    m.setAudioReceiverActive(1, true)
+    expect(addon.setAudioReceiverActive).toHaveBeenCalledWith(1, true)
+  })
+
+  test('setAudioReceiverVolume no-ops without an addon or method, forwards otherwise', async () => {
+    loadState.fail = true
+    const failed = await loadModule('darwin')
+    expect(() => failed.setAudioReceiverVolume(1, 0.5, 200)).not.toThrow()
+
+    loadState.fail = false
+    const m = await loadModule('darwin')
+    const original = addon.setAudioReceiverVolume
+    addon.setAudioReceiverVolume = undefined as never
+    expect(() => m.setAudioReceiverVolume(1, 0.5, 200)).not.toThrow()
+    addon.setAudioReceiverVolume = original
+
+    m.setAudioReceiverVolume(1, 0.5, 200)
+    expect(addon.setAudioReceiverVolume).toHaveBeenCalledWith(1, 0.5, 200)
+  })
+
+  test('closeAudioReceiver no-ops without an addon or method, forwards otherwise', async () => {
+    loadState.fail = true
+    const failed = await loadModule('darwin')
+    expect(() => failed.closeAudioReceiver(1)).not.toThrow()
+
+    loadState.fail = false
+    const m = await loadModule('darwin')
+    const original = addon.closeAudioReceiver
+    addon.closeAudioReceiver = undefined as never
+    expect(() => m.closeAudioReceiver(1)).not.toThrow()
+    addon.closeAudioReceiver = original
+
+    m.closeAudioReceiver(1)
+    expect(addon.closeAudioReceiver).toHaveBeenCalledWith(1)
+  })
+})
+
+describe('openMicUplink / closeMicUplink', () => {
+  const micOpts = {
+    codec: 'opus' as const,
+    payloadType: 111,
+    sampleRate: 16000,
+    channels: 1,
+    bitrate: 32000,
+    frameMs: 20,
+    port: 5000,
+    phone: '10.0.0.5',
+    device: 'hw:1'
+  }
+
+  test('returns null when the addon failed to load', async () => {
+    loadState.fail = true
+    const m = await loadModule('darwin')
+    expect(m.openMicUplink(Buffer.from([1]), micOpts)).toBeNull()
+  })
+
+  test('returns null when the loaded addon has no uplink method', async () => {
+    const m = await loadModule('darwin')
+    const original = addon.openMicUplink
+    addon.openMicUplink = undefined as never
+    expect(m.openMicUplink(Buffer.from([1]), micOpts)).toBeNull()
+    addon.openMicUplink = original
+  })
+
+  test('opens the uplink and forwards every option', async () => {
+    const m = await loadModule('darwin')
+    const key = Buffer.from([3])
+    expect(m.openMicUplink(key, micOpts)).toBe(99)
+    expect(addon.openMicUplink).toHaveBeenCalledWith(
+      key,
+      'opus',
+      111,
+      16000,
+      1,
+      32000,
+      20,
+      5000,
+      '10.0.0.5',
+      'hw:1'
+    )
+  })
+
+  test('an undefined addon result is normalised to null', async () => {
+    const m = await loadModule('darwin')
+    ;(addon.openMicUplink as ReturnType<typeof vi.fn>).mockReturnValueOnce(undefined)
+    expect(m.openMicUplink(Buffer.from([1]), micOpts)).toBeNull()
+  })
+
+  test('a throwing addon call is caught, warns and returns null', async () => {
+    const m = await loadModule('darwin')
+    ;(addon.openMicUplink as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+      throw new Error('mic busy')
+    })
+    expect(m.openMicUplink(Buffer.from([1]), micOpts)).toBeNull()
+    expect(warnSpy).toHaveBeenCalledWith('[GstVideo] mic uplink failed: mic busy')
+  })
+
+  test('closeMicUplink no-ops without an addon or method, forwards otherwise', async () => {
+    loadState.fail = true
+    const failed = await loadModule('darwin')
+    expect(() => failed.closeMicUplink(1)).not.toThrow()
+
+    loadState.fail = false
+    const m = await loadModule('darwin')
+    const original = addon.closeMicUplink
+    addon.closeMicUplink = undefined as never
+    expect(() => m.closeMicUplink(1)).not.toThrow()
+    addon.closeMicUplink = original
+
+    m.closeMicUplink(4)
+    expect(addon.closeMicUplink).toHaveBeenCalledWith(4)
+  })
+})
+
+describe('audio visualizer tap', () => {
+  test('no-ops without an addon or method', async () => {
+    loadState.fail = true
+    const failed = await loadModule('darwin')
+    expect(() => failed.setAudioReceiverVisualizerTap(true)).not.toThrow()
+
+    loadState.fail = false
+    const m = await loadModule('darwin')
+    const original = addon.setAudioVisualizerTap
+    addon.setAudioVisualizerTap = undefined as never
+    expect(() => m.setAudioReceiverVisualizerTap(true)).not.toThrow()
+    addon.setAudioVisualizerTap = original
+  })
+
+  test('forwards the tap and delivers samples to the registered callback', async () => {
+    const m = await loadModule('darwin')
+    const onSamples = vi.fn()
+    m.onAudioReceiverVisualizer(onSamples)
+    m.setAudioReceiverVisualizerTap(true)
+    expect(addon.setAudioVisualizerTap).toHaveBeenCalledWith(true, expect.any(Function))
+
+    const cb = (addon.setAudioVisualizerTap as ReturnType<typeof vi.fn>).mock.calls[0][1] as (
+      samples: Buffer,
+      sampleRate: number
+    ) => void
+    const samples = Buffer.from([1, 2, 3])
+    cb(samples, 48000)
+    expect(onSamples).toHaveBeenCalledWith(new Uint8Array(samples), 48000)
+  })
+
+  test('samples with no registered callback are silently dropped', async () => {
+    const m = await loadModule('darwin')
+    m.setAudioReceiverVisualizerTap(false)
+    const cb = (addon.setAudioVisualizerTap as ReturnType<typeof vi.fn>).mock.calls[0][1] as (
+      samples: Buffer,
+      sampleRate: number
+    ) => void
+    expect(() => cb(Buffer.from([1]), 48000)).not.toThrow()
   })
 })

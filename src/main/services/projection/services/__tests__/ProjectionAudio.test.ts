@@ -400,6 +400,41 @@ describe('ProjectionAudio attention hints', () => {
   })
 })
 
+describe('ProjectionAudio non-host-process visualizer path', () => {
+  test('forwards the receiver-side visualizer callback and tap toggle when not using the host process', async () => {
+    vi.resetModules()
+    let capturedCb: ((s: Uint8Array, rate: number) => void) | null = null
+    const setAudioReceiverVisualizerTap = vi.fn()
+    vi.doMock('@main/services/video/GstVideo', () => ({
+      useHostProcess: false,
+      onAudioReceiverVisualizer: (cb: (s: Uint8Array, rate: number) => void) => {
+        capturedCb = cb
+      },
+      setAudioReceiverVisualizerTap
+    }))
+    const { ProjectionAudio: NonHostProjectionAudio } = await import(
+      '@main/services/projection/services/ProjectionAudio'
+    )
+    const sendChunked = vi.fn()
+    const a = new NonHostProjectionAudio(() => ({}) as never, vi.fn(), sendChunked, vi.fn())
+
+    // useHostProcess === false takes the receiver-tap else branch instead of gstHost's.
+    a.setVisualizerEnabled(true)
+    expect(setAudioReceiverVisualizerTap).toHaveBeenCalledWith(true)
+
+    expect(capturedCb).toBeTypeOf('function')
+    capturedCb?.(new Uint8Array([1, 2, 3, 4]), 44100)
+    expect(sendChunked).toHaveBeenCalledWith(
+      'projection-audio-chunk',
+      expect.anything(),
+      64 * 1024,
+      { sampleRate: 44100, channels: 1 }
+    )
+
+    vi.doUnmock('@main/services/video/GstVideo')
+  })
+})
+
 describe('ProjectionAudio DEBUG logging', () => {
   test('logs commands and device changes when DEBUG is on', async () => {
     vi.resetModules()

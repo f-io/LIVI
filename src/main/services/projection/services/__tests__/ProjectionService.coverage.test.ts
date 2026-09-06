@@ -3596,3 +3596,143 @@ describe('HFP keeper, SCO and battery wiring', () => {
     expect(deps.feedPath).toBeTypeOf('function')
   })
 })
+
+describe('ProjectionService 100%-coverage fill', () => {
+  test('getCpDriver returns the manager from the driver stack', () => {
+    const svc = makeSvc()
+    expect(svc.getCpDriver()).toBeNull()
+    const mgr = { setAaWireless: vi.fn() }
+    svc.drivers.getCpManager = vi.fn(() => mgr)
+    expect(svc.getCpDriver()).toBe(mgr)
+  })
+
+  test('the BtPairedRegistry emit dep forwards the paired-list event to a live renderer', async () => {
+    const svc = makeSvc()
+    svc.webContents = { send: vi.fn() }
+    svc.deviceController.emitDevices = vi.fn()
+    bluezMock.listPaired.mockResolvedValueOnce([
+      { mac: 'AA:BB:CC:DD:EE:FF', name: 'Phone', class: 0x200404, connected: true }
+    ])
+    await svc.refreshBtPairedList()
+    expect(svc.webContents.send).toHaveBeenCalledWith(
+      'projection-event',
+      expect.objectContaining({ type: 'bluetoothPairedList' })
+    )
+  })
+
+  test('onDriverTargetedConnect is a no-op for native drivers', () => {
+    const svc = makeSvc()
+    expect(() => svc.onDriverTargetedConnect()).not.toThrow()
+  })
+
+  test('the audio-device monitor callback emits audioDevicesChanged', () => {
+    const svc = makeSvc()
+    const listener = vi.fn()
+    svc.onProjectionEvent(listener)
+    expect(audioMonitorHolder.cb).toBeTypeOf('function')
+    audioMonitorHolder.cb()
+    expect(listener).toHaveBeenCalledWith({ type: 'audioDevicesChanged' })
+  })
+
+  test('buildIpcHost: isStarted, send (with and without a driver), reloadConfigFromDisk and emitProjectionEvent', async () => {
+    const svc = makeSvc()
+    const host = svc.buildIpcHost()
+
+    svc.started = false
+    expect(host.isStarted()).toBe(false)
+    svc.started = true
+    expect(host.isStarted()).toBe(true)
+
+    // No routed driver: send falls back to the `?? Promise.resolve(false)` branch.
+    await expect(host.send({ any: 'msg' })).resolves.toBe(false)
+
+    const driver = fakeDriver({ send: vi.fn(async () => true) })
+    svc.drivers.getActive = vi.fn(() => driver)
+    await expect(host.send({ any: 'msg' })).resolves.toBe(true)
+    expect(driver.send).toHaveBeenCalledWith({ any: 'msg' })
+
+    svc.reloadConfigFromDisk = vi.fn(async () => undefined)
+    await host.reloadConfigFromDisk()
+    expect(svc.reloadConfigFromDisk).toHaveBeenCalled()
+
+    svc.emitProjectionEvent = vi.fn()
+    host.emitProjectionEvent({ type: 'unplugged' })
+    expect(svc.emitProjectionEvent).toHaveBeenCalledWith({ type: 'unplugged' })
+  })
+
+  test('switchTransport breaks once the override settles on the same transport/mode it started with', async () => {
+    const svc = makeSvc()
+    svc.arbiter.prepareSwitch = vi.fn(() => ({ ok: true, target: { transport: 'cp' } }))
+    // Every call returns an equal (but distinct) object, so the loop's second
+    // getOverride() read matches `desired` by value and breaks on the first pass.
+    svc.arbiter.getOverride = vi.fn(() => ({ transport: 'cp', mode: 'wired' }))
+    svc.getActiveTransport = vi.fn(() => null)
+    svc.isActiveAaWired = vi.fn(() => false)
+    svc.started = false
+    svc.autoStartIfNeeded = vi.fn(async () => undefined)
+
+    const res = await svc.switchTransport()
+
+    expect(svc.autoStartIfNeeded).toHaveBeenCalledTimes(1)
+    expect(res.ok).toBe(true)
+  })
+
+  test('start returns early without starting when the arbiter has no candidate', async () => {
+    const svc = makeSvc()
+    svc.arbiter.pickPreferred = vi.fn(() => undefined)
+    svc.drivers.startCp = vi.fn()
+    svc.emitTransportState = vi.fn()
+
+    await svc.start()
+
+    expect(svc.started).toBe(false)
+    expect(svc.drivers.startCp).not.toHaveBeenCalled()
+    expect(svc.emitTransportState).toHaveBeenCalled()
+  })
+
+  test('onActiveSessionChanged disposes the planes on a real codec change', () => {
+    const svc = makeSvc()
+    svc.planes.dispose = vi.fn()
+    svc.planes.restoreCodecs = vi.fn()
+    svc.planes.updateMainCrop = vi.fn()
+    svc.planes.getMainCodec = vi.fn(() => 'h264')
+    svc.mediaStore.hydrate = vi.fn()
+    svc.navStore.hydrate = vi.fn()
+    svc.startPromise = null
+    const driver = fakeDriver()
+    const next = {
+      index: 1,
+      protocol: 'androidauto',
+      driver,
+      audio: { duckLevel: 1, duckRampMs: 1500 },
+      video: { main: { codec: 'h265' }, cluster: {} }
+    }
+
+    svc.onActiveSessionChanged(next, { index: 2 })
+
+    expect(svc.planes.dispose).toHaveBeenCalled()
+  })
+
+  test('onActiveSessionChanged keeps the running decoder when the codec is unchanged', () => {
+    const svc = makeSvc()
+    svc.planes.dispose = vi.fn()
+    svc.planes.restoreCodecs = vi.fn()
+    svc.planes.updateMainCrop = vi.fn()
+    svc.planes.getMainCodec = vi.fn(() => 'h264')
+    svc.mediaStore.hydrate = vi.fn()
+    svc.navStore.hydrate = vi.fn()
+    svc.startPromise = null
+    const driver = fakeDriver()
+    const next = {
+      index: 1,
+      protocol: 'androidauto',
+      driver,
+      audio: { duckLevel: 1, duckRampMs: 1500 },
+      video: { main: { codec: 'h264' }, cluster: {} }
+    }
+
+    svc.onActiveSessionChanged(next, { index: 2 })
+
+    expect(svc.planes.dispose).not.toHaveBeenCalled()
+  })
+})

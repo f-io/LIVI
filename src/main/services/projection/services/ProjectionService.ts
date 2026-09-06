@@ -1903,20 +1903,12 @@ export class ProjectionService {
       this.planes.updateMainCrop()
       if (!this.startPromise) {
         if (!prev) this.audio.resetForSessionStart()
-        this.scheduleActiveKeyframe()
+        // fan.restart on activate waits for this keyframe, so request it at once.
+        next.driver.requestKeyframe?.()
       }
     } else {
       this.teardownToIdle()
     }
-  }
-
-  private keyframeDebounce?: NodeJS.Timeout
-  private scheduleActiveKeyframe(): void {
-    if (this.keyframeDebounce) clearTimeout(this.keyframeDebounce)
-    this.keyframeDebounce = setTimeout(() => {
-      this.keyframeDebounce = undefined
-      this.sessions.active()?.driver.requestKeyframe?.()
-    }, 150)
   }
 
   private teardownToIdle(): void {
