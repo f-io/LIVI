@@ -433,7 +433,7 @@ pub mod receiver {
     fn set_realtime() {
         // zeroed, not a struct literal: sched_param carries private padding on some platforms
         let mut param: libc::sched_param = unsafe { std::mem::zeroed() };
-        param.sched_priority = 20;
+        param.sched_priority = 10;
         let rc = unsafe { libc::pthread_setschedparam(libc::pthread_self(), libc::SCHED_FIFO, &param) };
         if rc != 0 {
             eprintln!("[cp_audio_rx] real-time priority denied (rc={rc}); normal priority");
