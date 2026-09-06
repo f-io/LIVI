@@ -208,7 +208,12 @@ jobs:
           chmod +x scripts/gstreamer/package-linux.sh
           chmod +x scripts/gstreamer/smoke-test-linux.sh
 
+          # ceiling = glibc of the current Debian stable (the deploy target)
+          GLIBC_CEILING="$(docker run --rm debian:stable-slim getconf GNU_LIBC_VERSION | awk '{print $2}')"
+          echo "glibc ceiling from current Debian stable: GLIBC_$GLIBC_CEILING"
+
           docker run --rm --platform=linux/amd64 \
+            -e GLIBC_CEILING="$GLIBC_CEILING" \
             -v "${GITHUB_WORKSPACE}:/work" \
             -w /work \
             debian:forky-slim sh -lc '
@@ -283,7 +288,12 @@ jobs:
           chmod +x scripts/gstreamer/smoke-test-linux.sh
           chmod +x scripts/gstreamer/build-patched-linux.sh
 
+          # ceiling = glibc of the current Debian stable (the deploy target)
+          GLIBC_CEILING="$(docker run --rm debian:stable-slim getconf GNU_LIBC_VERSION | awk '{print $2}')"
+          echo "glibc ceiling from current Debian stable: GLIBC_$GLIBC_CEILING"
+
           docker run --rm --platform=linux/arm64/v8 \
+            -e GLIBC_CEILING="$GLIBC_CEILING" \
             -v "${GITHUB_WORKSPACE}:/work" \
             -w /work \
             debian:forky-slim sh -lc '
