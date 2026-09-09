@@ -18,6 +18,7 @@ mod mac {
 
     fn wired_config(av_iface: Option<String>) -> (CpConfig, Identity) {
         let cp = CpConfig {
+            ap_mac: None,
             wifi_iface: String::new(),
             ssid: "LIVI".into(),
             passphrase: "12345678".into(),

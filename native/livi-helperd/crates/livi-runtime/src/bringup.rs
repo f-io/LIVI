@@ -1,5 +1,6 @@
 use tokio::sync::mpsc;
 
+use iap2_csm::CsmMessage;
 use iap2_csm::messages::authentication::*;
 use iap2_csm::messages::car_play::*;
 use iap2_csm::messages::communications::*;
@@ -8,11 +9,10 @@ use iap2_csm::messages::now_playing::*;
 use iap2_csm::messages::power::*;
 use iap2_csm::messages::route_guidance::*;
 use iap2_csm::messages::wifi::*;
-use iap2_csm::CsmMessage;
 
 use crate::framing::frame_msg_id;
-use crate::ident::{build_identification, Identity, Transport, DROPPABLE};
-use crate::{net, AsyncAuth, ControlChannel};
+use crate::ident::{DROPPABLE, Identity, Transport, build_identification};
+use crate::{AsyncAuth, ControlChannel, net};
 
 /// Wireless CarPlay parameters handed to the phone: the AP and the AirPlay receiver.
 #[derive(Debug, Clone)]
@@ -30,6 +30,8 @@ pub struct CpConfig {
     /// address the phone connects back to.
     pub av_iface: Option<String>,
     pub available_current_ma: u16,
+    /// The access point's MAC when it is not this host's, so the phone is told the right one.
+    pub ap_mac: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,7 +86,10 @@ fn subscriptions() -> Vec<Vec<u8>> {
             }),
         }
         .encode(),
-        StartRouteGuidanceUpdates { display_component_id: None }.encode(),
+        StartRouteGuidanceUpdates {
+            display_component_id: None,
+        }
+        .encode(),
         StartPowerUpdates {
             maximum_current_drawn_from_accessory: false,
             device_battery_will_charge_if_power_is_present: false,
@@ -135,7 +140,9 @@ async fn run_identification<C: ControlChannel>(
         match frame_msg_id(&frame) {
             Some(0x1D00) => {
                 let ident = build_identification(id, transport, &exclude);
-                ch.send(ident.encode()).await.map_err(|_| BringupError::Channel)?;
+                ch.send(ident.encode())
+                    .await
+                    .map_err(|_| BringupError::Channel)?;
             }
             Some(0x1D02) => return Ok(()),
             Some(0x1D03) => {
@@ -154,12 +161,14 @@ async fn run_identification<C: ControlChannel>(
                 }
                 exclude.extend(drop);
                 let ident = build_identification(id, transport, &exclude);
-                ch.send(ident.encode()).await.map_err(|_| BringupError::Channel)?;
+                ch.send(ident.encode())
+                    .await
+                    .map_err(|_| BringupError::Channel)?;
             }
             other => {
                 return Err(BringupError::Identification(format!(
                     "unexpected message during identification: {other:?}"
-                )))
+                )));
             }
         }
     }
@@ -172,8 +181,14 @@ fn flagged_fields(r: &IdentificationRejected) -> Vec<&'static str> {
             out.push(name)
         }
     };
-    push(r.location_information_component, "location_information_component");
-    push(r.vehicle_information_component, "vehicle_information_component");
+    push(
+        r.location_information_component,
+        "location_information_component",
+    );
+    push(
+        r.vehicle_information_component,
+        "vehicle_information_component",
+    );
     push(r.vehicle_status_component, "vehicle_status_component");
     out
 }
@@ -187,9 +202,14 @@ async fn run_auth<C: ControlChannel, A: AsyncAuth>(
         let frame = recv(ch).await?;
         match frame_msg_id(&frame) {
             Some(0xAA00) => {
-                ch.send(AuthenticationCertificate { certificate: cert.clone() }.encode())
-                    .await
-                    .map_err(|_| BringupError::Channel)?;
+                ch.send(
+                    AuthenticationCertificate {
+                        certificate: cert.clone(),
+                    }
+                    .encode(),
+                )
+                .await
+                .map_err(|_| BringupError::Channel)?;
             }
             Some(0xAA02) => {
                 let req = RequestAuthenticationChallengeResponse::decode(&frame)
@@ -200,9 +220,15 @@ async fn run_auth<C: ControlChannel, A: AsyncAuth>(
                     .map_err(|_| BringupError::Channel)?;
             }
             Some(0xAA05) => return Ok(()),
-            Some(0xAA04) => return Err(BringupError::Auth("device sent AuthenticationFailed".into())),
+            Some(0xAA04) => {
+                return Err(BringupError::Auth(
+                    "device sent AuthenticationFailed".into(),
+                ));
+            }
             other => {
-                return Err(BringupError::Auth(format!("unexpected message during auth: {other:?}")))
+                return Err(BringupError::Auth(format!(
+                    "unexpected message during auth: {other:?}"
+                )));
             }
         }
     }
@@ -222,7 +248,9 @@ fn carplay_start_session(cp: &CpConfig) -> Option<CarPlayStartSession> {
         // The link-local the phone connects to: the A/V interface's.
         let fe80 = net::wlan_link_local(cp.av_iface.as_deref()?)?;
         return Some(CarPlayStartSession {
-            wired_attributes: Some(CarPlayStartSessionWiredAttributes { ip_address: vec![fe80] }),
+            wired_attributes: Some(CarPlayStartSessionWiredAttributes {
+                ip_address: vec![fe80],
+            }),
             wireless_attributes: None,
             port: Some(cp.airplay_port),
             // No AP interface: the A/V interface stands in.
@@ -234,7 +262,9 @@ fn carplay_start_session(cp: &CpConfig) -> Option<CarPlayStartSession> {
     }
     let fe80 = net::wlan_link_local(&cp.wifi_iface)?;
     let (live_ssid, live_channel) = net::ap_ssid_channel(&cp.wifi_iface);
-    let ssid = live_ssid.filter(|s| !s.is_empty()).unwrap_or_else(|| cp.ssid.clone());
+    let ssid = live_ssid
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| cp.ssid.clone());
     let channel = live_channel.filter(|c| *c != 0).unwrap_or(cp.channel);
     Some(CarPlayStartSession {
         wired_attributes: None,
@@ -246,7 +276,7 @@ fn carplay_start_session(cp: &CpConfig) -> Option<CarPlayStartSession> {
             security_type: Some(cp.security_type as u8),
         }),
         port: Some(cp.airplay_port),
-        device_identifier: net::wlan_mac(&cp.wifi_iface),
+        device_identifier: cp.ap_mac.clone().or_else(|| net::wlan_mac(&cp.wifi_iface)),
         public_key: Some(cp.public_key.clone()),
         source_version: Some(cp.source_version.clone()),
     })
@@ -294,7 +324,9 @@ pub async fn run_accessory<C: ControlChannel, A: AsyncAuth>(
     let _ = events.send(BringupEvent::Subscribed).await;
 
     while let Some(frame) = ch.recv().await {
-        let Some(msg_id) = frame_msg_id(&frame) else { continue };
+        let Some(msg_id) = frame_msg_id(&frame) else {
+            continue;
+        };
         match msg_id {
             0x5702 => {
                 if ch.send(wifi_config(&cp).encode()).await.is_err() {
@@ -312,11 +344,17 @@ pub async fn run_accessory<C: ControlChannel, A: AsyncAuth>(
                         ),
                         Err(e) => println!("[cp] CarPlayAvailability undecodable: {e}"),
                     }
+                    let ip = start
+                        .wireless_attributes
+                        .as_ref()
+                        .map(|w| &w.ip_address)
+                        .or_else(|| start.wired_attributes.as_ref().map(|w| &w.ip_address))
+                        .map(|a| a.join(","))
+                        .unwrap_or_default();
                     println!(
-                        "[cp] CarPlayStartSession ip={:?} port={:?} device_id={:?} pk_len={}",
-                        start.wired_attributes.as_ref().map(|w| &w.ip_address),
-                        start.port,
-                        start.device_identifier,
+                        "[cp] CarPlayStartSession ip={ip} port={} device_id={} pk_len={}",
+                        start.port.unwrap_or(0),
+                        start.device_identifier.as_deref().unwrap_or("-"),
                         start.public_key.as_deref().unwrap_or("").len()
                     );
                     if ch.send(start.encode()).await.is_err() {
@@ -325,14 +363,18 @@ pub async fn run_accessory<C: ControlChannel, A: AsyncAuth>(
                     let _ = events.send(BringupEvent::CarPlayStartSent).await;
                 }
                 None => {
-                    let _ = events
-                        .send(BringupEvent::Failed("no Wi-Fi link-local on AP interface".into()))
-                        .await;
+                    let why = format!("no link-local on {:?}", cp.wifi_iface);
+                    println!("[cp] CarPlayStartSession not sent: {why}");
+                    let _ = events.send(BringupEvent::Failed(why)).await;
                 }
             },
             _ => {}
         }
-        if events.send(BringupEvent::Incoming { msg_id, frame }).await.is_err() {
+        if events
+            .send(BringupEvent::Incoming { msg_id, frame })
+            .await
+            .is_err()
+        {
             return;
         }
     }

@@ -1,8 +1,8 @@
 //! The LIVI Link as the helper sees it: on the bus or not, and once its name resolves,
 //! present. What needs the dongle waits on it.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tokio::sync::Notify;
@@ -80,7 +80,10 @@ impl LinkPresence {
                 if !self.on_bus.load(Ordering::SeqCst) {
                     break false;
                 }
-                if tokio::task::spawn_blocking(livi_dongle::link::resolves).await.unwrap_or(false) {
+                if tokio::task::spawn_blocking(livi_dongle::link::resolves)
+                    .await
+                    .unwrap_or(false)
+                {
                     break true;
                 }
                 tokio::time::sleep(RESOLVE_INTERVAL).await;
@@ -88,7 +91,10 @@ impl LinkPresence {
             if !up {
                 continue;
             }
-            println!("[helperd] LIVI Link up: {} resolves", livi_dongle::link::LINK_NAME);
+            println!(
+                "[helperd] LIVI Link up: {} resolves",
+                livi_dongle::link::LINK_NAME
+            );
             on_up();
             self.set_present(true);
             self.wait_for(|l| !l.on_bus.load(Ordering::SeqCst)).await;

@@ -43,6 +43,30 @@ fn txt_records(device_id: &str, source_version: &str, pk: &str, pi: &str) -> Vec
     txt
 }
 
+/// The publisher this platform uses, and the pattern that finds a stale one.
+const PUBLISHER: &str = if cfg!(target_os = "macos") {
+    "dns-sd"
+} else {
+    "avahi-publish-service"
+};
+
+/// Ends publishers left over from an earlier run, so one service is announced once.
+fn reap_publishers() {
+    let pattern = format!("{PUBLISHER}.*{AIRPLAY_SERVICE}");
+    let _ = std::process::Command::new("pkill")
+        .args(["-f", &pattern])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
+impl Drop for Bonjour {
+    fn drop(&mut self) {
+        // The child does not go when we do, so it is sent on its way.
+        let _ = self._publisher.start_kill();
+    }
+}
+
 impl Bonjour {
     pub fn start(
         device_id: String,
@@ -52,6 +76,9 @@ impl Bonjour {
         pi: String,
         bcast: Broadcaster,
     ) -> std::io::Result<Self> {
+        // A helper that was killed leaves its publisher behind, and every restart would add
+        // another announcement of the same service. Clear those before adding ours.
+        reap_publishers();
         let txt = txt_records(&device_id, &source_version, &pk, &pi);
         // macOS advertises through mDNSResponder (dns-sd); Linux through avahi.
         #[cfg(target_os = "macos")]
@@ -106,9 +133,14 @@ impl Bonjour {
             loop {
                 #[cfg(target_os = "macos")]
                 {
-                    let (d, s, b, sn) =
-                        (device_id.clone(), source_version.clone(), bcast.clone(), seen.clone());
-                    let _ = tokio::task::spawn_blocking(move || macos_browse_once(&d, &s, &b, &sn)).await;
+                    let (d, s, b, sn) = (
+                        device_id.clone(),
+                        source_version.clone(),
+                        bcast.clone(),
+                        seen.clone(),
+                    );
+                    let _ = tokio::task::spawn_blocking(move || macos_browse_once(&d, &s, &b, &sn))
+                        .await;
                 }
                 #[cfg(not(target_os = "macos"))]
                 if let Err(e) = browse_once(&device_id, &source_version, &bcast, &seen).await {
@@ -137,7 +169,9 @@ async fn browse_once(
         if !line.starts_with('=') {
             continue;
         }
-        let Some(ep) = parse_resolved(&line) else { continue };
+        let Some(ep) = parse_resolved(&line) else {
+            continue;
+        };
         let key = ep.phone_bt.clone().unwrap_or_else(|| ep.address.clone());
         let endpoint = (ep.address.clone(), ep.port);
         let fresh = {
@@ -152,7 +186,10 @@ async fn browse_once(
         if !fresh {
             continue;
         }
-        println!("[cp] found phone {CARPLAY_CTRL} at {}:{}", ep.address, ep.port);
+        println!(
+            "[cp] found phone {CARPLAY_CTRL} at {}:{}",
+            ep.address, ep.port
+        );
         if let Some(mac) = &ep.phone_bt {
             let ip = ep.address.split('%').next().unwrap_or(&ep.address);
             bcast.push_json(format!(
@@ -202,14 +239,23 @@ fn parse_resolved(line: &str) -> Option<Endpoint> {
         .find_map(|t| t.strip_prefix("id="))
         .map(|s| s.trim().to_lowercase());
 
-    Some(Endpoint { iface, address, port, phone_bt })
+    Some(Endpoint {
+        iface,
+        address,
+        port,
+        phone_bt,
+    })
 }
 
 fn connect_probe(ep: &Endpoint, device_id: &str, source_version: &str) {
     let mac_int = device_id.replace(':', "");
     let host = ep.address.split('%').next().unwrap_or(&ep.address);
     let is_v6 = ep.address.contains(':');
-    let host_hdr = if is_v6 { format!("[{host}]:{}", ep.port) } else { format!("{host}:{}", ep.port) };
+    let host_hdr = if is_v6 {
+        format!("[{host}]:{}", ep.port)
+    } else {
+        format!("{host}:{}", ep.port)
+    };
     let req = format!(
         "GET /ctrl-int/1/connect HTTP/1.1\r\nHost: {host_hdr}\r\nUser-Agent: AirPlay/{source_version}\r\nAirPlay-Receiver-Device-ID: {mac_int}\r\nConnection: close\r\n\r\n"
     );
@@ -233,8 +279,16 @@ fn connect_probe(ep: &Endpoint, device_id: &str, source_version: &str) {
 fn probe_attempt(ep: &Endpoint, host: &str, is_v6: bool, req: &[u8]) -> std::io::Result<String> {
     let (domain, addr): (Domain, SocketAddr) = if is_v6 {
         let ip: Ipv6Addr = host.parse().map_err(|_| io_err("bad v6"))?;
-        let scope = ep.address.split('%').nth(1).and_then(nametoindex).unwrap_or(0);
-        (Domain::IPV6, SocketAddr::V6(SocketAddrV6::new(ip, ep.port, 0, scope)))
+        let scope = ep
+            .address
+            .split('%')
+            .nth(1)
+            .and_then(nametoindex)
+            .unwrap_or(0);
+        (
+            Domain::IPV6,
+            SocketAddr::V6(SocketAddrV6::new(ip, ep.port, 0, scope)),
+        )
     } else {
         let ip: Ipv4Addr = host.parse().map_err(|_| io_err("bad v4"))?;
         (Domain::IPV4, SocketAddr::V4(SocketAddrV4::new(ip, ep.port)))
@@ -263,11 +317,7 @@ fn probe_attempt(ep: &Endpoint, host: &str, is_v6: bool, req: &[u8]) -> std::io:
 fn nametoindex(name: &str) -> Option<u32> {
     let cname = std::ffi::CString::new(name).ok()?;
     let idx = unsafe { libc::if_nametoindex(cname.as_ptr()) };
-    if idx == 0 {
-        None
-    } else {
-        Some(idx)
-    }
+    if idx == 0 { None } else { Some(idx) }
 }
 
 fn io_err(msg: &str) -> std::io::Error {
@@ -285,7 +335,9 @@ fn macos_browse_once(
     seen: &Arc<Mutex<std::collections::HashMap<String, (String, u16)>>>,
 ) {
     for inst in dns_sd_browse(CARPLAY_CTRL) {
-        let Some(ep) = dns_sd_resolve(&inst) else { continue };
+        let Some(ep) = dns_sd_resolve(&inst) else {
+            continue;
+        };
         let key = ep.phone_bt.clone().unwrap_or_else(|| ep.address.clone());
         let endpoint = (ep.address.clone(), ep.port);
         let fresh = {
@@ -300,7 +352,10 @@ fn macos_browse_once(
         if !fresh {
             continue;
         }
-        println!("[cp] found phone {CARPLAY_CTRL} at {}:{}", ep.address, ep.port);
+        println!(
+            "[cp] found phone {CARPLAY_CTRL} at {}:{}",
+            ep.address, ep.port
+        );
         if let Some(mac) = &ep.phone_bt {
             let ip = ep.address.split('%').next().unwrap_or(&ep.address);
             bcast.push_json(format!(
@@ -317,8 +372,11 @@ fn dns_sd_run(args: &[&str], secs: u64) -> Vec<String> {
     use std::io::BufRead;
     use std::process::{Command, Stdio};
     let mut out = Vec::new();
-    let Ok(mut child) =
-        Command::new("dns-sd").args(args).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()
+    let Ok(mut child) = Command::new("dns-sd")
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
     else {
         return out;
     };
@@ -328,7 +386,10 @@ fn dns_sd_run(args: &[&str], secs: u64) -> Vec<String> {
             std::thread::sleep(Duration::from_secs(secs));
             unsafe { libc::kill(pid as i32, libc::SIGTERM) };
         });
-        for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
+        for line in std::io::BufReader::new(stdout)
+            .lines()
+            .map_while(Result::ok)
+        {
             out.push(line);
         }
     }
@@ -363,14 +424,19 @@ fn dns_sd_resolve(instance: &str) -> Option<Endpoint> {
     for line in dns_sd_run(&["-L", instance, CARPLAY_CTRL], 3) {
         if let Some(pos) = line.find("can be reached at ") {
             // "<host>.:<port> (interface N)"
-            let token = line[pos + "can be reached at ".len()..].split_whitespace().next().unwrap_or("");
+            let token = line[pos + "can be reached at ".len()..]
+                .split_whitespace()
+                .next()
+                .unwrap_or("");
             if let Some(colon) = token.rfind(':') {
                 host = token[..colon].trim_end_matches('.').to_string();
                 port = token[colon + 1..].parse().unwrap_or(0);
             }
         }
         if phone_bt.is_none()
-            && let Some(id) = line.split(&['"', ' '][..]).find_map(|t| t.strip_prefix("id="))
+            && let Some(id) = line
+                .split(&['"', ' '][..])
+                .find_map(|t| t.strip_prefix("id="))
         {
             phone_bt = Some(id.trim().to_lowercase());
         }
@@ -385,9 +451,17 @@ fn dns_sd_resolve(instance: &str) -> Option<Endpoint> {
         .find(|a| matches!(a, SocketAddr::V6(v6) if (v6.ip().segments()[0] & 0xffc0) == 0xfe80))?;
     let SocketAddr::V6(v6) = sa else { return None };
     let iface = ifname_from_index(v6.scope_id()).unwrap_or_default();
-    let address =
-        if iface.is_empty() { v6.ip().to_string() } else { format!("{}%{}", v6.ip(), iface) };
-    Some(Endpoint { iface, address, port, phone_bt })
+    let address = if iface.is_empty() {
+        v6.ip().to_string()
+    } else {
+        format!("{}%{}", v6.ip(), iface)
+    };
+    Some(Endpoint {
+        iface,
+        address,
+        port,
+        phone_bt,
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -400,5 +474,8 @@ fn ifname_from_index(idx: u32) -> Option<String> {
     if p.is_null() {
         return None;
     }
-    unsafe { std::ffi::CStr::from_ptr(p) }.to_str().ok().map(|s| s.to_string())
+    unsafe { std::ffi::CStr::from_ptr(p) }
+        .to_str()
+        .ok()
+        .map(|s| s.to_string())
 }

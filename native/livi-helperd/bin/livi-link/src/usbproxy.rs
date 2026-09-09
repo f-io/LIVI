@@ -2,7 +2,7 @@
 //   LIST             enumerate attached iPhones
 //   CONFIG <serial>  vendor request 0x52 + select the CarPlay configuration
 //   RESTORE <serial> hand the phone back to the default configuration
-//   ATTACH <serial>  claim the usbmux interface; the socket then carries the bulk pipes
+//   ATTACH <serial>  claim the usbmux interface, the socket then carries the bulk pipes
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 const PORT: u16 = 5003;
 
-/// Cancel flag of the attach holding the usbmux interface; a new ATTACH sets it and takes over.
+/// Cancel flag of the attach holding the usbmux interface. A new ATTACH sets it and takes over.
 fn active_attach() -> &'static Mutex<Option<Arc<AtomicBool>>> {
     static ACTIVE: OnceLock<Mutex<Option<Arc<AtomicBool>>>> = OnceLock::new();
     ACTIVE.get_or_init(|| Mutex::new(None))
@@ -76,7 +76,10 @@ fn handle(mut s: TcpStream) -> Result<(), String> {
         "LIST" => {
             let mut out = String::new();
             for p in iap2_usbmux::find_iphones() {
-                let cfg = p.config_value.map(|c| c.to_string()).unwrap_or_else(|| "-".into());
+                let cfg = p
+                    .config_value
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "-".into());
                 out.push_str(&format!("{} {} {}\n", p.serial, p.num_configs, cfg));
             }
             out.push_str("END\n");
@@ -87,7 +90,9 @@ fn handle(mut s: TcpStream) -> Result<(), String> {
                 Ok(p) => format!(
                     "OK {} {}\n",
                     p.num_configs,
-                    p.config_value.map(|c| c.to_string()).unwrap_or_else(|| "-".into())
+                    p.config_value
+                        .map(|c| c.to_string())
+                        .unwrap_or_else(|| "-".into())
                 ),
                 Err(e) => format!("ERR {e}\n"),
             };
@@ -107,7 +112,7 @@ fn handle(mut s: TcpStream) -> Result<(), String> {
 
 /// Claims the usbmux interface and pumps bytes to and from the socket until either side ends.
 fn attach(mut s: TcpStream, serial: &str) -> Result<(), String> {
-    // Retires a previous attach and, with the lock released, waits for it to let go of the interface.
+    // Retires a previous attach and waits, lock released, for it to let go of the interface.
     let cancel = Arc::new(AtomicBool::new(false));
     let previous = active_attach().lock().unwrap().replace(cancel.clone());
     if let Some(old) = previous {
@@ -153,7 +158,9 @@ fn attach(mut s: TcpStream, serial: &str) -> Result<(), String> {
     // socket -> USB, one whole mux packet per bulk write (length in header bytes 4..8).
     let mut buf: Vec<u8> = Vec::new();
     let mut chunk = [0u8; 65536];
-    to_phone.set_read_timeout(Some(Duration::from_millis(500))).ok();
+    to_phone
+        .set_read_timeout(Some(Duration::from_millis(500)))
+        .ok();
     while !cancel.load(Ordering::SeqCst) {
         let n = match to_phone.read(&mut chunk) {
             Ok(0) => break,
@@ -164,7 +171,7 @@ fn attach(mut s: TcpStream, serial: &str) -> Result<(), String> {
                     std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
                 ) =>
             {
-                continue
+                continue;
             }
             Err(_) => break,
         };

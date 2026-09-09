@@ -7,20 +7,22 @@ use std::time::Duration;
 use tokio::sync::Notify;
 
 use iap2_link::LinkConfig;
-use livi_runtime::bringup::{run_accessory, CpConfig};
+use iap2_usbmux::{MuxRegistry, try_find_iphones};
+use iap2_wired::open_carkit;
+use livi_runtime::bringup::{CpConfig, run_accessory};
 use livi_runtime::driver::spawn_link_stream;
 use livi_runtime::ident::Identity;
-use livi_runtime::livi_sock::{pump_artwork, pump_events_for, Broadcaster, SharedTag};
+use livi_runtime::livi_sock::{Broadcaster, SharedTag, pump_artwork, pump_events_for};
 use livi_runtime::mfi_async::SharedCoprocessor;
 use livi_runtime::state::HelperState;
-use iap2_usbmux::{try_find_iphones, MuxRegistry};
-use iap2_wired::open_carkit;
 
 use crate::link::LinkPresence;
 
 /// Tell the app a wired phone is gone.
 fn announce_gone(bcast: &Broadcaster, serial: &str) {
-    bcast.push_json(format!("{{\"type\":\"device-gone\",\"src\":\"carkit\",\"usbUdid\":\"{serial}\"}}"));
+    bcast.push_json(format!(
+        "{{\"type\":\"device-gone\",\"src\":\"carkit\",\"usbUdid\":\"{serial}\"}}"
+    ));
 }
 
 const SCAN_INTERVAL: Duration = Duration::from_secs(2);
@@ -64,7 +66,9 @@ pub async fn watch(
         }
 
         // An unreachable proxy on a present link is a hiccup: nothing is retired on it.
-        let Ok(found) = try_find_iphones() else { continue };
+        let Ok(found) = try_find_iphones() else {
+            continue;
+        };
         let present: Vec<String> = found.into_iter().map(|d| d.serial).collect();
         failed.retain(|serial, _| present.contains(serial));
         for serial in registry.serials() {
@@ -125,7 +129,10 @@ pub async fn watch(
                 match open_carkit(&dev).await {
                     Ok(channel) => match channel.into_stream() {
                         Some(stream) => {
-                            println!("[wired] {}: carkit channel up, starting iAP2", short(&serial));
+                            println!(
+                                "[wired] {}: carkit channel up, starting iAP2",
+                                short(&serial)
+                            );
                             run_wired_session(serial.clone(), stream, ncm, ctx, cancel).await;
                         }
                         None => {
@@ -208,13 +215,20 @@ pub async fn watch_usbmuxd(
             };
             tokio::spawn(async move {
                 // The phone's own USB network interface (enX), resolved from the UDID.
-                let ncm = LocalNcm::Bridged(iap2_wired::mac_network::discover(&device.udid).await.ok());
+                let ncm =
+                    LocalNcm::Bridged(iap2_wired::mac_network::discover(&device.udid).await.ok());
                 match iap2_wired::usbmuxd::open(&device).await {
                     Ok(stream) => {
-                        println!("[wired] {}: usbmuxd carkit up, starting iAP2", short(&device.udid));
+                        println!(
+                            "[wired] {}: usbmuxd carkit up, starting iAP2",
+                            short(&device.udid)
+                        );
                         run_wired_session(device.udid.clone(), stream, ncm, ctx, cancel).await;
                     }
-                    Err(e) => eprintln!("[wired] {}: usbmuxd carkit failed: {e}", short(&device.udid)),
+                    Err(e) => eprintln!(
+                        "[wired] {}: usbmuxd carkit failed: {e}",
+                        short(&device.udid)
+                    ),
                 }
             });
         }
@@ -233,20 +247,39 @@ struct WiredCtx {
 
 /// The transport-agnostic half: from an open iAP2 stream through identification, MFi auth and the
 /// CarPlay session. Both watchers feed it the same way.
-async fn run_wired_session<S>(serial: String, stream: S, ncm: LocalNcm, ctx: WiredCtx, cancel: Arc<Notify>)
-where
+async fn run_wired_session<S>(
+    serial: String,
+    stream: S,
+    ncm: LocalNcm,
+    ctx: WiredCtx,
+    cancel: Arc<Notify>,
+) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
     let cp = match ncm.ifname() {
-        Some(name) => CpConfig { av_iface: Some(name.to_string()), ..ctx.cp },
+        Some(name) => CpConfig {
+            av_iface: Some(name.to_string()),
+            ..ctx.cp
+        },
         None => ctx.cp,
     };
-    let link = LinkConfig { max_outgoing: 4, control_version: 2, zero_ack: true, ..LinkConfig::default() };
+    let link = LinkConfig {
+        max_outgoing: 4,
+        control_version: 2,
+        zero_ack: true,
+        ..LinkConfig::default()
+    };
     let (ch, art_rx) = spawn_link_stream(stream, link, true);
     let (tx, rx) = tokio::sync::mpsc::channel(64);
     let ident: SharedTag = Default::default();
     ctx.state.carkit_started(ident.clone());
-    tokio::spawn(pump_events_for(rx, ctx.bcast.clone(), "wired", Some(serial.clone()), ident.clone()));
+    tokio::spawn(pump_events_for(
+        rx,
+        ctx.bcast.clone(),
+        "wired",
+        Some(serial.clone()),
+        ident.clone(),
+    ));
     tokio::spawn(pump_artwork(art_rx, ctx.bcast, ident.clone()));
     // End on either the phone closing iAP2 or the watcher cancelling on unplug, so the session
     // and its state never outlive the physical connection.

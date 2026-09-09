@@ -6,19 +6,19 @@ use std::os::fd::OwnedFd;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::{Arc, Mutex};
 
-use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
 
 use iap2_link::LinkConfig;
 
-use crate::bringup::{run_accessory, BringupEvent, CpConfig};
+use crate::bringup::{BringupEvent, CpConfig, run_accessory};
 use crate::driver::spawn_link;
 use crate::ident::Identity;
 use crate::state::HelperState;
-use crate::{events, AsyncAuth};
+use crate::{AsyncAuth, events};
 
 pub const SOCK_PATH: &str = "/tmp/cp-bt.sock";
 
@@ -30,7 +30,10 @@ pub struct Broadcaster {
 
 impl Broadcaster {
     pub fn push_json(&self, line: String) {
-        self.subs.lock().unwrap().retain(|tx| tx.send(line.clone()).is_ok());
+        self.subs
+            .lock()
+            .unwrap()
+            .retain(|tx| tx.send(line.clone()).is_ok());
     }
 
     pub fn subscribe(&self) -> mpsc::UnboundedReceiver<String> {
@@ -46,7 +49,12 @@ pub struct LiviSockConfig {
     pub adapter: String,
     pub identity: Identity,
     pub cp: CpConfig,
+    /// Who drops a phone's link where there is no BlueZ to ask.
+    pub disconnect: Option<DropLink>,
 }
+
+/// Drops the link to one phone, named by its address.
+pub type DropLink = Arc<dyn Fn(String) -> Result<(), String> + Send + Sync>;
 
 pub async fn serve<A>(
     cfg: LiviSockConfig,
@@ -131,7 +139,10 @@ where
                 );
                 return Ok(());
             }
-            println!("[cp-sock] tunnel up (cid={cid}, btMac={})", if bt_mac.is_empty() { "unknown" } else { bt_mac });
+            println!(
+                "[cp-sock] tunnel up (cid={cid}, btMac={})",
+                if bt_mac.is_empty() { "unknown" } else { bt_mac }
+            );
             run_tunnel(stream, auth, cfg, bcast, cid.to_string());
             Ok(())
         }
@@ -166,7 +177,17 @@ where
                         Ok(()) => "{\"ok\":true}".to_string(),
                         Err(e) => err_json(&e),
                     },
-                    None => err_json("disconnect unavailable without BlueZ"),
+                    None => match cfg.disconnect.clone() {
+                        Some(drop) => {
+                            let mac = arg.to_string();
+                            match tokio::task::spawn_blocking(move || drop(mac)).await {
+                                Ok(Ok(())) => "{\"ok\":true}".to_string(),
+                                Ok(Err(e)) => err_json(&e),
+                                Err(e) => err_json(&e.to_string()),
+                            }
+                        }
+                        None => err_json("nothing here can drop a bluetooth link"),
+                    },
                 }
             };
             reply(&mut stream, &json).await
@@ -193,7 +214,9 @@ where
 // [["MAC", "uuid" | null], ...]. The array order is the paging order.
 fn parse_reconnect_targets(arg: &str) -> Result<Vec<(String, Option<String>)>, String> {
     let value: serde_json::Value = serde_json::from_str(arg).map_err(|e| e.to_string())?;
-    let list = value.as_array().ok_or("reconnect-targets expects a JSON array")?;
+    let list = value
+        .as_array()
+        .ok_or("reconnect-targets expects a JSON array")?;
     list.iter()
         .map(|pair| {
             let mac = pair
@@ -240,7 +263,12 @@ where
         return;
     };
     let fd: OwnedFd = std_stream.into();
-    let link_cfg = LinkConfig { max_outgoing: 4, control_version: 2, zero_ack: true, ..LinkConfig::default() };
+    let link_cfg = LinkConfig {
+        max_outgoing: 4,
+        control_version: 2,
+        zero_ack: true,
+        ..LinkConfig::default()
+    };
     let (channel, art_rx) = spawn_link(fd, link_cfg, true);
     let (tx, rx) = mpsc::channel(64);
     tokio::spawn(run_accessory(channel, auth, cfg.identity, cfg.cp, tx));
@@ -248,17 +276,30 @@ where
         cid: (!cid.is_empty()).then_some(cid),
         ..Default::default()
     }));
-    tokio::spawn(pump_events_for(rx, bcast.clone(), "tunnel", None, ident.clone()));
+    tokio::spawn(pump_events_for(
+        rx,
+        bcast.clone(),
+        "tunnel",
+        None,
+        ident.clone(),
+    ));
     tokio::spawn(pump_artwork(art_rx, bcast, ident));
 }
 
 /// Forwards completed album artwork to the UI as base64 albumart events.
-pub async fn pump_artwork(mut art_rx: crate::driver::ArtworkRx, bcast: Broadcaster, ident: SharedTag) {
+pub async fn pump_artwork(
+    mut art_rx: crate::driver::ArtworkRx,
+    bcast: Broadcaster,
+    ident: SharedTag,
+) {
     while let Some(data) = art_rx.recv().await {
         if data.is_empty() {
             continue;
         }
-        let json = format!("{{\"type\":\"albumart\",\"dataB64\":\"{}\"}}", STANDARD.encode(&data));
+        let json = format!(
+            "{{\"type\":\"albumart\",\"dataB64\":\"{}\"}}",
+            STANDARD.encode(&data)
+        );
         bcast.push_json(ident.lock().unwrap().apply(json));
     }
 }
@@ -266,7 +307,14 @@ pub async fn pump_artwork(mut art_rx: crate::driver::ArtworkRx, bcast: Broadcast
 pub type SharedTag = Arc<Mutex<events::EventTag>>;
 
 pub async fn pump_events(rx: mpsc::Receiver<BringupEvent>, bcast: Broadcaster, tag: &'static str) {
-    pump_events_for(rx, bcast, tag, None, Arc::new(Mutex::new(events::EventTag::default()))).await
+    pump_events_for(
+        rx,
+        bcast,
+        tag,
+        None,
+        Arc::new(Mutex::new(events::EventTag::default())),
+    )
+    .await
 }
 
 /// Forwards bring-up telemetry to the UI: decodes incoming CSM into JSON and broadcasts it.
@@ -282,11 +330,10 @@ pub async fn pump_events_for(
     while let Some(event) = rx.recv().await {
         match event {
             BringupEvent::Incoming { frame, .. } => {
-                if !time_synced
-                    && let Some(secs) = events::device_time(&frame) {
-                        time_synced = true;
-                        crate::clock::step_to(secs);
-                    }
+                if !time_synced && let Some(secs) = events::device_time(&frame) {
+                    time_synced = true;
+                    crate::clock::step_to(secs);
+                }
                 let tagged = {
                     let mut t = ident.lock().unwrap();
                     t.learn(&frame);
@@ -311,14 +358,20 @@ pub async fn pump_events_for(
     }
 }
 
-async fn device_disconnect(
-    bus: &zbus::Connection,
-    adapter: &str,
-    mac: &str,
-) -> Result<(), String> {
-    let path = format!("/org/bluez/{}/dev_{}", adapter, mac.replace(':', "_").to_uppercase());
-    bus.call_method(Some("org.bluez"), path.as_str(), Some("org.bluez.Device1"), "Disconnect", &())
-        .await
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+async fn device_disconnect(bus: &zbus::Connection, adapter: &str, mac: &str) -> Result<(), String> {
+    let path = format!(
+        "/org/bluez/{}/dev_{}",
+        adapter,
+        mac.replace(':', "_").to_uppercase()
+    );
+    bus.call_method(
+        Some("org.bluez"),
+        path.as_str(),
+        Some("org.bluez.Device1"),
+        "Disconnect",
+        &(),
+    )
+    .await
+    .map(|_| ())
+    .map_err(|e| e.to_string())
 }

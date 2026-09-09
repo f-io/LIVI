@@ -78,7 +78,7 @@ vi.mock('@main/services/projection/driver/helper/helperSudoers', () => ({
   checkAndInstallHelperSudoers: vi.fn(() => Promise.resolve())
 }))
 vi.mock('@main/services/link/dongleAp', () => ({
-  DONGLE_AP: 'livi-link',
+  DONGLE_LINK: 'livi-link',
   reconcileDongleAp: vi.fn(() => Promise.resolve())
 }))
 vi.mock('@main/services/projection/driver/helper/wifiApUnit', () => ({

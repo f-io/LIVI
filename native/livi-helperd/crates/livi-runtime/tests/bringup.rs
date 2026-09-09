@@ -61,6 +61,7 @@ fn identity() -> Identity {
 
 fn cp_config() -> CpConfig {
     CpConfig {
+        ap_mac: None,
         wifi_iface: "nonexistent0".into(),
         ssid: "LIVI".into(),
         passphrase: "12345678".into(),

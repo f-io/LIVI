@@ -1,5 +1,6 @@
 import { stopSystemVolumeMonitor } from '@main/services/audio/SystemVolume'
 import { stopPhoneSuppression } from '@main/services/gvfsPhoneGuard'
+import { releaseDongle } from '@main/services/link/dongleAp'
 import { runPendingPowerAction } from '@main/services/power/hostPower'
 import { releaseWifiApForQuit } from '@main/services/projection/driver/helper/wifiApUnit'
 import { runtimeStateProps, ServicesProps } from '@main/types'
@@ -120,6 +121,10 @@ export function setupLifecycle(runtimeState: runtimeStateProps, services: Servic
 
       await measureStep('wifiAp.release()', async () => {
         await withTimeout('wifiAp.release()', releaseWifiApForQuit(runtimeState.config), 2000)
+      })
+
+      await measureStep('dongle.release()', async () => {
+        await withTimeout('dongle.release()', releaseDongle(), 2000)
       })
     } catch (err) {
       console.warn('[MAIN] Error while quitting:', err)

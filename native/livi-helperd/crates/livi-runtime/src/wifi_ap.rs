@@ -10,6 +10,8 @@ pub const DNSMASQ_CONF: &str = "/tmp/livi-dnsmasq.conf";
 const DNSMASQ_LEASES: &str = "/tmp/livi-dnsmasq.leases";
 const HOSTAPD_LOG: &str = "/tmp/livi-hostapd.log";
 const NM_UNMANAGED_CONF: &str = "/etc/NetworkManager/conf.d/99-livi-ap-unmanaged.conf";
+const NM_WAIT: Duration = Duration::from_secs(15);
+const NM_POLL: Duration = Duration::from_millis(250);
 
 #[derive(Clone)]
 pub struct ApConfig {
@@ -123,17 +125,32 @@ fn persist_nm_profiles() {
     }
 }
 
-/// Keep NM off the AP interface, permanently and for this boot.
-fn release_iface_from_nm(iface: &str) {
+fn nm_installed() -> bool {
+    ["/usr/bin/nmcli", "/bin/nmcli", "/usr/local/bin/nmcli"]
+        .iter()
+        .any(|p| std::path::Path::new(p).exists())
+}
+
+fn nm_running() -> bool {
+    cmd_stdout("systemctl", &["is-active", "NetworkManager"]).trim() == "active"
+}
+
+/// The config file NetworkManager reads at start, then the calls for one already running.
+pub fn release_iface_from_nm(iface: &str) {
     let content = format!("[keyfile]\nunmanaged-devices=interface-name:{iface}\n");
-    let existing = std::fs::read_to_string(NM_UNMANAGED_CONF).unwrap_or_default();
-    if existing != content {
+    if std::fs::read_to_string(NM_UNMANAGED_CONF).unwrap_or_default() != content {
         let _ = std::fs::create_dir_all("/etc/NetworkManager/conf.d");
         let _ = std::fs::write(NM_UNMANAGED_CONF, content);
-        run_cmd("nmcli", &["general", "reload"]);
     }
-    run_cmd("nmcli", &["device", "set", iface, "managed", "no"]);
-    run_cmd("nmcli", &["device", "disconnect", iface]);
+    if nm_installed() {
+        let deadline = Instant::now() + NM_WAIT;
+        while !nm_running() && Instant::now() < deadline {
+            std::thread::sleep(NM_POLL);
+        }
+        run_cmd("nmcli", &["general", "reload"]);
+        run_cmd("nmcli", &["device", "set", iface, "managed", "no"]);
+        run_cmd("nmcli", &["device", "disconnect", iface]);
+    }
     run_cmd("systemctl", &["stop", &format!("wpa_supplicant@{iface}")]);
     run_cmd("rfkill", &["unblock", "wifi"]);
 }
@@ -219,7 +236,7 @@ fn dhcp_listening() -> bool {
 fn wait_ready(iface: &str, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        if hostapd_state(iface) == "ENABLED" && dhcp_listening() {
+        if hostapd_state(iface) == "ENABLED" && dhcp_listening() && has_link_local(iface) {
             return true;
         }
         std::thread::sleep(Duration::from_millis(200));
@@ -296,10 +313,17 @@ pub fn run(cfg: ApConfig) -> ! {
                 eprintln!("[wifi-ap] dnsmasq exited ({st}), restarting");
                 break;
             }
+            if !has_link_local(&cfg.iface) {
+                eprintln!("[wifi-ap] {} lost its addresses, setting them again", cfg.iface);
+                release_iface_from_nm(&cfg.iface);
+                setup_interface(&cfg);
+            }
             std::thread::sleep(Duration::from_secs(2));
         }
         let _ = hostapd.kill();
+        let _ = hostapd.wait();
         let _ = dnsmasq.kill();
+        let _ = dnsmasq.wait();
         std::thread::sleep(Duration::from_secs(2));
     }
 }

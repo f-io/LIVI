@@ -1,5 +1,9 @@
 // CarlinKit dongle on USB.
 
+pub mod ap;
+#[cfg(target_os = "linux")]
+pub mod bt;
+pub mod iap;
 pub mod link;
 pub mod upload;
 pub mod wire;

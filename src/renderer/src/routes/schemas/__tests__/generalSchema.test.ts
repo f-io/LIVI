@@ -22,7 +22,7 @@ describe('generalSchema', () => {
       })
     )
 
-    expect(connections.children).toHaveLength(6)
+    expect(connections.children).toHaveLength(7)
 
     expect(connections.children[0]).toEqual(
       expect.objectContaining({
@@ -38,17 +38,23 @@ describe('generalSchema', () => {
     )
     expect(connections.children[3]).toEqual(
       expect.objectContaining({
-        type: 'checkbox',
-        path: 'wirelessAaEnabled'
+        type: 'select',
+        path: 'btAdapter'
       })
     )
     expect(connections.children[4]).toEqual(
       expect.objectContaining({
         type: 'checkbox',
-        path: 'wirelessCpEnabled'
+        path: 'wirelessAaEnabled'
       })
     )
     expect(connections.children[5]).toEqual(
+      expect.objectContaining({
+        type: 'checkbox',
+        path: 'wirelessCpEnabled'
+      })
+    )
+    expect(connections.children[6]).toEqual(
       expect.objectContaining({
         type: 'checkbox',
         path: 'autoConn'

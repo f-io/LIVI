@@ -1,8 +1,7 @@
-//! What the radio may transmit on, asked over nl80211 the way `iw list` does. The dongle ships no
-//! wireless tools at all, so the stack brings its own. The kernel carries its own regulatory
-//! database, so the answer already reflects the country hostapd asked for.
+//! What the radio may transmit on, asked over nl80211 the way `iw list` does. The answer already
+//! reflects the country hostapd asked for.
 
-/// Nothing to ask on a host without nl80211, but the service that offers the list builds anyway.
+/// The stub for a host without nl80211.
 #[cfg(not(target_os = "linux"))]
 pub fn listing() -> Result<String, String> {
     Err("the channel list needs linux".into())
@@ -30,7 +29,7 @@ const ATTR_SPLIT_WIPHY_DUMP: u16 = 174;
 const BAND_ATTR_FREQS: u16 = 1;
 const FREQ_ATTR_FREQ: u16 = 1;
 const FREQ_ATTR_DISABLED: u16 = 2;
-// Called PASSIVE_SCAN on this kernel and NO_IR since 3.15. Either way the radio must stay quiet.
+// Called PASSIVE_SCAN on this kernel, NO_IR since 3.15.
 const FREQ_ATTR_NO_IR: u16 = 3;
 const FREQ_ATTR_RADAR: u16 = 5;
 
@@ -58,7 +57,7 @@ pub fn run() -> ExitCode {
 }
 
 /// The regulatory country and every channel the radio knows, one per line, with the flags the
-/// kernel put on it. Which of them are usable for an access point is the host's call.
+/// kernel put on it.
 #[cfg(target_os = "linux")]
 pub fn listing() -> Result<String, String> {
     let fd = open()?;
@@ -80,10 +79,18 @@ pub fn listing() -> Result<String, String> {
 
 #[cfg(target_os = "linux")]
 fn open() -> Result<OwnedFd, String> {
-    let raw =
-        unsafe { libc::socket(libc::AF_NETLINK, libc::SOCK_RAW | libc::SOCK_CLOEXEC, NETLINK_GENERIC) };
+    let raw = unsafe {
+        libc::socket(
+            libc::AF_NETLINK,
+            libc::SOCK_RAW | libc::SOCK_CLOEXEC,
+            NETLINK_GENERIC,
+        )
+    };
     if raw < 0 {
-        return Err(format!("netlink socket: {}", std::io::Error::last_os_error()));
+        return Err(format!(
+            "netlink socket: {}",
+            std::io::Error::last_os_error()
+        ));
     }
     let fd = unsafe { OwnedFd::from_raw_fd(raw) };
     let mut local: libc::sockaddr_nl = unsafe { std::mem::zeroed() };
@@ -98,8 +105,11 @@ fn open() -> Result<OwnedFd, String> {
     if bound < 0 {
         return Err(format!("netlink bind: {}", std::io::Error::last_os_error()));
     }
-    // A kernel that stays silent must not hang the caller.
-    let timeout = libc::timeval { tv_sec: 3, tv_usec: 0 };
+    // Receive timeout.
+    let timeout = libc::timeval {
+        tv_sec: 3,
+        tv_usec: 0,
+    };
     unsafe {
         libc::setsockopt(
             fd.as_raw_fd(),
@@ -147,8 +157,7 @@ struct Radio {
     channels: Vec<(u32, String)>,
 }
 
-/// Every radio the kernel knows, never merged, because their lists differ. The dump asks to be
-/// split: unsplit it must fit a radio into one message and silently stops when it does not.
+/// Every radio the kernel knows, kept apart. The dump is asked for split.
 #[cfg(target_os = "linux")]
 fn radios(fd: &OwnedFd, family: u16) -> Result<Vec<Radio>, String> {
     let split = attr(ATTR_SPLIT_WIPHY_DUMP, &[]);
@@ -180,7 +189,11 @@ fn radios(fd: &OwnedFd, family: u16) -> Result<Vec<Radio>, String> {
         let at = match radios.iter().position(|r| r.id == id) {
             Some(at) => at,
             None => {
-                radios.push(Radio { id, name: String::new(), channels: Vec::new() });
+                radios.push(Radio {
+                    id,
+                    name: String::new(),
+                    channels: Vec::new(),
+                });
                 radios.len() - 1
             }
         };
@@ -269,7 +282,12 @@ const fn align(n: usize) -> usize {
 #[cfg(target_os = "linux")]
 fn call(fd: &OwnedFd, request: &[u8]) -> Result<Vec<Vec<u8>>, String> {
     let sent = unsafe {
-        libc::send(fd.as_raw_fd(), request.as_ptr() as *const libc::c_void, request.len(), 0)
+        libc::send(
+            fd.as_raw_fd(),
+            request.as_ptr() as *const libc::c_void,
+            request.len(),
+            0,
+        )
     };
     if sent < 0 {
         return Err(format!("netlink send: {}", std::io::Error::last_os_error()));
@@ -279,7 +297,12 @@ fn call(fd: &OwnedFd, request: &[u8]) -> Result<Vec<Vec<u8>>, String> {
     let mut buf = vec![0u8; 64 << 10];
     loop {
         let got = unsafe {
-            libc::recv(fd.as_raw_fd(), buf.as_mut_ptr() as *mut libc::c_void, buf.len(), 0)
+            libc::recv(
+                fd.as_raw_fd(),
+                buf.as_mut_ptr() as *mut libc::c_void,
+                buf.len(),
+                0,
+            )
         };
         if got <= 0 {
             return Err(format!("netlink recv: {}", std::io::Error::last_os_error()));
@@ -349,7 +372,9 @@ mod tests {
     fn attributes_are_walked_with_their_padding() {
         let mut list = attr(1, &[0xaa]);
         list.extend(attr(2, &[1, 2, 3, 4]));
-        let seen: Vec<_> = Attrs(&list[..]).map(|(kind, value)| (kind, value.to_vec())).collect();
+        let seen: Vec<_> = Attrs(&list[..])
+            .map(|(kind, value)| (kind, value.to_vec()))
+            .collect();
         assert_eq!(seen, vec![(1, vec![0xaa]), (2, vec![1, 2, 3, 4])]);
     }
 
@@ -383,8 +408,16 @@ mod tests {
 
     #[test]
     fn a_request_carries_its_length_and_command() {
-        let m = message(0x10, CTRL_CMD_GETFAMILY, NLM_F_ACK, &attr(CTRL_ATTR_FAMILY_NAME, b"nl80211\0"));
-        assert_eq!(u32::from_ne_bytes([m[0], m[1], m[2], m[3]]) as usize, m.len());
+        let m = message(
+            0x10,
+            CTRL_CMD_GETFAMILY,
+            NLM_F_ACK,
+            &attr(CTRL_ATTR_FAMILY_NAME, b"nl80211\0"),
+        );
+        assert_eq!(
+            u32::from_ne_bytes([m[0], m[1], m[2], m[3]]) as usize,
+            m.len()
+        );
         assert_eq!(u16::from_ne_bytes([m[4], m[5]]), 0x10);
         assert_eq!(u16::from_ne_bytes([m[6], m[7]]), NLM_F_ACK | NLM_F_REQUEST);
         assert_eq!(m[16], CTRL_CMD_GETFAMILY);

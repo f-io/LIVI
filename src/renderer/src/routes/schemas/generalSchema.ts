@@ -45,7 +45,7 @@ async function loadWifiInterfaces(): Promise<SelectOption[]> {
 async function loadBtAdapters(): Promise<SelectOption[]> {
   const list = await window.app?.listBtAdapters?.()
   if (!Array.isArray(list)) return []
-  return list.map((i) => ({ value: i, label: i }))
+  return list.map((i) => ({ value: i, label: i === 'livi-link' ? 'LIVI Link' : i }))
 }
 
 export const generalSchema: SettingsNode<Config> = {
@@ -193,27 +193,11 @@ export const generalSchema: SettingsNode<Config> = {
               icon: 'wifiInterface',
               path: 'wifiInterface',
               displayValue: true,
-              disabled: window.app?.platform !== 'linux',
               options: [],
               loadOptions: loadWifiInterfaces,
               page: {
                 title: 'Wi-Fi Interface',
                 labelTitle: 'settings.wifiInterface'
-              }
-            },
-            {
-              type: 'select',
-              label: 'Bluetooth Interface',
-              labelKey: 'settings.btAdapter',
-              icon: 'btInterface',
-              path: 'btAdapter',
-              displayValue: true,
-              disabled: window.app?.platform !== 'linux',
-              options: [],
-              loadOptions: loadBtAdapters,
-              page: {
-                title: 'Bluetooth Interface',
-                labelTitle: 'settings.btAdapter'
               }
             },
             {
@@ -225,6 +209,20 @@ export const generalSchema: SettingsNode<Config> = {
               disabled: window.app?.platform !== 'linux'
             }
           ]
+        },
+        {
+          type: 'select',
+          label: 'Bluetooth Interface',
+          labelKey: 'settings.btAdapter',
+          icon: 'btInterface',
+          path: 'btAdapter',
+          displayValue: true,
+          options: [],
+          loadOptions: loadBtAdapters,
+          page: {
+            title: 'Bluetooth Interface',
+            labelTitle: 'settings.btAdapter'
+          }
         },
         {
           type: 'checkbox',
@@ -239,8 +237,7 @@ export const generalSchema: SettingsNode<Config> = {
           label: 'Wireless CarPlay',
           labelKey: 'settings.wirelessCpEnabled',
           icon: 'wirelessCp',
-          path: 'wirelessCpEnabled',
-          disabled: window.app?.platform !== 'linux'
+          path: 'wirelessCpEnabled'
         },
         {
           type: 'checkbox',

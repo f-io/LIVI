@@ -6,6 +6,8 @@
 #   seedrng        feeds the kernel entropy pool (3.14 has no getrandom; TLS blocks without it)
 #   mfid           MFi coprocessor on i2c-1, served over TCP :5000
 #   wifid          the access point, configured by the host over TCP :5001
+#   btd            the Bluetooth controller, handed to the host over TCP :5002
+#   iapd           the Bluetooth accessory itself: pairs, serves iAP over TCP :5004
 #   livi-usbproxy  the iPhone's USB side (enumerate, config, bulk pipes) on TCP :5003
 #   l2fwd          L2 bridge iPhone-NCM (usbN) <-> ncm0 (host); started by l2fwd-watch.sh
 #   mdnsd          answers livi-link.local on ncm0 (host) and wlan0 (AP), each with its own address
@@ -33,7 +35,7 @@ if [ ! -x "$RUN/livi-link" ]; then
     log "missing $SRC/livi-link.gz"
   fi
 fi
-for b in seedrng mfid wifid livi-usbproxy l2fwd mdnsd; do
+for b in seedrng mfid wifid btd iapd livi-usbproxy l2fwd mdnsd; do
   [ -L "$RUN/$b" ] || ln -sf livi-link "$RUN/$b"
 done
 
@@ -62,6 +64,8 @@ start(){ name=$1; shift; reap "$1"
 start '[s]eedrng' "$RUN/seedrng"
 start '[m]fid' "$RUN/mfid" /dev/i2c-1
 start '[w]ifid' "$RUN/wifid"
+start '[b]td' "$RUN/btd"
+start '[i]apd' "$RUN/iapd"
 start '[m]dnsd' "$RUN/mdnsd" livi-link ncm0 wlan0
 
 # Web UI: boa serves /tmp/boa (a copy of /etc/boa, as the vendor start did) on 0.0.0.0:80.

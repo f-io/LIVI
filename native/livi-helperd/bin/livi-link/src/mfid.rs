@@ -65,9 +65,8 @@ pub fn serve<S: Read + Write>(io: &mut S, chip: &mut dyn AuthCoprocessor) {
     }
 }
 
-/// Register 0x02 reads back as rubbish on the 2.0B chip once it has signed something, and the
-/// generation picks the digest (2 = SHA-1, 3 = SHA-256), so a wrong answer costs the session.
-/// The certificate length is reliable, because reading the certificate is what works.
+/// Register 0x02 reads back as rubbish on the 2.0B chip once it has signed something. The
+/// certificate length says which generation it is (2 = SHA-1, 3 = SHA-256).
 fn protocol_major(chip: &mut dyn AuthCoprocessor) -> Option<u8> {
     match chip.protocol_major() {
         Ok(major @ (2 | 3)) => Some(major),
@@ -94,7 +93,7 @@ pub fn run(args: &[String]) -> std::process::ExitCode {
     use iap2_mfi::I2cCoprocessor;
     use std::net::TcpListener;
 
-    // The bus, as `/dev/i2c-<n>` or a bare number; the chip is externally powered, no GPIO.
+    // The bus, as `/dev/i2c-<n>` or a bare number. The chip is externally powered, no GPIO.
     let bus = args
         .first()
         .map(|a| a.trim_start_matches("/dev/i2c-"))
@@ -108,7 +107,9 @@ pub fn run(args: &[String]) -> std::process::ExitCode {
         }
     };
     let address = chip.address();
-    let major = protocol_major(&mut chip).map(|m| m.to_string()).unwrap_or_else(|| "unknown".into());
+    let major = protocol_major(&mut chip)
+        .map(|m| m.to_string())
+        .unwrap_or_else(|| "unknown".into());
     println!("[mfid] MFi @0x{address:02X} on i2c-{bus}, protocol major {major}");
 
     let listener = match TcpListener::bind(("0.0.0.0", PORT)) {
@@ -119,7 +120,7 @@ pub fn run(args: &[String]) -> std::process::ExitCode {
         }
     };
     println!("[mfid] listening on :{PORT}");
-    // One client at a time: there is one chip, and a signature is not interruptible.
+    // One client at a time.
     for stream in listener.incoming().flatten() {
         let mut stream = stream;
         serve(&mut stream, &mut chip);
@@ -140,7 +141,11 @@ mod tests {
 
     impl FakeChip {
         fn new(major: Result<u8, MfiError>, cert_len: usize) -> Self {
-            Self { major, cert: vec![0xAB; cert_len], signed: Vec::new() }
+            Self {
+                major,
+                cert: vec![0xAB; cert_len],
+                signed: Vec::new(),
+            }
         }
     }
 
@@ -168,7 +173,10 @@ mod tests {
 
     impl Wire {
         fn new(input: Vec<u8>) -> Self {
-            Self { input: std::io::Cursor::new(input), output: Vec::new() }
+            Self {
+                input: std::io::Cursor::new(input),
+                output: Vec::new(),
+            }
         }
     }
 
@@ -223,9 +231,11 @@ mod tests {
     #[test]
     fn falls_back_to_the_cert_length_when_the_register_misreads() {
         // 0xCD is what the 2.0B returns after it has signed something.
-        for (register, cert_len, expected) in
-            [(Ok(0xCD), 945, 2), (Ok(0xCD), 608, 3), (Err(MfiError::Io("x".into())), 945, 2)]
-        {
+        for (register, cert_len, expected) in [
+            (Ok(0xCD), 945, 2),
+            (Ok(0xCD), 608, 3),
+            (Err(MfiError::Io("x".into())), 945, 2),
+        ] {
             let mut chip = FakeChip::new(register, cert_len);
             let mut wire = Wire::new(vec![OP_PROTOCOL_MAJOR]);
             serve(&mut wire, &mut chip);

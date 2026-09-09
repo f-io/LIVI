@@ -3,8 +3,8 @@ use std::error::Error;
 use std::os::fd::OwnedFd;
 
 use tokio::sync::mpsc;
-use zbus::zvariant::{ObjectPath, OwnedValue, Value};
 use zbus::Connection;
+use zbus::zvariant::{ObjectPath, OwnedValue, Value};
 
 pub const AA_UUID: &str = "4de17a00-52cb-11e6-bdf4-0800200c9a66";
 pub const AA_CHANNEL: u16 = 8;
@@ -26,6 +26,9 @@ pub const IAP_SERVER_UUID: &str = "00000000-deca-fade-deca-deafdecacaff";
 pub const IAP_CLIENT_UUID: &str = "00000000-deca-fade-deca-deafdecacafe";
 pub const CARPLAY_SERVICE_UUID: &str = "ec884348-cd41-40a2-9727-575d50bf1fd3";
 pub const IAP_CHANNEL: u16 = 3;
+
+const ADAPTER_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
+const ADAPTER_POLL: std::time::Duration = std::time::Duration::from_millis(200);
 
 const IAP_SERVER_PATH: &str = "/livi/cp/iap_server";
 const IAP_CLIENT_PATH: &str = "/livi/cp/iap_client";
@@ -143,9 +146,15 @@ pub async fn start(
     let conn = Connection::system().await?;
     let (tx, rx) = mpsc::unbounded_channel();
 
-    conn.object_server().at(IAP_SERVER_PATH, Profile { tx: tx.clone() }).await?;
-    conn.object_server().at(IAP_CLIENT_PATH, Profile { tx: tx.clone() }).await?;
-    conn.object_server().at(CARPLAY_PATH, Profile { tx }).await?;
+    conn.object_server()
+        .at(IAP_SERVER_PATH, Profile { tx: tx.clone() })
+        .await?;
+    conn.object_server()
+        .at(IAP_CLIENT_PATH, Profile { tx: tx.clone() })
+        .await?;
+    conn.object_server()
+        .at(CARPLAY_PATH, Profile { tx })
+        .await?;
     conn.object_server().at(AGENT_PATH, Agent).await?;
 
     let mut iap_opts: HashMap<&str, Value> = HashMap::new();
@@ -191,35 +200,92 @@ pub async fn start(
     .await?;
 
     let adapter_path = format!("/org/bluez/{adapter}");
+    wait_for_adapter(&conn, &adapter_path).await?;
     set_prop(&conn, &adapter_path, "Alias", Value::from(alias)).await?;
-    set_prop(&conn, &adapter_path, "DiscoverableTimeout", Value::from(0u32)).await?;
+    set_prop(
+        &conn,
+        &adapter_path,
+        "DiscoverableTimeout",
+        Value::from(0u32),
+    )
+    .await?;
     set_prop(&conn, &adapter_path, "Powered", Value::from(true)).await?;
-    set_prop(&conn, &adapter_path, "Discoverable", Value::from(discoverable)).await?;
+    set_prop(
+        &conn,
+        &adapter_path,
+        "Discoverable",
+        Value::from(discoverable),
+    )
+    .await?;
     set_prop(&conn, &adapter_path, "Pairable", Value::from(discoverable)).await?;
 
     Ok((conn, rx))
 }
 
+/// BlueZ publishes an adapter a moment after the kernel registers it, and a tunnelled controller
+/// takes longer than a local one, so give it that moment before setting anything on it.
+async fn wait_for_adapter(conn: &Connection, path: &str) -> Result<(), Box<dyn Error>> {
+    let deadline = std::time::Instant::now() + ADAPTER_WAIT;
+    loop {
+        let asked = conn
+            .call_method(
+                Some("org.bluez"),
+                path,
+                Some("org.freedesktop.DBus.Properties"),
+                "Get",
+                &("org.bluez.Adapter1", "Address"),
+            )
+            .await;
+        match asked {
+            Ok(_) => return Ok(()),
+            Err(e) if std::time::Instant::now() >= deadline => {
+                return Err(format!("BlueZ never published {path}: {e}").into());
+            }
+            Err(_) => tokio::time::sleep(ADAPTER_POLL).await,
+        }
+    }
+}
+
+/// BlueZ answers Busy while it is still settling an adapter it has only just published, so the
+/// same set is offered again until it takes.
 async fn set_prop(
     conn: &Connection,
     path: &str,
     name: &str,
     value: Value<'_>,
 ) -> Result<(), Box<dyn Error>> {
-    conn.call_method(
-        Some("org.bluez"),
-        path,
-        Some("org.freedesktop.DBus.Properties"),
-        "Set",
-        &("org.bluez.Adapter1", name, value),
-    )
-    .await?;
-    Ok(())
+    let deadline = std::time::Instant::now() + ADAPTER_WAIT;
+    loop {
+        let asked = conn
+            .call_method(
+                Some("org.bluez"),
+                path,
+                Some("org.freedesktop.DBus.Properties"),
+                "Set",
+                &("org.bluez.Adapter1", name, &value),
+            )
+            .await;
+        match asked {
+            Ok(_) => return Ok(()),
+            Err(e) if busy(&e) && std::time::Instant::now() < deadline => {
+                println!("[bt] {path} is still busy, offering {name} again");
+                tokio::time::sleep(ADAPTER_POLL).await;
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+}
+
+/// Whether BlueZ turned the call down because it is in the middle of something else.
+fn busy(e: &zbus::Error) -> bool {
+    matches!(e, zbus::Error::MethodError(name, _, _) if name.as_str() == "org.bluez.Error.Busy")
 }
 
 /// Publishes the Android Auto wireless profile so a phone can open the RFCOMM channel that
 /// carries the Wi-Fi bootstrap.
-pub async fn start_aa(conn: &Connection) -> Result<mpsc::UnboundedReceiver<IncomingConn>, Box<dyn Error>> {
+pub async fn start_aa(
+    conn: &Connection,
+) -> Result<mpsc::UnboundedReceiver<IncomingConn>, Box<dyn Error>> {
     let (tx, rx) = mpsc::unbounded_channel();
     conn.object_server().at(AA_PATH, Profile { tx }).await?;
 
@@ -264,7 +330,9 @@ impl HfpProfile {
 /// The audio daemon usually holds HFP HF (incl. SCO); ours registers only as fallback,
 /// and calls go through the daemon's — a second SLC just makes the phone drop one.
 pub async fn start_hfp(conn: &Connection, hfp: crate::hfp::Hfp) -> Result<(), Box<dyn Error>> {
-    conn.object_server().at(HFP_PATH, HfpProfile { hfp: hfp.clone() }).await?;
+    conn.object_server()
+        .at(HFP_PATH, HfpProfile { hfp: hfp.clone() })
+        .await?;
     let mut opts: HashMap<&str, Value> = HashMap::new();
     opts.insert("Name", Value::from("HFP Hands-Free"));
     opts.insert("Role", Value::from("client"));
@@ -307,8 +375,14 @@ impl BleAd {
 }
 
 /// BLE advertisement with the AA UUID, so phones find the head unit without a BR/EDR scan.
-pub async fn start_ble_ad(conn: &Connection, adapter: &str, name: &str) -> Result<(), Box<dyn Error>> {
-    conn.object_server().at(BLE_AD_PATH, BleAd { name: name.into() }).await?;
+pub async fn start_ble_ad(
+    conn: &Connection,
+    adapter: &str,
+    name: &str,
+) -> Result<(), Box<dyn Error>> {
+    conn.object_server()
+        .at(BLE_AD_PATH, BleAd { name: name.into() })
+        .await?;
     let path = format!("/org/bluez/{adapter}");
     let opts: HashMap<&str, Value> = HashMap::new();
     conn.call_method(
@@ -384,15 +458,25 @@ impl MediaPlayerHandle {
             *s = status.to_string();
         }
         println!("[aa] avrcp playback status -> {status}");
-        if let Ok(iface) = self.conn.object_server().interface::<_, MprisPlayer>(PLAYER_PATH).await {
-            let _ = iface.get().await.playback_status_changed(iface.signal_context()).await;
+        if let Ok(iface) = self
+            .conn
+            .object_server()
+            .interface::<_, MprisPlayer>(PLAYER_PATH)
+            .await
+        {
+            let _ = iface
+                .get()
+                .await
+                .playback_status_changed(iface.signal_context())
+                .await;
         }
     }
 }
 
 impl MprisPlayer {
     fn emit(&self, command: &str) {
-        self.events.push_json(format!("{{\"event\":\"input\",\"command\":\"{command}\"}}"));
+        self.events
+            .push_json(format!("{{\"event\":\"input\",\"command\":\"{command}\"}}"));
     }
 }
 
@@ -505,7 +589,15 @@ pub async fn start_media_player(
 ) -> Result<MediaPlayerHandle, Box<dyn Error>> {
     let status = std::sync::Arc::new(std::sync::Mutex::new("Playing".to_string()));
     conn.object_server().at(PLAYER_PATH, MprisRoot).await?;
-    conn.object_server().at(PLAYER_PATH, MprisPlayer { events, status: status.clone() }).await?;
+    conn.object_server()
+        .at(
+            PLAYER_PATH,
+            MprisPlayer {
+                events,
+                status: status.clone(),
+            },
+        )
+        .await?;
 
     let mut props: HashMap<&str, Value> = HashMap::new();
     props.insert("PlaybackStatus", Value::from("Playing"));
@@ -533,7 +625,10 @@ pub async fn start_media_player(
     )
     .await?;
     println!("[aa] media player registered at {PLAYER_PATH}");
-    Ok(MediaPlayerHandle { conn: conn.clone(), status })
+    Ok(MediaPlayerHandle {
+        conn: conn.clone(),
+        status,
+    })
 }
 
 /// Stops advertising, so phones no longer try to reach a head unit that is gone.

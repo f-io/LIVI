@@ -47,19 +47,27 @@ fn decoder_chain(codec: Codec) -> Option<&'static str> {
     }
 }
 
-/// The sink and its buffering. `sync=false` everywhere, since the pacing
-/// happens upstream in the jitter buffer and clocksync.
-fn sink_chain(cfg: &Config) -> String {
-    let mut sink = if cfg!(target_os = "macos") {
-        String::from("osxaudiosink")
-    } else if cfg.realtime {
-        String::from("pulsesink sync=false")
+/// The only thing about audio output that differs between the systems: which sink carries it,
+/// and what that sink calls a device.
+const fn audio_sink() -> (&'static str, &'static str) {
+    if cfg!(target_os = "macos") {
+        ("osxaudiosink", "unique-id")
     } else {
-        String::from("pulsesink sync=false buffer-time=300000 latency-time=30000")
+        ("pulsesink", "device")
+    }
+}
+
+/// The sink and its buffering. `sync=false` everywhere, since the pacing happens upstream in the
+/// jitter buffer and clocksync, and a sink that paces again only fights them.
+fn sink_chain(cfg: &Config) -> String {
+    let (element, device_property) = audio_sink();
+    let mut sink = if cfg.realtime {
+        format!("{element} sync=false")
+    } else {
+        format!("{element} sync=false buffer-time=300000 latency-time=30000")
     };
     if let Some(device) = &cfg.device {
-        let prop = if cfg!(target_os = "macos") { "unique-id" } else { "device" };
-        sink.push_str(&format!(" {prop}={device}"));
+        sink.push_str(&format!(" {device_property}={device}"));
     }
     sink
 }
@@ -314,9 +322,22 @@ mod tests {
                 "audioresample",
                 "audio/x-raw,format=S16LE,rate=48000,channels=2",
                 "queue",
-                if cfg!(target_os = "macos") { "osxaudiosink" } else { "pulsesink" },
+                audio_sink().0,
             ]
         );
+    }
+
+    #[test]
+    fn the_sink_is_fed_the_same_way_on_both_systems() {
+        // Only the element differs; the buffered stream gets its reserve and nothing below
+        // clocksync paces a second time.
+        let buffered = sink_chain(&cfg(Codec::AacLc, false));
+        assert!(buffered.contains("sync=false"), "{buffered}");
+        assert!(buffered.contains("buffer-time=300000"), "{buffered}");
+        assert!(buffered.contains("latency-time=30000"), "{buffered}");
+        let realtime = sink_chain(&cfg(Codec::Opus, true));
+        assert!(realtime.contains("sync=false"), "{realtime}");
+        assert!(!realtime.contains("buffer-time"), "{realtime}");
     }
 
     #[test]

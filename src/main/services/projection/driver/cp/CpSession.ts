@@ -11,6 +11,7 @@
 
 import { EventEmitter } from 'node:events'
 import type * as net from 'node:net'
+import { DONGLE_LINK, dongleApMac, setDongleCalling } from '@main/services/link/dongleAp'
 import { panelPhysicalMm } from '@main/services/video/GstVideo'
 import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
 import type { Config } from '@shared/types'
@@ -212,6 +213,7 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
     if (this._downEmitted) return
     this._downEmitted = true
     this._connected = false
+    void setDongleCalling(true)
     this.emit('disconnected')
   }
 
@@ -273,6 +275,8 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
     stack.on('main-screen-ready', () => {
       if (!this._connected) {
         this._connected = true
+        // The phone is here, over Wi-Fi. Its Bluetooth being gone does not mean it left.
+        void setDongleCalling(false)
         this.emit('connected')
       }
     })
@@ -552,6 +556,11 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
   }
 
   private _buildStackConfig(cfg: Config): CpStackConfig {
+    const apBssid = (c: Config): string | null =>
+      c.wifiInterface === DONGLE_LINK
+        ? dongleApMac()
+        : (detectWifiBssid(c.wifiInterface || undefined) ?? null)
+
     const mainW = toEven(cfg.projectionWidth || 1920)
     const mainH = toEven(cfg.projectionHeight || 1080)
     const mainPanel = panelPhysicalMm('main', mainW, mainH)
@@ -562,7 +571,7 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
       deviceName: name,
       oemLabel: cfg.oemName?.trim() ? cfg.oemName : name,
       icons: this._buildIcons(cfg),
-      deviceId: detectWifiBssid(cfg.wifiInterface || undefined) ?? 'AA:BB:CC:DD:EE:FF',
+      deviceId: apBssid(cfg) ?? 'AA:BB:CC:DD:EE:FF',
       btMac: detectBtMac(cfg.btAdapter || undefined) ?? 'AA:BB:CC:DD:EE:FF',
       // AirPlay protocol version we announce.
       sourceVersion: cfg.carPlaySourceVersion?.trim() || DEFAULT_CONFIG.carPlaySourceVersion,

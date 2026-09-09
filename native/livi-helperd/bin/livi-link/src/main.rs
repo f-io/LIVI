@@ -1,6 +1,10 @@
 // The dongle stack in one binary: it picks its job from argv[0], and livi-link.sh links it under
-// each tool name, so the boot scripts and their ps/pkill patterns read as before.
+// each tool name.
 
+#[cfg(target_os = "linux")]
+mod bt;
+#[cfg(target_os = "linux")]
+mod iapd;
 #[cfg(target_os = "linux")]
 mod l2fwd;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -9,6 +13,10 @@ mod mdns;
 mod mdnsd;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod mfid;
+#[cfg(target_os = "linux")]
+mod mgmt;
+#[cfg(target_os = "linux")]
+mod sdp;
 #[cfg(target_os = "linux")]
 mod seedrng;
 mod usbproxy;
@@ -21,8 +29,17 @@ use std::path::Path;
 use std::process::ExitCode;
 
 /// The names the stack runs under, and the symlinks `livi-link.sh` creates for them.
-const TOOLS: [&str; 6] = ["seedrng", "mfid", "livi-usbproxy", "l2fwd", "mdnsd", "wifid"];
-const COMMANDS: [&str; 1] = ["wifi-channels"];
+const TOOLS: [&str; 8] = [
+    "seedrng",
+    "mfid",
+    "livi-usbproxy",
+    "l2fwd",
+    "mdnsd",
+    "wifid",
+    "btd",
+    "iapd",
+];
+const COMMANDS: [&str; 4] = ["wifi-channels", "bt-probe", "bt-mgmt", "sdp-dump"];
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
@@ -37,7 +54,10 @@ fn main() -> ExitCode {
     let (tool, rest) = if TOOLS.contains(&arg0.as_str()) {
         (arg0, args[1..].to_vec())
     } else {
-        (args.get(1).cloned().unwrap_or_default(), args.get(2..).unwrap_or_default().to_vec())
+        (
+            args.get(1).cloned().unwrap_or_default(),
+            args.get(2..).unwrap_or_default().to_vec(),
+        )
     };
 
     match tool.as_str() {
@@ -53,12 +73,29 @@ fn main() -> ExitCode {
         #[cfg(target_os = "linux")]
         "wifid" => wifid::run(),
         #[cfg(target_os = "linux")]
+        "btd" => bt::run(),
+        #[cfg(target_os = "linux")]
+        "iapd" => iapd::run(&rest),
+        #[cfg(target_os = "linux")]
         "wifi-channels" => wifi::run(),
+        #[cfg(target_os = "linux")]
+        "bt-probe" => bt::probe(),
+        #[cfg(target_os = "linux")]
+        "bt-mgmt" => mgmt::probe(),
+        #[cfg(target_os = "linux")]
+        "sdp-dump" => {
+            sdp::dump();
+            ExitCode::SUCCESS
+        }
         other => {
             if !other.is_empty() && (TOOLS.contains(&other) || COMMANDS.contains(&other)) {
                 eprintln!("livi-link: {other} runs on the dongle (linux) only");
             } else {
-                eprintln!("usage: livi-link <{}|{}> [args]", TOOLS.join("|"), COMMANDS.join("|"));
+                eprintln!(
+                    "usage: livi-link <{}|{}> [args]",
+                    TOOLS.join("|"),
+                    COMMANDS.join("|")
+                );
             }
             ExitCode::from(2)
         }

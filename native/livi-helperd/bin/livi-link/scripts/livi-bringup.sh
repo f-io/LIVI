@@ -65,7 +65,7 @@ if [ -e "$A/enable" ]; then
   ifconfig ncm0 10.10.10.1 netmask 255.255.255.0 mtu 1500 up
   cat > /tmp/udhcpd_ncm.conf <<CFG
 start 10.10.10.100
-end 10.10.10.200
+end 10.10.10.149
 interface ncm0
 opt subnet 255.255.255.0
 opt lease 86400
@@ -89,10 +89,22 @@ insmod /tmp/moal.ko mod_para=nxp/wifi_mod_para.conf 2>/dev/null
 i=0; while [ ! -e /sys/class/net/wlan0 ] && [ $i -lt 60 ]; do sleep 0.1; i=$((i+1)); done
 
 # --- WiFi AP ---
-# No address of its own: l2fwd-watch bridges it onto ncm0, so the AP and the USB link are one
-# segment with one address and one DHCP. Two addresses would deliver every frame twice.
-ifconfig wlan0 0.0.0.0 up 2>/dev/null
+# Own address and own DHCP for the phones, disjoint from the range ncm0 serves.
+ifconfig wlan0 10.10.10.2 netmask 255.255.255.0 up 2>/dev/null
 hostapd /etc/hostapd.conf -B 2>/dev/null
+cat > /tmp/udhcpd_ap.conf <<CFG
+start 10.10.10.150
+end 10.10.10.199
+interface wlan0
+opt subnet 255.255.255.0
+opt lease 86400
+lease_file /tmp/udhcpd_ap.leases
+pidfile /tmp/udhcpd_ap.pid
+max_leases 50
+CFG
+touch /tmp/udhcpd_ap.leases
+busybox udhcpd -f /tmp/udhcpd_ap.conf >/tmp/udhcpd_ap.log 2>&1 &
+log "wlan0 10.10.10.2 + udhcpd for the AP"
 
 if [ -e /sys/class/net/ncm0 ] || ps | grep -v grep | grep -q hostapd; then
   touch /tmp/livi_ok

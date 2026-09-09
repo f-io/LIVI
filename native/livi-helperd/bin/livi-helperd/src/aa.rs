@@ -7,10 +7,10 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
+use livi_aa::wpp;
 use livi_runtime::bt::IncomingConn;
 use livi_runtime::livi_sock::Broadcaster;
 use livi_runtime::net;
-use livi_aa::wpp;
 
 const VERSION_TIMEOUT: Duration = Duration::from_secs(10);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -36,7 +36,8 @@ impl WiredPhones {
 
     fn contains(&self, ids: &[&str]) -> bool {
         let known = self.0.lock().unwrap();
-        ids.iter().any(|id| !id.is_empty() && known.contains(&id.to_uppercase()))
+        ids.iter()
+            .any(|id| !id.is_empty() && known.contains(&id.to_uppercase()))
     }
 }
 
@@ -70,13 +71,16 @@ async fn handshake(
     std_stream.set_nonblocking(true)?;
     let mut sock = UnixStream::from_std(std_stream)?;
 
-    let bssid = net::wlan_mac(&cfg.wifi_iface).unwrap_or_default().to_lowercase();
+    let bssid = net::wlan_mac(&cfg.wifi_iface)
+        .unwrap_or_default()
+        .to_lowercase();
     println!(
         "[aa] {mac}: WPP bootstrap (AP {}:{} ssid={})",
         cfg.ap_ip, cfg.port, cfg.ssid
     );
 
-    sock.write_all(&wpp::wifi_version_request(cfg.channel)).await?;
+    sock.write_all(&wpp::wifi_version_request(cfg.channel))
+        .await?;
 
     let mut reader = wpp::FrameReader::default();
     let mut buf = [0u8; 4096];
@@ -84,7 +88,9 @@ async fn handshake(
 
     // The phone answers the version request first; a wired phone is dropped here so the
     // USB session keeps the phone.
-    if let Some((msg_id, body)) = read_frame(&mut sock, &mut reader, &mut buf, VERSION_TIMEOUT).await? {
+    if let Some((msg_id, body)) =
+        read_frame(&mut sock, &mut reader, &mut buf, VERSION_TIMEOUT).await?
+    {
         if msg_id == wpp::MSG_WIFI_VERSION_RESPONSE {
             let id = wpp::parse_identity(&body);
             emit_device(bcast, mac, &id);
@@ -97,7 +103,8 @@ async fn handshake(
         }
     }
 
-    sock.write_all(&wpp::wifi_start_request(&cfg.ap_ip, cfg.port)).await?;
+    sock.write_all(&wpp::wifi_start_request(&cfg.ap_ip, cfg.port))
+        .await?;
 
     loop {
         let next = match pending.take() {
@@ -111,7 +118,8 @@ async fn handshake(
 
         match msg_id {
             wpp::MSG_WIFI_INFO_REQUEST => {
-                sock.write_all(&wpp::wifi_info_response(&cfg.ssid, &cfg.passphrase, &bssid)).await?;
+                sock.write_all(&wpp::wifi_info_response(&cfg.ssid, &cfg.passphrase, &bssid))
+                    .await?;
             }
             wpp::MSG_WIFI_CONNECTION_STATUS => {
                 let status = body.get(1).copied().unwrap_or(0);
@@ -127,7 +135,10 @@ async fn handshake(
                 emit_device(bcast, mac, &id);
             }
             wpp::MSG_WIFI_START_RESPONSE => {}
-            other => println!("[aa] {mac}: unknown WPP message {other} ({} bytes)", body.len()),
+            other => println!(
+                "[aa] {mac}: unknown WPP message {other} ({} bytes)",
+                body.len()
+            ),
         }
     }
 }
@@ -158,8 +169,16 @@ fn emit_device(bcast: &Broadcaster, mac: &str, id: &wpp::Identity) {
     }
     println!(
         "[aa] {mac}: identified instanceId={} serial={}",
-        if id.instance_id.is_empty() { "-" } else { &id.instance_id },
-        if id.serial.is_empty() { "-" } else { &id.serial }
+        if id.instance_id.is_empty() {
+            "-"
+        } else {
+            &id.instance_id
+        },
+        if id.serial.is_empty() {
+            "-"
+        } else {
+            &id.serial
+        }
     );
     bcast.push_json(format!(
         "{{\"event\":\"aa-device\",\"btMac\":\"{}\",\"instanceId\":\"{}\",\"usbSerial\":\"{}\"}}",

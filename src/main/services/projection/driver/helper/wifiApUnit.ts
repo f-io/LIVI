@@ -2,7 +2,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import { join } from 'node:path'
-import { DONGLE_AP } from '@main/services/link/dongleAp'
+import { DONGLE_LINK } from '@main/services/link/dongleAp'
 import type { Config } from '@shared/types/Config'
 import { app, type BrowserWindow, dialog } from 'electron'
 
@@ -36,11 +36,13 @@ function unitContent(): string {
 Description=LIVI wireless projection AP (early boot)
 After=network-pre.target
 Wants=network-pre.target
+Before=NetworkManager.service
 ConditionPathExists=${helper}
 
 [Service]
 Type=simple
 Environment=SUDO_USER=${user}
+ExecStartPre=${helper} --wifi-ap-claim
 ExecStart=${helper} --wifi-ap
 ExecStop=${helper} --wifi-ap-teardown
 TimeoutStopSec=8
@@ -110,7 +112,7 @@ function sudo(args: string[]): Promise<boolean> {
 }
 
 function apWanted(config: Config): boolean {
-  if (config.wifiInterface === DONGLE_AP) return false
+  if (config.wifiInterface === DONGLE_LINK) return false
   return config.wifiDedicatedInterface || config.wirelessCpEnabled || config.wirelessAaEnabled
 }
 

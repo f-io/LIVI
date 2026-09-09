@@ -20,8 +20,10 @@ export async function resolveOptions(
   const key = keyOf(node)
 
   if (!force) {
+    // An empty list means the source was not reachable, not that there is nothing to choose, so
+    // it is asked again rather than kept.
     const cached = cache.get(key)
-    if (cached) return cached
+    if (cached?.length) return cached
     const pending = inflight.get(key)
     if (pending) return pending
   }

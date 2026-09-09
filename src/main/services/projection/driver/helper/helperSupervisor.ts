@@ -88,6 +88,11 @@ function envFromConfig(cfg: Config): NodeJS.ProcessEnv {
     LIVI_CP_PK: identity.pkHex,
     LIVI_CP_PI: identity.pairingId,
     LIVI_CP_NAME: cfg.carName || process.env.LIVI_CP_NAME || '',
+    LIVI_BT_ADAPTER: cfg.btAdapter || '',
+    LIVI_WIFI_IFACE: cfg.wifiInterface || '',
+    LIVI_PASSPHRASE: cfg.wifiPassword || '',
+    LIVI_CHANNEL: String(cfg.wifiChannel || ''),
+    LIVI_COUNTRY: cfg.country || '',
     LIVI_CP_DEBUG: DEBUG ? '1' : ''
   }
 }

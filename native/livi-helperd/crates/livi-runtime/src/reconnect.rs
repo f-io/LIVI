@@ -15,7 +15,7 @@ const FAST_ATTEMPTS: u32 = 15;
 const SLOW_INTERVAL: Duration = Duration::from_secs(30);
 const STALE: Duration = Duration::from_secs(10);
 
-pub async fn run(conn: Connection, adapter: String, state: Arc<HelperState>) {
+pub async fn run(conn: Connection, adapter: String, ap_iface: String, state: Arc<HelperState>) {
     let mut rr: usize = 0;
     let mut attempts: HashMap<String, u32> = HashMap::new();
     let mut next_try: HashMap<String, Instant> = HashMap::new();
@@ -73,6 +73,9 @@ pub async fn run(conn: Connection, adapter: String, state: Arc<HelperState>) {
             continue;
         }
 
+        if crate::net::wlan_link_local(&ap_iface).is_none() {
+            continue;
+        }
         println!("[cp] reconnect: paging {mac}");
         match tokio::time::timeout(PING_TIMEOUT, page(&conn, &path, uuid.as_deref())).await {
             Ok(Ok(())) => {

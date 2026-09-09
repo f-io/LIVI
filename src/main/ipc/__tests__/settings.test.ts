@@ -32,7 +32,7 @@ vi.mock('@main/app/hostOutput', () => ({
 
 const { dongleApPresent } = vi.hoisted(() => ({ dongleApPresent: vi.fn(async () => false) }))
 
-vi.mock('@main/services/link/dongleAp', () => ({ DONGLE_AP: 'livi-link', dongleApPresent }))
+vi.mock('@main/services/link/dongleAp', () => ({ DONGLE_LINK: 'livi-link', dongleApPresent }))
 
 vi.mock('@main/app/wifiOptions', () => ({
   listBtAdapters: vi.fn(() => ['hci0']),
@@ -239,7 +239,7 @@ describe('registerSettingsIpc', () => {
     expect(listWifiChannels).toHaveBeenCalledWith('5ghz')
     expect(getHandler<() => string[]>('app:listWifiCountryCodes')()).toEqual(['AT', 'DE'])
     expect(await getHandler<() => Promise<string[]>>('app:listWifiInterfaces')()).toEqual(['wlan0'])
-    expect(getHandler<() => string[]>('app:listBtAdapters')()).toEqual(['hci0'])
+    expect(await getHandler<() => Promise<string[]>>('app:listBtAdapters')()).toEqual(['hci0'])
   })
 
   test('the wifi interface list offers the dongle once it answers', async () => {
@@ -248,6 +248,16 @@ describe('registerSettingsIpc', () => {
 
     expect(await getHandler<() => Promise<string[]>>('app:listWifiInterfaces')()).toEqual([
       'wlan0',
+      'livi-link'
+    ])
+  })
+
+  test('the bluetooth adapter list offers the dongle once it answers', async () => {
+    dongleApPresent.mockResolvedValue(true)
+    registerSettingsIpc({ config: {} } as never)
+
+    expect(await getHandler<() => Promise<string[]>>('app:listBtAdapters')()).toEqual([
+      'hci0',
       'livi-link'
     ])
   })

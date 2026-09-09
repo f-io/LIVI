@@ -1,6 +1,6 @@
 //! The access point, driven from the host over TCP. Settings are collected per connection and
 //! take effect on `apply`, which puts the previous config back when hostapd refuses the new one.
-//! `save` then writes them into the config the dongle boots with.
+//! `save` writes them into the config the dongle boots with.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
@@ -9,19 +9,18 @@ use std::time::Duration;
 
 pub const PORT: u16 = 5001;
 
-/// The config the dongle boots with. It names the fallback AP, and `save` writes the radio
-/// settings into it.
+/// The config the dongle boots with, and what `save` writes into.
 const BASE: &str = "/etc/hostapd.conf";
-/// What the host asked for, in tmpfs so it dies with the next boot. Two of them, because a config
-/// that is refused must not have overwritten the one the AP is running on.
+const RADIO_TRIES: u32 = 40;
+const RADIO_POLL: std::time::Duration = std::time::Duration::from_millis(500);
+/// What the host asked for, in tmpfs. Two of them, so a refused config leaves the running one.
 const LIVE: [&str; 2] = ["/tmp/livi/hostapd.conf", "/tmp/livi/hostapd.alt"];
 const LOG: &str = "/tmp/livi/hostapd.log";
 const HOSTAPD: &str = "/usr/sbin/hostapd";
 const IFACE: &str = "wlan0";
-/// The dongle's only Bluetooth controller, attached to the UART at boot.
+/// The dongle's only Bluetooth controller.
 const BT: &str = "hci0";
 
-/// How long hostapd may take to report the radio is up. A 5 GHz start scans for neighbours first.
 const START_TIMEOUT: Duration = Duration::from_secs(20);
 const POLL: Duration = Duration::from_millis(250);
 
@@ -34,8 +33,11 @@ pub fn run() -> ExitCode {
         }
     };
     println!("[wifid] listening on :{PORT}");
-    let mut ap = Ap { config: BASE.to_string(), hostapd: None };
-    // One client at a time: there is one radio, and a change is not interruptible.
+    let mut ap = Ap {
+        config: BASE.to_string(),
+        hostapd: None,
+    };
+    // One client at a time.
     for stream in listener.incoming().flatten() {
         let mut stream = stream;
         serve(&mut stream, &mut ap);
@@ -43,8 +45,8 @@ pub fn run() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Which config the AP runs on and the hostapd this daemon started. The one from the boot script
-/// is nobody's child, so it is only ever stopped by name.
+/// Which config the AP runs on, and the hostapd this daemon started. The one from the boot script
+/// is not a child of ours and is stopped by name.
 pub struct Ap {
     config: String,
     hostapd: Option<Child>,
@@ -141,7 +143,7 @@ fn command(line: &str) -> Cmd<'_> {
             "off" => Cmd::Bt(false),
             _ => Cmd::Unknown(line),
         },
-        // The value is the rest of the line, so a name may hold spaces.
+        // The value is the rest of the line, spaces included.
         "set" => match rest.split_once(' ') {
             Some((key, value)) => Cmd::Set(key, value),
             None => Cmd::Unknown(line),
@@ -150,8 +152,7 @@ fn command(line: &str) -> Cmd<'_> {
     }
 }
 
-/// Checks a setting before it can reach the config. A value with a newline in it would write
-/// hostapd directives of its own, so nothing unchecked is ever kept.
+/// Checks a setting before it reaches the config. A value with a line break in it is refused.
 fn remember(wanted: &mut Wanted, key: &str, value: &str) -> Result<(), String> {
     if value.contains(['\n', '\r']) {
         return Err("a value holds a line break".into());
@@ -170,7 +171,9 @@ fn remember(wanted: &mut Wanted, key: &str, value: &str) -> Result<(), String> {
             wanted.country = Some(value.to_ascii_uppercase());
         }
         "channel" => {
-            let channel = value.parse::<u32>().map_err(|_| "channel must be a number")?;
+            let channel = value
+                .parse::<u32>()
+                .map_err(|_| "channel must be a number")?;
             if !(1..=196).contains(&channel) {
                 return Err("channel is out of range".into());
             }
@@ -187,15 +190,16 @@ fn remember(wanted: &mut Wanted, key: &str, value: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The base config with the wanted settings replacing their lines. Everything else the vendor put
-/// there stays, which is how the radio keeps working.
+/// The base config with the wanted settings replacing their lines. Everything else stays.
 fn config(base: &str, wanted: &Wanted) -> String {
     let mut out = String::new();
     for line in base.lines() {
         let replaced = match setting(line) {
             Some("ssid") => wanted.ssid.is_some(),
             Some("country_code") => wanted.country.is_some(),
-            Some("channel" | "hw_mode") => wanted.channel.is_some(),
+            Some("channel" | "hw_mode" | "ht_capab" | "vendor_elements" | "assocresp_elements") => {
+                wanted.channel.is_some()
+            }
             Some("wpa_passphrase") => wanted.passphrase.is_some(),
             _ => false,
         };
@@ -208,7 +212,13 @@ fn config(base: &str, wanted: &Wanted) -> String {
         out.push_str(&format!("country_code={country}\n"));
     }
     if let Some(channel) = wanted.channel {
-        out.push_str(&format!("hw_mode={}\nchannel={channel}\n", band(channel)));
+        let ie = apple_ie(channel);
+        out.push_str(&format!(
+            "hw_mode={}\nchannel={channel}\nht_capab=[SHORT-GI-20][SHORT-GI-40]{}\n\
+             vendor_elements={ie}\nassocresp_elements={ie}\n",
+            band(channel),
+            ht40(channel)
+        ));
     }
     if let Some(ssid) = &wanted.ssid {
         out.push_str(&format!("ssid={ssid}\n"));
@@ -228,23 +238,61 @@ fn setting(line: &str) -> Option<&str> {
     line.split_once('=').map(|(key, _)| key.trim())
 }
 
+/// Waits until the radio exists.
+fn await_radio() -> Result<(), String> {
+    let path = format!("/sys/class/net/{IFACE}");
+    for _ in 0..RADIO_TRIES {
+        if std::path::Path::new(&path).exists() {
+            return Ok(());
+        }
+        std::thread::sleep(RADIO_POLL);
+    }
+    Err(format!("{IFACE} never appeared"))
+}
+
 /// The band a channel sits in, the way hostapd spells it.
 fn band(channel: u32) -> &'static str {
     if channel <= 14 { "g" } else { "a" }
 }
 
+/// The vendor element a CarPlay access point carries: the vendor id, then the band.
+fn apple_ie(channel: u32) -> String {
+    let band_bit: u8 = if channel >= 36 { 0x01 } else { 0x02 };
+    format!("dd0800a04000000200{:02x}", 0x20 | band_bit)
+}
+
+/// Which way the second half of a 40 MHz channel points. The upper member of a pair reaches down.
+fn ht40(channel: u32) -> &'static str {
+    let up = if channel <= 14 {
+        channel <= 7
+    } else {
+        (channel / 4) % 2 == 1
+    };
+    if up { "[HT40+]" } else { "[HT40-]" }
+}
+
 fn apply(ap: &mut Ap, wanted: &Wanted) -> Result<(), String> {
+    await_radio()?;
     let base = std::fs::read_to_string(BASE).map_err(|e| format!("{BASE}: {e}"))?;
     if let Some(parent) = std::path::Path::new(LIVE[0]).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let next = if ap.config == LIVE[0] { LIVE[1] } else { LIVE[0] };
-    std::fs::write(next, config(&base, wanted)).map_err(|e| format!("{next}: {e}"))?;
+    // The same settings twice do not restart hostapd.
+    let text = config(&base, wanted);
+    if running() && std::fs::read_to_string(&ap.config).is_ok_and(|current| current == text) {
+        return Ok(());
+    }
+    let next = if ap.config == LIVE[0] {
+        LIVE[1]
+    } else {
+        LIVE[0]
+    };
+    std::fs::write(next, text).map_err(|e| format!("{next}: {e}"))?;
 
     let previous = ap.config.clone();
     stop(ap);
     if let Err(refused) = start(ap, next) {
-        // Back to what was running. Should even that not start, the fallback config always will.
+        // Back to what was running, and to the fallback config if that will not start either.
         stop(ap);
         if start(ap, &previous).is_err() {
             stop(ap);
@@ -257,8 +305,7 @@ fn apply(ap: &mut Ap, wanted: &Wanted) -> Result<(), String> {
     Ok(())
 }
 
-/// Makes the running settings the ones the dongle boots with. Only what hostapd has just accepted
-/// is written, and only when it differs, because this is flash.
+/// Makes the running settings the ones the dongle boots with. Written only when it differs.
 fn save(ap: &Ap) -> Result<(), String> {
     if ap.config == BASE {
         return Ok(());
@@ -269,7 +316,7 @@ fn save(ap: &Ap) -> Result<(), String> {
     if next == base {
         return Ok(());
     }
-    // Through a second name, so a power cut cannot leave the fallback config half written.
+    // Written under a second name and renamed over.
     let temp = format!("{BASE}.new");
     std::fs::write(&temp, next).map_err(|e| format!("{temp}: {e}"))?;
     std::fs::rename(&temp, BASE).map_err(|e| format!("{BASE}: {e}"))?;
@@ -277,7 +324,7 @@ fn save(ap: &Ap) -> Result<(), String> {
     Ok(())
 }
 
-/// What a config sets, read back so it can be written into another one.
+/// What a config sets.
 fn settings_of(text: &str) -> Wanted {
     let value = |key: &str| {
         text.lines()
@@ -305,12 +352,11 @@ fn on(ap: &mut Ap) -> Result<(), String> {
 
 fn off(ap: &mut Ap) {
     stop(ap);
-    // Down as well, or the radio keeps the channel busy for a host that wanted it quiet.
+    // Interface down as well.
     let _ = Command::new("ifconfig").args([IFACE, "down"]).status();
 }
 
-/// Takes the Bluetooth controller up or down. It shares the 2.4 GHz band with the AP, so a host
-/// that does not use this dongle switches it off rather than leaving it talking.
+/// Takes the Bluetooth controller up or down.
 fn bluetooth(up: bool) -> Result<(), String> {
     let what = if up { "up" } else { "down" };
     let status = Command::new("hciconfig")
@@ -328,14 +374,48 @@ fn bt_up() -> bool {
     let Ok(out) = Command::new("hciconfig").arg(BT).output() else {
         return false;
     };
-    String::from_utf8_lossy(&out.stdout).split_whitespace().any(|word| word == "UP")
+    String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .any(|word| word == "UP")
+}
+
+/// The access point's name, from the live config first, then the saved one.
+pub fn ap_name() -> Option<String> {
+    for file in LIVE.iter().chain(std::iter::once(&BASE)) {
+        let Ok(text) = std::fs::read_to_string(file) else {
+            continue;
+        };
+        for line in text.lines() {
+            if setting(line) == Some("ssid") {
+                let value = line.split_once('=').map(|(_, v)| v.trim()).unwrap_or("");
+                if !value.is_empty() {
+                    return Some(value.to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 fn status(ap: &Ap) -> String {
     let mut out = String::new();
-    out.push_str(if running() { "state on\n" } else { "state off\n" });
+    out.push_str(if running() {
+        "state on\n"
+    } else {
+        "state off\n"
+    });
     out.push_str(if bt_up() { "bt on\n" } else { "bt off\n" });
-    out.push_str(if ap.config == BASE { "config fallback\n" } else { "config host\n" });
+    if let Ok(mac) = std::fs::read_to_string(format!("/sys/class/net/{IFACE}/address")) {
+        out.push_str(&format!("mac {}\n", mac.trim()));
+    }
+    if let Ok(mac) = std::fs::read_to_string(format!("/sys/class/bluetooth/{BT}/address")) {
+        out.push_str(&format!("btmac {}\n", mac.trim()));
+    }
+    out.push_str(if ap.config == BASE {
+        "config fallback\n"
+    } else {
+        "config host\n"
+    });
     if let Ok(text) = std::fs::read_to_string(&ap.config) {
         for line in text.lines() {
             if let Some(key @ ("ssid" | "country_code" | "channel" | "hw_mode")) = setting(line) {
@@ -348,8 +428,7 @@ fn status(ap: &Ap) -> String {
     out
 }
 
-/// Starts hostapd and waits until the radio reports it is up. As a child, so its death is noticed,
-/// and without `-B`, which would close the log before the interesting line.
+/// Starts hostapd as a child, without `-B`, and waits until the radio reports it is up.
 fn start(ap: &mut Ap, config: &str) -> Result<(), String> {
     let _ = std::fs::remove_file(LOG);
     let log = std::fs::File::create(LOG).map_err(|e| format!("{LOG}: {e}"))?;
@@ -392,14 +471,18 @@ fn stop(ap: &mut Ap) {
     }
 }
 
-/// What hostapd objected to. Its last lines are the tear down, and the reason sits above them, so
-/// the first line that reads like a complaint is the one worth passing on.
+/// What hostapd objected to: the first line that reads like a complaint, not the tear down.
 fn complaint(log: &str) -> String {
     const MARKERS: [&str; 5] = ["not allowed", "Could not", "Unable", "Invalid", "ailed"];
     log.lines()
         .map(str::trim)
         .find(|line| MARKERS.iter().any(|m| line.contains(m)))
-        .or_else(|| log.lines().map(str::trim).rev().find(|line| !line.is_empty()))
+        .or_else(|| {
+            log.lines()
+                .map(str::trim)
+                .rev()
+                .find(|line| !line.is_empty())
+        })
         .unwrap_or("hostapd failed")
         .to_string()
 }
@@ -436,22 +519,24 @@ mod tests {
     }
 
     const BASE_CONF: &str = "interface=wlan0\n#channel=11\ncountry_code=US\nhw_mode=a\nchannel=36\n\
+                             ht_capab=[SHORT-GI-20][SHORT-GI-40][HT40+]\n\
                              ssid=old name\nwpa_passphrase=12345678\nwmm_enabled=1\n";
 
     #[test]
     fn a_setting_replaces_its_line_and_leaves_the_rest_alone() {
-        let out = config(BASE_CONF, &wanted(&[("ssid", "LIVI Link"), ("channel", "6")]));
+        let out = config(
+            BASE_CONF,
+            &wanted(&[("ssid", "LIVI Link"), ("channel", "6")]),
+        );
         assert!(out.contains("interface=wlan0\n"));
         assert!(out.contains("wmm_enabled=1\n"));
         assert!(out.contains("ssid=LIVI Link\n"));
         assert!(!out.contains("ssid=old name"));
-        // A 2.4 GHz channel has to take the band with it.
         assert!(out.contains("hw_mode=g\n"));
         assert!(out.contains("channel=6\n"));
         assert!(!out.contains("hw_mode=a\n"));
-        // The commented out line is not a setting and stays.
+        // A commented out line is not a setting.
         assert!(out.contains("#channel=11\n"));
-        // Untouched settings keep their value.
         assert!(out.contains("country_code=US\n"));
         assert!(out.contains("wpa_passphrase=12345678\n"));
     }
@@ -459,6 +544,53 @@ mod tests {
     #[test]
     fn nothing_wanted_leaves_the_config_as_it_was() {
         assert_eq!(config(BASE_CONF, &Wanted::default()), BASE_CONF);
+    }
+
+    #[test]
+    fn the_upper_channel_of_a_pair_reaches_down() {
+        for (channel, want) in [
+            (36, "[HT40+]"),
+            (40, "[HT40-]"),
+            (44, "[HT40+]"),
+            (48, "[HT40-]"),
+            (149, "[HT40+]"),
+            (153, "[HT40-]"),
+            (157, "[HT40+]"),
+            (161, "[HT40-]"),
+            (6, "[HT40+]"),
+            (11, "[HT40-]"),
+        ] {
+            assert_eq!(ht40(channel), want, "channel {channel}");
+        }
+    }
+
+    #[test]
+    fn a_channel_brings_the_carplay_element_for_its_band() {
+        assert_eq!(apple_ie(36), "dd0800a0400000020021");
+        let five = config(BASE_CONF, &wanted(&[("channel", "36")]));
+        assert!(
+            five.contains("vendor_elements=dd0800a0400000020021\n"),
+            "{five}"
+        );
+        assert!(
+            five.contains("assocresp_elements=dd0800a0400000020021\n"),
+            "{five}"
+        );
+        let two = config(BASE_CONF, &wanted(&[("channel", "6")]));
+        assert!(
+            two.contains("vendor_elements=dd0800a0400000020022\n"),
+            "{two}"
+        );
+    }
+
+    #[test]
+    fn a_channel_brings_its_own_pair_direction() {
+        let out = config(BASE_CONF, &wanted(&[("channel", "48")]));
+        assert!(
+            out.contains("ht_capab=[SHORT-GI-20][SHORT-GI-40][HT40-]\n"),
+            "{out}"
+        );
+        assert!(!out.contains("[HT40+]"), "{out}");
     }
 
     #[test]
@@ -529,8 +661,10 @@ mod tests {
                    Could not select hw_mode and channel. (-3)\n\
                    wlan0: AP-DISABLED \n\
                    nl80211: deinit ifname=wlan0 disabled_11b_rates=0\n";
-        assert_eq!(complaint(log), "Channel 13 (primary) not allowed for AP mode");
-        // Nothing that reads like a reason leaves the last word.
+        assert_eq!(
+            complaint(log),
+            "Channel 13 (primary) not allowed for AP mode"
+        );
         assert_eq!(complaint("odd\nstop\n"), "stop");
         assert_eq!(complaint(""), "hostapd failed");
     }

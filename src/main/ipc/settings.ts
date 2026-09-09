@@ -9,7 +9,7 @@ import { registerIpcHandle } from '@main/ipc/register'
 import { releaseFeedUrl, runNumberFromTitle } from '@main/ipc/update/feed'
 import { pickAssetForPlatform } from '@main/ipc/update/pickAsset'
 import { configEvents, saveSettings } from '@main/ipc/utils'
-import { DONGLE_AP, dongleApPresent } from '@main/services/link/dongleAp'
+import { DONGLE_LINK, dongleApPresent } from '@main/services/link/dongleAp'
 import { GhRelease, runtimeStateProps } from '@main/types'
 import { currentKiosk } from '@main/window/utils'
 import type { Config } from '@shared/types'
@@ -37,13 +37,20 @@ export function registerSettingsIpc(runtimeState: runtimeStateProps) {
 
   registerIpcHandle('app:listWifiCountryCodes', () => listWifiCountryCodes())
 
-  // The dongle is no interface of this host, so it is offered next to them rather than found.
+  // The dongle's radios are none of this host's, so they are offered next to them rather than found.
   registerIpcHandle('app:listWifiInterfaces', async () => {
     const local = listWifiInterfaces()
-    return (await dongleApPresent()) ? [...local, DONGLE_AP] : local
+    const all = (await dongleApPresent()) ? [...local, DONGLE_LINK] : local
+    console.log(`[settings] wifi interfaces: ${all.join(', ') || 'none'}`)
+    return all
   })
 
-  registerIpcHandle('app:listBtAdapters', () => listBtAdapters())
+  registerIpcHandle('app:listBtAdapters', async () => {
+    const local = listBtAdapters()
+    const all = (await dongleApPresent()) ? [...local, DONGLE_LINK] : local
+    console.log(`[settings] bluetooth adapters: ${all.join(', ') || 'none'}`)
+    return all
+  })
 
   registerIpcHandle('app:getLatestRelease', async () => {
     const nightly = runtimeState.config.updateNightly === true
