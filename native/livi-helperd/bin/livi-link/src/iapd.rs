@@ -1,12 +1,14 @@
 //! The dongle as the Bluetooth accessory. It configures the controller over the management
 //! socket, answers the kernel's pairing questions and keeps the link keys.
 
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use crate::mgmt::{self, Mgmt};
 use crate::sdp;
@@ -27,14 +29,52 @@ const SDP_PSM: u16 = 1;
 const LED_BLUE: u8 = 9;
 const PULSE: std::time::Duration = std::time::Duration::from_millis(120);
 pub const CONTROL_PORT: u16 = 5005;
-/// The calling cadence: quick tries first, then slow ones.
-const RING_FAST: std::time::Duration = std::time::Duration::from_secs(1);
+/// One phone per tick, quick tries first, then slow ones.
+const RING_TICK: Duration = Duration::from_secs(1);
 const RING_FAST_TRIES: u32 = 15;
-const RING_SLOW: std::time::Duration = std::time::Duration::from_secs(30);
-/// How long no phone is called after a session moved on.
-const RING_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
+const RING_SLOW: Duration = Duration::from_secs(30);
+/// How long a phone the host still wants may hold the link before it is disconnected.
+const STALE: Duration = Duration::from_secs(10);
 /// Where the host picks up the iAP session.
 pub const PORT: u16 = 5004;
+
+/// Which phones the host wants paged, and what is known about them. No list at all means the
+/// stored bonds are used, an empty list means nobody is paged.
+#[derive(Default)]
+struct Phones {
+    wanted: Option<Vec<[u8; 6]>>,
+    linked: HashSet<[u8; 6]>,
+    since: HashMap<[u8; 6], Instant>,
+    tries: HashMap<[u8; 6], u32>,
+    after: HashMap<[u8; 6], Instant>,
+    next: usize,
+}
+
+impl Phones {
+    /// Who to page, from the host if it has said, else every bond.
+    fn targets(&self) -> Vec<[u8; 6]> {
+        if let Some(list) = &self.wanted {
+            return list.clone();
+        }
+        stored_keys()
+            .iter()
+            .filter_map(|key| key.get(..6)?.try_into().ok())
+            .collect()
+    }
+
+    /// The next phone in the rotation, and whether it is on the air.
+    fn turn(&mut self) -> Option<([u8; 6], bool)> {
+        let list = self.targets();
+        self.tries.retain(|phone, _| list.contains(phone));
+        self.after.retain(|phone, _| list.contains(phone));
+        if list.is_empty() {
+            return None;
+        }
+        let phone = list[self.next % list.len()];
+        self.next = self.next.wrapping_add(1);
+        Some((phone, self.linked.contains(&phone)))
+    }
+}
 
 #[repr(C)]
 struct SockaddrL2 {
@@ -120,23 +160,16 @@ pub fn run(args: &[String]) -> ExitCode {
     }
     restore(&mgmt);
     println!("[iapd] {name} is discoverable and pairable");
-    let linked = Arc::new(AtomicBool::new(false));
-    // Off until a host asks for it.
-    let calling = Arc::new(AtomicBool::new(false));
+    let phones: Arc<Mutex<Phones>> = Arc::default();
+    // The accessory presents itself from here on, paging waits for a list from the host.
+    let offered = Arc::new(AtomicBool::new(true));
     // The host waiting for the next session.
     let host: Arc<Mutex<Option<TcpStream>>> = Arc::default();
-    // When a session last moved on.
-    let served: Arc<Mutex<Option<std::time::Instant>>> = Arc::default();
-    let (busy, want, calling_to, called, rung) = (
-        linked.clone(),
-        calling.clone(),
-        host.clone(),
-        local.clone(),
-        served.clone(),
-    );
-    std::thread::spawn(move || ring(&busy, &want, &called, &calling_to, &rung));
-    let want = calling.clone();
-    std::thread::spawn(move || control(&want));
+    let (known, want, calling_to, called) =
+        (phones.clone(), offered.clone(), host.clone(), local.clone());
+    std::thread::spawn(move || ring(&known, &want, &called, &calling_to));
+    let (want, known) = (offered.clone(), phones.clone());
+    std::thread::spawn(move || control(&want, &known));
     if fixed.is_none() {
         let mut shown = name.to_string();
         std::thread::spawn(move || {
@@ -167,11 +200,11 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     });
     std::thread::spawn(move || {
-        if let Err(e) = channel(&local, host, served) {
+        if let Err(e) = channel(&local, host) {
             eprintln!("[iapd] {e}");
         }
     });
-    listen(&mgmt, &linked);
+    listen(&mgmt, &phones);
     ExitCode::SUCCESS
 }
 
@@ -211,11 +244,7 @@ fn present(mgmt: &Mgmt, name: &str) -> Result<(), String> {
 }
 
 /// Opens every channel the record offers and hands the one the phone takes to the host.
-fn channel(
-    local: &str,
-    host: Arc<Mutex<Option<TcpStream>>>,
-    served: Arc<Mutex<Option<std::time::Instant>>>,
-) -> Result<(), String> {
+fn channel(local: &str, host: Arc<Mutex<Option<TcpStream>>>) -> Result<(), String> {
     let waiting = host.clone();
     std::thread::spawn(move || attend(&waiting));
     let mut open = Vec::new();
@@ -224,9 +253,8 @@ fn channel(
         let slot = host.clone();
         let (channel, name) = (record.channel, record.name);
         let local = local.to_string();
-        let seen = served.clone();
         open.push(std::thread::spawn(move || {
-            take(&listener, channel, name, &local, &slot, &seen)
+            take(&listener, channel, name, &local, &slot)
         }));
     }
     println!("[iapd] waiting for a phone, host on :{PORT}");
@@ -237,14 +265,7 @@ fn channel(
 }
 
 /// Accepts on one channel, session after session.
-fn take(
-    listener: &OwnedFd,
-    channel: u8,
-    name: &str,
-    local: &str,
-    host: &Mutex<Option<TcpStream>>,
-    served: &Mutex<Option<std::time::Instant>>,
-) {
+fn take(listener: &OwnedFd, channel: u8, name: &str, local: &str, host: &Mutex<Option<TcpStream>>) {
     loop {
         let mut peer = SockaddrRc {
             family: 0,
@@ -269,7 +290,7 @@ fn take(
         let link = std::fs::File::from(unsafe { OwnedFd::from_raw_fd(raw) });
         let phone = mac(&peer.bdaddr);
         println!("[iapd] {phone} opened {name} on channel {channel}");
-        hand_over(link, &phone, name, local, host, served);
+        hand_over(link, &phone, name, local, host);
     }
 }
 
@@ -383,7 +404,7 @@ fn local_name(name: &str) -> Vec<u8> {
 }
 
 /// Answers the kernel's pairing questions and logs the events.
-fn listen(mgmt: &Mgmt, linked: &AtomicBool) {
+fn listen(mgmt: &Mgmt, phones: &Mutex<Phones>) {
     loop {
         let (event, _, body) = match mgmt.event() {
             Ok(e) => e,
@@ -411,11 +432,19 @@ fn listen(mgmt: &Mgmt, linked: &AtomicBool) {
                 }
             }
             EV_DEVICE_CONNECTED => {
-                linked.store(true, Ordering::Relaxed);
+                if let Some(phone) = six(&body) {
+                    let mut state = phones.lock().unwrap();
+                    state.linked.insert(phone);
+                    state.since.insert(phone, Instant::now());
+                }
                 println!("[iapd] {} connected", addr(&body));
             }
             EV_DEVICE_DISCONNECTED => {
-                linked.store(false, Ordering::Relaxed);
+                if let Some(phone) = six(&body) {
+                    let mut state = phones.lock().unwrap();
+                    state.linked.remove(&phone);
+                    state.since.remove(&phone);
+                }
                 println!("[iapd] {} disconnected", addr(&body));
             }
             EV_CONNECT_FAILED => println!("[iapd] {} would not connect", addr(&body)),
@@ -438,7 +467,6 @@ fn hand_over(
     name: &str,
     local: &str,
     host: &Mutex<Option<TcpStream>>,
-    served: &Mutex<Option<std::time::Instant>>,
 ) {
     let Some(mut tcp) = host.lock().unwrap().take() else {
         println!("[iapd] {name} for {phone} with no host attached");
@@ -452,62 +480,88 @@ fn hand_over(
     blue(true);
     let carried = carry(link, tcp);
     blue(false);
-    *served.lock().unwrap() = Some(std::time::Instant::now());
     println!("[iapd] {name} closed after {carried} bytes");
 }
 
-/// Calls the stored phones while none is connected and calling is on.
+/// Pages the phones the host wants, one per tick, and lets go of one that holds the link without
+/// a session.
 fn ring(
-    linked: &AtomicBool,
-    wanted: &AtomicBool,
+    phones: &Mutex<Phones>,
+    offered: &AtomicBool,
     local: &str,
-    host: &Mutex<Option<TcpStream>>,
-    served: &Mutex<Option<std::time::Instant>>,
+    host: &Arc<Mutex<Option<TcpStream>>>,
 ) {
-    let mut tries: u32 = 0;
     loop {
-        std::thread::sleep(if tries < RING_FAST_TRIES {
-            RING_FAST
-        } else {
-            RING_SLOW
-        });
-        if linked.load(Ordering::Relaxed) || !wanted.load(Ordering::Relaxed) {
-            tries = 0;
+        std::thread::sleep(RING_TICK);
+        if !offered.load(Ordering::Relaxed) {
             continue;
         }
-        if served
+        let Some((phone, connected)) = phones.lock().unwrap().turn() else {
+            continue;
+        };
+        let who = addr(&phone);
+        if connected {
+            // Still on the host's list, so there is no session on this link.
+            let held = phones
+                .lock()
+                .unwrap()
+                .since
+                .get(&phone)
+                .is_some_and(|since| since.elapsed() >= STALE);
+            if held {
+                println!("[iapd] {who} holds the link without a session, disconnecting");
+                phones.lock().unwrap().since.remove(&phone);
+                if let Err(e) = drop_phone(&phone) {
+                    eprintln!("[iapd] {who}: {e}");
+                }
+            }
+            continue;
+        }
+        if phones
             .lock()
             .unwrap()
-            .is_some_and(|when| when.elapsed() < RING_GRACE)
+            .after
+            .get(&phone)
+            .is_some_and(|next| Instant::now() < *next)
         {
             continue;
         }
-        let keys = stored_keys();
-        if keys.is_empty() {
+        println!("[iapd] paging {who}");
+        pulse();
+        let Some(link) = call(&phone) else {
+            let mut state = phones.lock().unwrap();
+            let tries = state.tries.entry(phone).or_insert(0);
+            *tries += 1;
+            let spent = *tries >= RING_FAST_TRIES;
+            if spent {
+                state.tries.remove(&phone);
+                state.after.insert(phone, Instant::now() + RING_SLOW);
+            }
             continue;
+        };
+        println!("[iapd] {who} answered");
+        {
+            let mut state = phones.lock().unwrap();
+            state.tries.remove(&phone);
+            state.after.remove(&phone);
         }
-        tries = tries.saturating_add(1);
-        for key in &keys {
-            if linked.load(Ordering::Relaxed) || !wanted.load(Ordering::Relaxed) {
-                break;
-            }
-            let mut phone = [0u8; 6];
-            phone.copy_from_slice(&key[..6]);
-            let who = addr(&phone);
-            println!("[iapd] calling {who}");
-            pulse();
-            if let Some(link) = call(&phone) {
-                println!("[iapd] {who} answered");
-                tries = 0;
-                hand_over(link, &who, "Wireless iAP", local, host, served);
-                break;
-            }
-        }
+        // On its own thread, so the rotation carries on for the other phones.
+        let (host, local) = (host.clone(), local.to_string());
+        std::thread::spawn(move || hand_over(link, &who, "Wireless iAP", &local, &host));
     }
 }
 
-/// The control port: whether the car is offered, and whether known phones are called.
-fn control(wanted: &AtomicBool) {
+/// Drops the link to one phone.
+fn drop_phone(phone: &[u8; 6]) -> Result<(), String> {
+    let mgmt = Mgmt::open()?;
+    let mut who = phone.to_vec();
+    who.push(0);
+    mgmt.call(DISCONNECT, mgmt::INDEX, &who)?;
+    Ok(())
+}
+
+/// The control port: whether the car is offered, and who may be paged.
+fn control(offered: &AtomicBool, phones: &Mutex<Phones>) {
     let listener = match TcpListener::bind(("0.0.0.0", CONTROL_PORT)) {
         Ok(l) => l,
         Err(e) => {
@@ -521,7 +575,7 @@ fn control(wanted: &AtomicBool) {
             continue;
         };
         for line in BufReader::new(stream).lines().map_while(Result::ok) {
-            let answer = match order(line.trim(), wanted) {
+            let answer = match order(line.trim(), offered, phones) {
                 Ok(text) => text,
                 Err(e) => format!("error {e}\n"),
             };
@@ -533,7 +587,7 @@ fn control(wanted: &AtomicBool) {
 }
 
 /// One order and its answer.
-fn order(line: &str, wanted: &AtomicBool) -> Result<String, String> {
+fn order(line: &str, offered: &AtomicBool, phones: &Mutex<Phones>) -> Result<String, String> {
     match line {
         // Sets the controller up again after a host had it.
         "on" => {
@@ -541,38 +595,48 @@ fn order(line: &str, wanted: &AtomicBool) -> Result<String, String> {
             let name = wifid::ap_name().unwrap_or_else(|| NAME.into());
             present(&mgmt, &name)?;
             restore(&mgmt);
+            offered.store(true, Ordering::Relaxed);
             Ok("ok\n".into())
         }
         "off" => {
-            // Stops calling as well.
-            wanted.store(false, Ordering::Relaxed);
+            offered.store(false, Ordering::Relaxed);
+            phones.lock().unwrap().wanted = None;
             offer(false).map(|()| "ok\n".into())
-        }
-        "reconnect on" => {
-            wanted.store(true, Ordering::Relaxed);
-            Ok("ok\n".into())
-        }
-        "reconnect off" => {
-            wanted.store(false, Ordering::Relaxed);
-            Ok("ok\n".into())
         }
         _ if line.starts_with("disconnect ") => {
             let phone = address(line.trim_start_matches("disconnect ")).ok_or("not an address")?;
-            let mgmt = Mgmt::open()?;
-            let mut who = phone.to_vec();
-            who.push(0);
-            mgmt.call(DISCONNECT, mgmt::INDEX, &who)?;
+            drop_phone(&phone).map(|()| "ok\n".into())
+        }
+        // Who the host still wants paged. It leaves out whoever already has a session with it.
+        _ if line == "targets" || line.starts_with("targets ") => {
+            let list = line
+                .trim_start_matches("targets")
+                .split_whitespace()
+                .map(|text| address(text).ok_or_else(|| format!("not an address: {text}")))
+                .collect::<Result<Vec<_>, String>>()?;
+            let mut state = phones.lock().unwrap();
+            if state.wanted.as_ref() != Some(&list) {
+                println!("[iapd] the host wants {} phone(s) paged", list.len());
+            }
+            state.wanted = Some(list);
             Ok("ok\n".into())
         }
-        "status" => Ok(format!(
-            "bonds {}\nreconnect {}\nok\n",
-            stored_keys().len(),
-            if wanted.load(Ordering::Relaxed) {
-                "on"
-            } else {
-                "off"
-            }
-        )),
+        "status" => {
+            let state = phones.lock().unwrap();
+            Ok(format!(
+                "bonds {}\noffered {}\ntargets {}\nok\n",
+                stored_keys().len(),
+                if offered.load(Ordering::Relaxed) {
+                    "on"
+                } else {
+                    "off"
+                },
+                state
+                    .wanted
+                    .as_ref()
+                    .map_or_else(|| "-".to_string(), |list| list.len().to_string())
+            ))
+        }
         other => Err(format!("unknown order {other:?}")),
     }
 }
@@ -791,6 +855,11 @@ fn mac(bdaddr: &[u8; 6]) -> String {
         .join(":")
 }
 
+/// The six address bytes at the front of an event.
+fn six(body: &[u8]) -> Option<[u8; 6]> {
+    body.get(..6)?.try_into().ok()
+}
+
 /// The address at the front of most events, as text.
 fn addr(body: &[u8]) -> String {
     if body.len() < 6 {
@@ -799,4 +868,55 @@ fn addr(body: &[u8]) -> String {
     let mut bdaddr = [0u8; 6];
     bdaddr.copy_from_slice(&body[..6]);
     mac(&bdaddr)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn phone(last: u8) -> [u8; 6] {
+        [0x0c, 0x6a, 0xc4, 0x4e, 0xf3, last]
+    }
+
+    fn wanting(list: &[[u8; 6]]) -> Phones {
+        Phones {
+            wanted: Some(list.to_vec()),
+            ..Phones::default()
+        }
+    }
+
+    #[test]
+    fn the_rotation_hands_out_every_phone_in_turn() {
+        let (a, b) = (phone(0x2a), phone(0x2b));
+        let mut phones = wanting(&[a, b]);
+        assert_eq!(phones.turn(), Some((a, false)));
+        assert_eq!(phones.turn(), Some((b, false)));
+        assert_eq!(phones.turn(), Some((a, false)));
+    }
+
+    #[test]
+    fn a_phone_the_host_no_longer_wants_is_not_handed_out() {
+        let mut phones = wanting(&[]);
+        assert_eq!(phones.turn(), None);
+    }
+
+    #[test]
+    fn a_connected_phone_is_reported_as_one() {
+        let a = phone(0x2a);
+        let mut phones = wanting(&[a]);
+        phones.linked.insert(a);
+        assert_eq!(phones.turn(), Some((a, true)));
+    }
+
+    #[test]
+    fn what_is_counted_for_a_phone_goes_when_the_host_drops_it() {
+        let (a, b) = (phone(0x2a), phone(0x2b));
+        let mut phones = wanting(&[a, b]);
+        phones.tries.insert(b, 3);
+        phones.after.insert(b, Instant::now());
+        phones.wanted = Some(vec![a]);
+        let _ = phones.turn();
+        assert!(phones.tries.is_empty());
+        assert!(phones.after.is_empty());
+    }
 }

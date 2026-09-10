@@ -50,6 +50,7 @@ fn config(path: &str) -> LiviSockConfig {
             available_current_ma: 500,
         },
         disconnect: None,
+        targets: None,
     }
 }
 

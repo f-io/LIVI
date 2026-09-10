@@ -285,6 +285,15 @@ export class CpManager {
       else this._bufferPending(ids)
       return
     }
+    if (ev.type === 'link') {
+      // The LIVI Link carries every CarPlay session on this platform, so they end with it
+      // instead of each socket running into its own timeout.
+      if (ev.up === false) {
+        for (const s of [...this._sessions]) void s.close()
+        this._pendingDevices.length = 0
+      }
+      return
+    }
     if (ev.type === 'device-gone') {
       const usbUdid = str(ev.usbUdid)
       if (!usbUdid) return

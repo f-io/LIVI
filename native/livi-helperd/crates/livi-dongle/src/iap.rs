@@ -34,11 +34,64 @@ pub struct Session {
     pub stream: TcpStream,
 }
 
-/// Offers every session the dongle hands over, waiting again as soon as one is taken.
-pub fn sessions() -> mpsc::Receiver<Session> {
+/// The sockets the dongle carries, held a second time so they can be closed the moment it goes.
+static CARRIED: std::sync::Mutex<Vec<std::os::fd::OwnedFd>> = std::sync::Mutex::new(Vec::new());
+
+/// Keeps a second handle on this socket, and lets go of the ones that have ended.
+fn carry(stream: &TcpStream) {
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+    let copy = unsafe { libc::dup(stream.as_raw_fd()) };
+    if copy < 0 {
+        return;
+    }
+    let mut carried = CARRIED.lock().unwrap();
+    carried.retain(alive);
+    carried.push(unsafe { OwnedFd::from_raw_fd(copy) });
+}
+
+/// Whether anything still runs on this socket. A peek takes nothing away from the session.
+fn alive(fd: &std::os::fd::OwnedFd) -> bool {
+    use std::os::fd::AsRawFd;
+    let mut byte = 0u8;
+    let seen = unsafe {
+        libc::recv(
+            fd.as_raw_fd(),
+            &raw mut byte as *mut libc::c_void,
+            1,
+            libc::MSG_PEEK | libc::MSG_DONTWAIT,
+        )
+    };
+    if seen == 0 {
+        return false;
+    }
+    seen > 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EAGAIN)
+}
+
+/// Closes everything the dongle carries, waiting connection included, and says how many were
+/// still running. The blocking reads on them end at once instead of in their own timeout.
+pub fn drop_sessions() -> usize {
+    use std::os::fd::AsRawFd;
+    let carried = std::mem::take(&mut *CARRIED.lock().unwrap());
+    let mut closed = 0;
+    for fd in &carried {
+        if alive(fd) {
+            closed += 1;
+        }
+        unsafe { libc::shutdown(fd.as_raw_fd(), libc::SHUT_RDWR) };
+    }
+    closed
+}
+
+/// Offers every session the dongle hands over, waiting again as soon as one is taken. Nothing is
+/// tried while `ready` says the dongle is not there.
+pub fn sessions(ready: impl Fn() -> bool + Send + 'static) -> mpsc::Receiver<Session> {
     let (tx, rx) = mpsc::channel(2);
     tokio::spawn(async move {
         loop {
+            if !ready() {
+                tokio::time::sleep(RETRY).await;
+                continue;
+            }
             match waiting().await {
                 Ok(session) => {
                     if tx.send(session).await.is_err() {
@@ -66,6 +119,7 @@ async fn waiting() -> Result<Session, String> {
     // Waiting for a phone means a long silence, so the link itself has to say when the dongle is
     // gone. Without this a restarted dongle leaves us listening to nobody.
     watch_liveness(&stream);
+    carry(&stream);
     let head = header(&mut stream).await?;
     let peer = head
         .iter()
@@ -145,8 +199,8 @@ async fn read_line(stream: &mut TcpStream) -> Result<String, String> {
     }
 }
 
-/// Drops the dongle's link to one phone, which is what BlueZ does on a host that has it.
-pub fn drop_link(mac: &str) -> Result<(), String> {
+/// One order to the dongle's accessory, and the line it answers with.
+fn order(line: &str) -> Result<(), String> {
     use std::io::{BufRead, BufReader, Write as _};
     use std::net::ToSocketAddrs;
     let addr = (link::LINK_NAME, CONTROL_PORT)
@@ -159,7 +213,7 @@ pub fn drop_link(mac: &str) -> Result<(), String> {
     stream
         .set_read_timeout(Some(ORDER_TIMEOUT))
         .map_err(|e| format!("dongle: {e}"))?;
-    writeln!(stream, "disconnect {mac}").map_err(|e| format!("dongle: {e}"))?;
+    writeln!(stream, "{line}").map_err(|e| format!("dongle: {e}"))?;
     let mut answer = String::new();
     BufReader::new(&stream)
         .read_line(&mut answer)
@@ -168,6 +222,17 @@ pub fn drop_link(mac: &str) -> Result<(), String> {
         "ok" => Ok(()),
         other => Err(other.trim_start_matches("error ").to_string()),
     }
+}
+
+/// Drops the dongle's link to one phone, which is what BlueZ does on a host that has it.
+pub fn drop_link(mac: &str) -> Result<(), String> {
+    order(&format!("disconnect {mac}"))
+}
+
+/// Which phones the dongle may page. The host leaves out whoever already has a session with it,
+/// so a phone that moved to Wi-Fi is not called back.
+pub fn set_targets(macs: &[String]) -> Result<(), String> {
+    order(&format!("targets {}", macs.join(" ")))
 }
 
 #[cfg(test)]

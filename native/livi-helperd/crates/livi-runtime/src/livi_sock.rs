@@ -51,10 +51,15 @@ pub struct LiviSockConfig {
     pub cp: CpConfig,
     /// Who drops a phone's link where there is no BlueZ to ask.
     pub disconnect: Option<DropLink>,
+    /// Who pages phones where there is no BlueZ to page from.
+    pub targets: Option<PushTargets>,
 }
 
 /// Drops the link to one phone, named by its address.
 pub type DropLink = Arc<dyn Fn(String) -> Result<(), String> + Send + Sync>;
+
+/// Hands on the phones that may be paged, in paging order.
+pub type PushTargets = Arc<dyn Fn(Vec<String>) -> Result<(), String> + Send + Sync>;
 
 pub async fn serve<A>(
     cfg: LiviSockConfig,
@@ -196,7 +201,17 @@ where
             let json = match parse_reconnect_targets(arg) {
                 Ok(targets) => {
                     // LIVI refreshes this once a second, so logging every call is noise.
+                    let before = state.reconnect_targets();
                     state.set_reconnect_targets(targets);
+                    let after = state.reconnect_targets();
+                    if before != after
+                        && let Some(push) = cfg.targets.clone()
+                    {
+                        let macs = after.into_iter().map(|(mac, _)| mac).collect();
+                        if let Ok(Err(e)) = tokio::task::spawn_blocking(move || push(macs)).await {
+                            eprintln!("[helperd] the dongle refused the paging list: {e}");
+                        }
+                    }
                     "{\"ok\":true}".to_string()
                 }
                 Err(e) => err_json(&e),

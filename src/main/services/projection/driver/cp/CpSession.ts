@@ -11,7 +11,7 @@
 
 import { EventEmitter } from 'node:events'
 import type * as net from 'node:net'
-import { DONGLE_LINK, dongleApMac, setDongleCalling } from '@main/services/link/dongleAp'
+import { DONGLE_LINK, dongleApMac } from '@main/services/link/dongleAp'
 import { panelPhysicalMm } from '@main/services/video/GstVideo'
 import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
 import type { Config } from '@shared/types'
@@ -213,7 +213,6 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
     if (this._downEmitted) return
     this._downEmitted = true
     this._connected = false
-    void setDongleCalling(true)
     this.emit('disconnected')
   }
 
@@ -275,8 +274,6 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
     stack.on('main-screen-ready', () => {
       if (!this._connected) {
         this._connected = true
-        // The phone is here, over Wi-Fi. Its Bluetooth being gone does not mean it left.
-        void setDongleCalling(false)
         this.emit('connected')
       }
     })

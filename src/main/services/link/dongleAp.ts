@@ -85,7 +85,8 @@ export function commandsFor(config: Config): string[] {
 
 export function btCommandsFor(config: Config): string[] {
   if (config.btAdapter !== DONGLE_LINK || !config.wirelessCpEnabled) return ['off']
-  return ['on', `reconnect ${config.autoConn ? 'on' : 'off'}`]
+  // Who may be paged comes from the paging list the helper hands over, not from here.
+  return ['on']
 }
 
 /** The access point's MAC, as of the last exchange with the dongle. */
@@ -138,15 +139,6 @@ export async function reconcileDongleAp(config: Config): Promise<void> {
   } catch (err) {
     console.warn('[dongleAp] bluetooth:', String(err))
   }
-}
-
-/**
- * Whether the dongle should call known phones.
- */
-export async function setDongleCalling(on: boolean): Promise<void> {
-  try {
-    await talk([`reconnect ${on ? 'on' : 'off'}`], PROBE_MS, BT_PORT)
-  } catch {}
 }
 
 /** Switches off what LIVI switched on. The dongle brings both back by itself on its next boot. */

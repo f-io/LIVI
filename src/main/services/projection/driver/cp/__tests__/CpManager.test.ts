@@ -193,6 +193,24 @@ describe('CpManager session-at-identification', () => {
     expect(sessionsFor(mgr, macA)).toHaveLength(0)
     expect(sessionsFor(mgr, macB)).toHaveLength(1)
   })
+
+  it('a link that goes closes every session it carried', () => {
+    const { mgr } = makeManager()
+    const macA = 'aa:aa'
+    const macB = 'bb:bb'
+    mgr._onHelperEvent({ type: 'nowplaying', phoneId: macA, title: 'A' })
+    mgr._onHelperEvent({ type: 'nowplaying', phoneId: macB, title: 'B' })
+    expect(sessionsFor(mgr, macA)).toHaveLength(1)
+    expect(sessionsFor(mgr, macB)).toHaveLength(1)
+
+    mgr._onHelperEvent({ type: 'link', up: true })
+    expect(sessionsFor(mgr, macA)).toHaveLength(1)
+
+    mgr._onHelperEvent({ type: 'link', up: false })
+
+    expect(sessionsFor(mgr, macA)).toHaveLength(0)
+    expect(sessionsFor(mgr, macB)).toHaveLength(0)
+  })
 })
 
 describe('CpManager helper getter and seed fan-out', () => {

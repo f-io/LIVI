@@ -260,7 +260,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     // controller.
     let mut dongle_iap = std::env::var("LIVI_BT_VIA_DONGLE")
         .is_ok_and(|v| v == "1")
-        .then(livi_dongle::iap::sessions);
+        .then(|| livi_dongle::iap::sessions(|| true));
     let bt_mac = bt::adapter_address(&conn, &adapter).await?;
     println!(
         "[helperd] adapter {} up (RFCOMM ch {})",
@@ -276,6 +276,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         identity: identity.clone(),
         cp: cp.clone(),
         disconnect: None,
+        targets: None,
     };
     {
         let bus = conn.clone();

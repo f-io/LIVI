@@ -91,8 +91,8 @@ describe('what the dongle is told', () => {
       wirelessCpEnabled: true,
       autoConn: true
     } as Config
-    expect(btCommandsFor(chosen)).toEqual(['on', 'reconnect on'])
-    expect(btCommandsFor({ ...chosen, autoConn: false } as Config)).toEqual(['on', 'reconnect off'])
+    expect(btCommandsFor(chosen)).toEqual(['on'])
+    expect(btCommandsFor({ ...chosen, autoConn: false } as Config)).toEqual(['on'])
   })
 
   it('silences the accessory when wireless CarPlay is off', () => {
