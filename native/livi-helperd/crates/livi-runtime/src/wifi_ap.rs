@@ -80,8 +80,9 @@ fn write_hostapd_conf(cfg: &ApConfig) -> std::io::Result<()> {
 fn write_dnsmasq_conf(cfg: &ApConfig) -> std::io::Result<()> {
     let base = cfg.ap_ip.rsplit_once('.').map(|(b, _)| b.to_string()).unwrap_or_default();
     let conf = format!(
-        "interface={}\nbind-interfaces\ndhcp-range={base}.10,{base}.50,255.255.255.0,12h\n\
-         dhcp-leasefile={DNSMASQ_LEASES}\ndomain-needed\nbogus-priv\n",
+        // port=0 serves DHCP only. A system dnsmasq already holds :53 on many installs.
+        "interface={}\nbind-interfaces\nport=0\ndhcp-range={base}.10,{base}.50,255.255.255.0,12h\n\
+         dhcp-leasefile={DNSMASQ_LEASES}\n",
         cfg.iface
     );
     std::fs::write(DNSMASQ_CONF, conf)
@@ -257,7 +258,6 @@ fn spawn_dnsmasq() -> std::io::Result<Child> {
     Command::new("dnsmasq")
         .args(["--keep-in-foreground", &format!("--conf-file={DNSMASQ_CONF}")])
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
         .spawn()
 }
 
