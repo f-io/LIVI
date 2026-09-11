@@ -192,8 +192,7 @@
 
       <h2>Features</h2>
       <ul>
-        <li><strong>Apple CarPlay</strong> (wired &amp; wireless) on Linux — requires an MFi authentication coprocessor</li>
-        <li><strong>Apple CarPlay</strong> (wired) on Mac — requires <a href="https://github.com/f-io/LIVI/blob/main/LIVI-LINK.md">LIVI Link</a></li>
+        <li><strong>Apple CarPlay</strong> (wired &amp; wireless) on Linux and Mac — requires MFi authentication</li>
         <li><strong>Android Auto</strong> (wired) on all platforms</li>
         <li><strong>Android Auto</strong> (wireless) on Linux</li>
         <li><strong>Multi-session</strong> with live switching between connected phones</li>
@@ -257,9 +256,9 @@
       </p>
 
       <p>
-        On Linux, both Apple CarPlay and Android Auto are supported natively. Native CarPlay (wired &amp;
-        wireless) requires an MFi authentication coprocessor (see below). On Mac, wired CarPlay runs through
-        <a href="https://github.com/f-io/LIVI/blob/main/LIVI-LINK.md">LIVI Link</a>. Android Auto is native — wired on all platforms, wireless on Linux.
+        Apple CarPlay and Android Auto are supported natively. Native CarPlay (wired &amp; wireless) runs on
+        Linux and on Mac and requires MFi authentication (see below), either from a coprocessor on the board
+        or from a <a href="https://github.com/f-io/LIVI/blob/main/LIVI-LINK.md">LIVI Link</a>. Android Auto is native — wired on all platforms, wireless on Linux.
       </p>
 
       <h2>Installation</h2>
@@ -270,10 +269,10 @@
 
       <h2>How it works</h2>
       <p>
-        LIVI implements the CarPlay and Android Auto accessory side natively. On Linux that covers wireless
-        and wired sessions, on macOS wired sessions through <a href="https://github.com/f-io/LIVI/blob/main/LIVI-LINK.md">LIVI Link</a>. Wireless sessions run over LIVI's own
-        Wi-Fi access point with Bluetooth pairing, wired sessions run directly over the USB cable. Video is decoded on the platform's hardware decoder and stays on the GPU end to end
-        through the zero-copy GStreamer pipeline.
+        LIVI implements the CarPlay and Android Auto accessory side natively, wired and wireless, on Linux
+        and on macOS. Wireless sessions run over LIVI's own Wi-Fi access point with Bluetooth pairing, wired
+        sessions run directly over the USB cable. Video is decoded on the platform's hardware decoder and
+        stays on the GPU end to end through the zero-copy GStreamer pipeline.
       </p>
       <p>
         Native CarPlay authenticates against the phone with an Apple MFi coprocessor (see below). Android
@@ -288,8 +287,12 @@
       </p>
       <ul>
         <li><strong>On the board</strong> — a coprocessor wired to the I²C bus</li>
-        <li><strong>Over the network</strong> — <a href="https://github.com/f-io/LIVI/blob/main/LIVI-LINK.md">LIVI Link</a></li>
+        <li><strong>Over the network</strong> — a <a href="https://github.com/f-io/LIVI/blob/main/LIVI-LINK.md">LIVI Link</a></li>
       </ul>
+      <p>
+        Both routes work on Linux. A Mac has no I²C bus to put a coprocessor on, so there the LIVI Link is
+        the only one.
+      </p>
       <p>
         LIVI does not support Apple's Basic Accessory Authentication on macOS, but may in the future.
       </p>

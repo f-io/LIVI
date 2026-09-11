@@ -21,14 +21,13 @@ It is a standalone cross-platform head unit with a native, zero-copy GStreamer v
 
 ## Native Connectivity
 
-- **Apple CarPlay** (wired & wireless) on Linux — requires [MFi Authentication](#mfi-authentication)
-- **Apple CarPlay** (wired) on Mac — requires [LIVI Link](LIVI-LINK.md)
+- **Apple CarPlay** (wired & wireless) on Linux and Mac — requires [MFi Authentication](#mfi-authentication)
 - **Android Auto** (wired) on all platforms
 - **Android Auto** (wireless) on Linux
 
 ## Native Apple CarPlay
 
-LIVI implements the CarPlay accessory side natively. On Linux that covers wireless and wired sessions, on macOS wired sessions through [LIVI Link](LIVI-LINK.md). Wireless sessions run over LIVI's own Wi-Fi access point with Bluetooth pairing, wired sessions run directly over the USB cable (no OTG required).
+LIVI implements the CarPlay accessory side natively, wired and wireless, on Linux and on macOS. Wireless sessions run over LIVI's own Wi-Fi access point with Bluetooth pairing, wired sessions run directly over the USB cable (no OTG required).
 
 - main + instrument cluster video (H.264/H.265, hardware decoded, zero-copy)
 - audio playback, phone calls, microphone uplink
@@ -37,7 +36,7 @@ LIVI implements the CarPlay accessory side natively. On Linux that covers wirele
 - day/night mode and GPS forwarding to the phone
 - multi-session with live switching between connected phones
 
-Wireless CarPlay requires a Bluetooth adapter and a Wi-Fi interface dedicated to the access point. Wired CarPlay works on any USB port.
+Wireless CarPlay requires a Bluetooth adapter and a Wi-Fi interface dedicated to the access point. Both can come from a [LIVI Link](LIVI-LINK.md), which brings its own radios. Wired CarPlay works on any USB port.
 
 
 ## MFi Authentication
@@ -45,8 +44,9 @@ Wireless CarPlay requires a Bluetooth adapter and a Wi-Fi interface dedicated to
 CarPlay requires the accessory to authenticate against the phone. The usual way is an Apple **MFi authentication coprocessor**, a hardware chip that cannot be emulated and that LIVI neither ships nor bypasses. Two routes:
 
 - **On the board** — a coprocessor wired to the I²C bus
-- **Over the network** — [LIVI Link](LIVI-LINK.md)
+- **Over the network** — a [LIVI Link](LIVI-LINK.md)
 
+Both routes work on Linux. A Mac has no I²C bus to put a coprocessor on, so there the LIVI Link is the only one.
 
 LIVI does not support Apple's Basic Accessory Authentication on MacOS, but may in the future.
 
@@ -66,7 +66,7 @@ Wireless sessions do not need a router. LIVI brings up its own Wi-Fi access poin
 
 Wireless CarPlay and wireless Android Auto are enabled separately, so a head unit can offer one, both, or neither. With Auto Connect on, a phone that has been paired before is picked up again on its own. The car name is what the phone shows when it lists nearby vehicles.
 
-The Wi-Fi page sets the band, password, channel and country for the access point, and picks which Wi-Fi and Bluetooth adapter to use.
+The Wi-Fi page sets the band, password, channel and country for the access point and picks the Wi-Fi interface. The Bluetooth adapter is picked next to it, under Connections.
 
 Dedicated Interface reserves the Wi-Fi adapter for the access point and brings it up during boot, out of NetworkManager's hands. Without it the access point is started on demand and the interface is handed back afterwards, which keeps it available for normal networking but costs a moment on the first connection.
 

@@ -1,7 +1,19 @@
 # LIVI Link
 
-A CPC200-CCPA dongle reflashed into an MFi authentication coprocessor for LIVI's native CarPlay stack, reachable over the network. The iPhone plugs into the host. The dongle's own OTG
-port works on MacOS only.
+A CPC200-CCPA dongle reflashed into a network attached accessory for LIVI's native CarPlay stack.
+It works on Linux and on macOS and carries three things, each of them picked separately in the
+settings:
+
+- **MFi authentication**, the coprocessor CarPlay needs, reachable over the network
+- **A Wi-Fi access point**, selectable as the Wi-Fi interface for wireless sessions
+- **Bluetooth**, selectable as the Bluetooth adapter on Linux. On macOS the dongle pairs with the
+  phone itself and passes the session on to LIVI
+
+A Mac has no I²C bus to put a coprocessor on, so there this is the only route to CarPlay besides BAA. On Linux
+it is an alternative to a chip on the board, and a way to add an access point and a Bluetooth
+adapter to a machine that has neither. LIVI does disable the dongles acces point if it is not choosen within the settings to reduce interference.
+
+The iPhone plugs into the host. The dongle's own OTG port works on MacOS only.
 
 ## Setup
 
