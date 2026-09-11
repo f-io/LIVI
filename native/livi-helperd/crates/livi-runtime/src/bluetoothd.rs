@@ -119,8 +119,8 @@ mod linux {
         changed |= ensure_main_conf_class();
         if changed {
             println!("[helperd] restarting bluetoothd (--noplugin={DISABLED_PLUGINS}, class)");
-            let _ = std::process::Command::new("systemctl").arg("daemon-reload").status();
-            let _ = std::process::Command::new("systemctl").args(["restart", "bluetooth"]).status();
+            let _ = std::process::Command::new(crate::sys::tool("systemctl")).arg("daemon-reload").status();
+            let _ = std::process::Command::new(crate::sys::tool("systemctl")).args(["restart", "bluetooth"]).status();
             std::thread::sleep(std::time::Duration::from_secs(5));
         }
     }

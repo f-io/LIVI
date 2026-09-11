@@ -120,6 +120,16 @@ export async function dongleApPresent(): Promise<boolean> {
   return false
 }
 
+function absent(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException)?.code
+  return code === 'ENOTFOUND' || code === 'EAI_AGAIN'
+}
+
+function report(what: string, err: unknown): void {
+  if (absent(err)) console.log(`[dongleAp] ${what}: no dongle on the network`)
+  else console.warn(`[dongleAp] ${what}:`, String(err))
+}
+
 /** Hands the dongle its settings when it is the chosen AP, and silences it when it is not. */
 export async function reconcileDongleAp(config: Config): Promise<void> {
   if (!attached()) return
@@ -131,13 +141,13 @@ export async function reconcileDongleAp(config: Config): Promise<void> {
         ?.slice(4)
         .trim() || apMac
   } catch (err) {
-    // No dongle, or one that refused the change. Either way nothing local depends on it.
-    console.warn('[dongleAp]', String(err))
+    // Nothing local depends on the dongle, so a refusal is noted and the rest goes on.
+    report('access point', err)
   }
   try {
     await talk(btCommandsFor(config), APPLY_MS, BT_PORT)
   } catch (err) {
-    console.warn('[dongleAp] bluetooth:', String(err))
+    report('bluetooth', err)
   }
 }
 

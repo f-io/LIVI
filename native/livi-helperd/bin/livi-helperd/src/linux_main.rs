@@ -144,6 +144,21 @@ pub fn run_wifi_ap_status() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// `--install-wifi-ap <unit> <rule>`: puts both files under /etc.
+pub fn run_install_wifi_ap(unit: Option<String>, rule: Option<String>) -> ExitCode {
+    let (Some(unit), Some(rule)) = (unit, rule) else {
+        eprintln!("[wifi-ap] usage: --install-wifi-ap <unit file> <sudoers file>");
+        return ExitCode::FAILURE;
+    };
+    match livi_runtime::wifi_ap::install(&unit, &rule) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("[wifi-ap] install failed: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 /// `--wifi-ap-claim`: takes the interface from NetworkManager, before it starts.
 pub fn run_wifi_ap_claim() -> ExitCode {
     let dc = DeviceConfig::load();

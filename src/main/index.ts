@@ -28,6 +28,7 @@ import { checkMissingPackages } from '@main/services/packageCheck'
 import { checkAndInstallHelperSudoers } from '@main/services/projection/driver/helper/helperSudoers'
 import {
   reconcileWifiAp,
+  settleWifiAp,
   setWifiApReport
 } from '@main/services/projection/driver/helper/wifiApUnit'
 import { ProjectionService } from '@main/services/projection/services/ProjectionService'
@@ -219,7 +220,7 @@ app.whenReady().then(async () => {
   }
 
   if (win && process.platform === 'linux') {
-    void reconcileWifiAp(runtimeState.config, win)
+    void reconcileWifiAp(runtimeState.config, win).then(() => settleWifiAp(runtimeState.config))
     await checkAndInstallGvfsGuard(win)
     startPhoneSuppression()
     ensureWireplumberBtRoles()

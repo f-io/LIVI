@@ -16,6 +16,7 @@ pub mod livi_sock;
 pub mod net;
 pub mod reconnect;
 pub mod state;
+pub mod sys;
 
 #[cfg(target_os = "linux")]
 pub mod bt;

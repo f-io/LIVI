@@ -1,0 +1,21 @@
+# LIVI systemd unit. Managed by LIVI. Do not edit by hand.
+# Single source of truth for wifiApUnit.ts and the installer.
+[Unit]
+Description=LIVI wireless projection AP (early boot)
+After=network-pre.target
+Wants=network-pre.target
+Before=NetworkManager.service
+ConditionPathExists=__HELPER__
+
+[Service]
+Type=simple
+Environment=SUDO_USER=__USERNAME__
+ExecStartPre=__HELPER__ --wifi-ap-claim
+ExecStart=__HELPER__ --wifi-ap
+ExecStop=__HELPER__ --wifi-ap-teardown
+TimeoutStopSec=8
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

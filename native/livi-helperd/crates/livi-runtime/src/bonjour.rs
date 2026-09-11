@@ -53,7 +53,7 @@ const PUBLISHER: &str = if cfg!(target_os = "macos") {
 /// Ends publishers left over from an earlier run, so one service is announced once.
 fn reap_publishers() {
     let pattern = format!("{PUBLISHER}.*{AIRPLAY_SERVICE}");
-    let _ = std::process::Command::new("pkill")
+    let _ = std::process::Command::new(crate::sys::tool("pkill"))
         .args(["-f", &pattern])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -91,7 +91,7 @@ impl Bonjour {
                 airplay_port.to_string(),
             ];
             args.extend(txt);
-            Command::new("dns-sd")
+            Command::new(crate::sys::tool("dns-sd"))
                 .args(&args)
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
@@ -105,7 +105,7 @@ impl Bonjour {
                 airplay_port.to_string(),
             ];
             args.extend(txt);
-            Command::new("avahi-publish-service")
+            Command::new(crate::sys::tool("avahi-publish-service"))
                 .args(&args)
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
@@ -158,7 +158,7 @@ async fn browse_once(
     bcast: &Broadcaster,
     seen: &Arc<Mutex<std::collections::HashMap<String, (String, u16)>>>,
 ) -> std::io::Result<()> {
-    let mut child = Command::new("avahi-browse")
+    let mut child = Command::new(crate::sys::tool("avahi-browse"))
         .args(["-r", "-p", "-k", CARPLAY_CTRL])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -372,7 +372,7 @@ fn dns_sd_run(args: &[&str], secs: u64) -> Vec<String> {
     use std::io::BufRead;
     use std::process::{Command, Stdio};
     let mut out = Vec::new();
-    let Ok(mut child) = Command::new("dns-sd")
+    let Ok(mut child) = Command::new(crate::sys::tool("dns-sd"))
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

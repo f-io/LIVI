@@ -1,5 +1,6 @@
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import { join } from 'node:path'
 import { DONGLE_LINK } from '@main/services/link/dongleAp'
@@ -12,8 +13,8 @@ const UNIT_PATH = '/etc/systemd/system/livi-wifi-ap.service'
 const SUDOERS_PATH = '/etc/sudoers.d/99-LIVI-wifi-ap'
 const SERVICE = 'livi-wifi-ap.service'
 const NM_UNMANAGED_CONF = '/etc/NetworkManager/conf.d/99-livi-ap-unmanaged.conf'
-// Bump when the unit or sudoers content changes.
-const INSTALL_VERSION = '3'
+const UNIT_TEMPLATE = 'livi-wifi-ap.service.template'
+const SUDOERS_TEMPLATE = '99-LIVI-wifi-ap.sudoers.template'
 
 function helperPath(): string {
   return join(app.getPath('userData'), 'driver', 'livi-helperd')
@@ -21,6 +22,33 @@ function helperPath(): string {
 
 function markerPath(): string {
   return join(app.getPath('userData'), '.wifi-ap-install')
+}
+
+/** Packaged next to the app, with the repository copy for a development run. */
+function template(name: string): string {
+  const resources = process.resourcesPath
+  if (typeof resources === 'string' && resources.length > 0) {
+    const packaged = join(resources, name)
+    if (existsSync(packaged)) return readFileSync(packaged, 'utf8')
+  }
+  return readFileSync(join(app.getAppPath(), 'assets', 'linux', name), 'utf8')
+}
+
+function username(): string {
+  if (process.env.PKEXEC_UID) {
+    try {
+      return execFileSync('id', ['-nu', process.env.PKEXEC_UID], { encoding: 'utf8' }).trim()
+    } catch {}
+  }
+  if (process.env.SUDO_USER) return process.env.SUDO_USER
+  return os.userInfo().username
+}
+
+function render(name: string): string {
+  return template(name)
+    .replace(/__HELPER__/g, helperPath())
+    .replace(/__USERNAME__/g, username())
+    .replace(/__SYSTEMCTL__/g, systemctlPath())
 }
 
 function systemctlPath(): string {
@@ -32,38 +60,11 @@ function systemctlPath(): string {
 }
 
 function unitContent(): string {
-  const helper = helperPath()
-  const user = os.userInfo().username
-  return `[Unit]
-Description=LIVI wireless projection AP (early boot)
-After=network-pre.target
-Wants=network-pre.target
-Before=NetworkManager.service
-ConditionPathExists=${helper}
-
-[Service]
-Type=simple
-Environment=SUDO_USER=${user}
-ExecStartPre=${helper} --wifi-ap-claim
-ExecStart=${helper} --wifi-ap
-ExecStop=${helper} --wifi-ap-teardown
-TimeoutStopSec=8
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-`
+  return render(UNIT_TEMPLATE)
 }
 
-// NOPASSWD so LIVI can manage the AP service and teardown without a prompt.
 function sudoersContent(): string {
-  const user = os.userInfo().username
-  const sc = systemctlPath()
-  const helper = helperPath()
-  return `Cmnd_Alias LIVI_WIFI_AP = ${sc} start ${SERVICE}, ${sc} stop ${SERVICE}, ${sc} enable ${SERVICE}, ${sc} disable ${SERVICE}, ${helper} --wifi-ap-teardown
-${user} ALL=(root) NOPASSWD: LIVI_WIFI_AP
-`
+  return render(SUDOERS_TEMPLATE)
 }
 
 function readFile(path: string): string {
@@ -74,21 +75,80 @@ function readFile(path: string): string {
   }
 }
 
-// The sudoers file is root-only, so a marker tracks its version.
+// The sudoers file is root-only, so sudo itself is asked whether the rule is in force.
+function sudoersActive(): boolean {
+  try {
+    const out = execFileSync('sudo', ['-n', '-l'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore']
+    })
+    return out.includes(`restart ${SERVICE}`) || /\(ALL(\s*:\s*ALL)?\)\s+NOPASSWD:\s+ALL/.test(out)
+  } catch {
+    return false
+  }
+}
+
+/** Changing the rule changes the stamp, so an old marker means reinstall. */
+function sudoersStamp(): string {
+  return createHash('sha256').update(sudoersContent()).digest('hex').slice(0, 16)
+}
+
+// A host whose sudoers needs a password for `sudo -l` cannot answer, hence the marker.
+function sudoersInstalled(): boolean {
+  return sudoersActive() || readFile(markerPath()).trim() === sudoersStamp()
+}
+
 function needsInstall(): boolean {
-  return readFile(UNIT_PATH) !== unitContent() || readFile(markerPath()).trim() !== INSTALL_VERSION
+  return readFile(UNIT_PATH) !== unitContent() || !sudoersInstalled()
+}
+
+/** Hands both files to the helper, which the sudoers rule already lets us run as root. */
+function installViaHelper(): boolean {
+  let dir = ''
+  try {
+    const helper = resolveHelperBin()
+    dir = mkdtempSync(join(os.tmpdir(), 'livi-ap-'))
+    const unit = join(dir, 'unit')
+    const rule = join(dir, 'rule')
+    writeFileSync(unit, unitContent())
+    writeFileSync(rule, sudoersContent())
+    execFileSync('sudo', ['-n', helper, '--install-wifi-ap', unit, rule], {
+      stdio: 'ignore',
+      timeout: 20_000
+    })
+    return true
+  } catch {
+    return false
+  } finally {
+    if (dir) rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+function pkexecAvailable(): boolean {
+  try {
+    execFileSync('which', ['pkexec'], { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
 }
 
 function installPrivileged(): Promise<void> {
+  const staged = `${SUDOERS_PATH}.livi-tmp`
+  // set -e keeps a file that fails validation from ever reaching sudoers.d.
   const script = [
     'set -e',
+    `trap 'rm -f ${staged}' EXIT`,
     `cat > ${UNIT_PATH} <<'EOF'`,
     unitContent().trimEnd(),
     'EOF',
-    `cat > ${SUDOERS_PATH} <<'EOF'`,
+    `cat > ${staged} <<'EOF'`,
     sudoersContent().trimEnd(),
     'EOF',
-    `chmod 440 ${SUDOERS_PATH}`,
+    `chmod 0440 ${staged}`,
+    `chown root:root ${staged}`,
+    `visudo -c -f ${staged}`,
+    `mv ${staged} ${SUDOERS_PATH}`,
     'systemctl daemon-reload'
   ].join('\n')
   return new Promise((resolve, reject) => {
@@ -149,33 +209,47 @@ export async function reconcileWifiAp(config: Config, window?: BrowserWindow): P
     return
   }
 
-  if (needsInstall()) {
+  let install: boolean
+  try {
+    install = needsInstall()
+  } catch (err) {
+    console.error('[wifiApUnit] cannot read the unit templates:', err)
+    return
+  }
+
+  if (install) {
     if (installing) return
     installing = true
     try {
-      if (window) {
-        const { response } = await dialog.showMessageBox(window, {
-          type: 'question',
-          title: 'Wireless Projection — Wi-Fi AP',
-          message: 'LIVI manages a Wi-Fi access point for wireless projection.',
-          detail: `Installs a systemd unit (${UNIT_PATH}) and a sudoers rule (${SUDOERS_PATH}) so LIVI can take the interface for the AP and hand it back to your system afterwards.`,
-          buttons: ['Install', 'Skip'],
-          defaultId: 0,
-          cancelId: 1
-        })
-        if (response !== 0) {
-          installing = false
+      if (!installViaHelper()) {
+        if (!pkexecAvailable()) {
+          console.warn(
+            `[wifiApUnit] cannot install ${UNIT_PATH} and ${SUDOERS_PATH}: the helper is not ` +
+              'reachable as root and pkexec is missing. Run the LIVI install script on this host.'
+          )
           return
         }
+        if (window) {
+          const { response } = await dialog.showMessageBox(window, {
+            type: 'question',
+            title: 'Wireless Projection — Wi-Fi AP',
+            message: 'Install the Wi-Fi access point service?',
+            detail: 'Wireless CarPlay and Android Auto need it.',
+            buttons: ['Install', 'Skip'],
+            defaultId: 0,
+            cancelId: 1
+          })
+          if (response !== 0) return
+        }
+        await installPrivileged()
       }
-      await installPrivileged()
-      writeFileSync(markerPath(), INSTALL_VERSION)
+      writeFileSync(markerPath(), sudoersStamp())
     } catch (err) {
       console.error('[wifiApUnit] install failed:', err)
-      installing = false
       return
+    } finally {
+      installing = false
     }
-    installing = false
   }
 
   const sc = systemctlPath()
@@ -185,7 +259,6 @@ export async function reconcileWifiAp(config: Config, window?: BrowserWindow): P
   const restaged = helperRestaged()
   await sudo([sc, restaged ? 'restart' : 'start', SERVICE])
   if (restaged) clearHelperRestaged()
-  void settleWifiAp(config)
 }
 
 const AP_SETTLE_TRIES = 15
@@ -228,8 +301,8 @@ export async function restartWifiAp(config: Config): Promise<void> {
   void settleWifiAp(config)
 }
 
-/** Waits for the service to come up and writes back what it ended up on. */
-async function settleWifiAp(config: Config): Promise<void> {
+/** Writes back what the service ended up on. Only after a start that carried this config. */
+export async function settleWifiAp(config: Config): Promise<void> {
   for (let i = 0; i < AP_SETTLE_TRIES; i += 1) {
     const live = runningWifiAp()
     if (live?.running) {

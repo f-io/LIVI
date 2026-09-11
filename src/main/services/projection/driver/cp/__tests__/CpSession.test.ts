@@ -62,6 +62,10 @@ vi.mock('../../aa/stack/system/hwaddr', () => ({
   detectBtMac: btMock,
   detectWifiBssid: wifiMock
 }))
+vi.mock('@main/services/link/dongleAp', () => ({
+  DONGLE_LINK: 'livi-link',
+  dongleApMac: () => '02:50:43:02:ff:01'
+}))
 
 type Stack = InstanceType<typeof StackMock>
 
@@ -175,6 +179,15 @@ describe('CpSession construction and stack config', () => {
     expect(built.h264).toBe(true)
     expect(built.cluster).toBeUndefined()
     expect(built.entertainmentSampleRate).toBe(44100)
+  })
+
+  it('takes the device id from the dongle while it carries the access point', () => {
+    const { stack } = makeSession({
+      config: baseConfig({ wifiInterface: 'livi-link' }),
+      hevc: false
+    })
+    expect((stack.cfg as Record<string, unknown>).deviceId).toBe('02:50:43:02:ff:01')
+    expect(wifiMock).not.toHaveBeenCalled()
   })
 
   it('includes the cluster display and physical panel sizes when configured', () => {

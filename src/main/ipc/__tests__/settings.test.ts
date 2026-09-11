@@ -262,6 +262,21 @@ describe('registerSettingsIpc', () => {
     ])
   })
 
+  test('an empty list is logged as none rather than as nothing', async () => {
+    const { listWifiInterfaces, listBtAdapters } = await import('@main/app/wifiOptions')
+    dongleApPresent.mockResolvedValue(false)
+    vi.mocked(listWifiInterfaces).mockReturnValueOnce([])
+    vi.mocked(listBtAdapters).mockReturnValueOnce([])
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    registerSettingsIpc({ config: {} } as never)
+
+    expect(await getHandler<() => Promise<string[]>>('app:listWifiInterfaces')()).toEqual([])
+    expect(await getHandler<() => Promise<string[]>>('app:listBtAdapters')()).toEqual([])
+    expect(log).toHaveBeenCalledWith('[settings] wifi interfaces: none')
+    expect(log).toHaveBeenCalledWith('[settings] bluetooth adapters: none')
+    log.mockRestore()
+  })
+
   test('app:getLatestRelease pulls the nightly feed and derives version, commit and run', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

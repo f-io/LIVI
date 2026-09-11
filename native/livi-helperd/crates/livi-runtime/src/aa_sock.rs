@@ -110,7 +110,7 @@ async fn handle(
 /// Kicks every associated station off the access point via hostapd's control socket.
 async fn deauth_ap(iface: &str) -> usize {
     let cli = |args: &[&str]| {
-        tokio::process::Command::new("hostapd_cli")
+        tokio::process::Command::new(crate::sys::tool("hostapd_cli"))
             .args(["-p", "/var/run/hostapd", "-i", iface])
             .args(args)
             .output()

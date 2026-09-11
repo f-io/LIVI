@@ -11,13 +11,20 @@ vi.mock('../staged', () => ({
   clearHelperRestaged: vi.fn()
 }))
 vi.mock('../helperSupervisor', () => ({ resolveHelperBin: () => '/data/driver/livi-helperd' }))
-vi.mock('node:fs', () => ({ existsSync: vi.fn(), readFileSync: vi.fn(), writeFileSync: vi.fn() }))
+vi.mock('node:fs', () => ({
+  existsSync: vi.fn(),
+  readFileSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  mkdtempSync: vi.fn(() => '/tmp/livi-ap-test'),
+  rmSync: vi.fn()
+}))
 vi.mock('node:os', () => ({
-  default: { userInfo: () => ({ username: 'pi' }) },
-  userInfo: () => ({ username: 'pi' })
+  default: { userInfo: () => ({ username: 'pi' }), tmpdir: () => '/tmp' },
+  userInfo: () => ({ username: 'pi' }),
+  tmpdir: () => '/tmp'
 }))
 vi.mock('electron', () => ({
-  app: { getPath: vi.fn(() => '/data') },
+  app: { getPath: vi.fn(() => '/data'), getAppPath: vi.fn(() => '/app') },
   dialog: { showMessageBox: vi.fn(() => Promise.resolve({ response: 0 })) }
 }))
 
@@ -31,34 +38,68 @@ const mockedWrite = writeFileSync as Mock
 const mockedDialog = dialog.showMessageBox as Mock
 const win = {} as never
 
-// Mirrors the module's unit content so an "installed" read matches.
-const UNIT = [
+// Stands in for the shipped templates, so the test exercises the substitution.
+const UNIT_TPL = [
   '[Unit]',
-  'Description=LIVI wireless projection AP (early boot)',
-  'After=network-pre.target',
-  'Wants=network-pre.target',
-  'Before=NetworkManager.service',
-  'ConditionPathExists=/data/driver/livi-helperd',
+  'ConditionPathExists=__HELPER__',
   '',
   '[Service]',
-  'Type=simple',
-  'Environment=SUDO_USER=pi',
-  'ExecStartPre=/data/driver/livi-helperd --wifi-ap-claim',
-  'ExecStart=/data/driver/livi-helperd --wifi-ap',
-  'ExecStop=/data/driver/livi-helperd --wifi-ap-teardown',
-  'TimeoutStopSec=8',
-  'Restart=on-failure',
-  'RestartSec=5',
-  '',
-  '[Install]',
-  'WantedBy=multi-user.target',
+  'Environment=SUDO_USER=__USERNAME__',
+  'ExecStart=__HELPER__ --wifi-ap',
+  'ExecStop=__HELPER__ --wifi-ap-teardown',
   ''
 ].join('\n')
+const SUDOERS_TPL = [
+  'Cmnd_Alias LIVI_WIFI_AP = __SYSTEMCTL__ restart livi-wifi-ap.service, __HELPER__ --wifi-ap-teardown',
+  '__USERNAME__ ALL=(root) NOPASSWD: LIVI_WIFI_AP',
+  ''
+].join('\n')
+const UNIT = UNIT_TPL.replace(/__HELPER__/g, '/data/driver/livi-helperd').replace(
+  /__USERNAME__/g,
+  'pi'
+)
+
+// What `sudo -n -l` answers. Only a rule naming the service counts as installed.
+const NO_AP_RULE = 'User pi may run the following commands:\n    (root) NOPASSWD: /usr/bin/true\n'
+const AP_RULE =
+  'User pi may run the following commands:\n    (root) NOPASSWD: /usr/bin/systemctl restart livi-wifi-ap.service\n'
+
+// helperRoot: whether `sudo -n livi-helperd` is permitted.
+const exec = {
+  which: '/usr/bin/systemctl\n',
+  sudoList: NO_AP_RULE,
+  helper: '',
+  helperRoot: false,
+  id: 'pi\n'
+}
+
+// Nothing installed yet, but the templates that ship with the app are there.
+function templatesOnly(p: string): string {
+  const path = String(p)
+  if (path.endsWith('livi-wifi-ap.service.template')) return UNIT_TPL
+  if (path.endsWith('99-LIVI-wifi-ap.sudoers.template')) return SUDOERS_TPL
+  return ''
+}
+
+function execDispatch(cmd: string, args: string[] = []): string {
+  if (cmd === 'which') return exec.which
+  if (cmd === 'sudo' && args.includes('--install-wifi-ap')) {
+    if (!exec.helperRoot) throw new Error('sudo: a password is required')
+    return ''
+  }
+  if (cmd === 'sudo') return exec.sudoList
+  if (cmd === 'id') return exec.id
+  if (args.includes('--wifi-ap-status')) return exec.helper
+  return ''
+}
 
 type Cfg = {
   wifiDedicatedInterface: boolean
   wirelessCpEnabled: boolean
   wirelessAaEnabled: boolean
+  wifiInterface: string
+  wifiChannel: number
+  wifiChannelWidth: number
 }
 const cfg = (o: Partial<Cfg> = {}): never =>
   ({
@@ -86,12 +127,16 @@ function autoError(): void {
   })
 }
 
-// Unit + marker already present and current.
+// Unit in place and the sudoers rule in force.
 function installed(): void {
   mockedExists.mockReturnValue(true)
-  mockedRead.mockImplementation((p: string) =>
-    String(p).includes('.wifi-ap-install') ? '3' : UNIT
-  )
+  mockedRead.mockImplementation((p: string) => {
+    const path = String(p)
+    if (path.endsWith('livi-wifi-ap.service.template')) return UNIT_TPL
+    if (path.endsWith('99-LIVI-wifi-ap.sudoers.template')) return SUDOERS_TPL
+    return UNIT
+  })
+  exec.sudoList = AP_RULE
 }
 
 const spawnCmds = (): string[] => mockedSpawn.mock.calls.map((c) => String(c[0]))
@@ -108,7 +153,12 @@ describe('reconcileWifiAp — wanted', () => {
     realPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
     vi.clearAllMocks()
-    mockedExec.mockReturnValue('/usr/bin/systemctl\n')
+    exec.which = '/usr/bin/systemctl\n'
+    exec.sudoList = NO_AP_RULE
+    exec.helper = ''
+    exec.helperRoot = false
+    exec.id = 'pi\n'
+    mockedExec.mockImplementation(execDispatch)
     autoClose(0)
   })
   afterEach(() => {
@@ -117,7 +167,7 @@ describe('reconcileWifiAp — wanted', () => {
 
   test('installs unit + sudoers and starts the AP when not installed', async () => {
     mockedExists.mockReturnValue(false)
-    mockedRead.mockReturnValue('')
+    mockedRead.mockImplementation(templatesOnly)
     await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }), win)
     expect(mockedDialog).toHaveBeenCalled()
     const script = pkexecScript()
@@ -140,33 +190,43 @@ describe('reconcileWifiAp — wanted', () => {
     const patches: Record<string, unknown>[] = []
     setWifiApReport((p) => patches.push(p))
     installed()
-    mockedExec.mockReturnValue('running true\nssid LIVI\nchannel 36\nwidth 20\n')
+    exec.helper = 'running true\nssid LIVI\nchannel 36\nwidth 20\n'
     await restartWifiAp(cfg({ wirelessCpEnabled: true, wifiChannel: 149, wifiChannelWidth: 80 }))
     await new Promise((done) => setTimeout(done, 0))
     expect(patches).toEqual([{ wifiChannel: 36, wifiChannelWidth: 20 }])
     setWifiApReport(() => {})
   })
 
-  test('the boot fallback is written back at startup, not only after a restart', async () => {
-    const { setWifiApReport } = await import('../wifiApUnit')
+  test('the boot fallback is written back once the settle is asked for', async () => {
+    const { settleWifiAp, setWifiApReport } = await import('../wifiApUnit')
     const patches: Record<string, unknown>[] = []
     setWifiApReport((p) => patches.push(p))
     installed()
-    mockedExec.mockReturnValue('running true\nssid LIVI\nchannel 44\nwidth 20\n')
-    await reconcileWifiAp(cfg({ wirelessCpEnabled: true, wifiChannel: 149, wifiChannelWidth: 20 }))
-    await new Promise((done) => setTimeout(done, 0))
+    exec.helper = 'running true\nssid LIVI\nchannel 44\nwidth 20\n'
+    await settleWifiAp(cfg({ wirelessCpEnabled: true, wifiChannel: 149, wifiChannelWidth: 20 }))
     expect(patches).toEqual([{ wifiChannel: 44 }])
     setWifiApReport(() => {})
   })
 
-  test('nothing is written back while the service runs what was asked for', async () => {
+  test('a settings change alone writes nothing back, the service still runs the old one', async () => {
     const { setWifiApReport } = await import('../wifiApUnit')
     const patches: Record<string, unknown>[] = []
     setWifiApReport((p) => patches.push(p))
     installed()
-    mockedExec.mockReturnValue('running true\nssid LIVI\nchannel 44\nwidth 20\n')
-    await reconcileWifiAp(cfg({ wirelessCpEnabled: true, wifiChannel: 44, wifiChannelWidth: 20 }))
+    exec.helper = 'running true\nssid LIVI\nchannel 44\nwidth 20\n'
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true, wifiChannel: 36, wifiChannelWidth: 20 }))
     await new Promise((done) => setTimeout(done, 0))
+    expect(patches).toEqual([])
+    setWifiApReport(() => {})
+  })
+
+  test('nothing is written back while the service runs what was asked for', async () => {
+    const { settleWifiAp, setWifiApReport } = await import('../wifiApUnit')
+    const patches: Record<string, unknown>[] = []
+    setWifiApReport((p) => patches.push(p))
+    installed()
+    exec.helper = 'running true\nssid LIVI\nchannel 44\nwidth 20\n'
+    await settleWifiAp(cfg({ wirelessCpEnabled: true, wifiChannel: 44, wifiChannelWidth: 20 }))
     expect(patches).toEqual([])
     setWifiApReport(() => {})
   })
@@ -197,9 +257,36 @@ describe('reconcileWifiAp — wanted', () => {
     expect(sudoLines()).toContain('-n /usr/bin/systemctl start livi-wifi-ap.service')
   })
 
+  test('installs through the helper when it may run as root, without pkexec', async () => {
+    mockedExists.mockReturnValue(false)
+    mockedRead.mockImplementation(templatesOnly)
+    exec.helperRoot = true
+    await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }), win)
+    expect(mockedDialog).not.toHaveBeenCalled()
+    expect(spawnCmds()).not.toContain('pkexec')
+    const call = mockedExec.mock.calls.find((c) =>
+      (c[1] as string[])?.includes('--install-wifi-ap')
+    )
+    expect(call?.[1]).toEqual([
+      '-n',
+      '/data/driver/livi-helperd',
+      '--install-wifi-ap',
+      '/tmp/livi-ap-test/unit',
+      '/tmp/livi-ap-test/rule'
+    ])
+    expect(sudoLines()).toContain('-n /usr/bin/systemctl start livi-wifi-ap.service')
+  })
+
+  test('falls back to pkexec when the helper cannot run as root', async () => {
+    mockedExists.mockReturnValue(false)
+    mockedRead.mockImplementation(templatesOnly)
+    await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }), win)
+    expect(spawnCmds()).toContain('pkexec')
+  })
+
   test('installs without a dialog when no window is given', async () => {
     mockedExists.mockReturnValue(false)
-    mockedRead.mockReturnValue('')
+    mockedRead.mockImplementation(templatesOnly)
     await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }))
     expect(mockedDialog).not.toHaveBeenCalled()
     expect(pkexecScript()).toContain('/etc/sudoers.d/99-LIVI-wifi-ap')
@@ -207,7 +294,7 @@ describe('reconcileWifiAp — wanted', () => {
 
   test('a failed install is caught and the service is not started', async () => {
     mockedExists.mockReturnValue(false)
-    mockedRead.mockReturnValue('')
+    mockedRead.mockImplementation(templatesOnly)
     autoClose(126)
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }), win)
@@ -217,9 +304,11 @@ describe('reconcileWifiAp — wanted', () => {
   })
 
   test('an unreadable unit file is treated as absent and installs', async () => {
-    mockedExists.mockReturnValue(true)
-    mockedRead.mockImplementation(() => {
-      throw new Error('EACCES')
+    installed()
+    const readable = mockedRead.getMockImplementation() as (p: string) => string
+    mockedRead.mockImplementation((p: string) => {
+      if (String(p).startsWith('/etc/')) throw new Error('EACCES')
+      return readable(p)
     })
     await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }), win)
     expect(pkexecScript()).not.toBe('')
@@ -227,8 +316,9 @@ describe('reconcileWifiAp — wanted', () => {
 
   test('falls back to /usr/bin/systemctl when `which` fails', async () => {
     installed()
-    mockedExec.mockImplementation(() => {
-      throw new Error('nope')
+    mockedExec.mockImplementation((cmd: string, args: string[] = []) => {
+      if (cmd === 'which' && args[0] === 'systemctl') throw new Error('nope')
+      return execDispatch(cmd, args)
     })
     await reconcileWifiAp(cfg({ wirelessCpEnabled: true }))
     expect(sudoLines()).toContain('-n /usr/bin/systemctl start livi-wifi-ap.service')
@@ -236,7 +326,7 @@ describe('reconcileWifiAp — wanted', () => {
 
   test('falls back to /usr/bin/systemctl when `which` returns nothing', async () => {
     installed()
-    mockedExec.mockReturnValue('')
+    exec.which = ''
     await reconcileWifiAp(cfg({ wirelessCpEnabled: true }))
     expect(sudoLines()).toContain('-n /usr/bin/systemctl start livi-wifi-ap.service')
   })
@@ -249,7 +339,7 @@ describe('reconcileWifiAp — wanted', () => {
 
   test('an install spawn error is caught', async () => {
     mockedExists.mockReturnValue(false)
-    mockedRead.mockReturnValue('')
+    mockedRead.mockImplementation(templatesOnly)
     autoError()
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     await expect(
@@ -260,7 +350,7 @@ describe('reconcileWifiAp — wanted', () => {
 
   test('declined install does not spawn pkexec', async () => {
     mockedExists.mockReturnValue(false)
-    mockedRead.mockReturnValue('')
+    mockedRead.mockImplementation(templatesOnly)
     mockedDialog.mockResolvedValueOnce({ response: 1 })
     await reconcileWifiAp(cfg({ wirelessAaEnabled: true }), win)
     expect(pkexecScript()).toBe('')
@@ -268,7 +358,7 @@ describe('reconcileWifiAp — wanted', () => {
 
   test('a concurrent reconcile is skipped while installing', async () => {
     mockedExists.mockReturnValue(false)
-    mockedRead.mockReturnValue('')
+    mockedRead.mockImplementation(templatesOnly)
     let release: (v: { response: number }) => void = () => {}
     mockedDialog.mockImplementationOnce(() => new Promise((r) => (release = r)))
     const p1 = reconcileWifiAp(cfg({ wifiDedicatedInterface: true }), win)
@@ -277,6 +367,124 @@ describe('reconcileWifiAp — wanted', () => {
     expect(mockedDialog).toHaveBeenCalledTimes(1)
     release({ response: 0 })
     await p1
+  })
+
+  test('reads the template packaged next to the app when it is there', async () => {
+    const real = Object.getOwnPropertyDescriptor(process, 'resourcesPath')
+    Object.defineProperty(process, 'resourcesPath', { value: '/res', configurable: true })
+    mockedExists.mockImplementation((p: string) => String(p).startsWith('/res'))
+    mockedRead.mockImplementation(templatesOnly)
+    exec.helperRoot = true
+    await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }))
+    expect(mockedRead).toHaveBeenCalledWith('/res/livi-wifi-ap.service.template', 'utf8')
+    if (real) Object.defineProperty(process, 'resourcesPath', real)
+  })
+
+  test('the rule names the user behind pkexec, then the one behind sudo', async () => {
+    mockedExists.mockReturnValue(false)
+    mockedRead.mockImplementation(templatesOnly)
+    process.env.PKEXEC_UID = '1000'
+    exec.id = 'desktop-user\n'
+    await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }))
+    expect(pkexecScript()).toContain('SUDO_USER=desktop-user')
+
+    vi.clearAllMocks()
+    mockedExec.mockImplementation(execDispatch)
+    mockedExists.mockReturnValue(false)
+    mockedRead.mockImplementation(templatesOnly)
+    autoClose(0)
+    process.env.PKEXEC_UID = ''
+    process.env.SUDO_USER = 'sudo-user'
+    await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }))
+    expect(pkexecScript()).toContain('SUDO_USER=sudo-user')
+    process.env.SUDO_USER = ''
+  })
+
+  test('a sudo that cannot list the rules installs rather than assume', async () => {
+    installed()
+    mockedExec.mockImplementation((cmd: string, args: string[] = []) => {
+      if (cmd === 'sudo' && args.includes('-l')) throw new Error('a password is required')
+      return execDispatch(cmd, args)
+    })
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true }), win)
+    expect(pkexecScript()).not.toBe('')
+  })
+
+  test('templates that cannot be read stop the reconcile', async () => {
+    mockedExists.mockReturnValue(false)
+    mockedRead.mockImplementation(() => {
+      throw new Error('EACCES')
+    })
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true }))
+    expect(err).toHaveBeenCalled()
+    expect(sudoLines()).toEqual([])
+    err.mockRestore()
+  })
+
+  test('no helper and no pkexec says what to run instead', async () => {
+    mockedExists.mockReturnValue(false)
+    mockedRead.mockImplementation(templatesOnly)
+    mockedExec.mockImplementation((cmd: string, args: string[] = []) => {
+      if (cmd === 'which' && args[0] === 'pkexec') throw new Error('not found')
+      return execDispatch(cmd, args)
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true }), win)
+    expect(warn.mock.calls[0]?.[0]).toContain('Run the LIVI install script')
+    expect(spawnCmds()).not.toContain('pkexec')
+    expect(sudoLines()).toEqual([])
+    warn.mockRestore()
+  })
+
+  test('the dongle as the interface releases the local AP', async () => {
+    installed()
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true, wifiInterface: 'livi-link' }))
+    expect(sudoLines()).toContain('-n /usr/bin/systemctl stop livi-wifi-ap.service')
+    expect(sudoLines()).not.toContain('-n /usr/bin/systemctl start livi-wifi-ap.service')
+  })
+
+  test('a status readback that fails writes nothing back', async () => {
+    vi.useFakeTimers()
+    const { restartWifiAp, setWifiApReport } = await import('../wifiApUnit')
+    const patches: Record<string, unknown>[] = []
+    setWifiApReport((p) => patches.push(p))
+    installed()
+    mockedExec.mockImplementation((cmd: string, args: string[] = []) => {
+      if (args.includes('--wifi-ap-status')) throw new Error('no helper')
+      return execDispatch(cmd, args)
+    })
+    await restartWifiAp(cfg({ wirelessCpEnabled: true }))
+    await vi.advanceTimersByTimeAsync(40_000)
+    expect(patches).toEqual([])
+    setWifiApReport(() => {})
+    vi.useRealTimers()
+  })
+
+  test('a host that grants passwordless sudo for everything needs no install', async () => {
+    mockedExists.mockReturnValue(true)
+    mockedRead.mockImplementation((p: string) => {
+      const path = String(p)
+      if (path.endsWith('livi-wifi-ap.service.template')) return UNIT_TPL
+      if (path.endsWith('99-LIVI-wifi-ap.sudoers.template')) return SUDOERS_TPL
+      return UNIT
+    })
+    exec.sudoList = 'User pi may run the following commands:\n    (ALL : ALL) NOPASSWD: ALL\n'
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true }), win)
+    expect(pkexecScript()).toBe('')
+    expect(sudoLines()).toContain('-n /usr/bin/systemctl start livi-wifi-ap.service')
+  })
+
+  test('a temp directory that cannot be made falls back to pkexec', async () => {
+    const { mkdtempSync } = await import('node:fs')
+    mockedExists.mockReturnValue(false)
+    mockedRead.mockImplementation(templatesOnly)
+    exec.helperRoot = true
+    ;(mkdtempSync as Mock).mockImplementationOnce(() => {
+      throw new Error('EROFS')
+    })
+    await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }), win)
+    expect(spawnCmds()).toContain('pkexec')
   })
 
   test('is a no-op off linux', async () => {
@@ -292,7 +500,12 @@ describe('reconcileWifiAp — not wanted', () => {
     realPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
     vi.clearAllMocks()
-    mockedExec.mockReturnValue('/usr/bin/systemctl\n')
+    exec.which = '/usr/bin/systemctl\n'
+    exec.sudoList = NO_AP_RULE
+    exec.helper = ''
+    exec.helperRoot = false
+    exec.id = 'pi\n'
+    mockedExec.mockImplementation(execDispatch)
     autoClose(0)
   })
   afterEach(() => {
@@ -376,6 +589,124 @@ describe('reconcileWifiAp — not wanted', () => {
     expect(teardown).not.toContain('wlan1')
   })
 
+  test('reads the template packaged next to the app when it is there', async () => {
+    const real = Object.getOwnPropertyDescriptor(process, 'resourcesPath')
+    Object.defineProperty(process, 'resourcesPath', { value: '/res', configurable: true })
+    mockedExists.mockImplementation((p: string) => String(p).startsWith('/res'))
+    mockedRead.mockImplementation(templatesOnly)
+    exec.helperRoot = true
+    await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }))
+    expect(mockedRead).toHaveBeenCalledWith('/res/livi-wifi-ap.service.template', 'utf8')
+    if (real) Object.defineProperty(process, 'resourcesPath', real)
+  })
+
+  test('the rule names the user behind pkexec, then the one behind sudo', async () => {
+    mockedExists.mockReturnValue(false)
+    mockedRead.mockImplementation(templatesOnly)
+    process.env.PKEXEC_UID = '1000'
+    exec.id = 'desktop-user\n'
+    await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }))
+    expect(pkexecScript()).toContain('SUDO_USER=desktop-user')
+
+    vi.clearAllMocks()
+    mockedExec.mockImplementation(execDispatch)
+    mockedExists.mockReturnValue(false)
+    mockedRead.mockImplementation(templatesOnly)
+    autoClose(0)
+    process.env.PKEXEC_UID = ''
+    process.env.SUDO_USER = 'sudo-user'
+    await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }))
+    expect(pkexecScript()).toContain('SUDO_USER=sudo-user')
+    process.env.SUDO_USER = ''
+  })
+
+  test('a sudo that cannot list the rules installs rather than assume', async () => {
+    installed()
+    mockedExec.mockImplementation((cmd: string, args: string[] = []) => {
+      if (cmd === 'sudo' && args.includes('-l')) throw new Error('a password is required')
+      return execDispatch(cmd, args)
+    })
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true }), win)
+    expect(pkexecScript()).not.toBe('')
+  })
+
+  test('templates that cannot be read stop the reconcile', async () => {
+    mockedExists.mockReturnValue(false)
+    mockedRead.mockImplementation(() => {
+      throw new Error('EACCES')
+    })
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true }))
+    expect(err).toHaveBeenCalled()
+    expect(sudoLines()).toEqual([])
+    err.mockRestore()
+  })
+
+  test('no helper and no pkexec says what to run instead', async () => {
+    mockedExists.mockReturnValue(false)
+    mockedRead.mockImplementation(templatesOnly)
+    mockedExec.mockImplementation((cmd: string, args: string[] = []) => {
+      if (cmd === 'which' && args[0] === 'pkexec') throw new Error('not found')
+      return execDispatch(cmd, args)
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true }), win)
+    expect(warn.mock.calls[0]?.[0]).toContain('Run the LIVI install script')
+    expect(spawnCmds()).not.toContain('pkexec')
+    expect(sudoLines()).toEqual([])
+    warn.mockRestore()
+  })
+
+  test('the dongle as the interface releases the local AP', async () => {
+    installed()
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true, wifiInterface: 'livi-link' }))
+    expect(sudoLines()).toContain('-n /usr/bin/systemctl stop livi-wifi-ap.service')
+    expect(sudoLines()).not.toContain('-n /usr/bin/systemctl start livi-wifi-ap.service')
+  })
+
+  test('a status readback that fails writes nothing back', async () => {
+    vi.useFakeTimers()
+    const { restartWifiAp, setWifiApReport } = await import('../wifiApUnit')
+    const patches: Record<string, unknown>[] = []
+    setWifiApReport((p) => patches.push(p))
+    installed()
+    mockedExec.mockImplementation((cmd: string, args: string[] = []) => {
+      if (args.includes('--wifi-ap-status')) throw new Error('no helper')
+      return execDispatch(cmd, args)
+    })
+    await restartWifiAp(cfg({ wirelessCpEnabled: true }))
+    await vi.advanceTimersByTimeAsync(40_000)
+    expect(patches).toEqual([])
+    setWifiApReport(() => {})
+    vi.useRealTimers()
+  })
+
+  test('a host that grants passwordless sudo for everything needs no install', async () => {
+    mockedExists.mockReturnValue(true)
+    mockedRead.mockImplementation((p: string) => {
+      const path = String(p)
+      if (path.endsWith('livi-wifi-ap.service.template')) return UNIT_TPL
+      if (path.endsWith('99-LIVI-wifi-ap.sudoers.template')) return SUDOERS_TPL
+      return UNIT
+    })
+    exec.sudoList = 'User pi may run the following commands:\n    (ALL : ALL) NOPASSWD: ALL\n'
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true }), win)
+    expect(pkexecScript()).toBe('')
+    expect(sudoLines()).toContain('-n /usr/bin/systemctl start livi-wifi-ap.service')
+  })
+
+  test('a temp directory that cannot be made falls back to pkexec', async () => {
+    const { mkdtempSync } = await import('node:fs')
+    mockedExists.mockReturnValue(false)
+    mockedRead.mockImplementation(templatesOnly)
+    exec.helperRoot = true
+    ;(mkdtempSync as Mock).mockImplementationOnce(() => {
+      throw new Error('EROFS')
+    })
+    await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }), win)
+    expect(spawnCmds()).toContain('pkexec')
+  })
+
   test('is a no-op off linux', async () => {
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
     await reconcileWifiAp(cfg())
@@ -389,7 +720,12 @@ describe('releaseWifiApForQuit', () => {
     realPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
     vi.clearAllMocks()
-    mockedExec.mockReturnValue('/usr/bin/systemctl\n')
+    exec.which = '/usr/bin/systemctl\n'
+    exec.sudoList = NO_AP_RULE
+    exec.helper = ''
+    exec.helperRoot = false
+    exec.id = 'pi\n'
+    mockedExec.mockImplementation(execDispatch)
     autoClose(0)
   })
   afterEach(() => {
@@ -406,9 +742,147 @@ describe('releaseWifiApForQuit', () => {
     expect(sudoLines()).toEqual(['-n /usr/bin/systemctl stop livi-wifi-ap.service'])
   })
 
+  test('reads the template packaged next to the app when it is there', async () => {
+    const real = Object.getOwnPropertyDescriptor(process, 'resourcesPath')
+    Object.defineProperty(process, 'resourcesPath', { value: '/res', configurable: true })
+    mockedExists.mockImplementation((p: string) => String(p).startsWith('/res'))
+    mockedRead.mockImplementation(templatesOnly)
+    exec.helperRoot = true
+    await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }))
+    expect(mockedRead).toHaveBeenCalledWith('/res/livi-wifi-ap.service.template', 'utf8')
+    if (real) Object.defineProperty(process, 'resourcesPath', real)
+  })
+
+  test('the rule names the user behind pkexec, then the one behind sudo', async () => {
+    mockedExists.mockReturnValue(false)
+    mockedRead.mockImplementation(templatesOnly)
+    process.env.PKEXEC_UID = '1000'
+    exec.id = 'desktop-user\n'
+    await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }))
+    expect(pkexecScript()).toContain('SUDO_USER=desktop-user')
+
+    vi.clearAllMocks()
+    mockedExec.mockImplementation(execDispatch)
+    mockedExists.mockReturnValue(false)
+    mockedRead.mockImplementation(templatesOnly)
+    autoClose(0)
+    process.env.PKEXEC_UID = ''
+    process.env.SUDO_USER = 'sudo-user'
+    await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }))
+    expect(pkexecScript()).toContain('SUDO_USER=sudo-user')
+    process.env.SUDO_USER = ''
+  })
+
+  test('a sudo that cannot list the rules installs rather than assume', async () => {
+    installed()
+    mockedExec.mockImplementation((cmd: string, args: string[] = []) => {
+      if (cmd === 'sudo' && args.includes('-l')) throw new Error('a password is required')
+      return execDispatch(cmd, args)
+    })
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true }), win)
+    expect(pkexecScript()).not.toBe('')
+  })
+
+  test('templates that cannot be read stop the reconcile', async () => {
+    mockedExists.mockReturnValue(false)
+    mockedRead.mockImplementation(() => {
+      throw new Error('EACCES')
+    })
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true }))
+    expect(err).toHaveBeenCalled()
+    expect(sudoLines()).toEqual([])
+    err.mockRestore()
+  })
+
+  test('no helper and no pkexec says what to run instead', async () => {
+    mockedExists.mockReturnValue(false)
+    mockedRead.mockImplementation(templatesOnly)
+    mockedExec.mockImplementation((cmd: string, args: string[] = []) => {
+      if (cmd === 'which' && args[0] === 'pkexec') throw new Error('not found')
+      return execDispatch(cmd, args)
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true }), win)
+    expect(warn.mock.calls[0]?.[0]).toContain('Run the LIVI install script')
+    expect(spawnCmds()).not.toContain('pkexec')
+    expect(sudoLines()).toEqual([])
+    warn.mockRestore()
+  })
+
+  test('the dongle as the interface releases the local AP', async () => {
+    installed()
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true, wifiInterface: 'livi-link' }))
+    expect(sudoLines()).toContain('-n /usr/bin/systemctl stop livi-wifi-ap.service')
+    expect(sudoLines()).not.toContain('-n /usr/bin/systemctl start livi-wifi-ap.service')
+  })
+
+  test('a status readback that fails writes nothing back', async () => {
+    vi.useFakeTimers()
+    const { restartWifiAp, setWifiApReport } = await import('../wifiApUnit')
+    const patches: Record<string, unknown>[] = []
+    setWifiApReport((p) => patches.push(p))
+    installed()
+    mockedExec.mockImplementation((cmd: string, args: string[] = []) => {
+      if (args.includes('--wifi-ap-status')) throw new Error('no helper')
+      return execDispatch(cmd, args)
+    })
+    await restartWifiAp(cfg({ wirelessCpEnabled: true }))
+    await vi.advanceTimersByTimeAsync(40_000)
+    expect(patches).toEqual([])
+    setWifiApReport(() => {})
+    vi.useRealTimers()
+  })
+
+  test('a host that grants passwordless sudo for everything needs no install', async () => {
+    mockedExists.mockReturnValue(true)
+    mockedRead.mockImplementation((p: string) => {
+      const path = String(p)
+      if (path.endsWith('livi-wifi-ap.service.template')) return UNIT_TPL
+      if (path.endsWith('99-LIVI-wifi-ap.sudoers.template')) return SUDOERS_TPL
+      return UNIT
+    })
+    exec.sudoList = 'User pi may run the following commands:\n    (ALL : ALL) NOPASSWD: ALL\n'
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true }), win)
+    expect(pkexecScript()).toBe('')
+    expect(sudoLines()).toContain('-n /usr/bin/systemctl start livi-wifi-ap.service')
+  })
+
+  test('a temp directory that cannot be made falls back to pkexec', async () => {
+    const { mkdtempSync } = await import('node:fs')
+    mockedExists.mockReturnValue(false)
+    mockedRead.mockImplementation(templatesOnly)
+    exec.helperRoot = true
+    ;(mkdtempSync as Mock).mockImplementationOnce(() => {
+      throw new Error('EROFS')
+    })
+    await reconcileWifiAp(cfg({ wifiDedicatedInterface: true }), win)
+    expect(spawnCmds()).toContain('pkexec')
+  })
+
   test('is a no-op off linux', async () => {
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
     await releaseWifiApForQuit(cfg())
     expect(mockedSpawn).not.toHaveBeenCalled()
+  })
+})
+
+describe('shipped templates', () => {
+  test('carry what the app and the installer substitute', async () => {
+    const fs = await vi.importActual<typeof import('node:fs')>('node:fs')
+    const { join } = await vi.importActual<typeof import('node:path')>('node:path')
+    const dir = join(process.cwd(), 'assets', 'linux')
+    const unit = fs.readFileSync(join(dir, 'livi-wifi-ap.service.template'), 'utf8')
+    const rule = fs.readFileSync(join(dir, '99-LIVI-wifi-ap.sudoers.template'), 'utf8')
+
+    expect(unit).toContain('ConditionPathExists=__HELPER__')
+    expect(unit).toContain('Environment=SUDO_USER=__USERNAME__')
+    expect(unit).toContain('ExecStop=__HELPER__ --wifi-ap-teardown')
+    expect(unit).not.toContain('__SYSTEMCTL__')
+    // sudoersActive() recognises an installed rule by this command.
+    expect(rule).toContain('__SYSTEMCTL__ restart livi-wifi-ap.service')
+    expect(rule).toContain('__USERNAME__ ALL=(root) NOPASSWD: LIVI_WIFI_AP')
+    expect(unit.endsWith('\n')).toBe(true)
+    expect(rule.endsWith('\n')).toBe(true)
   })
 })

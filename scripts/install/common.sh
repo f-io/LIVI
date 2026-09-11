@@ -10,8 +10,13 @@ LIVI_UDEV_FILE="/etc/udev/rules.d/99-LIVI.rules"
 LIVI_UDEV_TEMPLATE="99-LIVI.rules.template"
 LIVI_TOUCH_FILTER_TEMPLATE="livi-touch-filter"
 LIVI_TOUCH_FILTER_FILE="/usr/local/lib/livi/livi-touch-filter"
-LIVI_SUDOERS_FILE="/etc/sudoers.d/99-LIVI-bt"
-LIVI_SUDOERS_TEMPLATE="99-LIVI-bt.sudoers.template"
+LIVI_SUDOERS_FILE="/etc/sudoers.d/99-LIVI-helper"
+LIVI_SUDOERS_TEMPLATE="99-LIVI-helper.sudoers.template"
+LIVI_AP_UNIT_FILE="/etc/systemd/system/livi-wifi-ap.service"
+LIVI_AP_UNIT_TEMPLATE="livi-wifi-ap.service.template"
+LIVI_AP_SUDOERS_FILE="/etc/sudoers.d/99-LIVI-wifi-ap"
+LIVI_AP_SUDOERS_TEMPLATE="99-LIVI-wifi-ap.sudoers.template"
+LIVI_AP_MARKER="${LIVI_AP_MARKER:-$HOME/.config/LIVI/.wifi-ap-install}"
 LIVI_BOOT_CONFIG="${LIVI_BOOT_CONFIG:-/boot/firmware/config.txt}"
 
 # I2C for the Apple MFi coprocessor, matching carPlayMfiI2cBus in config.json
@@ -470,6 +475,37 @@ livi_write_sudoers() {
   livi_drop_obsolete_sudoers
 }
 
+# The access point service. A host without a desktop has no agent for the in-app dialog.
+livi_write_wifi_ap_unit() {
+  local unit_template="$1" sudoers_template="$2" helper systemctl staged
+  helper="$HOME/.config/LIVI/driver/livi-helperd"
+  systemctl="$(command -v systemctl || echo /usr/bin/systemctl)"
+
+  echo "→ Writing $LIVI_AP_UNIT_FILE"
+  sed -e "s|__HELPER__|$helper|g" -e "s/__USERNAME__/$USER/g" "$unit_template" \
+    | sudo tee "$LIVI_AP_UNIT_FILE" >/dev/null
+
+  echo "→ Writing $LIVI_AP_SUDOERS_FILE"
+  staged="$(mktemp)"
+  sed -e "s|__HELPER__|$helper|g" -e "s|__SYSTEMCTL__|$systemctl|g" -e "s/__USERNAME__/$USER/g" \
+    "$sudoers_template" > "$staged"
+  sudo install -m 0440 -o root -g root "$staged" "$LIVI_AP_SUDOERS_FILE.livi-tmp"
+  rm -f "$staged"
+  if sudo visudo -c -f "$LIVI_AP_SUDOERS_FILE.livi-tmp" >/dev/null; then
+    sudo mv "$LIVI_AP_SUDOERS_FILE.livi-tmp" "$LIVI_AP_SUDOERS_FILE"
+  else
+    sudo rm -f "$LIVI_AP_SUDOERS_FILE.livi-tmp"
+    echo "Error: the generated sudoers file failed validation and was not installed" >&2
+    return 1
+  fi
+  sudo systemctl daemon-reload
+
+  # The app cannot read the root-only rule, so it compares this stamp of it instead.
+  mkdir -p "$(dirname "$LIVI_AP_MARKER")"
+  sed -e "s|__HELPER__|$helper|g" -e "s|__SYSTEMCTL__|$systemctl|g" -e "s/__USERNAME__/$USER/g" \
+    "$sudoers_template" | sha256sum | cut -c1-16 > "$LIVI_AP_MARKER"
+}
+
 # Earlier releases gave each python helper its own drop-in. They grant root to
 # scripts that no longer ship, so drop them once the current rule is in place.
 livi_drop_obsolete_sudoers() {
@@ -480,6 +516,11 @@ livi_drop_obsolete_sudoers() {
       sudo rm -f "$f"
     fi
   done
+  # 99-LIVI-bt granted the same thing under a name that only said Bluetooth.
+  if sudo test -f /etc/sudoers.d/99-LIVI-bt; then
+    echo "→ Removing obsolete /etc/sudoers.d/99-LIVI-bt"
+    sudo rm -f /etc/sudoers.d/99-LIVI-bt
+  fi
   sudo rm -f "$LIVI_SUDOERS_FILE.livi-tmp"
 }
 

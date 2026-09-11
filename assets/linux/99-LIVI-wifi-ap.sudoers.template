@@ -1,0 +1,6 @@
+# LIVI sudoers drop-in. Managed by LIVI. Do not edit by hand.
+# Single source of truth for wifiApUnit.ts and the installer.
+# Lets __USERNAME__ run the access point service and hand the interface back,
+# which wireless CarPlay and Android Auto need. Remove this file to revoke.
+Cmnd_Alias LIVI_WIFI_AP = __SYSTEMCTL__ start livi-wifi-ap.service, __SYSTEMCTL__ stop livi-wifi-ap.service, __SYSTEMCTL__ restart livi-wifi-ap.service, __SYSTEMCTL__ enable livi-wifi-ap.service, __SYSTEMCTL__ disable livi-wifi-ap.service, __HELPER__ --wifi-ap-teardown
+__USERNAME__ ALL=(root) NOPASSWD: LIVI_WIFI_AP

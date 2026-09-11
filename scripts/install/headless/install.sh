@@ -83,6 +83,14 @@ SUDOERS_TEMPLATE="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_SUDOERS_TEMPLATE
   exit 1
 }
 
+AP_UNIT_TEMPLATE="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_AP_UNIT_TEMPLATE")" || {
+  echo "Error: cannot obtain $LIVI_AP_UNIT_TEMPLATE" >&2
+  exit 1
+}
+AP_SUDOERS_TEMPLATE="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_AP_SUDOERS_TEMPLATE")" || {
+  echo "Error: cannot obtain $LIVI_AP_SUDOERS_TEMPLATE" >&2
+  exit 1
+}
 TOUCH_FILTER="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_TOUCH_FILTER_TEMPLATE")" || {
   echo "Error: cannot obtain $LIVI_TOUCH_FILTER_TEMPLATE" >&2
   exit 1
@@ -92,6 +100,7 @@ TOUCH_FILTER="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_TOUCH_FILTER_TEMPLAT
 livi_install_touch_filter "$TOUCH_FILTER"
 livi_write_udev_rule "$UDEV_TEMPLATE"
 livi_write_sudoers "$SUDOERS_TEMPLATE"
+livi_write_wifi_ap_unit "$AP_UNIT_TEMPLATE" "$AP_SUDOERS_TEMPLATE"
 livi_install_time_helper
 livi_disable_wifi_powersave
 livi_set_wifi_pmf_optional

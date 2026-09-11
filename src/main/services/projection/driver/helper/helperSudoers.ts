@@ -4,11 +4,20 @@ import os from 'node:os'
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog } from 'electron'
 
-const RULE_FILE = '/etc/sudoers.d/99-LIVI-bt'
-const TEMPLATE_FILENAME = '99-LIVI-bt.sudoers.template'
-const SENTINEL_VERSION = 'v2'
+const RULE_FILE = '/etc/sudoers.d/99-LIVI-helper'
+// The rule covers the whole helper, not only Bluetooth. This name replaces 99-LIVI-bt.
+const OBSOLETE_RULE_FILE = '/etc/sudoers.d/99-LIVI-bt'
+const TEMPLATE_FILENAME = '99-LIVI-helper.sudoers.template'
 function sentinelPath(): string {
-  return join(app.getPath('userData'), `bt-sudoers-${SENTINEL_VERSION}.installed`)
+  return join(app.getPath('userData'), 'helper-sudoers-v1.installed')
+}
+
+function sentinelExists(): boolean {
+  try {
+    return existsSync(sentinelPath())
+  } catch {
+    return false
+  }
 }
 
 function resolveTemplatePath(): string {
@@ -52,12 +61,7 @@ function ruleActiveInSudo(): boolean {
 }
 
 export function helperSudoersExists(): boolean {
-  if (ruleActiveInSudo()) return true
-  try {
-    return existsSync(sentinelPath())
-  } catch {
-    return false
-  }
+  return ruleActiveInSudo() || sentinelExists()
 }
 
 function pkexecAvailable(): boolean {
@@ -83,7 +87,8 @@ function installRule(): Promise<void> {
       `chmod 0440 ${tmpFile}`,
       `chown root:root ${tmpFile}`,
       `visudo -c -f ${tmpFile}`,
-      `mv ${tmpFile} ${RULE_FILE}`
+      `mv ${tmpFile} ${RULE_FILE}`,
+      `rm -f ${OBSOLETE_RULE_FILE}`
     ].join('\n')
 
     const proc = spawn('pkexec', ['bash', '-c', script], { stdio: 'ignore' })

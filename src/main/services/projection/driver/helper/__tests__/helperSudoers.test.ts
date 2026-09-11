@@ -27,8 +27,9 @@ const mockedRead = readFileSync as Mock
 const mockedWrite = writeFileSync as Mock
 const mockedDialog = dialog.showMessageBox as Mock
 
-const TEMPLATE = 'Cmnd_Alias LIVI_BT = */livi-helperd\n__USERNAME__ ALL=(root) NOPASSWD: LIVI_BT\n'
-const SENTINEL = '/tmp/bt-sudoers-v2.installed'
+const TEMPLATE =
+  'Cmnd_Alias LIVI_HELPER = */livi-helperd\n__USERNAME__ ALL=(root) NOPASSWD: LIVI_HELPER\n'
+const SENTINEL = '/tmp/helper-sudoers-v1.installed'
 const win = {} as never
 
 function makeProc(): EventEmitter {
@@ -157,12 +158,14 @@ describe('checkAndInstallHelperSudoers', () => {
 
     const script = await install()
 
-    expect(script).toContain('sudo-driver ALL=(root) NOPASSWD: LIVI_BT')
-    expect(script).toContain('Cmnd_Alias LIVI_BT = */livi-helperd')
-    expect(script).toContain('visudo -c -f /etc/sudoers.d/99-LIVI-bt.livi-tmp')
+    expect(script).toContain('sudo-driver ALL=(root) NOPASSWD: LIVI_HELPER')
+    expect(script).toContain('Cmnd_Alias LIVI_HELPER = */livi-helperd')
+    expect(script).toContain('visudo -c -f /etc/sudoers.d/99-LIVI-helper.livi-tmp')
+    // The same grant used to live under a name that only said Bluetooth.
+    expect(script).toContain('rm -f /etc/sudoers.d/99-LIVI-bt')
     expect(mockedWrite).toHaveBeenCalledWith(
       SENTINEL,
-      expect.stringContaining('/etc/sudoers.d/99-LIVI-bt'),
+      expect.stringContaining('/etc/sudoers.d/99-LIVI-helper'),
       { mode: 0o644 }
     )
     expect(mockedDialog).toHaveBeenLastCalledWith(win, expect.objectContaining({ type: 'info' }))
@@ -171,11 +174,13 @@ describe('checkAndInstallHelperSudoers', () => {
   test('renders the template from the packaged resources when present', async () => {
     noSudo()
     ;(process as { resourcesPath?: string }).resourcesPath = '/res'
-    mockedExists.mockImplementation((p: string) => String(p) === '/res/99-LIVI-bt.sudoers.template')
+    mockedExists.mockImplementation(
+      (p: string) => String(p) === '/res/99-LIVI-helper.sudoers.template'
+    )
 
     await install()
 
-    expect(mockedRead).toHaveBeenCalledWith('/res/99-LIVI-bt.sudoers.template', 'utf8')
+    expect(mockedRead).toHaveBeenCalledWith('/res/99-LIVI-helper.sudoers.template', 'utf8')
     expect(mockedSpawn.mock.calls[0][1][2]).toContain('*/livi-helperd')
   })
 
@@ -185,7 +190,10 @@ describe('checkAndInstallHelperSudoers', () => {
 
     await install()
 
-    expect(mockedRead).toHaveBeenCalledWith('/app/assets/linux/99-LIVI-bt.sudoers.template', 'utf8')
+    expect(mockedRead).toHaveBeenCalledWith(
+      '/app/assets/linux/99-LIVI-helper.sudoers.template',
+      'utf8'
+    )
   })
 
   test('resolves the username from PKEXEC_UID and falls back on id errors', async () => {
@@ -237,8 +245,8 @@ describe('checkAndInstallHelperSudoers', () => {
     expect(errSpy).toHaveBeenCalledWith('[helperSudoers] installation failed:', expect.any(Error))
     const opts = mockedDialog.mock.calls.at(-1)?.[1]
     expect(opts.type).toBe('error')
-    expect(opts.detail).toContain("sudo tee /etc/sudoers.d/99-LIVI-bt <<'EOF'")
-    expect(opts.detail).toContain('driver ALL=(root) NOPASSWD: LIVI_BT')
+    expect(opts.detail).toContain("sudo tee /etc/sudoers.d/99-LIVI-helper <<'EOF'")
+    expect(opts.detail).toContain('driver ALL=(root) NOPASSWD: LIVI_HELPER')
     errSpy.mockRestore()
   })
 
@@ -255,5 +263,20 @@ describe('checkAndInstallHelperSudoers', () => {
 
     expect(mockedDialog.mock.calls.at(-1)?.[1].type).toBe('error')
     errSpy.mockRestore()
+  })
+})
+
+describe('shipped template', () => {
+  test('names the helper, not one of its jobs', async () => {
+    const fs = await vi.importActual<typeof import('node:fs')>('node:fs')
+    const { join } = await vi.importActual<typeof import('node:path')>('node:path')
+    const rule = fs.readFileSync(
+      join(process.cwd(), 'assets', 'linux', '99-LIVI-helper.sudoers.template'),
+      'utf8'
+    )
+    expect(rule).toContain(
+      'Cmnd_Alias LIVI_HELPER = /home/__USERNAME__/.config/LIVI/driver/livi-helperd'
+    )
+    expect(rule).toContain('__USERNAME__ ALL=(root) NOPASSWD: SETENV: LIVI_HELPER')
   })
 })

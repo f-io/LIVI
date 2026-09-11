@@ -138,6 +138,15 @@ describe('wifiOptions', () => {
       expect(listWifiChannels('5ghz')).toEqual([149])
     })
 
+    test('an unreadable phy link falls back to every radio the helper lists', async () => {
+      const { readFileSync } = await import('node:fs')
+      ;(readFileSync as Mock).mockImplementation(() => {
+        throw new Error('ENOENT')
+      })
+      mockedExec.mockReturnValue(TWO_RADIOS)
+      expect(listWifiChannels('5ghz', 'DE', 'wlan0')).toEqual([36, 149])
+    })
+
     test('a country that is not the one the driver is on gets the safe list', () => {
       mockedExec.mockReturnValue(HELPER_LIST)
       expect(listWifiChannels('5ghz', 'US')).toEqual([36, 40, 44, 48])
@@ -167,6 +176,11 @@ describe('wifiOptions', () => {
       expect(listWifiChannels('5ghz')).toEqual([36, 40, 44, 48])
     })
 
+    test('a driver that lists no frequency at all gets the safe list', () => {
+      mockedExec.mockReturnValue('country DE\nphy phy0\n')
+      expect(listWifiChannels('5ghz')).toEqual([36, 40, 44, 48])
+    })
+
     test('falls back off linux without asking anyone', () => {
       Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
       expect(listWifiChannels('2.4ghz')).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
@@ -180,6 +194,28 @@ describe('wifiOptions', () => {
         ['country 00: DFS-UNSET', 'country DE: DFS-ETSI', 'country AT: DFS-ETSI', 'junk'].join('\n')
       )
       expect(listWifiCountryCodes()).toEqual(['AT', 'DE'])
+    })
+
+    test('finds regdbdump in sbin, which a desktop session does not carry in its PATH', () => {
+      mockedExists.mockImplementation((p: string) => String(p) === '/usr/sbin/regdbdump')
+      mockedExec.mockReturnValue('country DE: DFS-ETSI\n')
+      listWifiCountryCodes()
+      expect(mockedExec).toHaveBeenCalledWith(
+        '/usr/sbin/regdbdump',
+        ['/lib/firmware/regulatory.db'],
+        expect.anything()
+      )
+    })
+
+    test('calls regdbdump by name when it is in none of the system directories', () => {
+      mockedExists.mockReturnValue(false)
+      mockedExec.mockReturnValue('country DE: DFS-ETSI\n')
+      listWifiCountryCodes()
+      expect(mockedExec).toHaveBeenCalledWith(
+        'regdbdump',
+        ['/lib/firmware/regulatory.db'],
+        expect.anything()
+      )
     })
 
     test('falls back to the static list when regdbdump fails', () => {

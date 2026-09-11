@@ -15,8 +15,6 @@ const LAST_GOOD: &str = "/tmp/livi-ap-last-good";
 /// Where a refused channel lands. Allowed in every regulatory domain, no DFS.
 const SAFE_CHANNEL_5: u8 = 36;
 const SAFE_CHANNEL_24: u8 = 6;
-const NM_WAIT: Duration = Duration::from_secs(15);
-const NM_POLL: Duration = Duration::from_millis(250);
 
 #[derive(Clone)]
 pub struct ApConfig {
@@ -94,11 +92,15 @@ fn write_dnsmasq_conf(cfg: &ApConfig) -> std::io::Result<()> {
 }
 
 fn run_cmd(cmd: &str, args: &[&str]) {
-    let _ = Command::new(cmd).args(args).stdout(Stdio::null()).stderr(Stdio::null()).status();
+    let _ = Command::new(crate::sys::tool(cmd))
+        .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 }
 
 fn cmd_stdout(cmd: &str, args: &[&str]) -> String {
-    Command::new(cmd)
+    Command::new(crate::sys::tool(cmd))
         .args(args)
         .output()
         .ok()
@@ -148,11 +150,7 @@ pub fn release_iface_from_nm(iface: &str) {
         let _ = std::fs::create_dir_all("/etc/NetworkManager/conf.d");
         let _ = std::fs::write(NM_UNMANAGED_CONF, content);
     }
-    if nm_installed() {
-        let deadline = Instant::now() + NM_WAIT;
-        while !nm_running() && Instant::now() < deadline {
-            std::thread::sleep(NM_POLL);
-        }
+    if nm_installed() && nm_running() {
         run_cmd("nmcli", &["general", "reload"]);
         run_cmd("nmcli", &["device", "set", iface, "managed", "no"]);
         run_cmd("nmcli", &["device", "disconnect", iface]);
@@ -176,6 +174,37 @@ pub fn status(iface: &str) -> String {
         "running {}\nssid {ssid}\nchannel {channel}\nwidth {width}\n",
         channel > 0 && on_air
     )
+}
+
+const UNIT_PATH: &str = "/etc/systemd/system/livi-wifi-ap.service";
+const SUDOERS_PATH: &str = "/etc/sudoers.d/99-LIVI-wifi-ap";
+
+/// Puts the unit and the sudoers rule in place, both rendered by the caller.
+pub fn install(unit_src: &str, rule_src: &str) -> Result<(), String> {
+    if unsafe { libc::geteuid() } != 0 {
+        return Err("needs root".into());
+    }
+    let unit = std::fs::read(unit_src).map_err(|e| format!("{unit_src}: {e}"))?;
+    let rule = std::fs::read(rule_src).map_err(|e| format!("{rule_src}: {e}"))?;
+
+    let staged = format!("{SUDOERS_PATH}.livi-tmp");
+    std::fs::write(&staged, &rule).map_err(|e| format!("{staged}: {e}"))?;
+    std::fs::set_permissions(&staged, std::os::unix::fs::PermissionsExt::from_mode(0o440))
+        .map_err(|e| format!("{staged}: {e}"))?;
+    let checked = Command::new(crate::sys::tool("visudo"))
+        .args(["-c", "-f", &staged])
+        .stdout(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !checked {
+        let _ = std::fs::remove_file(&staged);
+        return Err("the rule did not pass visudo".into());
+    }
+    std::fs::rename(&staged, SUDOERS_PATH).map_err(|e| format!("{SUDOERS_PATH}: {e}"))?;
+    std::fs::write(UNIT_PATH, &unit).map_err(|e| format!("{UNIT_PATH}: {e}"))?;
+    run_cmd("systemctl", &["daemon-reload"]);
+    Ok(())
 }
 
 /// Return the interface to NetworkManager and stop the AP.
@@ -269,7 +298,7 @@ fn wait_ready(iface: &str, timeout: Duration) -> bool {
 
 fn spawn_hostapd() -> std::io::Result<Child> {
     let log = std::fs::File::create(HOSTAPD_LOG)?;
-    Command::new("hostapd")
+    Command::new(crate::sys::tool("hostapd"))
         .arg(HOSTAPD_CONF)
         .stdout(Stdio::from(log.try_clone()?))
         .stderr(Stdio::from(log))
@@ -277,7 +306,7 @@ fn spawn_hostapd() -> std::io::Result<Child> {
 }
 
 fn spawn_dnsmasq() -> std::io::Result<Child> {
-    Command::new("dnsmasq")
+    Command::new(crate::sys::tool("dnsmasq"))
         .args(["--keep-in-foreground", &format!("--conf-file={DNSMASQ_CONF}")])
         .stdout(Stdio::null())
         .spawn()

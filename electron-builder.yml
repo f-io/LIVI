@@ -41,8 +41,12 @@ linux:
       to: ../share/metainfo/dev.f-io.livi.metainfo.xml
     - from: assets/linux/99-LIVI.rules.template
       to: 99-LIVI.rules.template
-    - from: assets/linux/99-LIVI-bt.sudoers.template
-      to: 99-LIVI-bt.sudoers.template
+    - from: assets/linux/99-LIVI-helper.sudoers.template
+      to: 99-LIVI-helper.sudoers.template
+    - from: assets/linux/livi-wifi-ap.service.template
+      to: livi-wifi-ap.service.template
+    - from: assets/linux/99-LIVI-wifi-ap.sudoers.template
+      to: 99-LIVI-wifi-ap.sudoers.template
     - from: assets/linux/livi-touch-filter
       to: livi-touch-filter
     - from: assets/displays

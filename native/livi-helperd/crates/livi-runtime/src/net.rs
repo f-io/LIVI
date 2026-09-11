@@ -49,7 +49,7 @@ pub fn wlan_mac(iface: &str) -> Option<String> {
 
 #[cfg(target_os = "linux")]
 pub fn wlan_link_local(iface: &str) -> Option<String> {
-    let out = Command::new("ip")
+    let out = Command::new(crate::sys::tool("ip"))
         .args(["-6", "-o", "addr", "show", "dev", iface, "scope", "link"])
         .output()
         .ok()?;
