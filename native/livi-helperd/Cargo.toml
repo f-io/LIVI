@@ -11,6 +11,7 @@ members = [
     "crates/livi-session-io",
     "crates/livi-dongle",
     "crates/livi-link-provision",
+    "crates/livi-wifi",
     "bin/mfi-probe",
     "bin/livi-helperd",
     "bin/livi-link",

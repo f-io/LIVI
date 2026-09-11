@@ -26,7 +26,10 @@ import { checkAndInstallGvfsGuard, startPhoneSuppression } from '@main/services/
 import { reconcileDongleAp } from '@main/services/link/dongleAp'
 import { checkMissingPackages } from '@main/services/packageCheck'
 import { checkAndInstallHelperSudoers } from '@main/services/projection/driver/helper/helperSudoers'
-import { reconcileWifiAp } from '@main/services/projection/driver/helper/wifiApUnit'
+import {
+  reconcileWifiAp,
+  setWifiApReport
+} from '@main/services/projection/driver/helper/wifiApUnit'
 import { ProjectionService } from '@main/services/projection/services/ProjectionService'
 import { TelemetrySocket } from '@main/services/Socket'
 import { setupTelemetry } from '@main/services/telemetry/setupTelemetry'
@@ -84,6 +87,7 @@ app.whenReady().then(async () => {
   setDebugLogging(runtimeState.config.debugLogging === true)
 
   setCustomPageConfig(() => runtimeState.config)
+  setWifiApReport((patch) => saveSettings(runtimeState, patch))
   seedCustomPage()
   await customProxy.start(runtimeState.config.customUrl)
   const linkKeys: (keyof Config)[] = [

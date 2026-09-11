@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 livi-host-proto = { path = "../../../livi-host-proto/rust" }
+livi-wifi = { path = "../livi-wifi" }
 iap2-csm = { path = "../iap2-csm" }
 iap2-link = { path = "../iap2-link" }
 iap2-mfi = { path = "../iap2-mfi" }

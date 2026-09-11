@@ -137,6 +137,13 @@ pub fn run_wifi_ap() -> ExitCode {
     livi_runtime::wifi_ap::run(cfg)
 }
 
+/// `--wifi-ap-status`: what the access point ended up running on.
+pub fn run_wifi_ap_status() -> ExitCode {
+    let dc = DeviceConfig::load();
+    print!("{}", livi_runtime::wifi_ap::status(&ap_iface(&dc)));
+    ExitCode::SUCCESS
+}
+
 /// `--wifi-ap-claim`: takes the interface from NetworkManager, before it starts.
 pub fn run_wifi_ap_claim() -> ExitCode {
     let dc = DeviceConfig::load();

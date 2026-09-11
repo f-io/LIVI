@@ -1,3 +1,4 @@
+#[cfg(target_os = "linux")]
 use std::process::Command;
 
 #[cfg(not(target_os = "macos"))]
@@ -136,20 +137,10 @@ pub fn iface_facing(peer: &str) -> Option<String> {
     out
 }
 
+/// The network an interface beacons right now.
 pub fn ap_ssid_channel(iface: &str) -> (Option<String>, Option<u8>) {
-    let Ok(out) = Command::new("iw").args(["dev", iface, "info"]).output() else {
-        return (None, None);
-    };
-    let text = String::from_utf8_lossy(&out.stdout);
-    let mut ssid = None;
-    let mut channel = None;
-    for line in text.lines() {
-        let line = line.trim();
-        if let Some(v) = line.strip_prefix("ssid ") {
-            ssid = Some(v.trim().to_string());
-        } else if let Some(v) = line.strip_prefix("channel ") {
-            channel = v.split_whitespace().next().and_then(|c| c.parse().ok());
-        }
+    match livi_wifi::ap_state(iface) {
+        Some((ssid, channel)) => (Some(ssid), u8::try_from(channel).ok()),
+        None => (None, None),
     }
-    (ssid, channel)
 }

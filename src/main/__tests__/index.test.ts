@@ -83,7 +83,8 @@ vi.mock('@main/services/link/dongleAp', () => ({
 }))
 vi.mock('@main/services/projection/driver/helper/wifiApUnit', () => ({
   reconcileWifiAp: vi.fn(() => Promise.resolve()),
-  releaseWifiApForQuit: vi.fn(() => Promise.resolve())
+  releaseWifiApForQuit: vi.fn(() => Promise.resolve()),
+  setWifiApReport: vi.fn()
 }))
 
 vi.mock('@main/services/gvfsPhoneGuard', () => ({

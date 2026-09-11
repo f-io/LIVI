@@ -13,6 +13,12 @@ mod wired;
 fn main() -> ExitCode {
     #[cfg(target_os = "linux")]
     {
+        if std::env::args().any(|a| a == "--wifi-ap-status") {
+            return linux_main::run_wifi_ap_status();
+        }
+        if std::env::args().any(|a| a == "--wifi-channels") {
+            return livi_wifi::run();
+        }
         if std::env::args().any(|a| a == "--wifi-ap-claim") {
             return linux_main::run_wifi_ap_claim();
         }

@@ -231,12 +231,12 @@ describe('registerSettingsIpc', () => {
   })
 
   test('list handlers delegate to the host and wifi helpers', async () => {
-    const state = { config: { wifiType: '5ghz' } } as never
+    const state = { config: { wifiType: '5ghz', country: 'DE', wifiInterface: 'wlan0' } } as never
     registerSettingsIpc(state)
 
     expect(getHandler<() => string[]>('app:listDisplayModes')()).toEqual(['1024x600', '800x480'])
     expect(getHandler<() => number[]>('app:listWifiChannels')()).toEqual([36, 40])
-    expect(listWifiChannels).toHaveBeenCalledWith('5ghz')
+    expect(listWifiChannels).toHaveBeenCalledWith('5ghz', 'DE', 'wlan0')
     expect(getHandler<() => string[]>('app:listWifiCountryCodes')()).toEqual(['AT', 'DE'])
     expect(await getHandler<() => Promise<string[]>>('app:listWifiInterfaces')()).toEqual(['wlan0'])
     expect(await getHandler<() => Promise<string[]>>('app:listBtAdapters')()).toEqual(['hci0'])

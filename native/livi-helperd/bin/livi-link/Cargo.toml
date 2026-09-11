@@ -10,4 +10,5 @@ path = "src/main.rs"
 [dependencies]
 iap2-usbmux = { path = "../../crates/iap2-usbmux" }
 iap2-mfi = { path = "../../crates/iap2-mfi" }
+livi-wifi = { path = "../../crates/livi-wifi" }
 libc = "0.2"

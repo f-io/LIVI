@@ -920,6 +920,7 @@ dependencies = [
  "livi-aa",
  "livi-dongle",
  "livi-runtime",
+ "livi-wifi",
  "nusb",
  "serde_json",
  "tokio",
@@ -936,6 +937,7 @@ dependencies = [
  "iap2-mfi",
  "iap2-usbmux",
  "libc",
+ "livi-wifi",
 ]
 
 [[package]]
@@ -968,6 +970,7 @@ dependencies = [
  "iap2-mfi",
  "libc",
  "livi-host-proto",
+ "livi-wifi",
  "serde_json",
  "socket2 0.5.10",
  "tokio",
@@ -980,6 +983,13 @@ version = "0.1.0"
 dependencies = [
  "nusb",
  "tokio",
+]
+
+[[package]]
+name = "livi-wifi"
+version = "0.1.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

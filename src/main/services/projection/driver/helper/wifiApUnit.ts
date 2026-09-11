@@ -5,7 +5,8 @@ import { join } from 'node:path'
 import { DONGLE_LINK } from '@main/services/link/dongleAp'
 import type { Config } from '@shared/types/Config'
 import { app, type BrowserWindow, dialog } from 'electron'
-import { helperRestaged } from './staged'
+import { resolveHelperBin } from './helperSupervisor'
+import { clearHelperRestaged, helperRestaged } from './staged'
 
 const UNIT_PATH = '/etc/systemd/system/livi-wifi-ap.service'
 const SUDOERS_PATH = '/etc/sudoers.d/99-LIVI-wifi-ap'
@@ -181,7 +182,42 @@ export async function reconcileWifiAp(config: Config, window?: BrowserWindow): P
   await sudo([sc, config.wifiDedicatedInterface ? 'enable' : 'disable', SERVICE])
   // The service holds the old binary open until it is restarted, and start does nothing to a
   // running unit.
-  await sudo([sc, helperRestaged() ? 'restart' : 'start', SERVICE])
+  const restaged = helperRestaged()
+  await sudo([sc, restaged ? 'restart' : 'start', SERVICE])
+  if (restaged) clearHelperRestaged()
+  void settleWifiAp(config)
+}
+
+const AP_SETTLE_TRIES = 15
+const AP_SETTLE_MS = 2000
+
+let report: ((patch: Partial<Config>) => void) | null = null
+
+/** Where a corrected channel is written back to. */
+export function setWifiApReport(fn: (patch: Partial<Config>) => void): void {
+  report = fn
+}
+
+/** What the access point ended up on. */
+function runningWifiAp(): { running: boolean; channel: number; width: number } | null {
+  let out = ''
+  try {
+    out =
+      execFileSync(resolveHelperBin(), ['--wifi-ap-status'], {
+        encoding: 'utf8',
+        timeout: 3000
+      }) || ''
+  } catch {
+    return null
+  }
+  const value = (key: string): string =>
+    out
+      .split('\n')
+      .find((l) => l.startsWith(`${key} `))
+      ?.slice(key.length + 1) ?? ''
+  const channel = Number(value('channel'))
+  if (!channel) return null
+  return { running: value('running') === 'true', channel, width: Number(value('width')) }
 }
 
 /** Hands the AP service a settings change. It reads channel, width and the rest once at start. */
@@ -189,6 +225,29 @@ export async function restartWifiAp(config: Config): Promise<void> {
   if (process.platform !== 'linux') return
   if (!apWanted(config) || needsInstall()) return
   await sudo([systemctlPath(), 'restart', SERVICE])
+  void settleWifiAp(config)
+}
+
+/** Waits for the service to come up and writes back what it ended up on. */
+async function settleWifiAp(config: Config): Promise<void> {
+  for (let i = 0; i < AP_SETTLE_TRIES; i += 1) {
+    const live = runningWifiAp()
+    if (live?.running) {
+      const patch: Partial<Config> = {}
+      if (live.channel !== config.wifiChannel) patch.wifiChannel = live.channel
+      if (live.width > 0 && live.width !== config.wifiChannelWidth) {
+        patch.wifiChannelWidth = live.width
+      }
+      if (Object.keys(patch).length > 0) {
+        console.log(
+          `[wifiApUnit] channel ${config.wifiChannel} at ${config.wifiChannelWidth}MHz was refused, it runs on ${live.channel} at ${live.width}MHz`
+        )
+        report?.(patch)
+      }
+      return
+    }
+    await new Promise((done) => setTimeout(done, AP_SETTLE_MS))
+  }
 }
 
 /** before-quit: keep the AP only when dedicated, otherwise return the interface. */

@@ -33,7 +33,13 @@ export function registerSettingsIpc(runtimeState: runtimeStateProps) {
 
   registerIpcHandle('app:listDisplayModes', () => listHostOutputModes())
 
-  registerIpcHandle('app:listWifiChannels', () => listWifiChannels(runtimeState.config.wifiType))
+  registerIpcHandle('app:listWifiChannels', () =>
+    listWifiChannels(
+      runtimeState.config.wifiType,
+      runtimeState.config.country,
+      runtimeState.config.wifiInterface
+    )
+  )
 
   registerIpcHandle('app:listWifiCountryCodes', () => listWifiCountryCodes())
 

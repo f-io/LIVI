@@ -9,8 +9,11 @@ import {
 } from '../wifiOptions'
 
 vi.mock('node:child_process', () => ({ execFileSync: vi.fn() }))
+vi.mock('@main/services/projection/driver/helper/helperSupervisor', () => ({
+  resolveHelperBin: () => '/data/driver/livi-helperd'
+}))
 vi.mock('node:fs', () => {
-  const __m = { existsSync: vi.fn(), readdirSync: vi.fn() }
+  const __m = { existsSync: vi.fn(), readdirSync: vi.fn(), readFileSync: vi.fn() }
   return { ...__m, default: __m }
 })
 
@@ -18,18 +21,38 @@ const mockedExec = execFileSync as Mock
 const mockedExists = existsSync as Mock
 const mockedReaddir = readdirSync as Mock
 
-const IW_LIST = [
-  'Wiphy phy0',
-  '  Frequencies:',
-  '    * 2412.0 MHz [1]',
-  '    * 2417 MHz [2]',
-  '    * 2484 MHz [14]',
-  '    * 5180.0 MHz [36]',
-  '    * 5200 MHz [40] (disabled)',
-  '    * 5260 MHz [52] (radar detection)',
-  '    * 5745 MHz [149]',
-  '    * 5955 MHz [1] 6GHz-band',
-  '    * bogus line',
+const TWO_RADIOS = [
+  'country DE',
+  'phy phy0',
+  'chan 36 5180 ok 20',
+  'chan 149 5745 disabled 20',
+  'phy phy1',
+  'chan 36 5180 ok 20',
+  'chan 149 5745 ok 20',
+  ''
+].join('\n')
+
+const HELPER_LIST = [
+  'country DE',
+  'phy phy0',
+  'chan 1 2412 ok 20',
+  'chan 2 2417 ok 20',
+  'chan 14 2484 disabled 20',
+  'chan 36 5180 ok 20',
+  'chan 40 5200 disabled 20',
+  'chan 52 5260 radar 20',
+  'chan 149 5745 ok 20',
+  'bogus line',
+  ''
+].join('\n')
+
+// What DE really answers: the 5.8 band is there, but only at short range device power.
+const SHORT_RANGE_58 = [
+  'country DE',
+  'phy phy0',
+  'chan 36 5180 ok 20',
+  'chan 149 5745 ok 13',
+  'chan 165 5825 ok 13',
   ''
 ].join('\n')
 
@@ -87,29 +110,64 @@ describe('wifiOptions', () => {
 
   describe('listWifiChannels', () => {
     test('parses allowed 2.4 GHz channels from iw list', () => {
-      mockedExec.mockReturnValue(IW_LIST)
+      mockedExec.mockReturnValue(HELPER_LIST)
       expect(listWifiChannels('2.4ghz')).toEqual([1, 2])
     })
 
     test('parses allowed 5 GHz channels skipping disabled and radar entries', () => {
-      mockedExec.mockReturnValue(IW_LIST)
+      mockedExec.mockReturnValue(HELPER_LIST)
       expect(listWifiChannels('5ghz')).toEqual([36, 149])
     })
 
-    test('falls back to standard channels when iw fails', () => {
+    test('reads only the radio the chosen interface sits on', async () => {
+      const { readFileSync } = await import('node:fs')
+      ;(readFileSync as Mock).mockReturnValue('phy0\n')
+      mockedExec.mockReturnValue(TWO_RADIOS)
+      expect(listWifiChannels('5ghz', 'DE', 'wlan0')).toEqual([36])
+      ;(readFileSync as Mock).mockReturnValue('phy1\n')
+      expect(listWifiChannels('5ghz', 'DE', 'wlan1')).toEqual([36, 149])
+    })
+
+    test('drops a band the domain only allows for short range devices', () => {
+      mockedExec.mockReturnValue(SHORT_RANGE_58)
+      expect(listWifiChannels('5ghz')).toEqual([36])
+    })
+
+    test('keeps a channel when the helper says nothing about its power', () => {
+      mockedExec.mockReturnValue('country DE\nphy phy0\nchan 149 5745 ok\n')
+      expect(listWifiChannels('5ghz')).toEqual([149])
+    })
+
+    test('a country that is not the one the driver is on gets the safe list', () => {
+      mockedExec.mockReturnValue(HELPER_LIST)
+      expect(listWifiChannels('5ghz', 'US')).toEqual([36, 40, 44, 48])
+      expect(listWifiChannels('5ghz', 'DE')).toEqual([36, 149])
+    })
+
+    test('asks the helper, which asks the driver', () => {
+      mockedExec.mockReturnValue(HELPER_LIST)
+      listWifiChannels('5ghz')
+      expect(mockedExec).toHaveBeenCalledWith(
+        '/data/driver/livi-helperd',
+        ['--wifi-channels'],
+        expect.anything()
+      )
+    })
+
+    test('falls back to standard channels when the helper fails', () => {
       mockedExec.mockImplementation(() => {
-        throw new Error('iw missing')
+        throw new Error('no helper')
       })
       expect(listWifiChannels('2.4ghz')).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
-      expect(listWifiChannels('5ghz')).toEqual([36, 40, 44, 48, 149, 153, 157, 161, 165])
+      expect(listWifiChannels('5ghz')).toEqual([36, 40, 44, 48])
     })
 
-    test('falls back when iw lists no usable channels', () => {
-      mockedExec.mockReturnValue('Wiphy phy0\n    * 5200 MHz [40] (disabled)\n')
-      expect(listWifiChannels('5ghz')).toEqual([36, 40, 44, 48, 149, 153, 157, 161, 165])
+    test('falls back when the driver lists no usable channels', () => {
+      mockedExec.mockReturnValue('country DE\nchan 40 5200 disabled\n')
+      expect(listWifiChannels('5ghz')).toEqual([36, 40, 44, 48])
     })
 
-    test('falls back off linux without running iw', () => {
+    test('falls back off linux without asking anyone', () => {
       Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
       expect(listWifiChannels('2.4ghz')).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
       expect(mockedExec).not.toHaveBeenCalled()

@@ -1,3 +1,6 @@
+use std::path::Path;
+use std::time::{Duration, Instant};
+
 use tokio::sync::mpsc;
 
 use iap2_csm::CsmMessage;
@@ -282,6 +285,30 @@ fn carplay_start_session(cp: &CpConfig) -> Option<CarPlayStartSession> {
     })
 }
 
+/// How long the access point is given to come back before the phone is answered anyway.
+const AP_WAIT: Duration = Duration::from_secs(10);
+const AP_POLL: Duration = Duration::from_millis(250);
+
+/// The answer names an SSID and a channel, so it waits until they are on air.
+async fn wait_for_ap(iface: &str) {
+    if iface.is_empty() || !Path::new(&format!("/sys/class/net/{iface}")).exists() {
+        return;
+    }
+    if net::ap_ssid_channel(iface).0.is_some() {
+        return;
+    }
+    println!("[cp] waiting for the access point on {iface}");
+    let deadline = Instant::now() + AP_WAIT;
+    while Instant::now() < deadline {
+        tokio::time::sleep(AP_POLL).await;
+        if let (Some(ssid), Some(channel)) = net::ap_ssid_channel(iface) {
+            println!("[cp] access point up: {ssid} on channel {channel}");
+            return;
+        }
+    }
+    println!("[cp] access point on {iface} stayed down, answering anyway");
+}
+
 /// Runs the accessory side of a wireless CarPlay session: identification, MFi auth,
 /// subscriptions, then the request/response phase (Wi-Fi config, CarPlayStartSession),
 /// emitting progress and every subsequent incoming message id over `events`.
@@ -334,40 +361,45 @@ pub async fn run_accessory<C: ControlChannel, A: AsyncAuth>(
                 }
                 let _ = events.send(BringupEvent::WifiConfigSent).await;
             }
-            0x4300 => match carplay_start_session(&cp) {
-                Some(start) => {
-                    // Logs the phone's offer and our answer.
-                    match CarPlayAvailability::decode(&frame) {
-                        Ok(a) => println!(
-                            "[cp] CarPlayAvailability wired={:?} wireless={:?}",
-                            a.wired_attributes, a.wireless_attributes
-                        ),
-                        Err(e) => println!("[cp] CarPlayAvailability undecodable: {e}"),
-                    }
-                    let ip = start
-                        .wireless_attributes
-                        .as_ref()
-                        .map(|w| &w.ip_address)
-                        .or_else(|| start.wired_attributes.as_ref().map(|w| &w.ip_address))
-                        .map(|a| a.join(","))
-                        .unwrap_or_default();
-                    println!(
-                        "[cp] CarPlayStartSession ip={ip} port={} device_id={} pk_len={}",
-                        start.port.unwrap_or(0),
-                        start.device_identifier.as_deref().unwrap_or("-"),
-                        start.public_key.as_deref().unwrap_or("").len()
-                    );
-                    if ch.send(start.encode()).await.is_err() {
-                        break;
-                    }
-                    let _ = events.send(BringupEvent::CarPlayStartSent).await;
+            0x4300 => {
+                if cp.transport != Transport::Wired {
+                    wait_for_ap(&cp.wifi_iface).await;
                 }
-                None => {
-                    let why = format!("no link-local on {:?}", cp.wifi_iface);
-                    println!("[cp] CarPlayStartSession not sent: {why}");
-                    let _ = events.send(BringupEvent::Failed(why)).await;
+                match carplay_start_session(&cp) {
+                    Some(start) => {
+                        // Logs the phone's offer and our answer.
+                        match CarPlayAvailability::decode(&frame) {
+                            Ok(a) => println!(
+                                "[cp] CarPlayAvailability wired={:?} wireless={:?}",
+                                a.wired_attributes, a.wireless_attributes
+                            ),
+                            Err(e) => println!("[cp] CarPlayAvailability undecodable: {e}"),
+                        }
+                        let ip = start
+                            .wireless_attributes
+                            .as_ref()
+                            .map(|w| &w.ip_address)
+                            .or_else(|| start.wired_attributes.as_ref().map(|w| &w.ip_address))
+                            .map(|a| a.join(","))
+                            .unwrap_or_default();
+                        println!(
+                            "[cp] CarPlayStartSession ip={ip} port={} device_id={} pk_len={}",
+                            start.port.unwrap_or(0),
+                            start.device_identifier.as_deref().unwrap_or("-"),
+                            start.public_key.as_deref().unwrap_or("").len()
+                        );
+                        if ch.send(start.encode()).await.is_err() {
+                            break;
+                        }
+                        let _ = events.send(BringupEvent::CarPlayStartSent).await;
+                    }
+                    None => {
+                        let why = format!("no link-local on {:?}", cp.wifi_iface);
+                        println!("[cp] CarPlayStartSession not sent: {why}");
+                        let _ = events.send(BringupEvent::Failed(why)).await;
+                    }
                 }
-            },
+            }
             _ => {}
         }
         if events

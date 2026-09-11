@@ -51,7 +51,7 @@ function killStaleHelpers(): void {
   }
 }
 
-function resolveHelperBin(): string {
+export function resolveHelperBin(): string {
   const envBin = process.env.LIVI_HELPER_BIN
   if (envBin && existsSync(envBin)) return envBin
 

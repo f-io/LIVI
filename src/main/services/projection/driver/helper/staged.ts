@@ -9,3 +9,8 @@ export function markHelperRestaged(): void {
 export function helperRestaged(): boolean {
   return replaced
 }
+
+/** Called once the AP service was restarted onto the new binary. */
+export function clearHelperRestaged(): void {
+  replaced = false
+}

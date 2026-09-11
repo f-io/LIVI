@@ -1,3 +1,5 @@
+#![cfg_attr(not(target_os = "linux"), allow(dead_code))]
+
 //! What the radio may transmit on, asked over nl80211 the way `iw list` does. The answer already
 //! reflects the country hostapd asked for.
 
@@ -5,6 +7,12 @@
 #[cfg(not(target_os = "linux"))]
 pub fn listing() -> Result<String, String> {
     Err("the channel list needs linux".into())
+}
+
+/// The stub for a host without nl80211.
+#[cfg(not(target_os = "linux"))]
+pub fn ap_state(_iface: &str) -> Option<(String, u32)> {
+    None
 }
 
 #[cfg(target_os = "linux")]
@@ -21,6 +29,12 @@ const CTRL_ATTR_FAMILY_NAME: u16 = 2;
 
 const NL80211_CMD_GET_WIPHY: u8 = 1;
 const NL80211_CMD_GET_REG: u8 = 31;
+const NL80211_CMD_GET_INTERFACE: u8 = 5;
+const ATTR_IFNAME: u16 = 4;
+const ATTR_IFTYPE: u16 = 5;
+const ATTR_WIPHY_FREQ: u16 = 38;
+const ATTR_SSID: u16 = 52;
+const IFTYPE_AP: u32 = 3;
 const ATTR_WIPHY: u16 = 1;
 const ATTR_WIPHY_NAME: u16 = 2;
 const ATTR_WIPHY_BANDS: u16 = 22;
@@ -32,6 +46,7 @@ const FREQ_ATTR_DISABLED: u16 = 2;
 // Called PASSIVE_SCAN on this kernel, NO_IR since 3.15.
 const FREQ_ATTR_NO_IR: u16 = 3;
 const FREQ_ATTR_RADAR: u16 = 5;
+const FREQ_ATTR_MAX_TX_POWER: u16 = 6;
 
 const NLMSG_ERROR: u16 = 2;
 const NLMSG_DONE: u16 = 3;
@@ -68,9 +83,9 @@ pub fn listing() -> Result<String, String> {
     }
     for radio in radios(&fd, family)? {
         out.push_str(&format!("phy {}\n", radio.name));
-        for (freq, flags) in radio.channels {
-            if let Some(ch) = channel_of(freq) {
-                out.push_str(&format!("chan {ch} {freq} {flags}\n"));
+        for c in radio.channels {
+            if let Some(ch) = channel_of(c.freq) {
+                out.push_str(&format!("chan {ch} {} {} {}\n", c.freq, c.flags, c.dbm));
             }
         }
     }
@@ -136,6 +151,37 @@ fn family_id(fd: &OwnedFd) -> Result<u16, String> {
     Err("nl80211 is not registered with generic netlink".into())
 }
 
+/// The network an interface beacons right now, None while it is no access point.
+#[cfg(target_os = "linux")]
+pub fn ap_state(iface: &str) -> Option<(String, u32)> {
+    let fd = open().ok()?;
+    let family = family_id(&fd).ok()?;
+    let request = message(family, NL80211_CMD_GET_INTERFACE, NLM_F_DUMP, &[]);
+    for payload in call(&fd, &request).ok()? {
+        let mut name = None;
+        let mut kind_of = None;
+        let mut freq = None;
+        let mut ssid = None;
+        for (kind, value) in Attrs(&payload[..]) {
+            match kind {
+                ATTR_IFNAME => name = Some(text(value)),
+                ATTR_SSID => ssid = Some(text(value)),
+                ATTR_IFTYPE if value.len() >= 4 => {
+                    kind_of = Some(u32::from_ne_bytes([value[0], value[1], value[2], value[3]]));
+                }
+                ATTR_WIPHY_FREQ if value.len() >= 4 => {
+                    freq = Some(u32::from_ne_bytes([value[0], value[1], value[2], value[3]]));
+                }
+                _ => {}
+            }
+        }
+        if name.as_deref() == Some(iface) && kind_of == Some(IFTYPE_AP) {
+            return Some((ssid?, channel_of(freq?)?));
+        }
+    }
+    None
+}
+
 #[cfg(target_os = "linux")]
 fn country(fd: &OwnedFd, family: u16) -> Result<String, String> {
     let request = message(family, NL80211_CMD_GET_REG, NLM_F_ACK, &[]);
@@ -154,7 +200,15 @@ fn country(fd: &OwnedFd, family: u16) -> Result<String, String> {
 struct Radio {
     id: u32,
     name: String,
-    channels: Vec<(u32, String)>,
+    channels: Vec<Channel>,
+}
+
+/// One frequency as the kernel describes it. `dbm` is the permitted EIRP, 0 when it says
+/// nothing.
+struct Channel {
+    freq: u32,
+    flags: String,
+    dbm: u32,
 }
 
 /// Every radio the kernel knows, kept apart. The dump is asked for split.
@@ -203,8 +257,8 @@ fn radios(fd: &OwnedFd, family: u16) -> Result<Vec<Radio>, String> {
         radios[at].channels.extend(found);
     }
     for radio in &mut radios {
-        radio.channels.sort_by_key(|(freq, _)| *freq);
-        radio.channels.dedup_by_key(|(freq, _)| *freq);
+        radio.channels.sort_by_key(|c| c.freq);
+        radio.channels.dedup_by_key(|c| c.freq);
     }
     radios.retain(|radio| !radio.channels.is_empty());
     Ok(radios)
@@ -216,14 +270,18 @@ fn text(value: &[u8]) -> String {
     String::from_utf8_lossy(&value[..end]).into_owned()
 }
 
-/// One frequency with the flags the kernel put on it.
-fn frequency(attrs: &[u8]) -> Option<(u32, String)> {
+/// One frequency with the flags the kernel put on it. Power comes in mBm.
+fn frequency(attrs: &[u8]) -> Option<Channel> {
     let mut freq = None;
+    let mut dbm = 0;
     let mut flags = Vec::new();
     for (kind, value) in Attrs(attrs) {
         match kind {
             FREQ_ATTR_FREQ if value.len() >= 4 => {
                 freq = Some(u32::from_ne_bytes([value[0], value[1], value[2], value[3]]));
+            }
+            FREQ_ATTR_MAX_TX_POWER if value.len() >= 4 => {
+                dbm = u32::from_ne_bytes([value[0], value[1], value[2], value[3]]) / 100;
             }
             FREQ_ATTR_DISABLED => flags.push("disabled"),
             FREQ_ATTR_NO_IR => flags.push("no-ir"),
@@ -234,7 +292,7 @@ fn frequency(attrs: &[u8]) -> Option<(u32, String)> {
     if flags.is_empty() {
         flags.push("ok");
     }
-    Some((freq?, flags.join(",")))
+    Some(Channel { freq: freq?, flags: flags.join(","), dbm })
 }
 
 /// The channel number for a frequency, the way hostapd wants it written.
@@ -393,17 +451,19 @@ mod tests {
     }
 
     #[test]
-    fn a_channel_carries_the_flags_the_kernel_set() {
+    fn a_channel_carries_the_flags_and_the_power_the_kernel_set() {
         let mut usable = attr(FREQ_ATTR_FREQ, &5180u32.to_ne_bytes());
-        usable.extend(attr(6, &2000u32.to_ne_bytes()));
-        assert_eq!(frequency(&usable), Some((5180, "ok".into())));
+        usable.extend(attr(FREQ_ATTR_MAX_TX_POWER, &2000u32.to_ne_bytes()));
+        let usable = frequency(&usable).unwrap();
+        assert_eq!((usable.freq, usable.flags.as_str(), usable.dbm), (5180, "ok", 20));
 
         let mut dfs = attr(FREQ_ATTR_FREQ, &5260u32.to_ne_bytes());
         dfs.extend(attr(FREQ_ATTR_NO_IR, &[]));
         dfs.extend(attr(FREQ_ATTR_RADAR, &[]));
-        assert_eq!(frequency(&dfs), Some((5260, "no-ir,radar".into())));
+        let dfs = frequency(&dfs).unwrap();
+        assert_eq!((dfs.freq, dfs.flags.as_str(), dfs.dbm), (5260, "no-ir,radar", 0));
 
-        assert_eq!(frequency(&attr(FREQ_ATTR_DISABLED, &[])), None);
+        assert!(frequency(&attr(FREQ_ATTR_DISABLED, &[])).is_none());
     }
 
     #[test]

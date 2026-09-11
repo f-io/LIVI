@@ -21,8 +21,6 @@ mod sdp;
 mod seedrng;
 mod usbproxy;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-mod wifi;
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod wifid;
 
 use std::path::Path;
@@ -77,7 +75,7 @@ fn main() -> ExitCode {
         #[cfg(target_os = "linux")]
         "iapd" => iapd::run(&rest),
         #[cfg(target_os = "linux")]
-        "wifi-channels" => wifi::run(),
+        "wifi-channels" => livi_wifi::run(),
         #[cfg(target_os = "linux")]
         "bt-probe" => bt::probe(),
         #[cfg(target_os = "linux")]

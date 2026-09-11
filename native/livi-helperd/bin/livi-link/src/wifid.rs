@@ -72,7 +72,7 @@ pub fn serve<S: std::io::Read + Write>(io: &mut S, ap: &mut Ap) {
             Ok(_) => {}
         }
         let answer = match command(line.trim_end_matches(['\r', '\n'])) {
-            Cmd::Channels => match crate::wifi::listing() {
+            Cmd::Channels => match livi_wifi::listing() {
                 Ok(text) => format!("{text}ok\n"),
                 Err(e) => format!("error {e}\n"),
             },

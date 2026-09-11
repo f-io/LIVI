@@ -5,7 +5,12 @@ import { dialog } from 'electron'
 import { afterEach, beforeEach, describe, expect, type Mock, test, vi } from 'vitest'
 
 vi.mock('node:child_process', () => ({ spawn: vi.fn(), execFileSync: vi.fn() }))
-vi.mock('../staged', () => ({ helperRestaged: vi.fn(() => false), markHelperRestaged: vi.fn() }))
+vi.mock('../staged', () => ({
+  helperRestaged: vi.fn(() => false),
+  markHelperRestaged: vi.fn(),
+  clearHelperRestaged: vi.fn()
+}))
+vi.mock('../helperSupervisor', () => ({ resolveHelperBin: () => '/data/driver/livi-helperd' }))
 vi.mock('node:fs', () => ({ existsSync: vi.fn(), readFileSync: vi.fn(), writeFileSync: vi.fn() }))
 vi.mock('node:os', () => ({
   default: { userInfo: () => ({ username: 'pi' }) },
@@ -130,6 +135,42 @@ describe('reconcileWifiAp — wanted', () => {
     expect(sudoLines()).toContain('-n /usr/bin/systemctl restart livi-wifi-ap.service')
   })
 
+  test('a refused channel is written back from what the service ended up on', async () => {
+    const { restartWifiAp, setWifiApReport } = await import('../wifiApUnit')
+    const patches: Record<string, unknown>[] = []
+    setWifiApReport((p) => patches.push(p))
+    installed()
+    mockedExec.mockReturnValue('running true\nssid LIVI\nchannel 36\nwidth 20\n')
+    await restartWifiAp(cfg({ wirelessCpEnabled: true, wifiChannel: 149, wifiChannelWidth: 80 }))
+    await new Promise((done) => setTimeout(done, 0))
+    expect(patches).toEqual([{ wifiChannel: 36, wifiChannelWidth: 20 }])
+    setWifiApReport(() => {})
+  })
+
+  test('the boot fallback is written back at startup, not only after a restart', async () => {
+    const { setWifiApReport } = await import('../wifiApUnit')
+    const patches: Record<string, unknown>[] = []
+    setWifiApReport((p) => patches.push(p))
+    installed()
+    mockedExec.mockReturnValue('running true\nssid LIVI\nchannel 44\nwidth 20\n')
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true, wifiChannel: 149, wifiChannelWidth: 20 }))
+    await new Promise((done) => setTimeout(done, 0))
+    expect(patches).toEqual([{ wifiChannel: 44 }])
+    setWifiApReport(() => {})
+  })
+
+  test('nothing is written back while the service runs what was asked for', async () => {
+    const { setWifiApReport } = await import('../wifiApUnit')
+    const patches: Record<string, unknown>[] = []
+    setWifiApReport((p) => patches.push(p))
+    installed()
+    mockedExec.mockReturnValue('running true\nssid LIVI\nchannel 44\nwidth 20\n')
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true, wifiChannel: 44, wifiChannelWidth: 20 }))
+    await new Promise((done) => setTimeout(done, 0))
+    expect(patches).toEqual([])
+    setWifiApReport(() => {})
+  })
+
   test('restartWifiAp says nothing while no access point is wanted', async () => {
     const { restartWifiAp } = await import('../wifiApUnit')
     installed()
@@ -144,6 +185,8 @@ describe('reconcileWifiAp — wanted', () => {
     await reconcileWifiAp(cfg({ wirelessCpEnabled: true }))
     expect(sudoLines()).toContain('-n /usr/bin/systemctl restart livi-wifi-ap.service')
     expect(sudoLines()).not.toContain('-n /usr/bin/systemctl start livi-wifi-ap.service')
+    const { clearHelperRestaged } = await import('../staged')
+    expect(clearHelperRestaged).toHaveBeenCalled()
   })
 
   test('dedicated off + wireless on: no boot-persist, but the AP is started', async () => {

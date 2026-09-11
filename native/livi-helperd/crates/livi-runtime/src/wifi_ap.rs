@@ -10,6 +10,11 @@ pub const DNSMASQ_CONF: &str = "/tmp/livi-dnsmasq.conf";
 const DNSMASQ_LEASES: &str = "/tmp/livi-dnsmasq.leases";
 const HOSTAPD_LOG: &str = "/tmp/livi-hostapd.log";
 const NM_UNMANAGED_CONF: &str = "/etc/NetworkManager/conf.d/99-livi-ap-unmanaged.conf";
+/// The last channel and width that carried an access point, kept for a refusal.
+const LAST_GOOD: &str = "/tmp/livi-ap-last-good";
+/// Where a refused channel lands. Allowed in every regulatory domain, no DFS.
+const SAFE_CHANNEL_5: u8 = 36;
+const SAFE_CHANNEL_24: u8 = 6;
 const NM_WAIT: Duration = Duration::from_secs(15);
 const NM_POLL: Duration = Duration::from_millis(250);
 
@@ -156,6 +161,23 @@ pub fn release_iface_from_nm(iface: &str) {
     run_cmd("rfkill", &["unblock", "wifi"]);
 }
 
+/// What the access point is beaconing right now.
+pub fn status(iface: &str) -> String {
+    let conf = std::fs::read_to_string(HOSTAPD_CONF).unwrap_or_default();
+    let ssid = conf
+        .lines()
+        .find_map(|l| l.strip_prefix("ssid="))
+        .unwrap_or("")
+        .to_string();
+    // Not hostapd_cli: its control socket is root only and the caller is the app.
+    let (channel, width) = last_good().unwrap_or((0, 0));
+    let on_air = livi_wifi::ap_state(iface).map(|(_, ch)| ch) == Some(u32::from(channel));
+    format!(
+        "running {}\nssid {ssid}\nchannel {channel}\nwidth {width}\n",
+        channel > 0 && on_air
+    )
+}
+
 /// Return the interface to NetworkManager and stop the AP.
 pub fn unmanaged_iface() -> Option<String> {
     let text = std::fs::read_to_string(NM_UNMANAGED_CONF).ok()?;
@@ -262,6 +284,21 @@ fn spawn_dnsmasq() -> std::io::Result<Child> {
 }
 
 /// Bring the AP up and keep it up. Restarts hostapd/dnsmasq when either dies.
+/// What ran last, as channel and width.
+fn last_good() -> Option<(u8, u8)> {
+    let text = std::fs::read_to_string(LAST_GOOD).ok()?;
+    let (ch, width) = text.trim().split_once(' ')?;
+    Some((ch.parse().ok()?, width.parse().ok()?))
+}
+
+fn after_refusal(cfg: &ApConfig) -> (u8, u8) {
+    match last_good() {
+        Some((ch, width)) if ch != cfg.channel => (ch, width),
+        _ if cfg.channel > 14 => (SAFE_CHANNEL_5, 20),
+        _ => (SAFE_CHANNEL_24, 20),
+    }
+}
+
 pub fn run(cfg: ApConfig) -> ! {
     println!(
         "[wifi-ap] starting — ssid={} channel={} width={}MHz iface={}",
@@ -269,6 +306,7 @@ pub fn run(cfg: ApConfig) -> ! {
     );
     persist_nm_profiles();
     release_iface_from_nm(&cfg.iface);
+    let mut cfg = cfg;
     loop {
         run_cmd("pkill", &["-f", &format!("hostapd.*{HOSTAPD_CONF}")]);
         run_cmd("pkill", &["-f", &format!("dnsmasq.*{DNSMASQ_CONF}")]);
@@ -300,8 +338,19 @@ pub fn run(cfg: ApConfig) -> ! {
             println!("[wifi-ap] AP up — ssid={} ip={} channel={} width={}MHz",
                 cfg.ssid, cfg.ap_ip, cfg.channel, cfg.width);
             let _ = std::io::stdout().flush();
+            let _ = std::fs::write(LAST_GOOD, format!("{} {}", cfg.channel, cfg.width));
         } else {
-            eprintln!("[wifi-ap] readiness timeout, restarting stack");
+            let (channel, width) = after_refusal(&cfg);
+            if (channel, width) == (cfg.channel, cfg.width) {
+                eprintln!("[wifi-ap] readiness timeout, restarting stack");
+            } else {
+                eprintln!(
+                    "[wifi-ap] channel {} was refused, going back to {channel} at {width}MHz",
+                    cfg.channel
+                );
+                cfg.channel = channel;
+                cfg.width = width;
+            }
         }
         // Supervise: leave the pair alone until one of them exits.
         loop {
