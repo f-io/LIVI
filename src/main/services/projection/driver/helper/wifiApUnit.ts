@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { DONGLE_LINK } from '@main/services/link/dongleAp'
 import type { Config } from '@shared/types/Config'
 import { app, type BrowserWindow, dialog } from 'electron'
+import { helperRestaged } from './staged'
 
 const UNIT_PATH = '/etc/systemd/system/livi-wifi-ap.service'
 const SUDOERS_PATH = '/etc/sudoers.d/99-LIVI-wifi-ap'
@@ -178,7 +179,16 @@ export async function reconcileWifiAp(config: Config, window?: BrowserWindow): P
 
   const sc = systemctlPath()
   await sudo([sc, config.wifiDedicatedInterface ? 'enable' : 'disable', SERVICE])
-  await sudo([sc, 'start', SERVICE])
+  // The service holds the old binary open until it is restarted, and start does nothing to a
+  // running unit.
+  await sudo([sc, helperRestaged() ? 'restart' : 'start', SERVICE])
+}
+
+/** Hands the AP service a settings change. It reads channel, width and the rest once at start. */
+export async function restartWifiAp(config: Config): Promise<void> {
+  if (process.platform !== 'linux') return
+  if (!apWanted(config) || needsInstall()) return
+  await sudo([systemctlPath(), 'restart', SERVICE])
 }
 
 /** before-quit: keep the AP only when dedicated, otherwise return the interface. */

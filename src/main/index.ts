@@ -86,8 +86,25 @@ app.whenReady().then(async () => {
   setCustomPageConfig(() => runtimeState.config)
   seedCustomPage()
   await customProxy.start(runtimeState.config.customUrl)
+  const linkKeys: (keyof Config)[] = [
+    'wifiInterface',
+    'wifiDedicatedInterface',
+    'wirelessCpEnabled',
+    'wirelessAaEnabled',
+    'btAdapter',
+    'carName',
+    'country',
+    'wifiChannel',
+    'wifiChannelWidth',
+    'wifiPassword'
+  ]
+  const linkSettings = (c: Config): string => linkKeys.map((k) => String(c[k])).join('|')
+  let told = linkSettings(runtimeState.config)
   configEvents.on('changed', (next: Config) => {
     void customProxy.start(next.customUrl)
+    const now = linkSettings(next)
+    if (now === told) return
+    told = now
     void reconcileWifiAp(next)
     void reconcileDongleAp(next)
   })

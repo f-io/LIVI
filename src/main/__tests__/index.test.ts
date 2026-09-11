@@ -436,6 +436,24 @@ describe('main index bootstrap', () => {
     expect(stopSystemVolumeMonitor).toHaveBeenCalled()
   })
 
+  test('a change the radios do not care about leaves them alone', async () => {
+    await mockReadyRunsCallback()
+    await bootIndex()
+    const { configEvents } = await import('@main/ipc/utils')
+    const { reconcileWifiAp } = await import('@main/services/projection/driver/helper/wifiApUnit')
+    const { reconcileDongleAp } = await import('@main/services/link/dongleAp')
+    ;(reconcileWifiAp as Mock).mockClear()
+    ;(reconcileDongleAp as Mock).mockClear()
+
+    configEvents.emit('changed', { huVolume: 0.9 })
+    expect(reconcileWifiAp).not.toHaveBeenCalled()
+    expect(reconcileDongleAp).not.toHaveBeenCalled()
+
+    configEvents.emit('changed', { huVolume: 0.9, wifiChannel: 48 })
+    expect(reconcileWifiAp).toHaveBeenCalled()
+    expect(reconcileDongleAp).toHaveBeenCalled()
+  })
+
   test('unlinked head-unit volume stops the system mixer monitor', async () => {
     await mockReadyRunsCallback()
     const { startSystemVolumeMonitor, stopSystemVolumeMonitor } = await import(

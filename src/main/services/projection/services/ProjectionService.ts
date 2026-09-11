@@ -31,6 +31,7 @@ import type { AaSession } from '../driver/aa/AaSession'
 import type { CpManager } from '../driver/cp/CpManager'
 import type { CpSession } from '../driver/cp/CpSession'
 import { HelperSupervisor } from '../driver/helper/helperSupervisor'
+import { restartWifiAp } from '../driver/helper/wifiApUnit'
 import type { IPhoneDriver } from '../driver/IPhoneDriver'
 import { ProjectionDriverManager } from '../drivers/ProjectionDriverManager'
 import { type ProjectionIpcHost, registerProjectionIpc } from '../ipc'
@@ -1278,6 +1279,7 @@ export class ProjectionService {
     } catch (e) {
       console.warn('[ProjectionService] restartSession: stop threw (ignored)', e)
     }
+    await restartWifiAp(this.config)
 
     if (wasWired) {
       return

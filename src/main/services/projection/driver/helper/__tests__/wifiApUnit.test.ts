@@ -5,6 +5,7 @@ import { dialog } from 'electron'
 import { afterEach, beforeEach, describe, expect, type Mock, test, vi } from 'vitest'
 
 vi.mock('node:child_process', () => ({ spawn: vi.fn(), execFileSync: vi.fn() }))
+vi.mock('../staged', () => ({ helperRestaged: vi.fn(() => false), markHelperRestaged: vi.fn() }))
 vi.mock('node:fs', () => ({ existsSync: vi.fn(), readFileSync: vi.fn(), writeFileSync: vi.fn() }))
 vi.mock('node:os', () => ({
   default: { userInfo: () => ({ username: 'pi' }) },
@@ -120,6 +121,29 @@ describe('reconcileWifiAp — wanted', () => {
     expect(mockedWrite).toHaveBeenCalled()
     expect(sudoLines()).toContain('-n /usr/bin/systemctl enable livi-wifi-ap.service')
     expect(sudoLines()).toContain('-n /usr/bin/systemctl start livi-wifi-ap.service')
+  })
+
+  test('restartWifiAp hands the settings to the running service', async () => {
+    const { restartWifiAp } = await import('../wifiApUnit')
+    installed()
+    await restartWifiAp(cfg({ wirelessCpEnabled: true }))
+    expect(sudoLines()).toContain('-n /usr/bin/systemctl restart livi-wifi-ap.service')
+  })
+
+  test('restartWifiAp says nothing while no access point is wanted', async () => {
+    const { restartWifiAp } = await import('../wifiApUnit')
+    installed()
+    await restartWifiAp(cfg({}))
+    expect(sudoLines()).toHaveLength(0)
+  })
+
+  test('restarts the service when a new helper binary was staged', async () => {
+    const { helperRestaged } = await import('../staged')
+    vi.mocked(helperRestaged).mockReturnValueOnce(true)
+    installed()
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true }))
+    expect(sudoLines()).toContain('-n /usr/bin/systemctl restart livi-wifi-ap.service')
+    expect(sudoLines()).not.toContain('-n /usr/bin/systemctl start livi-wifi-ap.service')
   })
 
   test('dedicated off + wireless on: no boot-persist, but the AP is started', async () => {
