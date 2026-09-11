@@ -1,4 +1,5 @@
-// Enumerate USB devices, open one, list its interfaces, optionally claim each.
+// Enumerate USB devices, open one, list every configuration with its interfaces, optionally
+// claim each interface of the active one.
 // Cross-platform nusb groundwork for talking to a CDC device (the STM bridge).
 //   usb-probe               list every device
 //   usb-probe cafe          only VID cafe, dump its interfaces
@@ -39,15 +40,21 @@ fn main() -> ExitCode {
         let mut ifaces: Vec<u8> = cfg.interface_alt_settings().map(|d| d.interface_number()).collect();
         ifaces.sort_unstable();
         ifaces.dedup();
-        for desc in cfg.interface_alt_settings() {
-            println!(
-                "[usb-probe]   iface {} alt {} class {:02x}/{:02x}/{:02x}",
-                desc.interface_number(),
-                desc.alternate_setting(),
-                desc.class(),
-                desc.subclass(),
-                desc.protocol()
-            );
+        let active = cfg.configuration_value();
+        for cfg in device.configurations() {
+            let value = cfg.configuration_value();
+            let mark = if value == active { " (active)" } else { "" };
+            println!("[usb-probe]   config {value}{mark}");
+            for desc in cfg.interface_alt_settings() {
+                println!(
+                    "[usb-probe]     iface {} alt {} class {:02x}/{:02x}/{:02x}",
+                    desc.interface_number(),
+                    desc.alternate_setting(),
+                    desc.class(),
+                    desc.subclass(),
+                    desc.protocol()
+                );
+            }
         }
         if claim {
             for n in ifaces {
