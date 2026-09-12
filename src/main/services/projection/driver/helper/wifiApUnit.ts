@@ -1,10 +1,10 @@
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import os from 'node:os'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { DONGLE_LINK } from '@main/services/link/dongleAp'
 import {
   asset,
+  helperInstalls,
   markerHolds,
   pkexecAvailable,
   runAsRoot,
@@ -70,26 +70,8 @@ function needsInstall(): boolean {
   return readFile(UNIT_PATH) !== unitContent() || !sudoersInstalled()
 }
 
-/** Hands both files to the helper, which the sudoers rule already lets us run as root. */
 function installViaHelper(): boolean {
-  let dir = ''
-  try {
-    const helper = resolveHelperBin()
-    dir = mkdtempSync(join(os.tmpdir(), 'livi-ap-'))
-    const unit = join(dir, 'unit')
-    const rule = join(dir, 'rule')
-    writeFileSync(unit, unitContent())
-    writeFileSync(rule, sudoersContent())
-    execFileSync('sudo', ['-n', helper, '--install-wifi-ap', unit, rule], {
-      stdio: 'ignore',
-      timeout: 20_000
-    })
-    return true
-  } catch {
-    return false
-  } finally {
-    if (dir) rmSync(dir, { recursive: true, force: true })
-  }
+  return helperInstalls('install-wifi-ap', { unit: unitContent(), rule: sudoersContent() })
 }
 
 function installPrivileged(): Promise<void> {

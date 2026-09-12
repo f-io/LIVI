@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { BrowserWindow, dialog } from 'electron'
-import { asset, pkexecAvailable, runAsRoot } from '../privileged'
+import { asset, helperInstalls, pkexecAvailable, runAsRoot } from '../privileged'
 
 const RULE_FILE = '/etc/udev/rules.d/99-LIVI.rules'
 const TEMPLATE = '99-LIVI.rules.template'
@@ -67,6 +67,16 @@ export async function checkAndInstallUdevRule(window: BrowserWindow): Promise<bo
   const exists = udevRuleExists()
   const isCurrent = exists && udevRuleIsCurrent()
   if (exists && isCurrent) return false
+
+  const filter = loadTouchFilter()
+  if (
+    helperInstalls(
+      'install-udev-rule',
+      filter ? { rule: asset(TEMPLATE), filter } : { rule: asset(TEMPLATE) }
+    )
+  ) {
+    return true
+  }
 
   if (!pkexecAvailable()) {
     console.warn('[udevRule] pkexec not available, skipping udev rule setup')

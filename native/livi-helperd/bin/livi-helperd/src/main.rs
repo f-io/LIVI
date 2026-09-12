@@ -15,6 +15,8 @@ const SWITCHES: &[&str] = &[
     "--wifi-ap-status",
     "--wifi-channels",
     "--install-wifi-ap",
+    "--install-udev-rule",
+    "--install-gvfs-guard",
     "--wifi-ap-claim",
     "--wifi-ap-teardown",
     "--bt-tunnel",
@@ -43,6 +45,14 @@ fn main() -> ExitCode {
         if let Some(at) = std::env::args().position(|a| a == "--install-wifi-ap") {
             let mut rest = std::env::args().skip(at + 1);
             return linux_main::run_install_wifi_ap(rest.next(), rest.next());
+        }
+        if let Some(at) = std::env::args().position(|a| a == "--install-udev-rule") {
+            let mut rest = std::env::args().skip(at + 1);
+            return linux_main::run_install_udev_rule(rest.next(), rest.next());
+        }
+        if let Some(at) = std::env::args().position(|a| a == "--install-gvfs-guard") {
+            let mut rest = std::env::args().skip(at + 1);
+            return linux_main::run_install_gvfs_guard(rest.next(), rest.next());
         }
         if std::env::args().any(|a| a == "--wifi-ap-claim") {
             return linux_main::run_wifi_ap_claim();

@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Mock } from 'vitest'
 import {
   asset,
+  helperInstalls,
   markerHolds,
   pkexecAvailable,
   runAsRoot,
@@ -16,13 +17,22 @@ import {
 
 vi.mock('node:child_process', () => ({ execFileSync: vi.fn(), spawn: vi.fn() }))
 vi.mock('node:fs', () => {
-  const __m = { existsSync: vi.fn(() => false), readFileSync: vi.fn(), writeFileSync: vi.fn() }
+  const __m = {
+    existsSync: vi.fn(() => false),
+    readFileSync: vi.fn(),
+    writeFileSync: vi.fn(),
+    mkdtempSync: vi.fn(() => '/tmp/livi-install-x'),
+    rmSync: vi.fn()
+  }
   return { ...__m, default: __m }
 })
 vi.mock('node:os', () => {
-  const __m = { userInfo: vi.fn(() => ({ username: 'driver' })) }
+  const __m = { userInfo: vi.fn(() => ({ username: 'driver' })), tmpdir: () => '/tmp' }
   return { ...__m, default: __m }
 })
+vi.mock('../projection/driver/helper/helperSupervisor', () => ({
+  resolveHelperBin: () => '/data/driver/livi-helperd'
+}))
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => '/data'), getAppPath: vi.fn(() => '/app') }
 }))
@@ -176,5 +186,44 @@ describe('marker', () => {
     expect(stamp('a')).toMatch(/^[0-9a-f]{16}$/)
     expect(stamp('a')).toBe(stamp('a'))
     expect(stamp('a')).not.toBe(stamp('b'))
+  })
+})
+
+describe('helperInstalls', () => {
+  test('writes the files in order, hands them to the helper as root, cleans up', async () => {
+    const { rmSync } = await import('node:fs')
+    mockedExec.mockReturnValue('')
+    expect(helperInstalls('install-x', { first: 'a', second: 'b' })).toBe(true)
+    expect(mockedWrite).toHaveBeenNthCalledWith(1, '/tmp/livi-install-x/first', 'a')
+    expect(mockedWrite).toHaveBeenNthCalledWith(2, '/tmp/livi-install-x/second', 'b')
+    expect(mockedExec).toHaveBeenCalledWith(
+      'sudo',
+      [
+        '-n',
+        '/data/driver/livi-helperd',
+        '--install-x',
+        '/tmp/livi-install-x/first',
+        '/tmp/livi-install-x/second'
+      ],
+      { stdio: 'ignore', timeout: 20_000 }
+    )
+    expect(rmSync).toHaveBeenCalledWith('/tmp/livi-install-x', { recursive: true, force: true })
+  })
+
+  test('false when sudo refuses, the directory still goes', async () => {
+    const { rmSync } = await import('node:fs')
+    mockedExec.mockImplementation(() => {
+      throw new Error('a password is required')
+    })
+    expect(helperInstalls('install-x', { f: 'a' })).toBe(false)
+    expect(rmSync).toHaveBeenCalled()
+  })
+
+  test('false when no temp directory can be made', async () => {
+    const { mkdtempSync } = await import('node:fs')
+    ;(mkdtempSync as Mock).mockImplementationOnce(() => {
+      throw new Error('EROFS')
+    })
+    expect(helperInstalls('install-x', { f: 'a' })).toBe(false)
   })
 })

@@ -144,19 +144,41 @@ pub fn run_wifi_ap_status() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// `--install-wifi-ap <unit> <rule>`: puts both files under /etc.
+fn installed(what: &str, result: Result<(), String>) -> ExitCode {
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("[{what}] install failed: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// `--install-wifi-ap <unit> <rule>`
 pub fn run_install_wifi_ap(unit: Option<String>, rule: Option<String>) -> ExitCode {
     let (Some(unit), Some(rule)) = (unit, rule) else {
         eprintln!("[wifi-ap] usage: --install-wifi-ap <unit file> <sudoers file>");
         return ExitCode::FAILURE;
     };
-    match livi_runtime::wifi_ap::install(&unit, &rule) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("[wifi-ap] install failed: {e}");
-            ExitCode::FAILURE
-        }
-    }
+    installed("wifi-ap", livi_runtime::privileged::install_wifi_ap(&unit, &rule))
+}
+
+/// `--install-udev-rule <rule> [<touch filter>]`
+pub fn run_install_udev_rule(rule: Option<String>, filter: Option<String>) -> ExitCode {
+    let Some(rule) = rule else {
+        eprintln!("[udev] usage: --install-udev-rule <rule file> [<touch filter>]");
+        return ExitCode::FAILURE;
+    };
+    installed("udev", livi_runtime::privileged::install_udev_rule(&rule, filter.as_deref()))
+}
+
+/// `--install-gvfs-guard <script> <rule>`
+pub fn run_install_gvfs_guard(script: Option<String>, rule: Option<String>) -> ExitCode {
+    let (Some(script), Some(rule)) = (script, rule) else {
+        eprintln!("[gvfs] usage: --install-gvfs-guard <script file> <sudoers file>");
+        return ExitCode::FAILURE;
+    };
+    installed("gvfs", livi_runtime::privileged::install_gvfs_guard(&script, &rule))
 }
 
 /// `--wifi-ap-claim`: takes the interface from NetworkManager, before it starts.

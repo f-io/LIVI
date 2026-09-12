@@ -205,18 +205,15 @@ app.whenReady().then(async () => {
   setupLifecycle(runtimeState, services)
 
   const win = getMainWindow()
+  // The helper's sudoers rule comes first: with it the udev rule, the gvfs guard and the AP
+  // unit are installed through the helper, without a prompt.
+  if (win && process.platform === 'linux') {
+    await checkAndInstallHelperSudoers(win)
+  }
+
   if (win && (await checkAndInstallUdevRule(win))) {
     await restartApp(runtimeState, services)
     return
-  }
-
-  if (
-    win &&
-    process.platform === 'linux' &&
-    (runtimeState.config.wirelessAaEnabled === true ||
-      runtimeState.config.wirelessCpEnabled === true)
-  ) {
-    await checkAndInstallHelperSudoers(win)
   }
 
   if (win && process.platform === 'linux') {

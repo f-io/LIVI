@@ -35,12 +35,9 @@ export async function checkAndInstallHelperSudoers(window: BrowserWindow): Promi
 
   const { response } = await dialog.showMessageBox(window, {
     type: 'question',
-    title: 'Wireless Projection — Permission Required',
-    message:
-      'LIVI needs permission to manage Bluetooth and Wi-Fi for wireless Android Auto / CarPlay.',
-    detail:
-      `A sudoers rule will be installed at ${RULE_FILE} so the BT/Wi-Fi helper ` +
-      `(livi-helperd) can run as root without prompting on each session.`,
+    title: 'LIVI',
+    message: 'Allow LIVI to run its hardware helper as root?',
+    detail: 'Needed for Bluetooth, Wi-Fi, USB and the display. Asked once.',
     buttons: ['Install', 'Skip'],
     defaultId: 0,
     cancelId: 1

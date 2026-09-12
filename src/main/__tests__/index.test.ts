@@ -347,8 +347,24 @@ describe('main index bootstrap', () => {
     expect(startPhoneSuppression).toHaveBeenCalled()
   })
 
-  test('skips the BT sudoers installer when aa=false and cp=false', async () => {
+  test('asks for the helper rule on linux even with wireless off, the rest rides on it', async () => {
     await mockReadyRunsCallback()
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
+    const { checkAndInstallHelperSudoers } = await import(
+      '@main/services/projection/driver/helper/helperSudoers'
+    )
+    const { checkAndInstallUdevRule } = await import('../services/usb/udevRule')
+    await bootIndex()
+    expect(checkAndInstallHelperSudoers).toHaveBeenCalled()
+    // The rule first, so the udev rule can go through the helper without a prompt.
+    expect((checkAndInstallHelperSudoers as Mock).mock.invocationCallOrder[0]).toBeLessThan(
+      (checkAndInstallUdevRule as Mock).mock.invocationCallOrder[0]
+    )
+  })
+
+  test('never asks for the helper rule off linux', async () => {
+    await mockReadyRunsCallback()
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
     const { checkAndInstallHelperSudoers } = await import(
       '@main/services/projection/driver/helper/helperSudoers'
     )

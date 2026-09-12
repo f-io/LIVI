@@ -1,9 +1,10 @@
 import { execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
+import { resolveHelperBin } from './projection/driver/helper/helperSupervisor'
 
 /** A file from assets/linux, packaged next to the app or read from the repository. */
 export function asset(name: string): string {
@@ -100,4 +101,32 @@ export function markerHolds(name: string, content: string): boolean {
 
 export function writeMarker(name: string, content: string): void {
   writeFileSync(markerPath(name), stamp(content), { mode: 0o644 })
+}
+
+/**
+ * Hands rendered files to the helper, which the sudoers rule lets us run as root without a
+ * prompt. The files reach the switch in the order given. False when that is not permitted.
+ */
+export function helperInstalls(what: string, files: Record<string, string>): boolean {
+  let dir = ''
+  try {
+    // resolveHelperBin, not the path: a staged binary older than the app does not know the
+    // switch, would ignore it and run as the daemon instead, which never returns.
+    const helper = resolveHelperBin()
+    dir = mkdtempSync(join(os.tmpdir(), 'livi-install-'))
+    const paths = Object.entries(files).map(([name, content]) => {
+      const path = join(dir, name)
+      writeFileSync(path, content)
+      return path
+    })
+    execFileSync('sudo', ['-n', helper, `--${what}`, ...paths], {
+      stdio: 'ignore',
+      timeout: 20_000
+    })
+    return true
+  } catch {
+    return false
+  } finally {
+    if (dir) rmSync(dir, { recursive: true, force: true })
+  }
 }

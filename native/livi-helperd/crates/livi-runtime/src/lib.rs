@@ -14,6 +14,7 @@ pub mod wifi_ap;
 pub mod ident;
 pub mod livi_sock;
 pub mod net;
+pub mod privileged;
 pub mod reconnect;
 pub mod state;
 pub mod sys;

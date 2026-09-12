@@ -2,6 +2,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { type BrowserWindow, dialog } from 'electron'
 import {
+  helperInstalls,
   markerHolds,
   pkexecAvailable,
   runAsRoot,
@@ -62,6 +63,15 @@ export async function checkAndInstallGvfsGuard(window: BrowserWindow): Promise<v
   if (isInstalled()) return
   if (process.env.LIVI_KIOSK === '1') return
   if (!phoneMonitorsPresent()) return
+
+  const content = ruleContent()
+  if (helperInstalls('install-gvfs-guard', { script: GUARD_SCRIPT, rule: content })) {
+    try {
+      writeMarker(MARKER, content)
+    } catch {}
+    return
+  }
+
   if (!pkexecAvailable()) {
     console.warn('[gvfsGuard] pkexec not available — cannot install phone-guard')
     return
@@ -77,7 +87,6 @@ export async function checkAndInstallGvfsGuard(window: BrowserWindow): Promise<v
   })
   if (response !== 0) return
 
-  const content = ruleContent()
   try {
     await runAsRoot([
       `mkdir -p ${GUARD_DIR}`,

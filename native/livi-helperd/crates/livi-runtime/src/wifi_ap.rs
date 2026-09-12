@@ -170,37 +170,6 @@ pub fn status(iface: &str) -> String {
     }
 }
 
-const UNIT_PATH: &str = "/etc/systemd/system/livi-wifi-ap.service";
-const SUDOERS_PATH: &str = "/etc/sudoers.d/99-LIVI-wifi-ap";
-
-/// Puts the unit and the sudoers rule in place, both rendered by the caller.
-pub fn install(unit_src: &str, rule_src: &str) -> Result<(), String> {
-    if unsafe { libc::geteuid() } != 0 {
-        return Err("needs root".into());
-    }
-    let unit = std::fs::read(unit_src).map_err(|e| format!("{unit_src}: {e}"))?;
-    let rule = std::fs::read(rule_src).map_err(|e| format!("{rule_src}: {e}"))?;
-
-    let staged = format!("{SUDOERS_PATH}.livi-tmp");
-    std::fs::write(&staged, &rule).map_err(|e| format!("{staged}: {e}"))?;
-    std::fs::set_permissions(&staged, std::os::unix::fs::PermissionsExt::from_mode(0o440))
-        .map_err(|e| format!("{staged}: {e}"))?;
-    let checked = Command::new(crate::sys::tool("visudo"))
-        .args(["-c", "-f", &staged])
-        .stdout(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-    if !checked {
-        let _ = std::fs::remove_file(&staged);
-        return Err("the rule did not pass visudo".into());
-    }
-    std::fs::rename(&staged, SUDOERS_PATH).map_err(|e| format!("{SUDOERS_PATH}: {e}"))?;
-    std::fs::write(UNIT_PATH, &unit).map_err(|e| format!("{UNIT_PATH}: {e}"))?;
-    run_cmd("systemctl", &["daemon-reload"]);
-    Ok(())
-}
-
 /// Return the interface to NetworkManager and stop the AP.
 pub fn unmanaged_iface() -> Option<String> {
     let text = std::fs::read_to_string(NM_UNMANAGED_CONF).ok()?;

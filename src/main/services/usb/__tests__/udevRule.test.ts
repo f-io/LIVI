@@ -18,9 +18,16 @@ vi.mock('node:child_process', () => ({
   spawn: vi.fn()
 }))
 
+vi.mock('../../projection/driver/helper/helperSupervisor', () => ({
+  resolveHelperBin: () => '/data/driver/livi-helperd'
+}))
+
 vi.mock('node:fs', async () => {
   const real = (await vi.importActual('node:fs')) as typeof import('node:fs')
   const mock = {
+    writeFileSync: vi.fn(),
+    mkdtempSync: vi.fn(() => '/tmp/livi-install-x'),
+    rmSync: vi.fn(),
     existsSync: vi.fn(),
     readFileSync: vi.fn(function (p: string, enc?: string) {
       if (typeof p === 'string' && p.endsWith('.rules.template')) {
@@ -73,7 +80,11 @@ describe('udevRule', () => {
       return false
     })
     ruleFileFake('')
-    mockExecFileSync.mockReturnValue(undefined)
+    // No helper rule on this host: the silent path is refused, pkexec is the way.
+    mockExecFileSync.mockImplementation((cmd: string) => {
+      if (cmd === 'sudo') throw new Error('a password is required')
+      return undefined
+    })
     mockShowMessageBox.mockResolvedValue({ response: 0 })
     mockSpawn.mockReturnValue(mkProc(0))
   })
@@ -109,6 +120,17 @@ describe('udevRule', () => {
   })
 
   describe('checkAndInstallUdevRule', () => {
+    test('installs through the helper without a prompt when the rule allows it', async () => {
+      existsFake(false)
+      mockExecFileSync.mockReturnValue(undefined)
+      expect(await checkAndInstallUdevRule(mockWindow)).toBe(true)
+      expect(mockShowMessageBox).not.toHaveBeenCalled()
+      expect(mockSpawn).not.toHaveBeenCalled()
+      const args = mockExecFileSync.mock.calls.find((c) => c[0] === 'sudo')?.[1] as string[]
+      expect(args.slice(0, 3)).toEqual(['-n', '/data/driver/livi-helperd', '--install-udev-rule'])
+      expect(args[3]).toBe('/tmp/livi-install-x/rule')
+    })
+
     test('does nothing on non-linux platforms', async () => {
       Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
       await checkAndInstallUdevRule(mockWindow)
