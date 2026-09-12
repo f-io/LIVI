@@ -159,21 +159,15 @@ pub fn release_iface_from_nm(iface: &str) {
     run_cmd("rfkill", &["unblock", "wifi"]);
 }
 
-/// What the access point is beaconing right now.
+/// What the access point is beaconing right now, straight from the kernel.
 pub fn status(iface: &str) -> String {
-    let conf = std::fs::read_to_string(HOSTAPD_CONF).unwrap_or_default();
-    let ssid = conf
-        .lines()
-        .find_map(|l| l.strip_prefix("ssid="))
-        .unwrap_or("")
-        .to_string();
-    // Not hostapd_cli: its control socket is root only and the caller is the app.
-    let (channel, width) = last_good().unwrap_or((0, 0));
-    let on_air = livi_wifi::ap_state(iface).map(|(_, ch)| ch) == Some(u32::from(channel));
-    format!(
-        "running {}\nssid {ssid}\nchannel {channel}\nwidth {width}\n",
-        channel > 0 && on_air
-    )
+    match livi_wifi::ap_state(iface) {
+        Some(ap) => format!(
+            "running true\nssid {}\nchannel {}\nwidth {}\n",
+            ap.ssid, ap.channel, ap.width
+        ),
+        None => "running false\nssid \nchannel 0\nwidth 0\n".into(),
+    }
 }
 
 const UNIT_PATH: &str = "/etc/systemd/system/livi-wifi-ap.service";

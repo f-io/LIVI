@@ -9,9 +9,17 @@ pub fn listing() -> Result<String, String> {
     Err("the channel list needs linux".into())
 }
 
+/// What an interface beacons: its network, channel and width in MHz.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApState {
+    pub ssid: String,
+    pub channel: u32,
+    pub width: u32,
+}
+
 /// The stub for a host without nl80211.
 #[cfg(not(target_os = "linux"))]
-pub fn ap_state(_iface: &str) -> Option<(String, u32)> {
+pub fn ap_state(_iface: &str) -> Option<ApState> {
     None
 }
 
@@ -34,6 +42,7 @@ const ATTR_IFNAME: u16 = 4;
 const ATTR_IFTYPE: u16 = 5;
 const ATTR_WIPHY_FREQ: u16 = 38;
 const ATTR_SSID: u16 = 52;
+const ATTR_CHANNEL_WIDTH: u16 = 159;
 const IFTYPE_AP: u32 = 3;
 const ATTR_WIPHY: u16 = 1;
 const ATTR_WIPHY_NAME: u16 = 2;
@@ -151,9 +160,10 @@ fn family_id(fd: &OwnedFd) -> Result<u16, String> {
     Err("nl80211 is not registered with generic netlink".into())
 }
 
-/// The network an interface beacons right now, None while it is no access point.
+/// What an interface beacons right now, None until it is an access point with a network
+/// up. Read from the kernel, so it holds what is on air rather than what a config asked for.
 #[cfg(target_os = "linux")]
-pub fn ap_state(iface: &str) -> Option<(String, u32)> {
+pub fn ap_state(iface: &str) -> Option<ApState> {
     let fd = open().ok()?;
     let family = family_id(&fd).ok()?;
     let request = message(family, NL80211_CMD_GET_INTERFACE, NLM_F_DUMP, &[]);
@@ -162,24 +172,36 @@ pub fn ap_state(iface: &str) -> Option<(String, u32)> {
         let mut kind_of = None;
         let mut freq = None;
         let mut ssid = None;
+        let mut width = 0;
         for (kind, value) in Attrs(&payload[..]) {
+            let u32_of = |v: &[u8]| u32::from_ne_bytes([v[0], v[1], v[2], v[3]]);
             match kind {
                 ATTR_IFNAME => name = Some(text(value)),
                 ATTR_SSID => ssid = Some(text(value)),
-                ATTR_IFTYPE if value.len() >= 4 => {
-                    kind_of = Some(u32::from_ne_bytes([value[0], value[1], value[2], value[3]]));
-                }
-                ATTR_WIPHY_FREQ if value.len() >= 4 => {
-                    freq = Some(u32::from_ne_bytes([value[0], value[1], value[2], value[3]]));
-                }
+                ATTR_IFTYPE if value.len() >= 4 => kind_of = Some(u32_of(value)),
+                ATTR_WIPHY_FREQ if value.len() >= 4 => freq = Some(u32_of(value)),
+                ATTR_CHANNEL_WIDTH if value.len() >= 4 => width = width_mhz(u32_of(value)),
                 _ => {}
             }
         }
         if name.as_deref() == Some(iface) && kind_of == Some(IFTYPE_AP) {
-            return Some((ssid?, channel_of(freq?)?));
+            let ssid = ssid.filter(|s| !s.is_empty())?;
+            return Some(ApState { ssid, channel: channel_of(freq?)?, width });
         }
     }
     None
+}
+
+/// `enum nl80211_chan_width` as MHz. 80+80 reports its primary segment.
+fn width_mhz(raw: u32) -> u32 {
+    match raw {
+        0 | 1 => 20,
+        2 => 40,
+        3 | 4 => 80,
+        5 => 160,
+        13 => 320,
+        _ => 0,
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -482,5 +504,14 @@ mod tests {
         assert_eq!(u16::from_ne_bytes([m[6], m[7]]), NLM_F_ACK | NLM_F_REQUEST);
         assert_eq!(m[16], CTRL_CMD_GETFAMILY);
         assert_eq!(&m[HDR + 4..], b"nl80211\0");
+    }
+
+    #[test]
+    fn a_channel_width_comes_back_in_megahertz() {
+        assert_eq!(super::width_mhz(1), 20);
+        assert_eq!(super::width_mhz(2), 40);
+        assert_eq!(super::width_mhz(3), 80);
+        assert_eq!(super::width_mhz(5), 160);
+        assert_eq!(super::width_mhz(99), 0);
     }
 }

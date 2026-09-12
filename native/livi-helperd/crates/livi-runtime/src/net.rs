@@ -140,7 +140,7 @@ pub fn iface_facing(peer: &str) -> Option<String> {
 /// The network an interface beacons right now.
 pub fn ap_ssid_channel(iface: &str) -> (Option<String>, Option<u8>) {
     match livi_wifi::ap_state(iface) {
-        Some((ssid, channel)) => (Some(ssid), u8::try_from(channel).ok()),
+        Some(ap) => (Some(ap.ssid), u8::try_from(ap.channel).ok()),
         None => (None, None),
     }
 }
