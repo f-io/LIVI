@@ -1,10 +1,11 @@
-import { execFileSync, spawn } from 'child_process'
+import { execFileSync, spawn } from 'node:child_process'
+import fs from 'node:fs'
 import { BrowserWindow, dialog } from 'electron'
-import fs from 'fs'
 import type { Mock } from 'vitest'
 import { checkAndInstallUdevRule, udevRuleExists } from '../udevRule'
 
 vi.mock('electron', () => ({
+  app: { getAppPath: vi.fn(() => process.cwd()), getPath: vi.fn(() => '/tmp') },
   BrowserWindow: vi.fn(),
   dialog: {
     showMessageBox: vi.fn(),
@@ -12,13 +13,13 @@ vi.mock('electron', () => ({
   }
 }))
 
-vi.mock('child_process', () => ({
+vi.mock('node:child_process', () => ({
   execFileSync: vi.fn(),
   spawn: vi.fn()
 }))
 
-vi.mock('fs', async () => {
-  const real = (await vi.importActual('fs')) as typeof import('fs')
+vi.mock('node:fs', async () => {
+  const real = (await vi.importActual('node:fs')) as typeof import('node:fs')
   const mock = {
     existsSync: vi.fn(),
     readFileSync: vi.fn(function (p: string, enc?: string) {
@@ -52,7 +53,7 @@ describe('udevRule', () => {
 
   let realFs: typeof fs
   beforeAll(async () => {
-    realFs = (await vi.importActual('fs')) as typeof fs
+    realFs = (await vi.importActual('node:fs')) as typeof fs
   })
 
   const ruleFileFake = (content = '') => {

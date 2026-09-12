@@ -1,6 +1,6 @@
 import { execFileSync, spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import { dialog } from 'electron'
 import type { Mock } from 'vitest'
@@ -12,7 +12,7 @@ import {
 
 vi.mock('node:child_process', () => ({ execFileSync: vi.fn(), spawn: vi.fn() }))
 vi.mock('node:fs', () => {
-  const __m = { existsSync: vi.fn(() => false), writeFileSync: vi.fn() }
+  const __m = { existsSync: vi.fn(() => false), readFileSync: vi.fn(), writeFileSync: vi.fn() }
   return { ...__m, default: __m }
 })
 vi.mock('node:os', () => {
@@ -87,8 +87,26 @@ describe('checkAndInstallGvfsGuard', () => {
     expect(mockedDialog).not.toHaveBeenCalled()
   })
 
-  test('skips via the sentinel when sudo -l is unavailable', async () => {
-    existing(GUARD_PATH, '/tmp/gvfs-guard-v1.installed')
+  test('skips via the marker when sudo -l is unavailable', async () => {
+    // Install once so the marker holds what this build writes, then read it back.
+    existing(MONITOR)
+    mockedExec.mockImplementation((cmd: string) => {
+      if (cmd === 'which') return ''
+      throw new Error('no sudo')
+    })
+    const proc = makeProc()
+    mockedSpawn.mockReturnValue(proc)
+    const install = checkAndInstallGvfsGuard(win)
+    await new Promise((r) => setTimeout(r, 0))
+    proc.emit('close', 0)
+    await install
+    const written = mockedWrite.mock.calls[0][1] as string
+    mockedDialog.mockClear()
+
+    existing(GUARD_PATH)
+    ;(readFileSync as Mock).mockImplementation((p: string) =>
+      String(p) === '/tmp/gvfs-guard-v1.installed' ? written : ''
+    )
     mockedExec.mockImplementation(() => {
       throw new Error('sudo: a password is required')
     })
@@ -153,7 +171,7 @@ describe('checkAndInstallGvfsGuard', () => {
     expect(args[2]).toContain('sudo-driver ALL=(root) NOPASSWD: LIVI_GVFS')
     expect(mockedWrite).toHaveBeenCalledWith(
       '/tmp/gvfs-guard-v1.installed',
-      expect.stringContaining(GUARD_PATH),
+      expect.stringMatching(/^[0-9a-f]{16}$/),
       { mode: 0o644 }
     )
   })

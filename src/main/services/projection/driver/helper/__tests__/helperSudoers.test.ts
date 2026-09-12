@@ -2,6 +2,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
+import { stamp } from '@main/services/privileged'
 import { dialog } from 'electron'
 import type { Mock } from 'vitest'
 import { checkAndInstallHelperSudoers, helperSudoersExists } from '../helperSudoers'
@@ -106,10 +107,19 @@ describe('helperSudoersExists', () => {
     expect(helperSudoersExists()).toBe(true)
   })
 
-  test('falls back to the sentinel when sudo refuses', () => {
+  test('falls back to the marker when sudo refuses', () => {
     noSudo()
-    mockedExists.mockImplementation((p: string) => String(p) === SENTINEL)
+    const rendered = TEMPLATE.replace(/__USERNAME__/g, 'driver')
+    mockedRead.mockImplementation((p: string) =>
+      String(p) === SENTINEL ? `${stamp(rendered)}\n` : TEMPLATE
+    )
     expect(helperSudoersExists()).toBe(true)
+  })
+
+  test('a marker from a different rule text does not count', () => {
+    noSudo()
+    mockedRead.mockImplementation((p: string) => (String(p) === SENTINEL ? stamp('old') : TEMPLATE))
+    expect(helperSudoersExists()).toBe(false)
   })
 
   test('false when the sentinel check throws', () => {
@@ -163,11 +173,9 @@ describe('checkAndInstallHelperSudoers', () => {
     expect(script).toContain('visudo -c -f /etc/sudoers.d/99-LIVI-helper.livi-tmp')
     // The same grant used to live under a name that only said Bluetooth.
     expect(script).toContain('rm -f /etc/sudoers.d/99-LIVI-bt')
-    expect(mockedWrite).toHaveBeenCalledWith(
-      SENTINEL,
-      expect.stringContaining('/etc/sudoers.d/99-LIVI-helper'),
-      { mode: 0o644 }
-    )
+    expect(mockedWrite).toHaveBeenCalledWith(SENTINEL, expect.stringMatching(/^[0-9a-f]{16}$/), {
+      mode: 0o644
+    })
     expect(mockedDialog).toHaveBeenLastCalledWith(win, expect.objectContaining({ type: 'info' }))
   })
 
@@ -226,7 +234,7 @@ describe('checkAndInstallHelperSudoers', () => {
 
     await install()
 
-    expect(warnSpy).toHaveBeenCalledWith('[helperSudoers] could not write sentinel:', 'read-only')
+    expect(warnSpy).toHaveBeenCalledWith('[helperSudoers] could not write marker:', 'read-only')
     expect(mockedDialog).toHaveBeenLastCalledWith(win, expect.objectContaining({ type: 'info' }))
     warnSpy.mockRestore()
   })

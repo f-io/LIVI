@@ -1,8 +1,9 @@
-import { execFile, execFileSync, spawn } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { app, type BrowserWindow, dialog } from 'electron'
+import { runAsRoot } from './privileged'
 
 const execFileAsync = promisify(execFile)
 
@@ -144,18 +145,11 @@ function manualCommand(names: string[], pm: PackageManager): string {
 }
 
 function installPackages(names: string[], pm: PackageManager): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const script =
-      pm === 'dnf'
-        ? `dnf install -y ${names.join(' ')}`
-        : `apt-get update && apt-get install -y ${names.join(' ')}`
-    const proc = spawn('pkexec', ['bash', '-c', script], { stdio: 'ignore' })
-    proc.on('close', (code) => {
-      if (code === 0) resolve()
-      else reject(new Error(`pkexec exited with code ${code}`))
-    })
-    proc.on('error', reject)
-  })
+  return runAsRoot([
+    pm === 'dnf'
+      ? `dnf install -y ${names.join(' ')}`
+      : `apt-get update && apt-get install -y ${names.join(' ')}`
+  ])
 }
 
 function describe(entries: PackageEntry[]): string {

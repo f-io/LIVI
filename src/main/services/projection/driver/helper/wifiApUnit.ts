@@ -1,9 +1,18 @@
 import { execFileSync, spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import { join } from 'node:path'
 import { DONGLE_LINK } from '@main/services/link/dongleAp'
+import {
+  asset,
+  markerHolds,
+  pkexecAvailable,
+  runAsRoot,
+  sudoersLines,
+  sudoGrants,
+  username,
+  writeMarker
+} from '@main/services/privileged'
 import type { Config } from '@shared/types/Config'
 import { app, type BrowserWindow, dialog } from 'electron'
 import { resolveHelperBin } from './helperSupervisor'
@@ -15,37 +24,15 @@ const SERVICE = 'livi-wifi-ap.service'
 const NM_UNMANAGED_CONF = '/etc/NetworkManager/conf.d/99-livi-ap-unmanaged.conf'
 const UNIT_TEMPLATE = 'livi-wifi-ap.service.template'
 const SUDOERS_TEMPLATE = '99-LIVI-wifi-ap.sudoers.template'
+// The installer writes the same marker, see livi_write_wifi_ap_unit in scripts/install/common.sh.
+const MARKER = '.wifi-ap-install'
 
 function helperPath(): string {
   return join(app.getPath('userData'), 'driver', 'livi-helperd')
 }
 
-function markerPath(): string {
-  return join(app.getPath('userData'), '.wifi-ap-install')
-}
-
-/** Packaged next to the app, with the repository copy for a development run. */
-function template(name: string): string {
-  const resources = process.resourcesPath
-  if (typeof resources === 'string' && resources.length > 0) {
-    const packaged = join(resources, name)
-    if (existsSync(packaged)) return readFileSync(packaged, 'utf8')
-  }
-  return readFileSync(join(app.getAppPath(), 'assets', 'linux', name), 'utf8')
-}
-
-function username(): string {
-  if (process.env.PKEXEC_UID) {
-    try {
-      return execFileSync('id', ['-nu', process.env.PKEXEC_UID], { encoding: 'utf8' }).trim()
-    } catch {}
-  }
-  if (process.env.SUDO_USER) return process.env.SUDO_USER
-  return os.userInfo().username
-}
-
 function render(name: string): string {
-  return template(name)
+  return asset(name)
     .replace(/__HELPER__/g, helperPath())
     .replace(/__USERNAME__/g, username())
     .replace(/__SYSTEMCTL__/g, systemctlPath())
@@ -75,27 +62,9 @@ function readFile(path: string): string {
   }
 }
 
-// The sudoers file is root-only, so sudo itself is asked whether the rule is in force.
-function sudoersActive(): boolean {
-  try {
-    const out = execFileSync('sudo', ['-n', '-l'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore']
-    })
-    return out.includes(`restart ${SERVICE}`) || /\(ALL(\s*:\s*ALL)?\)\s+NOPASSWD:\s+ALL/.test(out)
-  } catch {
-    return false
-  }
-}
-
-/** Changing the rule changes the stamp, so an old marker means reinstall. */
-function sudoersStamp(): string {
-  return createHash('sha256').update(sudoersContent()).digest('hex').slice(0, 16)
-}
-
-// A host whose sudoers needs a password for `sudo -l` cannot answer, hence the marker.
+// The sudoers file is root-only. sudo is asked, and where it cannot answer the marker is.
 function sudoersInstalled(): boolean {
-  return sudoersActive() || readFile(markerPath()).trim() === sudoersStamp()
+  return sudoGrants(`restart ${SERVICE}`) || markerHolds(MARKER, sudoersContent())
 }
 
 function needsInstall(): boolean {
@@ -124,40 +93,14 @@ function installViaHelper(): boolean {
   }
 }
 
-function pkexecAvailable(): boolean {
-  try {
-    execFileSync('which', ['pkexec'], { stdio: 'ignore' })
-    return true
-  } catch {
-    return false
-  }
-}
-
 function installPrivileged(): Promise<void> {
-  const staged = `${SUDOERS_PATH}.livi-tmp`
-  // set -e keeps a file that fails validation from ever reaching sudoers.d.
-  const script = [
-    'set -e',
-    `trap 'rm -f ${staged}' EXIT`,
+  return runAsRoot([
     `cat > ${UNIT_PATH} <<'EOF'`,
     unitContent().trimEnd(),
     'EOF',
-    `cat > ${staged} <<'EOF'`,
-    sudoersContent().trimEnd(),
-    'EOF',
-    `chmod 0440 ${staged}`,
-    `chown root:root ${staged}`,
-    `visudo -c -f ${staged}`,
-    `mv ${staged} ${SUDOERS_PATH}`,
+    ...sudoersLines(SUDOERS_PATH, sudoersContent()),
     'systemctl daemon-reload'
-  ].join('\n')
-  return new Promise((resolve, reject) => {
-    const proc = spawn('pkexec', ['bash', '-c', script], { stdio: 'ignore' })
-    proc.on('close', (code) =>
-      code === 0 ? resolve() : reject(new Error(`pkexec exited ${code}`))
-    )
-    proc.on('error', reject)
-  })
+  ])
 }
 
 function sudo(args: string[]): Promise<boolean> {
@@ -243,7 +186,7 @@ export async function reconcileWifiAp(config: Config, window?: BrowserWindow): P
         }
         await installPrivileged()
       }
-      writeFileSync(markerPath(), sudoersStamp())
+      writeMarker(MARKER, sudoersContent())
     } catch (err) {
       console.error('[wifiApUnit] install failed:', err)
       return

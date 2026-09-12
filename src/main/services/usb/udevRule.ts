@@ -1,36 +1,18 @@
-import { execFileSync, spawn } from 'child_process'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { BrowserWindow, dialog } from 'electron'
-import fs from 'fs'
-import path from 'path'
+import { asset, pkexecAvailable, runAsRoot } from '../privileged'
 
 const RULE_FILE = '/etc/udev/rules.d/99-LIVI.rules'
+const TEMPLATE = '99-LIVI.rules.template'
 
-const TEMPLATE_FILENAME = '99-LIVI.rules.template'
-
-const TOUCH_FILTER_FILENAME = 'livi-touch-filter'
+const TOUCH_FILTER = 'livi-touch-filter'
 const TOUCH_FILTER_FILE = '/usr/local/lib/livi/livi-touch-filter'
-
-function resolveAssetPath(name: string): string {
-  const resources = process.resourcesPath
-  if (typeof resources === 'string' && resources.length > 0) {
-    const packaged = path.join(resources, name)
-    if (fs.existsSync(packaged)) return packaged
-  }
-  return path.join(__dirname, '..', '..', '..', '..', 'assets', 'linux', name)
-}
-
-function resolveTemplatePath(): string {
-  return resolveAssetPath(TEMPLATE_FILENAME)
-}
-
-function loadTemplate(): string {
-  return fs.readFileSync(resolveTemplatePath(), 'utf8')
-}
 
 // The rule calls this to tell a real mouse from a touch panel's mouse interface.
 function loadTouchFilter(): string | null {
   try {
-    return fs.readFileSync(resolveAssetPath(TOUCH_FILTER_FILENAME), 'utf8')
+    return asset(TOUCH_FILTER)
   } catch {
     return null
   }
@@ -41,13 +23,9 @@ function templateMarker(template: string): string {
   return m ? m[0] : '# LIVI-RULE-VERSION=0'
 }
 
-function buildRuleContent(): string {
-  return loadTemplate()
-}
-
 export function udevRuleExists(): boolean {
   try {
-    return fs.existsSync(RULE_FILE)
+    return existsSync(RULE_FILE)
   } catch {
     return false
   }
@@ -55,49 +33,32 @@ export function udevRuleExists(): boolean {
 
 function udevRuleIsCurrent(): boolean {
   try {
-    if (!fs.existsSync(RULE_FILE)) return false
-    const content = fs.readFileSync(RULE_FILE, 'utf8')
-    return content.includes(templateMarker(loadTemplate()))
-  } catch {
-    return false
-  }
-}
-
-function pkexecAvailable(): boolean {
-  try {
-    execFileSync('which', ['pkexec'], { stdio: 'ignore' })
-    return true
+    if (!existsSync(RULE_FILE)) return false
+    const content = readFileSync(RULE_FILE, 'utf8')
+    return content.includes(templateMarker(asset(TEMPLATE)))
   } catch {
     return false
   }
 }
 
 function installRule(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const filter = loadTouchFilter()
-    const script =
-      'set -e\n' +
-      `cat > ${RULE_FILE} <<'LIVI_RULE_EOF'\n${buildRuleContent().trim()}\nLIVI_RULE_EOF\n` +
-      (filter
-        ? `mkdir -p ${path.dirname(TOUCH_FILTER_FILE)}\n` +
-          `cat > ${TOUCH_FILTER_FILE} <<'LIVI_FILTER_EOF'\n${filter.trim()}\nLIVI_FILTER_EOF\n` +
-          `chmod 0755 ${TOUCH_FILTER_FILE}\n`
-        : '') +
-      'udevadm control --reload-rules\n' +
-      'udevadm trigger'
-
-    const proc = spawn('pkexec', ['bash', '-c', script], { stdio: 'ignore' })
-
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve()
-      } else {
-        reject(new Error(`pkexec exited with code ${code}`))
-      }
-    })
-
-    proc.on('error', reject)
-  })
+  const filter = loadTouchFilter()
+  return runAsRoot([
+    `cat > ${RULE_FILE} <<'LIVI_RULE_EOF'`,
+    asset(TEMPLATE).trim(),
+    'LIVI_RULE_EOF',
+    ...(filter
+      ? [
+          `mkdir -p ${dirname(TOUCH_FILTER_FILE)}`,
+          `cat > ${TOUCH_FILTER_FILE} <<'LIVI_FILTER_EOF'`,
+          filter.trim(),
+          'LIVI_FILTER_EOF',
+          `chmod 0755 ${TOUCH_FILTER_FILE}`
+        ]
+      : []),
+    'udevadm control --reload-rules',
+    'udevadm trigger'
+  ])
 }
 
 export async function checkAndInstallUdevRule(window: BrowserWindow): Promise<boolean> {

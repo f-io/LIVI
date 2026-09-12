@@ -271,7 +271,7 @@ describe('checkMissingPackages', () => {
 
     expect(mockedSpawn).toHaveBeenCalledWith(
       'pkexec',
-      ['bash', '-c', 'apt-get update && apt-get install -y foo'],
+      ['bash', '-c', 'set -e\napt-get update && apt-get install -y foo'],
       { stdio: 'ignore' }
     )
     const followUp = mockedDialog.mock.calls[1][1]
@@ -297,9 +297,13 @@ describe('checkMissingPackages', () => {
     proc.emit('close', 0)
     await expect(done).resolves.toEqual({})
 
-    expect(mockedSpawn).toHaveBeenCalledWith('pkexec', ['bash', '-c', 'dnf install -y libva'], {
-      stdio: 'ignore'
-    })
+    expect(mockedSpawn).toHaveBeenCalledWith(
+      'pkexec',
+      ['bash', '-c', 'set -e\ndnf install -y libva'],
+      {
+        stdio: 'ignore'
+      }
+    )
     // Still missing afterwards → warn path uses the dnf manual hint.
     const followUp = mockedDialog.mock.calls[1][1]
     expect(followUp.type).toBe('warning')

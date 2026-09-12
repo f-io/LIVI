@@ -1,13 +1,20 @@
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, writeFileSync } from 'node:fs'
-import os from 'node:os'
-import { join } from 'node:path'
-import { app, type BrowserWindow, dialog } from 'electron'
+import { existsSync } from 'node:fs'
+import { type BrowserWindow, dialog } from 'electron'
+import {
+  markerHolds,
+  pkexecAvailable,
+  runAsRoot,
+  sudoersLines,
+  sudoGrants,
+  username,
+  writeMarker
+} from './privileged'
 
 const GUARD_DIR = '/usr/local/lib/livi'
 const GUARD_PATH = `${GUARD_DIR}/gvfs-phone-guard.sh`
 const SUDOERS_FILE = '/etc/sudoers.d/99-LIVI-gvfs'
-const SENTINEL_VERSION = 'v1'
+const MARKER = 'gvfs-guard-v1.installed'
 
 const MONITOR_DIR = '/usr/share/gvfs/remote-volume-monitors'
 const PHONE_MONITORS = ['afc', 'gphoto2', 'mtp']
@@ -33,42 +40,8 @@ function phoneMonitorsPresent(): boolean {
   )
 }
 
-function sentinelPath(): string {
-  return join(app.getPath('userData'), `gvfs-guard-${SENTINEL_VERSION}.installed`)
-}
-
-function resolveUsername(): string {
-  if (process.env.SUDO_USER) return process.env.SUDO_USER
-  return os.userInfo().username
-}
-
-function ruleActiveInSudo(): boolean {
-  try {
-    const out = execFileSync('sudo', ['-n', '-l'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore']
-    })
-    return out.includes('LIVI_GVFS') || out.includes(GUARD_PATH)
-  } catch {
-    return false
-  }
-}
-
-function isInstalled(): boolean {
-  return existsSync(GUARD_PATH) && (ruleActiveInSudo() || existsSync(sentinelPath()))
-}
-
-function pkexecAvailable(): boolean {
-  try {
-    execFileSync('which', ['pkexec'], { stdio: 'ignore' })
-    return true
-  } catch {
-    return false
-  }
-}
-
-function buildSudoers(): string {
-  const user = resolveUsername()
+function ruleContent(): string {
+  const user = username()
   return [
     `# Installed by LIVI — lets ${user} toggle the phone gvfs volume monitors while LIVI`,
     `# runs, and restore them when it exits. Remove this file to revoke.`,
@@ -78,31 +51,8 @@ function buildSudoers(): string {
   ].join('\n')
 }
 
-function installViaPkexec(): Promise<void> {
-  const tmpSudo = `${SUDOERS_FILE}.livi-tmp`
-  const script = [
-    `mkdir -p ${GUARD_DIR}`,
-    `cat > ${GUARD_PATH} <<'GUARDEOF'`,
-    GUARD_SCRIPT.trimEnd(),
-    'GUARDEOF',
-    `chmod 0755 ${GUARD_PATH}`,
-    `chown root:root ${GUARD_PATH}`,
-    `cat > ${tmpSudo} <<'SUDOEOF'`,
-    buildSudoers().trimEnd(),
-    'SUDOEOF',
-    `chmod 0440 ${tmpSudo}`,
-    `chown root:root ${tmpSudo}`,
-    `visudo -c -f ${tmpSudo}`,
-    `mv ${tmpSudo} ${SUDOERS_FILE}`
-  ].join('\n')
-
-  return new Promise((resolve, reject) => {
-    const proc = spawn('pkexec', ['bash', '-c', script], { stdio: 'ignore' })
-    proc.on('close', (code) =>
-      code === 0 ? resolve() : reject(new Error(`pkexec exited ${code}`))
-    )
-    proc.on('error', reject)
-  })
+function isInstalled(): boolean {
+  return existsSync(GUARD_PATH) && (sudoGrants(GUARD_PATH) || markerHolds(MARKER, ruleContent()))
 }
 
 /** One-time: install the privileged toggle script + sudoers so LIVI can hide plugged
@@ -127,10 +77,19 @@ export async function checkAndInstallGvfsGuard(window: BrowserWindow): Promise<v
   })
   if (response !== 0) return
 
+  const content = ruleContent()
   try {
-    await installViaPkexec()
+    await runAsRoot([
+      `mkdir -p ${GUARD_DIR}`,
+      `cat > ${GUARD_PATH} <<'GUARDEOF'`,
+      GUARD_SCRIPT.trimEnd(),
+      'GUARDEOF',
+      `chmod 0755 ${GUARD_PATH}`,
+      `chown root:root ${GUARD_PATH}`,
+      ...sudoersLines(SUDOERS_FILE, content)
+    ])
     try {
-      writeFileSync(sentinelPath(), `${new Date().toISOString()} ${GUARD_PATH}\n`, { mode: 0o644 })
+      writeMarker(MARKER, content)
     } catch {}
   } catch (err) {
     console.error('[gvfsGuard] install failed:', err)

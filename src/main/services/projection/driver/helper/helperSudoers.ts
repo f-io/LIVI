@@ -1,103 +1,28 @@
-import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import os from 'node:os'
-import { join } from 'node:path'
-import { app, BrowserWindow, dialog } from 'electron'
+import {
+  asset,
+  markerHolds,
+  pkexecAvailable,
+  runAsRoot,
+  sudoersLines,
+  sudoGrants,
+  username,
+  writeMarker
+} from '@main/services/privileged'
+import { BrowserWindow, dialog } from 'electron'
 
 const RULE_FILE = '/etc/sudoers.d/99-LIVI-helper'
 // The rule covers the whole helper, not only Bluetooth. This name replaces 99-LIVI-bt.
 const OBSOLETE_RULE_FILE = '/etc/sudoers.d/99-LIVI-bt'
-const TEMPLATE_FILENAME = '99-LIVI-helper.sudoers.template'
-function sentinelPath(): string {
-  return join(app.getPath('userData'), 'helper-sudoers-v1.installed')
-}
+const TEMPLATE = '99-LIVI-helper.sudoers.template'
+const MARKER = 'helper-sudoers-v1.installed'
 
-function sentinelExists(): boolean {
-  try {
-    return existsSync(sentinelPath())
-  } catch {
-    return false
-  }
-}
-
-function resolveTemplatePath(): string {
-  const resources = process.resourcesPath
-  if (typeof resources === 'string' && resources.length > 0) {
-    const packaged = join(resources, TEMPLATE_FILENAME)
-    if (existsSync(packaged)) return packaged
-  }
-  return join(app.getAppPath(), 'assets', 'linux', TEMPLATE_FILENAME)
-}
-
-function loadTemplate(): string {
-  return readFileSync(resolveTemplatePath(), 'utf8')
-}
-
-function resolveUsername(): string {
-  if (process.env.PKEXEC_UID) {
-    try {
-      return execFileSync('id', ['-nu', process.env.PKEXEC_UID], { encoding: 'utf8' }).trim()
-    } catch {}
-  }
-  if (process.env.SUDO_USER) return process.env.SUDO_USER
-  return os.userInfo().username
-}
-
-function buildRuleContent(): string {
-  return loadTemplate().replace(/__USERNAME__/g, resolveUsername())
-}
-
-function ruleActiveInSudo(): boolean {
-  try {
-    const out = execFileSync('sudo', ['-n', '-l'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore']
-    })
-    // Only a rule naming the helper binary counts; an older python-era rule does not.
-    return out.includes('livi-helperd') || /\(ALL(\s*:\s*ALL)?\)\s+NOPASSWD:\s+ALL/.test(out)
-  } catch {
-    return false
-  }
+function ruleContent(): string {
+  return asset(TEMPLATE).replace(/__USERNAME__/g, username())
 }
 
 export function helperSudoersExists(): boolean {
-  return ruleActiveInSudo() || sentinelExists()
-}
-
-function pkexecAvailable(): boolean {
-  try {
-    execFileSync('which', ['pkexec'], { stdio: 'ignore' })
-    return true
-  } catch {
-    return false
-  }
-}
-
-function installRule(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const content = buildRuleContent()
-    const tmpFile = `${RULE_FILE}.livi-tmp`
-    // set -e keeps a file that fails validation from ever reaching sudoers.d.
-    const script = [
-      'set -e',
-      `trap 'rm -f ${tmpFile}' EXIT`,
-      `cat > ${tmpFile} <<'EOF'`,
-      content.trimEnd(),
-      'EOF',
-      `chmod 0440 ${tmpFile}`,
-      `chown root:root ${tmpFile}`,
-      `visudo -c -f ${tmpFile}`,
-      `mv ${tmpFile} ${RULE_FILE}`,
-      `rm -f ${OBSOLETE_RULE_FILE}`
-    ].join('\n')
-
-    const proc = spawn('pkexec', ['bash', '-c', script], { stdio: 'ignore' })
-    proc.on('close', (code) => {
-      if (code === 0) resolve()
-      else reject(new Error(`pkexec exited with code ${code}`))
-    })
-    proc.on('error', reject)
-  })
+  // Only a rule naming the helper binary counts; an older python-era rule does not.
+  return sudoGrants('livi-helperd') || markerHolds(MARKER, ruleContent())
 }
 
 export async function checkAndInstallHelperSudoers(window: BrowserWindow): Promise<void> {
@@ -122,12 +47,13 @@ export async function checkAndInstallHelperSudoers(window: BrowserWindow): Promi
   })
   if (response !== 0) return
 
+  const content = ruleContent()
   try {
-    await installRule()
+    await runAsRoot([...sudoersLines(RULE_FILE, content), `rm -f ${OBSOLETE_RULE_FILE}`])
     try {
-      writeFileSync(sentinelPath(), `${new Date().toISOString()} ${RULE_FILE}\n`, { mode: 0o644 })
+      writeMarker(MARKER, content)
     } catch (e) {
-      console.warn('[helperSudoers] could not write sentinel:', (e as Error).message)
+      console.warn('[helperSudoers] could not write marker:', (e as Error).message)
     }
     await dialog.showMessageBox(window, {
       type: 'info',
@@ -137,7 +63,6 @@ export async function checkAndInstallHelperSudoers(window: BrowserWindow): Promi
     })
   } catch (err) {
     console.error('[helperSudoers] installation failed:', err)
-    const content = buildRuleContent()
     await dialog.showMessageBox(window, {
       type: 'error',
       title: 'Installation Failed',
