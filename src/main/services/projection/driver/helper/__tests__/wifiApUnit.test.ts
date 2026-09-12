@@ -1,20 +1,16 @@
 import { execFileSync, spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dialog } from 'electron'
 import { afterEach, beforeEach, describe, expect, type Mock, test, vi } from 'vitest'
 
 vi.mock('node:child_process', () => ({ spawn: vi.fn(), execFileSync: vi.fn() }))
-vi.mock('../staged', () => ({
-  helperRestaged: vi.fn(() => false),
-  markHelperRestaged: vi.fn(),
-  clearHelperRestaged: vi.fn()
-}))
 vi.mock('../helperSupervisor', () => ({ resolveHelperBin: () => '/data/driver/livi-helperd' }))
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(),
   readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
+  statSync: vi.fn(() => ({ mtimeMs: 0 })),
   mkdtempSync: vi.fn(() => '/tmp/livi-ap-test'),
   rmSync: vi.fn()
 }))
@@ -82,6 +78,7 @@ function templatesOnly(p: string): string {
 }
 
 function execDispatch(cmd: string, args: string[] = []): string {
+  if (args.includes('ActiveEnterTimestampMonotonic')) return '4000000\n'
   if (cmd === 'which') return exec.which
   if (cmd === 'sudo' && args.includes('--install-wifi-ap')) {
     if (!exec.helperRoot) throw new Error('sudo: a password is required')
@@ -134,9 +131,15 @@ function installed(): void {
     const path = String(p)
     if (path.endsWith('livi-wifi-ap.service.template')) return UNIT_TPL
     if (path.endsWith('99-LIVI-wifi-ap.sudoers.template')) return SUDOERS_TPL
+    if (path === '/proc/stat') return 'cpu 1 2 3\nbtime 1000000\n'
     return UNIT
   })
   exec.sudoList = AP_RULE
+}
+
+/** When the staged helper was written, against a service that came up 4 s after a boot at 1e6. */
+function helperWrittenAt(epoch: number): void {
+  ;(statSync as Mock).mockReturnValue({ mtimeMs: epoch * 1000 })
 }
 
 const spawnCmds = (): string[] => mockedSpawn.mock.calls.map((c) => String(c[0]))
@@ -159,6 +162,7 @@ describe('reconcileWifiAp — wanted', () => {
     exec.helperRoot = false
     exec.id = 'pi\n'
     mockedExec.mockImplementation(execDispatch)
+    ;(statSync as Mock).mockReturnValue({ mtimeMs: 0 })
     autoClose(0)
   })
   afterEach(() => {
@@ -238,15 +242,31 @@ describe('reconcileWifiAp — wanted', () => {
     expect(sudoLines()).toHaveLength(0)
   })
 
-  test('restarts the service when a new helper binary was staged', async () => {
-    const { helperRestaged } = await import('../staged')
-    vi.mocked(helperRestaged).mockReturnValueOnce(true)
+  test('restarts the service when the staged helper is newer than its start', async () => {
     installed()
+    helperWrittenAt(1_000_010)
     await reconcileWifiAp(cfg({ wirelessCpEnabled: true }))
     expect(sudoLines()).toContain('-n /usr/bin/systemctl restart livi-wifi-ap.service')
     expect(sudoLines()).not.toContain('-n /usr/bin/systemctl start livi-wifi-ap.service')
-    const { clearHelperRestaged } = await import('../staged')
-    expect(clearHelperRestaged).toHaveBeenCalled()
+  })
+
+  test('only starts when the service already runs the staged helper', async () => {
+    installed()
+    helperWrittenAt(999_000)
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true }))
+    expect(sudoLines()).toContain('-n /usr/bin/systemctl start livi-wifi-ap.service')
+    expect(sudoLines()).not.toContain('-n /usr/bin/systemctl restart livi-wifi-ap.service')
+  })
+
+  test('starts, not restarts, when the age of the service cannot be told', async () => {
+    installed()
+    helperWrittenAt(1_000_010)
+    mockedExec.mockImplementation((cmd: string, args: string[] = []) => {
+      if (args.includes('ActiveEnterTimestampMonotonic')) throw new Error('no systemd')
+      return execDispatch(cmd, args)
+    })
+    await reconcileWifiAp(cfg({ wirelessCpEnabled: true }))
+    expect(sudoLines()).toContain('-n /usr/bin/systemctl start livi-wifi-ap.service')
   })
 
   test('dedicated off + wireless on: no boot-persist, but the AP is started', async () => {
@@ -506,6 +526,7 @@ describe('reconcileWifiAp — not wanted', () => {
     exec.helperRoot = false
     exec.id = 'pi\n'
     mockedExec.mockImplementation(execDispatch)
+    ;(statSync as Mock).mockReturnValue({ mtimeMs: 0 })
     autoClose(0)
   })
   afterEach(() => {
@@ -726,6 +747,7 @@ describe('releaseWifiApForQuit', () => {
     exec.helperRoot = false
     exec.id = 'pi\n'
     mockedExec.mockImplementation(execDispatch)
+    ;(statSync as Mock).mockReturnValue({ mtimeMs: 0 })
     autoClose(0)
   })
   afterEach(() => {

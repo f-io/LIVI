@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import { join } from 'node:path'
 import { DONGLE_LINK } from '@main/services/link/dongleAp'
@@ -16,7 +16,6 @@ import {
 import type { Config } from '@shared/types/Config'
 import { app, type BrowserWindow, dialog } from 'electron'
 import { resolveHelperBin } from './helperSupervisor'
-import { clearHelperRestaged, helperRestaged } from './staged'
 
 const UNIT_PATH = '/etc/systemd/system/livi-wifi-ap.service'
 const SUDOERS_PATH = '/etc/sudoers.d/99-LIVI-wifi-ap'
@@ -199,9 +198,28 @@ export async function reconcileWifiAp(config: Config, window?: BrowserWindow): P
   await sudo([sc, config.wifiDedicatedInterface ? 'enable' : 'disable', SERVICE])
   // The service holds the old binary open until it is restarted, and start does nothing to a
   // running unit.
-  const restaged = helperRestaged()
-  await sudo([sc, restaged ? 'restart' : 'start', SERVICE])
-  if (restaged) clearHelperRestaged()
+  await sudo([sc, serviceRunsOlderHelper() ? 'restart' : 'start', SERVICE])
+}
+
+/**
+ * The service holds the binary it started with. A staged helper newer than that start means
+ * a restart, and start would do nothing to a running unit.
+ */
+function serviceRunsOlderHelper(): boolean {
+  try {
+    const sinceBoot = Number(
+      execFileSync(
+        systemctlPath(),
+        ['show', '-p', 'ActiveEnterTimestampMonotonic', '--value', SERVICE],
+        { encoding: 'utf8' }
+      )
+    )
+    const boot = Number(readFileSync('/proc/stat', 'utf8').match(/^btime (\d+)/m)?.[1])
+    if (!sinceBoot || !boot) return false
+    return statSync(helperPath()).mtimeMs / 1000 > boot + sinceBoot / 1e6
+  } catch {
+    return false
+  }
 }
 
 const AP_SETTLE_TRIES = 15

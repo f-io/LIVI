@@ -7,7 +7,6 @@ import { DEBUG } from '@main/constants'
 import type { Config } from '@shared/types'
 import { app } from 'electron'
 import { loadOrCreateIdentity } from '../cp/stack/identity'
-import { markHelperRestaged } from './staged'
 
 const HELPER_BIN = 'livi-helperd'
 
@@ -29,7 +28,6 @@ function stageHelperBin(src: string): string {
     copyFileSync(src, tmp)
     chmodSync(tmp, 0o755)
     renameSync(tmp, dest)
-    markHelperRestaged()
   }
   return dest
 }
