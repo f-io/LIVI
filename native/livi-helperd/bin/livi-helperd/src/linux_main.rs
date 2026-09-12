@@ -514,7 +514,13 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
                 let cfg = LinkConfig { max_outgoing: 4, control_version: 2, ..LinkConfig::default() };
                 let (channel, art_rx) = spawn_link_stream(session.stream, cfg, false);
                 let (tx, rx) = tokio::sync::mpsc::channel(64);
-                tokio::spawn(run_accessory(channel, auth, identity.clone(), cp.clone(), tx));
+                let (accessory, mac) = (run_accessory(channel, auth, identity.clone(), cp.clone(), tx), session.peer.to_string());
+                let links = state.clone();
+                tokio::spawn(async move {
+                    links.link_up(&mac);
+                    accessory.await;
+                    links.link_down(&mac);
+                });
                 let ident: SharedTag = Default::default();
                 tokio::spawn(pump_events_for(rx, bcast.clone(), "bt", None, ident.clone()));
                 tokio::spawn(pump_artwork(art_rx, bcast.clone(), ident));
@@ -529,7 +535,13 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
                 let cfg = LinkConfig { max_outgoing: 4, control_version: 2, ..LinkConfig::default() };
                 let (channel, art_rx) = spawn_link(conn.fd, cfg, false);
                 let (tx, rx) = tokio::sync::mpsc::channel(64);
-                tokio::spawn(run_accessory(channel, auth, identity.clone(), cp.clone(), tx));
+                let (accessory, mac) = (run_accessory(channel, auth, identity.clone(), cp.clone(), tx), conn.peer_mac.clone());
+                let links = state.clone();
+                tokio::spawn(async move {
+                    links.link_up(&mac);
+                    accessory.await;
+                    links.link_down(&mac);
+                });
                 let ident: SharedTag = Default::default();
                 tokio::spawn(pump_events_for(rx, bcast.clone(), "bt", None, ident.clone()));
                 tokio::spawn(pump_artwork(art_rx, bcast.clone(), ident));

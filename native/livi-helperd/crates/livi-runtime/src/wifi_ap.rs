@@ -150,6 +150,7 @@ pub fn release_iface_from_nm(iface: &str) {
         let _ = std::fs::create_dir_all("/etc/NetworkManager/conf.d");
         let _ = std::fs::write(NM_UNMANAGED_CONF, content);
     }
+    // The installer writes the same file, so NetworkManager has it from its first start.
     if nm_installed() && nm_running() {
         run_cmd("nmcli", &["general", "reload"]);
         run_cmd("nmcli", &["device", "set", iface, "managed", "no"]);
@@ -259,8 +260,43 @@ fn wait_ready(iface: &str, timeout: Duration) -> bool {
     false
 }
 
+/// The last lines hostapd wrote, for the journal when it did not come up.
+fn chrono_free_stamp() -> String {
+    std::fs::read_to_string("/proc/uptime")
+        .ok()
+        .and_then(|t| t.split_whitespace().next().map(|u| format!("uptime {u}s")))
+        .unwrap_or_default()
+}
+
+fn hostapd_tail() -> String {
+    let text = std::fs::read_to_string(HOSTAPD_LOG).unwrap_or_default();
+    let lines: Vec<&str> = text.lines().collect();
+    let from = lines.len().saturating_sub(12);
+    lines[from..].join("\n")
+}
+
+/// The regulatory domain is requested by `iw reg set` and applied by the kernel some time
+/// later. hostapd started in between waits for it in COUNTRY_UPDATE, at boot possibly for
+/// longer than the readiness budget.
+fn wait_regulatory(country: &str, timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if livi_wifi::regulatory_country().as_deref() == Some(country) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    eprintln!(
+        "[wifi-ap] regulatory domain {country} not applied after {}s, kernel has {}",
+        timeout.as_secs(),
+        livi_wifi::regulatory_country().unwrap_or_else(|| "none".into())
+    );
+}
+
 fn spawn_hostapd() -> std::io::Result<Child> {
-    let log = std::fs::File::create(HOSTAPD_LOG)?;
+    let log = std::fs::OpenOptions::new().create(true).append(true).open(HOSTAPD_LOG)?;
+    use std::io::Write as _;
+    let _ = writeln!(&log, "--- hostapd start {} ---", chrono_free_stamp());
     Command::new(crate::sys::tool("hostapd"))
         .arg(HOSTAPD_CONF)
         .stdout(Stdio::from(log.try_clone()?))
@@ -298,12 +334,14 @@ pub fn run(cfg: ApConfig) -> ! {
     );
     persist_nm_profiles();
     release_iface_from_nm(&cfg.iface);
+    let _ = std::fs::remove_file(HOSTAPD_LOG);
     let mut cfg = cfg;
     loop {
         run_cmd("pkill", &["-f", &format!("hostapd.*{HOSTAPD_CONF}")]);
         run_cmd("pkill", &["-f", &format!("dnsmasq.*{DNSMASQ_CONF}")]);
         std::thread::sleep(Duration::from_millis(300));
         setup_interface(&cfg);
+        wait_regulatory(&cfg.country, Duration::from_secs(10));
         if write_hostapd_conf(&cfg).is_err() || write_dnsmasq_conf(&cfg).is_err() {
             eprintln!("[wifi-ap] cannot write configs, retrying");
             std::thread::sleep(Duration::from_secs(5));
@@ -333,6 +371,7 @@ pub fn run(cfg: ApConfig) -> ! {
             let _ = std::fs::write(LAST_GOOD, format!("{} {}", cfg.channel, cfg.width));
         } else {
             let (channel, width) = after_refusal(&cfg);
+            eprintln!("[wifi-ap] hostapd log:\n{}", hostapd_tail());
             if (channel, width) == (cfg.channel, cfg.width) {
                 eprintln!("[wifi-ap] readiness timeout, restarting stack");
             } else {
@@ -420,5 +459,14 @@ mod tests {
         let r = radio_section(&cfg(6, 80));
         assert!(r.contains("hw_mode=g"));
         assert!(!r.contains("ht_capab"));
+    }
+
+    #[test]
+    fn the_tail_keeps_the_last_twelve_lines() {
+        let text: String = (1..=20).map(|i| format!("l{i}\n")).collect();
+        let lines: Vec<&str> = text.lines().collect();
+        let from = lines.len().saturating_sub(12);
+        assert_eq!(lines[from..].first(), Some(&"l9"));
+        assert_eq!(lines[from..].len(), 12);
     }
 }

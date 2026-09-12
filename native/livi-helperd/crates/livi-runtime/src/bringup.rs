@@ -286,7 +286,8 @@ fn carplay_start_session(cp: &CpConfig) -> Option<CarPlayStartSession> {
 }
 
 /// How long the access point is given to come back before the phone is answered anyway.
-const AP_WAIT: Duration = Duration::from_secs(10);
+// Covers the AP service's own readiness budget plus the wait for the regulatory domain.
+const AP_WAIT: Duration = Duration::from_secs(30);
 const AP_POLL: Duration = Duration::from_millis(250);
 
 /// The answer names an SSID and a channel, so it waits until they are on air.

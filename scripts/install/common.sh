@@ -27,6 +27,7 @@ LIVI_MFI_OVERLAY="dtoverlay=i2c-gpio,bus=${LIVI_MFI_I2C_BUS},i2c_gpio_sda=19,i2c
 LIVI_MODULES_LOAD="${LIVI_MODULES_LOAD:-/etc/modules-load.d/livi-i2c.conf}"
 LIVI_NM_POWERSAVE_FILE="/etc/NetworkManager/conf.d/99-LIVI-wifi-powersave.conf"
 LIVI_NM_PMF_FILE="/etc/NetworkManager/conf.d/99-LIVI-wifi-pmf.conf"
+LIVI_REGDOM_FILE="/etc/modprobe.d/livi-regdom.conf"
 LIVI_RTPRIO_FILE="/etc/security/limits.d/99-livi-rtprio.conf"
 
 # Pixel repetition for RGB/VGA panels below HDMI's clock floor
@@ -436,6 +437,34 @@ livi_disable_wifi_powersave() {
   echo "→ Writing $LIVI_NM_POWERSAVE_FILE"
   sudo mkdir -p "$(dirname "$LIVI_NM_POWERSAVE_FILE")"
   printf '[connection]\nwifi.powersave = 2\n' | sudo tee "$LIVI_NM_POWERSAVE_FILE" >/dev/null
+}
+
+# livi_app_config_value <key> <default> -> the value from the app config, or the default.
+livi_app_config_value() {
+  local python_bin
+  python_bin="$(command -v python3 || echo /usr/bin/python3)"
+  "$python_bin" - "$LIVI_APP_CONFIG" "$1" "$2" <<'PY'
+import json, sys
+path, key, default = sys.argv[1:4]
+try:
+    with open(path) as f:
+        value = json.load(f).get(key)
+except (OSError, ValueError):
+    value = None
+print(value if value not in (None, "") else default)
+PY
+}
+
+# The regulatory domain from the moment the driver loads, the way raspi-config sets it.
+# hostapd asking for it at runtime would wait for the kernel to fetch the database first.
+# Only once the user has chosen a country in LIVI; a fresh install presumes none.
+livi_write_regdom() {
+  local country
+  country="$(livi_app_config_value country '' | tr '[:lower:]' '[:upper:]')"
+  case "$country" in [A-Z][A-Z]) ;; *) return 0 ;; esac
+  echo "→ Writing $LIVI_REGDOM_FILE for $country"
+  sudo mkdir -p "$(dirname "$LIVI_REGDOM_FILE")"
+  printf 'options cfg80211 ieee80211_regdom=%s\n' "$country" | sudo tee "$LIVI_REGDOM_FILE" >/dev/null
 }
 
 # Sets 802.11w (PMF) to optional for all NetworkManager Wi-Fi connections.

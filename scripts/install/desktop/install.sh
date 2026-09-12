@@ -104,6 +104,7 @@ livi_install_touch_filter "$TOUCH_FILTER"
 livi_write_udev_rule "$UDEV_TEMPLATE"
 livi_write_sudoers "$SUDOERS_TEMPLATE"
 livi_write_wifi_ap_unit "$AP_UNIT_TEMPLATE" "$AP_SUDOERS_TEMPLATE"
+livi_write_regdom
 livi_install_time_helper
 livi_disable_wifi_powersave
 livi_set_wifi_pmf_optional

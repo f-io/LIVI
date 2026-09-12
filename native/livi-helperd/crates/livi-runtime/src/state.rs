@@ -1,16 +1,32 @@
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use crate::livi_sock::SharedTag;
 
-/// Shared helper state: reconnect targets, plus the tags of the carkit iAP2 sessions.
-/// Targets stay in the order LIVI sent them: most recently seen phone first.
+/// Shared helper state: reconnect targets, the tags of the carkit iAP2 sessions, and the
+/// phones an iAP2 link is running with. Targets stay in the order LIVI sent them: most
+/// recently seen phone first.
 #[derive(Default)]
 pub struct HelperState {
     reconnect_targets: Mutex<Vec<(String, Option<String>)>>,
     carkit: Mutex<Vec<SharedTag>>,
+    links: Mutex<HashSet<String>>,
 }
 
 impl HelperState {
+    pub fn link_up(&self, mac: &str) {
+        self.links.lock().unwrap().insert(mac.to_uppercase());
+    }
+
+    pub fn link_down(&self, mac: &str) {
+        self.links.lock().unwrap().remove(&mac.to_uppercase());
+    }
+
+    /// True while an iAP2 link runs with this phone, from identification to the end.
+    pub fn link_active(&self, mac: &str) -> bool {
+        self.links.lock().unwrap().contains(&mac.to_uppercase())
+    }
+
     pub fn set_reconnect_targets(&self, targets: Vec<(String, Option<String>)>) {
         let normalized = targets.into_iter().map(|(m, u)| (m.to_uppercase(), u)).collect();
         *self.reconnect_targets.lock().unwrap() = normalized;
@@ -71,5 +87,15 @@ mod tests {
         assert!(!state.carkit_blocks("AA:BB:CC:DD:EE:FF"));
         state.carkit_ended(&unlearned);
         assert!(!state.carkit_blocks(""));
+    }
+
+    #[test]
+    fn a_phone_with_a_link_is_known_whatever_the_case_of_its_mac() {
+        let state = HelperState::default();
+        assert!(!state.link_active("0c:6a:c4:4e:f3:2a"));
+        state.link_up("0c:6a:c4:4e:f3:2a");
+        assert!(state.link_active("0C:6A:C4:4E:F3:2A"));
+        state.link_down("0C:6A:C4:4E:F3:2A");
+        assert!(!state.link_active("0c:6a:c4:4e:f3:2a"));
     }
 }

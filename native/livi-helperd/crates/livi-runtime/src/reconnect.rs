@@ -45,6 +45,11 @@ pub async fn run(conn: Connection, adapter: String, ap_iface: String, state: Arc
             // Out of the rotation: nudge the profile, disconnect after STALE so it re-pages.
             attempts.remove(&mac);
             next_try.remove(&mac);
+            // A link in progress, for instance still waiting for the access point, is not stale.
+            if state.link_active(&mac) {
+                stale_since.remove(&mac);
+                continue;
+            }
             let stale = match stale_since.entry(mac.clone()) {
                 Entry::Vacant(e) => {
                     e.insert(Instant::now());

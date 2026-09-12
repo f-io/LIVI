@@ -23,6 +23,12 @@ pub fn ap_state(_iface: &str) -> Option<ApState> {
     None
 }
 
+/// The stub for a host without nl80211.
+#[cfg(not(target_os = "linux"))]
+pub fn regulatory_country() -> Option<String> {
+    None
+}
+
 #[cfg(target_os = "linux")]
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 #[cfg(target_os = "linux")]
@@ -202,6 +208,14 @@ fn width_mhz(raw: u32) -> u32 {
         13 => 320,
         _ => 0,
     }
+}
+
+/// The regulatory domain the kernel has applied, as opposed to one merely requested.
+#[cfg(target_os = "linux")]
+pub fn regulatory_country() -> Option<String> {
+    let fd = open().ok()?;
+    let family = family_id(&fd).ok()?;
+    country(&fd, family).ok()
 }
 
 #[cfg(target_os = "linux")]

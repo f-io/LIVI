@@ -900,6 +900,8 @@ describe('shipped templates', () => {
     expect(unit).toContain('ConditionPathExists=__HELPER__')
     expect(unit).toContain('Environment=SUDO_USER=__USERNAME__')
     expect(unit).toContain('ExecStop=__HELPER__ --wifi-ap-teardown')
+    expect(unit).toContain('After=network.target')
+    expect(unit).not.toContain('Before=NetworkManager')
     expect(unit).not.toContain('__SYSTEMCTL__')
     // sudoersActive() recognises an installed rule by this command.
     expect(rule).toContain('__SYSTEMCTL__ restart livi-wifi-ap.service')
