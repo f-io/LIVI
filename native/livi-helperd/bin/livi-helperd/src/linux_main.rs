@@ -321,6 +321,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         cp: cp.clone(),
         disconnect: None,
         targets: None,
+        cp_live: None,
     };
     {
         let bus = conn.clone();

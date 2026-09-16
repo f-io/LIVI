@@ -259,6 +259,12 @@ fn start_carplay_seam(link: Arc<LinkPresence>) {
             .then(|| Arc::new(|mac: String| livi_dongle::iap::drop_link(&mac)) as _),
         targets: over_dongle
             .then(|| Arc::new(|macs: Vec<String>| livi_dongle::iap::set_targets(&macs)) as _),
+        // The dongle can reappear with a new access-point MAC; resolve it per session so the
+        // tunnel names the same accessory the phone joined, not the one seen at start.
+        cp_live: over_dongle.then(|| {
+            let base = cp.clone();
+            Arc::new(move || wireless_config(&base)) as _
+        }),
     };
     let (bc, st, a) = (bcast.clone(), state.clone(), auth.clone());
     tokio::spawn(async move {

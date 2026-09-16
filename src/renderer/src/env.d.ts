@@ -102,6 +102,12 @@ declare global {
         onUpdate(
           callback: (event: import('electron').IpcRendererEvent, settings: Config) => void
         ): () => void
+        onLinkSpeed(
+          callback: (
+            event: import('electron').IpcRendererEvent,
+            speed: { downMbps: number; upMbps: number; downRate: number; upRate: number } | null
+          ) => void
+        ): () => void
       }
       audio: {
         listSinks(): Promise<

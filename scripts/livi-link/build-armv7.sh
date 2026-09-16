@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Cross-builds the LIVI Link dongle stack (armv7, static) into an asset directory:
-# <out>/livi-link.gz plus MANIFEST.md5. The gzip is deterministic (-9 -n), so an unchanged binary
-# means nothing for CI to commit. Needs the rustup target and an arm-linux-gnueabihf toolchain.
+# Cross-builds the LIVI Link cpc200-ccpa dongle stack (armv7, static) into an
+# asset directory: <out>/livi-link.gz plus MANIFEST.md5. The gzip is
+# deterministic (-9 -n), so an unchanged binary means nothing for CI to
+# commit. Needs the rustup target and an arm-linux-gnueabihf toolchain.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")/../.." && pwd)
-OUT=${1:-$HERE/assets/livi-link}
+OUT=${1:-$HERE/assets/livi-link/cpc200-ccpa}
 CROSS=${CROSS:-arm-linux-gnueabihf-}
 TARGET=${TARGET:-armv7-unknown-linux-gnueabihf}
 HELPERD=$HERE/native/livi-helperd

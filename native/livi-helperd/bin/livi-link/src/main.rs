@@ -8,9 +8,7 @@ mod iapd;
 #[cfg(target_os = "linux")]
 mod l2fwd;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-mod mdns;
 #[cfg(target_os = "linux")]
-mod mdnsd;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod mfid;
 #[cfg(target_os = "linux")]
@@ -67,7 +65,7 @@ fn main() -> ExitCode {
         #[cfg(target_os = "linux")]
         "l2fwd" => l2fwd::run(&rest),
         #[cfg(target_os = "linux")]
-        "mdnsd" => mdnsd::run(&rest),
+        "mdnsd" => livi_mdns::daemon::run(&rest),
         #[cfg(target_os = "linux")]
         "wifid" => wifid::run(),
         #[cfg(target_os = "linux")]

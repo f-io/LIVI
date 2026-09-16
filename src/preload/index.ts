@@ -105,6 +105,12 @@ const api = {
       const ch = 'settings'
       ipcRenderer.on(ch, callback)
       return () => ipcRenderer.removeListener(ch, callback)
+    },
+    // Live Wi-Fi link readout. The payload is null while no dongle/phone is on the air.
+    onLinkSpeed: (callback: ApiCallback): (() => void) => {
+      const ch = 'link-speed'
+      ipcRenderer.on(ch, callback)
+      return () => ipcRenderer.removeListener(ch, callback)
     }
   },
 

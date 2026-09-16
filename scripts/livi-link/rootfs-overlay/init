@@ -1,0 +1,10 @@
+#!/bin/sh
+# LIVI-Link PID-1 shim: bring pseudo-fs up, then hand off to busybox init.
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t tmpfs tmpfs /tmp
+mkdir -p /dev/pts /sys/kernel/config
+mount -t devpts devpts /dev/pts 2>/dev/null
+mount -t configfs configfs /sys/kernel/config 2>/dev/null
+mdev -s
+exec /sbin/init

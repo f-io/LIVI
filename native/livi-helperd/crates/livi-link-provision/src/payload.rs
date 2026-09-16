@@ -1,5 +1,5 @@
 //! What the dongle carries, all of it embedded. The tool is a single download, so the armv7
-//! binary CI builds into `assets/livi-link` is baked in rather than read from disk.
+//! binary CI builds into `assets/livi-link/cpc200-ccpa` is baked in rather than read from disk.
 
 use md5::{Digest, Md5};
 
@@ -44,7 +44,7 @@ const BRINGUP: &str = include_str!("../../../bin/livi-link/scripts/livi-bringup.
 const LINK: &str = include_str!("../../../bin/livi-link/scripts/livi-link.sh");
 const L2FWD_WATCH: &str = include_str!("../../../bin/livi-link/scripts/l2fwd-watch.sh");
 const FLASH_IMAGE: &str = include_str!("../../../bin/livi-link/scripts/flash-image.sh");
-const STACK: &[u8] = include_bytes!("../../../../../assets/livi-link/livi-link.gz");
+const STACK: &[u8] = include_bytes!("../../../../../assets/livi-link/cpc200-ccpa/livi-link.gz");
 const SERVER_CGI: &str = include_str!("../../../bin/livi-link/web/server.cgi");
 const INDEX_HTML: &str = include_str!("../../../bin/livi-link/web/index.html");
 

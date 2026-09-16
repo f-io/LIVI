@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LIVI Link</title>
+<style>
+  :root { color-scheme: dark; --bg:#0b0d12; --fg:#e6e8ee; --dim:#8a92a5; --acc:#4dd0e1; --card:#151924; --br:#242938; --warn:#ff6b6b; --ok:#7ee787; }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 14px/1.5 -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--fg); padding: 24px 16px; }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h1 small { color:var(--dim); font-size: 13px; font-weight: 400; margin-left: 8px; }
+  h2 { font-size: 13px; font-weight: 600; color:var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin: 24px 0 8px; }
+  .card { background:var(--card); border:1px solid var(--br); border-radius: 10px; padding: 14px 16px; }
+  .kv { display:grid; grid-template-columns: 140px 1fr; gap: 6px 12px; }
+  .kv dt { color:var(--dim); }
+  .kv dd { margin:0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .status { color: var(--acc); }
+  .row { display:flex; gap:10px; align-items:center; }
+  label.file { display:inline-flex; align-items:center; gap:8px; padding:8px 12px; background:#0b0d12; border:1px solid var(--br); border-radius:8px; cursor:pointer; font-size:13px; }
+  label.file input { display:none; }
+  button { appearance:none; border:1px solid var(--br); background:#0b0d12; color:var(--fg); padding:8px 14px; border-radius:8px; cursor:pointer; font: inherit; }
+  button:hover:not(:disabled) { border-color: var(--acc); color: var(--acc); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.danger { border-color:#3a1e21; color:var(--warn); }
+  button.danger:hover:not(:disabled) { border-color:var(--warn); background:#1b0e10; }
+  .flash-row { display:grid; grid-template-columns: 60px 1fr auto; gap:10px; align-items:center; padding: 8px 0; border-bottom: 1px solid var(--br); }
+  .flash-row:last-child { border-bottom: 0; }
+  .flash-row .slot { font-family: ui-monospace, monospace; color: var(--acc); }
+  .flash-row .name { color: var(--dim); font-size: 12px; }
+  .msg { margin-top: 10px; font-family: ui-monospace, monospace; font-size: 12px; min-height: 1.4em; }
+  .msg.ok { color: var(--ok); }
+  .msg.err { color: var(--warn); }
+  .led-grid { display:grid; grid-template-columns: 140px 1fr; gap: 10px 12px; align-items: center; }
+  .led-grid .label { color: var(--dim); }
+  input[type="color"] { width: 48px; height: 32px; padding: 0; border: 1px solid var(--br); background: #0b0d12; border-radius: 6px; cursor: pointer; }
+  input[type="range"] { width: 100%; accent-color: var(--acc); }
+  .val { font-family: ui-monospace, monospace; color: var(--acc); font-size: 12px; margin-left: 6px; }
+
+  .progress { width: 100%; height: 8px; margin-top: 8px; appearance: none; }
+  .progress::-webkit-progress-bar { background: #0b0d12; border: 1px solid var(--br); border-radius: 4px; }
+  .progress::-webkit-progress-value { background: var(--acc); border-radius: 4px; transition: width 0.1s linear; }
+  .progress::-moz-progress-bar { background: var(--acc); border-radius: 4px; }
+</style>
+<main>
+  <h1>LIVI Link <small id="host">livi-link.local</small></h1>
+  <p class="status">● online</p>
+
+  <h2>Device</h2>
+  <div class="card">
+    <dl class="kv">
+      <dt>Kernel</dt><dd id="kernel">loading…</dd>
+      <dt>Uptime</dt><dd id="uptime">loading…</dd>
+      <dt>Load</dt><dd id="load">loading…</dd>
+      <dt>Memory</dt><dd id="mem">loading…</dd>
+      <dt>USB0 MAC</dt><dd id="mac">loading…</dd>
+    </dl>
+  </div>
+
+  <h2>WiFi</h2>
+  <div class="card">
+    <dl class="kv">
+      <dt>SSID</dt><dd id="wifi-ssid">loading…</dd>
+      <dt>MAC</dt><dd id="wifi-mac">loading…</dd>
+      <dt>Band</dt><dd id="wifi-band">loading…</dd>
+      <dt>Channel</dt><dd id="wifi-ch">loading…</dd>
+      <dt>Clients</dt><dd id="wifi-clients">loading…</dd>
+      <dt>Link &#8595;</dt><dd id="wifi-down">&mdash;</dd>
+      <dt>Link &#8593;</dt><dd id="wifi-up">&mdash;</dd>
+    </dl>
+  </div>
+
+  <h2>Bluetooth</h2>
+  <div class="card">
+    <dl class="kv">
+      <dt>Name</dt><dd id="bt-name">—</dd>
+      <dt>MAC</dt><dd id="bt-mac">loading…</dd>
+      <dt>State</dt><dd id="bt-state">loading…</dd>
+    </dl>
+  </div>
+
+  <h2>LED</h2>
+  <div class="card">
+    <div class="led-grid">
+      <span class="label">Status color</span>
+      <span><input type="color" id="led-color" value="#4dd0e1"></span>
+      <span class="label">Brightness<span class="val" id="led-brightness-val">20%</span></span>
+      <input type="range" id="led-brightness" min="0" max="100" value="20">
+    </div>
+  </div>
+
+  <h2>Flash</h2>
+  <div class="card">
+    <div class="flash-row">
+      <div class="slot">.lfwb</div>
+      <div class="name">firmware bundle</div>
+      <label class="file">Upload <input type="file" data-slot="bundle"></label>
+    </div>
+  </div>
+
+  <h2>Status</h2>
+  <div class="card">
+    <div class="msg" id="status-msg">idle.</div>
+    <progress class="progress" id="status-progress" max="100" value="0" hidden></progress>
+  </div>
+
+  <h2>Actions</h2>
+  <div class="card row" style="justify-content:flex-end">
+    <button id="reboot" class="danger">Reboot dongle</button>
+  </div>
+</main>
+<script>
+// Previous wifi byte sample, so /api/wifi's counters become a throughput between polls.
+let wifiPrev = null;
+async function tick() {
+  try {
+    const r = await fetch('/api/status');
+    if (r.ok) {
+      const s = await r.json();
+      for (const k of ['kernel','uptime','load','mem','mac']) document.getElementById(k).textContent = s[k];
+    }
+  } catch {}
+  try {
+    const r = await fetch('/api/bt');
+    if (r.ok) {
+      const b = await r.json();
+      document.getElementById('bt-name').textContent = b.name || '—';
+      document.getElementById('bt-mac').textContent = b.mac || '—';
+      document.getElementById('bt-state').textContent = b.state || '—';
+    }
+  } catch {}
+  try {
+    const r = await fetch('/api/wifi');
+    if (r.ok) {
+      const w = await r.json();
+      document.getElementById('wifi-ssid').textContent = w.ssid || '—';
+      document.getElementById('wifi-mac').textContent = w.mac || '—';
+      document.getElementById('wifi-band').textContent = w.band || '—';
+      document.getElementById('wifi-ch').textContent = w.channel || '—';
+      document.getElementById('wifi-clients').textContent = w.clients ?? '—';
+      const now = Date.now();
+      const leg = (mbps, phy) => (phy > 0 ? mbps.toFixed(1) + ' Mbps · ' + phy + ' PHY' : mbps.toFixed(1) + ' Mbps');
+      if (wifiPrev && typeof w.downbytes === 'number' && typeof w.upbytes === 'number') {
+        const dt = (now - wifiPrev.t) / 1000;
+        const rate = (a, b) => (dt > 0 && b >= a ? ((b - a) * 8) / dt / 1e6 : 0);
+        document.getElementById('wifi-down').textContent = leg(rate(wifiPrev.down, w.downbytes), w.downrate || 0);
+        document.getElementById('wifi-up').textContent = leg(rate(wifiPrev.up, w.upbytes), w.uprate || 0);
+      }
+      wifiPrev = { down: w.downbytes, up: w.upbytes, t: now };
+    }
+  } catch {}
+}
+tick(); setInterval(tick, 2000);
+
+// LED: load current, wire controls with debounce
+const ledColor = document.getElementById('led-color');
+const ledBri   = document.getElementById('led-brightness');
+const ledBriV  = document.getElementById('led-brightness-val');
+const ledMsg = document.getElementById('status-msg');
+
+(async () => {
+  try {
+    const r = await fetch('/api/led');
+    if (r.ok) {
+      const l = await r.json();
+      if (l.status_color) ledColor.value = l.status_color;
+      if (typeof l.brightness === 'number') { ledBri.value = l.brightness; ledBriV.textContent = l.brightness + '%'; }
+    }
+  } catch {}
+})();
+
+let ledTimer;
+function ledPush() {
+  clearTimeout(ledTimer);
+  ledTimer = setTimeout(async () => {
+    const body = `status_color=${encodeURIComponent(ledColor.value)}&brightness=${ledBri.value}`;
+    try {
+      const r = await fetch('/api/led', { method: 'POST', body,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+      const j = await r.json();
+      ledMsg.textContent = j.ok ? '' : (j.error || 'led update failed');
+      ledMsg.className = 'msg ' + (j.ok ? 'ok' : 'err');
+    } catch (e) { ledMsg.textContent = String(e); ledMsg.className = 'msg err'; }
+  }, 150);
+}
+ledColor.addEventListener('input', ledPush);
+ledBri.addEventListener('input',   () => { ledBriV.textContent = ledBri.value + '%'; ledPush(); });
+
+const msg = document.getElementById('status-msg');
+let sayTimer = null;
+function say(txt, cls) {
+  msg.textContent = txt;
+  msg.className = 'msg ' + (cls || '');
+  if (sayTimer) clearTimeout(sayTimer);
+  // Any status message auto-fades to "idle." after 15 s of quiet — covers
+  // the case where a reboot cycle happens too fast for our connectivity
+  // tracker to notice a drop, so the "reboot requested" line lingers.
+  sayTimer = setTimeout(() => {
+    msg.textContent = 'idle.';
+    msg.className = 'msg';
+    sayTimer = null;
+  }, 15000);
+}
+
+const bar = document.getElementById('status-progress');
+function fmtKB(n) { return (n/1024).toFixed(0) + ' KiB'; }
+
+document.querySelectorAll('input[type=file]').forEach(inp => {
+  inp.addEventListener('change', () => {
+    const file = inp.files[0]; if (!file) return;
+    const slot = inp.dataset.slot;
+    if (!confirm(`Flash ${fmtKB(file.size)} to /dev/${slot}? Dongle will reboot.`)) {
+      inp.value = ''; return;
+    }
+    say(`Uploading ${fmtKB(file.size)} → ${slot}…`);
+    bar.hidden = false; bar.value = 0;
+
+    const xhr = new XMLHttpRequest();
+    let writePoll = null;
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable) {
+        const pct = (e.loaded / e.total) * 100;
+        bar.value = pct;
+        say(`Uploading ${fmtKB(e.loaded)} / ${fmtKB(e.total)} (${pct.toFixed(0)}%)…`);
+      }
+    });
+    // Poll the server's /api/flash/status right away. While the upload is
+    // still in flight the server has no progress to report (idle) — but as
+    // soon as the server starts the NOR write it takes over the bar/msg.
+    // Message policy: `write` always updates (user wants live KB progress).
+    // `verify` sticks for 1.2 s so it does not flicker past. `compare` /
+    // `unchanged` are too transient to be readable — bar still moves, msg stays.
+    let lastPhaseKey = '';
+    let phaseAt = 0;
+    const HOLD_MS = 1200;
+    writePoll = setInterval(async () => {
+      try {
+        const r = await fetch('/api/flash/status');
+        if (!r.ok) return;
+        const j = await r.json();
+        if (j.phase === 'idle' || !j.total) return;
+        const pct = (j.written / j.total) * 100;
+        bar.value = pct;
+        const n = j.node || '?';
+        const key = j.phase + '@' + n;
+        const now = Date.now();
+        // Shorten mtdblockN → mtdN for display.
+        const short = n.replace(/^mtdblock/, 'mtd');
+        if (j.phase === 'write') {
+          say(`${short} writing… ${pct.toFixed(0)}%`);
+          lastPhaseKey = key; phaseAt = now;
+        } else if (j.phase === 'verify') {
+          if (key !== lastPhaseKey && (now - phaseAt) > HOLD_MS) {
+            say(`${short} verifying…`);
+            lastPhaseKey = key; phaseAt = now;
+          }
+        } else if (j.phase === 'done') {
+          say(`Rebooting…`, 'ok');
+        } else if (j.phase === 'error') {
+          say(`${short} flash error`, 'err');
+        }
+        // compare / unchanged: intentionally do not touch msg.
+      } catch {}
+    }, 250);
+    xhr.addEventListener('load', () => {
+      if (writePoll) { clearInterval(writePoll); writePoll = null; }
+      bar.hidden = true;
+      try {
+        const j = JSON.parse(xhr.responseText);
+        if (j.ok) say(j.message + '', 'ok');
+        else      say(j.error || 'flash failed', 'err');
+      } catch { say('server returned non-JSON: ' + xhr.responseText.slice(0, 200), 'err'); }
+    });
+    xhr.addEventListener('error', () => { bar.hidden = true; say('network error during upload', 'err'); });
+    xhr.addEventListener('abort', () => { bar.hidden = true; say('upload aborted', 'err'); });
+    xhr.open('POST', slot === 'bundle' ? '/api/flash' : ('/api/flash/' + slot));
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.send(file);
+    inp.value = '';
+  });
+});
+
+document.getElementById('reboot').addEventListener('click', async () => {
+  if (!confirm('Reboot dongle now?')) return;
+  try {
+    await fetch('/api/reboot', { method: 'POST' });
+    say('reboot requested — device will be back in ~5 s', 'ok');
+  } catch (e) { say(String(e), 'err'); }
+});
+
+// tick() connectivity tracker: clear pending status msgs when link recovers.
+let wasOffline = false;
+async function connectivityTick() {
+  // Short timeout so a rebooting dongle is detected within ~1.5 s.
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 1500);
+  try {
+    const r = await fetch('/api/status', { signal: ctrl.signal, cache: 'no-store' });
+    clearTimeout(t);
+    if (r.ok) {
+      if (wasOffline) {
+        wasOffline = false;
+        const el = document.getElementById('status-msg'); if (el) { el.textContent = 'idle.'; el.className = 'msg'; }
+      }
+    } else { wasOffline = true; }
+  } catch { clearTimeout(t); wasOffline = true; }
+}
+setInterval(connectivityTick, 2000);
+</script>

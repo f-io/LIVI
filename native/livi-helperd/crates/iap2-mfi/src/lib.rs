@@ -83,6 +83,10 @@ mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::I2cCoprocessor;
 
-// Remote coprocessor over TCP (LIVI Link dongle across the USB-NCM link).
+// Remote coprocessor over TCP (LIVI Link).
 pub mod ncm;
 pub use ncm::NcmCoprocessor;
+
+// Dongle-side TCP server for MFi authentication.
+pub mod server;
+pub use server::{PORT as SERVER_PORT, serve};

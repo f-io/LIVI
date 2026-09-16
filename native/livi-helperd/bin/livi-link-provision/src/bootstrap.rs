@@ -41,34 +41,6 @@ pub fn write_file(path: &str, content: &[u8]) -> Result<(), String> {
     runtime.block_on(send(path, content))
 }
 
-/// What the bus holds. A dongle announces itself as LIVI Link well before its shell answers, so
-/// the two cases are told apart rather than both reading as nothing plugged in.
-pub enum OnBus {
-    Nothing,
-    Stock,
-    Link,
-}
-
-pub fn on_bus() -> OnBus {
-    let Ok(runtime) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
-        return OnBus::Nothing;
-    };
-    runtime.block_on(async {
-        let Ok(list) = nusb::list_devices().await else {
-            return OnBus::Nothing;
-        };
-        let mut seen = OnBus::Nothing;
-        for d in list.filter(livi_dongle::is_dongle) {
-            if livi_dongle::is_livi_link(&d) {
-                seen = OnBus::Link;
-            } else {
-                return OnBus::Stock;
-            }
-        }
-        seen
-    })
-}
-
 /// Writes the bootstrap and hooks it into the carrier. Takes effect on the next boot.
 pub fn boot_hook() -> Result<(), String> {
     write_file(BOOT_HOOK, BOOTSTRAP.as_bytes())?;

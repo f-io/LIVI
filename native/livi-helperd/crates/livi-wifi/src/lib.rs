@@ -1,7 +1,10 @@
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
-//! What the radio may transmit on, asked over nl80211 the way `iw list` does. The answer already
-//! reflects the country hostapd asked for.
+//! nl80211 channel-listing (`listing`, `ap_state`, `regulatory_country`)
+//! plus a shared wifid server for the LIVI dongles (see [`server`]).
+
+#[cfg(target_os = "linux")]
+pub mod server;
 
 /// The stub for a host without nl80211.
 #[cfg(not(target_os = "linux"))]
@@ -29,6 +32,12 @@ pub fn regulatory_country() -> Option<String> {
     None
 }
 
+/// The stub for a host without nl80211.
+#[cfg(not(target_os = "linux"))]
+pub fn station_rates(_iface: &str) -> Option<(u32, u32)> {
+    None
+}
+
 #[cfg(target_os = "linux")]
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 #[cfg(target_os = "linux")]
@@ -44,7 +53,15 @@ const CTRL_ATTR_FAMILY_NAME: u16 = 2;
 const NL80211_CMD_GET_WIPHY: u8 = 1;
 const NL80211_CMD_GET_REG: u8 = 31;
 const NL80211_CMD_GET_INTERFACE: u8 = 5;
+const NL80211_CMD_GET_STATION: u8 = 17;
+const ATTR_IFINDEX: u16 = 3;
 const ATTR_IFNAME: u16 = 4;
+// STA_INFO holds the nested per-station stats; TX/RX_BITRATE are themselves nested RATE_INFO.
+const ATTR_STA_INFO: u16 = 21;
+const STA_INFO_TX_BITRATE: u16 = 8;
+const STA_INFO_RX_BITRATE: u16 = 14;
+const RATE_INFO_BITRATE: u16 = 2; // u16, 100 kbps
+const RATE_INFO_BITRATE32: u16 = 5; // u32, 100 kbps
 const ATTR_IFTYPE: u16 = 5;
 const ATTR_WIPHY_FREQ: u16 = 38;
 const ATTR_SSID: u16 = 52;
@@ -208,6 +225,65 @@ fn width_mhz(raw: u32) -> u32 {
         13 => 320,
         _ => 0,
     }
+}
+
+/// The connected station's negotiated PHY bitrate in Mbps, as (down, up) from the car's point
+/// of view: down is what the phone sends us (station RX), up is what we send it (station TX).
+/// None until a phone is associated. There is one station on the CarPlay AP.
+#[cfg(target_os = "linux")]
+pub fn station_rates(iface: &str) -> Option<(u32, u32)> {
+    let name = std::ffi::CString::new(iface).ok()?;
+    let index = unsafe { libc::if_nametoindex(name.as_ptr()) };
+    if index == 0 {
+        return None;
+    }
+    let fd = open().ok()?;
+    let family = family_id(&fd).ok()?;
+    let request = message(
+        family,
+        NL80211_CMD_GET_STATION,
+        NLM_F_DUMP,
+        &attr(ATTR_IFINDEX, &index.to_ne_bytes()),
+    );
+    for payload in call(&fd, &request).ok()? {
+        for (kind, info) in Attrs(&payload[..]) {
+            if kind != ATTR_STA_INFO {
+                continue;
+            }
+            let mut down = None;
+            let mut up = None;
+            for (what, rate) in Attrs(info) {
+                match what {
+                    STA_INFO_RX_BITRATE => down = rate_mbps(rate),
+                    STA_INFO_TX_BITRATE => up = rate_mbps(rate),
+                    _ => {}
+                }
+            }
+            if down.is_some() || up.is_some() {
+                return Some((down.unwrap_or(0), up.unwrap_or(0)));
+            }
+        }
+    }
+    None
+}
+
+/// One nested RATE_INFO attribute set to Mbps. Prefers the 32-bit rate; both are 100 kbps units.
+#[cfg(target_os = "linux")]
+fn rate_mbps(attrs: &[u8]) -> Option<u32> {
+    let mut wide = None;
+    let mut narrow = None;
+    for (kind, value) in Attrs(attrs) {
+        match kind {
+            RATE_INFO_BITRATE32 if value.len() >= 4 => {
+                wide = Some(u32::from_ne_bytes([value[0], value[1], value[2], value[3]]));
+            }
+            RATE_INFO_BITRATE if value.len() >= 2 => {
+                narrow = Some(u16::from_ne_bytes([value[0], value[1]]) as u32);
+            }
+            _ => {}
+        }
+    }
+    Some(wide.or(narrow)? / 10)
 }
 
 /// The regulatory domain the kernel has applied, as opposed to one merely requested.

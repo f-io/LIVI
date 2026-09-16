@@ -3,7 +3,7 @@
 
 mod bootstrap;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use livi_link_provision::payload::parts;
@@ -29,7 +29,7 @@ fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let host = pick_host();
     let Some(command) = args.first().map(String::as_str) else {
-        return menu(&Shell::new(&host));
+        return menu();
     };
 
     let sh = Shell::new(&host);
@@ -77,6 +77,40 @@ fn main() -> std::process::ExitCode {
             println!("{out}");
             true
         }),
+        "detect" => {
+            let d = livi_link_provision::detect::detect();
+            println!("{}", d.label());
+            Ok(true)
+        }
+        "v821b" => match args.get(1).map(String::as_str) {
+            Some("detect") => v821b_detect(),
+            Some("install-shell") => v821b_install_shell(),
+            Some("verify-hw") => v821b_verify(),
+            Some("selftest") => {
+                let n = args
+                    .get(2)
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .unwrap_or(3_211_264);
+                v821b_selftest(n)
+            }
+            Some("backup") => {
+                let dir = args
+                    .get(2)
+                    .map(PathBuf::from)
+                    .unwrap_or_else(backup_dir);
+                v821b_backup(&dir)
+            }
+            Some("flash") => match args.get(2) {
+                Some(path) => v821b_flash(&PathBuf::from(path)),
+                None => Err("usage: v821b flash <path.lfwb>".to_string()),
+            },
+            Some("provision") => match args.get(2) {
+                Some(path) => v821b_provision(Some(&PathBuf::from(path))),
+                None => v821b_provision(None),
+            },
+            _ => Err("v821b: detect | install-shell | verify-hw | selftest [N] | backup [dir] | flash <lfwb> | provision [lfwb]".to_string()),
+        }
+        .map(|_| true),
         _ => {
             eprintln!("{}", usage());
             return std::process::ExitCode::from(2);
@@ -93,15 +127,35 @@ fn main() -> std::process::ExitCode {
     }
 }
 
+const VERSION: &str = match option_env!("LIVI_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
 /// Started without arguments the tool asks rather than expecting commands. The subcommands stay
 /// for scripting.
-fn menu(sh: &Shell) -> std::process::ExitCode {
+fn menu() -> std::process::ExitCode {
+    use livi_link_provision::detect::Detected;
     loop {
-        println!("\nLIVI Link  ({})", describe(sh));
-        // An up to date dongle offers no install, only the deliberate way to write it again.
-        match action(sh) {
-            Some(what) => println!("  1  {what} LIVI Link"),
-            None => println!("  r  reinstall LIVI Link"),
+        let detected = livi_link_provision::detect::detect();
+        println!("\nLIVI Link provisioning tool v{VERSION}");
+        println!("Detected: {}", detected.label());
+
+        match &detected {
+            Detected::V821bStock { .. } => {
+                println!("  1  provision LIVI Link (backup current firmware first)");
+            }
+            Detected::V821bLink => {
+                println!("  (already running LIVI Link — use its web UI to reflash)");
+            }
+            Detected::Cpc200 { host } => {
+                let sh = Shell::new(host);
+                match action(&sh) {
+                    Some(what) => println!("  1  {what} LIVI Link"),
+                    None => println!("  r  reinstall LIVI Link"),
+                }
+            }
+            Detected::Nothing => {}
         }
         println!("  q  quit");
         print!("> ");
@@ -111,43 +165,40 @@ fn menu(sh: &Shell) -> std::process::ExitCode {
         if std::io::stdin().read_line(&mut line).is_err() {
             return std::process::ExitCode::SUCCESS;
         }
-        let outcome: Result<(), String> = match line.trim() {
-            "1" if action(sh).is_some() => match install(sh) {
+        let outcome: Result<(), String> = match (line.trim(), &detected) {
+            ("1", Detected::V821bStock { .. }) => match v821b_provision(None) {
                 Ok(()) => return std::process::ExitCode::SUCCESS,
                 Err(e) => Err(e),
             },
-            "r" if action(sh).is_none() => match install(sh) {
-                Ok(()) => return std::process::ExitCode::SUCCESS,
-                Err(e) => Err(e),
-            },
-            "q" | "quit" | "" => return std::process::ExitCode::SUCCESS,
-            other => Err(format!("no such choice: {other}")),
+            ("1", Detected::Cpc200 { host }) => {
+                let sh = Shell::new(host);
+                if action(&sh).is_some() {
+                    match install(&sh) {
+                        Ok(()) => return std::process::ExitCode::SUCCESS,
+                        Err(e) => Err(e),
+                    }
+                } else {
+                    Err("nothing to install".into())
+                }
+            }
+            ("r", Detected::Cpc200 { host }) => {
+                let sh = Shell::new(host);
+                if action(&sh).is_none() {
+                    match install(&sh) {
+                        Ok(()) => return std::process::ExitCode::SUCCESS,
+                        Err(e) => Err(e),
+                    }
+                } else {
+                    Err("nothing to reinstall".into())
+                }
+            }
+            ("q" | "quit" | "", _) => return std::process::ExitCode::SUCCESS,
+            (other, _) => Err(format!("no such choice: {other}")),
         };
         if let Err(e) = outcome {
             eprintln!("error: {e}");
         }
     }
-}
-
-/// What the dongle is right now, so the menu is not a shot in the dark.
-fn describe(sh: &Shell) -> String {
-    if !sh.port_open(shell::TELNET_PORT) {
-        return match bootstrap::on_bus() {
-            bootstrap::OnBus::Stock => "a dongle that has not been set up yet, pick 1 to do it".into(),
-            bootstrap::OnBus::Link => "a LIVI Link dongle that is not answering yet, give it a moment".into(),
-            bootstrap::OnBus::Nothing => {
-                format!("no dongle found, neither at {} nor on USB", sh.host())
-            }
-        };
-    }
-    // Neither file ends in a newline, so they are joined here rather than by cat.
-    let box_info = sh
-        .sh("echo \"$(cat /etc/box_product_type 2>/dev/null) $(cat /etc/software_version 2>/dev/null)\"")
-        .unwrap_or_default();
-    let mut fields = box_info.split_whitespace();
-    let model = fields.next().unwrap_or("?").to_string();
-    let firmware = fields.next().unwrap_or("?").to_string();
-    format!("{model} {firmware}, {}", state(sh))
 }
 
 /// Whether this tool would change the dongle's firmware, and what that would be called.
@@ -169,26 +220,6 @@ fn installed_version(sh: &Shell) -> Option<String> {
         .trim()
         .to_string();
     (!out.is_empty()).then_some(out)
-}
-
-/// What the dongle carries, and what this tool would put there instead.
-fn state(sh: &Shell) -> String {
-    use livi_link_provision::payload;
-    let Some(installed) = installed_version(sh) else {
-        return match is_stock(sh) {
-            Ok(true) => "not installed yet".into(),
-            Ok(false) => "LIVI Link installed, version unknown".into(),
-            Err(_) => "state unknown".into(),
-        };
-    };
-    let ours = payload::current_version();
-    let (theirs, their_files) = payload::parts(&installed);
-    let (mine, my_files) = payload::parts(&ours);
-    // Both parts, always: the digest says whether they differ, the number says what it is called.
-    if their_files == my_files {
-        return format!("LIVI Link {theirs} {their_files}, up to date");
-    }
-    format!("LIVI Link {theirs} {their_files}, this tool brings {mine} {my_files}")
 }
 
 /// The whole job in one go: a shell if the dongle has none, then the backup, then the install.
@@ -317,11 +348,12 @@ fn usage() -> &'static str {
     "usage: livi-link-provision plan | apply [--reboot] | verify | backup [dir] | push <local> <remote> | sh 'CMD'"
 }
 
-/// Where backups go when no directory is given: beside the app's own data.
+/// Where backups go when no directory is given: the app's backup folder, the one that also
+/// carries the config.json mirror — so copying it moves everything irreplaceable at once.
 fn backup_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     let base = if cfg!(target_os = "macos") {
-        PathBuf::from(home).join("Library/Application Support/LIVI")
+        PathBuf::from(home).join("Library/Application Support/LIVI/backup")
     } else {
         std::env::var("XDG_DATA_HOME")
             .map(PathBuf::from)
@@ -367,6 +399,73 @@ fn print_report(r: &Report) {
 
 fn kib(v: Option<u64>) -> String {
     v.map(|k| format!("{k}K")).unwrap_or_else(|| "unknown".into())
+}
+
+fn v821b_detect() -> Result<(), String> {
+    let info = livi_link_provision::v821b::web::host()?;
+    println!("name:    {}", info.name);
+    println!("appver:  {}", info.sys.appver);
+    println!("sn:      {}", info.sn);
+    println!("wifi:    {}", info.wifi);
+    println!("otp:     {}", info.otp);
+    println!("led:     {}", info.sys.led);
+    println!("update:  {}", info.update);
+    Ok(())
+}
+
+fn v821b_install_shell() -> Result<(), String> {
+    livi_link_provision::v821b::flash::install_bindshell()?;
+    println!("done — bind-shell should come up on 2323 shortly");
+    Ok(())
+}
+
+fn v821b_verify() -> Result<(), String> {
+    let mut sh = livi_link_provision::v821b::shell::BindShell::connect(180)?;
+    let hw = livi_link_provision::v821b::flash::verify_hardware(&mut sh)?;
+    println!("--- /proc/cpuinfo ---\n{}\n", hw.cpuinfo_head);
+    println!("--- /proc/mtd ---\n{}\n", hw.proc_mtd);
+    println!("--- aic8800 modules ---\n{}\n", hw.aic_modules);
+    if hw.looks_like_v821b_aic8800d80() {
+        println!("hardware: V821B + AIC8800D80 (as expected)");
+        Ok(())
+    } else {
+        Err("hardware check failed — not a V821B+AIC8800D80".into())
+    }
+}
+
+fn v821b_selftest(size: usize) -> Result<(), String> {
+    let mut sh = livi_link_provision::v821b::shell::BindShell::connect(180)?;
+    livi_link_provision::v821b::flash::stream_in_selftest(&mut sh, size)
+}
+
+fn v821b_backup(out_dir: &Path) -> Result<(), String> {
+    let mut sh = livi_link_provision::v821b::shell::BindShell::connect(180)?;
+    livi_link_provision::v821b::flash::backup_stock(&mut sh, out_dir)?;
+    Ok(())
+}
+
+fn v821b_flash(lfwb: &Path) -> Result<(), String> {
+    let mut sh = livi_link_provision::v821b::shell::BindShell::connect(180)?;
+    livi_link_provision::v821b::flash::flash_lfwb(&mut sh, lfwb)?;
+    Ok(())
+}
+
+fn v821b_provision(lfwb: Option<&PathBuf>) -> Result<(), String> {
+    livi_link_provision::v821b::flash::install_bindshell()?;
+    let mut sh = livi_link_provision::v821b::shell::BindShell::connect(300)?;
+    let hw = livi_link_provision::v821b::flash::verify_hardware(&mut sh)?;
+    if !hw.looks_like_v821b_aic8800d80() {
+        return Err("hardware verify failed — not touching mtd. bind-shell stays open for you.".into());
+    }
+    println!("hw: V821B+AIC8800D80 ✓  → backup + flash");
+    let dir = backup_dir();
+    livi_link_provision::v821b::flash::backup_stock(&mut sh, &dir)?;
+    match lfwb {
+        Some(path) => livi_link_provision::v821b::flash::flash_lfwb(&mut sh, path)?,
+        None => livi_link_provision::v821b::flash::flash_embedded(&mut sh)?,
+    }
+    println!("provision complete — dongle rebooting into LIVI Link");
+    Ok(())
 }
 
 #[cfg(test)]

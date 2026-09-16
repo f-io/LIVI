@@ -103,6 +103,23 @@ function attached(): boolean {
     .some((address) => address?.address.startsWith(LINK_SUBNET))
 }
 
+/** One status snapshot as a flat map of the dongle's `key value` lines, or null if it is not
+ *  on the network / did not answer. Used by the link-speed monitor. */
+export async function dongleStatus(): Promise<Record<string, string> | null> {
+  if (!attached()) return null
+  try {
+    const answers = await talk(['status'], PROBE_MS)
+    const out: Record<string, string> = {}
+    for (const line of answers) {
+      const sp = line.indexOf(' ')
+      if (sp > 0) out[line.slice(0, sp)] = line.slice(sp + 1).trim()
+    }
+    return out
+  } catch {
+    return null
+  }
+}
+
 /** Whether a LIVI Link is on the network and ready to be configured. */
 export async function dongleApPresent(): Promise<boolean> {
   if (!attached()) return false

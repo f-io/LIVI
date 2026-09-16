@@ -5,3 +5,4 @@ edition.workspace = true
 
 [dependencies]
 libc = "0.2"
+livi-btd = { path = "../livi-btd" }

@@ -24,6 +24,7 @@ import { ensureWireplumberBtRoles } from '@main/services/audio/wireplumberBtRole
 import { customProxy } from '@main/services/custom/CustomProxy'
 import { checkAndInstallGvfsGuard, startPhoneSuppression } from '@main/services/gvfsPhoneGuard'
 import { reconcileDongleAp } from '@main/services/link/dongleAp'
+import { startLinkSpeedMonitor } from '@main/services/link/linkSpeed'
 import { checkMissingPackages } from '@main/services/packageCheck'
 import { checkAndInstallHelperSudoers } from '@main/services/projection/driver/helper/helperSudoers'
 import {
@@ -114,6 +115,8 @@ app.whenReady().then(async () => {
     void reconcileDongleAp(next)
   })
   void reconcileDongleAp(runtimeState.config)
+  // Live CarPlay Wi-Fi link readout (down/up throughput + PHY rate) for the settings page.
+  startLinkSpeedMonitor()
 
   const carBridge = new CarBridgeService(runtimeState.config.language)
   carBridge.start()

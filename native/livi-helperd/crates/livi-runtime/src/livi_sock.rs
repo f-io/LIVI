@@ -53,10 +53,19 @@ pub struct LiviSockConfig {
     pub disconnect: Option<DropLink>,
     /// Who pages phones where there is no BlueZ to page from.
     pub targets: Option<PushTargets>,
+    /// Resolves the CarPlay config afresh for each tunnel session. The dongle's access point can
+    /// come up with a different MAC/SSID/channel than it had when the helper started, so a config
+    /// frozen at start would hand the phone a stale `device_identifier` that no longer matches the
+    /// one it joined over Bluetooth — and the phone drops the session. When set, this is asked
+    /// instead of `cp`.
+    pub cp_live: Option<CpFactory>,
 }
 
 /// Drops the link to one phone, named by its address.
 pub type DropLink = Arc<dyn Fn(String) -> Result<(), String> + Send + Sync>;
+
+/// Yields a freshly resolved CarPlay config, read from the live access point.
+pub type CpFactory = Arc<dyn Fn() -> CpConfig + Send + Sync>;
 
 /// Hands on the phones that may be paged, in paging order.
 pub type PushTargets = Arc<dyn Fn(Vec<String>) -> Result<(), String> + Send + Sync>;
@@ -286,7 +295,13 @@ where
     };
     let (channel, art_rx) = spawn_link(fd, link_cfg, true);
     let (tx, rx) = mpsc::channel(64);
-    tokio::spawn(run_accessory(channel, auth, cfg.identity, cfg.cp, tx));
+    // Read the access point's current MAC/SSID/channel now, so the phone hears the same
+    // accessory it just joined over Bluetooth rather than whatever was true at helper start.
+    let cp = match &cfg.cp_live {
+        Some(resolve) => resolve(),
+        None => cfg.cp,
+    };
+    tokio::spawn(run_accessory(channel, auth, cfg.identity, cp, tx));
     let ident: SharedTag = Arc::new(Mutex::new(events::EventTag {
         cid: (!cid.is_empty()).then_some(cid),
         ..Default::default()

@@ -20,6 +20,7 @@ use nusb::{DeviceId, DeviceInfo};
 
 pub const VENDOR: u16 = 0x1314;
 pub const PRODUCTS: [u16; 2] = [0x1520, 0x1521];
+pub const LINK_PRODUCT: &str = "LIVI Link";
 
 const WATCH_RETRY: Duration = Duration::from_secs(5);
 const REOFFER: Duration = Duration::from_millis(300);
@@ -48,15 +49,12 @@ struct Dongles {
 
 type Shared = Arc<Mutex<Dongles>>;
 
-pub fn is_dongle(info: &DeviceInfo) -> bool {
-    info.vendor_id() == VENDOR && PRODUCTS.contains(&info.product_id())
+pub fn is_livi_link(info: &DeviceInfo) -> bool {
+    info.product_string() == Some(LINK_PRODUCT)
 }
 
-/// The product string a dongle carries once provisioned as LIVI Link (an NCM bridge).
-pub const LINK_PRODUCT: &str = "LIVI Link";
-
-pub fn is_livi_link(info: &DeviceInfo) -> bool {
-    is_dongle(info) && info.product_string() == Some(LINK_PRODUCT)
+pub fn is_dongle(info: &DeviceInfo) -> bool {
+    info.vendor_id() == VENDOR && PRODUCTS.contains(&info.product_id())
 }
 
 pub async fn run(

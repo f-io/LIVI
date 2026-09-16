@@ -1,77 +1,44 @@
+use std::fs;
+use std::io::{Read, Write};
+use std::os::fd::AsRawFd;
 use std::thread::sleep;
 use std::time::Instant;
 
-use i2cdev::core::I2CDevice;
-use i2cdev::linux::LinuxI2CDevice;
-
 use crate::*;
 
+/// Linux i2c ioctl — bind this fd to a target slave address (u16).
+const I2C_SLAVE: libc::c_ulong = 0x0703;
+
 pub struct I2cCoprocessor {
-    dev: LinuxI2CDevice,
+    file: fs::File,
     addr: u16,
     protocol_major: Option<u8>,
-    power: Option<PowerLine>,
-}
-
-struct PowerLine {
-    req: gpiocdev::Request,
-    gpio: u32,
-}
-
-// The chip only leaves a wedged state on a real power cycle
-const POWER_OFF_SETTLE: Duration = Duration::from_millis(50);
-const POWER_ON_SETTLE: Duration = Duration::from_millis(100);
-
-fn power_on(gpio: i32) -> Result<Option<PowerLine>, MfiError> {
-    if gpio < 0 {
-        println!("[mfi] no power pin configured, expecting an externally powered chip");
-        return Ok(None);
-    }
-    let gpio = gpio as u32;
-    let req = gpiocdev::Request::builder()
-        .on_chip("/dev/gpiochip0")
-        .with_line(gpio)
-        .as_output(gpiocdev::line::Value::Inactive)
-        .request()
-        .map_err(|e| MfiError::Io(format!("claim gpio {gpio}: {e}")))?;
-    sleep(POWER_OFF_SETTLE);
-    req.set_value(gpio, gpiocdev::line::Value::Active)
-        .map_err(|e| MfiError::Io(format!("power gpio {gpio}: {e}")))?;
-    sleep(POWER_ON_SETTLE);
-    Ok(Some(PowerLine { req, gpio }))
-}
-
-impl Drop for PowerLine {
-    fn drop(&mut self) {
-        let _ = self.req.set_value(self.gpio, gpiocdev::line::Value::Inactive);
-    }
-}
-
-impl PowerLine {
-    pub fn gpio(&self) -> u32 {
-        self.gpio
-    }
 }
 
 impl I2cCoprocessor {
-    pub fn open(bus: u32, power_gpio: i32) -> Result<Self, MfiError> {
-        let power = power_on(power_gpio)?;
+    /// Open `/dev/i2c-<bus>` and bind to the first responding MFi address
+    /// (0x10 or 0x11 per `DEV_ADDR_CANDIDATES`). The `_power_gpio` argument
+    /// is accepted for backward compatibility; both current LIVI dongles
+    /// have the chip on the board's supply rail. If a future carrier ever
+    /// wants a soft-power line, reintroduce a small sysfs-GPIO wrapper
+    /// here — do NOT drag in `gpiocdev` for it.
+    pub fn open(bus: u32, _power_gpio: i32) -> Result<Self, MfiError> {
         let bus_path = format!("/dev/i2c-{bus}");
         let addr = Self::probe(&bus_path)?;
-        let dev = LinuxI2CDevice::new(&bus_path, addr)
-            .map_err(|e| MfiError::Io(format!("open {bus_path}@0x{addr:02X}: {e}")))?;
-        let mut chip = Self { dev, addr, protocol_major: None, power };
+        let file = fs::OpenOptions::new()
+            .read(true).write(true)
+            .open(&bus_path)
+            .map_err(|e| MfiError::Io(format!("open {bus_path}: {e}")))?;
+        set_slave(&file, addr)?;
+        let mut chip = Self { file, addr, protocol_major: None };
         chip.protocol_major = chip.read_reg(REG_PROTOCOL_MAJOR, 1).ok().map(|v| v[0]);
         Ok(chip)
     }
 
-    pub fn address(&self) -> u16 {
-        self.addr
-    }
+    pub fn address(&self) -> u16 { self.addr }
 
-    pub fn power_gpio(&self) -> Option<u32> {
-        self.power.as_ref().map(PowerLine::gpio)
-    }
+    /// Kept for source-compat with the earlier crate signature.
+    pub fn power_gpio(&self) -> Option<u32> { None }
 
     pub fn device_version(&mut self) -> Result<u8, MfiError> {
         Ok(self.read_reg(REG_DEVICE_VERSION, 1)?[0])
@@ -81,23 +48,25 @@ impl I2cCoprocessor {
         let deadline = Instant::now() + PROBE_TIMEOUT;
         while Instant::now() < deadline {
             for cand in DEV_ADDR_CANDIDATES {
-                if let Ok(mut dev) = LinuxI2CDevice::new(bus_path, cand)
-                    && dev.write(&[REG_DEVICE_VERSION]).is_ok() {
-                        let mut buf = [0u8; 1];
-                        if dev.read(&mut buf).is_ok() {
-                            return Ok(cand);
-                        }
-                    }
+                let Ok(mut f) = fs::OpenOptions::new().read(true).write(true).open(bus_path) else {
+                    continue;
+                };
+                if set_slave(&f, cand).is_err() { continue; }
+                if f.write_all(&[REG_DEVICE_VERSION]).is_err() { continue; }
+                let mut buf = [0u8; 1];
+                if f.read_exact(&mut buf).is_ok() {
+                    return Ok(cand);
+                }
             }
             sleep(BUSY_RETRY);
         }
         Err(MfiError::NoChip { probed: DEV_ADDR_CANDIDATES.to_vec() })
     }
 
-    fn retry(&mut self, what: &str, mut op: impl FnMut(&mut LinuxI2CDevice) -> bool) -> Result<(), MfiError> {
+    fn retry(&mut self, what: &str, mut op: impl FnMut(&mut fs::File) -> bool) -> Result<(), MfiError> {
         let deadline = Instant::now() + IO_TIMEOUT;
         loop {
-            if op(&mut self.dev) {
+            if op(&mut self.file) {
                 return Ok(());
             }
             if Instant::now() >= deadline {
@@ -108,9 +77,9 @@ impl I2cCoprocessor {
     }
 
     fn read_reg(&mut self, reg: u8, n: usize) -> Result<Vec<u8>, MfiError> {
-        self.retry(&format!("register select 0x{reg:02X}"), |dev| dev.write(&[reg]).is_ok())?;
+        self.retry(&format!("register select 0x{reg:02X}"), |f| f.write_all(&[reg]).is_ok())?;
         let mut buf = vec![0u8; n];
-        self.retry(&format!("read at 0x{reg:02X}"), |dev| dev.read(&mut buf).is_ok())?;
+        self.retry(&format!("read at 0x{reg:02X}"), |f| f.read_exact(&mut buf).is_ok())?;
         Ok(buf)
     }
 
@@ -118,12 +87,24 @@ impl I2cCoprocessor {
         let mut frame = Vec::with_capacity(data.len() + 1);
         frame.push(reg);
         frame.extend_from_slice(data);
-        self.retry(&format!("write at 0x{reg:02X}"), |dev| dev.write(&frame).is_ok())
+        self.retry(&format!("write at 0x{reg:02X}"), |f| f.write_all(&frame).is_ok())
     }
 
     fn read_len(&mut self, reg: u8) -> Result<usize, MfiError> {
         let v = self.read_reg(reg, 2)?;
         Ok(u16::from_be_bytes([v[0], v[1]]) as usize)
+    }
+}
+
+fn set_slave(file: &fs::File, addr: u16) -> Result<(), MfiError> {
+    let rc = unsafe { libc::ioctl(file.as_raw_fd(), I2C_SLAVE, addr as libc::c_ulong) };
+    if rc < 0 {
+        Err(MfiError::Io(format!(
+            "I2C_SLAVE 0x{addr:02X}: {}",
+            std::io::Error::last_os_error()
+        )))
+    } else {
+        Ok(())
     }
 }
 
@@ -157,9 +138,10 @@ impl AuthCoprocessor for I2cCoprocessor {
         let deadline = Instant::now() + AUTH_TIMEOUT;
         loop {
             if let Ok(status) = self.read_reg(REG_AUTH_CONTROL_STATUS, 1)
-                && status[0] == AUTH_DONE {
-                    break;
-                }
+                && status[0] == AUTH_DONE
+            {
+                break;
+            }
             if Instant::now() >= deadline {
                 let error_code = self.read_reg(REG_ERROR_CODE, 1).ok().map(|v| v[0]);
                 return Err(MfiError::AuthFailed { error_code });

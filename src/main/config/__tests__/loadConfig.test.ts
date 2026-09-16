@@ -6,6 +6,7 @@ import type { Mock } from 'vitest'
 
 const fsMock = vi.hoisted(() => ({
   existsSync: vi.fn(),
+  mkdirSync: vi.fn(),
   readFileSync: vi.fn(),
   renameSync: vi.fn(),
   writeFileSync: vi.fn()
@@ -15,7 +16,8 @@ vi.mock('fs', () => ({ ...fsMock, default: fsMock }))
 vi.mock('node:fs', () => ({ ...fsMock, default: fsMock }))
 
 vi.mock('@main/config/paths', () => ({
-  CONFIG_PATH: '/tmp/config.json'
+  CONFIG_PATH: '/tmp/config.json',
+  CONFIG_BACKUP_PATH: '/tmp/backup/config.json'
 }))
 
 vi.mock('node:os', () => ({ hostname: vi.fn(() => 'test-host') }))
@@ -41,6 +43,19 @@ vi.mock('@shared/types', () => ({
 describe('loadConfig', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  test('restores from the backup mirror when the live config is missing', () => {
+    ;(existsSync as Mock).mockImplementation((p: string) => p === '/tmp/backup/config.json')
+    ;(readFileSync as Mock).mockReturnValue(JSON.stringify({ carName: 'from-backup' }))
+
+    const result = loadConfig()
+
+    expect(readFileSync).toHaveBeenCalledWith('/tmp/backup/config.json', 'utf8')
+    expect(result.carName).toBe('from-backup')
+    // The restored config becomes the live one again, and the mirror is refreshed with it.
+    expect(writeFileSync).toHaveBeenCalledWith('/tmp/config.json.tmp', expect.any(String))
+    expect(writeFileSync).toHaveBeenCalledWith('/tmp/backup/config.json.tmp', expect.any(String))
   })
 
   test('returns defaults and writes config when file does not exist', () => {

@@ -10,6 +10,7 @@ import {
 import { Camera } from '../../components/pages/settings/pages/camera'
 import { GpsHwInfo } from '../../components/pages/settings/pages/general/gps/GpsHwInfo'
 import { GpsInfo } from '../../components/pages/settings/pages/general/gps/GpsInfo'
+import { WifiLinkInfo } from '../../components/pages/settings/pages/general/wifi/WifiLinkInfo'
 import { SelectOption, SettingsNode } from '../types'
 
 const panelDefaultOption: SelectOption = {
@@ -207,6 +208,13 @@ export const generalSchema: SettingsNode<Config> = {
               icon: 'dedicatedInterface',
               path: 'wifiDedicatedInterface',
               disabled: window.app?.platform !== 'linux'
+            },
+            {
+              type: 'custom',
+              label: 'Link Speed',
+              labelKey: 'settings.wifiLinkSpeed',
+              path: 'wifiInterface',
+              component: WifiLinkInfo
             }
           ]
         },

@@ -3,11 +3,11 @@ import type { Config } from '@shared/types'
 import { DEFAULT_CONFIG } from '@shared/types'
 import { CAR_NAME_MAX, WIFI_PASSWORD_MAX, WIFI_PASSWORD_MIN } from '@shared/types/Config'
 import { isPagePath } from '@shared/types/Pages'
-import { writeFileAtomic } from '@shared/utils'
 import { existsSync, readFileSync } from 'fs'
 import { sysfsPanelGeometry } from '../services/video/panelEdid'
-import { CONFIG_PATH } from './paths'
+import { CONFIG_BACKUP_PATH, CONFIG_PATH } from './paths'
 import { validate } from './validateConfig'
+import { writeConfig } from './writeConfig'
 
 /** carName names the Wi-Fi AP, the Bluetooth device and the head unit, so two
  *  cars on the stock name would collide. The host already carries a name the
@@ -21,9 +21,17 @@ function carNameFromHost(): string {
 export function loadConfig(): Config {
   let fileConfig: Partial<Config> = {}
 
-  if (existsSync(CONFIG_PATH)) {
+  // A missing live config on a machine that carries the backup folder is a restore, not a
+  // fresh install: the mirror is read and written back as the live config below.
+  const source = existsSync(CONFIG_PATH)
+    ? CONFIG_PATH
+    : existsSync(CONFIG_BACKUP_PATH)
+      ? CONFIG_BACKUP_PATH
+      : undefined
+  if (source) {
     try {
-      fileConfig = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'))
+      fileConfig = JSON.parse(readFileSync(source, 'utf8'))
+      if (source === CONFIG_BACKUP_PATH) console.log('[config] restored from backup mirror')
     } catch (e) {
       console.warn('[config] Failed to parse config.json, using defaults:', e)
     }
@@ -73,7 +81,7 @@ export function loadConfig(): Config {
     !existsSync(CONFIG_PATH) || JSON.stringify(fileConfig) !== JSON.stringify(merged)
 
   if (needWrite) {
-    writeFileAtomic(CONFIG_PATH, JSON.stringify(merged, null, 2))
+    writeConfig(merged)
     console.log('[config] Written corrected config.json')
   }
 

@@ -12,10 +12,15 @@ members = [
     "crates/livi-dongle",
     "crates/livi-link-provision",
     "crates/livi-wifi",
+    "crates/livi-btd",
+    "crates/livi-iapd",
+    "crates/livi-mdns",
     "bin/mfi-probe",
     "bin/livi-helperd",
     "bin/livi-link",
     "bin/livi-link-provision",
+    "bin/mkbootimg-v821b",
+    "bin/livid",
     "bin/muxd-probe",
     "bin/mac-usbmuxd-probe",
     "bin/usb-probe",
@@ -23,3 +28,11 @@ members = [
 
 [workspace.package]
 edition = "2024"
+
+[profile.embedded]
+inherits = "release"
+opt-level = "z"
+codegen-units = 1
+strip = true
+panic = "abort"
+lto = true

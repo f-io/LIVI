@@ -8,7 +8,10 @@ name = "livi-link"
 path = "src/main.rs"
 
 [dependencies]
+livi-mdns = { path = "../../crates/livi-mdns" }
 iap2-usbmux = { path = "../../crates/iap2-usbmux" }
 iap2-mfi = { path = "../../crates/iap2-mfi" }
 livi-wifi = { path = "../../crates/livi-wifi" }
+livi-btd  = { path = "../../crates/livi-btd" }
+livi-iapd = { path = "../../crates/livi-iapd" }
 libc = "0.2"

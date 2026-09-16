@@ -6,9 +6,11 @@
 //! rootfs, which is why `apply` reads one off the device first.
 
 pub mod ballast;
+pub mod detect;
 pub mod mtd;
 pub mod payload;
 pub mod shell;
+pub mod v821b;
 
 use std::path::Path;
 use std::thread::sleep;

@@ -6,7 +6,7 @@ use std::net::Ipv4Addr;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::process::ExitCode;
 
-use crate::mdns::{self, Name};
+use crate::wire::{self as mdns, Name};
 
 const MAX_IF: usize = 8;
 const POLL_MS: libc::c_int = 2000;

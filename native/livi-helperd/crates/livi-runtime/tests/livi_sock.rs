@@ -51,6 +51,7 @@ fn config(path: &str) -> LiviSockConfig {
         },
         disconnect: None,
         targets: None,
+        cp_live: None,
     }
 }
 

@@ -1,0 +1,123 @@
+#!/bin/sh
+# LIVI-Link boot: awbase watchdog FIRST, then NCM+DHCP+mDNS, WiFi AP, HTTP, tinyshell, LED.
+mkdir -p /tmp/livi /tmp/livi/led
+exec >/tmp/livi/rcS.log 2>&1
+echo '[livi] rcS'
+
+# Restore persistent config from mtd4 (customer partition) into tmpfs
+/usr/bin/livid config load 2>&1 | tail -3
+
+# CRITICAL: OpenSBI M-mode watchdog
+insmod /etc/awbase.ko 2>&1 | tail -1
+[ -e /sys/class/awbase ] && echo '[livi] awbase watchdog fed' || echo '[livi] WARN awbase not registered'
+
+hostname livi-link
+ifconfig lo up
+# usb0 (host) and wlan0 (phones) share one L2 segment: the phone reaches the host directly
+# and mDNS crosses over. hostapd attaches wlan0 itself (bridge=br0 in hostapd.conf).
+brctl addbr br0
+brctl stp br0 off 2>/dev/null
+brctl setfd br0 0 2>/dev/null
+ifconfig usb0 up 2>/dev/null
+brctl addif br0 usb0
+ifconfig br0 10.10.10.1 netmask 255.255.255.0 mtu 1500 up
+echo '[livi] br0 10.10.10.1/24 up (usb0 attached)'
+
+/usr/bin/livi-netd br0 10.10.10.1 100 199 livi-link >/tmp/livi/netd.log 2>&1 &
+echo "[livi] netd/br0 pid=$!"
+/usr/bin/livi-httpd 80 >/tmp/livi/httpd.log 2>&1 &
+echo "[livi] httpd pid=$! :80"
+/usr/bin/livi-tinyshell 2323 >/tmp/livi/tinyshell.log 2>&1 &
+echo "[livi] tinyshell pid=$! :2323"
+
+# livi-ledd owns /dev/spidev1.0 from here on out — no sanity blast.
+/usr/bin/livi-ledd >/tmp/livi/ledd.log 2>&1 &
+echo "[livi] ledd pid=$!"
+
+# MFi coprocessor bridge — retries in the background until /dev/i2c-1
+# appears (the sunxi twi controller registers a moment after boot).
+(
+    for i in $(seq 1 20); do
+        if [ -c /dev/i2c-1 ]; then
+            /usr/bin/livi-mfid 1 >/tmp/livi/mfid.log 2>&1 &
+            echo "[livi] mfid pid=$! :5000 (i2c-1)"
+            break
+        fi
+        sleep 0.5
+    done
+) &
+
+# AIC8800 power (Stock ly,dev: wifi_en=PD11, wifi_en2=PD17 both HIGH)
+for g in 107 113; do
+    [ -e /sys/class/gpio/gpio$g ] || echo $g > /sys/class/gpio/export 2>/dev/null
+    echo out > /sys/class/gpio/gpio$g/direction 2>/dev/null
+    echo 1   > /sys/class/gpio/gpio$g/value      2>/dev/null
+done
+echo '[livi] wifi power PD11+PD17 HIGH'
+sleep 0.2
+
+echo '[livi] insmod aic8800_bsp'
+insmod /lib/modules/5.4.220/aic8800_bsp.ko 2>&1 | tail -1
+sleep 1
+echo '[livi] insmod aic8800_fdrv + aic8800_btlpm'
+insmod /lib/modules/5.4.220/aic8800_fdrv.ko 2>&1 | tail -1
+insmod /lib/modules/5.4.220/aic8800_btlpm.ko 2>&1 | tail -1
+sleep 0.5
+# hci0 may not exist yet — aic BT driver registers asynchronously. Retry up
+# to 10 s until livi-bt-up succeeds AND /sys/class/bluetooth/hci0 shows up.
+(
+    for i in $(seq 1 20); do
+        if /usr/bin/livi-bt-up 0 2>&1 | tail -1 \
+           && [ -e /sys/class/bluetooth/hci0 ]; then
+            touch /tmp/livi/led/bt-ready
+            echo "[livi] bt-up ok on attempt $i"
+            /usr/bin/livi-btd >/tmp/livi/btd.log 2>&1 &
+            BTD_PID=$!
+            /usr/bin/livi-iapd >/tmp/livi/iapd.log 2>&1 &
+            IAPD_PID=$!
+            echo "[livi] btd  pid=$BTD_PID  :5002"
+            echo "[livi] iapd pid=$IAPD_PID :5004/:5005"
+            break
+        fi
+        sleep 0.5
+    done
+) &
+
+for i in $(seq 1 20); do
+    [ -e /sys/class/net/wlan0 ] && break
+    sleep 0.5
+done
+if [ -e /sys/class/net/wlan0 ]; then
+    echo '[livi] wlan0 present'
+    ifconfig wlan0 up
+    # Seed the tmpfs hostapd base from the read-only default (livid config
+    # load will overwrite it if a persisted copy is on mtd4).
+    [ -f /tmp/livi/hostapd.conf.saved ] || cp /etc/hostapd.conf /tmp/livi/hostapd.conf.saved
+    /usr/bin/livi-wifid >/tmp/livi/wifid.log 2>&1 &
+    echo "[livi] wifid pid=$! :5001"
+    # Bring the AP up via wifid (goes through the same path a host would).
+    sleep 0.3
+    (echo on; sleep 0.05; echo save) | nc 127.0.0.1 5001 >/dev/null 2>&1 || \
+        hostapd -B /tmp/livi/hostapd.conf.saved >/tmp/livi/hostapd.log 2>&1
+    (
+        for i in $(seq 1 30); do
+            if [ "$(cat /sys/class/net/wlan0/operstate 2>/dev/null)" = "up" ] \
+               && pidof hostapd >/dev/null; then
+                touch /tmp/livi/led/ap-up
+                echo '[livi] AP up (led signal set)'
+                break
+            fi
+            sleep 0.5
+        done
+    ) &
+else
+    echo '[livi] wlan0 did not appear within 10s'
+fi
+
+(while :; do
+    echo "$(cut -d. -f1 /proc/uptime)s" > /tmp/livi/heartbeat
+    sleep 3
+done) &
+echo "[livi] heartbeat pid=$!"
+
+echo '[livi] rcS done'

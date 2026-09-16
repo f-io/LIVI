@@ -6,5 +6,4 @@ edition.workspace = true
 [dependencies]
 
 [target.'cfg(target_os = "linux")'.dependencies]
-i2cdev = "0.6"
-gpiocdev = "0.7"
+libc = "0.2"
