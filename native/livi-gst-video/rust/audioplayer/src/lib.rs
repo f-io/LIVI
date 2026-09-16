@@ -57,19 +57,15 @@ const fn audio_sink() -> (&'static str, &'static str) {
     }
 }
 
-/// The sink and its buffering. `sync=false` everywhere, since the pacing happens upstream in the
-/// jitter buffer and clocksync, and a sink that paces again only fights them.
+const SINK_NAME: &str = "audio-sink";
+
 fn sink_chain(cfg: &Config) -> String {
-    let (element, device_property) = audio_sink();
-    let mut sink = if cfg.realtime {
-        format!("{element} sync=false")
+    let (element, _device_property) = audio_sink();
+    if cfg.realtime {
+        format!("{element} name={SINK_NAME} sync=false")
     } else {
-        format!("{element} sync=false buffer-time=300000 latency-time=30000")
-    };
-    if let Some(device) = &cfg.device {
-        sink.push_str(&format!(" {device_property}={device}"));
+        format!("{element} name={SINK_NAME} sync=false buffer-time=300000 latency-time=30000")
     }
-    sink
 }
 
 /// The whole pipeline for `cfg`. The caps go onto the appsrc afterwards, so the
@@ -119,6 +115,12 @@ impl Player {
                 return None;
             }
         };
+
+        if let Some(device) = &cfg.device {
+            let (_, device_property) = audio_sink();
+            let sink = pipeline.by_name(SINK_NAME)?;
+            sink.set_property(device_property, device.as_str());
+        }
 
         let appsrc = pipeline.by_name("src")?.downcast::<gst_app::AppSrc>().ok()?;
         let caps = gst::Caps::from_str(&rtp_caps(
@@ -383,13 +385,15 @@ mod tests {
     }
 
     #[test]
-    fn a_named_device_reaches_the_sink() {
+    fn the_desc_never_carries_the_device_string() {
         let mut c = cfg(Codec::Opus, false);
-        c.device = Some("alsa_output.front".into());
+        c.device = Some("AppleUSBAudioEngine:Unknown Manufacturer:USB PnP Audio Device:131200:1".into());
 
         let desc = pipeline_desc(&c);
-        let prop = if cfg!(target_os = "macos") { "unique-id" } else { "device" };
-        assert!(desc.contains(&format!("{prop}=alsa_output.front")));
+        assert!(desc.contains(&format!("name={SINK_NAME}")), "desc = {desc}");
+        assert!(!desc.contains("unique-id="), "desc = {desc}");
+        assert!(!desc.contains(" device="), "desc = {desc}");
+        assert!(!desc.contains("USB PnP"), "device string leaked into desc: {desc}");
     }
 
     #[test]

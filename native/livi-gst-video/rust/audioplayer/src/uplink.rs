@@ -36,17 +36,19 @@ impl UplinkConfig {
     }
 }
 
+pub(crate) const SOURCE_NAME: &str = "audio-source";
+
+pub(crate) fn source_device_property() -> &'static str {
+    if cfg!(target_os = "macos") { "unique-id" } else { "device" }
+}
+
 /// The capture chain. Opus is encoded here, PCM leaves as raw samples.
 pub fn pipeline_desc(cfg: &UplinkConfig) -> String {
-    let mut source = String::from(if cfg!(target_os = "macos") {
-        "osxaudiosrc"
+    let source = if cfg!(target_os = "macos") {
+        format!("osxaudiosrc name={SOURCE_NAME}")
     } else {
-        "pulsesrc"
-    });
-    if let Some(device) = &cfg.device {
-        let prop = if cfg!(target_os = "macos") { "unique-id" } else { "device" };
-        source.push_str(&format!(" {prop}={device}"));
-    }
+        format!("pulsesrc name={SOURCE_NAME}")
+    };
 
     let rate = cfg.sample_rate;
     let channels = cfg.channels;
@@ -86,6 +88,11 @@ impl Uplink {
                 return None;
             }
         };
+
+        if let Some(device) = &cfg.device {
+            let source = pipeline.by_name(SOURCE_NAME)?;
+            source.set_property(source_device_property(), device.as_str());
+        }
 
         let sink = pipeline.by_name("out")?.downcast::<gst_app::AppSink>().ok()?;
         let socket = UdpSocket::bind("[::]:0").ok()?;
@@ -156,12 +163,13 @@ impl Drop for Uplink {
 }
 
 /// The capture chain alone: raw samples in the given format, to a callback.
-pub fn capture_desc(sample_rate: u32, channels: u8, device: Option<&str>) -> String {
-    let mut source = String::from(if cfg!(target_os = "macos") { "osxaudiosrc" } else { "pulsesrc" });
-    if let Some(device) = device {
-        let prop = if cfg!(target_os = "macos") { "unique-id" } else { "device" };
-        source.push_str(&format!(" {prop}={device}"));
-    }
+pub fn capture_desc(sample_rate: u32, channels: u8) -> String {
+    // See pipeline_desc(): device is set post-parse by PcmCapture::new, not embedded here.
+    let source = if cfg!(target_os = "macos") {
+        format!("osxaudiosrc name={SOURCE_NAME}")
+    } else {
+        format!("pulsesrc name={SOURCE_NAME}")
+    };
     format!(
         "{source} ! audioconvert ! audioresample ! \
          audio/x-raw,format=S16LE,layout=interleaved,rate={sample_rate},channels={channels} ! \
@@ -183,7 +191,7 @@ impl PcmCapture {
         mut on_pcm: impl FnMut(&[u8]) + Send + 'static,
     ) -> Option<Self> {
         super::ensure_init();
-        let desc = capture_desc(sample_rate, channels, device);
+        let desc = capture_desc(sample_rate, channels);
         let pipeline = match gst::parse::launch(&desc) {
             Ok(p) => p.downcast::<gst::Pipeline>().ok()?,
             Err(e) => {
@@ -191,6 +199,10 @@ impl PcmCapture {
                 return None;
             }
         };
+        if let Some(device) = device {
+            let source = pipeline.by_name(SOURCE_NAME)?;
+            source.set_property(source_device_property(), device);
+        }
         let sink = pipeline.by_name("out")?.downcast::<gst_app::AppSink>().ok()?;
         sink.set_callbacks(
             gst_app::AppSinkCallbacks::builder()
@@ -269,5 +281,51 @@ impl SocketTap {
         })?;
         capture.start();
         Some(Self { capture })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use livi_audio_uplink::UplinkCodec;
+
+    // A real macOS unique-id built from a class-compliant USB descriptor.
+    const NASTY: &str =
+        "AppleUSBAudioEngine:Unknown Manufacturer:USB PnP Audio Device:131200:1";
+
+    fn cfg(codec: UplinkCodec, device: Option<String>) -> UplinkConfig {
+        UplinkConfig {
+            codec,
+            payload_type: 0,
+            sample_rate: 48_000,
+            channels: 1,
+            bitrate: 0,
+            frame_ms: 20,
+            key: [0; 32],
+            device,
+            phone: "127.0.0.1".into(),
+            port: 0,
+            label: "test".into(),
+        }
+    }
+
+    fn desc_carries_no_device(desc: &str) {
+        assert!(desc.contains(&format!("name={SOURCE_NAME}")), "desc = {desc}");
+        assert!(!desc.contains("unique-id="), "desc = {desc}");
+        assert!(!desc.contains(" device="), "desc = {desc}");
+        assert!(!desc.contains(NASTY), "device string leaked into desc: {desc}");
+    }
+
+    #[test]
+    fn pipeline_desc_never_carries_the_device_string() {
+        // Any device value would be at risk of being split by gst_parse_launch (spaces,
+        // quotes, backslashes). It goes through set_property in Uplink::new instead.
+        desc_carries_no_device(&pipeline_desc(&cfg(UplinkCodec::Pcm, Some(NASTY.into()))));
+        desc_carries_no_device(&pipeline_desc(&cfg(UplinkCodec::Opus, Some(NASTY.into()))));
+    }
+
+    #[test]
+    fn capture_desc_never_carries_the_device_string() {
+        desc_carries_no_device(&capture_desc(48_000, 1));
     }
 }
