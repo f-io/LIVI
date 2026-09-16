@@ -45,7 +45,10 @@ pub fn pipeline_desc(cfg: &UplinkConfig) -> String {
     });
     if let Some(device) = &cfg.device {
         let prop = if cfg!(target_os = "macos") { "unique-id" } else { "device" };
-        source.push_str(&format!(" {prop}={device}"));
+        // Quoted -- see sink_chain() in lib.rs for why: an unquoted macOS unique-id
+        // with a space in it (any real USB device's vendor/product name) otherwise
+        // splits mid-parse and silently fails to open.
+        source.push_str(&format!(" {prop}='{device}'"));
     }
 
     let rate = cfg.sample_rate;
@@ -160,13 +163,58 @@ pub fn capture_desc(sample_rate: u32, channels: u8, device: Option<&str>) -> Str
     let mut source = String::from(if cfg!(target_os = "macos") { "osxaudiosrc" } else { "pulsesrc" });
     if let Some(device) = device {
         let prop = if cfg!(target_os = "macos") { "unique-id" } else { "device" };
-        source.push_str(&format!(" {prop}={device}"));
+        // Quoted -- see sink_chain() in lib.rs for why: an unquoted unique-id
+        // with a space in it breaks gst_parse_launch's tokenizing.
+        source.push_str(&format!(" {prop}='{device}'"));
     }
     format!(
         "{source} ! audioconvert ! audioresample ! \
          audio/x-raw,format=S16LE,layout=interleaved,rate={sample_rate},channels={channels} ! \
          appsink name=out sync=false"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_device_id_with_a_space_stays_one_token_in_capture_desc() {
+        // Same bug as pipeline_desc()/sink_chain(): an unquoted macOS unique-id
+        // with a space in it splits mid-parse and silently fails to open.
+        let desc = capture_desc(
+            48_000,
+            1,
+            Some("AppleUSBAudioEngine:Unknown Manufacturer:USB PnP Audio Device:131200:1"),
+        );
+        let prop = if cfg!(target_os = "macos") { "unique-id" } else { "device" };
+        assert!(desc.contains(&format!(
+            "{prop}='AppleUSBAudioEngine:Unknown Manufacturer:USB PnP Audio Device:131200:1'"
+        )));
+    }
+
+    #[test]
+    fn a_device_id_with_a_space_stays_one_token_in_pipeline_desc() {
+        let cfg = UplinkConfig {
+            codec: UplinkCodec::Pcm,
+            payload_type: 0,
+            sample_rate: 48_000,
+            channels: 1,
+            bitrate: 0,
+            frame_ms: 20,
+            key: [0; 32],
+            device: Some("AppleUSBAudioEngine:Unknown Manufacturer:USB PnP Audio Device:131200:1".into()),
+            phone: "127.0.0.1".into(),
+            port: 0,
+            label: "test".into(),
+        };
+
+        let desc = pipeline_desc(&cfg);
+        let prop = if cfg!(target_os = "macos") { "unique-id" } else { "device" };
+        assert!(desc.contains(&format!(
+            "{prop}='AppleUSBAudioEngine:Unknown Manufacturer:USB PnP Audio Device:131200:1'"
+        )));
+    }
 }
 
 /// A microphone tap: every captured buffer goes to the callback as raw S16LE samples.

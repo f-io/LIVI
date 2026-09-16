@@ -67,7 +67,14 @@ fn sink_chain(cfg: &Config) -> String {
         format!("{element} sync=false buffer-time=300000 latency-time=30000")
     };
     if let Some(device) = &cfg.device {
-        sink.push_str(&format!(" {device_property}={device}"));
+        // Quoted: this string is fed to gst_parse_launch, and a macOS unique-id
+        // routinely contains spaces (vendor/product names, e.g. a class-compliant
+        // "AppleUSBAudioEngine:Unknown Manufacturer:USB PnP Audio Device:131200:1").
+        // Unquoted, the parser splits on the first space and the property value
+        // becomes garbage -- the pipeline still "builds" but the sink can't open.
+        // gst-device-monitor's own printed example command already quotes it this
+        // exact way.
+        sink.push_str(&format!(" {device_property}='{device}'"));
     }
     sink
 }
@@ -389,7 +396,23 @@ mod tests {
 
         let desc = pipeline_desc(&c);
         let prop = if cfg!(target_os = "macos") { "unique-id" } else { "device" };
-        assert!(desc.contains(&format!("{prop}=alsa_output.front")));
+        assert!(desc.contains(&format!("{prop}='alsa_output.front'")));
+    }
+
+    #[test]
+    fn a_device_id_with_a_space_stays_one_token() {
+        // A real macOS unique-id: AppleUSBAudioEngine:Unknown Manufacturer:USB PnP
+        // Audio Device:131200:1 -- unquoted, gst_parse_launch splits this on the
+        // first space and the sink fails to open with no error visible above this
+        // layer. Regression coverage for that.
+        let mut c = cfg(Codec::Opus, false);
+        c.device = Some("AppleUSBAudioEngine:Unknown Manufacturer:USB PnP Audio Device:131200:1".into());
+
+        let desc = pipeline_desc(&c);
+        let prop = if cfg!(target_os = "macos") { "unique-id" } else { "device" };
+        assert!(desc.contains(&format!(
+            "{prop}='AppleUSBAudioEngine:Unknown Manufacturer:USB PnP Audio Device:131200:1'"
+        )));
     }
 
     #[test]
