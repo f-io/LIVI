@@ -12,6 +12,7 @@ members = [
     "crates/livi-dongle",
     "crates/livi-link-provision",
     "crates/livi-wifi",
+    "crates/livi-web",
     "crates/livi-btd",
     "crates/livi-iapd",
     "crates/livi-mdns",

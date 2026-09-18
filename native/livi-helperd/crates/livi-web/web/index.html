@@ -49,6 +49,7 @@
   <h2>Device</h2>
   <div class="card">
     <dl class="kv">
+      <dt>Model</dt><dd id="model">loading…</dd>
       <dt>Kernel</dt><dd id="kernel">loading…</dd>
       <dt>Uptime</dt><dd id="uptime">loading…</dd>
       <dt>Load</dt><dd id="load">loading…</dd>
@@ -79,6 +80,7 @@
     </dl>
   </div>
 
+  <section id="sec-led" hidden>
   <h2>LED</h2>
   <div class="card">
     <div class="led-grid">
@@ -88,15 +90,18 @@
       <input type="range" id="led-brightness" min="0" max="100" value="20">
     </div>
   </div>
+  </section>
 
-  <h2>Flash</h2>
+  <section id="sec-flash" hidden>
+  <h2>Firmware</h2>
   <div class="card">
     <div class="flash-row">
-      <div class="slot">.lfwb</div>
-      <div class="name">firmware bundle</div>
-      <label class="file">Upload <input type="file" data-slot="bundle"></label>
+      <div class="slot" id="flash-slot">firmware</div>
+      <div class="name" id="flash-name">upload</div>
+      <label class="file">Upload <input type="file" id="flash-input"></label>
     </div>
   </div>
+  </section>
 
   <h2>Status</h2>
   <div class="card">
@@ -117,7 +122,7 @@ async function tick() {
     const r = await fetch('/api/status');
     if (r.ok) {
       const s = await r.json();
-      for (const k of ['kernel','uptime','load','mem','mac']) document.getElementById(k).textContent = s[k];
+      for (const k of ['model','kernel','uptime','load','mem','mac']) document.getElementById(k).textContent = s[k];
     }
   } catch {}
   try {
@@ -157,6 +162,32 @@ const ledColor = document.getElementById('led-color');
 const ledBri   = document.getElementById('led-brightness');
 const ledBriV  = document.getElementById('led-brightness-val');
 const ledMsg = document.getElementById('status-msg');
+
+// Which sections this dongle offers. flash is an object of the writes it supports:
+// mtd (a .lfwb bundle), stack (upload the .gz), rootfs (restore a full image).
+let CAPS = { flash: {}, led: false };
+(async () => {
+  try {
+    CAPS = await (await fetch('/api/caps')).json();
+    if (CAPS.led) document.getElementById('sec-led').hidden = false;
+    const f = CAPS.flash || {};
+    if (f.mtd || f.stack || f.rootfs) {
+      document.getElementById('sec-flash').hidden = false;
+      const slot = document.getElementById('flash-slot');
+      const name = document.getElementById('flash-name');
+      if (f.stack || f.rootfs) {
+        const bits = [];
+        if (f.stack)  bits.push('.gz firmware update');
+        if (f.rootfs) bits.push('.img firmware restore');
+        slot.textContent = 'firmware';
+        name.textContent = bits.join(' · ');
+      } else {
+        slot.textContent = '.lfwb';
+        name.textContent = 'firmware bundle';
+      }
+    }
+  } catch {}
+})();
 
 (async () => {
   try {
@@ -206,13 +237,12 @@ const bar = document.getElementById('status-progress');
 function fmtKB(n) { return (n/1024).toFixed(0) + ' KiB'; }
 
 document.querySelectorAll('input[type=file]').forEach(inp => {
-  inp.addEventListener('change', () => {
+  inp.addEventListener('change', async () => {
     const file = inp.files[0]; if (!file) return;
-    const slot = inp.dataset.slot;
-    if (!confirm(`Flash ${fmtKB(file.size)} to /dev/${slot}? Dongle will reboot.`)) {
+    if (!confirm(`Flash ${fmtKB(file.size)}? The dongle will restart or reboot.`)) {
       inp.value = ''; return;
     }
-    say(`Uploading ${fmtKB(file.size)} → ${slot}…`);
+    say(`Uploading ${fmtKB(file.size)}…`);
     bar.hidden = false; bar.value = 0;
 
     const xhr = new XMLHttpRequest();
@@ -273,7 +303,21 @@ document.querySelectorAll('input[type=file]').forEach(inp => {
     });
     xhr.addEventListener('error', () => { bar.hidden = true; say('network error during upload', 'err'); });
     xhr.addEventListener('abort', () => { bar.hidden = true; say('upload aborted', 'err'); });
-    xhr.open('POST', slot === 'bundle' ? '/api/flash' : ('/api/flash/' + slot));
+    // One endpoint; the dongle routes by the file. A .lfwb bundle and a gzipped stack carry their
+    // own integrity, a raw rootfs image does not — so the browser hashes that and the dongle rechecks.
+    const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+    const selfChecked = (head[0] === 0x1f && head[1] === 0x8b) ||
+                        (head[0] === 0x4c && head[1] === 0x46 && head[2] === 0x57 && head[3] === 0x42);
+    let url = '/api/flash';
+    if (!selfChecked) {
+      say('Hashing image…');
+      try {
+        const dig = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+        const sha = [...new Uint8Array(dig)].map(b => b.toString(16).padStart(2, '0')).join('');
+        url = '/api/flash?sha=' + sha;
+      } catch (e) { bar.hidden = true; say('sha256 failed: ' + e, 'err'); inp.value = ''; return; }
+    }
+    xhr.open('POST', url);
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
     xhr.send(file);
     inp.value = '';

@@ -52,6 +52,41 @@ pub fn carrier_body() -> &'static str {
     CARRIER_BODY
 }
 
+/// Whether a stock (non-LIVI) dongle is on the USB bus
+pub fn stock_dongle_once() -> bool {
+    let runtime = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+    runtime.block_on(async {
+        match nusb::list_devices().await {
+            Ok(devices) => devices
+                .into_iter()
+                .any(|d| livi_dongle::is_dongle(&d) && !livi_dongle::is_livi_link(&d)),
+            Err(_) => false,
+        }
+    })
+}
+
+/// Every USB device nusb can see, as (vid, pid, product-string) — for diagnosing detection.
+pub fn scan() -> Vec<(u16, u16, String)> {
+    let runtime = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+    runtime.block_on(async {
+        match nusb::list_devices().await {
+            Ok(devices) => devices
+                .into_iter()
+                .map(|d| {
+                    (d.vendor_id(), d.product_id(), d.product_string().unwrap_or("").to_string())
+                })
+                .collect(),
+            Err(_) => Vec::new(),
+        }
+    })
+}
+
 async fn send(path: &str, content: &[u8]) -> Result<(), String> {
     // A dongle that has just been plugged in, or one that is re-enumerating, is briefly not in
     // the list at all.

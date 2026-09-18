@@ -37,18 +37,19 @@ if [ "$got" != "$want" ]; then
   exit 1
 fi
 
-# sh, dd, sync and reboot are busybox symlinks; copied under their own name they still dispatch
-# by argv[0], so nothing below reaches back into the rootfs it is erasing.
+# Busybox applets, copied under their own name so they still dispatch by argv[0] — nothing below
+# reaches back into the rootfs it is erasing. cat, not dd: this busybox has no dd applet and the
+# flash is byte-addressable (writesize 1), so a plain copy programs it.
 mkdir -p "$stage"
-for t in sh dd sync reboot sleep; do cp "$(command -v $t)" "$stage/" 2>/dev/null; done
+for t in sh cat mount sync reboot sleep; do cp "$(command -v $t)" "$stage/" 2>/dev/null; done
 cp /usr/sbin/flash_erase "$stage/" 2>/dev/null
-for t in sh dd sync reboot sleep flash_erase; do
+for t in sh cat mount sync reboot sleep flash_erase; do
   [ -x "$stage/$t" ] || { echo "could not stage $t in $stage - refusing"; exit 1; }
 done
 
 blocks=$((psize / ersize))
 if [ -n "$LIVI_FLASH_DRY_RUN" ]; then
-  echo "would write $isize bytes to $dev: flash_erase $dev 0 $blocks, dd if=$img of=$dev bs=64k"
+  echo "would write $isize bytes to $dev: remount ro, flash_erase $dev 0 $blocks, cat $img > $dev"
   exit 0
 fi
 # Red and blue alternating for as long as the write runs, the signal the vendor updater gives too.
@@ -69,6 +70,7 @@ echo "writing $isize bytes to $dev ($blocks blocks of $ersize), then rebooting"
 echo "if it does not come back, $stage.log has the reason"
 setsid "$stage/sh" -c "$stage/sh $stage/blink.sh & \
   $stage/sleep 1; \
+  $stage/mount -o remount,ro /; \
   $stage/flash_erase $dev 0 $blocks && \
-  $stage/dd if=$img of=$dev bs=64k && \
+  $stage/cat $img > $dev && \
   $stage/sync; $stage/reboot -f" > "$stage.log" 2>&1 &

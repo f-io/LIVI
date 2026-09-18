@@ -24,16 +24,17 @@ pub const VERSION_FILE: &str = "/script/livi/version";
 pub const BRINGUP_MARKER: &str = "LIVI bridge bring-up";
 
 /// The whole relay stack, one binary; `livi-link.sh` links it under each tool name.
-pub const BINARY: &str = "livi-link";
+pub const BINARY: &str = "cpc200-ccpa";
 /// Superseded builds, removed so a dongle carries only what it runs: the per-tool binaries from
 /// before the stack became one, and the tunnel that preceded livi-usbproxy.
-pub const OBSOLETE: [&str; 6] = [
+pub const OBSOLETE: [&str; 7] = [
     "/script/livi/seedrng.gz",
     "/script/livi/mfid.gz",
     "/script/livi/livi-usbproxy.gz",
     "/script/livi/l2fwd.gz",
     "/script/livi/mdnsd.gz",
     "/script/livi/carkit_tunnel.gz",
+    "/script/livi/livi-link.gz",
 ];
 /// Ports the stack answers on once it runs: mfid and livi-usbproxy.
 pub const STACK_PORTS: [u16; 2] = [5000, 5003];
@@ -44,7 +45,7 @@ const BRINGUP: &str = include_str!("../../../bin/livi-link/scripts/livi-bringup.
 const LINK: &str = include_str!("../../../bin/livi-link/scripts/livi-link.sh");
 const L2FWD_WATCH: &str = include_str!("../../../bin/livi-link/scripts/l2fwd-watch.sh");
 const FLASH_IMAGE: &str = include_str!("../../../bin/livi-link/scripts/flash-image.sh");
-const STACK: &[u8] = include_bytes!("../../../../../assets/livi-link/cpc200-ccpa/livi-link.gz");
+const STACK: &[u8] = include_bytes!("../../../../../assets/livi-link/cpc200-ccpa/cpc200-ccpa.gz");
 const SERVER_CGI: &str = include_str!("../../../bin/livi-link/web/server.cgi");
 const INDEX_HTML: &str = include_str!("../../../bin/livi-link/web/index.html");
 
@@ -129,7 +130,7 @@ mod tests {
         assert!(BRINGUP.contains(BRINGUP_MARKER));
         // livi-link.sh unpacks the binary the asset build produces and links every process
         // name the verify step then looks for.
-        assert!(LINK.contains(&format!("{BINARY}.gz")));
+        assert!(LINK.contains("*.gz"), "the launcher finds the stack .gz by glob, not a hard-coded name");
         for name in STACK_PROCESSES {
             let started = name.strip_suffix("-watch").unwrap_or(name);
             assert!(LINK.contains(started), "livi-link.sh does not mention {started}");

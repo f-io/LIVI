@@ -1,7 +1,7 @@
 #!/bin/sh
 # LIVI Link relay stack. Installed at /script/livi/livi-link.sh, run by livi-bringup.sh at boot;
 # re-run by hand to restart the stack without a reboot (--fresh re-unpacks the binary).
-# One binary lives gzipped on jffs2 (/script/livi/livi-link.gz), unpacked into tmpfs (/tmp/livi)
+# One binary lives gzipped on jffs2 (the per-device stack .gz), unpacked into tmpfs (/tmp/livi)
 # and linked under each tool name, busybox-style — it picks its job from argv[0]:
 #   seedrng        feeds the kernel entropy pool (3.14 has no getrandom; TLS blocks without it)
 #   mfid           MFi coprocessor on i2c-1, served over TCP :5000
@@ -11,7 +11,7 @@
 #   livi-usbproxy  the iPhone's USB side (enumerate, config, bulk pipes) on TCP :5003
 #   l2fwd          L2 bridge iPhone-NCM (usbN) <-> ncm0 (host); started by l2fwd-watch.sh
 #   mdnsd          answers livi-link.local on ncm0 (host) and wlan0 (AP), each with its own address
-#   boa            the vendor web UI (/etc/boa), on every interface
+#   httpd          the LIVI web UI + control API on :80 (shared livi-web); vendor boa is the fallback
 PATH=/bin:/sbin:/usr/bin:/usr/sbin; export PATH
 SRC=/script/livi; RUN=/tmp/livi
 log(){ echo "[link] $*" > /dev/console 2>/dev/null; echo "[link] $*"; }
@@ -28,14 +28,15 @@ reap(){ i=0
 [ "$1" = "--fresh" ] && { reap "$RUN/"; reap l2fwd-watch; rm -rf "$RUN"; }
 mkdir -p "$RUN"
 if [ ! -x "$RUN/livi-link" ]; then
-  if [ -f "$SRC/livi-link.gz" ]; then
-    gunzip -c "$SRC/livi-link.gz" > "$RUN/livi-link.tmp" && chmod 755 "$RUN/livi-link.tmp" \
-      && mv "$RUN/livi-link.tmp" "$RUN/livi-link" || log "unpack livi-link failed"
+  gz=$(ls "$SRC"/*.gz 2>/dev/null | head -n1)
+  if [ -n "$gz" ]; then
+    gunzip -c "$gz" > "$RUN/livi-link.tmp" && chmod 755 "$RUN/livi-link.tmp" \
+      && mv "$RUN/livi-link.tmp" "$RUN/livi-link" || log "unpack $gz failed"
   else
-    log "missing $SRC/livi-link.gz"
+    log "no stack .gz in $SRC"
   fi
 fi
-for b in seedrng mfid wifid btd iapd livi-usbproxy l2fwd mdnsd; do
+for b in seedrng mfid wifid btd iapd livi-usbproxy l2fwd mdnsd httpd; do
   [ -L "$RUN/$b" ] || ln -sf livi-link "$RUN/$b"
 done
 
@@ -45,13 +46,7 @@ grep -q cdc_ncm /proc/modules || {
   insmod /tmp/cdc_ncm.ko 2>/dev/null
 }
 
-# Bring the stack to a known state: every run reaps first and starts fresh, rather than
-# deciding from a `ps` match whether something is "still" running — that guess got it wrong in
-# both directions. Restarting mfid is safe because the host reconnects to it per request.
-# Start detached from whatever session invoked us (boot script or a remote shell) and confirm
-# the daemon is actually up instead of assuming the launch worked.
-# The name is a ps pattern, bracketed so the grep does not match itself. The brackets are for
-# grep, not for the reader, so they come out of the log line again.
+# Bring the stack to a known state
 start(){ name=$1; shift; reap "$1"
   plain=$(echo "$name" | tr -d '[]')
   for try in 1 2 3; do
@@ -68,11 +63,15 @@ start '[b]td' "$RUN/btd"
 start '[i]apd' "$RUN/iapd"
 start '[m]dnsd' "$RUN/mdnsd" livi-link ncm0 wlan0
 
-# Web UI: boa serves /tmp/boa (a copy of /etc/boa, as the vendor start did) on 0.0.0.0:80.
-mkdir -p /tmp/boa/logs
-[ -d /tmp/boa/www ] || cp -r /etc/boa/www /tmp/boa/
-[ -d /tmp/boa/cgi-bin ] || cp -r /etc/boa/cgi-bin /tmp/boa/
-start '[b]oa' /usr/sbin/boa
+# Web UI
+reap boa
+if ! start '[h]ttpd' "$RUN/httpd"; then
+  log "httpd down — falling back to vendor boa so a recovery UI stays up"
+  mkdir -p /tmp/boa/logs
+  [ -d /tmp/boa/www ] || cp -r /etc/boa/www /tmp/boa/
+  [ -d /tmp/boa/cgi-bin ] || cp -r /etc/boa/cgi-bin /tmp/boa/
+  start '[b]oa' /usr/sbin/boa
+fi
 
 # usbproxy and the bridge watcher are restarted on every run; a running host session reconnects.
 reap "$RUN/livi-usbproxy"; reap l2fwd-watch; reap "$RUN/l2fwd"
