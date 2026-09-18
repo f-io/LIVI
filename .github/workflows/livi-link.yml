@@ -274,23 +274,13 @@ jobs:
             exit 0
           fi
 
-          details=""
-          for dir in assets/livi-link/*/; do
-            target=$(basename "$dir")
-            # $dir carries a trailing slash from the glob; build a clean path so
-            # `git show HEAD:<path>` resolves — a doubled slash makes it miss and
-            # every target then looks brand new.
-            manifest="assets/livi-link/$target/MANIFEST.md5"
-            [ -f "$manifest" ] || continue
-            old="$(git show "HEAD:$manifest" 2>/dev/null || true)"
-            if [[ -n "$old" ]]; then
-              d="$(comm -13 <(printf '%s\n' "$old" | sort) <(sort "$manifest") \
-                | awk '{ sub(/\.gz$/, "", $2); print $2 }' | paste -sd', ' -)"
-            else
-              d="new"
-            fi
-            [[ -n "$d" ]] && details="${details:+$details; }${target}: ${d}"
-          done
+          # The target dirs that changed in this run, names only, comma-separated
+          # (e.g. "cpc200-ccpa, v821b_aic8800d80"). Both binaries share the Rust crates,
+          # so a change there legitimately restages both — and v821b_aic8800d80 carries no
+          # MANIFEST.md5, so this reads the staged diff rather than scanning for manifests.
+          details="$(git diff --cached --name-only -- assets/livi-link \
+            | sed -n 's#^assets/livi-link/\([^/]*\)/.*#\1#p' | sort -u \
+            | paste -sd, - | sed 's/,/, /g')"
 
           msg="chore(livi-link): update dongle stack"
           [[ -n "$details" ]] && msg="$msg (${details})"
