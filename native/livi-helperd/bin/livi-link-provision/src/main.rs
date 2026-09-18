@@ -27,12 +27,14 @@ fn pick_host() -> String {
 
 fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let host = pick_host();
     let Some(command) = args.first().map(String::as_str) else {
         return menu();
     };
 
-    let sh = Shell::new(&host);
+    let sh = Shell::new(&match command {
+        "plan" | "apply" | "verify" | "backup" | "push" | "sh" => pick_host(),
+        _ => DEFAULT_HOST.to_string(),
+    });
 
     let result = match command {
         "plan" => plan(&sh).map(|p| {
@@ -80,6 +82,12 @@ fn main() -> std::process::ExitCode {
         "detect" => {
             let d = livi_link_provision::detect::detect();
             println!("{}", d.label());
+            Ok(true)
+        }
+        "usbscan" => {
+            for (v, p, name) in bootstrap::scan() {
+                println!("{v:04x}:{p:04x}  {name}");
+            }
             Ok(true)
         }
         "v821b" => match args.get(1).map(String::as_str) {
@@ -132,21 +140,80 @@ const VERSION: &str = match option_env!("LIVI_VERSION") {
     None => env!("CARGO_PKG_VERSION"),
 };
 
+/// What a probe of the bus and the network turned up.
+enum Found {
+    StockCpc,
+    Net(livi_link_provision::detect::Detected),
+    Nothing,
+}
+
+/// Probes USB and the network at the same time. The first hit wins.
+fn wait_for_dongle() -> Found {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{mpsc, Arc};
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::channel();
+
+    let usb = {
+        let stop = Arc::clone(&stop);
+        let tx = tx.clone();
+        std::thread::spawn(move || {
+            while !stop.load(Ordering::Relaxed) {
+                if bootstrap::stock_dongle_once() {
+                    let _ = tx.send(Found::StockCpc);
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(250));
+            }
+        })
+    };
+    {
+        let stop = Arc::clone(&stop);
+        let tx = tx.clone();
+        std::thread::spawn(move || {
+            while !stop.load(Ordering::Relaxed) {
+                let d = livi_link_provision::detect::detect();
+                if !matches!(d, livi_link_provision::detect::Detected::Nothing) {
+                    let _ = tx.send(Found::Net(d));
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(250));
+            }
+        });
+    }
+    drop(tx);
+
+    let found = rx.recv_timeout(Duration::from_secs(60)).unwrap_or(Found::Nothing);
+    stop.store(true, Ordering::Relaxed);
+    let _ = usb.join();
+    found
+}
+
 /// Started without arguments the tool asks rather than expecting commands. The subcommands stay
 /// for scripting.
 fn menu() -> std::process::ExitCode {
     use livi_link_provision::detect::Detected;
     loop {
-        let detected = livi_link_provision::detect::detect();
+        println!("\nsearching for a dongle (USB and network)…");
+        let (stock_usb, detected) = match wait_for_dongle() {
+            Found::StockCpc => (true, Detected::Nothing),
+            Found::Net(d) => (false, d),
+            Found::Nothing => (false, Detected::Nothing),
+        };
         println!("\nLIVI Link provisioning tool v{VERSION}");
-        println!("Detected: {}", detected.label());
+        if stock_usb {
+            println!("Detected: CPC200-CCPA (stock, on USB — no shell yet)");
+        } else {
+            println!("Detected: {}", detected.label());
+        }
 
         match &detected {
             Detected::V821bStock { .. } => {
                 println!("  1  provision LIVI Link (backup current firmware first)");
             }
-            Detected::V821bLink => {
-                println!("  (already running LIVI Link — use its web UI to reflash)");
+            Detected::LiviLink { .. } => {
+                println!("  1  update LIVI Link");
             }
             Detected::Cpc200 { host } => {
                 let sh = Shell::new(host);
@@ -154,6 +221,9 @@ fn menu() -> std::process::ExitCode {
                     Some(what) => println!("  1  {what} LIVI Link"),
                     None => println!("  r  reinstall LIVI Link"),
                 }
+            }
+            Detected::Nothing if stock_usb => {
+                println!("  1  bootstrap + install LIVI Link (over USB)");
             }
             Detected::Nothing => {}
         }
@@ -192,6 +262,14 @@ fn menu() -> std::process::ExitCode {
                     Err("nothing to reinstall".into())
                 }
             }
+            ("1", Detected::Nothing) if stock_usb => match install(&Shell::new(DEFAULT_HOST)) {
+                Ok(()) => return std::process::ExitCode::SUCCESS,
+                Err(e) => Err(e),
+            },
+            ("1", Detected::LiviLink { .. }) => match install(&Shell::new(DEFAULT_HOST)) {
+                Ok(()) => return std::process::ExitCode::SUCCESS,
+                Err(e) => Err(e),
+            },
             ("q" | "quit" | "", _) => return std::process::ExitCode::SUCCESS,
             (other, _) => Err(format!("no such choice: {other}")),
         };

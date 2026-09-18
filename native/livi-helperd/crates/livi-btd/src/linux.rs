@@ -14,6 +14,11 @@ const HCI_CHANNEL_USER: u16 = 1;
 const DEV: u16 = 0;
 const IFACE: &str = "hci0";
 const PACKET_MAX: usize = 4096;
+const HCI_EVT_PKT: u8 = 0x04;
+const EV_CONN_COMPLETE: u8 = 0x03;
+const EV_CONN_REQUEST: u8 = 0x04;
+const EV_DISCONN_COMPLETE: u8 = 0x05;
+const EV_LE_META: u8 = 0x3e;
 const POLL_MS: i32 = 200;
 const ORDER_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
 const CONTROLLER_TRIES: u32 = 120;
@@ -144,10 +149,14 @@ fn pump(dev: File, stream: TcpStream) {
     stop.store(true, Ordering::Relaxed);
     let _ = stream.shutdown(std::net::Shutdown::Both);
     let _ = up.join();
+    // Host gone: no link is ours to signal any more.
+    led_signal("bt-connected", false);
+    led_signal("bt-paging", false);
 }
 
 fn out_bound(dev: File, mut out: TcpStream, stop: &AtomicBool) {
     let mut buf = [0u8; PACKET_MAX];
+    let mut conns = 0u32;
     while !stop.load(Ordering::Relaxed) {
         if !readable(dev.as_raw_fd(), POLL_MS) {
             continue;
@@ -160,6 +169,7 @@ fn out_bound(dev: File, mut out: TcpStream, stop: &AtomicBool) {
                 return;
             }
         };
+        watch_link(&buf[..n], &mut conns);
         if let Err(e) = out
             .write_all(&(n as u16).to_be_bytes())
             .and_then(|()| out.write_all(&buf[..n]))
@@ -167,6 +177,45 @@ fn out_bound(dev: File, mut out: TcpStream, stop: &AtomicBool) {
             eprintln!("[btd] send: {e}");
             return;
         }
+    }
+}
+
+/// Reflects the BT link in the LED from the controller→host event stream. Tracks how many links
+/// are up so a second connect/disconnect does not flicker the signal.
+fn watch_link(pkt: &[u8], conns: &mut u32) {
+    if pkt.first() != Some(&HCI_EVT_PKT) || pkt.len() < 4 {
+        return;
+    }
+    let up = match pkt[1] {
+        EV_CONN_REQUEST => {
+            led_signal("bt-paging", true);
+            return;
+        }
+        EV_CONN_COMPLETE => pkt[3] == 0x00,
+        EV_LE_META if pkt.len() >= 5 => pkt[3] == 0x01 && pkt[4] == 0x00,
+        EV_DISCONN_COMPLETE if pkt[3] == 0x00 => {
+            *conns = conns.saturating_sub(1);
+            if *conns == 0 {
+                led_signal("bt-connected", false);
+            }
+            return;
+        }
+        _ => return,
+    };
+    if up {
+        *conns += 1;
+        led_signal("bt-paging", false);
+        led_signal("bt-connected", true);
+    }
+}
+
+fn led_signal(name: &str, on: bool) {
+    let path = format!("/tmp/livi/led/{name}");
+    if on {
+        let _ = std::fs::create_dir_all("/tmp/livi/led");
+        let _ = std::fs::write(&path, "");
+    } else {
+        let _ = std::fs::remove_file(&path);
     }
 }
 

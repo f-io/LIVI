@@ -1,23 +1,73 @@
-// Ported from bin/livi-httpd/src/main.rs — see livid dispatcher in main.rs.
-pub fn run(_args: Vec<String>) -> i32 {
-    match livid_main() {
+//! livi-web — the dongle web UI + control API, shared by both dongles (V821B/riscv32 and
+//! cpc200/i.MX6). The page and the HTTP server are identical; only the hardware-specific parts
+//! differ and come in as `WebCaps` from each dongle's binary: which interfaces to read, whether
+//! a controllable LED is present, and how a flash write is actually performed.
+//!
+//! Routes: GET / (index.html), GET /api/{status,wifi,bt,led,caps,flash/status},
+//! POST /api/{led,flash,reboot}. The flash + led routes answer 404 when the caps disable them.
+
+use std::sync::OnceLock;
+
+/// The firmware writes this dongle offers; several can be live at once. Default is none.
+#[derive(Default)]
+pub struct Flash {
+    /// A `.lfwb` bundle written across NOR mtd partitions, magic-checked and CRC-compared.
+    pub mtd: bool,
+    /// Update the running stack from its gzipped binary — no partition erase.
+    pub stack: Option<Stack>,
+    /// Restore a full rootfs image (e.g. the stock firmware backup), sha256- and size-gated.
+    pub rootfs: Option<Rootfs>,
+}
+
+/// Where the stack `.gz` lands on jffs2 and how the launcher is re-run to pick it up.
+pub struct Stack {
+    pub install_to: String,
+    pub restart: String,
+}
+
+/// The flash script and the partition it writes.
+pub struct Rootfs {
+    pub script: String,
+    pub partition: String,
+}
+
+/// What differs between the dongles the shared server runs on.
+pub struct WebCaps {
+    /// Human label shown in the Device card, e.g. "CPC200-CCPA" or "V821B + AIC8800D80".
+    pub model: String,
+    pub port: u16,
+    /// The AP interface whose SSID/MAC/rates the WiFi card shows (e.g. "wlan0").
+    pub wifi_iface: String,
+    /// The bridge whose forwarding table names the AP's clients; None counts via nl80211
+    /// (the cpc200 bridges with l2fwd and has no br0).
+    pub bridge: Option<String>,
+    /// The host-facing interface whose MAC stands in as the dongle's address.
+    pub host_iface: String,
+    /// The Bluetooth controller (e.g. "hci0").
+    pub bt: String,
+    /// Whether to offer the LED section (a controllable LED daemon is present).
+    pub led: bool,
+    /// How (or whether) this dongle flashes firmware from the web UI.
+    pub flash: Flash,
+}
+
+static CAPS: OnceLock<WebCaps> = OnceLock::new();
+fn caps() -> &'static WebCaps {
+    CAPS.get().expect("livi_web::run must be called before any handler")
+}
+
+/// Serve the web UI + control API for this dongle until the process is stopped.
+pub fn run(caps: WebCaps) -> i32 {
+    let _ = CAPS.set(caps);
+    match serve_forever() {
         Ok(()) => 0,
-        Err(e) => { eprintln!("[livi-httpd] {e}"); 1 }
+        Err(e) => {
+            eprintln!("[livi-web] {e}");
+            1
+        }
     }
 }
 
-// livi-httpd — tiny HTTP server for the LIVI-Link (V821B) dongle.
-//
-// Routes:
-//   GET  /                    → index.html (bundled)
-//   GET  /api/status          → JSON status
-//   GET  /api/led             → current LED config JSON
-//   POST /api/led             → update /etc/livi/led.toml + SIGHUP livi-ledd
-//   POST /api/flash/mtd1      → raw bootimg body → /dev/mtdblock1, then reboot
-//   POST /api/flash/mtd3      → raw squashfs body → /dev/mtdblock3, then reboot
-//   POST /api/reboot          → reboot the dongle
-
-use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv6Addr, SocketAddr, SocketAddrV6, TcpListener, TcpStream};
@@ -25,7 +75,9 @@ use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
-const INDEX_HTML: &str = include_str!("../assets/index.html");
+// Kept under web/ (not assets/): the Mac↔build-host sync skips any assets/ directory, which
+// would leave the build host compiling a stale or missing page.
+const INDEX_HTML: &str = include_str!("../web/index.html");
 
 // mtd slot sizes must match the on-flash partition layout. If a flash payload
 // exceeds the slot, refuse — the write would corrupt the neighbouring partition.
@@ -34,12 +86,8 @@ const MTD3_SIZE: u64 = 0x0048_0000; // 4.5  MiB — squashfs rootfs
 // mtd0 (u-boot + OpenSBI) is intentionally NOT in this table. We never flash it
 // from a running system; a bad write there requires FEL recovery.
 
-fn livid_main() -> std::io::Result<()> {
-    let port: u16 = env::args()
-        .nth(1)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(80);
-
+fn serve_forever() -> std::io::Result<()> {
+    let port = caps().port;
     let addr = SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, port, 0, 0);
     let listener = TcpListener::bind(SocketAddr::V6(addr))?;
     eprintln!("[livi-httpd] listening on [::]:{port} (dual-stack)");
@@ -97,25 +145,133 @@ fn read_request(sock: &TcpStream) -> Option<(String, String, u64, Option<Vec<u8>
     Some((method, path, content_length, body))
 }
 
-fn route(method: &str, path: &str, body: Option<&[u8]>, clen: u64)
+fn route(rmethod: &str, rpath: &str, body: Option<&[u8]>, clen: u64)
     -> (&'static str, &'static str, Vec<u8>)
 {
+    let c = caps();
+    // The path may carry a query (?sha=… for the rootfs flash); match on the path, keep the query.
+    let (path, query) = rpath.split_once('?').unwrap_or((rpath, ""));
+    let method = rmethod;
+
+    // LED section only when a controllable LED daemon is present.
+    if c.led {
+        match (method, path) {
+            ("GET", "/api/led") => return (S_200, T_JSON, led_json().into_bytes()),
+            ("POST", "/api/led") => return set_led(body),
+            _ => {}
+        }
+    }
+    // One upload endpoint; the dongle picks the write from what it offers and what the file is.
+    let has_flash = c.flash.mtd || c.flash.stack.is_some() || c.flash.rootfs.is_some();
+    if has_flash && (method, path) == ("POST", "/api/flash") {
+        return flash_dispatch(c, query, body, clen);
+    }
+    if c.flash.mtd {
+        match (method, path) {
+            ("POST", "/api/flash/mtd1") => return flash("mtdblock1", MTD1_SIZE, b"ANDROID!", body, clen),
+            ("POST", "/api/flash/mtd3") => return flash("mtdblock3", MTD3_SIZE, b"hsqs", body, clen),
+            _ => {}
+        }
+    }
+
     match (method, path) {
         ("GET", "/") | ("GET", "/index.html") => (S_200, T_HTML, INDEX_HTML.as_bytes().to_vec()),
         ("GET", "/api/status") => (S_200, T_JSON, status_json().into_bytes()),
         ("GET", "/api/wifi")   => (S_200, T_JSON, wifi_json().into_bytes()),
         ("GET", "/api/bt")     => (S_200, T_JSON, bt_json().into_bytes()),
-        ("GET", "/api/led")    => (S_200, T_JSON, led_json().into_bytes()),
+        ("GET", "/api/caps")   => (S_200, T_JSON, caps_json().into_bytes()),
         ("GET", "/api/flash/status") => (S_200, T_JSON, flash_status_json().into_bytes()),
-
-        ("POST", "/api/led")        => set_led(body),
-        ("POST", "/api/flash")      => flash_bundle(body, clen),
-        ("POST", "/api/flash/mtd1") => flash("mtdblock1", MTD1_SIZE, b"ANDROID!", body, clen),
-        ("POST", "/api/flash/mtd3") => flash("mtdblock3", MTD3_SIZE, b"hsqs",     body, clen),
         ("POST", "/api/reboot")    => reboot_soon(),
-
         _ => (S_404, T_TEXT, b"not found\n".to_vec()),
     }
+}
+
+/// What the page shows: which sections are live and which firmware writes this dongle offers.
+fn caps_json() -> String {
+    let f = &caps().flash;
+    format!(
+        r#"{{"flash":{{"mtd":{},"stack":{},"rootfs":{}}},"led":{}}}"#,
+        f.mtd, f.stack.is_some(), f.rootfs.is_some(), caps().led
+    )
+}
+
+/// cpc200/i.MX6 flash: write the uploaded rootfs image to a staging file, then hand it to
+/// flash-image.sh with the client-supplied sha256, which re-checks size + hash before it erases.
+/// No FEL here, so the script is the guard — we never write the partition ourselves.
+fn flash_rootfs(script: &str, partition: &str, query: &str, body: Option<&[u8]>, clen: u64)
+    -> (&'static str, &'static str, Vec<u8>)
+{
+    let Some(data) = body else { return (S_400, T_JSON, err_json("empty body")); };
+    if clen == 0 || (data.len() as u64) != clen {
+        return (S_400, T_JSON, err_json("content-length mismatch"));
+    }
+    let sha = query.split('&').find_map(|kv| kv.strip_prefix("sha=")).unwrap_or("");
+    if sha.len() != 64 || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return (S_400, T_JSON, err_json("missing/!64-hex ?sha= — refusing an unguarded flash"));
+    }
+    let img = "/tmp/restore.img";
+    if let Err(e) = fs::write(img, data) {
+        return (S_500, T_JSON, err_json(&format!("stage {img}: {e}")));
+    }
+    let _ = fs::create_dir_all("/tmp/livi/led");
+    let _ = fs::write("/tmp/livi/led/flash-mode", b"");
+    // flash-image.sh stages its own tools to tmpfs, blinks, writes, verifies and reboots.
+    match Command::new("/bin/sh").arg(script).arg(partition).arg(sha).arg(img).spawn() {
+        Ok(_) => (S_200, T_JSON, ok_json(&format!(
+            "flashing {partition} via {script}; the dongle reboots on success"
+        ))),
+        Err(e) => {
+            let _ = fs::remove_file("/tmp/livi/led/flash-mode");
+            (S_500, T_JSON, err_json(&format!("spawn {script}: {e}")))
+        }
+    }
+}
+
+/// Stack update: the uploaded gzip is the relay-stack binary. Write it to its home on jffs2, then
+/// re-run the launcher so it unpacks and relinks — no partition erase, no full reboot.
+fn flash_stack(install_to: &str, restart: &str, body: Option<&[u8]>, clen: u64)
+    -> (&'static str, &'static str, Vec<u8>)
+{
+    let Some(data) = body else { return (S_400, T_JSON, err_json("empty body")); };
+    if clen == 0 || (data.len() as u64) != clen {
+        return (S_400, T_JSON, err_json("content-length mismatch"));
+    }
+    if data.len() < 512 || !data.starts_with(&[0x1f, 0x8b]) {
+        return (S_400, T_JSON, err_json("not a gzip — expected the stack .gz"));
+    }
+    let _ = fs::create_dir_all("/tmp/livi/led");
+    let _ = fs::write("/tmp/livi/led/flash-mode", b"");
+    // Write beside the target and rename, so the launcher never sees a half-written file.
+    let tmp = format!("{install_to}.new");
+    if let Err(e) = write_sync(&tmp, data) {
+        let _ = fs::remove_file("/tmp/livi/led/flash-mode");
+        return (S_500, T_JSON, err_json(&format!("write {tmp}: {e}")));
+    }
+    if let Err(e) = fs::rename(&tmp, install_to) {
+        let _ = fs::remove_file("/tmp/livi/led/flash-mode");
+        return (S_500, T_JSON, err_json(&format!("install {install_to}: {e}")));
+    }
+    // The restart takes this httpd down with it, so the response must go out first.
+    restart_after(Duration::from_millis(500), restart.to_string());
+    (S_200, T_JSON, ok_json(&format!("installed {} B; restarting the stack", data.len())))
+}
+
+/// The single upload endpoint: routes by what this dongle offers and what the file is — a `.lfwb`
+/// bundle ("LFWB"), a gzipped stack (1f 8b), else a full rootfs image.
+fn flash_dispatch(c: &WebCaps, query: &str, body: Option<&[u8]>, clen: u64)
+    -> (&'static str, &'static str, Vec<u8>)
+{
+    let Some(data) = body else { return (S_400, T_JSON, err_json("empty body")); };
+    if c.flash.mtd && data.starts_with(BUNDLE_MAGIC) {
+        return flash_bundle(body, clen);
+    }
+    if let Some(s) = c.flash.stack.as_ref().filter(|_| data.starts_with(&[0x1f, 0x8b])) {
+        return flash_stack(&s.install_to, &s.restart, body, clen);
+    }
+    if let Some(r) = &c.flash.rootfs {
+        return flash_rootfs(&r.script, &r.partition, query, body, clen);
+    }
+    (S_400, T_JSON, err_json("this upload matches no firmware this dongle can write"))
 }
 
 fn flash(node: &str, slot_size: u64, magic: &[u8], body: Option<&[u8]>, clen: u64)
@@ -375,6 +531,15 @@ fn write_chunked(path: &str, data: &[u8], node: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Write a whole file and flush it to storage.
+fn write_sync(path: &str, data: &[u8]) -> std::io::Result<()> {
+    let mut f = fs::OpenOptions::new().write(true).create(true).truncate(true).open(path)?;
+    f.write_all(data)?;
+    f.sync_all()?;
+    unsafe { libc::sync(); }
+    Ok(())
+}
+
 fn write_progress(node: &str, written: usize, total: usize, phase: &str) {
     let _ = fs::create_dir_all("/tmp/livi");
     let _ = fs::write(
@@ -435,6 +600,19 @@ fn reboot_after(delay: Duration) {
     });
 }
 
+/// Re-runs the stack launcher detached, after the response has been sent — it takes this httpd
+/// with it, so it must outlive the process.
+fn restart_after(delay: Duration, cmd: String) {
+    thread::spawn(move || {
+        thread::sleep(delay);
+        unsafe { libc::sync(); }
+        let _ = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(format!("setsid {cmd} </dev/null >/tmp/livi/stack-restart.log 2>&1 &"))
+            .status();
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Status / small helpers
 // ---------------------------------------------------------------------------
@@ -444,7 +622,8 @@ fn bt_json() -> String {
     // group, so /sys has no 'address' file. livi-bt-up caches the MAC (via
     // HCIGETDEVINFO after HCIDEVUP) in /tmp/livi/bt-mac; we prefer sysfs when
     // available (upstream drivers) and fall back to the cached file otherwise.
-    let mut mac = read_trim("/sys/class/bluetooth/hci0/address");
+    let bt = caps().bt.as_str();
+    let mut mac = read_trim(&format!("/sys/class/bluetooth/{bt}/address"));
     if mac.is_empty() {
         mac = read_trim("/tmp/livi/bt-mac");
     }
@@ -452,7 +631,7 @@ fn bt_json() -> String {
     // Populated by whichever routine sets HCI Write_Local_Name; empty until
     // that lands. Prefer sysfs (upstream drivers expose it) then our cached
     // file, then fall back to no value at all.
-    let mut name = read_trim("/sys/class/bluetooth/hci0/name");
+    let mut name = read_trim(&format!("/sys/class/bluetooth/{bt}/name"));
     if name.is_empty() {
         name = read_trim("/tmp/livi/bt-name");
     }
@@ -465,7 +644,7 @@ fn bt_json() -> String {
         )
         .unwrap_or_default();
     }
-    let present = std::path::Path::new("/sys/class/bluetooth/hci0").exists();
+    let present = std::path::Path::new(&format!("/sys/class/bluetooth/{bt}")).exists();
     let state = if !present { "not present" }
                 else if mac.is_empty() { "up, MAC unknown" }
                 else { "up" };
@@ -479,26 +658,42 @@ const HOSTAPD_BASE: &str = "/tmp/livi/hostapd.conf.saved";
 const HOSTAPD_LIVE: [&str; 2] = ["/tmp/livi/hostapd.conf", "/tmp/livi/hostapd.alt"];
 
 fn wifi_json() -> String {
+    let iface = caps().wifi_iface.as_str();
     let mut ssid = String::new();
     let mut ch = String::new();
     let mut band = String::new();
-    let cfg = livi_wifi::server::ap_config_from(
-        std::path::Path::new(HOSTAPD_BASE),
-        &[std::path::Path::new(HOSTAPD_LIVE[0]), std::path::Path::new(HOSTAPD_LIVE[1])],
-    );
-    if let Some(cfg) = cfg {
-        for line in cfg.lines() {
-            let l = line.trim();
-            if let Some(v) = l.strip_prefix("ssid=")     { ssid = v.to_string(); }
-            else if let Some(v) = l.strip_prefix("channel=")  { ch = v.to_string(); }
-            else if let Some(v) = l.strip_prefix("hw_mode=")  { band = match v { "a" => "5 GHz", "g" => "2.4 GHz", "b" => "2.4 GHz", _ => v }.to_string(); }
+    // What the AP beacons right now, read from the kernel — independent of which hostapd.conf is
+    // live (the boot AP may run from a different path than the daemon's).
+    if let Some(ap) = livi_wifi::ap_state(iface) {
+        ssid = ap.ssid;
+        ch = ap.channel.to_string();
+        band = if ap.channel <= 14 { "2.4 GHz" } else { "5 GHz" }.to_string();
+    }
+    // Fall back to the managed hostapd.conf when the AP is not up yet.
+    if ssid.is_empty() {
+        let cfg = livi_wifi::server::ap_config_from(
+            std::path::Path::new(HOSTAPD_BASE),
+            &[std::path::Path::new(HOSTAPD_LIVE[0]), std::path::Path::new(HOSTAPD_LIVE[1])],
+        );
+        if let Some(cfg) = cfg {
+            for line in cfg.lines() {
+                let l = line.trim();
+                if let Some(v) = l.strip_prefix("ssid=")     { ssid = v.to_string(); }
+                else if let Some(v) = l.strip_prefix("channel=")  { ch = v.to_string(); }
+                else if let Some(v) = l.strip_prefix("hw_mode=")  { band = match v { "a" => "5 GHz", "g" => "2.4 GHz", "b" => "2.4 GHz", _ => v }.to_string(); }
+            }
         }
     }
-    let mac = read_trim("/sys/class/net/wlan0/address");
-    let clients = bridge_port_clients("br0", "wlan0");
-    let (downrate, uprate) = livi_wifi::station_rates("wlan0").unwrap_or((0, 0));
-    let downbytes = read_trim("/sys/class/net/wlan0/statistics/rx_bytes").parse::<u64>().unwrap_or(0);
-    let upbytes = read_trim("/sys/class/net/wlan0/statistics/tx_bytes").parse::<u64>().unwrap_or(0);
+    let mac = read_trim(&format!("/sys/class/net/{iface}/address"));
+    // Clients from the bridge forwarding table where there is a bridge (V821B/br0), else via an
+    // nl80211 station dump (cpc200 bridges with l2fwd, no br0).
+    let clients = match caps().bridge.as_deref() {
+        Some(br) => bridge_port_clients(br, iface),
+        None => livi_wifi::station_count(iface),
+    };
+    let (downrate, uprate) = livi_wifi::station_rates(iface).unwrap_or((0, 0));
+    let downbytes = read_trim(&format!("/sys/class/net/{iface}/statistics/rx_bytes")).parse::<u64>().unwrap_or(0);
+    let upbytes = read_trim(&format!("/sys/class/net/{iface}/statistics/tx_bytes")).parse::<u64>().unwrap_or(0);
     format!(
         r#"{{"ssid":"{}","mac":"{}","band":"{}","channel":"{}","clients":{},"downrate":{},"uprate":{},"downbytes":{},"upbytes":{}}}"#,
         js(&ssid), js(&mac), js(&band), js(&ch), clients, downrate, uprate, downbytes, upbytes
@@ -528,10 +723,10 @@ fn status_json() -> String {
     let uptime = fmt_uptime(&read_trim("/proc/uptime"));
     let load   = read_trim("/proc/loadavg");
     let mem    = fmt_meminfo();
-    let mac    = read_trim("/sys/class/net/usb0/address");
+    let mac    = read_trim(&format!("/sys/class/net/{}/address", caps().host_iface));
     format!(
-        r#"{{"kernel":"{}","uptime":"{}","load":"{}","mem":"{}","mac":"{}"}}"#,
-        js(&kernel), js(&uptime), js(&load), js(&mem), js(&mac)
+        r#"{{"model":"{}","kernel":"{}","uptime":"{}","load":"{}","mem":"{}","mac":"{}"}}"#,
+        js(&caps().model), js(&kernel), js(&uptime), js(&load), js(&mem), js(&mac)
     )
 }
 

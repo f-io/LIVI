@@ -12,7 +12,6 @@ use std::process::ExitCode;
 mod bt_up;
 mod btd;
 mod config;
-mod httpd;
 mod iapd;
 mod ledd;
 mod mfid;
@@ -47,7 +46,17 @@ fn main() -> ExitCode {
         "bt-probe"                     => exit_rc(livi_btd::probe()),
         "livi-btd"       | "btd"       => btd::run(rest),
         "livi-iapd"      | "iapd"      => iapd::run(rest),
-        "livi-httpd"     | "httpd"     => httpd::run(rest),
+        // Unified web UI.
+        "livi-httpd"     | "httpd"     => livi_web::run(livi_web::WebCaps {
+            model: "V821B + AIC8800D80".into(),
+            port: 80,
+            wifi_iface: "wlan0".into(),
+            bridge: Some("br0".into()),
+            host_iface: "usb0".into(),
+            bt: "hci0".into(),
+            led: true,
+            flash: livi_web::Flash { mtd: true, ..Default::default() },
+        }),
         "livi-ledd"      | "ledd"      => ledd::run(rest),
         "livi-netd"      | "netd"      => netd::run(rest),
         "livi-tinyshell" | "tinyshell" => tinyshell::run(rest),

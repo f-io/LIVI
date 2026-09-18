@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Cross-builds the LIVI Link cpc200-ccpa dongle stack (armv7, static) into an
-# asset directory: <out>/livi-link.gz plus MANIFEST.md5. The gzip is
+# asset directory: <out>/cpc200-ccpa.gz plus MANIFEST.md5. The gzip is
 # deterministic (-9 -n), so an unchanged binary means nothing for CI to
 # commit. Needs the rustup target and an arm-linux-gnueabihf toolchain.
 set -euo pipefail
@@ -10,7 +10,8 @@ OUT=${1:-$HERE/assets/livi-link/cpc200-ccpa}
 CROSS=${CROSS:-arm-linux-gnueabihf-}
 TARGET=${TARGET:-armv7-unknown-linux-gnueabihf}
 HELPERD=$HERE/native/livi-helperd
-BIN=livi-link
+PKG=livi-link
+BIN=cpc200-ccpa
 
 command -v "${CROSS}gcc" >/dev/null || { echo "no ${CROSS}gcc in PATH" >&2; exit 1; }
 mkdir -p "$OUT"
@@ -24,7 +25,7 @@ echo "==> $BIN (cargo $TARGET)"
   export "CC_${TARGET//-/_}=${CROSS}gcc"
   export "AR_${TARGET//-/_}=${CROSS}ar"
   export RUSTFLAGS="-C target-feature=+crt-static"
-  cargo build -p "$BIN" --release --target "$TARGET"
+  cargo build -p "$PKG" --release --target "$TARGET"
 )
 cp "$HELPERD/target/$TARGET/release/$BIN" "$WORK/$BIN"
 "${CROSS}strip" "$WORK/$BIN"

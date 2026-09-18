@@ -1057,6 +1057,7 @@ dependencies = [
  "livi-btd",
  "livi-iapd",
  "livi-mdns",
+ "livi-web",
  "livi-wifi",
 ]
 
@@ -1116,6 +1117,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "livi-web"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "livi-wifi",
+]
+
+[[package]]
 name = "livi-wifi"
 version = "0.1.0"
 dependencies = [
@@ -1132,6 +1141,7 @@ dependencies = [
  "livi-btd",
  "livi-iapd",
  "livi-mdns",
+ "livi-web",
  "livi-wifi",
 ]
 

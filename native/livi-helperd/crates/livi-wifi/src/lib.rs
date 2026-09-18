@@ -38,6 +38,12 @@ pub fn station_rates(_iface: &str) -> Option<(u32, u32)> {
     None
 }
 
+/// The stub for a host without nl80211.
+#[cfg(not(target_os = "linux"))]
+pub fn station_count(_iface: &str) -> usize {
+    0
+}
+
 #[cfg(target_os = "linux")]
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 #[cfg(target_os = "linux")]
@@ -284,6 +290,32 @@ fn rate_mbps(attrs: &[u8]) -> Option<u32> {
         }
     }
     Some(wide.or(narrow)? / 10)
+}
+
+/// How many stations are associated to the AP
+#[cfg(target_os = "linux")]
+pub fn station_count(iface: &str) -> usize {
+    let Ok(name) = std::ffi::CString::new(iface) else {
+        return 0;
+    };
+    let index = unsafe { libc::if_nametoindex(name.as_ptr()) };
+    if index == 0 {
+        return 0;
+    }
+    let Ok(fd) = open() else { return 0; };
+    let Ok(family) = family_id(&fd) else { return 0; };
+    let request = message(
+        family,
+        NL80211_CMD_GET_STATION,
+        NLM_F_DUMP,
+        &attr(ATTR_IFINDEX, &index.to_ne_bytes()),
+    );
+    let Ok(payloads) = call(&fd, &request) else { return 0; };
+    // One answer per station; each carries the nested STA_INFO.
+    payloads
+        .iter()
+        .filter(|p| Attrs(&p[..]).any(|(kind, _)| kind == ATTR_STA_INFO))
+        .count()
 }
 
 /// The regulatory domain the kernel has applied, as opposed to one merely requested.

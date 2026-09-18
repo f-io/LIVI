@@ -15,8 +15,8 @@ pub fn run(_args: Vec<String>) -> i32 {
 // State priority (highest first):
 //   flash-mode      → red+blue alternating (~2 Hz)
 //   iap2-active     → off
-//   bt-connected    → wlan-color solid + blue solid   (RGB additive)
-//   bt-paging       → wlan-color solid + blue blinking
+//   bt-connected    → blue solid
+//   bt-paging       → wlan-color, pulsing blue
 //   wifi client     → wlan-color solid   (a station is associated to the AP)
 //   waiting         → wlan-color blinking (no client on the AP yet)
 //
@@ -211,10 +211,9 @@ fn render(state: &State, cfg: &Config, tick: u64) -> Rgb {
     } else if state.iap2_active {
         OFF
     } else if state.bt_connected {
-        add(cfg.status, BLUE)
+        BLUE
     } else if state.bt_paging {
-        let bt = if blitz_on { BLUE } else { OFF };
-        add(cfg.status, bt)
+        if blitz_on { BLUE } else { cfg.status }
     } else if state.client {
         // A phone (or any station) is on the AP: hold the status colour steady.
         cfg.status
@@ -235,10 +234,6 @@ fn balance(c: Rgb, wb: Rgb) -> Rgb {
         ((c.1 as u16 * wb.1 as u16) / 255) as u8,
         ((c.2 as u16 * wb.2 as u16) / 255) as u8,
     )
-}
-
-fn add(a: Rgb, b: Rgb) -> Rgb {
-    Rgb(a.0.saturating_add(b.0), a.1.saturating_add(b.1), a.2.saturating_add(b.2))
 }
 
 fn scale(c: Rgb, brightness: u8) -> Rgb {
