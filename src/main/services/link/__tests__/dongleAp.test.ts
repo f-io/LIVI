@@ -49,6 +49,7 @@ import {
   DONGLE_LINK,
   dongleApMac,
   dongleApPresent,
+  dongleStatus,
   reconcileDongleAp,
   releaseDongle
 } from '../dongleAp'
@@ -269,5 +270,29 @@ describe('talking to the dongle', () => {
     await releaseDongle()
     expect(await dongleApPresent()).toBe(false)
     expect(createConnection).not.toHaveBeenCalled()
+  })
+})
+
+describe('the status snapshot the link-speed monitor polls', () => {
+  it('says nothing while no dongle is on the network', async () => {
+    networkInterfaces.mockReturnValue({ wlan0: [{ address: '192.168.1.20' }] })
+    expect(await dongleStatus()).toBeNull()
+    expect(createConnection).not.toHaveBeenCalled()
+  })
+
+  it('reads the answer into a flat map, skipping lines that carry no key', async () => {
+    const probe = dongleStatus()
+    await settle(0)
+    await answer(sockets[0], 1, 'downbytes 1000\nuprate   780\nnokeyhere\n bad\nok\n')
+
+    expect(await probe).toEqual({ downbytes: '1000', uprate: '780' })
+  })
+
+  it('says nothing when the dongle does not answer', async () => {
+    const probe = dongleStatus()
+    await settle(0)
+    sockets[0].emit('error', new Error('ECONNREFUSED'))
+
+    expect(await probe).toBeNull()
   })
 })

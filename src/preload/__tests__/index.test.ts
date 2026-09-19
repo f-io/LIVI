@@ -139,6 +139,24 @@ describe('preload api bridge', () => {
     expect(ipcRendererMock.removeListener).toHaveBeenCalledWith('settings', cb)
   })
 
+  test('settings onLinkSpeed carries the readout and cleanup removes listener', async () => {
+    const { projection } = await loadPreload()
+    const cb = vi.fn()
+
+    const cleanup = projection.settings.onLinkSpeed(cb)
+    const speed = { downMbps: 5.3, upMbps: 2.7, downRate: 866, upRate: 780 }
+    emit('link-speed', speed)
+    // null is what the monitor sends while nothing is on the air.
+    emit('link-speed', null)
+
+    expect(cb).toHaveBeenCalledWith(expect.anything(), speed)
+    expect(cb).toHaveBeenCalledWith(expect.anything(), null)
+
+    cleanup()
+
+    expect(ipcRendererMock.removeListener).toHaveBeenCalledWith('link-speed', cb)
+  })
+
   test('ipc onEvent returns an unsubscribe closure that stops the projection-event fan-out', async () => {
     const { projection } = await loadPreload()
     const cb = vi.fn()
