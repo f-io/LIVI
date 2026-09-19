@@ -25,7 +25,8 @@ reap(){ i=0
     pkill -f "$1" 2>/dev/null; i=$((i+1)); sleep 0.2
   done; }
 
-[ "$1" = "--fresh" ] && { reap "$RUN/"; reap l2fwd-watch; rm -rf "$RUN"; }
+fresh=
+[ "$1" = "--fresh" ] && { fresh=1; reap "$RUN/"; reap l2fwd-watch; rm -rf "$RUN"; }
 mkdir -p "$RUN"
 if [ ! -x "$RUN/livi-link" ]; then
   gz=$(ls "$SRC"/*.gz 2>/dev/null | head -n1)
@@ -36,6 +37,11 @@ if [ ! -x "$RUN/livi-link" ]; then
     log "no stack .gz in $SRC"
   fi
 fi
+
+if [ -n "$fresh" ] && [ -x "$RUN/livi-link" ]; then
+  "$RUN/livi-link" sync-scripts && exec sh "$SRC/livi-link.sh"
+fi
+
 for b in seedrng mfid wifid btd iapd ledd livi-usbproxy l2fwd mdnsd httpd; do
   [ -L "$RUN/$b" ] || ln -sf livi-link "$RUN/$b"
 done

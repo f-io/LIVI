@@ -4,6 +4,8 @@
 #[cfg(target_os = "linux")]
 mod bt;
 #[cfg(target_os = "linux")]
+mod install;
+#[cfg(target_os = "linux")]
 mod ledd;
 #[cfg(target_os = "linux")]
 mod iapd;
@@ -39,7 +41,7 @@ const TOOLS: [&str; 10] = [
     "ledd",
     "httpd",
 ];
-const COMMANDS: [&str; 4] = ["wifi-channels", "bt-probe", "bt-mgmt", "sdp-dump"];
+const COMMANDS: [&str; 5] = ["wifi-channels", "bt-probe", "bt-mgmt", "sdp-dump", "sync-scripts"];
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
@@ -100,6 +102,8 @@ fn main() -> ExitCode {
         "ledd" => ledd::run(),
         #[cfg(target_os = "linux")]
         "iapd" => iapd::run(&rest),
+        #[cfg(target_os = "linux")]
+        "sync-scripts" => install::run(),
         #[cfg(target_os = "linux")]
         "wifi-channels" => livi_wifi::run(),
         #[cfg(target_os = "linux")]
