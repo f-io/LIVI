@@ -235,6 +235,19 @@ describe('main index bootstrap', () => {
     expect(saveSettings).not.toHaveBeenCalled()
   })
 
+  test('the wifi AP reports what it changed back into the settings', async () => {
+    const { setWifiApReport } = await import('@main/services/projection/driver/helper/wifiApUnit')
+    const { saveSettings } = await import('@main/ipc/utils')
+
+    await bootIndex()
+
+    const report = (setWifiApReport as Mock).mock.calls.at(-1)?.[0] as (patch: object) => void
+    ;(saveSettings as Mock).mockClear()
+    report({ wifiChannel: 44 })
+
+    expect(saveSettings).toHaveBeenCalledWith(expect.anything(), { wifiChannel: 44 })
+  })
+
   test('exits without booting when the outer launcher hands off to the compositor', async () => {
     const { app } = await import('electron')
     await mockReadyRunsCallback()
