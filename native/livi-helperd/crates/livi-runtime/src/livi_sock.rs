@@ -10,7 +10,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 
 use iap2_link::LinkConfig;
 
@@ -26,6 +26,7 @@ pub const SOCK_PATH: &str = "/tmp/cp-bt.sock";
 #[derive(Clone, Default)]
 pub struct Broadcaster {
     subs: Arc<Mutex<Vec<mpsc::UnboundedSender<String>>>>,
+    joined: Arc<Notify>,
 }
 
 impl Broadcaster {
@@ -39,7 +40,19 @@ impl Broadcaster {
     pub fn subscribe(&self) -> mpsc::UnboundedReceiver<String> {
         let (tx, rx) = mpsc::unbounded_channel();
         self.subs.lock().unwrap().push(tx);
+        self.joined.notify_waiters();
         rx
+    }
+
+    /// Resolves once there is a subscriber, since a line pushed before that reaches nobody.
+    pub async fn subscribed(&self) {
+        loop {
+            let joined = self.joined.notified();
+            if !self.subs.lock().unwrap().is_empty() {
+                return;
+            }
+            joined.await;
+        }
     }
 }
 

@@ -354,11 +354,15 @@ pub fn run() -> ExitCode {
             }
         });
         let events = aa_events.clone();
-        tokio::spawn(livi_aa::usb::run(move |socket, peer, serial| {
-            events.push_json(format!(
-                "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\",\"transport\":\"usb\",\"serial\":\"{serial}\"}}"
-            ));
-        }));
+        let subscribed = aa_events.clone();
+        tokio::spawn(livi_aa::usb::run(
+            move |socket, peer, serial| {
+                events.push_json(format!(
+                    "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\",\"transport\":\"usb\",\"serial\":\"{serial}\"}}"
+                ));
+            },
+            async move { subscribed.subscribed().await },
+        ));
         println!("[helperd] Android Auto USB watcher started");
         let link = LinkPresence::new();
         let events = aa_events.clone();

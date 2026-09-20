@@ -401,11 +401,15 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var("LIVI_AA_USB").unwrap_or_else(|_| "1".into()) != "0" {
         // Phones on USB are switched to accessory mode and served here as well.
         let events = aa_events.clone();
-        tokio::spawn(livi_aa::usb::run(move |socket, peer, serial| {
-            events.push_json(format!(
-                "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\",\"transport\":\"usb\",\"serial\":\"{serial}\"}}"
-            ));
-        }));
+        let subscribed = aa_events.clone();
+        tokio::spawn(livi_aa::usb::run(
+            move |socket, peer, serial| {
+                events.push_json(format!(
+                    "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\",\"transport\":\"usb\",\"serial\":\"{serial}\"}}"
+                ));
+            },
+            async move { subscribed.subscribed().await },
+        ));
         println!("[helperd] Android Auto USB watcher started");
     }
     if std::env::var("LIVI_DONGLE").unwrap_or_else(|_| "1".into()) != "0" {

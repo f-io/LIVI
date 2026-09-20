@@ -4,16 +4,17 @@
 // (livi_session_io::usb); this is the AOAP-specific bring-up around it.
 
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 
-use tokio::sync::Notify;
+use tokio::sync::{Notify, watch};
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use nusb::hotplug::HotplugEvent;
 use nusb::transfer::{ControlIn, ControlOut, ControlType, Recipient, TransferError};
-use nusb::{Device, DeviceId, DeviceInfo};
+use nusb::{Device, DeviceId, DeviceInfo, ErrorKind};
 
 use livi_session_io::sock::bind_session_socket;
 use livi_session_io::usb::{UsbStream, open_pipe};
@@ -48,10 +49,11 @@ const AOAP_STRINGS: [(u16, &str); 6] = [
 
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
 const WATCH_RETRY: Duration = Duration::from_secs(5);
-/// Delay before the first bus scan, for the main process to subscribe to the announcements.
-const STARTUP_SCAN_DELAY: Duration = Duration::from_secs(3);
 /// The reset out of accessory mode re-enumerates the phone within this time.
 const RESET_WINDOW: Duration = Duration::from_secs(3);
+/// macOS refuses the reset while the interface is claimed.
+const RESET_RETRIES: usize = 10;
+const RESET_RETRY: Duration = Duration::from_millis(100);
 
 /// Tells the main process about a session: socket path, peer label, USB serial.
 pub type OnSession = dyn Fn(&str, &str, &str) + Send + Sync;
@@ -69,13 +71,24 @@ struct Phones {
     resetting: HashMap<String, Instant>,
     /// Per device serving a session, notified when it is unplugged so the session ends.
     cancel: HashMap<DeviceId, Arc<Notify>>,
+    /// Serials reset out of an earlier run's accessory mode.
+    leftover: HashSet<String>,
 }
 
 type Shared = Arc<Mutex<Phones>>;
 
-pub async fn run(on_session: impl Fn(&str, &str, &str) + Send + Sync + 'static) {
+/// `subscribed` resolves once the main process hears the announcements.
+pub async fn run(
+    on_session: impl Fn(&str, &str, &str) + Send + Sync + 'static,
+    subscribed: impl Future<Output = ()> + Send + 'static,
+) {
     let on_session: Arc<OnSession> = Arc::new(on_session);
     let phones: Shared = Arc::default();
+    let (ready_tx, ready) = watch::channel(false);
+    tokio::spawn(async move {
+        subscribed.await;
+        let _ = ready_tx.send(true);
+    });
     let mut watch = loop {
         match nusb::watch_devices() {
             Ok(w) => break w,
@@ -85,11 +98,10 @@ pub async fn run(on_session: impl Fn(&str, &str, &str) + Send + Sync + 'static) 
             }
         }
     };
-    tokio::time::sleep(STARTUP_SCAN_DELAY).await;
     match nusb::list_devices().await {
         Ok(list) => {
             for info in list {
-                seen(&phones, &on_session, info);
+                seen(&phones, &on_session, &ready, info, true);
             }
         }
         Err(e) => eprintln!("[aa-usb] list devices: {e}"),
@@ -97,7 +109,7 @@ pub async fn run(on_session: impl Fn(&str, &str, &str) + Send + Sync + 'static) 
     println!("[aa-usb] watching for phones");
     while let Some(ev) = watch.next().await {
         match ev {
-            HotplugEvent::Connected(info) => seen(&phones, &on_session, info),
+            HotplugEvent::Connected(info) => seen(&phones, &on_session, &ready, info, false),
             HotplugEvent::Disconnected(id) => gone(&phones, id),
         }
     }
@@ -128,7 +140,13 @@ fn is_candidate(info: &DeviceInfo) -> bool {
     interfaces.is_empty() || !interfaces.iter().all(|c| NON_PHONE_INTERFACE_CLASSES.contains(c))
 }
 
-fn seen(phones: &Shared, on_session: &Arc<OnSession>, info: DeviceInfo) {
+fn seen(
+    phones: &Shared,
+    on_session: &Arc<OnSession>,
+    ready: &watch::Receiver<bool>,
+    info: DeviceInfo,
+    at_startup: bool,
+) {
     let id = info.id();
     let serial = info.serial_number().unwrap_or("").to_owned();
     let accessory = is_accessory(&info);
@@ -144,6 +162,11 @@ fn seen(phones: &Shared, on_session: &Arc<OnSession>, info: DeviceInfo) {
         if !serial.is_empty() {
             p.serial_of.insert(id, serial.clone());
         }
+        if candidate {
+            p.leftover.remove(&serial);
+        } else if p.leftover.contains(&serial) {
+            return;
+        }
         if candidate && p.parked.contains(&serial) {
             println!("[aa-usb] {}: parked since the main process closed it", label(&serial));
             return;
@@ -153,10 +176,19 @@ fn seen(phones: &Shared, on_session: &Arc<OnSession>, info: DeviceInfo) {
     let phones = phones.clone();
     if accessory {
         let on_session = on_session.clone();
+        let mut ready = ready.clone();
         let cancel = Arc::new(Notify::new());
         phones.lock().unwrap().cancel.insert(id, cancel.clone());
         tokio::spawn(async move {
-            serve(&phones, &on_session, info, serial, cancel).await;
+            if !(at_startup && release_leftover(&phones, &info, &serial).await) {
+                let unplugged = tokio::select! {
+                    _ = async { let _ = ready.wait_for(|r| *r).await; } => false,
+                    _ = cancel.notified() => true,
+                };
+                if !unplugged {
+                    serve(&phones, &on_session, info, serial, cancel).await;
+                }
+            }
             let mut p = phones.lock().unwrap();
             p.busy.remove(&id);
             p.cancel.remove(&id);
@@ -249,6 +281,23 @@ async fn vendor_out(dev: &Device, request: u8, index: u16, data: &[u8]) -> Resul
     .await
 }
 
+async fn release_leftover(phones: &Shared, info: &DeviceInfo, serial: &str) -> bool {
+    let l = label(serial);
+    println!("[aa-usb] {l}: accessory left over from an earlier run, resetting it");
+    if !serial.is_empty() {
+        phones.lock().unwrap().leftover.insert(serial.to_owned());
+    }
+    let reset = match info.open().await {
+        Ok(dev) => dev.reset().await.map_err(|e| format!("reset: {e}")),
+        Err(e) => Err(format!("open accessory: {e}")),
+    };
+    if let Err(e) = &reset {
+        eprintln!("[aa-usb] {l}: {e}");
+        phones.lock().unwrap().leftover.remove(serial);
+    }
+    reset.is_ok()
+}
+
 /// Runs one session over the accessory, then puts the phone back into its plain mode.
 async fn serve(
     phones: &Shared,
@@ -284,8 +333,19 @@ async fn serve(
         }
         p.resetting.insert(serial.clone(), Instant::now());
     }
-    if let Err(e) = dev.reset().await {
-        eprintln!("[aa-usb] {l}: reset: {e}");
+    let mut tries = RESET_RETRIES;
+    loop {
+        match dev.reset().await {
+            Ok(()) => break,
+            Err(e) if e.kind() == ErrorKind::Busy && tries > 0 => {
+                tries -= 1;
+                tokio::time::sleep(RESET_RETRY).await;
+            }
+            Err(e) => {
+                eprintln!("[aa-usb] {l}: reset: {e}");
+                break;
+            }
+        }
     }
 }
 

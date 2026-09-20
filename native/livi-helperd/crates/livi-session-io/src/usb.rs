@@ -18,6 +18,7 @@ const CLAIM_RETRIES: usize = 5;
 const CLAIM_RETRY: Duration = Duration::from_millis(100);
 const READ_LEN: usize = 16384;
 const READS_IN_FLIGHT: usize = 4;
+const WRITE_DRAIN: Duration = Duration::from_millis(250);
 
 pub struct Pipe {
     iface: Interface,
@@ -97,7 +98,10 @@ async fn pump_in(mut ep: Endpoint<Bulk, In>, tx: mpsc::UnboundedSender<Vec<u8>>,
         ep.submit(buf);
     }
     loop {
-        let done = ep.next_complete().await;
+        let done = tokio::select! {
+            done = ep.next_complete() => done,
+            _ = tx.closed() => break,
+        };
         match done.status {
             Ok(()) => {
                 if done.actual_len > 0 && tx.send(done.buffer[..done.actual_len].to_vec()).is_err() {
@@ -123,7 +127,14 @@ async fn pump_in(mut ep: Endpoint<Bulk, In>, tx: mpsc::UnboundedSender<Vec<u8>>,
 async fn pump_out(mut ep: Endpoint<Bulk, Out>, mut rx: mpsc::UnboundedReceiver<Vec<u8>>) {
     while let Some(chunk) = rx.recv().await {
         ep.submit(Buffer::from(chunk));
-        let done = ep.next_complete().await;
+        let done = loop {
+            match tokio::time::timeout(WRITE_DRAIN, ep.next_complete()).await {
+                Ok(done) => break done,
+                // The stream is gone and the device is not taking the write.
+                Err(_) if rx.is_closed() => return,
+                Err(_) => {}
+            }
+        };
         if let Err(e) = done.status {
             eprintln!("[usb] write: {e}");
             break;
