@@ -1,18 +1,34 @@
 // Live media (throttled progress updates)
 
-import { useEffect, useRef, useState } from 'react'
-import { UI_INTERVAL_MS } from '../constants'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { PROGRESS_STALL_MS, UI_INTERVAL_MS } from '../constants'
 import { Bridge, PersistedSnapshot, UsbEvent } from '../types'
 import { clamp, mergePayload, payloadFromLiveEvent } from '../utils'
 
 export function useMediaState(allowInitialHydrate: boolean) {
   const [snap, setSnap] = useState<PersistedSnapshot | null>(null)
   const [livePlayMs, setLivePlayMs] = useState<number>(0)
+  const [stalled, setStalled] = useState(false)
 
   const lastTick = useRef<number>(performance.now())
   const lastUiUpdateRef = useRef<number>(0)
   const livePlayMsRef = useRef<number>(0)
   const hydratedOnceRef = useRef(false)
+  const phonePlayMsRef = useRef<number | undefined>(undefined)
+  const playStatusRef = useRef<number | undefined>(undefined)
+  const lastProgressAtRef = useRef<number>(performance.now())
+
+  const seedPlayTime = useCallback((from: PersistedSnapshot) => {
+    const t0 = from.payload.media?.MediaSongPlayTime ?? 0
+    setLivePlayMs(t0)
+    livePlayMsRef.current = t0
+    lastTick.current = performance.now()
+    lastUiUpdateRef.current = lastTick.current
+    phonePlayMsRef.current = t0
+    playStatusRef.current = from.payload.media?.MediaPlayStatus
+    lastProgressAtRef.current = lastTick.current
+    setStalled(false)
+  }, [])
 
   useEffect(() => {
     const handler = (_evt: unknown, ...args: unknown[]) => {
@@ -23,11 +39,7 @@ export function useMediaState(allowInitialHydrate: boolean) {
             const next = await window.projection.ipc.readMedia()
             if (next) {
               setSnap(next)
-              const t0 = next.payload.media?.MediaSongPlayTime ?? 0
-              setLivePlayMs(t0)
-              livePlayMsRef.current = t0
-              lastTick.current = performance.now()
-              lastUiUpdateRef.current = lastTick.current
+              seedPlayTime(next)
             }
           } catch {}
         })()
@@ -35,6 +47,16 @@ export function useMediaState(allowInitialHydrate: boolean) {
       }
       const inc = payloadFromLiveEvent(ev)
       if (!inc) return
+      const phonePlayMs = inc.media?.MediaSongPlayTime
+      const progressed = typeof phonePlayMs === 'number' && phonePlayMs !== phonePlayMsRef.current
+      if (progressed) phonePlayMsRef.current = phonePlayMs
+      const status = inc.media?.MediaPlayStatus
+      const resumed = status === 1 && playStatusRef.current !== 1
+      if (status !== undefined) playStatusRef.current = status
+      if (progressed || resumed) {
+        lastProgressAtRef.current = performance.now()
+        setStalled(false)
+      }
       setSnap((prev) => {
         const merged = mergePayload(prev?.payload, inc)
         let nextPlay = merged.media?.MediaSongPlayTime ?? 0
@@ -72,7 +94,7 @@ export function useMediaState(allowInitialHydrate: boolean) {
         } catch {}
       }
     }
-  }, [])
+  }, [seedPlayTime])
 
   useEffect(() => {
     if (!allowInitialHydrate || hydratedOnceRef.current) return
@@ -84,18 +106,14 @@ export function useMediaState(allowInitialHydrate: boolean) {
         if (!cancelled && initial) {
           hydratedOnceRef.current = true
           setSnap(initial)
-          const t0 = initial.payload.media?.MediaSongPlayTime ?? 0
-          setLivePlayMs(t0)
-          livePlayMsRef.current = t0
-          lastTick.current = performance.now()
-          lastUiUpdateRef.current = lastTick.current
+          seedPlayTime(initial)
         }
       } catch {}
     })()
     return () => {
       cancelled = true
     }
-  }, [allowInitialHydrate])
+  }, [allowInitialHydrate, seedPlayTime])
 
   useEffect(() => {
     let raf = 0
@@ -109,15 +127,25 @@ export function useMediaState(allowInitialHydrate: boolean) {
       const dt = now - lastTick.current
       lastTick.current = now
 
-      if (m.MediaPlayStatus === 1) {
-        const dur = m.MediaSongDuration ?? 0
-        const next = clamp(livePlayMsRef.current + dt, 0, dur)
-        livePlayMsRef.current = next
+      if (m.MediaPlayStatus !== 1) return
 
-        if (now - lastUiUpdateRef.current >= UI_INTERVAL_MS) {
-          lastUiUpdateRef.current = now
-          setLivePlayMs(next)
+      if (now - lastProgressAtRef.current > PROGRESS_STALL_MS) {
+        const reported = phonePlayMsRef.current
+        if (typeof reported === 'number' && reported !== livePlayMsRef.current) {
+          livePlayMsRef.current = reported
+          setLivePlayMs(reported)
         }
+        setStalled(true)
+        return
+      }
+
+      const dur = m.MediaSongDuration ?? 0
+      const next = clamp(livePlayMsRef.current + dt, 0, dur)
+      livePlayMsRef.current = next
+
+      if (now - lastUiUpdateRef.current >= UI_INTERVAL_MS) {
+        lastUiUpdateRef.current = now
+        setLivePlayMs(next)
       }
     }
 
@@ -125,5 +153,5 @@ export function useMediaState(allowInitialHydrate: boolean) {
     return () => cancelAnimationFrame(raf)
   }, [snap])
 
-  return { snap, livePlayMs }
+  return { snap, livePlayMs, stalled }
 }

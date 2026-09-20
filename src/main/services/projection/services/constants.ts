@@ -14,7 +14,7 @@ export const DEFAULT_MEDIA_DATA_RESPONSE = {
       MediaAPPName: '-',
       MediaSongDuration: 0,
       MediaSongPlayTime: 0,
-      MediaPlayStatus: 1,
+      MediaPlayStatus: 0,
       MediaLyrics: '-'
     },
     error: true
