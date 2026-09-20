@@ -1,7 +1,7 @@
 use std::net::TcpListener;
 
-use iap2_mfi::server::{PORT, protocol_major};
-use iap2_mfi::{I2cCoprocessor, serve};
+use iap2_mfi::I2cCoprocessor;
+use iap2_mfi::server::{PORT, listen, protocol_major};
 
 pub fn run(args: Vec<String>) -> i32 {
     let bus: u32 = args
@@ -35,9 +35,6 @@ pub fn run(args: Vec<String>) -> i32 {
         }
     };
     println!("[mfid] listening on :{PORT}");
-    for stream in listener.incoming().flatten() {
-        let mut stream = stream;
-        serve(&mut stream, &mut chip);
-    }
+    listen(listener, chip);
     0
 }

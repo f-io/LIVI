@@ -4,6 +4,8 @@
 //!   PROTO_MAJOR : [0x03]                       -> [status][len:2][major:1]
 
 use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
 
 use crate::{AuthCoprocessor, CHALLENGE_MAX, CHALLENGE_MIN, MfiError};
 
@@ -70,6 +72,70 @@ pub fn serve<S: Read + Write>(io: &mut S, chip: &mut dyn AuthCoprocessor) {
     }
 }
 
+struct Shared<C>(Arc<Mutex<C>>);
+
+impl<C: AuthCoprocessor> Shared<C> {
+    fn with<T>(&self, f: impl FnOnce(&mut C) -> T) -> T {
+        f(&mut self.0.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+}
+
+impl<C: AuthCoprocessor> AuthCoprocessor for Shared<C> {
+    fn protocol_major(&mut self) -> Result<u8, MfiError> {
+        self.with(|c| c.protocol_major())
+    }
+
+    fn read_certificate(&mut self) -> Result<Vec<u8>, MfiError> {
+        self.with(|c| c.read_certificate())
+    }
+
+    fn generate_challenge_response(&mut self, challenge: &[u8]) -> Result<Vec<u8>, MfiError> {
+        self.with(|c| c.generate_challenge_response(challenge))
+    }
+}
+
+/// Serves each connection on a thread of its own.
+pub fn listen<C: AuthCoprocessor + Send + 'static>(listener: TcpListener, chip: C) {
+    let chip = Arc::new(Mutex::new(chip));
+    for mut stream in listener.incoming().flatten() {
+        let mut chip = Shared(chip.clone());
+        std::thread::spawn(move || {
+            keepalive(&stream);
+            serve(&mut stream, &mut chip);
+        });
+    }
+}
+
+/// Ends the thread of a client that vanished, after 3 s.
+#[cfg(target_os = "linux")]
+fn keepalive(stream: &TcpStream) {
+    use std::os::fd::AsRawFd;
+
+    for (level, name, value) in [
+        (libc::SOL_SOCKET, libc::SO_KEEPALIVE, 1),
+        (libc::IPPROTO_TCP, libc::TCP_KEEPIDLE, 1),
+        (libc::IPPROTO_TCP, libc::TCP_KEEPINTVL, 1),
+        (libc::IPPROTO_TCP, libc::TCP_KEEPCNT, 2),
+    ] {
+        let value: libc::c_int = value;
+        let rc = unsafe {
+            libc::setsockopt(
+                stream.as_raw_fd(),
+                level,
+                name,
+                (&raw const value).cast(),
+                size_of::<libc::c_int>() as libc::socklen_t,
+            )
+        };
+        if rc != 0 {
+            eprintln!("[mfid] keepalive: {}", std::io::Error::last_os_error());
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn keepalive(_stream: &TcpStream) {}
+
 /// Best-effort major-version resolution. Register 0x02 reads back as
 /// rubbish on the 2.0B chip once it has signed something, so we cross-check
 /// against the certificate length (2.x ≈ 945 B, 3.0 ≈ 608 B).
@@ -99,4 +165,40 @@ fn respond<S: Write>(io: &mut S, status: u8, data: &[u8]) -> std::io::Result<()>
 #[allow(dead_code)]
 fn wrap_io(e: std::io::Error) -> MfiError {
     MfiError::Io(e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Chip;
+
+    impl AuthCoprocessor for Chip {
+        fn protocol_major(&mut self) -> Result<u8, MfiError> {
+            Ok(3)
+        }
+
+        fn read_certificate(&mut self) -> Result<Vec<u8>, MfiError> {
+            Ok(vec![0xAA; 4])
+        }
+
+        fn generate_challenge_response(&mut self, challenge: &[u8]) -> Result<Vec<u8>, MfiError> {
+            Ok(challenge.to_vec())
+        }
+    }
+
+    #[test]
+    fn a_silent_connection_does_not_hold_up_the_next() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || listen(listener, Chip));
+
+        let _silent = TcpStream::connect(addr).unwrap();
+        let mut client = TcpStream::connect(addr).unwrap();
+        client.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+        client.write_all(&[OP_PROTOCOL_MAJOR]).unwrap();
+        let mut reply = [0u8; 4];
+        client.read_exact(&mut reply).unwrap();
+        assert_eq!(reply, [STATUS_OK, 0, 1, 3]);
+    }
 }

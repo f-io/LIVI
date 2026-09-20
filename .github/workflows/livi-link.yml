@@ -2,16 +2,6 @@ name: livi-link
 run-name: 'livi-link → ${{ github.ref_name }}'
 
 on:
-  push:
-    paths:
-      - 'native/livi-helperd/**'
-      - 'scripts/livi-link/**'
-      - 'assets/livi-link/**'
-      - '.github/workflows/livi-link-assets.yml'
-  pull_request:
-    paths:
-      - 'native/livi-helperd/**'
-      - 'scripts/livi-link/**'
   workflow_dispatch:
     inputs:
       cpc200_ccpa:
@@ -81,7 +71,6 @@ jobs:
 
   targets:
     name: Select targets
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set.outputs.matrix }}
@@ -103,7 +92,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.target }}
-    needs: targets
+    needs: [workspace-tests, bundle-sanity, targets]
     if: needs.targets.outputs.any != ''
     runs-on: ubuntu-latest
     container:
@@ -289,9 +278,11 @@ jobs:
 
   tool:
     name: Build the provisioning tool (${{ matrix.name }})
-    needs: [targets, build]
+    needs: [workspace-tests, bundle-sanity, targets, build]
     if: |
       always() &&
+      needs.workspace-tests.result == 'success' &&
+      needs.bundle-sanity.result == 'success' &&
       needs.targets.result == 'success' &&
       (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: ${{ matrix.runner }}

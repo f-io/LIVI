@@ -98,7 +98,7 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           RUN=$(gh run list --repo "$REPO" \
-                             --workflow livi-link-assets.yml \
+                             --workflow livi-link.yml \
                              -s success \
                              -L 1 \
                              --json databaseId \

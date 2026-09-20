@@ -2,7 +2,7 @@ pub use iap2_mfi::server::PORT;
 
 #[cfg(target_os = "linux")]
 pub fn run(args: &[String]) -> std::process::ExitCode {
-    use iap2_mfi::{I2cCoprocessor, serve, server::protocol_major};
+    use iap2_mfi::{I2cCoprocessor, server::listen, server::protocol_major};
     use std::net::TcpListener;
 
     // The bus, as `/dev/i2c-<n>` or a bare number. Chip is externally
@@ -33,10 +33,6 @@ pub fn run(args: &[String]) -> std::process::ExitCode {
         }
     };
     println!("[mfid] listening on :{PORT}");
-    // One client at a time.
-    for stream in listener.incoming().flatten() {
-        let mut stream = stream;
-        serve(&mut stream, &mut chip);
-    }
+    listen(listener, chip);
     std::process::ExitCode::SUCCESS
 }
