@@ -12,13 +12,14 @@ pub fn run(_args: Vec<String>) -> i32 {
 // ~2.4 MHz). State inputs are file existence under /tmp/livi/led/. Config
 // (WLAN color + brightness) lives in /etc/livi/led.toml.
 //
-// State priority (highest first):
-//   flash-mode      → red+blue alternating (~2 Hz)
-//   iap2-active     → off
-//   bt-connected    → blue solid
-//   bt-paging       → wlan-color, pulsing blue
+// Wifi and bluetooth share the one pixel the way two LEDs would, their colours added:
 //   wifi client     → wlan-color solid   (a station is associated to the AP)
 //   waiting         → wlan-color blinking (no client on the AP yet)
+//   bt-connected    → blue solid, on top of the wifi state
+//   bt-paging       → pulsing blue, over the wifi state
+// Ahead of both:
+//   flash-mode      → red+blue alternating (~2 Hz)
+//   iap2-active     → off
 //
 // Brightness = 0 turns the LED off entirely (no separate toggle needed).
 
@@ -205,26 +206,31 @@ fn render(state: &State, cfg: &Config, tick: u64) -> Rgb {
     // Fast blitz (bt-paging): 5 Hz, on ~80 ms so the blue pulse reads as a blink, not a flicker.
     let blitz_on = (tick % (TICK_HZ / 5)) < (TICK_HZ / 12);
 
+    // Steady once a station is on the AP, blinking while it waits for one.
+    let wifi = if state.client || slow_on { cfg.status } else { OFF };
+
     let base = if state.flash_mode {
         // Alternating red / blue every ~250 ms
         if slow_on { Rgb(255, 0, 0) } else { BLUE }
     } else if state.iap2_active {
         OFF
     } else if state.bt_connected {
-        BLUE
+        add(wifi, BLUE)
     } else if state.bt_paging {
-        if blitz_on { BLUE } else { cfg.status }
-    } else if state.client {
-        // A phone (or any station) is on the AP: hold the status colour steady.
-        cfg.status
+        // The pulse replaces the colour rather than adding to it: a status colour with
+        // blue in it would swallow an added pulse.
+        if blitz_on { BLUE } else { wifi }
     } else {
-        // Waiting for a client: blink the status colour instead of a steady "AP is up".
-        if slow_on { cfg.status } else { OFF }
+        wifi
     };
 
     // Convert 0-100 % to a u8 gain factor (0-255) for scale().
     let gain = ((cfg.brightness_pct as u16 * 255) / 100) as u8;
     balance(scale(base, gain), cfg.wb)
+}
+
+fn add(a: Rgb, b: Rgb) -> Rgb {
+    Rgb(a.0.saturating_add(b.0), a.1.saturating_add(b.1), a.2.saturating_add(b.2))
 }
 
 /// Per-channel white-balance: multiply each channel by its gain/255.
