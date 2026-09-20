@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use livi_host_proto::feed as feedproto;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::net::UnixListener;
+use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Notify, mpsc};
 
 use crate::av;
@@ -528,20 +528,33 @@ impl<W: AsyncWrite + Unpin + Send> Session<W> {
 
 /// Takes the microphone records the pipeline streams in, one connection at a time.
 async fn listen_mic(listener: UnixListener, tx: mpsc::Sender<(u64, Vec<u8>)>) {
-    while let Ok((mut sock, _)) = listener.accept().await {
-        let mut framer = feedproto::Framer::new();
-        let mut buf = vec![0u8; 16384];
-        loop {
-            let n = match sock.read(&mut buf).await {
-                Ok(0) | Err(_) => break,
+    loop {
+        tokio::select! {
+            _ = tx.closed() => return,
+            conn = listener.accept() => match conn {
+                Ok((sock, _)) => drop(tokio::spawn(read_mic(sock, tx.clone()))),
+                Err(_) => return,
+            },
+        }
+    }
+}
+
+async fn read_mic(mut sock: UnixStream, tx: mpsc::Sender<(u64, Vec<u8>)>) {
+    let mut framer = feedproto::Framer::new();
+    let mut buf = vec![0u8; 16384];
+    loop {
+        let n = tokio::select! {
+            _ = tx.closed() => return,
+            r = sock.read(&mut buf) => match r {
+                Ok(0) | Err(_) => return,
                 Ok(n) => n,
-            };
-            framer.push(&buf[..n]);
-            while let Some(record) = framer.next_record() {
+            },
+        };
+        framer.push(&buf[..n]);
+        while let Some(record) = framer.next_record() {
+            if record.kind == feedproto::KIND_MIC {
                 // a slow session drops samples rather than piling them up
-                if record.kind == feedproto::KIND_MIC && tx.try_send((record.ts, record.payload)).is_err() {
-                    continue;
-                }
+                let _ = tx.try_send((record.ts, record.payload));
             }
         }
     }

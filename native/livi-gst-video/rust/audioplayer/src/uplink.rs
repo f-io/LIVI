@@ -241,12 +241,18 @@ impl Drop for PcmCapture {
 /// someone listens on: the helper, for the phone's mic channel or a call.
 pub struct SocketTap {
     capture: PcmCapture,
+    sock: std::os::unix::net::UnixStream,
 }
 
 impl SocketTap {
-    /// Ends the capture, the socket closes with the tap.
+    /// Ends the capture and closes the socket.
     pub fn stop(&self) {
+        self.hang_up();
         self.capture.stop()
+    }
+
+    fn hang_up(&self) {
+        let _ = self.sock.shutdown(std::net::Shutdown::Both);
     }
 
     pub fn open(
@@ -260,6 +266,13 @@ impl SocketTap {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("[mic:{label}] cannot reach {path}: {e}");
+                return None;
+            }
+        };
+        let closer = match sock.try_clone() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[mic:{label}] socket clone: {e}");
                 return None;
             }
         };
@@ -280,7 +293,13 @@ impl SocketTap {
             }
         })?;
         capture.start();
-        Some(Self { capture })
+        Some(Self { capture, sock: closer })
+    }
+}
+
+impl Drop for SocketTap {
+    fn drop(&mut self) {
+        self.hang_up();
     }
 }
 
