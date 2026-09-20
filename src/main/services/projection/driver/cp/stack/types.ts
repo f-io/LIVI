@@ -80,6 +80,8 @@ export interface CpStackConfig {
   oemLabel: string
   /** OEM app icons (PNG) the phone shows on the CarPlay homescreen. */
   icons: CpIcon[]
+  /** True for a right-hand-drive car, so the phone mirrors the CarPlay dock. */
+  rightHandDrive?: boolean
 }
 
 /** One CarPlay homescreen icon variant (PNG bytes at a given pixel size). */

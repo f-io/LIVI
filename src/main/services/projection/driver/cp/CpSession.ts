@@ -16,6 +16,7 @@ import { panelPhysicalMm } from '@main/services/video/GstVideo'
 import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
 import type { Config } from '@shared/types'
 import { DEFAULT_CONFIG } from '@shared/types'
+import { HandDriveType } from '@shared/types/Config'
 import { InputCommand } from '@shared/types/InputCommand'
 import {
   AudioCommand,
@@ -568,6 +569,7 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
       deviceName: name,
       oemLabel: cfg.oemName?.trim() ? cfg.oemName : name,
       icons: this._buildIcons(cfg),
+      rightHandDrive: cfg.hand === HandDriveType.RHD,
       deviceId: apBssid(cfg) ?? 'AA:BB:CC:DD:EE:FF',
       btMac: detectBtMac(cfg.btAdapter || undefined) ?? 'AA:BB:CC:DD:EE:FF',
       // AirPlay protocol version we announce.

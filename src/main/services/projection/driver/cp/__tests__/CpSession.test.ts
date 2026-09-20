@@ -190,6 +190,15 @@ describe('CpSession construction and stack config', () => {
     expect(wifiMock).not.toHaveBeenCalled()
   })
 
+  it('maps hand=1 to right-hand drive and anything else to left-hand drive', () => {
+    const rhd = makeSession({ config: baseConfig({ hand: 1 } as Partial<Config>) })
+    expect((rhd.stack.cfg as Record<string, unknown>).rightHandDrive).toBe(true)
+    const lhd = makeSession({ config: baseConfig({ hand: 0 } as Partial<Config>) })
+    expect((lhd.stack.cfg as Record<string, unknown>).rightHandDrive).toBe(false)
+    const unset = makeSession({ config: baseConfig() })
+    expect((unset.stack.cfg as Record<string, unknown>).rightHandDrive).toBe(false)
+  })
+
   it('includes the cluster display and physical panel sizes when configured', () => {
     const { stack } = makeSession({ config: baseConfig() })
     const built = stack.cfg as Record<string, unknown>

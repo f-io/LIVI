@@ -99,6 +99,14 @@ describe('buildInfoPlist', () => {
     expect(info.modes).toBeDefined()
   })
 
+  test('announces the driver side, defaulting to left-hand drive', () => {
+    expect((buildInfoPlist(baseConfig()) as Dict).rightHandDrive).toBe(false)
+    expect((buildInfoPlist(baseConfig({ rightHandDrive: false })) as Dict).rightHandDrive).toBe(
+      false
+    )
+    expect((buildInfoPlist(baseConfig({ rightHandDrive: true })) as Dict).rightHandDrive).toBe(true)
+  })
+
   test('modes declares screen and audio resources plus app states', () => {
     const info = buildInfoPlist(baseConfig()) as Dict
     const modes = info.modes as Dict
