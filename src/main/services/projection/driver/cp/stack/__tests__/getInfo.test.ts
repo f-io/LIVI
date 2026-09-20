@@ -22,6 +22,7 @@ function baseConfig(overrides: Partial<CpStackConfig> = {}): CpStackConfig {
     mfi: {} as CpStackConfig['mfi'],
     oemLabel: 'LIVI',
     icons: [],
+    rightHandDrive: false,
     ...overrides
   }
 }
@@ -99,8 +100,7 @@ describe('buildInfoPlist', () => {
     expect(info.modes).toBeDefined()
   })
 
-  test('announces the driver side, defaulting to left-hand drive', () => {
-    expect((buildInfoPlist(baseConfig()) as Dict).rightHandDrive).toBe(false)
+  test('announces the driver side', () => {
     expect((buildInfoPlist(baseConfig({ rightHandDrive: false })) as Dict).rightHandDrive).toBe(
       false
     )

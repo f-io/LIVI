@@ -179,7 +179,7 @@ export function buildInfoPlist(cfg: CpStackConfig): PlistValue {
     deviceID: cfg.deviceId,
     bluetoothIDs: [cfg.btMac],
     name: cfg.deviceName,
-    rightHandDrive: cfg.rightHandDrive ?? false,
+    rightHandDrive: cfg.rightHandDrive,
     keepAliveLowPower: false,
     keepAliveSendStatsAsBody: false,
     modes: modes(),
