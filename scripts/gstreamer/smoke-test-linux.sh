@@ -23,6 +23,9 @@ if [[ -n "$worst" ]]; then
   need="${worst#GLIBC_}"
   if [[ $(printf '%s\n' "$GLIBC_CEILING" "$need" | sort -t. -k2 -n | tail -1) != "$GLIBC_CEILING" ]]; then
     echo "FAIL bundle requires $worst, ceiling is GLIBC_$GLIBC_CEILING" >&2
+    echo "offending files:" >&2
+    find "$ROOT" -type f \( -name '*.so*' -o -perm -u+x \) -exec sh -c \
+      'strings "$1" 2>/dev/null | grep -q "$2" && echo "  $1"' _ {} "$worst" \; >&2
     exit 1
   fi
   echo "ok   glibc requirement $worst <= $GLIBC_CEILING"

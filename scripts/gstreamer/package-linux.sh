@@ -346,9 +346,11 @@ for f in "$OUT"/bin/*;                   do [ -f "$f" ] && patchelf --set-rpath 
 for f in "$OUT"/libexec/gstreamer-1.0/*; do [ -f "$f" ] && patchelf --set-rpath '$ORIGIN/../../lib' "$f" 2>/dev/null || true; done
 
 # Record the Debian package versions that fed this bundle.
-dpkg-query -W -f='${binary:Package} ${Version}\n' 2>/dev/null \
-  | grep -E '^(gstreamer1\.0-|libgstreamer)' \
-  | sort > "$OUT/packages.txt"
+{
+  dpkg-query -W -f='${binary:Package} ${Version}\n' 2>/dev/null \
+    | grep -E '^(gstreamer1\.0-|libgstreamer)' | grep -v '^libgstreamer-plugins-bad' || true
+  cat /usr/share/gst-build/meson-builds.txt 2>/dev/null || true
+} | sort > "$OUT/packages.txt"
 echo "Wrote provenance: $OUT/packages.txt ($(wc -l < "$OUT/packages.txt") packages)"
 
 echo "Created linux-x64/linux-arm64 GStreamer bundle at: $OUT"

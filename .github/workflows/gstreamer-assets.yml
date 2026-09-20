@@ -202,7 +202,7 @@ jobs:
       # ----------------------------
       # Linux x64
       # ----------------------------
-      - name: Build bundle [linux-x64 via Debian forky]
+      - name: Build bundle [linux-x64 via Debian stable]
         if: matrix.os == 'linux' && matrix.arch == 'x64'
         shell: bash
         run: |
@@ -210,6 +210,7 @@ jobs:
 
           chmod +x scripts/gstreamer/package-linux.sh
           chmod +x scripts/gstreamer/smoke-test-linux.sh
+          chmod +x scripts/gstreamer/build-backport-linux.sh
 
           # ceiling = glibc of the current Debian stable (the deploy target)
           GLIBC_CEILING="$(docker run --rm debian:stable-slim getconf GNU_LIBC_VERSION | awk '{print $2}')"
@@ -219,33 +220,16 @@ jobs:
             -e GLIBC_CEILING="$GLIBC_CEILING" \
             -v "${GITHUB_WORKSPACE}:/work" \
             -w /work \
-            debian:forky-slim sh -lc '
+            debian:stable-slim sh -lc '
               set -euo pipefail
 
               export DEBIAN_FRONTEND=noninteractive
 
               apt-get update
               apt-get install -y --no-install-recommends \
-                bash coreutils findutils file python3 dpkg-dev patchelf ca-certificates \
-                gstreamer1.0-tools \
-                gstreamer1.0-plugins-base \
-                gstreamer1.0-plugins-base-apps \
-                gstreamer1.0-plugins-good \
-                gstreamer1.0-plugins-bad \
-                gstreamer1.0-libav \
-                gstreamer1.0-gl \
-                gstreamer1.0-x \
-                gstreamer1.0-alsa \
-                gstreamer1.0-pulseaudio \
-                libgstreamer1.0-0 \
-                libgstreamer-plugins-base1.0-0 \
-                libglib2.0-0 \
-                liborc-0.4-0 \
-                libgudev-1.0-0 \
-                zlib1g \
-                libc6 \
-                libgcc-s1 \
-                libstdc++6
+                bash coreutils findutils file python3 dpkg-dev patchelf ca-certificates
+
+              scripts/gstreamer/build-backport-linux.sh
 
               scripts/gstreamer/package-linux.sh "assets/gstreamer/linux-x64"
               scripts/gstreamer/smoke-test-linux.sh "assets/gstreamer/linux-x64"
@@ -281,7 +265,7 @@ jobs:
       # ----------------------------
       # Linux arm64
       # ----------------------------
-      - name: Build bundle [linux-arm64 via Debian forky]
+      - name: Build bundle [linux-arm64 via Debian stable]
         if: matrix.os == 'linux' && matrix.arch == 'arm64'
         shell: bash
         run: |
@@ -289,7 +273,7 @@ jobs:
 
           chmod +x scripts/gstreamer/package-linux.sh
           chmod +x scripts/gstreamer/smoke-test-linux.sh
-          chmod +x scripts/gstreamer/build-patched-linux.sh
+          chmod +x scripts/gstreamer/build-backport-linux.sh
 
           # ceiling = glibc of the current Debian stable (the deploy target)
           GLIBC_CEILING="$(docker run --rm debian:stable-slim getconf GNU_LIBC_VERSION | awk '{print $2}')"
@@ -299,35 +283,16 @@ jobs:
             -e GLIBC_CEILING="$GLIBC_CEILING" \
             -v "${GITHUB_WORKSPACE}:/work" \
             -w /work \
-            debian:forky-slim sh -lc '
+            debian:stable-slim sh -lc '
               set -euo pipefail
 
               export DEBIAN_FRONTEND=noninteractive
 
               apt-get update
               apt-get install -y --no-install-recommends \
-                bash coreutils findutils file python3 dpkg-dev patchelf ca-certificates \
-                gstreamer1.0-tools \
-                gstreamer1.0-plugins-base \
-                gstreamer1.0-plugins-base-apps \
-                gstreamer1.0-plugins-good \
-                gstreamer1.0-plugins-bad \
-                gstreamer1.0-libav \
-                gstreamer1.0-gl \
-                gstreamer1.0-x \
-                gstreamer1.0-alsa \
-                gstreamer1.0-pulseaudio \
-                libgstreamer1.0-0 \
-                libgstreamer-plugins-base1.0-0 \
-                libglib2.0-0 \
-                liborc-0.4-0 \
-                libgudev-1.0-0 \
-                zlib1g \
-                libc6 \
-                libgcc-s1 \
-                libstdc++6
+                bash coreutils findutils file python3 dpkg-dev patchelf ca-certificates
 
-              scripts/gstreamer/build-patched-linux.sh
+              APPLY_PATCHES=1 scripts/gstreamer/build-backport-linux.sh
 
               scripts/gstreamer/package-linux.sh "assets/gstreamer/linux-arm64"
               scripts/gstreamer/smoke-test-linux.sh "assets/gstreamer/linux-arm64"
