@@ -81,7 +81,9 @@ impl Profile {
         device: ObjectPath<'_>,
         fd: zbus::zvariant::OwnedFd,
         _options: HashMap<String, OwnedValue>,
+        #[zbus(connection)] conn: &Connection,
     ) {
+        trust(conn, device.as_str()).await;
         let peer_mac = mac_from_device_path(device.as_str());
         let fd = OwnedFd::from(fd);
         let _ = self.tx.send(IncomingConn { fd, peer_mac });
@@ -209,6 +211,12 @@ pub async fn start(
         Value::from(0u32),
     )
     .await?;
+    // A soft-blocked adapter refuses Powered with org.bluez.Error.Blocked.
+    let _ = std::process::Command::new(crate::sys::tool("rfkill"))
+        .args(["unblock", "bluetooth"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
     set_prop(&conn, &adapter_path, "Powered", Value::from(true)).await?;
     set_prop(
         &conn,
@@ -273,6 +281,21 @@ async fn set_prop(
             }
             Err(e) => return Err(e.into()),
         }
+    }
+}
+
+async fn trust(conn: &Connection, device: &str) {
+    let set = conn
+        .call_method(
+            Some("org.bluez"),
+            device,
+            Some("org.freedesktop.DBus.Properties"),
+            "Set",
+            &("org.bluez.Device1", "Trusted", Value::from(true)),
+        )
+        .await;
+    if let Err(e) = set {
+        println!("[bt] {device}: not marked trusted: {e}");
     }
 }
 

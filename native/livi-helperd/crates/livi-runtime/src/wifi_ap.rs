@@ -10,6 +10,8 @@ pub const DNSMASQ_CONF: &str = "/tmp/livi-dnsmasq.conf";
 const DNSMASQ_LEASES: &str = "/tmp/livi-dnsmasq.leases";
 const HOSTAPD_LOG: &str = "/tmp/livi-hostapd.log";
 const NM_UNMANAGED_CONF: &str = "/etc/NetworkManager/conf.d/99-livi-ap-unmanaged.conf";
+/// The zone the AP interface was in before the AP.
+const FIREWALLD_ZONE: &str = "/run/livi-ap-firewalld-zone";
 /// The last channel and width that carried an access point, kept for a refusal.
 const LAST_GOOD: &str = "/tmp/livi-ap-last-good";
 /// Where a refused channel lands. Allowed in every regulatory domain, no DFS.
@@ -139,6 +141,28 @@ fn nm_installed() -> bool {
         .any(|p| std::path::Path::new(p).exists())
 }
 
+/// firewalld's default zone drops the phone's DHCP request, so the interface sits in `trusted`
+/// while the AP is up. Runtime only, nothing permanent.
+fn firewalld_open(iface: &str) {
+    if cmd_stdout("firewall-cmd", &["--state"]).trim() != "running" {
+        return;
+    }
+    let prior = cmd_stdout("firewall-cmd", &["--get-zone-of-interface", iface]);
+    let _ = std::fs::write(FIREWALLD_ZONE, prior.trim());
+    run_cmd("firewall-cmd", &["--zone=trusted", &format!("--change-interface={iface}")]);
+    println!("[wifi-ap] firewalld: {iface} in the trusted zone while the AP is up");
+}
+
+fn firewalld_restore(iface: &str) {
+    let Ok(prior) = std::fs::read_to_string(FIREWALLD_ZONE) else { return };
+    let _ = std::fs::remove_file(FIREWALLD_ZONE);
+    if prior.is_empty() {
+        run_cmd("firewall-cmd", &["--zone=trusted", &format!("--remove-interface={iface}")]);
+    } else {
+        run_cmd("firewall-cmd", &[&format!("--zone={prior}"), &format!("--change-interface={iface}")]);
+    }
+}
+
 fn nm_running() -> bool {
     cmd_stdout("systemctl", &["is-active", "NetworkManager"]).trim() == "active"
 }
@@ -179,6 +203,7 @@ pub fn unmanaged_iface() -> Option<String> {
 }
 
 pub fn teardown(iface: &str) {
+    firewalld_restore(iface);
     run_cmd("pkill", &["-f", &format!("hostapd.*{HOSTAPD_CONF}")]);
     run_cmd("pkill", &["-f", &format!("dnsmasq.*{DNSMASQ_CONF}")]);
     run_cmd("ip", &["addr", "flush", "dev", iface, "scope", "global"]);
@@ -334,6 +359,7 @@ pub fn run(cfg: ApConfig) -> ! {
     );
     persist_nm_profiles();
     release_iface_from_nm(&cfg.iface);
+    firewalld_open(&cfg.iface);
     let _ = std::fs::remove_file(HOSTAPD_LOG);
     let mut cfg = cfg;
     loop {
