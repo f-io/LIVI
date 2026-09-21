@@ -326,6 +326,7 @@ done
 # 6) Wrap into ANDROID! bootimg (host-side Rust tool)
 # ---------------------------------------------------------------------------
 HELPERD=$(cd "$HERE/../../native/livi-helperd" && pwd)
+source "$HERE/version.sh"
 log "cargo build -p mkbootimg-v821b (host)"
 ( cd "$HELPERD" && cargo build --release -p mkbootimg-v821b )
 

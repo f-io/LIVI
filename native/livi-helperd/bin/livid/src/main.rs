@@ -49,6 +49,7 @@ fn main() -> ExitCode {
         // Unified web UI.
         "livi-httpd"     | "httpd"     => livi_web::run(livi_web::WebCaps {
             model: "V821B + AIC8800D80".into(),
+            target: "v821b_aic8800d80".into(),
             port: 80,
             wifi_iface: "wlan0".into(),
             bridge: Some("br0".into()),
@@ -56,6 +57,7 @@ fn main() -> ExitCode {
             bt: "hci0".into(),
             led: true,
             flash: livi_web::Flash { mtd: true, ..Default::default() },
+            update_conf: "/tmp/livi/update.conf".into(),
         }),
         "livi-ledd"      | "ledd"      => ledd::run(rest),
         "livi-netd"      | "netd"      => netd::run(rest),

@@ -25,10 +25,16 @@ copy_if_exists() {
 }
 
 real_path() {
-  python3 - <<'PY' "$1"
-import os, sys
-print(os.path.realpath(sys.argv[1]))
-PY
+  local p=$1 link dir
+  while [ -L "$p" ]; do
+    link=$(readlink "$p")
+    case "$link" in
+      /*) p=$link ;;
+      *) dir=$(dirname "$p"); p=${dir%/}/$link ;;
+    esac
+  done
+  dir=$(cd -P "$(dirname "$p")" 2>/dev/null && pwd -P) || { printf '%s\n' "$p"; return; }
+  printf '%s/%s\n' "${dir%/}" "$(basename "$p")"
 }
 
 is_system_excluded() {

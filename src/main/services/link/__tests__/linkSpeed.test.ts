@@ -1,5 +1,5 @@
 const { dongleStatus } = vi.hoisted(() => ({ dongleStatus: vi.fn() }))
-vi.mock('@main/services/link/dongleAp', () => ({ dongleStatus }))
+vi.mock('@main/services/link/dongleAp', () => ({ dongleStatus, noteDongleStatus: vi.fn() }))
 
 const { broadcastToRenderers } = vi.hoisted(() => ({ broadcastToRenderers: vi.fn() }))
 vi.mock('@main/window/broadcast', () => ({ broadcastToRenderers }))

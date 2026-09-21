@@ -78,6 +78,7 @@ fn main() -> ExitCode {
         #[cfg(target_os = "linux")]
         "httpd" => ExitCode::from(livi_web::run(livi_web::WebCaps {
             model: "CPC200-CCPA".into(),
+            target: "cpc200-ccpa".into(),
             port: 80,
             wifi_iface: "wlan0".into(),
             bridge: None,
@@ -95,6 +96,7 @@ fn main() -> ExitCode {
                 }),
                 ..Default::default()
             },
+            update_conf: "/script/livi/update.conf".into(),
         }) as u8),
         #[cfg(target_os = "linux")]
         "btd" => bt::run(),

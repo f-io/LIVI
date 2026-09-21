@@ -14,6 +14,7 @@ const BT_PORT = 5005
 /** Applying waits for the radio, and a 5 GHz start spends the first seconds scanning. */
 const APPLY_MS = 30_000
 const PROBE_MS = 1500
+const DRIFT_RETRY_MS = 30_000
 
 /**
  * Runs commands on one connection, in order, and gives up on the first one the dongle refuses.
@@ -65,7 +66,7 @@ function talk(commands: string[], timeoutMs = APPLY_MS, port = PORT): Promise<st
   })
 }
 
-/** What the dongle is told for this configuration. */
+/** Full configuration */
 export function commandsFor(config: Config): string[] {
   if (config.wifiInterface !== DONGLE_LINK) {
     // Its radio would only sit next to the one actually in use.
@@ -75,6 +76,7 @@ export function commandsFor(config: Config): string[] {
     `set ssid ${config.carName || 'LIVI'}`,
     `set country ${config.country || 'DE'}`,
     `set channel ${config.wifiChannel || 36}`,
+    `set width ${config.wifiChannelWidth || 40}`,
     `set passphrase ${config.wifiPassword || '12345678'}`,
     'apply',
     // Keeps the whole state across a reboot. Only a boot that reaches neither the USB link nor
@@ -147,9 +149,37 @@ function report(what: string, err: unknown): void {
   else console.warn(`[dongleAp] ${what}:`, String(err))
 }
 
+let wanted: Config | null = null
+let told = false
+let reconciling = false
+let lastDriftAt = 0
+
+/** Fed with every status poll. */
+export function noteDongleStatus(status: Record<string, string> | null): void {
+  if (!status) {
+    told = false
+    return
+  }
+  if (!wanted || reconciling) return
+  const drifted = (status.state === 'on') !== (wanted.wifiInterface === DONGLE_LINK)
+  if (told && !(drifted && Date.now() - lastDriftAt > DRIFT_RETRY_MS)) return
+  if (told) lastDriftAt = Date.now()
+  void reconcileDongleAp(wanted)
+}
+
 /** Hands the dongle its settings when it is the chosen AP, and silences it when it is not. */
 export async function reconcileDongleAp(config: Config): Promise<void> {
-  if (!attached()) return
+  wanted = config
+  if (!attached() || reconciling) return
+  reconciling = true
+  try {
+    await reconcile(config)
+  } finally {
+    reconciling = false
+  }
+}
+
+async function reconcile(config: Config): Promise<void> {
   try {
     const answers = await talk([...commandsFor(config), 'status'])
     apMac =
@@ -157,6 +187,7 @@ export async function reconcileDongleAp(config: Config): Promise<void> {
         .find((line) => line.startsWith('mac '))
         ?.slice(4)
         .trim() || apMac
+    told = true
   } catch (err) {
     // Nothing local depends on the dongle, so a refusal is noted and the rest goes on.
     report('access point', err)

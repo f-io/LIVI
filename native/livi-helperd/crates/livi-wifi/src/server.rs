@@ -32,6 +32,7 @@ pub struct Ap {
     config: PathBuf,
     hostapd: Option<Child>,
     on_save: Option<OnSave>,
+    vht: bool,
 }
 
 impl Ap {
@@ -45,7 +46,14 @@ impl Ap {
             log: log.into(),
             hostapd: None,
             on_save: None,
+            vht: false,
         }
+    }
+
+    /// For a radio that does 802.11ac.
+    pub fn with_vht(mut self) -> Self {
+        self.vht = true;
+        self
     }
 
     pub fn with_on_save(mut self, on_save: OnSave) -> Self {
@@ -63,6 +71,7 @@ struct Wanted {
     ssid: Option<String>,
     country: Option<String>,
     channel: Option<u32>,
+    width: Option<u32>,
     passphrase: Option<String>,
 }
 
@@ -180,24 +189,28 @@ fn remember(wanted: &mut Wanted, key: &str, value: &str) -> Result<(), String> {
             }
             wanted.channel = Some(channel);
         }
+        "width" => {
+            let width = value.parse::<u32>().map_err(|_| "width must be a number")?;
+            if ![20, 40, 80].contains(&width) {
+                return Err("width must be 20, 40 or 80".into());
+            }
+            wanted.width = Some(width);
+        }
         "passphrase" => {
             if !(8..=63).contains(&value.len()) {
                 return Err("passphrase must be 8 to 63 bytes".into());
             }
             wanted.passphrase = Some(value.to_string());
         }
-        other => return Err(format!("unknown setting {other}")),
+        other => eprintln!("[wifid] setting {other} is not known here, dropped"),
     }
     Ok(())
 }
 
-fn config(base: &str, wanted: &Wanted) -> String {
+fn config(base: &str, wanted: &Wanted, vht: bool) -> String {
     // A base with 802.11ac pins an 80 MHz block (vht_oper_centr_freq_seg0_idx) to its own
-    // channel; any other channel makes hostapd refuse to start. Regenerated as VHT40 below,
-    // which needs no centre index, and dropped entirely on 2.4 GHz.
-    let vht = base
-        .lines()
-        .any(|line| setting(line) == Some("ieee80211ac") && line.trim().ends_with("=1"));
+    // channel; any other channel makes hostapd refuse to start. Regenerated below for the
+    // channel and width asked for, and left out on 2.4 GHz.
     let mut out = String::new();
     for line in base.lines() {
         let replaced = match setting(line) {
@@ -220,14 +233,25 @@ fn config(base: &str, wanted: &Wanted) -> String {
     }
     if let Some(channel) = wanted.channel {
         let ie = apple_ie(channel);
+        let width = wanted.width.unwrap_or(40);
+        let ht_capab = if width >= 40 {
+            format!("[SHORT-GI-20][SHORT-GI-40]{}", ht40(channel))
+        } else {
+            "[SHORT-GI-20]".to_string()
+        };
         out.push_str(&format!(
-            "hw_mode={}\nchannel={channel}\nht_capab=[SHORT-GI-20][SHORT-GI-40]{}\n\
+            "hw_mode={}\nchannel={channel}\nht_capab={ht_capab}\n\
              vendor_elements={ie}\nassocresp_elements={ie}\n",
-            band(channel),
-            ht40(channel)
+            band(channel)
         ));
         if vht && band(channel) == "a" {
-            out.push_str("ieee80211ac=1\nvht_oper_chwidth=0\n");
+            match vht_centre(channel).filter(|_| width >= 80) {
+                Some(centre) => out.push_str(&format!(
+                    "ieee80211ac=1\nvht_capab=[SHORT-GI-80]\nvht_oper_chwidth=1\n\
+                     vht_oper_centr_freq_seg0_idx={centre}\n"
+                )),
+                None => out.push_str("ieee80211ac=1\nvht_oper_chwidth=0\n"),
+            }
         }
     }
     if let Some(ssid) = &wanted.ssid {
@@ -267,6 +291,14 @@ fn apple_ie(channel: u32) -> String {
     format!("dd0800a04000000200{:02x}", 0x20 | band_bit)
 }
 
+fn vht_centre(channel: u32) -> Option<u32> {
+    match channel {
+        36..=48 => Some(42),
+        149..=161 => Some(155),
+        _ => None,
+    }
+}
+
 fn ht40(channel: u32) -> &'static str {
     let up = if channel <= 14 {
         channel <= 7
@@ -283,7 +315,7 @@ fn apply(ap: &mut Ap, wanted: &Wanted) -> Result<(), String> {
     if let Some(parent) = ap.live[0].parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let text = config(&base, wanted);
+    let text = config(&base, wanted, ap.vht);
     if running() && std::fs::read_to_string(&ap.config).is_ok_and(|current| current == text) {
         return Ok(());
     }
@@ -316,7 +348,7 @@ fn save(ap: &Ap) -> Result<(), String> {
         .map_err(|e| format!("{}: {e}", ap.config.display()))?;
     let base = std::fs::read_to_string(&ap.base)
         .map_err(|e| format!("{}: {e}", ap.base.display()))?;
-    let next = config(&base, &settings_of(&live));
+    let next = config(&base, &settings_of(&live), ap.vht);
     if next == base {
         return Ok(());
     }
@@ -341,6 +373,13 @@ fn settings_of(text: &str) -> Wanted {
         ssid: value("ssid"),
         country: value("country_code"),
         channel: value("channel").and_then(|c| c.parse().ok()),
+        width: Some(if value("vht_oper_chwidth").as_deref() == Some("1") {
+            80
+        } else if value("ht_capab").is_some_and(|c| c.contains("[HT40")) {
+            40
+        } else {
+            20
+        }),
         passphrase: value("wpa_passphrase"),
     }
 }
@@ -413,6 +452,9 @@ fn status(ap: &Ap) -> String {
                 out.push_str(&format!("{key} {value}\n"));
             }
         }
+    }
+    if let Some(state) = crate::ap_state(IFACE) {
+        out.push_str(&format!("width {}\n", state.width));
     }
     // Link telemetry from the car's point of view: down = phone→car, up = car→phone. The PHY
     // bitrate is the connected station's negotiated rate; the byte counters let the host derive
@@ -504,4 +546,99 @@ fn running() -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BASE: &str = "interface=wlan0\nssid=LIVI-Link\nhw_mode=a\nchannel=36\nieee80211ac=1\n\
+        ht_capab=[HT40+][SHORT-GI-20][SHORT-GI-40]\nvht_capab=[SHORT-GI-80]\n\
+        vht_oper_chwidth=1\nvht_oper_centr_freq_seg0_idx=42\nwpa_passphrase=livilink\n";
+
+    fn wanted(channel: u32, width: Option<u32>) -> Wanted {
+        Wanted { channel: Some(channel), width, ..Wanted::default() }
+    }
+
+    fn lines(config: &str) -> Vec<&str> {
+        config.lines().collect()
+    }
+
+    #[test]
+    fn eighty_megahertz_gets_its_centre_where_the_block_needs_no_dfs() {
+        let out = config(BASE, &wanted(149, Some(80)), true);
+        let out = lines(&out);
+        assert!(out.contains(&"vht_oper_chwidth=1"));
+        assert!(out.contains(&"vht_oper_centr_freq_seg0_idx=155"));
+        assert!(out.contains(&"ht_capab=[SHORT-GI-20][SHORT-GI-40][HT40+]"));
+        assert!(!out.contains(&"vht_oper_centr_freq_seg0_idx=42"));
+    }
+
+    #[test]
+    fn eighty_megahertz_on_a_dfs_channel_stays_at_forty() {
+        let out = config(BASE, &wanted(100, Some(80)), true);
+        let out = lines(&out);
+        assert!(out.contains(&"vht_oper_chwidth=0"));
+        assert!(!out.iter().any(|l| l.starts_with("vht_oper_centr_freq_seg0_idx")));
+    }
+
+    #[test]
+    fn a_host_that_names_no_width_gets_forty() {
+        let out = config(BASE, &wanted(36, None), true);
+        let out = lines(&out);
+        assert!(out.contains(&"vht_oper_chwidth=0"));
+        assert!(out.contains(&"ht_capab=[SHORT-GI-20][SHORT-GI-40][HT40+]"));
+    }
+
+    #[test]
+    fn twenty_megahertz_drops_the_secondary_channel() {
+        let out = config(BASE, &wanted(36, Some(20)), true);
+        let out = lines(&out);
+        assert!(out.contains(&"ht_capab=[SHORT-GI-20]"));
+        assert!(out.contains(&"vht_oper_chwidth=0"));
+    }
+
+    #[test]
+    fn a_saved_config_keeps_its_width() {
+        for width in [20, 40, 80] {
+            let live = config(BASE, &wanted(36, Some(width)), true);
+            assert_eq!(settings_of(&live).width, Some(width));
+        }
+    }
+
+    #[test]
+    fn a_base_that_lost_its_vht_lines_gets_them_back() {
+        let worn = "interface=wlan0\nssid=LIVI\nieee80211n=1\nchannel=36\n\
+            ht_capab=[SHORT-GI-20][SHORT-GI-40][HT40+]\n";
+        let out = config(worn, &wanted(36, Some(80)), true);
+        let out = lines(&out);
+        assert!(out.contains(&"ieee80211ac=1"));
+        assert!(out.contains(&"vht_oper_chwidth=1"));
+        assert!(out.contains(&"vht_oper_centr_freq_seg0_idx=42"));
+    }
+
+    #[test]
+    fn a_radio_without_vht_never_gets_it() {
+        let out = config(BASE, &wanted(36, Some(80)), false);
+        let out = lines(&out);
+        assert!(!out.iter().any(|l| l.starts_with("ieee80211ac") || l.starts_with("vht_")));
+        assert!(out.contains(&"ht_capab=[SHORT-GI-20][SHORT-GI-40][HT40+]"));
+    }
+
+    #[test]
+    fn a_setting_this_dongle_does_not_know_is_dropped_not_refused() {
+        let mut w = Wanted::default();
+        assert!(remember(&mut w, "he_bss_color", "12").is_ok());
+        assert!(remember(&mut w, "channel", "44").is_ok());
+        assert_eq!(w.channel, Some(44));
+    }
+
+    #[test]
+    fn only_the_three_widths_are_taken() {
+        let mut w = Wanted::default();
+        assert!(remember(&mut w, "width", "80").is_ok());
+        assert_eq!(w.width, Some(80));
+        assert!(remember(&mut w, "width", "160").is_err());
+        assert!(remember(&mut w, "width", "wide").is_err());
+    }
 }

@@ -1,4 +1,4 @@
-import { dongleStatus } from '@main/services/link/dongleAp'
+import { dongleStatus, noteDongleStatus } from '@main/services/link/dongleAp'
 import { broadcastToRenderers } from '@main/window/broadcast'
 
 // Polls the dongle's access-point status and reports the CarPlay Wi-Fi link, from the car's
@@ -34,6 +34,7 @@ async function sample(): Promise<void> {
   busy = true
   try {
     const s = await dongleStatus()
+    noteDongleStatus(s)
     if (!s) {
       prev = null
       broadcastToRenderers('link-speed', null)

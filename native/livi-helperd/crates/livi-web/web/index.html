@@ -19,6 +19,13 @@
   .row { display:flex; gap:10px; align-items:center; }
   label.file { display:inline-flex; align-items:center; gap:8px; padding:8px 12px; background:#0b0d12; border:1px solid var(--br); border-radius:8px; cursor:pointer; font-size:13px; }
   label.file input { display:none; }
+  label.switch { display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--dim); cursor:pointer; }
+  label.switch input { position:absolute; opacity:0; width:0; height:0; }
+  label.switch .track { width:34px; height:20px; border-radius:10px; background:var(--br); position:relative; transition:background .15s; }
+  label.switch .track::after { content:''; position:absolute; top:3px; left:3px; width:14px; height:14px; border-radius:50%; background:var(--dim); transition:transform .15s, background .15s; }
+  label.switch input:checked + .track { background:#1d4a52; }
+  label.switch input:checked + .track::after { transform:translateX(14px); background:var(--acc); }
+  label.switch input:focus-visible + .track { outline:2px solid var(--acc); outline-offset:2px; }
   button { appearance:none; border:1px solid var(--br); background:#0b0d12; color:var(--fg); padding:8px 14px; border-radius:8px; cursor:pointer; font: inherit; }
   button:hover:not(:disabled) { border-color: var(--acc); color: var(--acc); }
   button:disabled { opacity: .4; cursor: not-allowed; }
@@ -50,6 +57,7 @@
   <div class="card">
     <dl class="kv">
       <dt>Model</dt><dd id="model">loading…</dd>
+      <dt>Firmware</dt><dd id="firmware">loading…</dd>
       <dt>Kernel</dt><dd id="kernel">loading…</dd>
       <dt>Uptime</dt><dd id="uptime">loading…</dd>
       <dt>Load</dt><dd id="load">loading…</dd>
@@ -65,6 +73,7 @@
       <dt>MAC</dt><dd id="wifi-mac">loading…</dd>
       <dt>Band</dt><dd id="wifi-band">loading…</dd>
       <dt>Channel</dt><dd id="wifi-ch">loading…</dd>
+      <dt>Width</dt><dd id="wifi-width">loading…</dd>
       <dt>Clients</dt><dd id="wifi-clients">loading…</dd>
       <dt>Link &#8595;</dt><dd id="wifi-down">&mdash;</dd>
       <dt>Link &#8593;</dt><dd id="wifi-up">&mdash;</dd>
@@ -96,6 +105,15 @@
   <h2>Firmware</h2>
   <div class="card">
     <div class="flash-row">
+      <div class="slot">update</div>
+      <div class="name" id="ota-state">not checked</div>
+      <div class="row">
+        <label class="switch">Nightly <input type="checkbox" id="ota-nightly"><span class="track"></span></label>
+        <button id="ota-check">Check</button>
+        <button id="ota-install" hidden>Update</button>
+      </div>
+    </div>
+    <div class="flash-row">
       <div class="slot" id="flash-slot">firmware</div>
       <div class="name" id="flash-name">upload</div>
       <label class="file">Upload <input type="file" id="flash-input"></label>
@@ -123,6 +141,8 @@ async function tick() {
     if (r.ok) {
       const s = await r.json();
       for (const k of ['model','kernel','uptime','load','mem','mac']) document.getElementById(k).textContent = s[k];
+      document.getElementById('firmware').textContent = `${s.version} (${s.build})`;
+      installed = { target: s.target, version: s.version, build: s.build };
     }
   } catch {}
   try {
@@ -142,6 +162,7 @@ async function tick() {
       document.getElementById('wifi-mac').textContent = w.mac || '—';
       document.getElementById('wifi-band').textContent = w.band || '—';
       document.getElementById('wifi-ch').textContent = w.channel || '—';
+      document.getElementById('wifi-width').textContent = w.width ? w.width + ' MHz' : '—';
       document.getElementById('wifi-clients').textContent = w.clients ?? '—';
       const now = Date.now();
       const leg = (mbps, phy) => (phy > 0 ? mbps.toFixed(1) + ' Mbps · ' + phy + ' PHY' : mbps.toFixed(1) + ' Mbps');
@@ -236,92 +257,194 @@ function say(txt, cls) {
 const bar = document.getElementById('status-progress');
 function fmtKB(n) { return (n/1024).toFixed(0) + ' KiB'; }
 
+async function flashFile(file, sha) {
+  say(`Uploading ${fmtKB(file.size)}…`);
+  bar.hidden = false; bar.value = 0;
+
+  const xhr = new XMLHttpRequest();
+  let writePoll = null;
+  xhr.upload.addEventListener('progress', e => {
+    if (e.lengthComputable) {
+      const pct = (e.loaded / e.total) * 100;
+      bar.value = pct;
+      say(`Uploading ${fmtKB(e.loaded)} / ${fmtKB(e.total)} (${pct.toFixed(0)}%)…`);
+    }
+  });
+  // Poll the server's /api/flash/status right away. While the upload is
+  // still in flight the server has no progress to report (idle) — but as
+  // soon as the server starts the NOR write it takes over the bar/msg.
+  // Message policy: `write` always updates (user wants live KB progress).
+  // `verify` sticks for 1.2 s so it does not flicker past. `compare` /
+  // `unchanged` are too transient to be readable — bar still moves, msg stays.
+  let lastPhaseKey = '';
+  let phaseAt = 0;
+  const HOLD_MS = 1200;
+  writePoll = setInterval(async () => {
+    try {
+      const r = await fetch('/api/flash/status');
+      if (!r.ok) return;
+      const j = await r.json();
+      if (j.phase === 'idle' || !j.total) return;
+      const pct = (j.written / j.total) * 100;
+      bar.value = pct;
+      const n = j.node || '?';
+      const key = j.phase + '@' + n;
+      const now = Date.now();
+      // Shorten mtdblockN → mtdN for display.
+      const short = n.replace(/^mtdblock/, 'mtd');
+      if (j.phase === 'write') {
+        say(`${short} writing… ${pct.toFixed(0)}%`);
+        lastPhaseKey = key; phaseAt = now;
+      } else if (j.phase === 'verify') {
+        if (key !== lastPhaseKey && (now - phaseAt) > HOLD_MS) {
+          say(`${short} verifying…`);
+          lastPhaseKey = key; phaseAt = now;
+        }
+      } else if (j.phase === 'done') {
+        say(`Rebooting…`, 'ok');
+      } else if (j.phase === 'error') {
+        say(`${short} flash error`, 'err');
+      }
+      // compare / unchanged: intentionally do not touch msg.
+    } catch {}
+  }, 250);
+  xhr.addEventListener('load', () => {
+    if (writePoll) { clearInterval(writePoll); writePoll = null; }
+    bar.hidden = true;
+    try {
+      const j = JSON.parse(xhr.responseText);
+      if (j.ok) say(j.message + '', 'ok');
+      else      say(j.error || 'flash failed', 'err');
+    } catch { say('server returned non-JSON: ' + xhr.responseText.slice(0, 200), 'err'); }
+  });
+  xhr.addEventListener('error', () => { bar.hidden = true; say('network error during upload', 'err'); });
+  xhr.addEventListener('abort', () => { bar.hidden = true; say('upload aborted', 'err'); });
+  // One endpoint; the dongle routes by the file. A .lfwb bundle and a gzipped stack carry their
+  // own integrity, a raw rootfs image does not — so the browser hashes that and the dongle rechecks.
+  const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+  const selfChecked = (head[0] === 0x1f && head[1] === 0x8b) ||
+                      (head[0] === 0x4c && head[1] === 0x46 && head[2] === 0x57 && head[3] === 0x42);
+  let url = sha ? '/api/flash?sha=' + sha : '/api/flash';
+  if (!sha && !selfChecked) {
+    say('Hashing image…');
+    try {
+      const dig = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+      const sha = [...new Uint8Array(dig)].map(b => b.toString(16).padStart(2, '0')).join('');
+      url = '/api/flash?sha=' + sha;
+    } catch (e) { bar.hidden = true; say('sha256 failed: ' + e, 'err'); return; }
+  }
+  xhr.open('POST', url);
+  xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+  xhr.send(file);
+}
+
 document.querySelectorAll('input[type=file]').forEach(inp => {
   inp.addEventListener('change', async () => {
     const file = inp.files[0]; if (!file) return;
-    if (!confirm(`Flash ${fmtKB(file.size)}? The dongle will restart or reboot.`)) {
-      inp.value = ''; return;
-    }
-    say(`Uploading ${fmtKB(file.size)}…`);
-    bar.hidden = false; bar.value = 0;
-
-    const xhr = new XMLHttpRequest();
-    let writePoll = null;
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable) {
-        const pct = (e.loaded / e.total) * 100;
-        bar.value = pct;
-        say(`Uploading ${fmtKB(e.loaded)} / ${fmtKB(e.total)} (${pct.toFixed(0)}%)…`);
-      }
-    });
-    // Poll the server's /api/flash/status right away. While the upload is
-    // still in flight the server has no progress to report (idle) — but as
-    // soon as the server starts the NOR write it takes over the bar/msg.
-    // Message policy: `write` always updates (user wants live KB progress).
-    // `verify` sticks for 1.2 s so it does not flicker past. `compare` /
-    // `unchanged` are too transient to be readable — bar still moves, msg stays.
-    let lastPhaseKey = '';
-    let phaseAt = 0;
-    const HOLD_MS = 1200;
-    writePoll = setInterval(async () => {
-      try {
-        const r = await fetch('/api/flash/status');
-        if (!r.ok) return;
-        const j = await r.json();
-        if (j.phase === 'idle' || !j.total) return;
-        const pct = (j.written / j.total) * 100;
-        bar.value = pct;
-        const n = j.node || '?';
-        const key = j.phase + '@' + n;
-        const now = Date.now();
-        // Shorten mtdblockN → mtdN for display.
-        const short = n.replace(/^mtdblock/, 'mtd');
-        if (j.phase === 'write') {
-          say(`${short} writing… ${pct.toFixed(0)}%`);
-          lastPhaseKey = key; phaseAt = now;
-        } else if (j.phase === 'verify') {
-          if (key !== lastPhaseKey && (now - phaseAt) > HOLD_MS) {
-            say(`${short} verifying…`);
-            lastPhaseKey = key; phaseAt = now;
-          }
-        } else if (j.phase === 'done') {
-          say(`Rebooting…`, 'ok');
-        } else if (j.phase === 'error') {
-          say(`${short} flash error`, 'err');
-        }
-        // compare / unchanged: intentionally do not touch msg.
-      } catch {}
-    }, 250);
-    xhr.addEventListener('load', () => {
-      if (writePoll) { clearInterval(writePoll); writePoll = null; }
-      bar.hidden = true;
-      try {
-        const j = JSON.parse(xhr.responseText);
-        if (j.ok) say(j.message + '', 'ok');
-        else      say(j.error || 'flash failed', 'err');
-      } catch { say('server returned non-JSON: ' + xhr.responseText.slice(0, 200), 'err'); }
-    });
-    xhr.addEventListener('error', () => { bar.hidden = true; say('network error during upload', 'err'); });
-    xhr.addEventListener('abort', () => { bar.hidden = true; say('upload aborted', 'err'); });
-    // One endpoint; the dongle routes by the file. A .lfwb bundle and a gzipped stack carry their
-    // own integrity, a raw rootfs image does not — so the browser hashes that and the dongle rechecks.
-    const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
-    const selfChecked = (head[0] === 0x1f && head[1] === 0x8b) ||
-                        (head[0] === 0x4c && head[1] === 0x46 && head[2] === 0x57 && head[3] === 0x42);
-    let url = '/api/flash';
-    if (!selfChecked) {
-      say('Hashing image…');
-      try {
-        const dig = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
-        const sha = [...new Uint8Array(dig)].map(b => b.toString(16).padStart(2, '0')).join('');
-        url = '/api/flash?sha=' + sha;
-      } catch (e) { bar.hidden = true; say('sha256 failed: ' + e, 'err'); inp.value = ''; return; }
-    }
-    xhr.open('POST', url);
-    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-    xhr.send(file);
     inp.value = '';
+    if (!confirm(`Flash ${fmtKB(file.size)}? The dongle will restart or reboot.`)) return;
+    await flashFile(file);
   });
+});
+
+// Firmware updates.
+const OTA_REPO = 'f-io/LIVI';
+const otaState = document.getElementById('ota-state');
+const otaNightly = document.getElementById('ota-nightly');
+const otaInstall = document.getElementById('ota-install');
+let installed = null;   // { target, version, build } from /api/status
+let offered = null;     // { base, version, build, file, size, sha256 }
+
+// The update channel lives on the dongle.
+(async () => {
+  try { otaNightly.checked = (await (await fetch('/api/update')).json()).nightly === true; } catch {}
+})();
+otaNightly.addEventListener('change', async () => {
+  offered = null; otaInstall.hidden = true; otaState.textContent = 'not checked';
+  try {
+    const r = await fetch('/api/update', { method: 'POST', body: JSON.stringify({ nightly: otaNightly.checked ? 1 : 0 }) });
+    if (!r.ok) throw new Error((await r.json()).error || r.status);
+  } catch (e) {
+    otaNightly.checked = !otaNightly.checked;
+    say('could not save the update channel: ' + (e.message || e), 'err');
+  }
+});
+
+function cmpVersion(a, b) {
+  const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
+async function otaRelease() {
+  const forced = new URLSearchParams(location.search).get('ref');
+  if (forced) return { name: forced, ref: forced, assets: null };
+  const feed = otaNightly.checked ? 'releases/tags/nightly' : 'releases/latest';
+  const r = await fetch(`https://api.github.com/repos/${OTA_REPO}/${feed}`, { cache: 'no-store' });
+  if (r.status === 404) throw new Error(otaNightly.checked ? 'there is no nightly' : 'there is no release');
+  if (!r.ok) throw new Error(`release feed: ${r.status}`);
+  const rel = await r.json();
+  return { name: rel.name || rel.tag_name, ref: otaNightly.checked ? rel.target_commitish : rel.tag_name, assets: rel.assets || [] };
+}
+
+document.getElementById('ota-check').addEventListener('click', async () => {
+  offered = null; otaInstall.hidden = true;
+  otaState.textContent = 'checking…';
+  try {
+    if (!installed) throw new Error('the dongle has not reported its firmware yet');
+    const rel = await otaRelease();
+    const base = `https://raw.githubusercontent.com/${OTA_REPO}/${rel.ref}/assets/livi-link/${installed.target}`;
+    const r = await fetch(`${base}/firmware.json`, { cache: 'no-store' });
+    if (r.status === 404) throw new Error(`${rel.name} carries no firmware for this dongle`);
+    if (!r.ok) throw new Error(`firmware.json: ${r.status}`);
+    const fw = await r.json();
+    if (rel.assets) {
+      const asset = rel.assets.find(a => a.name === fw.file);
+      if (!asset) throw new Error(`${rel.name} carries no firmware for this dongle`);
+      if (asset.size !== fw.size || (asset.digest && asset.digest !== 'sha256:' + fw.sha256)) {
+        throw new Error(`${fw.file} is not the file ${rel.name} carries`);
+      }
+    }
+    if (fw.build === installed.build) {
+      otaState.textContent = `Up to date: ${fw.version} (${fw.build})`;
+      return;
+    }
+    const downgrade = !otaNightly.checked && cmpVersion(installed.version, fw.version) >= 0;
+    offered = { base, downgrade, ...fw };
+    otaState.textContent = `${downgrade ? 'Downgrade' : 'Update'} available: ${fw.version} (${fw.build}), ${fmtKB(fw.size)}`;
+    otaInstall.textContent = downgrade ? 'Downgrade' : 'Update';
+    otaInstall.hidden = false;
+  } catch (e) {
+    otaState.textContent = 'check failed: ' + (e.message || e);
+  }
+});
+
+otaInstall.addEventListener('click', async () => {
+  if (!offered) return;
+  const fw = offered;
+  if (!confirm(`${fw.downgrade ? 'Downgrade to' : 'Update to'} ${fw.version} (${fw.build})? The dongle will restart or reboot.`)) return;
+  otaInstall.disabled = true;
+  try {
+    say(`Downloading ${fmtKB(fw.size)}…`);
+    const r = await fetch(`${fw.base}/${fw.file}`, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`download: ${r.status}`);
+    const blob = await r.blob();
+    if (blob.size !== fw.size) throw new Error(`download is ${blob.size} B, firmware.json says ${fw.size} B`);
+    // crypto.subtle needs a secure context, this page is plain http
+    if (window.crypto && crypto.subtle) {
+      const dig = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+      const sha = [...new Uint8Array(dig)].map(b => b.toString(16).padStart(2, '0')).join('');
+      if (sha !== fw.sha256) throw new Error('download does not match its sha256');
+    }
+    await flashFile(blob, fw.sha256);
+  } catch (e) {
+    say('update failed: ' + (e.message || e), 'err');
+  } finally {
+    otaInstall.disabled = false;
+  }
 });
 
 document.getElementById('reboot').addEventListener('click', async () => {

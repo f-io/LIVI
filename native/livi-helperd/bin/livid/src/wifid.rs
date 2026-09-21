@@ -16,7 +16,7 @@ pub fn run(_args: Vec<String>) -> i32 {
         }
     };
     println!("[wifid] listening on :{PORT}");
-    let mut ap = Ap::new(BASE, LIVE, LOG).with_on_save(Box::new(|| {
+    let mut ap = Ap::new(BASE, LIVE, LOG).with_vht().with_on_save(Box::new(|| {
         let _ = Command::new("/usr/bin/livid")
             .arg("config").arg("save")
             .stdin(std::process::Stdio::null())

@@ -17,23 +17,34 @@ log(){ printf "\033[1;36m[livi-bundle]\033[0m %s\n" "$*"; }
 [[ -f "$MTD1" ]] || { log "missing $MTD1"; exit 1; }
 [[ -f "$MTD3" ]] || { log "missing $MTD3"; exit 1; }
 
-python3 - "$MTD1" "$MTD3" "$BUNDLE" <<'PY'
-import sys, struct, zlib
-mtd1_path, mtd3_path, out_path = sys.argv[1:4]
-imgs = []
-for typ, path in [(1, mtd1_path), (3, mtd3_path)]:
-    with open(path, "rb") as f:
-        data = f.read()
-    imgs.append((typ, data, zlib.crc32(data) & 0xffffffff))
-hdr = b"LFWB" + bytes([1, len(imgs), 0, 0])
-descs = b""
-for typ, data, crc in imgs:
-    descs += struct.pack("<BBHII", typ, 0, 0, len(data), crc)
-payload = b"".join(d for _, d, _ in imgs)
-with open(out_path, "wb") as f:
-    f.write(hdr); f.write(descs); f.write(payload)
-total = len(hdr) + len(descs) + len(payload)
-print(f"wrote {out_path}: {total} B (header {len(hdr)} + descs {len(descs)} + payload {len(payload)})")
-for typ, data, crc in imgs:
-    print(f"  type={typ}  len={len(data)}  crc32={crc:08x}")
-PY
+le32() {
+  local v=$1
+  # shellcheck disable=SC2059
+  printf "$(printf '\\x%02x\\x%02x\\x%02x\\x%02x' \
+    $((v & 255)) $((v >> 8 & 255)) $((v >> 16 & 255)) $((v >> 24 & 255)))"
+}
+
+# CRC-32 as the gzip trailer carries it, little-endian
+crc32le() { gzip -c "$1" | tail -c 8 | head -c 4; }
+
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+
+{
+  printf 'LFWB\x01\x02\x00\x00'
+  for entry in "1:$MTD1" "3:$MTD3"; do
+    typ=${entry%%:*} img=${entry#*:}
+    # shellcheck disable=SC2059
+    printf "$(printf '\\x%02x' "$typ")\x00\x00\x00"
+    le32 "$(wc -c < "$img" | tr -d ' ')"
+    crc32le "$img" | tee "$WORK/crc$typ"
+  done
+  cat "$MTD1" "$MTD3"
+} > "$BUNDLE"
+
+log "wrote $BUNDLE: $(wc -c < "$BUNDLE" | tr -d ' ') B"
+for entry in "1:$MTD1" "3:$MTD3"; do
+  typ=${entry%%:*} img=${entry#*:}
+  crc=$(od -An -tx1 "$WORK/crc$typ" | awk '{ print $4 $3 $2 $1 }')
+  log "  type=$typ  len=$(wc -c < "$img" | tr -d ' ')  crc32=$crc"
+done

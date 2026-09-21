@@ -60,14 +60,15 @@ jobs:
         run: bash scripts/livi-link/pack-bundle.sh
 
       - name: Verify bundle structure
+        shell: bash
         run: |
-          python3 - <<'PY'
-          data = open('/home/runner/LocalDev/tina-test/out/livi-link-v821b.lfwb', 'rb').read()
-          assert data[0:4] == b'LFWB', 'bad magic'
-          assert data[4] == 1, f'bad version {data[4]}'
-          assert data[5] == 2, f'bad count {data[5]}'
-          print('bundle header ok, size', len(data))
-          PY
+          set -euo pipefail
+          bundle=~/LocalDev/tina-test/out/livi-link-v821b.lfwb
+          [ "$(head -c 4 "$bundle")" = LFWB ] || { echo "bad magic" >&2; exit 1; }
+          read -r version count < <(od -An -tu1 -j4 -N2 "$bundle")
+          [ "$version" = 1 ] || { echo "bad version $version" >&2; exit 1; }
+          [ "$count" = 2 ] || { echo "bad count $count" >&2; exit 1; }
+          echo "bundle header ok, size $(wc -c < "$bundle")"
 
   targets:
     name: Select targets
@@ -108,11 +109,20 @@ jobs:
           set -euo pipefail
           apt-get update
           apt-get install -y --no-install-recommends \
-            ca-certificates curl git xz-utils build-essential file rsync python3
+            ca-certificates curl git xz-utils build-essential file rsync
 
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.ref }}
+
+      - name: Firmware version
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LIVI_BUILD="${GITHUB_SHA::8}"
+          source scripts/livi-link/version.sh
+          echo "LIVI_VERSION=$LIVI_VERSION" >> "$GITHUB_ENV"
+          echo "LIVI_BUILD=$LIVI_BUILD" >> "$GITHUB_ENV"
 
       - name: Install Rust
         shell: bash
@@ -219,6 +229,8 @@ jobs:
           # Stage the .lfwb as the artifact payload for this matrix cell.
           mkdir -p "assets/livi-link/${{ matrix.target }}"
           cp "$OUT_DIR/livi-link-v821b.lfwb" "assets/livi-link/${{ matrix.target }}/"
+          source scripts/livi-link/version.sh
+          livi_firmware_json "assets/livi-link/${{ matrix.target }}/livi-link-v821b.lfwb"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6

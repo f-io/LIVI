@@ -9,20 +9,95 @@ use crate::*;
 /// Linux i2c ioctl — bind this fd to a target slave address (u16).
 const I2C_SLAVE: libc::c_ulong = 0x0703;
 
+const GPIO_CHIP: &str = "/dev/gpiochip0";
+const GPIO_V2_LINE_FLAG_OUTPUT: u64 = 1 << 3;
+// _IOWR(0xB4, nr, size)
+const GPIO_V2_GET_LINE_IOCTL: u32 = (3 << 30) | ((size_of::<LineRequest>() as u32) << 16) | (0xB4 << 8) | 0x07;
+const GPIO_V2_LINE_SET_VALUES_IOCTL: u32 = (3 << 30) | ((size_of::<LineValues>() as u32) << 16) | (0xB4 << 8) | 0x0F;
+
+// The chip only leaves a wedged state on a real power cycle
+const POWER_OFF_SETTLE: Duration = Duration::from_millis(50);
+const POWER_ON_SETTLE: Duration = Duration::from_millis(100);
+
+/// struct gpio_v2_line_request, linux/gpio.h
+#[repr(C)]
+struct LineRequest {
+    offsets: [u32; 64],
+    consumer: [u8; 32],
+    flags: u64,
+    num_attrs: u32,
+    config_padding: [u32; 5],
+    attrs: [[u64; 3]; 10],
+    num_lines: u32,
+    event_buffer_size: u32,
+    padding: [u32; 5],
+    fd: i32,
+}
+
+/// struct gpio_v2_line_values
+#[repr(C)]
+struct LineValues {
+    bits: u64,
+    mask: u64,
+}
+
+const _: () = assert!(size_of::<LineRequest>() == 592 && size_of::<LineValues>() == 16);
+
+/// The chip's supply, held for as long as the line's fd is open.
+struct PowerLine(fs::File);
+
+impl PowerLine {
+    fn on(gpio: u32) -> Result<Self, MfiError> {
+        let chip = fs::OpenOptions::new()
+            .read(true).write(true)
+            .open(GPIO_CHIP)
+            .map_err(|e| MfiError::Io(format!("open {GPIO_CHIP}: {e}")))?;
+        let mut req: LineRequest = unsafe { std::mem::zeroed() };
+        req.offsets[0] = gpio;
+        req.num_lines = 1;
+        req.flags = GPIO_V2_LINE_FLAG_OUTPUT;
+        req.consumer[..8].copy_from_slice(b"livi-mfi");
+        if unsafe { libc::ioctl(chip.as_raw_fd(), GPIO_V2_GET_LINE_IOCTL as _, &mut req) } < 0 {
+            return Err(MfiError::Io(format!("claim gpio {gpio}: {}", std::io::Error::last_os_error())));
+        }
+        let line = Self(unsafe { <fs::File as std::os::fd::FromRawFd>::from_raw_fd(req.fd) });
+        sleep(POWER_OFF_SETTLE);
+        line.set(true).map_err(|e| MfiError::Io(format!("power gpio {gpio}: {e}")))?;
+        sleep(POWER_ON_SETTLE);
+        Ok(line)
+    }
+
+    fn set(&self, on: bool) -> std::io::Result<()> {
+        let mut values = LineValues { bits: u64::from(on), mask: 1 };
+        if unsafe { libc::ioctl(self.0.as_raw_fd(), GPIO_V2_LINE_SET_VALUES_IOCTL as _, &mut values) } < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    }
+}
+
+impl Drop for PowerLine {
+    fn drop(&mut self) {
+        let _ = self.set(false);
+    }
+}
+
 pub struct I2cCoprocessor {
     file: fs::File,
     addr: u16,
     protocol_major: Option<u8>,
+    power: Option<(u32, PowerLine)>,
 }
 
 impl I2cCoprocessor {
     /// Open `/dev/i2c-<bus>` and bind to the first responding MFi address
-    /// (0x10 or 0x11 per `DEV_ADDR_CANDIDATES`). The `_power_gpio` argument
-    /// is accepted for backward compatibility; both current LIVI dongles
-    /// have the chip on the board's supply rail. If a future carrier ever
-    /// wants a soft-power line, reintroduce a small sysfs-GPIO wrapper
-    /// here — do NOT drag in `gpiocdev` for it.
-    pub fn open(bus: u32, _power_gpio: i32) -> Result<Self, MfiError> {
+    /// (0x10 or 0x11 per `DEV_ADDR_CANDIDATES`). A negative `power_gpio` is a chip on the
+    /// board's supply rail.
+    pub fn open(bus: u32, power_gpio: i32) -> Result<Self, MfiError> {
+        let power = match u32::try_from(power_gpio) {
+            Ok(gpio) => Some((gpio, PowerLine::on(gpio)?)),
+            Err(_) => None,
+        };
         let bus_path = format!("/dev/i2c-{bus}");
         let addr = Self::probe(&bus_path)?;
         let file = fs::OpenOptions::new()
@@ -30,15 +105,14 @@ impl I2cCoprocessor {
             .open(&bus_path)
             .map_err(|e| MfiError::Io(format!("open {bus_path}: {e}")))?;
         set_slave(&file, addr)?;
-        let mut chip = Self { file, addr, protocol_major: None };
+        let mut chip = Self { file, addr, protocol_major: None, power };
         chip.protocol_major = chip.read_reg(REG_PROTOCOL_MAJOR, 1).ok().map(|v| v[0]);
         Ok(chip)
     }
 
     pub fn address(&self) -> u16 { self.addr }
 
-    /// Kept for source-compat with the earlier crate signature.
-    pub fn power_gpio(&self) -> Option<u32> { None }
+    pub fn power_gpio(&self) -> Option<u32> { self.power.as_ref().map(|(gpio, _)| *gpio) }
 
     pub fn device_version(&mut self) -> Result<u8, MfiError> {
         Ok(self.read_reg(REG_DEVICE_VERSION, 1)?[0])
@@ -97,7 +171,7 @@ impl I2cCoprocessor {
 }
 
 fn set_slave(file: &fs::File, addr: u16) -> Result<(), MfiError> {
-    let rc = unsafe { libc::ioctl(file.as_raw_fd(), I2C_SLAVE, addr as libc::c_ulong) };
+    let rc = unsafe { libc::ioctl(file.as_raw_fd(), I2C_SLAVE as _, addr as libc::c_ulong) };
     if rc < 0 {
         Err(MfiError::Io(format!(
             "I2C_SLAVE 0x{addr:02X}: {}",

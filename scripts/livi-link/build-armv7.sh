@@ -11,6 +11,7 @@ CROSS=${CROSS:-arm-linux-gnueabihf-}
 TARGET=${TARGET:-armv7-unknown-linux-gnueabihf}
 HELPERD=$HERE/native/livi-helperd
 PKG=livi-link
+source "$HERE/scripts/livi-link/version.sh"
 BIN=cpc200-ccpa
 
 command -v "${CROSS}gcc" >/dev/null || { echo "no ${CROSS}gcc in PATH" >&2; exit 1; }
@@ -46,6 +47,7 @@ done
 
 hashes() { if command -v md5sum >/dev/null; then md5sum "$@"; else command md5 -r "$@"; fi; }
 (cd "$OUT" && hashes ./*.gz | awk '{ sub(/^\.\//, "", $2); print $1 "  " $2 }' | sort -k2 > MANIFEST.md5)
+livi_firmware_json "$OUT/$BIN.gz"
 
 ls -la "$OUT"
 cat "$OUT/MANIFEST.md5"

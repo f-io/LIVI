@@ -115,15 +115,8 @@ jobs:
           path: release-assets
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download the v821b firmware bundle
-        if: steps.tool.outputs.run_id != ''
-        continue-on-error: true
-        uses: actions/download-artifact@v8
-        with:
-          run-id: ${{ steps.tool.outputs.run_id }}
-          name: v821b_aic8800d80
-          path: release-assets
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Add the LIVI Link firmware
+        run: bash scripts/livi-link/stage-firmware.sh release-assets
 
       - name: Name the tool per platform
         if: steps.tool.outputs.run_id != ''

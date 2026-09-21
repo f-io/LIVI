@@ -11,6 +11,7 @@ CROSS=${CROSS:-riscv32-linux-}
 TARGET=${TARGET:-riscv32gc-unknown-linux-gnu}
 HELPERD=$HERE/native/livi-helperd
 BIN=livid
+source "$HERE/scripts/livi-link/version.sh"
 
 command -v "${CROSS}gcc" >/dev/null || { echo "no ${CROSS}gcc in PATH" >&2; exit 1; }
 mkdir -p "$OUT"

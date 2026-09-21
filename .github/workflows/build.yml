@@ -501,10 +501,19 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            assets/livi-link
+            scripts/livi-link
+
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
           path: nightly-assets
+
+      - name: Add the LIVI Link firmware
+        run: bash scripts/livi-link/stage-firmware.sh nightly-assets/livi-link
 
       - name: Replace the nightly prerelease
         env:

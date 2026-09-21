@@ -35,6 +35,8 @@ pub struct Rootfs {
 pub struct WebCaps {
     /// Human label shown in the Device card, e.g. "CPC200-CCPA" or "V821B + AIC8800D80".
     pub model: String,
+    /// The directory under assets/livi-link this dongle's firmware is published in.
+    pub target: String,
     pub port: u16,
     /// The AP interface whose SSID/MAC/rates the WiFi card shows (e.g. "wlan0").
     pub wifi_iface: String,
@@ -49,7 +51,18 @@ pub struct WebCaps {
     pub led: bool,
     /// How (or whether) this dongle flashes firmware from the web UI.
     pub flash: Flash,
+    /// Where the update channel is kept.
+    pub update_conf: String,
 }
+
+const VERSION: &str = match option_env!("LIVI_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
+const BUILD: &str = match option_env!("LIVI_BUILD") {
+    Some(b) => b,
+    None => "dev",
+};
 
 static CAPS: OnceLock<WebCaps> = OnceLock::new();
 fn caps() -> &'static WebCaps {
@@ -181,6 +194,8 @@ fn route(rmethod: &str, rpath: &str, body: Option<&[u8]>, clen: u64)
         ("GET", "/api/bt")     => (S_200, T_JSON, bt_json().into_bytes()),
         ("GET", "/api/caps")   => (S_200, T_JSON, caps_json().into_bytes()),
         ("GET", "/api/flash/status") => (S_200, T_JSON, flash_status_json().into_bytes()),
+        ("GET", "/api/update") => (S_200, T_JSON, update_json().into_bytes()),
+        ("POST", "/api/update") => set_update(body),
         ("POST", "/api/reboot")    => reboot_soon(),
         _ => (S_404, T_TEXT, b"not found\n".to_vec()),
     }
@@ -229,7 +244,7 @@ fn flash_rootfs(script: &str, partition: &str, query: &str, body: Option<&[u8]>,
 
 /// Stack update: the uploaded gzip is the relay-stack binary. Write it to its home on jffs2, then
 /// re-run the launcher so it unpacks and relinks — no partition erase, no full reboot.
-fn flash_stack(install_to: &str, restart: &str, body: Option<&[u8]>, clen: u64)
+fn flash_stack(install_to: &str, restart: &str, query: &str, body: Option<&[u8]>, clen: u64)
     -> (&'static str, &'static str, Vec<u8>)
 {
     let Some(data) = body else { return (S_400, T_JSON, err_json("empty body")); };
@@ -246,6 +261,17 @@ fn flash_stack(install_to: &str, restart: &str, body: Option<&[u8]>, clen: u64)
     if let Err(e) = write_sync(&tmp, data) {
         let _ = fs::remove_file("/tmp/livi/led/flash-mode");
         return (S_500, T_JSON, err_json(&format!("write {tmp}: {e}")));
+    }
+    // A stack that does not unpack leaves a dongle with no web UI to fix it from.
+    if let Some(want) = query.split('&').find_map(|kv| kv.strip_prefix("sha=")) {
+        let got = Command::new("sha256sum").arg(&tmp).output().ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| s.split_whitespace().next().map(str::to_owned));
+        if got.as_deref() != Some(want) {
+            let _ = fs::remove_file(&tmp);
+            let _ = fs::remove_file("/tmp/livi/led/flash-mode");
+            return (S_400, T_JSON, err_json("sha256 mismatch, nothing installed"));
+        }
     }
     if let Err(e) = fs::rename(&tmp, install_to) {
         let _ = fs::remove_file("/tmp/livi/led/flash-mode");
@@ -266,7 +292,7 @@ fn flash_dispatch(c: &WebCaps, query: &str, body: Option<&[u8]>, clen: u64)
         return flash_bundle(body, clen);
     }
     if let Some(s) = c.flash.stack.as_ref().filter(|_| data.starts_with(&[0x1f, 0x8b])) {
-        return flash_stack(&s.install_to, &s.restart, body, clen);
+        return flash_stack(&s.install_to, &s.restart, query, body, clen);
     }
     if let Some(r) = &c.flash.rootfs {
         return flash_rootfs(&r.script, &r.partition, query, body, clen);
@@ -662,11 +688,11 @@ fn wifi_json() -> String {
     let mut ssid = String::new();
     let mut ch = String::new();
     let mut band = String::new();
-    // What the AP beacons right now, read from the kernel — independent of which hostapd.conf is
-    // live (the boot AP may run from a different path than the daemon's).
+    let mut width = 0;
     if let Some(ap) = livi_wifi::ap_state(iface) {
         ssid = ap.ssid;
         ch = ap.channel.to_string();
+        width = ap.width;
         band = if ap.channel <= 14 { "2.4 GHz" } else { "5 GHz" }.to_string();
     }
     // Fall back to the managed hostapd.conf when the AP is not up yet.
@@ -695,8 +721,8 @@ fn wifi_json() -> String {
     let downbytes = read_trim(&format!("/sys/class/net/{iface}/statistics/rx_bytes")).parse::<u64>().unwrap_or(0);
     let upbytes = read_trim(&format!("/sys/class/net/{iface}/statistics/tx_bytes")).parse::<u64>().unwrap_or(0);
     format!(
-        r#"{{"ssid":"{}","mac":"{}","band":"{}","channel":"{}","clients":{},"downrate":{},"uprate":{},"downbytes":{},"upbytes":{}}}"#,
-        js(&ssid), js(&mac), js(&band), js(&ch), clients, downrate, uprate, downbytes, upbytes
+        r#"{{"ssid":"{}","mac":"{}","band":"{}","channel":"{}","width":{},"clients":{},"downrate":{},"uprate":{},"downbytes":{},"upbytes":{}}}"#,
+        js(&ssid), js(&mac), js(&band), js(&ch), width, clients, downrate, uprate, downbytes, upbytes
     )
 }
 
@@ -725,8 +751,9 @@ fn status_json() -> String {
     let mem    = fmt_meminfo();
     let mac    = read_trim(&format!("/sys/class/net/{}/address", caps().host_iface));
     format!(
-        r#"{{"model":"{}","kernel":"{}","uptime":"{}","load":"{}","mem":"{}","mac":"{}"}}"#,
-        js(&caps().model), js(&kernel), js(&uptime), js(&load), js(&mem), js(&mac)
+        r#"{{"model":"{}","target":"{}","version":"{}","build":"{}","kernel":"{}","uptime":"{}","load":"{}","mem":"{}","mac":"{}"}}"#,
+        js(&caps().model), js(&caps().target), js(VERSION), js(BUILD),
+        js(&kernel), js(&uptime), js(&load), js(&mem), js(&mac)
     )
 }
 
@@ -840,6 +867,39 @@ fn set_led(body: Option<&[u8]>) -> (&'static str, &'static str, Vec<u8>) {
     // updates (150 ms per user gesture, one write per real change).
     persist_config();
     (S_200, T_JSON, ok_json("led config updated"))
+}
+
+// ---------------------------------------------------------------------------
+// Update channel
+// ---------------------------------------------------------------------------
+
+fn update_nightly() -> bool {
+    fs::read_to_string(&caps().update_conf)
+        .is_ok_and(|s| s.lines().any(|l| l.trim() == "nightly=1"))
+}
+
+fn update_json() -> String {
+    format!(r#"{{"nightly":{}}}"#, update_nightly())
+}
+
+fn set_update(body: Option<&[u8]>) -> (&'static str, &'static str, Vec<u8>) {
+    let Some(s) = body.and_then(|b| std::str::from_utf8(b).ok()) else {
+        return (S_400, T_JSON, err_json("empty body"));
+    };
+    let nightly = match json_num(s.trim(), "nightly").as_deref() {
+        Some("1") => true,
+        Some("0") => false,
+        _ => return (S_400, T_JSON, err_json("nightly must be 0 or 1")),
+    };
+    let path = &caps().update_conf;
+    if let Some(dir) = std::path::Path::new(path).parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    if let Err(e) = fs::write(path, format!("nightly={}\n", u8::from(nightly))) {
+        return (S_500, T_JSON, err_json(&format!("{path}: {e}")));
+    }
+    persist_config();
+    (S_200, T_JSON, ok_json("update channel saved"))
 }
 
 fn kick_ledd() {

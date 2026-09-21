@@ -50,6 +50,7 @@ import {
   dongleApMac,
   dongleApPresent,
   dongleStatus,
+  noteDongleStatus,
   reconcileDongleAp,
   releaseDongle
 } from '../dongleAp'
@@ -102,6 +103,7 @@ describe('what the dongle is told', () => {
       'set ssid LIVI',
       'set country DE',
       'set channel 36',
+      'set width 40',
       'set passphrase 12345678',
       'apply',
       'save'
@@ -114,10 +116,13 @@ describe('what the dongle is told', () => {
   })
 
   it('hands over the settings once it is the access point', () => {
-    expect(commandsFor({ ...config, wifiInterface: DONGLE_LINK })).toEqual([
+    expect(
+      commandsFor({ ...config, wifiInterface: DONGLE_LINK, wifiChannelWidth: 80 } as Config)
+    ).toEqual([
       'set ssid Volvo',
       'set country DE',
       'set channel 44',
+      'set width 80',
       'set passphrase geheim12',
       'apply',
       'save'
@@ -270,6 +275,45 @@ describe('talking to the dongle', () => {
     await releaseDongle()
     expect(await dongleApPresent()).toBe(false)
     expect(createConnection).not.toHaveBeenCalled()
+  })
+})
+
+describe('a dongle that shows up after the settings went out', () => {
+  async function takeReconcile(): Promise<void> {
+    await settle(0)
+    await answer(sockets[0], 1)
+    await answer(sockets[0], 2, 'state off\nok\n')
+    await settle(1)
+    await answer(sockets[1], 1)
+    for (let i = 0; i < 50; i++) await Promise.resolve()
+  }
+
+  it('is told once it answers, and left alone while it agrees', async () => {
+    networkInterfaces.mockReturnValue({})
+    await reconcileDongleAp(config)
+    expect(sockets.length).toBe(0)
+
+    networkInterfaces.mockReturnValue({ ncm0: [{ address: '10.10.10.100' }] })
+    noteDongleStatus({ state: 'on' })
+    await takeReconcile()
+    expect(sockets[0].sent).toEqual(['off\n', 'status\n'])
+
+    sockets.length = 0
+    noteDongleStatus({ state: 'off' })
+    await Promise.resolve()
+    expect(sockets.length).toBe(0)
+  })
+
+  it('is told again after it was gone', async () => {
+    const first = reconcileDongleAp(config)
+    await takeReconcile()
+    await first
+
+    sockets.length = 0
+    noteDongleStatus(null)
+    noteDongleStatus({ state: 'on' })
+    await takeReconcile()
+    expect(sockets[0].sent).toEqual(['off\n', 'status\n'])
   })
 })
 
