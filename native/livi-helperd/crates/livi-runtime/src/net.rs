@@ -98,6 +98,15 @@ pub fn wlan_link_local(iface: &str) -> Option<String> {
 
 /// Local interface sharing a /24 with `peer` ("host" or "host:port").
 pub fn iface_facing(peer: &str) -> Option<String> {
+    facing(peer).map(|(name, _)| name)
+}
+
+/// This machine's own address in the /24 it shares with `peer`.
+pub fn addr_facing(peer: &str) -> Option<std::net::Ipv4Addr> {
+    facing(peer).map(|(_, addr)| addr)
+}
+
+fn facing(peer: &str) -> Option<(String, std::net::Ipv4Addr)> {
     use std::net::ToSocketAddrs;
     let host = peer.rsplit_once(':').map(|(h, _)| h).unwrap_or(peer);
     let ip: std::net::Ipv4Addr = match host.parse() {
@@ -126,10 +135,11 @@ pub fn iface_facing(peer: &str) -> Option<String> {
             continue;
         }
         let sin = unsafe { &*(ifa.ifa_addr as *const libc::sockaddr_in) };
-        if u32::from_be(sin.sin_addr.s_addr) & 0xffff_ff00 == subnet
+        let own = u32::from_be(sin.sin_addr.s_addr);
+        if own & 0xffff_ff00 == subnet
             && let Ok(name) = unsafe { std::ffi::CStr::from_ptr(ifa.ifa_name) }.to_str()
         {
-            out = Some(name.to_string());
+            out = Some((name.to_string(), std::net::Ipv4Addr::from(own)));
             break;
         }
     }

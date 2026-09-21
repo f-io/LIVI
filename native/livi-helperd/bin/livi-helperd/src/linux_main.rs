@@ -392,6 +392,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
                     aa_events.clone(),
                     wired_phones.clone(),
                     hfp,
+                    state.clone(),
                 ));
             }
             Err(e) => eprintln!("[aa] profile registration failed: {e}"),
