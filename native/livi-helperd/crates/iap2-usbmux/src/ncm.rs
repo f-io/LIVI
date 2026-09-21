@@ -116,8 +116,25 @@ fn open_tap(ifname: &str) -> Result<OwnedFd, String> {
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }
 
-fn run_cmd(program: &str, args: &[&str]) {
-    let _ = Command::new(program).args(args).output();
+fn run_cmd(program: &str, args: &[&str]) -> bool {
+    Command::new(program).args(args).output().is_ok_and(|o| o.status.success())
+}
+
+/// A link-local-only NetworkManager profile for the kernel's interface. On its default profile
+/// NetworkManager runs DHCP, gets no answer from the phone, and takes the link down.
+fn link_local_profile(ifname: &str) {
+    let _ = fs::write(format!("/proc/sys/net/ipv6/conf/{ifname}/accept_dad"), "0");
+    run_cmd("ip", &["link", "set", ifname, "up"]);
+    let name = format!("livi-carkit-{ifname}");
+    if !run_cmd("nmcli", &["-g", "connection.id", "connection", "show", &name]) {
+        let added = run_cmd("nmcli", &[
+            "connection", "add", "type", "ethernet", "ifname", ifname, "con-name", &name,
+            "ipv4.method", "disabled", "ipv6.method", "link-local", "ipv6.addr-gen-mode", "eui64",
+            "connection.autoconnect", "yes", "connection.autoconnect-priority", "999",
+        ]);
+        println!("[ncm] NetworkManager profile {name}: {}", if added { "added" } else { "not added" });
+    }
+    run_cmd("nmcli", &["connection", "up", &name]);
 }
 
 impl NcmBridge {
@@ -129,6 +146,7 @@ impl NcmBridge {
 
         if let Some(ifname) = kernel_ncm_iface(&dev.sysfs) {
             println!("[ncm] using kernel cdc_ncm interface {ifname}");
+            link_local_profile(&ifname);
             return Ok(Self { ifname, run: None });
         }
 
