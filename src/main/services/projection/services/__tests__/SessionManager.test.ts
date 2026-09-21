@@ -10,6 +10,18 @@ function mkManager(): SessionManager {
 }
 
 describe('SessionManager', () => {
+  it('numbers from 1 again once no session is left', () => {
+    const mgr = mkManager()
+    const first = mkDriver()
+    expect(mgr.upsert(first, 'carplay', 'wifi', { btMac: 'aa:aa' }).index).toBe(1)
+    const second = mkDriver()
+    expect(mgr.upsert(second, 'carplay', 'wifi', { btMac: 'bb:bb' }).index).toBe(2)
+    mgr.closeByDriver(first)
+    expect(mgr.upsert(mkDriver(), 'carplay', 'wifi', { btMac: 'cc:cc' }).index).toBe(3)
+    mgr.clear()
+    expect(mgr.upsert(mkDriver(), 'carplay', 'wifi', { btMac: 'dd:dd' }).index).toBe(1)
+  })
+
   describe('carplay transport derivation', () => {
     it('is wifi with no udid, becomes usb once a udid lands, then stays usb + keeps the udid on a later partial upsert', () => {
       const mgr = mkManager()

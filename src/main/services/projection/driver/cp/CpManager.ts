@@ -45,6 +45,8 @@ export class CpManager {
   private _liveSession: CpSession | null = null
   /** Recent identity-bearing helper events buffered until their session connects. */
   private readonly _pendingDevices: PendingDevice[] = []
+  /** btMac → usbUdid of the phones on the bus. */
+  private readonly _wired = new Map<string, string>()
 
   private _hevcSupported = false
   private _vp9Supported = false
@@ -174,6 +176,7 @@ export class CpManager {
     this._sessions.clear()
     this._liveSession = null
     this._pendingDevices.length = 0
+    this._wired.clear()
     await Promise.all(
       sessions.map((s) =>
         s
@@ -231,7 +234,7 @@ export class CpManager {
       seed: this._seed()
     })
     this._register(session)
-    session.adoptHelperDevice({ btMac: phoneId })
+    session.adoptHelperDevice({ btMac: phoneId, usbUdid: this._wired.get(phoneId.toLowerCase()) })
     // Drain a carkit usbUdid buffered before this session existed, so a later unplug can target it.
     this._adoptPending(session)
     return session
@@ -279,6 +282,7 @@ export class CpManager {
         usbUdid: str(ev.usbUdid) || undefined,
         name: str(ev.name) || undefined
       }
+      if (ids.btMac && ids.usbUdid) this._wired.set(ids.btMac.toLowerCase(), ids.usbUdid)
       this._onHelperPresence({ kind: 'device', ...ids })
       const match = this._matchSession(ids)
       if (match) match.adoptHelperDevice(ids)
@@ -298,6 +302,7 @@ export class CpManager {
       const usbUdid = str(ev.usbUdid)
       if (!usbUdid) return
       // A wired phone physically left the bus (carkit): close its session, not the live one.
+      for (const [mac, udid] of this._wired) if (udid === usbUdid) this._wired.delete(mac)
       this._onHelperPresence({ kind: 'device-gone', usbUdid })
       for (const s of [...this._sessions]) {
         if (s.matchesIdentity({ usbUdid })) void s.close()

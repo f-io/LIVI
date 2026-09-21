@@ -175,6 +175,22 @@ describe('CpManager session-at-identification', () => {
     expect(adopted.at(-1)?.btMac).toBe(phoneId)
   })
 
+  it('a session born while its phone is on the bus is wired and ends with the unplug', () => {
+    const { mgr } = makeManager()
+    const phoneId = '0c:6a:c4:4e:f3:2a'
+    const serial = '00008110-000A1B2C3D4E5F00'
+    mgr._onHelperEvent({ type: 'nowplaying', phoneId, title: 'X' })
+    mgr._onHelperEvent({ type: 'device', src: 'carkit', btMac: phoneId, usbUdid: serial })
+    // The AirPlay side drops while iAP2 over USB lives on and keeps sending metadata.
+    for (const old of sessionsFor(mgr, phoneId)) void old.close()
+    mgr._onHelperEvent({ type: 'nowplaying', phoneId, title: 'Y' })
+    const [born] = sessionsFor(mgr, phoneId)
+    expect(born?.matchesIdentity({ usbUdid: serial })).toBe(true)
+
+    mgr._onHelperEvent({ type: 'device-gone', src: 'carkit', usbUdid: serial })
+    expect(sessionsFor(mgr, phoneId)).toHaveLength(0)
+  })
+
   it('device-gone closes only the session matching that usbUdid', () => {
     const { mgr } = makeManager()
     const macA = 'aa:aa'
