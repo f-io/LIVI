@@ -175,6 +175,9 @@ export type Config = {
   carType?: CarType
   evConnectorTypes?: EvConnectorType[]
 
+  // Android Auto compatibility
+  aaDisableEnergySensors: boolean
+
   // Audio
   samplingFrequency: 0 | 1
   UseBTPhone: boolean

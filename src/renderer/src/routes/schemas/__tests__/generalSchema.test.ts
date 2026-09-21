@@ -22,7 +22,7 @@ describe('generalSchema', () => {
       })
     )
 
-    expect(connections.children).toHaveLength(7)
+    expect(connections.children).toHaveLength(8)
 
     expect(connections.children[0]).toEqual(
       expect.objectContaining({

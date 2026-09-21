@@ -5,6 +5,7 @@ import { CarType, HandDriveType, PhoneWorkMode } from '@shared/types/Config'
 export const DEFAULT_CONFIG: Config = {
   dismissedPackages: [],
   debugLogging: false,
+  aaDisableEnergySensors: false,
   updateNightly: false,
   projectionWidth: 1280,
   projectionHeight: 720,

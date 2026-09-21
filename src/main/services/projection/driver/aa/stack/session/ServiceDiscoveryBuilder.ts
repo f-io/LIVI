@@ -298,9 +298,13 @@ export function buildServiceDiscoveryResponse(
         { sensorType: SENSOR.COMPASS },
         { sensorType: SENSOR.GPS_SATELLITE },
         { sensorType: SENSOR.RPM },
-        { sensorType: SENSOR.VEHICLE_ENERGY_MODEL },
-        { sensorType: SENSOR.RAW_VEHICLE_ENERGY_MODEL },
-        { sensorType: SENSOR.RAW_EV_TRIP_SETTINGS }
+        ...(cfg.disableEnergySensors
+          ? []
+          : [
+              { sensorType: SENSOR.VEHICLE_ENERGY_MODEL },
+              { sensorType: SENSOR.RAW_VEHICLE_ENERGY_MODEL },
+              { sensorType: SENSOR.RAW_EV_TRIP_SETTINGS }
+            ])
       ],
       // RAW_GPS_ONLY=256 | ACCEL=4 | GYRO=2 | COMPASS=8 | CAR_SPEED=64
       locationCharacterization: 256 | 4 | 2 | 8 | 64,

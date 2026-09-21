@@ -215,6 +215,7 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
       cfg.clusterDpi > 0 ? cfg.clusterDpi : computeAndroidAutoDpi(clusterTierW, clusterTierH)
     const name = cfg.carName?.trim() ? cfg.carName : 'LIVI'
     const aaCfg: AAStackConfig = {
+      disableEnergySensors: cfg.aaDisableEnergySensors === true,
       huName: name,
       videoWidth: tierW,
       videoHeight: tierH,

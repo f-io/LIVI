@@ -10,6 +10,7 @@ import BorderStyleOutlinedIcon from '@mui/icons-material/BorderStyleOutlined'
 import Brightness6OutlinedIcon from '@mui/icons-material/Brightness6Outlined'
 import BrightnessAutoOutlinedIcon from '@mui/icons-material/BrightnessAutoOutlined'
 import BugReportOutlinedIcon from '@mui/icons-material/BugReportOutlined'
+import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined'
 import CableOutlinedIcon from '@mui/icons-material/CableOutlined'
 import CallOutlinedIcon from '@mui/icons-material/CallOutlined'
 import CameraAltOutlinedIcon from '@mui/icons-material/CameraAltOutlined'
@@ -141,6 +142,7 @@ const ICONS: Record<string, SvgIconComponent> = {
   system: MemoryOutlinedIcon,
 
   connections: WifiOutlinedIcon,
+  compatibility: BuildOutlinedIcon,
   windowSettings: DisplaySettingsOutlinedIcon,
   tabSettings: GridViewOutlinedIcon,
   keyBindings: KeyboardOutlinedIcon,

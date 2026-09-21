@@ -74,6 +74,7 @@ const enum State {
 }
 
 export interface SessionConfig {
+  disableEnergySensors?: boolean
   // HU label in SDR
   huName?: string
   // AA tier the phone encodes into (800×480 / 1280×720 / 1920×1080 / 2560×1440 / 3840×2160)

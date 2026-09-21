@@ -12,6 +12,7 @@ import { GpsHwInfo } from '../../components/pages/settings/pages/general/gps/Gps
 import { GpsInfo } from '../../components/pages/settings/pages/general/gps/GpsInfo'
 import { WifiLinkInfo } from '../../components/pages/settings/pages/general/wifi/WifiLinkInfo'
 import { SelectOption, SettingsNode } from '../types'
+import { compatibilitySchema } from './compatibilitySchema'
 
 const panelDefaultOption: SelectOption = {
   value: '',
@@ -253,7 +254,8 @@ export const generalSchema: SettingsNode<Config> = {
           labelKey: 'settings.autoConnect',
           icon: 'autoConnect',
           path: 'autoConn'
-        }
+        },
+        compatibilitySchema
       ]
     },
     {
