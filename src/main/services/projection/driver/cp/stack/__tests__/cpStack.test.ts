@@ -207,6 +207,7 @@ function baseCfg(over: Partial<CpStackConfig> = {}): CpStackConfig {
     deviceName: 'LIVI',
     oemLabel: 'LIVI',
     icons: [],
+    rightHandDrive: false,
     deviceId: 'AA:BB:CC:DD:EE:FF',
     btMac: 'AA:BB:CC:DD:EE:FF',
     sourceVersion: '1.0',
