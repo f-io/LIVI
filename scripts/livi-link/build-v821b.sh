@@ -120,6 +120,11 @@ sed -i \
   -e 's|#define AICBT_DBG_FLAG\([[:space:]]\{1,\}\)1|#define AICBT_DBG_FLAG\10|' \
   "$DRV/aic8800_fdrv/aic_btsdio.h"
 
+log "apply AIC8800 driver patches"
+for p in "$HERE"/patches/aic8800/*.patch; do
+  ( cd "$DRV" && patch -p1 -s < "$p" ) || { log "patch $(basename "$p") failed"; exit 6; }
+done
+
 # ---------------------------------------------------------------------------
 # 3) Kernel patches: symlinks, DTSIs, board DTS
 # ---------------------------------------------------------------------------
