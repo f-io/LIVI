@@ -605,7 +605,7 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
             ...(clusterPanel
               ? { widthPhysicalMm: clusterPanel.widthMm, heightPhysicalMm: clusterPanel.heightMm }
               : {}),
-            fps: cfg.projectionFps || 60,
+            fps: cfg.clusterFps || 60,
             viewArea: {
               top: cfg.clusterViewAreaTop,
               bottom: cfg.clusterViewAreaBottom,

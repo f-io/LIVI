@@ -208,6 +208,15 @@ describe('CpSession construction and stack config', () => {
     expect(built.entertainmentSampleRate).toBe(48000)
   })
 
+  it('advertises the cluster at its own frame rate', () => {
+    const { stack } = makeSession({
+      config: baseConfig({ projectionFps: 60, clusterFps: 30 } as Partial<Config>)
+    })
+    const built = stack.cfg as Record<string, Record<string, unknown>>
+    expect(built.main.fps).toBe(60)
+    expect(built.cluster.fps).toBe(30)
+  })
+
   it('drops icons that decode to empty and keeps the rest', () => {
     const { stack } = makeSession({
       config: baseConfig({ dongleIcon120: 'A' } as Partial<Config>)
