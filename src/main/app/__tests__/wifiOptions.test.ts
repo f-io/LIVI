@@ -13,7 +13,12 @@ vi.mock('@main/services/projection/driver/helper/helperSupervisor', () => ({
   resolveHelperBin: () => '/data/driver/livi-helperd'
 }))
 vi.mock('node:fs', () => {
-  const __m = { existsSync: vi.fn(), readdirSync: vi.fn(), readFileSync: vi.fn() }
+  const __m = {
+    existsSync: vi.fn(),
+    readdirSync: vi.fn(),
+    readFileSync: vi.fn(),
+    realpathSync: vi.fn((p: string) => p)
+  }
   return { ...__m, default: __m }
 })
 
@@ -73,6 +78,16 @@ describe('wifiOptions', () => {
       mockedReaddir.mockReturnValue(['wlan1', 'eth0', 'wlan0'])
       mockedExists.mockImplementation((p: string) => String(p).includes('wlan'))
       expect(listWifiInterfaces()).toEqual(['wlan0', 'wlan1'])
+    })
+
+    test('leaves out a controller that sits on vhci', async () => {
+      const { realpathSync } = await import('node:fs')
+      ;(realpathSync as Mock).mockImplementation((p: string) =>
+        p.endsWith('hci1') ? '/sys/devices/virtual/bluetooth/hci1' : p
+      )
+      mockedReaddir.mockReturnValue(['hci0', 'hci1'])
+      expect(listBtAdapters()).toEqual(['hci0'])
+      ;(realpathSync as Mock).mockImplementation((p: string) => p)
     })
 
     test('returns [] off linux', () => {

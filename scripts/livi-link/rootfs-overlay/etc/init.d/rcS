@@ -60,7 +60,7 @@ echo '[livi] insmod aic8800_bsp'
 insmod /lib/modules/5.4.220/aic8800_bsp.ko 2>&1 | tail -1
 sleep 1
 echo '[livi] insmod aic8800_fdrv + aic8800_btlpm'
-insmod /lib/modules/5.4.220/aic8800_fdrv.ko 2>&1 | tail -1
+insmod /lib/modules/5.4.220/aic8800_fdrv.ko aicwf_dbg_level=1 2>&1 | tail -1
 insmod /lib/modules/5.4.220/aic8800_btlpm.ko 2>&1 | tail -1
 sleep 0.5
 # hci0 may not exist yet — aic BT driver registers asynchronously. Retry up
@@ -120,4 +120,5 @@ fi
 done) &
 echo "[livi] heartbeat pid=$!"
 
+echo 4 > /proc/sys/kernel/printk
 echo '[livi] rcS done'

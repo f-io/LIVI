@@ -188,7 +188,10 @@ mod linux {
             for byte in up[..n].iter_mut() {
                 *byte = pending.pop_front().unwrap_or(0);
             }
-            let _ = unsafe { libc::write(sco.as_raw_fd(), up.as_ptr().cast(), n) };
+            // A controller that takes no more audio must not hold up the caller's side.
+            let _ = unsafe {
+                libc::send(sco.as_raw_fd(), up.as_ptr().cast(), n, libc::MSG_DONTWAIT)
+            };
         }
     }
 

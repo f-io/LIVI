@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { isTunnelledBtAdapter } from '@main/services/projection/driver/aa/stack/system/hwaddr'
 import { resolveHelperBin } from '@main/services/projection/driver/helper/helperSupervisor'
 
 // iw and regdbdump live in sbin, which a desktop session does not carry in its PATH.
@@ -35,7 +36,7 @@ export function listBtAdapters(): string[] {
   if (process.platform !== 'linux') return []
   try {
     return readdirSync('/sys/class/bluetooth')
-      .filter((n) => /^hci\d+$/.test(n))
+      .filter((n) => /^hci\d+$/.test(n) && !isTunnelledBtAdapter(n))
       .sort()
   } catch {
     return []

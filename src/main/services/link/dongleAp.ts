@@ -85,8 +85,14 @@ export function commandsFor(config: Config): string[] {
   ]
 }
 
+// On Linux the host drives the dongle's controller itself, over the tunnel.
+function accessoryOnDongle(): boolean {
+  return process.platform !== 'linux' || process.env.LIVI_BT_VIA_DONGLE === '1'
+}
+
 export function btCommandsFor(config: Config): string[] {
   if (config.btAdapter !== DONGLE_LINK || !config.wirelessCpEnabled) return ['off']
+  if (!accessoryOnDongle()) return ['off']
   // Who may be paged comes from the paging list the helper hands over, not from here.
   return ['on']
 }
@@ -153,14 +159,17 @@ let wanted: Config | null = null
 let told = false
 let reconciling = false
 let lastDriftAt = 0
+let lastTryAt = 0
 
 /** Fed with every status poll. */
 export function noteDongleStatus(status: Record<string, string> | null): void {
   if (!status) {
     told = false
+    lastTryAt = 0
     return
   }
   if (!wanted || reconciling) return
+  if (!told && Date.now() - lastTryAt < DRIFT_RETRY_MS) return
   const drifted = (status.state === 'on') !== (wanted.wifiInterface === DONGLE_LINK)
   if (told && !(drifted && Date.now() - lastDriftAt > DRIFT_RETRY_MS)) return
   if (told) lastDriftAt = Date.now()
@@ -180,6 +189,8 @@ export async function reconcileDongleAp(config: Config): Promise<void> {
 }
 
 async function reconcile(config: Config): Promise<void> {
+  lastTryAt = Date.now()
+  let heard = true
   try {
     const answers = await talk([...commandsFor(config), 'status'])
     apMac =
@@ -187,19 +198,22 @@ async function reconcile(config: Config): Promise<void> {
         .find((line) => line.startsWith('mac '))
         ?.slice(4)
         .trim() || apMac
-    told = true
   } catch (err) {
     // Nothing local depends on the dongle, so a refusal is noted and the rest goes on.
+    heard = false
     report('access point', err)
   }
+  // The dongle's own Bluetooth stays off until it is told otherwise, so this has to arrive.
   try {
     await talk(btCommandsFor(config), APPLY_MS, BT_PORT)
   } catch (err) {
+    heard = false
     report('bluetooth', err)
   }
+  told = heard
 }
 
-/** Switches off what LIVI switched on. The dongle brings both back by itself on its next boot. */
+/** Switches off what LIVI switched on. */
 export async function releaseDongle(): Promise<void> {
   if (!attached()) return
   await Promise.allSettled([talk(['off'], PROBE_MS), talk(['off'], PROBE_MS, BT_PORT)])

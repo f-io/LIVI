@@ -163,29 +163,10 @@ pub fn run(config: Config) -> ExitCode {
         eprintln!("[iapd] the controller never answered");
         return ExitCode::FAILURE;
     };
-    // Retried until the controller takes it.
-    let mut refused = String::new();
-    for _ in 0..CONTROLLER_TRIES {
-        match present(&mgmt, name) {
-            Ok(()) => {
-                refused.clear();
-                break;
-            }
-            Err(e) => {
-                refused = e;
-                std::thread::sleep(CONTROLLER_POLL);
-            }
-        }
-    }
-    if !refused.is_empty() {
-        eprintln!("[iapd] {refused}");
-        return ExitCode::FAILURE;
-    }
-    restore(&mgmt);
-    println!("[iapd] {name} is discoverable and pairable");
+    println!("[iapd] {name} stays off the air until the host asks for it");
     let phones: Arc<Mutex<Phones>> = Arc::default();
-    // The accessory presents itself from here on, paging waits for a list from the host.
-    let offered = Arc::new(AtomicBool::new(true));
+    // A host that drives the controller itself never asks, and then nothing here may answer.
+    let offered = Arc::new(AtomicBool::new(false));
     // The host waiting for the next session.
     let host: Arc<Mutex<Option<TcpStream>>> = Arc::default();
     let (known, want, calling_to, called) =
@@ -624,7 +605,11 @@ fn order(line: &str, offered: &AtomicBool, phones: &Mutex<Phones>) -> Result<Str
         "off" => {
             offered.store(false, Ordering::Relaxed);
             phones.lock().unwrap().wanted = None;
-            offer(false).map(|()| "ok\n".into())
+            // A host that holds the controller keeps it off the air itself.
+            if let Err(e) = offer(false) {
+                println!("[iapd] off: {e}");
+            }
+            Ok("ok\n".into())
         }
         _ if line.starts_with("disconnect ") => {
             let phone = address(line.trim_start_matches("disconnect ")).ok_or("not an address")?;
@@ -670,7 +655,10 @@ fn offer(on: bool) -> Result<(), String> {
     let mut visible = vec![u8::from(on)];
     visible.extend_from_slice(&0u16.to_le_bytes());
     mgmt.call(SET_CONNECTABLE, mgmt::INDEX, &[u8::from(on)])?;
-    mgmt.call(SET_DISCOVERABLE, mgmt::INDEX, &visible)?;
+    // Not connectable is not discoverable either, and the kernel refuses to be told so.
+    if on {
+        mgmt.call(SET_DISCOVERABLE, mgmt::INDEX, &visible)?;
+    }
     Ok(())
 }
 

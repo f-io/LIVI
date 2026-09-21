@@ -104,7 +104,10 @@ fn bt_adapter(dc: &DeviceConfig) -> String {
     livi_dongle::bt::attach(
         move |index| {
             ours.store(true, std::sync::atomic::Ordering::Relaxed);
-            let _ = tx.send(index);
+            if tx.send(index).is_err() {
+                eprintln!("[bt] the dongle's controller arrived late, starting over with it");
+                std::process::exit(1);
+            }
         },
         move || {
             if lost.load(std::sync::atomic::Ordering::Relaxed) {

@@ -80,6 +80,17 @@ async function answer(socket: MockSocket, count: number, text = 'ok\n'): Promise
   socket.say(text)
 }
 
+/** Runs with the platform pinned, whatever machine the tests are on. */
+function on(platform: NodeJS.Platform, run: () => void): void {
+  const real = process.platform
+  Object.defineProperty(process, 'platform', { value: platform, configurable: true })
+  try {
+    run()
+  } finally {
+    Object.defineProperty(process, 'platform', { value: real, configurable: true })
+  }
+}
+
 describe('what the dongle is told', () => {
   it('silences it while something else is the access point', () => {
     expect(commandsFor(config)).toEqual(['off'])
@@ -93,8 +104,10 @@ describe('what the dongle is told', () => {
       wirelessCpEnabled: true,
       autoConn: true
     } as Config
-    expect(btCommandsFor(chosen)).toEqual(['on'])
-    expect(btCommandsFor({ ...chosen, autoConn: false } as Config)).toEqual(['on'])
+    on('darwin', () => {
+      expect(btCommandsFor(chosen)).toEqual(['on'])
+      expect(btCommandsFor({ ...chosen, autoConn: false } as Config)).toEqual(['on'])
+    })
   })
 
   it('falls back to defaults where the settings are empty', () => {
@@ -108,6 +121,11 @@ describe('what the dongle is told', () => {
       'apply',
       'save'
     ])
+  })
+
+  it('leaves the accessory off where the host holds the controller', () => {
+    const chosen = { ...config, btAdapter: DONGLE_LINK, wirelessCpEnabled: true } as Config
+    on('linux', () => expect(btCommandsFor(chosen)).toEqual(['off']))
   })
 
   it('silences the accessory when wireless CarPlay is off', () => {
@@ -291,6 +309,7 @@ describe('a dongle that shows up after the settings went out', () => {
   it('is told once it answers, and left alone while it agrees', async () => {
     networkInterfaces.mockReturnValue({})
     await reconcileDongleAp(config)
+    noteDongleStatus(null)
     expect(sockets.length).toBe(0)
 
     networkInterfaces.mockReturnValue({ ncm0: [{ address: '10.10.10.100' }] })
@@ -302,6 +321,33 @@ describe('a dongle that shows up after the settings went out', () => {
     noteDongleStatus({ state: 'off' })
     await Promise.resolve()
     expect(sockets.length).toBe(0)
+  })
+
+  it('is told again when the bluetooth order did not arrive', async () => {
+    vi.useFakeTimers()
+    noteDongleStatus(null)
+    noteDongleStatus({ state: 'off' })
+    await settle(0)
+    await answer(sockets[0], 1)
+    await answer(sockets[0], 2, 'state off\nok\n')
+    await settle(1)
+    sockets[1].emit('error', new Error('ECONNREFUSED'))
+    for (let i = 0; i < 50; i++) await Promise.resolve()
+
+    sockets.length = 0
+    noteDongleStatus({ state: 'off' })
+    await Promise.resolve()
+    expect(sockets.length).toBe(0)
+
+    vi.advanceTimersByTime(31_000)
+    noteDongleStatus({ state: 'off' })
+    await settle(0)
+    expect(sockets.length).toBe(1)
+    sockets[0].emit('error', new Error('done'))
+    await settle(1)
+    sockets[1].emit('error', new Error('done'))
+    for (let i = 0; i < 50; i++) await Promise.resolve()
+    vi.useRealTimers()
   })
 
   it('is told again after it was gone', async () => {

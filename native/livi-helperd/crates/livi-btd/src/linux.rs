@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -18,7 +19,7 @@ const HCI_EVT_PKT: u8 = 0x04;
 const EV_CONN_COMPLETE: u8 = 0x03;
 const EV_CONN_REQUEST: u8 = 0x04;
 const EV_DISCONN_COMPLETE: u8 = 0x05;
-const EV_LE_META: u8 = 0x3e;
+const LINK_ACL: u8 = 0x01;
 const POLL_MS: i32 = 200;
 const ORDER_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
 const CONTROLLER_TRIES: u32 = 120;
@@ -81,7 +82,6 @@ pub fn run() -> ExitCode {
         if let Err(e) = crate::hci::up(DEV) {
             eprintln!("[btd] {IFACE} up: {e}");
         }
-        tell_accessory("on");
     }
     ExitCode::SUCCESS
 }
@@ -156,7 +156,7 @@ fn pump(dev: File, stream: TcpStream) {
 
 fn out_bound(dev: File, mut out: TcpStream, stop: &AtomicBool) {
     let mut buf = [0u8; PACKET_MAX];
-    let mut conns = 0u32;
+    let mut links = HashSet::new();
     while !stop.load(Ordering::Relaxed) {
         if !readable(dev.as_raw_fd(), POLL_MS) {
             continue;
@@ -169,7 +169,7 @@ fn out_bound(dev: File, mut out: TcpStream, stop: &AtomicBool) {
                 return;
             }
         };
-        watch_link(&buf[..n], &mut conns);
+        watch_link(&buf[..n], &mut links);
         if let Err(e) = out
             .write_all(&(n as u16).to_be_bytes())
             .and_then(|()| out.write_all(&buf[..n]))
@@ -180,32 +180,28 @@ fn out_bound(dev: File, mut out: TcpStream, stop: &AtomicBool) {
     }
 }
 
-/// Reflects the BT link in the LED from the controller→host event stream. Tracks how many links
-/// are up so a second connect/disconnect does not flicker the signal.
-fn watch_link(pkt: &[u8], conns: &mut u32) {
-    if pkt.first() != Some(&HCI_EVT_PKT) || pkt.len() < 4 {
+fn watch_link(pkt: &[u8], links: &mut HashSet<u16>) {
+    if pkt.first() != Some(&HCI_EVT_PKT) || pkt.len() < 6 {
         return;
     }
-    let up = match pkt[1] {
-        EV_CONN_REQUEST => {
-            led_signal("bt-paging", true);
-            return;
+    let handle = u16::from_le_bytes([pkt[4], pkt[5]]) & 0x0fff;
+    match pkt[1] {
+        // A call's audio link asks to come in as well, and never completes as a connection.
+        EV_CONN_REQUEST if pkt.get(12) == Some(&LINK_ACL) => led_signal("bt-paging", true),
+        EV_CONN_COMPLETE => {
+            led_signal("bt-paging", false);
+            if pkt[3] == 0x00 && pkt.get(12) == Some(&LINK_ACL) {
+                links.insert(handle);
+                led_signal("bt-connected", true);
+            }
         }
-        EV_CONN_COMPLETE => pkt[3] == 0x00,
-        EV_LE_META if pkt.len() >= 5 => pkt[3] == 0x01 && pkt[4] == 0x00,
         EV_DISCONN_COMPLETE if pkt[3] == 0x00 => {
-            *conns = conns.saturating_sub(1);
-            if *conns == 0 {
+            links.remove(&handle);
+            if links.is_empty() {
                 led_signal("bt-connected", false);
             }
-            return;
         }
-        _ => return,
-    };
-    if up {
-        *conns += 1;
-        led_signal("bt-paging", false);
-        led_signal("bt-connected", true);
+        _ => {}
     }
 }
 

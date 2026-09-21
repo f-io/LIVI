@@ -8,6 +8,7 @@ import * as path from 'node:path'
 
 const BT_SYSFS_DIR = '/sys/class/bluetooth'
 const NET_SYSFS_DIR = '/sys/class/net'
+const DONGLE_LINK = 'livi-link'
 
 function readSysfsMac(filePath: string): string | null {
   try {
@@ -18,6 +19,15 @@ function readSysfsMac(filePath: string): string | null {
     return null
   } catch {
     return null
+  }
+}
+
+/** Whether the controller sits on vhci, as the LIVI Link's does. */
+export function isTunnelledBtAdapter(hci: string): boolean {
+  try {
+    return fs.realpathSync(path.join(BT_SYSFS_DIR, hci)).includes('/devices/virtual/')
+  } catch {
+    return false
   }
 }
 
@@ -60,6 +70,10 @@ function readBtMacFromBusctl(iface = 'hci0'): string | null {
 
 export function detectBtMac(iface?: string): string | undefined {
   if (process.env['AA_BT_MAC']) return process.env['AA_BT_MAC']
+  if (iface === DONGLE_LINK) {
+    iface = listSysfsDir(BT_SYSFS_DIR).find(isTunnelledBtAdapter)
+    if (!iface) return undefined
+  }
 
   const candidates = iface ? [iface] : listSysfsDir(BT_SYSFS_DIR).filter((n) => n.startsWith('hci'))
 

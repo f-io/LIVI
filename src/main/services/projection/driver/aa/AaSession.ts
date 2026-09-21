@@ -8,6 +8,7 @@
 import { EventEmitter } from 'node:events'
 import { DEBUG } from '@main/constants'
 import { MicTap } from '@main/services/audio/micTap'
+import { DONGLE_LINK, dongleApMac } from '@main/services/link/dongleAp'
 import {
   type SendableMessage,
   SendCloseDongle,
@@ -33,6 +34,8 @@ import {
   AAStack,
   type AAStackConfig,
   BUTTON_KEY,
+  detectBtMac,
+  detectWifiBssid,
   TOUCH_ACTION,
   type TouchPointer
 } from './stack/index'
@@ -304,6 +307,14 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
     this._touchInsetBottom = arBottom + Math.max(0, cfg.projectionViewAreaBottom ?? 0)
     this._touchInsetLeft = arLeft + Math.max(0, cfg.projectionViewAreaLeft ?? 0)
     this._touchInsetRight = arRight + Math.max(0, cfg.projectionViewAreaRight ?? 0)
+
+    const btMac = detectBtMac(cfg.btAdapter || undefined)
+    if (btMac) aaCfg.btMacAddress = btMac
+    const bssid =
+      cfg.wifiInterface === DONGLE_LINK
+        ? dongleApMac()
+        : detectWifiBssid(cfg.wifiInterface || undefined)
+    if (bssid) aaCfg.wifiBssid = bssid
 
     this._aaCfg = aaCfg
     return aaCfg
