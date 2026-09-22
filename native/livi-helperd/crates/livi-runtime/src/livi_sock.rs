@@ -257,7 +257,11 @@ where
             };
             reply(&mut stream, &json).await
         }
-        "drop-iap2" => reply(&mut stream, "{\"ok\":true}").await,
+        "drop-iap2" => {
+            let n = state.restart_wired();
+            println!("[cp-sock] drop-iap2: {n} wired session(s) end for a fresh start");
+            reply(&mut stream, "{\"ok\":true}").await
+        }
         other => reply(&mut stream, &err_json(&format!("unknown command: {other}"))).await,
     }
 }

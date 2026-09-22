@@ -144,6 +144,8 @@ const { configEventsMock } = vi.hoisted(() => ({
   configEventsMock: { on: vi.fn(), off: vi.fn(), emit: vi.fn() }
 }))
 vi.mock('@main/ipc/utils', () => ({ configEvents: configEventsMock }))
+const restartWifiApMock = vi.hoisted(() => vi.fn(async () => undefined))
+vi.mock('../../driver/helper/wifiApUnit', () => ({ restartWifiAp: restartWifiApMock }))
 
 const playerCreatedHook: { cb: (() => void) | null } = { cb: null }
 vi.mock('../../../video/GstVideo', async (importOriginal) => {
@@ -1977,6 +1979,36 @@ describe('ProjectionService transport switch / restart / connect', () => {
     svc.getActiveTransport = vi.fn(() => null)
     await svc.restartSession()
     expect(dropSessions).toHaveBeenCalled()
+  })
+
+  test('restartSession leaves the access point alone unless its settings changed', async () => {
+    const svc = makeSvc()
+    svc.cpActive = true
+    const dropSessions = vi.fn()
+    svc.drivers.getCpManager = vi.fn(() => ({
+      dropSessions,
+      helper: { sendReconnectTargets: vi.fn(async () => undefined) }
+    }))
+    svc.getActiveTransport = vi.fn(() => null)
+    svc.stop = vi.fn(async () => undefined)
+    svc.autoStartIfNeeded = vi.fn(async () => undefined)
+    svc.applyConfigPatch({ wifiChannel: 48 })
+
+    await svc.restartSession()
+    expect(restartWifiApMock).not.toHaveBeenCalled()
+
+    svc.config = { ...svc.config, wifiChannel: 149 }
+    const order: string[] = []
+    restartWifiApMock.mockImplementationOnce(async () => {
+      order.push('ap')
+    })
+    dropSessions.mockImplementation(() => order.push('drop'))
+    await svc.restartSession()
+    expect(order).toEqual(['ap', 'drop'])
+
+    restartWifiApMock.mockClear()
+    await svc.restartSession()
+    expect(restartWifiApMock).not.toHaveBeenCalled()
   })
 
   test('restartSession stops and returns for a wired AA session', async () => {

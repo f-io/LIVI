@@ -108,6 +108,12 @@ export class CpHelperSock implements MfiSigner {
     if (!res.ok) throw new CpHelperSockError(res.error)
   }
 
+  /** Ends the wired iAP2 sessions, so the phones open them again. */
+  async dropIap2(): Promise<void> {
+    const res = await this.request('drop-iap2')
+    if (!res.ok) throw new CpHelperSockError(res.error)
+  }
+
   /** Hands NMEA sentences (base64) to the iAP2 stack for a LocationInformation update;
    *  dropped when no phone subscribed. */
   async sendLocation(nmea: string): Promise<void> {

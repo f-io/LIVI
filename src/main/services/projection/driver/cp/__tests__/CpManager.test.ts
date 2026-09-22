@@ -122,6 +122,18 @@ describe('CpManager session-at-identification', () => {
     expect(sessionsFor(mgr, '0c:6a:c4:4e:f3:2a')).toHaveLength(1)
   })
 
+  it('does not rebirth a session from the events that trail its close', () => {
+    const { mgr } = makeManager()
+    mgr._onHelperEvent({ type: 'nowplaying', phoneId: '0c:6a', title: 'X' })
+    const [s] = sessionsFor(mgr, '0c:6a')
+    s.emit('disconnected')
+    mgr._onHelperEvent({ type: 'nowplaying', phoneId: '0c:6a', playing: 0 })
+    expect(sessionsFor(mgr, '0c:6a')).toHaveLength(0)
+    mgr._onHelperEvent({ type: 'device', btMac: '0C:6A' })
+    mgr._onHelperEvent({ type: 'nowplaying', phoneId: '0c:6a', title: 'Y' })
+    expect(sessionsFor(mgr, '0c:6a')).toHaveLength(1)
+  })
+
   it('reuses the born session for further events of the same phone', () => {
     const { mgr } = makeManager()
     mgr._onHelperEvent({ type: 'nowplaying', phoneId: '0c:6a', title: 'X' })
@@ -393,11 +405,13 @@ describe('CpManager dropSessions', () => {
     const [b] = sessionsFor(mgr, 'bb:bb')
     const closeA = vi.spyOn(a as never, 'close').mockResolvedValue(undefined as never)
     const closeB = vi.spyOn(b as never, 'close').mockResolvedValue(undefined as never)
+    const dropIap2 = vi.spyOn(mgr._helper, 'dropIap2').mockResolvedValue(undefined)
 
     mgr.dropSessions()
 
     expect(closeA).toHaveBeenCalledTimes(1)
     expect(closeB).toHaveBeenCalledTimes(1)
+    expect(dropIap2).toHaveBeenCalledTimes(1)
   })
 })
 

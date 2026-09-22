@@ -88,6 +88,18 @@ function deriveInitialNightMode(mode: string | undefined): boolean | undefined {
 const START_RETRY_BASE_MS = 1000
 const START_RETRY_CAP_MS = 15000
 
+function apSignature(c: Config): string {
+  return [
+    c.wifiInterface,
+    c.carName,
+    c.wifiPassword,
+    c.wifiType,
+    c.wifiChannel,
+    c.wifiChannelWidth,
+    c.country
+  ].join('|')
+}
+
 export class ProjectionService {
   private readonly drivers: ProjectionDriverManager
   private readonly arbiter: TransportArbiter
@@ -480,10 +492,14 @@ export class ProjectionService {
   private audio: ProjectionAudio
   private systemSound = new SystemSound(() => this.config)
 
+  /** What the access point was started with, once the boot config is in. */
+  private apSig: string | null = null
+
   private readonly onConfigChanged = (next: Config) => {
     if (this.shuttingDown) return
     const prev = this.config
     this.config = { ...this.config, ...next }
+    this.apSig ??= apSignature(this.config)
 
     const prevClusterActive = isClusterDisplayed(prev)
     const nextClusterActive = isClusterDisplayed(this.config)
@@ -1175,6 +1191,7 @@ export class ProjectionService {
 
   public applyConfigPatch(patch: Partial<Config>): void {
     this.config = { ...this.config, ...patch }
+    this.apSig ??= apSignature(this.config)
     this.deviceController.resendReconnectTargets()
     this.syncHelperSupervisor()
   }
@@ -1267,6 +1284,11 @@ export class ProjectionService {
   // Restart the session to apply a config change that needs fresh negotiation
   public async restartSession(): Promise<void> {
     console.log('[ProjectionService] restartSession requested (settings/IPC)')
+    // A phone is paged onto the new access point, never off the old one, so this comes first.
+    if (this.apSig !== null && apSignature(this.config) !== this.apSig) {
+      this.apSig = apSignature(this.config)
+      await restartWifiAp(this.config)
+    }
     // Native CarPlay renegotiates the advertised displays on reconnect.
     if (this.cpActive) this.drivers.getCpManager()?.dropSessions()
 
@@ -1279,7 +1301,6 @@ export class ProjectionService {
     } catch (e) {
       console.warn('[ProjectionService] restartSession: stop threw (ignored)', e)
     }
-    await restartWifiAp(this.config)
 
     if (wasWired) {
       return

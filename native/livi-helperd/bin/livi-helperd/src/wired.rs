@@ -191,6 +191,9 @@ pub async fn watch_usbmuxd(
         };
         let present: HashSet<String> = devices.iter().map(|d| d.udid.clone()).collect();
         active.retain(|udid, cancel| {
+            if state.take_redo(udid) {
+                return false;
+            }
             let keep = present.contains(udid);
             if !keep {
                 println!("[wired] {} unplugged", short(udid));
@@ -273,6 +276,8 @@ async fn run_wired_session<S>(
     let (tx, rx) = tokio::sync::mpsc::channel(64);
     let ident: SharedTag = Default::default();
     ctx.state.carkit_started(ident.clone());
+    let restart = Arc::new(Notify::new());
+    ctx.state.wired_started(&serial, restart.clone());
     tokio::spawn(pump_events_for(
         rx,
         ctx.bcast.clone(),
@@ -286,7 +291,9 @@ async fn run_wired_session<S>(
     tokio::select! {
         _ = run_accessory(ch, ctx.auth, ctx.identity, cp, tx, ctx.state.vehicle_feed()) => {}
         _ = cancel.notified() => println!("[wired] {}: session cancelled on unplug", short(&serial)),
+        _ = restart.notified() => println!("[wired] {}: session ended for a fresh start", short(&serial)),
     }
+    ctx.state.wired_ended(&serial);
     ctx.state.carkit_ended(&ident);
     drop(ncm);
 }

@@ -1,7 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use crate::livi_sock::SharedTag;
+use tokio::sync::Notify;
 use crate::vehicle::{Vehicle, VehicleFeed};
 
 /// Shared helper state: reconnect targets, the tags of the carkit iAP2 sessions, and the
@@ -13,6 +14,8 @@ pub struct HelperState {
     carkit: Mutex<Vec<SharedTag>>,
     links: Mutex<HashSet<String>>,
     vehicle: Vehicle,
+    wired: Mutex<HashMap<String, Arc<Notify>>>,
+    redo: Mutex<HashSet<String>>,
 }
 
 impl HelperState {
@@ -22,6 +25,30 @@ impl HelperState {
 
     pub fn vehicle_feed(&self) -> VehicleFeed {
         self.vehicle.feed()
+    }
+
+    pub fn wired_started(&self, serial: &str, restart: Arc<Notify>) {
+        self.wired.lock().unwrap().insert(serial.to_string(), restart);
+    }
+
+    pub fn wired_ended(&self, serial: &str) {
+        self.wired.lock().unwrap().remove(serial);
+    }
+
+    /// Ends every wired iAP2 session.
+    pub fn restart_wired(&self) -> usize {
+        let wired = self.wired.lock().unwrap();
+        let mut redo = self.redo.lock().unwrap();
+        for (serial, restart) in wired.iter() {
+            redo.insert(serial.clone());
+            restart.notify_one();
+        }
+        wired.len()
+    }
+
+    /// Whether this phone's session was ended for a fresh start, once.
+    pub fn take_redo(&self, serial: &str) -> bool {
+        self.redo.lock().unwrap().remove(serial)
     }
 
     pub fn link_up(&self, mac: &str) {

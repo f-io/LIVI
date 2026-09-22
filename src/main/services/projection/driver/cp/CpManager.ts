@@ -47,6 +47,8 @@ export class CpManager {
   private readonly _pendingDevices: PendingDevice[] = []
   /** btMac → usbUdid of the phones on the bus. */
   private readonly _wired = new Map<string, string>()
+  /** Phones whose wireless session ended: their last events must not create a new one. */
+  private readonly _gone = new Set<string>()
 
   private _hevcSupported = false
   private _vp9Supported = false
@@ -98,9 +100,11 @@ export class CpManager {
     for (const s of this._sessions) s.setClusterStreamActive(active)
   }
 
-  /** Drop every session; the listener stays up and the phones reconnect. */
+  /** Drop every session; the listener stays up and the phones reconnect. A wireless phone is
+   *  paged again, a wired one only offers CarPlay again on a fresh iAP2 session. */
   dropSessions(): void {
     for (const s of [...this._sessions]) void s.close()
+    this._helper.dropIap2().catch(() => {})
   }
 
   // ── Telemetry push (manager-level: shared hardware / whole subsystem) ───────
@@ -217,6 +221,8 @@ export class CpManager {
     })
     session.on('identity', () => this._adoptPending(session))
     session.once('disconnected', () => {
+      const mac = session.getBtMac().toLowerCase()
+      if (mac && !this._wired.has(mac)) this._gone.add(mac)
       this._sessions.delete(session)
       if (this._liveSession === session) {
         this._liveSession = [...this._sessions].at(-1) ?? null
@@ -282,6 +288,7 @@ export class CpManager {
         usbUdid: str(ev.usbUdid) || undefined,
         name: str(ev.name) || undefined
       }
+      if (ids.btMac) this._gone.delete(ids.btMac.toLowerCase())
       if (ids.btMac && ids.usbUdid) this._wired.set(ids.btMac.toLowerCase(), ids.usbUdid)
       this._onHelperPresence({ kind: 'device', ...ids })
       const match = this._matchSession(ids)
@@ -322,11 +329,6 @@ export class CpManager {
       : undefined
     let target = byPhoneId ?? byCid
     if (!target) {
-      // A phoneId-tagged event whose phone has no session yet BIRTHS one, so its metadata has
-      // a target from event #1; the AirPlay transport adopts that session at pair-verify
-      // (ProjectionService reassigns the driver, drops the placeholder). An untagged event
-      // falls back to the live/sole session, unless a phoneId contradicts it — and only while
-      // a single phone is around.
       const fallback = this._metadataTarget()
       const contradicts =
         Boolean(phoneId) &&
@@ -335,7 +337,9 @@ export class CpManager {
       const unattributable = !phoneId && !cid && this._sessions.size > 1
       if (unattributable) target = undefined
       else if (fallback && !contradicts) target = fallback
-      else if (phoneId) target = this._createMetaSession(phoneId)
+      else if (phoneId && !this._gone.has(phoneId.toLowerCase())) {
+        target = this._createMetaSession(phoneId)
+      }
     }
     if (target) target.ingestHelperEvent(ev)
   }
