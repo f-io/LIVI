@@ -8,13 +8,16 @@ use iap2_csm::messages::authentication::*;
 use iap2_csm::messages::car_play::*;
 use iap2_csm::messages::communications::*;
 use iap2_csm::messages::identification::*;
+use iap2_csm::messages::location::*;
 use iap2_csm::messages::now_playing::*;
 use iap2_csm::messages::power::*;
 use iap2_csm::messages::route_guidance::*;
+use iap2_csm::messages::vehicle_status::*;
 use iap2_csm::messages::wifi::*;
 
 use crate::framing::frame_msg_id;
 use crate::ident::{DROPPABLE, Identity, Transport, build_identification};
+use crate::vehicle::{LocationTypes, VehicleFeed, VehicleStatus};
 use crate::{AsyncAuth, ControlChannel, net};
 
 /// Wireless CarPlay parameters handed to the phone: the AP and the AirPlay receiver.
@@ -319,6 +322,7 @@ pub async fn run_accessory<C: ControlChannel, A: AsyncAuth>(
     id: Identity,
     cp: CpConfig,
     events: mpsc::Sender<BringupEvent>,
+    mut vehicle: VehicleFeed,
 ) {
     if let Err(e) = run_identification(&mut ch, &id, cp.transport).await {
         let _ = events.send(BringupEvent::Failed(e.to_string())).await;
@@ -351,11 +355,63 @@ pub async fn run_accessory<C: ControlChannel, A: AsyncAuth>(
     }
     let _ = events.send(BringupEvent::Subscribed).await;
 
-    while let Some(frame) = ch.recv().await {
+    let mut location_types = LocationTypes::default();
+    let mut status_wanted = false;
+    loop {
+        let frame = tokio::select! {
+            frame = ch.recv() => match frame {
+                Some(frame) => frame,
+                None => break,
+            },
+            changed = vehicle.location.changed() => {
+                if changed.is_err() {
+                    continue;
+                }
+                let nmea = vehicle.location.borrow_and_update().1.clone();
+                if !send_location(&mut ch, &location_types, &nmea).await {
+                    break;
+                }
+                continue;
+            }
+            changed = vehicle.status.changed() => {
+                if changed.is_err() {
+                    continue;
+                }
+                let status = vehicle.status.borrow_and_update().clone();
+                if status_wanted && !send_status(&mut ch, &status).await {
+                    break;
+                }
+                continue;
+            }
+        };
         let Some(msg_id) = frame_msg_id(&frame) else {
             continue;
         };
         match msg_id {
+            0xFFFA => {
+                location_types = StartLocationInformation::decode(&frame)
+                    .map(|req| LocationTypes::from_request(&req))
+                    .unwrap_or_default();
+                println!("[cp] location: subscribed {:?}", location_types.names());
+                // Only fixes from now on, not the one from before the phone asked.
+                vehicle.location.mark_unchanged();
+            }
+            0xFFFC => {
+                location_types = LocationTypes::default();
+                println!("[cp] location: stopped");
+            }
+            0xA100 => {
+                status_wanted = true;
+                println!("[cp] vehicle status: subscribed");
+                let status = vehicle.status.borrow_and_update().clone();
+                if !send_status(&mut ch, &status).await {
+                    break;
+                }
+            }
+            0xA102 => {
+                status_wanted = false;
+                println!("[cp] vehicle status: stopped");
+            }
             0x5702 => {
                 if ch.send(wifi_config(&cp).encode()).await.is_err() {
                     break;
@@ -412,4 +468,31 @@ pub async fn run_accessory<C: ControlChannel, A: AsyncAuth>(
         }
     }
     let _ = events.send(BringupEvent::Closed).await;
+}
+
+/// Each sentence the phone asked for as its own message. False once the channel is gone.
+async fn send_location<C: ControlChannel>(ch: &mut C, types: &LocationTypes, nmea: &str) -> bool {
+    for line in types.wanted(nmea) {
+        let msg = LocationInformation { nmea_sentence: line.to_string() };
+        if ch.send(msg.encode()).await.is_err() {
+            return false;
+        }
+    }
+    true
+}
+
+async fn send_status<C: ControlChannel>(ch: &mut C, status: &VehicleStatus) -> bool {
+    if status.is_empty() {
+        return true;
+    }
+    println!(
+        "[cp] vehicle status → range={:?} temp={:?} warn={:?}",
+        status.range, status.outside_temperature, status.range_warning
+    );
+    let msg = VehicleStatusUpdate {
+        range: status.range,
+        outside_temperature: status.outside_temperature,
+        range_warning: status.range_warning,
+    };
+    ch.send(msg.encode()).await.is_ok()
 }

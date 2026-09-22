@@ -18,6 +18,7 @@ pub mod privileged;
 pub mod reconnect;
 pub mod state;
 pub mod sys;
+pub mod vehicle;
 
 #[cfg(target_os = "linux")]
 pub mod bt;

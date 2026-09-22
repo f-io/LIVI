@@ -196,7 +196,7 @@ export type TelemetryPayload = {
 
   // ── EV battery  ─────────────────────────────────────────
 
-  /** Gross battery capacity in kWh. Required for AA's VehicleEnergyModel. */
+  /** Gross battery capacity in kWh. Turns on EV routing in AA, whatever `carType` says. */
   batteryCapacityKwh?: number
   /** Current battery level in kWh. Derived from `fuelPct × capacity` if absent. */
   batteryLevelKwh?: number

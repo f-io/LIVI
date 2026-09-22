@@ -4,7 +4,7 @@ use iap2_csm::messages::communications::CallStateUpdate;
 use iap2_csm::messages::communications::CommunicationsUpdate;
 use iap2_csm::messages::now_playing::{NowPlayingUpdate, PlaybackStatus};
 use iap2_csm::messages::power::PowerUpdate;
-use iap2_csm::messages::route_guidance::RouteGuidanceUpdate;
+use iap2_csm::messages::route_guidance::{RouteGuidanceManeuverUpdate, RouteGuidanceUpdate};
 use iap2_csm::CsmMessage;
 
 use crate::framing::frame_msg_id;
@@ -34,6 +34,24 @@ pub struct EventTag {
     pub phone_id: Option<String>,
     pub cid: Option<String>,
     pub usb_transport_id: Option<String>,
+    pub navigation: Navigation,
+}
+
+/// The phone describes every turn of the route once, by index, and the guidance updates then
+/// point at the current one.
+#[derive(Debug, Default, Clone)]
+pub struct Navigation {
+    maneuvers: std::collections::HashMap<u16, Maneuver>,
+    current: Option<u16>,
+}
+
+#[derive(Debug, Default, Clone)]
+struct Maneuver {
+    kind: Option<u8>,
+    side: Option<u8>,
+    junction: Option<u8>,
+    angle: Option<i16>,
+    road_after: Option<String>,
 }
 
 impl EventTag {
@@ -51,6 +69,63 @@ impl EventTag {
             if !m.usb_transport_id.is_empty() {
                 self.usb_transport_id = Some(m.usb_transport_id);
             }
+        }
+    }
+
+    /// The navigation event for a guidance or maneuver frame, with the current turn folded in.
+    pub fn navigation_json(&mut self, frame: &[u8]) -> Option<String> {
+        match frame_msg_id(frame)? {
+            0x5201 => {
+                let m = RouteGuidanceUpdate::decode(frame).ok()?;
+                if let Some(list) = &m.current_maneuver_list
+                    && list.len() >= 2
+                {
+                    self.navigation.current = Some(u16::from_be_bytes([list[0], list[1]]));
+                }
+                let mut o = Obj::new("navigation");
+                if let Some(s) = m.state {
+                    o.num("status", s);
+                }
+                if let Some(s) = m.maneuver_state {
+                    o.num("orderType", s);
+                }
+                if let Some(r) = m.current_road_name {
+                    o.str("roadName", &r);
+                }
+                if let Some(d) = m.destination_name {
+                    o.str("destinationName", &d);
+                }
+                if let Some(e) = m.eta {
+                    o.num("etaEpoch", e);
+                }
+                if let Some(t) = m.time_remaining {
+                    o.num("timeToDestination", t);
+                }
+                if let Some(d) = m.distance_remaining {
+                    o.num("distanceToDestination", d);
+                }
+                if let Some(d) = m.distance_to_maneuver {
+                    o.num("remainDistance", d);
+                }
+                if let Some(turn) = self.navigation.current.and_then(|i| self.navigation.maneuvers.get(&i)) {
+                    maneuver_fields(&mut o, turn);
+                }
+                o.finish()
+            }
+            0x5202 => {
+                let m = RouteGuidanceManeuverUpdate::decode(frame).ok()?;
+                let index = m.index?;
+                let current = self.navigation.current == Some(index);
+                let turn = self.navigation.maneuvers.entry(index).or_default();
+                turn.merge(m);
+                if !current {
+                    return None;
+                }
+                let mut o = Obj::new("navigation");
+                maneuver_fields(&mut o, turn);
+                o.finish()
+            }
+            _ => None,
         }
     }
 
@@ -89,7 +164,6 @@ pub fn to_json(frame: &[u8]) -> Option<String> {
         0xAE01 => power(frame),
         0x4158 => cellular(frame),
         0x4155 => call(frame),
-        0x5201 => navigation(frame),
         _ => None,
     }
 }
@@ -215,33 +289,89 @@ fn call(frame: &[u8]) -> Option<String> {
     o.finish()
 }
 
-fn navigation(frame: &[u8]) -> Option<String> {
-    let m = RouteGuidanceUpdate::decode(frame).ok()?;
-    let mut o = Obj::new("navigation");
-    if let Some(s) = m.state {
-        o.num("status", s);
+impl Maneuver {
+    /// Fields the phone leaves out keep their last value.
+    fn merge(&mut self, m: RouteGuidanceManeuverUpdate) {
+        self.kind = m.maneuver_type.or(self.kind);
+        self.side = m.driving_side.or(self.side);
+        self.junction = m.junction_type.or(self.junction);
+        self.angle = m.exit_angle.or(self.angle);
+        self.road_after = m.after_maneuver_road_name.or(self.road_after.take());
     }
-    if let Some(r) = m.current_road_name {
-        o.str("roadName", &r);
+}
+
+fn maneuver_fields(o: &mut Obj, turn: &Maneuver) {
+    if let Some(t) = turn.kind {
+        o.num("maneuverType", t);
     }
-    if let Some(d) = m.destination_name {
-        o.str("destinationName", &d);
+    if let Some(s) = turn.side {
+        o.num("turnSide", s);
     }
-    if let Some(e) = m.eta {
-        o.num("etaEpoch", e);
+    if let Some(j) = turn.junction {
+        o.num("junctionType", j);
     }
-    if let Some(t) = m.time_remaining {
-        o.num("timeToDestination", t);
+    if let Some(a) = turn.angle {
+        o.num("turnAngle", a);
     }
-    if let Some(d) = m.distance_remaining {
-        o.num("distanceToDestination", d);
+    if let Some(r) = &turn.road_after {
+        o.str("afterRoadName", r);
     }
-    o.finish()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_current_turn_rides_along_with_the_guidance() {
+        let mut tag = EventTag::default();
+        let turn = RouteGuidanceManeuverUpdate {
+            display_component_id: None,
+            index: Some(2),
+            maneuver_type: Some(4),
+            after_maneuver_road_name: Some("Elbchaussee".into()),
+            driving_side: None,
+            junction_type: None,
+            exit_angle: Some(-90),
+        };
+        // Not the current turn yet: kept, nothing to say.
+        assert_eq!(tag.navigation_json(&turn.encode()), None);
+
+        let guidance = RouteGuidanceUpdate {
+            display_component_id: None,
+            state: Some(1),
+            maneuver_state: Some(2),
+            current_road_name: Some("Reeperbahn".into()),
+            destination_name: None,
+            eta: None,
+            time_remaining: None,
+            distance_remaining: Some(12000),
+            distance_to_maneuver: Some(350),
+            current_maneuver_list: Some(vec![0, 2]),
+        };
+        let json = tag.navigation_json(&guidance.encode()).unwrap();
+        for part in [
+            "\"status\":1",
+            "\"orderType\":2",
+            "\"roadName\":\"Reeperbahn\"",
+            "\"remainDistance\":350",
+            "\"maneuverType\":4",
+            "\"turnAngle\":-90",
+            "\"afterRoadName\":\"Elbchaussee\"",
+        ] {
+            assert!(json.contains(part), "{json} lacks {part}");
+        }
+
+        // A later detail for the current turn goes out on its own, older fields kept.
+        let more = RouteGuidanceManeuverUpdate {
+            index: Some(2),
+            maneuver_type: None,
+            junction_type: Some(3),
+            ..turn.clone()
+        };
+        let json = tag.navigation_json(&more.encode()).unwrap();
+        assert!(json.contains("\"junctionType\":3") && json.contains("\"maneuverType\":4"), "{json}");
+    }
     use iap2_csm::messages::now_playing::{MediaItemAttributes, PlaybackAttributes};
 
     #[test]

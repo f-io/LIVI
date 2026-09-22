@@ -284,7 +284,7 @@ async fn run_wired_session<S>(
     // End on either the phone closing iAP2 or the watcher cancelling on unplug, so the session
     // and its state never outlive the physical connection.
     tokio::select! {
-        _ = run_accessory(ch, ctx.auth, ctx.identity, cp, tx) => {}
+        _ = run_accessory(ch, ctx.auth, ctx.identity, cp, tx, ctx.state.vehicle_feed()) => {}
         _ = cancel.notified() => println!("[wired] {}: session cancelled on unplug", short(&serial)),
     }
     ctx.state.carkit_ended(&ident);

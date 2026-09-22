@@ -18,6 +18,7 @@ use crate::bringup::{BringupEvent, CpConfig, run_accessory};
 use crate::driver::spawn_link;
 use crate::ident::Identity;
 use crate::state::HelperState;
+use crate::vehicle::VehicleFeed;
 use crate::{AsyncAuth, events};
 
 pub const SOCK_PATH: &str = "/tmp/cp-bt.sock";
@@ -170,7 +171,7 @@ where
                 "[cp-sock] tunnel up (cid={cid}, btMac={})",
                 if bt_mac.is_empty() { "unknown" } else { bt_mac }
             );
-            run_tunnel(stream, auth, cfg, bcast, cid.to_string());
+            run_tunnel(stream, auth, cfg, bcast, cid.to_string(), state.vehicle_feed());
             Ok(())
         }
         "certificate" => {
@@ -242,8 +243,21 @@ where
         }
         // Profiles are registered at startup and stay up; the toggles are accepted no-ops.
         "set-cp" | "set-aa" => reply(&mut stream, "{\"ok\":true}").await,
-        // Injected into the active iAP2 session when one exists; dropped otherwise.
-        "vehicle-status" | "location" | "drop-iap2" => reply(&mut stream, "{\"ok\":true}").await,
+        "location" => {
+            let json = match state.vehicle().push_location(arg) {
+                Ok(()) => "{\"ok\":true}".to_string(),
+                Err(e) => err_json(&e),
+            };
+            reply(&mut stream, &json).await
+        }
+        "vehicle-status" => {
+            let json = match state.vehicle().push_status(arg) {
+                Ok(()) => "{\"ok\":true}".to_string(),
+                Err(e) => err_json(&e),
+            };
+            reply(&mut stream, &json).await
+        }
+        "drop-iap2" => reply(&mut stream, "{\"ok\":true}").await,
         other => reply(&mut stream, &err_json(&format!("unknown command: {other}"))).await,
     }
 }
@@ -292,7 +306,14 @@ async fn run_subscriber(mut stream: UnixStream, bcast: Broadcaster) -> io::Resul
     }
 }
 
-fn run_tunnel<A>(stream: UnixStream, auth: A, cfg: LiviSockConfig, bcast: Broadcaster, cid: String)
+fn run_tunnel<A>(
+    stream: UnixStream,
+    auth: A,
+    cfg: LiviSockConfig,
+    bcast: Broadcaster,
+    cid: String,
+    vehicle: VehicleFeed,
+)
 where
     A: AsyncAuth + Clone + Send + 'static,
 {
@@ -314,7 +335,7 @@ where
         Some(resolve) => resolve(),
         None => cfg.cp,
     };
-    tokio::spawn(run_accessory(channel, auth, cfg.identity, cp, tx));
+    tokio::spawn(run_accessory(channel, auth, cfg.identity, cp, tx, vehicle));
     let ident: SharedTag = Arc::new(Mutex::new(events::EventTag {
         cid: (!cid.is_empty()).then_some(cid),
         ..Default::default()
@@ -382,7 +403,9 @@ pub async fn pump_events_for(
                     t.learn(&frame);
                     (
                         events::device_json(&frame, usb_udid.as_deref()).map(|j| t.apply(j)),
-                        events::to_json(&frame).map(|j| t.apply(j)),
+                        events::to_json(&frame)
+                            .or_else(|| t.navigation_json(&frame))
+                            .map(|j| t.apply(j)),
                     )
                 };
                 if let Some(json) = tagged.0 {

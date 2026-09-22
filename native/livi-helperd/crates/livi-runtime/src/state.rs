@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use crate::livi_sock::SharedTag;
+use crate::vehicle::{Vehicle, VehicleFeed};
 
 /// Shared helper state: reconnect targets, the tags of the carkit iAP2 sessions, and the
 /// phones an iAP2 link is running with. Targets stay in the order LIVI sent them: most
@@ -11,9 +12,18 @@ pub struct HelperState {
     reconnect_targets: Mutex<Vec<(String, Option<String>)>>,
     carkit: Mutex<Vec<SharedTag>>,
     links: Mutex<HashSet<String>>,
+    vehicle: Vehicle,
 }
 
 impl HelperState {
+    pub fn vehicle(&self) -> &Vehicle {
+        &self.vehicle
+    }
+
+    pub fn vehicle_feed(&self) -> VehicleFeed {
+        self.vehicle.feed()
+    }
+
     pub fn link_up(&self, mac: &str) {
         self.links.lock().unwrap().insert(mac.to_uppercase());
     }

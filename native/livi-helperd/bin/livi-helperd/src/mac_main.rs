@@ -112,6 +112,7 @@ async fn wireless_sessions(
     cp: CpConfig,
     bcast: Broadcaster,
     link: Arc<LinkPresence>,
+    state: Arc<HelperState>,
 ) {
     let mut sessions = livi_dongle::iap::sessions(move || link.is_present());
     while let Some(session) = sessions.recv().await {
@@ -142,7 +143,7 @@ async fn wireless_sessions(
         };
         let (channel, art_rx) = spawn_link_stream(session.stream, cfg, false);
         let (tx, rx) = tokio::sync::mpsc::channel(64);
-        tokio::spawn(run_accessory(channel, auth.clone(), identity, cp, tx));
+        tokio::spawn(run_accessory(channel, auth.clone(), identity, cp, tx, state.vehicle_feed()));
         let ident: SharedTag = Default::default();
         tokio::spawn(pump_events_for(
             rx,
@@ -289,7 +290,7 @@ fn start_carplay_seam(link: Arc<LinkPresence>) {
         identity,
         cp.clone(),
         bcast.clone(),
-        state,
+        state.clone(),
         link.clone(),
     ));
     println!(
@@ -303,6 +304,7 @@ fn start_carplay_seam(link: Arc<LinkPresence>) {
             cp_wireless,
             bcast.clone(),
             link.clone(),
+            state,
         ));
         println!("[helperd] wireless CarPlay over the dongle's bluetooth is on");
     }
