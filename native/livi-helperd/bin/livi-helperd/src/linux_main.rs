@@ -297,6 +297,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let aa_events = Broadcaster::default();
     let state = Arc::new(HelperState::default());
     let wired_phones = crate::aa::WiredPhones::default();
+    let usb_control = livi_aa::usb::Control::default();
     let sco_sink = livi_runtime::sco::ScoSink::default();
 
     livi_runtime::bluetoothd::setup();
@@ -407,6 +408,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         let events = aa_events.clone();
         let subscribed = aa_events.clone();
         tokio::spawn(livi_aa::usb::run(
+            usb_control.clone(),
             move |socket, peer, serial| {
                 events.push_json(format!(
                     "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\",\"transport\":\"usb\",\"serial\":\"{serial}\"}}"
@@ -448,6 +450,10 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             adapter: adapter.clone(),
             wifi_iface: wifi_iface.clone(),
             set_wired_phones: Box::new(move |ids| wired.set(ids)),
+            restart_usb: Box::new({
+                let usb = usb_control.clone();
+                move |serial| usb.restart(serial)
+            }),
             events: aa_events.clone(),
             set_sco_sink: Box::new({
                 let sink = sco_sink.clone();

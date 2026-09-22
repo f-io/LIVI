@@ -466,6 +466,18 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
     this._bridge = null
   }
 
+  setVideoActive(active: boolean): void {
+    this._mediaSink?.setVideoActive(false, active)
+    this._mediaSink?.setVideoActive(true, active)
+    this._mediaSink?.setAudioActive(active)
+  }
+
+  async disconnectPhone(): Promise<boolean> {
+    if (this._closed || !this._aa) return false
+    await this.close()
+    return true
+  }
+
   /**
    * Send a LIVI-domain message towards the phone.
    *

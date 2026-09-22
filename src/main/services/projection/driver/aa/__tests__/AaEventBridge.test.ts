@@ -32,6 +32,8 @@ function makeSink(over: Partial<AaMediaSinkDeps> = {}): AaMediaSinkDeps {
     videoPlaneId: (cluster) => (cluster ? 2 : 1),
     primeVideo: vi.fn(),
     noteVideoStarted: vi.fn(),
+    setVideoActive: vi.fn(),
+    setAudioActive: vi.fn(),
     audioOutputs: () => [],
     onAudioOutput: () => () => {},
     primeAudio: vi.fn(),

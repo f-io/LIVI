@@ -21,6 +21,7 @@ const bluezMock = {
   disconnect: vi.fn(async (_mac: string) => ({ ok: true })),
   disconnectProfile: vi.fn(async (_mac: string, _uuid: string) => ({ ok: true })),
   setPlaybackStatus: vi.fn(async () => ({ ok: true })),
+  restartUsb: vi.fn(async () => ({ ok: true, count: 1 })),
   setScoSink: vi.fn(async () => ({ ok: true })),
   deauthApClients: vi.fn(async () => undefined),
   setWiredPhones: vi.fn(async () => undefined),
@@ -2011,14 +2012,15 @@ describe('ProjectionService transport switch / restart / connect', () => {
     expect(restartWifiApMock).not.toHaveBeenCalled()
   })
 
-  test('restartSession stops and returns for a wired AA session', async () => {
+  test('restartSession has the helper reset a wired AA phone instead of stopping it', async () => {
     const svc = makeSvc()
     svc.getActiveTransport = vi.fn(() => 'aa')
     svc.isActiveAaWired = vi.fn(() => true)
     svc.stop = vi.fn(async () => undefined)
     svc.autoStartIfNeeded = vi.fn(async () => undefined)
     await svc.restartSession()
-    expect(svc.stop).toHaveBeenCalled()
+    expect(bluezMock.restartUsb).toHaveBeenCalled()
+    expect(svc.stop).not.toHaveBeenCalled()
     expect(svc.autoStartIfNeeded).not.toHaveBeenCalled()
   })
 
@@ -2163,6 +2165,7 @@ describe('ProjectionService active-session, teardown, stop and retry', () => {
 
     await svc.stop()
 
+    expect(send).toHaveBeenCalledWith('projection-event', { type: 'projection', shown: false })
     expect(send).toHaveBeenCalledWith('projection-event', { type: 'unplugged' })
     expect(svc.started).toBe(false)
   })
@@ -3745,7 +3748,7 @@ describe('ProjectionService 100%-coverage fill', () => {
     expect(svc.planes.dispose).toHaveBeenCalled()
   })
 
-  test('onActiveSessionChanged keeps the running decoder when the codec is unchanged', () => {
+  test('onActiveSessionChanged keeps the running decoder for the first session of its codec', () => {
     const svc = makeSvc()
     svc.planes.dispose = vi.fn()
     svc.planes.restoreCodecs = vi.fn()
@@ -3763,8 +3766,63 @@ describe('ProjectionService 100%-coverage fill', () => {
       video: { main: { codec: 'h264' }, cluster: {} }
     }
 
-    svc.onActiveSessionChanged(next, { index: 2 })
+    svc.onActiveSessionChanged(next, null)
 
     expect(svc.planes.dispose).not.toHaveBeenCalled()
+  })
+
+  test('onActiveSessionChanged keeps the running decoder between two sessions of one protocol', () => {
+    const svc = makeSvc()
+    svc.planes.dispose = vi.fn()
+    svc.planes.restoreCodecs = vi.fn()
+    svc.planes.updateMainCrop = vi.fn()
+    svc.planes.getMainCodec = vi.fn(() => 'h265')
+    svc.mediaStore.hydrate = vi.fn()
+    svc.navStore.hydrate = vi.fn()
+    svc.startPromise = null
+    const next = {
+      index: 1,
+      protocol: 'carplay',
+      driver: fakeDriver(),
+      audio: { duckLevel: 1, duckRampMs: 1500 },
+      video: { main: { codec: 'h265' }, cluster: {} }
+    }
+
+    svc.onActiveSessionChanged(next, { index: 2, protocol: 'carplay' })
+
+    expect(svc.planes.dispose).not.toHaveBeenCalled()
+  })
+
+  test('onActiveSessionChanged rebuilds the planes for the other protocol, its feeder held first', () => {
+    const svc = makeSvc()
+    const order: string[] = []
+    svc.planes.dispose = vi.fn(() => order.push('dispose'))
+    svc.planes.restoreCodecs = vi.fn()
+    svc.planes.updateMainCrop = vi.fn()
+    svc.planes.primeMain = vi.fn(() => order.push('primeMain'))
+    svc.planes.primeClusters = vi.fn(() => order.push('primeClusters'))
+    svc.planes.getMainCodec = vi.fn(() => 'h265')
+    svc.mediaStore.hydrate = vi.fn()
+    svc.navStore.hydrate = vi.fn()
+    svc.startPromise = null
+    const prevDriver = { ...fakeDriver(), setVideoActive: vi.fn(() => order.push('hold prev')) }
+    const driver = { ...fakeDriver(), setVideoActive: vi.fn(() => order.push('activate next')) }
+    const prev = { index: 2, protocol: 'carplay', driver: prevDriver, state: 'held' }
+    const next = {
+      index: 1,
+      protocol: 'androidauto',
+      driver,
+      state: 'active',
+      audio: { duckLevel: 1, duckRampMs: 1500 },
+      video: { main: { codec: 'h265' }, cluster: {} }
+    }
+    svc.videoActiveDriver = prevDriver
+    svc.sessions.active = () => next
+
+    svc.onActiveSessionChanged(next, prev)
+
+    expect(order).toEqual(['hold prev', 'activate next', 'dispose', 'primeMain', 'primeClusters'])
+    expect(prevDriver.setVideoActive).toHaveBeenCalledWith(false)
+    expect(driver.setVideoActive).toHaveBeenCalledWith(true)
   })
 })

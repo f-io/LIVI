@@ -55,6 +55,10 @@ export type AaMediaSinkDeps = {
   primeVideo: (cluster: boolean) => void
   /** The helper saw the first frame of a stream, geometry and focus follow. */
   noteVideoStarted: (cluster: boolean, width: number, height: number) => void
+  /** Whether the fed stream is the one the plane shows; a held session's frames stop in the host. */
+  setVideoActive: (cluster: boolean, active: boolean) => void
+  /** The same for the fed audio streams. */
+  setAudioActive: (active: boolean) => void
   /** The host's driver-fed streams, tagged with the channel they were opened for. */
   audioOutputs: () => Array<{ audioType: number; streamId: number; tag?: string }>
   onAudioOutput: (cb: (audioType: number, streamId: number, tag?: string) => void) => () => void

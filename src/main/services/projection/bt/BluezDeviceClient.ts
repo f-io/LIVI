@@ -129,6 +129,11 @@ export class BluezDeviceClient {
     return (await this.request('deauth-ap', timeoutMs)) as ActionResponse
   }
 
+  // Ends the wired Android Auto sessions
+  async restartUsb(timeoutMs = 5000): Promise<ActionResponse> {
+    return (await this.request('restart-usb', timeoutMs)) as ActionResponse
+  }
+
   /** Mirrors the active session's play state into the helper's AVRCP player. */
   async setPlaybackStatus(state: 'playing' | 'paused' | 'stopped'): Promise<ActionResponse> {
     return (await this.request(`playback-status ${state}`)) as ActionResponse

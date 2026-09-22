@@ -342,10 +342,15 @@ pub fn run() -> ExitCode {
     };
     rt.block_on(async {
         let aa_events = Broadcaster::default();
+        let usb_control = livi_aa::usb::Control::default();
         let deps = livi_runtime::aa_sock::AaSockDeps {
             adapter: String::new(),
             wifi_iface: String::new(),
             set_wired_phones: Box::new(|_| {}),
+            restart_usb: Box::new({
+                let usb = usb_control.clone();
+                move |serial| usb.restart(serial)
+            }),
             events: aa_events.clone(),
             set_playback_status: Box::new(|_| {}),
             set_sco_sink: Box::new(|_| {}),
@@ -358,6 +363,7 @@ pub fn run() -> ExitCode {
         let events = aa_events.clone();
         let subscribed = aa_events.clone();
         tokio::spawn(livi_aa::usb::run(
+            usb_control,
             move |socket, peer, serial| {
                 events.push_json(format!(
                     "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\",\"transport\":\"usb\",\"serial\":\"{serial}\"}}"

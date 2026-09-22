@@ -269,12 +269,15 @@ struct AudioStream<S, E> {
 type Streams<S, E> = Rc<RefCell<HashMap<u32, AudioStream<S, E>>>>;
 /// The keyframe gate per fed video stream, None for a codec it cannot read.
 type FeedFans = Rc<RefCell<HashMap<u32, Option<Fanout>>>>;
+/// Whether a fed stream is the feeder of its plane, kept for streams that start later.
+type FeedWanted = Rc<RefCell<HashMap<u32, bool>>>;
 
 /// Carries the helper's feed into the planes and the audio streams.
 struct MediaFeed<O: Outside> {
     planes: Planes<O::Plane>,
     audio: Streams<O::Speaker, O::AudioEars>,
     fans: FeedFans,
+    wanted: FeedWanted,
 }
 
 impl<O: Outside> MediaFeed<O> {
@@ -304,7 +307,7 @@ impl<O: Outside> MediaSink for MediaFeed<O> {
                 .map(|codec| {
                     let mut fan = Fanout::new();
                     fan.set_codec(codec);
-                    fan.set_active(true);
+                    fan.set_active(self.wanted.borrow().get(&r.id).copied().unwrap_or(true));
                     fan
                 });
                 self.fans.borrow_mut().insert(r.id, fan);
@@ -344,6 +347,7 @@ pub struct Host<O: Outside> {
     uplinks: HashMap<u32, O::Uplink>,
     taps: HashMap<u32, O::Tap>,
     feed_fans: FeedFans,
+    feed_wanted: FeedWanted,
     helper_feed: Option<O::FeedEars>,
     /// A window wants the pre-fader tap.
     visualizer_enabled: bool,
@@ -361,6 +365,7 @@ impl<O: Outside> Host<O> {
             uplinks: HashMap::new(),
             taps: HashMap::new(),
             feed_fans: Rc::new(RefCell::new(HashMap::new())),
+            feed_wanted: Rc::new(RefCell::new(HashMap::new())),
             helper_feed: None,
             visualizer_enabled: false,
             wire,
@@ -479,6 +484,7 @@ impl<O: Outside> Host<O> {
             planes: self.planes.clone(),
             audio: self.audio.clone(),
             fans: self.feed_fans.clone(),
+            wanted: self.feed_wanted.clone(),
         };
         match self.outside.open_feed(path, Box::new(sink)) {
             Some(ears) => {
@@ -542,33 +548,52 @@ impl<O: Outside> Host<O> {
         self.wire.reply(REPLY_PORT, id, &port.to_le_bytes());
     }
 
-    /// `[1B active]`. Making a receiver active makes every other receiver of the
-    /// same plane passive, so one screen has one feeder.
+    /// `[1B active]`. The id names a receiver, or a fed stream by its plane id
+    /// (the cluster id for the cluster planes). Making one active makes every
+    /// other feeder of the same plane passive, so one screen has one feeder.
     fn set_active_feeder(&mut self, id: u32, rest: &[u8]) {
-        let Some(r) = self.receivers.get(&id) else {
+        let active = rest.first().is_some_and(|b| b & 1 != 0);
+        let Some(state) = self.receivers.get(&id).map(|r| r.state.clone()) else {
+            if active {
+                self.hold_receivers_of(id, None);
+            }
+            self.set_feed_active(id, active);
             return;
         };
-        let plane_id = r.state.borrow().plane_id;
+        let plane_id = state.borrow().plane_id;
 
-        if !rest.first().is_some_and(|b| b & 1 != 0) {
-            r.state.borrow_mut().fan.set_active(false);
+        if !active {
+            state.borrow_mut().fan.set_active(false);
             return;
         }
 
+        self.hold_receivers_of(plane_id, Some(id));
+        self.set_feed_active(plane_id, false);
+
+        let mut st = state.borrow_mut();
+        st.fan.set_active(true);
+        st.fan.restart();
+        if !st.config.is_empty() {
+            self.wire.reply(REPLY_CONFIG, plane_id, &st.config);
+        }
+    }
+
+    fn hold_receivers_of(&self, plane_id: u32, except: Option<u32>) {
         for (other, o) in &self.receivers {
-            let same_plane = o.state.borrow().plane_id == plane_id;
-            if *other != id && same_plane {
+            if Some(*other) != except && o.state.borrow().plane_id == plane_id {
                 o.state.borrow_mut().fan.set_active(false);
             }
         }
+    }
 
-        {
-            let mut st = r.state.borrow_mut();
-            st.fan.set_active(true);
-            st.fan.restart();
-            if !st.config.is_empty() {
-                self.wire.reply(REPLY_CONFIG, plane_id, &st.config);
+    /// A stream that has not started yet picks the answer up when it does.
+    fn set_feed_active(&mut self, id: u32, active: bool) {
+        self.feed_wanted.borrow_mut().insert(id, active);
+        if let Some(Some(fan)) = self.feed_fans.borrow_mut().get_mut(&id) {
+            if active && !fan.is_active() {
+                fan.restart();
             }
+            fan.set_active(active);
         }
     }
 
@@ -1194,6 +1219,56 @@ mod tests {
             f.feed_in(feedproto::KIND_VIDEO, MAIN_PLANE, &nal(KEYFRAME, 1));
             f.send(OP_CREATE, MAIN_PLANE, &create_body("h264", &[]));
             assert_eq!(f.plane(0).pushed(), vec![nal(KEYFRAME, 1)]);
+        }
+
+        #[test]
+        fn a_receiver_made_active_holds_the_fed_stream_of_its_plane() {
+            let mut f = Fixture::new();
+            f.send(OP_CREATE, MAIN_PLANE, &create_body("h264", &[]));
+            f.open_feed("/tmp/x.feed");
+            f.feed_in(feedproto::KIND_VIDEO_START, MAIN_PLANE, &[0]);
+            f.feed_in(feedproto::KIND_VIDEO, MAIN_PLANE, &nal(KEYFRAME, 1));
+
+            f.feeder(42, MAIN_PLANE, false);
+            f.config(0, CpCodec::H264, &[1, 2]);
+            f.feed_in(feedproto::KIND_VIDEO, MAIN_PLANE, &nal(KEYFRAME, 2));
+            f.frame_in(0, &nal(KEYFRAME, 3));
+
+            assert_eq!(f.plane(0).pushed(), vec![nal(KEYFRAME, 1), nal(KEYFRAME, 3)]);
+        }
+
+        #[test]
+        fn a_fed_stream_made_active_holds_the_receivers_and_waits_for_a_keyframe() {
+            let mut f = Fixture::new();
+            f.send(OP_CREATE, MAIN_PLANE, &create_body("h264", &[]));
+            f.feeder(42, MAIN_PLANE, false);
+            f.config(0, CpCodec::H264, &[1, 2]);
+            f.open_feed("/tmp/x.feed");
+            f.feed_in(feedproto::KIND_VIDEO_START, MAIN_PLANE, &[0]);
+            f.feed_in(feedproto::KIND_VIDEO, MAIN_PLANE, &nal(KEYFRAME, 1));
+            assert!(f.plane(0).pushed().is_empty());
+
+            f.send(OP_SET_ACTIVE, MAIN_PLANE, &[1]);
+            f.frame_in(0, &nal(KEYFRAME, 2));
+            f.feed_in(feedproto::KIND_VIDEO, MAIN_PLANE, &nal(DELTA, 3));
+            f.feed_in(feedproto::KIND_VIDEO, MAIN_PLANE, &nal(KEYFRAME, 4));
+
+            assert_eq!(f.plane(0).pushed(), vec![nal(KEYFRAME, 4)]);
+        }
+
+        #[test]
+        fn a_fed_stream_that_starts_later_takes_the_answer_given_before() {
+            let mut f = Fixture::new();
+            f.send(OP_CREATE, MAIN_PLANE, &create_body("h264", &[]));
+            f.open_feed("/tmp/x.feed");
+            f.send(OP_SET_ACTIVE, MAIN_PLANE, &[0]);
+            f.feed_in(feedproto::KIND_VIDEO_START, MAIN_PLANE, &[0]);
+            f.feed_in(feedproto::KIND_VIDEO, MAIN_PLANE, &nal(KEYFRAME, 1));
+            assert!(f.plane(0).pushed().is_empty());
+
+            f.send(OP_SET_ACTIVE, MAIN_PLANE, &[1]);
+            f.feed_in(feedproto::KIND_VIDEO, MAIN_PLANE, &nal(KEYFRAME, 2));
+            assert_eq!(f.plane(0).pushed(), vec![nal(KEYFRAME, 2)]);
         }
 
         #[test]

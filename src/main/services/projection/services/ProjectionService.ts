@@ -1022,6 +1022,11 @@ export class ProjectionService {
           if (cluster && !isClusterDisplayed(this.config)) return
           this.noteVideoGeometry(cluster, w, h)
         },
+        setVideoActive: (cluster, active) =>
+          gstHost.setActiveFeeder(cluster ? VIDEO_PLANE_CLUSTER_RECV : VIDEO_PLANE_MAIN, active),
+        setAudioActive: (active) => {
+          for (const o of this.audio.hostOutputs()) gstHost.setAudioActive(o.streamId, active)
+        },
         audioOutputs: () => this.audio.hostOutputs(),
         onAudioOutput: (cb) => this.audio.onHostOutput(cb),
         primeAudio: (audioType, sampleRate, channels, tag) =>
@@ -1296,14 +1301,17 @@ export class ProjectionService {
     const wasWired = aaRouted && this.isActiveAaWired()
     const wasWireless = aaRouted && !this.isActiveAaWired()
 
+    // A wired phone is reset the way an unplug would, so it comes back as it does on a plug-in.
+    if (wasWired) {
+      const res = await this.bluez.restartUsb().catch((e) => ({ ok: false, error: String(e) }))
+      if (!res.ok) console.warn(`[ProjectionService] restartSession: restart-usb: ${res.error}`)
+      return
+    }
+
     try {
       await this.stop()
     } catch (e) {
       console.warn('[ProjectionService] restartSession: stop threw (ignored)', e)
-    }
-
-    if (wasWired) {
-      return
     }
 
     if (wasWireless) {
@@ -1904,9 +1912,11 @@ export class ProjectionService {
       this.audio.restoreDuck(next.audio.duckLevel, next.audio.duckRampMs)
       const mc = next.video.main.codec ?? this.lastMainCodecByDriver.get(next.driver)
       const cc = next.video.cluster.codec ?? this.lastClusterCodecByDriver.get(next.driver)
-      // A same-codec switch keeps the running decoder — the host flushes it and replays the
-      // new session's cached GOP. Tearing it down mid-decode wedges the HEVC STREAMOFF.
-      if (mc !== undefined && mc !== this.planes.getMainCodec()) this.planes.dispose()
+      // The other protocol's stream is a new sequence, which the hardware decoder does not take
+      // mid-stream. Its feeder is held before the decoder goes, so the teardown finds it idle.
+      const switched = prev !== null && prev.protocol !== next.protocol
+      if (switched) this.syncVideoActiveFeeder()
+      if (switched || (mc !== undefined && mc !== this.planes.getMainCodec())) this.planes.dispose()
       this.mediaStore.hydrate(next)
       this.navStore.hydrate(next)
       // Restore the length-prefixed codec_data for this session (null for byte-stream sources).
@@ -1916,6 +1926,11 @@ export class ProjectionService {
         next.video.main.codecData ?? null,
         next.video.cluster.codecData ?? null
       )
+      // CarPlay's planes come back with the receiver's config; the fed ones are primed here.
+      if (switched && next.protocol === 'androidauto') {
+        this.planes.primeMain()
+        this.planes.primeClusters()
+      }
       console.log(
         `[SESSIONS] codec-restore #${next.index} ${next.protocol}: session=${next.video.main.codec ?? '-'} map=${this.lastMainCodecByDriver.get(next.driver) ?? '-'} → gstVideoCodec=${this.planes.getMainCodec()}`
       )
@@ -1976,6 +1991,9 @@ export class ProjectionService {
       this.clearTimeouts()
 
       try {
+        // clear() does not report an active-session change, so the renderer hears it from here.
+        this.emitProjectionEvent({ type: 'projection', shown: false })
+        this.statusFile.setStreaming(false)
         const wc = this.webContents
         if (wc && !wc.isDestroyed()) {
           wc.send('projection-event', { type: 'unplugged' })

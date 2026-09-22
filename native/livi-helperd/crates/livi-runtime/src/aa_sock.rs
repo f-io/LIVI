@@ -28,6 +28,8 @@ pub struct AaSockDeps {
     pub set_playback_status: SetPlaybackStatus,
     /// Where the call audio goes: the pipeline's feed path and stream id, or nothing.
     pub set_sco_sink: SetScoSink,
+    /// Ends a phone's USB session.
+    pub restart_usb: Box<dyn Fn(&str) -> usize + Send + Sync>,
 }
 
 /// Without a D-Bus connection (macOS) the BlueZ verbs answer with an error, the rest works.
@@ -94,6 +96,11 @@ async fn handle(
             }
             other => err_json(&format!("unknown playback status: {other}")),
         },
+        "restart-usb" => {
+            let n = (deps.restart_usb)(arg);
+            println!("[aa-sock] restart-usb: {n} session(s) end for a fresh start");
+            format!("{{\"ok\":true,\"count\":{n}}}")
+        }
         "deauth-ap" => {
             let count = deauth_ap(&deps.wifi_iface).await;
             println!("[aa-sock] deauth-ap: kicked {count} client(s)");

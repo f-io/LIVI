@@ -77,13 +77,34 @@ struct Phones {
 
 type Shared = Arc<Mutex<Phones>>;
 
+/// A hand on the phones from outside the watcher.
+#[derive(Clone, Default)]
+pub struct Control(Shared);
+
+impl Control {
+    /// Ends the sessions.
+    pub fn restart(&self, serial: &str) -> usize {
+        let p = self.0.lock().unwrap();
+        let mut n = 0;
+        for (id, cancel) in &p.cancel {
+            let matches = serial.is_empty() || p.serial_of.get(id).is_some_and(|s| s == serial);
+            if matches {
+                cancel.notify_one();
+                n += 1;
+            }
+        }
+        n
+    }
+}
+
 /// `subscribed` resolves once the main process hears the announcements.
 pub async fn run(
+    control: Control,
     on_session: impl Fn(&str, &str, &str) + Send + Sync + 'static,
     subscribed: impl Future<Output = ()> + Send + 'static,
 ) {
     let on_session: Arc<OnSession> = Arc::new(on_session);
-    let phones: Shared = Arc::default();
+    let phones: Shared = control.0;
     let (ready_tx, ready) = watch::channel(false);
     tokio::spawn(async move {
         subscribed.await;
