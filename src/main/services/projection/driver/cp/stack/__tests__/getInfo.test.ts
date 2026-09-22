@@ -92,6 +92,16 @@ describe('buildInfoPlist', () => {
     expect((formats[8] as Dict).audioOutputFormats).toBe(0x800000)
   })
 
+  test('offers music on the main stream at full-rate stereo only', () => {
+    const media = (rate: 44100 | 48000) =>
+      (
+        (buildInfoPlist(baseConfig({ entertainmentSampleRate: rate })) as Dict)
+          .audioFormats as Dict[]
+      ).find((f) => f.type === 100 && f.audioType === 'media') as Dict
+    expect(media(44100).audioOutputFormats).toBe(0x800)
+    expect(media(48000).audioOutputFormats).toBe(0x8000)
+  })
+
   test('disableAudioOutput clears audio feature bits and omits audio keys', () => {
     const info = buildInfoPlist(baseConfig({ disableAudioOutput: true })) as Dict
     expect(info.features).toBe(NO_AUDIO_FEATURES)

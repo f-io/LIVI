@@ -101,6 +101,9 @@ function audioFormats(entertainmentRate: 44100 | 48000): PlistValue[] {
   const PCM_VOICE = 0x3fc // PCM 8/16/24/32k, mono + stereo
   const PCM = PCM_VOICE | (is48 ? 0xc000 : 0xc00) // + media 48k (or 44.1k) mono + stereo
   const PCM_MONO = 0x154 | (is48 ? 0x4000 : 0x400) // voice mono + media mono
+  // Music on the wired main stream: full-rate stereo only. If the phone is offered the voice
+  // rates too, it picks 8k stereo (0x8) for the music that resumes after a phone call.
+  const PCM_MEDIA = is48 ? 0x8000 : 0x800
   const OPUS = 0x70000000 // OPUS 16k/24k/48k mono
   const AAC_LC = is48 ? 0x800000 : 0x400000 // AAC-LC at the configured media rate
   return [
@@ -108,7 +111,7 @@ function audioFormats(entertainmentRate: 44100 | 48000): PlistValue[] {
     f(101, 'compatibility', PCM),
     f(100, 'default', PCM | OPUS, PCM_MONO | OPUS),
     f(100, 'alert', PCM | OPUS),
-    f(100, 'media', PCM),
+    f(100, 'media', PCM_MEDIA),
     f(100, 'telephony', PCM_MONO | OPUS, PCM_MONO | OPUS),
     f(100, 'speechRecognition', PCM_MONO | OPUS, PCM_MONO | OPUS),
     f(101, 'default', PCM | OPUS),
