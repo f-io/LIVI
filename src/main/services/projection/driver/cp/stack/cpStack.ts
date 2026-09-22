@@ -209,6 +209,8 @@ export class CpStack extends EventEmitter {
   private _clusterWantActive = false
   private _videoActive = false
   private _nightMode: boolean | null = null
+  /** Whether the phone reports a call, which it flags as a speech session too. */
+  private _callActive = false
   /** Last Siri speech-mode state, so we emit 'speech-active' only on transitions. */
   private _speechActive = false
   /** True while this phone is the one whose audio reaches the sink. */
@@ -388,6 +390,7 @@ export class CpStack extends EventEmitter {
     if (m.inProcess) closeAudioReceiver(m.hostStreamId)
     else gstHost.closeAudio(m.hostStreamId)
     if (entry) this.emit('audio-active', entry.prof, false)
+    if (entry?.prof.label === 'telephony') this._callActive = false
     if (m.micStreamId != null) {
       if (m.inProcess) closeMicUplink(m.micStreamId)
       else gstHost.closeMic(m.micStreamId)
@@ -538,13 +541,21 @@ export class CpStack extends EventEmitter {
     const params = (body.params ?? {}) as Record<string, PlistValue>
     const appStates = params.appStates
     if (!Array.isArray(appStates)) return
+    let inCall = this._callActive
+    for (const s of appStates) {
+      const st = s as Record<string, PlistValue>
+      if (Number(st.appStateID) === 2 && st.entity !== undefined) inCall = Number(st.entity) === 1
+    }
+    this._callActive = inCall
+
     let active = this._speechActive
     for (const s of appStates) {
       const st = s as Record<string, PlistValue>
       if (Number(st.appStateID) !== 1 || st.speechMode === undefined) continue
       const mode = Number(st.speechMode)
-      active = mode === 1 || mode === 2
+      active = !inCall && (mode === 1 || mode === 2)
     }
+    if (inCall) active = false
     if (active !== this._speechActive) {
       this._speechActive = active
       console.log(`[cpStack] Siri speech ${active ? 'active' : 'done'}`)

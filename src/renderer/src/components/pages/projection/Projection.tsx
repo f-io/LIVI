@@ -236,11 +236,9 @@ const CarplayComponent: React.FC<CarplayProps> = ({
 
       // ACTIVE: switch to projection
       if (p.active) {
-        // Already on projection: keep the arm if this kind switched us here (ring -> active).
+        // Already on projection: the arm stays, and a second kind taking over inherits it.
         if (inProjection) {
-          if (attentionSwitchedByRef.current !== p.kind) {
-            attentionSwitchedByRef.current = null
-          }
+          if (attentionSwitchedByRef.current) attentionSwitchedByRef.current = p.kind
           return
         }
 

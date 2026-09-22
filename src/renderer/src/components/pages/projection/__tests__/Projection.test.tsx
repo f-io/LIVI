@@ -399,6 +399,56 @@ describe('Projection page', () => {
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/media', { replace: true }))
   })
 
+  test('a call Siri placed inherits the way back from Siri', async () => {
+    mockPathname = '/media'
+
+    const { rerender } = render(
+      <Projection
+        {...baseProps()}
+        settings={{ width: 800, height: 480, fps: 60, autoSwitchOnPhoneCall: true } as any}
+      />
+    )
+
+    act(() => {
+      onEventCb?.(null, {
+        type: 'command',
+        message: { value: CommandMapping.voiceAssistantUiActive }
+      })
+    })
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/', { replace: true }))
+
+    navigateMock.mockClear()
+    mockPathname = '/'
+    rerender(
+      <Projection
+        {...baseProps()}
+        settings={{ width: 800, height: 480, fps: 60, autoSwitchOnPhoneCall: true } as any}
+      />
+    )
+
+    // The call takes over while Siri still holds the projection, and Siri ends afterwards.
+    act(() => {
+      onEventCb?.(null, {
+        type: 'audio',
+        payload: { command: AudioCommand.AudioPhonecallStart }
+      })
+      onEventCb?.(null, {
+        type: 'command',
+        message: { value: CommandMapping.voiceAssistantUiIdle }
+      })
+    })
+    expect(navigateMock).not.toHaveBeenCalled()
+
+    act(() => {
+      onEventCb?.(null, {
+        type: 'audio',
+        payload: { command: AudioCommand.AudioPhonecallStop }
+      })
+    })
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/media', { replace: true }))
+  })
+
   test('AudioAttentionRinging triggers call attention switch when autoSwitchOnPhoneCall', async () => {
     mockPathname = '/media'
 
