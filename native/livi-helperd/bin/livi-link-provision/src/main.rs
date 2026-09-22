@@ -1,14 +1,22 @@
 // Provisions a dongle as LIVI Link without a UI. The app drives the same crate.
 // Host: $LIVI_LINK_HOST (default 10.10.10.1). The stack it installs is baked into this binary.
+// A dongle of a project without a ready-made bootstrap gets one made from the vendor's own update
+// for it, downloaded on the way. $LIVI_LINK_OTA names a file to use instead, for a machine that
+// cannot reach the vendor's server.
 
 mod bootstrap;
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use livi_link_provision::payload::parts;
-use livi_link_provision::shell::{self, DEFAULT_HOST, Shell};
-use livi_link_provision::{Plan, Report, Status, apply, mtd, plan, verify};
+use livi_link_provision::dongle::arm::ax520;
+use livi_link_provision::dongle::arm::imx6ul::payload::parts;
+use livi_link_provision::dongle::arm::imx6ul::shell::{self, DEFAULT_HOST, Shell};
+use livi_link_provision::dongle::arm::imx6ul::{Plan, Report, Status, apply, mtd, plan, verify};
+use livi_link_provision::dongle::hook;
+use livi_link_provision::dongle::probe::{Family, Probe};
+use livi_link_provision::dongle::riscv::v821b;
+use livi_link_provision::dongle::web::HostInfo;
 
 const LEGACY_HOST: &str = "192.168.50.2";
 
@@ -31,12 +39,50 @@ fn main() -> std::process::ExitCode {
         return menu();
     };
 
+    let result = match command {
+        "detect" => {
+            let d = livi_link_provision::detect::detect();
+            println!("{}", d.label());
+            Ok(true)
+        }
+        "dongle" => run_dongle(&args[1..]),
+        _ => {
+            eprintln!("{}", usage());
+            return std::process::ExitCode::from(2);
+        }
+    };
+
+    match result {
+        Ok(true) => std::process::ExitCode::SUCCESS,
+        Ok(false) => std::process::ExitCode::FAILURE,
+        Err(e) => {
+            eprintln!("error: {e}");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+/// `dongle <arch> <soc> <command>`: architecture first, then the SoC, so every board is named by its
+/// silicon.
+fn run_dongle(args: &[String]) -> Result<bool, String> {
+    let rest = args.get(2..).unwrap_or_default();
+    match (args.first().map(String::as_str), args.get(1).map(String::as_str)) {
+        (Some("arm"), Some("imx6ul")) => run_imx6ul(rest),
+        (Some("arm"), Some("ax520")) => run_ax520(rest),
+        (Some("riscv"), Some("v821b")) => run_v821b(rest),
+        _ => Err(usage().to_string()),
+    }
+}
+
+fn run_imx6ul(args: &[String]) -> Result<bool, String> {
+    let Some(command) = args.first().map(String::as_str) else {
+        return Err(usage().to_string());
+    };
     let sh = Shell::new(&match command {
         "plan" | "apply" | "verify" | "backup" | "push" | "sh" => pick_host(),
         _ => DEFAULT_HOST.to_string(),
     });
-
-    let result = match command {
+    match command {
         "plan" => plan(&sh).map(|p| {
             print_plan(&p);
             true
@@ -63,7 +109,7 @@ fn main() -> std::process::ExitCode {
             [local, remote] => std::fs::read(local)
                 .map_err(|e| format!("{local}: {e}"))
                 .and_then(|data| {
-                    let md5 = livi_link_provision::payload::md5_hex(&data);
+                    let md5 = livi_link_provision::dongle::arm::imx6ul::payload::md5_hex(&data);
                     sh.push(&data, remote, shell::PUSH_PORT, &md5).map(|()| {
                         println!("pushed {} bytes to {remote} ({md5})", data.len());
                         true
@@ -79,60 +125,72 @@ fn main() -> std::process::ExitCode {
             println!("{out}");
             true
         }),
-        "detect" => {
-            let d = livi_link_provision::detect::detect();
-            println!("{}", d.label());
-            Ok(true)
-        }
         "usbscan" => {
             for (v, p, name) in bootstrap::scan() {
                 println!("{v:04x}:{p:04x}  {name}");
             }
             Ok(true)
         }
-        "v821b" => match args.get(1).map(String::as_str) {
-            Some("detect") => v821b_detect(),
-            Some("install-shell") => v821b_install_shell(),
-            Some("verify-hw") => v821b_verify(),
-            Some("selftest") => {
-                let n = args
-                    .get(2)
-                    .and_then(|s| s.parse::<usize>().ok())
-                    .unwrap_or(3_211_264);
-                v821b_selftest(n)
-            }
-            Some("backup") => {
-                let dir = args
-                    .get(2)
-                    .map(PathBuf::from)
-                    .unwrap_or_else(backup_dir);
-                v821b_backup(&dir)
-            }
-            Some("flash") => match args.get(2) {
-                Some(path) => v821b_flash(&PathBuf::from(path)),
-                None => Err("usage: v821b flash <path.lfwb>".to_string()),
-            },
-            Some("provision") => match args.get(2) {
-                Some(path) => v821b_provision(Some(&PathBuf::from(path))),
-                None => v821b_provision(None),
-            },
-            _ => Err("v821b: detect | install-shell | verify-hw | selftest [N] | backup [dir] | flash <lfwb> | provision [lfwb]".to_string()),
-        }
-        .map(|_| true),
-        _ => {
-            eprintln!("{}", usage());
-            return std::process::ExitCode::from(2);
-        }
-    };
-
-    match result {
-        Ok(true) => std::process::ExitCode::SUCCESS,
-        Ok(false) => std::process::ExitCode::FAILURE,
-        Err(e) => {
-            eprintln!("error: {e}");
-            std::process::ExitCode::FAILURE
-        }
+        _ => Err(usage().to_string()),
     }
+}
+
+fn run_ax520(args: &[String]) -> Result<bool, String> {
+    match args.first().map(String::as_str) {
+        Some("info") => stock_info(Some(ax520::PROJECT)),
+        Some("install-shell") => stock_install_shell(Some(ax520::PROJECT)),
+        Some("verify-hw") => ax520_verify(),
+        Some("selftest") => {
+            let n = args
+                .get(1)
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(3_211_264);
+            ax520_selftest(n)
+        }
+        Some("backup") => {
+            let dir = args.get(1).map(PathBuf::from).unwrap_or_else(backup_dir);
+            ax520_backup(&dir)
+        }
+        Some("flash") => match args.get(1) {
+            Some(path) => ax520_flash(&PathBuf::from(path)),
+            None => Err("usage: dongle arm ax520 flash <path.lfwb>".to_string()),
+        },
+        Some("provision") => match args.get(1) {
+            Some(path) => ax520_provision(Some(&PathBuf::from(path))),
+            None => ax520_provision(None),
+        },
+        _ => Err(usage().to_string()),
+    }
+    .map(|_| true)
+}
+
+fn run_v821b(args: &[String]) -> Result<bool, String> {
+    match args.first().map(String::as_str) {
+        Some("info") => stock_info(Some(v821b::PROJECT)),
+        Some("install-shell") => stock_install_shell(Some(v821b::PROJECT)),
+        Some("verify-hw") => v821b_verify(),
+        Some("selftest") => {
+            let n = args
+                .get(1)
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(3_211_264);
+            v821b_selftest(n)
+        }
+        Some("backup") => {
+            let dir = args.get(1).map(PathBuf::from).unwrap_or_else(backup_dir);
+            v821b_backup(&dir)
+        }
+        Some("flash") => match args.get(1) {
+            Some(path) => v821b_flash(&PathBuf::from(path)),
+            None => Err("usage: dongle riscv v821b flash <path.lfwb>".to_string()),
+        },
+        Some("provision") => match args.get(1) {
+            Some(path) => v821b_provision(Some(&PathBuf::from(path))),
+            None => v821b_provision(None),
+        },
+        _ => Err(usage().to_string()),
+    }
+    .map(|_| true)
 }
 
 const VERSION: &str = match option_env!("LIVI_VERSION") {
@@ -208,14 +266,22 @@ fn menu() -> std::process::ExitCode {
             println!("Detected: {}", detected.label());
         }
 
+        let family = match &detected {
+            Detected::DongleStock { info } => family_of(info),
+            _ => None,
+        };
         match &detected {
-            Detected::V821bStock { .. } => {
-                println!("  1  provision LIVI Link (backup current firmware first)");
-            }
+            Detected::DongleStock { .. } => match family {
+                Some(_) => println!("  1  provision LIVI Link (backup current firmware first)"),
+                None if livi_link_provision::dongle::shell::is_up() => {
+                    println!("  1  look at this dongle's hardware (no LIVI Link image for it yet)");
+                }
+                None => println!("  1  open this dongle (patches the vendor's update for it, then looks at what it is)"),
+            },
             Detected::LiviLink { .. } => {
                 println!("  1  update LIVI Link");
             }
-            Detected::Cpc200 { host } => {
+            Detected::Imx6ul { host } => {
                 let sh = Shell::new(host);
                 match action(&sh) {
                     Some(what) => println!("  1  {what} LIVI Link"),
@@ -236,11 +302,20 @@ fn menu() -> std::process::ExitCode {
             return std::process::ExitCode::SUCCESS;
         }
         let outcome: Result<(), String> = match (line.trim(), &detected) {
-            ("1", Detected::V821bStock { .. }) => match v821b_provision(None) {
-                Ok(()) => return std::process::ExitCode::SUCCESS,
-                Err(e) => Err(e),
-            },
-            ("1", Detected::Cpc200 { host }) => {
+            ("1", Detected::DongleStock { .. }) => {
+                let done = match family {
+                    Some(Family::V821b) => v821b_provision(None),
+                    Some(Family::Ax520) => ax520_provision(None),
+                    None => open_unknown(),
+                };
+                match (done, family) {
+                    // Only looked at it, the next round offers what the hardware allows.
+                    (Ok(()), None) => Ok(()),
+                    (Ok(()), Some(_)) => return std::process::ExitCode::SUCCESS,
+                    (Err(e), _) => Err(e),
+                }
+            }
+            ("1", Detected::Imx6ul { host }) => {
                 let sh = Shell::new(host);
                 if action(&sh).is_some() {
                     match install(&sh) {
@@ -251,7 +326,7 @@ fn menu() -> std::process::ExitCode {
                     Err("nothing to install".into())
                 }
             }
-            ("r", Detected::Cpc200 { host }) => {
+            ("r", Detected::Imx6ul { host }) => {
                 let sh = Shell::new(host);
                 if action(&sh).is_none() {
                     match install(&sh) {
@@ -281,7 +356,7 @@ fn menu() -> std::process::ExitCode {
 
 /// Whether this tool would change the dongle's firmware, and what that would be called.
 fn action(sh: &Shell) -> Option<&'static str> {
-    use livi_link_provision::payload;
+    use livi_link_provision::dongle::arm::imx6ul::payload;
     if is_stock(sh).unwrap_or(true) {
         return Some("install");
     }
@@ -293,7 +368,7 @@ fn action(sh: &Shell) -> Option<&'static str> {
 /// The version on the dongle, if it carries one.
 fn installed_version(sh: &Shell) -> Option<String> {
     let out = sh
-        .sh(&format!("cat {} 2>/dev/null", livi_link_provision::payload::VERSION_FILE))
+        .sh(&format!("cat {} 2>/dev/null", livi_link_provision::dongle::arm::imx6ul::payload::VERSION_FILE))
         .unwrap_or_default()
         .trim()
         .to_string();
@@ -318,7 +393,7 @@ fn install(sh: &Shell) -> Result<(), String> {
             bootstrap::carrier_body().as_bytes(),
             bootstrap::CARRIER,
             shell::PUSH_PORT,
-            &livi_link_provision::payload::md5_hex(bootstrap::carrier_body().as_bytes()),
+            &livi_link_provision::dongle::arm::imx6ul::payload::md5_hex(bootstrap::carrier_body().as_bytes()),
         )?;
         sh.sh(&format!("chmod 755 {}; rm -f {}; sync", bootstrap::CARRIER, bootstrap::BOOT_HOOK))?;
         println!("== bootstrap removed again");
@@ -392,8 +467,8 @@ impl Drop for Blink<'_> {
 fn is_stock(sh: &Shell) -> Result<bool, String> {
     let out = sh.sh(&format!(
         "grep -q '{}' {} 2>/dev/null && echo ours || echo stock",
-        livi_link_provision::payload::BRINGUP_MARKER,
-        livi_link_provision::payload::BRINGUP_REMOTE
+        livi_link_provision::dongle::arm::imx6ul::payload::BRINGUP_MARKER,
+        livi_link_provision::dongle::arm::imx6ul::payload::BRINGUP_REMOTE
     ))?;
     Ok(out.trim() == "stock")
 }
@@ -423,7 +498,10 @@ fn report(line: &str) {
 }
 
 fn usage() -> &'static str {
-    "usage: livi-link-provision plan | apply [--reboot] | verify | backup [dir] | push <local> <remote> | sh 'CMD'"
+    "usage: livi-link-provision [detect]
+  dongle arm imx6ul  plan | apply [--reboot] | verify | backup [dir] | push <local> <remote> | sh 'CMD' | bootstrap | usbscan
+  dongle arm ax520   info | install-shell | verify-hw | selftest [N] | backup [dir] | flash <lfwb> | provision [lfwb]
+  dongle riscv v821b info | install-shell | verify-hw | selftest [N] | backup [dir] | flash <lfwb> | provision [lfwb]"
 }
 
 /// Where backups go when no directory is given: the app's backup folder, the one that also
@@ -479,8 +557,63 @@ fn kib(v: Option<u64>) -> String {
     v.map(|k| format!("{k}K")).unwrap_or_else(|| "unknown".into())
 }
 
-fn v821b_detect() -> Result<(), String> {
-    let info = livi_link_provision::v821b::web::host()?;
+/// Only the V821B and the AX520 have a LIVI Link image, every other dongle stops at the bind-shell.
+/// The family comes from the project when it is one we know. For any other project it comes from
+/// what the shell on the dongle says, once the dongle has one.
+fn family_of(info: &HostInfo) -> Option<Family> {
+    match hook::ly_project(&info.sys.appver).as_deref() {
+        Some(p) if p == v821b::PROJECT => Some(Family::V821b),
+        Some(p) if p == ax520::PROJECT => Some(Family::Ax520),
+        _ => probe_shell().ok().and_then(|probe| probe.family()),
+    }
+}
+
+/// What the dongle's shell says it is.
+fn probe_shell() -> Result<Probe, String> {
+    if !livi_link_provision::dongle::shell::is_up() {
+        return Err("the dongle has no shell yet".into());
+    }
+    let mut sh = livi_link_provision::dongle::shell::BindShell::connect(30)?;
+    Probe::run(&mut sh)
+}
+
+/// Where the vendor's update for a project is kept between runs.
+fn ota_cache_dir() -> PathBuf {
+    backup_dir().with_file_name("ota-cache")
+}
+
+/// A dongle of a project we have no ready-made bootstrap for: get a shell onto it through the
+/// vendor's own update, patched from the vendor's download, and only then look at what it is. The
+/// dongle ends up on the vendor's public update for its project, with a shell open on 2323.
+fn open_unknown() -> Result<(), String> {
+    hook::install_bindshell(None, &ota_cache_dir())?;
+    let mut sh = livi_link_provision::dongle::shell::BindShell::connect(300)?;
+    let probe = Probe::run(&mut sh)?;
+    let report = probe.report();
+    println!("\n{report}");
+
+    let dir = backup_dir().with_file_name("dongle-probe");
+    let file = dir.join(format!("probe-{}.txt", livi_link_provision::dongle::lfwb::stamp()));
+    match std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&file, &report)) {
+        Ok(()) => println!("== saved {}", livi_link_provision::tilde(&file)),
+        Err(e) => println!("== could not save the report: {e}"),
+    }
+    match probe.family() {
+        Some(family) => println!(
+            "== this is a {}. Run the tool again to provision it, the current firmware is backed up first.",
+            family.name()
+        ),
+        None => println!(
+            "== this hardware is not one we have a LIVI Link image for yet, nothing more was done to it.\n\
+             == Please attach the report to an issue. The dongle's own update page puts the vendor's firmware back."
+        ),
+    }
+    Ok(())
+}
+
+/// `expected` is the hardware family the caller named, a dongle of another family is reported.
+fn stock_info(expected: Option<&str>) -> Result<(), String> {
+    let info = livi_link_provision::dongle::web::host()?;
     println!("name:    {}", info.name);
     println!("appver:  {}", info.sys.appver);
     println!("sn:      {}", info.sn);
@@ -488,18 +621,31 @@ fn v821b_detect() -> Result<(), String> {
     println!("otp:     {}", info.otp);
     println!("led:     {}", info.sys.led);
     println!("update:  {}", info.update);
-    Ok(())
+    let project = livi_link_provision::dongle::hook::ly_project(&info.sys.appver);
+    match &project {
+        Some(p) => println!("project: {p}"),
+        None => println!("project: (couldn't parse from appver)"),
+    }
+    println!(
+        "bootstrap: made from the vendor's update for this project, {}",
+        livi_link_provision::dongle::ota::version_url(&info.sys.appver)
+            .unwrap_or_else(|| "no address for it".to_string())
+    );
+    match &project {
+        Some(p) => hook::check_project(p, expected),
+        None => Ok(()),
+    }
 }
 
-fn v821b_install_shell() -> Result<(), String> {
-    livi_link_provision::v821b::flash::install_bindshell()?;
+fn stock_install_shell(expected: Option<&str>) -> Result<(), String> {
+    hook::install_bindshell(expected, &ota_cache_dir())?;
     println!("done — bind-shell should come up on 2323 shortly");
     Ok(())
 }
 
 fn v821b_verify() -> Result<(), String> {
-    let mut sh = livi_link_provision::v821b::shell::BindShell::connect(180)?;
-    let hw = livi_link_provision::v821b::flash::verify_hardware(&mut sh)?;
+    let mut sh = livi_link_provision::dongle::shell::BindShell::connect(180)?;
+    let hw = livi_link_provision::dongle::riscv::v821b::verify_hardware(&mut sh)?;
     println!("--- /proc/cpuinfo ---\n{}\n", hw.cpuinfo_head);
     println!("--- /proc/mtd ---\n{}\n", hw.proc_mtd);
     println!("--- aic8800 modules ---\n{}\n", hw.aic_modules);
@@ -512,35 +658,83 @@ fn v821b_verify() -> Result<(), String> {
 }
 
 fn v821b_selftest(size: usize) -> Result<(), String> {
-    let mut sh = livi_link_provision::v821b::shell::BindShell::connect(180)?;
-    livi_link_provision::v821b::flash::stream_in_selftest(&mut sh, size)
+    let mut sh = livi_link_provision::dongle::shell::BindShell::connect(180)?;
+    livi_link_provision::dongle::riscv::v821b::stream_in_selftest(&mut sh, size)
 }
 
 fn v821b_backup(out_dir: &Path) -> Result<(), String> {
-    let mut sh = livi_link_provision::v821b::shell::BindShell::connect(180)?;
-    livi_link_provision::v821b::flash::backup_stock(&mut sh, out_dir)?;
+    let mut sh = livi_link_provision::dongle::shell::BindShell::connect(180)?;
+    livi_link_provision::dongle::riscv::v821b::backup_stock(&mut sh, out_dir)?;
     Ok(())
 }
 
 fn v821b_flash(lfwb: &Path) -> Result<(), String> {
-    let mut sh = livi_link_provision::v821b::shell::BindShell::connect(180)?;
-    livi_link_provision::v821b::flash::flash_lfwb(&mut sh, lfwb)?;
+    let mut sh = livi_link_provision::dongle::shell::BindShell::connect(180)?;
+    livi_link_provision::dongle::riscv::v821b::flash_lfwb(&mut sh, lfwb)?;
     Ok(())
 }
 
 fn v821b_provision(lfwb: Option<&PathBuf>) -> Result<(), String> {
-    livi_link_provision::v821b::flash::install_bindshell()?;
-    let mut sh = livi_link_provision::v821b::shell::BindShell::connect(300)?;
-    let hw = livi_link_provision::v821b::flash::verify_hardware(&mut sh)?;
+    hook::install_bindshell(Some(v821b::PROJECT), &ota_cache_dir())?;
+    let mut sh = livi_link_provision::dongle::shell::BindShell::connect(300)?;
+    let hw = livi_link_provision::dongle::riscv::v821b::verify_hardware(&mut sh)?;
     if !hw.looks_like_v821b_aic8800d80() {
         return Err("hardware verify failed — not touching mtd. bind-shell stays open for you.".into());
     }
     println!("hw: V821B+AIC8800D80 ✓  → backup + flash");
     let dir = backup_dir();
-    livi_link_provision::v821b::flash::backup_stock(&mut sh, &dir)?;
+    livi_link_provision::dongle::riscv::v821b::backup_stock(&mut sh, &dir)?;
     match lfwb {
-        Some(path) => livi_link_provision::v821b::flash::flash_lfwb(&mut sh, path)?,
-        None => livi_link_provision::v821b::flash::flash_embedded(&mut sh)?,
+        Some(path) => livi_link_provision::dongle::riscv::v821b::flash_lfwb(&mut sh, path)?,
+        None => livi_link_provision::dongle::riscv::v821b::flash_embedded(&mut sh)?,
+    }
+    println!("provision complete — dongle rebooting into LIVI Link");
+    Ok(())
+}
+
+fn ax520_verify() -> Result<(), String> {
+    let mut sh = livi_link_provision::dongle::shell::BindShell::connect(180)?;
+    let hw = ax520::verify_hardware(&mut sh)?;
+    println!("--- /proc/cpuinfo ---\n{}\n", hw.cpuinfo_head);
+    println!("--- /proc/mtd ---\n{}\n", hw.proc_mtd);
+    if hw.looks_like_ax520_aic8800d80() {
+        println!("hardware: AX520 + AIC8800D80 (as expected)");
+        Ok(())
+    } else {
+        Err("hardware check failed — not an AX520 with the stock partition table".into())
+    }
+}
+
+fn ax520_selftest(size: usize) -> Result<(), String> {
+    let mut sh = livi_link_provision::dongle::shell::BindShell::connect(180)?;
+    ax520::stream_in_selftest(&mut sh, size)
+}
+
+fn ax520_backup(out_dir: &Path) -> Result<(), String> {
+    let mut sh = livi_link_provision::dongle::shell::BindShell::connect(180)?;
+    ax520::backup_stock(&mut sh, out_dir)?;
+    Ok(())
+}
+
+fn ax520_flash(lfwb: &Path) -> Result<(), String> {
+    let mut sh = livi_link_provision::dongle::shell::BindShell::connect(180)?;
+    ax520::flash_lfwb(&mut sh, lfwb)?;
+    Ok(())
+}
+
+fn ax520_provision(lfwb: Option<&PathBuf>) -> Result<(), String> {
+    hook::install_bindshell(Some(ax520::PROJECT), &ota_cache_dir())?;
+    let mut sh = livi_link_provision::dongle::shell::BindShell::connect(300)?;
+    let hw = ax520::verify_hardware(&mut sh)?;
+    if !hw.looks_like_ax520_aic8800d80() {
+        return Err("hardware verify failed — not touching mtd. bind-shell stays open for you.".into());
+    }
+    println!("hw: AX520+AIC8800D80 ✓  → backup + flash");
+    let dir = backup_dir();
+    ax520::backup_stock(&mut sh, &dir)?;
+    match lfwb {
+        Some(path) => ax520::flash_lfwb(&mut sh, path)?,
+        None => ax520::flash_embedded(&mut sh)?,
     }
     println!("provision complete — dongle rebooting into LIVI Link");
     Ok(())

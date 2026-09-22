@@ -1,23 +1,25 @@
-use crate::shell::{self, Shell};
-use crate::v821b;
+use crate::dongle;
+use crate::dongle::arm::imx6ul::shell::{self, Shell};
 
 pub enum Detected {
-    Cpc200 { host: String },
+    Imx6ul { host: String },
     LiviLink { model: String },
-    /// A VehiConn V821B in stock firmware, reachable through its own WiFi AP.
-    V821bStock { info: v821b::web::HostInfo },
+    /// A dongle in stock firmware, running the "Liaoyuan" web/OTA stack (`dongle::web`) — could
+    /// be a V821B or an AX520 (or another project not yet seen), see `dongle::hook::ly_project`.
+    DongleStock { info: dongle::web::HostInfo },
     Nothing,
 }
 
 impl Detected {
     pub fn label(&self) -> String {
         match self {
-            Detected::Cpc200 { host } => format!("CPC200-CCPA at {host}"),
+            Detected::Imx6ul { host } => format!("CPC200-CCPA at {host}"),
             Detected::LiviLink { model } => format!("{model} already running LIVI Link"),
-            Detected::V821bStock { info } => format!(
-                "V821B+AIC8800D80 in stock firmware ({}, appver {})",
-                info.name, info.sys.appver
-            ),
+            Detected::DongleStock { info } => {
+                let project = dongle::hook::ly_project(&info.sys.appver)
+                    .unwrap_or_else(|| "unknown project".into());
+                format!("{project} dongle in stock firmware ({}, appver {})", info.name, info.sys.appver)
+            }
             Detected::Nothing => "no dongle found".into(),
         }
     }
@@ -27,12 +29,12 @@ pub fn detect() -> Detected {
     if let Some(model) = livi_model(shell::DEFAULT_HOST) {
         return Detected::LiviLink { model };
     }
-    if let Ok(info) = v821b::web::host() {
-        return Detected::V821bStock { info };
+    if let Ok(info) = dongle::web::host() {
+        return Detected::DongleStock { info };
     }
     for host in [shell::DEFAULT_HOST, "192.168.50.2"] {
         if Shell::new(host).port_open(shell::TELNET_PORT) {
-            return Detected::Cpc200 {
+            return Detected::Imx6ul {
                 host: host.to_string(),
             };
         }

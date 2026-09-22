@@ -1,0 +1,43 @@
+#!/bin/sh
+# net-up [ncm|acm]: USB gadget on usb0. The UDC has four endpoints, enough for one of these at a time:
+#   ncm  NCM network (10.10.10.1/24 with DHCP for the host) and telnetd on :23 (default). With LINK_ONLY=1
+#        only the gadget, for the rootfs, which runs its own DHCP server on the bridge.
+#   acm  a shell on ttyGS0, /dev/ttyACM* or /dev/cu.usbmodem* on the host
+MODE=${1:-ncm}
+UDC=$(ls /sys/class/udc 2>/dev/null | head -n1)
+[ -n "$UDC" ] || { echo "net-up: no UDC (usb0 did not probe, see dmesg | grep -i fotg)"; exit 1; }
+
+G=/sys/kernel/config/usb_gadget/livi
+[ -d $G ] && { echo "net-up: already up, net-down first"; exit 0; }
+case $MODE in
+ncm) F=ncm.usb0; PID=0xa4a1 ;;   # same USB identity as V821B: the host app finds the dongle by its product string
+acm) F=acm.GS0;  PID=0xa4a7 ;;
+*) echo "usage: net-up [ncm|acm]"; exit 1 ;;
+esac
+mkdir -p $G/strings/0x409 $G/configs/c.1/strings/0x409 $G/functions/$F
+echo 0x0525  > $G/idVendor
+echo $PID    > $G/idProduct
+echo LIVI      > $G/strings/0x409/manufacturer
+echo "LIVI Link" > $G/strings/0x409/product
+echo $MODE   > $G/configs/c.1/strings/0x409/configuration
+ln -s $G/functions/$F $G/configs/c.1/
+echo "$UDC" > $G/UDC 2>/dev/null || { echo "net-up: binding $UDC as $MODE failed (dmesg | tail)"; net-down; exit 1; }
+
+if [ $MODE = ncm ] && [ -n "$LINK_ONLY" ]; then
+    echo "net-up: $UDC bound, NCM link only" > /dev/console
+elif [ $MODE = ncm ]; then
+    ifconfig usb0 10.10.10.1 netmask 255.255.255.0 up
+    mkdir -p /var/lib/misc /tmp
+    echo "start 10.10.10.100
+end 10.10.10.199
+interface usb0
+option subnet 255.255.255.0
+option lease 3600" > /etc/udhcpd.conf
+    udhcpd /etc/udhcpd.conf
+    pidof telnetd >/dev/null || telnetd -l /bin/sh -p 23
+    echo "net-up: $UDC bound, NCM + telnetd on 10.10.10.1" > /dev/console
+else
+    ( while [ -c /dev/ttyGS0 ]; do setsid cttyhack sh </dev/ttyGS0 >/dev/ttyGS0 2>&1; sleep 1; done ) &
+    echo $! > /tmp/acm-shell.pid
+    echo "net-up: $UDC bound, ACM shell on ttyGS0" > /dev/console
+fi

@@ -1,0 +1,398 @@
+--- a/aic8800_bsp/aic_bsp_driver.c
++++ b/aic8800_bsp/aic_bsp_driver.c
+@@ -476,7 +476,7 @@
+ }
+ 
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
+-MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
++MODULE_IMPORT_NS("VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");
+ #endif
+ 
+ #define MD5(x) x[0],x[1],x[2],x[3],x[4],x[5],x[6],x[7],x[8],x[9],x[10],x[11],x[12],x[13],x[14],x[15]
+--- a/aic8800_bsp/aicsdio.c
++++ b/aic8800_bsp/aicsdio.c
+@@ -1472,7 +1472,7 @@
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+ static void aicwf_sdio_bus_pwrctl(struct timer_list *t)
+ {
+-	struct aic_sdio_dev *sdiodev = from_timer(sdiodev, t, timer);
++	struct aic_sdio_dev *sdiodev = timer_container_of(sdiodev, t, timer);
+ #else
+ static void aicwf_sdio_bus_pwrctl(ulong data)
+ {
+@@ -1677,7 +1677,7 @@
+ 	spin_lock_bh(&sdiodev->pwrctl_lock);
+ 	if (!duration) {
+ 		if (timer_pending(&sdiodev->timer))
+-			del_timer_sync(&sdiodev->timer);
++			timer_delete_sync(&sdiodev->timer);
+ 	} else {
+ 		sdiodev->active_duration = duration;
+ 		timeout = msecs_to_jiffies(sdiodev->active_duration);
+--- a/aic8800_btlpm/aic8800_btlpm.c
++++ b/aic8800_btlpm/aic8800_btlpm.c
+@@ -579,7 +579,7 @@
+ 
+ 	return 0;
+ fail:
+-	del_timer(&rx_timer);
++	timer_delete(&rx_timer);
+ 	atomic_inc(&open_count);
+ 
+ 	return retval;
+@@ -602,7 +602,7 @@
+ 	/* assert BT_WAKE */
+ 	gpio_set_value(bsi->ext_wake, bsi->ext_wake_assert);
+ 
+-	del_timer(&rx_timer);
++	timer_delete(&rx_timer);
+ 	clear_bit(BT_PROTO, &flags);
+ 
+ 	if (test_bit(BT_ASLEEP, &flags)) {
+@@ -949,7 +949,7 @@
+ 		if (disable_irq_wake(bsi->host_wake_irq))
+ 			BT_ERR("Couldn't disable hostwake IRQ wakeup mode\n");
+ 		free_irq(bsi->host_wake_irq, &bsi->pdev->dev);
+-		del_timer(&rx_timer);
++		timer_delete(&rx_timer);
+ 		if (test_bit(BT_ASLEEP, &flags))
+ 			hsuart_power(1);
+ 	}
+--- a/aic8800_btlpm/lpm.c
++++ b/aic8800_btlpm/lpm.c
+@@ -558,7 +558,7 @@
+ 
+ 	return 0;
+ fail:
+-	del_timer(&rx_timer);
++	timer_delete(&rx_timer);
+ 	atomic_inc(&open_count);
+ 
+ 	return retval;
+@@ -581,7 +581,7 @@
+ 	/* assert BT_WAKE */
+ 	gpio_set_value(bsi->ext_wake, bsi->ext_wake_assert);
+ 
+-	del_timer(&rx_timer);
++	timer_delete(&rx_timer);
+ 	clear_bit(BT_PROTO, &flags);
+ 
+ 	if (test_bit(BT_ASLEEP, &flags)) {
+@@ -933,7 +933,7 @@
+ 		if (disable_irq_wake(bsi->host_wake_irq))
+ 			BT_ERR("Couldn't disable hostwake IRQ wakeup mode\n");
+ 		free_irq(bsi->host_wake_irq, &bsi->pdev->dev);
+-		del_timer(&rx_timer);
++		timer_delete(&rx_timer);
+ 		if (test_bit(BT_ASLEEP, &flags))
+ 			hsuart_power(1);
+ 	}
+--- a/aic8800_fdrv/aicwf_sdio.c
++++ b/aic8800_fdrv/aicwf_sdio.c
+@@ -260,7 +260,7 @@
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+ 		struct aic_sdio_dev *sdiodev = (struct aic_sdio_dev *) data;
+ #else
+-		struct aic_sdio_dev *sdiodev = from_timer(sdiodev, t, netif_timer);
++		struct aic_sdio_dev *sdiodev = timer_container_of(sdiodev, t, netif_timer);
+ #endif
+ 
+ 	if (!work_pending(&sdiodev->netif_work))
+@@ -296,7 +296,7 @@
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+ 	struct aic_sdio_dev *sdiodev = (struct aic_sdio_dev *) data;
+ #else
+-	struct aic_sdio_dev *sdiodev = from_timer(sdiodev, t, tp_ctrl_timer);
++	struct aic_sdio_dev *sdiodev = timer_container_of(sdiodev, t, tp_ctrl_timer);
+ #endif
+ 
+ 	if (!work_pending(&sdiodev->tp_ctrl_work))
+@@ -1022,12 +1022,12 @@
+ 	}
+ 
+ #ifdef CONFIG_TEMP_CONTROL
+-	del_timer_sync(&sdiodev->tp_ctrl_timer);
++	timer_delete_sync(&sdiodev->tp_ctrl_timer);
+ 	cancel_work_sync(&sdiodev->tp_ctrl_work);
+ 
+ 	mod_timer(&sdiodev->tp_ctrl_timer, jiffies + msecs_to_jiffies(TEMP_GET_INTERVAL));
+ 
+-	del_timer_sync(&sdiodev->netif_timer);
++	timer_delete_sync(&sdiodev->netif_timer);
+ 	cancel_work_sync(&sdiodev->netif_work);
+ #endif
+ 
+@@ -1280,13 +1280,13 @@
+ #ifdef CONFIG_TEMP_CONTROL
+ 		if (timer_pending(&g_rwnx_plat->sdiodev->tp_ctrl_timer)) {
+ 			AICWFDBG(LOGINFO, "%s del tp_ctrl_timer\n", __func__);
+-			del_timer_sync(&g_rwnx_plat->sdiodev->tp_ctrl_timer);
++			timer_delete_sync(&g_rwnx_plat->sdiodev->tp_ctrl_timer);
+ 		}
+ 		cancel_work_sync(&g_rwnx_plat->sdiodev->tp_ctrl_work);
+ 
+ 		if (timer_pending(&g_rwnx_plat->sdiodev->netif_timer)) {
+ 			AICWFDBG(LOGINFO, "%s del netif_timer\n", __func__);
+-			del_timer_sync(&g_rwnx_plat->sdiodev->netif_timer);
++			timer_delete_sync(&g_rwnx_plat->sdiodev->netif_timer);
+ 		}
+ 		cancel_work_sync(&g_rwnx_plat->sdiodev->netif_work);
+ #endif
+@@ -2804,7 +2804,7 @@
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+ 	struct aic_sdio_dev *sdiodev = (struct aic_sdio_dev *) data;
+ #else
+-	struct aic_sdio_dev *sdiodev = from_timer(sdiodev, t, timer);
++	struct aic_sdio_dev *sdiodev = timer_container_of(sdiodev, t, timer);
+ #endif
+ 
+ 	if (sdiodev->bus_if->state == BUS_DOWN_ST) {
+@@ -3001,7 +3001,7 @@
+ 	spin_lock_bh(&sdiodev->pwrctl_lock);
+ 	if (!duration) {
+ 		if (timer_pending(&sdiodev->timer))
+-			del_timer_sync(&sdiodev->timer);
++			timer_delete_sync(&sdiodev->timer);
+ 	} else {
+ 		sdiodev->active_duration = duration;
+ 		timeout = msecs_to_jiffies(sdiodev->active_duration);
+--- a/aic8800_fdrv/aicwf_tcp_ack.c
++++ b/aic8800_fdrv/aicwf_tcp_ack.c
+@@ -106,7 +106,7 @@
+ 		drop_msg = NULL;
+ 
+ 		write_seqlock_bh(&ack_m->ack_info[i].seqlock);
+-		del_timer(&ack_m->ack_info[i].timer);
++		timer_delete(&ack_m->ack_info[i].timer);
+ 		drop_msg = ack_m->ack_info[i].msgbuf;
+ 		ack_m->ack_info[i].msgbuf = NULL;
+ 		write_sequnlock_bh(&ack_m->ack_info[i].seqlock);
+@@ -375,7 +375,7 @@
+ 				//printk("%lx \n",ack_info->msgbuf);
+ 				drop_msg = ack_info->msgbuf;
+ 				ack_info->msgbuf = NULL;
+-				del_timer(&ack_info->timer);
++				timer_delete(&ack_info->timer);
+ 			}else{
+ 				//printk("msgbuf is NULL \n");
+ 			}
+@@ -409,7 +409,7 @@
+ 				   atomic_read(&ack_m->max_drop_cnt)))) {
+ 			ack_info->drop_cnt = 0;
+ 			ack_info->in_send_msg = new_msgbuf;
+-			del_timer(&ack_info->timer);
++			timer_delete(&ack_info->timer);
+ 		} else {
+ 			ret = 1;
+ 			ack_info->msgbuf = new_msgbuf;
+@@ -472,7 +472,7 @@
+ 			ack_info->drop_cnt = 0;
+ 			//send_msg = new_msgbuf;
+ 			ack_info->in_send_msg = new_msgbuf;
+-			del_timer(&ack_info->timer);
++			timer_delete(&ack_info->timer);
+ 		}else{
+ 			ret = 1;
+ 			ack_info->msgbuf = new_msgbuf;
+--- a/aic8800_fdrv/rwnx_main.c
++++ b/aic8800_fdrv/rwnx_main.c
+@@ -1766,7 +1766,7 @@
+ 	rwnx_vif = (struct rwnx_vif *)data;
+ 	rwnx_hw = rwnx_vif->rwnx_hw;
+ 	#else
+-	rwnx_hw = from_timer(rwnx_hw, t, p2p_alive_timer);
++	rwnx_hw = timer_container_of(rwnx_hw, t, p2p_alive_timer);
+ 	rwnx_vif = rwnx_hw->p2p_dev_vif;
+ 	#endif
+ 
+@@ -2203,7 +2203,7 @@
+ 	if (rwnx_vif == rwnx_hw->p2p_dev_vif) {
+ 		rwnx_hw->is_p2p_alive = 0;
+ 		if (timer_pending(&rwnx_hw->p2p_alive_timer)) {
+-			del_timer_sync(&rwnx_hw->p2p_alive_timer);
++			timer_delete_sync(&rwnx_hw->p2p_alive_timer);
+ 		}
+ 
+ 		if (rwnx_vif->up) {
+@@ -3559,7 +3559,7 @@
+ 	rwnx_vif->ap.start = false;
+ 	aicwf_nl_hook_deinit(rwnx_vif->ap.band, rwnx_vif->rwnx_hw->iface_idx);
+ 	if (timer_pending(&rwnx_vif->steer_timer))
+-		del_timer_sync(&rwnx_vif->steer_timer);
++		timer_delete_sync(&rwnx_vif->steer_timer);
+ 	cancel_work_sync(&rwnx_vif->steer_work);
+ #if 0
+ 	flush_workqueue(rwnx_vif->rsp_wq);
+@@ -3713,7 +3713,7 @@
+  *	have changed. The actual parameter values are available in
+  *	struct wiphy. If returning an error, no value should be changed.
+  */
+-static int rwnx_cfg80211_set_wiphy_params(struct wiphy *wiphy, u32 changed)
++static int rwnx_cfg80211_set_wiphy_params(struct wiphy *wiphy, int radio_idx, u32 changed)
+ {
+ 	return 0;
+ }
+@@ -3726,7 +3726,7 @@
+  *	always be %NULL unless the driver supports per-vif TX power
+  *	(as advertised by the nl80211 feature flag.)
+  */
+-static int rwnx_cfg80211_set_tx_power(struct wiphy *wiphy, struct wireless_dev *wdev,
++static int rwnx_cfg80211_set_tx_power(struct wiphy *wiphy, struct wireless_dev *wdev, int radio_idx,
+ 									  enum nl80211_tx_power_setting type, int mbm)
+ {
+ 	struct rwnx_hw *rwnx_hw = wiphy_priv(wiphy);
+@@ -3755,9 +3755,7 @@
+ }
+ 
+ static int rwnx_cfg80211_get_tx_power(struct wiphy *wiphy,
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
+- struct wireless_dev *wdev,
+-#endif
++ struct wireless_dev *wdev, int radio_idx, unsigned int link_id,
+ 	int *mbm)
+ {
+     #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)
+@@ -5741,7 +5739,7 @@
+ 	rwnx_vif = (struct rwnx_vif *)data;
+ 	rwnx_hw = rwnx_vif->rwnx_hw;
+ #else
+-	rwnx_hw = from_timer(rwnx_hw, t, pwrloss_timer);
++	rwnx_hw = timer_container_of(rwnx_hw, t, pwrloss_timer);
+ #endif
+ 	if (!work_pending(&rwnx_hw->pwrloss_work))
+ 		schedule_work(&rwnx_hw->pwrloss_work);
+@@ -6318,7 +6316,7 @@
+ 
+ #ifdef CONFIG_DYNAMIC_PWR
+ 	if(timer_pending(&rwnx_hw->pwrloss_timer)){
+-		del_timer_sync(&rwnx_hw->pwrloss_timer);}
++		timer_delete_sync(&rwnx_hw->pwrloss_timer);}
+ 	cancel_work_sync(&rwnx_hw->pwrloss_work);
+ #endif
+ 
+@@ -6327,7 +6325,7 @@
+ 		list_for_each_entry(defrag_ctrl, &rwnx_hw->defrag_list, list) {
+ 			list_del_init(&defrag_ctrl->list);
+ 			if (timer_pending(&defrag_ctrl->defrag_timer))
+-				del_timer_sync(&defrag_ctrl->defrag_timer);
++				timer_delete_sync(&defrag_ctrl->defrag_timer);
+ 			dev_kfree_skb(defrag_ctrl->skb);
+ 			kfree(defrag_ctrl);
+ 		}
+@@ -6459,7 +6457,7 @@
+ 
+ 
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
+-MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
++MODULE_IMPORT_NS("VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");
+ #endif
+ 
+ module_init(rwnx_mod_init);
+--- a/aic8800_fdrv/rwnx_platform.c
++++ b/aic8800_fdrv/rwnx_platform.c
+@@ -548,7 +548,7 @@
+ #endif
+ 
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
+-MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
++MODULE_IMPORT_NS("VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");
+ #endif
+ 
+ #if 0
+--- a/aic8800_fdrv/rwnx_rx.c
++++ b/aic8800_fdrv/rwnx_rx.c
+@@ -1659,7 +1659,7 @@
+ 	preorder_ctrl->enable = false;
+ 	spin_unlock_irqrestore(&preorder_ctrl->reord_list_lock, flags);
+ 	if (timer_pending(&preorder_ctrl->reord_timer))
+-		ret = del_timer_sync(&preorder_ctrl->reord_timer);
++		ret = timer_delete_sync(&preorder_ctrl->reord_timer);
+ 	cancel_work_sync(&preorder_ctrl->reord_timer_work);
+ 
+ 	return 0;
+@@ -1684,7 +1684,7 @@
+ 		if(preorder_ctrl->enable){
+ 			preorder_ctrl->enable = false;
+ 			if (timer_pending(&preorder_ctrl->reord_timer)) {
+-				ret = del_timer_sync(&preorder_ctrl->reord_timer);
++				ret = timer_delete_sync(&preorder_ctrl->reord_timer);
+ 			}
+ 			cancel_work_sync(&preorder_ctrl->reord_timer_work);
+ 		}
+@@ -1895,7 +1895,7 @@
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+ 	struct reord_ctrl *preorder_ctrl = (struct reord_ctrl *)data;
+ #else
+-	struct reord_ctrl *preorder_ctrl = from_timer(preorder_ctrl, t, reord_timer);
++	struct reord_ctrl *preorder_ctrl = timer_container_of(preorder_ctrl, t, reord_timer);
+ #endif
+ 
+ #if 0 //AIDEN
+@@ -2044,7 +2044,7 @@
+ 		}
+ 	} else {
+ 	if (timer_pending(&preorder_ctrl->reord_timer)) {
+-			ret = del_timer(&preorder_ctrl->reord_timer);
++			ret = timer_delete(&preorder_ctrl->reord_timer);
+ 	}
+ 	}
+ 	
+@@ -2146,7 +2146,7 @@
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0)
+ 	defrag_ctrl = (struct defrag_ctrl_info *)data;
+ #else
+-	defrag_ctrl = from_timer(defrag_ctrl, t, defrag_timer);
++	defrag_ctrl = timer_container_of(defrag_ctrl, t, defrag_timer);
+ #endif
+ 
+ 	printk("%s:%p\r\n", __func__, defrag_ctrl);
+@@ -2376,7 +2376,7 @@
+ #ifdef CONFIG_GKI
+ 			rwnx_cfg80211_rx_spurious_frame(rwnx_vif->ndev, hdr->addr2, GFP_ATOMIC);
+ #else
+-            cfg80211_rx_spurious_frame(rwnx_vif->ndev, hdr->addr2, GFP_ATOMIC);
++            cfg80211_rx_spurious_frame(rwnx_vif->ndev, hdr->addr2, -1, GFP_ATOMIC);
+ #endif
+ 		}
+ 		goto end;
+@@ -2695,7 +2695,7 @@
+ 							skb_tmp = defrag_info->skb;
+ 							list_del_init(&defrag_info->list);
+ 							if (timer_pending(&defrag_info->defrag_timer)) {
+-								ret = del_timer(&defrag_info->defrag_timer);
++								ret = timer_delete(&defrag_info->defrag_timer);
+ 							}
+ 							kfree(defrag_info);
+ 							spin_unlock_bh(&rwnx_hw->defrag_lock);
+@@ -2752,7 +2752,7 @@
+ 													   sta->mac_addr, GFP_ATOMIC);
+ #else
+                     cfg80211_rx_unexpected_4addr_frame(rwnx_vif->ndev,
+-                                                       sta->mac_addr, GFP_ATOMIC);
++                                                       sta->mac_addr, -1, GFP_ATOMIC);
+ #endif
+ 				}
+ 			}
+--- a/aic8800_fdrv/rwnx_wakelock.c
++++ b/aic8800_fdrv/rwnx_wakelock.c
+@@ -11,18 +11,12 @@
+ 
+ struct wakeup_source *rwnx_wakeup_init(const char *name)
+ {
+-	struct wakeup_source *ws;
+-	ws = wakeup_source_create(name);
+-	wakeup_source_add(ws);
+-	return ws;
++	return rwnx_wakeup_register(NULL, name);
+ }
+ 
+ void rwnx_wakeup_deinit(struct wakeup_source *ws)
+ {
+-	if (ws && ws->active)
+-		__pm_relax(ws);
+-	wakeup_source_remove(ws);
+-	wakeup_source_destroy(ws);
++	rwnx_wakeup_unregister(ws);
+ }
+ 
+ struct wakeup_source *rwnx_wakeup_register(struct device *dev, const char *name)

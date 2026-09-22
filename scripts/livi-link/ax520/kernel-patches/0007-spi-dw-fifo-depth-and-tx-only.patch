@@ -1,0 +1,78 @@
+--- a/drivers/spi/spi-dw-core.c
++++ b/drivers/spi/spi-dw-core.c
+@@ -410,6 +410,39 @@
+ 	return 0;
+ }
+ 
++static int dw_spi_tx_only(struct dw_spi *dws)
++{
++	unsigned long flags;
++	int guard = 200000;
++
++	/* Short frames only: interrupts are off, so nothing can leave a gap in the bit stream. */
++	local_irq_save(flags);
++	while (dws->tx_len) {
++		u32 room = dws->fifo_len - dw_readl(dws, DW_SPI_TXFLR);
++
++		while (room && dws->tx_len) {
++			u32 txw;
++
++			if (dws->n_bytes == 1)
++				txw = *(u8 *)(dws->tx);
++			else if (dws->n_bytes == 2)
++				txw = *(u16 *)(dws->tx);
++			else
++				txw = *(u32 *)(dws->tx);
++			dw_write_io_reg(dws, DW_SPI_DR, txw);
++			dws->tx += dws->n_bytes;
++			dws->tx_len--;
++			room--;
++		}
++	}
++	while (guard-- &&
++	       ((dw_readl(dws, DW_SPI_SR) & DW_SPI_SR_BUSY) || !(dw_readl(dws, DW_SPI_SR) & DW_SPI_SR_TF_EMPT)))
++		cpu_relax();
++	local_irq_restore(flags);
++
++	return guard < 0 ? -ETIMEDOUT : 0;
++}
++
+ static int dw_spi_transfer_one(struct spi_controller *host,
+ 			       struct spi_device *spi,
+ 			       struct spi_transfer *transfer)
+@@ -432,6 +465,17 @@
+ 	/* Ensure the data above is visible for all CPUs */
+ 	smp_mb();
+ 
++	if (!transfer->rx_buf && transfer->len <= 256 && !dws->dma_ops) {
++		cfg.tmode = DW_SPI_CTRLR0_TMOD_TO;
++		dws->rx_len = 0;
++		dw_spi_enable_chip(dws, 0);
++		dw_spi_update_config(dws, spi, &cfg);
++		transfer->effective_speed_hz = dws->current_freq;
++		dw_spi_mask_intr(dws, 0xff);
++		dw_spi_enable_chip(dws, 1);
++		return dw_spi_tx_only(dws);
++	}
++
+ 	dw_spi_enable_chip(dws, 0);
+ 
+ 	dw_spi_update_config(dws, spi, &cfg);
+@@ -876,6 +920,17 @@
+ 		dw_writel(dws, DW_SPI_TXFTLR, 0);
+ 
+ 		dws->fifo_len = (fifo == 1) ? 0 : fifo;
++		dw_writel(dws, DW_SPI_TXFTLR, 0);
++
++		/* AX520: Tx threshold takes 8, Rx takes 7, the FIFOs are 8 deep and the driver assumed 9 */
++		for (fifo = 1; fifo < 256; fifo++) {
++			dw_writel(dws, DW_SPI_RXFTLR, fifo);
++			if (fifo != dw_readl(dws, DW_SPI_RXFTLR))
++				break;
++		}
++		dw_writel(dws, DW_SPI_RXFTLR, 0);
++		if (fifo > 1 && fifo < dws->fifo_len)
++			dws->fifo_len = fifo;
+ 		dev_dbg(dev, "Detected FIFO size: %u bytes\n", dws->fifo_len);
+ 	}
+ 

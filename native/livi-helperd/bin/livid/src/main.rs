@@ -19,6 +19,49 @@ mod netd;
 mod tinyshell;
 mod wifid;
 
+/// One livid build per CPU arch serves every board of that arch, so the board is told apart
+/// by its devicetree. Flashing stays off where the partition layout is not wired up.
+fn web_caps() -> livi_web::WebCaps {
+    let compatible = std::fs::read("/sys/firmware/devicetree/base/compatible").unwrap_or_default();
+    let ax520 = compatible.windows(b"axera,ax520".len()).any(|w| w == b"axera,ax520");
+    let slot = |typ, node: &str, magic: &[u8], size| livi_web::MtdSlot {
+        typ, node: node.into(), magic: magic.to_vec(), size,
+    };
+    // The bundle types are the MTD numbers. The bootloader partition is never in the table, a bad
+    // write there needs the flash off the board (AX520) or FEL (V821B).
+    let (model, target, led, flash) = if ax520 {
+        ("AX520 + AIC8800D80", "ax520_aic8800d80", true, livi_web::Flash {
+            mtd: vec![
+                slot(3, "mtdblock3", &[0x56, 0x19, 0x05, 0x27], 0x30_0000), // little-endian uImage
+                slot(6, "mtdblock6", b"hsqs", 0x44_0000),
+            ],
+            // The loader after the bootrom reads the flash in quad mode and needs QE set.
+            check: Some("/usr/sbin/sfc-sr".into()),
+            ..Default::default()
+        })
+    } else {
+        ("V821B + AIC8800D80", "v821b_aic8800d80", true, livi_web::Flash {
+            mtd: vec![
+                slot(1, "mtdblock1", b"ANDROID!", 0x31_0000),
+                slot(3, "mtdblock3", b"hsqs", 0x48_0000),
+            ],
+            ..Default::default()
+        })
+    };
+    livi_web::WebCaps {
+        model: model.into(),
+        target: target.into(),
+        port: 80,
+        wifi_iface: "wlan0".into(),
+        bridge: Some("br0".into()),
+        host_iface: "usb0".into(),
+        bt: "hci0".into(),
+        led,
+        flash,
+        update_conf: "/tmp/livi/update.conf".into(),
+    }
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
     let arg0 = args.first().map(|s| s.as_str()).unwrap_or("livid");
@@ -47,18 +90,7 @@ fn main() -> ExitCode {
         "livi-btd"       | "btd"       => btd::run(rest),
         "livi-iapd"      | "iapd"      => iapd::run(rest),
         // Unified web UI.
-        "livi-httpd"     | "httpd"     => livi_web::run(livi_web::WebCaps {
-            model: "V821B + AIC8800D80".into(),
-            target: "v821b_aic8800d80".into(),
-            port: 80,
-            wifi_iface: "wlan0".into(),
-            bridge: Some("br0".into()),
-            host_iface: "usb0".into(),
-            bt: "hci0".into(),
-            led: true,
-            flash: livi_web::Flash { mtd: true, ..Default::default() },
-            update_conf: "/tmp/livi/update.conf".into(),
-        }),
+        "livi-httpd"     | "httpd"     => livi_web::run(web_caps()),
         "livi-ledd"      | "ledd"      => ledd::run(rest),
         "livi-netd"      | "netd"      => netd::run(rest),
         "livi-tinyshell" | "tinyshell" => tinyshell::run(rest),

@@ -1,0 +1,35 @@
+#!/bin/sh
+# sfc-sr [qe]: the flash status registers, read straight through the SPI controller (the MTD layer has no
+# interface for them). The loader after the bootrom reads the flash in quad mode and finds no kernel when
+# QE (SR2 bit 1) is clear, so flash-mtd checks it before it calls a write done. `sfc-sr qe` sets it again
+# (non-volatile). Only while nothing else uses the flash.
+B=0x00300000
+r() { devmem $((B + $1)); }
+w() { devmem $((B + $1)) 32 $2; }
+C0=$(r 0) C1=$(r 4)
+rd() {
+    w 8 0; w 0 0x00070300; w 4 0; w 0x10 0; w 8 1; w 0x60 $1; w 0x10 1
+    v=$(r 0x60); w 0x10 0; echo $((v & 0xff))
+}
+tx() {
+    w 8 0; w 0 0x00070100; w 0x10 0; w 8 1
+    for b in "$@"; do w 0x60 $b; done
+    w 0x10 1
+    while [ $(( $(r 0x28) & 1 )) = 1 ]; do :; done
+    w 0x10 0
+}
+show() {
+    S1=$(rd 0x05) S2=$(rd 0x35) S3=$(rd 0x15)
+    printf "SR1 0x%02x SR2 0x%02x SR3 0x%02x  QE=%d BP=%d CMP=%d WEL=%d\n" $S1 $S2 $S3 \
+        $(( (S2 >> 1) & 1 )) $(( (S1 >> 2) & 7 )) $(( (S2 >> 6) & 1 )) $(( (S1 >> 1) & 1 ))
+}
+show
+if [ "$1" = qe ] && [ $(( (S2 >> 1) & 1 )) = 0 ]; then
+    tx 0x06
+    tx 0x01 $((S1 & 0xfc)) $((S2 | 2))
+    i=0
+    while [ $(( $(rd 0x05) & 1 )) = 1 ] && [ $i -lt 200 ]; do i=$((i + 1)); done
+    show
+fi
+w 8 0; w 0 $C0; w 4 $C1; w 8 1
+[ $(( (S2 >> 1) & 1 )) = 1 ]

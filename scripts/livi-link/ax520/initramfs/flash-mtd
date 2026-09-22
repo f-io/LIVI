@@ -1,0 +1,33 @@
+#!/bin/sh
+# flash-mtd NAME FILE [-y]: write FILE to the MTD partition NAME (boot or rootfs), then read it back and
+# compare. Without -y it only checks and says what it would do. FILE comes over the network, e.g.
+# `nc -l -p 9000 > /tmp/boot.img` here and `nc 10.10.10.1 9000 < boot.uimg` on the host.
+NAME=$1 F=$2
+[ -n "$NAME" ] && [ -f "$F" ] || { echo "usage: flash-mtd boot|rootfs FILE [-y]"; exit 1; }
+case $NAME in
+boot)   MAGIC=56190527 WHAT="a little-endian uImage" ;;
+rootfs) MAGIC=68737173 WHAT="a squashfs" ;;
+*) echo "flash-mtd: only boot and rootfs"; exit 1 ;;
+esac
+
+N=
+for n in /sys/class/mtd/mtd[0-9]*; do
+    [ "$(cat $n/name 2>/dev/null)" = "$NAME" ] && N=${n##*mtd}
+done
+[ -n "$N" ] || { echo "flash-mtd: no MTD named $NAME (run: ovl sfc)"; exit 1; }
+
+SIZE=$(wc -c < "$F")
+PART=$(cat /sys/class/mtd/mtd$N/size)
+[ "$SIZE" -le "$PART" ] || { echo "flash-mtd: $SIZE B do not fit $NAME ($PART B)"; exit 1; }
+[ "$(head -c 4 "$F" | xxd -p)" = $MAGIC ] || { echo "flash-mtd: $F is not $WHAT"; exit 1; }
+SUM=$(md5sum < "$F" | cut -d' ' -f1)
+echo "flash-mtd: $F ($SIZE B, md5 $SUM) -> /dev/mtd$N ($NAME, $PART B)"
+[ "$3" = -y ] || { echo "dry run, add -y to write"; exit 0; }
+
+# flashcp erases and writes only what the file covers, sector by sector, through the MTD character device.
+flashcp "$F" /dev/mtd$N || { echo "flash-mtd: flashcp failed, do not reboot"; exit 1; }
+GOT=$(head -c "$SIZE" /dev/mtd$N | md5sum | cut -d' ' -f1)
+[ "$GOT" = "$SUM" ] || { echo "flash-mtd: READBACK MISMATCH ($GOT), do not reboot"; exit 1; }
+# Without QE the loader after the bootrom does not find the kernel, so a reboot would end in its retry loop.
+sfc-sr || { echo "flash-mtd: written and verified, but QE is clear: run sfc-sr qe before a reboot"; exit 1; }
+echo "flash-mtd: written and verified, QE set, safe to reboot"

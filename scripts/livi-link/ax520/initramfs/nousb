@@ -1,0 +1,3 @@
+#!/bin/sh
+# nousb: skip the net-up that init starts 15 s after boot.
+touch /tmp/nousb && echo "usb: will be skipped"

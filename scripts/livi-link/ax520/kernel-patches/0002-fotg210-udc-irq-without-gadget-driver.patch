@@ -1,0 +1,36 @@
+--- a/drivers/usb/fotg210/fotg210-udc.c
++++ b/drivers/usb/fotg210/fotg210-udc.c
+@@ -887,6 +887,10 @@
+ 
+ 	int_grp &= ~int_msk;
+ 
++	/* Nothing of ours pending: the line is shared, do not claim it. */
++	if (!int_grp)
++		return IRQ_NONE;
++
+ 	spin_lock(&fotg210->lock);
+ 
+ 	if (int_grp & DIGR_INT_G2) {
+@@ -897,8 +901,10 @@
+ 		int_grp2 &= ~int_msk2;
+ 
+ 		if (int_grp2 & DISGR2_USBRST_INT) {
+-			usb_gadget_udc_reset(&fotg210->gadget,
+-					     fotg210->driver);
++			/* A host can reset the bus before any gadget driver is bound. */
++			if (fotg210->driver)
++				usb_gadget_udc_reset(&fotg210->gadget,
++						     fotg210->driver);
+ 			fotg210_ack_int(fotg210, FOTG210_DISGR2, DISGR2_USBRST_INT);
+ 			pr_info("fotg210 udc reset\n");
+ 		}
+@@ -950,7 +956,8 @@
+ 		if (int_grp0 & DISGR0_CX_SETUP_INT) {
+ 			if (fotg210_setup_packet(fotg210, &ctrl)) {
+ 				spin_unlock(&fotg210->lock);
+-				if (fotg210->driver->setup(&fotg210->gadget,
++				if (!fotg210->driver ||
++				    fotg210->driver->setup(&fotg210->gadget,
+ 							   &ctrl) < 0)
+ 					fotg210_set_cxstall(fotg210);
+ 				spin_lock(&fotg210->lock);

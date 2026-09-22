@@ -1,0 +1,411 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * AXERA AX520 (VehiConn-D5A8). Addresses, IRQs and clock rates come from the DTB appended to the
+ * stock kernel. No clock controller or pinctrl driver exists, so clocks are fixed and the pins stay
+ * as muboot left them. UART, GIC, timer, USB, the SPI flash, GPIO and SPI1 (the RGB LED) are on,
+ * each seen to work. sdio0 is an overlay that rcS applies once it has switched the WiFi module on
+ * (GPIO0_24 high, as the stock "ly,dev" wifi_en_gpio and the V821B rcS do): a problem there then
+ * stops rcS, which the initramfs recovery shell gets around, and not the kernel.
+ */
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+
+/ {
+	compatible = "axera,ax520";
+	model = "AXERA AX520 VehiConn";
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	aliases {
+		serial0 = &serial0;
+		/* spi1 so the LED is /dev/spidev1.0, the path livid's LED daemon uses on V821B too. */
+		spi0 = &sfc;
+		spi1 = &spi1;
+		i2c0 = &i2c0;
+		i2c1 = &i2c1;
+		i2c2 = &i2c2;
+		i2c3 = &i2c_gpio;
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,115200 printk.time=1 loglevel=5 initcall_blacklist=jent_mod_init";
+		stdout-path = "serial0:115200n8";
+	};
+
+	memory@10000000 {
+		device_type = "memory";
+		reg = <0x10000000 0x04000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		mmz@13c00000 {
+			reg = <0x13c00000 0x00400000>;
+			no-map;
+		};
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu@0 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a7";
+			reg = <0>;
+		};
+	};
+
+	timer {
+		compatible = "arm,armv7-timer";
+		clock-frequency = <24000000>;
+		/* As in the stock DTB. Without it the kernel picks the virtual timer, whose
+		 * counter stood still on this board: all timestamps 0 and a hang at the first delay. */
+		arm,cpu-registers-not-fw-configured;
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(1) | IRQ_TYPE_LEVEL_LOW)>,
+			     <GIC_PPI 14 (GIC_CPU_MASK_SIMPLE(1) | IRQ_TYPE_LEVEL_LOW)>,
+			     <GIC_PPI 11 (GIC_CPU_MASK_SIMPLE(1) | IRQ_TYPE_LEVEL_LOW)>,
+			     <GIC_PPI 10 (GIC_CPU_MASK_SIMPLE(1) | IRQ_TYPE_LEVEL_LOW)>;
+	};
+
+	clk_apb: clock-apb {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <100000000>;
+	};
+
+	clk_ahb: clock-ahb {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <200000000>;
+	};
+
+	clk_spi1: clock-spi1 {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <100000000>;
+	};
+
+	clk_sdio: clock-sdio {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <50000000>;
+	};
+
+	clk_sfc: clock-sfc {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <170000000>;
+	};
+
+	/* Stock "ly,softi2c" (device_type i2c2): SCL GPIO0_26, SDA GPIO0_27, 100 kHz. */
+	i2c_gpio: i2c-gpio {
+		compatible = "i2c-gpio";
+		scl-gpios = <&gpio0_port 26 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		sda-gpios = <&gpio0_port 27 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		i2c-gpio,delay-us = <5>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+	};
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		interrupt-parent = <&gic>;
+		ranges;
+
+		gic: interrupt-controller@8f01000 {
+			compatible = "arm,cortex-a7-gic";
+			#interrupt-cells = <3>;
+			interrupt-controller;
+			reg = <0x08f01000 0x1000>, <0x08f02000 0x1000>;
+		};
+
+		/* Fallback time source, see mach.c: the first node becomes the tick, the second the clock. */
+		dwtimer0: timer@9020000 {
+			compatible = "snps,dw-apb-timer";
+			reg = <0x09020000 0x14>;
+			interrupts = <GIC_SPI 1 IRQ_TYPE_LEVEL_HIGH>;
+			clock-frequency = <100000000>;
+			status = "disabled";
+		};
+
+		dwtimer1: timer@9020014 {
+			compatible = "snps,dw-apb-timer";
+			reg = <0x09020014 0x14>;
+			clock-frequency = <100000000>;
+			status = "disabled";
+		};
+
+		serial0: serial@90a0000 {
+			compatible = "snps,dw-apb-uart";
+			reg = <0x090a0000 0x1000>;
+			interrupts = <GIC_SPI 12 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clk_apb>;
+			reg-shift = <2>;
+			reg-io-width = <4>;
+			status = "okay";
+		};
+
+		/*
+		 * Pad function select, one nibble per pin, eight pins per register, register 0x004 holds pins 9 to 16.
+		 * The bootloader leaves these pads on function 1 (GPIO), the stock kernel sets what its "pinscfg" table
+		 * says (mux value of each pin as it prints it at boot) and only then do SDIO, SPI1 and the I2C pins
+		 * reach the pads. Only the pins that table lists are set here, with the values stock ends up with.
+		 */
+		pinmux: pinmux@9001000 {
+			compatible = "pinctrl-single";
+			reg = <0x09001000 0x20>;
+			#pinctrl-cells = <2>;
+			pinctrl-single,register-width = <32>;
+			pinctrl-single,bit-per-mux;
+			pinctrl-single,function-mask = <0xf>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&pad_functions>;
+
+			pad_functions: pad-functions {
+				pinctrl-single,bits =
+					/* SDIO0: pins 15 and 16, 17 to 20 */
+					<0x04 0x00000000 0xff000000>,
+					<0x08 0x00000000 0x0000ffff>,
+					/* pin 23: function 3 */
+					<0x08 0x03000000 0x0f000000>,
+					/* I2C (softi2c pads): pins 26 and 27 */
+					<0x0c 0x00000000 0x00000ff0>,
+					/* SPI1 for the RGB LEDs: pins 31 to 34 */
+					<0x0c 0x33000000 0xff000000>,
+					<0x10 0x00000033 0x000000ff>;
+			};
+		};
+
+		gpio0: gpio@9040000 {
+			compatible = "snps,dw-apb-gpio";
+			reg = <0x09040000 0x1000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "okay";
+
+			gpio0_port: gpio-controller@0 {
+				compatible = "snps,dw-apb-gpio-port";
+				gpio-controller;
+				#gpio-cells = <2>;
+				snps,nr-gpios = <32>;
+				reg = <0>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+				interrupts = <GIC_SPI 15 IRQ_TYPE_LEVEL_HIGH>;
+			};
+		};
+
+		gpio1: gpio@9050000 {
+			compatible = "snps,dw-apb-gpio";
+			reg = <0x09050000 0x1000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+
+			gpio1_port: gpio-controller@0 {
+				compatible = "snps,dw-apb-gpio-port";
+				gpio-controller;
+				#gpio-cells = <2>;
+				snps,nr-gpios = <32>;
+				reg = <0>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+				interrupts = <GIC_SPI 19 IRQ_TYPE_LEVEL_HIGH>;
+			};
+		};
+
+		sdio0: mmc@400000 {
+			compatible = "snps,dw-mshc";
+			reg = <0x00400000 0x1000>;
+			interrupts = <GIC_SPI 20 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clk_sdio>, <&clk_sdio>;
+			clock-names = "biu", "ciu";
+			max-frequency = <50000000>;
+			bus-width = <4>;
+			fifo-depth = <0x200>;
+			/* Polled: the module only shows up once rcS has switched it on. */
+			broken-cd;
+			no-mmc;
+			no-sd;
+			cap-sd-highspeed;
+			cap-sdio-irq;
+			keep-power-in-suspend;
+			status = "disabled";
+		};
+
+		ethernet0: ethernet@200000 {
+			compatible = "snps,dwmac";
+			reg = <0x00200000 0x2000>;
+			interrupts = <GIC_SPI 30 IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = "macirq";
+			clocks = <&clk_ahb>;
+			clock-names = "stmmaceth";
+			snps,pbl = <8>;
+			snps,mixed-burst;
+			phy-mode = "mii";
+			phy-handle = <&ethphy0>;
+			status = "disabled";
+
+			mdio0 {
+				compatible = "snps,dwmac-mdio";
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				ethphy0: ethernet-phy@0 {
+					reg = <0>;
+				};
+			};
+		};
+
+		usb0: usb@b500000 {
+			compatible = "faraday,fotg210";
+			reg = <0x0b500000 0x00010000>;
+			/* The stock DTB lists two SPI lines for the one core and it is not known which the
+			 * device controller raises, so the shared handler is hooked to both (kernel-patches/). */
+			interrupts = <GIC_SPI 25 IRQ_TYPE_LEVEL_HIGH>, <GIC_SPI 22 IRQ_TYPE_LEVEL_HIGH>;
+			/* The SoC inverts the interrupt line: with the driver's default polarity it sits asserted while idle. */
+			faraday,int-active-low;
+			dr_mode = "peripheral";
+			status = "okay";
+		};
+
+		/* Stock "ly-led-rgb": three WS2812-type LEDs in one chain on MOSI, driven by livid's LED daemon through
+		 * spidev exactly as on V821B. The SSI input clock is 100 MHz. */
+		spi1: spi@9010000 {
+			compatible = "snps,dw-apb-ssi";
+			reg = <0x09010000 0x1000>;
+			interrupts = <GIC_SPI 16 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clk_spi1>;
+			reg-io-width = <4>;
+			num-cs = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "okay";
+
+			led@0 {
+				compatible = "livi,ax520-led";
+				reg = <0>;
+				spi-max-frequency = <3125000>;
+				livi,led-count = <3>;
+			};
+		};
+
+		/* The stock DTB lists three I2C controllers and a bit-banged bus without any device on them; the
+		 * vendor app talks to its parts from userspace. All four are on as /dev/i2c-N to find them. */
+		i2c0: i2c@90e0000 {
+			compatible = "snps,designware-i2c";
+			reg = <0x090e0000 0x1000>;
+			interrupts = <GIC_SPI 7 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clk_apb>;
+			clock-frequency = <100000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+
+		i2c1: i2c@90f0000 {
+			compatible = "snps,designware-i2c";
+			reg = <0x090f0000 0x1000>;
+			interrupts = <GIC_SPI 8 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clk_apb>;
+			clock-frequency = <100000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+
+		i2c2: i2c@90d0000 {
+			compatible = "snps,designware-i2c";
+			reg = <0x090d0000 0x1000>;
+			interrupts = <GIC_SPI 6 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clk_apb>;
+			clock-frequency = <100000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+
+		sfc: spi@300000 {
+			compatible = "snps,dw-apb-ssi";
+			reg = <0x00300000 0x10000>;
+			interrupts = <GIC_SPI 24 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clk_sfc>;
+			reg-io-width = <4>;
+			num-cs = <2>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "okay";
+
+			flash@0 {
+				compatible = "jedec,spi-nor";
+				reg = <0>;
+				/* Writes failed with "FIFO overflow on Rx" at 85 MHz, the CPU does not drain the FIFO in time. */
+					spi-max-frequency = <5000000>;
+				spi-rx-bus-width = <4>;
+				spi-tx-bus-width = <4>;
+
+				partitions {
+					compatible = "fixed-partitions";
+					#address-cells = <1>;
+					#size-cells = <1>;
+
+					partition@0 {
+						label = "muboot";
+						reg = <0x00000000 0x00030000>;
+					};
+
+					partition@30000 {
+						label = "env";
+						reg = <0x00030000 0x00010000>;
+					};
+
+					partition@40000 {
+						label = "env-redund";
+						reg = <0x00040000 0x00010000>;
+					};
+
+					partition@50000 {
+						label = "boot";
+						reg = <0x00050000 0x00300000>;
+					};
+
+					partition@350000 {
+						label = "recovery";
+						reg = <0x00350000 0x00300000>;
+					};
+
+					partition@650000 {
+						label = "customer";
+						reg = <0x00650000 0x00440000>;
+					};
+
+					partition@a90000 {
+						label = "rootfs";
+						reg = <0x00a90000 0x00440000>;
+					};
+
+					partition@ed0000 {
+						label = "private";
+						reg = <0x00ed0000 0x00010000>;
+					};
+
+					partition@ee0000 {
+						label = "logo";
+						reg = <0x00ee0000 0x000b0000>;
+					};
+
+					partition@f90000 {
+						label = "UDISK";
+						reg = <0x00f90000 0x00070000>;
+					};
+				};
+			};
+		};
+	};
+};

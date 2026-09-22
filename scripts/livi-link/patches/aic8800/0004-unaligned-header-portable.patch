@@ -1,0 +1,14 @@
+--- a/aic8800_fdrv/btsdio.c	2026-09-25 00:25:13.023258819 +0200
++++ b/aic8800_fdrv/btsdio.c	2026-09-25 00:25:13.029485824 +0200
+@@ -31,7 +31,11 @@
+ #include <linux/sched.h>
+ #include <linux/errno.h>
+ #include <linux/skbuff.h>
++#if __has_include(<linux/unaligned.h>)
++#include <linux/unaligned.h>
++#else
+ #include <asm/unaligned.h>
++#endif
+ 
+ #include <linux/mmc/host.h>
+ #include <linux/mmc/sdio_ids.h>

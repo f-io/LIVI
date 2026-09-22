@@ -1,0 +1,57 @@
+#!/bin/busybox sh
+# PID 1 of the initramfs baked into the kernel image. Every way in that needs no flash stays
+# available if the rootfs is missing or broken: the shell on the UART console, and USB with
+# NCM + telnet and an ACM serial shell. The "rootfs" squashfs takes over via switch_root only if it is ours.
+/bin/busybox --install -s
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts /sys/kernel/config
+mount -t devpts devpts /dev/pts
+mount -t configfs configfs /sys/kernel/config
+mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null
+echo "AX520 initramfs" > /dev/console
+
+# The kernel runs /sbin/modprobe for every socket family or netdev name it does not know. No module is
+# ever loaded this way here, so the helper is switched off.
+echo > /proc/sys/kernel/modprobe
+
+# Rootfs is found by its MTD name, not by a hardcoded device number.
+ROOTDEV=
+for n in /sys/class/mtd/mtd[0-9]*; do
+    [ "$(cat $n/name 2>/dev/null)" = rootfs ] && ROOTDEV=/dev/mtdblock${n##*mtd}
+done
+mkdir -p /mnt/root
+# Only our own rootfs is taken over: a stock rootfs also has an /init, and its userspace
+# must not run on this kernel.
+# The rootfs does not set up the USB gadget, it bridges the usb0 made here. Enter on the UART within 1 s
+# stays in this initramfs instead (recovery shell, USB only after the 15 s nousb window).
+if [ -n "$ROOTDEV" ] && mount -t squashfs -o ro "$ROOTDEV" /mnt/root && [ -x /mnt/root/usr/bin/livid ]; then
+    echo "rootfs $ROOTDEV is ours, switching in 1 s, Enter for the recovery shell" > /dev/console
+    if read -t 1 _ < /dev/console; then
+        umount /mnt/root
+    else
+        LINK_ONLY=1 net-up > /dev/console 2>&1
+        mount -o move /dev /mnt/root/dev
+        exec switch_root /mnt/root /init
+    fi
+fi
+
+cat > /dev/console <<'EOT'
+
+no rootfs taken over. Shell on the UART, USB-NCM + telnet 10.10.10.1 after 15 s. Tools:
+  ovl [NAME]        peripheral overlays: sdio0 (after: wifi_en high, see rcS)
+  led-test RRGGBB   send a colour to the RGB LED
+  net-up [ncm|acm]  USB gadget, one function at a time (four endpoints), started 15 s after boot, net-down first to switch
+  nousb             skip that automatic net-up (within the 15 s)
+  flash-mtd boot|rootfs FILE [-y]   write an image to that MTD, verified (without -y: dry run), flash-boot FILE = boot
+  sfc-sr [qe]       flash status registers, qe sets the quad enable bit the bootloader needs
+  nc -l -p 9000 > /tmp/f   receive a file over the network, or rx /tmp/f over the UART (xmodem)
+  devmem ADDR       read a register, e.g. devmem 0x0b500000
+  diag              state overview; dmesg, /proc/uptime, /sys/kernel/debug (dynamic_debug)
+EOT
+# USB comes up 15 s after the shell, so a USB bring-up that stops the system can be skipped from the UART:
+# `nousb` within those 15 s. SysRq y (serial break, then y) dumps timer, GIC and USB state if it stops anyway.
+echo "usb: net-up in 15 s, type nousb to skip" > /dev/console
+( sleep 15; [ -e /tmp/nousb ] && { echo "usb: skipped" > /dev/console; exit; }; net-up > /dev/console 2>&1 ) &
+exec setsid cttyhack sh

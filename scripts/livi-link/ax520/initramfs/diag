@@ -1,0 +1,18 @@
+#!/bin/sh
+# diag: one screen of state for the UART log. Run at boot, and by hand from any shell.
+echo "=== diag: uptime $(cat /proc/uptime)"
+T0=$(cut -d. -f1 /proc/uptime); sleep 1; T1=$(cut -d. -f1 /proc/uptime)
+echo "--- sleep 1 took $((T1 - T0)) s of uptime (0 means sleep or the clock is broken)"
+echo "--- clock events / sources:"
+grep -E "^Clock Event Device|^ *max_delta_ns|^ *event_handler|^Tick Device" /proc/timer_list 2>/dev/null | head -12
+cat /sys/devices/system/clocksource/clocksource0/current_clocksource 2>/dev/null
+echo "--- interrupts:"
+cat /proc/interrupts
+echo "--- usb: udc $(ls /sys/class/udc 2>/dev/null) state $(cat /sys/class/udc/*/state 2>/dev/null)"
+dmesg | grep -iE "fotg210|udc|gadget|usb" | tail -n 15
+echo "--- platform devices:"
+ls /sys/bus/platform/devices
+echo "--- mtd:"
+cat /proc/mtd 2>/dev/null
+echo "--- overlays available: $(ovl | tr '\n' ' ')"
+echo "=== end diag"

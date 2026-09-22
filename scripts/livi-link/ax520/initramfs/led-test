@@ -1,0 +1,24 @@
+#!/bin/sh
+# led-test RRGGBB [N]: send one colour to N (default 1) addressable LEDs on SPI1 (after `ovl led`) in the
+# WS2812 format: green, red, blue, most significant bit first, each bit as three SPI bits at 2.4 MHz
+# (110 for a one, 100 for a zero), with a low stretch before and after as the latch.
+C=${1:?usage: led-test RRGGBB [N]}
+N=${2:-1}
+D=/dev/spidev1.0
+[ -c $D ] || { echo "led-test: no $D (run: ovl led)"; exit 1; }
+R=$((0x$(echo $C | cut -c1-2))) G=$((0x$(echo $C | cut -c3-4))) B=$((0x$(echo $C | cut -c5-6)))
+enc() {
+    v=$1 bits=0 i=7
+    while [ $i -ge 0 ]; do
+        bits=$(( (bits << 3) | ( ((v >> i) & 1) ? 6 : 4 ) ))
+        i=$((i - 1))
+    done
+    printf "\\$(printf %o $(( (bits >> 16) & 255 )))\\$(printf %o $(( (bits >> 8) & 255 )))\\$(printf %o $(( bits & 255 )))"
+}
+{
+    head -c 40 /dev/zero
+    j=0
+    while [ $j -lt $N ]; do enc $G; enc $R; enc $B; j=$((j + 1)); done
+    head -c 40 /dev/zero
+} > /tmp/led.bin
+cat /tmp/led.bin > $D

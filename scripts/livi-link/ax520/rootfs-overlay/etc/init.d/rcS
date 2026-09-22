@@ -1,0 +1,89 @@
+#!/bin/sh
+# LIVI-Link boot: NCM+DHCP+mDNS, WiFi AP, HTTP, tinyshell.
+mkdir -p /tmp/livi
+exec >/tmp/livi/rcS.log 2>&1
+echo '[livi] rcS'
+
+# Restore persistent config from the "customer" MTD into tmpfs
+/usr/bin/livid config load 2>&1 | tail -3
+
+hostname livi-link
+ifconfig lo up
+# usb0 (host) and wlan0 (phones) share one L2 segment: the phone reaches the host directly
+# and mDNS crosses over. hostapd attaches wlan0 itself (bridge=br0 in hostapd.conf).
+brctl addbr br0
+brctl stp br0 off 2>/dev/null
+brctl setfd br0 0 2>/dev/null
+ifconfig usb0 up 2>/dev/null
+brctl addif br0 usb0
+ifconfig br0 10.10.10.1 netmask 255.255.255.0 mtu 1500 up
+echo '[livi] br0 10.10.10.1/24 up (usb0 attached)'
+
+/usr/bin/livi-netd br0 10.10.10.1 100 199 livi-link >/tmp/livi/netd.log 2>&1 &
+echo "[livi] netd/br0 pid=$!"
+/usr/bin/livi-httpd >/tmp/livi/httpd.log 2>&1 &
+echo "[livi] httpd pid=$! :80"
+/usr/bin/livi-tinyshell 2323 >/tmp/livi/tinyshell.log 2>&1 &
+echo "[livi] tinyshell pid=$! :2323"
+
+# The RGB LEDs: livi-ledd owns /dev/spidev1.0 (SPI1, pads set by the pinmux node in the DTB), as on V821B.
+/usr/bin/livi-ledd >/tmp/livi/ledd.log 2>&1 &
+echo "[livi] ledd pid=$!"
+# The initramfs telnetd does not survive the switch_root, so this one serves :23.
+killall telnetd 2>/dev/null
+telnetd -l /bin/sh -p 23 && echo "[livi] telnetd :23"
+
+# WiFi power as on V821B: the module enable (GPIO0_24, stock ly,dev wifi_en_gpio) goes high first.
+# "high" as the direction sets the level together with the output, so the pin never drives low: low on
+# this pin reset the whole board once. Only then the SDIO controller comes on (an overlay), and the
+# polled slot finds the module.
+GB=
+for c in /sys/class/gpio/gpiochip*; do
+    case "$(readlink -f "$c")" in *9040000*) GB=$(cat "$c/base") ;; esac
+done
+if [ -n "$GB" ]; then
+    g=$((GB + 24))
+    [ -e /sys/class/gpio/gpio$g ] || echo $g > /sys/class/gpio/export
+    echo high > /sys/class/gpio/gpio$g/direction
+    echo "[livi] wifi_en GPIO0_24 (gpio$g) high"
+    sleep 0.2
+    echo sdio0 > /sys/firmware/ax520/overlay && echo '[livi] sdio0 on'
+    for i in $(seq 1 20); do
+        ls /sys/bus/sdio/devices/* >/dev/null 2>&1 && break
+        sleep 0.25
+    done
+    echo "[livi] sdio: $(ls /sys/bus/sdio/devices 2>/dev/null | tr '\n' ' ')"
+fi
+
+if [ -e /sys/class/mmc_host/mmc0 ]; then
+    echo '[livi] insmod aic8800_bsp'
+    insmod /lib/modules/$(uname -r)/aic8800_bsp.ko 2>&1 | tail -1
+    sleep 1
+    echo '[livi] insmod aic8800_fdrv'
+    insmod /lib/modules/$(uname -r)/aic8800_fdrv.ko aicwf_dbg_level=1 2>&1 | tail -1
+
+    for i in $(seq 1 20); do
+        [ -e /sys/class/net/wlan0 ] && break
+        sleep 0.5
+    done
+    if [ -e /sys/class/net/wlan0 ]; then
+        echo '[livi] wlan0 present'
+        ifconfig wlan0 up
+        # Seed the tmpfs hostapd base from the read-only default (livid config
+        # load will overwrite it if a persisted copy is on the customer MTD).
+        [ -f /tmp/livi/hostapd.conf.saved ] || cp /etc/hostapd.conf /tmp/livi/hostapd.conf.saved
+        /usr/bin/livi-wifid >/tmp/livi/wifid.log 2>&1 &
+        echo "[livi] wifid pid=$! :5001"
+        # Bring the AP up via wifid (goes through the same path a host would).
+        sleep 0.3
+        (echo on; sleep 0.05; echo save) | nc 127.0.0.1 5001 >/dev/null 2>&1 || \
+            hostapd -B /tmp/livi/hostapd.conf.saved >/tmp/livi/hostapd.log 2>&1
+    else
+        echo '[livi] wlan0 did not appear within 10s'
+    fi
+else
+    echo '[livi] no SDIO host, WiFi skipped'
+fi
+
+echo 3 > /proc/sys/kernel/printk
+echo '[livi] rcS done'

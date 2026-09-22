@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config ARCH_AXERA
+	bool "Axera AX520"
+	depends on ARCH_MULTI_V7
+	select ARM_GIC
+	select ARM_ARCH_TIMER
+	select DW_APB_TIMER_OF
+	help
+	  Support for the Axera AX520 SoC (Cortex-A7), as used in the
+	  VehiConn-D5A8 CarPlay dongle and the M5Stack TimerCamera520.

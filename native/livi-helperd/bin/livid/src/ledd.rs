@@ -6,10 +6,11 @@ pub fn run(_args: Vec<String>) -> i32 {
     }
 }
 
-// livi-ledd — single-pixel RGB LED driver for the LIVI-Link (V821B) dongle.
+// livi-ledd — RGB LED driver for the LIVI-Link dongles.
 //
-// Drives a WS2812-style chip via /dev/spidev1.0 (3-bit-per-bit encoding at
-// ~2.4 MHz). State inputs are file existence under /tmp/livi/led/. Config
+// Drives WS2812-style chips via /dev/spidev1.0 (4-bit-per-bit encoding at
+// ~3.1 MHz). One pixel on V821B, a chain of three on AX520 (the count comes from the
+// board's device tree). State inputs are file existence under /tmp/livi/led/. Config
 // (WLAN color + brightness) lives in /etc/livi/led.toml.
 //
 // Wifi and bluetooth share the one pixel the way two LEDs would, their colours added:
@@ -32,6 +33,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const SPI_DEV: &str = "/dev/spidev1.0";
+// Chain length, a big-endian u32 on the spidev node. Boards without the property have one LED.
+const LED_COUNT_PROP: &str = "/sys/bus/spi/devices/spi1.0/of_node/livi,led-count";
 // /etc/ is on read-only squashfs; the runtime config lives on tmpfs.
 // rcS seeds it from /etc/livi/led.toml at boot; changes made via the web
 // UI are lost on reboot until we add a writable partition.
@@ -278,8 +281,16 @@ fn encode_pixel(c: Rgb, out: &mut [u8; 12]) {
     encode_byte(c.2, &mut tmp); out[8..12].copy_from_slice(&tmp); // B
 }
 
+fn led_count() -> usize {
+    fs::read(LED_COUNT_PROP)
+        .ok()
+        .and_then(|b| <[u8; 4]>::try_from(b.as_slice()).ok())
+        .map_or(1, |b| u32::from_be_bytes(b).clamp(1, 16) as usize)
+}
+
 struct Spi {
     file: fs::File,
+    leds: usize,
 }
 
 impl Spi {
@@ -295,11 +306,11 @@ impl Spi {
             let hz: u32 = SPI_HZ;
             check(libc::ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ as _, &hz as *const u32))?;
         }
-        Ok(Self { file })
+        Ok(Self { file, leds: led_count() })
     }
 
     fn write_pixel(&mut self, c: Rgb) -> std::io::Result<()> {
-        // [25 leading zeros | 12 data | 25 trailing zeros]
+        // [25 leading zeros | 12 data per LED, all the same colour | 25 trailing zeros]
         // 25 bytes at 3.2 MHz = ~62 µs low — more than the WS2812 reset
         // threshold (≥50 µs). The LEADING gap forces the chip into a
         // clean reset-done state right before our data (killing any
@@ -307,10 +318,12 @@ impl Spi {
         // stretch the first bit's high pulse and light G at 128); the
         // TRAILING gap latches the pixel and survives whatever the SPI
         // hardware does with MOSI while CS is deasserted.
-        let mut buf = [0u8; 25 + 12 + 25];
+        let mut buf = vec![0u8; 25 + 12 * self.leds + 25];
         let mut px = [0u8; 12];
         encode_pixel(c, &mut px);
-        buf[25..37].copy_from_slice(&px);
+        for led in buf[25..25 + 12 * self.leds].as_chunks_mut::<12>().0 {
+            *led = px;
+        }
         self.file.write_all(&buf)?;
         Ok(())
     }

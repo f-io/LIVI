@@ -1,0 +1,3 @@
+#!/bin/sh
+# flash-boot FILE [-y]: flash-mtd for the boot partition.
+exec flash-mtd boot "$@"

@@ -11,12 +11,24 @@ use std::sync::OnceLock;
 /// The firmware writes this dongle offers; several can be live at once. Default is none.
 #[derive(Default)]
 pub struct Flash {
-    /// A `.lfwb` bundle written across NOR mtd partitions, magic-checked and CRC-compared.
-    pub mtd: bool,
+    /// The partitions a `.lfwb` bundle is written to, magic-checked and CRC-compared. Empty when
+    /// this dongle takes no bundle.
+    pub mtd: Vec<MtdSlot>,
     /// Update the running stack from its gzipped binary — no partition erase.
     pub stack: Option<Stack>,
     /// Restore a full rootfs image (e.g. the stock firmware backup), sha256- and size-gated.
     pub rootfs: Option<Rootfs>,
+    /// Run after a bundle is written and verified. If it fails the dongle does not reboot.
+    pub check: Option<String>,
+}
+
+/// One bundle image type and where it goes. The size is the partition's: a larger payload would
+/// run into the next one.
+pub struct MtdSlot {
+    pub typ: u8,
+    pub node: String,
+    pub magic: Vec<u8>,
+    pub size: u64,
 }
 
 /// Where the stack `.gz` lands on jffs2 and how the launcher is re-run to pick it up.
@@ -91,13 +103,6 @@ use std::time::Duration;
 // Kept under web/ (not assets/): the Mac↔build-host sync skips any assets/ directory, which
 // would leave the build host compiling a stale or missing page.
 const INDEX_HTML: &str = include_str!("../web/index.html");
-
-// mtd slot sizes must match the on-flash partition layout. If a flash payload
-// exceeds the slot, refuse — the write would corrupt the neighbouring partition.
-const MTD1_SIZE: u64 = 0x0031_0000; // 3.06 MiB — kernel + DTB bootimg
-const MTD3_SIZE: u64 = 0x0048_0000; // 4.5  MiB — squashfs rootfs
-// mtd0 (u-boot + OpenSBI) is intentionally NOT in this table. We never flash it
-// from a running system; a bad write there requires FEL recovery.
 
 fn serve_forever() -> std::io::Result<()> {
     let port = caps().port;
@@ -175,15 +180,14 @@ fn route(rmethod: &str, rpath: &str, body: Option<&[u8]>, clen: u64)
         }
     }
     // One upload endpoint; the dongle picks the write from what it offers and what the file is.
-    let has_flash = c.flash.mtd || c.flash.stack.is_some() || c.flash.rootfs.is_some();
+    let has_flash = !c.flash.mtd.is_empty() || c.flash.stack.is_some() || c.flash.rootfs.is_some();
     if has_flash && (method, path) == ("POST", "/api/flash") {
         return flash_dispatch(c, query, body, clen);
     }
-    if c.flash.mtd {
-        match (method, path) {
-            ("POST", "/api/flash/mtd1") => return flash("mtdblock1", MTD1_SIZE, b"ANDROID!", body, clen),
-            ("POST", "/api/flash/mtd3") => return flash("mtdblock3", MTD3_SIZE, b"hsqs", body, clen),
-            _ => {}
+    if method == "POST" {
+        let typ = path.strip_prefix("/api/flash/mtd").and_then(|n| n.parse::<u8>().ok());
+        if let Some(slot) = typ.and_then(|t| c.flash.mtd.iter().find(|s| s.typ == t)) {
+            return flash(&c.flash, slot, body, clen);
         }
     }
 
@@ -206,7 +210,7 @@ fn caps_json() -> String {
     let f = &caps().flash;
     format!(
         r#"{{"flash":{{"mtd":{},"stack":{},"rootfs":{}}},"led":{}}}"#,
-        f.mtd, f.stack.is_some(), f.rootfs.is_some(), caps().led
+        !f.mtd.is_empty(), f.stack.is_some(), f.rootfs.is_some(), caps().led
     )
 }
 
@@ -288,8 +292,8 @@ fn flash_dispatch(c: &WebCaps, query: &str, body: Option<&[u8]>, clen: u64)
     -> (&'static str, &'static str, Vec<u8>)
 {
     let Some(data) = body else { return (S_400, T_JSON, err_json("empty body")); };
-    if c.flash.mtd && data.starts_with(BUNDLE_MAGIC) {
-        return flash_bundle(body, clen);
+    if !c.flash.mtd.is_empty() && data.starts_with(BUNDLE_MAGIC) {
+        return flash_bundle(&c.flash, body, clen);
     }
     if let Some(s) = c.flash.stack.as_ref().filter(|_| data.starts_with(&[0x1f, 0x8b])) {
         return flash_stack(&s.install_to, &s.restart, query, body, clen);
@@ -300,9 +304,10 @@ fn flash_dispatch(c: &WebCaps, query: &str, body: Option<&[u8]>, clen: u64)
     (S_400, T_JSON, err_json("this upload matches no firmware this dongle can write"))
 }
 
-fn flash(node: &str, slot_size: u64, magic: &[u8], body: Option<&[u8]>, clen: u64)
+fn flash(f: &Flash, slot: &MtdSlot, body: Option<&[u8]>, clen: u64)
     -> (&'static str, &'static str, Vec<u8>)
 {
+    let (node, slot_size, magic) = (slot.node.as_str(), slot.size, slot.magic.as_slice());
     let Some(data) = body else {
         return (S_400, T_JSON, err_json("empty body"));
     };
@@ -354,6 +359,10 @@ fn flash(node: &str, slot_size: u64, magic: &[u8], body: Option<&[u8]>, clen: u6
     write_progress(node, data.len(), data.len(), "verify");
     match verify_flash(&path, data) {
         Ok(()) => {
+            if let Err(e) = post_write_check(f) {
+                write_progress(node, data.len(), data.len(), "error");
+                return (S_500, T_JSON, err_json(&e));
+            }
             write_progress(node, data.len(), data.len(), "done");
             reboot_after(Duration::from_millis(500));
             (S_200, T_JSON, ok_json(&format!(
@@ -390,7 +399,7 @@ struct ImageDesc {
     payload_offset: usize,
 }
 
-fn flash_bundle(body: Option<&[u8]>, clen: u64) -> (&'static str, &'static str, Vec<u8>) {
+fn flash_bundle(f: &Flash, body: Option<&[u8]>, clen: u64) -> (&'static str, &'static str, Vec<u8>) {
     let Some(data) = body else {
         return (S_400, T_JSON, err_json("empty body"));
     };
@@ -451,14 +460,11 @@ fn flash_bundle(body: Option<&[u8]>, clen: u64) -> (&'static str, &'static str, 
     let mut wrote_any = false;
     let mut report: Vec<String> = Vec::new();
     for d in descs.iter() {
-        let (node, magic, slot_size) = match d.typ {
-            1 => ("mtdblock1", &b"ANDROID!"[..], MTD1_SIZE),
-            3 => ("mtdblock3", &b"hsqs"[..],     MTD3_SIZE),
-            other => {
-                let _ = fs::remove_file("/tmp/livi/led/flash-mode");
-                return (S_400, T_JSON, err_json(&format!("unknown image type {}", other)));
-            }
+        let Some(slot) = f.mtd.iter().find(|s| s.typ == d.typ) else {
+            let _ = fs::remove_file("/tmp/livi/led/flash-mode");
+            return (S_400, T_JSON, err_json(&format!("image type {} is not for this dongle", d.typ)));
         };
+        let (node, magic, slot_size) = (slot.node.as_str(), slot.magic.as_slice(), slot.size);
         let slice = &data[d.payload_offset .. d.payload_offset + d.length as usize];
 
         if (d.length as u64) > slot_size {
@@ -503,6 +509,12 @@ fn flash_bundle(body: Option<&[u8]>, clen: u64) -> (&'static str, &'static str, 
         report.push(format!("{} written", node));
     }
 
+    if wrote_any
+        && let Err(e) = post_write_check(f)
+    {
+        write_progress("bundle", data.len(), data.len(), "error");
+        return (S_500, T_JSON, err_json(&format!("{}, but {e}", report.join(", "))));
+    }
     write_progress("bundle", data.len(), data.len(), "done");
     if wrote_any {
         reboot_after(Duration::from_millis(500));
@@ -510,6 +522,17 @@ fn flash_bundle(body: Option<&[u8]>, clen: u64) -> (&'static str, &'static str, 
     } else {
         let _ = fs::remove_file("/tmp/livi/led/flash-mode");
         (S_200, T_JSON, ok_json("Up-to-date"))
+    }
+}
+
+fn post_write_check(f: &Flash) -> Result<(), String> {
+    let Some(cmd) = &f.check else { return Ok(()) };
+    match Command::new("sh").arg("-c").arg(cmd).status() {
+        Ok(st) if st.success() => Ok(()),
+        _ => {
+            let _ = fs::remove_file("/tmp/livi/led/flash-mode");
+            Err(format!("{cmd} failed after the write, not rebooting"))
+        }
     }
 }
 
