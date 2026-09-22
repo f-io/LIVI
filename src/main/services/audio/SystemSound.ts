@@ -1,4 +1,4 @@
-import { AudioOutput } from './AudioOutput'
+import { HostAudioOutput } from './HostAudioOutput'
 
 /** Config subset the system-sound channel needs (read live so volume changes apply instantly). */
 type SystemSoundConfig = {
@@ -99,7 +99,7 @@ export function renderRelayClick(kind: 'on' | 'off'): Float32Array {
  * Independent "system sounds" audio channel
  */
 export class SystemSound {
-  private out: AudioOutput | null = null
+  private out: HostAudioOutput | null = null
   private timer: ReturnType<typeof setInterval> | null = null
   private teardownTimer: ReturnType<typeof setTimeout> | null = null
   private active = false
@@ -152,10 +152,10 @@ export class SystemSound {
   private ensureRunning(): void {
     if (this.out) return
     const cfg = this.getConfig()
-    this.out = new AudioOutput({
+    this.out = new HostAudioOutput({
       sampleRate: SR,
       channels: CHANNELS,
-      mode: 'realtime',
+      realtime: true,
       device: cfg.audioOutputDevice || undefined
     })
     this.out.start()

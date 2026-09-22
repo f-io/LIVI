@@ -25,10 +25,16 @@ copy_required() {
 }
 
 real_path() {
-  python3 - <<'PY' "$1"
-import os, sys
-print(os.path.realpath(sys.argv[1]))
-PY
+  local p=$1 link dir
+  while [ -L "$p" ]; do
+    link=$(readlink "$p")
+    case "$link" in
+      /*) p=$link ;;
+      *) dir=$(dirname "$p"); p=${dir%/}/$link ;;
+    esac
+  done
+  dir=$(cd -P "$(dirname "$p")" 2>/dev/null && pwd -P) || { printf '%s\n' "$p"; return; }
+  printf '%s/%s\n' "${dir%/}" "$(basename "$p")"
 }
 
 # Only follow @rpath deps, system libs (/usr/lib, /System) are absolute and skipped
@@ -179,8 +185,17 @@ plugins=(
   libgstosxvideo.dylib
 )
 
+# PATCHED_APPLEMEDIA (from build-patched-macos.sh) replaces the prebuilt applemedia plugin
+# with the locally built, patched one (vtdec low-latency + full-range HEVC). Same @rpath deps,
+# so dep scanning and the later rpath/signing pass treat it like any other plugin.
 for plugin in "${plugins[@]}"; do
-  copy_plugin_and_deps "$GST_ROOT/lib/gstreamer-1.0/$plugin"
+  src="$GST_ROOT/lib/gstreamer-1.0/$plugin"
+  if [[ "$plugin" == libgstapplemedia.dylib && -n "${PATCHED_APPLEMEDIA:-}" ]]; then
+    copy_required "$PATCHED_APPLEMEDIA" "$OUT/lib/gstreamer-1.0/$plugin"
+    while read -r dep; do queue_dep "$dep"; done < <(scan_deps "$PATCHED_APPLEMEDIA")
+    continue
+  fi
+  copy_plugin_and_deps "$src"
 done
 
 # Umbrella framework binary (kept for parity with prior bundles)

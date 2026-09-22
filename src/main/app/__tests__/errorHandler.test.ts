@@ -33,19 +33,6 @@ describe('installMainProcessErrorHandlers', () => {
     mod.installMainProcessErrorHandlers()
   }
 
-  test.each([
-    ["Couldn't find matching udev device"],
-    ['could not find matching udev device'],
-    ['Couldnt find matching udev device'],
-    ['LIBUSB_ERROR_NO_DEVICE'],
-    ['matching udev device']
-  ])('warns but never raises on benign libusb noise: %s', async (msg) => {
-    await install()
-    handlers.uncaughtException?.(new Error(msg))
-    expect(warnSpy).toHaveBeenCalled()
-    expect(errorSpy).not.toHaveBeenCalled()
-  })
-
   test('logs non-benign uncaught exceptions to console.error without popping a dialog', async () => {
     await install()
     handlers.uncaughtException?.(new Error('Something completely unrelated'))
@@ -62,13 +49,6 @@ describe('installMainProcessErrorHandlers', () => {
     await install()
     await install()
     expect((process.on as unknown as Mock).mock.calls.length).toBe(2)
-  })
-
-  test('warns on benign USB rejections without raising', async () => {
-    await install()
-    handlers.unhandledRejection?.(new Error('LIBUSB_ERROR_BUSY'))
-    expect(warnSpy).toHaveBeenCalled()
-    expect(errorSpy).not.toHaveBeenCalled()
   })
 
   test('swallows EPIPE for exceptions and rejections', async () => {

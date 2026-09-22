@@ -22,6 +22,10 @@ vi.mock('node:fs', () => {
     writeFileSync: (p: string, data: string) => {
       files.set(p, data)
     },
+    renameSync: (from: string, to: string) => {
+      files.set(to, files.get(from) ?? '')
+      files.delete(from)
+    },
     mkdirSync: vi.fn()
   }
 })

@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react'
+import { renderHook, waitFor } from '@testing-library/react'
 import { UI } from '../../../constants'
 import { useTabsConfig } from '../useTabsConfig'
 
@@ -7,7 +7,7 @@ let mockRole = 'main'
 let mockState = {
   isStreaming: false,
   isDongleHardwarePresent: false,
-  activeProtocol: null as 'carplay' | 'androidauto' | 'dongle' | null,
+  activeProtocol: null as 'carplay' | 'androidauto' | null,
   cameraFound: true,
   telemetryOnMain: false,
   settingsMissing: false,
@@ -15,7 +15,9 @@ let mockState = {
   secondaryTelemetry: false,
   secondaryMedia: false,
   secondaryCamera: false,
-  secondaryAbsentKeys: false
+  secondaryAbsentKeys: false,
+  mainCustom: false,
+  secondaryCustom: false
 }
 
 vi.mock('@mui/material/styles', () => ({
@@ -46,6 +48,9 @@ vi.mock('@store/store', () => ({
             camera: mockState.secondaryAbsentKeys
               ? { main: true }
               : { main: true, dash: mockState.secondaryCamera, aux: mockState.secondaryCamera },
+            custom: mockState.secondaryAbsentKeys
+              ? undefined
+              : { main: mockState.mainCustom, dash: mockState.secondaryCustom, aux: false },
             media: mockState.secondaryAbsentKeys
               ? { main: true }
               : {
@@ -81,7 +86,10 @@ describe('useTabsConfig', () => {
       mainMedia: true,
       secondaryTelemetry: false,
       secondaryMedia: false,
-      secondaryCamera: false
+      secondaryCamera: false,
+      secondaryAbsentKeys: false,
+      mainCustom: false,
+      secondaryCustom: false
     }
   })
 
@@ -106,6 +114,26 @@ describe('useTabsConfig', () => {
     mockState.mainMedia = false
     const { result } = renderHook(() => useTabsConfig(false))
     expect(result.current.map((t) => t.path)).toEqual(['/', '/camera', '/settings'])
+  })
+
+  test('adds the custom tab above settings when routed to main', () => {
+    mockState.mainCustom = true
+    const { result } = renderHook(() => useTabsConfig(false))
+    expect(result.current.map((t) => t.path)).toEqual([
+      '/',
+      '/media',
+      '/camera',
+      '/custom',
+      '/settings'
+    ])
+    expect(result.current.find((t) => t.path === '/custom')?.label).toBe('Custom')
+  })
+
+  test('a secondary window shows the custom tab when routed there', () => {
+    mockRole = 'dash'
+    mockState.secondaryCustom = true
+    const { result } = renderHook(() => useTabsConfig(false))
+    expect(result.current.map((t) => t.path)).toContain('/custom')
   })
 
   test('hides camera tab when camera is not found', () => {
@@ -242,6 +270,72 @@ describe('useTabsConfig', () => {
       configurable: true,
       writable: true,
       value: originalInnerHeight
+    })
+  })
+
+  describe('the custom tab icon', () => {
+    const customIconUrl = vi.fn()
+
+    beforeEach(() => {
+      customIconUrl.mockReset()
+      ;(window as unknown as { app: unknown }).app = { customIconUrl }
+      mockRole = 'main'
+      mockState.mainCustom = true
+    })
+
+    function customTab() {
+      const { result } = renderHook(() => useTabsConfig(false))
+      return result
+    }
+
+    test('the folder icon is drawn as a mask in the current colour', async () => {
+      customIconUrl.mockResolvedValue('app://index.html/custom/icon.svg')
+      const result = customTab()
+
+      await waitFor(() => {
+        const icon = result.current.find((t) => t.label === 'Custom')?.icon as {
+          props: { className?: string; style?: Record<string, string> }
+        }
+        expect(icon.props.className).toBe('MuiSvgIcon-root')
+        expect(icon.props.style?.backgroundColor).toBe('currentColor')
+        expect(icon.props.style?.maskImage).toBe('url(app://index.html/custom/icon.svg)')
+      })
+    })
+
+    test('without one the default icon stays', async () => {
+      customIconUrl.mockResolvedValue(null)
+      const result = customTab()
+
+      await waitFor(() => expect(customIconUrl).toHaveBeenCalled())
+      const icon = result.current.find((t) => t.label === 'Custom')?.icon as {
+        props: { className?: string }
+      }
+      expect(icon.props.className).toBeUndefined()
+    })
+
+    test('a failing lookup leaves the default icon', async () => {
+      customIconUrl.mockRejectedValue(new Error('no'))
+      const result = customTab()
+
+      await waitFor(() => expect(customIconUrl).toHaveBeenCalled())
+      expect(result.current.find((t) => t.label === 'Custom')).toBeTruthy()
+    })
+
+    test('an answer landing after unmount is dropped', async () => {
+      let settle: (v: unknown) => void = () => {}
+      customIconUrl.mockReturnValue(new Promise((r) => (settle = r)))
+      const { unmount } = renderHook(() => useTabsConfig(false))
+
+      unmount()
+      settle('app://index.html/custom/icon.svg')
+      await Promise.resolve()
+    })
+
+    test('stays on the default when the bridge is missing', async () => {
+      ;(window as unknown as { app: unknown }).app = {}
+      const result = customTab()
+
+      expect(result.current.find((t) => t.label === 'Custom')).toBeTruthy()
     })
   })
 })

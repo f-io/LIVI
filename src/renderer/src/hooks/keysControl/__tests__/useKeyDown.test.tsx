@@ -1,6 +1,6 @@
+import { ROUTES } from '@shared/types'
 import { renderHook } from '@testing-library/react'
 import { ReactNode } from 'react'
-import { ROUTES } from '../../../constants'
 import { AppContext, AppContextProps } from '../../../context'
 import { useKeyDownProps } from '../types'
 import { useKeyDown } from '../useKeyDown'

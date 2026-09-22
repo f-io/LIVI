@@ -20,7 +20,6 @@ const ProtocolIcon = ({ p, size }: { p?: DeviceView['protocol']; size: number | 
   )
 
 const SourceBadge = ({ d, size }: { d: DeviceView; size: number }) => {
-  if (d.source === 'dongle') return <DeviceHubIcon sx={{ fontSize: size }} />
   if (d.lastTransport === 'usb') return <CableOutlinedIcon sx={{ fontSize: size }} />
   if (d.lastTransport === 'wifi') return <WifiOutlinedIcon sx={{ fontSize: size }} />
   return null
@@ -36,7 +35,8 @@ const BatteryIcon = ({ level, charging }: { level: number; charging?: boolean })
   const outline = theme.palette.text.secondary
   return (
     <span
-      title={`${pct}%${charging ? ' charging' : ''}`}
+      role="img"
+      aria-label={`${pct}%${charging ? ' charging' : ''}`}
       style={{
         position: 'relative',
         display: 'inline-flex',

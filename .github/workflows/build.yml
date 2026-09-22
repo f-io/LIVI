@@ -161,7 +161,7 @@ jobs:
         uses: ./.github/actions/pnpm
         with:
           node-version: '24'
-          pnpm-major: '11'
+          pnpm-major: '12'
           pnpm-store-dir: '.pnpm-store'
 
       - name: Read version from package.json
@@ -185,16 +185,39 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Not used here, and its index and packages drift apart often enough to break a run.
+          sudo rm -f /etc/apt/sources.list.d/*google*
+          sudo sed -i '\#dl\.google\.com#d' /etc/apt/sources.list
+          grep -rl dl.google.com /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null || true
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-              build-essential python3 python3-dev python3-pip \
-              pkg-config libudev1 ca-certificates \
+              build-essential pkg-config libudev1 ca-certificates \
               libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-              ninja-build bison \
-              libegl-dev libgles-dev libgbm-dev libcairo2-dev \
-              libffi-dev libexpat1-dev
+              cmake libwayland-dev libxkbcommon-dev
           sudo rm -rf /var/lib/apt/lists/*
-          sudo pip3 install --break-system-packages --upgrade 'meson>=1.4'
+
+      - name: Setup Rust [linux-x64]
+        if: matrix.os == 'linux' && matrix.arch == 'x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+
+      - name: Cache cargo [linux-x64]
+        if: matrix.os == 'linux' && matrix.arch == 'x64'
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/livi-helperd/target
+            native/livi-compositor/rust/target
+            native/livi-crypto/rust/target
+            native/livi-gst-video/rust/target
+          key: cargo-linux-x64-${{ hashFiles('native/livi-helperd/**/Cargo.toml', 'native/livi-compositor/rust/Cargo.toml', 'native/livi-crypto/rust/Cargo.toml', 'native/livi-gst-video/rust/**/Cargo.toml') }}
+          restore-keys: cargo-linux-x64-
 
       - name: Install deps (pnpm) [linux-x64]
         if: matrix.os == 'linux' && matrix.arch == 'x64'
@@ -206,8 +229,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ELECTRON_VERSION=$(node -p "require('./node_modules/electron/package.json').version")
-          npx --yes node-gyp install --target="$ELECTRON_VERSION" --dist-url=https://artifacts.electronjs.org/headers/dist
           pnpm run typecheck
           rm -rf dist
           pnpm run build:linux:x64
@@ -220,16 +241,41 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Ships with the runner image, is used by nothing here, and its index and packages drift
+          # apart often enough to break a run.
+          # Not used here, and its index and packages drift apart often enough to break a run.
+          sudo rm -f /etc/apt/sources.list.d/*google*
+          sudo sed -i '\#dl\.google\.com#d' /etc/apt/sources.list
+          grep -rl dl.google.com /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null || true
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-              build-essential python3 python3-dev python3-pip \
-              pkg-config libudev1 ca-certificates \
+              build-essential pkg-config libudev1 ca-certificates \
               libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-              ninja-build bison \
-              libegl-dev libgles-dev libgbm-dev libcairo2-dev \
-              libffi-dev libexpat1-dev
+              cmake libwayland-dev libxkbcommon-dev
           sudo rm -rf /var/lib/apt/lists/*
-          sudo pip3 install --break-system-packages --upgrade 'meson>=1.4'
+
+      - name: Setup Rust [linux-arm64]
+        if: matrix.os == 'linux' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+
+      - name: Cache cargo [linux-arm64]
+        if: matrix.os == 'linux' && matrix.arch == 'arm64'
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/livi-helperd/target
+            native/livi-compositor/rust/target
+            native/livi-crypto/rust/target
+            native/livi-gst-video/rust/target
+          key: cargo-linux-arm64-${{ hashFiles('native/livi-helperd/**/Cargo.toml', 'native/livi-compositor/rust/Cargo.toml', 'native/livi-crypto/rust/Cargo.toml', 'native/livi-gst-video/rust/**/Cargo.toml') }}
+          restore-keys: cargo-linux-arm64-
 
       - name: Install deps (pnpm) [linux-arm64]
         if: matrix.os == 'linux' && matrix.arch == 'arm64'
@@ -240,8 +286,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ELECTRON_VERSION=$(node -p "require('./node_modules/electron/package.json').version")
-          npx --yes node-gyp install --target="$ELECTRON_VERSION" --dist-url=https://artifacts.electronjs.org/headers/dist
           pnpm run typecheck
           rm -rf dist
           pnpm run build:linux:arm64
@@ -305,6 +349,29 @@ jobs:
           sudo installer -pkg gst-runtime.pkg -target /
           sudo installer -pkg gst-devel.pkg -target /
 
+      - name: Setup Rust [macos]
+        if: matrix.os == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+
+      - name: Cache cargo [macos]
+        if: matrix.os == 'macos'
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/livi-helperd/target
+            native/livi-compositor/rust/target
+            native/livi-crypto/rust/target
+            native/livi-gst-video/rust/target
+          key: cargo-macos-${{ matrix.arch }}-${{ hashFiles('native/livi-helperd/**/Cargo.toml', 'native/livi-compositor/rust/Cargo.toml', 'native/livi-crypto/rust/Cargo.toml', 'native/livi-gst-video/rust/**/Cargo.toml') }}
+          restore-keys: cargo-macos-${{ matrix.arch }}-
+
       - name: Install deps (pnpm) [macos-arm64]
         if: matrix.os == 'macos'
         shell: bash
@@ -315,8 +382,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ELECTRON_VERSION=$(node -p "require('./node_modules/electron/package.json').version")
-          npx --yes node-gyp install --target="$ELECTRON_VERSION" --dist-url=https://artifacts.electronjs.org/headers/dist
           pnpm run typecheck
           if [ "${{ matrix.arch }}" = "x64" ]; then
             npx --yes electron-builder install-app-deps --arch=x64
@@ -436,10 +501,19 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            assets/livi-link
+            scripts/livi-link
+
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
           path: nightly-assets
+
+      - name: Add the LIVI Link firmware
+        run: bash scripts/livi-link/stage-firmware.sh nightly-assets/livi-link
 
       - name: Replace the nightly prerelease
         env:

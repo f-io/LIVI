@@ -10,8 +10,13 @@ LIVI_UDEV_FILE="/etc/udev/rules.d/99-LIVI.rules"
 LIVI_UDEV_TEMPLATE="99-LIVI.rules.template"
 LIVI_TOUCH_FILTER_TEMPLATE="livi-touch-filter"
 LIVI_TOUCH_FILTER_FILE="/usr/local/lib/livi/livi-touch-filter"
-LIVI_SUDOERS_FILE="/etc/sudoers.d/99-LIVI-bt"
-LIVI_SUDOERS_TEMPLATE="99-LIVI-bt.sudoers.template"
+LIVI_SUDOERS_FILE="/etc/sudoers.d/99-LIVI-helper"
+LIVI_SUDOERS_TEMPLATE="99-LIVI-helper.sudoers.template"
+LIVI_AP_UNIT_FILE="/etc/systemd/system/livi-wifi-ap.service"
+LIVI_AP_UNIT_TEMPLATE="livi-wifi-ap.service.template"
+LIVI_AP_SUDOERS_FILE="/etc/sudoers.d/99-LIVI-wifi-ap"
+LIVI_AP_SUDOERS_TEMPLATE="99-LIVI-wifi-ap.sudoers.template"
+LIVI_AP_MARKER="${LIVI_AP_MARKER:-$HOME/.config/LIVI/.wifi-ap-install}"
 LIVI_BOOT_CONFIG="${LIVI_BOOT_CONFIG:-/boot/firmware/config.txt}"
 
 # I2C for the Apple MFi coprocessor, matching carPlayMfiI2cBus in config.json
@@ -22,6 +27,8 @@ LIVI_MFI_OVERLAY="dtoverlay=i2c-gpio,bus=${LIVI_MFI_I2C_BUS},i2c_gpio_sda=19,i2c
 LIVI_MODULES_LOAD="${LIVI_MODULES_LOAD:-/etc/modules-load.d/livi-i2c.conf}"
 LIVI_NM_POWERSAVE_FILE="/etc/NetworkManager/conf.d/99-LIVI-wifi-powersave.conf"
 LIVI_NM_PMF_FILE="/etc/NetworkManager/conf.d/99-LIVI-wifi-pmf.conf"
+LIVI_REGDOM_FILE="/etc/modprobe.d/livi-regdom.conf"
+LIVI_RTPRIO_FILE="/etc/security/limits.d/99-livi-rtprio.conf"
 
 # Pixel repetition for RGB/VGA panels below HDMI's clock floor
 LIVI_HDMI_PR_SCRIPT="setup-hdmi-pr-display.sh"
@@ -49,9 +56,26 @@ livi_asset_arch() {
   esac
 }
 
-# Package names for the given sections of packages.txt, the single source the app checks too.
+# Host package manager: apt or dnf.
+livi_pm() {
+  if command -v apt-get >/dev/null 2>&1; then echo apt
+  elif command -v dnf >/dev/null 2>&1; then echo dnf
+  fi
+}
+
+# Install packages with the detected manager.
+livi_pm_install() {
+  [ "$#" -gt 0 ] || return 0
+  case "$(livi_pm)" in
+    apt) sudo apt-get update && sudo apt-get install -y "$@" ;;
+    dnf) sudo dnf install -y "$@" ;;
+    *)   echo "Error: no supported package manager (apt/dnf) found" >&2; return 1 ;;
+  esac
+}
+
+# Package names for the given sections (col 2 apt, col 5 dnf), deduped.
 livi_packages() {
-  local manifest tmp section
+  local manifest tmp section field
   manifest="$LIVI_LIB_DIR/packages.txt"
   if [ ! -f "$manifest" ]; then
     tmp="$(mktemp)"
@@ -59,26 +83,10 @@ livi_packages() {
       || { echo "Error: cannot obtain packages.txt" >&2; return 1; }
     manifest="$tmp"
   fi
+  field=2; [ "$(livi_pm)" = dnf ] && field=5
   for section in "$@"; do
-    grep -E "^${section}\|" "$manifest" | cut -d '|' -f2
-  done
-}
-
-# Wired CarPlay drives the phone over usbmux, which needs pymobiledevice3.
-livi_install_pymobiledevice3() {
-  echo "→ Installing pymobiledevice3 for wired CarPlay"
-  if ! command -v pip3 >/dev/null; then
-    echo "   WARNING: pip3 missing, wired CarPlay stays disabled" >&2
-    return 0
-  fi
-  local out
-  # pip is loud even with -q, so keep its output for the failure case only.
-  if out="$(pip3 install --break-system-packages --ignore-installed -q pymobiledevice3 2>&1)"; then
-    echo "   installed"
-  else
-    echo "   WARNING: install failed, wired CarPlay stays disabled" >&2
-    printf '%s\n' "$out" | tail -5 >&2
-  fi
+    grep -E "^${section}\|" "$manifest" | cut -d '|' -f"$field"
+  done | awk 'NF && !seen[$0]++'
 }
 
 # Sets LIVI_CHANNEL and LIVI_RELEASE_API. Skips the prompt when LIVI_CHANNEL is
@@ -417,10 +425,46 @@ livi_apply_hdmi_pr() {
 
 # The radio's power saving drops an idle link after a few minutes, which takes the
 # host off the network. Applies from the next boot, so no running session is cut.
+# Grants real-time scheduling to the CarPlay audio receive thread. Kiosk and
+# desktop sessions run through PAM, so pam_limits applies this on login.
+livi_grant_rtprio() {
+  echo "→ Writing $LIVI_RTPRIO_FILE"
+  sudo mkdir -p "$(dirname "$LIVI_RTPRIO_FILE")"
+  printf '%s - rtprio 30\n' "$USER" | sudo tee "$LIVI_RTPRIO_FILE" >/dev/null
+}
+
 livi_disable_wifi_powersave() {
   echo "→ Writing $LIVI_NM_POWERSAVE_FILE"
   sudo mkdir -p "$(dirname "$LIVI_NM_POWERSAVE_FILE")"
   printf '[connection]\nwifi.powersave = 2\n' | sudo tee "$LIVI_NM_POWERSAVE_FILE" >/dev/null
+}
+
+# livi_app_config_value <key> <default> -> the value from the app config, or the default.
+livi_app_config_value() {
+  local python_bin
+  python_bin="$(command -v python3 || echo /usr/bin/python3)"
+  "$python_bin" - "$LIVI_APP_CONFIG" "$1" "$2" <<'PY'
+import json, sys
+path, key, default = sys.argv[1:4]
+try:
+    with open(path) as f:
+        value = json.load(f).get(key)
+except (OSError, ValueError):
+    value = None
+print(value if value not in (None, "") else default)
+PY
+}
+
+# The regulatory domain from the moment the driver loads, the way raspi-config sets it.
+# hostapd asking for it at runtime would wait for the kernel to fetch the database first.
+# Only once the user has chosen a country in LIVI; a fresh install presumes none.
+livi_write_regdom() {
+  local country
+  country="$(livi_app_config_value country '' | tr '[:lower:]' '[:upper:]')"
+  case "$country" in [A-Z][A-Z]) ;; *) return 0 ;; esac
+  echo "→ Writing $LIVI_REGDOM_FILE for $country"
+  sudo mkdir -p "$(dirname "$LIVI_REGDOM_FILE")"
+  printf 'options cfg80211 ieee80211_regdom=%s\n' "$country" | sudo tee "$LIVI_REGDOM_FILE" >/dev/null
 }
 
 # Sets 802.11w (PMF) to optional for all NetworkManager Wi-Fi connections.
@@ -436,7 +480,7 @@ livi_set_wifi_pmf_optional() {
 livi_write_udev_rule() {
   local template="$1"
   echo "→ Writing $LIVI_UDEV_FILE"
-  sed "s/__USERNAME__/$USER/g" "$template" | sudo tee "$LIVI_UDEV_FILE" >/dev/null
+  sudo tee "$LIVI_UDEV_FILE" <"$template" >/dev/null
   sudo udevadm control --reload-rules
   sudo udevadm trigger
 }
@@ -444,11 +488,10 @@ livi_write_udev_rule() {
 # Lets the helper run as root without a password, which a headless host needs
 # because the in-app pkexec dialog has no agent to display it.
 livi_write_sudoers() {
-  local template="$1" python_bin staged
+  local template="$1" staged
   echo "→ Writing $LIVI_SUDOERS_FILE"
-  python_bin="$(command -v python3 || echo /usr/bin/python3)"
   staged="$(mktemp)"
-  sed -e "s/__USERNAME__/$USER/g" -e "s#__PYTHON__#$python_bin#g" "$template" > "$staged"
+  sed -e "s/__USERNAME__/$USER/g" "$template" > "$staged"
   sudo install -m 0440 -o root -g root "$staged" "$LIVI_SUDOERS_FILE.livi-tmp"
   rm -f "$staged"
   if sudo visudo -c -f "$LIVI_SUDOERS_FILE.livi-tmp" >/dev/null; then
@@ -458,6 +501,56 @@ livi_write_sudoers() {
     echo "Error: the generated sudoers file failed validation and was not installed" >&2
     return 1
   fi
+  livi_drop_obsolete_sudoers
+}
+
+# The access point service. A host without a desktop has no agent for the in-app dialog.
+livi_write_wifi_ap_unit() {
+  local unit_template="$1" sudoers_template="$2" helper systemctl staged
+  helper="$HOME/.config/LIVI/driver/livi-helperd"
+  systemctl="$(command -v systemctl || echo /usr/bin/systemctl)"
+
+  echo "→ Writing $LIVI_AP_UNIT_FILE"
+  sed -e "s|__HELPER__|$helper|g" -e "s/__USERNAME__/$USER/g" "$unit_template" \
+    | sudo tee "$LIVI_AP_UNIT_FILE" >/dev/null
+
+  echo "→ Writing $LIVI_AP_SUDOERS_FILE"
+  staged="$(mktemp)"
+  sed -e "s|__HELPER__|$helper|g" -e "s|__SYSTEMCTL__|$systemctl|g" -e "s/__USERNAME__/$USER/g" \
+    "$sudoers_template" > "$staged"
+  sudo install -m 0440 -o root -g root "$staged" "$LIVI_AP_SUDOERS_FILE.livi-tmp"
+  rm -f "$staged"
+  if sudo visudo -c -f "$LIVI_AP_SUDOERS_FILE.livi-tmp" >/dev/null; then
+    sudo mv "$LIVI_AP_SUDOERS_FILE.livi-tmp" "$LIVI_AP_SUDOERS_FILE"
+  else
+    sudo rm -f "$LIVI_AP_SUDOERS_FILE.livi-tmp"
+    echo "Error: the generated sudoers file failed validation and was not installed" >&2
+    return 1
+  fi
+  sudo systemctl daemon-reload
+
+  # The app cannot read the root-only rule, so it compares this stamp of it instead.
+  mkdir -p "$(dirname "$LIVI_AP_MARKER")"
+  sed -e "s|__HELPER__|$helper|g" -e "s|__SYSTEMCTL__|$systemctl|g" -e "s/__USERNAME__/$USER/g" \
+    "$sudoers_template" | sha256sum | cut -c1-16 > "$LIVI_AP_MARKER"
+}
+
+# Earlier releases gave each python helper its own drop-in. They grant root to
+# scripts that no longer ship, so drop them once the current rule is in place.
+livi_drop_obsolete_sudoers() {
+  local f
+  for f in /etc/sudoers.d/99-LIVI-aa /etc/sudoers.d/99-LIVI-cp; do
+    if sudo test -f "$f" && sudo grep -q 'bluetooth\.py' "$f" 2>/dev/null; then
+      echo "→ Removing obsolete $f"
+      sudo rm -f "$f"
+    fi
+  done
+  # 99-LIVI-bt granted the same thing under a name that only said Bluetooth.
+  if sudo test -f /etc/sudoers.d/99-LIVI-bt; then
+    echo "→ Removing obsolete /etc/sudoers.d/99-LIVI-bt"
+    sudo rm -f /etc/sudoers.d/99-LIVI-bt
+  fi
+  sudo rm -f "$LIVI_SUDOERS_FILE.livi-tmp"
 }
 
 # Sets LIVI_MFI to yes or no. LIVI_MFI skips the prompt.

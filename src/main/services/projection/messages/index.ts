@@ -1,6 +1,5 @@
 export { DEFAULT_CONFIG } from '@shared/types'
 export type { AudioFormat } from '@shared/types/AudioDecode'
 export { decodeTypeMap } from '@shared/types/AudioDecode'
-export * from './dongleEvents.js'
 export * from './readable.js'
 export * from './sendable.js'

@@ -6,6 +6,8 @@ import { NULL_DELETES } from './constants'
 
 export const isMacPlatform = () => process.platform === 'darwin'
 
+export const isDev = () => !app.isPackaged
+
 export function applyNullDeletes(merged: Config, next: Partial<Config>) {
   const nextAny = next as Record<string, unknown>
   const mergedAny = merged as Record<string, unknown>

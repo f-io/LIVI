@@ -300,6 +300,20 @@ describe('CarBridgeService', () => {
     svc.stop()
   })
 
+  test('brightness is clamped to percent and cached for reconnects', () => {
+    const svc = new CarBridgeService('en')
+    svc.setBrightness(73.4)
+    svc.setBrightness(Number.NaN)
+    const { port } = connectDarwin(svc)
+    expect(port.written).toContain('bright 73\n')
+    port.written.length = 0
+    svc.setBrightness(150)
+    svc.setBrightness(-5)
+    svc.setBrightness(-5)
+    expect(port.written).toEqual(['bright 100\n', 'bright 0\n'])
+    svc.stop()
+  })
+
   test('car lines become typed telemetry payloads', () => {
     const svc = new CarBridgeService('en')
     const { reader } = connectDarwin(svc)

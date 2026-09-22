@@ -9,26 +9,23 @@ import { isPhoneLikeCod } from './utils/isPhoneLikeCod'
 export type DeviceControllerDeps = {
   deviceRegistry: DeviceRegistry
   sessions: () => SessionManager
-  getDongleSession: () => ProjectionSession | null
   bluez: BluezDeviceClient
   getBtName: (macUpper: string) => string | undefined
   getConnectedBtMac: () => string
-  getDongleConnectedMac: () => string
-  getDongleDevList: () => DevListEntry[]
   emit: (payload: ProjectionEvent) => void
   autoConnect: () => boolean
-  pushReconnectTargets: (targets: Record<string, string | null>) => void
+  pushReconnectTargets: (targets: Array<[string, string | null]>) => void
   pushWiredPhones: (ids: string[]) => void
 }
 
 // The phone's iAP service UUID, used as the CarPlay reconnect ConnectProfile target.
 const IAP_PROFILE_UUID = '00000000-deca-fade-deca-deafdecacafe'
-const HSP_AG_UUID = '00001112-0000-1000-8000-00805f9b34fb'
+const HFP_AG_UUID = '0000111f-0000-1000-8000-00805f9b34fb'
 
 /** The profile a phone of this protocol is woken on. */
 function wakeUuid(protocol: string | undefined): string | null {
   if (protocol === 'carplay') return IAP_PROFILE_UUID
-  if (protocol === 'androidauto') return HSP_AG_UUID
+  if (protocol === 'androidauto') return HFP_AG_UUID
   return null
 }
 
@@ -62,6 +59,9 @@ export class DeviceController {
       void (s.driver.disconnectPhone?.() ?? s.driver.send(new SendDisconnectPhone())).catch((err) =>
         console.warn(`[DeviceController] forget ${id} goodbye failed: ${(err as Error).message}`)
       )
+      // The goodbye is best-effort
+      const index = s.index
+      setTimeout(() => this.deps.sessions().close(index), 1500)
     }
 
     const mac = e.btMac
@@ -78,12 +78,6 @@ export class DeviceController {
   }
 
   selectDevice(id: string): { ok: boolean } {
-    if (this.deps.getDongleDevList().some((d) => d.id === id)) {
-      const ds = this.deps.getDongleSession()
-      if (!ds) return { ok: false }
-      this.deps.sessions().activate(ds.index)
-      return { ok: true }
-    }
     const reg = this.deps.deviceRegistry
     const e = reg.list().find((x) => reg.deviceId(x) === id)
     const ids = e
@@ -148,10 +142,12 @@ export class DeviceController {
     this.deps.pushWiredPhones(list)
   }
 
+  // Ordered by recency: the helper pages one phone at a time, top of the list first.
   private reconcileReconnectTargets(force = false): void {
     const reg = this.deps.deviceRegistry
-    const targets: Record<string, string | null> = {}
-    for (const e of this.deps.autoConnect() ? reg.list() : []) {
+    const candidates = this.deps.autoConnect() ? reg.list() : []
+    const targets: Array<[string, string | null]> = []
+    for (const e of [...candidates].sort((a, b) => (b.lastSeen ?? 0) - (a.lastSeen ?? 0))) {
       if (!e.btMac || !(e.protocol || e.name)) continue
       const sess = this.deps.sessions().byDevice({
         btMac: e.btMac,
@@ -161,12 +157,9 @@ export class DeviceController {
         ip: e.currentIp
       })
       if (sess) continue
-      targets[e.btMac.toUpperCase()] = wakeUuid(e.protocol)
+      targets.push([e.btMac.toUpperCase(), wakeUuid(e.protocol)])
     }
-    const sig = Object.keys(targets)
-      .sort()
-      .map((m) => `${m}=${targets[m] ?? ''}`)
-      .join(',')
+    const sig = targets.map(([m, u]) => `${m}=${u ?? ''}`).join(',')
     if (!force && sig === this.lastReconnectSig) return
     this.lastReconnectSig = sig
     this.deps.pushReconnectTargets(targets)
@@ -221,28 +214,6 @@ export class DeviceController {
       }
       out.push(view)
       lastSeenOf.set(view, e.lastSeen ?? 0)
-    }
-    const connectedDongleMac = this.deps.getDongleConnectedMac().trim().toUpperCase()
-    const dongleSession = this.deps.getDongleSession()
-    const dongleActive = dongleSession?.state === 'active'
-    const phoneLikeDongle = this.deps
-      .getDongleDevList()
-      .filter((d): d is DevListEntry & { id: string } => !!d.id && isPhoneLikeCod(d.class))
-    for (const d of phoneLikeDongle) {
-      const isConnected =
-        (!!connectedDongleMac && d.id.trim().toUpperCase() === connectedDongleMac) ||
-        !!d.connected ||
-        (dongleActive && phoneLikeDongle.length === 1)
-      const view: DeviceView = {
-        id: d.id,
-        name: d.name || d.id,
-        protocol: d.type === 'AndroidAuto' ? 'androidauto' : 'carplay',
-        status: !dongleSession ? 'offline' : dongleActive && isConnected ? 'active' : 'available',
-        source: 'dongle',
-        session: dongleSession ? ordered.indexOf(dongleSession) + 1 || undefined : undefined
-      }
-      out.push(view)
-      lastSeenOf.set(view, 0)
     }
     out.sort((a, b) => {
       const as = a.session

@@ -1,4 +1,3 @@
-import { decodeTypeMap } from '@shared/types/AudioDecode'
 import { PhoneType } from '@shared/types/Config'
 import type { NaviInfo } from '@shared/types/NavigationTypes'
 import type { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
@@ -34,65 +33,20 @@ export { PhoneType }
 export type AudioDataFields = {
   decodeType: number
   audioType: number
-  volume?: number
   command?: AudioCommand
-  volumeDuration?: number
-  data?: Int16Array
-  sampleRate?: number
-  channels?: number
 }
 
+/** An audio command of a driver, the samples themselves go from the helper to the host. */
 export class AudioData extends Message {
   command?: AudioCommand
   decodeType: number
-  sampleRate: number
-  channels: number
-  volume: number
-  volumeDuration?: number
   audioType: number
-  data?: Int16Array
 
   constructor(fields: AudioDataFields) {
     super()
     this.decodeType = fields.decodeType
-    const fmt = decodeTypeMap[fields.decodeType]
-    this.sampleRate = fields.sampleRate ?? fmt?.frequency ?? 48000
-    this.channels = fields.channels ?? fmt?.channel ?? 2
-    this.volume = fields.volume ?? 0
     this.audioType = fields.audioType
     this.command = fields.command
-    this.volumeDuration = fields.volumeDuration
-    this.data = fields.data
-  }
-}
-
-export type VideoDataFields = {
-  width: number
-  height: number
-  data: Buffer
-  cluster?: boolean
-  flags?: number
-  unknown?: number
-}
-
-export class VideoData extends Message {
-  width: number
-  height: number
-  flags: number
-  length: number
-  unknown: number
-  data: Buffer
-  cluster: boolean
-
-  constructor(fields: VideoDataFields) {
-    super()
-    this.width = fields.width
-    this.height = fields.height
-    this.flags = fields.flags ?? 0
-    this.length = fields.data.length
-    this.unknown = fields.unknown ?? 0
-    this.data = fields.data
-    this.cluster = fields.cluster ?? false
   }
 }
 

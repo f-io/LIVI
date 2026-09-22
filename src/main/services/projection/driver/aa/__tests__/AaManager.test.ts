@@ -1,8 +1,15 @@
 import { EventEmitter } from 'node:events'
 import type { Mock } from 'vitest'
 
+type SessionOpts = {
+  transport: unknown
+  wired: boolean
+  usbSerial?: string
+  seed: Record<string, unknown>
+}
+
 class MockAaSession extends EventEmitter {
-  opts: { wired: boolean; wiredBridge: unknown; seed: Record<string, unknown> }
+  opts: SessionOpts
   isWiredMode: Mock
   close = vi.fn(async () => undefined)
   setHevcSupported = vi.fn()
@@ -10,7 +17,19 @@ class MockAaSession extends EventEmitter {
   setAv1Supported = vi.fn()
   setInitialNightMode = vi.fn()
   setClusterStreamActive = vi.fn()
-  constructor(opts: MockAaSession['opts']) {
+  sendSpeedData = vi.fn()
+  sendRpmData = vi.fn()
+  sendGearData = vi.fn()
+  sendNightModeData = vi.fn()
+  sendParkingBrakeData = vi.fn()
+  sendDrivingStatusData = vi.fn()
+  sendLightData = vi.fn()
+  sendFuelData = vi.fn()
+  sendOdometerData = vi.fn()
+  sendEnvironmentData = vi.fn()
+  sendGpsLocationData = vi.fn()
+  sendVehicleEnergyModel = vi.fn()
+  constructor(opts: SessionOpts) {
     super()
     this.opts = opts
     this.isWiredMode = vi.fn(() => this.opts.wired)
@@ -18,90 +37,94 @@ class MockAaSession extends EventEmitter {
   }
 }
 
-class MockUsbAoapBridge extends EventEmitter {
-  start = vi.fn(async () => undefined)
-  stop = vi.fn(async () => undefined)
-  drain = vi.fn(async () => undefined)
-  forceReenum = vi.fn(async () => undefined)
-}
-
-class MockServer extends EventEmitter {
-  handler: (sock: unknown) => void
-  listen = vi.fn((_port: number, _host: string, cb?: () => void) => {
-    cb?.()
-    return this
-  })
-  close = vi.fn()
-  constructor(handler: (sock: unknown) => void) {
+class MockLink extends EventEmitter {
+  destroy = vi.fn()
+  constructor(readonly peer: string) {
     super()
-    this.handler = handler
   }
 }
 
-class MockSocket extends EventEmitter {
-  destroy = vi.fn()
-  setNoDelay = vi.fn()
-  setTimeout = vi.fn()
+type HelperEvent = {
+  event: string
+  socket?: string
+  peer?: string
+  transport?: string
+  serial?: string
+}
+
+/** A helper event stream the test drives by hand. */
+class FakeHelper {
+  onEvent: ((ev: HelperEvent) => void) | null = null
+  onClose: (() => void) | null = null
+  closed = vi.fn()
+  subscribe = vi.fn((onEvent: (ev: HelperEvent) => void, onClose?: () => void) => {
+    this.onEvent = onEvent
+    this.onClose = onClose ?? null
+    return { close: this.closed }
+  })
 }
 
 const spawned: MockAaSession[] = []
-const lastServer: { instance: MockServer | null } = { instance: null }
-const lastBridge: { instance: MockUsbAoapBridge | null } = { instance: null }
-const lastConnectSocket: { instance: MockSocket | null } = { instance: null }
+const links: MockLink[] = []
 
 vi.mock('../AaSession', () => ({
-  AaSession: vi.fn().mockImplementation(function (opts: MockAaSession['opts']) {
+  AaSession: vi.fn().mockImplementation(function (opts: SessionOpts) {
     return new MockAaSession(opts)
   })
 }))
 
-vi.mock('../stack/index', () => ({ TCP_PORT: 5277 }))
-
-vi.mock('../stack/transport/UsbAoapBridge', () => ({
-  UsbAoapBridge: vi.fn().mockImplementation(function () {
-    const b = new MockUsbAoapBridge()
-    lastBridge.instance = b
-    return b
-  })
+vi.mock('../stack/transport/HelperSessionLink', () => ({
+  HelperSessionLink: {
+    connect: vi.fn(async (_socket: string, peer: string) => {
+      const link = new MockLink(peer)
+      links.push(link)
+      return link
+    })
+  }
 }))
 
-vi.mock('node:net', () => ({
-  createServer: vi.fn((_opts: unknown, handler: (sock: unknown) => void) => {
-    const s = new MockServer(handler)
-    lastServer.instance = s
-    return s
-  }),
-  createConnection: vi.fn(() => {
-    const s = new MockSocket()
-    lastConnectSocket.instance = s
-    return s
-  })
-}))
-
-import * as net from 'node:net'
 import type { Config } from '@shared/types'
 import { AaManager } from '../AaManager'
-import { AOAP_LOOPBACK_PORT } from '../stack/aoap/constants'
-import { UsbAoapBridge } from '../stack/transport/UsbAoapBridge'
+import { HelperSessionLink } from '../stack/transport/HelperSessionLink'
 
-const fakeDevice = (serial = 'S1'): USBDevice =>
-  ({ vendorId: 0x18d1, productId: 0x4ee1, serialNumber: serial }) as unknown as USBDevice
+const connect = HelperSessionLink.connect as unknown as Mock
 
-function newManager(): { mgr: AaManager; onSpawn: Mock } {
+const flush = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
+
+function newManager(): { mgr: AaManager; onSpawn: Mock; config: Partial<Config> } {
   const onSpawn = vi.fn()
-  const mgr = new AaManager({
-    getConfig: () => ({}) as Config,
-    onWillReenumerate: vi.fn(),
-    onSpawn
-  })
-  return { mgr, onSpawn }
+  const config: Partial<Config> = {}
+  const mgr = new AaManager({ getConfig: () => config as Config, onSpawn })
+  return { mgr, onSpawn, config }
+}
+
+/** A manager whose sessions come from a fake helper. */
+function newHelperManager(): ReturnType<typeof newManager> & { helper: FakeHelper } {
+  const base = newManager()
+  const helper = new FakeHelper()
+  base.mgr.attachHelper(helper)
+  return { ...base, helper }
+}
+
+/** The helper announces a phone it carries over WiFi. */
+async function announce(helper: FakeHelper, peer: string, socket = `/tmp/aa-session-${peer}.sock`) {
+  helper.onEvent?.({ event: 'aa-session', socket, peer, transport: 'wifi' })
+  await flush()
+}
+
+/** The helper announces a phone it switched to accessory mode on USB. */
+async function announceUsb(
+  helper: FakeHelper,
+  serial: string,
+  socket = `/tmp/aa-session-${serial}.sock`
+) {
+  helper.onEvent?.({ event: 'aa-session', socket, peer: `usb:${serial}`, transport: 'usb', serial })
+  await flush()
 }
 
 beforeEach(() => {
   spawned.length = 0
-  lastServer.instance = null
-  lastBridge.instance = null
-  lastConnectSocket.instance = null
+  links.length = 0
   vi.clearAllMocks()
   vi.spyOn(console, 'log').mockImplementation(function () {})
   vi.spyOn(console, 'warn').mockImplementation(function () {})
@@ -109,271 +132,226 @@ beforeEach(() => {
 })
 afterEach(() => vi.restoreAllMocks())
 
-describe('AaManager — wireless listener', () => {
-  test('startWireless listens on TCP 5277 and a connection spawns a wireless AaSession', () => {
-    const { mgr, onSpawn } = newManager()
-    mgr.startWireless()
-    expect(lastServer.instance).not.toBeNull()
-    expect(lastServer.instance!.listen).toHaveBeenCalledWith(5277, '0.0.0.0', expect.any(Function))
-
-    const sock = new MockSocket()
-    lastServer.instance!.handler(sock)
-    expect(sock.setNoDelay).toHaveBeenCalled()
-    expect(sock.setTimeout).toHaveBeenCalledWith(30_000)
-    expect(onSpawn).toHaveBeenCalledTimes(1)
+describe('AaManager: sessions from the helper', () => {
+  test('a wifi announcement without a peer label spawns and supersedes nothing', async () => {
+    const { helper } = newHelperManager()
+    helper.onEvent?.({ event: 'aa-session', socket: '/tmp/aa-session-x.sock', transport: 'wifi' })
+    await flush()
     expect(spawned).toHaveLength(1)
-    expect(spawned[0]!.opts.wired).toBe(false)
-    expect(spawned[0]!.opts.wiredBridge).toBeNull()
   })
 
-  test('startWireless is idempotent (single server)', () => {
-    const { mgr } = newManager()
-    mgr.startWireless()
-    mgr.startWireless()
-    expect(net.createServer as Mock).toHaveBeenCalledTimes(1)
+  test('the resubscribe is a no-op once the helper is detached', () => {
+    const { mgr } = newHelperManager()
+    mgr.detachHelper()
+    expect(() => (mgr as unknown as { _openHelperSub: () => void })._openHelperSub()).not.toThrow()
   })
 
-  test('stopWireless closes the server and closes only wireless sessions', () => {
-    const { mgr } = newManager()
-    mgr.startWireless()
-    const server = lastServer.instance!
-    server.handler(new MockSocket())
-    const wireless = spawned[0]!
+  test('attachHelper subscribes and a wifi announcement spawns a wireless AaSession on its link', async () => {
+    const { helper, onSpawn } = newHelperManager()
+    expect(helper.subscribe).toHaveBeenCalledTimes(1)
 
-    mgr.stopWireless()
-    expect(server.close).toHaveBeenCalled()
-    expect(wireless.close).toHaveBeenCalled()
-  })
-})
-
-describe('AaManager — wired bring-up', () => {
-  test('brings up a UsbAoapBridge and spawns a wired AaSession on loopback connect', async () => {
-    const { mgr, onSpawn } = newManager()
-    const ok = await mgr.bringUpWired(fakeDevice())
-    expect(ok).toBe(true)
-    const bridge = lastBridge.instance!
-    expect(bridge.start).toHaveBeenCalledWith(AOAP_LOOPBACK_PORT)
-
-    bridge.emit('ready', { host: '127.0.0.1', port: 5278 })
-    expect(net.createConnection as Mock).toHaveBeenCalled()
-
-    const sock = lastConnectSocket.instance!
-    sock.emit('connect')
+    await announce(helper, '10.10.0.14')
+    expect(connect).toHaveBeenCalledWith('/tmp/aa-session-10.10.0.14.sock', '10.10.0.14')
     expect(onSpawn).toHaveBeenCalledTimes(1)
-    expect(spawned[0]!.opts.wired).toBe(true)
-    expect(spawned[0]!.opts.wiredBridge).toBe(bridge)
+    expect(spawned[0]!.opts.transport).toBe(links[0])
+    expect(spawned[0]!.opts.wired).toBe(false)
+    expect(spawned[0]!.opts.usbSerial).toBeUndefined()
   })
 
-  test('idempotent per device: a second bring-up for the same device does not build a 2nd bridge', async () => {
+  test('attachHelper is idempotent (single subscription)', () => {
+    const { mgr, helper } = newHelperManager()
+    mgr.attachHelper(helper)
+    expect(helper.subscribe).toHaveBeenCalledTimes(1)
+  })
+
+  test('without a helper there is nothing to attach', () => {
     const { mgr } = newManager()
-    await mgr.bringUpWired(fakeDevice('same'))
-    const ok = await mgr.bringUpWired(fakeDevice('same'))
-    expect(ok).toBe(true)
-    expect(UsbAoapBridge as unknown as Mock).toHaveBeenCalledTimes(1)
+    expect(() => mgr.attachHelper(undefined)).not.toThrow()
+    expect(console.warn).toHaveBeenCalled()
   })
 
-  test('distinct devices each get their own bridge', async () => {
-    const { mgr } = newManager()
-    await mgr.bringUpWired(fakeDevice('a'))
-    await mgr.bringUpWired(fakeDevice('b'))
-    expect(UsbAoapBridge as unknown as Mock).toHaveBeenCalledTimes(2)
+  test('other events and announcements without a socket are ignored', async () => {
+    const { helper, onSpawn } = newHelperManager()
+    helper.onEvent?.({ event: 'aa-device' })
+    helper.onEvent?.({ event: 'aa-session', peer: '10.10.0.14', transport: 'wifi' })
+    await flush()
+    expect(connect).not.toHaveBeenCalled()
+    expect(onSpawn).not.toHaveBeenCalled()
   })
 
-  test('bridge.start rejection → returns false and frees the device for a retry', async () => {
-    ;(UsbAoapBridge as unknown as Mock).mockImplementationOnce(function () {
-      const b = new MockUsbAoapBridge()
-      b.start = vi.fn(async () => {
-        throw new Error('init failed')
-      })
-      lastBridge.instance = b
-      return b
+  test('a link that cannot be opened is logged, not thrown', async () => {
+    connect.mockImplementationOnce(async () => {
+      throw new Error('ECONNREFUSED')
     })
-    const { mgr } = newManager()
-    const ok = await mgr.bringUpWired(fakeDevice('retry'))
-    expect(ok).toBe(false)
-    // The failed key was released, so a fresh attempt builds a new bridge.
-    await mgr.bringUpWired(fakeDevice('retry'))
-    expect(UsbAoapBridge as unknown as Mock).toHaveBeenCalledTimes(2)
+    const { helper, onSpawn } = newHelperManager()
+    await announce(helper, '10.10.0.14')
+    expect(onSpawn).not.toHaveBeenCalled()
+    expect(console.warn).toHaveBeenCalled()
   })
 
-  test('a disconnected wired session frees the device key for re-bring-up', async () => {
-    const { mgr } = newManager()
-    await mgr.bringUpWired(fakeDevice('cycle'))
-    lastBridge.instance!.emit('ready', { host: '127.0.0.1', port: 5278 })
-    lastConnectSocket.instance!.emit('connect')
-    const session = spawned[0]!
-
-    session.emit('disconnected')
-    await mgr.bringUpWired(fakeDevice('cycle'))
-    expect(UsbAoapBridge as unknown as Mock).toHaveBeenCalledTimes(2)
+  test('a link arriving after detachHelper is dropped again', async () => {
+    const { mgr, helper } = newHelperManager()
+    helper.onEvent?.({
+      event: 'aa-session',
+      socket: '/tmp/x.sock',
+      peer: '10.10.0.14',
+      transport: 'wifi'
+    })
+    mgr.detachHelper()
+    await flush()
+    expect(links[0]!.destroy).toHaveBeenCalled()
+    expect(spawned).toHaveLength(0)
   })
 
-  test('a bridge closing without a session on it frees the device key', async () => {
-    const { mgr } = newManager()
-    await mgr.bringUpWired(fakeDevice('gone'))
-    // No session was ever spawned, so nothing else would release the key
-    lastBridge.instance!.emit('closed')
-    await mgr.bringUpWired(fakeDevice('gone'))
-    expect(UsbAoapBridge as unknown as Mock).toHaveBeenCalledTimes(2)
+  test('the subscription comes back once the helper does', () => {
+    vi.useFakeTimers()
+    try {
+      const { helper } = newHelperManager()
+      helper.onClose?.()
+      vi.advanceTimersByTime(2000)
+      expect(helper.subscribe).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
-  test('a stale bridge closing does not evict the bridge that replaced it', async () => {
-    const { mgr } = newManager()
-    await mgr.bringUpWired(fakeDevice('replace'))
-    const stale = lastBridge.instance!
-    stale.emit('closed')
-    await mgr.bringUpWired(fakeDevice('replace'))
-    const fresh = lastBridge.instance!
+  test('a closed subscription stays closed after detachHelper', () => {
+    vi.useFakeTimers()
+    try {
+      const { mgr, helper } = newHelperManager()
+      mgr.detachHelper()
+      helper.onClose?.()
+      vi.advanceTimersByTime(2000)
+      expect(helper.subscribe).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 
-    stale.emit('closed')
-    await mgr.bringUpWired(fakeDevice('replace'))
-    expect(UsbAoapBridge as unknown as Mock).toHaveBeenCalledTimes(2)
-    expect(fresh).not.toBe(stale)
+  test('a detached helper can be attached again', () => {
+    const { mgr, helper } = newHelperManager()
+    mgr.detachHelper()
+    mgr.attachHelper(helper)
+    expect(helper.subscribe).toHaveBeenCalledTimes(2)
   })
 })
 
-describe('AaManager — additional coverage', () => {
-  test('wireless server error is logged without throwing', () => {
-    const { mgr } = newManager()
-    mgr.startWireless()
-    expect(() => lastServer.instance!.emit('error', new Error('EADDRINUSE'))).not.toThrow()
+describe('AaManager: usb sessions from the helper', () => {
+  test('a usb announcement spawns a wired AaSession carrying the phone serial', async () => {
+    const { helper, onSpawn } = newHelperManager()
+    await announceUsb(helper, 'SN-42')
+    expect(connect).toHaveBeenCalledWith('/tmp/aa-session-SN-42.sock', 'usb:SN-42')
+    expect(onSpawn).toHaveBeenCalledTimes(1)
+    expect(spawned[0]!.opts.transport).toBe(links[0])
+    expect(spawned[0]!.opts.wired).toBe(true)
+    expect(spawned[0]!.opts.usbSerial).toBe('SN-42')
   })
 
-  test('stopWireless is a no-op when never started', () => {
+  test('usb sessions take no part in the wireless supersede', async () => {
+    const { helper } = newHelperManager()
+    const usb = { event: 'aa-session', peer: 'phone', transport: 'usb', serial: 'SN-42' }
+    helper.onEvent?.({ ...usb, socket: '/tmp/a.sock' })
+    helper.onEvent?.({ ...usb, socket: '/tmp/b.sock' })
+    helper.onEvent?.({
+      event: 'aa-session',
+      socket: '/tmp/c.sock',
+      peer: 'phone',
+      transport: 'wifi'
+    })
+    await flush()
+    expect(spawned).toHaveLength(3)
+    expect(spawned[0]!.close).not.toHaveBeenCalled()
+    expect(spawned[1]!.close).not.toHaveBeenCalled()
+  })
+})
+
+describe('AaManager: stopping', () => {
+  test('stopWireless is a no-op when nothing is attached', () => {
     const { mgr } = newManager()
     expect(() => mgr.stopWireless()).not.toThrow()
   })
 
-  test('stopWireless leaves wired sessions running', async () => {
-    const { mgr } = newManager()
-    mgr.startWireless()
-    await mgr.bringUpWired(fakeDevice('w1'))
-    lastBridge.instance!.emit('ready', { host: '127.0.0.1', port: 5278 })
-    lastConnectSocket.instance!.emit('connect')
+  test('stopWireless closes the wireless sessions and keeps the subscription', async () => {
+    const { mgr, helper } = newHelperManager()
+    await announce(helper, '10.10.0.14')
+    const wireless = spawned[0]!
+
+    mgr.stopWireless()
+    expect(wireless.close).toHaveBeenCalled()
+    expect(helper.closed).not.toHaveBeenCalled()
+  })
+
+  test('stopWireless leaves usb sessions running', async () => {
+    const { mgr, helper } = newHelperManager()
+    await announceUsb(helper, 'SN-1')
+    await announce(helper, '10.10.0.14')
     const wired = spawned[0]!
+    const wireless = spawned[1]!
+
     mgr.stopWireless()
     expect(wired.close).not.toHaveBeenCalled()
+    expect(wireless.close).toHaveBeenCalled()
   })
 
-  test('bridge error and closed handlers do not throw', async () => {
-    const { mgr } = newManager()
-    await mgr.bringUpWired(fakeDevice('e1'))
-    const b = lastBridge.instance!
-    expect(() => {
-      b.emit('error', new Error('x'))
-      b.emit('closed')
-    }).not.toThrow()
+  test('detachHelper closes the subscription and every session, usb included', async () => {
+    const { mgr, helper } = newHelperManager()
+    await announceUsb(helper, 'SN-1')
+    await announce(helper, '10.10.0.14')
+
+    mgr.detachHelper()
+    expect(helper.closed).toHaveBeenCalled()
+    expect(spawned[0]!.close).toHaveBeenCalled()
+    expect(spawned[1]!.close).toHaveBeenCalled()
   })
 
-  test('ready is ignored once the bridge has been superseded', async () => {
-    const { mgr } = newManager()
-    await mgr.bringUpWired(fakeDevice('sup'))
-    const b = lastBridge.instance!
-    ;(mgr as unknown as { _wiredBridges: Map<string, unknown> })._wiredBridges.set(
-      'serial:sup',
-      new MockUsbAoapBridge()
-    )
-    b.emit('ready', { host: '127.0.0.1', port: 5278 })
-    expect(net.createConnection as Mock).not.toHaveBeenCalled()
-  })
-
-  test('loopback connect is dropped if the bridge was superseded mid-dial', async () => {
-    const { mgr } = newManager()
-    await mgr.bringUpWired(fakeDevice('mid'))
-    const b = lastBridge.instance!
-    b.emit('ready', { host: '127.0.0.1', port: 5278 })
-    const sock = lastConnectSocket.instance!
-    ;(mgr as unknown as { _wiredBridges: Map<string, unknown> })._wiredBridges.set(
-      'serial:mid',
-      new MockUsbAoapBridge()
-    )
-    sock.emit('connect')
-    expect(sock.destroy).toHaveBeenCalled()
-  })
-
-  test('loopback socket error is logged without throwing', async () => {
-    const { mgr } = newManager()
-    await mgr.bringUpWired(fakeDevice('le'))
-    lastBridge.instance!.emit('ready', { host: '127.0.0.1', port: 5278 })
-    const sock = lastConnectSocket.instance!
-    expect(() => sock.emit('error', new Error('reset'))).not.toThrow()
-  })
-
-  test('deviceKey falls back to vid:pid when there is no serial', async () => {
-    const { mgr } = newManager()
-    const dev = {
-      vendorId: undefined,
-      productId: undefined,
-      serialNumber: undefined
-    } as unknown as USBDevice
-    await mgr.bringUpWired(dev)
-    lastBridge.instance!.emit('ready', { host: '127.0.0.1', port: 5278 })
-    lastConnectSocket.instance!.emit('connect')
-    expect(
-      (mgr as unknown as { _wiredBridges: Map<string, unknown> })._wiredBridges.has('0:0')
-    ).toBe(true)
-    expect(spawned[0]!.opts.wiredBridge).toBe(lastBridge.instance)
-  })
-
-  test('close shuts server, sessions and wired bridges, tolerating throws', async () => {
-    const { mgr } = newManager()
-    mgr.startWireless()
-    lastServer.instance!.handler(new MockSocket())
+  test('close shuts the subscription and the sessions, tolerating throws', async () => {
+    const { mgr, helper } = newHelperManager()
+    await announce(helper, '10.10.0.14')
+    await announceUsb(helper, 'SN-1')
     const wireless = spawned[0]!
+    const wired = spawned[1]!
     wireless.close = vi.fn(async () => {
       throw new Error('sess')
     })
-    await mgr.bringUpWired(fakeDevice('cl'))
-    const b = lastBridge.instance!
-    b.stop = vi.fn(async () => {
-      throw new Error('brg')
-    })
     await expect(mgr.close()).resolves.toBeUndefined()
+    expect(helper.closed).toHaveBeenCalled()
     expect(wireless.close).toHaveBeenCalled()
-    expect(b.stop).toHaveBeenCalled()
+    expect(wired.close).toHaveBeenCalled()
   })
 
-  test('close with no server still resolves', async () => {
+  test('close with nothing attached still resolves', async () => {
     const { mgr } = newManager()
     await expect(mgr.close()).resolves.toBeUndefined()
   })
 
-  test('wireless reconnect supersedes the same-IP session only', () => {
-    const { mgr } = newManager()
-    mgr.startWireless()
-    const srv = lastServer.instance!
-    const a = new MockSocket()
-    ;(a as unknown as { remoteAddress: string }).remoteAddress = '10.0.0.5'
-    srv.handler(a)
-    const other = new MockSocket()
-    ;(other as unknown as { remoteAddress: string }).remoteAddress = '10.0.0.9'
-    srv.handler(other)
+  test('a reconnect supersedes the same-peer session only', async () => {
+    const { helper } = newHelperManager()
+    await announce(helper, '10.0.0.5', '/tmp/a.sock')
+    await announce(helper, '10.0.0.9', '/tmp/b.sock')
     const s1 = spawned[0]!
     const s2 = spawned[1]!
-    const b = new MockSocket()
-    ;(b as unknown as { remoteAddress: string }).remoteAddress = '10.0.0.5'
-    srv.handler(b)
+    await announce(helper, '10.0.0.5', '/tmp/c.sock')
     expect(s1.close).toHaveBeenCalled()
     expect(s2.close).not.toHaveBeenCalled()
   })
 
-  test('a wireless session disconnect cleans up without touching wired bridges', () => {
-    const { mgr } = newManager()
-    mgr.startWireless()
-    const srv = lastServer.instance!
-    const sock = new MockSocket()
-    ;(sock as unknown as { remoteAddress: string }).remoteAddress = '10.0.0.7'
-    srv.handler(sock)
+  test('a disconnected session leaves the fan-out and the peer map', async () => {
+    const { mgr, helper } = newHelperManager()
+    await announce(helper, '10.0.0.7', '/tmp/a.sock')
     const s = spawned[0]!
-    expect(() => s.emit('disconnected')).not.toThrow()
+    s.emit('disconnected')
+
+    mgr.sendSpeedData(4200)
+    expect(s.sendSpeedData).not.toHaveBeenCalled()
+    await announce(helper, '10.0.0.7', '/tmp/b.sock')
+    expect(s.close).not.toHaveBeenCalled()
   })
 })
 
-describe('AaManager — codec/night-mode seed', () => {
-  test('live setters forward to every live session', () => {
-    const { mgr } = newManager()
-    mgr.startWireless()
-    lastServer.instance!.handler(new MockSocket())
+describe('AaManager: codec/night-mode seed', () => {
+  test('live setters forward to every live session', async () => {
+    const { mgr, helper } = newHelperManager()
+    await announce(helper, '10.0.0.1')
     const s = spawned[0]!
 
     mgr.setHevcSupported(true)
@@ -389,17 +367,72 @@ describe('AaManager — codec/night-mode seed', () => {
     expect(s.setClusterStreamActive).toHaveBeenCalledWith(false)
   })
 
-  test('new sessions inherit the current seed', () => {
+  test('new sessions inherit the current seed', async () => {
     const { mgr } = newManager()
     mgr.setHevcSupported(true)
-    mgr.setInitialNightMode(true)
     mgr.setClusterStreamActive(false)
 
-    mgr.startWireless()
-    lastServer.instance!.handler(new MockSocket())
+    const helper = new FakeHelper()
+    mgr.attachHelper(helper)
+    await announce(helper, '10.0.0.1')
     const seed = spawned[0]!.opts.seed
     expect(seed.hevcSupported).toBe(true)
-    expect(seed.initialNightMode).toBe(true)
     expect(seed.clusterStreamActive).toBe(false)
+  })
+
+  test('a new session inherits the stored night mode', async () => {
+    const { mgr } = newManager()
+    mgr.setInitialNightMode(true)
+
+    const helper = new FakeHelper()
+    mgr.attachHelper(helper)
+    await announce(helper, '10.0.0.1')
+
+    expect(spawned[0]!.opts.seed.initialNightMode).toBe(true)
+  })
+
+  test('a live night-mode change reaches every session', async () => {
+    const { mgr, helper } = newHelperManager()
+    await announce(helper, '10.0.0.1')
+    await announce(helper, '10.0.0.2')
+
+    mgr.setInitialNightMode(true)
+
+    expect(spawned[0]!.setInitialNightMode).toHaveBeenCalledWith(true)
+    expect(spawned[1]!.setInitialNightMode).toHaveBeenCalledWith(true)
+  })
+
+  test('telemetry fans out to every connected session', async () => {
+    const { mgr, helper } = newHelperManager()
+    await announce(helper, '10.0.0.1')
+    await announce(helper, '10.0.0.2')
+
+    mgr.sendSpeedData(4200)
+    mgr.sendRpmData(3000)
+    mgr.sendGearData(4)
+    mgr.sendNightModeData(true)
+    mgr.sendParkingBrakeData(true)
+    mgr.sendDrivingStatusData(1)
+    mgr.sendLightData(2, false, 1)
+    mgr.sendFuelData(80, 400, false)
+    mgr.sendOdometerData(1200, 30)
+    mgr.sendEnvironmentData(21000, 101000, 0)
+    mgr.sendGpsLocationData({ latDeg: 1, lngDeg: 2 })
+    mgr.sendVehicleEnergyModel(60000, 45000, 300000)
+
+    for (const s of spawned) {
+      expect(s.sendSpeedData).toHaveBeenCalledWith(4200, undefined, undefined)
+      expect(s.sendRpmData).toHaveBeenCalledWith(3000)
+      expect(s.sendGearData).toHaveBeenCalledWith(4)
+      expect(s.sendNightModeData).toHaveBeenCalledWith(true)
+      expect(s.sendParkingBrakeData).toHaveBeenCalledWith(true)
+      expect(s.sendDrivingStatusData).toHaveBeenCalledWith(1)
+      expect(s.sendLightData).toHaveBeenCalledWith(2, false, 1)
+      expect(s.sendFuelData).toHaveBeenCalledWith(80, 400, false)
+      expect(s.sendOdometerData).toHaveBeenCalledWith(1200, 30)
+      expect(s.sendEnvironmentData).toHaveBeenCalledWith(21000, 101000, 0)
+      expect(s.sendGpsLocationData).toHaveBeenCalledWith({ latDeg: 1, lngDeg: 2 })
+      expect(s.sendVehicleEnergyModel).toHaveBeenCalledWith(60000, 45000, 300000, undefined)
+    }
   })
 })

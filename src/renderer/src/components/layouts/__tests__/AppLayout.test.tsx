@@ -73,7 +73,7 @@ describe('AppLayout', () => {
   })
 
   test('auto-hides nav after inactivity on maps', async () => {
-    mockPathname = '/cluster'
+    mockPathname = '/telemetry'
     const navRef = createRef<HTMLDivElement>()
     const mainRef = createRef<HTMLDivElement>()
     const { container } = render(
@@ -102,7 +102,7 @@ describe('AppLayout', () => {
   })
 
   test('shows nav again and re-arms hide timer on mousemove in maps mode', async () => {
-    mockPathname = '/cluster'
+    mockPathname = '/telemetry'
     const navRef = createRef<HTMLDivElement>()
     const mainRef = createRef<HTMLDivElement>()
 
@@ -127,8 +127,8 @@ describe('AppLayout', () => {
     expect(container.querySelector('#content-root')?.getAttribute('data-nav-hidden')).toBe('1')
   })
 
-  test('shows nav again when focus moves into nav area on cluster page', async () => {
-    mockPathname = '/cluster'
+  test('shows nav again when focus moves into nav area on the telemetry page', async () => {
+    mockPathname = '/telemetry'
     const navRef = createRef<HTMLDivElement>()
     const mainRef = createRef<HTMLDivElement>()
 
@@ -152,7 +152,7 @@ describe('AppLayout', () => {
   })
 
   test('clears auto-hide timer and keeps nav visible when leaving auto-hide pages', async () => {
-    mockPathname = '/cluster'
+    mockPathname = '/telemetry'
     const navRef = createRef<HTMLDivElement>()
     const mainRef = createRef<HTMLDivElement>()
 
@@ -191,7 +191,7 @@ describe('AppLayout', () => {
   })
 
   test('overlays the nav on auto-hide pages so the content keeps full width', async () => {
-    mockPathname = '/cluster'
+    mockPathname = '/telemetry'
     const navRef = createRef<HTMLDivElement>()
     const mainRef = createRef<HTMLDivElement>()
     const { container } = render(
@@ -318,7 +318,7 @@ describe('AppLayout', () => {
   })
 
   test('removes wake listeners on unmount for auto-hide pages', async () => {
-    mockPathname = '/cluster'
+    mockPathname = '/telemetry'
     const navRef = createRef<HTMLDivElement>()
     const mainRef = createRef<HTMLDivElement>()
 

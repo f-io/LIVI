@@ -14,6 +14,9 @@ release/
 tmp/
 temp/
 
+# Cargo
+native/**/target/
+
 # Test/coverage
 coverage/
 .nyc_output/
@@ -70,3 +73,8 @@ Thumbs.db
 # Logs
 *.log
 *.log*
+
+# LIVI Link dongle stack — build output, committed by the CI job only
+assets/livi-link/*/*.gz
+assets/livi-link/*/*.lfwb
+assets/livi-link/*/MANIFEST.md5

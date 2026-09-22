@@ -1,0 +1,9 @@
+[package]
+name = "livi-video-codec"
+version = "0.1.0"
+edition.workspace = true
+
+# Which parser, decoder and caps a codec gets. The candidates come out best
+# first; the caller takes the first one the GStreamer registry knows.
+[lib]
+crate-type = ["rlib"]

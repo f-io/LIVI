@@ -38,7 +38,6 @@ vi.mock('../../messages', async () => {
     Unplugged: class {},
     PhoneType: { CarPlay: 3, AndroidAuto: 5 },
     BluetoothPairedList: class {},
-    VideoData: class {},
     AudioData: class {},
     MediaData: class {},
     NavigationData: class {},
@@ -51,7 +50,6 @@ vi.mock('../../messages', async () => {
     SendCommand: Stub,
     SendTouch: Stub,
     SendMultiTouch: Stub,
-    SendAudio: Stub,
     SendFile: Stub,
     SendServerCgiScript: Stub,
     SendLiviWeb: Stub,
@@ -108,11 +106,6 @@ vi.mock('@main/ipc/utils', () => ({
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => '/tmp/appdata') },
   WebContents: class {}
-}))
-
-vi.mock('usb', () => ({
-  WebUSBDevice: { createInstance: vi.fn(async () => ({})) },
-  usb: { getDeviceList: vi.fn(() => []) }
 }))
 
 import { ProjectionService } from '../ProjectionService'

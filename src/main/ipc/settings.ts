@@ -9,9 +9,9 @@ import { registerIpcHandle } from '@main/ipc/register'
 import { releaseFeedUrl, runNumberFromTitle } from '@main/ipc/update/feed'
 import { pickAssetForPlatform } from '@main/ipc/update/pickAsset'
 import { configEvents, saveSettings } from '@main/ipc/utils'
+import { DONGLE_LINK, dongleApPresent } from '@main/services/link/dongleAp'
 import { GhRelease, runtimeStateProps } from '@main/types'
 import { currentKiosk } from '@main/window/utils'
-import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
 import type { Config } from '@shared/types'
 import { app } from 'electron'
 
@@ -29,30 +29,34 @@ export function registerSettingsIpc(runtimeState: runtimeStateProps) {
     saveSettings(runtimeState, settings)
   })
 
-  registerIpcHandle('settings:reset-dongle-icons', () => {
-    saveSettings(runtimeState, {
-      dongleIcon120: '',
-      dongleIcon180: '',
-      dongleIcon256: ''
-    })
-    return {
-      dongleIcon120: ICON_120_B64,
-      dongleIcon180: ICON_180_B64,
-      dongleIcon256: ICON_256_B64
-    }
-  })
-
   registerIpcHandle('app:getVersion', () => app.getVersion())
 
   registerIpcHandle('app:listDisplayModes', () => listHostOutputModes())
 
-  registerIpcHandle('app:listWifiChannels', () => listWifiChannels(runtimeState.config.wifiType))
+  registerIpcHandle('app:listWifiChannels', () =>
+    listWifiChannels(
+      runtimeState.config.wifiType,
+      runtimeState.config.country,
+      runtimeState.config.wifiInterface
+    )
+  )
 
   registerIpcHandle('app:listWifiCountryCodes', () => listWifiCountryCodes())
 
-  registerIpcHandle('app:listWifiInterfaces', () => listWifiInterfaces())
+  // The dongle's radios are none of this host's, so they are offered next to them rather than found.
+  registerIpcHandle('app:listWifiInterfaces', async () => {
+    const local = listWifiInterfaces()
+    const all = (await dongleApPresent()) ? [...local, DONGLE_LINK] : local
+    console.log(`[settings] wifi interfaces: ${all.join(', ') || 'none'}`)
+    return all
+  })
 
-  registerIpcHandle('app:listBtAdapters', () => listBtAdapters())
+  registerIpcHandle('app:listBtAdapters', async () => {
+    const local = listBtAdapters()
+    const all = (await dongleApPresent()) ? [...local, DONGLE_LINK] : local
+    console.log(`[settings] bluetooth adapters: ${all.join(', ') || 'none'}`)
+    return all
+  })
 
   registerIpcHandle('app:getLatestRelease', async () => {
     const nightly = runtimeState.config.updateNightly === true

@@ -24,7 +24,7 @@ export const mediaControlOps = ({
     flash(playBtnRef)
     setOverride(!uiPlaying)
 
-    window.projection.ipc.sendCommand(!uiPlaying ? MediaEventType.PLAY : MediaEventType.PAUSE)
+    window.projection.ipc.sendCommand('playPause')
   }
 
   const handlePrev = () => {

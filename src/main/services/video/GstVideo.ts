@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process'
 import net from 'node:net'
+import os from 'node:os'
 import { app, BrowserWindow, type WebContents } from 'electron'
 import path from 'path'
 import { gstEnv, resolveBinary, resolveGStreamerRoot } from '../audio/gstreamer'
-import { gstHost, probeCodecsViaHost } from './gstHost'
+import { gstHost, type MicStreamOpts, probeCodecsViaHost } from './gstHost'
 import { sysfsPanelGeometry } from './panelEdid'
 
 export type GstVideoCodec = 'h264' | 'h265' | 'vp9' | 'av1'
@@ -18,7 +19,7 @@ function hexToRgb255(hex: string): [number, number, number] {
 
 // Linux runs the pipeline in the gstHost child process (its own GLib loop so waylandsink resizes
 // live, and out of reach of the Electron-vs-system libffi crash). mac/Windows render in-process.
-const useHostProcess = process.platform === 'linux'
+export const useHostProcess = process.platform === 'linux'
 let nextPlayerId = 1
 
 // Display calibration applied as a glshader pass in each video pipeline.
@@ -276,8 +277,8 @@ export function setCompositorScreen(role: string, on: boolean, w?: number, h?: n
   compositorControl.screen(role, on, w, h)
 }
 
-// Ask the compositor to relaunch the inner UI (Linux/compositor only). Returns false when
-// not running in the compositor, so the caller can fall back to a normal relaunch.
+// Asks the compositor to relaunch the inner UI (Linux/compositor only); false when not
+// running in the compositor.
 export function compositorRestart(): boolean {
   return compositorControl.restart()
 }
@@ -285,10 +286,10 @@ export function compositorRestart(): boolean {
 export type GstCodecSupport = { hw: boolean; sw: boolean }
 export type GstCodecProbe = Record<GstVideoCodec, GstCodecSupport>
 
-interface GstAddon {
+export interface GstAddon {
   version(): string
   probeCodecs(): GstCodecProbe
-  createPlayer(codec: string, windowHandle: Buffer, codecData?: Buffer): unknown
+  createPlayer(codec: string, windowHandle: Buffer, codecData?: Buffer, planeId?: number): unknown
   start(player: unknown): void
   pushBuffer(player: unknown, buffer: Buffer): boolean
   setVisible(player: unknown, visible: boolean): void
@@ -304,6 +305,55 @@ interface GstAddon {
   setBackdrop(windowHandle: Buffer, r: number, g: number, b: number): void
   setGamma(player: unknown, gamma: number, contrast: number, r: number, g: number, b: number): void
   stop(player: unknown): void
+  /** Binds the socket the helper streams media into. */
+  openFeed(path: string): boolean
+  /** Binds a port for the CarPlay screen stream and decrypts it in-process. Returns the port. */
+  openVideoReceiver(
+    planeId: number,
+    key: Buffer,
+    onConfig: (codec: number, atom: Buffer) => void
+  ): number
+  closeVideoReceiver(planeId: number): void
+  /** Binds the RTP ports of one audio stream, decodes and plays it in-process. */
+  openAudioReceiver(
+    key: Buffer,
+    codec: string,
+    payloadType: number,
+    clockRate: number,
+    channels: number,
+    latencyMs: number,
+    realtime: boolean,
+    device: string | undefined,
+    onStarted: (streamId: number, firstSample: number) => void
+  ): { streamId: number; dataPort: number; controlPort: number } | null
+  setAudioReceiverActive(streamId: number, active: boolean): void
+  setAudioReceiverVolume(streamId: number, level: number, rampMs: number): void
+  closeAudioReceiver(streamId: number): void
+  openMicUplink(
+    key: Buffer,
+    codec: string,
+    payloadType: number,
+    sampleRate: number,
+    channels: number,
+    bitrate: number,
+    frameMs: number,
+    port: number,
+    phone: string,
+    device?: string
+  ): number | null
+  closeMicUplink(id: number): void
+  setAudioVisualizerTap(
+    on: boolean,
+    onSamples?: (samples: Buffer, sampleRate: number) => void
+  ): void
+  openAudio(sampleRate: number, channels: number, device?: string, realtime?: boolean): unknown
+  audioStreamId(stream: unknown): number
+  pushAudio(stream: unknown, buffer: Buffer): boolean
+  setAudioActive(stream: unknown, active: boolean): void
+  setAudioVolume(stream: unknown, level: number, rampMs: number): void
+  closeAudio(stream: unknown): void
+  openMicTap(path: string, sampleRate: number, channels: number, device?: string): unknown
+  closeMicTap(tap: unknown): void
 }
 
 let addon: GstAddon | null = null
@@ -363,13 +413,36 @@ function load(): GstAddon | null {
   }
   try {
     prepareMacRuntime()
-    addon = require('gst-video') as GstAddon
+    addon = require('livi-gst-video') as GstAddon
     logGstRuntime(addon.version())
   } catch (e) {
     loadFailed = true
     console.error('[GstVideo] native addon load failed:', (e as Error).message)
   }
   return addon
+}
+
+/** The in-process pipeline addon, null on Linux and when it failed to load. */
+export function gstAddon(): GstAddon | null {
+  return load()
+}
+
+let mediaFeed: Promise<string> | null = null
+
+/** The socket the helper streams media into: the host's on Linux, the addon's elsewhere. */
+export function openMediaFeed(): Promise<string> {
+  if (useHostProcess) return gstHost.openFeed()
+  if (mediaFeed) return mediaFeed
+  const a = load()
+  const feedPath = path.join(os.tmpdir(), `livi-gst-${process.pid}.feed`)
+  const bound = a?.openFeed(feedPath) === true
+  console.log(
+    bound
+      ? `[GstVideo] media feed at ${feedPath}`
+      : '[GstVideo] no media feed, the addon did not load or could not bind'
+  )
+  mediaFeed = Promise.resolve(bound ? feedPath : '')
+  return mediaFeed
 }
 
 // Which codecs the bundled/loaded GStreamer can decode on this platform,
@@ -395,6 +468,12 @@ export function probeGstCodecs(): GstCodecProbe {
   } catch {
     return { h264: none, h265: none, vp9: none, av1: none }
   }
+}
+
+// Fires after a player is created, once the compositor claim has completed.
+let onPlayerCreated: (() => void) | null = null
+export function setOnPlayerCreated(cb: (() => void) | null): void {
+  onPlayerCreated = cb
 }
 
 // GStreamer video player. On Linux the pipeline lives in the gstHost child process and this only
@@ -466,6 +545,7 @@ export class GstVideo {
         this.applyGamma()
         for (const b of this.pendingBuffers) gstHost.pushBuffer(this.id, b)
         this.pendingBuffers = []
+        onPlayerCreated?.()
       })
       return
     }
@@ -476,13 +556,14 @@ export class GstVideo {
     const handle = this.windowHandle()
     if (!handle) return
     compositorControl.claim(this.role)
-    this.player = a.createPlayer(codec, handle, this.codecData ?? undefined)
+    this.player = a.createPlayer(codec, handle, this.codecData ?? undefined, this.id)
     this.codec = codec
     if (this.player) {
       a.start(this.player)
       a.setVisible(this.player, this.visible)
       if (this.region) this.applyRegion(a)
       this.applyGamma()
+      onPlayerCreated?.()
     }
   }
 
@@ -503,8 +584,8 @@ export class GstVideo {
     if (this.player) a.pushBuffer(this.player, nal)
   }
 
-  // Set the length-prefixed codec_data (CarPlay hvcC/avcC). Arrives before the first frame,
-  // so it is in place when the pipeline is created. A later change recreates the pipeline.
+  // Sets the length-prefixed codec_data (CarPlay hvcC/avcC); a later change recreates the
+  // pipeline.
   setCodecData(codecData: Buffer): void {
     if (this.codecData && this.codecData.equals(codecData)) return
     this.codecData = codecData
@@ -567,4 +648,133 @@ export class GstVideo {
     this.player = null
     this.codec = null
   }
+}
+
+// The CarPlay screen stream without a host process: the addon binds the port and feeds the
+// plane; the config record comes back through onScreenReceiverConfig.
+let screenConfigCb: ((id: number, codec: GstVideoCodec, atom: Buffer) => void) | null = null
+
+export function onScreenReceiverConfig(
+  cb: (id: number, codec: GstVideoCodec, atom: Buffer) => void
+): void {
+  screenConfigCb = cb
+}
+
+/** The port the phone streams to, or 0 when this build has no in-process receiver. */
+export function openScreenReceiver(planeId: number, key: Buffer): number {
+  const a = load()
+  if (!a?.openVideoReceiver) return 0
+  try {
+    return a.openVideoReceiver(planeId, key, (codec: number, atom: Buffer) => {
+      screenConfigCb?.(planeId, codec === 1 ? 'h265' : 'h264', atom)
+    })
+  } catch (e) {
+    console.error('[GstVideo] screen receiver failed:', (e as Error).message)
+    return 0
+  }
+}
+
+export function closeScreenReceiver(planeId: number): void {
+  load()?.closeVideoReceiver?.(planeId)
+}
+
+// One CarPlay audio stream without a host process: the addon binds the RTP ports, decodes and
+// plays. Ids come from the addon; a foreign id is a no-op here.
+export type CpAudioReceiverOpts = {
+  codec: string
+  payloadType: number
+  clockRate: number
+  channels: number
+  latencyMs: number
+  realtime: boolean
+  device?: string
+}
+
+let audioStartedCb: ((id: number, firstSample: number) => void) | null = null
+
+export function onAudioReceiverStarted(cb: (id: number, firstSample: number) => void): void {
+  audioStartedCb = cb
+}
+
+export function openAudioReceiver(
+  key: Buffer,
+  o: CpAudioReceiverOpts
+): { streamId: number; dataPort: number; controlPort: number } | null {
+  const a = load()
+  if (!a?.openAudioReceiver) return null
+  try {
+    return (
+      a.openAudioReceiver(
+        key,
+        o.codec,
+        o.payloadType,
+        o.clockRate,
+        o.channels,
+        o.latencyMs,
+        o.realtime,
+        o.device,
+        (id: number, firstSample: number) => audioStartedCb?.(id, firstSample)
+      ) ?? null
+    )
+  } catch (e) {
+    console.error('[GstVideo] audio receiver failed:', (e as Error).message)
+    return null
+  }
+}
+
+export function setAudioReceiverActive(streamId: number, active: boolean): void {
+  load()?.setAudioReceiverActive?.(streamId, active)
+}
+
+export function setAudioReceiverVolume(streamId: number, level: number, rampMs: number): void {
+  load()?.setAudioReceiverVolume?.(streamId, level, rampMs)
+}
+
+export function closeAudioReceiver(streamId: number): void {
+  load()?.closeAudioReceiver?.(streamId)
+}
+
+// The CarPlay microphone stream without a host process: the addon captures, encodes as the
+// phone asked (opus or pcm) and sends the sealed RTP.
+export function openMicUplink(key: Buffer, o: MicStreamOpts): number | null {
+  const a = load()
+  if (!a?.openMicUplink) return null
+  try {
+    return (
+      a.openMicUplink(
+        key,
+        o.codec,
+        o.payloadType,
+        o.sampleRate,
+        o.channels,
+        o.bitrate,
+        o.frameMs,
+        o.port,
+        o.phone,
+        o.device
+      ) ?? null
+    )
+  } catch (e) {
+    console.warn(`[GstVideo] mic uplink failed: ${(e as Error).message}`)
+    return null
+  }
+}
+
+export function closeMicUplink(id: number): void {
+  load()?.closeMicUplink?.(id)
+}
+
+// The visualizer tap for in-process audio.
+let visualizerCb: ((samples: Uint8Array, sampleRate: number) => void) | null = null
+
+export function onAudioReceiverVisualizer(
+  cb: (samples: Uint8Array, sampleRate: number) => void
+): void {
+  visualizerCb = cb
+}
+
+export function setAudioReceiverVisualizerTap(on: boolean): void {
+  load()?.setAudioVisualizerTap?.(on, (samples: Buffer, sampleRate: number) =>
+    visualizerCb?.(new Uint8Array(samples), sampleRate)
+  )
 }

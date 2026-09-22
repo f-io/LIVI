@@ -506,7 +506,6 @@ describe('store', () => {
     const { useStatusStore } = await loadFreshStore()
 
     useStatusStore.getState().setCameraFound(true)
-    useStatusStore.getState().setDongleHardwarePresent(true)
     useStatusStore.getState().setStreaming(true)
     useStatusStore.getState().setReverse(true)
     useStatusStore.getState().setLights(true)
@@ -514,7 +513,6 @@ describe('store', () => {
     expect(useStatusStore.getState()).toEqual(
       expect.objectContaining({
         cameraFound: true,
-        isDongleHardwarePresent: true,
         isStreaming: true,
         reverse: true,
         lights: true
@@ -1766,32 +1764,21 @@ describe('store', () => {
 
   test('setActiveProtocol flips the status flag and useProjectionActive reflects it', async () => {
     const { useStatusStore, useProjectionActive } = await loadFreshStore()
-    useStatusStore.getState().setActiveProtocol('androidauto')
-    expect(useStatusStore.getState().activeProtocol).toBe('androidauto')
-    expect(useProjectionActive).toBeInstanceOf(Function)
-    useStatusStore.getState().setActiveProtocol(null)
-    useStatusStore.getState().setDongleHardwarePresent(true)
-    expect(useStatusStore.getState().isDongleHardwarePresent).toBe(true)
-  })
-
-  test('useProjectionActive reflects dongle presence and active protocol', async () => {
-    const { useStatusStore, useProjectionActive } = await loadFreshStore()
 
     const { result } = renderHook(() => useProjectionActive())
     expect(result.current).toBe(false)
 
     act(() => {
-      useStatusStore.getState().setDongleHardwarePresent(true)
+      useStatusStore.getState().setActiveProtocol('androidauto')
     })
+    expect(useStatusStore.getState().activeProtocol).toBe('androidauto')
     expect(result.current).toBe(true)
-  })
 
-  test('clearing dongle presence while nothing is active does not re-baseline', async () => {
-    const { useStatusStore } = await loadFreshStore()
-
-    useStatusStore.getState().setDongleHardwarePresent(false)
-
-    expect(useStatusStore.getState().isDongleHardwarePresent).toBe(false)
+    act(() => {
+      useStatusStore.getState().setActiveProtocol(null)
+    })
+    expect(useStatusStore.getState().activeProtocol).toBe(null)
+    expect(result.current).toBe(false)
   })
 
   test('audio-devices revision and cluster-dash setters update state', async () => {
@@ -1805,7 +1792,7 @@ describe('store', () => {
     expect(useStatusStore.getState().clusterDashActive).toBe(true)
   })
 
-  test('telemetry view request updates the requested view and bumps its nonce', async () => {
+  test('telemetry path request parks the path until it is consumed', async () => {
     let telemetryHandler: ((payload: unknown) => void) | undefined
 
     const projection = makeProjectionApi({
@@ -1824,10 +1811,10 @@ describe('store', () => {
 
     await waitForStoreSettings(useLiviStore)
 
-    const before = useStatusStore.getState().requestedViewNonce
-    telemetryHandler?.({ view: 'camera' })
+    telemetryHandler?.({ path: '/camera' })
+    expect(useStatusStore.getState().requestedPath).toBe('/camera')
 
-    expect(useStatusStore.getState().requestedView).toBe('camera')
-    expect(useStatusStore.getState().requestedViewNonce).toBe(before + 1)
+    useStatusStore.getState().clearRequestedPath()
+    expect(useStatusStore.getState().requestedPath).toBeNull()
   })
 })

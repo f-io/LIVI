@@ -15,7 +15,7 @@ function freshHost() {
     start: vi.fn(async () => undefined),
     stop: vi.fn(async () => undefined),
     restartSession: vi.fn(async () => undefined),
-    pickPreferredTransport: vi.fn(() => 'dongle' as 'dongle' | 'aa' | null),
+    pickPreferredTransport: vi.fn(() => 'aa' as 'aa' | 'cp' | null),
     applyCodecCapabilities: vi.fn(),
     setVideoVisible: vi.fn()
   }
@@ -43,8 +43,9 @@ describe('lifecycle ipc', () => {
     expect(host.stop).not.toHaveBeenCalled()
   })
 
-  test('projection-stop delegates when preferred transport is dongle', async () => {
+  test('projection-stop delegates when no AA transport is preferred', async () => {
     const host = freshHost()
+    host.pickPreferredTransport.mockReturnValue(null)
     registerLifecycleIpc(host)
     await handlers.get('projection-stop')!(null)
     expect(host.stop).toHaveBeenCalled()

@@ -1,6 +1,6 @@
 import type { Mock } from 'vitest'
 import { probeGstCodecs } from '../../../video/GstVideo'
-import { CodecCapabilityService, type CodecKind } from '../CodecCapabilityService'
+import { CodecCapabilityService, type CodecKind, offersHevc } from '../CodecCapabilityService'
 
 vi.mock('../../../video/GstVideo', () => ({
   probeGstCodecs: vi.fn()
@@ -108,13 +108,12 @@ describe('CodecCapabilityService', () => {
     expect(svc.av1).toBe(false)
   })
 
-  test('applyGstCodecCaps drops sw hevc when h264 already decodes in HW', () => {
-    const svc = new CodecCapabilityService(vi.fn())
-    ;(probeGstCodecs as Mock).mockReturnValue(mkProbe({ h265: { hw: false, sw: true } }))
-
-    svc.applyGstCodecCaps()
-
-    expect(svc.hevc).toBe(false)
+  test('sw hevc yields to a hardware h264, except on macOS', () => {
+    const swOnly = { h264: { hw: true }, h265: { hw: false, sw: true } }
+    expect(offersHevc(swOnly, 'linux')).toBe(false)
+    expect(offersHevc(swOnly, 'darwin')).toBe(true)
+    expect(offersHevc({ h264: { hw: false }, h265: { hw: false, sw: true } }, 'linux')).toBe(true)
+    expect(offersHevc({ h264: { hw: true }, h265: { hw: false, sw: false } }, 'darwin')).toBe(false)
   })
 
   test('applyGstCodecCaps drops every optional codec without any decoder', () => {

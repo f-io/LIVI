@@ -165,6 +165,7 @@ export const FFTSpectrum = () => {
       if (!canvas) return
       const ctx = canvas.getContext('2d')!
       const { width: cw, height: ch } = dimensions
+      if (cw === 0 || ch === 0) return
 
       if (canvas.width !== cw || canvas.height !== ch) {
         canvas.width = cw

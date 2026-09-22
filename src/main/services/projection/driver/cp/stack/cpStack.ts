@@ -11,10 +11,25 @@
 import { EventEmitter } from 'node:events'
 import net from 'node:net'
 import { DEBUG } from '@main/constants'
-import { gstHost, VIDEO_PLANE_CLUSTER_RECV, VIDEO_PLANE_MAIN } from '@main/services/video/gstHost'
+import {
+  closeAudioReceiver,
+  closeMicUplink,
+  closeScreenReceiver,
+  onAudioReceiverStarted,
+  openAudioReceiver,
+  openMicUplink,
+  openScreenReceiver,
+  setAudioReceiverActive,
+  setAudioReceiverVolume
+} from '@main/services/video/GstVideo'
+import {
+  type CpAudioCodec,
+  gstHost,
+  VIDEO_PLANE_CLUSTER_RECV,
+  VIDEO_PLANE_MAIN
+} from '@main/services/video/gstHost'
 import { AudioCommand } from '@shared/types/ProjectionEnums'
 import { CP_BT_SOCK_PATH } from '../CpHelperSock'
-import { AudioStream, ntp64Now } from './audioStream'
 import { handleAuthSetup } from './authSetup'
 import { decodeBplist, encodeBplist, type PlistValue } from './bplist'
 import { ControlCipher } from './controlCipher'
@@ -34,10 +49,9 @@ import {
 import { IapTunnel } from './iapTunnel'
 import { KeepAliveServer } from './keepAliveServer'
 import type { MfiSigner } from './mfiSigner'
-import { CpMicUplink } from './micUplink'
+import { ntp64Now } from './ntp'
 import { PairSetup } from './pairSetup'
 import { PairVerify } from './pairVerify'
-import { CpRtpAudioDecoder } from './rtpAudioDecoder'
 import { buildResponse, parseMessages, type RtspRequest, type RtspResponse } from './rtspMessage'
 import { ScreenStream } from './screenStream'
 import { TimingSync } from './timingServer'
@@ -131,6 +145,8 @@ interface CpSession {
   encBuf: Buffer
   /** The phone's address, used to drive the timing sync and reach its ports. */
   peerHost: string
+  /** BT MAC from the session SETUP, sent in the tunnel header for the carkit guard. */
+  deviceBtMac: string
   /** Media session servers, created during SETUP, torn down with the connection. */
   timing: TimingSync | null
   keepAlive: KeepAliveServer | null
@@ -138,6 +154,9 @@ interface CpSession {
   clusterScreen: ScreenStream | null
   screenNativeId: number | null
   clusterScreenNativeId: number | null
+  /** The receiver runs in the addon, so the id is a plane id and the host is not involved. */
+  screenInProcess: boolean
+  clusterScreenInProcess: boolean
   clusterCodecEmitted: boolean
   /** One record per audio stream (media/alt/high), created during SETUP: its media
    *  clock (for /feedback), the UDP stream, and its gst decoder (AAC-LC/OPUS, or null
@@ -146,15 +165,19 @@ interface CpSession {
     type: number
     sampleRate: number
     connectionID: PlistValue
-    stream: AudioStream
-    decoder: { stop(): void } | null
-    /** Mic uplink for a bidirectional MainAudio stream (phone gave a send port), else null. */
-    uplink: CpMicUplink | null
-    /** The phone's negotiated audioLatencyMs for this stream. Drives both the decoder
-     *  jitter buffer and the /feedback playback-position lag so the two stay consistent. */
+    /** The stream that owns the ports and the pipeline: the gst-host, or the addon here. */
+    hostStreamId: number
+    /** True when the addon received it, so the host is never asked about this stream. */
+    inProcess: boolean
+    /** The microphone stream in the host for a bidirectional MainAudio, else null. */
+    micStreamId: number | null
+    /** Media clock anchor: the first sample the host received, and when. */
+    origin: { firstSample: number; originNs: bigint } | null
+    /** The phone's negotiated audioLatencyMs for this stream: the decoder jitter buffer and
+     *  the /feedback playback-position lag. */
     playoutLatencyMs: number
   }[]
-  /** iAP2-over-CarPlay tunnel + its relay connection to the Python iAP2 stack. */
+  /** iAP2-over-CarPlay tunnel + its relay connection to the helper's iAP2 stack. */
   iapTunnel: IapTunnel | null
   iapRelay: net.Socket | null
   /** TCP event channel the phone connects to after session SETUP. */
@@ -188,12 +211,27 @@ export class CpStack extends EventEmitter {
   private _nightMode: boolean | null = null
   /** Last Siri speech-mode state, so we emit 'speech-active' only on transitions. */
   private _speechActive = false
-  /** Mic uplinks whose MainAudio stream is currently active (fed by writeMic). */
-  private readonly _activeUplinks = new Set<CpMicUplink>()
+  /** True while this phone is the one whose audio reaches the sink. */
+  private _audioActive = false
+  /** The host's audio streams, so its start report finds the right stream. */
+  private readonly _audioById = new Map<
+    number,
+    { prof: CpAudioProfile; inProcess: boolean; started: (firstSample: number) => void }
+  >()
 
   constructor(private readonly cfg: CpStackConfig) {
     super()
     this._mfi = cfg.mfi
+    // Same reverse path whether the host or the addon received the first sample.
+    onAudioReceiverStarted((id, firstSample) => this._audioStarted(id, firstSample))
+    gstHost.onAudioStarted((id, firstSample) => this._audioStarted(id, firstSample))
+  }
+
+  private _audioStarted(id: number, firstSample: number): void {
+    const entry = this._audioById.get(id)
+    if (!entry) return
+    entry.started(firstSample)
+    this.emit('audio-active', entry.prof, true)
   }
 
   stop(): void {
@@ -215,12 +253,15 @@ export class CpStack extends EventEmitter {
       cipher: null,
       encBuf: Buffer.alloc(0),
       peerHost: sock.remoteAddress ?? '',
+      deviceBtMac: '',
       timing: null,
       keepAlive: null,
       screen: null,
       clusterScreen: null,
       screenNativeId: null,
       clusterScreenNativeId: null,
+      screenInProcess: false,
+      clusterScreenInProcess: false,
       clusterCodecEmitted: false,
       audioMeta: [],
       iapTunnel: null,
@@ -235,8 +276,7 @@ export class CpStack extends EventEmitter {
       heartbeat: null
     }
     this._sessionSock.set(session, sock)
-    // Handlers are async (auth-setup hits the MFi helper), so serialise the
-    // per-connection processing to keep the request order and the cipher state sane.
+    // Requests of one connection are processed one after another.
     let acc = Buffer.alloc(0)
     let chain: Promise<void> = Promise.resolve()
 
@@ -295,23 +335,20 @@ export class CpStack extends EventEmitter {
     session.keepAlive?.stop()
     session.screen?.stop()
     session.clusterScreen?.stop()
+    // The id is the host's receiver handle, or the plane id where the addon received.
     if (session.screenNativeId != null) {
-      gstHost.closeVideoReceiver(session.screenNativeId)
+      if (session.screenInProcess) closeScreenReceiver(session.screenNativeId)
+      else gstHost.closeVideoReceiver(session.screenNativeId)
       session.screenNativeId = null
     }
     if (session.clusterScreenNativeId != null) {
-      gstHost.closeVideoReceiver(session.clusterScreenNativeId)
+      if (session.clusterScreenInProcess) closeScreenReceiver(session.clusterScreenNativeId)
+      else gstHost.closeVideoReceiver(session.clusterScreenNativeId)
       session.clusterScreenNativeId = null
     }
     for (const m of session.audioMeta) {
-      m.stream.stop()
-      m.decoder?.stop()
-      if (m.uplink) {
-        this._activeUplinks.delete(m.uplink)
-        m.uplink.stop()
-      }
+      this._closeAudio(m)
     }
-    if (this._activeUplinks.size === 0) this.emit('mic-active', false, 0)
     session.iapTunnel?.stop()
     session.iapRelay?.destroy()
     session.audioMeta = []
@@ -330,9 +367,32 @@ export class CpStack extends EventEmitter {
     return this._liveSession?.pairVerify.controllerId ?? null
   }
 
-  /** Feed captured S16LE mic PCM to every active MainAudio uplink. */
-  writeMic(pcm: Buffer): void {
-    for (const u of this._activeUplinks) u.write(pcm)
+  /** Sets the level of every stream of this audioType in the host. */
+  setStreamVolume(audioType: number, level: number, rampMs: number): void {
+    for (const [id, entry] of this._audioById) {
+      if (entry.prof.audioType === audioType) {
+        if (entry.inProcess) setAudioReceiverVolume(id, level, rampMs)
+        else gstHost.setAudioVolume(id, level, rampMs)
+      }
+    }
+  }
+
+  /** Closes one stream's ports, pipeline and microphone in the host. */
+  private _closeAudio(m: {
+    hostStreamId: number
+    inProcess: boolean
+    micStreamId: number | null
+  }): void {
+    const entry = this._audioById.get(m.hostStreamId)
+    this._audioById.delete(m.hostStreamId)
+    if (m.inProcess) closeAudioReceiver(m.hostStreamId)
+    else gstHost.closeAudio(m.hostStreamId)
+    if (entry) this.emit('audio-active', entry.prof, false)
+    if (m.micStreamId != null) {
+      if (m.inProcess) closeMicUplink(m.micStreamId)
+      else gstHost.closeMic(m.micStreamId)
+      this.emit('mic-active', false, 0, 0)
+    }
   }
 
   private _normHost(h: string): string {
@@ -368,13 +428,7 @@ export class CpStack extends EventEmitter {
       const idx = session.audioMeta.findIndex((m) => m.type === type)
       if (idx < 0) continue
       const [m] = session.audioMeta.splice(idx, 1)
-      m.stream.stop()
-      m.decoder?.stop()
-      if (m.uplink) {
-        this._activeUplinks.delete(m.uplink)
-        m.uplink.stop()
-        if (this._activeUplinks.size === 0) this.emit('mic-active', false, 0)
-      }
+      this._closeAudio(m)
     }
     return { status: 200 }
   }
@@ -519,8 +573,7 @@ export class CpStack extends EventEmitter {
     } else if (type === 'modesChanged') {
       this._handleModesChanged(body)
       if (DEBUG) {
-        // Log who currently owns each resource so we can see if the phone granted us
-        // main audio (resourceID 2, entity: 1 = device/controller, 2 = accessory).
+        // Logs who owns each resource (resourceID 2 = main audio; entity 1 = phone, 2 = accessory).
         const j = JSON.stringify(body.params ?? body, (_k, v) =>
           typeof v === 'bigint' ? Number(v) : v
         )
@@ -570,33 +623,23 @@ export class CpStack extends EventEmitter {
     if (session.audioMeta.length === 0) return { status: 200 }
     const streams = session.audioMeta.map((m) => {
       const s: Record<string, PlistValue> = { type: m.type, sampleRate: m.sampleRate }
-      // Report the extrapolated PLAYBACK position: origin sample + elapsed real time
-      // times the rate. It advances at real time (sink hardware clock) no matter how
-      // fast the phone sends, which forces it to keep feeding at real time.
-      const o = m.stream.getOrigin()
+      // Reports the playback position extrapolated at real time: origin sample + elapsed × rate.
+      const o = m.origin
       if (o) {
         const nowNs = process.hrtime.bigint()
-        // Playback starts only after the output buffer fills.
-        // Use this stream's negotiated audioLatencyMs so the
-        // reported lag matches the jitter-buffer depth exactly (buffered stream = 1000ms).
+        // The reported lag is this stream's negotiated audioLatencyMs (buffered stream: 1000 ms).
         const PLAYOUT_LATENCY_SEC = m.playoutLatencyMs / 1000
         const elapsedSec = Math.max(0, Number(nowNs - o.originNs) / 1e9 - PLAYOUT_LATENCY_SEC)
         const play = (o.firstSample + Math.round(elapsedSec * m.sampleRate)) >>> 0
         s.streamConnectionID = m.connectionID
-        // hostTime must be in the phone's synchronized clock domain (via TimingSync),
-        // else the phone can't place our media-clock anchor. hostTimeRaw stays raw.
+        // hostTime is in the phone's synchronized clock domain (TimingSync); hostTimeRaw stays raw.
         s.timestamp = session.timing ? session.timing.syncedNtp() : ntp64Now()
         s.timestampRawNs = nowNs
         s.sampleTime = play
         if (DEBUG) {
-          // buffer = received-so-far − reported-playback (samples). Positive = phone
-          // is ahead of our playback; shrinking toward 0/negative = feed falling behind.
-          const buf = (m.stream.getLastRecvSample() - play) | 0
           this._fbN++
           if (this._fbN % 3 === 0) {
-            console.log(
-              `[cpStack fb] type=${m.type} play=${play} recv=${m.stream.getLastRecvSample()} buffer=${buf} (${(buf / m.sampleRate).toFixed(2)}s)`
-            )
+            console.log(`[cpStack fb] type=${m.type} play=${play}`)
           }
         }
       }
@@ -652,6 +695,7 @@ export class CpStack extends EventEmitter {
     const idDevice = typeof dict.deviceID === 'string' ? dict.deviceID : ''
     const idWifi = typeof dict.macAddress === 'string' ? dict.macAddress.toLowerCase() : ''
     const idModel = typeof dict.model === 'string' ? dict.model : ''
+    if (idDevice) session.deviceBtMac = idDevice
     if (idName || idDevice || idWifi) {
       this.emit('device-info', {
         name: idName,
@@ -789,10 +833,8 @@ export class CpStack extends EventEmitter {
     this._sendHidReport(TELEPHONY_HID_UID, telephonyReport(0))
   }
 
-  /** Invoke Siri as a dedicated Siri button (R6 3.3.7.1.2): buttonDown(2) then buttonUp(3).
-   *  Sent as an immediate momentary click, not tied to the physical hold, so the phone
-   *  sees a tap and starts a conversational session (listens via VAD and replies) rather
-   *  than push-to-talk that submits on release before the user has spoken. */
+  /** Invokes Siri as a dedicated Siri button (R6 3.3.7.1.2): buttonDown(2) then buttonUp(3),
+   *  sent as one momentary click. */
   invokeSiri(): void {
     const s = this._active
     if (!s) {
@@ -805,9 +847,8 @@ export class CpStack extends EventEmitter {
   }
 
   /** Send a bplist command to the phone over the encrypted event channel. */
-  /** The event channel is bidirectional reverse-HTTP: the phone both answers our
-   *  commands and sends its own requests, which MUST get a response (older iOS
-   *  blocks session bring-up on 5s request timeouts otherwise). */
+  /** The event channel is bidirectional reverse-HTTP: the phone answers our commands and
+   *  sends its own requests, each of which gets a response. */
   private _onEventMessage(session: CpSession, msg: RtspRequest): void {
     if (msg.method.startsWith('RTSP/') || msg.method.startsWith('HTTP/')) {
       if (msg.path !== '200')
@@ -847,10 +888,8 @@ export class CpStack extends EventEmitter {
     const shared = session.pairVerify.sharedSecret
     if (!shared) throw new Error('audio SETUP arrived before pair-verify')
     const streamId = sd.streamConnectionID
-    // The phone tells us how far ahead it buffers via audioLatencyMs (1000 for the
-    // buffered music stream). We size our jitter buffer to
-    // exactly that so it never underruns, and report the same lag in /feedback. Falls
-    // back to 1000 for buffered / 0 for low-latency if the field is absent.
+    // The jitter buffer is sized to the phone's audioLatencyMs and /feedback reports the same
+    // lag; absent, 1000 for a buffered and 0 for a low-latency stream.
     const audioLatencyMs = Number(sd.audioLatencyMs) || 0
     // Same DataStream key derivation as the screen: HKDF-SHA512(pair-verify shared,
     // "DataStream-Salt"<id>, "DataStream-Output-Encryption-Key"). Audio output streams
@@ -887,41 +926,49 @@ export class CpStack extends EventEmitter {
       sampleRate = 44100
       channels = 2
     }
-    const streamProf: CpStreamProfile = { ...prof, sampleRate, channels }
-    const stream = new AudioStream(key, prof.label)
-    let decoder: { stop(): void } | null = null
-    if (isAacLc || isOpus) {
-      // Compressed audio (AAC-LC/OPUS) over RTP: feed the reconstructed RTP into a
-      // udpsrc/rtpjitterbuffer/depay/decode pipeline. The jitter buffer paces the
-      // phone's bursty delivery back to steady real time (the payload type is the
-      // CarPlay stream type; AAC clocks at its sample rate, OPUS always at 48k).
-      const dec = new CpRtpAudioDecoder({
-        codec: isAacLc ? 'aac-lc' : 'opus',
-        payloadType: type,
-        clockRate: isOpus ? 48000 : sampleRate,
-        channels,
-        latencyMs: audioLatencyMs > 0 ? audioLatencyMs : 1000,
-        label: prof.label
-      })
-      dec.on('pcm', (pcm: Buffer) => this.emit('audio-frame', pcm, streamProf))
-      await dec.start()
-      decoder = dec
-      stream.on('rtp', (rtp: Buffer) => dec.write(rtp))
-    } else {
-      // LPCM passthrough: the wire samples are 16-bit big-endian, swap to S16LE
-      // (guard the odd-length case so swap16 can't throw in the packet handler).
-      stream.on('pcm', (pcm: Buffer) =>
-        this.emit('audio-frame', pcm.length % 2 === 0 ? pcm.swap16() : pcm, streamProf)
-      )
+    const codec: CpAudioCodec = isAacLc ? 'aac-lc' : isOpus ? 'opus' : 'pcm'
+    const meta = {
+      type,
+      sampleRate,
+      connectionID: streamId as PlistValue,
+      playoutLatencyMs: audioLatencyMs,
+      hostStreamId: 0,
+      inProcess: false,
+      micStreamId: null as number | null,
+      origin: null as { firstSample: number; originNs: bigint } | null
     }
+
+    const audioOpts = {
+      codec,
+      payloadType: type,
+      // OPUS always clocks at 48k, AAC at its negotiated rate
+      clockRate: isOpus ? 48000 : sampleRate,
+      channels,
+      latencyMs: audioLatencyMs > 0 ? audioLatencyMs : 1000,
+      // audioType 3 is the buffered media stream, the others take the short path
+      realtime: prof.audioType !== 3,
+      device: this.cfg.audioDevice?.() || undefined
+    }
+    // Without a host process the addon binds the ports and plays in-process; `inProcess` routes
+    // volume/active/close to it.
+    const inProc = openAudioReceiver(key, audioOpts)
+    const {
+      streamId: hostStreamId,
+      dataPort,
+      controlPort
+    } = inProc ?? (await gstHost.openAudio(key, audioOpts))
+    meta.hostStreamId = hostStreamId
+    meta.inProcess = inProc !== null
+    if (this._audioActive) {
+      if (meta.inProcess) setAudioReceiverActive(hostStreamId, true)
+      else gstHost.setAudioActive(hostStreamId, true)
+    }
+
     // MainAudio is bidirectional: a send port in the phone's request means it wants
-    // mic. Derive the input key (mirror of the output key), build the uplink, and
-    // bracket mic capture on this stream's active/stop. Over wireless the phone picks
-    // OPUS for the mic (PCM is USB-only), so the uplink encodes; the encode/capture rate
-    // is the negotiated OPUS rate (16k/24k/48k), independent of the downlink 48k.
-    let uplink: CpMicUplink | null = null
+    // mic. The input key is the mirror of the output key. Over wireless the phone
+    // picks OPUS for the mic (PCM is USB-only); the encode rate is the negotiated
+    // OPUS rate (16k/24k/48k), independent of the downlink 48k.
     const phoneMicPort = type === STREAM_TYPE_MAIN_AUDIO ? Number(sd.dataPort) || 0 : 0
-    // Frame duration from the phone's framesPerPacket (falls back to 20ms).
     const opusRate =
       fmt & 0x40000000 ? 48000 : fmt & 0x20000000 ? 24000 : fmt & 0x10000000 ? 16000 : 24000
     const micRate = isOpus ? opusRate : sampleRate
@@ -930,53 +977,48 @@ export class CpStack extends EventEmitter {
     const frameMs = framesPerPacket > 0 ? Math.round((framesPerPacket / micRate) * 1000) : 20
     // OPUS low-latency bitrate tiers (R6): 48k ≤24kHz, 64k ≤32kHz, 96k at 48kHz.
     const bitrate = micRate <= 24000 ? 48000 : micRate <= 32000 ? 64000 : 96000
-    if (phoneMicPort > 0) {
-      const inputKey = hkdfSha512(
-        shared,
-        `DataStream-Salt${streamId}`,
-        'DataStream-Input-Encryption-Key',
-        32
-      )
-      uplink = new CpMicUplink({
-        key: inputKey,
-        host: session.peerHost,
-        port: phoneMicPort,
-        sampleRate: micRate,
-        channels: micChannels,
-        payloadType: type,
-        codec: isOpus ? 'opus' : 'pcm',
-        frameMs,
-        bitrate,
-        label: prof.label
-      })
-    }
-    stream.on('active', (active: boolean) => {
-      this.emit('audio-active', prof, active)
-      if (!uplink) return
-      if (active) {
-        uplink.start()
-        this._activeUplinks.add(uplink)
+    const inputKey =
+      phoneMicPort > 0
+        ? hkdfSha512(shared, `DataStream-Salt${streamId}`, 'DataStream-Input-Encryption-Key', 32)
+        : null
+
+    // The host reports the first packet it received. That anchors the media clock for
+    // /feedback and brackets the mic, which runs while audio flows.
+    this._audioById.set(hostStreamId, {
+      prof,
+      inProcess: meta.inProcess,
+      started: (firstSample: number) => {
+        meta.origin = { firstSample, originNs: process.hrtime.bigint() }
+        if (!inputKey || meta.micStreamId != null) return
+        const micOpts = {
+          codec: isOpus ? ('opus' as const) : ('pcm' as const),
+          payloadType: type,
+          sampleRate: micRate,
+          channels: micChannels,
+          bitrate,
+          frameMs,
+          port: phoneMicPort,
+          phone: session.peerHost,
+          device: this.cfg.audioInputDevice?.() || undefined
+        }
+        if (meta.inProcess) {
+          const id = openMicUplink(inputKey, micOpts)
+          if (id == null) {
+            console.warn('[cpStack] mic uplink failed to open')
+            return
+          }
+          meta.micStreamId = id
+        } else {
+          meta.micStreamId = gstHost.openMic(inputKey, micOpts)
+        }
         this.emit('mic-active', true, micRate, micChannels)
-      } else {
-        uplink.stop()
-        this._activeUplinks.delete(uplink)
-        if (this._activeUplinks.size === 0) this.emit('mic-active', false, 0, 0)
       }
     })
-    // /feedback reports this stream's live media-clock anchor (its latest reception
-    // position + time) so the phone keeps the buffered stream fed.
-    session.audioMeta.push({
-      type,
-      sampleRate,
-      connectionID: streamId as PlistValue,
-      playoutLatencyMs: audioLatencyMs,
-      stream,
-      decoder,
-      uplink
-    })
-    const { dataPort, controlPort } = await stream.listen()
+
+    // /feedback reports this stream's live media-clock anchor.
+    session.audioMeta.push(meta)
     console.log(
-      `[cpStack] SETUP audio (type ${type}, audioType=${sd.audioType}, format=0x${fmt.toString(16)}, codec=${isAacLc ? 'aac-lc (gst decode)' : isOpus ? 'opus (gst decode)' : 'pcm'}, audioLatencyMs=${audioLatencyMs}, dataPort=${dataPort}, controlPort=${controlPort}, id=${streamId})`
+      `[cpStack] SETUP audio (type ${type}, audioType=${sd.audioType}, format=0x${fmt.toString(16)}, codec=${codec}, audioLatencyMs=${audioLatencyMs}, dataPort=${dataPort}, controlPort=${controlPort}, id=${streamId})`
     )
     // Echo the phone's streamConnectionID back: without it the phone
     // can't correlate our response to its request and tears the stream back down.
@@ -1007,7 +1049,10 @@ export class CpStack extends EventEmitter {
     if (session.iapRelay) return
     const sock = net.createConnection(CP_BT_SOCK_PATH)
     session.iapRelay = sock
-    sock.write(`tunnel ${session.pairVerify.controllerId ?? ''}\n`)
+    const mac = session.deviceBtMac || this.cfg.phoneBtMac?.() || ''
+    const cid = session.pairVerify.controllerId ?? ''
+    console.log(`[cpStack] opening iAP relay (cid=${cid}, btMac=${mac || 'unknown'})`)
+    sock.write(`tunnel ${cid} ${mac}`.trimEnd() + '\n')
     sock.on('data', (d: Buffer) => this._sendIapMessage(session, d))
     sock.on('error', (e) => console.warn(`[cpStack] iAP relay error: ${e.message}`))
     sock.on('close', () => {
@@ -1035,6 +1080,8 @@ export class CpStack extends EventEmitter {
       32
     )
     if (process.platform === 'linux') {
+      // The config atom is parsed in gst-host; the codec reported here is the advertised one.
+      const nativeCodec = this.cfg.hevc ? 'h265' : 'h264'
       if (isCluster) {
         const { port, receiverId } = await gstHost.openVideoReceiver(
           VIDEO_PLANE_CLUSTER_RECV,
@@ -1043,19 +1090,64 @@ export class CpStack extends EventEmitter {
         )
         session.clusterScreenNativeId = receiverId
         if (this._videoActive) gstHost.setActiveFeeder(receiverId, true)
-        console.log(`[cpStack] SETUP screen NATIVE (cluster, dataPort=${port}, id=${streamId})`)
+        if (!session.clusterCodecEmitted) {
+          this.emit('cluster-video-codec', nativeCodec)
+          session.clusterCodecEmitted = true
+        }
+        console.log(
+          `[cpStack] SETUP screen NATIVE (cluster, dataPort=${port}, id=${streamId}, codec=${nativeCodec})`
+        )
         return port
       }
       const { port, receiverId } = await gstHost.openVideoReceiver(VIDEO_PLANE_MAIN, key)
       session.screenNativeId = receiverId
       if (this._videoActive) gstHost.setActiveFeeder(receiverId, true)
+      if (!session.codecEmitted) {
+        this.emit('video-codec', nativeCodec)
+        session.codecEmitted = true
+      }
       if (!session.mainStreamReady) {
         session.mainStreamReady = true
         if (this._clusterWantActive) this._activateClusterStream(session)
       }
       this.emit('main-screen-ready')
-      console.log(`[cpStack] SETUP screen NATIVE (main, dataPort=${port}, id=${streamId})`)
+      console.log(
+        `[cpStack] SETUP screen NATIVE (main, dataPort=${port}, id=${streamId}, codec=${nativeCodec})`
+      )
       return port
+    }
+    // Without a host process the addon binds the port and feeds the plane directly; the config
+    // comes back through onNativeVideoConfig.
+    {
+      const planeId = isCluster ? VIDEO_PLANE_CLUSTER_RECV : VIDEO_PLANE_MAIN
+      const inProcPort = openScreenReceiver(planeId, key)
+      if (inProcPort > 0) {
+        const nativeCodec = this.cfg.hevc ? 'h265' : 'h264'
+        if (isCluster) {
+          session.clusterScreenNativeId = planeId
+          session.clusterScreenInProcess = true
+          if (!session.clusterCodecEmitted) {
+            this.emit('cluster-video-codec', nativeCodec)
+            session.clusterCodecEmitted = true
+          }
+        } else {
+          session.screenNativeId = planeId
+          session.screenInProcess = true
+          if (!session.codecEmitted) {
+            this.emit('video-codec', nativeCodec)
+            session.codecEmitted = true
+          }
+          if (!session.mainStreamReady) {
+            session.mainStreamReady = true
+            if (this._clusterWantActive) this._activateClusterStream(session)
+          }
+          this.emit('main-screen-ready')
+        }
+        console.log(
+          `[cpStack] SETUP screen NATIVE in-process (${isCluster ? 'cluster' : 'main'}, dataPort=${inProcPort}, id=${streamId}, codec=${nativeCodec})`
+        )
+        return inProcPort
+      }
     }
     const codec = this.cfg.hevc ? 'h265' : 'h264'
     const screen = new ScreenStream(key)
@@ -1097,12 +1189,26 @@ export class CpStack extends EventEmitter {
     return port
   }
 
+  /** Let this phone's audio streams reach the sink, or hold them back. */
+  setAudioActive(active: boolean): void {
+    this._audioActive = active
+    for (const session of this._sessionSock.keys()) {
+      for (const m of session.audioMeta) {
+        if (m.inProcess) setAudioReceiverActive(m.hostStreamId, active)
+        else gstHost.setAudioActive(m.hostStreamId, active)
+      }
+    }
+  }
+
   /** Mark this phone's native video receivers as the active feeders (or not) of the shared planes. */
   setVideoActive(active: boolean): void {
     this._videoActive = active
+    // An in-process receiver has no feeder switch; only the host's receivers are told.
     for (const session of this._sessionSock.keys()) {
-      if (session.screenNativeId != null) gstHost.setActiveFeeder(session.screenNativeId, active)
-      if (session.clusterScreenNativeId != null) {
+      if (session.screenNativeId != null && !session.screenInProcess) {
+        gstHost.setActiveFeeder(session.screenNativeId, active)
+      }
+      if (session.clusterScreenNativeId != null && !session.clusterScreenInProcess) {
         gstHost.setActiveFeeder(session.clusterScreenNativeId, active)
       }
     }
@@ -1122,13 +1228,23 @@ export class CpStack extends EventEmitter {
 
   forceMainKeyframe(): void {
     const s = this._active
-    if (!s || !s.mainStreamReady) return
+    if (!s || !s.mainStreamReady) {
+      console.log('[cpStack] forceMainKeyframe skipped (stream not ready)')
+      return
+    }
+    console.log('[cpStack] forceKeyFrame -> main')
     this._sendEventCommand(s, encodeBplist({ type: 'forceKeyFrame', params: { uuid: MAIN_UUID } }))
   }
 
   forceClusterKeyframe(): void {
     const s = this._active
-    if (!s || !s.mainStreamReady || !this._clusterWantActive) return
+    if (!s || !s.mainStreamReady || !this._clusterWantActive) {
+      console.log(
+        `[cpStack] forceClusterKeyframe skipped (ready=${!!s?.mainStreamReady} wantActive=${this._clusterWantActive})`
+      )
+      return
+    }
+    console.log('[cpStack] forceKeyFrame -> cluster')
     this._sendEventCommand(s, encodeBplist({ type: 'forceKeyFrame', params: { uuid: ALT_UUID } }))
   }
 

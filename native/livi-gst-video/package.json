@@ -1,0 +1,7 @@
+{
+  "name": "livi-gst-video",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LIVI native GStreamer video addon \u2014 cargo-built (crate gst-video-addon)",
+  "main": "index.js"
+}

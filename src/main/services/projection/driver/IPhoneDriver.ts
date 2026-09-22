@@ -49,6 +49,8 @@ export interface IPhoneDriver extends EventEmitter {
 
   /** Forward host-side audio (mic, TTS) towards the phone. */
   sendPhoneAudio?(pcm: Int16Array, decodeType: number): void
+  /** Sets the level of the driver's audio streams of this audioType. */
+  setStreamVolume?(audioType: number, level: number, rampMs: number): void
 
   /** Upload the host app icons (120/180/256) to the phone. */
   uploadHostIcons?(icon120: Buffer, icon180: Buffer, icon256: Buffer): void

@@ -69,6 +69,8 @@ export interface ProtoTypes {
   BatteryStatusNotification: protobuf.Type
   /** aap_protobuf.service.phonestatus.message.PhoneStatus (signal_strength, calls) */
   PhoneStatus: protobuf.Type
+  BluetoothPairingRequest: protobuf.Type
+  BluetoothPairingResponse: protobuf.Type
 
   // ── AV channels (still oaa — wire-compatible, migrate in phase 2) ────────
   AVChannelSetupRequest: protobuf.Type
@@ -105,6 +107,8 @@ export async function loadProtos(): Promise<ProtoTypes> {
     path.join(PROTO_ROOT, 'aap_protobuf/service/control/message/AuthResponse.proto'),
     path.join(PROTO_ROOT, 'aap_protobuf/service/control/message/BatteryStatusNotification.proto'),
     path.join(PROTO_ROOT, 'aap_protobuf/service/phonestatus/message/PhoneStatus.proto'),
+    path.join(PROTO_ROOT, 'aap_protobuf/service/bluetooth/message/BluetoothPairingRequest.proto'),
+    path.join(PROTO_ROOT, 'aap_protobuf/service/bluetooth/message/BluetoothPairingResponse.proto'),
 
     // --- legacy oaa/ AV setup + misc (wire-compatible with aap_protobuf) --
     path.join(PROTO_ROOT, 'oaa/av/AVChannelSetupRequestMessage.proto'),
@@ -140,6 +144,8 @@ export async function loadProtos(): Promise<ProtoTypes> {
     PhoneStatusService: root.lookupType(`${svc}.phonestatus.PhoneStatusService`),
     BatteryStatusNotification: root.lookupType(`${ctrl}.BatteryStatusNotification`),
     PhoneStatus: root.lookupType(`${svc}.phonestatus.message.PhoneStatus`),
+    BluetoothPairingRequest: root.lookupType(`${svc}.bluetooth.message.BluetoothPairingRequest`),
+    BluetoothPairingResponse: root.lookupType(`${svc}.bluetooth.message.BluetoothPairingResponse`),
 
     AVChannelSetupRequest: root.lookupType('oaa.proto.messages.AVChannelSetupRequest'),
     AVChannelSetupResponse: root.lookupType('oaa.proto.messages.AVChannelSetupResponse'),

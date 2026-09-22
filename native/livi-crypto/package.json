@@ -1,0 +1,7 @@
+{
+  "name": "livi-crypto",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LIVI native ChaCha20-Poly1305 (RFC 8439) for CarPlay frame crypto \u2014 cargo-built N-API addon (crate livi-crypto-node, aws-lc-rs)",
+  "main": "index.js"
+}

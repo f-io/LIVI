@@ -459,4 +459,73 @@ describe('useMediaState', () => {
 
     expect(result.current.livePlayMs).toBe(0)
   })
+
+  it('stalls and falls back to the reported play time when the phone stops reporting progress', async () => {
+    mockReadMedia.mockResolvedValueOnce({
+      timestamp: '2025-01-01T00:00:00Z',
+      payload: {
+        type: 1,
+        media: { MediaPlayStatus: 1, MediaSongDuration: 600000, MediaSongPlayTime: 1000 }
+      }
+    })
+    const { result } = renderHook(() => useMediaState(true))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.stalled).toBe(false)
+
+    await act(async () => {
+      vi.advanceTimersByTime(2000)
+      await Promise.resolve()
+    })
+    expect(result.current.stalled).toBe(false)
+    expect(result.current.livePlayMs).toBeGreaterThan(1000)
+
+    await act(async () => {
+      vi.advanceTimersByTime(1500)
+      await Promise.resolve()
+    })
+    expect(result.current.stalled).toBe(true)
+    expect(result.current.livePlayMs).toBe(1000)
+
+    const frozen = result.current.livePlayMs
+    await act(async () => {
+      vi.advanceTimersByTime(5000)
+      await Promise.resolve()
+    })
+    expect(result.current.livePlayMs).toBe(frozen)
+  })
+
+  it('leaves the stall as soon as the phone reports a new play time', async () => {
+    let handler: (ev: unknown, ...args: unknown[]) => void = () => {}
+    mockOnEvent.mockImplementationOnce((cb) => {
+      handler = cb
+      return vi.fn()
+    })
+    mockReadMedia.mockResolvedValueOnce({
+      timestamp: '2025-01-01T00:00:00Z',
+      payload: {
+        type: 1,
+        media: { MediaPlayStatus: 1, MediaSongDuration: 600000, MediaSongPlayTime: 1000 }
+      }
+    })
+    const { result } = renderHook(() => useMediaState(true))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    await act(async () => {
+      vi.advanceTimersByTime(3500)
+      await Promise.resolve()
+    })
+    expect(result.current.stalled).toBe(true)
+
+    const media = { MediaPlayStatus: 1, MediaSongDuration: 600000, MediaSongPlayTime: 2000 }
+    ;(payloadFromLiveEvent as Mock).mockReturnValue({ type: 1, media })
+    ;(mergePayload as Mock).mockReturnValue({ type: 1, media })
+    act(() => {
+      handler({}, { type: 'media', payload: { payload: { media } } })
+    })
+    expect(result.current.stalled).toBe(false)
+    expect(result.current.livePlayMs).toBe(2000)
+  })
 })

@@ -9,8 +9,8 @@
  *           │  on 'change'
  *           ▼
  *   ┌──────────────────┬───────────────┬───────────────┐
- *   │ liviDashAdapt    │   aaAdapter   │ dongleAdapter │
- *   │ (IPC → Renderer) │  (AaDriver)   │ (DongleDriver)│
+ *   │ liviDashAdapt    │   aaAdapter   │
+ *   │ (IPC → Renderer) │  (AaDriver)   │
  *   └──────────────────┴───────────────┴───────────────┘
  *
  */
@@ -25,7 +25,6 @@ import { ipcMain } from 'electron'
 import { attachAaAdapter } from './adapters/aaAdapter'
 import { attachBlinkerSound } from './adapters/blinkerSoundAdapter'
 import { attachCpAdapter } from './adapters/cpAdapter'
-import { attachDongleAdapter } from './adapters/dongleAdapter'
 import { attachLiviDashAdapter } from './adapters/liviDashAdapter'
 import { attachGnss } from './gnss/attachGnss'
 import { attachGpsPersist } from './gpsPersist'
@@ -90,7 +89,6 @@ export function setupTelemetry({
   })
 
   let offAa: (() => void) | null = null
-  let offDongle: (() => void) | null = null
   let offCp: (() => void) | null = null
   let offPlugHook: (() => void) | null = null
   let offBlinker: (() => void) | null = null
@@ -104,16 +102,11 @@ export function setupTelemetry({
       store,
       getAaDriver: () => projectionService.getAaDriver()
     })
-    const dongle = attachDongleAdapter({
-      store,
-      getDongleDriver: () => projectionService.getDongleDriver()
-    })
     const cp = attachCpAdapter({
       store,
       getCpDriver: () => projectionService.getCpDriver()
     })
     offAa = aa.off
-    offDongle = dongle.off
     offCp = cp.off
 
     offPlugHook = projectionService.addPluggedHook(() => {
@@ -121,11 +114,6 @@ export function setupTelemetry({
         aa.hydrate()
       } catch (e) {
         console.warn('[setupTelemetry] aa.hydrate threw (ignored)', e)
-      }
-      try {
-        dongle.hydrate()
-      } catch (e) {
-        console.warn('[setupTelemetry] dongle.hydrate threw (ignored)', e)
       }
       try {
         cp.hydrate()
@@ -146,7 +134,6 @@ export function setupTelemetry({
       gnss.dispose()
       offDash()
       offAa?.()
-      offDongle?.()
       offCp?.()
       offPlugHook?.()
       offBlinker?.()

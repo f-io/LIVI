@@ -10,7 +10,7 @@ const applyBtList = vi.fn()
 
 const statusState = {
   isDongleHardwarePresent: true,
-  activeProtocol: null as 'carplay' | 'androidauto' | 'dongle' | null
+  activeProtocol: null as 'carplay' | 'androidauto' | null
 }
 const liviState = {
   settings: { some: 'settings', wirelessAaEnabled: false } as Record<string, unknown>,

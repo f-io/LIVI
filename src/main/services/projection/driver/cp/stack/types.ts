@@ -57,6 +57,12 @@ export interface CpStackConfig {
   sourceVersion: string
   /** HW-decodable codecs advertised to the phone (Pi5: hevc only, Pi4: h264 only). */
   hevc: boolean
+  /** Tunnel-header fallback when the SETUP carried no deviceID. */
+  phoneBtMac?: () => string
+  /** The sink the audio streams play out on, empty for the system default. */
+  audioDevice?: () => string
+  /** The source the microphone stream captures from. */
+  audioInputDevice?: () => string
   h264: boolean
   /** Main (centre) screen. */
   main: CpDisplayConfig
@@ -74,6 +80,8 @@ export interface CpStackConfig {
   oemLabel: string
   /** OEM app icons (PNG) the phone shows on the CarPlay homescreen. */
   icons: CpIcon[]
+  /** True for a right-hand-drive car, so the phone mirrors the CarPlay dock. */
+  rightHandDrive: boolean
 }
 
 /** One CarPlay homescreen icon variant (PNG bytes at a given pixel size). */

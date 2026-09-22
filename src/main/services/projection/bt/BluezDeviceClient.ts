@@ -1,7 +1,7 @@
 import * as net from 'net'
 
 /**
- * Client for the aa-bluetooth.py helper IPC socket.
+ * Client for the livi-helperd IPC socket.
  *
  * Protocol-agnostic BlueZ device management (list_paired / connect / disconnect /
  * remove), shared by every projection path (Android Auto and CarPlay alike).
@@ -98,6 +98,11 @@ export class BluezDeviceClient {
     return (await this.request(`connect-full ${mac}`, timeoutMs)) as ActionResponse
   }
 
+  // Tear down one profile connection (BlueZ Device1.DisconnectProfile)
+  async disconnectProfile(mac: string, uuid: string, timeoutMs = 10000): Promise<ActionResponse> {
+    return (await this.request(`disconnect-profile ${mac} ${uuid}`, timeoutMs)) as ActionResponse
+  }
+
   // Tear down the BT connection (BlueZ Device1.Disconnect)
   async disconnect(mac: string, timeoutMs = 10000): Promise<ActionResponse> {
     return (await this.request(`disconnect ${mac}`, timeoutMs)) as ActionResponse
@@ -113,9 +118,25 @@ export class BluezDeviceClient {
     return (await this.request(`wired-phones ${JSON.stringify(ids)}`, timeoutMs)) as ActionResponse
   }
 
+  // Where the call audio goes: the pipeline's feed and stream id, nothing to stop
+  async setScoSink(feed?: string, streamId?: number, timeoutMs = 5000): Promise<ActionResponse> {
+    const arg = feed && streamId != null ? ` ${feed} ${streamId}` : ''
+    return (await this.request(`sco-sink${arg}`, timeoutMs)) as ActionResponse
+  }
+
   // Kick every associated Wi-Fi station off the AP
   async deauthApClients(timeoutMs = 5000): Promise<ActionResponse> {
     return (await this.request('deauth-ap', timeoutMs)) as ActionResponse
+  }
+
+  // Ends the wired Android Auto sessions
+  async restartUsb(timeoutMs = 5000): Promise<ActionResponse> {
+    return (await this.request('restart-usb', timeoutMs)) as ActionResponse
+  }
+
+  /** Mirrors the active session's play state into the helper's AVRCP player. */
+  async setPlaybackStatus(state: 'playing' | 'paused' | 'stopped'): Promise<ActionResponse> {
+    return (await this.request(`playback-status ${state}`)) as ActionResponse
   }
 
   // Open a event subscription
@@ -128,6 +149,11 @@ export class BluezDeviceClient {
       btMac?: string
       instanceId?: string
       usbSerial?: string
+      up?: boolean
+      pct?: number
+      mtu?: number
+      socket?: string
+      peer?: string
     }) => void,
     onClose?: () => void,
     onOpen?: () => void

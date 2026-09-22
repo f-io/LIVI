@@ -8,26 +8,15 @@ export type BtPairedRegistryDeps = {
 }
 
 /**
- * Owns the combined Bluetooth paired-list state: the two raw sources (host BlueZ
- * and dongle firmware), the name/connected cache derived from the host list, and
- * the merge that the device picker consumes.
+ * Owns the Bluetooth paired-list state: the host BlueZ raw source, the name/connected
+ * cache derived from it, and the list the device picker consumes.
  */
 export class BtPairedRegistry {
   private hostPairedRaw = ''
-  private donglePairedRaw = ''
   private btNameByMac = new Map<string, string>()
   private connectedBtMac = ''
 
   constructor(private readonly deps: BtPairedRegistryDeps) {}
-
-  setDonglePairedRaw(raw: string): void {
-    this.donglePairedRaw = raw
-    this.emitCombined()
-  }
-
-  clearDongleRaw(): void {
-    this.donglePairedRaw = ''
-  }
 
   getName(macUpper: string): string | undefined {
     return this.btNameByMac.get(macUpper)
@@ -67,7 +56,7 @@ export class BtPairedRegistry {
     return { connectedMac: connected, phones }
   }
 
-  // Merge dongle + host lists (dongle wins on MAC collision) and emit the combined list.
+  // Emit the host paired list.
   emitCombined(): void {
     if (!this.deps.hasRenderer()) return
     const parse = (raw: string): Array<{ mac: string; line: string }> => {
@@ -81,10 +70,7 @@ export class BtPairedRegistry {
       }
       return out
     }
-    const dongle = parse(this.donglePairedRaw)
-    const dongleMacs = new Set(dongle.map((d) => d.mac))
-    const host = parse(this.hostPairedRaw).filter((h) => !dongleMacs.has(h.mac))
-    const all = [...dongle, ...host]
+    const all = parse(this.hostPairedRaw)
     const raw = all.length ? all.map((d) => d.line).join('\n') + '\n' : ''
     this.deps.emit({ type: 'bluetoothPairedList', payload: raw })
   }

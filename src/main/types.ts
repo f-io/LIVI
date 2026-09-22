@@ -1,7 +1,6 @@
 import { NULL_DELETES } from '@main/constants'
 import { ProjectionService } from '@main/services/projection/services/ProjectionService'
 import { TelemetrySocket } from '@main/services/Socket'
-import { USBService } from '@main/services/usb/USBService'
 import type { Config } from '@shared/types'
 
 export type UpdateSessionState = 'idle' | 'downloading' | 'ready' | 'installing'
@@ -27,7 +26,6 @@ export interface GhRelease {
 
 export interface ServicesProps {
   projectionService: ProjectionService
-  usbService: USBService
   telemetrySocket: TelemetrySocket
 }
 

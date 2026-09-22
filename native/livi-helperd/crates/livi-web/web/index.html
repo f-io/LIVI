@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LIVI Link</title>
+<style>
+  :root { color-scheme: dark; --bg:#0b0d12; --fg:#e6e8ee; --dim:#8a92a5; --acc:#4dd0e1; --card:#151924; --br:#242938; --warn:#ff6b6b; --ok:#7ee787; }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 14px/1.5 -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--fg); padding: 24px 16px; }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h1 small { color:var(--dim); font-size: 13px; font-weight: 400; margin-left: 8px; }
+  h2 { font-size: 13px; font-weight: 600; color:var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin: 24px 0 8px; }
+  .card { background:var(--card); border:1px solid var(--br); border-radius: 10px; padding: 14px 16px; }
+  .kv { display:grid; grid-template-columns: 140px 1fr; gap: 6px 12px; }
+  .kv dt { color:var(--dim); }
+  .kv dd { margin:0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .status { color: var(--acc); }
+  .row { display:flex; gap:10px; align-items:center; }
+  label.file { display:inline-flex; align-items:center; gap:8px; padding:8px 12px; background:#0b0d12; border:1px solid var(--br); border-radius:8px; cursor:pointer; font-size:13px; }
+  label.file input { display:none; }
+  label.switch { display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--dim); cursor:pointer; }
+  label.switch input { position:absolute; opacity:0; width:0; height:0; }
+  label.switch .track { width:34px; height:20px; border-radius:10px; background:var(--br); position:relative; transition:background .15s; }
+  label.switch .track::after { content:''; position:absolute; top:3px; left:3px; width:14px; height:14px; border-radius:50%; background:var(--dim); transition:transform .15s, background .15s; }
+  label.switch input:checked + .track { background:#1d4a52; }
+  label.switch input:checked + .track::after { transform:translateX(14px); background:var(--acc); }
+  label.switch input:focus-visible + .track { outline:2px solid var(--acc); outline-offset:2px; }
+  button { appearance:none; border:1px solid var(--br); background:#0b0d12; color:var(--fg); padding:8px 14px; border-radius:8px; cursor:pointer; font: inherit; }
+  button:hover:not(:disabled) { border-color: var(--acc); color: var(--acc); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.danger { border-color:#3a1e21; color:var(--warn); }
+  button.danger:hover:not(:disabled) { border-color:var(--warn); background:#1b0e10; }
+  .flash-row { display:grid; grid-template-columns: 60px 1fr auto; gap:10px; align-items:center; padding: 8px 0; border-bottom: 1px solid var(--br); }
+  .flash-row:last-child { border-bottom: 0; }
+  .flash-row .slot { font-family: ui-monospace, monospace; color: var(--acc); }
+  .flash-row .name { color: var(--dim); font-size: 12px; }
+  .msg { margin-top: 10px; font-family: ui-monospace, monospace; font-size: 12px; min-height: 1.4em; }
+  .msg.ok { color: var(--ok); }
+  .msg.err { color: var(--warn); }
+  .led-grid { display:grid; grid-template-columns: 140px 1fr; gap: 10px 12px; align-items: center; }
+  .led-grid .label { color: var(--dim); }
+  input[type="color"] { width: 48px; height: 32px; padding: 0; border: 1px solid var(--br); background: #0b0d12; border-radius: 6px; cursor: pointer; }
+  input[type="range"] { width: 100%; accent-color: var(--acc); }
+  .val { font-family: ui-monospace, monospace; color: var(--acc); font-size: 12px; margin-left: 6px; }
+
+  .progress { width: 100%; height: 8px; margin-top: 8px; appearance: none; }
+  .progress::-webkit-progress-bar { background: #0b0d12; border: 1px solid var(--br); border-radius: 4px; }
+  .progress::-webkit-progress-value { background: var(--acc); border-radius: 4px; transition: width 0.1s linear; }
+  .progress::-moz-progress-bar { background: var(--acc); border-radius: 4px; }
+</style>
+<main>
+  <h1>LIVI Link <small id="host">livi-link.local</small></h1>
+  <p class="status">● online</p>
+
+  <h2>Device</h2>
+  <div class="card">
+    <dl class="kv">
+      <dt>Model</dt><dd id="model">loading…</dd>
+      <dt>Firmware</dt><dd id="firmware">loading…</dd>
+      <dt>Kernel</dt><dd id="kernel">loading…</dd>
+      <dt>Uptime</dt><dd id="uptime">loading…</dd>
+      <dt>Load</dt><dd id="load">loading…</dd>
+      <dt>Memory</dt><dd id="mem">loading…</dd>
+      <dt>USB0 MAC</dt><dd id="mac">loading…</dd>
+    </dl>
+  </div>
+
+  <h2>WiFi</h2>
+  <div class="card">
+    <dl class="kv">
+      <dt>SSID</dt><dd id="wifi-ssid">loading…</dd>
+      <dt>MAC</dt><dd id="wifi-mac">loading…</dd>
+      <dt>Band</dt><dd id="wifi-band">loading…</dd>
+      <dt>Channel</dt><dd id="wifi-ch">loading…</dd>
+      <dt>Width</dt><dd id="wifi-width">loading…</dd>
+      <dt>Clients</dt><dd id="wifi-clients">loading…</dd>
+      <dt>Link &#8595;</dt><dd id="wifi-down">&mdash;</dd>
+      <dt>Link &#8593;</dt><dd id="wifi-up">&mdash;</dd>
+    </dl>
+  </div>
+
+  <h2>Bluetooth</h2>
+  <div class="card">
+    <dl class="kv">
+      <dt>Name</dt><dd id="bt-name">—</dd>
+      <dt>MAC</dt><dd id="bt-mac">loading…</dd>
+      <dt>State</dt><dd id="bt-state">loading…</dd>
+    </dl>
+  </div>
+
+  <section id="sec-led" hidden>
+  <h2>LED</h2>
+  <div class="card">
+    <div class="led-grid">
+      <span class="label">Status color</span>
+      <span><input type="color" id="led-color" value="#4dd0e1"></span>
+      <span class="label">Brightness<span class="val" id="led-brightness-val">20%</span></span>
+      <input type="range" id="led-brightness" min="0" max="100" value="20">
+    </div>
+  </div>
+  </section>
+
+  <section id="sec-flash" hidden>
+  <h2>Firmware</h2>
+  <div class="card">
+    <div class="flash-row">
+      <div class="slot">update</div>
+      <div class="name" id="ota-state">not checked</div>
+      <div class="row">
+        <label class="switch">Nightly <input type="checkbox" id="ota-nightly"><span class="track"></span></label>
+        <button id="ota-check">Check</button>
+        <button id="ota-install" hidden>Update</button>
+      </div>
+    </div>
+    <div class="flash-row">
+      <div class="slot" id="flash-slot">firmware</div>
+      <div class="name" id="flash-name">upload</div>
+      <label class="file">Upload <input type="file" id="flash-input"></label>
+    </div>
+  </div>
+  </section>
+
+  <h2>Status</h2>
+  <div class="card">
+    <div class="msg" id="status-msg">idle.</div>
+    <progress class="progress" id="status-progress" max="100" value="0" hidden></progress>
+  </div>
+
+  <h2>Actions</h2>
+  <div class="card row" style="justify-content:flex-end">
+    <button id="reboot" class="danger">Reboot dongle</button>
+  </div>
+</main>
+<script>
+// Previous wifi byte sample, so /api/wifi's counters become a throughput between polls.
+let wifiPrev = null;
+async function tick() {
+  try {
+    const r = await fetch('/api/status');
+    if (r.ok) {
+      const s = await r.json();
+      for (const k of ['model','kernel','uptime','load','mem','mac']) document.getElementById(k).textContent = s[k];
+      document.getElementById('firmware').textContent = `${s.version} (${s.build})`;
+      installed = { target: s.target, version: s.version, build: s.build };
+    }
+  } catch {}
+  try {
+    const r = await fetch('/api/bt');
+    if (r.ok) {
+      const b = await r.json();
+      document.getElementById('bt-name').textContent = b.name || '—';
+      document.getElementById('bt-mac').textContent = b.mac || '—';
+      document.getElementById('bt-state').textContent = b.state || '—';
+    }
+  } catch {}
+  try {
+    const r = await fetch('/api/wifi');
+    if (r.ok) {
+      const w = await r.json();
+      document.getElementById('wifi-ssid').textContent = w.ssid || '—';
+      document.getElementById('wifi-mac').textContent = w.mac || '—';
+      document.getElementById('wifi-band').textContent = w.band || '—';
+      document.getElementById('wifi-ch').textContent = w.channel || '—';
+      document.getElementById('wifi-width').textContent = w.width ? w.width + ' MHz' : '—';
+      document.getElementById('wifi-clients').textContent = w.clients ?? '—';
+      const now = Date.now();
+      const leg = (mbps, phy) => (phy > 0 ? mbps.toFixed(1) + ' Mbps · ' + phy + ' PHY' : mbps.toFixed(1) + ' Mbps');
+      if (wifiPrev && typeof w.downbytes === 'number' && typeof w.upbytes === 'number') {
+        const dt = (now - wifiPrev.t) / 1000;
+        const rate = (a, b) => (dt > 0 && b >= a ? ((b - a) * 8) / dt / 1e6 : 0);
+        document.getElementById('wifi-down').textContent = leg(rate(wifiPrev.down, w.downbytes), w.downrate || 0);
+        document.getElementById('wifi-up').textContent = leg(rate(wifiPrev.up, w.upbytes), w.uprate || 0);
+      }
+      wifiPrev = { down: w.downbytes, up: w.upbytes, t: now };
+    }
+  } catch {}
+}
+tick(); setInterval(tick, 2000);
+
+// LED: load current, wire controls with debounce
+const ledColor = document.getElementById('led-color');
+const ledBri   = document.getElementById('led-brightness');
+const ledBriV  = document.getElementById('led-brightness-val');
+const ledMsg = document.getElementById('status-msg');
+
+// Which sections this dongle offers. flash is an object of the writes it supports:
+// mtd (a .lfwb bundle), stack (upload the .gz), rootfs (restore a full image).
+let CAPS = { flash: {}, led: false };
+(async () => {
+  try {
+    CAPS = await (await fetch('/api/caps')).json();
+    if (CAPS.led) document.getElementById('sec-led').hidden = false;
+    const f = CAPS.flash || {};
+    if (f.mtd || f.stack || f.rootfs) {
+      document.getElementById('sec-flash').hidden = false;
+      const slot = document.getElementById('flash-slot');
+      const name = document.getElementById('flash-name');
+      if (f.stack || f.rootfs) {
+        const bits = [];
+        if (f.stack)  bits.push('.gz firmware update');
+        if (f.rootfs) bits.push('.img firmware restore');
+        slot.textContent = 'firmware';
+        name.textContent = bits.join(' · ');
+      } else {
+        slot.textContent = '.lfwb';
+        name.textContent = 'firmware bundle';
+      }
+    }
+  } catch {}
+})();
+
+(async () => {
+  try {
+    const r = await fetch('/api/led');
+    if (r.ok) {
+      const l = await r.json();
+      if (l.status_color) ledColor.value = l.status_color;
+      if (typeof l.brightness === 'number') { ledBri.value = l.brightness; ledBriV.textContent = l.brightness + '%'; }
+    }
+  } catch {}
+})();
+
+let ledTimer;
+function ledPush() {
+  clearTimeout(ledTimer);
+  ledTimer = setTimeout(async () => {
+    const body = `status_color=${encodeURIComponent(ledColor.value)}&brightness=${ledBri.value}`;
+    try {
+      const r = await fetch('/api/led', { method: 'POST', body,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+      const j = await r.json();
+      ledMsg.textContent = j.ok ? '' : (j.error || 'led update failed');
+      ledMsg.className = 'msg ' + (j.ok ? 'ok' : 'err');
+    } catch (e) { ledMsg.textContent = String(e); ledMsg.className = 'msg err'; }
+  }, 150);
+}
+ledColor.addEventListener('input', ledPush);
+ledBri.addEventListener('input',   () => { ledBriV.textContent = ledBri.value + '%'; ledPush(); });
+
+const msg = document.getElementById('status-msg');
+let sayTimer = null;
+function say(txt, cls) {
+  msg.textContent = txt;
+  msg.className = 'msg ' + (cls || '');
+  if (sayTimer) clearTimeout(sayTimer);
+  // Any status message auto-fades to "idle." after 15 s of quiet — covers
+  // the case where a reboot cycle happens too fast for our connectivity
+  // tracker to notice a drop, so the "reboot requested" line lingers.
+  sayTimer = setTimeout(() => {
+    msg.textContent = 'idle.';
+    msg.className = 'msg';
+    sayTimer = null;
+  }, 15000);
+}
+
+const bar = document.getElementById('status-progress');
+function fmtKB(n) { return (n/1024).toFixed(0) + ' KiB'; }
+
+async function flashFile(file, sha) {
+  say(`Uploading ${fmtKB(file.size)}…`);
+  bar.hidden = false; bar.value = 0;
+
+  const xhr = new XMLHttpRequest();
+  let writePoll = null;
+  xhr.upload.addEventListener('progress', e => {
+    if (e.lengthComputable) {
+      const pct = (e.loaded / e.total) * 100;
+      bar.value = pct;
+      say(`Uploading ${fmtKB(e.loaded)} / ${fmtKB(e.total)} (${pct.toFixed(0)}%)…`);
+    }
+  });
+  // Poll the server's /api/flash/status right away. While the upload is
+  // still in flight the server has no progress to report (idle) — but as
+  // soon as the server starts the NOR write it takes over the bar/msg.
+  // Message policy: `write` always updates (user wants live KB progress).
+  // `verify` sticks for 1.2 s so it does not flicker past. `compare` /
+  // `unchanged` are too transient to be readable — bar still moves, msg stays.
+  let lastPhaseKey = '';
+  let phaseAt = 0;
+  const HOLD_MS = 1200;
+  writePoll = setInterval(async () => {
+    try {
+      const r = await fetch('/api/flash/status');
+      if (!r.ok) return;
+      const j = await r.json();
+      if (j.phase === 'idle' || !j.total) return;
+      const pct = (j.written / j.total) * 100;
+      bar.value = pct;
+      const n = j.node || '?';
+      const key = j.phase + '@' + n;
+      const now = Date.now();
+      // Shorten mtdblockN → mtdN for display.
+      const short = n.replace(/^mtdblock/, 'mtd');
+      if (j.phase === 'write') {
+        say(`${short} writing… ${pct.toFixed(0)}%`);
+        lastPhaseKey = key; phaseAt = now;
+      } else if (j.phase === 'verify') {
+        if (key !== lastPhaseKey && (now - phaseAt) > HOLD_MS) {
+          say(`${short} verifying…`);
+          lastPhaseKey = key; phaseAt = now;
+        }
+      } else if (j.phase === 'done') {
+        say(`Rebooting…`, 'ok');
+      } else if (j.phase === 'error') {
+        say(`${short} flash error`, 'err');
+      }
+      // compare / unchanged: intentionally do not touch msg.
+    } catch {}
+  }, 250);
+  xhr.addEventListener('load', () => {
+    if (writePoll) { clearInterval(writePoll); writePoll = null; }
+    bar.hidden = true;
+    try {
+      const j = JSON.parse(xhr.responseText);
+      if (j.ok) say(j.message + '', 'ok');
+      else      say(j.error || 'flash failed', 'err');
+    } catch { say('server returned non-JSON: ' + xhr.responseText.slice(0, 200), 'err'); }
+  });
+  xhr.addEventListener('error', () => { bar.hidden = true; say('network error during upload', 'err'); });
+  xhr.addEventListener('abort', () => { bar.hidden = true; say('upload aborted', 'err'); });
+  // One endpoint; the dongle routes by the file. A .lfwb bundle and a gzipped stack carry their
+  // own integrity, a raw rootfs image does not — so the browser hashes that and the dongle rechecks.
+  const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+  const selfChecked = (head[0] === 0x1f && head[1] === 0x8b) ||
+                      (head[0] === 0x4c && head[1] === 0x46 && head[2] === 0x57 && head[3] === 0x42);
+  let url = sha ? '/api/flash?sha=' + sha : '/api/flash';
+  if (!sha && !selfChecked) {
+    say('Hashing image…');
+    try {
+      const dig = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+      const sha = [...new Uint8Array(dig)].map(b => b.toString(16).padStart(2, '0')).join('');
+      url = '/api/flash?sha=' + sha;
+    } catch (e) { bar.hidden = true; say('sha256 failed: ' + e, 'err'); return; }
+  }
+  xhr.open('POST', url);
+  xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+  xhr.send(file);
+}
+
+document.querySelectorAll('input[type=file]').forEach(inp => {
+  inp.addEventListener('change', async () => {
+    const file = inp.files[0]; if (!file) return;
+    inp.value = '';
+    if (!confirm(`Flash ${fmtKB(file.size)}? The dongle will restart or reboot.`)) return;
+    await flashFile(file);
+  });
+});
+
+// Firmware updates.
+const OTA_REPO = 'f-io/LIVI';
+const otaState = document.getElementById('ota-state');
+const otaNightly = document.getElementById('ota-nightly');
+const otaInstall = document.getElementById('ota-install');
+let installed = null;   // { target, version, build } from /api/status
+let offered = null;     // { base, version, build, file, size, sha256 }
+
+// The update channel lives on the dongle.
+(async () => {
+  try { otaNightly.checked = (await (await fetch('/api/update')).json()).nightly === true; } catch {}
+})();
+otaNightly.addEventListener('change', async () => {
+  offered = null; otaInstall.hidden = true; otaState.textContent = 'not checked';
+  try {
+    const r = await fetch('/api/update', { method: 'POST', body: JSON.stringify({ nightly: otaNightly.checked ? 1 : 0 }) });
+    if (!r.ok) throw new Error((await r.json()).error || r.status);
+  } catch (e) {
+    otaNightly.checked = !otaNightly.checked;
+    say('could not save the update channel: ' + (e.message || e), 'err');
+  }
+});
+
+function cmpVersion(a, b) {
+  const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
+async function otaRelease() {
+  const forced = new URLSearchParams(location.search).get('ref');
+  if (forced) return { name: forced, ref: forced, assets: null };
+  const feed = otaNightly.checked ? 'releases/tags/nightly' : 'releases/latest';
+  const r = await fetch(`https://api.github.com/repos/${OTA_REPO}/${feed}`, { cache: 'no-store' });
+  if (r.status === 404) throw new Error(otaNightly.checked ? 'there is no nightly' : 'there is no release');
+  if (!r.ok) throw new Error(`release feed: ${r.status}`);
+  const rel = await r.json();
+  return { name: rel.name || rel.tag_name, ref: otaNightly.checked ? rel.target_commitish : rel.tag_name, assets: rel.assets || [] };
+}
+
+document.getElementById('ota-check').addEventListener('click', async () => {
+  offered = null; otaInstall.hidden = true;
+  otaState.textContent = 'checking…';
+  try {
+    if (!installed) throw new Error('the dongle has not reported its firmware yet');
+    const rel = await otaRelease();
+    const base = `https://raw.githubusercontent.com/${OTA_REPO}/${rel.ref}/assets/livi-link/${installed.target}`;
+    const r = await fetch(`${base}/firmware.json`, { cache: 'no-store' });
+    if (r.status === 404) throw new Error(`${rel.name} carries no firmware for this dongle`);
+    if (!r.ok) throw new Error(`firmware.json: ${r.status}`);
+    const fw = await r.json();
+    if (rel.assets) {
+      const asset = rel.assets.find(a => a.name === fw.file);
+      if (!asset) throw new Error(`${rel.name} carries no firmware for this dongle`);
+      if (asset.size !== fw.size || (asset.digest && asset.digest !== 'sha256:' + fw.sha256)) {
+        throw new Error(`${fw.file} is not the file ${rel.name} carries`);
+      }
+    }
+    if (fw.build === installed.build) {
+      otaState.textContent = `Up to date: ${fw.version} (${fw.build})`;
+      return;
+    }
+    const downgrade = !otaNightly.checked && cmpVersion(installed.version, fw.version) >= 0;
+    offered = { base, downgrade, ...fw };
+    otaState.textContent = `${downgrade ? 'Downgrade' : 'Update'} available: ${fw.version} (${fw.build}), ${fmtKB(fw.size)}`;
+    otaInstall.textContent = downgrade ? 'Downgrade' : 'Update';
+    otaInstall.hidden = false;
+  } catch (e) {
+    otaState.textContent = 'check failed: ' + (e.message || e);
+  }
+});
+
+otaInstall.addEventListener('click', async () => {
+  if (!offered) return;
+  const fw = offered;
+  if (!confirm(`${fw.downgrade ? 'Downgrade to' : 'Update to'} ${fw.version} (${fw.build})? The dongle will restart or reboot.`)) return;
+  otaInstall.disabled = true;
+  try {
+    say(`Downloading ${fmtKB(fw.size)}…`);
+    const r = await fetch(`${fw.base}/${fw.file}`, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`download: ${r.status}`);
+    const blob = await r.blob();
+    if (blob.size !== fw.size) throw new Error(`download is ${blob.size} B, firmware.json says ${fw.size} B`);
+    // crypto.subtle needs a secure context, this page is plain http
+    if (window.crypto && crypto.subtle) {
+      const dig = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+      const sha = [...new Uint8Array(dig)].map(b => b.toString(16).padStart(2, '0')).join('');
+      if (sha !== fw.sha256) throw new Error('download does not match its sha256');
+    }
+    await flashFile(blob, fw.sha256);
+  } catch (e) {
+    say('update failed: ' + (e.message || e), 'err');
+  } finally {
+    otaInstall.disabled = false;
+  }
+});
+
+document.getElementById('reboot').addEventListener('click', async () => {
+  if (!confirm('Reboot dongle now?')) return;
+  try {
+    await fetch('/api/reboot', { method: 'POST' });
+    say('reboot requested — device will be back in ~5 s', 'ok');
+  } catch (e) { say(String(e), 'err'); }
+});
+
+// tick() connectivity tracker: clear pending status msgs when link recovers.
+let wasOffline = false;
+async function connectivityTick() {
+  // Short timeout so a rebooting dongle is detected within ~1.5 s.
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 1500);
+  try {
+    const r = await fetch('/api/status', { signal: ctrl.signal, cache: 'no-store' });
+    clearTimeout(t);
+    if (r.ok) {
+      if (wasOffline) {
+        wasOffline = false;
+        const el = document.getElementById('status-msg'); if (el) { el.textContent = 'idle.'; el.className = 'msg'; }
+      }
+    } else { wasOffline = true; }
+  } catch { clearTimeout(t); wasOffline = true; }
+}
+setInterval(connectivityTick, 2000);
+</script>

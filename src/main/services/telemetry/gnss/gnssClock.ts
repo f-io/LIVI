@@ -1,11 +1,11 @@
-// Sets the system clock from GNSS time. A marker file claims the clock so
-// cp_handler.py (separate root process) skips its own step while GPS holds it.
+// Sets the system clock from GNSS time. A marker file claims the clock so the helper
+// (separate root process) skips its own step while GPS holds it.
 
 import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import type { GnssInfo } from '@shared/types/Gnss'
 
-/** Checked by cp_handler.py before it steps the clock. */
+/** Checked by the helper before it steps the clock from the phone's time. */
 export const CLOCK_CLAIM_FILE = '/tmp/livi-gps-clock'
 /** Root helper, installed by the LIVI installers. */
 const SET_TIME_HELPER = '/usr/local/lib/livi/livi-set-time.sh'
@@ -64,7 +64,7 @@ export class GnssClock {
       this.release()
       return
     }
-    // The claim tells cp_handler.py to stand down, and only a real lock earns it
+    // The claim tells the helper to stand down, and only a real lock earns it
     if (isTimeSourceTrustworthy(info)) this.claim()
     else this.release()
 

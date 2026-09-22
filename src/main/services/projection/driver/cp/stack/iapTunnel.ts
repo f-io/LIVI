@@ -11,7 +11,7 @@
  *      header (size, packageType, groupID, messageType, replyToken, replyErr) then
  *      the body. For iAP2 the messageType is 'cmnd' and the body is raw iAP2 bytes.
  *
- * We emit the raw iAP2 bytes ('iap') for CpStack to relay to the Python iAP2 stack.
+ * We emit the raw iAP2 bytes ('iap') for CpStack to relay to the helper's iAP2 stack.
  * The reverse direction (accessory -> phone) rides the AirPlay event channel, not this
  * socket, so this transport is receive-only.
  */

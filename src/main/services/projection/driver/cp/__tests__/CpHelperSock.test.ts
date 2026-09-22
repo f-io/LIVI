@@ -64,11 +64,11 @@ describe('CpHelperSock request', () => {
     expect(sockets).toHaveLength(1)
   })
 
-  it('reads the certificate once for protocolMajor and defaults to 3', async () => {
+  it('reads the certificate once for protocolMajor and refuses to guess', async () => {
     const helper = new CpHelperSock()
     const p = helper.protocolMajor()
     reply(sockets[0], { ok: true, data: '' })
-    await expect(p).resolves.toBe(3)
+    await expect(p).rejects.toThrow('MFi auth protocol version unknown')
   })
 
   it('returns an empty certificate when the reply omits data', async () => {
@@ -214,9 +214,12 @@ describe('CpHelperSock rpc wrappers', () => {
     await expect(p).resolves.toBeUndefined()
   })
 
-  it('sendReconnectTargets serialises the targets map', async () => {
+  it('sendReconnectTargets serialises the targets in paging order', async () => {
     const helper = new CpHelperSock()
-    const targets = { 'aa:bb': '10.0.0.2', 'cc:dd': null }
+    const targets: Array<[string, string | null]> = [
+      ['aa:bb', '10.0.0.2'],
+      ['cc:dd', null]
+    ]
     const p = helper.sendReconnectTargets(targets)
     expect(wrote(sockets[0])).toBe(`reconnect-targets ${JSON.stringify(targets)}\n`)
     sockets[0].emit('data', Buffer.from('{"ok":true}\n'))

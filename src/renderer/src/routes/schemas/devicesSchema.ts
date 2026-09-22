@@ -1,7 +1,7 @@
 import type { Config } from '@shared/types'
-import { SettingsNode } from '../types'
+import { RouteNode } from '../types'
 
-export const devicesSchema: SettingsNode<Config> = {
+export const devicesSchema: RouteNode<Config> = {
   type: 'route',
   route: 'devices',
   label: 'Devices',

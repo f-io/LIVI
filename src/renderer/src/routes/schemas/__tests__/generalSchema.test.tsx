@@ -45,6 +45,26 @@ describe('generalSchema loadOptions', () => {
     }
   })
 
+  test('the dongle is labelled LIVI Link while other interfaces keep their name', async () => {
+    ;(window as unknown as { app: unknown }).app = {
+      listDisplayModes: vi.fn(async () => []),
+      listWifiChannels: vi.fn(async () => []),
+      listWifiCountryCodes: vi.fn(async () => []),
+      listWifiInterfaces: vi.fn(async () => ['livi-link', 'wlan0']),
+      listBtAdapters: vi.fn(async () => ['livi-link', 'hci0'])
+    }
+    const options = (await Promise.all(loaders.map((load) => load()))).flat() as Array<{
+      value: string
+      label?: string
+    }>
+    const labelFor = (value: string): string | undefined =>
+      options.find((o) => o.value === value)?.label
+
+    expect(labelFor('livi-link')).toBe('LIVI Link')
+    expect(labelFor('wlan0')).toBe('wlan0')
+    expect(labelFor('hci0')).toBe('hci0')
+  })
+
   test('display modes keep the panel-default option ahead of the reported modes', async () => {
     ;(window as unknown as { app: unknown }).app = {
       listDisplayModes: vi.fn(async () => ['800x480'])

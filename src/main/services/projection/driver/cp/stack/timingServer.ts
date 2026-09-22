@@ -15,7 +15,7 @@
  */
 
 import dgram from 'node:dgram'
-import { ntp64Now } from './audioStream'
+import { ntp64Now } from './ntp'
 
 const PT_REQUEST = 210
 const PT_RESPONSE = 211

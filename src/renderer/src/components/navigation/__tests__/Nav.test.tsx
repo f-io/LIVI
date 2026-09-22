@@ -1,17 +1,16 @@
+import { ROUTES } from '@shared/types'
 import { fireEvent, render, screen } from '@testing-library/react'
-import { ROUTES, UI } from '../../../constants'
+import { UI } from '../../../constants'
 import { Nav } from '../Nav'
 
 const navigateMock = vi.fn()
-const quitMock = vi.fn(() => Promise.resolve())
 
 let mockPathname = '' as string
 let mockIsStreaming = false
 let mockTabs = [
   { label: 'Home', path: ROUTES.HOME, icon: <span>h</span> },
   { label: 'Media', path: ROUTES.MEDIA, icon: <span>m</span> },
-  { label: 'Settings', path: ROUTES.SETTINGS, icon: <span>s</span> },
-  { label: 'Quit', path: ROUTES.QUIT, icon: <span>q</span> }
+  { label: 'Settings', path: ROUTES.SETTINGS, icon: <span>s</span> }
 ]
 
 vi.mock('react-router', async () => {
@@ -85,15 +84,13 @@ describe('Nav', () => {
 
   beforeEach(async () => {
     navigateMock.mockReset()
-    quitMock.mockClear()
 
     mockPathname = ROUTES.HOME
     mockIsStreaming = false
     mockTabs = [
       { label: 'Home', path: ROUTES.HOME, icon: <span>h</span> },
       { label: 'Media', path: ROUTES.MEDIA, icon: <span>m</span> },
-      { label: 'Settings', path: ROUTES.SETTINGS, icon: <span>s</span> },
-      { label: 'Quit', path: ROUTES.QUIT, icon: <span>q</span> }
+      { label: 'Settings', path: ROUTES.SETTINGS, icon: <span>s</span> }
     ]
 
     Object.defineProperty(window, 'innerHeight', {
@@ -101,7 +98,6 @@ describe('Nav', () => {
       writable: true,
       value: originalInnerHeight
     })
-    ;(window as any).projection = { quit: quitMock }
   })
 
   test('returns null when streaming on home page', async () => {
@@ -155,19 +151,6 @@ describe('Nav', () => {
     expect(screen.getByTestId('tabs')).toHaveAttribute('data-value', '0')
   })
 
-  test('routes the transport switch tab to the devices page', async () => {
-    mockTabs = [
-      { label: 'Home', path: ROUTES.HOME, icon: <span>h</span> },
-      { label: 'Switch', path: ROUTES.TRANSPORT_SWITCH, icon: <span>x</span> }
-    ]
-
-    render(<Nav receivingVideo={false} settings={null as never} />)
-
-    fireEvent.click(screen.getByLabelText('Switch'))
-
-    expect(navigateMock).toHaveBeenCalledWith(ROUTES.DEVICES)
-  })
-
   test('replaces current route when clicking Settings from nested settings path', async () => {
     mockPathname = '/settings/system'
 
@@ -176,14 +159,6 @@ describe('Nav', () => {
     fireEvent.click(screen.getByLabelText('Settings'))
 
     expect(navigateMock).toHaveBeenCalledWith(ROUTES.SETTINGS, { replace: true })
-  })
-
-  test('calls projection.quit on Quit tab click', async () => {
-    render(<Nav receivingVideo={false} settings={null as never} />)
-
-    fireEvent.click(screen.getByLabelText('Quit'))
-
-    expect(quitMock).toHaveBeenCalledTimes(1)
   })
 
   test('navigates via Tabs onChange handler', async () => {
@@ -202,14 +177,6 @@ describe('Nav', () => {
     fireEvent.click(screen.getByTestId('tabs-change-2'))
 
     expect(navigateMock).toHaveBeenCalledWith(ROUTES.SETTINGS, { replace: true })
-  })
-
-  test('calls projection.quit via Tabs onChange for quit route', async () => {
-    render(<Nav receivingVideo={false} settings={null as never} />)
-
-    fireEvent.click(screen.getByTestId('tabs-change-3'))
-
-    expect(quitMock).toHaveBeenCalledTimes(1)
   })
 
   test('renders with xs icon sizing branch when viewport height is small', async () => {

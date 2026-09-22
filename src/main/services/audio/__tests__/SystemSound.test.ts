@@ -1,4 +1,4 @@
-vi.mock('../AudioOutput', async () => {
+vi.mock('../HostAudioOutput', async () => {
   const instances: Array<{
     started: boolean
     stopped: boolean
@@ -7,7 +7,7 @@ vi.mock('../AudioOutput', async () => {
   }> = []
   return {
     __instances: instances,
-    AudioOutput: class {
+    HostAudioOutput: class {
       started = false
       stopped = false
       writes: Int16Array[] = []
@@ -28,7 +28,7 @@ vi.mock('../AudioOutput', async () => {
   }
 })
 
-import * as AO from '../AudioOutput'
+import * as AO from '../HostAudioOutput'
 import { renderRelayClick, SystemSound } from '../SystemSound'
 
 type MockOut = {

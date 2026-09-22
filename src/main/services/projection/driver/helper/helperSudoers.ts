@@ -1,109 +1,28 @@
-import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import os from 'node:os'
-import { join } from 'node:path'
-import { app, BrowserWindow, dialog } from 'electron'
+import {
+  asset,
+  markerHolds,
+  pkexecAvailable,
+  runAsRoot,
+  sudoersLines,
+  sudoGrants,
+  username,
+  writeMarker
+} from '@main/services/privileged'
+import { BrowserWindow, dialog } from 'electron'
 
-const RULE_FILE = '/etc/sudoers.d/99-LIVI-bt'
-const TEMPLATE_FILENAME = '99-LIVI-bt.sudoers.template'
-const SENTINEL_VERSION = 'v1'
-function sentinelPath(): string {
-  return join(app.getPath('userData'), `bt-sudoers-${SENTINEL_VERSION}.installed`)
-}
+const RULE_FILE = '/etc/sudoers.d/99-LIVI-helper'
+// The rule covers the whole helper, not only Bluetooth. This name replaces 99-LIVI-bt.
+const OBSOLETE_RULE_FILE = '/etc/sudoers.d/99-LIVI-bt'
+const TEMPLATE = '99-LIVI-helper.sudoers.template'
+const MARKER = 'helper-sudoers-v1.installed'
 
-function resolveTemplatePath(): string {
-  const resources = process.resourcesPath
-  if (typeof resources === 'string' && resources.length > 0) {
-    const packaged = join(resources, TEMPLATE_FILENAME)
-    if (existsSync(packaged)) return packaged
-  }
-  return join(app.getAppPath(), 'assets', 'linux', TEMPLATE_FILENAME)
-}
-
-function loadTemplate(): string {
-  return readFileSync(resolveTemplatePath(), 'utf8')
-}
-
-function pythonPath(): string {
-  for (const p of ['/usr/bin/python3', '/usr/local/bin/python3']) {
-    if (existsSync(p)) return p
-  }
-  try {
-    return execFileSync('which', ['python3'], { encoding: 'utf8' }).trim() || '/usr/bin/python3'
-  } catch {
-    return '/usr/bin/python3'
-  }
-}
-
-function resolveUsername(): string {
-  if (process.env.PKEXEC_UID) {
-    try {
-      return execFileSync('id', ['-nu', process.env.PKEXEC_UID], { encoding: 'utf8' }).trim()
-    } catch {}
-  }
-  if (process.env.SUDO_USER) return process.env.SUDO_USER
-  return os.userInfo().username
-}
-
-function buildRuleContent(): string {
-  return loadTemplate()
-    .replace(/__USERNAME__/g, resolveUsername())
-    .replace(/__PYTHON__/g, pythonPath())
-}
-
-function ruleActiveInSudo(): boolean {
-  try {
-    const out = execFileSync('sudo', ['-n', '-l'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore']
-    })
-    return out.includes('LIVI_BT') || out.includes('livi-helper.py')
-  } catch {
-    return false
-  }
+function ruleContent(): string {
+  return asset(TEMPLATE).replace(/__USERNAME__/g, username())
 }
 
 export function helperSudoersExists(): boolean {
-  if (ruleActiveInSudo()) return true
-  try {
-    return existsSync(sentinelPath())
-  } catch {
-    return false
-  }
-}
-
-function pkexecAvailable(): boolean {
-  try {
-    execFileSync('which', ['pkexec'], { stdio: 'ignore' })
-    return true
-  } catch {
-    return false
-  }
-}
-
-function installRule(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const content = buildRuleContent()
-    const tmpFile = `${RULE_FILE}.livi-tmp`
-    // set -e keeps a file that fails validation from ever reaching sudoers.d.
-    const script = [
-      'set -e',
-      `cat > ${tmpFile} <<'EOF'`,
-      content.trimEnd(),
-      'EOF',
-      `chmod 0440 ${tmpFile}`,
-      `chown root:root ${tmpFile}`,
-      `visudo -c -f ${tmpFile}`,
-      `mv ${tmpFile} ${RULE_FILE}`
-    ].join('\n')
-
-    const proc = spawn('pkexec', ['bash', '-c', script], { stdio: 'ignore' })
-    proc.on('close', (code) => {
-      if (code === 0) resolve()
-      else reject(new Error(`pkexec exited with code ${code}`))
-    })
-    proc.on('error', reject)
-  })
+  // Only a rule naming the helper binary counts; an older python-era rule does not.
+  return sudoGrants('livi-helperd') || markerHolds(MARKER, ruleContent())
 }
 
 export async function checkAndInstallHelperSudoers(window: BrowserWindow): Promise<void> {
@@ -116,24 +35,22 @@ export async function checkAndInstallHelperSudoers(window: BrowserWindow): Promi
 
   const { response } = await dialog.showMessageBox(window, {
     type: 'question',
-    title: 'Wireless Projection — Permission Required',
-    message:
-      'LIVI needs permission to manage Bluetooth and Wi-Fi for wireless Android Auto / CarPlay.',
-    detail:
-      `A sudoers rule will be installed at ${RULE_FILE} so the BT/Wi-Fi helper ` +
-      `(livi-helper.py) can run as root without prompting on each session.`,
+    title: 'LIVI',
+    message: 'Allow LIVI to run its hardware helper as root?',
+    detail: 'Needed for Bluetooth, Wi-Fi, USB and the display. Asked once.',
     buttons: ['Install', 'Skip'],
     defaultId: 0,
     cancelId: 1
   })
   if (response !== 0) return
 
+  const content = ruleContent()
   try {
-    await installRule()
+    await runAsRoot([...sudoersLines(RULE_FILE, content), `rm -f ${OBSOLETE_RULE_FILE}`])
     try {
-      writeFileSync(sentinelPath(), `${new Date().toISOString()} ${RULE_FILE}\n`, { mode: 0o644 })
+      writeMarker(MARKER, content)
     } catch (e) {
-      console.warn('[helperSudoers] could not write sentinel:', (e as Error).message)
+      console.warn('[helperSudoers] could not write marker:', (e as Error).message)
     }
     await dialog.showMessageBox(window, {
       type: 'info',
@@ -143,7 +60,6 @@ export async function checkAndInstallHelperSudoers(window: BrowserWindow): Promi
     })
   } catch (err) {
     console.error('[helperSudoers] installation failed:', err)
-    const content = buildRuleContent()
     await dialog.showMessageBox(window, {
       type: 'error',
       title: 'Installation Failed',

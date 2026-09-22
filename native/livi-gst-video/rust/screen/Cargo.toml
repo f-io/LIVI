@@ -1,0 +1,17 @@
+[package]
+name = "livi-screen-stream"
+version = "0.1.0"
+edition.workspace = true
+
+# Framing and decryption of the CarPlay screen stream, with the socket and the
+# GLib source that drive it.
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+livi-crypto-node = { path = "../../../livi-crypto/rust", default-features = false }
+livi-video-nal = { path = "../nal" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+glib = "0.21"
+socket2 = "0.6"

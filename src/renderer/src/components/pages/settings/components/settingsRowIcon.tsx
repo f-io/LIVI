@@ -7,11 +7,13 @@ import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined'
 import BluetoothOutlinedIcon from '@mui/icons-material/BluetoothOutlined'
 import BoltOutlinedIcon from '@mui/icons-material/BoltOutlined'
 import BorderStyleOutlinedIcon from '@mui/icons-material/BorderStyleOutlined'
+import Brightness6OutlinedIcon from '@mui/icons-material/Brightness6Outlined'
 import BrightnessAutoOutlinedIcon from '@mui/icons-material/BrightnessAutoOutlined'
 import BugReportOutlinedIcon from '@mui/icons-material/BugReportOutlined'
 import CableOutlinedIcon from '@mui/icons-material/CableOutlined'
 import CallOutlinedIcon from '@mui/icons-material/CallOutlined'
 import CameraAltOutlinedIcon from '@mui/icons-material/CameraAltOutlined'
+import CameraOutlinedIcon from '@mui/icons-material/CameraOutlined'
 import ContrastOutlinedIcon from '@mui/icons-material/ContrastOutlined'
 import CropFreeOutlinedIcon from '@mui/icons-material/CropFreeOutlined'
 import CropOutlinedIcon from '@mui/icons-material/CropOutlined'
@@ -57,7 +59,6 @@ import SettingsEthernetOutlinedIcon from '@mui/icons-material/SettingsEthernetOu
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined'
 import ShutterSpeedOutlinedIcon from '@mui/icons-material/ShutterSpeedOutlined'
 import SmartphoneOutlinedIcon from '@mui/icons-material/SmartphoneOutlined'
-import SpaceDashboardOutlinedIcon from '@mui/icons-material/SpaceDashboardOutlined'
 import SpeakerOutlinedIcon from '@mui/icons-material/SpeakerOutlined'
 import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined'
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined'
@@ -70,11 +71,11 @@ import UsbOutlinedIcon from '@mui/icons-material/UsbOutlined'
 import UTurnLeftOutlinedIcon from '@mui/icons-material/UTurnLeftOutlined'
 import VerticalAlignBottomOutlinedIcon from '@mui/icons-material/VerticalAlignBottomOutlined'
 import VerticalAlignTopOutlinedIcon from '@mui/icons-material/VerticalAlignTopOutlined'
-import VideocamOutlinedIcon from '@mui/icons-material/VideocamOutlined'
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import VolumeOffOutlinedIcon from '@mui/icons-material/VolumeOffOutlined'
 import VolumeUpOutlinedIcon from '@mui/icons-material/VolumeUpOutlined'
 import WestOutlinedIcon from '@mui/icons-material/WestOutlined'
+import WidgetsOutlinedIcon from '@mui/icons-material/WidgetsOutlined'
 import WifiOutlinedIcon from '@mui/icons-material/WifiOutlined'
 import ZoomInOutlinedIcon from '@mui/icons-material/ZoomInOutlined'
 
@@ -102,9 +103,11 @@ const ICONS: Record<string, SvgIconComponent> = {
   fullscreen: FullscreenOutlinedIcon,
   active: VisibilityOutlinedIcon,
 
-  dashboards: SpaceDashboardOutlinedIcon,
+  dashboards: SpeedOutlinedIcon,
   media: PlayCircleOutlinedIcon,
-  reverseCamera: VideocamOutlinedIcon,
+  reverseCamera: CameraOutlinedIcon,
+  customTab: WidgetsOutlinedIcon,
+  customUrl: LinkOutlinedIcon,
   autoReverse: UTurnLeftOutlinedIcon,
   cameraMirror: FlipOutlinedIcon,
   cameraRotation: RotateRightOutlinedIcon,
@@ -147,7 +150,6 @@ const ICONS: Record<string, SvgIconComponent> = {
   uiZoom: ZoomInOutlinedIcon,
   language: TranslateOutlinedIcon,
   mfi: DeveloperBoardOutlinedIcon,
-  usbDongle: UsbOutlinedIcon,
 
   huVolume: VolumeUpOutlinedIcon,
   music: MusicNoteOutlinedIcon,
@@ -166,6 +168,8 @@ const ICONS: Record<string, SvgIconComponent> = {
 
   darkMode: DarkModeOutlinedIcon,
   phoneAppearance: BrightnessAutoOutlinedIcon,
+  displayBrightness: Brightness6OutlinedIcon,
+  displayBrightnessAuto: BrightnessAutoOutlinedIcon,
   uiColors: PaletteOutlinedIcon,
   contrastGamma: TonalityOutlinedIcon,
   displayColor: InvertColorsOutlinedIcon,

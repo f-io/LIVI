@@ -1,0 +1,12 @@
+[package]
+name = "livi-video-fanout"
+version = "0.1.0"
+edition.workspace = true
+
+# Per-receiver frame gating and GOP cache. The caller owns the planes and does
+# the pushing; this decides what is worth pushing.
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+livi-video-nal = { path = "../nal" }

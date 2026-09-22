@@ -103,6 +103,9 @@ jobs:
     needs: plan
     if: ${{ needs.plan.outputs.is_empty != 'true' }}
     runs-on: ${{ matrix.runner }}
+    # A platform that cannot be built right now is an expected picture here, not a broken run. It
+    # stays red in the job list, and publish fails the run if nothing at all came through.
+    continue-on-error: true
 
     strategy:
       fail-fast: false
@@ -131,16 +134,30 @@ jobs:
             exit 1
           fi
           echo "Resolved macOS GStreamer: $GST_VERSION"
-          curl -fL \
-            -o gstreamer-runtime.pkg \
-            "https://gstreamer.freedesktop.org/data/pkg/osx/${GST_VERSION}/gstreamer-1.0-${GST_VERSION}-universal.pkg"
+          echo "GST_VERSION=$GST_VERSION" >> "$GITHUB_ENV"
+          base="https://gstreamer.freedesktop.org/data/pkg/osx/${GST_VERSION}"
+          curl -fL -o gstreamer-runtime.pkg "${base}/gstreamer-1.0-${GST_VERSION}-universal.pkg"
+          # devel pkg carries the headers and .pc files build-patched-macos.sh needs
+          curl -fL -o gstreamer-devel.pkg "${base}/gstreamer-1.0-devel-${GST_VERSION}-universal.pkg"
 
-      - name: Install GStreamer runtime pkg [macos-arm64]
+      - name: Install GStreamer runtime + devel pkg [macos-arm64]
         if: matrix.os == 'macos' && matrix.arch == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
           sudo installer -pkg gstreamer-runtime.pkg -target /
+          sudo installer -pkg gstreamer-devel.pkg -target /
+
+      - name: Build patched applemedia (vtdec) [macos-arm64]
+        if: matrix.os == 'macos' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # glib generator tools (the framework's carry a dead cerbero shebang) + build system
+          brew install glib meson ninja
+          chmod +x scripts/gstreamer/build-patched-macos.sh
+          scripts/gstreamer/build-patched-macos.sh "$RUNNER_TEMP/applemedia"
+          echo "PATCHED_APPLEMEDIA=$RUNNER_TEMP/applemedia/libgstapplemedia.dylib" >> "$GITHUB_ENV"
 
       - name: Build bundle [macos-arm64]
         if: matrix.os == 'macos' && matrix.arch == 'arm64'
@@ -185,7 +202,7 @@ jobs:
       # ----------------------------
       # Linux x64
       # ----------------------------
-      - name: Build bundle [linux-x64 via Debian forky]
+      - name: Build bundle [linux-x64 via Debian stable]
         if: matrix.os == 'linux' && matrix.arch == 'x64'
         shell: bash
         run: |
@@ -193,37 +210,26 @@ jobs:
 
           chmod +x scripts/gstreamer/package-linux.sh
           chmod +x scripts/gstreamer/smoke-test-linux.sh
+          chmod +x scripts/gstreamer/build-backport-linux.sh
+
+          # ceiling = glibc of the current Debian stable (the deploy target)
+          GLIBC_CEILING="$(docker run --rm debian:stable-slim getconf GNU_LIBC_VERSION | awk '{print $2}')"
+          echo "glibc ceiling from current Debian stable: GLIBC_$GLIBC_CEILING"
 
           docker run --rm --platform=linux/amd64 \
+            -e GLIBC_CEILING="$GLIBC_CEILING" \
             -v "${GITHUB_WORKSPACE}:/work" \
             -w /work \
-            debian:forky-slim sh -lc '
+            debian:stable-slim sh -lc '
               set -euo pipefail
 
               export DEBIAN_FRONTEND=noninteractive
 
               apt-get update
               apt-get install -y --no-install-recommends \
-                bash coreutils findutils file python3 dpkg-dev patchelf ca-certificates \
-                gstreamer1.0-tools \
-                gstreamer1.0-plugins-base \
-                gstreamer1.0-plugins-base-apps \
-                gstreamer1.0-plugins-good \
-                gstreamer1.0-plugins-bad \
-                gstreamer1.0-libav \
-                gstreamer1.0-gl \
-                gstreamer1.0-x \
-                gstreamer1.0-alsa \
-                gstreamer1.0-pulseaudio \
-                libgstreamer1.0-0 \
-                libgstreamer-plugins-base1.0-0 \
-                libglib2.0-0 \
-                liborc-0.4-0 \
-                libgudev-1.0-0 \
-                zlib1g \
-                libc6 \
-                libgcc-s1 \
-                libstdc++6
+                bash coreutils findutils file python3 dpkg-dev patchelf ca-certificates
+
+              scripts/gstreamer/build-backport-linux.sh
 
               scripts/gstreamer/package-linux.sh "assets/gstreamer/linux-x64"
               scripts/gstreamer/smoke-test-linux.sh "assets/gstreamer/linux-x64"
@@ -259,7 +265,7 @@ jobs:
       # ----------------------------
       # Linux arm64
       # ----------------------------
-      - name: Build bundle [linux-arm64 via Debian forky]
+      - name: Build bundle [linux-arm64 via Debian stable]
         if: matrix.os == 'linux' && matrix.arch == 'arm64'
         shell: bash
         run: |
@@ -267,40 +273,26 @@ jobs:
 
           chmod +x scripts/gstreamer/package-linux.sh
           chmod +x scripts/gstreamer/smoke-test-linux.sh
-          chmod +x scripts/gstreamer/build-patched-linux.sh
+          chmod +x scripts/gstreamer/build-backport-linux.sh
+
+          # ceiling = glibc of the current Debian stable (the deploy target)
+          GLIBC_CEILING="$(docker run --rm debian:stable-slim getconf GNU_LIBC_VERSION | awk '{print $2}')"
+          echo "glibc ceiling from current Debian stable: GLIBC_$GLIBC_CEILING"
 
           docker run --rm --platform=linux/arm64/v8 \
+            -e GLIBC_CEILING="$GLIBC_CEILING" \
             -v "${GITHUB_WORKSPACE}:/work" \
             -w /work \
-            debian:forky-slim sh -lc '
+            debian:stable-slim sh -lc '
               set -euo pipefail
 
               export DEBIAN_FRONTEND=noninteractive
 
               apt-get update
               apt-get install -y --no-install-recommends \
-                bash coreutils findutils file python3 dpkg-dev patchelf ca-certificates \
-                gstreamer1.0-tools \
-                gstreamer1.0-plugins-base \
-                gstreamer1.0-plugins-base-apps \
-                gstreamer1.0-plugins-good \
-                gstreamer1.0-plugins-bad \
-                gstreamer1.0-libav \
-                gstreamer1.0-gl \
-                gstreamer1.0-x \
-                gstreamer1.0-alsa \
-                gstreamer1.0-pulseaudio \
-                libgstreamer1.0-0 \
-                libgstreamer-plugins-base1.0-0 \
-                libglib2.0-0 \
-                liborc-0.4-0 \
-                libgudev-1.0-0 \
-                zlib1g \
-                libc6 \
-                libgcc-s1 \
-                libstdc++6
+                bash coreutils findutils file python3 dpkg-dev patchelf ca-certificates
 
-              scripts/gstreamer/build-patched-linux.sh
+              APPLY_PATCHES=1 scripts/gstreamer/build-backport-linux.sh
 
               scripts/gstreamer/package-linux.sh "assets/gstreamer/linux-arm64"
               scripts/gstreamer/smoke-test-linux.sh "assets/gstreamer/linux-arm64"
@@ -338,7 +330,7 @@ jobs:
     needs:
       - plan
       - build
-    if: ${{ needs.plan.outputs.is_empty != 'true' }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.is_empty != 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -350,53 +342,60 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.ref }}
 
-      - name: Download artifact [macos-arm64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-macos-arm64"')
+      - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
-          name: gstreamer-macos-arm64
-          path: .artifacts/macos-arm64
+          pattern: gstreamer-*
+          merge-multiple: true
+          path: .artifacts
 
       - name: Extract artifact [macos-arm64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-macos-arm64"')
         shell: bash
         run: |
           set -euo pipefail
+          archive=.artifacts/gstreamer-macos-arm64.tar.gz
+          if [[ ! -f "$archive" ]]; then
+            echo "no macos-arm64 archive, keeping the committed one"
+            exit 0
+          fi
           rm -rf assets/gstreamer/macos-arm64
           mkdir -p assets/gstreamer
-          tar -C assets/gstreamer -xzf .artifacts/macos-arm64/gstreamer-macos-arm64.tar.gz
-
-      - name: Download artifact [linux-x64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-x64"')
-        uses: actions/download-artifact@v8
-        with:
-          name: gstreamer-linux-x64
-          path: .artifacts/linux-x64
+          tar -C assets/gstreamer -xzf "$archive"
 
       - name: Extract artifact [linux-x64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-x64"')
         shell: bash
         run: |
           set -euo pipefail
+          archive=.artifacts/gstreamer-linux-x64.tar.gz
+          if [[ ! -f "$archive" ]]; then
+            echo "no linux-x64 archive, keeping the committed one"
+            exit 0
+          fi
           rm -rf assets/gstreamer/linux-x64
           mkdir -p assets/gstreamer
-          tar -C assets/gstreamer -xzf .artifacts/linux-x64/gstreamer-linux-x64.tar.gz
-
-      - name: Download artifact [linux-arm64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-arm64"')
-        uses: actions/download-artifact@v8
-        with:
-          name: gstreamer-linux-arm64
-          path: .artifacts/linux-arm64
+          tar -C assets/gstreamer -xzf "$archive"
 
       - name: Extract artifact [linux-arm64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-arm64"')
         shell: bash
         run: |
           set -euo pipefail
+          archive=.artifacts/gstreamer-linux-arm64.tar.gz
+          if [[ ! -f "$archive" ]]; then
+            echo "no linux-arm64 archive, keeping the committed one"
+            exit 0
+          fi
           rm -rf assets/gstreamer/linux-arm64
           mkdir -p assets/gstreamer
-          tar -C assets/gstreamer -xzf .artifacts/linux-arm64/gstreamer-linux-arm64.tar.gz
+          tar -C assets/gstreamer -xzf "$archive"
+
+      - name: Check that something was built
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! ls .artifacts/gstreamer-*.tar.gz >/dev/null 2>&1; then
+            echo "no platform produced an asset"
+            exit 1
+          fi
 
       - name: Read Linux version for badge
         id: meta

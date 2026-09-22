@@ -1,16 +1,18 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { getPairing, savePairing } from '../pairings'
 
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(() => false),
   mkdirSync: vi.fn(),
   readFileSync: vi.fn(),
+  renameSync: vi.fn(),
   writeFileSync: vi.fn()
 }))
 
 const mockExists = vi.mocked(existsSync)
 const mockRead = vi.mocked(readFileSync)
 const mockWrite = vi.mocked(writeFileSync)
+const mockRename = vi.mocked(renameSync)
 const mockMkdir = vi.mocked(mkdirSync)
 
 beforeEach(() => {
@@ -23,9 +25,10 @@ describe('savePairing', () => {
     savePairing('phone-1', Buffer.from('aabb', 'hex'))
     expect(mockMkdir).toHaveBeenCalledWith('/tmp/cp', { recursive: true })
     const [file, json, opts] = mockWrite.mock.calls[0]
-    expect(file).toBe('/tmp/cp/pairings.json')
+    expect(file).toBe('/tmp/cp/pairings.json.tmp')
     expect(JSON.parse(json as string)).toEqual({ 'phone-1': 'aabb' })
     expect(opts).toEqual({ mode: 0o600 })
+    expect(mockRename).toHaveBeenCalledWith('/tmp/cp/pairings.json.tmp', '/tmp/cp/pairings.json')
   })
 
   test('merges into existing pairings', () => {

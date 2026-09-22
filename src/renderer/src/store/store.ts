@@ -125,8 +125,8 @@ const applyTelemetryControls = (payload: unknown) => {
   }
 
   // Momentary navigation request
-  if (typeof msg.view === 'string') {
-    useStatusStore.getState().requestView(msg.view)
+  if (typeof msg.path === 'string') {
+    useStatusStore.getState().requestPath(msg.path)
   }
 }
 
@@ -156,10 +156,6 @@ export interface CarplayStore {
   productId: number | null
   usbFwVersion: string | null
   setDeviceInfo: (info: { vendorId: number; productId: number; usbFwVersion: string }) => void
-
-  // USB dongle info
-  dongleFwVersion: string | null
-  boxInfo: unknown | null
 
   // Audio metadata
   audioSampleRate: number | null
@@ -461,9 +457,6 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
         usbFwVersion: usbFwVersion?.trim() ? usbFwVersion.trim() : null
       }),
 
-    dongleFwVersion: null,
-    boxInfo: null,
-
     audioSampleRate: null,
     setAudioInfo: ({ sampleRate }) => set({ audioSampleRate: sampleRate }),
 
@@ -501,8 +494,6 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
         vendorId: null,
         productId: null,
         usbFwVersion: null,
-        dongleFwVersion: null,
-        boxInfo: null,
         audioSampleRate: null,
         audioPcmData: null
       })
@@ -513,60 +504,48 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
 useLiviStore.getState().init()
 
 // Status store
-export type ActiveProtocol = 'carplay' | 'androidauto' | 'dongle' | null
+export type ActiveProtocol = 'carplay' | 'androidauto' | null
 
 export interface StatusStore {
   reverse: boolean
   lights: boolean
   activeProtocol: ActiveProtocol
-  isDongleHardwarePresent: boolean
   isStreaming: boolean
   cameraFound: boolean
   clusterDashActive: boolean
-  requestedView: string | null
-  requestedViewNonce: number
+  requestedPath: string | null
 
   setCameraFound: (found: boolean) => void
   setActiveProtocol: (protocol: ActiveProtocol) => void
-  setDongleHardwarePresent: (present: boolean) => void
   setStreaming: (streaming: boolean) => void
   setReverse: (reverse: boolean) => void
   setLights: (lights: boolean) => void
   setClusterDashActive: (active: boolean) => void
-  requestView: (view: string) => void
+  requestPath: (path: string) => void
+  clearRequestedPath: () => void
 }
 
 export const useStatusStore = create<StatusStore>((set, get) => ({
   reverse: false,
   lights: false,
   activeProtocol: null,
-  isDongleHardwarePresent: false,
   isStreaming: false,
   cameraFound: false,
   clusterDashActive: false,
-  requestedView: null,
-  requestedViewNonce: 0,
+  requestedPath: null,
 
   setCameraFound: (found) => set({ cameraFound: found }),
   setActiveProtocol: (protocol) => {
-    const wasPresent = get().isDongleHardwarePresent || get().activeProtocol !== null
+    const wasPresent = get().activeProtocol !== null
     set({ activeProtocol: protocol })
-    const nowPresent = get().isDongleHardwarePresent || protocol !== null
-    if (nowPresent && !wasPresent) useLiviStore.getState().markRestartBaseline()
-  },
-  setDongleHardwarePresent: (present) => {
-    const wasPresent = get().isDongleHardwarePresent || get().activeProtocol !== null
-    set({ isDongleHardwarePresent: present })
-    const nowPresent = present || get().activeProtocol !== null
-    if (nowPresent && !wasPresent) useLiviStore.getState().markRestartBaseline()
+    if (protocol !== null && !wasPresent) useLiviStore.getState().markRestartBaseline()
   },
   setStreaming: (streaming) => set({ isStreaming: streaming }),
   setReverse: (reverse) => set({ reverse }),
   setLights: (lights) => set({ lights }),
   setClusterDashActive: (active) => set({ clusterDashActive: active }),
-  requestView: (view) =>
-    set((s) => ({ requestedView: view, requestedViewNonce: s.requestedViewNonce + 1 }))
+  requestPath: (path) => set({ requestedPath: path }),
+  clearRequestedPath: () => set({ requestedPath: null })
 }))
 
-export const useProjectionActive = (): boolean =>
-  useStatusStore((s) => s.isDongleHardwarePresent || s.activeProtocol !== null)
+export const useProjectionActive = (): boolean => useStatusStore((s) => s.activeProtocol !== null)

@@ -9,8 +9,10 @@ import type { PersistedMediaPayload, ProjectionEvent } from './types'
 
 export type MediaStoreDeps = {
   emit: (payload: ProjectionEvent) => void
-  getPlaybackInferred: () => 1 | 2
+  getPlaybackInferred: () => 1 | 0
   getLastPhoneType: () => PhoneType | undefined
+  /** Active session's play state, deduped — drives the AVRCP PlaybackStatus. */
+  onPlaybackStatus?: (state: 'playing' | 'paused') => void
 }
 
 // Persists and emits the phone's media (now-playing) snapshot, per session.
@@ -20,6 +22,8 @@ export class MediaStore {
 
   constructor(private readonly deps: MediaStoreDeps) {}
 
+  private lastPlaybackStatus: 'playing' | 'paused' | null = null
+
   private emitActive(payload: PersistedMediaPayload): void {
     const out: PersistedMediaPayload = { type: payload.type, media: payload.media }
     if (payload.base64Image !== this.lastEmittedImage) {
@@ -27,6 +31,15 @@ export class MediaStore {
       this.lastEmittedImage = payload.base64Image
     }
     this.deps.emit({ type: 'media', payload: { payload: out } })
+    const ps = payload.media?.MediaPlayStatus
+    if (ps !== undefined) {
+      // Canonical MediaPlayStatus: 1 = playing, anything else = paused.
+      const state = ps === 1 ? 'playing' : 'paused'
+      if (state !== this.lastPlaybackStatus) {
+        this.lastPlaybackStatus = state
+        this.deps.onPlaybackStatus?.(state)
+      }
+    }
   }
 
   private file(): string {
@@ -82,7 +95,7 @@ export class MediaStore {
     }
   }
 
-  patchAaPlayStatus(session: ProjectionSession | null, status: 1 | 2): void {
+  patchAaPlayStatus(session: ProjectionSession | null, status: 1 | 0): void {
     if (!session) return
     try {
       const existingPayload: PersistedMediaPayload =

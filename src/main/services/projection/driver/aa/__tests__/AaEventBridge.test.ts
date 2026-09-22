@@ -1,21 +1,10 @@
 import { EventEmitter } from 'node:events'
-import {
-  AudioData,
-  Command,
-  DongleReady,
-  MediaData,
-  type Message,
-  NavigationData,
-  Opened,
-  Plugged,
-  Unplugged,
-  VideoData
-} from '@projection/messages'
-import { CommandMapping } from '@shared/types/ProjectionEnums'
+import { AudioData, Command, MediaData, type Message, NavigationData } from '@projection/messages'
+import { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
 import type { Mock } from 'vitest'
-import { AaEventBridge, type AaEventBridgeDeps } from '../AaEventBridge'
+import { AaEventBridge, type AaEventBridgeDeps, type AaMediaSinkDeps } from '../AaEventBridge'
+import { CH } from '../stack/constants'
 import type { AAStack, AAStackConfig } from '../stack/index'
-import type { UsbAoapBridge } from '../stack/transport/UsbAoapBridge'
 
 function baseCfg(over: Partial<AAStackConfig> = {}): AAStackConfig {
   return {
@@ -36,6 +25,23 @@ function baseCfg(over: Partial<AAStackConfig> = {}): AAStackConfig {
   } as AAStackConfig
 }
 
+/** A host media sink whose feed and stream announcements the test controls. */
+function makeSink(over: Partial<AaMediaSinkDeps> = {}): AaMediaSinkDeps {
+  return {
+    feedPath: async () => '/tmp/feed',
+    videoPlaneId: (cluster) => (cluster ? 2 : 1),
+    primeVideo: vi.fn(),
+    noteVideoStarted: vi.fn(),
+    setVideoActive: vi.fn(),
+    setAudioActive: vi.fn(),
+    audioOutputs: () => [],
+    onAudioOutput: () => () => {},
+    primeAudio: vi.fn(),
+    setHostVolume: vi.fn(),
+    ...over
+  }
+}
+
 function makeBridge(over: Partial<AaEventBridgeDeps> = {}, cfgOver?: AAStackConfig) {
   const aa = new EventEmitter() as unknown as AAStack
   const emitMessage = vi.fn<void, [Message]>()
@@ -44,7 +50,6 @@ function makeBridge(over: Partial<AaEventBridgeDeps> = {}, cfgOver?: AAStackConf
   const emitDeviceStatus = vi.fn()
   const startMic = vi.fn<void, [string]>()
   const stopMic = vi.fn<void, [string]>()
-  const consumeWiredBridge = vi.fn<UsbAoapBridge | null, []>(() => null)
   const isClosed = vi.fn<boolean, []>(() => false)
   const deps: AaEventBridgeDeps = {
     emitMessage,
@@ -53,7 +58,6 @@ function makeBridge(over: Partial<AaEventBridgeDeps> = {}, cfgOver?: AAStackConf
     emitDeviceStatus,
     startMic,
     stopMic,
-    consumeWiredBridge,
     isClosed,
     ...over
   }
@@ -70,10 +74,12 @@ function makeBridge(over: Partial<AaEventBridgeDeps> = {}, cfgOver?: AAStackConf
     emitDeviceStatus,
     startMic,
     stopMic,
-    consumeWiredBridge,
     isClosed
   }
 }
+
+/** Lets the async feed path lookups behind the sink pushes settle. */
+const settle = (): Promise<void> => new Promise((r) => setImmediate(r))
 
 function allMessages(emitMessage: Mock): Message[] {
   return emitMessage.mock.calls.map((c) => c[0] as Message)
@@ -96,10 +102,6 @@ function metas(emitMessage: Mock): (MediaData | NavigationData)[] {
   )
 }
 
-function videoFrames(emitMessage: Mock, cluster: boolean): VideoData[] {
-  return messagesOf(emitMessage, VideoData).filter((m) => m.cluster === cluster)
-}
-
 function asMedia(m: MediaData | NavigationData): MediaData {
   if (!(m instanceof MediaData)) throw new Error('not a media meta')
   return m
@@ -116,12 +118,10 @@ describe('AaEventBridge', () => {
       const { aa, emitMessage } = makeBridge()
       aa.emit('connected')
 
-      const msgs = allMessages(emitMessage)
-      expect(msgs.some((m) => m instanceof Opened || m instanceof DongleReady)).toBe(false)
-      expect(msgs.some((m) => m instanceof Plugged)).toBe(false)
+      allMessages(emitMessage)
     })
 
-    test('disconnected releases video focus if it was held and emits no Unplugged', async () => {
+    test('disconnected releases video focus if it was held', async () => {
       const { aa, emitMessage } = makeBridge()
       aa.emit('video-focus-projected')
       emitMessage.mockClear()
@@ -132,7 +132,6 @@ describe('AaEventBridge', () => {
         (c) => c.value === CommandMapping.releaseVideoFocus
       )
       expect(releaseEmitted).toBe(true)
-      expect(messagesOf(emitMessage, Unplugged)).toHaveLength(0)
     })
 
     test('disconnected without prior video focus does not emit releaseVideoFocus', async () => {
@@ -142,29 +141,6 @@ describe('AaEventBridge', () => {
         (c) => c.value === CommandMapping.releaseVideoFocus
       )
       expect(releaseEmitted).toBe(false)
-    })
-
-    test('watchdog disconnect consumes the wired bridge and tears it down', async () => {
-      const wiredBridge = {
-        forceReenum: vi.fn(async () => undefined),
-        stop: vi.fn(async () => undefined)
-      } as unknown as UsbAoapBridge
-      const consume = vi.fn(() => wiredBridge)
-      const { aa } = makeBridge({ consumeWiredBridge: consume })
-
-      aa.emit('disconnected', 'pre-RUNNING watchdog')
-      expect(consume).toHaveBeenCalledTimes(1)
-
-      await new Promise((r) => setImmediate(r))
-      expect((wiredBridge as unknown as { forceReenum: Mock }).forceReenum).toHaveBeenCalled()
-      expect((wiredBridge as unknown as { stop: Mock }).stop).toHaveBeenCalled()
-    })
-
-    test('non-watchdog disconnect does not touch the wired bridge', async () => {
-      const consume = vi.fn(() => null)
-      const { aa } = makeBridge({ consumeWiredBridge: consume })
-      aa.emit('disconnected', 'normal')
-      expect(consume).not.toHaveBeenCalled()
     })
   })
 
@@ -195,28 +171,24 @@ describe('AaEventBridge', () => {
     })
   })
 
-  describe('watchdog with no wired bridge', () => {
-    test('watchdog disconnect with a null bridge is a no-op', () => {
-      const { aa } = makeBridge({ consumeWiredBridge: () => null })
-      expect(() => aa.emit('disconnected', 'pre-RUNNING watchdog')).not.toThrow()
-    })
-  })
-
-  describe('video dimension defaults', () => {
-    test('video + cluster frames fall back to 1280x720 when unset', () => {
+  describe('video start', () => {
+    test('video-started reports the stream geometry to the host, 1280x720 when unset', () => {
+      const noteVideoStarted = vi.fn()
       const cfg = baseCfg({ videoWidth: undefined, videoHeight: undefined })
-      const { aa, emitMessage } = makeBridge({}, cfg)
-      aa.emit('video-frame', Buffer.alloc(8), 0n)
-      aa.emit('cluster-video-frame', Buffer.alloc(8), 0n)
-      expect(videoFrames(emitMessage, false).length).toBeGreaterThan(0)
-      expect(videoFrames(emitMessage, true).length).toBeGreaterThan(0)
+      const { aa } = makeBridge({ mediaSink: makeSink({ noteVideoStarted }) }, cfg)
+      aa.emit('video-started')
+      aa.emit('cluster-video-started')
+      expect(noteVideoStarted.mock.calls).toEqual([
+        [false, 1280, 720],
+        [true, 1280, 720]
+      ])
     })
 
-    test('cluster frame does not re-request focus once already projected', () => {
+    test('cluster-video-started does not re-request focus once already projected', () => {
       const { aa, emitMessage } = makeBridge()
       aa.emit('cluster-video-focus-projected')
       emitMessage.mockClear()
-      aa.emit('cluster-video-frame', Buffer.alloc(8), 0n)
+      aa.emit('cluster-video-started')
       expect(
         commands(emitMessage).some((c) => c.value === CommandMapping.requestClusterFocus)
       ).toBe(false)
@@ -230,19 +202,19 @@ describe('AaEventBridge', () => {
       expect(commands(emitMessage)[0].value).toBe(CommandMapping.requestVideoFocus)
     })
 
-    test('first video-frame requests focus when not already held', async () => {
+    test('video-started requests focus when not already held', async () => {
       const { aa, emitMessage } = makeBridge()
-      aa.emit('video-frame', Buffer.from([0, 0, 0, 1]), 0n)
+      aa.emit('video-started')
       expect(commands(emitMessage).some((c) => c.value === CommandMapping.requestVideoFocus)).toBe(
         true
       )
     })
 
-    test('subsequent video-frames do NOT re-request focus', async () => {
+    test('video-started after a projected focus does NOT re-request it', async () => {
       const { aa, emitMessage } = makeBridge()
       aa.emit('video-focus-projected')
       emitMessage.mockClear()
-      aa.emit('video-frame', Buffer.from([0]), 0n)
+      aa.emit('video-started')
       expect(commands(emitMessage).some((c) => c.value === CommandMapping.requestVideoFocus)).toBe(
         false
       )
@@ -252,24 +224,6 @@ describe('AaEventBridge', () => {
       const { aa, emitMessage } = makeBridge()
       aa.emit('cluster-video-focus-projected')
       expect(commands(emitMessage)[0].value).toBe(CommandMapping.requestClusterFocus)
-    })
-  })
-
-  describe('video frames', () => {
-    test('video-frame forwards a VideoData message with main MessageType', async () => {
-      const { aa, emitMessage } = makeBridge()
-      aa.emit('video-frame', Buffer.alloc(64), 0n)
-      const msg = videoFrames(emitMessage, false)[0]
-      expect(msg).toBeInstanceOf(VideoData)
-      expect(msg.cluster).toBe(false)
-    })
-
-    test('cluster-video-frame forwards a cluster VideoData message', async () => {
-      const { aa, emitMessage } = makeBridge()
-      aa.emit('cluster-video-frame', Buffer.alloc(64), 0n)
-      const msg = videoFrames(emitMessage, true)[0]
-      expect(msg).toBeInstanceOf(VideoData)
-      expect(msg.cluster).toBe(true)
     })
   })
 
@@ -285,21 +239,104 @@ describe('AaEventBridge', () => {
       aa.emit('cluster-video-codec', 'vp9')
       expect(emitCodec).toHaveBeenCalledWith('cluster-video-codec', 'vp9')
     })
+
+    test('pushAudioSink without a media sink returns', () => {
+      const { bridge } = makeBridge()
+      expect(() =>
+        (bridge as unknown as { pushAudioSink: (id: number, tag: string) => void }).pushAudioSink(
+          1,
+          'media'
+        )
+      ).not.toThrow()
+    })
+
+    test('the sink delivery respects closed state and empty feeds', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      type Deliver = {
+        deliverVideoSink: (feed: string, entry: unknown) => void
+        deliverAudioSink: (feed: string, ch: number, id: number) => void
+      }
+
+      const closedSend = vi.fn()
+      const closed = makeBridge({ isClosed: () => true })
+      Object.assign(closed.aa, { sendMediaSink: closedSend })
+      ;(closed.bridge as unknown as Deliver).deliverVideoSink('/tmp/f', { ch: 1 })
+      ;(closed.bridge as unknown as Deliver).deliverAudioSink('/tmp/f', 1, 10)
+      expect(closedSend).not.toHaveBeenCalled()
+
+      const openSend = vi.fn()
+      const open = makeBridge({ isClosed: () => false })
+      Object.assign(open.aa, { sendMediaSink: openSend })
+      ;(open.bridge as unknown as Deliver).deliverVideoSink('', { ch: 1 })
+      ;(open.bridge as unknown as Deliver).deliverAudioSink('/tmp/f', 1, 10)
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('no media feed'))
+      expect(openSend).toHaveBeenCalledTimes(2)
+      warn.mockRestore()
+    })
+
+    test('a codec choice primes the host plane and hands the feed to the stack', async () => {
+      const sendMediaSink = vi.fn()
+      const primeVideo = vi.fn()
+      const { aa } = makeBridge({ mediaSink: makeSink({ primeVideo }) })
+      Object.assign(aa, { sendMediaSink })
+
+      aa.emit('video-codec', 'h265')
+      aa.emit('cluster-video-codec', 'h264')
+      await settle()
+
+      expect(primeVideo.mock.calls).toEqual([[false], [true]])
+      expect(sendMediaSink.mock.calls.map((c) => c[0])).toEqual([
+        { feed: '/tmp/feed', video: [{ ch: CH.VIDEO, id: 1, codec: 'h265' }] },
+        { feed: '/tmp/feed', video: [{ ch: CH.CLUSTER_VIDEO, id: 2, codec: 'h264' }] }
+      ])
+    })
   })
 
   describe('audio', () => {
-    test('audio-frame emits an AudioData message', async () => {
-      const { aa, emitMessage } = makeBridge()
-      aa.emit('audio-frame', Buffer.alloc(32), 0n, 'media', 0)
-      const msg = messagesOf(emitMessage, AudioData)[0]
-      expect(msg).toBeInstanceOf(AudioData)
-    })
-
     test('audio-start emits an AudioData lifecycle command', async () => {
       const { aa, emitMessage } = makeBridge()
       aa.emit('audio-start', 'media', 0)
       const msgs = messagesOf(emitMessage, AudioData)
       expect(msgs.length).toBeGreaterThan(0)
+    })
+
+    test('audio-setup primes one host stream per channel', async () => {
+      const primeAudio = vi.fn()
+      const { aa } = makeBridge({ mediaSink: makeSink({ primeAudio }) })
+      aa.emit('audio-setup', 'media', 48000, 2)
+      aa.emit('audio-setup', 'speech', 16000, 1)
+      aa.emit('audio-setup', 'system', 16000, 1)
+      expect(primeAudio.mock.calls).toEqual([
+        [3, 48000, 2, 'media'],
+        [4, 16000, 1, 'speech'],
+        [4, 16000, 1, 'system']
+      ])
+    })
+
+    test('a host stream is routed only to the channel it was tagged with', async () => {
+      const sendMediaSink = vi.fn()
+      let announce: ((audioType: number, streamId: number, tag?: string) => void) | undefined
+      const mediaSink = makeSink({
+        audioOutputs: () => [{ audioType: 3, streamId: 10, tag: 'media' }],
+        onAudioOutput: (cb) => {
+          announce = cb
+          return () => {}
+        }
+      })
+      const { aa } = makeBridge({ mediaSink })
+      Object.assign(aa, { sendMediaSink })
+
+      aa.emit('connected')
+      announce?.(4, 11, 'speech')
+      announce?.(4, 12, 'system')
+      announce?.(4, 13, undefined)
+      await settle()
+
+      expect(sendMediaSink.mock.calls.map((c) => c[0].audio)).toEqual([
+        [{ ch: CH.MEDIA_AUDIO, id: 10 }],
+        [{ ch: CH.SPEECH_AUDIO, id: 11 }],
+        [{ ch: CH.SYSTEM_AUDIO, id: 12 }]
+      ])
     })
 
     test('audio-stop emits an AudioData lifecycle command', async () => {
@@ -438,7 +475,7 @@ describe('AaEventBridge', () => {
         NaviDisplayDistanceE3: 0.5,
         NaviDisplayDistanceUnit: 'km'
       })
-      // AA never carries the trip distance/ETA — those destination fields stay unset
+      // AA never carries the trip distance/ETA, so those destination fields stay unset
       expect(info.NaviDistanceToDestination).toBeUndefined()
       expect(info.NaviTimeToDestination).toBeUndefined()
     })
@@ -572,11 +609,12 @@ describe('AaEventBridge', () => {
     })
   })
 
-  test('audio lifecycle command for "phone" channel emits AudioOutput* commands', () => {
+  test('audio lifecycle command for "system" channel emits AudioNavi* commands, like CarPlay alerts', () => {
     const { aa, emitMessage } = makeBridge()
-    aa.emit('audio-start', 'phone', 0)
-    aa.emit('audio-stop', 'phone', 0)
-    expect(messagesOf(emitMessage, AudioData).length).toBeGreaterThanOrEqual(2)
+    aa.emit('audio-start', 'system', 0)
+    aa.emit('audio-stop', 'system', 0)
+    const cmds = messagesOf(emitMessage, AudioData).map((m) => m.command)
+    expect(cmds).toEqual([AudioCommand.AudioNaviStart, AudioCommand.AudioNaviStop])
   })
 
   test('audio lifecycle command for "speech" channel emits AudioNavi* commands', () => {
@@ -586,39 +624,11 @@ describe('AaEventBridge', () => {
     expect(messagesOf(emitMessage, AudioData).length).toBeGreaterThanOrEqual(2)
   })
 
-  test('watchdog forceReenum throwing is swallowed', async () => {
-    const wiredBridge = {
-      forceReenum: vi.fn(async () => {
-        throw new Error('USB hung')
-      }),
-      stop: vi.fn(async () => undefined)
-    } as unknown as import('../stack/transport/UsbAoapBridge').UsbAoapBridge
-    const { aa } = makeBridge({ consumeWiredBridge: () => wiredBridge })
-    aa.emit('disconnected', 'pre-RUNNING watchdog')
-    await new Promise((r) => setImmediate(r))
-    await new Promise((r) => setImmediate(r))
-    expect((wiredBridge as unknown as { stop: Mock }).stop).toHaveBeenCalled()
-  })
-
-  test('watchdog bridge.stop throwing is swallowed', async () => {
-    const wiredBridge = {
-      forceReenum: vi.fn(async () => undefined),
-      stop: vi.fn(async () => {
-        throw new Error('hung')
-      })
-    } as unknown as import('../stack/transport/UsbAoapBridge').UsbAoapBridge
-    const { aa } = makeBridge({ consumeWiredBridge: () => wiredBridge })
-    aa.emit('disconnected', 'pre-RUNNING watchdog')
-    await new Promise((r) => setImmediate(r))
-    await new Promise((r) => setImmediate(r))
-    expect((wiredBridge as unknown as { forceReenum: Mock }).forceReenum).toHaveBeenCalled()
-  })
-
   test('publishNavi preserves naviApp when already present in the bag', async () => {
     const { aa, emitMessage } = makeBridge()
     aa.emit('nav-start') // sets naviApp = "Google Maps"
     emitMessage.mockClear()
-    // emit a status update — publishNavi should pull naviApp from the existing bag (already set), not re-inject
+    // emit a status update. publishNavi should pull naviApp from the existing bag (already set), not re-inject
     aa.emit('nav-status', { state: 'active' })
     const meta = metas(emitMessage)[0]
     expect(asNavi(meta).navi?.NaviAPPName).toBe('Google Maps')

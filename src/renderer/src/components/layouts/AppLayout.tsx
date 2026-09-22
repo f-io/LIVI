@@ -3,10 +3,11 @@ import WifiOffIcon from '@mui/icons-material/WifiOff'
 import Box from '@mui/material/Box'
 import { useTheme } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
+import { ROUTES } from '@shared/types'
 import { useLiviStore, useStatusStore } from '@store/store'
 import { FC, PropsWithChildren, useCallback } from 'react'
 import { useLocation } from 'react-router'
-import { ROUTES, UI } from '../../constants'
+import { UI } from '../../constants'
 import { useAutoHideNav } from '../../hooks/useAutoHideNav'
 import { useBlinkingTime } from '../../hooks/useBlinkingTime'
 import { useNetworkStatus } from '../../hooks/useNetworkStatus'
@@ -34,7 +35,7 @@ export const AppLayout: FC<PropsWithChildren<AppLayoutProps>> = ({
   const isXSIcons = typeof window !== 'undefined' && window.innerHeight <= UI.XS_ICON_MAX_HEIGHT
   const clockFontSize = isXSIcons ? '1rem' : '1.5rem'
 
-  const inAutoHideNavPage = pathname === ROUTES.CLUSTER || pathname === ROUTES.TELEMETRY
+  const inAutoHideNavPage = pathname === ROUTES.TELEMETRY
 
   const { hidden: clusterNavHidden } = useAutoHideNav(inAutoHideNavPage, navRef.current)
 

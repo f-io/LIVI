@@ -138,6 +138,13 @@ export class CarBridgeService {
     }
   }
 
+  // 0-100% from the settings slider (or any other source)
+  public setBrightness(percent: number): void {
+    if (!Number.isFinite(percent)) return
+    const v = Math.round(Math.min(100, Math.max(0, percent)))
+    this.send('bright', String(v))
+  }
+
   private handleCarLine(rest: string): void {
     const sp = rest.indexOf(' ')
     if (sp <= 0) return

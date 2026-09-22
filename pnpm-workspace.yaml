@@ -1,11 +1,6 @@
 packages:
-  - native/gst-video
-  - native/crypto
-overrides:
-  # @electron/rebuild bundles node-gyp 11.5.0, which cannot detect VS2026 on the
-  # windows-2025-vs2026 runner (nodejs/node-gyp#3214, pnpm/pnpm#10268). 12.x adds
-  # support; force the whole tree to it until @electron/rebuild bumps its node-gyp
-  node-gyp: ^12.3.0
+  - native/livi-gst-video
+  - native/livi-crypto
 allowBuilds:
   electron-winstaller: true
   esbuild: true

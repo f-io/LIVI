@@ -2,7 +2,7 @@ import { useStatusStore } from '@store/store'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Controls, ProgressBar } from './components'
 import { FFTSpectrum } from './components/createFFTSpectrum'
-import { MIN_TEXT_COL } from './constants'
+import { MIN_TEXT_COL, OPTIMISTIC_PLAY_TIMEOUT_MS } from './constants'
 import { useElementSize, useMediaState, useOptimisticPlaying, usePressFeedback } from './hooks'
 import { MediaEventType, UsbEvent } from './types'
 import { clamp } from './utils'
@@ -18,7 +18,7 @@ export const Media = ({ forceHydrate = false }: MediaProps = {}) => {
   const isStreaming = useStatusStore((s: { isStreaming: boolean }) => s.isStreaming)
 
   const [rootRef, { w, h }] = useElementSize<HTMLDivElement>()
-  const { snap, livePlayMs } = useMediaState(forceHydrate || isStreaming)
+  const { snap, livePlayMs, stalled } = useMediaState(forceHydrate || isStreaming)
 
   // Scales (base)
   const { titlePx, artistPx, albumPx, pagePad, colGap, sectionGap, ctrlSize, ctrlGap, progressH } =
@@ -63,13 +63,15 @@ export const Media = ({ forceHydrate = false }: MediaProps = {}) => {
     album,
     appName,
     durationMs,
-    realPlaying,
+    realPlaying: reportedPlaying,
     imageDataUrl
   } = mediaProjectionOps({ snap })
+  const realPlaying = reportedPlaying && !stalled
 
   const { uiPlaying, setOverride, clearOverride } = useOptimisticPlaying(
     realPlaying,
-    mediaPayloadError
+    mediaPayloadError,
+    { timeoutMs: OPTIMISTIC_PLAY_TIMEOUT_MS }
   )
   const { press, bump, reset: resetPress } = usePressFeedback()
 

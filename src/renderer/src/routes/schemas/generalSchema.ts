@@ -1,4 +1,5 @@
 import type { Config } from '@shared/types'
+import { PAGES } from '@shared/types'
 import { WIFI_PASSWORD_MAX, WIFI_PASSWORD_MIN } from '@shared/types/Config'
 import {
   MAX_HEIGHT,
@@ -9,7 +10,7 @@ import {
 import { Camera } from '../../components/pages/settings/pages/camera'
 import { GpsHwInfo } from '../../components/pages/settings/pages/general/gps/GpsHwInfo'
 import { GpsInfo } from '../../components/pages/settings/pages/general/gps/GpsInfo'
-import { USBDongle } from '../../components/pages/settings/pages/system/usbDongle/USBDongle'
+import { WifiLinkInfo } from '../../components/pages/settings/pages/general/wifi/WifiLinkInfo'
 import { SelectOption, SettingsNode } from '../types'
 
 const panelDefaultOption: SelectOption = {
@@ -39,13 +40,13 @@ async function loadWifiCountryCodes(): Promise<SelectOption[]> {
 async function loadWifiInterfaces(): Promise<SelectOption[]> {
   const list = await window.app?.listWifiInterfaces?.()
   if (!Array.isArray(list)) return []
-  return list.map((i) => ({ value: i, label: i }))
+  return list.map((i) => ({ value: i, label: i === 'livi-link' ? 'LIVI Link' : i }))
 }
 
 async function loadBtAdapters(): Promise<SelectOption[]> {
   const list = await window.app?.listBtAdapters?.()
   if (!Array.isArray(list)) return []
-  return list.map((i) => ({ value: i, label: i }))
+  return list.map((i) => ({ value: i, label: i === 'livi-link' ? 'LIVI Link' : i }))
 }
 
 export const generalSchema: SettingsNode<Config> = {
@@ -148,6 +149,32 @@ export const generalSchema: SettingsNode<Config> = {
             },
             {
               type: 'select',
+              label: 'Wi-Fi Channel Width',
+              labelKey: 'settings.wifiChannelWidth',
+              icon: 'wifiChannel',
+              path: 'wifiChannelWidth',
+              displayValue: true,
+              options: [
+                {
+                  label: '20 MHz',
+                  value: 20
+                },
+                {
+                  label: '40 MHz',
+                  value: 40
+                },
+                {
+                  label: '80 MHz',
+                  value: 80
+                }
+              ],
+              page: {
+                title: 'Wi-Fi Channel Width',
+                labelTitle: 'settings.wifiChannelWidth'
+              }
+            },
+            {
+              type: 'select',
               label: 'Wi-Fi Country',
               labelKey: 'settings.wifiCountry',
               icon: 'wifiCountry',
@@ -167,27 +194,11 @@ export const generalSchema: SettingsNode<Config> = {
               icon: 'wifiInterface',
               path: 'wifiInterface',
               displayValue: true,
-              disabled: window.app?.platform !== 'linux',
               options: [],
               loadOptions: loadWifiInterfaces,
               page: {
                 title: 'Wi-Fi Interface',
                 labelTitle: 'settings.wifiInterface'
-              }
-            },
-            {
-              type: 'select',
-              label: 'Bluetooth Interface',
-              labelKey: 'settings.btAdapter',
-              icon: 'btInterface',
-              path: 'btAdapter',
-              displayValue: true,
-              disabled: window.app?.platform !== 'linux',
-              options: [],
-              loadOptions: loadBtAdapters,
-              page: {
-                title: 'Bluetooth Interface',
-                labelTitle: 'settings.btAdapter'
               }
             },
             {
@@ -197,8 +208,29 @@ export const generalSchema: SettingsNode<Config> = {
               icon: 'dedicatedInterface',
               path: 'wifiDedicatedInterface',
               disabled: window.app?.platform !== 'linux'
+            },
+            {
+              type: 'custom',
+              label: 'Link Speed',
+              labelKey: 'settings.wifiLinkSpeed',
+              path: 'wifiInterface',
+              component: WifiLinkInfo
             }
           ]
+        },
+        {
+          type: 'select',
+          label: 'Bluetooth Interface',
+          labelKey: 'settings.btAdapter',
+          icon: 'btInterface',
+          path: 'btAdapter',
+          displayValue: true,
+          options: [],
+          loadOptions: loadBtAdapters,
+          page: {
+            title: 'Bluetooth Interface',
+            labelTitle: 'settings.btAdapter'
+          }
         },
         {
           type: 'checkbox',
@@ -213,8 +245,7 @@ export const generalSchema: SettingsNode<Config> = {
           label: 'Wireless CarPlay',
           labelKey: 'settings.wirelessCpEnabled',
           icon: 'wirelessCp',
-          path: 'wirelessCpEnabled',
-          disabled: window.app?.platform !== 'linux'
+          path: 'wirelessCpEnabled'
         },
         {
           type: 'checkbox',
@@ -576,6 +607,51 @@ export const generalSchema: SettingsNode<Config> = {
               ]
             }
           ]
+        },
+        {
+          type: 'route',
+          label: 'Custom Tab',
+          labelKey: 'settings.customTab',
+          icon: 'customTab',
+          route: 'custom',
+          path: '',
+          displayValue: true,
+          children: [
+            {
+              type: 'checkbox',
+              label: 'Main',
+              labelKey: 'settings.mainScreen',
+              icon: 'mainScreen',
+              path: 'custom.main'
+            },
+            {
+              type: 'checkbox',
+              label: 'Dash',
+              labelKey: 'settings.dashScreen',
+              icon: 'dashScreen',
+              path: 'custom.dash'
+            },
+            {
+              type: 'checkbox',
+              label: 'Aux',
+              labelKey: 'settings.auxScreen',
+              icon: 'auxScreen',
+              path: 'custom.aux'
+            },
+            {
+              type: 'string',
+              label: 'Address',
+              labelKey: 'settings.customUrl',
+              icon: 'customUrl',
+              path: 'customUrl',
+              format: 'url',
+              displayValue: true,
+              page: {
+                title: 'Address',
+                labelTitle: 'settings.customUrl'
+              }
+            }
+          ]
         }
       ]
     },
@@ -850,13 +926,7 @@ export const generalSchema: SettingsNode<Config> = {
       icon: 'startPage',
       path: 'startPage',
       displayValue: true,
-      options: [
-        { label: 'Home', labelKey: 'settings.startPageHome', value: 'home' },
-        { label: 'Telemetry', labelKey: 'settings.startPageTelemetry', value: 'telemetry' },
-        { label: 'Media', labelKey: 'settings.startPageMedia', value: 'media' },
-        { label: 'Camera', labelKey: 'settings.startPageCamera', value: 'camera' },
-        { label: 'Settings', labelKey: 'settings.startPageSettings', value: 'settings' }
-      ],
+      options: PAGES.map(({ path, label, labelKey }) => ({ label, labelKey, value: path })),
       page: {
         title: 'Start Page',
         labelTitle: 'settings.startPage'
@@ -1058,23 +1128,6 @@ export const generalSchema: SettingsNode<Config> = {
               component: GpsHwInfo
             }
           ]
-        }
-      ]
-    },
-    {
-      type: 'route',
-      label: 'USB Dongle',
-      labelKey: 'settings.usbDongle',
-      icon: 'usbDongle',
-      route: 'usbDongle',
-      path: '',
-      children: [
-        {
-          type: 'custom',
-          label: 'USB Dongle',
-          labelKey: 'settings.usbDongle',
-          path: 'carName',
-          component: USBDongle
         }
       ]
     }

@@ -30,6 +30,10 @@ vi.mock('@main/app/hostOutput', () => ({
   listHostOutputModes: vi.fn(() => ['1024x600', '800x480'])
 }))
 
+const { dongleApPresent } = vi.hoisted(() => ({ dongleApPresent: vi.fn(async () => false) }))
+
+vi.mock('@main/services/link/dongleAp', () => ({ DONGLE_LINK: 'livi-link', dongleApPresent }))
+
 vi.mock('@main/app/wifiOptions', () => ({
   listBtAdapters: vi.fn(() => ['hci0']),
   listWifiChannels: vi.fn(() => [36, 40]),
@@ -59,7 +63,6 @@ describe('registerSettingsIpc', () => {
         'settings:get-kiosk',
         'getSettings',
         'save-settings',
-        'settings:reset-dongle-icons',
         'app:getVersion',
         'app:getLatestRelease'
       ])
@@ -162,46 +165,6 @@ describe('registerSettingsIpc', () => {
     expect(saveSettings).toHaveBeenCalledWith(runtimeState, patch)
   })
 
-  test('settings:reset-dongle-icons restores bundled icon defaults and returns them', async () => {
-    const richRuntimeState = {
-      config: {
-        kiosk: true,
-        dongleIcon120: 'old-120',
-        dongleIcon180: 'old-180',
-        dongleIcon256: 'old-256'
-      }
-    } as never
-
-    registerSettingsIpc(richRuntimeState)
-
-    const handler = getHandler<
-      () => {
-        dongleIcon120: string
-        dongleIcon180: string
-        dongleIcon256: string
-      }
-    >('settings:reset-dongle-icons')
-
-    const result = handler()
-
-    expect(saveSettings).toHaveBeenCalledWith(
-      richRuntimeState,
-      expect.objectContaining({
-        dongleIcon120: expect.any(String),
-        dongleIcon180: expect.any(String),
-        dongleIcon256: expect.any(String)
-      })
-    )
-
-    expect(result).toEqual(
-      expect.objectContaining({
-        dongleIcon120: expect.any(String),
-        dongleIcon180: expect.any(String),
-        dongleIcon256: expect.any(String)
-      })
-    )
-  })
-
   test('app:getLatestRelease falls back to json.name when tag_name is missing', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -268,15 +231,50 @@ describe('registerSettingsIpc', () => {
   })
 
   test('list handlers delegate to the host and wifi helpers', async () => {
-    const state = { config: { wifiType: '5ghz' } } as never
+    const state = { config: { wifiType: '5ghz', country: 'DE', wifiInterface: 'wlan0' } } as never
     registerSettingsIpc(state)
 
     expect(getHandler<() => string[]>('app:listDisplayModes')()).toEqual(['1024x600', '800x480'])
     expect(getHandler<() => number[]>('app:listWifiChannels')()).toEqual([36, 40])
-    expect(listWifiChannels).toHaveBeenCalledWith('5ghz')
+    expect(listWifiChannels).toHaveBeenCalledWith('5ghz', 'DE', 'wlan0')
     expect(getHandler<() => string[]>('app:listWifiCountryCodes')()).toEqual(['AT', 'DE'])
-    expect(getHandler<() => string[]>('app:listWifiInterfaces')()).toEqual(['wlan0'])
-    expect(getHandler<() => string[]>('app:listBtAdapters')()).toEqual(['hci0'])
+    expect(await getHandler<() => Promise<string[]>>('app:listWifiInterfaces')()).toEqual(['wlan0'])
+    expect(await getHandler<() => Promise<string[]>>('app:listBtAdapters')()).toEqual(['hci0'])
+  })
+
+  test('the wifi interface list offers the dongle once it answers', async () => {
+    dongleApPresent.mockResolvedValueOnce(true)
+    registerSettingsIpc({ config: {} } as never)
+
+    expect(await getHandler<() => Promise<string[]>>('app:listWifiInterfaces')()).toEqual([
+      'wlan0',
+      'livi-link'
+    ])
+  })
+
+  test('the bluetooth adapter list offers the dongle once it answers', async () => {
+    dongleApPresent.mockResolvedValue(true)
+    registerSettingsIpc({ config: {} } as never)
+
+    expect(await getHandler<() => Promise<string[]>>('app:listBtAdapters')()).toEqual([
+      'hci0',
+      'livi-link'
+    ])
+  })
+
+  test('an empty list is logged as none rather than as nothing', async () => {
+    const { listWifiInterfaces, listBtAdapters } = await import('@main/app/wifiOptions')
+    dongleApPresent.mockResolvedValue(false)
+    vi.mocked(listWifiInterfaces).mockReturnValueOnce([])
+    vi.mocked(listBtAdapters).mockReturnValueOnce([])
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    registerSettingsIpc({ config: {} } as never)
+
+    expect(await getHandler<() => Promise<string[]>>('app:listWifiInterfaces')()).toEqual([])
+    expect(await getHandler<() => Promise<string[]>>('app:listBtAdapters')()).toEqual([])
+    expect(log).toHaveBeenCalledWith('[settings] wifi interfaces: none')
+    expect(log).toHaveBeenCalledWith('[settings] bluetooth adapters: none')
+    log.mockRestore()
   })
 
   test('app:getLatestRelease pulls the nightly feed and derives version, commit and run', async () => {

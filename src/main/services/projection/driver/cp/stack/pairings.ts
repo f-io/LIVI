@@ -5,8 +5,9 @@
  * identifier; pair-verify looks it up to authenticate a reconnecting phone.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { writeFileAtomic } from '@shared/utils'
 import { app } from 'electron'
 
 function dir(): string {
@@ -31,7 +32,7 @@ export function savePairing(identifier: string, ltpk: Buffer): void {
   p[identifier] = ltpk.toString('hex')
   try {
     mkdirSync(dir(), { recursive: true })
-    writeFileSync(file(), JSON.stringify(p), { mode: 0o600 })
+    writeFileAtomic(file(), JSON.stringify(p), 0o600)
   } catch (e) {
     console.warn('[cpPairings] persist failed:', (e as Error).message)
   }

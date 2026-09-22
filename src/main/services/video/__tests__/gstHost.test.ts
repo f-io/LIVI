@@ -107,7 +107,7 @@ function blockGstVideoResolve(): () => void {
   const M = Module as unknown as Resolver
   const orig = M._resolveFilename
   M._resolveFilename = function (request: unknown, ...rest: unknown[]) {
-    if (request === 'gst-video') throw new Error('module not found')
+    if (request === 'livi-gst-video') throw new Error('module not found')
     return orig.call(this, request, ...rest)
   }
   return () => {
@@ -115,7 +115,11 @@ function blockGstVideoResolve(): () => void {
   }
 }
 
+const realPlatform = process.platform
+
 beforeEach(() => {
+  // the host process is a Linux thing; these tests describe it wherever they run
+  Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
   vi.clearAllMocks()
   children.length = 0
   servers.length = 0
@@ -129,6 +133,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true })
   vi.useRealTimers()
 })
 
@@ -330,7 +335,10 @@ describe('gstHost framing + transport', () => {
 
     expect(createServerMock).not.toHaveBeenCalled()
     expect(spawnMock).not.toHaveBeenCalled()
-    expect(errSpy).toHaveBeenCalledWith('[gstHost] cannot resolve gst-video:', 'module not found')
+    expect(errSpy).toHaveBeenCalledWith(
+      '[gstHost] cannot resolve livi-gst-video:',
+      'module not found'
+    )
 
     restore()
     gstHost.createPlayer(1, 'h264')
@@ -494,6 +502,312 @@ describe('gstHost reverse channel', () => {
   })
 })
 
+describe('gstHost audio', () => {
+  const AUDIO = {
+    codec: 'aac-lc' as const,
+    payloadType: 96,
+    clockRate: 44100,
+    channels: 2,
+    latencyMs: 1000,
+    realtime: false
+  }
+
+  test('openAudio carries the settings and the key, and answers with both ports', async () => {
+    const gstHost = await freshHost()
+    const promise = gstHost.openAudio(Buffer.alloc(32, 7), { ...AUDIO, device: 'sink0' })
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+
+    const f = sock.write.mock.calls[0][0] as Buffer
+    expect(f.readUInt8(4)).toBe(8)
+    const streamId = f.readUInt32LE(5)
+    const body = f.subarray(9)
+    expect(body.readUInt8(0)).toBe(0)
+    expect(body.readUInt8(1)).toBe(96)
+    expect(body.readUInt32LE(2)).toBe(44100)
+    expect(body.readUInt8(6)).toBe(2)
+    expect(body.readUInt32LE(7)).toBe(1000)
+    expect(body.readUInt8(11)).toBe(0)
+    expect(body.subarray(12, 44)).toEqual(Buffer.alloc(32, 7))
+    expect(body.subarray(44).toString('utf8')).toBe('sink0')
+
+    const ports = Buffer.allocUnsafe(4)
+    ports.writeUInt16LE(6000, 0)
+    ports.writeUInt16LE(6001, 2)
+    sock.emit('data', reverse(4, streamId, ports))
+    await expect(promise).resolves.toEqual({ streamId, dataPort: 6000, controlPort: 6001 })
+  })
+
+  test('a fed stream sets the flag and names no device', async () => {
+    const gstHost = await freshHost()
+    void gstHost.openAudio(Buffer.alloc(32), { ...AUDIO, codec: 'pcm-le', fed: true })
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+
+    const body = (sock.write.mock.calls[0][0] as Buffer).subarray(9)
+    expect(body.readUInt8(0)).toBe(3)
+    expect(body.readUInt8(11)).toBe(2)
+    expect(body.length).toBe(44)
+  })
+
+  test('a short port payload resolves with no ports', async () => {
+    const gstHost = await freshHost()
+    const promise = gstHost.openAudio(Buffer.alloc(32), AUDIO)
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+
+    const streamId = (sock.write.mock.calls[0][0] as Buffer).readUInt32LE(5)
+    sock.emit('data', reverse(4, streamId, Buffer.from([1])))
+    await expect(promise).resolves.toEqual({ streamId, dataPort: 0, controlPort: 0 })
+  })
+
+  test('an open the host never answers gives up after the wait', async () => {
+    vi.useFakeTimers()
+    const gstHost = await freshHost()
+    const promise = gstHost.openAudio(Buffer.alloc(32), AUDIO)
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+
+    const streamId = (sock.write.mock.calls[0][0] as Buffer).readUInt32LE(5)
+    await vi.advanceTimersByTimeAsync(4000)
+
+    await expect(promise).resolves.toEqual({ streamId, dataPort: 0, controlPort: 0 })
+    vi.useRealTimers()
+  })
+
+  test('a realtime stream sets its flag', async () => {
+    const gstHost = await freshHost()
+    void gstHost.openAudio(Buffer.alloc(32), { ...AUDIO, realtime: true })
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+
+    expect((sock.write.mock.calls[0][0] as Buffer).subarray(9).readUInt8(11)).toBe(1)
+  })
+
+  test('a port report for a stream nobody waits on is dropped', async () => {
+    const gstHost = await freshHost()
+    gstHost.closeAudio(0)
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+
+    expect(() => sock.emit('data', reverse(4, 999, Buffer.alloc(4)))).not.toThrow()
+  })
+
+  test('volume, active, data and stop each go out as their own frame', async () => {
+    const gstHost = await freshHost()
+    gstHost.closeAudio(0)
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+    sock.write.mockClear()
+
+    gstHost.setAudioVolume(3, 0.25, 250)
+    gstHost.setAudioActive(3, true)
+    gstHost.pushAudio(3, Buffer.from([1, 2]))
+    gstHost.closeAudio(3)
+
+    const ops = sock.write.mock.calls.map((c) => (c[0] as Buffer).readUInt8(4))
+    expect(ops).toEqual([9, 13, 14, 10])
+    const volume = sock.write.mock.calls[0][0] as Buffer
+    expect(volume.subarray(9).readDoubleLE(0)).toBe(0.25)
+    expect(volume.subarray(9).readUInt32LE(8)).toBe(250)
+    expect((sock.write.mock.calls[1][0] as Buffer).subarray(9)).toEqual(Buffer.from([1]))
+    expect((sock.write.mock.calls[2][0] as Buffer).subarray(9)).toEqual(Buffer.from([1, 2]))
+  })
+
+  test('an inactive stream is switched off with a zero', async () => {
+    const gstHost = await freshHost()
+    gstHost.closeAudio(0)
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+    sock.write.mockClear()
+
+    gstHost.setAudioActive(3, false)
+
+    expect((sock.write.mock.calls[0][0] as Buffer).subarray(9)).toEqual(Buffer.from([0]))
+  })
+
+  test('openMic carries the phone address, the device and the key', async () => {
+    const gstHost = await freshHost()
+    gstHost.closeAudio(0)
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+    sock.write.mockClear()
+
+    const id = gstHost.openMic(Buffer.alloc(32, 3), {
+      codec: 'opus',
+      payloadType: 97,
+      sampleRate: 24000,
+      channels: 1,
+      bitrate: 48000,
+      frameMs: 20,
+      port: 5010,
+      phone: 'fe80::1',
+      device: 'src0'
+    })
+    gstHost.closeMic(id)
+
+    const f = sock.write.mock.calls[0][0] as Buffer
+    expect(f.readUInt8(4)).toBe(11)
+    expect(f.readUInt32LE(5)).toBe(id)
+    const body = f.subarray(9)
+    expect(body.readUInt8(0)).toBe(0)
+    expect(body.readUInt32LE(2)).toBe(24000)
+    expect(body.readUInt32LE(7)).toBe(48000)
+    expect(body.readUInt32LE(11)).toBe(20)
+    expect(body.readUInt16LE(15)).toBe(5010)
+    expect(body.subarray(17, 49)).toEqual(Buffer.alloc(32, 3))
+    expect(body.readUInt8(49)).toBe('fe80::1'.length)
+    expect(body.subarray(50, 57).toString('utf8')).toBe('fe80::1')
+    expect(body.subarray(57).toString('utf8')).toBe('src0')
+    expect((sock.write.mock.calls[1][0] as Buffer).readUInt8(4)).toBe(12)
+  })
+
+  test('a pcm microphone without a device sends the codec byte for it', async () => {
+    const gstHost = await freshHost()
+    gstHost.closeAudio(0)
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+    sock.write.mockClear()
+
+    gstHost.openMic(Buffer.alloc(32), {
+      codec: 'pcm',
+      payloadType: 97,
+      sampleRate: 16000,
+      channels: 1,
+      bitrate: 48000,
+      frameMs: 20,
+      port: 1,
+      phone: 'a'
+    })
+
+    const body = (sock.write.mock.calls[0][0] as Buffer).subarray(9)
+    expect(body.readUInt8(0)).toBe(1)
+    expect(body.length).toBe(51)
+  })
+
+  test('openFeed asks the host to bind the feed socket and resolves the path it returns', async () => {
+    const gstHost = await freshHost()
+    const promise = gstHost.openFeed()
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+    const f = sock.write.mock.calls[0][0] as Buffer
+    expect(f.readUInt8(4)).toBe(16)
+
+    sock.emit('data', reverse(7, 0, Buffer.from('/tmp/livi.feed', 'utf8')))
+    await expect(promise).resolves.toBe('/tmp/livi.feed')
+    // The bound path is cached, a second call does not re-ask the host.
+    sock.write.mockClear()
+    await expect(gstHost.openFeed()).resolves.toBe('/tmp/livi.feed')
+    expect(sock.write).not.toHaveBeenCalled()
+  })
+
+  test('openFeed resolves empty when the host never answers', async () => {
+    vi.useFakeTimers()
+    const gstHost = await freshHost()
+    const promise = gstHost.openFeed()
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+    await vi.advanceTimersByTimeAsync(4000)
+    await expect(promise).resolves.toBe('')
+  })
+
+  test('a child spawn error makes the host unavailable and empties a pending feed', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const gstHost = await freshHost()
+    const promise = gstHost.openFeed()
+    children[0].emit('error', new Error('spawn failed'))
+    await expect(promise).resolves.toBe('')
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('cannot start the host'))
+    errSpy.mockRestore()
+  })
+
+  test('openMicTap names the format, the device and the socket the tap feeds', async () => {
+    const gstHost = await freshHost()
+    gstHost.closeAudio(0)
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+    sock.write.mockClear()
+
+    const id = gstHost.openMicTap('/run/livi/aa-mic.sock', {
+      sampleRate: 24000,
+      channels: 2,
+      device: 'src0'
+    })
+
+    const f = sock.write.mock.calls[0][0] as Buffer
+    expect(f.readUInt8(4)).toBe(20)
+    expect(f.readUInt32LE(5)).toBe(id)
+    const body = f.subarray(9)
+    expect(f.readUInt32LE(0)).toBe(5 + body.length)
+    expect(body.readUInt32LE(0)).toBe(24000)
+    expect(body.readUInt8(4)).toBe(2)
+    expect(body.readUInt8(5)).toBe('src0'.length)
+    expect(body.subarray(6, 10).toString('utf8')).toBe('src0')
+    expect(body.subarray(10).toString('utf8')).toBe('/run/livi/aa-mic.sock')
+  })
+
+  test('closeMicTap ends the tap it opened, a tap without a device names none', async () => {
+    const gstHost = await freshHost()
+    gstHost.closeAudio(0)
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+    sock.write.mockClear()
+
+    const id = gstHost.openMicTap('/tmp/mic.sock', { sampleRate: 16000, channels: 1 })
+    gstHost.closeMicTap(id)
+
+    const open = (sock.write.mock.calls[0][0] as Buffer).subarray(9)
+    expect(open.readUInt8(5)).toBe(0)
+    expect(open.subarray(6).toString('utf8')).toBe('/tmp/mic.sock')
+    const close = sock.write.mock.calls[1][0] as Buffer
+    expect(close.readUInt32LE(0)).toBe(5)
+    expect(close.readUInt8(4)).toBe(21)
+    expect(close.readUInt32LE(5)).toBe(id)
+    expect(close).toHaveLength(9)
+  })
+
+  test('setVisualizerTap toggles the tap and viz samples reach the listener with their rate', async () => {
+    const gstHost = await freshHost()
+    gstHost.closeAudio(0)
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+    sock.write.mockClear()
+
+    gstHost.setVisualizerTap(true)
+    const on = sock.write.mock.calls[0][0] as Buffer
+    expect(on.readUInt8(4)).toBe(15)
+    expect(on.subarray(9)).toEqual(Buffer.from([1]))
+
+    gstHost.setVisualizerTap(false)
+    expect((sock.write.mock.calls[1][0] as Buffer).subarray(9)).toEqual(Buffer.from([0]))
+
+    const seen: { samples: Uint8Array; rate: number }[] = []
+    gstHost.onVisualizerAudio((samples, rate) => seen.push({ samples, rate }))
+    const reply = Buffer.concat([Buffer.alloc(4), Buffer.from([9, 8, 7, 6])])
+    reply.writeUInt32LE(44100, 0)
+    sock.emit('data', reverse(6, 7, reply))
+
+    expect(seen).toEqual([{ samples: new Uint8Array([9, 8, 7, 6]), rate: 44100 }])
+  })
+
+  test('the started report reaches its listener with the first sample', async () => {
+    const gstHost = await freshHost()
+    gstHost.closeAudio(0)
+    const sock = makeSocket()
+    connectionHandlers[0](sock)
+    const started = vi.fn()
+    gstHost.onAudioStarted(started)
+
+    const sample = Buffer.allocUnsafe(4)
+    sample.writeUInt32LE(4242, 0)
+    sock.emit('data', reverse(5, 77, sample))
+    sock.emit('data', reverse(5, 78, Buffer.from([1])))
+
+    expect(started).toHaveBeenNthCalledWith(1, 77, 4242)
+    expect(started).toHaveBeenNthCalledWith(2, 78, 0)
+  })
+})
+
 describe('gstHost child lifecycle', () => {
   test('child exit on a signal prints the crash backtrace and closes the server', async () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -557,6 +871,28 @@ describe('gstHost child lifecycle', () => {
     expect(hook).toBeTypeOf('function')
     hook()
     expect(children[0].kill).toHaveBeenCalled()
+  })
+
+  test('off linux the host never starts, and every later call is a silent no-op', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const gstHost = await freshHost()
+
+    gstHost.createPlayer(1, 'h264')
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('no host process on this platform')
+    )
+    expect(createServerMock).not.toHaveBeenCalled()
+    expect(spawnMock).not.toHaveBeenCalled()
+
+    // A second call finds `unavailable` already set: send() returns before queuing anything.
+    warnSpy.mockClear()
+    gstHost.createPlayer(2, 'h264')
+    expect(warnSpy).not.toHaveBeenCalled()
+    expect(createServerMock).not.toHaveBeenCalled()
+
+    warnSpy.mockRestore()
   })
 })
 

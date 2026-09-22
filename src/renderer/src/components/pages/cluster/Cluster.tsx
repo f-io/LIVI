@@ -1,6 +1,6 @@
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined'
-import { Box, Typography, useTheme } from '@mui/material'
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { Box, useTheme } from '@mui/material'
+import React, { useEffect, useRef, useState } from 'react'
 import { useLiviStore, useStatusStore } from '../../../store/store'
 import { ViewAreaMask } from '../projection/ViewAreaMask'
 
@@ -9,66 +9,16 @@ type ClusterProps = {
   showLoadingPlaceholder?: boolean
 }
 
-type BoxInfo = { supportFeatures?: unknown }
-
-function isBoxInfo(v: unknown): v is BoxInfo {
-  return typeof v === 'object' && v !== null
-}
-
-function parseBoxInfo(raw: unknown): BoxInfo | null {
-  if (isBoxInfo(raw)) return raw
-
-  if (typeof raw === 'string') {
-    const s = raw.trim()
-    if (!s) return null
-    try {
-      const parsed: unknown = JSON.parse(s)
-      return isBoxInfo(parsed) ? parsed : null
-    } catch {
-      return null
-    }
-  }
-
-  return null
-}
-
 export const Cluster: React.FC<ClusterProps> = ({ visible, showLoadingPlaceholder = true }) => {
   const theme = useTheme()
   const showCluster = visible === true
 
-  const boxInfoRaw = useLiviStore((s) => s.boxInfo)
   const settings = useLiviStore((s) => s.settings)
-  const isStreaming = useStatusStore((s) => s.isStreaming)
-  const activeProtocol = useStatusStore((s) => s.activeProtocol)
   const clusterDashActive = useStatusStore((s) => s.clusterDashActive)
 
   const [clusterStreamActive, setClusterStreamActive] = useState(false)
 
   const rootRef = useRef<HTMLDivElement>(null)
-
-  const supportsNaviScreen = useMemo(() => {
-    // AA-native and CarPlay-native expose a cluster sink (alt screen) when a cluster display is active
-    if (activeProtocol === 'androidauto' || activeProtocol === 'carplay') return true
-
-    const box = parseBoxInfo(boxInfoRaw)
-    if (!box) return false
-
-    const features = box.supportFeatures
-
-    if (Array.isArray(features)) {
-      return features.some((f) => String(f).trim().toLowerCase() === 'naviscreen')
-    }
-
-    if (typeof features === 'string') {
-      return features
-        .split(/[,\s]+/g)
-        .map((x) => x.trim().toLowerCase())
-        .filter(Boolean)
-        .includes('naviscreen')
-    }
-
-    return false
-  }, [boxInfoRaw, activeProtocol])
 
   // Request the cluster (stream + plane) ONLY while the cluster view is actually shown.
   const showClusterRef = useRef(showCluster)
@@ -167,26 +117,6 @@ export const Cluster: React.FC<ClusterProps> = ({ visible, showLoadingPlaceholde
           }}
         >
           <MapOutlinedIcon sx={{ fontSize: 84, opacity: 0.55 }} />
-        </Box>
-      )}
-
-      {isStreaming && !supportsNaviScreen && (
-        <Box
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            display: 'grid',
-            placeItems: 'center',
-            textAlign: 'center',
-            pointerEvents: 'none'
-          }}
-        >
-          <Box sx={{ display: 'grid', placeItems: 'center', gap: 1 }}>
-            <MapOutlinedIcon sx={{ fontSize: 84, opacity: 0.55 }} />
-            <Typography variant="body2" sx={{ opacity: 0.75 }}>
-              Not supported by firmware
-            </Typography>
-          </Box>
         </Box>
       )}
 

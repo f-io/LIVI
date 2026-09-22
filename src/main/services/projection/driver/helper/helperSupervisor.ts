@@ -1,100 +1,79 @@
-import { type ChildProcess, spawn } from 'node:child_process'
+import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync
-} from 'node:fs'
-import { join } from 'node:path'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { DEBUG } from '@main/constants'
 import type { Config } from '@shared/types'
 import { app } from 'electron'
 import { loadOrCreateIdentity } from '../cp/stack/identity'
+
+const HELPER_BIN = 'livi-helperd'
 
 function isInsideAppImageMount(p: string): boolean {
   if (process.env.APPIMAGE && p.startsWith(process.env.APPDIR ?? '')) return true
   return p.includes('/.mount_')
 }
 
-function* walkTree(
-  root: string,
-  prefix = ''
-): Generator<{ relPath: string; size: number; mtimeMs: number }> {
-  for (const name of readdirSync(root).sort()) {
-    const full = join(root, name)
-    const rel = prefix ? `${prefix}/${name}` : name
-    const st = statSync(full)
-    if (st.isDirectory()) {
-      yield* walkTree(full, rel)
-    } else if (st.isFile()) {
-      yield { relPath: rel, size: st.size, mtimeMs: st.mtimeMs }
-    }
+// The AppImage FUSE mount is private to the launching user, so root cannot exec the
+// binary from there. Copy it onto a real filesystem path that root can reach.
+// Staged via temp + rename: the AP boot service runs this binary, and writing the
+// executing inode in place raises ETXTBSY — rename swaps the path atomically instead.
+function stageHelperBin(src: string): string {
+  const dest = join(app.getPath('userData'), 'driver', HELPER_BIN)
+  const digest = (p: string): string => createHash('sha256').update(readFileSync(p)).digest('hex')
+  if (!existsSync(dest) || digest(dest) !== digest(src)) {
+    mkdirSync(dirname(dest), { recursive: true })
+    const tmp = `${dest}.new`
+    copyFileSync(src, tmp)
+    chmodSync(tmp, 0o755)
+    renameSync(tmp, dest)
   }
+  return dest
 }
 
-function signTree(root: string): string {
-  const h = createHash('sha256')
-  for (const e of walkTree(root)) {
-    h.update(e.relPath)
-    h.update('\0')
-    h.update(readFileSync(join(root, e.relPath)))
-    h.update('\0')
-  }
-  return h.digest('hex')
-}
-function stageHelperDir(sourceRoot: string): string {
-  const stageRoot = join(app.getPath('userData'), 'driver', 'unified')
-  const sigPath = join(stageRoot, '.livi-staged-sig')
-  const wantSig = signTree(sourceRoot)
-
-  if (existsSync(sigPath)) {
+// A leftover helper (crashed LIVI, killed session) runs as root and keeps the
+// MFi GPIO, the RFCOMM channel and the BT sockets claimed; only root can end it.
+// The end anchor spares the AP service, which runs the same binary as --wifi-ap.
+function killStaleHelpers(): void {
+  if (process.platform !== 'linux') return
+  for (const pattern of ['livi-helper\\.py', 'driver/livi-helperd$']) {
     try {
-      if (readFileSync(sigPath, 'utf8').trim() === wantSig) return stageRoot
+      const out = execFileSync('pgrep', ['-f', pattern], { encoding: 'utf8' }).trim()
+      if (!out) continue
+      console.warn(`[helper] stopping a stale helper instance (${pattern})`)
+      execFileSync('sudo', ['-n', 'pkill', '-f', pattern], { stdio: 'ignore' })
     } catch {
-      /* re-stage */
+      /* nothing to clean up, or no passwordless sudo for it */
     }
   }
-  // cleanup files
-  try {
-    rmSync(stageRoot, { recursive: true, force: true })
-  } catch (err) {
-    console.warn(`[helper] could not clear ${stageRoot}: ${(err as Error).message}`)
-  }
-  mkdirSync(stageRoot, { recursive: true })
-  cpSync(sourceRoot, stageRoot, { recursive: true, force: true })
-  writeFileSync(sigPath, `${wantSig}\n`, { mode: 0o644 })
-  if (DEBUG) console.log(`[helper] staged driver/ from AppImage mount to ${stageRoot}`)
-  return stageRoot
 }
-function resolveHelperRoot(): string {
-  const entry = join('helper', 'livi-helper.py')
-  const devPath = join(__dirname, 'driver')
-  if (existsSync(join(devPath, entry))) return devPath
 
-  const resPath =
-    typeof process.resourcesPath === 'string' ? join(process.resourcesPath, 'driver') : ''
-  if (resPath && existsSync(join(resPath, entry))) {
-    if (process.platform === 'linux' && isInsideAppImageMount(resPath)) {
+export function resolveHelperBin(): string {
+  const envBin = process.env.LIVI_HELPER_BIN
+  if (envBin && existsSync(envBin)) return envBin
+
+  const resBin =
+    typeof process.resourcesPath === 'string'
+      ? join(process.resourcesPath, 'driver', HELPER_BIN)
+      : ''
+  if (resBin && existsSync(resBin)) {
+    if (process.platform === 'linux' && isInsideAppImageMount(resBin)) {
       try {
-        return stageHelperDir(resPath)
+        return stageHelperBin(resBin)
       } catch (err) {
-        if (DEBUG)
-          console.warn(
-            `[helper] staging failed, falling back to mount path: ${(err as Error).message}`
-          )
-        return resPath
+        console.warn(`[helper] staging failed: ${(err as Error).message}`)
+        // root can never exec from the user's FUSE mount — a previously staged
+        // copy, even an older build, is the only path sudo can run.
+        const staged = join(app.getPath('userData'), 'driver', HELPER_BIN)
+        if (existsSync(staged)) return staged
+        return resBin
       }
     }
-    return resPath
+    return resBin
   }
 
-  return devPath
+  return join(__dirname, 'driver', HELPER_BIN)
 }
 function envFromConfig(cfg: Config): NodeJS.ProcessEnv {
   const wantAaWireless = cfg.wirelessAaEnabled === true
@@ -103,12 +82,17 @@ function envFromConfig(cfg: Config): NodeJS.ProcessEnv {
 
   return {
     ...process.env,
-    PYTHONDONTWRITEBYTECODE: '1',
     LIVI_AA_WIRELESS: wantAaWireless ? '1' : '',
     LIVI_CP_WIRELESS: wantCpWireless ? '1' : '',
     DEBUG: DEBUG ? '1' : '',
     LIVI_CP_PK: identity.pkHex,
     LIVI_CP_PI: identity.pairingId,
+    LIVI_CP_NAME: cfg.carName || process.env.LIVI_CP_NAME || '',
+    LIVI_BT_ADAPTER: cfg.btAdapter || '',
+    LIVI_WIFI_IFACE: cfg.wifiInterface || '',
+    LIVI_PASSPHRASE: cfg.wifiPassword || '',
+    LIVI_CHANNEL: String(cfg.wifiChannel || ''),
+    LIVI_COUNTRY: cfg.country || '',
     LIVI_CP_DEBUG: DEBUG ? '1' : ''
   }
 }
@@ -121,7 +105,6 @@ export interface HelperSupervisorEvents {
 }
 
 export interface HelperSupervisorOptions {
-  python?: string
   restartDelayMs?: number
   maxRestarts?: number
 }
@@ -131,13 +114,11 @@ export class HelperSupervisor extends EventEmitter {
   private _restartCount = 0
   private _restartTimer: NodeJS.Timeout | null = null
   private _cfg: Config | null = null
-  private readonly _python: string
   private readonly _restartDelayMs: number
   private readonly _maxRestarts: number
 
   constructor(opts: HelperSupervisorOptions = {}) {
     super()
-    this._python = opts.python ?? 'python3'
     this._restartDelayMs = opts.restartDelayMs ?? 2000
     this._maxRestarts = opts.maxRestarts ?? -1
   }
@@ -174,27 +155,27 @@ export class HelperSupervisor extends EventEmitter {
 
   private _spawn(): void {
     if (!this._cfg) return
-    const helperRoot = resolveHelperRoot()
-    const script = join(helperRoot, 'helper', 'livi-helper.py')
+    killStaleHelpers()
+    const bin = resolveHelperBin()
 
-    if (!existsSync(script)) {
-      this.emit('error', new Error(`livi-helper.py not found at ${script}`))
+    if (!existsSync(bin)) {
+      this.emit('error', new Error(`${HELPER_BIN} not found at ${bin}`))
       return
     }
 
     const env = envFromConfig(this._cfg)
     const useSudo = process.platform === 'linux'
-    const cmd = useSudo ? 'sudo' : this._python
-    const args = useSudo ? ['-n', '-E', this._python, '-u', script] : ['-u', script]
+    const cmd = useSudo ? 'sudo' : bin
+    const args = useSudo ? ['-n', '-E', bin] : []
 
     if (DEBUG) {
       console.log(
-        `[helper] spawning ${cmd} ${args.join(' ')} (cwd=${helperRoot}, aa=${env.LIVI_AA_WIRELESS || '0'}, cpWireless=${env.LIVI_CP_WIRELESS || '0'})`
+        `[helper] spawning ${cmd} ${args.join(' ')} (aa=${env.LIVI_AA_WIRELESS || '0'}, cpWireless=${env.LIVI_CP_WIRELESS || '0'})`
       )
     }
 
     const child = spawn(cmd, args, {
-      cwd: helperRoot,
+      cwd: dirname(bin),
       env,
       stdio: ['ignore', 'pipe', 'pipe']
     })
@@ -241,7 +222,7 @@ export class HelperSupervisor extends EventEmitter {
 
       this._restartCount += 1
       if (this._maxRestarts >= 0 && this._restartCount > this._maxRestarts) {
-        this.emit('error', new Error(`livi-helper.py exceeded max restarts (${this._maxRestarts})`))
+        this.emit('error', new Error(`${HELPER_BIN} exceeded max restarts (${this._maxRestarts})`))
         return
       }
 

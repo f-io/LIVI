@@ -8,11 +8,6 @@ vi.mock('../projection', () => ({
   Projection: 'ProjectionMock'
 }))
 
-vi.mock('../home', () => ({
-  __esModule: true,
-  Home: 'HomeMock'
-}))
-
 vi.mock('../cluster', () => ({
   __esModule: true,
   Cluster: 'ClusterMock'
@@ -39,7 +34,6 @@ describe('pages index', () => {
 
     expect(mod.Camera).toBe('CameraMock')
     expect(mod.Projection).toBe('ProjectionMock')
-    expect(mod.Home).toBe('HomeMock')
     expect(mod.Cluster).toBe('ClusterMock')
     expect(mod.Media).toBe('MediaMock')
     expect(mod.SettingsPage).toBe('SettingsPageMock')

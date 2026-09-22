@@ -2,7 +2,6 @@ import {
   aaContentArea,
   clamp,
   computeAndroidAutoDpi,
-  dongleDisplayName,
   getCurrentTimeInMs,
   matchFittingAAResolution,
   pixelAspectRatioE4
@@ -148,11 +147,6 @@ describe('androidAuto utils', () => {
     expect(dpi % 10).toBe(0)
     expect(dpi).toBeGreaterThan(140)
     expect(dpi).toBeLessThan(420)
-  })
-
-  test('dongleDisplayName tags the name with a (D) suffix', () => {
-    expect(dongleDisplayName('CarPlay')).toBe('CarPlay (D)')
-    expect(dongleDisplayName('')).toBe(' (D)')
   })
 
   test('computeAndroidAutoDpi interpolates within the first tier interval', () => {

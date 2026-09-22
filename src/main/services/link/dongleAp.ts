@@ -1,0 +1,220 @@
+import net from 'node:net'
+import os from 'node:os'
+import type { Config } from '@shared/types/Config'
+
+/** What the Wi-Fi interface and Bluetooth adapter lists carry for the dongle's own radios. */
+export const DONGLE_LINK = 'livi-link'
+
+const HOST = 'livi-link.local'
+/** The dongle's USB link and its own access point both hand out addresses here. */
+const LINK_SUBNET = '10.10.10.'
+/** The access point answers here, the Bluetooth accessory on its own port. */
+const PORT = 5001
+const BT_PORT = 5005
+/** Applying waits for the radio, and a 5 GHz start spends the first seconds scanning. */
+const APPLY_MS = 30_000
+const PROBE_MS = 1500
+const DRIFT_RETRY_MS = 30_000
+
+/**
+ * Runs commands on one connection, in order, and gives up on the first one the dongle refuses.
+ * Every answer ends in `ok` or `error <reason>`, so the next command goes out on the `ok`.
+ */
+function talk(commands: string[], timeoutMs = APPLY_MS, port = PORT): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host: HOST, port })
+    const answers: string[] = []
+    let buffer = ''
+    let at = 0
+    let done = false
+
+    const finish = (err?: Error): void => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      socket.destroy()
+      if (err) reject(err)
+      else resolve(answers)
+    }
+    // One timer for the whole exchange, since a name that does not resolve never reaches connect.
+    const timer = setTimeout(() => finish(new Error('the dongle did not answer')), timeoutMs)
+
+    socket.on('connect', () => socket.write(`${commands[at]}\n`))
+    socket.on('data', (chunk) => {
+      buffer += chunk.toString()
+      for (let end = buffer.indexOf('\n'); end >= 0; end = buffer.indexOf('\n')) {
+        const line = buffer.slice(0, end).trimEnd()
+        buffer = buffer.slice(end + 1)
+        if (line.startsWith('error ')) {
+          finish(new Error(`${commands[at]}: ${line.slice(6)}`))
+          return
+        }
+        if (line !== 'ok') {
+          answers.push(line)
+          continue
+        }
+        at += 1
+        if (at >= commands.length) {
+          finish()
+          return
+        }
+        socket.write(`${commands[at]}\n`)
+      }
+    })
+    socket.on('error', (err) => finish(err))
+    socket.on('close', () => finish(new Error('the dongle closed the link')))
+  })
+}
+
+/** Full configuration */
+export function commandsFor(config: Config): string[] {
+  if (config.wifiInterface !== DONGLE_LINK) {
+    // Its radio would only sit next to the one actually in use.
+    return ['off']
+  }
+  return [
+    `set ssid ${config.carName || 'LIVI'}`,
+    `set country ${config.country || 'DE'}`,
+    `set channel ${config.wifiChannel || 36}`,
+    `set width ${config.wifiChannelWidth || 40}`,
+    `set passphrase ${config.wifiPassword || '12345678'}`,
+    'apply',
+    // Keeps the whole state across a reboot. Only a boot that reaches neither the USB link nor
+    // the AP puts the default name back.
+    'save'
+  ]
+}
+
+// On Linux the host drives the dongle's controller itself, over the tunnel.
+function accessoryOnDongle(): boolean {
+  return process.platform !== 'linux' || process.env.LIVI_BT_VIA_DONGLE === '1'
+}
+
+export function btCommandsFor(config: Config): string[] {
+  if (config.btAdapter !== DONGLE_LINK || !config.wirelessCpEnabled) return ['off']
+  if (!accessoryOnDongle()) return ['off']
+  // Who may be paged comes from the paging list the helper hands over, not from here.
+  return ['on']
+}
+
+/** The access point's MAC, as of the last exchange with the dongle. */
+let apMac: string | null = null
+
+/** What the phone is told to look for. Empty until the dongle has answered once. */
+export function dongleApMac(): string | null {
+  return apMac
+}
+
+function attached(): boolean {
+  return Object.values(os.networkInterfaces())
+    .flat()
+    .some((address) => address?.address.startsWith(LINK_SUBNET))
+}
+
+/** One status snapshot as a flat map of the dongle's `key value` lines, or null if it is not
+ *  on the network / did not answer. Used by the link-speed monitor. */
+export async function dongleStatus(): Promise<Record<string, string> | null> {
+  if (!attached()) return null
+  try {
+    const answers = await talk(['status'], PROBE_MS)
+    const out: Record<string, string> = {}
+    for (const line of answers) {
+      const sp = line.indexOf(' ')
+      if (sp > 0) out[line.slice(0, sp)] = line.slice(sp + 1).trim()
+    }
+    return out
+  } catch {
+    return null
+  }
+}
+
+/** Whether a LIVI Link is on the network and ready to be configured. */
+export async function dongleApPresent(): Promise<boolean> {
+  if (!attached()) return false
+  // Right after the dongle is plugged in the route to it needs a moment, so one miss is no answer.
+  let last = ''
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await talk(['status'], PROBE_MS)
+      return true
+    } catch (e) {
+      last = e instanceof Error ? e.message : String(e)
+    }
+  }
+  console.log(`[dongleAp] ${HOST}:${PORT} did not answer: ${last}`)
+  return false
+}
+
+function absent(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException)?.code
+  return code === 'ENOTFOUND' || code === 'EAI_AGAIN'
+}
+
+function report(what: string, err: unknown): void {
+  if (absent(err)) console.log(`[dongleAp] ${what}: no dongle on the network`)
+  else console.warn(`[dongleAp] ${what}:`, String(err))
+}
+
+let wanted: Config | null = null
+let told = false
+let reconciling = false
+let lastDriftAt = 0
+let lastTryAt = 0
+
+/** Fed with every status poll. */
+export function noteDongleStatus(status: Record<string, string> | null): void {
+  if (!status) {
+    told = false
+    lastTryAt = 0
+    return
+  }
+  if (!wanted || reconciling) return
+  if (!told && Date.now() - lastTryAt < DRIFT_RETRY_MS) return
+  const drifted = (status.state === 'on') !== (wanted.wifiInterface === DONGLE_LINK)
+  if (told && !(drifted && Date.now() - lastDriftAt > DRIFT_RETRY_MS)) return
+  if (told) lastDriftAt = Date.now()
+  void reconcileDongleAp(wanted)
+}
+
+/** Hands the dongle its settings when it is the chosen AP, and silences it when it is not. */
+export async function reconcileDongleAp(config: Config): Promise<void> {
+  wanted = config
+  if (!attached() || reconciling) return
+  reconciling = true
+  try {
+    await reconcile(config)
+  } finally {
+    reconciling = false
+  }
+}
+
+async function reconcile(config: Config): Promise<void> {
+  lastTryAt = Date.now()
+  let heard = true
+  try {
+    const answers = await talk([...commandsFor(config), 'status'])
+    apMac =
+      answers
+        .find((line) => line.startsWith('mac '))
+        ?.slice(4)
+        .trim() || apMac
+  } catch (err) {
+    // Nothing local depends on the dongle, so a refusal is noted and the rest goes on.
+    heard = false
+    report('access point', err)
+  }
+  // The dongle's own Bluetooth stays off until it is told otherwise, so this has to arrive.
+  try {
+    await talk(btCommandsFor(config), APPLY_MS, BT_PORT)
+  } catch (err) {
+    heard = false
+    report('bluetooth', err)
+  }
+  told = heard
+}
+
+/** Switches off what LIVI switched on. */
+export async function releaseDongle(): Promise<void> {
+  if (!attached()) return
+  await Promise.allSettled([talk(['off'], PROBE_MS), talk(['off'], PROBE_MS, BT_PORT)])
+}

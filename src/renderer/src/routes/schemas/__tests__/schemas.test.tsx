@@ -50,6 +50,19 @@ describe('settings schemas', () => {
     expect(slider.valueTransform.format(50)).toBe('50 %')
   })
 
+  test('brightness value transform handles invalid and valid values', () => {
+    if (appearanceSchema.type !== 'route') {
+      throw new Error('appearanceSchema must be a route node')
+    }
+    const slider = (appearanceSchema.children as any[]).find((x) => x.path === 'displayBrightness')
+    expect(slider.valueTransform.toView(0.45)).toBe(45)
+    expect(slider.valueTransform.toView(undefined)).toBe(100)
+    expect(slider.valueTransform.fromView(25, 1)).toBe(0.25)
+    expect(slider.valueTransform.fromView(Number.NaN, 0.8)).toBe(0.8)
+    expect(slider.valueTransform.fromView(Number.NaN, undefined)).toBe(1)
+    expect(slider.valueTransform.format(50)).toBe('50 %')
+  })
+
   test('settings schema aggregates major sections and generates routes', () => {
     expect(settingsSchema.type).toBe('route')
     if (settingsSchema.type !== 'route') {

@@ -1,6 +1,6 @@
 import type { Config } from '@shared/types'
+import { ROUTES } from '@shared/types'
 import { useLocation, useNavigate } from 'react-router'
-import { ROUTES } from '../../constants'
 import { useBlinkingTime } from '../../hooks/useBlinkingTime'
 import { useNetworkStatus } from '../../hooks/useNetworkStatus'
 import { useStatusStore } from '../../store/store'
@@ -40,16 +40,6 @@ export const Nav = ({ receivingVideo }: NavProps) => {
     ROUTES.HOME
 
   const handleSelect = (key: string) => {
-    if (key === ROUTES.QUIT) {
-      window.projection.quit().catch(console.error)
-      return
-    }
-
-    if (key === ROUTES.TRANSPORT_SWITCH) {
-      navigate(ROUTES.DEVICES)
-      return
-    }
-
     if (key === ROUTES.SETTINGS && pathname.startsWith(ROUTES.SETTINGS)) {
       navigate(ROUTES.SETTINGS, { replace: true })
       return

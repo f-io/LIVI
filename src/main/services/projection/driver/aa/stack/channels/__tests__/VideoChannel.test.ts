@@ -34,39 +34,27 @@ describe('VideoChannel', () => {
     expect(ch.channelId).toBe(CH.CLUSTER_VIDEO)
   })
 
-  test('AV_MEDIA_INDICATION emits frame + sends ack + increments frameCount', () => {
-    const { send, calls } = freshSend()
-    const ch = new VideoChannel(send)
-    const frame = vi.fn()
-    ch.on('frame', frame)
-
-    ch.handleMessage(
-      AV_MSG.AV_MEDIA_INDICATION,
-      Buffer.from([0x00, 0x00, 0x00, 0x01]),
-      dummyFrame(CH.VIDEO, AV_MSG.AV_MEDIA_INDICATION, Buffer.from([]))
-    )
-    expect(frame).toHaveBeenCalledTimes(1)
-    expect(calls.find((c) => c.msgId === AV_MSG.AV_MEDIA_ACK)).toBeDefined()
-    expect(ch.frameCount).toBe(1)
-  })
-
-  test('AV_MEDIA_WITH_TIMESTAMP separates the leading 8-byte timestamp', () => {
+  test('START_INDICATION with a session id adopts it', () => {
     const { send } = freshSend()
     const ch = new VideoChannel(send)
-    const frame = vi.fn()
-    ch.on('frame', frame)
-
-    const ts = Buffer.alloc(8)
-    ts.writeBigUInt64BE(7n, 0)
-    const data = Buffer.from([0xaa])
     ch.handleMessage(
-      AV_MSG.AV_MEDIA_WITH_TIMESTAMP,
-      Buffer.concat([ts, data]),
-      dummyFrame(CH.VIDEO, AV_MSG.AV_MEDIA_WITH_TIMESTAMP, Buffer.alloc(0))
+      AV_MSG.START_INDICATION,
+      fieldVarint(1, 7),
+      dummyFrame(CH.VIDEO, AV_MSG.START_INDICATION, Buffer.alloc(0))
     )
-    const [emittedData, emittedTs] = frame.mock.calls[0]
-    expect((emittedData as Buffer).equals(data)).toBe(true)
-    expect(emittedTs).toBe(7n)
+    expect((ch as unknown as { _session: number })._session).toBe(7)
+  })
+
+  test('START_INDICATION with an empty payload keeps the default session', () => {
+    const { send } = freshSend()
+    const ch = new VideoChannel(send)
+    expect(() =>
+      ch.handleMessage(
+        AV_MSG.START_INDICATION,
+        Buffer.alloc(0),
+        dummyFrame(CH.VIDEO, AV_MSG.START_INDICATION, Buffer.alloc(0))
+      )
+    ).not.toThrow()
   })
 
   test('START_INDICATION without a session_id keeps the default session', () => {
@@ -79,24 +67,6 @@ describe('VideoChannel', () => {
         dummyFrame(CH.VIDEO, AV_MSG.START_INDICATION, Buffer.alloc(0))
       )
     ).not.toThrow()
-  })
-
-  test('START_INDICATION captures session_id for subsequent acks', () => {
-    const { send, calls } = freshSend()
-    const ch = new VideoChannel(send)
-    ch.handleMessage(
-      AV_MSG.START_INDICATION,
-      fieldVarint(1, 11),
-      dummyFrame(CH.VIDEO, AV_MSG.START_INDICATION, Buffer.alloc(0))
-    )
-    ch.handleMessage(
-      AV_MSG.AV_MEDIA_INDICATION,
-      Buffer.from([1]),
-      dummyFrame(CH.VIDEO, AV_MSG.AV_MEDIA_INDICATION, Buffer.from([1]))
-    )
-    const ack = calls.find((c) => c.msgId === AV_MSG.AV_MEDIA_ACK)!
-    const fields = Array.from(decodeFields(ack.data))
-    expect(decodeVarintValue(fields[0].bytes)).toBe(11)
   })
 
   test('VIDEO_FOCUS_REQUEST mode=PROJECTED responds with focus indication + emits "video-focus-projected"', () => {

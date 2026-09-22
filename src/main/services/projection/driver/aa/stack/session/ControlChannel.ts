@@ -74,6 +74,9 @@ export class ControlChannel extends EventEmitter {
       case CTRL_MSG.BATTERY_STATUS_NOTIFICATION:
         try {
           const b = decode(this._proto.BatteryStatusNotification, payload)
+          console.log(
+            `[ControlChannel] battery ${b['batteryLevel'] ?? '?'}% critical=${b['criticalBattery'] === true}`
+          )
           this.emit('battery', {
             level: typeof b['batteryLevel'] === 'number' ? b['batteryLevel'] : undefined,
             critical: b['criticalBattery'] === true,

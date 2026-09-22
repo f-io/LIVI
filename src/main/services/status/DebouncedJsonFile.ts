@@ -46,7 +46,7 @@ export class DebouncedJsonFile {
     try {
       const file = this.target()
       fs.mkdirSync(path.dirname(file), { recursive: true })
-      // tmp + rename so a reader never sees a half-written file
+      // tmp + rename so a reader gets either the old content or the new one
       const tmp = `${file}.tmp`
       fs.writeFileSync(tmp, `${JSON.stringify(this.snapshot(), null, 2)}\n`, 'utf8')
       fs.renameSync(tmp, file)

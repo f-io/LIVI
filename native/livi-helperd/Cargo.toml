@@ -1,0 +1,39 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/iap2-csm",
+    "crates/iap2-link",
+    "crates/iap2-mfi",
+    "crates/livi-runtime",
+    "crates/iap2-usbmux",
+    "crates/iap2-wired",
+    "crates/livi-aa",
+    "crates/livi-session-io",
+    "crates/livi-dongle",
+    "crates/livi-link-provision",
+    "crates/livi-wifi",
+    "crates/livi-web",
+    "crates/livi-btd",
+    "crates/livi-iapd",
+    "crates/livi-mdns",
+    "bin/mfi-probe",
+    "bin/livi-helperd",
+    "bin/livi-link",
+    "bin/livi-link-provision",
+    "bin/mkbootimg-v821b",
+    "bin/livid",
+    "bin/muxd-probe",
+    "bin/mac-usbmuxd-probe",
+    "bin/usb-probe",
+]
+
+[workspace.package]
+edition = "2024"
+
+[profile.embedded]
+inherits = "release"
+opt-level = "z"
+codegen-units = 1
+strip = true
+panic = "abort"
+lto = true

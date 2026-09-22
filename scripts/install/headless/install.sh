@@ -28,8 +28,8 @@ fi
 
 livi_require_regular_user
 
-if ! command -v apt-get >/dev/null; then
-  echo "Error: this installer needs apt. Install the packages from" >&2
+if [ -z "$(livi_pm)" ]; then
+  echo "Error: this installer needs apt or dnf. Install the packages from" >&2
   echo "scripts/install/packages.txt by hand, then run the remaining steps." >&2
   exit 1
 fi
@@ -44,10 +44,7 @@ KIOSK_PAM="/etc/pam.d/livi-kiosk"
 echo "→ Architecture: $(uname -m) → $(livi_asset_arch).AppImage"
 
 echo "→ Installing required packages"
-sudo apt-get update
-sudo apt-get install -y $(livi_packages core lite | tr '\n' ' ')
-
-livi_install_pymobiledevice3
+livi_pm_install $(livi_packages core lite | tr '\n' ' ')
 
 echo "→ Adding $USER to required groups"
 WANTED_GROUPS=(video render input plugdev)
@@ -86,22 +83,36 @@ SUDOERS_TEMPLATE="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_SUDOERS_TEMPLATE
   exit 1
 }
 
+AP_UNIT_TEMPLATE="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_AP_UNIT_TEMPLATE")" || {
+  echo "Error: cannot obtain $LIVI_AP_UNIT_TEMPLATE" >&2
+  exit 1
+}
+AP_SUDOERS_TEMPLATE="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_AP_SUDOERS_TEMPLATE")" || {
+  echo "Error: cannot obtain $LIVI_AP_SUDOERS_TEMPLATE" >&2
+  exit 1
+}
 TOUCH_FILTER="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_TOUCH_FILTER_TEMPLATE")" || {
   echo "Error: cannot obtain $LIVI_TOUCH_FILTER_TEMPLATE" >&2
   exit 1
 }
 
+# --- shared ---
 livi_install_touch_filter "$TOUCH_FILTER"
 livi_write_udev_rule "$UDEV_TEMPLATE"
 livi_write_sudoers "$SUDOERS_TEMPLATE"
-livi_install_video_mode_helper
+livi_write_wifi_ap_unit "$AP_UNIT_TEMPLATE" "$AP_SUDOERS_TEMPLATE"
+livi_write_regdom
 livi_install_time_helper
-livi_install_power_helper
 livi_disable_wifi_powersave
 livi_set_wifi_pmf_optional
+livi_grant_rtprio
 livi_apply_mfi
 livi_apply_splash
 livi_apply_hdmi_pr "$APPIMAGE_PATH"
+
+# --- headless only ---
+livi_install_video_mode_helper
+livi_install_power_helper
 
 echo "→ Enabling seatd"
 sudo systemctl enable --now seatd

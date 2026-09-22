@@ -1,0 +1,17 @@
+[package]
+name = "livid"
+version = "0.1.0"
+edition.workspace = true
+
+[[bin]]
+name = "livid"
+path = "src/main.rs"
+
+[dependencies]
+livi-mdns = { path = "../../crates/livi-mdns" }
+livi-wifi = { path = "../../crates/livi-wifi" }
+livi-web  = { path = "../../crates/livi-web" }
+livi-btd  = { path = "../../crates/livi-btd" }
+livi-iapd = { path = "../../crates/livi-iapd" }
+iap2-mfi  = { path = "../../crates/iap2-mfi" }
+libc = "0.2"

@@ -8,6 +8,7 @@ class MockSession {
 class MockWebContents {
   session = new MockSession()
   setWindowOpenHandler = vi.fn()
+  once = vi.fn()
 }
 
 class MockBrowserWindow extends EventEmitter {
@@ -34,6 +35,7 @@ class MockBrowserWindow extends EventEmitter {
 const lastWindows: MockBrowserWindow[] = []
 
 vi.mock('electron', () => ({
+  app: { isPackaged: true },
   BrowserWindow: vi.fn().mockImplementation(function (opts: Record<string, unknown>) {
     const w = new MockBrowserWindow()
     w.__opts = opts
@@ -63,17 +65,13 @@ vi.mock('@main/ipc/utils', () => ({
   saveSettings: (...a: unknown[]) => saveSettingsMock(...a)
 }))
 
-vi.mock('@electron-toolkit/utils', () => ({
-  is: { dev: false }
-}))
-
-import { is } from '@electron-toolkit/utils'
 import { COMPOSITOR_TITLEBAR_H } from '@main/app/compositorLayout'
 import type { runtimeStateProps } from '@main/types'
-import { shell } from 'electron'
+import { app, shell } from 'electron'
 import {
   closeAllSecondaryWindows,
   getSecondaryWindow,
+  secondaryWindowEvents,
   setupSecondaryWindows,
   syncSecondaryWindows
 } from '../secondaryWindows'
@@ -331,6 +329,40 @@ describe('secondaryWindows — bounds + ready-to-show', () => {
     expect(win.__opts.height).toBe(480)
   })
 
+  test('spawn bounds an oversized config value to the maximum', () => {
+    const rt = baseState({
+      dashScreenActive: true,
+      dashScreenWidth: 2213123132132,
+      dashScreenHeight: 999999
+    })
+    syncSecondaryWindows(rt)
+    const win = lastWindows[0]
+    expect(win.__opts.width).toBe(4096)
+    expect(win.__opts.height).toBe(2160)
+  })
+
+  test('spawn lifts an undersized config value to the minimum', () => {
+    const rt = baseState({ dashScreenActive: true, dashScreenWidth: 12, dashScreenHeight: 7 })
+    syncSecondaryWindows(rt)
+    const win = lastWindows[0]
+    expect(win.__opts.width).toBe(300)
+    expect(win.__opts.height).toBe(200)
+  })
+
+  test('a loaded window announces itself as ready', () => {
+    const rt = baseState({ dashScreenActive: true })
+    syncSecondaryWindows(rt)
+    const win = lastWindows[0]
+    const ready = vi.fn()
+    secondaryWindowEvents.once('ready', ready)
+
+    const [event, handler] = win.webContents.once.mock.calls[0]
+    expect(event).toBe('did-finish-load')
+    handler()
+
+    expect(ready).toHaveBeenCalledWith('dash')
+  })
+
   test('spawned window denies popups and filters permissions', () => {
     const rt = baseState({ dashScreenActive: true })
     syncSecondaryWindows(rt)
@@ -350,12 +382,12 @@ describe('secondaryWindows — bounds + ready-to-show', () => {
 
   test('dev mode loads the renderer url with a role query', () => {
     const original = process.env.ELECTRON_RENDERER_URL
-    ;(is as { dev: boolean }).dev = true
+    ;(app as { isPackaged: boolean }).isPackaged = false
     process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173'
     const rt = baseState({ dashScreenActive: true })
     syncSecondaryWindows(rt)
     expect(lastWindows[0].loadURL).toHaveBeenCalledWith('http://localhost:5173?role=dash')
-    ;(is as { dev: boolean }).dev = false
+    ;(app as { isPackaged: boolean }).isPackaged = true
     if (original === undefined) delete process.env.ELECTRON_RENDERER_URL
     else process.env.ELECTRON_RENDERER_URL = original
   })

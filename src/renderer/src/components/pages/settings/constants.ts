@@ -73,6 +73,9 @@ export const requiresRestartParams: (keyof Config)[] = [
   'clusterSafeAreaRight',
 
   'wifiType',
+  'wifiChannel',
+  'wifiChannelWidth',
+  'country',
   'wifiInterface',
   'btAdapter',
   'wifiDedicatedInterface',

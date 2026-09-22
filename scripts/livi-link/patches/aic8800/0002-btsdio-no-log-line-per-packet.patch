@@ -1,0 +1,34 @@
+--- a/aic8800_fdrv/btsdio.c
++++ b/aic8800_fdrv/btsdio.c
+@@ -91,7 +91,6 @@
+ {
+ 	int err;
+ 
+-	AICBT_INFO("%s", data->hdev->name);
+ 
+ 	/* Prepend Type-A header */
+ 	skb_push(skb, 1);
+@@ -124,7 +123,6 @@
+ 	struct sk_buff *skb;
+ 	int err;
+ 
+-	AICBT_INFO("%s,%s", data->hdev->name,__func__);
+ 
+ 
+ 	while ((skb = skb_dequeue(&data->txq))) {
+@@ -185,7 +183,6 @@
+ 		//kfree_skb(skb);
+ 		///return 0;
+ 	//}
+-	AICBT_INFO("skb type %d",type);
+ 	//bt_data_dump("bt_skb", skb, skb->len);
+ 	ret = hci_recv_frame(hdev, skb);
+ 	if(ret < 0){
+@@ -230,7 +227,6 @@
+ {
+ 	struct btsdio_data *data = hci_get_drvdata(hdev);
+ 
+-	AICBT_INFO("%s,%s", hdev->name,__func__);
+ 
+ 	switch (hci_skb_pkt_type(skb)) {
+ 	case HCI_COMMAND_PKT:

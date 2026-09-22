@@ -1,12 +1,18 @@
 import { Box } from '@mui/material'
+import { ROUTES } from '@shared/types'
 import type { KeyCommand } from '@worker/types'
 import i18n from 'i18next'
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { HashRouter as Router, useLocation, useNavigate, useRoutes } from 'react-router'
+import {
+  matchRoutes,
+  HashRouter as Router,
+  useLocation,
+  useNavigate,
+  useRoutes
+} from 'react-router'
 import { SessionSwitchOverlay } from './components/common/SessionSwitchOverlay'
 import { AppLayout } from './components/layouts/AppLayout'
 import { Cluster, Projection } from './components/pages'
-import { ROUTES } from './constants'
 import { AppContext } from './context'
 import { useActiveControl, useFocus, useKeyDown } from './hooks'
 import { appRoutes } from './routes/appRoutes'
@@ -14,23 +20,6 @@ import { useLiviStore, useStatusStore } from './store/store'
 import { broadcastMediaKey } from './utils/broadcastMediaKey'
 import { updateCameras } from './utils/cameraDetection'
 import { getWindowRole } from './utils/windowRole'
-
-const START_PAGE_ROUTE: Record<string, string> = {
-  home: ROUTES.HOME,
-  media: ROUTES.MEDIA,
-  camera: ROUTES.CAMERA,
-  settings: ROUTES.SETTINGS,
-  telemetry: ROUTES.TELEMETRY
-}
-
-const VIEW_ROUTE: Record<string, string> = {
-  projection: ROUTES.HOME,
-  dash: ROUTES.TELEMETRY,
-  media: ROUTES.MEDIA,
-  camera: ROUTES.CAMERA,
-  settings: ROUTES.SETTINGS,
-  devices: `${ROUTES.SETTINGS}/devices`
-}
 
 function AppInner() {
   const appContext = useContext(AppContext)
@@ -56,6 +45,10 @@ function AppInner() {
   const lastInputModeRef = useRef<'keys' | 'pointer' | 'other'>('other')
   const prevPathRef = useRef<string>(location.pathname)
   const cameFromSettingsSubRef = useRef(false)
+
+  useEffect(() => {
+    window.app?.reportPath?.(location.pathname)
+  }, [location.pathname])
 
   // Subscribe to main-process media key broadcasts
   useEffect(() => {
@@ -112,7 +105,7 @@ function AppInner() {
       return
     }
 
-    const target = START_PAGE_ROUTE[settings.startPage ?? 'home'] ?? ROUTES.HOME
+    const target = settings.startPage ?? ROUTES.HOME
 
     didApplyStartPageRef.current = true
 
@@ -292,14 +285,18 @@ function AppInner() {
   ])
 
   // External navigation request
-  const requestedView = useStatusStore((s) => s.requestedView)
-  const requestedViewNonce = useStatusStore((s) => s.requestedViewNonce)
+  const requestedPath = useStatusStore((s) => s.requestedPath)
+  const clearRequestedPath = useStatusStore((s) => s.clearRequestedPath)
   useEffect(() => {
-    if (!requestedViewNonce) return
-    const route = requestedView ? VIEW_ROUTE[requestedView] : undefined
-    if (route && location.pathname !== route) navigate(route)
+    if (!requestedPath) return
+    clearRequestedPath()
+    const target = requestedPath.replace(/\/{2,}/g, '/').replace(/(.)\/$/, '$1')
+    const matches = matchRoutes(appRoutes, target)
+    const leaf = matches?.[matches.length - 1]
+    if (!leaf || (leaf.route.path?.endsWith('*') && leaf.params['*'])) return
+    if (location.pathname !== target) navigate(target)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestedViewNonce])
+  }, [requestedPath])
 
   return (
     <AppLayout navRef={navRef} mainRef={mainRef} receivingVideo={receivingVideo}>
@@ -312,13 +309,10 @@ function AppInner() {
           commandCounter={commandCounter}
         />
       )}
-      {/* Single cluster overlay, owns the plane reveal. Driven by the guidance auto-switch
-          route (/cluster) OR by a telemetry dash that hosts the cluster (clusterDashActive).*/}
+      {/* Single cluster overlay, owns the plane reveal. A telemetry dash hosting the
+          cluster drives it. */}
       {settings && (
-        <Cluster
-          visible={location.pathname === ROUTES.CLUSTER || clusterDashActive}
-          showLoadingPlaceholder={!clusterDashActive}
-        />
+        <Cluster visible={clusterDashActive} showLoadingPlaceholder={!clusterDashActive} />
       )}
       <Box sx={{ width: '100%', height: '100%' }}>{element}</Box>
       <SessionSwitchOverlay />

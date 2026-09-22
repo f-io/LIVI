@@ -1,15 +1,14 @@
 /**
- * AaSession — IPhoneDriver for ONE Android Auto connection (wired or wireless).
+ * AaSession, IPhoneDriver for ONE Android Auto connection, over WiFi or USB.
  *
- * Wraps a single AAStack that adopts an already-connected socket via
- * attachSocket (no :5277 listener of its own). AaManager owns the shared
- * infra and constructs one AaSession per accepted connection.
+ * Wraps a single AAStack that adopts the session link the helper announced.
+ * AaManager owns the shared infra and constructs one AaSession per announcement.
  */
 
 import { EventEmitter } from 'node:events'
-import type * as net from 'node:net'
 import { DEBUG } from '@main/constants'
-import { Microphone } from '@main/services/audio'
+import { MicTap } from '@main/services/audio/micTap'
+import { DONGLE_LINK, dongleApMac } from '@main/services/link/dongleAp'
 import {
   type SendableMessage,
   SendCloseDongle,
@@ -29,15 +28,18 @@ import {
   matchFittingAAResolution
 } from '@shared/utils'
 import type { IPhoneDriver } from '../IPhoneDriver'
+import type { AaMediaSinkDeps } from './AaEventBridge'
 import { AaEventBridge } from './AaEventBridge'
 import {
   AAStack,
   type AAStackConfig,
   BUTTON_KEY,
+  detectBtMac,
+  detectWifiBssid,
   TOUCH_ACTION,
   type TouchPointer
 } from './stack/index'
-import type { UsbAoapBridge } from './stack/transport/UsbAoapBridge'
+import { HelperSessionLink } from './stack/transport/HelperSessionLink'
 
 /** Pixel aspect ratio in ten-thousandths: square pixels. */
 const SQUARE_PIXEL_E4 = 10000
@@ -81,12 +83,12 @@ export interface AaSessionSeed {
 }
 
 export interface AaSessionOptions {
-  socket: net.Socket
+  transport: HelperSessionLink
   getConfig: () => Config
   wired: boolean
-  wiredBridge?: UsbAoapBridge | null
   usbSerial?: string
   seed: AaSessionSeed
+  mediaSink?: AaMediaSinkDeps
 }
 
 export class AaSession extends EventEmitter implements IPhoneDriver {
@@ -100,7 +102,7 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
   private _touchInsetRight = 0
   private _touchInsetTop = 0
   private _touchInsetBottom = 0
-  private _mic: Microphone | null = null
+  private _micTap: MicTap | null = null
   private _micActive = false
 
   private _bridge: AaEventBridge | null = null
@@ -111,8 +113,7 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
   private _aaCfg: AAStackConfig | null = null
   private readonly _wired: boolean
   private readonly _usbSerial: string
-  private _wiredBridge: UsbAoapBridge | null
-  private _wiredClientSocket: net.Socket | null
+  private readonly _mediaSink: AaMediaSinkDeps | undefined
   private readonly _getConfig: () => Config
 
   constructor(opts: AaSessionOptions) {
@@ -120,8 +121,7 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
     this._getConfig = opts.getConfig
     this._wired = opts.wired
     this._usbSerial = opts.usbSerial ?? ''
-    this._wiredBridge = opts.wiredBridge ?? null
-    this._wiredClientSocket = opts.wired ? opts.socket : null
+    this._mediaSink = opts.mediaSink
     this._hevcSupported = opts.seed.hevcSupported
     this._vp9Supported = opts.seed.vp9Supported
     this._av1Supported = opts.seed.av1Supported
@@ -133,7 +133,7 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
     aa.setConfigRefresh(() => aa.applyDisplayConfig(this._buildStackConfig(this._getConfig())))
     this._bridge = this._makeEventBridge(aa, aaCfg)
     aa.setClusterStreamActive(opts.seed.clusterStreamActive)
-    aa.attachSocket(opts.socket)
+    aa.attachLink(opts.transport)
 
     this.on('disconnected', () => {
       setImmediate(() => {
@@ -161,9 +161,17 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
     if (this._aaCfg) this._aaCfg.av1Supported = supported
   }
 
+  applyNightMode(night: boolean | undefined): void {
+    this.setInitialNightMode(night)
+  }
+
   setInitialNightMode(value: boolean | undefined): void {
     this._initialNightMode = value
     if (this._aaCfg) this._aaCfg.initialNightMode = value
+    // The stack answers with this on a sensor subscription, which a running
+    // session no longer sends, so push it as well.
+    console.log(`[AaSession] nightMode=${value} (stack ${this._aa ? 'up' : 'gone'})`)
+    if (value !== undefined) this._aa?.sendNightModeData(value)
   }
 
   // Visibility-gated cluster stream: stops/resumes the phone-side cluster encode
@@ -174,6 +182,11 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
   requestKeyframe(): void {
     this._aa?.requestMainKeyframe()
     this._aa?.forceClusterKeyframe()
+  }
+
+  // The volume hook for host-fed streams, the same shape CarPlay uses in cpStack.
+  setStreamVolume(audioType: number, level: number, rampMs: number): void {
+    this._mediaSink?.setHostVolume(audioType, level, rampMs)
   }
 
   isWiredMode(): boolean {
@@ -295,6 +308,14 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
     this._touchInsetLeft = arLeft + Math.max(0, cfg.projectionViewAreaLeft ?? 0)
     this._touchInsetRight = arRight + Math.max(0, cfg.projectionViewAreaRight ?? 0)
 
+    const btMac = detectBtMac(cfg.btAdapter || undefined)
+    if (btMac) aaCfg.btMacAddress = btMac
+    const bssid =
+      cfg.wifiInterface === DONGLE_LINK
+        ? dongleApMac()
+        : detectWifiBssid(cfg.wifiInterface || undefined)
+    if (bssid) aaCfg.wifiBssid = bssid
+
     this._aaCfg = aaCfg
     return aaCfg
   }
@@ -319,12 +340,8 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
       },
       startMic: (reason) => this._startMicCapture(reason),
       stopMic: (reason) => this._stopMicCapture(reason),
-      consumeWiredBridge: () => {
-        const b = this._wiredBridge
-        this._wiredBridge = null
-        return b
-      },
-      isClosed: () => this._closed
+      isClosed: () => this._closed,
+      mediaSink: this._mediaSink
     })
     bridge.wire()
     return bridge
@@ -382,32 +399,41 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
     this._aa?.sendVehicleEnergyModel(capacityWh, currentWh, rangeM, opts)
   }
 
-  // Mltiple sources (mic-start, voice-session START,
-  // PTT keydown) can request capture independently.
+  // Multiple sources (mic-start, voice-session START, PTT keydown) can request the
+  // capture independently. The pipeline taps the configured input in the format the
+  // phone negotiated and streams it to the helper, which sends it.
   private _startMicCapture(reason: string): void {
     if (this._micActive) return
-    this._micActive = true
-    if (!this._mic) {
-      this._mic = new Microphone()
-      this._mic.on('data', (chunk: Buffer) => {
-        if (!this._micActive) return
-        this._aa?.sendMicPcm(chunk)
-      })
+    const path = this._aa?.micSocketPath()
+    if (!path) {
+      console.warn(`[AaSession] ${reason} → no mic socket from the helper yet`)
+      return
     }
-    // Capture from the configured input, in the format the phone negotiated at setup.
-    this._mic.setDevice(this._getConfig().audioInputDevice || undefined)
     const fmt = this._aa?.micFormat() ?? { sampleRate: 16000, channels: 1 }
-    console.log(
-      `[AaSession] ${reason} → starting mic capture (${fmt.sampleRate}Hz ${fmt.channels}ch)`
-    )
-    this._mic.start(5, { frequency: fmt.sampleRate, channels: fmt.channels })
+    console.log(`[AaSession] ${reason} → starting mic tap (${fmt.sampleRate}Hz ${fmt.channels}ch)`)
+    this._micTap = MicTap.open(path, {
+      sampleRate: fmt.sampleRate,
+      channels: fmt.channels,
+      device: this._getConfig().audioInputDevice || undefined
+    })
+    this._micActive = this._micTap !== null
   }
 
   private _stopMicCapture(reason: string): void {
     if (!this._micActive) return
     this._micActive = false
-    console.log(`[AaSession] ${reason} → stopping mic capture`)
-    this._mic?.stop()
+    console.log(`[AaSession] ${reason} → stopping mic tap`)
+    this._dropMicTap()
+  }
+
+  private _dropMicTap(): void {
+    const tap = this._micTap
+    this._micTap = null
+    try {
+      tap?.close()
+    } catch (err) {
+      console.warn(`[AaSession] mic tap close failed: ${(err as Error).message}`)
+    }
   }
 
   async close(): Promise<void> {
@@ -421,26 +447,13 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
     }
 
     this._micActive = false
-    try {
-      this._mic?.stop()
-    } catch (err) {
-      console.warn(`[AaSession] mic stop threw: ${(err as Error).message}`)
-    }
-    this._mic = null
+    this._dropMicTap()
 
     // Best-effort graceful goodbye to the phone
     try {
       await this._aa?.requestShutdown()
     } catch (err) {
       console.warn(`[AaSession] requestShutdown threw: ${(err as Error).message}`)
-    }
-
-    if (this._wiredBridge) {
-      try {
-        await this._wiredBridge.drain(500)
-      } catch (err) {
-        console.warn(`[AaSession] wired bridge drain threw: ${(err as Error).message}`)
-      }
     }
 
     try {
@@ -451,22 +464,18 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
     this._aa = null
     this._aaCfg = null
     this._bridge = null
+  }
 
-    try {
-      this._wiredClientSocket?.destroy()
-    } catch {
-      /* already destroyed */
-    }
-    this._wiredClientSocket = null
+  setVideoActive(active: boolean): void {
+    this._mediaSink?.setVideoActive(false, active)
+    this._mediaSink?.setVideoActive(true, active)
+    this._mediaSink?.setAudioActive(active)
+  }
 
-    if (this._wiredBridge) {
-      try {
-        await this._wiredBridge.stop()
-      } catch (err) {
-        console.warn(`[AaSession] wired bridge stop threw: ${(err as Error).message}`)
-      }
-    }
-    this._wiredBridge = null
+  async disconnectPhone(): Promise<boolean> {
+    if (this._closed || !this._aa) return false
+    await this.close()
+    return true
   }
 
   /**
@@ -475,7 +484,7 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
    * Bridges:
    *   - SendTouch         (single pointer, normalised 0..1 coordinates)
    *   - SendMultiTouch    (multi-pointer, normalised 0..1 coordinates)
-   *   - SendCommand       (subset: 'frame', 'requestVideoFocus' → keyframe; rest no-op)
+   *   - SendCommand       (subset: 'frame', 'requestVideoFocus' → keyframe, rest no-op)
    *   - SendDisconnectPhone / SendCloseDongle  → ByeByeRequest(USER_SELECTION)
    *
    */
@@ -643,7 +652,7 @@ export class AaSession extends EventEmitter implements IPhoneDriver {
         const tierY = clamp01(t.y) * this._touchH
         const ux = tierX - this._touchInsetLeft
         const uy = tierY - this._touchInsetTop
-        // Out-of-window pointer — phone has no UI under that part of the
+        // Out-of-window pointer: phone has no UI under that part of the
         // canvas (AR-fit black bar / safe-area cutout). Skip silently.
         if (ux < 0 || uy < 0 || ux >= usableW || uy >= usableH) continue
         pointers.push({ id: t.id, x: Math.round(ux), y: Math.round(uy) })

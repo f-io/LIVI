@@ -1,0 +1,17 @@
+[package]
+name = "mac-usbmuxd-probe"
+version = "0.1.0"
+edition.workspace = true
+
+[[bin]]
+name = "mac-usbmuxd-probe"
+path = "src/main.rs"
+
+[dependencies]
+iap2-wired = { path = "../../crates/iap2-wired" }
+iap2-link = { path = "../../crates/iap2-link" }
+iap2-csm = { path = "../../crates/iap2-csm" }
+livi-runtime = { path = "../../crates/livi-runtime" }
+iap2-mfi = { path = "../../crates/iap2-mfi" }
+livi-dongle = { path = "../../crates/livi-dongle" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "io-util"] }

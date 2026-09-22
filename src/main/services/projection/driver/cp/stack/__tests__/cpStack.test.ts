@@ -1,4 +1,19 @@
 import { EventEmitter } from 'node:events'
+import {
+  closeMicUplink,
+  closeScreenReceiver,
+  onAudioReceiverStarted,
+  openAudioReceiver,
+  openMicUplink,
+  setAudioReceiverActive,
+  setAudioReceiverVolume
+} from '@main/services/video/GstVideo'
+
+type CpStackControl = {
+  setStreamVolume(audioType: number, level: number, rampMs: number): void
+  setAudioActive(active: boolean): void
+}
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { encodeBplist } from '../bplist'
 import { ControlCipher } from '../controlCipher'
@@ -30,7 +45,14 @@ const reg = vi.hoisted(() => {
     gst: {
       openVideoReceiver: vi.fn(),
       closeVideoReceiver: vi.fn(),
-      setActiveFeeder: vi.fn()
+      setActiveFeeder: vi.fn(),
+      onAudioStarted: vi.fn(),
+      openAudio: vi.fn(async () => ({ streamId: 1, dataPort: 6000, controlPort: 6001 })),
+      setAudioVolume: vi.fn(),
+      closeAudio: vi.fn(),
+      openMic: vi.fn(() => 2),
+      closeMic: vi.fn(),
+      setAudioActive: vi.fn()
     }
   }
 })
@@ -51,26 +73,21 @@ vi.mock('@main/services/video/gstHost', () => ({
   VIDEO_PLANE_CLUSTER_RECV: 0x7a000010
 }))
 
-vi.mock('../audioStream', async () => {
-  const { EventEmitter } = await import('node:events')
-  class AudioStream extends EventEmitter {
-    key: Buffer
-    label: string
-    _origin: { originNs: bigint; firstSample: number } | null = null
-    _recv = 0
-    stop = vi.fn()
-    getOrigin = vi.fn(() => this._origin)
-    getLastRecvSample = vi.fn(() => this._recv)
-    listen = vi.fn(async () => ({ dataPort: 41000, controlPort: 41001 }))
-    constructor(key: Buffer, label: string) {
-      super()
-      this.key = key
-      this.label = label
-      reg.audioStreams.push(this as unknown as Record<string, unknown>)
-    }
-  }
-  return { AudioStream, ntp64Now: () => 123n }
-})
+// In-process receiver mock: 0 = not available (the ScreenStream fallback); a test sets a port
+// to enable it.
+const inProcPort = { value: 0 }
+vi.mock('@main/services/video/GstVideo', () => ({
+  openScreenReceiver: vi.fn(() => inProcPort.value),
+  closeScreenReceiver: vi.fn(),
+  // null means "no in-process receiver", so the host path stays the default in tests
+  openAudioReceiver: vi.fn(() => null),
+  onAudioReceiverStarted: vi.fn(),
+  setAudioReceiverActive: vi.fn(),
+  setAudioReceiverVolume: vi.fn(),
+  closeAudioReceiver: vi.fn(),
+  openMicUplink: vi.fn(() => null),
+  closeMicUplink: vi.fn()
+}))
 
 vi.mock('../screenStream', async () => {
   const { EventEmitter } = await import('node:events')
@@ -190,6 +207,7 @@ function baseCfg(over: Partial<CpStackConfig> = {}): CpStackConfig {
     deviceName: 'LIVI',
     oemLabel: 'LIVI',
     icons: [],
+    rightHandDrive: false,
     deviceId: 'AA:BB:CC:DD:EE:FF',
     btMac: 'AA:BB:CC:DD:EE:FF',
     sourceVersion: '1.0',
@@ -293,6 +311,15 @@ beforeEach(() => {
   reg.gst.openVideoReceiver.mockReset().mockResolvedValue({ port: 40000, receiverId: 7 })
   reg.gst.closeVideoReceiver.mockReset()
   reg.gst.setActiveFeeder.mockReset()
+  reg.gst.onAudioStarted.mockReset()
+  reg.gst.openAudio
+    .mockReset()
+    .mockResolvedValue({ streamId: 1, dataPort: 6000, controlPort: 6001 })
+  reg.gst.setAudioVolume.mockReset()
+  reg.gst.setAudioActive.mockReset()
+  reg.gst.closeAudio.mockReset()
+  reg.gst.openMic.mockReset().mockReturnValue(2)
+  reg.gst.closeMic.mockReset()
   Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
   logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
   warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -595,7 +622,7 @@ describe('CpStack SETUP', () => {
     const streams = res.body && Buffer.isBuffer(res.body) ? res.body : Buffer.alloc(0)
     expect(streams.length).toBeGreaterThan(0)
     expect(reg.screens.length).toBeGreaterThan(0)
-    expect(reg.audioStreams.length).toBe(1)
+    expect(reg.gst.openAudio).toHaveBeenCalledTimes(1)
     expect(reg.tunnels.length).toBe(1)
   })
 })
@@ -626,28 +653,36 @@ describe('CpStack audio setup formats', () => {
     ).rejects.toThrow('before pair-verify')
   })
 
-  it('builds an AAC-LC 48k stereo decoder', async () => {
+  it('opens an AAC-LC 48k stereo stream in the host', async () => {
     const { result } = await setupAudio({
       streamConnectionID: 1,
       audioType: 'media',
       audioFormat: 0x800000
     })
-    expect(reg.decoders).toHaveLength(1)
-    expect(reg.decoders[0]?.opts).toMatchObject({ codec: 'aac-lc' })
-    expect(result).toMatchObject({ type: 100 })
+    expect(reg.gst.openAudio).toHaveBeenCalledTimes(1)
+    expect(reg.gst.openAudio.mock.calls[0][1]).toMatchObject({
+      codec: 'aac-lc',
+      clockRate: 48000,
+      channels: 2
+    })
+    expect(result).toMatchObject({ type: 100, dataPort: 6000, controlPort: 6001 })
   })
 
-  it('builds an AAC-LC 44.1k decoder', async () => {
+  it('opens an AAC-LC 44.1k stream at its own clock rate', async () => {
     await setupAudio({
       streamConnectionID: 1,
       audioType: 'media',
       audioFormat: 0x400000,
       audioLatencyMs: 1000
     })
-    expect(reg.decoders[0]?.opts).toMatchObject({ codec: 'aac-lc', clockRate: 44100 })
+    expect(reg.gst.openAudio.mock.calls[0][1]).toMatchObject({
+      codec: 'aac-lc',
+      clockRate: 44100,
+      latencyMs: 1000
+    })
   })
 
-  it('builds an OPUS decoder and honours the mic uplink for MainAudio', async () => {
+  it('opens an OPUS stream and its microphone once the phone starts sending', async () => {
     const { stack } = await setupAudio({
       streamConnectionID: 1,
       audioType: 'speechRecognition',
@@ -655,48 +690,95 @@ describe('CpStack audio setup formats', () => {
       dataPort: 6000,
       framesPerPacket: 480
     })
-    expect(reg.decoders[0]?.opts).toMatchObject({ codec: 'opus' })
-    expect(reg.uplinks).toHaveLength(1)
+    expect(reg.gst.openAudio.mock.calls[0][1]).toMatchObject({ codec: 'opus', clockRate: 48000 })
+
     const active = vi.fn()
     stack.on('mic-active', active)
-    reg.audioStreams[0]?.emit?.('active', true)
-    expect(reg.uplinks[0]?.start).toHaveBeenCalled()
+    reg.gst.onAudioStarted.mock.calls.at(-1)[0](1, 4242)
+
+    expect(reg.gst.openMic).toHaveBeenCalledTimes(1)
+    expect(reg.gst.openMic.mock.calls[0][1]).toMatchObject({ codec: 'opus', port: 6000 })
     expect(active).toHaveBeenCalledWith(true, expect.any(Number), 1)
-    reg.audioStreams[0]?.emit?.('active', false)
-    expect(reg.uplinks[0]?.stop).toHaveBeenCalled()
   })
 
-  it('passes LPCM through, swapping endianness on even payloads', async () => {
-    const { stack } = await setupAudio(
+  it('opens the microphone in-process when the addon plays the stream', async () => {
+    vi.mocked(openAudioReceiver).mockReturnValueOnce({
+      streamId: 0x7c000001,
+      dataPort: 5001,
+      controlPort: 5002
+    })
+    vi.mocked(openMicUplink).mockReturnValueOnce(0x7d000001)
+    const { stack, session } = await setupAudio({
+      streamConnectionID: 1,
+      audioType: 'speechRecognition',
+      audioFormat: 0x20000000,
+      dataPort: 6000,
+      framesPerPacket: 480
+    })
+    expect(reg.gst.openAudio).not.toHaveBeenCalled()
+
+    const active = vi.fn()
+    stack.on('mic-active', active)
+    vi.mocked(onAudioReceiverStarted).mock.calls.at(-1)?.[0](0x7c000001, 4242)
+
+    expect(openMicUplink).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(openMicUplink).mock.calls[0][1]).toMatchObject({ codec: 'opus', port: 6000 })
+    expect(reg.gst.openMic).not.toHaveBeenCalled()
+    expect(active).toHaveBeenCalledWith(true, expect.any(Number), 1)
+
+    internals(stack)._closeAudio(session.audioMeta[0])
+    expect(closeMicUplink).toHaveBeenCalledWith(0x7d000001)
+    expect(reg.gst.closeMic).not.toHaveBeenCalled()
+  })
+
+  it('warns and skips mic-active when the in-process mic uplink fails to open', async () => {
+    vi.mocked(openAudioReceiver).mockReturnValueOnce({
+      streamId: 0x7c000002,
+      dataPort: 5003,
+      controlPort: 5004
+    })
+    // openMicUplink defaults to returning null (no in-process uplink available).
+    const { stack } = await setupAudio({
+      streamConnectionID: 1,
+      audioType: 'speechRecognition',
+      audioFormat: 0x20000000,
+      dataPort: 6000,
+      framesPerPacket: 480
+    })
+
+    const active = vi.fn()
+    stack.on('mic-active', active)
+    vi.mocked(onAudioReceiverStarted).mock.calls.at(-1)?.[0](0x7c000002, 4242)
+
+    expect(openMicUplink).toHaveBeenCalledTimes(1)
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('mic uplink failed to open'))
+    expect(active).not.toHaveBeenCalled()
+  })
+
+  it('opens LPCM as samples on the wire', async () => {
+    await setupAudio(
       { streamConnectionID: 1, audioType: 'telephony', audioFormat: 0x800, dataPort: 0 },
       100
     )
-    const frames: Buffer[] = []
-    stack.on('audio-frame', (f: Buffer) => frames.push(f))
-    reg.audioStreams[0]?.emit?.('pcm', Buffer.from([1, 2, 3, 4]))
-    reg.audioStreams[0]?.emit?.('pcm', Buffer.from([1, 2, 3]))
-    expect(frames).toHaveLength(2)
-    reg.audioStreams[0]?.emit?.('active', true)
+    expect(reg.gst.openAudio.mock.calls[0][1]).toMatchObject({ codec: 'pcm' })
   })
 
-  it('defaults an unknown audio format to 44.1k stereo without a decoder', async () => {
+  it('defaults an unknown audio format to 44.1k stereo', async () => {
     await setupAudio({ streamConnectionID: 1, audioType: 'alert', audioFormat: 0 }, 101)
-    expect(reg.decoders).toHaveLength(0)
-    expect(reg.audioStreams).toHaveLength(1)
+    expect(reg.gst.openAudio.mock.calls[0][1]).toMatchObject({
+      codec: 'pcm',
+      clockRate: 44100,
+      channels: 2
+    })
   })
 
-  it('forwards decoded RTP pcm frames to listeners', async () => {
-    const { stack } = await setupAudio({
-      streamConnectionID: 1,
-      audioType: 'media',
-      audioFormat: 0x800000
-    })
-    const frames: Buffer[] = []
-    stack.on('audio-frame', (f: Buffer) => frames.push(f))
-    reg.decoders[0]?.emit?.('pcm', Buffer.from([9]))
-    reg.audioStreams[0]?.emit?.('rtp', Buffer.from([1]))
-    expect(reg.decoders[0]?.write).toHaveBeenCalledWith(Buffer.from([1]))
-    expect(frames).toHaveLength(1)
+  it('takes the short path to the sink for everything but media', async () => {
+    await setupAudio({ streamConnectionID: 1, audioType: 'media', audioFormat: 0x800000 })
+    expect(reg.gst.openAudio.mock.calls[0][1]).toMatchObject({ realtime: false })
+
+    reg.gst.openAudio.mockClear()
+    await setupAudio({ streamConnectionID: 2, audioType: 'telephony', audioFormat: 0x800 }, 101)
+    expect(reg.gst.openAudio.mock.calls[0][1]).toMatchObject({ realtime: true })
   })
 })
 
@@ -738,6 +820,98 @@ describe('CpStack screen setup', () => {
     expect(clusterPort).toBe(40000)
     expect(ready).toHaveBeenCalled()
     expect(reg.gst.setActiveFeeder).toHaveBeenCalled()
+  })
+
+  it('uses the in-process receiver off linux when the addon offers one', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+    inProcPort.value = 40500
+    try {
+      const { stack, session } = await stackWith({ hevc: false })
+      const codec = vi.fn()
+      const ready = vi.fn()
+      stack.on('video-codec', codec)
+      stack.on('main-screen-ready', ready)
+
+      const port = await internals(stack)._setupScreen({ streamConnectionID: 1 }, session)
+
+      expect(port).toBe(40500)
+      expect(codec).toHaveBeenCalledWith('h264')
+      expect(ready).toHaveBeenCalled()
+      // the frames reach the plane inside the addon, so no ScreenStream is built here
+      expect(session.screen).toBeFalsy()
+    } finally {
+      inProcPort.value = 0
+    }
+  })
+
+  it('uses the in-process receiver off linux for the cluster screen', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+    inProcPort.value = 40600
+    try {
+      const { stack, session } = await stackWith({ hevc: false })
+      const clusterCodec = vi.fn()
+      stack.on('cluster-video-codec', clusterCodec)
+
+      const port = await internals(stack)._setupScreen({ streamConnectionID: 2 }, session, true)
+
+      expect(port).toBe(40600)
+      expect(session.clusterScreenNativeId).toBeTruthy()
+      expect(session.clusterScreenInProcess).toBe(true)
+      expect(clusterCodec).toHaveBeenCalledWith('h264')
+      expect(session.clusterScreen).toBeFalsy()
+    } finally {
+      inProcPort.value = 0
+    }
+  })
+
+  it('reports h265 for the in-process path, activates a pending cluster once, then settles', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+    inProcPort.value = 40700
+    try {
+      // default cfg.hevc is true; this exercises the h265 arm of the in-process codec pick
+      const { stack, session } = await stackWith()
+      internals(stack)._clusterWantActive = true
+      const evSock = eventReady(session)
+      const codec = vi.fn()
+      const clusterCodec = vi.fn()
+      stack.on('video-codec', codec)
+      stack.on('cluster-video-codec', clusterCodec)
+
+      await internals(stack)._setupScreen({ streamConnectionID: 1 }, session)
+      expect(codec).toHaveBeenCalledWith('h265')
+      // main screen just became ready, with a cluster pending: activated at once
+      expect(evSock.write).toHaveBeenCalled()
+
+      evSock.write.mockClear()
+      await internals(stack)._setupScreen({ streamConnectionID: 1 }, session)
+      // codec and readiness are already tracked: no repeat emit, no repeat activation
+      expect(codec).toHaveBeenCalledTimes(1)
+      expect(evSock.write).not.toHaveBeenCalled()
+
+      await internals(stack)._setupScreen({ streamConnectionID: 2 }, session, true)
+      await internals(stack)._setupScreen({ streamConnectionID: 2 }, session, true)
+      expect(clusterCodec).toHaveBeenCalledTimes(1)
+      expect(clusterCodec).toHaveBeenCalledWith('h265')
+    } finally {
+      inProcPort.value = 0
+    }
+  })
+
+  it('reports the advertised codec once per native screen on linux', async () => {
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
+    const { stack, session } = await stackWith({ hevc: false })
+    const codec = vi.fn()
+    const clusterCodec = vi.fn()
+    stack.on('video-codec', codec)
+    stack.on('cluster-video-codec', clusterCodec)
+    await internals(stack)._setupScreen({ streamConnectionID: 1 }, session)
+    await internals(stack)._setupScreen({ streamConnectionID: 1 }, session)
+    await internals(stack)._setupScreen({ streamConnectionID: 2 }, session, true)
+    await internals(stack)._setupScreen({ streamConnectionID: 2 }, session, true)
+    expect(codec).toHaveBeenCalledTimes(1)
+    expect(codec).toHaveBeenCalledWith('h264')
+    expect(clusterCodec).toHaveBeenCalledTimes(1)
+    expect(clusterCodec).toHaveBeenCalledWith('h264')
   })
 
   it('builds a ScreenStream off linux and emits codec, config and frames', async () => {
@@ -1024,9 +1198,9 @@ describe('CpStack feedback', () => {
       sampleRate: 48000,
       connectionID: 7,
       playoutLatencyMs: 1000,
-      stream: { getOrigin: () => origin, getLastRecvSample: () => 96000 },
-      decoder: null,
-      uplink: null
+      hostStreamId: 5,
+      micStreamId: null,
+      origin
     })
   }
 
@@ -1044,6 +1218,16 @@ describe('CpStack feedback', () => {
     const res = internals(stack)._buildFeedback(session) as Record<string, unknown>
     expect(Buffer.isBuffer(res.body)).toBe(true)
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('fb]'))
+  })
+
+  it('falls back to raw ntp for an anchored stream without a synced clock', async () => {
+    const { stack, session } = await fresh()
+    session.timing = null
+    pushStream(session, { originNs: process.hrtime.bigint() - 1_000_000_000n, firstSample: 0 })
+
+    const res = internals(stack)._buildFeedback(session) as Record<string, unknown>
+
+    expect(Buffer.isBuffer(res.body)).toBe(true)
   })
 
   it('reports a stream without an origin and falls back to raw ntp', async () => {
@@ -1243,10 +1427,11 @@ describe('CpStack event messages and iAP relay', () => {
     eventReady(session)
     const relay = fakeSock()
     reg.createConnection.mockReturnValue(relay)
+    session.deviceBtMac = 'AA:BB:CC:DD:EE:FF'
     internals(stack)._openIapMessageRelay(session)
     internals(stack)._openIapMessageRelay(session)
     expect(reg.createConnection).toHaveBeenCalledTimes(1)
-    expect(relay.write).toHaveBeenCalledWith('tunnel ctrl-1\n')
+    expect(relay.write).toHaveBeenCalledWith('tunnel ctrl-1 AA:BB:CC:DD:EE:FF\n')
     relay.emit('data', Buffer.from('from-helper'))
     relay.emit('error', new Error('relay-fail'))
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('iAP relay error'))
@@ -1260,11 +1445,158 @@ describe('CpStack event messages and iAP relay', () => {
     const relay = fakeSock()
     reg.createConnection.mockReturnValue(relay)
     internals(stack)._openIapMessageRelay(session)
-    expect(relay.write).toHaveBeenCalledWith('tunnel \n')
+    expect(relay.write).toHaveBeenCalledWith('tunnel\n')
+  })
+
+  it('omits the BT MAC from the tunnel header until the SETUP delivers one', async () => {
+    const { stack, session } = await fresh()
+    const relay = fakeSock()
+    reg.createConnection.mockReturnValue(relay)
+    internals(stack)._openIapMessageRelay(session)
+    expect(relay.write).toHaveBeenCalledWith('tunnel ctrl-1\n')
   })
 })
 
-describe('CpStack writeMic and teardown', () => {
+describe('CpStack audio control', () => {
+  async function withStream(): Promise<{ stack: EventEmitter; session: Session }> {
+    const CpStack = await loadStack()
+    const stack = new CpStack(baseCfg())
+    const { session } = attach(stack)
+    stubVerify(session)
+    await internals(stack)._setupAudio(
+      { streamConnectionID: 1, audioType: 'media', audioFormat: 0x800000 },
+      session,
+      100
+    )
+    return { stack, session }
+  }
+
+  it('sets the level of the streams of one audioType only', async () => {
+    const { stack } = await withStream()
+
+    ;(stack as unknown as CpStackControl).setStreamVolume(3, 0.5, 250)
+    ;(stack as unknown as CpStackControl).setStreamVolume(2, 0.1, 0)
+
+    expect(reg.gst.setAudioVolume).toHaveBeenCalledTimes(1)
+    expect(reg.gst.setAudioVolume).toHaveBeenCalledWith(1, 0.5, 250)
+  })
+
+  it('switches every stream of the phone through to the sink and back', async () => {
+    const { stack } = await withStream()
+    reg.gst.setAudioActive.mockClear()
+
+    ;(stack as unknown as CpStackControl).setAudioActive(true)
+    ;(stack as unknown as CpStackControl).setAudioActive(false)
+
+    expect(reg.gst.setAudioActive).toHaveBeenNthCalledWith(1, 1, true)
+    expect(reg.gst.setAudioActive).toHaveBeenNthCalledWith(2, 1, false)
+  })
+
+  it('a start report for an unknown stream is ignored', async () => {
+    const CpStack = await loadStack()
+    const stack = new CpStack(baseCfg())
+    const started = vi.fn()
+    stack.on('audio-active', started)
+
+    reg.gst.onAudioStarted.mock.calls.at(-1)?.[0]?.(999, 0)
+
+    expect(started).not.toHaveBeenCalled()
+  })
+
+  it('closing a stream the stack never opened still closes it in the host', async () => {
+    const CpStack = await loadStack()
+    const stack = new CpStack(baseCfg())
+    const { session } = attach(stack)
+    session.audioMeta = [{ type: 100, hostStreamId: 77, micStreamId: null, origin: null }]
+
+    internals(stack)._teardown(session)
+
+    expect(reg.gst.closeAudio).toHaveBeenCalledWith(77)
+  })
+
+  it('a stream opened while the phone is active is switched through at once', async () => {
+    const CpStack = await loadStack()
+    const stack = new CpStack(baseCfg())
+    const { session } = attach(stack)
+    stubVerify(session)
+    ;(stack as unknown as CpStackControl).setAudioActive(true)
+
+    await internals(stack)._setupAudio(
+      { streamConnectionID: 1, audioType: 'media', audioFormat: 0x800000 },
+      session,
+      100
+    )
+
+    expect(reg.gst.setAudioActive).toHaveBeenCalledWith(1, true)
+  })
+
+  it('an in-process stream opened while the phone is active is switched through directly', async () => {
+    vi.mocked(openAudioReceiver).mockReturnValueOnce({
+      streamId: 0x7c000010,
+      dataPort: 5011,
+      controlPort: 5012
+    })
+    const CpStack = await loadStack()
+    const stack = new CpStack(baseCfg())
+    const { session } = attach(stack)
+    stubVerify(session)
+    ;(stack as unknown as CpStackControl).setAudioActive(true)
+
+    await internals(stack)._setupAudio(
+      { streamConnectionID: 1, audioType: 'media', audioFormat: 0x800000 },
+      session,
+      100
+    )
+
+    expect(setAudioReceiverActive).toHaveBeenCalledWith(0x7c000010, true)
+    expect(reg.gst.setAudioActive).not.toHaveBeenCalled()
+  })
+
+  it('sets the level of an in-process stream directly, without going through the host', async () => {
+    vi.mocked(openAudioReceiver).mockReturnValueOnce({
+      streamId: 0x7c000011,
+      dataPort: 5013,
+      controlPort: 5014
+    })
+    const CpStack = await loadStack()
+    const stack = new CpStack(baseCfg())
+    const { session } = attach(stack)
+    stubVerify(session)
+    await internals(stack)._setupAudio(
+      { streamConnectionID: 1, audioType: 'media', audioFormat: 0x800000 },
+      session,
+      100
+    )
+
+    ;(stack as unknown as CpStackControl).setStreamVolume(3, 0.5, 250)
+
+    expect(setAudioReceiverVolume).toHaveBeenCalledWith(0x7c000011, 0.5, 250)
+    expect(reg.gst.setAudioVolume).not.toHaveBeenCalled()
+  })
+
+  it('switches an already-open in-process stream active directly through setAudioActive', async () => {
+    vi.mocked(openAudioReceiver).mockReturnValueOnce({
+      streamId: 0x7c000012,
+      dataPort: 5015,
+      controlPort: 5016
+    })
+    const CpStack = await loadStack()
+    const stack = new CpStack(baseCfg())
+    const { session } = attach(stack)
+    stubVerify(session)
+    await internals(stack)._setupAudio(
+      { streamConnectionID: 1, audioType: 'media', audioFormat: 0x800000 },
+      session,
+      100
+    )
+
+    ;(stack as unknown as CpStackControl).setAudioActive(true)
+
+    expect(setAudioReceiverActive).toHaveBeenCalledWith(0x7c000012, true)
+  })
+})
+
+describe('CpStack teardown', () => {
   async function fresh(): Promise<{ stack: EventEmitter; session: Session }> {
     const CpStack = await loadStack()
     const stack = new CpStack(baseCfg())
@@ -1273,21 +1605,36 @@ describe('CpStack writeMic and teardown', () => {
     return { stack, session }
   }
 
-  it('feeds mic pcm to every active uplink', async () => {
-    const { stack } = await fresh()
-    const uplink = { write: vi.fn() }
-    internals(stack)._activeUplinks.add(uplink)
-    ;(stack as unknown as { writeMic(b: Buffer): void }).writeMic(Buffer.from('pcm'))
-    expect(uplink.write).toHaveBeenCalledWith(Buffer.from('pcm'))
+  /** One audio stream as the stack keeps it after SETUP. */
+  function meta(type = 100, micStreamId: number | null = null): Record<string, unknown> {
+    return { type, hostStreamId: 5, micStreamId, origin: null }
+  }
+
+  it('a stream the stack opened reports itself inactive when it closes', async () => {
+    const CpStack = await loadStack()
+    const stack = new CpStack(baseCfg())
+    const { session } = attach(stack)
+    stubVerify(session)
+    await internals(stack)._setupAudio(
+      { streamConnectionID: 1, audioType: 'media', audioFormat: 0x800000 },
+      session,
+      100
+    )
+    const inactive = vi.fn()
+    stack.on('audio-active', (_p: unknown, active: boolean) => {
+      if (!active) inactive()
+    })
+
+    internals(stack)._teardown(session)
+
+    expect(inactive).toHaveBeenCalled()
   })
 
-  it('tears down every session resource and reports mic inactive', async () => {
+  it('closes every session resource in the host and reports the mic inactive', async () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
     const { stack, session } = await fresh()
     const micOff = vi.fn()
     stack.on('mic-active', micOff)
-    const uplink = { stop: vi.fn() }
-    internals(stack)._activeUplinks.add(uplink)
     session.heartbeat = setInterval(() => {}, 1000)
     session.timing = { stop: vi.fn() }
     session.keepAlive = { stop: vi.fn() }
@@ -1295,15 +1642,18 @@ describe('CpStack writeMic and teardown', () => {
     session.clusterScreen = { stop: vi.fn() }
     session.screenNativeId = 11
     session.clusterScreenNativeId = 22
-    session.audioMeta = [{ stream: { stop: vi.fn() }, decoder: { stop: vi.fn() }, uplink }]
+    session.audioMeta = [meta(100, 9)]
     session.iapTunnel = { stop: vi.fn() }
     session.iapRelay = fakeSock()
     session.event = { close: vi.fn() }
 
     internals(stack)._teardown(session)
+
     expect(reg.gst.closeVideoReceiver).toHaveBeenCalledWith(11)
     expect(reg.gst.closeVideoReceiver).toHaveBeenCalledWith(22)
-    expect(micOff).toHaveBeenCalledWith(false, 0)
+    expect(reg.gst.closeAudio).toHaveBeenCalledWith(5)
+    expect(reg.gst.closeMic).toHaveBeenCalledWith(9)
+    expect(micOff).toHaveBeenCalledWith(false, 0, 0)
     expect(session.audioMeta).toHaveLength(0)
     expect(session.iapRelay as FakeSock | null).toBeNull()
   })
@@ -1311,11 +1661,8 @@ describe('CpStack writeMic and teardown', () => {
   it('tears down a session-level TEARDOWN and a per-stream TEARDOWN', async () => {
     const { stack, session } = await fresh()
     session.screen = { stop: vi.fn() }
-    const uplink = { stop: vi.fn() }
-    internals(stack)._activeUplinks.add(uplink)
-    session.audioMeta = [
-      { type: 100, stream: { stop: vi.fn() }, decoder: { stop: vi.fn() }, uplink }
-    ]
+    session.audioMeta = [meta(100)]
+
     const perStream = internals(stack)._handleTeardown(
       req(
         'TEARDOWN',
@@ -1326,6 +1673,7 @@ describe('CpStack writeMic and teardown', () => {
     )
     expect(perStream).toMatchObject({ status: 200 })
     expect(session.audioMeta).toHaveLength(0)
+    expect(reg.gst.closeAudio).toHaveBeenCalledWith(5)
 
     const full = internals(stack)._handleTeardown(req('TEARDOWN', 'rtsp://x'), session)
     expect(full).toMatchObject({ status: 200 })
@@ -1340,33 +1688,32 @@ describe('CpStack writeMic and teardown', () => {
     expect(res).toMatchObject({ status: 200 })
   })
 
-  it('tears down uplink-less streams while other mics stay active', async () => {
+  it('closes in-process screen receivers directly, without going through the host', async () => {
     const { stack, session } = await fresh()
-    internals(stack)._activeUplinks.add({ stop: vi.fn() })
-    const micOff = vi.fn()
-    stack.on('mic-active', (a: boolean) => {
-      if (!a) micOff()
-    })
-    session.audioMeta = [{ stream: { stop: vi.fn() }, decoder: null, uplink: null }]
+    session.screenNativeId = 11
+    session.screenInProcess = true
+    session.clusterScreenNativeId = 22
+    session.clusterScreenInProcess = true
+
     internals(stack)._teardown(session)
-    expect(micOff).not.toHaveBeenCalled()
+
+    expect(closeScreenReceiver).toHaveBeenCalledWith(11)
+    expect(closeScreenReceiver).toHaveBeenCalledWith(22)
+    expect(reg.gst.closeVideoReceiver).not.toHaveBeenCalled()
   })
 
-  it('keeps mic active when a per-stream teardown leaves another uplink', async () => {
+  it('a stream without a microphone reports nothing about it', async () => {
     const { stack, session } = await fresh()
-    internals(stack)._activeUplinks.add({ stop: vi.fn() })
-    const uplink = { stop: vi.fn() }
-    internals(stack)._activeUplinks.add(uplink)
     const micOff = vi.fn()
     stack.on('mic-active', (a: boolean) => {
       if (!a) micOff()
     })
-    session.audioMeta = [{ type: 100, stream: { stop: vi.fn() }, decoder: null, uplink }]
-    internals(stack)._handleTeardown(
-      req('TEARDOWN', 'rtsp://x', encodeBplist({ streams: [{ type: 100 }] })),
-      session
-    )
+    session.audioMeta = [meta(100, null)]
+
+    internals(stack)._teardown(session)
+
     expect(micOff).not.toHaveBeenCalled()
+    expect(reg.gst.closeMic).not.toHaveBeenCalled()
   })
 })
 
@@ -1526,51 +1873,69 @@ describe('CpStack audio format branches', () => {
     return stack
   }
 
+  /** The settings the stack opened its stream with. */
+  function opened(): Record<string, unknown> {
+    return reg.gst.openAudio.mock.calls[0][1] as Record<string, unknown>
+  }
+
+  /** The settings the stack opened its microphone with. */
+  function mic(): Record<string, unknown> {
+    return reg.gst.openMic.mock.calls[0][1] as Record<string, unknown>
+  }
+
+  /** Reports the first packet, which is when the microphone opens. */
+  function started(stack: EventEmitter): void {
+    reg.gst.onAudioStarted.mock.calls.at(-1)?.[0]?.(1, 0)
+    void stack
+  }
+
   it('labels a default audio profile as nav for a blank audio type', async () => {
     await setupAudio({ streamConnectionID: 1, audioType: '', audioFormat: 0 }, 101)
-    expect(reg.audioStreams).toHaveLength(1)
+    expect(reg.gst.openAudio).toHaveBeenCalledTimes(1)
   })
 
   it('defaults the audio type to media when omitted', async () => {
     await setupAudio({ streamConnectionID: 1, audioFormat: 0x800000 }, 100)
-    expect(reg.decoders[0]?.opts).toMatchObject({ codec: 'aac-lc' })
+    expect(opened()).toMatchObject({ codec: 'aac-lc', realtime: false })
   })
 
-  it('picks the 48k opus tier and a 96k bitrate uplink', async () => {
-    await setupAudio(
-      { streamConnectionID: 1, audioType: 'media', audioFormat: 0x40000000, dataPort: 6000 },
-      100
-    )
-    expect(reg.decoders[0]?.opts).toMatchObject({ codec: 'opus' })
-    expect(reg.uplinks[0]?.opts).toMatchObject({ bitrate: 96000, codec: 'opus' })
-  })
-
-  it('picks the 16k opus tier', async () => {
-    await setupAudio({ streamConnectionID: 1, audioType: 'media', audioFormat: 0x10000000 }, 101)
-    expect(reg.decoders[0]?.opts).toMatchObject({ clockRate: 48000 })
-  })
-
-  it('builds a pcm mic uplink at the 32k tier', async () => {
-    await setupAudio(
-      { streamConnectionID: 1, audioType: 'telephony', audioFormat: 0x100, dataPort: 6000 },
-      100
-    )
-    expect(reg.uplinks[0]?.opts).toMatchObject({ codec: 'pcm', bitrate: 64000 })
-  })
-
-  it('keeps mic active while another uplink stream remains', async () => {
+  it('picks the 48k opus tier and a 96k bitrate microphone', async () => {
     const stack = await setupAudio(
       { streamConnectionID: 1, audioType: 'media', audioFormat: 0x40000000, dataPort: 6000 },
       100
     )
-    const micOff = vi.fn()
-    stack.on('mic-active', (_a: boolean, ...rest: unknown[]) => {
-      if (_a === false) micOff(...rest)
-    })
-    internals(stack)._activeUplinks.add({ stop: vi.fn() })
-    reg.audioStreams[0]?.emit?.('active', true)
-    reg.audioStreams[0]?.emit?.('active', false)
-    expect(micOff).not.toHaveBeenCalled()
+    expect(opened()).toMatchObject({ codec: 'opus' })
+
+    started(stack)
+
+    expect(mic()).toMatchObject({ bitrate: 96000, codec: 'opus', sampleRate: 48000 })
+  })
+
+  it('opus always clocks at 48k, whatever tier the phone picks', async () => {
+    await setupAudio({ streamConnectionID: 1, audioType: 'media', audioFormat: 0x10000000 }, 101)
+    expect(opened()).toMatchObject({ clockRate: 48000 })
+  })
+
+  it('builds a pcm microphone at the 32k tier', async () => {
+    const stack = await setupAudio(
+      { streamConnectionID: 1, audioType: 'telephony', audioFormat: 0x100, dataPort: 6000 },
+      100
+    )
+
+    started(stack)
+
+    expect(mic()).toMatchObject({ codec: 'pcm', bitrate: 64000 })
+  })
+
+  it('a stream without a send port opens no microphone', async () => {
+    const stack = await setupAudio(
+      { streamConnectionID: 1, audioType: 'media', audioFormat: 0x40000000 },
+      100
+    )
+
+    started(stack)
+
+    expect(reg.gst.openMic).not.toHaveBeenCalled()
   })
 })
 

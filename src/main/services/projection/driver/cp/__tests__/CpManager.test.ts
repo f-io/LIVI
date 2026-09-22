@@ -122,6 +122,18 @@ describe('CpManager session-at-identification', () => {
     expect(sessionsFor(mgr, '0c:6a:c4:4e:f3:2a')).toHaveLength(1)
   })
 
+  it('does not rebirth a session from the events that trail its close', () => {
+    const { mgr } = makeManager()
+    mgr._onHelperEvent({ type: 'nowplaying', phoneId: '0c:6a', title: 'X' })
+    const [s] = sessionsFor(mgr, '0c:6a')
+    s.emit('disconnected')
+    mgr._onHelperEvent({ type: 'nowplaying', phoneId: '0c:6a', playing: 0 })
+    expect(sessionsFor(mgr, '0c:6a')).toHaveLength(0)
+    mgr._onHelperEvent({ type: 'device', btMac: '0C:6A' })
+    mgr._onHelperEvent({ type: 'nowplaying', phoneId: '0c:6a', title: 'Y' })
+    expect(sessionsFor(mgr, '0c:6a')).toHaveLength(1)
+  })
+
   it('reuses the born session for further events of the same phone', () => {
     const { mgr } = makeManager()
     mgr._onHelperEvent({ type: 'nowplaying', phoneId: '0c:6a', title: 'X' })
@@ -175,6 +187,22 @@ describe('CpManager session-at-identification', () => {
     expect(adopted.at(-1)?.btMac).toBe(phoneId)
   })
 
+  it('a session born while its phone is on the bus is wired and ends with the unplug', () => {
+    const { mgr } = makeManager()
+    const phoneId = '0c:6a:c4:4e:f3:2a'
+    const serial = '00008110-000A1B2C3D4E5F00'
+    mgr._onHelperEvent({ type: 'nowplaying', phoneId, title: 'X' })
+    mgr._onHelperEvent({ type: 'device', src: 'carkit', btMac: phoneId, usbUdid: serial })
+    // The AirPlay side drops while iAP2 over USB lives on and keeps sending metadata.
+    for (const old of sessionsFor(mgr, phoneId)) void old.close()
+    mgr._onHelperEvent({ type: 'nowplaying', phoneId, title: 'Y' })
+    const [born] = sessionsFor(mgr, phoneId)
+    expect(born?.matchesIdentity({ usbUdid: serial })).toBe(true)
+
+    mgr._onHelperEvent({ type: 'device-gone', src: 'carkit', usbUdid: serial })
+    expect(sessionsFor(mgr, phoneId)).toHaveLength(0)
+  })
+
   it('device-gone closes only the session matching that usbUdid', () => {
     const { mgr } = makeManager()
     const macA = 'aa:aa'
@@ -192,6 +220,24 @@ describe('CpManager session-at-identification', () => {
 
     expect(sessionsFor(mgr, macA)).toHaveLength(0)
     expect(sessionsFor(mgr, macB)).toHaveLength(1)
+  })
+
+  it('a link that goes closes every session it carried', () => {
+    const { mgr } = makeManager()
+    const macA = 'aa:aa'
+    const macB = 'bb:bb'
+    mgr._onHelperEvent({ type: 'nowplaying', phoneId: macA, title: 'A' })
+    mgr._onHelperEvent({ type: 'nowplaying', phoneId: macB, title: 'B' })
+    expect(sessionsFor(mgr, macA)).toHaveLength(1)
+    expect(sessionsFor(mgr, macB)).toHaveLength(1)
+
+    mgr._onHelperEvent({ type: 'link', up: true })
+    expect(sessionsFor(mgr, macA)).toHaveLength(1)
+
+    mgr._onHelperEvent({ type: 'link', up: false })
+
+    expect(sessionsFor(mgr, macA)).toHaveLength(0)
+    expect(sessionsFor(mgr, macB)).toHaveLength(0)
   })
 })
 
@@ -359,11 +405,13 @@ describe('CpManager dropSessions', () => {
     const [b] = sessionsFor(mgr, 'bb:bb')
     const closeA = vi.spyOn(a as never, 'close').mockResolvedValue(undefined as never)
     const closeB = vi.spyOn(b as never, 'close').mockResolvedValue(undefined as never)
+    const dropIap2 = vi.spyOn(mgr._helper, 'dropIap2').mockResolvedValue(undefined)
 
     mgr.dropSessions()
 
     expect(closeA).toHaveBeenCalledTimes(1)
     expect(closeB).toHaveBeenCalledTimes(1)
+    expect(dropIap2).toHaveBeenCalledTimes(1)
   })
 })
 

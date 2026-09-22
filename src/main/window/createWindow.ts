@@ -1,7 +1,7 @@
-import { is } from '@electron-toolkit/utils'
 import { saveSettings } from '@main/ipc/utils'
+import { customProxy } from '@main/services/custom/CustomProxy'
 import { runtimeStateProps, ServicesProps } from '@main/types'
-import { isMacPlatform, pushSettingsToRenderer } from '@main/utils'
+import { isDev, isMacPlatform, pushSettingsToRenderer } from '@main/utils'
 import type { WindowBounds } from '@shared/types'
 import { app, BrowserWindow, screen, session, shell } from 'electron'
 import { join } from 'path'
@@ -135,7 +135,9 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
 
   session.defaultSession.webRequest.onHeadersReceived(
     { urls: ['*://*/*', 'file://*/*'] },
-    (d, cb) =>
+    (d, cb) => {
+      const proxied = customProxy.url()
+      if (proxied && d.url.startsWith(proxied)) return cb({})
       cb({
         responseHeaders: {
           ...d.responseHeaders,
@@ -144,6 +146,7 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
           'Cross-Origin-Resource-Policy': ['same-site']
         }
       })
+    }
   )
 
   mainWindow.once('ready-to-show', () => {
@@ -202,7 +205,7 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
       kiosk: { ...runtimeState.config.kiosk, main: currentKiosk(runtimeState.config) }
     })
 
-    if (is.dev) {
+    if (isDev()) {
       win.webContents.openDevTools({ mode: 'detach' })
     }
 
@@ -243,7 +246,7 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
     return { action: 'deny' }
   })
 
-  if (is.dev && process.env.ELECTRON_RENDERER_URL) {
+  if (isDev() && process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else mainWindow.loadURL('app://index.html')
 
@@ -266,7 +269,7 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
     }
   })
 
-  if (is.dev) {
+  if (isDev()) {
     const gpuWindow = new BrowserWindow({
       width: 1000,
       height: 800,
@@ -276,7 +279,7 @@ export function createMainWindow(runtimeState: runtimeStateProps, services: Serv
     gpuWindow.loadURL('chrome://gpu')
   }
 
-  if (is.dev) {
+  if (isDev()) {
     const mediaWindow = new BrowserWindow({
       width: 1000,
       height: 800,

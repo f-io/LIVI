@@ -10,15 +10,28 @@ installMainProcessErrorHandlers()
 import { setDebugLogging } from '@main/constants'
 import { registerIpc } from '@main/ipc'
 import { configEvents, saveSettings } from '@main/ipc/utils'
-import { registerAppProtocol } from '@main/protocol/appProtocol'
+import {
+  registerAppProtocol,
+  seedCustomPage,
+  setCustomPageConfig
+} from '@main/protocol/appProtocol'
 import {
   setSystemVolume,
   startSystemVolumeMonitor,
   stopSystemVolumeMonitor
 } from '@main/services/audio/SystemVolume'
+import { ensureWireplumberBtRoles } from '@main/services/audio/wireplumberBtRoles'
+import { customProxy } from '@main/services/custom/CustomProxy'
 import { checkAndInstallGvfsGuard, startPhoneSuppression } from '@main/services/gvfsPhoneGuard'
+import { reconcileDongleAp } from '@main/services/link/dongleAp'
+import { startLinkSpeedMonitor } from '@main/services/link/linkSpeed'
 import { checkMissingPackages } from '@main/services/packageCheck'
 import { checkAndInstallHelperSudoers } from '@main/services/projection/driver/helper/helperSudoers'
+import {
+  reconcileWifiAp,
+  settleWifiAp,
+  setWifiApReport
+} from '@main/services/projection/driver/helper/wifiApUnit'
 import { ProjectionService } from '@main/services/projection/services/ProjectionService'
 import { TelemetrySocket } from '@main/services/Socket'
 import { setupTelemetry } from '@main/services/telemetry/setupTelemetry'
@@ -29,8 +42,8 @@ import { app, BrowserWindow } from 'electron'
 import { loadConfig } from './config/loadConfig'
 import { restartApp } from './ipc/app'
 import { CarBridgeService } from './services/carBridge/CarBridgeService'
-import { USBService } from './services/usb/USBService'
 import { checkAndInstallUdevRule } from './services/usb/udevRule'
+import { registerUsbIpc } from './services/usb/usbIpc'
 import {
   backdropHex,
   setCompositorBackdrop,
@@ -62,9 +75,10 @@ if (bootstrapCompositor()) {
 app.whenReady().then(async () => {
   if (!bootAllowed) return
   const projectionService = new ProjectionService()
-  const usbService = new USBService(projectionService)
+  registerUsbIpc()
   const telemetryStore = new TelemetryStore()
   const telemetrySocket = new TelemetrySocket(telemetryStore, 4000)
+
   const runtimeState: runtimeStateProps = {
     config: loadConfig(),
     telemetrySocket: null,
@@ -74,17 +88,62 @@ app.whenReady().then(async () => {
   }
   setDebugLogging(runtimeState.config.debugLogging === true)
 
+  setCustomPageConfig(() => runtimeState.config)
+  setWifiApReport((patch) => saveSettings(runtimeState, patch))
+  seedCustomPage()
+  await customProxy.start(runtimeState.config.customUrl)
+  const linkKeys: (keyof Config)[] = [
+    'wifiInterface',
+    'wifiDedicatedInterface',
+    'wirelessCpEnabled',
+    'wirelessAaEnabled',
+    'btAdapter',
+    'carName',
+    'country',
+    'wifiChannel',
+    'wifiChannelWidth',
+    'wifiPassword'
+  ]
+  const linkSettings = (c: Config): string => linkKeys.map((k) => String(c[k])).join('|')
+  let told = linkSettings(runtimeState.config)
+  configEvents.on('changed', (next: Config) => {
+    void customProxy.start(next.customUrl)
+    const now = linkSettings(next)
+    if (now === told) return
+    told = now
+    void reconcileWifiAp(next)
+    void reconcileDongleAp(next)
+  })
+  void reconcileDongleAp(runtimeState.config)
+  // Live CarPlay Wi-Fi link readout (down/up throughput + PHY rate) for the settings page.
+  startLinkSpeedMonitor()
+
   const carBridge = new CarBridgeService(runtimeState.config.language)
   carBridge.start()
   projectionService.onProjectionEvent((payload) => carBridge.handleEvent(payload))
   carBridge.onKey = (command) => projectionService.dispatchRemoteInput(command)
   carBridge.onTelemetry = (payload) => telemetryStore.merge(payload)
+  carBridge.setBrightness(runtimeState.config.displayBrightness * 100)
+  configEvents.on('changed', (next: Config) =>
+    carBridge.setBrightness(next.displayBrightness * 100)
+  )
+  //auto: the vehicle's panel dimmer writes displayBrightness itself, so the
+  //slider stays truthful; manual: vehicle values run into the void
+  let brightnessAuto = runtimeState.config.displayBrightnessAuto
+  configEvents.on('changed', (next: Config) => {
+    brightnessAuto = next.displayBrightnessAuto
+  })
+  telemetryStore.on('change', (patch: { dimmerPct?: unknown }) => {
+    if (!brightnessAuto || typeof patch.dimmerPct !== 'number') return
+    const next = Math.min(1, Math.max(0, patch.dimmerPct / 100))
+    if (Math.abs(next - runtimeState.config.displayBrightness) < 0.005) return
+    saveSettings(runtimeState, { displayBrightness: next })
+  })
 
   runtimeState.telemetrySocket = telemetrySocket
 
   const services = {
     projectionService,
-    usbService,
     telemetrySocket
   }
 
@@ -149,23 +208,22 @@ app.whenReady().then(async () => {
   setupLifecycle(runtimeState, services)
 
   const win = getMainWindow()
+  // The helper's sudoers rule comes first: with it the udev rule, the gvfs guard and the AP
+  // unit are installed through the helper, without a prompt.
+  if (win && process.platform === 'linux') {
+    await checkAndInstallHelperSudoers(win)
+  }
+
   if (win && (await checkAndInstallUdevRule(win))) {
     await restartApp(runtimeState, services)
     return
   }
 
-  if (
-    win &&
-    process.platform === 'linux' &&
-    (runtimeState.config.wirelessAaEnabled === true ||
-      runtimeState.config.wirelessCpEnabled === true)
-  ) {
-    await checkAndInstallHelperSudoers(win)
-  }
-
   if (win && process.platform === 'linux') {
+    void reconcileWifiAp(runtimeState.config, win).then(() => settleWifiAp(runtimeState.config))
     await checkAndInstallGvfsGuard(win)
     startPhoneSuppression()
+    ensureWireplumberBtRoles()
   }
 
   if (win && process.platform === 'linux') {

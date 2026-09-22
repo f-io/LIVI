@@ -30,10 +30,6 @@ export function aaContentArea(
   return { contentWidth: frame.width, contentHeight: roundEven(frame.width / userAR) }
 }
 
-export function dongleDisplayName(name: string): string {
-  return `${name} (D)`
-}
-
 // Android Auto only encodes into these canonical 16:9 frames.
 const AA_TIERS: ReadonlyArray<{ w: number; h: number }> = [
   { w: 800, h: 480 },

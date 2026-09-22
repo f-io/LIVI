@@ -24,7 +24,7 @@ import {
   randomBytes
 } from 'node:crypto'
 
-// ChaCha20-Poly1305 (RFC 8439) runs in the livi-crypto native addon (Monocypher-backed).
+// ChaCha20-Poly1305 (RFC 8439) runs in the livi-crypto native addon.
 type NativeAead = {
   open(key: Buffer, nonce: Buffer, ct: Buffer, aad?: Buffer): Buffer | null
   seal(key: Buffer, nonce: Buffer, pt: Buffer, aad?: Buffer): Buffer

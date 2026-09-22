@@ -11,12 +11,16 @@ const focusFirstInMainMock = vi.fn()
 let capturedKeyDownOpts: any = null
 let mockPathname = '/'
 
-vi.mock('react-router', () => ({
-  HashRouter: ({ children }: any) => <div data-testid="router">{children}</div>,
-  useLocation: () => ({ pathname: mockPathname }),
-  useRoutes: () => <div data-testid="routes">routes</div>,
-  useNavigate: () => navigateMock
-}))
+vi.mock('react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router')>()
+  return {
+    matchRoutes: actual.matchRoutes,
+    HashRouter: ({ children }: any) => <div data-testid="router">{children}</div>,
+    useLocation: () => ({ pathname: mockPathname }),
+    useRoutes: () => <div data-testid="routes">routes</div>,
+    useNavigate: () => navigateMock
+  }
+})
 
 vi.mock('../components/pages', () => ({
   Projection: (props: any) => <div data-testid="projection">{String(props.receivingVideo)}</div>,
@@ -24,7 +28,7 @@ vi.mock('../components/pages', () => ({
   Home: () => <div data-testid="home" />,
   Media: () => <div data-testid="media" />,
   Camera: () => <div data-testid="camera" />,
-  Devices: () => <div data-testid="devices" />,
+  Custom: () => <div data-testid="custom" />,
   Maps: () => <div data-testid="maps" />,
   Telemetry: () => <div data-testid="telemetry" />
 }))
@@ -60,7 +64,7 @@ vi.mock('../hooks', () => ({
 
 const liviState: any = {
   settings: {
-    startPage: 'media',
+    startPage: '/media',
     language: 'en',
     bindings: { back: 'KeyB', selectDown: 'Enter' }
   },
@@ -70,8 +74,8 @@ const statusState: any = {
   setCameraFound: vi.fn(),
   reverse: false,
   cameraFound: false,
-  requestedView: null,
-  requestedViewNonce: 0
+  requestedPath: null,
+  clearRequestedPath: vi.fn()
 }
 
 vi.mock('../store/store', () => ({
@@ -102,15 +106,14 @@ describe('App', () => {
     focusFirstInMainMock.mockReset()
     mockPathname = '/'
     liviState.settings = {
-      startPage: 'media',
+      startPage: '/media',
       language: 'en',
       bindings: { back: 'KeyB', selectDown: 'Enter' }
     }
     liviState.saveSettings = vi.fn()
     statusState.reverse = false
     statusState.cameraFound = false
-    statusState.requestedView = null
-    statusState.requestedViewNonce = 0
+    statusState.requestedPath = null
     ;(window as any).projection = {
       usb: {
         listenForEvents,
@@ -472,11 +475,11 @@ describe('App', () => {
     expect(navigateMock).not.toHaveBeenCalled()
   })
 
-  test('falls back to home when the start page is unknown', async () => {
-    liviState.settings = { ...liviState.settings, startPage: 'nonexistent' }
+  test('starts on the custom page when configured', async () => {
+    liviState.settings = { ...liviState.settings, startPage: '/custom' }
     mockPathname = '/'
     render(<App />)
-    expect(navigateMock).not.toHaveBeenCalled()
+    expect(navigateMock).toHaveBeenCalledWith('/custom', { replace: true })
   })
 
   test('records a transition from a settings sub page back to settings root', async () => {
@@ -673,19 +676,80 @@ describe('App', () => {
     expect(navigateMock).not.toHaveBeenCalled()
   })
 
-  test('external navigation request routes to the requested view', async () => {
-    statusState.requestedView = 'media'
-    statusState.requestedViewNonce = 1
+  test('external navigation request routes to the requested path', async () => {
+    statusState.requestedPath = '/media'
     mockPathname = '/'
     render(<App />)
     expect(navigateMock).toHaveBeenCalledWith('/media')
   })
 
-  test('external navigation request with no view does not navigate', async () => {
-    statusState.requestedView = null
-    statusState.requestedViewNonce = 1
+  test('a handled request is consumed so the same path can be sent again', async () => {
+    statusState.requestedPath = '/media'
+    mockPathname = '/'
+    render(<App />)
+    expect(statusState.clearRequestedPath).toHaveBeenCalled()
+  })
+
+  test('external navigation request with no path does not navigate', async () => {
+    statusState.requestedPath = null
     mockPathname = '/media'
     render(<App />)
     expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  test('a path that matches no route is discarded', async () => {
+    statusState.requestedPath = '/nope'
+    mockPathname = '/'
+    render(<App />)
+    expect(navigateMock).not.toHaveBeenCalledWith('/nope')
+  })
+
+  test('a settings detail page is reachable', async () => {
+    statusState.requestedPath = '/settings/audio/callVolume'
+    mockPathname = '/'
+    render(<App />)
+    expect(navigateMock).toHaveBeenCalledWith('/settings/audio/callVolume')
+  })
+
+  test('a trailing slash is normalised away', async () => {
+    statusState.requestedPath = '/settings/audio/'
+    mockPathname = '/'
+    render(<App />)
+    expect(navigateMock).toHaveBeenCalledWith('/settings/audio')
+  })
+
+  test('repeated slashes are collapsed', async () => {
+    statusState.requestedPath = '/settings//audio'
+    mockPathname = '/'
+    render(<App />)
+    expect(navigateMock).toHaveBeenCalledWith('/settings/audio')
+  })
+
+  test('an unknown settings sub-path is discarded', async () => {
+    statusState.requestedPath = '/settings/test'
+    mockPathname = '/'
+    render(<App />)
+    expect(navigateMock).not.toHaveBeenCalledWith('/settings/test')
+  })
+
+  test('the settings root is reachable', async () => {
+    statusState.requestedPath = '/settings'
+    mockPathname = '/'
+    render(<App />)
+    expect(navigateMock).toHaveBeenCalledWith('/settings')
+  })
+
+  test('requesting the current path does not navigate again', async () => {
+    statusState.requestedPath = '/media'
+    mockPathname = '/media'
+    render(<App />)
+    expect(navigateMock).not.toHaveBeenCalledWith('/media')
+  })
+
+  test('a settings route is reachable', async () => {
+    statusState.requestedPath = '/settings/devices'
+    mockPathname = '/'
+    render(<App />)
+    expect(navigateMock).toHaveBeenCalledWith('/settings/devices')
   })
 })

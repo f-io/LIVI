@@ -1,0 +1,15 @@
+[package]
+name = "livi-link-provision-cli"
+version = "0.1.0"
+edition.workspace = true
+
+[[bin]]
+name = "livi-link-provision"
+path = "src/main.rs"
+
+[dependencies]
+livi-link-provision = { path = "../../crates/livi-link-provision" }
+livi-dongle = { path = "../../crates/livi-dongle" }
+livi-session-io = { path = "../../crates/livi-session-io" }
+nusb = "0.2"
+tokio = { version = "1", features = ["rt", "io-util", "time"] }

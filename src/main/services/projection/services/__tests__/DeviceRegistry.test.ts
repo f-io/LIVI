@@ -29,6 +29,7 @@ describe('DeviceRegistry', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    vi.spyOn(fsp, 'rename').mockResolvedValue(undefined)
   })
 
   afterEach(() => {

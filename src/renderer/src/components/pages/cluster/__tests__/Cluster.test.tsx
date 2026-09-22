@@ -81,47 +81,6 @@ describe('Cluster page', () => {
     })
   })
 
-  test('shows unsupported firmware hint when naviScreen is missing', async () => {
-    liviState.boxInfo = { supportFeatures: '' }
-    renderCluster()
-
-    expect(screen.getByText('Not supported by firmware')).toBeInTheDocument()
-  })
-
-  test('parseBoxInfo accepts a stringified JSON boxInfo and detects naviScreen', async () => {
-    liviState.boxInfo = JSON.stringify({ supportFeatures: 'naviScreen,foo' })
-    renderCluster()
-    // supportsNaviScreen=true → the "Not supported by firmware" hint is hidden
-    expect(screen.queryByText('Not supported by firmware')).not.toBeInTheDocument()
-  })
-
-  test('parseBoxInfo treats empty / invalid JSON strings as null', async () => {
-    liviState.boxInfo = '   '
-    renderCluster()
-    // No box → not supported → hint appears (isStreaming=true triggers it)
-    expect(screen.getByText('Not supported by firmware')).toBeInTheDocument()
-  })
-
-  test('parseBoxInfo survives a non-JSON string', async () => {
-    liviState.boxInfo = 'this is not json'
-    renderCluster()
-    expect(screen.getByText('Not supported by firmware')).toBeInTheDocument()
-  })
-
-  test('supportFeatures array form matches naviScreen entry', async () => {
-    liviState.boxInfo = { supportFeatures: ['Foo', 'NaviScreen', 'Bar'] }
-    renderCluster()
-    expect(screen.queryByText('Not supported by firmware')).not.toBeInTheDocument()
-  })
-
-  test('activeProtocol androidauto overrides missing firmware support', async () => {
-    liviState.boxInfo = null
-    statusState.activeProtocol = 'androidauto'
-    renderCluster()
-    expect(screen.queryByText('Not supported by firmware')).not.toBeInTheDocument()
-    statusState.activeProtocol = null
-  })
-
   test('onClusterResolution hides the map placeholder once cluster frames arrive', async () => {
     let resCb: ((p: unknown) => void) | null = null
     ;(window as any).projection.ipc.onClusterResolution = vi.fn((cb: (p: unknown) => void) => {
@@ -209,24 +168,6 @@ describe('Cluster page', () => {
         cbs.forEach((cb) => cb(undefined, { type: 'failure' }))
       })
     ).not.toThrow()
-  })
-
-  test('treats a non-string non-object boxInfo as unsupported', async () => {
-    liviState.boxInfo = 12345
-    renderCluster()
-    expect(screen.getByText('Not supported by firmware')).toBeInTheDocument()
-  })
-
-  test('treats a stringified non-object boxInfo as unsupported', async () => {
-    liviState.boxInfo = '123'
-    renderCluster()
-    expect(screen.getByText('Not supported by firmware')).toBeInTheDocument()
-  })
-
-  test('treats a numeric supportFeatures value as unsupported', async () => {
-    liviState.boxInfo = { supportFeatures: 42 }
-    renderCluster()
-    expect(screen.getByText('Not supported by firmware')).toBeInTheDocument()
   })
 
   test('ignores zero-sized cluster frames and runs the resolution cleanup', async () => {

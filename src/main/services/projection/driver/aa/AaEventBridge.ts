@@ -8,8 +8,7 @@ import {
   type Message,
   NavigationData,
   NavigationMetaType,
-  type NaviInfo,
-  VideoData
+  type NaviInfo
 } from '@projection/messages/readable'
 import { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
 import {
@@ -18,6 +17,7 @@ import {
   turnEventToManeuverType,
   turnSideToNaviCode
 } from './stack/channels/navManeuverMap'
+import { CH } from './stack/constants'
 import {
   type AAStack,
   type AAStackConfig,
@@ -31,32 +31,41 @@ import {
   type NavigationTurnUpdate,
   type VideoCodec
 } from './stack/index'
-import type { UsbAoapBridge } from './stack/transport/UsbAoapBridge'
 
+// audioType uses the CarPlay numbering ProjectionAudio keys its streams by, not the AA wire types.
+// System sounds take the nav type like CarPlay alerts, calls never reach this link (HFP).
 const AUDIO_MAP: Record<AudioChannelType, { audioType: number; decodeType: number }> = {
   media: { audioType: 3, decodeType: 4 },
-  speech: { audioType: 1, decodeType: 5 },
-  phone: { audioType: 2, decodeType: 5 }
+  speech: { audioType: 4, decodeType: 5 },
+  system: { audioType: 4, decodeType: 5 }
 }
 
-export function buildVideoDataMessage(
-  buf: Buffer,
-  width: number,
-  height: number,
-  cluster = false
-): VideoData {
-  return new VideoData({ width, height, data: buf, cluster })
+const AUDIO_CHANNEL_ID: Record<AudioChannelType, number> = {
+  media: CH.MEDIA_AUDIO,
+  speech: CH.SPEECH_AUDIO,
+  system: CH.SYSTEM_AUDIO
 }
 
-function buildAudioDataMessage(buf: Buffer, channel: AudioChannelType): AudioData {
-  const { audioType, decodeType } = AUDIO_MAP[channel]
-  const sampleBytes = buf.length - (buf.length % 2)
-  const samples = new Int16Array(
-    buf.buffer,
-    buf.byteOffset,
-    sampleBytes / Int16Array.BYTES_PER_ELEMENT
-  )
-  return new AudioData({ decodeType, audioType, data: samples })
+/** What a helper-carried session needs to route its media straight into the host. */
+export type AaMediaSinkDeps = {
+  /** The host's feed socket path, '' when the host cannot provide one. */
+  feedPath: () => Promise<string>
+  videoPlaneId: (cluster: boolean) => number
+  /** Creates the plane so the fed frames find a decoder. */
+  primeVideo: (cluster: boolean) => void
+  /** The helper saw the first frame of a stream, geometry and focus follow. */
+  noteVideoStarted: (cluster: boolean, width: number, height: number) => void
+  /** Whether the fed stream is the one the plane shows; a held session's frames stop in the host. */
+  setVideoActive: (cluster: boolean, active: boolean) => void
+  /** The same for the fed audio streams. */
+  setAudioActive: (active: boolean) => void
+  /** The host's driver-fed streams, tagged with the channel they were opened for. */
+  audioOutputs: () => Array<{ audioType: number; streamId: number; tag?: string }>
+  onAudioOutput: (cb: (audioType: number, streamId: number, tag?: string) => void) => () => void
+  /** Opens the host stream for a channel's format, samples never pass through here. */
+  primeAudio: (audioType: number, sampleRate: number, channels: number, tag: string) => void
+  /** Sets the level of the host-fed streams of this audioType. */
+  setHostVolume: (audioType: number, level: number, rampMs: number) => void
 }
 
 function buildAudioCommandMessage(channel: AudioChannelType, command: AudioCommand): AudioData {
@@ -69,9 +78,8 @@ function audioLifecycleCommand(channel: AudioChannelType, starting: boolean): Au
     case 'media':
       return starting ? AudioCommand.AudioMediaStart : AudioCommand.AudioMediaStop
     case 'speech':
+    case 'system':
       return starting ? AudioCommand.AudioNaviStart : AudioCommand.AudioNaviStop
-    case 'phone':
-      return starting ? AudioCommand.AudioOutputStart : AudioCommand.AudioOutputStop
   }
 }
 
@@ -84,8 +92,8 @@ export type AaEventBridgeDeps = {
   emitDisconnected?: (reason?: string) => void
   startMic: (reason: string) => void
   stopMic: (reason: string) => void
-  consumeWiredBridge: () => UsbAoapBridge | null
   isClosed: () => boolean
+  mediaSink?: AaMediaSinkDeps
 }
 
 export class AaEventBridge {
@@ -111,7 +119,7 @@ export class AaEventBridge {
 
     aa.on('disconnected', (reason?: string) => {
       console.log(
-        `[AaEventBridge] AAStack disconnected (${reason ?? 'no reason'}) — supervisor stays up for retry`
+        `[AaEventBridge] AAStack disconnected (${reason ?? 'no reason'}), supervisor stays up for retry`
       )
       deps.emitDisconnected?.(reason)
       this.naviBag = {}
@@ -121,25 +129,6 @@ export class AaEventBridge {
       if (this.videoFocusEmitted) {
         this.emitCommand(CommandMapping.releaseVideoFocus)
         this.videoFocusEmitted = false
-      }
-
-      if (reason === 'pre-RUNNING watchdog') {
-        const bridge = deps.consumeWiredBridge()
-        if (bridge) {
-          console.log('[AaEventBridge] watchdog disconnect — forcing USB re-enumeration')
-          void (async () => {
-            try {
-              await bridge.forceReenum()
-            } catch (err) {
-              console.warn(`[AaEventBridge] watchdog forceReenum threw: ${(err as Error).message}`)
-            }
-            try {
-              await bridge.stop()
-            } catch (err) {
-              console.warn(`[AaEventBridge] watchdog bridge stop threw: ${(err as Error).message}`)
-            }
-          })()
-        }
       }
     })
 
@@ -161,39 +150,50 @@ export class AaEventBridge {
       this.emitCommand(CommandMapping.requestClusterFocus)
     })
 
-    aa.on('video-frame', (buf: Buffer) => {
-      if (!this.videoFocusEmitted) {
-        this.videoFocusEmitted = true
-        this.emitCommand(CommandMapping.requestVideoFocus)
-      }
-      const w = cfg.videoWidth ?? 1280
-      const h = cfg.videoHeight ?? 720
-      deps.emitMessage(buildVideoDataMessage(buf, w, h) as Message)
-    })
-
-    aa.on('cluster-video-frame', (buf: Buffer) => {
-      if (!this.clusterFocusEmitted) {
-        this.clusterFocusEmitted = true
-        this.emitCommand(CommandMapping.requestClusterFocus)
-      }
-      const w = cfg.videoWidth ?? 1280
-      const h = cfg.videoHeight ?? 720
-      deps.emitMessage(buildVideoDataMessage(buf, w, h, true) as Message)
-    })
-
     aa.on('cluster-video-codec', (codec: VideoCodec) => {
       console.log(`[AaEventBridge] cluster-video-codec=${codec} (phone selection)`)
       deps.emitCodec('cluster-video-codec', codec)
+      this.pushVideoSink(true, codec)
     })
 
     aa.on('video-codec', (codec: VideoCodec) => {
       console.log(`[AaEventBridge] video-codec=${codec} (phone selection)`)
       deps.emitCodec('video-codec', codec)
+      this.pushVideoSink(false, codec)
     })
 
-    aa.on('audio-frame', (buf: Buffer, _ts: bigint, channel: AudioChannelType) => {
-      deps.emitMessage(buildAudioDataMessage(buf, channel) as Message)
+    // Helper-carried sessions: the frames go to the host directly, only their
+    // arrival is reported here.
+    aa.on('video-started', () => {
+      if (!this.videoFocusEmitted) {
+        this.videoFocusEmitted = true
+        this.emitCommand(CommandMapping.requestVideoFocus)
+      }
+      deps.mediaSink?.noteVideoStarted(false, cfg.videoWidth ?? 1280, cfg.videoHeight ?? 720)
     })
+
+    aa.on('cluster-video-started', () => {
+      if (!this.clusterFocusEmitted) {
+        this.clusterFocusEmitted = true
+        this.emitCommand(CommandMapping.requestClusterFocus)
+      }
+      deps.mediaSink?.noteVideoStarted(true, cfg.videoWidth ?? 1280, cfg.videoHeight ?? 720)
+    })
+
+    if (deps.mediaSink) {
+      const sink = deps.mediaSink
+      const off = sink.onAudioOutput((_audioType, streamId, tag) =>
+        this.pushAudioSink(streamId, tag)
+      )
+      aa.on('connected', () => {
+        for (const o of sink.audioOutputs()) this.pushAudioSink(o.streamId, o.tag)
+      })
+      aa.on('disconnected', off)
+      // One host stream per channel, so speech and system never share a decoder.
+      aa.on('audio-setup', (channel: AudioChannelType, sampleRate: number, channels: number) => {
+        sink.primeAudio(AUDIO_MAP[channel].audioType, sampleRate, channels, channel)
+      })
+    }
 
     aa.on('audio-start', (channel: AudioChannelType) => {
       const cmd = audioLifecycleCommand(channel, true)
@@ -324,7 +324,7 @@ export class AaEventBridge {
       const patch: Record<string, unknown> = {}
       // step_distance = distance to the next maneuver (shown next to the turn arrow)
       if (p.stepDistanceMeters !== undefined) patch.NaviRemainDistance = p.stepDistanceMeters
-      // destination distance + remaining time + arrival clock — the real trip figures
+      // destination distance + remaining time + arrival clock, the real trip figures
       if (p.destinationMeters !== undefined) patch.NaviDistanceToDestination = p.destinationMeters
       if (p.timeToArrivalSeconds !== undefined) patch.NaviTimeToDestination = p.timeToArrivalSeconds
       if (p.etaText) patch.NaviETA = p.etaText
@@ -338,6 +338,39 @@ export class AaEventBridge {
       }
       console.warn(`[AaEventBridge] AAStack transient error: ${err.message}`)
     })
+  }
+
+  // The plane is primed first so the host has a decoder when the feed starts.
+  private pushVideoSink(cluster: boolean, codec: VideoCodec): void {
+    const sink = this.deps.mediaSink
+    if (!sink) return
+    sink.primeVideo(cluster)
+    const entry = {
+      ch: cluster ? CH.CLUSTER_VIDEO : CH.VIDEO,
+      id: sink.videoPlaneId(cluster),
+      codec
+    }
+    void sink.feedPath().then((feed) => this.deliverVideoSink(feed, entry))
+  }
+
+  private deliverVideoSink(feed: string, entry: unknown): void {
+    if (this.deps.isClosed()) return
+    if (!feed) console.warn('[AaEventBridge] host has no media feed, video will not show')
+    this.aa.sendMediaSink({ feed, video: [entry] })
+  }
+
+  // Routes a host stream to the one channel it was opened for.
+  private pushAudioSink(streamId: number, tag: string | undefined): void {
+    const sink = this.deps.mediaSink
+    if (!sink) return
+    if (!tag || !(tag in AUDIO_CHANNEL_ID)) return
+    const ch = AUDIO_CHANNEL_ID[tag as AudioChannelType]
+    void sink.feedPath().then((feed) => this.deliverAudioSink(feed, ch, streamId))
+  }
+
+  private deliverAudioSink(feed: string, ch: number, streamId: number): void {
+    if (this.deps.isClosed()) return
+    this.aa.sendMediaSink({ feed, audio: [{ ch, id: streamId }] })
   }
 
   private emitCommand(value: CommandMapping): void {

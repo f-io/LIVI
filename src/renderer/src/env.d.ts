@@ -1,5 +1,5 @@
 import type { ElectronAPI } from '@electron-toolkit/preload'
-import type { Config, DeviceView, DongleFirmwareAction, TransportSnapshot } from '@shared/types'
+import type { Config, DeviceView, TransportSnapshot } from '@shared/types'
 import type { MultiTouchPoint } from '@shared/types/TouchTypes'
 
 // Should move to src/types/usb.ts
@@ -64,29 +64,6 @@ type MediaPayload = {
   }
 } | null
 
-type DongleFirmwareCheckResult =
-  | {
-      ok: true
-      hasUpdate: boolean
-      latestVer?: string
-      notes?: string
-      size?: number
-      id?: string
-      token?: string
-      request?: {
-        lang: number
-        code: number
-        appVer: string
-        ver: string
-        uuid: string
-        mfd: string
-        fwn: string
-        model: string
-      }
-      raw: unknown
-    }
-  | { ok: false; error: string }
-
 type DevToolsUploadResult = {
   ok: boolean
   cgiOk: boolean
@@ -115,13 +92,7 @@ declare global {
       onUSBResetStatus(callback: (event: unknown, ...args: unknown[]) => void): void
 
       usb: {
-        forceReset(): Promise<boolean>
-        detectDongle(): Promise<boolean>
-        getDeviceInfo(): Promise<UsbDeviceInfo>
-        getLastEvent(): Promise<unknown>
         getSysdefaultPrettyName(): Promise<string>
-        uploadIcons(): Promise<void>
-        uploadLiviScripts(): Promise<DevToolsUploadResult>
         listenForEvents(callback: (event: unknown, ...args: unknown[]) => void): () => void
       }
 
@@ -130,6 +101,12 @@ declare global {
         save(settings: Partial<Config>): Promise<void>
         onUpdate(
           callback: (event: import('electron').IpcRendererEvent, settings: Config) => void
+        ): () => void
+        onLinkSpeed(
+          callback: (
+            event: import('electron').IpcRendererEvent,
+            speed: { downMbps: number; upMbps: number; downRate: number; upRate: number } | null
+          ) => void
         ): () => void
       }
       audio: {
@@ -146,7 +123,6 @@ declare global {
         restart(): Promise<void>
         setVisible(visible: boolean): Promise<void>
         sendFrame(): Promise<void>
-        dongleFirmware(action: DongleFirmwareAction): Promise<DongleFirmwareCheckResult>
 
         sendTouch(x: number, y: number, action: number): void
         sendMultiTouch(points: MultiTouchPoint[]): void
@@ -171,7 +147,7 @@ declare global {
 
         connectBluetoothPairedDevice(mac: string): Promise<{ ok: boolean }>
 
-        switchTransport(): Promise<{ ok: boolean; active: 'dongle' | 'aa' | 'cp' | null }>
+        switchTransport(): Promise<{ ok: boolean; active: 'aa' | 'cp' | null }>
         cycleSession(): Promise<void>
         getTransportState(): Promise<TransportSnapshot>
         getDevices(): Promise<DeviceView[]>
@@ -182,6 +158,9 @@ declare global {
       platform: NodeJS.Platform
       compositor: boolean
       notifyUserActivity(): void
+      reportPath(path: string): void
+      customPageUrl(): Promise<string | null>
+      customIconUrl(): Promise<string | null>
       quitApp(): Promise<void>
       restartApp(): Promise<void>
       getVersion(): Promise<string>

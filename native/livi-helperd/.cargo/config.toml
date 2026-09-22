@@ -1,0 +1,10 @@
+# Cross target for the V821B (Andes C907, rv32imafdc + Andes 'xv5-0p0'; rv32gc covers what
+# Rust's stdlib actually emits). Static-linked against the Andes glibc.
+[target.riscv32gc-unknown-linux-gnu]
+linker = "riscv32-linux-gcc"
+rustflags = [
+  "-C", "target-feature=+crt-static",
+  "-C", "relocation-model=static",
+  "-C", "link-arg=-static",
+  "-C", "link-arg=-no-pie",
+]

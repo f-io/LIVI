@@ -3,7 +3,7 @@ import type { Mock } from 'vitest'
 
 vi.mock('../config/loadConfig', () => ({
   loadConfig: vi.fn(function () {
-    return { width: 800, height: 480, kiosk: false }
+    return { width: 800, height: 480, kiosk: false, displayBrightness: 1.0 }
   })
 }))
 
@@ -23,7 +23,9 @@ vi.mock('@main/app/compositorBootstrap', () => ({
 }))
 
 vi.mock('@main/protocol/appProtocol', () => ({
-  registerAppProtocol: vi.fn()
+  registerAppProtocol: vi.fn(),
+  seedCustomPage: vi.fn(),
+  setCustomPageConfig: vi.fn()
 }))
 
 vi.mock('@main/ipc', () => ({
@@ -54,10 +56,8 @@ vi.mock('@main/services/projection/services/ProjectionService', () => ({
   })
 }))
 
-vi.mock('../services/usb/USBService', () => ({
-  USBService: vi.fn().mockImplementation(function () {
-    return {}
-  })
+vi.mock('../services/usb/usbIpc', () => ({
+  registerUsbIpc: vi.fn()
 }))
 
 vi.mock('@main/services/Socket', () => ({
@@ -76,6 +76,15 @@ vi.mock('../services/usb/udevRule', () => ({
 
 vi.mock('@main/services/projection/driver/helper/helperSudoers', () => ({
   checkAndInstallHelperSudoers: vi.fn(() => Promise.resolve())
+}))
+vi.mock('@main/services/link/dongleAp', () => ({
+  DONGLE_LINK: 'livi-link',
+  reconcileDongleAp: vi.fn(() => Promise.resolve())
+}))
+vi.mock('@main/services/projection/driver/helper/wifiApUnit', () => ({
+  reconcileWifiAp: vi.fn(() => Promise.resolve()),
+  releaseWifiApForQuit: vi.fn(() => Promise.resolve()),
+  setWifiApReport: vi.fn()
 }))
 
 vi.mock('@main/services/gvfsPhoneGuard', () => ({
@@ -106,7 +115,7 @@ vi.mock('../window/secondaryWindows', () => ({
 
 vi.mock('../services/carBridge/CarBridgeService', () => ({
   CarBridgeService: vi.fn().mockImplementation(function () {
-    return { start: vi.fn(), stop: vi.fn(), handleEvent: vi.fn() }
+    return { start: vi.fn(), stop: vi.fn(), handleEvent: vi.fn(), setBrightness: vi.fn() }
   })
 }))
 
@@ -159,15 +168,21 @@ describe('main index bootstrap', () => {
     const { ProjectionService } = await import(
       '@main/services/projection/services/ProjectionService'
     )
-    const { USBService } = await import('../services/usb/USBService')
+    const { registerUsbIpc } = await import('../services/usb/usbIpc')
     const { TelemetrySocket } = await import('@main/services/Socket')
+    const { seedCustomPage, setCustomPageConfig } = await import('@main/protocol/appProtocol')
 
     await bootIndex()
+
+    expect(seedCustomPage).toHaveBeenCalled()
+    const getConfig = (setCustomPageConfig as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0][0] as () => { language?: string }
+    expect(getConfig()).toBeTruthy()
 
     expect(app.whenReady as Mock).toHaveBeenCalledTimes(1)
 
     expect(ProjectionService).toHaveBeenCalledTimes(1)
-    expect(USBService).toHaveBeenCalledTimes(1)
+    expect(registerUsbIpc).toHaveBeenCalledTimes(1)
     expect(TelemetrySocket).toHaveBeenCalledTimes(1)
     expect((TelemetrySocket as Mock).mock.calls[0][1]).toBe(4000)
 
@@ -197,6 +212,40 @@ describe('main index bootstrap', () => {
     const mergeSpy = vi.spyOn(TelemetryStore.prototype, 'merge')
     bridge.onTelemetry({ speedKph: 73 })
     expect(mergeSpy).toHaveBeenCalledWith({ speedKph: 73 })
+    expect(bridge.setBrightness).toHaveBeenCalled()
+    const { configEvents } = await import('@main/ipc/utils')
+    bridge.setBrightness.mockClear()
+    configEvents.emit('changed', { displayBrightness: 0.4, displayBrightnessAuto: true })
+    expect(bridge.setBrightness).toHaveBeenCalledWith(40)
+    const { TelemetryStore: TS } = await import('@main/services/telemetry/TelemetryStore')
+    const { saveSettings } = await import('@main/ipc/utils')
+    const storeInstance = mergeSpy.mock.instances[0] as InstanceType<typeof TS>
+    // auto: the dimmer writes the setting (slider stays truthful)
+    storeInstance.emit('change', { dimmerPct: 68 }, {})
+    expect(saveSettings).toHaveBeenCalledWith(expect.anything(), { displayBrightness: 0.68 })
+    ;(saveSettings as Mock).mockClear()
+    storeInstance.emit('change', { speedKph: 50 }, {})
+    expect(saveSettings).not.toHaveBeenCalled()
+    // unchanged value is deduped (config default is 1.0 = 100%)
+    storeInstance.emit('change', { dimmerPct: 100 }, {})
+    expect(saveSettings).not.toHaveBeenCalled()
+    // manual: vehicle values run into the void
+    configEvents.emit('changed', { displayBrightness: 0.4, displayBrightnessAuto: false })
+    storeInstance.emit('change', { dimmerPct: 30 }, {})
+    expect(saveSettings).not.toHaveBeenCalled()
+  })
+
+  test('the wifi AP reports what it changed back into the settings', async () => {
+    const { setWifiApReport } = await import('@main/services/projection/driver/helper/wifiApUnit')
+    const { saveSettings } = await import('@main/ipc/utils')
+
+    await bootIndex()
+
+    const report = (setWifiApReport as Mock).mock.calls.at(-1)?.[0] as (patch: object) => void
+    ;(saveSettings as Mock).mockClear()
+    report({ wifiChannel: 44 })
+
+    expect(saveSettings).toHaveBeenCalledWith(expect.anything(), { wifiChannel: 44 })
   })
 
   test('exits without booting when the outer launcher hands off to the compositor', async () => {
@@ -311,8 +360,24 @@ describe('main index bootstrap', () => {
     expect(startPhoneSuppression).toHaveBeenCalled()
   })
 
-  test('skips the BT sudoers installer when aa=false and cp=false', async () => {
+  test('asks for the helper rule on linux even with wireless off, the rest rides on it', async () => {
     await mockReadyRunsCallback()
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
+    const { checkAndInstallHelperSudoers } = await import(
+      '@main/services/projection/driver/helper/helperSudoers'
+    )
+    const { checkAndInstallUdevRule } = await import('../services/usb/udevRule')
+    await bootIndex()
+    expect(checkAndInstallHelperSudoers).toHaveBeenCalled()
+    // The rule first, so the udev rule can go through the helper without a prompt.
+    expect((checkAndInstallHelperSudoers as Mock).mock.invocationCallOrder[0]).toBeLessThan(
+      (checkAndInstallUdevRule as Mock).mock.invocationCallOrder[0]
+    )
+  })
+
+  test('never asks for the helper rule off linux', async () => {
+    await mockReadyRunsCallback()
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
     const { checkAndInstallHelperSudoers } = await import(
       '@main/services/projection/driver/helper/helperSudoers'
     )
@@ -399,6 +464,24 @@ describe('main index bootstrap', () => {
 
     configEvents.emit('changed', { ...cfg, huVolumeLinkSystem: false })
     expect(stopSystemVolumeMonitor).toHaveBeenCalled()
+  })
+
+  test('a change the radios do not care about leaves them alone', async () => {
+    await mockReadyRunsCallback()
+    await bootIndex()
+    const { configEvents } = await import('@main/ipc/utils')
+    const { reconcileWifiAp } = await import('@main/services/projection/driver/helper/wifiApUnit')
+    const { reconcileDongleAp } = await import('@main/services/link/dongleAp')
+    ;(reconcileWifiAp as Mock).mockClear()
+    ;(reconcileDongleAp as Mock).mockClear()
+
+    configEvents.emit('changed', { huVolume: 0.9 })
+    expect(reconcileWifiAp).not.toHaveBeenCalled()
+    expect(reconcileDongleAp).not.toHaveBeenCalled()
+
+    configEvents.emit('changed', { huVolume: 0.9, wifiChannel: 48 })
+    expect(reconcileWifiAp).toHaveBeenCalled()
+    expect(reconcileDongleAp).toHaveBeenCalled()
   })
 
   test('unlinked head-unit volume stops the system mixer monitor', async () => {

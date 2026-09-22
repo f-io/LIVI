@@ -1,6 +1,6 @@
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { chmodSync, existsSync, readFileSync, unlinkSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync } from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
@@ -37,6 +37,46 @@ export function clusterPlaneId(screen: 'main' | 'dash' | 'aux'): number {
 type ReverseEvents = {
   config: (id: number, codec: 'h264' | 'h265', atom: Buffer) => void
   started: (id: number) => void
+  audioStarted: (id: number, firstSample: number) => void
+  visualizerAudio: (samples: Uint8Array, sampleRate: number) => void
+}
+
+/** How a CarPlay audio stream travels. */
+export type CpAudioCodec = 'aac-lc' | 'opus' | 'pcm' | 'pcm-le'
+
+const AUDIO_CODEC_BYTE: Record<CpAudioCodec, number> = {
+  'aac-lc': 0,
+  opus: 1,
+  pcm: 2,
+  'pcm-le': 3
+}
+
+export type AudioStreamOpts = {
+  codec: CpAudioCodec
+  /** RTP payload type, which is the CarPlay stream type. */
+  payloadType: number
+  clockRate: number
+  channels: number
+  /** Jitter buffer depth, the phone's negotiated playout latency. */
+  latencyMs: number
+  /** Voice and call streams take the short path to the sink. */
+  realtime: boolean
+  /** The main process feeds this stream instead of the host binding ports. */
+  fed?: boolean
+  device?: string
+}
+
+export type MicStreamOpts = {
+  codec: 'opus' | 'pcm'
+  payloadType: number
+  sampleRate: number
+  channels: number
+  bitrate: number
+  frameMs: number
+  /** Where the phone listens. */
+  port: number
+  phone: string
+  device?: string
 }
 
 class GstHost {
@@ -47,22 +87,32 @@ class GstHost {
   private readonly queue: Buffer[] = []
   private readonly events = new EventEmitter()
   private readonly portWaiters = new Map<number, (port: number) => void>()
+  private readonly audioWaiters = new Map<number, (data: number, control: number) => void>()
   private recvBuf: Buffer = Buffer.alloc(0)
   private nextReceiverId = 0x7b000000
+  private feedWaiter: ((path: string) => void) | null = null
+  private feedPath: Promise<string> | null = null
+  // Set once the host binary is missing, this platform has no host process.
+  private unavailable = false
 
   private start(): void {
-    if (this.child || this.starting) return
+    if (this.child || this.starting || this.unavailable) return
+    if (process.platform !== 'linux') {
+      this.unavailable = true
+      console.warn('[gstHost] no host process on this platform, call ignored')
+      return
+    }
     this.starting = true
 
     let addonPath: string
     try {
-      // require.resolve gives the logical app.asar path; the real files are unpacked (asarUnpack),
+      // require.resolve gives the logical app.asar path. The real files are unpacked (asarUnpack),
       // and spawn plus the child need the physical path.
       addonPath = require
-        .resolve('gst-video')
+        .resolve('livi-gst-video')
         .replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`)
     } catch (e) {
-      console.error('[gstHost] cannot resolve gst-video:', (e as Error).message)
+      console.error('[gstHost] cannot resolve livi-gst-video:', (e as Error).message)
       this.starting = false
       return
     }
@@ -99,9 +149,30 @@ class GstHost {
       if (process.env.LIVI_GST_PRELOAD) env.LD_PRELOAD = process.env.LIVI_GST_PRELOAD
       env.GST_GL_WINDOW = 'surfaceless'
       env.GST_GL_PLATFORM = 'egl'
-      this.child = spawn(hostBin, [sockPath, crashPath], {
-        env,
-        stdio: ['ignore', 'inherit', 'inherit']
+      // A silent pipeline failure must be diagnosable from the log.
+      let stdio: ('ignore' | 'inherit' | number)[] = ['ignore', 'inherit', 'inherit']
+      try {
+        const logDir = path.join(os.homedir(), '.config', 'LIVI', 'log')
+        mkdirSync(logDir, { recursive: true })
+        const fd = openSync(path.join(logDir, 'gst-host.log'), 'w')
+        stdio = ['ignore', fd, fd]
+      } catch {
+        // no log dir: keep the inherited stdio
+      }
+      this.child = spawn(hostBin, [sockPath, crashPath], { env, stdio })
+      this.child.on('error', (e: Error) => {
+        console.error(
+          `[gstHost] cannot start the host, media fed by the helper has nowhere to go: ${e.message}`
+        )
+        this.unavailable = true
+        this.child = null
+        this.sock = null
+        this.starting = false
+        this.feedPath = null
+        const waiter = this.feedWaiter
+        this.feedWaiter = null
+        waiter?.('')
+        server.close()
       })
       this.child.on('exit', (code, signal) => {
         console.error('[gstHost] child exited:', code, signal ?? '')
@@ -113,6 +184,7 @@ class GstHost {
         this.child = null
         this.sock = null
         this.starting = false
+        this.feedPath = null
         server.close()
       })
     })
@@ -125,6 +197,7 @@ class GstHost {
 
   private send(buf: Buffer): void {
     this.start()
+    if (this.unavailable) return
     if (this.sock?.writable) this.sock.write(buf)
     else this.queue.push(buf)
   }
@@ -157,7 +230,45 @@ class GstHost {
       this.events.emit('config', id, codec, Buffer.from(rest.subarray(1)))
     } else if (rop === 3) {
       this.events.emit('started', id)
+    } else if (rop === 4) {
+      const waiter = this.audioWaiters.get(id)
+      if (waiter) {
+        this.audioWaiters.delete(id)
+        waiter(
+          rest.length >= 4 ? rest.readUInt16LE(0) : 0,
+          rest.length >= 4 ? rest.readUInt16LE(2) : 0
+        )
+      }
+    } else if (rop === 5) {
+      this.events.emit('audioStarted', id, rest.length >= 4 ? rest.readUInt32LE(0) : 0)
+    } else if (rop === 6 && rest.length >= 4) {
+      // [rate u32 LE][mono s16 samples]. Copy off the shared socket buffer.
+      this.events.emit('visualizerAudio', new Uint8Array(rest.subarray(4)), rest.readUInt32LE(0))
+    } else if (rop === 7) {
+      const waiter = this.feedWaiter
+      this.feedWaiter = null
+      waiter?.(rest.toString('utf8'))
     }
+  }
+
+  /** The socket the helper streams media into, empty when the host cannot bind it. */
+  openFeed(): Promise<string> {
+    if (this.feedPath) return this.feedPath
+    const feedPath = path.join(os.tmpdir(), `livi-gst-${process.pid}.sock.feed`)
+    this.feedPath = new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.feedWaiter = null
+        this.feedPath = null
+        resolve('')
+      }, 4000)
+      this.feedWaiter = (bound) => {
+        clearTimeout(timer)
+        if (!bound) this.feedPath = null
+        resolve(bound)
+      }
+      this.send(frame(16, 0, Buffer.from(feedPath, 'utf8')))
+    })
+    return this.feedPath
   }
 
   openVideoReceiver(
@@ -189,6 +300,112 @@ class GstHost {
 
   closeVideoReceiver(receiverId: number): void {
     this.send(frame(6, receiverId, Buffer.alloc(0)))
+  }
+
+  /** Opens one audio stream in the host and answers with the ports it bound. */
+  openAudio(
+    key: Buffer,
+    o: AudioStreamOpts
+  ): Promise<{ streamId: number; dataPort: number; controlPort: number }> {
+    const streamId = this.nextReceiverId++
+    return new Promise((resolve) => {
+      const done = (dataPort: number, controlPort: number): void => {
+        clearTimeout(timer)
+        resolve({ streamId, dataPort, controlPort })
+      }
+      const timer = setTimeout(() => {
+        this.audioWaiters.delete(streamId)
+        resolve({ streamId, dataPort: 0, controlPort: 0 })
+      }, 4000)
+      this.audioWaiters.set(streamId, done)
+
+      const head = Buffer.alloc(12)
+      head.writeUInt8(AUDIO_CODEC_BYTE[o.codec], 0)
+      head.writeUInt8(o.payloadType & 0xff, 1)
+      head.writeUInt32LE(o.clockRate, 2)
+      head.writeUInt8(o.channels, 6)
+      head.writeUInt32LE(o.latencyMs, 7)
+      head.writeUInt8((o.realtime ? 1 : 0) | (o.fed ? 2 : 0), 11)
+      const device = Buffer.from(o.device ?? '', 'utf8')
+      this.send(frame(8, streamId, Buffer.concat([head, key, device])))
+    })
+  }
+
+  /** Feeds samples into a stream the host does not receive itself. */
+  pushAudio(streamId: number, samples: Buffer): void {
+    this.send(frame(14, streamId, samples))
+  }
+
+  /** Toggles the pre-fader mono tap on every audio stream. */
+  setVisualizerTap(on: boolean): void {
+    this.send(frame(15, 0, Buffer.from([on ? 1 : 0])))
+  }
+
+  onVisualizerAudio(cb: ReverseEvents['visualizerAudio']): void {
+    this.events.removeAllListeners('visualizerAudio')
+    this.events.on('visualizerAudio', cb)
+  }
+
+  /** Sets the level at once, or over `rampMs` on the pipeline clock. */
+  setAudioVolume(streamId: number, level: number, rampMs = 0): void {
+    const body = Buffer.alloc(12)
+    body.writeDoubleLE(level, 0)
+    body.writeUInt32LE(Math.max(0, Math.round(rampMs)), 8)
+    this.send(frame(9, streamId, body))
+  }
+
+  /** Only the active phone's streams reach the sink. */
+  setAudioActive(streamId: number, active: boolean): void {
+    this.send(frame(13, streamId, Buffer.from([active ? 1 : 0])))
+  }
+
+  closeAudio(streamId: number): void {
+    this.audioWaiters.delete(streamId)
+    this.send(frame(10, streamId, Buffer.alloc(0)))
+  }
+
+  /** Starts capturing and sending the microphone stream. */
+  openMic(key: Buffer, o: MicStreamOpts): number {
+    const streamId = this.nextReceiverId++
+    const phone = Buffer.from(o.phone, 'utf8')
+    const head = Buffer.alloc(17)
+    head.writeUInt8(o.codec === 'pcm' ? 1 : 0, 0)
+    head.writeUInt8(o.payloadType & 0xff, 1)
+    head.writeUInt32LE(o.sampleRate, 2)
+    head.writeUInt8(o.channels, 6)
+    head.writeUInt32LE(o.bitrate, 7)
+    head.writeUInt32LE(o.frameMs, 11)
+    head.writeUInt16LE(o.port, 15)
+    const device = Buffer.from(o.device ?? '', 'utf8')
+    this.send(
+      frame(11, streamId, Buffer.concat([head, key, Buffer.from([phone.length]), phone, device]))
+    )
+    return streamId
+  }
+
+  closeMic(streamId: number): void {
+    this.send(frame(12, streamId, Buffer.alloc(0)))
+  }
+
+  /** Captures the microphone and streams raw samples into the socket at `path`. */
+  openMicTap(path: string, o: { sampleRate: number; channels: number; device?: string }): number {
+    const tapId = this.nextReceiverId++
+    const head = Buffer.alloc(6)
+    head.writeUInt32LE(o.sampleRate, 0)
+    head.writeUInt8(o.channels, 4)
+    const device = Buffer.from(o.device ?? '', 'utf8')
+    head.writeUInt8(device.length, 5)
+    this.send(frame(20, tapId, Buffer.concat([head, device, Buffer.from(path, 'utf8')])))
+    return tapId
+  }
+
+  closeMicTap(tapId: number): void {
+    this.send(frame(21, tapId, Buffer.alloc(0)))
+  }
+
+  onAudioStarted(cb: ReverseEvents['audioStarted']): void {
+    this.events.removeAllListeners('audioStarted')
+    this.events.on('audioStarted', cb)
   }
 
   onVideoReceiverConfig(cb: ReverseEvents['config']): void {
@@ -234,7 +451,7 @@ export const gstHost = new GstHost()
 function resolveHostBinary(): string | null {
   try {
     const addonPath = require
-      .resolve('gst-video')
+      .resolve('livi-gst-video')
       .replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`)
     return path.join(path.dirname(addonPath), 'build', 'Release', 'livi-gst-host')
   } catch {

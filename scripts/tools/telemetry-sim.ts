@@ -17,6 +17,13 @@
  *   telemetry:set turn=left
  *
  *
+ * NAVIGATE THE UI (router path; a path matching no route is discarded)
+ *
+ *   telemetry:set path=/media
+ *   telemetry:set path=/settings/devices
+ *   telemetry:set path=/
+ *
+ *
  * SEND A BLOCK (multiple fields in one push, merged on the LIVI side)
  *
  *   telemetry:set speedKph=73 rpm=2100 gear=D lights=true

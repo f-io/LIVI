@@ -31,11 +31,10 @@ echo "→ Checking for required tools: curl, xdg-user-dir, pkexec"
 for tool in curl xdg-user-dir pkexec; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "   $tool not found, installing…"
-    sudo apt-get update
     case "$tool" in
-      xdg-user-dir) sudo apt-get --yes install xdg-user-dirs ;;
-      pkexec)       sudo apt-get --yes install pkexec ;;
-      *)            sudo apt-get --yes install "$tool" ;;
+      xdg-user-dir) livi_pm_install xdg-user-dirs ;;
+      pkexec)       [ "$(livi_pm)" = dnf ] && livi_pm_install polkit || livi_pm_install pkexec ;;
+      *)            livi_pm_install "$tool" ;;
     esac
   else
     echo "   $tool found"
@@ -44,10 +43,7 @@ done
 
 # A desktop session is already present, so only the core packages are needed here.
 echo "→ Ensuring GStreamer, wireless AP and Bluetooth runtime packages"
-sudo apt-get update
-sudo apt-get install -y $(livi_packages core | tr '\n' ' ')
-
-livi_install_pymobiledevice3
+livi_pm_install $(livi_packages core | tr '\n' ' ')
 
 ICON_URL="$LIVI_RAW/assets/icons/linux/livi.png"
 ICON_DEST="$USER_HOME/.local/share/icons/livi.png"
@@ -90,21 +86,35 @@ SUDOERS_TEMPLATE="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_SUDOERS_TEMPLATE
   echo "Error: cannot obtain $LIVI_SUDOERS_TEMPLATE" >&2
   exit 1
 }
+AP_UNIT_TEMPLATE="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_AP_UNIT_TEMPLATE")" || {
+  echo "Error: cannot obtain $LIVI_AP_UNIT_TEMPLATE" >&2
+  exit 1
+}
+AP_SUDOERS_TEMPLATE="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_AP_SUDOERS_TEMPLATE")" || {
+  echo "Error: cannot obtain $LIVI_AP_SUDOERS_TEMPLATE" >&2
+  exit 1
+}
 TOUCH_FILTER="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_TOUCH_FILTER_TEMPLATE")" || {
   echo "Error: cannot obtain $LIVI_TOUCH_FILTER_TEMPLATE" >&2
   exit 1
 }
 
+# --- shared ---
 livi_install_touch_filter "$TOUCH_FILTER"
 livi_write_udev_rule "$UDEV_TEMPLATE"
 livi_write_sudoers "$SUDOERS_TEMPLATE"
-livi_install_gvfs_guard
+livi_write_wifi_ap_unit "$AP_UNIT_TEMPLATE" "$AP_SUDOERS_TEMPLATE"
+livi_write_regdom
 livi_install_time_helper
-
+livi_disable_wifi_powersave
 livi_set_wifi_pmf_optional
+livi_grant_rtprio
 livi_apply_mfi
 livi_apply_splash
 livi_apply_hdmi_pr "$APPIMAGE_PATH"
+
+# --- desktop only ---
+livi_install_gvfs_guard
 
 echo "→ Creating autostart entry"
 AUTOSTART_DIR="$USER_HOME/.config/autostart"

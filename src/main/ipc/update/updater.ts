@@ -103,9 +103,9 @@ export class Updater {
 
       if (updateSession.platform === 'darwin') {
         try {
-          await this.services.usbService.gracefulReset()
+          await this.services.projectionService.stop()
         } catch (e) {
-          console.warn('[MAIN] gracefulReset failed (continuing install):', e)
+          console.warn('[MAIN] projection stop failed (continuing install):', e)
         }
         await new Promise((r) => setTimeout(r, 150))
         await installOnMacFromFile(file)

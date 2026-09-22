@@ -1,10 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { ed25519Sign, ed25519Verify } from '../crypto'
 
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(() => false),
   mkdirSync: vi.fn(),
   readFileSync: vi.fn(),
+  renameSync: vi.fn(),
   writeFileSync: vi.fn()
 }))
 
@@ -33,8 +34,12 @@ describe('loadOrCreateIdentity', () => {
     expect(id.pairingId).toMatch(/^[0-9a-f-]{36}$/)
     expect(mockMkdir).toHaveBeenCalledWith('/tmp/cp', { recursive: true })
     const [file, json, opts] = mockWrite.mock.calls[0]
-    expect(file).toBe('/tmp/cp/identity.json')
+    expect(file).toBe('/tmp/cp/identity.json.tmp')
     expect(opts).toEqual({ mode: 0o600 })
+    expect(vi.mocked(renameSync)).toHaveBeenCalledWith(
+      '/tmp/cp/identity.json.tmp',
+      '/tmp/cp/identity.json'
+    )
     expect(JSON.parse(json as string)).toEqual({
       priv: id.privRaw.toString('hex'),
       pub: id.pubRaw.toString('hex'),

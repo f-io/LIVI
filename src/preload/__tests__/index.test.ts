@@ -139,6 +139,24 @@ describe('preload api bridge', () => {
     expect(ipcRendererMock.removeListener).toHaveBeenCalledWith('settings', cb)
   })
 
+  test('settings onLinkSpeed carries the readout and cleanup removes listener', async () => {
+    const { projection } = await loadPreload()
+    const cb = vi.fn()
+
+    const cleanup = projection.settings.onLinkSpeed(cb)
+    const speed = { downMbps: 5.3, upMbps: 2.7, downRate: 866, upRate: 780 }
+    emit('link-speed', speed)
+    // null is what the monitor sends while nothing is on the air.
+    emit('link-speed', null)
+
+    expect(cb).toHaveBeenCalledWith(expect.anything(), speed)
+    expect(cb).toHaveBeenCalledWith(expect.anything(), null)
+
+    cleanup()
+
+    expect(ipcRendererMock.removeListener).toHaveBeenCalledWith('link-speed', cb)
+  })
+
   test('ipc onEvent returns an unsubscribe closure that stops the projection-event fan-out', async () => {
     const { projection } = await loadPreload()
     const cb = vi.fn()
@@ -234,9 +252,10 @@ describe('preload api bridge', () => {
     await app.getVersion()
     await app.getLatestRelease()
     await app.performUpdate('https://example.com/update.img')
-    await app.resetDongleIcons()
     await app.beginInstall()
     await app.abortUpdate()
+    await app.customPageUrl()
+    await app.customIconUrl()
     await app.quitApp()
     await app.restartApp()
     await app.openExternal('https://example.com')
@@ -248,9 +267,10 @@ describe('preload api bridge', () => {
       'app:performUpdate',
       'https://example.com/update.img'
     )
-    expect(ipcRendererMock.invoke).toHaveBeenCalledWith('settings:reset-dongle-icons')
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:beginInstall')
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:abortUpdate')
+    expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:customPageUrl')
+    expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:customIconUrl')
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:quitApp')
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:restartApp')
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:openExternal', 'https://example.com')
@@ -261,13 +281,7 @@ describe('preload api bridge', () => {
     const { projection } = await loadPreload()
     ipcRendererMock.invoke.mockResolvedValue({ ok: true })
 
-    await projection.usb.forceReset()
-    await projection.usb.detectDongle()
-    await projection.usb.getDeviceInfo()
-    await projection.usb.getLastEvent()
     await projection.usb.getSysdefaultPrettyName()
-    await projection.usb.uploadIcons()
-    await projection.usb.uploadLiviScripts()
     await projection.settings.get()
     await projection.settings.save({ language: 'de' })
     await projection.ipc.start()
@@ -276,18 +290,11 @@ describe('preload api bridge', () => {
     await projection.ipc.setBluetoothPairedList('abc')
     await projection.ipc.connectBluetoothPairedDevice('AA:BB:CC:DD:EE:FF')
     await projection.ipc.forgetBluetoothPairedDevice('AA:BB:CC:DD:EE:FF')
-    await projection.ipc.dongleFirmware('check')
     await projection.ipc.readMedia()
     await projection.ipc.readNavigation()
     await projection.ipc.requestCluster(true)
 
-    expect(ipcRendererMock.invoke).toHaveBeenCalledWith('usb-force-reset')
-    expect(ipcRendererMock.invoke).toHaveBeenCalledWith('usb-detect-dongle')
-    expect(ipcRendererMock.invoke).toHaveBeenCalledWith('projection:usbDevice')
-    expect(ipcRendererMock.invoke).toHaveBeenCalledWith('usb-last-event')
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('get-sysdefault-mic-label')
-    expect(ipcRendererMock.invoke).toHaveBeenCalledWith('projection-upload-icons')
-    expect(ipcRendererMock.invoke).toHaveBeenCalledWith('projection-upload-livi-scripts')
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('getSettings')
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('save-settings', { language: 'de' })
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('projection-start')
@@ -302,7 +309,6 @@ describe('preload api bridge', () => {
       'projection-bt-forget-device',
       'AA:BB:CC:DD:EE:FF'
     )
-    expect(ipcRendererMock.invoke).toHaveBeenCalledWith('dongle-fw', { action: 'check' })
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('projection-media-read')
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('projection-navigation-read')
     expect(ipcRendererMock.invoke).toHaveBeenCalledWith('cluster:request', true)
@@ -440,6 +446,12 @@ describe('preload api bridge', () => {
       app.notifyUserActivity()
       expect(ipcRendererMock.send).toHaveBeenCalledWith('app:user-activity')
     })
+
+    test('reportPath sends ui:path', async () => {
+      const { app } = await loadPreload()
+      app.reportPath('/settings/general/display')
+      expect(ipcRendererMock.send).toHaveBeenCalledWith('ui:path', '/settings/general/display')
+    })
   })
 
   describe('projection ipc wrappers — additional', () => {
@@ -560,7 +572,6 @@ describe('preload api bridge', () => {
 
       await app.getVersion()
       await app.performUpdate('http://x')
-      await app.resetDongleIcons()
       await app.beginInstall()
       await app.abortUpdate()
       await app.quitApp()
@@ -568,7 +579,6 @@ describe('preload api bridge', () => {
 
       expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:getVersion')
       expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:performUpdate', 'http://x')
-      expect(ipcRendererMock.invoke).toHaveBeenCalledWith('settings:reset-dongle-icons')
       expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:beginInstall')
       expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:abortUpdate')
       expect(ipcRendererMock.invoke).toHaveBeenCalledWith('app:quitApp')

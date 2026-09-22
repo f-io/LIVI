@@ -11,12 +11,13 @@
 
 import { EventEmitter } from 'node:events'
 import type * as net from 'node:net'
-import { Microphone } from '@main/services/audio'
+import { DONGLE_LINK, dongleApMac } from '@main/services/link/dongleAp'
 import { panelPhysicalMm } from '@main/services/video/GstVideo'
 import { ICON_120_B64, ICON_180_B64, ICON_256_B64 } from '@shared/assets/carIcons'
 import type { Config } from '@shared/types'
 import { DEFAULT_CONFIG } from '@shared/types'
-import type { InputCommand } from '@shared/types/InputCommand'
+import { HandDriveType } from '@shared/types/Config'
+import { InputCommand } from '@shared/types/InputCommand'
 import {
   AudioCommand,
   CommandMapping,
@@ -31,8 +32,7 @@ import {
   MediaData,
   MediaType,
   NavigationData,
-  NavigationMetaType,
-  VideoData
+  NavigationMetaType
 } from '../../messages/readable'
 import {
   type SendableMessage,
@@ -49,22 +49,6 @@ import type { CpAudioProfile, CpIcon, CpStackConfig, CpStreamProfile } from './s
 
 /** Full knob-axis deflection: a d-pad direction maps to X/Y at the extreme (±127). */
 const KNOB_DEFLECT = 127
-
-/** PCM AudioData event; the PCM buffer is viewed as Int16 samples. */
-function buildCpAudioData(
-  pcm: Buffer,
-  sampleRate: number,
-  channels: number,
-  audioType: number
-): AudioData {
-  const sampleBytes = pcm.length - (pcm.length % 2)
-  const samples = new Int16Array(
-    pcm.buffer,
-    pcm.byteOffset,
-    sampleBytes / Int16Array.BYTES_PER_ELEMENT
-  )
-  return new AudioData({ decodeType: 0, audioType, sampleRate, channels, data: samples })
-}
 
 /** AudioData event carrying an AudioCommand (stream start/stop). */
 function buildCpAudioCommand(prof: CpAudioProfile, active: boolean): AudioData {
@@ -100,8 +84,6 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
   private _downEmitted = false
   private _hevc: boolean
   private _initialNightMode: boolean | undefined
-  private _mic: Microphone | null = null
-  private _micActive = false
   private readonly _getConfig: () => Config
   private readonly _helper: CpHelperSock
   /** Phone identity, learned from the stack's session-level SETUP + the socket peer. */
@@ -177,6 +159,7 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
 
   setVideoActive(active: boolean): void {
     this._stack?.setVideoActive(active)
+    this._stack?.setAudioActive(active)
   }
 
   /** The live CarPlay session's stable pair-verify controller id, the CP device identity. */
@@ -264,18 +247,11 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
     stack.on('cluster-video-config', (codecData: Buffer) =>
       this.emit('cluster-video-config', codecData)
     )
-    stack.on('audio-frame', (pcm: Buffer, prof: CpStreamProfile) => {
-      this.emit('message', buildCpAudioData(pcm, prof.sampleRate, prof.channels, prof.audioType))
-    })
     stack.on('audio-active', (prof: CpAudioProfile, active: boolean) => {
       this.emit('message', buildCpAudioCommand(prof, active))
     })
     stack.on('duck', (level: number, durationMs: number) => {
       this.emit('message', new DuckAudio(level, durationMs))
-    })
-    stack.on('mic-active', (active: boolean, sampleRate: number, channels: number) => {
-      if (active) this._startMicCapture(sampleRate, channels)
-      else this._stopMicCapture()
     })
     stack.on('host-ui-requested', () => {
       this.emit('message', new Command(CommandMapping.requestHostUI))
@@ -302,23 +278,7 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
         this.emit('connected')
       }
     })
-    stack.on('video-frame', (nal: Buffer) => {
-      const cfg = this._getConfig()
-      const w = cfg.projectionWidth || 1920
-      const h = cfg.projectionHeight || 1080
-      if (!this._connected) {
-        this._connected = true
-        this.emit('connected')
-      }
-      this.emit('message', new VideoData({ width: w, height: h, data: nal }))
-    })
     stack.on('cluster-video-codec', (codec: string) => this.emit('cluster-video-codec', codec))
-    stack.on('cluster-video-frame', (nal: Buffer) => {
-      const cfg = this._getConfig()
-      const w = cfg.clusterWidth || 1280
-      const h = cfg.clusterHeight || 720
-      this.emit('message', new VideoData({ width: w, height: h, data: nal, cluster: true }))
-    })
   }
 
   /**
@@ -409,35 +369,15 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
     }
   }
 
-  private _startMicCapture(sampleRate: number, channels: number): void {
-    if (this._micActive) return
-    this._micActive = true
-    if (!this._mic) {
-      this._mic = new Microphone()
-      this._mic.on('data', (chunk: Buffer) => {
-        if (this._micActive) this._stack?.writeMic(chunk)
-      })
-    }
-    // Capture from the configured input.
-    this._mic.setDevice(this._getConfig().audioInputDevice || undefined)
-    console.log(`[CpSession] mic uplink → starting capture (${sampleRate}Hz ${channels}ch)`)
-    this._mic.start(5, { frequency: sampleRate, channels })
-  }
-
-  private _stopMicCapture(): void {
-    if (!this._micActive) return
-    this._micActive = false
-    console.log('[CpSession] mic uplink → stopping capture')
-    this._mic?.stop()
+  /** Sets the level of the CarPlay streams of this audioType. */
+  setStreamVolume(audioType: number, level: number, rampMs: number): void {
+    this._stack?.setStreamVolume(audioType, level, rampMs)
   }
 
   async close(): Promise<void> {
     if (this._closed) return
     this._closed = true
     this._emitDisconnected()
-    this._micActive = false
-    this._mic?.stop()
-    this._mic = null
     try {
       this._stack?.stop()
     } catch (e) {
@@ -580,7 +520,22 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
     }
   }
 
-  handleInput(_command: InputCommand): void {}
+  handleInput(command: InputCommand): void {
+    const map: Partial<Record<InputCommand, CommandMapping>> = {
+      [InputCommand.Play]: CommandMapping.play,
+      [InputCommand.Pause]: CommandMapping.pause,
+      [InputCommand.PlayPause]: CommandMapping.playPause,
+      [InputCommand.Next]: CommandMapping.next,
+      [InputCommand.Previous]: CommandMapping.prev,
+      [InputCommand.AcceptCall]: CommandMapping.acceptPhone,
+      [InputCommand.RejectCall]: CommandMapping.rejectPhone,
+      [InputCommand.HookSwitch]: CommandMapping.phoneKeyHookSwitch,
+      [InputCommand.VoiceAssistant]: CommandMapping.voiceAssistant
+    }
+    const cmd = map[command]
+    if (cmd === undefined) return
+    this._sendCommand(cmd)
+  }
 
   /** OEM icons for the CarPlay homescreen: user upload (config) or the LIVI default. */
   private _buildIcons(cfg: Config): CpIcon[] {
@@ -599,16 +554,23 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
   }
 
   private _buildStackConfig(cfg: Config): CpStackConfig {
+    const apBssid = (c: Config): string | null =>
+      c.wifiInterface === DONGLE_LINK
+        ? dongleApMac()
+        : (detectWifiBssid(c.wifiInterface || undefined) ?? null)
+
     const mainW = toEven(cfg.projectionWidth || 1920)
     const mainH = toEven(cfg.projectionHeight || 1080)
     const mainPanel = panelPhysicalMm('main', mainW, mainH)
     const clusterPanel = panelPhysicalMm('cluster', cfg.clusterWidth, cfg.clusterHeight)
     const name = cfg.carName?.trim() ? cfg.carName : 'LIVI'
     return {
+      phoneBtMac: () => this._btMac,
       deviceName: name,
       oemLabel: cfg.oemName?.trim() ? cfg.oemName : name,
       icons: this._buildIcons(cfg),
-      deviceId: detectWifiBssid(cfg.wifiInterface || undefined) ?? 'AA:BB:CC:DD:EE:FF',
+      rightHandDrive: cfg.hand === HandDriveType.RHD,
+      deviceId: apBssid(cfg) ?? 'AA:BB:CC:DD:EE:FF',
       btMac: detectBtMac(cfg.btAdapter || undefined) ?? 'AA:BB:CC:DD:EE:FF',
       // AirPlay protocol version we announce.
       sourceVersion: cfg.carPlaySourceVersion?.trim() || DEFAULT_CONFIG.carPlaySourceVersion,
@@ -643,7 +605,7 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
             ...(clusterPanel
               ? { widthPhysicalMm: clusterPanel.widthMm, heightPhysicalMm: clusterPanel.heightMm }
               : {}),
-            fps: cfg.projectionFps || 60,
+            fps: cfg.clusterFps || 60,
             viewArea: {
               top: cfg.clusterViewAreaTop,
               bottom: cfg.clusterViewAreaBottom,

@@ -81,4 +81,19 @@ describe('selectOptionsCache', () => {
     expect(getCachedOptions({ path: 'a' })).toEqual([{ value: 'a', label: 'A' }])
     expect(getCachedOptions({ path: 'b' })).toEqual([{ value: 'b', label: 'B' }])
   })
+
+  it('asks again when the last answer was empty', async () => {
+    const loadOptions = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ value: 'livi-link', label: 'LIVI Link' }])
+    const node = { path: 'btAdapter', options: [], loadOptions }
+
+    expect(await resolveOptions(node)).toEqual([])
+    expect(await resolveOptions(node)).toEqual([{ value: 'livi-link', label: 'LIVI Link' }])
+    expect(loadOptions).toHaveBeenCalledTimes(2)
+
+    expect(await resolveOptions(node)).toEqual([{ value: 'livi-link', label: 'LIVI Link' }])
+    expect(loadOptions).toHaveBeenCalledTimes(2)
+  })
 })

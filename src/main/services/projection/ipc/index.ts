@@ -2,7 +2,6 @@ import { registerAudioIpc } from './audio'
 import { registerBluetoothIpc } from './bluetooth'
 import { registerClusterIpc } from './cluster'
 import { registerDataIpc } from './data'
-import { registerDongleIpc } from './dongle'
 import { registerInputIpc } from './input'
 import { registerLifecycleIpc } from './lifecycle'
 import { registerTransportIpc } from './transport'
@@ -15,7 +14,6 @@ export function registerProjectionIpc(host: ProjectionIpcHost): void {
   registerBluetoothIpc(host)
   registerClusterIpc(host)
   registerDataIpc(host)
-  registerDongleIpc(host)
   registerAudioIpc(host)
 }
 

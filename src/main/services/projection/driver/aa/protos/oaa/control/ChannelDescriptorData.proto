@@ -6,10 +6,6 @@
  * member declarations in AA APK v16.1.660414. The aasdk (f1x.studio, 2018)
  * field numbers are correct and match the APK.
  *
- * NOTE: A previous comment here listed wrong field numbers (inserting a
- * phantom "channel_type" at field 2, shifting everything +1). This was
- * human error, not a decoder bug — descriptor_decoder.py outputs the
- * correct field numbers for wbw.
  *
  * APK class mapping (wbm.java in 16.2, wbw.java in 16.1):
  *   1=channel_id, 2=sensor(wbk), 3=av(vye), 4=input(vxm),

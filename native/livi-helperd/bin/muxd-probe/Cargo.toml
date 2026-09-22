@@ -1,0 +1,15 @@
+[package]
+name = "muxd-probe"
+version = "0.1.0"
+edition.workspace = true
+
+[[bin]]
+name = "muxd-probe"
+path = "src/main.rs"
+
+[dependencies]
+iap2-usbmux = { path = "../../crates/iap2-usbmux" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+iap2-wired = { path = "../../crates/iap2-wired" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

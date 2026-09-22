@@ -3,7 +3,7 @@ import { DebouncedJsonFile } from './DebouncedJsonFile'
 
 export type LiviStatus = {
   projection: {
-    active: 'aa' | 'cp' | 'dongle' | null
+    active: 'aa' | 'cp' | null
     streaming: boolean
     phoneType: 'CarPlay' | 'AndroidAuto' | null
   }
@@ -15,12 +15,13 @@ export type LiviStatus = {
   phone: { active: boolean }
   voiceAssistant: { active: boolean }
   nav: { announcing: boolean }
-  usb: { phoneConnected: boolean; dongleConnected: boolean }
+  ui: { path: string }
 }
 
 export const STATUS_VERSION = 1
 
 const INITIAL: LiviStatus = {
+  ui: { path: '' },
   projection: { active: null, streaming: false, phoneType: null },
   audio: {
     media: { playing: false },
@@ -29,8 +30,7 @@ const INITIAL: LiviStatus = {
   },
   phone: { active: false },
   voiceAssistant: { active: false },
-  nav: { announcing: false },
-  usb: { phoneConnected: false, dongleConnected: false }
+  nav: { announcing: false }
 }
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] }
@@ -76,16 +76,16 @@ export class StatusFileWriter {
     this.patch({ projection: { streaming } })
   }
 
-  setUsbState(phoneConnected: boolean, dongleConnected: boolean): void {
-    this.patch({ usb: { phoneConnected, dongleConnected } })
-  }
-
   setPhoneCall(active: boolean): void {
     this.patch({ phone: { active } })
   }
 
   setVoiceAssistant(active: boolean): void {
     this.patch({ voiceAssistant: { active } })
+  }
+
+  setPath(path: string): void {
+    this.patch({ ui: { path } })
   }
 
   setNavAnnouncing(on: boolean): void {

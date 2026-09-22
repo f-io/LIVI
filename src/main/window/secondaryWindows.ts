@@ -1,8 +1,17 @@
-import { is } from '@electron-toolkit/utils'
+import { EventEmitter } from 'node:events'
 import { COMPOSITOR_TITLEBAR_H } from '@main/app/compositorLayout'
+import {
+  DEFAULT_HEIGHT,
+  DEFAULT_WIDTH,
+  MAX_HEIGHT,
+  MAX_WIDTH,
+  MIN_HEIGHT,
+  MIN_WIDTH
+} from '@main/constants'
 import { configEvents, saveSettings } from '@main/ipc/utils'
 import { backdropHex, setCompositorScreen, setMacBackdrop } from '@main/services/video/GstVideo'
 import { runtimeStateProps } from '@main/types'
+import { isDev } from '@main/utils'
 import type { Config, WindowBounds } from '@shared/types'
 import { BrowserWindow, shell } from 'electron'
 import { join } from 'path'
@@ -11,6 +20,12 @@ import { sanitizeBounds } from './utils'
 // Inside livi-compositor the host window is the compositor's own output (titled by role);
 // the Electron title only tells the compositor which screen this window belongs to.
 const inCompositor = process.env.LIVI_COMPOSITOR === '1'
+
+// Fires 'ready' with the role once a secondary window has loaded, so listeners
+// can attach content that needs a live webContents (e.g. cluster planes).
+export const secondaryWindowEvents = new EventEmitter()
+// one 'ready' listener per ProjectionService instance
+secondaryWindowEvents.setMaxListeners(0)
 
 export type SecondaryWindowRole = 'dash' | 'aux'
 
@@ -45,10 +60,18 @@ const SPECS: SecondaryWindowSpec[] = [
 const windows = new Map<SecondaryWindowRole, BrowserWindow>()
 const boundsTimers = new Map<SecondaryWindowRole, NodeJS.Timeout>()
 
+// A size out of range reaches this from a hand-edited config as easily as from the
+// UI, so the window geometry is bounded here regardless of where the value came from.
+function clampSize(v: unknown, fallback: number, min: number, max: number): number {
+  const n = Math.round(Number(v))
+  if (!Number.isFinite(n) || n <= 0) return fallback
+  return Math.min(max, Math.max(min, n))
+}
+
 function getSize(cfg: Config, spec: SecondaryWindowSpec) {
   return {
-    w: Math.max(1, Number(cfg[spec.widthKey]) || 800),
-    h: Math.max(1, Number(cfg[spec.heightKey]) || 480)
+    w: clampSize(cfg[spec.widthKey], DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH),
+    h: clampSize(cfg[spec.heightKey], DEFAULT_HEIGHT, MIN_HEIGHT, MAX_HEIGHT)
   }
 }
 
@@ -158,7 +181,7 @@ function spawn(spec: SecondaryWindowSpec, runtimeState: runtimeStateProps) {
   )
 
   const url =
-    is.dev && process.env.ELECTRON_RENDERER_URL
+    isDev() && process.env.ELECTRON_RENDERER_URL
       ? `${process.env.ELECTRON_RENDERER_URL}?role=${spec.role}`
       : `app://index.html?role=${spec.role}`
   win.loadURL(url)
@@ -195,6 +218,7 @@ function spawn(spec: SecondaryWindowSpec, runtimeState: runtimeStateProps) {
   })
 
   windows.set(spec.role, win)
+  win.webContents.once?.('did-finish-load', () => secondaryWindowEvents.emit('ready', spec.role))
 }
 
 function close(role: SecondaryWindowRole) {

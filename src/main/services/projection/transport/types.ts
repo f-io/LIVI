@@ -1,6 +1,4 @@
-type Device = USBDevice
-
-export type Transport = 'dongle' | 'aa' | 'cp'
+export type Transport = 'aa' | 'cp'
 
 export type ConnectionMode = 'wired' | 'wireless'
 
@@ -20,17 +18,11 @@ export type ArbiterDeps = {
   isWirelessEnabled: () => boolean
   isWirelessPhoneInRange: () => boolean
   getActiveTransport: () => Transport | null
-  isDongleSessionActive: () => boolean
   isWiredAaSessionActive: () => boolean
   isWiredCpSessionActive: () => boolean
-  hasWiredSession: () => boolean
+  hasWiredAaSession: () => boolean
+  hasWiredCpSession: () => boolean
   onChange: () => void
   onShouldStop: () => Promise<void>
   onShouldAutoStart: () => void
-  onShouldBringUpWiredBeside: () => void
-  onWiredPhoneGone: () => void
-}
-
-export type WiredPhone = {
-  device: Device | null
 }

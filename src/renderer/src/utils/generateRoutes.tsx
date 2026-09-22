@@ -4,7 +4,9 @@ import { SettingsPage } from '../components/pages/settings/SettingsPage'
 import { SettingsNode } from '../routes'
 
 export const generateRoutes = (node: SettingsNode<Config>): RouteObject | null => {
-  if (node.type !== 'route') return null
+  if (node.type !== 'route') {
+    return node.page && node.path ? { path: node.path, element: <SettingsPage /> } : null
+  }
 
   return {
     path: node.route,

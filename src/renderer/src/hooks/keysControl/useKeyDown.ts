@@ -1,8 +1,8 @@
+import { ROUTES } from '@shared/types'
 import { useLiviStore } from '@store/store'
 import { useCallback, useContext, useMemo } from 'react'
 import { useLocation } from 'react-router'
 import { KeyCommand } from '../../components/worker/types'
-import { ROUTES } from '../../constants'
 import { AppContext } from '../../context'
 import { broadcastMediaKey } from '../../utils/broadcastMediaKey'
 import { BindKey, useKeyDownProps } from './types'
@@ -123,10 +123,12 @@ export const useKeyDown = ({
         inMain = true
       }
 
+      const formFocused = isFormField(active)
+
       const pager = appContext?.telemetryPager
       const isTelemetryRoute = currentRoute.startsWith('/telemetry')
 
-      if (pager && isTelemetryRoute && !inNav) {
+      if (pager && isTelemetryRoute && !inNav && !formFocused) {
         if (isLeft) {
           if (pager.canPrev()) pager.prev()
           event.preventDefault()
@@ -151,13 +153,12 @@ export const useKeyDown = ({
       }
 
       const nothing = !active || active === document.body
-      const formFocused = isFormField(active)
 
       if (formFocused && !editingField && code === 'Backspace') {
         return
       }
 
-      if (settings && isCarPlayActive && mappedAction && !inNav) {
+      if (settings && isCarPlayActive && mappedAction && !inNav && !formFocused) {
         // PTT: suppress auto-repeat, release is dispatched on keyup elsewhere.
         if (mappedAction === 'voiceAssistant' && event.repeat) {
           event.preventDefault()
@@ -489,7 +490,7 @@ export const useKeyDown = ({
         code === b?.rejectPhone ||
         code === b?.voiceAssistant
 
-      if (settings && !isCarPlayActive && isTransport) {
+      if (settings && !isCarPlayActive && isTransport && !formFocused) {
         const action: KeyCommand =
           code === b?.next
             ? 'next'

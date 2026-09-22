@@ -6,8 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <link rel="canonical" href="https://f-io.github.io/LIVI/" />
-    <link rel="icon" type="image/png" sizes="512x512" href="images/livi.png" />
-    <link rel="apple-touch-icon" href="images/livi.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="media/livi.png" />
+    <link rel="apple-touch-icon" href="media/livi.png" />
 
     <meta
       name="description"
@@ -21,7 +21,7 @@
       property="og:description"
       content="Carplay and Android Auto head unit for Linux. Native zero-copy GStreamer video pipeline with hardware-accelerated decoding, low-latency audio, touchscreen and D-pad friendly."
     />
-    <meta property="og:image" content="https://f-io.github.io/LIVI/images/banner.png" />
+    <meta property="og:image" content="https://f-io.github.io/LIVI/media/banner.png" />
     <meta property="og:image:alt" content="LIVI banner" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="LIVI - Linux In-Vehicle Infotainment" />
@@ -29,7 +29,7 @@
       name="twitter:description"
       content="Carplay and Android Auto head unit for Linux. Native zero-copy GStreamer video pipeline with hardware-accelerated decoding, low-latency audio, touchscreen and D-pad friendly."
     />
-    <meta name="twitter:image" content="https://f-io.github.io/LIVI/images/banner.png" />
+    <meta name="twitter:image" content="https://f-io.github.io/LIVI/media/banner.png" />
     <meta name="twitter:image:alt" content="LIVI banner" />
 
     <meta name="theme-color" content="#0e1116" />
@@ -162,7 +162,7 @@
   <body>
     <main>
       <header class="banner">
-        <img src="images/banner.png" alt="LIVI banner" />
+        <img src="media/banner.png" alt="LIVI banner" />
         <p style="text-align: center; margin: 0.5rem 0 1.4rem">
           <img
             alt="Release"
@@ -192,7 +192,7 @@
 
       <h2>Features</h2>
       <ul>
-        <li><strong>Apple CarPlay</strong> (wired &amp; wireless) on Linux — requires an MFi authentication coprocessor</li>
+        <li><strong>Apple CarPlay</strong> (wired &amp; wireless) on Linux and Mac — requires MFi authentication</li>
         <li><strong>Android Auto</strong> (wired) on all platforms</li>
         <li><strong>Android Auto</strong> (wireless) on Linux</li>
         <li><strong>Multi-session</strong> with live switching between connected phones</li>
@@ -212,32 +212,32 @@
       <h2>Wireless</h2>
       <p>Wireless sessions do not need a router. LIVI brings up its own Wi-Fi access point and the phone joins that, with Bluetooth carrying the pairing and the handover. Wireless CarPlay and wireless Android Auto are enabled separately, and a phone that has been paired before is picked up again on its own.</p>
       <p style="text-align: center;">
-        <img src="images/connections.png" alt="Connection settings" width="42%" align="top" />
-        <img src="images/wifi.png" alt="Wi-Fi access point settings" width="42%" align="top" />
+        <img src="media/connections.png" alt="Connection settings" width="42%" align="top" />
+        <img src="media/wifi.png" alt="Wi-Fi access point settings" width="42%" align="top" />
       </p>
 
       <h2>Multi-Session</h2>
       <p>Several phones can be connected at the same time, and all of them are tracked live: state, battery, signal, media metadata and turn-by-turn navigation stay current in the background, not just for the phone on screen. Switching is a handover rather than a reconnect, so bringing another phone forward takes milliseconds.</p>
       <p>CarPlay and Android Auto can be mixed, over cable and Wi-Fi alike.</p>
       <p style="text-align: center;">
-        <img src="images/devices.png" alt="Connected devices" width="84%" />
+        <img src="media/devices.png" alt="Connected devices" width="84%" />
       </p>
 
       <h2>Display Calibration</h2>
       <p>Car displays are rarely colour accurate. Gamma, contrast and the red, green and blue channels can be corrected in software, applied by the compositor in a single pass over the finished frame. That covers the LIVI interface, the dashboards and the projected CarPlay or Android Auto video alike.</p>
       <p style="text-align: center;">
-        <img src="images/contrast_gamma.png" alt="Contrast and gamma calibration" width="42%" align="top" />
-        <img src="images/color.png" alt="Colour channel calibration" width="42%" align="top" />
+        <img src="media/contrast_gamma.png" alt="Contrast and gamma calibration" width="42%" align="top" />
+        <img src="media/color.png" alt="Colour channel calibration" width="42%" align="top" />
       </p>
 
       <h2>Multi-Display</h2>
        <p>LIVI can run as multiple windows at once. The Dash and Aux windows are freely assignable and can show the dashes, the reverse camera or the media player. Assignment is not exclusive: any feature can be shown on one, several, or all windows at the same time.</p>
         <p style="text-align: center;">
-        <img src="images/dash.png" alt="Dashboard" width="84%" />
+        <img src="media/dash.png" alt="Dashboard" width="84%" />
         </p>
         <p style="text-align: center;">
-        <img src="images/multi-display/auxilary.png" alt="Aux Screen" width="42%" align="top" />
-        <img src="images/multi-display/livi.png" alt="Main Screen" width="42%" align="top" />
+        <img src="media/multi-display/auxilary.png" alt="Aux Screen" width="42%" align="top" />
+        <img src="media/multi-display/livi.png" alt="Main Screen" width="42%" align="top" />
        </p>
 
 
@@ -256,9 +256,9 @@
       </p>
 
       <p>
-        On Linux, both Apple CarPlay and Android Auto are supported natively. Native CarPlay (wired &amp;
-        wireless) requires an MFi authentication coprocessor (see below). Android Auto is native — wired on
-        all platforms, wireless on Linux.
+        Apple CarPlay and Android Auto are supported natively. Native CarPlay (wired &amp; wireless) runs on
+        Linux and on Mac and requires MFi authentication (see below), either from a coprocessor on the board
+        or from a <a href="https://github.com/f-io/LIVI/blob/main/LIVI-LINK.md">LIVI Link</a>. Android Auto is native — wired on all platforms, wireless on Linux.
       </p>
 
       <h2>Installation</h2>
@@ -269,10 +269,10 @@
 
       <h2>How it works</h2>
       <p>
-        On Linux, LIVI implements the CarPlay and Android Auto accessory side natively. Wireless sessions
-        run over LIVI's own Wi-Fi access point with Bluetooth pairing, wired sessions run directly over the
-        USB cable. Video is decoded on the platform's hardware decoder and stays on the GPU end to end
-        through the zero-copy GStreamer pipeline.
+        LIVI implements the CarPlay and Android Auto accessory side natively, wired and wireless, on Linux
+        and on macOS. Wireless sessions run over LIVI's own Wi-Fi access point with Bluetooth pairing, wired
+        sessions run directly over the USB cable. Video is decoded on the platform's hardware decoder and
+        stays on the GPU end to end through the zero-copy GStreamer pipeline.
       </p>
       <p>
         Native CarPlay authenticates against the phone with an Apple MFi coprocessor (see below). Android
@@ -281,13 +281,23 @@
 
       <h2>MFi Authentication</h2>
       <p>
-        Native CarPlay requires the accessory to authenticate against the phone using an Apple
-        <strong>MFi authentication coprocessor</strong>. This is a hardware chip, it cannot be emulated in
-        software, and LIVI does not ship or bypass it. You need a physical coprocessor (for example salvaged
-        from a certified CarPlay accessory or sourced as a module) wired to the I²C bus of your board.
+        CarPlay requires the accessory to authenticate against the phone. The usual way is an Apple
+        <strong>MFi authentication coprocessor</strong>, a hardware chip that cannot be emulated and that
+        LIVI neither ships nor bypasses. Two routes:
+      </p>
+      <ul>
+        <li><strong>On the board</strong> — a coprocessor wired to the I²C bus</li>
+        <li><strong>Over the network</strong> — a <a href="https://github.com/f-io/LIVI/blob/main/LIVI-LINK.md">LIVI Link</a></li>
+      </ul>
+      <p>
+        Both routes work on Linux. A Mac has no I²C bus to put a coprocessor on, so there the LIVI Link is
+        the only one.
       </p>
       <p>
-        Without a coprocessor, native CarPlay is unavailable.
+        LIVI does not support Apple's Basic Accessory Authentication on macOS, but may in the future.
+      </p>
+      <p>
+        Without one of these, native CarPlay is unavailable. All Android Auto paths work regardless.
       </p>
 
       <h2>Build Environment</h2>
@@ -321,15 +331,15 @@
       <h2>Screenshots</h2>
 
       <p style="text-align: center">
-        <img src="images/cp.png" alt="CarPlay" width="42%" align="center">
+        <img src="media/cp.png" alt="CarPlay" width="42%" align="center">
         &emsp;
-        <img src="images/aa.png" alt="Android Auto" width="41%" align="center">
+        <img src="media/aa.png" alt="Android Auto" width="41%" align="center">
       </p>
 
       <p style="text-align: center">
-        <img src="images/settings.png" alt="Settings" width="42%" align="top" />
+        <img src="media/settings.png" alt="Settings" width="42%" align="top" />
         &emsp;
-        <img src="images/media.png" alt="Media" width="42%" align="top" />
+        <img src="media/media.png" alt="Media" width="42%" align="top" />
       </p>
 
       <h2>Documentation</h2>

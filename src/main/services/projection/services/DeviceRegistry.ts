@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import { writeFileAtomicAsync } from '@shared/utils'
 import { app } from 'electron'
 
 export type LinkTransport = 'bt' | 'wifi' | 'usb'
@@ -172,7 +173,9 @@ export class DeviceRegistry {
           }
           return out
         })
-      fs.writeFile(this.file, JSON.stringify(stored, null, 2)).catch(() => {})
+      writeFileAtomicAsync(this.file, JSON.stringify(stored, null, 2)).catch((e) =>
+        console.warn('[DeviceRegistry] persist failed:', (e as Error).message)
+      )
     }, 500)
   }
 

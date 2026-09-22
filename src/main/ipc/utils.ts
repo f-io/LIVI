@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import os from 'node:os'
-import { CONFIG_PATH } from '@main/config/paths'
+import { writeConfig } from '@main/config/writeConfig'
 import { setDebugLogging } from '@main/constants'
 import { runtimeStateProps, UpdateEventPayload } from '@main/types'
 import { applyNullDeletes, pushSettingsToRenderer, sizesEqual } from '@main/utils'
@@ -15,7 +15,7 @@ import type { Config } from '@shared/types'
 import { DEFAULT_BINDINGS } from '@shared/types'
 import { screen } from 'electron'
 import { EventEmitter } from 'events'
-import { existsSync, writeFileSync } from 'fs'
+import { existsSync } from 'fs'
 
 export const configEvents = new EventEmitter()
 
@@ -68,7 +68,7 @@ export function saveSettings(runtimeState: runtimeStateProps, next: Partial<Conf
   applyNullDeletes(merged, next)
 
   try {
-    writeFileSync(CONFIG_PATH, JSON.stringify(merged, null, 2))
+    writeConfig(merged)
   } catch (e) {
     console.warn('[config] saveSettings failed:', e)
   }

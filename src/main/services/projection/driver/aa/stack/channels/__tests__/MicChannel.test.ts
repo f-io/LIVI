@@ -1,4 +1,4 @@
-import { AV_MSG, CH, FRAME_FLAGS } from '../../constants'
+import { AV_MSG, CH } from '../../constants'
 import type { RawFrame } from '../../frame/codec'
 import { MicChannel } from '../MicChannel'
 import { decodeFields, decodeVarintValue, fieldVarint } from '../protoEnc'
@@ -23,8 +23,9 @@ function freshSend() {
   return { send, calls }
 }
 
-function openMic(channel: MicChannel, maxUnacked = 2): void {
-  const openReq = Buffer.concat([fieldVarint(1, 1), fieldVarint(4, maxUnacked)])
+// MicrophoneRequest with open=true and a max_unacked the channel no longer reads
+function openMic(channel: MicChannel): void {
+  const openReq = Buffer.concat([fieldVarint(1, 1), fieldVarint(4, 2)])
   channel.handleMessage(AV_MSG.AV_INPUT_OPEN_REQUEST, openReq, dummyFrame())
 }
 
@@ -88,68 +89,31 @@ describe('MicChannel — open/close', () => {
   })
 })
 
-describe('MicChannel — pcm flow control', () => {
-  test('pushPcm before open is dropped', () => {
+describe('MicChannel: control side only', () => {
+  test('AV_MEDIA_ACK is ignored before and after open', () => {
     const { send, calls } = freshSend()
     const ch = new MicChannel(MIC, send)
-    ch.pushPcm(Buffer.from([1]), 0n)
-    expect(calls.some((c) => c.msgId === AV_MSG.AV_MEDIA_WITH_TIMESTAMP)).toBe(false)
-  })
-
-  test('pushPcm after open sends a timestamp-prefixed frame', () => {
-    const { send, calls } = freshSend()
-    const ch = new MicChannel(MIC, send)
-    openMic(ch)
-
-    ch.pushPcm(Buffer.from([0xaa, 0xbb]), 7n)
-    const frame = calls.find((c) => c.msgId === AV_MSG.AV_MEDIA_WITH_TIMESTAMP)!
-    expect(frame.channelId).toBe(MIC)
-    expect(frame.flags).toBe(FRAME_FLAGS.ENC_SIGNAL)
-    expect(frame.data.readBigUInt64BE(0)).toBe(7n)
-    expect(frame.data.subarray(8).equals(Buffer.from([0xaa, 0xbb]))).toBe(true)
-  })
-
-  test('respects maxUnacked: extra frames queue until ACK arrives', () => {
-    const { send, calls } = freshSend()
-    const ch = new MicChannel(MIC, send)
-    openMic(ch, 1)
-
-    ch.pushPcm(Buffer.from([1]), 1n) // sent (unacked=1)
-    ch.pushPcm(Buffer.from([2]), 2n) // queued
-    const framesSentBefore = calls.filter((c) => c.msgId === AV_MSG.AV_MEDIA_WITH_TIMESTAMP).length
-    expect(framesSentBefore).toBe(1)
-
-    // ACK frees one slot — queued frame is drained
+    const stop = vi.fn()
+    ch.on('mic-stop', stop)
     ch.handleMessage(AV_MSG.AV_MEDIA_ACK, Buffer.alloc(0), dummyFrame())
-    const framesSentAfter = calls.filter((c) => c.msgId === AV_MSG.AV_MEDIA_WITH_TIMESTAMP).length
-    expect(framesSentAfter).toBe(2)
+    expect(calls).toHaveLength(0)
+
+    openMic(ch)
+    calls.length = 0
+    ch.handleMessage(AV_MSG.AV_MEDIA_ACK, Buffer.alloc(0), dummyFrame())
+    expect(calls).toHaveLength(0)
+    expect(stop).not.toHaveBeenCalled()
   })
 
-  test('ACK with no outstanding frames leaves the counter at zero', () => {
-    const { send } = freshSend()
-    const ch = new MicChannel(MIC, send)
-    expect(() => ch.handleMessage(AV_MSG.AV_MEDIA_ACK, Buffer.alloc(0), dummyFrame())).not.toThrow()
-  })
-
-  test('OPEN_REQUEST ignores fields other than open and max_unacked', () => {
+  test('OPEN_REQUEST ignores fields other than open', () => {
     const { send, calls } = freshSend()
     const ch = new MicChannel(MIC, send)
+    const start = vi.fn()
+    ch.on('mic-start', start)
     const req = Buffer.concat([fieldVarint(1, 1), fieldVarint(2, 9), fieldVarint(4, 3)])
     ch.handleMessage(AV_MSG.AV_INPUT_OPEN_REQUEST, req, dummyFrame())
+    expect(start).toHaveBeenCalledWith(MIC)
     expect(calls.some((c) => c.msgId === AV_MSG.AV_INPUT_OPEN_RESPONSE)).toBe(true)
-  })
-
-  test('drops oldest queued frame if backlog grows beyond 64', () => {
-    const { send } = freshSend()
-    const ch = new MicChannel(MIC, send)
-    openMic(ch, 1)
-
-    // First push goes out, the rest queue. Backlog cap is 64.
-    ch.pushPcm(Buffer.from([0]), 0n)
-    for (let i = 1; i <= 70; i++) ch.pushPcm(Buffer.from([i]), BigInt(i))
-
-    // No throw, no overflow
-    expect(true).toBe(true)
   })
 })
 

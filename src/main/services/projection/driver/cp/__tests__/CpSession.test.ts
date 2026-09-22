@@ -1,94 +1,73 @@
 import { EventEmitter } from 'node:events'
 import type net from 'node:net'
+import { InputCommand } from '@main/shared/types/InputCommand'
 import type { Config } from '@shared/types'
 import { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AudioData, Command, DuckAudio } from '../../../messages/readable'
-import {
-  SendBluetoothPairedList,
-  SendCommand,
-  SendMultiTouch,
-  SendTouch
-} from '../../../messages/sendable'
+import { SendableMessage, SendCommand, SendMultiTouch, SendTouch } from '../../../messages/sendable'
 import { CpSession } from '../CpSession'
 import { MediaButton, TelephonyButton } from '../stack/hid'
 
-const { StackMock, stackInstances, MicMock, micInstances, panelMock, wifiMock, btMock } =
-  vi.hoisted(() => {
-    const stackInstances: Record<string, unknown>[] = []
-    const micInstances: Record<string, unknown>[] = []
+const { StackMock, stackInstances, panelMock, wifiMock, btMock } = vi.hoisted(() => {
+  const stackInstances: Record<string, unknown>[] = []
 
-    class StackMock {
-      cfg: unknown
-      activeControllerId: string | null = null
-      private readonly _l: Record<string, ((...a: unknown[]) => void)[]> = {}
-      attachSocket = vi.fn()
-      setConfigRefresh = vi.fn()
-      applyDisplayConfig = vi.fn()
-      setNightMode = vi.fn()
-      setClusterStreamActive = vi.fn()
-      setVideoActive = vi.fn()
-      forceMainKeyframe = vi.fn()
-      forceClusterKeyframe = vi.fn()
-      sendTouches = vi.fn()
-      sendMedia = vi.fn()
-      sendKnob = vi.fn()
-      sendKnobSelect = vi.fn()
-      sendTelephony = vi.fn()
-      invokeSiri = vi.fn()
-      writeMic = vi.fn()
-      stop = vi.fn()
-      constructor(cfg: unknown) {
-        this.cfg = cfg
-        stackInstances.push(this as unknown as Record<string, unknown>)
-      }
-      on(ev: string, cb: (...a: unknown[]) => void): this {
-        ;(this._l[ev] ||= []).push(cb)
-        return this
-      }
-      fire(ev: string, ...args: unknown[]): void {
-        for (const f of this._l[ev] || []) f(...args)
-      }
+  class StackMock {
+    cfg: unknown
+    activeControllerId: string | null = null
+    private readonly _l: Record<string, ((...a: unknown[]) => void)[]> = {}
+    attachSocket = vi.fn()
+    setConfigRefresh = vi.fn()
+    applyDisplayConfig = vi.fn()
+    setNightMode = vi.fn()
+    setClusterStreamActive = vi.fn()
+    setVideoActive = vi.fn()
+    setAudioActive = vi.fn()
+    setStreamVolume = vi.fn()
+    forceMainKeyframe = vi.fn()
+    forceClusterKeyframe = vi.fn()
+    sendTouches = vi.fn()
+    sendMedia = vi.fn()
+    sendKnob = vi.fn()
+    sendKnobSelect = vi.fn()
+    sendTelephony = vi.fn()
+    invokeSiri = vi.fn()
+    writeMic = vi.fn()
+    stop = vi.fn()
+    constructor(cfg: unknown) {
+      this.cfg = cfg
+      stackInstances.push(this as unknown as Record<string, unknown>)
     }
+    on(ev: string, cb: (...a: unknown[]) => void): this {
+      ;(this._l[ev] ||= []).push(cb)
+      return this
+    }
+    fire(ev: string, ...args: unknown[]): void {
+      for (const f of this._l[ev] || []) f(...args)
+    }
+  }
 
-    class MicMock {
-      private readonly _l: Record<string, ((...a: unknown[]) => void)[]> = {}
-      start = vi.fn()
-      stop = vi.fn()
-      setDevice = vi.fn()
-      constructor() {
-        micInstances.push(this as unknown as Record<string, unknown>)
-      }
-      on(ev: string, cb: (...a: unknown[]) => void): this {
-        ;(this._l[ev] ||= []).push(cb)
-        return this
-      }
-      fire(ev: string, ...args: unknown[]): void {
-        for (const f of this._l[ev] || []) f(...args)
-      }
-    }
-
-    return {
-      StackMock,
-      stackInstances,
-      MicMock,
-      micInstances,
-      panelMock: vi.fn(),
-      wifiMock: vi.fn(),
-      btMock: vi.fn()
-    }
-  })
+  return {
+    StackMock,
+    stackInstances,
+    panelMock: vi.fn(),
+    wifiMock: vi.fn(),
+    btMock: vi.fn()
+  }
+})
 
 vi.mock('../stack/cpStack', () => ({ CpStack: StackMock }))
-vi.mock('@main/services/audio', () => ({ Microphone: MicMock }))
 vi.mock('@main/services/video/GstVideo', () => ({ panelPhysicalMm: panelMock }))
 vi.mock('../../aa/stack/system/hwaddr', () => ({
   detectBtMac: btMock,
   detectWifiBssid: wifiMock
 }))
+vi.mock('@main/services/link/dongleAp', () => ({
+  DONGLE_LINK: 'livi-link',
+  dongleApMac: () => '02:50:43:02:ff:01'
+}))
 
 type Stack = InstanceType<typeof StackMock>
-type Mic = InstanceType<typeof MicMock>
 
 function baseConfig(over: Partial<Config> = {}): Config {
   return {
@@ -144,7 +123,6 @@ let warnSpy: ReturnType<typeof vi.spyOn>
 
 beforeEach(() => {
   stackInstances.length = 0
-  micInstances.length = 0
   panelMock.mockReturnValue({ widthMm: 100, heightMm: 60 })
   wifiMock.mockReturnValue('WF:00:11:22:33:44')
   btMock.mockReturnValue('BT:00:11:22:33:44')
@@ -203,12 +181,40 @@ describe('CpSession construction and stack config', () => {
     expect(built.entertainmentSampleRate).toBe(44100)
   })
 
+  it('takes the device id from the dongle while it carries the access point', () => {
+    const { stack } = makeSession({
+      config: baseConfig({ wifiInterface: 'livi-link' }),
+      hevc: false
+    })
+    expect((stack.cfg as Record<string, unknown>).deviceId).toBe('02:50:43:02:ff:01')
+    expect(wifiMock).not.toHaveBeenCalled()
+  })
+
+  it('maps hand=1 to right-hand drive and anything else to left-hand drive', () => {
+    const rhd = makeSession({ config: baseConfig({ hand: 1 } as Partial<Config>) })
+    expect((rhd.stack.cfg as Record<string, unknown>).rightHandDrive).toBe(true)
+    const lhd = makeSession({ config: baseConfig({ hand: 0 } as Partial<Config>) })
+    expect((lhd.stack.cfg as Record<string, unknown>).rightHandDrive).toBe(false)
+    const unset = makeSession({ config: baseConfig() })
+    expect((unset.stack.cfg as Record<string, unknown>).rightHandDrive).toBe(false)
+  })
+
   it('includes the cluster display and physical panel sizes when configured', () => {
     const { stack } = makeSession({ config: baseConfig() })
     const built = stack.cfg as Record<string, unknown>
     expect(built.cluster).toBeDefined()
+    expect((built.phoneBtMac as () => unknown)()).toBe('')
     expect((built.main as Record<string, unknown>).widthPhysicalMm).toBe(100)
     expect(built.entertainmentSampleRate).toBe(48000)
+  })
+
+  it('advertises the cluster at its own frame rate', () => {
+    const { stack } = makeSession({
+      config: baseConfig({ projectionFps: 60, clusterFps: 30 } as Partial<Config>)
+    })
+    const built = stack.cfg as Record<string, Record<string, unknown>>
+    expect(built.main.fps).toBe(60)
+    expect(built.cluster.fps).toBe(30)
   })
 
   it('drops icons that decode to empty and keeps the rest', () => {
@@ -250,6 +256,8 @@ describe('CpSession driver surface', () => {
     const { session, stack } = makeSession()
     session.setClusterStreamActive(true)
     expect(stack.setClusterStreamActive).toHaveBeenCalledWith(true)
+    session.setStreamVolume(3, 0.5, 250)
+    expect(stack.setStreamVolume).toHaveBeenCalledWith(3, 0.5, 250)
     session.requestKeyframe()
     expect(stack.forceMainKeyframe).toHaveBeenCalled()
     expect(stack.forceClusterKeyframe).toHaveBeenCalled()
@@ -362,7 +370,7 @@ describe('CpSession stack event bridge', () => {
     expect(cconfig).toHaveBeenCalledWith(Buffer.from('ccfg'))
   })
 
-  it('wraps audio frames, audio commands and duck into messages', () => {
+  it('wraps audio commands and duck into messages', () => {
     const { session, stack } = makeSession()
     const msgs: unknown[] = []
     session.on('message', (m) => msgs.push(m))
@@ -375,12 +383,10 @@ describe('CpSession stack event bridge', () => {
       stopCmd: 2,
       label: 'media'
     }
-    stack.fire('audio-frame', Buffer.from([1, 2, 3]), prof)
     stack.fire('audio-active', prof, true)
     stack.fire('duck', 0.5, 250)
     expect(msgs[0]).toBeInstanceOf(AudioData)
-    expect(msgs[1]).toBeInstanceOf(AudioData)
-    expect(msgs[2]).toBeInstanceOf(DuckAudio)
+    expect(msgs[1]).toBeInstanceOf(DuckAudio)
   })
 
   it('emits a command message when the host UI is requested', () => {
@@ -437,43 +443,12 @@ describe('CpSession stack event bridge', () => {
     expect(connected).toHaveBeenCalledTimes(1)
   })
 
-  it('emits a video message and connects on the first video frame', () => {
-    const { session, stack } = makeSession()
-    const connected = vi.fn()
-    const msgs: unknown[] = []
-    session.on('connected', connected)
-    session.on('message', (m) => msgs.push(m))
-    stack.fire('video-frame', Buffer.from([0, 0, 1]))
-    expect(connected).toHaveBeenCalledTimes(1)
-    expect(msgs).toHaveLength(1)
-  })
-
-  it('uses default dimensions for video frames when config lacks them', () => {
-    const { session, stack } = makeSession({
-      config: baseConfig({
-        projectionWidth: 0,
-        projectionHeight: 0,
-        clusterWidth: 0,
-        clusterHeight: 0
-      } as Partial<Config>)
-    })
-    const msgs: unknown[] = []
-    session.on('message', (m) => msgs.push(m))
-    stack.fire('video-frame', Buffer.from([1]))
-    stack.fire('cluster-video-frame', Buffer.from([2]))
-    expect(msgs).toHaveLength(2)
-  })
-
-  it('bridges cluster codec and frame events', () => {
+  it('bridges the cluster codec event', () => {
     const { session, stack } = makeSession()
     const codec = vi.fn()
-    const msgs: unknown[] = []
     session.on('cluster-video-codec', codec)
-    session.on('message', (m) => msgs.push(m))
     stack.fire('cluster-video-codec', 'h265')
-    stack.fire('cluster-video-frame', Buffer.from([9]))
     expect(codec).toHaveBeenCalledWith('h265')
-    expect(msgs).toHaveLength(1)
   })
 
   it('ends the session exactly once on session-ended', () => {
@@ -483,43 +458,6 @@ describe('CpSession stack event bridge', () => {
     stack.fire('session-ended')
     stack.fire('session-ended')
     expect(down).toHaveBeenCalledTimes(1)
-  })
-})
-
-describe('CpSession microphone uplink', () => {
-  it('starts capture on mic-active and feeds pcm to the stack', () => {
-    const { session, stack } = makeSession()
-    stack.fire('mic-active', true, 24000, 1)
-    stack.fire('mic-active', true, 24000, 1)
-    const mic = micInstances.at(-1) as unknown as Mic
-    expect(mic.start).toHaveBeenCalledTimes(1)
-    mic.fire('data', Buffer.from([5, 6]))
-    expect(stack.writeMic).toHaveBeenCalledWith(Buffer.from([5, 6]))
-    void session
-  })
-
-  it('stops capture on mic-active false and drops late pcm', () => {
-    const { stack } = makeSession()
-    stack.fire('mic-active', true, 24000, 1)
-    const mic = micInstances.at(-1) as unknown as Mic
-    stack.fire('mic-active', false, 0, 0)
-    expect(mic.stop).toHaveBeenCalled()
-    stack.writeMic.mockClear()
-    mic.fire('data', Buffer.from([7]))
-    expect(stack.writeMic).not.toHaveBeenCalled()
-  })
-
-  it('ignores a stop when capture never started', () => {
-    const { stack } = makeSession()
-    expect(() => stack.fire('mic-active', false, 0, 0)).not.toThrow()
-  })
-
-  it('reuses the same microphone across restart cycles', () => {
-    const { stack } = makeSession()
-    stack.fire('mic-active', true, 24000, 1)
-    stack.fire('mic-active', false, 0, 0)
-    stack.fire('mic-active', true, 24000, 1)
-    expect(micInstances).toHaveLength(1)
   })
 })
 
@@ -534,7 +472,7 @@ describe('CpSession send', () => {
 
   it('returns false for an unhandled message type', async () => {
     const { session } = makeSession()
-    await expect(session.send(new SendBluetoothPairedList('x'))).resolves.toBe(false)
+    await expect(session.send(new (class extends SendableMessage {})())).resolves.toBe(false)
   })
 
   it('returns false once the stack is gone', async () => {
@@ -542,6 +480,21 @@ describe('CpSession send', () => {
     await session.close()
     await expect(session.send(new SendTouch(0, 0, 0))).resolves.toBe(false)
     await expect(session.send(new SendCommand('play'))).resolves.toBe(false)
+  })
+
+  it('maps remote input commands onto the media and telephony reports', () => {
+    const { session, stack } = makeSession()
+    session.handleInput(InputCommand.Pause)
+    expect(stack.sendMedia).toHaveBeenCalledWith(MediaButton.pause)
+    session.handleInput(InputCommand.Next)
+    expect(stack.sendMedia).toHaveBeenCalledWith(MediaButton.next)
+    session.handleInput(InputCommand.AcceptCall)
+    expect(stack.sendTelephony).toHaveBeenCalledWith(TelephonyButton.hookSwitch)
+    session.handleInput(InputCommand.VoiceAssistant)
+    expect(stack.invokeSiri).toHaveBeenCalled()
+    stack.sendMedia.mockClear()
+    session.handleInput(InputCommand.VolumeUp)
+    expect(stack.sendMedia).not.toHaveBeenCalled()
   })
 
   it('routes every command mapping to the stack', () => {
@@ -742,15 +695,6 @@ describe('CpSession branch completion', () => {
     expect(session.peerIp).toBe('')
   })
 
-  it('does not re-announce connected on a later video frame', () => {
-    const { session, stack } = makeSession()
-    const connected = vi.fn()
-    session.on('connected', connected)
-    stack.fire('video-frame', Buffer.from([1]))
-    stack.fire('video-frame', Buffer.from([2]))
-    expect(connected).toHaveBeenCalledTimes(1)
-  })
-
   it('drops mistyped power and cellular fields', () => {
     const { session } = makeSession()
     const seen: Record<string, unknown>[] = []
@@ -789,15 +733,12 @@ describe('CpSession branch completion', () => {
 })
 
 describe('CpSession close', () => {
-  it('tears down once, stopping mic and stack', async () => {
+  it('tears down once, stopping the stack', async () => {
     const { session, stack } = makeSession()
-    stack.fire('mic-active', true, 24000, 1)
-    const mic = micInstances.at(-1) as unknown as Mic
     const down = vi.fn()
     session.on('disconnected', down)
     await session.close()
     await session.close()
-    expect(mic.stop).toHaveBeenCalled()
     expect(stack.stop).toHaveBeenCalledTimes(1)
     expect(down).toHaveBeenCalledTimes(1)
   })

@@ -9,8 +9,6 @@ function make(hasRenderer = true) {
   return { reg, emit }
 }
 
-const line = (mac: string, name = '') => `${mac}${name}`
-
 const PHONE_COD = 0x5a020c
 const AUDIO_COD = 0x240404
 
@@ -25,67 +23,33 @@ const dev = (mac: string, over: Partial<PairedDevice> = {}): PairedDevice => ({
 })
 
 describe('BtPairedRegistry.emitCombined', () => {
-  test('setDonglePairedRaw emits the combined list as a bluetoothPairedList event', () => {
+  const opts = { cpClaimedBtMacs: new Set<string>(), keepHostRawIfEmpty: false }
+
+  test('emits the host paired list as a bluetoothPairedList event', () => {
     const { reg, emit } = make()
-    reg.setDonglePairedRaw(`${line('AA:BB:CC:DD:EE:FF', 'Pixel')}\n`)
-    expect(emit).toHaveBeenCalledWith({
+    reg.ingest([dev('AA:BB:CC:DD:EE:FF', { name: 'Pixel' })], opts)
+    expect(emit.mock.calls.at(-1)![0]).toEqual({
       type: 'bluetoothPairedList',
       payload: 'AA:BB:CC:DD:EE:FFPixel\n'
     })
   })
 
-  test('dongle wins on MAC collision, host duplicate is dropped', () => {
+  test('empty host list emits an empty string', () => {
     const { reg, emit } = make()
-    reg.ingest(
-      [dev('AA:BB:CC:DD:EE:FF', { name: 'HostName' }), dev('11:22:33:44:55:66', { name: 'Other' })],
-      { cpClaimedBtMacs: new Set(), keepHostRawIfEmpty: false }
-    )
-    emit.mockClear()
-    reg.setDonglePairedRaw(`${line('AA:BB:CC:DD:EE:FF', 'DongleName')}\n`)
-    const payload = emit.mock.calls[0][0].payload as string
-    // Dongle line first, host entry for the same MAC filtered, unique host entry kept.
-    expect(payload).toBe('AA:BB:CC:DD:EE:FFDongleName\n11:22:33:44:55:66Other\n')
-  })
-
-  test('skips lines shorter than 17 chars and MACs without a colon', () => {
-    const { reg, emit } = make()
-    reg.setDonglePairedRaw(
-      ['short', '................pad', line('AA:BB:CC:DD:EE:FF', 'Ok')].join('\n')
-    )
-    const payload = emit.mock.calls[0][0].payload as string
-    expect(payload).toBe('AA:BB:CC:DD:EE:FFOk\n')
-  })
-
-  test('trims a trailing CR from CRLF line endings', () => {
-    const { reg, emit } = make()
-    reg.setDonglePairedRaw(`${line('AA:BB:CC:DD:EE:FF', 'Name')}\r\n`)
-    const payload = emit.mock.calls[0][0].payload as string
-    expect(payload).toBe('AA:BB:CC:DD:EE:FFName\n')
-  })
-
-  test('empty sources emit an empty string', () => {
-    const { reg, emit } = make()
-    reg.setDonglePairedRaw('')
-    expect(emit.mock.calls[0][0].payload).toBe('')
+    reg.ingest([], opts)
+    expect(emit.mock.calls.at(-1)![0].payload).toBe('')
   })
 
   test('does not emit when no renderer is attached', () => {
     const { reg, emit } = make(false)
-    reg.setDonglePairedRaw(`${line('AA:BB:CC:DD:EE:FF', 'Pixel')}\n`)
+    reg.ingest([dev('AA:BB:CC:DD:EE:FF', { name: 'Pixel' })], opts)
     expect(emit).not.toHaveBeenCalled()
   })
 
-  test('clearDongleRaw drops the dongle source without emitting', () => {
+  test('drops paired entries whose leading field is not a colon MAC', () => {
     const { reg, emit } = make()
-    reg.setDonglePairedRaw(`${line('AA:BB:CC:DD:EE:FF', 'Pixel')}\n`)
-    emit.mockClear()
-
-    reg.clearDongleRaw()
-    expect(emit).not.toHaveBeenCalled()
-
-    // Next explicit emit reflects the cleared dongle source.
-    reg.emitCombined()
-    expect(emit.mock.calls[0][0].payload).toBe('')
+    reg.ingest([dev('AABBCCDDEEFF0011X', { name: 'Y' })], opts)
+    expect(emit.mock.calls.at(-1)![0].payload).toBe('')
   })
 })
 

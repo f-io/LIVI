@@ -4,6 +4,16 @@ type Caps = Record<string, { hw?: unknown; sw?: unknown } | undefined>
 
 export type CodecKind = 'hevc' | 'vp9' | 'av1'
 
+/** Whether h265 is advertised: with a hardware decoder, or in software when h264 has none,
+ *  on macOS also in software. */
+export function offersHevc(
+  p: { h264: { hw: boolean }; h265: { hw: boolean; sw: boolean } },
+  platform: NodeJS.Platform = process.platform
+): boolean {
+  if (platform === 'darwin') return p.h265.hw || p.h265.sw
+  return p.h265.hw || (p.h265.sw && !p.h264.hw)
+}
+
 export class CodecCapabilityService {
   private hevcSupported = false
   private vp9Supported = false
@@ -36,7 +46,7 @@ export class CodecCapabilityService {
     const p = probeGstCodecs()
     const hwCap = (s: { hw: boolean }): { hw?: unknown; sw?: unknown } | undefined =>
       s.hw ? { hw: true, sw: true } : undefined
-    const h265Cap = p.h265.hw || (p.h265.sw && !p.h264.hw) ? { hw: true, sw: true } : undefined
+    const h265Cap = offersHevc(p, process.platform) ? { hw: true, sw: true } : undefined
     this.lastCodecCaps = {
       h264: { hw: true, sw: true },
       h265: h265Cap,
@@ -56,8 +66,7 @@ export class CodecCapabilityService {
   private recompute(): void {
     // recompute only runs after lastCodecCaps was assigned by an apply* call
     const caps = this.lastCodecCaps as Caps
-    // applyGstCodecCaps already drops optional codecs without a HW decoder to
-    // undefined, so a present entry means the codec is advertised
+    // a present entry means the codec is advertised
     const isSupported = (c: { hw?: unknown; sw?: unknown } | undefined): boolean => Boolean(c)
 
     const hevc = isSupported(caps.h265)

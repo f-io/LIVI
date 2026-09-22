@@ -112,31 +112,31 @@ describe('Media component', () => {
     vi.useRealTimers()
   })
 
-  it('sends play/pause command and resets press feedback', async () => {
+  it('sends the play/pause toggle and resets press feedback', async () => {
     const { getByLabelText } = render(<Media />)
     const playButton = getByLabelText('Play/Pause')
 
-    // simulate play click
+    // simulate play click — the toggle key, not discrete play, so a cold press resumes
     await act(async () => {
       fireEvent.click(playButton)
     })
 
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    expect(window.projection.ipc.sendCommand).toHaveBeenCalledWith('play')
+    expect(window.projection.ipc.sendCommand).toHaveBeenCalledWith('playPause')
 
     // advance timers for reset
     await act(async () => {
       vi.advanceTimersByTime(150)
     })
 
-    // simulate second click (pause)
+    // simulate second click — same toggle key
     await act(async () => {
       fireEvent.click(playButton)
       vi.advanceTimersByTime(150)
     })
 
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    expect(window.projection.ipc.sendCommand).toHaveBeenCalledWith('pause')
+    expect(window.projection.ipc.sendCommand).toHaveBeenCalledWith('playPause')
   })
 
   it('sends next and prev commands', async () => {

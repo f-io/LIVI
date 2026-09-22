@@ -7,7 +7,6 @@ import { type DeviceView, forgetDevice, selectDevice, useDevices } from './useDe
 export const Devices = () => {
   const devices = useDevices()
   const navigate = useNavigate()
-  const forgetDongle = useLiviStore((s) => s.forgetBluetoothPairedDevice)
 
   const onPick = async (d: DeviceView) => {
     const r = await selectDevice(d.id)
@@ -29,7 +28,7 @@ export const Devices = () => {
             key={d.id}
             device={d}
             onSelect={selectable ? () => onPick(d) : undefined}
-            onForget={() => (d.source === 'dongle' ? forgetDongle(d.id) : forgetDevice(d.id))}
+            onForget={() => forgetDevice(d.id)}
           />
         )
       })}

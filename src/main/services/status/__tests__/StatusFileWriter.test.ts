@@ -61,25 +61,23 @@ describe('StatusFileWriter — setters mutate state and write', () => {
   test('setStreaming preserves the rest of the projection block', () => {
     const file = tmpFile()
     const w = new StatusFileWriter(file, { debounceMs: 0 })
-    w.setProjection('dongle', 'CarPlay')
+    w.setProjection('cp', 'CarPlay')
     w.setStreaming(true)
     w.flush()
     const s = readStatus(file).payload as {
       projection: { active: string; phoneType: string; streaming: boolean }
     }
-    expect(s.projection).toEqual({ active: 'dongle', phoneType: 'CarPlay', streaming: true })
+    expect(s.projection).toEqual({ active: 'cp', phoneType: 'CarPlay', streaming: true })
     fs.unlinkSync(file)
   })
 
-  test('setUsbState writes the USB block', () => {
+  test('setPath writes the ui block', () => {
     const file = tmpFile()
     const w = new StatusFileWriter(file, { debounceMs: 0 })
-    w.setUsbState(true, false)
+    w.setPath('/media')
     w.flush()
-    const s = readStatus(file).payload as {
-      usb: { phoneConnected: boolean; dongleConnected: boolean }
-    }
-    expect(s.usb).toEqual({ phoneConnected: true, dongleConnected: false })
+    const s = readStatus(file).payload as { ui: { path: string } }
+    expect(s.ui).toEqual({ path: '/media' })
     fs.unlinkSync(file)
   })
 
@@ -218,6 +216,14 @@ describe('StatusFileWriter — debounce + atomic write', () => {
 })
 
 describe('StatusFileWriter — setters and audio commands', () => {
+  test('setPath patches the ui block', () => {
+    const w = new StatusFileWriter(tmpFile(), { writeInitial: false })
+    w.setPath('/settings/general/display')
+    expect(w.getState().ui).toEqual({ path: '/settings/general/display' })
+    w.setPath('/home')
+    expect(w.getState().ui).toEqual({ path: '/home' })
+  })
+
   test('setNavAnnouncing patches the nav state', () => {
     const w = new StatusFileWriter(tmpFile(), { writeInitial: false })
     w.setNavAnnouncing(true)

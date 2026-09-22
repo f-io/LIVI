@@ -22,6 +22,7 @@ function baseConfig(overrides: Partial<CpStackConfig> = {}): CpStackConfig {
     mfi: {} as CpStackConfig['mfi'],
     oemLabel: 'LIVI',
     icons: [],
+    rightHandDrive: false,
     ...overrides
   }
 }
@@ -97,6 +98,13 @@ describe('buildInfoPlist', () => {
     expect(info.audioLatencies).toBeUndefined()
     expect(info.audioFormats).toBeUndefined()
     expect(info.modes).toBeDefined()
+  })
+
+  test('announces the driver side', () => {
+    expect((buildInfoPlist(baseConfig({ rightHandDrive: false })) as Dict).rightHandDrive).toBe(
+      false
+    )
+    expect((buildInfoPlist(baseConfig({ rightHandDrive: true })) as Dict).rightHandDrive).toBe(true)
   })
 
   test('modes declares screen and audio resources plus app states', () => {

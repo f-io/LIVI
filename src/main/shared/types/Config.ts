@@ -108,6 +108,7 @@ export type Config = {
   wifiDedicatedInterface: boolean
   wifiType: '2.4ghz' | '5ghz'
   wifiChannel: number
+  wifiChannelWidth: number
   country: string
 
   // AirPlay protocol version we advertise
@@ -121,8 +122,7 @@ export type Config = {
   gpsEnabled: boolean
   gpsDevice: string
   gpsBaudRate: number
-  /** Last zone derived from a fix. Applied at startup so the clock reads right
-   *  before the receiver has a position again. */
+  /** Last zone derived from a fix, applied at startup. */
   timezone: string
 
   // Main stream
@@ -166,6 +166,8 @@ export type Config = {
 
   // Theme / vehicle identity
   darkMode: boolean
+  displayBrightness: number
+  displayBrightnessAuto: boolean
   nightMode: boolean
   carName: string
   oemName: string
@@ -195,7 +197,7 @@ export type Config = {
   autoSwitchOnReverse: boolean
 
   // LIVI UI
-  startPage: 'home' | 'media' | 'maps' | 'telemetry' | 'camera' | 'settings'
+  startPage: string
   language: string
   kiosk: WindowAssignment
   uiZoomPercent: number
@@ -218,6 +220,8 @@ export type Config = {
   cameraRotation: 0 | 90 | 180 | 270
   media: WindowAssignment
   dashboards: DashboardsConfig
+  custom: WindowAssignment
+  customUrl: string
 
   // Multi-window bounds
   mainScreenBounds?: WindowBounds
@@ -233,8 +237,6 @@ export type Config = {
   auxScreenHeight: number
 
   lastKnownGps?: LastKnownGps
-
-  dongleToolsIp?: string
 
   // Theme overrides
   primaryColorDark?: string

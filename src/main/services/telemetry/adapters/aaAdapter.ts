@@ -2,7 +2,7 @@
  * Android Auto telemetry adapter.
  *
  * Subscribes to `TelemetryStore.change` and forwards each field that
- * `TELEMETRY_ROUTES[key].aa === true` to the active AA driver.
+ * `TELEMETRY_ROUTES[key].aa === true` to every connected AA session.
  *
  * Bundled fields:
  *   - lights / highBeam / hazards / turn   → one `sendLightData` call
@@ -14,15 +14,42 @@
  *
  */
 
-import type { AaSession } from '@projection/driver/aa/AaSession'
 import { type GpsPayload, isWired, type TelemetryPayload } from '@shared/types/Telemetry'
 import type { TelemetryStore } from '../TelemetryStore'
 
 // Maps re-routes lazily on VEM updates
 const VEM_MIN_INTERVAL_MS = 10_000
 
+/** The AA telemetry surface, fanned out across every connected session. */
+export type AaTelemetrySink = {
+  sendSpeedData(speedMmS: number, cruiseEngaged?: boolean, cruiseSetSpeedMmS?: number): void
+  sendRpmData(rpmE3: number): void
+  sendGearData(gear: number): void
+  sendNightModeData(nightMode: boolean): void
+  sendParkingBrakeData(engaged: boolean): void
+  sendDrivingStatusData(status: number): void
+  sendLightData(headLight?: 1 | 2 | 3, hazardLights?: boolean, turnIndicator?: 1 | 2 | 3): void
+  sendFuelData(level: number, range?: number, lowFuelWarning?: boolean): void
+  sendOdometerData(totalKmE1: number, tripKmE1?: number): void
+  sendEnvironmentData(temperatureE3?: number, pressureE3?: number, rain?: number): void
+  sendGpsLocationData(opts: {
+    latDeg: number
+    lngDeg: number
+    accuracyM?: number
+    altitudeM?: number
+    speedMs?: number
+    bearingDeg?: number
+  }): void
+  sendVehicleEnergyModel(
+    capacityWh: number,
+    currentWh: number,
+    rangeM: number,
+    opts?: { maxChargePowerW?: number; maxDischargePowerW?: number; auxiliaryWhPerKm?: number }
+  ): void
+}
+
 export type AaAdapterDeps = {
-  getAaDriver: () => AaSession | null
+  getAaDriver: () => AaTelemetrySink | null
   store: TelemetryStore
 }
 

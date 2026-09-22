@@ -1,0 +1,43 @@
+Description: vtdec: honour the stream's full-range flag on HEVC/H264 output
+ vtdec always requested the video-range NV12 pixel format ('420v') and hardcoded
+ FullRangeVideo=FALSE in the input format description, regardless of the stream's
+ signalled range. For a full-range stream (SPS video_full_range_flag = 1, e.g.
+ CarPlay/AirPlay: black = 0, white = 255) it therefore compressed the samples to
+ 16-235 while the negotiated caps still carried the full-range colorimetry, so
+ downstream glcolorconvert did not expand and black rendered as 16 (washed out).
+ Pick the full-range pixel format ('420f') and set FullRangeVideo=TRUE when the
+ input colorimetry is full range; video-range streams keep the old behaviour.
+Origin: vendor
+Author: LIVI
+Forwarded: not-needed
+
+---
+--- a/sys/applemedia/vtdec.c
++++ b/sys/applemedia/vtdec.c
+@@ -1270,6 +1270,14 @@
+   OSStatus status;
+   guint32 cv_format = gst_video_format_to_cvpixelformat (format);
+ 
++  /* CarPlay/AirPlay HEVC and H.264 are full-range Y'CbCr (SPS video_full_range_flag = 1);
++   * honour it instead of the video-range default, which lifts black from 0 to 16. */
++  if (vtdec->input_state
++      && GST_VIDEO_INFO_COLORIMETRY (&vtdec->input_state->info).range ==
++      GST_VIDEO_COLOR_RANGE_0_255
++      && cv_format == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
++    cv_format = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
++
+   g_return_val_if_fail (vtdec->session == NULL, FALSE);
+ 
+   videoDecoderSpecification =
+@@ -1478,7 +1486,10 @@
+       CFSTR ("CVImageBufferChromaLocationBottomField"), "left");
+   gst_vtutil_dict_set_string (extensions,
+       CFSTR ("CVImageBufferChromaLocationTopField"), "left");
+-  gst_vtutil_dict_set_boolean (extensions, CFSTR ("FullRangeVideo"), FALSE);
++  gst_vtutil_dict_set_boolean (extensions, CFSTR ("FullRangeVideo"),
++      (vtdec->input_state
++          && GST_VIDEO_INFO_COLORIMETRY (&vtdec->input_state->info).range ==
++          GST_VIDEO_COLOR_RANGE_0_255) ? TRUE : FALSE);
+ 
+   /* CVPixelAspectRatio dict */
+   par = CFDictionaryCreateMutable (NULL, 0, &kCFTypeDictionaryKeyCallBacks,

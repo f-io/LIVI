@@ -1,0 +1,11 @@
+[package]
+name = "usb-probe"
+version = "0.1.0"
+edition.workspace = true
+
+[[bin]]
+name = "usb-probe"
+path = "src/main.rs"
+
+[dependencies]
+nusb = "0.2"

@@ -8,8 +8,9 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { writeFileAtomic } from '@shared/utils'
 import { app } from 'electron'
 import { ed25519Generate } from './crypto'
 
@@ -48,14 +49,14 @@ export function loadOrCreateIdentity(): CpIdentity {
   const pairingId = randomUUID()
   try {
     mkdirSync(join(app.getPath('userData'), 'cp'), { recursive: true })
-    writeFileSync(
+    writeFileAtomic(
       file,
       JSON.stringify({
         priv: kp.privRaw.toString('hex'),
         pub: kp.pubRaw.toString('hex'),
         pi: pairingId
       }),
-      { mode: 0o600 }
+      0o600
     )
   } catch (e) {
     console.warn('[cpIdentity] could not persist identity:', (e as Error).message)

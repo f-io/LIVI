@@ -1,0 +1,359 @@
+name: livi-link
+run-name: 'livi-link → ${{ github.ref_name }}'
+
+on:
+  workflow_dispatch:
+    inputs:
+      cpc200_ccpa:
+        description: 'Build cpc200-ccpa (armv7, static-glibc)'
+        type: boolean
+        default: true
+      v821b_aic8800d80:
+        description: 'Build v821b_aic8800d80 (riscv32, static-glibc)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  workspace-tests:
+    name: cargo test shared crates (host)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/livi-helperd/target
+          key: cargo-shared-${{ hashFiles('native/livi-helperd/**/Cargo.toml') }}
+          restore-keys: cargo-shared-
+
+      - name: cargo test shared crates
+        working-directory: native/livi-helperd
+        run: |
+          cargo test --release \
+            -p iap2-mfi -p livi-wifi -p livi-btd -p livi-iapd -p livi-mdns
+
+  bundle-sanity:
+    name: pack .lfwb bundle (dummy inputs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Fake mtd1/mtd3 for pack-bundle
+        run: |
+          mkdir -p ~/LocalDev/tina-test/out
+          printf 'ANDROID!' > ~/LocalDev/tina-test/out/livi-link-v821b-mtd1.bin
+          dd if=/dev/zero bs=1 count=1024 >> ~/LocalDev/tina-test/out/livi-link-v821b-mtd1.bin
+          printf 'hsqs'     > ~/LocalDev/tina-test/out/livi-link-v821b-mtd3.bin
+          dd if=/dev/zero bs=1 count=1024 >> ~/LocalDev/tina-test/out/livi-link-v821b-mtd3.bin
+
+      - name: Run pack-bundle
+        run: bash scripts/livi-link/pack-bundle.sh
+
+      - name: Verify bundle structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle=~/LocalDev/tina-test/out/livi-link-v821b.lfwb
+          [ "$(head -c 4 "$bundle")" = LFWB ] || { echo "bad magic" >&2; exit 1; }
+          read -r version count < <(od -An -tu1 -j4 -N2 "$bundle")
+          [ "$version" = 1 ] || { echo "bad version $version" >&2; exit 1; }
+          [ "$count" = 2 ] || { echo "bad count $count" >&2; exit 1; }
+          echo "bundle header ok, size $(wc -c < "$bundle")"
+
+  targets:
+    name: Select targets
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+      any: ${{ steps.set.outputs.any }}
+    steps:
+      - id: set
+        env:
+          CPC: ${{ inputs.cpc200_ccpa }}
+          V821: ${{ inputs.v821b_aic8800d80 }}
+        run: |
+          set -euo pipefail
+          arr=()
+          [[ "$CPC"  == "true" ]] && arr+=('"cpc200-ccpa"')
+          [[ "$V821" == "true" ]] && arr+=('"v821b_aic8800d80"')
+          {
+            printf 'matrix={"target":[%s]}\n' "$(IFS=,; echo "${arr[*]}")"
+            printf 'any=%s\n' "$(IFS=,; echo "${arr[*]}")"
+          } >>"$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: [workspace-tests, bundle-sanity, targets]
+    if: needs.targets.outputs.any != ''
+    runs-on: ubuntu-latest
+    container:
+      image: debian:forky-slim
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.targets.outputs.matrix) }}
+
+    steps:
+      - name: Install container base deps
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git xz-utils build-essential file rsync
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Firmware version
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LIVI_BUILD="${GITHUB_SHA::8}"
+          source scripts/livi-link/version.sh
+          echo "LIVI_VERSION=$LIVI_VERSION" >> "$GITHUB_ENV"
+          echo "LIVI_BUILD=$LIVI_BUILD" >> "$GITHUB_ENV"
+
+      - name: Install Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/rustc" --version
+
+      - name: Install armv7 cross toolchain
+        if: matrix.target == 'cpc200-ccpa'
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
+          "$HOME/.cargo/bin/rustup" target add armv7-unknown-linux-gnueabihf
+          arm-linux-gnueabihf-gcc --version | head -1
+
+      - name: Cache cargo (cpc200-ccpa)
+        if: matrix.target == 'cpc200-ccpa'
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/livi-helperd/target
+          key: cargo-livi-link-armv7-${{ hashFiles('native/livi-helperd/**/Cargo.toml') }}
+          restore-keys: cargo-livi-link-armv7-
+
+      - name: Build cpc200-ccpa asset
+        if: matrix.target == 'cpc200-ccpa'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/livi-link/build-armv7.sh
+          scripts/livi-link/build-armv7.sh "assets/livi-link/${{ matrix.target }}"
+
+      - name: Install Andes riscv32 cross toolchain
+        if: matrix.target == 'v821b_aic8800d80'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TC_URL=${TC_URL:-https://github.com/andestech/Andes-Development-Kit/releases/download/ast-v5_4_1-release-linux/nds32le-linux-glibc-v5d.txz}
+          TC_SHA=0d9ee91376785835a10b1631cfc9e4d6d61326c0512da774c012fdac53c2bc3a
+          TC_DIR=$HOME/andes
+          mkdir -p "$TC_DIR"
+          curl -sSL "$TC_URL" -o /tmp/andes.txz
+          echo "$TC_SHA  /tmp/andes.txz" | sha256sum -c
+          tar -xJf /tmp/andes.txz -C "$TC_DIR"
+          TC_BIN="$TC_DIR/nds32le-linux-glibc-v5d/bin"
+          "$TC_BIN/riscv32-linux-gcc" --version | head -1
+          echo "TC_BIN=$TC_BIN" >> "$GITHUB_ENV"
+          echo "$TC_BIN" >> "$GITHUB_PATH"
+
+      - name: Install userspace build deps
+        if: matrix.target == 'v821b_aic8800d80'
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get install -y --no-install-recommends \
+            bc bison flex libssl-dev libelf-dev cmake pkg-config \
+            squashfs-tools
+
+      - name: Setup Rust nightly + rust-src (v821b)
+        if: matrix.target == 'v821b_aic8800d80'
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HOME/.cargo/bin/rustup" toolchain install nightly --profile minimal --component rust-src
+          "$HOME/.cargo/bin/rustc" +nightly --version
+
+      - name: Cache cargo (v821b)
+        if: matrix.target == 'v821b_aic8800d80'
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/livi-helperd/target
+          key: cargo-livi-link-riscv32-${{ hashFiles('native/livi-helperd/**/Cargo.toml') }}
+          restore-keys: cargo-livi-link-riscv32-
+
+      - name: Build v821b firmware bundle
+        if: matrix.target == 'v821b_aic8800d80'
+        shell: bash
+        env:
+          TOP: ${{ github.workspace }}/build/tina-test
+          BUILD: ${{ github.workspace }}/build/livi-userspace-build
+          OUT_DIR: ${{ github.workspace }}/build/tina-test/out
+          USERSPACE: ${{ github.workspace }}/build/livi-userspace-build/out
+          KERNEL_SRC: ${{ github.workspace }}/build/tina-test/tina-v821-v1.3-kernel/linux-5.4-ansc
+        run: |
+          set -euo pipefail
+          mkdir -p "$TOP" "$BUILD" "$OUT_DIR"
+          chmod +x scripts/livi-link/*.sh
+
+          scripts/livi-link/build-v821b.sh
+          scripts/livi-link/build-userspace.sh
+          scripts/livi-link/build-mtd3.sh
+
+          # build-mtd3.sh triggers pack-bundle.sh via its own hook.
+          ls -la "$OUT_DIR"/*.lfwb "$OUT_DIR"/livi-link-v821b-mtd*.bin
+
+          # Stage the .lfwb as the artifact payload for this matrix cell.
+          mkdir -p "assets/livi-link/${{ matrix.target }}"
+          cp "$OUT_DIR/livi-link-v821b.lfwb" "assets/livi-link/${{ matrix.target }}/"
+          source scripts/livi-link/version.sh
+          livi_firmware_json "assets/livi-link/${{ matrix.target }}/livi-link-v821b.lfwb"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.target }}
+          path: assets/livi-link/${{ matrix.target }}
+          retention-days: 30
+
+  commit:
+    name: Commit updated assets
+    needs: [targets, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Download cpc200-ccpa artifact
+        if: contains(needs.targets.outputs.any, 'cpc200-ccpa')
+        uses: actions/download-artifact@v8
+        with:
+          name: cpc200-ccpa
+          path: assets/livi-link/cpc200-ccpa
+
+      - name: Download v821b_aic8800d80 artifact
+        if: contains(needs.targets.outputs.any, 'v821b_aic8800d80')
+        uses: actions/download-artifact@v8
+        with:
+          name: v821b_aic8800d80
+          path: assets/livi-link/v821b_aic8800d80
+
+      - name: Commit and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -f -A assets/livi-link
+          if git diff --cached --quiet -- assets/livi-link; then
+            echo "No asset changes to commit"
+            exit 0
+          fi
+
+          # The target dirs that changed in this run, names only, comma-separated
+          # (e.g. "cpc200-ccpa, v821b_aic8800d80"). Both binaries share the Rust crates,
+          # so a change there legitimately restages both — and v821b_aic8800d80 carries no
+          # MANIFEST.md5, so this reads the staged diff rather than scanning for manifests.
+          details="$(git diff --cached --name-only -- assets/livi-link \
+            | sed -n 's#^assets/livi-link/\([^/]*\)/.*#\1#p' | sort -u \
+            | paste -sd, - | sed 's/,/, /g')"
+
+          msg="chore(livi-link): update dongle stack"
+          [[ -n "$details" ]] && msg="$msg (${details})"
+          git commit -m "$msg"
+          git push
+
+  tool:
+    name: Build the provisioning tool (${{ matrix.name }})
+    needs: [workspace-tests, bundle-sanity, targets, build]
+    if: |
+      always() &&
+      needs.workspace-tests.result == 'success' &&
+      needs.bundle-sanity.result == 'success' &&
+      needs.targets.result == 'success' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            runner: macos-latest
+          - name: linux-x64
+            runner: ubuntu-latest
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Take the cpc200-ccpa binary from this run
+        if: contains(needs.targets.outputs.any, 'cpc200-ccpa')
+        uses: actions/download-artifact@v8
+        with:
+          name: cpc200-ccpa
+          path: assets/livi-link/cpc200-ccpa
+
+      - name: Take the v821b firmware bundle from this run
+        if: contains(needs.targets.outputs.any, 'v821b_aic8800d80')
+        uses: actions/download-artifact@v8
+        with:
+          name: v821b_aic8800d80
+          path: assets/livi-link/v821b_aic8800d80
+
+      - name: Setup Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/livi-helperd/target
+          key: cargo-livi-link-tool-${{ matrix.name }}-${{ hashFiles('native/livi-helperd/**/Cargo.toml') }}
+          restore-keys: cargo-livi-link-tool-${{ matrix.name }}-
+
+      - name: Build
+        working-directory: native/livi-helperd
+        run: |
+          LIVI_VERSION="$(node -p "require('../../package.json').version")" \
+            cargo build --release -p livi-link-provision-cli
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: livi-link-provision-${{ matrix.name }}
+          path: native/livi-helperd/target/release/livi-link-provision
+          retention-days: 30

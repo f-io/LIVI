@@ -1,4 +1,11 @@
 import { registerIpcHandle, registerIpcOn } from '@main/ipc/register'
+import {
+  CUSTOM_ICON_URL,
+  CUSTOM_PAGE_URL,
+  customIconExists,
+  customPageExists
+} from '@main/protocol/appProtocol'
+import { customProxy } from '@main/services/custom/CustomProxy'
 import { hostPowerAvailable, requestPowerAction } from '@main/services/power/hostPower'
 import { compositorRestart } from '@main/services/video/GstVideo'
 import { runtimeStateProps, ServicesProps } from '@main/types'
@@ -28,20 +35,17 @@ export async function restartApp(
     }
 
     try {
-      services.usbService?.beginShutdown()
-    } catch {}
-
-    try {
       const teardown = services.projectionService.shutdownWirelessSessions()
       await Promise.race([teardown, new Promise((r) => setTimeout(r, 8000))])
     } catch (e) {
       console.warn('[MAIN] shutdownWirelessSessions failed (continuing restart):', e)
     }
 
+    // A restart leaves the phones paired and connected, only the helper goes.
     try {
-      await services.usbService?.gracefulReset()
+      await services.projectionService.stopHelper()
     } catch (e) {
-      console.warn('[MAIN] gracefulReset failed (continuing restart):', e)
+      console.warn('[MAIN] stopHelper failed (continuing restart):', e)
     }
 
     await new Promise((r) => setTimeout(r, 150))
@@ -95,7 +99,15 @@ export function registerAppIpc(runtimeState: runtimeStateProps, services: Servic
       : app.quit()
   )
 
+  registerIpcHandle('app:customPageUrl', async () => {
+    const proxied = await customProxy.start(runtimeState.config.customUrl)
+    if (proxied) return proxied
+    return customPageExists() ? CUSTOM_PAGE_URL : null
+  })
+
   // App Quit
+  registerIpcHandle('app:customIconUrl', () => (customIconExists() ? CUSTOM_ICON_URL : null))
+
   registerIpcHandle('app:quitApp', () => {
     if (runtimeState.isQuitting) return
     if (hostPowerAvailable()) requestPowerAction('poweroff')
@@ -106,6 +118,10 @@ export function registerAppIpc(runtimeState: runtimeStateProps, services: Servic
   registerIpcHandle('app:restartApp', () => restartApp(runtimeState, services))
 
   // User activity (touch/click)
+  registerIpcOn('ui:path', (_evt, path: string) => {
+    services.projectionService.setUiPath(String(path ?? ''))
+  })
+
   registerIpcOn('app:user-activity', () => {
     restoreKioskAfterWmExit(runtimeState)
   })

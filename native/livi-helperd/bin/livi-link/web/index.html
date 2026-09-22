@@ -1,0 +1,281 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>LIVI Link tools</title>
+  <meta http-equiv="Cache-Control" content="no-store">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,Arial,sans-serif;background:#111;color:#eee;margin:0;padding:16px;}
+h1{font-size:20px;margin:0 0 12px;}
+h2{font-size:16px;margin:16px 0 8px;}
+p{margin:4px 0 8px;}
+a{color:#0bf;text-decoration:none;}
+a:hover{text-decoration:underline;}
+code{background:#222;padding:2px 4px;border-radius:3px;font-size:12px;}
+section{margin-bottom:16px;padding:12px;border-radius:8px;background:#181818;}
+input[type="text"]{background:#000;border:1px solid #444;border-radius:4px;padding:4px 6px;color:#eee;min-width:180px;}
+button{background:#0bf;border:none;border-radius:4px;padding:4px 10px;font-size:13px;color:#000;cursor:pointer;}
+button:hover{filter:brightness(1.1);}
+button.secondary{background:#333;color:#eee;border:1px solid #444;}
+button.secondary:hover{filter:none;border-color:#666;}
+button:disabled{opacity:.45;cursor:default;filter:none;}
+button.danger{background:#ff5a5a;color:#000;}
+small{color:#999;font-size:11px;}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+textarea{width:100%;min-height:90px;background:#000;border:1px solid #444;border-radius:6px;padding:8px;color:#eee;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.35;box-sizing:border-box;}
+pre{background:#0f0f0f;border:1px solid #2a2a2a;border-radius:8px;padding:10px;white-space:pre-wrap;overflow-x:auto;max-height:320px;overflow:auto;}
+.muted{color:#aaa;}
+.chip{display:inline-block;background:#1b1b1b;border:1px solid #2a2a2a;padding:4px 8px;border-radius:999px;font-size:12px;color:#ddd;}
+.spacer{height:6px;}
+.warn{color:#ffcc66;}
+.wrap{max-width:980px;margin:0 auto;}
+@media (max-width: 520px){.wrap{max-width:none;}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <h1>LIVI Link tools</h1>
+
+  <section>
+    <h2>File Browser</h2>
+    <div class="row">
+      <button type="button" class="secondary" onclick="window.location='./cgi-bin/server.cgi?action=ls&path=/'">Browser</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Recovery</h2>
+    <p class="muted">Pick <code>rootfs.img</code> from the backup folder.</p>
+    <div class="row">
+      <input type="file" id="imgFile" onchange="hashPicked()" />
+      <button type="button" class="danger" onclick="restore()">Restore</button>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <code id="sha" class="muted">no image picked</code>
+    </div>
+    <div class="spacer"></div>
+  </section>
+
+  <section>
+    <h2>Shell</h2>
+    <div class="row">
+      <button id="shellBtn" type="button" class="secondary" onclick="startShell()">Start the shell</button>
+    </div>
+    <div class="spacer"></div>
+  </section>
+
+  <section>
+    <h2>Dev Console</h2>
+    <div class="row">
+      <button type="button" class="secondary" onclick="loadHistory()">History</button>
+      <button type="button" class="secondary" onclick="clearOutput()">Clear output</button>
+    </div>
+    <div class="spacer"></div>
+    <textarea id="cmd" spellcheck="false" placeholder="e.g. ps"></textarea>
+    <div class="row" style="margin-top:8px;">
+      <button id="runBtn" type="button" class="danger" onclick="runCmdFromBox()">Run</button>
+    </div>
+    <div class="spacer"></div>
+    <pre id="out">output</pre>
+  </section>
+</div>
+
+<script>
+const CGI = "./cgi-bin/server.cgi";
+const outEl = () => document.getElementById("out");
+const cmdEl = () => document.getElementById("cmd");
+
+function clearOutput(){ outEl().textContent = "(output cleared)"; }
+
+function pushHistory(cmd){
+  try {
+    const key = "livi_cmd_history";
+    const prev = JSON.parse(localStorage.getItem(key) || "[]");
+    const next = [cmd, ...prev.filter((x) => x !== cmd)].slice(0, 50);
+    localStorage.setItem(key, JSON.stringify(next));
+  } catch {}
+}
+
+function loadHistory(){
+  try {
+    const key = "livi_cmd_history";
+    const prev = JSON.parse(localStorage.getItem(key) || "[]");
+    if (!prev.length) { outEl().textContent = "No history yet."; return; }
+    outEl().textContent = "History:\n\n" + prev.map((c, i) => String(i + 1) + ". " + c).join("\n");
+  } catch {
+    outEl().textContent = "Failed to load history.";
+  }
+}
+
+async function execSilent(cmd){
+  const url = CGI + "?action=exec&raw=1&cmd=" + encodeURIComponent(cmd);
+  const res = await fetch(url, { cache: "no-store" });
+  return await res.text();
+}
+
+async function execConsole(cmd){
+  outEl().textContent = "> " + cmd + "\n\n(running...)";
+  pushHistory(cmd);
+  try {
+    const txt = await execSilent(cmd);
+    outEl().textContent = "> " + cmd + "\n\n" + txt;
+  } catch (e) {
+    outEl().textContent = "> " + cmd + "\n\nERROR: " + String(e);
+  }
+}
+
+async function runCmdFromBox(){
+  const cmd = (cmdEl().value || "").trim();
+  if (!cmd) { outEl().textContent = "Empty command."; return; }
+  await execConsole(cmd);
+}
+
+// SHA-256 in the page: crypto.subtle needs a secure context and the dongle serves plain HTTP,
+// so the browser hashes the picked file itself and nobody has to type a hash.
+const K256 = [
+  0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+  0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+  0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+  0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+  0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+];
+
+function sha256Hex(buffer){
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.length;
+  const padded = new Uint8Array((((len + 8) >> 6) << 6) + 64);
+  padded.set(bytes);
+  padded[len] = 0x80;
+  const view = new DataView(padded.buffer);
+  view.setUint32(padded.length - 8, Math.floor(len / 536870912));
+  view.setUint32(padded.length - 4, (len << 3) >>> 0);
+
+  const h = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+  const w = new Uint32Array(64);
+  for (let off = 0; off < padded.length; off += 64) {
+    for (let i = 0; i < 16; i++) w[i] = view.getUint32(off + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const a15 = w[i - 15], a2 = w[i - 2];
+      const s0 = rotr(a15, 7) ^ rotr(a15, 18) ^ (a15 >>> 3);
+      const s1 = rotr(a2, 17) ^ rotr(a2, 19) ^ (a2 >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, hh] = h;
+    for (let i = 0; i < 64; i++) {
+      const t1 = (hh + (rotr(e,6) ^ rotr(e,11) ^ rotr(e,25)) + ((e & f) ^ (~e & g)) + K256[i] + w[i]) >>> 0;
+      const t2 = ((rotr(a,2) ^ rotr(a,13) ^ rotr(a,22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      hh = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    const next = [a, b, c, d, e, f, g, hh];
+    for (let i = 0; i < 8; i++) h[i] = (h[i] + next[i]) >>> 0;
+  }
+  return h.map((x) => x.toString(16).padStart(8, "0")).join("");
+}
+
+let pickedSha = ""
+let rootfsBytes = 0
+
+// The size the rootfs partition needs, so a wrong file is caught before it is uploaded.
+async function readRootfsSize(){
+  try {
+    const line = await execSilent("grep -w rootfs /proc/mtd")
+    const hex = line.trim().split(/\s+/)[1]
+    if (hex) rootfsBytes = parseInt(hex, 16)
+  } catch (e) {
+    rootfsBytes = 0
+  }
+}
+
+async function hashPicked(){
+  const f = document.getElementById("imgFile").files[0]
+  if (!f) return
+  if (rootfsBytes && f.size !== rootfsBytes) {
+    pickedSha = ""
+    document.getElementById("sha").textContent = "no image picked"
+    outEl().textContent =
+      f.name + " is " + f.size + " bytes, the rootfs needs " + rootfsBytes + ".\n" +
+      "Pick rootfs.img from the backup folder, not the kernel or the bootloader."
+    return
+  }
+  outEl().textContent = "(hashing " + f.size + " bytes...)"
+  const hex = sha256Hex(await f.arrayBuffer())
+  pickedSha = hex
+  document.getElementById("sha").textContent = hex
+  outEl().textContent = f.name + "\n" + f.size + " bytes\nsha256 " + hex
+}
+
+async function startShell(){
+  outEl().textContent = "(starting the shell on port 2323...)"
+  try {
+    await execSilent("busybox telnetd -l /bin/sh -p 2323")
+    const running = await shellRunning()
+    outEl().textContent = running ? "Shell running on port 2323." : "The shell did not start."
+  } catch (e) {
+    outEl().textContent = "Could not start the shell: " + String(e)
+  }
+}
+
+// Greys the button out while something is already listening on 2323.
+async function shellRunning(){
+  let running = false
+  try {
+    running = (await execSilent("ps | grep -c '[t]elnetd'")).trim() !== "0"
+  } catch (e) {
+    return false
+  }
+  const b = document.getElementById("shellBtn")
+  if (b) {
+    b.disabled = running
+    b.textContent = running ? "Shell already running" : "Start the shell"
+  }
+  return running
+}
+
+// One action from where the user stands: send the image over, check it arrived intact, ask, write.
+async function restore(){
+  const f = document.getElementById("imgFile").files[0]
+  if (!f) { outEl().textContent = "Pick an image file first." ; return }
+  if (!/^[0-9a-f]{64}$/.test(pickedSha)) { outEl().textContent = "That file cannot be restored." ; return }
+
+  outEl().textContent = "Sending " + f.size + " bytes to the dongle, this takes a moment..."
+  let txt
+  try {
+    const res = await fetch(CGI + "?action=upload_image", { method: "POST", body: f, cache: "no-store" })
+    txt = await res.text()
+  } catch (e) {
+    outEl().textContent = "Upload failed: " + String(e)
+    return
+  }
+  if (!txt.includes(pickedSha)) {
+    outEl().textContent = "The dongle did not receive the file intact, nothing was written.\n\n" + txt
+    return
+  }
+
+  const ok = confirm(
+    "Write " + f.name + " over the dongle's system and reboot.\n\n" +
+    "Everything on it is replaced, LIVI Link included, and the dongle comes back as whatever the " +
+    "image holds. Once the write starts it must finish, so do not unplug the dongle. The red and " +
+    "blue LED alternate while it writes and stop when it is done.\n\nWrite it now?"
+  )
+  if (!ok) { outEl().textContent = "The image is on the dongle but nothing was written." ; return }
+
+  outEl().textContent = "Writing. The red and blue LED alternate until the write is done, then the dongle reboots."
+  try {
+    const res = await fetch(CGI + "?action=flash_image&sha=" + pickedSha, { cache: "no-store" })
+    outEl().textContent = await res.text()
+  } catch (e) {
+    outEl().textContent = "The write could not be started: " + String(e)
+  }
+}
+
+shellRunning()
+readRootfsSize()
+</script>
+</body>
+</html>

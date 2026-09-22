@@ -10,241 +10,117 @@ vi.mock('@main/ipc/register', () => ({
   registerIpcOn: vi.fn()
 }))
 
-import { SendForgetBluetoothAddr } from '../../messages/sendable'
 import { registerBluetoothIpc } from '../bluetooth'
 import type { ProjectionIpcHost } from '../types'
 
-type BtHost = Pick<
-  ProjectionIpcHost,
-  | 'isStarted'
-  | 'isUsingDongle'
-  | 'isUsingAa'
-  | 'sendToDongle'
-  | 'sendBluetoothPairedList'
-  | 'connectBt'
-  | 'refreshBtPaired'
-  | 'getBoxInfo'
-  | 'setPendingStartupConnectTarget'
-  | 'noteDonglePairForgotten'
->
+type BtHost = Pick<ProjectionIpcHost, 'isStarted' | 'isUsingAa' | 'connectBt' | 'refreshBtPaired'>
 
 function fakeHost(over: Partial<BtHost> = {}): Mocked<BtHost> {
   return {
     isStarted: vi.fn(() => true),
-    isUsingDongle: vi.fn(() => false),
     isUsingAa: vi.fn(() => false),
-    sendToDongle: vi.fn(async () => true),
-    sendBluetoothPairedList: vi.fn(async () => true),
     connectBt: vi.fn(async () => ({ ok: true })),
     refreshBtPaired: vi.fn(),
-    getBoxInfo: vi.fn(() => undefined),
-    setPendingStartupConnectTarget: vi.fn(),
-    noteDonglePairForgotten: vi.fn(),
     ...over
   } as Mocked<BtHost>
 }
 
-beforeEach(async () => {
+beforeEach(() => {
   handlers.clear()
 })
 
 describe('bluetooth ipc — projection-bt-pairedlist-set', () => {
   test('returns { ok: false } when not started', async () => {
-    const host = fakeHost({ isStarted: vi.fn(() => false) })
-    registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-pairedlist-set')!
-    await expect(h(null, 'abc')).resolves.toEqual({ ok: false })
+    registerBluetoothIpc(fakeHost({ isStarted: vi.fn(() => false) }))
+    expect(await handlers.get('projection-bt-pairedlist-set')!(null, 'x')).toEqual({ ok: false })
   })
 
-  test('sends to dongle when using dongle', async () => {
-    const host = fakeHost({ isUsingDongle: vi.fn(() => true) })
-    registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-pairedlist-set')!
-    await expect(h(null, 'abc')).resolves.toEqual({ ok: true })
-    expect(host.sendBluetoothPairedList).toHaveBeenCalledWith('abc')
-  })
-
-  test('no-op on AA path', async () => {
-    const host = fakeHost({ isUsingDongle: vi.fn(() => false) })
-    registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-pairedlist-set')!
-    await expect(h(null, 'abc')).resolves.toEqual({ ok: true })
-    expect(host.sendBluetoothPairedList).not.toHaveBeenCalled()
+  test('returns { ok: true } when started', async () => {
+    registerBluetoothIpc(fakeHost())
+    expect(await handlers.get('projection-bt-pairedlist-set')!(null, 'x')).toEqual({ ok: true })
   })
 })
 
 describe('bluetooth ipc — projection-bt-connect-device', () => {
   test('rejects when not started or mac empty', async () => {
-    const host = fakeHost({ isStarted: vi.fn(() => false) })
-    registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-connect-device')!
-    await expect(h(null, 'AA:BB')).resolves.toEqual({ ok: false })
+    registerBluetoothIpc(fakeHost({ isStarted: vi.fn(() => false) }))
+    expect(await handlers.get('projection-bt-connect-device')!(null, 'AA')).toEqual({ ok: false })
 
-    const h2 = (() => {
-      handlers.clear()
-      registerBluetoothIpc(fakeHost())
-      return handlers.get('projection-bt-connect-device')!
-    })()
-    await expect(h2(null, '   ')).resolves.toEqual({ ok: false })
+    registerBluetoothIpc(fakeHost())
+    expect(await handlers.get('projection-bt-connect-device')!(null, '  ')).toEqual({ ok: false })
   })
 
   test('AA path delegates to connectBt and refreshes on success', async () => {
-    const host = fakeHost({
-      isUsingAa: vi.fn(() => true),
-      connectBt: vi.fn(async () => ({ ok: true }))
-    })
+    const host = fakeHost({ isUsingAa: vi.fn(() => true) })
     registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-connect-device')!
-    await expect(h(null, 'AA:BB')).resolves.toEqual({ ok: true })
+    const res = await handlers.get('projection-bt-connect-device')!(null, 'AA:BB')
+    expect(host.connectBt).toHaveBeenCalledWith('AA:BB')
     expect(host.refreshBtPaired).toHaveBeenCalled()
+    expect(res).toEqual({ ok: true })
   })
 
-  test('AA path: connectBt throwing surfaces as { ok:false, error }', async () => {
+  test('non-AA path returns { ok: false }', async () => {
+    const host = fakeHost({ isUsingAa: vi.fn(() => false) })
+    registerBluetoothIpc(host)
+    const res = (await handlers.get('projection-bt-connect-device')!(null, 'AA:BB')) as {
+      ok: boolean
+    }
+    expect(res.ok).toBe(false)
+    expect(host.connectBt).not.toHaveBeenCalled()
+  })
+
+  test('AA path: connectBt throwing surfaces as { ok: false, error }', async () => {
     const host = fakeHost({
       isUsingAa: vi.fn(() => true),
       connectBt: vi.fn(async () => {
-        throw new Error('busy')
+        throw new Error('boom')
       })
     })
     registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-connect-device')!
-    await expect(h(null, 'AA:BB')).resolves.toEqual({ ok: false, error: 'busy' })
-  })
-
-  test('dongle path: AndroidAuto entry → Android phoneWorkMode', async () => {
-    const host = fakeHost({
-      getBoxInfo: vi.fn(function () {
-        return { DevList: [{ id: 'AA:BB', type: 'AndroidAuto' }] }
-      })
-    })
-    registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-connect-device')!
-    await expect(h(null, 'AA:BB')).resolves.toEqual({ ok: true })
-    expect(host.setPendingStartupConnectTarget).toHaveBeenCalledWith({
-      btMac: 'AA:BB',
-      phoneWorkMode: expect.any(Number)
+    expect(await handlers.get('projection-bt-connect-device')!(null, 'AA:BB')).toEqual({
+      ok: false,
+      error: 'boom'
     })
   })
 
-  test('dongle path: non-AA entry → CarPlay phoneWorkMode', async () => {
+  test('AA path: a rejected connect returns the response without refreshing', async () => {
     const host = fakeHost({
-      getBoxInfo: vi.fn(function () {
-        return { DevList: [{ id: 'CC:DD', type: 'CarPlay' }] }
-      })
+      isUsingAa: vi.fn(() => true),
+      connectBt: vi.fn(async () => ({ ok: false }))
     })
     registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-connect-device')!
-    await h(null, 'CC:DD')
-    const arg = host.setPendingStartupConnectTarget.mock.calls[0][0]
-    expect(arg).not.toBeNull()
+    expect(await handlers.get('projection-bt-connect-device')!(null, 'AA:BB')).toEqual({
+      ok: false
+    })
+    expect(host.refreshBtPaired).not.toHaveBeenCalled()
+  })
+
+  test('a missing mac is treated as empty', async () => {
+    registerBluetoothIpc(fakeHost())
+    expect(await handlers.get('projection-bt-connect-device')!(null, undefined)).toEqual({
+      ok: false
+    })
   })
 })
 
 describe('bluetooth ipc — projection-bt-forget-device', () => {
   test('rejects when not started or mac empty', async () => {
-    const host = fakeHost({ isStarted: vi.fn(() => false) })
-    registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-forget-device')!
-    await expect(h(null, 'AA:BB')).resolves.toEqual({ ok: false })
+    registerBluetoothIpc(fakeHost({ isStarted: vi.fn(() => false) }))
+    expect(await handlers.get('projection-bt-forget-device')!(null, 'AA')).toEqual({ ok: false })
   })
 
-  test('sends SendForgetBluetoothAddr to the dongle', async () => {
-    const host = fakeHost()
-    registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-forget-device')!
-    await expect(h(null, 'AA:BB')).resolves.toEqual({ ok: true })
-    expect(host.sendToDongle).toHaveBeenCalledWith(expect.any(SendForgetBluetoothAddr))
+  test('forget is not available without a dongle', async () => {
+    registerBluetoothIpc(fakeHost())
+    const res = (await handlers.get('projection-bt-forget-device')!(null, 'AA:BB')) as {
+      ok: boolean
+    }
+    expect(res.ok).toBe(false)
   })
 
-  test('returns { ok: false } when sendToDongle resolves falsy', async () => {
-    const host = fakeHost({ sendToDongle: vi.fn(async () => false) })
-    registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-forget-device')!
-    await expect(h(null, 'AA:BB')).resolves.toEqual({ ok: false })
-  })
-
-  test('forget rejects an empty mac', async () => {
-    const host = fakeHost()
-    registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-forget-device')!
-    await expect(h(null, '')).resolves.toEqual({ ok: false })
-    await expect(h(null, '   ')).resolves.toEqual({ ok: false })
-  })
-})
-
-describe('bluetooth ipc — edge cases', () => {
-  test('pairedlist-set tolerates null listText payload', async () => {
-    const host = fakeHost({ isUsingDongle: vi.fn(() => true) })
-    registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-pairedlist-set')!
-    await h(null, null as unknown as string)
-    expect(host.sendBluetoothPairedList).toHaveBeenCalledWith('')
-  })
-
-  test('connect AA-path: refresh not called when connectBt resolves !ok', async () => {
-    const host = fakeHost({
-      isUsingAa: vi.fn(() => true),
-      connectBt: vi.fn(async () => ({ ok: false, error: 'no peer' }))
+  test('forget with a missing mac rejects', async () => {
+    registerBluetoothIpc(fakeHost())
+    expect(await handlers.get('projection-bt-forget-device')!(null, undefined)).toEqual({
+      ok: false
     })
-    registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-connect-device')!
-    await expect(h(null, 'AA:BB')).resolves.toEqual({ ok: false, error: 'no peer' })
-    expect(host.refreshBtPaired).not.toHaveBeenCalled()
-  })
-
-  test('connect dongle-path: empty BoxInfo or non-array DevList falls back to empty list', async () => {
-    const host = fakeHost({ getBoxInfo: vi.fn(() => undefined) })
-    registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-connect-device')!
-    await expect(h(null, 'AA:BB')).resolves.toEqual({ ok: true })
-    expect(host.setPendingStartupConnectTarget).toHaveBeenCalled()
-  })
-
-  test('connect dongle-path: BoxInfo with non-array DevList shape', async () => {
-    const host = fakeHost({
-      getBoxInfo: vi.fn(function () {
-        return { DevList: 'not-an-array' }
-      })
-    })
-    registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-connect-device')!
-    await expect(h(null, 'AA:BB')).resolves.toEqual({ ok: true })
-  })
-
-  test('connect rejects empty mac (whitespace-only)', async () => {
-    const host = fakeHost()
-    registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-connect-device')!
-    await expect(h(null, '   ')).resolves.toEqual({ ok: false })
-  })
-
-  test('connect tolerates a nullish mac payload', async () => {
-    const host = fakeHost()
-    registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-connect-device')!
-    await expect(h(null, undefined)).resolves.toEqual({ ok: false })
-    await expect(h(null, null)).resolves.toEqual({ ok: false })
-  })
-
-  test('connect dongle-path skips DevList entries without an id', async () => {
-    const host = fakeHost({
-      getBoxInfo: vi.fn(function () {
-        return { DevList: [{ type: 'AndroidAuto' }, { id: 'AA:BB', type: 'AndroidAuto' }] }
-      })
-    })
-    registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-connect-device')!
-    await expect(h(null, 'AA:BB')).resolves.toEqual({ ok: true })
-    expect(host.setPendingStartupConnectTarget).toHaveBeenCalledWith({
-      btMac: 'AA:BB',
-      phoneWorkMode: expect.any(Number)
-    })
-  })
-
-  test('forget tolerates a nullish mac payload', async () => {
-    const host = fakeHost()
-    registerBluetoothIpc(host)
-    const h = handlers.get('projection-bt-forget-device')!
-    await expect(h(null, undefined)).resolves.toEqual({ ok: false })
   })
 })

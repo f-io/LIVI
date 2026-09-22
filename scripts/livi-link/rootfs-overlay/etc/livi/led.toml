@@ -1,0 +1,9 @@
+# LIVI-Link LED default config.
+# Seeded to /tmp/livi/led.toml by rcS at boot; the web UI writes there.
+# brightness is 0-100 %; 0 = LED off.
+
+status_color = "#4dd0e1"
+brightness = 20
+
+# Per-channel white balance (#RRGGBB, each 00-ff = gain applied on top of brightness).
+white_balance = "#ffbe82"

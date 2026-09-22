@@ -1,0 +1,11 @@
+[package]
+name = "mfi-probe"
+version = "0.1.0"
+edition.workspace = true
+
+[[bin]]
+name = "mfi-probe"
+path = "src/main.rs"
+
+[dependencies]
+iap2-mfi = { path = "../../crates/iap2-mfi" }

@@ -84,6 +84,18 @@ describe('BluezDeviceClient.connect / disconnect / remove', () => {
     await expect(p).resolves.toEqual({ ok: true })
   })
 
+  test('disconnectProfile writes "disconnect-profile <mac> <uuid>"', async () => {
+    const { client, nextSocket } = makeClient()
+    const p = client.disconnectProfile('CC:DD', '0000111f-0000-1000-8000-00805f9b34fb', 500)
+    const sock = nextSocket()
+    sock.emit('connect')
+    expect(sock.write).toHaveBeenCalledWith(
+      'disconnect-profile CC:DD 0000111f-0000-1000-8000-00805f9b34fb\n'
+    )
+    sock.emit('data', Buffer.from(JSON.stringify({ ok: true }) + '\n'))
+    await expect(p).resolves.toEqual({ ok: true })
+  })
+
   test('remove writes "remove <mac>"', async () => {
     const { client, nextSocket } = makeClient()
     const p = client.remove('EE:FF', 500)
@@ -291,6 +303,23 @@ describe('BluezDeviceClient — request internals', () => {
     expect(sock.write).toHaveBeenCalledWith('wired-phones ["id1","id2"]\n')
     sock.emit('data', Buffer.from(JSON.stringify({ ok: true }) + '\n'))
     await expect(p).resolves.toEqual({ ok: true })
+  })
+
+  test('setScoSink names the feed and stream, or clears it', async () => {
+    const { client, nextSocket } = makeClient()
+    const p = client.setScoSink('/tmp/feed.sock', 5, 500)
+    const sock = nextSocket()
+    sock.emit('connect')
+    expect(sock.write).toHaveBeenCalledWith('sco-sink /tmp/feed.sock 5\n')
+    sock.emit('data', Buffer.from(JSON.stringify({ ok: true }) + '\n'))
+    await expect(p).resolves.toEqual({ ok: true })
+
+    const p2 = client.setScoSink(undefined, undefined, 500)
+    const sock2 = nextSocket()
+    sock2.emit('connect')
+    expect(sock2.write).toHaveBeenCalledWith('sco-sink\n')
+    sock2.emit('data', Buffer.from(JSON.stringify({ ok: true }) + '\n'))
+    await expect(p2).resolves.toEqual({ ok: true })
   })
 
   test('deauthApClients with the default timeout writes deauth-ap', async () => {

@@ -1,6 +1,6 @@
 import { execFileSync, spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import { dialog } from 'electron'
 import type { Mock } from 'vitest'
@@ -12,13 +12,22 @@ import {
 
 vi.mock('node:child_process', () => ({ execFileSync: vi.fn(), spawn: vi.fn() }))
 vi.mock('node:fs', () => {
-  const __m = { existsSync: vi.fn(() => false), writeFileSync: vi.fn() }
+  const __m = {
+    existsSync: vi.fn(() => false),
+    readFileSync: vi.fn(),
+    writeFileSync: vi.fn(),
+    mkdtempSync: vi.fn(() => '/tmp/livi-install-x'),
+    rmSync: vi.fn()
+  }
   return { ...__m, default: __m }
 })
 vi.mock('node:os', () => {
-  const __m = { userInfo: vi.fn(() => ({ username: 'driver' })) }
+  const __m = { userInfo: vi.fn(() => ({ username: 'driver' })), tmpdir: () => '/tmp' }
   return { ...__m, default: __m }
 })
+vi.mock('../services/projection/driver/helper/helperSupervisor', () => ({
+  resolveHelperBin: () => '/data/driver/livi-helperd'
+}))
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => '/tmp') },
   dialog: { showMessageBox: vi.fn(() => Promise.resolve({ response: 0 })) }
@@ -87,13 +96,49 @@ describe('checkAndInstallGvfsGuard', () => {
     expect(mockedDialog).not.toHaveBeenCalled()
   })
 
-  test('skips via the sentinel when sudo -l is unavailable', async () => {
-    existing(GUARD_PATH, '/tmp/gvfs-guard-v1.installed')
+  test('skips via the marker when sudo -l is unavailable', async () => {
+    // Install once so the marker holds what this build writes, then read it back.
+    existing(MONITOR)
+    mockedExec.mockImplementation((cmd: string) => {
+      if (cmd === 'which') return ''
+      throw new Error('no sudo')
+    })
+    const proc = makeProc()
+    mockedSpawn.mockReturnValue(proc)
+    const install = checkAndInstallGvfsGuard(win)
+    await new Promise((r) => setTimeout(r, 0))
+    proc.emit('close', 0)
+    await install
+    const written = mockedWrite.mock.calls[0][1] as string
+    mockedDialog.mockClear()
+
+    existing(GUARD_PATH)
+    ;(readFileSync as Mock).mockImplementation((p: string) =>
+      String(p) === '/tmp/gvfs-guard-v1.installed' ? written : ''
+    )
     mockedExec.mockImplementation(() => {
       throw new Error('sudo: a password is required')
     })
     await checkAndInstallGvfsGuard(win)
     expect(mockedDialog).not.toHaveBeenCalled()
+  })
+
+  test('installs through the helper without a prompt when the rule allows it', async () => {
+    existing(MONITOR)
+    mockedExec.mockImplementation((cmd: string, args: string[] = []) => {
+      if (cmd === 'sudo' && args.includes('-l')) throw new Error('no rule listed')
+      return ''
+    })
+    await checkAndInstallGvfsGuard(win)
+    expect(mockedDialog).not.toHaveBeenCalled()
+    expect(mockedSpawn).not.toHaveBeenCalled()
+    const args = mockedExec.mock.calls.find((c) => c[0] === 'sudo' && !c[1].includes('-l'))?.[1]
+    expect(args.slice(0, 3)).toEqual(['-n', '/data/driver/livi-helperd', '--install-gvfs-guard'])
+    expect(mockedWrite).toHaveBeenCalledWith(
+      '/tmp/gvfs-guard-v1.installed',
+      expect.stringMatching(/^[0-9a-f]{16}$/),
+      { mode: 0o644 }
+    )
   })
 
   test('never prompts in kiosk mode', async () => {
@@ -153,7 +198,7 @@ describe('checkAndInstallGvfsGuard', () => {
     expect(args[2]).toContain('sudo-driver ALL=(root) NOPASSWD: LIVI_GVFS')
     expect(mockedWrite).toHaveBeenCalledWith(
       '/tmp/gvfs-guard-v1.installed',
-      expect.stringContaining(GUARD_PATH),
+      expect.stringMatching(/^[0-9a-f]{16}$/),
       { mode: 0o644 }
     )
   })
@@ -193,7 +238,11 @@ describe('checkAndInstallGvfsGuard', () => {
     await done
 
     expect(errSpy).toHaveBeenCalledWith('[gvfsGuard] install failed:', expect.any(Error))
-    expect(mockedWrite).not.toHaveBeenCalled()
+    expect(mockedWrite).not.toHaveBeenCalledWith(
+      '/tmp/gvfs-guard-v1.installed',
+      expect.anything(),
+      expect.anything()
+    )
     errSpy.mockRestore()
   })
 

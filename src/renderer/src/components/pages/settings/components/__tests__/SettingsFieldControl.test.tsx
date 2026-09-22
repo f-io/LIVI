@@ -12,8 +12,16 @@ vi.mock('@mui/material', async () => {
   const actual = await vi.importActual('@mui/material')
   return {
     ...actual,
-    TextField: ({ value, onChange, type = 'text' }: any) => (
-      <input data-testid={`textfield-${type}`} type={type} value={value} onChange={onChange} />
+    TextField: ({ value, onChange, onBlur, onFocus, onKeyDown, type = 'text' }: any) => (
+      <input
+        data-testid={`textfield-${type}`}
+        type={type}
+        value={value}
+        onChange={onChange}
+        onBlur={onBlur}
+        onFocus={onFocus}
+        onKeyDown={onKeyDown}
+      />
     ),
     Switch: ({ checked, onChange }: any) => (
       <input
@@ -56,10 +64,10 @@ vi.mock('../selectOptionsCache', () => ({
 
 vi.mock('../numberSpinner/numberSpinner', () => ({
   __esModule: true,
-  default: ({ onValueChange }: { onValueChange: (n: number) => void }) => (
+  default: ({ onValueCommitted }: { onValueCommitted: (n: number) => void }) => (
     <div>
-      <button data-testid="spinner-ok" onClick={() => onValueChange(42.9)} />
-      <button data-testid="spinner-bad" onClick={() => onValueChange(Number.NaN)} />
+      <button data-testid="spinner-ok" onClick={() => onValueCommitted(42.9)} />
+      <button data-testid="spinner-bad" onClick={() => onValueCommitted(Number.NaN)} />
     </div>
   )
 }))
@@ -74,7 +82,7 @@ describe('SettingsFieldControl', () => {
     ;(window as any).projection = undefined
   })
 
-  test('string node forwards text changes', async () => {
+  test('string node commits on blur, not per keystroke', () => {
     const onChange = vi.fn()
     render(
       <SettingsFieldControl
@@ -83,8 +91,128 @@ describe('SettingsFieldControl', () => {
         onChange={onChange}
       />
     )
-    fireEvent.change(screen.getByTestId('textfield-text'), { target: { value: 'new' } })
+    const input = screen.getByTestId('textfield-text')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: 'new' } })
+    expect(onChange).not.toHaveBeenCalled() //no write while typing
+    fireEvent.blur(input)
     expect(onChange).toHaveBeenCalledWith('new')
+  })
+
+  test('string node keeps the draft when the stored value changes while editing', () => {
+    const onChange = vi.fn()
+    const { rerender } = render(
+      <SettingsFieldControl
+        node={{ type: 'string', label: 'Name', path: 'name' } as any}
+        value="old"
+        onChange={onChange}
+      />
+    )
+    const input = screen.getByTestId('textfield-text')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: 'typing' } })
+
+    rerender(
+      <SettingsFieldControl
+        node={{ type: 'string', label: 'Name', path: 'name' } as any}
+        value="from elsewhere"
+        onChange={onChange}
+      />
+    )
+
+    expect((input as HTMLInputElement).value).toBe('typing')
+  })
+
+  test('a url node refuses a half-typed address and takes a bare host', () => {
+    const onChange = vi.fn()
+    render(
+      <SettingsFieldControl
+        node={{ type: 'string', label: 'Address', path: 'customUrl', format: 'url' } as any}
+        value=""
+        onChange={onChange}
+      />
+    )
+    const input = screen.getByTestId('textfield-text')
+
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: 'h' } })
+    fireEvent.blur(input)
+    expect(onChange).not.toHaveBeenCalled()
+
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: '10.0.0.9' } })
+    fireEvent.blur(input)
+    expect(onChange).toHaveBeenCalledWith('10.0.0.9')
+  })
+
+  test('string node stays put on any other key', () => {
+    const onChange = vi.fn()
+    render(
+      <SettingsFieldControl
+        node={{ type: 'string', label: 'Name', path: 'name' } as any}
+        value="old"
+        onChange={onChange}
+      />
+    )
+    const input = screen.getByTestId('textfield-text')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: 'new' } })
+    fireEvent.keyDown(input, { key: 'a' })
+
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  test('string node commits on Enter', () => {
+    const onChange = vi.fn()
+    render(
+      <SettingsFieldControl
+        node={{ type: 'string', label: 'Name', path: 'name' } as any}
+        value="old"
+        onChange={onChange}
+      />
+    )
+    const input = screen.getByTestId('textfield-text')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: 'new' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.blur(input)
+    expect(onChange).toHaveBeenCalledWith('new')
+  })
+
+  test('url field blocks the commit on an invalid URL and allows a valid one', () => {
+    const onChange = vi.fn()
+    render(
+      <SettingsFieldControl
+        node={{ type: 'string', label: 'Address', path: 'customUrl', format: 'url' } as any}
+        value=""
+        onChange={onChange}
+      />
+    )
+    const input = screen.getByTestId('textfield-text')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: 'notaurl' } })
+    fireEvent.blur(input)
+    expect(onChange).not.toHaveBeenCalled() //invalid -> no write
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: 'http://livi.local/dash' } })
+    fireEvent.blur(input)
+    expect(onChange).toHaveBeenCalledWith('http://livi.local/dash')
+  })
+
+  test('url field accepts empty to clear', () => {
+    const onChange = vi.fn()
+    render(
+      <SettingsFieldControl
+        node={{ type: 'string', label: 'Address', path: 'customUrl', format: 'url' } as any}
+        value="http://old"
+        onChange={onChange}
+      />
+    )
+    const input = screen.getByTestId('textfield-text')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: '' } })
+    fireEvent.blur(input)
+    expect(onChange).toHaveBeenCalledWith('')
   })
 
   test('string node flags too-short values against minLength', () => {
@@ -196,6 +324,7 @@ describe('SettingsFieldControl', () => {
       />
     )
     expect(screen.getByTestId('slider')).toBeInTheDocument()
+    expect(capturedSlider.value).toBe(0)
     rerender(
       <SettingsFieldControl
         node={{ type: 'slider', label: 'Scale', path: 'scale' } as any}
@@ -204,6 +333,15 @@ describe('SettingsFieldControl', () => {
       />
     )
     expect(screen.getByTestId('slider')).toBeInTheDocument()
+    expect(capturedSlider.value).toBe(100)
+    rerender(
+      <SettingsFieldControl
+        node={{ type: 'slider', label: 'Scale', path: 'scale' } as any}
+        value={Number.NaN as any}
+        onChange={vi.fn()}
+      />
+    )
+    expect(capturedSlider.value).toBe(100)
   })
 
   test('slider value label shows mute icon at zero and percent otherwise', () => {

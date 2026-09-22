@@ -41,6 +41,52 @@ describe('MediaStore', () => {
     warnSpy.mockRestore()
   })
 
+  test('reports deduped playback state changes for the active session', () => {
+    const onPlaybackStatus = vi.fn()
+    const { store } = mkStore({ onPlaybackStatus })
+    const session = mkSession()
+
+    store.handle(
+      {} as IPhoneDriver,
+      session,
+      mkMsg({ type: MediaType.Data, media: { MediaPlayStatus: 1 } }),
+      true
+    )
+    store.handle(
+      {} as IPhoneDriver,
+      session,
+      mkMsg({ type: MediaType.Data, media: { MediaPlayStatus: 1 } }),
+      true
+    )
+    expect(onPlaybackStatus).toHaveBeenCalledTimes(1)
+    expect(onPlaybackStatus).toHaveBeenCalledWith('playing')
+
+    store.handle(
+      {} as IPhoneDriver,
+      session,
+      mkMsg({ type: MediaType.Data, media: { MediaPlayStatus: 2 } }),
+      true
+    )
+    expect(onPlaybackStatus).toHaveBeenLastCalledWith('paused')
+    expect(onPlaybackStatus).toHaveBeenCalledTimes(2)
+
+    // The AA bridge encodes paused as 0.
+    store.handle(
+      {} as IPhoneDriver,
+      session,
+      mkMsg({ type: MediaType.Data, media: { MediaPlayStatus: 1 } }),
+      true
+    )
+    store.handle(
+      {} as IPhoneDriver,
+      session,
+      mkMsg({ type: MediaType.Data, media: { MediaPlayStatus: 0 } }),
+      true
+    )
+    expect(onPlaybackStatus).toHaveBeenLastCalledWith('paused')
+    expect(onPlaybackStatus).toHaveBeenCalledTimes(4)
+  })
+
   test('ignores messages without a payload', () => {
     const { store, emit } = mkStore()
     const session = mkSession()

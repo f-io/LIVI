@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { DashPlaceholder } from '../DashPlaceholder'
 
 describe('DashPlaceholder', () => {
@@ -33,13 +33,16 @@ describe('DashPlaceholder', () => {
 
     render(<DashPlaceholder title="Telemetry Placeholder" />)
 
-    expect(screen.getByText('Telemetry Placeholder')).toBeInTheDocument()
+    const fill = screen.getByText('Telemetry Placeholder').parentElement as HTMLElement
+    expect(fill).toHaveStyle({ position: 'absolute' })
 
     el.setAttribute('data-nav-hidden', '1')
-    observerCallback?.([], {} as MutationObserver)
+    act(() => observerCallback?.([], {} as MutationObserver))
+    expect(fill).toHaveStyle({ position: 'fixed' })
 
     el.setAttribute('data-nav-hidden', '0')
-    observerCallback?.([], {} as MutationObserver)
+    act(() => observerCallback?.([], {} as MutationObserver))
+    expect(fill).toHaveStyle({ position: 'absolute' })
   })
 
   test('disconnects MutationObserver on unmount', () => {

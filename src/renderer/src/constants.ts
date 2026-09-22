@@ -1,15 +1,3 @@
-export enum ROUTES {
-  HOME = '/',
-  CLUSTER = '/cluster',
-  MEDIA = '/media',
-  CAMERA = '/camera',
-  DEVICES = '/devices',
-  SETTINGS = '/settings',
-  TELEMETRY = '/telemetry',
-  QUIT = 'quit',
-  TRANSPORT_SWITCH = 'transport-switch'
-}
-
 export const FOCUSABLE_SELECTOR = [
   'button:not([disabled])',
   'a[href]',

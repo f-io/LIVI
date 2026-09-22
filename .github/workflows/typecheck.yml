@@ -33,7 +33,7 @@ jobs:
           corepack enable
           corepack install
           echo "pnpm version: $(pnpm -v)"
-          node -e "const v=require('child_process').execSync('pnpm -v').toString().trim(); if(!/^11\\./.test(v)){console.error('Expected pnpm 11.x, got', v); process.exit(1);} console.log('pnpm 11 OK');"
+          node -e "const v=require('child_process').execSync('pnpm -v').toString().trim(); if(!/^12\\./.test(v)){console.error('Expected pnpm 12.x, got', v); process.exit(1);} console.log('pnpm 12 OK');"
 
       - name: Resolve pnpm store path
         id: pnpm_store
@@ -50,10 +50,78 @@ jobs:
       - name: Install dependencies from lockfile
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Build native crypto addon
-        working-directory: native/crypto
+      - name: Setup Rust
+        shell: bash
         run: |
-          pnpm exec node-gyp rebuild
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal --component clippy
+          rustup default stable
+          rustup target add armv7-unknown-linux-gnueabihf
+          rustc --version
+
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/livi-compositor/rust/target
+            native/livi-crypto/rust/target
+            native/livi-gst-video/rust/target
+            native/livi-helperd/target
+            native/livi-host-proto/rust/target
+          key: cargo-check-${{ hashFiles('native/**/Cargo.toml') }}
+          restore-keys: cargo-check-
+
+      - name: Install native build deps
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Not used here, and its index and packages drift apart often enough to break a run.
+          sudo rm -f /etc/apt/sources.list.d/*google*
+          sudo sed -i '\#dl\.google\.com#d' /etc/apt/sources.list
+          grep -rl dl.google.com /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null || true
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+              build-essential pkg-config libudev1 ca-certificates \
+              gcc-arm-linux-gnueabihf libc6-dev-armhf-cross \
+              libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+              cmake libwayland-dev libxkbcommon-dev
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Check the host protocol (clippy, tests)
+        run: |
+          cargo clippy --manifest-path native/livi-host-proto/rust/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path native/livi-host-proto/rust/Cargo.toml
+
+      - name: Check the helper (clippy, tests)
+        working-directory: native/livi-helperd
+        run: |
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+
+      - name: Check the dongle stack (armv7)
+        working-directory: native/livi-helperd
+        env:
+          CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: arm-linux-gnueabihf-gcc
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo clippy -p livi-link --target armv7-unknown-linux-gnueabihf -- -D warnings
+
+      - name: Check the compositor (clippy)
+        working-directory: native/livi-compositor/rust
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Check the video path (clippy, tests)
+        working-directory: native/livi-gst-video/rust
+        run: |
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+
+      - name: Build native crypto addon (clippy, tests, cargo)
+        run: |
+          cargo clippy --manifest-path native/livi-crypto/rust/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path native/livi-crypto/rust/Cargo.toml
+          node scripts/build-native.mjs --only=crypto
 
       - name: Run Biome checks
         run: pnpm run lint:check

@@ -2,7 +2,7 @@ import type { IPhoneDriver } from '../driver/IPhoneDriver'
 import { logSessions } from './sessionLog'
 import type { PersistedMediaPayload, PersistedNavigationPayload } from './types'
 
-export type SessionProtocol = 'carplay' | 'androidauto' | 'dongle'
+export type SessionProtocol = 'carplay' | 'androidauto'
 export type SessionTransport = 'usb' | 'wifi' | 'bt'
 export type SessionState = 'active' | 'held'
 export type VideoCodec = 'h264' | 'h265' | 'vp9' | 'av1'
@@ -209,7 +209,9 @@ export class SessionManager {
   }
 
   private removeAt(i: number): ProjectionSession {
-    return this.sessions.splice(i, 1)[0]
+    const removed = this.sessions.splice(i, 1)[0]
+    if (this.sessions.length === 0) this.nextIndex = 1
+    return removed
   }
 
   private closeSession(s: ProjectionSession): void {
@@ -259,6 +261,7 @@ export class SessionManager {
 
   clear(): void {
     this.sessions = []
+    this.nextIndex = 1
     this.emitChange('clear')
   }
 }

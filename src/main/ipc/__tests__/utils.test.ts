@@ -18,13 +18,15 @@ import { screen } from 'electron'
 import { existsSync, writeFileSync } from 'fs'
 import type { Mock } from 'vitest'
 
-vi.mock('fs', () => {
-  const __m = {
-    existsSync: vi.fn(() => false),
-    writeFileSync: vi.fn()
-  }
-  return { ...__m, default: __m }
-})
+const fsMock = vi.hoisted(() => ({
+  existsSync: vi.fn(() => false),
+  readFileSync: vi.fn(),
+  renameSync: vi.fn(),
+  writeFileSync: vi.fn()
+}))
+
+vi.mock('fs', () => ({ ...fsMock, default: fsMock }))
+vi.mock('node:fs', () => ({ ...fsMock, default: fsMock }))
 
 vi.mock('node:child_process', () => ({
   execFile: vi.fn()
@@ -276,9 +278,10 @@ describe('ipc utils', () => {
 
     expect(mockedApplyNullDeletes).toHaveBeenCalledWith(runtimeState.config, patch)
     expect(mockedWriteFileSync).toHaveBeenCalledWith(
-      '/tmp/config.json',
+      '/tmp/config.json.tmp',
       JSON.stringify(runtimeState.config, null, 2)
     )
+    expect(fsMock.renameSync).toHaveBeenCalledWith('/tmp/config.json.tmp', '/tmp/config.json')
     expect(mockedPushSettingsToRenderer).toHaveBeenCalledWith(runtimeState)
 
     expect(runtimeState.config.mainScreenHeight).toBe(600)

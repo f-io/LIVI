@@ -17,9 +17,10 @@ export function zoneOffsetMinutes(zone: string, at: number): number | null {
       timeZone: zone,
       timeZoneName: 'longOffset'
     }).format(new Date(at))
-    // A bad zone throws above; a shape we cannot read throws on the destructuring
-    const [, sign, hours, minutes] = /GMT([+-])(\d{2}):(\d{2})/.exec(name) as RegExpExecArray
-    return (sign === '-' ? -1 : 1) * (Number(hours) * 60 + Number(minutes))
+    // A bad zone throws above. Older ICU renders a zero offset as a bare "GMT".
+    const m = /GMT([+-])(\d{2}):(\d{2})/.exec(name)
+    if (!m) return /GMT(?![+-])/.test(name) ? 0 : null
+    return (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3]))
   } catch {
     return null
   }

@@ -1,0 +1,11 @@
+[package]
+name = "iap2-usbmux"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+tokio = { version = "1", features = ["rt", "sync", "io-util"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nusb = "0.2"
+libc = "0.2"

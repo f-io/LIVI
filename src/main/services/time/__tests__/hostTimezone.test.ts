@@ -29,6 +29,30 @@ describe('zoneOffsetMinutes', () => {
     expect(zoneOffsetMinutes('UTC', JUL)).toBe(0)
   })
 
+  // Older ICU (Debian 13 / Pi) renders a zero offset without the +00:00 suffix.
+  function withFormatted(text: string, run: () => void): void {
+    const spy = vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(function () {
+      return { format: () => text } as Intl.DateTimeFormat
+    } as unknown as () => Intl.DateTimeFormat)
+    try {
+      run()
+    } finally {
+      spy.mockRestore()
+    }
+  }
+
+  test('reads a bare GMT as zero', () => {
+    withFormatted('7/15/2026, GMT', () => {
+      expect(zoneOffsetMinutes('UTC', JUL)).toBe(0)
+    })
+  })
+
+  test('rejects a shape without an offset', () => {
+    withFormatted('7/15/2026', () => {
+      expect(zoneOffsetMinutes('UTC', JUL)).toBeNull()
+    })
+  })
+
   test('follows daylight saving within a zone', () => {
     expect(zoneOffsetMinutes('Europe/Berlin', JAN)).toBe(60)
     expect(zoneOffsetMinutes('Europe/Berlin', JUL)).toBe(120)

@@ -1,10 +1,10 @@
-import type { DevListEntry } from '@shared/types'
 import { DeviceController, type DeviceControllerDeps } from '../DeviceController'
 import type { DeviceEntry, DeviceRegistry } from '../DeviceRegistry'
 import type { ProjectionSession, SessionManager } from '../SessionManager'
 
 const IAP = '00000000-deca-fade-deca-deafdecacafe'
-const HSP = '00001112-0000-1000-8000-00805f9b34fb'
+const AAP = '0000111f-0000-1000-8000-00805f9b34fb'
+const HSP = '0000111f-0000-1000-8000-00805f9b34fb'
 
 type SessionsApi = {
   all: ReturnType<typeof vi.fn>
@@ -41,11 +41,8 @@ function mkCtl(over: Partial<Record<keyof DeviceControllerDeps, unknown>> = {}):
       remove: ReturnType<typeof vi.fn>
       connect: ReturnType<typeof vi.fn>
     }
-    getDongleSession: ReturnType<typeof vi.fn>
     getBtName: ReturnType<typeof vi.fn>
     getConnectedBtMac: ReturnType<typeof vi.fn>
-    getDongleConnectedMac: ReturnType<typeof vi.fn>
-    getDongleDevList: ReturnType<typeof vi.fn>
     emit: ReturnType<typeof vi.fn>
     autoConnect: ReturnType<typeof vi.fn>
     pushReconnectTargets: ReturnType<typeof vi.fn>
@@ -57,7 +54,8 @@ function mkCtl(over: Partial<Record<keyof DeviceControllerDeps, unknown>> = {}):
     all: vi.fn(() => []),
     byDevice: vi.fn(() => null),
     stateForDevice: vi.fn(() => null),
-    activate: vi.fn()
+    activate: vi.fn(),
+    close: vi.fn()
   }
   const deps = {
     deviceRegistry: {
@@ -66,7 +64,6 @@ function mkCtl(over: Partial<Record<keyof DeviceControllerDeps, unknown>> = {}):
       deviceId: vi.fn((e: DeviceEntry) => e.btMac ?? e.usbUdid ?? e.wifiMac ?? e.instanceId ?? '')
     },
     sessions: () => sessionsApi as unknown as SessionManager,
-    getDongleSession: vi.fn(() => null),
     bluez: {
       disconnect: vi.fn(() => Promise.resolve()),
       remove: vi.fn(() => Promise.resolve()),
@@ -74,8 +71,6 @@ function mkCtl(over: Partial<Record<keyof DeviceControllerDeps, unknown>> = {}):
     },
     getBtName: vi.fn(() => undefined),
     getConnectedBtMac: vi.fn(() => ''),
-    getDongleConnectedMac: vi.fn(() => ''),
-    getDongleDevList: vi.fn((): DevListEntry[] => []),
     emit: vi.fn(),
     autoConnect: vi.fn(() => true),
     pushReconnectTargets: vi.fn(),
@@ -145,6 +140,26 @@ describe('DeviceController', () => {
       expect(disconnectPhone).toHaveBeenCalled()
     })
 
+    test('closes the session once the goodbye had its window', () => {
+      vi.useFakeTimers()
+      try {
+        const { ctl, deps, sessionsApi } = mkCtl()
+        deps.deviceRegistry.forget.mockReturnValue(mkEntry({ btMac: 'aa:bb:cc:dd:ee:ff' }))
+        ;(sessionsApi.byDevice as ReturnType<typeof vi.fn>).mockReturnValue({
+          index: 3,
+          driver: { disconnectPhone: vi.fn(() => Promise.resolve()) }
+        })
+
+        ctl.forgetDevice('aa:bb:cc:dd:ee:ff')
+        expect(sessionsApi.close).not.toHaveBeenCalled()
+
+        vi.advanceTimersByTime(1500)
+        expect(sessionsApi.close).toHaveBeenCalledWith(3)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     test('falls back to SendDisconnectPhone and logs a failing goodbye', async () => {
       const { ctl, deps, sessionsApi } = mkCtl()
       deps.deviceRegistry.forget.mockReturnValue(mkEntry({ btMac: 'aa:bb:cc:dd:ee:ff' }))
@@ -174,17 +189,6 @@ describe('DeviceController', () => {
   })
 
   describe('selectDevice', () => {
-    test('routes a dongle pick to the dongle session', () => {
-      const { ctl, deps, sessionsApi } = mkCtl()
-      deps.getDongleDevList.mockReturnValue([{ id: 'D1' }])
-
-      expect(ctl.selectDevice('D1')).toEqual({ ok: false })
-
-      deps.getDongleSession.mockReturnValue(mkSession({ index: 7, protocol: 'dongle' }))
-      expect(ctl.selectDevice('D1')).toEqual({ ok: true })
-      expect(sessionsApi.activate).toHaveBeenCalledWith(7)
-    })
-
     test('activates the session of a known registry device', () => {
       const { ctl, deps, sessionsApi } = mkCtl()
       deps.deviceRegistry.list.mockReturnValue([
@@ -213,7 +217,7 @@ describe('DeviceController', () => {
       expect(deps.bluez.connect).toHaveBeenCalledWith('aa:bb:cc:dd:ee:ff', undefined, IAP)
     })
 
-    test('wakes a known android phone on the HSP AG profile', () => {
+    test('wakes a known android phone on the HFP AG profile', () => {
       const { ctl, deps } = mkCtl()
       deps.deviceRegistry.list.mockReturnValue([
         mkEntry({ btMac: 'aa:bb:cc:dd:ee:ff', protocol: 'androidauto', name: 'P' })
@@ -281,10 +285,10 @@ describe('DeviceController', () => {
       ctl.emitDevices()
 
       expect(deps.pushReconnectTargets).toHaveBeenCalledTimes(1)
-      expect(deps.pushReconnectTargets).toHaveBeenCalledWith({
-        'AA:BB:CC:DD:EE:01': IAP,
-        'AA:BB:CC:DD:EE:02': null
-      })
+      expect(deps.pushReconnectTargets).toHaveBeenCalledWith([
+        ['AA:BB:CC:DD:EE:01', IAP],
+        ['AA:BB:CC:DD:EE:02', null]
+      ])
 
       ctl.emitDevices()
       expect(deps.pushReconnectTargets).toHaveBeenCalledTimes(1)
@@ -292,6 +296,23 @@ describe('DeviceController', () => {
       ctl.resendReconnectTargets()
       expect(deps.pushReconnectTargets).toHaveBeenCalledTimes(2)
       expect(deps.pushWiredPhones).toHaveBeenCalledTimes(1)
+    })
+
+    test('pages the most recently seen phone first', () => {
+      const { ctl, deps } = mkCtl()
+      deps.deviceRegistry.list.mockReturnValue([
+        mkEntry({ btMac: 'aa:bb:cc:dd:ee:01', protocol: 'androidauto', lastSeen: 100 }),
+        mkEntry({ btMac: 'aa:bb:cc:dd:ee:02', protocol: 'carplay', lastSeen: 900 }),
+        mkEntry({ btMac: 'aa:bb:cc:dd:ee:03', protocol: 'carplay' })
+      ])
+
+      ctl.resendReconnectTargets()
+
+      expect(deps.pushReconnectTargets).toHaveBeenCalledWith([
+        ['AA:BB:CC:DD:EE:02', IAP],
+        ['AA:BB:CC:DD:EE:01', AAP],
+        ['AA:BB:CC:DD:EE:03', IAP]
+      ])
     })
 
     test('pushes no reconnect targets with autoconnect off', () => {
@@ -302,7 +323,7 @@ describe('DeviceController', () => {
 
       ctl.resendReconnectTargets()
 
-      expect(deps.pushReconnectTargets).toHaveBeenCalledWith({})
+      expect(deps.pushReconnectTargets).toHaveBeenCalledWith([])
     })
 
     test('reports wired android phones by every known id, skipping wireless and carplay', () => {
@@ -432,52 +453,6 @@ describe('DeviceController', () => {
 
       expect(views.find((v) => v.name === 'One')?.session).toBe(1)
       expect(views.find((v) => v.name === 'Two')?.session).toBeUndefined()
-    })
-
-    test('lists phone-like dongle devices with connection-derived status', () => {
-      const { ctl, deps } = mkCtl()
-      deps.getDongleDevList.mockReturnValue([
-        { id: 'AA:AA:AA:AA:AA:01', name: 'DonglePhone', type: 'AndroidAuto', class: 0x200 },
-        { id: 'AA:AA:AA:AA:AA:02', type: 'CarPlay', connected: true },
-        { name: 'NoId' },
-        { id: 'AA:AA:AA:AA:AA:03', name: 'Speaker', class: 0x400 }
-      ])
-
-      const offline = ctl.getDevices()
-      expect(offline).toHaveLength(2)
-      expect(offline.every((v) => v.status === 'offline')).toBe(true)
-      expect(offline.map((v) => v.name).sort()).toEqual(['AA:AA:AA:AA:AA:02', 'DonglePhone'])
-      expect(offline.find((v) => v.name === 'DonglePhone')?.protocol).toBe('androidauto')
-      expect(offline.find((v) => v.name === 'AA:AA:AA:AA:AA:02')?.protocol).toBe('carplay')
-
-      const ds = mkSession({ index: 1, protocol: 'dongle', state: 'active' })
-      deps.getDongleSession.mockReturnValue(ds)
-      deps.getDongleConnectedMac.mockReturnValue(' aa:aa:aa:aa:aa:01 ')
-      const views = ctl.getDevices()
-      expect(views.find((v) => v.name === 'DonglePhone')?.status).toBe('active')
-      expect(views.find((v) => v.name === 'AA:AA:AA:AA:AA:02')?.status).toBe('active')
-      expect(views.find((v) => v.name === 'DonglePhone')?.session).toBeUndefined()
-    })
-
-    test('a lone dongle phone counts as connected while the dongle session is active', () => {
-      const { ctl, deps, sessionsApi } = mkCtl()
-      const ds = mkSession({ index: 2, protocol: 'dongle', state: 'active' })
-      deps.getDongleSession.mockReturnValue(ds)
-      sessionsApi.all.mockReturnValue([mkSession({ index: 1 }), ds])
-      deps.getDongleDevList.mockReturnValue([{ id: 'AA:AA:AA:AA:AA:01', name: 'Solo' }])
-
-      const view = ctl.getDevices()[0]
-
-      expect(view.status).toBe('active')
-      expect(view.session).toBe(2)
-    })
-
-    test('a held dongle session leaves its phones available', () => {
-      const { ctl, deps } = mkCtl()
-      deps.getDongleSession.mockReturnValue(mkSession({ index: 2, protocol: 'dongle' }))
-      deps.getDongleDevList.mockReturnValue([{ id: 'AA:AA:AA:AA:AA:01', name: 'Solo' }])
-
-      expect(ctl.getDevices()[0].status).toBe('available')
     })
 
     test('sorts session views first, then by status rank, then by recency', () => {

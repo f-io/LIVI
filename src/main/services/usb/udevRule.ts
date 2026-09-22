@@ -1,60 +1,21 @@
-import { execFileSync, spawn } from 'child_process'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { BrowserWindow, dialog } from 'electron'
-import fs from 'fs'
-import os from 'os'
-import path from 'path'
+import { asset, helperInstalls, pkexecAvailable, runAsRoot } from '../privileged'
 
 const RULE_FILE = '/etc/udev/rules.d/99-LIVI.rules'
+const TEMPLATE = '99-LIVI.rules.template'
 
-const TEMPLATE_FILENAME = '99-LIVI.rules.template'
-
-const TOUCH_FILTER_FILENAME = 'livi-touch-filter'
+const TOUCH_FILTER = 'livi-touch-filter'
 const TOUCH_FILTER_FILE = '/usr/local/lib/livi/livi-touch-filter'
-
-function resolveAssetPath(name: string): string {
-  const resources = process.resourcesPath
-  if (typeof resources === 'string' && resources.length > 0) {
-    const packaged = path.join(resources, name)
-    if (fs.existsSync(packaged)) return packaged
-  }
-  return path.join(__dirname, '..', '..', '..', '..', 'assets', 'linux', name)
-}
-
-function resolveTemplatePath(): string {
-  return resolveAssetPath(TEMPLATE_FILENAME)
-}
-
-function loadTemplate(): string {
-  return fs.readFileSync(resolveTemplatePath(), 'utf8')
-}
 
 // The rule calls this to tell a real mouse from a touch panel's mouse interface.
 function loadTouchFilter(): string | null {
   try {
-    return fs.readFileSync(resolveAssetPath(TOUCH_FILTER_FILENAME), 'utf8')
+    return asset(TOUCH_FILTER)
   } catch {
     return null
   }
-}
-
-let cachedPhoneVendorIds: Set<number> | null | undefined
-
-// Android vendor allowlist parsed from the udev template.
-// Lines that also match an idProduct (dongle) are skipped.
-export function phoneVendorIdsFromUdevTemplate(): Set<number> | null {
-  if (cachedPhoneVendorIds !== undefined) return cachedPhoneVendorIds
-  try {
-    const ids = new Set<number>()
-    for (const line of loadTemplate().split('\n')) {
-      if (line.includes('ATTR{idProduct}')) continue
-      const m = line.match(/ATTR\{idVendor\}=="([0-9a-fA-F]+)"/)
-      if (m) ids.add(Number.parseInt(m[1], 16))
-    }
-    cachedPhoneVendorIds = ids.size > 0 ? ids : null
-  } catch {
-    cachedPhoneVendorIds = null
-  }
-  return cachedPhoneVendorIds
 }
 
 function templateMarker(template: string): string {
@@ -62,25 +23,9 @@ function templateMarker(template: string): string {
   return m ? m[0] : '# LIVI-RULE-VERSION=0'
 }
 
-function resolveUsername(): string {
-  if (process.env.PKEXEC_UID) {
-    try {
-      return execFileSync('id', ['-nu', process.env.PKEXEC_UID], { encoding: 'utf8' }).trim()
-    } catch {
-      // fall through
-    }
-  }
-  if (process.env.SUDO_USER) return process.env.SUDO_USER
-  return os.userInfo().username
-}
-
-function buildRuleContent(): string {
-  return loadTemplate().replace(/__USERNAME__/g, resolveUsername())
-}
-
 export function udevRuleExists(): boolean {
   try {
-    return fs.existsSync(RULE_FILE)
+    return existsSync(RULE_FILE)
   } catch {
     return false
   }
@@ -88,49 +33,32 @@ export function udevRuleExists(): boolean {
 
 function udevRuleIsCurrent(): boolean {
   try {
-    if (!fs.existsSync(RULE_FILE)) return false
-    const content = fs.readFileSync(RULE_FILE, 'utf8')
-    return content.includes(templateMarker(loadTemplate()))
-  } catch {
-    return false
-  }
-}
-
-function pkexecAvailable(): boolean {
-  try {
-    execFileSync('which', ['pkexec'], { stdio: 'ignore' })
-    return true
+    if (!existsSync(RULE_FILE)) return false
+    const content = readFileSync(RULE_FILE, 'utf8')
+    return content.includes(templateMarker(asset(TEMPLATE)))
   } catch {
     return false
   }
 }
 
 function installRule(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const filter = loadTouchFilter()
-    const script =
-      'set -e\n' +
-      `cat > ${RULE_FILE} <<'LIVI_RULE_EOF'\n${buildRuleContent().trim()}\nLIVI_RULE_EOF\n` +
-      (filter
-        ? `mkdir -p ${path.dirname(TOUCH_FILTER_FILE)}\n` +
-          `cat > ${TOUCH_FILTER_FILE} <<'LIVI_FILTER_EOF'\n${filter.trim()}\nLIVI_FILTER_EOF\n` +
-          `chmod 0755 ${TOUCH_FILTER_FILE}\n`
-        : '') +
-      'udevadm control --reload-rules\n' +
-      'udevadm trigger'
-
-    const proc = spawn('pkexec', ['bash', '-c', script], { stdio: 'ignore' })
-
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve()
-      } else {
-        reject(new Error(`pkexec exited with code ${code}`))
-      }
-    })
-
-    proc.on('error', reject)
-  })
+  const filter = loadTouchFilter()
+  return runAsRoot([
+    `cat > ${RULE_FILE} <<'LIVI_RULE_EOF'`,
+    asset(TEMPLATE).trim(),
+    'LIVI_RULE_EOF',
+    ...(filter
+      ? [
+          `mkdir -p ${dirname(TOUCH_FILTER_FILE)}`,
+          `cat > ${TOUCH_FILTER_FILE} <<'LIVI_FILTER_EOF'`,
+          filter.trim(),
+          'LIVI_FILTER_EOF',
+          `chmod 0755 ${TOUCH_FILTER_FILE}`
+        ]
+      : []),
+    'udevadm control --reload-rules',
+    'udevadm trigger'
+  ])
 }
 
 export async function checkAndInstallUdevRule(window: BrowserWindow): Promise<boolean> {
@@ -140,6 +68,16 @@ export async function checkAndInstallUdevRule(window: BrowserWindow): Promise<bo
   const isCurrent = exists && udevRuleIsCurrent()
   if (exists && isCurrent) return false
 
+  const filter = loadTouchFilter()
+  if (
+    helperInstalls(
+      'install-udev-rule',
+      filter ? { rule: asset(TEMPLATE), filter } : { rule: asset(TEMPLATE) }
+    )
+  ) {
+    return true
+  }
+
   if (!pkexecAvailable()) {
     console.warn('[udevRule] pkexec not available, skipping udev rule setup')
     return false
@@ -148,12 +86,12 @@ export async function checkAndInstallUdevRule(window: BrowserWindow): Promise<bo
   const isUpgrade = exists && !isCurrent
   const { response } = await dialog.showMessageBox(window, {
     type: 'question',
-    title: isUpgrade ? 'USB Permission Update' : 'USB Permission Required',
+    title: isUpgrade ? 'udev Rule Update' : 'udev Rule Required',
     message: isUpgrade
-      ? 'LIVI needs to update its udev rule for USB device access.'
-      : 'LIVI needs permission to access USB devices.',
+      ? 'LIVI needs to update its udev rule.'
+      : 'LIVI needs a udev rule for its touch panels and phones.',
     detail: isUpgrade
-      ? `The existing rule at ${RULE_FILE} is outdated (wired Android Auto needs additional phone vendor entries). It will be replaced.`
+      ? `The existing rule at ${RULE_FILE} is outdated. It will be replaced.`
       : `A udev rule will be installed to ${RULE_FILE}.`,
     buttons: [isUpgrade ? 'Update' : 'Install', 'Skip'],
     defaultId: 0,
@@ -173,7 +111,7 @@ export async function checkAndInstallUdevRule(window: BrowserWindow): Promise<bo
         type: 'error',
         title: 'Installation Failed',
         message: 'Could not install the udev rule.',
-        detail: `${err instanceof Error ? err.message : String(err)}\n\nThis step is required for USB device access.`,
+        detail: `${err instanceof Error ? err.message : String(err)}`,
         buttons: ['Retry', 'Skip'],
         defaultId: 0,
         cancelId: 1

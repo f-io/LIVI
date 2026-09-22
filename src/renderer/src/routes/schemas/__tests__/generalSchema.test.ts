@@ -9,7 +9,7 @@ describe('generalSchema', () => {
     expect(schema.label).toBe('General')
     expect(schema.labelKey).toBe('settings.general')
     expect(schema.path).toBe('')
-    expect(schema.children).toHaveLength(12)
+    expect(schema.children).toHaveLength(11)
   })
 
   test('connections route contains names, wifi and auto connect', () => {
@@ -22,7 +22,7 @@ describe('generalSchema', () => {
       })
     )
 
-    expect(connections.children).toHaveLength(6)
+    expect(connections.children).toHaveLength(7)
 
     expect(connections.children[0]).toEqual(
       expect.objectContaining({
@@ -38,17 +38,23 @@ describe('generalSchema', () => {
     )
     expect(connections.children[3]).toEqual(
       expect.objectContaining({
-        type: 'checkbox',
-        path: 'wirelessAaEnabled'
+        type: 'select',
+        path: 'btAdapter'
       })
     )
     expect(connections.children[4]).toEqual(
       expect.objectContaining({
         type: 'checkbox',
-        path: 'wirelessCpEnabled'
+        path: 'wirelessAaEnabled'
       })
     )
     expect(connections.children[5]).toEqual(
+      expect.objectContaining({
+        type: 'checkbox',
+        path: 'wirelessCpEnabled'
+      })
+    )
+    expect(connections.children[6]).toEqual(
       expect.objectContaining({
         type: 'checkbox',
         path: 'autoConn'
@@ -114,24 +120,6 @@ describe('generalSchema', () => {
     }
   })
 
-  test('usb dongle route lives at the bottom with a single custom entry', () => {
-    const usbDongle = schema.children[11]
-    expect(usbDongle).toEqual(
-      expect.objectContaining({
-        type: 'route',
-        route: 'usbDongle',
-        labelKey: 'settings.usbDongle'
-      })
-    )
-    expect(usbDongle.children).toHaveLength(1)
-    expect(usbDongle.children[0]).toEqual(
-      expect.objectContaining({
-        type: 'custom',
-        path: 'carName'
-      })
-    )
-  })
-
   test('key bindings route contains representative binding entries', () => {
     const keyBindings = schema.children[3]
     expect(keyBindings).toEqual(
@@ -164,15 +152,16 @@ describe('generalSchema', () => {
       })
     )
     expect(startPage.options).toEqual([
-      { label: 'Home', labelKey: 'settings.startPageHome', value: 'home' },
-      { label: 'Telemetry', labelKey: 'settings.startPageTelemetry', value: 'telemetry' },
-      { label: 'Media', labelKey: 'settings.startPageMedia', value: 'media' },
-      { label: 'Camera', labelKey: 'settings.startPageCamera', value: 'camera' },
-      { label: 'Settings', labelKey: 'settings.startPageSettings', value: 'settings' }
+      { label: 'Home', labelKey: 'settings.startPageHome', value: '/' },
+      { label: 'Telemetry', labelKey: 'settings.startPageTelemetry', value: '/telemetry' },
+      { label: 'Media', labelKey: 'settings.startPageMedia', value: '/media' },
+      { label: 'Camera', labelKey: 'settings.startPageCamera', value: '/camera' },
+      { label: 'Custom', labelKey: 'settings.startPageCustom', value: '/custom' },
+      { label: 'Settings', labelKey: 'settings.startPageSettings', value: '/settings' }
     ])
   })
 
-  test('window settings + tab settings live as siblings, tab settings hosts dashboards/media/camera', () => {
+  test('window settings + tab settings live as siblings, tab settings hosts dashboards/media/camera/custom', () => {
     const windowSettings = schema.children[1]
     expect(windowSettings).toEqual(
       expect.objectContaining({
@@ -194,7 +183,7 @@ describe('generalSchema', () => {
       })
     )
     const tabRoutes = tabSettings.children.map((c) => c.route)
-    expect(tabRoutes).toEqual(['dashboards', 'media', 'camera'])
+    expect(tabRoutes).toEqual(['dashboards', 'media', 'camera', 'custom'])
 
     const dashboardsRoute = tabSettings.children[0]
     expect(dashboardsRoute.children).toHaveLength(5)

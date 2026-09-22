@@ -1,0 +1,15 @@
+[package]
+name = "livi-web"
+version = "0.1.0"
+edition.workspace = true
+
+# The dongle web UI + control API, shared by both dongles (V821B and cpc200/i.MX6). The page
+# and server are identical; the hardware-specific parts (flash backend, LED, interface names)
+# are passed in as WebCaps by each dongle's binary.
+[lib]
+name = "livi_web"
+path = "src/lib.rs"
+
+[dependencies]
+livi-wifi = { path = "../livi-wifi" }
+libc = "0.2"

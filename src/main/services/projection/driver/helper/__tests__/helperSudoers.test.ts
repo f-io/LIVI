@@ -2,6 +2,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
+import { stamp } from '@main/services/privileged'
 import { dialog } from 'electron'
 import type { Mock } from 'vitest'
 import { checkAndInstallHelperSudoers, helperSudoersExists } from '../helperSudoers'
@@ -28,8 +29,8 @@ const mockedWrite = writeFileSync as Mock
 const mockedDialog = dialog.showMessageBox as Mock
 
 const TEMPLATE =
-  'Cmnd_Alias LIVI_BT = __PYTHON__ /opt/livi-helper.py\n__USERNAME__ ALL=(root) NOPASSWD: LIVI_BT\n'
-const SENTINEL = '/tmp/bt-sudoers-v1.installed'
+  'Cmnd_Alias LIVI_HELPER = */livi-helperd\n__USERNAME__ ALL=(root) NOPASSWD: LIVI_HELPER\n'
+const SENTINEL = '/tmp/helper-sudoers-v1.installed'
 const win = {} as never
 
 function makeProc(): EventEmitter {
@@ -85,16 +86,40 @@ async function install(): Promise<string> {
 
 describe('helperSudoersExists', () => {
   test('true when sudo -n -l lists the alias or the helper', () => {
-    mockedExec.mockReturnValueOnce('Cmnd_Alias LIVI_BT = ...')
+    mockedExec.mockReturnValueOnce('(root) SETENV: NOPASSWD: /opt/livi/driver/livi-helperd')
     expect(helperSudoersExists()).toBe(true)
-    mockedExec.mockReturnValueOnce('(root) NOPASSWD: /usr/bin/python3 /opt/livi-helper.py')
+    mockedExec.mockReturnValueOnce('(root) NOPASSWD: /opt/livi/driver/livi-helperd')
     expect(helperSudoersExists()).toBe(true)
   })
 
-  test('falls back to the sentinel when sudo refuses', () => {
-    noSudo()
-    mockedExists.mockImplementation((p: string) => String(p) === SENTINEL)
+  test('a python-era rule does not count, so an updated install gets the new one', () => {
+    mockedExec.mockReturnValueOnce(
+      'User pi may run the following commands:\n    (root) SETENV: NOPASSWD: /usr/bin/python3 *livi-helper.py'
+    )
+    mockedExists.mockImplementation((p: string) => String(p) === '/tmp/bt-sudoers-v1.installed')
+    expect(helperSudoersExists()).toBe(false)
+  })
+
+  test('true when the host already grants passwordless sudo for everything', () => {
+    mockedExec.mockReturnValueOnce(
+      'User pi may run the following commands:\n    (ALL) NOPASSWD: ALL'
+    )
     expect(helperSudoersExists()).toBe(true)
+  })
+
+  test('falls back to the marker when sudo refuses', () => {
+    noSudo()
+    const rendered = TEMPLATE.replace(/__USERNAME__/g, 'driver')
+    mockedRead.mockImplementation((p: string) =>
+      String(p) === SENTINEL ? `${stamp(rendered)}\n` : TEMPLATE
+    )
+    expect(helperSudoersExists()).toBe(true)
+  })
+
+  test('a marker from a different rule text does not count', () => {
+    noSudo()
+    mockedRead.mockImplementation((p: string) => (String(p) === SENTINEL ? stamp('old') : TEMPLATE))
+    expect(helperSudoersExists()).toBe(false)
   })
 
   test('false when the sentinel check throws', () => {
@@ -114,7 +139,7 @@ describe('checkAndInstallHelperSudoers', () => {
   })
 
   test('skips when the rule is already active', async () => {
-    mockedExec.mockReturnValue('LIVI_BT')
+    mockedExec.mockReturnValue('livi-helperd')
     await checkAndInstallHelperSudoers(win)
     expect(mockedDialog).not.toHaveBeenCalled()
   })
@@ -140,32 +165,31 @@ describe('checkAndInstallHelperSudoers', () => {
   test('installs the rendered rule, writes the sentinel and confirms', async () => {
     noSudo()
     process.env.SUDO_USER = 'sudo-driver'
-    mockedExists.mockImplementation((p: string) => String(p) === '/usr/bin/python3')
 
     const script = await install()
 
-    expect(script).toContain('sudo-driver ALL=(root) NOPASSWD: LIVI_BT')
-    expect(script).toContain('/usr/bin/python3 /opt/livi-helper.py')
-    expect(script).toContain('visudo -c -f /etc/sudoers.d/99-LIVI-bt.livi-tmp')
-    expect(mockedWrite).toHaveBeenCalledWith(
-      SENTINEL,
-      expect.stringContaining('/etc/sudoers.d/99-LIVI-bt'),
-      { mode: 0o644 }
-    )
+    expect(script).toContain('sudo-driver ALL=(root) NOPASSWD: LIVI_HELPER')
+    expect(script).toContain('Cmnd_Alias LIVI_HELPER = */livi-helperd')
+    expect(script).toContain('visudo -c -f /etc/sudoers.d/99-LIVI-helper.livi-tmp')
+    // The same grant used to live under a name that only said Bluetooth.
+    expect(script).toContain('rm -f /etc/sudoers.d/99-LIVI-bt')
+    expect(mockedWrite).toHaveBeenCalledWith(SENTINEL, expect.stringMatching(/^[0-9a-f]{16}$/), {
+      mode: 0o644
+    })
     expect(mockedDialog).toHaveBeenLastCalledWith(win, expect.objectContaining({ type: 'info' }))
   })
 
   test('renders the template from the packaged resources when present', async () => {
     noSudo()
     ;(process as { resourcesPath?: string }).resourcesPath = '/res'
-    mockedExists.mockImplementation((p: string) =>
-      ['/res/99-LIVI-bt.sudoers.template', '/usr/local/bin/python3'].includes(String(p))
+    mockedExists.mockImplementation(
+      (p: string) => String(p) === '/res/99-LIVI-helper.sudoers.template'
     )
 
     await install()
 
-    expect(mockedRead).toHaveBeenCalledWith('/res/99-LIVI-bt.sudoers.template', 'utf8')
-    expect(mockedSpawn.mock.calls[0][1][2]).toContain('/usr/local/bin/python3')
+    expect(mockedRead).toHaveBeenCalledWith('/res/99-LIVI-helper.sudoers.template', 'utf8')
+    expect(mockedSpawn.mock.calls[0][1][2]).toContain('*/livi-helperd')
   })
 
   test('falls back to the app template when the packaged one is missing', async () => {
@@ -174,38 +198,10 @@ describe('checkAndInstallHelperSudoers', () => {
 
     await install()
 
-    expect(mockedRead).toHaveBeenCalledWith('/app/assets/linux/99-LIVI-bt.sudoers.template', 'utf8')
-  })
-
-  test('resolves python via which when no known path exists', async () => {
-    mockedExec.mockImplementation((cmd: string, args: string[]) => {
-      if (cmd === 'which' && args[0] === 'python3') return '/custom/python3\n'
-      if (cmd === 'which') return ''
-      throw new Error('no sudo')
-    })
-
-    const script = await install()
-    expect(script).toContain('/custom/python3 /opt/livi-helper.py')
-  })
-
-  test('defaults the python path when which yields nothing or throws', async () => {
-    mockedExec.mockImplementation((cmd: string, args: string[]) => {
-      if (cmd === 'which' && args[0] === 'python3') return ''
-      if (cmd === 'which') return ''
-      throw new Error('no sudo')
-    })
-    const script = await install()
-    expect(script).toContain('/usr/bin/python3 /opt/livi-helper.py')
-
-    mockedDialog.mockClear()
-    mockedSpawn.mockReset()
-    mockedExec.mockImplementation((cmd: string, args: string[]) => {
-      if (cmd === 'which' && args[0] === 'python3') throw new Error('no which')
-      if (cmd === 'which') return ''
-      throw new Error('no sudo')
-    })
-    const second = await install()
-    expect(second).toContain('/usr/bin/python3 /opt/livi-helper.py')
+    expect(mockedRead).toHaveBeenCalledWith(
+      '/app/assets/linux/99-LIVI-helper.sudoers.template',
+      'utf8'
+    )
   })
 
   test('resolves the username from PKEXEC_UID and falls back on id errors', async () => {
@@ -238,7 +234,7 @@ describe('checkAndInstallHelperSudoers', () => {
 
     await install()
 
-    expect(warnSpy).toHaveBeenCalledWith('[helperSudoers] could not write sentinel:', 'read-only')
+    expect(warnSpy).toHaveBeenCalledWith('[helperSudoers] could not write marker:', 'read-only')
     expect(mockedDialog).toHaveBeenLastCalledWith(win, expect.objectContaining({ type: 'info' }))
     warnSpy.mockRestore()
   })
@@ -257,8 +253,8 @@ describe('checkAndInstallHelperSudoers', () => {
     expect(errSpy).toHaveBeenCalledWith('[helperSudoers] installation failed:', expect.any(Error))
     const opts = mockedDialog.mock.calls.at(-1)?.[1]
     expect(opts.type).toBe('error')
-    expect(opts.detail).toContain("sudo tee /etc/sudoers.d/99-LIVI-bt <<'EOF'")
-    expect(opts.detail).toContain('driver ALL=(root) NOPASSWD: LIVI_BT')
+    expect(opts.detail).toContain("sudo tee /etc/sudoers.d/99-LIVI-helper <<'EOF'")
+    expect(opts.detail).toContain('driver ALL=(root) NOPASSWD: LIVI_HELPER')
     errSpy.mockRestore()
   })
 
@@ -275,5 +271,20 @@ describe('checkAndInstallHelperSudoers', () => {
 
     expect(mockedDialog.mock.calls.at(-1)?.[1].type).toBe('error')
     errSpy.mockRestore()
+  })
+})
+
+describe('shipped template', () => {
+  test('names the helper, not one of its jobs', async () => {
+    const fs = await vi.importActual<typeof import('node:fs')>('node:fs')
+    const { join } = await vi.importActual<typeof import('node:path')>('node:path')
+    const rule = fs.readFileSync(
+      join(process.cwd(), 'assets', 'linux', '99-LIVI-helper.sudoers.template'),
+      'utf8'
+    )
+    expect(rule).toContain(
+      'Cmnd_Alias LIVI_HELPER = /home/__USERNAME__/.config/LIVI/driver/livi-helperd'
+    )
+    expect(rule).toContain('__USERNAME__ ALL=(root) NOPASSWD: SETENV: LIVI_HELPER')
   })
 })

@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, openSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { COMPOSITOR_TITLEBAR_H } from '@main/app/compositorLayout'
 import { applyKioskDisplayMode } from '@main/app/hostOutput'
@@ -48,6 +49,8 @@ export function bootstrapCompositor(): boolean {
     LIVI_OUTPUT_APP_ID: 'dev.f-io.livi',
     LIVI_COMPOSITOR_CTRL: ctrlSocket,
     LIVI_SCREENS: 'main,dash,aux',
+    // A compositor crash must always be diagnosable from the log.
+    RUST_BACKTRACE: '1',
     ...(outputSize ? { LIVI_OUTPUT_SIZE: outputSize } : {})
   }
   delete env.APPIMAGE
@@ -55,6 +58,16 @@ export function bootstrapCompositor(): boolean {
   delete env.ARGV0
   delete env.OWD
 
-  spawn(launcher, ['-s', inner], { detached: true, stdio: 'inherit', env }).unref()
+  let stdio: ('ignore' | 'inherit' | number)[] = ['ignore', 'inherit', 'inherit']
+  try {
+    const logDir = join(homedir(), '.config', 'LIVI', 'log')
+    mkdirSync(logDir, { recursive: true })
+    const fd = openSync(join(logDir, 'compositor.log'), 'w')
+    stdio = ['ignore', fd, fd]
+  } catch {
+    // no log dir: fall back to inherited stdio
+  }
+
+  spawn(launcher, ['-s', inner], { detached: true, stdio, env }).unref()
   return true
 }

@@ -17,13 +17,6 @@ export type InitialisePayload = {
   audioPort: MessagePort
 }
 
-/** Payload for handing an audio player/shared buffer to the worker */
-export type AudioPlayerPayload = {
-  sab: SharedArrayBuffer
-  decodeType: number
-  audioType: number
-}
-
 /** Start command payload */
 export type StartPayload = {
   config: Partial<Config>
@@ -112,8 +105,6 @@ export type Command =
   | { type: 'start'; payload: StartPayload }
   | { type: 'touch'; payload: { x: number; y: number; action: TouchAction } }
   | { type: 'initialise'; payload: InitialisePayload }
-  | { type: 'audioPlayer'; payload: AudioPlayerPayload }
-  | { type: 'audioBuffer'; payload: AudioPlayerPayload }
   | { type: 'microphoneInput'; payload: Int16Array }
   | { type: 'frame' }
   | { type: 'keyCommand'; command: KeyCommand }
@@ -131,10 +122,6 @@ export type WorkerToUI =
     }
   | { type: 'pcmData'; payload: ArrayBuffer }
   | { type: 'command'; message?: { value?: number } }
-  | {
-      type: 'dongleInfo'
-      payload: { serial?: string; manufacturer?: string; product?: string; fwVersion?: string }
-    }
   | { type: 'resolution'; payload: { width: number; height: number } }
 
 /** Back-compat alias */
@@ -152,4 +139,3 @@ export type UsbEvent =
   | { type: 'resolution'; payload: { width: number; height: number } }
   | { type: 'audioInfo'; payload?: unknown }
   | { type: 'command'; message?: { value?: number } }
-  | { type: 'dongleInfo'; payload?: unknown }

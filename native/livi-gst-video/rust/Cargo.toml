@@ -1,0 +1,8 @@
+# Build workspace for the gst-video native targets. Kept separate from
+# native/livi-helperd so its workspace-wide checks never need GStreamer headers.
+[workspace]
+resolver = "2"
+members = ["addon", "audio", "audioplayer", "codec", "fanout", "host", "mic", "nal", "player", "screen"]
+
+[workspace.package]
+edition = "2024"

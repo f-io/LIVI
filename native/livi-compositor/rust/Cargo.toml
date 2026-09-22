@@ -1,0 +1,32 @@
+[package]
+name = "livi-compositor"
+version = "0.1.0"
+edition = "2024"
+
+# Nested Wayland compositor for LIVI: hosts the Electron UI and tagged GStreamer
+# waylandsink video planes as windows of the outer session, composited zero-copy.
+# Server side is smithay, the host windows are smithay-client-toolkit.
+
+[[bin]]
+name = "livi-compositor"
+path = "src/main.rs"
+
+[dependencies]
+smithay = { version = "0.7", default-features = false, features = [
+    "wayland_frontend",
+    "backend_egl",
+    "renderer_gl",
+    "use_system_lib",
+] }
+smithay-client-toolkit = { version = "0.19", default-features = false, features = ["calloop", "xkbcommon"] }
+wayland-egl = "0.32"
+calloop-wayland-source = "0.4"
+log = "0.4"
+env_logger = { version = "0.11", default-features = false }
+tiny-skia = "0.11"
+ab_glyph = "0.2"
+fontdb = "0.23"
+nix = { version = "0.29", features = ["signal", "process", "fs"] }
+
+[profile.release]
+opt-level = 3

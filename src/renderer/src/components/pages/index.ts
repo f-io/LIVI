@@ -1,6 +1,6 @@
 export * from './camera'
 export * from './cluster'
-export * from './home'
+export * from './custom'
 export * from './media'
 export * from './projection'
 export * from './settings'
