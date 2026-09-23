@@ -1,4 +1,4 @@
-// CarlinKit dongle on USB.
+// The stock dongle on USB.
 
 pub mod ap;
 #[cfg(target_os = "linux")]

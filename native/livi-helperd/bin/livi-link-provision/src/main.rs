@@ -1,4 +1,4 @@
-// Provisions a CarlinKit dongle as LIVI Link without a UI; the app drives the same crate.
+// Provisions a dongle as LIVI Link without a UI. The app drives the same crate.
 // Host: $LIVI_LINK_HOST (default 10.10.10.1). The stack it installs is baked into this binary.
 
 mod bootstrap;

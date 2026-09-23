@@ -1,7 +1,7 @@
-//! Bridges a stock CarlinKit dongle's USB bulk pipe to a unix socket so the main process can
-//! upload files to it (the server.cgi bootstrap, then any file). The main process speaks the
-//! CarlinKit wire itself; this frames only the node->dongle direction, so each message is one
-//! bulk transfer, and forwards the dongle->node direction as it arrives.
+//! Bridges a stock dongle's USB bulk pipe to a unix socket so the main process can upload files
+//! to it (the server.cgi bootstrap, then any file). The main process speaks the wire protocol
+//! itself. This frames only the node->dongle direction, so each message is one bulk transfer,
+//! and forwards the dongle->node direction as it arrives.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -43,7 +43,7 @@ where
         }
     });
 
-    // node -> dongle: one whole CarlinKit message per bulk write.
+    // node -> dongle: one whole message per bulk write.
     let down = async move {
         let mut acc: Vec<u8> = Vec::new();
         let mut buf = vec![0u8; READ_CHUNK];

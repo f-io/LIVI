@@ -91,7 +91,7 @@ describe('LIVI dongle web tools', () => {
   test('restore is the only way back, and promises nothing about the image', () => {
     const html = buildLiviWeb()
     expect(html).toContain('restore()')
-    expect(html).not.toContain('CarlinKit mode')
+    expect(html).not.toContain('vendor mode')
     // Installing the tools persistently is the provisioner's job, not a button here.
     expect(html).not.toContain('installPersistentWeb')
     // Booting the vendor init was a dead end: boa comes up from the bring-up it would disable.

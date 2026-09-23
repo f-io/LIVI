@@ -1,4 +1,4 @@
-//! The CarlinKit userspace our init never starts, and the libraries that belong to it.
+//! The vendor userspace our init never starts, and the libraries that belong to it.
 //!
 //! Binaries go unconditionally. A library only goes when no binary we keep still references it —
 //! measured on the device by scanning the kept ELFs for sonames, not assumed from a list.

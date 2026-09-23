@@ -1,5 +1,5 @@
 //! Brings a CPC200-CCPA that already runs our root shell (busybox telnetd :2323) into the LIVI
-//! Link state: keep the vendor init as `.orig`, strip the CarlinKit userspace, install the stack
+//! Link state: keep the vendor init as `.orig`, strip the vendor userspace, install the stack
 //! under /script/livi and our bring-up as the boot script, start it, verify.
 //!
 //! Everything runs over the dongle's NCM link. The way back is writing a backup image over the

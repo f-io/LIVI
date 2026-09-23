@@ -1,4 +1,4 @@
-// CarlinKit framing: a 16 byte header of magic, payload length, message type and
+// The dongle's framing: a 16 byte header of magic, payload length, message type and
 // the type's complement, then the payload.
 
 pub const MAGIC: u32 = 0x55aa_55aa;

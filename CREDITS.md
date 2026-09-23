@@ -14,10 +14,6 @@ during development.
 
 - **BertoldVdb/WACResearch** - Bertold Van den Bergh
 - **f1xpl/aasdk** - Michal Szwaj
-
-### Legacy / dongle related
-
-- **rhysmorgan134/node-carplay** by Rhys Morgan
 - Various reverse-engineering projects, websites, and community write-ups
 
 This list is likely incomplete, many thanks to everyone whose work contributed,

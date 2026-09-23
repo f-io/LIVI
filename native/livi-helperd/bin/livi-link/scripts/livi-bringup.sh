@@ -124,4 +124,4 @@ hciconfig hci0 reset 2>/dev/null
 hciconfig hci0 scomtu 240:32 2>/dev/null
 hcitool -i hci0 cmd 0x3f 0x1d 0x00 2>/dev/null
 
-log "bring-up complete (no CarlinKit userspace)"
+log "bring-up complete (no vendor userspace)"

@@ -1,7 +1,7 @@
-/** Uploads files to a CarlinKit dongle over USB. The helper bridges the dongle's bulk pipe to a
- *  unix socket (its `dongle-upload` announce); this speaks the CarlinKit wire over that socket:
+/** Uploads files to a stock dongle over USB. The helper bridges the dongle's bulk pipe to a unix
+ *  socket (its `dongle-upload` announce). This speaks the dongle's wire protocol over that socket:
  *  an Open handshake, then one SendFile per file. Used to drop the LIVI web tools onto a stock
- *  dongle — the exec/telnet bootstrap runs from the dongle's own web UI. */
+ *  dongle. The exec/telnet bootstrap runs from the dongle's own web UI. */
 
 import net from 'node:net'
 import type { HelperSessionEvent, HelperSessionSource } from '@projection/driver/aa/AaManager'
@@ -19,7 +19,7 @@ const WEB_PATH = '/tmp/boa/www/index.html'
 const CONNECT_TIMEOUT_MS = 3000
 const DRAIN_MS = 300
 
-/** A 16-byte CarlinKit header (magic, payload length, type, ~type) and the payload. */
+/** A 16-byte header (magic, payload length, type, ~type) and the payload. */
 function frame(type: number, payload: Buffer): Buffer {
   const head = Buffer.alloc(16)
   head.writeUInt32LE(MAGIC, 0)
