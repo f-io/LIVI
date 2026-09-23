@@ -242,6 +242,14 @@ describe('reconcileWifiAp — wanted', () => {
     expect(sudoLines()).toHaveLength(0)
   })
 
+  test('restartWifiAp is a no-op off linux', async () => {
+    const { restartWifiAp } = await import('../wifiApUnit')
+    installed()
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+    await restartWifiAp(cfg({ wirelessCpEnabled: true }))
+    expect(sudoLines()).toHaveLength(0)
+  })
+
   test('restarts the service when the staged helper is newer than its start', async () => {
     installed()
     helperWrittenAt(1_000_010)

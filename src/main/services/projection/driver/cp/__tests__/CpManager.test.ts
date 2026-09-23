@@ -413,6 +413,17 @@ describe('CpManager dropSessions', () => {
     expect(closeB).toHaveBeenCalledTimes(1)
     expect(dropIap2).toHaveBeenCalledTimes(1)
   })
+
+  it('a helper that cannot drop the wired sessions does not break the drop', async () => {
+    const { mgr } = makeManager()
+    const dropIap2 = vi
+      .spyOn(mgr._helper, 'dropIap2')
+      .mockRejectedValue(new Error('helper is gone'))
+
+    expect(() => mgr.dropSessions()).not.toThrow()
+    await Promise.resolve()
+    expect(dropIap2).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('CpManager registration lifecycle', () => {

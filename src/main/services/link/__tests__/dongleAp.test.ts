@@ -350,6 +350,39 @@ describe('a dongle that shows up after the settings went out', () => {
     vi.useRealTimers()
   })
 
+  it('says nothing while it is already talking to the dongle', async () => {
+    networkInterfaces.mockReturnValue({ ncm0: [{ address: '10.10.10.100' }] })
+    const first = reconcileDongleAp(config)
+    await settle(0)
+    noteDongleStatus({ state: 'on' })
+    await Promise.resolve()
+    expect(sockets.length).toBe(1)
+    await answer(sockets[0], 1)
+    await answer(sockets[0], 2, 'state off\nok\n')
+    await settle(1)
+    await answer(sockets[1], 1)
+    for (let i = 0; i < 50; i++) await Promise.resolve()
+    await first
+  })
+
+  it('tells it again when it drifted off on its own', async () => {
+    networkInterfaces.mockReturnValue({ ncm0: [{ address: '10.10.10.100' }] })
+    noteDongleStatus(null)
+    noteDongleStatus({ state: 'on' })
+    await takeReconcile()
+
+    // It agrees now, so a matching status is left alone.
+    sockets.length = 0
+    noteDongleStatus({ state: 'off' })
+    await Promise.resolve()
+    expect(sockets.length).toBe(0)
+
+    // Its own access point came up again, which is worth another word.
+    noteDongleStatus({ state: 'on' })
+    await takeReconcile()
+    expect(sockets[0].sent).toEqual(['off\n', 'status\n'])
+  })
+
   it('is told again after it was gone', async () => {
     const first = reconcileDongleAp(config)
     await takeReconcile()

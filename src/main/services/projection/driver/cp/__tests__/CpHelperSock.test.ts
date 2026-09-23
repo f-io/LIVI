@@ -197,6 +197,18 @@ describe('CpHelperSock rpc wrappers', () => {
     await expect(bad).rejects.toThrow('no device')
   })
 
+  it('dropIap2 resolves on ok and throws otherwise', async () => {
+    const helper = new CpHelperSock()
+    const ok = helper.dropIap2()
+    expect(wrote(sockets[0])).toBe('drop-iap2\n')
+    sockets[0].emit('data', Buffer.from('{"ok":true}\n'))
+    await expect(ok).resolves.toBeUndefined()
+
+    const bad = helper.dropIap2()
+    reply(sockets[1], { ok: false, error: 'no session' })
+    await expect(bad).rejects.toThrow('no session')
+  })
+
   it('sendLocation is best-effort and base64-encodes the nmea', async () => {
     const helper = new CpHelperSock()
     const p = helper.sendLocation('$GPGGA')

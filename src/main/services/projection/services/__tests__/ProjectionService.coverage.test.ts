@@ -189,6 +189,7 @@ vi.mock('../../../audio/AudioDeviceEnumerator', () => ({
   })
 }))
 
+import { gstHost } from '@main/services/video/gstHost'
 import { webContents as electronWebContents } from 'electron'
 import { ProjectionAudio } from '../ProjectionAudio'
 import { ProjectionService } from '../ProjectionService'
@@ -467,6 +468,20 @@ describe('ProjectionService video handling', () => {
     sink.setHostVolume(3, 0.5, 80)
     expect(svc.audio.setHostStreamVolume).toHaveBeenCalledWith(3, 0.5, 80)
     await expect(sink.feedPath()).resolves.toBe('/tmp/media.feed')
+
+    // A held session keeps its streams, but what it feeds stops in the host.
+    const feeder = vi.spyOn(gstHost, 'setActiveFeeder').mockImplementation(() => {})
+    const audioActive = vi.spyOn(gstHost, 'setAudioActive').mockImplementation(() => {})
+    sink.setVideoActive(false, false)
+    sink.setVideoActive(true, true)
+    expect(feeder.mock.calls).toEqual([
+      [0x7a000001, false],
+      [0x7a000010, true]
+    ])
+    sink.setAudioActive(false)
+    expect(audioActive).toHaveBeenCalledWith(5, false)
+    feeder.mockRestore()
+    audioActive.mockRestore()
   })
 
   test('noteVideoGeometry tolerates no active session and a destroyed cluster target', () => {
@@ -1982,6 +1997,25 @@ describe('ProjectionService transport switch / restart / connect', () => {
     expect(dropSessions).toHaveBeenCalled()
   })
 
+  test('restartSession carries on when stopping the old session threw', async () => {
+    const svc = makeSvc()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    svc.getActiveTransport = vi.fn(() => null)
+    svc.stop = vi.fn(async () => {
+      throw new Error('stop boom')
+    })
+    svc.autoStartIfNeeded = vi.fn(async () => undefined)
+
+    await expect(svc.restartSession()).resolves.toBeUndefined()
+
+    expect(warn).toHaveBeenCalledWith(
+      '[ProjectionService] restartSession: stop threw (ignored)',
+      expect.any(Error)
+    )
+    expect(svc.autoStartIfNeeded).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
   test('restartSession leaves the access point alone unless its settings changed', async () => {
     const svc = makeSvc()
     svc.cpActive = true
@@ -2022,6 +2056,24 @@ describe('ProjectionService transport switch / restart / connect', () => {
     expect(bluezMock.restartUsb).toHaveBeenCalled()
     expect(svc.stop).not.toHaveBeenCalled()
     expect(svc.autoStartIfNeeded).not.toHaveBeenCalled()
+  })
+
+  test('restartSession says so when the helper could not reset the wired phone', async () => {
+    const svc = makeSvc()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    svc.getActiveTransport = vi.fn(() => 'aa')
+    svc.isActiveAaWired = vi.fn(() => true)
+    svc.stop = vi.fn(async () => undefined)
+
+    bluezMock.restartUsb.mockResolvedValueOnce({ ok: false, error: 'no helper' })
+    await svc.restartSession()
+    expect(warn).toHaveBeenCalledWith('[ProjectionService] restartSession: restart-usb: no helper')
+
+    bluezMock.restartUsb.mockRejectedValueOnce(new Error('socket gone'))
+    await svc.restartSession()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('restart-usb: Error: socket gone'))
+    expect(svc.stop).not.toHaveBeenCalled()
+    warn.mockRestore()
   })
 
   test('restartSession restarts a wireless AA session', async () => {

@@ -332,6 +332,16 @@ describe('BluezDeviceClient — request internals', () => {
     await expect(p).resolves.toEqual({ ok: true })
   })
 
+  test('restartUsb writes restart-usb and answers with the count', async () => {
+    const { client, nextSocket } = makeClient()
+    const p = client.restartUsb()
+    const sock = nextSocket()
+    sock.emit('connect')
+    expect(sock.write).toHaveBeenCalledWith('restart-usb\n')
+    sock.emit('data', Buffer.from(JSON.stringify({ ok: true, count: 1 }) + '\n'))
+    await expect(p).resolves.toEqual({ ok: true, count: 1 })
+  })
+
   test('a late socket error after settling is ignored', async () => {
     const { client, nextSocket } = makeClient()
     const p = client.listPaired(1000)

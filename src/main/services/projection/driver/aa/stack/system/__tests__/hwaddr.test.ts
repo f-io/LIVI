@@ -3,7 +3,8 @@ import type { Mock } from 'vitest'
 vi.mock('node:fs', () => {
   const __m = {
     readFileSync: vi.fn(),
-    readdirSync: vi.fn()
+    readdirSync: vi.fn(),
+    realpathSync: vi.fn()
   }
   return { ...__m, default: __m }
 })
@@ -13,10 +14,11 @@ vi.mock('node:child_process', () => ({
 
 import { execSync } from 'node:child_process'
 import * as fs from 'node:fs'
-import { detectBtMac, detectWifiBssid } from '../hwaddr'
+import { detectBtMac, detectWifiBssid, isTunnelledBtAdapter } from '../hwaddr'
 
 const mockReadFileSync = fs.readFileSync as Mock
 const mockReaddirSync = fs.readdirSync as Mock
+const mockRealpathSync = fs.realpathSync as Mock
 const mockExecSync = execSync as Mock
 
 describe('detectBtMac', () => {
@@ -93,6 +95,40 @@ describe('detectBtMac', () => {
     mockExecSync.mockReturnValueOnce('s ""\n')
     mockExecSync.mockReturnValueOnce('no address here\n')
     expect(detectBtMac()).toBeUndefined()
+  })
+
+  test('the LIVI Link resolves to whichever controller sits on vhci', () => {
+    mockReaddirSync.mockReturnValue(['hci0', 'hci1'])
+    mockRealpathSync.mockImplementation((p: string) =>
+      p.endsWith('hci1')
+        ? '/sys/devices/virtual/bluetooth/hci1'
+        : '/sys/devices/pci0/bluetooth/hci0'
+    )
+    mockReadFileSync.mockReturnValue('aa:bb:cc:dd:ee:ff\n')
+    expect(detectBtMac('livi-link')).toBe('AA:BB:CC:DD:EE:FF')
+    expect(mockReadFileSync).toHaveBeenCalledWith('/sys/class/bluetooth/hci1/address', 'utf8')
+  })
+
+  test('the LIVI Link gives up when no controller sits on vhci', () => {
+    mockReaddirSync.mockReturnValue(['hci0'])
+    mockRealpathSync.mockReturnValue('/sys/devices/pci0/bluetooth/hci0')
+    expect(detectBtMac('livi-link')).toBeUndefined()
+    expect(mockReadFileSync).not.toHaveBeenCalled()
+  })
+})
+
+describe('isTunnelledBtAdapter', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  test('reads the controller off its sysfs path, and says no when it cannot', () => {
+    mockRealpathSync.mockReturnValueOnce('/sys/devices/virtual/bluetooth/hci1')
+    expect(isTunnelledBtAdapter('hci1')).toBe(true)
+    mockRealpathSync.mockReturnValueOnce('/sys/devices/platform/soc/bluetooth/hci0')
+    expect(isTunnelledBtAdapter('hci0')).toBe(false)
+    mockRealpathSync.mockImplementationOnce(() => {
+      throw new Error('ENOENT')
+    })
+    expect(isTunnelledBtAdapter('hci9')).toBe(false)
   })
 })
 
