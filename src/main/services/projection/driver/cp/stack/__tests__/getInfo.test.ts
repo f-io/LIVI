@@ -84,6 +84,18 @@ describe('buildInfoPlist', () => {
     expect(entertainment.audioOutputFormats).toBe(0x400000)
   })
 
+  test('offers music the media rate in stereo only, so a phone cannot resume it at 8 kHz', () => {
+    const at44 = buildInfoPlist(baseConfig()) as Dict
+    const at48 = buildInfoPlist(baseConfig({ entertainmentSampleRate: 48000 })) as Dict
+    const media = (i: Dict): Dict =>
+      (i.audioFormats as Dict[]).find((f) => f.type === 100 && f.audioType === 'media') as Dict
+    expect(media(at44).audioOutputFormats).toBe(0x800)
+    expect(media(at48).audioOutputFormats).toBe(0x8000)
+    const tel = (i: Dict): Dict =>
+      (i.audioFormats as Dict[]).find((f) => f.type === 100 && f.audioType === 'telephony') as Dict
+    expect(Number(tel(at48).audioOutputFormats) & 0x100).toBe(0x100)
+  })
+
   test('advertises 48k variants when entertainmentSampleRate is 48000', () => {
     const info = buildInfoPlist(baseConfig({ entertainmentSampleRate: 48000 })) as Dict
     const formats = info.audioFormats as Dict[]
