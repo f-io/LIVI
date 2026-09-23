@@ -351,9 +351,14 @@ jobs:
           LIVI_VERSION="$(node -p "require('../../package.json').version")" \
             cargo build --release -p livi-link-provision-cli
 
+      - name: Name the binary per platform
+        working-directory: native/livi-helperd/target/release
+        shell: bash
+        run: mv livi-link-provision livi-link-provision-${{ matrix.name }}
+
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
           name: livi-link-provision-${{ matrix.name }}
-          path: native/livi-helperd/target/release/livi-link-provision
+          path: native/livi-helperd/target/release/livi-link-provision-${{ matrix.name }}
           retention-days: 30

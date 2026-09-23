@@ -118,21 +118,6 @@ jobs:
       - name: Add the LIVI Link firmware
         run: bash scripts/livi-link/stage-firmware.sh release-assets
 
-      - name: Name the tool per platform
-        if: steps.tool.outputs.run_id != ''
-        shell: bash
-        run: |
-          set -euo pipefail
-          # download-artifact keeps one directory per artifact, and every binary inside is called
-          # the same; the release needs distinct names.
-          for dir in release-assets/livi-link-provision-*; do
-            [[ -d "$dir" ]] || continue
-            platform="${dir##*/livi-link-provision-}"
-            mv "$dir/livi-link-provision" "release-assets/livi-link-provision-$platform"
-            rmdir "$dir"
-          done
-          ls -l release-assets
-
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
