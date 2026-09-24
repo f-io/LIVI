@@ -537,12 +537,12 @@ export class CpSession extends EventEmitter implements IPhoneDriver {
     this._sendCommand(cmd)
   }
 
-  /** OEM icons for the CarPlay homescreen: user upload (config) or the LIVI default. */
+  /** The logo CarPlay shows on the tile back to LIVI, overridable in the config. */
   private _buildIcons(cfg: Config): CpIcon[] {
     const sizes: { size: number; b64: string }[] = [
-      { size: 120, b64: cfg.dongleIcon120?.trim() || ICON_120_B64 },
-      { size: 180, b64: cfg.dongleIcon180?.trim() || ICON_180_B64 },
-      { size: 256, b64: cfg.dongleIcon256?.trim() || ICON_256_B64 }
+      { size: 120, b64: cfg.carplayIcon120?.trim() || ICON_120_B64 },
+      { size: 180, b64: cfg.carplayIcon180?.trim() || ICON_180_B64 },
+      { size: 256, b64: cfg.carplayIcon256?.trim() || ICON_256_B64 }
     ]
     return sizes
       .map(({ size, b64 }) => ({

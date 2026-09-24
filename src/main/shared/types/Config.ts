@@ -3,25 +3,6 @@ export enum HandDriveType {
   RHD = 1
 }
 
-export enum MicType {
-  CarMic = 0,
-  DongleMic = 1,
-  PhoneMic = 2
-}
-
-export enum PhoneWorkMode {
-  CarPlay = 2,
-  Android = 4
-}
-
-export enum PhoneType {
-  AndroidMirror = 1,
-  CarPlay = 3,
-  iPhoneMirror = 4,
-  AndroidAuto = 5,
-  HiCar = 6
-}
-
 export enum CarType {
   Unknown = 0,
   Gasoline = 1,
@@ -50,8 +31,6 @@ export enum EvConnectorType {
   Gbt = 9,
   Other = 101
 }
-
-export type PhoneTypeConfig = { frameInterval: number | null }
 
 export type TelemetryDashboardId = 'dash1' | 'dash2' | 'dash3' | 'dash4'
 
@@ -122,6 +101,7 @@ export type Config = {
   gpsEnabled: boolean
   gpsDevice: string
   gpsBaudRate: number
+
   /** Last zone derived from a fix, applied at startup. */
   timezone: string
 
@@ -136,7 +116,6 @@ export type Config = {
   projectionViewAreaLeft: number
   projectionViewAreaRight: number
   // Safe Area = where the phone keeps nav hints/UI inside the view area.
-  // drawOutside = CarPlay drawUIOutsideSafeArea (main display only)
   projectionSafeAreaTop: number
   projectionSafeAreaBottom: number
   projectionSafeAreaLeft: number
@@ -160,9 +139,7 @@ export type Config = {
   clusterSafeAreaRight: number
 
   // Phone session state
-  lastPhoneWorkMode: PhoneWorkMode
   lastConnectedAaBtMac?: string
-  phoneConfig: Partial<Record<number, PhoneTypeConfig>>
 
   // Theme / vehicle identity
   darkMode: boolean
@@ -246,10 +223,10 @@ export type Config = {
   backgroundColorDark?: string
   backgroundColorLight?: string
 
-  // Dongle icon overrides
-  dongleIcon120?: string
-  dongleIcon180?: string
-  dongleIcon256?: string
+  // Overrides for the logo CarPlay shows on the tile that leads back to LIVI
+  carplayIcon120?: string
+  carplayIcon180?: string
+  carplayIcon256?: string
 
   // Take the rolling build of main instead of the latest release
   updateNightly: boolean

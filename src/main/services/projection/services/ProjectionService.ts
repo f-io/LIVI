@@ -4,7 +4,6 @@ import { SystemSound } from '@main/services/audio'
 import { broadcastToSecondaryRenderers } from '@main/window/broadcast'
 import { getSecondaryWindow, secondaryWindowEvents } from '@main/window/secondaryWindows'
 import type { Config, DevListEntry } from '@shared/types'
-import { PhoneWorkMode } from '@shared/types'
 import { isInputCommand } from '@shared/types/InputCommand'
 import type { NavLocale } from '@shared/utils'
 import { clusterTargetScreens, isClusterDisplayed } from '@shared/utils'
@@ -44,8 +43,7 @@ import {
   MediaData,
   MediaType,
   type Message,
-  NavigationData,
-  PhoneType
+  NavigationData
 } from '../messages'
 import { TransportArbiter } from '../transport/TransportArbiter'
 import type { Transport } from '../transport/types'
@@ -61,8 +59,13 @@ import { MediaStore } from './MediaStore'
 import { NavStore } from './NavStore'
 import { ProjectionAudio } from './ProjectionAudio'
 import { ScoAudio } from './ScoAudio'
-import { type ProjectionSession, SessionManager, type SessionTransport } from './SessionManager'
-import { type PendingStartupConnectTarget, type ProjectionEvent } from './types'
+import {
+  type ProjectionSession,
+  SessionManager,
+  type SessionProtocol,
+  type SessionTransport
+} from './SessionManager'
+import { type ProjectionEvent } from './types'
 import { isPhoneLikeCod } from './utils/isPhoneLikeCod'
 import { VideoPlaneManager } from './VideoPlaneManager'
 
@@ -136,7 +139,7 @@ export class ProjectionService {
   private readonly mediaStore = new MediaStore({
     emit: (p) => this.emitProjectionEvent(p),
     getPlaybackInferred: () => this.aaPlaybackInferred,
-    getLastPhoneType: () => this.lastPluggedPhoneType,
+    getLastProtocol: () => this.lastPluggedProtocol,
     onPlaybackStatus: (state) => this.bluez.setPlaybackStatus(state).catch(() => {})
   })
   private readonly navStore = new NavStore({
@@ -243,7 +246,7 @@ export class ProjectionService {
     this.maybeAutoActivate(
       this.sessions.upsert(session, 'androidauto', this.aaTransport(session), {})
     )
-    this.onPhoneConnected(PhoneType.AndroidAuto)
+    this.onPhoneConnected('androidauto')
     this.ensureAaPhoneHfp()
   }
 
@@ -307,7 +310,7 @@ export class ProjectionService {
         controllerId: session.getControllerId() ?? undefined
       })
     )
-    this.onPhoneConnected(PhoneType.CarPlay)
+    this.onPhoneConnected('carplay')
   }
   private readonly onCpDisconnected = (session: CpSession): void => {
     const closed = this.sessions.byDriver(session)
@@ -468,8 +471,8 @@ export class ProjectionService {
   }
 
   // Hydration
-  private readonly pluggedHooks: Array<(phoneType: PhoneType) => void> = []
-  public addPluggedHook(fn: (phoneType: PhoneType) => void): () => void {
+  private readonly pluggedHooks: Array<() => void> = []
+  public addPluggedHook(fn: () => void): () => void {
     this.pluggedHooks.push(fn)
     return (): void => {
       const i = this.pluggedHooks.indexOf(fn)
@@ -485,7 +488,7 @@ export class ProjectionService {
   // the renderer is attached.
   private earlyVideoQueues: Map<string, Array<Record<string, unknown>>> = new Map()
   private static readonly EARLY_QUEUE_MAX_PER_CHANNEL = 256
-  private lastPluggedPhoneType?: PhoneType
+  private lastPluggedProtocol?: SessionProtocol
   /** Canonical MediaPlayStatus (1 = playing, 0 = paused), inferred from AA audio commands. */
   private aaPlaybackInferred: 1 | 0 = 1
 
@@ -644,32 +647,23 @@ export class ProjectionService {
     return this.codecCaps.hevc
   }
 
-  private onPhoneConnected(phoneType: PhoneType): void {
+  private onPhoneConnected(protocol: SessionProtocol): void {
     this.clearTimeouts()
-    this.lastPluggedPhoneType = phoneType
+    this.lastPluggedProtocol = protocol
     this.aaPlaybackInferred = 1
     this.lastVideoWidth = undefined
     this.lastVideoHeight = undefined
     this.lastClusterVideoWidth = undefined
     this.lastClusterVideoHeight = undefined
 
-    const nextPhoneWorkMode =
-      phoneType === PhoneType.CarPlay ? PhoneWorkMode.CarPlay : PhoneWorkMode.Android
-
-    try {
-      configEvents.emit('requestSave', { lastPhoneWorkMode: nextPhoneWorkMode })
-    } catch (e) {
-      console.warn('[ProjectionService] failed to persist lastPhoneWorkMode (ignored)', e)
-    }
-
-    this.emitProjectionEvent({ type: 'plugged', phoneType })
+    this.emitProjectionEvent({ type: 'plugged' })
     this.statusFile.setProjection(
       this.getActiveTransport(),
-      phoneType === PhoneType.CarPlay ? 'CarPlay' : 'AndroidAuto'
+      protocol === 'carplay' ? 'CarPlay' : 'AndroidAuto'
     )
     for (const fn of this.pluggedHooks) {
       try {
-        fn(phoneType)
+        fn()
       } catch (e) {
         console.warn('[ProjectionService] plugged hook threw (ignored)', e)
       }
@@ -678,7 +672,7 @@ export class ProjectionService {
 
   private onPhoneDisconnected(): void {
     this.clearTimeouts()
-    this.lastPluggedPhoneType = undefined
+    this.lastPluggedProtocol = undefined
     this.aaPlaybackInferred = 1
     // UI/status/nav are cleared only when no session is left active; the active-session case
     // runs through onActiveSessionChanged / teardownToIdle.
@@ -736,7 +730,7 @@ export class ProjectionService {
 
     if (msg.command != null) {
       this.statusFile.applyAudioCommand(msg.command)
-      if (this.lastPluggedPhoneType === PhoneType.AndroidAuto) {
+      if (this.lastPluggedProtocol === 'androidauto') {
         if (msg.command === 10) {
           this.aaPlaybackInferred = 1
           this.mediaStore.patchAaPlayStatus(this.sessions.active(), 1)
@@ -1829,7 +1823,7 @@ export class ProjectionService {
         this.audio.resetForSessionStart()
         this.lastVideoWidth = undefined
         this.lastVideoHeight = undefined
-        this.lastPluggedPhoneType = undefined
+        this.lastPluggedProtocol = undefined
         this.aaPlaybackInferred = 1
 
         this.mediaStore.reset('session-start')
@@ -2015,7 +2009,7 @@ export class ProjectionService {
       this.navStore.reset('session-stop')
       this.lastVideoWidth = undefined
       this.lastVideoHeight = undefined
-      this.lastPluggedPhoneType = undefined
+      this.lastPluggedProtocol = undefined
       this.aaPlaybackInferred = 0
     })().finally(() => {
       this.stopPromise = null

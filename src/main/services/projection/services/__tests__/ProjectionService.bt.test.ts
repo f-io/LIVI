@@ -17,15 +17,6 @@ vi.mock('../../bt/BluezDeviceClient', () => ({
 }))
 
 vi.mock('../../messages', async () => {
-  const EventEmitter = require('events')
-  class MockDongleDriver extends EventEmitter {
-    send = vi.fn(async () => true)
-    initialise = vi.fn(async () => undefined)
-    start = vi.fn(async () => undefined)
-    stop = vi.fn(async () => undefined)
-    close = vi.fn(async () => undefined)
-    sendBluetoothPairedList = vi.fn(async () => true)
-  }
   class Stub {
     constructor(
       public a?: unknown,
@@ -33,32 +24,17 @@ vi.mock('../../messages', async () => {
     ) {}
   }
   return {
-    DongleDriver: MockDongleDriver,
-    Plugged: class {},
-    Unplugged: class {},
-    PhoneType: { CarPlay: 3, AndroidAuto: 5 },
-    BluetoothPairedList: class {},
     AudioData: class {},
     MediaData: class {},
     NavigationData: class {},
     MediaType: { Data: 1 },
     NavigationMetaType: { DashboardInfo: 200 },
     Command: class {},
-    BoxInfo: class {},
-    SoftwareVersion: class {},
-    GnssData: class {},
     SendCommand: Stub,
     SendTouch: Stub,
     SendMultiTouch: Stub,
-    SendFile: Stub,
-    SendServerCgiScript: Stub,
-    SendLiviWeb: Stub,
     SendDisconnectPhone: Stub,
     SendCloseDongle: Stub,
-    FileAddress: { ICON_120: '/120', ICON_180: '/180', ICON_256: '/256' },
-    BoxUpdateProgress: class {},
-    BoxUpdateState: class {},
-    MessageType: { ClusterVideoData: 0x2c },
     decodeTypeMap: {},
     DEFAULT_CONFIG: { apkVer: '1.0.0', language: 'en' }
   }

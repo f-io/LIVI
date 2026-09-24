@@ -5,17 +5,21 @@ const saveSettings = vi.fn()
 const markRestartBaseline = vi.fn()
 let mockRestartBaseline: any = { projectionWidth: 800, bindings: { back: 'KeyB' } }
 
+const { projectionActive } = vi.hoisted(() => ({ projectionActive: { value: true } }))
+
 vi.mock('@store/store', () => ({
   useLiviStore: (selector: (s: any) => unknown) =>
     selector({
       saveSettings,
       restartBaseline: mockRestartBaseline,
       markRestartBaseline
-    })
+    }),
+  useProjectionActive: () => projectionActive.value
 }))
 
 vi.mock('../../constants', () => ({
-  requiresRestartParams: ['projectionWidth', 'bindings']
+  requiresRestartParams: ['projectionWidth', 'bindings', 'carplayIcon180', 'wifiChannel'],
+  restartWithoutSessionParams: ['wifiChannel']
 }))
 
 describe('useSmartSettings', () => {
@@ -86,6 +90,23 @@ describe('useSmartSettings', () => {
     // restartBaseline from mock has projectionWidth: 800 → needsRestartFromConfig = true
     const { result } = renderHook(() => useSmartSettings(initial, settings))
     expect(result.current.needsRestart).toBe(true)
+  })
+
+  test('with nothing projecting only the access point keys still ask for a restart', async () => {
+    mockRestartBaseline = { carplayIcon180: '', wifiChannel: 36 }
+    projectionActive.value = false
+
+    const icon = { carplayIcon180: 'b64', wifiChannel: 36 } as any
+    const idle = renderHook(() => useSmartSettings(icon, icon))
+    expect(idle.result.current.needsRestart).toBe(false)
+
+    const wifi = { carplayIcon180: '', wifiChannel: 149 } as any
+    const ap = renderHook(() => useSmartSettings(wifi, wifi))
+    expect(ap.result.current.needsRestart).toBe(true)
+
+    projectionActive.value = true
+    const projecting = renderHook(() => useSmartSettings(icon, icon))
+    expect(projecting.result.current.needsRestart).toBe(true)
   })
 
   test('handleFieldChange with transform override applies transformation', async () => {

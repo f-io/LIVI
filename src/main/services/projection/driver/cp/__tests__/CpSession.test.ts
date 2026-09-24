@@ -219,7 +219,7 @@ describe('CpSession construction and stack config', () => {
 
   it('drops icons that decode to empty and keeps the rest', () => {
     const { stack } = makeSession({
-      config: baseConfig({ dongleIcon120: 'A' } as Partial<Config>)
+      config: baseConfig({ carplayIcon120: 'A' } as Partial<Config>)
     })
     const icons = (stack.cfg as Record<string, unknown>).icons as unknown[]
     expect(icons).toHaveLength(2)

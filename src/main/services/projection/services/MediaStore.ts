@@ -2,15 +2,15 @@ import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import type { IPhoneDriver } from '../driver/IPhoneDriver'
-import { type MediaData, MediaType, PhoneType } from '../messages'
+import { type MediaData, MediaType } from '../messages'
 import { DEFAULT_MEDIA_DATA_RESPONSE } from './constants'
-import type { ProjectionSession } from './SessionManager'
+import type { ProjectionSession, SessionProtocol } from './SessionManager'
 import type { PersistedMediaPayload, ProjectionEvent } from './types'
 
 export type MediaStoreDeps = {
   emit: (payload: ProjectionEvent) => void
   getPlaybackInferred: () => 1 | 0
-  getLastPhoneType: () => PhoneType | undefined
+  getLastProtocol: () => SessionProtocol | undefined
   /** Active session's play state, deduped — drives the AVRCP PlaybackStatus. */
   onPlaybackStatus?: (state: 'playing' | 'paused') => void
 }
@@ -67,7 +67,7 @@ export class MediaStore {
       const mergedMedia = { ...existingPayload.media, ...msg.payload.media }
 
       if (
-        this.deps.getLastPhoneType() === PhoneType.AndroidAuto &&
+        this.deps.getLastProtocol() === 'androidauto' &&
         mergedMedia.MediaPlayStatus === undefined
       ) {
         mergedMedia.MediaPlayStatus = this.deps.getPlaybackInferred()

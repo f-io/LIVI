@@ -1,16 +1,10 @@
 import type { DeviceView, NaviBag } from '@shared/types'
-import { PhoneWorkMode } from '@shared/types'
 import type { AudioCommand } from '@shared/types/ProjectionEnums'
 import type { NavLocale } from '@shared/utils'
-import type { Command, NavigationData, PhoneType } from '../messages'
+import type { Command, NavigationData } from '../messages'
 import { MediaType, NavigationMetaType } from '../messages'
 import type { TransportSnapshot } from '../transport/types'
 import type { SessionProtocol, VideoCodec } from './SessionManager'
-
-export type PendingStartupConnectTarget = {
-  btMac: string
-  phoneWorkMode: PhoneWorkMode
-}
 
 export type MediaBag = Record<string, unknown>
 
@@ -54,7 +48,7 @@ export type ProjectionEventAudioInfo = {
 }
 
 export type ProjectionEvent =
-  | { type: 'plugged'; phoneType: PhoneType }
+  | { type: 'plugged' }
   | { type: 'unplugged' }
   | { type: 'resolution'; payload: { width: number; height: number } }
   | {

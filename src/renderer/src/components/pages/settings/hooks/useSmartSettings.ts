@@ -1,6 +1,6 @@
-import { useLiviStore } from '@store/store'
+import { useLiviStore, useProjectionActive } from '@store/store'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { requiresRestartParams } from '../constants'
+import { requiresRestartParams, restartWithoutSessionParams } from '../constants'
 import { getValueByPath, setValueByPath } from '../utils'
 
 type OverrideConfig = {
@@ -24,6 +24,8 @@ export function useSmartSettings<T extends Record<string, unknown>>(
   const [state, setState] = useState<T>(() => ({ ...initial }))
   const [restartRequested, setRestartRequested] = useState(false)
 
+  const projectionActive = useProjectionActive()
+
   const saveSettings = useLiviStore((s) => s.saveSettings)
   const restartBaseline = useLiviStore((s) => s.restartBaseline)
   const markRestartBaseline = useLiviStore((s) => s.markRestartBaseline)
@@ -46,10 +48,11 @@ export function useSmartSettings<T extends Record<string, unknown>>(
 
     for (const key of requiresRestartParams) {
       if (!isRestartRelevantPath(key)) continue
+      if (!projectionActive && !restartWithoutSessionParams.includes(key)) continue
       if (JSON.stringify(cfg[key]) !== JSON.stringify(baseline[key])) return true
     }
     return false
-  }, [settings, restartBaseline])
+  }, [settings, restartBaseline, projectionActive])
 
   const needsRestart = useMemo(() => {
     return Boolean(needsRestartFromConfig || restartRequested)

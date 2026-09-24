@@ -1,4 +1,3 @@
-import { PhoneType } from '@shared/types'
 import fs from 'fs'
 import type { IPhoneDriver } from '../../driver/IPhoneDriver'
 import { type MediaData, MediaType } from '../../messages'
@@ -21,7 +20,7 @@ function mkStore(over: Partial<MediaStoreDeps> = {}): {
   const store = new MediaStore({
     emit,
     getPlaybackInferred: () => 2,
-    getLastPhoneType: () => PhoneType.CarPlay,
+    getLastProtocol: () => 'carplay' as const,
     ...over
   })
   return { store, emit }
@@ -133,7 +132,7 @@ describe('MediaStore', () => {
 
   test('android auto data without a play status gets the inferred one', () => {
     const { store } = mkStore({
-      getLastPhoneType: () => PhoneType.AndroidAuto,
+      getLastProtocol: () => 'androidauto' as const,
       getPlaybackInferred: () => 2
     })
     const session = mkSession({ type: MediaType.Data, media: {} })
@@ -149,7 +148,7 @@ describe('MediaStore', () => {
   })
 
   test('android auto data keeps an explicit play status', () => {
-    const { store } = mkStore({ getLastPhoneType: () => PhoneType.AndroidAuto })
+    const { store } = mkStore({ getLastProtocol: () => 'androidauto' as const })
     const session = mkSession({ type: MediaType.Data, media: {} })
 
     store.handle(

@@ -1,6 +1,6 @@
 import type { Config } from '@shared/types'
 import { DEFAULT_BINDINGS } from '@shared/types'
-import { CarType, HandDriveType, PhoneWorkMode } from '@shared/types/Config'
+import { CarType, HandDriveType } from '@shared/types/Config'
 
 export const DEFAULT_CONFIG: Config = {
   dismissedPackages: [],
@@ -32,7 +32,6 @@ export const DEFAULT_CONFIG: Config = {
   clusterSafeAreaLeft: 300,
   clusterSafeAreaRight: 300,
   lastConnectedAaBtMac: '',
-  lastPhoneWorkMode: PhoneWorkMode.CarPlay,
   carName: 'LIVI',
   oemName: 'App',
   darkMode: true,
@@ -48,7 +47,6 @@ export const DEFAULT_CONFIG: Config = {
   wifiChannel: 36,
   wifiChannelWidth: 40,
   country: 'DE',
-  phoneConfig: {},
   carType: CarType.Gasoline,
   evConnectorTypes: [],
   wirelessAaEnabled: false,
@@ -119,7 +117,7 @@ export const DEFAULT_CONFIG: Config = {
   },
   media: { main: true, dash: false, aux: false },
   bindings: DEFAULT_BINDINGS,
-  dongleIcon120: '',
-  dongleIcon180: '',
-  dongleIcon256: ''
+  carplayIcon120: '',
+  carplayIcon180: '',
+  carplayIcon256: ''
 }

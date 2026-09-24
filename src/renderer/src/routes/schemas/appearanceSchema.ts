@@ -1,4 +1,5 @@
 import type { Config } from '@shared/types'
+import { IconUploader } from '../../components/pages/settings/pages/appearance/iconUploader/IconUploader'
 import { ColorCalibration } from '../../components/pages/settings/pages/displayCalibration/ColorCalibration'
 import { ContrastGammaCalibration } from '../../components/pages/settings/pages/displayCalibration/ContrastGammaCalibration'
 import { SettingsNode, ValueTransform } from '../types'
@@ -160,7 +161,15 @@ export const appearanceSchema: SettingsNode<Config> = {
       icon: 'uiIcon',
       route: 'ui-icon',
       path: '',
-      children: []
+      children: [
+        {
+          type: 'custom',
+          label: 'UI Icon',
+          labelKey: 'settings.uiIcon',
+          path: 'carplayIcon180',
+          component: IconUploader
+        }
+      ]
     }
   ]
 }

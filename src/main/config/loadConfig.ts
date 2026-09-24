@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'fs'
 import { sysfsPanelGeometry } from '../services/video/panelEdid'
 import { CONFIG_BACKUP_PATH, CONFIG_PATH } from './paths'
 import { validate } from './validateConfig'
-import { writeConfig } from './writeConfig'
+import { configForFile, writeConfig } from './writeConfig'
 
 /** carName names the Wi-Fi AP, the Bluetooth device and the head unit, so two
  *  cars on the stock name would collide. The host already carries a name the
@@ -78,7 +78,7 @@ export function loadConfig(): Config {
   }
 
   const needWrite =
-    !existsSync(CONFIG_PATH) || JSON.stringify(fileConfig) !== JSON.stringify(merged)
+    !existsSync(CONFIG_PATH) || JSON.stringify(fileConfig) !== JSON.stringify(configForFile(merged))
 
   if (needWrite) {
     writeConfig(merged)

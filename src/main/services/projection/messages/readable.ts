@@ -1,4 +1,3 @@
-import { PhoneType } from '@shared/types/Config'
 import type { NaviInfo } from '@shared/types/NavigationTypes'
 import type { AudioCommand, CommandMapping } from '@shared/types/ProjectionEnums'
 
@@ -27,8 +26,6 @@ export class Command extends Message {
     this.value = value
   }
 }
-
-export { PhoneType }
 
 export type AudioDataFields = {
   decodeType: number

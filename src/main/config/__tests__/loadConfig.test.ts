@@ -36,7 +36,10 @@ vi.mock('@shared/types', () => ({
     carName: 'LIVI',
     bindings: {},
     wifiPassword: 'livi-default-pw',
-    startPage: '/'
+    startPage: '/',
+    carplayIcon120: '',
+    carplayIcon180: '',
+    carplayIcon256: ''
   }
 }))
 
@@ -70,11 +73,14 @@ describe('loadConfig', () => {
       carName: 'test-host',
       bindings: {},
       wifiPassword: 'livi-default-pw',
-      startPage: '/'
+      startPage: '/',
+      carplayIcon120: '',
+      carplayIcon180: '',
+      carplayIcon256: ''
     })
     expect(writeFileSync).toHaveBeenCalledWith(
       '/tmp/config.json.tmp',
-      JSON.stringify(result, null, 2)
+      expect.not.stringContaining('carplayIcon')
     )
   })
 
@@ -102,7 +108,10 @@ describe('loadConfig', () => {
       carName: 'MyCar',
       bindings: {},
       wifiPassword: 'MyCarPass123',
-      startPage: '/'
+      startPage: '/',
+      carplayIcon120: '',
+      carplayIcon180: '',
+      carplayIcon256: ''
     })
     expect(writeFileSync).not.toHaveBeenCalled()
   })
@@ -122,12 +131,15 @@ describe('loadConfig', () => {
       carName: 'test-host',
       bindings: {},
       wifiPassword: 'livi-default-pw',
-      startPage: '/'
+      startPage: '/',
+      carplayIcon120: '',
+      carplayIcon180: '',
+      carplayIcon256: ''
     })
     expect(warnSpy).toHaveBeenCalled()
     expect(writeFileSync).toHaveBeenCalledWith(
       '/tmp/config.json.tmp',
-      JSON.stringify(result, null, 2)
+      expect.not.stringContaining('carplayIcon')
     )
 
     warnSpy.mockRestore()
@@ -269,6 +281,41 @@ describe('loadConfig', () => {
       })
     )
     expect(loadConfig().wifiPassword).toBe('supersecret')
+  })
+
+  test('a default logo stays out of the file, a custom one goes in', () => {
+    ;(existsSync as Mock).mockReturnValue(true)
+    ;(readFileSync as Mock).mockReturnValue(JSON.stringify({ carName: 'Car', bindings: {} }))
+    ;(writeFileSync as Mock).mockClear()
+
+    loadConfig()
+
+    const written = (writeFileSync as Mock).mock.calls[0]?.[1] as string
+    expect(written).not.toContain('carplayIcon120')
+
+    ;(readFileSync as Mock).mockReturnValue(
+      JSON.stringify({ carName: 'Car', bindings: {}, carplayIcon120: 'b64' })
+    )
+    ;(writeFileSync as Mock).mockClear()
+
+    expect(loadConfig().carplayIcon120).toBe('b64')
+    const second = (writeFileSync as Mock).mock.calls[0]?.[1] as string | undefined
+    if (second !== undefined) expect(second).toContain('carplayIcon120')
+  })
+
+  test('empty logo keys already in the file are cleaned out on the next write', () => {
+    ;(existsSync as Mock).mockReturnValue(true)
+    ;(readFileSync as Mock).mockReturnValue(
+      JSON.stringify({ carName: 'Car', bindings: {}, carplayIcon120: '', carplayIcon180: '  ' })
+    )
+    ;(writeFileSync as Mock).mockClear()
+
+    loadConfig()
+
+    expect(writeFileSync).toHaveBeenCalledWith(
+      '/tmp/config.json.tmp',
+      expect.not.stringContaining('carplayIcon')
+    )
   })
 
   test('an overlong wifiPassword falls back to the default', () => {

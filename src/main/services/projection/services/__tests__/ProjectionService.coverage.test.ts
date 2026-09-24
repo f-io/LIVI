@@ -70,7 +70,6 @@ vi.mock('../../messages', async () => {
       constructor(public phoneType?: number) {}
     },
     Unplugged: class {},
-    PhoneType: { CarPlay: 3, AndroidAuto: 5 },
     BluetoothPairedList: class {
       constructor(public data?: unknown) {}
     },
@@ -730,7 +729,7 @@ describe('ProjectionService audio handling', () => {
     svc.webContents = { send }
     svc.statusFile.applyAudioCommand = vi.fn()
     svc.mediaStore.patchAaPlayStatus = vi.fn()
-    svc.lastPluggedPhoneType = 5
+    svc.lastPluggedProtocol = 'androidauto'
 
     svc.handleAudioData({ command: 10, audioType: 1, decodeType: 1, volume: 0.5 })
     expect(svc.aaPlaybackInferred).toBe(1)
@@ -749,7 +748,7 @@ describe('ProjectionService audio handling', () => {
     const svc = makeSvc()
     const send = vi.fn()
     svc.webContents = { send }
-    svc.lastPluggedPhoneType = 3
+    svc.lastPluggedProtocol = 'carplay'
 
     svc.handleAudioData({ decodeType: 1, audioType: 1 })
     svc.handleAudioData({ decodeType: 1, audioType: 1 })
@@ -763,7 +762,7 @@ describe('ProjectionService audio handling', () => {
 })
 
 describe('ProjectionService phone lifecycle events', () => {
-  test('onPhoneConnected persists work mode, emits plugged, and runs hooks', () => {
+  test('onPhoneConnected emits plugged and runs the hooks', () => {
     const svc = makeSvc()
     const send = vi.fn()
     svc.webContents = { send }
@@ -775,24 +774,11 @@ describe('ProjectionService phone lifecycle events', () => {
     })
     svc.addPluggedHook(throwingHook)
 
-    svc.onPhoneConnected(3)
+    svc.onPhoneConnected('carplay')
 
-    expect(configEventsMock.emit).toHaveBeenCalledWith('requestSave', {
-      lastPhoneWorkMode: expect.any(Number)
-    })
-    expect(send).toHaveBeenCalledWith('projection-event', { type: 'plugged', phoneType: 3 })
-    expect(hook).toHaveBeenCalledWith(3)
+    expect(send).toHaveBeenCalledWith('projection-event', { type: 'plugged' })
+    expect(hook).toHaveBeenCalled()
     expect(throwingHook).toHaveBeenCalled()
-  })
-
-  test('onPhoneConnected swallows a persistence failure', () => {
-    const svc = makeSvc()
-    svc.webContents = { send: vi.fn() }
-    svc.statusFile.setProjection = vi.fn()
-    ;(configEventsMock.emit as Mock).mockImplementationOnce(() => {
-      throw new Error('save boom')
-    })
-    expect(() => svc.onPhoneConnected(5)).not.toThrow()
   })
 
   test('addPluggedHook returns a disposer that removes the hook', () => {
@@ -803,7 +789,7 @@ describe('ProjectionService phone lifecycle events', () => {
     dispose()
     svc.webContents = { send: vi.fn() }
     svc.statusFile.setProjection = vi.fn()
-    svc.onPhoneConnected(5)
+    svc.onPhoneConnected('androidauto')
     expect(hook).not.toHaveBeenCalled()
   })
 
@@ -1662,7 +1648,7 @@ describe('ProjectionService constructor wiring closures', () => {
     const svc = makeSvc()
     svc.emitProjectionEvent = vi.fn()
     svc.aaPlaybackInferred = 2
-    svc.lastPluggedPhoneType = 5
+    svc.lastPluggedProtocol = 'androidauto'
     svc.config = { language: 'de' }
     svc.webContents = { id: 1, send: vi.fn() }
     svc.hostDevList = [{ id: 'x' }]
@@ -1674,7 +1660,7 @@ describe('ProjectionService constructor wiring closures', () => {
     svc.btPaired.getConnectedMac = vi.fn(() => 'AA:BB')
 
     expect(svc.mediaStore.deps.getPlaybackInferred()).toBe(2)
-    expect(svc.mediaStore.deps.getLastPhoneType()).toBe(5)
+    expect(svc.mediaStore.deps.getLastProtocol()).toBe('androidauto')
     svc.mediaStore.deps.emit({ type: 'media' })
     expect(svc.navStore.deps.getLanguage()).toBe('de')
     svc.navStore.deps.emit({ type: 'navigation' })

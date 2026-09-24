@@ -85,5 +85,22 @@ export const requiresRestartParams: (keyof Config)[] = [
   'oemName',
   'wifiPassword',
   'samplingFrequency',
-  'hand'
+  'hand',
+  'carplayIcon120',
+  'carplayIcon180',
+  'carplayIcon256'
+]
+
+export const restartWithoutSessionParams: (keyof Config)[] = [
+  'wirelessAaEnabled',
+  'wirelessCpEnabled',
+  'wifiInterface',
+  'wifiDedicatedInterface',
+  'wifiType',
+  'wifiChannel',
+  'wifiChannelWidth',
+  'wifiPassword',
+  'country',
+  'carName',
+  'btAdapter'
 ]

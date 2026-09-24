@@ -1,5 +1,4 @@
 import { EventEmitter } from 'node:events'
-import { PhoneWorkMode } from '@shared/types'
 import fs from 'fs'
 import type { Mock } from 'vitest'
 import {
@@ -10,7 +9,6 @@ import {
   BoxUpdateState,
   Command,
   decodeTypeMap,
-  PhoneType,
   Plugged,
   SoftwareVersion
 } from '../../messages'
@@ -28,7 +26,6 @@ vi.mock('../../messages', async () => {
       constructor(public phoneType?: number) {}
     },
     Unplugged: class {},
-    PhoneType: { CarPlay: 3, AndroidAuto: 5 },
     BluetoothPairedList: class {
       constructor(public data?: unknown) {}
     },
@@ -767,7 +764,7 @@ describe('ProjectionService', () => {
     routeMockDriver(svc)
     const send = vi.fn()
     svc.webContents = { send }
-    svc.lastPluggedPhoneType = PhoneType.CarPlay
+    svc.lastPluggedProtocol = 'carplay'
     ;(decodeTypeMap as any)[7] = {
       frequency: 48000,
       channel: 2,
