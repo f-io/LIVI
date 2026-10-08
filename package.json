@@ -11,7 +11,7 @@
   ],
   "homepage": "https://f-io.dev",
   "license": "GPL-3.0-or-later",
-  "packageManager": "pnpm@12.9.1",
+  "packageManager": "pnpm@12.10.1",
   "scripts": {
     "prepare": "husky",
     "dev": "vite",
@@ -55,7 +55,7 @@
     "@mui/material": "^9.4.0",
     "@mui/system": "^9.4.0",
     "i18next": "^26.4.2",
-    "react-i18next": "^17.0.15",
+    "react-i18next": "^17.0.16",
     "react-router": "^8.4.0",
     "zustand": "^5.0.15"
   },
@@ -68,7 +68,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "@vitest/coverage-v8": "^5.0.3",
-    "electron": "^44.5.1",
+    "electron": "^44.7.0",
     "electron-builder": "^26.15.3",
     "husky": "^9.1.7",
     "jsdom": "^30.1.2",
@@ -76,7 +76,7 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "typescript": "^7.0.2",
-    "vite": "^8.3.3",
+    "vite": "^8.3.4",
     "vite-plugin-electron": "^1.1.2",
     "vitest": "^5.0.3"
   }
