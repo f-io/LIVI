@@ -541,7 +541,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     if let Err(e) = bluetooth().await {
-        eprintln!("[helperd] no Bluetooth ({e}), wired CarPlay carries on");
+        eprintln!("[helperd] no Bluetooth ({e}): wired/wireless AA will not be available. wired CarPlay carries on");
         crate::shutdown_signal().await;
         println!("[helperd] shutting down");
         iap2_usbmux::restore_all_default_config();
