@@ -25,6 +25,8 @@ const OP_AUDIO_DATA: u8 = 14;
 const OP_VISUALIZER: u8 = 15;
 const OP_FEED_OPEN: u8 = 16;
 const OP_AUDIO_OUTPUT: u8 = 17;
+const OP_FEED_ROUTE: u8 = 18;
+const OP_FEED_CLOSE: u8 = 19;
 const OP_TAP_OPEN: u8 = 20;
 const OP_TAP_STOP: u8 = 21;
 
@@ -75,6 +77,13 @@ pub enum HostEvent {
     Spectrum {
         bands: Vec<f32>,
     },
+}
+
+/// Where a fed stream of its own ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeedTarget {
+    Plane(u32),
+    Audio(u32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -431,6 +440,25 @@ impl GstHost {
         self.send(frame(OP_TEARDOWN, receiver, &[]));
     }
 
+    /// A fed stream of its own into a plane or an audio stream, switched like a receiver: the
+    /// active one plays and holds the others of the same target.
+    pub fn open_feed_route(&self, target: FeedTarget, active: bool) -> u32 {
+        let id = self.next_id();
+        let (kind, target) = match target {
+            FeedTarget::Plane(plane) => (0u8, plane),
+            FeedTarget::Audio(stream) => (1, stream),
+        };
+        let mut rest = vec![kind];
+        rest.extend_from_slice(&target.to_le_bytes());
+        rest.push(u8::from(active));
+        self.send(frame(OP_FEED_ROUTE, id, &rest));
+        id
+    }
+
+    pub fn close_feed_route(&self, id: u32) {
+        self.send(frame(OP_FEED_CLOSE, id, &[]));
+    }
+
     /// (stream id, data port, control port), ports 0 on a timeout.
     pub async fn open_audio(&self, key: &[u8; 32], o: &AudioOpts) -> (u32, u16, u16) {
         let stream = self.next_id();
@@ -664,6 +692,24 @@ mod tests {
         gst.stop(0x7a00_0001);
         let mut fake = FakeHost::connect(&gst).await;
         assert_eq!(fake.next().await.op, OP_STOP);
+    }
+
+    #[tokio::test]
+    async fn a_feed_route_names_its_target_and_closes_again() {
+        let dir = TempDir::new();
+        let gst = host(&dir);
+        let mut fake = FakeHost::connect(&gst).await;
+        let video = gst.open_feed_route(FeedTarget::Plane(0x7a00_0001), true);
+        let audio = gst.open_feed_route(FeedTarget::Audio(0x7b00_0009), false);
+        assert_ne!(video, audio);
+        let first = fake.next().await;
+        assert_eq!((first.op, first.id), (OP_FEED_ROUTE, video));
+        assert_eq!(first.rest, [0, 1, 0, 0, 0x7a, 1]);
+        let second = fake.next().await;
+        assert_eq!((second.id, second.rest.as_slice()), (audio, &[1, 9, 0, 0, 0x7b, 0][..]));
+        gst.close_feed_route(video);
+        let close = fake.next().await;
+        assert_eq!((close.op, close.id), (OP_FEED_CLOSE, video));
     }
 
     #[tokio::test]

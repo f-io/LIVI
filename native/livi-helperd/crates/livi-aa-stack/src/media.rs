@@ -7,6 +7,7 @@ use tokio::sync::broadcast;
 
 use crate::channels::audio::AudioChannelType;
 use crate::discovery::VideoCodec;
+use crate::manager::SessionId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AudioKind {
@@ -37,13 +38,18 @@ pub struct AudioOutput {
 pub trait AaMedia: Send + Sync + 'static {
     /// Empty when the host cannot provide one.
     fn feed_path(&self) -> impl Future<Output = String> + Send;
-    fn video_plane(&self, cluster: bool) -> u32;
+    /// The session's own stream into the main or the cluster plane.
+    fn video_feed(&self, session: SessionId, cluster: bool) -> u32;
     /// Creates the plane, so the fed frames find a decoder.
     fn prime_video(&self, cluster: bool, codec: VideoCodec);
     fn video_started(&self, cluster: bool, width: u32, height: u32);
-    /// A held session's frames stop in the host.
-    fn set_video_active(&self, cluster: bool, active: bool);
-    fn set_audio_active(&self, active: bool);
+    /// The session's own stream into an audio output all sessions share.
+    fn audio_feed(&self, session: SessionId, stream: u32) -> u32;
+    /// A held session's frames and samples stop in the host, another session's hold leaves
+    /// this one alone.
+    fn set_active(&self, session: SessionId, active: bool);
+    /// The session is gone, its streams close.
+    fn release(&self, session: SessionId);
     fn audio_outputs(&self) -> Vec<AudioOutput>;
     fn audio_output_opened(&self) -> broadcast::Receiver<AudioOutput>;
     fn prime_audio(&self, kind: AudioKind, sample_rate: u32, channels: u32, tag: &str);
@@ -100,7 +106,7 @@ pub(crate) mod tests {
             "/tmp/gst.feed".to_string()
         }
 
-        fn video_plane(&self, cluster: bool) -> u32 {
+        fn video_feed(&self, _session: SessionId, cluster: bool) -> u32 {
             if cluster { 7 } else { 1 }
         }
 
@@ -112,12 +118,16 @@ pub(crate) mod tests {
             self.note(json!({ "videoStarted": [cluster, width, height] }));
         }
 
-        fn set_video_active(&self, cluster: bool, active: bool) {
-            self.note(json!({ "videoActive": [cluster, active] }));
+        fn audio_feed(&self, _session: SessionId, stream: u32) -> u32 {
+            stream
         }
 
-        fn set_audio_active(&self, active: bool) {
-            self.note(json!({ "audioActive": active }));
+        fn set_active(&self, session: SessionId, active: bool) {
+            self.note(json!({ "active": [session, active] }));
+        }
+
+        fn release(&self, session: SessionId) {
+            self.note(json!({ "release": session }));
         }
 
         fn audio_outputs(&self) -> Vec<AudioOutput> {

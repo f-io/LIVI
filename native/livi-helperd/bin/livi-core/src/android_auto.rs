@@ -1,13 +1,14 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use livi_aa_stack::config::Codecs;
 use livi_aa_stack::discovery::VideoCodec;
 use livi_aa_stack::helper_sock::AaHelperSock;
+use livi_aa_stack::manager::SessionId;
 use livi_aa_stack::media::{AaMedia, AudioKind, AudioOutput};
 use livi_core_proto::state::State;
 use livi_host_proto::{PLANE_CLUSTER_RECV, PLANE_MAIN};
-use livi_media::gst_host::{self, Codec, GstHost};
+use livi_media::gst_host::{self, Codec, FeedTarget, GstHost};
 use livi_media::planes::{ClusterPlanes, Crop, MainPlane, crop_for};
 use tokio::sync::{broadcast, mpsc, watch};
 
@@ -65,7 +66,25 @@ struct Audio {
     opening: Vec<OutputKey>,
     keys: HashMap<u32, OutputKey>,
     levels: HashMap<AudioKind, f64>,
+    /// The helper feeds the call stream itself, it plays while a session has the front.
+    call_active: bool,
+}
+
+/// A session's own streams into the planes and outputs all sessions share, so one session's
+/// hold never reaches another's picture or sound.
+#[derive(Default)]
+struct Feeds {
     active: bool,
+    /// By cluster.
+    video: BTreeMap<bool, u32>,
+    /// By the output stream.
+    audio: BTreeMap<u32, u32>,
+}
+
+#[derive(Default)]
+struct Sessions {
+    feeds: HashMap<SessionId, Feeds>,
+    front: Option<SessionId>,
 }
 
 /// `round` tells a late answer of an earlier call apart.
@@ -90,6 +109,7 @@ pub struct GstAaMedia {
     main_codec: Mutex<Option<Codec>>,
     crop: watch::Sender<Option<Crop>>,
     call: Mutex<Call>,
+    sessions: Mutex<Sessions>,
 }
 
 impl GstAaMedia {
@@ -104,12 +124,46 @@ impl GstAaMedia {
             plane,
             clusters,
             state,
-            audio: Arc::new(Mutex::new(Audio { active: true, ..Default::default() })),
+            audio: Arc::new(Mutex::new(Audio { call_active: true, ..Default::default() })),
             opened: broadcast::channel(16).0,
             main_codec: Mutex::new(None),
             crop: watch::channel(None).0,
             call: Mutex::new(Call::default()),
+            sessions: Mutex::new(Sessions::default()),
         })
+    }
+
+    fn sessions(&self) -> MutexGuard<'_, Sessions> {
+        self.sessions.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn feed(&self, session: SessionId, target: FeedTarget) -> u32 {
+        let mut sessions = self.sessions();
+        let feeds = sessions.feeds.entry(session).or_default();
+        let known = match target {
+            FeedTarget::Plane(plane) => feeds.video.get(&(plane == PLANE_CLUSTER_RECV)),
+            FeedTarget::Audio(stream) => feeds.audio.get(&stream),
+        };
+        if let Some(id) = known {
+            return *id;
+        }
+        let id = self.gst.open_feed_route(target, feeds.active);
+        match target {
+            FeedTarget::Plane(plane) => feeds.video.insert(plane == PLANE_CLUSTER_RECV, id),
+            FeedTarget::Audio(stream) => feeds.audio.insert(stream, id),
+        };
+        id
+    }
+
+    fn set_call_active(&self, active: bool) {
+        let streams: Vec<u32> = {
+            let mut a = self.audio();
+            a.call_active = active;
+            a.outputs.iter().filter(|o| is_call(o)).map(|o| o.stream).collect()
+        };
+        for stream in streams {
+            self.gst.set_audio_active(stream, active);
+        }
     }
 
     pub fn crop(&self) -> watch::Receiver<Option<Crop>> {
@@ -227,8 +281,8 @@ impl AaMedia for GstAaMedia {
         self.gst.open_feed().await
     }
 
-    fn video_plane(&self, cluster: bool) -> u32 {
-        if cluster { PLANE_CLUSTER_RECV } else { PLANE_MAIN }
+    fn video_feed(&self, session: SessionId, cluster: bool) -> u32 {
+        self.feed(session, FeedTarget::Plane(if cluster { PLANE_CLUSTER_RECV } else { PLANE_MAIN }))
     }
 
     fn prime_video(&self, cluster: bool, video: VideoCodec) {
@@ -255,11 +309,30 @@ impl AaMedia for GstAaMedia {
         }
     }
 
+    fn audio_feed(&self, session: SessionId, stream: u32) -> u32 {
+        self.feed(session, FeedTarget::Audio(stream))
+    }
+
     /// A session coming back to the front finds the plane as another phone
     /// left it, so its own codec and crop go there again.
-    fn set_video_active(&self, cluster: bool, active: bool) {
-        self.gst.set_active_feeder(self.video_plane(cluster), active);
-        if cluster || !active {
+    fn set_active(&self, session: SessionId, active: bool) {
+        let (feeds, front) = {
+            let mut sessions = self.sessions();
+            let feeds = sessions.feeds.entry(session).or_default();
+            feeds.active = active;
+            let ids: Vec<u32> = feeds.video.values().chain(feeds.audio.values()).copied().collect();
+            if active {
+                sessions.front = Some(session);
+            } else if sessions.front == Some(session) {
+                sessions.front = None;
+            }
+            (ids, sessions.front.is_some())
+        };
+        for feed in feeds {
+            self.gst.set_active_feeder(feed, active);
+        }
+        self.set_call_active(front);
+        if !active {
             return;
         }
         let main = *self.main_codec.lock().unwrap_or_else(|e| e.into_inner());
@@ -272,14 +345,18 @@ impl AaMedia for GstAaMedia {
         }
     }
 
-    fn set_audio_active(&self, active: bool) {
-        let streams: Vec<u32> = {
-            let mut a = self.audio();
-            a.active = active;
-            a.outputs.iter().map(|o| o.stream).collect()
+    fn release(&self, session: SessionId) {
+        let feeds = {
+            let mut sessions = self.sessions();
+            if sessions.front == Some(session) {
+                sessions.front = None;
+            }
+            sessions.feeds.remove(&session)
         };
-        for stream in streams {
-            self.gst.set_audio_active(stream, active);
+        for feed in
+            feeds.into_iter().flat_map(|f| f.video.into_values().chain(f.audio.into_values()))
+        {
+            self.gst.close_feed_route(feed);
         }
     }
 
@@ -324,9 +401,10 @@ impl AaMedia for GstAaMedia {
                     return;
                 }
                 let output = AudioOutput { kind, stream, tag: Some(key.3.clone()) };
+                let active = !is_call(&output) || a.call_active;
                 a.keys.insert(stream, key);
                 a.outputs.push(output.clone());
-                (output, a.levels.get(&kind).copied().unwrap_or(fallback), a.active)
+                (output, a.levels.get(&kind).copied().unwrap_or(fallback), active)
             };
             gst.set_audio_active(stream, active);
             gst.set_audio_volume(stream, level, 0);
@@ -407,10 +485,20 @@ mod tests {
     use crate::config_file::defaults;
     use crate::config_file::tests::TempDir;
 
+    const OP_SET_ACTIVE: u8 = 7;
     const OP_AUDIO_OPEN: u8 = 8;
     const OP_AUDIO_VOLUME: u8 = 9;
     const OP_AUDIO_ACTIVE: u8 = 13;
+    const OP_FEED_ROUTE: u8 = 18;
+    const OP_FEED_CLOSE: u8 = 19;
     const REPLY_AUDIO_PORTS: u8 = 4;
+
+    fn route(kind: u8, target: u32, active: bool) -> Vec<u8> {
+        let mut v = vec![kind];
+        v.extend_from_slice(&target.to_le_bytes());
+        v.push(u8::from(active));
+        v
+    }
 
     struct FakeHost {
         stream: UnixStream,
@@ -529,17 +617,54 @@ mod tests {
         media.set_host_volume(AudioKind::Speech, 0.3, 200);
         media.set_host_volume(AudioKind::Media, 0.9, 0);
         assert_eq!(host.next().await, (OP_AUDIO_VOLUME, id, volume(0.3, 200)));
-        media.set_audio_active(false);
-        assert_eq!(host.next().await, (OP_AUDIO_ACTIVE, id, vec![0]));
-
-        assert_eq!(media.video_plane(true), PLANE_CLUSTER_RECV);
-        assert_eq!(media.video_plane(false), PLANE_MAIN);
         let crop = media.crop();
         media.video_started(false, 0, 720);
         assert!(crop.borrow().is_none());
         media.video_started(false, 1280, 720);
         assert_eq!(*crop.borrow(), crop_for((1280, 720), (1280, 600)));
         assert!(media.open_mic_tap("/tmp/mic", 16000, 1, "").is_some());
+    }
+
+    #[tokio::test]
+    async fn every_session_switches_only_its_own_feeds() {
+        let dir = TempDir::new();
+        let sock = dir.0.join("gst.sock");
+        let gst = GstHost::new(sock.clone());
+        let ctrl = CompositorControl::connect(dir.0.join("ctrl"));
+        let plane = MainPlane::new(gst.clone(), ctrl.clone());
+        let clusters = ClusterPlanes::new(gst.clone(), ctrl);
+        let (_state_tx, state_rx) = watch::channel(state());
+        let media = GstAaMedia::new(gst, plane, clusters, state_rx);
+
+        let wifi = media.video_feed(1, false);
+        let mut host = FakeHost::connect(&sock).await;
+        assert_eq!(host.next().await, (OP_FEED_ROUTE, wifi, route(0, PLANE_MAIN, false)));
+        let wifi_speech = media.audio_feed(1, 0x7b00_0040);
+        assert_eq!(host.next().await, (OP_FEED_ROUTE, wifi_speech, route(1, 0x7b00_0040, false)));
+        assert_eq!(media.video_feed(1, false), wifi);
+        media.set_active(1, true);
+        assert_eq!(host.next().await, (OP_SET_ACTIVE, wifi, vec![1]));
+        assert_eq!(host.next().await, (OP_SET_ACTIVE, wifi_speech, vec![1]));
+
+        media.set_active(2, true);
+        let usb = media.video_feed(2, false);
+        assert_eq!(host.next().await, (OP_FEED_ROUTE, usb, route(0, PLANE_MAIN, true)));
+        let usb_cluster = media.video_feed(2, true);
+        assert_eq!(
+            host.next().await,
+            (OP_FEED_ROUTE, usb_cluster, route(0, PLANE_CLUSTER_RECV, true))
+        );
+
+        media.set_active(1, false);
+        assert_eq!(host.next().await, (OP_SET_ACTIVE, wifi, vec![0]));
+        assert_eq!(host.next().await, (OP_SET_ACTIVE, wifi_speech, vec![0]));
+        media.release(1);
+        assert_eq!(host.next().await, (OP_FEED_CLOSE, wifi, vec![]));
+        assert_eq!(host.next().await, (OP_FEED_CLOSE, wifi_speech, vec![]));
+        media.release(1);
+        media.release(2);
+        assert_eq!(host.next().await, (OP_FEED_CLOSE, usb, vec![]));
+        assert_eq!(host.next().await, (OP_FEED_CLOSE, usb_cluster, vec![]));
     }
 
     async fn helper_line(listener: &tokio::net::UnixListener) -> String {
@@ -592,6 +717,16 @@ mod tests {
         assert_eq!(op, OP_FEED_OPEN);
         host.stream.write_all(&encode_reply(REPLY_FEED, 0, b"/run/feed")).await.unwrap();
         assert_eq!(helper_line(&listener).await, format!("sco-sink /run/feed {stream}"));
+
+        // The caller follows whichever session has the front, a late hold of another leaves it.
+        media.set_active(1, true);
+        media.set_active(2, true);
+        media.set_active(1, false);
+        for _ in 0..3 {
+            assert_eq!(host.next().await, (OP_AUDIO_ACTIVE, stream, vec![1]));
+        }
+        media.set_active(2, false);
+        assert_eq!(host.next().await, (OP_AUDIO_ACTIVE, stream, vec![0]));
 
         media.stop_call(&helper);
         media.stop_call(&helper);

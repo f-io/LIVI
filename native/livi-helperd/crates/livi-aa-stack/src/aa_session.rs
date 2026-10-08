@@ -274,6 +274,7 @@ impl<M: AaMedia> Phone<M> {
         }
         self.mic_active = false;
         self.drop_mic_tap();
+        self.media.release(self.id);
         self.down_emitted = true;
         self.emit(AaEvent::Disconnected { id: self.id });
     }
@@ -325,9 +326,7 @@ impl<M: AaMedia> Phone<M> {
             }
             SessionCmd::ClusterActive(active) => self.session.set_cluster_stream_active(active),
             SessionCmd::VideoActive(active) => {
-                self.media.set_video_active(false, active);
-                self.media.set_video_active(true, active);
-                self.media.set_audio_active(active);
+                self.media.set_active(self.id, active);
                 Vec::new()
             }
             SessionCmd::StreamVolume { kind, level, ramp_ms } => {
@@ -388,7 +387,7 @@ impl<M: AaMedia> Phone<M> {
         self.media.prime_video(cluster, codec);
         let entry = json!({
             "ch": if cluster { ch::CLUSTER_VIDEO } else { ch::VIDEO },
-            "id": self.media.video_plane(cluster),
+            "id": self.media.video_feed(self.id, cluster),
             "codec": codec.name(),
         });
         self.deliver(true, "video", entry);
@@ -396,7 +395,8 @@ impl<M: AaMedia> Phone<M> {
 
     fn push_audio_sink(&mut self, o: &AudioOutput) {
         let Some(channel) = o.tag.as_deref().and_then(AudioChannelType::from_name) else { return };
-        self.deliver(false, "audio", json!({ "ch": channel.channel(), "id": o.stream }));
+        let id = self.media.audio_feed(self.id, o.stream);
+        self.deliver(false, "audio", json!({ "ch": channel.channel(), "id": id }));
     }
 
     fn deliver(&self, video: bool, key: &'static str, entry: Value) {
@@ -633,10 +633,9 @@ mod tests {
         assert_eq!(
             r.media.take(),
             [
-                json!({ "videoActive": [false, false] }),
-                json!({ "videoActive": [true, false] }),
-                json!({ "audioActive": false }),
-                json!({ "volume": [4, 0.5, 100] })
+                json!({ "active": [7, false] }),
+                json!({ "volume": [4, 0.5, 100] }),
+                json!({ "release": 7 })
             ]
         );
         loop {

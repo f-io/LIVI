@@ -41,6 +41,8 @@ const OP_AUDIO_DATA: u8 = 14;
 const OP_VISUALIZER: u8 = 15;
 const OP_FEED_OPEN: u8 = 16;
 const OP_AUDIO_OUTPUT: u8 = 17;
+const OP_FEED_ROUTE: u8 = 18;
+const OP_FEED_CLOSE: u8 = 19;
 
 const REPLY_PORT: u8 = 1;
 const REPLY_CONFIG: u8 = 2;
@@ -273,11 +275,22 @@ type Streams<S, E> = Rc<RefCell<HashMap<u32, AudioStream<S, E>>>>;
 type FeedFans = Rc<RefCell<HashMap<u32, Option<Fanout>>>>;
 type FeedWanted = Rc<RefCell<HashMap<u32, bool>>>;
 
+/// Where a fed stream of its own ends. One phone session owns it, and it plays only while
+/// that session is active.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Route {
+    Plane(u32),
+    Audio(u32),
+}
+
+type FeedRoutes = Rc<RefCell<HashMap<u32, Route>>>;
+
 struct MediaFeed<O: Outside> {
     planes: Planes<O::Plane>,
     audio: Streams<O::Speaker, O::AudioEars>,
     fans: FeedFans,
     wanted: FeedWanted,
+    routes: FeedRoutes,
 }
 
 impl<O: Outside> MediaFeed<O> {
@@ -312,19 +325,30 @@ impl<O: Outside> MediaSink for MediaFeed<O> {
                 self.fans.borrow_mut().insert(r.id, fan);
             }
             feedproto::KIND_VIDEO => {
+                let target = match self.routes.borrow().get(&r.id) {
+                    Some(Route::Plane(plane)) => *plane,
+                    _ => r.id,
+                };
                 let planes = self.planes.borrow();
                 let mut has_target = false;
-                Self::for_each_target(&planes, r.id, |_| has_target = true);
+                Self::for_each_target(&planes, target, |_| has_target = true);
                 let pass = match self.fans.borrow_mut().get_mut(&r.id) {
                     Some(Some(fan)) => fan.take(&r.payload, has_target),
                     _ => has_target,
                 };
                 if pass {
-                    Self::for_each_target(&planes, r.id, |p| p.push(&r.payload));
+                    Self::for_each_target(&planes, target, |p| p.push(&r.payload));
                 }
             }
             feedproto::KIND_AUDIO => {
-                if let Some(a) = self.audio.borrow().get(&r.id)
+                let (stream, wanted) = match self.routes.borrow().get(&r.id) {
+                    Some(Route::Audio(stream)) => {
+                        (*stream, self.wanted.borrow().get(&r.id).copied().unwrap_or(false))
+                    }
+                    _ => (r.id, true),
+                };
+                if wanted
+                    && let Some(a) = self.audio.borrow().get(&stream)
                     && a.active.load(Ordering::Relaxed)
                 {
                     a.speaker.get().push_samples(&r.payload);
@@ -345,6 +369,7 @@ pub struct Host<O: Outside> {
     taps: HashMap<u32, O::Tap>,
     feed_fans: FeedFans,
     feed_wanted: FeedWanted,
+    feed_routes: FeedRoutes,
     helper_feed: Option<O::FeedEars>,
     visualizer_enabled: bool,
     spectrum: Spectrum,
@@ -363,6 +388,7 @@ impl<O: Outside> Host<O> {
             taps: HashMap::new(),
             feed_fans: Rc::new(RefCell::new(HashMap::new())),
             feed_wanted: Rc::new(RefCell::new(HashMap::new())),
+            feed_routes: Rc::new(RefCell::new(HashMap::new())),
             helper_feed: None,
             visualizer_enabled: false,
             spectrum: Spectrum::new(),
@@ -436,6 +462,12 @@ impl<O: Outside> Host<O> {
             }
             OP_VISUALIZER => self.set_visualizer_enabled(rest.first().is_some_and(|b| b & 1 != 0)),
             OP_FEED_OPEN => self.open_feed(id, rest),
+            OP_FEED_ROUTE => self.route_feed(id, rest),
+            OP_FEED_CLOSE => {
+                self.feed_routes.borrow_mut().remove(&id);
+                self.feed_fans.borrow_mut().remove(&id);
+                self.feed_wanted.borrow_mut().remove(&id);
+            }
             _ => {}
         }
     }
@@ -462,6 +494,15 @@ impl<O: Outside> Host<O> {
                 plane.push(frame);
             }
         }
+        for feed in self.feeds_to(Route::Plane(feeder), None) {
+            if let Some(Some(fan)) = self.feed_fans.borrow().get(&feed)
+                && fan.is_active()
+            {
+                for frame in fan.cached() {
+                    plane.push(frame);
+                }
+            }
+        }
         self.planes.borrow_mut().insert(id, plane);
     }
 
@@ -476,6 +517,7 @@ impl<O: Outside> Host<O> {
             audio: self.audio.clone(),
             fans: self.feed_fans.clone(),
             wanted: self.feed_wanted.clone(),
+            routes: self.feed_routes.clone(),
         };
         match self.outside.open_feed(path, Box::new(sink)) {
             Some(ears) => {
@@ -538,13 +580,53 @@ impl<O: Outside> Host<O> {
         self.wire.reply(REPLY_PORT, id, &port.to_le_bytes());
     }
 
-    /// `[1B active]`. The id names a receiver, or a fed stream by its plane id (the cluster id
-    /// for cluster planes).
+    /// `[1B kind: 0 plane, 1 audio stream][4B target][1B active]`. The message id names a fed
+    /// stream of its own, which ends in the target.
+    fn route_feed(&mut self, id: u32, rest: &[u8]) {
+        if rest.len() < 6 {
+            return;
+        }
+        let target = u32::from_le_bytes(rest[1..5].try_into().unwrap());
+        let route = if rest[0] == 1 { Route::Audio(target) } else { Route::Plane(target) };
+        self.feed_routes.borrow_mut().insert(id, route);
+        self.set_active_feeder(id, &rest[5..6]);
+    }
+
+    fn feeds_to(&self, target: Route, except: Option<u32>) -> Vec<u32> {
+        self.feed_routes
+            .borrow()
+            .iter()
+            .filter(|(feed, route)| **route == target && Some(**feed) != except)
+            .map(|(feed, _)| *feed)
+            .collect()
+    }
+
+    /// Activating one feeder of a target holds the others, the last one asked plays.
+    fn hold_feeds_to(&mut self, target: Route, except: Option<u32>) {
+        for feed in self.feeds_to(target, except) {
+            self.set_feed_active(feed, false);
+        }
+    }
+
+    /// `[1B active]`. The id names a receiver, a routed feed, or a fed stream by its plane id
+    /// (the cluster id for cluster planes).
     fn set_active_feeder(&mut self, id: u32, rest: &[u8]) {
         let active = rest.first().is_some_and(|b| b & 1 != 0);
+        let route = self.feed_routes.borrow().get(&id).copied();
         let Some(state) = self.receivers.get(&id).map(|r| r.state.clone()) else {
             if active {
-                self.hold_receivers_of(id, None);
+                match route {
+                    Some(Route::Plane(plane)) => {
+                        self.hold_receivers_of(plane, None);
+                        self.set_feed_active(plane, false);
+                        self.hold_feeds_to(Route::Plane(plane), Some(id));
+                    }
+                    Some(Route::Audio(stream)) => self.hold_feeds_to(Route::Audio(stream), Some(id)),
+                    None => {
+                        self.hold_receivers_of(id, None);
+                        self.hold_feeds_to(Route::Plane(id), None);
+                    }
+                }
             }
             self.set_feed_active(id, active);
             return;
@@ -558,6 +640,7 @@ impl<O: Outside> Host<O> {
 
         self.hold_receivers_of(plane_id, Some(id));
         self.set_feed_active(plane_id, false);
+        self.hold_feeds_to(Route::Plane(plane_id), None);
 
         let mut st = state.borrow_mut();
         st.fan.set_active(true);
@@ -782,6 +865,7 @@ impl<O: Outside> Host<O> {
                 st.plane_id, s.incoming, s.dropped, s.pushed
             ));
         }
+        let routes = self.feed_routes.borrow();
         for (id, fan) in self.feed_fans.borrow_mut().iter_mut() {
             let Some(fan) = fan else { continue };
             let awaiting = u8::from(fan.awaiting_keyframe());
@@ -790,8 +874,12 @@ impl<O: Outside> Host<O> {
             if s.incoming == 0 && s.dropped == 0 && s.pushed == 0 {
                 continue;
             }
+            let to = match routes.get(id) {
+                Some(Route::Plane(plane)) => format!(" -> 0x{plane:x}"),
+                _ => String::new(),
+            };
             lines.push(format!(
-                "[feed] recv 0x{id:x}: in={} dropped={} pushed={} awaiting_kf={awaiting} active={active}",
+                "[feed] recv 0x{id:x}{to}: in={} dropped={} pushed={} awaiting_kf={awaiting} active={active}",
                 s.incoming, s.dropped, s.pushed
             ));
         }
@@ -1288,6 +1376,110 @@ mod tests {
             f.send(OP_AUDIO_ACTIVE, 77, &[1]);
             f.feed_in(feedproto::KIND_AUDIO, 77, &[3, 4]);
             assert_eq!(f.speaker(0).pushed(), vec![vec![3, 4]]);
+        }
+
+        fn route(kind: u8, target: u32, active: bool) -> Vec<u8> {
+            let mut v = vec![kind];
+            v.extend_from_slice(&target.to_le_bytes());
+            v.push(u8::from(active));
+            v
+        }
+
+        const OLD: u32 = 0x7b00_0001;
+        const NEW: u32 = 0x7b00_0002;
+
+        #[test]
+        fn a_late_hold_of_the_old_feed_leaves_the_new_one_playing() {
+            let mut f = Fixture::new();
+            f.send(OP_CREATE, MAIN_PLANE, &create_body("h264", &[]));
+            f.open_feed("/tmp/x.feed");
+            f.send(OP_FEED_ROUTE, OLD, &route(0, MAIN_PLANE, true));
+            f.feed_in(feedproto::KIND_VIDEO_START, OLD, &[0]);
+            f.feed_in(feedproto::KIND_VIDEO, OLD, &nal(KEYFRAME, 1));
+
+            f.send(OP_FEED_ROUTE, NEW, &route(0, MAIN_PLANE, true));
+            f.feed_in(feedproto::KIND_VIDEO_START, NEW, &[0]);
+            f.feed_in(feedproto::KIND_VIDEO, OLD, &nal(KEYFRAME, 2));
+            f.feed_in(feedproto::KIND_VIDEO, NEW, &nal(KEYFRAME, 3));
+            f.send(OP_SET_ACTIVE, OLD, &[0]);
+            f.feed_in(feedproto::KIND_VIDEO, NEW, &nal(DELTA, 4));
+
+            assert_eq!(
+                f.plane(0).pushed(),
+                vec![nal(KEYFRAME, 1), nal(KEYFRAME, 3), nal(DELTA, 4)]
+            );
+            let stats = f.host.take_stats();
+            assert!(stats.iter().any(|l| l.starts_with("[feed] recv 0x7b000002 -> 0x7a000001:")));
+        }
+
+        #[test]
+        fn a_routed_feed_waits_until_it_is_made_active() {
+            let mut f = Fixture::new();
+            f.send(OP_CREATE, MAIN_PLANE, &create_body("h264", &[]));
+            f.open_feed("/tmp/x.feed");
+            f.send(OP_FEED_ROUTE, NEW, &route(0, MAIN_PLANE, false));
+            f.feed_in(feedproto::KIND_VIDEO_START, NEW, &[0]);
+            f.feed_in(feedproto::KIND_VIDEO, NEW, &nal(KEYFRAME, 1));
+            assert!(f.plane(0).pushed().is_empty());
+
+            f.send(OP_SET_ACTIVE, NEW, &[1]);
+            f.feed_in(feedproto::KIND_VIDEO, NEW, &nal(KEYFRAME, 2));
+            assert_eq!(f.plane(0).pushed(), vec![nal(KEYFRAME, 2)]);
+        }
+
+        #[test]
+        fn a_receiver_and_a_routed_feed_hold_each_other() {
+            let mut f = Fixture::new();
+            f.send(OP_CREATE, MAIN_PLANE, &create_body("h264", &[]));
+            f.open_feed("/tmp/x.feed");
+            f.send(OP_FEED_ROUTE, NEW, &route(0, MAIN_PLANE, true));
+            f.feed_in(feedproto::KIND_VIDEO_START, NEW, &[0]);
+
+            f.feeder(42, MAIN_PLANE, false);
+            f.config(0, CpCodec::H264, &[1, 2]);
+            f.feed_in(feedproto::KIND_VIDEO, NEW, &nal(KEYFRAME, 1));
+            f.frame_in(0, &nal(KEYFRAME, 2));
+            f.send(OP_SET_ACTIVE, NEW, &[1]);
+            f.frame_in(0, &nal(KEYFRAME, 3));
+            f.feed_in(feedproto::KIND_VIDEO, NEW, &nal(KEYFRAME, 4));
+
+            assert_eq!(f.plane(0).pushed(), vec![nal(KEYFRAME, 2), nal(KEYFRAME, 4)]);
+        }
+
+        #[test]
+        fn a_plane_created_late_is_primed_from_the_active_routed_feed() {
+            let mut f = Fixture::new();
+            f.open_feed("/tmp/x.feed");
+            f.send(OP_FEED_ROUTE, NEW, &route(0, CLUSTER_RECV_ID, true));
+            f.feed_in(feedproto::KIND_VIDEO_START, NEW, &[0]);
+            f.feed_in(feedproto::KIND_VIDEO, NEW, &nal(KEYFRAME, 1));
+            f.send(OP_CREATE, CLUSTER_A, &create_body("h264", &[]));
+            assert_eq!(f.plane(0).pushed(), vec![nal(KEYFRAME, 1)]);
+        }
+
+        #[test]
+        fn routed_audio_reaches_the_stream_only_from_the_active_feed() {
+            let mut f = Fixture::new();
+            f.send(OP_AUDIO_OPEN, 77, &audio_body(true));
+            f.send(OP_AUDIO_ACTIVE, 77, &[1]);
+            f.open_feed("/tmp/x.feed");
+            f.send(OP_FEED_ROUTE, OLD, &route(1, 77, true));
+            f.send(OP_FEED_ROUTE, NEW, &route(1, 77, true));
+            f.feed_in(feedproto::KIND_AUDIO, OLD, &[1]);
+            f.feed_in(feedproto::KIND_AUDIO, NEW, &[2]);
+            f.send(OP_SET_ACTIVE, OLD, &[0]);
+            f.feed_in(feedproto::KIND_AUDIO, NEW, &[3]);
+
+            f.send(OP_FEED_CLOSE, NEW, &[]);
+            f.feed_in(feedproto::KIND_AUDIO, NEW, &[4]);
+            assert_eq!(f.speaker(0).pushed(), vec![vec![2], vec![3]]);
+        }
+
+        #[test]
+        fn a_short_route_is_ignored() {
+            let mut f = Fixture::new();
+            f.send(OP_FEED_ROUTE, NEW, &[0, 1, 0]);
+            assert!(f.host.feed_routes.borrow().is_empty());
         }
     }
 
