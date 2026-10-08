@@ -10,7 +10,6 @@ iap2-csm = { path = "../iap2-csm" }
 iap2-link = { path = "../iap2-link" }
 iap2-mfi = { path = "../iap2-mfi" }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "sync", "io-util", "net", "process"] }
-futures-util = "0.3"
 libc.workspace = true
 base64 = "0.22"
 serde_json = "1"

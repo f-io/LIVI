@@ -1604,7 +1604,6 @@ name = "livi-runtime"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
- "futures-util",
  "iap2-csm",
  "iap2-link",
  "iap2-mfi",
