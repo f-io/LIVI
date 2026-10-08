@@ -621,7 +621,9 @@ impl<O: Outside> Host<O> {
                         self.set_feed_active(plane, false);
                         self.hold_feeds_to(Route::Plane(plane), Some(id));
                     }
-                    Some(Route::Audio(stream)) => self.hold_feeds_to(Route::Audio(stream), Some(id)),
+                    Some(Route::Audio(stream)) => {
+                        self.hold_feeds_to(Route::Audio(stream), Some(id))
+                    }
                     None => {
                         self.hold_receivers_of(id, None);
                         self.hold_feeds_to(Route::Plane(id), None);
