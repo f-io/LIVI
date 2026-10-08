@@ -35,6 +35,7 @@ function report(linkSpeed: Speed | null): void {
         btAdapters: [],
         dongle: null,
         linkSpeed,
+        wifiBands: [],
         wifiChannels: [],
         wifiCountries: []
       }

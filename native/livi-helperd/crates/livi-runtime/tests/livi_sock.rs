@@ -3,7 +3,6 @@ use base64::engine::general_purpose::STANDARD;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
-use iap2_csm::messages::wifi::SecurityType;
 use livi_runtime::AsyncAuth;
 use livi_runtime::bringup::CpConfig;
 use livi_runtime::ident::{Identity, Transport};
@@ -43,8 +42,7 @@ fn config(path: &str) -> LiviSockConfig {
             wifi_iface: "none0".into(),
             ssid: "LIVI".into(),
             passphrase: "12345678".into(),
-            channel: 36,
-            security_type: SecurityType::WpaWpa2,
+            channel: livi_wifi::Channel::of_number(36),
             airplay_port: 7000,
             source_version: "950.7.1".into(),
             public_key: String::new(),

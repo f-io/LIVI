@@ -595,9 +595,9 @@ fn wifi_json() -> String {
     let mut width = 0;
     if let Some(ap) = livi_wifi::ap_state(iface) {
         ssid = ap.ssid;
-        ch = ap.channel.to_string();
+        ch = ap.channel.number.to_string();
         width = ap.width;
-        band = if ap.channel <= 14 { "2.4 GHz" } else { "5 GHz" }.to_string();
+        band = ap.channel.band.to_string();
     }
     if ssid.is_empty() {
         let cfg = livi_wifid::server::ap_config_from(
@@ -611,14 +611,9 @@ fn wifi_json() -> String {
                     ssid = v.to_string();
                 } else if let Some(v) = l.strip_prefix("channel=") {
                     ch = v.to_string();
-                } else if let Some(v) = l.strip_prefix("hw_mode=") {
-                    band = match v {
-                        "a" => "5 GHz",
-                        "g" => "2.4 GHz",
-                        "b" => "2.4 GHz",
-                        _ => v,
+                    if let Ok(number) = v.parse() {
+                        band = livi_wifi::Channel::of_number(number).band.to_string();
                     }
-                    .to_string();
                 }
             }
         }

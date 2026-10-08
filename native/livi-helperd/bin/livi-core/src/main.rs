@@ -173,7 +173,7 @@ async fn run() -> Result<Exit, String> {
 
     let user_data = paths.config.parent().map(Path::to_path_buf).unwrap_or_default();
     tokio::spawn(dongle::run(core.hub.clone(), dongle_asks));
-    tokio::spawn(wifi_options::follow(core.hub.clone()));
+    tokio::spawn(wifi_options::follow(core.clone()));
     let (inside, inside_rx) = tokio::sync::mpsc::unbounded_channel();
     tokio::spawn(telemetry::run(core.clone(), inside_rx));
     tokio::spawn(gnss::run(core.clone(), inside.clone(), user_data.clone()));

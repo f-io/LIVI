@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use ts_rs::TS;
 
-use crate::config::Config;
+use crate::config::{Config, WifiBand};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -122,8 +122,10 @@ pub struct System {
     pub bt_adapters: Vec<String>,
     /// None while the LIVI Link does not answer.
     pub dongle: Option<DongleRadios>,
-    /// The phone's Wi-Fi link on the LIVI Link's access point.
+    /// The phone's Wi-Fi link on the access point.
     pub link_speed: Option<LinkSpeed>,
+    /// The bands an access point on the chosen interface can run on.
+    pub wifi_bands: Vec<WifiBand>,
     /// Allowed in the chosen band and country.
     pub wifi_channels: Vec<u32>,
     pub wifi_countries: Vec<String>,

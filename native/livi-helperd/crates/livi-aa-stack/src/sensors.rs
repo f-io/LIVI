@@ -1,4 +1,10 @@
-//! Each sensor goes out as a SensorBatch whose field number is the sensor type.
+//! Each sensor goes out as a SensorBatchNotification holding just that sensor.
+
+use livi_aa_proto::{
+    CarLocation, CurrentGear, DrivingStatus, EngineRpm, EnvironmentConditions, FuelLevel,
+    LightStates, NightMode, Odometer, ParkingBrake, SensorBatchNotification, VehicleSpeed,
+};
+use prost::Message;
 
 use crate::wire::{field_float, field_len_delim, field_varint, round_half_up};
 
@@ -14,41 +20,36 @@ pub struct GpsFix {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Sensor {
-    /// Level in percent, range in metres.
     Fuel {
-        level: i64,
-        range: Option<i64>,
+        level_percent: i32,
+        range_km: Option<i32>,
         low_fuel_warning: Option<bool>,
     },
-    Speed {
-        speed_mm_s: i64,
-        cruise_engaged: Option<bool>,
-        cruise_set_speed_mm_s: Option<i64>,
-    },
+    /// Millimetres per second.
+    Speed(i32),
     /// Revolutions per minute times 1000.
-    Rpm(i64),
+    Rpm(i32),
     /// 0 neutral, 1 to 10 manual, 100 drive, 101 park, 102 reverse.
-    Gear(i64),
+    Gear(i32),
     NightMode(bool),
     ParkingBrake(bool),
     /// Head light 1 off, 2 on, 3 high. Turn indicator 1 none, 2 left, 3 right.
     Light {
-        head_light: Option<i64>,
+        head_light: Option<i32>,
         hazard_lights: Option<bool>,
-        turn_indicator: Option<i64>,
+        turn_indicator: Option<i32>,
     },
     /// Temperature in milli-degrees, pressure in pascal.
     Environment {
-        temperature_e3: Option<i64>,
-        pressure_e3: Option<i64>,
-        rain: Option<i64>,
+        temperature_e3: Option<i32>,
+        pressure_e3: Option<i32>,
     },
     Odometer {
-        total_km_e1: i64,
-        trip_km_e1: Option<i64>,
+        total_km_e1: i32,
+        trip_km_e1: Option<i32>,
     },
     /// The restriction bits, 0 unrestricted.
-    DrivingStatus(i64),
+    DrivingStatus(i32),
     Gps(GpsFix),
     /// The phone's maps read the minimum usable capacity as the current level.
     VehicleEnergyModel {
@@ -61,85 +62,111 @@ pub enum Sensor {
     },
 }
 
-fn flag(v: bool) -> i64 {
-    i64::from(v)
+fn location(fix: GpsFix) -> Option<CarLocation> {
+    let scaled = |v: f64| v.is_finite().then(|| round_half_up(v) as i32);
+    let optional = |v: Option<f64>, scale: f64| match v {
+        Some(v) => scaled(v * scale).map(Some),
+        None => Some(None),
+    };
+    Some(CarLocation {
+        latitude_deg_e7: scaled(fix.lat_deg * 1e7)?,
+        longitude_deg_e7: scaled(fix.lng_deg * 1e7)?,
+        accuracy_m_e3: optional(fix.accuracy_m, 1000.0)?.map(|a| a as u32),
+        altitude_m_e2: optional(fix.altitude_m, 100.0)?,
+        speed_m_per_s_e3: optional(fix.speed_ms, 1000.0)?,
+        bearing_deg_e6: optional(fix.bearing_deg, 1e6)?,
+    })
 }
 
-pub fn encode(sensor: &Sensor) -> Option<(u32, Vec<u8>)> {
-    let mut parts: Vec<Vec<u8>> = Vec::new();
-    let field = match *sensor {
-        Sensor::Fuel { level, range, low_fuel_warning } => {
-            parts.push(field_varint(1, level));
-            parts.extend(range.map(|r| field_varint(2, r)));
-            parts.extend(low_fuel_warning.map(|w| field_varint(3, flag(w))));
-            6
+/// Google Maps reads this with its own energy model, wider than the one Android Auto knows and
+/// passes on unread, so it is written by hand.
+fn vehicle_energy_model(
+    capacity_wh: i64,
+    current_wh: i64,
+    range_m: i64,
+    max_charge_power_w: Option<i64>,
+    max_discharge_power_w: Option<i64>,
+    auxiliary_wh_per_km: Option<f64>,
+) -> Option<Vec<u8>> {
+    if capacity_wh <= 0 || current_wh <= 0 || range_m <= 0 {
+        return None;
+    }
+    let energy = |wh: i64| field_varint(1, wh);
+    let reserve = round_half_up(capacity_wh as f64 * 0.05) as i64;
+    let battery = [
+        field_varint(1, 1),
+        field_len_delim(3, &energy(current_wh)),
+        field_len_delim(4, &energy(capacity_wh)),
+        field_len_delim(8, &energy(reserve)),
+        field_varint(9, max_charge_power_w.unwrap_or(150_000)),
+        field_varint(10, max_discharge_power_w.unwrap_or(150_000)),
+        field_varint(11, 1),
+    ]
+    .concat();
+    let wh_per_km = (current_wh as f64 / range_m as f64) * 1000.0;
+    let aux = auxiliary_wh_per_km.unwrap_or(2.0);
+    let consumption = [
+        field_len_delim(1, &field_float(1, wh_per_km)),
+        field_len_delim(2, &field_float(1, aux)),
+        field_len_delim(3, &field_float(1, 0.36)),
+    ]
+    .concat();
+    let charging_prefs = field_varint(3, 1);
+    let model = [
+        field_len_delim(1, &battery),
+        field_len_delim(2, &consumption),
+        field_len_delim(12, &charging_prefs),
+    ]
+    .concat();
+    Some(field_len_delim(23, &model))
+}
+
+pub fn batch(sensor: &Sensor) -> Option<Vec<u8>> {
+    let mut b = SensorBatchNotification::default();
+    match *sensor {
+        Sensor::Fuel { level_percent, range_km, low_fuel_warning } => {
+            b.fuel_levels.push(FuelLevel {
+                level_percent: Some(level_percent),
+                range_km,
+                energy_is_low: low_fuel_warning,
+            })
         }
-        Sensor::Speed { speed_mm_s, cruise_engaged, cruise_set_speed_mm_s } => {
-            parts.push(field_varint(1, speed_mm_s));
-            parts.extend(cruise_engaged.map(|c| field_varint(2, flag(c))));
-            parts.extend(cruise_set_speed_mm_s.map(|s| field_varint(4, s)));
-            3
+        Sensor::Speed(speed) => {
+            b.speeds.push(VehicleSpeed { speed_m_per_s_e3: speed, ..Default::default() });
         }
-        Sensor::Rpm(rpm_e3) => {
-            parts.push(field_varint(1, rpm_e3));
-            4
-        }
-        Sensor::Gear(gear) => {
-            parts.push(field_varint(1, gear));
-            8
-        }
+        Sensor::Rpm(rpm_e3) => b.engine_rpms.push(EngineRpm { rpm_e3 }),
+        Sensor::Gear(gear) => b.gears.push(CurrentGear { gear }),
         Sensor::NightMode(night) => {
-            parts.push(field_varint(1, flag(night)));
-            10
+            b.night_modes.push(NightMode { night_mode_active: Some(night) })
         }
-        Sensor::ParkingBrake(engaged) => {
-            parts.push(field_varint(1, flag(engaged)));
-            7
-        }
+        Sensor::ParkingBrake(engaged) => b.parking_brakes.push(ParkingBrake { engaged }),
         Sensor::Light { head_light, hazard_lights, turn_indicator } => {
-            parts.extend(head_light.map(|h| field_varint(1, h)));
-            parts.extend(turn_indicator.map(|t| field_varint(2, t)));
-            parts.extend(hazard_lights.map(|h| field_varint(3, flag(h))));
-            if parts.is_empty() {
+            if head_light.is_none() && hazard_lights.is_none() && turn_indicator.is_none() {
                 return None;
             }
-            17
+            b.light_states.push(LightStates {
+                headlight: head_light,
+                turn_indicator,
+                hazard_lights_on: hazard_lights,
+            });
         }
-        Sensor::Environment { temperature_e3, pressure_e3, rain } => {
-            parts.extend(temperature_e3.map(|t| field_varint(1, t)));
-            parts.extend(pressure_e3.map(|p| field_varint(2, p)));
-            parts.extend(rain.map(|r| field_varint(3, r)));
-            if parts.is_empty() {
+        Sensor::Environment { temperature_e3, pressure_e3 } => {
+            if temperature_e3.is_none() && pressure_e3.is_none() {
                 return None;
             }
-            11
+            b.environment_conditions.push(EnvironmentConditions {
+                temperature_e3,
+                pressure_e3,
+                ..Default::default()
+            });
         }
         Sensor::Odometer { total_km_e1, trip_km_e1 } => {
-            parts.push(field_varint(1, total_km_e1));
-            parts.extend(trip_km_e1.map(|t| field_varint(2, t)));
-            5
+            b.odometers.push(Odometer { odometer_km_e1: total_km_e1, trip_km_e1 });
         }
-        Sensor::DrivingStatus(status) => {
-            parts.push(field_varint(1, status));
-            13
+        Sensor::DrivingStatus(restrictions) => {
+            b.driving_statuses.push(DrivingStatus { restrictions })
         }
-        Sensor::Gps(fix) => {
-            let scaled = [
-                Some((2, fix.lat_deg * 1e7)),
-                Some((3, fix.lng_deg * 1e7)),
-                fix.accuracy_m.map(|a| (4, a * 1000.0)),
-                fix.altitude_m.map(|a| (5, a * 100.0)),
-                fix.speed_ms.map(|s| (6, s * 1000.0)),
-                fix.bearing_deg.map(|b| (7, b * 1e6)),
-            ];
-            for (field, value) in scaled.into_iter().flatten() {
-                if !value.is_finite() {
-                    return None;
-                }
-                parts.push(field_varint(field, round_half_up(value) as i64));
-            }
-            1
-        }
+        Sensor::Gps(fix) => b.locations.push(location(fix)?),
         Sensor::VehicleEnergyModel {
             capacity_wh,
             current_wh,
@@ -148,41 +175,17 @@ pub fn encode(sensor: &Sensor) -> Option<(u32, Vec<u8>)> {
             max_discharge_power_w,
             auxiliary_wh_per_km,
         } => {
-            if capacity_wh <= 0 || current_wh <= 0 || range_m <= 0 {
-                return None;
-            }
-            let energy = |wh: i64| field_varint(1, wh);
-            let reserve = round_half_up(capacity_wh as f64 * 0.05) as i64;
-            let battery = [
-                field_varint(1, 1),
-                field_len_delim(3, &energy(current_wh)),
-                field_len_delim(4, &energy(capacity_wh)),
-                field_len_delim(8, &energy(reserve)),
-                field_varint(9, max_charge_power_w.unwrap_or(150_000)),
-                field_varint(10, max_discharge_power_w.unwrap_or(150_000)),
-                field_varint(11, 1),
-            ]
-            .concat();
-            let wh_per_km = (current_wh as f64 / range_m as f64) * 1000.0;
-            let aux = auxiliary_wh_per_km.unwrap_or(2.0);
-            let consumption = [
-                field_len_delim(1, &field_float(1, wh_per_km)),
-                field_len_delim(2, &field_float(1, aux)),
-                field_len_delim(3, &field_float(1, 0.36)),
-            ]
-            .concat();
-            let charging_prefs = field_varint(3, 1);
-            parts.push(field_len_delim(1, &battery));
-            parts.push(field_len_delim(2, &consumption));
-            parts.push(field_len_delim(12, &charging_prefs));
-            23
+            return vehicle_energy_model(
+                capacity_wh,
+                current_wh,
+                range_m,
+                max_charge_power_w,
+                max_discharge_power_w,
+                auxiliary_wh_per_km,
+            );
         }
-    };
-    Some((field, parts.concat()))
-}
-
-pub fn batch(sensor: &Sensor) -> Option<Vec<u8>> {
-    encode(sensor).map(|(field, inner)| field_len_delim(field, &inner))
+    }
+    Some(b.encode_to_vec())
 }
 
 #[cfg(test)]
@@ -194,17 +197,18 @@ mod tests {
         assert_eq!(batch(&Sensor::NightMode(true)), Some(vec![0x52, 0x02, 0x08, 0x01]));
         assert_eq!(batch(&Sensor::DrivingStatus(0)), Some(vec![0x6a, 0x02, 0x08, 0x00]));
         assert_eq!(
-            batch(&Sensor::Fuel { level: 50, range: Some(300), low_fuel_warning: Some(false) }),
+            batch(&Sensor::Fuel {
+                level_percent: 50,
+                range_km: Some(300),
+                low_fuel_warning: Some(false)
+            }),
             Some(vec![0x32, 0x07, 0x08, 0x32, 0x10, 0xac, 0x02, 0x18, 0x00])
         );
         assert_eq!(
             batch(&Sensor::Light { head_light: None, hazard_lights: None, turn_indicator: None }),
             None
         );
-        assert_eq!(
-            batch(&Sensor::Environment { temperature_e3: None, pressure_e3: None, rain: None }),
-            None
-        );
+        assert_eq!(batch(&Sensor::Environment { temperature_e3: None, pressure_e3: None }), None);
         let gps = GpsFix {
             lat_deg: 48.1,
             lng_deg: f64::NAN,

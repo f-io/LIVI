@@ -1,6 +1,6 @@
 //! The samples go from the helper straight to the host.
 
-use crate::consts::{av_msg, ch};
+use crate::consts::{ch, media_msg};
 use crate::log::{debug, detail};
 use crate::wire::decode_start;
 
@@ -9,6 +9,7 @@ pub enum AudioChannelType {
     Media,
     Speech,
     System,
+    Telephony,
 }
 
 impl AudioChannelType {
@@ -16,6 +17,7 @@ impl AudioChannelType {
         match channel {
             ch::SPEECH_AUDIO => Self::Speech,
             ch::SYSTEM_AUDIO => Self::System,
+            ch::TELEPHONY_AUDIO => Self::Telephony,
             _ => Self::Media,
         }
     }
@@ -25,14 +27,17 @@ impl AudioChannelType {
             Self::Media => ch::MEDIA_AUDIO,
             Self::Speech => ch::SPEECH_AUDIO,
             Self::System => ch::SYSTEM_AUDIO,
+            Self::Telephony => ch::TELEPHONY_AUDIO,
         }
     }
 
+    /// Not "call", that tag is the hands-free stream.
     pub fn name(self) -> &'static str {
         match self {
             Self::Media => "media",
             Self::Speech => "speech",
             Self::System => "system",
+            Self::Telephony => "telephony",
         }
     }
 
@@ -41,6 +46,7 @@ impl AudioChannelType {
             "media" => Some(Self::Media),
             "speech" => Some(Self::Speech),
             "system" => Some(Self::System),
+            "telephony" => Some(Self::Telephony),
             _ => None,
         }
     }
@@ -81,14 +87,14 @@ impl AudioChannel {
     pub fn handle_message(&mut self, msg_id: u16, payload: &[u8]) -> Option<AudioChannelEvent> {
         let name = self.channel_type().name();
         match msg_id {
-            av_msg::START_INDICATION => {
+            media_msg::START => {
                 if let Some(start) = decode_start(payload) {
                     self.session = start.session_id;
                 }
                 detail!("[AudioChannel:{name}] stream started, session={}", self.session);
                 Some(AudioChannelEvent::Start)
             }
-            av_msg::STOP_INDICATION => {
+            media_msg::STOP => {
                 detail!("[AudioChannel:{name}] stream stopped");
                 Some(AudioChannelEvent::Stop)
             }
@@ -145,16 +151,21 @@ mod tests {
             AudioChannelEvent::Setup { codec: 1, sample_rate: 16000, channels: 1 }
         );
         assert_eq!(
-            a.handle_message(av_msg::START_INDICATION, &[0x08, 0x07]),
+            a.handle_message(media_msg::START, &[0x08, 0x07]),
             Some(AudioChannelEvent::Start)
         );
         assert_eq!(a.session, 7);
-        assert_eq!(a.handle_message(av_msg::START_INDICATION, &[]), Some(AudioChannelEvent::Start));
+        assert_eq!(a.handle_message(media_msg::START, &[]), Some(AudioChannelEvent::Start));
         assert_eq!(a.session, 7);
-        assert_eq!(a.handle_message(av_msg::STOP_INDICATION, &[]), Some(AudioChannelEvent::Stop));
-        assert_eq!(a.handle_message(av_msg::AV_MEDIA_ACK, &[]), None);
+        assert_eq!(a.handle_message(media_msg::STOP, &[]), Some(AudioChannelEvent::Stop));
+        assert_eq!(a.handle_message(media_msg::ACK, &[]), None);
         assert_eq!(AudioChannel::new(42).channel_type(), AudioChannelType::Media);
-        for t in [AudioChannelType::Media, AudioChannelType::Speech, AudioChannelType::System] {
+        for t in [
+            AudioChannelType::Media,
+            AudioChannelType::Speech,
+            AudioChannelType::System,
+            AudioChannelType::Telephony,
+        ] {
             assert_eq!(AudioChannelType::of_channel(t.channel()), t);
             assert_eq!(AudioChannelType::from_name(t.name()), Some(t));
         }

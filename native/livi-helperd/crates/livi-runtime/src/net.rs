@@ -152,14 +152,6 @@ fn first_ipv4(
     out
 }
 
-/// The network an interface beacons right now.
-pub fn ap_ssid_channel(iface: &str) -> (Option<String>, Option<u8>) {
-    match livi_wifi::ap_state(iface) {
-        Some(ap) => (Some(ap.ssid), u8::try_from(ap.channel).ok()),
-        None => (None, None),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

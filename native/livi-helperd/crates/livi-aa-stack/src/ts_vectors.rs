@@ -4,6 +4,7 @@
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use livi_aa_proto::ServiceDiscoveryRequest;
 use serde_json::{Map, Value as Json, json};
 use tokio::net::UnixStream;
 use tokio::sync::{mpsc, watch};
@@ -32,7 +33,6 @@ use crate::link::{self, Link, LinkItem, LinkReader};
 use crate::log::hex;
 use crate::media::AudioKind;
 use crate::media::tests::FakeMedia;
-use crate::proto::aap_protobuf::service::control::message::ServiceDiscoveryRequest;
 use crate::sensors::{GpsFix, Sensor};
 use crate::session::{Out, Session, SessionEvent, TEST_WALL, Timer};
 use crate::wire::{decode_fields, decode_start, encode_varint, field_float, read_varint};
@@ -113,6 +113,7 @@ fn ts_config(v: &Json) -> AaConfig {
         wifi_bssid: s("wifiBssid"),
         wifi_ssid: s("wifiSsid").unwrap_or_default(),
         wifi_password: s("wifiPassword").unwrap_or_default(),
+        wifi_security: Default::default(),
         wifi_channel: opt_u(v, "wifiChannel"),
         fuel_types: list("fuelTypes"),
         ev_connector_types: list("evConnectorTypes"),
@@ -132,6 +133,7 @@ fn ts_config(v: &Json) -> AaConfig {
         cluster_safe_area: insets("clusterSafeArea"),
         disable_audio_output: b("disableAudioOutput"),
         mic_device: String::new(),
+        telephony_audio: false,
     }
 }
 
@@ -183,11 +185,11 @@ fn service_discovery_matches() {
 
 fn sdr_request_json(r: &ServiceDiscoveryRequest) -> Json {
     let mut o = Map::new();
-    put(&mut o, "deviceName", r.device_name.clone());
-    put(&mut o, "deviceBrand", r.device_brand.clone());
-    if let Some(p) = &r.phone_info {
+    put(&mut o, "deviceName", r.head_unit_label.clone());
+    put(&mut o, "deviceBrand", r.phone_make_and_model.clone());
+    if let Some(p) = &r.mobile_device_identity {
         let mut pi = Map::new();
-        put(&mut pi, "instanceId", p.instance_id.clone());
+        put(&mut pi, "instanceId", p.mobile_device_id.clone());
         put(&mut pi, "connectivityLifetimeId", p.connectivity_lifetime_id.clone());
         o.insert("phoneInfo".into(), Json::Object(pi));
     }
@@ -415,11 +417,16 @@ struct Replay {
     now: u64,
     seq: u64,
     timers: Vec<(u64, u64, Due)>,
+    ping_every: u64,
     records: Vec<Json>,
 }
 
 fn arg_u(args: &Json, i: usize) -> Option<i64> {
     args.get(i).and_then(Json::as_f64).map(|f| f as i64)
+}
+
+fn arg_i(args: &Json, i: usize) -> Option<i32> {
+    arg_u(args, i).map(|v| v as i32)
 }
 
 fn arg_b(args: &Json, i: usize) -> Option<bool> {
@@ -431,7 +438,15 @@ impl Replay {
         set_wall(T0);
         let (tx, rx) = watch::channel(cfg);
         let (s, first) = Session::new(rx, "::FFFF:10.0.0.5%wlan0");
-        let mut r = Self { s, _tx: tx, now: 0, seq: 0, timers: Vec::new(), records: Vec::new() };
+        let mut r = Self {
+            s,
+            _tx: tx,
+            now: 0,
+            seq: 0,
+            timers: Vec::new(),
+            ping_every: 0,
+            records: Vec::new(),
+        };
         r.apply(first);
         r
     }
@@ -453,8 +468,11 @@ impl Replay {
                         self.records.push(json!({ "emit": e }));
                     }
                 }
-                Out::Ping(true) => self.arm(1500, Due::Ping),
-                Out::Ping(false) => self.timers.retain(|t| t.2 != Due::Ping),
+                Out::Ping(Some(every)) => {
+                    self.ping_every = every.as_millis() as u64;
+                    self.arm(self.ping_every, Due::Ping);
+                }
+                Out::Ping(None) => self.timers.retain(|t| t.2 != Due::Ping),
                 Out::After(d, t) => self.arm(d.as_millis() as u64, Due::Timer(t)),
                 Out::ShutdownDone => {}
             }
@@ -476,7 +494,7 @@ impl Replay {
             self.step_to(due).await;
             if what == Due::Ping {
                 self.seq += 1;
-                self.timers[i] = (due + 1500, self.seq, what);
+                self.timers[i] = (due + self.ping_every, self.seq, what);
                 let out = self.s.on_ping_tick();
                 self.apply(out);
             } else {
@@ -546,34 +564,29 @@ impl Replay {
             }
             "sendRotary" => self.s.send_rotary(a[0].as_i64().unwrap()),
             "sendFuelData" => self.sensor(Sensor::Fuel {
-                level: arg_u(a, 0).unwrap(),
-                range: arg_u(a, 1),
+                level_percent: arg_i(a, 0).unwrap(),
+                range_km: arg_i(a, 1),
                 low_fuel_warning: arg_b(a, 2),
             }),
-            "sendSpeedData" => self.sensor(Sensor::Speed {
-                speed_mm_s: arg_u(a, 0).unwrap(),
-                cruise_engaged: arg_b(a, 1),
-                cruise_set_speed_mm_s: arg_u(a, 2),
-            }),
-            "sendRpmData" => self.sensor(Sensor::Rpm(arg_u(a, 0).unwrap())),
-            "sendGearData" => self.sensor(Sensor::Gear(arg_u(a, 0).unwrap())),
+            "sendSpeedData" => self.sensor(Sensor::Speed(arg_i(a, 0).unwrap())),
+            "sendRpmData" => self.sensor(Sensor::Rpm(arg_i(a, 0).unwrap())),
+            "sendGearData" => self.sensor(Sensor::Gear(arg_i(a, 0).unwrap())),
             "sendNightModeData" => self.sensor(Sensor::NightMode(arg_b(a, 0).unwrap())),
             "sendParkingBrakeData" => self.sensor(Sensor::ParkingBrake(arg_b(a, 0).unwrap())),
             "sendLightData" => self.sensor(Sensor::Light {
-                head_light: arg_u(a, 0),
+                head_light: arg_i(a, 0),
                 hazard_lights: arg_b(a, 1),
-                turn_indicator: arg_u(a, 2),
+                turn_indicator: arg_i(a, 2),
             }),
             "sendEnvironmentData" => self.sensor(Sensor::Environment {
-                temperature_e3: arg_u(a, 0),
-                pressure_e3: arg_u(a, 1),
-                rain: arg_u(a, 2),
+                temperature_e3: arg_i(a, 0),
+                pressure_e3: arg_i(a, 1),
             }),
             "sendOdometerData" => self.sensor(Sensor::Odometer {
-                total_km_e1: arg_u(a, 0).unwrap(),
-                trip_km_e1: arg_u(a, 1),
+                total_km_e1: arg_i(a, 0).unwrap(),
+                trip_km_e1: arg_i(a, 1),
             }),
-            "sendDrivingStatusData" => self.sensor(Sensor::DrivingStatus(arg_u(a, 0).unwrap())),
+            "sendDrivingStatusData" => self.sensor(Sensor::DrivingStatus(arg_i(a, 0).unwrap())),
             "sendGpsLocationData" => {
                 let o = &a[0];
                 let f = |k: &str| o.get(k).and_then(Json::as_f64);
@@ -1148,7 +1161,7 @@ struct Driver {
     from_driver: LinkReader,
     cmds: mpsc::UnboundedSender<SessionCmd>,
     media: Arc<FakeMedia>,
-    marker: i64,
+    marker: i32,
 }
 
 impl Driver {
@@ -1183,9 +1196,9 @@ impl Driver {
 
     async fn through_link(&mut self) -> Vec<Frame> {
         self.marker += 1;
-        let ping = crate::wire::field_varint(1, self.marker);
+        let ping = crate::wire::field_varint(1, i64::from(self.marker));
         self.helper.send(&Frame::new(0, 0x03, 0x000b, ping.clone()));
-        self.until(Frame::new(0, 0x03, 0x000c, ping)).await
+        self.until(Frame::new(0, 0x0b, 0x000c, ping)).await
     }
 
     async fn through_commands(&mut self) -> Vec<Frame> {
@@ -1228,8 +1241,11 @@ async fn the_driver_matches() {
         } else {
             "11:22:33:44:55:66"
         };
-        let addresses =
-            Addresses { bt_mac: Some("AA:BB:CC:DD:EE:FF".into()), wifi_bssid: Some(wifi.into()) };
+        let addresses = Addresses {
+            bt_mac: Some("AA:BB:CC:DD:EE:FF".into()),
+            wifi_bssid: Some(wifi.into()),
+            access_point: None,
+        };
         let aa = from_livi(&cfg, codecs, seed["initialNightMode"].as_bool(), &addresses);
         assert_eq!(aa_config_json(&aa), case["aaCfg"], "driver {n} config");
         let g = Geometry::main(&aa);

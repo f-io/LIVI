@@ -2,13 +2,14 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use livi_core_proto::config::Config;
+use livi_core_proto::config::{Config, WifiBand};
 use livi_link_host::link::CHOICE;
 use serde_json::{Map, Value};
 use tokio::process::Command;
 
 use crate::privileged::{Privileged, quietly, sudo, sudo_grants, systemctl};
 use crate::server::Core;
+use crate::wifi_options::{band_of, wifi_band};
 
 const UNIT_PATH: &str = "/etc/systemd/system/livi-wifi-ap.service";
 const SERVICE: &str = "livi-wifi-ap.service";
@@ -159,6 +160,8 @@ async fn runs_older_helper() -> bool {
 
 #[derive(Debug, PartialEq)]
 struct Running {
+    /// None from a helper that did not name it yet.
+    band: Option<WifiBand>,
     channel: u32,
     width: u32,
 }
@@ -170,6 +173,7 @@ fn parse_status(out: &str) -> Option<Running> {
         return None;
     }
     Some(Running {
+        band: value("band").and_then(|b| livi_wifi::Band::of_setting(b.trim())).map(wifi_band),
         channel,
         width: value("width").and_then(|w| w.trim().parse().ok()).unwrap_or(0),
     })
@@ -188,6 +192,10 @@ async fn settle(p: &Privileged, core: &Core, started: &Config) -> Config {
             }
             let cfg = started;
             let mut patch = Map::new();
+            if let Some(band) = live.band.filter(|b| *b != cfg.wifi_type) {
+                ran.wifi_type = band;
+                patch.insert("wifiType".into(), band_of(band).setting().into());
+            }
             if live.channel != cfg.wifi_channel {
                 patch.insert("wifiChannel".into(), live.channel.into());
             }
@@ -268,12 +276,15 @@ mod tests {
 
     #[test]
     fn the_status_names_the_channel_only_while_running() {
-        let up = "running true\nssid LIVI\nchannel 36\nwidth 80\n";
-        assert_eq!(parse_status(up), Some(Running { channel: 36, width: 80 }));
+        let up = "running true\nssid LIVI\nband 6ghz\nchannel 37\nwidth 80\n";
+        assert_eq!(
+            parse_status(up),
+            Some(Running { band: Some(WifiBand::Ghz6), channel: 37, width: 80 })
+        );
         assert_eq!(parse_status("running false\nssid \nchannel 0\nwidth 0\n"), None);
         assert_eq!(
             parse_status("running true\nchannel 6\n"),
-            Some(Running { channel: 6, width: 0 })
+            Some(Running { band: None, channel: 6, width: 0 })
         );
         assert_eq!(parse_status(""), None);
     }

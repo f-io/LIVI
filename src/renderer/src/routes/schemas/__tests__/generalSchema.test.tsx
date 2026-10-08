@@ -16,7 +16,8 @@ const system = (
   dongle: { wifi: boolean; bt: boolean } | null = null,
   wifiChannels: number[] = [36, 40],
   wifiCountries: string[] = ['DE', 'AT'],
-  displayModes: string[] = ['800x480', '1024x600']
+  displayModes: string[] = ['800x480', '1024x600'],
+  wifiBands: Array<'2.4ghz' | '5ghz' | '6ghz'> = []
 ) =>
   useLiviStore.setState({
     system: {
@@ -24,6 +25,7 @@ const system = (
       btAdapters,
       dongle,
       linkSpeed: null,
+      wifiBands,
       wifiChannels,
       wifiCountries,
       displayModes,
@@ -121,6 +123,25 @@ describe('generalSchema loadOptions', () => {
       [{ kind: 'setDongleRadio', radio: 'wifi', on: true }],
       [{ kind: 'setDongleRadio', radio: 'bt', on: true }]
     ])
+  })
+
+  test('the band choice offers what the radio can run an access point on', async () => {
+    let bands: { loadOptions: LoadFn } | undefined
+    const walk = (n: Record<string, unknown>): void => {
+      if (n.path === 'wifiType') bands = n as unknown as { loadOptions: LoadFn }
+      if (Array.isArray(n.children)) for (const c of n.children) walk(c as Record<string, unknown>)
+    }
+    walk(generalSchema as unknown as Record<string, unknown>)
+
+    system(['wlan0'], [], null, [37], ['DE'], [], ['2.4ghz', '5ghz', '6ghz'])
+    expect(await bands!.loadOptions()).toEqual([
+      { value: '2.4ghz', label: '2.4 GHz' },
+      { value: '5ghz', label: '5 GHz' },
+      { value: '6ghz', label: '6 GHz' }
+    ])
+
+    system(['wlan0'], [])
+    expect((await bands!.loadOptions()).map((o) => o.value)).toEqual(['2.4ghz', '5ghz'])
   })
 
   test('display modes keep the panel-default option ahead of the reported modes', async () => {

@@ -4,10 +4,13 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
+livi-aa-proto = { path = "../livi-aa-proto" }
 livi-host-proto = { path = "../../../livi-host-proto/rust" }
 livi-session-io = { path = "../livi-session-io" }
+livi-wifi = { path = "../livi-wifi" }
 futures-util = "0.3"
 nusb = { version = "0.2", features = ["tokio"] }
+prost = "0.14.4"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-pemfile = "2"
 rustls-pki-types = "1"

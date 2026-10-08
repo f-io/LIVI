@@ -1,8 +1,0 @@
-syntax="proto2";
-
-package aap_protobuf.service.media.source.message;
-
-message MicrophoneResponse {
-    required int32 status = 1;
-    optional int32 session_id = 2;
-}

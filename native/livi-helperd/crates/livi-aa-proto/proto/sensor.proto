@@ -1,0 +1,300 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+import "common.proto";
+import "vehicle_energy.proto";
+
+enum SensorMessageId {
+  SENSOR_MESSAGE_ID_REQUEST = 32769;
+  SENSOR_MESSAGE_ID_RESPONSE = 32770;
+  SENSOR_MESSAGE_ID_BATCH = 32771;
+  SENSOR_MESSAGE_ID_ERROR = 32772;
+}
+
+enum EvConnectorType {
+  EV_CONNECTOR_TYPE_UNKNOWN = 0;
+  EV_CONNECTOR_TYPE_J1772 = 1;
+  EV_CONNECTOR_TYPE_MENNEKES = 2;
+  EV_CONNECTOR_TYPE_CHADEMO = 3;
+  EV_CONNECTOR_TYPE_COMBO_1 = 4;
+  EV_CONNECTOR_TYPE_COMBO_2 = 5;
+  EV_CONNECTOR_TYPE_TESLA_ROADSTER = 6;
+  EV_CONNECTOR_TYPE_TESLA_HPWC = 7;
+  EV_CONNECTOR_TYPE_TESLA_SUPERCHARGER = 8;
+  EV_CONNECTOR_TYPE_GBT = 9;
+  EV_CONNECTOR_TYPE_6 = 10;
+  EV_CONNECTOR_TYPE_LECCS = 11;
+  EV_CONNECTOR_TYPE_NACS = 14;
+  EV_CONNECTOR_TYPE_OTHER = 101;
+}
+
+enum FuelType {
+  FUEL_TYPE_UNKNOWN = 0;
+  FUEL_TYPE_UNLEADED = 1;
+  FUEL_TYPE_LEADED = 2;
+  FUEL_TYPE_DIESEL_1 = 3;
+  FUEL_TYPE_DIESEL_2 = 4;
+  FUEL_TYPE_BIODIESEL = 5;
+  FUEL_TYPE_E85 = 6;
+  FUEL_TYPE_LPG = 7;
+  FUEL_TYPE_CNG = 8;
+  FUEL_TYPE_LNG = 9;
+  FUEL_TYPE_ELECTRIC = 10;
+  FUEL_TYPE_HYDROGEN = 11;
+  FUEL_TYPE_OTHER = 12;
+}
+
+enum Gear {
+  GEAR_NEUTRAL = 0;
+  GEAR_1 = 1;
+  GEAR_2 = 2;
+  GEAR_3 = 3;
+  GEAR_4 = 4;
+  GEAR_5 = 5;
+  GEAR_6 = 6;
+  GEAR_7 = 7;
+  GEAR_8 = 8;
+  GEAR_9 = 9;
+  GEAR_10 = 10;
+  GEAR_DRIVE = 100;
+  GEAR_PARK = 101;
+  GEAR_REVERSE = 102;
+}
+
+enum HeadlightState {
+  HEADLIGHT_STATE_OFF = 1;
+  HEADLIGHT_STATE_ON = 2;
+  HEADLIGHT_STATE_HIGH_BEAM = 3;
+}
+
+enum SensorErrorCode {
+  SENSOR_ERROR_CODE_OK = 1;
+  SENSOR_ERROR_CODE_TRANSIENT = 2;
+  SENSOR_ERROR_CODE_PERMANENT = 3;
+}
+
+enum SensorType {
+  SENSOR_TYPE_LOCATION = 1;
+  SENSOR_TYPE_COMPASS = 2;
+  SENSOR_TYPE_SPEED = 3;
+  SENSOR_TYPE_RPM = 4;
+  SENSOR_TYPE_ODOMETER = 5;
+  SENSOR_TYPE_FUEL = 6;
+  SENSOR_TYPE_PARKING_BRAKE = 7;
+  SENSOR_TYPE_GEAR = 8;
+  SENSOR_TYPE_OBDII_DIAGNOSTIC_CODE = 9;
+  SENSOR_TYPE_NIGHT_MODE = 10;
+  SENSOR_TYPE_ENVIRONMENT_DATA = 11;
+  SENSOR_TYPE_HVAC_DATA = 12;
+  SENSOR_TYPE_DRIVING_STATUS_DATA = 13;
+  SENSOR_TYPE_DEAD_RECKONING_DATA = 14;
+  SENSOR_TYPE_PASSENGER_DATA = 15;
+  SENSOR_TYPE_DOOR_DATA = 16;
+  SENSOR_TYPE_LIGHT_DATA = 17;
+  SENSOR_TYPE_TIRE_PRESSURE_DATA = 18;
+  SENSOR_TYPE_ACCELEROMETER_DATA = 19;
+  SENSOR_TYPE_GYROSCOPE_DATA = 20;
+  SENSOR_TYPE_GPS_SATELLITE_DATA = 21;
+  SENSOR_TYPE_TOLL_CARD = 22;
+  SENSOR_TYPE_VEHICLE_ENERGY_MODEL_DATA = 23;
+  SENSOR_TYPE_TRAILER_DATA = 24;
+  SENSOR_TYPE_RAW_VEHICLE_ENERGY_MODEL = 25;
+  SENSOR_TYPE_RAW_EV_TRIP_SETTINGS = 26;
+}
+
+enum TurnIndicatorState {
+  TURN_INDICATOR_STATE_NONE = 1;
+  TURN_INDICATOR_STATE_LEFT = 2;
+  TURN_INDICATOR_STATE_RIGHT = 3;
+}
+
+message Acceleration {
+  optional int32 x_m_per_s2_e3 = 1;
+  optional int32 y_m_per_s2_e3 = 2;
+  optional int32 z_m_per_s2_e3 = 3;
+}
+
+message CarLocation {
+  required int32 latitude_deg_e7 = 2;
+  required int32 longitude_deg_e7 = 3;
+  optional uint32 accuracy_m_e3 = 4;
+  optional int32 altitude_m_e2 = 5;
+  optional int32 speed_m_per_s_e3 = 6;
+  optional int32 bearing_deg_e6 = 7;
+}
+
+message CompassOrientation {
+  required int32 bearing_deg_e6 = 1;
+  optional int32 pitch_deg_e6 = 2;
+  optional int32 roll_deg_e6 = 3;
+}
+
+message CurrentGear {
+  required Gear gear = 1;
+}
+
+message DeadReckoning {
+  optional int32 steering_angle_e1 = 1;
+  repeated int32 wheel_speeds_e3 = 2;
+}
+
+message DoorStates {
+  optional bool hood_open = 1;
+  optional bool trunk_open = 2;
+  repeated bool doors_open = 3;
+}
+
+message DrivingStatus {
+  required int32 restrictions = 1;
+}
+
+message EngineRpm {
+  required int32 rpm_e3 = 1;
+}
+
+message EnvironmentConditions {
+  optional int32 temperature_e3 = 1;
+  optional int32 pressure_e3 = 2;
+  optional int32 unknown_3 = 3;
+}
+
+message FuelLevel {
+  optional int32 level_percent = 1;
+  optional int32 range_km = 2;
+  optional bool energy_is_low = 3;
+}
+
+message GpsSatellite {
+  required int32 prn = 1;
+  required int32 snr_e3 = 2;
+  required bool used_in_fix = 3;
+  optional int32 azimuth_e3 = 4;
+  optional int32 elevation_e3 = 5;
+}
+
+message GpsSatellites {
+  required int32 in_use_count = 1;
+  optional int32 in_view_count = 2;
+  repeated GpsSatellite satellites = 3;
+}
+
+message HvacTemperatures {
+  optional int32 target_temperature_e3 = 1;
+  optional int32 current_temperature_e3 = 2;
+}
+
+message LightStates {
+  optional HeadlightState headlight = 1;
+  optional TurnIndicatorState turn_indicator = 2;
+  optional bool hazard_lights_on = 3;
+}
+
+message NightMode {
+  optional bool night_mode_active = 1;
+}
+
+message ObdDiagnosticCodes {
+  optional bytes codes = 1;
+}
+
+message Odometer {
+  required int32 odometer_km_e1 = 1;
+  optional int32 trip_km_e1 = 2;
+}
+
+message ParkingBrake {
+  required bool engaged = 1;
+}
+
+message PassengerPresence {
+  optional bool passenger_present = 1;
+}
+
+message RawEvTripSettings {
+  optional bytes settings = 1;
+}
+
+message RawVehicleEnergyModel {
+  optional bytes model = 1;
+}
+
+message RotationRate {
+  optional int32 x_rad_per_s_e3 = 1;
+  optional int32 y_rad_per_s_e3 = 2;
+  optional int32 z_rad_per_s_e3 = 3;
+}
+
+message SensorBatchNotification {
+  repeated CarLocation locations = 1;
+  repeated CompassOrientation compass_orientations = 2;
+  repeated VehicleSpeed speeds = 3;
+  repeated EngineRpm engine_rpms = 4;
+  repeated Odometer odometers = 5;
+  repeated FuelLevel fuel_levels = 6;
+  repeated ParkingBrake parking_brakes = 7;
+  repeated CurrentGear gears = 8;
+  repeated ObdDiagnosticCodes obd_diagnostic_codes = 9;
+  repeated NightMode night_modes = 10;
+  repeated EnvironmentConditions environment_conditions = 11;
+  repeated HvacTemperatures hvac_temperatures = 12;
+  repeated DrivingStatus driving_statuses = 13;
+  repeated DeadReckoning dead_reckonings = 14;
+  repeated PassengerPresence passenger_presences = 15;
+  repeated DoorStates door_states = 16;
+  repeated LightStates light_states = 17;
+  repeated TirePressures tire_pressures = 18;
+  repeated Acceleration accelerations = 19;
+  repeated RotationRate rotation_rates = 20;
+  repeated GpsSatellites gps_satellites = 21;
+  repeated TollCard toll_cards = 22;
+  repeated VehicleEnergyModel vehicle_energy_models = 23;
+  repeated TrailerStatus trailer_statuses = 24;
+  repeated RawVehicleEnergyModel raw_vehicle_energy_models = 25;
+  repeated RawEvTripSettings raw_ev_trip_settings = 26;
+}
+
+message SensorErrorNotification {
+  required SensorType sensor_type = 1;
+  required SensorErrorCode error_code = 2;
+}
+
+message SensorRequest {
+  required SensorType sensor_type = 1;
+  required int64 update_rate = 2;
+}
+
+message SensorResponse {
+  required MessageStatus status = 1;
+}
+
+message SensorSourceService {
+  repeated SupportedSensor supported_sensors = 1;
+  optional uint32 location_characterization = 2;
+  repeated FuelType fuel_types = 3;
+  repeated EvConnectorType ev_connector_types = 4;
+}
+
+message SupportedSensor {
+  required SensorType sensor_type = 1;
+}
+
+message TirePressures {
+  repeated int32 pressures_e2 = 1;
+}
+
+message TollCard {
+  required bool card_present = 1;
+}
+
+message TrailerStatus {
+}
+
+message VehicleSpeed {
+  required int32 speed_m_per_s_e3 = 1;
+  optional bool unknown_2 = 2;
+  optional int32 unknown_4 = 4;
+}

@@ -26,13 +26,13 @@ pub fn encode<M: Message>(msg: &M) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::proto::aap_protobuf::service::control::message::PingRequest;
+    use livi_aa_proto::PingRequest;
 
     #[test]
     fn a_missing_required_field_fails() {
         assert!(decode::<PingRequest>(&[0x10, 0x01], &[1]).is_err());
         let ping: PingRequest = decode(&[0x08, 0x05], &[1]).unwrap();
-        assert_eq!(ping.timestamp, 5);
+        assert_eq!(ping.timestamp_ns, 5);
         assert!(decode::<PingRequest>(&[0x08], &[1]).is_err());
         assert_eq!(check_nested(&[0x0a, 0x02, 0x08, 0x01], 1, &[1]), Ok(()));
         assert!(check_nested(&[0x0a, 0x02, 0x10, 0x01], 1, &[1]).is_err());

@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+import "media_playback.proto";
+
+enum PhoneStatusMessageId {
+  PHONE_STATUS_MESSAGE_ID_STATUS = 32769;
+  PHONE_STATUS_MESSAGE_ID_INPUT = 32770;
+}
+
+enum PhoneCallState {
+  PHONE_CALL_STATE_UNKNOWN = 0;
+  PHONE_CALL_STATE_IN = 1;
+  PHONE_CALL_STATE_ON_HOLD = 2;
+  PHONE_CALL_STATE_INACTIVE = 3;
+  PHONE_CALL_STATE_INCOMING = 4;
+  PHONE_CALL_STATE_CONFERENCED = 5;
+  PHONE_CALL_STATE_MUTED = 6;
+}
+
+message PhoneCall {
+  required PhoneCallState state = 1;
+  required uint32 duration_seconds = 2;
+  optional string caller_number = 3;
+  optional string caller_display_name = 4;
+  optional string caller_number_label = 5;
+  optional bytes caller_photo_png = 6;
+}
+
+message PhoneStatusInputNotification {
+  required InstrumentClusterInputNotification input = 1;
+  optional string unknown_2 = 2;
+  optional string unknown_3 = 3;
+}
+
+message PhoneStatusNotification {
+  repeated PhoneCall calls = 1;
+  optional uint32 signal_strength = 2;
+}
+
+message PhoneStatusService {
+}

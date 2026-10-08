@@ -1,6 +1,6 @@
 // One phone connection: version and TLS handshakes, then the demux. Media on the
-// AV channels goes to gst-host and is acked here, everything else is relayed to
-// the main process over the session socket.
+// AV channels goes to gst-host and is acked here where the protocol still wants acks,
+// everything else is relayed to the main process over the session socket.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::IpAddr;
@@ -8,7 +8,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use livi_aa_proto::VersionResponseOptions;
 use livi_host_proto::feed as feedproto;
+use prost::Message as _;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Notify, mpsc};
@@ -54,6 +56,23 @@ enum Phase {
     Version,
     Handshake,
     Running,
+}
+
+/// How often the phone wants our pings and when it counts us as gone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PingConfig {
+    interval_ms: u64,
+    timeout_ms: u64,
+}
+
+/// The phone's ping wishes from the options that follow the version response.
+fn ping_config(options: &[u8]) -> Option<PingConfig> {
+    let options = VersionResponseOptions::decode(options).ok()?;
+    let ping = options.connection_configuration?.ping_configuration?;
+    Some(PingConfig {
+        interval_ms: u64::from(ping.interval_ms?),
+        timeout_ms: u64::from(ping.timeout_ms?),
+    })
 }
 
 /// Where the media of each channel goes, as the main process configured it.
@@ -164,6 +183,9 @@ struct Session<W> {
     parser: FrameParser,
     splitter: FrameSplitter,
     tls: Option<TlsEngine>,
+    /// The version the phone agreed to, major and minor.
+    protocol: (u16, u16),
+    ping: Option<PingConfig>,
     sinks: Sinks,
     /// Channel → session id from its START_INDICATION, for the acks.
     session_ids: HashMap<u8, u32>,
@@ -243,6 +265,8 @@ where
         parser: FrameParser::default(),
         splitter: FrameSplitter::default(),
         tls: None,
+        protocol: (0, 0),
+        ping: None,
         sinks: Sinks::default(),
         session_ids: HashMap::new(),
         announced: HashSet::new(),
@@ -388,21 +412,28 @@ impl<W: AsyncWrite + Unpin + Send> Session<W> {
                     return Err("version response too short".into());
                 }
                 let status = u16::from_be_bytes([body[4], body[5]]);
+                let (major, minor) = (
+                    u16::from_be_bytes([body[0], body[1]]),
+                    u16::from_be_bytes([body[2], body[3]]),
+                );
                 if status == VERSION_STATUS_MISMATCH {
-                    return Err(format!(
-                        "version mismatch {}.{}",
-                        u16::from_be_bytes([body[0], body[1]]),
-                        u16::from_be_bytes([body[2], body[3]])
-                    ));
+                    return Err(format!("version mismatch {major}.{minor}"));
                 }
+                self.protocol = (major, minor);
+                self.ping = ping_config(&body[6..]);
                 let mut tls = TlsEngine::new(self.peer.ip).map_err(|e| e.to_string())?;
                 let hello = tls.take_output();
                 self.tls = Some(tls);
                 self.phase = Phase::Handshake;
-                self.write(&frame::encode(CH_CONTROL, FLAGS_PLAINTEXT, CTRL_SSL_HANDSHAKE, &hello))
-                    .await
+                self.write(&frame::encode(
+                    CH_CONTROL,
+                    FLAGS_PLAINTEXT,
+                    CTRL_ENCAPSULATED_SSL,
+                    &hello,
+                ))
+                .await
             }
-            (CTRL_SSL_HANDSHAKE, Phase::Handshake) => {
+            (CTRL_ENCAPSULATED_SSL, Phase::Handshake) => {
                 let body = body.to_vec();
                 let tls = self.tls.as_mut().ok_or("no tls")?;
                 tls.inject_handshake(&body).map_err(|e| e.to_string())?;
@@ -412,7 +443,7 @@ impl<W: AsyncWrite + Unpin + Send> Session<W> {
                     self.write(&frame::encode(
                         CH_CONTROL,
                         FLAGS_PLAINTEXT,
-                        CTRL_SSL_HANDSHAKE,
+                        CTRL_ENCAPSULATED_SSL,
                         &out,
                     ))
                     .await?;
@@ -429,10 +460,22 @@ impl<W: AsyncWrite + Unpin + Send> Session<W> {
     async fn become_running(&mut self) -> Result<(), String> {
         self.splitter = std::mem::take(&mut self.parser).into_splitter();
         self.phase = Phase::Running;
-        println!("[aa-session] {}: tls up", self.peer.label);
-        let json =
-            serde_json::json!({ "type": "ready", "peer": self.peer.label, "mic": self.mic_path })
-                .to_string();
+        let (major, minor) = self.protocol;
+        let ping = match self.ping {
+            Some(p) => format!(
+                ", the phone wants a ping every {} ms, gone after {} ms",
+                p.interval_ms, p.timeout_ms
+            ),
+            None => String::new(),
+        };
+        println!("[aa-session] {}: tls up, protocol {major}.{minor}{ping}", self.peer.label);
+        let mut ready =
+            serde_json::json!({ "type": "ready", "peer": self.peer.label, "mic": self.mic_path });
+        if let Some(p) = self.ping {
+            ready["ping"] =
+                serde_json::json!({ "interval": p.interval_ms, "timeout": p.timeout_ms });
+        }
+        let json = ready.to_string();
         if !self.control(&json).await {
             return Err("main process gone".into());
         }
@@ -464,7 +507,7 @@ impl<W: AsyncWrite + Unpin + Send> Session<W> {
             if is_media_message(m.msg_id) {
                 return self.media(m).await;
             }
-            if m.msg_id == AV_START_INDICATION {
+            if m.msg_id == MEDIA_START {
                 self.session_ids.insert(m.ch, av::start_session_id(&m.payload).unwrap_or(0));
             }
         }
@@ -472,14 +515,16 @@ impl<W: AsyncWrite + Unpin + Send> Session<W> {
     }
 
     async fn media(&mut self, m: Message) -> Result<(), String> {
-        let session_id = self.session_ids.get(&m.ch).copied().unwrap_or(0);
-        let ack = self
-            .tls
-            .as_mut()
-            .ok_or("no tls")?
-            .encrypt(m.ch, FLAGS_ENC_SIGNAL, AV_MEDIA_ACK, &av::ack(session_id))
-            .map_err(|e| e.to_string())?;
-        self.write(&ack).await?;
+        if av::wants_ack(self.protocol, m.ch) {
+            let session_id = self.session_ids.get(&m.ch).copied().unwrap_or(0);
+            let ack = self
+                .tls
+                .as_mut()
+                .ok_or("no tls")?
+                .encrypt(m.ch, FLAGS_ENC_SIGNAL, MEDIA_ACK, &av::ack(session_id))
+                .map_err(|e| e.to_string())?;
+            self.write(&ack).await?;
+        }
 
         let (ts, data) = av::media(m.msg_id, &m.payload);
         let ts = ts.unwrap_or_else(now_ns);
@@ -510,7 +555,7 @@ impl<W: AsyncWrite + Unpin + Send> Session<W> {
             .tls
             .as_mut()
             .ok_or("no tls")?
-            .encrypt(CH_MIC_INPUT, FLAGS_ENC_SIGNAL, AV_MEDIA_WITH_TIMESTAMP, &payload)
+            .encrypt(CH_MIC_INPUT, FLAGS_ENC_SIGNAL, MEDIA_DATA, &payload)
             .map_err(|e| e.to_string())?;
         self.write(&wire).await
     }
@@ -594,4 +639,20 @@ async fn read_mic(mut sock: UnixStream, tx: mpsc::Sender<(u64, Vec<u8>)>) {
 
 fn now_ns() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_phone_ping_wishes_come_out_of_the_version_response() {
+        // The app's default: timeout 8000, interval 1000, high latency 200, 5 tracked pings.
+        let ping = [0x08, 0xc0, 0x3e, 0x10, 0xe8, 0x07, 0x18, 0xc8, 0x01, 0x20, 0x05];
+        let connection = [&[0x0a, ping.len() as u8][..], &ping].concat();
+        let options = [&[0x0a, connection.len() as u8][..], &connection].concat();
+        assert_eq!(ping_config(&options), Some(PingConfig { interval_ms: 1000, timeout_ms: 8000 }));
+        assert_eq!(ping_config(&[]), None);
+        assert_eq!(ping_config(&[0x0a, 0x02, 0x0a, 0x00]), None);
+    }
 }

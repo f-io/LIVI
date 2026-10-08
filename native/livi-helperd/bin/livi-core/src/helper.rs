@@ -69,6 +69,10 @@ fn settings_env(cfg: &Config) -> Vec<(String, String)> {
         ("LIVI_BT_ADAPTER".to_string(), cfg.bt_adapter.clone()),
         ("LIVI_WIFI_IFACE".to_string(), cfg.wifi_interface.clone()),
         ("LIVI_PASSPHRASE".to_string(), cfg.wifi_password.clone()),
+        (
+            "LIVI_WIFI_TYPE".to_string(),
+            livi_wifi::Band::setting(crate::wifi_options::band_of(cfg.wifi_type)).to_string(),
+        ),
         ("LIVI_CHANNEL".to_string(), channel),
         ("LIVI_COUNTRY".to_string(), cfg.country.clone()),
         ("LIVI_CP_DEBUG".to_string(), flag(debug, "")),
@@ -281,6 +285,7 @@ mod tests {
         assert_eq!(get(&env, "LIVI_CP_NAME"), Some("LIVI"));
         assert_eq!(get(&env, "LIVI_CP_FUELS"), Some("Gasoline"));
         assert_eq!(get(&env, "LIVI_CHANNEL"), Some("36"));
+        assert_eq!(get(&env, "LIVI_WIFI_TYPE"), Some("2.4ghz"));
         assert_eq!(get(&env, "LIVI_CP_AIRPLAY_PORT"), Some("7000"));
         cfg.debug_logging = true;
         let env = helper_env(&cfg, &identity(), None);

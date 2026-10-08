@@ -1,4 +1,6 @@
-use crate::channels::input::{TouchPointer, button_key as key, touch_action};
+use livi_aa_proto::{Keycode, TouchAction as TouchEventAction};
+
+use crate::channels::input::TouchPointer;
 use crate::config::Geometry;
 use crate::wire::round_half_up;
 
@@ -102,37 +104,37 @@ pub enum Action {
 pub fn command_action(cmd: Command) -> Action {
     use Command as C;
     match cmd {
-        C::SelectDown | C::KnobDown => Action::Key { code: key::DPAD_CENTER, down: true },
-        C::SelectUp | C::KnobUp => Action::Key { code: key::DPAD_CENTER, down: false },
-        C::VoiceAssistant => Action::Key { code: key::SEARCH, down: true },
-        C::VoiceAssistantRelease => Action::Key { code: key::SEARCH, down: false },
+        C::SelectDown | C::KnobDown => Action::Key { code: Keycode::DpadCenter as u32, down: true },
+        C::SelectUp | C::KnobUp => Action::Key { code: Keycode::DpadCenter as u32, down: false },
+        C::VoiceAssistant => Action::Key { code: Keycode::Search as u32, down: true },
+        C::VoiceAssistantRelease => Action::Key { code: Keycode::Search as u32, down: false },
         // Lists scroll on the rotary, the d-pad only moves between regions.
         C::Left | C::KnobLeft => Action::Rotary(-1),
         C::Right | C::KnobRight => Action::Rotary(1),
-        C::Up => Action::Click(key::DPAD_UP),
-        C::Down => Action::Click(key::DPAD_DOWN),
-        C::Home => Action::Click(key::HOME),
-        C::Back => Action::Click(key::BACK),
-        C::AcceptPhone => Action::Click(key::PHONE_ACCEPT),
-        C::RejectPhone => Action::Click(key::PHONE_DECLINE),
-        C::PhoneKey0 => Action::Click(key::KEY_0),
-        C::PhoneKey1 => Action::Click(key::KEY_1),
-        C::PhoneKey2 => Action::Click(key::KEY_2),
-        C::PhoneKey3 => Action::Click(key::KEY_3),
-        C::PhoneKey4 => Action::Click(key::KEY_4),
-        C::PhoneKey5 => Action::Click(key::KEY_5),
-        C::PhoneKey6 => Action::Click(key::KEY_6),
-        C::PhoneKey7 => Action::Click(key::KEY_7),
-        C::PhoneKey8 => Action::Click(key::KEY_8),
-        C::PhoneKey9 => Action::Click(key::KEY_9),
-        C::PhoneKeyStar => Action::Click(key::KEY_STAR),
-        C::PhoneKeyHash => Action::Click(key::KEY_POUND),
-        C::PhoneKeyHookSwitch => Action::Click(key::HEADSETHOOK),
-        C::Play => Action::Click(key::MEDIA_PLAY),
-        C::Pause => Action::Click(key::MEDIA_PAUSE),
-        C::PlayPause => Action::Click(key::MEDIA_PLAY_PAUSE),
-        C::Next => Action::Click(key::MEDIA_NEXT),
-        C::Prev => Action::Click(key::MEDIA_PREV),
+        C::Up => Action::Click(Keycode::DpadUp as u32),
+        C::Down => Action::Click(Keycode::DpadDown as u32),
+        C::Home => Action::Click(Keycode::Home as u32),
+        C::Back => Action::Click(Keycode::Back as u32),
+        C::AcceptPhone => Action::Click(Keycode::Call as u32),
+        C::RejectPhone => Action::Click(Keycode::Endcall as u32),
+        C::PhoneKey0 => Action::Click(Keycode::Keycode0 as u32),
+        C::PhoneKey1 => Action::Click(Keycode::Keycode1 as u32),
+        C::PhoneKey2 => Action::Click(Keycode::Keycode2 as u32),
+        C::PhoneKey3 => Action::Click(Keycode::Keycode3 as u32),
+        C::PhoneKey4 => Action::Click(Keycode::Keycode4 as u32),
+        C::PhoneKey5 => Action::Click(Keycode::Keycode5 as u32),
+        C::PhoneKey6 => Action::Click(Keycode::Keycode6 as u32),
+        C::PhoneKey7 => Action::Click(Keycode::Keycode7 as u32),
+        C::PhoneKey8 => Action::Click(Keycode::Keycode8 as u32),
+        C::PhoneKey9 => Action::Click(Keycode::Keycode9 as u32),
+        C::PhoneKeyStar => Action::Click(Keycode::Star as u32),
+        C::PhoneKeyHash => Action::Click(Keycode::Pound as u32),
+        C::PhoneKeyHookSwitch => Action::Click(Keycode::Headsethook as u32),
+        C::Play => Action::Click(Keycode::MediaPlay as u32),
+        C::Pause => Action::Click(Keycode::MediaPause as u32),
+        C::PlayPause => Action::Click(Keycode::MediaPlayPause as u32),
+        C::Next => Action::Click(Keycode::MediaNext as u32),
+        C::Prev => Action::Click(Keycode::MediaPrevious as u32),
         C::Frame | C::RequestVideoFocus => Action::VideoFocus,
         C::RequestClusterStreamFocus => Action::ClusterFocus,
         C::ReleaseVideoFocus
@@ -146,21 +148,21 @@ pub fn command_action(cmd: Command) -> Action {
 pub fn input_key(cmd: InputCommand) -> u32 {
     use InputCommand as I;
     match cmd {
-        I::Play => key::MEDIA_PLAY,
-        I::Pause => key::MEDIA_PAUSE,
-        I::PlayPause => key::MEDIA_PLAY_PAUSE,
-        I::Stop => key::MEDIA_STOP,
-        I::Next => key::MEDIA_NEXT,
-        I::Previous => key::MEDIA_PREV,
-        I::FastForward => key::MEDIA_FAST_FWD,
-        I::Rewind => key::MEDIA_REWIND,
-        I::VolumeUp => key::VOLUME_UP,
-        I::VolumeDown => key::VOLUME_DOWN,
-        I::Mute => key::VOLUME_MUTE,
-        I::AcceptCall => key::PHONE_ACCEPT,
-        I::RejectCall => key::PHONE_DECLINE,
-        I::HookSwitch => key::HEADSETHOOK,
-        I::VoiceAssistant => key::SEARCH,
+        I::Play => Keycode::MediaPlay as u32,
+        I::Pause => Keycode::MediaPause as u32,
+        I::PlayPause => Keycode::MediaPlayPause as u32,
+        I::Stop => Keycode::MediaStop as u32,
+        I::Next => Keycode::MediaNext as u32,
+        I::Previous => Keycode::MediaPrevious as u32,
+        I::FastForward => Keycode::MediaFastForward as u32,
+        I::Rewind => Keycode::MediaRewind as u32,
+        I::VolumeUp => Keycode::VolumeUp as u32,
+        I::VolumeDown => Keycode::VolumeDown as u32,
+        I::Mute => Keycode::VolumeMute as u32,
+        I::AcceptCall => Keycode::Call as u32,
+        I::RejectCall => Keycode::Endcall as u32,
+        I::HookSwitch => Keycode::Headsethook as u32,
+        I::VoiceAssistant => Keycode::Search as u32,
     }
 }
 
@@ -187,9 +189,9 @@ pub fn touch_point(g: &Geometry, id: u32, x: f64, y: f64) -> Option<TouchPointer
 
 pub fn single_touch_action(action: TouchAction) -> u32 {
     match action {
-        TouchAction::Down => touch_action::DOWN,
-        TouchAction::Move => touch_action::MOVED,
-        TouchAction::Up => touch_action::UP,
+        TouchAction::Down => TouchEventAction::Down as u32,
+        TouchAction::Move => TouchEventAction::Move as u32,
+        TouchAction::Up => TouchEventAction::Up as u32,
     }
 }
 
@@ -200,11 +202,11 @@ pub fn multi_touch(g: &Geometry, touches: &[TouchItem]) -> Option<(u32, Vec<Touc
     let trigger = touches.iter().position(|t| t.action != TouchAction::Move);
     let multi = touches.len() > 1;
     let action = match trigger.map(|i| touches[i].action).unwrap_or(touches[0].action) {
-        TouchAction::Down if multi => touch_action::POINTER_DOWN,
-        TouchAction::Down => touch_action::DOWN,
-        TouchAction::Up if multi => touch_action::POINTER_UP,
-        TouchAction::Up => touch_action::UP,
-        TouchAction::Move => touch_action::MOVED,
+        TouchAction::Down if multi => TouchEventAction::PointerDown as u32,
+        TouchAction::Down => TouchEventAction::Down as u32,
+        TouchAction::Up if multi => TouchEventAction::PointerUp as u32,
+        TouchAction::Up => TouchEventAction::Up as u32,
+        TouchAction::Move => TouchEventAction::Move as u32,
     };
     let pointers: Vec<TouchPointer> =
         touches.iter().filter_map(|t| touch_point(g, t.id, t.x, t.y)).collect();
@@ -231,14 +233,14 @@ mod tests {
         let t = |id, x, action| TouchItem { id, x, y: 0.5, action };
         let (action, pointers, index) =
             multi_touch(&g, &[t(0, 0.5, TouchAction::Move), t(1, 0.6, TouchAction::Down)]).unwrap();
-        assert_eq!((action, pointers.len(), index), (touch_action::POINTER_DOWN, 2, 1));
+        assert_eq!((action, pointers.len(), index), (TouchEventAction::PointerDown as u32, 2, 1));
         let (action, _, index) = multi_touch(&g, &[t(0, 0.5, TouchAction::Up)]).unwrap();
-        assert_eq!((action, index), (touch_action::UP, 0));
+        assert_eq!((action, index), (TouchEventAction::Up as u32, 0));
         let (action, _, _) = multi_touch(&g, &[t(0, 0.5, TouchAction::Move)]).unwrap();
-        assert_eq!(action, touch_action::MOVED);
+        assert_eq!(action, TouchEventAction::Move as u32);
         assert_eq!(multi_touch(&g, &[t(0, 0.0, TouchAction::Down)]), None);
         assert_eq!(multi_touch(&g, &[]), None);
-        assert_eq!(single_touch_action(TouchAction::Up), touch_action::UP);
+        assert_eq!(single_touch_action(TouchAction::Up), TouchEventAction::Up as u32);
     }
 
     #[test]

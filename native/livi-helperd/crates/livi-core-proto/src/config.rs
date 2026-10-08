@@ -187,6 +187,8 @@ pub enum WifiBand {
     Ghz24,
     #[serde(rename = "5ghz")]
     Ghz5,
+    #[serde(rename = "6ghz")]
+    Ghz6,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

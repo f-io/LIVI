@@ -178,9 +178,12 @@ pub async fn start(
     register_profile(&conn, IAP_SERVER_PATH, IAP_SERVER_UUID, iap_opts).await?;
 
     // The client profile with AutoConnect lets BlueZ page a known phone back after a restart.
+    // Without authentication on our own pages a phone that lost its key pairs without bonding,
+    // and BlueZ forgets it again on the next disconnect.
     let mut client_opts: HashMap<&str, Value> = HashMap::new();
     client_opts.insert("Role", Value::from("client"));
     client_opts.insert("AutoConnect", Value::from(true));
+    client_opts.insert("RequireAuthentication", Value::from(true));
     if let Err(e) = register_profile(&conn, IAP_CLIENT_PATH, IAP_CLIENT_UUID, client_opts).await {
         eprintln!("[cp] could not register iAP client profile: {e}");
     }
@@ -357,7 +360,8 @@ pub async fn start_hfp(
     let mut opts: HashMap<&str, Value> = HashMap::new();
     opts.insert("Name", Value::from("HFP Hands-Free"));
     opts.insert("Role", Value::from("client"));
-    opts.insert("RequireAuthentication", Value::from(false));
+    // We page the phone on this profile, see the iAP client.
+    opts.insert("RequireAuthentication", Value::from(true));
     opts.insert("RequireAuthorization", Value::from(false));
     opts.insert("Features", Value::from(0x009cu16));
     opts.insert("Version", Value::from(0x0108u16));

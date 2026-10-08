@@ -2,6 +2,15 @@
 
 //! Shared by the host and the LIVI Link's wifid.
 
+pub mod ap_config;
+pub mod band;
+pub mod radio;
+pub mod security;
+
+pub use band::{Band, Channel};
+pub use radio::{BandOffer, Radio, radio};
+pub use security::Security;
+
 #[cfg(not(target_os = "linux"))]
 pub fn listing() -> Result<String, String> {
     Err("the channel list needs linux".into())
@@ -11,13 +20,28 @@ pub fn listing() -> Result<String, String> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApState {
     pub ssid: String,
-    pub channel: u32,
+    pub channel: Channel,
     pub width: u32,
+}
+
+/// The access point as a phone finds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OnAir {
+    pub ssid: String,
+    pub channel: Channel,
+    pub security: Security,
 }
 
 #[cfg(not(target_os = "linux"))]
 pub fn ap_state(_iface: &str) -> Option<ApState> {
     None
+}
+
+/// A host access point: what the kernel beacons, secured as hostapd runs it.
+pub fn on_air(iface: &str) -> Option<OnAir> {
+    let ap = ap_state(iface)?;
+    let conf = std::fs::read_to_string(ap_config::HOST_CONF).unwrap_or_default();
+    Some(OnAir { ssid: ap.ssid, channel: ap.channel, security: Security::of_hostapd(&conf) })
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -114,8 +138,8 @@ pub fn listing() -> Result<String, String> {
     for radio in radios(&fd, family)? {
         out.push_str(&format!("phy {}\n", radio.name));
         for c in radio.channels {
-            if let Some(ch) = channel_of(c.freq) {
-                out.push_str(&format!("chan {ch} {} {} {}\n", c.freq, c.flags, c.dbm));
+            if let Some(ch) = Channel::of_freq(c.freq) {
+                out.push_str(&format!("chan {} {} {} {}\n", ch.number, c.freq, c.flags, c.dbm));
             }
         }
     }
@@ -194,7 +218,7 @@ pub fn ap_state(iface: &str) -> Option<ApState> {
         }
         if name.as_deref() == Some(iface) && kind_of == Some(IFTYPE_AP) {
             let ssid = ssid.filter(|s| !s.is_empty())?;
-            return Some(ApState { ssid, channel: channel_of(freq?)?, width });
+            return Some(ApState { ssid, channel: Channel::of_freq(freq?)?, width });
         }
     }
     None
@@ -303,14 +327,14 @@ fn country(fd: &OwnedFd, family: u16) -> Result<String, String> {
 }
 
 #[cfg(target_os = "linux")]
-struct Radio {
+struct Phy {
     id: u32,
     name: String,
-    channels: Vec<Channel>,
+    channels: Vec<Frequency>,
 }
 
 /// `dbm` is the permitted EIRP, 0 when the kernel names none.
-struct Channel {
+struct Frequency {
     freq: u32,
     flags: String,
     dbm: u32,
@@ -318,10 +342,10 @@ struct Channel {
 
 /// A split dump spreads one radio over several messages.
 #[cfg(target_os = "linux")]
-fn radios(fd: &OwnedFd, family: u16) -> Result<Vec<Radio>, String> {
+fn radios(fd: &OwnedFd, family: u16) -> Result<Vec<Phy>, String> {
     let split = attr(ATTR_SPLIT_WIPHY_DUMP, &[]);
     let request = message(family, NL80211_CMD_GET_WIPHY, NLM_F_DUMP, &split);
-    let mut radios: Vec<Radio> = Vec::new();
+    let mut radios: Vec<Phy> = Vec::new();
     for payload in call(fd, &request)? {
         let mut id = None;
         let mut name = None;
@@ -348,7 +372,7 @@ fn radios(fd: &OwnedFd, family: u16) -> Result<Vec<Radio>, String> {
         let at = match radios.iter().position(|r| r.id == id) {
             Some(at) => at,
             None => {
-                radios.push(Radio { id, name: String::new(), channels: Vec::new() });
+                radios.push(Phy { id, name: String::new(), channels: Vec::new() });
                 radios.len() - 1
             }
         };
@@ -372,7 +396,7 @@ fn text(value: &[u8]) -> String {
 }
 
 /// Power comes in mBm.
-fn frequency(attrs: &[u8]) -> Option<Channel> {
+fn frequency(attrs: &[u8]) -> Option<Frequency> {
     let mut freq = None;
     let mut dbm = 0;
     let mut flags = Vec::new();
@@ -393,17 +417,7 @@ fn frequency(attrs: &[u8]) -> Option<Channel> {
     if flags.is_empty() {
         flags.push("ok");
     }
-    Some(Channel { freq: freq?, flags: flags.join(","), dbm })
-}
-
-/// The channel number as hostapd wants it.
-fn channel_of(freq: u32) -> Option<u32> {
-    match freq {
-        2484 => Some(14),
-        2412..=2472 => Some((freq - 2407) / 5),
-        5000..=5895 => Some((freq - 5000) / 5),
-        _ => None,
-    }
+    Some(Frequency { freq: freq?, flags: flags.join(","), dbm })
 }
 
 fn message(family: u16, cmd: u8, flags: u16, attrs: &[u8]) -> Vec<u8> {
@@ -503,16 +517,6 @@ impl<'a> Iterator for Attrs<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_frequency_maps_to_the_channel_hostapd_wants() {
-        assert_eq!(channel_of(2412), Some(1));
-        assert_eq!(channel_of(2472), Some(13));
-        assert_eq!(channel_of(2484), Some(14));
-        assert_eq!(channel_of(5180), Some(36));
-        assert_eq!(channel_of(5825), Some(165));
-        assert_eq!(channel_of(1000), None);
-    }
 
     #[test]
     fn attributes_are_walked_with_their_padding() {

@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+message VendorExtensionService {
+  required string name = 1;
+  repeated string allowed_package_names = 2;
+  optional bytes data = 3;
+}

@@ -12,7 +12,6 @@ pub mod link;
 pub mod log;
 pub mod manager;
 pub mod media;
-pub mod proto;
 pub mod sensors;
 pub mod session;
 pub mod wire;

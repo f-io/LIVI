@@ -106,6 +106,29 @@ fn mbps(bytes: f64, over: Duration) -> f64 {
     (bytes * 8.0 / secs / 1e6 * 10.0).round() / 10.0
 }
 
+/// A host access point counts the way the dongle does: bytes on the interface, the phone's
+/// rates from the kernel.
+fn host_counters(iface: &str) -> Option<Status> {
+    let bytes = |dir: &str| {
+        std::fs::read_to_string(format!("/sys/class/net/{iface}/statistics/{dir}_bytes"))
+            .ok()
+            .map(|s| s.trim().to_string())
+    };
+    let mut status = Status::new();
+    status.insert("downbytes".into(), bytes("rx")?);
+    status.insert("upbytes".into(), bytes("tx")?);
+    Some(status)
+}
+
+fn host_rates(iface: &str) -> Status {
+    let mut status = Status::new();
+    if let Some((down, up)) = livi_wifi::stations(iface).rates {
+        status.insert("downrate".into(), down.to_string());
+        status.insert("uprate".into(), up.to_string());
+    }
+    status
+}
+
 fn attached() -> bool {
     livi_link_host::link::attached()
 }
@@ -228,8 +251,8 @@ impl Link {
     }
 
     /// A single missed poll keeps the dongle listed, the route needs a moment after plug in.
-    async fn poll(&mut self, hub: &Hub, speed_shown: bool) -> Option<Status> {
-        let mut status = if attached() {
+    async fn poll(&mut self, hub: &Hub, speed_shown: bool, wifi_interface: &str) -> Option<Status> {
+        let status = if attached() {
             tokio::task::spawn_blocking(ap::status).await.ok().flatten()
         } else {
             None
@@ -237,21 +260,31 @@ impl Link {
         self.misses = if status.is_some() { 0 } else { self.misses.saturating_add(1) };
         let answers =
             status.is_some() || (self.misses < 2 && hub.watch().borrow().system.dongle.is_some());
-        let link_speed = match status.as_mut() {
-            Some(s) if speed_shown => {
+        let host = wifi_interface != CHOICE;
+        let mut counted = match (host, speed_shown) {
+            (_, false) => None,
+            (false, true) => status.clone(),
+            (true, true) => {
+                let iface = wifi_interface.to_string();
+                tokio::task::spawn_blocking(move || host_counters(&iface)).await.ok().flatten()
+            }
+        };
+        let link_speed = match counted.as_mut() {
+            Some(s) => {
                 if self.rates_due() {
-                    self.rates = tokio::task::spawn_blocking(ap::rates)
-                        .await
-                        .ok()
-                        .flatten()
-                        .unwrap_or_default();
+                    let iface = wifi_interface.to_string();
+                    self.rates = tokio::task::spawn_blocking(move || {
+                        if host { host_rates(&iface) } else { ap::rates().unwrap_or_default() }
+                    })
+                    .await
+                    .unwrap_or_default();
                     self.rates_at = Some(Instant::now());
                 }
                 // Older dongles carry the rates in the status.
                 s.extend(self.rates.clone());
                 Some(self.speed(s))
             }
-            _ => {
+            None => {
                 self.bytes = None;
                 self.rates_at = None;
                 None
@@ -319,7 +352,7 @@ pub async fn run(hub: Arc<Hub>, mut asks: DongleAsks) {
         tokio::select! {
             _ = tick.tick() => {
                 let speed_shown = *asks.link_speed_viewers.borrow() > 0;
-                let status = link.poll(&hub, speed_shown).await;
+                let status = link.poll(&hub, speed_shown, &cfg.wifi_interface).await;
                 if link.due(status.as_ref(), &cfg) {
                     link.reconcile(&cfg).await;
                 }

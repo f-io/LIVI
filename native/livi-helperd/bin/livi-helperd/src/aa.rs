@@ -9,6 +9,7 @@ use livi_aa::wpp;
 use livi_runtime::bt::IncomingConn;
 use livi_runtime::livi_sock::Broadcaster;
 use livi_runtime::net;
+use livi_wifi::{Channel, Security};
 
 const VERSION_TIMEOUT: Duration = Duration::from_secs(10);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -17,25 +18,29 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct AaConfig {
     pub ssid: String,
     pub passphrase: String,
-    pub channel: u16,
+    pub channel: Channel,
     pub wifi_iface: String,
     pub ap_ip: String,
     pub port: u16,
 }
 
-async fn access_point(cfg: &AaConfig) -> (AaConfig, String) {
+/// What the phone is told: the access point on air, else the configured one. Also its security
+/// and BSSID.
+async fn access_point(cfg: &AaConfig) -> (AaConfig, Security, String) {
     let base = cfg.clone();
     tokio::task::spawn_blocking(move || {
         use livi_link_host::{ap, link};
         let dc = crate::linux_main::DeviceConfig::load();
         let iface = dc.string("wifiInterface", "LIVI_WIFI_IFACE", &base.wifi_iface);
         let passphrase = dc.string("wifiPassword", "LIVI_PASSPHRASE", &base.passphrase);
+        let live = livi_link_host::on_air(&iface);
+        let ssid = live.as_ref().map(|ap| ap.ssid.clone()).filter(|s| !s.is_empty());
+        let channel = live.as_ref().map_or(base.channel, |ap| ap.channel);
+        let security = live.map(|ap| ap.security).unwrap_or_default();
         if iface == link::CHOICE {
-            let live = AaConfig {
-                ssid: ap::ssid().unwrap_or_else(|| base.ssid.clone()),
-                channel: ap::status_field("channel")
-                    .and_then(|c| c.parse().ok())
-                    .unwrap_or(base.channel),
+            let told = AaConfig {
+                ssid: ssid.unwrap_or_else(|| base.ssid.clone()),
+                channel,
                 ap_ip: link::host_iface()
                     .and_then(|iface| net::ipv4_of(&iface))
                     .map(|a| a.to_string())
@@ -43,21 +48,20 @@ async fn access_point(cfg: &AaConfig) -> (AaConfig, String) {
                 passphrase,
                 ..base
             };
-            return (live, ap::mac().unwrap_or_default());
+            return (told, security, ap::mac().unwrap_or_default());
         }
-        let (ssid, channel) = net::ap_ssid_channel(&iface);
         let bssid = net::wlan_mac(&iface).unwrap_or_default();
-        let live = AaConfig {
-            ssid: ssid.filter(|s| !s.is_empty()).unwrap_or_else(|| base.ssid.clone()),
-            channel: channel.filter(|c| *c != 0).map(u16::from).unwrap_or(base.channel),
+        let told = AaConfig {
+            ssid: ssid.unwrap_or_else(|| base.ssid.clone()),
+            channel,
             wifi_iface: iface,
             passphrase,
             ..base
         };
-        (live, bssid)
+        (told, security, bssid)
     })
     .await
-    .unwrap_or_else(|_| (cfg.clone(), String::new()))
+    .unwrap_or_else(|_| (cfg.clone(), Security::default(), String::new()))
 }
 
 /// Phones already projecting over USB, which must not be invited onto the access point.
@@ -107,7 +111,7 @@ async fn handshake(
     std_stream.set_nonblocking(true)?;
     let mut sock = UnixStream::from_std(std_stream)?;
 
-    let (cfg, bssid) = access_point(cfg).await;
+    let (cfg, security, bssid) = access_point(cfg).await;
     let (cfg, bssid) = (&cfg, bssid.to_lowercase());
     println!("[aa] {mac}: WPP bootstrap (AP {}:{} ssid={})", cfg.ap_ip, cfg.port, cfg.ssid);
 
@@ -148,18 +152,18 @@ async fn handshake(
 
         match msg_id {
             wpp::MSG_WIFI_INFO_REQUEST => {
-                sock.write_all(&wpp::wifi_info_response(&cfg.ssid, &cfg.passphrase, &bssid))
-                    .await?;
+                let info = wpp::wifi_info_response(&cfg.ssid, &cfg.passphrase, &bssid, security);
+                sock.write_all(&info).await?;
             }
-            wpp::MSG_WIFI_CONNECTION_STATUS => {
-                let status = body.get(1).copied().unwrap_or(0);
+            wpp::MSG_WIFI_CONNECT_STATUS => {
+                let status = wpp::connect_status(&body);
                 if status == 0 {
                     println!("[aa] {mac}: phone joined AP {}", cfg.ssid);
                 } else {
                     println!("[aa] {mac}: phone-side AP join failed (status={status})");
                 }
             }
-            wpp::MSG_PING => sock.write_all(&wpp::pong(&body)).await?,
+            wpp::MSG_WIFI_PING_REQUEST => sock.write_all(&wpp::pong(&body)).await?,
             wpp::MSG_WIFI_VERSION_RESPONSE => {
                 let id = wpp::parse_identity(&body);
                 emit_device(bcast, mac, &id);

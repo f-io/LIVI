@@ -1,20 +1,31 @@
 // Wireless Projection Protocol: the Android Auto Wi-Fi bootstrap, framed as a 4-byte
 // header (u16 length, u16 message id) plus a protobuf body.
 
-pub const MSG_WIFI_START_REQUEST: u16 = 1;
-pub const MSG_WIFI_INFO_REQUEST: u16 = 2;
-pub const MSG_WIFI_INFO_RESPONSE: u16 = 3;
-pub const MSG_WIFI_VERSION_REQUEST: u16 = 4;
-pub const MSG_WIFI_VERSION_RESPONSE: u16 = 5;
-pub const MSG_WIFI_CONNECTION_STATUS: u16 = 6;
-pub const MSG_WIFI_START_RESPONSE: u16 = 7;
-pub const MSG_PING: u16 = 8;
-pub const MSG_PONG: u16 = 9;
+use livi_aa_proto::{
+    WifiAccessPointType, WifiConnectStatusNotification, WifiInfoResponse, WifiSecurityMode,
+    WifiStartRequest, WifiVersionRequest, WifiVersionResponse, WirelessSetupMessageId as Id,
+};
+use livi_wifi::{Channel, Security};
+use prost::Message;
 
-const SECURITY_WPA2_PERSONAL: u64 = 8;
-const ACCESS_POINT_STATIC: u64 = 0;
+pub const MSG_WIFI_START_REQUEST: u16 = Id::WifiRequestStartBt as u16;
+pub const MSG_WIFI_INFO_REQUEST: u16 = Id::WifiRequestInfoBt as u16;
+pub const MSG_WIFI_INFO_RESPONSE: u16 = Id::WifiResponseInfoBt as u16;
+pub const MSG_WIFI_VERSION_REQUEST: u16 = Id::WifiVersionRequestBt as u16;
+pub const MSG_WIFI_VERSION_RESPONSE: u16 = Id::WifiVersionResponseBt as u16;
+pub const MSG_WIFI_CONNECT_STATUS: u16 = Id::WifiConnectStatusBt as u16;
+pub const MSG_WIFI_START_RESPONSE: u16 = Id::WifiResponseStartBt as u16;
+pub const MSG_WIFI_PING_REQUEST: u16 = Id::WifiPingRequestBt as u16;
+pub const MSG_WIFI_PING_RESPONSE: u16 = Id::WifiPingResponseBt as u16;
 
-use crate::proto::{pb_string, pb_varint, read_varint, varint};
+/// The phone refuses WPA3 alone and picks WPA3 out of the transition itself when it runs SAE,
+/// so a WPA3-only access point is told as the transition.
+fn security_mode(security: Security) -> WifiSecurityMode {
+    match security {
+        Security::Wpa2 => WifiSecurityMode::Wpa2Personal,
+        Security::Wpa2Wpa3 | Security::Wpa3 => WifiSecurityMode::Wpa2Wpa3Personal,
+    }
+}
 
 pub fn frame(msg_id: u16, body: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(body.len() + 4);
@@ -24,50 +35,50 @@ pub fn frame(msg_id: u16, body: &[u8]) -> Vec<u8> {
     out
 }
 
-pub fn channel_to_freq_mhz(channel: u16) -> u64 {
-    match channel {
-        1..=13 => 2412 + (channel as u64 - 1) * 5,
-        14 => 2484,
-        36..=177 => 5180 + (channel as u64 - 36) * 5,
-        _ => 5180,
-    }
-}
-
 /// Announces our WPP version and the frequency the access point runs on.
-pub fn wifi_version_request(channel: u16) -> Vec<u8> {
-    let freq_body = varint(channel_to_freq_mhz(channel));
-    let mut body = pb_varint(1, 6);
-    body.extend(pb_varint(2, 0));
-    // Field 4, packed: the list of supported channel frequencies.
-    body.push(0x22);
-    body.extend(varint(freq_body.len() as u64));
-    body.extend(freq_body);
-    frame(MSG_WIFI_VERSION_REQUEST, &body)
+pub fn wifi_version_request(channel: Channel) -> Vec<u8> {
+    let request = WifiVersionRequest {
+        major_version: Some(6),
+        minor_version: Some(0),
+        supported_channel_frequencies_mhz: vec![channel.freq_mhz() as i32],
+        ..Default::default()
+    };
+    frame(MSG_WIFI_VERSION_REQUEST, &request.encode_to_vec())
 }
 
 /// Tells the phone where the projection listener waits once it has joined the AP.
 pub fn wifi_start_request(ip: &str, port: u16) -> Vec<u8> {
-    let mut body = pb_string(1, ip);
-    body.extend(pb_varint(2, port as u64));
-    frame(MSG_WIFI_START_REQUEST, &body)
+    let request = WifiStartRequest {
+        ip_address: Some(ip.to_string()),
+        port: Some(i32::from(port)),
+        reason: None,
+    };
+    frame(MSG_WIFI_START_REQUEST, &request.encode_to_vec())
 }
 
 /// The access point credentials the phone asked for.
-pub fn wifi_info_response(ssid: &str, key: &str, bssid: &str) -> Vec<u8> {
-    let mut body = pb_string(1, ssid);
-    body.extend(pb_string(2, key));
-    body.extend(pb_string(3, bssid));
-    body.extend(pb_varint(4, SECURITY_WPA2_PERSONAL));
-    body.extend(pb_varint(5, ACCESS_POINT_STATIC));
-    frame(MSG_WIFI_INFO_RESPONSE, &body)
+pub fn wifi_info_response(ssid: &str, key: &str, bssid: &str, security: Security) -> Vec<u8> {
+    let response = WifiInfoResponse {
+        ssid: Some(ssid.to_string()),
+        password: Some(key.to_string()),
+        bssid: Some(bssid.to_string()),
+        security_mode: Some(security_mode(security) as i32),
+        access_point_type: Some(WifiAccessPointType::Static as i32),
+    };
+    frame(MSG_WIFI_INFO_RESPONSE, &response.encode_to_vec())
 }
 
 pub fn pong(body: &[u8]) -> Vec<u8> {
-    frame(MSG_PONG, body)
+    frame(MSG_WIFI_PING_RESPONSE, body)
 }
 
-/// The phone's identity from a WifiVersionResponse: field 3 is the serial (same as the USB
-/// descriptor serial), field 6 → field 1 is the instance id.
+/// 0 when the phone joined the access point.
+pub fn connect_status(body: &[u8]) -> i32 {
+    WifiConnectStatusNotification::decode(body).ok().and_then(|s| s.status).unwrap_or(0)
+}
+
+/// The phone's identity from a WifiVersionResponse: the serial (same as the USB descriptor
+/// serial) and the device id.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Identity {
     pub instance_id: String,
@@ -75,52 +86,14 @@ pub struct Identity {
 }
 
 pub fn parse_identity(data: &[u8]) -> Identity {
-    let mut id = Identity::default();
-    let mut i = 0usize;
-    while i < data.len() {
-        let Some(tag) = read_varint(data, &mut i) else { break };
-        let field = tag >> 3;
-        match tag & 7 {
-            2 => {
-                let Some(len) = read_varint(data, &mut i) else { break };
-                let end = i + len as usize;
-                let Some(val) = data.get(i..end) else { break };
-                i = end;
-                if field == 3 {
-                    id.serial = String::from_utf8_lossy(val).into_owned();
-                } else if field == 6 {
-                    let mut j = 0usize;
-                    while j < val.len() {
-                        let Some(t2) = read_varint(val, &mut j) else { break };
-                        match t2 & 7 {
-                            2 => {
-                                let Some(l2) = read_varint(val, &mut j) else { break };
-                                let e2 = j + l2 as usize;
-                                let Some(v2) = val.get(j..e2) else { break };
-                                j = e2;
-                                if t2 >> 3 == 1 {
-                                    id.instance_id = String::from_utf8_lossy(v2).into_owned();
-                                }
-                            }
-                            0 => {
-                                if read_varint(val, &mut j).is_none() {
-                                    break;
-                                }
-                            }
-                            _ => break,
-                        }
-                    }
-                }
-            }
-            0 => {
-                if read_varint(data, &mut i).is_none() {
-                    break;
-                }
-            }
-            _ => break,
-        }
+    let Ok(response) = WifiVersionResponse::decode(data) else { return Identity::default() };
+    Identity {
+        instance_id: response
+            .mobile_device_identity
+            .and_then(|i| i.mobile_device_id)
+            .unwrap_or_default(),
+        serial: response.device_serial.unwrap_or_default(),
     }
-    id
 }
 
 /// Splits the RFCOMM byte stream into WPP frames.
@@ -156,18 +129,25 @@ mod tests {
     #[test]
     fn version_request_matches_reference() {
         // Channel 36 → 5180 MHz, the shape the phone expects.
-        let f = wifi_version_request(36);
-        assert_eq!(&f[..4], &[0x00, 0x08, 0x00, 0x04]);
-        assert_eq!(&f[4..], &[0x08, 0x06, 0x10, 0x00, 0x22, 0x02, 0xBC, 0x28]);
+        let f = wifi_version_request(Channel::of_number(36));
+        assert_eq!(&f[..4], &[0x00, 0x07, 0x00, 0x04]);
+        assert_eq!(&f[4..], &[0x08, 0x06, 0x10, 0x00, 0x20, 0xBC, 0x28]);
     }
 
     #[test]
-    fn frequencies() {
-        assert_eq!(channel_to_freq_mhz(1), 2412);
-        assert_eq!(channel_to_freq_mhz(11), 2462);
-        assert_eq!(channel_to_freq_mhz(14), 2484);
-        assert_eq!(channel_to_freq_mhz(36), 5180);
-        assert_eq!(channel_to_freq_mhz(149), 5745);
+    fn a_6_ghz_channel_announces_its_own_frequency() {
+        let f = wifi_version_request(Channel::new(livi_wifi::Band::Ghz6, 37));
+        assert_eq!(&f[8..], &[0x20, 0xF7, 0x2F]);
+    }
+
+    #[test]
+    fn the_security_goes_out_in_the_phones_numbering() {
+        for (security, mode) in
+            [(Security::Wpa2, 8), (Security::Wpa2Wpa3, 40), (Security::Wpa3, 40)]
+        {
+            let f = wifi_info_response("LIVI", "secret123", "aa:bb:cc:dd:ee:ff", security);
+            assert!(f.ends_with(&[0x20, mode, 0x28, 0x00]), "{security}");
+        }
     }
 
     #[test]
@@ -179,7 +159,7 @@ mod tests {
 
     #[test]
     fn info_response_carries_credentials() {
-        let f = wifi_info_response("LIVI-cm5", "secret123", "2c:cf:67:ee:c1:e0");
+        let f = wifi_info_response("LIVI-cm5", "secret123", "2c:cf:67:ee:c1:e0", Security::Wpa2);
         assert_eq!(u16::from_be_bytes([f[2], f[3]]), MSG_WIFI_INFO_RESPONSE);
         assert!(f.windows(8).any(|w| w == b"LIVI-cm5"));
         assert!(f.windows(9).any(|w| w == b"secret123"));
@@ -187,14 +167,24 @@ mod tests {
 
     #[test]
     fn identity_from_version_response() {
-        let mut body = pb_string(3, "SERIAL123");
-        let inner = pb_string(1, "instance-xyz");
-        body.extend(varint(((6 << 3) | 2) as u64));
-        body.extend(varint(inner.len() as u64));
-        body.extend(inner);
-        let id = parse_identity(&body);
+        let response = WifiVersionResponse {
+            device_serial: Some("SERIAL123".into()),
+            mobile_device_identity: Some(livi_aa_proto::MobileDeviceIdentity {
+                mobile_device_id: Some("instance-xyz".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let id = parse_identity(&response.encode_to_vec());
         assert_eq!(id.serial, "SERIAL123");
         assert_eq!(id.instance_id, "instance-xyz");
+    }
+
+    #[test]
+    fn the_join_status_comes_out_of_its_field() {
+        let failed = WifiConnectStatusNotification { status: Some(-3), error_message_hint: None };
+        assert_eq!(connect_status(&failed.encode_to_vec()), -3);
+        assert_eq!(connect_status(&[]), 0);
     }
 
     #[test]
@@ -206,9 +196,9 @@ mod tests {
     fn frame_reader_splits_stream() {
         let mut r = FrameReader::default();
         r.push(&wifi_start_request("1.2.3.4", 5277));
-        r.push(&frame(MSG_PING, &[0xAA]));
+        r.push(&frame(MSG_WIFI_PING_REQUEST, &[0xAA]));
         assert_eq!(r.next_frame().unwrap().0, MSG_WIFI_START_REQUEST);
-        assert_eq!(r.next_frame().unwrap(), (MSG_PING, vec![0xAA]));
+        assert_eq!(r.next_frame().unwrap(), (MSG_WIFI_PING_REQUEST, vec![0xAA]));
         assert_eq!(r.next_frame(), None);
     }
 

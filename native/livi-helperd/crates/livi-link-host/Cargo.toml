@@ -7,6 +7,7 @@ edition.workspace = true
 futures-util = "0.3"
 libc.workspace = true
 livi-net = { path = "../livi-net" }
+livi-wifi = { path = "../livi-wifi" }
 nusb = { version = "0.2", features = ["tokio"] }
 tokio = { version = "1", features = ["rt", "macros", "time", "sync", "io-util", "net"] }
 

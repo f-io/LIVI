@@ -1,0 +1,77 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+import "bluetooth.proto";
+import "buffered_media.proto";
+import "car_control.proto";
+import "car_intent.proto";
+import "car_local_media.proto";
+import "control.proto";
+import "input.proto";
+import "media.proto";
+import "media_browser.proto";
+import "media_playback.proto";
+import "navigation.proto";
+import "notification.proto";
+import "phone_status.proto";
+import "radio.proto";
+import "sensor.proto";
+import "vendor_extension.proto";
+import "wifi_projection.proto";
+import "wireless_setup.proto";
+
+message Service {
+  required int32 id = 1;
+  optional SensorSourceService sensor_source = 2;
+  optional MediaSinkService media_sink = 3;
+  optional InputSourceService input_source = 4;
+  optional MediaSourceService media_source = 5;
+  optional BluetoothService bluetooth = 6;
+  optional RadioService radio = 7;
+  optional NavigationStatusService navigation_status = 8;
+  optional MediaPlaybackStatusService media_playback = 9;
+  optional PhoneStatusService phone_status = 10;
+  optional MediaBrowserService media_browser = 11;
+  optional VendorExtensionService vendor_extension = 12;
+  optional NotificationService notification = 13;
+  optional WifiProjectionService wifi_projection = 14;
+  optional CarControlService car_control = 15;
+  optional CarLocalMediaService car_local_media = 16;
+  optional BufferedMediaSinkService buffered_media = 17;
+  optional CarIntentService car_intent = 18;
+}
+
+message ServiceDiscoveryRequest {
+  optional bytes icon_32px = 1;
+  optional bytes icon_64px = 2;
+  optional bytes icon_128px = 3;
+  optional string head_unit_label = 4;
+  optional string phone_make_and_model = 5;
+  optional MobileDeviceIdentity mobile_device_identity = 6;
+}
+
+message ServiceDiscoveryResponse {
+  repeated Service services = 1;
+  optional string manufacturer = 2;
+  optional string model = 3;
+  optional string model_year = 4;
+  optional string vehicle_id = 5;
+  optional DriverPosition driver_position = 6;
+  optional string head_unit_make = 7;
+  optional string head_unit_model = 8;
+  optional string head_unit_software_build = 9;
+  optional string head_unit_software_version = 10;
+  optional bool can_play_native_media_during_vr = 11;
+  optional int32 session_flags = 13;
+  optional string display_name = 14;
+  optional bool probe_only = 15;
+  optional CarInfo car_info = 17;
+}
+
+message ServiceDiscoveryUpdateNotification {
+  optional Service service = 1;
+}

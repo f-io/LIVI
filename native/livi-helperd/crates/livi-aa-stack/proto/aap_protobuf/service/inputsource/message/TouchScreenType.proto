@@ -1,9 +1,0 @@
-syntax="proto2";
-
-package aap_protobuf.service.inputsource.message;
-
-enum TouchScreenType {
-    CAPACITIVE = 1;
-    RESISTIVE = 2;
-    INFRARED = 3;
-}

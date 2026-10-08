@@ -17,11 +17,11 @@ pub enum AudioKind {
 }
 
 impl AudioKind {
-    /// Calls never come over the session, they take the hands-free profile.
     pub fn of(channel: AudioChannelType) -> Self {
         match channel {
             AudioChannelType::Media => Self::Media,
             AudioChannelType::Speech | AudioChannelType::System => Self::Alert,
+            AudioChannelType::Telephony => Self::Call,
         }
     }
 }
@@ -30,7 +30,7 @@ impl AudioKind {
 pub struct AudioOutput {
     pub kind: AudioKind,
     pub stream: u32,
-    /// The channel it was opened for: media, speech or system.
+    /// The channel it was opened for: media, speech, system or telephony.
     pub tag: Option<String>,
 }
 

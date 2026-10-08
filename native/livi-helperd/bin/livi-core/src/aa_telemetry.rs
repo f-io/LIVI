@@ -54,16 +54,16 @@ fn flag(map: &Map<String, Value>, key: &str) -> Option<bool> {
 
 #[derive(Default)]
 struct Sent {
-    speed_mm_s: Option<i64>,
-    rpm_e3: Option<i64>,
+    speed_mm_s: Option<i32>,
+    rpm_e3: Option<i32>,
     gear: Option<i64>,
     night_mode: Option<bool>,
     parking_brake: Option<bool>,
     driving_status: Option<i64>,
-    lights: Option<(Option<i64>, Option<i64>, Option<bool>)>,
-    fuel: Option<(i64, Option<i64>, Option<bool>)>,
-    odometer: Option<(i64, Option<i64>)>,
-    environment: Option<(Option<i64>, Option<i64>)>,
+    lights: Option<(Option<i32>, Option<i32>, Option<bool>)>,
+    fuel: Option<(i32, Option<i32>, Option<bool>)>,
+    odometer: Option<(i32, Option<i32>)>,
+    environment: Option<(Option<i32>, Option<i32>)>,
     gps: Option<GpsFix>,
     energy_model_at: Option<Instant>,
 }
@@ -100,20 +100,16 @@ impl AaTelemetry {
         if changed("speedKph")
             && let Some(kph) = num(next, "speedKph")
         {
-            let v = round(kph * 1000.0 / 3.6).max(0);
+            let v = round(kph * 1000.0 / 3.6).max(0) as i32;
             if sent.speed_mm_s != Some(v) {
                 sent.speed_mm_s = Some(v);
-                out.push(Sensor::Speed {
-                    speed_mm_s: v,
-                    cruise_engaged: None,
-                    cruise_set_speed_mm_s: None,
-                });
+                out.push(Sensor::Speed(v));
             }
         }
         if changed("rpm")
             && let Some(rpm) = num(next, "rpm")
         {
-            let v = round(rpm * 1000.0).max(0);
+            let v = round(rpm * 1000.0).max(0) as i32;
             if sent.rpm_e3 != Some(v) {
                 sent.rpm_e3 = Some(v);
                 out.push(Sensor::Rpm(v));
@@ -124,7 +120,7 @@ impl AaTelemetry {
             && sent.gear != Some(g)
         {
             sent.gear = Some(g);
-            out.push(Sensor::Gear(g));
+            out.push(Sensor::Gear(g as i32));
         }
         if changed("nightMode")
             && let Some(night) = flag(next, "nightMode")
@@ -145,7 +141,7 @@ impl AaTelemetry {
             && sent.driving_status != Some(status as i64)
         {
             sent.driving_status = Some(status as i64);
-            out.push(Sensor::DrivingStatus(status as i64));
+            out.push(Sensor::DrivingStatus(status as i32));
         }
 
         if ["lights", "highBeam", "hazards", "turn"].iter().any(|k| changed(k)) {
@@ -175,20 +171,24 @@ impl AaTelemetry {
         if (changed("fuelPct") || changed("rangeKm"))
             && let Some(pct) = num(next, "fuelPct")
         {
-            let level = round(pct).clamp(0, 100);
-            let range = num(next, "rangeKm").map(|km| round(km * 1000.0).max(0));
+            let level = round(pct).clamp(0, 100) as i32;
+            let range = num(next, "rangeKm").map(|km| round(km).max(0) as i32);
             let low = Some(pct < LOW_FUEL_PCT);
             if sent.fuel != Some((level, range, low)) {
                 sent.fuel = Some((level, range, low));
-                out.push(Sensor::Fuel { level, range, low_fuel_warning: low });
+                out.push(Sensor::Fuel {
+                    level_percent: level,
+                    range_km: range,
+                    low_fuel_warning: low,
+                });
             }
         }
 
         if (changed("odometerKm") || changed("odometerTripKm"))
             && let Some(km) = num(next, "odometerKm")
         {
-            let total = round(km * 10.0);
-            let trip = num(next, "odometerTripKm").map(|t| round(t * 10.0));
+            let total = round(km * 10.0) as i32;
+            let trip = num(next, "odometerTripKm").map(|t| round(t * 10.0) as i32);
             if sent.odometer != Some((total, trip)) {
                 sent.odometer = Some((total, trip));
                 out.push(Sensor::Odometer { total_km_e1: total, trip_km_e1: trip });
@@ -196,15 +196,11 @@ impl AaTelemetry {
         }
 
         if changed("ambientC") || changed("baroKpa") {
-            let temp = num(next, "ambientC").map(|c| round(c * 1000.0));
-            let pressure = num(next, "baroKpa").map(|k| round(k * 1000.0));
+            let temp = num(next, "ambientC").map(|c| round(c * 1000.0) as i32);
+            let pressure = num(next, "baroKpa").map(|k| round(k * 1000.0) as i32);
             if sent.environment.unwrap_or_default() != (temp, pressure) {
                 sent.environment = Some((temp, pressure));
-                out.push(Sensor::Environment {
-                    temperature_e3: temp,
-                    pressure_e3: pressure,
-                    rain: None,
-                });
+                out.push(Sensor::Environment { temperature_e3: temp, pressure_e3: pressure });
             }
         }
 
@@ -287,16 +283,7 @@ mod tests {
         let sent = t.sensors(&Map::new(), &first, now);
         assert_eq!(
             sent,
-            [
-                Sensor::Speed {
-                    speed_mm_s: 20_389,
-                    cruise_engaged: None,
-                    cruise_set_speed_mm_s: None
-                },
-                Sensor::Rpm(2500),
-                Sensor::Gear(100),
-                Sensor::NightMode(true),
-            ]
+            [Sensor::Speed(20_389), Sensor::Rpm(2500), Sensor::Gear(100), Sensor::NightMode(true),]
         );
         let tick = map(json!({ "speedKph": 73.40001, "rpm": 2.5, "gear": "D", "nightMode": true }));
         assert!(t.sensors(&first, &tick, now).is_empty());
@@ -321,15 +308,14 @@ mod tests {
             turn_indicator: Some(2)
         }));
         assert!(sent.contains(&Sensor::Fuel {
-            level: 8,
-            range: Some(120_500),
+            level_percent: 8,
+            range_km: Some(121),
             low_fuel_warning: Some(true)
         }));
         assert!(sent.contains(&Sensor::Odometer { total_km_e1: 123_457, trip_km_e1: Some(123) }));
         assert!(sent.contains(&Sensor::Environment {
             temperature_e3: Some(-2500),
-            pressure_e3: Some(101_300),
-            rain: None
+            pressure_e3: Some(101_300)
         }));
         assert!(sent.iter().any(|s| matches!(s, Sensor::Gps(f) if f.lat_deg == 52.5)));
         assert!(sent.contains(&Sensor::VehicleEnergyModel {

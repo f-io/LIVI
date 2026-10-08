@@ -5,81 +5,93 @@ use std::io::Write;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-pub const HOSTAPD_CONF: &str = "/tmp/livi-hostapd.conf";
+use livi_wifi::ap_config::{self, HOST_CONF, Standards, Wanted};
+use livi_wifi::{Band, Channel, Radio};
+
+const HOSTAPD_CTRL: &str = "/var/run/hostapd";
 pub const DNSMASQ_CONF: &str = "/tmp/livi-dnsmasq.conf";
 const DNSMASQ_LEASES: &str = "/tmp/livi-dnsmasq.leases";
 const HOSTAPD_LOG: &str = "/tmp/livi-hostapd.log";
 const NM_UNMANAGED_CONF: &str = "/etc/NetworkManager/conf.d/99-livi-ap-unmanaged.conf";
 /// The zone the AP interface was in before the AP.
 const FIREWALLD_ZONE: &str = "/run/livi-ap-firewalld-zone";
-/// The last channel and width that carried an access point, kept for a refusal.
+/// The last frequency and width that carried an access point, kept for a refusal.
 const LAST_GOOD: &str = "/tmp/livi-ap-last-good";
 /// Where a refused channel lands. Allowed in every regulatory domain, no DFS.
-const SAFE_CHANNEL_5: u8 = 36;
-const SAFE_CHANNEL_24: u8 = 6;
+const SAFE_CHANNEL_5: Channel = Channel { band: Band::Ghz5, number: 36 };
+const SAFE_CHANNEL_24: Channel = Channel { band: Band::Ghz24, number: 6 };
 
 #[derive(Clone)]
 pub struct ApConfig {
     pub iface: String,
     pub ssid: String,
     pub passphrase: String,
-    pub channel: u8,
+    pub channel: Channel,
     /// 20, 40 or 80 (MHz). 80 silently degrades to 40 outside a usable block.
-    pub width: u8,
+    pub width: u32,
     pub country: String,
     pub ap_ip: String,
 }
 
-/// Centre segment for 80 MHz VHT. Non-DFS blocks only: UNII-1 → 42, UNII-3 → 155.
-fn vht_centre(primary: u8) -> Option<u8> {
-    match primary {
-        36..=48 => Some(42),
-        149..=161 => Some(155),
-        _ => None,
-    }
+/// What the radio behind `iface` offers an access point. One that does not describe itself is
+/// taken for the 802.11ac radio a host AP always assumed.
+fn radio(iface: &str) -> Radio {
+    livi_wifi::radio(iface)
+        .filter(|r| !r.bands.is_empty())
+        .unwrap_or_else(|| Standards { vht: true, he: false }.into())
 }
 
-/// HT40 secondary position: lower channel of each pair uses '+', upper '-'.
-fn ht40_secondary(primary: u8) -> char {
-    if (primary / 4) % 2 == 1 { '+' } else { '-' }
+/// For the journal: the bands an access point gets and what it runs on them.
+fn described(radio: &Radio) -> String {
+    let bands: Vec<String> = radio
+        .bands
+        .iter()
+        .filter(|b| b.band != Band::Ghz6 || radio.ap_sae)
+        .map(|b| {
+            let mut has = Vec::new();
+            for (on, name) in [
+                (b.ht.is_some(), "802.11n"),
+                (b.vht.is_some(), "802.11ac"),
+                (b.he.is_some(), "802.11ax"),
+                (b.eht, "802.11be"),
+            ] {
+                if on {
+                    has.push(name);
+                }
+            }
+            format!("{} {}", b.band, has.join("/"))
+        })
+        .collect();
+    let wpa3 = if radio.ap_sae { "WPA3" } else { "WPA2 only" };
+    let uapsd = if radio.ap_uapsd { ", power save delivery" } else { "" };
+    format!("{}, {wpa3}{uapsd}", bands.join(", "))
 }
 
-fn radio_section(cfg: &ApConfig) -> String {
-    let ch = cfg.channel;
-    if ch < 36 {
-        // 2.4 GHz: 11n HT20 only.
-        return format!("hw_mode=g\nchannel={ch}\nieee80211n=1\n");
-    }
-    let mut s = format!("hw_mode=a\nchannel={ch}\nieee80211n=1\nieee80211ac=1\n");
-    let want80 = cfg.width >= 80 && vht_centre(ch).is_some();
-    if cfg.width >= 40 || want80 {
-        s.push_str(&format!("ht_capab=[HT40{}]\n", ht40_secondary(ch)));
-    }
-    if want80 {
-        s.push_str(&format!(
-            "vht_capab=[SHORT-GI-80]\nvht_oper_chwidth=1\nvht_oper_centr_freq_seg0_idx={}\n",
-            vht_centre(ch).unwrap()
-        ));
-    }
-    s
+/// The LIVI Link base on this host's interface, with this AP's name, channel and width and all
+/// the radio offers.
+fn hostapd_conf(cfg: &ApConfig, radio: &Radio) -> String {
+    let wanted = Wanted {
+        own_interface: Some(cfg.iface.clone()),
+        ssid: Some(cfg.ssid.clone()),
+        country: Some(cfg.country.clone()),
+        channel: Some(cfg.channel),
+        width: Some(cfg.width),
+        passphrase: Some(cfg.passphrase.clone()),
+        security: Some(ap_config::security_for(radio, cfg.channel.band)),
+        ..Wanted::default()
+    };
+    ap_config::config(ap_config::BASE, &wanted, radio, HOSTAPD_CTRL)
 }
 
-fn write_hostapd_conf(cfg: &ApConfig) -> std::io::Result<()> {
-    let band_bit: u8 = if cfg.channel >= 36 { 0x01 } else { 0x02 };
-    let apple_ie = format!("dd0800a04000000200{:02x}", 0x20 | band_bit);
-    let conf = format!(
-        "interface={iface}\ndriver=nl80211\nctrl_interface=/var/run/hostapd\nssid={ssid}\n\
-         country_code={country}\nieee80211d=1\nieee80211h=0\n{radio}ignore_broadcast_ssid=0\n\
-         wmm_enabled=1\nvendor_elements={ie}\nassocresp_elements={ie}\n\
-         wpa=2\nwpa_key_mgmt=WPA-PSK\nrsn_pairwise=CCMP\nwpa_passphrase={pass}\n",
-        iface = cfg.iface,
-        ssid = cfg.ssid,
-        country = cfg.country,
-        radio = radio_section(cfg),
-        ie = apple_ie,
-        pass = cfg.passphrase,
-    );
-    std::fs::write(HOSTAPD_CONF, conf)
+fn standard_of(conf: &str) -> &'static str {
+    let on = |key: &str| conf.lines().any(|l| l == format!("{key}=1"));
+    if on("ieee80211ax") {
+        "802.11ax"
+    } else if on("ieee80211ac") {
+        "802.11ac"
+    } else {
+        "802.11n"
+    }
 }
 
 fn write_dnsmasq_conf(cfg: &ApConfig) -> std::io::Result<()> {
@@ -191,7 +203,11 @@ pub fn release_iface_from_nm(iface: &str) {
 pub fn status(iface: &str) -> String {
     match livi_wifi::ap_state(iface) {
         Some(ap) => {
-            format!("running true\nssid {}\nchannel {}\nwidth {}\n", ap.ssid, ap.channel, ap.width)
+            let (band, channel) = (ap.channel.band.setting(), ap.channel.number);
+            format!(
+                "running true\nssid {}\nband {band}\nchannel {channel}\nwidth {}\n",
+                ap.ssid, ap.width
+            )
         }
         None => "running false\nssid \nchannel 0\nwidth 0\n".into(),
     }
@@ -206,9 +222,10 @@ pub fn unmanaged_iface() -> Option<String> {
 
 pub fn teardown(iface: &str) {
     firewalld_restore(iface);
-    run_cmd("pkill", &["-f", &format!("hostapd.*{HOSTAPD_CONF}")]);
+    run_cmd("pkill", &["-f", &format!("hostapd.*{HOST_CONF}")]);
     run_cmd("pkill", &["-f", &format!("dnsmasq.*{DNSMASQ_CONF}")]);
     run_cmd("ip", &["addr", "flush", "dev", iface, "scope", "global"]);
+    keep_awake(iface, false);
     let _ = std::fs::remove_file(NM_UNMANAGED_CONF);
     run_cmd("nmcli", &["general", "reload"]);
     run_cmd("nmcli", &["device", "set", iface, "managed", "yes"]);
@@ -260,16 +277,43 @@ fn ensure_link_local(iface: &str) {
     println!("[wifi-ap] {iface} has no IPv6 link-local, CarPlay needs one");
 }
 
+/// The power switches mt76 drivers (MT7921, MT7925, …) expose in debugfs.
+const MT76_POWER: [&str; 2] = ["runtime-pm", "deep-sleep"];
+
+fn mt76_debugfs(iface: &str) -> Option<std::path::PathBuf> {
+    let phy = std::fs::read_link(format!("/sys/class/net/{iface}/phy80211")).ok()?;
+    let dir =
+        std::path::Path::new("/sys/kernel/debug/ieee80211").join(phy.file_name()?).join("mt76");
+    dir.is_dir().then_some(dir)
+}
+
+/// An AP that dozes between frames answers the phone late. Off while LIVI holds the
+/// interface, the driver defaults again once it goes back.
+fn keep_awake(iface: &str, awake: bool) {
+    run_cmd("iw", &["dev", iface, "set", "power_save", if awake { "off" } else { "on" }]);
+    let mt76 = mt76_debugfs(iface);
+    if let Some(dir) = &mt76 {
+        for switch in MT76_POWER {
+            let _ = std::fs::write(dir.join(switch), if awake { "0" } else { "1" });
+        }
+    }
+    if awake {
+        let extra = if mt76.is_some() { ", mt76 runtime PM and deep sleep off" } else { "" };
+        println!("[wifi-ap] {iface} stays awake (power save off{extra})");
+    }
+}
+
 fn setup_interface(cfg: &ApConfig) {
     run_cmd("iw", &["reg", "set", &cfg.country]);
     run_cmd("ip", &["link", "set", &cfg.iface, "up"]);
+    keep_awake(&cfg.iface, true);
     run_cmd("ip", &["addr", "flush", "dev", &cfg.iface, "scope", "global"]);
     run_cmd("ip", &["addr", "add", &format!("{}/24", cfg.ap_ip), "dev", &cfg.iface]);
     ensure_link_local(&cfg.iface);
 }
 
 fn hostapd_state(iface: &str) -> String {
-    let out = cmd_stdout("hostapd_cli", &["-p", "/var/run/hostapd", "-i", iface, "status"]);
+    let out = cmd_stdout("hostapd_cli", &["-p", HOSTAPD_CTRL, "-i", iface, "status"]);
     out.lines().find_map(|l| l.strip_prefix("state=")).unwrap_or("").trim().to_string()
 }
 
@@ -282,9 +326,13 @@ fn dhcp_listening() -> bool {
         .unwrap_or(false)
 }
 
-fn wait_ready(iface: &str, timeout: Duration) -> bool {
+/// A hostapd that refused its config is gone at once, the next step need not wait for it.
+fn wait_ready(iface: &str, hostapd: &mut Child, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
+        if !matches!(hostapd.try_wait(), Ok(None)) {
+            return false;
+        }
         if hostapd_state(iface) == "ENABLED" && dhcp_listening() && has_link_local(iface) {
             return true;
         }
@@ -331,7 +379,7 @@ fn spawn_hostapd() -> std::io::Result<Child> {
     use std::io::Write as _;
     let _ = writeln!(&log, "--- hostapd start {} ---", chrono_free_stamp());
     Command::new(crate::sys::tool("hostapd"))
-        .arg(HOSTAPD_CONF)
+        .arg(HOST_CONF)
         .stdout(Stdio::from(log.try_clone()?))
         .stderr(Stdio::from(log))
         .spawn()
@@ -344,22 +392,22 @@ fn spawn_dnsmasq() -> std::io::Result<Child> {
         .spawn()
 }
 
-/// Bring the AP up and keep it up. Restarts hostapd/dnsmasq when either dies.
 /// What ran last, as channel and width.
-fn last_good() -> Option<(u8, u8)> {
+fn last_good() -> Option<(Channel, u32)> {
     let text = std::fs::read_to_string(LAST_GOOD).ok()?;
-    let (ch, width) = text.trim().split_once(' ')?;
-    Some((ch.parse().ok()?, width.parse().ok()?))
+    let (mhz, width) = text.trim().split_once(' ')?;
+    Some((Channel::of_freq(mhz.parse().ok()?)?, width.parse().ok()?))
 }
 
-fn after_refusal(cfg: &ApConfig) -> (u8, u8) {
+fn after_refusal(cfg: &ApConfig) -> (Channel, u32) {
     match last_good() {
         Some((ch, width)) if ch != cfg.channel => (ch, width),
-        _ if cfg.channel > 14 => (SAFE_CHANNEL_5, 20),
-        _ => (SAFE_CHANNEL_24, 20),
+        _ if cfg.channel.band == Band::Ghz24 => (SAFE_CHANNEL_24, 20),
+        _ => (SAFE_CHANNEL_5, 20),
     }
 }
 
+/// Bring the AP up and keep it up. Restarts hostapd/dnsmasq when either dies.
 pub fn run(cfg: ApConfig) -> ! {
     println!(
         "[wifi-ap] starting — ssid={} channel={} width={}MHz iface={}",
@@ -370,13 +418,18 @@ pub fn run(cfg: ApConfig) -> ! {
     firewalld_open(&cfg.iface);
     let _ = std::fs::remove_file(HOSTAPD_LOG);
     let mut cfg = cfg;
+    let radio = radio(&cfg.iface);
+    println!("[wifi-ap] {} offers {}", cfg.iface, described(&radio));
+    // What the radio accepted after refusing more, kept until the channel changes.
+    let mut weakened: Option<String> = None;
     loop {
-        run_cmd("pkill", &["-f", &format!("hostapd.*{HOSTAPD_CONF}")]);
+        run_cmd("pkill", &["-f", &format!("hostapd.*{HOST_CONF}")]);
         run_cmd("pkill", &["-f", &format!("dnsmasq.*{DNSMASQ_CONF}")]);
         std::thread::sleep(Duration::from_millis(300));
         setup_interface(&cfg);
         wait_regulatory(&cfg.country, Duration::from_secs(10));
-        if write_hostapd_conf(&cfg).is_err() || write_dnsmasq_conf(&cfg).is_err() {
+        let conf = weakened.clone().unwrap_or_else(|| hostapd_conf(&cfg, &radio));
+        if std::fs::write(HOST_CONF, &conf).is_err() || write_dnsmasq_conf(&cfg).is_err() {
             eprintln!("[wifi-ap] cannot write configs, retrying");
             std::thread::sleep(Duration::from_secs(5));
             continue;
@@ -398,14 +451,23 @@ pub fn run(cfg: ApConfig) -> ! {
                 continue;
             }
         };
-        if wait_ready(&cfg.iface, Duration::from_secs(20)) {
+        if wait_ready(&cfg.iface, &mut hostapd, Duration::from_secs(20)) {
             println!(
-                "[wifi-ap] AP up — ssid={} ip={} channel={} width={}MHz",
-                cfg.ssid, cfg.ap_ip, cfg.channel, cfg.width
+                "[wifi-ap] AP up — ssid={} ip={} channel={} width={}MHz {}",
+                cfg.ssid,
+                cfg.ap_ip,
+                cfg.channel,
+                cfg.width,
+                standard_of(&conf)
             );
             let _ = std::io::stdout().flush();
-            let _ = std::fs::write(LAST_GOOD, format!("{} {}", cfg.channel, cfg.width));
+            let _ = std::fs::write(LAST_GOOD, format!("{} {}", cfg.channel.freq_mhz(), cfg.width));
+        } else if let Some((next, step)) = ap_config::weaker(&conf) {
+            eprintln!("[wifi-ap] hostapd log:\n{}", hostapd_tail());
+            eprintln!("[wifi-ap] the radio refused this config, trying {step}");
+            weakened = Some(next);
         } else {
+            weakened = None;
             let (channel, width) = after_refusal(&cfg);
             eprintln!("[wifi-ap] hostapd log:\n{}", hostapd_tail());
             if (channel, width) == (cfg.channel, cfg.width) {
@@ -448,53 +510,103 @@ pub fn run(cfg: ApConfig) -> ! {
 mod tests {
     use super::*;
 
-    fn cfg(channel: u8, width: u8) -> ApConfig {
+    fn cfg(channel: u32, width: u32) -> ApConfig {
         ApConfig {
-            iface: "wlan0".into(),
+            iface: "wlp104s0".into(),
             ssid: "LIVI".into(),
             passphrase: "x".into(),
-            channel,
+            channel: Channel::of_number(channel),
             width,
             country: "DE".into(),
             ap_ip: "10.10.0.1".into(),
         }
     }
 
-    #[test]
-    fn width_80_uses_vht_block() {
-        let r = radio_section(&cfg(36, 80));
-        assert!(r.contains("ht_capab=[HT40+]"));
-        assert!(r.contains("vht_oper_chwidth=1"));
-        assert!(r.contains("vht_oper_centr_freq_seg0_idx=42"));
+    const AC_AX: Standards = Standards { vht: true, he: true };
+
+    fn lines(conf: &str) -> Vec<&str> {
+        conf.lines().collect()
     }
 
     #[test]
-    fn width_80_degrades_outside_blocks() {
-        let r = radio_section(&cfg(56, 80));
-        assert!(r.contains("ht_capab=[HT40-]"));
-        assert!(!r.contains("vht_oper_chwidth"));
+    fn the_host_ap_is_the_livi_link_ap_on_its_own_interface() {
+        let conf = hostapd_conf(&cfg(36, 40), &AC_AX.into());
+        let out = lines(&conf);
+        assert!(out.contains(&"interface=wlp104s0"));
+        assert!(!out.iter().any(|l| l.starts_with("bridge=")));
+        assert!(!out.iter().any(|l| l.starts_with("ieee80211d") || l.starts_with("ieee80211h")));
+        for line in [
+            "ht_capab=[HT40+][SHORT-GI-20][SHORT-GI-40]",
+            "wpa_key_mgmt=WPA-PSK",
+            "ieee80211ac=1",
+            "vht_oper_chwidth=0",
+            "ieee80211ax=1",
+            "he_oper_chwidth=0",
+            "auth_algs=1",
+            "wpa_pairwise=CCMP",
+            "ctrl_interface=/var/run/hostapd",
+            "ssid=LIVI",
+            "country_code=DE",
+        ] {
+            assert!(out.contains(&line), "{line}");
+        }
+        assert_eq!(standard_of(&conf), "802.11ax");
     }
 
     #[test]
-    fn width_40_secondary_signs() {
-        assert!(radio_section(&cfg(36, 40)).contains("[HT40+]"));
-        assert!(radio_section(&cfg(40, 40)).contains("[HT40-]"));
-        assert!(radio_section(&cfg(149, 40)).contains("[HT40+]"));
-        assert!(radio_section(&cfg(153, 40)).contains("[HT40-]"));
+    fn eighty_megahertz_takes_the_whole_block() {
+        let conf = hostapd_conf(&cfg(36, 80), &AC_AX.into());
+        let out = lines(&conf);
+        assert!(out.contains(&"vht_oper_chwidth=1"));
+        assert!(out.contains(&"vht_oper_centr_freq_seg0_idx=42"));
+        assert!(out.contains(&"he_oper_centr_freq_seg0_idx=42"));
     }
 
     #[test]
-    fn width_20_stays_narrow() {
-        let r = radio_section(&cfg(36, 20));
-        assert!(!r.contains("ht_capab"));
-        assert!(!r.contains("vht"));
+    fn eighty_megahertz_outside_a_block_stays_at_forty() {
+        let conf = hostapd_conf(&cfg(56, 80), &AC_AX.into());
+        let out = lines(&conf);
+        assert!(out.contains(&"ht_capab=[HT40-][SHORT-GI-20][SHORT-GI-40]"));
+        assert!(out.contains(&"vht_oper_chwidth=0"));
     }
 
     #[test]
-    fn band_24ghz_is_ht20_g() {
-        let r = radio_section(&cfg(6, 80));
-        assert!(r.contains("hw_mode=g"));
-        assert!(!r.contains("ht_capab"));
+    fn a_radio_without_he_gets_802_11ac() {
+        let conf = hostapd_conf(&cfg(36, 40), &Standards { vht: true, he: false }.into());
+        assert!(!conf.contains("ieee80211ax"));
+        assert_eq!(standard_of(&conf), "802.11ac");
+    }
+
+    #[test]
+    fn two_point_four_gigahertz_is_802_11n() {
+        let conf = hostapd_conf(&cfg(6, 40), &AC_AX.into());
+        let out = lines(&conf);
+        assert!(out.contains(&"hw_mode=g"));
+        assert!(!out.iter().any(|l| l.starts_with("ieee80211ac") || l.starts_with("ieee80211ax")));
+        assert_eq!(standard_of(&conf), "802.11n");
+    }
+
+    fn sae_radio() -> Radio {
+        Radio { ap_sae: true, ap_uapsd: true, ..AC_AX.into() }
+    }
+
+    #[test]
+    fn a_radio_hostapd_runs_sae_on_offers_wpa3_beside_wpa2() {
+        let conf = hostapd_conf(&cfg(36, 40), &sae_radio());
+        assert_eq!(livi_wifi::Security::of_hostapd(&conf), livi_wifi::Security::Wpa2Wpa3);
+        assert!(lines(&conf).contains(&"uapsd_advertisement_enabled=1"));
+    }
+
+    #[test]
+    fn the_journal_names_what_the_radio_offers() {
+        assert_eq!(
+            described(&sae_radio()),
+            "2.4 GHz 802.11n, 5 GHz 802.11n/802.11ac/802.11ax, WPA3, power save delivery"
+        );
+        assert_eq!(
+            described(&AC_AX.into()),
+            "2.4 GHz 802.11n, 5 GHz 802.11n/802.11ac/802.11ax, WPA2 only"
+        );
     }
 
     #[test]

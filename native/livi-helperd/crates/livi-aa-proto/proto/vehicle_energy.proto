@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto3";
+
+package livi.aa;
+
+enum EnergyModelHvacStatus {
+  ENERGY_MODEL_HVAC_STATUS_UNKNOWN = 0;
+  ENERGY_MODEL_HVAC_STATUS_OFF = 1;
+  ENERGY_MODEL_HVAC_STATUS_ON = 2;
+}
+
+message VehicleEnergyInfo {
+  WattHours battery_level_wh = 3;
+  WattHours battery_capacity_wh = 4;
+  EnergyModelHvacStatus hvac_status = 5;
+  float external_temp_celsius = 7;
+  float battery_temp_celsius = 8;
+}
+
+message VehicleEnergyModel {
+  VehicleEnergyInfo vehicle_info = 1;
+}
+
+message WattHours {
+  int32 value = 1;
+}

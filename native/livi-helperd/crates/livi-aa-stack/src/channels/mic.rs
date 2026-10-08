@@ -1,10 +1,12 @@
 //! The control side of the microphone channel (9). The samples go from the
 //! pipeline's tap to the helper.
 
+use livi_aa_proto::{MediaStartNotification, MessageStatus, MicrophoneRequest, MicrophoneResponse};
+
 use crate::channels::{Emit, Frame};
-use crate::consts::{av_msg, frame_flags};
+use crate::codec::{decode, encode};
+use crate::consts::{frame_flags, media_msg};
 use crate::log::{debug, detail};
-use crate::wire::{WIRE_VARINT, decode_fields, decode_varint_value, field_varint};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MicEvent {
@@ -20,7 +22,7 @@ pub struct MicChannel {
     sample_rate: u32,
     channel_count: u32,
     /// Ours, the phone echoes it in its acks.
-    session: i64,
+    session: i32,
     open: bool,
 }
 
@@ -31,12 +33,12 @@ impl MicChannel {
 
     pub fn handle_message(&mut self, msg_id: u16, payload: &[u8]) -> Vec<MicOut> {
         match msg_id {
-            av_msg::SETUP_REQUEST | av_msg::AV_MEDIA_ACK => Vec::new(),
-            av_msg::AV_INPUT_OPEN_REQUEST => self.on_open_request(payload),
-            av_msg::STOP_INDICATION => {
+            media_msg::SETUP | media_msg::ACK => Vec::new(),
+            media_msg::MICROPHONE_REQUEST => self.on_open_request(payload),
+            media_msg::STOP => {
                 if self.open {
                     self.open = false;
-                    detail!("[MicChannel] STOP_INDICATION, closing mic");
+                    detail!("[MicChannel] STOP, closing mic");
                     vec![Emit::Event(MicEvent::Stop)]
                 } else {
                     Vec::new()
@@ -66,27 +68,29 @@ impl MicChannel {
     }
 
     fn on_open_request(&mut self, payload: &[u8]) -> Vec<MicOut> {
-        let mut open = false;
-        for f in decode_fields(payload) {
-            if f.field == 1 && f.wire == WIRE_VARINT {
-                open = decode_varint_value(f.bytes) != 0;
-            }
-        }
+        let open = decode::<MicrophoneRequest>(payload, &[1]).is_ok_and(|r| r.open);
         detail!("[MicChannel] OPEN_REQUEST open={open}");
-        let response = [field_varint(1, 0), field_varint(2, self.session)].concat();
+        let response = encode(&MicrophoneResponse {
+            status: MessageStatus::Success as i32,
+            session_id: Some(self.session),
+        });
         let mut out = vec![Emit::Send(Frame::new(
             self.channel,
             frame_flags::ENC_SIGNAL,
-            av_msg::AV_INPUT_OPEN_RESPONSE,
+            media_msg::MICROPHONE_RESPONSE,
             response,
         ))];
         if open && !self.open {
             self.open = true;
-            let start = [field_varint(1, self.session), field_varint(2, 0)].concat();
+            let start = encode(&MediaStartNotification {
+                session_id: self.session,
+                configuration_index: 0,
+                ..Default::default()
+            });
             out.push(Emit::Send(Frame::new(
                 self.channel,
                 frame_flags::ENC_SIGNAL,
-                av_msg::START_INDICATION,
+                media_msg::START,
                 start,
             )));
             detail!("[MicChannel] mic open, session={}", self.session);
@@ -108,30 +112,30 @@ mod tests {
     #[test]
     fn opening_announces_the_stream_once() {
         let mut m = MicChannel::new(ch::MIC_INPUT);
-        let out = m.handle_message(av_msg::AV_INPUT_OPEN_REQUEST, &[0x08, 0x01]);
+        let out = m.handle_message(media_msg::MICROPHONE_REQUEST, &[0x08, 0x01]);
         assert_eq!(
             out,
             [
                 Emit::Send(Frame::new(
                     9,
                     0x0b,
-                    av_msg::AV_INPUT_OPEN_RESPONSE,
+                    media_msg::MICROPHONE_RESPONSE,
                     [0x08, 0x00, 0x10, 0x01]
                 )),
-                Emit::Send(Frame::new(9, 0x0b, av_msg::START_INDICATION, [0x08, 0x01, 0x10, 0x00])),
+                Emit::Send(Frame::new(9, 0x0b, media_msg::START, [0x08, 0x01, 0x10, 0x00])),
                 Emit::Event(MicEvent::Start),
             ]
         );
-        assert_eq!(m.handle_message(av_msg::AV_INPUT_OPEN_REQUEST, &[0x08, 0x01]).len(), 1);
+        assert_eq!(m.handle_message(media_msg::MICROPHONE_REQUEST, &[0x08, 0x01]).len(), 1);
         assert_eq!(
-            m.handle_message(av_msg::AV_INPUT_OPEN_REQUEST, &[0x08, 0x00]).last(),
+            m.handle_message(media_msg::MICROPHONE_REQUEST, &[0x08, 0x00]).last(),
             Some(&Emit::Event(MicEvent::Stop))
         );
-        assert!(m.handle_message(av_msg::STOP_INDICATION, &[]).is_empty());
-        m.handle_message(av_msg::AV_INPUT_OPEN_REQUEST, &[0x08, 0x01]);
-        assert_eq!(m.handle_message(av_msg::STOP_INDICATION, &[]), [Emit::Event(MicEvent::Stop)]);
-        assert!(m.handle_message(av_msg::AV_MEDIA_ACK, &[]).is_empty());
-        assert!(m.handle_message(av_msg::SETUP_REQUEST, &[]).is_empty());
+        assert!(m.handle_message(media_msg::STOP, &[]).is_empty());
+        m.handle_message(media_msg::MICROPHONE_REQUEST, &[0x08, 0x01]);
+        assert_eq!(m.handle_message(media_msg::STOP, &[]), [Emit::Event(MicEvent::Stop)]);
+        assert!(m.handle_message(media_msg::ACK, &[]).is_empty());
+        assert!(m.handle_message(media_msg::SETUP, &[]).is_empty());
         assert!(m.handle_message(0x4444, &[]).is_empty());
         m.handle_setup_request(1, 0, 0);
         assert_eq!(m.format(), (16000, 1));

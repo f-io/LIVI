@@ -1,15 +1,9 @@
 //! The media playback status channel (13).
 
 use crate::channels::text;
+use crate::consts::playback_msg;
 use crate::log::{detail, hex};
 use crate::wire::{decode_fields, decode_varint_value};
-
-pub mod media_msg {
-    pub const MEDIA_PLAYBACK_STATUS: u16 = 0x8001;
-    /// Head unit to phone.
-    pub const MEDIA_PLAYBACK_INPUT: u16 = 0x8002;
-    pub const MEDIA_PLAYBACK_METADATA: u16 = 0x8003;
-}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MediaPlaybackMetadata {
@@ -69,7 +63,7 @@ pub struct MediaInfoChannel;
 impl MediaInfoChannel {
     pub fn handle_message(&mut self, msg_id: u16, payload: &[u8]) -> Option<MediaInfoEvent> {
         match msg_id {
-            media_msg::MEDIA_PLAYBACK_METADATA => {
+            playback_msg::METADATA => {
                 let m = decode_metadata(payload);
                 detail!(
                     "[MediaInfoChannel] metadata: song={} artist={} album={} duration={}s art={} playlist={}",
@@ -82,7 +76,7 @@ impl MediaInfoChannel {
                 );
                 Some(MediaInfoEvent::Metadata(m))
             }
-            media_msg::MEDIA_PLAYBACK_STATUS => {
+            playback_msg::STATUS => {
                 let s = decode_status(payload);
                 detail!(
                     "[MediaInfoChannel] status: state={} pos={}s source={} shuffle={} repeat={}",
@@ -94,7 +88,7 @@ impl MediaInfoChannel {
                 );
                 Some(MediaInfoEvent::Status(s))
             }
-            media_msg::MEDIA_PLAYBACK_INPUT => None,
+            playback_msg::INPUT => None,
             other => {
                 let shown = hex(payload);
                 detail!(
@@ -157,7 +151,7 @@ mod tests {
         let mut c = MediaInfoChannel;
         let meta = [0x0a, 0x01, b'S', 0x22, 0x02, 1, 2, 0x30, 0xb4, 0x01, 0x38, 0x05];
         assert_eq!(
-            c.handle_message(media_msg::MEDIA_PLAYBACK_METADATA, &meta),
+            c.handle_message(playback_msg::METADATA, &meta),
             Some(MediaInfoEvent::Metadata(MediaPlaybackMetadata {
                 song: Some("S".into()),
                 album_art: Some(vec![1, 2]),
@@ -168,7 +162,7 @@ mod tests {
         );
         let status = [0x08, 0x02, 0x12, 0x01, b'M', 0x18, 0x0a, 0x20, 0x01, 0x28, 0x00, 0x30, 0x01];
         assert_eq!(
-            c.handle_message(media_msg::MEDIA_PLAYBACK_STATUS, &status),
+            c.handle_message(playback_msg::STATUS, &status),
             Some(MediaInfoEvent::Status(MediaPlaybackStatus {
                 state: MediaPlaybackState::Playing,
                 media_source: Some("M".into()),
@@ -185,7 +179,7 @@ mod tests {
             decode_metadata(&[0x1a, 0x01, b'A', 0x12, 0x01, b'B', 0x2a, 0x01, b'P']).playlist,
             Some("P".into())
         );
-        assert_eq!(c.handle_message(media_msg::MEDIA_PLAYBACK_INPUT, &[]), None);
+        assert_eq!(c.handle_message(playback_msg::INPUT, &[]), None);
         assert_eq!(c.handle_message(0x9000, &[1; 60]), None);
     }
 }

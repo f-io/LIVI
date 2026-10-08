@@ -1,0 +1,122 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+enum InputSourceMessageId {
+  INPUT_SOURCE_MESSAGE_ID_INPUT_REPORT = 32769;
+  INPUT_SOURCE_MESSAGE_ID_KEY_BINDING_REQUEST = 32770;
+  INPUT_SOURCE_MESSAGE_ID_KEY_BINDING_RESPONSE = 32771;
+  INPUT_SOURCE_MESSAGE_ID_INPUT_FEEDBACK = 32772;
+}
+
+enum InputFeedbackEvent {
+  INPUT_FEEDBACK_EVENT_SELECT = 1;
+  INPUT_FEEDBACK_EVENT_FOCUS_CHANGE = 2;
+  INPUT_FEEDBACK_EVENT_DRAG_SELECT = 3;
+  INPUT_FEEDBACK_EVENT_DRAG_START = 4;
+  INPUT_FEEDBACK_EVENT_DRAG_END = 5;
+}
+
+enum TouchAction {
+  TOUCH_ACTION_DOWN = 0;
+  TOUCH_ACTION_UP = 1;
+  TOUCH_ACTION_MOVE = 2;
+  TOUCH_ACTION_POINTER_DOWN = 5;
+  TOUCH_ACTION_POINTER_UP = 6;
+}
+
+enum TouchscreenType {
+  TOUCHSCREEN_TYPE_VALUE_1 = 1;
+  TOUCHSCREEN_TYPE_VALUE_2 = 2;
+  TOUCHSCREEN_TYPE_VALUE_3 = 3;
+}
+
+message AbsoluteEvent {
+  required uint32 keycode = 1;
+  required int32 value = 2;
+}
+
+message AbsoluteEventBatch {
+  repeated AbsoluteEvent absolute_events = 1;
+}
+
+message InputFeedbackNotification {
+  optional InputFeedbackEvent feedback_event = 1;
+}
+
+message InputReportNotification {
+  required uint64 timestamp_us = 1;
+  optional TouchEvent touchscreen_event = 3;
+  optional KeyEventBatch key_event_batch = 4;
+  optional AbsoluteEventBatch absolute_event_batch = 5;
+  optional RelativeEventBatch relative_event_batch = 6;
+  optional TouchEvent touchpad_event = 7;
+}
+
+message InputSourceService {
+  repeated int32 supported_keycodes = 1 [packed = true];
+  repeated Touchscreen touchscreens = 2;
+  repeated Touchpad touchpads = 3;
+  repeated InputFeedbackEvent feedback_events = 4;
+  optional uint32 display_id = 5;
+}
+
+message KeyBindingRequest {
+  repeated int32 keycodes = 1 [packed = true];
+}
+
+message KeyBindingResponse {
+  required int32 status = 1;
+}
+
+message KeyEvent {
+  required uint32 keycode = 1;
+  required bool down = 2;
+  required uint32 meta_state = 3;
+  optional bool long_press = 4;
+}
+
+message KeyEventBatch {
+  repeated KeyEvent key_events = 1;
+}
+
+message RelativeEvent {
+  required uint32 keycode = 1;
+  required int32 delta = 2;
+}
+
+message RelativeEventBatch {
+  repeated RelativeEvent relative_events = 1;
+}
+
+message TouchEvent {
+  repeated TouchPointer pointers = 1;
+  optional uint32 action_index = 2;
+  optional TouchAction action = 3;
+}
+
+message Touchpad {
+  required int32 width = 1;
+  required int32 height = 2;
+  optional bool used_for_ui_navigation = 3;
+  optional int32 physical_width_mm = 4;
+  optional int32 physical_height_mm = 5;
+  optional bool ui_absolute = 6;
+  optional bool tap_as_select = 7;
+  optional int32 sensitivity = 8;
+}
+
+message TouchPointer {
+  required uint32 x = 1;
+  required uint32 y = 2;
+  required uint32 pointer_id = 3;
+}
+
+message Touchscreen {
+  required int32 width = 1;
+  required int32 height = 2;
+  optional TouchscreenType type = 3;
+}

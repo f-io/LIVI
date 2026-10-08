@@ -189,9 +189,13 @@ wifiInterfaces: Array<string>, btAdapters: Array<string>,
  */
 dongle: DongleRadios | null, 
 /**
- * The phone's Wi-Fi link on the LIVI Link's access point.
+ * The phone's Wi-Fi link on the access point.
  */
 linkSpeed: LinkSpeed | null, 
+/**
+ * The bands an access point on the chosen interface can run on.
+ */
+wifiBands: Array<WifiBand>, 
 /**
  * Allowed in the chosen band and country.
  */
@@ -225,6 +229,6 @@ total: number, error: string | null, };
 
 export type UpdatePhase = "idle" | "download" | "ready" | "installing" | "relaunching" | "error";
 
-export type WifiBand = "2.4ghz" | "5ghz";
+export type WifiBand = "2.4ghz" | "5ghz" | "6ghz";
 
 export type WindowBounds = { x: number, y: number, width: number, height: number, };

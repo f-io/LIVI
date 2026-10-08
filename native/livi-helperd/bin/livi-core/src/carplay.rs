@@ -173,6 +173,7 @@ fn icons(cfg: &Config) -> Vec<Icon> {
 pub struct Addresses {
     pub device_id: String,
     pub bt_mac: String,
+    pub access_point: Option<livi_wifi::OnAir>,
 }
 
 pub fn stack_config(
@@ -263,8 +264,11 @@ pub fn offers_hevc(probe: &serde_json::Value) -> bool {
 
 fn aa_config(cfg: &Config, codecs: Codecs, addresses: &Addresses) -> AaConfig {
     let known = |a: &str| (a != hwaddr::FALLBACK).then(|| a.to_string());
-    let addresses =
-        AaAddresses { bt_mac: known(&addresses.bt_mac), wifi_bssid: known(&addresses.device_id) };
+    let addresses = AaAddresses {
+        bt_mac: known(&addresses.bt_mac),
+        wifi_bssid: known(&addresses.device_id),
+        access_point: addresses.access_point.clone(),
+    };
     livi_aa_stack::config::from_livi(cfg, codecs, night_mode(cfg.appearance_mode), &addresses)
 }
 
@@ -301,8 +305,11 @@ impl ConfigSource {
         state: watch::Receiver<State>,
         panels: watch::Receiver<HashMap<String, Panel>>,
     ) -> (Arc<Self>, watch::Receiver<StackConfig>, watch::Receiver<AaConfig>) {
-        let addresses =
-            Addresses { device_id: hwaddr::FALLBACK.into(), bt_mac: hwaddr::FALLBACK.into() };
+        let addresses = Addresses {
+            device_id: hwaddr::FALLBACK.into(),
+            bt_mac: hwaddr::FALLBACK.into(),
+            access_point: None,
+        };
         let cfg = state.borrow().config.clone();
         let first = stack_config(&cfg, &panels.borrow(), false, &addresses);
         let (tx, rx) = watch::channel(first);
@@ -335,12 +342,15 @@ impl ConfigSource {
                     format!("bt {}", cfg.bt_adapter),
                     hwaddr::bt_mac(&cfg.bt_adapter),
                 ),
+                access_point: livi_link_host::on_air(&cfg.wifi_interface),
             }
         };
         let addresses = {
             let mut known = self.addresses.lock().unwrap_or_else(|e| e.into_inner());
             if *known != found {
-                println!("[core] CarPlay accessory {} (bt {})", found.device_id, found.bt_mac);
+                if (&known.device_id, &known.bt_mac) != (&found.device_id, &found.bt_mac) {
+                    println!("[core] CarPlay accessory {} (bt {})", found.device_id, found.bt_mac);
+                }
                 *known = found;
             }
             known.clone()
@@ -421,7 +431,11 @@ mod tests {
     }
 
     fn addresses() -> Addresses {
-        Addresses { device_id: "11:11:11:11:11:11".into(), bt_mac: "22:22:22:22:22:22".into() }
+        Addresses {
+            device_id: "11:11:11:11:11:11".into(),
+            bt_mac: "22:22:22:22:22:22".into(),
+            access_point: None,
+        }
     }
 
     #[test]

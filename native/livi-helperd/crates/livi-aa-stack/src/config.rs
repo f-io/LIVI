@@ -1,4 +1,5 @@
 use livi_core_proto::config::{CarType, Config, HandDriveType};
+use livi_wifi::{OnAir, Security};
 
 use crate::wire::round_half_up;
 
@@ -23,6 +24,7 @@ pub struct AaConfig {
     pub wifi_bssid: Option<String>,
     pub wifi_ssid: String,
     pub wifi_password: String,
+    pub wifi_security: Security,
     pub wifi_channel: Option<u32>,
     pub fuel_types: Vec<i32>,
     pub ev_connector_types: Vec<i32>,
@@ -43,6 +45,8 @@ pub struct AaConfig {
     pub disable_audio_output: bool,
     /// Empty for the default capture device.
     pub mic_device: String,
+    /// Offers the phone a call audio channel next to hands-free, `LIVI_AA_TELEPHONY=1`.
+    pub telephony_audio: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -64,6 +68,8 @@ pub struct Codecs {
 pub struct Addresses {
     pub bt_mac: Option<String>,
     pub wifi_bssid: Option<String>,
+    /// The access point a phone joins, when one is on air.
+    pub access_point: Option<OnAir>,
 }
 
 const SQUARE_PIXEL_E4: u32 = 10000;
@@ -183,6 +189,7 @@ pub fn from_livi(
             "not advertised".to_string()
         }
     );
+    let on_air = addresses.access_point.as_ref();
     AaConfig {
         hu_name: Some(name.clone()),
         video_width: Some(tier_w),
@@ -207,13 +214,14 @@ pub fn from_livi(
         driver_position: u8::from(cfg.hand == HandDriveType::Rhd),
         bt_mac_address: addresses.bt_mac.clone(),
         wifi_bssid: addresses.wifi_bssid.clone(),
-        wifi_ssid: name,
+        wifi_ssid: on_air.map(|ap| ap.ssid.clone()).filter(|s| !s.is_empty()).unwrap_or(name),
         wifi_password: if cfg.wifi_password.is_empty() {
             "12345678".to_string()
         } else {
             cfg.wifi_password.clone()
         },
-        wifi_channel: Some(cfg.wifi_channel),
+        wifi_security: on_air.map(|ap| ap.security).unwrap_or_default(),
+        wifi_channel: Some(on_air.map_or(cfg.wifi_channel, |ap| ap.channel.number)),
         fuel_types: fuel_types(cfg.car_type),
         ev_connector_types: cfg.ev_connector_types.iter().flatten().map(|t| *t as i32).collect(),
         hevc_supported: codecs.hevc,
@@ -242,6 +250,7 @@ pub fn from_livi(
         },
         disable_audio_output: cfg.disable_audio_output,
         mic_device: cfg.audio_input_device.clone().unwrap_or_default(),
+        telephony_audio: std::env::var("LIVI_AA_TELEPHONY").is_ok_and(|v| v == "1"),
     }
 }
 
@@ -353,7 +362,11 @@ pub(crate) mod tests {
         cfg.hand = HandDriveType::Rhd;
         cfg.car_type = Some(CarType::HybridGasoline);
         cfg.dashboards.dash3.main = true;
-        let addresses = Addresses { bt_mac: Some("AA:BB:CC:DD:EE:FF".into()), wifi_bssid: None };
+        let addresses = Addresses {
+            bt_mac: Some("AA:BB:CC:DD:EE:FF".into()),
+            wifi_bssid: None,
+            access_point: None,
+        };
         let aa = from_livi(&cfg, Codecs::default(), Some(true), &addresses);
         assert_eq!(aa.hu_name.as_deref(), Some("LIVI"));
         assert_eq!(aa.wifi_ssid, "LIVI");

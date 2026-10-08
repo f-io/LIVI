@@ -3,18 +3,9 @@
 //! those that use them.
 
 use crate::channels::text;
+use crate::consts::nav_msg;
 use crate::log::detail;
 use crate::wire::{WIRE_LEN, WIRE_VARINT, decode_fields, decode_varint_value};
-
-pub mod nav_msg {
-    pub const START_INDICATION: u16 = 0x8001;
-    pub const STOP_INDICATION: u16 = 0x8002;
-    pub const STATUS: u16 = 0x8003;
-    pub const TURN_EVENT: u16 = 0x8004;
-    pub const DISTANCE_EVENT: u16 = 0x8005;
-    pub const STATE: u16 = 0x8006;
-    pub const CURRENT_POSITION: u16 = 0x8007;
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NavigationState {
@@ -182,11 +173,11 @@ pub struct NavigationChannel;
 impl NavigationChannel {
     pub fn handle_message(&mut self, msg_id: u16, payload: &[u8]) -> Option<NavigationEvent> {
         match msg_id {
-            nav_msg::START_INDICATION => {
+            nav_msg::START => {
                 println!("[NavigationChannel] START");
                 Some(NavigationEvent::Start)
             }
-            nav_msg::STOP_INDICATION => {
+            nav_msg::STOP => {
                 println!("[NavigationChannel] STOP");
                 Some(NavigationEvent::Stop)
             }
@@ -195,7 +186,7 @@ impl NavigationChannel {
                 detail!("[NavigationChannel] status={s:?}");
                 Some(NavigationEvent::Status(s))
             }
-            nav_msg::TURN_EVENT => {
+            nav_msg::NEXT_TURN => {
                 let t = decode_turn_event(payload);
                 detail!(
                     "[NavigationChannel] turn road={} event={} side={} angle={} image={}",
@@ -207,7 +198,7 @@ impl NavigationChannel {
                 );
                 Some(NavigationEvent::Turn(t))
             }
-            nav_msg::DISTANCE_EVENT => {
+            nav_msg::NEXT_TURN_DISTANCE => {
                 let d = decode_distance_event(payload);
                 detail!(
                     "[NavigationChannel] distance {}m t={}s display={}/{}",
@@ -429,8 +420,8 @@ mod tests {
     #[test]
     fn the_channel_sorts_its_messages() {
         let mut n = NavigationChannel;
-        assert_eq!(n.handle_message(nav_msg::START_INDICATION, &[]), Some(NavigationEvent::Start));
-        assert_eq!(n.handle_message(nav_msg::STOP_INDICATION, &[]), Some(NavigationEvent::Stop));
+        assert_eq!(n.handle_message(nav_msg::START, &[]), Some(NavigationEvent::Start));
+        assert_eq!(n.handle_message(nav_msg::STOP, &[]), Some(NavigationEvent::Stop));
         for (raw, state) in [
             (1, NavigationState::Active),
             (2, NavigationState::Inactive),
@@ -452,7 +443,7 @@ mod tests {
         ]
         .concat();
         assert_eq!(
-            n.handle_message(nav_msg::TURN_EVENT, &turn),
+            n.handle_message(nav_msg::NEXT_TURN, &turn),
             Some(NavigationEvent::Turn(NavigationTurnUpdate {
                 road: Some("Main St".into()),
                 turn_side: Some(NavigationTurnSide::Right),
@@ -466,7 +457,7 @@ mod tests {
             [field_varint(1, 250), field_varint(2, 20), field_varint(3, 250), field_varint(4, 1)]
                 .concat();
         assert_eq!(
-            n.handle_message(nav_msg::DISTANCE_EVENT, &dist),
+            n.handle_message(nav_msg::NEXT_TURN_DISTANCE, &dist),
             Some(NavigationEvent::Distance(NavigationDistanceUpdate {
                 distance_meters: 250,
                 time_to_turn_seconds: 20,

@@ -1,3 +1,4 @@
+import type { WifiBand } from '@shared/core/contract'
 import type { Config } from '@shared/types'
 import { PAGES } from '@shared/types'
 import { WIFI_PASSWORD_MAX, WIFI_PASSWORD_MIN } from '@shared/types/Config'
@@ -23,6 +24,19 @@ const panelDefaultOption: SelectOption = {
 async function loadDisplayModes(): Promise<SelectOption[]> {
   const list = useLiviStore.getState().system?.displayModes ?? []
   return [panelDefaultOption, ...list.map((m) => ({ value: m, label: m }))]
+}
+
+const BAND_LABELS: Record<WifiBand, string> = {
+  '2.4ghz': '2.4 GHz',
+  '5ghz': '5 GHz',
+  '6ghz': '6 GHz'
+}
+
+/** The bands the chosen radio can run an access point on, 2.4 and 5 GHz until it says. */
+async function loadWifiBands(): Promise<SelectOption[]> {
+  const bands = useLiviStore.getState().system?.wifiBands ?? []
+  const shown: WifiBand[] = bands.length > 0 ? bands : ['2.4ghz', '5ghz']
+  return shown.map((b) => ({ value: b, label: BAND_LABELS[b] }))
 }
 
 async function loadWifiChannels(): Promise<SelectOption[]> {
@@ -117,16 +131,8 @@ export const generalSchema: SettingsNode<Config> = {
               icon: 'wifiFrequency',
               path: 'wifiType',
               displayValue: true,
-              options: [
-                {
-                  label: '2.4 GHz',
-                  value: '2.4ghz'
-                },
-                {
-                  label: '5 GHz',
-                  value: '5ghz'
-                }
-              ],
+              options: [],
+              loadOptions: loadWifiBands,
               page: {
                 title: 'Wi-Fi Frequency',
                 labelTitle: 'settings.wifiFrequency'

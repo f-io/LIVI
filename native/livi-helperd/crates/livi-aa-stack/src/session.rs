@@ -6,6 +6,15 @@ use serde_json::{Map, Value};
 use tokio::sync::watch;
 use tokio::time::Instant;
 
+use livi_aa_proto::{
+    AuthCompleteNotification, BluetoothPairingRequest, BluetoothPairingResponse,
+    ChannelOpenResponse, KeyBindingResponse, MediaConfigResponse, MediaConfigStatus,
+    MediaSetupRequest, MessageStatus, PhoneStatusNotification, PingRequest, SensorRequest,
+    SensorResponse, VideoFocusMode, VideoFocusNotification, WifiAccessPointType,
+    WifiCredentialsResponse, WifiCredentialsSecurityMode,
+};
+use livi_wifi::Security;
+
 use crate::channels::audio::{AudioChannel, AudioChannelEvent, AudioChannelType};
 use crate::channels::input::{self, TouchPointer};
 use crate::channels::media_info::{
@@ -17,22 +26,17 @@ use crate::channels::video::{VideoChannel, VideoChannelEvent};
 use crate::channels::{Emit, Frame};
 use crate::codec::{check_nested, decode, encode};
 use crate::config::{AaConfig, Geometry};
-use crate::consts::{STATUS_OK, av_msg, av_setup_status, ch, ctrl_msg, frame_flags};
+use crate::consts::{
+    bluetooth_msg, ch, ctrl_msg, frame_flags, input_msg, media_msg, phone_msg, sensor_msg, wifi_msg,
+};
 use crate::control::{ControlChannel, ControlEvent, ControlOut};
 use crate::discovery::{self, VideoCodec};
 use crate::log::{debug, detail, trace};
-use crate::proto::aap_protobuf::service::bluetooth::message::{
-    BluetoothPairingRequest, BluetoothPairingResponse,
-};
-use crate::proto::aap_protobuf::service::control::message::{
-    AuthResponse, ChannelOpenResponse, PingRequest,
-};
-use crate::proto::aap_protobuf::service::phonestatus::message::PhoneStatus;
-use crate::proto::oaa::proto::messages::{AvChannelSetupRequest, AvChannelSetupResponse};
 use crate::sensors::{self, Sensor};
-use crate::wire::{decode_start, encode_uvarint};
+use crate::wire::decode_start;
 
-pub const PING_INTERVAL: Duration = Duration::from_millis(1500);
+/// Used when the phone states no ping configuration of its own.
+const PING_INTERVAL: Duration = Duration::from_millis(1500);
 const PING_TIMEOUT: Duration = Duration::from_millis(5000);
 const WATCHDOG: Duration = Duration::from_secs(30);
 const KEYFRAME_FOLLOW_UP: Duration = Duration::from_millis(60);
@@ -40,20 +44,12 @@ const SHUTDOWN_ACK: Duration = Duration::from_secs(1);
 
 pub const BYEBYE_USER_SELECTION: u8 = 1;
 
-const SENSOR_START_REQUEST: u16 = 0x8001;
-const SENSOR_START_RESPONSE: u16 = 0x8002;
-const SENSOR_BATCH: u16 = 0x8003;
-const PHONE_STATUS: u16 = 0x8001;
-const BT_PAIRING_REQUEST: u16 = 0x8001;
-const BT_PAIRING_RESPONSE: u16 = 0x8002;
-const WIFI_CREDENTIALS_REQUEST: u16 = 0x8001;
-const WIFI_CREDENTIALS_RESPONSE: u16 = 0x8002;
-const KEY_BINDING_REQUEST: u16 = 0x8002;
-const KEY_BINDING_RESPONSE: u16 = 0x8003;
+const OK: i32 = MessageStatus::Success as i32;
 
-/// Focus indications: projected asks for a keyframe, native stops the encoder.
-const FOCUS_PROJECTED: [u8; 2] = [0x08, 0x01];
-const FOCUS_NATIVE: [u8; 2] = [0x08, 0x02];
+/// Projected asks for a keyframe, native stops the encoder.
+fn focus(mode: VideoFocusMode) -> Vec<u8> {
+    encode(&VideoFocusNotification { mode: Some(mode as i32), unsolicited: None })
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum State {
@@ -171,7 +167,8 @@ pub enum Out {
     End,
     Destroy,
     Event(SessionEvent),
-    Ping(bool),
+    /// Starts the ping timer at this interval, or stops it.
+    Ping(Option<Duration>),
     After(Duration, Timer),
     ShutdownDone,
 }
@@ -179,6 +176,14 @@ pub enum Out {
 #[cfg(test)]
 thread_local! {
     pub(crate) static TEST_WALL: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+/// WPA3 alone goes as the transition, as in the Bluetooth bootstrap.
+fn credentials_security(security: Security) -> WifiCredentialsSecurityMode {
+    match security {
+        Security::Wpa2 => WifiCredentialsSecurityMode::Wpa2Personal,
+        Security::Wpa2Wpa3 | Security::Wpa3 => WifiCredentialsSecurityMode::Wpa2Wpa3Personal,
+    }
 }
 
 fn wall_ms() -> u64 {
@@ -210,6 +215,7 @@ fn is_frame_channel(c: u8) -> bool {
             | ch::MEDIA_AUDIO
             | ch::SPEECH_AUDIO
             | ch::SYSTEM_AUDIO
+            | ch::TELEPHONY_AUDIO
             | ch::INPUT
             | ch::MIC_INPUT
             | ch::SENSOR
@@ -231,6 +237,8 @@ pub struct Session {
     mic_socket: Option<String>,
     last_pong: Instant,
     ping_running: bool,
+    ping_interval: Duration,
+    ping_timeout: Duration,
     control: ControlChannel,
     video: VideoChannel,
     cluster: VideoChannel,
@@ -251,6 +259,7 @@ pub struct Session {
 
 impl Session {
     pub fn new(config: watch::Receiver<AaConfig>, peer: &str) -> (Self, Vec<Out>) {
+        let telephony = config.borrow().telephony_audio.then_some(ch::TELEPHONY_AUDIO);
         let session = Self {
             config,
             advertised: None,
@@ -261,11 +270,14 @@ impl Session {
             mic_socket: None,
             last_pong: Instant::now(),
             ping_running: false,
+            ping_interval: PING_INTERVAL,
+            ping_timeout: PING_TIMEOUT,
             control: ControlChannel,
             video: VideoChannel::new(ch::VIDEO),
             cluster: VideoChannel::new(ch::CLUSTER_VIDEO),
             audio: [ch::MEDIA_AUDIO, ch::SPEECH_AUDIO, ch::SYSTEM_AUDIO]
                 .into_iter()
+                .chain(telephony)
                 .map(AudioChannel::new)
                 .collect(),
             mic: MicChannel::new(ch::MIC_INPUT),
@@ -347,7 +359,7 @@ impl Session {
     fn stop_ping(&mut self, out: &mut Vec<Out>) {
         if self.ping_running {
             self.ping_running = false;
-            out.push(Out::Ping(false));
+            out.push(Out::Ping(None));
         }
     }
 
@@ -377,6 +389,12 @@ impl Session {
             Some("ready") => {
                 self.link_ready = true;
                 self.mic_socket = c.get("mic").and_then(Value::as_str).map(str::to_string);
+                let ms =
+                    |k: &str| c["ping"][k].as_u64().filter(|v| *v > 0).map(Duration::from_millis);
+                if let (Some(interval), Some(timeout)) = (ms("interval"), ms("timeout")) {
+                    self.ping_interval = interval;
+                    self.ping_timeout = timeout.max(interval);
+                }
                 self.on_link_ready(&mut out);
             }
             Some("first-frame") => {
@@ -413,7 +431,7 @@ impl Session {
             return;
         }
         self.transition(out, State::Auth, "");
-        let auth = encode(&AuthResponse { status: STATUS_OK });
+        let auth = encode(&AuthCompleteNotification { status: OK });
         if debug() {
             println!("[Session] AUTH_COMPLETE proto bytes: {}", crate::log::hex(&auth));
         }
@@ -444,7 +462,7 @@ impl Session {
             if debug() {
                 println!("[Session] CHANNEL_OPEN_REQUEST ch={c}, responding OK");
             }
-            let resp = encode(&ChannelOpenResponse { status: STATUS_OK });
+            let resp = encode(&ChannelOpenResponse { status: OK });
             self.send_to(
                 &mut out,
                 c,
@@ -455,14 +473,14 @@ impl Session {
             return out;
         }
         if c == ch::VIDEO || c == ch::CLUSTER_VIDEO {
-            if msg_id == av_msg::SETUP_REQUEST {
+            if msg_id == media_msg::SETUP {
                 self.on_av_setup_request(&mut out, c, payload);
             } else {
                 self.on_video_message(&mut out, c, msg_id, payload);
             }
             return out;
         }
-        if msg_id != av_msg::SETUP_REQUEST
+        if msg_id != media_msg::SETUP
             && let Some(i) = self.audio.iter().position(|a| a.channel_id() == c)
         {
             let channel = self.audio[i].channel_type();
@@ -472,12 +490,16 @@ impl Session {
                 _ => return out,
             };
             let (sample_rate, channels) = self.audio[i].format();
+            if channel == AudioChannelType::Telephony {
+                let state = if active { "starts" } else { "stops" };
+                println!("[Session] call audio over Android Auto {state}");
+            }
             self.event(&mut out, SessionEvent::Audio { channel, sample_rate, channels, active });
             return out;
         }
         match c {
             ch::SENSOR => {
-                if msg_id == SENSOR_START_REQUEST {
+                if msg_id == sensor_msg::REQUEST {
                     self.on_sensor_start_request(&mut out, payload);
                 } else if debug() {
                     println!("[Session] sensor ch={c} msgId=0x{msg_id:04x} (unhandled)");
@@ -497,7 +519,7 @@ impl Session {
                 return out;
             }
             ch::PHONE_STATUS => {
-                if msg_id == PHONE_STATUS {
+                if msg_id == phone_msg::STATUS {
                     self.on_phone_status(&mut out, payload);
                 }
                 return out;
@@ -509,7 +531,7 @@ impl Session {
                 return out;
             }
             ch::BLUETOOTH => {
-                if msg_id == BT_PAIRING_REQUEST {
+                if msg_id == bluetooth_msg::PAIRING_REQUEST {
                     // The phone routes call audio to our hands-free profile only
                     // after this answer.
                     match decode::<BluetoothPairingRequest>(payload, &[1, 2]) {
@@ -524,19 +546,19 @@ impl Session {
                         }
                     }
                     let resp =
-                        encode(&BluetoothPairingResponse { status: 1, already_paired: true });
+                        encode(&BluetoothPairingResponse { status: OK, already_paired: true });
                     self.send_to(
                         &mut out,
                         ch::BLUETOOTH,
                         frame_flags::ENC_SIGNAL,
-                        BT_PAIRING_RESPONSE,
+                        bluetooth_msg::PAIRING_RESPONSE,
                         resp,
                     );
                 }
                 return out;
             }
             ch::MIC_INPUT => {
-                if msg_id == av_msg::SETUP_REQUEST {
+                if msg_id == media_msg::SETUP {
                     self.on_av_setup_request(&mut out, c, payload);
                 } else {
                     let emitted = self.mic.handle_message(msg_id, payload);
@@ -545,7 +567,7 @@ impl Session {
                 return out;
             }
             ch::WIFI => {
-                if msg_id == WIFI_CREDENTIALS_REQUEST {
+                if msg_id == wifi_msg::CREDENTIALS_REQUEST {
                     if debug() {
                         println!("[Session] WifiCredentialsRequest received, sending credentials");
                     }
@@ -557,39 +579,40 @@ impl Session {
             }
             _ => {}
         }
-        if msg_id == av_msg::SETUP_REQUEST {
+        if msg_id == media_msg::SETUP {
             self.on_av_setup_request(&mut out, c, payload);
             return out;
         }
-        if msg_id == av_msg::START_INDICATION {
+        if msg_id == media_msg::START {
             if debug() {
                 let start = decode_start(payload);
-                let label = if matches!(c, ch::MEDIA_AUDIO | ch::SPEECH_AUDIO | ch::SYSTEM_AUDIO) {
+                let label = if self.audio.iter().any(|a| a.channel_id() == c) {
                     "audio".to_string()
                 } else {
                     format!("ch{c}")
                 };
                 detail!(
-                    "[Session] {label} START_INDICATION ch={c} sessionId={} configIdx={}, stream starting",
+                    "[Session] {label} START ch={c} sessionId={} configIdx={}, stream starting",
                     start.map_or(-1, |s| i64::from(s.session_id)),
                     start.and_then(|s| s.config_index).map_or(-1, i64::from)
                 );
             }
             return out;
         }
-        if c == ch::INPUT && msg_id == KEY_BINDING_REQUEST {
+        if (c == ch::INPUT || c == ch::CLUSTER_INPUT) && msg_id == input_msg::KEY_BINDING_REQUEST {
             if debug() {
                 println!(
-                    "[Session] INPUT KeyBindingRequest (len={}), replying status=OK",
+                    "[Session] ch={c} KeyBindingRequest (len={}), replying status=OK",
                     payload.len()
                 );
             }
+            let resp = encode(&KeyBindingResponse { status: OK });
             self.send_to(
                 &mut out,
-                ch::INPUT,
+                c,
                 frame_flags::ENC_SIGNAL,
-                KEY_BINDING_RESPONSE,
-                [0x08, 0x00],
+                input_msg::KEY_BINDING_RESPONSE,
+                resp,
             );
             return out;
         }
@@ -633,6 +656,13 @@ impl Session {
     fn on_control(&mut self, out: &mut Vec<Out>, emitted: Vec<ControlOut>) {
         for e in emitted {
             match e {
+                // Before TLS the phone pings in the clear and is answered the same way.
+                Emit::Send(mut frame)
+                    if frame.msg_id == ctrl_msg::PING_RESPONSE && self.state < State::Auth =>
+                {
+                    frame.flags = frame_flags::PLAINTEXT;
+                    self.send(out, frame);
+                }
                 Emit::Send(frame) => self.send(out, frame),
                 Emit::Event(event) => self.on_control_event(out, event),
             }
@@ -645,14 +675,17 @@ impl Session {
                 if debug() {
                     println!(
                         "[Session] Phone: {} / {}",
-                        req.device_name.as_deref().unwrap_or("?"),
-                        req.device_brand.as_deref().unwrap_or("?")
+                        req.head_unit_label.as_deref().unwrap_or("?"),
+                        req.phone_make_and_model.as_deref().unwrap_or("?")
                     );
                 }
-                let name = req.device_name.clone().unwrap_or_default();
-                let model = req.device_brand.clone().unwrap_or_default();
-                let instance_id =
-                    req.phone_info.as_ref().and_then(|p| p.instance_id.clone()).unwrap_or_default();
+                let name = req.head_unit_label.clone().unwrap_or_default();
+                let model = req.phone_make_and_model.clone().unwrap_or_default();
+                let instance_id = req
+                    .mobile_device_identity
+                    .as_ref()
+                    .and_then(|p| p.mobile_device_id.clone())
+                    .unwrap_or_default();
                 if !name.is_empty() || !model.is_empty() || !instance_id.is_empty() {
                     let ip = self.peer();
                     self.event(out, SessionEvent::DeviceInfo { name, model, instance_id, ip });
@@ -676,10 +709,13 @@ impl Session {
                 self.send_ping(out);
                 if !self.ping_running {
                     self.ping_running = true;
-                    out.push(Out::Ping(true));
+                    out.push(Out::Ping(Some(self.ping_interval)));
                 }
                 if debug() {
-                    println!("[Session] SDR + Ping sent (1500ms interval)");
+                    println!(
+                        "[Session] SDR + Ping sent ({}ms interval)",
+                        self.ping_interval.as_millis()
+                    );
                 }
                 self.transition(out, State::ChannelSetup, "");
                 if debug() {
@@ -689,7 +725,7 @@ impl Session {
                 }
             }
             ControlEvent::ChannelOpenRequest(_) => {
-                let frame = self.control.channel_open_response(STATUS_OK);
+                let frame = self.control.channel_open_response(OK);
                 self.send(out, frame);
             }
             ControlEvent::AvSetupRequest { ch, payload } => {
@@ -722,11 +758,11 @@ impl Session {
 
     fn send_ping(&mut self, out: &mut Vec<Out>) {
         let ping = encode(&PingRequest {
-            timestamp: (wall_ms() * 1000) as i64,
-            bug_report: None,
-            data: None,
+            timestamp_ns: (wall_ms() * 1_000_000) as i64,
+            requests_bug_report: None,
+            payload: None,
         });
-        self.send_to(out, ch::CONTROL, frame_flags::PLAINTEXT, ctrl_msg::PING_REQUEST, ping);
+        self.send_to(out, ch::CONTROL, frame_flags::ENC_SIGNAL, ctrl_msg::PING_REQUEST, ping);
     }
 
     pub fn on_ping_tick(&mut self) -> Vec<Out> {
@@ -734,10 +770,10 @@ impl Session {
         if self.state >= State::Closed {
             return out;
         }
-        if self.last_pong.elapsed() > PING_TIMEOUT {
+        if self.last_pong.elapsed() > self.ping_timeout {
             println!(
                 "[Session] PING timeout ({}ms without PING_RESPONSE), closing session",
-                PING_TIMEOUT.as_millis()
+                self.ping_timeout.as_millis()
             );
             self.transition(&mut out, State::Closed, "ping timeout");
             out.push(Out::Destroy);
@@ -773,8 +809,8 @@ impl Session {
                         &mut out,
                         ch::VIDEO,
                         frame_flags::ENC_SIGNAL,
-                        av_msg::VIDEO_FOCUS_INDICATION,
-                        FOCUS_PROJECTED,
+                        media_msg::VIDEO_FOCUS_NOTIFICATION,
+                        focus(VideoFocusMode::Projected),
                     );
                 }
             }
@@ -784,8 +820,8 @@ impl Session {
                         &mut out,
                         ch::CLUSTER_VIDEO,
                         frame_flags::ENC_SIGNAL,
-                        av_msg::VIDEO_FOCUS_INDICATION,
-                        FOCUS_PROJECTED,
+                        media_msg::VIDEO_FOCUS_NOTIFICATION,
+                        focus(VideoFocusMode::Projected),
                     );
                 }
             }
@@ -800,8 +836,8 @@ impl Session {
     }
 
     fn on_av_setup_request(&mut self, out: &mut Vec<Out>, c: u8, payload: &[u8]) {
-        let codec = match decode::<AvChannelSetupRequest>(payload, &[1]) {
-            Ok(req) => req.media_codec_type,
+        let codec = match decode::<MediaSetupRequest>(payload, &[1]) {
+            Ok(req) => req.codec_type,
             Err(e) => {
                 eprintln!("[Session] AVSetupRequest ch={c} unreadable ({e}), dropped");
                 return;
@@ -864,17 +900,14 @@ impl Session {
                 }
             }
         }
-        let resp = encode(&AvChannelSetupResponse {
-            media_status: av_setup_status::OK,
-            max_unacked: Some(1),
-            configs: vec![config_index],
+        let resp = encode(&MediaConfigResponse {
+            status: MediaConfigStatus::Ready as i32,
+            max_unacked_frames: Some(1),
+            configuration_indices: vec![config_index],
         });
-        self.send_to(out, c, frame_flags::ENC_SIGNAL, av_msg::SETUP_RESPONSE, resp);
+        self.send_to(out, c, frame_flags::ENC_SIGNAL, media_msg::CONFIG, resp);
         if debug() {
-            println!(
-                "[Session] AVChannelSetupResponse ch={c} status=OK({}) sent",
-                av_setup_status::OK
-            );
+            println!("[Session] MediaConfigResponse ch={c} status=READY sent");
         }
 
         if c == ch::VIDEO {
@@ -882,8 +915,8 @@ impl Session {
                 out,
                 ch::VIDEO,
                 frame_flags::ENC_SIGNAL,
-                av_msg::VIDEO_FOCUS_INDICATION,
-                FOCUS_PROJECTED,
+                media_msg::VIDEO_FOCUS_NOTIFICATION,
+                focus(VideoFocusMode::Projected),
             );
             // The phone starts the stream itself once it is ready.
             self.transition(out, State::Running, "");
@@ -894,20 +927,18 @@ impl Session {
     }
 
     fn on_sensor_start_request(&mut self, out: &mut Vec<Out>, payload: &[u8]) {
-        let sensor_type = match payload {
-            [0x08, t, ..] => *t,
-            _ => 0,
-        };
+        let sensor_type = decode::<SensorRequest>(payload, &[]).map_or(0, |r| r.sensor_type);
         if debug() {
             println!("[Session] SensorStartRequest type={sensor_type}");
         }
-        self.send_to(out, ch::SENSOR, frame_flags::ENC_SIGNAL, SENSOR_START_RESPONSE, [0x08, 0x00]);
+        let resp = encode(&SensorResponse { status: OK });
+        self.send_to(out, ch::SENSOR, frame_flags::ENC_SIGNAL, sensor_msg::RESPONSE, resp);
         if sensor_type == 13 {
             self.send_to(
                 out,
                 ch::SENSOR,
                 frame_flags::ENC_SIGNAL,
-                SENSOR_BATCH,
+                sensor_msg::BATCH,
                 [0x6a, 0x02, 0x08, 0x00],
             );
         } else if sensor_type == 10 {
@@ -916,7 +947,7 @@ impl Session {
                 out,
                 ch::SENSOR,
                 frame_flags::ENC_SIGNAL,
-                SENSOR_BATCH,
+                sensor_msg::BATCH,
                 [0x52, 0x02, 0x08, u8::from(night)],
             );
             if debug() {
@@ -926,8 +957,8 @@ impl Session {
     }
 
     fn on_phone_status(&mut self, out: &mut Vec<Out>, payload: &[u8]) {
-        let status =
-            check_nested(payload, 1, &[1, 2]).and_then(|()| decode::<PhoneStatus>(payload, &[]));
+        let status = check_nested(payload, 1, &[1, 2])
+            .and_then(|()| decode::<PhoneStatusNotification>(payload, &[]));
         let ps = match status {
             Ok(ps) => ps,
             Err(e) => {
@@ -945,48 +976,39 @@ impl Session {
             .calls
             .into_iter()
             .map(|c| PhoneCall {
-                state: CallState::of(c.phone_state),
-                duration_s: c.call_duration_seconds,
+                state: CallState::of(c.state),
+                duration_s: c.duration_seconds,
                 number: c.caller_number,
-                caller_id: c.caller_id,
-                number_type: c.caller_number_type,
-                thumbnail: c.caller_thumbnail,
+                caller_id: c.caller_display_name,
+                number_type: c.caller_number_label,
+                thumbnail: c.caller_photo_png,
             })
             .collect();
         self.event(out, SessionEvent::Calls { ip, calls });
     }
 
     fn on_wifi_credentials_request(&mut self, out: &mut Vec<Out>) {
-        let (ssid, pass) = {
+        let (ssid, pass, security) = {
             let cfg = self.config.borrow();
-            (cfg.wifi_ssid.clone(), cfg.wifi_password.clone())
+            (cfg.wifi_ssid.clone(), cfg.wifi_password.clone(), cfg.wifi_security)
         };
         if ssid.is_empty() && debug() {
             eprintln!(
                 "[Session] WifiCredentialsRequest: no wifiSsid configured, sending empty response"
             );
         }
-        let mut resp = Vec::new();
-        if !pass.is_empty() {
-            resp.push(0x0a);
-            resp.extend(encode_uvarint(pass.len() as u64));
-            resp.extend(pass.as_bytes());
-        }
-        // WPA2 personal, in this message's own numbering.
-        resp.extend([0x10, 0x05]);
-        if !ssid.is_empty() {
-            resp.push(0x1a);
-            resp.extend(encode_uvarint(ssid.len() as u64));
-            resp.extend(ssid.as_bytes());
-        }
-        // A static access point.
-        resp.extend([0x28, 0x00]);
+        let resp = encode(&WifiCredentialsResponse {
+            password: (!pass.is_empty()).then_some(pass),
+            security_mode: Some(credentials_security(security) as i32),
+            ssid: (!ssid.is_empty()).then(|| ssid.clone()),
+            access_point_type: Some(WifiAccessPointType::Static as i32),
+        });
         if debug() {
             println!(
-                "[Session] WifiCredentialsResponse: ssid=\"{ssid}\" security=WPA2_PERSONAL(5) type=STATIC"
+                "[Session] WifiCredentialsResponse: ssid=\"{ssid}\" security={security} type=STATIC"
             );
         }
-        self.send_to(out, ch::WIFI, frame_flags::ENC_SIGNAL, WIFI_CREDENTIALS_RESPONSE, resp);
+        self.send_to(out, ch::WIFI, frame_flags::ENC_SIGNAL, wifi_msg::CREDENTIALS_RESPONSE, resp);
     }
 
     fn ts_micros(&self) -> u64 {
@@ -1038,7 +1060,7 @@ impl Session {
             return out;
         }
         if let Some(batch) = sensors::batch(sensor) {
-            self.send_to(&mut out, ch::SENSOR, frame_flags::ENC_SIGNAL, SENSOR_BATCH, batch);
+            self.send_to(&mut out, ch::SENSOR, frame_flags::ENC_SIGNAL, sensor_msg::BATCH, batch);
             if debug() {
                 println!("[Session] SensorBatch {sensor:?}");
             }
@@ -1055,7 +1077,7 @@ impl Session {
             &mut out,
             ch::VIDEO,
             frame_flags::ENC_SIGNAL,
-            av_msg::VIDEO_FOCUS_REQUEST,
+            media_msg::VIDEO_FOCUS_REQUEST,
             [0x10, 0x01, 0x18, 0x00],
         );
         if debug() {
@@ -1074,8 +1096,8 @@ impl Session {
             &mut out,
             ch::VIDEO,
             frame_flags::ENC_SIGNAL,
-            av_msg::VIDEO_FOCUS_INDICATION,
-            FOCUS_NATIVE,
+            media_msg::VIDEO_FOCUS_NOTIFICATION,
+            focus(VideoFocusMode::Native),
         );
         out.push(Out::After(KEYFRAME_FOLLOW_UP, Timer::MainKeyframe));
         out
@@ -1096,8 +1118,8 @@ impl Session {
             &mut out,
             ch::CLUSTER_VIDEO,
             frame_flags::ENC_SIGNAL,
-            av_msg::VIDEO_FOCUS_INDICATION,
-            FOCUS_NATIVE,
+            media_msg::VIDEO_FOCUS_NOTIFICATION,
+            focus(VideoFocusMode::Native),
         );
         out.push(Out::After(KEYFRAME_FOLLOW_UP, Timer::ClusterKeyframe));
         out
@@ -1118,8 +1140,8 @@ impl Session {
                     &mut out,
                     ch::CLUSTER_VIDEO,
                     frame_flags::ENC_SIGNAL,
-                    av_msg::VIDEO_FOCUS_INDICATION,
-                    FOCUS_NATIVE,
+                    media_msg::VIDEO_FOCUS_NOTIFICATION,
+                    focus(VideoFocusMode::Native),
                 );
                 if debug() {
                     println!("[Session] cluster video focus indication (NATIVE) sent");
@@ -1145,8 +1167,8 @@ impl Session {
             out,
             ch::CLUSTER_VIDEO,
             frame_flags::ENC_SIGNAL,
-            av_msg::VIDEO_FOCUS_INDICATION,
-            FOCUS_PROJECTED,
+            media_msg::VIDEO_FOCUS_NOTIFICATION,
+            focus(VideoFocusMode::Projected),
         );
         if debug() {
             println!("[Session] cluster video focus indication (PROJECTED) sent");
@@ -1166,7 +1188,7 @@ impl Session {
             &mut out,
             ch::CONTROL,
             frame_flags::ENC_SIGNAL,
-            ctrl_msg::SHUTDOWN_REQUEST,
+            ctrl_msg::BYEBYE_REQUEST,
             [0x08, reason],
         );
         self.shutdowns_waiting += 1;
@@ -1195,7 +1217,11 @@ impl Session {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use prost::Message;
+
     use super::*;
+    use livi_aa_proto::{MediaCodecType, ServiceDiscoveryResponse};
+
     use crate::wire::field_varint;
 
     pub(crate) fn frames(out: &[Out]) -> Vec<Frame> {
@@ -1228,7 +1254,7 @@ pub(crate) mod tests {
         let (mut s, tx) = session(cfg);
         s.on_link_control(&serde_json::json!({ "type": "ready", "mic": "/tmp/m.sock" }));
         s.on_message(ch::CONTROL, ctrl_msg::SERVICE_DISCOVERY_REQUEST, &[]);
-        s.on_message(ch::VIDEO, av_msg::SETUP_REQUEST, &[0x08, 0x03]);
+        s.on_message(ch::VIDEO, media_msg::SETUP, &[0x08, 0x03]);
         assert_eq!(s.state(), State::Running);
         (s, tx)
     }
@@ -1266,10 +1292,67 @@ pub(crate) mod tests {
         let sent = frames(&out);
         assert_eq!(sent[0].msg_id, ctrl_msg::SERVICE_DISCOVERY_RESPONSE);
         assert_eq!(sent[1].msg_id, ctrl_msg::PING_REQUEST);
-        assert_eq!(sent[1].payload, [field_varint(1, 1_700_000_000_000_000)].concat());
-        assert!(out.contains(&Out::Ping(true)));
+        assert_eq!(sent[1].flags, frame_flags::ENC_SIGNAL);
+        assert_eq!(sent[1].payload, field_varint(1, 1_700_000_000_000_000_000));
+        assert!(out.contains(&Out::Ping(Some(PING_INTERVAL))));
         assert_eq!(s.state(), State::ChannelSetup);
         assert!(frames(&s.on_ping_tick())[0].msg_id == ctrl_msg::PING_REQUEST);
+    }
+
+    #[test]
+    fn key_bindings_are_answered_on_the_asking_channel() {
+        let (mut s, _tx) = running(AaConfig::default());
+        for c in [ch::INPUT, ch::CLUSTER_INPUT] {
+            let out = s.on_message(c, input_msg::KEY_BINDING_REQUEST, &[]);
+            assert_eq!(
+                frames(&out),
+                [Frame::new(
+                    c,
+                    frame_flags::ENC_SIGNAL,
+                    input_msg::KEY_BINDING_RESPONSE,
+                    [0x08, 0x00]
+                )]
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_phone_sets_the_ping_pace() {
+        let (mut s, _tx) = session(AaConfig::default());
+        let ready =
+            serde_json::json!({ "type": "ready", "ping": { "interval": 1000, "timeout": 8000 } });
+        s.on_link_control(&ready);
+        let out = s.on_message(ch::CONTROL, ctrl_msg::SERVICE_DISCOVERY_REQUEST, &[]);
+        assert!(out.contains(&Out::Ping(Some(Duration::from_millis(1000)))));
+        tokio::time::advance(Duration::from_millis(7000)).await;
+        assert_eq!(frames(&s.on_ping_tick())[0].msg_id, ctrl_msg::PING_REQUEST);
+        tokio::time::advance(Duration::from_millis(1500)).await;
+        assert!(s.on_ping_tick().contains(&Out::Destroy));
+    }
+
+    #[test]
+    fn call_audio_rides_the_session_only_with_the_switch() {
+        let telephony = |active| SessionEvent::Audio {
+            channel: AudioChannelType::Telephony,
+            sample_rate: 16000,
+            channels: 1,
+            active,
+        };
+        let (mut s, _tx) = running(AaConfig { telephony_audio: true, ..Default::default() });
+        let out = s.on_message(ch::TELEPHONY_AUDIO, media_msg::SETUP, &[0x08, 0x01]);
+        assert!(events(&out).contains(&SessionEvent::AudioSetup {
+            channel: AudioChannelType::Telephony,
+            sample_rate: 16000,
+            channels: 1
+        }));
+        let out = s.on_message(ch::TELEPHONY_AUDIO, media_msg::START, &[0x08, 0x01]);
+        assert!(events(&out).contains(&telephony(true)));
+        let out = s.on_message(ch::TELEPHONY_AUDIO, media_msg::STOP, &[]);
+        assert!(events(&out).contains(&telephony(false)));
+
+        let (mut off, _tx) = running(AaConfig::default());
+        let out = off.on_message(ch::TELEPHONY_AUDIO, media_msg::SETUP, &[0x08, 0x01]);
+        assert!(events(&out).is_empty());
     }
 
     #[test]
@@ -1277,7 +1360,7 @@ pub(crate) mod tests {
         let (mut s, _tx) = session(AaConfig { hevc_supported: true, ..Default::default() });
         s.on_link_control(&serde_json::json!({ "type": "ready" }));
         s.on_message(ch::CONTROL, ctrl_msg::SERVICE_DISCOVERY_REQUEST, &[]);
-        let out = s.on_message(ch::VIDEO, av_msg::SETUP_REQUEST, &[0x08, 0x07]);
+        let out = s.on_message(ch::VIDEO, media_msg::SETUP, &[0x08, 0x07]);
         assert_eq!(
             events(&out),
             [SessionEvent::VideoCodec(VideoCodec::H265), SessionEvent::Connected]
@@ -1288,28 +1371,29 @@ pub(crate) mod tests {
                 Frame::new(
                     ch::VIDEO,
                     frame_flags::ENC_SIGNAL,
-                    av_msg::SETUP_RESPONSE,
-                    [0x08, 0x02, 0x10, 0x01, 0x18, 0x01]
+                    media_msg::CONFIG,
+                    [0x08, 0x02, 0x10, 0x01, 0x18, 0x00]
                 ),
                 Frame::new(
                     ch::VIDEO,
                     frame_flags::ENC_SIGNAL,
-                    av_msg::VIDEO_FOCUS_INDICATION,
-                    FOCUS_PROJECTED
+                    media_msg::VIDEO_FOCUS_NOTIFICATION,
+                    focus(VideoFocusMode::Projected)
                 ),
             ]
         );
-        let out = s.on_message(ch::VIDEO, av_msg::SETUP_REQUEST, &[0x08, 0x07]);
+        let out = s.on_message(ch::VIDEO, media_msg::SETUP, &[0x08, 0x07]);
         assert_eq!(events(&out), [SessionEvent::Connected]);
-        assert!(s.on_message(ch::VIDEO, av_msg::SETUP_REQUEST, &[]).is_empty());
+        assert!(s.on_message(ch::VIDEO, media_msg::SETUP, &[]).is_empty());
     }
 
     #[test]
     fn encrypted_frames_wait_for_auth_and_nothing_goes_out_closed() {
         let (mut s, _tx) = session(AaConfig::default());
-        assert!(s.on_message(ch::SENSOR, SENSOR_START_REQUEST, &[0x08, 0x0d]).is_empty());
+        assert!(s.on_message(ch::SENSOR, sensor_msg::REQUEST, &[0x08, 0x0d]).is_empty());
         let out = s.on_message(ch::CONTROL, ctrl_msg::PING_REQUEST, &[0x08, 0x01]);
         assert_eq!(frames(&out).len(), 1);
+        assert_eq!(frames(&out)[0].flags, frame_flags::PLAINTEXT);
         let out = s.close("bye");
         assert_eq!(out, [Out::Destroy, Out::Event(SessionEvent::Disconnected("bye".into()))]);
         assert_eq!(s.close("again"), [Out::Destroy]);
@@ -1326,13 +1410,19 @@ pub(crate) mod tests {
             c.initial_night_mode = Some(true);
             c.wifi_ssid = "Car".into();
         });
-        s.on_message(ch::CONTROL, ctrl_msg::SERVICE_DISCOVERY_REQUEST, &[]);
-        let out = s.on_message(ch::VIDEO, av_msg::SETUP_REQUEST, &[0x08, 0x07]);
-        assert_eq!(frames(&out)[0].payload, [0x08, 0x02, 0x10, 0x01, 0x18, 0x01]);
-        let out = s.on_message(ch::SENSOR, SENSOR_START_REQUEST, &[0x08, 0x0a]);
+        let out = s.on_message(ch::CONTROL, ctrl_msg::SERVICE_DISCOVERY_REQUEST, &[]);
+        let offer = frames(&out)
+            .into_iter()
+            .find(|f| f.msg_id == ctrl_msg::SERVICE_DISCOVERY_RESPONSE)
+            .unwrap();
+        let offer = ServiceDiscoveryResponse::decode(offer.payload.as_slice()).unwrap();
+        let main = offer.services[0].media_sink.as_ref().unwrap();
+        assert_eq!(main.codec_type, Some(MediaCodecType::VideoH265 as i32));
+        s.on_message(ch::VIDEO, media_msg::SETUP, &[0x08, 0x07]);
+        let out = s.on_message(ch::SENSOR, sensor_msg::REQUEST, &[0x08, 0x0a]);
         assert_eq!(frames(&out)[1].payload, [0x52, 0x02, 0x08, 0x01]);
         tx.send_modify(|c| c.wifi_password = "pw".into());
-        let out = s.on_message(ch::WIFI, WIFI_CREDENTIALS_REQUEST, &[]);
+        let out = s.on_message(ch::WIFI, wifi_msg::CREDENTIALS_REQUEST, &[]);
         assert_eq!(
             frames(&out)[0].payload,
             [0x0a, 0x02, b'p', b'w', 0x10, 0x05, 0x1a, 0x03, b'C', b'a', b'r', 0x28, 0x00]
@@ -1342,12 +1432,24 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn the_credentials_name_the_security_on_air() {
+        let (mut s, tx) = running(AaConfig::default());
+        for (security, mode) in
+            [(Security::Wpa2, 5), (Security::Wpa3, 11), (Security::Wpa2Wpa3, 11)]
+        {
+            tx.send_modify(|c| c.wifi_security = security);
+            let out = s.on_message(ch::WIFI, wifi_msg::CREDENTIALS_REQUEST, &[]);
+            assert!(frames(&out)[0].payload.windows(2).any(|w| w == [0x10, mode]), "{security}");
+        }
+    }
+
+    #[test]
     fn a_second_discovery_keeps_one_ping_interval() {
         let (mut s, _tx) = running(AaConfig::default());
         let out = s.on_message(ch::CONTROL, ctrl_msg::SERVICE_DISCOVERY_REQUEST, &[]);
-        assert!(!out.contains(&Out::Ping(true)));
+        assert!(!out.iter().any(|o| matches!(o, Out::Ping(Some(_)))));
         assert_eq!(s.state(), State::ChannelSetup);
-        assert_eq!(s.close("x").iter().filter(|o| **o == Out::Ping(false)).count(), 1);
+        assert_eq!(s.close("x").iter().filter(|o| **o == Out::Ping(None)).count(), 1);
     }
 
     #[test]
@@ -1355,7 +1457,7 @@ pub(crate) mod tests {
         let (mut s, _tx) = running(AaConfig::default());
         let out = s.on_message(
             ch::PHONE_STATUS,
-            PHONE_STATUS,
+            phone_msg::STATUS,
             &[0x0a, 0x06, 0x08, 0x01, 0x10, 0x3c, 0x1a, 0x00],
         );
         assert_eq!(
@@ -1372,8 +1474,10 @@ pub(crate) mod tests {
                 }]
             }]
         );
-        assert!(s.on_message(ch::PHONE_STATUS, PHONE_STATUS, &[0x0a, 0x02, 0x08, 0x01]).is_empty());
-        assert!(s.on_message(ch::MEDIA_AUDIO, av_msg::SETUP_REQUEST, &[0x10, 0x01]).is_empty());
+        assert!(
+            s.on_message(ch::PHONE_STATUS, phone_msg::STATUS, &[0x0a, 0x02, 0x08, 0x01]).is_empty()
+        );
+        assert!(s.on_message(ch::MEDIA_AUDIO, media_msg::SETUP, &[0x10, 0x01]).is_empty());
         let gps = crate::sensors::GpsFix {
             lat_deg: f64::INFINITY,
             lng_deg: 1.0,
@@ -1388,7 +1492,7 @@ pub(crate) mod tests {
             s.request_shutdown(1).last(),
             Some(&Out::After(SHUTDOWN_ACK, Timer::ShutdownTimeout))
         );
-        let out = s.on_message(ch::CONTROL, ctrl_msg::SHUTDOWN_RESPONSE, &[]);
+        let out = s.on_message(ch::CONTROL, ctrl_msg::BYEBYE_RESPONSE, &[]);
         assert_eq!(out.last(), Some(&Out::ShutdownDone));
         assert_eq!(s.request_shutdown(1), [Out::ShutdownDone]);
         assert!(s.on_timer(Timer::ShutdownTimeout).is_empty());

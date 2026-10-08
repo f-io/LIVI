@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto3";
+
+package livi.aa;
+
+message Duration {
+  int64 seconds = 1;
+  int32 nanos = 2;
+}

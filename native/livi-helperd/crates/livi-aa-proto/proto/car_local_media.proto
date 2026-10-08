@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+enum CarLocalMediaMessageId {
+  CAR_LOCAL_MEDIA_MESSAGE_ID_PLAYBACK_STATUS = 32769;
+  CAR_LOCAL_MEDIA_MESSAGE_ID_PLAYBACK_METADATA = 32770;
+  CAR_LOCAL_MEDIA_MESSAGE_ID_PLAYBACK_REQUEST = 32771;
+}
+
+enum CarLocalMediaPlaybackAction {
+  CAR_LOCAL_MEDIA_PLAYBACK_ACTION_PLAY = 0;
+  CAR_LOCAL_MEDIA_PLAYBACK_ACTION_PAUSE = 1;
+  CAR_LOCAL_MEDIA_PLAYBACK_ACTION_PREVIOUS = 2;
+  CAR_LOCAL_MEDIA_PLAYBACK_ACTION_NEXT = 3;
+  CAR_LOCAL_MEDIA_PLAYBACK_ACTION_STOP = 4;
+}
+
+enum CarLocalMediaPlaybackState {
+  CAR_LOCAL_MEDIA_PLAYBACK_STATE_STOPPED = 1;
+  CAR_LOCAL_MEDIA_PLAYBACK_STATE_PLAYING = 2;
+  CAR_LOCAL_MEDIA_PLAYBACK_STATE_PAUSED = 3;
+  CAR_LOCAL_MEDIA_PLAYBACK_STATE_SOURCE_UNAVAILABLE = 4;
+  CAR_LOCAL_MEDIA_PLAYBACK_STATE_INACTIVE = 5;
+}
+
+message CarLocalMediaPlaybackActionNotification {
+  optional CarLocalMediaPlaybackAction action = 1;
+}
+
+message CarLocalMediaPlaybackMetadataNotification {
+  optional string song = 1;
+  optional string artist = 2;
+  optional string album = 3;
+  optional bytes album_art = 4;
+  optional uint32 duration_seconds = 5;
+}
+
+message CarLocalMediaPlaybackStatusNotification {
+  optional CarLocalMediaPlaybackState state = 1;
+  optional string media_source = 2;
+  optional int32 playback_position_seconds = 3;
+  repeated CarLocalMediaPlaybackAction supported_actions = 4;
+}
+
+message CarLocalMediaService {
+}

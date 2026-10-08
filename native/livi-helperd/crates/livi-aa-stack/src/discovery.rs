@@ -1,29 +1,16 @@
+use livi_aa_proto::{
+    AudioConfiguration, AudioStreamType, BluetoothPairingMethod, BluetoothService, CarInfo,
+    DisplayInsets, DisplayType, InputSourceService, Keycode, MediaCodecType,
+    MediaPlaybackStatusService, MediaSinkService, MediaSourceService, NavigationClusterType,
+    NavigationImageOptions, NavigationStatusService, PhoneStatusService, SensorSourceService,
+    SensorType, Service, ServiceDiscoveryResponse, SupportedSensor, Touchscreen, UiConfig,
+    VideoCodecResolution, VideoConfiguration, VideoFrameRate, WifiProjectionService,
+};
+
 use crate::codec::encode;
 use crate::config::{AaConfig, Geometry, Insets};
-use crate::consts::{
-    bt_pairing_method, ch, display_type, media_codec, video_fps, video_resolution,
-};
+use crate::consts::ch;
 use crate::log::{debug, hex};
-use crate::proto::aap_protobuf::service::Service;
-use crate::proto::aap_protobuf::service::bluetooth::BluetoothService;
-use crate::proto::aap_protobuf::service::control::message::{
-    ConnectionConfiguration, HeadUnitInfo, PingConfiguration, ServiceDiscoveryResponse,
-};
-use crate::proto::aap_protobuf::service::inputsource::InputSourceService;
-use crate::proto::aap_protobuf::service::inputsource::input_source_service::TouchScreen;
-use crate::proto::aap_protobuf::service::media::shared::message::{
-    AudioConfiguration, Insets as UiInsets, UiConfig,
-};
-use crate::proto::aap_protobuf::service::media::sink::MediaSinkService;
-use crate::proto::aap_protobuf::service::media::sink::message::VideoConfiguration;
-use crate::proto::aap_protobuf::service::media::source::MediaSourceService;
-use crate::proto::aap_protobuf::service::mediaplayback::MediaPlaybackStatusService;
-use crate::proto::aap_protobuf::service::navigationstatus::NavigationStatusService;
-use crate::proto::aap_protobuf::service::navigationstatus::navigation_status_service::ImageOptions;
-use crate::proto::aap_protobuf::service::phonestatus::PhoneStatusService;
-use crate::proto::aap_protobuf::service::sensorsource::SensorSourceService;
-use crate::proto::aap_protobuf::service::sensorsource::message::Sensor;
-use crate::proto::aap_protobuf::service::wifiprojection::WifiProjectionService;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VideoCodec {
@@ -44,12 +31,28 @@ impl VideoCodec {
     }
 
     pub fn of_media_codec(codec: i32) -> Self {
-        match codec {
-            media_codec::VIDEO_H265 => Self::H265,
-            media_codec::VIDEO_VP9 => Self::Vp9,
-            media_codec::VIDEO_AV1 => Self::Av1,
+        match MediaCodecType::try_from(codec) {
+            Ok(MediaCodecType::VideoH265) => Self::H265,
+            Ok(MediaCodecType::VideoVp9) => Self::Vp9,
+            Ok(MediaCodecType::VideoAv1) => Self::Av1,
             _ => Self::H264,
         }
+    }
+
+    fn media_codec(self) -> i32 {
+        let codec = match self {
+            Self::H264 => MediaCodecType::VideoH264Bp,
+            Self::H265 => MediaCodecType::VideoH265,
+            Self::Vp9 => MediaCodecType::VideoVp9,
+            Self::Av1 => MediaCodecType::VideoAv1,
+        };
+        codec as i32
+    }
+
+    /// From protocol 5.0 on the phone drops a display that offers more than one codec type, and
+    /// it only ever encodes H.264 or H.265.
+    fn for_display(cfg: &AaConfig) -> Self {
+        if cfg.hevc_supported { Self::H265 } else { Self::H264 }
     }
 }
 
@@ -61,110 +64,131 @@ pub struct Discovery {
     pub cluster_codecs: Vec<VideoCodec>,
 }
 
-mod sensor {
-    pub const LOCATION: i32 = 1;
-    pub const COMPASS: i32 = 2;
-    pub const SPEED: i32 = 3;
-    pub const RPM: i32 = 4;
-    pub const ODOMETER: i32 = 5;
-    pub const FUEL: i32 = 6;
-    pub const PARKING_BRAKE: i32 = 7;
-    pub const GEAR: i32 = 8;
-    pub const NIGHT_MODE: i32 = 10;
-    pub const ENV_DATA: i32 = 11;
-    pub const HVAC: i32 = 12;
-    pub const DRIVING_STATUS: i32 = 13;
-    pub const DOOR_DATA: i32 = 16;
-    pub const LIGHT_DATA: i32 = 17;
-    pub const TIRE_PRESSURE_DATA: i32 = 18;
-    pub const ACCELEROMETER: i32 = 19;
-    pub const GYROSCOPE: i32 = 20;
-    pub const GPS_SATELLITE: i32 = 21;
-    pub const VEHICLE_ENERGY_MODEL: i32 = 23;
-    pub const RAW_VEHICLE_ENERGY_MODEL: i32 = 25;
-    pub const RAW_EV_TRIP_SETTINGS: i32 = 26;
-}
-
-mod audio_stream {
-    pub const GUIDANCE: i32 = 1;
-    pub const SYSTEM: i32 = 2;
-    pub const MEDIA: i32 = 3;
-    #[allow(dead_code)]
-    pub const TELEPHONY: i32 = 4;
-}
-
 /// Raw GPS plus accelerometer, gyroscope, compass and car speed.
 const LOCATION_CHARACTERIZATION: u32 = 256 | 4 | 2 | 8 | 64;
 
-const KEYCODES: [i32; 46] = [
-    3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 66,
-    79, 82, 84, 85, 86, 87, 88, 89, 90, 91, 111, 126, 127, 164, 219, 231, 260, 261, 262, 263,
-    65536,
+const KEYCODES: [Keycode; 46] = [
+    Keycode::Home,
+    Keycode::Back,
+    Keycode::Call,
+    Keycode::Endcall,
+    Keycode::Keycode0,
+    Keycode::Keycode1,
+    Keycode::Keycode2,
+    Keycode::Keycode3,
+    Keycode::Keycode4,
+    Keycode::Keycode5,
+    Keycode::Keycode6,
+    Keycode::Keycode7,
+    Keycode::Keycode8,
+    Keycode::Keycode9,
+    Keycode::Star,
+    Keycode::Pound,
+    Keycode::DpadUp,
+    Keycode::DpadDown,
+    Keycode::DpadLeft,
+    Keycode::DpadRight,
+    Keycode::DpadCenter,
+    Keycode::VolumeUp,
+    Keycode::VolumeDown,
+    Keycode::Power,
+    Keycode::Enter,
+    Keycode::Headsethook,
+    Keycode::Menu,
+    Keycode::Search,
+    Keycode::MediaPlayPause,
+    Keycode::MediaStop,
+    Keycode::MediaNext,
+    Keycode::MediaPrevious,
+    Keycode::MediaRewind,
+    Keycode::MediaFastForward,
+    Keycode::Mute,
+    Keycode::Escape,
+    Keycode::MediaPlay,
+    Keycode::MediaPause,
+    Keycode::VolumeMute,
+    Keycode::Assist,
+    Keycode::VoiceAssist,
+    Keycode::NavigatePrevious,
+    Keycode::NavigateNext,
+    Keycode::NavigateIn,
+    Keycode::NavigateOut,
+    Keycode::RotaryController,
 ];
 
-const SENSORS: [i32; 21] = [
-    sensor::DRIVING_STATUS,
-    sensor::LOCATION,
-    sensor::NIGHT_MODE,
-    sensor::SPEED,
-    sensor::GEAR,
-    sensor::PARKING_BRAKE,
-    sensor::FUEL,
-    sensor::ODOMETER,
-    sensor::ENV_DATA,
-    sensor::DOOR_DATA,
-    sensor::LIGHT_DATA,
-    sensor::TIRE_PRESSURE_DATA,
-    sensor::HVAC,
-    sensor::ACCELEROMETER,
-    sensor::GYROSCOPE,
-    sensor::COMPASS,
-    sensor::GPS_SATELLITE,
-    sensor::RPM,
-    sensor::VEHICLE_ENERGY_MODEL,
-    sensor::RAW_VEHICLE_ENERGY_MODEL,
-    sensor::RAW_EV_TRIP_SETTINGS,
+const SENSORS: [SensorType; 21] = [
+    SensorType::DrivingStatusData,
+    SensorType::Location,
+    SensorType::NightMode,
+    SensorType::Speed,
+    SensorType::Gear,
+    SensorType::ParkingBrake,
+    SensorType::Fuel,
+    SensorType::Odometer,
+    SensorType::EnvironmentData,
+    SensorType::DoorData,
+    SensorType::LightData,
+    SensorType::TirePressureData,
+    SensorType::HvacData,
+    SensorType::AccelerometerData,
+    SensorType::GyroscopeData,
+    SensorType::Compass,
+    SensorType::GpsSatelliteData,
+    SensorType::Rpm,
+    SensorType::VehicleEnergyModelData,
+    SensorType::RawVehicleEnergyModel,
+    SensorType::RawEvTripSettings,
 ];
 
-fn resolution(width: u32) -> i32 {
+fn resolution(width: u32) -> VideoCodecResolution {
+    use VideoCodecResolution as R;
     if width >= 3840 {
-        5
+        R::VideoCodecResolution3840x2160
     } else if width >= 2560 {
-        4
+        R::VideoCodecResolution2560x1440
     } else if width >= 1920 {
-        video_resolution::R1920X1080
+        R::VideoCodecResolution1920x1080
     } else if width <= 800 {
-        video_resolution::R800X480
+        R::VideoCodecResolution800x480
     } else {
-        video_resolution::R1280X720
+        R::VideoCodecResolution1280x720
     }
 }
 
-fn resolution_of(width: u32, height: u32) -> Option<i32> {
+fn resolution_of(width: u32, height: u32) -> Option<VideoCodecResolution> {
+    use VideoCodecResolution as R;
     match (width, height) {
-        (800, 480) => Some(video_resolution::R800X480),
-        (1280, 720) => Some(video_resolution::R1280X720),
-        (1920, 1080) => Some(video_resolution::R1920X1080),
+        (800, 480) => Some(R::VideoCodecResolution800x480),
+        (1280, 720) => Some(R::VideoCodecResolution1280x720),
+        (1920, 1080) => Some(R::VideoCodecResolution1920x1080),
         _ => None,
     }
 }
 
-fn ui_insets(i: Insets) -> UiInsets {
-    UiInsets { top: Some(i.top), bottom: Some(i.bottom), left: Some(i.left), right: Some(i.right) }
+fn frame_rate(fps: u32) -> VideoFrameRate {
+    if fps == 60 { VideoFrameRate::VideoFrameRate60 } else { VideoFrameRate::VideoFrameRate30 }
 }
 
-fn audio(sampling_rate: u32, channels: u32) -> AudioConfiguration {
-    AudioConfiguration { sampling_rate, number_of_bits: 16, number_of_channels: channels }
+fn display_insets(i: Insets) -> DisplayInsets {
+    DisplayInsets {
+        top: Some(i.top),
+        bottom: Some(i.bottom),
+        left: Some(i.left),
+        right: Some(i.right),
+    }
+}
+
+fn audio(sampling_rate_hz: u32, channel_count: u32) -> AudioConfiguration {
+    AudioConfiguration { sampling_rate_hz, bits_per_sample: 16, channel_count }
 }
 
 fn audio_sink(id: u8, stream: i32, sampling_rate: u32, channels: u32) -> Service {
     Service {
         id: i32::from(id),
-        media_sink_service: Some(MediaSinkService {
-            available_type: Some(media_codec::AUDIO_PCM),
-            audio_type: Some(stream),
-            available_while_in_call: Some(true),
-            audio_configs: vec![audio(sampling_rate, channels)],
+        media_sink: Some(MediaSinkService {
+            codec_type: Some(MediaCodecType::AudioPcm as i32),
+            audio_stream_type: Some(stream),
+            audio_configurations: vec![audio(sampling_rate, channels)],
             ..Default::default()
         }),
         ..Default::default()
@@ -174,59 +198,47 @@ fn audio_sink(id: u8, stream: i32, sampling_rate: u32, channels: u32) -> Service
 fn video_configs(base: &VideoConfiguration, codecs: &[VideoCodec]) -> Vec<VideoConfiguration> {
     codecs
         .iter()
-        .map(|c| VideoConfiguration {
-            video_codec_type: Some(match c {
-                VideoCodec::H264 => media_codec::VIDEO_H264_BP,
-                VideoCodec::H265 => media_codec::VIDEO_H265,
-                VideoCodec::Vp9 => media_codec::VIDEO_VP9,
-                VideoCodec::Av1 => media_codec::VIDEO_AV1,
-            }),
-            ..*base
-        })
+        .map(|c| VideoConfiguration { codec_type: Some(c.media_codec()), ..base.clone() })
         .collect()
 }
 
-/// The identity goes in the deprecated fields as well, older phones read it there.
-#[allow(deprecated)]
+/// The car's identity goes in the flat fields as well, the phone reads them when car_info is
+/// missing.
 pub fn build(cfg: &AaConfig) -> Discovery {
     let v_w = cfg.video_width.unwrap_or(1280);
     let dpi = cfg.video_dpi.unwrap_or(140);
     let v_res = resolution(v_w);
-    let v_fps = if cfg.video_fps.unwrap_or(30) == 60 { video_fps::FPS60 } else { video_fps::FPS30 };
+    let v_fps = frame_rate(cfg.video_fps.unwrap_or(30));
     let main = Geometry::main(cfg);
-    let main_content = ui_insets(cfg.main_safe_area);
+    let main_content = display_insets(cfg.main_safe_area);
 
     let mut channels = Vec::new();
 
     let base = VideoConfiguration {
-        codec_resolution: Some(v_res),
-        frame_rate: Some(v_fps),
-        width_margin: Some(main.width_margin),
-        height_margin: Some(main.height_margin),
-        density: Some(dpi),
+        codec_resolution: Some(v_res as i32),
+        frame_rate: Some(v_fps as i32),
+        margin_width: Some(main.width_margin),
+        margin_height: Some(main.height_margin),
+        density_dpi: Some(dpi),
         pixel_aspect_ratio_e4: Some(cfg.pixel_aspect_ratio_e4.unwrap_or(10000)),
         ui_config: Some(UiConfig {
-            margins: Some(ui_insets(main.inset)),
+            margins: Some(display_insets(main.inset)),
             content_insets: Some(main_content),
             stable_content_insets: Some(main_content),
-            ui_theme: None,
+            ..Default::default()
         }),
         ..Default::default()
     };
-    let mut video_codecs = vec![VideoCodec::H264];
-    if cfg.hevc_supported {
-        video_codecs.push(VideoCodec::H265);
-    }
+    let codec = VideoCodec::for_display(cfg);
+    let video_codecs = vec![codec];
     if debug() {
-        let names: Vec<_> = video_codecs.iter().map(|c| c.name()).collect();
-        println!("[Session] advertising codecs: {}", names.join(", "));
+        println!("[Session] advertising codec: {}", codec.name());
     }
     channels.push(Service {
         id: i32::from(ch::VIDEO),
-        media_sink_service: Some(MediaSinkService {
-            available_type: Some(media_codec::VIDEO_H264_BP),
-            available_while_in_call: Some(true),
-            video_configs: video_configs(&base, &video_codecs),
+        media_sink: Some(MediaSinkService {
+            codec_type: Some(codec.media_codec()),
+            video_configurations: video_configs(&base, &video_codecs),
             ..Default::default()
         }),
         ..Default::default()
@@ -238,44 +250,33 @@ pub fn build(cfg: &AaConfig) -> Discovery {
         let tier = (cfg.cluster_tier_width.unwrap_or(c_w), cfg.cluster_tier_height.unwrap_or(c_h));
         let cluster_res = resolution_of(tier.0, tier.1).unwrap_or(v_res);
         let cluster_fps = match cfg.cluster_fps {
-            60 => video_fps::FPS60,
-            30 => video_fps::FPS30,
+            30 | 60 => frame_rate(cfg.cluster_fps),
             _ => v_fps,
         };
         let geometry = Geometry::new(tier, (c_w, c_h), cfg.cluster_view_area);
-        let content = ui_insets(cfg.cluster_safe_area);
+        let content = display_insets(cfg.cluster_safe_area);
         let base = VideoConfiguration {
-            codec_resolution: Some(cluster_res),
-            frame_rate: Some(cluster_fps),
-            width_margin: Some(geometry.width_margin),
-            height_margin: Some(geometry.height_margin),
-            density: Some(cfg.cluster_dpi.unwrap_or(dpi)),
+            codec_resolution: Some(cluster_res as i32),
+            frame_rate: Some(cluster_fps as i32),
+            margin_width: Some(geometry.width_margin),
+            margin_height: Some(geometry.height_margin),
+            density_dpi: Some(cfg.cluster_dpi.unwrap_or(dpi)),
             pixel_aspect_ratio_e4: Some(cfg.cluster_pixel_aspect_ratio_e4.unwrap_or(10000)),
             ui_config: Some(UiConfig {
-                margins: Some(ui_insets(geometry.inset)),
+                margins: Some(display_insets(geometry.inset)),
                 content_insets: Some(content),
                 stable_content_insets: Some(content),
-                ui_theme: None,
+                ..Default::default()
             }),
             ..Default::default()
         };
-        cluster_codecs.push(VideoCodec::H264);
-        for (on, codec) in [
-            (cfg.hevc_supported, VideoCodec::H265),
-            (cfg.vp9_supported, VideoCodec::Vp9),
-            (cfg.av1_supported, VideoCodec::Av1),
-        ] {
-            if on {
-                cluster_codecs.push(codec);
-            }
-        }
+        cluster_codecs.push(codec);
         channels.push(Service {
             id: i32::from(ch::CLUSTER_VIDEO),
-            media_sink_service: Some(MediaSinkService {
-                available_type: Some(media_codec::VIDEO_H264_BP),
-                available_while_in_call: Some(true),
-                video_configs: video_configs(&base, &cluster_codecs),
-                display_type: Some(display_type::CLUSTER),
+            media_sink: Some(MediaSinkService {
+                codec_type: Some(codec.media_codec()),
+                video_configurations: video_configs(&base, &cluster_codecs),
+                display_type: Some(DisplayType::Cluster as i32),
                 display_id: Some(1),
                 ..Default::default()
             }),
@@ -283,25 +284,29 @@ pub fn build(cfg: &AaConfig) -> Discovery {
         });
         channels.push(Service {
             id: i32::from(ch::CLUSTER_INPUT),
-            input_source_service: Some(InputSourceService {
-                display_id: Some(1),
-                ..Default::default()
-            }),
+            input_source: Some(InputSourceService { display_id: Some(1), ..Default::default() }),
             ..Default::default()
         });
     }
 
     if !cfg.disable_audio_output {
-        channels.push(audio_sink(ch::MEDIA_AUDIO, audio_stream::MEDIA, 48000, 2));
-        channels.push(audio_sink(ch::SPEECH_AUDIO, audio_stream::GUIDANCE, 16000, 1));
+        channels.push(audio_sink(ch::MEDIA_AUDIO, AudioStreamType::Media as i32, 48000, 2));
+        channels.push(audio_sink(ch::SPEECH_AUDIO, AudioStreamType::Guidance as i32, 16000, 1));
+        if cfg.telephony_audio {
+            // Probe: LIVI_AA_TELEPHONY_TYPE puts another stream type on the same channel.
+            let stream = std::env::var("LIVI_AA_TELEPHONY_TYPE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(AudioStreamType::Telephony as i32);
+            channels.push(audio_sink(ch::TELEPHONY_AUDIO, stream, 16000, 1));
+        }
     }
-    channels.push(audio_sink(ch::SYSTEM_AUDIO, audio_stream::SYSTEM, 16000, 1));
+    channels.push(audio_sink(ch::SYSTEM_AUDIO, AudioStreamType::SystemAudio as i32, 16000, 1));
     channels.push(Service {
         id: i32::from(ch::MIC_INPUT),
-        media_source_service: Some(MediaSourceService {
-            available_type: Some(media_codec::AUDIO_PCM),
-            audio_config: Some(audio(16000, 1)),
-            available_while_in_call: Some(true),
+        media_source: Some(MediaSourceService {
+            codec_type: Some(MediaCodecType::AudioPcm as i32),
+            audio_configuration: Some(audio(16000, 1)),
         }),
         ..Default::default()
     });
@@ -309,11 +314,14 @@ pub fn build(cfg: &AaConfig) -> Discovery {
     let fuel_types = if cfg.fuel_types.is_empty() { vec![1] } else { cfg.fuel_types.clone() };
     channels.push(Service {
         id: i32::from(ch::SENSOR),
-        sensor_source_service: Some(SensorSourceService {
-            sensors: SENSORS.iter().map(|t| Sensor { sensor_type: *t }).collect(),
+        sensor_source: Some(SensorSourceService {
+            supported_sensors: SENSORS
+                .iter()
+                .map(|t| SupportedSensor { sensor_type: *t as i32 })
+                .collect(),
             location_characterization: Some(LOCATION_CHARACTERIZATION),
-            supported_fuel_types: fuel_types,
-            supported_ev_connector_types: cfg.ev_connector_types.clone(),
+            fuel_types,
+            ev_connector_types: cfg.ev_connector_types.clone(),
         }),
         ..Default::default()
     });
@@ -321,9 +329,9 @@ pub fn build(cfg: &AaConfig) -> Discovery {
     let (touch_w, touch_h) = main.touch_size();
     channels.push(Service {
         id: i32::from(ch::INPUT),
-        input_source_service: Some(InputSourceService {
-            keycodes_supported: KEYCODES.to_vec(),
-            touchscreen: vec![TouchScreen {
+        input_source: Some(InputSourceService {
+            supported_keycodes: KEYCODES.iter().map(|k| *k as i32).collect(),
+            touchscreens: vec![Touchscreen {
                 width: touch_w as i32,
                 height: touch_h as i32,
                 ..Default::default()
@@ -335,14 +343,14 @@ pub fn build(cfg: &AaConfig) -> Discovery {
 
     channels.push(Service {
         id: i32::from(ch::BLUETOOTH),
-        bluetooth_service: Some(BluetoothService {
+        bluetooth: Some(BluetoothService {
             car_address: cfg
                 .bt_mac_address
                 .clone()
                 .unwrap_or_else(|| "00:00:00:00:00:00".to_string()),
             supported_pairing_methods: vec![
-                bt_pairing_method::PIN,
-                bt_pairing_method::NUMERIC_COMPARISON,
+                BluetoothPairingMethod::Pin as i32,
+                BluetoothPairingMethod::NumericComparison as i32,
             ],
         }),
         ..Default::default()
@@ -350,29 +358,31 @@ pub fn build(cfg: &AaConfig) -> Discovery {
 
     channels.push(Service {
         id: i32::from(ch::NAVIGATION),
-        navigation_status_service: Some(NavigationStatusService {
+        navigation_status: Some(NavigationStatusService {
             minimum_interval_ms: 500,
-            r#type: 1,
-            image_options: Some(ImageOptions { width: 256, height: 256, colour_depth_bits: 32 }),
+            cluster_type: NavigationClusterType::Image as i32,
+            image_options: Some(NavigationImageOptions {
+                height: 256,
+                width: 256,
+                color_depth_bits: 32,
+            }),
         }),
         ..Default::default()
     });
     channels.push(Service {
         id: i32::from(ch::MEDIA_INFO),
-        media_playback_service: Some(MediaPlaybackStatusService {}),
+        media_playback: Some(MediaPlaybackStatusService {}),
         ..Default::default()
     });
     channels.push(Service {
         id: i32::from(ch::PHONE_STATUS),
-        phone_status_service: Some(PhoneStatusService {}),
+        phone_status: Some(PhoneStatusService {}),
         ..Default::default()
     });
     if let Some(bssid) = cfg.wifi_bssid.as_ref().filter(|b| !b.is_empty()) {
         channels.push(Service {
             id: i32::from(ch::WIFI),
-            wifi_projection_service: Some(WifiProjectionService {
-                car_wifi_bssid: Some(bssid.clone()),
-            }),
+            wifi_projection: Some(WifiProjectionService { car_wifi_bssid: Some(bssid.clone()) }),
             ..Default::default()
         });
     }
@@ -386,10 +396,10 @@ pub fn build(cfg: &AaConfig) -> Discovery {
     let version = || Some("1.0".to_string());
     let channel_count = channels.len();
     let sdr = ServiceDiscoveryResponse {
-        channels,
-        make: make(),
+        services: channels,
+        manufacturer: make(),
         model: model(),
-        year: year(),
+        model_year: year(),
         vehicle_id: vehicle(),
         driver_position: Some(i32::from(cfg.driver_position)),
         head_unit_make: make(),
@@ -397,27 +407,19 @@ pub fn build(cfg: &AaConfig) -> Discovery {
         head_unit_software_build: build_no(),
         head_unit_software_version: version(),
         can_play_native_media_during_vr: Some(true),
-        session_configuration: None,
+        session_flags: None,
         display_name: Some(cfg.hu_name.clone().unwrap_or_else(|| "LIVI".to_string())),
-        probe_for_support: Some(false),
-        connection_configuration: Some(ConnectionConfiguration {
-            ping_configuration: Some(PingConfiguration {
-                timeout_ms: Some(5000),
-                interval_ms: Some(1500),
-                high_latency_threshold_ms: Some(500),
-                tracked_ping_count: Some(5),
-            }),
-            wireless_tcp_configuration: None,
-        }),
-        headunit_info: Some(HeadUnitInfo {
-            make: make(),
+        probe_only: Some(false),
+        car_info: Some(CarInfo {
+            manufacturer: make(),
             model: model(),
-            year: year(),
+            model_year: year(),
             vehicle_id: vehicle(),
             head_unit_make: make(),
             head_unit_model: hu_model(),
             head_unit_software_build: build_no(),
             head_unit_software_version: version(),
+            vehicle_type: None,
         }),
     };
     let buf = encode(&sdr);
@@ -440,7 +442,7 @@ mod tests {
     }
 
     fn ids(sdr: &ServiceDiscoveryResponse) -> Vec<i32> {
-        sdr.channels.iter().map(|c| c.id).collect()
+        sdr.services.iter().map(|c| c.id).collect()
     }
 
     #[test]
@@ -451,10 +453,21 @@ mod tests {
         let sdr = decoded(&AaConfig::default());
         assert_eq!(ids(&sdr), [3, 4, 5, 6, 9, 1, 8, 10, 12, 13, 14]);
         assert_eq!(sdr.display_name.as_deref(), Some("LIVI"));
-        let bt = sdr.channels[7].bluetooth_service.as_ref().unwrap();
+        let bt = sdr.services[7].bluetooth.as_ref().unwrap();
         assert_eq!(bt.car_address, "00:00:00:00:00:00");
-        let touch = &sdr.channels[6].input_source_service.as_ref().unwrap().touchscreen[0];
+        let touch = &sdr.services[6].input_source.as_ref().unwrap().touchscreens[0];
         assert_eq!((touch.width, touch.height), (1280, 720));
+    }
+
+    #[test]
+    fn call_audio_is_offered_only_when_asked() {
+        let sdr = decoded(&AaConfig { telephony_audio: true, ..Default::default() });
+        assert_eq!(ids(&sdr), [3, 4, 5, 7, 6, 9, 1, 8, 10, 12, 13, 14]);
+        let call = sdr.services[3].media_sink.as_ref().unwrap();
+        assert_eq!(call.audio_stream_type, Some(AudioStreamType::Telephony as i32));
+        let muted =
+            AaConfig { telephony_audio: true, disable_audio_output: true, ..Default::default() };
+        assert!(!ids(&decoded(&muted)).contains(&7));
     }
 
     #[test]
@@ -472,27 +485,35 @@ mod tests {
             ..Default::default()
         };
         let d = build(&cfg);
-        assert_eq!(d.video_codecs, [VideoCodec::H264, VideoCodec::H265]);
-        assert_eq!(
-            d.cluster_codecs,
-            [VideoCodec::H264, VideoCodec::H265, VideoCodec::Vp9, VideoCodec::Av1]
-        );
+        assert_eq!(d.video_codecs, [VideoCodec::H265]);
+        assert_eq!(d.cluster_codecs, [VideoCodec::H265]);
         let sdr = decoded(&cfg);
         assert_eq!(ids(&sdr), [3, 19, 20, 6, 9, 1, 8, 10, 12, 13, 14, 18]);
-        let cluster = sdr.channels[1].media_sink_service.as_ref().unwrap();
-        assert_eq!(cluster.video_configs[0].codec_resolution, Some(video_resolution::R1280X720));
-        assert_eq!(cluster.video_configs[0].height_margin, Some(0));
-        assert_eq!(cluster.video_configs[0].width_margin, Some(0));
-        assert_eq!(cluster.video_configs[0].frame_rate, Some(video_fps::FPS60));
+        for display in &sdr.services[..2] {
+            let sink = display.media_sink.as_ref().unwrap();
+            assert_eq!(sink.codec_type, Some(MediaCodecType::VideoH265 as i32));
+            assert!(sink.video_configurations.iter().all(|v| v.codec_type == sink.codec_type));
+        }
+        let cluster = &sdr.services[1].media_sink.as_ref().unwrap().video_configurations[0];
+        assert_eq!(
+            cluster.codec_resolution,
+            Some(VideoCodecResolution::VideoCodecResolution1280x720 as i32)
+        );
+        assert_eq!(cluster.margin_height, Some(0));
+        assert_eq!(cluster.margin_width, Some(0));
+        assert_eq!(cluster.frame_rate, Some(VideoFrameRate::VideoFrameRate60 as i32));
         let tiered =
             AaConfig { cluster_tier_width: Some(800), cluster_tier_height: Some(480), ..cfg };
         let sdr = decoded(&tiered);
-        let cluster = sdr.channels[1].media_sink_service.as_ref().unwrap();
-        assert_eq!(cluster.video_configs[0].codec_resolution, Some(video_resolution::R800X480));
-        assert_eq!(cluster.video_configs[0].height_margin, Some(80));
-        assert_eq!(VideoCodec::of_media_codec(media_codec::VIDEO_AV1), VideoCodec::Av1);
+        let cluster = &sdr.services[1].media_sink.as_ref().unwrap().video_configurations[0];
+        assert_eq!(
+            cluster.codec_resolution,
+            Some(VideoCodecResolution::VideoCodecResolution800x480 as i32)
+        );
+        assert_eq!(cluster.margin_height, Some(80));
+        assert_eq!(VideoCodec::of_media_codec(MediaCodecType::VideoAv1 as i32), VideoCodec::Av1);
         assert_eq!(VideoCodec::of_media_codec(0), VideoCodec::H264);
-        assert_eq!(resolution(3840), 5);
-        assert_eq!(resolution(2560), 4);
+        assert_eq!(resolution(3840), VideoCodecResolution::VideoCodecResolution3840x2160);
+        assert_eq!(resolution(2560), VideoCodecResolution::VideoCodecResolution2560x1440);
     }
 }

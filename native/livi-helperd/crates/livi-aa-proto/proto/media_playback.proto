@@ -1,0 +1,55 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+enum MediaPlaybackStatusMessageId {
+  MEDIA_PLAYBACK_STATUS_MESSAGE_ID_STATUS = 32769;
+  MEDIA_PLAYBACK_STATUS_MESSAGE_ID_INPUT = 32770;
+  MEDIA_PLAYBACK_STATUS_MESSAGE_ID_METADATA = 32771;
+}
+
+enum InstrumentClusterAction {
+  INSTRUMENT_CLUSTER_ACTION_VALUE_0 = 0;
+  INSTRUMENT_CLUSTER_ACTION_VALUE_1 = 1;
+  INSTRUMENT_CLUSTER_ACTION_VALUE_2 = 2;
+  INSTRUMENT_CLUSTER_ACTION_VALUE_3 = 3;
+  INSTRUMENT_CLUSTER_ACTION_VALUE_4 = 4;
+  INSTRUMENT_CLUSTER_ACTION_VALUE_5 = 5;
+  INSTRUMENT_CLUSTER_ACTION_VALUE_6 = 6;
+  INSTRUMENT_CLUSTER_ACTION_VALUE_7 = 7;
+}
+
+enum MediaPlaybackState {
+  MEDIA_PLAYBACK_STATE_STOPPED = 1;
+  MEDIA_PLAYBACK_STATE_PLAYING = 2;
+  MEDIA_PLAYBACK_STATE_PAUSED = 3;
+}
+
+message InstrumentClusterInputNotification {
+  required InstrumentClusterAction action = 1;
+}
+
+message MediaPlaybackMetadataNotification {
+  optional string title = 1;
+  optional string subtitle = 2;
+  optional string description = 3;
+  optional bytes album_art_png = 4;
+  optional string playlist = 5;
+  optional uint32 duration_seconds = 6;
+  optional int32 rating = 7;
+}
+
+message MediaPlaybackStatusNotification {
+  optional MediaPlaybackState state = 1;
+  optional string media_app_name = 2;
+  optional uint32 playback_position_seconds = 3;
+  optional bool shuffle_enabled = 4;
+  optional bool repeat_enabled = 5;
+  optional bool repeat_one_enabled = 6;
+}
+
+message MediaPlaybackStatusService {
+}

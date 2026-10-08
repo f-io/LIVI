@@ -11,7 +11,6 @@ use iap2_csm::messages::location::*;
 use iap2_csm::messages::now_playing::*;
 use iap2_csm::messages::power::PowerSourceUpdate;
 use iap2_csm::messages::vehicle_status::*;
-use iap2_csm::messages::wifi::SecurityType;
 use livi_runtime::bringup::{BringupEvent, CpConfig, OnCable, run_accessory};
 use livi_runtime::framing::frame_msg_id;
 use livi_runtime::ident::{Identity, Transport};
@@ -78,8 +77,7 @@ fn cp_config() -> CpConfig {
         wifi_iface: "nonexistent0".into(),
         ssid: "LIVI".into(),
         passphrase: "12345678".into(),
-        channel: 36,
-        security_type: SecurityType::WpaWpa2,
+        channel: livi_wifi::Channel::of_number(36),
         airplay_port: 7000,
         source_version: "950.7.1".into(),
         public_key: String::new(),

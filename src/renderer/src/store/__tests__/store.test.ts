@@ -83,6 +83,7 @@ const state = (config: unknown, main = 'livi'): State =>
       btAdapters: [],
       dongle: null,
       linkSpeed: null,
+      wifiBands: [],
       wifiChannels: [],
       wifiCountries: [],
       displayModes: [],

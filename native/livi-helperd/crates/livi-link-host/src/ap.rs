@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::time::Duration;
 
+use livi_wifi::{Channel, OnAir, Security};
+
 use crate::link;
 
 const TIMEOUT: Duration = Duration::from_secs(3);
@@ -118,12 +120,21 @@ pub fn status_field(key: &str) -> Option<String> {
     status()?.remove(key)
 }
 
-pub fn on_air() -> Option<(String, u8)> {
-    let mut status = status()?;
+/// The dongle has no 6 GHz, so its bare channel number is enough. A dongle from before it
+/// told its security runs WPA2.
+pub fn on_air() -> Option<OnAir> {
+    on_air_in(status()?)
+}
+
+fn on_air_in(mut status: HashMap<String, String>) -> Option<OnAir> {
     if status.get("state")? != "on" {
         return None;
     }
-    Some((status.remove("ssid")?, status.get("channel")?.parse().ok()?))
+    Some(OnAir {
+        ssid: status.remove("ssid")?,
+        channel: Channel::of_number(status.get("channel")?.parse().ok()?),
+        security: status.get("security").and_then(|s| Security::of_name(s)).unwrap_or_default(),
+    })
 }
 
 pub fn ready(within: Duration) -> bool {
@@ -162,6 +173,31 @@ pub fn bt_mac() -> Option<[u8; 6]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn status_of(text: &str) -> HashMap<String, String> {
+        fields(text.as_bytes())
+    }
+
+    #[test]
+    fn the_dongle_on_air_carries_its_channel_and_security() {
+        let live =
+            on_air_in(status_of("state on\nssid LIVI\nchannel 149\nsecurity wpa2-wpa3\nok\n"));
+        assert_eq!(
+            live,
+            Some(OnAir {
+                ssid: "LIVI".into(),
+                channel: Channel::of_number(149),
+                security: Security::Wpa2Wpa3
+            })
+        );
+    }
+
+    #[test]
+    fn a_dongle_that_names_no_security_runs_wpa2() {
+        let live = on_air_in(status_of("state on\nssid LIVI\nchannel 6\nok\n")).unwrap();
+        assert_eq!(live.security, Security::Wpa2);
+        assert_eq!(on_air_in(status_of("state off\nssid LIVI\nchannel 6\nok\n")), None);
+    }
 
     struct Wire {
         answer: std::io::Cursor<Vec<u8>>,

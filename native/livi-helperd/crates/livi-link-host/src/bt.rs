@@ -32,7 +32,7 @@ pub fn attach(
         loop {
             match tunnel(&on_adapter) {
                 Ok(true) => on_lost(),
-                Ok(false) => {}
+                Ok(false) | Err(TunnelError::NoDongle(_)) => {}
                 Err(e) => eprintln!("[bt] {e}"),
             }
             std::thread::sleep(RETRY);
@@ -40,15 +40,35 @@ pub fn attach(
     });
 }
 
+#[derive(Debug)]
+pub enum TunnelError {
+    /// Most hosts never have a dongle, so this is no fault.
+    NoDongle(std::io::Error),
+    Failed(String),
+}
+
+impl std::fmt::Display for TunnelError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoDongle(e) => write!(f, "no dongle in reach: {e}"),
+            Self::Failed(e) => f.write_str(e),
+        }
+    }
+}
+
 /// The bool says whether an adapter was made.
-pub fn tunnel(on_adapter: &(impl Fn(u16) + Sync)) -> Result<bool, String> {
+pub fn tunnel(on_adapter: &(impl Fn(u16) + Sync)) -> Result<bool, TunnelError> {
     let stream = livi_net::connect((link::LINK_NAME, livi_net::port::HCI), CONNECT_TIMEOUT)
-        .map_err(|e| format!("dongle: {e}"))?;
-    stream.set_nodelay(true).map_err(|e| format!("nodelay: {e}"))?;
+        .map_err(TunnelError::NoDongle)?;
+    let failed = TunnelError::Failed;
+    stream.set_nodelay(true).map_err(|e| failed(format!("nodelay: {e}")))?;
     notice_loss(&stream);
-    let mut dev =
-        OpenOptions::new().read(true).write(true).open(VHCI).map_err(|e| format!("{VHCI}: {e}"))?;
-    dev.write_all(&CREATE_PRIMARY).map_err(|e| format!("{VHCI}: no adapter: {e}"))?;
+    let mut dev = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(VHCI)
+        .map_err(|e| failed(format!("{VHCI}: {e}")))?;
+    dev.write_all(&CREATE_PRIMARY).map_err(|e| failed(format!("{VHCI}: no adapter: {e}")))?;
     let made = AtomicBool::new(false);
     pump(dev, stream, &|index| {
         made.store(true, Ordering::Relaxed);

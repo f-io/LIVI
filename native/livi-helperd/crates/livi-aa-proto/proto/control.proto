@@ -1,0 +1,184 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+import "common.proto";
+
+enum ControlMessageId {
+  CONTROL_MESSAGE_ID_VERSION_REQUEST = 1;
+  CONTROL_MESSAGE_ID_VERSION_RESPONSE = 2;
+  CONTROL_MESSAGE_ID_ENCAPSULATED_SSL = 3;
+  CONTROL_MESSAGE_ID_AUTH_COMPLETE = 4;
+  CONTROL_MESSAGE_ID_SERVICE_DISCOVERY_REQUEST = 5;
+  CONTROL_MESSAGE_ID_SERVICE_DISCOVERY_RESPONSE = 6;
+  CONTROL_MESSAGE_ID_CHANNEL_OPEN_REQUEST = 7;
+  CONTROL_MESSAGE_ID_CHANNEL_OPEN_RESPONSE = 8;
+  CONTROL_MESSAGE_ID_CHANNEL_CLOSE_NOTIFICATION = 9;
+  CONTROL_MESSAGE_ID_PING_REQUEST = 11;
+  CONTROL_MESSAGE_ID_PING_RESPONSE = 12;
+  CONTROL_MESSAGE_ID_NAV_FOCUS_REQUEST = 13;
+  CONTROL_MESSAGE_ID_NAV_FOCUS_NOTIFICATION = 14;
+  CONTROL_MESSAGE_ID_BYEBYE_REQUEST = 15;
+  CONTROL_MESSAGE_ID_BYEBYE_RESPONSE = 16;
+  CONTROL_MESSAGE_ID_VOICE_SESSION_NOTIFICATION = 17;
+  CONTROL_MESSAGE_ID_AUDIO_FOCUS_REQUEST = 18;
+  CONTROL_MESSAGE_ID_AUDIO_FOCUS_NOTIFICATION = 19;
+  CONTROL_MESSAGE_ID_CAR_CONNECTED_DEVICES_REQUEST = 20;
+  CONTROL_MESSAGE_ID_CAR_CONNECTED_DEVICES_RESPONSE = 21;
+  CONTROL_MESSAGE_ID_USER_SWITCH_REQUEST = 22;
+  CONTROL_MESSAGE_ID_BATTERY_STATUS_NOTIFICATION = 23;
+  CONTROL_MESSAGE_ID_CALL_AVAILABILITY_STATUS = 24;
+  CONTROL_MESSAGE_ID_USER_SWITCH_RESPONSE = 25;
+  CONTROL_MESSAGE_ID_SERVICE_DISCOVERY_UPDATE = 26;
+  CONTROL_MESSAGE_ID_UNEXPECTED_MESSAGE = 255;
+  CONTROL_MESSAGE_ID_INTERNAL_ERROR = 4095;
+  CONTROL_MESSAGE_ID_HARD_SHUTDOWN = 57005;
+  CONTROL_MESSAGE_ID_FRAMING_ERROR = 65535;
+}
+
+enum AudioFocusRequestType {
+  AUDIO_FOCUS_REQUEST_TYPE_GAIN = 1;
+  AUDIO_FOCUS_REQUEST_TYPE_GAIN_TRANSIENT = 2;
+  AUDIO_FOCUS_REQUEST_TYPE_GAIN_TRANSIENT_MAY_DUCK = 3;
+  AUDIO_FOCUS_REQUEST_TYPE_RELEASE = 4;
+}
+
+enum AudioFocusState {
+  AUDIO_FOCUS_STATE_INVALID = 0;
+  AUDIO_FOCUS_STATE_GAIN = 1;
+  AUDIO_FOCUS_STATE_GAIN_TRANSIENT = 2;
+  AUDIO_FOCUS_STATE_LOSS = 3;
+  AUDIO_FOCUS_STATE_LOSS_TRANSIENT_CAN_DUCK = 4;
+  AUDIO_FOCUS_STATE_LOSS_TRANSIENT = 5;
+  AUDIO_FOCUS_STATE_GAIN_MEDIA_ONLY = 6;
+  AUDIO_FOCUS_STATE_GAIN_TRANSIENT_GUIDANCE_ONLY = 7;
+}
+
+enum ByeByeReason {
+  BYE_BYE_REASON_USER_SELECTION = 1;
+  BYE_BYE_REASON_DEVICE_SWITCH = 2;
+  BYE_BYE_REASON_NOT_SUPPORTED = 3;
+  BYE_BYE_REASON_NOT_CURRENTLY_SUPPORTED = 4;
+  BYE_BYE_REASON_PROBE_SUPPORTED = 5;
+  BYE_BYE_REASON_WIRELESS_PROJECTION_DISABLED = 6;
+  BYE_BYE_REASON_POWER_DOWN = 7;
+  BYE_BYE_REASON_USER_PROFILE_SWITCH = 8;
+}
+
+enum DriverPosition {
+  DRIVER_POSITION_LEFT = 0;
+  DRIVER_POSITION_RIGHT = 1;
+  DRIVER_POSITION_CENTER = 2;
+  DRIVER_POSITION_UNKNOWN = 3;
+}
+
+enum NavigationFocusType {
+  NAVIGATION_FOCUS_TYPE_NATIVE = 1;
+  NAVIGATION_FOCUS_TYPE_PROJECTED = 2;
+}
+
+enum VoiceSessionStatus {
+  VOICE_SESSION_STATUS_START = 1;
+  VOICE_SESSION_STATUS_END = 2;
+}
+
+message AudioFocusNotification {
+  required AudioFocusState focus_state = 1;
+  optional bool unsolicited = 2;
+}
+
+message AudioFocusRequest {
+  required AudioFocusRequestType request_type = 1;
+}
+
+message AuthCompleteNotification {
+  required int32 status = 1;
+}
+
+message BatteryStatusNotification {
+  required uint32 battery_level = 1;
+  optional uint32 time_remaining_seconds = 2;
+  optional bool in_low_power_mode = 3;
+}
+
+message ByeByeRequest {
+  required ByeByeReason reason = 1;
+}
+
+message ByeByeResponse {
+}
+
+message CallAvailabilityNotification {
+  optional bool call_available = 1;
+}
+
+message CarInfo {
+  optional string manufacturer = 1;
+  optional string model = 2;
+  optional string model_year = 3;
+  optional string vehicle_id = 4;
+  optional string head_unit_make = 5;
+  optional string head_unit_model = 6;
+  optional string head_unit_software_build = 7;
+  optional string head_unit_software_version = 8;
+  optional int32 vehicle_type = 9;
+}
+
+message ChannelCloseNotification {
+}
+
+message ChannelOpenRequest {
+  required sint32 priority = 1;
+  required int32 service_id = 2;
+}
+
+message ChannelOpenResponse {
+  required MessageStatus status = 1;
+}
+
+message ConnectionConfiguration {
+  optional PingConfiguration ping_configuration = 1;
+}
+
+message HardShutdownNotification {
+}
+
+message NavigationFocusNotification {
+  required NavigationFocusType focus_type = 1;
+}
+
+message NavigationFocusRequest {
+  optional NavigationFocusType focus_type = 1;
+}
+
+message PingConfiguration {
+  optional uint32 timeout_ms = 1;
+  optional uint32 interval_ms = 2;
+  optional uint32 unknown_3 = 3;
+  optional uint32 unknown_4 = 4;
+}
+
+message PingRequest {
+  required int64 timestamp_ns = 1;
+  optional bool requests_bug_report = 2;
+  optional bytes payload = 3;
+}
+
+message PingResponse {
+  required int64 timestamp_ns = 1;
+  optional bytes payload = 2;
+}
+
+message VersionRequestOptions {
+}
+
+message VersionResponseOptions {
+  optional ConnectionConfiguration connection_configuration = 1;
+}
+
+message VoiceSessionNotification {
+  optional VoiceSessionStatus status = 1;
+}

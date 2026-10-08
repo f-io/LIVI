@@ -18,7 +18,7 @@ use crate::log::detail;
 use crate::manager::{AaEvent, SessionId};
 use crate::media::{AaMedia, AudioKind, AudioOutput};
 use crate::sensors::Sensor;
-use crate::session::{BYEBYE_USER_SELECTION, Out, PING_INTERVAL, Session, SessionEvent, Timer};
+use crate::session::{BYEBYE_USER_SELECTION, Out, Session, SessionEvent, Timer};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SessionCmd {
@@ -188,13 +188,12 @@ impl<M: AaMedia> Phone<M> {
                 Out::End => self.link.end(),
                 Out::Destroy => self.link.destroy(),
                 Out::Event(e) => self.on_session_event(e),
-                Out::Ping(true) => {
-                    let mut i =
-                        tokio::time::interval_at(Instant::now() + PING_INTERVAL, PING_INTERVAL);
+                Out::Ping(Some(every)) => {
+                    let mut i = tokio::time::interval_at(Instant::now() + every, every);
                     i.set_missed_tick_behavior(MissedTickBehavior::Delay);
                     self.ping = Some(i);
                 }
-                Out::Ping(false) => self.ping = None,
+                Out::Ping(None) => self.ping = None,
                 Out::After(d, t) => self.timers.push((Instant::now() + d, t)),
                 Out::ShutdownDone => self.shutdown_done = true,
             }

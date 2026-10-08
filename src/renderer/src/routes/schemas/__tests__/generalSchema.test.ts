@@ -62,7 +62,7 @@ describe('generalSchema', () => {
     )
   })
 
-  test('wifi route contains expected frequency options', () => {
+  test('wifi route loads the frequency options from the radio', async () => {
     const wifi = schema.children[0].children[2]
     expect(wifi).toEqual(
       expect.objectContaining({
@@ -79,7 +79,8 @@ describe('generalSchema', () => {
         displayValue: true
       })
     )
-    expect(select.options).toEqual([
+    expect(select.options).toEqual([])
+    expect(await select.loadOptions()).toEqual([
       { label: '2.4 GHz', value: '2.4ghz' },
       { label: '5 GHz', value: '5ghz' }
     ])

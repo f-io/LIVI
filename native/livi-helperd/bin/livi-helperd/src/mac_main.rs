@@ -5,11 +5,10 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
-use iap2_csm::messages::wifi::SecurityType;
 use iap2_link::LinkConfig;
 use iap2_mfi::{NcmCoprocessor, NoCoprocessor};
 use livi_runtime::bonjour::Bonjour;
-use livi_runtime::bringup::{CpConfig, run_accessory};
+use livi_runtime::bringup::{AskOnAir, CpConfig, run_accessory};
 use livi_runtime::driver::spawn_link_stream;
 use livi_runtime::ident::{Identity, Transport};
 use livi_runtime::livi_sock::{
@@ -18,6 +17,7 @@ use livi_runtime::livi_sock::{
 use livi_runtime::mfi_async::SharedCoprocessor;
 use livi_runtime::state::HelperState;
 use livi_runtime::vehicle::Fuels;
+use livi_wifi::Channel;
 
 use crate::link::LinkPresence;
 
@@ -54,8 +54,7 @@ fn cp_config() -> (CpConfig, Identity) {
         wifi_iface: String::new(),
         ssid: name.clone(),
         passphrase: env_s("LIVI_PASSPHRASE", "12345678"),
-        channel: env_s("LIVI_CHANNEL", "36").parse().unwrap_or(36),
-        security_type: SecurityType::WpaWpa2,
+        channel: Channel::of_number(env_s("LIVI_CHANNEL", "36").parse().unwrap_or(36)),
         airplay_port: env_s("LIVI_CP_AIRPLAY_PORT", "").parse().unwrap_or(0),
         source_version: env_s("LIVI_CP_SOURCE_VERSION", "950.7.1"),
         public_key: pi.clone(),
@@ -84,7 +83,8 @@ fn wireless_config(base: &CpConfig) -> CpConfig {
             .unwrap_or_default(),
         channel: livi_link_host::ap::status_field("channel")
             .and_then(|c| c.parse().ok())
-            .unwrap_or(base.channel),
+            .map_or(base.channel, Channel::of_number),
+        ap_on_air: Some(livi_link_host::ap::on_air as AskOnAir),
         transport: Transport::Wireless,
         ..base.clone()
     }
