@@ -22,6 +22,8 @@ pub struct Fanout {
     awaiting_keyframe: bool,
     cache: Vec<Vec<u8>>,
     cache_valid: bool,
+    params: Vec<Vec<u8>>,
+    params_closed: bool,
     stats: Stats,
 }
 
@@ -40,6 +42,8 @@ impl Fanout {
             awaiting_keyframe: true,
             cache: Vec::new(),
             cache_valid: false,
+            params: Vec::new(),
+            params_closed: false,
             stats: Stats::default(),
         }
     }
@@ -68,9 +72,18 @@ impl Fanout {
         self.awaiting_keyframe
     }
 
-    /// The frames a new player is primed with.
     pub fn cached(&self) -> &[Vec<u8>] {
         if self.cache_valid { &self.cache } else { &[] }
+    }
+
+    /// The last parameter sets the stream sent, kept across a restart.
+    pub fn params(&self) -> &[Vec<u8>] {
+        &self.params
+    }
+
+    /// The frames a new player is primed with: the parameter sets, then the running GOP.
+    pub fn primer(&self) -> impl Iterator<Item = &Vec<u8>> {
+        self.params.iter().chain(self.cached())
     }
 
     /// Reads the counters and starts them over.
@@ -89,6 +102,15 @@ impl Fanout {
         }
 
         let kind = classify_nal(nal, self.codec);
+        if kind == CpNalKind::Params {
+            if self.params_closed {
+                self.params.clear();
+                self.params_closed = false;
+            }
+            self.params.push(nal.to_vec());
+        } else {
+            self.params_closed = true;
+        }
         if self.awaiting_keyframe {
             self.stats.dropped += 1;
             match kind {
@@ -296,5 +318,35 @@ mod tests {
     fn an_empty_frame_is_a_delta() {
         let mut f = running();
         assert!(!f.take(&[], true));
+    }
+
+    fn pps() -> Vec<u8> {
+        nal(8, 3)
+    }
+
+    #[test]
+    fn the_parameter_sets_outlive_a_restart_and_lead_the_primer() {
+        let mut f = running();
+        f.take(&params(), true);
+        f.take(&pps(), true);
+        f.take(&keyframe(), true);
+        f.take(&delta(), true);
+
+        f.restart();
+
+        assert_eq!(f.params(), [params(), pps()]);
+        assert_eq!(f.primer().cloned().collect::<Vec<_>>(), [params(), pps()]);
+        f.take(&keyframe(), true);
+        assert_eq!(f.primer().cloned().collect::<Vec<_>>(), [params(), pps(), keyframe()]);
+    }
+
+    #[test]
+    fn a_new_set_of_parameters_replaces_the_old_one() {
+        let mut f = running();
+        f.take(&params(), true);
+        f.take(&keyframe(), true);
+        f.take(&pps(), true);
+
+        assert_eq!(f.params(), [pps()]);
     }
 }

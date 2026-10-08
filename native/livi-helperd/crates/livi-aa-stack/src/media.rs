@@ -40,8 +40,9 @@ pub trait AaMedia: Send + Sync + 'static {
     fn feed_path(&self) -> impl Future<Output = String> + Send;
     /// The session's own stream into the main or the cluster plane.
     fn video_feed(&self, session: SessionId, cluster: bool) -> u32;
-    /// Creates the plane, so the fed frames find a decoder.
-    fn prime_video(&self, cluster: bool, codec: VideoCodec);
+    /// Creates the plane, so the fed frames find a decoder. A session in the background only
+    /// names its codec and gets the plane when it comes to the front.
+    fn prime_video(&self, session: SessionId, cluster: bool, codec: VideoCodec);
     fn video_started(&self, cluster: bool, width: u32, height: u32);
     /// The session's own stream into an audio output all sessions share.
     fn audio_feed(&self, session: SessionId, stream: u32) -> u32;
@@ -110,7 +111,7 @@ pub(crate) mod tests {
             if cluster { 7 } else { 1 }
         }
 
-        fn prime_video(&self, cluster: bool, _codec: VideoCodec) {
+        fn prime_video(&self, _session: SessionId, cluster: bool, _codec: VideoCodec) {
             self.note(json!({ "primeVideo": cluster }));
         }
 

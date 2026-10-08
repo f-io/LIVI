@@ -485,12 +485,12 @@ impl<O: Outside> Host<O> {
 
         let feeder = feeder_of(id);
         if let Some(state) = self.active_feeder(feeder) {
-            for frame in state.borrow().fan.cached() {
+            for frame in state.borrow().fan.primer() {
                 plane.push(frame);
             }
         }
         if let Some(Some(fan)) = self.feed_fans.borrow().get(&feeder) {
-            for frame in fan.cached() {
+            for frame in fan.primer() {
                 plane.push(frame);
             }
         }
@@ -498,7 +498,7 @@ impl<O: Outside> Host<O> {
             if let Some(Some(fan)) = self.feed_fans.borrow().get(&feed)
                 && fan.is_active()
             {
-                for frame in fan.cached() {
+                for frame in fan.primer() {
                     plane.push(frame);
                 }
             }
@@ -660,14 +660,31 @@ impl<O: Outside> Host<O> {
         }
     }
 
+    /// A feed made active hands its parameter sets on first, the keyframe it waits for needs them.
     fn set_feed_active(&mut self, id: u32, active: bool) {
         self.feed_wanted.borrow_mut().insert(id, active);
+        let mut params = Vec::new();
         if let Some(Some(fan)) = self.feed_fans.borrow_mut().get_mut(&id) {
             if active && !fan.is_active() {
                 fan.restart();
+                params = fan.params().to_vec();
             }
             fan.set_active(active);
         }
+        if params.is_empty() {
+            return;
+        }
+        let target = match self.feed_routes.borrow().get(&id) {
+            Some(Route::Plane(plane)) => *plane,
+            Some(Route::Audio(_)) => return,
+            None => id,
+        };
+        let planes = self.planes.borrow();
+        MediaFeed::<O>::for_each_target(&planes, target, |p| {
+            for frame in &params {
+                p.push(frame);
+            }
+        });
     }
 
     /// `[1B codec: 0 aac-lc, 1 opus, 2 lpcm, 3 pcm-le][1B payloadType][4B clockRate]
@@ -1457,6 +1474,39 @@ mod tests {
             f.feed_in(feedproto::KIND_VIDEO, NEW, &nal(KEYFRAME, 1));
             f.send(OP_CREATE, CLUSTER_A, &create_body("h264", &[]));
             assert_eq!(f.plane(0).pushed(), vec![nal(KEYFRAME, 1)]);
+        }
+
+        const SPS: u8 = 7;
+
+        #[test]
+        fn a_routed_feed_made_active_hands_its_parameter_sets_on_first() {
+            let mut f = Fixture::new();
+            f.send(OP_CREATE, MAIN_PLANE, &create_body("h264", &[]));
+            f.open_feed("/tmp/x.feed");
+            f.send(OP_FEED_ROUTE, NEW, &route(0, MAIN_PLANE, false));
+            f.feed_in(feedproto::KIND_VIDEO_START, NEW, &[0]);
+            f.feed_in(feedproto::KIND_VIDEO, NEW, &nal(SPS, 1));
+            f.feed_in(feedproto::KIND_VIDEO, NEW, &nal(KEYFRAME, 2));
+            f.feed_in(feedproto::KIND_VIDEO, NEW, &nal(DELTA, 3));
+            assert!(f.plane(0).pushed().is_empty());
+
+            f.send(OP_SET_ACTIVE, NEW, &[1]);
+            f.feed_in(feedproto::KIND_VIDEO, NEW, &nal(DELTA, 4));
+            f.feed_in(feedproto::KIND_VIDEO, NEW, &nal(KEYFRAME, 5));
+
+            assert_eq!(f.plane(0).pushed(), vec![nal(SPS, 1), nal(KEYFRAME, 5)]);
+        }
+
+        #[test]
+        fn a_new_plane_gets_the_parameter_sets_of_the_feed_it_plays() {
+            let mut f = Fixture::new();
+            f.open_feed("/tmp/x.feed");
+            f.send(OP_FEED_ROUTE, NEW, &route(0, MAIN_PLANE, true));
+            f.feed_in(feedproto::KIND_VIDEO_START, NEW, &[0]);
+            f.feed_in(feedproto::KIND_VIDEO, NEW, &nal(SPS, 1));
+            f.feed_in(feedproto::KIND_VIDEO, NEW, &nal(KEYFRAME, 2));
+            f.send(OP_CREATE, MAIN_PLANE, &create_body("h264", &[]));
+            assert_eq!(f.plane(0).pushed(), vec![nal(SPS, 1), nal(KEYFRAME, 2)]);
         }
 
         #[test]

@@ -384,7 +384,7 @@ impl<M: AaMedia> Phone<M> {
 
     /// The plane comes first, so the host has a decoder when the feed starts.
     fn push_video_sink(&mut self, cluster: bool, codec: VideoCodec) {
-        self.media.prime_video(cluster, codec);
+        self.media.prime_video(self.id, cluster, codec);
         let entry = json!({
             "ch": if cluster { ch::CLUSTER_VIDEO } else { ch::VIDEO },
             "id": self.media.video_feed(self.id, cluster),

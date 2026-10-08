@@ -46,6 +46,10 @@ pub fn crop_for(tier: (u32, u32), display: (u32, u32)) -> Option<Crop> {
     })
 }
 
+fn same_stream(codec: Option<Codec>, data: &[u8], next: Codec, atom: &[u8]) -> bool {
+    codec == Some(next) && data == atom
+}
+
 #[derive(Default)]
 struct State {
     started: bool,
@@ -79,15 +83,16 @@ impl MainPlane {
 
     pub fn prepare(self: &Arc<Self>, codec: Codec, atom: Vec<u8>) {
         let generation = {
-            let mut st = self.state();
-            st.codec_data = atom;
-            if (st.started && st.codec == Some(codec)) || st.claiming {
+            let st = self.state();
+            if (st.started || st.claiming) && same_stream(st.codec, &st.codec_data, codec, &atom) {
                 return;
             }
             drop(st);
             self.dispose();
             let mut st = self.state();
             st.claiming = true;
+            st.codec = Some(codec);
+            st.codec_data = atom;
             st.generation
         };
         let plane = self.clone();
@@ -192,8 +197,10 @@ impl ClusterPlanes {
     pub fn prepare(self: &Arc<Self>, codec: Codec, atom: Vec<u8>) {
         let restart = {
             let mut st = self.state();
+            let same = same_stream(st.codec, &st.codec_data, codec, &atom);
+            st.codec = Some(codec);
             st.codec_data = atom;
-            st.codec.replace(codec) != Some(codec)
+            !same
         };
         for i in 0..CLUSTER_SCREENS.len() {
             if restart {
@@ -329,6 +336,16 @@ mod tests {
         assert_eq!(c.crop_t, 120.0);
         let c = crop_for((1280, 720), (800, 600)).unwrap();
         assert_eq!((c.vis_w, c.vis_h, c.crop_l), (960.0, 720.0, 160.0));
+    }
+
+    #[test]
+    fn only_the_same_stream_keeps_the_running_player() {
+        assert!(same_stream(Some(Codec::H265), &[1, 2], Codec::H265, &[1, 2]));
+        // CarPlay hands its parameter sets over, Android Auto sends them in the stream.
+        assert!(!same_stream(Some(Codec::H265), &[1, 2], Codec::H265, &[]));
+        assert!(!same_stream(Some(Codec::H265), &[1, 2], Codec::H265, &[3, 4]));
+        assert!(!same_stream(Some(Codec::H264), &[], Codec::H265, &[]));
+        assert!(!same_stream(None, &[], Codec::H265, &[]));
     }
 
     #[tokio::test]

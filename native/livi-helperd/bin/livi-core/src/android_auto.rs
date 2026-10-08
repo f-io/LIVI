@@ -77,6 +77,8 @@ struct Feeds {
     active: bool,
     /// By cluster.
     video: BTreeMap<bool, u32>,
+    /// By cluster.
+    codecs: BTreeMap<bool, Codec>,
     /// By the output stream.
     audio: BTreeMap<u32, u32>,
 }
@@ -106,7 +108,6 @@ pub struct GstAaMedia {
     state: watch::Receiver<State>,
     audio: Arc<Mutex<Audio>>,
     opened: broadcast::Sender<AudioOutput>,
-    main_codec: Mutex<Option<Codec>>,
     crop: watch::Sender<Option<Crop>>,
     call: Mutex<Call>,
     sessions: Mutex<Sessions>,
@@ -126,7 +127,6 @@ impl GstAaMedia {
             state,
             audio: Arc::new(Mutex::new(Audio { call_active: true, ..Default::default() })),
             opened: broadcast::channel(16).0,
-            main_codec: Mutex::new(None),
             crop: watch::channel(None).0,
             call: Mutex::new(Call::default()),
             sessions: Mutex::new(Sessions::default()),
@@ -261,6 +261,14 @@ impl GstAaMedia {
         lock(&self.audio)
     }
 
+    fn prepare(&self, cluster: bool, codec: Codec) {
+        if cluster {
+            self.clusters.prepare(codec, Vec::new());
+        } else {
+            self.plane.prepare(codec, Vec::new());
+        }
+    }
+
     fn place_main(&self, tier: (u32, u32)) {
         let cfg = self.state.borrow().config.clone();
         let crop = crop_for(tier, (cfg.projection_width, cfg.projection_height));
@@ -285,12 +293,15 @@ impl AaMedia for GstAaMedia {
         self.feed(session, FeedTarget::Plane(if cluster { PLANE_CLUSTER_RECV } else { PLANE_MAIN }))
     }
 
-    fn prime_video(&self, cluster: bool, video: VideoCodec) {
-        if cluster {
-            self.clusters.prepare(codec(video), Vec::new());
-        } else {
-            *self.main_codec.lock().unwrap_or_else(|e| e.into_inner()) = Some(codec(video));
-            self.plane.prepare(codec(video), Vec::new());
+    fn prime_video(&self, session: SessionId, cluster: bool, video: VideoCodec) {
+        let active = {
+            let mut sessions = self.sessions();
+            let feeds = sessions.feeds.entry(session).or_default();
+            feeds.codecs.insert(cluster, codec(video));
+            feeds.active
+        };
+        if active {
+            self.prepare(cluster, codec(video));
         }
     }
 
@@ -316,17 +327,18 @@ impl AaMedia for GstAaMedia {
     /// A session coming back to the front finds the plane as another phone
     /// left it, so its own codec and crop go there again.
     fn set_active(&self, session: SessionId, active: bool) {
-        let (feeds, front) = {
+        let (feeds, codecs, front) = {
             let mut sessions = self.sessions();
             let feeds = sessions.feeds.entry(session).or_default();
             feeds.active = active;
             let ids: Vec<u32> = feeds.video.values().chain(feeds.audio.values()).copied().collect();
+            let codecs = feeds.codecs.clone();
             if active {
                 sessions.front = Some(session);
             } else if sessions.front == Some(session) {
                 sessions.front = None;
             }
-            (ids, sessions.front.is_some())
+            (ids, codecs, sessions.front.is_some())
         };
         for feed in feeds {
             self.gst.set_active_feeder(feed, active);
@@ -335,9 +347,8 @@ impl AaMedia for GstAaMedia {
         if !active {
             return;
         }
-        let main = *self.main_codec.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(main) = main {
-            self.plane.prepare(main, Vec::new());
+        for (cluster, codec) in codecs {
+            self.prepare(cluster, codec);
         }
         let crop = *self.crop.borrow();
         if let Some(c) = crop {
@@ -665,6 +676,33 @@ mod tests {
         media.release(2);
         assert_eq!(host.next().await, (OP_FEED_CLOSE, usb, vec![]));
         assert_eq!(host.next().await, (OP_FEED_CLOSE, usb_cluster, vec![]));
+    }
+
+    #[tokio::test]
+    async fn a_session_in_the_background_leaves_the_plane_to_the_front() {
+        const OP_CREATE: u8 = 1;
+        let dir = TempDir::new();
+        let sock = dir.0.join("gst.sock");
+        let gst = GstHost::new(sock.clone());
+        let ctrl = CompositorControl::connect(dir.0.join("ctrl"));
+        let plane = MainPlane::new(gst.clone(), ctrl.clone());
+        let clusters = ClusterPlanes::new(gst.clone(), ctrl);
+        let (_state_tx, state_rx) = watch::channel(state());
+        let media = GstAaMedia::new(gst, plane, clusters, state_rx);
+
+        let back = media.video_feed(2, false);
+        let mut host = FakeHost::connect(&sock).await;
+        assert_eq!(host.next().await, (OP_FEED_ROUTE, back, route(0, PLANE_MAIN, false)));
+        media.prime_video(2, false, VideoCodec::H265);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        media.release(2);
+        assert_eq!(host.next().await, (OP_FEED_CLOSE, back, vec![]));
+
+        media.set_active(3, true);
+        media.prime_video(3, false, VideoCodec::H265);
+        let (op, id, rest) = host.next().await;
+        assert_eq!((op, id), (OP_CREATE, PLANE_MAIN));
+        assert_eq!(rest, [&[4u8][..], b"h265"].concat());
     }
 
     async fn helper_line(listener: &tokio::net::UnixListener) -> String {
