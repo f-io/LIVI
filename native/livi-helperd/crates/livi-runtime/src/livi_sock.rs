@@ -76,8 +76,9 @@ pub type DropLink = Arc<dyn Fn(String) -> Result<(), String> + Send + Sync>;
 
 pub type CpFactory = Arc<dyn Fn() -> CpConfig + Send + Sync>;
 
-/// In paging order.
-pub type PushTargets = Arc<dyn Fn(Vec<String>) -> Result<(), String> + Send + Sync>;
+/// In paging order, each phone with the profile that wakes it.
+pub type PushTargets =
+    Arc<dyn Fn(Vec<(String, Option<String>)>) -> Result<(), String> + Send + Sync>;
 
 pub async fn serve<A>(
     cfg: LiviSockConfig,
@@ -232,9 +233,9 @@ where
                     if before != after
                         && let Some(push) = cfg.targets.clone()
                     {
-                        let macs: Vec<String> = after.into_iter().map(|(mac, _)| mac).collect();
+                        let macs: Vec<&str> = after.iter().map(|(mac, _)| mac.as_str()).collect();
                         println!("[helperd] the dongle pages {macs:?}");
-                        if let Ok(Err(e)) = tokio::task::spawn_blocking(move || push(macs)).await {
+                        if let Ok(Err(e)) = tokio::task::spawn_blocking(move || push(after)).await {
                             eprintln!("[helperd] the dongle refused the paging list: {e}");
                         }
                     }

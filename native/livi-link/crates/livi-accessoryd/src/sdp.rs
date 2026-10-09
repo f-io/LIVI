@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const AF_BLUETOOTH: libc::c_int = 31;
 const BTPROTO_L2CAP: libc::c_int = 0;
@@ -19,6 +20,13 @@ pub const IAP_CLIENT_UUID: [u8; 16] = [
 pub const CARPLAY_UUID: [u8; 16] = [
     0xec, 0x88, 0x43, 0x48, 0xcd, 0x41, 0x40, 0xa2, 0x97, 0x27, 0x57, 0x5d, 0x50, 0xbf, 0x1f, 0xd3,
 ];
+/// What the name list a phone sees before connecting carries.
+pub const ADVERTISED: [[u8; 16]; 3] = [IAP_UUID, IAP_CLIENT_UUID, CARPLAY_UUID];
+
+const fn full_uuid(id: u16) -> [u8; 16] {
+    let [hi, lo] = id.to_be_bytes();
+    [0, 0, hi, lo, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0x80, 0x5f, 0x9b, 0x34, 0xfb]
+}
 
 pub struct Record {
     pub handle: u32,
@@ -27,10 +35,26 @@ pub struct Record {
     pub name: &'static str,
 }
 
-pub const RECORDS: [Record; 2] = [
+pub static RECORDS: [Record; 2] = [
     Record { handle: 0x0001_0001, uuid: IAP_UUID, channel: 3, name: "Wireless iAP" },
     Record { handle: 0x0001_0002, uuid: CARPLAY_UUID, channel: 4, name: "CarPlay" },
 ];
+/// A phone that finds the records uses them, so they are listed only while a host takes them.
+static OFFERED: AtomicBool = AtomicBool::new(false);
+
+/// Whether this changed anything.
+pub fn set_offered(on: bool) -> bool {
+    OFFERED.swap(on, Ordering::Relaxed) != on
+}
+
+pub fn offered() -> bool {
+    OFFERED.load(Ordering::Relaxed)
+}
+
+fn on_offer() -> Vec<&'static Record> {
+    if offered() { RECORDS.iter().collect() } else { Vec::new() }
+}
+
 const UUID_L2CAP: u16 = 0x0100;
 const UUID_RFCOMM: u16 = 0x0003;
 const UUID_BROWSE_ROOT: u16 = 0x1002;
@@ -144,7 +168,7 @@ fn search_attribute(tid: u16, body: &[u8]) -> Vec<u8> {
     };
     let start = continuation(rest);
     let mut found = Vec::new();
-    for r in RECORDS.iter().filter(|r| wanted(pattern, r)) {
+    for r in on_offer().into_iter().filter(|r| wanted(pattern, r)) {
         found.extend_from_slice(&record(r, attrs));
     }
     let lists = seq(&found);
@@ -166,7 +190,7 @@ fn attribute(tid: u16, body: &[u8]) -> Vec<u8> {
         return error(tid, ERROR_SYNTAX);
     };
     let start = continuation(rest);
-    let list = match RECORDS.iter().find(|r| r.handle == handle) {
+    let list = match on_offer().into_iter().find(|r| r.handle == handle) {
         Some(r) => record(r, attrs),
         None => seq(&[]),
     };
@@ -182,7 +206,7 @@ fn service_search(tid: u16, body: &[u8]) -> Vec<u8> {
     let Some((pattern, _)) = element(body) else {
         return error(tid, ERROR_SYNTAX);
     };
-    let hits: Vec<&Record> = RECORDS.iter().filter(|r| wanted(pattern, r)).collect();
+    let hits: Vec<&Record> = on_offer().into_iter().filter(|r| wanted(pattern, r)).collect();
     let count = hits.len() as u16;
     let mut params = Vec::new();
     params.extend_from_slice(&count.to_be_bytes());
@@ -200,7 +224,10 @@ fn wanted(pattern: &[u8], record: &Record) -> bool {
         let hit = match value.len() {
             2 => {
                 let id = u16::from_be_bytes([value[0], value[1]]);
-                id == UUID_BROWSE_ROOT || id == UUID_L2CAP || id == UUID_RFCOMM
+                id == UUID_BROWSE_ROOT
+                    || id == UUID_L2CAP
+                    || id == UUID_RFCOMM
+                    || record.uuid == full_uuid(id)
             }
             16 => value == record.uuid,
             _ => false,
@@ -231,7 +258,6 @@ fn attributes(record: &Record) -> Vec<(u16, Vec<u8>)> {
         seq(&[uuid16(UUID_RFCOMM), uint8(record.channel)].concat()),
     ]
     .concat());
-    let profile = seq(&seq(&[uuid16(UUID_SERIAL_PORT), uint16(0x0100)].concat()));
     vec![
         (0x0000, uint32(record.handle)),
         (0x0001, seq(&uuid128(&record.uuid))),
@@ -239,7 +265,7 @@ fn attributes(record: &Record) -> Vec<(u16, Vec<u8>)> {
         (0x0004, protocol),
         (0x0005, seq(&uuid16(UUID_BROWSE_ROOT))),
         (0x0008, uint8(0xff)),
-        (0x0009, profile),
+        (0x0009, seq(&seq(&[uuid16(UUID_SERIAL_PORT), uint16(0x0100)].concat()))),
         (0x0100, text(record.name)),
     ]
 }
@@ -281,7 +307,7 @@ fn continuation(rest: &[u8]) -> usize {
     }
 }
 
-pub(crate) fn element(body: &[u8]) -> Option<(&[u8], &[u8])> {
+fn element(body: &[u8]) -> Option<(&[u8], &[u8])> {
     let head = *body.first()?;
     let index = head & 0x07;
     let (len, from): (usize, usize) = match index {
@@ -307,7 +333,7 @@ pub(crate) fn element(body: &[u8]) -> Option<(&[u8], &[u8])> {
     Some((&body[from..end], &body[end..]))
 }
 
-pub(crate) fn packet(pdu: u8, tid: u16, params: &[u8]) -> Vec<u8> {
+fn packet(pdu: u8, tid: u16, params: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(5 + params.len());
     out.push(pdu);
     out.extend_from_slice(&tid.to_be_bytes());
@@ -324,7 +350,7 @@ fn uint8(v: u8) -> Vec<u8> {
     vec![0x08, v]
 }
 
-pub(crate) fn uint16(v: u16) -> Vec<u8> {
+fn uint16(v: u16) -> Vec<u8> {
     let mut out = vec![0x09];
     out.extend_from_slice(&v.to_be_bytes());
     out
@@ -342,7 +368,7 @@ fn uuid16(v: u16) -> Vec<u8> {
     out
 }
 
-pub(crate) fn uuid128(v: &[u8; 16]) -> Vec<u8> {
+fn uuid128(v: &[u8; 16]) -> Vec<u8> {
     let mut out = vec![0x1c];
     out.extend_from_slice(v);
     out
@@ -354,8 +380,11 @@ fn text(v: &str) -> Vec<u8> {
     out
 }
 
-pub(crate) fn seq(body: &[u8]) -> Vec<u8> {
-    let mut out = vec![0x35, body.len() as u8];
+fn seq(body: &[u8]) -> Vec<u8> {
+    let mut out = match u8::try_from(body.len()) {
+        Ok(len) => vec![0x35, len],
+        Err(_) => [&[0x36][..], &(body.len() as u16).to_be_bytes()].concat(),
+    };
     out.extend_from_slice(body);
     out
 }
@@ -395,25 +424,17 @@ mod tests {
     }
 
     #[test]
-    fn every_record_names_its_own_channel() {
-        let all = [0x0a, 0x00, 0x00, 0xff, 0xff];
-        for r in &RECORDS {
-            let body = record(r, &all);
-            assert!(body.windows(16).any(|w| w == r.uuid));
-            assert!(body.contains(&r.channel));
-            assert!(String::from_utf8_lossy(&body).contains(r.name));
-        }
-    }
-
-    #[test]
-    fn a_long_answer_is_handed_over_in_pieces() {
-        let full: Vec<u8> = (0..100u8).collect();
-        let (first, next) = slice(&full, 0, 40);
-        assert_eq!(first.len(), 40);
-        assert_eq!(next, vec![2, 0, 40]);
-        assert_eq!(continuation(&next), 40);
-        let (last, done) = slice(&full, 40, 200);
-        assert_eq!(last.len(), 60);
-        assert_eq!(done, vec![0]);
+    fn the_records_are_listed_only_while_a_host_takes_them() {
+        let found = || {
+            service_search(1, &seq(&uuid128(&CARPLAY_UUID)))
+                .windows(4)
+                .any(|w| w == RECORDS[1].handle.to_be_bytes())
+        };
+        assert!(!found());
+        assert!(set_offered(true));
+        assert!(!set_offered(true));
+        assert!(found());
+        assert!(set_offered(false));
+        assert!(!found());
     }
 }

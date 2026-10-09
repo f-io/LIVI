@@ -2,7 +2,7 @@
 //!   channels | status | on | off | apply | save | down | deauth | watch
 //!   set <ssid|country|channel|width|passphrase> <value>
 //!   bt on | bt off
-//!   iap <order>   for the Bluetooth accessory, answered the way iapd answers
+//!   accessory <order>   for the Bluetooth accessory, answered the way accessoryd answers
 //! `on`, `off` and `bt` are kept on the dongle, a boot brings back what was switched last.
 //! `down` takes the access point off the air until the next apply or boot, nothing is kept.
 //! `deauth` sends every station off, `deauth <count>` says how many.
@@ -32,8 +32,9 @@ const WATCH_RETRY: Duration = Duration::from_secs(1);
 const HOSTAPD: &str = "/usr/sbin/hostapd";
 const IFACE: &str = "wlan0";
 const BT: &str = "hci0";
+const BT_MAC: &str = "/tmp/livi/bt-mac";
 const BT_DEV: u16 = 0;
-/// Loads the driver and brings hci0 up with btd and iapd, for what a boot left out.
+/// Loads the driver and brings hci0 up with btd and accessoryd, for what a boot left out.
 const LIVI_RADIO: &str = "/usr/bin/livi-radio";
 const ACCESSORY: SocketAddr =
     SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, livi_net::port::ACCESSORY));
@@ -90,7 +91,7 @@ enum Cmd<'a> {
     On,
     Off,
     Bt(bool),
-    Iap(&'a str),
+    Accessory(&'a str),
     Empty,
     Unknown(&'a str),
 }
@@ -162,7 +163,7 @@ pub fn serve<S: std::io::Read + Write>(io: &mut S, ap: &Mutex<Ap>) {
                 }
             }
             // Never waits for the access point, an apply can take half a minute
-            Cmd::Iap(order) => accessory(ACCESSORY, order),
+            Cmd::Accessory(order) => accessory(ACCESSORY, order),
             Cmd::Empty => continue,
             Cmd::Unknown(what) => format!("error unknown command {what}\n"),
         };
@@ -192,7 +193,7 @@ fn command(line: &str) -> Cmd<'_> {
             "off" => Cmd::Bt(false),
             _ => Cmd::Unknown(line),
         },
-        "iap" if !rest.trim().is_empty() => Cmd::Iap(rest.trim()),
+        "accessory" if !rest.trim().is_empty() => Cmd::Accessory(rest.trim()),
         "set" => match rest.split_once(' ') {
             Some((key, value)) => Cmd::Set(key, value),
             None => Cmd::Unknown(line),
@@ -431,11 +432,11 @@ fn off(ap: &mut Ap) {
 fn bluetooth(up: bool) -> Result<(), String> {
     if !up {
         // btd first: while a host tunnels, it holds hci0 and hci0 will not go down.
-        livi_radio("bt-off", "btd and iapd would not stop")?;
+        livi_radio("bt-off", "btd and accessoryd would not stop")?;
         return livi_btd::hci::down(BT_DEV).map_err(|e| format!("{BT} would not go down: {e}"));
     }
     driver();
-    // A boot with Bluetooth off started neither btd nor iapd, they only run once hci0 is up.
+    // A boot with Bluetooth off started neither btd nor accessoryd, they only run once hci0 is up.
     livi_radio("bt", &format!("{BT} would not come up"))
 }
 
@@ -508,7 +509,10 @@ fn status(ap: &Ap) -> String {
     if let Ok(mac) = std::fs::read_to_string(format!("/sys/class/net/{IFACE}/address")) {
         out.push_str(&format!("mac {}\n", mac.trim()));
     }
-    if let Ok(mac) = std::fs::read_to_string(format!("/sys/class/bluetooth/{BT}/address")) {
+    // The vendor driver has no address attribute, livi-bt-up writes it down instead.
+    if let Ok(mac) = std::fs::read_to_string(format!("/sys/class/bluetooth/{BT}/address"))
+        .or_else(|_| std::fs::read_to_string(BT_MAC))
+    {
         out.push_str(&format!("btmac {}\n", mac.trim()));
     }
     out.push_str(if ap.config == ap.base { "config fallback\n" } else { "config host\n" });
@@ -638,7 +642,7 @@ mod tests {
         assert!(remember(&mut w, "width", "wide").is_err());
     }
 
-    fn iapd(answer: &'static str) -> (SocketAddr, std::thread::JoinHandle<String>) {
+    fn accessoryd(answer: &'static str) -> (SocketAddr, std::thread::JoinHandle<String>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let at = listener.local_addr().unwrap();
         let heard = std::thread::spawn(move || {
@@ -682,21 +686,21 @@ mod tests {
     }
 
     #[test]
-    fn an_iap_order_goes_to_the_accessory_and_comes_back_whole() {
-        assert!(matches!(command("iap targets aa bb"), Cmd::Iap("targets aa bb")));
-        assert!(matches!(command("iap"), Cmd::Unknown("iap")));
+    fn an_accessory_order_goes_to_the_accessory_and_comes_back_whole() {
+        assert!(matches!(command("accessory targets aa bb"), Cmd::Accessory("targets aa bb")));
+        assert!(matches!(command("accessory"), Cmd::Unknown("accessory")));
 
-        let (at, heard) = iapd("bonds 1\noffered on\ntargets 0\nok\n");
+        let (at, heard) = accessoryd("bonds 1\noffered on\ntargets 0\nok\n");
         assert_eq!(accessory(at, "status"), "bonds 1\noffered on\ntargets 0\nok\n");
         assert_eq!(heard.join().unwrap(), "status\n");
 
-        let (at, _) = iapd("error not an address\n");
+        let (at, _) = accessoryd("error not an address\n");
         assert_eq!(accessory(at, "disconnect x"), "error not an address\n");
     }
 
     #[test]
     fn an_accessory_that_is_gone_or_hangs_up_is_an_error() {
-        let (at, _) = iapd("bonds 1\n");
+        let (at, _) = accessoryd("bonds 1\n");
         assert!(accessory(at, "status").starts_with("error accessory: "));
         let gone = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
         assert!(accessory(gone, "on").starts_with("error accessory: "));

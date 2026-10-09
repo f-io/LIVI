@@ -1,5 +1,7 @@
 //! The state says what to show, never why.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use ts_rs::TS;
@@ -120,6 +122,8 @@ pub struct System {
     /// The LIVI Link is among them while it answers.
     pub wifi_interfaces: Vec<String>,
     pub bt_adapters: Vec<String>,
+    /// The chip behind an interface, by its name, where the system can tell.
+    pub interface_models: BTreeMap<String, String>,
     /// None while the LIVI Link does not answer.
     pub dongle: Option<DongleRadios>,
     /// The phone's Wi-Fi link on the access point.

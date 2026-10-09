@@ -27,13 +27,14 @@ pub const SET_SSP: u16 = 0x000b;
 pub const SET_CLASS: u16 = 0x000e;
 pub const SET_NAME: u16 = 0x000f;
 pub const ADD_UUID: u16 = 0x0010;
+pub const REMOVE_UUID: u16 = 0x0011;
 pub const LOAD_LINK_KEYS: u16 = 0x0012;
 pub const DISCONNECT: u16 = 0x0014;
 pub const PIN_CODE_NEG_REPLY: u16 = 0x0017;
 pub const SET_IO_CAPABILITY: u16 = 0x0018;
 pub const USER_CONFIRM_REPLY: u16 = 0x001c;
 
-pub const NEEDED: [(u16, &str); 13] = [
+pub const NEEDED: [(u16, &str); 14] = [
     (SET_POWERED, "set-powered"),
     (SET_DISCOVERABLE, "set-discoverable"),
     (SET_CONNECTABLE, "set-connectable"),
@@ -42,6 +43,7 @@ pub const NEEDED: [(u16, &str); 13] = [
     (SET_CLASS, "set-class"),
     (SET_NAME, "set-name"),
     (ADD_UUID, "add-uuid"),
+    (REMOVE_UUID, "remove-uuid"),
     (LOAD_LINK_KEYS, "load-link-keys"),
     (DISCONNECT, "disconnect"),
     (PIN_CODE_NEG_REPLY, "pin-code-neg-reply"),

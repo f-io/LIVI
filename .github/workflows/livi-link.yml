@@ -50,7 +50,7 @@ jobs:
 
       - name: cargo test shared and dongle crates
         working-directory: native
-        run: cargo test --release --locked -p iap2-mfi -p livi-wifi -p livi-btd -p livi-iapd -p livi-mdns -p livi-wifid
+        run: cargo test --release --locked -p iap2-mfi -p livi-wifi -p livi-btd -p livi-accessoryd -p livi-mdns -p livi-wifid
 
   bundle-sanity:
     name: pack .lfwb bundle (dummy inputs)

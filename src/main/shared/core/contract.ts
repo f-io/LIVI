@@ -185,6 +185,10 @@ export type System = {
  */
 wifiInterfaces: Array<string>, btAdapters: Array<string>, 
 /**
+ * The chip behind an interface, by its name, where the system can tell.
+ */
+interfaceModels: { [key in string]: string }, 
+/**
  * None while the LIVI Link does not answer.
  */
 dongle: DongleRadios | null, 

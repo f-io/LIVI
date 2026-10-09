@@ -1,5 +1,5 @@
-// For wireless CarPlay the dongle is the Bluetooth accessory and hands the session up on TCP,
-// since macOS cannot lend a foreign controller to its own stack.
+// The dongle's Bluetooth controller is driven from here over its HCI tunnel, since macOS cannot
+// lend a foreign controller to its own stack.
 
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -7,23 +7,26 @@ use std::time::Duration;
 
 use iap2_link::LinkConfig;
 use iap2_mfi::{NcmCoprocessor, NoCoprocessor};
+use livi_bt_host::sdp::Service;
 use livi_runtime::bonjour::Bonjour;
 use livi_runtime::bringup::{AskOnAir, CpConfig, run_accessory};
 use livi_runtime::driver::spawn_link_stream;
+use livi_runtime::hfp::Hfp;
 use livi_runtime::ident::{Identity, Transport};
 use livi_runtime::livi_sock::{
     self, Broadcaster, LiviSockConfig, SharedTag, pump_artwork, pump_events_for,
 };
 use livi_runtime::mfi_async::SharedCoprocessor;
+use livi_runtime::sco::ScoSink;
 use livi_runtime::state::HelperState;
 use livi_runtime::vehicle::Fuels;
 use livi_wifi::Channel;
+use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
+use crate::bt_dongle::{Arrival, Dongle, Profiles};
 use crate::link::LinkPresence;
 
 const AP_WAIT: Duration = Duration::from_secs(15);
-/// The dongle pages nobody without the list.
-const TARGET_RETRY: Duration = Duration::from_millis(500);
 
 static BONJOUR: std::sync::OnceLock<Bonjour> = std::sync::OnceLock::new();
 
@@ -99,14 +102,16 @@ async fn wireless_sessions(
     identity: Identity,
     cp: CpConfig,
     bcast: Broadcaster,
-    link: Arc<LinkPresence>,
+    mut arrivals: UnboundedReceiver<Arrival>,
     state: Arc<HelperState>,
+    dongle: Dongle,
 ) {
-    let mut sessions = livi_link_host::iap::sessions(move || link.is_present());
-    while let Some(session) = sessions.recv().await {
+    while let Some(session) = arrivals.recv().await {
         if state.carkit_claims(&session.peer) {
             println!("[helperd] {} is on the cable, its Bluetooth link goes", session.peer);
-            crate::link::drop_dongle_link(session.peer.to_string());
+            if let Err(e) = dongle.disconnect(&session.peer) {
+                eprintln!("[helperd] {} stays on the dongle's bluetooth: {e}", session.peer);
+            }
             continue;
         }
         // The phone is about to be told which network to join, so make sure it is on the air.
@@ -117,10 +122,8 @@ async fn wireless_sessions(
             eprintln!("[helperd] the dongle's access point is not up, not starting a session");
             continue;
         }
-        let cp = CpConfig {
-            on_cable: Some(crate::link::dongle_on_cable(state.clone())),
-            ..wireless_config(&cp)
-        };
+        let cp =
+            CpConfig { on_cable: Some(dongle.on_cable(state.clone())), ..wireless_config(&cp) };
         // The phone is talking to the dongle's controller, so that is the address it must hear.
         let identity = Identity { bt_mac: session.local, ..identity.clone() };
         println!(
@@ -139,25 +142,8 @@ async fn wireless_sessions(
     }
 }
 
-/// The dongle answers only once its accessory is listening, a moment after the name resolves.
-async fn hand_targets(state: Arc<HelperState>, link: Arc<LinkPresence>) {
-    link.wait_until(true).await;
-    let mut refused = false;
-    while link.is_present() {
-        let macs: Vec<String> = state.reconnect_targets().into_iter().map(|(mac, _)| mac).collect();
-        let sent =
-            tokio::task::spawn_blocking(move || livi_link_host::iap::set_targets(&macs)).await;
-        match sent {
-            Ok(Ok(())) => return,
-            Ok(Err(e)) if !refused => {
-                eprintln!("[helperd] the dongle has no paging list yet: {e}");
-                refused = true;
-            }
-            Ok(Err(_)) => {}
-            Err(e) => eprintln!("[helperd] {e}"),
-        }
-        tokio::time::sleep(TARGET_RETRY).await;
-    }
+fn wireless_android_auto() -> bool {
+    env_s("LIVI_AA_WIRELESS", "1") != "0"
 }
 
 async fn identify_on_link(link: Arc<LinkPresence>, mut auth: SharedCoprocessor) {
@@ -187,35 +173,39 @@ async fn identify_on_link(link: Arc<LinkPresence>, mut auth: SharedCoprocessor) 
     }
 }
 
-fn start_carplay_seam(link: Arc<LinkPresence>) {
+fn over_dongle() -> bool {
+    env_s("LIVI_BT_ADAPTER", "") == livi_link_host::link::CHOICE
+}
+
+fn start_carplay_seam(
+    link: Arc<LinkPresence>,
+    state: Arc<HelperState>,
+    dongle: Dongle,
+    arrivals: Option<UnboundedReceiver<Arrival>>,
+) {
     let (cp, identity) = cp_config();
     let auth = SharedCoprocessor::new(Box::new(NoCoprocessor));
     let bcast = Broadcaster::default();
-    let state = Arc::new(HelperState::default());
 
     // A phone that came in over the dongle's Bluetooth carries on wirelessly, so the session on
     // the socket has to identify the same way. Announcing a USB accessory to it gets turned down.
-    let over_dongle = env_s("LIVI_BT_ADAPTER", "") == livi_link_host::link::CHOICE;
+    let over_dongle = over_dongle();
 
     let (up_auth, down_auth) = (auth.clone(), auth.clone());
-    let (arriving, handing) = (state.clone(), link.clone());
     let (arrived, left) = (bcast.clone(), bcast.clone());
+    let gone = dongle.clone();
     tokio::spawn(link.clone().resolve(
         move || {
             up_auth.replace(Box::new(NcmCoprocessor::new(&livi_link_host::link::addr(
                 livi_net::port::MFI,
             ))));
-            // A dongle that arrives while LIVI runs has heard nothing yet.
-            if over_dongle {
-                tokio::spawn(hand_targets(arriving.clone(), handing.clone()));
-            }
             arrived.push_json("{\"type\":\"link\",\"up\":true}".into());
         },
         move || {
             down_auth.replace(Box::new(NoCoprocessor));
-            // Its sessions are gone with it, a blocking read would notice only ten seconds later.
-            let closed = livi_link_host::iap::drop_sessions();
-            println!("[helperd] the dongle went, closed {closed} session(s)");
+            // Its links are gone with it, a blocking read would notice only much later.
+            gone.end();
+            println!("[helperd] the dongle went");
             left.push_json("{\"type\":\"link\",\"up\":false}".into());
         },
     ));
@@ -223,11 +213,12 @@ fn start_carplay_seam(link: Arc<LinkPresence>) {
         path: livi_sock::SOCK_PATH.into(),
         identity: if over_dongle { wireless_identity(&identity) } else { identity.clone() },
         cp: if over_dongle { wireless_config(&cp) } else { cp.clone() },
-        // No BlueZ here, so the dongle drops the link after the handover and pages for us.
-        disconnect: over_dongle
-            .then(|| Arc::new(|mac: String| livi_link_host::iap::drop_link(&mac)) as _),
-        targets: over_dongle
-            .then(|| Arc::new(|macs: Vec<String>| livi_link_host::iap::set_targets(&macs)) as _),
+        // No BlueZ here, our own host on the dongle's controller drops the link.
+        disconnect: over_dongle.then(|| {
+            let dongle = dongle.clone();
+            Arc::new(move |mac: String| dongle.disconnect(&mac)) as _
+        }),
+        targets: None,
         // The dongle can come back with a new access-point MAC, so it is read per session and
         // the tunnel names the accessory the phone joined.
         cp_live: over_dongle.then(|| {
@@ -263,14 +254,15 @@ fn start_carplay_seam(link: Arc<LinkPresence>) {
     if dongle_ap {
         tokio::spawn(crate::link::relay_stations(bcast.clone()));
     }
-    if env_s("LIVI_BT_ADAPTER", "") == livi_link_host::link::CHOICE {
+    if let Some(arrivals) = arrivals {
         tokio::spawn(wireless_sessions(
             auth_wireless,
             identity_wireless,
             cp_wireless,
             bcast.clone(),
-            link.clone(),
+            arrivals,
             state,
+            dongle,
         ));
         println!("[helperd] wireless CarPlay over the dongle's bluetooth is on");
     }
@@ -303,6 +295,68 @@ fn start_carplay_seam(link: Arc<LinkPresence>) {
     }
 }
 
+/// The Wi-Fi bootstrap for the phones the dongle's Bluetooth hands over.
+fn start_android_auto(
+    arrivals: UnboundedReceiver<Arrival>,
+    events: Broadcaster,
+    wired: crate::aa::WiredPhones,
+    state: Arc<HelperState>,
+) {
+    let port = env_s("LIVI_PORT", "").parse().unwrap_or(livi_aa::consts::TCP_PORT);
+    let sessions = events.clone();
+    tokio::spawn(livi_aa::server::run(port, move |socket, peer| {
+        sessions.push_json(format!(
+            "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\",\"transport\":\"wifi\"}}"
+        ));
+    }));
+    let cfg = crate::aa::AaConfig {
+        ssid: env_s("LIVI_CP_NAME", "LIVI"),
+        passphrase: env_s("LIVI_PASSPHRASE", "12345678"),
+        channel: Channel::of_number(env_s("LIVI_CHANNEL", "36").parse().unwrap_or(36)),
+        ap_ip: String::new(),
+        port,
+    };
+    tokio::spawn(crate::aa::watch_dongle(arrivals, cfg, events, wired, state));
+    println!("[helperd] wireless Android Auto over the dongle's bluetooth is on");
+}
+
+/// Android Auto takes its calls over hands-free on the cable too, wireless only adds the Wi-Fi
+/// bootstrap. CarPlay needs Bluetooth only to go wireless.
+fn start_bluetooth(
+    link: Arc<LinkPresence>,
+    state: Arc<HelperState>,
+    dongle: Dongle,
+    events: Broadcaster,
+    wired: crate::aa::WiredPhones,
+    sco_sink: ScoSink,
+) -> Option<UnboundedReceiver<Arrival>> {
+    let wireless_cp = env_s("LIVI_CP_WIRELESS", "") == "1";
+    let wireless_aa = wireless_android_auto();
+    let (carplay, carplay_arrivals) = unbounded_channel();
+    let (android_auto, aa_arrivals) = unbounded_channel();
+    let hfp = Hfp::default();
+    hfp.set_events(events.clone());
+    let mut offered = vec![Service::HandsFree];
+    if wireless_cp {
+        offered.push(Service::CarPlay);
+    }
+    if wireless_aa {
+        offered.push(Service::AndroidAuto);
+        start_android_auto(aa_arrivals, events.clone(), wired, state.clone());
+    }
+    let profiles = Profiles {
+        carplay: wireless_cp.then_some(carplay),
+        android_auto: wireless_aa.then_some(android_auto),
+        hfp,
+        events,
+        sco_sink,
+    };
+    let name = env_s("LIVI_CP_NAME", "LIVI");
+    tokio::spawn(crate::bt_dongle::run(dongle, link, profiles, state, offered, name));
+    println!("[helperd] hands-free over the dongle's bluetooth is on");
+    wireless_cp.then_some(carplay_arrivals)
+}
+
 pub fn run() -> ExitCode {
     let rt = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,
@@ -328,14 +382,22 @@ pub fn run() -> ExitCode {
         });
         let aa_events = Broadcaster::default();
         let usb_control = livi_aa::usb::Control::default();
+        let wired_phones = crate::aa::WiredPhones::default();
+        let sco_sink = ScoSink::default();
         let deps = livi_runtime::aa_sock::AaSockDeps {
-            set_wired_phones: Box::new(|_| {}),
+            set_wired_phones: Box::new({
+                let wired = wired_phones.clone();
+                move |ids| wired.set(ids)
+            }),
             restart_usb: Box::new({
                 let usb = usb_control.clone();
                 move |serial| usb.restart(serial)
             }),
             events: aa_events.clone(),
-            set_sco_sink: Box::new(|_| {}),
+            set_sco_sink: Box::new({
+                let sink = sco_sink.clone();
+                move |target| sink.set(target)
+            }),
         };
         tokio::spawn(async move {
             if let Err(e) = livi_runtime::aa_sock::serve(deps).await {
@@ -359,7 +421,14 @@ pub fn run() -> ExitCode {
         tokio::spawn(livi_link_host::run(move |on, _serial| link_state.set_on_bus(on)));
         println!("[helperd] dongle watcher started");
 
-        start_carplay_seam(link);
+        let state = Arc::new(HelperState::default());
+        let dongle = Dongle::default();
+        let carplay = if over_dongle() {
+            start_bluetooth(link.clone(), state.clone(), dongle.clone(), aa_events, wired_phones, sco_sink)
+        } else {
+            None
+        };
+        start_carplay_seam(link, state, dongle, carplay);
 
         crate::shutdown_signal().await;
         println!("[helperd] shutting down");

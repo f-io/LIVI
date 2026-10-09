@@ -3,8 +3,8 @@
 # livid config). wifid calls it for what a boot left out.
 #   livi-radio boot    at boot, from rcS
 #   livi-radio driver  the driver, unless it is loaded already
-#   livi-radio bt      hci0 up, then btd and iapd
-#   livi-radio bt-off  btd and iapd gone, as after a boot with bluetooth switched off
+#   livi-radio bt      hci0 up, then btd and accessoryd
+#   livi-radio bt-off  btd and accessoryd gone, as after a boot with bluetooth switched off
 #   livi-radio mac     wlan0 on the address it had on its first boot, before it comes up
 . /etc/livi/board.sh
 CONF=/tmp/livi/radio.conf
@@ -43,34 +43,34 @@ bt() {
                 /usr/bin/livi-btd >/tmp/livi/btd.log 2>&1 &
                 echo "[livi] btd  pid=$!  :5002"
             fi
-            if ! pidof livi-iapd >/dev/null; then
-                /usr/bin/livi-iapd >/tmp/livi/iapd.log 2>&1 &
-                echo "[livi] iapd pid=$! :5003/:5004"
+            if ! pidof livi-accessoryd >/dev/null; then
+                /usr/bin/livi-accessoryd >/tmp/livi/accessory.log 2>&1 &
+                echo "[livi] accessoryd pid=$! :5003/:5004"
             fi
             return 0
         fi
         sleep 0.5
     done
-    echo '[livi] bt-up gave up, no btd/iapd'
+    echo '[livi] bt-up gave up, no btd/accessoryd'
     return 1
 }
 
 # btd holds hci0 as a user channel while a host tunnels, and the kernel will not take hci0 down
 # under one. wifid takes it down after this.
 bt_off() {
-    for daemon in livi-btd livi-iapd; do
+    for daemon in livi-btd livi-accessoryd; do
         pids=$(pidof "$daemon") && kill $pids
     done
     for i in $(seq 1 20); do
-        pidof livi-btd >/dev/null || pidof livi-iapd >/dev/null || break
+        pidof livi-btd >/dev/null || pidof livi-accessoryd >/dev/null || break
         sleep 0.1
     done
     rm -f /tmp/livi/led/bt-paging /tmp/livi/led/bt-connected
-    if pidof livi-btd >/dev/null || pidof livi-iapd >/dev/null; then
-        echo '[livi] btd or iapd would not stop' >&2
+    if pidof livi-btd >/dev/null || pidof livi-accessoryd >/dev/null; then
+        echo '[livi] btd or accessoryd would not stop' >&2
         return 1
     fi
-    echo '[livi] btd and iapd stopped'
+    echo '[livi] btd and accessoryd stopped'
 }
 
 boot() {

@@ -17,12 +17,14 @@ const system = (
   wifiChannels: number[] = [36, 40],
   wifiCountries: string[] = ['DE', 'AT'],
   displayModes: string[] = ['800x480', '1024x600'],
-  wifiBands: Array<'2.4ghz' | '5ghz' | '6ghz'> = []
+  wifiBands: Array<'2.4ghz' | '5ghz' | '6ghz'> = [],
+  interfaceModels: Record<string, string> = {}
 ) =>
   useLiviStore.setState({
     system: {
       wifiInterfaces,
       btAdapters,
+      interfaceModels,
       dongle,
       linkSpeed: null,
       wifiBands,
@@ -79,6 +81,24 @@ describe('generalSchema loadOptions', () => {
 
     expect(labelFor('livi-link')).toBe('LIVI Link')
     expect(labelFor('wlan0')).toBe('wlan0')
+    expect(labelFor('hci0')).toBe('hci0')
+  })
+
+  test('a local interface names its chip where the system can tell', async () => {
+    system(['wlp104s0', 'wlan0'], ['hci1', 'hci0'], null, [], [], [], [], {
+      wlp104s0: 'MT7925',
+      hci1: 'MT7925'
+    })
+    const options = (await Promise.all(loaders.map((load) => load()))).flat() as Array<{
+      value: string
+      label?: string
+    }>
+    const labelFor = (value: string): string | undefined =>
+      options.find((o) => o.value === value)?.label
+
+    expect(labelFor('wlp104s0')).toBe('wlp104s0 (MT7925)')
+    expect(labelFor('wlan0')).toBe('wlan0')
+    expect(labelFor('hci1')).toBe('hci1 (MT7925)')
     expect(labelFor('hci0')).toBe('hci0')
   })
 

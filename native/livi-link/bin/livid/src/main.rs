@@ -5,10 +5,10 @@ use std::env;
 use std::path::Path;
 use std::process::ExitCode;
 
+mod accessoryd;
 mod bt_up;
 mod btd;
 mod config;
-mod iapd;
 #[cfg(not(target_arch = "riscv32"))]
 mod imx6ul;
 mod ledd;
@@ -118,7 +118,7 @@ fn main() -> ExitCode {
             Some(sub) => (sub.as_str(), args[2..].to_vec()),
             None => {
                 eprintln!(
-                    "usage: livid <bt-up|bt-mgmt|bt-probe|btd|config|httpd|iapd|ledd|mfid|netd|wifid> [args…]"
+                    "usage: livid <accessoryd|bt-up|bt-mgmt|bt-probe|btd|config|httpd|ledd|mfid|netd|wifid> [args…]"
                 );
                 return ExitCode::from(2);
             }
@@ -129,10 +129,10 @@ fn main() -> ExitCode {
 
     let rc = match cmd {
         "livi-bt-up" | "bt-up" => bt_up::run(rest),
-        "bt-mgmt" => exit_rc(livi_iapd::mgmt::probe()),
+        "bt-mgmt" => exit_rc(livi_accessoryd::mgmt::probe()),
         "bt-probe" => exit_rc(livi_btd::probe()),
         "livi-btd" | "btd" => btd::run(rest),
-        "livi-iapd" | "iapd" => iapd::run(rest),
+        "livi-accessoryd" | "accessoryd" => accessoryd::run(rest),
         "livi-httpd" | "httpd" => livi_web::run(web_caps()),
         "livi-ledd" | "ledd" => ledd::run(rest),
         "livi-netd" | "netd" => netd::run(rest),

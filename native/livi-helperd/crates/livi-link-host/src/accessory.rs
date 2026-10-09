@@ -1,4 +1,4 @@
-//! `iapd` on the dongle is the accessory: it pairs the phone, opens its channel and passes the
+//! `accessoryd` on the dongle is the accessory: it pairs the phone, opens its channel and passes the
 //! bytes on to this host.
 
 use std::time::Duration;
@@ -28,53 +28,15 @@ pub struct Session {
     pub stream: TcpStream,
 }
 
-/// The sockets the dongle carries, held a second time so they can be closed the moment it goes.
-static CARRIED: std::sync::Mutex<Vec<std::os::fd::OwnedFd>> = std::sync::Mutex::new(Vec::new());
-
-fn carry(stream: &TcpStream) {
-    use std::os::fd::AsFd;
-    // Close-on-exec, so no child we start holds the dongle's session.
-    let Ok(copy) = stream.as_fd().try_clone_to_owned() else {
-        return;
-    };
-    let mut carried = CARRIED.lock().unwrap();
-    carried.retain(alive);
-    carried.push(copy);
-}
-
-/// A peek takes nothing away from the session.
-fn alive(fd: &std::os::fd::OwnedFd) -> bool {
-    use std::os::fd::AsRawFd;
-    let mut byte = 0u8;
-    let seen = unsafe {
-        libc::recv(
-            fd.as_raw_fd(),
-            &raw mut byte as *mut libc::c_void,
-            1,
-            libc::MSG_PEEK | libc::MSG_DONTWAIT,
-        )
-    };
-    if seen == 0 {
-        return false;
-    }
-    seen > 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EAGAIN)
-}
-
-/// Shutdown ends the blocking reads on them at once.
-pub fn drop_sessions() -> usize {
-    use std::os::fd::AsRawFd;
-    let carried = std::mem::take(&mut *CARRIED.lock().unwrap());
-    let mut closed = 0;
-    for fd in &carried {
-        if alive(fd) {
-            closed += 1;
-        }
-        unsafe { libc::shutdown(fd.as_raw_fd(), libc::SHUT_RDWR) };
-    }
-    closed
-}
-
 pub fn sessions(ready: impl Fn() -> bool + Send + 'static) -> mpsc::Receiver<Session> {
+    sessions_on(livi_net::port::IAP, "iap", ready)
+}
+
+fn sessions_on(
+    port: u16,
+    tag: &'static str,
+    ready: impl Fn() -> bool + Send + 'static,
+) -> mpsc::Receiver<Session> {
     let (tx, rx) = mpsc::channel(2);
     tokio::spawn(async move {
         loop {
@@ -82,14 +44,14 @@ pub fn sessions(ready: impl Fn() -> bool + Send + 'static) -> mpsc::Receiver<Ses
                 tokio::time::sleep(RETRY).await;
                 continue;
             }
-            match waiting().await {
+            match waiting(port, tag).await {
                 Ok(session) => {
                     if tx.send(session).await.is_err() {
                         return;
                     }
                 }
                 Err(e) => {
-                    eprintln!("[iap] {e}");
+                    eprintln!("[{tag}] {e}");
                     tokio::time::sleep(RETRY).await;
                 }
             }
@@ -98,9 +60,9 @@ pub fn sessions(ready: impl Fn() -> bool + Send + 'static) -> mpsc::Receiver<Ses
     rx
 }
 
-async fn waiting() -> Result<Session, String> {
-    let blocking = tokio::task::spawn_blocking(|| {
-        livi_net::connect((link::LINK_NAME, livi_net::port::IAP), CONNECT_TIMEOUT)
+async fn waiting(port: u16, tag: &str) -> Result<Session, String> {
+    let blocking = tokio::task::spawn_blocking(move || {
+        livi_net::connect((link::LINK_NAME, port), CONNECT_TIMEOUT)
     })
     .await
     .map_err(|e| format!("dongle: {e}"))?
@@ -110,7 +72,6 @@ async fn waiting() -> Result<Session, String> {
     stream.set_nodelay(true).map_err(|e| format!("nodelay: {e}"))?;
     // Waiting for a phone means a long silence, so keepalive has to notice a dongle that is gone.
     watch_liveness(&stream);
-    carry(&stream);
     let head = header(&mut stream).await?;
     let peer = head
         .iter()
@@ -122,7 +83,7 @@ async fn waiting() -> Result<Session, String> {
         .find_map(|l| l.strip_prefix("local "))
         .and_then(address)
         .ok_or("the dongle named no controller")?;
-    println!("[iap] {peer} is on the dongle's bluetooth");
+    println!("[{tag}] {peer} is on the dongle's bluetooth");
     Ok(Session { peer, local, stream })
 }
 
@@ -185,16 +146,11 @@ async fn read_line(stream: &mut TcpStream) -> Result<String, String> {
 }
 
 fn order(line: &str) -> Result<(), String> {
-    crate::ap::order(&format!("iap {line}"))
+    crate::ap::order(&format!("accessory {line}"))
 }
 
 pub fn drop_link(mac: &str) -> Result<(), String> {
     order(&format!("disconnect {mac}"))
-}
-
-/// Leave out whoever already has a session, so a phone that moved to Wi-Fi is not called back.
-pub fn set_targets(macs: &[String]) -> Result<(), String> {
-    order(&format!("targets {}", macs.join(" ")))
 }
 
 #[cfg(test)]

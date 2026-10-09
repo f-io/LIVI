@@ -369,7 +369,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         // Off unless asked for, since the tunnelled adapter wants the same controller.
         let mut dongle_iap = std::env::var("LIVI_BT_VIA_DONGLE")
             .is_ok_and(|v| v == "1")
-            .then(|| livi_link_host::iap::sessions(|| true));
+            .then(|| livi_link_host::accessory::sessions(|| true));
         let bt_mac = bt::adapter_address(&conn, &adapter).await?;
         println!("[helperd] adapter {} up (RFCOMM ch {})", format_mac(&bt_mac), bt::IAP_CHANNEL);
         let identity = Identity { bt_mac, ..identity.clone() };
@@ -381,6 +381,15 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             ap_iface(&DeviceConfig::load()),
             state.clone(),
         ));
+
+        // Android Auto takes its calls over hands-free on the cable too, the switch below only
+        // adds the Wi-Fi bootstrap.
+        let hfp = livi_runtime::hfp::Hfp::default();
+        hfp.set_events(aa_events.clone());
+        if let Err(e) = bt::start_hfp(&conn, &adapter, hfp).await {
+            eprintln!("[hfp] profile registration failed: {e}");
+        }
+        livi_runtime::sco::serve(aa_events.clone(), sco_sink.clone());
 
         if std::env::var("LIVI_AA_WIRELESS").unwrap_or_else(|_| "1".into()) != "0" {
             let aa_port = env_or("LIVI_PORT", livi_aa::consts::TCP_PORT);
@@ -400,12 +409,6 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
                         ap_ip: std::env::var("LIVI_AP_IP").unwrap_or_else(|_| "10.10.0.1".into()),
                         port: aa_port,
                     };
-                    let hfp = livi_runtime::hfp::Hfp::default();
-                    hfp.set_events(aa_events.clone());
-                    if let Err(e) = bt::start_hfp(&conn, &adapter, hfp).await {
-                        eprintln!("[hfp] profile registration failed: {e}");
-                    }
-                    livi_runtime::sco::serve(aa_events.clone(), sco_sink.clone());
                     if let Err(e) = bt::start_ble_ad(&conn, &adapter, &identity.name).await {
                         eprintln!("[aa] BLE advertisement failed: {e}");
                     }

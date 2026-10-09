@@ -2,7 +2,7 @@
 
 /// The MFi coprocessor.
 pub const MFI: u16 = 5000;
-/// Orders for the dongle, the Bluetooth accessory's with `iap` in front.
+/// Orders for the dongle, the Bluetooth accessory's with `accessory` in front.
 pub const CONTROL: u16 = 5001;
 /// The Bluetooth controller as raw HCI, for a host that drives it itself.
 pub const HCI: u16 = 5002;

@@ -51,8 +51,12 @@ async function loadWifiCountryCodes(): Promise<SelectOption[]> {
 
 const DONGLE_LINK = 'livi-link'
 
-function adapterOption(value: string, switchedOn: boolean | null | undefined): SelectOption {
-  if (value !== DONGLE_LINK) return { value, label: value }
+function adapterOption(
+  value: string,
+  switchedOn: boolean | null | undefined,
+  model: string | undefined
+): SelectOption {
+  if (value !== DONGLE_LINK) return { value, label: model ? `${value} (${model})` : value }
   if (switchedOn === false) {
     return { value, label: 'LIVI Link (off)', labelKey: 'settings.dongleSwitchedOff' }
   }
@@ -61,12 +65,16 @@ function adapterOption(value: string, switchedOn: boolean | null | undefined): S
 
 async function loadWifiInterfaces(): Promise<SelectOption[]> {
   const system = useLiviStore.getState().system
-  return (system?.wifiInterfaces ?? []).map((i) => adapterOption(i, system?.dongle?.wifi))
+  return (system?.wifiInterfaces ?? []).map((i) =>
+    adapterOption(i, system?.dongle?.wifi, system?.interfaceModels?.[i])
+  )
 }
 
 async function loadBtAdapters(): Promise<SelectOption[]> {
   const system = useLiviStore.getState().system
-  return (system?.btAdapters ?? []).map((i) => adapterOption(i, system?.dongle?.bt))
+  return (system?.btAdapters ?? []).map((i) =>
+    adapterOption(i, system?.dongle?.bt, system?.interfaceModels?.[i])
+  )
 }
 
 const switchDongleOn =
@@ -258,8 +266,7 @@ export const generalSchema: SettingsNode<Config> = {
           label: 'Wireless Android Auto',
           labelKey: 'settings.wirelessAaEnabled',
           icon: 'wirelessAa',
-          path: 'wirelessAaEnabled',
-          disabled: window.app?.platform !== 'linux'
+          path: 'wirelessAaEnabled'
         },
         {
           type: 'checkbox',

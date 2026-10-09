@@ -2361,6 +2361,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "livi-accessoryd"
+version = "0.1.0"
+dependencies = [
+ "libc 1.0.0-alpha.5",
+ "livi-net",
+]
+
+[[package]]
 name = "livi-audio-player"
 version = "0.1.0"
 dependencies = [
@@ -2388,6 +2396,10 @@ version = "0.1.0"
 dependencies = [
  "livi-crypto-node",
 ]
+
+[[package]]
+name = "livi-bt-host"
+version = "0.1.0"
 
 [[package]]
 name = "livi-btd"
@@ -2488,6 +2500,8 @@ dependencies = [
  "iap2-wired",
  "libc 1.0.0-alpha.5",
  "livi-aa",
+ "livi-bt-host",
+ "livi-hfp",
  "livi-link-host",
  "livi-net",
  "livi-runtime",
@@ -2498,16 +2512,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "livi-host-proto"
-version = "0.1.0"
-
-[[package]]
-name = "livi-iapd"
+name = "livi-hfp"
 version = "0.1.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
- "livi-net",
 ]
+
+[[package]]
+name = "livi-host-proto"
+version = "0.1.0"
 
 [[package]]
 name = "livi-link-host"
@@ -2575,6 +2588,7 @@ dependencies = [
  "iap2-link",
  "iap2-mfi",
  "libc 1.0.0-alpha.5",
+ "livi-hfp",
  "livi-host-proto",
  "livi-wifi",
  "serde_json",
@@ -2662,8 +2676,8 @@ dependencies = [
  "iap2-mfi",
  "imx6ul-uboot",
  "libc 1.0.0-alpha.5",
+ "livi-accessoryd",
  "livi-btd",
- "livi-iapd",
  "livi-mdns",
  "livi-net",
  "livi-web",

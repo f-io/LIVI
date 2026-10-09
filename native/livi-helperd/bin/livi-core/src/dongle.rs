@@ -70,14 +70,15 @@ fn commands_for(cfg: &Config, status: &Status) -> Vec<String> {
     settings_for(cfg)
 }
 
-/// On Linux the host drives the dongle's controller itself, over the tunnel.
+/// The host drives the dongle's controller itself, over the tunnel. Only on Linux can a test hand
+/// wireless CarPlay to the dongle's own accessory instead.
 fn accessory_on_dongle() -> bool {
-    !cfg!(target_os = "linux") || std::env::var("LIVI_BT_VIA_DONGLE").as_deref() == Ok("1")
+    cfg!(target_os = "linux") && std::env::var("LIVI_BT_VIA_DONGLE").as_deref() == Ok("1")
 }
 
 fn bt_commands_for(cfg: &Config) -> Vec<String> {
     let on = cfg.bt_adapter == CHOICE && cfg.wireless_cp_enabled && accessory_on_dongle();
-    vec![if on { "iap on" } else { "iap off" }.into()]
+    vec![if on { "accessory on" } else { "accessory off" }.into()]
 }
 
 /// Channel and width are left out, the dongle narrows those itself when its
@@ -292,6 +293,8 @@ impl Link {
         };
         let mut wifi_interfaces = hwaddr::wifi_interfaces();
         let mut bt_adapters = hwaddr::bt_adapters();
+        let models =
+            hwaddr::interface_models(&[wifi_interfaces.clone(), bt_adapters.clone()].concat());
         let mut dongle = None;
         if answers {
             dongle = match &status {
@@ -304,6 +307,7 @@ impl Link {
         hub.update(|s| {
             s.system.wifi_interfaces = wifi_interfaces;
             s.system.bt_adapters = bt_adapters;
+            s.system.interface_models = models;
             s.system.dongle = dongle;
             s.system.link_speed = link_speed;
         });
@@ -444,13 +448,15 @@ mod tests {
     }
 
     #[test]
-    fn the_accessory_runs_on_the_dongle_only_with_its_bluetooth_and_wireless_carplay() {
+    fn the_dongles_own_accessory_stays_off_while_the_host_drives_its_controller() {
         let mut cfg = on_dongle();
-        assert_eq!(bt_commands_for(&cfg), ["iap off"]);
-        cfg.bt_adapter = CHOICE.into();
         cfg.wireless_cp_enabled = true;
-        let expected = if accessory_on_dongle() { "iap on" } else { "iap off" };
-        assert_eq!(bt_commands_for(&cfg), [expected]);
+        assert_eq!(bt_commands_for(&cfg), ["accessory off"]);
+        cfg.bt_adapter = CHOICE.into();
+        let on = if accessory_on_dongle() { "accessory on" } else { "accessory off" };
+        assert_eq!(bt_commands_for(&cfg), [on]);
+        cfg.wireless_cp_enabled = false;
+        assert_eq!(bt_commands_for(&cfg), ["accessory off"]);
     }
 
     #[test]

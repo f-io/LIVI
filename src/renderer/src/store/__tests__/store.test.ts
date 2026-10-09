@@ -81,6 +81,7 @@ const state = (config: unknown, main = 'livi'): State =>
     system: {
       wifiInterfaces: [],
       btAdapters: [],
+      interfaceModels: {},
       dongle: null,
       linkSpeed: null,
       wifiBands: [],

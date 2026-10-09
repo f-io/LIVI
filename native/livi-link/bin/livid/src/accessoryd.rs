@@ -6,7 +6,7 @@ const HOSTAPD_LIVE: [&str; 2] = ["/tmp/livi/hostapd.conf", "/tmp/livi/hostapd.al
 const KEYS: &str = "/tmp/livi/bt-keys";
 
 pub fn run(_args: Vec<String>) -> i32 {
-    let cfg = livi_iapd::Config {
+    let cfg = livi_accessoryd::Config {
         keys_path: KEYS.into(),
         ap_name: Arc::new(|| {
             livi_wifid::server::ap_name_from(
@@ -15,5 +15,5 @@ pub fn run(_args: Vec<String>) -> i32 {
             )
         }),
     };
-    crate::exit_rc(livi_iapd::run(cfg))
+    crate::exit_rc(livi_accessoryd::run(cfg))
 }

@@ -12,8 +12,10 @@ members = [
     "livi-helperd/crates/livi-aa",
     "livi-helperd/crates/livi-aa-proto",
     "livi-helperd/crates/livi-aa-stack",
+    "livi-helperd/crates/livi-bt-host",
     "livi-helperd/crates/livi-core-proto",
     "livi-helperd/crates/livi-cp",
+    "livi-helperd/crates/livi-hfp",
     "livi-helperd/crates/livi-link-host",
     "livi-helperd/crates/livi-media",
     "livi-helperd/crates/livi-net",
@@ -38,7 +40,7 @@ members = [
     "livi-link/bin/mkbootimg-v821b",
     "livi-link/crates/imx6ul-uboot",
     "livi-link/crates/livi-btd",
-    "livi-link/crates/livi-iapd",
+    "livi-link/crates/livi-accessoryd",
     "livi-link/crates/livi-link-provision",
     "livi-link/crates/livi-mdns",
     "livi-link/crates/livi-web",
@@ -77,8 +79,10 @@ iap2-wired = { path = "livi-helperd/crates/iap2-wired" }
 livi-aa = { path = "livi-helperd/crates/livi-aa" }
 livi-aa-proto = { path = "livi-helperd/crates/livi-aa-proto" }
 livi-aa-stack = { path = "livi-helperd/crates/livi-aa-stack" }
+livi-bt-host = { path = "livi-helperd/crates/livi-bt-host" }
 livi-core-proto = { path = "livi-helperd/crates/livi-core-proto" }
 livi-cp = { path = "livi-helperd/crates/livi-cp" }
+livi-hfp = { path = "livi-helperd/crates/livi-hfp" }
 livi-link-host = { path = "livi-helperd/crates/livi-link-host" }
 livi-media = { path = "livi-helperd/crates/livi-media" }
 livi-net = { path = "livi-helperd/crates/livi-net" }
@@ -97,7 +101,7 @@ livi-video-nal = { path = "livi-gst-video/rust/nal" }
 livi-video-player = { path = "livi-gst-video/rust/player" }
 imx6ul-uboot = { path = "livi-link/crates/imx6ul-uboot" }
 livi-btd = { path = "livi-link/crates/livi-btd" }
-livi-iapd = { path = "livi-link/crates/livi-iapd" }
+livi-accessoryd = { path = "livi-link/crates/livi-accessoryd" }
 livi-link-provision = { path = "livi-link/crates/livi-link-provision" }
 livi-mdns = { path = "livi-link/crates/livi-mdns" }
 livi-web = { path = "livi-link/crates/livi-web" }

@@ -47,7 +47,7 @@ done
 
 log "livid + applet symlinks"
 cp "$LIVID" "$WORK/usr/bin/livid"
-for name in livi-netd livi-httpd livi-wifid livi-ledd livi-bt-up livi-mfid livi-btd livi-iapd; do
+for name in livi-netd livi-httpd livi-wifid livi-ledd livi-bt-up livi-mfid livi-btd livi-accessoryd; do
   ln -sf livid "$WORK/usr/bin/$name"
 done
 

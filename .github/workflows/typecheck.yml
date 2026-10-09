@@ -219,7 +219,7 @@ jobs:
         working-directory: native
         env:
           DYLD_LIBRARY_PATH: /Library/Frameworks/GStreamer.framework/Versions/1.0/lib
-          LINUX_ONLY: --exclude livi-compositor --exclude livid --exclude livi-iapd --exclude livi-mdns --exclude livi-web
+          LINUX_ONLY: --exclude livi-compositor --exclude livid --exclude livi-accessoryd --exclude livi-mdns --exclude livi-web
         run: |
           cargo clippy --workspace --all-targets --locked $LINUX_ONLY -- -D warnings
           cargo test --workspace --locked $LINUX_ONLY

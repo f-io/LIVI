@@ -557,7 +557,7 @@ fn bt_json() -> String {
         mac = read_trim("/tmp/livi/bt-mac");
     }
     let mut name = read_trim(&format!("/sys/class/bluetooth/{bt}/name"));
-    // iapd gives the controller the AP name, so the hostapd config has it when sysfs does not.
+    // accessoryd gives the controller the AP name, so the hostapd config has it when sysfs does not.
     if name.is_empty() {
         name = livi_wifid::server::ap_name_from(
             std::path::Path::new(HOSTAPD_BASE),

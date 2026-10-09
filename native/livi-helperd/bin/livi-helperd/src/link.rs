@@ -2,8 +2,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+#[cfg(target_os = "linux")]
 use livi_runtime::bringup::OnCable;
 use livi_runtime::livi_sock::Broadcaster;
+#[cfg(target_os = "linux")]
 use livi_runtime::state::HelperState;
 use tokio::sync::Notify;
 
@@ -11,14 +13,16 @@ const RESOLVE_INTERVAL: Duration = Duration::from_millis(500);
 const WATCH_RETRY: Duration = Duration::from_secs(2);
 
 /// CarPlay over the cable keeps the phone's Bluetooth to the accessory disconnected.
+#[cfg(target_os = "linux")]
 pub fn drop_dongle_link(mac: String) {
     tokio::task::spawn_blocking(move || {
-        if let Err(e) = livi_link_host::iap::drop_link(&mac) {
+        if let Err(e) = livi_link_host::accessory::drop_link(&mac) {
             eprintln!("[helperd] {mac} stays on the dongle's bluetooth: {e}");
         }
     });
 }
 
+#[cfg(target_os = "linux")]
 pub fn dongle_on_cable(state: Arc<HelperState>) -> OnCable {
     OnCable(Arc::new(move |mac: &str| {
         let cabled = state.carkit_claims(mac);

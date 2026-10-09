@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -109,6 +110,61 @@ pub fn bt_adapters() -> Vec<String> {
     bt_adapters_in(Path::new(BT_SYSFS))
 }
 
+/// The chips LIVI meets, by the IDs their devices report, named as the kernel's driver tables name
+/// them. MediaTek Wi-Fi on PCIe first, then the Bluetooth half of the same cards on USB.
+const CHIPS: [(u16, u16, &str); 11] = [
+    (0x14c3, 0x7961, "MT7921"),
+    (0x14c3, 0x0608, "MT7921"),
+    (0x14c3, 0x7922, "MT7922"),
+    (0x14c3, 0x0616, "MT7922"),
+    (0x14c3, 0x7920, "MT7920"),
+    (0x14c3, 0x7925, "MT7925"),
+    (0x14c3, 0x0717, "MT7925"),
+    (0x14c3, 0x7927, "MT7927"),
+    (0x0489, 0xe0e2, "MT7922"),
+    (0x13d3, 0x3602, "MT7925"),
+    (0x0e8d, 0x7925, "MT7925"),
+];
+
+fn hex_in(path: &Path) -> Option<u16> {
+    let text = fs::read_to_string(path).ok()?;
+    u16::from_str_radix(text.trim().trim_start_matches("0x"), 16).ok()
+}
+
+/// The chip behind an interface's device, else its maker, else its driver.
+fn model_of(device: &Path) -> Option<String> {
+    let device = fs::canonicalize(device).ok()?;
+    let parent = device.parent()?;
+    // A PCI or SDIO function names its IDs itself, a USB interface leaves them to its device.
+    let ids = hex_in(&device.join("vendor"))
+        .zip(hex_in(&device.join("device")))
+        .or_else(|| hex_in(&parent.join("idVendor")).zip(hex_in(&parent.join("idProduct"))));
+    if let Some((_, _, chip)) = ids.and_then(|ids| CHIPS.iter().find(|(v, d, _)| (*v, *d) == ids)) {
+        return Some((*chip).to_string());
+    }
+    // On USB the driver alone would only say btusb.
+    let maker = fs::read_to_string(parent.join("manufacturer")).ok();
+    if let Some(maker) = maker.as_deref().and_then(|m| m.split_whitespace().next()) {
+        return Some(maker.trim_end_matches([',', '.']).to_string());
+    }
+    let driver = fs::read_link(device.join("driver")).ok()?;
+    Some(driver.file_name()?.to_string_lossy().into_owned())
+}
+
+fn interface_models_in(net: &Path, bt: &Path, names: &[String]) -> BTreeMap<String, String> {
+    names
+        .iter()
+        .filter_map(|name| {
+            let dir = if name.starts_with("hci") { bt } else { net };
+            model_of(&dir.join(name).join("device")).map(|model| (name.clone(), model))
+        })
+        .collect()
+}
+
+pub fn interface_models(names: &[String]) -> BTreeMap<String, String> {
+    interface_models_in(Path::new(NET_SYSFS), Path::new(BT_SYSFS), names)
+}
+
 /// Asking the dongle blocks for up to its timeout.
 pub fn accessory_id(wifi_interface: &str) -> Option<String> {
     if let Ok(mac) = std::env::var("AA_WIFI_BSSID") {
@@ -162,6 +218,49 @@ mod tests {
         fs::create_dir_all(bt.join("hci0:1")).unwrap();
         fs::create_dir_all(bt.join("hci")).unwrap();
         assert_eq!(bt_adapters_in(&bt), ["hci1"]);
+    }
+
+    #[test]
+    fn each_interface_names_its_chip_its_maker_or_its_driver() {
+        use std::os::unix::fs::symlink;
+        let dir = TempDir::new();
+        let (net, bt, devices) = (dir.0.join("net"), dir.0.join("bt"), dir.0.join("devices"));
+        let place = |class: &Path, name: &str, device: &Path| {
+            fs::create_dir_all(class.join(name)).unwrap();
+            fs::create_dir_all(device).unwrap();
+            symlink(device, class.join(name).join("device")).unwrap();
+        };
+        let card = devices.join("pci/0000:68:00.0");
+        place(&net, "wlp104s0", &card);
+        write(&card.join("vendor"), "0x14c3\n");
+        write(&card.join("device"), "0x7925\n");
+
+        let sdio = devices.join("mmc1:0001:1");
+        place(&net, "wlan0", &sdio);
+        write(&sdio.join("vendor"), "0x02d0\n");
+        write(&sdio.join("device"), "0xa9a6\n");
+        fs::create_dir_all(devices.join("drivers/brcmfmac")).unwrap();
+        symlink(devices.join("drivers/brcmfmac"), sdio.join("driver")).unwrap();
+
+        let known = devices.join("usb5/5-7/5-7:1.0");
+        place(&bt, "hci1", &known);
+        write(&devices.join("usb5/5-7/idVendor"), "13d3\n");
+        write(&devices.join("usb5/5-7/idProduct"), "3602\n");
+
+        let other = devices.join("usb3/3-6/3-6:1.0");
+        place(&bt, "hci0", &other);
+        write(&devices.join("usb3/3-6/idVendor"), "0e8d\n");
+        write(&devices.join("usb3/3-6/idProduct"), "0616\n");
+        write(&devices.join("usb3/3-6/manufacturer"), "MediaTek Inc.\n");
+
+        let names: Vec<String> =
+            ["wlp104s0", "wlan0", "hci1", "hci0", "hci7", "livi-link"].map(String::from).to_vec();
+        let models = interface_models_in(&net, &bt, &names);
+        assert_eq!(models.get("wlp104s0").map(String::as_str), Some("MT7925"));
+        assert_eq!(models.get("wlan0").map(String::as_str), Some("brcmfmac"));
+        assert_eq!(models.get("hci1").map(String::as_str), Some("MT7925"));
+        assert_eq!(models.get("hci0").map(String::as_str), Some("MediaTek"));
+        assert_eq!(models.len(), 4);
     }
 
     #[test]

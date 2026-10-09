@@ -23,3 +23,7 @@ serde_json.workspace = true
 libc.workspace = true
 nusb.workspace = true
 
+
+[target.'cfg(target_os = "macos")'.dependencies]
+livi-bt-host.workspace = true
+livi-hfp.workspace = true

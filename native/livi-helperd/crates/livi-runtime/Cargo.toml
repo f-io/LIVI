@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 livi-wifi.workspace = true
+livi-host-proto.workspace = true
 iap2-csm.workspace = true
 iap2-link.workspace = true
 iap2-mfi.workspace = true
@@ -14,9 +15,7 @@ base64.workspace = true
 serde_json.workspace = true
 socket2 = { workspace = true, features = ["all"] }
 zbus = { workspace = true, features = ["tokio"] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-livi-host-proto.workspace = true
+livi-hfp.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros", "time", "sync", "test-util"] }
