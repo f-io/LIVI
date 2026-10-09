@@ -16,6 +16,7 @@ use smithay::wayland::dmabuf::DmabufFeedbackBuilder;
 use smithay::wayland::drm_syncobj::{DrmSyncobjState, supports_syncobj_eventfd};
 use smithay_client_toolkit::compositor::{
     CompositorHandler as SctkCompositorHandler, CompositorState as SctkCompositorState,
+    FrameCallbackData,
 };
 use smithay_client_toolkit::output::{
     OutputHandler as SctkOutputHandler, OutputState as SctkOutputState,
@@ -31,7 +32,9 @@ use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface a
 use smithay_client_toolkit::reexports::client::protocol::wl_touch::WlTouch;
 use smithay_client_toolkit::reexports::client::{Connection, Proxy, QueueHandle};
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
-use smithay_client_toolkit::seat::keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers};
+use smithay_client_toolkit::seat::keyboard::{
+    KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers,
+};
 use smithay_client_toolkit::seat::pointer::{
     CursorIcon, PointerEvent, PointerEventKind, PointerHandler, ThemeSpec, ThemedPointer,
 };
@@ -734,7 +737,7 @@ impl SctkSeatHandler for LiviState {
                 self.host.pointer =
                     surface.zip(self.host.shm.as_ref()).and_then(|(surface, shm)| {
                         seats
-                            .get_pointer_with_theme(
+                            .get_pointer_with_theme::<_, ()>(
                                 qh,
                                 &seat,
                                 shm.wl_shm(),
@@ -918,6 +921,17 @@ impl KeyboardHandler for LiviState {
         crate::input::key(self, event.time, event.raw_code, true, event.keysym);
     }
 
+    // The inner client repeats on its own, from the repeat info of our seat.
+    fn repeat_key(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &WlKeyboard,
+        _serial: u32,
+        _event: KeyEvent,
+    ) {
+    }
+
     fn release_key(
         &mut self,
         _: &Connection,
@@ -936,7 +950,8 @@ impl KeyboardHandler for LiviState {
         _: &WlKeyboard,
         _serial: u32,
         modifiers: Modifiers,
-        _raw: u32,
+        _raw: RawModifiers,
+        _layout: u32,
     ) {
         crate::input::modifiers(self, modifiers);
     }
@@ -969,15 +984,7 @@ pub fn apply_cursor(state: &LiviState) {
     let _ = conn.flush();
 }
 
-smithay_client_toolkit::delegate_compositor!(LiviState);
-smithay_client_toolkit::delegate_output!(LiviState);
-smithay_client_toolkit::delegate_shm!(LiviState);
-smithay_client_toolkit::delegate_seat!(LiviState);
-smithay_client_toolkit::delegate_keyboard!(LiviState);
-smithay_client_toolkit::delegate_pointer!(LiviState);
-smithay_client_toolkit::delegate_touch!(LiviState);
-smithay_client_toolkit::delegate_xdg_shell!(LiviState);
-smithay_client_toolkit::delegate_xdg_window!(LiviState);
+smithay_client_toolkit::delegate_dispatch2!(LiviState);
 smithay_client_toolkit::delegate_registry!(LiviState);
 
 pub fn request_frame(state: &mut LiviState, screen_idx: usize) {
@@ -985,7 +992,7 @@ pub fn request_frame(state: &mut LiviState, screen_idx: usize) {
     if let (Some(w), Some(qh)) = (state.host.window_for_screen(screen_idx), qh)
         && !w.frame_pending
     {
-        w.window.wl_surface().frame(&qh, w.window.wl_surface().clone());
+        w.window.wl_surface().frame(&qh, FrameCallbackData(w.window.wl_surface().clone()));
         w.frame_pending = true;
     }
 }

@@ -43,7 +43,7 @@ impl FeedListener {
         let listener = self.listener.try_clone().expect("dup listener");
         let clients = self.clients.clone();
         let mut next = 0u64;
-        let id = glib::unix_fd_add_local(fd, IOCondition::IN, move |_, _| {
+        let id = glib_unix::unix_fd_add_local(fd, IOCondition::IN, move |_, _| {
             let Ok((sock, _)) = listener.accept() else {
                 return glib::ControlFlow::Continue;
             };
@@ -62,7 +62,7 @@ impl FeedListener {
 fn watch_client(fd: RawFd, generation: u64, clients: Clients, sink: Sink) {
     let cond = IOCondition::IN | IOCondition::HUP | IOCondition::ERR;
     let mut framer = Framer::new();
-    glib::unix_fd_add_local(fd, cond, move |_, cond| {
+    glib_unix::unix_fd_add_local(fd, cond, move |_, cond| {
         let mut chunk = [0u8; 65536];
         let read = {
             let mut guard = clients.borrow_mut();

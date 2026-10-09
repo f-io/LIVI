@@ -10,4 +10,5 @@ crate-type = ["rlib"]
 livi-crypto-node = { path = "../../../livi-crypto/rust" }
 livi-video-nal = { path = "../nal" }
 glib = "0.22"
+glib-unix = "0.22"
 socket2 = "0.6"

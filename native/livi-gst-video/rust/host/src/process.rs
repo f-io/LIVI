@@ -49,7 +49,7 @@ pub fn run(sock_path: &str, crash_log: &str) {
 
     let fd = sock.as_raw_fd();
     let reading = host.clone();
-    glib::unix_fd_add_local(
+    glib_unix::unix_fd_add_local(
         fd,
         IOCondition::IN | IOCondition::HUP | IOCondition::ERR,
         move |_, cond| {

@@ -18,4 +18,5 @@ livi-video-nal = { path = "../nal" }
 livi-video-player = { path = "../player" }
 realfft = "3.5.0"
 glib = "0.22"
+glib-unix = "0.22"
 libc.workspace = true

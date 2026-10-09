@@ -331,10 +331,19 @@ fn image_url(version_json: &str, origin: &str) -> Result<String, String> {
 }
 
 fn get(url: &str, limit: u64) -> Result<Vec<u8>, String> {
-    let response =
-        ureq::get(url).timeout(Duration::from_secs(300)).call().map_err(|e| e.to_string())?;
+    let response = ureq::get(url)
+        .config()
+        .timeout_global(Some(Duration::from_secs(300)))
+        .build()
+        .call()
+        .map_err(|e| e.to_string())?;
     let mut body = Vec::new();
-    response.into_reader().take(limit).read_to_end(&mut body).map_err(|e| e.to_string())?;
+    response
+        .into_body()
+        .into_reader()
+        .take(limit)
+        .read_to_end(&mut body)
+        .map_err(|e| e.to_string())?;
     Ok(body)
 }
 

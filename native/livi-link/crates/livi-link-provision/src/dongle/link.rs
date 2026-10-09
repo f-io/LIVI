@@ -12,10 +12,13 @@ pub struct Status {
 
 pub fn status(host: &str) -> Option<Status> {
     ureq::get(&format!("http://{host}/api/status"))
-        .timeout(Duration::from_secs(2))
+        .config()
+        .timeout_global(Some(Duration::from_secs(2)))
+        .build()
         .call()
         .ok()?
-        .into_json()
+        .body_mut()
+        .read_json()
         .ok()
 }
 
@@ -33,16 +36,16 @@ pub fn bundle(target: &str) -> Option<&'static [u8]> {
 
 /// The dongle writes and verifies every changed image before it answers, hence the long timeout.
 pub fn update(host: &str, bundle: &[u8]) -> Result<String, String> {
-    let reply = match ureq::post(&format!("http://{host}/api/flash"))
-        .set("Content-Type", "application/octet-stream")
-        .timeout(Duration::from_secs(900))
-        .send_bytes(bundle)
-    {
-        Ok(r) => r,
-        Err(ureq::Error::Status(_, r)) => r,
-        Err(e) => return Err(format!("upload: {e}")),
-    };
-    let body = reply.into_string().map_err(|e| format!("reply: {e}"))?;
+    let mut reply = ureq::post(&format!("http://{host}/api/flash"))
+        .header("Content-Type", "application/octet-stream")
+        .config()
+        .timeout_global(Some(Duration::from_secs(900)))
+        // A refusal still carries the dongle's reason in its body.
+        .http_status_as_error(false)
+        .build()
+        .send(bundle)
+        .map_err(|e| format!("upload: {e}"))?;
+    let body = reply.body_mut().read_to_string().map_err(|e| format!("reply: {e}"))?;
     answer(&body)
 }
 

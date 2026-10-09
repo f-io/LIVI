@@ -26,11 +26,13 @@ fn cgi_url() -> String {
 
 pub fn host() -> Result<HostInfo, String> {
     let url = format!("{}?id=host", cgi_url());
-    let resp = ureq::get(&url)
-        .timeout(Duration::from_secs(5))
+    let mut resp = ureq::get(&url)
+        .config()
+        .timeout_global(Some(Duration::from_secs(5)))
+        .build()
         .call()
         .map_err(|e| format!("id=host: {e}"))?;
-    resp.into_json::<HostInfo>().map_err(|e| format!("id=host JSON: {e}"))
+    resp.body_mut().read_json::<HostInfo>().map_err(|e| format!("id=host JSON: {e}"))
 }
 
 pub fn upload(image: &[u8]) -> Result<(), String> {
@@ -46,9 +48,11 @@ pub fn upload(image: &[u8]) -> Result<(), String> {
     body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
 
     let resp = ureq::post(&url)
-        .set("Content-Type", &format!("multipart/form-data; boundary={boundary}"))
-        .timeout(Duration::from_secs(60))
-        .send_bytes(&body)
+        .header("Content-Type", format!("multipart/form-data; boundary={boundary}"))
+        .config()
+        .timeout_global(Some(Duration::from_secs(60)))
+        .build()
+        .send(body.as_slice())
         .map_err(|e| format!("id=upload: {e}"))?;
     if resp.status() != 200 {
         return Err(format!("id=upload HTTP {}", resp.status()));

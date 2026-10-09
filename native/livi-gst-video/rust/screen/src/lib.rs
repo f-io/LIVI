@@ -332,7 +332,7 @@ pub mod receiver {
             let client = self.client.clone();
             let stream = self.stream.clone();
 
-            let id = glib::unix_fd_add_local(fd, IOCondition::IN, move |_, _| {
+            let id = glib_unix::unix_fd_add_local(fd, IOCondition::IN, move |_, _| {
                 let Ok((sock, _)) = listener.accept() else {
                     return glib::ControlFlow::Continue;
                 };
@@ -359,7 +359,7 @@ pub mod receiver {
         stream: Rc<RefCell<ScreenStream>>,
     ) {
         let cond = IOCondition::IN | IOCondition::HUP | IOCondition::ERR;
-        glib::unix_fd_add_local(fd, cond, move |_, cond| {
+        glib_unix::unix_fd_add_local(fd, cond, move |_, cond| {
             let drop_client = |stream: &Rc<RefCell<ScreenStream>>| {
                 *client.borrow_mut() = None;
                 stream.borrow_mut().reset();
