@@ -12,6 +12,7 @@ use livi_link_provision::dongle::arm::imx6ul::shell::{self, DEFAULT_HOST, Shell}
 use livi_link_provision::dongle::arm::imx6ul::{self, boot, mtd};
 use livi_link_provision::dongle::hook;
 use livi_link_provision::dongle::link;
+use livi_link_provision::dongle::mips::x1600;
 use livi_link_provision::dongle::probe::{Family, Probe};
 use livi_link_provision::dongle::rescue;
 use livi_link_provision::dongle::riscv::v821b;
@@ -57,6 +58,7 @@ fn run_dongle(args: &[String]) -> Result<bool, String> {
         (Some("arm"), Some("imx6ul")) => run_imx6ul(rest),
         (Some("arm"), Some("ax520")) => run_ax520(rest),
         (Some("riscv"), Some("v821b")) => run_v821b(rest),
+        (Some("mips"), Some("x1600")) => run_x1600(rest),
         _ => Err(usage().to_string()),
     }
 }
@@ -180,6 +182,95 @@ fn run_ax520(args: &[String]) -> Result<bool, String> {
         _ => Err(usage().to_string()),
     }
     .map(|_| true)
+}
+
+/// Identify, back up and flash through the vendor's own OTA, which keeps the other bank as the
+/// way back. The host is the dongle's AP address unless $LIVI_LINK_HOST says otherwise.
+fn run_x1600(args: &[String]) -> Result<bool, String> {
+    let host = std::env::var("LIVI_LINK_HOST").unwrap_or_else(|_| x1600::default_host().into());
+    match args.first().map(String::as_str) {
+        Some("info") => {
+            let v = x1600::version(&host)?;
+            println!("model:    {}", v.model);
+            println!("platform: {}", v.platform.as_deref().unwrap_or("?"));
+            println!("custom:   {}", v.custom.as_deref().unwrap_or("?"));
+            println!("system:   {}", v.system_version.as_deref().unwrap_or("?"));
+            println!(
+                "{}",
+                if v.model == x1600::MODEL { "a supported X1600 dongle" } else { "NOT an X1600 dongle" }
+            );
+            Ok(true)
+        }
+        Some("fetch") => {
+            let out = args.get(1).ok_or("usage: dongle mips x1600 fetch <out.img>")?;
+            let ota = x1600::fetch(&x1600::version(&host)?)?;
+            std::fs::write(out, &ota).map_err(|e| format!("{out}: {e}"))?;
+            println!("vendor OTA saved to {out} ({} B)", ota.len());
+            Ok(true)
+        }
+        Some("backup") => {
+            let positional = args.get(1).filter(|a| !a.starts_with("--"));
+            let dir = positional.map(PathBuf::from).unwrap_or_else(backup_dir);
+            let mut sh = livi_link_provision::dongle::shell::BindShell::connect(30)?;
+            match bank_flag(&args[1..])? {
+                Some(bank) => x1600::backup_bank(&mut sh, bank, &dir).map(|_| true),
+                None => x1600::backup_stock(&mut sh, &dir).map(|_| true),
+            }
+        }
+        Some("flash") => {
+            let path = args.get(1).ok_or("usage: dongle mips x1600 flash <ota.img> [--write] [--reboot]")?;
+            let ota = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+            let parts = x1600::image::parse(&ota)?;
+            println!(
+                "== image ok: kernel {} B, rootfs {} B, checks match",
+                parts.kernel.len(),
+                parts.rootfs.len()
+            );
+            let flags = &args[2..];
+            if !flags.iter().any(|a| a == "--write") {
+                println!("== dry run, add --write to flash the inactive bank");
+                return Ok(true);
+            }
+            x1600::flash(&host, &ota, &report)?;
+            println!("== ota update ok, the other bank is now the next boot");
+            if flags.iter().any(|a| a == "--reboot") {
+                x1600::reboot(&host);
+                println!("== rebooting");
+            } else {
+                println!("== reboot it when ready: http://{host}/cgi-bin/reboot.cgi");
+            }
+            Ok(true)
+        }
+        Some("install-shell") => {
+            let path_arg = args.get(1).filter(|a| !a.starts_with("--"));
+            let ota = match path_arg {
+                Some(path) => std::fs::read(path).map_err(|e| format!("{path}: {e}"))?,
+                None => x1600::fetch(&x1600::version(&host)?)?,
+            };
+            let patched = x1600::shell::with_shell(&ota)?;
+            let parts = x1600::image::parse(&patched)?;
+            println!(
+                "== patched image ready: kernel {} B, rootfs {} B, bind-shell on 2323",
+                parts.kernel.len(),
+                parts.rootfs.len()
+            );
+            let flags = &args[if path_arg.is_some() { 2 } else { 1 }..];
+            if !flags.iter().any(|a| a == "--write") {
+                println!("== dry run, add --write to flash the inactive bank");
+                return Ok(true);
+            }
+            x1600::flash(&host, &patched, &report)?;
+            println!("== ota update ok, the other bank is now the next boot, with the bind-shell on 2323");
+            if flags.iter().any(|a| a == "--reboot") {
+                x1600::reboot(&host);
+                println!("== rebooting");
+            } else {
+                println!("== reboot it when ready: http://{host}/cgi-bin/reboot.cgi");
+            }
+            Ok(true)
+        }
+        _ => Err(usage().to_string()),
+    }
 }
 
 fn run_v821b(args: &[String]) -> Result<bool, String> {
@@ -320,6 +411,9 @@ fn menu() -> std::process::ExitCode {
                 println!("  2  back to the vendor firmware (from backup)");
             }
             Detected::Rescue { .. } => println!("  1  write LIVI Link again"),
+            Detected::X1600Stock { .. } => {
+                println!("  (Ingenic X1600: use `dongle mips x1600 backup | flash`, no LIVI Link image yet)");
+            }
             Detected::Nothing if stock_usb => {
                 println!("  1  bootstrap + install LIVI Link (over USB)");
             }
@@ -580,10 +674,22 @@ fn report(line: &str) {
     println!("== {line}");
 }
 
+/// `--bank 1` or `--bank 2` out of a flag list, for `dongle mips x1600 backup`.
+fn bank_flag(args: &[String]) -> Result<Option<u8>, String> {
+    let Some(pos) = args.iter().position(|a| a == "--bank") else { return Ok(None) };
+    let value = args.get(pos + 1).ok_or("--bank needs a 1 or a 2 after it")?;
+    match value.as_str() {
+        "1" => Ok(Some(1)),
+        "2" => Ok(Some(2)),
+        other => Err(format!("--bank must be 1 or 2, not {other:?}")),
+    }
+}
+
 fn usage() -> &'static str {
     "usage: livi-link-provision [detect]
   dongle arm imx6ul  provision [lfwb] | restore [backup dir] | flash <lfwb> [--write] | kernel <zImage> [--write] | backup [dir] | push <local> <remote> | sh 'CMD' | bootstrap | usbscan
   dongle arm ax520   info | install-shell | verify-hw | selftest [N] | backup [dir] | flash <lfwb> | provision [lfwb]
+  dongle mips x1600  info | fetch <out.img> | backup [dir] [--bank 1|2] | flash <ota.img> [--write] [--reboot] | install-shell [<ota.img>] [--write] [--reboot]
   dongle riscv v821b info | install-shell | verify-hw | selftest [N] | backup [dir] | flash <lfwb> | provision [lfwb]"
 }
 
