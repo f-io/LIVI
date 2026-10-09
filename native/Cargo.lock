@@ -250,6 +250,7 @@ dependencies = [
  "liblzma",
  "liblzma-sys",
  "no_std_io2",
+ "rust-lzo",
  "solana-nohash-hasher",
  "thiserror",
  "tracing",
@@ -2563,6 +2564,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "time",
  "ureq",
 ]
 
@@ -3770,6 +3772,15 @@ dependencies = [
  "spki",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "rust-lzo"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf191ab1b954757cb5bb7f366e17d80daaa06010f1fdde7a3a7db052c1ecd1a8"
+dependencies = [
+ "libc 0.2.190",
 ]
 
 [[package]]
