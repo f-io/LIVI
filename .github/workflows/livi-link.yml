@@ -44,18 +44,13 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            native/livi-helperd/target
-            native/livi-link/target
-          key: cargo-shared-${{ hashFiles('native/livi-helperd/Cargo.lock', 'native/livi-link/Cargo.lock', 'native/livi-helperd/**/Cargo.toml', 'native/livi-link/**/Cargo.toml') }}
+            native/target
+          key: cargo-shared-${{ hashFiles('native/Cargo.lock', 'native/**/Cargo.toml') }}
           restore-keys: cargo-shared-
 
-      - name: cargo test shared crates
-        working-directory: native/livi-helperd
-        run: cargo test --release -p iap2-mfi -p livi-wifi
-
-      - name: cargo test dongle crates
-        working-directory: native/livi-link
-        run: cargo test --release -p livi-btd -p livi-iapd -p livi-mdns -p livi-wifid
+      - name: cargo test shared and dongle crates
+        working-directory: native
+        run: cargo test --release --locked -p iap2-mfi -p livi-wifi -p livi-btd -p livi-iapd -p livi-mdns -p livi-wifid
 
   bundle-sanity:
     name: pack .lfwb bundle (dummy inputs)
@@ -198,8 +193,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            native/livi-link/target
-          key: cargo-livi-link-riscv32-${{ hashFiles('native/livi-link/Cargo.lock', 'native/livi-helperd/Cargo.lock', 'native/livi-link/**/Cargo.toml', 'native/livi-helperd/**/Cargo.toml') }}
+            native/target
+          key: cargo-livi-link-riscv32-${{ hashFiles('native/Cargo.lock', 'native/**/Cargo.toml') }}
           restore-keys: cargo-livi-link-riscv32-
 
       - name: Build v821b firmware bundle
@@ -240,8 +235,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            native/livi-link/target
-          key: cargo-livi-link-${{ matrix.target }}-${{ hashFiles('native/livi-link/Cargo.lock', 'native/livi-helperd/Cargo.lock', 'native/livi-link/**/Cargo.toml', 'native/livi-helperd/**/Cargo.toml') }}
+            native/target
+          key: cargo-livi-link-${{ matrix.target }}-${{ hashFiles('native/Cargo.lock', 'native/**/Cargo.toml') }}
           restore-keys: cargo-livi-link-${{ matrix.target }}-
 
       - name: Build armv7 firmware bundle
@@ -413,18 +408,18 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            native/livi-link/target
-          key: cargo-livi-link-tool-${{ matrix.name }}-${{ hashFiles('native/livi-link/Cargo.lock', 'native/livi-helperd/Cargo.lock', 'native/livi-link/**/Cargo.toml', 'native/livi-helperd/**/Cargo.toml') }}
+            native/target
+          key: cargo-livi-link-tool-${{ matrix.name }}-${{ hashFiles('native/Cargo.lock', 'native/**/Cargo.toml') }}
           restore-keys: cargo-livi-link-tool-${{ matrix.name }}-
 
       - name: Build
-        working-directory: native/livi-link
+        working-directory: native
         run: |
-          LIVI_VERSION="$(node -p "require('../../package.json').version")" \
-            cargo build --release -p livi-link-provision-cli
+          LIVI_VERSION="$(node -p "require('../package.json').version")" \
+            cargo build --release --locked -p livi-link-provision-cli
 
       - name: Name the binary per platform
-        working-directory: native/livi-link/target/release
+        working-directory: native/target/release
         shell: bash
         run: mv livi-link-provision livi-link-provision-${{ matrix.name }}
 
@@ -432,5 +427,5 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: livi-link-provision-${{ matrix.name }}
-          path: native/livi-link/target/release/livi-link-provision-${{ matrix.name }}
+          path: native/target/release/livi-link-provision-${{ matrix.name }}
           retention-days: 30

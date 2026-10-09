@@ -8,4 +8,4 @@ name = "usb-probe"
 path = "src/main.rs"
 
 [dependencies]
-nusb = "0.2"
+nusb.workspace = true

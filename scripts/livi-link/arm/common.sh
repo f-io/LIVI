@@ -10,16 +10,16 @@ source "$COMMON/kernel.sh"
 
 # The musl target keeps livid fully static like everything else on the rootfs.
 build_livid() {
-  local link=$REPO/native/livi-link rtarget=armv7-unknown-linux-musleabihf livid
+  local native=$REPO/native rtarget=armv7-unknown-linux-musleabihf livid
   log "cargo build livid ($rtarget)"
   (
-    cd "$link"
+    cd "$native"
     export "CARGO_TARGET_$(echo "$rtarget" | tr 'a-z-' 'A-Z_')_LINKER=${CROSS_COMPILE}gcc"
     export "CC_${rtarget//-/_}=${CROSS_COMPILE}gcc"
     export "AR_${rtarget//-/_}=${CROSS_COMPILE}ar"
     cargo build --profile embedded -p livid --target "$rtarget"
   )
-  livid=${CARGO_TARGET_DIR:-$link/target}/$rtarget/embedded/livid
+  livid=${CARGO_TARGET_DIR:-$native/target}/$rtarget/embedded/livid
   [[ -x $livid ]] || { log "missing $livid"; exit 4; }
   cp -f "$livid" "$OUT/livid"
   log "  livid: $(stat -c%s "$OUT/livid") B"

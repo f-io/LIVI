@@ -9,4 +9,4 @@ edition.workspace = true
 crate-type = ["rlib"]
 
 [dependencies]
-livi-video-nal = { path = "../nal" }
+livi-video-nal.workspace = true

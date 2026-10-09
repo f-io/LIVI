@@ -8,7 +8,7 @@ name = "livi_web"
 path = "src/lib.rs"
 
 [dependencies]
-livi-wifi = { path = "../../../livi-helperd/crates/livi-wifi" }
-livi-wifid = { path = "../livi-wifid" }
-livi-net = { path = "../../../livi-helperd/crates/livi-net" }
+livi-wifi.workspace = true
+livi-wifid.workspace = true
+livi-net.workspace = true
 libc.workspace = true

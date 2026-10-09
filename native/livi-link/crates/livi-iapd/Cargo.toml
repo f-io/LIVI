@@ -7,4 +7,4 @@ edition.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true
-livi-net = { path = "../../../livi-helperd/crates/livi-net" }
+livi-net.workspace = true

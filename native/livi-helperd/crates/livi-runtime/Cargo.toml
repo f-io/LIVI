@@ -4,17 +4,19 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
-livi-host-proto = { path = "../../../livi-host-proto/rust" }
-livi-wifi = { path = "../livi-wifi" }
-iap2-csm = { path = "../iap2-csm" }
-iap2-link = { path = "../iap2-link" }
-iap2-mfi = { path = "../iap2-mfi" }
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "sync", "io-util", "net", "process"] }
+livi-wifi.workspace = true
+iap2-csm.workspace = true
+iap2-link.workspace = true
+iap2-mfi.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time", "sync", "io-util", "net", "process"] }
 libc.workspace = true
-base64 = "0.23"
-serde_json = "1"
-socket2 = { version = "0.6", features = ["all"] }
-zbus = { version = "5.19.0", default-features = false, features = ["tokio"] }
+base64.workspace = true
+serde_json.workspace = true
+socket2 = { workspace = true, features = ["all"] }
+zbus = { workspace = true, features = ["tokio"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+livi-host-proto.workspace = true
 
 [dev-dependencies]
-tokio = { version = "1", features = ["rt", "macros", "time", "sync", "test-util"] }
+tokio = { workspace = true, features = ["rt", "macros", "time", "sync", "test-util"] }

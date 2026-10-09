@@ -7,7 +7,7 @@ edition.workspace = true
 crate-type = ["rlib"]
 
 [dependencies]
-livi-crypto-node = { path = "../../../livi-crypto/rust" }
+livi-crypto-node.workspace = true
 
-socket2 = "0.6"
+socket2.workspace = true
 libc.workspace = true

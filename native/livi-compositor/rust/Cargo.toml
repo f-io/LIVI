@@ -1,7 +1,7 @@
 [package]
 name = "livi-compositor"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 
 # Nested Wayland compositor for LIVI: hosts the Electron UI and tagged GStreamer
 # waylandsink video planes as windows of the outer session, composited zero-copy.
@@ -28,6 +28,3 @@ tiny-skia = "0.12"
 ab_glyph = "0.2"
 fontdb = "0.24"
 nix = { version = "0.31", features = ["signal", "process", "fs"] }
-
-[profile.release]
-opt-level = 3

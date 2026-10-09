@@ -209,9 +209,9 @@ log "Image: $(stat -c%s "$IMG") B   DTB: $(stat -c%s "$DTB") B"
 aic8800_collect
 
 log "wrap kernel + DTB into the boot image for mtd1"
-LINK=$REPO/native/livi-link
-( cd "$LINK" && cargo build --release -p mkbootimg-v821b )
-"${CARGO_TARGET_DIR:-$LINK/target}/release/mkbootimg-v821b" "$IMG" "$DTB" "$BOOTIMG"
+NATIVE=$REPO/native
+( cd "$NATIVE" && cargo build --release -p mkbootimg-v821b )
+"${CARGO_TARGET_DIR:-$NATIVE/target}/release/mkbootimg-v821b" "$IMG" "$DTB" "$BOOTIMG"
 log "done: $BOOTIMG"
 
 build_livid

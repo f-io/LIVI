@@ -8,15 +8,15 @@ name = "livi-gst-host"
 path = "src/main.rs"
 
 [dependencies]
-livi-audio-player = { path = "../audioplayer" }
-livi-audio-stream = { path = "../audio" }
-livi-audio-uplink = { path = "../mic" }
-livi-host-proto = { path = "../../../livi-host-proto/rust" }
-livi-screen-stream = { path = "../screen" }
-livi-video-fanout = { path = "../fanout" }
-livi-video-nal = { path = "../nal" }
-livi-video-player = { path = "../player" }
+livi-audio-player.workspace = true
+livi-audio-stream.workspace = true
+livi-audio-uplink.workspace = true
+livi-host-proto.workspace = true
+livi-screen-stream.workspace = true
+livi-video-fanout.workspace = true
+livi-video-nal.workspace = true
+livi-video-player.workspace = true
 realfft = "3.5.0"
-glib = "0.22"
-glib-unix = "0.22"
+glib.workspace = true
+glib-unix.workspace = true
 libc.workspace = true

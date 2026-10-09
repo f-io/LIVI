@@ -8,4 +8,4 @@ name = "mkbootimg-v821b"
 path = "src/main.rs"
 
 [dependencies]
-flate2 = "1"
+flate2.workspace = true

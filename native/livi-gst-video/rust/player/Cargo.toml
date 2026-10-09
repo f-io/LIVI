@@ -8,10 +8,10 @@ crate-type = ["rlib"]
 
 # v1_24 matches the oldest build host, the CI runner.
 [dependencies]
-gstreamer = { version = "0.25", features = ["v1_24"] }
-gstreamer-app = { version = "0.25", features = ["v1_24"] }
+gstreamer = { workspace = true, features = ["v1_24"] }
+gstreamer-app = { workspace = true, features = ["v1_24"] }
 gstreamer-base = { version = "0.25", features = ["v1_24"] }
-livi-video-codec = { path = "../codec" }
+livi-video-codec.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 gstreamer-video = { version = "0.25", features = ["v1_24"], optional = true }

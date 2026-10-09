@@ -1,0 +1,112 @@
+[workspace]
+resolver = "3"
+members = [
+    "livi-helperd/bin/livi-core",
+    "livi-helperd/bin/livi-helperd",
+    "livi-helperd/bin/usb-probe",
+    "livi-helperd/crates/iap2-csm",
+    "livi-helperd/crates/iap2-link",
+    "livi-helperd/crates/iap2-mfi",
+    "livi-helperd/crates/iap2-usbmux",
+    "livi-helperd/crates/iap2-wired",
+    "livi-helperd/crates/livi-aa",
+    "livi-helperd/crates/livi-aa-proto",
+    "livi-helperd/crates/livi-aa-stack",
+    "livi-helperd/crates/livi-core-proto",
+    "livi-helperd/crates/livi-cp",
+    "livi-helperd/crates/livi-link-host",
+    "livi-helperd/crates/livi-media",
+    "livi-helperd/crates/livi-net",
+    "livi-helperd/crates/livi-runtime",
+    "livi-helperd/crates/livi-session-io",
+    "livi-helperd/crates/livi-wifi",
+    "livi-host-proto/rust",
+    "livi-crypto/rust",
+    "livi-gst-video/rust/addon",
+    "livi-gst-video/rust/audio",
+    "livi-gst-video/rust/audioplayer",
+    "livi-gst-video/rust/codec",
+    "livi-gst-video/rust/fanout",
+    "livi-gst-video/rust/host",
+    "livi-gst-video/rust/mic",
+    "livi-gst-video/rust/nal",
+    "livi-gst-video/rust/player",
+    "livi-gst-video/rust/screen",
+    "livi-compositor/rust",
+    "livi-link/bin/livi-link-provision",
+    "livi-link/bin/livid",
+    "livi-link/bin/mkbootimg-v821b",
+    "livi-link/crates/imx6ul-uboot",
+    "livi-link/crates/livi-btd",
+    "livi-link/crates/livi-iapd",
+    "livi-link/crates/livi-link-provision",
+    "livi-link/crates/livi-mdns",
+    "livi-link/crates/livi-web",
+    "livi-link/crates/livi-wifid",
+]
+
+[workspace.package]
+edition = "2024"
+
+[workspace.dependencies]
+# Every crate takes libc from here, so all of them follow the 1.0 API.
+libc = "1.0.0-alpha.5"
+aes = "0.9.3"
+base64 = "0.23.1"
+flate2 = "1.1.10"
+futures-util = "0.3.34"
+glib = "0.22.10"
+glib-unix = "0.22.8"
+gstreamer = "0.25.4"
+gstreamer-app = "0.25.2"
+nusb = "0.2.7"
+prost = "0.14.4"
+serde = "1.0.229"
+serde_json = "1.0.151"
+sha2 = "0.11.0"
+socket2 = "0.6.5"
+tokio = "1.53.2"
+uuid = "1.27.0"
+zbus = { version = "5.19.0", default-features = false }
+
+iap2-csm = { path = "livi-helperd/crates/iap2-csm" }
+iap2-link = { path = "livi-helperd/crates/iap2-link" }
+iap2-mfi = { path = "livi-helperd/crates/iap2-mfi" }
+iap2-usbmux = { path = "livi-helperd/crates/iap2-usbmux" }
+iap2-wired = { path = "livi-helperd/crates/iap2-wired" }
+livi-aa = { path = "livi-helperd/crates/livi-aa" }
+livi-aa-proto = { path = "livi-helperd/crates/livi-aa-proto" }
+livi-aa-stack = { path = "livi-helperd/crates/livi-aa-stack" }
+livi-core-proto = { path = "livi-helperd/crates/livi-core-proto" }
+livi-cp = { path = "livi-helperd/crates/livi-cp" }
+livi-link-host = { path = "livi-helperd/crates/livi-link-host" }
+livi-media = { path = "livi-helperd/crates/livi-media" }
+livi-net = { path = "livi-helperd/crates/livi-net" }
+livi-runtime = { path = "livi-helperd/crates/livi-runtime" }
+livi-session-io = { path = "livi-helperd/crates/livi-session-io" }
+livi-wifi = { path = "livi-helperd/crates/livi-wifi" }
+livi-host-proto = { path = "livi-host-proto/rust" }
+livi-crypto-node = { path = "livi-crypto/rust" }
+livi-audio-player = { path = "livi-gst-video/rust/audioplayer" }
+livi-audio-stream = { path = "livi-gst-video/rust/audio" }
+livi-audio-uplink = { path = "livi-gst-video/rust/mic" }
+livi-screen-stream = { path = "livi-gst-video/rust/screen" }
+livi-video-codec = { path = "livi-gst-video/rust/codec" }
+livi-video-fanout = { path = "livi-gst-video/rust/fanout" }
+livi-video-nal = { path = "livi-gst-video/rust/nal" }
+livi-video-player = { path = "livi-gst-video/rust/player" }
+imx6ul-uboot = { path = "livi-link/crates/imx6ul-uboot" }
+livi-btd = { path = "livi-link/crates/livi-btd" }
+livi-iapd = { path = "livi-link/crates/livi-iapd" }
+livi-link-provision = { path = "livi-link/crates/livi-link-provision" }
+livi-mdns = { path = "livi-link/crates/livi-mdns" }
+livi-web = { path = "livi-link/crates/livi-web" }
+livi-wifid = { path = "livi-link/crates/livi-wifid" }
+
+[profile.embedded]
+inherits = "release"
+opt-level = "z"
+codegen-units = 1
+strip = true
+panic = "abort"
+lto = true

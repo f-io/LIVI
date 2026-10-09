@@ -23,18 +23,22 @@ function cargoEnv() {
   return env
 }
 
-function cargoBuild(manifest, pkg) {
-  const args = ['build', '--release', '-p', pkg, '--manifest-path', manifest]
+const manifest = join(root, 'native', 'Cargo.toml')
+
+function cargoBuild(pkgs) {
+  const args = ['build', '--release', '--manifest-path', manifest, ...pkgs.flatMap((p) => ['-p', p])]
+  // A manifest edit without its lockfile fails in CI instead of resolving anew.
+  if (process.env.CI) args.push('--locked')
   if (cross) {
     execFileSync('rustup', ['target', 'add', triple], { stdio: 'inherit' })
     args.push('--target', triple)
   }
   execFileSync('cargo', args, { stdio: 'inherit', env: cargoEnv() })
-  return join(targetDir(manifest), ...(cross ? [triple] : []), 'release')
+  return join(targetDir(), ...(cross ? [triple] : []), 'release')
 }
 
 // CARGO_TARGET_DIR or a target-dir in the cargo config may move the build out of the tree.
-function targetDir(manifest) {
+function targetDir() {
   const meta = execFileSync(
     'cargo',
     ['metadata', '--format-version', '1', '--no-deps', '--manifest-path', manifest],
@@ -49,25 +53,20 @@ function place(src, destDir, destName) {
   console.log(`[build-native] ${destName} <- ${src}`)
 }
 
-const gstManifest = join(root, 'native', 'livi-gst-video', 'rust', 'Cargo.toml')
+const pkgs = ['gst-video-host', 'livi-helperd', 'livi-core']
+if (process.platform === 'darwin') pkgs.push('gst-video-addon')
+if (process.platform === 'linux') pkgs.push('livi-compositor')
+const out = cargoBuild(pkgs)
+
 const gstDest = join(root, 'native', 'livi-gst-video', 'build', 'Release')
-const hostOut = cargoBuild(gstManifest, 'gst-video-host')
-place(join(hostOut, 'livi-gst-host'), gstDest, 'livi-gst-host')
-
+place(join(out, 'livi-gst-host'), gstDest, 'livi-gst-host')
 if (process.platform === 'darwin') {
-  const addonOut = cargoBuild(gstManifest, 'gst-video-addon')
-  place(join(addonOut, 'libgst_video_addon.dylib'), gstDest, 'gst_video.node')
+  place(join(out, 'libgst_video_addon.dylib'), gstDest, 'gst_video.node')
 }
-
 if (process.platform === 'linux') {
-  const compManifest = join(root, 'native', 'livi-compositor', 'rust', 'Cargo.toml')
-  const compOut = cargoBuild(compManifest, 'livi-compositor')
-  place(join(compOut, 'livi-compositor'), join(root, 'out', 'compositor'), 'livi-compositor')
+  place(join(out, 'livi-compositor'), join(root, 'out', 'compositor'), 'livi-compositor')
 }
 
-const helperManifest = join(root, 'native', 'livi-helperd', 'Cargo.toml')
 const helperDest = join(root, 'native', 'livi-helperd', 'build', 'Release')
-const helperOut = cargoBuild(helperManifest, 'livi-helperd')
-place(join(helperOut, 'livi-helperd'), helperDest, 'livi-helperd')
-const coreOut = cargoBuild(helperManifest, 'livi-core')
-place(join(coreOut, 'livi-core'), helperDest, 'livi-core')
+place(join(out, 'livi-helperd'), helperDest, 'livi-helperd')
+place(join(out, 'livi-core'), helperDest, 'livi-core')

@@ -14,12 +14,12 @@ source "$COMMON/kernel.sh"
 # Rust ships no std for riscv32 Linux, so nightly builds it, and the Andes gcc links livid
 # statically (.cargo/config.toml).
 build_livid() {
-  local link=$REPO/native/livi-link rtarget=riscv32gc-unknown-linux-gnu livid
+  local native=$REPO/native rtarget=riscv32gc-unknown-linux-gnu livid
   local PATH=$TC_BIN:$PATH
   command -v riscv32-linux-gcc >/dev/null || { log "no riscv32-linux-gcc in PATH (set TC_BIN)"; exit 3; }
   log "cargo +nightly build livid ($rtarget)"
-  ( cd "$link" && cargo +nightly build --profile embedded -p livid --target "$rtarget" -Z build-std=std,panic_abort )
-  livid=${CARGO_TARGET_DIR:-$link/target}/$rtarget/embedded/livid
+  ( cd "$native" && cargo +nightly build --profile embedded -p livid --target "$rtarget" -Z build-std=std,panic_abort )
+  livid=${CARGO_TARGET_DIR:-$native/target}/$rtarget/embedded/livid
   [[ -x $livid ]] || { log "missing $livid"; exit 4; }
   cp -f "$livid" "$OUT/livid"
   log "  livid: $(stat -c%s "$OUT/livid") B"

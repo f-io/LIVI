@@ -8,25 +8,25 @@ name = "livi-core"
 path = "src/main.rs"
 
 [dependencies]
-livi-core-proto = { path = "../../crates/livi-core-proto" }
-livi-aa-stack = { path = "../../crates/livi-aa-stack" }
-livi-cp = { path = "../../crates/livi-cp" }
-livi-link-host = { path = "../../crates/livi-link-host" }
-livi-host-proto = { path = "../../../livi-host-proto/rust" }
-livi-media = { path = "../../crates/livi-media" }
-livi-wifi = { path = "../../crates/livi-wifi" }
+livi-core-proto.workspace = true
+livi-aa-stack.workspace = true
+livi-cp.workspace = true
+livi-link-host.workspace = true
+livi-host-proto.workspace = true
+livi-media.workspace = true
+livi-wifi.workspace = true
 axum = "0.8.9"
-base64 = "0.23.1"
+base64.workspace = true
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
 libc.workspace = true
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
-sha2 = "0.11.0"
+sha2.workspace = true
 socketioxide = "0.18.7"
-tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "signal", "time", "process"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "signal", "time", "process"] }
 tower-http = { version = "0.7.1", features = ["cors"] }
-zbus = { version = "5.19.0", default-features = false, features = ["tokio"] }
+zbus = { workspace = true, features = ["tokio"] }
 
 [dev-dependencies]
-tokio = { version = "1.53.2", features = ["test-util"] }
+tokio = { workspace = true, features = ["test-util"] }

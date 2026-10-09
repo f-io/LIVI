@@ -8,18 +8,18 @@ name = "livi-helperd"
 path = "src/main.rs"
 
 [dependencies]
-livi-runtime = { path = "../../crates/livi-runtime" }
-livi-wifi = { path = "../../crates/livi-wifi" }
-livi-net = { path = "../../crates/livi-net" }
-iap2-csm = { path = "../../crates/iap2-csm" }
-iap2-mfi = { path = "../../crates/iap2-mfi" }
-iap2-link = { path = "../../crates/iap2-link" }
-livi-aa = { path = "../../crates/livi-aa" }
-livi-link-host = { path = "../../crates/livi-link-host" }
-iap2-usbmux = { path = "../../crates/iap2-usbmux" }
-iap2-wired = { path = "../../crates/iap2-wired" }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
-serde_json = "1"
+livi-runtime.workspace = true
+livi-wifi.workspace = true
+livi-net.workspace = true
+iap2-csm.workspace = true
+iap2-mfi.workspace = true
+iap2-link.workspace = true
+livi-aa.workspace = true
+livi-link-host.workspace = true
+iap2-usbmux.workspace = true
+iap2-wired.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
+serde_json.workspace = true
 libc.workspace = true
-nusb = "0.2"
+nusb.workspace = true
 

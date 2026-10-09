@@ -8,13 +8,13 @@ name = "livid"
 path = "src/main.rs"
 
 [dependencies]
-livi-mdns  = { path = "../../crates/livi-mdns" }
-livi-wifid = { path = "../../crates/livi-wifid" }
-livi-web   = { path = "../../crates/livi-web" }
-livi-btd   = { path = "../../crates/livi-btd" }
-livi-iapd  = { path = "../../crates/livi-iapd" }
-livi-net   = { path = "../../../livi-helperd/crates/livi-net" }
-iap2-mfi   = { path = "../../../livi-helperd/crates/iap2-mfi" }
+livi-mdns.workspace = true
+livi-wifid.workspace = true
+livi-web.workspace = true
+livi-btd.workspace = true
+livi-iapd.workspace = true
+livi-net.workspace = true
+iap2-mfi.workspace = true
 libc.workspace = true
 [target.'cfg(not(target_arch = "riscv32"))'.dependencies]
-imx6ul-uboot = { path = "../../crates/imx6ul-uboot" }
+imx6ul-uboot.workspace = true

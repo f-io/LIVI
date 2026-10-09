@@ -4,8 +4,8 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
-tokio = { version = "1", features = ["rt", "sync", "io-util"] }
+tokio = { workspace = true, features = ["rt", "sync", "io-util"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-nusb = "0.2"
+nusb.workspace = true
 libc.workspace = true

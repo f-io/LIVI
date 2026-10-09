@@ -4,5 +4,5 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
-aes = "0.9"
-flate2 = "1"
+aes.workspace = true
+flate2.workspace = true

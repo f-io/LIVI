@@ -170,10 +170,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            native/livi-helperd/target
-            native/livi-compositor/rust/target
-            native/livi-gst-video/rust/target
-          key: cargo-linux-x64-${{ hashFiles('native/livi-helperd/Cargo.lock', 'native/livi-helperd/**/Cargo.toml', 'native/livi-compositor/rust/Cargo.lock', 'native/livi-compositor/rust/Cargo.toml', 'native/livi-gst-video/rust/Cargo.lock', 'native/livi-gst-video/rust/**/Cargo.toml', 'native/livi-crypto/rust/Cargo.toml') }}
+            native/target
+          key: cargo-linux-x64-${{ hashFiles('native/Cargo.lock', 'native/**/Cargo.toml') }}
           restore-keys: cargo-linux-x64-
 
       - name: Install deps (pnpm) [linux-x64]
@@ -221,10 +219,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            native/livi-helperd/target
-            native/livi-compositor/rust/target
-            native/livi-gst-video/rust/target
-          key: cargo-linux-arm64-${{ hashFiles('native/livi-helperd/Cargo.lock', 'native/livi-helperd/**/Cargo.toml', 'native/livi-compositor/rust/Cargo.lock', 'native/livi-compositor/rust/Cargo.toml', 'native/livi-gst-video/rust/Cargo.lock', 'native/livi-gst-video/rust/**/Cargo.toml', 'native/livi-crypto/rust/Cargo.toml') }}
+            native/target
+          key: cargo-linux-arm64-${{ hashFiles('native/Cargo.lock', 'native/**/Cargo.toml') }}
           restore-keys: cargo-linux-arm64-
 
       - name: Install deps (pnpm) [linux-arm64]
@@ -302,9 +298,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            native/livi-helperd/target
-            native/livi-gst-video/rust/target
-          key: cargo-macos-${{ matrix.arch }}-${{ hashFiles('native/livi-helperd/Cargo.lock', 'native/livi-helperd/**/Cargo.toml', 'native/livi-gst-video/rust/Cargo.lock', 'native/livi-gst-video/rust/**/Cargo.toml') }}
+            native/target
+          key: cargo-macos-${{ matrix.arch }}-${{ hashFiles('native/Cargo.lock', 'native/**/Cargo.toml') }}
           restore-keys: cargo-macos-${{ matrix.arch }}-
 
       - name: Install deps (pnpm) [macos-arm64]
