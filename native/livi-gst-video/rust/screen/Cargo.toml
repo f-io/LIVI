@@ -9,5 +9,5 @@ crate-type = ["rlib"]
 [dependencies]
 livi-crypto-node = { path = "../../../livi-crypto/rust" }
 livi-video-nal = { path = "../nal" }
-glib = "0.21"
+glib = "0.22"
 socket2 = "0.6"

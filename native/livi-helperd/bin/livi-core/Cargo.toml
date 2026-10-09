@@ -16,8 +16,8 @@ livi-host-proto = { path = "../../../livi-host-proto/rust" }
 livi-media = { path = "../../crates/livi-media" }
 livi-wifi = { path = "../../crates/livi-wifi" }
 axum = "0.8.9"
-base64 = "0.22.1"
-jiff = { version = "0.2.37", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
+base64 = "0.23.1"
+jiff = { version = "0.2.38", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
 libc.workspace = true
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"

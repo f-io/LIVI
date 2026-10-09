@@ -11,9 +11,9 @@ iap2-link = { path = "../iap2-link" }
 iap2-mfi = { path = "../iap2-mfi" }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "sync", "io-util", "net", "process"] }
 libc.workspace = true
-base64 = "0.22"
+base64 = "0.23"
 serde_json = "1"
-socket2 = { version = "0.5", features = ["all"] }
+socket2 = { version = "0.6", features = ["all"] }
 zbus = { version = "5.19.0", default-features = false, features = ["tokio"] }
 
 [dev-dependencies]

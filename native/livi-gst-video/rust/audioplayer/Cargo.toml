@@ -11,7 +11,7 @@ crate-type = ["rlib"]
 livi-host-proto = { path = "../../../livi-host-proto/rust" }
 livi-audio-stream = { path = "../audio" }
 livi-audio-uplink = { path = "../mic" }
-gstreamer = { version = "0.24", features = ["v1_24"] }
-gstreamer-app = { version = "0.24", features = ["v1_24"] }
-gstreamer-audio = { version = "0.24", features = ["v1_24"] }
-gstreamer-controller = "0.24"
+gstreamer = { version = "0.25", features = ["v1_24"] }
+gstreamer-app = { version = "0.25", features = ["v1_24"] }
+gstreamer-audio = { version = "0.25", features = ["v1_24"] }
+gstreamer-controller = "0.25"

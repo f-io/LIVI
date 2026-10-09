@@ -17,5 +17,5 @@ livi-video-fanout = { path = "../fanout" }
 livi-video-nal = { path = "../nal" }
 livi-video-player = { path = "../player" }
 realfft = "3.5.0"
-glib = "0.21"
+glib = "0.22"
 libc.workspace = true
