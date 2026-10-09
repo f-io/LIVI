@@ -1,7 +1,7 @@
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -36,6 +36,10 @@ const STREAM_MAIN_HIGH_AUDIO: u64 = 102;
 /// The generic data stream, the one iAP2 rides.
 const STREAM_DATA: u64 = 130;
 const IAP_DATASTREAM_UUID: &str = "E9459FD0-BCAD-4C45-820F-1E72447EF2F2";
+
+/// The phone answers the clock exchange every second and asks for feedback every two.
+const PHONE_SILENT: Duration = Duration::from_secs(10);
+const SILENCE_CHECK: Duration = Duration::from_millis(250);
 
 const CLUSTER_MAP_URL: &str = "maps:/car/instrumentcluster/map";
 
@@ -220,6 +224,7 @@ struct Conn<M: Media> {
     phone_bt_mac: String,
     timing: Option<TimingSync>,
     keep_alive: Option<KeepAlive>,
+    last_request: tokio::time::Instant,
     screen: Option<u32>,
     cluster_screen: Option<u32>,
     codec_emitted: bool,
@@ -364,6 +369,7 @@ pub async fn run<M: Media>(
         phone_bt_mac: String::new(),
         timing: None,
         keep_alive: None,
+        last_request: tokio::time::Instant::now(),
         screen: None,
         cluster_screen: None,
         codec_emitted: false,
@@ -388,16 +394,27 @@ pub async fn run<M: Media>(
     let mut event_buf = vec![0u8; 16 * 1024];
     let mut relay_buf = vec![0u8; 16 * 1024];
     let mut stopped = false;
+    let mut silence = tokio::time::interval(SILENCE_CHECK);
     loop {
         tokio::select! {
             read = rd.read(&mut buf) => match read {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
+                    conn.last_request = tokio::time::Instant::now();
                     if conn.on_control_bytes(&buf[..n], &mut wr).await.is_err() {
                         break;
                     }
                 }
             },
+            _ = silence.tick() => {
+                if conn.went_silent() {
+                    println!(
+                        "[cpStack] the phone has been silent for {} s, the session ends",
+                        PHONE_SILENT.as_secs()
+                    );
+                    break;
+                }
+            }
             cmd = cmds.recv() => match cmd {
                 None | Some(StackCmd::Stop) => {
                     stopped = true;
@@ -448,6 +465,14 @@ pub async fn run<M: Media>(
 impl<M: Media> Conn<M> {
     fn emit(&self, event: StackEvent) {
         let _ = self.events.send(event);
+    }
+
+    /// Nothing is judged before the phone first answered the clock exchange.
+    fn went_silent(&self) -> bool {
+        let Some(answered) = self.timing.as_ref().and_then(TimingSync::last_heard) else {
+            return false;
+        };
+        answered.max(self.last_request).elapsed() > PHONE_SILENT
     }
 
     async fn on_control_bytes(&mut self, chunk: &[u8], wr: &mut OwnedWriteHalf) -> io::Result<()> {
@@ -1616,6 +1641,33 @@ pub(crate) mod tests {
         assert!(!setup.is_empty());
         rig.phone.sock.shutdown().await.unwrap();
         assert_eq!(rig.event().await, StackEvent::Closed { was_active: false });
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_phone_that_falls_silent_ends_the_session() {
+        let mut rig = Rig::new().await;
+        let secret = rig.secret;
+        rig.phone.verify(&secret, b"phone-1").await;
+        let resp = rig.phone.plist("SETUP", "/s", &dict([("timingPort", Value::Int(9))])).await;
+
+        // Before the phone has answered the clock exchange nothing is judged.
+        tokio::time::sleep(PHONE_SILENT * 2).await;
+        let (code, _) = rig.phone.request("POST", "/feedback", b"").await;
+        assert_eq!(code, "200");
+
+        let clock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let timing_port = int_of(&resp, "timingPort") as u16;
+        clock.send_to(&[0u8; crate::timing::PACKET_LEN], ("127.0.0.1", timing_port)).await.unwrap();
+        tokio::time::sleep(PHONE_SILENT - Duration::from_secs(1)).await;
+        let (code, _) = rig.phone.request("POST", "/feedback", b"").await;
+        assert_eq!(code, "200");
+
+        tokio::time::sleep(PHONE_SILENT).await;
+        loop {
+            if let StackEvent::Closed { .. } = rig.event().await {
+                break;
+            }
+        }
     }
 
     #[tokio::test]

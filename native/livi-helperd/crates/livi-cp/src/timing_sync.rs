@@ -7,21 +7,23 @@ use std::time::Duration;
 
 use tokio::net::UdpSocket;
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 
 use crate::net;
-use crate::timing::TimingClock;
+use crate::timing::{PACKET_LEN, TimingClock};
 
 const REQUEST_EVERY: Duration = Duration::from_secs(1);
 
 pub struct TimingSync {
     clock: Arc<Mutex<TimingClock>>,
     sock: Arc<UdpSocket>,
+    heard: Arc<Mutex<Option<Instant>>>,
     port: u16,
     tasks: Vec<JoinHandle<()>>,
 }
 
-fn lock(clock: &Mutex<TimingClock>) -> std::sync::MutexGuard<'_, TimingClock> {
-    clock.lock().unwrap_or_else(|e| e.into_inner())
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 impl TimingSync {
@@ -29,8 +31,9 @@ impl TimingSync {
         let sock = Arc::new(net::udp_socket()?);
         let port = net::local_port(sock.local_addr());
         let clock = Arc::new(Mutex::new(TimingClock::new()));
-        let answering = tokio::spawn(answer(sock.clone(), clock.clone()));
-        Ok(Self { clock, sock, port, tasks: vec![answering] })
+        let heard = Arc::new(Mutex::new(None));
+        let answering = tokio::spawn(answer(sock.clone(), clock.clone(), heard.clone()));
+        Ok(Self { clock, sock, heard, port, tasks: vec![answering] })
     }
 
     pub fn port(&self) -> u16 {
@@ -53,6 +56,11 @@ impl TimingSync {
     pub fn synced_ntp(&self) -> u64 {
         lock(&self.clock).synced_ntp()
     }
+
+    /// None until the phone took part in the exchange.
+    pub fn last_heard(&self) -> Option<Instant> {
+        *lock(&self.heard)
+    }
 }
 
 impl Drop for TimingSync {
@@ -63,11 +71,18 @@ impl Drop for TimingSync {
     }
 }
 
-async fn answer(sock: Arc<UdpSocket>, clock: Arc<Mutex<TimingClock>>) {
+async fn answer(
+    sock: Arc<UdpSocket>,
+    clock: Arc<Mutex<TimingClock>>,
+    heard: Arc<Mutex<Option<Instant>>>,
+) {
     let mut buf = [0u8; 512];
     loop {
         match sock.recv_from(&mut buf).await {
             Ok((n, from)) => {
+                if n >= PACKET_LEN {
+                    *lock(&heard) = Some(Instant::now());
+                }
                 let reply = lock(&clock).on_packet(&buf[..n]);
                 if let Some(reply) = reply {
                     let _ = sock.send_to(&reply, from).await;
@@ -81,13 +96,13 @@ async fn answer(sock: Arc<UdpSocket>, clock: Arc<Mutex<TimingClock>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::timing::PACKET_LEN;
 
     #[tokio::test]
     async fn requests_go_out_and_requests_get_answered() {
         let phone = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let mut sync = TimingSync::listen().unwrap();
         assert!(sync.port() > 0);
+        assert_eq!(sync.last_heard(), None);
         sync.start(phone.local_addr().unwrap());
 
         let mut buf = [0u8; 64];
@@ -110,5 +125,6 @@ mod tests {
             }
         }
         assert!(sync.synced_ntp() > 0);
+        assert!(sync.last_heard().is_some());
     }
 }
