@@ -318,11 +318,24 @@ plugins=(
   libgstvideoconvertscale.so
   libgstopengl.so
   libgstlibav.so
+  # video LIVI fetches from a URL: playbin3, hlsdemux2, souphttpsrc, qtdemux
+  libgstplayback.so
+  libgstadaptivedemux2.so
+  libgstsoup.so
+  libgstisomp4.so
 )
 
 for plugin in "${plugins[@]}"; do
   copy_plugin_and_deps "$PLUGIN_DIR/$plugin"
 done
+
+# Both soup plugins dlopen libsoup, so ldd never names it.
+SOUP="$(ldconfig -p | awk '$1 == "libsoup-3.0.so.0" { print $NF; exit }')"
+if [[ -z "$SOUP" ]]; then
+  echo "libsoup-3.0.so.0 not found, souphttpsrc and hlsdemux2 would not load" >&2
+  exit 1
+fi
+queue_dep "$SOUP"
 
 # video HW decode + DRM/KMS sink — host-dependent
 optional_plugins=(

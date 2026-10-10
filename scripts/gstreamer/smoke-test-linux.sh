@@ -36,7 +36,8 @@ fi
 "$ROOT/bin/gst-device-monitor-1.0" --version
 
 # Cross-platform video elements must load
-for el in h264parse h265parse videoconvert videoscale glimagesink; do
+for el in h264parse h265parse videoconvert videoscale glimagesink \
+  playbin3 hlsdemux2 souphttpsrc qtdemux; do
   if "$INSPECT" "$el" >/dev/null 2>&1; then
     echo "ok   $el"
   else
