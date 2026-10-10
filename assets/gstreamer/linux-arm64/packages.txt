@@ -1,7 +1,7 @@
 gst-plugins-bad1.0 1.28.7-2
 gstreamer1.0-alsa:arm64 1.28.7-1
 gstreamer1.0-gl:arm64 1.28.7-1
-gstreamer1.0-libav:arm64 1.28.7-1
+gstreamer1.0-libav:arm64 1.28.7-2
 gstreamer1.0-plugins-base-apps 1.28.7-1
 gstreamer1.0-plugins-base:arm64 1.28.7-1
 gstreamer1.0-plugins-good:arm64 1.28.7-1
