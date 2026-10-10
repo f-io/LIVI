@@ -46,6 +46,21 @@ pub struct AudioStream {
     pub control_port: u16,
 }
 
+/// Where the video player stands. Times are seconds, None while the player cannot tell, a live
+/// stream has no duration.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct VideoStatus {
+    pub position: Option<f64>,
+    pub duration: Option<f64>,
+    /// (start, end) of what can be sought to.
+    pub seekable: Option<(f64, f64)>,
+    pub playing: bool,
+    pub ready: bool,
+    pub buffered_percent: Option<u8>,
+    pub ended: bool,
+    pub failed: bool,
+}
+
 pub trait Media: Send + Sync + 'static {
     /// (port, receiver id), the port is 0 when none was bound.
     fn open_screen(&self, cluster: bool, key: [u8; 32]) -> impl Future<Output = (u16, u32)> + Send;
@@ -64,4 +79,11 @@ pub trait Media: Send + Sync + 'static {
     fn close_mic(&self, id: u32);
     /// (stream, first sample) once a stream's first packet arrived.
     fn audio_started(&self) -> broadcast::Receiver<(u32, u32)>;
+    fn play_video(&self, url: String, audio_device: String);
+    fn set_video_rate(&self, rate: f64);
+    fn seek_video(&self, seconds: f64);
+    fn set_video_muted(&self, muted: bool);
+    fn stop_video(&self);
+    /// None until the player first reported.
+    fn video_status(&self) -> Option<VideoStatus>;
 }

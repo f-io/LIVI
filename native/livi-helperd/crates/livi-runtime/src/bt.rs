@@ -4,7 +4,7 @@ use std::os::fd::OwnedFd;
 
 use tokio::sync::mpsc;
 use zbus::Connection;
-use zbus::zvariant::{ObjectPath, OwnedValue, Value};
+use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value};
 
 pub const AA_UUID: &str = "4de17a00-52cb-11e6-bdf4-0800200c9a66";
 pub const AA_CHANNEL: u16 = 8;
@@ -29,6 +29,7 @@ pub const IAP_CHANNEL: u16 = 3;
 
 const ADAPTER_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
 const ADAPTER_POLL: std::time::Duration = std::time::Duration::from_millis(200);
+const LET_GO_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 
 const IAP_SERVER_PATH: &str = "/livi/cp/iap_server";
 const IAP_CLIENT_PATH: &str = "/livi/cp/iap_client";
@@ -97,23 +98,140 @@ impl Profile {
     fn release(&self) {}
 }
 
-struct Agent;
+struct Agent {
+    adapter: String,
+}
 
 #[zbus::interface(name = "org.bluez.Agent1")]
 impl Agent {
     fn release(&self) {}
-    fn authorize_service(&self, _device: ObjectPath<'_>, _uuid: String) {}
-    fn request_pin_code(&self, _device: ObjectPath<'_>) -> String {
-        "0000".into()
+    fn authorize_service(&self, device: ObjectPath<'_>, _uuid: String) -> zbus::fdo::Result<()> {
+        refuse_other_adapter(device.as_str(), &self.adapter)
     }
-    fn request_passkey(&self, _device: ObjectPath<'_>) -> u32 {
-        0
+    fn request_pin_code(&self, device: ObjectPath<'_>) -> zbus::fdo::Result<String> {
+        refuse_other_adapter(device.as_str(), &self.adapter)?;
+        Ok("0000".into())
+    }
+    fn request_passkey(&self, device: ObjectPath<'_>) -> zbus::fdo::Result<u32> {
+        refuse_other_adapter(device.as_str(), &self.adapter)?;
+        Ok(0)
     }
     fn display_passkey(&self, _device: ObjectPath<'_>, _passkey: u32, _entered: u16) {}
     fn display_pin_code(&self, _device: ObjectPath<'_>, _pincode: String) {}
-    fn request_confirmation(&self, _device: ObjectPath<'_>, _passkey: u32) {}
-    fn request_authorization(&self, _device: ObjectPath<'_>) {}
+    fn request_confirmation(&self, device: ObjectPath<'_>, _passkey: u32) -> zbus::fdo::Result<()> {
+        refuse_other_adapter(device.as_str(), &self.adapter)
+    }
+    fn request_authorization(&self, device: ObjectPath<'_>) -> zbus::fdo::Result<()> {
+        refuse_other_adapter(device.as_str(), &self.adapter)
+    }
     fn cancel(&self) {}
+}
+
+/// A controller's settings as LIVI found them.
+#[derive(Clone, Debug, PartialEq)]
+struct Found {
+    alias: String,
+    discoverable: bool,
+    pairable: bool,
+    discoverable_timeout: u32,
+}
+
+/// Every controller LIVI changed, with what goes back when it lets go.
+#[derive(Default)]
+pub struct Held(Vec<(String, Found)>);
+
+/// LIVI's name on a controller it has not touched yet is left over from a run that never let go,
+/// so that one goes back to the system's name, out of sight.
+fn to_put_back(found: Found, alias: &str) -> Found {
+    if found.alias == alias {
+        Found { alias: String::new(), discoverable: false, ..found }
+    } else {
+        found
+    }
+}
+
+async fn controllers(conn: &Connection) -> Result<Vec<(String, Found)>, Box<dyn Error>> {
+    let reply = conn
+        .call_method(
+            Some("org.bluez"),
+            "/",
+            Some("org.freedesktop.DBus.ObjectManager"),
+            "GetManagedObjects",
+            &(),
+        )
+        .await?;
+    let objects: HashMap<OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>> =
+        reply.body().deserialize()?;
+    let mut out = Vec::new();
+    for (path, interfaces) in objects {
+        let Some(props) = interfaces.get("org.bluez.Adapter1") else { continue };
+        let Some(name) = path.as_str().strip_prefix("/org/bluez/") else { continue };
+        let value = |key: &str| props.get(key).and_then(|v| v.try_clone().ok());
+        out.push((
+            name.to_string(),
+            Found {
+                alias: value("Alias").and_then(|v| String::try_from(v).ok()).unwrap_or_default(),
+                discoverable: value("Discoverable").and_then(|v| bool::try_from(v).ok())
+                    == Some(true),
+                pairable: value("Pairable").and_then(|v| bool::try_from(v).ok()) == Some(true),
+                discoverable_timeout: value("DiscoverableTimeout")
+                    .and_then(|v| u32::try_from(v).ok())
+                    .unwrap_or(0),
+            },
+        ));
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(out)
+}
+
+/// Phones pair on LIVI's controller only, every other one stays out of their sight meanwhile.
+async fn hold(conn: &Connection, adapter: &str, alias: &str) -> Held {
+    let found = match controllers(conn).await {
+        Ok(found) => found,
+        Err(e) => {
+            eprintln!("[bt] the controllers could not be read, nothing will be put back: {e}");
+            return Held::default();
+        }
+    };
+    let held: Vec<(String, Found)> =
+        found.into_iter().map(|(name, found)| (name, to_put_back(found, alias))).collect();
+    for (name, back) in &held {
+        if name == adapter {
+            continue;
+        }
+        let path = format!("/org/bluez/{name}");
+        if back.alias.is_empty()
+            && let Err(e) = set_prop(conn, &path, "Alias", Value::from("")).await
+        {
+            eprintln!("[bt] {name} keeps LIVI's name: {e}");
+        }
+        for prop in ["Discoverable", "Pairable"] {
+            if let Err(e) = set_prop(conn, &path, prop, Value::from(false)).await {
+                eprintln!("[bt] {name} could not be set {prop}=false: {e}");
+            }
+        }
+    }
+    Held(held)
+}
+
+/// Puts every controller back the way LIVI found it. Powered stays as it is.
+pub async fn let_go(conn: &Connection, adapter: &str, held: &Held) {
+    // While our advertisement runs the controller answers Busy to every discoverable change.
+    stop_ble_ad(conn, adapter).await;
+    for (name, back) in &held.0 {
+        let path = format!("/org/bluez/{name}");
+        let props = [
+            ("Alias", Value::from(back.alias.as_str())),
+            ("DiscoverableTimeout", Value::from(back.discoverable_timeout)),
+            ("Discoverable", Value::from(back.discoverable)),
+            ("Pairable", Value::from(back.pairable)),
+        ];
+        for (prop, value) in props {
+            if let Err(e) = set_prop_within(conn, &path, prop, value, LET_GO_WAIT).await {
+                eprintln!("[bt] {name}: {prop} could not be put back: {e}");
+            }
+        }
+    }
 }
 
 /// BlueZ offers a profile on every controller, but only the chosen one is LIVI's.
@@ -159,7 +277,7 @@ pub async fn start(
     adapter: &str,
     alias: &str,
     discoverable: bool,
-) -> Result<(Connection, mpsc::UnboundedReceiver<IncomingConn>), Box<dyn Error>> {
+) -> Result<(Connection, mpsc::UnboundedReceiver<IncomingConn>, Held), Box<dyn Error>> {
     let conn = Connection::system().await?;
     let (tx, rx) = mpsc::unbounded_channel();
 
@@ -167,7 +285,7 @@ pub async fn start(
     conn.object_server().at(IAP_SERVER_PATH, Profile { tx: tx.clone(), adapter: ours() }).await?;
     conn.object_server().at(IAP_CLIENT_PATH, Profile { tx: tx.clone(), adapter: ours() }).await?;
     conn.object_server().at(CARPLAY_PATH, Profile { tx, adapter: ours() }).await?;
-    conn.object_server().at(AGENT_PATH, Agent).await?;
+    conn.object_server().at(AGENT_PATH, Agent { adapter: ours() }).await?;
 
     let mut iap_opts: HashMap<&str, Value> = HashMap::new();
     iap_opts.insert("Role", Value::from("server"));
@@ -216,6 +334,7 @@ pub async fn start(
 
     let adapter_path = format!("/org/bluez/{adapter}");
     wait_for_adapter(&conn, &adapter_path).await?;
+    let held = hold(&conn, adapter, alias).await;
     set_prop(&conn, &adapter_path, "Alias", Value::from(alias)).await?;
     set_prop(&conn, &adapter_path, "DiscoverableTimeout", Value::from(0u32)).await?;
     // A soft-blocked adapter refuses Powered with org.bluez.Error.Blocked.
@@ -228,7 +347,7 @@ pub async fn start(
     set_prop(&conn, &adapter_path, "Discoverable", Value::from(discoverable)).await?;
     set_prop(&conn, &adapter_path, "Pairable", Value::from(discoverable)).await?;
 
-    Ok((conn, rx))
+    Ok((conn, rx, held))
 }
 
 /// A tunnelled controller shows up in BlueZ late.
@@ -254,14 +373,24 @@ async fn wait_for_adapter(conn: &Connection, path: &str) -> Result<(), Box<dyn E
     }
 }
 
-/// BlueZ answers Busy on an adapter it has only just published.
 async fn set_prop(
     conn: &Connection,
     path: &str,
     name: &str,
     value: Value<'_>,
 ) -> Result<(), Box<dyn Error>> {
-    let deadline = std::time::Instant::now() + ADAPTER_WAIT;
+    set_prop_within(conn, path, name, value, ADAPTER_WAIT).await
+}
+
+/// BlueZ answers Busy on an adapter it has only just published.
+async fn set_prop_within(
+    conn: &Connection,
+    path: &str,
+    name: &str,
+    value: Value<'_>,
+    patience: std::time::Duration,
+) -> Result<(), Box<dyn Error>> {
+    let deadline = std::time::Instant::now() + patience;
     loop {
         let asked = conn
             .call_method(
@@ -299,7 +428,17 @@ async fn trust(conn: &Connection, device: &str) {
 }
 
 fn busy(e: &zbus::Error) -> bool {
-    matches!(e, zbus::Error::MethodError(name, _, _) if name.as_str() == "org.bluez.Error.Busy")
+    match e {
+        zbus::Error::MethodError(name, message, _) => {
+            busy_answer(name.as_str(), message.as_deref())
+        }
+        _ => false,
+    }
+}
+
+/// A mode change that meets another one in flight comes back as Failed with Busy in its text.
+fn busy_answer(name: &str, message: Option<&str>) -> bool {
+    name == "org.bluez.Error.Busy" || (name == "org.bluez.Error.Failed" && message == Some("Busy"))
 }
 
 pub async fn start_aa(
@@ -415,6 +554,20 @@ pub async fn start_ble_ad(
     .await?;
     println!("[aa] BLE advertisement registered");
     Ok(())
+}
+
+/// Without wireless Android Auto there is none, so a refusal is no news.
+async fn stop_ble_ad(conn: &Connection, adapter: &str) {
+    let Ok(ad) = ObjectPath::try_from(BLE_AD_PATH) else { return };
+    let _ = conn
+        .call_method(
+            Some("org.bluez"),
+            format!("/org/bluez/{adapter}").as_str(),
+            Some("org.bluez.LEAdvertisingManager1"),
+            "UnregisterAdvertisement",
+            &(ad,),
+        )
+        .await;
 }
 
 struct MprisRoot;
@@ -631,16 +784,6 @@ pub async fn start_media_player(
     Ok(MediaPlayerHandle { conn: conn.clone(), status })
 }
 
-/// Turned off so phones stop trying to reach a head unit that is gone.
-pub async fn set_discoverable(conn: &Connection, adapter: &str, on: bool) {
-    let path = format!("/org/bluez/{adapter}");
-    for prop in ["Discoverable", "Pairable"] {
-        if let Err(e) = set_prop(conn, &path, prop, Value::from(on)).await {
-            eprintln!("[cp] could not set {prop}={on}: {e}");
-        }
-    }
-}
-
 pub async fn adapter_address(conn: &Connection, adapter: &str) -> Result<[u8; 6], Box<dyn Error>> {
     let path = format!("/org/bluez/{adapter}");
     let reply = conn
@@ -696,5 +839,29 @@ mod tests {
         assert!(refuse_other_adapter(phone, "hci2").is_ok());
         assert!(refuse_other_adapter(phone, "hci0").is_err());
         assert!(refuse_other_adapter("/org/bluez/hci10/dev_0C_6A_C4_4E_F3_2A", "hci1").is_err());
+    }
+
+    fn found(alias: &str, discoverable: bool) -> Found {
+        Found { alias: alias.into(), discoverable, pairable: true, discoverable_timeout: 180 }
+    }
+
+    #[test]
+    fn a_controller_goes_back_the_way_it_was_found() {
+        assert_eq!(to_put_back(found("blacky", false), "LIVI blacky"), found("blacky", false));
+        assert_eq!(to_put_back(found("blacky #2", true), "LIVI blacky"), found("blacky #2", true));
+    }
+
+    #[test]
+    fn livis_name_left_on_a_controller_goes_back_to_the_systems() {
+        let back = to_put_back(found("LIVI blacky", true), "LIVI blacky");
+        assert_eq!(back, Found { alias: String::new(), discoverable: false, ..found("", true) });
+    }
+
+    #[test]
+    fn busy_comes_as_its_own_error_or_as_a_failed_mode_change() {
+        assert!(busy_answer("org.bluez.Error.Busy", None));
+        assert!(busy_answer("org.bluez.Error.Failed", Some("Busy")));
+        assert!(!busy_answer("org.bluez.Error.Failed", Some("Not Powered")));
+        assert!(!busy_answer("org.bluez.Error.Blocked", Some("Busy")));
     }
 }

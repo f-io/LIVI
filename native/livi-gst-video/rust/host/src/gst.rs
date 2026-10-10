@@ -4,12 +4,13 @@ use livi_audio_stream::AudioSink;
 use livi_screen_stream::ScreenSink;
 #[cfg(not(target_os = "macos"))]
 use livi_video_player::Player;
+use livi_video_player::UrlPlayer;
 
 #[cfg(not(target_os = "macos"))]
 use crate::Plane;
 #[cfg(target_os = "macos")]
 use crate::ui_plane::UiPlane;
-use crate::{AudioConfig, MediaSink, Outside, Speaker, TapConfig, UplinkConfig};
+use crate::{AudioConfig, MediaSink, Outside, Speaker, TapConfig, UplinkConfig, UrlPlay};
 
 /// Captures for as long as it is held.
 pub struct Tap(#[allow(dead_code)] SocketTap);
@@ -30,6 +31,28 @@ impl Plane for Player {
 
     fn set_gamma(&self, gamma: f64, contrast: f64, r: f64, g: f64, b: f64) {
         Player::set_gamma(self, gamma, contrast, r, g, b)
+    }
+}
+
+impl UrlPlay for UrlPlayer {
+    fn start(&self) {
+        UrlPlayer::start(self)
+    }
+
+    fn set_rate(&self, rate: f64) {
+        UrlPlayer::set_rate(self, rate)
+    }
+
+    fn seek(&self, seconds: f64) {
+        UrlPlayer::seek(self, seconds)
+    }
+
+    fn set_muted(&self, muted: bool) {
+        UrlPlayer::set_muted(self, muted)
+    }
+
+    fn status(&self) -> crate::UrlStatus {
+        UrlPlayer::status(self)
     }
 }
 
@@ -68,6 +91,7 @@ impl Outside for Gst {
     type Plane = Player;
     #[cfg(target_os = "macos")]
     type Plane = UiPlane;
+    type UrlPlayer = UrlPlayer;
     type Ears = Ears;
     type Speaker = AudioPipelinePlayer;
     type AudioEars = AudioEars;
@@ -92,6 +116,17 @@ impl Outside for Gst {
             return None;
         };
         UiPlane::open(&path, id, codec, codec_data)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn play_url(&self, _id: u32, url: &str, audio_device: &str) -> Option<UrlPlayer> {
+        UrlPlayer::new(url, audio_device)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn play_url(&self, id: u32, _url: &str, _audio_device: &str) -> Option<UrlPlayer> {
+        eprintln!("[gst-host] plane 0x{id:x} has no URL playback on macOS yet");
+        None
     }
 
     fn listen(&self, key: [u8; 32], sink: Box<dyn ScreenSink>) -> Option<(Ears, u16)> {

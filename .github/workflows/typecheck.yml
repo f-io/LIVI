@@ -78,7 +78,7 @@ jobs:
           grep -rl dl.google.com /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null || true
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-              build-essential pkg-config libudev1 ca-certificates \
+              build-essential pkg-config libudev1 ca-certificates libssl-dev \
               libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
               cmake libwayland-dev libxkbcommon-dev
           sudo rm -rf /var/lib/apt/lists/*

@@ -365,7 +365,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         let adapter = bt_adapter(&dc).await;
         livi_runtime::bluetoothd::setup();
         println!("[helperd] starting BlueZ profile on {adapter}");
-        let (conn, mut incoming) = bt::start(&adapter, &identity.name, true).await?;
+        let (conn, mut incoming, held) = bt::start(&adapter, &identity.name, true).await?;
         // Off unless asked for, since the tunnelled adapter wants the same controller.
         let mut dongle_iap = std::env::var("LIVI_BT_VIA_DONGLE")
             .is_ok_and(|v| v == "1")
@@ -490,7 +490,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             tokio::select! {
                 _ = crate::shutdown_signal() => {
                     println!("[helperd] shutting down");
-                    bt::set_discoverable(&conn, &adapter, false).await;
+                    bt::let_go(&conn, &adapter, &held).await;
                     iap2_usbmux::restore_all_default_config();
                     return Ok(());
                 }

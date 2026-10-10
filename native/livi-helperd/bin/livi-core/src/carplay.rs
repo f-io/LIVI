@@ -7,11 +7,12 @@ use livi_aa_stack::config::{AaConfig, Addresses as AaAddresses, Codecs};
 use livi_core_proto::config::{AppearanceMode, Config, HandDriveType};
 use livi_core_proto::state::State;
 use livi_cp::info::{DisplayConfig, Icon, InfoConfig, Insets};
-use livi_cp::media::{AudioCodec, AudioRequest, AudioStream, Media, MicRequest};
+use livi_cp::media::{AudioCodec, AudioRequest, AudioStream, Media, MicRequest, VideoStatus};
 use livi_cp::stack::StackConfig;
-use livi_host_proto::{PLANE_CLUSTER_RECV, PLANE_MAIN};
+use livi_host_proto::{PLANE_CLUSTER_RECV, PLANE_MAIN, PLANE_VIDEO, UrlStatus};
 use livi_media::compositor::Panel;
 use livi_media::gst_host::{self, GstHost, HostEvent};
+use livi_media::planes::VideoPlane;
 use tokio::sync::{broadcast, watch};
 
 use crate::hwaddr;
@@ -22,26 +23,34 @@ const ICON_256: &str = include_str!("../../../../../src/main/shared/assets/icon-
 
 pub struct GstMedia {
     gst: GstHost,
+    video: Arc<VideoPlane>,
     started: broadcast::Sender<(u32, u32)>,
+    video_status: Arc<Mutex<Option<VideoStatus>>>,
 }
 
 impl GstMedia {
-    pub fn new(gst: GstHost) -> Arc<Self> {
+    pub fn new(gst: GstHost, video: Arc<VideoPlane>) -> Arc<Self> {
         let (started, _) = broadcast::channel(32);
         let mut events = gst.subscribe();
         let tx = started.clone();
+        let video_status = Arc::new(Mutex::new(None));
+        let latest = video_status.clone();
         tokio::spawn(async move {
             loop {
                 match events.recv().await {
                     Ok(HostEvent::AudioStarted { stream, first_sample }) => {
                         let _ = tx.send((stream, first_sample));
                     }
+                    Ok(HostEvent::UrlStatus { plane: PLANE_VIDEO, status }) => {
+                        *latest.lock().unwrap_or_else(|e| e.into_inner()) =
+                            Some(video_status_of(status));
+                    }
                     Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
                     Err(broadcast::error::RecvError::Closed) => return,
                 }
             }
         });
-        Arc::new(Self { gst, started })
+        Arc::new(Self { gst, video, started, video_status })
     }
 }
 
@@ -119,6 +128,59 @@ impl Media for GstMedia {
 
     fn audio_started(&self) -> broadcast::Receiver<(u32, u32)> {
         self.started.subscribe()
+    }
+
+    fn play_video(&self, url: String, audio_device: String) {
+        self.forget_video_status();
+        let plane = self.video.clone();
+        let turn = plane.turn();
+        tokio::spawn(async move {
+            if plane.play(turn, &url, &audio_device).await {
+                println!("[core] video {url} on its own plane");
+            }
+        });
+    }
+
+    fn set_video_rate(&self, rate: f64) {
+        self.video.set_rate(rate);
+    }
+
+    fn seek_video(&self, seconds: f64) {
+        self.video.seek(seconds);
+    }
+
+    fn set_video_muted(&self, muted: bool) {
+        self.video.set_muted(muted);
+    }
+
+    fn stop_video(&self) {
+        self.video.stop();
+        self.forget_video_status();
+        println!("[core] video plane closed");
+    }
+
+    fn video_status(&self) -> Option<VideoStatus> {
+        *self.video_status.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+impl GstMedia {
+    /// What the last player said is no word about the next one.
+    fn forget_video_status(&self) {
+        *self.video_status.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+}
+
+fn video_status_of(s: UrlStatus) -> VideoStatus {
+    VideoStatus {
+        position: s.position,
+        duration: s.duration,
+        seekable: s.seekable,
+        playing: s.playing,
+        ready: s.ready,
+        buffered_percent: s.buffered_percent,
+        ended: s.ended,
+        failed: s.failed,
     }
 }
 

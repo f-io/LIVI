@@ -4,6 +4,9 @@ use gstreamer_app as gst_app;
 use gstreamer_base as gst_base;
 use std::sync::Once;
 
+mod url_player;
+pub use url_player::UrlPlayer;
+
 static INIT: Once = Once::new();
 
 /// `LIVI_GST_DEBUG=1` stands for the decoder and sink categories the video path is usually
@@ -89,8 +92,8 @@ fn colorimetry(caps: &gst::CapsRef) -> Option<String> {
     s.get::<String>("colorimetry").ok()
 }
 
-fn log_decoded_caps(caps: &gst::CapsRef) {
-    let Some(s) = caps.structure(0) else { return };
+fn decoded_caps(caps: &gst::CapsRef) -> Option<String> {
+    let s = caps.structure(0)?;
     let fmt = s.get::<String>("format").unwrap_or_else(|_| "?".to_owned());
     let drm = s.get::<String>("drm-format").map(|d| format!(" drm={d}")).unwrap_or_default();
     let w = s.get::<i32>("width").unwrap_or(0);
@@ -100,16 +103,23 @@ fn log_decoded_caps(caps: &gst::CapsRef) {
         .map(|f| f.to_string())
         .filter(|f| !f.is_empty())
         .unwrap_or_else(|| "SystemMemory".to_owned());
-    eprintln!("[gst_video] decoded format={fmt}{drm} {w}x{h} mem={mem}");
+    Some(format!("format={fmt}{drm} {w}x{h} mem={mem}"))
 }
 
 fn install_decoder_probes(dec: &gst::Element, decoder_name: &str) {
     if let Some(src) = dec.static_pad("src") {
-        src.add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, |_, info| {
+        // A fetched stream repeats its caps with every fragment.
+        let last = std::sync::Mutex::new(String::new());
+        src.add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, move |_, info| {
             if let Some(gst::PadProbeData::Event(ev)) = &info.data
                 && let gst::EventView::Caps(c) = ev.view()
+                && let Some(now) = decoded_caps(c.caps())
             {
-                log_decoded_caps(c.caps());
+                let mut last = last.lock().unwrap_or_else(|e| e.into_inner());
+                if *last != now {
+                    eprintln!("[gst_video] decoded {now}");
+                    *last = now;
+                }
             }
             gst::PadProbeReturn::Ok
         });

@@ -89,7 +89,10 @@ mod kernel {
     }
 
     pub fn listen() -> std::io::Result<OwnedFd> {
-        let raw = unsafe { libc::socket(libc::AF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_SCO) };
+        // Close-on-exec, or a child the helper starts keeps listening after it has gone.
+        let raw = unsafe {
+            libc::socket(libc::AF_BLUETOOTH, libc::SOCK_SEQPACKET | libc::SOCK_CLOEXEC, BTPROTO_SCO)
+        };
         if raw < 0 {
             return Err(std::io::Error::last_os_error());
         }
@@ -119,7 +122,12 @@ mod kernel {
         let mut addr = SockaddrSco { sco_family: 0, sco_bdaddr: [0; 6] };
         let mut size = std::mem::size_of::<SockaddrSco>() as libc::socklen_t;
         let raw = unsafe {
-            libc::accept(listen.as_raw_fd(), std::ptr::addr_of_mut!(addr).cast(), &raw mut size)
+            libc::accept4(
+                listen.as_raw_fd(),
+                std::ptr::addr_of_mut!(addr).cast(),
+                &raw mut size,
+                libc::SOCK_CLOEXEC,
+            )
         };
         if raw < 0 {
             return Err(std::io::Error::last_os_error());

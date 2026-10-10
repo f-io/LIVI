@@ -29,6 +29,10 @@ const OP_FEED_ROUTE: u8 = 18;
 const OP_FEED_CLOSE: u8 = 19;
 const OP_TAP_OPEN: u8 = 20;
 const OP_TAP_STOP: u8 = 21;
+const OP_PLAY_URL: u8 = 22;
+const OP_PLAY_RATE: u8 = 23;
+const OP_PLAY_SEEK: u8 = 24;
+const OP_PLAY_MUTE: u8 = 25;
 
 const REPLY_PORT: u8 = 1;
 const REPLY_CONFIG: u8 = 2;
@@ -37,6 +41,7 @@ const REPLY_AUDIO_PORTS: u8 = 4;
 const REPLY_AUDIO_STARTED: u8 = 5;
 const REPLY_VISUALIZER: u8 = 6;
 const REPLY_FEED: u8 = 7;
+const REPLY_URL_STATUS: u8 = 8;
 
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(4);
 
@@ -76,6 +81,11 @@ pub enum HostEvent {
     /// Every stream summed, tapped before the fader, 0 to 1 per band.
     Spectrum {
         bands: Vec<f32>,
+    },
+    /// Where a plane that plays a URL stands, twice a second.
+    UrlStatus {
+        plane: u32,
+        status: livi_host_proto::UrlStatus,
     },
 }
 
@@ -386,6 +396,11 @@ impl GstHost {
                     let _ = w.send(String::from_utf8_lossy(rest).into_owned());
                 }
             }
+            REPLY_URL_STATUS => {
+                if let Some(status) = livi_host_proto::parse_url_status(rest) {
+                    let _ = self.inner.events.send(HostEvent::UrlStatus { plane: id, status });
+                }
+            }
             _ => {}
         }
     }
@@ -565,6 +580,24 @@ impl GstHost {
         ));
     }
 
+    /// The host fetches and times the stream itself, an empty device is the system default.
+    pub fn play_url(&self, plane: u32, url: &str, audio_device: &str) {
+        self.send(frame(OP_PLAY_URL, plane, &livi_host_proto::url_body(url, audio_device)));
+    }
+
+    /// 0 pauses.
+    pub fn set_play_rate(&self, plane: u32, rate: f64) {
+        self.send(frame(OP_PLAY_RATE, plane, &rate.to_le_bytes()));
+    }
+
+    pub fn seek(&self, plane: u32, seconds: f64) {
+        self.send(frame(OP_PLAY_SEEK, plane, &seconds.to_le_bytes()));
+    }
+
+    pub fn set_play_muted(&self, plane: u32, muted: bool) {
+        self.send(frame(OP_PLAY_MUTE, plane, &[u8::from(muted)]));
+    }
+
     pub fn stop(&self, plane: u32) {
         self.send(frame(OP_STOP, plane, &[]));
     }
@@ -664,6 +697,15 @@ mod tests {
         let bands: Vec<u8> = [0.25f32, 1.0].iter().flat_map(|b| b.to_le_bytes()).collect();
         first.reply(REPLY_VISUALIZER, 0, &bands).await;
         assert_eq!(events.recv().await.unwrap(), HostEvent::Spectrum { bands: vec![0.25, 1.0] });
+        let status = livi_host_proto::UrlStatus { position: Some(2.0), ..Default::default() };
+        first
+            .reply(REPLY_URL_STATUS, 0x7a00_0002, &livi_host_proto::url_status_body(&status))
+            .await;
+        first.reply(REPLY_URL_STATUS, 0x7a00_0002, &[1]).await;
+        assert_eq!(
+            events.recv().await.unwrap(),
+            HostEvent::UrlStatus { plane: 0x7a00_0002, status }
+        );
         drop(first);
 
         let mut again = FakeHost::connect(&gst).await;

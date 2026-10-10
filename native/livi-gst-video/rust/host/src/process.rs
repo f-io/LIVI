@@ -15,6 +15,7 @@ use crate::{Host, Wire};
 
 const STATS_SECONDS: u32 = 5;
 const VISUALIZER_INTERVAL_MS: u64 = 20;
+const URL_STATUS_INTERVAL_MS: u64 = 500;
 const CHUNK: usize = 65536;
 
 /// The audio receive threads reply through the same socket, the lock keeps frames from
@@ -70,6 +71,12 @@ pub fn run(sock_path: &str, crash_log: &str) {
     let visualizer_host = host.clone();
     glib::timeout_add_local(std::time::Duration::from_millis(VISUALIZER_INTERVAL_MS), move || {
         visualizer_host.borrow_mut().pump_visualizer();
+        glib::ControlFlow::Continue
+    });
+
+    let status_host = host.clone();
+    glib::timeout_add_local(std::time::Duration::from_millis(URL_STATUS_INTERVAL_MS), move || {
+        status_host.borrow().pump_url_status();
         glib::ControlFlow::Continue
     });
 

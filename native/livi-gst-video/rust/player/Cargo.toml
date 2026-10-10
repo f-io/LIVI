@@ -11,6 +11,7 @@ crate-type = ["rlib"]
 gstreamer = { workspace = true, features = ["v1_24"] }
 gstreamer-app = { workspace = true, features = ["v1_24"] }
 gstreamer-base = { version = "0.25", features = ["v1_24"] }
+livi-host-proto.workspace = true
 livi-video-codec.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]

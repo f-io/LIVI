@@ -145,6 +145,10 @@ impl Reader<'_> {
                     _ => err("unsupported real size"),
                 }
             }
+            // Seconds since 2001, read as a plain number.
+            0x3 if nib == 3 => {
+                Ok(Value::Real(f64::from_be_bytes(self.slice(p, 8)?.try_into().unwrap())))
+            }
             0x4 => {
                 let n = count()?;
                 Ok(Value::Data(self.slice(p, n)?.to_vec()))
@@ -365,6 +369,16 @@ mod tests {
             ("list", Value::Array(vec![Value::Int(1), Value::Int(300), Value::Int(70000)])),
         ]);
         assert_eq!(decode(&encode(&value)), Ok(value));
+    }
+
+    #[test]
+    fn a_date_reads_as_its_seconds() {
+        let mut bytes = encode(&Value::Real(813_000_000.5));
+        assert_eq!(bytes[8], 0x23);
+        bytes[8] = 0x33;
+        assert_eq!(decode(&bytes), Ok(Value::Real(813_000_000.5)));
+        bytes[8] = 0x32;
+        assert!(decode(&bytes).is_err());
     }
 
     #[test]

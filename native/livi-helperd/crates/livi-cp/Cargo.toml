@@ -9,17 +9,25 @@ base64.workspace = true
 chacha20poly1305 = "0.11.0"
 ctr = "0.10.1"
 ed25519-dalek = "3.0.0"
+foreign-types = "0.3.2"
 getrandom = "0.4.3"
 hkdf = "0.13.0"
 num-bigint = "0.5.1"
+openssl = "0.10.81"
+openssl-sys = "0.9.117"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha1 = "0.11.0"
 sha2.workspace = true
 socket2 = { workspace = true, features = ["all"] }
 tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "sync", "time"] }
+tokio-openssl = "0.6.5"
 uuid = { workspace = true, features = ["v4"] }
 x25519-dalek = { version = "3.0.0", features = ["getrandom"] }
+
+# The DMG ships without a system OpenSSL to link against.
+[target.'cfg(target_os = "macos")'.dependencies]
+openssl = { version = "0.10.81", features = ["vendored"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "test-util"] }

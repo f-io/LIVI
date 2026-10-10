@@ -6,9 +6,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use livi_audio_stream::{AudioSink, Codec as AudioCodec};
 use livi_audio_uplink::UplinkCodec;
+pub use livi_host_proto::UrlStatus;
 use livi_host_proto::{
     CLUSTER_PLANE_MAX, CLUSTER_PLANE_MIN, CLUSTER_RECV_ID, Framer, feed as feedproto, feeder_of,
-    parse_plane_body,
+    parse_plane_body, parse_url_body, url_status_body,
 };
 use livi_screen_stream::ScreenSink;
 use livi_video_fanout::Fanout;
@@ -43,6 +44,10 @@ const OP_FEED_OPEN: u8 = 16;
 const OP_AUDIO_OUTPUT: u8 = 17;
 const OP_FEED_ROUTE: u8 = 18;
 const OP_FEED_CLOSE: u8 = 19;
+const OP_PLAY_URL: u8 = 22;
+const OP_PLAY_RATE: u8 = 23;
+const OP_PLAY_SEEK: u8 = 24;
+const OP_PLAY_MUTE: u8 = 25;
 
 const REPLY_PORT: u8 = 1;
 const REPLY_CONFIG: u8 = 2;
@@ -51,6 +56,7 @@ const REPLY_AUDIO_PORTS: u8 = 4;
 const REPLY_AUDIO_STARTED: u8 = 5;
 const REPLY_VISUALIZER: u8 = 6;
 const REPLY_FEED: u8 = 7;
+const REPLY_URL_STATUS: u8 = 8;
 
 pub trait Speaker: Send + Sync + 'static {
     fn push_rtp(&self, rtp: &[u8]);
@@ -100,8 +106,19 @@ pub trait Plane: 'static {
     fn set_gamma(&self, gamma: f64, contrast: f64, r: f64, g: f64, b: f64);
 }
 
+/// A plane that fetches its stream from a URL itself.
+pub trait UrlPlay: 'static {
+    fn start(&self);
+    /// 0 pauses.
+    fn set_rate(&self, rate: f64);
+    fn seek(&self, seconds: f64);
+    fn set_muted(&self, muted: bool);
+    fn status(&self) -> UrlStatus;
+}
+
 pub trait Outside: 'static {
     type Plane: Plane;
+    type UrlPlayer: UrlPlay;
     /// Dropping it stops the listening.
     type Ears;
 
@@ -110,6 +127,9 @@ pub trait Outside: 'static {
     type AudioEars;
 
     fn create_plane(&self, id: u32, codec: &str, codec_data: &[u8]) -> Option<Self::Plane>;
+
+    /// An empty `audio_device` is the system default.
+    fn play_url(&self, id: u32, url: &str, audio_device: &str) -> Option<Self::UrlPlayer>;
 
     /// The port is the one to tell the phone about.
     fn listen(&self, key: [u8; 32], sink: Box<dyn ScreenSink>) -> Option<(Self::Ears, u16)>;
@@ -367,6 +387,7 @@ pub struct Host<O: Outside> {
     audio: Streams<O::Speaker, O::AudioEars>,
     uplinks: HashMap<u32, O::Uplink>,
     taps: HashMap<u32, O::Tap>,
+    url_players: HashMap<u32, O::UrlPlayer>,
     feed_fans: FeedFans,
     feed_wanted: FeedWanted,
     feed_routes: FeedRoutes,
@@ -386,6 +407,7 @@ impl<O: Outside> Host<O> {
             audio: Rc::new(RefCell::new(HashMap::new())),
             uplinks: HashMap::new(),
             taps: HashMap::new(),
+            url_players: HashMap::new(),
             feed_fans: Rc::new(RefCell::new(HashMap::new())),
             feed_wanted: Rc::new(RefCell::new(HashMap::new())),
             feed_routes: Rc::new(RefCell::new(HashMap::new())),
@@ -413,6 +435,23 @@ impl<O: Outside> Host<O> {
             }
             OP_STOP => {
                 self.planes.borrow_mut().remove(&id);
+                self.url_players.remove(&id);
+            }
+            OP_PLAY_URL => self.play_url(id, rest),
+            OP_PLAY_RATE => {
+                if let (Some(p), Some(rate)) = (self.url_players.get(&id), f64_le(rest)) {
+                    p.set_rate(rate);
+                }
+            }
+            OP_PLAY_SEEK => {
+                if let (Some(p), Some(seconds)) = (self.url_players.get(&id), f64_le(rest)) {
+                    p.seek(seconds);
+                }
+            }
+            OP_PLAY_MUTE => {
+                if let (Some(p), Some(b)) = (self.url_players.get(&id), rest.first()) {
+                    p.set_muted(b & 1 != 0);
+                }
             }
             OP_GAMMA => self.set_gamma(id, rest),
             OP_LISTEN => self.open_receiver(id, rest),
@@ -477,6 +516,7 @@ impl<O: Outside> Host<O> {
         let Some((codec, codec_data)) = parse_plane_body(rest) else { return };
 
         self.planes.borrow_mut().remove(&id);
+        self.url_players.remove(&id);
         let Some(plane) = self.outside.create_plane(id, &codec, codec_data) else {
             eprintln!("livi: create player 0x{id:x} (codec {codec}) FAILED");
             return;
@@ -504,6 +544,20 @@ impl<O: Outside> Host<O> {
             }
         }
         self.planes.borrow_mut().insert(id, plane);
+    }
+
+    /// `[2B deviceLen LE][audio device][url]`
+    fn play_url(&mut self, id: u32, rest: &[u8]) {
+        let Some((url, device)) = parse_url_body(rest) else { return };
+
+        self.planes.borrow_mut().remove(&id);
+        self.url_players.remove(&id);
+        let Some(player) = self.outside.play_url(id, &url, &device) else {
+            eprintln!("livi: play 0x{id:x} from {url} FAILED");
+            return;
+        };
+        player.start();
+        self.url_players.insert(id, player);
     }
 
     /// The socket path as utf-8. The reply carries the path back, empty when binding failed.
@@ -868,6 +922,13 @@ impl<O: Outside> Host<O> {
         }
     }
 
+    /// Every URL player tells core where it stands.
+    pub fn pump_url_status(&self) {
+        for (id, player) in &self.url_players {
+            self.wire.reply(REPLY_URL_STATUS, *id, &url_status_body(&player.status()));
+        }
+    }
+
     /// Reading starts the counters over.
     pub fn take_stats(&self) -> Vec<String> {
         let mut lines = Vec::new();
@@ -904,6 +965,10 @@ impl<O: Outside> Host<O> {
         }
         lines
     }
+}
+
+fn f64_le(rest: &[u8]) -> Option<f64> {
+    Some(f64::from_le_bytes(rest.get(..8)?.try_into().ok()?))
 }
 
 #[cfg(test)]
@@ -953,6 +1018,47 @@ mod tests {
 
         fn set_gamma(&self, gamma: f64, contrast: f64, r: f64, g: f64, b: f64) {
             self.0.borrow_mut().gamma = Some([gamma, contrast, r, g, b]);
+        }
+    }
+
+    #[derive(Default)]
+    struct UrlLog {
+        started: usize,
+        status: UrlStatus,
+        rates: Vec<f64>,
+        seeks: Vec<f64>,
+        muted: Option<bool>,
+        dropped: bool,
+    }
+
+    /// The world keeps the log, the host the player.
+    struct FakeUrlPlayer(Rc<RefCell<UrlLog>>);
+
+    impl UrlPlay for FakeUrlPlayer {
+        fn status(&self) -> UrlStatus {
+            self.0.borrow().status
+        }
+
+        fn start(&self) {
+            self.0.borrow_mut().started += 1;
+        }
+
+        fn set_rate(&self, rate: f64) {
+            self.0.borrow_mut().rates.push(rate);
+        }
+
+        fn seek(&self, seconds: f64) {
+            self.0.borrow_mut().seeks.push(seconds);
+        }
+
+        fn set_muted(&self, muted: bool) {
+            self.0.borrow_mut().muted = Some(muted);
+        }
+    }
+
+    impl Drop for FakeUrlPlayer {
+        fn drop(&mut self) {
+            self.0.borrow_mut().dropped = true;
         }
     }
 
@@ -1059,6 +1165,10 @@ mod tests {
         feeds: Vec<SharedMediaSink>,
         feed_paths: Vec<String>,
         refuse_feed: bool,
+        /// Plane, url and audio device.
+        urls: Vec<(u32, String, String)>,
+        url_logs: Vec<Rc<RefCell<UrlLog>>>,
+        refuse_url: bool,
     }
 
     type SharedMediaSink = Rc<RefCell<Box<dyn MediaSink>>>;
@@ -1068,6 +1178,7 @@ mod tests {
 
     impl Outside for Fake {
         type Plane = FakePlane;
+        type UrlPlayer = FakeUrlPlayer;
         type Ears = SharedSink;
         type Speaker = FakeSpeaker;
         type AudioEars = SharedAudioSink;
@@ -1092,6 +1203,17 @@ mod tests {
             w.codecs.push((id, codec.to_owned(), codec_data.to_vec()));
             w.planes.push(plane.clone());
             Some(plane)
+        }
+
+        fn play_url(&self, id: u32, url: &str, audio_device: &str) -> Option<FakeUrlPlayer> {
+            if self.0.borrow().refuse_url {
+                return None;
+            }
+            let log = Rc::new(RefCell::new(UrlLog::default()));
+            let mut w = self.0.borrow_mut();
+            w.urls.push((id, url.to_owned(), audio_device.to_owned()));
+            w.url_logs.push(log.clone());
+            Some(FakeUrlPlayer(log))
         }
 
         fn listen(&self, key: [u8; 32], sink: Box<dyn ScreenSink>) -> Option<(SharedSink, u16)> {
@@ -1623,6 +1745,108 @@ mod tests {
         f.send(OP_DATA, MAIN_PLANE, &[7]);
 
         assert!(f.plane(0).pushed().is_empty());
+    }
+
+    const VIDEO_PLANE: u32 = 0x7a00_0002;
+
+    fn url_log(f: &Fixture, i: usize) -> Rc<RefCell<UrlLog>> {
+        f.world.0.borrow().url_logs[i].clone()
+    }
+
+    #[test]
+    fn a_play_message_starts_a_player_on_its_url_and_audio_device() {
+        let mut f = Fixture::new();
+
+        f.send(OP_PLAY_URL, VIDEO_PLANE, &livi_host_proto::url_body("http://h/i.m3u8", "car"));
+
+        assert_eq!(
+            f.world.0.borrow().urls,
+            vec![(VIDEO_PLANE, "http://h/i.m3u8".to_owned(), "car".to_owned())]
+        );
+        assert_eq!(url_log(&f, 0).borrow().started, 1);
+    }
+
+    #[test]
+    fn rate_seek_and_mute_reach_the_player() {
+        let mut f = Fixture::new();
+        f.send(OP_PLAY_URL, VIDEO_PLANE, &livi_host_proto::url_body("http://h/", ""));
+
+        f.send(OP_PLAY_RATE, VIDEO_PLANE, &0.0f64.to_le_bytes());
+        f.send(OP_PLAY_SEEK, VIDEO_PLANE, &12.5f64.to_le_bytes());
+        f.send(OP_PLAY_MUTE, VIDEO_PLANE, &[1]);
+
+        let log = url_log(&f, 0);
+        let log = log.borrow();
+        assert_eq!((log.rates.as_slice(), log.seeks.as_slice()), (&[0.0][..], &[12.5][..]));
+        assert_eq!(log.muted, Some(true));
+    }
+
+    #[test]
+    fn control_messages_short_of_their_value_or_their_player_are_ignored() {
+        let mut f = Fixture::new();
+        f.send(OP_PLAY_RATE, VIDEO_PLANE, &1.0f64.to_le_bytes());
+        f.send(OP_PLAY_URL, VIDEO_PLANE, &livi_host_proto::url_body("http://h/", ""));
+
+        f.send(OP_PLAY_RATE, VIDEO_PLANE, &[0; 4]);
+        f.send(OP_PLAY_SEEK, VIDEO_PLANE, &[]);
+        f.send(OP_PLAY_MUTE, VIDEO_PLANE, &[]);
+        f.send(OP_PLAY_MUTE, MAIN_PLANE, &[1]);
+
+        let log = url_log(&f, 0);
+        let log = log.borrow();
+        assert!(log.rates.is_empty() && log.seeks.is_empty());
+        assert_eq!(log.muted, None);
+    }
+
+    #[test]
+    fn every_url_player_reports_its_status() {
+        let mut f = Fixture::new();
+        f.host.pump_url_status();
+        assert!(f.replies().is_empty());
+        f.send(OP_PLAY_URL, VIDEO_PLANE, &livi_host_proto::url_body("http://h/", ""));
+        let status =
+            UrlStatus { position: Some(4.0), ready: true, playing: true, ..Default::default() };
+        url_log(&f, 0).borrow_mut().status = status;
+
+        f.host.pump_url_status();
+
+        assert_eq!(f.replies(), vec![(REPLY_URL_STATUS, VIDEO_PLANE, url_status_body(&status))]);
+    }
+
+    #[test]
+    fn a_stop_message_drops_the_player() {
+        let mut f = Fixture::new();
+        f.send(OP_PLAY_URL, VIDEO_PLANE, &livi_host_proto::url_body("http://h/", ""));
+
+        f.send(OP_STOP, VIDEO_PLANE, &[]);
+        f.send(OP_PLAY_MUTE, VIDEO_PLANE, &[1]);
+
+        assert!(url_log(&f, 0).borrow().dropped);
+        assert_eq!(url_log(&f, 0).borrow().muted, None);
+    }
+
+    #[test]
+    fn a_player_and_a_plane_on_one_id_replace_each_other() {
+        let mut f = Fixture::new();
+        f.send(OP_CREATE, VIDEO_PLANE, &create_body("h264", &[]));
+
+        f.send(OP_PLAY_URL, VIDEO_PLANE, &livi_host_proto::url_body("http://h/", ""));
+        f.send(OP_DATA, VIDEO_PLANE, &[7]);
+        assert!(f.plane(0).pushed().is_empty());
+
+        f.send(OP_CREATE, VIDEO_PLANE, &create_body("h264", &[]));
+        assert!(url_log(&f, 0).borrow().dropped);
+    }
+
+    #[test]
+    fn a_play_message_without_a_url_or_a_player_leaves_nothing_behind() {
+        let mut f = Fixture::new();
+        f.send(OP_PLAY_URL, VIDEO_PLANE, &livi_host_proto::url_body("", "car"));
+        f.world.0.borrow_mut().refuse_url = true;
+        f.send(OP_PLAY_URL, VIDEO_PLANE, &livi_host_proto::url_body("http://h/", ""));
+
+        assert!(f.world.0.borrow().url_logs.is_empty());
+        assert!(f.host.url_players.is_empty());
     }
 
     #[test]

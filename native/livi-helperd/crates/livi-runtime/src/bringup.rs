@@ -248,31 +248,32 @@ async fn run_auth<C: ControlChannel, A: AsyncAuth>(
     }
 }
 
-fn security_type(security: Security) -> SecurityType {
+fn start_session_security(security: Security) -> Option<CarPlayWiFiSecurityType> {
     match security {
-        Security::Wpa2 => SecurityType::WpaWpa2,
-        Security::Wpa2Wpa3 => SecurityType::Wpa3Transition,
-        Security::Wpa3 => SecurityType::Wpa3Only,
+        Security::Wpa2 => None,
+        Security::Wpa2Wpa3 => Some(CarPlayWiFiSecurityType::Wpa3Transition),
+        Security::Wpa3 => Some(CarPlayWiFiSecurityType::Wpa3Only),
     }
 }
 
 /// The network the phone is told about: the one on air, else the configured one.
-fn told(cp: &CpConfig, live: Option<&OnAir>) -> (String, u8, SecurityType) {
+fn told(cp: &CpConfig, live: Option<&OnAir>) -> (String, u8, Security) {
     let ssid = live.map(|ap| ap.ssid.clone()).filter(|s| !s.is_empty());
     let channel = live.map_or(cp.channel, |ap| ap.channel);
     (
         ssid.unwrap_or_else(|| cp.ssid.clone()),
         u8::try_from(channel.number).unwrap_or_default(),
-        security_type(live.map(|ap| ap.security).unwrap_or_default()),
+        live.map(|ap| ap.security).unwrap_or_default(),
     )
 }
 
 fn wifi_config(cp: &CpConfig, live: Option<&OnAir>) -> AccessoryWiFiConfigurationInformation {
-    let (ssid, channel, security_type) = told(cp, live);
+    let (ssid, channel, _) = told(cp, live);
     AccessoryWiFiConfigurationInformation {
         ssid: Some(ssid),
         passphrase: Some(cp.passphrase.clone()),
-        security_type,
+        // The only WPA number this message has. A 3 here made the phone drop the link.
+        security_type: AccessoryWiFiSecurityType::Wpa2OrWpa3Transition,
         channel,
     }
 }
@@ -303,7 +304,7 @@ fn carplay_start_session(cp: &CpConfig, live: Option<OnAir>) -> Option<CarPlaySt
         });
     }
     let fe80 = net::wlan_link_local(&cp.wifi_iface)?;
-    let (ssid, channel, security_type) = told(cp, live.as_ref());
+    let (ssid, channel, security) = told(cp, live.as_ref());
     Some(CarPlayStartSession {
         wired_attributes: None,
         wireless_attributes: Some(CarPlayStartSessionWirelessAttributes {
@@ -311,7 +312,7 @@ fn carplay_start_session(cp: &CpConfig, live: Option<OnAir>) -> Option<CarPlaySt
             passphrase: Some(cp.passphrase.clone()),
             channel: Some(channel),
             ip_address: vec![fe80],
-            security_type: Some(security_type as u8),
+            security_type: start_session_security(security),
         }),
         port: Some(cp.airplay_port),
         device_identifier: accessory_id(cp),
@@ -642,17 +643,25 @@ mod tests {
         let told = wifi_config(&cp, Some(&live));
         assert_eq!(told.ssid.as_deref(), Some("LIVI-Link"));
         assert_eq!(told.channel, 149);
-        assert_eq!(told.security_type, SecurityType::Wpa3Transition);
         let fallback = wifi_config(&cp, None);
         assert_eq!((fallback.ssid.as_deref(), fallback.channel), (Some("LIVI"), 36));
-        assert_eq!(fallback.security_type, SecurityType::WpaWpa2);
     }
 
     #[test]
-    fn every_security_has_its_iap2_number() {
-        assert_eq!(security_type(Security::Wpa2) as u8, 2);
-        assert_eq!(security_type(Security::Wpa2Wpa3) as u8, 3);
-        assert_eq!(security_type(Security::Wpa3) as u8, 4);
+    fn the_wifi_config_has_one_number_for_every_wpa_mode() {
+        let cp = dongle_ap(|| None);
+        for security in [Security::Wpa2, Security::Wpa2Wpa3, Security::Wpa3] {
+            let live = OnAir { security, ..ap("LIVI-Link", 149) };
+            assert_eq!(wifi_config(&cp, Some(&live)).security_type as u8, 2);
+        }
+        assert_eq!(wifi_config(&cp, None).security_type as u8, 2);
+    }
+
+    #[test]
+    fn a_start_session_names_only_the_wpa3_modes() {
+        assert_eq!(start_session_security(Security::Wpa2), None);
+        assert_eq!(start_session_security(Security::Wpa2Wpa3).map(|s| s as u8), Some(3));
+        assert_eq!(start_session_security(Security::Wpa3).map(|s| s as u8), Some(4));
     }
 
     fn dongle_ap(ask: AskOnAir) -> CpConfig {

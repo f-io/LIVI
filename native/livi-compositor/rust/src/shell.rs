@@ -116,11 +116,7 @@ fn classify_on_initial_commit(state: &mut LiviState, idx: usize) {
             state.toplevels[idx].awaiting_claim = true;
             log::warn!("video plane arrived before its claim, waiting for one");
         }
-        if state.toplevels[idx].tag == "main" {
-            state.video_order.push(idx);
-        } else {
-            state.video_order.insert(0, idx);
-        }
+        stack_video(state, idx);
         let tag = state.toplevels[idx].tag.clone();
         log::info!(
             "app_id={app_id:?} title={title:?} tag='{tag}' -> video on screen '{}'",
@@ -171,6 +167,25 @@ fn main_ui_surface(state: &LiviState) -> Option<WlSurface> {
         .map(|t| t.toplevel.wl_surface().clone())
 }
 
+/// Bottom to top: cluster, main, video.
+fn video_rank(tag: &str) -> u8 {
+    match tag {
+        "video" => 2,
+        "main" => 1,
+        _ => 0,
+    }
+}
+
+fn stack_video(state: &mut LiviState, idx: usize) {
+    let rank = video_rank(&state.toplevels[idx].tag);
+    let at = state
+        .video_order
+        .iter()
+        .position(|&i| state.toplevels.get(i).is_some_and(|t| video_rank(&t.tag) > rank))
+        .unwrap_or(state.video_order.len());
+    state.video_order.insert(at, idx);
+}
+
 fn drop_stale_planes(state: &mut LiviState, keep: usize, tag: &str) {
     for (i, t) in state.toplevels.iter_mut().enumerate() {
         if i != keep && t.kind == Kind::Video && t.tag == tag {
@@ -192,11 +207,7 @@ pub fn bind_waiting_plane(state: &mut LiviState, tag: &str) -> bool {
     drop_stale_planes(state, idx, tag);
 
     state.video_order.retain(|&i| i != idx);
-    if tag == "main" {
-        state.video_order.push(idx);
-    } else {
-        state.video_order.insert(0, idx);
-    }
+    stack_video(state, idx);
 
     crate::ctrl::send(state, &format!("bound {tag}\n"));
     crate::layout::apply_cfg_to_video(state, tag, idx);
@@ -462,3 +473,15 @@ smithay::delegate_dmabuf!(LiviState);
 smithay::delegate_viewporter!(LiviState);
 impl smithay::wayland::output::OutputHandler for LiviState {}
 smithay::delegate_output!(LiviState);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn video_lies_above_the_projection_and_the_clusters_below() {
+        assert!(video_rank("video") > video_rank("main"));
+        assert!(video_rank("main") > video_rank("cluster-main"));
+        assert_eq!(video_rank(""), video_rank("cluster-dash"));
+    }
+}

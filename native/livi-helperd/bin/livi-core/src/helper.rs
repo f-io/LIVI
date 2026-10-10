@@ -122,21 +122,34 @@ pub fn resolve_bin(bin: &Path, user_data: &Path) -> PathBuf {
     }
 }
 
-/// A crashed LIVI leaves a root helper holding the MFi GPIO, the RFCOMM channel
-/// and the BT sockets, and only root can end it.
-fn kill_stale() {
-    let running = std::process::Command::new("pgrep")
+fn stale_running() -> bool {
+    std::process::Command::new("pgrep")
         .args(["-f", STALE_PATTERN])
         .output()
-        .is_ok_and(|o| !o.stdout.is_empty());
-    if running {
-        println!("[core] stopping a stale helper");
+        .is_ok_and(|o| !o.stdout.is_empty())
+}
+
+/// A crashed LIVI leaves a root helper holding the MFi GPIO, the RFCOMM channel
+/// and the BT sockets, and only root can end it.
+async fn kill_stale() {
+    if !stale_running() {
+        return;
+    }
+    println!("[core] stopping a stale helper");
+    for signal in ["-TERM", "-KILL"] {
         let _ = std::process::Command::new("sudo")
-            .args(["-n", "pkill", "-f", STALE_PATTERN])
+            .args(["-n", "pkill", signal, "-f", STALE_PATTERN])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
+        for _ in 0..20 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            if !stale_running() {
+                return;
+            }
+        }
     }
+    eprintln!("[core] a stale helper outlived SIGKILL");
 }
 
 pub struct Spec {
@@ -213,7 +226,7 @@ async fn run(spec: Spec, mut stop: watch::Receiver<bool>) {
     let mut restarts = 0;
     loop {
         if cfg!(target_os = "linux") && spec.use_sudo {
-            kill_stale();
+            kill_stale().await;
         }
         if !spec.bin.exists() {
             eprintln!("[core] {HELPER_BIN} not found at {}", spec.bin.display());

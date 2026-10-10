@@ -29,6 +29,15 @@ impl IapTunnel {
         seed: &str,
         out: mpsc::UnboundedSender<Vec<u8>>,
     ) -> io::Result<Self> {
+        Self::listen_as("iAP", shared, seed, out)
+    }
+
+    pub fn listen_as(
+        name: &'static str,
+        shared: &[u8; 32],
+        seed: &str,
+        out: mpsc::UnboundedSender<Vec<u8>>,
+    ) -> io::Result<Self> {
         let key = hkdf_sha512(
             shared,
             format!("DataStream-Salt{seed}").as_bytes(),
@@ -39,11 +48,11 @@ impl IapTunnel {
         let task = tokio::spawn(async move {
             let mut current: Option<JoinHandle<()>> = None;
             while let Ok((sock, from)) = listener.accept().await {
-                println!("[cpIapTunnel] iAP data connection from {from}");
+                println!("[cpIapTunnel] {name} data connection from {from}");
                 if let Some(old) = current.take() {
                     old.abort();
                 }
-                current = Some(tokio::spawn(read(sock, key, out.clone())));
+                current = Some(tokio::spawn(read(name, sock, key, out.clone())));
             }
         });
         Ok(Self { port, task })
@@ -60,7 +69,7 @@ impl Drop for IapTunnel {
     }
 }
 
-async fn read(mut sock: TcpStream, key: [u8; 32], out: mpsc::UnboundedSender<Vec<u8>>) {
+async fn read(name: &str, mut sock: TcpStream, key: [u8; 32], out: mpsc::UnboundedSender<Vec<u8>>) {
     let mut cipher = ControlCipher::new(key, [0; 32]);
     let mut sealed = Vec::new();
     let mut plain = Vec::new();
@@ -95,10 +104,13 @@ async fn read(mut sock: TcpStream, key: [u8; 32], out: mpsc::UnboundedSender<Vec
             plain.drain(..size);
             if kind == MSG_TYPE_COMM {
                 let _ = out.send(body);
+            } else if name != "iAP" {
+                let tag = String::from_utf8_lossy(&kind.to_be_bytes()).into_owned();
+                println!("[cpIapTunnel] {name}: package '{tag}' ({} B) skipped", body.len());
             }
         }
     }
-    println!("[cpIapTunnel] iAP data connection closed");
+    println!("[cpIapTunnel] {name} data connection closed");
 }
 
 #[cfg(test)]

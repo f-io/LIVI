@@ -243,6 +243,7 @@ async fn browse_once(
         .args(["-r", "-p", "-k", CARPLAY_CTRL])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
+        .kill_on_drop(true)
         .spawn()?;
     let stdout = child.stdout.take().expect("piped stdout");
     let mut lines = BufReader::new(stdout).lines();

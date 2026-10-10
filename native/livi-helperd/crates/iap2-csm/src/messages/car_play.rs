@@ -47,13 +47,20 @@ csm_group! {
     }
 }
 
+csm_enum! {
+    pub enum CarPlayWiFiSecurityType {
+        Wpa3Transition = 3,
+        Wpa3Only = 4,
+    }
+}
+
 csm_group! {
     pub struct CarPlayStartSessionWirelessAttributes {
         0 => wifi_ssid: [opt str],
         1 => passphrase: [opt str],
         2 => channel: [opt u8],
         3 => ip_address: [list str],
-        4 => security_type: [opt u8],
+        4 => security_type: [opt enum CarPlayWiFiSecurityType],
     }
 }
 

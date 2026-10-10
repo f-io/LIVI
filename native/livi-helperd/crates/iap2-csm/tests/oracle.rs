@@ -79,6 +79,7 @@ fn vectors_roundtrip() {
                     assert_eq!(w.wifi_ssid.as_deref(), Some("LIVI"));
                     assert_eq!(w.channel, Some(36));
                     assert_eq!(w.ip_address, vec!["192.168.2.1"]);
+                    assert_eq!(w.security_type, Some(CarPlayWiFiSecurityType::Wpa3Transition));
                     assert_eq!(m.port, Some(49152));
                 }
             }
@@ -108,7 +109,7 @@ fn vectors_roundtrip() {
             }
             "AccessoryWiFiConfigurationInformation" => {
                 let m = roundtrip::<AccessoryWiFiConfigurationInformation>(&name, &frame);
-                assert_eq!(m.security_type, SecurityType::Wpa3Transition);
+                assert_eq!(m.security_type, AccessoryWiFiSecurityType::Wpa2OrWpa3Transition);
                 assert_eq!(m.channel, 36);
             }
             "StartLocationInformation" => {

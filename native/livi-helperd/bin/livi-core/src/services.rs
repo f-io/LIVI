@@ -23,7 +23,7 @@ use crate::ui::UiSupervisor;
 use livi_aa_stack::helper_sock::AaHelperSock;
 use livi_media::compositor::{self, CompositorControl, Ui, backdrop_hex};
 use livi_media::gst_host::{GstHost, HostEvent, Launch};
-use livi_media::planes::{ClusterPlanes, MainPlane, crop_for};
+use livi_media::planes::{ClusterPlanes, MainPlane, VideoPlane, crop_for};
 
 const HELPER_RESTART_DELAY: Duration = Duration::from_secs(2);
 const HELPER_MAX_RESTARTS: u32 = 5;
@@ -237,10 +237,13 @@ impl CarPlay {
             identity: self.identity,
             pairings: Pairings::new(self.user_data.join("cp/pairings.json")),
             helper: HelperSock::default(),
-            media: GstMedia::new(gst.clone()),
+            media: GstMedia::new(gst.clone(), VideoPlane::new(gst.clone(), ctrl.clone())),
             config,
             refresh: Some(Arc::new(move || refreshing.refresh())),
             debug: self.debug,
+            // gst-host plays URLs on Linux only so far.
+            video_playback: cfg!(not(target_os = "macos")),
+            video_capture: self.debug.then(|| self.user_data.join("log/video-playback")),
         });
         let (events_tx, events) = mpsc::unbounded_channel();
         let cp = livi_cp::manager::start(self.listener, ctx, events_tx);
