@@ -24,6 +24,10 @@ on:
         description: 'Build imx6ul_rtl8822bs (armv7, static-musl, mainline kernel)'
         type: boolean
         default: true
+      x1600_aic8800d80:
+        description: 'Build x1600_aic8800d80 (mipsel, musl, mainline kernel)'
+        type: boolean
+        default: true
       bindshells:
         description: 'Rebuild the provisioner bind-shells (armv7, riscv32, mipsel)'
         type: boolean
@@ -104,6 +108,7 @@ jobs:
           IMX6UL: ${{ inputs.imx6ul_iw416 }}
           IMX6UL_RTL8822CS: ${{ inputs.imx6ul_rtl8822cs }}
           IMX6UL_RTL8822BS: ${{ inputs.imx6ul_rtl8822bs }}
+          X1600: ${{ inputs.x1600_aic8800d80 }}
         run: |
           set -euo pipefail
           arr=()
@@ -112,6 +117,7 @@ jobs:
           [[ "$IMX6UL" == "true" ]] && arr+=('"imx6ul_iw416"')
           [[ "$IMX6UL_RTL8822CS" == "true" ]] && arr+=('"imx6ul_rtl8822cs"')
           [[ "$IMX6UL_RTL8822BS" == "true" ]] && arr+=('"imx6ul_rtl8822bs"')
+          [[ "$X1600"  == "true" ]] && arr+=('"x1600_aic8800d80"')
           {
             printf 'matrix={"target":[%s]}\n' "$(IFS=,; echo "${arr[*]}")"
             printf 'any=%s\n' "$(IFS=,; echo "${arr[*]}")"
@@ -308,6 +314,73 @@ jobs:
           source scripts/livi-link/version.sh
           livi_firmware_json "assets/livi-link/${{ matrix.target }}/$(basename "$BUNDLE")"
 
+      # Debian dropped mipsel entirely from trixie
+      - name: Install mipsel cross toolchain (x1600)
+        if: matrix.target == 'x1600_aic8800d80'
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get install -y --no-install-recommends \
+            squashfs-tools u-boot-tools bc bison flex libssl-dev libelf-dev bzip2 pkg-config xz-utils
+
+          TC_VER=2026.08-1
+          TC_SHA=e8517d51ba86699d5efaac62fc50fd9267dbdbc8b2cd3eb5b658db3582286778
+          TC_URL="https://toolchains.bootlin.com/downloads/releases/toolchains/mips32el/tarballs/mips32el--musl--stable-${TC_VER}.tar.xz"
+          curl -sSL "$TC_URL" -o /tmp/mips-tc.tar.xz
+          echo "$TC_SHA  /tmp/mips-tc.tar.xz" | sha256sum -c
+          mkdir -p "$HOME/mips-tc"
+          tar -xJf /tmp/mips-tc.tar.xz -C "$HOME/mips-tc" --strip-components=1
+          cp "$HOME/mips-tc/lib/gcc/mipsel-buildroot-linux-musl/15.3.0/libgcc_eh.a" \
+             "$HOME/mips-tc/mipsel-buildroot-linux-musl/sysroot/lib/libunwind.a"
+          echo "$HOME/mips-tc/bin" >> "$GITHUB_PATH"
+          "$HOME/mips-tc/bin/mipsel-buildroot-linux-musl-gcc" --version | head -1
+
+      # mipsel-unknown-linux-musl is Tier 3 (no prebuilt std), same as v821b's riscv32gc target.
+      - name: Setup Rust nightly + rust-src (x1600)
+        if: matrix.target == 'x1600_aic8800d80'
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HOME/.cargo/bin/rustup" toolchain install nightly --profile minimal --component rust-src
+          "$HOME/.cargo/bin/rustc" +nightly --version
+
+      - name: Cache cargo (x1600)
+        if: matrix.target == 'x1600_aic8800d80'
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            native/target
+          key: cargo-livi-link-x1600-${{ hashFiles('native/Cargo.lock', 'native/**/Cargo.toml') }}
+          restore-keys: cargo-livi-link-x1600-
+
+      # Dual bank, the vendor's own: the existing bootloader is kept as-is and already reads "ota"
+      # to pick which bank to boot. Same .lfwb shape as the other boards (kernel + rootfs), but
+      # flashed through livi-link-provision's own flash() — the vendor's HTTP bank-flip — not a
+      # raw MTD write (see x1600-livi-link.dts for why).
+      - name: Build X1600 firmware bundle
+        if: matrix.target == 'x1600_aic8800d80'
+        shell: bash
+        env:
+          BOARD_DIR: scripts/livi-link/mips/x1600
+          TOP: ${{ github.workspace }}/build/x1600_aic8800d80
+          CROSS_COMPILE: mipsel-buildroot-linux-musl-
+        run: |
+          set -euo pipefail
+          mkdir -p "$TOP"
+          bash scripts/livi-link/mips/build-userspace.sh "$BOARD_DIR"
+          bash "$BOARD_DIR/build.sh"
+          bash scripts/livi-link/common/build-rootfs.sh "$BOARD_DIR"
+          bash scripts/livi-link/common/pack-bundle.sh "$BOARD_DIR"
+
+          BUNDLE=$(source "$BOARD_DIR/board.sh" && echo "$BUNDLE")
+          mkdir -p "assets/livi-link/x1600_aic8800d80"
+          cp "$BUNDLE" "assets/livi-link/x1600_aic8800d80/"
+          source scripts/livi-link/version.sh
+          livi_firmware_json "assets/livi-link/x1600_aic8800d80/$(basename "$BUNDLE")"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
@@ -363,6 +436,13 @@ jobs:
         with:
           name: imx6ul_rtl8822bs
           path: assets/livi-link/imx6ul_rtl8822bs
+
+      - name: Download x1600_aic8800d80 artifact
+        if: contains(needs.targets.outputs.any, 'x1600_aic8800d80')
+        uses: actions/download-artifact@v8
+        with:
+          name: x1600_aic8800d80
+          path: assets/livi-link/x1600_aic8800d80
 
       - name: Download bind-shell artifacts
         if: inputs.bindshells
@@ -459,6 +539,13 @@ jobs:
         with:
           name: imx6ul_rtl8822bs
           path: assets/livi-link/imx6ul_rtl8822bs
+
+      - name: Take the x1600_aic8800d80 firmware bundle from this run
+        if: contains(needs.targets.outputs.any, 'x1600_aic8800d80')
+        uses: actions/download-artifact@v8
+        with:
+          name: x1600_aic8800d80
+          path: assets/livi-link/x1600_aic8800d80
 
       # Without a rebuild the committed bind-shells in the checkout are embedded.
       - name: Take the bind-shells from this run

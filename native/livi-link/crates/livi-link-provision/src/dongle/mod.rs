@@ -2,6 +2,7 @@ pub mod arm;
 pub mod hook;
 pub mod lfwb;
 pub mod link;
+pub mod mips;
 pub mod ota;
 pub mod probe;
 pub mod rescue;
@@ -11,6 +12,24 @@ pub mod web;
 
 pub const DONGLE_HOST: &str = "192.168.50.100";
 pub const BIND_SHELL_PORT: u16 = 2323;
+
+/// Puts `data` at `path` in a squashfs being rebuilt, replacing it in place if a patch already put
+/// something there — so patching twice (or patching an image that already carries our shell)
+/// replaces instead of erroring or duplicating.
+pub(crate) fn put_file(
+    writer: &mut backhand::FilesystemWriter,
+    path: &str,
+    data: Vec<u8>,
+    header: backhand::NodeHeader,
+) -> Result<(), String> {
+    let bytes = std::io::Cursor::new(data);
+    if writer.mut_file(path).is_some() {
+        writer.replace_file(path, bytes)
+    } else {
+        writer.push_file(bytes, path, header)
+    }
+    .map_err(|e| format!("{path}: {e}"))
+}
 
 /// A root shell on the dongle: the bind shell the hook opens on a stock one, or telnet on one that
 /// runs our kernel.

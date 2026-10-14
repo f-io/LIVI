@@ -8,3 +8,13 @@ rustflags = [
   "-C", "link-arg=-static",
   "-C", "link-arg=-no-pie",
 ]
+
+# Cross target for the X1600, static-linked against Bootlin's musl toolchain (Tier 3, no prebuilt
+# std, same as riscv32gc-unknown-linux-gnu above: +nightly -Z build-std).
+[target.mipsel-unknown-linux-musl]
+linker = "mipsel-buildroot-linux-musl-gcc"
+rustflags = [
+  "-C", "target-feature=+crt-static,-soft-float",
+  "-C", "link-arg=-static",
+  "-C", "link-self-contained=no",
+]
