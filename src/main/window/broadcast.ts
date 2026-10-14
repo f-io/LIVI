@@ -2,7 +2,7 @@ import { getMainWindow } from '@main/window/createWindow'
 import { getSecondaryWindow, type SecondaryWindowRole } from '@main/window/secondaryWindows'
 import type { WebContents } from 'electron'
 
-const SECONDARY_ROLES: SecondaryWindowRole[] = ['dash', 'aux']
+const SECONDARY_ROLES: SecondaryWindowRole[] = ['cluster', 'aux']
 
 export function getAllRendererWebContents(): WebContents[] {
   const out: WebContents[] = []

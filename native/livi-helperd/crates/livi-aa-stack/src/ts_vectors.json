@@ -5247,27 +5247,27 @@
     "carType": 1,
     "evConnectorTypes": [],
     "dashboards": {
-     "dash1": {
+     "dashboard1": {
       "main": true,
-      "dash": false,
+      "cluster": false,
       "aux": false,
       "pos": 1
      },
-     "dash2": {
+     "dashboard2": {
       "main": true,
-      "dash": false,
+      "cluster": false,
       "aux": false,
       "pos": 2
      },
-     "dash3": {
+     "dashboard3": {
       "main": false,
-      "dash": false,
+      "cluster": false,
       "aux": false,
       "pos": 3
      },
-     "dash4": {
+     "dashboard4": {
       "main": false,
-      "dash": false,
+      "cluster": false,
       "aux": false,
       "pos": 4
      }
@@ -6723,27 +6723,27 @@
      5
     ],
     "dashboards": {
-     "dash1": {
+     "dashboard1": {
       "main": true,
-      "dash": false,
+      "cluster": false,
       "aux": false,
       "pos": 1
      },
-     "dash2": {
+     "dashboard2": {
       "main": true,
-      "dash": false,
+      "cluster": false,
       "aux": false,
       "pos": 2
      },
-     "dash3": {
+     "dashboard3": {
       "main": true,
-      "dash": false,
+      "cluster": false,
       "aux": false,
       "pos": 3
      },
-     "dash4": {
+     "dashboard4": {
       "main": false,
-      "dash": false,
+      "cluster": false,
       "aux": false,
       "pos": 4
      }
@@ -7108,27 +7108,27 @@
     "carType": 102,
     "evConnectorTypes": [],
     "dashboards": {
-     "dash1": {
+     "dashboard1": {
       "main": true,
-      "dash": false,
+      "cluster": false,
       "aux": false,
       "pos": 1
      },
-     "dash2": {
+     "dashboard2": {
       "main": true,
-      "dash": false,
+      "cluster": false,
       "aux": false,
       "pos": 2
      },
-     "dash3": {
+     "dashboard3": {
       "main": false,
-      "dash": false,
+      "cluster": false,
       "aux": false,
       "pos": 3
      },
-     "dash4": {
+     "dashboard4": {
       "main": false,
-      "dash": true,
+      "cluster": true,
       "aux": false,
       "pos": 4
      }
@@ -7330,27 +7330,27 @@
     "carType": 0,
     "evConnectorTypes": [],
     "dashboards": {
-     "dash1": {
+     "dashboard1": {
       "main": true,
-      "dash": false,
+      "cluster": false,
       "aux": false,
       "pos": 1
      },
-     "dash2": {
+     "dashboard2": {
       "main": true,
-      "dash": false,
+      "cluster": false,
       "aux": false,
       "pos": 2
      },
-     "dash3": {
+     "dashboard3": {
       "main": false,
-      "dash": false,
+      "cluster": false,
       "aux": false,
       "pos": 3
      },
-     "dash4": {
+     "dashboard4": {
       "main": false,
-      "dash": false,
+      "cluster": false,
       "aux": false,
       "pos": 4
      }

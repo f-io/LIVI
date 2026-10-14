@@ -1,7 +1,6 @@
 import { render, waitFor } from '@testing-library/react'
 import { Projection } from '../Projection'
 
-const navigateMock = vi.fn()
 const reportShownMock = vi.fn()
 let mockPathname = '/'
 
@@ -15,7 +14,6 @@ const statusState: Record<string, any> = {
 const liviState: Record<string, any> = {}
 
 vi.mock('react-router', () => ({
-  useNavigate: () => navigateMock,
   useLocation: () => ({ pathname: mockPathname })
 }))
 
@@ -45,7 +43,6 @@ vi.mock('../hooks/useProjectionTouch', () => ({
 
 describe('Projection page', () => {
   beforeEach(() => {
-    navigateMock.mockReset()
     reportShownMock.mockReset()
     mockPathname = '/'
 
@@ -82,10 +79,10 @@ describe('Projection page', () => {
     rerender(<Projection {...baseProps()} />)
     expect(reportShownMock).toHaveBeenLastCalledWith('main', 'livi')
 
-    statusState.clusterDashActive = true
+    statusState.clusterDashboardActive = true
     rerender(<Projection {...baseProps()} />)
     expect(reportShownMock).toHaveBeenLastCalledWith('main', 'cluster')
-    statusState.clusterDashActive = false
+    statusState.clusterDashboardActive = false
   })
 
   test('a connected phone turns the status overlay to its phone phase', () => {
@@ -94,77 +91,6 @@ describe('Projection page', () => {
     const { container } = render(<Projection {...baseProps()} />)
 
     expect(container.querySelector('[role="status"]')).not.toBeNull()
-  })
-
-  test('the UI follows core bringing the projection forward and taking it back', () => {
-    mockPathname = '/settings'
-    liviState.sessions = { active: 'carplay' }
-    liviState.front = { main: 'livi' }
-    const { rerender } = render(<Projection {...baseProps()} />)
-
-    liviState.front = { main: 'projection' }
-    rerender(<Projection {...baseProps()} />)
-    expect(navigateMock).toHaveBeenCalledWith('/', { replace: true })
-
-    navigateMock.mockClear()
-    mockPathname = '/'
-    rerender(<Projection {...baseProps()} />)
-    liviState.front = { main: 'livi' }
-    rerender(<Projection {...baseProps()} />)
-    expect(navigateMock).toHaveBeenCalledWith('/settings', { replace: true })
-  })
-
-  test('the phone handing the screen back leads to the media page', () => {
-    liviState.sessions = { active: 'carplay' }
-    liviState.front = { main: 'projection' }
-    const { rerender } = render(<Projection {...baseProps()} />)
-
-    liviState.front = { main: 'livi' }
-    rerender(<Projection {...baseProps()} />)
-    expect(navigateMock).toHaveBeenCalledWith('/media', { replace: true })
-  })
-
-  test('a phone that is gone leaves the projection page to its idle look', () => {
-    liviState.front = { main: 'projection' }
-    const { rerender } = render(<Projection {...baseProps()} />)
-
-    liviState.front = { main: 'livi' }
-    rerender(<Projection {...baseProps()} />)
-    expect(navigateMock).not.toHaveBeenCalled()
-  })
-
-  test('the first state and the UI moving by itself do not navigate', () => {
-    mockPathname = '/media'
-    liviState.sessions = { active: 'carplay' }
-    const { rerender } = render(<Projection {...baseProps()} />)
-
-    liviState.front = { main: 'projection' }
-    rerender(<Projection {...baseProps()} />)
-    liviState.front = { main: 'livi' }
-    rerender(<Projection {...baseProps()} />)
-    mockPathname = '/'
-    liviState.front = { main: 'projection' }
-    rerender(<Projection {...baseProps()} />)
-
-    expect(navigateMock).not.toHaveBeenCalled()
-  })
-
-  test('leaving the projection forgets the way back', () => {
-    mockPathname = '/settings'
-    liviState.sessions = { active: 'carplay' }
-    liviState.front = { main: 'livi' }
-    const { rerender } = render(<Projection {...baseProps()} />)
-    liviState.front = { main: 'projection' }
-    rerender(<Projection {...baseProps()} />)
-
-    for (const path of ['/', '/telemetry', '/']) {
-      mockPathname = path
-      rerender(<Projection {...baseProps()} />)
-    }
-    navigateMock.mockClear()
-    liviState.front = { main: 'livi' }
-    rerender(<Projection {...baseProps()} />)
-    expect(navigateMock).toHaveBeenCalledWith('/media', { replace: true })
   })
 
   test('the video shows through only on the projection route', () => {
@@ -222,6 +148,22 @@ describe('Projection page', () => {
     expect(videoContainer.style.visibility).toBe('visible')
     expect(videoContainer.style.zIndex).toBe('1')
   })
+
+  test('touch and the view area mask sit in the stream box, not on the whole window', () => {
+    const settings = baseSettings({
+      projectionWidth: 1920,
+      projectionHeight: 1080,
+      projectionViewAreaTop: 54
+    })
+    const { container } = render(<Projection {...baseProps({ receivingVideo: true, settings })} />)
+
+    const box = container.querySelector('#projection-stream') as HTMLElement
+    expect(box.querySelector('#videoContainer')).not.toBeNull()
+    expect(box.style.position).toBe('absolute')
+    expect(box.style.left).toBe('50%')
+    const mask = Array.from(box.children).filter((c) => c.id !== 'videoContainer')
+    expect((mask[0] as HTMLElement).style.height).toBe('5%')
+  })
 })
 
 function baseSettings(overrides: any = {}) {
@@ -229,7 +171,7 @@ function baseSettings(overrides: any = {}) {
     width: 800,
     height: 480,
     fps: 60,
-    cluster: { main: false, dash: false, aux: false },
+    cluster: { main: false, cluster: false, aux: false },
     ...overrides
   }
 }
@@ -242,7 +184,7 @@ function baseProps(overrides: any = {}) {
       width: 800,
       height: 480,
       fps: 60,
-      cluster: { main: false, dash: false, aux: false }
+      cluster: { main: false, cluster: false, aux: false }
     },
     ...overrides
   }

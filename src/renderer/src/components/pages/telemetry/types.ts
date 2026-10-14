@@ -1,8 +1,8 @@
 export enum TelemetryDashboardIds {
-  Dash1 = 'dash1',
-  Dash2 = 'dash2',
-  Dash3 = 'dash3',
-  Dash4 = 'dash4'
+  Dashboard1 = 'dashboard1',
+  Dashboard2 = 'dashboard2',
+  Dashboard3 = 'dashboard3',
+  Dashboard4 = 'dashboard4'
 }
 
 export type TelemetryDashboardItemProp = {

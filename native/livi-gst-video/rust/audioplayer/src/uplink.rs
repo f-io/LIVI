@@ -8,8 +8,9 @@ use gstreamer_app as gst_app;
 
 use gst::prelude::*;
 use livi_audio_uplink::{Counters, RTP_HEADER_LEN, UplinkCodec, seal_packet, to_wire_pcm};
-use std::net::UdpSocket;
+use std::net::{IpAddr, SocketAddr, SocketAddrV6, UdpSocket};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// What the phone negotiated for its microphone stream.
 pub struct UplinkConfig {
@@ -33,6 +34,19 @@ impl UplinkConfig {
     /// Samples one packet carries.
     pub fn samples_per_packet(&self) -> u32 {
         (self.sample_rate * self.frame_ms).div_ceil(1000)
+    }
+}
+
+/// The socket the phone listens on. A link-local IPv6 brings its interface after `%`, without
+/// it the packets have no way out.
+fn phone_target(phone: &str, port: u16) -> Option<SocketAddr> {
+    let (host, interface) = match phone.split_once('%') {
+        Some((host, interface)) => (host, interface.parse().ok()?),
+        None => (phone, 0),
+    };
+    match host.parse().ok()? {
+        IpAddr::V4(ip) => Some(SocketAddr::from((ip, port))),
+        IpAddr::V6(ip) => Some(SocketAddr::V6(SocketAddrV6::new(ip, port, 0, interface))),
     }
 }
 
@@ -95,8 +109,20 @@ impl Uplink {
         }
 
         let sink = pipeline.by_name("out")?.downcast::<gst_app::AppSink>().ok()?;
-        let socket = UdpSocket::bind("[::]:0").ok()?;
-        let target = format!("{}:{}", cfg.phone, cfg.port);
+        let Some(target) = phone_target(&cfg.phone, cfg.port) else {
+            eprintln!("[cp_mic:{}] no address to reach the phone: {}", cfg.label, cfg.phone);
+            return None;
+        };
+        let socket = UdpSocket::bind(if target.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" }).ok()?;
+        let label = cfg.label.clone();
+        let send_failed = AtomicBool::new(false);
+        let send = move |pkt: &[u8]| {
+            if let Err(e) = socket.send_to(pkt, target)
+                && !send_failed.swap(true, Ordering::Relaxed)
+            {
+                eprintln!("[cp_mic:{label}] cannot send to {target}: {e}");
+            }
+        };
         let samples = cfg.samples_per_packet();
         let frame_bytes = (samples * u32::from(cfg.channels) * 2) as usize;
         let state = Mutex::new((Counters::default(), Vec::<u8>::new()));
@@ -124,7 +150,7 @@ impl Uplink {
                             if let Some(pkt) =
                                 seal_packet(&cfg.key, cfg.payload_type, counters, frame, samples)
                             {
-                                let _ = socket.send_to(&pkt, &target);
+                                send(&pkt);
                             }
                         }
                         UplinkCodec::Pcm => {
@@ -138,7 +164,7 @@ impl Uplink {
                                     &to_wire_pcm(&frame),
                                     samples,
                                 ) {
-                                    let _ = socket.send_to(&pkt, &target);
+                                    send(&pkt);
                                 }
                             }
                         }
@@ -345,5 +371,14 @@ mod tests {
     #[test]
     fn capture_desc_never_carries_the_device_string() {
         desc_carries_no_device(&capture_desc(48_000, 1));
+    }
+
+    #[test]
+    fn the_phone_is_reached_on_its_interface() {
+        let link_local = phone_target("fe80::fe:6721:d43e:f866%41", 56505).unwrap();
+        assert_eq!(link_local, "[fe80::fe:6721:d43e:f866%41]:56505".parse().unwrap());
+        assert_eq!(phone_target("10.0.0.3", 1), "10.0.0.3:1".parse().ok());
+        assert_eq!(phone_target("fe80::2%wlan0", 1), None);
+        assert_eq!(phone_target("phone", 1), None);
     }
 }

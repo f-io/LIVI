@@ -53,11 +53,11 @@ vi.mock('../App.tsx', async () => {
   }
 })
 
-vi.mock('../DashApp.tsx', async () => {
+vi.mock('../ClusterApp.tsx', async () => {
   const React = await import('react')
   return {
     __esModule: true,
-    default: () => React.createElement('div', { 'data-testid': 'dash-app' }, 'dash')
+    default: () => React.createElement('div', { 'data-testid': 'cluster-app' }, 'cluster')
   }
 })
 
@@ -284,18 +284,18 @@ describe('renderer main bootstrap', () => {
     expect(matchMediaMock).toHaveBeenCalledWith('(pointer: coarse)')
   })
 
-  test('dash role sets the window title and mounts DashApp', async () => {
-    vi.doMock('../utils/windowRole', () => ({ getWindowRole: () => 'dash' }))
+  test('cluster role sets the window title and mounts ClusterApp', async () => {
+    vi.doMock('../utils/windowRole', () => ({ getWindowRole: () => 'cluster' }))
 
     const mod = await import('../main')
 
-    expect(document.title).toBe('Dash')
+    expect(document.title).toBe('Cluster')
     expect(initUiBreatheClockMock).not.toHaveBeenCalled()
     expect(initCursorHiderMock).not.toHaveBeenCalled()
 
     const tree = mod.Root()
     const roleApp = tree.props.children.props.children[1]
-    expect(roleApp.type().props['data-testid']).toBe('dash-app')
+    expect(roleApp.type().props['data-testid']).toBe('cluster-app')
   })
 
   test('aux role sets the window title and mounts AuxApp', async () => {

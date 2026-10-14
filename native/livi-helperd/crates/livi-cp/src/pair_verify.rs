@@ -25,6 +25,7 @@ pub struct PairVerify {
     enc_key: Option<[u8; 32]>,
     keys: Option<ControlKeys>,
     controller: Option<String>,
+    transcript: Vec<u8>,
 }
 
 impl PairVerify {
@@ -49,19 +50,35 @@ impl PairVerify {
         self.shared
     }
 
+    /// The proofs for mutual authentication, once a run completed.
+    pub fn transcript_proofs(&self) -> Option<([u8; 32], [u8; 32])> {
+        self.keys.as_ref()?;
+        Some(crate::mfi4::transcript_proofs(&self.shared?, &self.transcript))
+    }
+
     /// Same error states as pair-setup.
     pub fn handle(&mut self, body: &[u8], identity: &Identity, pairings: &Pairings) -> Vec<u8> {
         let msg = tlv8::decode(body);
         let state = msg.get(&tlv::STATE).and_then(|s| s.first().copied());
+        if state == Some(1) {
+            self.transcript.clear();
+        }
         let reply = match state {
             Some(1) => self.m2(&msg, identity),
             Some(3) => self.m4(&msg, pairings),
             other => Err((other.unwrap_or(0), format!("unexpected state {other:?}"))),
         };
-        reply.unwrap_or_else(|(reply_state, e)| {
-            println!("[cp] pair-verify: {e}");
-            error_reply(reply_state)
-        })
+        match reply {
+            Ok(out) => {
+                self.transcript.extend_from_slice(body);
+                self.transcript.extend_from_slice(&out);
+                out
+            }
+            Err((reply_state, e)) => {
+                println!("[cp] pair-verify: {e}");
+                error_reply(reply_state)
+            }
+        }
     }
 
     fn m2(

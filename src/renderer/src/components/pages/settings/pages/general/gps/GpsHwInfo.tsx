@@ -1,7 +1,7 @@
 /** Module identity and RF front end — the hardware side, apart from the live data. */
 
 import { SettingsValueRow } from '@settings/components'
-import type { GnssAntennaPower, GnssAntennaStatus, GnssInfo, GnssJamming } from '@shared/types/Gnss'
+import type { GnssAntennaPower, GnssAntennaStatus, GnssInfo, GnssJamming } from '@shared/types'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useVehicleTelemetry } from '../../../../telemetry/hooks/useVehicleTelemetry'

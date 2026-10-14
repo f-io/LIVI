@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::identity::{hex, unhex, write_private};
 
@@ -9,6 +9,10 @@ pub struct Pairings {
 }
 
 impl Pairings {
+    pub fn dir(&self) -> Option<&Path> {
+        self.path.parent()
+    }
+
     pub fn new(path: PathBuf) -> Self {
         Self { path }
     }

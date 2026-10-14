@@ -112,7 +112,7 @@ pub fn build_identification(
             Some(VehicleInformationComponent {
                 id: 0,
                 name: id.name.clone(),
-                engine_type: EngineType::Diesel,
+                engine_types: id.fuels.engine_types(),
                 display_name: Some(id.name.clone()),
                 maps_display_name: Some(id.name.clone()),
             })

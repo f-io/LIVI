@@ -1,14 +1,13 @@
 //! The proxy the phone offers in setProxyParameters, the car's only way to content that lives on
-//! the phone, such as a video app's own HLS server on 127.0.0.1. The phone speaks TLS 1.3 with an
-//! external PSK and the AES-256/SHA-384 suite only, then HTTP CONNECT. A local listener hands
-//! every connection through its own tunnel, so a player only ever sees plain HTTP on 127.0.0.1.
-//! Only http:// content goes through, LIVI plays no DRM content.
+//! the phone or the internet behind it, such as a video app's own HLS server on 127.0.0.1 or a
+//! CDN. The phone speaks TLS 1.3 with an external PSK and the AES-256/SHA-384 suite only, then
+//! HTTP CONNECT to whatever host the content names.
 
 use std::ffi::{c_int, c_uchar};
 use std::io;
 use std::net::{Ipv6Addr, SocketAddr, SocketAddrV6};
 use std::pin::Pin;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use foreign_types::ForeignType;
@@ -16,8 +15,7 @@ use openssl::ex_data::Index;
 use openssl::ssl::{Ssl, SslContext, SslMethod, SslVerifyMode, SslVersion};
 use openssl_sys as ffi;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::net::TcpStream;
 use tokio_openssl::SslStream;
 
 use crate::bplist::Value;
@@ -158,7 +156,10 @@ impl ProxyOffer {
 
     /// A connection to `target` (host:port as the phone sees it) through the proxy, plus what
     /// came after the CONNECT answer.
-    async fn connect(&self, target: &str) -> io::Result<(SslStream<TcpStream>, Vec<u8>)> {
+    pub(crate) async fn connect(
+        &self,
+        target: &str,
+    ) -> io::Result<(SslStream<TcpStream>, Vec<u8>)> {
         let tcp =
             tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(SocketAddr::V6(self.at)))
                 .await
@@ -194,73 +195,18 @@ impl ProxyOffer {
     }
 }
 
-/// host:port and path of a plain http URL. Anything else, https above all, is left alone.
-pub fn plain_http(url: &str) -> Option<(String, String)> {
-    let rest = url.strip_prefix("http://")?;
-    let (host, path) = rest.find('/').map_or((rest, "/"), |at| (&rest[..at], &rest[at..]));
-    if host.is_empty() {
-        return None;
-    }
-    let has_port = match host.rfind(']') {
-        Some(bracket) => host[bracket..].contains(':'),
-        None => host.contains(':'),
-    };
-    let target = if has_port { host.to_string() } else { format!("{host}:80") };
-    Some((target, path.to_string()))
-}
-
-/// A listener on 127.0.0.1 whose every connection reaches one target on the phone.
-pub struct Tunnel {
-    url: String,
-    task: JoinHandle<()>,
-}
-
-impl Drop for Tunnel {
-    fn drop(&mut self) {
-        self.task.abort();
-    }
-}
-
-impl Tunnel {
-    /// None when `content` is not plain http.
-    pub async fn open(offer: Arc<ProxyOffer>, content: &str) -> io::Result<Option<Self>> {
-        let Some((target, path)) = plain_http(content) else { return Ok(None) };
-        let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
-        let url = format!("http://{}{path}", listener.local_addr()?);
-        let task = tokio::spawn(async move {
-            // Dropping the set with the aborted task ends every open relay too.
-            let mut relays = JoinSet::new();
-            while let Ok((local, _)) = listener.accept().await {
-                relays.spawn(relay(offer.clone(), target.clone(), local));
-                while relays.try_join_next().is_some() {}
-            }
-        });
-        Ok(Some(Self { url, task }))
-    }
-
-    /// Where a player on this machine fetches the content.
-    pub fn url(&self) -> &str {
-        &self.url
-    }
-}
-
-async fn relay(offer: Arc<ProxyOffer>, target: String, mut local: TcpStream) {
-    let (mut tls, early) = match offer.connect(&target).await {
-        Ok(up) => up,
-        Err(e) => {
-            println!("[videoProxy] no way to {target}: {e}");
-            return;
-        }
-    };
-    if local.write_all(&early).await.is_ok() {
-        let _ = tokio::io::copy_bidirectional(&mut local, &mut tls).await;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
+    use openssl::ssl::SslConnector;
+    use tokio::io::{AsyncRead, AsyncWrite};
+    use tokio::net::TcpListener;
+
     use crate::bplist::dict;
+    use crate::hls::Client;
+    use crate::test_tls;
 
     const KEY: [u8; 32] = [7; 32];
     const IDENTITY: &[u8] = b"identity-1";
@@ -294,13 +240,19 @@ mod tests {
         }
     }
 
-    /// Stands in for the phone: the PSK proxy and, behind it, an HTTP server that names the path.
-    async fn phone() -> SocketAddrV6 {
+    const PHONE_SERVER: &str = "127.0.0.1:58539";
+    const CDN: &str = "localhost:443";
+
+    /// The phone's proxy with an HTTP server and an https CDN behind it, both echo the path.
+    async fn phone() -> (SocketAddrV6, SslConnector) {
+        let (cdn, trust) = test_tls::ca();
+        let cdn = Arc::new(cdn);
         let listener = TcpListener::bind("[::1]:0").await.unwrap();
         let SocketAddr::V6(at) = listener.local_addr().unwrap() else { unreachable!() };
         tokio::spawn(async move {
             loop {
                 let (tcp, _) = listener.accept().await.unwrap();
+                let cdn = cdn.clone();
                 tokio::spawn(async move {
                     let mut ctx = SslContext::builder(SslMethod::tls_server()).unwrap();
                     ctx.set_min_proto_version(Some(SslVersion::TLS1_3)).unwrap();
@@ -312,32 +264,45 @@ mod tests {
                         return;
                     }
                     let ask = read_head(&mut tls).await;
-                    if !ask.starts_with("CONNECT 127.0.0.1:58539 ")
-                        || !ask.contains(&format!("Proxy-Authorization: {AUTH}\r\n"))
-                    {
+                    let target = ask.strip_prefix("CONNECT ").and_then(|t| t.split(' ').next());
+                    let target = target.filter(|t| [PHONE_SERVER, CDN].contains(t));
+                    let (Some(target), true) =
+                        (target, ask.contains(&format!("Proxy-Authorization: {AUTH}\r\n")))
+                    else {
                         let _ = tls.write_all(b"HTTP/1.1 407 Nope\r\n\r\n").await;
                         return;
-                    }
+                    };
                     tls.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
-                    let get = read_head(&mut tls).await;
-                    let path = get.split(' ').nth(1).unwrap_or_default().to_string();
-                    let answer = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{path}",
-                        path.len()
-                    );
-                    tls.write_all(answer.as_bytes()).await.unwrap();
-                    let _ = tls.shutdown().await;
+                    if target == PHONE_SERVER {
+                        name_the_path(tls).await;
+                        return;
+                    }
+                    let mut inner = SslStream::new(Ssl::new(cdn.context()).unwrap(), tls).unwrap();
+                    if Pin::new(&mut inner).accept().await.is_ok() {
+                        name_the_path(inner).await;
+                    }
                 });
             }
         });
-        at
+        (at, trust)
     }
 
-    async fn read_head(tls: &mut SslStream<TcpStream>) -> String {
+    async fn name_the_path<S: AsyncRead + AsyncWrite + Unpin>(mut sock: S) {
+        let get = read_head(&mut sock).await;
+        let path = get.split(' ').nth(1).unwrap_or_default().to_string();
+        let answer = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{path}",
+            path.len()
+        );
+        let _ = sock.write_all(answer.as_bytes()).await;
+        let _ = sock.shutdown().await;
+    }
+
+    async fn read_head<S: AsyncRead + Unpin>(sock: &mut S) -> String {
         let mut head = Vec::new();
         while !head.ends_with(b"\r\n\r\n") {
             let mut b = [0u8; 1];
-            if tls.read(&mut b).await.unwrap_or(0) == 0 {
+            if sock.read(&mut b).await.unwrap_or(0) == 0 {
                 break;
             }
             head.push(b[0]);
@@ -355,18 +320,6 @@ mod tests {
         ])
     }
 
-    async fn get(url: &str) -> String {
-        let rest = url.strip_prefix("http://").unwrap();
-        let (host, path) = rest.split_at(rest.find('/').unwrap());
-        let mut sock = TcpStream::connect(host).await.unwrap();
-        sock.write_all(format!("GET {path} HTTP/1.1\r\nHost: {host}\r\n\r\n").as_bytes())
-            .await
-            .unwrap();
-        let mut answer = String::new();
-        let _ = sock.read_to_string(&mut answer).await;
-        answer
-    }
-
     #[test]
     fn the_offer_is_read_from_set_proxy_parameters() {
         let at = SocketAddrV6::new("fe80::88:6ad0:5dab:f30a".parse().unwrap(), 60664, 0, 0);
@@ -382,58 +335,36 @@ mod tests {
         assert!(ProxyOffer::from_params(&bad, 0).is_none());
     }
 
-    #[test]
-    fn only_plain_http_goes_through() {
-        let pair = |t: &str, p: &str| Some((t.to_string(), p.to_string()));
-        assert_eq!(
-            plain_http("http://127.0.0.1:58539/mirror/index.m3u8"),
-            pair("127.0.0.1:58539", "/mirror/index.m3u8")
-        );
-        assert_eq!(plain_http("http://phone.local"), pair("phone.local:80", "/"));
-        assert_eq!(plain_http("http://[::1]:8080/a"), pair("[::1]:8080", "/a"));
-        assert_eq!(plain_http("http://[::1]/a"), pair("[::1]:80", "/a"));
-        assert_eq!(plain_http("https://play.itunes.apple.com/x.m3u8"), None);
-        assert_eq!(plain_http("http:///x"), None);
-    }
-
     #[tokio::test]
-    async fn a_player_reaches_the_phone_through_the_tunnel() {
-        let at = phone().await;
+    async fn http_on_the_phone_and_https_behind_it_come_through_the_proxy() {
+        let (at, trust) = phone().await;
         let offer = Arc::new(ProxyOffer::from_params(&params(at, AUTH), 0).unwrap());
-        let tunnel = Tunnel::open(offer.clone(), "http://127.0.0.1:58539/mirror/index.m3u8")
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(tunnel.url().starts_with("http://127.0.0.1:"));
-        assert!(tunnel.url().ends_with("/mirror/index.m3u8"));
-        let answer = get(tunnel.url()).await;
-        assert!(answer.starts_with("HTTP/1.1 200 OK") && answer.ends_with("/mirror/index.m3u8"));
-        let again = get(&tunnel.url().replace("index.m3u8", "part1.mp4")).await;
-        assert!(again.ends_with("/mirror/part1.mp4"), "{again}");
+        let mut client = Client::through(offer.clone()).trusting(trust);
+        let on_phone = client.get(&format!("http://{PHONE_SERVER}/mirror/index.m3u8")).await;
+        assert_eq!(on_phone.unwrap(), b"/mirror/index.m3u8");
+        let cdn = client.get("https://localhost/films/a.m3u8").await.unwrap();
+        assert_eq!(cdn, b"/films/a.m3u8");
 
-        assert!(Tunnel::open(offer, "https://x/a.m3u8").await.unwrap().is_none());
-        let url = tunnel.url().to_string();
-        drop(tunnel);
-        tokio::task::yield_now().await;
-        let host = url.trim_start_matches("http://").split('/').next().unwrap().to_string();
-        assert!(TcpStream::connect(host).await.is_err());
+        let mut unknown = Client::through(offer);
+        assert!(unknown.get("https://localhost/films/a.m3u8").await.is_err());
     }
 
     #[tokio::test]
-    async fn a_refused_tunnel_closes_the_player_connection() {
-        let at = phone().await;
+    async fn a_refused_proxy_fails_the_request() {
+        let (at, _) = phone().await;
         let wrong = Arc::new(ProxyOffer::from_params(&params(at, "Basic d3Jvbmc="), 0).unwrap());
-        let tunnel =
-            Tunnel::open(wrong.clone(), "http://127.0.0.1:58539/a").await.unwrap().unwrap();
-        assert_eq!(get(tunnel.url()).await, "");
-        let err = wrong.connect("127.0.0.1:58539").await.err().unwrap();
+        let mut client = Client::through(wrong.clone());
+        assert!(client.get(&format!("http://{PHONE_SERVER}/a")).await.is_err());
+        let err = wrong.connect(PHONE_SERVER).await.err().unwrap();
         assert!(err.to_string().contains("407"), "{err}");
+        let elsewhere = wrong.connect("example.com:443").await.err().unwrap();
+        assert!(elsewhere.to_string().contains("407"), "{elsewhere}");
 
         let mut other_key = params(at, AUTH);
         if let Value::Dict(entries) = &mut other_key {
             entries[3].1 = Value::Data(b"someone-else".to_vec());
         }
         let stranger = ProxyOffer::from_params(&other_key, 0).unwrap();
-        assert!(stranger.connect("127.0.0.1:58539").await.is_err());
+        assert!(stranger.connect(PHONE_SERVER).await.is_err());
     }
 }

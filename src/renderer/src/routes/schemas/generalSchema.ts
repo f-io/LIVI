@@ -1,7 +1,6 @@
 import type { WifiBand } from '@shared/core/contract'
 import type { Config } from '@shared/types'
-import { PAGES } from '@shared/types'
-import { WIFI_PASSWORD_MAX, WIFI_PASSWORD_MIN } from '@shared/types/Config'
+import { PAGES, WIFI_PASSWORD_MAX, WIFI_PASSWORD_MIN } from '@shared/types'
 import {
   MAX_HEIGHT,
   MAX_WIDTH,
@@ -356,47 +355,47 @@ export const generalSchema: SettingsNode<Config> = {
         },
         {
           type: 'route',
-          label: 'Dash Screen',
-          labelKey: 'settings.dashScreen',
-          icon: 'dashScreen',
-          route: 'dashScreen',
+          label: 'Cluster Screen',
+          labelKey: 'settings.clusterScreen',
+          icon: 'clusterScreen',
+          route: 'clusterScreen',
           path: '',
           children: [
             {
               type: 'checkbox',
               label: 'Active',
-              labelKey: 'settings.dashScreenActive',
+              labelKey: 'settings.clusterScreenActive',
               icon: 'active',
-              path: 'dashScreenActive'
+              path: 'clusterScreenActive'
             },
             {
               type: 'number',
               label: 'Width',
-              labelKey: 'settings.dashScreenWidth',
+              labelKey: 'settings.clusterScreenWidth',
               icon: 'width',
-              path: 'dashScreenWidth',
+              path: 'clusterScreenWidth',
               min: MIN_WIDTH,
               max: MAX_WIDTH,
               step: 1,
               displayValue: true,
               page: {
-                title: 'Dash Screen Width',
-                labelTitle: 'settings.dashScreenWidth'
+                title: 'Cluster Screen Width',
+                labelTitle: 'settings.clusterScreenWidth'
               }
             },
             {
               type: 'number',
               label: 'Height',
-              labelKey: 'settings.dashScreenHeight',
+              labelKey: 'settings.clusterScreenHeight',
               icon: 'height',
-              path: 'dashScreenHeight',
+              path: 'clusterScreenHeight',
               min: MIN_HEIGHT,
               max: MAX_HEIGHT,
               step: 1,
               displayValue: true,
               page: {
-                title: 'Dash Screen Height',
-                labelTitle: 'settings.dashScreenHeight'
+                title: 'Cluster Screen Height',
+                labelTitle: 'settings.clusterScreenHeight'
               }
             },
             {
@@ -404,7 +403,7 @@ export const generalSchema: SettingsNode<Config> = {
               label: 'Fullscreen',
               labelKey: 'settings.fullscreen',
               icon: 'fullscreen',
-              path: 'kiosk.dash'
+              path: 'kiosk.cluster'
             }
           ]
         },
@@ -486,15 +485,27 @@ export const generalSchema: SettingsNode<Config> = {
               labelKey: 'settings.telemetryDashboards',
               path: 'dashboards',
               items: [
-                { id: 'dash1', label: 'Dash 1', labelKey: 'settings.telemetryDash1' },
-                { id: 'dash2', label: 'Dash 2', labelKey: 'settings.telemetryDash2' },
-                { id: 'dash3', label: 'Dash 3', labelKey: 'settings.telemetryDash3' },
-                { id: 'dash4', label: 'Dash 4', labelKey: 'settings.telemetryDash4' }
+                {
+                  id: 'dashboard1',
+                  label: 'Dashboard 1',
+                  labelKey: 'settings.telemetryDashboard1'
+                },
+                {
+                  id: 'dashboard2',
+                  label: 'Dashboard 2',
+                  labelKey: 'settings.telemetryDashboard2'
+                },
+                {
+                  id: 'dashboard3',
+                  label: 'Dashboard 3',
+                  labelKey: 'settings.telemetryDashboard3'
+                },
+                { id: 'dashboard4', label: 'Dashboard 4', labelKey: 'settings.telemetryDashboard4' }
               ]
             },
-            ...(['dash1', 'dash2', 'dash3', 'dash4'] as const).map((id, i) => ({
+            ...(['dashboard1', 'dashboard2', 'dashboard3', 'dashboard4'] as const).map((id, i) => ({
               type: 'route' as const,
-              label: `Dash ${i + 1}`,
+              label: `Dashboard ${i + 1}`,
               labelKey: `settings.telemetry${id.charAt(0).toUpperCase()}${id.slice(1)}`,
               route: id,
               path: '',
@@ -509,10 +520,10 @@ export const generalSchema: SettingsNode<Config> = {
                 },
                 {
                   type: 'checkbox' as const,
-                  label: 'Dash',
-                  labelKey: 'settings.dashScreen',
-                  icon: 'dashScreen',
-                  path: `dashboards.${id}.dash`
+                  label: 'Cluster',
+                  labelKey: 'settings.clusterScreen',
+                  icon: 'clusterScreen',
+                  path: `dashboards.${id}.cluster`
                 },
                 {
                   type: 'checkbox' as const,
@@ -542,10 +553,10 @@ export const generalSchema: SettingsNode<Config> = {
             },
             {
               type: 'checkbox',
-              label: 'Dash',
-              labelKey: 'settings.dashScreen',
-              icon: 'dashScreen',
-              path: 'media.dash'
+              label: 'Cluster',
+              labelKey: 'settings.clusterScreen',
+              icon: 'clusterScreen',
+              path: 'media.cluster'
             },
             {
               type: 'checkbox',
@@ -581,10 +592,10 @@ export const generalSchema: SettingsNode<Config> = {
             },
             {
               type: 'checkbox',
-              label: 'Dash',
-              labelKey: 'settings.dashScreen',
-              icon: 'dashScreen',
-              path: 'camera.dash'
+              label: 'Cluster',
+              labelKey: 'settings.clusterScreen',
+              icon: 'clusterScreen',
+              path: 'camera.cluster'
             },
             {
               type: 'checkbox',
@@ -655,10 +666,10 @@ export const generalSchema: SettingsNode<Config> = {
             },
             {
               type: 'checkbox',
-              label: 'Dash',
-              labelKey: 'settings.dashScreen',
-              icon: 'dashScreen',
-              path: 'custom.dash'
+              label: 'Cluster',
+              labelKey: 'settings.clusterScreen',
+              icon: 'clusterScreen',
+              path: 'custom.cluster'
             },
             {
               type: 'checkbox',

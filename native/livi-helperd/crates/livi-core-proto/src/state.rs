@@ -19,8 +19,9 @@ pub struct State {
     pub system: System,
     /// Those in a session first.
     pub devices: Vec<DeviceView>,
-    /// What the car and outside producers pushed, merged into one snapshot.
-    #[ts(type = "Record<string, unknown>")]
+    /// What the car and outside producers pushed, merged into one snapshot. A producer may add
+    /// fields LIVI does not know.
+    #[ts(type = "TelemetrySnapshot & Record<string, unknown>")]
     pub telemetry: Map<String, Value>,
     pub update: Update,
     pub config: Config,
@@ -243,7 +244,7 @@ pub enum Protocol {
 #[ts(export_to = "contract.ts")]
 pub enum Screen {
     Main,
-    Dash,
+    Cluster,
     Aux,
 }
 
@@ -262,7 +263,7 @@ pub enum Front {
 #[ts(export_to = "contract.ts")]
 pub struct PerScreen<T> {
     pub main: T,
-    pub dash: T,
+    pub cluster: T,
     pub aux: T,
 }
 
@@ -270,7 +271,7 @@ impl<T> PerScreen<T> {
     pub fn get(&self, screen: Screen) -> &T {
         match screen {
             Screen::Main => &self.main,
-            Screen::Dash => &self.dash,
+            Screen::Cluster => &self.cluster,
             Screen::Aux => &self.aux,
         }
     }
@@ -278,7 +279,7 @@ impl<T> PerScreen<T> {
     pub fn get_mut(&mut self, screen: Screen) -> &mut T {
         match screen {
             Screen::Main => &mut self.main,
-            Screen::Dash => &mut self.dash,
+            Screen::Cluster => &mut self.cluster,
             Screen::Aux => &mut self.aux,
         }
     }
@@ -290,20 +291,20 @@ mod tests {
 
     #[test]
     fn per_screen_addresses_each_screen() {
-        let mut fronts = PerScreen { main: Front::Livi, dash: Front::Livi, aux: Front::Livi };
-        *fronts.get_mut(Screen::Dash) = Front::Cluster;
+        let mut fronts = PerScreen { main: Front::Livi, cluster: Front::Livi, aux: Front::Livi };
+        *fronts.get_mut(Screen::Cluster) = Front::Cluster;
         assert_eq!(*fronts.get(Screen::Main), Front::Livi);
-        assert_eq!(*fronts.get(Screen::Dash), Front::Cluster);
+        assert_eq!(*fronts.get(Screen::Cluster), Front::Cluster);
         assert_eq!(*fronts.get(Screen::Aux), Front::Livi);
     }
 
     #[test]
     fn fronts_are_lower_case_on_the_wire() {
         let fronts =
-            PerScreen { main: Front::Projection, dash: Front::Cluster, aux: Front::Camera };
+            PerScreen { main: Front::Projection, cluster: Front::Cluster, aux: Front::Camera };
         assert_eq!(
             serde_json::to_string(&fronts).unwrap(),
-            r#"{"main":"projection","dash":"cluster","aux":"camera"}"#
+            r#"{"main":"projection","cluster":"cluster","aux":"camera"}"#
         );
     }
 

@@ -77,6 +77,68 @@ pub fn panel_native_px() -> Option<(u32, u32)> {
     None
 }
 
+/// The main display's own size where no compositor reports panels.
+#[cfg(target_os = "macos")]
+pub fn screen_panel() -> Option<livi_media::compositor::Panel> {
+    use std::ffi::c_void;
+
+    #[repr(C)]
+    struct CGSize {
+        width: f64,
+        height: f64,
+    }
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        fn CGMainDisplayID() -> u32;
+        fn CGDisplayScreenSize(display: u32) -> CGSize;
+        fn CGDisplayCopyDisplayMode(display: u32) -> *mut c_void;
+        fn CGDisplayModeGetPixelWidth(mode: *mut c_void) -> usize;
+        fn CGDisplayModeGetPixelHeight(mode: *mut c_void) -> usize;
+        fn CGDisplayModeRelease(mode: *mut c_void);
+    }
+
+    // SAFETY: plain CoreGraphics queries on the main display, the copied mode is released once.
+    let (mm, px) = unsafe {
+        let display = CGMainDisplayID();
+        let mm = CGDisplayScreenSize(display);
+        let mode = CGDisplayCopyDisplayMode(display);
+        if mode.is_null() {
+            return None;
+        }
+        let px = (CGDisplayModeGetPixelWidth(mode), CGDisplayModeGetPixelHeight(mode));
+        CGDisplayModeRelease(mode);
+        (mm, px)
+    };
+    let panel = screen_panel_from(mm.width, mm.height, px.0, px.1)?;
+    println!(
+        "[core] screen: {}x{} mm over {}x{} px",
+        panel.width_mm, panel.height_mm, panel.width_px, panel.height_px
+    );
+    Some(panel)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn screen_panel() -> Option<livi_media::compositor::Panel> {
+    None
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn screen_panel_from(
+    width_mm: f64,
+    height_mm: f64,
+    width_px: usize,
+    height_px: usize,
+) -> Option<livi_media::compositor::Panel> {
+    let panel = livi_media::compositor::Panel {
+        width_mm: width_mm.round() as u32,
+        height_mm: height_mm.round() as u32,
+        width_px: u32::try_from(width_px).ok()?,
+        height_px: u32::try_from(height_px).ok()?,
+    };
+    let known = panel.width_mm > 0 && panel.height_mm > 0 && panel.width_px > 0;
+    (known && panel.height_px > 0).then_some(panel)
+}
+
 #[cfg(any(target_os = "linux", test))]
 fn is_connector(name: &str) -> bool {
     let Some(rest) = name.strip_prefix("card") else { return false };
@@ -87,6 +149,22 @@ fn is_connector(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_screen_needs_both_sizes() {
+        let panel = screen_panel_from(286.4, 178.9, 2560, 1600).unwrap();
+        assert_eq!((panel.width_mm, panel.height_mm), (286, 179));
+        assert_eq!((panel.width_px, panel.height_px), (2560, 1600));
+        assert_eq!(screen_panel_from(0.0, 178.9, 2560, 1600), None);
+        assert_eq!(screen_panel_from(286.4, 178.9, 2560, 0), None);
+    }
+
+    #[test]
+    fn the_screen_is_read_or_left_alone() {
+        if let Some(panel) = screen_panel() {
+            assert!(panel.width_mm > 0 && panel.width_px > 0);
+        }
+    }
 
     #[test]
     fn car_name_from_the_host() {

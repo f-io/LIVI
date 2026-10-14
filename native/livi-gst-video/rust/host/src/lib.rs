@@ -57,6 +57,11 @@ const REPLY_AUDIO_STARTED: u8 = 5;
 const REPLY_VISUALIZER: u8 = 6;
 const REPLY_FEED: u8 = 7;
 const REPLY_URL_STATUS: u8 = 8;
+const REPLY_AUDIO_DELAY: u8 = 9;
+/// The measurement moves in steps of the sink's segments, smaller changes are noise.
+const DELAY_STEP_MS: u32 = 10;
+/// Share of a new measurement in the smoothed output delay.
+const DELAY_WEIGHT: f64 = 0.2;
 
 pub trait Speaker: Send + Sync + 'static {
     fn push_rtp(&self, rtp: &[u8]);
@@ -66,6 +71,8 @@ pub trait Speaker: Send + Sync + 'static {
     fn set_visualizer_enabled(&self, on: bool);
     /// Mono samples and their rate.
     fn take_visualizer(&self) -> Option<(Vec<u8>, u32)>;
+    /// Measured time from release to the speaker, None while nothing plays yet.
+    fn output_delay_ms(&self) -> Option<u32>;
 }
 
 pub struct AudioConfig {
@@ -286,6 +293,8 @@ struct AudioStream<S, E> {
     cfg: AudioConfig,
     level: Option<f64>,
     active: Arc<AtomicBool>,
+    told_delay_ms: Option<u32>,
+    smoothed_delay_ms: Option<f64>,
     /// Absent while the main process feeds the stream itself.
     _ears: Option<E>,
 }
@@ -435,7 +444,12 @@ impl<O: Outside> Host<O> {
             }
             OP_STOP => {
                 self.planes.borrow_mut().remove(&id);
-                self.url_players.remove(&id);
+                if self.url_players.remove(&id).is_some() {
+                    eprintln!(
+                        "{}",
+                        livi_video_player::stamped("[gst_video] player dropped with all it held")
+                    );
+                }
             }
             OP_PLAY_URL => self.play_url(id, rest),
             OP_PLAY_RATE => {
@@ -797,9 +811,18 @@ impl<O: Outside> Host<O> {
             }
         };
 
-        self.audio
-            .borrow_mut()
-            .insert(id, AudioStream { speaker, cfg, level: None, active, _ears: ears });
+        self.audio.borrow_mut().insert(
+            id,
+            AudioStream {
+                speaker,
+                cfg,
+                level: None,
+                active,
+                told_delay_ms: None,
+                smoothed_delay_ms: None,
+                _ears: ears,
+            },
+        );
         let mut ports = data_port.to_le_bytes().to_vec();
         ports.extend_from_slice(&control_port.to_le_bytes());
         self.wire.reply(REPLY_AUDIO_PORTS, id, &ports);
@@ -817,19 +840,24 @@ impl<O: Outside> Host<O> {
                 continue;
             }
             let before = std::mem::replace(&mut a.cfg.device, device.clone());
-            let Some(speaker) = self.outside.create_speaker(&a.cfg) else {
+            let Some(speaker) = self.fresh_speaker(&a.cfg, a.level) else {
                 eprintln!("livi: audio 0x{id:x} cannot move to {device:?}, it stays");
                 a.cfg.device = before;
                 continue;
             };
-            if let Some(level) = a.level {
-                speaker.set_volume(level, 0);
-            }
-            if self.visualizer_enabled {
-                speaker.set_visualizer_enabled(true);
-            }
             a.speaker.replace(speaker);
         }
+    }
+
+    fn fresh_speaker(&self, cfg: &AudioConfig, level: Option<f64>) -> Option<O::Speaker> {
+        let speaker = self.outside.create_speaker(cfg)?;
+        if let Some(level) = level {
+            speaker.set_volume(level, 0);
+        }
+        if self.visualizer_enabled {
+            speaker.set_visualizer_enabled(true);
+        }
+        Some(speaker)
     }
 
     /// `[1B codec][1B payloadType][4B sampleRate][1B channels][4B bitrate]
@@ -919,6 +947,23 @@ impl<O: Outside> Host<O> {
         if let Some(bands) = self.spectrum.pump() {
             let payload: Vec<u8> = bands.iter().flat_map(|b| b.to_le_bytes()).collect();
             self.wire.reply(REPLY_VISUALIZER, 0, &payload);
+        }
+    }
+
+    /// The core tells the phone when sound is heard, from what each stream really takes.
+    pub fn pump_audio_delays(&self) {
+        for (id, a) in self.audio.borrow_mut().iter_mut() {
+            let Some(now) = a.speaker.get().output_delay_ms() else { continue };
+            let smoothed = a
+                .smoothed_delay_ms
+                .map_or(f64::from(now), |s| s + DELAY_WEIGHT * (f64::from(now) - s));
+            a.smoothed_delay_ms = Some(smoothed);
+            let ms = smoothed.round() as u32;
+            if a.told_delay_ms.is_some_and(|told| told.abs_diff(ms) < DELAY_STEP_MS) {
+                continue;
+            }
+            a.told_delay_ms = Some(ms);
+            self.wire.reply(REPLY_AUDIO_DELAY, *id, &ms.to_le_bytes());
         }
     }
 
@@ -1072,6 +1117,7 @@ mod tests {
         ramp_ms: Option<u64>,
         visualizer_on: Option<bool>,
         visualizer: Vec<u8>,
+        output_delay_ms: Option<u32>,
     }
 
     #[derive(Default, Clone)]
@@ -1088,6 +1134,10 @@ mod tests {
 
         fn ramp_ms(&self) -> Option<u64> {
             self.0.lock().unwrap().ramp_ms
+        }
+
+        fn set_output_delay(&self, ms: u32) {
+            self.0.lock().unwrap().output_delay_ms = Some(ms);
         }
 
         fn visualizer_on(&self) -> Option<bool> {
@@ -1137,6 +1187,10 @@ mod tests {
         fn take_visualizer(&self) -> Option<(Vec<u8>, u32)> {
             let s = core::mem::take(&mut self.0.lock().unwrap().visualizer);
             if s.is_empty() { None } else { Some((s, 48000)) }
+        }
+
+        fn output_delay_ms(&self) -> Option<u32> {
+            self.0.lock().unwrap().output_delay_ms
         }
     }
 
@@ -2404,6 +2458,35 @@ mod tests {
         assert_eq!((f.speaker(1).volume(), f.speaker(1).ramp_ms()), (Some(0.25), Some(0)));
         assert_eq!(f.speaker(1).pushed(), vec![vec![7]]);
         assert!(f.speaker(0).pushed().is_empty());
+    }
+
+    #[test]
+    fn a_stream_tells_its_output_delay_once_it_changes() {
+        let mut f = Fixture::new();
+        f.send(OP_AUDIO_OPEN, MUSIC, &audio_body(0, false, ""));
+        let delays = |f: &Fixture| -> Vec<u32> {
+            f.replies()
+                .into_iter()
+                .filter(|(op, id, _)| *op == REPLY_AUDIO_DELAY && *id == MUSIC)
+                .map(|(_, _, rest)| u32::from_le_bytes(rest[..4].try_into().unwrap()))
+                .collect()
+        };
+
+        f.host.pump_audio_delays();
+        assert!(delays(&f).is_empty(), "nothing plays yet");
+        f.speaker(0).set_output_delay(40);
+        f.host.pump_audio_delays();
+        f.speaker(0).set_output_delay(80);
+        f.host.pump_audio_delays();
+        assert_eq!(delays(&f), [40], "one jump is smoothed below the step");
+        for _ in 0..20 {
+            f.host.pump_audio_delays();
+        }
+        let told = delays(&f);
+        assert!(
+            told.len() >= 2 && *told.last().unwrap() >= 70,
+            "a lasting change gets through: {told:?}"
+        );
     }
 
     #[test]

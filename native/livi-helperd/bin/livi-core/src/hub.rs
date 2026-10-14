@@ -109,7 +109,7 @@ mod tests {
     use crate::config_file::defaults;
 
     fn hub() -> Hub {
-        let livi = PerScreen { main: Front::Livi, dash: Front::Livi, aux: Front::Livi };
+        let livi = PerScreen { main: Front::Livi, cluster: Front::Livi, aux: Front::Livi };
         Hub::new(State {
             front: livi,
             sessions: Default::default(),

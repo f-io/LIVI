@@ -1,6 +1,4 @@
 mod clock;
-mod file;
-mod info;
 mod nmea;
 mod port;
 mod receiver;
@@ -8,11 +6,11 @@ pub mod timezone;
 mod tz_data;
 mod ubx;
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use livi_core_proto::config::Config;
+use livi_core_proto::gnss as info;
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
@@ -20,7 +18,6 @@ use tokio::time::Instant;
 
 use crate::server::Core;
 use clock::{Clock, Step};
-use file::GpsFile;
 use info::{GnssInfo, GpsFix};
 use port::{Chunk, Port};
 use receiver::{DEFAULT_BAUD_RATE, DEFAULT_DEVICE, Output, Poll, Receiver};
@@ -83,7 +80,6 @@ type Opener = Box<dyn FnMut(&str, u32) -> Result<Port, String> + Send>;
 struct Gnss {
     telemetry: mpsc::UnboundedSender<Value>,
     open: Opener,
-    file: GpsFile,
     clock: Clock,
     receiver: Option<Receiver>,
     port: Option<Port>,
@@ -96,16 +92,10 @@ struct Gnss {
 }
 
 impl Gnss {
-    fn new(
-        telemetry: mpsc::UnboundedSender<Value>,
-        open: Opener,
-        file: GpsFile,
-        clock: Clock,
-    ) -> Self {
+    fn new(telemetry: mpsc::UnboundedSender<Value>, open: Opener, clock: Clock) -> Self {
         Self {
             telemetry,
             open,
-            file,
             clock,
             receiver: None,
             port: None,
@@ -173,14 +163,10 @@ impl Gnss {
             receiver.tick(now.at);
         }
         self.pump(now);
-        if self.file.due().is_some_and(|due| due <= now.at) {
-            self.file.flush(now.unix_ms);
-        }
     }
 
     fn next_deadline(&self) -> Option<Instant> {
-        let receiver = self.receiver.as_ref().and_then(Receiver::next_deadline);
-        [receiver, self.file.due()].into_iter().flatten().min()
+        self.receiver.as_ref().and_then(Receiver::next_deadline)
     }
 
     async fn next_chunk(&mut self) -> Option<Chunk> {
@@ -239,7 +225,7 @@ impl Gnss {
                 }
             }
             Output::Info(info) => self.on_info(*info, now),
-            Output::Fix(fix) => self.publish_fix(fix, now),
+            Output::Fix(fix) => self.publish_fix(fix),
         }
     }
 
@@ -249,10 +235,9 @@ impl Gnss {
         if let Some(step) = self.clock.update(&info, now.unix_ms as i64) {
             self.jobs.push(Job::StepClock(step));
         }
-        self.file.set_info(info, now.at);
     }
 
-    fn publish_fix(&mut self, fix: GpsFix, now: Moment) {
+    fn publish_fix(&mut self, fix: GpsFix) {
         if let (Some(lat), Some(lng)) = (fix.lat, fix.lng) {
             let key = format!("{lat:.2},{lng:.2}");
             if key != self.zone_key {
@@ -270,15 +255,12 @@ impl Gnss {
             }
         }
         let _ = self.telemetry.send(json!({ "gps": to_json(&fix) }));
-        self.file.set_fix(&fix, now.at);
     }
 }
 
 impl Drop for Gnss {
     fn drop(&mut self) {
-        let now = Moment::now();
-        self.stop_receiver(now);
-        self.file.flush(now.unix_ms);
+        self.stop_receiver(Moment::now());
     }
 }
 
@@ -305,15 +287,14 @@ async fn carry_out_job(core: &Core, job: Job) {
     }
 }
 
-pub async fn run(core: Arc<Core>, telemetry: mpsc::UnboundedSender<Value>, user_data: PathBuf) {
+pub async fn run(core: Arc<Core>, telemetry: mpsc::UnboundedSender<Value>) {
     if !cfg!(target_os = "linux") {
         return;
     }
     let mut state = core.hub.watch();
     let config = state.borrow_and_update().config.clone();
     let mut settings = Settings::of(&config);
-    let file = GpsFile::new(user_data.join(file::FILE));
-    let mut gnss = Gnss::new(telemetry, Box::new(Port::open), file, Clock::new(clock::CLAIM_FILE));
+    let mut gnss = Gnss::new(telemetry, Box::new(Port::open), Clock::new(clock::CLAIM_FILE));
     gnss.begin(&config, Moment::now());
     loop {
         for job in gnss.take_jobs() {
@@ -370,8 +351,7 @@ mod tests {
                 seen.lock().unwrap().push((device.to_string(), baud_rate));
                 Ok(Port::fake(mpsc::unbounded_channel().1))
             });
-            let file = GpsFile::new(dir.0.join(file::FILE));
-            let gnss = Gnss::new(tx, open, file, Clock::new(dir.0.join("claim")));
+            let gnss = Gnss::new(tx, open, Clock::new(dir.0.join("claim")));
             let now = Moment { at: Instant::now(), unix_ms: 1_774_269_319_000 };
             let mut rig = Self { gnss, telemetry, opened, now, dir };
             rig.gnss.begin(config, rig.now);
@@ -410,7 +390,7 @@ mod tests {
 
         fn fix(&mut self, lat: f64, lng: f64) {
             let fix = GpsFix { lat: Some(lat), lng: Some(lng), ..Default::default() };
-            self.gnss.publish_fix(fix, self.now);
+            self.gnss.publish_fix(fix);
         }
 
         fn info(&mut self) {
@@ -484,7 +464,7 @@ mod tests {
     }
 
     #[test]
-    fn the_fix_and_the_receiver_state_go_to_the_telemetry_and_the_file() {
+    fn the_fix_and_the_receiver_state_go_to_the_telemetry() {
         let mut rig = Rig::enabled();
         assert_eq!(rig.last_gnss()["connected"], false);
         rig.feed(GGA);
@@ -495,17 +475,12 @@ mod tests {
         let gnss = sent.iter().rev().find_map(|v| v.get("gnss")).unwrap();
         assert_eq!(gnss["connected"], true);
 
-        assert_eq!(rig.gnss.next_deadline(), Some(rig.now.at + Duration::from_secs(1)));
         rig.later(Duration::from_secs(1));
         let gnss = rig.last_gnss();
         assert_eq!(
             (&gnss["fixQuality"], &gnss["timezone"]),
             (&json!("gps"), &json!("Europe/Berlin"))
         );
-        let written = std::fs::read_to_string(rig.dir.0.join(file::FILE)).unwrap();
-        let written: Value = serde_json::from_str(&written).unwrap();
-        assert_eq!(written["fix"]["satellites"], 8);
-        assert_eq!(written["receiver"]["fixQuality"], "gps");
     }
 
     #[test]
@@ -542,7 +517,7 @@ mod tests {
         rig.fix(22.5726, 88.3639);
         assert_eq!(rig.gnss.take_jobs()[1], Job::SaveTimezone("Asia/Kolkata".into()));
 
-        rig.gnss.publish_fix(GpsFix { alt: Some(12.0), ..Default::default() }, rig.now);
+        rig.gnss.publish_fix(GpsFix { alt: Some(12.0), ..Default::default() });
         rig.fix(999.0, 999.0);
         assert!(rig.gnss.take_jobs().is_empty());
         rig.info();
@@ -564,20 +539,19 @@ mod tests {
     }
 
     #[test]
-    fn stopping_core_writes_the_file_and_releases_the_clock() {
+    fn stopping_core_reports_the_receiver_gone_and_releases_the_clock() {
         let mut rig = Rig::enabled();
         rig.feed(&[GGA, GSA, RMC].concat());
         rig.later(Duration::from_secs(1));
         let claim = rig.dir.0.join("claim");
-        let path = rig.dir.0.join(file::FILE);
         assert!(claim.exists());
-        std::fs::remove_file(&path).unwrap();
-        let Rig { gnss, dir, .. } = rig;
+        let Rig { gnss, mut telemetry, dir, .. } = rig;
         drop(gnss);
-        let written: Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(written["receiver"]["connected"], false);
-        assert_eq!(written["fix"]["satellites"], 8);
+        let mut last = None;
+        while let Ok(v) = telemetry.try_recv() {
+            last = v.get("gnss").cloned().or(last);
+        }
+        assert_eq!(last.unwrap()["connected"], false);
         assert!(!claim.exists());
         drop(dir);
     }
@@ -586,9 +560,8 @@ mod tests {
     fn a_port_that_cannot_be_opened_is_reported() {
         let dir = TempDir::new();
         let (tx, mut telemetry) = mpsc::unbounded_channel();
-        let file = GpsFile::new(dir.0.join(file::FILE));
         let open: Opener = Box::new(|device, _| Err(format!("{device} not found")));
-        let mut gnss = Gnss::new(tx, open, file, Clock::new(dir.0.join("claim")));
+        let mut gnss = Gnss::new(tx, open, Clock::new(dir.0.join("claim")));
         gnss.begin(&Config { gps_enabled: true, ..defaults() }, Moment::now());
         let info = telemetry.try_recv().unwrap();
         assert_eq!(info["gnss"]["error"], "/dev/ttyAMA0 not found");
@@ -602,8 +575,7 @@ mod tests {
         let (feed, chunks) = mpsc::unbounded_channel();
         let mut chunks = Some(chunks);
         let open: Opener = Box::new(move |_, _| Ok(Port::fake(chunks.take().unwrap())));
-        let file = GpsFile::new(dir.0.join(file::FILE));
-        let mut gnss = Gnss::new(tx, open, file, Clock::new(dir.0.join("claim")));
+        let mut gnss = Gnss::new(tx, open, Clock::new(dir.0.join("claim")));
         gnss.begin(&Config { gps_enabled: true, ..defaults() }, Moment::now());
         feed.send(Ok(GGA.to_vec())).unwrap();
         assert_eq!(gnss.next_chunk().await, Some(Ok(GGA.to_vec())));

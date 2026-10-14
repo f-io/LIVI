@@ -3,13 +3,13 @@ import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined'
 import { Box, IconButton, Modal, Paper, Typography } from '@mui/material'
 import type { KeyBindingNode } from '@renderer/routes/types'
 import type { Config } from '@shared/types'
-import { DEFAULT_BINDINGS } from '@shared/types'
+import { DEFAULT_CONFIG } from '@shared/types'
 import { useLiviStore } from '@store/store'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { StackItem } from './stackItem'
 
-const DEFAULT_BINDINGS_MAP = DEFAULT_BINDINGS as Partial<
+const DEFAULT_BINDINGS_MAP = DEFAULT_CONFIG.bindings as Partial<
   Record<KeyBindingNode['bindingKey'], string>
 >
 
@@ -61,7 +61,7 @@ export function KeyBindingRow({ node }: { node: KeyBindingNode }) {
     return normalize(settings?.bindings?.[node.bindingKey])
   }, [settings?.bindings, node.bindingKey])
 
-  // default value (from schema node OR DEFAULT_BINDINGS fallback)
+  // default value (from schema node OR the default config's bindings)
   const defaultValue = useMemo(() => {
     const fallback = DEFAULT_BINDINGS_MAP[node.bindingKey]
     return normalize(node.defaultValue ?? fallback)

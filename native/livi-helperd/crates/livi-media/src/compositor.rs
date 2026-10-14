@@ -17,7 +17,7 @@ pub fn env(cfg: &Config, ctrl: &Path) -> Vec<(String, String)> {
         // Its windows belong to the installed dev.f-io.livi.desktop entry.
         ("LIVI_OUTPUT_APP_ID".to_string(), "dev.f-io.livi".to_string()),
         ("LIVI_COMPOSITOR_CTRL".to_string(), ctrl.display().to_string()),
-        ("LIVI_SCREENS".to_string(), "main,dash,aux".to_string()),
+        ("LIVI_SCREENS".to_string(), "main,cluster,aux".to_string()),
         // A compositor crash has to be readable from the log.
         ("RUST_BACKTRACE".to_string(), "1".to_string()),
     ];
@@ -434,15 +434,15 @@ mod tests {
         assert_eq!(line(&mut rd).await, "claim main\n");
         let second = tokio::spawn({
             let ctrl = ctrl.clone();
-            async move { ctrl.claim("cluster-dash").await }
+            async move { ctrl.claim("cluster-cluster").await }
         });
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert!(!second.is_finished());
         wr.write_all(b"bound main\n").await.unwrap();
         tokio::time::timeout(Duration::from_secs(5), second).await.unwrap().unwrap();
-        assert_eq!(line(&mut rd).await, "claim cluster-dash\n");
-        ctrl.release("cluster-dash");
-        assert_eq!(line(&mut rd).await, "unclaim cluster-dash\n");
+        assert_eq!(line(&mut rd).await, "claim cluster-cluster\n");
+        ctrl.release("cluster-cluster");
+        assert_eq!(line(&mut rd).await, "unclaim cluster-cluster\n");
     }
 
     #[tokio::test]
@@ -450,9 +450,9 @@ mod tests {
         let dir = TempDir::new();
         let (comp, ctrl) = setup(&dir);
         let mut ui = ctrl.ui();
-        ctrl.screen("dash", true, Some((800, 480)));
+        ctrl.screen("cluster", true, Some((800, 480)));
         let (mut rd, mut wr) = comp.accept().await;
-        assert_eq!(line(&mut rd).await, "screen dash 1 800 480\n");
+        assert_eq!(line(&mut rd).await, "screen cluster 1 800 480\n");
         wr.write_all(b"ui wayland-2 /dev/dri/renderD129\npanel main 344 194 1920 1080\n")
             .await
             .unwrap();

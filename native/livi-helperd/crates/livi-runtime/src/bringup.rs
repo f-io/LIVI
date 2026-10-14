@@ -287,7 +287,16 @@ fn on_cable(cp: &CpConfig, frame: &[u8]) -> Option<String> {
     (ask.0)(&phone).then_some(phone)
 }
 
-fn carplay_start_session(cp: &CpConfig, live: Option<OnAir>) -> Option<CarPlayStartSession> {
+/// Mutual auth CP3.0 only
+fn mutual_authentication(chip_major: u8) -> Option<bool> {
+    (chip_major == 3).then_some(true)
+}
+
+fn carplay_start_session(
+    cp: &CpConfig,
+    live: Option<OnAir>,
+    mutual: Option<bool>,
+) -> Option<CarPlayStartSession> {
     if cp.transport == Transport::Wired {
         // The link-local the phone connects to: the A/V interface's.
         let fe80 = net::wlan_link_local(cp.av_iface.as_deref()?)?;
@@ -301,6 +310,7 @@ fn carplay_start_session(cp: &CpConfig, live: Option<OnAir>) -> Option<CarPlaySt
                 .or_else(|| cp.av_iface.as_deref().and_then(net::wlan_mac)),
             public_key: Some(cp.public_key.clone()),
             source_version: Some(cp.source_version.clone()),
+            supports_mutual_authentication: mutual,
         });
     }
     let fe80 = net::wlan_link_local(&cp.wifi_iface)?;
@@ -318,6 +328,7 @@ fn carplay_start_session(cp: &CpConfig, live: Option<OnAir>) -> Option<CarPlaySt
         device_identifier: accessory_id(cp),
         public_key: Some(cp.public_key.clone()),
         source_version: Some(cp.source_version.clone()),
+        supports_mutual_authentication: mutual,
     })
 }
 
@@ -400,6 +411,8 @@ pub async fn run_accessory<C: ControlChannel, A: AsyncAuth>(
         return;
     }
     let _ = events.send(BringupEvent::Authenticated).await;
+    // The chip that just answered for us also answers the phone's mutual authentication.
+    let mutual = mutual_authentication(auth.protocol_major().await.unwrap_or(0));
 
     if cp.transport == Transport::Wired {
         let power = PowerSourceUpdate {
@@ -438,7 +451,7 @@ pub async fn run_accessory<C: ControlChannel, A: AsyncAuth>(
                     continue;
                 }
                 println!("[cp] the phone hears the start once more");
-                if !send_start(&mut ch, &cp, None, &events, None).await {
+                if !send_start(&mut ch, &cp, None, mutual, &events, None).await {
                     break;
                 }
                 continue;
@@ -531,7 +544,7 @@ pub async fn run_accessory<C: ControlChannel, A: AsyncAuth>(
                 }
                 let live =
                     if cp.transport == Transport::Wired { None } else { wait_for_ap(&cp).await };
-                if !send_start(&mut ch, &cp, live, &events, Some(&frame)).await {
+                if !send_start(&mut ch, &cp, live, mutual, &events, Some(&frame)).await {
                     break;
                 }
                 offered = true;
@@ -559,10 +572,11 @@ async fn send_start<C: ControlChannel>(
     ch: &mut C,
     cp: &CpConfig,
     live: Option<OnAir>,
+    mutual: Option<bool>,
     events: &mpsc::Sender<BringupEvent>,
     offer: Option<&[u8]>,
 ) -> bool {
-    let Some(start) = carplay_start_session(cp, live) else {
+    let Some(start) = carplay_start_session(cp, live, mutual) else {
         let why = match (&cp.transport, cp.av_iface.as_deref()) {
             (Transport::Wired, None) => {
                 "the phone's USB network interface was not found".to_string()
@@ -591,10 +605,11 @@ async fn send_start<C: ControlChannel>(
         .map(|a| a.join(","))
         .unwrap_or_default();
     println!(
-        "[cp] CarPlayStartSession ip={ip} port={} device_id={} pk_len={}",
+        "[cp] CarPlayStartSession ip={ip} port={} device_id={} pk_len={}{}",
         start.port.unwrap_or(0),
         start.device_identifier.as_deref().unwrap_or("-"),
-        start.public_key.as_deref().unwrap_or("").len()
+        start.public_key.as_deref().unwrap_or("").len(),
+        if start.supports_mutual_authentication == Some(true) { " mutual-auth" } else { "" }
     );
     if ch.send(start.encode()).await.is_err() {
         return false;

@@ -56,6 +56,16 @@ pub fn host_of(addr: &SocketAddr) -> String {
     }
 }
 
+/// The host to send to: a link-local address keeps its interface, `fe80::2%3`.
+pub fn route_of(addr: &SocketAddr) -> String {
+    match addr {
+        SocketAddr::V6(a) if a.scope_id() != 0 && a.ip().to_ipv4_mapped().is_none() => {
+            format!("{}%{}", a.ip(), a.scope_id())
+        }
+        _ => host_of(addr),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -78,6 +88,16 @@ mod tests {
 
     fn v6_addr() -> SocketAddr {
         "[fe80::2]:7".parse().unwrap()
+    }
+
+    #[test]
+    fn a_link_local_route_keeps_its_interface() {
+        let link_local: SocketAddr = "[fe80::2%3]:5000".parse().unwrap();
+        assert_eq!(route_of(&link_local), "fe80::2%3");
+        assert_eq!(route_of(&v6_addr()), "fe80::2");
+        let mapped: SocketAddr = "[::ffff:10.0.0.2]:5000".parse().unwrap();
+        assert_eq!(route_of(&mapped), "10.0.0.2");
+        assert_eq!(route_of(&"10.0.0.3:1".parse().unwrap()), "10.0.0.3");
     }
 
     #[tokio::test]

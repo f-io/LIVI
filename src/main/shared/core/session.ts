@@ -8,6 +8,8 @@ type Listener = (state: State, prev: State | null) => void
 
 type SpectrumListener = (bands: number[]) => void
 
+type PageListener = (path: string) => void
+
 type Waiting = { resolve: () => void; reject: (e: Error) => void }
 
 export class CoreSession {
@@ -20,7 +22,9 @@ export class CoreSession {
   private readonly shown = new Map<Screen, Front>()
   private drawsSpectrum = false
   private showsLinkSpeed = false
+  private cameraFound: boolean | null = null
   private readonly spectrumListeners = new Set<SpectrumListener>()
+  private readonly pageListeners = new Set<PageListener>()
 
   constructor(private readonly send: Send) {}
 
@@ -34,6 +38,11 @@ export class CoreSession {
     return () => this.spectrumListeners.delete(listener)
   }
 
+  onOpenPage(listener: PageListener): () => void {
+    this.pageListeners.add(listener)
+    return () => this.pageListeners.delete(listener)
+  }
+
   receive(msg: FromCore): void {
     switch (msg.type) {
       case 'welcome':
@@ -42,9 +51,13 @@ export class CoreSession {
         for (const [screen, front] of this.shown) this.tellShown(screen, front)
         if (this.drawsSpectrum) this.send({ type: 'spectrum', on: true })
         if (this.showsLinkSpeed) this.send({ type: 'linkSpeed', on: true })
+        if (this.cameraFound !== null) this.send({ type: 'camera', found: this.cameraFound })
         return
       case 'spectrum':
         for (const listener of this.spectrumListeners) listener(msg.bands)
+        return
+      case 'openPage':
+        for (const listener of this.pageListeners) listener(msg.path)
         return
       case 'patch': {
         if (!this.state || msg.rev !== this.rev + 1) {
@@ -118,6 +131,11 @@ export class CoreSession {
   linkSpeed(on: boolean): void {
     this.showsLinkSpeed = on
     this.send({ type: 'linkSpeed', on })
+  }
+
+  camera(found: boolean): void {
+    this.cameraFound = found
+    this.send({ type: 'camera', found })
   }
 
   private tellShown(screen: Screen, front: Front): void {

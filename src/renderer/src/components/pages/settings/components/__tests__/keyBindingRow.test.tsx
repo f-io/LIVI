@@ -182,7 +182,7 @@ describe('KeyBindingRow', () => {
     })
   })
 
-  test('falls back to DEFAULT_BINDINGS when node omits a default value', () => {
+  test('falls back to the default bindings when node omits a default value', () => {
     const noDefault = {
       kind: 'keyBinding',
       id: 'kb.next',

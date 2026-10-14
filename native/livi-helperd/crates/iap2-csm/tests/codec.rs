@@ -57,6 +57,7 @@ fn empty_list_is_omitted() {
         device_identifier: None,
         public_key: None,
         source_version: None,
+        supports_mutual_authentication: None,
     };
     assert_eq!(m.encode(), vec![0x40, 0x40, 0x00, 0x0A, 0x43, 0x01, 0x00, 0x04, 0x00, 0x00]);
 }

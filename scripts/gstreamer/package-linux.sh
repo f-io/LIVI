@@ -318,11 +318,12 @@ plugins=(
   libgstvideoconvertscale.so
   libgstopengl.so
   libgstlibav.so
-  # video LIVI fetches from a URL: playbin3, hlsdemux2, souphttpsrc, qtdemux
+  # video LIVI fetches from a URL: playbin3, hlsdemux2, souphttpsrc, qtdemux, tsdemux
   libgstplayback.so
   libgstadaptivedemux2.so
   libgstsoup.so
   libgstisomp4.so
+  libgstmpegtsdemux.so
 )
 
 for plugin in "${plugins[@]}"; do

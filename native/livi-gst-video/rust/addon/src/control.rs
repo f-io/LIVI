@@ -65,7 +65,7 @@ mod tests {
 
     #[test]
     fn the_lines_core_sends_come_apart() {
-        assert_eq!(parse("claim cluster-dash"), Some(Line::Claim("cluster-dash".into())));
+        assert_eq!(parse("claim cluster-cluster"), Some(Line::Claim("cluster-cluster".into())));
         assert_eq!(
             parse("videocfg main main 160 0 960 720 1280 720"),
             Some(Line::Place {
@@ -90,7 +90,7 @@ mod tests {
 
     #[test]
     fn what_a_window_cannot_use_is_left_alone() {
-        assert_eq!(parse("screen dash 1 800 480"), None);
+        assert_eq!(parse("screen cluster 1 800 480"), None);
         assert_eq!(parse("unclaim main"), None);
         assert_eq!(parse("restart"), None);
         assert_eq!(parse("videocfg main main 1 2 3"), None);

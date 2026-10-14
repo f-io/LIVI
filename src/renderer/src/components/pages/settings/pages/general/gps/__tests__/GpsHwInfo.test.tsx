@@ -1,5 +1,4 @@
-import type { GnssInfo } from '@shared/types/Gnss'
-import { EMPTY_GNSS_INFO } from '@shared/types/Gnss'
+import { EMPTY_GNSS_INFO, type GnssInfo } from '@shared/types'
 import { render, screen } from '@testing-library/react'
 import { GpsHwInfo } from '../GpsHwInfo'
 

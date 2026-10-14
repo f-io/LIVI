@@ -10,11 +10,12 @@ import type {
   Screen,
   Sessions,
   System,
+  TelemetrySnapshot,
   ToCore,
   Update
 } from '@shared/core/contract'
 import { CoreSession } from '@shared/core/session'
-import type { Config, TelemetryPayload } from '@shared/types'
+import type { Config } from '@shared/types'
 import { create } from 'zustand'
 
 type CoreBridge = {
@@ -65,6 +66,16 @@ export function onSpectrum(listener: (bands: number[]) => void): () => void {
   return session?.onSpectrum(listener) ?? (() => {})
 }
 
+/** Only the browser sees the cameras, core needs one to show it while reversing. */
+export function reportCamera(found: boolean): void {
+  session?.camera(found)
+}
+
+/** A page the telemetry asked core for, opened once. */
+export function onOpenPage(listener: (path: string) => void): () => void {
+  return session?.onOpenPage(listener) ?? (() => {})
+}
+
 const applyDerivedFromSettings = (s: Config) => {
   const audioVolume = s.audioVolume ?? 1.0
   const navVolume = s.navVolume ?? 0.5
@@ -72,33 +83,6 @@ const applyDerivedFromSettings = (s: Config) => {
   const callVolume = s.callVolume ?? 1.0
 
   return { audioVolume, navVolume, voiceAssistantVolume, callVolume }
-}
-
-const applyTelemetryControls = (msg: TelemetryPayload, prev: TelemetryPayload | null) => {
-  const explicitReverse =
-    typeof msg.reverse === 'boolean'
-      ? msg.reverse
-      : msg.gear === 'R' || msg.gear === -1
-        ? true
-        : msg.gear !== undefined
-          ? false
-          : null
-  if (explicitReverse !== null) {
-    if (useStatusStore.getState().reverse !== explicitReverse) {
-      useStatusStore.getState().setReverse(explicitReverse)
-    }
-  }
-
-  if (typeof msg.lights === 'boolean') {
-    if (useStatusStore.getState().lights !== msg.lights) {
-      useStatusStore.getState().setLights(msg.lights)
-    }
-  }
-
-  // Momentary navigation request, the snapshot keeps the last one
-  if (typeof msg.path === 'string' && msg.path !== prev?.path) {
-    useStatusStore.getState().requestPath(msg.path)
-  }
 }
 
 export interface CarplayStore {
@@ -113,7 +97,7 @@ export interface CarplayStore {
 
   devices: DeviceView[]
 
-  telemetry: TelemetryPayload | null
+  telemetry: TelemetrySnapshot | null
 
   update: Update | null
 
@@ -202,12 +186,7 @@ export const useLiviStore = create<CarplayStore>((set, get) => {
           if (state.system !== prev?.system) followSystem(state.system, prev?.system)
           if (state.devices !== prev?.devices) set({ devices: state.devices })
           if (state.update !== prev?.update) set({ update: state.update })
-          if (state.telemetry !== prev?.telemetry) {
-            const telemetry = state.telemetry as TelemetryPayload
-            const was = (prev?.telemetry as TelemetryPayload | undefined) ?? null
-            set({ telemetry })
-            applyTelemetryControls(telemetry, was)
-          }
+          if (state.telemetry !== prev?.telemetry) set({ telemetry: state.telemetry })
         })
         const link = bridge.connect(
           `ui:${role}`,
@@ -245,32 +224,22 @@ useLiviStore.getState().init()
 export type ActiveProtocol = 'carplay' | 'androidauto' | null
 
 export interface StatusStore {
-  reverse: boolean
-  lights: boolean
   activeProtocol: ActiveProtocol
   isStreaming: boolean
   cameraFound: boolean
-  clusterDashActive: boolean
-  requestedPath: string | null
+  clusterDashboardActive: boolean
 
   setCameraFound: (found: boolean) => void
   setActiveProtocol: (protocol: ActiveProtocol) => void
   setStreaming: (streaming: boolean) => void
-  setReverse: (reverse: boolean) => void
-  setLights: (lights: boolean) => void
-  setClusterDashActive: (active: boolean) => void
-  requestPath: (path: string) => void
-  clearRequestedPath: () => void
+  setClusterDashboardActive: (active: boolean) => void
 }
 
 export const useStatusStore = create<StatusStore>((set, get) => ({
-  reverse: false,
-  lights: false,
   activeProtocol: null,
   isStreaming: false,
   cameraFound: false,
-  clusterDashActive: false,
-  requestedPath: null,
+  clusterDashboardActive: false,
 
   setCameraFound: (found) => set({ cameraFound: found }),
   setActiveProtocol: (protocol) => {
@@ -279,11 +248,7 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
     if (protocol !== null && !wasPresent) useLiviStore.getState().markRestartBaseline()
   },
   setStreaming: (streaming) => set({ isStreaming: streaming }),
-  setReverse: (reverse) => set({ reverse }),
-  setLights: (lights) => set({ lights }),
-  setClusterDashActive: (active) => set({ clusterDashActive: active }),
-  requestPath: (path) => set({ requestedPath: path }),
-  clearRequestedPath: () => set({ requestedPath: null })
+  setClusterDashboardActive: (active) => set({ clusterDashboardActive: active })
 }))
 
 export const useProjectionActive = (): boolean => useStatusStore((s) => s.activeProtocol !== null)

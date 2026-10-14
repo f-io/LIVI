@@ -47,27 +47,27 @@ vi.mock('@store/store', () => ({
         : {
             camera: mockState.secondaryAbsentKeys
               ? { main: true }
-              : { main: true, dash: mockState.secondaryCamera, aux: mockState.secondaryCamera },
+              : { main: true, cluster: mockState.secondaryCamera, aux: mockState.secondaryCamera },
             custom: mockState.secondaryAbsentKeys
               ? undefined
-              : { main: mockState.mainCustom, dash: mockState.secondaryCustom, aux: false },
+              : { main: mockState.mainCustom, cluster: mockState.secondaryCustom, aux: false },
             media: mockState.secondaryAbsentKeys
               ? { main: true }
               : {
                   main: mockState.mainMedia,
-                  dash: mockState.secondaryMedia,
+                  cluster: mockState.secondaryMedia,
                   aux: mockState.secondaryMedia
                 },
             dashboards: {
-              dash1: {
+              dashboard1: {
                 main: mockState.telemetryOnMain,
-                dash: mockState.secondaryTelemetry,
+                cluster: mockState.secondaryTelemetry,
                 aux: mockState.secondaryTelemetry,
                 pos: 1
               },
-              dash2: { main: false, dash: false, aux: false, pos: 2 },
-              dash3: { main: false, dash: false, aux: false, pos: 3 },
-              dash4: { main: false, dash: false, aux: false, pos: 4 }
+              dashboard2: { main: false, cluster: false, aux: false, pos: 2 },
+              dashboard3: { main: false, cluster: false, aux: false, pos: 3 },
+              dashboard4: { main: false, cluster: false, aux: false, pos: 4 }
             }
           }
     })
@@ -130,7 +130,7 @@ describe('useTabsConfig', () => {
   })
 
   test('a secondary window shows the custom tab when routed there', () => {
-    mockRole = 'dash'
+    mockRole = 'cluster'
     mockState.secondaryCustom = true
     const { result } = renderHook(() => useTabsConfig(false))
     expect(result.current.map((t) => t.path)).toContain('/custom')
@@ -208,7 +208,7 @@ describe('useTabsConfig', () => {
   })
 
   test('secondary window with nothing routed to it shows no tabs', () => {
-    mockRole = 'dash'
+    mockRole = 'cluster'
 
     const { result } = renderHook(() => useTabsConfig(false))
 
@@ -227,7 +227,7 @@ describe('useTabsConfig', () => {
   })
 
   test('secondary window hides the camera tab when the camera is unavailable', () => {
-    mockRole = 'dash'
+    mockRole = 'cluster'
     mockState.secondaryCamera = true
     mockState.cameraFound = false
 
@@ -237,7 +237,7 @@ describe('useTabsConfig', () => {
   })
 
   test('secondary window shows only the telemetry tab when only telemetry is routed', () => {
-    mockRole = 'dash'
+    mockRole = 'cluster'
     mockState.secondaryTelemetry = true
 
     const { result } = renderHook(() => useTabsConfig(false))

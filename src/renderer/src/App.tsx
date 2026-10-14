@@ -14,12 +14,18 @@ import { VolumeOverlay } from './components/common/VolumeOverlay'
 import { AppLayout } from './components/layouts/AppLayout'
 import { Cluster, Projection } from './components/pages'
 import { AppContext } from './context'
-import { useActiveControl, useFocus, useKeyDown } from './hooks'
+import { useActiveControl, useFocus, useFollowFront, useKeyDown } from './hooks'
 import { appRoutes } from './routes/appRoutes'
-import { reportPath, sendInput, useLiviStore, useStatusStore } from './store/store'
+import {
+  onOpenPage,
+  reportCamera,
+  reportPath,
+  sendInput,
+  useLiviStore,
+  useStatusStore
+} from './store/store'
 import { broadcastMediaKey } from './utils/broadcastMediaKey'
 import { updateCameras } from './utils/cameraDetection'
-import { getWindowRole } from './utils/windowRole'
 
 function AppInner() {
   const appContext = useContext(AppContext)
@@ -33,7 +39,7 @@ function AppInner() {
   const settings = useLiviStore((s) => s.settings)
   const saveSettings = useLiviStore((s) => s.saveSettings)
   const setCameraFound = useStatusStore((s) => s.setCameraFound)
-  const clusterDashActive = useStatusStore((s) => s.clusterDashActive)
+  const clusterDashboardActive = useStatusStore((s) => s.clusterDashboardActive)
 
   const navRef = useRef<HTMLDivElement | null>(null)
   const mainRef = useRef<HTMLDivElement | null>(null)
@@ -230,56 +236,26 @@ function AppInner() {
     updateCameras(setCameraFound, saveSettings, settings)
   }, [settings, saveSettings, setCameraFound])
 
-  const reverse = useStatusStore((s) => s.reverse)
   const cameraFound = useStatusStore((s) => s.cameraFound)
-  const reverseAutoSwitchActiveRef = useRef(false)
-  const reverseBackPathRef = useRef<string | null>(null)
-  const cameraOnRole = (() => {
-    const role = getWindowRole()
-    return role === 'main' ? (settings?.camera?.main ?? true) : (settings?.camera?.[role] ?? false)
-  })()
   useEffect(() => {
-    if (!settings?.autoSwitchOnReverse) return
-    if (!cameraOnRole) return
-    const cameraReady = cameraFound && Boolean(settings.cameraId)
+    reportCamera(cameraFound)
+  }, [cameraFound])
 
-    if (reverse && cameraReady) {
-      if (location.pathname !== ROUTES.CAMERA) {
-        reverseBackPathRef.current = location.pathname
-        reverseAutoSwitchActiveRef.current = true
-        navigate(ROUTES.CAMERA)
-      }
-      return
-    }
+  useFollowFront()
 
-    if (reverseAutoSwitchActiveRef.current && location.pathname === ROUTES.CAMERA) {
-      const back = reverseBackPathRef.current as string
-      reverseAutoSwitchActiveRef.current = false
-      reverseBackPathRef.current = null
-      navigate(back)
-    }
-  }, [
-    reverse,
-    cameraFound,
-    cameraOnRole,
-    settings?.autoSwitchOnReverse,
-    settings?.cameraId,
-    location.pathname,
-    navigate
-  ])
-
-  const requestedPath = useStatusStore((s) => s.requestedPath)
-  const clearRequestedPath = useStatusStore((s) => s.clearRequestedPath)
-  useEffect(() => {
-    if (!requestedPath) return
-    clearRequestedPath()
-    const target = requestedPath.replace(/\/{2,}/g, '/').replace(/(.)\/$/, '$1')
-    const matches = matchRoutes(appRoutes, target)
-    const leaf = matches?.[matches.length - 1]
-    if (!leaf || (leaf.route.path?.endsWith('*') && leaf.params['*'])) return
-    if (location.pathname !== target) navigate(target)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestedPath])
+  const pathnameRef = useRef(location.pathname)
+  pathnameRef.current = location.pathname
+  useEffect(
+    () =>
+      onOpenPage((path) => {
+        const target = path.replace(/\/{2,}/g, '/').replace(/(.)\/$/, '$1')
+        const matches = matchRoutes(appRoutes, target)
+        const leaf = matches?.[matches.length - 1]
+        if (!leaf || (leaf.route.path?.endsWith('*') && leaf.params['*'])) return
+        if (pathnameRef.current !== target) navigate(target)
+      }),
+    [navigate]
+  )
 
   return (
     <AppLayout navRef={navRef} mainRef={mainRef} receivingVideo={receivingVideo}>
@@ -292,7 +268,10 @@ function AppInner() {
       )}
       {/* The only cluster overlay, it owns the plane reveal. */}
       {settings && (
-        <Cluster visible={clusterDashActive} showLoadingPlaceholder={!clusterDashActive} />
+        <Cluster
+          visible={clusterDashboardActive}
+          showLoadingPlaceholder={!clusterDashboardActive}
+        />
       )}
       <Box sx={{ width: '100%', height: '100%' }}>{element}</Box>
       <PhoneOverlay />

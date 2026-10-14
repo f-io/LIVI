@@ -1,10 +1,10 @@
-export type WindowRole = 'main' | 'dash' | 'aux'
+export type WindowRole = 'main' | 'cluster' | 'aux'
 
 export function getWindowRole(): WindowRole {
   try {
     const search = typeof window !== 'undefined' ? window.location.search : ''
     const role = new URLSearchParams(search).get('role')
-    if (role === 'dash' || role === 'aux') return role
+    if (role === 'cluster' || role === 'aux') return role
     return 'main'
   } catch {
     return 'main'

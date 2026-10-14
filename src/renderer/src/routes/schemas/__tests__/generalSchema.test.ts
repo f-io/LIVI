@@ -172,7 +172,7 @@ describe('generalSchema', () => {
     )
     expect(windowSettings.children.map((c) => c.route)).toEqual([
       'mainScreen',
-      'dashScreen',
+      'clusterScreen',
       'auxScreen'
     ])
 
@@ -195,9 +195,14 @@ describe('generalSchema', () => {
         path: 'dashboards'
       })
     )
-    expect(posList.items.map((it) => it.id)).toEqual(['dash1', 'dash2', 'dash3', 'dash4'])
+    expect(posList.items.map((it) => it.id)).toEqual([
+      'dashboard1',
+      'dashboard2',
+      'dashboard3',
+      'dashboard4'
+    ])
 
-    const ids = ['dash1', 'dash2', 'dash3', 'dash4']
+    const ids = ['dashboard1', 'dashboard2', 'dashboard3', 'dashboard4']
     ids.forEach((id, i) => {
       const dashRoute = dashboardsRoute.children[i + 1]
       expect(dashRoute).toEqual(
@@ -209,7 +214,7 @@ describe('generalSchema', () => {
       )
       expect(dashRoute.children.map((c) => c.path)).toEqual([
         `dashboards.${id}.main`,
-        `dashboards.${id}.dash`,
+        `dashboards.${id}.cluster`,
         `dashboards.${id}.aux`
       ])
     })
@@ -217,7 +222,7 @@ describe('generalSchema', () => {
     const mediaRoute = tabSettings.children[1]
     expect(mediaRoute.children.map((c) => c.path)).toEqual([
       'media.main',
-      'media.dash',
+      'media.cluster',
       'media.aux'
     ])
 
@@ -225,7 +230,7 @@ describe('generalSchema', () => {
     expect(cameraRoute.children.map((c) => (c.type === 'route' ? c.route : c.path))).toEqual([
       'autoSwitchOnReverse',
       'camera.main',
-      'camera.dash',
+      'camera.cluster',
       'camera.aux',
       'cameraMirror',
       'cameraRotation',

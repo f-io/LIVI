@@ -21,7 +21,12 @@ class MockBrowserWindow extends EventEmitter {
   setPosition = vi.fn()
   setFullScreen = vi.fn()
   setKiosk = vi.fn()
+  setAspectRatio = vi.fn()
+  setMinimumSize = vi.fn()
+  setResizable = vi.fn()
+  getBounds = vi.fn(() => ({ x: 100, y: 100, width: 800, height: 508 }))
   getPosition = vi.fn(() => [100, 100])
+  getSize = vi.fn(() => [800, 508])
   getContentSize = vi.fn(() => [800, 480])
   isDestroyed = vi.fn(() => false)
   isFullScreen = vi.fn(() => false)
@@ -43,7 +48,10 @@ vi.mock('electron', () => ({
     return w
   }),
   shell: { openExternal: vi.fn() },
-  screen: { getAllDisplays: vi.fn(() => []) }
+  screen: {
+    getAllDisplays: vi.fn(() => []),
+    getDisplayMatching: vi.fn(() => ({ workAreaSize: { width: 3000, height: 2000 } }))
+  }
 }))
 
 const { configEvents } = vi.hoisted(() => ({
@@ -70,10 +78,10 @@ import {
 function baseState(over: Partial<runtimeStateProps['config']> = {}): runtimeStateProps {
   return {
     config: {
-      dashScreenActive: false,
+      clusterScreenActive: false,
       auxScreenActive: false,
-      dashScreenWidth: 800,
-      dashScreenHeight: 480,
+      clusterScreenWidth: 800,
+      clusterScreenHeight: 480,
       auxScreenWidth: 1024,
       auxScreenHeight: 600,
       ...over
@@ -96,76 +104,81 @@ afterEach(() => {
 
 describe('syncSecondaryWindows — open / close', () => {
   test('spawns a window when active flag is set', () => {
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     syncSecondaryWindows(rt)
     expect(lastWindows).toHaveLength(1)
-    expect(getSecondaryWindow('dash')).not.toBeNull()
+    expect(getSecondaryWindow('cluster')).not.toBeNull()
   })
 
   test('closes the window when active flag is cleared', () => {
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
-    rt.config.dashScreenActive = false
-    syncSecondaryWindows(rt, { dashScreenActive: true } as never)
+    rt.config.clusterScreenActive = false
+    syncSecondaryWindows(rt, { clusterScreenActive: true } as never)
     expect(win.close).toHaveBeenCalled()
   })
 
   test('isQuitting short-circuits the sync', () => {
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     rt.isQuitting = true
     syncSecondaryWindows(rt)
     expect(lastWindows).toHaveLength(0)
   })
 
   test('no-op when window is already open and config unchanged', () => {
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     syncSecondaryWindows(rt)
     expect(lastWindows).toHaveLength(1)
-    syncSecondaryWindows(rt, { dashScreenActive: true } as never)
+    syncSecondaryWindows(rt, { clusterScreenActive: true } as never)
     expect(lastWindows).toHaveLength(1)
   })
 })
 
 describe('syncSecondaryWindows — resize + kiosk', () => {
   test('resizes the window when width/height change', () => {
-    const rt = baseState({ dashScreenActive: true, dashScreenWidth: 800, dashScreenHeight: 480 })
+    const rt = baseState({
+      clusterScreenActive: true,
+      clusterScreenWidth: 800,
+      clusterScreenHeight: 480
+    })
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
-    rt.config.dashScreenWidth = 1024
-    rt.config.dashScreenHeight = 600
+    rt.config.clusterScreenWidth = 1024
+    rt.config.clusterScreenHeight = 600
     syncSecondaryWindows(rt, {
-      dashScreenActive: true,
-      dashScreenWidth: 800,
-      dashScreenHeight: 480
+      clusterScreenActive: true,
+      clusterScreenWidth: 800,
+      clusterScreenHeight: 480
     } as never)
-    expect(win.setContentSize).toHaveBeenCalledWith(1024, 600)
+    expect(win.setContentSize).toHaveBeenCalledWith(1024, 600, false)
+    expect(win.setAspectRatio).toHaveBeenCalledWith(1024 / 600, { width: 0, height: 0 })
   })
 
   test('applyKiosk toggles fullScreen on darwin', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
-    const rt = baseState({ dashScreenActive: true, kiosk: { dash: false } } as never)
+    const rt = baseState({ clusterScreenActive: true, kiosk: { cluster: false } } as never)
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
-    rt.config.kiosk = { dash: true } as never
-    syncSecondaryWindows(rt, { dashScreenActive: true, kiosk: { dash: false } } as never)
+    rt.config.kiosk = { cluster: true } as never
+    syncSecondaryWindows(rt, { clusterScreenActive: true, kiosk: { cluster: false } } as never)
     expect(win.setFullScreen).toHaveBeenCalledWith(true)
   })
 
   test('applyKiosk toggles kiosk on linux', () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
-    const rt = baseState({ dashScreenActive: true, kiosk: { dash: false } } as never)
+    const rt = baseState({ clusterScreenActive: true, kiosk: { cluster: false } } as never)
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
-    rt.config.kiosk = { dash: true } as never
-    syncSecondaryWindows(rt, { dashScreenActive: true, kiosk: { dash: false } } as never)
+    rt.config.kiosk = { cluster: true } as never
+    syncSecondaryWindows(rt, { clusterScreenActive: true, kiosk: { cluster: false } } as never)
     expect(win.setKiosk).toHaveBeenCalledWith(true)
   })
 })
 
 describe('window lifecycle', () => {
   test('window emits move/resize → schedule save', () => {
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
     win.emit('move')
@@ -175,17 +188,17 @@ describe('window lifecycle', () => {
   })
 
   test('window "closed" event clears the active flag', () => {
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
-    expect(drawVideoIn).toHaveBeenCalledWith('dash', win)
+    expect(drawVideoIn).toHaveBeenCalledWith('cluster', win)
     win.emit('closed')
-    expect(drawVideoIn).toHaveBeenLastCalledWith('dash', null)
-    expect(saveConfigMock).toHaveBeenCalledWith({ dashScreenActive: false })
+    expect(drawVideoIn).toHaveBeenLastCalledWith('cluster', null)
+    expect(saveConfigMock).toHaveBeenCalledWith({ clusterScreenActive: false })
   })
 
   test('"closed" while quitting does not save', () => {
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
     rt.isQuitting = true
@@ -196,27 +209,27 @@ describe('window lifecycle', () => {
 
 describe('setupSecondaryWindows + closeAllSecondaryWindows', () => {
   test('setup runs initial sync + subscribes to config changes', () => {
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     setupSecondaryWindows(rt)
     expect(lastWindows).toHaveLength(1)
     expect(configEvents.on).toHaveBeenCalledWith('changed', expect.any(Function))
   })
 
   test('config "changed" callback re-syncs', () => {
-    const rt = baseState({ dashScreenActive: false })
+    const rt = baseState({ clusterScreenActive: false })
     setupSecondaryWindows(rt)
     expect(lastWindows).toHaveLength(0)
     const cb = configEvents.on.mock.calls.find((c) => c[0] === 'changed')![1] as (
       next: unknown,
       prev: unknown
     ) => void
-    rt.config.dashScreenActive = true
-    cb(rt.config, { dashScreenActive: false })
+    rt.config.clusterScreenActive = true
+    cb(rt.config, { clusterScreenActive: false })
     expect(lastWindows).toHaveLength(1)
   })
 
   test('closeAllSecondaryWindows closes every open window', () => {
-    const rt = baseState({ dashScreenActive: true, auxScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true, auxScreenActive: true })
     syncSecondaryWindows(rt)
     expect(lastWindows).toHaveLength(2)
     closeAllSecondaryWindows()
@@ -228,29 +241,38 @@ describe('setupSecondaryWindows + closeAllSecondaryWindows', () => {
   })
 
   test('getSecondaryWindow returns the open window for a role', () => {
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     syncSecondaryWindows(rt)
-    expect(getSecondaryWindow('dash')).not.toBeNull()
+    expect(getSecondaryWindow('cluster')).not.toBeNull()
   })
 })
 
 describe('secondaryWindows — bounds + ready-to-show', () => {
-  test('bounds from config are applied on ready-to-show', () => {
+  test('a saved window keeps its place and width in the configured shape', () => {
     const rt = baseState({
-      dashScreenActive: true,
-      dashScreenBounds: { x: 10, y: 20, width: 1024, height: 768 }
+      clusterScreenActive: true,
+      clusterScreenBounds: { x: 10, y: 20, width: 1024, height: 768 }
     } as never)
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
     win.emit('ready-to-show')
     // Separate calls keep the titlebar from shifting the window.
-    expect(win.setContentSize).toHaveBeenCalledWith(1024, 768)
+    expect(win.setContentSize).toHaveBeenCalledWith(1024, 614, false)
     expect(win.setPosition).toHaveBeenCalledWith(10, 20)
+  })
+
+  test('without a saved window it opens at the configured size', () => {
+    const rt = baseState({ clusterScreenActive: true })
+    syncSecondaryWindows(rt)
+    const win = lastWindows[0]
+    win.emit('ready-to-show')
+    expect(win.setContentSize).toHaveBeenCalledWith(800, 480, false)
+    expect(win.setPosition).not.toHaveBeenCalled()
   })
 
   test('darwin kiosk applies on ready-to-show', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
-    const rt = baseState({ dashScreenActive: true, kiosk: { dash: true } } as never)
+    const rt = baseState({ clusterScreenActive: true, kiosk: { cluster: true } } as never)
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
     win.emit('ready-to-show')
@@ -259,7 +281,7 @@ describe('secondaryWindows — bounds + ready-to-show', () => {
 
   test('linux kiosk applies on ready-to-show', () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
-    const rt = baseState({ dashScreenActive: true, kiosk: { dash: true } } as never)
+    const rt = baseState({ clusterScreenActive: true, kiosk: { cluster: true } } as never)
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
     win.emit('ready-to-show')
@@ -267,7 +289,7 @@ describe('secondaryWindows — bounds + ready-to-show', () => {
   })
 
   test('persistBounds skips when fullScreen / kiosk', () => {
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
     win.isFullScreen.mockReturnValue(true)
@@ -277,7 +299,7 @@ describe('secondaryWindows — bounds + ready-to-show', () => {
   })
 
   test('persistBounds skips when destroyed', () => {
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
     win.isDestroyed.mockReturnValue(true)
@@ -288,8 +310,8 @@ describe('secondaryWindows — bounds + ready-to-show', () => {
 
   test('persistBounds skips when bounds unchanged', () => {
     const rt = baseState({
-      dashScreenActive: true,
-      dashScreenBounds: { x: 100, y: 100, width: 800, height: 480 }
+      clusterScreenActive: true,
+      clusterScreenBounds: { x: 100, y: 100, width: 800, height: 480 }
     } as never)
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
@@ -299,21 +321,25 @@ describe('secondaryWindows — bounds + ready-to-show', () => {
   })
 
   test('resize is a no-op when fullScreen / kiosk', () => {
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
     win.isFullScreen.mockReturnValue(true)
-    rt.config.dashScreenWidth = 1234
+    rt.config.clusterScreenWidth = 1234
     syncSecondaryWindows(rt, {
-      dashScreenActive: true,
-      dashScreenWidth: 800,
-      dashScreenHeight: 480
+      clusterScreenActive: true,
+      clusterScreenWidth: 800,
+      clusterScreenHeight: 480
     } as never)
     expect(win.setContentSize).not.toHaveBeenCalled()
   })
 
   test('spawn falls back to default sizes for invalid config values', () => {
-    const rt = baseState({ dashScreenActive: true, dashScreenWidth: 0, dashScreenHeight: 0 })
+    const rt = baseState({
+      clusterScreenActive: true,
+      clusterScreenWidth: 0,
+      clusterScreenHeight: 0
+    })
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
     expect(win.__opts.width).toBe(800)
@@ -322,9 +348,9 @@ describe('secondaryWindows — bounds + ready-to-show', () => {
 
   test('spawn bounds an oversized config value to the maximum', () => {
     const rt = baseState({
-      dashScreenActive: true,
-      dashScreenWidth: 2213123132132,
-      dashScreenHeight: 999999
+      clusterScreenActive: true,
+      clusterScreenWidth: 2213123132132,
+      clusterScreenHeight: 999999
     })
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
@@ -333,7 +359,11 @@ describe('secondaryWindows — bounds + ready-to-show', () => {
   })
 
   test('spawn lifts an undersized config value to the minimum', () => {
-    const rt = baseState({ dashScreenActive: true, dashScreenWidth: 12, dashScreenHeight: 7 })
+    const rt = baseState({
+      clusterScreenActive: true,
+      clusterScreenWidth: 12,
+      clusterScreenHeight: 7
+    })
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
     expect(win.__opts.width).toBe(300)
@@ -341,7 +371,7 @@ describe('secondaryWindows — bounds + ready-to-show', () => {
   })
 
   test('a loaded window announces itself as ready', () => {
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
     const ready = vi.fn()
@@ -351,11 +381,11 @@ describe('secondaryWindows — bounds + ready-to-show', () => {
     expect(event).toBe('did-finish-load')
     handler()
 
-    expect(ready).toHaveBeenCalledWith('dash')
+    expect(ready).toHaveBeenCalledWith('cluster')
   })
 
   test('spawned window denies popups and filters permissions', () => {
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
     const openHandler = win.webContents.setWindowOpenHandler.mock.calls[0][0]
@@ -376,9 +406,9 @@ describe('secondaryWindows — bounds + ready-to-show', () => {
     const original = process.env.ELECTRON_RENDERER_URL
     ;(app as { isPackaged: boolean }).isPackaged = false
     process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173'
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     syncSecondaryWindows(rt)
-    expect(lastWindows[0].loadURL).toHaveBeenCalledWith('http://localhost:5173?role=dash')
+    expect(lastWindows[0].loadURL).toHaveBeenCalledWith('http://localhost:5173?role=cluster')
     ;(app as { isPackaged: boolean }).isPackaged = true
     if (original === undefined) delete process.env.ELECTRON_RENDERER_URL
     else process.env.ELECTRON_RENDERER_URL = original
@@ -386,9 +416,9 @@ describe('secondaryWindows — bounds + ready-to-show', () => {
 
   test('ready-to-show handlers bail out on a destroyed window', () => {
     const rt = baseState({
-      dashScreenActive: true,
-      dashScreenBounds: { x: 1, y: 2, width: 640, height: 400 },
-      kiosk: { dash: true }
+      clusterScreenActive: true,
+      clusterScreenBounds: { x: 1, y: 2, width: 640, height: 400 },
+      kiosk: { cluster: true }
     } as never)
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
@@ -401,77 +431,77 @@ describe('secondaryWindows — bounds + ready-to-show', () => {
   })
 
   test('closed clears a pending bounds timer and skips save when flag already false', () => {
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
     win.emit('move')
-    rt.config.dashScreenActive = false
+    rt.config.clusterScreenActive = false
     win.emit('closed')
     vi.advanceTimersByTime(500)
     expect(saveConfigMock).not.toHaveBeenCalled()
   })
 
   test('resize is a no-op when the window is destroyed', () => {
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
     win.isDestroyed.mockReturnValue(true)
-    rt.config.dashScreenWidth = 1024
+    rt.config.clusterScreenWidth = 1024
     syncSecondaryWindows(rt, {
-      dashScreenActive: true,
-      dashScreenWidth: 800,
-      dashScreenHeight: 480
+      clusterScreenActive: true,
+      clusterScreenWidth: 800,
+      clusterScreenHeight: 480
     } as never)
     expect(win.setContentSize).not.toHaveBeenCalled()
   })
 
   test('a height-only change still triggers a resize', () => {
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
-    rt.config.dashScreenHeight = 600
+    rt.config.clusterScreenHeight = 600
     syncSecondaryWindows(rt, {
-      dashScreenActive: true,
-      dashScreenWidth: 800,
-      dashScreenHeight: 480
+      clusterScreenActive: true,
+      clusterScreenWidth: 800,
+      clusterScreenHeight: 480
     } as never)
-    expect(win.setContentSize).toHaveBeenCalledWith(800, 600)
+    expect(win.setContentSize).toHaveBeenCalledWith(800, 600, false)
   })
 
   test('applyKiosk is a no-op when the window is destroyed', () => {
-    const rt = baseState({ dashScreenActive: true, kiosk: { dash: false } } as never)
+    const rt = baseState({ clusterScreenActive: true, kiosk: { cluster: false } } as never)
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
     win.isDestroyed.mockReturnValue(true)
-    rt.config.kiosk = { dash: true } as never
-    syncSecondaryWindows(rt, { dashScreenActive: true, kiosk: { dash: false } } as never)
+    rt.config.kiosk = { cluster: true } as never
+    syncSecondaryWindows(rt, { clusterScreenActive: true, kiosk: { cluster: false } } as never)
     expect(win.setFullScreen).not.toHaveBeenCalled()
     expect(win.setKiosk).not.toHaveBeenCalled()
   })
 
   test('applyKiosk skips when darwin fullscreen already matches', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
-    const rt = baseState({ dashScreenActive: true, kiosk: { dash: false } } as never)
+    const rt = baseState({ clusterScreenActive: true, kiosk: { cluster: false } } as never)
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
     win.isFullScreen.mockReturnValue(true)
-    rt.config.kiosk = { dash: true } as never
-    syncSecondaryWindows(rt, { dashScreenActive: true, kiosk: { dash: false } } as never)
+    rt.config.kiosk = { cluster: true } as never
+    syncSecondaryWindows(rt, { clusterScreenActive: true, kiosk: { cluster: false } } as never)
     expect(win.setFullScreen).not.toHaveBeenCalled()
   })
 
   test('applyKiosk skips when linux kiosk already matches', () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
-    const rt = baseState({ dashScreenActive: true, kiosk: { dash: false } } as never)
+    const rt = baseState({ clusterScreenActive: true, kiosk: { cluster: false } } as never)
     syncSecondaryWindows(rt)
     const win = lastWindows[0]
     win.isKiosk.mockReturnValue(true)
-    rt.config.kiosk = { dash: true } as never
+    rt.config.kiosk = { cluster: true } as never
     syncSecondaryWindows(rt, {
-      dashScreenActive: true,
-      dashScreenWidth: 800,
-      dashScreenHeight: 480,
-      kiosk: { dash: false }
+      clusterScreenActive: true,
+      clusterScreenWidth: 800,
+      clusterScreenHeight: 480,
+      kiosk: { cluster: false }
     } as never)
     expect(win.setKiosk).not.toHaveBeenCalled()
     expect(win.setContentSize).not.toHaveBeenCalled()
@@ -492,14 +522,16 @@ describe('secondaryWindows — compositor mode', () => {
   test('spawn ignores saved bounds, titles by role and skips bounds persistence', async () => {
     const mod = await loadCompositor()
     const rt = baseState({
-      dashScreenActive: true,
-      dashScreenBounds: { x: 1, y: 2, width: 640, height: 400 }
+      clusterScreenActive: true,
+      clusterScreenBounds: { x: 1, y: 2, width: 640, height: 400 }
     } as never)
     mod.syncSecondaryWindows(rt)
     const win = lastWindows[0]
-    expect(win.__opts.title).toBe('livi:dash')
+    expect(win.__opts.title).toBe('livi:cluster')
     expect(win.__opts.x).toBeUndefined()
     expect(win.__opts.transparent).toBe(true)
+    win.emit('ready-to-show')
+    expect(win.setContentSize).not.toHaveBeenCalled()
     win.emit('move')
     vi.advanceTimersByTime(500)
     expect(saveConfigMock).not.toHaveBeenCalled()
@@ -508,16 +540,16 @@ describe('secondaryWindows — compositor mode', () => {
 
   test('a size change resizes the window', async () => {
     const mod = await loadCompositor()
-    const rt = baseState({ dashScreenActive: true })
+    const rt = baseState({ clusterScreenActive: true })
     mod.syncSecondaryWindows(rt)
     const win = lastWindows[0]
-    rt.config.dashScreenWidth = 1024
+    rt.config.clusterScreenWidth = 1024
     mod.syncSecondaryWindows(rt, {
-      dashScreenActive: true,
-      dashScreenWidth: 800,
-      dashScreenHeight: 480
+      clusterScreenActive: true,
+      clusterScreenWidth: 800,
+      clusterScreenHeight: 480
     } as never)
-    expect(win.setContentSize).toHaveBeenCalledWith(1024, 480)
+    expect(win.setContentSize).toHaveBeenCalledWith(1024, 480, false)
     mod.closeAllSecondaryWindows()
   })
 })

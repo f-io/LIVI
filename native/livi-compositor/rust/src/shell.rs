@@ -482,6 +482,6 @@ mod tests {
     fn video_lies_above_the_projection_and_the_clusters_below() {
         assert!(video_rank("video") > video_rank("main"));
         assert!(video_rank("main") > video_rank("cluster-main"));
-        assert_eq!(video_rank(""), video_rank("cluster-dash"));
+        assert_eq!(video_rank(""), video_rank("cluster-cluster"));
     }
 }

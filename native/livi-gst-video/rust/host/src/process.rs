@@ -77,6 +77,7 @@ pub fn run(sock_path: &str, crash_log: &str) {
     let status_host = host.clone();
     glib::timeout_add_local(std::time::Duration::from_millis(URL_STATUS_INTERVAL_MS), move || {
         status_host.borrow().pump_url_status();
+        status_host.borrow().pump_audio_delays();
         glib::ControlFlow::Continue
     });
 

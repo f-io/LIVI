@@ -22,7 +22,7 @@ pub enum ToCore {
         id: u32,
         action: Action,
     },
-    /// The UI's route, only because statusData.json publishes it.
+    /// The UI's route, only because state/status.json publishes it.
     Path {
         path: String,
     },
@@ -32,6 +32,10 @@ pub enum ToCore {
     /// The dongle's Wi-Fi driver is asked for rates only while a UI shows them.
     LinkSpeed {
         on: bool,
+    },
+    /// Only the browser sees the cameras, core needs one to show it while reversing.
+    Camera {
+        found: bool,
     },
 }
 
@@ -63,6 +67,10 @@ pub enum FromCore {
     /// 0 to 1 per band, only to clients that asked. Never part of the state.
     Spectrum {
         bands: Vec<f32>,
+    },
+    /// The telemetry asked for a page once, never part of the state.
+    OpenPage {
+        path: String,
     },
 }
 

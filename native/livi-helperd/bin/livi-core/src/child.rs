@@ -36,6 +36,7 @@ pub async fn terminate(child: &mut Child, grace: Duration, group: bool) {
 mod tests {
     use std::os::unix::process::ExitStatusExt;
 
+    use tokio::io::{AsyncBufReadExt, BufReader};
     use tokio::process::Command;
 
     use super::*;
@@ -67,11 +68,14 @@ mod tests {
     async fn a_stubborn_group_is_killed() {
         let mut child = Command::new("sh")
             .arg("-c")
-            .arg("trap '' TERM; sleep 30 & wait")
+            .arg("trap '' TERM; sleep 30 & echo ready; wait")
+            .stdout(Stdio::piped())
             .process_group(0)
             .spawn()
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        // TERM only finds the trap once the shell has set it.
+        let mut ready = String::new();
+        BufReader::new(child.stdout.take().unwrap()).read_line(&mut ready).await.unwrap();
         terminate(&mut child, Duration::from_millis(300), true).await;
         assert_eq!(child.wait().await.unwrap().signal(), Some(libc::SIGKILL));
     }

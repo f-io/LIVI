@@ -1,4 +1,4 @@
-import { CarType, DEFAULT_CONFIG, EvConnectorType, type TelemetryPayload } from '@shared/types'
+import { CarType, DEFAULT_CONFIG, EvConnectorType, type TelemetrySnapshot } from '@shared/types'
 import { render, screen } from '@testing-library/react'
 import { useLiviStore } from '../../../../../../store/store'
 import { CarReadings } from '../CarReadings'
@@ -8,7 +8,7 @@ vi.mock('react-i18next', () => ({
 }))
 
 const show = (
-  telemetry: TelemetryPayload | null,
+  telemetry: TelemetrySnapshot | null,
   settings: Partial<typeof DEFAULT_CONFIG> = {}
 ) => {
   useLiviStore.setState({ telemetry, settings: { ...DEFAULT_CONFIG, ...settings } })

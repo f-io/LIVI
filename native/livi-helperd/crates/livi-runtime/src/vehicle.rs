@@ -3,6 +3,7 @@
 use base64::Engine;
 use tokio::sync::watch;
 
+use iap2_csm::messages::identification::EngineType;
 use iap2_csm::messages::location::StartLocationInformation;
 use iap2_csm::messages::vehicle_status::VehicleStatusUpdate;
 
@@ -33,6 +34,19 @@ impl Fuels {
 
     fn hybrid(&self) -> bool {
         self.electric && (self.gasoline || self.diesel || self.cng)
+    }
+
+    /// What the car tops up from outside. None while LIVI does not know the car.
+    pub fn engine_types(&self) -> Vec<EngineType> {
+        [
+            (self.gasoline, EngineType::Gas),
+            (self.diesel, EngineType::Diesel),
+            (self.electric, EngineType::Electric),
+            (self.cng, EngineType::Cng),
+        ]
+        .into_iter()
+        .filter_map(|(runs, engine)| runs.then_some(engine))
+        .collect()
     }
 }
 
@@ -281,6 +295,15 @@ mod tests {
             Fuels { gasoline: false, diesel: true, electric: true, cng: true }
         );
         assert_eq!(Fuels::parse(""), Fuels::default());
+    }
+
+    #[test]
+    fn the_phone_hears_every_engine_the_car_tops_up() {
+        let hybrid = Fuels::parse("Gasoline,Electric").engine_types();
+        assert_eq!(hybrid, [EngineType::Gas, EngineType::Electric]);
+        assert_eq!(Fuels::parse("CNG").engine_types(), [EngineType::Cng]);
+        assert_eq!(Fuels::parse("Diesel").engine_types(), [EngineType::Diesel]);
+        assert!(Fuels::default().engine_types().is_empty(), "an unknown car names no engine");
     }
 
     #[test]

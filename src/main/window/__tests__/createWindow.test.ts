@@ -117,7 +117,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false
@@ -149,7 +149,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false
@@ -165,7 +165,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false
@@ -184,7 +184,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 900,
         mainScreenHeight: 500,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         uiZoomPercent: 125
       },
       isQuitting: false
@@ -200,7 +200,10 @@ describe('createMainWindow', () => {
     expect(readyHandler).toBeDefined()
     readyHandler()
 
-    expect(applyWindowedContentSize).toHaveBeenCalledWith(win, 900, 500)
+    expect(applyWindowedContentSize).toHaveBeenCalledWith(win, 900, 500, {
+      width: 900,
+      height: 500
+    })
     expect(win.show).toHaveBeenCalled()
     expect(win.webContents.setZoomFactor).toHaveBeenCalledWith(1.25)
   })
@@ -213,7 +216,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false
@@ -239,7 +242,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false
@@ -260,7 +263,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false
@@ -282,7 +285,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false
@@ -307,7 +310,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false
@@ -331,7 +334,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 1000,
         mainScreenHeight: 600,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false,
@@ -365,7 +368,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 1000,
         mainScreenHeight: 600,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false,
@@ -394,7 +397,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false,
@@ -421,7 +424,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false,
@@ -454,7 +457,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: true, dash: false, aux: false },
+        kiosk: { main: true, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false
@@ -480,7 +483,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false
@@ -502,7 +505,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false
@@ -527,7 +530,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false
@@ -561,7 +564,7 @@ describe('createMainWindow', () => {
     const { customProxy } = await import('@main/services/custom/CustomProxy')
     const url = vi.spyOn(customProxy, 'url').mockReturnValue('http://127.0.0.1:5555/')
     const runtimeState = {
-      config: { kiosk: { main: false, dash: false, aux: false }, uiZoomPercent: 100 },
+      config: { kiosk: { main: false, cluster: false, aux: false }, uiZoomPercent: 100 },
       isQuitting: false
     } as any
 
@@ -593,6 +596,21 @@ describe('createMainWindow', () => {
     const restoreCb = win.once.mock.calls.find(([e]: any[]) => e === 'ready-to-show')?.[1]
     restoreCb()
     expect(win.setBounds).toHaveBeenCalledWith({ x: 50, y: 60, width: 1024, height: 768 })
+  })
+
+  test('savedBounds: the saved size gives the width, the setting keeps the shape', async () => {
+    const saved = { x: 50, y: 60, width: 1024, height: 768 }
+    const runtimeState = {
+      config: { mainScreenWidth: 800, mainScreenHeight: 480, mainScreenBounds: saved },
+      isQuitting: false
+    } as any
+    createMainWindow(runtimeState)
+    const win = browserWindowInstances[browserWindowInstances.length - 1]
+    win.setBounds = vi.fn()
+    for (const [event, handler] of win.once.mock.calls) {
+      if (event === 'ready-to-show') handler()
+    }
+    expect(applyWindowedContentSize).toHaveBeenCalledWith(win, 800, 480, saved)
   })
 
   test('savedBounds: destroyed window skips the restore', async () => {
@@ -761,7 +779,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: true, dash: false, aux: false },
+        kiosk: { main: true, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false
@@ -790,7 +808,7 @@ describe('createMainWindow', () => {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
         mainScreenBounds: { x: 5, y: 6, width: 700, height: 400 },
-        kiosk: { main: true, dash: false, aux: false },
+        kiosk: { main: true, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false
@@ -971,7 +989,10 @@ describe('createMainWindow', () => {
     const win = browserWindowInstances[browserWindowInstances.length - 1]
     const readyHandler = win.once.mock.calls.find(([e]: any[]) => e === 'ready-to-show')?.[1]
     readyHandler()
-    expect(applyWindowedContentSize).toHaveBeenCalledWith(win, 1200, 720)
+    expect(applyWindowedContentSize).toHaveBeenCalledWith(win, 1200, 720, {
+      width: 1200,
+      height: 720
+    })
     expect(win.webContents.setZoomFactor).toHaveBeenCalledWith(1)
   })
 
@@ -984,7 +1005,7 @@ describe('createMainWindow', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: true, dash: false, aux: false },
+        kiosk: { main: true, cluster: false, aux: false },
         uiZoomPercent: 100
       },
       isQuitting: false

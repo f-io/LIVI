@@ -305,6 +305,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
     }
+    tokio::task::spawn_blocking(iap2_usbmux::drop_name_bound_profiles);
     if std::env::var("LIVI_DONGLE").unwrap_or_else(|_| "1".into()) != "0" {
         let mfi_link_state = mfi_link.clone();
         tokio::spawn(livi_link_host::run(move |on, _serial| mfi_link_state.set_on_bus(on)));

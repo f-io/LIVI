@@ -38,6 +38,7 @@ fn info_config() -> InfoConfig {
         main: DisplayConfig {
             width_pixels: 1280,
             height_pixels: 720,
+            width_physical_mm: Some(200),
             fps: Some(60),
             view_area: Some(Insets::default()),
             safe_area: Some(Insets { top: 0, bottom: 0, left: 10, right: 10 }),

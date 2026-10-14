@@ -30,8 +30,10 @@ pub struct Core {
     pub restart: AtomicBool,
     /// The user quit LIVI, not a signal or a closed window.
     pub quit_asked: AtomicBool,
-    /// Only kept because statusData.json publishes it.
+    /// Only kept because state/status.json publishes it.
     pub ui_path: watch::Sender<String>,
+    /// Pages the telemetry asked for, each opened once.
+    pub open_page: broadcast::Sender<String>,
     pub relaunch: std::sync::Mutex<Option<PathBuf>>,
     asks: UiSenders,
     uid: u32,
@@ -54,6 +56,7 @@ impl Core {
             quit_asked: AtomicBool::new(false),
             relaunch: std::sync::Mutex::new(None),
             ui_path: watch::channel(String::new()).0,
+            open_page: broadcast::channel(8).0,
             asks,
             uid,
         }
@@ -215,6 +218,7 @@ async fn client(core: Arc<Core>, stream: UnixStream) -> io::Result<()> {
         return send(&mut wr, &FromCore::Refused { reason }).await;
     }
     println!("[core] {client} connected");
+    let mut pages = core.open_page.subscribe();
     let mut patches = welcome(&core, &mut wr).await?;
     let mut viewer: Option<Viewer> = None;
     let mut link_speed_viewer: Option<LinkSpeedViewer> = None;
@@ -250,6 +254,9 @@ async fn client(core: Arc<Core>, stream: UnixStream) -> io::Result<()> {
                         Ok(ToCore::Path { path }) => {
                             core.ui_path.send_replace(path);
                         }
+                        Ok(ToCore::Camera { found }) => {
+                            let _ = core.asks.commands.send(UiCommand::CameraFound(found));
+                        }
                         Ok(ToCore::Hello { .. }) => {}
                         Err(FrameError::Json(e)) => println!("[core] {client} sent a broken frame: {e}"),
                         Err(e @ FrameError::TooLarge(_)) => return Err(io::Error::other(e)),
@@ -262,6 +269,11 @@ async fn client(core: Arc<Core>, stream: UnixStream) -> io::Result<()> {
                 Err(broadcast::error::RecvError::Closed) => break,
             },
             frame = next_spectrum(&mut viewer) => wr.write_all(&frame).await?,
+            page = pages.recv() => match page {
+                Ok(path) => send(&mut wr, &FromCore::OpenPage { path }).await?,
+                Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
         }
     }
     println!("[core] {client} disconnected");
@@ -329,7 +341,7 @@ mod tests {
         crate::projection::DongleAsks,
         crate::projection::UpdateAsks,
     ) {
-        let livi = PerScreen { main: Front::Livi, dash: Front::Livi, aux: Front::Livi };
+        let livi = PerScreen { main: Front::Livi, cluster: Front::Livi, aux: Front::Livi };
         let hub = Hub::new(State {
             front: livi,
             sessions: Default::default(),
@@ -393,6 +405,20 @@ mod tests {
         ui.send(&ToCore::Input { input: key.clone() }).await;
         ui.send(&ToCore::Path { path: "/media".into() }).await;
         assert_eq!(asks.input.recv().await, Some(key));
+        ui.send(&ToCore::Camera { found: true }).await;
+        assert_eq!(asks.commands.recv().await, Some(UiCommand::CameraFound(true)));
+    }
+
+    #[tokio::test]
+    async fn a_page_the_telemetry_asked_for_reaches_every_client() {
+        let dir = TempDir::new();
+        let (core, path) = start(&dir);
+        let mut main = Peer::hello(&path).await;
+        let mut cluster = Peer::hello(&path).await;
+        core.open_page.send("/media".into()).unwrap();
+        let page = Some(FromCore::OpenPage { path: "/media".into() });
+        assert_eq!(main.recv().await, page);
+        assert_eq!(cluster.recv().await, page);
     }
 
     async fn wait_for(done: impl Fn() -> bool) {

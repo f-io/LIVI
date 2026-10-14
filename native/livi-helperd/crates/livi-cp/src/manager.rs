@@ -15,6 +15,7 @@ use crate::helper_sock::Feed;
 use crate::media::Media;
 use crate::net::{host_of, norm_host};
 use crate::stack::{self, AudioProfile, ScreenCodec, StackCmd, StackCtx, StackEvent};
+use crate::vehicle_state::Climate;
 
 const RESTART_FIRST: Duration = Duration::from_millis(500);
 const RESTART_EVERY: Duration = Duration::from_millis(1000);
@@ -124,6 +125,10 @@ pub enum CpEvent {
         id: SessionId,
         event: Value,
     },
+    Climate {
+        id: SessionId,
+        climate: Climate,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -138,6 +143,8 @@ pub enum CpCmd {
     LimitedUi(bool),
     VideoAllowed(bool),
     ClusterActive(bool),
+    /// Climate set outside the phone, every session hears it.
+    Climate(Climate),
     /// The phones reconnect.
     DropSessions,
     Close {
@@ -428,6 +435,7 @@ impl<M: Media> Manager<M> {
             }
             StackEvent::HostUiRequested => self.emit(CpEvent::HostUiRequested { id }),
             StackEvent::SpeechActive(active) => self.emit(CpEvent::SpeechActive { id, active }),
+            StackEvent::Climate(climate) => self.emit(CpEvent::Climate { id, climate }),
             StackEvent::DisableBluetooth(device) => {
                 let mac = device.trim().to_string();
                 if mac.is_empty() {
@@ -856,6 +864,11 @@ impl<M: Media> Manager<M> {
                     s.send(StackCmd::ClusterActive(active));
                 }
             }
+            CpCmd::Climate(climate) => {
+                for s in self.sessions.values() {
+                    s.send(StackCmd::Climate(climate.clone()));
+                }
+            }
             CpCmd::DropSessions => {
                 for id in self.sessions.keys().copied().collect::<Vec<_>>() {
                     self.close(id);
@@ -966,6 +979,9 @@ mod tests {
                 info: crate::info::tests::sample(),
                 audio_device: String::new(),
                 audio_input_device: String::new(),
+                hls_video: false,
+                vehicle_climate: true,
+                app_version: "9.5.0".into(),
             });
             std::mem::forget(tx);
             let ctx = Arc::new(StackCtx {
@@ -976,8 +992,8 @@ mod tests {
                 config,
                 refresh: None,
                 debug: false,
-                video_playback: false,
                 video_capture: None,
+                mfi4_proven: false,
             });
             let listener = net::tcp_listener().unwrap();
             let port = net::local_port(listener.local_addr());
@@ -1127,6 +1143,7 @@ mod tests {
         rig.handle.send(CpCmd::LimitedUi(true));
         rig.handle.send(CpCmd::VideoAllowed(false));
         rig.handle.send(CpCmd::ClusterActive(false));
+        rig.handle.send(CpCmd::Climate(Climate::new()));
         phone.sock.shutdown().await.unwrap();
         assert_eq!(
             rig.until(|e| matches!(e, CpEvent::Disconnected { .. })).await,

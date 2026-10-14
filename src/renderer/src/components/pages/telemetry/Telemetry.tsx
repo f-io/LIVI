@@ -1,11 +1,11 @@
 import { Box, useTheme } from '@mui/material'
-import { DashPlaceholder } from '@renderer/components/pages/telemetry/components/DashPlaceholder'
+import { DashboardPlaceholder } from '@renderer/components/pages/telemetry/components/DashboardPlaceholder'
 import { DashboardsPagination } from '@renderer/components/pages/telemetry/components/pagination/pagination'
 import { DashboardConfig } from '@renderer/components/pages/telemetry/config'
-import { normalizeDashComponents } from '@renderer/components/pages/telemetry/utils'
+import { normalizeDashboardComponents } from '@renderer/components/pages/telemetry/utils'
 import { AppContext } from '@renderer/context'
 import { useNavbarHidden } from '@renderer/hooks/useNavbarHidden'
-import type { WindowId } from '@shared/types'
+import type { Screen } from '@shared/types'
 import { useLiviStore } from '@store/store'
 import { clamp } from '@utils/index'
 import * as React from 'react'
@@ -13,7 +13,7 @@ import { FC, useContext, useEffect, useState } from 'react'
 import { useKeyboardNavigation } from './hooks/useKeyboardNavigation'
 
 type TelemetryProps = {
-  windowRole?: WindowId
+  windowRole?: Screen
 }
 
 export const Telemetry: FC<TelemetryProps> = ({ windowRole = 'main' }) => {
@@ -22,7 +22,7 @@ export const Telemetry: FC<TelemetryProps> = ({ windowRole = 'main' }) => {
   const { onSetAppContext } = useContext(AppContext)
   const [index, setIndex] = useState(0)
 
-  const { dashboards } = normalizeDashComponents(settings?.dashboards, windowRole)
+  const { dashboards } = normalizeDashboardComponents(settings?.dashboards, windowRole)
   const { isNavbarHidden, isNavPresent } = useNavbarHidden()
   const { prev, next, canPrev, canNext, onPointerDown, onPointerUp } = useKeyboardNavigation({
     dashboards,
@@ -52,7 +52,7 @@ export const Telemetry: FC<TelemetryProps> = ({ windowRole = 'main' }) => {
   }, [onSetAppContext, prev, next, canPrev, canNext])
 
   const DashboardFallback = ({ message }: { message?: string }) => {
-    const msg = message || 'Unknown dash'
+    const msg = message || 'Unknown dashboard'
     return (
       <Box
         sx={{
@@ -64,7 +64,7 @@ export const Telemetry: FC<TelemetryProps> = ({ windowRole = 'main' }) => {
           opacity: 0.8
         }}
       >
-        <DashPlaceholder title={msg} />
+        <DashboardPlaceholder title={msg} />
       </Box>
     )
   }

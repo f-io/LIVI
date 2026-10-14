@@ -21,6 +21,9 @@ export const AREA_STEP = 2
 export const requiresRestartParams: (keyof Config)[] = [
   'wirelessAaEnabled',
   'wirelessCpEnabled',
+  'carPlayHlsVideo',
+  'carPlayVehicleClimate',
+  'carPlayDockPosition',
 
   'displayMode',
 

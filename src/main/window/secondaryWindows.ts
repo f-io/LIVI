@@ -15,7 +15,7 @@ import { configEvents } from '@main/window/applyConfig'
 import type { Config, WindowBounds } from '@shared/types'
 import { BrowserWindow, shell } from 'electron'
 import { join } from 'path'
-import { sanitizeBounds } from './utils'
+import { applyWindowedContentSize, sanitizeBounds } from './utils'
 
 // In livi-compositor the window title tells the compositor which screen the window is for.
 const inCompositor = process.env.LIVI_COMPOSITOR === '1'
@@ -23,25 +23,25 @@ const inCompositor = process.env.LIVI_COMPOSITOR === '1'
 export const secondaryWindowEvents = new EventEmitter()
 secondaryWindowEvents.setMaxListeners(0)
 
-export type SecondaryWindowRole = 'dash' | 'aux'
+export type SecondaryWindowRole = 'cluster' | 'aux'
 
 type SecondaryWindowSpec = {
   role: SecondaryWindowRole
   activeKey: keyof Config
   widthKey: keyof Config
   heightKey: keyof Config
-  boundsKey: 'dashScreenBounds' | 'auxScreenBounds'
+  boundsKey: 'clusterScreenBounds' | 'auxScreenBounds'
   title: string
 }
 
 const SPECS: SecondaryWindowSpec[] = [
   {
-    role: 'dash',
-    activeKey: 'dashScreenActive',
-    widthKey: 'dashScreenWidth',
-    heightKey: 'dashScreenHeight',
-    boundsKey: 'dashScreenBounds',
-    title: 'Dash'
+    role: 'cluster',
+    activeKey: 'clusterScreenActive',
+    widthKey: 'clusterScreenWidth',
+    heightKey: 'clusterScreenHeight',
+    boundsKey: 'clusterScreenBounds',
+    title: 'Cluster'
   },
   {
     role: 'aux',
@@ -147,11 +147,11 @@ function spawn(spec: SecondaryWindowSpec, runtimeState: runtimeStateProps) {
     }
   })
 
-  if (bounds) {
+  if (!inCompositor) {
     win.once('ready-to-show', () => {
       if (win.isDestroyed()) return
-      win.setContentSize(bounds.width, bounds.height)
-      win.setPosition(bounds.x, bounds.y)
+      applyWindowedContentSize(win, w, h, bounds ?? { width: w, height: h })
+      if (bounds) win.setPosition(bounds.x, bounds.y)
     })
   }
 
@@ -216,8 +216,7 @@ function resize(spec: SecondaryWindowSpec, runtimeState: runtimeStateProps) {
   if (!win || win.isDestroyed()) return
   if (win.isFullScreen() || win.isKiosk()) return
   const { w, h } = getSize(runtimeState.config, spec)
-  const [cw, ch] = win.getContentSize()
-  if (cw !== w || ch !== h) win.setContentSize(w, h)
+  applyWindowedContentSize(win, w, h)
 }
 
 function applyKiosk(spec: SecondaryWindowSpec, runtimeState: runtimeStateProps) {

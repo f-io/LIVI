@@ -1,19 +1,22 @@
-import { DEFAULT_CONFIG } from '@shared/types'
-import type { GnssInfo, GnssSatellite } from '@shared/types/Gnss'
-import { EMPTY_GNSS_INFO } from '@shared/types/Gnss'
-import type { GpsPayload } from '@shared/types/Telemetry'
+import {
+  DEFAULT_CONFIG,
+  EMPTY_GNSS_INFO,
+  type GnssInfo,
+  type GnssSatellite,
+  type GpsFix
+} from '@shared/types'
 import { useLiviStore } from '@store/store'
 import { cleanup, render, screen } from '@testing-library/react'
 import { GpsInfo } from '../GpsInfo'
 
-const telemetry: { gnss?: GnssInfo; gps?: GpsPayload } = {}
+const telemetry: { gnss?: GnssInfo; gps?: GpsFix } = {}
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }))
 vi.mock('../../../../../telemetry/hooks/useVehicleTelemetry', () => ({
   useVehicleTelemetry: () => ({ telemetry, isStale: false })
 }))
 
-function show(gnss?: GnssInfo, gps?: GpsPayload) {
+function show(gnss?: GnssInfo, gps?: GpsFix) {
   telemetry.gnss = gnss
   telemetry.gps = gps
   return render(<GpsInfo />)

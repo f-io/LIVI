@@ -80,7 +80,7 @@ pub fn feeder_of(plane_id: u32) -> u32 {
 }
 
 /// The cluster plane ids follow this order.
-pub const SCREENS: [&str; 3] = ["main", "dash", "aux"];
+pub const SCREENS: [&str; 3] = ["main", "cluster", "aux"];
 pub const MAIN_TAG: &str = "main";
 pub const VIDEO_TAG: &str = "video";
 
@@ -267,7 +267,7 @@ mod tests {
     fn every_plane_has_its_tag_and_screen() {
         assert_eq!(plane_place(PLANE_MAIN), Some(("main".into(), "main")));
         assert_eq!(plane_place(PLANE_VIDEO), Some(("video".into(), "main")));
-        assert_eq!(plane_place(CLUSTER_PLANE_MIN + 1), Some(("cluster-dash".into(), "dash")));
+        assert_eq!(plane_place(CLUSTER_PLANE_MIN + 1), Some(("cluster-cluster".into(), "cluster")));
         assert_eq!(plane_place(CLUSTER_PLANE_MAX), Some(("cluster-aux".into(), "aux")));
         assert_eq!(plane_place(PLANE_CLUSTER_RECV), None);
         assert_eq!(plane_place(CLUSTER_PLANE_MAX + 1), None);

@@ -4,7 +4,7 @@ const speed = (max: number, step: number) => gaugeScale(max, step, SPEED_MAX_SEC
 const rpm = (max: number) => gaugeScale(max, RPM_STEP, RPM_MAX_SECTIONS, (v) => String(v / 1000))
 
 describe('gaugeScale', () => {
-  test('the default keeps the scale the dash always had', () => {
+  test('the default keeps the scale the dashboard always had', () => {
     expect(speed(200, 40)).toEqual({
       scaleMax: 200,
       majorCount: 6,

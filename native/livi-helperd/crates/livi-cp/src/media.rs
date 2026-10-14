@@ -74,12 +74,14 @@ pub trait Media: Send + Sync + 'static {
     ) -> impl Future<Output = AudioStream> + Send;
     fn set_audio_active(&self, stream: u32, active: bool);
     fn set_audio_volume(&self, stream: u32, level: f64, ramp_ms: u32);
+    /// What the stream measurably takes from release to speaker, None until known.
+    fn audio_output_delay(&self, stream: u32) -> Option<u32>;
     fn close_audio(&self, stream: u32);
     fn open_mic(&self, key: [u8; 32], req: MicRequest) -> u32;
     fn close_mic(&self, id: u32);
     /// (stream, first sample) once a stream's first packet arrived.
     fn audio_started(&self) -> broadcast::Receiver<(u32, u32)>;
-    fn play_video(&self, url: String, audio_device: String);
+    fn play_video(&self, url: String, audio_device: String, muted: bool);
     fn set_video_rate(&self, rate: f64);
     fn seek_video(&self, seconds: f64);
     fn set_video_muted(&self, muted: bool);

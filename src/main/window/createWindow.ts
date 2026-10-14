@@ -147,11 +147,12 @@ export function createMainWindow(runtimeState: runtimeStateProps) {
   mainWindow.once('ready-to-show', () => {
     const win = mainWindow as BrowserWindow
 
-    const baseW = savedBounds?.width || runtimeState.config.mainScreenWidth || 1200
-    const baseH = savedBounds?.height || runtimeState.config.mainScreenHeight || 720
+    const shapeW = runtimeState.config.mainScreenWidth || 1200
+    const shapeH = runtimeState.config.mainScreenHeight || 720
+    const want = savedBounds ?? { width: shapeW, height: shapeH }
 
     // In compositor mode the compositor owns the size.
-    if (!compositorMode) applyWindowedContentSize(win, baseW, baseH)
+    if (!compositorMode) applyWindowedContentSize(win, shapeW, shapeH, want)
     win.show()
 
     scheduleMainBoundsSave()

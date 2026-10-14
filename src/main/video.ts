@@ -9,7 +9,7 @@ type VideoAddon = {
   setWindow(screen: string, handle?: Buffer | null): void
 }
 
-export type VideoScreen = 'main' | 'dash' | 'aux'
+export type VideoScreen = 'main' | 'cluster' | 'aux'
 
 let addon: VideoAddon | null = null
 

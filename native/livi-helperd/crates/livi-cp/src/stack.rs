@@ -1,6 +1,7 @@
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -15,12 +16,14 @@ use crate::control_cipher::ControlCipher;
 use crate::crypto::hkdf_sha512;
 use crate::helper_sock::HelperSock;
 use crate::hid::{self, Contact, KnobState};
+use crate::hls::Client;
 use crate::hls_gateway::Gateway;
 use crate::iap_tunnel::IapTunnel;
 use crate::identity::Identity;
 use crate::info::{self, ALT_UUID, InfoConfig, MAIN_UUID};
 use crate::keep_alive::KeepAlive;
 use crate::media::{AudioCodec, AudioRequest, Media, MicRequest};
+use crate::mfi4;
 use crate::net;
 use crate::pair_setup::PairSetup;
 use crate::pair_verify::PairVerify;
@@ -28,8 +31,9 @@ use crate::pairings::Pairings;
 use crate::rtsp::{self, Request, Response};
 use crate::timing::ntp64_now;
 use crate::timing_sync::TimingSync;
+use crate::vehicle_state::{self, Climate, Lane, VehicleState};
 use crate::video_playback;
-use crate::video_proxy::{ProxyOffer, Tunnel};
+use crate::video_proxy::ProxyOffer;
 
 const STREAM_MAIN_SCREEN: u64 = 110;
 const STREAM_ALT_SCREEN: u64 = 111;
@@ -114,6 +118,11 @@ pub struct StackConfig {
     /// Sink and source, empty for the system default.
     pub audio_device: String,
     pub audio_input_device: String,
+    /// The host plays a queued video itself, so the phone may hand one over.
+    pub hls_video: bool,
+    pub vehicle_climate: bool,
+    /// Shown in the phone's vehicle app.
+    pub app_version: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -141,6 +150,7 @@ pub enum StackCmd {
     AudioActive(bool),
     StreamVolume { kind: AudioKind, level: f64, ramp_ms: u32 },
     PhoneBtMac(String),
+    Climate(Climate),
     Stop,
 }
 
@@ -177,6 +187,7 @@ pub enum StackEvent {
     HostUiRequested,
     SpeechActive(bool),
     DisableBluetooth(String),
+    Climate(Climate),
     /// Always the last event.
     Closed {
         was_active: bool,
@@ -192,10 +203,11 @@ pub struct StackCtx<M: Media> {
     /// The access point's MAC can change while LIVI runs, and /info must name the current one.
     pub refresh: Option<Arc<dyn Fn() + Send + Sync>>,
     pub debug: bool,
-    /// The host plays a queued video itself, so the phone may hand one over.
-    pub video_playback: bool,
     /// Where the payloads of the video streams are kept, for reading their format.
     pub video_capture: Option<std::path::PathBuf>,
+    /// The fake phone cannot run MFi4, so a test says whether it passed.
+    #[cfg(test)]
+    pub mfi4_proven: bool,
 }
 
 struct AudioStreamState {
@@ -225,6 +237,8 @@ struct Conn<M: Media> {
     peer: SocketAddr,
     pair_setup: PairSetup,
     pair_verify: PairVerify,
+    /// Mutual authentication, once the phone asked for it on this connection.
+    mfi4: Option<mfi4::Session>,
     cipher: Option<ControlCipher>,
     sealed: Vec<u8>,
     plain: Vec<u8>,
@@ -251,6 +265,13 @@ struct Conn<M: Media> {
     video_settings_out: Option<mpsc::UnboundedReceiver<Vec<u8>>>,
     video_overlay: Option<IapTunnel>,
     video_overlay_out: Option<mpsc::UnboundedReceiver<Vec<u8>>>,
+    vehicle_state: Option<VehicleState>,
+    /// Climate from LIVI that came before the phone set up vehicle state.
+    climate_pending: Climate,
+    climate_reported: Option<Climate>,
+    vehicle_streams: Vec<(Lane, IapTunnel, mpsc::UnboundedSender<Vec<u8>>)>,
+    vehicle_in: Option<mpsc::UnboundedSender<(Lane, Vec<u8>)>>,
+    vehicle_out: Option<mpsc::UnboundedReceiver<(Lane, Vec<u8>)>>,
     video_screen_borrowed: bool,
     video_allowed: bool,
     video_proxy: Option<Arc<ProxyOffer>>,
@@ -267,11 +288,12 @@ struct Conn<M: Media> {
     call_active: bool,
     speech_active: bool,
     video_player: video_playback::Playback,
+    /// The phone's word, kept for a stream that is opened again.
+    video_muted: Arc<AtomicBool>,
 }
 
 /// A queued video playing, ended by dropping it.
 struct VideoRun {
-    _tunnel: Tunnel,
     _gateway: Gateway,
     restarts: tokio::task::JoinHandle<()>,
     stop: Box<dyn Fn() + Send + Sync>,
@@ -292,14 +314,22 @@ async fn reopen_video<M: Media>(
     media: Arc<M>,
     url: String,
     device: String,
+    muted: Arc<AtomicBool>,
     mut started_over: mpsc::UnboundedReceiver<()>,
 ) {
     while started_over.recv().await.is_some() {
         println!("[cpStack] video stream started over, opening it again");
         media.stop_video();
         tokio::time::sleep(VIDEO_REOPEN_PAUSE).await;
-        media.play_video(url.clone(), device.clone());
+        media.play_video(url.clone(), device.clone(), muted.load(Ordering::Relaxed));
     }
+}
+
+/// The RTP sample the speaker plays now: the first one plus what played since, `lag_ms` behind
+/// its arrival.
+fn sounding_sample(first: u32, since_first_s: f64, lag_ms: u32, rate: u32) -> u32 {
+    let played = (since_first_s - f64::from(lag_ms) / 1000.0).max(0.0);
+    (i64::from(first) + (played * f64::from(rate) + 0.5).floor() as i64) as u32
 }
 
 async fn accept(listener: &Option<TcpListener>) -> io::Result<(TcpStream, SocketAddr)> {
@@ -326,7 +356,7 @@ async fn read_relay(
     }
 }
 
-async fn recv_iap(out: &mut Option<mpsc::UnboundedReceiver<Vec<u8>>>) -> Option<Vec<u8>> {
+async fn recv_iap<T>(out: &mut Option<mpsc::UnboundedReceiver<T>>) -> Option<T> {
     match out {
         Some(rx) => rx.recv().await,
         None => std::future::pending().await,
@@ -398,6 +428,32 @@ fn status(code: u16) -> Response {
     Response { status: Some(code), ..Default::default() }
 }
 
+fn octet(result: Result<Vec<u8>, String>, what: &str) -> Response {
+    match result {
+        Ok(body) => Response {
+            headers: vec![("Content-Type".into(), OCTET.into())],
+            body,
+            ..Default::default()
+        },
+        Err(e) => {
+            println!("[cpStack] {what}: {e}");
+            status(500)
+        }
+    }
+}
+
+/// A number the way the phone writes headers: 0x for hex, a leading 0 for octal.
+fn header_number(req: &Request, name: &str) -> Option<u32> {
+    let v = req.headers.get(name)?.trim();
+    if let Some(hex) = v.strip_prefix("0x").or_else(|| v.strip_prefix("0X")) {
+        u32::from_str_radix(hex, 16).ok()
+    } else if v.len() > 1 && v.starts_with('0') {
+        u32::from_str_radix(&v[1..], 8).ok()
+    } else {
+        v.parse().ok()
+    }
+}
+
 fn stream_key(shared: &[u8; 32], id: &str, info: &str) -> [u8; 32] {
     hkdf_sha512(shared, format!("DataStream-Salt{id}").as_bytes(), info.as_bytes())
 }
@@ -418,6 +474,7 @@ pub async fn run<M: Media>(
         peer,
         pair_setup: PairSetup::new(),
         pair_verify: PairVerify::new(),
+        mfi4: None,
         cipher: None,
         sealed: Vec::new(),
         plain: Vec::new(),
@@ -442,6 +499,12 @@ pub async fn run<M: Media>(
         video_settings_out: None,
         video_overlay: None,
         video_overlay_out: None,
+        vehicle_state: None,
+        climate_pending: Climate::new(),
+        climate_reported: None,
+        vehicle_streams: Vec::new(),
+        vehicle_in: None,
+        vehicle_out: None,
         video_screen_borrowed: false,
         video_allowed: true,
         video_proxy: None,
@@ -457,6 +520,7 @@ pub async fn run<M: Media>(
         call_active: false,
         speech_active: false,
         video_player: video_playback::Playback::default(),
+        video_muted: Arc::new(AtomicBool::new(false)),
     };
     let mut buf = vec![0u8; 64 * 1024];
     let mut event_buf = vec![0u8; 16 * 1024];
@@ -525,6 +589,10 @@ pub async fn run<M: Media>(
                 Some(setting) => conn.keep_side_message("settings", &setting),
                 None => conn.video_settings_out = None,
             },
+            vehicle = recv_iap(&mut conn.vehicle_out) => match vehicle {
+                Some((lane, message)) => conn.on_vehicle_message(lane, &message),
+                None => conn.vehicle_out = None,
+            },
             start = recv_started(&mut started) => match start {
                 Ok((stream, first_sample)) => conn.audio_started(stream, first_sample),
                 Err(broadcast::error::RecvError::Lagged(_)) => {}
@@ -583,6 +651,43 @@ impl<M: Media> Conn<M> {
         Ok(())
     }
 
+    /// Vehicle state is CarPlay Ultra, which only a CP3.0 accessory gets.
+    fn mfi4_proven(&self) -> bool {
+        #[cfg(test)]
+        if self.ctx.mfi4_proven {
+            return true;
+        }
+        self.mfi4.as_ref().is_some_and(mfi4::Session::proven)
+    }
+
+    /// Also carries the phone's transcript proof through the channel, ours goes back the same way.
+    async fn mfi4_auth_setup(&mut self, req: &Request) -> Response {
+        let session = self.mfi4.get_or_insert_with(|| {
+            println!("[cpStack] MFi4 mutual authentication");
+            mfi4::Session::new(self.ctx.pairings.dir())
+        });
+        if header_number(req, "x-apple-pairingtranscript").is_some_and(|v| v != 0) {
+            session.binds_pairing = true;
+        }
+        let pair_verify = &self.pair_verify;
+        let mut bound = false;
+        let mut check = |shown: &[u8]| {
+            let (expected, ours) = pair_verify
+                .transcript_proofs()
+                .ok_or_else(|| "nothing to bind, pair-verify has not run".to_string())?;
+            if shown.get(..expected.len()) != Some(&expected[..]) {
+                return Err("the phone's transcript proof does not match".to_string());
+            }
+            bound = true;
+            Ok(ours.to_vec())
+        };
+        let result = session.handle(&req.body, &self.ctx.helper, &mut check).await;
+        if bound {
+            println!("[cpStack] MFi4: this pair-verify is bound to the mutual authentication");
+        }
+        octet(result, "MFi4 auth-setup")
+    }
+
     async fn handle(&mut self, req: &Request) -> Response {
         let path = req.path.to_lowercase();
         let chatty = req.method == "OPTIONS" || path.ends_with("/feedback");
@@ -625,6 +730,15 @@ impl<M: Media> Conn<M> {
             "TEARDOWN" => return self.handle_teardown(req),
             _ => {}
         }
+        if path.ends_with("/pair-setup")
+            && let Some(session) = self.mfi4.as_mut()
+        {
+            let (pair_setup, ctx) = (&mut self.pair_setup, &self.ctx);
+            let mut through =
+                |data: &[u8]| Ok(pair_setup.handle(data, &ctx.identity, &ctx.pairings));
+            let result = session.handle(&req.body, &ctx.helper, &mut through).await;
+            return octet(result, "MFi4 pair-setup");
+        }
         if path.ends_with("/pair-setup") {
             let body = self.pair_setup.handle(&req.body, &self.ctx.identity, &self.ctx.pairings);
             return Response {
@@ -640,6 +754,11 @@ impl<M: Media> Conn<M> {
                 body,
                 ..Default::default()
             };
+        }
+        if path.ends_with("/auth-setup")
+            && header_number(req, "x-apple-at") == Some(mfi4::AUTH_TYPE)
+        {
+            return self.mfi4_auth_setup(req).await;
         }
         if path.ends_with("/auth-setup") {
             return match auth_setup::handle(&req.body, &self.ctx.helper).await {
@@ -673,6 +792,12 @@ impl<M: Media> Conn<M> {
                 let features = info.get("features").and_then(Value::as_int).unwrap_or(0);
                 if let Value::Dict(entries) = &mut info {
                     entries.extend(video_playback::info_entries(features, self.video_allowed));
+                }
+            }
+            if let Some(state) = &self.vehicle_state {
+                info::add_display_panels(&mut info);
+                if let Value::Dict(entries) = &mut info {
+                    entries.push(state.info_entry());
                 }
             }
             let count = |k: &str| info.get(k).and_then(Value::as_array).map_or(0, <[Value]>::len);
@@ -753,12 +878,29 @@ impl<M: Media> Conn<M> {
         if !offered.is_empty() {
             println!("[cpStack] phone offers {}", offered.join(", "));
         }
-        if offered.contains(&video_playback::FEATURE) && self.ctx.video_playback {
+        if offered.contains(&video_playback::FEATURE) && self.ctx.config.borrow().hls_video {
             self.video_playback = true;
             if let Some(root) = &self.ctx.video_capture {
                 let capture = video_playback::Capture::new(root);
                 println!("[cpStack] video payloads go to {}", capture.dir().display());
                 self.video_capture = Some(capture);
+            }
+        }
+        if offered.contains(&vehicle_state::FEATURE) {
+            if self.mfi4_proven() {
+                let (climate, version) = {
+                    let cfg = self.ctx.config.borrow();
+                    (cfg.vehicle_climate, cfg.app_version.clone())
+                };
+                let mut state = VehicleState::new(self.ctx.debug, climate, &version);
+                state.set_climate(&std::mem::take(&mut self.climate_pending));
+                self.vehicle_state = Some(state);
+                self.report_climate();
+            } else {
+                println!(
+                    "[cpStack] the phone offers vehicle state, but MFi4 did not prove the phone \
+                     and LIVI to each other, it stays off"
+                );
             }
         }
 
@@ -809,6 +951,9 @@ impl<M: Media> Conn<M> {
         }
         if self.video_playback {
             features.push(Value::String(video_playback::FEATURE.into()));
+        }
+        if self.vehicle_state.is_some() {
+            features.push(Value::String(vehicle_state::FEATURE.into()));
         }
         let mut resp = vec![
             ("timingPort".to_string(), Value::Int(u64::from(timing_port))),
@@ -947,7 +1092,7 @@ impl<M: Media> Conn<M> {
                     bitrate,
                     frame_ms,
                     port,
-                    phone: net::host_of(&self.peer),
+                    phone: net::route_of(&self.peer),
                     device: input_device,
                 },
             )
@@ -974,6 +1119,73 @@ impl<M: Media> Conn<M> {
             ("controlPort", Value::Int(u64::from(opened.control_port))),
             ("streamConnectionID", connection_id),
         ]))
+    }
+
+    /// One of the two vehicle state streams, both answered on their own connection.
+    fn setup_vehicle_stream(&mut self, lane: Lane, sd: &Value) -> Result<Value, String> {
+        let shared = self
+            .pair_verify
+            .shared_secret()
+            .ok_or("vehicle state DataStream SETUP arrived before pair-verify")?;
+        let into_session = self
+            .vehicle_in
+            .get_or_insert_with(|| {
+                let (tx, rx) = mpsc::unbounded_channel();
+                self.vehicle_out = Some(rx);
+                tx
+            })
+            .clone();
+        let deliver = Arc::new(move |message: Vec<u8>| {
+            let _ = into_session.send((lane, message));
+        });
+        let name = match lane {
+            Lane::High => "vehicle state (high priority)",
+            Lane::Normal => "vehicle state",
+        };
+        let seed = id_text(sd.get("seed"));
+        let (tunnel, to_phone) =
+            IapTunnel::listen_duplex(name, &shared, &seed, deliver).map_err(|e| e.to_string())?;
+        let port = tunnel.port();
+        self.vehicle_streams.retain(|(l, ..)| *l != lane);
+        self.vehicle_streams.push((lane, tunnel, to_phone));
+        self.last_stream_id += 1;
+        let id = self.last_stream_id;
+        println!("[cpStack] SETUP {name} (type 130, streamID={id}, dataPort={port})");
+        Ok(dict([
+            ("type", Value::Int(STREAM_DATA)),
+            ("streamID", Value::Int(id)),
+            ("dataPort", Value::Int(u64::from(port))),
+        ]))
+    }
+
+    fn on_vehicle_message(&mut self, lane: Lane, message: &[u8]) {
+        let Some(state) = &mut self.vehicle_state else { return };
+        let answers = state.handle(lane, message);
+        self.to_vehicle_streams(answers);
+        self.report_climate();
+    }
+
+    /// LIVI's telemetry follows the climate the phone and the car settle on.
+    fn report_climate(&mut self) {
+        let Some(climate) = self.vehicle_state.as_ref().and_then(VehicleState::climate) else {
+            return;
+        };
+        if self.climate_reported.as_ref() != Some(&climate) {
+            self.climate_reported = Some(climate.clone());
+            self.emit(StackEvent::Climate(climate));
+        }
+    }
+
+    fn to_vehicle_streams(&self, answers: Vec<(Lane, Vec<u8>)>) {
+        for (lane, answer) in answers {
+            let stream = self.vehicle_streams.iter().find(|(l, ..)| *l == lane);
+            match stream.or(self.vehicle_streams.first()) {
+                Some((_, _, to_phone)) => {
+                    let _ = to_phone.send(answer);
+                }
+                None => println!("[cpVehicle] no stream left to answer on"),
+            }
+        }
     }
 
     fn setup_data_stream(&mut self, sd: &Value) -> Result<Option<Value>, String> {
@@ -1035,6 +1247,14 @@ impl<M: Media> Conn<M> {
                 ("streamID", Value::Int(id)),
                 ("dataPort", Value::Int(u64::from(port))),
             ])));
+        }
+        let lane = match uuid.as_str() {
+            vehicle_state::HIGH_PRIORITY_DATASTREAM_UUID => Some(Lane::High),
+            vehicle_state::DATASTREAM_UUID => Some(Lane::Normal),
+            _ => None,
+        };
+        if let Some(lane) = lane.filter(|_| self.vehicle_state.is_some()) {
+            return self.setup_vehicle_stream(lane, sd).map(Some);
         }
         if uuid != IAP_DATASTREAM_UUID {
             let what = match uuid.as_str() {
@@ -1159,6 +1379,7 @@ impl<M: Media> Conn<M> {
                 if message.get("property").and_then(Value::as_str) == Some("muted") =>
             {
                 if let Some(Value::Bool(muted)) = message.get("value") {
+                    self.video_muted.store(*muted, Ordering::Relaxed);
                     self.ctx.media.set_video_muted(*muted);
                 }
             }
@@ -1215,35 +1436,33 @@ impl<M: Media> Conn<M> {
             println!("[cpStack] no proxy from the phone, {url} is out of reach");
             return;
         };
-        match Tunnel::open(offer, url).await {
-            Ok(Some(tunnel)) => {
-                let (started_over, restarts) = mpsc::unbounded_channel();
-                let gateway = match Gateway::open(tunnel.url(), started_over).await {
-                    Ok(gateway) => gateway,
-                    Err(e) => {
-                        println!("[cpStack] no gateway for video {url}: {e}");
-                        return;
-                    }
-                };
-                println!("[cpStack] video {url} reachable at {}", gateway.url());
-                let device = self.ctx.config.borrow().audio_device.clone();
-                let media = self.ctx.media.clone();
-                media.play_video(gateway.url().into(), device.clone());
-                let restarts = tokio::spawn(reopen_video(
-                    media.clone(),
-                    gateway.url().into(),
-                    device,
-                    restarts,
-                ));
-                let stop = Box::new(move || media.stop_video());
-                self.video_tunnel =
-                    Some(VideoRun { _tunnel: tunnel, _gateway: gateway, restarts, stop });
+        let (started_over, restarts) = mpsc::unbounded_channel();
+        let gateway = match Gateway::open(Client::through(offer), url, started_over).await {
+            Ok(gateway) => gateway,
+            Err(e) => {
+                println!("[cpStack] no gateway for video {url}: {e}");
+                return;
             }
-            Ok(None) => {
-                println!("[cpStack] video {url} is not plain http, LIVI plays no DRM content")
-            }
-            Err(e) => println!("[cpStack] no tunnel for video {url}: {e}"),
+        };
+        println!("[cpStack] video {url} reachable at {}", gateway.url());
+        let device = self.ctx.config.borrow().audio_device.clone();
+        let muted = item.and_then(|i| i.get("muted")).and_then(Value::as_bool).unwrap_or(false);
+        self.video_muted.store(muted, Ordering::Relaxed);
+        let media = self.ctx.media.clone();
+        media.play_video(gateway.url().into(), device.clone(), muted);
+        let start = self.video_player.position();
+        if start > 0.0 {
+            media.seek_video(start);
         }
+        let restarts = tokio::spawn(reopen_video(
+            media.clone(),
+            gateway.url().into(),
+            device,
+            self.video_muted.clone(),
+            restarts,
+        ));
+        let stop = Box::new(move || media.stop_video());
+        self.video_tunnel = Some(VideoRun { _gateway: gateway, restarts, stop });
     }
 
     async fn relay_iap(&mut self, iap: &[u8]) {
@@ -1349,11 +1568,14 @@ impl<M: Media> Conn<M> {
                     ("sampleRate".to_string(), Value::Int(u64::from(a.sample_rate))),
                 ];
                 if let Some((first, at)) = a.origin {
-                    let lag = f64::from(a.playout_latency_ms) / 1000.0;
-                    let elapsed = (at.elapsed().as_secs_f64() - lag).max(0.0);
-                    let play = (i64::from(first)
-                        + (elapsed * f64::from(a.sample_rate) + 0.5).floor() as i64)
-                        as u32;
+                    // The jitter buffer, then what the pipeline measurably takes to the speaker.
+                    let output = self.ctx.media.audio_output_delay(a.host_stream).unwrap_or(0);
+                    let play = sounding_sample(
+                        first,
+                        at.elapsed().as_secs_f64(),
+                        a.playout_latency_ms + output,
+                        a.sample_rate,
+                    );
                     let ntp = self.timing.as_ref().map_or_else(ntp64_now, TimingSync::synced_ntp);
                     s.push(("streamConnectionID".to_string(), a.connection_id.clone()));
                     s.push(("timestamp".to_string(), Value::Int(ntp)));
@@ -1726,6 +1948,15 @@ impl<M: Media> Conn<M> {
                 }
             }
             StackCmd::PhoneBtMac(mac) => self.phone_bt_mac = mac,
+            StackCmd::Climate(climate) => {
+                let Some(state) = &mut self.vehicle_state else {
+                    self.climate_pending.extend(climate);
+                    return;
+                };
+                let answers = state.set_climate(&climate);
+                self.to_vehicle_streams(answers);
+                self.report_climate();
+            }
             StackCmd::Stop => {}
         }
     }
@@ -1747,6 +1978,7 @@ pub(crate) mod tests {
     };
     use crate::identity::load_or_create;
     use crate::media::AudioStream;
+    use crate::opack;
     use crate::pair_setup::tlv;
     use crate::pairings::tests::TempDir;
     use crate::tlv8;
@@ -1755,6 +1987,7 @@ pub(crate) mod tests {
         calls: Mutex<Vec<String>>,
         pub(crate) started: broadcast::Sender<(u32, u32)>,
         pub(crate) video_status: Mutex<Option<crate::media::VideoStatus>>,
+        pub(crate) output_delay: Mutex<Option<u32>>,
     }
 
     impl FakeMedia {
@@ -1763,6 +1996,7 @@ pub(crate) mod tests {
                 calls: Mutex::default(),
                 started: broadcast::channel(8).0,
                 video_status: Mutex::default(),
+                output_delay: Mutex::default(),
             })
         }
 
@@ -1807,6 +2041,9 @@ pub(crate) mod tests {
         fn set_audio_volume(&self, stream: u32, level: f64, ramp_ms: u32) {
             self.log(format!("volume {stream} {level} {ramp_ms}"));
         }
+        fn audio_output_delay(&self, _stream: u32) -> Option<u32> {
+            *self.output_delay.lock().unwrap()
+        }
         fn close_audio(&self, stream: u32) {
             self.log(format!("close_audio {stream}"));
         }
@@ -1823,8 +2060,9 @@ pub(crate) mod tests {
         fn audio_started(&self) -> broadcast::Receiver<(u32, u32)> {
             self.started.subscribe()
         }
-        fn play_video(&self, url: String, audio_device: String) {
-            self.log(format!("play_video {url} {audio_device}"));
+        fn play_video(&self, url: String, audio_device: String, muted: bool) {
+            let muted = if muted { " muted" } else { "" };
+            self.log(format!("play_video {url} {audio_device}{muted}"));
         }
         fn set_video_rate(&self, rate: f64) {
             self.log(format!("video_rate {rate}"));
@@ -1958,6 +2196,14 @@ pub(crate) mod tests {
         }
 
         async fn with_video(video: bool, capture: bool) -> Self {
+            Self::build(video, capture, false).await
+        }
+
+        async fn with_mfi4() -> Self {
+            Self::build(false, false, true).await
+        }
+
+        async fn build(video: bool, capture: bool, mfi4_proven: bool) -> Self {
             let dir = TempDir::new();
             let identity = load_or_create(&dir.0.join("identity.json"));
             let pairings = Pairings::new(dir.0.join("pairings.json"));
@@ -1971,6 +2217,9 @@ pub(crate) mod tests {
                 info,
                 audio_device: "out".into(),
                 audio_input_device: "in".into(),
+                hls_video: video,
+                vehicle_climate: true,
+                app_version: "9.5.0".into(),
             });
             std::mem::forget(_tx);
             let media = FakeMedia::new();
@@ -1982,8 +2231,8 @@ pub(crate) mod tests {
                 config,
                 refresh: Some(Arc::new(|| println!("[test] refreshed"))),
                 debug: true,
-                video_playback: video,
                 video_capture: capture.then(|| dir.0.join("video")),
+                mfi4_proven,
             });
             let listener = net::tcp_listener().unwrap();
             let port = net::local_port(listener.local_addr());
@@ -2003,6 +2252,18 @@ pub(crate) mod tests {
 
     fn int_of(v: &Value, k: &str) -> u64 {
         v.get(k).and_then(Value::as_int).unwrap()
+    }
+
+    #[test]
+    fn the_feedback_names_the_sample_the_speaker_plays_now() {
+        assert_eq!(sounding_sample(100, 0.5, 1000, 48_000), 100, "still in the jitter buffer");
+        assert_eq!(sounding_sample(100, 2.0, 1000, 48_000), 100 + 48_000);
+        assert_eq!(
+            sounding_sample(100, 2.0, 1300, 48_000),
+            100 + 33_600,
+            "the measured output delay moves it back"
+        );
+        assert_eq!(sounding_sample(u32::MAX, 2.0, 1000, 48_000), 47_999, "RTP time wraps");
     }
 
     #[test]
@@ -2160,6 +2421,59 @@ pub(crate) mod tests {
             ["play", "video_rate 0", "seek_video 12", "video_muted true", "stop_video"]
         );
         assert!(!rig._dir.0.join("video").exists(), "without debug nothing is kept");
+    }
+
+    #[tokio::test]
+    async fn a_muted_item_starts_muted() {
+        let mut rig = Rig::with_video(true, false).await;
+        let secret = rig.secret;
+        rig.phone.verify(&secret, b"phone-1").await;
+        let offered = Value::Array(vec![Value::String(video_playback::FEATURE.into())]);
+        let session = dict([("timingPort", Value::Int(9)), ("features", offered)]);
+        rig.phone.plist("SETUP", "/s", &session).await;
+        let video = dict([
+            ("type", Value::Int(STREAM_DATA)),
+            ("clientTypeUUID", Value::String(video_playback::DATASTREAM_UUID.to_lowercase())),
+        ]);
+        rig.phone.plist("SETUP", "/s", &dict([("streams", Value::Array(vec![video]))])).await;
+        let media = dict([
+            ("type", Value::Int(102)),
+            ("streamConnectionID", Value::Int(44)),
+            ("audioType", Value::String("media".into())),
+            ("audioFormat", Value::Int(0x10)),
+            ("audioLatencyMs", Value::Int(1000)),
+        ]);
+        rig.phone.plist("SETUP", "/s", &dict([("streams", Value::Array(vec![media]))])).await;
+        let offer = dict([
+            ("type", Value::String("setProxyParameters".into())),
+            (
+                "params",
+                dict([
+                    ("proxyUrl", Value::String("https://[fe80::1]".into())),
+                    ("proxyPort", Value::Int(60664)),
+                    ("proxyPsk", Value::Data(vec![1; 32])),
+                    ("proxyPskIdentity", Value::Data(vec![2; 16])),
+                    ("proxyAuthorization", Value::String("Basic eDp5".into())),
+                ]),
+            ),
+        ]);
+        rig.phone.request("POST", "/command", &bplist::encode(&offer)).await;
+
+        let item = dict([
+            ("Content-Location", Value::String("http://127.0.0.1:58539/mirror/index.m3u8".into())),
+            ("muted", Value::Bool(true)),
+        ]);
+        let message = dict([("type", Value::String("insertPlayQueueItem".into())), ("item", item)]);
+        let body = bplist::encode(&dict([(
+            "params",
+            dict([("data", Value::Data(bplist::encode(&message)))]),
+        )]));
+        rig.phone.request_with("POST", "/command", "X-Apple-StreamID: 2\r\n", &body).await;
+
+        let plays: Vec<String> =
+            rig.media.calls().into_iter().filter(|c| c.starts_with("play_video")).collect();
+        assert_eq!(plays.len(), 1);
+        assert!(plays[0].ends_with(" muted"), "{plays:?}");
     }
 
     #[tokio::test]
@@ -2367,6 +2681,109 @@ pub(crate) mod tests {
         .await
         .unwrap();
         assert_eq!(std::fs::read(kept).unwrap(), b"opak");
+    }
+
+    #[tokio::test]
+    async fn vehicle_state_is_claimed_described_and_answered_on_its_own_stream() {
+        let mut rig = Rig::with_mfi4().await;
+        let secret = rig.secret;
+        rig.phone.verify(&secret, b"phone-1").await;
+        let warmer = serde_json::json!({ "driverTargetC": 23 }).as_object().cloned().unwrap();
+        rig.cmds.send(StackCmd::Climate(warmer)).unwrap();
+        let offered = Value::Array(vec![Value::String(vehicle_state::FEATURE.into())]);
+        let session = dict([("timingPort", Value::Int(9)), ("features", offered)]);
+        let resp = rig.phone.plist("SETUP", "/s", &session).await;
+        let enabled = resp.get("enabledFeatures").and_then(Value::as_array).unwrap();
+        assert!(enabled.contains(&Value::String(vehicle_state::FEATURE.into())));
+        let climate = loop {
+            if let StackEvent::Climate(c) = rig.event().await
+                && c["driverTargetC"] == 23.0
+            {
+                break c;
+            }
+        };
+        assert_eq!(climate["auto"], true, "LIVI's climate waits for the vehicle state");
+        let by_hand = serde_json::json!({ "fanLevel": 6 }).as_object().cloned().unwrap();
+        rig.cmds.send(StackCmd::Climate(by_hand)).unwrap();
+        let StackEvent::Climate(climate) = rig.event().await else { panic!("no climate") };
+        assert_eq!((&climate["fanLevel"], &climate["auto"]), (&6.into(), &false.into()));
+        let info = rig.phone.plist("GET", "/info", &Value::Dict(Vec::new())).await;
+        let described = info.get("vehicleStateProtocolInfo").unwrap();
+        assert_eq!(described.get("pluginCount").and_then(Value::as_int), Some(1));
+        assert!(info.get("displayPanels").is_some());
+
+        let stream = dict([
+            ("type", Value::Int(STREAM_DATA)),
+            ("clientTypeUUID", Value::String(vehicle_state::HIGH_PRIORITY_DATASTREAM_UUID.into())),
+            ("seed", Value::Int(11)),
+        ]);
+        let out =
+            rig.phone.plist("SETUP", "/s", &dict([("streams", Value::Array(vec![stream]))])).await;
+        let stream = &out.get("streams").and_then(Value::as_array).unwrap()[0];
+        assert_eq!(int_of(stream, "streamID"), 2);
+        let port = int_of(stream, "dataPort") as u16;
+
+        let key = |info: &[u8]| hkdf_sha512(&rig.phone.shared, b"DataStream-Salt11", info);
+        let mut cipher = ControlCipher::new(
+            key(b"DataStream-Input-Encryption-Key"),
+            key(b"DataStream-Output-Encryption-Key"),
+        );
+        let ask = opack::dict([
+            ("command", opack::Value::str("configRequest")),
+            ("transactionID", opack::Value::Int(-5)),
+        ]);
+        let message = opack::encode(&opack::dict([
+            ("pluginID", opack::Value::Int(0)),
+            ("pluginData", opack::Value::Data(opack::encode(&ask))),
+        ]));
+        let mut package = vec![0u8; 32];
+        package[..4].copy_from_slice(&(32 + message.len() as u32).to_be_bytes());
+        package[4..8].copy_from_slice(b"asyn");
+        package[16..20].copy_from_slice(b"cmnd");
+        package.extend_from_slice(&message);
+        let mut sock = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        sock.write_all(&cipher.encrypt(&package)).await.unwrap();
+
+        let (mut sealed, mut plain) = (Vec::new(), Vec::new());
+        let mut chunk = vec![0u8; 16 * 1024];
+        while plain.len() < 4
+            || plain.len() < u32::from_be_bytes(plain[..4].try_into().unwrap()) as usize
+        {
+            let n = tokio::time::timeout(Duration::from_secs(5), sock.read(&mut chunk))
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(n > 0, "vehicle state stream closed");
+            sealed.extend_from_slice(&chunk[..n]);
+            let (data, rest) = cipher.decrypt(&sealed).unwrap();
+            plain.extend(data);
+            sealed = rest;
+        }
+        assert_eq!(&plain[4..8], b"asyn");
+        assert_eq!(&plain[16..20], b"cmnd");
+        let outer = opack::decode(&plain[32..]).unwrap();
+        let answer =
+            opack::decode(outer.get("pluginData").and_then(opack::Value::as_data).unwrap())
+                .unwrap();
+        assert_eq!(answer.get("command").and_then(opack::Value::as_str), Some("configResponse"));
+        assert_eq!(answer.get("transactionID").and_then(opack::Value::as_int), Some(-5));
+    }
+
+    #[tokio::test]
+    async fn vehicle_state_stays_off_unless_offered_after_mfi4() {
+        for (mfi4, offered) in [(true, "hevc"), (false, vehicle_state::FEATURE)] {
+            let mut rig = if mfi4 { Rig::with_mfi4().await } else { Rig::new().await };
+            let secret = rig.secret;
+            rig.phone.verify(&secret, b"phone-1").await;
+            let offered = Value::Array(vec![Value::String(offered.into())]);
+            let session = dict([("timingPort", Value::Int(9)), ("features", offered)]);
+            let resp = rig.phone.plist("SETUP", "/s", &session).await;
+            let enabled = resp.get("enabledFeatures").and_then(Value::as_array).unwrap();
+            assert!(!enabled.contains(&Value::String(vehicle_state::FEATURE.into())));
+            let info = rig.phone.plist("GET", "/info", &Value::Dict(Vec::new())).await;
+            assert!(info.get("vehicleStateProtocolInfo").is_none());
+            assert!(info.get("displayPanels").is_none());
+        }
     }
 
     #[tokio::test]

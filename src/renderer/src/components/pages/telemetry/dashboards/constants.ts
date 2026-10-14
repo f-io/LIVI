@@ -25,7 +25,7 @@ export const NAV_Y = 460
 
 export const NAV_DIVIDER_Y = 532
 
-// Full-map cluster dash. `ring` is the soft elliptical backdrop behind each gauge,
+// Full-map cluster dashboard. `ring` is the soft elliptical backdrop behind each gauge,
 // centred on the gauge box so the left/right shadows are mirror-symmetric and the 0/P readout stays
 // legible over the map. soft/end = % radius where the glow is still solid / fully faded.
 export const VIGNETTE = {

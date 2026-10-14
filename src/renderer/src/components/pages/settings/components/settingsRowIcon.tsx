@@ -1,4 +1,5 @@
 import type { SvgIconComponent } from '@mui/icons-material'
+import AcUnitOutlinedIcon from '@mui/icons-material/AcUnitOutlined'
 import AndroidOutlinedIcon from '@mui/icons-material/AndroidOutlined'
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined'
 import AspectRatioOutlinedIcon from '@mui/icons-material/AspectRatioOutlined'
@@ -101,7 +102,7 @@ const ICONS: Record<string, SvgIconComponent> = {
   autoConnect: AutorenewOutlinedIcon,
 
   mainScreen: MonitorOutlinedIcon,
-  dashScreen: SpeedOutlinedIcon,
+  clusterScreen: SpeedOutlinedIcon,
   auxScreen: TvOutlinedIcon,
   displayMode: AspectRatioOutlinedIcon,
   width: SettingsEthernetOutlinedIcon,
@@ -161,6 +162,7 @@ const ICONS: Record<string, SvgIconComponent> = {
   redlineRpm: WarningAmberOutlinedIcon,
   speedUnit: StraightenOutlinedIcon,
   temperatureUnit: ThermostatOutlinedIcon,
+  climate: AcUnitOutlinedIcon,
   uiZoom: ZoomInOutlinedIcon,
   language: TranslateOutlinedIcon,
   mfi: DeveloperBoardOutlinedIcon,

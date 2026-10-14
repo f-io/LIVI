@@ -98,11 +98,11 @@ describe('video', () => {
     const { startVideo, drawVideoIn } = await load()
     startVideo()
     drawVideoIn('main', window())
-    drawVideoIn('dash', null)
+    drawVideoIn('cluster', null)
     drawVideoIn('aux', window(true))
     expect(addon.setWindow.mock.calls).toEqual([
       ['main', handle],
-      ['dash', null],
+      ['cluster', null],
       ['aux', null]
     ])
   })

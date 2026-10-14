@@ -2,7 +2,7 @@ import CropPortraitOutlinedIcon from '@mui/icons-material/CropPortraitOutlined'
 import { Box, useTheme } from '@mui/material'
 import type { Config } from '@shared/types'
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router'
+import { useLocation } from 'react-router'
 import {
   reportShown,
   useLiviStore,
@@ -10,6 +10,7 @@ import {
   useStatusStore
 } from '../../../store/store'
 import { useProjectionMultiTouch } from './hooks/useProjectionTouch'
+import { streamBox } from './streamBox'
 import { ViewAreaMask } from './ViewAreaMask'
 
 interface CarplayProps {
@@ -72,18 +73,14 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   setReceivingVideo,
   settings
 }) => {
-  const navigate = useNavigate()
   const location = useLocation()
   const pathname = location.pathname
 
   const theme = useTheme()
 
   const isStreaming = useStatusStore((s) => s.isStreaming)
-  const clusterDashActive = useStatusStore((s) => s.clusterDashActive)
+  const clusterDashboardActive = useStatusStore((s) => s.clusterDashboardActive)
   const isProjectionActive = useProjectionActive()
-
-  const frontMain = useLiviStore((s) => s.front?.main)
-  const phoneActive = useLiviStore((s) => s.sessions.active !== null)
 
   useEffect(() => {
     setReceivingVideo(isStreaming)
@@ -91,8 +88,11 @@ const CarplayComponent: React.FC<CarplayProps> = ({
 
   // Core shows the video plane while the projection or the cluster is in front
   useEffect(() => {
-    reportShown('main', pathname === '/' ? 'projection' : clusterDashActive ? 'cluster' : 'livi')
-  }, [pathname, clusterDashActive])
+    reportShown(
+      'main',
+      pathname === '/' ? 'projection' : clusterDashboardActive ? 'cluster' : 'livi'
+    )
+  }, [pathname, clusterDashboardActive])
 
   useEffect(() => {
     document.documentElement.classList.toggle('show-video', pathname === '/' && receivingVideo)
@@ -103,27 +103,6 @@ const CarplayComponent: React.FC<CarplayProps> = ({
   }, [isProjectionActive])
 
   const videoContainerRef = useRef<HTMLDivElement>(null)
-
-  // Core moves main on its own for a call, Siri or the phone handing the screen back.
-  const backPathRef = useRef<string | null>(null)
-  const prevFrontRef = useRef(frontMain)
-  useEffect(() => {
-    if (pathname !== '/') backPathRef.current = null
-  }, [pathname])
-  useEffect(() => {
-    const prev = prevFrontRef.current
-    prevFrontRef.current = frontMain
-    if (prev === undefined || prev === frontMain) return
-    if (frontMain === 'projection') {
-      if (pathname === '/') return
-      backPathRef.current = pathname
-      navigate('/', { replace: true })
-      return
-    }
-    if (prev !== 'projection' || pathname !== '/' || !phoneActive) return
-    navigate(backPathRef.current ?? '/media', { replace: true })
-    backPathRef.current = null
-  }, [frontMain, pathname, phoneActive, navigate])
 
   const [overlayX, setOverlayX] = useState(0)
   const [overlayY, setOverlayY] = useState(0)
@@ -181,7 +160,8 @@ const CarplayComponent: React.FC<CarplayProps> = ({
         opacity: showProjectionOverlay ? 1 : 0,
         transition: 'opacity 120ms ease',
         pointerEvents: inProjection && isStreaming ? 'auto' : 'none',
-        zIndex: showProjectionOverlay ? 999 : -1
+        zIndex: showProjectionOverlay ? 999 : -1,
+        containerType: 'size'
       }}
     >
       {pathname === '/' && (
@@ -189,35 +169,40 @@ const CarplayComponent: React.FC<CarplayProps> = ({
       )}
 
       <div
-        id="videoContainer"
-        ref={videoContainerRef}
-        {...touchHandlers}
-        style={{
-          height: '100%',
-          width: '100%',
-          padding: 0,
-          margin: 0,
-          display: 'block',
-          touchAction: 'none',
-          backgroundColor: receivingVideo ? 'transparent' : theme.palette.background.default,
-          visibility: receivingVideo ? 'visible' : 'hidden',
-          zIndex: receivingVideo ? 1 : -1,
-          position: 'relative',
-          overflow: 'hidden'
-        }}
-      />
+        id="projection-stream"
+        style={streamBox(settings.projectionWidth, settings.projectionHeight)}
+      >
+        <div
+          id="videoContainer"
+          ref={videoContainerRef}
+          {...touchHandlers}
+          style={{
+            height: '100%',
+            width: '100%',
+            padding: 0,
+            margin: 0,
+            display: 'block',
+            touchAction: 'none',
+            backgroundColor: receivingVideo ? 'transparent' : theme.palette.background.default,
+            visibility: receivingVideo ? 'visible' : 'hidden',
+            zIndex: receivingVideo ? 1 : -1,
+            position: 'relative',
+            overflow: 'hidden'
+          }}
+        />
 
-      <ViewAreaMask
-        visible={receivingVideo}
-        displayWidth={settings.projectionWidth}
-        displayHeight={settings.projectionHeight}
-        insets={{
-          top: settings.projectionViewAreaTop ?? 0,
-          bottom: settings.projectionViewAreaBottom ?? 0,
-          left: settings.projectionViewAreaLeft ?? 0,
-          right: settings.projectionViewAreaRight ?? 0
-        }}
-      />
+        <ViewAreaMask
+          visible={receivingVideo}
+          displayWidth={settings.projectionWidth}
+          displayHeight={settings.projectionHeight}
+          insets={{
+            top: settings.projectionViewAreaTop ?? 0,
+            bottom: settings.projectionViewAreaBottom ?? 0,
+            left: settings.projectionViewAreaLeft ?? 0,
+            right: settings.projectionViewAreaRight ?? 0
+          }}
+        />
+      </div>
     </div>
   )
 }

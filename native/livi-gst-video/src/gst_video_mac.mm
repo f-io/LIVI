@@ -6,6 +6,7 @@
 @interface LIVIClipView : NSView {
 @public
   NSView* _gl;
+  int _rank;
   double _cropL, _cropT, _visW, _visH, _tierW, _tierH;  // content region in tier px
 @private
   BOOL _relayoutPending;
@@ -72,18 +73,34 @@
 }
 @end
 
-extern "C" guintptr livi_attach_view(guintptr parent, void** outView) {
+// Above the clips of the same or a lower rank, always under the web content.
+static void insert_clip(NSView* p, LIVIClipView* clip) {
+  NSView* above = nil;
+  for (NSView* v in [p subviews]) {
+    if ([v isKindOfClass:[LIVIClipView class]] && ((LIVIClipView*)v)->_rank <= clip->_rank) {
+      above = v;
+    }
+  }
+  if (above) {
+    [p addSubview:clip positioned:NSWindowAbove relativeTo:above];
+  } else {
+    [p addSubview:clip positioned:NSWindowBelow relativeTo:nil];
+  }
+}
+
+extern "C" guintptr livi_attach_view(guintptr parent, int rank, void** outView) {
   *outView = nullptr;
   NSView* p = (NSView*)(void*)parent;
   if (!p) return parent;
 
   LIVIClipView* clip = [[LIVIClipView alloc] initWithFrame:[p bounds]];
   clip->_gl = nullptr;
+  clip->_rank = rank;
   clip->_cropL = clip->_cropT = clip->_visW = clip->_visH = clip->_tierW = clip->_tierH = 0;
   [clip setWantsLayer:YES];
   clip.layer.backgroundColor = CGColorGetConstantColor(kCGColorBlack);
   clip.layer.masksToBounds = YES;
-  [p addSubview:clip positioned:NSWindowBelow relativeTo:nil];
+  insert_clip(p, clip);
 
   NSView* gl = [[NSView alloc] initWithFrame:[clip bounds]];
   [gl setWantsLayer:YES];

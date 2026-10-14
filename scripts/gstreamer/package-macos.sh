@@ -140,6 +140,12 @@ plugins=(
   libgstvideoconvertscale.dylib
   libgstopengl.dylib
   libgstosxvideo.dylib
+  # video LIVI fetches from a URL: playbin3, hlsdemux2, souphttpsrc, qtdemux, tsdemux
+  libgstplayback.dylib
+  libgstadaptivedemux2.dylib
+  libgstsoup.dylib
+  libgstisomp4.dylib
+  libgstmpegtsdemux.dylib
 )
 
 # PATCHED_APPLEMEDIA (from build-patched-macos.sh) replaces the prebuilt applemedia plugin
@@ -153,6 +159,13 @@ for plugin in "${plugins[@]}"; do
   fi
   copy_plugin_and_deps "$src"
 done
+
+# Both soup plugins dlopen libsoup, so otool never names it.
+if [[ ! -e "$GST_ROOT/lib/libsoup-3.0.0.dylib" ]]; then
+  echo "libsoup-3.0.0.dylib not found, souphttpsrc and hlsdemux2 would not load" >&2
+  exit 1
+fi
+queue_dep libsoup-3.0.0.dylib
 
 copy_required "$GST_ROOT/lib/GStreamer" "$OUT/lib/GStreamer"
 

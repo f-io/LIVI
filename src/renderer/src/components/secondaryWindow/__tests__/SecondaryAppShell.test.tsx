@@ -3,22 +3,22 @@ import { fireEvent, render, screen } from '@testing-library/react'
 const state: {
   settings:
     | (Partial<{
-        dashboards: Record<string, Partial<Record<'main' | 'dash' | 'aux', boolean>>>
-        media: Partial<Record<'dash' | 'aux', boolean>>
-        camera: Partial<Record<'dash' | 'aux', boolean>>
+        dashboards: Record<string, Partial<Record<'main' | 'cluster' | 'aux', boolean>>>
+        media: Partial<Record<'cluster' | 'aux', boolean>>
+        camera: Partial<Record<'cluster' | 'aux', boolean>>
         bindings: Record<string, string>
       }> & { dashboards?: unknown })
     | undefined
 } = { settings: undefined }
 
-let clusterDashActive = false
+let clusterDashboardActive = false
 
 vi.mock('../../../store/store', () => ({
   sendInput: (input: unknown) => sendInputMock(input),
   reportShown: (screen: string, front: string) => reportShownMock(screen, front),
   useLiviStore: (selector: (s: { settings: unknown }) => unknown) => selector(state),
-  useStatusStore: (selector: (s: { clusterDashActive: boolean }) => unknown) =>
-    selector({ clusterDashActive })
+  useStatusStore: (selector: (s: { clusterDashboardActive: boolean }) => unknown) =>
+    selector({ clusterDashboardActive })
 }))
 
 vi.mock('../../pages/camera', () => ({
@@ -52,7 +52,7 @@ const release = (code: string) => ({ kind: 'key', code, down: false })
 
 beforeEach(async () => {
   state.settings = undefined
-  clusterDashActive = false
+  clusterDashboardActive = false
   sendInputMock.mockReset()
   reportShownMock.mockReset()
   onMediaKeyMock.mockReset().mockReturnValue(() => {})
@@ -61,7 +61,7 @@ beforeEach(async () => {
 })
 afterEach(async () => vi.restoreAllMocks())
 
-async function renderShell(role: 'dash' | 'aux' = 'dash', emptyLabel = 'Dash Window') {
+async function renderShell(role: 'cluster' | 'aux' = 'cluster', emptyLabel = 'Cluster Window') {
   const { SecondaryAppShell } = await import('../SecondaryAppShell')
   return render(<SecondaryAppShell role={role} emptyLabel={emptyLabel} />)
 }
@@ -75,55 +75,55 @@ describe('SecondaryAppShell — empty / loading states', async () => {
 
   test('renders the empty-label panel when no slot is enabled for the role', async () => {
     state.settings = { dashboards: {}, media: {}, camera: {} }
-    await renderShell('dash', 'Dash Window')
-    expect(screen.getByText('Dash Window')).toBeInTheDocument()
+    await renderShell('cluster', 'Cluster Window')
+    expect(screen.getByText('Cluster Window')).toBeInTheDocument()
   })
 })
 
 describe('SecondaryAppShell — initial route selection', () => {
-  test('a cluster dash (dash3/dash4) renders the cluster overlay and routes to telemetry', async () => {
-    state.settings = { dashboards: { dash3: { dash: true } } }
-    await renderShell('dash')
+  test('a cluster dashboard (dashboard3/dashboard4) renders the cluster overlay and routes to telemetry', async () => {
+    state.settings = { dashboards: { dashboard3: { cluster: true } } }
+    await renderShell('cluster')
     // Cluster dash is also a dashboard slot, so the initial route is telemetry.
-    expect(screen.getByTestId('telemetry-page')).toHaveAttribute('data-role', 'dash')
+    expect(screen.getByTestId('telemetry-page')).toHaveAttribute('data-role', 'cluster')
     expect(screen.getByTestId('cluster-page')).toBeInTheDocument()
   })
 
   test('telemetry routes when a non-cluster dashboard slot is set', async () => {
-    state.settings = { dashboards: { dash1: { dash: true } } }
-    await renderShell('dash')
-    expect(screen.getByTestId('telemetry-page')).toHaveAttribute('data-role', 'dash')
+    state.settings = { dashboards: { dashboard1: { cluster: true } } }
+    await renderShell('cluster')
+    expect(screen.getByTestId('telemetry-page')).toHaveAttribute('data-role', 'cluster')
     expect(screen.queryByTestId('cluster-page')).toBeNull()
   })
 
   test('media routes when only media is enabled', async () => {
-    state.settings = { media: { dash: true } }
-    await renderShell('dash')
+    state.settings = { media: { cluster: true } }
+    await renderShell('cluster')
     expect(screen.getByTestId('media-page')).toBeInTheDocument()
   })
 
   test('camera routes when only camera is enabled', async () => {
-    state.settings = { camera: { dash: true } }
-    await renderShell('dash')
+    state.settings = { camera: { cluster: true } }
+    await renderShell('cluster')
     expect(screen.getByTestId('camera-page')).toBeInTheDocument()
   })
 
-  test('cluster overlay visibility follows clusterDashActive', async () => {
-    clusterDashActive = true
-    state.settings = { dashboards: { dash4: { aux: true } } }
+  test('cluster overlay visibility follows clusterDashboardActive', async () => {
+    clusterDashboardActive = true
+    state.settings = { dashboards: { dashboard4: { aux: true } } }
     await renderShell('aux')
     expect(screen.getByTestId('cluster-page')).toHaveAttribute('data-visible', 'true')
   })
 
-  test('cluster overlay is hidden while the cluster dash has not signalled active', async () => {
-    clusterDashActive = false
-    state.settings = { dashboards: { dash4: { aux: true } } }
+  test('cluster overlay is hidden while the cluster dashboard has not signalled active', async () => {
+    clusterDashboardActive = false
+    state.settings = { dashboards: { dashboard4: { aux: true } } }
     await renderShell('aux')
     expect(screen.getByTestId('cluster-page')).toHaveAttribute('data-visible', 'false')
   })
 
-  test('aux role ignores slots that belong to dash', async () => {
-    state.settings = { media: { dash: true } }
+  test('aux role ignores slots that belong to the cluster screen', async () => {
+    state.settings = { media: { cluster: true } }
     await renderShell('aux', 'Aux Window')
     expect(screen.getByText('Aux Window')).toBeInTheDocument()
   })
@@ -131,13 +131,13 @@ describe('SecondaryAppShell — initial route selection', () => {
 
 describe('SecondaryAppShell — media-key bridge', () => {
   test('subscribes to window.app.onMediaKey on mount', async () => {
-    state.settings = { media: { dash: true } }
+    state.settings = { media: { cluster: true } }
     await renderShell()
     expect(onMediaKeyMock).toHaveBeenCalled()
   })
 
   test('an incoming media key dispatches a car-media-key window event', async () => {
-    state.settings = { media: { dash: true } }
+    state.settings = { media: { cluster: true } }
     let captured: ((command: string) => void) | null = null
     onMediaKeyMock.mockImplementation((cb: (c: string) => void) => {
       captured = cb
@@ -152,31 +152,31 @@ describe('SecondaryAppShell — media-key bridge', () => {
   })
 
   test('survives missing window.app.onMediaKey', async () => {
-    state.settings = { media: { dash: true } }
+    state.settings = { media: { cluster: true } }
     ;(window as { app?: unknown }).app = {}
     await expect(renderShell()).resolves.toBeDefined()
   })
 })
 
 describe('SecondaryAppShell — what the screen shows', () => {
-  test('tells core when a cluster dash is in front', async () => {
+  test('tells core when a cluster dashboard is in front', async () => {
     state.settings = { media: { aux: true } }
-    clusterDashActive = true
+    clusterDashboardActive = true
     await renderShell('aux', 'Aux Window')
     expect(reportShownMock).toHaveBeenLastCalledWith('aux', 'cluster')
   })
 
   test('tells core LIVI is in front otherwise', async () => {
-    state.settings = { media: { dash: true } }
+    state.settings = { media: { cluster: true } }
     await renderShell()
-    expect(reportShownMock).toHaveBeenLastCalledWith('dash', 'livi')
+    expect(reportShownMock).toHaveBeenLastCalledWith('cluster', 'livi')
   })
 })
 
 describe('SecondaryAppShell — key bindings reach core', () => {
   test('transport keys go to core', async () => {
     state.settings = {
-      media: { dash: true },
+      media: { cluster: true },
       bindings: { playPause: 'Space', next: 'KeyN' }
     }
     await renderShell()
@@ -188,14 +188,14 @@ describe('SecondaryAppShell — key bindings reach core', () => {
   })
 
   test('unmapped key codes are ignored', async () => {
-    state.settings = { media: { dash: true }, bindings: { playPause: 'Space' } }
+    state.settings = { media: { cluster: true }, bindings: { playPause: 'Space' } }
     await renderShell()
     fireEvent.keyDown(document, { code: 'KeyZ' })
     expect(sendInputMock).not.toHaveBeenCalled()
   })
 
   test('voiceAssistant fires on press and release', async () => {
-    state.settings = { media: { dash: true }, bindings: { voiceAssistant: 'KeyV' } }
+    state.settings = { media: { cluster: true }, bindings: { voiceAssistant: 'KeyV' } }
     await renderShell()
     fireEvent.keyDown(document, { code: 'KeyV' })
     expect(sendInputMock).toHaveBeenCalledWith(press('KeyV'))
@@ -206,7 +206,7 @@ describe('SecondaryAppShell — key bindings reach core', () => {
   })
 
   test('repeated voiceAssistant keydown is suppressed', async () => {
-    state.settings = { media: { dash: true }, bindings: { voiceAssistant: 'KeyV' } }
+    state.settings = { media: { cluster: true }, bindings: { voiceAssistant: 'KeyV' } }
     await renderShell()
     fireEvent.keyDown(document, { code: 'KeyV' })
     sendInputMock.mockClear()
@@ -215,7 +215,7 @@ describe('SecondaryAppShell — key bindings reach core', () => {
   })
 
   test('PTT auto-releases on window blur', async () => {
-    state.settings = { media: { dash: true }, bindings: { voiceAssistant: 'KeyV' } }
+    state.settings = { media: { cluster: true }, bindings: { voiceAssistant: 'KeyV' } }
     await renderShell()
     fireEvent.keyDown(document, { code: 'KeyV' })
     sendInputMock.mockClear()
@@ -224,7 +224,7 @@ describe('SecondaryAppShell — key bindings reach core', () => {
   })
 
   test('PTT auto-releases on visibility hidden', async () => {
-    state.settings = { media: { dash: true }, bindings: { voiceAssistant: 'KeyV' } }
+    state.settings = { media: { cluster: true }, bindings: { voiceAssistant: 'KeyV' } }
     await renderShell()
     fireEvent.keyDown(document, { code: 'KeyV' })
     sendInputMock.mockClear()
@@ -238,7 +238,7 @@ describe('SecondaryAppShell — key bindings reach core', () => {
 
   test('ignores empty and non-string binding codes', async () => {
     state.settings = {
-      media: { dash: true },
+      media: { cluster: true },
       bindings: { playPause: 'Space', left: '', up: 42 } as unknown as Record<string, string>
     }
     await renderShell()
@@ -248,7 +248,7 @@ describe('SecondaryAppShell — key bindings reach core', () => {
   })
 
   test('ignores non-transport key down and up events', async () => {
-    state.settings = { media: { dash: true }, bindings: { back: 'Backspace' } }
+    state.settings = { media: { cluster: true }, bindings: { back: 'Backspace' } }
     await renderShell()
 
     fireEvent.keyDown(document, { code: 'Backspace' })
@@ -257,7 +257,7 @@ describe('SecondaryAppShell — key bindings reach core', () => {
   })
 
   test('keeps PTT engaged while the window stays visible', async () => {
-    state.settings = { media: { dash: true }, bindings: { voiceAssistant: 'KeyV' } }
+    state.settings = { media: { cluster: true }, bindings: { voiceAssistant: 'KeyV' } }
     await renderShell()
     fireEvent.keyDown(document, { code: 'KeyV' })
     sendInputMock.mockClear()

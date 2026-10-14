@@ -55,7 +55,7 @@ impl ConfigFile {
             defaults.cluster_height = h;
         }
 
-        let mut config = merge(&file, &defaults);
+        let mut config = merge(&current_names(&file), &defaults);
         if !WIFI_PASSWORD_LEN.contains(&config.wifi_password.chars().count()) {
             println!("[core] wifiPassword is no WPA passphrase, falling back to the default");
             config.wifi_password = self::defaults().wifi_password;
@@ -110,6 +110,43 @@ fn for_file(config: &Config) -> Value {
         }
     }
     value
+}
+
+/// Keys of earlier releases under their current names.
+fn current_names(file: &Value) -> Value {
+    let mut file = file.clone();
+    let Value::Object(top) = &mut file else { return file };
+    for (old, new) in [
+        ("dashScreenBounds", "clusterScreenBounds"),
+        ("dashScreenActive", "clusterScreenActive"),
+        ("dashScreenWidth", "clusterScreenWidth"),
+        ("dashScreenHeight", "clusterScreenHeight"),
+    ] {
+        rename(top, old, new);
+    }
+    for per_screen in ["kiosk", "camera", "media", "custom"] {
+        if let Some(Value::Object(screens)) = top.get_mut(per_screen) {
+            rename(screens, "dash", "cluster");
+        }
+    }
+    if let Some(Value::Object(slots)) = top.get_mut("dashboards") {
+        for i in 1..=4 {
+            let slot = format!("dashboard{i}");
+            rename(slots, &format!("dash{i}"), &slot);
+            if let Some(Value::Object(screens)) = slots.get_mut(&slot) {
+                rename(screens, "dash", "cluster");
+            }
+        }
+    }
+    file
+}
+
+fn rename(map: &mut Map<String, Value>, old: &str, new: &str) {
+    if let Some(value) = map.remove(old)
+        && !map.contains_key(new)
+    {
+        map.insert(new.to_string(), value);
+    }
 }
 
 /// Every phone handles 1280x720.
@@ -256,7 +293,6 @@ pub mod tests {
         assert_eq!(live, written(&dir, "backup/config.json"));
         assert_eq!(live["carName"], "LIVI");
         assert!(live.get("carplayIcon120").is_none());
-        assert!(live.get("lastKnownGps").is_none());
     }
 
     #[test]
@@ -270,13 +306,54 @@ pub mod tests {
     }
 
     #[test]
+    fn the_old_dash_names_come_over_and_are_written_under_the_new_ones() {
+        let dir = TempDir::new();
+        let bounds = json!({ "x": 8, "y": 31, "width": 1211, "height": 678 });
+        let file = json!({
+            "dashScreenActive": true,
+            "dashScreenWidth": 1024,
+            "dashScreenHeight": 600,
+            "dashScreenBounds": bounds,
+            "clusterScreenHeight": 480,
+            "kiosk": { "main": false, "dash": true, "aux": false },
+            "media": { "main": true, "dash": true, "aux": false },
+            "dashboards": {
+                "dash1": { "main": false, "dash": false, "aux": false, "pos": 1 },
+                "dash2": { "main": false, "dash": true, "aux": false, "pos": 2 },
+                "dash3": { "main": true, "dash": true, "aux": false, "pos": 3 },
+                "dash4": { "main": false, "dash": false, "aux": true, "pos": 4 }
+            }
+        });
+        fs::create_dir_all(dir.0.join("LIVI")).unwrap();
+        fs::write(dir.0.join("LIVI/config.json"), file.to_string()).unwrap();
+
+        let host = HostFacts { car_name: None, panel_px: None };
+        let config = file_in(&dir).load(&host);
+        assert!(config.cluster_screen_active);
+        assert_eq!((config.cluster_screen_width, config.cluster_screen_height), (1024, 480));
+        assert_eq!(config.cluster_screen_bounds.map(|b| b.width), Some(1211));
+        assert_eq!(config.kiosk, PerScreen { main: false, cluster: true, aux: false });
+        assert!(config.media.cluster);
+        assert!(config.dashboards.dashboard2.cluster && config.dashboards.dashboard3.main);
+        assert!(config.dashboards.dashboard4.aux && !config.dashboards.dashboard1.cluster);
+
+        let live = written(&dir, "LIVI/config.json");
+        let text = live.to_string();
+        for old in ["\"dash\":", "\"dash1\":", "\"dash3\":", "\"dashScreen"] {
+            assert!(!text.contains(old), "{old} is left: {text}");
+        }
+        assert_eq!(live["clusterScreenWidth"], 1024);
+        assert_eq!(live["dashboards"]["dashboard3"]["cluster"], true);
+    }
+
+    #[test]
     fn values_of_the_wrong_type_fall_back_one_by_one() {
         let dir = TempDir::new();
         let file = json!({
             "carName": "Bulli",
             "huVolume": "loud",
             "wifiChannel": 36.5,
-            "kiosk": { "main": true, "dash": "yes" },
+            "kiosk": { "main": true, "cluster": "yes" },
             "evConnectorTypes": [999],
             "lastKnownGps": { "lat": 52.5, "lng": 13.4, "ts": 1700000000000u64 },
             "dongleEra": true
@@ -289,14 +366,13 @@ pub mod tests {
         assert_eq!(config.car_name, "Bulli");
         assert_eq!(config.hu_volume, 0.95);
         assert_eq!(config.wifi_channel, 36);
-        assert_eq!(config.kiosk, PerScreen { main: true, dash: false, aux: false });
+        assert_eq!(config.kiosk, PerScreen { main: true, cluster: false, aux: false });
         assert_eq!(config.ev_connector_types, Some(Vec::new()));
-        assert_eq!(config.last_known_gps.map(|g| g.lat), Some(52.5));
         assert_eq!((config.projection_width, config.projection_height), (800, 480));
 
         let live = written(&dir, "LIVI/config.json");
         assert!(live.get("dongleEra").is_none());
-        assert_eq!(live["lastKnownGps"]["ts"], 1700000000000u64);
+        assert!(live.get("lastKnownGps").is_none(), "the last position lives in state/gps.json");
     }
 
     #[test]
@@ -338,7 +414,7 @@ pub mod tests {
     fn a_patch_replaces_fields_and_merges_bindings() {
         let next = apply_patch(
             &defaults(),
-            &json!({ "huVolume": 0.5, "kiosk": { "main": true, "dash": false, "aux": false },
+            &json!({ "huVolume": 0.5, "kiosk": { "main": true, "cluster": false, "aux": false },
                      "bindings": { "home": "KeyX" } }),
         )
         .unwrap();

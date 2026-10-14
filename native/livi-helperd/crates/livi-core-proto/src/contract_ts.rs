@@ -6,8 +6,11 @@ use std::path::PathBuf;
 use ts_rs::TS;
 
 use crate::PROTOCOL;
+use crate::config::{WIFI_PASSWORD_MAX, WIFI_PASSWORD_MIN, defaults};
 use crate::frame::MAX_FRAME;
+use crate::gnss::GnssInfo;
 use crate::message::{FromCore, ToCore};
+use crate::telemetry::TelemetrySnapshot;
 
 const FILE: &str = "contract.ts";
 
@@ -40,14 +43,23 @@ fn typescript_contract_is_current() {
     let cfg = ts_rs::Config::new().with_large_int("number").with_out_dir(&out);
     ToCore::export_all(&cfg).unwrap();
     FromCore::export_all(&cfg).unwrap();
+    TelemetrySnapshot::export_all(&cfg).unwrap();
 
     let files: Vec<_> = fs::read_dir(&out).unwrap().map(|e| e.unwrap().file_name()).collect();
     let generated = fs::read_to_string(out.join(FILE));
     let _ = fs::remove_dir_all(&out);
     assert_eq!(files, [FILE], "every contract type has to export to {FILE}");
-    // The numbers a client checks against, which ts-rs has no export for.
-    let constants =
-        format!("export const MAX_FRAME = {MAX_FRAME};\n\nexport const PROTOCOL = {PROTOCOL};\n");
+    // Values ts-rs has no export for: the numbers a client checks against and the settings
+    // before core answers.
+    let defaults = serde_json::to_string_pretty(&defaults()).unwrap();
+    let no_receiver = serde_json::to_string_pretty(&GnssInfo::default()).unwrap();
+    let constants = format!(
+        "export const MAX_FRAME = {MAX_FRAME};\n\nexport const PROTOCOL = {PROTOCOL};\n\n\
+         export const WIFI_PASSWORD_MIN = {WIFI_PASSWORD_MIN};\n\n\
+         export const WIFI_PASSWORD_MAX = {WIFI_PASSWORD_MAX};\n\n\
+         export const DEFAULT_CONFIG: Config = {defaults};\n\n\
+         export const EMPTY_GNSS_INFO: GnssInfo = {no_receiver};\n"
+    );
     let generated = sorted(&format!("{}\n\n{constants}", generated.unwrap()));
 
     let path = checked_in().join(FILE);

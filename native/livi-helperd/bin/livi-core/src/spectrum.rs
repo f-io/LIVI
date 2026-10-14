@@ -165,7 +165,7 @@ mod tests {
         let mut config = defaults();
         config.visual_audio_delay_ms = delay_ms;
         State {
-            front: PerScreen { main: Front::Livi, dash: Front::Livi, aux: Front::Livi },
+            front: PerScreen { main: Front::Livi, cluster: Front::Livi, aux: Front::Livi },
             sessions: Default::default(),
             now_playing: Default::default(),
             telemetry: Default::default(),

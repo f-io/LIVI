@@ -449,6 +449,13 @@ export const videoSchema: SettingsNode<Config> = {
           ]
         }
       ]
+    },
+    {
+      type: 'checkbox',
+      label: 'CarPlay HLS Video Playback',
+      labelKey: 'settings.carPlayHlsVideo',
+      icon: 'media',
+      path: 'carPlayHlsVideo'
     }
   ]
 }

@@ -42,6 +42,7 @@ const REPLY_AUDIO_STARTED: u8 = 5;
 const REPLY_VISUALIZER: u8 = 6;
 const REPLY_FEED: u8 = 7;
 const REPLY_URL_STATUS: u8 = 8;
+const REPLY_AUDIO_DELAY: u8 = 9;
 
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(4);
 
@@ -77,6 +78,11 @@ pub enum HostEvent {
     AudioStarted {
         stream: u32,
         first_sample: u32,
+    },
+    /// What a stream measurably takes from its release to the speaker.
+    AudioDelay {
+        stream: u32,
+        ms: u32,
     },
     /// Every stream summed, tapped before the fader, 0 to 1 per band.
     Spectrum {
@@ -395,6 +401,9 @@ impl GstHost {
                 if let Some(w) = self.state().feed_waiter.take() {
                     let _ = w.send(String::from_utf8_lossy(rest).into_owned());
                 }
+            }
+            REPLY_AUDIO_DELAY => {
+                let _ = self.inner.events.send(HostEvent::AudioDelay { stream: id, ms: u32_at(0) });
             }
             REPLY_URL_STATUS => {
                 if let Some(status) = livi_host_proto::parse_url_status(rest) {
@@ -799,6 +808,7 @@ mod tests {
 
         fake.reply(REPLY_CONFIG, 0x7a00_0001, &[1, 0xaa, 0xbb]).await;
         fake.reply(REPLY_AUDIO_STARTED, req.id, &5u32.to_le_bytes()).await;
+        fake.reply(REPLY_AUDIO_DELAY, req.id, &120u32.to_le_bytes()).await;
         assert_eq!(
             events.recv().await.unwrap(),
             HostEvent::Config { plane: 0x7a00_0001, codec: Codec::H265, atom: vec![0xaa, 0xbb] }
@@ -807,6 +817,7 @@ mod tests {
             events.recv().await.unwrap(),
             HostEvent::AudioStarted { stream: req.id, first_sample: 5 }
         );
+        assert_eq!(events.recv().await.unwrap(), HostEvent::AudioDelay { stream: req.id, ms: 120 });
     }
 
     #[tokio::test]

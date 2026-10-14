@@ -8,6 +8,10 @@ const updateCamerasMock = vi.fn()
 const focusFirstInMainMock = vi.fn()
 const reportPathMock = vi.fn()
 const sendInputMock = vi.fn()
+const reportCameraMock = vi.fn()
+const useFollowFrontMock = vi.fn()
+let openPage: ((path: string) => void) | null = null
+const askFor = (path: string) => act(() => openPage?.(path))
 let capturedKeyDownOpts: any = null
 let mockPathname = '/'
 
@@ -50,6 +54,7 @@ vi.mock('../utils/cameraDetection', () => ({
 
 vi.mock('../hooks', () => ({
   useActiveControl: () => vi.fn(),
+  useFollowFront: () => useFollowFrontMock(),
   useFocus: () => ({
     isFormField: () => false,
     focusSelectedNav: vi.fn(),
@@ -74,13 +79,17 @@ const liviState: any = {
 }
 const statusState: any = {
   setCameraFound: vi.fn(),
-  reverse: false,
-  cameraFound: false,
-  requestedPath: null,
-  clearRequestedPath: vi.fn()
+  cameraFound: false
 }
 
 vi.mock('../store/store', () => ({
+  onOpenPage: (listener: (path: string) => void) => {
+    openPage = listener
+    return () => {
+      openPage = null
+    }
+  },
+  reportCamera: (found: boolean) => reportCameraMock(found),
   reportPath: (path: string) => reportPathMock(path),
   sendInput: (input: unknown) => sendInputMock(input),
   useLiviStore: (selector: (s: any) => unknown) => selector(liviState),
@@ -113,9 +122,8 @@ describe('App', () => {
       bindings: { back: 'KeyB', selectDown: 'Enter' }
     }
     liviState.saveSettings = vi.fn()
-    statusState.reverse = false
     statusState.cameraFound = false
-    statusState.requestedPath = null
+    reportCameraMock.mockReset()
     ;(window as any).projection = {}
     ;(window as any).app = undefined
   })
@@ -382,67 +390,11 @@ describe('App', () => {
     expect(broadcastMediaKey).toHaveBeenCalledWith('voiceAssistantRelease')
   })
 
-  test('reverse + camera ready auto-switches to /camera', async () => {
-    liviState.settings = {
-      ...liviState.settings,
-      autoSwitchOnReverse: true,
-      cameraId: 'cam-1',
-      camera: { main: true }
-    }
-    statusState.reverse = true
+  test('tells core whether a camera is there and follows the front it picks', async () => {
     statusState.cameraFound = true
-    mockPathname = '/media'
     render(<App />)
-    expect(navigateMock).toHaveBeenCalledWith('/camera')
-  })
-
-  test('does not auto-switch when autoSwitchOnReverse is off', async () => {
-    liviState.settings = {
-      ...liviState.settings,
-      autoSwitchOnReverse: false,
-      cameraId: 'cam-1',
-      camera: { main: true }
-    }
-    statusState.reverse = true
-    statusState.cameraFound = true
-    mockPathname = '/media'
-    render(<App />)
-    expect(navigateMock).not.toHaveBeenCalledWith('/camera')
-  })
-
-  test('does not auto-switch when the camera tab is not enabled for the role', async () => {
-    liviState.settings = {
-      ...liviState.settings,
-      autoSwitchOnReverse: true,
-      cameraId: 'cam-1',
-      camera: { main: false }
-    }
-    statusState.reverse = true
-    statusState.cameraFound = true
-    mockPathname = '/media'
-    render(<App />)
-    expect(navigateMock).not.toHaveBeenCalledWith('/camera')
-  })
-
-  test('reverse off after an auto-switch navigates back to the prior route', async () => {
-    liviState.settings = {
-      ...liviState.settings,
-      autoSwitchOnReverse: true,
-      cameraId: 'cam-1',
-      camera: { main: true }
-    }
-    statusState.reverse = true
-    statusState.cameraFound = true
-    mockPathname = '/media'
-    const { rerender } = render(<App />)
-    expect(navigateMock).toHaveBeenCalledWith('/camera')
-
-    // The mocked router does not move, so the path is set by hand.
-    mockPathname = '/camera'
-    statusState.reverse = false
-    navigateMock.mockClear()
-    rerender(<App />)
-    expect(navigateMock).toHaveBeenCalledWith('/media')
+    expect(reportCameraMock).toHaveBeenCalledWith(true)
+    expect(useFollowFrontMock).toHaveBeenCalled()
   })
 
   test('mounts without redirecting when settings are missing', async () => {
@@ -594,144 +546,79 @@ describe('App', () => {
     expect(broadcastMediaKey).not.toHaveBeenCalled()
   })
 
-  test('camera enabled state resolves for non-main window roles', async () => {
-    const { getWindowRole } = await vi.importMock<any>('../utils/windowRole')
-    getWindowRole.mockReturnValue('left')
-    liviState.settings = {
-      ...liviState.settings,
-      autoSwitchOnReverse: true,
-      cameraId: 'cam-1',
-      camera: { left: true }
-    }
-    statusState.reverse = true
-    statusState.cameraFound = true
-    mockPathname = '/media'
-    render(<App />)
-    expect(navigateMock).toHaveBeenCalledWith('/camera')
-    getWindowRole.mockReturnValue('main')
-  })
-
-  test('camera stays disabled for a non-main role without a camera entry', async () => {
-    const { getWindowRole } = await vi.importMock<any>('../utils/windowRole')
-    getWindowRole.mockReturnValue('left')
-    liviState.settings = {
-      ...liviState.settings,
-      autoSwitchOnReverse: true,
-      cameraId: 'cam-1',
-      camera: {}
-    }
-    statusState.reverse = true
-    statusState.cameraFound = true
-    mockPathname = '/media'
-    render(<App />)
-    expect(navigateMock).not.toHaveBeenCalledWith('/camera')
-    getWindowRole.mockReturnValue('main')
-  })
-
-  test('does not re-navigate to camera when already on the camera route', async () => {
-    liviState.settings = {
-      ...liviState.settings,
-      autoSwitchOnReverse: true,
-      cameraId: 'cam-1',
-      camera: { main: true }
-    }
-    statusState.reverse = true
-    statusState.cameraFound = true
-    mockPathname = '/camera'
-    render(<App />)
-    expect(navigateMock).not.toHaveBeenCalledWith('/camera')
-  })
-
-  test('reverse off restores home when there is no recorded prior route', async () => {
-    const { getWindowRole } = await vi.importMock<any>('../utils/windowRole')
-    getWindowRole.mockReturnValue('main')
-    liviState.settings = {
-      ...liviState.settings,
-      autoSwitchOnReverse: true,
-      cameraId: 'cam-1',
-      camera: { main: true }
-    }
-    statusState.reverse = false
-    statusState.cameraFound = true
-    mockPathname = '/camera'
-    render(<App />)
-    expect(navigateMock).not.toHaveBeenCalled()
-  })
-
-  test('external navigation request routes to the requested path', async () => {
-    statusState.requestedPath = '/media'
+  test('a page core asks for opens', async () => {
     mockPathname = '/'
     render(<App />)
+    askFor('/media')
     expect(navigateMock).toHaveBeenCalledWith('/media')
   })
 
-  test('a handled request is consumed so the same path can be sent again', async () => {
-    statusState.requestedPath = '/media'
-    mockPathname = '/'
-    render(<App />)
-    expect(statusState.clearRequestedPath).toHaveBeenCalled()
+  test('unmounting stops listening for pages', async () => {
+    const { unmount } = render(<App />)
+    expect(openPage).not.toBeNull()
+    unmount()
+    expect(openPage).toBeNull()
   })
 
-  test('external navigation request with no path does not navigate', async () => {
-    statusState.requestedPath = null
+  test('no page asked for, no navigation', async () => {
     mockPathname = '/media'
     render(<App />)
     expect(navigateMock).not.toHaveBeenCalled()
   })
 
   test('a path that matches no route is discarded', async () => {
-    statusState.requestedPath = '/nope'
     mockPathname = '/'
     render(<App />)
+    askFor('/nope')
     expect(navigateMock).not.toHaveBeenCalledWith('/nope')
   })
 
   test('a settings detail page is reachable', async () => {
-    statusState.requestedPath = '/settings/audio/callVolume'
     mockPathname = '/'
     render(<App />)
+    askFor('/settings/audio/callVolume')
     expect(navigateMock).toHaveBeenCalledWith('/settings/audio/callVolume')
   })
 
   test('a trailing slash is normalised away', async () => {
-    statusState.requestedPath = '/settings/audio/'
     mockPathname = '/'
     render(<App />)
+    askFor('/settings/audio/')
     expect(navigateMock).toHaveBeenCalledWith('/settings/audio')
   })
 
   test('repeated slashes are collapsed', async () => {
-    statusState.requestedPath = '/settings//audio'
     mockPathname = '/'
     render(<App />)
+    askFor('/settings//audio')
     expect(navigateMock).toHaveBeenCalledWith('/settings/audio')
   })
 
   test('an unknown settings sub-path is discarded', async () => {
-    statusState.requestedPath = '/settings/test'
     mockPathname = '/'
     render(<App />)
+    askFor('/settings/test')
     expect(navigateMock).not.toHaveBeenCalledWith('/settings/test')
   })
 
   test('the settings root is reachable', async () => {
-    statusState.requestedPath = '/settings'
     mockPathname = '/'
     render(<App />)
+    askFor('/settings')
     expect(navigateMock).toHaveBeenCalledWith('/settings')
   })
 
   test('requesting the current path does not navigate again', async () => {
-    statusState.requestedPath = '/media'
     mockPathname = '/media'
     render(<App />)
+    askFor('/media')
     expect(navigateMock).not.toHaveBeenCalledWith('/media')
   })
 
   test('a settings route is reachable', async () => {
-    statusState.requestedPath = '/settings/devices'
     mockPathname = '/'
     render(<App />)
+    askFor('/settings/devices')
     expect(navigateMock).toHaveBeenCalledWith('/settings/devices')
   })
 })

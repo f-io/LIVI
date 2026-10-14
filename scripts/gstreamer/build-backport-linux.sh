@@ -110,6 +110,7 @@ build_meson gst-plugins-bad1.0 gst-plugins-bad \
   -Dauto_features=disabled \
   -Dgpl=enabled \
   -Dvideoparsers=enabled \
+  -Dmpegtsdemux=enabled \
   -Dfaad=enabled \
   -Dv4l2codecs=enabled \
   -Dkms=enabled \

@@ -6,9 +6,12 @@ import { execFileSync } from 'node:child_process'
 import { chmod, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-// AppRun passes Electron's sandbox flags, core hands them on to the UI.
+// AppRun passes Electron's sandbox flags, core hands them on to the UI. `LIVI.AppImage telemetry`
+// pushes into the running LIVI instead of starting a second one, AppRun may put --no-sandbox first.
 const START = `#!/bin/sh
 HERE="$(dirname "$(readlink -f "$0")")"
+[ "$1" = --no-sandbox ] && [ "$2" = telemetry ] && shift
+[ "$1" = telemetry ] && exec "$HERE/resources/core/livi-core" "$@"
 export LIVI_RESOURCES="$HERE/resources"
 export LIVI_UI_ARGS="$*"
 exec "$HERE/resources/core/livi-core"

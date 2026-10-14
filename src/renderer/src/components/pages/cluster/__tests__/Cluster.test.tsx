@@ -4,7 +4,7 @@ import { Cluster } from '../Cluster'
 
 type AnyFn = (...args: any[]) => any
 
-const statusState: Record<string, any> = { clusterDashActive: false }
+const statusState: Record<string, any> = { clusterDashboardActive: false }
 const liviState: Record<string, any> = {}
 
 vi.mock('../../../../store/store', async () => {
@@ -22,7 +22,7 @@ const renderCluster = (props: { visible?: boolean; showLoadingPlaceholder?: bool
 
 describe('Cluster page', () => {
   beforeEach(() => {
-    statusState.clusterDashActive = false
+    statusState.clusterDashboardActive = false
     liviState.settings = { clusterWidth: 800, clusterHeight: 480 }
     liviState.sessions = { active: null }
     ;(window as any).projection = { ipc: { clusterRepaintNudge: vi.fn().mockResolvedValue({}) } }
@@ -63,9 +63,9 @@ describe('Cluster page', () => {
     expect(document.documentElement.classList.contains('show-cluster')).toBe(false)
   })
 
-  test('nudges the cluster repaint while the stream and the dash are on', () => {
+  test('nudges the cluster repaint while the stream and the dashboard are on', () => {
     vi.useFakeTimers()
-    statusState.clusterDashActive = true
+    statusState.clusterDashboardActive = true
     liviState.sessions = { active: 'carplay' }
     const nudge = vi.fn().mockRejectedValue(new Error('nudge'))
     ;(window as any).projection.ipc.clusterRepaintNudge = nudge
@@ -79,7 +79,7 @@ describe('Cluster page', () => {
 
   test('does not throw when the repaint nudge is unavailable', () => {
     vi.useFakeTimers()
-    statusState.clusterDashActive = true
+    statusState.clusterDashboardActive = true
     liviState.sessions = { active: 'carplay' }
     delete (window as any).projection.ipc.clusterRepaintNudge
 

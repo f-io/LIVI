@@ -3,14 +3,13 @@ use livi_audio_player::{Config as AudioPipeline, Player as AudioPipelinePlayer};
 use livi_audio_stream::AudioSink;
 use livi_screen_stream::ScreenSink;
 #[cfg(not(target_os = "macos"))]
-use livi_video_player::Player;
-use livi_video_player::UrlPlayer;
+use livi_video_player::{Player, UrlPlayer};
 
-#[cfg(not(target_os = "macos"))]
-use crate::Plane;
 #[cfg(target_os = "macos")]
-use crate::ui_plane::UiPlane;
-use crate::{AudioConfig, MediaSink, Outside, Speaker, TapConfig, UplinkConfig, UrlPlay};
+use crate::ui_plane::{UiPlane, UiUrlPlayer};
+use crate::{AudioConfig, MediaSink, Outside, Speaker, TapConfig, UplinkConfig};
+#[cfg(not(target_os = "macos"))]
+use crate::{Plane, UrlPlay};
 
 /// Captures for as long as it is held.
 pub struct Tap(#[allow(dead_code)] SocketTap);
@@ -34,6 +33,7 @@ impl Plane for Player {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 impl UrlPlay for UrlPlayer {
     fn start(&self) {
         UrlPlayer::start(self)
@@ -82,6 +82,10 @@ impl Speaker for AudioPipelinePlayer {
     fn take_visualizer(&self) -> Option<(Vec<u8>, u32)> {
         AudioPipelinePlayer::take_visualizer(self)
     }
+
+    fn output_delay_ms(&self) -> Option<u32> {
+        AudioPipelinePlayer::output_delay(self).and_then(|d| u32::try_from(d.as_millis()).ok())
+    }
 }
 
 pub struct Gst;
@@ -91,7 +95,10 @@ impl Outside for Gst {
     type Plane = Player;
     #[cfg(target_os = "macos")]
     type Plane = UiPlane;
+    #[cfg(not(target_os = "macos"))]
     type UrlPlayer = UrlPlayer;
+    #[cfg(target_os = "macos")]
+    type UrlPlayer = UiUrlPlayer;
     type Ears = Ears;
     type Speaker = AudioPipelinePlayer;
     type AudioEars = AudioEars;
@@ -111,22 +118,17 @@ impl Outside for Gst {
 
     #[cfg(target_os = "macos")]
     fn create_plane(&self, id: u32, codec: &str, codec_data: &[u8]) -> Option<UiPlane> {
-        let Ok(path) = std::env::var(livi_host_proto::ui_planes::PATH_ENV) else {
-            eprintln!("[gst-host] no UI to draw plane 0x{id:x} in");
-            return None;
-        };
-        UiPlane::open(&path, id, codec, codec_data)
+        UiPlane::open(&ui_planes_path(id)?, id, codec, codec_data)
     }
 
     #[cfg(not(target_os = "macos"))]
     fn play_url(&self, _id: u32, url: &str, audio_device: &str) -> Option<UrlPlayer> {
-        UrlPlayer::new(url, audio_device)
+        UrlPlayer::new(url, audio_device, 0, livi_video_player::to_stderr())
     }
 
     #[cfg(target_os = "macos")]
-    fn play_url(&self, id: u32, _url: &str, _audio_device: &str) -> Option<UrlPlayer> {
-        eprintln!("[gst-host] plane 0x{id:x} has no URL playback on macOS yet");
-        None
+    fn play_url(&self, id: u32, url: &str, audio_device: &str) -> Option<UiUrlPlayer> {
+        UiUrlPlayer::open(&ui_planes_path(id)?, id, url, audio_device)
     }
 
     fn listen(&self, key: [u8; 32], sink: Box<dyn ScreenSink>) -> Option<(Ears, u16)> {
@@ -212,4 +214,11 @@ pub fn probe_json() -> String {
     }
     out.push('}');
     out
+}
+
+#[cfg(target_os = "macos")]
+fn ui_planes_path(id: u32) -> Option<String> {
+    std::env::var(livi_host_proto::ui_planes::PATH_ENV)
+        .inspect_err(|_| eprintln!("[gst-host] no UI to draw plane 0x{id:x} in"))
+        .ok()
 }

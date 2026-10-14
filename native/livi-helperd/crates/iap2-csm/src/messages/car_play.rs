@@ -72,5 +72,6 @@ csm_message! {
         3 => device_identifier: [opt str],
         4 => public_key: [opt str],
         5 => source_version: [opt str],
+        8 => supports_mutual_authentication: [opt bool],
     }
 }

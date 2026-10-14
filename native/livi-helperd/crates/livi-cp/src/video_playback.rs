@@ -8,6 +8,7 @@ use base64::engine::general_purpose::STANDARD_NO_PAD;
 
 use crate::bplist::{self, Value, dict};
 use crate::media::VideoStatus;
+use crate::opack;
 
 pub const FEATURE: &str = "videoPlayback";
 /// Live streams have no length, so answers name one long enough for any film.
@@ -100,7 +101,8 @@ fn seconds(v: Option<&Value>) -> Option<f64> {
     }
 }
 
-/// One line for the log: type, kind, id and property of a message on the video stream.
+/// One line for the log: type, kind, id and property of a message on the video stream, with the
+/// values it sets.
 pub fn describe(message: &Value) -> String {
     let mut parts = Vec::new();
     for key in ["type", "controlMessage", "kind", "property"] {
@@ -113,6 +115,23 @@ pub fn describe(message: &Value) -> String {
     }
     if let Some(url) = message.get("item").and_then(|i| text_of(i, "Content-Location")) {
         parts.push(format!("url={url}"));
+    }
+    if let Some(rate) = seconds(message.get("rate")) {
+        parts.push(format!("rate={rate}"));
+    }
+    if let Some(time) = seconds(message.get("time")) {
+        parts.push(format!("time={time:.3}"));
+    }
+    match message.get("value") {
+        Some(Value::Bool(on)) => parts.push(format!("value={on}")),
+        Some(info @ Value::Dict(_)) => {
+            for key in ["position", "rate"] {
+                if let Some(v) = seconds(info.get(key)) {
+                    parts.push(format!("{key}={v:.3}"));
+                }
+            }
+        }
+        _ => {}
     }
     if parts.is_empty() { "no type".into() } else { parts.join(" ") }
 }
@@ -222,97 +241,12 @@ impl Playback {
     }
 }
 
-/// OPACK, the compact binary the settings stream speaks. Object references are not read.
-pub fn opack_decode(buf: &[u8]) -> Option<Value> {
-    let mut at = 0;
-    let v = opack_value(buf, &mut at)?;
-    (at == buf.len()).then_some(v)
-}
-
-const OPACK_END: u8 = 0x03;
-
-fn take<'a>(buf: &'a [u8], at: &mut usize, n: usize) -> Option<&'a [u8]> {
-    let s = buf.get(*at..at.checked_add(n)?)?;
-    *at += n;
-    Some(s)
-}
-
-fn le(bytes: &[u8]) -> u64 {
-    bytes.iter().rev().fold(0, |acc, b| (acc << 8) | u64::from(*b))
-}
-
-fn opack_len(buf: &[u8], at: &mut usize, tag: u8, base: u8) -> Option<usize> {
-    let width = match tag - base {
-        n @ 0..=0x20 => return Some(usize::from(n)),
-        0x21 => 1,
-        0x22 => 2,
-        0x23 => 3,
-        0x24 => 4,
-        _ => return None,
-    };
-    usize::try_from(le(take(buf, at, width)?)).ok()
-}
-
-fn opack_value(buf: &[u8], at: &mut usize) -> Option<Value> {
-    let tag = *take(buf, at, 1)?.first()?;
-    Some(match tag {
-        0x01 => Value::Bool(true),
-        0x02 => Value::Bool(false),
-        0x04 => Value::String("null".into()),
-        0x05 => Value::Data(take(buf, at, 16)?.to_vec()),
-        0x06 | 0x36 => Value::Real(f64::from_bits(le(take(buf, at, 8)?))),
-        0x08..=0x2F => Value::Int(u64::from(tag - 0x08)),
-        0x30 => Value::Int(le(take(buf, at, 1)?)),
-        0x31 => Value::Int(le(take(buf, at, 2)?)),
-        0x32 => Value::Int(le(take(buf, at, 4)?)),
-        0x33 => Value::Int(le(take(buf, at, 8)?)),
-        0x35 => Value::Real(f64::from(f32::from_bits(u32::try_from(le(take(buf, at, 4)?)).ok()?))),
-        0x40..=0x64 => {
-            let n = opack_len(buf, at, tag, 0x40)?;
-            Value::String(String::from_utf8_lossy(take(buf, at, n)?).into_owned())
-        }
-        0x70..=0x94 => {
-            let n = opack_len(buf, at, tag, 0x70)?;
-            Value::Data(take(buf, at, n)?.to_vec())
-        }
-        0xD0..=0xDF => {
-            let mut items = Vec::new();
-            let counted = (tag != 0xDF).then_some(usize::from(tag - 0xD0));
-            while counted.is_none_or(|n| items.len() < n) {
-                if counted.is_none() && buf.get(*at) == Some(&OPACK_END) {
-                    *at += 1;
-                    break;
-                }
-                items.push(opack_value(buf, at)?);
-            }
-            Value::Array(items)
-        }
-        0xE0..=0xEF => {
-            let mut entries = Vec::new();
-            let counted = (tag != 0xEF).then_some(usize::from(tag - 0xE0));
-            while counted.is_none_or(|n| entries.len() < n) {
-                if counted.is_none() && buf.get(*at) == Some(&OPACK_END) {
-                    *at += 1;
-                    break;
-                }
-                let key = match opack_value(buf, at)? {
-                    Value::String(s) => s,
-                    other => format!("{other:?}"),
-                };
-                entries.push((key, opack_value(buf, at)?));
-            }
-            Value::Dict(entries)
-        }
-        _ => return None,
-    })
-}
-
 /// A settings message for the log, with the plist it carries opened up.
 pub fn describe_setting(message: &[u8]) -> String {
-    let Some(v) = opack_decode(message) else { return "not OPACK".into() };
-    let kind = v.get("messageType").and_then(Value::as_int);
+    let Some(v) = opack::decode(message) else { return "not OPACK".into() };
+    let kind = v.get("messageType").and_then(opack::Value::as_int);
     let data = match v.get("data") {
-        Some(Value::Data(d)) => match bplist::decode(d) {
+        Some(opack::Value::Data(d)) => match bplist::decode(d) {
             Ok(p) => format!("{p:?}"),
             Err(_) => format!("{} B", d.len()),
         },
@@ -348,7 +282,7 @@ impl Capture {
         std::fs::write(&path, data)?;
         if let Ok(v) = bplist::decode(data) {
             std::fs::write(path.with_extension("txt"), format!("{v:#?}\n"))?;
-        } else if opack_decode(data).is_some() {
+        } else if opack::decode(data).is_some() {
             std::fs::write(path.with_extension("txt"), describe_setting(data) + "\n")?;
         }
         Ok(path)
@@ -404,6 +338,13 @@ mod tests {
 
         let rate =
             message(vec![("type", Value::String("setRate".into())), ("rate", Value::Int(1))]);
+        assert_eq!(describe(&rate), "type=setRate rate=1");
+        let mute = message(vec![
+            ("type", Value::String("setProperty".into())),
+            ("property", Value::String("muted".into())),
+            ("value", Value::Bool(true)),
+        ]);
+        assert_eq!(describe(&mute), "type=setProperty property=muted value=true");
         assert_eq!(playback.handle(&rate, None), (None, true));
         assert_eq!(playback.handle(&rate, None), (None, false), "only the first start counts");
 
@@ -416,7 +357,10 @@ mod tests {
             VideoStatus { position: Some(61.5), ready: true, playing: true, ..Default::default() };
         let (answer, _) = playback.handle(&ask, Some(&playing));
         let answer = answer.unwrap();
-        assert_eq!(describe(&answer), "type=playbackInfo kind=response messageID=7");
+        assert_eq!(
+            describe(&answer),
+            "type=playbackInfo kind=response messageID=7 position=61.500 rate=1.000"
+        );
         let info = answer.get("value").unwrap();
         assert_eq!(info.get("position").and_then(|p| seconds(Some(p))), Some(61.5));
         assert_eq!(info.get("rate").and_then(|p| seconds(Some(p))), Some(1.0));
@@ -549,19 +493,18 @@ mod tests {
         msg.push(0x4B);
         msg.extend_from_slice(b"messageType");
         msg.push(0x0D);
-        let v = opack_decode(&msg).unwrap();
-        assert_eq!(v.get("messageType").and_then(Value::as_int), Some(5));
+        let v = opack::decode(&msg).unwrap();
+        assert_eq!(v.get("messageType").and_then(opack::Value::as_int), Some(5));
         let line = describe_setting(&msg);
         assert!(line.starts_with("messageType=5 data=") && line.contains("\"p\""), "{line}");
 
         let open = [0xDF, 0x01, 0x30, 0xFF, 0x03, 0xEF, 0x41, b'k', 0x02, 0x03];
         assert_eq!(
-            opack_decode(&open[..5]),
-            Some(Value::Array(vec![Value::Bool(true), Value::Int(255)]))
+            opack::decode(&open[..5]),
+            Some(opack::Value::Array(vec![opack::Value::Bool(true), opack::Value::Int(-1)]))
         );
-        let dict_end = opack_decode(&open[5..]).unwrap();
-        assert_eq!(dict_end.get("k").and_then(Value::as_bool), Some(false));
-        assert_eq!(opack_decode(&[0xA0]), None);
+        let dict_end = opack::decode(&open[5..]).unwrap();
+        assert_eq!(dict_end.get("k"), Some(&opack::Value::Bool(false)));
         assert_eq!(describe_setting(b"\xA0"), "not OPACK");
     }
 

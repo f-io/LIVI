@@ -2,9 +2,8 @@
 
 import { speedIn, speedSuffix } from '@renderer/utils/units'
 import { SettingsValueRow } from '@settings/components'
+import type { GnssConstellation, GnssInfo, GnssSatellite, GpsFix } from '@shared/types'
 import { DEFAULT_CONFIG } from '@shared/types'
-import type { GnssConstellation, GnssInfo, GnssSatellite } from '@shared/types/Gnss'
-import type { GpsPayload } from '@shared/types/Telemetry'
 import { useLiviStore } from '@store/store'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -90,7 +89,7 @@ function signalLevel(satellites: GnssSatellite[]): number | null {
   return top.reduce((a, b) => a + b, 0) / top.length
 }
 
-function coordinate(fix: GpsPayload | undefined): string {
+function coordinate(fix: GpsFix | undefined): string {
   if (fix?.lat === undefined || fix.lng === undefined) return ''
   return `${fix.lat.toFixed(6)}, ${fix.lng.toFixed(6)}`
 }
@@ -107,7 +106,7 @@ export const GpsInfo = () => {
   const speedUnit = useLiviStore((s) => s.settings?.speedUnit ?? DEFAULT_CONFIG.speedUnit)
 
   const gnss = telemetry?.gnss as GnssInfo | undefined
-  const fix = telemetry?.gps as GpsPayload | undefined
+  const fix = telemetry?.gps as GpsFix | undefined
 
   const rows = useMemo<Row[]>(() => {
     if (!gnss) return []

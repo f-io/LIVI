@@ -1,34 +1,34 @@
 import React from 'react'
 import { DashboardConfig } from '../config'
-import { Dash1, Dash2, Dash3, Dash4 } from '../dashboards'
+import { Dashboard1, Dashboard2, Dashboard3, Dashboard4 } from '../dashboards'
 import { TelemetryDashboardIds } from '../types'
 
 vi.mock('../dashboards', () => ({
-  Dash1: () => React.createElement('div', { 'data-testid': 'dash1' }),
-  Dash2: () => React.createElement('div', { 'data-testid': 'dash2' }),
-  Dash3: () => React.createElement('div', { 'data-testid': 'dash3' }),
-  Dash4: () => React.createElement('div', { 'data-testid': 'dash4' })
+  Dashboard1: () => React.createElement('div', { 'data-testid': 'dashboard1' }),
+  Dashboard2: () => React.createElement('div', { 'data-testid': 'dashboard2' }),
+  Dashboard3: () => React.createElement('div', { 'data-testid': 'dashboard3' }),
+  Dashboard4: () => React.createElement('div', { 'data-testid': 'dashboard4' })
 }))
 
 describe('DashboardConfig', () => {
   test('maps all telemetry dashboard ids to dashboard elements', () => {
     expect(Object.keys(DashboardConfig)).toEqual([
-      TelemetryDashboardIds.Dash1,
-      TelemetryDashboardIds.Dash2,
-      TelemetryDashboardIds.Dash3,
-      TelemetryDashboardIds.Dash4
+      TelemetryDashboardIds.Dashboard1,
+      TelemetryDashboardIds.Dashboard2,
+      TelemetryDashboardIds.Dashboard3,
+      TelemetryDashboardIds.Dashboard4
     ])
 
-    expect(React.isValidElement(DashboardConfig[TelemetryDashboardIds.Dash1])).toBe(true)
-    expect(React.isValidElement(DashboardConfig[TelemetryDashboardIds.Dash2])).toBe(true)
-    expect(React.isValidElement(DashboardConfig[TelemetryDashboardIds.Dash3])).toBe(true)
-    expect(React.isValidElement(DashboardConfig[TelemetryDashboardIds.Dash4])).toBe(true)
+    expect(React.isValidElement(DashboardConfig[TelemetryDashboardIds.Dashboard1])).toBe(true)
+    expect(React.isValidElement(DashboardConfig[TelemetryDashboardIds.Dashboard2])).toBe(true)
+    expect(React.isValidElement(DashboardConfig[TelemetryDashboardIds.Dashboard3])).toBe(true)
+    expect(React.isValidElement(DashboardConfig[TelemetryDashboardIds.Dashboard4])).toBe(true)
   })
 
   test('uses the expected dashboard components for each id', () => {
-    expect(DashboardConfig[TelemetryDashboardIds.Dash1].type).toBe(Dash1)
-    expect(DashboardConfig[TelemetryDashboardIds.Dash2].type).toBe(Dash2)
-    expect(DashboardConfig[TelemetryDashboardIds.Dash3].type).toBe(Dash3)
-    expect(DashboardConfig[TelemetryDashboardIds.Dash4].type).toBe(Dash4)
+    expect(DashboardConfig[TelemetryDashboardIds.Dashboard1].type).toBe(Dashboard1)
+    expect(DashboardConfig[TelemetryDashboardIds.Dashboard2].type).toBe(Dashboard2)
+    expect(DashboardConfig[TelemetryDashboardIds.Dashboard3].type).toBe(Dashboard3)
+    expect(DashboardConfig[TelemetryDashboardIds.Dashboard4].type).toBe(Dashboard4)
   })
 })

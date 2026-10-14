@@ -549,7 +549,7 @@ mod tests {
         config.projection_height = 600;
         config.voice_assistant_volume = 0.5;
         State {
-            front: PerScreen { main: Front::Livi, dash: Front::Livi, aux: Front::Livi },
+            front: PerScreen { main: Front::Livi, cluster: Front::Livi, aux: Front::Livi },
             sessions: Default::default(),
             now_playing: Default::default(),
             telemetry: Default::default(),

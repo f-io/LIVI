@@ -109,7 +109,8 @@ async fn full_bringup_sequence() {
     let ident = IdentificationInformation::decode(&ident_frame).unwrap();
     assert_eq!(ident.name, "LIVI");
     assert_eq!(ident.bluetooth_transport_component[0].bluetooth_transport_mac, identity().bt_mac);
-    assert!(ident.vehicle_information_component.is_some());
+    let vehicle = ident.vehicle_information_component.unwrap();
+    assert_eq!(vehicle.engine_types, [EngineType::Gas], "the car type decides, not a fixed diesel");
 
     phone.send(IdentificationAccepted {}.encode()).await.unwrap();
     assert_eq!(rx.recv().await, Some(BringupEvent::Identified));

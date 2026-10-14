@@ -1,15 +1,22 @@
 //! Plays an HLS stream of fMP4 segments with H.264 video, the kind a video app on the phone
 //! serves, as length-prefixed access units paced at their own rate.
 
+use std::collections::HashMap;
 use std::io;
+use std::pin::Pin;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use openssl::ssl::{SslConnector, SslMethod};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
+use tokio_openssl::SslStream;
 
-const FETCH_TIMEOUT: Duration = Duration::from_secs(4);
+use crate::video_proxy::ProxyOffer;
+
+pub(crate) const FETCH_TIMEOUT: Duration = Duration::from_secs(4);
 const NAL_LENGTH: usize = 4;
 
 /// The video track of an init segment.
@@ -236,9 +243,13 @@ pub fn read_playlist(text: &str) -> Playlist {
 }
 
 /// `uri` as seen from the playlist at `base`.
-fn resolve(base: &str, uri: &str) -> String {
+pub(crate) fn resolve(base: &str, uri: &str) -> String {
     if uri.contains("://") {
         return uri.to_string();
+    }
+    if uri.starts_with("//") {
+        let scheme = base.split_once("://").map_or("http", |(scheme, _)| scheme);
+        return format!("{scheme}:{uri}");
     }
     let origin_end = base.find("://").map_or(0, |at| at + 3);
     let host_end = base[origin_end..].find('/').map_or(base.len(), |at| origin_end + at);
@@ -256,47 +267,130 @@ pub async fn get(url: &str) -> io::Result<Vec<u8>> {
     Client::default().get(url).await
 }
 
-/// Host and path of a plain http URL.
-pub(crate) fn split_url(url: &str) -> io::Result<(&str, &str)> {
-    let rest = url
-        .strip_prefix("http://")
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "not an http URL"))?;
-    Ok(rest.find('/').map_or((rest, "/"), |at| (&rest[..at], &rest[at..])))
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Target<'a> {
+    pub tls: bool,
+    /// As written, with a port only when the URL names one.
+    pub host: &'a str,
+    pub path: &'a str,
 }
 
-/// One HTTP/1.1 connection kept open between requests. Behind the tunnel on 127.0.0.1 every new
-/// connection costs a handshake with the phone, one per playlist and segment was too many.
+impl<'a> Target<'a> {
+    pub fn of(url: &'a str) -> io::Result<Self> {
+        let (tls, rest) = match (url.strip_prefix("http://"), url.strip_prefix("https://")) {
+            (Some(rest), _) => (false, rest),
+            (_, Some(rest)) => (true, rest),
+            _ => {
+                let e = format!("{url}: neither http nor https");
+                return Err(io::Error::new(io::ErrorKind::InvalidInput, e));
+            }
+        };
+        let (host, path) = rest.find('/').map_or((rest, "/"), |at| (&rest[..at], &rest[at..]));
+        if host.is_empty() {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("{url}: no host")));
+        }
+        Ok(Self { tls, host, path })
+    }
+
+    pub fn origin(&self) -> String {
+        format!("{}://{}", if self.tls { "https" } else { "http" }, self.host)
+    }
+
+    pub fn address(&self) -> String {
+        let has_port = match self.host.rfind(']') {
+            Some(bracket) => self.host[bracket..].contains(':'),
+            None => self.host.contains(':'),
+        };
+        match (has_port, self.tls) {
+            (true, _) => self.host.to_string(),
+            (false, true) => format!("{}:443", self.host),
+            (false, false) => format!("{}:80", self.host),
+        }
+    }
+
+    /// What the certificate has to name.
+    fn name(&self) -> &'a str {
+        let host = match self.host.rfind(']') {
+            Some(bracket) => &self.host[..bracket],
+            None => self.host.rsplit_once(':').map_or(self.host, |(name, _)| name),
+        };
+        host.trim_start_matches('[')
+    }
+}
+
+pub(crate) trait Conn: AsyncRead + AsyncWrite + Unpin + Send + Sync {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send + Sync> Conn for T {}
+
+fn system_trust() -> io::Result<SslConnector> {
+    static TRUST: OnceLock<SslConnector> = OnceLock::new();
+    if let Some(trust) = TRUST.get() {
+        return Ok(trust.clone());
+    }
+    let mut trust = SslConnector::builder(SslMethod::tls_client()).map_err(io::Error::other)?;
+    // The vendored OpenSSL knows no roots of its own, macOS keeps a bundle here.
+    if cfg!(target_os = "macos") {
+        trust.set_ca_file("/etc/ssl/cert.pem").map_err(io::Error::other)?;
+    }
+    let trust = trust.build();
+    Ok(TRUST.get_or_init(|| trust).clone())
+}
+
+/// Connections kept open by origin, through the phone each new one costs a handshake.
 #[derive(Default)]
 pub struct Client {
-    open: Option<(String, TcpStream)>,
+    open: HashMap<String, Vec<Box<dyn Conn>>>,
+    dialer: Dialer,
 }
 
 impl Client {
+    pub fn through(phone: Arc<ProxyOffer>) -> Self {
+        Self { dialer: Dialer { phone: Some(phone), trust: None }, ..Self::default() }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn trusting(mut self, trust: SslConnector) -> Self {
+        self.dialer.trust = Some(trust);
+        self
+    }
+
     pub async fn get(&mut self, url: &str) -> io::Result<Vec<u8>> {
-        let (host, path) = split_url(url)?;
-        let reused = self.open.as_ref().is_some_and(|(h, _)| h == host);
-        if !reused {
-            self.open = None;
-        }
-        match self.exchange(host, path, url).await {
+        let target = Target::of(url)?;
+        let open = self.take(&target.origin());
+        let reused = open.is_some();
+        match self.exchange(&target, open, url).await {
             // A server may close a connection that sat idle, that one gets a fresh try.
             Err(e) if reused && e.kind() != io::ErrorKind::TimedOut => {
-                self.open = None;
-                self.exchange(host, path, url).await
+                self.exchange(&target, None, url).await
             }
             other => other,
         }
     }
 
-    async fn exchange(&mut self, host: &str, path: &str, url: &str) -> io::Result<Vec<u8>> {
-        let open = self.open.take();
+    pub(crate) fn take(&mut self, origin: &str) -> Option<Box<dyn Conn>> {
+        self.open.get_mut(origin)?.pop()
+    }
+
+    pub(crate) fn keep(&mut self, origin: String, conn: Box<dyn Conn>) {
+        self.open.entry(origin).or_default().push(conn);
+    }
+
+    pub(crate) fn dialer(&self) -> Dialer {
+        self.dialer.clone()
+    }
+
+    async fn exchange(
+        &mut self,
+        target: &Target<'_>,
+        open: Option<Box<dyn Conn>>,
+        url: &str,
+    ) -> io::Result<Vec<u8>> {
         let fetch = async {
             let mut sock = match open {
-                Some((_, sock)) => sock,
-                None => TcpStream::connect(host).await?,
+                Some(sock) => sock,
+                None => self.dialer.connect(target).await?,
             };
-            sock.write_all(format!("GET {path} HTTP/1.1\r\nHost: {host}\r\n\r\n").as_bytes())
-                .await?;
+            let ask = format!("GET {} HTTP/1.1\r\nHost: {}\r\n\r\n", target.path, target.host);
+            sock.write_all(ask.as_bytes()).await?;
             let (head, body, again) = read_answer(&mut sock, url).await?;
             Ok::<_, io::Error>((head, body, again.then_some(sock)))
         };
@@ -304,7 +398,7 @@ impl Client {
             .await
             .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, format!("{url}: timed out")))??;
         if let Some(sock) = sock {
-            self.open = Some((host.to_string(), sock));
+            self.keep(target.origin(), sock);
         }
         if head.split(' ').nth(1) != Some("200") {
             let line = head.lines().next().unwrap_or_default().to_string();
@@ -314,9 +408,46 @@ impl Client {
     }
 }
 
+#[derive(Clone, Default)]
+pub(crate) struct Dialer {
+    /// None connects directly.
+    phone: Option<Arc<ProxyOffer>>,
+    trust: Option<SslConnector>,
+}
+
+impl Dialer {
+    pub(crate) async fn connect(&self, target: &Target<'_>) -> io::Result<Box<dyn Conn>> {
+        let plain: Box<dyn Conn> = match &self.phone {
+            Some(phone) => {
+                let (tunnel, early) = phone.connect(&target.address()).await?;
+                if !early.is_empty() {
+                    return Err(io::Error::other("the proxy spoke before the request"));
+                }
+                Box::new(tunnel)
+            }
+            None => Box::new(TcpStream::connect(target.address()).await?),
+        };
+        if !target.tls {
+            return Ok(plain);
+        }
+        let trust = match &self.trust {
+            Some(trust) => trust.clone(),
+            None => system_trust()?,
+        };
+        let ssl = trust.configure().and_then(|c| c.into_ssl(target.name()));
+        let mut tls =
+            SslStream::new(ssl.map_err(io::Error::other)?, plain).map_err(io::Error::other)?;
+        Pin::new(&mut tls).connect().await.map_err(io::Error::other)?;
+        Ok(Box::new(tls))
+    }
+}
+
 /// One answer off `sock`: the head in lower case, the body, and whether the connection can carry
 /// another request.
-async fn read_answer(sock: &mut TcpStream, url: &str) -> io::Result<(String, Vec<u8>, bool)> {
+async fn read_answer<S: AsyncRead + Unpin>(
+    sock: &mut S,
+    url: &str,
+) -> io::Result<(String, Vec<u8>, bool)> {
     let mut all = Vec::new();
     let mut chunk = vec![0u8; 64 * 1024];
     let mut ended = false;
@@ -349,7 +480,7 @@ async fn read_answer(sock: &mut TcpStream, url: &str) -> io::Result<(String, Vec
     }
 }
 
-fn with_query(url: &str, query: &str) -> String {
+pub(crate) fn with_query(url: &str, query: &str) -> String {
     let sep = if url.contains('?') { '&' } else { '?' };
     format!("{url}{sep}{query}")
 }
@@ -777,7 +908,8 @@ mod tests {
         assert_eq!(get(&format!("{base}/a")).await.unwrap(), b"plain");
         assert_eq!(get(&format!("{base}/b")).await.unwrap(), b"chunks");
         assert!(get(&format!("{base}/c")).await.unwrap_err().to_string().contains("404"));
-        assert!(get("https://x/a").await.is_err());
+        assert!(get("ftp://x/a").await.is_err());
+        assert!(get("https:///a").await.is_err());
         let silent = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let at = silent.local_addr().unwrap();
         tokio::spawn(async move {
@@ -821,30 +953,77 @@ mod tests {
         let log = seen.clone();
         tokio::spawn(async move {
             loop {
-                let (mut sock, _) = listener.accept().await.unwrap();
+                let (sock, _) = listener.accept().await.unwrap();
                 log.lock().unwrap().0 += 1;
+                tokio::spawn(echo(sock, log.clone()));
+            }
+        });
+        (base, seen)
+    }
+
+    type Seen = Arc<Mutex<(usize, Vec<String>)>>;
+
+    async fn echo<S: AsyncRead + AsyncWrite + Unpin>(mut sock: S, log: Seen) {
+        let mut buf = vec![0u8; 4096];
+        while let Ok(n) = sock.read(&mut buf).await {
+            if n == 0 {
+                return;
+            }
+            let ask = String::from_utf8_lossy(&buf[..n]).to_string();
+            let path = ask.split(' ').nth(1).unwrap_or_default().to_string();
+            log.lock().unwrap().1.push(path.clone());
+            let answer = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{path}", path.len());
+            if sock.write_all(answer.as_bytes()).await.is_err() {
+                return;
+            }
+        }
+    }
+
+    #[test]
+    fn a_target_names_where_to_connect_and_whom_to_trust() {
+        let t = Target::of("https://cdn.example/v/a.m3u8?x=1").unwrap();
+        assert_eq!((t.tls, t.host, t.path), (true, "cdn.example", "/v/a.m3u8?x=1"));
+        assert_eq!(
+            (t.origin(), t.address(), t.name()),
+            ("https://cdn.example".into(), "cdn.example:443".into(), "cdn.example")
+        );
+        let t = Target::of("http://[::1]:8080").unwrap();
+        assert_eq!((t.path, t.address(), t.name()), ("/", "[::1]:8080".into(), "::1"));
+        let t = Target::of("https://[::1]/a").unwrap();
+        assert_eq!((t.address(), t.name()), ("[::1]:443".into(), "::1"));
+        assert_eq!(Target::of("http://h:81/").unwrap().name(), "h");
+        assert_eq!(Target::of("http://h/").unwrap().address(), "h:80");
+        assert_eq!(resolve("https://h/a/b.m3u8", "//cdn/x.ts"), "https://cdn/x.ts");
+    }
+
+    #[tokio::test]
+    async fn https_is_checked_against_the_trusted_roots_and_kept_open() {
+        let (acceptor, trust) = crate::test_tls::ca();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("https://{}", listener.local_addr().unwrap());
+        let seen: Seen = Arc::new(Mutex::new((0, Vec::new())));
+        let log = seen.clone();
+        tokio::spawn(async move {
+            loop {
+                let (tcp, _) = listener.accept().await.unwrap();
+                log.lock().unwrap().0 += 1;
+                let ssl = openssl::ssl::Ssl::new(acceptor.context()).unwrap();
                 let log = log.clone();
                 tokio::spawn(async move {
-                    let mut buf = vec![0u8; 4096];
-                    while let Ok(n) = sock.read(&mut buf).await {
-                        if n == 0 {
-                            return;
-                        }
-                        let ask = String::from_utf8_lossy(&buf[..n]).to_string();
-                        let path = ask.split(' ').nth(1).unwrap_or_default().to_string();
-                        log.lock().unwrap().1.push(path.clone());
-                        let answer = format!(
-                            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{path}",
-                            path.len()
-                        );
-                        if sock.write_all(answer.as_bytes()).await.is_err() {
-                            return;
-                        }
+                    let mut tls = SslStream::new(ssl, tcp).unwrap();
+                    if Pin::new(&mut tls).accept().await.is_ok() {
+                        echo(tls, log).await;
                     }
                 });
             }
         });
-        (base, seen)
+
+        let mut client = Client::default().trusting(trust);
+        for path in ["/a", "/b"] {
+            assert_eq!(client.get(&format!("{base}{path}")).await.unwrap(), path.as_bytes());
+        }
+        assert_eq!(seen.lock().unwrap().0, 1);
+        assert!(Client::default().get(&format!("{base}/a")).await.is_err(), "unknown root");
     }
 
     #[tokio::test]

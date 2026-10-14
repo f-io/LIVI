@@ -77,7 +77,7 @@ pub fn pipeline_desc(cfg: &Config) -> String {
         "appsrc name=src is-live=true format=time do-timestamp=true ! \
          {head}audioconvert ! clocksync sync=true ! volume name=vol ! \
          audioconvert ! audioresample ! audio/x-raw,format=S16LE,rate=48000,channels=2 ! \
-         queue ! {sink}",
+         queue name=out ! {sink}",
         sink = sink_chain(cfg),
     )
 }
@@ -272,6 +272,35 @@ impl Player {
         self.level.set(now, self.volume.property::<f64>("volume"));
         self.level.set(now + gst::ClockTime::from_mseconds(ms), target);
         self.volume.set_control_binding_disabled("volume", false);
+    }
+
+    /// How long sound clocksync lets through now takes to be heard: what waits in the queue, then
+    /// between where the sink writes next and what the device already played. Measured by
+    /// GStreamer itself, None while the sink plays nothing yet.
+    pub fn output_delay(&self) -> Option<std::time::Duration> {
+        let sink = self.pipeline.by_name(SINK_NAME)?;
+        if !sink.is::<gst_audio::AudioBaseSink>() {
+            return None;
+        }
+        let queued =
+            self.pipeline.by_name("out").map_or(0, |q| q.property::<u64>("current-level-time"));
+        // SAFETY: the element is a GstAudioBaseSink, its ring buffer lives as long as the sink.
+        let ring_ns = unsafe {
+            let base = sink.as_ptr() as *mut gst_audio::ffi::GstAudioBaseSink;
+            let ring = (*base).ringbuffer;
+            let next = (*base).next_sample;
+            if ring.is_null()
+                || next == u64::MAX
+                || gst_audio::ffi::gst_audio_ring_buffer_is_acquired(ring) == 0
+            {
+                return None;
+            }
+            let rate = u64::try_from((*ring).spec.info.rate).ok().filter(|r| *r > 0)?;
+            next.checked_sub(gst_audio::ffi::gst_audio_ring_buffer_samples_done(ring))?
+                * 1_000_000_000
+                / rate
+        };
+        Some(std::time::Duration::from_nanos(queued + ring_ns))
     }
 }
 

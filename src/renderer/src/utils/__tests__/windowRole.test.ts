@@ -11,9 +11,9 @@ describe('getWindowRole', () => {
     expect(getWindowRole()).toBe('main')
   })
 
-  test('returns "dash" when role=dash', () => {
-    setSearch('?role=dash')
-    expect(getWindowRole()).toBe('dash')
+  test('returns "cluster" when role=cluster', () => {
+    setSearch('?role=cluster')
+    expect(getWindowRole()).toBe('cluster')
   })
 
   test('returns "aux" when role=aux', () => {

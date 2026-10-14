@@ -12,7 +12,9 @@ pub mod info;
 pub mod keep_alive;
 pub mod manager;
 pub mod media;
+pub mod mfi4;
 pub mod net;
+pub mod opack;
 pub mod pair_setup;
 pub mod pair_verify;
 pub mod pairings;
@@ -22,8 +24,11 @@ pub mod stack;
 pub mod timing;
 pub mod timing_sync;
 pub mod tlv8;
+pub mod vehicle_state;
 pub mod video_playback;
 pub mod video_proxy;
 
+#[cfg(test)]
+mod test_tls;
 #[cfg(test)]
 mod ts_vectors;

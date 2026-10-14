@@ -10,7 +10,7 @@ export type ClockProps = {
 
 /**
  * Standalone HH:MM clock with a blinking colon. Used as the nav centre's no-route fallback and as
- * the cluster dash's centre when no stream is running.
+ * the cluster dashboard's centre when no stream is running.
  */
 export function Clock({ className, size }: ClockProps) {
   const theme = useTheme()

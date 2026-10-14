@@ -25,27 +25,50 @@ export function applyAspectRatioWindowed(win: BrowserWindow, width: number, heig
   const extraW = Math.max(0, winW - contentW)
   const extraH = Math.max(0, winH - contentH)
 
-  win.setAspectRatio(0)
+  win.setAspectRatio(width / height, { width: 0, height: 0 })
   win.setMinimumSize(MIN_WIDTH + extraW, MIN_HEIGHT + extraH)
 }
 
-export function applyWindowedContentSize(win: BrowserWindow, w: number, h: number) {
+type Size = { width: number; height: number }
+
+/** `want`'s width in the shape of `shape`, shrunk as a whole until it fits `room`. */
+export function fitToShape(want: Size, shape: Size, room: Size): Size {
+  const at = (v: number) => Math.max(1, Math.round(v))
+  if (!(shape.width > 0 && shape.height > 0))
+    return { width: at(want.width), height: at(want.height) }
+  const width = want.width > 0 ? want.width : shape.width
+  const height = (width * shape.height) / shape.width
+  const scale = Math.min(
+    1,
+    room.width > 0 ? room.width / width : 1,
+    room.height > 0 ? room.height / height : 1
+  )
+  return { width: at(width * scale), height: at(height * scale) }
+}
+
+function contentRoom(win: BrowserWindow): Size {
+  const work = screen.getDisplayMatching(win.getBounds()).workAreaSize
+  const [winW, winH] = win.getSize()
+  const [contentW, contentH] = win.getContentSize()
+  return {
+    width: work.width - Math.max(0, winW - contentW),
+    height: work.height - Math.max(0, winH - contentH)
+  }
+}
+
+/** Fitted into the screen with the shape of `w` x `h` kept, else the system cuts it into another. */
+export function applyWindowedContentSize(
+  win: BrowserWindow,
+  w: number,
+  h: number,
+  want: Size = { width: w, height: h }
+) {
   if (process.platform === 'linux') {
-    const d = screen.getDisplayMatching(win.getBounds())
-    const work = d.workAreaSize
-
-    const dipW = Math.max(1, Math.min(Math.round(w), work.width))
-    const dipH = Math.max(1, Math.min(Math.round(h), work.height))
-
     win.setResizable(true)
     win.setMinimumSize(0, 0)
-
-    win.setContentSize(dipW, dipH, false)
-    applyAspectRatioWindowed(win, dipW, dipH)
-    return
   }
-
-  win.setContentSize(w, h, false)
+  const size = fitToShape(want, { width: w, height: h }, contentRoom(win))
+  win.setContentSize(size.width, size.height, false)
   applyAspectRatioWindowed(win, w, h)
 }
 
@@ -78,7 +101,7 @@ export function getMainKiosk(config: Config): boolean {
 }
 
 export function withMainKiosk(config: Config, value: boolean): Config['kiosk'] {
-  const prev = config.kiosk ?? { main: false, dash: false, aux: false }
+  const prev = config.kiosk ?? { main: false, cluster: false, aux: false }
   return { ...prev, main: value }
 }
 

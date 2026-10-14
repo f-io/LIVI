@@ -151,9 +151,11 @@ fn fuel_types(car: Option<CarType>) -> Vec<i32> {
     }
 }
 
-/// dash3 and dash4 are the cluster dashboards.
+/// dashboard3 and dashboard4 are the cluster dashboards.
 pub fn cluster_displayed(cfg: &Config) -> bool {
-    [cfg.dashboards.dash3, cfg.dashboards.dash4].iter().any(|d| d.main || d.dash || d.aux)
+    [cfg.dashboards.dashboard3, cfg.dashboards.dashboard4]
+        .iter()
+        .any(|d| d.main || d.cluster || d.aux)
 }
 
 pub fn from_livi(
@@ -361,7 +363,7 @@ pub(crate) mod tests {
         cfg.wifi_password = String::new();
         cfg.hand = HandDriveType::Rhd;
         cfg.car_type = Some(CarType::HybridGasoline);
-        cfg.dashboards.dash3.main = true;
+        cfg.dashboards.dashboard3.main = true;
         let addresses = Addresses {
             bt_mac: Some("AA:BB:CC:DD:EE:FF".into()),
             wifi_bssid: None,
@@ -378,12 +380,12 @@ pub(crate) mod tests {
         assert!(aa.cluster_enabled);
         assert_eq!(aa.initial_night_mode, Some(true));
         assert_eq!(aa.bt_mac_address.as_deref(), Some("AA:BB:CC:DD:EE:FF"));
-        cfg.dashboards.dash3.main = false;
-        cfg.dashboards.dash4.main = false;
-        cfg.dashboards.dash4.dash = false;
-        cfg.dashboards.dash4.aux = false;
-        cfg.dashboards.dash3.dash = false;
-        cfg.dashboards.dash3.aux = false;
+        cfg.dashboards.dashboard3.main = false;
+        cfg.dashboards.dashboard4.main = false;
+        cfg.dashboards.dashboard4.cluster = false;
+        cfg.dashboards.dashboard4.aux = false;
+        cfg.dashboards.dashboard3.cluster = false;
+        cfg.dashboards.dashboard3.aux = false;
         assert!(!from_livi(&cfg, Codecs::default(), None, &addresses).cluster_enabled);
     }
 }

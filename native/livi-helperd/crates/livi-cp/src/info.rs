@@ -16,6 +16,7 @@ const CARPLAY_AUDIO_FEATURES: u64 = 0x100_0454_0a00;
 
 pub const MAIN_UUID: &str = "b7e6c5a0-1111-4000-8000-000000000001";
 pub const ALT_UUID: &str = "b7e6c5a0-2222-4000-8000-000000000002";
+const CLUSTER_UID: &str = "b7e6c5a0-3333-4000-8000-000000000003";
 
 const RESOURCE_SCREEN: u64 = 1;
 const RESOURCE_AUDIO: u64 = 2;
@@ -42,6 +43,8 @@ pub struct DisplayConfig {
     pub view_area: Option<Insets>,
     pub safe_area: Option<Insets>,
     pub safe_area_draw_outside: Option<bool>,
+    /// Where the status bar and dock sit, 0 lets the phone pick.
+    pub status_bar_edge: Option<u64>,
     /// The CarPlay URL an alternate screen opens with.
     pub initial_url: Option<String>,
 }
@@ -181,11 +184,25 @@ fn area(d: &DisplayConfig) -> Option<Value> {
         }
         view.push(("safeArea".to_string(), Value::Dict(safe)));
     }
+    if let Some(edge) = d.status_bar_edge {
+        view.push(("viewAreaStatusBarEdge".to_string(), Value::Int(edge)));
+    }
+    view.push(("viewAreaTransitionControl".to_string(), Value::Bool(false)));
+    view.push(("viewAreaSupportsFocusTransfer".to_string(), Value::Bool(false)));
     Some(Value::Dict(view))
 }
 
+/// The phone keeps its UI a fixed size in millimetres, so a display of unknown
+/// size grows with its pixels instead of only getting denser.
+const FALLBACK_DPI: f64 = 200.0;
+
+pub fn mm_at_dpi(pixels: i64, dpi: f64) -> i64 {
+    (hid::round_half_up(pixels as f64 * 25.4 / dpi) as i64).max(1)
+}
+
 fn display(d: &DisplayConfig, kind: u64, uuid: &str) -> Value {
-    let width_physical = d.width_physical_mm.unwrap_or(200);
+    let width_physical =
+        d.width_physical_mm.unwrap_or_else(|| mm_at_dpi(d.width_pixels, FALLBACK_DPI));
     let height_physical = d.height_physical_mm.unwrap_or_else(|| {
         let h = width_physical as f64 * d.height_pixels as f64 / d.width_pixels.max(1) as f64;
         (hid::round_half_up(h) as i64).max(1)
@@ -206,6 +223,8 @@ fn display(d: &DisplayConfig, kind: u64, uuid: &str) -> Value {
             "primaryInputDevice".to_string(),
             num(d.primary_input_device.unwrap_or(PRIMARY_INPUT_KNOBS as i64)),
         ),
+        ("cornerMasks".to_string(), Value::Bool(false)),
+        ("adjacentViewAreas".to_string(), Value::Array(Vec::new())),
     ];
     if let Some(view) = area(d) {
         entry.push(("viewAreas".to_string(), Value::Array(vec![view])));
@@ -294,6 +313,64 @@ pub fn build(cfg: &InfoConfig) -> Value {
     Value::Dict(info)
 }
 
+/// Climate needs Ultra, and the phone counts the car as Ultra once a panel in
+/// `displayPanels` carries a display plug-in. A screen with a plug-in gets a
+/// black stream, so the plug-in sits on an extra panel without one.
+pub fn add_display_panels(info: &mut Value) {
+    let Some(displays) = info.get("displays").and_then(Value::as_array) else { return };
+    let size = |d: &Value, k: &str| d.get(k).cloned().unwrap_or(Value::Int(0));
+    let panel = |d: &Value, uid: &str, streams: Vec<&str>, instruments: bool| {
+        let video = streams
+            .iter()
+            .map(|uuid| {
+                dict([
+                    ("uuid", Value::String((*uuid).into())),
+                    ("originXPixels", Value::Int(0)),
+                    ("originYPixels", Value::Int(0)),
+                    ("zIndex", Value::Int(0)),
+                ])
+            })
+            .collect();
+        let mut fields = vec![
+            ("uid".to_string(), Value::String(format!("{uid}-panel"))),
+            ("widthPixels".to_string(), size(d, "widthPixels")),
+            ("heightPixels".to_string(), size(d, "heightPixels")),
+            ("widthPhysical".to_string(), size(d, "widthPhysical")),
+            ("heightPhysical".to_string(), size(d, "heightPhysical")),
+            (
+                "properties".to_string(),
+                Value::Array(if instruments {
+                    vec![Value::String("showsInstruments".into())]
+                } else {
+                    Vec::new()
+                }),
+            ),
+            ("initialVideoStreams".to_string(), Value::Array(video)),
+        ];
+        if streams.is_empty() {
+            let plugin = dict([
+                ("uid", Value::String(format!("{uid}-plugin"))),
+                ("videoStreams", Value::Array(Vec::new())),
+            ]);
+            fields.push(("displayPlugins".to_string(), Value::Array(vec![plugin])));
+        }
+        Value::Dict(fields)
+    };
+    let is_alt = |d: &Value| d.get("type") == Some(&Value::Int(STREAM_TYPE_ALT_SCREEN));
+    let mut panels: Vec<Value> = displays
+        .iter()
+        .filter_map(|d| {
+            let uuid = d.get("uuid").and_then(Value::as_str)?;
+            Some(panel(d, uuid, vec![uuid], is_alt(d)))
+        })
+        .collect();
+    let Some(sized) = displays.iter().find(|d| is_alt(d)).or(displays.first()) else { return };
+    panels.push(panel(sized, CLUSTER_UID, Vec::new(), true));
+    if let Value::Dict(entries) = info {
+        entries.push(("displayPanels".to_string(), Value::Array(panels)));
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -324,12 +401,24 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn main_display_falls_back_to_200_mm_wide() {
-        let info = build(&sample());
-        let main = &info.get("displays").and_then(Value::as_array).unwrap()[0];
-        assert_eq!(main.get("widthPhysical"), Some(&Value::Int(200)));
-        assert_eq!(main.get("heightPhysical"), Some(&Value::Int(113)));
-        assert_eq!(main.get("type"), Some(&Value::Int(110)));
+    fn a_display_of_unknown_size_grows_with_its_pixels() {
+        let size = |cfg: &InfoConfig| {
+            let info = build(cfg);
+            let main = &info.get("displays").and_then(Value::as_array).unwrap()[0];
+            assert_eq!(main.get("type"), Some(&Value::Int(110)));
+            (main.get("widthPhysical").cloned(), main.get("heightPhysical").cloned())
+        };
+        assert_eq!(size(&sample()), (Some(Value::Int(163)), Some(Value::Int(92))));
+        let mut wide = sample();
+        wide.main.width_pixels = 1920;
+        wide.main.height_pixels = 1080;
+        assert_eq!(size(&wide), (Some(Value::Int(244)), Some(Value::Int(137))));
+    }
+
+    #[test]
+    fn mm_at_dpi_never_drops_to_zero() {
+        assert_eq!(mm_at_dpi(1920, 160.0), 305);
+        assert_eq!(mm_at_dpi(0, 160.0), 1);
     }
 
     #[test]
@@ -342,6 +431,114 @@ pub(crate) mod tests {
             info.get("features"),
             Some(&Value::Int(CARPLAY_FEATURES & !CARPLAY_AUDIO_FEATURES))
         );
+    }
+
+    #[test]
+    fn main_panel_stays_without_plugin_and_a_virtual_cluster_carries_one() {
+        let mut info = build(&sample());
+        assert!(info.get("displayPanels").is_none());
+        add_display_panels(&mut info);
+        let panels = info.get("displayPanels").and_then(Value::as_array).unwrap();
+        assert_eq!(panels.len(), 2);
+        let main = &panels[0];
+        assert_eq!(
+            main.get("uid").and_then(Value::as_str),
+            Some(format!("{MAIN_UUID}-panel").as_str())
+        );
+        assert_eq!(main.get("widthPixels"), Some(&Value::Int(1280)));
+        assert_eq!(main.get("heightPhysical"), Some(&Value::Int(92)));
+        assert_eq!(main.get("properties"), Some(&Value::Array(Vec::new())));
+        assert!(main.get("displayPlugins").is_none());
+        let stream = &main.get("initialVideoStreams").and_then(Value::as_array).unwrap()[0];
+        assert_eq!(stream.get("uuid").and_then(Value::as_str), Some(MAIN_UUID));
+
+        let cluster = &panels[1];
+        assert_eq!(
+            cluster.get("uid").and_then(Value::as_str),
+            Some(format!("{CLUSTER_UID}-panel").as_str())
+        );
+        assert_eq!(cluster.get("widthPixels"), Some(&Value::Int(1280)));
+        assert_eq!(
+            cluster.get("properties"),
+            Some(&Value::Array(vec![Value::String("showsInstruments".into())]))
+        );
+        assert_eq!(cluster.get("initialVideoStreams"), Some(&Value::Array(Vec::new())));
+        let plugins = cluster.get("displayPlugins").and_then(Value::as_array).unwrap();
+        assert_eq!(
+            plugins[0].get("uid").and_then(Value::as_str),
+            Some(format!("{CLUSTER_UID}-plugin").as_str())
+        );
+        assert_eq!(plugins[0].get("videoStreams"), Some(&Value::Array(Vec::new())));
+    }
+
+    #[test]
+    fn an_alternate_screen_keeps_its_stream_and_the_plugin_gets_its_own_panel() {
+        let mut cfg = sample();
+        let mut cluster = cfg.main.clone();
+        cluster.width_pixels = 800;
+        cfg.cluster = Some(cluster);
+        let mut info = build(&cfg);
+        add_display_panels(&mut info);
+        let panels = info.get("displayPanels").and_then(Value::as_array).unwrap();
+        assert_eq!(panels.len(), 3);
+        assert!(panels[0].get("displayPlugins").is_none());
+
+        let alt = &panels[1];
+        assert_eq!(
+            alt.get("uid").and_then(Value::as_str),
+            Some(format!("{ALT_UUID}-panel").as_str())
+        );
+        assert!(alt.get("displayPlugins").is_none(), "a plug-in would black out the cluster");
+        assert_eq!(
+            alt.get("properties"),
+            Some(&Value::Array(vec![Value::String("showsInstruments".into())]))
+        );
+        let stream = &alt.get("initialVideoStreams").and_then(Value::as_array).unwrap()[0];
+        assert_eq!(stream.get("uuid").and_then(Value::as_str), Some(ALT_UUID));
+
+        let virtual_panel = &panels[2];
+        assert_eq!(
+            virtual_panel.get("uid").and_then(Value::as_str),
+            Some(format!("{CLUSTER_UID}-panel").as_str())
+        );
+        assert_eq!(virtual_panel.get("widthPixels"), Some(&Value::Int(800)));
+        assert_eq!(virtual_panel.get("initialVideoStreams"), Some(&Value::Array(Vec::new())));
+        let plugins = virtual_panel.get("displayPlugins").and_then(Value::as_array).unwrap();
+        assert_eq!(plugins[0].get("videoStreams"), Some(&Value::Array(Vec::new())));
+    }
+
+    #[test]
+    fn display_panels_need_displays() {
+        let mut info = Value::Array(Vec::new());
+        add_display_panels(&mut info);
+        assert_eq!(info, Value::Array(Vec::new()));
+        let mut info = dict([("displays", Value::Array(Vec::new()))]);
+        let before = info.clone();
+        add_display_panels(&mut info);
+        assert_eq!(info, before);
+    }
+
+    #[test]
+    fn a_display_without_uuid_or_sizes_still_yields_a_cluster() {
+        let mut info = dict([("displays", Value::Array(vec![dict([("type", Value::Int(110))])]))]);
+        add_display_panels(&mut info);
+        let panels = info.get("displayPanels").and_then(Value::as_array).unwrap();
+        assert_eq!(panels.len(), 1);
+        assert_eq!(panels[0].get("widthPixels"), Some(&Value::Int(0)));
+        assert!(panels[0].get("displayPlugins").is_some());
+    }
+
+    #[test]
+    fn the_status_bar_edge_goes_out_only_when_set() {
+        let edge = |info: &Value| {
+            let main = &info.get("displays").and_then(Value::as_array).unwrap()[0];
+            let area = &main.get("viewAreas").and_then(Value::as_array).unwrap()[0];
+            area.get("viewAreaStatusBarEdge").cloned()
+        };
+        assert_eq!(edge(&build(&sample())), None);
+        let mut cfg = sample();
+        cfg.main.status_bar_edge = Some(1);
+        assert_eq!(edge(&build(&cfg)), Some(Value::Int(1)));
     }
 
     #[test]

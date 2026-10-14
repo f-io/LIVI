@@ -91,6 +91,7 @@ fn host_launch(res: &Resources, user_data: &Path, ui: Option<&Ui>) -> Launch {
 }
 
 impl Services {
+    #[allow(clippy::too_many_arguments)]
     pub fn start(
         res: Resources,
         runtime: &Path,
@@ -99,6 +100,7 @@ impl Services {
         core_socket: PathBuf,
         quit: Arc<Notify>,
         asks: UiAsks,
+        telemetry: mpsc::UnboundedSender<serde_json::Value>,
     ) -> Self {
         let state = hub.watch();
         let cfg = state.borrow().config.clone();
@@ -161,6 +163,7 @@ impl Services {
                 probe: host_launch(&res, user_data, None),
                 debug: helper::debug(&cfg),
                 helper_restart,
+                telemetry,
             };
             carplay.start(hub, &ctrl, &gst, plane.clone(), clusters.clone(), asks);
         }
@@ -209,6 +212,7 @@ struct CarPlay {
     probe: Launch,
     debug: bool,
     helper_restart: Arc<Notify>,
+    telemetry: mpsc::UnboundedSender<serde_json::Value>,
 }
 
 impl CarPlay {
@@ -241,8 +245,6 @@ impl CarPlay {
             config,
             refresh: Some(Arc::new(move || refreshing.refresh())),
             debug: self.debug,
-            // gst-host plays URLs on Linux only so far.
-            video_playback: cfg!(not(target_os = "macos")),
             video_capture: self.debug.then(|| self.user_data.join("log/video-playback")),
         });
         let (events_tx, events) = mpsc::unbounded_channel();
@@ -268,7 +270,14 @@ impl CarPlay {
             AaHelperSock::default(),
             phone_answers,
         ));
-        let drivers = Drivers { cp, aa, aa_crop: aa_media.crop(), phone_io, phone_back };
+        let drivers = Drivers {
+            cp,
+            aa,
+            aa_crop: aa_media.crop(),
+            phone_io,
+            phone_back,
+            telemetry: self.telemetry,
+        };
         let projection =
             Projection::new(hub, drivers, plane, clusters, self.helper_restart, devices, wants);
         tokio::spawn(projection.run(events, aa_events, asks, state));
@@ -333,7 +342,7 @@ async fn follow_state(
         }
         if last.as_ref().is_none_or(|l| l.front != now.front) {
             let f = &now.front;
-            clusters.show_on([f.main, f.dash, f.aux].map(|f| f == Front::Cluster));
+            clusters.show_on([f.main, f.cluster, f.aux].map(|f| f == Front::Cluster));
         }
         last = Some(now);
         if state.changed().await.is_err() {

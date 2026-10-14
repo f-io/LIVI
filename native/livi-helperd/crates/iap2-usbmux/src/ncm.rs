@@ -140,15 +140,37 @@ fn run_cmd(program: &str, args: &[&str]) -> bool {
     Command::new(program).args(args).output().is_ok_and(|o| o.status.success())
 }
 
+const PROFILE_PREFIX: &str = "livi-carkit-";
+
+/// Older LIVI named its profile after the interface and bound it there. On a usb0 it keeps a
+/// LIVI Link from its DHCP address, so the dongle is never found.
+fn bound_to_a_name(profile: &str) -> bool {
+    profile
+        .strip_prefix(PROFILE_PREFIX)
+        .is_some_and(|rest| rest.len() != 12 || !rest.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
+pub fn drop_name_bound_profiles() {
+    let Ok(out) = Command::new("nmcli").args(["-g", "NAME", "connection", "show"]).output() else {
+        return;
+    };
+    for name in String::from_utf8_lossy(&out.stdout).lines().filter(|n| bound_to_a_name(n)) {
+        let gone = run_cmd("nmcli", &["connection", "delete", name]);
+        println!(
+            "[ncm] NetworkManager profile {name} bound to an interface name: {}",
+            if gone { "deleted" } else { "not deleted" }
+        );
+    }
+}
+
 /// Link-local only, since NetworkManager takes a link down when its DHCP gets no answer. Bound
 /// to the MAC, because a LIVI Link is a usb0 too and there the host is a DHCP client.
 fn link_local_profile(ifname: &str) {
     let _ = fs::write(format!("/proc/sys/net/ipv6/conf/{ifname}/accept_dad"), "0");
     run_cmd("ip", &["link", "set", ifname, "up"]);
-    run_cmd("nmcli", &["connection", "delete", &format!("livi-carkit-{ifname}")]);
     let Ok(mac) = fs::read_to_string(format!("/sys/class/net/{ifname}/address")) else { return };
     let mac = mac.trim().to_uppercase();
-    let name = format!("livi-carkit-{}", mac.replace(':', ""));
+    let name = format!("{PROFILE_PREFIX}{}", mac.replace(':', ""));
     if !run_cmd("nmcli", &["-g", "connection.id", "connection", "show", &name]) {
         let added = run_cmd(
             "nmcli",
@@ -438,4 +460,17 @@ fn host_mac(device: &Device, sysfs: &Path, control_if: u8) -> Option<String> {
         return None;
     }
     Some((0..12).step_by(2).map(|i| s[i..i + 2].to_lowercase()).collect::<Vec<_>>().join(":"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_profiles_named_after_an_interface_go() {
+        assert!(bound_to_a_name("livi-carkit-usb0"));
+        assert!(bound_to_a_name("livi-carkit-enx0e6ac4630dd2"));
+        assert!(!bound_to_a_name("livi-carkit-0E6AC4630DD2"));
+        assert!(!bound_to_a_name("Wired connection 2"));
+    }
 }

@@ -119,22 +119,25 @@ Configure under Settings → Appearance → Contrast / Gamma and Settings → Ap
 
 The Dashboard is a WIP. While the IPC/socket telemetry payload already supports many signals, the UI exposes only a subset. Widgets and layouts will be extended over time.
 
-### Telemetry CLI (local)
+### Pushing telemetry
 
-To push test data into a running LIVI, use the CLI in `scripts/tools`. The full
-field list and routing lives in
-`src/main/shared/types/Telemetry.ts`.
+LIVI's core binary pushes test data into a running LIVI. On macOS it sits in
+`LIVI.app/Contents/Resources/core/livi-core`, on Linux the AppImage hands it over:
+`./LIVI-<version>.AppImage telemetry set gear=R`. Every field and where it goes is listed in
+`native/livi-helperd/crates/livi-core-proto/src/telemetry.rs`.
 
 ```bash
-pnpm -C scripts/tools install
+# Plausible values for every field at once
+livi-core telemetry demo
 
-# Realistic all-fields demo push
-pnpm -C scripts/tools run telemetry:demo
+# Single fields, a dot nests into a block
+livi-core telemetry set fuelPct=4 rangeKm=38
+livi-core telemetry set gps.lat=53.5912 gps.lng=10.015
+livi-core telemetry set speedKph=90 rpm=2500 --every-ms 1000
 
-# Send single fields or blocks ad-hoc
-pnpm -C scripts/tools run telemetry:set fuelPct=4 rangeKm=38
-pnpm -C scripts/tools run telemetry:set gps.lat=53.5912 gps.lng=10.015
-pnpm -C scripts/tools run telemetry:set _repeatMs=1000 speedKph=90 rpm=2500
+# Another LIVI, or without livi-core at hand
+livi-core telemetry set gear=R --to livi.local:4000
+curl -d '{"gear":"R"}' http://livi.local:4000/telemetry
 ```
 
 <p align="center">

@@ -120,7 +120,7 @@ csm_group! {
     pub struct VehicleInformationComponent {
         0 => id: [u16],
         1 => name: [str],
-        2 => engine_type: [enum EngineType],
+        2 => engine_types: [list enum EngineType],
         6 => display_name: [opt str],
         8 => maps_display_name: [opt str],
     }

@@ -42,7 +42,7 @@ const welcome = (config: Record<string, unknown>): FromCore => ({
   protocol: 1,
   version: '0',
   rev: 0,
-  state: { front: { main: 'livi', dash: 'livi', aux: 'livi' }, config } as unknown as State
+  state: { front: { main: 'livi', cluster: 'livi', aux: 'livi' }, config } as unknown as State
 })
 
 async function load() {
@@ -129,6 +129,7 @@ describe('core on macOS', () => {
     expect(opts.env).toMatchObject({
       LIVI_ROOT: '/repo',
       LIVI_NO_UI: '1',
+      LIVI_VERSION: '0.0.0-test',
       LIVI_LIFELINE: '1',
       LIVI_UI_PLANES: '/run/livi/ui-planes.sock'
     })
@@ -278,7 +279,7 @@ describe('saveConfig', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { saveConfig, startCore } = await load()
     void startCore({ config: {} } as never, vi.fn())
-    saveConfig({ kiosk: { main: true, dash: false, aux: false } })
+    saveConfig({ kiosk: { main: true, cluster: false, aux: false } })
     links[0].opts.onClose?.()
     await new Promise((r) => setImmediate(r))
     expect(warn).toHaveBeenCalledWith('[core] config not saved: core went away')

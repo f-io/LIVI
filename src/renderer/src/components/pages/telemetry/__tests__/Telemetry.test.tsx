@@ -6,7 +6,7 @@ import { Telemetry } from '../Telemetry'
 const useLiviStoreMock = vi.fn()
 const useNavbarHiddenMock = vi.fn()
 const useKeyboardNavigationMock = vi.fn()
-const normalizeDashComponentsMock = vi.fn()
+const normalizeDashboardComponentsMock = vi.fn()
 
 vi.mock('@store/store', () => ({
   useLiviStore: (selector: (state: { settings: unknown }) => unknown) => useLiviStoreMock(selector)
@@ -21,19 +21,19 @@ vi.mock('../hooks/useKeyboardNavigation', () => ({
 }))
 
 vi.mock('@renderer/components/pages/telemetry/utils', () => ({
-  normalizeDashComponents: (...args: unknown[]) => normalizeDashComponentsMock(...args)
+  normalizeDashboardComponents: (...args: unknown[]) => normalizeDashboardComponentsMock(...args)
 }))
 
 vi.mock('@renderer/components/pages/telemetry/config', () => ({
   DashboardConfig: {
-    dash1: React.createElement('div', { 'data-testid': 'dash-1' }, 'Dash 1'),
-    dash2: React.createElement('div', { 'data-testid': 'dash-2' }, 'Dash 2')
+    dashboard1: React.createElement('div', { 'data-testid': 'dashboard-1' }, 'Dashboard 1'),
+    dashboard2: React.createElement('div', { 'data-testid': 'dashboard-2' }, 'Dashboard 2')
   }
 }))
 
-vi.mock('@renderer/components/pages/telemetry/components/DashPlaceholder', () => ({
-  DashPlaceholder: ({ title }: { title: string }) =>
-    React.createElement('div', { 'data-testid': 'dash-placeholder' }, title)
+vi.mock('@renderer/components/pages/telemetry/components/DashboardPlaceholder', () => ({
+  DashboardPlaceholder: ({ title }: { title: string }) =>
+    React.createElement('div', { 'data-testid': 'dashboard-placeholder' }, title)
 }))
 
 vi.mock('@renderer/components/pages/telemetry/components/pagination/pagination', () => ({
@@ -90,15 +90,15 @@ describe('Telemetry', () => {
     useLiviStoreMock.mockImplementation((selector: (state: { settings: unknown }) => unknown) =>
       selector({
         settings: {
-          telemetryDashboards: [{ id: 'dash1', enabled: true, pos: 1 }]
+          telemetryDashboards: [{ id: 'dashboard1', enabled: true, pos: 1 }]
         }
       })
     )
 
     useNavbarHiddenMock.mockReturnValue({ isNavbarHidden: false })
 
-    normalizeDashComponentsMock.mockReturnValue({
-      dashboards: [{ id: 'dash1', pos: 1 }]
+    normalizeDashboardComponentsMock.mockReturnValue({
+      dashboards: [{ id: 'dashboard1', pos: 1 }]
     })
 
     useKeyboardNavigationMock.mockReturnValue({
@@ -112,34 +112,34 @@ describe('Telemetry', () => {
   })
 
   test('renders fallback when no dashboards are enabled', async () => {
-    normalizeDashComponentsMock.mockReturnValue({ dashboards: [] })
+    normalizeDashboardComponentsMock.mockReturnValue({ dashboards: [] })
 
     renderWithContext(<Telemetry />)
 
-    expect(screen.getByTestId('dash-placeholder')).toHaveTextContent('No dashboards enabled')
+    expect(screen.getByTestId('dashboard-placeholder')).toHaveTextContent('No dashboards enabled')
   })
 
   test('renders configured dashboard for current index', async () => {
     renderWithContext(<Telemetry />)
 
-    expect(screen.getByTestId('dash-1')).toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-1')).toBeInTheDocument()
   })
 
   test('renders unknown fallback when dashboard id is not in config', async () => {
-    normalizeDashComponentsMock.mockReturnValue({
+    normalizeDashboardComponentsMock.mockReturnValue({
       dashboards: [{ id: 'unknownDash', pos: 1 }]
     })
 
     renderWithContext(<Telemetry />)
 
-    expect(screen.getByTestId('dash-placeholder')).toHaveTextContent('Unknown dash')
+    expect(screen.getByTestId('dashboard-placeholder')).toHaveTextContent('Unknown dashboard')
   })
 
   test('renders pagination only when more than one dashboard exists', async () => {
-    normalizeDashComponentsMock.mockReturnValue({
+    normalizeDashboardComponentsMock.mockReturnValue({
       dashboards: [
-        { id: 'dash1', pos: 1 },
-        { id: 'dash2', pos: 2 }
+        { id: 'dashboard1', pos: 1 },
+        { id: 'dashboard2', pos: 2 }
       ]
     })
 
@@ -155,20 +155,20 @@ describe('Telemetry', () => {
   })
 
   test('switches dashboard when pagination changes index', async () => {
-    normalizeDashComponentsMock.mockReturnValue({
+    normalizeDashboardComponentsMock.mockReturnValue({
       dashboards: [
-        { id: 'dash1', pos: 1 },
-        { id: 'dash2', pos: 2 }
+        { id: 'dashboard1', pos: 1 },
+        { id: 'dashboard2', pos: 2 }
       ]
     })
 
     renderWithContext(<Telemetry />)
 
-    expect(screen.getByTestId('dash-1')).toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-1')).toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('pagination'))
 
-    expect(screen.getByTestId('dash-2')).toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-2')).toBeInTheDocument()
   })
 
   test('passes telemetry pager into app context and cleans up on unmount', async () => {
@@ -201,7 +201,7 @@ describe('Telemetry', () => {
   test('does not try to register app context when onSetAppContext is missing', async () => {
     renderWithContext(<Telemetry />, {})
 
-    expect(screen.getByTestId('dash-1')).toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-1')).toBeInTheDocument()
   })
 
   test('uses fixed positioning when navbar is hidden', async () => {
@@ -213,20 +213,20 @@ describe('Telemetry', () => {
   })
 
   test('falls back when the active index points past the available dashboards', async () => {
-    normalizeDashComponentsMock.mockReturnValue({
+    normalizeDashboardComponentsMock.mockReturnValue({
       dashboards: [
-        { id: 'dash1', pos: 1 },
-        { id: 'dash2', pos: 2 }
+        { id: 'dashboard1', pos: 1 },
+        { id: 'dashboard2', pos: 2 }
       ]
     })
 
     const { rerender } = renderWithContext(<Telemetry />)
 
     fireEvent.click(screen.getByTestId('pagination'))
-    expect(screen.getByTestId('dash-2')).toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-2')).toBeInTheDocument()
 
-    normalizeDashComponentsMock.mockReturnValue({
-      dashboards: [{ id: 'dash1', pos: 1 }]
+    normalizeDashboardComponentsMock.mockReturnValue({
+      dashboards: [{ id: 'dashboard1', pos: 1 }]
     })
 
     rerender(
@@ -235,7 +235,7 @@ describe('Telemetry', () => {
       </AppContext.Provider>
     )
 
-    expect(screen.getByTestId('dash-1')).toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-1')).toBeInTheDocument()
   })
 
   test('wires pointer handlers from keyboard navigation hook', async () => {

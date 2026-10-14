@@ -184,8 +184,8 @@ fn vectors_roundtrip() {
                 let wcp = m.wireless_car_play_transport_component.unwrap();
                 assert!(wcp.supports_car_play && wcp.supports_iap2_connection);
                 assert_eq!(
-                    m.vehicle_information_component.unwrap().engine_type,
-                    EngineType::Electric
+                    m.vehicle_information_component.unwrap().engine_types,
+                    [EngineType::Electric]
                 );
                 assert_eq!(
                     m.route_guidance_display_component[0].max_current_road_name_length,

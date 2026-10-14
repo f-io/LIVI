@@ -4,6 +4,9 @@ use serde_json::{Map, Value};
 
 use crate::aa_telemetry::{LOW_FUEL_PCT, gear};
 use crate::nmea::{self, Position};
+use crate::telemetry::{CLIMATE, SOURCE};
+
+pub const FROM_CARPLAY: &str = "carplay";
 
 const NEUTRAL: i64 = 0;
 const PARK: i64 = 101;
@@ -104,13 +107,34 @@ impl CpTelemetry {
             let helper = self.helper.clone();
             tokio::spawn(async move { helper.send_location(&nmea).await });
         }
+        if changed(prev, next, CLIMATE)
+            && let Some(climate) = next.get(CLIMATE).and_then(Value::as_object)
+            && climate.get(SOURCE).and_then(Value::as_str) != Some(FROM_CARPLAY)
+        {
+            let before = prev.get(CLIMATE).and_then(Value::as_object);
+            let changes: Map<String, Value> = climate
+                .iter()
+                .filter(|(key, v)| *key != SOURCE && before.and_then(|b| b.get(*key)) != Some(*v))
+                .map(|(key, v)| (key.clone(), v.clone()))
+                .collect();
+            if !changes.is_empty() {
+                cp.send(CpCmd::Climate(changes));
+            }
+        }
     }
 
     pub fn hydrate(&mut self, snap: &Map<String, Value>, cp: &CpHandle) {
         self.night = None;
         self.limited_ui = None;
         self.video_allowed = None;
-        self.follow(&Map::new(), snap, cp);
+        let mut rest = snap.clone();
+        let climate = rest.remove(CLIMATE);
+        self.follow(&Map::new(), &rest, cp);
+        // A new session starts from the store, whoever set it last.
+        if let Some(Value::Object(mut climate)) = climate {
+            climate.remove(SOURCE);
+            cp.send(CpCmd::Climate(climate));
+        }
     }
 }
 
@@ -202,6 +226,33 @@ mod tests {
 
         t.follow(&second, &obj(json!({ "gps": { "lat": 1.0 } })), &cp);
         t.follow(&second, &obj(json!({ "nightMode": "dusk" })), &cp);
+        assert!(cmds.try_recv().is_err());
+    }
+
+    #[test]
+    fn climate_set_outside_the_phone_reaches_it_and_a_new_session_starts_from_the_store() {
+        let (tx, mut cmds) = mpsc::unbounded_channel();
+        let cp = CpHandle::from_sender(tx);
+        let mut t = CpTelemetry::new(HelperSock::default());
+        let first = obj(json!({ "climate": { "auto": true, "fanLevel": 3, "source": "default" } }));
+        let second =
+            obj(json!({ "climate": { "auto": true, "fanLevel": 5, "source": "external" } }));
+        t.follow(&first, &second, &cp);
+        assert_eq!(cmds.try_recv(), Ok(CpCmd::Climate(obj(json!({ "fanLevel": 5 })))));
+
+        let third =
+            obj(json!({ "climate": { "auto": false, "fanLevel": 5, "source": "carplay" } }));
+        t.follow(&second, &third, &cp);
+        assert!(cmds.try_recv().is_err(), "the phone's own setting does not go back to it");
+        let renamed = obj(json!({ "climate": { "auto": false, "fanLevel": 5, "source": "car" } }));
+        t.follow(&third, &renamed, &cp);
+        assert!(cmds.try_recv().is_err());
+
+        t.hydrate(&third, &cp);
+        assert_eq!(
+            cmds.try_recv(),
+            Ok(CpCmd::Climate(obj(json!({ "auto": false, "fanLevel": 5 }))))
+        );
         assert!(cmds.try_recv().is_err());
     }
 

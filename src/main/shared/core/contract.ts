@@ -10,13 +10,66 @@ export type AudioDevice = { id: string, name: string, isDefault: boolean,
  */
 offline: boolean, };
 
+export type CanFrame = { id: number, data: Array<number>, bus?: number, };
+
 export enum CarType { "Unknown" = 0, "Gasoline" = 1, "DieselWinter" = 3, "Diesel" = 4, "Biodiesel" = 5, "E85" = 6, "LPG" = 7, "CNG" = 8, "LNG" = 9, "Electric" = 10, "Hydrogen" = 11, "Other" = 12, "HybridGasoline" = 101, "HybridDiesel" = 102 }
+
+/**
+ * The car's climate as CarPlay shows it. Without a running session an outside source keeps it
+ * current, a new session starts from it.
+ */
+export type Climate = { 
+/**
+ * Who set it last: `carplay` the phone, `external` a push that names no source, `saved` the
+ * last run, `default` LIVI's start values. Anything but `carplay` reaches the phone.
+ */
+source?: string, on?: boolean, auto?: boolean, ac?: boolean, maxAc?: boolean, maxDefrost?: boolean, recirculation?: boolean, 
+/**
+ * The passenger side follows the driver's temperature.
+ */
+zonesSynced?: boolean, 
+/**
+ * 16 to 28 in steps of 0.5, the ends show as LO and HI.
+ */
+driverTargetC?: number, passengerTargetC?: number, 
+/**
+ * Measured by the car.
+ */
+driverCabinC?: number, passengerCabinC?: number, 
+/**
+ * 0 to 7, 0 is off.
+ */
+fanLevel?: number, fanAuto?: boolean, 
+/**
+ * 0 or 1.
+ */
+frontWindowHeating?: number, rearWindowHeating?: number, ventUpper?: boolean, ventMiddle?: boolean, ventLower?: boolean, 
+/**
+ * AUTO picks the vents.
+ */
+ventsAuto?: boolean, 
+/**
+ * 0 to 2.
+ */
+driverSeatHeating?: number, passengerSeatHeating?: number, };
 
 export type Config = { debugLogging: boolean, wirelessAaEnabled: boolean, wirelessCpEnabled: boolean, wifiPassword: string, btAdapter: string, wifiInterface: string, wifiDedicatedInterface: boolean, wifiType: WifiBand, wifiChannel: number, wifiChannelWidth: number, country: string, carPlaySourceVersion: string, carPlayMfiI2cBus: number, 
 /**
  * -1 when the coprocessor has no power pin.
  */
-carPlayMfiPowerGpio: number, gpsEnabled: boolean, gpsDevice: string, gpsBaudRate: number, 
+carPlayMfiPowerGpio: number, 
+/**
+ * Dedicated HLS video Stream insted of embedded into CarPlay video.
+ */
+carPlayHlsVideo: boolean, 
+/**
+ * Climate controls in the phone's dock and climate app.
+ */
+carPlayVehicleClimate: boolean, 
+/**
+ * Where the phone puts its dock and status bar.
+ */
+carPlayDockPosition: DockPosition, gpsEnabled: boolean, gpsDevice: string, gpsBaudRate: number, 
 /**
  * From the last GPS fix, applied at startup.
  */
@@ -36,15 +89,230 @@ redlineRpm: number, speedUnit: SpeedUnit, temperatureUnit: TemperatureUnit, samp
 /**
  * "WIDTHxHEIGHT", empty leaves the panel at the mode it came up in.
  */
-displayMode: string, displayGamma: number, displayContrast: number, displayColorR: number, displayColorG: number, displayColorB: number, cameraId: string, camera: PerScreen<boolean>, cameraMirror: boolean, cameraRotation: 0 | 90 | 180 | 270, media: PerScreen<boolean>, dashboards: Dashboards, custom: PerScreen<boolean>, customUrl: string, mainScreenBounds?: WindowBounds, dashScreenBounds?: WindowBounds, auxScreenBounds?: WindowBounds, mainScreenWidth: number, mainScreenHeight: number, dashScreenActive: boolean, dashScreenWidth: number, dashScreenHeight: number, auxScreenActive: boolean, auxScreenWidth: number, auxScreenHeight: number, lastKnownGps?: LastKnownGps, primaryColorDark?: string, primaryColorLight?: string, highlightColorLight?: string, highlightColorDark?: string, backgroundColorDark?: string, backgroundColorLight?: string, 
+displayMode: string, displayGamma: number, displayContrast: number, displayColorR: number, displayColorG: number, displayColorB: number, cameraId: string, camera: PerScreen<boolean>, cameraMirror: boolean, cameraRotation: 0 | 90 | 180 | 270, media: PerScreen<boolean>, dashboards: Dashboards, custom: PerScreen<boolean>, customUrl: string, mainScreenBounds?: WindowBounds, clusterScreenBounds?: WindowBounds, auxScreenBounds?: WindowBounds, mainScreenWidth: number, mainScreenHeight: number, clusterScreenActive: boolean, clusterScreenWidth: number, clusterScreenHeight: number, auxScreenActive: boolean, auxScreenWidth: number, auxScreenHeight: number, primaryColorDark?: string, primaryColorLight?: string, highlightColorLight?: string, highlightColorDark?: string, backgroundColorDark?: string, backgroundColorLight?: string, 
 /**
  * Override for the logo on the CarPlay tile that leads back to LIVI.
  */
 carplayIcon120?: string, carplayIcon180?: string, carplayIcon256?: string, updateNightly: boolean, dismissedPackages: Array<string>, bindings: KeyBindings, };
 
-export type DashboardSlot = { main: boolean, dash: boolean, aux: boolean, pos: number, };
+export const DEFAULT_CONFIG: Config = {
+  "debugLogging": false,
+  "wirelessAaEnabled": false,
+  "wirelessCpEnabled": false,
+  "wifiPassword": "12345678",
+  "btAdapter": "hci0",
+  "wifiInterface": "wlan0",
+  "wifiDedicatedInterface": false,
+  "wifiType": "5ghz",
+  "wifiChannel": 36,
+  "wifiChannelWidth": 40,
+  "country": "DE",
+  "carPlaySourceVersion": "950.7.1",
+  "carPlayMfiI2cBus": 2,
+  "carPlayMfiPowerGpio": -1,
+  "carPlayHlsVideo": false,
+  "carPlayVehicleClimate": true,
+  "carPlayDockPosition": "bottom",
+  "gpsEnabled": false,
+  "gpsDevice": "/dev/ttyAMA0",
+  "gpsBaudRate": 38400,
+  "timezone": "",
+  "projectionWidth": 1280,
+  "projectionHeight": 720,
+  "projectionFps": 60,
+  "projectionDpi": 0,
+  "projectionViewAreaTop": 0,
+  "projectionViewAreaBottom": 0,
+  "projectionViewAreaLeft": 0,
+  "projectionViewAreaRight": 0,
+  "projectionSafeAreaTop": 0,
+  "projectionSafeAreaBottom": 0,
+  "projectionSafeAreaLeft": 0,
+  "projectionSafeAreaRight": 0,
+  "projectionSafeAreaDrawOutside": true,
+  "clusterWidth": 1280,
+  "clusterHeight": 720,
+  "clusterFps": 60,
+  "clusterDpi": 0,
+  "clusterViewAreaTop": 0,
+  "clusterViewAreaBottom": 0,
+  "clusterViewAreaLeft": 0,
+  "clusterViewAreaRight": 0,
+  "clusterSafeAreaTop": 60,
+  "clusterSafeAreaBottom": 10,
+  "clusterSafeAreaLeft": 300,
+  "clusterSafeAreaRight": 300,
+  "lastConnectedAaBtMac": "",
+  "darkMode": true,
+  "overlayMessages": true,
+  "displayBrightness": 1.0,
+  "displayBrightnessAuto": true,
+  "carName": "LIVI",
+  "oemName": "App",
+  "hand": 0,
+  "carType": 1,
+  "evConnectorTypes": [],
+  "maxSpeedKph": 200,
+  "speedScaleStep": 40,
+  "maxRpm": 5000,
+  "redlineRpm": 4500,
+  "speedUnit": "kmh",
+  "temperatureUnit": "celsius",
+  "samplingFrequency": 1,
+  "disableAudioOutput": false,
+  "huVolume": 0.95,
+  "huVolumeLinkSystem": true,
+  "audioVolume": 0.95,
+  "navVolume": 0.95,
+  "voiceAssistantVolume": 0.95,
+  "callVolume": 0.95,
+  "systemSoundsVolume": 0.75,
+  "audioOutputDevice": "",
+  "audioOutputDeviceLabel": "",
+  "audioInputDevice": "",
+  "audioInputDeviceLabel": "",
+  "visualAudioDelayMs": 0,
+  "autoConn": true,
+  "autoSwitchOnReverse": true,
+  "startPage": "/",
+  "language": "en",
+  "kiosk": {
+    "main": false,
+    "cluster": false,
+    "aux": false
+  },
+  "uiZoomPercent": 100,
+  "appearanceMode": "auto",
+  "displayMode": "",
+  "displayGamma": 1.0,
+  "displayContrast": 1.0,
+  "displayColorR": 1.0,
+  "displayColorG": 1.0,
+  "displayColorB": 1.0,
+  "cameraId": "",
+  "camera": {
+    "main": true,
+    "cluster": false,
+    "aux": false
+  },
+  "cameraMirror": false,
+  "cameraRotation": 0,
+  "media": {
+    "main": true,
+    "cluster": false,
+    "aux": false
+  },
+  "dashboards": {
+    "dashboard1": {
+      "main": true,
+      "cluster": false,
+      "aux": false,
+      "pos": 1
+    },
+    "dashboard2": {
+      "main": true,
+      "cluster": false,
+      "aux": false,
+      "pos": 2
+    },
+    "dashboard3": {
+      "main": true,
+      "cluster": false,
+      "aux": false,
+      "pos": 3
+    },
+    "dashboard4": {
+      "main": true,
+      "cluster": false,
+      "aux": false,
+      "pos": 4
+    }
+  },
+  "custom": {
+    "main": false,
+    "cluster": false,
+    "aux": false
+  },
+  "customUrl": "",
+  "mainScreenBounds": {
+    "x": 0,
+    "y": 0,
+    "width": 0,
+    "height": 0
+  },
+  "clusterScreenBounds": {
+    "x": 0,
+    "y": 0,
+    "width": 0,
+    "height": 0
+  },
+  "auxScreenBounds": {
+    "x": 0,
+    "y": 0,
+    "width": 0,
+    "height": 0
+  },
+  "mainScreenWidth": 1280,
+  "mainScreenHeight": 720,
+  "clusterScreenActive": false,
+  "clusterScreenWidth": 1280,
+  "clusterScreenHeight": 720,
+  "auxScreenActive": false,
+  "auxScreenWidth": 800,
+  "auxScreenHeight": 480,
+  "primaryColorDark": "",
+  "primaryColorLight": "",
+  "highlightColorLight": "",
+  "highlightColorDark": "",
+  "backgroundColorDark": "",
+  "backgroundColorLight": "",
+  "carplayIcon120": "",
+  "carplayIcon180": "",
+  "carplayIcon256": "",
+  "updateNightly": false,
+  "dismissedPackages": [],
+  "bindings": {
+    "up": "ArrowUp",
+    "down": "ArrowDown",
+    "left": "ArrowLeft",
+    "right": "ArrowRight",
+    "selectUp": "",
+    "selectDown": "Enter",
+    "back": "Backspace",
+    "knobLeft": "",
+    "knobRight": "",
+    "knobUp": "",
+    "knobDown": "",
+    "home": "KeyH",
+    "cycleSession": "KeyS",
+    "playPause": "KeyP",
+    "play": "",
+    "pause": "",
+    "next": "KeyN",
+    "prev": "KeyB",
+    "acceptPhone": "KeyA",
+    "rejectPhone": "KeyR",
+    "phoneKey0": "Digit0",
+    "phoneKey1": "Digit1",
+    "phoneKey2": "Digit2",
+    "phoneKey3": "Digit3",
+    "phoneKey4": "Digit4",
+    "phoneKey5": "Digit5",
+    "phoneKey6": "Digit6",
+    "phoneKey7": "Digit7",
+    "phoneKey8": "Digit8",
+    "phoneKey9": "Digit9",
+    "phoneKeyStar": "",
+    "phoneKeyHash": "",
+    "phoneKeyHookSwitch": "",
+    "voiceAssistant": "KeyV",
+    "voiceAssistantRelease": ""
+  }
+};
 
-export type Dashboards = { dash1: DashboardSlot, dash2: DashboardSlot, dash3: DashboardSlot, dash4: DashboardSlot, };
+export type DashboardSlot = { main: boolean, cluster: boolean, aux: boolean, pos: number, };
+
+export type Dashboards = { dashboard1: DashboardSlot, dashboard2: DashboardSlot, dashboard3: DashboardSlot, dashboard4: DashboardSlot, };
 
 /**
  * Active projects, available is held or on the access point, offline is
@@ -58,13 +326,88 @@ export type DeviceView = { id: string, name?: string, model?: string, protocol?:
  */
 session?: number, };
 
+export type DockPosition = "auto" | "side" | "bottom";
+
 export type DongleRadios = { wifi: boolean, bt: boolean, };
+
+export const EMPTY_GNSS_INFO: GnssInfo = {
+  "connected": false,
+  "fixQuality": "none",
+  "fixMode": "none",
+  "satellitesUsed": 0,
+  "satellitesVisible": 0,
+  "satellites": [],
+  "constellations": []
+};
 
 export enum EvConnectorType { "Unknown" = 0, "J1772" = 1, "Mennekes" = 2, "Chademo" = 3, "Combo1" = 4, "Combo2" = 5, "TeslaSupercharger" = 8, "Gbt" = 9, "Other" = 101 }
 
-export type FromCore = { "type": "welcome", protocol: number, version: string, rev: number, state: State, } | { "type": "refused", reason: string, } | { "type": "patch", rev: number, ops: Array<PatchOp>, } | { "type": "reply", id: number, error?: string, } | { "type": "spectrum", bands: Array<number>, };
+export type FromCore = { "type": "welcome", protocol: number, version: string, rev: number, state: State, } | { "type": "refused", reason: string, } | { "type": "patch", rev: number, ops: Array<PatchOp>, } | { "type": "reply", id: number, error?: string, } | { "type": "spectrum", bands: Array<number>, } | { "type": "openPage", path: string, };
 
 export type Front = "livi" | "projection" | "cluster" | "camera";
+
+export type GnssAntennaPower = "off" | "on" | "unknown";
+
+export type GnssAntennaStatus = "init" | "unknown" | "ok" | "short" | "open";
+
+/**
+ * Declared in name order, lists of them are sorted by name.
+ */
+export type GnssConstellation = "beidou" | "galileo" | "glonass" | "gps" | "qzss" | "unknown";
+
+export type GnssFixMode = "none" | "2d" | "3d";
+
+/**
+ * The fix quality of a GGA sentence, numbered there 0 to 8.
+ */
+export type GnssFixQuality = "none" | "gps" | "dgps" | "pps" | "rtk" | "rtkFloat" | "estimated" | "manual" | "simulated";
+
+export type GnssInfo = { 
+/**
+ * True while bytes arrive, an open but silent port is not connected.
+ */
+connected: boolean, device?: string, baudRate?: number, fixQuality: GnssFixQuality, fixMode: GnssFixMode, satellitesUsed: number, satellitesVisible: number, satellites: Array<GnssSatellite>, constellations: Array<GnssConstellation>, version?: GnssVersion, rf?: GnssRf, error?: string, pdop?: number, hdop?: number, vdop?: number, 
+/**
+ * Unix milliseconds.
+ */
+receiverTime?: number, 
+/**
+ * Unix milliseconds of the last bytes.
+ */
+updatedAt?: number, timezone?: string, };
+
+export type GnssJamming = "unknown" | "ok" | "warning" | "critical";
+
+export type GnssRf = { jamming: GnssJamming, antennaStatus: GnssAntennaStatus, antennaPower: GnssAntennaPower, noise: number, 
+/**
+ * High gain on a weak signal means the antenna delivers too little.
+ */
+agc: number, jammingIndicator: number, };
+
+export type GnssSatellite = { id: number, constellation: GnssConstellation, used: boolean, elevation?: number, azimuth?: number, 
+/**
+ * Absent while the receiver only knows where the satellite is.
+ */
+snr?: number, };
+
+/**
+ * Only a u-blox receiver reports it.
+ */
+export type GnssVersion = { software: string, hardware: string, firmware?: string, protocol?: string, model?: string, 
+/**
+ * The constellations the firmware can track.
+ */
+supported?: Array<string>, };
+
+export type GpsFix = { lat?: number, lng?: number, alt?: number, heading?: number, speedMs?: number, 
+/**
+ * Horizontal.
+ */
+accuracyM?: number, satellites?: number, 
+/**
+ * Unix milliseconds.
+ */
+fixTs?: number, };
 
 export enum HandDriveType { "LHD" = 0, "RHD" = 1 }
 
@@ -74,12 +417,6 @@ export type Input = { "kind": "pointer", screen: Screen, points: Array<Point>, }
  * Each value is a KeyboardEvent.code, empty when unbound.
  */
 export type KeyBindings = { up: string, down: string, left: string, right: string, selectUp: string, selectDown: string, back: string, knobLeft: string, knobRight: string, knobUp: string, knobDown: string, home: string, cycleSession: string, playPause: string, play: string, pause: string, next: string, prev: string, acceptPhone: string, rejectPhone: string, phoneKey0: string, phoneKey1: string, phoneKey2: string, phoneKey3: string, phoneKey4: string, phoneKey5: string, phoneKey6: string, phoneKey7: string, phoneKey8: string, phoneKey9: string, phoneKeyStar: string, phoneKeyHash: string, phoneKeyHookSwitch: string, voiceAssistant: string, voiceAssistantRelease: string, };
-
-export type LastKnownGps = { lat: number, lng: number, alt?: number, heading?: number, 
-/**
- * Milliseconds since the epoch.
- */
-ts: number, };
 
 /**
  * Down is phone to car, the stream, up is car to phone, touch and mic.
@@ -132,11 +469,11 @@ elapsedMs: number | null, playing: boolean | null,
  */
 artwork: string | null, };
 
-export const PROTOCOL = 5;
+export const PROTOCOL = 6;
 
 export type PatchOp = { "op": "set", path: Array<string>, value: unknown, } | { "op": "remove", path: Array<string>, };
 
-export type PerScreen<T> = { main: T, dash: T, aux: T, };
+export type PerScreen<T> = { main: T, cluster: T, aux: T, };
 
 export type Phase = "down" | "move" | "up" | "cancel";
 
@@ -159,7 +496,7 @@ run: string,
  */
 url: string | null, };
 
-export type Screen = "main" | "dash" | "aux";
+export type Screen = "main" | "cluster" | "aux";
 
 export type Sessions = { active: Protocol | null, 
 /**
@@ -175,9 +512,10 @@ export type State = { front: PerScreen<Front>, sessions: Sessions, nowPlaying: N
  */
 devices: Array<DeviceView>, 
 /**
- * What the car and outside producers pushed, merged into one snapshot.
+ * What the car and outside producers pushed, merged into one snapshot. A producer may add
+ * fields LIVI does not know.
  */
-telemetry: Record<string, unknown>, update: Update, config: Config, };
+telemetry: TelemetrySnapshot & Record<string, unknown>, update: Update, config: Config, };
 
 export type System = { 
 /**
@@ -213,9 +551,149 @@ displayModes: Array<string>,
  */
 displayModeSettable: boolean, audioSinks: Array<AudioDevice>, audioSources: Array<AudioDevice>, };
 
+export type TelemetrySnapshot = { 
+/**
+ * Unix milliseconds, LIVI fills it in when a push has none.
+ */
+ts?: number, speedKph?: number, rpm?: number, 
+/**
+ * A number for a manual gearbox, -1 reverse, 0 neutral, 1 to 10. A string for an automatic,
+ * P, R, N, D, S or M1 to M10.
+ */
+gear: number | string, 
+/**
+ * Negative is left.
+ */
+steeringDeg?: number, 
+/**
+ * Wins over `gear`.
+ */
+reverse?: boolean, 
+/**
+ * Low beam.
+ */
+lights?: boolean, 
+/**
+ * Android Auto shows high beam whatever `lights` says.
+ */
+highBeam?: boolean, hazards?: boolean, 
+/**
+ * Taken as `turn` too, the name it had before.
+ */
+turnSignal?: TurnSignal, parkingBrake?: boolean, coolantC?: number, oilC?: number, 
+/**
+ * Automatic transmission oil.
+ */
+transmissionC?: number, 
+/**
+ * Intake air.
+ */
+iatC?: number, 
+/**
+ * Outside, Android Auto and CarPlay get it too.
+ */
+ambientC?: number, 
+/**
+ * The 12 V battery.
+ */
+batteryV?: number, 
+/**
+ * 0 to 100, for an electric car the state of charge.
+ */
+fuelPct?: number, rangeKm?: number, 
+/**
+ * Hybrids only, the range on the tank.
+ */
+rangeFuelKm?: number, 
+/**
+ * Hybrids only, the range on the battery.
+ */
+rangeElectricKm?: number, fuelRateLph?: number, consumptionLPer100Km?: number, consumptionAvgLPer100Km?: number, 
+/**
+ * Gross capacity. Turns on electric routing in Android Auto, whatever `carType` says.
+ */
+batteryCapacityKwh?: number, 
+/**
+ * Taken from `fuelPct` and the capacity when absent.
+ */
+batteryLevelKwh?: number, 
+/**
+ * A `CarType` name such as `HybridDiesel`, written into the settings when it differs.
+ */
+carType?: string, 
+/**
+ * `EvConnectorType` names such as `Combo2`, written into the settings when they differ.
+ */
+evConnectorTypes?: Array<string>, 
+/**
+ * Manifold absolute pressure.
+ */
+mapKpa?: number, 
+/**
+ * Android Auto also gets it on its environment channel.
+ */
+baroKpa?: number, boostKpa?: number, 
+/**
+ * Throttle position, 0 to 100.
+ */
+throttlePct?: number, 
+/**
+ * 1.0 is stoichiometric.
+ */
+lambda?: number, 
+/**
+ * Air to fuel ratio.
+ */
+afr?: number, 
+/**
+ * Android Auto gets it in steps of 0.1 km.
+ */
+odometerKm?: number, odometerTripKm?: number, 
+/**
+ * Android Auto's driving restrictions as they are, 0 is none.
+ */
+drivingStatus?: number, ambientLux?: number, 
+/**
+ * The dimmer of the panel lights, 0 to 100.
+ */
+dimmerPct?: number, 
+/**
+ * Day or night for Android Auto and CarPlay, LIVI's own look follows its setting.
+ */
+nightMode?: boolean, 
+/**
+ * A page such as `/media` or `/settings/devices`, LIVI's main screen opens it once each time
+ * it changes. A path that names no page is ignored.
+ */
+path?: string, 
+/**
+ * The head unit's level, 0 to 1. It sets `huVolume`, which drives the amplifier and, while
+ * linked, the system mixer.
+ */
+volume?: number, 
+/**
+ * Send the whole fix every time or only what the sensor delivers.
+ */
+gps?: GpsFix, 
+/**
+ * Only LIVI's own receiver sends it, a push replaces it whole.
+ */
+gnss?: GnssInfo, tirePressure?: TirePressure, 
+/**
+ * No receiver uses it, it is for tooling and diagnostics.
+ */
+can?: CanFrame, climate?: Climate, };
+
 export type TemperatureUnit = "celsius" | "fahrenheit";
 
-export type ToCore = { "type": "hello", protocol: number, client: string, } | { "type": "resync" } | { "type": "input", input: Input, } | { "type": "action", id: number, action: Action, } | { "type": "path", path: string, } | { "type": "spectrum", on: boolean, } | { "type": "linkSpeed", on: boolean, };
+/**
+ * A sensor may push one wheel at a time.
+ */
+export type TirePressure = { frontLeftKpa?: number, frontRightKpa?: number, rearLeftKpa?: number, rearRightKpa?: number, };
+
+export type ToCore = { "type": "hello", protocol: number, client: string, } | { "type": "resync" } | { "type": "input", input: Input, } | { "type": "action", id: number, action: Action, } | { "type": "path", path: string, } | { "type": "spectrum", on: boolean, } | { "type": "linkSpeed", on: boolean, } | { "type": "camera", found: boolean, };
+
+export type TurnSignal = "none" | "left" | "right";
 
 export type Update = { 
 /**
@@ -232,6 +710,10 @@ checked: boolean, phase: UpdatePhase, received: number,
 total: number, error: string | null, };
 
 export type UpdatePhase = "idle" | "download" | "ready" | "installing" | "relaunching" | "error";
+
+export const WIFI_PASSWORD_MAX = 63;
+
+export const WIFI_PASSWORD_MIN = 8;
 
 export type WifiBand = "2.4ghz" | "5ghz" | "6ghz";
 

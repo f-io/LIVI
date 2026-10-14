@@ -6,6 +6,7 @@ import {
   applyWindowedContentSize,
   attachKioskStateSync,
   attachResizeReflow,
+  fitToShape,
   persistKiosk,
   restoreKioskAfterWmExit,
   sanitizeBounds,
@@ -68,7 +69,7 @@ describe('window utils', () => {
     expect(win.setMinimumSize).toHaveBeenCalledWith(0, 0)
   })
 
-  test('applyAspectRatioWindowed clears aspect ratio and sets minimum size with frame extras', () => {
+  test('applyAspectRatioWindowed keeps the configured shape and sets minimum size with frame extras', () => {
     const win = {
       setAspectRatio: vi.fn(),
       setMinimumSize: vi.fn(),
@@ -78,7 +79,7 @@ describe('window utils', () => {
 
     applyAspectRatioWindowed(win, 800, 480)
 
-    expect(win.setAspectRatio).toHaveBeenCalledWith(0)
+    expect(win.setAspectRatio).toHaveBeenCalledWith(800 / 480, { width: 0, height: 0 })
     expect(win.setMinimumSize).toHaveBeenCalledWith(320, 240)
   })
 
@@ -86,6 +87,7 @@ describe('window utils', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' })
 
     const win = {
+      getBounds: vi.fn(() => ({ x: 0, y: 0, width: 820, height: 520 })),
       setContentSize: vi.fn(),
       setAspectRatio: vi.fn(),
       setMinimumSize: vi.fn(),
@@ -96,11 +98,52 @@ describe('window utils', () => {
     applyWindowedContentSize(win, 1024, 600)
 
     expect(win.setContentSize).toHaveBeenCalledWith(1024, 600, false)
-    expect(win.setAspectRatio).toHaveBeenCalledWith(0)
+    expect(win.setAspectRatio).toHaveBeenCalledWith(1024 / 600, { width: 0, height: 0 })
     expect(win.setMinimumSize).toHaveBeenCalled()
   })
 
-  test('applyWindowedContentSize on linux clamps size to work area and reapplies constraints', () => {
+  test('applyWindowedContentSize keeps the configured shape for a saved size and fits the screen', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+    mockedGetDisplayMatching.mockReturnValue({ workAreaSize: { width: 1600, height: 900 } })
+
+    const win = {
+      getBounds: vi.fn(() => ({ x: 0, y: 0, width: 820, height: 520 })),
+      setContentSize: vi.fn(),
+      setAspectRatio: vi.fn(),
+      setMinimumSize: vi.fn(),
+      getSize: vi.fn(() => [820, 520]),
+      getContentSize: vi.fn(() => [800, 480])
+    } as any
+
+    applyWindowedContentSize(win, 1920, 1080, { width: 1846, height: 1154 })
+
+    expect(win.setContentSize).toHaveBeenCalledWith(1529, 860, false)
+    expect(win.setAspectRatio).toHaveBeenCalledWith(1920 / 1080, { width: 0, height: 0 })
+  })
+
+  test('fitToShape keeps the wanted width in the shape and shrinks the whole to the room', () => {
+    const shape = { width: 1920, height: 1080 }
+    expect(fitToShape({ width: 1280, height: 720 }, { width: 1280, height: 720 }, shape)).toEqual({
+      width: 1280,
+      height: 720
+    })
+    expect(fitToShape({ width: 1846, height: 1154 }, shape, { width: 4000, height: 4000 })).toEqual(
+      { width: 1846, height: 1038 }
+    )
+    expect(fitToShape(shape, shape, { width: 1680, height: 1017 })).toEqual({
+      width: 1680,
+      height: 945
+    })
+    expect(fitToShape({ width: 0, height: 0 }, shape, { width: 0, height: 0 })).toEqual(shape)
+  })
+
+  test('fitToShape without a shape keeps the wanted size, at least 1x1', () => {
+    const none = { width: 0, height: 0 }
+    expect(fitToShape({ width: 800, height: 600 }, none, none)).toEqual({ width: 800, height: 600 })
+    expect(fitToShape({ width: 0, height: -5 }, none, none)).toEqual({ width: 1, height: 1 })
+  })
+
+  test('applyWindowedContentSize on linux fits the shape into the work area and reapplies constraints', () => {
     Object.defineProperty(process, 'platform', { value: 'linux' })
 
     const win = {
@@ -123,8 +166,9 @@ describe('window utils', () => {
 
     expect(win.setResizable).toHaveBeenCalledWith(true)
     expect(win.setMinimumSize).toHaveBeenCalledWith(0, 0)
-    expect(win.setContentSize).toHaveBeenCalledWith(1000, 700, false)
-    expect(win.setAspectRatio).toHaveBeenCalledWith(0)
+    // 1000 x 700 less the frame leaves 980 x 660, the 3:2 shape fits as 980 x 653.
+    expect(win.setContentSize).toHaveBeenCalledWith(980, 653, false)
+    expect(win.setAspectRatio).toHaveBeenCalledWith(1200 / 800, { width: 0, height: 0 })
   })
 
   test('applyWindowedContentSize on linux clamps invalid sizes to at least 1x1', () => {
@@ -153,7 +197,7 @@ describe('window utils', () => {
 
   test('persistKiosk leaves an unchanged kiosk alone', () => {
     const runtimeState = {
-      config: { kiosk: { main: true, dash: false, aux: false } },
+      config: { kiosk: { main: true, cluster: false, aux: false } },
       wmExitedKiosk: true
     } as any
 
@@ -164,7 +208,7 @@ describe('window utils', () => {
 
   test('persistKiosk saves when kiosk changed', () => {
     const runtimeState = {
-      config: { kiosk: { main: true, dash: false, aux: false } },
+      config: { kiosk: { main: true, cluster: false, aux: false } },
       wmExitedKiosk: true
     } as any
 
@@ -172,7 +216,7 @@ describe('window utils', () => {
 
     expect(runtimeState.wmExitedKiosk).toBe(false)
     expect(saveConfig).toHaveBeenCalledWith({
-      kiosk: { main: false, dash: false, aux: false }
+      kiosk: { main: false, cluster: false, aux: false }
     })
   })
 
@@ -183,7 +227,7 @@ describe('window utils', () => {
     expect(saveConfig).not.toHaveBeenCalled()
 
     persistKiosk(true, runtimeState)
-    expect(saveConfig).toHaveBeenCalledWith({ kiosk: { main: true, dash: false, aux: false } })
+    expect(saveConfig).toHaveBeenCalledWith({ kiosk: { main: true, cluster: false, aux: false } })
   })
 
   test('restoreKioskAfterWmExit returns early on non-linux', () => {
@@ -191,7 +235,7 @@ describe('window utils', () => {
 
     const runtimeState = {
       wmExitedKiosk: true,
-      config: { kiosk: { main: false, dash: false, aux: false } }
+      config: { kiosk: { main: false, cluster: false, aux: false } }
     } as any
 
     restoreKioskAfterWmExit(runtimeState)
@@ -205,7 +249,7 @@ describe('window utils', () => {
 
     const runtimeState = {
       wmExitedKiosk: true,
-      config: { kiosk: { main: false, dash: false, aux: false } }
+      config: { kiosk: { main: false, cluster: false, aux: false } }
     } as any
 
     restoreKioskAfterWmExit(runtimeState)
@@ -221,7 +265,7 @@ describe('window utils', () => {
 
     const runtimeState = {
       wmExitedKiosk: true,
-      config: { kiosk: { main: false, dash: false, aux: false } }
+      config: { kiosk: { main: false, cluster: false, aux: false } }
     } as any
 
     restoreKioskAfterWmExit(runtimeState)
@@ -238,7 +282,7 @@ describe('window utils', () => {
 
     const runtimeState = {
       wmExitedKiosk: false,
-      config: { kiosk: { main: false, dash: false, aux: false } }
+      config: { kiosk: { main: false, cluster: false, aux: false } }
     } as any
 
     restoreKioskAfterWmExit(runtimeState)
@@ -259,13 +303,13 @@ describe('window utils', () => {
 
     const runtimeState = {
       wmExitedKiosk: true,
-      config: { kiosk: { main: false, dash: false, aux: false } }
+      config: { kiosk: { main: false, cluster: false, aux: false } }
     } as any
 
     expect(() => restoreKioskAfterWmExit(runtimeState)).not.toThrow()
     expect(runtimeState.wmExitedKiosk).toBe(false)
     expect(saveConfig).toHaveBeenCalledWith({
-      kiosk: { main: true, dash: false, aux: false }
+      kiosk: { main: true, cluster: false, aux: false }
     })
   })
 
@@ -280,7 +324,7 @@ describe('window utils', () => {
 
     const runtimeState = {
       wmExitedKiosk: true,
-      config: { kiosk: { main: false, dash: false, aux: false } }
+      config: { kiosk: { main: false, cluster: false, aux: false } }
     } as any
 
     restoreKioskAfterWmExit(runtimeState)
@@ -288,7 +332,7 @@ describe('window utils', () => {
     expect(runtimeState.wmExitedKiosk).toBe(false)
     expect(win.setKiosk).toHaveBeenCalledWith(true)
     expect(saveConfig).toHaveBeenCalledWith({
-      kiosk: { main: true, dash: false, aux: false }
+      kiosk: { main: true, cluster: false, aux: false }
     })
   })
 
@@ -296,7 +340,7 @@ describe('window utils', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' })
 
     const runtimeState = {
-      config: { kiosk: { main: false, dash: false, aux: false } },
+      config: { kiosk: { main: false, cluster: false, aux: false } },
       wmExitedKiosk: false
     } as any
 
@@ -308,7 +352,7 @@ describe('window utils', () => {
     ;(getMainWindow as Mock).mockReturnValue(null)
 
     const runtimeState = {
-      config: { kiosk: { main: false, dash: false, aux: false } },
+      config: { kiosk: { main: false, cluster: false, aux: false } },
       wmExitedKiosk: false
     } as any
 
@@ -331,7 +375,7 @@ describe('window utils', () => {
     ;(getMainWindow as Mock).mockReturnValue(win)
 
     const runtimeState = {
-      config: { kiosk: { main: false, dash: false, aux: false } },
+      config: { kiosk: { main: false, cluster: false, aux: false } },
       wmExitedKiosk: false
     } as any
 
@@ -365,7 +409,7 @@ describe('window utils', () => {
     ;(getMainWindow as Mock).mockReturnValue(win)
 
     const runtimeState = {
-      config: { kiosk: { main: true, dash: false, aux: false } },
+      config: { kiosk: { main: true, cluster: false, aux: false } },
       wmExitedKiosk: false
     } as any
 
@@ -389,7 +433,7 @@ describe('window utils', () => {
     ;(getMainWindow as Mock).mockReturnValue(win)
 
     const runtimeState = {
-      config: { kiosk: { main: true, dash: false, aux: false } },
+      config: { kiosk: { main: true, cluster: false, aux: false } },
       wmExitedKiosk: false
     } as any
 
@@ -397,7 +441,7 @@ describe('window utils', () => {
 
     expect(runtimeState.wmExitedKiosk).toBe(true)
     expect(saveConfig).toHaveBeenCalledWith({
-      kiosk: { main: false, dash: false, aux: false }
+      kiosk: { main: false, cluster: false, aux: false }
     })
   })
 
@@ -415,7 +459,7 @@ describe('window utils', () => {
     ;(getMainWindow as Mock).mockReturnValue(win)
 
     const runtimeState = {
-      config: { kiosk: { main: false, dash: false, aux: false } },
+      config: { kiosk: { main: false, cluster: false, aux: false } },
       wmExitedKiosk: false
     } as any
 
@@ -438,7 +482,7 @@ describe('window utils', () => {
     ;(getMainWindow as Mock).mockReturnValue(win)
 
     const runtimeState = {
-      config: { kiosk: { main: false, dash: false, aux: false } },
+      config: { kiosk: { main: false, cluster: false, aux: false } },
       wmExitedKiosk: false
     } as any
 
@@ -461,7 +505,7 @@ describe('window utils', () => {
     ;(getMainWindow as Mock).mockReturnValue(win)
 
     const runtimeState = {
-      config: { kiosk: { main: false, dash: false, aux: false } },
+      config: { kiosk: { main: false, cluster: false, aux: false } },
       wmExitedKiosk: false
     } as any
 
@@ -469,7 +513,7 @@ describe('window utils', () => {
 
     expect(runtimeState.wmExitedKiosk).toBe(false)
     expect(saveConfig).toHaveBeenCalledWith({
-      kiosk: { main: true, dash: false, aux: false }
+      kiosk: { main: true, cluster: false, aux: false }
     })
   })
 
@@ -488,7 +532,7 @@ describe('window utils', () => {
     ;(getMainWindow as Mock).mockReturnValue(win)
 
     const runtimeState = {
-      config: { kiosk: { main: false, dash: false, aux: false } },
+      config: { kiosk: { main: false, cluster: false, aux: false } },
       wmExitedKiosk: true
     } as any
 
@@ -497,7 +541,7 @@ describe('window utils', () => {
 
     expect(win.setKiosk).toHaveBeenCalledWith(true)
     expect(saveConfig).toHaveBeenCalledWith({
-      kiosk: { main: true, dash: false, aux: false }
+      kiosk: { main: true, cluster: false, aux: false }
     })
   })
 

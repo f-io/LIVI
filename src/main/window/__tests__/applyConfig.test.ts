@@ -90,7 +90,7 @@ describe('applyConfig', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         bindings: {},
         uiZoomPercent: 125
       }
@@ -117,13 +117,13 @@ describe('applyConfig', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         bindings: {}
       }
     } as any
 
     applyChange(runtimeState, {
-      kiosk: { main: true, dash: false, aux: false },
+      kiosk: { main: true, cluster: false, aux: false },
       mainScreenWidth: 1280,
       mainScreenHeight: 720
     } as any)
@@ -149,13 +149,13 @@ describe('applyConfig', () => {
       config: {
         mainScreenWidth: 1280,
         mainScreenHeight: 720,
-        kiosk: { main: true, dash: false, aux: false },
+        kiosk: { main: true, cluster: false, aux: false },
         bindings: {}
       }
     } as any
 
     applyChange(runtimeState, {
-      kiosk: { main: false, dash: false, aux: false },
+      kiosk: { main: false, cluster: false, aux: false },
       mainScreenWidth: 800,
       mainScreenHeight: 480
     } as any)
@@ -180,7 +180,7 @@ describe('applyConfig', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: true, dash: false, aux: false },
+        kiosk: { main: true, cluster: false, aux: false },
         bindings: {}
       }
     } as any
@@ -208,7 +208,7 @@ describe('applyConfig', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         bindings: {}
       }
     } as any
@@ -241,12 +241,12 @@ describe('applyConfig', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         bindings: {}
       }
     } as any
 
-    applyChange(runtimeState, { kiosk: { main: true, dash: false, aux: false } } as any)
+    applyChange(runtimeState, { kiosk: { main: true, cluster: false, aux: false } } as any)
 
     expect(mockedApplyAspectRatioWindowed).toHaveBeenCalledWith(mainWindow, 0, 0)
     expect(mainWindow.setKiosk).toHaveBeenCalledWith(true)
@@ -281,13 +281,13 @@ describe('applyConfig', () => {
       config: {
         mainScreenWidth: 1280,
         mainScreenHeight: 720,
-        kiosk: { main: true, dash: false, aux: false },
+        kiosk: { main: true, cluster: false, aux: false },
         bindings: {}
       }
     } as any
 
     applyChange(runtimeState, {
-      kiosk: { main: false, dash: false, aux: false },
+      kiosk: { main: false, cluster: false, aux: false },
       mainScreenWidth: 800,
       mainScreenHeight: 480
     } as any)
@@ -327,13 +327,13 @@ describe('applyConfig', () => {
       config: {
         mainScreenWidth: 1280,
         mainScreenHeight: 720,
-        kiosk: { main: true, dash: false, aux: false },
+        kiosk: { main: true, cluster: false, aux: false },
         bindings: {}
       }
     } as any
 
     applyChange(runtimeState, {
-      kiosk: { main: false, dash: false, aux: false },
+      kiosk: { main: false, cluster: false, aux: false },
       mainScreenWidth: 800,
       mainScreenHeight: 480
     } as any)
@@ -356,7 +356,7 @@ describe('applyConfig', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         bindings: {}
       }
     } as any
@@ -382,12 +382,12 @@ describe('applyConfig', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         bindings: {}
       }
     } as any
 
-    applyChange(runtimeState, { kiosk: { main: true, dash: false, aux: false } } as any)
+    applyChange(runtimeState, { kiosk: { main: true, cluster: false, aux: false } } as any)
 
     expect(mainWindow.setFullScreen).toHaveBeenCalledWith(true)
     expect(mockedApplyWindowedContentSize).not.toHaveBeenCalled()
@@ -410,12 +410,12 @@ describe('applyConfig', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: true, dash: false, aux: false },
+        kiosk: { main: true, cluster: false, aux: false },
         bindings: {}
       }
     } as any
 
-    applyChange(runtimeState, { kiosk: { main: false, dash: false, aux: false } } as any)
+    applyChange(runtimeState, { kiosk: { main: false, cluster: false, aux: false } } as any)
 
     expect(mainWindow.setFullScreen).toHaveBeenCalledWith(false)
     expect(mockedApplyWindowedContentSize).not.toHaveBeenCalled()
@@ -436,7 +436,7 @@ describe('applyConfig', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: true, dash: false, aux: false },
+        kiosk: { main: true, cluster: false, aux: false },
         bindings: {}
       }
     } as any
@@ -469,11 +469,11 @@ describe('applyConfig', () => {
 
       const runtimeState = {
         config: {
-          kiosk: { main: prevKiosk, dash: false, aux: false }
+          kiosk: { main: prevKiosk, cluster: false, aux: false }
         }
       } as any
 
-      applyChange(runtimeState, { kiosk: { main: nextKiosk, dash: false, aux: false } } as any)
+      applyChange(runtimeState, { kiosk: { main: nextKiosk, cluster: false, aux: false } } as any)
 
       expect(mockedApplyWindowedContentSize).toHaveBeenCalledWith(mainWindow, 800, 480)
       if (nextKiosk && nextKiosk !== prevKiosk) {
@@ -503,13 +503,13 @@ describe('applyConfig', () => {
       config: {
         mainScreenWidth: 800,
         mainScreenHeight: 480,
-        kiosk: { main: false, dash: false, aux: false },
+        kiosk: { main: false, cluster: false, aux: false },
         bindings: {}
       }
     } as any
 
     try {
-      applyChange(runtimeState, { kiosk: { main: true, dash: false, aux: false } } as any)
+      applyChange(runtimeState, { kiosk: { main: true, cluster: false, aux: false } } as any)
       expect(mainWindow.setFullScreen).toHaveBeenCalledWith(true)
       expect(mainWindow.setKiosk).not.toHaveBeenCalled()
 

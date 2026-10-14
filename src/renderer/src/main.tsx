@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import AuxApp from './AuxApp'
-import DashApp from './DashApp'
+import ClusterApp from './ClusterApp'
 import { useLiviStore } from './store/store'
 import {
   buildRuntimeTheme,
@@ -26,7 +26,7 @@ if (role === 'main') {
   initUiBreatheClock()
   initCursorHider()
 }
-if (role === 'dash') document.title = 'Dash'
+if (role === 'cluster') document.title = 'Cluster'
 else if (role === 'aux') document.title = 'Auxiliary'
 
 // Under the livi-compositor the window is transparent so the GPU video plane behind it shows through
@@ -82,7 +82,7 @@ export const Root = () => {
     [appContext, handleChangeAppContext]
   )
 
-  const RoleApp = role === 'dash' ? DashApp : role === 'aux' ? AuxApp : App
+  const RoleApp = role === 'cluster' ? ClusterApp : role === 'aux' ? AuxApp : App
 
   return (
     <AppContext.Provider value={providerValue}>

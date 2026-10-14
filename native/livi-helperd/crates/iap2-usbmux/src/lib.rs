@@ -31,7 +31,7 @@ pub use device::{MuxDevice, MuxRegistry, socket_path};
 #[cfg(target_os = "linux")]
 mod ncm;
 #[cfg(target_os = "linux")]
-pub use ncm::NcmBridge;
+pub use ncm::{NcmBridge, drop_name_bound_profiles};
 
 mod async_stream;
 pub use async_stream::AsyncMuxStream;

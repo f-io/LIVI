@@ -14,7 +14,7 @@ export const Cluster: React.FC<ClusterProps> = ({ visible, showLoadingPlaceholde
   const showCluster = visible === true
 
   const settings = useLiviStore((s) => s.settings)
-  const clusterDashActive = useStatusStore((s) => s.clusterDashActive)
+  const clusterDashboardActive = useStatusStore((s) => s.clusterDashboardActive)
 
   // Core streams the cluster onto this screen's plane while a phone is there.
   const clusterStreamActive = useLiviStore((s) => s.sessions.active !== null)
@@ -22,13 +22,13 @@ export const Cluster: React.FC<ClusterProps> = ({ visible, showLoadingPlaceholde
   const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!clusterStreamActive || !clusterDashActive) return
+    if (!clusterStreamActive || !clusterDashboardActive) return
     const ipc = window.projection.ipc as { clusterRepaintNudge?: () => Promise<unknown> }
     const id = setTimeout(() => {
       void ipc.clusterRepaintNudge?.().catch(() => {})
     }, 120)
     return () => clearTimeout(id)
-  }, [clusterStreamActive, clusterDashActive])
+  }, [clusterStreamActive, clusterDashboardActive])
 
   // The cluster is a video plane below the UI (compositor plane on Linux, NSView on mac).
   useEffect(() => {

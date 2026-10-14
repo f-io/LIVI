@@ -205,7 +205,7 @@ impl LiviState {
 
         let kiosk = std::env::var("LIVI_KIOSK").map(|v| v != "0").unwrap_or(false);
         let roles = std::env::var("LIVI_SCREENS").unwrap_or_default();
-        let roles = if roles.is_empty() { "main,dash,aux" } else { &roles };
+        let roles = if roles.is_empty() { "main,cluster,aux" } else { &roles };
         let screens: Vec<Screen> = roles
             .split(',')
             .filter(|r| !r.is_empty())
@@ -301,7 +301,7 @@ impl LiviState {
 pub fn role_title(role: &str) -> &str {
     match role {
         "main" => "LIVI",
-        "dash" => "Dash",
+        "cluster" => "Cluster",
         "aux" => "Auxiliary",
         other => other,
     }

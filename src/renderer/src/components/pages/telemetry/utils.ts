@@ -1,12 +1,12 @@
-import type { DashboardsConfig, TelemetryDashboardId, WindowId } from '@shared/types'
+import type { Dashboards, Screen } from '@shared/types'
 
-const DASH_IDS: TelemetryDashboardId[] = ['dash1', 'dash2', 'dash3', 'dash4']
+const DASH_IDS: (keyof Dashboards)[] = ['dashboard1', 'dashboard2', 'dashboard3', 'dashboard4']
 
-export const normalizeDashComponents = (
-  dashboards: DashboardsConfig | null | undefined,
-  windowRole: WindowId = 'main'
+export const normalizeDashboardComponents = (
+  dashboards: Dashboards | null | undefined,
+  windowRole: Screen = 'main'
 ) => {
-  if (!dashboards) return { dashboards: [] as { id: TelemetryDashboardId; pos: number }[] }
+  if (!dashboards) return { dashboards: [] as { id: keyof Dashboards; pos: number }[] }
 
   const enabled = DASH_IDS.flatMap((id) => {
     const slot = dashboards[id]

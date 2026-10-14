@@ -1,6 +1,6 @@
 {
   "name": "LIVI",
-  "version": "9.4.0",
+  "version": "9.5.0",
   "description": "LIVI - Linux In-Vehicle Infotainment",
   "desktopName": "dev.f-io.livi.desktop",
   "main": "./out/main/main.js",
@@ -54,7 +54,7 @@
     "@mui/icons-material": "^9.5.0",
     "@mui/material": "^9.5.0",
     "@mui/system": "^9.5.0",
-    "i18next": "^26.4.3",
+    "i18next": "^26.4.4",
     "react-i18next": "^17.0.16",
     "react-router": "^8.4.0",
     "zustand": "^5.0.15"
@@ -67,8 +67,8 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
-    "@vitest/coverage-v8": "^5.0.3",
-    "electron": "^44.7.0",
+    "@vitest/coverage-v8": "^5.0.4",
+    "electron": "^44.7.1",
     "electron-builder": "^26.15.3",
     "husky": "^9.1.7",
     "jsdom": "^30.1.2",
@@ -78,6 +78,6 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vite-plugin-electron": "^1.1.2",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.4"
   }
 }

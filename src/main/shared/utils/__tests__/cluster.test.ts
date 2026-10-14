@@ -1,10 +1,10 @@
 import { clusterTargetScreens, isClusterOnScreen } from '@main/shared/utils'
 
 describe('cluster utils', () => {
-  test('clusterTargetScreens collects roles enabled on dash3 or dash4', () => {
+  test('clusterTargetScreens collects roles enabled on dashboard3 or dashboard4', () => {
     expect(
       clusterTargetScreens({
-        dashboards: { dash3: { main: true, dash: false }, dash4: { aux: true } }
+        dashboards: { dashboard3: { main: true, cluster: false }, dashboard4: { aux: true } }
       })
     ).toEqual(['main', 'aux'])
   })
@@ -16,9 +16,9 @@ describe('cluster utils', () => {
   })
 
   test('isClusterOnScreen checks a single role', () => {
-    const cfg = { dashboards: { dash3: { main: true, dash: false, aux: false } } }
+    const cfg = { dashboards: { dashboard3: { main: true, cluster: false, aux: false } } }
     expect(isClusterOnScreen(cfg, 'main')).toBe(true)
-    expect(isClusterOnScreen(cfg, 'dash')).toBe(false)
+    expect(isClusterOnScreen(cfg, 'cluster')).toBe(false)
     expect(isClusterOnScreen(null, 'aux')).toBe(false)
   })
 })

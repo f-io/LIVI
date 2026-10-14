@@ -503,9 +503,9 @@ mod tests {
         for _ in 0..3 {
             seen.push(next_line(&mut lines).await);
         }
-        assert!(seen.contains(&"claim cluster-dash".to_string()));
-        assert!(seen.contains(&"videocfg cluster-dash dash 0 0 0 0 0 0".to_string()));
-        assert!(seen.contains(&"videoshow cluster-dash 1".to_string()));
+        assert!(seen.contains(&"claim cluster-cluster".to_string()));
+        assert!(seen.contains(&"videocfg cluster-cluster cluster 0 0 0 0 0 0".to_string()));
+        assert!(seen.contains(&"videoshow cluster-cluster 1".to_string()));
 
         let mut host = UnixStream::connect(dir.0.join("gst.sock")).await.unwrap();
         let mut framer = livi_host_proto::Framer::new();
@@ -515,10 +515,10 @@ mod tests {
         planes.show_on([false, false, false]);
         // This compositor never confirms, so the open claim is dropped too.
         let mut after = Vec::new();
-        while !after.contains(&"videoshow cluster-dash 0".to_string()) {
+        while !after.contains(&"videoshow cluster-cluster 0".to_string()) {
             after.push(next_line(&mut lines).await);
         }
-        assert!(after.contains(&"unclaim cluster-dash".to_string()));
+        assert!(after.contains(&"unclaim cluster-cluster".to_string()));
         let msg = next_msg(&mut host, &mut framer).await;
         assert_eq!(msg.id, CLUSTER_PLANE_MIN + 1);
         assert_ne!(msg.op, 1);

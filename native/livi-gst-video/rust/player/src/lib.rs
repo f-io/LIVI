@@ -2,10 +2,25 @@ use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use gstreamer_base as gst_base;
-use std::sync::Once;
+use std::sync::{Arc, Once};
 
 mod url_player;
 pub use url_player::UrlPlayer;
+
+pub type Say = Arc<dyn Fn(&str) + Send + Sync>;
+
+pub fn to_stderr() -> Say {
+    Arc::new(|line| eprintln!("{}", stamped(line)))
+}
+
+/// With the local time of day, so the line can be laid next to the core's log.
+pub fn stamped(line: &str) -> String {
+    let at = gst::glib::DateTime::now_local()
+        .and_then(|now| now.format("%H:%M:%S.%f"))
+        .map(|t| t.chars().take(12).collect::<String>())
+        .unwrap_or_default();
+    format!("[{at}] {line}")
+}
 
 static INIT: Once = Once::new();
 
@@ -106,10 +121,11 @@ fn decoded_caps(caps: &gst::CapsRef) -> Option<String> {
     Some(format!("format={fmt}{drm} {w}x{h} mem={mem}"))
 }
 
-fn install_decoder_probes(dec: &gst::Element, decoder_name: &str) {
+fn install_decoder_probes(dec: &gst::Element, decoder_name: &str, say: &Say) {
     if let Some(src) = dec.static_pad("src") {
         // A fetched stream repeats its caps with every fragment.
         let last = std::sync::Mutex::new(String::new());
+        let say = say.clone();
         src.add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, move |_, info| {
             if let Some(gst::PadProbeData::Event(ev)) = &info.data
                 && let gst::EventView::Caps(c) = ev.view()
@@ -117,7 +133,7 @@ fn install_decoder_probes(dec: &gst::Element, decoder_name: &str) {
             {
                 let mut last = last.lock().unwrap_or_else(|e| e.into_inner());
                 if *last != now {
-                    eprintln!("[gst_video] decoded {now}");
+                    say(&format!("[gst_video] decoded {now}"));
                     *last = now;
                 }
             }
@@ -185,7 +201,7 @@ fn install_decoder_probes(dec: &gst::Element, decoder_name: &str) {
 // The window view entry points in gst_video_mac.mm.
 #[cfg(all(target_os = "macos", feature = "window-view"))]
 unsafe extern "C" {
-    fn livi_attach_view(parent: usize, out_view: *mut *mut core::ffi::c_void) -> usize;
+    fn livi_attach_view(parent: usize, rank: i32, out_view: *mut *mut core::ffi::c_void) -> usize;
     fn livi_remove_view(view: *mut core::ffi::c_void);
     fn livi_set_view_hidden(view: *mut core::ffi::c_void, hidden: bool);
     fn livi_set_content_region(
@@ -200,14 +216,94 @@ unsafe extern "C" {
     );
 }
 
+const RANK_FRAMES: i32 = 0;
+/// A fetched video covers the projection it was started from.
+const RANK_URL: i32 = 1;
+
+#[derive(Default)]
+struct WindowView {
+    #[cfg(all(target_os = "macos", feature = "window-view"))]
+    view: core::sync::atomic::AtomicPtr<core::ffi::c_void>,
+}
+
+impl WindowView {
+    /// Above every view of a lower rank, below the web content.
+    #[cfg(all(target_os = "macos", feature = "window-view"))]
+    fn attach(&self, handle: usize, rank: i32, sink: Option<&gst::Element>) {
+        use gstreamer_video::prelude::VideoOverlayExtManual;
+        if handle == 0 {
+            return;
+        }
+        let mut view = core::ptr::null_mut();
+        let overlay = unsafe { livi_attach_view(handle, rank, &mut view) };
+        self.view.store(view, core::sync::atomic::Ordering::Release);
+        if overlay == 0 {
+            return;
+        }
+        if let Some(o) = sink.and_then(|s| s.dynamic_cast_ref::<gstreamer_video::VideoOverlay>()) {
+            unsafe { o.set_window_handle(overlay) };
+        }
+    }
+
+    #[cfg(not(all(target_os = "macos", feature = "window-view")))]
+    fn attach(&self, _handle: usize, _rank: i32, _sink: Option<&gst::Element>) {}
+
+    fn set_visible(&self, visible: bool) {
+        #[cfg(all(target_os = "macos", feature = "window-view"))]
+        unsafe {
+            livi_set_view_hidden(self.ptr(), !visible)
+        };
+        #[cfg(not(all(target_os = "macos", feature = "window-view")))]
+        let _ = visible;
+    }
+
+    fn set_region(
+        &self,
+        crop_l: f64,
+        crop_t: f64,
+        vis_w: f64,
+        vis_h: f64,
+        tier_w: f64,
+        tier_h: f64,
+    ) {
+        #[cfg(all(target_os = "macos", feature = "window-view"))]
+        {
+            let view = self.ptr();
+            if !view.is_null() {
+                let sink = core::ptr::null_mut();
+                unsafe {
+                    livi_set_content_region(
+                        view, sink, crop_l, crop_t, vis_w, vis_h, tier_w, tier_h,
+                    )
+                }
+            }
+        }
+        #[cfg(not(all(target_os = "macos", feature = "window-view")))]
+        let _ = (crop_l, crop_t, vis_w, vis_h, tier_w, tier_h);
+    }
+
+    #[cfg(all(target_os = "macos", feature = "window-view"))]
+    fn ptr(&self) -> *mut core::ffi::c_void {
+        self.view.load(core::sync::atomic::Ordering::Acquire)
+    }
+
+    // Swapped out atomically, so a shared player can be stopped from any thread.
+    fn remove(&self) {
+        #[cfg(all(target_os = "macos", feature = "window-view"))]
+        {
+            let view = self.view.swap(core::ptr::null_mut(), core::sync::atomic::Ordering::AcqRel);
+            if !view.is_null() {
+                unsafe { livi_remove_view(view) };
+            }
+        }
+    }
+}
+
 pub struct Player {
     pipeline: gst::Pipeline,
     appsrc: Option<gst_app::AppSrc>,
     glshader: Option<gst::Element>,
-    #[cfg(all(target_os = "macos", feature = "window-view"))]
-    sink: Option<gst::Element>,
-    #[cfg(all(target_os = "macos", feature = "window-view"))]
-    view: core::sync::atomic::AtomicPtr<core::ffi::c_void>,
+    view: WindowView,
 }
 
 impl Player {
@@ -236,12 +332,9 @@ impl Player {
             src.set_caps(Some(&length_prefixed_caps(codec, codec_data)));
         }
 
-        let mut player = Self {
+        let player = Self {
             glshader: pipeline.by_name("cal"),
-            #[cfg(all(target_os = "macos", feature = "window-view"))]
-            sink: pipeline.by_name("sink"),
-            #[cfg(all(target_os = "macos", feature = "window-view"))]
-            view: core::sync::atomic::AtomicPtr::new(core::ptr::null_mut()),
+            view: WindowView::default(),
             appsrc,
             pipeline,
         };
@@ -266,10 +359,10 @@ impl Player {
                     dec.property::<i32>("max-threads")
                 );
             }
-            install_decoder_probes(&dec, decoder);
+            install_decoder_probes(&dec, decoder, &to_stderr());
         }
         log_bus_messages(&player.pipeline);
-        player.attach_view(handle);
+        player.view.attach(handle, RANK_FRAMES, player.pipeline.by_name("sink").as_ref());
 
         Some(player)
     }
@@ -308,35 +401,13 @@ impl Player {
         }
     }
 
-    #[cfg(not(all(target_os = "macos", feature = "window-view")))]
-    fn attach_view(&mut self, _handle: usize) {}
-
-    #[cfg(all(target_os = "macos", feature = "window-view"))]
-    fn attach_view(&mut self, handle: usize) {
-        use gstreamer_video::prelude::VideoOverlayExtManual;
-        if handle == 0 {
-            return;
-        }
-        let mut view = core::ptr::null_mut();
-        let overlay = unsafe { livi_attach_view(handle, &mut view) };
-        self.view.store(view, core::sync::atomic::Ordering::Release);
-        if overlay == 0 {
-            return;
-        }
-        if let Some(o) =
-            self.sink.as_ref().and_then(|s| s.dynamic_cast_ref::<gstreamer_video::VideoOverlay>())
-        {
-            unsafe { o.set_window_handle(overlay) };
-        }
-    }
-
     pub fn start(&self) {
         let _ = self.pipeline.set_state(gst::State::Playing);
     }
 
     pub fn stop(&self) {
         let _ = self.pipeline.set_state(gst::State::Null);
-        self.remove_view();
+        self.view.remove();
     }
 
     pub fn push(&self, data: &[u8]) -> bool {
@@ -348,15 +419,9 @@ impl Player {
     }
 
     pub fn set_visible(&self, visible: bool) {
-        #[cfg(all(target_os = "macos", feature = "window-view"))]
-        unsafe {
-            livi_set_view_hidden(self.view_ptr(), !visible)
-        };
-        #[cfg(not(all(target_os = "macos", feature = "window-view")))]
-        let _ = visible;
+        self.view.set_visible(visible);
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn set_content_region(
         &self,
         crop_l: f64,
@@ -366,22 +431,7 @@ impl Player {
         tier_w: f64,
         tier_h: f64,
     ) {
-        #[cfg(all(target_os = "macos", feature = "window-view"))]
-        {
-            let view = self.view_ptr();
-            if view.is_null() {
-                return;
-            }
-            let sink = self
-                .sink
-                .as_ref()
-                .map_or(core::ptr::null_mut(), |s| s.as_ptr() as *mut core::ffi::c_void);
-            unsafe {
-                livi_set_content_region(view, sink, crop_l, crop_t, vis_w, vis_h, tier_w, tier_h)
-            }
-        }
-        #[cfg(not(all(target_os = "macos", feature = "window-view")))]
-        let _ = (crop_l, crop_t, vis_w, vis_h, tier_w, tier_h);
+        self.view.set_region(crop_l, crop_t, vis_w, vis_h, tier_w, tier_h);
     }
 
     pub fn flush(&self) {
@@ -401,28 +451,12 @@ impl Player {
             .build();
         shader.set_property("uniforms", uniforms);
     }
-
-    #[cfg(all(target_os = "macos", feature = "window-view"))]
-    fn view_ptr(&self) -> *mut core::ffi::c_void {
-        self.view.load(core::sync::atomic::Ordering::Acquire)
-    }
-
-    // The view is swapped out atomically, so a shared player can be stopped from any thread.
-    fn remove_view(&self) {
-        #[cfg(all(target_os = "macos", feature = "window-view"))]
-        {
-            let view = self.view.swap(core::ptr::null_mut(), core::sync::atomic::Ordering::AcqRel);
-            if !view.is_null() {
-                unsafe { livi_remove_view(view) };
-            }
-        }
-    }
 }
 
 impl Drop for Player {
     fn drop(&mut self) {
         let _ = self.pipeline.set_state(gst::State::Null);
-        self.remove_view();
+        self.view.remove();
     }
 }
 
