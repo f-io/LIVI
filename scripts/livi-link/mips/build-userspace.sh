@@ -30,8 +30,8 @@ quiet(){
     fi
 }
 
-MUSL_VER=1.2.5
-MUSL_SHA=a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4
+MUSL_VER=1.2.6
+MUSL_SHA=d585fd3b613c66151fc3249e8ed44f77020cb5e6c1e635a616d3f9f82460512a
 MUSL_URL=https://musl.libc.org/releases/musl-${MUSL_VER}.tar.gz
 
 BUSYBOX_VER=1.36.1
@@ -72,20 +72,26 @@ if [[ ! -f "$MUSL_PREFIX/lib/libc.a" ]]; then
     fetch "$MUSL_URL" "$SRC/musl-${MUSL_VER}.tar.gz" "$MUSL_SHA"
     rm -rf "$SRC/musl-${MUSL_VER}"
     tar -xzf "$SRC/musl-${MUSL_VER}.tar.gz" -C "$SRC"
+    # CVE-2026-40200 (qsort stack overflow, "32-bit users should patch"): not in any tagged musl
+    # release yet (1.2.7 will have it), only as upstream's own mailed patch, applied here as our own
+    # maintained patch until it is.
+    apply_patches "$COMMON/patches/musl" "$SRC/musl-${MUSL_VER}"
     log "configure + build musl ${MUSL_VER}"
     (
         cd "$SRC/musl-${MUSL_VER}"
         quiet musl-configure  env CC=$CC CROSS_COMPILE=$CROSS_COMPILE ./configure \
             --prefix="$MUSL_PREFIX" \
-            --target=mipsel-linux-musl \
-            --enable-wrapper=gcc
+            --target=mipsel-linux-musl
         quiet musl-build      make -j"$JOBS"
         quiet musl-install    make install
     )
 fi
 
-MUSL_GCC=$MUSL_PREFIX/bin/musl-gcc
-[[ -x "$MUSL_GCC" ]] || { log "no musl-gcc at $MUSL_GCC"; exit 3; }
+# Not the generated musl-gcc wrapper: its -specs indirection re-expands GCC's own internal
+# %(cc1_cpu) default, which on this single-target (non-multilib) toolchain tries to pass -EL, a
+# flag this build never learned (there is no second endianness to choose between). Pointing the
+# real compiler straight at musl's include/lib directories sidesteps that substitution entirely.
+MUSL_CC="${CROSS_COMPILE}gcc -isystem $MUSL_PREFIX/include -B$MUSL_PREFIX/lib -L$MUSL_PREFIX/lib"
 
 # musl ships no kernel UAPI headers; busybox, libnl and hostapd need linux/*.h.
 if [[ ! -f "$MUSL_PREFIX/include/linux/nl80211.h" ]]; then
@@ -108,7 +114,7 @@ if [[ ! -x "$USERSPACE/bin/busybox" ]]; then
         make CROSS_COMPILE=$CROSS_COMPILE defconfig >/dev/null </dev/null
         sed -i -e 's|^# CONFIG_STATIC is not set|CONFIG_STATIC=y|' -f "$COMMON/busybox.sed" .config
         (yes "" 2>/dev/null || true) | make CROSS_COMPILE=$CROSS_COMPILE oldconfig >/dev/null
-        quiet busybox-build make -j"$JOBS" CROSS_COMPILE=$CROSS_COMPILE CC="$MUSL_GCC"
+        quiet busybox-build make -j"$JOBS" CROSS_COMPILE=$CROSS_COMPILE CC="$MUSL_CC"
     )
     cp -f "$BB_SRC/busybox" "$USERSPACE/bin/busybox"
 fi
@@ -129,7 +135,7 @@ if [[ ! -f "$LIBNL_PREFIX/lib/libnl-3.a" ]]; then
             --enable-static --disable-shared \
             --disable-cli \
             --disable-pthreads \
-            CC="$MUSL_GCC" \
+            CC="$MUSL_CC" \
             AR="${CROSS_COMPILE}ar" RANLIB="${CROSS_COMPILE}ranlib"
         quiet libnl-build   make -j"$JOBS"
         quiet libnl-install make install
@@ -156,7 +162,7 @@ LDFLAGS += -static
 EOF
         export PKG_CONFIG_PATH=$LIBNL_PREFIX/lib/pkgconfig
         export PKG_CONFIG_LIBDIR=$LIBNL_PREFIX/lib/pkgconfig
-        quiet hostapd-build make -j"$JOBS" CC="$MUSL_GCC"
+        quiet hostapd-build make -j"$JOBS" CC="$MUSL_CC"
     )
     cp -f "$HA_SRC/hostapd/hostapd" "$USERSPACE/usr/sbin/hostapd"
 fi
@@ -188,7 +194,7 @@ if [[ -n ${RESCUE_APPLETS:-} ]] && \
             grep -q "^CONFIG_$sym=y" .config || missing="$missing $sym"
         done
         [[ -z $missing ]] || { log "busybox symbols that did not stick:$missing"; exit 4; }
-        quiet busybox-rescue make -j"$JOBS" CROSS_COMPILE="$CROSS_COMPILE" CC="$MUSL_GCC"
+        quiet busybox-rescue make -j"$JOBS" CROSS_COMPILE="$CROSS_COMPILE" CC="$MUSL_CC"
     )
     "${CROSS_COMPILE}strip" -o "$RESCUE/busybox" "$BB_SRC/busybox"
     printf '%s' "$RESCUE_APPLETS" > "$RESCUE/busybox.applets"

@@ -29,8 +29,8 @@ quiet(){
     fi
 }
 
-MUSL_VER=1.2.5
-MUSL_SHA=a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4
+MUSL_VER=1.2.6
+MUSL_SHA=d585fd3b613c66151fc3249e8ed44f77020cb5e6c1e635a616d3f9f82460512a
 MUSL_URL=https://musl.libc.org/releases/musl-${MUSL_VER}.tar.gz
 
 BUSYBOX_VER=1.36.1
@@ -76,6 +76,10 @@ if [[ ! -f "$MUSL_PREFIX/lib/libc.so" ]]; then
     fetch "$MUSL_URL" "$SRC/musl-${MUSL_VER}.tar.gz" "$MUSL_SHA"
     rm -rf "$SRC/musl-${MUSL_VER}"
     tar -xzf "$SRC/musl-${MUSL_VER}.tar.gz" -C "$SRC"
+    # CVE-2026-40200 (qsort stack overflow, "32-bit users should patch"): not in any tagged musl
+    # release yet (1.2.7 will have it), only as upstream's own mailed patch, applied here as our own
+    # maintained patch until it is.
+    apply_patches "$COMMON/patches/musl" "$SRC/musl-${MUSL_VER}"
     log "configure + build musl ${MUSL_VER}"
     (
         cd "$SRC/musl-${MUSL_VER}"
