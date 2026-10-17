@@ -28,7 +28,7 @@ It is a standalone cross-platform head unit with a native, zero-copy GStreamer v
 
 LIVI implements the CarPlay accessory side natively, wired and wireless, on Linux and on macOS. Wireless sessions run over LIVI's own Wi-Fi access point with Bluetooth pairing, wired sessions run directly over the USB cable (no OTG required).
 
-- main + instrument cluster video (H.264 and H.265/HEVC, hardware decoded, zero-copy)
+- main and instrument cluster video (H.264 and H.265/HEVC, hardware decoded, zero-copy)
 - configurable cluster content: map or maneuver card, compass, ETA, speed limit
 - audio playback, phone calls, microphone uplink, Siri
 - volume in both directions between phone and LIVI
@@ -212,6 +212,15 @@ On a Raspberry Pi 5, `/dev/ttyAMA0` on GPIO 14/15 (PIN 8/10) does not exist unti
   &emsp;
   <img src="docs/media/gps/gps_info.png" alt="GPS data info" width="42%" align="top" />
 </p>
+
+
+## DAB+
+
+DAB+ radio via USB RTL-SDR (RTL2832U with R820T2).
+
+- station scan, station list with logos, favourites and hidden stations
+- radio text and station logos in LIVI's media player
+- station order and hidden stations in Settings → DAB+
 
 
 ## Multi-Display
