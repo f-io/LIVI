@@ -82,6 +82,10 @@ pub struct HostState {
     pub shm: Option<Shm>,
     /// What the inner client wants the pointer to look like, None while it hides it.
     pub cursor: Option<CursorIcon>,
+    /// Chromium asks for its default arrow before the page has loaded, the UI's first hide arms it.
+    pub cursor_armed: bool,
+    pub pointer_on_inner: bool,
+    pub pointer_on_deco: bool,
     pub touch: Option<WlTouch>,
     pub has_touch_cap: bool,
     pub last_pointer_serial: u32,
@@ -112,6 +116,9 @@ impl HostState {
             pointer: None,
             shm: None,
             cursor: None,
+            cursor_armed: false,
+            pointer_on_inner: false,
+            pointer_on_deco: false,
             touch: None,
             has_touch_cap: false,
             last_pointer_serial: 0,
@@ -505,7 +512,46 @@ fn share_of_panel(mm: (i32, i32), window: (i32, i32), output: (i32, i32)) -> (i3
 
 #[cfg(test)]
 mod tests {
-    use super::share_of_panel;
+    use super::{CursorIcon, HostState, cursor_requested, share_of_panel, shown_cursor};
+
+    fn over_ui() -> HostState {
+        let mut host = HostState::new();
+        host.pointer_on_inner = true;
+        host
+    }
+
+    #[test]
+    fn the_default_arrow_before_the_page_hides_it_stays_hidden() {
+        let mut host = over_ui();
+        cursor_requested(&mut host, Some(CursorIcon::Default));
+        assert_eq!(shown_cursor(&host), None);
+    }
+
+    #[test]
+    fn the_ui_shows_the_pointer_once_it_has_hidden_it() {
+        let mut host = over_ui();
+        cursor_requested(&mut host, None);
+        cursor_requested(&mut host, Some(CursorIcon::Pointer));
+        assert_eq!(shown_cursor(&host), Some(CursorIcon::Pointer));
+    }
+
+    #[test]
+    fn leaving_the_ui_keeps_the_hidden_pointer() {
+        let mut host = over_ui();
+        cursor_requested(&mut host, None);
+        host.pointer_on_inner = false;
+        cursor_requested(&mut host, Some(CursorIcon::Default));
+        assert_eq!(shown_cursor(&host), None);
+    }
+
+    #[test]
+    fn the_decoration_always_shows_the_arrow() {
+        let mut host = over_ui();
+        cursor_requested(&mut host, None);
+        host.pointer_on_inner = false;
+        host.pointer_on_deco = true;
+        assert_eq!(shown_cursor(&host), Some(CursorIcon::Default));
+    }
 
     #[test]
     fn a_window_gets_the_millimetres_of_the_part_it_covers() {
@@ -767,6 +813,8 @@ impl SctkSeatHandler for LiviState {
             self.host.keyboard.is_some(),
             self.host.touch.is_some()
         );
+        // Cage puts its default arrow back on every device change without a new enter.
+        apply_cursor(self);
     }
 
     fn remove_capability(
@@ -777,6 +825,7 @@ impl SctkSeatHandler for LiviState {
         capability: Capability,
     ) {
         log::info!("input device gone: {capability:?}");
+        apply_cursor(self);
     }
 
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, seat: CWlSeat) {
@@ -804,6 +853,7 @@ impl PointerHandler for LiviState {
                 }
                 PointerEventKind::Leave { .. } => {
                     self.host.pointer_screen = None;
+                    self.host.pointer_on_deco = false;
                     crate::input::pointer_clear_focus(self);
                 }
                 PointerEventKind::Motion { time } => {
@@ -979,11 +1029,28 @@ pub fn apply_cursor(state: &LiviState) {
         return;
     };
     // Refused until the pointer has entered one of our windows, the enter applies it again.
-    let _ = match state.host.cursor {
+    let _ = match shown_cursor(&state.host) {
         Some(icon) => pointer.set_cursor(conn, icon),
         None => pointer.hide_cursor(),
     };
     let _ = conn.flush();
+}
+
+/// Only the UI decides, smithay's reset to the default arrow on leaving the UI would stick.
+pub fn cursor_requested(host: &mut HostState, want: Option<CursorIcon>) {
+    if !host.pointer_on_inner {
+        return;
+    }
+    if want.is_none() {
+        host.cursor_armed = true;
+    }
+    if host.cursor_armed {
+        host.cursor = want;
+    }
+}
+
+fn shown_cursor(host: &HostState) -> Option<CursorIcon> {
+    if host.pointer_on_deco { Some(CursorIcon::Default) } else { host.cursor }
 }
 
 smithay_client_toolkit::delegate_dispatch2!(LiviState);

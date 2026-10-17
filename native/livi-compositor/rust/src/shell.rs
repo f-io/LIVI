@@ -404,11 +404,12 @@ impl SeatHandler for LiviState {
     }
 
     fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
-        self.host.cursor = match image {
+        let want = match image {
             CursorImageStatus::Hidden => None,
             CursorImageStatus::Named(icon) => Some(icon),
             CursorImageStatus::Surface(_) => Some(CursorIcon::Default),
         };
+        crate::host::cursor_requested(&mut self.host, want);
         crate::host::apply_cursor(self);
     }
 

@@ -104,6 +104,7 @@ pub fn surface_at(state: &LiviState, lx: f64, ly: f64) -> Option<(WlSurface, Poi
 }
 
 pub fn pointer_clear_focus(state: &mut LiviState) {
+    state.host.pointer_on_inner = false;
     let pointer = state.seat.get_pointer();
     if let Some(pointer) = pointer {
         pointer.motion(
@@ -122,11 +123,16 @@ pub fn pointer_clear_focus(state: &mut LiviState) {
 pub fn pointer_motion(state: &mut LiviState, time: u32) {
     let (lx, ly) = state.host.pointer_pos;
     let (deco_screen, _hit) = deco_hit_test(state, lx, ly);
+    if state.host.pointer_on_deco != deco_screen.is_some() {
+        state.host.pointer_on_deco = deco_screen.is_some();
+        crate::host::apply_cursor(state);
+    }
     if deco_screen.is_some() {
         pointer_clear_focus(state);
         return;
     }
     let under = surface_at(state, lx, ly);
+    state.host.pointer_on_inner = under.is_some();
     let pointer = state.seat.get_pointer();
     if let Some(pointer) = pointer {
         pointer.motion(
