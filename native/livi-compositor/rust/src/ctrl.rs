@@ -1,7 +1,7 @@
 //! Control socket (LIVI_COMPOSITOR_CTRL): line protocol from the host.
 //! Commands: screen <role> <0|1> [w h] | claim <tag> | unclaim <tag> |
 //! videocfg <tag> <screen> <crop...> | videoshow <tag> <0|1> |
-//! backdrop <r> <g> <b> | gamma <g> <c> <r> <g> <b> | restart
+//! backdrop <r> <g> <b> | gamma <g> <c> <r> <g> <b> | aspect <role> <w> <h> | restart
 //! Events out: "panel <role> <mm_w> <mm_h> <px_w> <px_h>" | "bound <tag>" |
 //! "ui <wayland-socket> <render-node or ->"
 
@@ -279,6 +279,19 @@ fn handle_line(state: &mut LiviState, line: &str) {
             if let Some(v) = state.find_video_by_tag(&tag) {
                 state.toplevels[v].visible = onoff != 0;
                 crate::host::damage_all(state);
+            }
+        }
+        Some("aspect") => {
+            let Some(idx) = parts.next().and_then(|role| state.screen_idx_by_role(role)) else {
+                return;
+            };
+            let w = parts.next().and_then(|v| v.parse::<i32>().ok()).unwrap_or(0);
+            let h = parts.next().and_then(|v| v.parse::<i32>().ok()).unwrap_or(0);
+            let aspect = (w > 0 && h > 0).then_some((w, h));
+            if state.screens[idx].aspect != aspect {
+                log::info!("ctrl < {line}");
+                state.screens[idx].aspect = aspect;
+                crate::host::refit(state, idx);
             }
         }
         Some("backdrop") => {

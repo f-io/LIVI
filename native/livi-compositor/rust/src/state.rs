@@ -91,6 +91,8 @@ pub struct Screen {
     pub applied_height: i32,
     pub backdrop_color: [f32; 4],
     pub has_backdrop_color: bool,
+    /// Content shape a floating host window keeps, the titlebar not counted.
+    pub aspect: Option<(i32, i32)>,
 }
 
 impl Screen {
@@ -225,6 +227,7 @@ impl LiviState {
                 applied_height: 0,
                 backdrop_color: [0.0, 0.0, 0.0, 1.0],
                 has_backdrop_color: false,
+                aspect: None,
             })
             .collect();
 

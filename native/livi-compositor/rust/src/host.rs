@@ -31,6 +31,7 @@ use smithay_client_toolkit::reexports::client::protocol::wl_seat::WlSeat as CWlS
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface as CWlSurface;
 use smithay_client_toolkit::reexports::client::protocol::wl_touch::WlTouch;
 use smithay_client_toolkit::reexports::client::{Connection, Proxy, QueueHandle};
+use smithay_client_toolkit::reexports::csd_frame::WindowState;
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
 use smithay_client_toolkit::seat::keyboard::{
     KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers,
@@ -49,7 +50,10 @@ use smithay_client_toolkit::shell::xdg::window::{
 };
 use smithay_client_toolkit::shm::{Shm, ShmHandler as SctkShmHandler};
 
-use crate::state::LiviState;
+use crate::state::{LiviState, TITLEBAR_H};
+
+/// The smallest host window, titlebar included.
+const MIN_SIZE: (i32, i32) = (320, 200);
 
 pub struct HostWindow {
     pub window: Window,
@@ -61,6 +65,8 @@ pub struct HostWindow {
     /// xdg-shell: no buffer may be committed before the first configure.
     pub configured: bool,
     pub host_output: Option<WlOutput>,
+    /// Neither fullscreen, maximized nor tiled: the size is ours to pick.
+    pub floating: bool,
 }
 
 pub struct HostState {
@@ -319,7 +325,7 @@ pub fn open_screen(state: &mut LiviState, screen_idx: usize) {
     let window = xdg.create_window(surface, WindowDecorations::RequestClient, qh);
     window.set_title(crate::state::role_title(&state.screens[screen_idx].role));
     window.set_app_id(state.output_app_id.clone());
-    window.set_min_size(Some((320, 200)));
+    window.set_min_size(Some((MIN_SIZE.0 as u32, MIN_SIZE.1 as u32)));
     if state.screens[screen_idx].fullscreen {
         window.set_fullscreen(None);
     }
@@ -350,6 +356,7 @@ pub fn open_screen(state: &mut LiviState, screen_idx: usize) {
             frame_pending: false,
             configured: false,
             host_output: None,
+            floating: true,
         },
     ));
     ensure_server_output(state, screen_idx);
@@ -512,7 +519,9 @@ fn share_of_panel(mm: (i32, i32), window: (i32, i32), output: (i32, i32)) -> (i3
 
 #[cfg(test)]
 mod tests {
-    use super::{CursorIcon, HostState, cursor_requested, share_of_panel, shown_cursor};
+    use super::{
+        CursorIcon, HostState, cursor_requested, fit_aspect, share_of_panel, shown_cursor,
+    };
 
     fn over_ui() -> HostState {
         let mut host = HostState::new();
@@ -551,6 +560,24 @@ mod tests {
         host.pointer_on_inner = false;
         host.pointer_on_deco = true;
         assert_eq!(shown_cursor(&host), Some(CursorIcon::Default));
+    }
+
+    #[test]
+    fn a_floating_window_keeps_the_stream_shape_below_the_titlebar() {
+        // Already 16:9 below the 32 px titlebar.
+        assert_eq!(fit_aspect((1280, 752), 32, (1280, 720)), (1280, 752));
+        // Too wide or too tall: the content shrinks to the shape, never grows.
+        assert_eq!(fit_aspect((2000, 752), 32, (1280, 720)), (1280, 752));
+        assert_eq!(fit_aspect((1280, 1000), 32, (1280, 720)), (1280, 752));
+        assert_eq!(fit_aspect((1000, 512), 32, (800, 480)), (800, 512));
+        // Fullscreen has no titlebar.
+        assert_eq!(fit_aspect((1920, 1200), 0, (1920, 1080)), (1920, 1080));
+    }
+
+    #[test]
+    fn the_minimum_size_wins_over_the_offer() {
+        assert_eq!(fit_aspect((100, 50), 32, (16, 9)), (320, 212));
+        assert_eq!(fit_aspect((100, 50), 32, (1, 4)), (320, 1312));
     }
 
     #[test]
@@ -690,28 +717,73 @@ impl WindowHandler for LiviState {
         let h = configure.new_size.1.map(|v| v.get() as i32).unwrap_or(cur.1);
         let host_fullscreen = configure.is_fullscreen();
         let _ = configure.decoration_mode == DecorationMode::Server;
+        let floating = !(host_fullscreen
+            || configure.is_maximized()
+            || configure.state.intersects(WindowState::TILED));
 
         {
             let hw = &mut self.host.windows[pos].1;
-            if (w, h) != cur {
-                hw.egl_surface.resize(w, h, 0, 0);
-                hw.width = w;
-                hw.height = h;
-            }
             hw.configured = true;
-            hw.needs_redraw = true;
+            hw.floating = floating;
         }
-        self.screens[screen_idx].width = w;
-        self.screens[screen_idx].height = h;
         if self.screens[screen_idx].fullscreen != host_fullscreen {
             self.screens[screen_idx].fullscreen = host_fullscreen;
         }
-        // The output mode change and the video relayout each send an event the
-        // waylandsink clients crash on mid-resize, so defer them until the drag settles.
-        self.screens[screen_idx].resize_pending = Some(Instant::now() + RESIZE_SETTLE);
-        crate::layout::apply_ui_layout(self, screen_idx);
-        crate::ctrl::send_panels(self);
+        let size = match self.screens[screen_idx].aspect {
+            Some(aspect) if floating => fit_aspect((w, h), TITLEBAR_H, aspect),
+            _ => (w, h),
+        };
+        resize_host_window(self, screen_idx, size);
     }
+}
+
+/// A floating window takes the largest size inside `size` whose content, the part below
+/// the titlebar, has the shape of `aspect`. The host only offers a maximum, so the
+/// window may come out smaller, never larger, unless the minimum size needs it.
+pub fn fit_aspect(size: (i32, i32), inset: i32, aspect: (i32, i32)) -> (i32, i32) {
+    let (aw, ah) = (aspect.0.max(1) as i64, aspect.1.max(1) as i64);
+    let (mut cw, mut ch) = (size.0.max(1) as i64, (size.1 - inset).max(1) as i64);
+    if cw * ah > ch * aw {
+        cw = (ch * aw + ah / 2) / ah;
+    } else {
+        ch = (cw * ah + aw / 2) / aw;
+    }
+    let (min_w, min_h) = (MIN_SIZE.0 as i64, (MIN_SIZE.1 as i64 - inset as i64).max(1));
+    if cw < min_w || ch < min_h {
+        let grow = |v: i64, num: i64, den: i64| (v * num + den - 1) / den;
+        cw = min_w.max(grow(min_h, aw, ah));
+        ch = grow(cw, ah, aw);
+    }
+    (cw as i32, ch as i32 + inset)
+}
+
+/// Fits the floating window again after the shape changed, the host follows the
+/// buffer size of a floating window.
+pub fn refit(state: &mut LiviState, screen_idx: usize) {
+    let Some(aspect) = state.screens[screen_idx].aspect else { return };
+    let Some(w) = state.host.window_for_screen(screen_idx) else { return };
+    if !w.configured || !w.floating {
+        return;
+    }
+    let size = fit_aspect((w.width, w.height), TITLEBAR_H, aspect);
+    resize_host_window(state, screen_idx, size);
+}
+
+fn resize_host_window(state: &mut LiviState, screen_idx: usize, (w, h): (i32, i32)) {
+    let Some(hw) = state.host.window_for_screen(screen_idx) else { return };
+    if (w, h) != (hw.width, hw.height) {
+        hw.egl_surface.resize(w, h, 0, 0);
+        hw.width = w;
+        hw.height = h;
+    }
+    hw.needs_redraw = true;
+    state.screens[screen_idx].width = w;
+    state.screens[screen_idx].height = h;
+    // The output mode change and the video relayout each send an event the
+    // waylandsink clients crash on mid-resize, so defer them until the drag settles.
+    state.screens[screen_idx].resize_pending = Some(Instant::now() + RESIZE_SETTLE);
+    crate::layout::apply_ui_layout(state, screen_idx);
+    crate::ctrl::send_panels(state);
 }
 
 /// How long the compositor waits after the last resize step before it pushes the

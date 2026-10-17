@@ -329,6 +329,31 @@ fn apply_display(cfg: &Config, ctrl: &CompositorControl) {
     );
 }
 
+type ScreenWant = (&'static str, bool, Option<(u32, u32)>);
+
+/// The compositor opens a host window per active secondary screen, sized to its content.
+fn secondary_screens(cfg: &Config) -> [ScreenWant; 2] {
+    let size = |w: u32, h: u32| (w > 0 && h > 0).then_some((w, h));
+    [
+        (
+            "cluster",
+            cfg.cluster_screen_active,
+            size(cfg.cluster_screen_width, cfg.cluster_screen_height),
+        ),
+        ("aux", cfg.aux_screen_active, size(cfg.aux_screen_width, cfg.aux_screen_height)),
+    ]
+}
+
+fn changed_screens(last: Option<&Config>, now: &Config) -> Vec<ScreenWant> {
+    let before = last.map(secondary_screens);
+    secondary_screens(now)
+        .into_iter()
+        .enumerate()
+        .filter(|(i, want)| before.is_none_or(|b| b[*i] != *want))
+        .map(|(_, want)| want)
+        .collect()
+}
+
 async fn follow_state(
     mut state: watch::Receiver<State>,
     ctrl: CompositorControl,
@@ -350,6 +375,14 @@ async fn follow_state(
         });
         if display_changed {
             apply_display(&now.config, &ctrl);
+        }
+        for (role, on, size) in changed_screens(last.as_ref().map(|l| &l.config), &now.config) {
+            ctrl.screen(role, on, size);
+        }
+        // The floating main window keeps the shape of the stream.
+        let stream = |c: &Config| (c.projection_width, c.projection_height);
+        if last.as_ref().is_none_or(|l| stream(&l.config) != stream(&now.config)) {
+            ctrl.aspect("main", Some(stream(&now.config)));
         }
         if last.as_ref().is_none_or(|l| l.front.main != now.front.main) {
             plane.set_visible(now.front.main == Front::Projection);
@@ -424,6 +457,42 @@ mod tests {
         cfg.projection_width = 0;
         cfg.projection_height = 0;
         assert_eq!(carplay_tier(&cfg), (1920, 1080));
+    }
+
+    #[test]
+    fn secondary_screens_follow_the_config() {
+        let mut cfg = defaults();
+        cfg.cluster_screen_active = false;
+        cfg.aux_screen_active = false;
+        cfg.cluster_screen_width = 800;
+        cfg.cluster_screen_height = 480;
+        cfg.aux_screen_width = 0;
+        cfg.aux_screen_height = 0;
+        assert_eq!(
+            changed_screens(None, &cfg),
+            vec![("cluster", false, Some((800, 480))), ("aux", false, None)],
+            "the first state tells the compositor every role"
+        );
+        assert!(changed_screens(Some(&cfg), &cfg).is_empty());
+
+        let mut on = cfg.clone();
+        on.cluster_screen_active = true;
+        assert_eq!(changed_screens(Some(&cfg), &on), vec![("cluster", true, Some((800, 480)))]);
+
+        let mut resized = on.clone();
+        resized.cluster_screen_width = 1024;
+        assert_eq!(
+            changed_screens(Some(&on), &resized),
+            vec![("cluster", true, Some((1024, 480)))]
+        );
+
+        let mut off = resized.clone();
+        off.cluster_screen_active = false;
+        off.aux_screen_active = true;
+        assert_eq!(
+            changed_screens(Some(&resized), &off),
+            vec![("cluster", false, Some((1024, 480))), ("aux", true, None)]
+        );
     }
 
     #[test]

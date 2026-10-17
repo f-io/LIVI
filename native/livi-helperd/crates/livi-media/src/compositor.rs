@@ -152,6 +152,13 @@ impl CompositorControl {
         let _ = self.tx.send(Cmd::State(format!("screen:{role}"), line));
     }
 
+    /// The content shape a floating host window keeps, 0x0 lets it go.
+    pub fn aspect(&self, role: &str, size: Option<(u32, u32)>) {
+        let (w, h) = size.filter(|(w, h)| *w > 0 && *h > 0).unwrap_or((0, 0));
+        let _ =
+            self.tx.send(Cmd::State(format!("aspect:{role}"), format!("aspect {role} {w} {h}\n")));
+    }
+
     /// "#rrggbb"
     pub fn backdrop(&self, hex: &str) {
         let (r, g, b) = rgb(hex);
@@ -443,6 +450,18 @@ mod tests {
         assert_eq!(line(&mut rd).await, "claim cluster-cluster\n");
         ctrl.release("cluster-cluster");
         assert_eq!(line(&mut rd).await, "unclaim cluster-cluster\n");
+    }
+
+    #[tokio::test]
+    async fn the_main_shape_is_kept_and_a_missing_size_lets_it_go() {
+        let dir = TempDir::new();
+        let (comp, ctrl) = setup(&dir);
+        ctrl.aspect("main", Some((1280, 720)));
+        ctrl.aspect("main", Some((800, 480)));
+        let (mut rd, _wr) = comp.accept().await;
+        assert_eq!(line(&mut rd).await, "aspect main 800 480\n", "only the latest shape");
+        ctrl.aspect("main", Some((0, 480)));
+        assert_eq!(line(&mut rd).await, "aspect main 0 0\n");
     }
 
     #[tokio::test]
