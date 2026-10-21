@@ -81,7 +81,7 @@ pub fn crc32(data: &[u8]) -> u32 {
     !crc
 }
 
-fn md5_hex(data: &[u8]) -> String {
+pub(crate) fn md5_hex(data: &[u8]) -> String {
     Md5::digest(data)
         .iter()
         .map(|b| format!("{b:02x}"))

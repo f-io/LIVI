@@ -55,11 +55,13 @@ fi
 
 const SHELL_ARM: &[u8] = include_bytes!("../../assets/bindshell/armv7");
 const SHELL_RISCV32: &[u8] = include_bytes!("../../assets/bindshell/riscv32");
+const SHELL_MIPS: &[u8] = include_bytes!("../../assets/bindshell/mipsel");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Arch {
     Arm,
     Riscv32,
+    Mips,
 }
 
 impl Arch {
@@ -67,13 +69,15 @@ impl Arch {
         match self {
             Arch::Arm => "ARMv7",
             Arch::Riscv32 => "RISC-V 32",
+            Arch::Mips => "MIPS32",
         }
     }
 
-    pub fn shell(self) -> &'static [u8] {
+    pub const fn shell(self) -> &'static [u8] {
         match self {
             Arch::Arm => SHELL_ARM,
             Arch::Riscv32 => SHELL_RISCV32,
+            Arch::Mips => SHELL_MIPS,
         }
     }
 }
@@ -258,22 +262,13 @@ impl Ota {
         writer
             .replace_file(SCRIPT_PATH, Cursor::new(hooked(&script).into_bytes()))
             .map_err(|e| format!("{SCRIPT_PATH}: {e}"))?;
-        let bytes = Cursor::new(shell.to_vec());
-        if writer.mut_file(SHELL_PATH).is_some() {
-            writer.replace_file(SHELL_PATH, bytes)
-        } else {
-            writer.push_file(
-                bytes,
-                SHELL_PATH,
-                NodeHeader {
-                    permissions: 0o755,
-                    uid: 0,
-                    gid: 0,
-                    mtime: 0,
-                },
-            )
-        }
-        .map_err(|e| format!("{SHELL_PATH}: {e}"))?;
+        let header = NodeHeader {
+            permissions: 0o755,
+            uid: 0,
+            gid: 0,
+            mtime: 0,
+        };
+        super::put_file(&mut writer, SHELL_PATH, shell.to_vec(), header)?;
         let mut squashfs = Cursor::new(Vec::new());
         writer
             .write(&mut squashfs)

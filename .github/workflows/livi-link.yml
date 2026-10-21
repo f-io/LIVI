@@ -536,6 +536,13 @@ jobs:
           name: imx6ul_rtl8822bs
           path: assets/livi-link/imx6ul_rtl8822bs
 
+      - name: Take the x1600_aic8800d80 firmware bundle from this run
+        if: contains(needs.targets.outputs.any, 'x1600_aic8800d80')
+        uses: actions/download-artifact@v8
+        with:
+          name: x1600_aic8800d80
+          path: assets/livi-link/x1600_aic8800d80
+
       # Without a rebuild the committed bind-shells in the checkout are embedded.
       - name: Take the bind-shells from this run
         if: inputs.bindshells
