@@ -24,8 +24,9 @@
 //! | turnSignal                          | ✓    | ✓            | ·               | TODO          |
 //! | lights, highBeam, hazards           | ✓    | ✓            | ·               | ·             |
 //! | parkingBrake                        | ✓    | ✓            | ·               | ·             |
-//! | nightMode                           | ✓    | ✓            | ✓               | ✓             |
+//! | nightMode                           | ·    | ✓            | ✓               | ✓             |
 //! | clusterNightMode                    | ·    | ·            | ✓               | ✓             |
+//! | darkMode                            | ✓    | ·            | ·               | ·             |
 //! | path                                | ✓    | ·            | ·               | ·             |
 //! | volume                              | ✓    | ·            | ·               | ✓             |
 //! | fuelPct                             | ✓    | ✓            | ✓ (warning, %)  | ✓             |
@@ -149,11 +150,14 @@ pub struct TelemetrySnapshot {
     pub ambient_lux: Option<f64>,
     /// The dimmer of the panel lights, 0 to 100.
     pub dimmer_pct: Option<f64>,
-    /// Day or night for Android Auto and CarPlay, LIVI's own look follows its setting.
+    /// Day or night for Android Auto and CarPlay, LIVI's own look follows `darkMode`.
     pub night_mode: Option<bool>,
     /// Day or night for the CarPlay cluster, it follows `nightMode` while absent or null. A
     /// change of LIVI's appearance setting sets `nightMode` and clears this one.
     pub cluster_night_mode: Option<bool>,
+    /// LIVI's own look, dark or light. A push sets the Dark Mode setting, a change of that
+    /// setting shows up here.
+    pub dark_mode: Option<bool>,
     /// A page such as `/media` or `/settings/devices`, LIVI's main screen opens it once each time
     /// it changes. A path that names no page is ignored.
     pub path: Option<String>,

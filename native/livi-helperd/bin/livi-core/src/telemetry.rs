@@ -112,6 +112,7 @@ struct Telemetry {
     io: SocketIo,
     snap: Snapshot,
     appearance: AppearanceMode,
+    dark: bool,
     volume: Option<f64>,
 }
 
@@ -123,6 +124,7 @@ impl Telemetry {
             io,
             snap: Snapshot::new(),
             appearance: cfg.appearance_mode,
+            dark: cfg.dark_mode,
             volume: None,
         };
         t.seed(&cfg, saved);
@@ -178,6 +180,9 @@ impl Telemetry {
         if let Some(level) = changed.get("volume").and_then(Value::as_f64) {
             self.volume_from(level).await;
         }
+        if let Some(dark) = changed.get("darkMode").and_then(Value::as_bool) {
+            self.dark_from(dark).await;
+        }
         if let Some(name) = changed.get("carType").and_then(Value::as_str) {
             self.car_type_from(name).await;
         }
@@ -207,6 +212,21 @@ impl Telemetry {
         if let Some(night) = night_of(mode) {
             self.push(&json!({ "nightMode": night, "clusterNightMode": null }))
                 .await;
+        }
+    }
+
+    async fn dark_mode(&mut self, dark: bool) {
+        if dark == self.dark {
+            return;
+        }
+        self.dark = dark;
+        self.push(&json!({ "darkMode": dark })).await;
+    }
+
+    async fn dark_from(&mut self, dark: bool) {
+        self.dark = dark;
+        if self.core.hub.config().dark_mode != dark {
+            self.save(json!({ "darkMode": dark })).await;
         }
     }
 
@@ -330,8 +350,12 @@ pub async fn run(core: Arc<Core>, mut inside: mpsc::UnboundedReceiver<Value>, sa
                 if changed.is_err() {
                     return;
                 }
-                let mode = state.borrow_and_update().config.appearance_mode;
+                let (mode, dark) = {
+                    let cfg = &state.borrow_and_update().config;
+                    (cfg.appearance_mode, cfg.dark_mode)
+                };
                 t.appearance(mode).await;
+                t.dark_mode(dark).await;
             }
         }
     }
@@ -588,6 +612,27 @@ mod tests {
         );
         t.push(&json!({ "evMaxDcPowerKw": 150.5 })).await;
         assert_eq!(core.hub.config().ev_max_dc_power_kw, Some(150.5));
+    }
+
+    #[tokio::test]
+    async fn dark_mode_from_the_car_sets_livis_look_and_follows_the_setting() {
+        let dir = TempDir::new();
+        let core = core(&dir, defaults());
+        let (_, io, _) = socket(core.hub.watch());
+        let mut t = Telemetry::new(core.clone(), io, &Saved::default());
+        let dark = core.hub.config().dark_mode;
+
+        t.push(&json!({ "darkMode": !dark })).await;
+        assert_eq!(core.hub.config().dark_mode, !dark);
+
+        core.set_config(&json!({ "darkMode": dark })).await.unwrap();
+        t.dark_mode(dark).await;
+        assert_eq!(t.snap["darkMode"], json!(dark));
+
+        t.push(&json!({ "darkMode": !dark })).await;
+        assert_eq!(core.hub.config().dark_mode, !dark, "the car wins again");
+        t.push(&json!({ "darkMode": "yes" })).await;
+        assert_eq!(core.hub.config().dark_mode, !dark);
     }
 
     #[tokio::test]

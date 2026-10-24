@@ -58,7 +58,7 @@ exclude = ["vendor"]
 femtovg = { path = "vendor/femtovg" }
 
 [workspace.package]
-version = "10.0.2"
+version = "10.1.0"
 edition = "2024"
 description = "LIVI - Linux In-Vehicle Infotainment"
 homepage = "https://f-io.dev"

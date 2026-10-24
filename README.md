@@ -142,6 +142,9 @@ livi-core telemetry set speedKph=90 rpm=2500 --every-ms 1000
 # Light main screen, dark CarPlay cluster
 livi-core telemetry set nightMode=false clusterNightMode=true
 
+# LIVI's own UI
+livi-core telemetry set darkMode=false nightMode=true
+
 # A warning in the CarPlay cluster, it stays until Enter closes it
 livi-core telemetry set notification.title=Frost notification.text="Icy roads" notification.symbol=snowflake notification.open=true
 
