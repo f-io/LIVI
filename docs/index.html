@@ -172,10 +172,12 @@
             alt="Build main"
             src="https://img.shields.io/github/actions/workflow/status/f-io/LIVI/build.yml?branch=main&label=build%20main&style=flat"
           />
-          <img
-            alt="TS main"
-            src="https://img.shields.io/github/actions/workflow/status/f-io/LIVI/typecheck.yml?branch=main&label=TS%20main&style=flat"
-          />
+          <a href="https://discord.gg/cv6Gd8wDKB">
+            <img
+              alt="Discord"
+              src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white"
+            />
+          </a>
         </p>
       </header>
 
@@ -185,21 +187,22 @@
 
       <p>
         LIVI - Linux In-Vehicle Infotainment - is an open-source project that provides a standalone
-        <strong>Apple Carplay and Android Auto head unit</strong>. It runs on Linux desktops and
-        ARM-based embedded platforms such as Raspberry Pi, with pre-built releases also available
-        for macOS.
+        <strong>Apple Carplay and Android Auto head unit</strong>. Built in Rust with a Slint UI, it
+        runs on Linux desktops and ARM-based embedded platforms such as Raspberry Pi, with pre-built
+        releases also available for macOS.
       </p>
 
       <h2>Features</h2>
       <ul>
-        <li><strong>Apple CarPlay Ultra</strong> (wired &amp; wireless) on Linux and Mac — requires MFi authentication</li>
-        <li><strong>Android Auto</strong> (wired &amp; wireless) on Linux and Mac — wireless on Mac requires a LIVI Link</li>
+        <li><strong>Apple CarPlay Ultra</strong> (wired &amp; wireless) on Linux and Mac, requires MFi authentication</li>
+        <li><strong>Android Auto</strong> (wired &amp; wireless) on Linux and Mac, wireless on Mac requires a LIVI Link</li>
         <li><strong>Multi-session</strong> with live switching between connected phones</li>
         <li><strong>Video in the car</strong> (AirPlay video while parked, no FairPlay-protected content)</li>
         <li>Native, zero-copy video pipeline via GStreamer (hardware-accelerated decoding)</li>
         <li>Main and instrument cluster video</li>
         <li>Turn-by-turn navigation data</li>
-        <li>Climate control*</li>
+        <li>Climate control in the CarPlay dock</li>
+        <li>Radio, Climate and Car apps*</li>
         <li>Extended vehicle data*</li>
         <li>Car maker themes*</li>
         <li>Now-playing metadata incl. album art</li>
@@ -257,14 +260,15 @@
       <p>LIVI runs on:</p>
       <ul>
         <li>Linux desktops (Debian, Arch, Fedora, Ubuntu etc.)</li>
-        <li>Raspberry Pi OS Trixie (Pi 4, Pi 5, CM4, CM5)</li>
-        <li>Other arm64 and x64 Linux devices capable of running Electron (AppImage)</li>
+        <li>Raspberry Pi OS Trixie (Pi Zero 2 W, Pi 3, Pi 4, CM4, Pi 5, CM5)</li>
+        <li>Other arm64 and x64 Linux devices (AppImage), including non-Pi SoCs</li>
         <li>Mac (arm and intel)</li>
       </ul>
 
       <p>
-        On Raspberry Pi 4 and 5, video is decoded on the SoC's hardware decoder and stays on the
-        GPU end to end through the zero-copy GStreamer pipeline.
+        Video is decoded on the platform's hardware decoder and stays on the GPU end to end through
+        the zero-copy GStreamer pipeline, on the Raspberry Pi 3 and up as well as other Linux
+        systems.
       </p>
 
       <p>
@@ -298,8 +302,8 @@
         LIVI neither ships nor bypasses. Two routes:
       </p>
       <ul>
-        <li><strong>On the board</strong> — a coprocessor wired to the I²C bus</li>
-        <li><strong>Over the network</strong> — a <a href="https://github.com/f-io/LIVI/blob/main/LIVI-LINK.md">LIVI Link</a></li>
+        <li><strong>On the board</strong>: a coprocessor wired to the I²C bus</li>
+        <li><strong>Over the network</strong>: a <a href="https://github.com/f-io/LIVI/blob/main/LIVI-LINK.md">LIVI Link</a></li>
       </ul>
       <p>
         Both routes work on Linux. A Mac has no I²C bus to put a coprocessor on, so there the LIVI Link is
@@ -315,28 +319,20 @@
       <h2>Build Environment</h2>
       <p>
         <img
-          alt="Node"
-          src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-node.json"
+          alt="Rust"
+          src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-rust.json"
         />
         <img
-          alt="pnpm"
-          src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-pnpm.json"
+          alt="Slint"
+          src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-slint.json"
         />
         <img
-          alt="electron"
-          src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-electron.json"
-        />
-        <img
-          alt="chrome"
-          src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-electron-date.json"
-        />
-        <img
-          alt="release"
-          src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-electron-chromium.json"
-        />
-        <img
-          alt="gstreamer"
+          alt="GStreamer"
           src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-gstreamer.json"
+        />
+        <img
+          alt="License"
+          src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"
         />
       </p>
 
@@ -358,6 +354,13 @@
       <p>
         Detailed setup steps can be found in the GitHub repository:
         <a href="https://github.com/f-io/LIVI">https://github.com/f-io/LIVI</a>
+      </p>
+
+      <h2>Community</h2>
+      <p>
+        Questions, help and general chat happen on
+        <a href="https://discord.gg/cv6Gd8wDKB">Discord</a>, a good first stop to talk to other
+        users before opening a GitHub issue.
       </p>
 
       <h2>Contributing</h2>

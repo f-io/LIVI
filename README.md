@@ -6,7 +6,7 @@
 
 LIVI is an open-source **Apple CarPlay and Android Auto head unit**.
 
-It is a standalone cross-platform head unit with a native, zero-copy GStreamer video pipeline and hardware-accelerated decoding on Linux (including the Raspberry Pi 4 and 5) and macOS, low-latency audio, multitouch + D-Pad navigation, and support for very small embedded/OEM displays.
+It is a standalone cross-platform head unit with a native, zero-copy GStreamer video pipeline and hardware-accelerated decoding across Linux (from x86_64 and arm64 desktops to embedded boards like the Raspberry Pi) and macOS, with low-latency audio, multitouch + D-Pad navigation, and support for very small embedded/OEM displays.
 
 ## Project Status
 
@@ -18,8 +18,8 @@ It is a standalone cross-platform head unit with a native, zero-copy GStreamer v
 
 ## Native Connectivity
 
-- **Apple CarPlay** (wired & wireless) on Linux and Mac — requires [MFi Authentication](#mfi-authentication)
-- **Android Auto** (wired & wireless) on Linux and Mac — wireless on Mac requires a [LIVI Link](LIVI-LINK.md)
+- **Apple CarPlay** (wired & wireless) on Linux and Mac, requires [MFi Authentication](#mfi-authentication)
+- **Android Auto** (wired & wireless) on Linux and Mac, wireless on Mac requires a [LIVI Link](LIVI-LINK.md)
 
 ## Native Apple CarPlay Ultra
 
@@ -37,7 +37,8 @@ LIVI implements the CarPlay accessory side natively, wired and wireless, on Linu
 - multi-session with live switching between connected phones
 - wireless sessions move to the cable when plugged in
 - video in the car (AirPlay video while parked, no FairPlay-protected content)
-- climate control\*
+- climate control in the CarPlay dock
+- Radio, Climate and Car apps\*
 - extended vehicle data\*
 - car maker themes\*
 
@@ -49,8 +50,8 @@ Wireless CarPlay requires a Bluetooth and a Wi-Fi interface. Both can come from 
 
 CarPlay requires the accessory to authenticate against the phone. The usual way is an Apple **MFi authentication coprocessor**, a hardware chip that cannot be emulated and that LIVI neither ships nor bypasses. Two routes:
 
-- **On the board** — a coprocessor wired to the I²C bus
-- **Over the network** — a [LIVI Link](LIVI-LINK.md)
+- **On the board**: a coprocessor wired to the I²C bus
+- **Over the network**: a [LIVI Link](LIVI-LINK.md)
 
 Both routes work on Linux. A Mac has no I²C bus to put a coprocessor on, so there the LIVI Link is the only one.
 
@@ -286,7 +287,7 @@ chmod +x install.sh
 _Tested on Raspberry Pi OS, Ubuntu 26.04 and Fedora 44._
 
 > [!NOTE]
-> The Pi 3, Pi 4, CM 4, Pi 5 and CM 5 require Trixie (Debian 13).
+> The Pi Zero 2 W, Pi 3, Pi 4, CM 4, Pi 5 and CM 5 require Trixie (Debian 13).
 
 ## Linux (x86_64)
 
