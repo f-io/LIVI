@@ -130,7 +130,7 @@ fn open_tap(ifname: &str) -> Result<OwnedFd, String> {
         ifr.ifr_name[i] = *b as libc::c_char;
     }
     ifr.ifr_ifru.ifru_flags = IFF_TAP | IFF_NO_PI;
-    if unsafe { libc::ioctl(fd, TUNSETIFF, &mut ifr) } < 0 {
+    if unsafe { libc::ioctl(fd, TUNSETIFF as _, &mut ifr) } < 0 {
         let e = std::io::Error::last_os_error();
         unsafe { libc::close(fd) };
         return Err(format!("TUNSETIFF {ifname}: {e}"));
