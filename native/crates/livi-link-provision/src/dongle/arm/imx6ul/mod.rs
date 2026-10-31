@@ -6,6 +6,7 @@ pub mod boot;
 pub mod mtd;
 pub mod restore;
 pub mod shell;
+pub mod vendor;
 
 use std::path::Path;
 use std::thread::sleep;

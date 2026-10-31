@@ -317,6 +317,16 @@ pub fn install(sh: &Shell, plan: &Install, progress: &dyn Fn(&str)) -> Result<()
     Ok(())
 }
 
+pub fn key_fits(sh: &Shell, progress: &dyn Fn(&str)) -> Result<bool, String> {
+    let (uboot, _, _) = locate(&mtd::partitions(sh)?)?;
+    let fuses = read_fuses(sh)?;
+    let image = mtd::pull(sh, &uboot, progress)?;
+    let block = image
+        .get(UPDATE_BLOCK..UPDATE_BLOCK + ERASE)
+        .ok_or("the uboot partition is shorter than its update block")?;
+    Ok(read_env_auto(fuses, block).is_ok())
+}
+
 fn locate(parts: &[Partition]) -> Result<(Partition, EnvAt, Partition), String> {
     let at = parts
         .iter()
