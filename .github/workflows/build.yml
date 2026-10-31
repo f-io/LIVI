@@ -240,7 +240,11 @@ jobs:
           fi
           git add ".github/badges/${BUILD_BRANCH}-"*.json
           git commit -m "chore(badges): ${BUILD_BRANCH} -> v${VERSION}, rust ${RUST}, slint ${SLINT}, gstreamer ${GSTREAMER:-n/a}" || echo "No changes"
-          git push
+          for attempt in 1 2 3; do
+            git push && break
+            [ "$attempt" = 3 ] && exit 1
+            git pull --rebase
+          done
 
   nightly:
     name: Publish rolling nightly

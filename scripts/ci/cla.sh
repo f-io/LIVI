@@ -1,5 +1,5 @@
 #!/bin/sh
-# Signatures live as JSON lines on the "cla" branch, one per author and CLA.md revision.
+# Signatures live as JSON lines in cla/signatures.jsonl on the "version" branch, one per author and CLA.md revision.
 #
 # usage: cla.sh sign    (COMMENT_BODY, COMMENTER_ID, COMMENTER_LOGIN, COMMENT_ID, COMMENT_URL, COMMENTED_AT, PR)
 #        cla.sh check   (PR, OWNER_ID, NOTIFY)
@@ -8,8 +8,8 @@ set -eu
 : "${GITHUB_REPOSITORY:?}"
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 STORE=${CLA_STORE:-${RUNNER_TEMP:-/tmp}/cla}
-BRANCH=cla
-FILE=signatures.jsonl
+BRANCH=version
+FILE=cla/signatures.jsonl
 PHRASE='I have read the CLA Document and I hereby sign the CLA'
 DOC="https://github.com/$GITHUB_REPOSITORY/blob/main/CLA.md"
 GUIDE="https://github.com/$GITHUB_REPOSITORY/blob/main/CONTRIBUTING.md#llms-and-generated-content"
@@ -30,6 +30,7 @@ store() {
   fi
   git -C "$STORE" config user.name "github-actions[bot]"
   git -C "$STORE" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+  mkdir -p "$STORE/$(dirname "$FILE")"
 }
 
 signed() {
