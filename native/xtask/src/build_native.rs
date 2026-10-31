@@ -7,9 +7,6 @@ use std::process::Command;
 
 use crate::util::{Arch, build_date, build_run, build_sha, copy_exe, exec, read, root, version};
 
-const MAC_GST_PKGCONFIG: &str =
-    "/Library/Frameworks/GStreamer.framework/Versions/1.0/lib/pkgconfig";
-
 fn cargo(manifest: &PathBuf, sub: &[&str]) -> Result<Command, String> {
     let mut cmd = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
     cmd.env("LIVI_VERSION", version()?)
@@ -17,15 +14,6 @@ fn cargo(manifest: &PathBuf, sub: &[&str]) -> Result<Command, String> {
         .env("LIVI_BUILD_SHA", build_sha())
         .env("LIVI_BUILD_RUN", build_run())
         .env("PKG_CONFIG_ALLOW_CROSS", "1");
-    if cfg!(target_os = "macos") && std::path::Path::new(MAC_GST_PKGCONFIG).is_dir() {
-        let prev = std::env::var("PKG_CONFIG_PATH").unwrap_or_default();
-        let path = if prev.is_empty() {
-            MAC_GST_PKGCONFIG.to_string()
-        } else {
-            format!("{MAC_GST_PKGCONFIG}:{prev}")
-        };
-        cmd.env("PKG_CONFIG_PATH", path);
-    }
     cmd.args(sub).arg("--manifest-path").arg(manifest);
     Ok(cmd)
 }

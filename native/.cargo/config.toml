@@ -19,3 +19,9 @@ rustflags = [
 
 [alias]
 xtask = "run --quiet --package xtask --"
+
+[env]
+PKG_CONFIG_PATH = "/Library/Frameworks/GStreamer.framework/Versions/1.0/lib/pkgconfig"
+
+[target.'cfg(target_os = "macos")']
+rustflags = ["-C", "link-arg=-Wl,-rpath,/Library/Frameworks/GStreamer.framework/Versions/1.0/lib"]
