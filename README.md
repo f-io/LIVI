@@ -384,8 +384,6 @@ cargo xtask package-mac --arch x64    # Intel on Apple Silicon
 cargo xtask build-native
 ```
 
-`package-linux` needs [appimagetool](https://github.com/AppImage/appimagetool) on the `PATH`, or its path in `APPIMAGETOOL`, and `desktop-file-validate` (package `desktop-file-utils`).
-
 ## Debugging
 
 Diagnostic environment flags and where to find the logs are documented in [DEBUGGING.md](DEBUGGING.md).

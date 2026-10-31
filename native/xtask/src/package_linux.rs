@@ -4,10 +4,12 @@
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::util::{Arch, copy_exe, copy_tree, exec, fetch_gstreamer, root, version};
+use crate::util::{Arch, copy_exe, copy_tree, exec, fetch_gstreamer, read, root, version};
+
+const APPIMAGETOOL: &str = "https://api.github.com/repos/AppImage/appimagetool/releases/latest";
 
 const START: &str = r#"#!/bin/sh
 HERE="$(dirname "$(readlink -f "$0")")"
@@ -50,14 +52,96 @@ fn write_exe(path: &Path, text: &str) -> Result<(), String> {
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())
 }
 
-fn appimagetool() -> String {
-    std::env::var("APPIMAGETOOL").unwrap_or_else(|_| "appimagetool".into())
+fn sha256(path: &Path) -> Result<String, String> {
+    let sum = read(Command::new("sha256sum").arg(path))?;
+    Ok(sum
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_string())
+}
+
+fn cached(dir: &Path, prefix: &str) -> Option<PathBuf> {
+    fs::read_dir(dir)
+        .ok()?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with(prefix) && !n.ends_with(".part"))
+        })
+        .max_by_key(|p| fs::metadata(p).and_then(|m| m.modified()).ok())
+}
+
+fn appimagetool() -> Result<PathBuf, String> {
+    if let Ok(tool) = std::env::var("APPIMAGETOOL") {
+        return Ok(tool.into());
+    }
+    let host = std::env::consts::ARCH;
+    let asset = format!("appimagetool-{host}.AppImage");
+    let prefix = format!("appimagetool-{host}-");
+    let dir = root().join("native/target/tools");
+    let release = read(Command::new("curl").args(["-fsSL", "--retry", "3", APPIMAGETOOL]));
+    let release: serde_json::Value = match release {
+        Ok(json) => serde_json::from_str(&json).map_err(|e| format!("{APPIMAGETOOL}: {e}"))?,
+        Err(e) => {
+            return cached(&dir, &prefix).ok_or(e).inspect(|tool| {
+                println!("[package-linux] offline, using {}", tool.display());
+            });
+        }
+    };
+    let found = release["assets"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|a| a["name"] == asset.as_str())
+        .ok_or_else(|| format!("no {asset} in the latest appimagetool release"))?;
+    let url = found["browser_download_url"]
+        .as_str()
+        .ok_or_else(|| format!("{asset} has no download url"))?;
+    let want = found["digest"]
+        .as_str()
+        .and_then(|d| d.strip_prefix("sha256:"))
+        .ok_or_else(|| format!("{asset} has no sha256"))?;
+    let name = format!("{prefix}{}", &want[..want.len().min(12)]);
+    let tool = dir.join(&name);
+    if tool.exists() && sha256(&tool)? == want {
+        return Ok(tool);
+    }
+    fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let part = dir.join(format!("{name}.part"));
+    println!("[package-linux] fetching {url}");
+    exec(
+        Command::new("curl")
+            .args(["-fsSL", "--retry", "3", "-o"])
+            .arg(&part)
+            .arg(url),
+    )?;
+    let got = sha256(&part)?;
+    if got != want {
+        let _ = fs::remove_file(&part);
+        return Err(format!("{asset}: sha256 {got}, expected {want}"));
+    }
+    fs::set_permissions(&part, fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+    fs::rename(&part, &tool).map_err(|e| e.to_string())?;
+    for old in fs::read_dir(&dir).into_iter().flatten().flatten() {
+        let old = old.path();
+        let stale = old
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with(&prefix));
+        if stale && old != tool {
+            let _ = fs::remove_file(&old);
+        }
+    }
+    Ok(tool)
 }
 
 pub fn run(arch: Arch) -> Result<(), String> {
     if !cfg!(target_os = "linux") {
         return Err("package-linux runs on Linux".into());
     }
+    let tool = appimagetool()?;
     crate::build_native::run(arch)?;
 
     let root = root();
@@ -124,7 +208,8 @@ pub fn run(arch: Arch) -> Result<(), String> {
     let image = dist.join(format!("LIVI-{version}-linux-{}.AppImage", arch.name()));
     let _ = fs::remove_file(&image);
     exec(
-        Command::new(appimagetool())
+        Command::new(&tool)
+            .env("APPIMAGE_EXTRACT_AND_RUN", "1")
             .env("ARCH", arch.appimage())
             .env("VERSION", &version)
             .arg("--no-appstream")

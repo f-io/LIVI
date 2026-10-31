@@ -1,5 +1,4 @@
 FROM docker.io/library/debian:trixie-slim
-ARG APPIMAGETOOL_VERSION=1.9.0
 RUN dpkg --add-architecture arm64 \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -11,9 +10,6 @@ RUN dpkg --add-architecture arm64 \
       libwayland-dev:arm64 libxkbcommon-dev:arm64 libfontconfig-dev:arm64 \
       libinput-dev:arm64 libseat-dev:arm64 libgbm-dev:arm64 \
  && rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL -o /usr/local/bin/appimagetool \
-      "https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-x86_64.AppImage" \
- && chmod +x /usr/local/bin/appimagetool
 ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
     CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc \
     CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++ \
@@ -21,7 +17,5 @@ ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
     PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
     PATH=/cargo/bin:$PATH \
     CARGO_HOME=/cargo \
-    RUSTUP_HOME=/rustup \
-    APPIMAGETOOL=/usr/local/bin/appimagetool \
-    APPIMAGE_EXTRACT_AND_RUN=1
+    RUSTUP_HOME=/rustup
 RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none --no-modify-path

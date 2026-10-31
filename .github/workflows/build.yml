@@ -36,7 +36,6 @@ permissions:
 
 env:
   CARGO_INCREMENTAL: 0
-  APPIMAGETOOL_VERSION: "1.9.0"
 
 jobs:
   plan:
@@ -121,21 +120,6 @@ jobs:
               cmake libwayland-dev libxkbcommon-dev libfontconfig1-dev \
               libudev-dev libinput-dev libseat-dev libgbm-dev file desktop-file-utils
           sudo rm -rf /var/lib/apt/lists/*
-
-      - name: Install appimagetool [linux]
-        if: matrix.os == 'linux'
-        shell: bash
-        run: |
-          set -euo pipefail
-          case '${{ matrix.arch }}' in
-            x64) tool_arch=x86_64 ;;
-            arm64) tool_arch=aarch64 ;;
-          esac
-          url="https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-${tool_arch}.AppImage"
-          curl -fL -o "$RUNNER_TEMP/appimagetool" "$url"
-          chmod +x "$RUNNER_TEMP/appimagetool"
-          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
-          echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
 
       - name: Install deps (brew) [macos]
         if: matrix.os == 'macos'
