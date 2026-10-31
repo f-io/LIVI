@@ -110,11 +110,10 @@ fn device(screen: Screen, n: usize, name: &str, id: &str, state: &Value, t: &Str
             ..Row::default()
         });
     }
-    let reset = t.t("settings.reset", "Reset");
     out.push(Row {
         kind: RowKind::Button,
-        label: reset.clone(),
-        button: reset,
+        label: t.t("settings.touchReset", "Reset Calibration"),
+        button: t.t("settings.reset", "Reset"),
         outlined: true,
         enabled: state["config"]["touchCalibration"][name].is_object(),
         action: Some(Action::SetConfig {
@@ -248,7 +247,7 @@ mod tests {
         let t = Strings::new("en");
         let rows = rows(Screen::Cluster, &state(), &t);
         assert!(!rows[0].checked);
-        assert_eq!(rows[1].label, "Reset");
+        assert_eq!(rows[1].label, "Reset Calibration");
         assert!(!rows[1].enabled, "nothing to reset yet");
         assert_eq!(rows.len(), 3, "no assistant outside the main screen");
         let Some(Change::Config(on)) = &rows[0].change else {

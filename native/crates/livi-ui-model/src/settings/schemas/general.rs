@@ -38,6 +38,20 @@ fn auto_connector_option() -> Choice {
     )
 }
 
+fn touch_page(screen: Screen) -> Node {
+    Node::route(
+        "touch",
+        Label::new("settings.touch", "Touch"),
+        vec![Node::custom(
+            Label::new("settings.touch", "Touch"),
+            "touchCalibration",
+            CustomPage::Touch(screen),
+        )],
+    )
+    .icon("touch")
+    .disabled(Condition::DisplaysNotSettable)
+}
+
 fn display_rows(screen: Screen) -> Vec<Node> {
     let (connector_path, mode_path) = match screen {
         Screen::Main => ("displayConnector.main", "displayMode.main"),
@@ -223,10 +237,10 @@ fn connections() -> Node {
     .icon("connections")
 }
 
-fn window_settings() -> Node {
+fn screen_settings() -> Node {
     Node::route(
-        "windowSettings",
-        Label::new("settings.windowSettings", "Window Settings"),
+        "screenSettings",
+        Label::new("settings.screenSettings", "Screen Settings"),
         vec![
             Node::route(
                 "mainScreen",
@@ -253,6 +267,7 @@ fn window_settings() -> Node {
                             "Main Screen Height",
                         ),
                         fullscreen("kiosk.main"),
+                        touch_page(Screen::Main),
                     ],
                 ]
                 .concat(),
@@ -290,6 +305,7 @@ fn window_settings() -> Node {
                             "Cluster Screen Height",
                         ),
                         fullscreen("kiosk.cluster"),
+                        touch_page(Screen::Cluster),
                     ],
                 ]
                 .concat(),
@@ -327,6 +343,7 @@ fn window_settings() -> Node {
                             "Aux Screen Height",
                         ),
                         fullscreen("kiosk.aux"),
+                        touch_page(Screen::Aux),
                     ],
                 ]
                 .concat(),
@@ -334,7 +351,7 @@ fn window_settings() -> Node {
             .icon("auxScreen"),
         ],
     )
-    .icon("windowSettings")
+    .icon("screenSettings")
 }
 
 fn tab_settings() -> Node {
@@ -601,7 +618,7 @@ pub fn schema() -> Node {
         Label::new("settings.general", "General"),
         vec![
             connections(),
-            window_settings(),
+            screen_settings(),
             tab_settings(),
             key_bindings(),
             Node::select(

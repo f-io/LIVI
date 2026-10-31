@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use livi_core_proto::config::Config;
+use livi_core_proto::config::{Config, TouchCalibration};
 use livi_core_proto::input::{Input, Phase, Point};
 use livi_core_proto::state::{Display, Screen};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -75,8 +75,9 @@ fn screen_of(role: &str) -> Option<Screen> {
 }
 
 fn display_of(line: &str) -> Option<Display> {
-    let mut words = line.splitn(6, ' ');
-    let (Some("display"), Some(connector), Some(role), Some(current), Some(modes)) = (
+    let mut words = line.splitn(7, ' ');
+    let (Some("display"), Some(connector), Some(role), Some(current), Some(modes), Some(id)) = (
+        words.next(),
         words.next(),
         words.next(),
         words.next(),
@@ -87,6 +88,7 @@ fn display_of(line: &str) -> Option<Display> {
     };
     Some(Display {
         connector: connector.to_string(),
+        id: id.to_string(),
         panel: words.next().unwrap_or("").trim().to_string(),
         screen: screen_of(role),
         current: (current != "-").then(|| current.to_string()),
@@ -95,7 +97,32 @@ fn display_of(line: &str) -> Option<Display> {
         } else {
             modes.split(',').map(str::to_string).collect()
         },
+        touch: Vec::new(),
     })
+}
+
+fn touch_panel_of(line: &str) -> Option<(&str, &str)> {
+    let rest = line.strip_prefix("touchpanel ")?;
+    let (connector, name) = rest.split_once(' ')?;
+    (!name.is_empty()).then_some((connector, name))
+}
+
+fn touch_calibration_lines(entries: &BTreeMap<String, TouchCalibration>) -> String {
+    let mut out = format!("touchcals {}\n", entries.len());
+    for (name, c) in entries {
+        let display = if c.display.is_empty() {
+            "-"
+        } else {
+            &c.display
+        };
+        let matrix: Vec<String> = c.matrix.iter().map(f64::to_string).collect();
+        out.push_str(&format!(
+            "touchcal {} {display} {} {name}\n",
+            u8::from(c.enabled),
+            matrix.join(" ")
+        ));
+    }
+    out
 }
 
 fn phase_of(word: &str) -> Option<Phase> {
@@ -327,6 +354,11 @@ impl CompositorControl {
         let _ = self.tx.send(Cmd::State("__gamma__".into(), line));
     }
 
+    pub fn touch_calibration(&self, entries: &BTreeMap<String, TouchCalibration>) {
+        let lines = touch_calibration_lines(entries);
+        let _ = self.tx.send(Cmd::State("__touchcal__".into(), lines));
+    }
+
     pub fn panels(&self) -> watch::Receiver<HashMap<String, Panel>> {
         self.panels.clone()
     }
@@ -373,9 +405,16 @@ struct Actor {
     panels: watch::Sender<HashMap<String, Panel>>,
     ui: watch::Sender<Option<Ui>>,
     displays: watch::Sender<Option<Vec<Display>>>,
-    incoming: Option<(usize, Vec<Display>)>,
+    incoming: Option<Incoming>,
     touches: broadcast::Sender<Input>,
     fullscreen: broadcast::Sender<(Screen, bool)>,
+}
+
+#[derive(Default)]
+struct Incoming {
+    count: usize,
+    displays: Vec<Display>,
+    touch: Vec<(String, String)>,
 }
 
 impl Actor {
@@ -550,13 +589,32 @@ impl Actor {
             }
             Some("displays") => {
                 let count = words.next().and_then(|n| n.parse().ok()).unwrap_or(0);
-                self.incoming = Some((count, Vec::new()));
+                self.incoming = Some(Incoming {
+                    count,
+                    ..Default::default()
+                });
                 self.take_displays();
             }
-            Some("display") => {
-                if let (Some((_, list)), Some(display)) = (self.incoming.as_mut(), display_of(line))
+            Some("touchpanel") => {
+                if let (Some(incoming), Some((connector, name))) =
+                    (self.incoming.as_mut(), touch_panel_of(line))
                 {
-                    list.push(display);
+                    incoming
+                        .touch
+                        .push((connector.to_string(), name.to_string()));
+                }
+            }
+            Some("display") => {
+                if let (Some(incoming), Some(mut display)) =
+                    (self.incoming.as_mut(), display_of(line))
+                {
+                    display.touch = incoming
+                        .touch
+                        .iter()
+                        .filter(|(c, _)| *c == display.connector)
+                        .map(|(_, name)| name.clone())
+                        .collect();
+                    incoming.displays.push(display);
                 }
                 self.take_displays();
             }
@@ -575,7 +633,11 @@ impl Actor {
     }
 
     fn take_displays(&mut self) {
-        if let Some((count, list)) = &self.incoming
+        if let Some(Incoming {
+            count,
+            displays: list,
+            ..
+        }) = &self.incoming
             && list.len() >= *count
         {
             for d in list {
@@ -793,7 +855,7 @@ mod tests {
         ctrl.screen("cluster", true, Some((800, 480)));
         let (mut rd, mut wr) = comp.accept().await;
         assert_eq!(line(&mut rd).await, "screen cluster 1 800 480\n");
-        wr.write_all(b"ui wayland-2 /dev/dri/renderD129\npanel main 344 194 1920 1080\ndisplays 2\ndisplay HDMI-A-1 main 1280x720@60 1920x1080,1280x720 DELL U2415\ndisplay DSI-1 - - 800x480 \n")
+        wr.write_all(b"ui wayland-2 /dev/dri/renderD129\npanel main 344 194 1920 1080\ndisplays 2\ntouchpanel HDMI-A-1 ILITEK ILITEK-TP\ndisplay HDMI-A-1 main 1280x720@60 1920x1080,1280x720 DEL-a0b1-00000001 DELL U2415\ndisplay DSI-1 - - 800x480 DSI-1 \n")
             .await
             .unwrap();
         tokio::time::timeout(Duration::from_secs(5), ui.changed())
@@ -826,17 +888,21 @@ mod tests {
             Some(vec![
                 Display {
                     connector: "HDMI-A-1".into(),
+                    id: "DEL-a0b1-00000001".into(),
                     panel: "DELL U2415".into(),
                     screen: Some(Screen::Main),
                     current: Some("1280x720@60".into()),
                     modes: vec!["1920x1080".into(), "1280x720".into()],
+                    touch: vec!["ILITEK ILITEK-TP".into()],
                 },
                 Display {
                     connector: "DSI-1".into(),
+                    id: "DSI-1".into(),
                     panel: String::new(),
                     screen: None,
                     current: None,
                     modes: vec!["800x480".into()],
+                    touch: Vec::new(),
                 },
             ])
         );
@@ -879,6 +945,26 @@ mod tests {
             Some("DSI-1")
         );
         assert_eq!(get(&set, "LIVI_MAIN_CONNECTOR"), None);
+    }
+
+    #[test]
+    fn touch_calibration_goes_out_as_one_block() {
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            "ILITEK ILITEK-TP".to_string(),
+            TouchCalibration {
+                display: "DEL-a0b1-00000001".into(),
+                enabled: true,
+                matrix: [1.0, 0.0, 0.02, 0.0, 0.98, 0.0],
+            },
+        );
+        entries.insert("Other".to_string(), TouchCalibration::default());
+        assert_eq!(
+            touch_calibration_lines(&entries),
+            "touchcals 2\n\
+             touchcal 1 DEL-a0b1-00000001 1 0 0.02 0 0.98 0 ILITEK ILITEK-TP\n\
+             touchcal 0 - 1 0 0 0 1 0 Other\n"
+        );
     }
 
     #[test]

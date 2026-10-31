@@ -11,6 +11,7 @@ mod gps;
 pub mod icon;
 mod mfi;
 mod system;
+pub mod touch;
 
 use livi_core_proto::message::Action;
 use serde_json::Value;
@@ -46,6 +47,7 @@ pub fn rows(page: CustomPage, state: &Value, t: &Strings, facts: &Facts) -> Opti
         CustomPage::GpsHwInfo => gps::hardware(state, t),
         CustomPage::IconUploader => icon::rows(state, t),
         CustomPage::MfiCertificate => mfi::rows(state, t),
+        CustomPage::Touch(screen) => touch::rows(screen, state, t),
         _ => return None,
     })
 }

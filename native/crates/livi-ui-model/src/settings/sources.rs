@@ -60,7 +60,7 @@ fn screen_key(screen: Screen) -> &'static str {
     }
 }
 
-fn display_for(state: &Value, screen: Screen) -> Option<&Value> {
+pub(crate) fn display_for(state: &Value, screen: Screen) -> Option<&Value> {
     let displays = state["system"]["displays"].as_array()?;
     let key = screen_key(screen);
     let chosen = state["config"]["displayConnector"][key]

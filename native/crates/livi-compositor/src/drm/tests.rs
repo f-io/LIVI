@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use super::{Offered, assign, choose, panel_name, size_of, wl_output_in};
+use super::{
+    Offered, assign, calibrated, choose, panel_id, panel_name, size_of, touch_cal_of, wl_output_in,
+};
 
 fn mode(w: u16, h: u16, refresh: u32, preferred: bool) -> Offered {
     Offered {
@@ -129,4 +131,42 @@ fn the_panel_name_comes_from_the_edid_descriptor() {
     assert_eq!(panel_name(&edid).as_deref(), Some("Elecrow 8in"));
     assert_eq!(panel_name(&[0u8; 128]), None);
     assert_eq!(panel_name(&[0u8; 20]), None);
+}
+
+#[test]
+fn the_panel_id_comes_from_vendor_product_and_serial() {
+    let mut edid = vec![0u8; 128];
+    edid[..8].copy_from_slice(&[0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0]);
+    edid[8..16].copy_from_slice(&[0x10, 0xAC, 0xB1, 0xA0, 0x01, 0x00, 0x00, 0x00]);
+    assert_eq!(panel_id(&edid).as_deref(), Some("DEL-a0b1-00000001"));
+    assert_eq!(panel_id(&[0u8; 128]), None);
+    assert_eq!(panel_id(&edid[..12]), None);
+}
+
+#[test]
+fn a_touch_calibration_line_names_its_device_last() {
+    let (name, cal) =
+        touch_cal_of("touchcal 1 DEL-a0b1-00000001 1 0 0.02 0 0.98 0 ILITEK ILITEK-TP").unwrap();
+    assert_eq!(name, "ILITEK ILITEK-TP");
+    assert!(cal.enabled);
+    assert_eq!(cal.display, "DEL-a0b1-00000001");
+    assert_eq!(cal.matrix, [1.0, 0.0, 0.02, 0.0, 0.98, 0.0]);
+    let (_, off) = touch_cal_of("touchcal 0 - 1 0 0 0 1 0 Other").unwrap();
+    assert!(!off.enabled && off.display.is_empty());
+    assert!(touch_cal_of("touchcal 1 - 1 0 0 0 1 Short").is_none());
+    assert!(touch_cal_of("touchcal 1 - 1 0 0 0 1 0 ").is_none());
+}
+
+#[test]
+fn the_calibration_works_in_screen_space() {
+    let shift = [1.0, 0.0, 0.02, 0.0, 0.5, 0.25];
+    assert_eq!(
+        calibrated(&shift, 400.0, 240.0, 800.0, 480.0),
+        (416.0, 240.0)
+    );
+    let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+    assert_eq!(
+        calibrated(&identity, 12.0, 34.0, 800.0, 480.0),
+        (12.0, 34.0)
+    );
 }

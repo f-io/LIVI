@@ -60,9 +60,9 @@ fn mutter_displays_in(monitors: &[MutterMonitor]) -> Vec<Display> {
             Display {
                 connector: connector.clone(),
                 panel: product.clone(),
-                screen: None,
                 current: current.map(|m| format!("{}x{}@{}", m.1, m.2, m.3.round() as u32)),
                 modes: largest_first(sizes),
+                ..Default::default()
             }
         })
         .collect()

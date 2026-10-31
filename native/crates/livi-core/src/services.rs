@@ -468,6 +468,12 @@ async fn follow_state(
         if display_changed {
             apply_display(&now.config, &ctrl);
         }
+        if last
+            .as_ref()
+            .is_none_or(|l| l.config.touch_calibration != now.config.touch_calibration)
+        {
+            ctrl.touch_calibration(&now.config.touch_calibration);
+        }
         for (role, on, size) in changed_screens(last.as_ref().map(|l| &l.config), &now.config) {
             ctrl.screen(role, on, size);
         }

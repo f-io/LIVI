@@ -100,6 +100,7 @@ pub enum Local {
     ToProjection,
     Browse(crate::settings::custom::files::Wanted),
     PickEntry(usize),
+    CalibrateTouch(usize),
 }
 
 #[derive(Debug, Clone, PartialEq)]

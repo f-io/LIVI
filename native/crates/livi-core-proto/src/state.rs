@@ -330,10 +330,12 @@ pub enum Front {
 #[serde(rename_all = "camelCase")]
 pub struct Display {
     pub connector: String,
+    pub id: String,
     pub panel: String,
     pub screen: Option<Screen>,
     pub current: Option<String>,
     pub modes: Vec<String>,
+    pub touch: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

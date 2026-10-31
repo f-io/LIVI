@@ -62,14 +62,33 @@ pub struct DrmState {
     wanted: BTreeSet<usize>,
     mode_settings: HashMap<usize, Option<String>>,
     touch_outputs: HashMap<String, String>,
+    touch_devices: Vec<smithay::reexports::input::Device>,
+    touch_cal: HashMap<String, TouchCal>,
+    touch_cal_incoming: Option<(usize, HashMap<String, TouchCal>)>,
     active: bool,
     mouse_active: bool,
     cursor: MemoryRenderBuffer,
 }
 
+#[derive(PartialEq)]
+struct TouchCal {
+    enabled: bool,
+    display: String,
+    matrix: [f64; 6],
+}
+
+fn calibrated(m: &[f64; 6], x: f64, y: f64, w: f64, h: f64) -> (f64, f64) {
+    let (u, v) = (x / w, y / h);
+    (
+        (m[0] * u + m[1] * v + m[2]) * w,
+        (m[3] * u + m[4] * v + m[5]) * h,
+    )
+}
+
 struct Connector {
     handle: connector::Handle,
     name: String,
+    id: String,
     panel: String,
     connected: bool,
     modes: Vec<Mode>,
@@ -201,6 +220,9 @@ fn start(
         wanted: BTreeSet::from([0]),
         mode_settings: HashMap::new(),
         touch_outputs: HashMap::new(),
+        touch_devices: Vec::new(),
+        touch_cal: HashMap::new(),
+        touch_cal_incoming: None,
         active: true,
         mouse_active: false,
         cursor: cursor_image(),
@@ -268,6 +290,10 @@ fn connectors(device: &DrmDevice, probe: bool) -> Vec<Connector> {
                 .and_then(|(_, blob)| device.get_property_blob(blob).ok());
             Some(Connector {
                 handle,
+                id: edid
+                    .as_deref()
+                    .and_then(panel_id)
+                    .unwrap_or_else(|| name.clone()),
                 panel: edid.as_deref().and_then(panel_name).unwrap_or_default(),
                 connected: info.state() == connector::State::Connected,
                 modes: info.modes().to_vec(),
@@ -312,6 +338,23 @@ fn orientation(device: &DrmDevice, handle: connector::Handle) -> Transform {
         Ok("Right Side Up") => Transform::_270,
         _ => Transform::Normal,
     }
+}
+
+fn panel_id(edid: &[u8]) -> Option<String> {
+    if edid.get(..8)? != [0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0] {
+        return None;
+    }
+    let b = edid.get(8..16)?;
+    let vendor = u16::from_be_bytes([b[0], b[1]]);
+    let letter = |shift: u16| char::from(b'@' + ((vendor >> shift) & 0x1F) as u8);
+    let product = u16::from_le_bytes([b[2], b[3]]);
+    let serial = u32::from_le_bytes([b[4], b[5], b[6], b[7]]);
+    Some(format!(
+        "{}{}{}-{product:04x}-{serial:08x}",
+        letter(10),
+        letter(5),
+        letter(0)
+    ))
 }
 
 fn panel_name(edid: &[u8]) -> Option<String> {
@@ -575,6 +618,15 @@ pub fn displays_lines(state: &LiviState) -> Option<String> {
     let drm = state.drm.as_ref()?;
     let shown: Vec<&Connector> = drm.connectors.iter().filter(|c| c.connected).collect();
     let mut out = format!("displays {}\n", shown.len());
+    for device in &drm.touch_devices {
+        if let Some(output) = touch_output(drm, device) {
+            out.push_str(&format!(
+                "touchpanel {} {}\n",
+                output.connector,
+                device.name()
+            ));
+        }
+    }
     for c in shown {
         let output = drm.outputs.iter().find(|o| o.connector == c.name);
         let role = output
@@ -591,11 +643,68 @@ pub fn displays_lines(state: &LiviState) -> Option<String> {
             modes.join(",")
         };
         out.push_str(&format!(
-            "display {} {role} {current} {modes} {}\n",
-            c.name, c.panel
+            "display {} {role} {current} {modes} {} {}\n",
+            c.name, c.id, c.panel
         ));
     }
     Some(out)
+}
+
+pub fn touch_calibration(state: &mut LiviState, line: &str) {
+    let Some(drm) = state.drm.as_mut() else {
+        return;
+    };
+    let mut words = line.split(' ');
+    match words.next() {
+        Some("touchcals") => {
+            let count = words.next().and_then(|n| n.parse().ok()).unwrap_or(0);
+            drm.touch_cal_incoming = Some((count, HashMap::new()));
+        }
+        Some("touchcal") => {
+            let (Some((_, entries)), Some((name, cal))) =
+                (drm.touch_cal_incoming.as_mut(), touch_cal_of(line))
+            else {
+                return;
+            };
+            entries.insert(name, cal);
+        }
+        _ => return,
+    }
+    let Some((count, entries)) = drm.touch_cal_incoming.take_if(|(n, e)| e.len() >= *n) else {
+        return;
+    };
+    if entries == drm.touch_cal {
+        return;
+    }
+    log::info!("touch calibration for {count} device(s)");
+    drm.touch_cal = entries;
+    crate::ctrl::send_displays(state);
+}
+
+fn touch_cal_of(line: &str) -> Option<(String, TouchCal)> {
+    let mut words = line.splitn(10, ' ');
+    if words.next() != Some("touchcal") {
+        return None;
+    }
+    let enabled = words.next()? == "1";
+    let display = words.next()?;
+    let mut matrix = [0.0f64; 6];
+    for v in &mut matrix {
+        *v = words.next()?.parse().ok()?;
+    }
+    let name = words.next().filter(|n| !n.is_empty())?;
+    Some((
+        name.to_string(),
+        TouchCal {
+            enabled,
+            display: if display == "-" {
+                String::new()
+            } else {
+                display.to_string()
+            },
+            matrix,
+        },
+    ))
 }
 
 pub fn panel_mm(state: &LiviState, screen_idx: usize) -> Option<(i32, i32)> {

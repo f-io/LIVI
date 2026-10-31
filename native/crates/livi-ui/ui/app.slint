@@ -15,8 +15,9 @@ import { SettingsView, SettingsState, ScreenKind, RowData, RowKind, PickData, Kn
 import { Dashboard, DashState, GaugeData, CapData, TrailData, LabelData } from "dashboard.slint";
 import { LevelOverlay, PhoneOverlay, OverlayState } from "overlays.slint";
 import { MaskData } from "mask.slint";
+import { TouchCalibration, TouchCalibrationState } from "touch_calibration.slint";
 
-export { Theme, Focus, FocusZone, Page, PhoneState, TabData, TouchPhase, SettingsState, ScreenKind, RowData, RowKind, PickData, KnobData, MediaText, Press, DabState, StationData, DashState, GaugeData, CapData, TrailData, LabelData, OverlayState, MaskData }
+export { Theme, Focus, FocusZone, Page, PhoneState, TabData, TouchPhase, SettingsState, ScreenKind, RowData, RowKind, PickData, KnobData, MediaText, Press, DabState, StationData, DashState, GaugeData, CapData, TrailData, LabelData, OverlayState, MaskData, TouchCalibrationState }
 
 export component AppWindow inherits Window {
     in-out property <Page> page: Page.media;
@@ -192,6 +193,10 @@ export component AppWindow inherits Window {
         window-width: root.width;
         x: root.width - self.width - 16px;
         y: 16px;
+    }
+    if TouchCalibrationState.active: TouchCalibration {
+        width: root.width;
+        height: root.height;
     }
 }
 

@@ -363,6 +363,7 @@ fn handle_line(state: &mut LiviState, line: &str) {
                 crate::host::damage_all(state);
             }
         }
+        Some("touchcals" | "touchcal") => crate::drm::touch_calibration(state, line),
         Some("gamma") => {
             log::info!("ctrl < {line}");
             let nums: Vec<f64> = parts.filter_map(|v| v.parse().ok()).collect();

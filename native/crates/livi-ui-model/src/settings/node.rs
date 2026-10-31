@@ -116,6 +116,7 @@ pub enum CustomPage {
     PowerOff,
     Restart,
     SoftwareUpdate,
+    Touch(Screen),
     WifiLinkInfo,
 }
 

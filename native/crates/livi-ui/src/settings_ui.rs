@@ -32,6 +32,7 @@ use crate::{
     AppWindow, KnobData, Page, PickData, RowData, RowKind, ScreenKind, SettingsState, ToolData,
 };
 
+mod calibrate_touch;
 mod capture;
 mod dialog;
 mod render;
@@ -203,6 +204,7 @@ pub fn wire(ui: &AppWindow, client: &Client, lang: &str) {
     });
     let s = ui.global::<SettingsState>();
     let weak = ui.as_weak();
+    calibrate_touch::wire(ui, client);
 
     s.on_back({
         let (weak, client) = (weak.clone(), client.clone());
@@ -235,6 +237,11 @@ pub fn wire(ui: &AppWindow, client: &Client, lang: &str) {
                         c.browser = Some(Browser::open(wanted));
                         (Vec::new(), false)
                     });
+                }
+                Some(Local::CalibrateTouch(n)) => {
+                    if let Some(ui) = weak.upgrade() {
+                        calibrate_touch::start(&ui, &client, n);
+                    }
                 }
                 Some(Local::PickEntry(n)) => {
                     act(&weak, &client, |c, _| {

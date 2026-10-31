@@ -227,8 +227,8 @@ DAB+ radio via USB RTL-SDR (RTL2832U with R820T2).
 LIVI can run as multiple windows at once, each placeable on its own physical display.
 The Dash and Aux windows are freely assignable and can show the Dashes, the reverse camera or the media player. Assignment is not exclusive: any feature can be shown on one, several, or all windows at the same time.
 
-Configure each window under Settings → Window Settings
-(Main Screen / Dash Screen / Aux Screen), and assign features under
+Configure each window under Settings → General → Screen Settings
+(Main Screen / Cluster Screen / Aux Screen), and assign features under
 Settings → General → Tab Settings.
 
 <p align="center">

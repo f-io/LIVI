@@ -4,17 +4,30 @@
 
 use super::*;
 use smithay::reexports::input::event::touch::TouchEventSlot;
+use smithay::reexports::input::{Device, DeviceCapability};
+
+pub(super) fn touch_output<'a>(drm: &'a DrmState, device: &Device) -> Option<&'a Output> {
+    let linked = drm
+        .touch_cal
+        .get(device.name())
+        .filter(|c| !c.display.is_empty())
+        .and_then(|c| {
+            drm.connectors
+                .iter()
+                .find(|k| k.connected && k.id == c.display)
+        })
+        .map(|k| &k.name);
+    match linked.or_else(|| drm.touch_outputs.get(device.sysname())) {
+        Some(name) => drm.outputs.iter().find(|o| &o.connector == name),
+        None => drm.outputs.iter().find(|o| o.screen_idx == 0),
+    }
+}
 
 pub(super) fn touch_target(
     state: &LiviState,
-    device: &smithay::reexports::input::Device,
+    device: &Device,
 ) -> (usize, Size<i32, smithay::utils::Logical>, Transform) {
-    let drm = state.drm.as_ref();
-    let named = drm.and_then(|d| d.touch_outputs.get(device.sysname()));
-    let output = drm.and_then(|d| match named {
-        Some(name) => d.outputs.iter().find(|o| &o.connector == name),
-        None => d.outputs.iter().find(|o| o.screen_idx == 0),
-    });
+    let output = state.drm.as_ref().and_then(|d| touch_output(d, device));
     match output {
         Some(o) => (o.screen_idx, Size::from(o.physical()), o.transform),
         None => (0, screen_size(state, 0), Transform::Normal),
@@ -23,7 +36,7 @@ pub(super) fn touch_target(
 
 pub(super) fn touch_point(
     state: &LiviState,
-    device: &smithay::reexports::input::Device,
+    device: &Device,
     at: impl Fn(Size<i32, smithay::utils::Logical>) -> Point<f64, smithay::utils::Logical>,
 ) -> (usize, f64, f64) {
     let (idx, physical, transform) = touch_target(state, device);
@@ -31,7 +44,18 @@ pub(super) fn touch_point(
     let area =
         Size::<f64, smithay::utils::Logical>::from((f64::from(physical.w), f64::from(physical.h)));
     let local = transform.transform_point_in(native, &area);
-    (idx, state.screens[idx].x as f64 + local.x, local.y)
+    let size = transform.transform_size(area);
+    let matrix = state
+        .drm
+        .as_ref()
+        .and_then(|d| d.touch_cal.get(device.name()))
+        .filter(|c| c.enabled)
+        .map(|c| c.matrix);
+    let (x, y) = match matrix {
+        Some(m) => calibrated(&m, local.x, local.y, size.w, size.h),
+        None => (local.x, local.y),
+    };
+    (idx, state.screens[idx].x as f64 + x, y)
 }
 
 pub(super) fn screen_size(state: &LiviState, idx: usize) -> Size<i32, smithay::utils::Logical> {
@@ -74,12 +98,33 @@ pub(super) fn wl_output_in(udev_data: &str) -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
-pub(super) fn device_added(state: &mut LiviState, device: &smithay::reexports::input::Device) {
+pub(super) fn device_added(state: &mut LiviState, device: &Device) {
     log::info!("input device: {}", device.name());
-    if let (Some(output), Some(drm)) = (wl_output_of(device.sysname()), state.drm.as_mut()) {
+    let Some(drm) = state.drm.as_mut() else {
+        return;
+    };
+    if let Some(output) = wl_output_of(device.sysname()) {
         log::info!("{} touches {output}", device.name());
         drm.touch_outputs
             .insert(device.sysname().to_string(), output);
+    }
+    if device.has_capability(DeviceCapability::Touch) {
+        drm.touch_devices.push(device.clone());
+        crate::ctrl::send_displays(state);
+    }
+}
+
+fn device_removed(state: &mut LiviState, device: &Device) {
+    log::info!("input device gone: {}", device.name());
+    let Some(drm) = state.drm.as_mut() else {
+        return;
+    };
+    drm.touch_outputs.remove(device.sysname());
+    let before = drm.touch_devices.len();
+    drm.touch_devices
+        .retain(|d| d.sysname() != device.sysname());
+    if drm.touch_devices.len() != before {
+        crate::ctrl::send_displays(state);
     }
 }
 
@@ -133,12 +178,7 @@ pub(super) fn input(state: &mut LiviState, event: InputEvent<LibinputInputBacken
         }
         InputEvent::TouchCancel { .. } => crate::input::touch_cancel(state),
         InputEvent::DeviceAdded { device } => device_added(state, &device),
-        InputEvent::DeviceRemoved { device } => {
-            log::info!("input device gone: {}", device.name());
-            if let Some(drm) = state.drm.as_mut() {
-                drm.touch_outputs.remove(device.sysname());
-            }
-        }
+        InputEvent::DeviceRemoved { device } => device_removed(state, &device),
         _ => {}
     }
 }
