@@ -7,7 +7,7 @@ exclude = ["vendor"]
 femtovg = { path = "vendor/femtovg" }
 
 [workspace.package]
-version = "10.2.0"
+version = "10.3.0"
 edition = "2024"
 description = "LIVI - Linux In-Vehicle Infotainment"
 homepage = "https://f-io.dev"
@@ -34,7 +34,7 @@ sha2 = "0.11.1"
 socket2 = "0.6.5"
 tokio = "1.54.1"
 uuid = "1.29.0"
-zbus = { version = "6.1.0", default-features = false }
+zbus = { version = "6.2.0", default-features = false }
 
 iap2-csm = { path = "crates/iap2-csm" }
 iap2-link = { path = "crates/iap2-link" }
