@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-#![cfg_attr(not(target_os = "linux"), allow(dead_code))]
-
+#[cfg(target_os = "linux")]
 pub mod mgmt;
+#[cfg(target_os = "linux")]
 pub mod sdp;
 
 #[cfg(target_os = "linux")]

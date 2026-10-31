@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+#![cfg(target_os = "linux")]
+
 use std::sync::OnceLock;
 
 #[derive(Default)]

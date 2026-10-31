@@ -8,6 +8,8 @@ name = "livi_web"
 path = "src/lib.rs"
 
 [dependencies]
+
+[target.'cfg(target_os = "linux")'.dependencies]
 livi-wifi.workspace = true
 livi-wifid.workspace = true
 livi-net.workspace = true

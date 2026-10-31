@@ -8,6 +8,8 @@ name = "livid"
 path = "src/main.rs"
 
 [dependencies]
+
+[target.'cfg(target_os = "linux")'.dependencies]
 livi-mdns.workspace = true
 livi-wifid.workspace = true
 livi-web.workspace = true
@@ -16,5 +18,5 @@ livi-accessoryd.workspace = true
 livi-net.workspace = true
 iap2-mfi.workspace = true
 libc.workspace = true
-[target.'cfg(not(target_arch = "riscv32"))'.dependencies]
+[target.'cfg(all(target_os = "linux", not(target_arch = "riscv32")))'.dependencies]
 imx6ul-uboot.workspace = true

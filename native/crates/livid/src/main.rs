@@ -2,21 +2,32 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+#[cfg(target_os = "linux")]
 use std::env;
+#[cfg(target_os = "linux")]
 use std::path::Path;
 use std::process::ExitCode;
 
+#[cfg(target_os = "linux")]
 mod accessoryd;
+#[cfg(target_os = "linux")]
 mod bt_up;
+#[cfg(target_os = "linux")]
 mod btd;
+#[cfg(target_os = "linux")]
 mod config;
-#[cfg(not(target_arch = "riscv32"))]
+#[cfg(all(target_os = "linux", not(target_arch = "riscv32")))]
 mod imx6ul;
+#[cfg(target_os = "linux")]
 mod ledd;
+#[cfg(target_os = "linux")]
 mod mfid;
+#[cfg(target_os = "linux")]
 mod netd;
+#[cfg(target_os = "linux")]
 mod wifid;
 
+#[cfg(target_os = "linux")]
 fn board() -> (&'static str, &'static str) {
     let compatible = std::fs::read("/sys/firmware/devicetree/base/compatible").unwrap_or_default();
     let has = |c: &[u8]| compatible.windows(c.len()).any(|w| w == c);
@@ -30,6 +41,7 @@ fn board() -> (&'static str, &'static str) {
     ("V821B + AIC8800D80", "v821b_aic8800d80")
 }
 
+#[cfg(target_os = "linux")]
 fn wifi_standards(target: &str) -> livi_wifid::server::Standards {
     use livi_wifid::server::Standards;
     match target {
@@ -45,6 +57,7 @@ fn wifi_standards(target: &str) -> livi_wifid::server::Standards {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn web_caps() -> livi_web::WebCaps {
     let (model, target) = board();
     let slot = |typ, node: &str, magic: &[u8], size| livi_web::MtdSlot {
@@ -107,6 +120,7 @@ fn web_caps() -> livi_web::WebCaps {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
     let arg0 = args.first().map(|s| s.as_str()).unwrap_or("livid");
@@ -149,11 +163,18 @@ fn main() -> ExitCode {
     ExitCode::from(rc.clamp(0, 255) as u8)
 }
 
+#[cfg(not(target_os = "linux"))]
+fn main() -> ExitCode {
+    eprintln!("livid runs on Linux");
+    ExitCode::FAILURE
+}
+
+#[cfg(target_os = "linux")]
 fn exit_rc(code: ExitCode) -> i32 {
     if code == ExitCode::SUCCESS { 0 } else { 1 }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
     use livi_wifid::server::Standards;

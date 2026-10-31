@@ -135,7 +135,7 @@ jobs:
         env:
           DYLD_LIBRARY_PATH: /Library/Frameworks/GStreamer.framework/Versions/1.0/lib
         run: |
-          linux_only=(--exclude livi-compositor --exclude livid --exclude livi-accessoryd --exclude livi-mdns --exclude livi-web)
+          linux_only=(--exclude livi-compositor)
           cargo clippy --workspace --all-targets --locked "${linux_only[@]}" -- -D warnings
           cargo test --workspace --locked "${linux_only[@]}"
 
