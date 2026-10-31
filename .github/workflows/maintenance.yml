@@ -8,6 +8,8 @@ on:
 permissions:
   actions: write
   contents: read
+  pull-requests: write
+  statuses: read
 
 jobs:
   cleanup:
@@ -18,12 +20,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RETAIN_DAYS: "7"
+          RETAIN_SKIPPED_CLA_HOURS: "24"
           KEEP_MINIMUM_RUNS: "1"
         shell: bash
         run: |
           set -euo pipefail
 
           CUTOFF="$(date -u -d "${RETAIN_DAYS} days ago" +%s)"
+          SKIPPED_CLA_CUTOFF="$(date -u -d "${RETAIN_SKIPPED_CLA_HOURS} hours ago" +%s)"
 
           # Newest first, so the first KEEP_MINIMUM_RUNS of each workflow survive.
           RUNS="$(gh api -H "Accept: application/vnd.github+json" \
@@ -31,7 +35,7 @@ jobs:
             --paginate \
             --jq '.workflow_runs[]
               | select(.status == "completed")
-              | "\(.id) \(.created_at) \(.workflow_id)"' \
+              | "\(.id) \(.created_at) \(.workflow_id) \(.conclusion) \(.name)"' \
             | sort -k2 -r || true)"
 
           if [ -z "${RUNS}" ]; then
@@ -40,8 +44,16 @@ jobs:
 
           declare -A SEEN_FOR_WORKFLOW=()
 
-          while read -r ID CREATED WORKFLOW; do
+          while read -r ID CREATED WORKFLOW CONCLUSION NAME; do
             [ -n "${ID}" ] || continue
+
+            if [ "${NAME}" = "cla" ] && [ "${CONCLUSION}" = "skipped" ]; then
+              if [ "$(date -u -d "${CREATED}" +%s)" -lt "${SKIPPED_CLA_CUTOFF}" ]; then
+                gh api -X DELETE -H "Accept: application/vnd.github+json" \
+                  "/repos/${GITHUB_REPOSITORY}/actions/runs/${ID}" >/dev/null
+              fi
+              continue
+            fi
 
             SEEN_FOR_WORKFLOW["${WORKFLOW}"]=$(( ${SEEN_FOR_WORKFLOW[${WORKFLOW}]:-0} + 1 ))
             if [ "${SEEN_FOR_WORKFLOW[${WORKFLOW}]}" -le "${KEEP_MINIMUM_RUNS}" ]; then
@@ -90,3 +102,17 @@ jobs:
             gh api -X DELETE -H "Accept: application/vnd.github+json" \
               "/repos/${GITHUB_REPOSITORY}/actions/caches/${ID}" >/dev/null
           done <<< "${CACHES}"
+
+  cla:
+    name: Close pull requests without a CLA
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            scripts/ci
+
+      - name: Close stale pull requests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: sh scripts/ci/cla.sh stale

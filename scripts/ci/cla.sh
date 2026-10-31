@@ -3,6 +3,7 @@
 #
 # usage: cla.sh sign    (COMMENT_BODY, COMMENTER_ID, COMMENTER_LOGIN, COMMENT_ID, COMMENT_URL, COMMENTED_AT, PR)
 #        cla.sh check   (PR, OWNER_ID, NOTIFY)
+#        cla.sh stale
 set -eu
 : "${GITHUB_REPOSITORY:?}"
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -12,6 +13,8 @@ FILE=signatures.jsonl
 PHRASE='I have read the CLA Document and I hereby sign the CLA'
 DOC="https://github.com/$GITHUB_REPOSITORY/blob/main/CLA.md"
 GUIDE="https://github.com/$GITHUB_REPOSITORY/blob/main/CONTRIBUTING.md#llms-and-generated-content"
+STALE_HOURS=24
+STALE_MARK='<!-- cla-stale -->'
 AI='@(anthropic|openai)\.com$|^cursoragent@cursor\.com$|^aider@aider\.chat$|\+(copilot|copilot-swe-agent\[bot\]|devin-ai-integration\[bot\]|gemini-code-assist\[bot\]|chatgpt-codex-connector\[bot\])@users\.noreply\.github\.com$'
 
 sha() {
@@ -124,6 +127,10 @@ EOF
     -f state="$state" -f context=CLA -f target_url="$DOC" \
     -f description="$(printf '%s' "$desc" | cut -c1-140)" >/dev/null
   echo "$desc"
+  if [ "$state" = success ] && closed_for_cla "$PR"; then
+    gh pr reopen "$PR" --repo "$GITHUB_REPOSITORY"
+    echo "reopened #$PR"
+  fi
   [ "$state" = failure ] && [ "${NOTIFY:-false}" = true ] || return 0
   note=""
   if [ -n "$ai" ]; then
@@ -143,8 +150,34 @@ Not signed yet:$missing"
   gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "$note"
 }
 
+closed_for_cla() {
+  [ "$(gh api "repos/$GITHUB_REPOSITORY/pulls/$1" --jq '"\(.state) \(.merged)"')" = "closed false" ] || return 1
+  gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$1/comments" \
+    --jq '.[] | select(.user.login == "github-actions[bot]") | .body' | grep -qF "$STALE_MARK"
+}
+
+stale() {
+  cutoff=$(( $(date -u +%s) - STALE_HOURS * 3600 ))
+  gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
+    --jq '.[] | "\(.number) \(.created_at) \(.head.sha)"' |
+  while read -r number created sha; do
+    [ "$(date -u -d "$created" +%s)" -lt "$cutoff" ] || continue
+    state=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/status" \
+      --jq '[.statuses[] | select(.context == "CLA")][0].state // ""' </dev/null)
+    [ "$state" = failure ] || continue
+    gh pr close "$number" --repo "$GITHUB_REPOSITORY" --comment "Closed because the [Contributor License Agreement]($DOC) was not signed within $STALE_HOURS hours. Once every commit author has posted the line below, this pull request opens again.
+
+\`\`\`
+$PHRASE
+\`\`\`
+$STALE_MARK" </dev/null
+    echo "closed #$number"
+  done
+}
+
 case "${1:-}" in
   sign) sign ;;
   check) check ;;
-  *) sed -n '4,5s/^# //p' "$0" >&2; exit 2 ;;
+  stale) stale ;;
+  *) sed -n '4,6s/^# //p' "$0" >&2; exit 2 ;;
 esac
