@@ -139,42 +139,44 @@ impl Shell {
 
     pub fn push(&self, data: &[u8], remote: &str, port: u16, want: &str) -> Result<(), String> {
         let tmp = format!("/tmp/livi-push.{port}");
+        self.land(data, &tmp, port, want)
+            .map_err(|e| format!("push to {remote} failed ({e})"))?;
+        self.run(
+            &format!("mkdir -p $(dirname {remote}) && cp {tmp} {remote}.tmp && sync"),
+            Duration::from_secs(90),
+        )?;
+        if self.md5(&format!("{remote}.tmp")).as_deref() != Some(want) {
+            return Err(format!("flash copy of {remote} failed md5"));
+        }
+        self.run(
+            &format!("mv {remote}.tmp {remote} && sync && rm -f {tmp}"),
+            Duration::from_secs(30),
+        )?;
+        Ok(())
+    }
+
+    pub fn land(&self, data: &[u8], path: &str, port: u16, want: &str) -> Result<(), String> {
         let mut last = String::new();
         for attempt in 1..=3 {
             self.sh(&format!(
-                "pkill -f 'nc -l -p {port}' 2>/dev/null; rm -f {tmp}; \
-                 setsid sh -c 'nc -l -p {port} > {tmp}' >/dev/null 2>&1 &"
+                "pkill -f 'nc -l -p {port}' 2>/dev/null; rm -f {path}; \
+                 setsid sh -c 'nc -l -p {port} > {path}' >/dev/null 2>&1 &"
             ))?;
             sleep(Duration::from_secs(1));
 
-            match self.send(data, port) {
-                Ok(()) => {}
-                Err(e) => {
-                    last = format!("attempt {attempt}: {e}");
-                    sleep(Duration::from_secs(2));
-                    continue;
-                }
-            }
-            sleep(Duration::from_millis(500) + Duration::from_secs_f64(data.len() as f64 / 4e6));
-            if self.md5(&tmp).as_deref() != Some(want) {
-                last = format!("attempt {attempt}: md5 mismatch in /tmp");
+            if let Err(e) = self.send(data, port) {
+                last = format!("attempt {attempt}: {e}");
+                sleep(Duration::from_secs(2));
                 continue;
             }
-
-            self.run(
-                &format!("mkdir -p $(dirname {remote}) && cp {tmp} {remote}.tmp && sync"),
-                Duration::from_secs(90),
-            )?;
-            if self.md5(&format!("{remote}.tmp")).as_deref() != Some(want) {
-                return Err(format!("flash copy of {remote} failed md5"));
+            sleep(Duration::from_millis(500) + Duration::from_secs_f64(data.len() as f64 / 4e6));
+            if self.md5(path).as_deref() == Some(want) {
+                return Ok(());
             }
-            self.run(
-                &format!("mv {remote}.tmp {remote} && sync && rm -f {tmp}"),
-                Duration::from_secs(30),
-            )?;
-            return Ok(());
+            last = format!("attempt {attempt}: md5 mismatch in {path}");
         }
-        Err(format!("push to {remote} failed after 3 attempts ({last})"))
+        let _ = self.sh(&format!("rm -f {path}"));
+        Err(format!("3 attempts, {last}"))
     }
 
     fn send(&self, data: &[u8], port: u16) -> Result<(), String> {

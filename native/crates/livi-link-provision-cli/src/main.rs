@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use livi_link_provision::dongle::arm::ax520;
 use livi_link_provision::dongle::arm::imx6ul::shell::{self, DEFAULT_HOST, Shell};
-use livi_link_provision::dongle::arm::imx6ul::{self, boot, mtd};
+use livi_link_provision::dongle::arm::imx6ul::{self, boot, mtd, vendor};
 use livi_link_provision::dongle::hook;
 use livi_link_provision::dongle::link;
 use livi_link_provision::dongle::probe::{Family, Probe};
@@ -406,6 +406,9 @@ fn imx6ul_provision(lfwb: Option<&Path>) -> Result<(), String> {
         }
         wait_for_shell(&sh)?;
     }
+    if imx6ul::running(&sh)? == imx6ul::Running::Vendor && !boot::key_fits(&sh, &report)? {
+        imx6ul_vendor_again(&sh)?;
+    }
     if sh
         .sh(&format!(
             "[ -e {} ] && echo yes || echo no",
@@ -438,6 +441,70 @@ fn imx6ul_provision(lfwb: Option<&Path>) -> Result<(), String> {
         "\n== done, the dongle runs LIVI Link {} ({}) and is safe to unplug",
         now.version, now.build
     );
+    Ok(())
+}
+
+fn imx6ul_vendor_again(sh: &Shell) -> Result<(), String> {
+    println!("== this dongle's U-Boot block is still the factory one, LIVI Link cannot read it");
+    println!(
+        "== the vendor's own updater rewrites it for this dongle, so its firmware goes on first"
+    );
+    let unit = vendor::unit(sh)?;
+    println!(
+        "== {} {}, serial {}, made {}",
+        unit.model, unit.version, unit.serial, unit.mfd
+    );
+    let offer = vendor::find(&unit)?;
+    if offer.newer_than(&unit) {
+        println!("== the vendor's server has the newer {}", offer.version);
+    } else if offer.older_than(&unit) {
+        println!(
+            "== the vendor's server has only {}, older than the installed {}",
+            offer.version, unit.version
+        );
+        if !ask("install it anyway? [y/N]")?.eq_ignore_ascii_case("y") {
+            return Err("nothing was changed on the dongle".into());
+        }
+    } else {
+        println!("== installing {} again", offer.version);
+    }
+    let image = vendor::download(&unit, &offer, &ota_cache_dir(), &report)?;
+    let dir = mtd::backup(sh, &backup_dir(), &report)?;
+    println!(
+        "== current firmware saved in {}",
+        livi_link_provision::tilde(&dir)
+    );
+    vendor::reinstall(sh, &unit, &image, &report)?;
+
+    let gone = Instant::now();
+    while sh.reachable() && gone.elapsed() < Duration::from_secs(60) {
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    println!("== waiting for the dongle to come back with the vendor firmware");
+    let start = Instant::now();
+    let mut usb_since = None;
+    while start.elapsed() < Duration::from_secs(300) && !sh.reachable() {
+        if usb_since.is_none() && bootstrap::stock_dongle_once() {
+            usb_since = Some(Instant::now());
+        }
+        if usb_since.is_some_and(|t| t.elapsed() > Duration::from_secs(60)) {
+            break;
+        }
+        std::thread::sleep(Duration::from_secs(3));
+    }
+    if !sh.reachable() {
+        println!("== the update took the shell with it, writing the bootstrap again");
+        bootstrap::boot_hook()?;
+        ask("unplug the dongle, plug it back in, then press enter")?;
+        wait_for_shell(sh)?;
+    }
+    if !boot::key_fits(sh, &report)? {
+        return Err(
+            "the vendor firmware is on again, but its U-Boot block still does not unpack with this dongle's key"
+                .into(),
+        );
+    }
+    println!("== the U-Boot block now carries this dongle's key");
     Ok(())
 }
 
