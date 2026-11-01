@@ -18,6 +18,7 @@ import '@fontsource/roboto/500.css'
 import '@fontsource/roboto/700.css'
 import { THEME } from './constants'
 import { AppContext, type AppContextProps } from './context'
+import { themeColors } from './themeColors'
 import './i18n'
 import { getWindowRole } from './utils/windowRole'
 
@@ -57,11 +58,20 @@ export const Root = () => {
         : THEME.LIGHT
       : THEME.DARK
 
-  const primaryOverride =
-    mode === THEME.DARK ? settings?.primaryColorDark : settings?.primaryColorLight
+  // Night (low glare): muted red accent replaces amber / custom accent colours
+  const isNight = settings?.nightMode === true
 
-  const highlightOverride =
-    mode === THEME.DARK ? settings?.highlightColorDark : settings?.highlightColorLight
+  const primaryOverride = isNight
+    ? themeColors.nightAccent
+    : mode === THEME.DARK
+      ? settings?.primaryColorDark
+      : settings?.primaryColorLight
+
+  const highlightOverride = isNight
+    ? themeColors.nightHighlight
+    : mode === THEME.DARK
+      ? settings?.highlightColorDark
+      : settings?.highlightColorLight
 
   const backgroundOverride =
     mode === THEME.DARK ? settings?.backgroundColorDark : settings?.backgroundColorLight

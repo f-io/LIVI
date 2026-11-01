@@ -224,7 +224,7 @@ const compositorControl = new CompositorControl()
 
 // Resolve the active backdrop colour for a config, falling back to the theme defaults
 export function backdropHex(darkMode: boolean, dark?: string, light?: string): string {
-  return (darkMode ? dark : light) || (darkMode ? '#000000' : '#d4d4d4')
+  return (darkMode ? dark : light) || (darkMode ? '#0B0B0B' : '#ECE7DE')
 }
 
 // Push the theme background colour to the compositor backdrop (Linux/compositor only)

@@ -77,7 +77,7 @@ export type LastKnownGps = {
   ts: number
 }
 
-export type AppearanceMode = 'auto' | 'night' | 'day'
+export type AppearanceMode = 'auto' | 'sun' | 'night' | 'day'
 
 export type MiniDspPreset = {
   index: number
@@ -254,6 +254,10 @@ export type Config = {
   auxScreenHeight: number
 
   lastKnownGps?: LastKnownGps
+
+  // Sunrise/sunset night mode — manual location used when no GPS fix is known (0/0 = unset)
+  sunLatitude: number
+  sunLongitude: number
 
   dongleToolsIp?: string
 

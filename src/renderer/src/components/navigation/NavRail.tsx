@@ -34,6 +34,18 @@ export const NavRail = ({ items, activeKey, onSelect, ariaLabel = 'Navigation' }
     '& .MuiSvgIcon-root': { transition: 'color 120ms ease-out' },
     minHeight: 'auto',
 
+    position: 'relative',
+    // Selected item: amber-outlined tile with a faint amber tint (ZTT OEM style)
+    '&.Mui-selected::before': {
+      content: '""',
+      position: 'absolute',
+      inset: isXSIcons ? '3px 8px' : '6px 10px',
+      borderRadius: '6px',
+      border: `1px solid ${theme.palette.primary.main}`,
+      backgroundColor: `color-mix(in srgb, ${theme.palette.primary.main} 14%, transparent)`,
+      pointerEvents: 'none'
+    },
+    '&.Mui-selected .MuiSvgIcon-root': { color: theme.palette.primary.main },
     '&.Mui-focusVisible, &:hover': { opacity: 1 },
     '&.Mui-focusVisible .MuiSvgIcon-root, &:hover .MuiSvgIcon-root': {
       color: `${theme.palette.primary.main} !important`

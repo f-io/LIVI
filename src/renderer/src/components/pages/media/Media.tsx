@@ -325,7 +325,7 @@ export const Media = ({ forceHydrate = false }: MediaProps = {}) => {
           overflow: 'hidden',
           pointerEvents: 'none',
           background:
-            'radial-gradient(circle at 80% 20%, color-mix(in srgb, var(--ui-highlight) 24%, transparent), transparent 52%), linear-gradient(145deg, #11151c, #07080b)',
+            'radial-gradient(circle at 80% 20%, color-mix(in srgb, var(--ui-highlight) 24%, transparent), transparent 52%), linear-gradient(145deg, #1a1a1a, #0b0b0b)',
           zIndex: 0
         }}
       >

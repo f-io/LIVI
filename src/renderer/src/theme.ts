@@ -128,6 +128,9 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK, bg?: string) {
   const primary = isLight ? themeColors.primaryColorLight : themeColors.primaryColorDark
   const highlight = isLight ? themeColors.highlightColorLight : themeColors.highlightColorDark
   const background = bg || (isLight ? themeColors.light : themeColors.dark)
+  const surface = isLight ? themeColors.surfaceLight : themeColors.surfaceDark
+  const raised = isLight ? themeColors.raisedLight : themeColors.raisedDark
+  const border = isLight ? themeColors.borderLight : themeColors.borderDark
 
   return createTheme({
     breakpoints: {
@@ -138,6 +141,10 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK, bg?: string) {
         lg: 1200,
         xl: 1536
       }
+    },
+    typography: {
+      fontFamily:
+        'Bahnschrift, "DIN Alternate", "D-DIN", "DIN 2014", Inter, Roboto, "Helvetica Neue", Arial, sans-serif'
     },
     palette: {
       mode,
@@ -152,7 +159,12 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK, bg?: string) {
       primary: { main: primary },
       secondary: { main: highlight },
       divider: isLight ? themeColors.dividerLight : themeColors.dividerDark,
-      success: { main: themeColors.successMain }
+      success: { main: themeColors.successMain },
+      warning: { main: themeColors.warningMain },
+      error: { main: themeColors.errorMain },
+      action: {
+        disabled: isLight ? themeColors.disabledLight : themeColors.disabledDark
+      }
     },
     components: {
       MuiCssBaseline: {
@@ -162,6 +174,9 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK, bg?: string) {
             backgroundColor: background,
             '--ui-highlight': highlight,
             '--ui-primary': primary,
+            '--ui-surface': surface,
+            '--ui-raised': raised,
+            '--ui-border': border,
             '--ui-breathe-dur': '1350ms'
           },
           '.fft-surface': {
@@ -354,8 +369,10 @@ function buildTheme(mode: THEME.LIGHT | THEME.DARK, bg?: string) {
       MuiCard: {
         styleOverrides: {
           root: {
-            borderRadius: 12,
-            boxShadow: isLight ? '0 2px 8px rgba(0,0,0,0.1)' : '0 2px 8px rgba(0,0,0,0.3)'
+            borderRadius: 8,
+            backgroundColor: surface,
+            border: `1px solid ${border}`,
+            boxShadow: isLight ? '0 2px 8px rgba(0,0,0,0.1)' : '0 2px 10px rgba(0,0,0,0.5)'
           }
         }
       }
