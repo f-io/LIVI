@@ -329,7 +329,15 @@
     "minidspVolumeMin": "Мінімальна гучність",
     "minidspVolumeMax": "Максимальна гучність",
     "minidspBassMin": "Мінімальне підсилення басів",
-    "minidspBassMax": "Максимальне підсилення басів"
+    "minidspBassMax": "Максимальне підсилення басів",
+    "games": "Ігри",
+    "gamesEnabled": "Увімкнути ігри",
+    "retroArchPath": "Програма RetroArch",
+    "romDirectory": "Тека ROM",
+    "playlistDirectory": "Тека списків",
+    "thumbnailDirectory": "Тека мініатюр",
+    "coresDirectory": "Тека ядер",
+    "startPageGames": "Ігри"
   },
   "softwareUpdate": {
     "channelNightly": "Nightly",
@@ -431,5 +439,33 @@
     "bass": "Баси",
     "outputs": "Виходи {{outputs}}",
     "presets": "Пресети"
+  },
+  "games": {
+    "title": "Ігри",
+    "count": "Ігор: {{count}}",
+    "countOne": "1 гра",
+    "loading": "Завантаження ігор…",
+    "imported": "Імпортовано ігор: {{games}} у списків: {{playlists}}; завантажено мініатюр: {{thumbnails}}.",
+    "missingCores": "Бракує ядер: {{cores}}.",
+    "import": "Імпортувати ROM",
+    "importing": "Імпорт…",
+    "pairController": "Під’єднати контролер",
+    "rescan": "Оновити",
+    "emptyTitle": "Ігор ще немає",
+    "emptyRoms": "Покладіть легально отримані ROM у {{dir}}.",
+    "emptyImport": "Імпортуйте ROM, щоб створити списки й завантажити обкладинки.",
+    "openRetroArch": "Відкрити RetroArch",
+    "retroArchDirs": "Списки й мініатюри читаються автоматично з ~/.config/retroarch.",
+    "launching": "Запуск RetroArch…",
+    "controllersTitle": "Bluetooth-контролери",
+    "controllersHint": "Переведіть контролер у режим спарювання, потім знайдіть пристрої поруч.",
+    "noControllers": "Контролерів не знайдено",
+    "scan": "Пошук",
+    "scanning": "Пошук…",
+    "close": "Закрити",
+    "pair": "Спарити",
+    "pairing": "Спарювання…",
+    "paired": "Спарено",
+    "connected": "Під’єднано"
   }
 }

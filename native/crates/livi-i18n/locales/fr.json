@@ -329,7 +329,15 @@
     "minidspVolumeMin": "Volume minimal",
     "minidspVolumeMax": "Volume maximal",
     "minidspBassMin": "Gain des basses minimal",
-    "minidspBassMax": "Gain des basses maximal"
+    "minidspBassMax": "Gain des basses maximal",
+    "games": "Jeux",
+    "gamesEnabled": "Activer les jeux",
+    "retroArchPath": "Exécutable RetroArch",
+    "romDirectory": "Dossier des ROM",
+    "playlistDirectory": "Dossier des listes de lecture",
+    "thumbnailDirectory": "Dossier des vignettes",
+    "coresDirectory": "Dossier des cœurs",
+    "startPageGames": "Jeux"
   },
   "softwareUpdate": {
     "channelNightly": "Nightly",
@@ -431,5 +439,33 @@
     "bass": "Basses",
     "outputs": "Sorties {{outputs}}",
     "presets": "Préréglages"
+  },
+  "games": {
+    "title": "Jeux",
+    "count": "{{count}} jeux",
+    "countOne": "1 jeu",
+    "loading": "Chargement des jeux…",
+    "imported": "{{games}} jeux importés dans {{playlists}} listes ; {{thumbnails}} vignettes téléchargées.",
+    "missingCores": "Cœurs manquants : {{cores}}.",
+    "import": "Importer des ROM",
+    "importing": "Importation…",
+    "pairController": "Associer une manette",
+    "rescan": "Actualiser",
+    "emptyTitle": "Aucun jeu pour l’instant",
+    "emptyRoms": "Placez des ROM obtenues légalement dans {{dir}}.",
+    "emptyImport": "Importez des ROM pour créer les listes et télécharger les jaquettes.",
+    "openRetroArch": "Ouvrir RetroArch",
+    "retroArchDirs": "Les listes et vignettes sont lues automatiquement depuis ~/.config/retroarch.",
+    "launching": "Démarrage de RetroArch…",
+    "controllersTitle": "Manettes Bluetooth",
+    "controllersHint": "Mettez la manette en mode d’association, puis recherchez les appareils à proximité.",
+    "noControllers": "Aucune manette trouvée",
+    "scan": "Rechercher",
+    "scanning": "Recherche…",
+    "close": "Fermer",
+    "pair": "Associer",
+    "pairing": "Association…",
+    "paired": "Associée",
+    "connected": "Connectée"
   }
 }

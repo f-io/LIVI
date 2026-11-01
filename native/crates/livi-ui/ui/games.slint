@@ -1,0 +1,453 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme } from "theme.slint";
+import { Focus, FocusZone } from "focus.slint";
+
+export struct GameData {
+    id: string,
+    title: string,
+    system: string,
+    has-cover: bool,
+    cover: image,
+}
+
+export struct ControllerData {
+    mac: string,
+    name: string,
+    paired: bool,
+    connected: bool,
+}
+
+export global GamesText {
+    in property <string> title: "Games";
+    in property <string> count;
+    in property <string> loading: "Loading games…";
+    in property <string> import: "Import ROMs";
+    in property <string> importing: "Importing…";
+    in property <string> pair-controller: "Pair controller";
+    in property <string> rescan: "Rescan";
+    in property <string> empty-title: "No games yet";
+    in property <string> empty-roms;
+    in property <string> empty-import: "Import ROMs to create playlists and download cover art.";
+    in property <string> open-retroarch: "Open RetroArch";
+    in property <string> retroarch-dirs;
+    in property <string> launching: "Starting RetroArch…";
+    in property <string> controllers-title: "Bluetooth controllers";
+    in property <string> controllers-hint;
+    in property <string> no-controllers: "No controllers found";
+    in property <string> scan: "Scan";
+    in property <string> scanning: "Scanning…";
+    in property <string> close: "Close";
+    in property <string> pair: "Pair";
+    in property <string> pairing: "Pairing…";
+    in property <string> paired: "Paired";
+    in property <string> connected: "Connected";
+}
+
+export global GamesState {
+    in property <[GameData]> games;
+    in property <bool> scanned;
+    in property <bool> importing;
+    in property <bool> busy;
+    in property <string> launching-id;
+    in property <string> notice;
+    in property <string> error;
+    in-out property <bool> pairing-open;
+    in property <[ControllerData]> controllers;
+    in property <bool> scanning;
+    in property <string> pairing-mac;
+    in property <string> controller-error;
+    callback import();
+    callback rescan();
+    callback launch(string);
+    callback open-retroarch();
+    callback open-pairing();
+    callback close-pairing();
+    callback scan();
+    callback pair(string);
+}
+
+component PillButton inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> has-icon: true;
+    in property <bool> focused;
+    in property <bool> enabled: true;
+    in property <bool> filled;
+    callback clicked();
+    height: 44px;
+    min-width: row.preferred-width + 28px;
+    border-radius: 22px;
+    border-width: root.focused ? 3px : 1px;
+    border-color: root.focused ? Theme.primary : Theme.divider;
+    background: root.filled ? Theme.primary : touch.has-hover ? Theme.surface : transparent;
+    opacity: root.enabled ? 1 : 0.5;
+    row := HorizontalLayout {
+        alignment: center;
+        spacing: 8px;
+        padding-left: 14px;
+        padding-right: 14px;
+        if root.has-icon: Image {
+            y: (parent.height - self.height) / 2;
+            width: 20px;
+            height: 20px;
+            source: root.icon;
+            colorize: root.filled ? Theme.background : Theme.text;
+        }
+        Text {
+            text: root.text;
+            color: root.filled ? Theme.background : Theme.text;
+            font-size: 15px;
+            font-weight: 500;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+component GameCard inherits Rectangle {
+    in property <GameData> game;
+    in property <bool> focused;
+    in property <bool> launching;
+    in property <string> launching-text;
+    callback launch();
+    border-radius: 12px;
+    clip: true;
+    background: touch.has-hover ? Theme.surface.mix(Theme.paper, 0.5) : Theme.paper;
+    border-width: root.focused ? 3px : 1px;
+    border-color: root.focused ? Theme.primary : Theme.divider;
+    VerticalLayout {
+        Rectangle {
+            vertical-stretch: 1;
+            background: Theme.surface;
+            if root.game.has-cover: Image {
+                width: parent.width;
+                height: parent.height;
+                source: root.game.cover;
+                image-fit: contain;
+            }
+            if !root.game.has-cover: Image {
+                width: min(64px, parent.width * 0.4);
+                height: self.width;
+                source: @image-url("icons/SportsEsportsOutlined.svg");
+                colorize: Theme.text-secondary;
+            }
+        }
+        Rectangle { height: 1px; background: Theme.divider; }
+        VerticalLayout {
+            padding: 12px;
+            spacing: 2px;
+            Text {
+                text: root.game.title;
+                color: Theme.text;
+                font-size: 16px;
+                font-weight: 500;
+                overflow: elide;
+            }
+            Text {
+                text: root.game.system;
+                color: Theme.text-secondary;
+                font-size: 12px;
+                overflow: elide;
+            }
+        }
+    }
+    if root.launching: Rectangle {
+        background: Theme.background.with-alpha(0.7);
+        Text {
+            text: root.launching-text;
+            color: Theme.text;
+            font-size: 14px;
+        }
+    }
+    touch := TouchArea {
+        enabled: !root.launching;
+        clicked => { root.launch(); }
+    }
+}
+
+component Library inherits Rectangle {
+    in property <int> focus-base;
+    property <length> card-h: max(160px, min(root.height - 24px, 390px));
+    property <length> card-w: max(128px, min(card-h * 0.66, 250px));
+    property <length> gap: 20px;
+    property <length> step: card-w + gap;
+    property <int> focused-index: Focus.zone == FocusZone.main ? Focus.main-index - focus-base : -1;
+
+    function show(i: int) {
+        if (i < 0) {
+            return;
+        }
+        let left = root.gap + i * root.step;
+        if (left + flick.content-x < 0) {
+            flick.content-x = -left + root.gap;
+        } else if (left + root.card-w + flick.content-x > flick.width) {
+            flick.content-x = flick.width - left - root.card-w - root.gap;
+        }
+    }
+
+    changed focused-index => { root.show(root.focused-index); }
+
+    flick := Flickable {
+        content-width: max(self.width, root.gap + GamesState.games.length * root.step);
+        content-height: self.height;
+        for game[i] in GamesState.games: GameCard {
+            x: root.gap + i * root.step;
+            y: (root.height - root.card-h) / 2;
+            width: root.card-w;
+            height: root.card-h;
+            game: game;
+            focused: root.focused-index == i;
+            launching: GamesState.launching-id == game.id;
+            launching-text: GamesText.launching;
+            launch => { GamesState.launch(game.id); }
+        }
+    }
+}
+
+component EmptyLibrary inherits Rectangle {
+    in property <int> focus-base;
+    VerticalLayout {
+        alignment: center;
+        spacing: 8px;
+        padding: 16px;
+        HorizontalLayout {
+            alignment: center;
+            Image {
+                width: 48px;
+                height: 48px;
+                source: @image-url("icons/SportsEsportsOutlined.svg");
+                colorize: Theme.text-secondary;
+            }
+        }
+        Text {
+            text: GamesText.empty-title;
+            color: Theme.text;
+            font-size: 20px;
+            font-weight: 500;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: GamesText.empty-roms;
+            color: Theme.text-secondary;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+        Text {
+            text: GamesText.empty-import;
+            color: Theme.text-secondary;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            alignment: center;
+            spacing: 12px;
+            PillButton {
+                text: GamesState.importing ? GamesText.importing : GamesText.import;
+                icon: @image-url("icons/Add.svg");
+                enabled: !GamesState.importing;
+                focused: Focus.main(root.focus-base);
+                clicked => { GamesState.import(); }
+            }
+            PillButton {
+                text: GamesText.open-retroarch;
+                icon: @image-url("icons/SportsEsportsOutlined.svg");
+                enabled: !GamesState.busy;
+                focused: Focus.main(root.focus-base + 1);
+                clicked => { GamesState.open-retroarch(); }
+            }
+        }
+        Text {
+            text: GamesText.retroarch-dirs;
+            color: Theme.text-disabled;
+            font-size: 12px;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+}
+
+component ControllerPairing inherits Rectangle {
+    background: Theme.background.with-alpha(0.6);
+    TouchArea { }
+    Rectangle {
+        width: min(parent.width - 32px, 560px);
+        height: min(parent.height - 32px, 420px);
+        border-radius: 16px;
+        background: Theme.background.mix(Theme.dark ? #ffffff : #000000, 0.9);
+        border-width: 1px;
+        border-color: Theme.divider;
+        VerticalLayout {
+            padding: 20px;
+            spacing: 10px;
+            Text {
+                text: GamesText.controllers-title;
+                color: Theme.text;
+                font-size: 20px;
+                font-weight: 500;
+            }
+            Text {
+                text: GamesText.controllers-hint;
+                color: Theme.text-secondary;
+                wrap: word-wrap;
+            }
+            if GamesState.controller-error != "": Text {
+                text: GamesState.controller-error;
+                color: #ff8a80;
+                wrap: word-wrap;
+            }
+            Flickable {
+                vertical-stretch: 1;
+                content-height: max(self.height, GamesState.controllers.length * 60px);
+                if GamesState.controllers.length == 0: Text {
+                    y: 12px;
+                    width: parent.width;
+                    text: GamesState.scanning ? GamesText.scanning : GamesText.no-controllers;
+                    color: Theme.text-secondary;
+                    horizontal-alignment: center;
+                }
+                for c[i] in GamesState.controllers: Rectangle {
+                    y: i * 60px;
+                    height: 56px;
+                    border-radius: 10px;
+                    background: Theme.surface;
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 8px;
+                        spacing: 12px;
+                        Image {
+                            y: (parent.height - self.height) / 2;
+                            width: 24px;
+                            height: 24px;
+                            source: @image-url("icons/SportsEsportsOutlined.svg");
+                            colorize: c.connected ? Theme.primary : Theme.text;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: c.name;
+                                color: Theme.text;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: c.connected ? c.mac + " · " + GamesText.connected : c.mac;
+                                color: Theme.text-secondary;
+                                font-size: 12px;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            PillButton {
+                                has-icon: false;
+                                filled: !c.paired;
+                                text: GamesState.pairing-mac == c.mac ? GamesText.pairing : c.paired ? GamesText.paired : GamesText.pair;
+                                enabled: !c.paired && GamesState.pairing-mac == "" && !GamesState.scanning;
+                                focused: Focus.main(2 + i);
+                                clicked => { GamesState.pair(c.mac); }
+                            }
+                        }
+                    }
+                }
+            }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 12px;
+                PillButton {
+                    text: GamesState.scanning ? GamesText.scanning : GamesText.scan;
+                    icon: @image-url("icons/BluetoothOutlined.svg");
+                    enabled: !GamesState.scanning && GamesState.pairing-mac == "";
+                    focused: Focus.main(0);
+                    clicked => { GamesState.scan(); }
+                }
+                PillButton {
+                    text: GamesText.close;
+                    has-icon: false;
+                    enabled: GamesState.pairing-mac == "";
+                    focused: Focus.main(1);
+                    clicked => { GamesState.close-pairing(); }
+                }
+            }
+        }
+    }
+}
+
+export component GamesPage inherits Rectangle {
+    background: Theme.background;
+    VerticalLayout {
+        HorizontalLayout {
+            padding-left: 24px;
+            padding-right: 24px;
+            padding-top: 14px;
+            padding-bottom: 14px;
+            spacing: 10px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                Text {
+                    text: GamesText.title;
+                    color: Theme.text;
+                    font-size: 24px;
+                    font-weight: 500;
+                }
+                Text {
+                    text: GamesState.scanned ? GamesText.count : GamesText.loading;
+                    color: Theme.text-secondary;
+                    font-size: 13px;
+                }
+            }
+            PillButton {
+                y: (parent.height - self.height) / 2;
+                text: GamesState.importing ? GamesText.importing : GamesText.import;
+                icon: @image-url("icons/Add.svg");
+                enabled: !GamesState.importing && !GamesState.busy;
+                focused: !GamesState.pairing-open && Focus.main(0);
+                clicked => { GamesState.import(); }
+            }
+            PillButton {
+                text: GamesText.pair-controller;
+                icon: @image-url("icons/BluetoothOutlined.svg");
+                focused: !GamesState.pairing-open && Focus.main(1);
+                clicked => { GamesState.open-pairing(); }
+            }
+            PillButton {
+                text: GamesText.rescan;
+                icon: @image-url("icons/AutorenewOutlined.svg");
+                enabled: !GamesState.busy;
+                focused: !GamesState.pairing-open && Focus.main(2);
+                clicked => { GamesState.rescan(); }
+            }
+        }
+        Rectangle { height: 1px; background: Theme.divider; }
+        if GamesState.notice != "": Text {
+            x: 24px;
+            text: GamesState.notice;
+            color: Theme.primary;
+            wrap: word-wrap;
+        }
+        if GamesState.error != "": Text {
+            x: 24px;
+            text: GamesState.error;
+            color: #ff8a80;
+            wrap: word-wrap;
+        }
+        if GamesState.games.length > 0: Library {
+            vertical-stretch: 1;
+            focus-base: 3;
+        }
+        if GamesState.scanned && GamesState.games.length == 0: EmptyLibrary {
+            vertical-stretch: 1;
+            focus-base: 3;
+        }
+        if !GamesState.scanned: Rectangle { vertical-stretch: 1; }
+    }
+    if GamesState.pairing-open: ControllerPairing {
+        width: root.width;
+        height: root.height;
+    }
+}

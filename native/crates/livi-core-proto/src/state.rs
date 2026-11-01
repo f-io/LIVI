@@ -26,6 +26,8 @@ pub struct State {
     pub cluster: Cluster,
     pub dab: Dab,
     #[serde(default)]
+    pub games: Games,
+    #[serde(default)]
     pub minidsp: MiniDsp,
     pub config: Config,
 }
@@ -44,6 +46,60 @@ pub struct MiniDsp {
     pub muted: bool,
     pub product_name: Option<String>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Games {
+    pub library: Vec<GameView>,
+    pub scanned: bool,
+    pub importing: bool,
+    pub last_import: Option<GameImport>,
+    pub run: GameRun,
+    pub game_id: Option<String>,
+    pub error: Option<String>,
+    pub controllers: Vec<ControllerView>,
+    pub scanning: bool,
+    pub pairing: Option<String>,
+    pub controller_error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameView {
+    pub id: String,
+    pub title: String,
+    pub system: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumbnail: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameImport {
+    pub games: u32,
+    pub playlists: u32,
+    pub thumbnails_downloaded: u32,
+    pub thumbnails_missing: u32,
+    pub missing_cores: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum GameRun {
+    #[default]
+    Idle,
+    Launching,
+    Running,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ControllerView {
+    pub mac: String,
+    pub name: String,
+    pub paired: bool,
+    pub connected: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

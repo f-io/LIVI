@@ -329,7 +329,15 @@
     "minidspVolumeMin": "最小音量",
     "minidspVolumeMax": "最大音量",
     "minidspBassMin": "最小低音增益",
-    "minidspBassMax": "最大低音增益"
+    "minidspBassMax": "最大低音增益",
+    "games": "游戏",
+    "gamesEnabled": "启用游戏",
+    "retroArchPath": "RetroArch 程序",
+    "romDirectory": "ROM 目录",
+    "playlistDirectory": "播放列表目录",
+    "thumbnailDirectory": "缩略图目录",
+    "coresDirectory": "核心目录",
+    "startPageGames": "游戏"
   },
   "softwareUpdate": {
     "channelNightly": "每日构建",
@@ -431,5 +439,33 @@
     "bass": "低音",
     "outputs": "输出 {{outputs}}",
     "presets": "预设"
+  },
+  "games": {
+    "title": "游戏",
+    "count": "{{count}} 个游戏",
+    "countOne": "1 个游戏",
+    "loading": "正在加载游戏…",
+    "imported": "已将 {{games}} 个游戏导入 {{playlists}} 个播放列表；下载了 {{thumbnails}} 张缩略图。",
+    "missingCores": "缺少核心：{{cores}}。",
+    "import": "导入 ROM",
+    "importing": "正在导入…",
+    "pairController": "配对手柄",
+    "rescan": "重新扫描",
+    "emptyTitle": "还没有游戏",
+    "emptyRoms": "请将合法获得的 ROM 放入 {{dir}}。",
+    "emptyImport": "导入 ROM 以创建播放列表并下载封面。",
+    "openRetroArch": "打开 RetroArch",
+    "retroArchDirs": "播放列表和缩略图会自动从 ~/.config/retroarch 读取。",
+    "launching": "正在启动 RetroArch…",
+    "controllersTitle": "蓝牙手柄",
+    "controllersHint": "让手柄进入配对模式，然后扫描附近的设备。",
+    "noControllers": "未找到手柄",
+    "scan": "扫描",
+    "scanning": "正在扫描…",
+    "close": "关闭",
+    "pair": "配对",
+    "pairing": "正在配对…",
+    "paired": "已配对",
+    "connected": "已连接"
   }
 }

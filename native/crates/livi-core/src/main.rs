@@ -31,6 +31,7 @@ mod dab;
 mod devices;
 mod dongle;
 mod fonts;
+mod games;
 mod gnss;
 mod gvfs_guard;
 mod haltech_can;
@@ -198,6 +199,7 @@ async fn run() -> Result<Exit, String> {
         update: Default::default(),
         cluster: Default::default(),
         dab: Default::default(),
+        games: Default::default(),
         cameras: Vec::new(),
         mfi: Default::default(),
         minidsp: Default::default(),

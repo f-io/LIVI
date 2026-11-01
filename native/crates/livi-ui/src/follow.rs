@@ -18,6 +18,7 @@ use livi_ui_model::overlay;
 pub enum Update {
     Media(MediaView),
     Dab(DabView),
+    Games(crate::games_ui::GamesView),
     MiniDsp(livi_ui_model::minidsp::View),
     Dash(Box<DashView>),
     DashOn(livi_core_proto::state::Screen, Box<DashView>),
@@ -40,6 +41,7 @@ pub enum Update {
 #[derive(Default)]
 pub struct Follow {
     media: MediaReader,
+    covers: crate::games_ui::CoverReader,
     front: Option<Front>,
     phone: Option<PhoneState>,
     look: Option<Look>,
@@ -67,6 +69,9 @@ impl Follow {
             && let Some(d) = self.media.read_dab(state)
         {
             out.push(Update::Dab(d));
+        }
+        if hit("games") {
+            out.push(Update::Games(self.covers.read(state)));
         }
         if hit("minidsp") || hit("config") {
             let next = livi_ui_model::minidsp::view(state);

@@ -48,7 +48,7 @@ echo "→ Installing required packages"
 livi_pm_install $(livi_packages core lite | tr '\n' ' ')
 
 echo "→ Adding $USER to required groups"
-WANTED_GROUPS=(video render input plugdev)
+WANTED_GROUPS=(video render input plugdev bluetooth)
 EXISTING_GROUPS=()
 for g in "${WANTED_GROUPS[@]}"; do
   if getent group "$g" >/dev/null; then
@@ -104,6 +104,7 @@ livi_optional livi_grant_rtprio
 livi_optional livi_apply_mfi
 livi_optional livi_apply_splash
 livi_optional livi_apply_hdmi_pr "$APPIMAGE_PATH"
+livi_optional livi_setup_games
 livi_optional livi_install_minidsp_rs
 
 # --- headless only ---

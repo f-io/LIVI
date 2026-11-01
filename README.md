@@ -285,6 +285,38 @@ DAB+ radio via USB RTL-SDR (RTL2832U with R820T2).
 - radio text and station logos in LIVI's media player
 - station order and hidden stations in Settings → DAB+
 
+## RetroArch games
+
+The **Games** tab shows the RetroArch library with cover art and starts games fullscreen above LIVI; when RetroArch closes, LIVI comes back on the Games page. It reads RetroArch's standard directories:
+
+- ROMs: `~/Games/roms`
+- playlists: `~/.config/retroarch/playlists`
+- thumbnails: `~/.config/retroarch/thumbnails`
+- cores: `~/.config/retroarch/cores`, then the system libretro directories
+
+The installers—and LIVI's importer itself—create these ROM folders:
+
+```text
+~/Games/roms/
+├── doom/
+├── gameboy/
+├── gameboy-color/
+├── gba/
+├── nds/
+├── nes/
+├── snes/
+├── genesis/
+└── master-system/
+```
+
+Installers add **DOOM (Freedoom)**, a libre DOOM-compatible campaign, to the `doom` folder by default. Place legally obtained ROMs in the matching folder, then press **Games → Import ROMs**. LIVI detects DOOM WADs, GB, GBC, GBA, Nintendo DS, NES, SNES, Sega Genesis/Mega Drive and Sega Master System files (also zipped inside a system folder); finds installed cores; writes RetroArch `.lpl` playlists; and downloads matching box art from the Libretro thumbnail repositories. Standard No-Intro/Redump filenames produce the best thumbnail matches. Discs in folders with an `.m3u` file are skipped so a multi-disc game appears once. **Open RetroArch** (on an empty library) starts RetroArch's own menu for anything else. Paths and the Games tab itself are under **Settings → General → Games**.
+
+The installers also install RetroArch and the available `libretro-prboom`, `libretro-gambatte`, `libretro-mgba`, `libretro-desmume`, `libretro-nestopia`, `libretro-snes9x` and `libretro-genesisplusgx` packages. SNES and Genesis packages are in Debian's non-free component and are skipped with a warning when that component is unavailable.
+
+Pair a Bluetooth gamepad without leaving LIVI: put the controller in pairing mode, open **Games → Pair controller**, press **Scan**, then **Pair** beside the controller. LIVI pairs, trusts and connects it through BlueZ; RetroArch detects it as a normal Linux gamepad. Reboot once after a fresh installation so `input` and `bluetooth` group membership applies.
+
+Inside LIVI's compositor RetroArch fills the main screen above the LIVI UI, which stays mapped beneath it. Other apps get the same treatment when they ask for fullscreen or their Wayland app id is listed in `LIVI_FULLSCREEN_APP_IDS` (default `retroarch,com.libretro.RetroArch`).
+
 ## MiniDSP
 
 The MiniDSP tab controls a [MiniDSP](https://www.minidsp.com/) through the [minidsp-rs](https://github.com/mrene/minidsp-rs) daemon (`minidspd`) and its HTTP API at `http://127.0.0.1:5380`.

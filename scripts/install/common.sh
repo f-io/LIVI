@@ -783,3 +783,122 @@ livi_apply_mfi() {
 
   echo "   $dev is present"
 }
+
+# --- RetroArch games ---
+LIVI_ROMS_DIR="${LIVI_ROMS_DIR:-$HOME/Games/roms}"
+LIVI_RETROARCH_DIR="${LIVI_RETROARCH_DIR:-$HOME/.config/retroarch}"
+LIVI_ROM_FOLDERS="doom gameboy gameboy-color gba nds nes snes genesis master-system"
+
+# Package names of RetroArch and the cores for DOOM/GB/GBA/NDS/NES/SNES/Genesis/Master System.
+livi_retroarch_packages() {
+  case "$(livi_pm)" in
+    apt)    echo "retroarch libretro-core-info libretro-database libretro-prboom libretro-gambatte libretro-mgba libretro-desmume libretro-nestopia libretro-snes9x libretro-genesisplusgx" ;;
+    dnf)    echo "retroarch libretro-prboom libretro-gambatte libretro-mgba libretro-desmume libretro-nestopia libretro-snes9x libretro-genesis-plus-gx" ;;
+    pacman) echo "retroarch libretro-core-info libretro-gambatte libretro-mgba libretro-desmume libretro-nestopia libretro-snes9x libretro-genesis-plus-gx" ;;
+  esac
+}
+
+livi_pm_has() {
+  case "$(livi_pm)" in
+    apt)    apt-cache show "$1" >/dev/null 2>&1 ;;
+    dnf)    dnf info -q "$1" >/dev/null 2>&1 ;;
+    pacman) pacman -Si "$1" >/dev/null 2>&1 ;;
+    *)      return 1 ;;
+  esac
+}
+
+# Installs RetroArch and the console cores the repositories have. Debian keeps
+# Snes9x and Genesis Plus GX in non-free, a missing core is reported, not fatal.
+livi_install_retroarch() {
+  local package available=()
+  echo "→ Installing RetroArch and cores (DOOM/GB/GBA/NDS/NES/SNES/Genesis/Master System)"
+  for package in $(livi_retroarch_packages); do
+    if livi_pm_has "$package"; then
+      available+=("$package")
+    else
+      echo "   WARNING: $package is not in the configured repositories" >&2
+    fi
+  done
+  if [ ${#available[@]} -gt 0 ] && ! livi_pm_install "${available[@]}"; then
+    for package in "${available[@]}"; do
+      livi_pm_install "$package" || echo "   WARNING: $package could not be installed" >&2
+    done
+  fi
+  command -v retroarch >/dev/null 2>&1 || { echo "   RetroArch is not installed" >&2; return 1; }
+  echo "   RetroArch: $(command -v retroarch)"
+}
+
+# Creates the ROM folders LIVI's importer knows and RetroArch's playlist and
+# thumbnail folders, and lets the user read gamepads and pair them over BlueZ.
+livi_prepare_retroarch() {
+  local folder group
+  echo "→ Preparing the game library in $LIVI_ROMS_DIR"
+  for folder in $LIVI_ROM_FOLDERS; do
+    mkdir -p "$LIVI_ROMS_DIR/$folder"
+  done
+  mkdir -p "$LIVI_RETROARCH_DIR/playlists" "$LIVI_RETROARCH_DIR/thumbnails" "$LIVI_RETROARCH_DIR/cores"
+  for group in input bluetooth; do
+    if getent group "$group" >/dev/null 2>&1; then
+      sudo usermod -aG "$group" "$USER"
+    fi
+  done
+  echo "   Playlists: $LIVI_RETROARCH_DIR/playlists"
+  echo "   Thumbnails: $LIVI_RETROARCH_DIR/thumbnails"
+}
+
+# Installs Freedoom, a libre DOOM-compatible game, as DOOM (Freedoom) in the
+# doom folder and its playlist. Existing files and entries are kept.
+livi_install_default_doom() {
+  local source destination core playlist
+  echo "→ Installing the default DOOM game (Freedoom)"
+  if livi_pm_has freedoom; then
+    livi_pm_install freedoom >/dev/null || echo "   WARNING: freedoom could not be installed" >&2
+  fi
+  source="$(find /usr/share -name freedoom1.wad -print -quit 2>/dev/null || true)"
+  if [ -z "$source" ]; then
+    echo "   freedoom1.wad is not available, no default DOOM game" >&2
+    return 0
+  fi
+  destination="$LIVI_ROMS_DIR/doom/DOOM (Freedoom).wad"
+  mkdir -p "$LIVI_ROMS_DIR/doom"
+  [ -e "$destination" ] || cp "$source" "$destination"
+  core="$(find /usr/lib /usr/lib64 -name prboom_libretro.so -print -quit 2>/dev/null || true)"
+  playlist="$LIVI_RETROARCH_DIR/playlists/DOOM.lpl"
+  mkdir -p "$(dirname "$playlist")"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$destination" "$core" "$playlist" <<'PY'
+import json, os, sys
+wad, core, playlist = sys.argv[1:]
+data = {"version": "1.5", "items": []}
+try:
+    with open(playlist, encoding="utf-8") as handle:
+        current = json.load(handle)
+        if isinstance(current, dict) and isinstance(current.get("items"), list):
+            data = current
+except (FileNotFoundError, json.JSONDecodeError, OSError):
+    pass
+if not any(isinstance(i, dict) and i.get("path") == wad for i in data["items"]):
+    data["items"].append({
+        "path": wad,
+        "label": "DOOM (Freedoom)",
+        "core_path": core or "DETECT",
+        "core_name": "PrBoom" if core else "DETECT",
+        "crc32": "DETECT",
+        "db_name": "DOOM.lpl",
+    })
+    tmp = playlist + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2)
+    os.replace(tmp, playlist)
+PY
+  else
+    echo "   python3 missing, Games > Import ROMs adds DOOM to the library"
+  fi
+  echo "   DOOM: $destination"
+}
+
+livi_setup_games() {
+  livi_install_retroarch
+  livi_prepare_retroarch
+  livi_install_default_doom
+}

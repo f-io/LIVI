@@ -329,7 +329,15 @@
     "minidspVolumeMin": "Minimale Lautstärke",
     "minidspVolumeMax": "Maximale Lautstärke",
     "minidspBassMin": "Minimale Bassverstärkung",
-    "minidspBassMax": "Maximale Bassverstärkung"
+    "minidspBassMax": "Maximale Bassverstärkung",
+    "games": "Spiele",
+    "gamesEnabled": "Spiele aktivieren",
+    "retroArchPath": "RetroArch-Programm",
+    "romDirectory": "ROM-Ordner",
+    "playlistDirectory": "Playlist-Ordner",
+    "thumbnailDirectory": "Vorschaubild-Ordner",
+    "coresDirectory": "Core-Ordner",
+    "startPageGames": "Spiele"
   },
   "softwareUpdate": {
     "channelNightly": "Nightly",
@@ -431,5 +439,33 @@
     "bass": "Bass",
     "outputs": "Ausgänge {{outputs}}",
     "presets": "Presets"
+  },
+  "games": {
+    "title": "Spiele",
+    "count": "{{count}} Spiele",
+    "countOne": "1 Spiel",
+    "loading": "Spiele werden geladen…",
+    "imported": "{{games}} Spiele in {{playlists}} Playlists importiert; {{thumbnails}} Vorschaubilder heruntergeladen.",
+    "missingCores": "Fehlende Cores: {{cores}}.",
+    "import": "ROMs importieren",
+    "importing": "Importiere…",
+    "pairController": "Controller koppeln",
+    "rescan": "Neu einlesen",
+    "emptyTitle": "Noch keine Spiele",
+    "emptyRoms": "Lege legal erworbene ROMs in {{dir}} ab.",
+    "emptyImport": "Importiere ROMs, um Playlists anzulegen und Cover zu laden.",
+    "openRetroArch": "RetroArch öffnen",
+    "retroArchDirs": "Playlists und Vorschaubilder werden automatisch aus ~/.config/retroarch gelesen.",
+    "launching": "RetroArch startet…",
+    "controllersTitle": "Bluetooth-Controller",
+    "controllersHint": "Versetze den Controller in den Kopplungsmodus und suche dann nach Geräten in der Nähe.",
+    "noControllers": "Keine Controller gefunden",
+    "scan": "Suchen",
+    "scanning": "Suche…",
+    "close": "Schließen",
+    "pair": "Koppeln",
+    "pairing": "Kopple…",
+    "paired": "Gekoppelt",
+    "connected": "Verbunden"
   }
 }
