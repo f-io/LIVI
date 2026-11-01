@@ -18,6 +18,7 @@ use livi_ui_model::overlay;
 pub enum Update {
     Media(MediaView),
     Dab(DabView),
+    MiniDsp(livi_ui_model::minidsp::View),
     Dash(Box<DashView>),
     DashOn(livi_core_proto::state::Screen, Box<DashView>),
     Secondary(Vec<livi_ui_model::dashboard::screens::Secondary>),
@@ -51,6 +52,7 @@ pub struct Follow {
     started: bool,
     main_mask: Option<Option<Mask>>,
     fonts: Option<Vec<String>>,
+    minidsp: Option<livi_ui_model::minidsp::View>,
 }
 
 impl Follow {
@@ -65,6 +67,13 @@ impl Follow {
             && let Some(d) = self.media.read_dab(state)
         {
             out.push(Update::Dab(d));
+        }
+        if hit("minidsp") || hit("config") {
+            let next = livi_ui_model::minidsp::view(state);
+            if self.minidsp.as_ref() != Some(&next) {
+                self.minidsp = Some(next.clone());
+                out.push(Update::MiniDsp(next));
+            }
         }
         if hit("sessions") {
             let phone = if state["sessions"]["active"].is_null() {

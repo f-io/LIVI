@@ -126,6 +126,8 @@ pub struct Config {
     pub dab_gain_db: f64,
     pub dab_ppm: i32,
 
+    pub minidsp: MiniDspConfig,
+
     pub auto_conn: bool,
     pub auto_switch_on_reverse: bool,
 
@@ -524,6 +526,7 @@ pub fn defaults() -> Config {
         dab_gain_auto: true,
         dab_gain_db: 19.7,
         dab_ppm: 0,
+        minidsp: default_minidsp(),
         auto_conn: true,
         auto_switch_on_reverse: true,
         start_page: "/".into(),
@@ -573,6 +576,57 @@ pub fn defaults() -> Config {
         update_nightly: false,
         dismissed_packages: Vec::new(),
         bindings: default_bindings(),
+    }
+}
+
+/// MiniDSP page, driven through the minidsp-rs daemon's HTTP API.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MiniDspConfig {
+    pub enabled: bool,
+    /// Simulated device, honoured by development builds only.
+    pub mock_device: bool,
+    pub server_url: String,
+    pub device_index: u32,
+    pub volume_min_db: f64,
+    pub volume_max_db: f64,
+    pub volume_step_db: f64,
+    /// Zero-based outputs the bass control sets the gain of.
+    pub bass_output_channels: Vec<u32>,
+    pub bass_gain_db: f64,
+    pub bass_min_db: f64,
+    pub bass_max_db: f64,
+    pub bass_step_db: f64,
+    pub presets: Vec<MiniDspPreset>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MiniDspPreset {
+    pub index: u32,
+    pub label: String,
+}
+
+fn default_minidsp() -> MiniDspConfig {
+    MiniDspConfig {
+        enabled: true,
+        mock_device: false,
+        server_url: "http://127.0.0.1:5380".into(),
+        device_index: 0,
+        volume_min_db: -80.0,
+        volume_max_db: 0.0,
+        volume_step_db: 0.5,
+        bass_output_channels: vec![2, 3],
+        bass_gain_db: 0.0,
+        bass_min_db: -80.0,
+        bass_max_db: 12.0,
+        bass_step_db: 0.5,
+        presets: (0..4)
+            .map(|index| MiniDspPreset {
+                index,
+                label: format!("Preset {}", index + 1),
+            })
+            .collect(),
     }
 }
 

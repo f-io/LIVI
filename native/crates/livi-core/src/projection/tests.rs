@@ -77,6 +77,7 @@ impl Rig {
             dab: Default::default(),
             cameras: Vec::new(),
             mfi: Default::default(),
+            minidsp: Default::default(),
             config: defaults(),
         }));
         let (tx, cmds) = mpsc::unbounded_channel();

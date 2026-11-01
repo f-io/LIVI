@@ -21,6 +21,7 @@ use crate::config_file::{ConfigFile, apply_patch};
 use crate::dab::DabAsk;
 use crate::dongle::LinkSpeedViewer;
 use crate::hub::{Frame, Hub};
+use crate::minidsp::MiniDspAsk;
 use crate::projection::{UiCommand, UiSenders};
 use crate::spectrum::Viewer;
 use crate::status_file::Activity;
@@ -39,6 +40,8 @@ pub struct Core {
     asks: UiSenders,
     uid: u32,
     mfi_dir: PathBuf,
+    minidsp: tokio::sync::mpsc::UnboundedSender<MiniDspAsk>,
+    minidsp_asks: std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<MiniDspAsk>>>,
 }
 
 impl Core {
@@ -49,6 +52,7 @@ impl Core {
         quit: Arc<Notify>,
         asks: UiSenders,
     ) -> Self {
+        let (minidsp, minidsp_asks) = tokio::sync::mpsc::unbounded_channel();
         Self {
             hub: Arc::new(hub),
             config_file,
@@ -62,7 +66,23 @@ impl Core {
             asks,
             uid,
             mfi_dir: PathBuf::new(),
+            minidsp,
+            minidsp_asks: std::sync::Mutex::new(Some(minidsp_asks)),
         }
+    }
+
+    /// The MiniDSP asks, for the one task that serves them.
+    pub fn take_minidsp_asks(&self) -> Option<tokio::sync::mpsc::UnboundedReceiver<MiniDspAsk>> {
+        self.minidsp_asks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+    }
+
+    fn ask_minidsp(&self, ask: MiniDspAsk) -> Result<(), String> {
+        self.minidsp
+            .send(ask)
+            .map_err(|_| "MiniDSP is not available".to_string())
     }
 
     pub fn with_mfi(mut self, dir: PathBuf) -> Self {
@@ -247,6 +267,14 @@ impl Core {
             Action::SetDongleRadio { radio, on } => {
                 let _ = self.asks.dongle.send((radio, on));
                 Ok(())
+            }
+            Action::MiniDspRefresh => self.ask_minidsp(MiniDspAsk::Refresh),
+            Action::MiniDspSetVolume { volume_db } => {
+                self.ask_minidsp(MiniDspAsk::SetVolume(volume_db))
+            }
+            Action::MiniDspSetBass { gain_db } => self.ask_minidsp(MiniDspAsk::SetBass(gain_db)),
+            Action::MiniDspSelectPreset { preset } => {
+                self.ask_minidsp(MiniDspAsk::SelectPreset(preset))
             }
             Action::CheckUpdate => self.ask_update(UpdateAsk::Check),
             Action::DownloadUpdate => self.ask_update(UpdateAsk::Download),
@@ -474,6 +502,7 @@ mod tests {
             dab: Default::default(),
             cameras: Vec::new(),
             mfi: Default::default(),
+            minidsp: Default::default(),
             config: defaults(),
         });
         let file = ConfigFile::new(dir.0.join("config.json"), dir.0.join("backup.json"));
@@ -615,6 +644,37 @@ mod tests {
         })
         .await;
         assert_eq!(asks.input.recv().await, Some(key));
+    }
+
+    #[tokio::test]
+    async fn minidsp_actions_reach_the_minidsp_task() {
+        let dir = TempDir::new();
+        let (core, path) = start(&dir);
+        let mut asks = core.take_minidsp_asks().unwrap();
+        assert!(core.take_minidsp_asks().is_none());
+        let mut ui = Peer::hello(&path).await;
+        for (id, action, ask) in [
+            (1, Action::MiniDspRefresh, MiniDspAsk::Refresh),
+            (
+                2,
+                Action::MiniDspSetVolume { volume_db: -20.0 },
+                MiniDspAsk::SetVolume(-20.0),
+            ),
+            (
+                3,
+                Action::MiniDspSetBass { gain_db: 4.5 },
+                MiniDspAsk::SetBass(4.5),
+            ),
+            (
+                4,
+                Action::MiniDspSelectPreset { preset: 1 },
+                MiniDspAsk::SelectPreset(1),
+            ),
+        ] {
+            ui.send(&ToCore::Action { id, action }).await;
+            assert_eq!(ui.recv().await, Some(FromCore::Reply { id, error: None }));
+            assert_eq!(asks.recv().await, Some(ask));
+        }
     }
 
     #[tokio::test]

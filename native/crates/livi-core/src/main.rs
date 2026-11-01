@@ -45,6 +45,7 @@ mod kiosk_unit;
 mod livi_os;
 mod log_file;
 mod mfi;
+mod minidsp;
 mod nav_text;
 mod nmea;
 mod paths;
@@ -199,6 +200,7 @@ async fn run() -> Result<Exit, String> {
         dab: Default::default(),
         cameras: Vec::new(),
         mfi: Default::default(),
+        minidsp: Default::default(),
         config,
     });
     let (asks_tx, asks, dongle_asks, update_asks) = projection::ui_channels(wants);
@@ -225,6 +227,9 @@ async fn run() -> Result<Exit, String> {
     tokio::spawn(haltech_can::run(core.clone(), inside.clone()));
     tokio::spawn(system_volume::follow(core.clone()));
     tokio::spawn(update::run(core.clone(), update_asks));
+    if let Some(asks) = core.take_minidsp_asks() {
+        tokio::spawn(minidsp::run(core.clone(), asks));
+    }
     tokio::spawn(fonts::follow(core.clone(), user_data.join("fonts")));
     state_files::start(&core, core.activity(), &user_data);
     let res = Resources::from_env();

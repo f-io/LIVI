@@ -8,6 +8,7 @@ pub mod icons;
 pub mod keys;
 pub mod mask;
 pub mod media;
+pub mod minidsp;
 pub mod overlay;
 pub mod settings;
 pub mod shell;

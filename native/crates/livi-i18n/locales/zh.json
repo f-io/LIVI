@@ -317,7 +317,16 @@
     "dabGain": "增益",
     "moveUp": "上移",
     "moveDown": "下移",
-    "dabPpm": "频率校正"
+    "dabPpm": "频率校正",
+    "startPageMinidsp": "MiniDSP",
+    "minidsp": "MiniDSP",
+    "minidspEnabled": "显示 MiniDSP 页面",
+    "minidspServerUrl": "服务器 URL",
+    "minidspDeviceIndex": "设备索引",
+    "minidspVolumeMin": "最小音量",
+    "minidspVolumeMax": "最大音量",
+    "minidspBassMin": "最小低音增益",
+    "minidspBassMax": "最大低音增益"
   },
   "softwareUpdate": {
     "channelNightly": "每日构建",
@@ -403,5 +412,21 @@
     "changeHighway": "变更高速",
     "changeHighwayLeft": "变更高速（向左）",
     "changeHighwayRight": "变更高速（向右）"
+  },
+  "minidsp": {
+    "title": "MiniDSP",
+    "connecting": "正在连接…",
+    "connected": "已连接",
+    "notConnected": "未连接",
+    "unavailable": "不可用",
+    "unavailableTitle": "MiniDSP 不可用",
+    "noDevice": "未连接 MiniDSP",
+    "connectHint": "请连接 MiniDSP，然后刷新重试。",
+    "refresh": "刷新",
+    "masterVolume": "主音量",
+    "fullSystemOutput": "整个系统输出",
+    "bass": "低音",
+    "outputs": "输出 {{outputs}}",
+    "presets": "预设"
   }
 }

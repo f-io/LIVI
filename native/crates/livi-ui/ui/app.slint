@@ -16,8 +16,9 @@ import { Dashboard, DashState, GaugeData, CapData, TrailData, LabelData } from "
 import { LevelOverlay, PhoneOverlay, OverlayState } from "overlays.slint";
 import { MaskData } from "mask.slint";
 import { TouchCalibration, TouchCalibrationState } from "touch_calibration.slint";
+import { MiniDspPage, MiniDspState, DspPhase, DspPresetData, DspControlData } from "minidsp.slint";
 
-export { Theme, Focus, FocusZone, Page, PhoneState, TabData, TouchPhase, SettingsState, ScreenKind, RowData, RowKind, PickData, KnobData, MediaText, Press, DabState, StationData, DashState, GaugeData, CapData, TrailData, LabelData, OverlayState, MaskData, TouchCalibrationState }
+export { Theme, Focus, FocusZone, Page, PhoneState, TabData, TouchPhase, SettingsState, ScreenKind, RowData, RowKind, PickData, KnobData, MediaText, Press, DabState, StationData, DashState, GaugeData, CapData, TrailData, LabelData, OverlayState, MaskData, TouchCalibrationState, MiniDspState, DspPhase, DspPresetData, DspControlData }
 
 export component AppWindow inherits Window {
     in-out property <Page> page: Page.media;
@@ -149,6 +150,10 @@ export component AppWindow inherits Window {
                 next => { root.next(); }
                 seek(f) => { root.seek(f); }
                 spectrum-changed(on) => { root.spectrum-changed(on); }
+            }
+            if root.page == Page.minidsp: MiniDspPage {
+                width: parent.width;
+                height: parent.height;
             }
             if root.page == Page.settings: SettingsView {
                 width: parent.width;

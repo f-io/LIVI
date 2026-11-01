@@ -147,6 +147,7 @@ mod tests {
             dab: Default::default(),
             cameras,
             mfi: Default::default(),
+            minidsp: Default::default(),
             config,
         }
     }

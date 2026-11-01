@@ -25,7 +25,25 @@ pub struct State {
     pub update: Update,
     pub cluster: Cluster,
     pub dab: Dab,
+    #[serde(default)]
+    pub minidsp: MiniDsp,
     pub config: Config,
+}
+
+/// What the MiniDSP daemon last reported for the configured device.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MiniDsp {
+    /// A status answer came back at least once, so the page leaves "connecting".
+    pub checked: bool,
+    pub busy: bool,
+    pub connected: bool,
+    pub preset: u32,
+    pub source: String,
+    pub volume_db: f64,
+    pub muted: bool,
+    pub product_name: Option<String>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
