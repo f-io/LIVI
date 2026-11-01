@@ -33,6 +33,7 @@ mod dongle;
 mod fonts;
 mod gnss;
 mod gvfs_guard;
+mod haltech_can;
 mod hands_free;
 mod helper;
 mod host;
@@ -41,6 +42,7 @@ mod host_setup;
 mod hub;
 mod hwaddr;
 mod kiosk_unit;
+mod livi_os;
 mod log_file;
 mod mfi;
 mod nav_text;
@@ -220,6 +222,7 @@ async fn run() -> Result<Exit, String> {
     tokio::spawn(gnss::run(core.clone(), inside.clone()));
     tokio::spawn(sun_schedule::run(core.clone(), inside.clone()));
     tokio::spawn(car_bridge::run(core.clone(), inside.clone()));
+    tokio::spawn(haltech_can::run(core.clone(), inside.clone()));
     tokio::spawn(system_volume::follow(core.clone()));
     tokio::spawn(update::run(core.clone(), update_asks));
     tokio::spawn(fonts::follow(core.clone(), user_data.join("fonts")));
@@ -230,11 +233,24 @@ async fn run() -> Result<Exit, String> {
         res.gstreamer.clone(),
     ));
     host_setup::prepare();
+    let livi_os = livi_os::active();
+    if livi_os {
+        println!(
+            "[livi-os] contract {}, helper {}",
+            livi_os::CONTRACT,
+            livi_os::helper().display()
+        );
+    }
     let privileged = privileged::Privileged {
         templates: res.templates.clone(),
-        helper: helper::resolve_bin(&res.helper, &user_data),
-        helper_named: user_data.join("driver/livi-helperd"),
+        helper: helper::locate(&res.helper, &user_data),
+        helper_named: if livi_os {
+            livi_os::helper()
+        } else {
+            user_data.join("driver/livi-helperd")
+        },
         user_data: user_data.clone(),
+        livi_os,
     };
     if udev_rule::ensure(&privileged).await {
         return Ok(Exit::Restart(None));

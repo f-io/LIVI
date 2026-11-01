@@ -29,13 +29,14 @@ Categories=Utility;
 StartupWMClass=LIVI
 ";
 
-const TEMPLATES: [&str; 6] = [
+const TEMPLATES: [&str; 7] = [
     "99-LIVI.rules.template",
     "99-LIVI-helper.sudoers.template",
     "livi-wifi-ap.service.template",
     "99-LIVI-wifi-ap.sudoers.template",
     "livi-kiosk.service.template",
     "livi-touch-filter",
+    "livi-os-helper-api",
 ];
 
 fn copy(src: &Path, dest: &Path) -> Result<(), String> {

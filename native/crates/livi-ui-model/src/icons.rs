@@ -77,6 +77,7 @@ const SETTINGS: &[(&str, &str)] = &[
     ("mfi", "DeveloperBoardOutlined"),
     ("mfiCertificate", "VerifiedUserOutlined"),
     ("carPlayVehicleClimate", "AcUnitOutlined"),
+    ("haltechCan", "CableOutlined"),
     ("huVolume", "VolumeUpOutlined"),
     ("music", "MusicNoteOutlined"),
     ("navigation", "NavigationOutlined"),

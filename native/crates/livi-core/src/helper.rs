@@ -166,27 +166,44 @@ pub fn resolve_bin(bin: &Path, user_data: &Path) -> PathBuf {
     }
 }
 
-fn stale_running() -> bool {
+/// The helper to run: under LIVI OS the image's own, never a staged copy.
+pub fn locate(bin: &Path, user_data: &Path) -> PathBuf {
+    if crate::livi_os::active() {
+        crate::livi_os::helper()
+    } else {
+        resolve_bin(bin, user_data)
+    }
+}
+
+fn stale_pattern(spec: &Spec) -> String {
+    if spec.livi_os {
+        format!("{}$", spec.bin.display())
+    } else {
+        STALE_PATTERN.to_string()
+    }
+}
+
+fn stale_running(pattern: &str) -> bool {
     std::process::Command::new("pgrep")
-        .args(["-f", STALE_PATTERN])
+        .args(["-f", pattern])
         .output()
         .is_ok_and(|o| !o.stdout.is_empty())
 }
 
-async fn kill_stale() {
-    if !stale_running() {
+async fn kill_stale(pattern: &str) {
+    if !stale_running(pattern) {
         return;
     }
     println!("[core] stopping a stale helper");
     for signal in ["-TERM", "-KILL"] {
         let _ = std::process::Command::new("sudo")
-            .args(["-n", "pkill", signal, "-f", STALE_PATTERN])
+            .args(["-n", "pkill", signal, "-f", pattern])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
         for _ in 0..20 {
             tokio::time::sleep(Duration::from_millis(100)).await;
-            if !stale_running() {
+            if !stale_running(pattern) {
                 return;
             }
         }
@@ -199,6 +216,9 @@ pub struct Spec {
     pub env: Box<dyn Fn() -> Vec<(String, String)> + Send + Sync>,
     pub restart: Arc<Notify>,
     pub use_sudo: bool,
+    /// LIVI OS: `bin` is the image's fixed helper, run without `-E` and with only the
+    /// allow-listed environment of `livi_os::helper_env`.
+    pub livi_os: bool,
     pub restart_delay: Duration,
     pub max_restarts: Option<u32>,
 }
@@ -223,8 +243,12 @@ impl HelperSupervisor {
     }
 }
 
-fn spawn(spec: &Spec) -> io::Result<Child> {
-    let mut cmd = if spec.use_sudo {
+fn command(spec: &Spec) -> Command {
+    let mut cmd = if spec.livi_os {
+        let mut c = Command::new("sudo");
+        c.arg("-n").arg(&spec.bin).env_clear();
+        c
+    } else if spec.use_sudo {
         let mut c = Command::new("sudo");
         c.arg("-n").arg("-E").arg(&spec.bin);
         c
@@ -234,8 +258,17 @@ fn spawn(spec: &Spec) -> io::Result<Child> {
     if let Some(dir) = spec.bin.parent() {
         cmd.current_dir(dir);
     }
-    crate::child::with_lifeline(&mut cmd)
-        .envs((spec.env)())
+    let env = if spec.livi_os {
+        crate::livi_os::helper_env((spec.env)(), |k| std::env::var(k).ok())
+    } else {
+        (spec.env)()
+    };
+    crate::child::with_lifeline(&mut cmd).envs(env);
+    cmd
+}
+
+fn spawn(spec: &Spec) -> io::Result<Child> {
+    command(spec)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
@@ -268,8 +301,8 @@ fn forward_lines(child: &mut Child) {
 async fn run(spec: Spec, mut stop: watch::Receiver<bool>) {
     let mut restarts = 0;
     loop {
-        if cfg!(target_os = "linux") && spec.use_sudo {
-            kill_stale().await;
+        if cfg!(target_os = "linux") && (spec.use_sudo || spec.livi_os) {
+            kill_stale(&stale_pattern(&spec)).await;
         }
         if !spec.bin.exists() {
             eprintln!("[core] {HELPER_BIN} not found at {}", spec.bin.display());
@@ -377,6 +410,102 @@ mod tests {
         assert_eq!(get(&env, "DEBUG"), Some("1"));
     }
 
+    fn spec(livi_os: bool, use_sudo: bool) -> Spec {
+        Spec {
+            bin: PathBuf::from(if livi_os {
+                crate::livi_os::DEFAULT_HELPER
+            } else {
+                "/home/u/.config/LIVI/driver/livi-helperd"
+            }),
+            env: Box::new(|| {
+                vec![
+                    ("LIVI_CP_PK".into(), "ab".into()),
+                    ("NOT_FOR_THE_HELPER".into(), "x".into()),
+                ]
+            }),
+            restart: Arc::new(Notify::new()),
+            use_sudo,
+            livi_os,
+            restart_delay: Duration::from_secs(1),
+            max_restarts: None,
+        }
+    }
+
+    fn line(cmd: &Command) -> Vec<String> {
+        let cmd = cmd.as_std();
+        std::iter::once(cmd.get_program())
+            .chain(cmd.get_args())
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    fn envs(cmd: &Command) -> Vec<(String, Option<String>)> {
+        cmd.as_std()
+            .get_envs()
+            .map(|(k, v)| {
+                (
+                    k.to_string_lossy().into_owned(),
+                    v.map(|v| v.to_string_lossy().into_owned()),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn livi_os_runs_the_fixed_helper_without_the_callers_environment() {
+        let cmd = command(&spec(true, true));
+        assert_eq!(line(&cmd), ["sudo", "-n", "/usr/libexec/livi-helperd"]);
+        let env = envs(&cmd);
+        let keys: Vec<&str> = env.iter().map(|(k, _)| k.as_str()).collect();
+        assert!(keys.contains(&"PATH"));
+        assert!(keys.contains(&"LIVI_CP_PK"));
+        assert!(keys.contains(&livi_core_proto::LIFELINE_ENV));
+        assert!(!keys.contains(&"NOT_FOR_THE_HELPER"));
+        assert!(keys.iter().all(|k| *k == "PATH"
+            || crate::livi_os::HELPER_KEYS.contains(k)
+            || crate::livi_os::PASSTHROUGH_KEYS.contains(k)));
+        assert_eq!(
+            stale_pattern(&spec(true, true)),
+            "/usr/libexec/livi-helperd$"
+        );
+    }
+
+    #[test]
+    fn off_livi_os_the_helper_keeps_sudo_dash_e() {
+        let cmd = command(&spec(false, true));
+        assert_eq!(
+            line(&cmd),
+            [
+                "sudo",
+                "-n",
+                "-E",
+                "/home/u/.config/LIVI/driver/livi-helperd"
+            ]
+        );
+        assert!(
+            envs(&cmd)
+                .iter()
+                .any(|(k, v)| k == "NOT_FOR_THE_HELPER" && v.as_deref() == Some("x"))
+        );
+        assert_eq!(stale_pattern(&spec(false, true)), STALE_PATTERN);
+        assert_eq!(
+            line(&command(&spec(false, false))),
+            ["/home/u/.config/LIVI/driver/livi-helperd"]
+        );
+    }
+
+    #[test]
+    fn livi_os_lets_through_everything_the_helper_is_given() {
+        let mut cfg = defaults();
+        cfg.debug_logging = true;
+        for (key, _) in helper_env(&cfg, &identity(), "88:00:33:77:8C:26", Some(7000)) {
+            assert!(
+                crate::livi_os::HELPER_KEYS.contains(&key.as_str()),
+                "{key} is missing from livi_os::HELPER_KEYS and docs/LIVI-OS.md"
+            );
+        }
+    }
+
     #[test]
     fn only_what_the_helper_reads_restarts_it() {
         let before = defaults();
@@ -437,6 +566,7 @@ mod tests {
             env: Box::new(Vec::new),
             restart: Arc::new(Notify::new()),
             use_sudo: false,
+            livi_os: false,
             restart_delay: Duration::from_millis(10),
             max_restarts: Some(2),
         });
@@ -465,6 +595,7 @@ mod tests {
             env: Box::new(|| vec![("LIVI_TEST".into(), "1".into())]),
             restart: Arc::new(Notify::new()),
             use_sudo: false,
+            livi_os: false,
             restart_delay: Duration::from_secs(5),
             max_restarts: None,
         });
@@ -493,6 +624,7 @@ mod tests {
             }),
             restart: restart.clone(),
             use_sudo: false,
+            livi_os: false,
             restart_delay: Duration::from_secs(60),
             max_restarts: Some(0),
         });

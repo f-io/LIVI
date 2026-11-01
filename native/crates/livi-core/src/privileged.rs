@@ -18,6 +18,8 @@ pub struct Privileged {
     pub helper: PathBuf,
     pub helper_named: PathBuf,
     pub user_data: PathBuf,
+    /// LIVI OS: every file the installs below would write comes with the read-only image.
+    pub livi_os: bool,
 }
 
 pub fn username() -> String {
@@ -120,7 +122,16 @@ impl Privileged {
         }
     }
 
+    /// True when LIVI OS ships `what`, so nothing is to be installed for it.
+    pub fn os_provides(&self, what: &'static str) -> bool {
+        crate::livi_os::provides_in(self.livi_os, what)
+    }
+
     pub async fn helper_installs(&self, what: &str, files: &[(&str, &str)]) -> bool {
+        if self.livi_os {
+            eprintln!("[setup] {what} skipped, LIVI OS ships its system files");
+            return false;
+        }
         let dir = std::env::temp_dir().join(format!("livi-install-{}-{what}", std::process::id()));
         let staged: std::io::Result<Vec<String>> = (|| {
             std::fs::create_dir_all(&dir)?;
@@ -169,7 +180,31 @@ mod tests {
             helper: dir.0.join("helper"),
             helper_named: PathBuf::from("/home/u/.config/LIVI/driver/livi-helperd"),
             user_data: dir.0.clone(),
+            livi_os: false,
         }
+    }
+
+    #[tokio::test]
+    async fn livi_os_never_installs_through_the_helper() {
+        let dir = TempDir::new();
+        let p = Privileged {
+            livi_os: true,
+            ..privileged(&dir)
+        };
+        assert!(p.os_provides("the udev rule"));
+        assert!(!privileged(&dir).os_provides("the udev rule"));
+        assert!(
+            !p.helper_installs("install-udev-rule", &[("rule", "x")])
+                .await
+        );
+        assert!(
+            !std::env::temp_dir()
+                .join(format!(
+                    "livi-install-{}-install-udev-rule",
+                    std::process::id()
+                ))
+                .exists()
+        );
     }
 
     #[test]

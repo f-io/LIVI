@@ -48,6 +48,8 @@ pub struct Config {
     pub gps_baud_rate: u32,
     pub timezone: String,
 
+    pub haltech_can_enabled: bool,
+
     pub projection_width: u32,
     pub projection_height: u32,
     pub projection_fps: u32,
@@ -461,6 +463,7 @@ pub fn defaults() -> Config {
         gps_device: "/dev/ttyAMA0".into(),
         gps_baud_rate: 38400,
         timezone: String::new(),
+        haltech_can_enabled: false,
         projection_width: 1280,
         projection_height: 720,
         projection_fps: 60,

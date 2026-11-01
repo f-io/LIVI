@@ -53,7 +53,11 @@ pub async fn start(p: Privileged) {
         return;
     }
     let rule = rule(&username());
-    if !installed(&p, &rule).await && !crate::power::owns_host() && monitors_present() {
+    if !p.os_provides(GUARD)
+        && !installed(&p, &rule).await
+        && !crate::power::owns_host()
+        && monitors_present()
+    {
         if p.helper_installs("install-gvfs-guard", &[("script", SCRIPT), ("rule", &rule)])
             .await
         {

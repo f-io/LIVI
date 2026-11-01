@@ -156,6 +156,7 @@
     "bottom": "下",
     "drawOutside": "绘制到安全区外",
     "carPlayHlsVideo": "车内视频",
+    "haltechCanEnabled": "接收 Haltech CAN V2 遥测（can0，1 Mbit/s，仅监听）",
     "carMakerTheme": "车厂主题",
     "carPlayTheme": "主题",
     "carPlayVehicleModel": "车型",

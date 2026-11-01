@@ -103,7 +103,9 @@ async fn release_interface(p: &Privileged) {
     let sc = systemctl();
     sudo(&[&sc, "stop", SERVICE]).await;
     sudo(&[&sc, "disable", SERVICE]).await;
-    let helper = if Path::new(UNIT_HELPER).exists() {
+    let helper = if p.livi_os {
+        p.helper.display().to_string()
+    } else if Path::new(UNIT_HELPER).exists() {
         UNIT_HELPER.to_string()
     } else {
         p.helper_named.display().to_string()
@@ -116,19 +118,21 @@ async fn reconcile(p: &Privileged, cfg: &Config) {
         release_interface(p).await;
         return;
     }
-    let Some(u) = render(p) else { return };
-    if needs_install(p, &u).await {
-        if !p
-            .helper_installs("install-wifi-ap", &[("unit", &u.unit), ("rule", &u.rule)])
-            .await
-        {
-            eprintln!(
-                "[wifi-ap] {UNIT_PATH} not installed, the helper does not run as root. \
-                 Run the LIVI install script on this host."
-            );
-            return;
+    if !p.os_provides(UNIT_PATH) {
+        let Some(u) = render(p) else { return };
+        if needs_install(p, &u).await {
+            if !p
+                .helper_installs("install-wifi-ap", &[("unit", &u.unit), ("rule", &u.rule)])
+                .await
+            {
+                eprintln!(
+                    "[wifi-ap] {UNIT_PATH} not installed, the helper does not run as root. \
+                     Run the LIVI install script on this host."
+                );
+                return;
+            }
+            p.write_marker(MARKER, &u.rule);
         }
-        p.write_marker(MARKER, &u.rule);
     }
     let sc = systemctl();
     let enable = if cfg.wifi_dedicated_interface {
@@ -268,9 +272,11 @@ pub async fn follow(core: Arc<Core>, p: Privileged) {
         if ap_settings(&cfg) == started_with || !wanted(&cfg) {
             continue;
         }
-        let Some(u) = render(&p) else { continue };
-        if needs_install(&p, &u).await {
-            continue;
+        if !p.os_provides(UNIT_PATH) {
+            let Some(u) = render(&p) else { continue };
+            if needs_install(&p, &u).await {
+                continue;
+            }
         }
         println!("[wifi-ap] restarting with the new settings");
         sudo(&[&systemctl(), "restart", SERVICE]).await;
