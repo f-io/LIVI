@@ -76,13 +76,13 @@ jobs:
 
           if (eventName === 'workflow_run') {
             // main: always build everything
-            add('linux', 'ubuntu-latest', 'x64', 'AppImage');
+            add('linux', 'ubuntu-24.04', 'x64', 'AppImage');
             add('linux', 'ubuntu-24.04-arm', 'arm64', 'AppImage');
             add('macos', 'macos-latest', 'arm64', 'dmg');
             add('macos', 'macos-latest', 'x64', 'dmg');
           } else {
             // manual: only selected
-            if (inputs.linux_x64) add('linux', 'ubuntu-latest', 'x64', 'AppImage');
+            if (inputs.linux_x64) add('linux', 'ubuntu-24.04', 'x64', 'AppImage');
             if (inputs.linux_arm64) add('linux', 'ubuntu-24.04-arm', 'arm64', 'AppImage');
             if (inputs.macos_arm64) add('macos', 'macos-latest', 'arm64', 'dmg');
             if (inputs.macos_x64) add('macos', 'macos-latest', 'x64', 'dmg');
