@@ -16,6 +16,10 @@ on:
         description: "Build Linux arm64 bundle"
         type: boolean
         default: true
+      android_arm64:
+        description: "Build Android arm64 bundle"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -35,6 +39,7 @@ jobs:
           IN_MACOS_ARM64: ${{ inputs.macos_arm64 }}
           IN_LINUX_X64: ${{ inputs.linux_x64 }}
           IN_LINUX_ARM64: ${{ inputs.linux_arm64 }}
+          IN_ANDROID_ARM64: ${{ inputs.android_arm64 }}
         run: |
           set -euo pipefail
 
@@ -45,6 +50,7 @@ jobs:
           if [[ "${IN_MACOS_ARM64,,}" == true ]]; then add macos macos-latest arm64 macos-arm64; fi
           if [[ "${IN_LINUX_X64,,}" == true ]]; then add linux ubuntu-24.04 x64 linux-x64; fi
           if [[ "${IN_LINUX_ARM64,,}" == true ]]; then add linux ubuntu-24.04-arm arm64 linux-arm64; fi
+          if [[ "${IN_ANDROID_ARM64,,}" == true ]]; then add android ubuntu-24.04 arm64 android-arm64; fi
 
           matrix="{\"include\":[$(IFS=,; echo "${entries[*]-}")]}"
           is_empty=$([[ ${#entries[@]} -eq 0 ]] && echo true || echo false)
@@ -291,6 +297,82 @@ jobs:
           path: ${{ matrix.archive_name }}
           retention-days: 7
 
+      # ----------------------------
+      # Android arm64
+      # ----------------------------
+      - name: Download GStreamer Android SDK [android-arm64]
+        if: matrix.os == 'android' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # GStreamer uses GNOME-style versioning: even minor = stable, odd = dev.
+          GST_VERSION=$(curl -fsSL https://gstreamer.freedesktop.org/data/pkg/android/ \
+            | grep -oE 'href="[0-9]+\.[0-9]+\.[0-9]+/"' \
+            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' \
+            | awk -F. '$2 % 2 == 0' \
+            | sort -V \
+            | tail -1)
+          if [[ -z "$GST_VERSION" ]]; then
+            echo "Failed to resolve latest stable GStreamer version from android listing"
+            exit 1
+          fi
+          echo "Resolved Android GStreamer: $GST_VERSION"
+          echo "GST_VERSION=$GST_VERSION" >> "$GITHUB_ENV"
+          base="https://gstreamer.freedesktop.org/data/pkg/android/${GST_VERSION}"
+          sdk="gstreamer-1.0-android-universal-${GST_VERSION}.tar.xz"
+          curl -fL -o "$sdk" "${base}/${sdk}"
+          curl -fsSL "${base}/${sdk}.sha256sum" | sha256sum -c -
+          # the universal SDK carries every ABI, only arm64 is unpacked
+          mkdir -p "$RUNNER_TEMP/gst-android"
+          tar -xJf "$sdk" -C "$RUNNER_TEMP/gst-android" arm64
+          rm -f "$sdk"
+          echo "GST_ANDROID_ROOT=$RUNNER_TEMP/gst-android/arm64" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+
+      - name: Build faad plugin (DAB+ audio) [android-arm64]
+        if: matrix.os == 'android' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # host glib generator tools + build system (gst-plugins-bad needs meson >= 1.4)
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build libglib2.0-dev-bin
+          pipx install meson
+          chmod +x scripts/gstreamer/build-faad-android.sh
+          scripts/gstreamer/build-faad-android.sh "$GST_ANDROID_ROOT" "$RUNNER_TEMP/faad"
+          echo "FAAD_DIR=$RUNNER_TEMP/faad" >> "$GITHUB_ENV"
+
+      - name: Build bundle [android-arm64]
+        if: matrix.os == 'android' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/gstreamer/package-android.sh
+          scripts/gstreamer/package-android.sh "$GST_ANDROID_ROOT" "assets/gstreamer/${{ matrix.dir_name }}"
+
+      - name: Smoke test bundle [android-arm64]
+        if: matrix.os == 'android' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/gstreamer/smoke-test-android.sh
+          scripts/gstreamer/smoke-test-android.sh "assets/gstreamer/${{ matrix.dir_name }}"
+
+      - name: Pack artifact [android-arm64]
+        if: matrix.os == 'android' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -C assets/gstreamer -czf "${{ matrix.archive_name }}" "${{ matrix.dir_name }}"
+
+      - name: Upload artifact [android-arm64]
+        if: matrix.os == 'android' && matrix.arch == 'arm64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.archive_name }}
+          retention-days: 7
+
   publish:
     name: Publish gstreamer assets
     needs:
@@ -330,7 +412,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          for plat in macos-arm64 linux-x64 linux-arm64; do
+          for plat in macos-arm64 linux-x64 linux-arm64 android-arm64; do
             archive=".artifacts/gstreamer-${plat}.tar.gz"
             [[ -f "$archive" ]] || continue
             sh scripts/assets.sh publish gstreamer "$plat" "$archive"
@@ -363,7 +445,7 @@ jobs:
 
           # One commit per platform
           changed=false
-          for plat in linux-x64 linux-arm64 macos-arm64; do
+          for plat in linux-x64 linux-arm64 macos-arm64 android-arm64; do
             dir="assets/gstreamer/${plat}"
             [[ -d "$dir" ]] || continue
             git add -A "$dir"
