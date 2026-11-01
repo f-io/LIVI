@@ -1,6 +1,6 @@
 # LIVI udev rules. Managed by LIVI. Do not edit by hand.
 # Single source of truth for livi-core and the installers.
-# LIVI-RULE-VERSION=6
+# LIVI-RULE-VERSION=7
 # Touch panels that expose a multitouch digitizer and a mouse interface at the same time.
 SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_MOUSE}=="1", PROGRAM=="/usr/local/lib/livi/livi-touch-filter %S%p", ENV{LIBINPUT_IGNORE_DEVICE}="1"
 # Apple: wired CarPlay uses usbmux + NCM only. Stop the desktop from auto-mounting
@@ -14,6 +14,7 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="04e8", ENV{ID_MTP_DEVICE}="", ENV{ID_MEDIA_PL
 SUBSYSTEM=="usb", ATTR{idVendor}=="22b8", ENV{ID_MTP_DEVICE}="", ENV{ID_MEDIA_PLAYER}="", ENV{UDISKS_IGNORE}="1", ENV{ID_MM_DEVICE_IGNORE}="1"
 SUBSYSTEM=="usb", ATTR{idVendor}=="0fce", ENV{ID_MTP_DEVICE}="", ENV{ID_MEDIA_PLAYER}="", ENV{UDISKS_IGNORE}="1", ENV{ID_MM_DEVICE_IGNORE}="1"
 SUBSYSTEM=="usb", ATTR{idVendor}=="12d1", ENV{ID_MTP_DEVICE}="", ENV{ID_MEDIA_PLAYER}="", ENV{UDISKS_IGNORE}="1", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="usb", ATTR{idVendor}=="22d9", ENV{ID_MTP_DEVICE}="", ENV{ID_MEDIA_PLAYER}="", ENV{UDISKS_IGNORE}="1", ENV{ID_MM_DEVICE_IGNORE}="1"
 SUBSYSTEM=="usb", ATTR{idVendor}=="2717", ENV{ID_MTP_DEVICE}="", ENV{ID_MEDIA_PLAYER}="", ENV{UDISKS_IGNORE}="1", ENV{ID_MM_DEVICE_IGNORE}="1"
 SUBSYSTEM=="usb", ATTR{idVendor}=="2a70", ENV{ID_MTP_DEVICE}="", ENV{ID_MEDIA_PLAYER}="", ENV{UDISKS_IGNORE}="1", ENV{ID_MM_DEVICE_IGNORE}="1"
 SUBSYSTEM=="usb", ATTR{idVendor}=="0bb4", ENV{ID_MTP_DEVICE}="", ENV{ID_MEDIA_PLAYER}="", ENV{UDISKS_IGNORE}="1", ENV{ID_MM_DEVICE_IGNORE}="1"
