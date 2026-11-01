@@ -38,6 +38,7 @@ vi.mock('fs', async () => {
 
 describe('udevRule', () => {
   const originalPlatform = process.platform
+  const originalLiviOs = process.env.LIVI_OS
   const mockExistsSync = fs.existsSync as Mock
   const mockReadFileSync = fs.readFileSync as Mock
   const mockExecFileSync = execFileSync as Mock
@@ -79,6 +80,7 @@ describe('udevRule', () => {
       homedir: '/home/testuser'
     })
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true })
+    delete process.env.LIVI_OS
     mockExistsSync.mockImplementation(function (p: string) {
       if (typeof p === 'string' && p.endsWith('.rules.template')) return true
       return false
@@ -91,6 +93,8 @@ describe('udevRule', () => {
 
   afterEach(async () => {
     Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true })
+    if (originalLiviOs === undefined) delete process.env.LIVI_OS
+    else process.env.LIVI_OS = originalLiviOs
   })
 
   const existsFake = (ruleFileExists: boolean) => {
@@ -124,6 +128,14 @@ describe('udevRule', () => {
       Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
       await checkAndInstallUdevRule(mockWindow)
       expect(mockShowMessageBox).not.toHaveBeenCalled()
+    })
+
+    test('does not prompt to modify immutable OS udev policy', async () => {
+      process.env.LIVI_OS = '1'
+      await checkAndInstallUdevRule(mockWindow)
+      expect(mockShowMessageBox).not.toHaveBeenCalled()
+      expect(mockSpawn).not.toHaveBeenCalled()
+      expect(mockExistsSync).not.toHaveBeenCalled()
     })
 
     test('does nothing when rule file already exists with a current version marker', async () => {

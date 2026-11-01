@@ -34,7 +34,7 @@ vi.mock('../../cp/stack/identity', () => ({
     privRaw: Buffer.alloc(32),
     pubRaw: Buffer.alloc(32),
     pairingId: 'pi-123',
-    pkHex: 'aabbcc'
+    pkHex: 'a'.repeat(64)
   }))
 }))
 
@@ -86,6 +86,7 @@ const originalPlatform = process.platform
 const originalResources = process.resourcesPath
 const originalAppImage = process.env.APPIMAGE
 const originalAppDir = process.env.APPDIR
+const originalLiviOs = process.env.LIVI_OS
 
 beforeEach(() => {
   mockedSpawn.mockReset()
@@ -103,6 +104,7 @@ beforeEach(() => {
   ;(process as { resourcesPath?: string }).resourcesPath = undefined
   delete process.env.APPIMAGE
   delete process.env.APPDIR
+  delete process.env.LIVI_OS
 })
 
 afterEach(() => {
@@ -112,6 +114,8 @@ afterEach(() => {
   else process.env.APPIMAGE = originalAppImage
   if (originalAppDir === undefined) delete process.env.APPDIR
   else process.env.APPDIR = originalAppDir
+  if (originalLiviOs === undefined) delete process.env.LIVI_OS
+  else process.env.LIVI_OS = originalLiviOs
   vi.useRealTimers()
 })
 
@@ -140,10 +144,31 @@ describe('spawning', () => {
     expect(String(args[4])).toContain('livi-helper.py')
     expect(opts.env.LIVI_AA_WIRELESS).toBe('1')
     expect(opts.env.LIVI_CP_WIRELESS).toBe('')
-    expect(opts.env.LIVI_CP_PK).toBe('aabbcc')
+    expect(opts.env.LIVI_CP_PK).toBe('a'.repeat(64))
     expect(opts.env.LIVI_CP_PI).toBe('pi-123')
     expect(opts.env.DEBUG).toBe('')
     expect(sup.running).toBe(true)
+  })
+
+  test('uses the immutable OS helper without inherited environment or script elevation', async () => {
+    process.env.LIVI_OS = '1'
+    const { HelperSupervisor } = await load(false)
+    new HelperSupervisor().start(CONFIG)
+
+    const [cmd, args, opts] = mockedSpawn.mock.calls[0]
+    expect(cmd).toBe('/usr/bin/sudo')
+    expect(args).toEqual([
+      '-n',
+      '/usr/libexec/livi-projection-helper',
+      '1',
+      '0',
+      'a'.repeat(64),
+      'pi-123',
+      '0'
+    ])
+    expect(opts.cwd).toBe('/usr/lib/livi/driver')
+    expect(opts.env).toEqual({ PATH: '/usr/sbin:/usr/bin:/sbin:/bin' })
+    expect(mockedExists).not.toHaveBeenCalled()
   })
 
   test('runs python directly off linux', async () => {

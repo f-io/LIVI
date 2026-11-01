@@ -394,6 +394,11 @@ pnpm run build:mac:arm64           # Apple Silicon
 pnpm run build:mac:x64             # Intel
 ```
 
+Linux AppImages include `resources/livi-os-helper-api` to declare the launcher
+contract used by the immutable LIVI OS integration. Keep the marker and the
+`LIVI_OS=1` helper launch path in sync with the OS image's fixed privileged
+helper interface.
+
 
 ## Debugging
 
