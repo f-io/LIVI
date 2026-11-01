@@ -291,12 +291,60 @@ component PhonePlayer inherits Rectangle {
     }
 }
 
+// Ambient layer behind the media page: a highlight glow, the cover stretched
+// into a soft blur and, unless the artwork already shows it, a faint live
+// spectrum along the bottom. Decorative only, it takes no input.
+component MediaBackdrop inherits Rectangle {
+    in property <image> backdrop;
+    in property <bool> has-artwork;
+    in property <bool> show-spectrum;
+    in property <[float]> bands;
+
+    clip: true;
+    background: @linear-gradient(145deg, Theme.paper 0%, Theme.background 100%);
+    property <length> glow: 0.832 * sqrt(pow(root.width / 1px, 2) + pow(root.height / 1px, 2)) * 1px;
+    Rectangle {
+        x: root.width * 0.8 - self.width / 2;
+        y: root.height * 0.2 - self.height / 2;
+        width: root.glow;
+        height: root.glow;
+        // Default radius is half the diagonal; 70.7% lands on the edge.
+        background: @radial-gradient(circle, Theme.highlight.with-alpha(0.24) 0%, Theme.highlight.with-alpha(0) 70.7%);
+    }
+    if root.has-artwork: Image {
+        x: -parent.width * 0.12;
+        y: -parent.height * 0.12;
+        width: parent.width * 1.24;
+        height: parent.height * 1.24;
+        source: root.backdrop;
+        image-fit: cover;
+        image-rendering: smooth;
+        opacity: 0.42;
+    }
+    Rectangle {
+        background: @linear-gradient(90deg, Theme.background.with-alpha(0.84) 0%, Theme.background.with-alpha(0.56) 48%, Theme.background.with-alpha(0.32) 100%);
+    }
+    Rectangle {
+        background: @linear-gradient(0deg, Theme.background.with-alpha(0.84) 0%, Theme.background.with-alpha(0) 58%);
+    }
+    if !root.show-spectrum: Spectrum {
+        x: -parent.width * 0.02;
+        y: parent.height * 0.42;
+        width: parent.width * 1.04;
+        height: parent.height * 0.56;
+        opacity: 0.34;
+        ambient: true;
+        bands: root.bands;
+    }
+}
+
 export component MediaPage inherits Rectangle {
     in property <string> track-title;
     in property <string> artist;
     in property <string> album;
     in property <string> app;
     in property <image> artwork;
+    in property <image> artwork-backdrop;
     in property <bool> has-artwork;
     in property <bool> playing;
     in property <float> progress;
@@ -316,6 +364,13 @@ export component MediaPage inherits Rectangle {
     property <length> tabs-h: DabState.receiver ? 48px : 0;
 
     background: Theme.backdrop;
+
+    MediaBackdrop {
+        backdrop: root.artwork-backdrop;
+        has-artwork: root.has-artwork && !root.dab-shown;
+        show-spectrum: root.show-spectrum;
+        bands: root.bands;
+    }
 
     Rectangle {
         if DabState.receiver: SourceTabs {

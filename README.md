@@ -277,6 +277,12 @@ On a Raspberry Pi 5, `/dev/ttyAMA0` on GPIO 14/15 (PIN 8/10) does not exist unti
   <img src="docs/media/gps/gps_info.png" alt="GPS data info" width="42%" align="top" />
 </p>
 
+## Media
+
+LIVI's media page sits on an ambient backdrop: a glow in the highlight colour, the album cover stretched into a soft blur and a faint live spectrum along the bottom.
+Tapping the artwork (or selecting it with a knob) brings the spectrum to the foreground with frequency labels; the background spectrum steps aside while it is there.
+The audio capture for the spectrum runs only while the media page is open.
+
 ## DAB+
 
 DAB+ radio via USB RTL-SDR (RTL2832U with R820T2).

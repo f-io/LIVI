@@ -149,7 +149,7 @@ fn render_settings(ui: &AppWindow) {
 
 fn apply(ui: &AppWindow, update: Update) {
     match update {
-        Update::Media(m) => CLIENT.with_borrow(|c| media_ui::apply_media(ui, c.as_ref(), m)),
+        Update::Media(m) => media_ui::apply_media(ui, m),
         Update::Dab(d) => media_ui::apply_dab(ui, d),
         Update::Games(g) => games_ui::apply(ui, g),
         Update::MiniDsp(v) => minidsp_ui::apply(ui, v),
@@ -271,7 +271,8 @@ fn reported(ui: &AppWindow, client: &Client, page: Page) {
     };
     client.show(Screen::Main, front);
     client.path(path);
-    client.spectrum(page == Page::Media && ui.get_show_spectrum());
+    // Media always draws the spectrum: over the artwork or faint behind the page.
+    client.spectrum(page == Page::Media);
     media_ui::follow(ui);
     if page != Page::Settings {
         settings_ui::leave(client);
@@ -421,10 +422,6 @@ fn wire(ui: &AppWindow, client: &Client) {
     });
     media_ui::wire(ui, client);
     minidsp_ui::wire(ui, client);
-    ui.on_spectrum_changed({
-        let c = client.clone();
-        move |on| c.spectrum(on)
-    });
     dashboard_ui::wire(&ui.global::<DashState>(), client);
     games_ui::wire(ui, client);
 }
