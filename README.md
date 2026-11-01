@@ -225,6 +225,19 @@ DAB+ radio via USB RTL-SDR (RTL2832U with R820T2).
 - radio text and station logos in LIVI's media player
 - station order and hidden stations in Settings → DAB+
 
+## MiniDSP
+
+The MiniDSP tab controls a [MiniDSP](https://www.minidsp.com/) through the [minidsp-rs](https://github.com/mrene/minidsp-rs) daemon (`minidspd`) and its HTTP API at `http://127.0.0.1:5380`.
+
+- master volume and bass gain, each with touch-sized step buttons and a slider
+- preset selection, the active preset is marked with a check
+- connection status (product and input source) and refresh in the header, the status is polled while the tab is open
+- follows LIVI's theme colours and works with the D-pad / rotary keys
+
+The bass control sets the gain of the outputs in `minidsp.bassOutputChannels` (zero-based, default outputs 3 + 4). Settings → General → Tab Settings → MiniDSP shows or hides the tab and sets the server URL, device index and the volume and bass limits. Preset names (`minidsp.presets`) and step sizes are edited in `config.json`. For development without hardware set `minidsp.mockDevice` or `LIVI_MOCK_MINIDSP=1` (debug builds only).
+
+On apt hosts the installer installs the latest minidsp-rs Debian package and enables `minidsp.service` (skip with `LIVI_SKIP_MINIDSP=1`); elsewhere install minidsp-rs by hand.
+
 ## Multi-Display
 
 LIVI can run as multiple windows at once, each placeable on its own physical display.

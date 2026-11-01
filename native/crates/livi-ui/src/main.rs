@@ -17,6 +17,7 @@ mod keys_ui;
 mod log;
 mod media;
 mod media_ui;
+mod minidsp_ui;
 mod overlay_ui;
 mod secondary;
 mod settings_ui;
@@ -90,6 +91,7 @@ fn tab(t: Tab) -> TabData {
         Tab::Telemetry => (Page::Telemetry, "SpeedOutlined"),
         Tab::Media => (Page::Media, "PlayCircleOutlined"),
         Tab::Camera => (Page::Camera, "CameraOutlined"),
+        Tab::MiniDsp => (Page::Minidsp, "GraphicEqOutlined"),
         Tab::Settings => (Page::Settings, "SettingsOutlined"),
     };
     TabData {
@@ -126,6 +128,7 @@ fn apply_language(ui: &AppWindow, lang: &str) {
     settings_ui::set_language(lang);
     secondary::set_texts();
     media_ui::set_texts(ui, settings_ui::tr);
+    minidsp_ui::set_texts(ui, settings_ui::tr);
     dashboard_ui::set_texts(&ui.global::<DashState>(), settings_ui::tr);
     ui.set_no_camera(settings_ui::tr("camera.noCamera", "No camera found").into());
 }
@@ -144,6 +147,7 @@ fn apply(ui: &AppWindow, update: Update) {
     match update {
         Update::Media(m) => CLIENT.with_borrow(|c| media_ui::apply_media(ui, c.as_ref(), m)),
         Update::Dab(d) => media_ui::apply_dab(ui, d),
+        Update::MiniDsp(v) => minidsp_ui::apply(ui, v),
         Update::Dash(d) => {
             let before = dashboard_ui::map_shown(ui);
             dashboard_ui::apply(ui, *d);
@@ -217,6 +221,7 @@ fn open_path(ui: &AppWindow, path: &str) {
         Some("telemetry") => Page::Telemetry,
         Some("media") => Page::Media,
         Some("camera") => Page::Camera,
+        Some("minidsp") => Page::Minidsp,
         Some("settings") => Page::Settings,
         Some(other) => {
             println!("[ui] no page for {other}");
@@ -254,6 +259,7 @@ fn reported(ui: &AppWindow, client: &Client, page: Page) {
         Page::Telemetry => (Front::Livi, "/telemetry"),
         Page::Media => (Front::Livi, media_ui::path(ui)),
         Page::Camera => (Front::Camera, "/camera"),
+        Page::Minidsp => (Front::Livi, "/minidsp"),
         Page::Settings => (Front::Livi, "/settings"),
     };
     client.show(Screen::Main, front);
@@ -407,6 +413,7 @@ fn wire(ui: &AppWindow, client: &Client) {
         move |phase, x, y| send_touch(&c, phase, x, y)
     });
     media_ui::wire(ui, client);
+    minidsp_ui::wire(ui, client);
     ui.on_spectrum_changed({
         let c = client.clone();
         move |on| c.spectrum(on)
@@ -531,6 +538,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "projection" => Page::Projection,
             "settings" => Page::Settings,
             "telemetry" => Page::Telemetry,
+            "minidsp" => Page::Minidsp,
             _ => Page::Media,
         };
         choose(&ui, page);

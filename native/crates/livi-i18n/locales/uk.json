@@ -312,7 +312,16 @@
     "dabGain": "Підсилення",
     "moveUp": "Вгору",
     "moveDown": "Вниз",
-    "dabPpm": "Корекція частоти"
+    "dabPpm": "Корекція частоти",
+    "startPageMinidsp": "MiniDSP",
+    "minidsp": "MiniDSP",
+    "minidspEnabled": "Показувати сторінку MiniDSP",
+    "minidspServerUrl": "URL сервера",
+    "minidspDeviceIndex": "Індекс пристрою",
+    "minidspVolumeMin": "Мінімальна гучність",
+    "minidspVolumeMax": "Максимальна гучність",
+    "minidspBassMin": "Мінімальне підсилення басів",
+    "minidspBassMax": "Максимальне підсилення басів"
   },
   "softwareUpdate": {
     "channelNightly": "Nightly",
@@ -398,5 +407,21 @@
     "changeHighway": "Зміна автомагістралі",
     "changeHighwayLeft": "Зміна автомагістралі (ліворуч)",
     "changeHighwayRight": "Зміна автомагістралі (праворуч)"
+  },
+  "minidsp": {
+    "title": "MiniDSP",
+    "connecting": "Підключення…",
+    "connected": "Підключено",
+    "notConnected": "Не підключено",
+    "unavailable": "Недоступно",
+    "unavailableTitle": "MiniDSP недоступний",
+    "noDevice": "MiniDSP не підключено",
+    "connectHint": "Підключіть MiniDSP, а потім оновіть, щоб спробувати ще раз.",
+    "refresh": "Оновити",
+    "masterVolume": "Загальна гучність",
+    "fullSystemOutput": "Весь вихід системи",
+    "bass": "Баси",
+    "outputs": "Виходи {{outputs}}",
+    "presets": "Пресети"
   }
 }

@@ -10,6 +10,7 @@ pub enum Tab {
     Telemetry,
     Media,
     Camera,
+    MiniDsp,
     Settings,
 }
 
@@ -51,6 +52,9 @@ pub fn tabs(config: &Value) -> Vec<Tab> {
     }
     if on_main(config, "camera", true) && camera_ready {
         tabs.push(Tab::Camera);
+    }
+    if config["minidsp"]["enabled"].as_bool().unwrap_or(false) {
+        tabs.push(Tab::MiniDsp);
     }
     tabs.push(Tab::Settings);
     tabs
@@ -121,6 +125,14 @@ mod tests {
                 Tab::Camera,
                 Tab::Settings
             ]
+        );
+        assert_eq!(
+            tabs(&json!({ "minidsp": { "enabled": true } })),
+            vec![Tab::Projection, Tab::Media, Tab::MiniDsp, Tab::Settings]
+        );
+        assert_eq!(
+            tabs(&json!({ "minidsp": { "enabled": false } })),
+            vec![Tab::Projection, Tab::Media, Tab::Settings]
         );
     }
 

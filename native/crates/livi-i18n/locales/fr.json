@@ -312,7 +312,16 @@
     "dabGain": "Gain",
     "moveUp": "Monter",
     "moveDown": "Descendre",
-    "dabPpm": "Correction de fréquence"
+    "dabPpm": "Correction de fréquence",
+    "startPageMinidsp": "MiniDSP",
+    "minidsp": "MiniDSP",
+    "minidspEnabled": "Afficher la page MiniDSP",
+    "minidspServerUrl": "URL du serveur",
+    "minidspDeviceIndex": "Index de l'appareil",
+    "minidspVolumeMin": "Volume minimal",
+    "minidspVolumeMax": "Volume maximal",
+    "minidspBassMin": "Gain des basses minimal",
+    "minidspBassMax": "Gain des basses maximal"
   },
   "softwareUpdate": {
     "channelNightly": "Nightly",
@@ -398,5 +407,21 @@
     "changeHighway": "Changement d'autoroute",
     "changeHighwayLeft": "Changement d'autoroute (à gauche)",
     "changeHighwayRight": "Changement d'autoroute (à droite)"
+  },
+  "minidsp": {
+    "title": "MiniDSP",
+    "connecting": "Connexion…",
+    "connected": "Connecté",
+    "notConnected": "Non connecté",
+    "unavailable": "Indisponible",
+    "unavailableTitle": "MiniDSP indisponible",
+    "noDevice": "Aucun MiniDSP connecté",
+    "connectHint": "Branchez votre MiniDSP, puis actualisez pour réessayer.",
+    "refresh": "Actualiser",
+    "masterVolume": "Volume principal",
+    "fullSystemOutput": "Sortie complète du système",
+    "bass": "Basses",
+    "outputs": "Sorties {{outputs}}",
+    "presets": "Préréglages"
   }
 }
