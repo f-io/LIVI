@@ -41,6 +41,7 @@ mod host_setup;
 mod hub;
 mod hwaddr;
 mod kiosk_unit;
+mod livi_os;
 mod log_file;
 mod mfi;
 mod nav_text;
@@ -228,11 +229,24 @@ async fn run() -> Result<Exit, String> {
         res.gstreamer.clone(),
     ));
     host_setup::prepare();
+    let livi_os = livi_os::active();
+    if livi_os {
+        println!(
+            "[livi-os] contract {}, helper {}",
+            livi_os::CONTRACT,
+            livi_os::helper().display()
+        );
+    }
     let privileged = privileged::Privileged {
         templates: res.templates.clone(),
-        helper: helper::resolve_bin(&res.helper, &user_data),
-        helper_named: user_data.join("driver/livi-helperd"),
+        helper: helper::locate(&res.helper, &user_data),
+        helper_named: if livi_os {
+            livi_os::helper()
+        } else {
+            user_data.join("driver/livi-helperd")
+        },
         user_data: user_data.clone(),
+        livi_os,
     };
     if udev_rule::ensure(&privileged).await {
         return Ok(Exit::Restart(None));

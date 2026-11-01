@@ -302,6 +302,16 @@ chmod +x LIVI-*-linux-x64.AppImage
 
 > **Hardware video decode (optional):** LIVI uses the system VA-API driver for GPU video decode (it is not bundled, since it must match your GPU and kernel). Most desktops ship it, a minimal install may not. Without it LIVI still works via software decode. For HW decode install the driver for your GPU and verify with `vainfo`: `i965-va-driver` (older Intel, e.g. Broadwell), `intel-media-va-driver` (Gen9+ Intel), `mesa-va-drivers` (AMD).
 
+## LIVI OS (immutable image)
+
+On the read-only [LIVI OS](https://github.com/DrSkunk/livi-os-buildroot) image, which starts
+LIVI with `LIVI_OS=1`, LIVI installs no system files of its own: no udev rule, sudoers
+drop-in, systemd unit or root copy of `livi-helperd`. It runs the image's
+`/usr/libexec/livi-helperd` through `sudo -n` (no `-E`) with an allow-listed environment
+instead. Linux AppImages carry `resources/livi-os-helper-api` with the version of this
+interface. The exact contract the image has to provide is in [docs/LIVI-OS.md](docs/LIVI-OS.md);
+keep both in sync when the helper's inputs change.
+
 ## Mac (arm64)
 
 Download the `-arm64.dmg`, open it, and drag **LIVI.app** into Applications.

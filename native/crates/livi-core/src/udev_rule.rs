@@ -26,7 +26,7 @@ fn current(template: &str) -> bool {
 }
 
 pub async fn ensure(p: &Privileged) -> bool {
-    if !cfg!(target_os = "linux") {
+    if !cfg!(target_os = "linux") || p.os_provides(RULE_FILE) {
         return false;
     }
     let template = match std::fs::read_to_string(p.templates.join(TEMPLATE)) {
