@@ -6,15 +6,18 @@
 
 LIVI is an open-source **Apple CarPlay and Android Auto head unit**.
 
+> This is the [DrSkunk/LIVI](https://github.com/DrSkunk/LIVI) fork with extra features for a Raspberry Pi 5 install (Haltech CAN telemetry, MiniDSP, RetroArch games, sunrise/sunset night mode, LIVI OS integration).
+>
+> Based on LIVI by Lasse Heitgres (https://github.com/f-io/LIVI)
+
 It is a standalone cross-platform head unit with a native, zero-copy GStreamer video pipeline and hardware-accelerated decoding across Linux (from x86_64 and arm64 desktops to embedded boards like the Raspberry Pi) and macOS, with low-latency audio, multitouch + D-Pad navigation, and support for very small embedded/OEM displays.
 
 ## Project Status
 
-![Release](https://img.shields.io/github/v/release/f-io/LIVI?label=release)
-![Main Version](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-version.json)
-![Checks Main](https://img.shields.io/github/actions/workflow/status/f-io/LIVI/checks.yml?branch=main&label=checks%20main)
-![Build Main](https://img.shields.io/github/actions/workflow/status/f-io/LIVI/build.yml?branch=main&label=build%20main)
-<a href="https://discord.gg/cv6Gd8wDKB"><img alt="Discord" src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" /></a>
+![Release](https://img.shields.io/github/v/release/DrSkunk/LIVI?label=release)
+![Main Version](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/DrSkunk/LIVI/version/.github/badges/main-version.json)
+![Checks Main](https://img.shields.io/github/actions/workflow/status/DrSkunk/LIVI/checks.yml?branch=main&label=checks%20main)
+![Build Main](https://img.shields.io/github/actions/workflow/status/DrSkunk/LIVI/build.yml?branch=main&label=build%20main)
 
 ## Native Connectivity
 
@@ -279,7 +282,7 @@ Video: 1920x1080 - View Area: 0/0/0/0 (T/B/L/R) - Safe Area: 120/20/500/500 (T/B
 One script installs LIVI on both desktop and headless hosts, auto-detecting which (override with `--desktop` / `--headless`). It uses apt, dnf or pacman, it runs on Debian/Ubuntu, Fedora, Arch and likely other distros, on arm64 and x86_64.
 
 ```bash
-curl -fL -o install.sh https://raw.githubusercontent.com/f-io/LIVI/main/scripts/install/install.sh
+curl -fL -o install.sh https://raw.githubusercontent.com/DrSkunk/LIVI/main/scripts/install/install.sh
 chmod +x install.sh
 ./install.sh
 ```
@@ -315,7 +318,7 @@ After this, the app will launch normally and future updates will work without ad
 
 ## Build Environment
 
-![gstreamer](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-gstreamer.json)
+![gstreamer](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/DrSkunk/LIVI/version/.github/badges/main-gstreamer.json)
 
 ### System Requirements (build)
 
@@ -368,7 +371,7 @@ On macOS, building needs Rust and the GStreamer framework (runtime and devel pkg
 
 ```bash
 # Git clone
-git clone --branch main --single-branch https://github.com/f-io/LIVI.git \
+git clone --branch main --single-branch https://github.com/DrSkunk/LIVI.git \
   && cd LIVI
 
 cd native

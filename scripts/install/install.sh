@@ -28,7 +28,7 @@ echo "→ Host looks $FLOW, running the $FLOW installer (override with --desktop
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT="$DIR/$FLOW/install.sh"
 if [ ! -f "$SCRIPT" ]; then
-  RAW="https://raw.githubusercontent.com/${LIVI_REPO:-f-io/LIVI}/${LIVI_INSTALLER_BRANCH:-main}/scripts/install"
+  RAW="https://raw.githubusercontent.com/${LIVI_REPO:-DrSkunk/LIVI}/${LIVI_INSTALLER_BRANCH:-main}/scripts/install"
   SCRIPT="$(mktemp)"
   curl -fsSL "$RAW/$FLOW/install.sh" -o "$SCRIPT" \
     || { echo "Error: cannot obtain the $FLOW installer" >&2; exit 1; }

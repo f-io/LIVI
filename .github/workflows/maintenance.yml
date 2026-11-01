@@ -103,16 +103,3 @@ jobs:
               "/repos/${GITHUB_REPOSITORY}/actions/caches/${ID}" >/dev/null
           done <<< "${CACHES}"
 
-  cla:
-    name: Close pull requests without a CLA
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          sparse-checkout: |
-            scripts/ci
-
-      - name: Close stale pull requests
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: sh scripts/ci/cla.sh stale

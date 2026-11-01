@@ -608,7 +608,7 @@ fn facts() -> Facts {
     Facts {
         name: env!("CARGO_PKG_DESCRIPTION").into(),
         homepage: env!("CARGO_PKG_HOMEPAGE").into(),
-        source: "https://github.com/f-io/LIVI".into(),
+        source: "https://github.com/DrSkunk/LIVI".into(),
         copyright: format!("© {years} Lasse Heitgres"),
         license: env!("CARGO_PKG_LICENSE").into(),
         version: env!("CARGO_PKG_VERSION").into(),

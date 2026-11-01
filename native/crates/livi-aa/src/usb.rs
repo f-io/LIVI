@@ -38,7 +38,7 @@ const AOAP_STRINGS: [(u16, &str); 6] = [
     (1, "Android Auto"),
     (2, "LIVI Wired Android Auto host"),
     (3, "2.0.1"),
-    (4, "https://github.com/f-io/LIVI"),
+    (4, "https://github.com/DrSkunk/LIVI"),
     (5, "LIVI-0001"),
 ];
 

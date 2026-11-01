@@ -20,7 +20,7 @@ LIVI_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../common.sh"
 if [ ! -f "$LIVI_LIB" ]; then
   LIVI_LIB="$(mktemp)"
   curl -fsSL \
-    "https://raw.githubusercontent.com/${LIVI_REPO:-f-io/LIVI}/${LIVI_INSTALLER_BRANCH:-main}/scripts/install/common.sh" \
+    "https://raw.githubusercontent.com/${LIVI_REPO:-DrSkunk/LIVI}/${LIVI_INSTALLER_BRANCH:-main}/scripts/install/common.sh" \
     -o "$LIVI_LIB" || { echo "Error: cannot obtain common.sh" >&2; exit 1; }
 fi
 # shellcheck source=../common.sh

@@ -79,5 +79,5 @@ body:
     id: logs
     attributes:
       label: Logs
-      description: See [DEBUGGING.md](https://github.com/f-io/LIVI/blob/main/DEBUGGING.md) for how to get them.
+      description: See [DEBUGGING.md](https://github.com/DrSkunk/LIVI/blob/main/DEBUGGING.md) for how to get them.
       render: text

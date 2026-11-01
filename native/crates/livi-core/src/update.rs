@@ -40,7 +40,7 @@ fn feed_url(nightly: bool) -> String {
     let repo = std::env::var("UPDATE_REPO").ok().filter(|r| !r.is_empty());
     let base = format!(
         "https://api.github.com/repos/{}/releases",
-        repo.as_deref().unwrap_or("f-io/LIVI")
+        repo.as_deref().unwrap_or("DrSkunk/LIVI")
     );
     if nightly {
         format!("{base}/tags/{NIGHTLY_TAG}")

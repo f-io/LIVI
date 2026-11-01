@@ -1,6 +1,6 @@
 # LIVI installer library, sourced by scripts/install/*/install.sh.
 
-LIVI_REPO="${LIVI_REPO:-f-io/LIVI}"
+LIVI_REPO="${LIVI_REPO:-DrSkunk/LIVI}"
 LIVI_BRANCH="${LIVI_INSTALLER_BRANCH:-main}"
 LIVI_RAW="https://raw.githubusercontent.com/${LIVI_REPO}/${LIVI_BRANCH}"
 LIVI_API="https://api.github.com/repos/${LIVI_REPO}"
