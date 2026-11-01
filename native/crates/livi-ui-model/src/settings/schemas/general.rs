@@ -15,11 +15,12 @@ const MAX_HEIGHT: f64 = 2160.0;
 const WIFI_PASSWORD_MIN: usize = 8;
 const WIFI_PASSWORD_MAX: usize = 63;
 
-const PAGES: [(&str, &str, &str); 6] = [
+const PAGES: [(&str, &str, &str); 7] = [
     ("/", "Home", "settings.startPageHome"),
     ("/telemetry", "Telemetry", "settings.startPageTelemetry"),
     ("/media", "Media", "settings.startPageMedia"),
     ("/camera", "Camera", "settings.startPageCamera"),
+    ("/games", "Games", "settings.startPageGames"),
     ("/settings", "Settings", "settings.startPageSettings"),
     ("last", "Last used", "settings.startPageLast"),
 ];
@@ -612,6 +613,55 @@ const LANGUAGES: [(&str, &str, &str); 32] = [
     ("ko", "한국어", "Korean"),
 ];
 
+fn game_path(key: &'static str, text: &'static str, path: &'static str) -> Node {
+    Node::text(Label::new(key, text), path)
+        .icon("folder")
+        .display_value()
+        .page(Label::new(key, text))
+}
+
+fn games() -> Node {
+    Node::route(
+        "games",
+        Label::new("settings.games", "Games"),
+        vec![
+            Node::checkbox(
+                Label::new("settings.gamesEnabled", "Enable Games"),
+                "games.enabled",
+            )
+            .icon("gamesEnabled"),
+            Node::text(
+                Label::new("settings.retroArchPath", "RetroArch Executable"),
+                "games.retroArchPath",
+            )
+            .icon("retroArch")
+            .display_value()
+            .page(Label::new("settings.retroArchPath", "RetroArch Executable")),
+            game_path(
+                "settings.romDirectory",
+                "ROM Directory",
+                "games.romDirectory",
+            ),
+            game_path(
+                "settings.playlistDirectory",
+                "Playlist Directory",
+                "games.playlistDirectory",
+            ),
+            game_path(
+                "settings.thumbnailDirectory",
+                "Thumbnail Directory",
+                "games.thumbnailDirectory",
+            ),
+            game_path(
+                "settings.coresDirectory",
+                "Cores Directory",
+                "games.coresDirectory",
+            ),
+        ],
+    )
+    .icon("games")
+}
+
 pub fn schema() -> Node {
     Node::route(
         "general",
@@ -620,6 +670,7 @@ pub fn schema() -> Node {
             connections(),
             screen_settings(),
             tab_settings(),
+            games(),
             key_bindings(),
             Node::select(
                 Label::new("settings.startPage", "Start Page"),

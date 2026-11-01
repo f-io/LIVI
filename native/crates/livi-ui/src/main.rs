@@ -11,6 +11,7 @@ mod files_ui;
 mod follow;
 mod fonts;
 mod fullscreen;
+mod games_ui;
 mod icon_ui;
 mod icons;
 mod keys_ui;
@@ -90,6 +91,7 @@ fn tab(t: Tab) -> TabData {
         Tab::Telemetry => (Page::Telemetry, "SpeedOutlined"),
         Tab::Media => (Page::Media, "PlayCircleOutlined"),
         Tab::Camera => (Page::Camera, "CameraOutlined"),
+        Tab::Games => (Page::Games, "SportsEsportsOutlined"),
         Tab::Settings => (Page::Settings, "SettingsOutlined"),
     };
     TabData {
@@ -128,6 +130,7 @@ fn apply_language(ui: &AppWindow, lang: &str) {
     media_ui::set_texts(ui, settings_ui::tr);
     dashboard_ui::set_texts(&ui.global::<DashState>(), settings_ui::tr);
     ui.set_no_camera(settings_ui::tr("camera.noCamera", "No camera found").into());
+    games_ui::set_texts(ui, settings_ui::tr);
 }
 
 fn render_settings(ui: &AppWindow) {
@@ -144,6 +147,7 @@ fn apply(ui: &AppWindow, update: Update) {
     match update {
         Update::Media(m) => CLIENT.with_borrow(|c| media_ui::apply_media(ui, c.as_ref(), m)),
         Update::Dab(d) => media_ui::apply_dab(ui, d),
+        Update::Games(g) => games_ui::apply(ui, g),
         Update::Dash(d) => {
             let before = dashboard_ui::map_shown(ui);
             dashboard_ui::apply(ui, *d);
@@ -217,6 +221,7 @@ fn open_path(ui: &AppWindow, path: &str) {
         Some("telemetry") => Page::Telemetry,
         Some("media") => Page::Media,
         Some("camera") => Page::Camera,
+        Some("games") => Page::Games,
         Some("settings") => Page::Settings,
         Some(other) => {
             println!("[ui] no page for {other}");
@@ -238,7 +243,7 @@ fn open_path(ui: &AppWindow, path: &str) {
     }
 }
 
-fn choose(ui: &AppWindow, page: Page) {
+pub(crate) fn choose(ui: &AppWindow, page: Page) {
     ui.set_page(page);
     CLIENT.with_borrow(|c| {
         if let Some(c) = c {
@@ -254,6 +259,7 @@ fn reported(ui: &AppWindow, client: &Client, page: Page) {
         Page::Telemetry => (Front::Livi, "/telemetry"),
         Page::Media => (Front::Livi, media_ui::path(ui)),
         Page::Camera => (Front::Camera, "/camera"),
+        Page::Games => (Front::Livi, "/games"),
         Page::Settings => (Front::Livi, "/settings"),
     };
     client.show(Screen::Main, front);
@@ -412,6 +418,7 @@ fn wire(ui: &AppWindow, client: &Client) {
         move |on| c.spectrum(on)
     });
     dashboard_ui::wire(&ui.global::<DashState>(), client);
+    games_ui::wire(ui, client);
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -531,6 +538,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "projection" => Page::Projection,
             "settings" => Page::Settings,
             "telemetry" => Page::Telemetry,
+            "games" => Page::Games,
             _ => Page::Media,
         };
         choose(&ui, page);

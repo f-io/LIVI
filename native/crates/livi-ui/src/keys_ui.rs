@@ -47,6 +47,7 @@ enum Target {
     Source(bool),
     Favorite,
     Station(usize),
+    Games(usize),
 }
 
 thread_local! {
@@ -138,6 +139,9 @@ fn targets(ui: &AppWindow) -> Vec<Target> {
             }
             out
         }
+        Page::Games => (0..crate::games_ui::targets(ui))
+            .map(Target::Games)
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -269,6 +273,7 @@ fn activate(ui: &AppWindow, target: Target) {
         Target::Source(false) => d.invoke_phone(),
         Target::Source(true) => d.invoke_resume(),
         Target::Favorite => d.invoke_toggle_favorite(),
+        Target::Games(i) => crate::games_ui::activate(ui, i),
         Target::Station(i) => {
             if let Some(st) = d.get_stations().row_data(i) {
                 d.invoke_pick(st.service_id);

@@ -312,7 +312,15 @@
     "dabGain": "Gain",
     "moveUp": "Move up",
     "moveDown": "Move down",
-    "dabPpm": "Frequency correction"
+    "dabPpm": "Frequency correction",
+    "games": "Games",
+    "gamesEnabled": "Enable Games",
+    "retroArchPath": "RetroArch Executable",
+    "romDirectory": "ROM Directory",
+    "playlistDirectory": "Playlist Directory",
+    "thumbnailDirectory": "Thumbnail Directory",
+    "coresDirectory": "Cores Directory",
+    "startPageGames": "Games"
   },
   "softwareUpdate": {
     "channelNightly": "Nightly",
@@ -398,5 +406,33 @@
     "changeHighway": "Change highway",
     "changeHighwayLeft": "Change highway (left)",
     "changeHighwayRight": "Change highway (right)"
+  },
+  "games": {
+    "title": "Games",
+    "count": "{{count}} games",
+    "countOne": "1 game",
+    "loading": "Loading games…",
+    "imported": "Imported {{games}} games into {{playlists}} playlists; downloaded {{thumbnails}} thumbnails.",
+    "missingCores": "Missing cores: {{cores}}.",
+    "import": "Import ROMs",
+    "importing": "Importing…",
+    "pairController": "Pair controller",
+    "rescan": "Rescan",
+    "emptyTitle": "No games yet",
+    "emptyRoms": "Place legally obtained ROMs in {{dir}}.",
+    "emptyImport": "Import ROMs to create playlists and download cover art.",
+    "openRetroArch": "Open RetroArch",
+    "retroArchDirs": "Playlists and thumbnails are read automatically from ~/.config/retroarch.",
+    "launching": "Starting RetroArch…",
+    "controllersTitle": "Bluetooth controllers",
+    "controllersHint": "Put your controller in pairing mode, then scan for nearby devices.",
+    "noControllers": "No controllers found",
+    "scan": "Scan",
+    "scanning": "Scanning…",
+    "close": "Close",
+    "pair": "Pair",
+    "pairing": "Pairing…",
+    "paired": "Paired",
+    "connected": "Connected"
   }
 }

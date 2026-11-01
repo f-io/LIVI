@@ -10,6 +10,7 @@ pub enum Tab {
     Telemetry,
     Media,
     Camera,
+    Games,
     Settings,
 }
 
@@ -51,6 +52,9 @@ pub fn tabs(config: &Value) -> Vec<Tab> {
     }
     if on_main(config, "camera", true) && camera_ready {
         tabs.push(Tab::Camera);
+    }
+    if config["games"]["enabled"].as_bool().unwrap_or(false) {
+        tabs.push(Tab::Games);
     }
     tabs.push(Tab::Settings);
     tabs
@@ -121,6 +125,10 @@ mod tests {
                 Tab::Camera,
                 Tab::Settings
             ]
+        );
+        assert_eq!(
+            tabs(&json!({ "games": { "enabled": true } })),
+            vec![Tab::Projection, Tab::Media, Tab::Games, Tab::Settings]
         );
     }
 
