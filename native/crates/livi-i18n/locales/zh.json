@@ -235,6 +235,7 @@
     "copyright": "版权",
     "license": "许可证",
     "sourceCode": "源代码",
+    "basedOn": "基于",
     "warranty": "保修",
     "noWarranty": "在法律允许的范围内不提供担保",
     "noPairedDevices": "无已配对设备",

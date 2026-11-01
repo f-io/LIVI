@@ -235,6 +235,7 @@
     "copyright": "Copyright",
     "license": "Licence",
     "sourceCode": "Code source",
+    "basedOn": "Basé sur",
     "warranty": "Garantie",
     "noWarranty": "Aucune, dans la mesure permise par la loi",
     "noPairedDevices": "Aucun appareil associé",
