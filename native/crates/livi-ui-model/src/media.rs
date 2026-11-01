@@ -241,47 +241,6 @@ pub fn badge(label: &str) -> [u8; 3] {
     })
 }
 
-/// Side length of the ambient artwork backdrop behind the media page.
-pub const BACKDROP: u32 = 12;
-const BACKDROP_SATURATE: f32 = 1.55;
-const BACKDROP_BRIGHTNESS: f32 = 0.72;
-
-/// Shrinks RGBA artwork to a `BACKDROP`² tile of box averages, boosted in
-/// saturation and dimmed. Stretched back over the page with smooth scaling
-/// it reads as a heavy blur of the cover.
-pub fn backdrop(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
-    let (w, h) = (width as usize, height as usize);
-    let n = BACKDROP as usize;
-    let mut out = vec![0u8; n * n * 4];
-    if w == 0 || h == 0 || rgba.len() < w * h * 4 {
-        return out;
-    }
-    for ty in 0..n {
-        let (y0, y1) = (ty * h / n, ((ty + 1) * h / n).max(ty * h / n + 1));
-        for tx in 0..n {
-            let (x0, x1) = (tx * w / n, ((tx + 1) * w / n).max(tx * w / n + 1));
-            let mut sum = [0u64; 4];
-            for y in y0..y1.min(h) {
-                for x in x0..x1.min(w) {
-                    let px = &rgba[(y * w + x) * 4..][..4];
-                    for (s, &c) in sum.iter_mut().zip(px) {
-                        *s += u64::from(c);
-                    }
-                }
-            }
-            let count = ((y1.min(h) - y0) * (x1.min(w) - x0)).max(1) as f32;
-            let [r, g, b, a] = sum.map(|s| s as f32 / count);
-            let grey = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-            let tone = |c: f32| {
-                ((grey + (c - grey) * BACKDROP_SATURATE) * BACKDROP_BRIGHTNESS).clamp(0.0, 255.0)
-                    as u8
-            };
-            out[(ty * n + tx) * 4..][..4].copy_from_slice(&[tone(r), tone(g), tone(b), a as u8]);
-        }
-    }
-    out
-}
-
 pub fn dab(state: &Value) -> Dab {
     let d = &state["dab"];
     let tuned = d["station"].as_u64().map(|v| v as u32);
@@ -432,39 +391,5 @@ mod tests {
         assert_eq!(d.stations.len(), 1);
         assert_eq!(d.stations[0].label, "Eins");
         assert_eq!(d.tuned_index, Some(0));
-    }
-
-    #[test]
-    fn backdrop_averages_dims_and_saturates_the_cover() {
-        let n = BACKDROP as usize;
-        let (w, h) = (n * 4, n * 2);
-        let mut img = Vec::new();
-        for y in 0..h {
-            for _ in 0..w {
-                img.extend_from_slice(if y % 2 == 0 {
-                    &[200, 100, 100, 255]
-                } else {
-                    &[200, 140, 100, 255]
-                });
-            }
-        }
-        let out = backdrop(&img, w as u32, h as u32);
-        assert_eq!(out.len(), n * n * 4);
-        let px = &out[..4];
-        assert_eq!(px[3], 255);
-        assert!(px[0] < 200, "dimmed: {px:?}");
-        let (r, g) = (f32::from(px[0]), f32::from(px[1]));
-        assert!(
-            r - g > (200.0 - 120.0) * BACKDROP_BRIGHTNESS,
-            "more saturated: {px:?}"
-        );
-    }
-
-    #[test]
-    fn backdrop_copes_with_covers_smaller_than_the_tile_and_bad_input() {
-        let out = backdrop(&[255, 255, 255, 255], 1, 1);
-        assert_eq!(out.len(), (BACKDROP * BACKDROP * 4) as usize);
-        assert!(out.chunks(4).all(|p| p[3] == 255 && p[0] == p[1]));
-        assert!(backdrop(&[1, 2, 3], 4, 4).iter().all(|&b| b == 0));
     }
 }
