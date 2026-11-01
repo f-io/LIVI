@@ -7,6 +7,8 @@
     "settingsTitle": "Settings",
     "devices": "Devices",
     "general": "General",
+    "vehicleTelemetry": "Vehicle Telemetry",
+    "haltechCanEnabled": "Receive Haltech CAN V2 telemetry (can0, 1 Mbit/s, listen-only)",
     "windowSettings": "Window Settings",
     "tabSettings": "Tab Settings",
     "mainVideo": "Main Video",

@@ -102,6 +102,7 @@ export const DEFAULT_CONFIG: Config = {
   kiosk: { main: false, dash: false, aux: false },
   uiZoomPercent: 100,
   cameraId: '',
+  haltechCanEnabled: false,
   camera: { main: true, dash: false, aux: false },
   cameraMirror: false,
   cameraRotation: 0,
