@@ -150,11 +150,11 @@ glare down. Every colour can still be overridden under Settings → Appearance �
 Settings → Appearance → **Day / Night Mode** (`appearanceMode`) picks what drives day and
 night:
 
-| Mode               | Behaviour                                                                  |
-| ------------------ | -------------------------------------------------------------------------- |
-| `sun` (default)    | Switches at sunrise and sunset, computed from the car's position           |
-| `day` / `night`    | Fixed                                                                      |
-| `auto`             | Left to the car or the phone (e.g. a light sensor pushing `nightMode`)     |
+| Mode            | Behaviour                                                              |
+| --------------- | ---------------------------------------------------------------------- |
+| `sun` (default) | Switches at sunrise and sunset, computed from the car's position       |
+| `day` / `night` | Fixed                                                                  |
+| `auto`          | Left to the car or the phone (e.g. a light sensor pushing `nightMode`) |
 
 In `sun` mode LIVI checks the sun's elevation once a minute and, at each transition, sets
 both `darkMode` (LIVI's own theme) and `nightMode` (CarPlay, Android Auto and the cluster),

@@ -10,21 +10,21 @@ The AppImage declares the version of this contract it speaks in
 `resources/livi-os-helper-api` (one line). This is contract version `2`. The image should
 refuse, or at least warn about, an AppImage whose marker it does not know.
 
-| Version | Change |
-| --- | --- |
-| 1 | Electron LIVI: `/usr/libexec/livi-projection-helper` with positional arguments. |
-| 2 | Native LIVI: `/usr/libexec/livi-helperd`, settings through an allow-listed environment. |
+| Version | Change                                                                                  |
+| ------- | --------------------------------------------------------------------------------------- |
+| 1       | Electron LIVI: `/usr/libexec/livi-projection-helper` with positional arguments.         |
+| 2       | Native LIVI: `/usr/libexec/livi-helperd`, settings through an allow-listed environment. |
 
 In the tables `<user>` is the account LIVI runs as. Its home must be `/home/<user>`
 (the helper finds `~/.config/LIVI/config.json` and the MFi files through `SUDO_USER`).
 
 ## Environment LIVI is started with
 
-| Variable | Value | Effect |
-| --- | --- | --- |
-| `LIVI_OS` | `1` | Turns on everything below. Any other value, or none, is a normal install. |
-| `LIVI_OS_HELPER` | path, optional | Another helper than `/usr/libexec/livi-helperd`. |
-| `LIVI_KIOSK` | `1`, optional | LIVI owns the host: Quit powers it off, the gvfs guard is not needed. |
+| Variable         | Value          | Effect                                                                    |
+| ---------------- | -------------- | ------------------------------------------------------------------------- |
+| `LIVI_OS`        | `1`            | Turns on everything below. Any other value, or none, is a normal install. |
+| `LIVI_OS_HELPER` | path, optional | Another helper than `/usr/libexec/livi-helperd`.                          |
+| `LIVI_KIOSK`     | `1`, optional  | LIVI owns the host: Quit powers it off, the gvfs guard is not needed.     |
 
 With `LIVI_OS=1` LIVI never stages a copy of `livi-helperd`, never runs `sudo -E`, and never
 calls any `livi-helperd --install-*` switch. It logs once per item, for example
@@ -87,21 +87,21 @@ the rule has to name the path that exists on the image.
 
 ## Files the image ships
 
-| Path | Content | Without it |
-| --- | --- | --- |
-| `/usr/libexec/livi-helperd` | see above | no projection |
-| `/etc/udev/rules.d/99-LIVI.rules` | `resources/99-LIVI.rules.template` of the AppImage, verbatim | phones get grabbed by the desktop, touch panels double up |
-| `/usr/local/lib/livi/livi-touch-filter` | `resources/livi-touch-filter`, mode `0755` | the rule's touch line never matches |
-| `/etc/systemd/system/livi-wifi-ap.service` | `resources/livi-wifi-ap.service.template` with `/usr/local/sbin/livi-helperd` replaced by `/usr/libexec/livi-helperd` and `__USERNAME__` by `<user>`; not enabled by default, LIVI enables it for a dedicated AP interface | no wireless CarPlay / Android Auto |
-| `/usr/local/lib/livi/livi-power.sh` | as `livi_install_power_helper` in `scripts/install/common.sh` | Quit does not power off |
-| `/usr/local/lib/livi/livi-set-time.sh` | as `livi_install_time_helper` | GPS does not set clock or timezone |
-| `/usr/local/lib/livi/livi-video-mode.sh` | as `livi_install_video_mode_helper` (adapt `CMDLINE` to the image's boot partition) | the display mode is not pinned |
-| `/usr/libexec/livi-can-capture` | see [Haltech CAN capture](#haltech-can-capture) | no Haltech CAN telemetry |
-| `/usr/local/lib/livi/gvfs-phone-guard.sh` | optional, only for an image with gvfs; script and sudoers rule as in `native/crates/livi-core/src/gvfs_guard.rs` | gvfs may grab phones |
+| Path                                       | Content                                                                                                                                                                                                                    | Without it                                                |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `/usr/libexec/livi-helperd`                | see above                                                                                                                                                                                                                  | no projection                                             |
+| `/etc/udev/rules.d/99-LIVI.rules`          | `resources/99-LIVI.rules.template` of the AppImage, verbatim                                                                                                                                                               | phones get grabbed by the desktop, touch panels double up |
+| `/usr/local/lib/livi/livi-touch-filter`    | `resources/livi-touch-filter`, mode `0755`                                                                                                                                                                                 | the rule's touch line never matches                       |
+| `/etc/systemd/system/livi-wifi-ap.service` | `resources/livi-wifi-ap.service.template` with `/usr/local/sbin/livi-helperd` replaced by `/usr/libexec/livi-helperd` and `__USERNAME__` by `<user>`; not enabled by default, LIVI enables it for a dedicated AP interface | no wireless CarPlay / Android Auto                        |
+| `/usr/local/lib/livi/livi-power.sh`        | as `livi_install_power_helper` in `scripts/install/common.sh`                                                                                                                                                              | Quit does not power off                                   |
+| `/usr/local/lib/livi/livi-set-time.sh`     | as `livi_install_time_helper`                                                                                                                                                                                              | GPS does not set clock or timezone                        |
+| `/usr/local/lib/livi/livi-video-mode.sh`   | as `livi_install_video_mode_helper` (adapt `CMDLINE` to the image's boot partition)                                                                                                                                        | the display mode is not pinned                            |
+| `/usr/libexec/livi-can-capture`            | see [Haltech CAN capture](#haltech-can-capture)                                                                                                                                                                            | no Haltech CAN telemetry                                  |
+| `/usr/local/lib/livi/gvfs-phone-guard.sh`  | optional, only for an image with gvfs; script and sudoers rule as in `native/crates/livi-core/src/gvfs_guard.rs`                                                                                                           | gvfs may grab phones                                      |
 
 ## Haltech CAN capture
 
-With *Settings → Car → Receive Haltech CAN V2 telemetry* on (`haltechCanEnabled`), LIVI runs
+With _Settings → Car → Receive Haltech CAN V2 telemetry_ on (`haltechCanEnabled`), LIVI runs
 
 ```
 sudo -n /usr/libexec/livi-can-capture

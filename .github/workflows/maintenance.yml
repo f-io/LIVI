@@ -102,4 +102,3 @@ jobs:
             gh api -X DELETE -H "Accept: application/vnd.github+json" \
               "/repos/${GITHUB_REPOSITORY}/actions/caches/${ID}" >/dev/null
           done <<< "${CACHES}"
-
