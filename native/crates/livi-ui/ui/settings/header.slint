@@ -36,10 +36,11 @@ export component SettingsHeader inherits Rectangle {
     Text {
         x: root.side;
         width: root.width - 2 * root.side;
-        text: root.title;
-        color: Theme.text;
+        text: Theme.comand ? root.title.to-uppercase() : root.title;
+        color: Theme.comand ? Theme.primary : Theme.text;
         font-size: Metrics.title-px;
-        font-weight: 800;
+        font-weight: Theme.comand ? 700 : 800;
+        letter-spacing: Theme.comand ? 2.5px : 0;
         horizontal-alignment: center;
         vertical-alignment: center;
         overflow: elide;
@@ -49,9 +50,9 @@ export component SettingsHeader inherits Rectangle {
         x: root.width - 0.5rem - Metrics.slot-right;
         width: Metrics.slot-right;
         Rectangle {
-            border-radius: 6px;
-            border-width: root.apply-focused ? 2px : 0;
-            border-color: Theme.primary;
+            border-radius: Theme.comand ? Theme.radius : 6px;
+            border-width: root.apply-focused ? Theme.ring(2px) : 0;
+            border-color: Theme.focus-color;
         }
         HorizontalLayout {
             alignment: center;
@@ -60,6 +61,7 @@ export component SettingsHeader inherits Rectangle {
                 text: root.apply-text;
                 color: Theme.primary;
                 font-size: Metrics.apply-px;
+                letter-spacing: Theme.tracking;
                 vertical-alignment: center;
             }
             Image {

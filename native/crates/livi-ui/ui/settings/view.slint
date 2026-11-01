@@ -89,7 +89,7 @@ export global SettingsState {
 }
 
 export component SettingsView inherits Rectangle {
-    background: Theme.background;
+    background: Theme.backdrop;
 
     property <int> focus-index: Focus.zone == FocusZone.main ? Focus.main-index : -1;
     property <length> lead: Metrics.header-h + Metrics.header-mb;
@@ -139,8 +139,11 @@ export component SettingsView inherits Rectangle {
                     padding-right: 0.5rem;
                     padding-bottom: 2px;
                     if SettingsState.kind == ScreenKind.list: Rectangle {
-                        background: SettingsState.rows.length > 0 ? Theme.paper : transparent;
-                        border-radius: 10px;
+                        background: SettingsState.rows.length > 0 ? (Theme.comand ? Theme.panel-base : Theme.paper) : transparent;
+                        border-radius: Theme.comand ? Theme.radius : 10px;
+                        drop-shadow-blur: Theme.comand && SettingsState.rows.length > 0 ? 28px : 0;
+                        drop-shadow-offset-y: 10px;
+                        drop-shadow-color: Theme.panel-shadow;
                         VerticalLayout {
                         for r[i] in SettingsState.rows: Rectangle {
                             property <int> rel: root.focus-index - SettingsState.focus-base - r.focus-at;
@@ -149,9 +152,9 @@ export component SettingsView inherits Rectangle {
                             if r.kind == RowKind.picture: Rectangle {
                                 width: parent.side;
                                 height: parent.side;
-                                border-radius: 8px;
-                                border-width: r.focus-at >= 0 && parent.rel == 0 ? 2px : 1px;
-                                border-color: r.focus-at >= 0 && parent.rel == 0 ? Theme.primary : Theme.divider;
+                                border-radius: Theme.comand ? Theme.radius : 8px;
+                                border-width: r.focus-at >= 0 && parent.rel == 0 ? Theme.ring(2px) : 1px;
+                                border-color: r.focus-at >= 0 && parent.rel == 0 ? Theme.focus-color : Theme.rule;
                                 clip: true;
                                 Image {
                                     width: 100%;
@@ -164,11 +167,13 @@ export component SettingsView inherits Rectangle {
                                 }
                             }
                             if r.kind == RowKind.progress: Rectangle {
-                                background: Theme.primary.with-alpha(0.3);
+                                background: Theme.comand ? Theme.panel-base : Theme.primary.with-alpha(0.3);
                                 Rectangle {
                                     x: 0;
                                     width: parent.width * r.level;
                                     background: Theme.primary;
+                                    drop-shadow-blur: Theme.comand ? 8px : 0;
+                                    drop-shadow-color: Theme.primary;
                                 }
                             }
                             if r.kind != RowKind.progress && r.kind != RowKind.picture: SettingsRow {
@@ -263,15 +268,17 @@ export component SettingsView inherits Rectangle {
     }
 
     if SettingsState.dialog-open: Rectangle {
-        background: #00000080;
+        background: Theme.comand ? #000000c2 : #00000080;
         TouchArea {}
         card := Rectangle {
             width: min(parent.width - 32px, 444px);
             height: content.preferred-height;
-            border-radius: 4px;
-            background: Theme.dark ? #383838 : #ffffff;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: #00000080;
+            border-radius: Theme.comand ? Theme.radius : 4px;
+            background: Theme.comand ? Theme.panel : Theme.dark ? #383838 : #ffffff;
+            border-width: Theme.comand ? 1px : 0;
+            border-color: Theme.key-edge;
+            drop-shadow-blur: Theme.comand ? 70px : 24px;
+            drop-shadow-color: Theme.comand ? #000000 : #00000080;
             content := VerticalLayout {
                 padding-left: 16px;
                 padding-right: 16px;
@@ -279,21 +286,24 @@ export component SettingsView inherits Rectangle {
                 padding-bottom: 8px;
                 spacing: 4px;
                 Text {
-                    text: SettingsState.dialog-title;
-                    color: Theme.text;
-                    font-size: 20px;
+                    text: Theme.comand ? SettingsState.dialog-title.to-uppercase() : SettingsState.dialog-title;
+                    color: Theme.comand ? Theme.primary : Theme.text;
+                    font-size: Theme.comand ? 18px : 20px;
                     font-weight: 500;
+                    letter-spacing: Theme.comand ? 2.5px : 0;
                     height: 40px;
                     vertical-alignment: center;
                 }
                 for r in SettingsState.dialog-rows: Rectangle {
                     height: r.kind == RowKind.progress ? 4px : r.kind == RowKind.button ? 0 : 24px;
                     if r.kind == RowKind.progress: Rectangle {
-                        background: Theme.primary.with-alpha(0.3);
+                        background: Theme.comand ? Theme.panel-base : Theme.primary.with-alpha(0.3);
                         Rectangle {
                             x: 0;
                             width: parent.width * r.level;
                             background: Theme.primary;
+                            drop-shadow-blur: Theme.comand ? 8px : 0;
+                            drop-shadow-color: Theme.primary;
                         }
                     }
                     if r.kind == RowKind.info: HorizontalLayout {
@@ -339,25 +349,28 @@ export component SettingsView inherits Rectangle {
     }
 
     if SettingsState.capture-open: Rectangle {
-        background: #00000080;
+        background: Theme.comand ? #000000c2 : #00000080;
         TouchArea {
             clicked => { SettingsState.capture-cancel(); }
         }
         Rectangle {
             width: min(parent.width - 48px, 460px);
             height: box.preferred-height;
-            border-radius: 4px;
-            background: Theme.dark ? #383838 : #ffffff;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: #00000080;
+            border-radius: Theme.comand ? Theme.radius : 4px;
+            background: Theme.comand ? Theme.panel : Theme.dark ? #383838 : #ffffff;
+            border-width: Theme.comand ? 1px : 0;
+            border-color: Theme.key-edge;
+            drop-shadow-blur: Theme.comand ? 70px : 24px;
+            drop-shadow-color: Theme.comand ? #000000 : #00000080;
             box := VerticalLayout {
                 padding: 20px;
                 spacing: 8px;
                 Text {
-                    text: SettingsState.capture-title;
-                    color: Theme.text;
-                    font-size: 20px;
+                    text: Theme.comand ? SettingsState.capture-title.to-uppercase() : SettingsState.capture-title;
+                    color: Theme.comand ? Theme.primary : Theme.text;
+                    font-size: Theme.comand ? 18px : 20px;
                     font-weight: 500;
+                    letter-spacing: Theme.comand ? 2.5px : 0;
                     wrap: word-wrap;
                 }
                 Text {

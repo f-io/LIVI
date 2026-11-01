@@ -51,10 +51,10 @@ component StepButton inherits Rectangle {
     property <int> repeats;
 
     width: 72px;
-    background: touch.pressed ? Theme.button-active : Theme.button;
+    background: Theme.comand ? (touch.pressed ? Theme.key-lit : Theme.key) : touch.pressed ? Theme.button-active : Theme.button;
     opacity: root.enabled ? 1 : 0.4;
-    border-width: root.focused ? 2px : 0;
-    border-color: Theme.primary;
+    border-width: root.focused ? Theme.ring(2px) : 0;
+    border-color: Theme.focus-color;
     Text {
         text: root.glyph;
         color: Theme.text;
@@ -124,9 +124,9 @@ export component NumberBody inherits VerticalLayout {
     alignment: start;
     Rectangle {
         height: 88px;
-        border-radius: 8px;
-        border-width: root.editing ? 3px : root.focused ? 2px : 1px;
-        border-color: root.focused ? Theme.primary : Theme.divider;
+        border-radius: Theme.comand ? Theme.radius : 8px;
+        border-width: Theme.comand ? 1px : root.editing ? 3px : root.focused ? 2px : 1px;
+        border-color: root.editing && Theme.comand ? Theme.primary : root.focused ? Theme.focus-color : Theme.rule;
         clip: true;
         HorizontalLayout {
             minus := StepButton {
@@ -184,9 +184,10 @@ export component TextBody inherits VerticalLayout {
     alignment: start;
     Rectangle {
         height: 56px;
-        border-radius: 8px;
-        border-width: input.has-focus || root.focused ? 2px : 1px;
-        border-color: input.has-focus || root.focused ? Theme.primary : Theme.divider;
+        border-radius: Theme.comand ? Theme.radius : 8px;
+        background: Theme.comand ? Theme.background.with-alpha(0.72) : transparent;
+        border-width: input.has-focus || root.focused ? Theme.ring(2px) : 1px;
+        border-color: input.has-focus && Theme.comand ? Theme.primary : input.has-focus || root.focused ? Theme.focus-color : Theme.rule;
         input := TextInput {
             x: 14px;
             width: parent.width - 28px;

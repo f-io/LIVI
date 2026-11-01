@@ -59,10 +59,10 @@ component StepButton inherits Rectangle {
 
     width: size;
     height: size;
-    border-radius: 8px;
-    border-width: root.focused ? 3px : 1px;
-    border-color: root.focused ? Theme.primary : Theme.divider;
-    background: root.enabled && (touch.pressed || touch.has-hover) ? Theme.surface : transparent;
+    border-radius: Theme.comand ? Theme.radius : 8px;
+    border-width: root.focused ? Theme.ring(3px) : 1px;
+    border-color: root.focused ? Theme.focus-color : Theme.comand ? (touch.has-hover ? Theme.primary : Theme.key-edge) : Theme.divider;
+    background: Theme.comand ? (touch.pressed ? Theme.key-lit : Theme.key) : root.enabled && (touch.pressed || touch.has-hover) ? Theme.surface : transparent;
     opacity: root.enabled ? 1 : 0.4;
     Image {
         width: root.size * 0.5;
@@ -87,10 +87,13 @@ component DspControl inherits Rectangle {
     in property <length> value-px;
     in property <length> button;
 
-    border-radius: 12px;
+    border-radius: Theme.comand ? Theme.radius : 12px;
     border-width: 1px;
-    border-color: Theme.divider;
-    background: Theme.paper;
+    border-color: Theme.rule;
+    background: Theme.comand ? Theme.panel : Theme.paper;
+    drop-shadow-blur: Theme.comand ? 28px : 0;
+    drop-shadow-offset-y: 10px;
+    drop-shadow-color: Theme.panel-shadow;
 
     VerticalLayout {
         padding: root.pad;
@@ -171,10 +174,10 @@ component PresetButton inherits Rectangle {
     in property <bool> focused;
     callback clicked();
 
-    border-radius: 8px;
-    border-width: root.focused ? 3px : 1px;
-    border-color: root.focused || root.preset.active ? Theme.primary : Theme.divider;
-    background: root.preset.active ? Theme.primary.with-alpha(0.16) : touch.has-hover ? Theme.surface : transparent;
+    border-radius: Theme.comand ? Theme.radius : 8px;
+    border-width: root.focused ? Theme.ring(3px) : 1px;
+    border-color: root.focused ? Theme.focus-color : root.preset.active ? Theme.primary : Theme.comand ? Theme.key-edge : Theme.divider;
+    background: Theme.comand ? (root.preset.active ? Theme.wash : Theme.key) : root.preset.active ? Theme.primary.with-alpha(0.16) : touch.has-hover ? Theme.surface : transparent;
     opacity: MiniDspState.busy ? 0.4 : 1;
     HorizontalLayout {
         padding-left: 16px;
@@ -231,10 +234,10 @@ component EmptyState inherits VerticalLayout {
         Rectangle {
             height: 48px;
             width: refresh-row.preferred-width + 32px;
-            border-radius: 8px;
-            border-width: Focus.main(1) ? 3px : 1px;
-            border-color: Focus.main(1) ? Theme.primary : Theme.divider;
-            background: refresh-touch.has-hover ? Theme.surface : transparent;
+            border-radius: Theme.comand ? Theme.radius : 8px;
+            border-width: Focus.main(1) ? Theme.ring(3px) : 1px;
+            border-color: Focus.main(1) ? Theme.focus-color : Theme.comand ? (refresh-touch.has-hover ? Theme.primary : Theme.key-edge) : Theme.divider;
+            background: Theme.comand ? Theme.key : refresh-touch.has-hover ? Theme.surface : transparent;
             opacity: MiniDspState.busy ? 0.4 : 1;
             refresh-row := HorizontalLayout {
                 alignment: center;
@@ -275,7 +278,7 @@ export component MiniDspPage inherits Rectangle {
     property <int> columns: root.narrow ? 2 : min(4, max(1, MiniDspState.presets.length));
     property <length> preset-h: round(clampf(h * 0.1, 48, 72)) * 1px;
 
-    background: Theme.background;
+    background: Theme.backdrop;
 
     VerticalLayout {
         padding: root.pad;

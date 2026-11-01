@@ -15,7 +15,7 @@ export component ProjectionPage inherits Rectangle {
     in property <image> idle-icon;
     callback touch(TouchPhase, float, float);
 
-    background: root.streaming ? transparent : Theme.background;
+    background: root.streaming ? transparent : Theme.backdrop;
 
     Rectangle {
         width: min(root.width, root.height * root.stream-width / root.stream-height);

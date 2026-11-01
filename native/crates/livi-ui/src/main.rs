@@ -41,7 +41,7 @@ use slint::{Color, Model, ModelRc, Timer, TimerMode, VecModel, Weak};
 
 use crate::core_process::{CoreProcess, RELAUNCH};
 use crate::follow::{Follow, Update};
-use livi_ui_model::shell::{Look, Tab, ui_scale};
+use livi_ui_model::shell::{Look, Style, Tab, ui_scale};
 
 slint::include_modules!();
 
@@ -107,6 +107,7 @@ fn apply_look(ui: &AppWindow, look: Look) {
     theme.set_highlight_override(rgb(look.highlight));
     theme.set_background_override(rgb(look.background));
     theme.set_text_override(rgb(look.text));
+    theme.set_comand(look.style == Style::Comand);
     ui.set_right_hand(look.right_hand);
     ui.set_stream_width(look.stream.0);
     ui.set_stream_height(look.stream.1);

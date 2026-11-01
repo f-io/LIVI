@@ -21,6 +21,56 @@ export global Theme {
     out property <color> button: #ffffff29;
     out property <color> button-active: #ffffff3d;
     out property <color> track: #ffffff47;
+
+    // UI style (`uiStyle` in the config). `comand` is a Mercedes COMAND-style
+    // head-unit look: bevelled gradient panels, 1px rules, square corners and a
+    // DIN typeface. Every token below is derived from the colours above, so a
+    // custom palette carries over; with `comand` off the upstream look is used
+    // unchanged (components branch on `Theme.comand`).
+    in property <bool> comand: false;
+
+    out property <string> font-family: comand ? "D-DIN" : "Roboto";
+    // Letter-spacing for body text and for button / title labels.
+    out property <length> tracking: comand ? 0.5px : 0;
+    out property <length> tracking-wide: comand ? 1.5px : 0.4px;
+    out property <length> radius: 3px;
+
+    // Fill of a whole page (window background behind the content).
+    out property <brush> backdrop: comand
+        ? @linear-gradient(135deg, background.mix(#000000, 0.7) 0%, background 56%, background.mix(primary, 0.97) 100%)
+        : background;
+    out property <brush> nav-fill: comand
+        ? @linear-gradient(90deg, background.mix(#000000, 0.6) 0%, background.mix(text, 0.95) 100%)
+        : background;
+    out property <color> nav-shadow: comand && dark ? #0000007a : transparent;
+    out property <color> nav-edge: highlight.with-alpha(0.09);
+    // Unselected nav icon colour (CSS --ui-muted).
+    out property <color> muted: text.mix(background, 0.75);
+
+    // 1px rule used for panel borders and row dividers (CSS --ui-divider).
+    out property <color> rule: comand ? primary.mix(text, 0.5).mix(background, 0.3) : divider;
+    out property <brush> panel: @linear-gradient(145deg, background.mix(text, 0.9) 0%, background.mix(text, 0.98) 100%);
+    out property <color> panel-base: background.mix(text, 0.96);
+    out property <color> panel-shadow: dark ? #0000006b : #00000026;
+    out property <color> bevel-light: text.with-alpha(0.12);
+    out property <color> bevel-dark: dark ? #000000cc : #00000033;
+    // Selected / hovered wash behind a nav tab or list row.
+    out property <brush> wash: @linear-gradient(90deg, primary.with-alpha(0.11) 0%, primary.with-alpha(0) 80%);
+
+    // Hardware-style key (CSS .command-button) and its lit / contained variant.
+    out property <brush> key: @linear-gradient(180deg, background.mix(text, 0.87) 0%, background.mix(text, 0.975) 52%, background.mix(text, 0.93) 100%);
+    out property <color> key-edge: rule.mix(text, 0.8);
+    out property <brush> key-lit: @linear-gradient(180deg, highlight 0%, primary.mix(#000000, 0.88) 100%);
+    out property <color> key-lit-edge: highlight.mix(#ffffff, 0.85);
+    out property <color> key-lit-text: background.mix(primary, 0.9);
+    // Recessed slider / switch / progress groove.
+    out property <brush> groove: @linear-gradient(180deg, background.mix(#000000, 0.9) 0%, background.mix(primary, 0.9) 100%);
+
+    // Keyboard / D-pad focus ring: COMAND draws a 1px highlight outline.
+    out property <color> focus-color: comand ? highlight : primary;
+    public pure function ring(standard: length) -> length {
+        return comand ? 1px : standard;
+    }
 }
 
 export global Ui {

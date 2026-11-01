@@ -114,6 +114,7 @@ const SETTINGS: &[(&str, &str)] = &[
     ("sunLongitude", "PublicOutlined"),
     ("displayBrightness", "Brightness6Outlined"),
     ("displayBrightnessAuto", "BrightnessAutoOutlined"),
+    ("uiStyle", "BorderStyleOutlined"),
     ("uiColors", "PaletteOutlined"),
     ("contrastGamma", "TonalityOutlined"),
     ("displayColor", "InvertColorsOutlined"),

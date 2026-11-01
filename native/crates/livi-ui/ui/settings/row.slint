@@ -76,13 +76,65 @@ export component RowFrame inherits Rectangle {
     out property <bool> active: touch.pressed || touch.has-hover || root.focused;
     callback clicked();
 
+    property <length> corner: Theme.comand ? Theme.radius : 10px;
+
     height: Metrics.row-h;
-    background: Theme.paper;
-    border-top-left-radius: root.first ? 10px : 0;
-    border-top-right-radius: root.first ? 10px : 0;
-    border-bottom-left-radius: root.last ? 10px : 0;
-    border-bottom-right-radius: root.last ? 10px : 0;
+    background: Theme.comand ? Theme.panel : Theme.paper;
+    border-top-left-radius: root.first ? root.corner : 0;
+    border-top-right-radius: root.first ? root.corner : 0;
+    border-bottom-left-radius: root.last ? root.corner : 0;
+    border-bottom-right-radius: root.last ? root.corner : 0;
     opacity: root.enabled ? 1 : 0.45;
+
+    // COMAND: each row draws its share of the panel frame (1px rule sides,
+    // top bevel highlight on the first row, dark bevel on the last) so any
+    // list of rows reads as one bevelled panel, plus a wash when lit.
+    if Theme.comand && root.active && (root.clickable || root.focused): Rectangle {
+        border-top-left-radius: parent.border-top-left-radius;
+        border-top-right-radius: parent.border-top-right-radius;
+        border-bottom-left-radius: parent.border-bottom-left-radius;
+        border-bottom-right-radius: parent.border-bottom-right-radius;
+        background: Theme.wash;
+    }
+    if Theme.comand: Rectangle {
+        x: 0;
+        width: 1px;
+        background: Theme.rule;
+    }
+    if Theme.comand: Rectangle {
+        x: parent.width - 1px;
+        width: 1px;
+        background: Theme.rule;
+    }
+    if Theme.comand && root.first: Rectangle {
+        y: 0;
+        height: 1px;
+        background: Theme.rule;
+    }
+    if Theme.comand && root.first: Rectangle {
+        x: 1px;
+        y: 1px;
+        width: parent.width - 2px;
+        height: 1px;
+        background: Theme.bevel-light;
+    }
+    if Theme.comand && root.last: Rectangle {
+        x: 1px;
+        y: parent.height - 2px;
+        width: parent.width - 2px;
+        height: 1px;
+        background: Theme.bevel-dark;
+    }
+    if Theme.comand && root.last: Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.rule;
+    }
+    if Theme.comand && root.focused: Rectangle {
+        border-radius: Theme.radius;
+        border-width: 1px;
+        border-color: Theme.focus-color;
+    }
 
     touch := TouchArea {
         enabled: root.enabled && root.clickable;
@@ -117,8 +169,9 @@ export component RowFrame inherits Rectangle {
             padding-right: Metrics.row-pad;
             Text {
                 text: root.label;
-                color: root.alert ? #f44336 : root.active && (root.clickable || root.focused) ? Theme.primary : Theme.text-secondary;
+                color: root.alert ? #f44336 : root.active && (root.clickable || root.focused) ? Theme.primary : Theme.comand ? Theme.text : Theme.text-secondary;
                 font-size: Metrics.row-font;
+                letter-spacing: Theme.comand ? 0.8px : 0;
                 vertical-alignment: center;
                 overflow: elide;
             }
@@ -126,12 +179,20 @@ export component RowFrame inherits Rectangle {
         @children
     }
 
-    if !root.last: Rectangle {
+    if !root.last && !Theme.comand: Rectangle {
         x: Metrics.row-inset;
         y: parent.height - 2px;
         width: parent.width - Metrics.row-inset - Metrics.row-inset-r;
         height: 2px;
         background: Theme.divider;
+    }
+    if !root.last && Theme.comand: Rectangle {
+        property <bool> lit: root.active && (root.clickable || root.focused);
+        x: self.lit ? 1px : Metrics.row-inset;
+        y: parent.height - 1px;
+        width: self.lit ? parent.width - 2px : parent.width - Metrics.row-inset - Metrics.row-inset-r;
+        height: 1px;
+        background: self.lit ? Theme.primary : Theme.rule.with-alpha(0.74);
     }
 }
 
@@ -203,7 +264,8 @@ export component SettingsRow inherits RowFrame {
     if root.data.value != "" && root.data.kind != RowKind.slider: Text {
         text: root.data.value;
         color: Theme.text;
-        font-family: root.data.mono ? "monospace" : "Roboto";
+        font-family: root.data.mono ? "monospace" : Theme.font-family;
+        letter-spacing: root.data.mono ? 0 : Theme.tracking;
         font-size: Metrics.row-font;
         vertical-alignment: center;
         horizontal-alignment: right;
@@ -214,7 +276,7 @@ export component SettingsRow inherits RowFrame {
         y: (parent.height - self.height) / 2;
         width: Metrics.swatch-w;
         height: Metrics.swatch-h;
-        border-radius: 6px;
+        border-radius: Theme.comand ? Theme.radius : 6px;
         border-width: 1px;
         border-color: #80808080;
         background: root.data.swatch;
@@ -266,9 +328,9 @@ export component SettingsRow inherits RowFrame {
             if t.switch: Rectangle {
                 y: (parent.height - self.height) / 2;
                 height: 38px;
-                border-radius: 19px;
-                border-width: root.focus-tool == j ? 2px : 0;
-                border-color: Theme.primary;
+                border-radius: Theme.comand ? Theme.radius : 19px;
+                border-width: root.focus-tool == j ? Theme.ring(2px) : 0;
+                border-color: Theme.focus-color;
                 Switch {
                     checked: t.on;
                     enabled: t.enabled;

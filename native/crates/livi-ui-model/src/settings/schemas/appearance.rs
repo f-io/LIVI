@@ -42,6 +42,23 @@ pub fn schema() -> Node {
             .icon("displayBrightnessAuto"),
             Node::checkbox(Label::new("settings.darkMode", "Dark Mode"), "darkMode")
                 .icon("darkMode"),
+            Node::select(
+                Label::new("settings.uiStyle", "UI Style"),
+                "uiStyle",
+                vec![
+                    choice(
+                        Label::new("settings.uiStyleComand", "COMAND"),
+                        OptionValue::Text("comand"),
+                    ),
+                    choice(
+                        Label::new("settings.uiStyleStandard", "Standard"),
+                        OptionValue::Text("standard"),
+                    ),
+                ],
+            )
+            .icon("uiStyle")
+            .display_value()
+            .page(Label::new("settings.uiStyle", "UI Style")),
             Node::checkbox(
                 Label::new("settings.overlayMessages", "Overlay Messages"),
                 "overlayMessages",

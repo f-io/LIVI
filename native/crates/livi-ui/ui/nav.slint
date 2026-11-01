@@ -21,6 +21,7 @@ component Tab inherits Rectangle {
     in property <bool> focused;
     in property <PhoneState> phone;
     in property <bool> enabled: true;
+    in property <bool> right-hand;
     callback clicked();
 
     property <color> tint: page == Page.projection
@@ -31,7 +32,23 @@ component Tab inherits Rectangle {
     min-height: Ui.icon-size;
     preferred-height: Ui.icon-size + (Ui.xs-icons ? 10px : 20px);
 
-    if root.active: Rectangle {
+    property <bool> lit: touch.has-hover || root.focused;
+
+    // COMAND: a horizontal wash plus a glowing 2px bar on the outer edge marks
+    // the selected tab; the others are muted.
+    if Theme.comand && root.active: Rectangle {
+        background: Theme.wash;
+    }
+    if Theme.comand && root.active: Rectangle {
+        x: root.right-hand ? parent.width - 9px : 7px;
+        y: parent.height * 0.2;
+        width: 2px;
+        height: parent.height * 0.6;
+        background: Theme.highlight;
+        drop-shadow-blur: 9px;
+        drop-shadow-color: Theme.primary;
+    }
+    if !Theme.comand && root.active: Rectangle {
         width: min(parent.width - 4px, Ui.icon-size + 14px);
         height: parent.height - (Ui.xs-icons ? 6px : 12px);
         border-radius: 6px;
@@ -43,8 +60,12 @@ component Tab inherits Rectangle {
     Image {
         width: Ui.icon-size;
         height: Ui.icon-size;
-        colorize: root.active || touch.has-hover || root.focused ? Theme.primary : root.tint;
-        opacity: root.active || touch.has-hover || root.focused || root.page == Page.projection ? 1 : 0.6;
+        colorize: Theme.comand
+            ? (root.lit || root.active ? Theme.primary : root.page == Page.projection ? root.tint : Theme.muted)
+            : (root.active || root.lit ? Theme.primary : root.tint);
+        opacity: Theme.comand
+            ? (root.active || root.lit || root.page == Page.projection ? 1 : 0.72)
+            : (root.active || root.lit || root.page == Page.projection ? 1 : 0.6);
         source: root.icon;
     }
 
@@ -64,7 +85,10 @@ export component Nav inherits Rectangle {
     callback select(Page);
 
     width: Ui.xs-icons ? Ui.nav-width : max(Ui.icon-size, Ui.show-clock ? clock-text.preferred-width : 0) + 2 * Ui.nav-pad + 1px;
-    background: Theme.background;
+    background: Theme.nav-fill;
+    drop-shadow-blur: Theme.comand ? 25px : 0;
+    drop-shadow-offset-x: root.right-hand ? -8px : 8px;
+    drop-shadow-color: Theme.nav-shadow;
     opacity: root.asleep ? 0 : 1;
     animate opacity { duration: 220ms; easing: ease; }
 
@@ -78,6 +102,7 @@ export component Nav inherits Rectangle {
                 text: root.clock;
                 color: Theme.text;
                 font-size: Ui.xs-icons ? 16px : 24px;
+                letter-spacing: Theme.tracking;
             }
         }
         for tab[i] in root.tabs: Tab {
@@ -86,6 +111,7 @@ export component Nav inherits Rectangle {
             focused: Focus.nav(i);
             active: tab.page == root.active;
             phone: root.phone;
+            right-hand: root.right-hand;
             enabled: !root.asleep;
             clicked => { root.select(tab.page); }
         }
@@ -95,6 +121,11 @@ export component Nav inherits Rectangle {
     Rectangle {
         x: root.right-hand ? 0 : parent.width - 1px;
         width: 1px;
-        background: Theme.divider;
+        background: Theme.rule;
+    }
+    if Theme.comand: Rectangle {
+        x: root.right-hand ? 1px : parent.width - 2px;
+        width: 1px;
+        background: Theme.nav-edge;
     }
 }

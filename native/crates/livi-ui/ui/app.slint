@@ -6,6 +6,8 @@ import "fonts/Roboto-300.ttf";
 import "fonts/Roboto-400.ttf";
 import "fonts/Roboto-500.ttf";
 import "fonts/Roboto-700.ttf";
+import "fonts/D-DIN-400.otf";
+import "fonts/D-DIN-700.otf";
 import { Theme, Ui } from "theme.slint";
 import { Focus, FocusZone } from "focus.slint";
 import { Nav, Page, PhoneState, TabData } from "nav.slint";
@@ -84,7 +86,7 @@ export component AppWindow inherits Window {
     }
 
     title: "LIVI";
-    default-font-family: "Roboto";
+    default-font-family: Theme.font-family;
     preferred-width: 1280px;
     preferred-height: 720px;
     min-width: 320px;
@@ -160,7 +162,7 @@ export component AppWindow inherits Window {
                 height: parent.height;
             }
             if root.page == Page.camera && !root.camera-found: Rectangle {
-                background: Theme.background;
+                background: Theme.backdrop;
                 Text {
                     text: root.no-camera;
                     color: Theme.text-secondary;
@@ -210,7 +212,7 @@ export component SecondaryWindow inherits Window {
     in property <string> window-title;
     title: root.window-title;
     in property <string> empty-label: "No content on this screen";
-    default-font-family: "Roboto";
+    default-font-family: Theme.font-family;
     background: root.has-dashboard ? transparent : #000000;
 
     if root.has-dashboard: Dashboard {

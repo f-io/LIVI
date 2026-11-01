@@ -24,7 +24,7 @@ export component SegmentBar inherits HorizontalLayout {
         width: 12 * root.u;
         height: 8 * root.u;
         y: (parent.height - self.height) / 2;
-        border-radius: 2 * root.u;
+        border-radius: Theme.comand ? 1 * root.u : 2 * root.u;
         background: i < root.filled ? root.on-color : Theme.text-disabled;
         opacity: i < root.filled ? 1 : 0.5;
     }

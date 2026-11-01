@@ -138,6 +138,7 @@ pub struct Config {
     pub appearance_mode: AppearanceMode,
     pub sun_latitude: f64,
     pub sun_longitude: f64,
+    pub ui_style: UiStyle,
 
     pub display_mode: PerScreen<String>,
     pub display_connector: PerScreen<String>,
@@ -229,6 +230,15 @@ impl AppearanceMode {
             AppearanceMode::Auto | AppearanceMode::Sun => None,
         }
     }
+}
+
+/// Look of the LIVI UI itself. `Standard` is upstream's look; `Comand` is the
+/// fork's Mercedes COMAND-style head-unit look (bevelled panels, DIN typeface).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UiStyle {
+    Standard,
+    Comand,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -536,6 +546,7 @@ pub fn defaults() -> Config {
         appearance_mode: AppearanceMode::Sun,
         sun_latitude: 0.0,
         sun_longitude: 0.0,
+        ui_style: UiStyle::Comand,
         display_mode: PerScreen::default(),
         display_connector: PerScreen::default(),
         display_gamma: 1.0,
@@ -690,5 +701,16 @@ mod tests {
             Some(EvConnectorType::Combo2)
         );
         assert_eq!(EvConnectorType::from_name("Type 2"), None);
+    }
+
+    #[test]
+    fn the_fork_defaults_to_the_comand_ui_style() {
+        assert_eq!(defaults().ui_style, UiStyle::Comand);
+        let json = serde_json::to_value(defaults()).unwrap();
+        assert_eq!(json["uiStyle"], "comand");
+        assert_eq!(
+            serde_json::from_value::<UiStyle>(serde_json::json!("standard")).unwrap(),
+            UiStyle::Standard
+        );
     }
 }

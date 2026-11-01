@@ -40,18 +40,27 @@ export component RoundButton inherits Rectangle {
         width: root.size * s;
         height: root.size * s;
         border-radius: self.width / 2;
-        background: root.hover || root.down || root.focused ? Theme.button-active : Theme.button;
+        background: Theme.comand ? (root.down ? Theme.key-lit : Theme.key) : root.hover || root.down || root.focused ? Theme.button-active : Theme.button;
+        drop-shadow-blur: Theme.comand && (root.hover || root.focused) ? 10px : 0;
+        drop-shadow-color: Theme.primary.with-alpha(0.13);
         animate width, height { duration: 110ms; easing: ease; }
+        if Theme.comand: Rectangle {
+            y: 1px;
+            x: parent.width * 0.2;
+            width: parent.width * 0.6;
+            height: 1px;
+            background: Theme.bevel-light;
+        }
         Rectangle {
             border-radius: parent.width / 2;
-            border-width: root.focused ? 3px : root.down ? 4px : root.hover ? 2px : 0;
-            border-color: Theme.primary;
+            border-width: Theme.comand ? 1px : root.focused ? 3px : root.down ? 4px : root.hover ? 2px : 0;
+            border-color: Theme.comand ? (root.focused ? Theme.focus-color : root.hover || root.down ? Theme.primary : Theme.key-edge) : Theme.primary;
         }
         Image {
             width: root.icon-size;
             height: root.icon-size;
             source: root.icon;
-            colorize: root.icon-color;
+            colorize: Theme.comand && root.down ? Theme.key-lit-text : Theme.comand && (root.hover || root.focused) ? Theme.highlight : root.icon-color;
         }
     }
     touch := TouchArea {
@@ -127,13 +136,15 @@ component SourceTab inherits Rectangle {
     callback picked();
     height: label-text.preferred-height + 12px;
     width: label-text.preferred-width + 40px;
-    border-radius: self.height / 2;
-    border-width: root.focused ? 3px : 0;
-    border-color: Theme.primary;
+    border-radius: Theme.comand ? Theme.radius : self.height / 2;
+    background: Theme.comand && root.on ? Theme.wash : transparent;
+    border-width: root.focused ? Theme.ring(3px) : 0;
+    border-color: Theme.focus-color;
     label-text := Text {
-        text: root.label;
+        text: Theme.comand ? root.label.to-uppercase() : root.label;
         font-size: 16px;
         font-weight: 700;
+        letter-spacing: Theme.comand ? Theme.tracking-wide : 0;
         color: root.on ? Theme.primary : Theme.text;
         opacity: root.on ? 1 : 0.65;
     }
@@ -156,8 +167,10 @@ export component SourceTabs inherits Rectangle {
         y: 8px;
         width: row.preferred-width;
         height: row.preferred-height;
-        border-radius: self.height / 2;
-        background: #ffffff14;
+        border-radius: Theme.comand ? Theme.radius : self.height / 2;
+        background: Theme.comand ? Theme.panel : #ffffff14;
+        border-width: Theme.comand ? 1px : 0;
+        border-color: Theme.rule;
         row := HorizontalLayout {
             padding-left: 8px;
             padding-right: 8px;
