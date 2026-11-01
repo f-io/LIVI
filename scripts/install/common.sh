@@ -427,6 +427,63 @@ livi_grant_rtprio() {
   printf '%s - rtprio 30\n' "$USER" | sudo tee "$LIVI_RTPRIO_FILE" >/dev/null
 }
 
+# Installs the latest minidsp-rs Debian package for the MiniDSP page. The package
+# brings the USB udev rule, the loopback HTTP API on port 5380 and minidsp.service;
+# enabling it makes the daemon available now and after reboots. apt hosts only,
+# elsewhere install minidsp-rs by hand. LIVI_SKIP_MINIDSP=1 skips it.
+livi_install_minidsp_rs() {
+  local arch release_json url package
+
+  if [ "${LIVI_SKIP_MINIDSP:-0}" = 1 ]; then
+    echo "→ Skipping minidsp-rs (LIVI_SKIP_MINIDSP=1)"
+    return 0
+  fi
+  if [ "$(livi_pm)" != apt ] || ! command -v dpkg >/dev/null 2>&1; then
+    echo "Error: minidsp-rs ships Debian packages only, install it by hand on this host" >&2
+    return 1
+  fi
+
+  arch="$(dpkg --print-architecture)"
+  case "$arch" in
+    amd64|arm64|armhf) ;;
+    *)
+      echo "Error: minidsp-rs has no Debian package for architecture '$arch'" >&2
+      return 1
+      ;;
+  esac
+
+  echo "→ Installing minidsp-rs for $arch"
+  if ! release_json="$(curl -fsSL https://api.github.com/repos/mrene/minidsp-rs/releases/latest)"; then
+    echo "Error: cannot find the latest minidsp-rs release" >&2
+    return 1
+  fi
+  url="$(printf '%s\n' "$release_json" \
+    | grep -o 'https://[^"[:space:]]*' \
+    | grep -E "/minidsp_[^/]+_${arch}\\.deb$" \
+    | head -1 || true)"
+  if [ -z "$url" ]; then
+    echo "Error: latest minidsp-rs release has no $arch Debian package" >&2
+    return 1
+  fi
+
+  package="$(mktemp --suffix=.deb)"
+  if ! curl -fL "$url" -o "$package"; then
+    rm -f "$package"
+    echo "Error: minidsp-rs download failed" >&2
+    return 1
+  fi
+  chmod 0644 "$package"
+  if ! sudo apt-get install -y "$package"; then
+    rm -f "$package"
+    echo "Error: minidsp-rs package installation failed" >&2
+    return 1
+  fi
+  rm -f "$package"
+
+  sudo systemctl enable --now minidsp.service
+  echo "   minidsp.service enabled, HTTP API on 127.0.0.1:5380"
+}
+
 # The radio's power saving drops an idle link after a few minutes, which takes the
 # host off the network. Applies from the next boot, so no running session is cut.
 livi_disable_wifi_powersave() {

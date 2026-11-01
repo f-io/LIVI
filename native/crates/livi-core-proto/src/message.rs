@@ -143,6 +143,18 @@ pub enum Action {
     ControllerPair {
         mac: String,
     },
+    MiniDspRefresh,
+    #[serde(rename_all = "camelCase")]
+    MiniDspSetVolume {
+        volume_db: f64,
+    },
+    #[serde(rename_all = "camelCase")]
+    MiniDspSetBass {
+        gain_db: f64,
+    },
+    MiniDspSelectPreset {
+        preset: u32,
+    },
     Quit,
     Restart,
 }
@@ -265,6 +277,26 @@ mod tests {
             })
             .unwrap(),
             json!({ "kind": "controllerPair", "mac": "AA:BB:CC:DD:EE:FF" })
+        );
+    }
+
+    #[test]
+    fn minidsp_actions_on_the_wire() {
+        let volume = Action::MiniDspSetVolume { volume_db: -18.5 };
+        let wire = json!({ "kind": "miniDspSetVolume", "volumeDb": -18.5 });
+        assert_eq!(serde_json::to_value(&volume).unwrap(), wire);
+        assert_eq!(serde_json::from_value::<Action>(wire).unwrap(), volume);
+        assert_eq!(
+            serde_json::to_value(Action::MiniDspSetBass { gain_db: 3.0 }).unwrap(),
+            json!({ "kind": "miniDspSetBass", "gainDb": 3.0 })
+        );
+        assert_eq!(
+            serde_json::to_value(Action::MiniDspSelectPreset { preset: 2 }).unwrap(),
+            json!({ "kind": "miniDspSelectPreset", "preset": 2 })
+        );
+        assert_eq!(
+            serde_json::to_value(Action::MiniDspRefresh).unwrap(),
+            json!({ "kind": "miniDspRefresh" })
         );
     }
 

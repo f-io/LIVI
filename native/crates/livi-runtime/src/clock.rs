@@ -6,6 +6,7 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const CLAIM_FILE: &str = "/tmp/livi-gps-clock";
+const PHONE_CLAIM_FILE: &str = "/tmp/livi-phone-clock";
 const CLAIM_MAX_AGE_S: u64 = 120;
 const STEP_THRESHOLD_S: i64 = 2;
 
@@ -20,6 +21,12 @@ fn gps_owns_clock() -> bool {
         .elapsed()
         .map(|age| age.as_secs() <= CLAIM_MAX_AGE_S)
         .unwrap_or(false)
+}
+
+fn phone_confirmed(secs: i64) {
+    if let Err(e) = std::fs::write(PHONE_CLAIM_FILE, format!("{secs}\n")) {
+        eprintln!("[cp] device time: cannot note the phone clock: {e}");
+    }
 }
 
 fn now_unix() -> i64 {
@@ -40,6 +47,7 @@ pub fn step_to(secs: i64) {
     let offset = secs - now_unix();
     if offset.abs() <= STEP_THRESHOLD_S {
         println!("[cp] device time: offset {offset}s, keeping the system clock");
+        phone_confirmed(secs);
         return;
     }
     match Command::new(crate::sys::tool("date"))
@@ -51,6 +59,7 @@ pub fn step_to(secs: i64) {
                 .arg("save")
                 .output();
             println!("[cp] device time: system clock stepped by {offset}s");
+            phone_confirmed(secs);
         }
         Ok(out) => eprintln!(
             "[cp] device time: setting the clock failed: {}",

@@ -121,11 +121,62 @@ Configure under Settings → Appearance → Contrast / Gamma and Settings → Ap
   <img src="docs/media/color.png" alt="Colour channel calibration" width="42%" align="top" />
 </p>
 
+## Theme and Day / Night Mode
+
+The fork ships the **ZTT** palette, modelled on the 1990s Mercedes R129 OEM look: amber
+accents on near-black panels in dark mode, burnt amber on warm cream in light mode, and an
+amber-outlined tile for the selected navigation item.
+
+|            | Dark      | Light     |
+| ---------- | --------- | --------- |
+| Background | `#0B0B0B` | `#ECE7DE` |
+| Text       | `#F5F0E8` | `#1A1A1A` |
+| Primary    | `#FFA500` | `#C77700` |
+| Highlight  | `#E08F00` | `#A86400` |
+| Divider    | `#303030` | `#C9C1B4` |
+
+While `nightMode` is on, the accents switch to a muted red (`#D93636` / `#A82828`) to keep
+glare down. Every colour can still be overridden under Settings → Appearance → UI Colors.
+
+Settings → Appearance → **Day / Night Mode** (`appearanceMode`) picks what drives day and
+night:
+
+| Mode               | Behaviour                                                                  |
+| ------------------ | -------------------------------------------------------------------------- |
+| `sun` (default)    | Switches at sunrise and sunset, computed from the car's position           |
+| `day` / `night`    | Fixed                                                                      |
+| `auto`             | Left to the car or the phone (e.g. a light sensor pushing `nightMode`)     |
+
+In `sun` mode LIVI checks the sun's elevation once a minute and, at each transition, sets
+both `darkMode` (LIVI's own theme) and `nightMode` (CarPlay, Android Auto and the cluster),
+so everything switches together. Toggling Dark Mode by hand holds until the next sunrise
+or sunset. The position comes from the GPS fix when a receiver is connected, otherwise from
+`sunLatitude` / `sunLongitude` (Settings → Appearance, decimal degrees). With neither set
+(`0` / `0`) nothing is switched.
+
+A Raspberry Pi 4 has no RTC and the Pi 5 RTC only keeps time with a backup battery, so the
+schedule waits until the system clock is trusted: an RTC with a plausible time close to the
+system clock, NTP in sync (systemd-timesyncd or chrony), the GPS receiver disciplining the
+clock, or the clock having been set or confirmed by an iPhone at CarPlay start. Until then
+the last state is kept.
+
 ## Dashboard
 
 The Dashboard is the car's instrument cluster. It comes in layouts, built the way a car maker's CarPlay theme is: each layout decides where the gauges, the speed and the warning lights sit and whether the phone's cluster stream runs behind them. With a car maker's theme on the phone, the palette picked there colours the gauges. Step through the layouts with the page dots, a swipe or the Cluster Layout key (default T). LIVI comes back with the layout and the palette picked last.
 
 The dashboard is a WIP. While the IPC/socket telemetry payload already supports many signals, the UI exposes only a subset. Widgets and layouts will be extended over time.
+
+### Haltech CAN V2
+
+LIVI can listen to a Haltech ECU's CAN V2 broadcast on `can0` (1 Mbit/s) and feed the engine
+speed (frame 0x360) and the vehicle speed (0x370) into the telemetry, for the Dashboard and the
+phone's cluster. Turn it on under Settings → Car → Receive Haltech CAN V2 telemetry. LIVI only
+listens, it reads `candump -L can0,360:7FF,370:7FF` (`can-utils`, with `can0` already up), on
+LIVI OS the image's `/usr/libexec/livi-can-capture`. A value with no frame for 1.5 s is cleared.
+
+For the Raspberry Pi Haltech CAN V2 receiver and TJD CarPiHAT wiring, configuration, and
+bring-up steps, see the
+[Haltech CAN wiring and setup guide](https://github.com/DrSkunk/livi-os-buildroot/blob/main/docs/HALTECH-CAN.md).
 
 ### Pushing telemetry
 
@@ -257,6 +308,19 @@ Pair a Bluetooth gamepad without leaving LIVI: put the controller in pairing mod
 
 Inside LIVI's compositor RetroArch fills the main screen above the LIVI UI, which stays mapped beneath it. Other apps get the same treatment when they ask for fullscreen or their Wayland app id is listed in `LIVI_FULLSCREEN_APP_IDS` (default `retroarch,com.libretro.RetroArch`).
 
+## MiniDSP
+
+The MiniDSP tab controls a [MiniDSP](https://www.minidsp.com/) through the [minidsp-rs](https://github.com/mrene/minidsp-rs) daemon (`minidspd`) and its HTTP API at `http://127.0.0.1:5380`.
+
+- master volume and bass gain, each with touch-sized step buttons and a slider
+- preset selection, the active preset is marked with a check
+- connection status (product and input source) and refresh in the header, the status is polled while the tab is open
+- follows LIVI's theme colours and works with the D-pad / rotary keys
+
+The bass control sets the gain of the outputs in `minidsp.bassOutputChannels` (zero-based, default outputs 3 + 4). Settings → General → Tab Settings → MiniDSP shows or hides the tab and sets the server URL, device index and the volume and bass limits. Preset names (`minidsp.presets`) and step sizes are edited in `config.json`. For development without hardware set `minidsp.mockDevice` or `LIVI_MOCK_MINIDSP=1` (debug builds only).
+
+On apt hosts the installer installs the latest minidsp-rs Debian package and enables `minidsp.service` (skip with `LIVI_SKIP_MINIDSP=1`); elsewhere install minidsp-rs by hand.
+
 ## Multi-Display
 
 LIVI can run as multiple windows at once, each placeable on its own physical display.
@@ -333,6 +397,16 @@ chmod +x LIVI-*-linux-x64.AppImage
 ```
 
 > **Hardware video decode (optional):** LIVI uses the system VA-API driver for GPU video decode (it is not bundled, since it must match your GPU and kernel). Most desktops ship it, a minimal install may not. Without it LIVI still works via software decode. For HW decode install the driver for your GPU and verify with `vainfo`: `i965-va-driver` (older Intel, e.g. Broadwell), `intel-media-va-driver` (Gen9+ Intel), `mesa-va-drivers` (AMD).
+
+## LIVI OS (immutable image)
+
+On the read-only [LIVI OS](https://github.com/DrSkunk/livi-os-buildroot) image, which starts
+LIVI with `LIVI_OS=1`, LIVI installs no system files of its own: no udev rule, sudoers
+drop-in, systemd unit or root copy of `livi-helperd`. It runs the image's
+`/usr/libexec/livi-helperd` through `sudo -n` (no `-E`) with an allow-listed environment
+instead. Linux AppImages carry `resources/livi-os-helper-api` with the version of this
+interface. The exact contract the image has to provide is in [docs/LIVI-OS.md](docs/LIVI-OS.md);
+keep both in sync when the helper's inputs change.
 
 ## Mac (arm64)
 

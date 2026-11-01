@@ -10,6 +10,15 @@ fn color(key: &'static str, text: &'static str, path: &'static str) -> Node {
         .page(Label::new(key, text))
 }
 
+fn coordinate(key: &'static str, text: &'static str, path: &'static str, limit: f64) -> Node {
+    Node::number(Label::new(key, text), path)
+        .icon(path)
+        .range(Some(-limit), Some(limit), Some(0.01))
+        .default_number(0.0)
+        .display_value()
+        .page(Label::new(key, text))
+}
+
 pub fn schema() -> Node {
     Node::route(
         "appearance",
@@ -39,12 +48,12 @@ pub fn schema() -> Node {
             )
             .icon("overlayMessages"),
             Node::select(
-                Label::new("settings.phoneAppearance", "Phone Appearance"),
+                Label::new("settings.phoneAppearance", "Day / Night Mode"),
                 "appearanceMode",
                 vec![
                     choice(
-                        Label::new("settings.phoneAppearanceAuto", "Auto"),
-                        OptionValue::Text("auto"),
+                        Label::new("settings.phoneAppearanceSun", "Sunrise / Sunset"),
+                        OptionValue::Text("sun"),
                     ),
                     choice(
                         Label::new("settings.phoneAppearanceDay", "Day"),
@@ -54,11 +63,27 @@ pub fn schema() -> Node {
                         Label::new("settings.phoneAppearanceNight", "Night"),
                         OptionValue::Text("night"),
                     ),
+                    choice(
+                        Label::new("settings.phoneAppearanceAuto", "Auto (sensor)"),
+                        OptionValue::Text("auto"),
+                    ),
                 ],
             )
             .icon("phoneAppearance")
             .display_value()
-            .page(Label::new("settings.phoneAppearance", "Phone Appearance")),
+            .page(Label::new("settings.phoneAppearance", "Day / Night Mode")),
+            coordinate(
+                "settings.sunLatitude",
+                "Latitude (no GPS)",
+                "sunLatitude",
+                90.0,
+            ),
+            coordinate(
+                "settings.sunLongitude",
+                "Longitude (no GPS)",
+                "sunLongitude",
+                180.0,
+            ),
             Node::route(
                 "ui-colors",
                 Label::plain("UI Colors"),

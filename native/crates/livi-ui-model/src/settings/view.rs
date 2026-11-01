@@ -243,14 +243,14 @@ fn offline_label(t: &Strings, o: &Offer) -> String {
 
 pub fn default_color(path: &str) -> &'static str {
     match path {
-        "primaryColorDark" => "#00adad",
-        "primaryColorLight" => "#008585",
-        "highlightColorLight" => "#007575",
-        "backgroundColorDark" => "#000000",
-        "backgroundColorLight" => "#f5f5f5",
-        "textColorDark" => "#ffffff",
-        "textColorLight" => "#000000",
-        _ => "#009494",
+        "primaryColorDark" => "#ffa500",
+        "primaryColorLight" => "#c77700",
+        "highlightColorLight" => "#a86400",
+        "backgroundColorDark" => "#0b0b0b",
+        "backgroundColorLight" => "#ece7de",
+        "textColorDark" => "#f5f0e8",
+        "textColorLight" => "#1a1a1a",
+        _ => "#e08f00",
     }
 }
 

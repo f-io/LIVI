@@ -147,13 +147,14 @@ impl Services {
         let env_identity = identity.clone();
         let env_accessory = accessory.clone();
         let helper = HelperSupervisor::start(Spec {
-            bin: helper::resolve_bin(&res.helper, user_data),
+            bin: helper::locate(&res.helper, user_data),
             env: Box::new(move || {
                 let cfg = applied.borrow().clone();
                 helper::helper_env(&cfg, &env_identity, &env_accessory, airplay_port)
             }),
             restart: helper_restart.clone(),
             use_sudo: cfg!(target_os = "linux"),
+            livi_os: crate::livi_os::active(),
             restart_delay: HELPER_RESTART_DELAY,
             max_restarts: Some(HELPER_MAX_RESTARTS),
         });

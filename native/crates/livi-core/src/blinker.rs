@@ -353,6 +353,7 @@ mod tests {
             games: Default::default(),
             cameras: Vec::new(),
             mfi: Default::default(),
+            minidsp: Default::default(),
             config: crate::config_file::defaults(),
         };
         assert!(!blinking(&s));

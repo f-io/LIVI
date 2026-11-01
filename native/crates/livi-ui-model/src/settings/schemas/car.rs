@@ -164,6 +164,14 @@ pub fn schema() -> Node {
                 "carPlayHlsVideo",
             )
             .icon("media"),
+            Node::checkbox(
+                Label::new(
+                    "settings.haltechCanEnabled",
+                    "Receive Haltech CAN V2 telemetry (can0, 1 Mbit/s, listen-only)",
+                ),
+                "haltechCanEnabled",
+            )
+            .icon("haltechCan"),
             Node::custom(
                 Label::new("settings.carData", "Car Data"),
                 "carType",

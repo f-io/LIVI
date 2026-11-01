@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 
 use livi_core_proto::state::Front;
-use livi_ui_model::shell::{Look, look};
+use livi_ui_model::shell::{Look, look_at};
 use serde_json::Value;
 
 use crate::PhoneState;
@@ -19,6 +19,7 @@ pub enum Update {
     Media(MediaView),
     Dab(DabView),
     Games(crate::games_ui::GamesView),
+    MiniDsp(livi_ui_model::minidsp::View),
     Dash(Box<DashView>),
     DashOn(livi_core_proto::state::Screen, Box<DashView>),
     Secondary(Vec<livi_ui_model::dashboard::screens::Secondary>),
@@ -53,6 +54,7 @@ pub struct Follow {
     started: bool,
     main_mask: Option<Option<Mask>>,
     fonts: Option<Vec<String>>,
+    minidsp: Option<livi_ui_model::minidsp::View>,
 }
 
 impl Follow {
@@ -70,6 +72,13 @@ impl Follow {
         }
         if hit("games") {
             out.push(Update::Games(self.covers.read(state)));
+        }
+        if hit("minidsp") || hit("config") {
+            let next = livi_ui_model::minidsp::view(state);
+            if self.minidsp.as_ref() != Some(&next) {
+                self.minidsp = Some(next.clone());
+                out.push(Update::MiniDsp(next));
+            }
         }
         if hit("sessions") {
             let phone = if state["sessions"]["active"].is_null() {
@@ -91,12 +100,14 @@ impl Follow {
                 out.push(Update::Front(front));
             }
         }
-        if hit("config") {
-            let next = look(&state["config"]);
+        if hit("config") || hit("telemetry") {
+            let next = look_at(&state["config"], &state["telemetry"]);
             if self.look.as_ref() != Some(&next) {
                 self.look = Some(next.clone());
                 out.push(Update::Look(next));
             }
+        }
+        if hit("config") {
             let kiosk = state["config"]["kiosk"]["main"].as_bool().unwrap_or(false);
             if self.kiosk != Some(kiosk) {
                 self.kiosk = Some(kiosk);

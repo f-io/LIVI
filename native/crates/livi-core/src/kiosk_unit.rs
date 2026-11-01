@@ -33,7 +33,7 @@ fn render(template: &str, home: &str, appimage: &str) -> String {
 }
 
 pub async fn ensure(p: &Privileged) -> bool {
-    if !cfg!(target_os = "linux") {
+    if !cfg!(target_os = "linux") || p.os_provides("the kiosk unit") {
         return false;
     }
     let Ok(unit) = std::fs::read_to_string(UNIT_FILE) else {

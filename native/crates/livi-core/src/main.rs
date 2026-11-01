@@ -34,6 +34,7 @@ mod fonts;
 mod games;
 mod gnss;
 mod gvfs_guard;
+mod haltech_can;
 mod hands_free;
 mod helper;
 mod host;
@@ -42,8 +43,10 @@ mod host_setup;
 mod hub;
 mod hwaddr;
 mod kiosk_unit;
+mod livi_os;
 mod log_file;
 mod mfi;
+mod minidsp;
 mod nav_text;
 mod nmea;
 mod paths;
@@ -56,6 +59,7 @@ mod services;
 mod spectrum;
 mod state_files;
 mod status_file;
+mod sun_schedule;
 mod system_volume;
 mod telemetry;
 mod telemetry_cli;
@@ -198,6 +202,7 @@ async fn run() -> Result<Exit, String> {
         games: Default::default(),
         cameras: Vec::new(),
         mfi: Default::default(),
+        minidsp: Default::default(),
         config,
     });
     let (asks_tx, asks, dongle_asks, update_asks) = projection::ui_channels(wants);
@@ -219,9 +224,14 @@ async fn run() -> Result<Exit, String> {
     let (inside, inside_rx) = tokio::sync::mpsc::unbounded_channel();
     tokio::spawn(telemetry::run(core.clone(), inside_rx, saved));
     tokio::spawn(gnss::run(core.clone(), inside.clone()));
+    tokio::spawn(sun_schedule::run(core.clone(), inside.clone()));
     tokio::spawn(car_bridge::run(core.clone(), inside.clone()));
+    tokio::spawn(haltech_can::run(core.clone(), inside.clone()));
     tokio::spawn(system_volume::follow(core.clone()));
     tokio::spawn(update::run(core.clone(), update_asks));
+    if let Some(asks) = core.take_minidsp_asks() {
+        tokio::spawn(minidsp::run(core.clone(), asks));
+    }
     tokio::spawn(fonts::follow(core.clone(), user_data.join("fonts")));
     state_files::start(&core, core.activity(), &user_data);
     let res = Resources::from_env();
@@ -230,11 +240,24 @@ async fn run() -> Result<Exit, String> {
         res.gstreamer.clone(),
     ));
     host_setup::prepare();
+    let livi_os = livi_os::active();
+    if livi_os {
+        println!(
+            "[livi-os] contract {}, helper {}",
+            livi_os::CONTRACT,
+            livi_os::helper().display()
+        );
+    }
     let privileged = privileged::Privileged {
         templates: res.templates.clone(),
-        helper: helper::resolve_bin(&res.helper, &user_data),
-        helper_named: user_data.join("driver/livi-helperd"),
+        helper: helper::locate(&res.helper, &user_data),
+        helper_named: if livi_os {
+            livi_os::helper()
+        } else {
+            user_data.join("driver/livi-helperd")
+        },
         user_data: user_data.clone(),
+        livi_os,
     };
     if udev_rule::ensure(&privileged).await {
         return Ok(Exit::Restart(None));

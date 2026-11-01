@@ -410,6 +410,7 @@ mod tests {
             games: Default::default(),
             cameras: Vec::new(),
             mfi: Default::default(),
+            minidsp: Default::default(),
             config,
         }
     }

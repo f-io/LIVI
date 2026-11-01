@@ -15,12 +15,13 @@ const MAX_HEIGHT: f64 = 2160.0;
 const WIFI_PASSWORD_MIN: usize = 8;
 const WIFI_PASSWORD_MAX: usize = 63;
 
-const PAGES: [(&str, &str, &str); 7] = [
+const PAGES: [(&str, &str, &str); 8] = [
     ("/", "Home", "settings.startPageHome"),
     ("/telemetry", "Telemetry", "settings.startPageTelemetry"),
     ("/media", "Media", "settings.startPageMedia"),
     ("/camera", "Camera", "settings.startPageCamera"),
     ("/games", "Games", "settings.startPageGames"),
+    ("/minidsp", "MiniDSP", "settings.startPageMinidsp"),
     ("/settings", "Settings", "settings.startPageSettings"),
     ("last", "Last used", "settings.startPageLast"),
 ];
@@ -355,6 +356,81 @@ fn screen_settings() -> Node {
     .icon("screenSettings")
 }
 
+fn minidsp_db(
+    key: &'static str,
+    text: &'static str,
+    icon: &'static str,
+    path: &'static str,
+    max: f64,
+) -> Node {
+    Node::number(Label::new(key, text), path)
+        .icon(icon)
+        .range(Some(-127.0), Some(max), Some(0.5))
+        .display_value()
+        .shown(Shown::Suffix(" dB"))
+        .page(Label::new(key, text))
+}
+
+fn minidsp() -> Node {
+    Node::route(
+        "minidsp",
+        Label::new("settings.minidsp", "MiniDSP"),
+        vec![
+            Node::checkbox(
+                Label::new("settings.minidspEnabled", "Show MiniDSP page"),
+                "minidsp.enabled",
+            )
+            .icon("active"),
+            Node::text(
+                Label::new("settings.minidspServerUrl", "Server URL"),
+                "minidsp.serverUrl",
+            )
+            .icon("minidspServer")
+            .url()
+            .display_value()
+            .page(Label::new("settings.minidspServerUrl", "Server URL")),
+            Node::number(
+                Label::new("settings.minidspDeviceIndex", "Device index"),
+                "minidsp.deviceIndex",
+            )
+            .icon("minidspDevice")
+            .range(Some(0.0), Some(15.0), Some(1.0))
+            .default_number(0.0)
+            .display_value()
+            .page(Label::new("settings.minidspDeviceIndex", "Device index")),
+            minidsp_db(
+                "settings.minidspVolumeMin",
+                "Minimum volume",
+                "minidspVolume",
+                "minidsp.volumeMinDb",
+                0.0,
+            ),
+            minidsp_db(
+                "settings.minidspVolumeMax",
+                "Maximum volume",
+                "minidspVolume",
+                "minidsp.volumeMaxDb",
+                0.0,
+            ),
+            minidsp_db(
+                "settings.minidspBassMin",
+                "Minimum bass gain",
+                "minidspBass",
+                "minidsp.bassMinDb",
+                24.0,
+            ),
+            minidsp_db(
+                "settings.minidspBassMax",
+                "Maximum bass gain",
+                "minidspBass",
+                "minidsp.bassMaxDb",
+                24.0,
+            ),
+        ],
+    )
+    .icon("minidsp")
+}
+
 fn tab_settings() -> Node {
     Node::route(
         "tabSettings",
@@ -429,6 +505,7 @@ fn tab_settings() -> Node {
             )
             .icon("reverseCamera")
             .display_value(),
+            minidsp(),
         ],
     )
     .icon("tabSettings")

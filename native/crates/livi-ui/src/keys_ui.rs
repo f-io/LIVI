@@ -16,7 +16,8 @@ use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
 use slint::{ComponentHandle, Model};
 
 use crate::{
-    AppWindow, DabState, Focus, FocusZone, Page, PhoneState, RowKind, ScreenKind, SettingsState,
+    AppWindow, DabState, Focus, FocusZone, MiniDspState, Page, PhoneState, RowKind, ScreenKind,
+    SettingsState,
 };
 
 const SEEK_STEP_MS: f32 = 15_000.0;
@@ -48,6 +49,10 @@ enum Target {
     Favorite,
     Station(usize),
     Games(usize),
+    DspRefresh,
+    DspStep(bool, i32),
+    DspSlider(bool),
+    DspPreset(usize),
 }
 
 thread_local! {
@@ -142,6 +147,23 @@ fn targets(ui: &AppWindow) -> Vec<Target> {
         Page::Games => (0..crate::games_ui::targets(ui))
             .map(Target::Games)
             .collect(),
+        Page::Minidsp => {
+            let mut out = vec![Target::DspRefresh];
+            if crate::minidsp_ui::ready() {
+                for bass in [false, true] {
+                    out.extend([
+                        Target::DspStep(bass, -1),
+                        Target::DspSlider(bass),
+                        Target::DspStep(bass, 1),
+                    ]);
+                }
+                let presets = ui.global::<MiniDspState>().get_presets().row_count();
+                out.extend((0..presets).map(Target::DspPreset));
+            } else if crate::minidsp_ui::has_empty_state() {
+                out.push(Target::DspRefresh);
+            }
+            out
+        }
         _ => Vec::new(),
     }
 }
@@ -152,6 +174,7 @@ fn kind(t: Target) -> Focused {
         | Target::ColorSlider(_)
         | Target::PageSlider
         | Target::CalSlider(_)
+        | Target::DspSlider(_)
         | Target::Progress => Focused::Slider,
         Target::Number => Focused::Number,
         Target::Text | Target::ColorHex => Focused::Text,
@@ -279,6 +302,14 @@ fn activate(ui: &AppWindow, target: Target) {
                 d.invoke_pick(st.service_id);
             }
         }
+        Target::DspRefresh => ui.global::<MiniDspState>().invoke_refresh(),
+        Target::DspStep(bass, by) => ui.global::<MiniDspState>().invoke_nudge(bass, by),
+        Target::DspPreset(i) => {
+            let m = ui.global::<MiniDspState>();
+            if let Some(p) = m.get_presets().row_data(i) {
+                m.invoke_pick(p.index);
+            }
+        }
         _ => {}
     }
 }
@@ -324,6 +355,7 @@ fn adjust(ui: &AppWindow, target: Target, delta: i32) {
             HELD.set(Some((started, now, v)));
             s.invoke_number_set(v);
         }
+        Target::DspSlider(bass) => ui.global::<MiniDspState>().invoke_nudge(bass, delta),
         Target::Progress => {
             let total = ui.get_total_ms();
             if total > 0.0 {

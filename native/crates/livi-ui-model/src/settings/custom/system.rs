@@ -11,6 +11,9 @@ use crate::i18n::Strings;
 use crate::settings::value::patch;
 use crate::settings::view::{Change, Dialog, Facts, Local, Row, RowKind};
 
+/// Attribution required by NOTICE (GPL-3.0 section 7(b)) for this fork.
+pub const UPSTREAM_ATTRIBUTION: &str = "LIVI by Lasse Heitgres (https://github.com/f-io/LIVI)";
+
 pub fn about(t: &Strings, f: &Facts) -> Vec<Row> {
     let or_dash = |s: &str| {
         if s.trim().is_empty() {
@@ -31,6 +34,11 @@ pub fn about(t: &Strings, f: &Facts) -> Vec<Row> {
             t.t("settings.sourceCode", "Source code"),
             None,
             or_dash(&f.source),
+        ),
+        info(
+            t.t("settings.basedOn", "Based on"),
+            None,
+            UPSTREAM_ATTRIBUTION.to_string(),
         ),
         info(
             t.t("settings.copyright", "Copyright"),
@@ -363,9 +371,25 @@ mod tests {
     fn about_shows_the_legal_notices() {
         let rows = about(&Strings::new("en"), &facts());
         let labels: Vec<&str> = rows.iter().map(|r| r.label.as_str()).collect();
-        for label in ["Source code", "Copyright", "License", "Warranty"] {
+        for label in [
+            "Source code",
+            "Based on",
+            "Copyright",
+            "License",
+            "Warranty",
+        ] {
             assert!(labels.contains(&label), "{label} missing");
         }
+    }
+
+    #[test]
+    fn about_credits_upstream_livi() {
+        let rows = about(&Strings::new("en"), &facts());
+        let row = rows.iter().find(|r| r.label == "Based on").unwrap();
+        assert_eq!(
+            format!("{} {}", row.label, row.value),
+            "Based on LIVI by Lasse Heitgres (https://github.com/f-io/LIVI)"
+        );
     }
 
     #[test]

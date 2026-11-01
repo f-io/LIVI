@@ -48,6 +48,8 @@ pub struct Config {
     pub gps_baud_rate: u32,
     pub timezone: String,
 
+    pub haltech_can_enabled: bool,
+
     pub projection_width: u32,
     pub projection_height: u32,
     pub projection_fps: u32,
@@ -124,6 +126,8 @@ pub struct Config {
     pub dab_gain_db: f64,
     pub dab_ppm: i32,
 
+    pub minidsp: MiniDspConfig,
+
     pub auto_conn: bool,
     pub auto_switch_on_reverse: bool,
 
@@ -132,6 +136,8 @@ pub struct Config {
     pub kiosk: PerScreen<bool>,
     pub ui_zoom_percent: u32,
     pub appearance_mode: AppearanceMode,
+    pub sun_latitude: f64,
+    pub sun_longitude: f64,
 
     pub display_mode: PerScreen<String>,
     pub display_connector: PerScreen<String>,
@@ -259,6 +265,7 @@ pub enum WifiBand {
 #[serde(rename_all = "camelCase")]
 pub enum AppearanceMode {
     Auto,
+    Sun,
     Night,
     Day,
 }
@@ -268,7 +275,7 @@ impl AppearanceMode {
         match self {
             AppearanceMode::Night => Some(true),
             AppearanceMode::Day => Some(false),
-            AppearanceMode::Auto => None,
+            AppearanceMode::Auto | AppearanceMode::Sun => None,
         }
     }
 }
@@ -507,6 +514,7 @@ pub fn defaults() -> Config {
         gps_device: "/dev/ttyAMA0".into(),
         gps_baud_rate: 38400,
         timezone: String::new(),
+        haltech_can_enabled: false,
         projection_width: 1280,
         projection_height: 720,
         projection_fps: 60,
@@ -567,13 +575,16 @@ pub fn defaults() -> Config {
         dab_gain_auto: true,
         dab_gain_db: 19.7,
         dab_ppm: 0,
+        minidsp: default_minidsp(),
         auto_conn: true,
         auto_switch_on_reverse: true,
         start_page: "/".into(),
         language: "en".into(),
         kiosk: off,
         ui_zoom_percent: 100,
-        appearance_mode: AppearanceMode::Auto,
+        appearance_mode: AppearanceMode::Sun,
+        sun_latitude: 0.0,
+        sun_longitude: 0.0,
         display_mode: PerScreen::default(),
         display_connector: PerScreen::default(),
         display_gamma: 1.0,
@@ -615,6 +626,57 @@ pub fn defaults() -> Config {
         dismissed_packages: Vec::new(),
         bindings: default_bindings(),
         games: GamesConfig::default(),
+    }
+}
+
+/// MiniDSP page, driven through the minidsp-rs daemon's HTTP API.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MiniDspConfig {
+    pub enabled: bool,
+    /// Simulated device, honoured by development builds only.
+    pub mock_device: bool,
+    pub server_url: String,
+    pub device_index: u32,
+    pub volume_min_db: f64,
+    pub volume_max_db: f64,
+    pub volume_step_db: f64,
+    /// Zero-based outputs the bass control sets the gain of.
+    pub bass_output_channels: Vec<u32>,
+    pub bass_gain_db: f64,
+    pub bass_min_db: f64,
+    pub bass_max_db: f64,
+    pub bass_step_db: f64,
+    pub presets: Vec<MiniDspPreset>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MiniDspPreset {
+    pub index: u32,
+    pub label: String,
+}
+
+fn default_minidsp() -> MiniDspConfig {
+    MiniDspConfig {
+        enabled: true,
+        mock_device: false,
+        server_url: "http://127.0.0.1:5380".into(),
+        device_index: 0,
+        volume_min_db: -80.0,
+        volume_max_db: 0.0,
+        volume_step_db: 0.5,
+        bass_output_channels: vec![2, 3],
+        bass_gain_db: 0.0,
+        bass_min_db: -80.0,
+        bass_max_db: 12.0,
+        bass_step_db: 0.5,
+        presets: (0..4)
+            .map(|index| MiniDspPreset {
+                index,
+                label: format!("Preset {}", index + 1),
+            })
+            .collect(),
     }
 }
 

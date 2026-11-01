@@ -1,0 +1,408 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme } from "theme.slint";
+import { Focus } from "focus.slint";
+import { RoundButton } from "media_parts.slint";
+import { Slider } from "settings/controls.slint";
+
+export enum DspPhase { connecting, error, waiting, ready }
+
+export struct DspPresetData {
+    index: int,
+    label: string,
+    active: bool,
+}
+
+export struct DspControlData {
+    value: string,
+    level: float,
+    at-min: bool,
+    at-max: bool,
+}
+
+export global MiniDspState {
+    in property <DspPhase> phase;
+    in property <bool> busy;
+    in property <string> status-line;
+    in property <string> error;
+    in property <DspControlData> volume;
+    in property <DspControlData> bass;
+    in property <string> bass-outputs;
+    in property <[DspPresetData]> presets;
+
+    in property <string> title: "MiniDSP";
+    in property <string> refresh-label: "Refresh";
+    in property <string> unavailable-title: "MiniDSP unavailable";
+    in property <string> no-device: "No MiniDSP connected";
+    in property <string> connect-hint: "Connect your MiniDSP, then refresh to try again.";
+    in property <string> volume-title: "Master volume";
+    in property <string> volume-subtitle: "Full system output";
+    in property <string> bass-title: "Bass";
+    in property <string> presets-title: "Presets";
+
+    callback refresh();
+    // bass: which control, direction: -1 or 1
+    callback nudge(bool, int);
+    callback slide(bool, float);
+    callback slide-done(bool, float);
+    callback pick(int);
+}
+
+component StepButton inherits Rectangle {
+    in property <bool> focused;
+    in property <bool> enabled: true;
+    in property <length> size;
+    in property <image> icon;
+    callback clicked();
+
+    width: size;
+    height: size;
+    border-radius: 8px;
+    border-width: root.focused ? 3px : 1px;
+    border-color: root.focused ? Theme.primary : Theme.divider;
+    background: root.enabled && (touch.pressed || touch.has-hover) ? Theme.surface : transparent;
+    opacity: root.enabled ? 1 : 0.4;
+    Image {
+        width: root.size * 0.5;
+        height: root.size * 0.5;
+        source: root.icon;
+        colorize: Theme.text;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+component DspControl inherits Rectangle {
+    in property <bool> bass;
+    in property <string> title;
+    in property <string> subtitle;
+    in property <image> icon;
+    in property <DspControlData> data;
+    in property <int> focus-base;
+    in property <length> pad;
+    in property <length> value-px;
+    in property <length> button;
+
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.divider;
+    background: Theme.paper;
+
+    VerticalLayout {
+        padding: root.pad;
+        spacing: round(root.pad / 1px * 0.6) * 1px;
+        HorizontalLayout {
+            spacing: 10px;
+            Image {
+                width: 24px;
+                height: 24px;
+                y: (parent.height - self.height) / 2;
+                source: root.icon;
+                colorize: Theme.text-secondary;
+            }
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: root.title;
+                    color: Theme.text;
+                    font-weight: 500;
+                    font-size: 16px;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.subtitle;
+                    color: Theme.text-secondary;
+                    font-size: 12px;
+                    overflow: elide;
+                }
+            }
+        }
+        HorizontalLayout {
+            alignment: start;
+            spacing: 8px;
+            Text {
+                text: root.data.value;
+                color: Theme.text;
+                font-size: root.value-px;
+                font-weight: 500;
+                vertical-alignment: bottom;
+            }
+            Text {
+                text: "dB";
+                color: Theme.text-secondary;
+                font-size: 16px;
+                vertical-alignment: bottom;
+            }
+        }
+        HorizontalLayout {
+            spacing: 12px;
+            StepButton {
+                size: root.button;
+                focused: Focus.main(root.focus-base);
+                enabled: !MiniDspState.busy && !root.data.at-min;
+                icon: @image-url("icons/Remove.svg");
+                clicked => { MiniDspState.nudge(root.bass, -1); }
+            }
+            Slider {
+                level: root.data.level;
+                enabled: !MiniDspState.busy;
+                focused: Focus.main(root.focus-base + 1);
+                small: true;
+                moved(l) => { MiniDspState.slide(root.bass, l); }
+                released(l) => { MiniDspState.slide-done(root.bass, l); }
+            }
+            StepButton {
+                size: root.button;
+                focused: Focus.main(root.focus-base + 2);
+                enabled: !MiniDspState.busy && !root.data.at-max;
+                icon: @image-url("icons/Add.svg");
+                clicked => { MiniDspState.nudge(root.bass, 1); }
+            }
+        }
+    }
+}
+
+component PresetButton inherits Rectangle {
+    in property <DspPresetData> preset;
+    in property <bool> focused;
+    callback clicked();
+
+    border-radius: 8px;
+    border-width: root.focused ? 3px : 1px;
+    border-color: root.focused || root.preset.active ? Theme.primary : Theme.divider;
+    background: root.preset.active ? Theme.primary.with-alpha(0.16) : touch.has-hover ? Theme.surface : transparent;
+    opacity: MiniDspState.busy ? 0.4 : 1;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 8px;
+        Text {
+            text: root.preset.label;
+            color: Theme.text;
+            font-size: 16px;
+            font-weight: root.preset.active ? 500 : 400;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        if root.preset.active: Image {
+            width: 20px;
+            height: 20px;
+            y: (parent.height - self.height) / 2;
+            source: @image-url("icons/CheckRounded.svg");
+            colorize: Theme.primary;
+        }
+    }
+    touch := TouchArea {
+        enabled: !MiniDspState.busy;
+        clicked => { root.clicked(); }
+    }
+}
+
+component EmptyState inherits VerticalLayout {
+    in property <bool> failed;
+    alignment: center;
+    spacing: 12px;
+    Image {
+        height: 48px;
+        source: @image-url("icons/GraphicEqOutlined.svg");
+        colorize: Theme.text-secondary;
+        image-fit: contain;
+    }
+    Text {
+        text: root.failed ? MiniDspState.unavailable-title : MiniDspState.no-device;
+        color: Theme.text;
+        font-size: 20px;
+        font-weight: 500;
+        horizontal-alignment: center;
+    }
+    Text {
+        text: root.failed ? MiniDspState.error : MiniDspState.connect-hint;
+        color: root.failed ? (Theme.dark ? #ff8a80 : #c62828) : Theme.text-secondary;
+        font-size: 15px;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+    }
+    HorizontalLayout {
+        alignment: center;
+        Rectangle {
+            height: 48px;
+            width: refresh-row.preferred-width + 32px;
+            border-radius: 8px;
+            border-width: Focus.main(1) ? 3px : 1px;
+            border-color: Focus.main(1) ? Theme.primary : Theme.divider;
+            background: refresh-touch.has-hover ? Theme.surface : transparent;
+            opacity: MiniDspState.busy ? 0.4 : 1;
+            refresh-row := HorizontalLayout {
+                alignment: center;
+                spacing: 8px;
+                Image {
+                    width: 20px;
+                    height: 20px;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("icons/RefreshOutlined.svg");
+                    colorize: Theme.text;
+                }
+                Text {
+                    text: MiniDspState.refresh-label;
+                    color: Theme.text;
+                    font-size: 15px;
+                    vertical-alignment: center;
+                }
+            }
+            refresh-touch := TouchArea {
+                enabled: !MiniDspState.busy;
+                clicked => { MiniDspState.refresh(); }
+            }
+        }
+    }
+}
+
+export component MiniDspPage inherits Rectangle {
+    pure function clampf(v: float, lo: float, hi: float) -> float { return min(max(v, lo), hi); }
+
+    property <float> w: root.width / 1px;
+    property <float> h: root.height / 1px;
+    property <length> pad: round(clampf(w * 0.025, 12, 30)) * 1px;
+    property <length> gap: round(clampf(h * 0.025, 12, 20)) * 1px;
+    property <length> card-pad: round(clampf(w * 0.025, 14, 28)) * 1px;
+    property <length> value-px: round(clampf(h * 0.07, 28, 56)) * 1px;
+    property <length> button: round(clampf(h * 0.07, 44, 58)) * 1px;
+    property <bool> narrow: w < 600;
+    property <int> columns: root.narrow ? 2 : min(4, max(1, MiniDspState.presets.length));
+    property <length> preset-h: round(clampf(h * 0.1, 48, 72)) * 1px;
+
+    background: Theme.background;
+
+    VerticalLayout {
+        padding: root.pad;
+        spacing: root.gap;
+
+        HorizontalLayout {
+            vertical-stretch: 0;
+            spacing: 12px;
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Text {
+                    text: MiniDspState.title;
+                    color: Theme.text;
+                    font-size: round(clampf(h * 0.03, 19, 26)) * 1px;
+                    font-weight: 500;
+                }
+                Text {
+                    text: MiniDspState.status-line;
+                    color: Theme.text-secondary;
+                    font-size: 12px;
+                    overflow: elide;
+                }
+            }
+            RoundButton {
+                size: 48px;
+                icon-size: 24px;
+                icon: @image-url("icons/RefreshOutlined.svg");
+                focused: Focus.main(0);
+                enabled: !MiniDspState.busy;
+                clicked => { MiniDspState.refresh(); }
+            }
+        }
+        Rectangle {
+            height: 1px;
+            vertical-stretch: 0;
+            background: Theme.divider;
+        }
+
+        if MiniDspState.phase == DspPhase.connecting: Text {
+            vertical-stretch: 1;
+            text: MiniDspState.status-line;
+            color: Theme.text-secondary;
+            font-size: 16px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        if MiniDspState.phase == DspPhase.error || MiniDspState.phase == DspPhase.waiting: EmptyState {
+            vertical-stretch: 1;
+            failed: MiniDspState.phase == DspPhase.error;
+        }
+        if MiniDspState.phase == DspPhase.ready: VerticalLayout {
+            vertical-stretch: 1;
+            alignment: center;
+            spacing: root.gap;
+            if !root.narrow: HorizontalLayout {
+                spacing: root.gap;
+                DspControl {
+                    horizontal-stretch: 1;
+                    bass: false;
+                    title: MiniDspState.volume-title;
+                    subtitle: MiniDspState.volume-subtitle;
+                    icon: @image-url("icons/VolumeUpOutlined.svg");
+                    data: MiniDspState.volume;
+                    focus-base: 1;
+                    pad: root.card-pad;
+                    value-px: root.value-px;
+                    button: root.button;
+                }
+                DspControl {
+                    horizontal-stretch: 1;
+                    bass: true;
+                    title: MiniDspState.bass-title;
+                    subtitle: MiniDspState.bass-outputs;
+                    icon: @image-url("icons/SpeakerOutlined.svg");
+                    data: MiniDspState.bass;
+                    focus-base: 4;
+                    pad: root.card-pad;
+                    value-px: root.value-px;
+                    button: root.button;
+                }
+            }
+            if root.narrow: VerticalLayout {
+                spacing: root.gap;
+                DspControl {
+                    bass: false;
+                    title: MiniDspState.volume-title;
+                    subtitle: MiniDspState.volume-subtitle;
+                    icon: @image-url("icons/VolumeUpOutlined.svg");
+                    data: MiniDspState.volume;
+                    focus-base: 1;
+                    pad: root.card-pad;
+                    value-px: root.value-px;
+                    button: root.button;
+                }
+                DspControl {
+                    bass: true;
+                    title: MiniDspState.bass-title;
+                    subtitle: MiniDspState.bass-outputs;
+                    icon: @image-url("icons/SpeakerOutlined.svg");
+                    data: MiniDspState.bass;
+                    focus-base: 4;
+                    pad: root.card-pad;
+                    value-px: root.value-px;
+                    button: root.button;
+                }
+            }
+            if MiniDspState.presets.length > 0: Text {
+                text: MiniDspState.presets-title;
+                color: Theme.text;
+                font-size: 16px;
+                font-weight: 500;
+            }
+            if MiniDspState.presets.length > 0: Rectangle {
+                property <length> cell-w: (self.width - (root.columns - 1) * 12px) / root.columns;
+                property <int> rows: ceil(MiniDspState.presets.length / root.columns);
+                height: self.rows * root.preset-h + (self.rows - 1) * 12px;
+                for preset[i] in MiniDspState.presets: PresetButton {
+                    x: mod(i, root.columns) * (parent.cell-w + 12px);
+                    y: floor(i / root.columns) * (root.preset-h + 12px);
+                    width: parent.cell-w;
+                    height: root.preset-h;
+                    preset: preset;
+                    focused: Focus.main(7 + i);
+                    clicked => { MiniDspState.pick(preset.index); }
+                }
+            }
+        }
+    }
+}
