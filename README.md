@@ -127,6 +127,18 @@ The Dashboard is the car's instrument cluster. It comes in layouts, built the wa
 
 The dashboard is a WIP. While the IPC/socket telemetry payload already supports many signals, the UI exposes only a subset. Widgets and layouts will be extended over time.
 
+### Haltech CAN V2
+
+LIVI can listen to a Haltech ECU's CAN V2 broadcast on `can0` (1 Mbit/s) and feed the engine
+speed (frame 0x360) and the vehicle speed (0x370) into the telemetry, for the Dashboard and the
+phone's cluster. Turn it on under Settings → Car → Receive Haltech CAN V2 telemetry. LIVI only
+listens, it reads `candump -L can0,360:7FF,370:7FF` (`can-utils`, with `can0` already up), on
+LIVI OS the image's `/usr/libexec/livi-can-capture`. A value with no frame for 1.5 s is cleared.
+
+For the Raspberry Pi Haltech CAN V2 receiver and TJD CarPiHAT wiring, configuration, and
+bring-up steps, see the
+[Haltech CAN wiring and setup guide](https://github.com/DrSkunk/livi-os-buildroot/blob/main/docs/HALTECH-CAN.md).
+
 ### Pushing telemetry
 
 LIVI's core binary pushes test data into a running LIVI. On macOS it sits in

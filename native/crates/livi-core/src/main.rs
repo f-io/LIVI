@@ -33,6 +33,7 @@ mod dongle;
 mod fonts;
 mod gnss;
 mod gvfs_guard;
+mod haltech_can;
 mod hands_free;
 mod helper;
 mod host;
@@ -219,6 +220,7 @@ async fn run() -> Result<Exit, String> {
     tokio::spawn(telemetry::run(core.clone(), inside_rx, saved));
     tokio::spawn(gnss::run(core.clone(), inside.clone()));
     tokio::spawn(car_bridge::run(core.clone(), inside.clone()));
+    tokio::spawn(haltech_can::run(core.clone(), inside.clone()));
     tokio::spawn(system_volume::follow(core.clone()));
     tokio::spawn(update::run(core.clone(), update_asks));
     tokio::spawn(fonts::follow(core.clone(), user_data.join("fonts")));

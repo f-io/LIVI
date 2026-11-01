@@ -156,6 +156,7 @@
     "bottom": "Bottom",
     "drawOutside": "Draw Outside",
     "carPlayHlsVideo": "Video in the car",
+    "haltechCanEnabled": "Receive Haltech CAN V2 telemetry (can0, 1 Mbit/s, listen-only)",
     "carMakerTheme": "Car Maker Theme",
     "carPlayTheme": "Theme",
     "carPlayVehicleModel": "Vehicle Model",

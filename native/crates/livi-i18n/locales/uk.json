@@ -156,6 +156,7 @@
     "bottom": "Внизу",
     "drawOutside": "Малювати за межами",
     "carPlayHlsVideo": "Відео в авто",
+    "haltechCanEnabled": "Отримувати телеметрію Haltech CAN V2 (can0, 1 Мбіт/с, лише приймання)",
     "carMakerTheme": "Тема виробника",
     "carPlayTheme": "Тема",
     "carPlayVehicleModel": "Модель авто",

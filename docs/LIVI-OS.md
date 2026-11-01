@@ -77,7 +77,8 @@ Cmnd_Alias LIVI_HELPER = /usr/libexec/livi-helperd "", /usr/libexec/livi-helperd
 Cmnd_Alias LIVI_STALE = /usr/bin/pkill -TERM -f /usr/libexec/livi-helperd$, /usr/bin/pkill -KILL -f /usr/libexec/livi-helperd$
 Cmnd_Alias LIVI_WIFI_AP = /usr/bin/systemctl start livi-wifi-ap.service, /usr/bin/systemctl stop livi-wifi-ap.service, /usr/bin/systemctl restart livi-wifi-ap.service, /usr/bin/systemctl enable livi-wifi-ap.service, /usr/bin/systemctl disable livi-wifi-ap.service
 Cmnd_Alias LIVI_HOST = /usr/local/lib/livi/livi-power.sh *, /usr/local/lib/livi/livi-set-time.sh *, /usr/local/lib/livi/livi-video-mode.sh *
-<user> ALL=(root) NOPASSWD: LIVI_HELPER, LIVI_STALE, LIVI_WIFI_AP, LIVI_HOST
+Cmnd_Alias LIVI_CAN = /usr/libexec/livi-can-capture ""
+<user> ALL=(root) NOPASSWD: LIVI_HELPER, LIVI_STALE, LIVI_WIFI_AP, LIVI_HOST, LIVI_CAN
 ```
 
 `""` allows the command only without arguments. Leave out `SETENV`, LIVI does not need it.
@@ -95,7 +96,29 @@ the rule has to name the path that exists on the image.
 | `/usr/local/lib/livi/livi-power.sh` | as `livi_install_power_helper` in `scripts/install/common.sh` | Quit does not power off |
 | `/usr/local/lib/livi/livi-set-time.sh` | as `livi_install_time_helper` | GPS does not set clock or timezone |
 | `/usr/local/lib/livi/livi-video-mode.sh` | as `livi_install_video_mode_helper` (adapt `CMDLINE` to the image's boot partition) | the display mode is not pinned |
+| `/usr/libexec/livi-can-capture` | see [Haltech CAN capture](#haltech-can-capture) | no Haltech CAN telemetry |
 | `/usr/local/lib/livi/gvfs-phone-guard.sh` | optional, only for an image with gvfs; script and sudoers rule as in `native/crates/livi-core/src/gvfs_guard.rs` | gvfs may grab phones |
+
+## Haltech CAN capture
+
+With *Settings → Car → Receive Haltech CAN V2 telemetry* on (`haltechCanEnabled`), LIVI runs
+
+```
+sudo -n /usr/libexec/livi-can-capture
+```
+
+instead of `candump`. The image provides it (root, mode `0755`, no arguments) and:
+
+- brings `can0` up listen-only at 1 Mbit/s, as `ip link set can0 type can bitrate 1000000
+  listen-only on && ip link set can0 up` would, when it is not up yet;
+- then `exec`s `candump -L can0,360:7FF,370:7FF` (or prints the same `candump -L` line format,
+  `(<seconds>.<micros>) can0 <ID>#<DATA>`, one frame per line on stdout) until SIGTERM;
+- never transmits on the bus. Diagnostics go to stderr, LIVI logs them.
+
+If it exits LIVI starts it again after 2 s, doubling up to 30 s. Wiring and bring-up:
+[HALTECH-CAN.md](https://github.com/DrSkunk/livi-os-buildroot/blob/main/docs/HALTECH-CAN.md).
+
+## Notes
 
 The access point unit runs `livi-helperd --wifi-ap-claim`, `--wifi-ap` and `--wifi-ap-teardown`
 as root with `Environment=SUDO_USER=<user>`, so it reads the user's `config.json`.
