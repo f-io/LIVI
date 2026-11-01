@@ -71,6 +71,8 @@ pub struct TopLevel {
     pub tier_h: f64,
     pub position: Point<i32, Logical>,
     pub clear: bool,
+    pub fill: bool,
+    pub mapped: bool,
 }
 
 pub struct Screen {
@@ -124,6 +126,7 @@ pub struct LiviState {
     pub _cursor_shape_state: CursorShapeManagerState,
 
     pub output_app_id: String,
+    pub fill_app_ids: Vec<String>,
     pub screens: Vec<Screen>,
     pub toplevels: Vec<TopLevel>,
     pub video_order: Vec<usize>,
@@ -250,6 +253,9 @@ impl LiviState {
             _viewporter_state: viewporter_state,
             _cursor_shape_state: cursor_shape_state,
             output_app_id,
+            fill_app_ids: crate::layout::fill_app_ids(
+                std::env::var("LIVI_FULLSCREEN_APP_IDS").ok().as_deref(),
+            ),
             screens,
             toplevels: Vec::new(),
             video_order: Vec::new(),

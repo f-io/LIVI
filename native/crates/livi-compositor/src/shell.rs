@@ -91,6 +91,7 @@ impl CompositorHandler for LiviState {
                 self.toplevels[idx].clear = crate::projection::ui_clear(&root);
             }
             self.center_dialog_by_surface(&root);
+            self.follow_fill_mapping(idx, &root);
             crate::host::damage_all(self);
         }
     }
@@ -166,6 +167,20 @@ fn classify_on_initial_commit(state: &mut LiviState, idx: usize) {
         if is_dialog { "dialog" } else { "ui" },
         state.screens[screen_idx].role
     );
+    let fills = is_dialog
+        && (state.toplevels[idx].fill
+            || crate::layout::fills_by_app_id(app_id.as_deref(), &state.fill_app_ids));
+    if fills {
+        state.toplevels[idx].fill = true;
+        crate::layout::apply_fill_layout(state, idx);
+        let surface = state.toplevels[idx].toplevel.wl_surface().clone();
+        crate::input::focus_surface(state, &surface);
+        log::info!(
+            "app_id={app_id:?} fills screen '{}'",
+            state.screens[screen_idx].role
+        );
+        return;
+    }
     if is_dialog {
         center_dialog(state, idx);
     } else {
@@ -251,9 +266,31 @@ impl LiviState {
         if let Some(idx) = self
             .toplevels
             .iter()
-            .position(|t| t.toplevel.wl_surface() == surface && t.kind == Kind::Dialog)
+            .position(|t| t.toplevel.wl_surface() == surface && t.kind == Kind::Dialog && !t.fill)
         {
             center_dialog(self, idx);
+        }
+    }
+
+    // A filling app takes the keyboard while it shows and hands it back to the
+    // LIVI UI when it unmaps, before the client is even gone.
+    fn follow_fill_mapping(&mut self, idx: usize, surface: &WlSurface) {
+        let shown = crate::render::surface_size(surface) != (0, 0);
+        let t = &mut self.toplevels[idx];
+        if !t.fill || t.mapped == shown {
+            return;
+        }
+        t.mapped = shown;
+        if shown {
+            crate::input::focus_surface(self, surface);
+            return;
+        }
+        let focused = self
+            .seat
+            .get_keyboard()
+            .is_some_and(|k| k.current_focus().as_ref() == Some(surface));
+        if focused && let Some(ui) = main_ui_surface(self) {
+            crate::input::focus_surface(self, &ui);
         }
     }
 }
@@ -294,6 +331,8 @@ impl XdgShellHandler for LiviState {
             tier_h: 0.0,
             position: Point::from((0, 0)),
             clear: false,
+            fill: false,
+            mapped: false,
         });
     }
 
@@ -369,6 +408,21 @@ impl XdgShellHandler for LiviState {
         surface: ToplevelSurface,
         _output: Option<smithay::reexports::wayland_server::protocol::wl_output::WlOutput>,
     ) {
+        if let Some(idx) = self
+            .toplevels
+            .iter()
+            .position(|t| t.toplevel == surface && matches!(t.kind, Kind::Dialog | Kind::Pending))
+        {
+            // Foreign apps fill the screen above LIVI instead of fullscreening the host window.
+            self.toplevels[idx].fill = true;
+            if self.toplevels[idx].kind == Kind::Dialog {
+                crate::layout::apply_fill_layout(self, idx);
+                crate::input::focus_surface(self, &surface.wl_surface().clone());
+            } else {
+                surface.send_configure();
+            }
+            return;
+        }
         let Some(idx) = self
             .toplevels
             .iter()
@@ -392,6 +446,25 @@ impl XdgShellHandler for LiviState {
     }
 
     fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
+        if let Some(idx) = self
+            .toplevels
+            .iter()
+            .position(|t| t.toplevel == surface && t.kind == Kind::Dialog && t.fill)
+        {
+            let app_id = with_states(surface.wl_surface(), |states| {
+                states
+                    .data_map
+                    .get::<smithay::wayland::shell::xdg::XdgToplevelSurfaceData>()
+                    .and_then(|d| d.lock().ok()?.app_id.clone())
+            });
+            if !crate::layout::fills_by_app_id(app_id.as_deref(), &self.fill_app_ids) {
+                crate::layout::release_fill(self, idx);
+                crate::host::damage_all(self);
+            } else {
+                surface.send_configure();
+            }
+            return;
+        }
         let Some(idx) = self
             .toplevels
             .iter()
