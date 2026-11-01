@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 
 use livi_core_proto::state::Front;
-use livi_ui_model::shell::{Look, look};
+use livi_ui_model::shell::{Look, look_at};
 use serde_json::Value;
 
 use crate::PhoneState;
@@ -86,12 +86,14 @@ impl Follow {
                 out.push(Update::Front(front));
             }
         }
-        if hit("config") {
-            let next = look(&state["config"]);
+        if hit("config") || hit("telemetry") {
+            let next = look_at(&state["config"], &state["telemetry"]);
             if self.look.as_ref() != Some(&next) {
                 self.look = Some(next.clone());
                 out.push(Update::Look(next));
             }
+        }
+        if hit("config") {
             let kiosk = state["config"]["kiosk"]["main"].as_bool().unwrap_or(false);
             if self.kiosk != Some(kiosk) {
                 self.kiosk = Some(kiosk);

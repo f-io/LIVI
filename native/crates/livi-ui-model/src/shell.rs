@@ -68,7 +68,15 @@ pub fn ui_scale(base: f32, zoom: f32, physical_height: f32) -> f32 {
     base * zoom * fit
 }
 
+pub const NIGHT_PRIMARY: [u8; 3] = [0xd9, 0x36, 0x36];
+pub const NIGHT_HIGHLIGHT: [u8; 3] = [0xa8, 0x28, 0x28];
+
 pub fn look(config: &Value) -> Look {
+    look_at(config, &Value::Null)
+}
+
+pub fn look_at(config: &Value, telemetry: &Value) -> Look {
+    let night = telemetry["nightMode"].as_bool() == Some(true);
     let dark = config["darkMode"].as_bool().unwrap_or(true);
     let pick = |dark_key: &str, light_key: &str| {
         config[if dark { dark_key } else { light_key }]
@@ -87,8 +95,16 @@ pub fn look(config: &Value) -> Look {
         tabs: tabs(config),
         right_hand: config["hand"].as_i64() == Some(1),
         dark,
-        primary: pick("primaryColorDark", "primaryColorLight"),
-        highlight: pick("highlightColorDark", "highlightColorLight"),
+        primary: if night {
+            Some(NIGHT_PRIMARY)
+        } else {
+            pick("primaryColorDark", "primaryColorLight")
+        },
+        highlight: if night {
+            Some(NIGHT_HIGHLIGHT)
+        } else {
+            pick("highlightColorDark", "highlightColorLight")
+        },
         background: pick("backgroundColorDark", "backgroundColorLight"),
         text: pick("textColorDark", "textColorLight"),
         zoom: config["uiZoomPercent"]
@@ -143,5 +159,17 @@ mod tests {
         assert_eq!(l.zoom, 2.0);
         assert!(l.right_hand);
         assert_eq!(hex_color("nope"), None);
+    }
+
+    #[test]
+    fn night_swaps_the_accents_for_low_glare_red() {
+        let config = json!({ "darkMode": true, "primaryColorDark": "#00ADAD" });
+        let day = look_at(&config, &json!({ "nightMode": false }));
+        assert_eq!(day.primary, Some([0, 0xad, 0xad]));
+        assert_eq!(day.highlight, None);
+        let night = look_at(&config, &json!({ "nightMode": true }));
+        assert_eq!(night.primary, Some(NIGHT_PRIMARY));
+        assert_eq!(night.highlight, Some(NIGHT_HIGHLIGHT));
+        assert_eq!(look(&config), day);
     }
 }
