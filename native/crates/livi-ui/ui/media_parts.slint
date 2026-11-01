@@ -62,10 +62,15 @@ export component RoundButton inherits Rectangle {
 
 export component Spectrum inherits Rectangle {
     in property <[float]> bands;
+    // Decorative backdrop: no frequency labels, slightly lower bars whose
+    // upper part fades out so they melt into the page.
+    in property <bool> ambient;
 
     property <float> spec-w: root.width / 1px;
     property <float> font: min(16, floor(spec-w / 12));
-    property <bool> labels: font >= 9;
+    property <bool> labels: !ambient && font >= 9;
+    property <float> reach: ambient ? 0.88 : 1;
+    property <float> fade: 0.38;
     property <length> usable-h: round((root.height - (labels ? (font + 4) * 1px : 0)) / 1phx) * 1phx;
     property <length> bar-w: root.width / 24;
     property <float> char-w: font * 0.56;
@@ -80,8 +85,10 @@ export component Spectrum inherits Rectangle {
         x: i * root.bar-w;
         y: root.usable-h - self.height;
         width: root.bar-w * 0.8;
-        height: round(root.usable-h * b / 1phx) * 1phx;
-        background: Theme.highlight;
+        height: round(root.usable-h * b * root.reach / 1phx) * 1phx;
+        background: root.ambient
+            ? @linear-gradient(0deg, Theme.highlight 0%, Theme.highlight.with-alpha(clamp((1 - b * root.reach) / root.fade, 0, 1)) 100%)
+            : Theme.highlight;
     }
     if root.labels: Text {
         x: 0;

@@ -8,8 +8,11 @@ use std::time::{Duration, Instant};
 
 use livi_core_client::Client;
 use livi_core_proto::message::{Action, MediaControl};
-use livi_ui_model::media::{Guess, Playback, Pressed};
-use slint::{Color, ComponentHandle, Image, ModelRc, Timer, TimerMode, VecModel};
+use livi_ui_model::media::{BACKDROP, Guess, Playback, Pressed, backdrop};
+use slint::{
+    Color, ComponentHandle, Image, ModelRc, Rgba8Pixel, SharedPixelBuffer, Timer, TimerMode,
+    VecModel,
+};
 
 use crate::media::{DabView, MediaView};
 use crate::{AppWindow, DabState, MediaText, Page, Press, StationData};
@@ -67,7 +70,7 @@ pub fn follow(ui: &AppWindow) {
     tick(ui);
 }
 
-pub fn apply_media(ui: &AppWindow, client: Option<&Client>, mut m: MediaView) {
+pub fn apply_media(ui: &AppWindow, mut m: MediaView) {
     ui.set_track_title(m.title.into());
     ui.set_artist(m.artist.into());
     ui.set_album(m.album.into());
@@ -76,6 +79,10 @@ pub fn apply_media(ui: &AppWindow, client: Option<&Client>, mut m: MediaView) {
     ui.set_total_ms(m.duration_ms as f32);
     match m.artwork.take() {
         Some(Some(buf)) => {
+            let tile = backdrop(buf.as_bytes(), buf.width(), buf.height());
+            ui.set_artwork_backdrop(Image::from_rgba8(
+                SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(&tile, BACKDROP, BACKDROP),
+            ));
             ui.set_artwork(Image::from_rgba8(buf));
             ui.set_has_artwork(true);
         }
@@ -99,11 +106,8 @@ pub fn apply_media(ui: &AppWindow, client: Option<&Client>, mut m: MediaView) {
         );
         changed
     });
-    if new_session && ui.get_show_spectrum() {
+    if new_session {
         ui.set_show_spectrum(false);
-        if let Some(c) = client {
-            c.spectrum(false);
-        }
     }
     tick(ui);
 }
