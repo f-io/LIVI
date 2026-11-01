@@ -131,6 +131,18 @@ pub enum Action {
         radio: Radio,
         on: bool,
     },
+    GamesRefresh,
+    GamesImport,
+    GamesLaunch {
+        id: String,
+    },
+    GamesOpenRetroArch,
+    GamesStop,
+    ControllersList,
+    ControllersScan,
+    ControllerPair {
+        mac: String,
+    },
     Quit,
     Restart,
 }
@@ -234,6 +246,25 @@ mod tests {
             })
             .unwrap(),
             json!({ "kind": "removeMfi", "file": "certificate" })
+        );
+    }
+
+    #[test]
+    fn games_actions_travel_by_name() {
+        let launch = Action::GamesLaunch { id: "abc".into() };
+        let wire = json!({ "kind": "gamesLaunch", "id": "abc" });
+        assert_eq!(serde_json::to_value(&launch).unwrap(), wire);
+        assert_eq!(serde_json::from_value::<Action>(wire).unwrap(), launch);
+        assert_eq!(
+            serde_json::to_value(Action::GamesOpenRetroArch).unwrap(),
+            json!({ "kind": "gamesOpenRetroArch" })
+        );
+        assert_eq!(
+            serde_json::to_value(Action::ControllerPair {
+                mac: "AA:BB:CC:DD:EE:FF".into()
+            })
+            .unwrap(),
+            json!({ "kind": "controllerPair", "mac": "AA:BB:CC:DD:EE:FF" })
         );
     }
 

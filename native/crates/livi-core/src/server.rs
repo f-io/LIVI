@@ -20,6 +20,7 @@ use tokio::sync::{Mutex, Notify, broadcast, oneshot, watch};
 use crate::config_file::{ConfigFile, apply_patch};
 use crate::dab::DabAsk;
 use crate::dongle::LinkSpeedViewer;
+use crate::games::GamesAsk;
 use crate::hub::{Frame, Hub};
 use crate::projection::{UiCommand, UiSenders};
 use crate::spectrum::Viewer;
@@ -123,6 +124,13 @@ impl Core {
             .dab
             .send(ask)
             .map_err(|_| "DAB+ is not available".to_string())
+    }
+
+    fn ask_games(&self, ask: GamesAsk) -> Result<(), String> {
+        self.asks
+            .games
+            .send(ask)
+            .map_err(|_| "games are not available".to_string())
     }
 
     fn dab_media(&self, control: MediaControl) -> bool {
@@ -248,6 +256,14 @@ impl Core {
                 let _ = self.asks.dongle.send((radio, on));
                 Ok(())
             }
+            Action::GamesRefresh => self.ask_games(GamesAsk::Refresh),
+            Action::GamesImport => self.ask_games(GamesAsk::Import),
+            Action::GamesLaunch { id } => self.ask_games(GamesAsk::Launch(id)),
+            Action::GamesOpenRetroArch => self.ask_games(GamesAsk::OpenRetroArch),
+            Action::GamesStop => self.ask_games(GamesAsk::Stop),
+            Action::ControllersList => self.ask_games(GamesAsk::ListControllers),
+            Action::ControllersScan => self.ask_games(GamesAsk::ScanControllers),
+            Action::ControllerPair { mac } => self.ask_games(GamesAsk::Pair(mac)),
             Action::CheckUpdate => self.ask_update(UpdateAsk::Check),
             Action::DownloadUpdate => self.ask_update(UpdateAsk::Download),
             Action::InstallUpdate => self.ask_update(UpdateAsk::Install),
@@ -472,6 +488,7 @@ mod tests {
             update: Default::default(),
             cluster: Default::default(),
             dab: Default::default(),
+            games: Default::default(),
             cameras: Vec::new(),
             mfi: Default::default(),
             config: defaults(),

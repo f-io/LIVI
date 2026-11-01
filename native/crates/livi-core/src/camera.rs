@@ -145,6 +145,7 @@ mod tests {
             update: Default::default(),
             cluster: Default::default(),
             dab: Default::default(),
+            games: Default::default(),
             cameras,
             mfi: Default::default(),
             config,

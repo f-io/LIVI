@@ -58,6 +58,7 @@ impl ConfigFile {
         }
 
         let mut config = merge(&current_names(&file), &defaults);
+        config.games = config.games.with_blanks_filled();
         if !WIFI_PASSWORD_LEN.contains(&config.wifi_password.chars().count()) {
             println!("[core] wifiPassword is no WPA passphrase, falling back to the default");
             config.wifi_password = self::defaults().wifi_password;

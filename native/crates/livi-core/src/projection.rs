@@ -500,6 +500,7 @@ pub struct UiAsks {
     pub goodbye: mpsc::UnboundedReceiver<oneshot::Sender<()>>,
     pub activity: watch::Sender<Activity>,
     pub dab: Option<crate::dab::DabAsks>,
+    pub games: Option<crate::games::GamesAsks>,
     pub dab_from_phone: mpsc::UnboundedSender<crate::dab::DabAsk>,
     pub input_from_compositor: mpsc::UnboundedSender<Input>,
     pub camera_found: mpsc::UnboundedSender<UiCommand>,
@@ -516,6 +517,7 @@ pub struct UiSenders {
     pub update: mpsc::UnboundedSender<UpdateAsk>,
     pub activity: watch::Receiver<Activity>,
     pub dab: mpsc::UnboundedSender<crate::dab::DabAsk>,
+    pub games: mpsc::UnboundedSender<crate::games::GamesAsk>,
 }
 
 pub struct DongleAsks {
@@ -535,6 +537,7 @@ pub fn ui_channels(wants: PerScreen<Front>) -> (UiSenders, UiAsks, DongleAsks, U
     let (update_tx, update_rx) = mpsc::unbounded_channel();
     let (activity_tx, activity_rx) = watch::channel(Activity::default());
     let (dab_tx, dab_rx) = mpsc::unbounded_channel();
+    let (games_tx, games_rx) = mpsc::unbounded_channel();
     let feed = spectrum::Feed::new();
     (
         UiSenders {
@@ -548,6 +551,7 @@ pub fn ui_channels(wants: PerScreen<Front>) -> (UiSenders, UiAsks, DongleAsks, U
             update: update_tx,
             activity: activity_rx,
             dab: dab_tx.clone(),
+            games: games_tx,
         },
         UiAsks {
             wants: wants_rx,
@@ -557,6 +561,7 @@ pub fn ui_channels(wants: PerScreen<Front>) -> (UiSenders, UiAsks, DongleAsks, U
             goodbye: goodbye_rx,
             activity: activity_tx,
             dab: Some(dab_rx),
+            games: Some(games_rx),
             dab_from_phone: dab_tx,
             input_from_compositor: input_tx,
             camera_found: commands_tx,

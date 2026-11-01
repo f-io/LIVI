@@ -31,6 +31,7 @@ mod dab;
 mod devices;
 mod dongle;
 mod fonts;
+mod games;
 mod gnss;
 mod gvfs_guard;
 mod hands_free;
@@ -194,6 +195,7 @@ async fn run() -> Result<Exit, String> {
         update: Default::default(),
         cluster: Default::default(),
         dab: Default::default(),
+        games: Default::default(),
         cameras: Vec::new(),
         mfi: Default::default(),
         config,

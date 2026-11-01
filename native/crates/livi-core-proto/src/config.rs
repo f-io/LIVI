@@ -194,6 +194,55 @@ pub struct Config {
     pub dismissed_packages: Vec<String>,
 
     pub bindings: KeyBindings,
+
+    pub games: GamesConfig,
+}
+
+pub const DEFAULT_ROM_DIRECTORY: &str = "~/Games/roms";
+pub const DEFAULT_PLAYLIST_DIRECTORY: &str = "~/.config/retroarch/playlists";
+pub const DEFAULT_THUMBNAIL_DIRECTORY: &str = "~/.config/retroarch/thumbnails";
+pub const DEFAULT_CORES_DIRECTORY: &str = "~/.config/retroarch/cores";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GamesConfig {
+    pub enabled: bool,
+    pub retro_arch_path: String,
+    pub rom_directory: String,
+    pub playlist_directory: String,
+    pub thumbnail_directory: String,
+    pub cores_directory: String,
+}
+
+impl Default for GamesConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            retro_arch_path: "retroarch".into(),
+            rom_directory: DEFAULT_ROM_DIRECTORY.into(),
+            playlist_directory: DEFAULT_PLAYLIST_DIRECTORY.into(),
+            thumbnail_directory: DEFAULT_THUMBNAIL_DIRECTORY.into(),
+            cores_directory: DEFAULT_CORES_DIRECTORY.into(),
+        }
+    }
+}
+
+impl GamesConfig {
+    pub fn with_blanks_filled(mut self) -> Self {
+        let defaults = Self::default();
+        for (value, default) in [
+            (&mut self.retro_arch_path, defaults.retro_arch_path),
+            (&mut self.rom_directory, defaults.rom_directory),
+            (&mut self.playlist_directory, defaults.playlist_directory),
+            (&mut self.thumbnail_directory, defaults.thumbnail_directory),
+            (&mut self.cores_directory, defaults.cores_directory),
+        ] {
+            if value.trim().is_empty() {
+                *value = default;
+            }
+        }
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -565,6 +614,7 @@ pub fn defaults() -> Config {
         update_nightly: false,
         dismissed_packages: Vec::new(),
         bindings: default_bindings(),
+        games: GamesConfig::default(),
     }
 }
 
@@ -614,6 +664,31 @@ fn default_bindings() -> KeyBindings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn games_use_the_retroarch_folders_and_blank_paths_fall_back_to_them() {
+        let games = defaults().games;
+        assert!(games.enabled);
+        assert_eq!(games.retro_arch_path, "retroarch");
+        assert_eq!(games.rom_directory, "~/Games/roms");
+        assert_eq!(games.playlist_directory, "~/.config/retroarch/playlists");
+        assert_eq!(games.thumbnail_directory, "~/.config/retroarch/thumbnails");
+        let blank = GamesConfig {
+            enabled: false,
+            retro_arch_path: "/opt/retroarch".into(),
+            rom_directory: " ".into(),
+            playlist_directory: String::new(),
+            thumbnail_directory: String::new(),
+            cores_directory: String::new(),
+        }
+        .with_blanks_filled();
+        assert!(!blank.enabled);
+        assert_eq!(blank.retro_arch_path, "/opt/retroarch");
+        assert_eq!(blank.rom_directory, DEFAULT_ROM_DIRECTORY);
+        assert_eq!(blank.playlist_directory, DEFAULT_PLAYLIST_DIRECTORY);
+        assert_eq!(blank.thumbnail_directory, DEFAULT_THUMBNAIL_DIRECTORY);
+        assert_eq!(blank.cores_directory, DEFAULT_CORES_DIRECTORY);
+    }
 
     #[test]
     fn names_from_telemetry_match_in_any_case() {

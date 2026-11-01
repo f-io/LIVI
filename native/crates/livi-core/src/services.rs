@@ -224,6 +224,14 @@ impl Services {
             ));
         }
 
+        if let Some(games_asks) = asks.games.take() {
+            tokio::spawn(crate::games::run(
+                hub.clone(),
+                games_asks,
+                compositor.is_some().then(|| ctrl.ui()),
+            ));
+        }
+
         if let Some(listener) = airplay {
             let carplay = CarPlay {
                 listener,
