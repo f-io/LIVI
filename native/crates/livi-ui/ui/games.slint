@@ -79,10 +79,10 @@ component PillButton inherits Rectangle {
     callback clicked();
     height: 44px;
     min-width: row.preferred-width + 28px;
-    border-radius: 22px;
-    border-width: root.focused ? 3px : 1px;
-    border-color: root.focused ? Theme.primary : Theme.divider;
-    background: root.filled ? Theme.primary : touch.has-hover ? Theme.surface : transparent;
+    border-radius: Theme.comand ? Theme.radius : 22px;
+    border-width: root.focused ? Theme.ring(3px) : 1px;
+    border-color: root.focused ? Theme.focus-color : Theme.comand ? (root.filled ? Theme.key-lit-edge : touch.has-hover ? Theme.primary : Theme.key-edge) : Theme.divider;
+    background: Theme.comand ? (root.filled || touch.pressed ? Theme.key-lit : Theme.key) : root.filled ? Theme.primary : touch.has-hover ? Theme.surface : transparent;
     opacity: root.enabled ? 1 : 0.5;
     row := HorizontalLayout {
         alignment: center;
@@ -94,13 +94,14 @@ component PillButton inherits Rectangle {
             width: 20px;
             height: 20px;
             source: root.icon;
-            colorize: root.filled ? Theme.background : Theme.text;
+            colorize: root.filled ? (Theme.comand ? Theme.key-lit-text : Theme.background) : Theme.text;
         }
         Text {
-            text: root.text;
-            color: root.filled ? Theme.background : Theme.text;
-            font-size: 15px;
+            text: Theme.comand ? root.text.to-uppercase() : root.text;
+            color: root.filled ? (Theme.comand ? Theme.key-lit-text : Theme.background) : Theme.text;
+            font-size: Theme.comand ? 13px : 15px;
             font-weight: 500;
+            letter-spacing: Theme.tracking;
             vertical-alignment: center;
         }
     }
@@ -116,11 +117,11 @@ component GameCard inherits Rectangle {
     in property <bool> launching;
     in property <string> launching-text;
     callback launch();
-    border-radius: 12px;
+    border-radius: Theme.comand ? Theme.radius : 12px;
     clip: true;
-    background: touch.has-hover ? Theme.surface.mix(Theme.paper, 0.5) : Theme.paper;
-    border-width: root.focused ? 3px : 1px;
-    border-color: root.focused ? Theme.primary : Theme.divider;
+    background: Theme.comand ? (touch.has-hover ? Theme.wash : Theme.panel) : touch.has-hover ? Theme.surface.mix(Theme.paper, 0.5) : Theme.paper;
+    border-width: root.focused ? Theme.ring(3px) : 1px;
+    border-color: root.focused ? Theme.focus-color : Theme.comand ? (touch.has-hover ? Theme.primary : Theme.rule) : Theme.divider;
     VerticalLayout {
         Rectangle {
             vertical-stretch: 1;
@@ -138,7 +139,7 @@ component GameCard inherits Rectangle {
                 colorize: Theme.text-secondary;
             }
         }
-        Rectangle { height: 1px; background: Theme.divider; }
+        Rectangle { height: 1px; background: Theme.rule; }
         VerticalLayout {
             padding: 12px;
             spacing: 2px;
@@ -278,10 +279,13 @@ component ControllerPairing inherits Rectangle {
     Rectangle {
         width: min(parent.width - 32px, 560px);
         height: min(parent.height - 32px, 420px);
-        border-radius: 16px;
-        background: Theme.background.mix(Theme.dark ? #ffffff : #000000, 0.9);
+        border-radius: Theme.comand ? Theme.radius : 16px;
+        background: Theme.comand ? Theme.panel : Theme.background.mix(Theme.dark ? #ffffff : #000000, 0.9);
         border-width: 1px;
-        border-color: Theme.divider;
+        border-color: Theme.comand ? Theme.rule : Theme.divider;
+        drop-shadow-blur: Theme.comand ? 28px : 0;
+        drop-shadow-offset-y: 10px;
+        drop-shadow-color: Theme.panel-shadow;
         VerticalLayout {
             padding: 20px;
             spacing: 10px;
@@ -314,8 +318,8 @@ component ControllerPairing inherits Rectangle {
                 for c[i] in GamesState.controllers: Rectangle {
                     y: i * 60px;
                     height: 56px;
-                    border-radius: 10px;
-                    background: Theme.surface;
+                    border-radius: Theme.comand ? Theme.radius : 10px;
+                    background: Theme.comand ? Theme.key : Theme.surface;
                     HorizontalLayout {
                         padding-left: 12px;
                         padding-right: 8px;
@@ -378,7 +382,7 @@ component ControllerPairing inherits Rectangle {
 }
 
 export component GamesPage inherits Rectangle {
-    background: Theme.background;
+    background: Theme.backdrop;
     VerticalLayout {
         HorizontalLayout {
             padding-left: 24px;
@@ -423,7 +427,7 @@ export component GamesPage inherits Rectangle {
                 clicked => { GamesState.rescan(); }
             }
         }
-        Rectangle { height: 1px; background: Theme.divider; }
+        Rectangle { height: 1px; background: Theme.rule; }
         if GamesState.notice != "": Text {
             x: 24px;
             text: GamesState.notice;
