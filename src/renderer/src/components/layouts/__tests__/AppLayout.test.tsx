@@ -39,7 +39,7 @@ vi.mock('@mui/material/styles', async () => {
   return {
     ...actual,
     useTheme: () => ({
-      palette: { background: { paper: '#111' } }
+      palette: { background: { paper: '#111' }, divider: '#303030' }
     })
   }
 })

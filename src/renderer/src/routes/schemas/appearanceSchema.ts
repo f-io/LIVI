@@ -19,19 +19,42 @@ export const appearanceSchema: SettingsNode<Config> = {
     },
     {
       type: 'select',
-      label: 'Phone Appearance',
+      label: 'Day / Night Mode',
       labelKey: 'settings.phoneAppearance',
       path: 'appearanceMode',
       displayValue: true,
       options: [
-        { label: 'Auto', labelKey: 'settings.phoneAppearanceAuto', value: 'auto' },
+        { label: 'Sunrise / Sunset', labelKey: 'settings.phoneAppearanceSun', value: 'sun' },
         { label: 'Day', labelKey: 'settings.phoneAppearanceDay', value: 'day' },
-        { label: 'Night', labelKey: 'settings.phoneAppearanceNight', value: 'night' }
+        { label: 'Night', labelKey: 'settings.phoneAppearanceNight', value: 'night' },
+        { label: 'Auto (sensor)', labelKey: 'settings.phoneAppearanceAuto', value: 'auto' }
       ],
       page: {
-        title: 'Phone Appearance',
+        title: 'Day / Night Mode',
         labelTitle: 'settings.phoneAppearance'
       }
+    },
+    {
+      type: 'number',
+      label: 'Latitude (no GPS)',
+      labelKey: 'settings.sunLatitude',
+      path: 'sunLatitude',
+      min: -90,
+      max: 90,
+      step: 0.01,
+      displayValue: true,
+      page: { title: 'Latitude', labelTitle: 'settings.sunLatitude' }
+    },
+    {
+      type: 'number',
+      label: 'Longitude (no GPS)',
+      labelKey: 'settings.sunLongitude',
+      path: 'sunLongitude',
+      min: -180,
+      max: 180,
+      step: 0.01,
+      displayValue: true,
+      page: { title: 'Longitude', labelTitle: 'settings.sunLongitude' }
     },
     {
       type: 'route',

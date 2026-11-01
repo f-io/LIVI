@@ -28,6 +28,7 @@ import { attachCpAdapter } from './adapters/cpAdapter'
 import { attachDongleAdapter } from './adapters/dongleAdapter'
 import { attachLiviDashAdapter } from './adapters/liviDashAdapter'
 import { attachGpsPersist } from './gpsPersist'
+import { attachSunSchedule } from './sunSchedule'
 import type { TelemetryStore } from './TelemetryStore'
 import { attachVolumePersist } from './volumePersist'
 
@@ -69,8 +70,12 @@ export function setupTelemetry({
     initialVolume: initialConfig?.huVolume
   })
 
+  // Sunrise/sunset night mode (appearanceMode === 'sun'); runs after GPS seed.
+  const sunSchedule = attachSunSchedule({ store, initialConfig })
+
   let lastAppearanceMode: string | undefined = initialConfig?.appearanceMode
   const onConfigChanged = (merged: Config): void => {
+    sunSchedule.setConfig(merged)
     if (merged.appearanceMode !== lastAppearanceMode) {
       lastAppearanceMode = merged.appearanceMode
       applyAppearanceMode(store, merged.appearanceMode)
@@ -137,6 +142,7 @@ export function setupTelemetry({
       ipcMain.removeAllListeners('telemetry:push')
       ipcMain.removeHandler('telemetry:snapshot')
       configEvents.off('changed', onConfigChanged)
+      sunSchedule.off()
       gpsPersist.off()
       volumePersist.off()
       offDash()
