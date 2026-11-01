@@ -132,6 +132,8 @@ pub struct Config {
     pub kiosk: PerScreen<bool>,
     pub ui_zoom_percent: u32,
     pub appearance_mode: AppearanceMode,
+    pub sun_latitude: f64,
+    pub sun_longitude: f64,
 
     pub display_mode: PerScreen<String>,
     pub display_connector: PerScreen<String>,
@@ -210,6 +212,7 @@ pub enum WifiBand {
 #[serde(rename_all = "camelCase")]
 pub enum AppearanceMode {
     Auto,
+    Sun,
     Night,
     Day,
 }
@@ -219,7 +222,7 @@ impl AppearanceMode {
         match self {
             AppearanceMode::Night => Some(true),
             AppearanceMode::Day => Some(false),
-            AppearanceMode::Auto => None,
+            AppearanceMode::Auto | AppearanceMode::Sun => None,
         }
     }
 }
@@ -524,7 +527,9 @@ pub fn defaults() -> Config {
         language: "en".into(),
         kiosk: off,
         ui_zoom_percent: 100,
-        appearance_mode: AppearanceMode::Auto,
+        appearance_mode: AppearanceMode::Sun,
+        sun_latitude: 0.0,
+        sun_longitude: 0.0,
         display_mode: PerScreen::default(),
         display_connector: PerScreen::default(),
         display_gamma: 1.0,

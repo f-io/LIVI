@@ -104,6 +104,8 @@ const SETTINGS: &[(&str, &str)] = &[
     ("darkMode", "DarkModeOutlined"),
     ("overlayMessages", "LayersOutlined"),
     ("phoneAppearance", "BrightnessAutoOutlined"),
+    ("sunLatitude", "PublicOutlined"),
+    ("sunLongitude", "PublicOutlined"),
     ("displayBrightness", "Brightness6Outlined"),
     ("displayBrightnessAuto", "BrightnessAutoOutlined"),
     ("uiColors", "PaletteOutlined"),

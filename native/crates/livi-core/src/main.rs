@@ -55,6 +55,7 @@ mod services;
 mod spectrum;
 mod state_files;
 mod status_file;
+mod sun_schedule;
 mod system_volume;
 mod telemetry;
 mod telemetry_cli;
@@ -217,6 +218,7 @@ async fn run() -> Result<Exit, String> {
     let (inside, inside_rx) = tokio::sync::mpsc::unbounded_channel();
     tokio::spawn(telemetry::run(core.clone(), inside_rx, saved));
     tokio::spawn(gnss::run(core.clone(), inside.clone()));
+    tokio::spawn(sun_schedule::run(core.clone(), inside.clone()));
     tokio::spawn(car_bridge::run(core.clone(), inside.clone()));
     tokio::spawn(system_volume::follow(core.clone()));
     tokio::spawn(update::run(core.clone(), update_asks));
