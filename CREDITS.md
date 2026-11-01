@@ -64,6 +64,15 @@ Roboto is licensed under the **SIL Open Font License 1.1 (OFL-1.1)**.
 
 https://github.com/googlefonts/roboto
 
+### D-DIN
+
+This application bundles the **D-DIN** font by Datto Inc. (used by the COMAND UI style).
+
+D-DIN is licensed under the **SIL Open Font License 1.1 (OFL-1.1)**, with the Reserved Font Name "D-DIN".
+The license text is included as `native/crates/livi-ui/ui/fonts/D-DIN-OFL.txt`.
+
+https://www.fontsquirrel.com/fonts/d-din
+
 ### Material Icons
 
 This application bundles icons from Google's **Material Icons**.

@@ -24,7 +24,7 @@ export component Dashboard inherits Rectangle {
     property <bool> blinking: DashState.turn-left || DashState.turn-right || DashState.hazards;
     property <length> swipe-from;
 
-    background: DashState.enabled && DashState.map ? transparent : Theme.background;
+    background: DashState.enabled && DashState.map ? transparent : Theme.backdrop;
 
     Timer {
         interval: 500ms;

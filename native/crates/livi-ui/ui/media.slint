@@ -41,6 +41,7 @@ component Progress inherits Rectangle {
             text: root.clock(root.dragging ? root.shown-ms : root.elapsed-ms);
             color: Theme.text.with-alpha(0.85);
             font-size: 14px;
+            letter-spacing: Theme.tracking;
             vertical-alignment: center;
         }
         track := Rectangle {
@@ -48,15 +49,17 @@ component Progress inherits Rectangle {
             Rectangle {
                 y: (parent.height - root.bar-height) / 2;
                 height: root.bar-height;
-                border-radius: root.bar-height / 1.6;
+                border-radius: Theme.comand ? root.bar-height / 2 : root.bar-height / 1.6;
                 clip: true;
-                background: Theme.track;
+                background: Theme.comand ? Theme.groove : Theme.track;
+                border-width: Theme.comand ? 1px : 0;
+                border-color: root.focused && Theme.comand ? Theme.focus-color : Theme.rule;
                 drop-shadow-blur: root.focused ? 8px : 0;
                 drop-shadow-color: Theme.highlight.with-alpha(0.35);
                 Rectangle {
                     x: 0;
                     width: parent.width * root.shown;
-                    background: Theme.highlight;
+                    background: Theme.comand ? @linear-gradient(180deg, Theme.highlight 0%, Theme.primary 100%) : Theme.highlight;
                 }
             }
             if root.can-seek: Rectangle {
@@ -65,10 +68,12 @@ component Progress inherits Rectangle {
                 y: (parent.height - self.height) / 2;
                 x: clamp(parent.width * root.shown - self.width / 2, 0, parent.width - self.width);
                 border-radius: self.height / 2;
-                background: Theme.highlight;
-                drop-shadow-blur: 4px;
-                drop-shadow-offset-y: 1px;
-                drop-shadow-color: #00000059;
+                background: Theme.comand ? Theme.background.mix(Theme.text, 0.98) : Theme.highlight;
+                border-width: Theme.comand ? 3px : 0;
+                border-color: Theme.highlight;
+                drop-shadow-blur: Theme.comand ? 13px : 4px;
+                drop-shadow-offset-y: Theme.comand ? 0 : 1px;
+                drop-shadow-color: Theme.comand ? Theme.highlight.with-alpha(0.58) : #00000059;
             }
             TouchArea {
                 enabled: root.can-seek && root.total-ms > 0;
@@ -95,6 +100,7 @@ component Progress inherits Rectangle {
             text: "-" + root.clock(root.total-ms - (root.dragging ? root.shown-ms : root.elapsed-ms));
             color: Theme.text.with-alpha(0.85);
             font-size: 14px;
+            letter-spacing: Theme.tracking;
             horizontal-alignment: right;
             vertical-alignment: center;
         }
@@ -178,8 +184,8 @@ component PhonePlayer inherits Rectangle {
                         text: root.track-title;
                         color: Theme.text;
                         font-size: root.title-px * 1px;
-                        font-weight: 800;
-                        letter-spacing: 0.2px;
+                        font-weight: Theme.comand ? 700 : 800;
+                        letter-spacing: Theme.comand ? 1px : 0.2px;
                         overflow: elide;
                     }
                     if root.two-col: Text {
@@ -207,11 +213,11 @@ component PhonePlayer inherits Rectangle {
                         width: root.art-px * 1px;
                         height: root.art-px * 1px;
                         y: (parent.height - self.height) / 2;
-                        border-radius: 34px;
-                        border-width: Focus.main(root.focus-base) ? 3px : 0;
-                        border-color: Theme.primary;
+                        border-radius: Theme.comand ? Theme.radius : 34px;
+                        border-width: Focus.main(root.focus-base) ? Theme.ring(3px) : Theme.comand ? 1px : 0;
+                        border-color: Focus.main(root.focus-base) ? Theme.focus-color : Theme.rule;
                         clip: true;
-                        background: root.show-spectrum ? transparent : Theme.surface;
+                        background: root.show-spectrum ? (Theme.comand ? Theme.panel : transparent) : Theme.comand ? Theme.panel : Theme.surface;
                         if !root.show-spectrum && root.has-artwork: Image {
                             width: parent.width;
                             height: parent.height;
@@ -309,7 +315,7 @@ export component MediaPage inherits Rectangle {
     property <bool> dab-shown: DabState.receiver && DabState.view-dab;
     property <length> tabs-h: DabState.receiver ? 48px : 0;
 
-    background: Theme.background;
+    background: Theme.backdrop;
 
     Rectangle {
         if DabState.receiver: SourceTabs {

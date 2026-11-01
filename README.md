@@ -105,6 +105,15 @@ Manage under Settings → Devices.
   <img src="docs/media/devices.png" alt="Connected devices" width="70%" />
 </p>
 
+## UI Style
+
+Settings → Appearance → UI Style switches the look of LIVI's own interface.
+
+- **COMAND** (default in this fork): a Mercedes COMAND-style head-unit look. Bevelled gradient panels with a 1px rule and square corners, hardware-style keys, recessed sliders and switches, a nav rail whose selected tab carries a glowing bar, uppercase titles and the D-DIN typeface. A focused control (D-pad / keyboard) gets a thin highlight outline.
+- **Standard**: the upstream LIVI look.
+
+Both styles take their colours from Settings → Appearance → UI Colors, so a custom palette carries over. The projected CarPlay / Android Auto video is not affected.
+
 ## Display Calibration
 
 Car displays are rarely colour accurate. Cheap panels wash out blacks, run cold or warm, or crush the shadows once the sun hits them. LIVI can correct this in software.

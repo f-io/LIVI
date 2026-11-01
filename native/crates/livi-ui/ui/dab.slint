@@ -75,14 +75,18 @@ component StationTile inherits Rectangle {
     callback picked();
     width: tile;
     height: tile;
-    border-radius: 10px;
-    border-width: root.station.tuned ? 2px : 0;
-    border-color: Theme.primary;
-    background: root.focused ? #ffffff33 : root.station.tuned ? #ffffff24 : #ffffff0f;
+    border-radius: Theme.comand ? Theme.radius : 10px;
+    border-width: root.station.tuned ? (Theme.comand ? 1px : 2px) : Theme.comand ? 1px : 0;
+    border-color: Theme.comand && !root.station.tuned ? Theme.rule : Theme.primary;
+    background: Theme.comand ? (root.station.tuned ? Theme.wash : Theme.panel) : root.focused ? #ffffff33 : root.station.tuned ? #ffffff24 : #ffffff0f;
     Rectangle {
-        border-radius: 10px;
-        border-width: root.focused ? 3px : 0;
-        border-color: Theme.primary;
+        border-radius: Theme.comand ? Theme.radius : 10px;
+        border-width: root.focused ? Theme.ring(3px) : 0;
+        border-color: Theme.focus-color;
+        x: Theme.comand ? -3px : 0;
+        y: Theme.comand ? -3px : 0;
+        width: parent.width + (Theme.comand ? 6px : 0);
+        height: parent.height + (Theme.comand ? 6px : 0);
     }
     Text {
         x: parent.width - self.width - 8px;
@@ -151,8 +155,8 @@ component StationBand inherits Rectangle {
     init => { root.show(DabState.tuned-index); }
 
     height: tile + 16px;
-    border-radius: 12px;
-    background: #ffffff0f;
+    border-radius: Theme.comand ? Theme.radius : 12px;
+    background: Theme.comand ? Theme.panel-base : #ffffff0f;
     clip: true;
     flick := Flickable {
         content-width: max(self.width, 8px + DabState.stations.length * root.step);
@@ -312,9 +316,9 @@ export component DabPage inherits Rectangle {
                 Rectangle {
                     width: root.art-px * 1px;
                     height: root.art-px * 1px;
-                    border-radius: 16px;
-                    border-width: Focus.main(root.focus-base) ? 3px : 0;
-                    border-color: Theme.primary;
+                    border-radius: Theme.comand ? Theme.radius : 16px;
+                    border-width: Focus.main(root.focus-base) ? Theme.ring(3px) : Theme.comand ? 1px : 0;
+                    border-color: Focus.main(root.focus-base) ? Theme.focus-color : Theme.rule;
                     clip: true;
                     background: root.show-spectrum ? transparent : #ffffff14;
                     if !root.show-spectrum: StationBadge {

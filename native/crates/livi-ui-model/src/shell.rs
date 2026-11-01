@@ -26,6 +26,21 @@ pub struct Look {
     pub zoom: f32,
     pub stream: (i32, i32),
     pub language: String,
+    pub style: Style,
+}
+
+/// Which visual style the UI draws with (`uiStyle` in the config).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Style {
+    Standard,
+    Comand,
+}
+
+pub fn style(config: &Value) -> Style {
+    match config["uiStyle"].as_str() {
+        Some("standard") => Style::Standard,
+        _ => Style::Comand,
+    }
 }
 
 fn on_main(config: &Value, key: &str, default: bool) -> bool {
@@ -117,6 +132,7 @@ pub fn look_at(config: &Value, telemetry: &Value) -> Look {
             .map_or(1.0, |z| (z / 100.0) as f32),
         stream: (w, h),
         language: config["language"].as_str().unwrap_or("en").to_string(),
+        style: style(config),
     }
 }
 
@@ -183,5 +199,16 @@ mod tests {
         assert_eq!(night.primary, Some(NIGHT_PRIMARY));
         assert_eq!(night.highlight, Some(NIGHT_HIGHLIGHT));
         assert_eq!(look(&config), day);
+    }
+
+    #[test]
+    fn the_style_follows_the_config_and_defaults_to_comand() {
+        assert_eq!(look(&json!({})).style, Style::Comand);
+        assert_eq!(look(&json!({ "uiStyle": "comand" })).style, Style::Comand);
+        assert_eq!(
+            look(&json!({ "uiStyle": "standard" })).style,
+            Style::Standard
+        );
+        assert_eq!(look(&json!({ "uiStyle": "bogus" })).style, Style::Comand);
     }
 }
