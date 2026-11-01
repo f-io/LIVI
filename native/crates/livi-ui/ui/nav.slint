@@ -31,10 +31,19 @@ component Tab inherits Rectangle {
     min-height: Ui.icon-size;
     preferred-height: Ui.icon-size + (Ui.xs-icons ? 10px : 20px);
 
+    if root.active: Rectangle {
+        width: min(parent.width - 4px, Ui.icon-size + 14px);
+        height: parent.height - (Ui.xs-icons ? 6px : 12px);
+        border-radius: 6px;
+        border-width: 1px;
+        border-color: Theme.primary;
+        background: Theme.primary.with-alpha(0.14);
+    }
+
     Image {
         width: Ui.icon-size;
         height: Ui.icon-size;
-        colorize: touch.has-hover || root.focused ? Theme.primary : root.tint;
+        colorize: root.active || touch.has-hover || root.focused ? Theme.primary : root.tint;
         opacity: root.active || touch.has-hover || root.focused || root.page == Page.projection ? 1 : 0.6;
         source: root.icon;
     }

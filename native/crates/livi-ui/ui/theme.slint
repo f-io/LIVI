@@ -9,14 +9,14 @@ export global Theme {
     in property <color> background-override: transparent;
     in property <color> text-override: transparent;
 
-    out property <color> background: background-override.alpha > 0 ? background-override : (dark ? #000000 : #f5f5f5);
+    out property <color> background: background-override.alpha > 0 ? background-override : (dark ? #0b0b0b : #ece7de);
     out property <color> paper: background.mix(dark ? #ffffff : #000000, 0.93);
-    out property <color> text: text-override.alpha > 0 ? text-override : (dark ? #ffffff : #000000);
+    out property <color> text: text-override.alpha > 0 ? text-override : (dark ? #f5f0e8 : #1a1a1a);
     out property <color> text-secondary: text.with-alpha(dark ? 0.73 : 0.8);
     out property <color> text-disabled: text.with-alpha(dark ? 0.5 : 0.38);
-    out property <color> primary: primary-override.alpha > 0 ? primary-override : (dark ? #00adad : #008585);
-    out property <color> highlight: highlight-override.alpha > 0 ? highlight-override : (dark ? #009494 : #007575);
-    out property <color> divider: dark ? #ffffff33 : #0000001f;
+    out property <color> primary: primary-override.alpha > 0 ? primary-override : (dark ? #ffa500 : #c77700);
+    out property <color> highlight: highlight-override.alpha > 0 ? highlight-override : (dark ? #e08f00 : #a86400);
+    out property <color> divider: dark ? #303030 : #c9c1b4;
     out property <color> surface: dark ? #ffffff0f : #0000000f;
     out property <color> button: #ffffff29;
     out property <color> button-active: #ffffff3d;

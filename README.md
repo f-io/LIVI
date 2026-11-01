@@ -121,6 +121,45 @@ Configure under Settings → Appearance → Contrast / Gamma and Settings → Ap
   <img src="docs/media/color.png" alt="Colour channel calibration" width="42%" align="top" />
 </p>
 
+## Theme and Day / Night Mode
+
+The fork ships the **ZTT** palette, modelled on the 1990s Mercedes R129 OEM look: amber
+accents on near-black panels in dark mode, burnt amber on warm cream in light mode, and an
+amber-outlined tile for the selected navigation item.
+
+|            | Dark      | Light     |
+| ---------- | --------- | --------- |
+| Background | `#0B0B0B` | `#ECE7DE` |
+| Text       | `#F5F0E8` | `#1A1A1A` |
+| Primary    | `#FFA500` | `#C77700` |
+| Highlight  | `#E08F00` | `#A86400` |
+| Divider    | `#303030` | `#C9C1B4` |
+
+While `nightMode` is on, the accents switch to a muted red (`#D93636` / `#A82828`) to keep
+glare down. Every colour can still be overridden under Settings → Appearance → UI Colors.
+
+Settings → Appearance → **Day / Night Mode** (`appearanceMode`) picks what drives day and
+night:
+
+| Mode               | Behaviour                                                                  |
+| ------------------ | -------------------------------------------------------------------------- |
+| `sun` (default)    | Switches at sunrise and sunset, computed from the car's position           |
+| `day` / `night`    | Fixed                                                                      |
+| `auto`             | Left to the car or the phone (e.g. a light sensor pushing `nightMode`)     |
+
+In `sun` mode LIVI checks the sun's elevation once a minute and, at each transition, sets
+both `darkMode` (LIVI's own theme) and `nightMode` (CarPlay, Android Auto and the cluster),
+so everything switches together. Toggling Dark Mode by hand holds until the next sunrise
+or sunset. The position comes from the GPS fix when a receiver is connected, otherwise from
+`sunLatitude` / `sunLongitude` (Settings → Appearance, decimal degrees). With neither set
+(`0` / `0`) nothing is switched.
+
+A Raspberry Pi 4 has no RTC and the Pi 5 RTC only keeps time with a backup battery, so the
+schedule waits until the system clock is trusted: an RTC with a plausible time close to the
+system clock, NTP in sync (systemd-timesyncd or chrony), the GPS receiver disciplining the
+clock, or the clock having been set or confirmed by an iPhone at CarPlay start. Until then
+the last state is kept.
+
 ## Dashboard
 
 The Dashboard is the car's instrument cluster. It comes in layouts, built the way a car maker's CarPlay theme is: each layout decides where the gauges, the speed and the warning lights sit and whether the phone's cluster stream runs behind them. With a car maker's theme on the phone, the palette picked there colours the gauges. Step through the layouts with the page dots, a swipe or the Cluster Layout key (default T). LIVI comes back with the layout and the palette picked last.

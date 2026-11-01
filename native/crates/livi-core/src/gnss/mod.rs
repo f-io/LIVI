@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-mod clock;
+pub(crate) mod clock;
 mod nmea;
 mod port;
 mod receiver;
