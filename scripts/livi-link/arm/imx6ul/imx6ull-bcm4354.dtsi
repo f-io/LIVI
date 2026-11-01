@@ -1,0 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Broadcom BCM4354 (AP6354). brcmfmac drives the Wi-Fi half over SDIO. The Bluetooth half sits on
+ * UART3, it gets no node until its .hcd patch is in.
+ */

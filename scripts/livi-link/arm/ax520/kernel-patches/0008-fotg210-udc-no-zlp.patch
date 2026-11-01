@@ -1,0 +1,14 @@
+--- a/drivers/usb/fotg210/fotg210-udc.c
++++ b/drivers/usb/fotg210/fotg210-udc.c
+@@ -1272,6 +1272,11 @@
+ 	fotg210->gadget.ops = &fotg210_gadget_ops;
+ 
+ 	fotg210->gadget.max_speed = USB_SPEED_HIGH;
++	/*
++	 * req->zero is never handled, so an IN transfer that ends on a full packet would run on into
++	 * the next one. With this set, u_ether adds a byte to such a transfer instead.
++	 */
++	fotg210->gadget.quirk_zlp_not_supp = 1;
+ 	fotg210->gadget.dev.parent = dev;
+ 	fotg210->gadget.dev.dma_mask = dev->dma_mask;
+ 	fotg210->gadget.name = udc_name;

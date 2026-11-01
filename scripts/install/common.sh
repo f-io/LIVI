@@ -10,15 +10,23 @@ LIVI_UDEV_FILE="/etc/udev/rules.d/99-LIVI.rules"
 LIVI_UDEV_TEMPLATE="99-LIVI.rules.template"
 LIVI_TOUCH_FILTER_TEMPLATE="livi-touch-filter"
 LIVI_TOUCH_FILTER_FILE="/usr/local/lib/livi/livi-touch-filter"
-LIVI_SUDOERS_FILE="/etc/sudoers.d/99-LIVI-bt"
-LIVI_SUDOERS_TEMPLATE="99-LIVI-bt.sudoers.template"
+LIVI_SUDOERS_FILE="/etc/sudoers.d/99-LIVI-helper"
+LIVI_SUDOERS_TEMPLATE="99-LIVI-helper.sudoers.template"
+LIVI_KIOSK_TEMPLATE="livi-kiosk.service.template"
 LIVI_BOOT_CONFIG="${LIVI_BOOT_CONFIG:-/boot/firmware/config.txt}"
 
 # I2C for the Apple MFi coprocessor, matching carPlayMfiI2cBus in config.json
-LIVI_MFI_I2C_BUS="2"
-LIVI_MFI_OVERLAY="dtoverlay=i2c-gpio,bus=${LIVI_MFI_I2C_BUS},i2c_gpio_sda=19,i2c_gpio_scl=26,i2c_gpio_delay_us=5"
+LIVI_MFI_I2C_BUS=""
+LIVI_MFI_POWER_GPIO="21"
+LIVI_APP_CONFIG="${LIVI_APP_CONFIG:-$HOME/.config/LIVI/config.json}"
+LIVI_MFI_OVERLAY_MATCH='^dtoverlay=i2c-gpio,.*i2c_gpio_sda=19'
+LIVI_I2C_DEVICES="${LIVI_I2C_DEVICES:-/sys/bus/i2c/devices}"
+LIVI_DEVICE_TREE="${LIVI_DEVICE_TREE:-/proc/device-tree}"
 LIVI_MODULES_LOAD="${LIVI_MODULES_LOAD:-/etc/modules-load.d/livi-i2c.conf}"
 LIVI_NM_POWERSAVE_FILE="/etc/NetworkManager/conf.d/99-LIVI-wifi-powersave.conf"
+LIVI_NM_PMF_FILE="/etc/NetworkManager/conf.d/99-LIVI-wifi-pmf.conf"
+LIVI_REGDOM_FILE="/etc/modprobe.d/livi-regdom.conf"
+LIVI_RTPRIO_FILE="/etc/security/limits.d/99-livi-rtprio.conf"
 
 # Pixel repetition for RGB/VGA panels below HDMI's clock floor
 LIVI_HDMI_PR_SCRIPT="setup-hdmi-pr-display.sh"
@@ -33,11 +41,9 @@ livi_require_regular_user() {
   fi
 }
 
-# Release assets are named LIVI-<version>-linux-<arch>.AppImage, where <arch> is
-# electron-builder's spelling: x86_64 or arm64.
 livi_asset_arch() {
   case "$(uname -m)" in
-    x86_64|amd64)  printf 'x86_64\n' ;;
+    x86_64|amd64)  printf 'x64\n' ;;
     aarch64|arm64) printf 'arm64\n' ;;
     *)
       echo "Error: unsupported architecture $(uname -m). LIVI ships x86_64 and arm64." >&2
@@ -46,9 +52,32 @@ livi_asset_arch() {
   esac
 }
 
-# Package names for the given sections of packages.txt, the single source the app checks too.
+livi_pm() {
+  if command -v apt-get >/dev/null 2>&1; then echo apt
+  elif command -v dnf >/dev/null 2>&1; then echo dnf
+  elif command -v pacman >/dev/null 2>&1; then echo pacman
+  fi
+}
+
+livi_pm_install() {
+  [ "$#" -gt 0 ] || return 0
+  case "$(livi_pm)" in
+    apt)    sudo apt-get update && sudo apt-get install -y "$@" ;;
+    dnf)    sudo dnf install -y "$@" ;;
+    pacman) sudo pacman -Sy --needed --noconfirm "$@" ;;
+    *)      echo "Error: no supported package manager (apt/dnf/pacman) found" >&2; return 1 ;;
+  esac
+}
+
+livi_require_sudo() {
+  command -v sudo >/dev/null 2>&1 && return 0
+  echo "Error: sudo is required but not installed (pacman -S sudo). doas is not supported." >&2
+  return 1
+}
+
+# Package names for the given sections (col 2 apt, col 5 dnf, col 6 pacman), deduped.
 livi_packages() {
-  local manifest tmp section
+  local manifest tmp section field
   manifest="$LIVI_LIB_DIR/packages.txt"
   if [ ! -f "$manifest" ]; then
     tmp="$(mktemp)"
@@ -56,189 +85,14 @@ livi_packages() {
       || { echo "Error: cannot obtain packages.txt" >&2; return 1; }
     manifest="$tmp"
   fi
+  field=2
+  case "$(livi_pm)" in dnf) field=5 ;; pacman) field=6 ;; esac
   for section in "$@"; do
-    grep -E "^${section}\|" "$manifest" | cut -d '|' -f2
-  done
+    grep -E "^${section}\|" "$manifest" | cut -d '|' -f"$field"
+  done | awk 'NF && !seen[$0]++'
 }
 
-# Wired CarPlay drives the phone over usbmux, which needs pymobiledevice3.
-livi_install_pymobiledevice3() {
-  echo "→ Installing pymobiledevice3 for wired CarPlay"
-  if ! command -v pip3 >/dev/null; then
-    echo "   WARNING: pip3 missing, wired CarPlay stays disabled" >&2
-    return 0
-  fi
-  local out
-  # pip is loud even with -q, so keep its output for the failure case only.
-  if out="$(pip3 install --break-system-packages --ignore-installed -q pymobiledevice3 2>&1)"; then
-    echo "   installed"
-  else
-    echo "   WARNING: install failed, wired CarPlay stays disabled" >&2
-    printf '%s\n' "$out" | tail -5 >&2
-  fi
-}
-
-# Creates RetroArch's standard library directories without overwriting user
-# configuration. LIVI reads playlists and thumbnails from these paths by default.
-livi_prepare_retroarch() {
-  LIVI_ROMS_DIR="${LIVI_ROMS_DIR:-$HOME/Games/roms}"
-  LIVI_RETROARCH_DIR="${LIVI_RETROARCH_DIR:-$HOME/.config/retroarch}"
-
-  echo "→ Preparing RetroArch library directories"
-  mkdir -p \
-    "$LIVI_ROMS_DIR/doom" \
-    "$LIVI_ROMS_DIR/gameboy" \
-    "$LIVI_ROMS_DIR/gameboy-color" \
-    "$LIVI_ROMS_DIR/gba" \
-    "$LIVI_ROMS_DIR/nds" \
-    "$LIVI_ROMS_DIR/nes" \
-    "$LIVI_ROMS_DIR/snes" \
-    "$LIVI_ROMS_DIR/genesis" \
-    "$LIVI_ROMS_DIR/master-system" \
-    "$LIVI_RETROARCH_DIR/playlists" \
-    "$LIVI_RETROARCH_DIR/thumbnails"
-  for group in input bluetooth; do
-    if getent group "$group" >/dev/null 2>&1; then
-      sudo usermod -aG "$group" "$USER"
-    fi
-  done
-  echo "   ROMs: $LIVI_ROMS_DIR"
-  echo "   Playlists: $LIVI_RETROARCH_DIR/playlists"
-  echo "   Thumbnails: $LIVI_RETROARCH_DIR/thumbnails"
-}
-
-# Installs common console cores available from the host's apt repositories.
-# Raspberry Pi OS may omit non-free Snes9x/Genesis packages until that component
-# is enabled, so unavailable cores are reported without aborting the LIVI setup.
-livi_install_retroarch_cores() {
-  local requested package
-  requested="libretro-core-info libretro-database libretro-prboom libretro-gambatte libretro-mgba libretro-desmume libretro-nestopia libretro-snes9x libretro-genesisplusgx"
-
-  echo "→ Installing RetroArch cores (DOOM/GB/GBA/NDS/NES/SNES/Genesis/Master System)"
-  for package in $requested; do
-    if ! apt-cache show "$package" >/dev/null 2>&1; then
-      echo "   WARNING: $package is unavailable in configured apt repositories" >&2
-      continue
-    fi
-    if ! sudo apt-get install -y "$package"; then
-      echo "   WARNING: $package could not be installed; continuing" >&2
-    fi
-  done
-}
-
-# Installs Freedoom, a libre DOOM-compatible game, and places its first campaign
-# in LIVI's normal ROM library. Existing files are never replaced.
-livi_install_default_doom() {
-  local package="freedoom" source destination core playlist
-
-  echo "→ Installing default DOOM game (Freedoom)"
-  if ! apt-cache show "$package" >/dev/null 2>&1; then
-    echo "   WARNING: $package is unavailable; default DOOM game was not installed" >&2
-    return 0
-  fi
-  if ! sudo apt-get install -y "$package"; then
-    echo "   WARNING: $package could not be installed; continuing" >&2
-    return 0
-  fi
-
-  source="$(dpkg -L "$package" | grep -E '/freedoom1\.wad$' | head -1 || true)"
-  destination="$LIVI_ROMS_DIR/doom/DOOM (Freedoom).wad"
-  if [ -z "$source" ] || [ ! -f "$source" ]; then
-    echo "   WARNING: $package did not provide freedoom1.wad" >&2
-    return 0
-  fi
-  if [ ! -e "$destination" ]; then
-    cp "$source" "$destination"
-  fi
-
-  core="$(find /usr/lib -type f -name prboom_libretro.so -print -quit 2>/dev/null || true)"
-  playlist="$LIVI_RETROARCH_DIR/playlists/DOOM.lpl"
-  python3 - "$destination" "$core" "$playlist" <<'PY'
-import json
-import os
-import sys
-
-wad, core, playlist = sys.argv[1:]
-data = {"version": "1.5", "items": []}
-try:
-    with open(playlist, encoding="utf-8") as handle:
-        current = json.load(handle)
-        if isinstance(current, dict) and isinstance(current.get("items"), list):
-            data = current
-except (FileNotFoundError, json.JSONDecodeError, OSError):
-    pass
-
-if not any(isinstance(item, dict) and item.get("path") == wad for item in data["items"]):
-    data["items"].append({
-        "path": wad,
-        "label": "DOOM (Freedoom)",
-        "core_path": core or "DETECT",
-        "core_name": "PrBoom" if core else "DETECT",
-        "crc32": "DETECT",
-        "db_name": "DOOM.lpl",
-    })
-    temporary = playlist + ".tmp"
-    with open(temporary, "w", encoding="utf-8") as handle:
-        json.dump(data, handle, indent=2)
-    os.replace(temporary, playlist)
-PY
-  echo "   DOOM: $destination"
-}
-
-# Installs the latest minidsp-rs Debian package. Its package includes the USB
-# udev rule, loopback HTTP API on port 5380 and minidsp.service; enabling it here
-# makes the daemon available to LIVI after this script exits and after reboots.
-livi_install_minidsp_rs() {
-  local arch release_json url package
-
-  if ! command -v dpkg >/dev/null 2>&1; then
-    echo "Error: dpkg is required to install minidsp-rs" >&2
-    return 1
-  fi
-
-  arch="$(dpkg --print-architecture)"
-  case "$arch" in
-    amd64|arm64|armhf) ;;
-    *)
-      echo "Error: minidsp-rs has no Debian package for architecture '$arch'" >&2
-      return 1
-      ;;
-  esac
-
-  echo "→ Installing minidsp-rs for $arch"
-  if ! release_json="$(curl -fsSL https://api.github.com/repos/mrene/minidsp-rs/releases/latest)"; then
-    echo "Error: cannot find the latest minidsp-rs release" >&2
-    return 1
-  fi
-  url="$(printf '%s\n' "$release_json" \
-    | grep -o 'https://[^"[:space:]]*' \
-    | grep -E "/minidsp_[^/]+_${arch}\\.deb$" \
-    | head -1 || true)"
-  if [ -z "$url" ]; then
-    echo "Error: latest minidsp-rs release has no $arch Debian package" >&2
-    return 1
-  fi
-
-  package="$(mktemp --suffix=.deb)"
-  if ! curl -fL "$url" -o "$package"; then
-    rm -f "$package"
-    echo "Error: minidsp-rs download failed" >&2
-    return 1
-  fi
-  chmod 0644 "$package"
-  if ! sudo apt-get install -y "$package"; then
-    rm -f "$package"
-    echo "Error: minidsp-rs package installation failed" >&2
-    return 1
-  fi
-  rm -f "$package"
-
-  sudo systemctl enable --now minidsp.service
-  echo "   minidsp.service enabled; HTTP API listening on 127.0.0.1:5380"
-}
-
-# Sets LIVI_CHANNEL and LIVI_RELEASE_API. Skips the prompt when LIVI_CHANNEL is
-# already set or an AppImage was passed in, so unattended runs keep working.
+# Sets LIVI_CHANNEL and LIVI_RELEASE_API.
 livi_pick_channel() {
   local have_src="${1:-}" reply
   LIVI_CHANNEL="$(livi_lower "${LIVI_CHANNEL:-}")"
@@ -272,16 +126,17 @@ livi_pick_channel() {
 # livi_fetch_appimage <dest> [source]
 # source is an optional local path or http(s) URL, otherwise the picked channel.
 livi_fetch_appimage() {
-  local dest="$1" src="${2:-}" arch url release_json
+  local dest="$1" src="${2:-}" arch url tmp
   mkdir -p "$(dirname "$dest")"
+  tmp="$dest.download"
 
   if [ -n "$src" ]; then
     if [[ "$src" =~ ^https?:// ]]; then
       echo "→ Downloading AppImage from $src"
-      curl -fL "$src" --output "$dest" || { echo "Error: download failed" >&2; return 1; }
+      curl -fL "$src" --output "$tmp" || { rm -f "$tmp"; echo "Error: download failed" >&2; return 1; }
     elif [ -f "$src" ]; then
       echo "→ Using local AppImage at $src"
-      cp "$src" "$dest"
+      cp "$src" "$tmp"
     else
       echo "Error: AppImage source not found: $src" >&2
       return 1
@@ -289,32 +144,25 @@ livi_fetch_appimage() {
   else
     arch="$(livi_asset_arch)" || return 1
     echo "→ Fetching the latest $LIVI_CHANNEL build for $arch"
-    if ! release_json="$(curl -fsSL "$LIVI_RELEASE_API")"; then
-      echo "Error: cannot fetch the '$LIVI_CHANNEL' release from $LIVI_REPO." >&2
-      echo "The repository may not have published that release yet." >&2
-      echo "Publish an AppImage release or pass a local AppImage path/URL to install.sh." >&2
-      return 1
-    fi
-    url="$(printf '%s\n' "$release_json" \
+    url="$(curl -s "$LIVI_RELEASE_API" \
       | grep browser_download_url \
-      | grep "${arch}.AppImage" \
-      | cut -d '"' -f 4 || true)"
+      | grep "linux-${arch}.AppImage" \
+      | cut -d '"' -f 4)"
     if [ -z "$url" ]; then
-      echo "Error: no ${arch} AppImage in the latest $LIVI_CHANNEL build at $LIVI_REPO." >&2
-      echo "Publish that asset or pass a local AppImage path/URL to install.sh." >&2
+      echo "Error: no ${arch} AppImage in the latest $LIVI_CHANNEL build" >&2
       return 1
     fi
     echo "   Download URL: $url"
-    curl -fL "$url" --output "$dest" || { echo "Error: download failed" >&2; return 1; }
+    curl -fL "$url" --output "$tmp" || { rm -f "$tmp"; echo "Error: download failed" >&2; return 1; }
   fi
 
+  mv -f "$tmp" "$dest"
   chmod +x "$dest"
 }
 
 # livi_fetch_template <appimage> <name> -> prints the path to the extracted template.
-# Taken from inside the AppImage so what is installed matches the app on this disk,
-# with the repository copy as the fallback for older releases. Each template gets
-# its own directory because --appimage-extract takes one pattern.
+# Taken from the AppImage so it matches the installed app, else from the repository.
+# One directory per template, since --appimage-extract takes one pattern.
 livi_fetch_template() {
   local appimage="$1" name="$2" dir path
   dir="${LIVI_EXTRACT_DIR:-$(mktemp -d)}/$name.d"
@@ -337,9 +185,97 @@ livi_install_touch_filter() {
   sudo install -m 0755 -o root -g root "$script" "$LIVI_TOUCH_FILTER_FILE"
 }
 
+# livi_install_root_helper <helper> <sudoers-file> <description>
+# Script body comes from stdin.
+livi_install_root_helper() {
+  local helper="$1" rule="$2" desc="$3" staged
+  echo "→ Installing $helper"
+  sudo mkdir -p "$(dirname "$helper")"
+  sudo tee "$helper" >/dev/null
+  sudo chmod 0755 "$helper"
+  sudo chown root:root "$helper"
+
+  echo "→ Writing $rule"
+  staged="$(mktemp)"
+  cat > "$staged" <<SUDOEOF
+# Installed by LIVI — $desc
+# Remove this file to revoke.
+$USER ALL=(root) NOPASSWD: $helper *
+SUDOEOF
+  sudo install -m 0440 -o root -g root "$staged" "$rule.livi-tmp"
+  rm -f "$staged"
+  if sudo visudo -c -f "$rule.livi-tmp" >/dev/null; then
+    sudo mv "$rule.livi-tmp" "$rule"
+  else
+    sudo rm -f "$rule.livi-tmp"
+    echo "Error: the sudoers rule for $helper failed validation and was not installed" >&2
+    return 1
+  fi
+}
+
+livi_install_video_mode_helper() {
+  livi_install_root_helper /usr/local/lib/livi/livi-video-mode.sh /etc/sudoers.d/99-LIVI-video \
+    "lets $USER pin the display mode in the kernel cmdline." <<'EOF'
+#!/bin/bash
+# Managed by LIVI. Pins video=<CONNECTOR:WxH@Hz> in the kernel cmdline; "clear" removes it.
+set -euo pipefail
+CMDLINE="/boot/firmware/cmdline.txt"
+arg="${1:-}"
+case "$arg" in
+  clear) new="" ;;
+  *)
+    [[ "$arg" =~ ^[A-Za-z0-9-]+:[0-9]+x[0-9]+@[0-9]+D?$ ]] || {
+      echo "usage: livi-video-mode.sh <CONNECTOR:WxH@Hz>|clear" >&2
+      exit 2
+    }
+    new="video=$arg"
+    ;;
+esac
+line="$(tr -d '\n' < "$CMDLINE")"
+stripped="$(sed -E 's/[[:space:]]*video=[^[:space:]]+//g' <<< "$line")"
+out="$stripped${new:+ $new}"
+[ "$out" = "$line" ] || echo "$out" > "$CMDLINE"
+EOF
+}
+
+livi_install_power_helper() {
+  livi_install_root_helper /usr/local/lib/livi/livi-power.sh /etc/sudoers.d/99-LIVI-power \
+    "lets $USER power the host down or reboot it." <<'EOF'
+#!/bin/bash
+# Managed by LIVI. Powers the host off or reboots it. Nothing else.
+set -euo pipefail
+case "${1:-}" in
+  poweroff) systemctl poweroff ;;
+  reboot)   systemctl reboot ;;
+  *) echo "usage: livi-power.sh poweroff|reboot" >&2 ; exit 2 ;;
+esac
+EOF
+}
+
+livi_install_time_helper() {
+  livi_install_root_helper /usr/local/lib/livi/livi-set-time.sh /etc/sudoers.d/99-LIVI-time \
+    "lets $USER set the system clock and timezone." <<'EOF'
+#!/bin/bash
+# Managed by LIVI. Sets the system clock from a unix timestamp, or the timezone.
+set -euo pipefail
+case "${1:-}" in
+  tz)
+    zone="${2:-}"
+    [[ "$zone" =~ ^[A-Za-z0-9_+/-]{1,64}$ ]] || { echo "usage: livi-set-time.sh tz <zone>" >&2; exit 2; }
+    [ -f "/usr/share/zoneinfo/$zone" ] || { echo "unknown timezone: $zone" >&2; exit 3; }
+    timedatectl set-timezone "$zone"
+    ;;
+  *)
+    arg="${1:-}"
+    [[ "$arg" =~ ^[0-9]{10,11}$ ]] || { echo "usage: livi-set-time.sh <unix-seconds>|tz <zone>" >&2; exit 2; }
+    date -u -s "@$arg" >/dev/null
+    command -v fake-hwclock >/dev/null 2>&1 && fake-hwclock save || true
+    ;;
+esac
+EOF
+}
+
 # livi_fetch_resource <appimage> <path inside resources> <path in the repository>
-# Prints the path to the extracted file. Same order as livi_fetch_template: the
-# AppImage on disk first, the repository only for releases that predate the file.
 livi_fetch_resource() {
   local appimage="$1" res="$2" repo="$3" dir path
   dir="${LIVI_EXTRACT_DIR:-$(mktemp -d)}/$(printf '%s' "$res" | tr '/' '_').d"
@@ -357,9 +293,13 @@ livi_is_raspberry_pi() {
   grep -qi "raspberry pi" /proc/device-tree/model 2>/dev/null
 }
 
-# Prints one EDID profile name per line, read from the repository because the
-# question comes before the AppImage is on disk.
+# Prints one EDID profile name per line.
 livi_list_display_profiles() {
+  local dir="$LIVI_LIB_DIR/../../assets/$LIVI_DISPLAYS_DIR"
+  if [ -d "$dir" ]; then
+    ls "$dir" | grep '\.edid$'
+    return 0
+  fi
   curl -fsSL "$LIVI_API/contents/assets/$LIVI_DISPLAYS_DIR?ref=$LIVI_BRANCH" 2>/dev/null \
     | grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*\.edid"' \
     | sed 's/.*"\([^"]*\.edid\)"/\1/'
@@ -434,18 +374,19 @@ livi_ask_hdmi_pr() {
   LIVI_HDMI_PR_EDID="$(printf '%s\n' "$profiles" | sed -n "${reply}p")"
 }
 
-# Runs the pixel repetition setup for the chosen panel.
 livi_apply_hdmi_pr() {
   local appimage="$1" script edid
   [ "${LIVI_HDMI_PR:-no}" = "yes" ] || return 0
 
   echo "→ Setting up $LIVI_HDMI_PR_EDID"
-  if ! script="$(livi_fetch_resource "$appimage" "$LIVI_HDMI_PR_SCRIPT" \
+  script="$LIVI_LIB_DIR/pi/$LIVI_HDMI_PR_SCRIPT"
+  if [ ! -f "$script" ] && ! script="$(livi_fetch_resource "$appimage" "$LIVI_HDMI_PR_SCRIPT" \
       "scripts/install/pi/$LIVI_HDMI_PR_SCRIPT")"; then
     echo "   cannot obtain $LIVI_HDMI_PR_SCRIPT, the panel stays as it is"
     return 0
   fi
-  if ! edid="$(livi_fetch_resource "$appimage" "$LIVI_DISPLAYS_DIR/$LIVI_HDMI_PR_EDID" \
+  edid="$LIVI_LIB_DIR/../../assets/$LIVI_DISPLAYS_DIR/$LIVI_HDMI_PR_EDID"
+  if [ ! -f "$edid" ] && ! edid="$(livi_fetch_resource "$appimage" "$LIVI_DISPLAYS_DIR/$LIVI_HDMI_PR_EDID" \
       "assets/$LIVI_DISPLAYS_DIR/$LIVI_HDMI_PR_EDID")"; then
     echo "   cannot obtain $LIVI_HDMI_PR_EDID, the panel stays as it is"
     return 0
@@ -456,6 +397,93 @@ livi_apply_hdmi_pr() {
   return 0
 }
 
+LIVI_SKIPPED=()
+
+# Runs a step LIVI can do without. A failure is reported and the install goes on.
+livi_optional() {
+  local rc
+  set +e
+  ( set -e; "$@" )
+  rc=$?
+  set -e
+  if [ "$rc" -ne 0 ]; then
+    echo "   ⚠ $1 failed (exit $rc), continuing without it" >&2
+    LIVI_SKIPPED+=("$1")
+  fi
+}
+
+livi_report_skipped() {
+  [ ${#LIVI_SKIPPED[@]} -gt 0 ] || return 0
+  echo ""
+  echo "⚠ Not completed: ${LIVI_SKIPPED[*]}"
+  echo "  LIVI runs without them, run the installer again once the cause above is fixed."
+}
+
+# Grants real-time scheduling to the CarPlay audio receive thread. Kiosk and
+# desktop sessions run through PAM, so pam_limits applies this on login.
+livi_grant_rtprio() {
+  echo "→ Writing $LIVI_RTPRIO_FILE"
+  sudo mkdir -p "$(dirname "$LIVI_RTPRIO_FILE")"
+  printf '%s - rtprio 30\n' "$USER" | sudo tee "$LIVI_RTPRIO_FILE" >/dev/null
+}
+
+# Installs the latest minidsp-rs Debian package for the MiniDSP page. The package
+# brings the USB udev rule, the loopback HTTP API on port 5380 and minidsp.service;
+# enabling it makes the daemon available now and after reboots. apt hosts only,
+# elsewhere install minidsp-rs by hand. LIVI_SKIP_MINIDSP=1 skips it.
+livi_install_minidsp_rs() {
+  local arch release_json url package
+
+  if [ "${LIVI_SKIP_MINIDSP:-0}" = 1 ]; then
+    echo "→ Skipping minidsp-rs (LIVI_SKIP_MINIDSP=1)"
+    return 0
+  fi
+  if [ "$(livi_pm)" != apt ] || ! command -v dpkg >/dev/null 2>&1; then
+    echo "Error: minidsp-rs ships Debian packages only, install it by hand on this host" >&2
+    return 1
+  fi
+
+  arch="$(dpkg --print-architecture)"
+  case "$arch" in
+    amd64|arm64|armhf) ;;
+    *)
+      echo "Error: minidsp-rs has no Debian package for architecture '$arch'" >&2
+      return 1
+      ;;
+  esac
+
+  echo "→ Installing minidsp-rs for $arch"
+  if ! release_json="$(curl -fsSL https://api.github.com/repos/mrene/minidsp-rs/releases/latest)"; then
+    echo "Error: cannot find the latest minidsp-rs release" >&2
+    return 1
+  fi
+  url="$(printf '%s\n' "$release_json" \
+    | grep -o 'https://[^"[:space:]]*' \
+    | grep -E "/minidsp_[^/]+_${arch}\\.deb$" \
+    | head -1 || true)"
+  if [ -z "$url" ]; then
+    echo "Error: latest minidsp-rs release has no $arch Debian package" >&2
+    return 1
+  fi
+
+  package="$(mktemp --suffix=.deb)"
+  if ! curl -fL "$url" -o "$package"; then
+    rm -f "$package"
+    echo "Error: minidsp-rs download failed" >&2
+    return 1
+  fi
+  chmod 0644 "$package"
+  if ! sudo apt-get install -y "$package"; then
+    rm -f "$package"
+    echo "Error: minidsp-rs package installation failed" >&2
+    return 1
+  fi
+  rm -f "$package"
+
+  sudo systemctl enable --now minidsp.service
+  echo "   minidsp.service enabled, HTTP API on 127.0.0.1:5380"
+}
+
 # The radio's power saving drops an idle link after a few minutes, which takes the
 # host off the network. Applies from the next boot, so no running session is cut.
 livi_disable_wifi_powersave() {
@@ -464,22 +492,90 @@ livi_disable_wifi_powersave() {
   printf '[connection]\nwifi.powersave = 2\n' | sudo tee "$LIVI_NM_POWERSAVE_FILE" >/dev/null
 }
 
+# The installer edits the app config with jq, the app itself does not need it.
+livi_require_jq() {
+  command -v jq >/dev/null 2>&1 && return 0
+  echo "→ Installing jq"
+  livi_pm_install jq
+}
+
+# livi_app_config_jq <filter> [jq options] -> the filter applied to the app config,
+# which counts as {} when it is missing or not a JSON object.
+livi_app_config_jq() {
+  local filter="$1" src="$LIVI_APP_CONFIG"
+  shift
+  [ -r "$src" ] || src=/dev/null
+  jq -Rs "$@" "(try fromjson catch null) | if type == \"object\" then . else {} end | $filter" "$src"
+}
+
+# livi_app_config_value <key> <default> -> the value from the app config, or the default.
+livi_app_config_value() {
+  livi_app_config_jq '.[$k] | if . == null or . == "" then $d else . end' -r --arg k "$1" --arg d "$2"
+}
+
+# Sets the regulatory domain as the driver loads, so hostapd does not wait for the kernel
+# to fetch it. Only once the user has chosen a country in LIVI.
+livi_write_regdom() {
+  local country
+  livi_require_jq || return 0
+  country="$(livi_app_config_value country '' | tr '[:lower:]' '[:upper:]')"
+  case "$country" in [A-Z][A-Z]) ;; *) return 0 ;; esac
+  echo "→ Writing $LIVI_REGDOM_FILE for $country"
+  sudo mkdir -p "$(dirname "$LIVI_REGDOM_FILE")"
+  printf 'options cfg80211 ieee80211_regdom=%s\n' "$country" | sudo tee "$LIVI_REGDOM_FILE" >/dev/null
+}
+
+# wifi-sec.pmf=2 makes 802.11w (PMF) optional.
+livi_set_wifi_pmf_optional() {
+  echo "→ Writing $LIVI_NM_PMF_FILE"
+  sudo mkdir -p "$(dirname "$LIVI_NM_PMF_FILE")"
+  printf '[connection]\nwifi-sec.pmf=2\n' | sudo tee "$LIVI_NM_PMF_FILE" >/dev/null
+  if command -v nmcli >/dev/null 2>&1; then
+    sudo nmcli general reload conf 2>/dev/null || true
+  fi
+}
+
+livi_write_kiosk_pam() {
+  local file="$1" stack
+  echo "→ Writing $file"
+  sudo mkdir -p "$(dirname "$file")"
+  if [ -f /etc/pam.d/common-session ]; then
+    sudo tee "$file" >/dev/null <<'EOF'
+auth      required  pam_permit.so
+@include  common-account
+@include  common-session
+EOF
+    return 0
+  fi
+  for stack in system-login system-auth; do
+    [ -f "/etc/pam.d/$stack" ] || continue
+    sudo tee "$file" >/dev/null <<EOF
+auth      required  pam_permit.so
+account   include   $stack
+session   include   $stack
+EOF
+    [ "$stack" = system-auth ] && [ -f /etc/pam.d/postlogin ] \
+      && printf 'session   include   postlogin\n' | sudo tee -a "$file" >/dev/null
+    return 0
+  done
+  echo "Error: no usable PAM stack (common-session / system-login / system-auth) found" >&2
+  return 1
+}
+
 livi_write_udev_rule() {
   local template="$1"
   echo "→ Writing $LIVI_UDEV_FILE"
-  sed "s/__USERNAME__/$USER/g" "$template" | sudo tee "$LIVI_UDEV_FILE" >/dev/null
+  sudo tee "$LIVI_UDEV_FILE" <"$template" >/dev/null
   sudo udevadm control --reload-rules
   sudo udevadm trigger
 }
 
-# Lets the helper run as root without a password, which a headless host needs
-# because the in-app pkexec dialog has no agent to display it.
+# LIVI never asks for a password, it reaches everything under root through the helper.
 livi_write_sudoers() {
-  local template="$1" python_bin staged
+  local template="$1" staged
   echo "→ Writing $LIVI_SUDOERS_FILE"
-  python_bin="$(command -v python3 || echo /usr/bin/python3)"
   staged="$(mktemp)"
-  sed -e "s/__USERNAME__/$USER/g" -e "s#__PYTHON__#$python_bin#g" "$template" > "$staged"
+  sed -e "s/__USERNAME__/$USER/g" "$template" > "$staged"
   sudo install -m 0440 -o root -g root "$staged" "$LIVI_SUDOERS_FILE.livi-tmp"
   rm -f "$staged"
   if sudo visudo -c -f "$LIVI_SUDOERS_FILE.livi-tmp" >/dev/null; then
@@ -489,12 +585,37 @@ livi_write_sudoers() {
     echo "Error: the generated sudoers file failed validation and was not installed" >&2
     return 1
   fi
+  livi_drop_obsolete_sudoers
+}
+
+# Removes the per-script drop-ins of earlier releases once the current rule is in
+# place, they grant root to scripts that no longer ship.
+livi_drop_obsolete_sudoers() {
+  local f
+  for f in /etc/sudoers.d/99-LIVI-aa /etc/sudoers.d/99-LIVI-cp; do
+    if sudo test -f "$f" && sudo grep -q 'bluetooth\.py' "$f" 2>/dev/null; then
+      echo "→ Removing obsolete $f"
+      sudo rm -f "$f"
+    fi
+  done
+  # 99-LIVI-bt granted the same thing under a name that only said Bluetooth.
+  if sudo test -f /etc/sudoers.d/99-LIVI-bt; then
+    echo "→ Removing obsolete /etc/sudoers.d/99-LIVI-bt"
+    sudo rm -f /etc/sudoers.d/99-LIVI-bt
+  fi
+  sudo rm -f "$LIVI_SUDOERS_FILE.livi-tmp"
 }
 
 # Sets LIVI_MFI to yes or no. LIVI_MFI skips the prompt.
 livi_ask_mfi() {
   local reply
   LIVI_MFI="$(livi_lower "${LIVI_MFI:-}")"
+
+  if [ ! -f "$LIVI_BOOT_CONFIG" ]; then
+    LIVI_MFI="no"
+    return 0
+  fi
+
   if [ -z "$LIVI_MFI" ]; then
     if [ -t 0 ]; then
       echo ""
@@ -519,10 +640,16 @@ livi_ask_mfi() {
   esac
 }
 
-# LIVI_SPLASH
+# Sets LIVI_SPLASH to yes or no. LIVI_SPLASH skips the prompt.
 livi_ask_splash() {
   local reply
   LIVI_SPLASH="$(livi_lower "${LIVI_SPLASH:-}")"
+
+  if [ ! -f "$LIVI_BOOT_CONFIG" ] || [ ! -f "$(dirname "$LIVI_BOOT_CONFIG")/cmdline.txt" ]; then
+    LIVI_SPLASH="no"
+    return 0
+  fi
+
   if [ -z "$LIVI_SPLASH" ]; then
     if [ -t 0 ]; then
       echo ""
@@ -547,8 +674,7 @@ livi_ask_splash() {
   esac
 }
 
-# Hands over to scripts/install/pi/splash/install.sh, which needs root and the
-# logo next to it. Prefers the checkout, otherwise fetches both.
+# The splash installer needs the logo next to it.
 livi_apply_splash() {
   [ "${LIVI_SPLASH:-no}" = "yes" ] || return 0
   local dir script
@@ -569,18 +695,77 @@ livi_apply_splash() {
   sudo bash "$script" || echo "   splash install failed, continuing" >&2
 }
 
+# A power pin of -1 means disabled and counts as unset.
+livi_seed_mfi_config() {
+  local cfg
+  livi_require_jq || return 1
+  mkdir -p "$(dirname "$LIVI_APP_CONFIG")"
+  cfg="$(livi_app_config_jq '
+    .carPlayMfiI2cBus = $bus
+    | if .carPlayMfiPowerGpio == null or .carPlayMfiPowerGpio == "" or .carPlayMfiPowerGpio == -1
+      then .carPlayMfiPowerGpio = $gpio else . end' \
+    --argjson bus "$LIVI_MFI_I2C_BUS" --argjson gpio "$LIVI_MFI_POWER_GPIO")" || return 1
+  [ -n "$cfg" ] || return 1
+  printf '%s\n' "$cfg" > "$LIVI_APP_CONFIG"
+}
+
+livi_i2c_dt_claimed() {
+  local alias="$LIVI_DEVICE_TREE/aliases/i2c$1" node status=okay
+  [ -r "$alias" ] || return 1
+  node="$(tr -d '\0' < "$alias")"
+  [ -n "$node" ] && [ -d "$LIVI_DEVICE_TREE$node" ] || return 1
+  if [ -r "$LIVI_DEVICE_TREE$node/status" ]; then
+    status="$(tr -d '\0' < "$LIVI_DEVICE_TREE$node/status")"
+  fi
+  [ "$status" = okay ] || [ "$status" = ok ]
+}
+
+livi_i2c_free() {
+  [ ! -e "$LIVI_I2C_DEVICES/i2c-$1" ] && ! livi_i2c_dt_claimed "$1"
+}
+
+livi_i2c_free_or_gpio() {
+  local adapter="$LIVI_I2C_DEVICES/i2c-$1" driver
+  if [ ! -e "$adapter" ]; then
+    ! livi_i2c_dt_claimed "$1"
+    return
+  fi
+  driver="$(readlink -f "$(dirname "$(readlink -f "$adapter")")/driver" 2>/dev/null)"
+  [ "${driver##*/}" = i2c-gpio ]
+}
+
+livi_pick_mfi_bus() {
+  local n
+  n="$(grep -E "$LIVI_MFI_OVERLAY_MATCH" "$LIVI_BOOT_CONFIG" 2>/dev/null | head -1 \
+    | sed -n 's/.*bus=\([0-9][0-9]*\).*/\1/p')" || true
+  if [ -n "$n" ] && livi_i2c_free_or_gpio "$n"; then
+    LIVI_MFI_I2C_BUS="$n"
+    return 0
+  fi
+  n=2
+  while ! livi_i2c_free "$n"; do
+    n=$((n + 1))
+  done
+  LIVI_MFI_I2C_BUS="$n"
+}
+
 livi_apply_mfi() {
   [ "${LIVI_MFI:-no}" = "yes" ] || return 0
+  livi_pick_mfi_bus
   local dev="/dev/i2c-${LIVI_MFI_I2C_BUS}"
+  local overlay="dtoverlay=i2c-gpio,bus=${LIVI_MFI_I2C_BUS},i2c_gpio_sda=19,i2c_gpio_scl=26,i2c_gpio_delay_us=5"
+
+  echo "→ Setting MFi i2c bus ${LIVI_MFI_I2C_BUS} and power pin ${LIVI_MFI_POWER_GPIO} in the app config"
+  livi_seed_mfi_config
 
   echo "→ Enabling I2C for the MFi coprocessor"
-
   if [ -f "$LIVI_BOOT_CONFIG" ]; then
-    if grep -qF "$LIVI_MFI_OVERLAY" "$LIVI_BOOT_CONFIG"; then
+    if grep -qxF "$overlay" "$LIVI_BOOT_CONFIG"; then
       echo "   overlay already in $LIVI_BOOT_CONFIG"
     else
-      printf '%s\n' "$LIVI_MFI_OVERLAY" | sudo tee -a "$LIVI_BOOT_CONFIG" >/dev/null
-      echo "   overlay added to $LIVI_BOOT_CONFIG"
+      sudo sed -i "/$LIVI_MFI_OVERLAY_MATCH/d" "$LIVI_BOOT_CONFIG"
+      printf '%s\n' "$overlay" | sudo tee -a "$LIVI_BOOT_CONFIG" >/dev/null
+      echo "   overlay on bus ${LIVI_MFI_I2C_BUS} written to $LIVI_BOOT_CONFIG"
     fi
   else
     echo "   no $LIVI_BOOT_CONFIG on this host, skipping the overlay"
@@ -597,4 +782,123 @@ livi_apply_mfi() {
   fi
 
   echo "   $dev is present"
+}
+
+# --- RetroArch games ---
+LIVI_ROMS_DIR="${LIVI_ROMS_DIR:-$HOME/Games/roms}"
+LIVI_RETROARCH_DIR="${LIVI_RETROARCH_DIR:-$HOME/.config/retroarch}"
+LIVI_ROM_FOLDERS="doom gameboy gameboy-color gba nds nes snes genesis master-system"
+
+# Package names of RetroArch and the cores for DOOM/GB/GBA/NDS/NES/SNES/Genesis/Master System.
+livi_retroarch_packages() {
+  case "$(livi_pm)" in
+    apt)    echo "retroarch libretro-core-info libretro-database libretro-prboom libretro-gambatte libretro-mgba libretro-desmume libretro-nestopia libretro-snes9x libretro-genesisplusgx" ;;
+    dnf)    echo "retroarch libretro-prboom libretro-gambatte libretro-mgba libretro-desmume libretro-nestopia libretro-snes9x libretro-genesis-plus-gx" ;;
+    pacman) echo "retroarch libretro-core-info libretro-gambatte libretro-mgba libretro-desmume libretro-nestopia libretro-snes9x libretro-genesis-plus-gx" ;;
+  esac
+}
+
+livi_pm_has() {
+  case "$(livi_pm)" in
+    apt)    apt-cache show "$1" >/dev/null 2>&1 ;;
+    dnf)    dnf info -q "$1" >/dev/null 2>&1 ;;
+    pacman) pacman -Si "$1" >/dev/null 2>&1 ;;
+    *)      return 1 ;;
+  esac
+}
+
+# Installs RetroArch and the console cores the repositories have. Debian keeps
+# Snes9x and Genesis Plus GX in non-free, a missing core is reported, not fatal.
+livi_install_retroarch() {
+  local package available=()
+  echo "→ Installing RetroArch and cores (DOOM/GB/GBA/NDS/NES/SNES/Genesis/Master System)"
+  for package in $(livi_retroarch_packages); do
+    if livi_pm_has "$package"; then
+      available+=("$package")
+    else
+      echo "   WARNING: $package is not in the configured repositories" >&2
+    fi
+  done
+  if [ ${#available[@]} -gt 0 ] && ! livi_pm_install "${available[@]}"; then
+    for package in "${available[@]}"; do
+      livi_pm_install "$package" || echo "   WARNING: $package could not be installed" >&2
+    done
+  fi
+  command -v retroarch >/dev/null 2>&1 || { echo "   RetroArch is not installed" >&2; return 1; }
+  echo "   RetroArch: $(command -v retroarch)"
+}
+
+# Creates the ROM folders LIVI's importer knows and RetroArch's playlist and
+# thumbnail folders, and lets the user read gamepads and pair them over BlueZ.
+livi_prepare_retroarch() {
+  local folder group
+  echo "→ Preparing the game library in $LIVI_ROMS_DIR"
+  for folder in $LIVI_ROM_FOLDERS; do
+    mkdir -p "$LIVI_ROMS_DIR/$folder"
+  done
+  mkdir -p "$LIVI_RETROARCH_DIR/playlists" "$LIVI_RETROARCH_DIR/thumbnails" "$LIVI_RETROARCH_DIR/cores"
+  for group in input bluetooth; do
+    if getent group "$group" >/dev/null 2>&1; then
+      sudo usermod -aG "$group" "$USER"
+    fi
+  done
+  echo "   Playlists: $LIVI_RETROARCH_DIR/playlists"
+  echo "   Thumbnails: $LIVI_RETROARCH_DIR/thumbnails"
+}
+
+# Installs Freedoom, a libre DOOM-compatible game, as DOOM (Freedoom) in the
+# doom folder and its playlist. Existing files and entries are kept.
+livi_install_default_doom() {
+  local source destination core playlist
+  echo "→ Installing the default DOOM game (Freedoom)"
+  if livi_pm_has freedoom; then
+    livi_pm_install freedoom >/dev/null || echo "   WARNING: freedoom could not be installed" >&2
+  fi
+  source="$(find /usr/share -name freedoom1.wad -print -quit 2>/dev/null || true)"
+  if [ -z "$source" ]; then
+    echo "   freedoom1.wad is not available, no default DOOM game" >&2
+    return 0
+  fi
+  destination="$LIVI_ROMS_DIR/doom/DOOM (Freedoom).wad"
+  mkdir -p "$LIVI_ROMS_DIR/doom"
+  [ -e "$destination" ] || cp "$source" "$destination"
+  core="$(find /usr/lib /usr/lib64 -name prboom_libretro.so -print -quit 2>/dev/null || true)"
+  playlist="$LIVI_RETROARCH_DIR/playlists/DOOM.lpl"
+  mkdir -p "$(dirname "$playlist")"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$destination" "$core" "$playlist" <<'PY'
+import json, os, sys
+wad, core, playlist = sys.argv[1:]
+data = {"version": "1.5", "items": []}
+try:
+    with open(playlist, encoding="utf-8") as handle:
+        current = json.load(handle)
+        if isinstance(current, dict) and isinstance(current.get("items"), list):
+            data = current
+except (FileNotFoundError, json.JSONDecodeError, OSError):
+    pass
+if not any(isinstance(i, dict) and i.get("path") == wad for i in data["items"]):
+    data["items"].append({
+        "path": wad,
+        "label": "DOOM (Freedoom)",
+        "core_path": core or "DETECT",
+        "core_name": "PrBoom" if core else "DETECT",
+        "crc32": "DETECT",
+        "db_name": "DOOM.lpl",
+    })
+    tmp = playlist + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2)
+    os.replace(tmp, playlist)
+PY
+  else
+    echo "   python3 missing, Games > Import ROMs adds DOOM to the library"
+  fi
+  echo "   DOOM: $destination"
+}
+
+livi_setup_games() {
+  livi_install_retroarch
+  livi_prepare_retroarch
+  livi_install_default_doom
 }

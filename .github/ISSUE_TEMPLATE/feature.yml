@@ -1,0 +1,17 @@
+name: Feature request
+description: Something LIVI should do.
+labels: ["💫 feature request"]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What do you need
+      description: The use case or problem, not only the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How it could work, if you have an idea.

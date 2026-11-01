@@ -1,0 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Realtek RTL8822BS. rtw88 drives the Wi-Fi half over SDIO. The Bluetooth half sits on UART3 as
+ * well, but btrtl knows the 8822B over USB only, so it gets no node for now.
+ */

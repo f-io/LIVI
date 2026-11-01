@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+import "common.proto";
+
+enum BluetoothMessageId {
+  BLUETOOTH_MESSAGE_ID_PAIRING_REQUEST = 32769;
+  BLUETOOTH_MESSAGE_ID_PAIRING_RESPONSE = 32770;
+  BLUETOOTH_MESSAGE_ID_AUTHENTICATION_REQUEST = 32771;
+  BLUETOOTH_MESSAGE_ID_AUTHENTICATION_RESPONSE = 32772;
+}
+
+enum BluetoothPairingMethod {
+  BLUETOOTH_PAIRING_METHOD_UNAVAILABLE = -1;
+  BLUETOOTH_PAIRING_METHOD_OOB = 1;
+  BLUETOOTH_PAIRING_METHOD_NUMERIC_COMPARISON = 2;
+  BLUETOOTH_PAIRING_METHOD_PASSKEY_ENTRY = 3;
+  BLUETOOTH_PAIRING_METHOD_PIN = 4;
+}
+
+message BluetoothAuthenticationRequest {
+  required string pairing_key = 1;
+}
+
+message BluetoothAuthenticationResponse {
+  required MessageStatus status = 1;
+}
+
+message BluetoothPairingRequest {
+  required string phone_address = 1;
+  required BluetoothPairingMethod pairing_method = 2;
+}
+
+message BluetoothPairingResponse {
+  required MessageStatus status = 1;
+  required bool already_paired = 2;
+}
+
+message BluetoothService {
+  required string car_address = 1;
+  repeated BluetoothPairingMethod supported_pairing_methods = 2 [packed = true];
+}

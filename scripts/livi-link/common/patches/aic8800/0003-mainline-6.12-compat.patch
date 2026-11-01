@@ -1,0 +1,221 @@
+--- a/aic8800_bsp/aic8800d80n_compat.c
++++ b/aic8800_bsp/aic8800d80n_compat.c
+@@ -1,4 +1,5 @@
+ #include "aic8800d80n_compat.h"
++#include <linux/vmalloc.h>
+ #include "aic_bsp_export.h"
+ 
+ #define RWNX_MAC_FW_RF_BASE_NAME_8800D80N   "lmacfw_rf_8800d80n.bin"
+--- a/aic8800_bsp/aicsdio.c
++++ b/aic8800_bsp/aicsdio.c
+@@ -43,6 +43,8 @@
+ #endif//for AML
+ 
+ 
++
++
+ static int aicbsp_platform_power_on(void);
+ static void aicbsp_platform_power_off(void);
+ 
+@@ -578,6 +580,15 @@
+ 			return ret;
+ 	}
+ 
++	/* LIVI-Link on Allwinner (V821B): chip is powered from userspace, MMC
++	 * controller probes too early, so an explicit rescan is needed. Not
++	 * applicable outside sunxi-mmc (e.g. dw_mmc on AX520) — the generic
++	 * mmc_detect_change() path handles that instead. */
++#ifdef CONFIG_PLATFORM_ALLWINNER
++	sunxi_mmc_rescan_card(1);
++#endif
++
++
+ #ifdef CONFIG_PLATFORM_ALLWINNER
+ 	sunxi_wlan_set_power(0);
+ 	mdelay(50);
+--- a/aic8800_fdrv/aic_btsdio.c
++++ b/aic8800_fdrv/aic_btsdio.c
+@@ -135,7 +135,7 @@
+ 	struct hci_dev *hdev;
+ 	u32 len = data_len;
+ 	//int ret=0;
+-	hdev = hci_dev_get(0);
++	hdev = aicbt_hci_dev_get(0);
+     if (!hdev) {
+         AICWFDBG(LOGERROR,"%s: Failed to get hci dev[NULL]", __func__);
+         return -ENODEV;
+@@ -445,7 +445,7 @@
+ 
+ /* Get HCI device by index.
+  * Device is held on return. */
+-struct hci_dev *hci_dev_get(int index)
++struct hci_dev *aicbt_hci_dev_get(int index)
+ {
+     if (index != 0)
+         return NULL;
+@@ -461,7 +461,7 @@
+ 
+     AICBT_DBG("%s: dev %d", __func__, dev);
+ 
+-    hdev = hci_dev_get(dev);
++    hdev = aicbt_hci_dev_get(dev);
+     if (!hdev) {
+         AICBT_ERR("%s: Failed to get hci dev[Null]", __func__);
+         return -ENODEV;
+@@ -497,7 +497,7 @@
+ {
+     struct hci_dev *hdev;
+     int err;
+-    hdev = hci_dev_get(dev);
++    hdev = aicbt_hci_dev_get(dev);
+     if (!hdev) {
+         AICBT_ERR("%s: failed to get hci dev[Null]", __func__);
+         return -ENODEV;
+@@ -609,7 +609,7 @@
+     aic_enqueue(aic_skb_copy);
+ 
+     /* Make sure bt char device existing before wakeup read queue */
+-    hdev = hci_dev_get(0);
++    hdev = aicbt_hci_dev_get(0);
+     if (hdev) {
+         //AICBT_DBG("%s: Try to wakeup read queue", __func__);
+         AICBT_DBG("%s", __func__);
+@@ -815,7 +815,7 @@
+     /* Not open unless wanna tracing log */
+     /* trace_printk("%s: open....\n", __func__); */
+ 
+-    hdev = hci_dev_get(0);
++    hdev = aicbt_hci_dev_get(0);
+     if (!hdev) {
+         AICBT_DBG("%s: Failed to get hci dev[NULL]", __func__);
+         return -ENODEV;
+@@ -858,7 +858,7 @@
+     bt_reset = 0;
+ #endif
+ 
+-    hdev = hci_dev_get(0);
++    hdev = aicbt_hci_dev_get(0);
+     if (hdev) {
+         atomic_set(&hdev->promisc, 0);
+         mutex_lock(&btchr_mutex);
+@@ -908,7 +908,7 @@
+ 
+     while (count) {
+ #if 1
+-		hdev = hci_dev_get(0);
++		hdev = aicbt_hci_dev_get(0);
+         if (!hdev) {
+             /*
+              * Note: Only when BT device hotplugged out, we wil get
+@@ -952,7 +952,7 @@
+ 		printk("0x%x ",(u8)buff[i]);
+ 	}
+ 	printk("\r\n");
+-	hdev = hci_dev_get(0);
++	hdev = aicbt_hci_dev_get(0);
+ 	if (!hdev) {
+ 		AICBT_WARN("%s: Failed to get hci dev[Null]", __func__);
+ 		return;
+@@ -993,7 +993,7 @@
+ 
+     AICBT_DBG("%s", __func__);
+ 
+-    hdev = hci_dev_get(0);
++    hdev = aicbt_hci_dev_get(0);
+     if (!hdev) {
+         AICBT_WARN("%s: Failed to get hci dev[Null]", __func__);
+         /*
+@@ -1059,7 +1059,7 @@
+     poll_wait(file_p, &btchr_read_wait, wait);
+ 	//printk("poll out\n");
+ 
+-    hdev = hci_dev_get(0);
++    hdev = aicbt_hci_dev_get(0);
+     if (!hdev) {
+         AICBT_ERR("%s: Failed to get hci dev[Null]", __func__);
+         //mdelay(URB_CANCELING_DELAY_MS);
+@@ -1105,7 +1105,7 @@
+         return 0;
+     }
+ 
+-    hdev = hci_dev_get(0);
++    hdev = aicbt_hci_dev_get(0);
+     if(!hdev) {
+         AICBT_ERR("%s device is NULL!", __func__);
+         set_dlfw_state_value(0);
+--- a/aic8800_fdrv/aic_btsdio.h
++++ b/aic8800_fdrv/aic_btsdio.h
+@@ -356,6 +356,8 @@
+ }
+ #endif
+ 
++#if LINUX_VERSION_CODE <= KERNEL_VERSION(3, 4, 0)
++/* Mainline kernels already provide these in net/bluetooth/hci_core.h. */
+ static inline void *hci_get_drvdata(struct hci_dev *hdev)
+ {
+     return dev_get_drvdata(&hdev->dev);
+@@ -367,6 +369,7 @@
+ }
+ 
+ #define SET_HCIDEV_DEV(hdev, pdev) ((hdev)->parent = (pdev))
++#endif
+ 
+ 
+ /* ---- HCI Packet structures ---- */
+@@ -543,7 +546,9 @@
+ void hdev_exit(void);
+ 
+ 
++#if LINUX_VERSION_CODE <= KERNEL_VERSION(3, 4, 0)
+ struct hci_dev *hci_dev_get(int index);
++#endif
+ int hci_recv_fragment(struct hci_dev *hdev, int type, void *data, int count);
+ #else
+ int btsdio_init(void);
+--- a/aic8800_fdrv/btsdio.c
++++ b/aic8800_fdrv/btsdio.c
+@@ -23,6 +23,7 @@
+  */
+ 
+ #include <linux/kernel.h>
++#include <linux/version.h>
+ #include <linux/module.h>
+ #include <linux/init.h>
+ #include <linux/slab.h>
+@@ -127,7 +128,7 @@
+ 
+ /* Get HCI device by index.
+  * Device is held on return. */
+-struct hci_dev *hci_dev_get(int index)
++struct hci_dev *aicbt_hci_dev_get(int index)
+ {
+     if (index != 0)
+         return NULL;
+@@ -142,7 +143,7 @@
+ 	struct hci_dev *hdev;
+ 	u32 len = data_len;
+ 	int ret=0;
+-	hdev = hci_dev_get(0);
++	hdev = aicbt_hci_dev_get(0);
+     if (!hdev) {
+         AICWFDBG(LOGERROR,"%s: Failed to get hci dev[NULL]", __func__);
+         return -ENODEV;
+@@ -254,7 +255,9 @@
+ 	hdev->bus = HCI_SDIO;
+ 	hci_set_drvdata(hdev, data);
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 2, 0)
+ 	hdev->dev_type = HCI_PRIMARY;
++#endif
+ 
+ 	data->hdev = hdev;
+ 
+@@ -277,7 +280,7 @@
+ {
+ 	struct btsdio_data *data;
+ 	struct hci_dev *hdev;
+-    hdev = hci_dev_get(0);
++    hdev = aicbt_hci_dev_get(0);
+     if (!hdev) {
+         AICBT_ERR("%s: Failed to get hci dev[Null]", __func__);
+         return;

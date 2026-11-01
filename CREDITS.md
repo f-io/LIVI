@@ -14,11 +14,7 @@ during development.
 
 - **BertoldVdb/WACResearch** - Bertold Van den Bergh
 - **f1xpl/aasdk** - Michal Szwaj
-
-### Legacy / dongle related
-
-- **rhysmorgan134/node-carplay** by Rhys Morgan
-- Various Carlinkit / CPC200 reverse-engineering projects, websites, and community write-ups
+- Various reverse-engineering projects, websites, and community write-ups
 
 This list is likely incomplete, many thanks to everyone whose work contributed,
 directly or indirectly.
@@ -27,24 +23,21 @@ directly or indirectly.
 
 This application bundles the following third-party components.
 
-### Electron
+### Slint
 
-This application is built on **Electron**, which bundles Chromium, Node.js, V8 and
-ffmpeg.
+The user interface is built with **Slint**.
 
-Electron is licensed under the **MIT License**. Chromium and its components are
-licensed under the **BSD-3-Clause** and other compatible licenses.
+Slint is used under the **GNU General Public License, version 3**.
 
-https://www.electronjs.org/
+https://slint.dev/
 
-### wlroots
+### Smithay
 
-This application bundles a **modified** build of **wlroots** (0.20). LIVI carries
-local patches for host-output control and multi-output touch in the Wayland backend.
+This application bundles smithay.
 
-wlroots is licensed under the **MIT License**.
+Smithay is licensed under the **MIT License**.
 
-https://gitlab.freedesktop.org/wlroots/wlroots
+https://github.com/Smithay/smithay
 
 ### GStreamer
 
@@ -55,17 +48,9 @@ The license text is included in the `assets/gstreamer/LICENSES` directory.
 
 https://gstreamer.freedesktop.org/
 
-### node-usb-rs
-
-This application bundles **node-usb-rs**.
-
-node-usb-rs is licensed under the **MIT License**.
-
-https://github.com/node-usb/node-usb-rs
-
 ### nusb
 
-This application bundles **nusb** (compiled into the node-usb-rs prebuilt binaries).
+This application bundles **nusb** (compiled into the `livi-helperd` binary, which talks to phones over USB).
 
 nusb is dual-licensed under the **MIT OR Apache-2.0** license.
 
@@ -78,3 +63,20 @@ This application bundles the **Roboto** font.
 Roboto is licensed under the **SIL Open Font License 1.1 (OFL-1.1)**.
 
 https://github.com/googlefonts/roboto
+
+### D-DIN
+
+This application bundles the **D-DIN** font by Datto Inc. (used by the COMAND UI style).
+
+D-DIN is licensed under the **SIL Open Font License 1.1 (OFL-1.1)**, with the Reserved Font Name "D-DIN".
+The license text is included as `native/crates/livi-ui/ui/fonts/D-DIN-OFL.txt`.
+
+https://www.fontsquirrel.com/fonts/d-din
+
+### Material Icons
+
+This application bundles icons from Google's **Material Icons**.
+
+Material Icons are licensed under the **Apache License 2.0**.
+
+https://github.com/google/material-design-icons

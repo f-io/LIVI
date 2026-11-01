@@ -1,0 +1,107 @@
+Subject: [PATCH] v821: build its drivers
+
+Kconfig and Makefile entries for the V821 CCU, the V821 AON CCU, the V821B
+pin controller and the V821 SPI flash controller, whose sources are added
+next to the patches.
+---
+diff --git a/drivers/clk/sunxi-ng/Kconfig b/drivers/clk/sunxi-ng/Kconfig
+index 6af2d020e..74bec293f 100644
+--- a/drivers/clk/sunxi-ng/Kconfig
++++ b/drivers/clk/sunxi-ng/Kconfig
+@@ -17,6 +17,16 @@ config SUN20I_D1_CCU
+ 	default ARCH_SUNXI
+ 	depends on MACH_SUN8I || RISCV || COMPILE_TEST
+ 
++config SUN300I_V821_CCU
++	tristate "Support for the Allwinner V821 CCU"
++	default ARCH_SUNXI_V821
++	depends on RISCV || COMPILE_TEST
++
++config SUN300I_V821_AON_CCU
++	tristate "Support for the Allwinner V821 AON CCU"
++	default ARCH_SUNXI_V821
++	depends on RISCV || COMPILE_TEST
++
+ config SUN20I_D1_R_CCU
+ 	tristate "Support for the Allwinner D1/R528/T113 PRCM CCU"
+ 	default ARCH_SUNXI
+diff --git a/drivers/clk/sunxi-ng/Makefile b/drivers/clk/sunxi-ng/Makefile
+index a1c4087d7..9901f2394 100644
+--- a/drivers/clk/sunxi-ng/Makefile
++++ b/drivers/clk/sunxi-ng/Makefile
+@@ -27,6 +27,8 @@ sunxi-ccu-y			+= ccu_mp.o
+ obj-$(CONFIG_SUNIV_F1C100S_CCU)	+= suniv-f1c100s-ccu.o
+ obj-$(CONFIG_SUN20I_D1_CCU)	+= sun20i-d1-ccu.o
+ obj-$(CONFIG_SUN20I_D1_R_CCU)	+= sun20i-d1-r-ccu.o
++obj-$(CONFIG_SUN300I_V821_CCU)	+= sun300i-v821-ccu.o
++obj-$(CONFIG_SUN300I_V821_AON_CCU)	+= sun300i-v821-aon-ccu.o
+ obj-$(CONFIG_SUN50I_A64_CCU)	+= sun50i-a64-ccu.o
+ obj-$(CONFIG_SUN50I_A100_CCU)	+= sun50i-a100-ccu.o
+ obj-$(CONFIG_SUN50I_A100_R_CCU)	+= sun50i-a100-r-ccu.o
+@@ -55,6 +57,8 @@ obj-$(CONFIG_SUN9I_A80_CCU)	+= sun9i-a80-usb-ccu.o
+ suniv-f1c100s-ccu-y		+= ccu-suniv-f1c100s.o
+ sun20i-d1-ccu-y			+= ccu-sun20i-d1.o
+ sun20i-d1-r-ccu-y		+= ccu-sun20i-d1-r.o
++sun300i-v821-ccu-y		+= ccu-sun300i-v821.o
++sun300i-v821-aon-ccu-y		+= ccu-sun300i-v821-aon.o
+ sun50i-a64-ccu-y		+= ccu-sun50i-a64.o
+ sun50i-a100-ccu-y		+= ccu-sun50i-a100.o
+ sun50i-a100-r-ccu-y		+= ccu-sun50i-a100-r.o
+diff --git a/drivers/pinctrl/sunxi/Kconfig b/drivers/pinctrl/sunxi/Kconfig
+index dc62eba96..522294119 100644
+--- a/drivers/pinctrl/sunxi/Kconfig
++++ b/drivers/pinctrl/sunxi/Kconfig
+@@ -86,6 +86,11 @@ config PINCTRL_SUN20I_D1
+ 	default MACH_SUN8I || (RISCV && ARCH_SUNXI)
+ 	select PINCTRL_SUNXI
+ 
++config PINCTRL_SUN300I_V821B
++	bool "Support for the Allwinner V821B PIO"
++	default ARCH_SUNXI_V821
++	select PINCTRL_SUNXI
++
+ config PINCTRL_SUN50I_A64
+ 	bool "Support for the Allwinner A64 PIO"
+ 	default ARM64 && ARCH_SUNXI
+diff --git a/drivers/pinctrl/sunxi/Makefile b/drivers/pinctrl/sunxi/Makefile
+index 951b3f1e4..42e1e458c 100644
+--- a/drivers/pinctrl/sunxi/Makefile
++++ b/drivers/pinctrl/sunxi/Makefile
+@@ -22,6 +22,7 @@ obj-$(CONFIG_PINCTRL_SUN8I_H3)		+= pinctrl-sun8i-h3.o
+ obj-$(CONFIG_PINCTRL_SUN8I_H3_R)	+= pinctrl-sun8i-h3-r.o
+ obj-$(CONFIG_PINCTRL_SUN8I_V3S)		+= pinctrl-sun8i-v3s.o
+ obj-$(CONFIG_PINCTRL_SUN20I_D1)		+= pinctrl-sun20i-d1.o
++obj-$(CONFIG_PINCTRL_SUN300I_V821B)	+= pinctrl-sun300i-v821b.o
+ obj-$(CONFIG_PINCTRL_SUN50I_H5)		+= pinctrl-sun50i-h5.o
+ obj-$(CONFIG_PINCTRL_SUN50I_H6)		+= pinctrl-sun50i-h6.o
+ obj-$(CONFIG_PINCTRL_SUN50I_H6_R)	+= pinctrl-sun50i-h6-r.o
+diff --git a/drivers/spi/Kconfig b/drivers/spi/Kconfig
+index 1872f9d54..2823dbc9b 100644
+--- a/drivers/spi/Kconfig
++++ b/drivers/spi/Kconfig
+@@ -1129,6 +1129,13 @@ config SPI_SUN4I
+ 	help
+ 	  SPI driver for Allwinner sun4i, sun5i and sun7i SoCs
+ 
++config SPI_SUN300I_SPIF
++	tristate "Allwinner V821 SPI flash controller"
++	depends on ARCH_SUNXI || COMPILE_TEST
++	depends on SPI_MEM
++	help
++	  The dedicated controller of the boot flash on the Allwinner V821.
++
+ config SPI_SUN6I
+ 	tristate "Allwinner A31 SPI controller"
+ 	depends on ARCH_SUNXI || COMPILE_TEST
+diff --git a/drivers/spi/Makefile b/drivers/spi/Makefile
+index 1f7c06a30..c618c358e 100644
+--- a/drivers/spi/Makefile
++++ b/drivers/spi/Makefile
+@@ -147,6 +147,7 @@ obj-$(CONFIG_SPI_STM32_OSPI) 		+= spi-stm32-ospi.o
+ obj-$(CONFIG_SPI_STM32_QSPI) 		+= spi-stm32-qspi.o
+ obj-$(CONFIG_SPI_ST_SSC4)		+= spi-st-ssc4.o
+ obj-$(CONFIG_SPI_SUN4I)			+= spi-sun4i.o
++obj-$(CONFIG_SPI_SUN300I_SPIF)		+= spi-sun300i-spif.o
+ obj-$(CONFIG_SPI_SUN6I)			+= spi-sun6i.o
+ obj-$(CONFIG_SPI_SUNPLUS_SP7021)	+= spi-sunplus-sp7021.o
+ obj-$(CONFIG_SPI_SYNQUACER)		+= spi-synquacer.o

@@ -1,0 +1,260 @@
+Kernel 7.3 hands the cookie for remain_on_channel, mgmt_tx and the renamed
+probe_peer to the driver instead of asking the driver for one. The driver
+keeps that cookie with the request and reports it back on ready, expiry,
+tx status and probe status. cfg80211_probe_status also takes the link id,
+which is -1 without MLO.
+---
+--- a/aic8800_fdrv/rwnx_defs.h
++++ b/aic8800_fdrv/rwnx_defs.h
+@@ -584,6 +584,7 @@
+ 	struct wireless_dev *wdev;
+ 	struct ieee80211_channel *chan;
+ 	unsigned int duration;
++	u64 cookie;
+ 	/* Used to avoid call of CFG80211 callback upon expiration of RoC */
+ 	bool mgmt_roc;
+ 	/* Indicate if we have switch on the RoC channel */
+@@ -701,7 +702,6 @@
+ 
+ 	/* RoC Management */
+ 	struct rwnx_roc_elem *roc_elem;             /* Information provided by cfg80211 in its remain on channel request */
+-	u32 roc_cookie_cnt;                         /* Counter used to identify RoC request sent by cfg80211 */
+ 
+ 	struct rwnx_cmd_mgr *cmd_mgr;
+ 
+--- a/aic8800_fdrv/rwnx_main.c
++++ b/aic8800_fdrv/rwnx_main.c
+@@ -3182,9 +3182,9 @@
+        printk("sta %pM found = %d\n", mac, found);
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
+        if(found)
+-               cfg80211_probe_status(rwnx_vif->ndev, mac, (u64)rwnx_vif->sta_probe.probe_id, 1, 0, false, GFP_ATOMIC);
++               cfg80211_probe_status(rwnx_vif->ndev, mac, rwnx_vif->sta_probe.probe_id, -1, 1, 0, false, GFP_ATOMIC);
+        else
+-               cfg80211_probe_status(rwnx_vif->ndev, mac, (u64)rwnx_vif->sta_probe.probe_id, 0, 0, false, GFP_ATOMIC);
++               cfg80211_probe_status(rwnx_vif->ndev, mac, rwnx_vif->sta_probe.probe_id, -1, 0, 0, false, GFP_ATOMIC);
+ #else
+ 	if(found)
+                 cfg80211_probe_status(rwnx_vif->ndev, mac, (u64)rwnx_vif->sta_probe.probe_id, 1, GFP_ATOMIC);
+@@ -3192,7 +3192,6 @@
+                 cfg80211_probe_status(rwnx_vif->ndev, mac, (u64)rwnx_vif->sta_probe.probe_id, 0, GFP_ATOMIC);
+ 
+ #endif
+-       rwnx_vif->sta_probe.probe_id ++;
+ }
+ /**
+  * @change_station: Modify a given station. Note that flags changes are not much
+@@ -3661,11 +3660,11 @@
+ 
+ 
+ /**
+- * @probe_client: probe an associated client, must return a cookie that it
+- *	later passes to cfg80211_probe_status().
++ * @probe_peer: probe an associated client, the cookie from cfg80211 goes
++ *	back with cfg80211_probe_status().
+  */
+-int rwnx_cfg80211_probe_client(struct wiphy *wiphy, struct net_device *dev,
+-			const u8 *peer, u64 *cookie)
++int rwnx_cfg80211_probe_peer(struct wiphy *wiphy, struct net_device *dev,
++			const u8 *peer, u64 cookie)
+ {
+ //       struct rwnx_hw *rwnx_hw = wiphy_priv(wiphy);
+        struct rwnx_vif *vif = netdev_priv(dev);
+@@ -3688,10 +3687,9 @@
+ 
+ 
+        memcpy(vif->sta_probe.sta_mac_addr, peer, 6);
++       vif->sta_probe.probe_id = cookie;
+        queue_work(vif->sta_probe.apmprobesta_wq, &vif->sta_probe.apmprobestaWork);
+ 
+-       *cookie = vif->sta_probe.probe_id;
+-
+        return 0;
+ 
+ }
+@@ -3845,7 +3843,7 @@
+ static int
+ rwnx_cfg80211_remain_on_channel_(struct wiphy *wiphy, struct wireless_dev *wdev,
+ 								struct ieee80211_channel *chan,
+-								unsigned int duration, u64 *cookie, bool mgmt_roc_flag)
++								unsigned int duration, u64 cookie, bool mgmt_roc_flag)
+ {
+ 	struct rwnx_hw *rwnx_hw = wiphy_priv(wiphy);
+ 	//struct rwnx_vif *rwnx_vif = netdev_priv(wdev->netdev);
+@@ -3918,6 +3916,7 @@
+ 	roc_elem->wdev = wdev;
+ 	roc_elem->chan = chan;
+ 	roc_elem->duration = duration;
++	roc_elem->cookie = cookie;
+ 	roc_elem->mgmt_roc = mgmt_roc_flag;
+ 	roc_elem->on_chan = false;
+ 
+@@ -3930,8 +3929,6 @@
+ 
+ 	/* If no error, keep all the information for handling of end of procedure */
+ 	if (error == 0) {
+-		/* Set the cookie value */
+-		*cookie = (u64)(rwnx_hw->roc_cookie_cnt);
+ 		if (roc_cfm.status) {
+ 			// failed to roc
+ 			rwnx_hw->roc_elem = NULL;
+@@ -3953,7 +3950,7 @@
+ static int
+ rwnx_cfg80211_remain_on_channel(struct wiphy *wiphy, struct wireless_dev *wdev,
+ 								struct ieee80211_channel *chan,
+-								unsigned int duration, u64 *cookie, const u8 *rx_addr)
++								unsigned int duration, u64 cookie, const u8 *rx_addr)
+ {
+ 	return rwnx_cfg80211_remain_on_channel_(wiphy, wdev, chan, duration, cookie, false);
+ }
+@@ -4093,7 +4090,7 @@
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0))
+ static int rwnx_cfg80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
+ 								 struct cfg80211_mgmt_tx_params *params,
+-								 u64 *cookie)
++								 u64 cookie)
+ #else
+ static int rwnx_cfg80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
+ 								 struct ieee80211_channel *channel, bool offchan,
+@@ -4180,14 +4177,13 @@
+ 			return -EINVAL;
+ 		}
+ 	} else {
+-		u64 cookie;
+ 		int error;
+ 
+ 		printk("mgmt rx remain on chan\n");
+ 
+ 		/* Start a ROC procedure for 30ms */
+ 		error = rwnx_cfg80211_remain_on_channel_(wiphy, wdev, channel,
+-												30, &cookie, true);
++												30, 0, true);
+ 		if (error) {
+ 			printk("mgmt rx chan err\n");
+ 			return error;
+@@ -5439,7 +5435,7 @@
+ 	.change_beacon = rwnx_cfg80211_change_beacon,
+ 	.stop_ap = rwnx_cfg80211_stop_ap,
+ 	.set_monitor_channel = rwnx_cfg80211_set_monitor_channel,
+-	.probe_client = rwnx_cfg80211_probe_client,
++	.probe_peer = rwnx_cfg80211_probe_peer,
+ //	.mgmt_frame_register = rwnx_cfg80211_mgmt_frame_register,
+ 	.set_wiphy_params = rwnx_cfg80211_set_wiphy_params,
+ 	.set_txq_params = rwnx_cfg80211_set_txq_params,
+@@ -5990,8 +5986,6 @@
+ 
+ 	/* Initialize RoC element pointer to NULL, indicate that RoC can be started */
+ 	rwnx_hw->roc_elem = NULL;
+-	/* Cookie can not be 0 */
+-	rwnx_hw->roc_cookie_cnt = 1;
+ 
+ 	INIT_LIST_HEAD(&rwnx_hw->vifs);
+ 	INIT_LIST_HEAD(&rwnx_hw->defrag_list);
+--- a/aic8800_fdrv/rwnx_msg_rx.c
++++ b/aic8800_fdrv/rwnx_msg_rx.c
+@@ -121,7 +121,7 @@
+ 			/* If mgmt_roc is true, remain on channel has been started by ourself */
+ 			if (!roc_elem->mgmt_roc) {
+ 				/* Inform the host that we have switch on the indicated off-channel */
+-				cfg80211_ready_on_channel(roc_elem->wdev, (u64)(rwnx_hw->roc_cookie_cnt),
++				cfg80211_ready_on_channel(roc_elem->wdev, roc_elem->cookie,
+ 									  roc_elem->chan, roc_elem->duration, GFP_ATOMIC);
+ 			}
+ 
+@@ -230,19 +230,12 @@
+ 	/* If RoC has been cancelled before we switched on channel, do not call cfg80211 */
+ 	if (!roc_elem->mgmt_roc && roc_elem->on_chan) {
+ 		/* Inform the host that off-channel period has expired */
+-		cfg80211_remain_on_channel_expired(roc_elem->wdev, (u64)(rwnx_hw->roc_cookie_cnt),
++		cfg80211_remain_on_channel_expired(roc_elem->wdev, roc_elem->cookie,
+ 										   roc_elem->chan, GFP_ATOMIC);
+ 	}
+ 
+ 	/* De-init offchannel TX queue */
+ 	rwnx_txq_offchan_deinit(rwnx_vif);
+-
+-	/* Increase the cookie counter cannot be zero */
+-	rwnx_hw->roc_cookie_cnt++;
+-
+-	if (rwnx_hw->roc_cookie_cnt == 0) {
+-		rwnx_hw->roc_cookie_cnt = 1;
+-	}
+ 
+ 	/* Free the allocated RoC element */
+ 	kfree(roc_elem);
+--- a/aic8800_fdrv/rwnx_tdls.c
++++ b/aic8800_fdrv/rwnx_tdls.c
+@@ -749,15 +749,14 @@
+ 					  initiator, extra_ies, extra_ies_len, oper_class, chandef);
+ 
+ 	if (action_code == WLAN_PUB_ACTION_TDLS_DISCOVER_RES) {
+-		u64 cookie;
+ 		#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0))
+ 		struct cfg80211_mgmt_tx_params params;
+ 
+ 		params.len = skb->len;
+ 		params.buf = skb->data;
+-		ret = rwnx_start_mgmt_xmit(rwnx_vif, NULL, &params, false, &cookie);
++		ret = rwnx_start_mgmt_xmit(rwnx_vif, NULL, &params, false, 0);
+ 		#else
+-		ret = rwnx_start_mgmt_xmit(rwnx_vif, NULL, NULL, false, 0, skb->data, skb->len, false, false, &cookie);
++		ret = rwnx_start_mgmt_xmit(rwnx_vif, NULL, NULL, false, 0, skb->data, skb->len, false, false, 0);
+ 		#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0) */
+ 
+ 		return ret;
+--- a/aic8800_fdrv/rwnx_tx.c
++++ b/aic8800_fdrv/rwnx_tx.c
+@@ -2118,7 +2118,7 @@
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0))
+ int rwnx_start_mgmt_xmit(struct rwnx_vif *vif, struct rwnx_sta *sta,
+ 						 struct cfg80211_mgmt_tx_params *params, bool offchan,
+-						 u64 *cookie)
++						 u64 cookie)
+ #else
+ int rwnx_start_mgmt_xmit(struct rwnx_vif *vif, struct rwnx_sta *sta,
+ 						 struct ieee80211_channel *channel, bool offchan,
+@@ -2187,8 +2187,6 @@
+ 		return -ENOMEM;
+ 	}
+ 
+-	*cookie = (unsigned long)skb;
+-
+ 	/*
+ 	 * Move skb->data pointer in order to reserve room for rwnx_txhdr
+ 	 * headroom value will be equal to sizeof(struct rwnx_txhdr)
+@@ -2254,6 +2252,7 @@
+ 	sw_txhdr->rwnx_sta = sta;
+ 	sw_txhdr->rwnx_vif = vif;
+ 	sw_txhdr->skb = skb;
++	sw_txhdr->cookie = cookie;
+ 	sw_txhdr->headroom = headroom;
+ 	sw_txhdr->map_len = skb->len - offsetof(struct rwnx_txhdr, hw_hdr);
+ #ifdef CONFIG_RWNX_AMSDUS_TX
+@@ -2381,7 +2380,7 @@
+ #endif
+ 		/* Confirm transmission to CFG80211 */
+ 		cfg80211_mgmt_tx_status(&sw_txhdr->rwnx_vif->wdev,
+-								(unsigned long)skb,
++								sw_txhdr->cookie,
+ 								(skb->data + sw_txhdr->headroom),
+ 								sw_txhdr->frame_len,
+ 								rwnx_txst.acknowledged,
+--- a/aic8800_fdrv/rwnx_tx.h
++++ b/aic8800_fdrv/rwnx_tx.h
+@@ -125,6 +125,7 @@
+ #endif
+ 	u32 need_cfm;
+ 	struct sk_buff *skb;
++	u64 cookie;
+ 
+ 	size_t map_len;
+ 	dma_addr_t dma_addr;
+@@ -158,7 +159,7 @@
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0))
+ int rwnx_start_mgmt_xmit(struct rwnx_vif *vif, struct rwnx_sta *sta,
+ 						 struct cfg80211_mgmt_tx_params *params, bool offchan,
+-						 u64 *cookie);
++						 u64 cookie);
+ #else
+ int rwnx_start_mgmt_xmit(struct rwnx_vif *vif, struct rwnx_sta *sta,
+ 						 struct ieee80211_channel *channel, bool offchan,

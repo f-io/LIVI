@@ -2,12 +2,14 @@ name: maintenance
 
 on:
   schedule:
-    - cron: '20 4 * * *'
+    - cron: "20 4 * * *"
   workflow_dispatch:
 
 permissions:
   actions: write
   contents: read
+  pull-requests: write
+  statuses: read
 
 jobs:
   cleanup:
@@ -17,13 +19,15 @@ jobs:
       - name: Cleanup workflow runs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RETAIN_DAYS: '7'
-          KEEP_MINIMUM_RUNS: '1'
+          RETAIN_DAYS: "7"
+          RETAIN_SKIPPED_CLA_HOURS: "24"
+          KEEP_MINIMUM_RUNS: "1"
         shell: bash
         run: |
           set -euo pipefail
 
           CUTOFF="$(date -u -d "${RETAIN_DAYS} days ago" +%s)"
+          SKIPPED_CLA_CUTOFF="$(date -u -d "${RETAIN_SKIPPED_CLA_HOURS} hours ago" +%s)"
 
           # Newest first, so the first KEEP_MINIMUM_RUNS of each workflow survive.
           RUNS="$(gh api -H "Accept: application/vnd.github+json" \
@@ -31,7 +35,7 @@ jobs:
             --paginate \
             --jq '.workflow_runs[]
               | select(.status == "completed")
-              | "\(.id) \(.created_at) \(.workflow_id)"' \
+              | "\(.id) \(.created_at) \(.workflow_id) \(.conclusion) \(.name)"' \
             | sort -k2 -r || true)"
 
           if [ -z "${RUNS}" ]; then
@@ -40,8 +44,16 @@ jobs:
 
           declare -A SEEN_FOR_WORKFLOW=()
 
-          while read -r ID CREATED WORKFLOW; do
+          while read -r ID CREATED WORKFLOW CONCLUSION NAME; do
             [ -n "${ID}" ] || continue
+
+            if [ "${NAME}" = "cla" ] && [ "${CONCLUSION}" = "skipped" ]; then
+              if [ "$(date -u -d "${CREATED}" +%s)" -lt "${SKIPPED_CLA_CUTOFF}" ]; then
+                gh api -X DELETE -H "Accept: application/vnd.github+json" \
+                  "/repos/${GITHUB_REPOSITORY}/actions/runs/${ID}" >/dev/null
+              fi
+              continue
+            fi
 
             SEEN_FOR_WORKFLOW["${WORKFLOW}"]=$(( ${SEEN_FOR_WORKFLOW[${WORKFLOW}]:-0} + 1 ))
             if [ "${SEEN_FOR_WORKFLOW[${WORKFLOW}]}" -le "${KEEP_MINIMUM_RUNS}" ]; then
@@ -64,71 +76,29 @@ jobs:
           set -euo pipefail
 
           CACHES="$(gh api -H "Accept: application/vnd.github+json" \
-            "/repos/${GITHUB_REPOSITORY}/actions/caches" \
+            "/repos/${GITHUB_REPOSITORY}/actions/caches?per_page=100" \
             --paginate \
-            --jq '.actions_caches[]
-              | select(.key | startswith("pnpm-store-") or startswith("build-cache-") or startswith("electron-cache-") or startswith("eb-cache-"))
-              | "\(.id) \(.last_accessed_at) \(.ref) \(.key)"' \
+            --jq '.actions_caches[] | "\(.id) \(.last_accessed_at) \(.ref) \(.key)"' \
             | sort -k2 -r || true)"
 
           if [ -z "${CACHES}" ]; then
             exit 0
           fi
 
-          declare -A KEEP_FOR_GROUP=()
+          declare -A KEEP=()
 
-          while read -r ID LAST REF KEY; do
+          # Newest first, so the newest cache of each family and branch survives.
+          while read -r ID _ REF KEY; do
             [ -n "${ID}" ] || continue
 
-            case "${KEY}" in
-              pnpm-store-*)
-                GROUP="pnpm-store"
-                ;;
-              build-cache-*)
-                GROUP="build-cache"
-                ;;
-              electron-cache-*)
-                GROUP="electron-cache"
-                ;;
-              eb-cache-*)
-                GROUP="eb-cache"
-                ;;
-              *)
-                continue
-                ;;
-            esac
-
-            GROUP="${GROUP}::${REF}"
-            if [ -z "${KEEP_FOR_GROUP[${GROUP}]+x}" ]; then
-              KEEP_FOR_GROUP["${GROUP}"]="${ID}"
+            FAMILY="${KEY%-*}"
+            if [[ "${KEY}" == cargo-* ]]; then
+              FAMILY="${FAMILY%-*}"
             fi
-          done <<< "${CACHES}"
-
-          while read -r ID LAST REF KEY; do
-            [ -n "${ID}" ] || continue
-
-            case "${KEY}" in
-              pnpm-store-*)
-                GROUP="pnpm-store"
-                ;;
-              build-cache-*)
-                GROUP="build-cache"
-                ;;
-              electron-cache-*)
-                GROUP="electron-cache"
-                ;;
-              eb-cache-*)
-                GROUP="eb-cache"
-                ;;
-              *)
-                continue
-                ;;
-            esac
-
-            GROUP="${GROUP}::${REF}"
-            KEEP_ID="${KEEP_FOR_GROUP[${GROUP}]}"
-            if [ "${ID}" != "${KEEP_ID}" ]; then
-              gh api -X DELETE -H "Accept: application/vnd.github+json" \
-                "/repos/${GITHUB_REPOSITORY}/actions/caches/${ID}" >/dev/null
+            if [ -z "${KEEP["${REF} ${FAMILY}"]+x}" ]; then
+              KEEP["${REF} ${FAMILY}"]="${ID}"
+              continue
             fi
+            gh api -X DELETE -H "Accept: application/vnd.github+json" \
+              "/repos/${GITHUB_REPOSITORY}/actions/caches/${ID}" >/dev/null
           done <<< "${CACHES}"

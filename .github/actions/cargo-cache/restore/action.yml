@@ -1,0 +1,29 @@
+name: Restore the cargo cache
+description: Restores the cargo registry, git checkouts and native/target, keyed by toolchain and lockfile.
+inputs:
+  name:
+    description: Cache family, one per job kind and target
+    required: true
+  toolchain:
+    description: File that pins the toolchain this cache was built with
+    default: rust-toolchain.toml
+outputs:
+  key:
+    description: Exact key to save under
+    value: ${{ steps.restore.outputs.cache-primary-key }}
+  hit:
+    description: Whether the exact key was restored
+    value: ${{ steps.restore.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    - id: restore
+      uses: actions/cache/restore@v6
+      with:
+        path: |
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+          native/target
+        key: cargo-${{ inputs.name }}-${{ hashFiles(inputs.toolchain) }}-${{ hashFiles('native/Cargo.lock', 'native/**/Cargo.toml') }}
+        restore-keys: cargo-${{ inputs.name }}-${{ hashFiles(inputs.toolchain) }}-

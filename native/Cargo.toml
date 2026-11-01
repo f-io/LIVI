@@ -1,0 +1,90 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]
+exclude = ["vendor"]
+
+[patch.crates-io]
+femtovg = { path = "vendor/femtovg" }
+
+[workspace.package]
+version = "10.3.0"
+edition = "2024"
+description = "LIVI - Linux In-Vehicle Infotainment"
+homepage = "https://f-io.dev"
+authors = ["Lasse Heitgres"]
+license = "GPL-3.0-or-later"
+
+[workspace.dependencies]
+# Every crate takes libc from here, so all of them follow the 1.0 API.
+libc = "1.0.0-alpha.5"
+aes = "0.9.3"
+base64 = "0.23.1"
+flate2 = "1.1.10"
+futures-util = "0.3.34"
+glib = "0.22.10"
+glib-unix = "0.22.8"
+gstreamer = "0.25.4"
+gstreamer-app = "0.25.2"
+lzokay-native = "0.1.0"
+nusb = "0.2.9"
+prost = "0.14.4"
+serde = "1.0.229"
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+socket2 = "0.6.5"
+tokio = "1.54.1"
+uuid = "1.29.0"
+zbus = { version = "6.2.0", default-features = false }
+
+iap2-csm = { path = "crates/iap2-csm" }
+iap2-link = { path = "crates/iap2-link" }
+iap2-mfi = { path = "crates/iap2-mfi" }
+iap2-usbmux = { path = "crates/iap2-usbmux" }
+iap2-wired = { path = "crates/iap2-wired" }
+imx6ul-uboot = { path = "crates/imx6ul-uboot" }
+livi-aa = { path = "crates/livi-aa" }
+livi-aa-proto = { path = "crates/livi-aa-proto" }
+livi-aa-stack = { path = "crates/livi-aa-stack" }
+livi-accessoryd = { path = "crates/livi-accessoryd" }
+livi-audio = { path = "crates/livi-audio" }
+livi-bt-host = { path = "crates/livi-bt-host" }
+livi-btd = { path = "crates/livi-btd" }
+livi-core-client = { path = "crates/livi-core-client" }
+livi-core-proto = { path = "crates/livi-core-proto" }
+livi-cp = { path = "crates/livi-cp" }
+livi-crypto = { path = "crates/livi-crypto" }
+livi-dab = { path = "crates/livi-dab" }
+livi-hfp = { path = "crates/livi-hfp" }
+livi-host-proto = { path = "crates/livi-host-proto" }
+livi-link-host = { path = "crates/livi-link-host" }
+livi-link-provision = { path = "crates/livi-link-provision" }
+livi-mdns = { path = "crates/livi-mdns" }
+livi-media = { path = "crates/livi-media" }
+livi-net = { path = "crates/livi-net" }
+livi-rtlsdr = { path = "crates/livi-rtlsdr" }
+livi-runtime = { path = "crates/livi-runtime" }
+livi-screen-stream = { path = "crates/livi-screen-stream" }
+livi-session-io = { path = "crates/livi-session-io" }
+livi-i18n = { path = "crates/livi-i18n" }
+livi-ui-model = { path = "crates/livi-ui-model" }
+livi-video = { path = "crates/livi-video" }
+livi-video-player = { path = "crates/livi-video-player" }
+livi-video-view = { path = "crates/livi-video-view" }
+livi-web = { path = "crates/livi-web" }
+livi-wifi = { path = "crates/livi-wifi" }
+livi-wifid = { path = "crates/livi-wifid" }
+
+# The DAB+ receiver demodulates in real time, also in debug builds.
+[profile.dev.package.livi-dab]
+opt-level = 3
+
+[profile.dev.package.rustfft]
+opt-level = 3
+
+[profile.embedded]
+inherits = "release"
+opt-level = "z"
+codegen-units = 1
+strip = true
+panic = "abort"
+lto = true

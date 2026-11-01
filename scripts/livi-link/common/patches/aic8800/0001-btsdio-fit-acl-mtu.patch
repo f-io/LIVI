@@ -1,0 +1,63 @@
+--- a/aic8800_fdrv/btsdio.c
++++ b/aic8800_fdrv/btsdio.c
+@@ -30,6 +30,7 @@
+ #include <linux/sched.h>
+ #include <linux/errno.h>
+ #include <linux/skbuff.h>
++#include <asm/unaligned.h>
+ 
+ #include <linux/mmc/host.h>
+ #include <linux/mmc/sdio_ids.h>
+@@ -54,6 +55,10 @@
+ };
+ struct hci_dev *ghdev = NULL;
+ 
++/* rwnx_sdio_bt_send_req() carries 1024 bytes: packet type, ACL header, payload. */
++#define BT_SEND_MAX	1024
++#define BT_ACL_MTU_MAX	(BT_SEND_MAX - 1 - HCI_ACL_HDR_SIZE)
++
+ void bt_data_dump(char* tag, void* data, unsigned long len){
+ 	unsigned long i = 0;
+ 	uint8_t* data_ = (uint8_t* )data;
+@@ -92,6 +97,13 @@
+ 	skb_push(skb, 1);
+ 	skb->data[0] = hci_skb_pkt_type(skb);
+ 
++	if (skb->len > BT_SEND_MAX) {
++		AICBT_ERR("%s: %u bytes do not fit the send request", __func__, skb->len);
++		data->hdev->stat.err_tx++;
++		kfree_skb(skb);
++		return 0;
++	}
++
+ 	//bt_data_dump("btwrite", skb->data, skb->len);
+ 	err = rwnx_sdio_bt_send_req(g_rwnx_plat->sdiodev->rwnx_hw, skb->len, skb);
+ 	if(err<0){
+@@ -133,6 +145,18 @@
+         return NULL;
+ 
+     return ghdev;
++}
++
++static void btsdio_fit_acl_mtu(struct sk_buff *skb)
++{
++	u8 *ev = skb->data;
++
++	if (skb->len < 8 || ev[0] != HCI_EV_CMD_COMPLETE || ev[5])
++		return;
++	if (get_unaligned_le16(ev + 3) != HCI_OP_READ_BUFFER_SIZE)
++		return;
++	if (get_unaligned_le16(ev + 6) > BT_ACL_MTU_MAX)
++		put_unaligned_le16(BT_ACL_MTU_MAX, ev + 6);
+ }
+ 
+ int bt_sdio_recv(u8 *data,u32 data_len)
+@@ -155,6 +179,8 @@
+ 	memcpy(skb_put(skb,len-1) ,(data+1), len-1);
+ 	hdev->stat.byte_rx += len;
+ 	hci_skb_pkt_type(skb) = type;
++	if (type == HCI_EVENT_PKT)
++		btsdio_fit_acl_mtu(skb);
+ 	//if(bt_bypass_event(skb)){
+ 		//kfree_skb(skb);
+ 		///return 0;

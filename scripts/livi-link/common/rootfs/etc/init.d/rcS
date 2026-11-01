@@ -1,0 +1,60 @@
+#!/bin/sh
+# LIVI-Link boot, the same on every board: NCM+DHCP+mDNS, WiFi AP, HTTP, telnet, LEDs, MFi, BT.
+# What differs per board (WiFi power and driver, the MFi bus) is in /etc/livi/board.sh.
+mkdir -p /tmp/livi /tmp/livi/led
+exec >/tmp/livi/rcS.log 2>&1
+echo '[livi] rcS'
+. /etc/livi/board.sh
+
+# Restore persistent config from the customer partition into tmpfs
+/usr/bin/livid config load 2>&1 | tail -3
+
+hostname livi-link
+ifconfig lo up
+# usb0 (host) and wlan0 (phones) share one L2 segment: the phone reaches the host directly
+# and mDNS crosses over. hostapd attaches wlan0 itself (bridge=br0 in hostapd.conf).
+brctl addbr br0
+brctl stp br0 off 2>/dev/null
+brctl setfd br0 0 2>/dev/null
+ifconfig usb0 up 2>/dev/null
+brctl addif br0 usb0
+ifconfig br0 10.10.10.1 netmask 255.255.255.0 mtu 1500 up
+echo '[livi] br0 10.10.10.1/24 up (usb0 attached)'
+
+/usr/bin/livi-netd br0 10.10.10.1 100 199 livi-link >/tmp/livi/netd.log 2>&1 &
+echo "[livi] netd/br0 pid=$!"
+/usr/bin/livi-httpd >/tmp/livi/httpd.log 2>&1 &
+echo "[livi] httpd pid=$! :80"
+# The initramfs telnetds do not survive the switch_root. A dongle running LIVI takes updates over
+# its web page and needs no provisioner, so the usual port is enough.
+killall telnetd 2>/dev/null
+telnetd -l /bin/sh -p 23 && echo "[livi] telnetd :23"
+
+/usr/bin/livi-ledd >/tmp/livi/ledd.log 2>&1 &
+echo "[livi] ledd pid=$!"
+
+# MFi coprocessor bridge. Retries in the background until the board's I2C node is there.
+if [ -n "$MFI_I2C" ]; then
+    (
+        for i in $(seq 1 20); do
+            if [ -c /dev/i2c-$MFI_I2C ]; then
+                /usr/bin/livi-mfid $MFI_I2C >/tmp/livi/mfid.log 2>&1 &
+                echo "[livi] mfid pid=$! :5000 (i2c-$MFI_I2C)"
+                break
+            fi
+            sleep 0.5
+        done
+    ) &
+fi
+
+# The ways in are up: clear the mark the initramfs set for this boot, the next one takes this rootfs again.
+for n in /sys/class/mtd/mtd[0-9]*; do
+    [ "$(cat $n/name 2>/dev/null)" = bootstate ] && flash_eraseall -q /dev/mtd${n##*mtd} \
+        && echo '[livi] bootstate cleared'
+done
+
+# WiFi and Bluetooth, as far as they are switched on.
+/usr/bin/livi-radio boot
+
+echo 4 > /proc/sys/kernel/printk
+echo '[livi] rcS done'

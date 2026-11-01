@@ -1,58 +1,56 @@
 name: dependencies
-run-name: 'dependencies → ${{ github.event_name == ''workflow_dispatch'' && (inputs.include_major && ''major'' || ''minor+patch'') || ''minor+patch'' }} on ${{ github.event_name == ''workflow_dispatch'' && inputs.branch || ''dev'' }}'
+run-name: "dependencies → ${{ inputs.include_major && 'major' || 'minor+patch' }} on ${{ inputs.branch }}"
 
 on:
-  schedule:
-   - cron: '0 20 * * 0'
-
   workflow_dispatch:
     inputs:
       branch:
-        description: 'Branch to update'
+        description: "Branch to update"
         required: true
-        default: 'dev'
+        default: "dev"
         type: string
       include_major:
-        description: 'Include major updates'
+        description: "Include major updates"
         required: true
         default: false
         type: boolean
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   update:
-    name: Update dependencies on ${{ github.event_name == 'workflow_dispatch' && inputs.branch || 'dev' }}
+    name: Update dependencies on ${{ inputs.branch }}
     runs-on: ubuntu-latest
 
     env:
-      TARGET_BRANCH: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || 'dev' }}
-      HUSKY: 0
+      TARGET_BRANCH: ${{ inputs.branch }}
 
     steps:
       - name: Checkout target branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ env.TARGET_BRANCH }}
 
-      - name: Setup Node + pnpm
-        id: pnpm
-        uses: ./.github/actions/pnpm
-        with:
-          node-version: '24'
-          pnpm-major: '11'
-          pnpm-store-dir: '.pnpm-store'
+      - name: Setup Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install
+          rustc --version
+
+      - name: Install cargo-edit
+        run: cargo install cargo-edit --locked
 
       - name: Collect available updates report
         id: report
+        working-directory: native
         shell: bash
         run: |
           set -euo pipefail
 
-          REPORT="$(npx --yes npm-check-updates --format group || true)"
+          REPORT="$(cargo upgrade --dry-run --incompatible allow 2>&1 || true)"
 
           {
             echo 'report<<EOF'
@@ -61,28 +59,18 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Update minor and patch only
-        if: ${{ github.event_name == 'schedule' || inputs.include_major == false }}
-        run: npx --yes npm-check-updates -u --target minor
+        if: ${{ inputs.include_major == false }}
+        working-directory: native
+        run: cargo upgrade
 
       - name: Update including majors
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_major == true }}
-        run: npx --yes npm-check-updates -u
-
-      - name: Check whether package.json changed
-        id: manifest_changes
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if git diff --quiet -- package.json; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
+        if: ${{ inputs.include_major == true }}
+        working-directory: native
+        run: cargo upgrade --incompatible allow
 
       - name: Refresh lockfile
-        if: steps.manifest_changes.outputs.changed == 'true'
-        run: pnpm install --lockfile-only --ignore-scripts
+        working-directory: native
+        run: cargo update
 
       - name: Check for dependency file changes
         id: changes
@@ -90,34 +78,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          if git diff --quiet -- package.json pnpm-lock.yaml; then
+          if git diff --quiet -- 'native/Cargo.lock' 'native/**/Cargo.toml' 'native/Cargo.toml'; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Compute PR metadata
-        id: meta
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.include_major }}" == "true" ]]; then
-            echo "branch=chore/deps-major" >> "$GITHUB_OUTPUT"
-            echo "title=chore(deps): update dependencies (major)" >> "$GITHUB_OUTPUT"
-          else
-            echo "branch=chore/deps-minor" >> "$GITHUB_OUTPUT"
-            echo "title=chore(deps): update dependencies" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Create or update the pull request
+      - name: Commit and push directly to target branch
         if: steps.changes.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: ${{ steps.meta.outputs.branch }}
-          TITLE: ${{ steps.meta.outputs.title }}
           REPORT: ${{ steps.report.outputs.report }}
-          INCLUDE_MAJOR: ${{ github.event_name == 'workflow_dispatch' && inputs.include_major || false }}
+          INCLUDE_MAJOR: ${{ inputs.include_major }}
         shell: bash
         run: |
           set -euo pipefail
@@ -125,13 +97,16 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-          # Written line by line because the report may carry backticks, which a
-          # heredoc would run as command substitution.
+          if [[ "${INCLUDE_MAJOR}" == "true" ]]; then
+            TITLE="chore(deps): update dependencies (major)"
+          else
+            TITLE="chore(deps): update dependencies"
+          fi
+
           BODY_FILE="$(mktemp)"
           {
-            echo 'Automated dependency update.'
+            echo "${TITLE}"
             echo
-            echo "Target branch: \`${TARGET_BRANCH}\`"
             echo "Include major updates: \`${INCLUDE_MAJOR}\`"
             echo
             echo 'Available updates before applying changes:'
@@ -141,19 +116,8 @@ jobs:
             echo '```'
           } > "${BODY_FILE}"
 
-          # The branch is rebuilt from the target branch on every run, so a run
-          # that drops an update leaves nothing stale behind.
-          git switch -C "${BRANCH}"
-          git add package.json pnpm-lock.yaml
-          git commit -m "${TITLE}"
-          git push --force origin "${BRANCH}"
-
-          PR="$(gh pr list --head "${BRANCH}" --base "${TARGET_BRANCH}" --state open \
-            --json number --jq '.[0].number // empty')"
-
-          if [ -n "${PR}" ]; then
-            gh pr edit "${PR}" --title "${TITLE}" --body-file "${BODY_FILE}"
-          else
-            gh pr create --base "${TARGET_BRANCH}" --head "${BRANCH}" \
-              --title "${TITLE}" --body-file "${BODY_FILE}"
-          fi
+          git add native/Cargo.lock native/Cargo.toml
+          git ls-files -m -- 'native/**/Cargo.toml' | xargs -r git add
+          git commit -F "${BODY_FILE}"
+          git pull --rebase origin "${TARGET_BRANCH}"
+          git push origin "${TARGET_BRANCH}"

@@ -1,0 +1,40 @@
+#!/bin/sh
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+
+for f in $(git diff --cached --name-only --diff-filter=ACMR -- '*.rs' '*.slint' ':!native/vendor'); do
+  head -n1 "$root/$f" | grep -q '^// SPDX-FileCopyrightText:' && continue
+  if git diff --quiet -- "$f"; then
+    sh "$root/scripts/spdx-header.sh" "$root/$f"
+    git add "$root/$f"
+  else
+    echo "spdx: $f also has unstaged changes, add the license header and stage again." >&2
+    exit 1
+  fi
+done
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR -- '*.rs')
+[ -z "$staged" ] && exit 0
+
+fix=""
+check=""
+for f in $staged; do
+  if git diff --quiet -- "$f"; then
+    fix="$fix $root/$f"
+  else
+    check="$check $root/$f"
+  fi
+done
+
+if [ -n "$fix" ]; then
+  sh "$root/scripts/rustfmt-staged.sh" $fix
+  git add $fix
+fi
+
+if [ -n "$check" ]; then
+  if ! sh "$root/scripts/rustfmt-staged.sh" --check $check; then
+    echo "rustfmt: these files also have unstaged changes, format them and stage again." >&2
+    exit 1
+  fi
+fi

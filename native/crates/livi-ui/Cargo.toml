@@ -1,0 +1,40 @@
+[package]
+name = "livi-ui"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+homepage.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "LIVI"
+path = "src/main.rs"
+
+[dependencies]
+base64.workspace = true
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
+libc.workspace = true
+livi-core-client.workspace = true
+livi-core-proto.workspace = true
+livi-ui-model.workspace = true
+raw-window-handle = "0.6.2"
+serde_json.workspace = true
+slint = { version = "1.18.1", default-features = false, features = [
+  "std",
+  "compat-1-2",
+  "backend-winit",
+  "backend-winit-wayland",
+  "renderer-femtovg",
+  "renderer-software",
+  "raw-window-handle-06",
+  "unstable-winit-030",
+  "unstable-fontique-011",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+livi-video-view.workspace = true
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSCursor"] }
+
+[build-dependencies]
+slint-build = "1.18.1"

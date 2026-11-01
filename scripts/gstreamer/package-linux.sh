@@ -25,10 +25,16 @@ copy_if_exists() {
 }
 
 real_path() {
-  python3 - <<'PY' "$1"
-import os, sys
-print(os.path.realpath(sys.argv[1]))
-PY
+  local p=$1 link dir
+  while [ -L "$p" ]; do
+    link=$(readlink "$p")
+    case "$link" in
+      /*) p=$link ;;
+      *) dir=$(dirname "$p"); p=${dir%/}/$link ;;
+    esac
+  done
+  dir=$(cd -P "$(dirname "$p")" 2>/dev/null && pwd -P) || { printf '%s\n' "$p"; return; }
+  printf '%s/%s\n' "${dir%/}" "$(basename "$p")"
 }
 
 is_system_excluded() {
@@ -39,10 +45,10 @@ is_system_excluded() {
     */libgcc_s.so.*|*/libstdc++.so.*|\
     */libpulse.so.*|*/libpulsecommon-*.so|*/libasound.so.*|\
     */libdbus-1.so.*|*/libsystemd.so.*|\
-    */libX*.so.*|*/libxcb*.so.*|*/libwayland-*.so.*|\
+    */libX*.so.*|*/libxcb*.so.*|*/libwayland-server.so.*|*/libwayland-egl.so.*|*/libwayland-cursor.so.*|\
     */libdrm.so.*|*/libgbm.so.*|*/libGL.so.*|*/libEGL.so.*|*/libGLESv2.so.*|\
     */libGLdispatch.so.*|*/libOpenGL.so.*|*/libglapi.so.*|*/libgallium*.so.*|\
-    */libva.so.*|*/libva-drm.so.*|*/libva-x11.so.*|*/libv4l2.so.*|*/libv4lconvert.so.*|\
+    */libv4l2.so.*|*/libv4lconvert.so.*|\
     */libvulkan.so.*|*/libudev.so.*|*/libgudev-1.0.so.*|\
     */libssh.so.*|*/libssh2.so.*)
       return 0
@@ -142,6 +148,13 @@ copy_plugin_optional_and_deps() {
   done < <(scan_deps "$src")
 }
 
+lib_dest() {
+  case "$1" in
+    libva.so.*|libva-*.so.*) printf '%s\n' "$OUT/lib/libva-compat" ;;
+    *)                       printf '%s\n' "$OUT/lib" ;;
+  esac
+}
+
 copy_all_pending_libs() {
   local idx=0
 
@@ -149,17 +162,18 @@ copy_all_pending_libs() {
     local lib="${PENDING_LIBS[$idx]}"
     idx=$((idx + 1))
 
-    local link_name real_name real_base
+    local link_name real_name real_base dest
     link_name="$(basename "$lib")"
     real_name="$(real_path "$lib")"
     real_base="$(basename "$real_name")"
+    dest="$(lib_dest "$real_base")"
 
-    if [[ ! -e "$OUT/lib/$real_base" ]]; then
-      copy_required "$real_name" "$OUT/lib/$real_base"
+    if [[ ! -e "$dest/$real_base" ]]; then
+      copy_required "$real_name" "$dest/$real_base"
     fi
 
-    if [[ "$link_name" != "$real_base" && ! -e "$OUT/lib/$link_name" ]]; then
-      ln -s "$real_base" "$OUT/lib/$link_name"
+    if [[ "$link_name" != "$real_base" && ! -e "$dest/$link_name" ]]; then
+      ln -s "$real_base" "$dest/$link_name"
     fi
 
     while read -r dep; do
@@ -265,6 +279,7 @@ rm -rf "$OUT"
 mkdir -p \
   "$OUT/bin" \
   "$OUT/lib" \
+  "$OUT/lib/libva-compat" \
   "$OUT/lib/gstreamer-1.0" \
   "$OUT/libexec/gstreamer-1.0"
 
@@ -310,13 +325,29 @@ plugins=(
   # video parse + scale + GL sink (cross-platform)
   libgstvideoparsersbad.so
   libgstvideoconvertscale.so
+  libgstjpeg.so
+  libgstvideofilter.so
   libgstopengl.so
   libgstlibav.so
+  # video LIVI fetches from a URL: playbin3, hlsdemux2, souphttpsrc, qtdemux, tsdemux
+  libgstplayback.so
+  libgstadaptivedemux2.so
+  libgstsoup.so
+  libgstisomp4.so
+  libgstmpegtsdemux.so
 )
 
 for plugin in "${plugins[@]}"; do
   copy_plugin_and_deps "$PLUGIN_DIR/$plugin"
 done
+
+# Both soup plugins dlopen libsoup, so ldd never names it.
+SOUP="$(ldconfig -p | awk '$1 == "libsoup-3.0.so.0" { print $NF; exit }')"
+if [[ -z "$SOUP" ]]; then
+  echo "libsoup-3.0.so.0 not found, souphttpsrc and hlsdemux2 would not load" >&2
+  exit 1
+fi
+queue_dep "$SOUP"
 
 # video HW decode + DRM/KMS sink — host-dependent
 optional_plugins=(
@@ -324,6 +355,7 @@ optional_plugins=(
   libgstv4l2codecs.so    # v4l2slh264dec/v4l2slh265dec (Pi 5 stateless HEVC)
   libgstkms.so           # kmssink (DRM overlay plane, kiosk)
   libgstva.so            # vah264dec/vah265dec (x86 VA-API)
+  libgstnvcodec.so       # nvh264dec/nvh265dec (NVIDIA NVDEC, CUDA from the host driver)
   libgstwaylandsink.so   # waylandsink (wlroots/cage)
 )
 
@@ -340,15 +372,17 @@ if ! command -v patchelf >/dev/null 2>&1; then
   exit 1
 fi
 echo "Patching RPATHs to \$ORIGIN (relocatable bundle)"
-for f in "$OUT"/lib/*.so*;               do [ -f "$f" ] && patchelf --set-rpath '$ORIGIN' "$f" 2>/dev/null || true; done
+for f in "$OUT"/lib/*.so* "$OUT"/lib/libva-compat/*.so*; do [ -f "$f" ] && patchelf --set-rpath '$ORIGIN' "$f" 2>/dev/null || true; done
 for f in "$OUT"/lib/gstreamer-1.0/*.so;  do [ -f "$f" ] && patchelf --set-rpath '$ORIGIN/..' "$f" 2>/dev/null || true; done
 for f in "$OUT"/bin/*;                   do [ -f "$f" ] && patchelf --set-rpath '$ORIGIN/../lib' "$f" 2>/dev/null || true; done
 for f in "$OUT"/libexec/gstreamer-1.0/*; do [ -f "$f" ] && patchelf --set-rpath '$ORIGIN/../../lib' "$f" 2>/dev/null || true; done
 
 # Record the Debian package versions that fed this bundle.
-dpkg-query -W -f='${binary:Package} ${Version}\n' 2>/dev/null \
-  | grep -E '^(gstreamer1\.0-|libgstreamer)' \
-  | sort > "$OUT/packages.txt"
+{
+  dpkg-query -W -f='${binary:Package} ${Version}\n' 2>/dev/null \
+    | grep -E '^(gstreamer1\.0-|libgstreamer)' | grep -v '^libgstreamer-plugins-bad' || true
+  cat /usr/share/gst-build/meson-builds.txt 2>/dev/null || true
+} | sort > "$OUT/packages.txt"
 echo "Wrote provenance: $OUT/packages.txt ($(wc -l < "$OUT/packages.txt") packages)"
 
 echo "Created linux-x64/linux-arm64 GStreamer bundle at: $OUT"

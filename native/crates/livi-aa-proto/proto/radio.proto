@@ -1,0 +1,161 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+enum RadioMessageId {
+  RADIO_MESSAGE_ID_PROGRAM_LIST_NOTIFICATION = 32794;
+  RADIO_MESSAGE_ID_PROGRAM_INFO_NOTIFICATION = 32795;
+  RADIO_MESSAGE_ID_MUTE_REQUEST = 32796;
+  RADIO_MESSAGE_ID_MUTE_RESPONSE = 32797;
+  RADIO_MESSAGE_ID_TUNE_REQUEST = 32798;
+  RADIO_MESSAGE_ID_TUNE_RESPONSE = 32799;
+  RADIO_MESSAGE_ID_FAVORITE_LIST_NOTIFICATION = 32800;
+  RADIO_MESSAGE_ID_FAVORITE_CHANGE_NOTIFICATION = 32801;
+  RADIO_MESSAGE_ID_STATION_SKIP_NOTIFICATION = 32802;
+  RADIO_MESSAGE_ID_BAND_SCAN_NOTIFICATION = 32803;
+}
+
+enum RadioBand {
+  RADIO_BAND_AM = 1;
+  RADIO_BAND_FM = 2;
+  RADIO_BAND_DAB = 3;
+}
+
+enum RadioProgramIdentifierType {
+  RADIO_PROGRAM_IDENTIFIER_TYPE_INVALID = 0;
+  RADIO_PROGRAM_IDENTIFIER_TYPE_AMFM_FREQUENCY = 1;
+  RADIO_PROGRAM_IDENTIFIER_TYPE_RDS_PI = 2;
+  RADIO_PROGRAM_IDENTIFIER_TYPE_HD_STATION_ID_EXT = 3;
+  RADIO_PROGRAM_IDENTIFIER_TYPE_HD_STATION_NAME = 4;
+  RADIO_PROGRAM_IDENTIFIER_TYPE_DAB_DMB_SID_EXT = 5;
+  RADIO_PROGRAM_IDENTIFIER_TYPE_DAB_ENSEMBLE = 6;
+  RADIO_PROGRAM_IDENTIFIER_TYPE_DAB_SCID = 7;
+  RADIO_PROGRAM_IDENTIFIER_TYPE_DAB_FREQUENCY = 8;
+  RADIO_PROGRAM_IDENTIFIER_TYPE_DAB_SID_EXT = 9;
+}
+
+enum RadioProgramTypeSchema {
+  RADIO_PROGRAM_TYPE_SCHEMA_RDS = 1;
+  RADIO_PROGRAM_TYPE_SCHEMA_RBDS = 2;
+}
+
+enum RadioSkipDirection {
+  RADIO_SKIP_DIRECTION_NEXT = 1;
+  RADIO_SKIP_DIRECTION_PREVIOUS = 2;
+}
+
+enum RadioTuneResult {
+  RADIO_TUNE_RESULT_SUCCESS = 1;
+  RADIO_TUNE_RESULT_VALUE_2 = 2;
+  RADIO_TUNE_RESULT_VALUE_3 = 3;
+  RADIO_TUNE_RESULT_VALUE_4 = 4;
+}
+
+message RadioBandGroup {
+  repeated RadioBand bands = 1;
+  optional bool hide_empty_group = 2;
+  optional string band_scan_action = 3;
+  optional bool keep_original_station_order = 4;
+}
+
+message RadioBandScanNotification {
+  optional string band_scan_action = 1;
+}
+
+message RadioConfiguration {
+  repeated RadioBandGroup band_groups = 1;
+}
+
+message RadioFavoriteChangeNotification {
+  optional bool favorite = 1;
+}
+
+message RadioFavoriteListNotification {
+  repeated RadioProgramInfo favorite_programs = 1;
+}
+
+message RadioImage {
+  optional bytes encoded_image = 1;
+}
+
+message RadioMetadata {
+  optional string station_name = 1;
+  optional string station_name_short = 2;
+  optional string station_name_long = 3;
+  optional RadioProgramType program_type = 4;
+  optional RadioImage station_icon = 5;
+  optional RadioSongMetadata song_metadata = 6;
+  optional string message = 7;
+  optional string service_name = 8;
+  optional uint32 available_hd_sub_channels_mask = 9;
+  optional bool hd_signal_acquired = 10;
+  optional bool hd_audio_acquired = 11;
+  optional string dab_component_name = 12;
+  optional bool dts_autostage_enriched = 13;
+}
+
+message RadioMuteRequest {
+  optional bool mute = 1;
+}
+
+message RadioMuteResponse {
+  optional bool muted = 1;
+}
+
+message RadioProgramIdentifier {
+  optional RadioProgramIdentifierType type = 1;
+  optional uint64 value = 2;
+}
+
+message RadioProgramInfo {
+  optional RadioProgramSelector program_selector = 1;
+  optional RadioMetadata metadata = 2;
+}
+
+message RadioProgramInfoNotification {
+  optional RadioProgramInfo program_info = 1;
+  optional bool muted = 2;
+  optional bool favorite = 3;
+}
+
+message RadioProgramListNotification {
+  repeated RadioProgramInfo programs = 1;
+}
+
+message RadioProgramSelector {
+  optional RadioProgramIdentifier primary_identifier = 1;
+  repeated RadioProgramIdentifier secondary_identifiers = 2;
+}
+
+message RadioProgramType {
+  optional RadioProgramTypeSchema schema = 1;
+  optional uint32 code = 2;
+}
+
+message RadioService {
+  optional RadioConfiguration radio_configuration = 2;
+}
+
+message RadioSongMetadata {
+  optional string title = 1;
+  optional string artist = 2;
+  optional string album = 3;
+  optional string genre = 4;
+  optional RadioImage album_art = 5;
+  optional uint64 duration_seconds = 6;
+}
+
+message RadioStationSkipNotification {
+  optional RadioSkipDirection direction = 1;
+}
+
+message RadioTuneRequest {
+  optional RadioProgramSelector program_selector = 1;
+}
+
+message RadioTuneResponse {
+  optional RadioTuneResult result = 1;
+}

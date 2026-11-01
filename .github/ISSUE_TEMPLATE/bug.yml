@@ -1,0 +1,83 @@
+name: Bug report
+description: Something does not work as it should.
+labels: ["🐛 bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: LIVI version
+      description: Settings > System > About, Version and Build.
+      placeholder: 10.2.0 (a1b2c3d4)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux arm64
+        - Linux x86_64
+        - macOS Apple Silicon
+        - macOS Intel
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device and OS
+      placeholder: Raspberry Pi 5, Raspberry Pi OS Lite (trixie)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: session
+    attributes:
+      label: Display session
+      options:
+        - Headless (LIVI compositor)
+        - Desktop (Wayland)
+        - macOS
+    validations:
+      required: true
+
+  - type: dropdown
+    id: projection
+    attributes:
+      label: Projection
+      multiple: true
+      options:
+        - CarPlay
+        - Android Auto
+        - Not related to projection
+    validations:
+      required: true
+
+  - type: input
+    id: phone
+    attributes:
+      label: Phone
+      description: Model and OS version, if a phone is involved.
+      placeholder: iPhone 16, iOS 26.1
+
+  - type: input
+    id: hardware
+    attributes:
+      label: Other hardware
+      description: Whatever is involved, e.g. display, LIVI Link, MFi chip, audio device, USB adapters.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happens
+      description: The steps that lead to it, what you expected and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: See [DEBUGGING.md](https://github.com/DrSkunk/LIVI/blob/main/DEBUGGING.md) for how to get them.
+      render: text

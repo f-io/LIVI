@@ -1,0 +1,3 @@
+#!/bin/sh
+# nousb: skip the net-up that init starts once the board's RESCUE_USB_DELAY is over.
+touch /tmp/nousb && echo "usb: will be skipped"

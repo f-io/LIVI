@@ -8,11 +8,10 @@ set -euo pipefail
 # OS Lite and on x86 Debian alike. Everything it shares with the desktop
 # installer lives in scripts/install/common.sh.
 #
-#   - Installs Cage (Wayland kiosk compositor), seatd, PipeWire and RetroArch
-#   - Installs minidsp-rs and enables its systemd daemon
+#   - Installs seatd and PipeWire, LIVI drives the display itself
 #   - Writes the udev rule and the sudoers drop-in from the templates inside the
 #     AppImage, so first launch needs no pkexec dialog
-#   - Configures tty1 autologin through a systemd getty drop-in and starts Cage
+#   - Configures tty1 autologin through a systemd getty drop-in and starts LIVI on tty1
 #     from the livi-kiosk service
 #
 # Re-runnable. Refuses to run as root (sudo is used internally).
@@ -28,9 +27,10 @@ fi
 . "$LIVI_LIB"
 
 livi_require_regular_user
+livi_require_sudo
 
-if ! command -v apt-get >/dev/null; then
-  echo "Error: this installer needs apt. Install the packages from" >&2
+if [ -z "$(livi_pm)" ]; then
+  echo "Error: this installer needs apt, dnf or pacman. Install the packages from" >&2
   echo "scripts/install/packages.txt by hand, then run the remaining steps." >&2
   exit 1
 fi
@@ -44,15 +44,8 @@ KIOSK_PAM="/etc/pam.d/livi-kiosk"
 
 echo "→ Architecture: $(uname -m) → $(livi_asset_arch).AppImage"
 
-echo "→ Installing LIVI runtime packages and RetroArch"
-sudo apt-get update
-sudo apt-get install -y $(livi_packages core lite | tr '\n' ' ') retroarch
-
-livi_prepare_retroarch
-livi_install_retroarch_cores
-livi_install_default_doom
-livi_install_pymobiledevice3
-livi_install_minidsp_rs
+echo "→ Installing required packages"
+livi_pm_install $(livi_packages core lite | tr '\n' ' ')
 
 echo "→ Adding $USER to required groups"
 WANTED_GROUPS=(video render input plugdev bluetooth)
@@ -90,19 +83,33 @@ SUDOERS_TEMPLATE="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_SUDOERS_TEMPLATE
   echo "Error: cannot obtain $LIVI_SUDOERS_TEMPLATE" >&2
   exit 1
 }
-
+KIOSK_TEMPLATE="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_KIOSK_TEMPLATE")" || {
+  echo "Error: cannot obtain $LIVI_KIOSK_TEMPLATE" >&2
+  exit 1
+}
 TOUCH_FILTER="$(livi_fetch_template "$APPIMAGE_PATH" "$LIVI_TOUCH_FILTER_TEMPLATE")" || {
   echo "Error: cannot obtain $LIVI_TOUCH_FILTER_TEMPLATE" >&2
   exit 1
 }
 
-livi_install_touch_filter "$TOUCH_FILTER"
+# --- shared ---
 livi_write_udev_rule "$UDEV_TEMPLATE"
 livi_write_sudoers "$SUDOERS_TEMPLATE"
-livi_disable_wifi_powersave
-livi_apply_mfi
-livi_apply_splash
-livi_apply_hdmi_pr "$APPIMAGE_PATH"
+livi_optional livi_install_touch_filter "$TOUCH_FILTER"
+livi_optional livi_write_regdom
+livi_optional livi_install_time_helper
+livi_optional livi_disable_wifi_powersave
+livi_optional livi_set_wifi_pmf_optional
+livi_optional livi_grant_rtprio
+livi_optional livi_apply_mfi
+livi_optional livi_apply_splash
+livi_optional livi_apply_hdmi_pr "$APPIMAGE_PATH"
+livi_optional livi_setup_games
+livi_optional livi_install_minidsp_rs
+
+# --- headless only ---
+livi_optional livi_install_video_mode_helper
+livi_optional livi_install_power_helper
 
 echo "→ Enabling seatd"
 sudo systemctl enable --now seatd
@@ -147,50 +154,22 @@ if grep -q "$KIOSK_MARKER" "$USER_HOME/.bash_profile" 2>/dev/null; then
   ' "$USER_HOME/.bash_profile.livi-bak" > "$USER_HOME/.bash_profile"
 fi
 
-echo "→ Writing $KIOSK_PAM"
-sudo tee "$KIOSK_PAM" >/dev/null <<'EOF'
-auth      required  pam_permit.so
-@include  common-account
-@include  common-session
-EOF
+livi_write_kiosk_pam "$KIOSK_PAM"
 
 echo "→ Writing $KIOSK_UNIT"
-CAGE_BIN="$(command -v cage || echo /usr/bin/cage)"
 SYSTEMCTL_BIN="$(command -v systemctl || echo /usr/bin/systemctl)"
-sudo tee "$KIOSK_UNIT" >/dev/null <<EOF
-[Unit]
-Description=LIVI kiosk
-After=systemd-user-sessions.service seatd.service getty@tty1.service
-Conflicts=getty@tty1.service
-
-[Service]
-Type=simple
-User=$USER
-PAMName=livi-kiosk
-WorkingDirectory=$USER_HOME
-TTYPath=/dev/tty1
-TTYReset=yes
-TTYVHangup=yes
-StandardInput=tty-fail
-StandardOutput=truncate:$APPIMAGE_DIR/LIVI.log
-StandardError=inherit
-Environment=ELECTRON_OZONE_PLATFORM_HINT=wayland
-Environment=LIVI_KIOSK=1
-ExecStart=$CAGE_BIN -s -- $APPIMAGE_PATH
-ExecStopPost=+$SYSTEMCTL_BIN --no-block start getty@tty1.service
-Restart=no
-
-[Install]
-WantedBy=multi-user.target
-EOF
+sed -e "s|__USERNAME__|$USER|g" \
+    -e "s|__HOME__|$USER_HOME|g" \
+    -e "s|__APPIMAGE__|$APPIMAGE_PATH|g" \
+    -e "s|__SYSTEMCTL__|$SYSTEMCTL_BIN|g" \
+    "$KIOSK_TEMPLATE" | sudo tee "$KIOSK_UNIT" >/dev/null
 
 sudo systemctl daemon-reload
 sudo systemctl enable livi-kiosk.service
 
 echo ""
 echo "✅ LIVI headless installation complete."
-echo "   RetroArch: $(command -v retroarch) (ROMs: $LIVI_ROMS_DIR)"
-echo "   MiniDSP: minidsp.service (http://127.0.0.1:5380)"
+livi_report_skipped
 echo ""
 echo "Reboot to launch LIVI in kiosk mode on tty1:"
 echo "    sudo reboot"

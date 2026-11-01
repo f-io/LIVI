@@ -1,0 +1,86 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme, Ui } from "../theme.slint";
+import { Metrics } from "metrics.slint";
+
+export component RowButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> outlined;
+    in property <bool> enabled: true;
+    in property <bool> focused;
+    callback clicked();
+
+    property <bool> lit: touch.has-hover || touch.pressed || root.focused;
+
+    // COMAND: outlined = bevelled hardware key, filled = lit amber key.
+    property <bool> key: Theme.comand && root.outlined;
+    property <bool> key-lit: Theme.comand && !root.outlined;
+
+    width: max(120px, label.preferred-width + 32px);
+    height: Theme.comand ? 42px : 36px;
+    border-radius: Theme.comand ? Theme.radius : 4px;
+    opacity: root.enabled ? 1 : (Theme.comand ? 0.35 : 0.45);
+    background: root.key ? Theme.key : root.key-lit ? Theme.key-lit : root.outlined ? (root.lit ? Theme.primary.with-alpha(0.08) : transparent) : Theme.primary;
+    border-width: root.outlined || Theme.comand ? 1px : 0;
+    border-color: root.key ? (root.lit ? Theme.primary : Theme.key-edge) : root.key-lit ? Theme.key-lit-edge : Theme.primary.with-alpha(0.5);
+    drop-shadow-blur: Theme.comand ? (root.lit || root.key-lit ? 12px : 0) : (!root.outlined && root.lit ? 16px : 0);
+    drop-shadow-color: Theme.comand ? Theme.primary.with-alpha(root.key-lit ? 0.2 : 0.13) : Theme.highlight.with-alpha(0.55);
+    if Theme.comand: Rectangle {
+        x: 1px;
+        y: 1px;
+        width: parent.width - 2px;
+        height: 1px;
+        background: root.key-lit ? Theme.key-lit-edge : Theme.bevel-light;
+    }
+    Rectangle {
+        border-radius: Theme.comand ? Theme.radius : 4px;
+        border-width: root.focused && Theme.comand ? 1px : root.lit && !Theme.comand ? 2px : 0;
+        border-color: Theme.comand ? Theme.focus-color : Theme.highlight.with-alpha(root.focused ? 0.85 : 0.65);
+    }
+    label := Text {
+        text: Theme.comand ? root.text.to-uppercase() : root.text;
+        font-size: 14px;
+        font-weight: Theme.comand ? 600 : 500;
+        letter-spacing: Theme.tracking-wide;
+        color: root.key ? (root.lit ? Theme.highlight : Theme.text) : root.key-lit ? Theme.key-lit-text : root.outlined ? Theme.primary : #000000de;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component ToolButton inherits Rectangle {
+    in property <image> icon;
+    in property <color> tint: Theme.text;
+    in property <bool> enabled: true;
+    in property <bool> focused;
+    callback clicked();
+
+    property <length> glyph: Metrics.icon-px + 4px;
+
+    property <length> pad: Ui.width < 600px ? 4px : 12px;
+    property <bool> lit: root.focused || (touch.has-hover && root.enabled);
+
+    width: glyph + pad;
+    height: glyph + pad;
+    border-radius: Theme.comand ? Theme.radius : self.width / 2;
+    opacity: root.enabled ? 1 : (Theme.comand ? 0.35 : 0.38);
+    background: Theme.comand ? Theme.key : root.lit ? Theme.text.with-alpha(0.08) : transparent;
+    border-width: Theme.comand ? 1px : root.focused ? 2px : 0;
+    border-color: Theme.comand ? (root.focused ? Theme.focus-color : root.lit ? Theme.primary : Theme.key-edge) : Theme.primary;
+    drop-shadow-blur: Theme.comand && root.lit ? 10px : 0;
+    drop-shadow-color: Theme.primary.with-alpha(0.13);
+    Image {
+        width: root.glyph;
+        height: root.glyph;
+        source: root.icon;
+        colorize: root.tint;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}

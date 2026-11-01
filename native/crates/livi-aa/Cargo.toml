@@ -1,0 +1,22 @@
+[package]
+name = "livi-aa"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+livi-aa-proto.workspace = true
+livi-host-proto.workspace = true
+livi-session-io.workspace = true
+livi-wifi.workspace = true
+futures-util.workspace = true
+nusb = { workspace = true, features = ["tokio"] }
+prost.workspace = true
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pemfile = "2"
+rustls-pki-types = "1"
+serde_json.workspace = true
+socket2 = { workspace = true, features = ["all"] }
+tokio = { workspace = true, features = ["rt", "macros", "time", "sync", "io-util", "net"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "net"] }

@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       build_run_id:
-        description: 'ID of successful build run (leave empty = latest on main)'
+        description: "ID of successful build run (leave empty = latest on main)"
         required: false
       draft:
-        description: 'Create as draft?'
+        description: "Create as draft?"
         type: boolean
         default: true
 
@@ -54,7 +54,7 @@ jobs:
                  -q .headSha)
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ steps.sha.outputs.sha }}
           fetch-depth: 1
@@ -62,7 +62,8 @@ jobs:
       - name: Read version
         id: ver
         run: |
-          VERSION=$(grep -oP '"version"\s*:\s*"\K[^"]+' package.json)
+          VERSION=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' native/Cargo.toml)
+          [[ -n "$VERSION" ]] || { echo "::error::No version in native/Cargo.toml"; exit 1; }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Get release date (Europe/Berlin)
@@ -89,6 +90,36 @@ jobs:
           run-id: ${{ steps.pick.outputs.run_id }}
           path: release-assets
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pick livi-link assets run ID
+        id: tool
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          RUN=$(gh run list --repo "$REPO" \
+                             --workflow livi-link.yml \
+                             -s success \
+                             -L 1 \
+                             --json databaseId \
+                             -q '.[0].databaseId')
+          echo "run_id=$RUN" >> "$GITHUB_OUTPUT"
+
+      - name: Download the LIVI Link tool
+        if: steps.tool.outputs.run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          run-id: ${{ steps.tool.outputs.run_id }}
+          pattern: livi-link-provision-*
+          path: release-assets
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add the LIVI Link firmware
+        run: |
+          sh scripts/assets.sh fetch livi-link
+          bash scripts/livi-link/stage-firmware.sh release-assets
 
       - name: Create GitHub release
         env:

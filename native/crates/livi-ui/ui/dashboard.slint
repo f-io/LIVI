@@ -1,0 +1,224 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { ViewAreaMask } from "mask.slint";
+import { Theme } from "theme.slint";
+import { Gauge, Readout } from "dashboard/gauge.slint";
+import { NavFull, NavMini } from "dashboard/nav.slint";
+import { Blink, DashState, Signal } from "dashboard/state.slint";
+import { Dots, Lamp, Level } from "dashboard/widgets.slint";
+
+export { CapData, DashState, GaugeData, LabelData, TrailData } from "dashboard/state.slint";
+
+export component Dashboard inherits Rectangle {
+    property <float> s: min(root.width / 1280px, root.height / 720px);
+    property <length> u: max(0.01, s) * 1px;
+    property <length> left: (root.width - 1280 * u) / 2;
+    property <length> top: (root.height - 720 * u) / 2;
+    property <float> push: max(0, (root.width / u - 1280) / 2);
+    property <color> pointer: DashState.has-accent ? DashState.accent : Theme.text;
+    property <color> major: DashState.has-accent ? DashState.accent : Theme.text-secondary;
+    property <color> shade: Theme.dark ? #0000008c : #ffffffb8;
+    property <color> plate: Theme.dark ? #00000099 : #ffffffc7;
+    property <bool> blinking: DashState.turn-left || DashState.turn-right || DashState.hazards;
+    property <length> swipe-from;
+
+    background: DashState.enabled && DashState.map ? transparent : Theme.backdrop;
+
+    Timer {
+        interval: 500ms;
+        running: root.blinking;
+        triggered => { Blink.on = !Blink.on; }
+    }
+
+    if DashState.enabled && DashState.map: ViewAreaMask {
+        mask: DashState.mask;
+    }
+
+    TouchArea {
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.swipe-from = self.mouse-x;
+            } else if (e.kind == PointerEventKind.up) {
+                let dx = self.mouse-x - root.swipe-from;
+                if (abs(dx) >= 40px && DashState.page-count > 1) {
+                    DashState.step(dx < 0 ? 1 : -1);
+                }
+            }
+        }
+    }
+
+    if !DashState.enabled: Text {
+        text: DashState.placeholder;
+        color: Theme.text-secondary;
+        font-size: 20px;
+    }
+
+    if DashState.enabled && DashState.gauges: Rectangle {
+        Gauge {
+            x: root.left + (-32 + DashState.ring-shift - root.push) * root.u;
+            y: root.top + 60 * root.u;
+            u: root.u;
+            g: DashState.speed-gauge;
+            value-t: DashState.speed-t;
+            scale-color: Theme.text-disabled;
+            major-color: root.major;
+            pointer-color: root.pointer;
+            backdrop: DashState.map;
+            backdrop-color: root.shade;
+        }
+        Readout {
+            x: round((root.left + (-32 + DashState.ring-shift - root.push + 235 + 34 - 100) * root.u) / 1phx) * 1phx;
+            y: round((root.top + (60 + 300 - 65) * root.u) / 1phx) * 1phx;
+            width: 200 * root.u;
+            height: 130 * root.u;
+            u: root.u;
+            value: DashState.speed-text;
+            caption: DashState.speed-label;
+            to-end: true;
+            backdrop: DashState.map;
+            backdrop-color: root.plate;
+        }
+        Gauge {
+            x: root.left + (850 + root.push - DashState.ring-shift) * root.u;
+            y: root.top + 60 * root.u;
+            u: root.u;
+            g: DashState.rpm-gauge;
+            value-t: DashState.rpm-t;
+            scale-color: Theme.text-disabled;
+            major-color: root.major;
+            pointer-color: root.pointer;
+            backdrop: DashState.map;
+            backdrop-color: root.shade;
+        }
+        Readout {
+            x: round((root.left + (850 + root.push - DashState.ring-shift + 235 - 34 - 100) * root.u) / 1phx) * 1phx;
+            y: round((root.top + (60 + 300 - 65) * root.u) / 1phx) * 1phx;
+            width: 200 * root.u;
+            height: 130 * root.u;
+            u: root.u;
+            value: DashState.gear;
+            caption: DashState.gear-label;
+            to-end: false;
+            backdrop: DashState.map;
+            backdrop-color: root.plate;
+        }
+
+        Lamp {
+            x: root.left + 70 * root.u;
+            y: root.top + 1 * root.u;
+            width: 51 * root.u;
+            height: 51 * root.u;
+            source: @image-url("icons/PlayArrow.svg");
+            transform-rotation: 180deg;
+            tint: Signal.green;
+            active: DashState.turn-left || DashState.hazards;
+            blink: true;
+        }
+        Lamp {
+            x: root.left + (1210 - 51) * root.u;
+            y: root.top + 1 * root.u;
+            width: 51 * root.u;
+            height: 51 * root.u;
+            source: @image-url("icons/PlayArrow.svg");
+            tint: Signal.green;
+            active: DashState.turn-right || DashState.hazards;
+            blink: true;
+        }
+        HorizontalLayout {
+            x: root.left + (640 - 2 * 30 - 1.5 * 21) * root.u;
+            y: root.top + 12 * root.u;
+            height: 30 * root.u;
+            spacing: 21 * root.u;
+            Lamp {
+                width: 30 * root.u;
+                source: @image-url("icons/TelltaleLowBeam.svg");
+                tint: Signal.green;
+                active: DashState.lights;
+            }
+            Lamp {
+                width: 30 * root.u;
+                source: @image-url("icons/TelltaleHighBeam.svg");
+                tint: Signal.blue;
+                active: DashState.high-beam;
+            }
+            Lamp {
+                width: 30 * root.u;
+                source: @image-url("icons/TelltaleHazard.svg");
+                tint: Signal.red;
+                active: DashState.hazards;
+                blink: true;
+            }
+            Rectangle {
+                width: 30 * root.u;
+                opacity: DashState.parking-brake ? 1 : 0;
+                Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: @image-url("icons/TelltaleParkingRing.svg");
+                    colorize: Signal.red;
+                }
+                Text {
+                    text: "P";
+                    font-size: 9.5 / 24 * 30 * root.u;
+                    font-weight: 700;
+                    color: Signal.red;
+                }
+            }
+        }
+        if DashState.ambient != "": Text {
+            x: root.left + (1210 - 51 - 42) * root.u - self.width;
+            y: root.top + 27 * root.u - self.height / 2;
+            text: DashState.ambient;
+            font-size: 20 * root.u;
+            font-weight: 500;
+            letter-spacing: 0.5 * root.u;
+            color: Theme.text;
+        }
+
+        Level {
+            x: root.left + 140 * root.u;
+            y: root.top + 660 * root.u;
+            height: 24 * root.u;
+            u: root.u;
+            icon: @image-url("icons/DeviceThermostat.svg");
+            ratio: DashState.oil-ratio;
+            value: DashState.oil-text;
+            warn: DashState.oil-hot;
+        }
+        Level {
+            x: root.left + 1140 * root.u - self.width;
+            y: root.top + 660 * root.u;
+            height: 24 * root.u;
+            u: root.u;
+            icon: DashState.battery ? @image-url("icons/BatteryHorizontal.svg") : @image-url("icons/LocalGasStation.svg");
+            ratio: DashState.fuel / 100;
+            value: DashState.fuel + "%";
+            warn: DashState.fuel-low;
+        }
+    }
+
+    if DashState.enabled && DashState.gauges && DashState.center == 1: NavMini {
+        x: root.left;
+        y: root.top;
+        width: 1280 * root.u;
+        height: 720 * root.u;
+        u: root.u;
+    }
+    if DashState.enabled && DashState.gauges && DashState.center == 2: NavFull {
+        x: root.left;
+        y: root.top;
+        width: 1280 * root.u;
+        height: 720 * root.u;
+        u: root.u;
+    }
+
+    if DashState.enabled && DashState.page-count > 1: Dots {
+        Ui-height: root.height;
+        x: (root.width - self.width) / 2;
+        y: root.height - self.height - clamp(root.height * 0.022, 10px, 18px);
+        opacity: DashState.dots-shown ? 1 : 0;
+        animate opacity { duration: 220ms; }
+    }
+}

@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+enum BufferedMediaMessageId {
+  BUFFERED_MEDIA_MESSAGE_ID_VALUE_1 = 1;
+  BUFFERED_MEDIA_MESSAGE_ID_VALUE_2 = 2;
+  BUFFERED_MEDIA_MESSAGE_ID_VALUE_3 = 3;
+  BUFFERED_MEDIA_MESSAGE_ID_PLAYBACK_STATUS = 4;
+}
+
+enum BufferedMediaPlaybackState {
+  BUFFERED_MEDIA_PLAYBACK_STATE_UNKNOWN = 0;
+  BUFFERED_MEDIA_PLAYBACK_STATE_PLAYING = 1;
+  BUFFERED_MEDIA_PLAYBACK_STATE_PAUSED = 2;
+  BUFFERED_MEDIA_PLAYBACK_STATE_STOPPED = 3;
+  BUFFERED_MEDIA_PLAYBACK_STATE_BUFFERING = 4;
+}
+
+message BufferedMediaPlaybackStatusNotification {
+  optional int32 session_id = 1;
+  optional uint64 uid = 2;
+  optional uint64 current_position_ms = 3;
+  optional BufferedMediaPlaybackState state = 4;
+  optional uint64 buffered_position_ms = 5;
+  optional uint64 content_duration_ms = 6;
+}
+
+message BufferedMediaSinkService {
+}

@@ -1,0 +1,153 @@
+--- a/drivers/usb/fotg210/fotg210-udc.c
++++ b/drivers/usb/fotg210/fotg210-udc.c
+@@ -906,33 +906,33 @@
+ 				usb_gadget_udc_reset(&fotg210->gadget,
+ 						     fotg210->driver);
+ 			fotg210_ack_int(fotg210, FOTG210_DISGR2, DISGR2_USBRST_INT);
+-			pr_info("fotg210 udc reset\n");
++			pr_debug("fotg210 udc reset\n");
+ 		}
+ 		if (int_grp2 & DISGR2_SUSP_INT) {
+ 			fotg210_ack_int(fotg210, FOTG210_DISGR2, DISGR2_SUSP_INT);
+-			pr_info("fotg210 udc suspend\n");
++			pr_debug("fotg210 udc suspend\n");
+ 		}
+ 		if (int_grp2 & DISGR2_RESM_INT) {
+ 			fotg210_ack_int(fotg210, FOTG210_DISGR2, DISGR2_RESM_INT);
+-			pr_info("fotg210 udc resume\n");
++			pr_debug("fotg210 udc resume\n");
+ 		}
+ 		if (int_grp2 & DISGR2_ISO_SEQ_ERR_INT) {
+ 			fotg210_ack_int(fotg210, FOTG210_DISGR2, DISGR2_ISO_SEQ_ERR_INT);
+-			pr_info("fotg210 iso sequence error\n");
++			pr_debug("fotg210 iso sequence error\n");
+ 		}
+ 		if (int_grp2 & DISGR2_ISO_SEQ_ABORT_INT) {
+ 			fotg210_ack_int(fotg210, FOTG210_DISGR2, DISGR2_ISO_SEQ_ABORT_INT);
+-			pr_info("fotg210 iso sequence abort\n");
++			pr_debug("fotg210 iso sequence abort\n");
+ 		}
+ 		if (int_grp2 & DISGR2_TX0BYTE_INT) {
+ 			fotg210_clear_tx0byte(fotg210);
+ 			fotg210_ack_int(fotg210, FOTG210_DISGR2, DISGR2_TX0BYTE_INT);
+-			pr_info("fotg210 transferred 0 byte\n");
++			pr_debug("fotg210 transferred 0 byte\n");
+ 		}
+ 		if (int_grp2 & DISGR2_RX0BYTE_INT) {
+ 			fotg210_clear_rx0byte(fotg210);
+ 			fotg210_ack_int(fotg210, FOTG210_DISGR2, DISGR2_RX0BYTE_INT);
+-			pr_info("fotg210 received 0 byte\n");
++			pr_debug("fotg210 received 0 byte\n");
+ 		}
+ 		if (int_grp2 & DISGR2_DMA_ERROR) {
+ 			fotg210_ack_int(fotg210, FOTG210_DISGR2, DISGR2_DMA_ERROR);
+@@ -950,7 +950,7 @@
+ 		/* the highest priority in this source register */
+ 		if (int_grp0 & DISGR0_CX_COMABT_INT) {
+ 			fotg210_ack_int(fotg210, FOTG210_DISGR0, DISGR0_CX_COMABT_INT);
+-			pr_info("fotg210 CX command abort\n");
++			pr_debug("fotg210 CX command abort\n");
+ 		}
+ 
+ 		if (int_grp0 & DISGR0_CX_SETUP_INT) {
+@@ -964,7 +964,7 @@
+ 			}
+ 		}
+ 		if (int_grp0 & DISGR0_CX_COMEND_INT)
+-			pr_info("fotg210 cmd end\n");
++			pr_debug("fotg210 cmd end\n");
+ 
+ 		if (int_grp0 & DISGR0_CX_IN_INT)
+ 			fotg210_ep0in(fotg210);
+@@ -974,7 +974,7 @@
+ 
+ 		if (int_grp0 & DISGR0_CX_COMFAIL_INT) {
+ 			fotg210_set_cxstall(fotg210);
+-			pr_info("fotg210 ep0 fail\n");
++			pr_debug("fotg210 ep0 fail\n");
+ 		}
+ 	}
+ 
+@@ -1009,6 +1009,29 @@
+ 	iowrite32(reg, fotg210->reg + FOTG210_PHYTMSR);
+ }
+ 
++static void fotg210_enable_unplug(struct fotg210_udc *fotg210)
++{
++	u32 reg = ioread32(fotg210->reg + FOTG210_PHYTMSR);
++
++	reg |= PHYTMSR_UNPLUG;
++	iowrite32(reg, fotg210->reg + FOTG210_PHYTMSR);
++}
++
++static int fotg210_pullup(struct usb_gadget *g, int is_on)
++{
++	struct fotg210_udc *fotg210 = gadget_to_fotg210(g);
++	unsigned long flags;
++
++	spin_lock_irqsave(&fotg210->lock, flags);
++	if (is_on)
++		fotg210_disable_unplug(fotg210);
++	else
++		fotg210_enable_unplug(fotg210);
++	spin_unlock_irqrestore(&fotg210->lock, flags);
++
++	return 0;
++}
++
+ static int fotg210_udc_start(struct usb_gadget *g,
+ 		struct usb_gadget_driver *driver)
+ {
+@@ -1046,10 +1069,15 @@
+ static void fotg210_init(struct fotg210_udc *fotg210)
+ {
+ 	u32 value;
++	u32 gmir = GMIR_MHC_INT | GMIR_MOTG_INT;
+ 
+-	/* disable global interrupt and set int polarity to active high */
+-	iowrite32(GMIR_MHC_INT | GMIR_MOTG_INT | GMIR_INT_POLARITY,
+-		  fotg210->reg + FOTG210_GMIR);
++	/*
++	 * Disable global interrupt and set the polarity. Where the SoC inverts the line (AX520:
++	 * with the bit set the line sits asserted while idle) the bit has to stay clear.
++	 */
++	if (!device_property_read_bool(fotg210->dev, "faraday,int-active-low"))
++		gmir |= GMIR_INT_POLARITY;
++	iowrite32(gmir, fotg210->reg + FOTG210_GMIR);
+ 
+ 	/* mask interrupts for groups other than 0-2 */
+ 	iowrite32(~(DMIGR_MINT_G0 | DMIGR_MINT_G1 | DMIGR_MINT_G2),
+@@ -1089,13 +1117,13 @@
+ 		return otg_set_peripheral(fotg210->phy->otg, NULL);
+ 
+ 	spin_lock_irqsave(&fotg210->lock, flags);
+-
+-	fotg210_init(fotg210);
+ 	fotg210->driver = NULL;
+ 	fotg210->gadget.speed = USB_SPEED_UNKNOWN;
+-
+ 	spin_unlock_irqrestore(&fotg210->lock, flags);
+ 
++	fotg210_init(fotg210);
++	fotg210_enable_unplug(fotg210);
++
+ 	return 0;
+ }
+ 
+@@ -1119,6 +1147,7 @@
+ 	.udc_start		= fotg210_udc_start,
+ 	.udc_stop		= fotg210_udc_stop,
+ 	.vbus_session		= fotg210_vbus_session,
++	.pullup			= fotg210_pullup,
+ };
+ 
+ /**
+@@ -1275,7 +1304,7 @@
+ 
+ 	fotg210_init(fotg210);
+ 
+-	fotg210_disable_unplug(fotg210);
++	fotg210_enable_unplug(fotg210);
+ 
+ 	ret = request_irq(irq, fotg210_irq, IRQF_SHARED,
+ 			  udc_name, fotg210);

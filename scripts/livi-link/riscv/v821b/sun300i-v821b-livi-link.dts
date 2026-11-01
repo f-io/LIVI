@@ -1,0 +1,169 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * LIVI Link on the V821B dongle board: AIC8800D80 on SDIO, 64 MiB DDR2, 16 MiB SPI NOR.
+ * The vendor U-Boot loads this DTB from the boot image next to the kernel.
+ */
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include "sun300i-v821b.dtsi"
+
+/ {
+	model = "LIVI Link V821B";
+	compatible = "livi,link-v821b", "allwinner,sun300i-v821b";
+
+	aliases {
+		i2c1 = &i2c1;
+		spi1 = &spi1;
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0x0 0x4000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		/*
+		 * The vendor OpenSBI runs here and guards it with PMP, a store from Linux faults. The efuse
+		 * copy boot0 leaves for the kernel sits at its end.
+		 */
+		opensbi@80fc0000 {
+			reg = <0x0 0x80fc0000 0x0 0x40000>;
+			no-map;
+		};
+	};
+
+	/* Module enable, high before the SDIO slot is scanned. */
+	reg_wlan: regulator-wlan {
+		compatible = "regulator-fixed";
+		regulator-name = "wlan";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		gpio = <&pio 3 11 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		startup-delay-us = <200000>;
+	};
+
+	wlan_pwrseq: wlan-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		reset-gpios = <&pio 3 17 GPIO_ACTIVE_LOW>;
+		post-power-on-delay-ms = <100>;
+	};
+};
+
+/* The LED chain only needs MOSI. */
+&spi1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi1_pd13_pin>;
+	status = "okay";
+
+	led@0 {
+		compatible = "livi,v821b-led";
+		reg = <0>;
+		spi-max-frequency = <3000000>;
+	};
+};
+
+&spif {
+	status = "okay";
+
+	flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <100000000>;
+		spi-rx-bus-width = <4>;
+		spi-tx-bus-width = <4>;
+
+		/* The offsets the vendor U-Boot and the web updater use, mtd0 to mtd9. */
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0 {
+				label = "uboot";
+				reg = <0x000000 0x060000>;
+				read-only;
+			};
+
+			partition@60000 {
+				label = "boot";
+				reg = <0x060000 0x310000>;
+			};
+
+			partition@370000 {
+				label = "recovery";
+				reg = <0x370000 0x310000>;
+			};
+
+			partition@680000 {
+				label = "rootfs";
+				reg = <0x680000 0x480000>;
+			};
+
+			partition@b00000 {
+				label = "customer";
+				reg = <0xb00000 0x3a0000>;
+			};
+
+			partition@ea0000 {
+				label = "env";
+				reg = <0xea0000 0x010000>;
+			};
+
+			partition@eb0000 {
+				label = "env-redund";
+				reg = <0xeb0000 0x010000>;
+			};
+
+			partition@ec0000 {
+				label = "private";
+				reg = <0xec0000 0x010000>;
+			};
+
+			partition@ed0000 {
+				label = "logo";
+				reg = <0xed0000 0x0b0000>;
+			};
+
+			partition@f80000 {
+				label = "UDISK";
+				reg = <0xf80000 0x080000>;
+			};
+		};
+	};
+};
+
+&mmc1 {
+	bus-width = <4>;
+	max-frequency = <50000000>;
+	non-removable;
+	cap-sd-highspeed;
+	cap-sdio-irq;
+	keep-power-in-suspend;
+	no-mmc;
+	no-sd;
+	vmmc-supply = <&reg_wlan>;
+	mmc-pwrseq = <&wlan_pwrseq>;
+	status = "okay";
+};
+
+/* The MFi coprocessor. */
+&i2c1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&twi1_pd_pins>;
+	clock-frequency = <100000>;
+	status = "okay";
+};
+
+&usb_otg {
+	status = "okay";
+};
+
+&usbphy {
+	status = "okay";
+};

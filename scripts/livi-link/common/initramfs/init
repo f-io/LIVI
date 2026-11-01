@@ -1,0 +1,94 @@
+#!/bin/busybox sh
+# PID 1 of the initramfs baked into the kernel image. Our rootfs takes over via switch_root. Without it,
+# or with Enter on the UART within 1 s, the ways in that need no flash stay: the shell on the UART, and
+# 10.10.10.1 on br0 with DHCP and a shell on :23 and :2323 over USB NCM, plus what the board adds in
+# /etc/board.sh (the Wi-Fi AP on the i.MX6UL).
+/bin/busybox --install -s
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts /sys/kernel/config /var/run /var/lib/misc /tmp
+mount -t devpts devpts /dev/pts
+mount -t configfs configfs /sys/kernel/config
+mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null
+. /etc/board.sh
+echo "$BOARD_NAME initramfs" > /dev/console
+
+# The kernel runs /sbin/modprobe for every socket family or netdev name it does not know. No module is
+# ever loaded this way here, so the helper is switched off.
+[ -w /proc/sys/kernel/modprobe ] && echo > /proc/sys/kernel/modprobe
+
+# Rootfs is found by its MTD name, not by a hardcoded device number.
+ROOTDEV=
+STATE=
+for n in /sys/class/mtd/mtd[0-9]*; do
+    case "$(cat $n/name 2>/dev/null)" in
+        rootfs) ROOTDEV=/dev/mtdblock${n##*mtd} ;;
+        bootstate) STATE=/dev/mtd${n##*mtd} ;;
+    esac
+done
+mkdir -p /mnt/root
+# Only our own rootfs is taken over: a stock rootfs also has an /init, and its userspace
+# must not run on this kernel.
+# The rootfs does not set up the USB gadget, it bridges the usb0 made here. Enter on the UART within 1 s
+# stays in this initramfs instead.
+# A board with a "bootstate" MTD gets its rootfs boot marked there, and rcS clears the mark once the ways
+# in are up. A mark still there means the last rootfs boot never got that far, so this one stays here.
+if [ -n "$ROOTDEV" ] && mount -t squashfs -o ro "$ROOTDEV" /mnt/root && [ -x /mnt/root/usr/bin/livid ]; then
+    mark=$([ -n "$STATE" ] && hexdump -n 8 -e '8/1 "%02x"' $STATE)
+    if [ "$mark" = 4c495649424f4f54 ]; then
+        echo "the last boot of rootfs $ROOTDEV did not bring the ways in up, staying here (flash_eraseall $STATE to try it again)" > /dev/console
+        umount /mnt/root
+    else
+        # Whatever reached the UART before the question is no answer to it. A UART that hears its own
+        # output has the boot loader's lines waiting there, line ends included.
+        stty -F /dev/console -icanon min 0 time 0 && cat /dev/console > /dev/null
+        stty -F /dev/console icanon
+        echo "rootfs $ROOTDEV is ours, switching in 1 s, Enter for the recovery shell" > /dev/console
+        if read -t 1 _ < /dev/console; then
+            umount /mnt/root
+        else
+            if [ -n "$STATE" ]; then
+                [ "$mark" = ffffffffffffffff ] || flash_eraseall -q $STATE
+                printf LIVIBOOT > $STATE
+            fi
+            LINK_ONLY=1 net-up > /dev/console 2>&1
+            mount -o move /dev /mnt/root/dev
+            exec switch_root /mnt/root /init
+        fi
+    fi
+fi
+
+ifconfig lo 127.0.0.1 up
+brctl addbr br0
+brctl stp br0 off
+brctl setfd br0 0
+ifconfig br0 10.10.10.1 netmask 255.255.255.0 mtu 1500 up
+cat > /etc/udhcpd.conf <<EOF
+start 10.10.10.100
+end 10.10.10.199
+interface br0
+option subnet 255.255.255.0
+option lease 3600
+EOF
+udhcpd /etc/udhcpd.conf
+telnetd -l /bin/sh -p 23
+telnetd -l /bin/sh -p 2323
+board_rescue
+
+board_help > /dev/console
+# USB comes up $RESCUE_USB_DELAY s after the shell, so a USB bring-up that stops the system can be
+# skipped from the UART with `nousb` in that window.
+[ "$RESCUE_USB_DELAY" -gt 0 ] && echo "usb: net-up in $RESCUE_USB_DELAY s, type nousb to skip" > /dev/console
+(
+    sleep $RESCUE_USB_DELAY
+    [ -e /tmp/nousb ] && { echo "usb: skipped" > /dev/console; exit; }
+    n=0
+    until ls /sys/class/udc 2>/dev/null | grep -q .; do
+        n=$((n + 1))
+        [ $n -gt 60 ] && { echo "usb: no UDC after 60 s, see dmesg" > /dev/console; exit; }
+        sleep 1
+    done
+    net-up > /dev/console 2>&1
+) &
+exec setsid cttyhack sh

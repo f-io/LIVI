@@ -1,0 +1,36 @@
+--- a/drivers/clk/imx/clk-imx6ul.c
++++ b/drivers/clk/imx/clk-imx6ul.c
+@@ -502,22 +502,18 @@
+ 	of_clk_add_hw_provider(np, of_clk_hw_onecell_get, clk_hw_data);
+
+ 	/*
+-	 * Lower the AHB clock rate before changing the parent clock source,
+-	 * as AHB clock rate can NOT be higher than 133MHz, but its parent
+-	 * will be switched from 396MHz PFD to 528MHz PLL in order to increase
+-	 * AXI clock rate, so we need to lower AHB rate first to make sure at
+-	 * any time, AHB rate is <= 133MHz.
++	 * The vendor U-Boot on the ULL dongles leaves the bus clocks set up for the
++	 * running system, so only the UL moves PERIPH here.
+ 	 */
+-	clk_set_rate(hws[IMX6UL_CLK_AHB]->clk, 99000000);
+-
+-	/* Change periph_pre clock to pll2_bus to adjust AXI rate to 264MHz */
+-	clk_set_parent(hws[IMX6UL_CLK_PERIPH_CLK2_SEL]->clk, hws[IMX6UL_CLK_OSC]->clk);
+-	clk_set_parent(hws[IMX6UL_CLK_PERIPH]->clk, hws[IMX6UL_CLK_PERIPH_CLK2]->clk);
+-	clk_set_parent(hws[IMX6UL_CLK_PERIPH_PRE]->clk, hws[IMX6UL_CLK_PLL2_BUS]->clk);
+-	clk_set_parent(hws[IMX6UL_CLK_PERIPH]->clk, hws[IMX6UL_CLK_PERIPH_PRE]->clk);
+-
+-	/* Make sure AHB rate is 132MHz  */
+-	clk_set_rate(hws[IMX6UL_CLK_AHB]->clk, 132000000);
++	if (clk_on_imx6ul()) {
++		/* AHB has to stay <= 133MHz while PERIPH moves from the 396MHz PFD to PLL2. */
++		clk_set_rate(hws[IMX6UL_CLK_AHB]->clk, 99000000);
++		clk_set_parent(hws[IMX6UL_CLK_PERIPH_CLK2_SEL]->clk, hws[IMX6UL_CLK_OSC]->clk);
++		clk_set_parent(hws[IMX6UL_CLK_PERIPH]->clk, hws[IMX6UL_CLK_PERIPH_CLK2]->clk);
++		clk_set_parent(hws[IMX6UL_CLK_PERIPH_PRE]->clk, hws[IMX6UL_CLK_PLL2_BUS]->clk);
++		clk_set_parent(hws[IMX6UL_CLK_PERIPH]->clk, hws[IMX6UL_CLK_PERIPH_PRE]->clk);
++		clk_set_rate(hws[IMX6UL_CLK_AHB]->clk, 132000000);
++	}
+
+ 	/* set perclk to from OSC */
+ 	clk_set_parent(hws[IMX6UL_CLK_PERCLK_SEL]->clk, hws[IMX6UL_CLK_OSC]->clk);

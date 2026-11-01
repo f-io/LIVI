@@ -1,0 +1,27 @@
+# Cross target for the V821B (Andes C907), static-linked against the Andes glibc.
+# rv32gc covers what the Rust stdlib emits.
+[target.riscv32gc-unknown-linux-gnu]
+linker = "riscv32-linux-gcc"
+rustflags = [
+  "-Ctarget-feature=+crt-static",
+  "-Crelocation-model=static",
+  "-Clink-arg=-static",
+  "-Clink-arg=-no-pie",
+]
+
+[target.mipsel-unknown-linux-musl]
+linker = "mipsel-buildroot-linux-musl-gcc"
+rustflags = [
+  "-Ctarget-feature=+crt-static,-soft-float",
+  "-Clink-arg=-static",
+  "-Clink-self-contained=no",
+]
+
+[alias]
+xtask = "run --quiet --package xtask --"
+
+[env]
+PKG_CONFIG_PATH = "/Library/Frameworks/GStreamer.framework/Versions/1.0/lib/pkgconfig"
+
+[target.'cfg(target_os = "macos")']
+rustflags = ["-C", "link-arg=-Wl,-rpath,/Library/Frameworks/GStreamer.framework/Versions/1.0/lib"]

@@ -1,0 +1,19 @@
+name: Save the cargo cache
+description: Drops the workspace's own build output from native/target and saves the rest.
+inputs:
+  key:
+    description: Key from the restore step
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: sh scripts/ci/prune-target.sh native/target
+    - uses: actions/cache/save@v6
+      with:
+        path: |
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+          native/target
+        key: ${{ inputs.key }}

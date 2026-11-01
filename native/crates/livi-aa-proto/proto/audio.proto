@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+enum AudioStreamType {
+  AUDIO_STREAM_TYPE_GUIDANCE = 1;
+  AUDIO_STREAM_TYPE_SYSTEM_AUDIO = 2;
+  AUDIO_STREAM_TYPE_MEDIA = 3;
+  AUDIO_STREAM_TYPE_TELEPHONY = 4;
+}
+
+message AudioConfiguration {
+  required uint32 sampling_rate_hz = 1;
+  required uint32 bits_per_sample = 2;
+  required uint32 channel_count = 3;
+}
+
+message MicrophoneRequest {
+  required bool open = 1;
+  optional bool unknown_2 = 2;
+  optional bool unknown_3 = 3;
+  optional int32 unknown_4 = 4;
+}
+
+message MicrophoneResponse {
+  required int32 status = 1;
+  optional int32 session_id = 2;
+}

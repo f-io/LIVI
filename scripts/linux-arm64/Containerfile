@@ -1,0 +1,21 @@
+FROM docker.io/library/debian:trixie-slim
+RUN dpkg --add-architecture arm64 \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates curl git file cmake make pkg-config desktop-file-utils \
+      gcc g++ libc6-dev gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross \
+      libwayland-bin \
+      libssl-dev:arm64 libudev-dev:arm64 \
+      libgstreamer1.0-dev:arm64 libgstreamer-plugins-base1.0-dev:arm64 \
+      libwayland-dev:arm64 libxkbcommon-dev:arm64 libfontconfig-dev:arm64 \
+      libinput-dev:arm64 libseat-dev:arm64 libgbm-dev:arm64 \
+ && rm -rf /var/lib/apt/lists/*
+ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+    CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc \
+    CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++ \
+    PKG_CONFIG_ALLOW_CROSS=1 \
+    PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
+    PATH=/cargo/bin:$PATH \
+    CARGO_HOME=/cargo \
+    RUSTUP_HOME=/rustup
+RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none --no-modify-path

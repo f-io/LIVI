@@ -1,0 +1,497 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme, Ui } from "../theme.slint";
+import { Metrics } from "metrics.slint";
+import { RowFrame } from "row.slint";
+import { Slider, SliderGrab } from "controls.slint";
+import { ToolButton } from "actions.slint";
+import { Focus, FocusZone } from "../focus.slint";
+
+export struct PickData {
+    label: string,
+    selected: bool,
+}
+
+component OptionRow inherits RowFrame {
+    in property <bool> selected;
+    clickable: true;
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        width: clamp(Metrics.row-h * 0.25, 8px, 12px);
+        height: self.width;
+        border-radius: self.width / 2;
+        background: root.selected ? Theme.primary : transparent;
+    }
+}
+
+export component SelectBody inherits VerticalLayout {
+    in property <int> base;
+    in property <[PickData]> picks;
+    in property <bool> read-only;
+    callback pick(int);
+    for p[i] in root.picks: OptionRow {
+        label: p.label;
+        selected: p.selected;
+        focused: Focus.main(root.base + i);
+        first: i == 0;
+        last: i == root.picks.length - 1;
+        enabled: !root.read-only;
+        clicked => { root.pick(i); }
+    }
+}
+
+component StepButton inherits Rectangle {
+    in property <string> glyph;
+    in property <bool> enabled: true;
+    in property <bool> focused;
+    out property <bool> held: touch.pressed && root.enabled;
+    callback step(float);
+    property <int> repeats;
+
+    width: 72px;
+    background: Theme.comand ? (touch.pressed ? Theme.key-lit : Theme.key) : touch.pressed ? Theme.button-active : Theme.button;
+    opacity: root.enabled ? 1 : 0.4;
+    border-width: root.focused ? Theme.ring(2px) : 0;
+    border-color: Theme.focus-color;
+    Text {
+        text: root.glyph;
+        color: Theme.text;
+        font-size: 28px;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.repeats = 0;
+                root.step(1);
+            }
+        }
+    }
+    Timer {
+        interval: root.repeats == 0 ? 400ms : 80ms;
+        running: root.held;
+        triggered => {
+            root.repeats += 1;
+            root.step(root.repeats >= 40 ? 100 : root.repeats >= 12 ? 10 : 1);
+        }
+    }
+}
+
+export component NumberBody inherits VerticalLayout {
+    in property <int> base;
+    property <bool> focused: Focus.main(root.base + 1);
+    property <bool> editing: Focus.editing && root.focused;
+    in property <float> value;
+    in property <float> min-value;
+    in property <float> max-value;
+    in property <bool> has-min;
+    in property <bool> has-max;
+    in property <float> step: 1;
+    in property <string> text;
+    in property <string> raw;
+    callback set(float);
+    callback commit(string);
+
+    property <float> current: root.value;
+    property <bool> holding: minus.held || plus.held;
+
+    function bounded(v: float) -> float {
+        let low = root.has-min ? max(root.min-value, v) : v;
+        root.has-max ? min(root.max-value, low) : low
+    }
+    function nudge(by: float) {
+        root.current = root.bounded(root.current + by);
+        root.set(root.current);
+    }
+
+    changed value => {
+        if (!root.holding) {
+            root.current = root.value;
+        }
+    }
+    changed editing => {
+        if (root.editing) {
+            input.text = root.raw;
+            input.select-all();
+            input.focus();
+        } else {
+            input.clear-focus();
+        }
+    }
+
+    alignment: start;
+    Rectangle {
+        height: 88px;
+        border-radius: Theme.comand ? Theme.radius : 8px;
+        border-width: Theme.comand ? 1px : root.editing ? 3px : root.focused ? 2px : 1px;
+        border-color: root.editing && Theme.comand ? Theme.primary : root.focused ? Theme.focus-color : Theme.rule;
+        clip: true;
+        HorizontalLayout {
+            minus := StepButton {
+                glyph: "−";
+                focused: Focus.main(root.base);
+                enabled: !root.has-min || root.current - root.step >= root.min-value;
+                step(times) => { root.nudge(-times * root.step); }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                if !root.editing: Text {
+                    text: root.text;
+                    color: Theme.text;
+                    font-size: 24px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                if !root.editing: TouchArea {
+                    clicked => {
+                        Focus.zone = FocusZone.main;
+                        Focus.main-index = root.base + 1;
+                        Focus.editing = true;
+                    }
+                }
+                input := TextInput {
+                    visible: root.editing;
+                    width: parent.width - 24px;
+                    color: Theme.text;
+                    font-size: 24px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    single-line: true;
+                    input-type: decimal;
+                    accepted => { root.commit(self.text); }
+                }
+            }
+            plus := StepButton {
+                glyph: "+";
+                focused: Focus.main(root.base + 2);
+                enabled: !root.has-max || root.current + root.step <= root.max-value;
+                step(times) => { root.nudge(times * root.step); }
+            }
+        }
+    }
+}
+
+export component TextBody inherits VerticalLayout {
+    in property <bool> focused;
+    in property <bool> editing;
+    in property <string> value;
+    in property <int> max-length;
+    out property <string> draft: input.text;
+    callback commit(string);
+
+    alignment: start;
+    Rectangle {
+        height: 56px;
+        border-radius: Theme.comand ? Theme.radius : 8px;
+        background: Theme.comand ? Theme.background.with-alpha(0.72) : transparent;
+        border-width: input.has-focus || root.focused ? Theme.ring(2px) : 1px;
+        border-color: input.has-focus && Theme.comand ? Theme.primary : input.has-focus || root.focused ? Theme.focus-color : Theme.rule;
+        input := TextInput {
+            x: 14px;
+            width: parent.width - 28px;
+            text: root.value;
+            color: Theme.text;
+            font-size: 18px;
+            vertical-alignment: center;
+            single-line: true;
+            accepted => { root.commit(self.text); }
+        }
+    }
+    changed editing => {
+        if (root.editing) {
+            input.focus();
+        } else {
+            input.clear-focus();
+        }
+    }
+}
+
+component GradientSlider inherits VerticalLayout {
+    in property <bool> focused;
+    in property <string> label;
+    in property <brush> rail;
+    in property <float> level;
+    callback moved(float);
+    callback released(float);
+
+    property <bool> dragging;
+    property <float> drag;
+    property <float> shown: dragging ? drag : level;
+
+    spacing: 4px;
+    Text {
+        text: root.label;
+        color: Theme.text-secondary;
+        font-size: 13px;
+        x: 24px;
+    }
+    Rectangle {
+        height: 32px;
+        Rectangle {
+            x: 24px;
+            width: parent.width - 48px;
+            y: (parent.height - self.height) / 2;
+            height: clamp(Metrics.row-h * 0.3, 12px, 18px);
+            border-radius: self.height / 2;
+            background: root.rail;
+        }
+        Rectangle {
+            x: 24px + (parent.width - 48px) * root.shown - self.width / 2;
+            y: (parent.height - self.height) / 2;
+            width: clamp(Metrics.row-h * 0.5, 22px, 28px);
+            height: self.width;
+            border-radius: self.width / 2;
+            background: white;
+            border-width: root.focused ? 3px : 2px;
+            border-color: root.focused ? Theme.primary : #00000059;
+        }
+        TouchArea {
+            x: 24px;
+            width: parent.width - 48px;
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) {
+                    root.dragging = true;
+                    SliderGrab.held = true;
+                    root.drag = clamp(self.mouse-x / self.width, 0, 1);
+                    root.moved(root.drag);
+                } else if (e.kind == PointerEventKind.up && root.dragging) {
+                    root.dragging = false;
+                    SliderGrab.held = false;
+                    root.released(clamp(self.mouse-x / self.width, 0, 1));
+                } else if (e.kind == PointerEventKind.cancel) {
+                    root.dragging = false;
+                    SliderGrab.held = false;
+                }
+            }
+            moved => {
+                if (root.dragging) {
+                    root.drag = clamp(self.mouse-x / self.width, 0, 1);
+                    root.moved(root.drag);
+                }
+            }
+        }
+    }
+}
+
+export component ColorBody inherits VerticalLayout {
+    in property <int> base;
+    in property <color> preview;
+    in property <string> hex;
+    in property <bool> hex-invalid;
+    in property <bool> custom;
+    in property <float> hue;
+    in property <float> saturation;
+    in property <float> lightness;
+    in property <color> sat-from;
+    in property <color> sat-to;
+    in property <color> light-mid;
+    in property <string> hue-label: "Hue";
+    in property <string> saturation-label: "Saturation";
+    in property <string> lightness-label: "Lightness";
+    callback hex-commit(string);
+    callback slide(int, float);
+    callback slide-done(int, float);
+    callback reset();
+
+    property <bool> hex-touched;
+    property <bool> hex-bad: root.hex-invalid && !root.hex-touched;
+    property <bool> hex-editing: Focus.editing && Focus.main(root.base);
+    changed hex-editing => {
+        if (root.hex-editing) {
+            hex-input.focus();
+        } else {
+            hex-input.clear-focus();
+        }
+    }
+
+    alignment: start;
+    spacing: clamp(Metrics.row-h * 0.3, 8px, 20px);
+    padding-top: 8px;
+    HorizontalLayout {
+        spacing: 16px;
+        Rectangle {
+            width: 56px;
+            height: 40px;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: #80808080;
+            background: root.preview;
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            height: 40px;
+            border-radius: 8px;
+            border-width: root.hex-bad || hex-input.has-focus || Focus.main(root.base) ? 2px : 1px;
+            border-color: root.hex-bad ? #f44336 : hex-input.has-focus || Focus.main(root.base) ? Theme.primary : Theme.divider;
+            hex-input := TextInput {
+                x: 12px;
+                width: parent.width - 24px;
+                text: root.hex;
+                color: Theme.text;
+                font-size: 16px;
+                vertical-alignment: center;
+                single-line: true;
+                edited => { root.hex-touched = true; }
+                accepted => {
+                    root.hex-touched = false;
+                    root.hex-commit(self.text);
+                }
+            }
+        }
+        Rectangle {
+            width: 40px;
+            border-radius: 6px;
+            border-width: Focus.main(root.base + 1) ? 2px : 0;
+            border-color: Theme.primary;
+            opacity: root.custom ? 1 : 0.4;
+            Image {
+                width: 22px;
+                height: 22px;
+                source: @image-url("../icons/RestartAltOutlined.svg");
+                colorize: Theme.text;
+            }
+            TouchArea {
+                enabled: root.custom;
+                clicked => { root.reset(); }
+            }
+        }
+    }
+    GradientSlider {
+        focused: Focus.main(root.base + 2);
+        label: root.hue-label;
+        level: root.hue / 359;
+        rail: @linear-gradient(90deg, #ff0000 0%, #ffff00 16.7%, #00ff00 33.3%, #00ffff 50%, #0000ff 66.7%, #ff00ff 83.3%, #ff0000 100%);
+        moved(v) => { root.slide(0, v * 359); }
+        released(v) => { root.slide-done(0, v * 359); }
+    }
+    GradientSlider {
+        focused: Focus.main(root.base + 3);
+        label: root.saturation-label;
+        level: root.saturation / 100;
+        rail: @linear-gradient(90deg, root.sat-from 0%, root.sat-to 100%);
+        moved(v) => { root.slide(1, v * 100); }
+        released(v) => { root.slide-done(1, v * 100); }
+    }
+    GradientSlider {
+        focused: Focus.main(root.base + 4);
+        label: root.lightness-label;
+        level: root.lightness / 100;
+        rail: @linear-gradient(90deg, #000000 0%, root.light-mid 50%, #ffffff 100%);
+        moved(v) => { root.slide(2, v * 100); }
+        released(v) => { root.slide-done(2, v * 100); }
+    }
+}
+
+export component SliderBody inherits VerticalLayout {
+    in property <bool> focused;
+    in property <float> level;
+    in property <string> text;
+    callback moved(float);
+    callback released(float);
+
+    alignment: center;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        Slider {
+            focused: root.focused;
+            level: root.level;
+            text: root.text;
+            moved(v) => { root.moved(v); }
+            released(v) => { root.released(v); }
+        }
+    }
+}
+
+export component PendingBody inherits VerticalLayout {
+    in property <string> name;
+    alignment: center;
+    Text {
+        text: root.name + " is not ported yet";
+        color: Theme.text-secondary;
+        font-size: 16px;
+        horizontal-alignment: center;
+    }
+}
+
+export struct KnobData {
+    tint: color,
+    has-tint: bool,
+    icon: image,
+    has-icon: bool,
+    level: float,
+    text: string,
+    neutral: bool,
+}
+
+component Swatch inherits Rectangle {
+    border-radius: 4px;
+    horizontal-stretch: 1;
+}
+
+export component CalibrationBody inherits VerticalLayout {
+    in property <int> base;
+    in property <bool> wedge;
+    in property <[KnobData]> knobs;
+    in property <image> reset-icon;
+    callback moved(int, float);
+    callback released(int, float);
+    callback reset(int);
+
+    property <length> band: clamp(Ui.height * 0.1, 32px, 96px);
+
+    alignment: center;
+    spacing: 16px;
+    padding-left: 16px;
+    padding-right: 16px;
+
+    if !root.wedge: VerticalLayout {
+        spacing: 8px;
+        HorizontalLayout {
+            height: root.band;
+            spacing: 8px;
+            Swatch { background: #ff0000; }
+            Swatch { background: #00ff00; }
+            Swatch { background: #0000ff; }
+        }
+        HorizontalLayout {
+            height: root.band;
+            spacing: 8px;
+            Swatch { background: #ffffff; }
+            Swatch { background: #808080; }
+        }
+    }
+    if root.wedge: Rectangle {
+        height: root.band;
+        border-radius: 4px;
+        clip: true;
+        HorizontalLayout {
+            for i in 16: Rectangle {
+                horizontal-stretch: 1;
+                background: rgb(i * 17, i * 17, i * 17);
+            }
+        }
+    }
+    for k[i] in root.knobs: HorizontalLayout {
+        spacing: 12px;
+        Slider {
+            tint: k.has-tint ? k.tint : Theme.primary;
+            text: k.text;
+            icon: k.icon;
+            has-icon: k.has-icon;
+            level: k.level;
+            focused: Focus.main(root.base + i);
+            moved(v) => { root.moved(i, v); }
+            released(v) => { root.released(i, v); }
+        }
+        ToolButton {
+            y: (parent.height - self.height) / 2;
+            icon: root.reset-icon;
+            tint: Theme.text-secondary;
+            enabled: !k.neutral;
+            clicked => { root.reset(i); }
+        }
+    }
+}

@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+import "wireless_setup.proto";
+
+enum WifiProjectionMessageId {
+  WIFI_PROJECTION_MESSAGE_ID_CREDENTIALS_REQUEST = 32769;
+  WIFI_PROJECTION_MESSAGE_ID_CREDENTIALS_RESPONSE = 32770;
+}
+
+enum WifiCredentialsSecurityMode {
+  WIFI_CREDENTIALS_SECURITY_MODE_UNKNOWN = 0;
+  WIFI_CREDENTIALS_SECURITY_MODE_OPEN = 1;
+  WIFI_CREDENTIALS_SECURITY_MODE_WEP_64 = 2;
+  WIFI_CREDENTIALS_SECURITY_MODE_WEP_128 = 3;
+  WIFI_CREDENTIALS_SECURITY_MODE_WPA_PERSONAL = 4;
+  WIFI_CREDENTIALS_SECURITY_MODE_WPA2_PERSONAL = 5;
+  WIFI_CREDENTIALS_SECURITY_MODE_WPA_WPA2_PERSONAL = 6;
+  WIFI_CREDENTIALS_SECURITY_MODE_WPA_ENTERPRISE = 7;
+  WIFI_CREDENTIALS_SECURITY_MODE_WPA2_ENTERPRISE = 8;
+  WIFI_CREDENTIALS_SECURITY_MODE_WPA_WPA2_ENTERPRISE = 9;
+  WIFI_CREDENTIALS_SECURITY_MODE_WPA3_PERSONAL = 10;
+  WIFI_CREDENTIALS_SECURITY_MODE_WPA2_WPA3_PERSONAL = 11;
+}
+
+message WifiCredentialsRequest {
+}
+
+message WifiCredentialsResponse {
+  optional string password = 1;
+  optional WifiCredentialsSecurityMode security_mode = 2;
+  optional string ssid = 3;
+  optional WifiAccessPointType access_point_type = 5;
+}
+
+message WifiProjectionService {
+  optional string car_wifi_bssid = 1;
+}

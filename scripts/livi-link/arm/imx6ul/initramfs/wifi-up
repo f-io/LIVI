@@ -1,0 +1,37 @@
+#!/bin/sh
+# wifi-up: the module's Wi-Fi as access point LIVI-Link on br0 next to usb0. 2.4 GHz, 20 MHz:
+# without a country the kernel allows no access point on 5 GHz.
+
+ap_iface() {
+    for i in uap0 wlan0; do
+        [ -d /sys/class/net/$i ] && { echo $i; return 0; }
+    done
+    return 1
+}
+
+n=0
+until IF=$(ap_iface); do
+    n=$((n + 1))
+    [ $n -gt 30 ] && { echo "wifi-up: no uap0 or wlan0 after 30 s (dmesg)"; exit 1; }
+    sleep 1
+done
+
+cat > /tmp/hostapd.conf <<EOF
+interface=$IF
+driver=nl80211
+bridge=br0
+ssid=LIVI-Link
+hw_mode=g
+channel=6
+ieee80211n=1
+wmm_enabled=1
+auth_algs=1
+wpa=2
+wpa_key_mgmt=WPA-PSK
+wpa_pairwise=CCMP
+rsn_pairwise=CCMP
+wpa_passphrase=livilink
+ignore_broadcast_ssid=0
+EOF
+hostapd -B /tmp/hostapd.conf || { echo "wifi-up: hostapd failed"; exit 1; }
+echo "wifi-up: AP LIVI-Link on $IF, bridged to br0 (10.10.10.1)"

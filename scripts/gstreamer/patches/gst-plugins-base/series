@@ -1,5 +1,5 @@
 0001-video_Add_GST_VIDEO_FORMAT_NV12_128C8.patch
 0002-video-Add-GST_VIDEO_FORMAT_NV12_10LE32_128C8.patch
-gstvideodecode_dma_buf.patch
-gsteglimage.patch
-gstglmemory.patch
+0003-videodecoder-dma-drm-allocation.patch
+0004-egl-translate-column-mode-tile-strides.patch
+0005-glmemory-translate-column-mode-tile-strides.patch

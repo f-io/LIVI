@@ -1,7 +1,0 @@
-syntax="proto2";
-
-package aap_protobuf.service.navigationstatus.message;
-
-message NavigationDestination {
-  optional string address = 1;
-}

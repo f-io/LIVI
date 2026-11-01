@@ -1,0 +1,28 @@
+Subject: [PATCH] riscv: add the Allwinner V821
+
+The V821 shares ARCH_SUNXI with the D1 but has an Andes A27L2 core, which
+needs the Andes cache driver and errata instead of the T-Head ones.
+---
+diff --git a/arch/riscv/Kconfig.socs b/arch/riscv/Kconfig.socs
+index 429e07589..d6bce2220 100644
+--- a/arch/riscv/Kconfig.socs
++++ b/arch/riscv/Kconfig.socs
+@@ -68,6 +68,18 @@ config ARCH_SUNXI
+ 	  This enables support for Allwinner sun20i platform hardware,
+ 	  including boards based on the D1 and D1s SoCs.
+ 
++config ARCH_SUNXI_V821
++	bool "Allwinner V821"
++	depends on ARCH_SUNXI && RISCV_SBI && !RISCV_ISA_ZICBOM
++	# It would remap coherent DMA with page attributes this core does not have.
++	depends on !ERRATA_THEAD_CMO
++	select ANDES_CACHE
++	select CACHEMAINT_FOR_DMA
++	select ERRATA_ANDES
++	select RISCV_DMA_NONCOHERENT
++	help
++	  This enables support for the Allwinner V821 and its Andes A27L2 core.
++
+ config ARCH_TENSTORRENT
+ 	bool "Tenstorrent SoCs"
+ 	help

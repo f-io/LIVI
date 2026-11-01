@@ -1,7 +1,0 @@
-syntax="proto2";
-
-package aap_protobuf.service.sensorsource.message;
-
-message ParkingBrakeData {
-    required bool parking_brake = 1;
-}

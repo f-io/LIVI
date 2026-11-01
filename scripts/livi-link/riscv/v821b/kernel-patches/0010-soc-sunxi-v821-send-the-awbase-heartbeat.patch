@@ -1,0 +1,69 @@
+Subject: [PATCH] soc: sunxi: v821: send the awbase heartbeat
+
+The vendor OpenSBI on the V821 expects the kernel to call its awbase
+extension regularly, which the vendor kernel does from a module every
+10 s. Without it, OpenSBI prints "awbase abnormal...[0x33330001]"
+about a minute after boot and the kernel stops responding. Send the same
+call from a delayed work.
+---
+
+diff --git a/drivers/soc/sunxi/Kconfig b/drivers/soc/sunxi/Kconfig
+index 8aecbc9b1..b45adccd5 100644
+--- a/drivers/soc/sunxi/Kconfig
++++ b/drivers/soc/sunxi/Kconfig
+@@ -19,3 +19,11 @@ config SUNXI_SRAM
+ 	  Say y here to enable the SRAM controller support. This
+ 	  device is responsible on mapping the SRAM in the sunXi SoCs
+ 	  whether to the CPU/DMA, or to the devices.
++
++config SUN300I_AWBASE
++	bool
++	default ARCH_SUNXI_V821
++	depends on RISCV_SBI
++	help
++	  Say y to send the heartbeat the vendor OpenSBI on the V821
++	  expects from the kernel.
+diff --git a/drivers/soc/sunxi/Makefile b/drivers/soc/sunxi/Makefile
+index 549159571..ac0ce89df 100644
+--- a/drivers/soc/sunxi/Makefile
++++ b/drivers/soc/sunxi/Makefile
+@@ -1,3 +1,4 @@
+ # SPDX-License-Identifier: GPL-2.0-only
+ obj-$(CONFIG_SUNXI_MBUS) +=	sunxi_mbus.o
+ obj-$(CONFIG_SUNXI_SRAM) +=	sunxi_sram.o
++obj-$(CONFIG_SUN300I_AWBASE) +=	sun300i_awbase.o
+diff --git a/drivers/soc/sunxi/sun300i_awbase.c b/drivers/soc/sunxi/sun300i_awbase.c
+new file mode 100644
+index 000000000..98cb13687
+--- /dev/null
++++ b/drivers/soc/sunxi/sun300i_awbase.c
+@@ -0,0 +1,29 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * The vendor OpenSBI on the V821 waits for a heartbeat from the kernel and
++ * reports it as hung ("awbase abnormal") once the heartbeat stops coming.
++ */
++
++#include <linux/init.h>
++#include <linux/jiffies.h>
++#include <linux/workqueue.h>
++#include <asm/sbi.h>
++
++#define SBI_EXT_AWBASE		0x54455335
++#define SBI_AWBASE_KICK		0
++
++static void sun300i_awbase_kick(struct work_struct *work);
++static DECLARE_DELAYED_WORK(sun300i_awbase_work, sun300i_awbase_kick);
++
++static void sun300i_awbase_kick(struct work_struct *work)
++{
++	sbi_ecall(SBI_EXT_AWBASE, SBI_AWBASE_KICK, 0, 0, 0, 0, 0, 0);
++	schedule_delayed_work(&sun300i_awbase_work, 10 * HZ);
++}
++
++static int __init sun300i_awbase_init(void)
++{
++	sun300i_awbase_kick(NULL);
++	return 0;
++}
++device_initcall(sun300i_awbase_init);

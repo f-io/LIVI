@@ -1,0 +1,208 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto3";
+
+package livi.aa;
+
+enum CarActionId {
+  CAR_ACTION_ID_UNKNOWN = 0;
+  CAR_ACTION_ID_LAUNCH_HVAC = 1;
+  CAR_ACTION_ID_LAUNCH_CAR_MEDIA = 2;
+  CAR_ACTION_ID_LAUNCH_CONTROL_CENTER = 3;
+  CAR_ACTION_ID_LAUNCH_CAR_ALERTS = 4;
+  CAR_ACTION_ID_DISMISS_OVERLAY = 5;
+  CAR_ACTION_ID_SHOW_CAMERA_OVERLAY = 6;
+}
+
+enum CarAreaDoor {
+  CAR_AREA_DOOR_UNKNOWN = 0;
+  CAR_AREA_DOOR_ROW_1_LEFT = 1;
+  CAR_AREA_DOOR_ROW_1_RIGHT = 4;
+  CAR_AREA_DOOR_ROW_2_LEFT = 16;
+  CAR_AREA_DOOR_ROW_2_RIGHT = 64;
+  CAR_AREA_DOOR_ROW_3_LEFT = 256;
+  CAR_AREA_DOOR_ROW_3_RIGHT = 1024;
+  CAR_AREA_DOOR_HOOD = 268435456;
+  CAR_AREA_DOOR_REAR = 536870912;
+}
+
+enum CarAreaGlobal {
+  CAR_AREA_GLOBAL_WHOLE_CAR = 0;
+}
+
+enum CarAreaMirror {
+  CAR_AREA_MIRROR_UNKNOWN = 0;
+  CAR_AREA_MIRROR_DRIVER_LEFT = 1;
+  CAR_AREA_MIRROR_DRIVER_RIGHT = 2;
+  CAR_AREA_MIRROR_DRIVER_CENTER = 4;
+}
+
+enum CarAreaSeat {
+  CAR_AREA_SEAT_UNKNOWN = 0;
+  CAR_AREA_SEAT_ROW_1_LEFT = 1;
+  CAR_AREA_SEAT_ROW_1_CENTER = 2;
+  CAR_AREA_SEAT_ROW_1_RIGHT = 4;
+  CAR_AREA_SEAT_ROW_2_LEFT = 16;
+  CAR_AREA_SEAT_ROW_2_CENTER = 32;
+  CAR_AREA_SEAT_ROW_2_RIGHT = 64;
+  CAR_AREA_SEAT_ROW_3_LEFT = 256;
+  CAR_AREA_SEAT_ROW_3_CENTER = 512;
+  CAR_AREA_SEAT_ROW_3_RIGHT = 1024;
+}
+
+enum CarAreaType {
+  CAR_AREA_TYPE_GLOBAL = 0;
+  CAR_AREA_TYPE_WINDOW = 2;
+  CAR_AREA_TYPE_SEAT = 3;
+  CAR_AREA_TYPE_DOOR = 4;
+  CAR_AREA_TYPE_MIRROR = 5;
+  CAR_AREA_TYPE_WHEEL = 6;
+}
+
+enum CarAreaWheel {
+  CAR_AREA_WHEEL_UNKNOWN = 0;
+  CAR_AREA_WHEEL_LEFT_FRONT = 1;
+  CAR_AREA_WHEEL_RIGHT_FRONT = 2;
+  CAR_AREA_WHEEL_LEFT_REAR = 4;
+  CAR_AREA_WHEEL_RIGHT_REAR = 8;
+}
+
+enum CarAreaWindow {
+  CAR_AREA_WINDOW_UNKNOWN = 0;
+  CAR_AREA_WINDOW_FRONT_WINDSHIELD = 1;
+  CAR_AREA_WINDOW_REAR_WINDSHIELD = 2;
+  CAR_AREA_WINDOW_ROW_1_LEFT = 16;
+  CAR_AREA_WINDOW_ROW_1_RIGHT = 64;
+  CAR_AREA_WINDOW_ROW_2_LEFT = 256;
+  CAR_AREA_WINDOW_ROW_2_RIGHT = 1024;
+  CAR_AREA_WINDOW_ROW_3_LEFT = 4096;
+  CAR_AREA_WINDOW_ROW_3_RIGHT = 16384;
+  CAR_AREA_WINDOW_ROOF_TOP_1 = 65536;
+  CAR_AREA_WINDOW_ROOF_TOP_2 = 131072;
+}
+
+enum CarControlMetadata {
+  CAR_CONTROL_METADATA_UNKNOWN = 0;
+  CAR_CONTROL_METADATA_COMPACT_UI = 1;
+  CAR_CONTROL_METADATA_PREFER_STATUS_BAR = 2;
+}
+
+enum CarPropertyAccess {
+  CAR_PROPERTY_ACCESS_UNSPECIFIED = 0;
+  CAR_PROPERTY_ACCESS_READ = 1;
+  CAR_PROPERTY_ACCESS_VALUE_2 = 2;
+  CAR_PROPERTY_ACCESS_READ_WRITE = 3;
+}
+
+enum CarPropertyId {
+  CAR_PROPERTY_ID_UNKNOWN = 0;
+  CAR_PROPERTY_ID_HVAC_TEMPERATURE_SET = 358614275;
+  CAR_PROPERTY_ID_HVAC_AUTO_ON = 354419978;
+  CAR_PROPERTY_ID_HVAC_DUAL_ON = 354419977;
+  CAR_PROPERTY_ID_HVAC_SEAT_TEMPERATURE = 356517131;
+  CAR_PROPERTY_ID_HVAC_FAN_SPEED = 356517120;
+  CAR_PROPERTY_ID_HVAC_FAN_DIRECTION = 356517121;
+  CAR_PROPERTY_ID_HVAC_FAN_DIRECTION_AVAILABLE = 356582673;
+  CAR_PROPERTY_ID_ELECTRONIC_TOLL_COLLECTION_CARD_STATUS = 289410874;
+  CAR_PROPERTY_ID_HVAC_TEMPERATURE_DISPLAY_UNITS = 289408270;
+  CAR_PROPERTY_ID_HVAC_AC_ON = 354419973;
+  CAR_PROPERTY_ID_HVAC_MAX_AC_ON = 354419974;
+  CAR_PROPERTY_ID_HVAC_DEFROSTER = 320865540;
+  CAR_PROPERTY_ID_HVAC_MAX_DEFROST_ON = 354419975;
+  CAR_PROPERTY_ID_HVAC_POWER_ON = 354419984;
+  CAR_PROPERTY_ID_HVAC_AUTO_RECIRC_ON = 354419986;
+  CAR_PROPERTY_ID_HVAC_RECIRC_ON = 354419976;
+  CAR_PROPERTY_ID_HVAC_SEAT_VENTILATION = 356517139;
+  CAR_PROPERTY_ID_HVAC_SIDE_MIRROR_HEAT = 339739916;
+  CAR_PROPERTY_ID_HVAC_STEERING_WHEEL_HEAT = 289408269;
+  CAR_PROPERTY_ID_DOOR_LOCK = 371198722;
+  CAR_PROPERTY_ID_IGNITION_STATE = 289408009;
+  CAR_PROPERTY_ID_HMG_HVAC_MTC_TEMPERATURE = 624984185;
+  CAR_PROPERTY_ID_HMG_HVAC_TEMPERATURE_RANGE = 557940737;
+  CAR_PROPERTY_ID_HMG_HVAC_TEMPERATURE_SET_CELSIUS = 627081341;
+  CAR_PROPERTY_ID_HMG_HVAC_TEMPERATURE_SET_FAHRENHEIT = 627081339;
+  CAR_PROPERTY_ID_HMG_CAR_ALERTS_COUNT = 34908672;
+  CAR_PROPERTY_ID_HMG_MAIN_CONTENT_AREA_OVERLAY = 34908673;
+}
+
+enum CarPropertyValueType {
+  CAR_PROPERTY_VALUE_TYPE_UNSPECIFIED = 0;
+  CAR_PROPERTY_VALUE_TYPE_INT32 = 1;
+  CAR_PROPERTY_VALUE_TYPE_BOOL = 2;
+  CAR_PROPERTY_VALUE_TYPE_FLOAT = 3;
+  CAR_PROPERTY_VALUE_TYPE_INT64 = 4;
+  CAR_PROPERTY_VALUE_TYPE_STRING = 5;
+  CAR_PROPERTY_VALUE_TYPE_FLOAT_ARRAY = 6;
+  CAR_PROPERTY_VALUE_TYPE_INT32_ARRAY = 7;
+  CAR_PROPERTY_VALUE_TYPE_INT64_ARRAY = 8;
+}
+
+message CarAction {
+  optional CarActionId action_id = 1;
+}
+
+message CarAreaId {
+  optional CarAreaGlobal global_area = 1;
+  repeated CarAreaSeat seats = 2;
+  repeated CarAreaWindow windows = 3;
+  repeated CarAreaDoor doors = 4;
+  repeated CarAreaWheel wheels = 5;
+  repeated CarAreaMirror mirrors = 6;
+}
+
+message CarAreaIdConfig {
+  CarAreaId area_id = 1;
+  CarPropertyValue max_value = 2;
+  CarPropertyValue min_value = 3;
+}
+
+message CarProperty {
+  optional CarPropertyId property_id = 1;
+  CarAreaId area_id = 2;
+}
+
+message CarPropertyConfig {
+  optional CarPropertyId property_id = 1;
+  optional CarPropertyValueType value_type = 2;
+  optional CarPropertyAccess access = 3;
+  repeated CarAreaId area_ids = 4;
+  optional CarAreaType area_type = 5;
+  repeated int32 config_array = 6;
+  repeated CarAreaIdConfig area_id_configs = 7;
+}
+
+message CarPropertyControl {
+  CarProperty property = 1;
+  CarAction associated_action = 2;
+  CarProperty associated_property = 3;
+}
+
+message CarPropertyFloatArray {
+  repeated float values = 1;
+}
+
+message CarPropertyInt32Array {
+  repeated int32 values = 1;
+}
+
+message CarPropertyInt64Array {
+  repeated int64 values = 1;
+}
+
+message CarPropertyValue {
+  oneof value {
+    int32 int32_value = 1;
+    float float_value = 2;
+    bool bool_value = 3;
+    int64 int64_value = 4;
+    string string_value = 5;
+    CarPropertyInt32Array int32_array_value = 6;
+    CarPropertyInt64Array int64_array_value = 7;
+    CarPropertyFloatArray float_array_value = 8;
+  }
+}
+
+message SupportedCarAction {
+  CarAction action = 1;
+}

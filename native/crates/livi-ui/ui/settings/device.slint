@@ -1,0 +1,84 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme } from "../theme.slint";
+
+export component Battery inherits Rectangle {
+    in property <int> level;
+    in property <bool> charging;
+    property <float> pct: clamp(level, 0, 100);
+    width: 52px;
+    height: 24px;
+    Rectangle {
+        x: 1px;
+        y: 3.5px;
+        width: 45px;
+        height: 17px;
+        border-radius: 4px;
+        border-width: 1.8px;
+        border-color: Theme.text-secondary;
+    }
+    Rectangle {
+        x: 47.5px;
+        y: 8.5px;
+        width: 3px;
+        height: 7px;
+        border-radius: 1.5px;
+        background: Theme.text-secondary;
+    }
+    Rectangle {
+        x: 3px;
+        y: 5.5px;
+        width: max(3px, 42px * root.pct / 100);
+        height: 13px;
+        border-radius: 2px;
+        opacity: 0.9;
+        background: root.pct < 10 ? #ff3b30 : root.pct < 20 ? #ffcc00 : #34c759;
+    }
+    Text {
+        x: 39px - self.width;
+        y: 12px - self.height / 2;
+        text: root.pct;
+        font-size: 10.5px;
+        font-weight: 700;
+        color: Theme.text;
+        stroke: Theme.paper;
+        stroke-width: 2px;
+        stroke-style: outside;
+    }
+    if root.charging: Image {
+        x: 2px;
+        y: (parent.height - self.height) / 2;
+        width: 12px;
+        height: 12px;
+        source: @image-url("../icons/Bolt.svg");
+        colorize: Theme.text;
+    }
+}
+
+export component SignalBars inherits Rectangle {
+    in property <int> level;
+    property <[length]> heights: [4px, 6.5px, 9px, 11.5px, 14px];
+    width: 23px;
+    height: 14px;
+    for h[i] in root.heights: Rectangle {
+        x: i * 5px;
+        y: root.height - h;
+        width: 3px;
+        height: h;
+        border-radius: 1px;
+        background: i < root.level ? Theme.text : Theme.text-disabled;
+        opacity: i < root.level ? 1 : 0.35;
+    }
+}
+
+export component StatusDot inherits Rectangle {
+    in property <int> presence;
+    width: 12px;
+    height: 12px;
+    border-radius: 6px;
+    background: presence == 0 ? Theme.highlight : presence == 1 ? Theme.text : transparent;
+    border-width: presence == 2 ? 2px : 0;
+    border-color: Theme.text-disabled;
+}

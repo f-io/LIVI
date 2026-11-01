@@ -1,0 +1,174 @@
+name: checks
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main, dev]
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+
+jobs:
+  linux:
+    name: Linux (fmt, clippy, tests)
+    if: ${{ github.actor != 'github-actions' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Setup Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install
+          rustup target add armv7-unknown-linux-musleabihf
+          rustc --version
+
+      - name: Restore cargo cache
+        id: cargo
+        uses: ./.github/actions/cargo-cache/restore
+        with:
+          name: check-linux
+
+      - name: Install native build deps
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rm -f /etc/apt/sources.list.d/*google*
+          sudo sed -i '\#dl\.google\.com#d' /etc/apt/sources.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+              build-essential pkg-config libudev1 ca-certificates libssl-dev \
+              libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+              cmake libwayland-dev libxkbcommon-dev libfontconfig1-dev \
+              libudev-dev libinput-dev libseat-dev libgbm-dev
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Check Rust formatting
+        working-directory: native
+        run: cargo fmt --all --check
+
+      - name: Check the Rust workspace (clippy, tests)
+        working-directory: native
+        run: |
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo test --workspace --locked
+
+      - name: Check the dongle daemon for armv7 (clippy)
+        working-directory: native
+        run: cargo clippy -p livid --target armv7-unknown-linux-musleabihf --locked -- -D warnings
+
+      - name: Save cargo cache
+        if: ${{ steps.cargo.outputs.hit != 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') }}
+        uses: ./.github/actions/cargo-cache/save
+        with:
+          key: ${{ steps.cargo.outputs.key }}
+
+  macos:
+    name: macOS (clippy, tests)
+    if: ${{ github.actor != 'github-actions' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') }}
+    runs-on: macos-latest
+    timeout-minutes: 40
+    env:
+      PKG_CONFIG_PATH: /Library/Frameworks/GStreamer.framework/Versions/1.0/lib/pkgconfig
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Install pkg-config
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew list --versions pkg-config >/dev/null || brew install pkg-config >/dev/null
+
+      - name: Setup Rust
+        run: |
+          set -euo pipefail
+          rustup toolchain install
+          rustc --version
+
+      - name: GStreamer version
+        id: gst
+        run: echo "version=$(tr -d '[:space:]' < assets/gstreamer/macos-arm64/version.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache GStreamer pkgs
+        id: gstcache
+        uses: actions/cache@v6
+        with:
+          path: |
+            gst-runtime.pkg
+            gst-devel.pkg
+          key: gst-pkg-macos-universal-${{ steps.gst.outputs.version }}
+
+      - name: Download GStreamer pkgs
+        if: steps.gstcache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          v='${{ steps.gst.outputs.version }}'
+          base="https://gstreamer.freedesktop.org/data/pkg/osx/$v"
+          curl -fL -o gst-runtime.pkg "$base/gstreamer-1.0-$v-universal.pkg"
+          curl -fL -o gst-devel.pkg "$base/gstreamer-1.0-devel-$v-universal.pkg"
+
+      - name: Install GStreamer (runtime + devel)
+        run: |
+          set -euo pipefail
+          sudo installer -pkg gst-runtime.pkg -target /
+          sudo installer -pkg gst-devel.pkg -target /
+
+      - name: Restore cargo cache
+        id: cargo
+        uses: ./.github/actions/cargo-cache/restore
+        with:
+          name: check-macos
+
+      - name: Check the Rust workspace without the Linux-only crates (clippy, tests)
+        working-directory: native
+        env:
+          DYLD_LIBRARY_PATH: /Library/Frameworks/GStreamer.framework/Versions/1.0/lib
+        run: |
+          linux_only=(--exclude livi-compositor)
+          cargo clippy --workspace --all-targets --locked "${linux_only[@]}" -- -D warnings
+          cargo test --workspace --locked "${linux_only[@]}"
+
+      - name: Save cargo cache
+        if: ${{ steps.cargo.outputs.hit != 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') }}
+        uses: ./.github/actions/cargo-cache/save
+        with:
+          key: ${{ steps.cargo.outputs.key }}
+
+  lint:
+    name: Lint (dprint, actionlint, license headers)
+    if: ${{ github.actor != 'github-actions' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Check formatting (YAML, Markdown, JSON, TOML)
+        run: |
+          set -euo pipefail
+          curl -fsSL https://dprint.dev/install.sh | sh -s 0.64.3 >/dev/null
+          "$HOME/.dprint/bin/dprint" check
+
+      - name: Lint the workflows
+        run: |
+          set -euo pipefail
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color
+
+      - name: Check the license headers
+        run: sh scripts/spdx-header.sh --check

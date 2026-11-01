@@ -1,0 +1,201 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR MIT)
+/*
+ * Allwinner V821B, the blocks the LIVI Link board uses. Addresses, interrupts and the clock wiring are
+ * those of the vendor device tree.
+ */
+
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/clock/sun300i-v821-aon-ccu.h>
+#include <dt-bindings/clock/sun300i-v821-ccu.h>
+#include <dt-bindings/reset/sun300i-v821-ccu.h>
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		timebase-frequency = <40000000>;
+
+		cpu0: cpu@0 {
+			compatible = "riscv";
+			device_type = "cpu";
+			reg = <0>;
+			riscv,isa-base = "rv32i";
+			riscv,isa-extensions = "i", "m", "a", "f", "d", "c";
+			mmu-type = "riscv,sv32";
+			i-cache-size = <0x4000>;
+			i-cache-line-size = <64>;
+			d-cache-size = <0x4000>;
+			d-cache-line-size = <64>;
+			next-level-cache = <&l2_cache>;
+
+			cpu0_intc: interrupt-controller {
+				compatible = "riscv,cpu-intc";
+				#interrupt-cells = <1>;
+				interrupt-controller;
+			};
+		};
+	};
+
+	dcxo: dcxo-clk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <40000000>;
+		clock-output-names = "dcxo";
+	};
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+		dma-noncoherent;
+		interrupt-parent = <&plic>;
+
+		pio: pinctrl@42000000 {
+			compatible = "allwinner,sun300i-v821b-pinctrl";
+			reg = <0x0 0x42000000 0x0 0x500>;
+			clocks = <&aon_ccu CLK_AON_APB>;
+			gpio-controller;
+			#gpio-cells = <3>;
+
+			sdc1_pins: sdc1-pins {
+				pins = "PD1", "PD2", "PD3", "PD4", "PD5", "PD6";
+				function = "sdc1";
+				drive-strength = <40>;
+				bias-pull-up;
+			};
+
+			spi1_pd13_pin: spi1-pd13-pin {
+				pins = "PD13";
+				function = "spi1";
+			};
+
+			spif_pins: spif-pins {
+				pins = "PC6", "PC7", "PC8", "PC9", "PC10", "PC11";
+				function = "spif";
+			};
+
+			twi1_pd_pins: twi1-pd-pins {
+				pins = "PD18", "PD19";
+				function = "twi1";
+				bias-pull-up;
+			};
+		};
+
+		ccu: clock-controller@42001000 {
+			compatible = "allwinner,sun300i-v821-ccu";
+			reg = <0x0 0x42001000 0x0 0x100>;
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		i2c1: i2c@42502400 {
+			compatible = "allwinner,sun6i-a31-i2c";
+			reg = <0x0 0x42502400 0x0 0x400>;
+			interrupts = <11 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&ccu CLK_BUS_TWI1>;
+			resets = <&ccu RST_BUS_TWI1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		mmc1: mmc@44021000 {
+			compatible = "allwinner,sun300i-v821-mmc";
+			reg = <0x0 0x44021000 0x0 0x1000>;
+			interrupts = <42 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&ccu CLK_BUS_SMHC1>, <&ccu CLK_SMHC1>, <&ccu CLK_MBUS_SMHC1>;
+			clock-names = "ahb", "mmc", "mbus";
+			resets = <&ccu RST_BUS_SMHC1>;
+			reset-names = "ahb";
+			pinctrl-names = "default";
+			pinctrl-0 = <&sdc1_pins>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		spi1: spi@44026000 {
+			compatible = "allwinner,sun50i-r329-spi";
+			reg = <0x0 0x44026000 0x0 0x1000>;
+			interrupts = <17 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&ccu CLK_BUS_SPI1>, <&ccu CLK_SPI1>;
+			clock-names = "ahb", "mod";
+			resets = <&ccu RST_BUS_SPI1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		usb_otg: usb@44100000 {
+			compatible = "allwinner,sun300i-v821-musb";
+			reg = <0x0 0x44100000 0x0 0x400>;
+			interrupts = <30 IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = "mc";
+			clocks = <&ccu CLK_BUS_OTG>, <&ccu CLK_BUS_USB>, <&ccu CLK_MBUS_USB>;
+			clock-names = "otg", "ahb", "mbus";
+			resets = <&ccu RST_BUS_OTG>, <&ccu RST_BUS_USB>;
+			reset-names = "otg", "usb_rst";
+			phys = <&usbphy 0>;
+			phy-names = "usb";
+			extcon = <&usbphy 0>;
+			dr_mode = "peripheral";
+			status = "disabled";
+		};
+
+		usbphy: phy@44100400 {
+			compatible = "allwinner,sun300i-v821-usb-phy";
+			reg = <0x0 0x44100400 0x0 0x100>, <0x0 0x44101800 0x0 0x100>;
+			reg-names = "phy_ctrl", "pmu0";
+			clocks = <&ccu CLK_USB_24M>;
+			clock-names = "usb0_phy";
+			resets = <&ccu RST_USB_PHY>;
+			reset-names = "usb0_reset";
+			#phy-cells = <1>;
+			status = "disabled";
+		};
+
+		spif: spi@44f00000 {
+			compatible = "allwinner,sun300i-v821-spif";
+			reg = <0x0 0x44f00000 0x0 0x1000>;
+			interrupts = <20 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&ccu CLK_BUS_SPIF>, <&ccu CLK_SPIF>;
+			clock-names = "bus", "mod";
+			resets = <&ccu RST_BUS_SPIF>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&spif_pins>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		plic: interrupt-controller@48000000 {
+			compatible = "allwinner,sun300i-v821-plic", "riscv,plic0";
+			reg = <0x0 0x48000000 0x0 0x400000>;
+			interrupts-extended = <&cpu0_intc 11>, <&cpu0_intc 9>;
+			interrupt-controller;
+			#address-cells = <0>;
+			#interrupt-cells = <2>;
+			riscv,ndev = <187>;
+		};
+
+		l2_cache: cache-controller@49000000 {
+			compatible = "andestech,llcache", "cache";
+			reg = <0x0 0x49000000 0x0 0x300>;
+			cache-line-size = <64>;
+			cache-level = <2>;
+			cache-size = <0x20000>;
+			cache-unified;
+		};
+
+		aon_ccu: clock-controller@4a010000 {
+			compatible = "allwinner,sun300i-v821-aon-ccu";
+			reg = <0x0 0x4a010000 0x0 0x600>;
+			clocks = <&dcxo>;
+			#clock-cells = <1>;
+		};
+	};
+};

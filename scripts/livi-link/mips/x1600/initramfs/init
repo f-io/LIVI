@@ -1,0 +1,86 @@
+#!/bin/busybox sh
+# PID 1 of the X1600 initramfs: mounts the rootfs of the bank that "ota" names, else the rescue shell.
+/bin/busybox --install -s
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts /sys/kernel/config /var/run /var/lib/misc /tmp
+mount -t devpts devpts /dev/pts
+mount -t configfs configfs /sys/kernel/config
+mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null
+. /etc/board.sh
+echo "$BOARD_NAME initramfs" >/dev/console
+
+[ -w /proc/sys/kernel/modprobe ] && echo >/proc/sys/kernel/modprobe
+
+OTADEV=
+ROOTFS1=
+ROOTFS2=
+for n in /sys/class/mtd/mtd[0-9]*; do
+  case "$(cat "$n/name" 2>/dev/null)" in
+    ota) OTADEV=/dev/mtd${n##*mtd} ;;
+    rootfs) ROOTFS1=/dev/mtdblock${n##*mtd} ;;
+    rootfs2) ROOTFS2=/dev/mtdblock${n##*mtd} ;;
+  esac
+done
+
+ROOTDEV=
+if [ -n "$OTADEV" ] && [ -n "$ROOTFS1" ] && [ -n "$ROOTFS2" ]; then
+  if head -c 4096 "$OTADEV" 2>/dev/null | grep -q 'ota:kernel2'; then
+    ROOTDEV=$ROOTFS2
+  else
+    ROOTDEV=$ROOTFS1
+  fi
+fi
+
+mkdir -p /mnt/root
+if [ -n "$ROOTDEV" ] && mount -t squashfs -o ro "$ROOTDEV" /mnt/root && [ -x /mnt/root/usr/bin/livid ]; then
+  stty -F /dev/console -icanon min 0 time 0 && cat /dev/console >/dev/null
+  stty -F /dev/console icanon
+  echo "rootfs $ROOTDEV is ours, switching in 1 s, Enter for the recovery shell" >/dev/console
+  if read -r -t 1 _ </dev/console; then
+    umount /mnt/root
+  else
+    LINK_ONLY=1 net-up >/dev/console 2>&1
+    mount -o move /dev /mnt/root/dev
+    exec switch_root /mnt/root /init
+  fi
+fi
+
+ifconfig lo 127.0.0.1 up
+brctl addbr br0
+brctl stp br0 off
+brctl setfd br0 0
+ifconfig br0 10.10.10.1 netmask 255.255.255.0 mtu 1500 up
+cat >/etc/udhcpd.conf <<EOF
+start 10.10.10.100
+end 10.10.10.199
+interface br0
+option subnet 255.255.255.0
+option lease 3600
+EOF
+udhcpd /etc/udhcpd.conf
+telnetd -l /bin/sh -p 23
+telnetd -l /bin/sh -p 2323
+board_rescue
+
+board_help >/dev/console
+[ "$RESCUE_USB_DELAY" -gt 0 ] && echo "usb: net-up in $RESCUE_USB_DELAY s, type nousb to skip" >/dev/console
+(
+  sleep "$RESCUE_USB_DELAY"
+  [ -e /tmp/nousb ] && {
+    echo "usb: skipped" >/dev/console
+    exit
+  }
+  n=0
+  until ls /sys/class/udc 2>/dev/null | grep -q .; do
+    n=$((n + 1))
+    [ $n -gt 60 ] && {
+      echo "usb: no UDC after 60 s, see dmesg" >/dev/console
+      exit
+    }
+    sleep 1
+  done
+  net-up >/dev/console 2>&1
+) &
+exec setsid cttyhack sh

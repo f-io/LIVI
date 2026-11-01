@@ -1,0 +1,114 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme } from "theme.slint";
+
+export global OverlayState {
+    in property <bool> level-shown;
+    in property <image> level-icon;
+    in property <int> level-percent;
+    in property <bool> phone-shown;
+    in property <image> phone-icon;
+    in property <string> phone-name;
+}
+
+component Card inherits Rectangle {
+    background: #121214b8;
+    border-radius: 14px;
+    drop-shadow-blur: 22px;
+    drop-shadow-offset-y: 6px;
+    drop-shadow-color: #00000066;
+}
+
+export component LevelOverlay inherits Card {
+    in property <length> window-width;
+
+    property <length> bar: clamp(120px, root.window-width * 0.24, 280px);
+
+    width: row.preferred-width;
+    height: row.preferred-height;
+    opacity: OverlayState.level-shown ? 1 : 0;
+    animate opacity { duration: 180ms; easing: ease-in-out; }
+
+    row := HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 14px;
+        alignment: center;
+
+        Image {
+            width: 28px;
+            height: 28px;
+            y: (parent.height - self.height) / 2;
+            source: OverlayState.level-icon;
+            colorize: #ffffffeb;
+        }
+        Rectangle {
+            width: root.bar;
+            Rectangle {
+                y: (parent.height - self.height) / 2;
+                height: 6px;
+                border-radius: 3px;
+                background: #ffffff40;
+                clip: true;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * clamp(OverlayState.level-percent, 0, 100) / 100;
+                    background: Theme.highlight;
+                }
+            }
+        }
+        Rectangle {
+            width: widest.preferred-width;
+            widest := Text {
+                text: "100%";
+                font-size: 20px;
+                font-weight: 500;
+                opacity: 0;
+            }
+            Text {
+                x: parent.width - self.width;
+                text: OverlayState.level-percent + "%";
+                font-size: 20px;
+                font-weight: 500;
+                color: #ffffffeb;
+            }
+        }
+    }
+}
+
+export component PhoneOverlay inherits Card {
+    in property <length> window-width;
+
+    width: min(row.preferred-width, root.window-width * 0.6);
+    height: row.preferred-height;
+    opacity: OverlayState.phone-shown ? 1 : 0;
+    animate opacity { duration: OverlayState.phone-shown ? 180ms : 330ms; easing: ease-in-out; }
+
+    row := HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 14px;
+
+        Image {
+            width: 28px;
+            height: 28px;
+            y: (parent.height - self.height) / 2;
+            source: OverlayState.phone-icon;
+            colorize: #ffffffeb;
+        }
+        Text {
+            text: OverlayState.phone-name;
+            font-size: 20px;
+            font-weight: 500;
+            color: #ffffffeb;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}

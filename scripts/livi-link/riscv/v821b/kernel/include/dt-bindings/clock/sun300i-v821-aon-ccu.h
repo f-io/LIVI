@@ -1,0 +1,18 @@
+/* SPDX-License-Identifier: (GPL-2.0-only OR MIT) */
+#ifndef _DT_BINDINGS_CLK_SUN300I_V821_AON_CCU_H_
+#define _DT_BINDINGS_CLK_SUN300I_V821_AON_CCU_H_
+
+#define CLK_AON_PLL_PERI	0
+#define CLK_AON_PLL_PERI_768M	1
+#define CLK_AON_PLL_PERI_512M	2
+#define CLK_AON_PLL_PERI_384M	3
+#define CLK_AON_PLL_PERI_307M	4
+#define CLK_AON_PLL_PERI_236M	5
+#define CLK_AON_PLL_PERI_219M	6
+#define CLK_AON_PLL_PERI_192M	7
+#define CLK_AON_PLL_PERI_48M	8
+#define CLK_AON_AHB		9
+#define CLK_AON_APB		10
+#define CLK_AON_APB_SPC		11
+
+#endif

@@ -115,26 +115,13 @@ add_flag "splash"
 add_flag "plymouth.ignore-serial-consoles"
 add_flag "loglevel=0"
 
-# Auto-detect the active display mode so plymouth doesn't render at EDID
-# preferred (often 4K). Falls back to LIVI_SPLASH_VIDEO env if detection fails.
+# Keeps the mode LIVI pinned (video=) so plymouth does not render at EDID
+# preferred (often 4K). LIVI_SPLASH_VIDEO overrides it.
 detect_video_mode() {
-  [[ -z "${SUDO_USER:-}" ]] && return 1
-  command -v wlr-randr >/dev/null || return 1
-  local uid runtime
-  uid=$(id -u "${SUDO_USER}")
-  runtime="/run/user/${uid}"
-  [[ -S "${runtime}/wayland-0" ]] || return 1
-  local out
-  out=$(WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR="${runtime}" \
-        runuser -u "${SUDO_USER}" -- wlr-randr 2>/dev/null) || return 1
-  awk '
-    /^[^[:space:]]/ { conn=$1 }
-    /current/ {
-      for (i=1;i<=NF;i++) if ($i ~ /^[0-9]+x[0-9]+/) mode=$i
-      for (i=1;i<=NF;i++) if ($i ~ /^[0-9]+\.[0-9]+/) hz=int($i+0.5)
-      if (conn && mode && hz) { printf "%s:%s@%d", conn, mode, hz; exit }
-    }
-  ' <<< "${out}"
+  local current
+  current=$(grep -o "video=[^[:space:]]*" <<< "${LINE}" | head -n 1)
+  [[ -n "${current}" ]] || return 1
+  printf "%s" "${current#video=}"
 }
 
 VIDEO_MODE="${LIVI_SPLASH_VIDEO:-$(detect_video_mode || true)}"

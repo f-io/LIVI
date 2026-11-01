@@ -1,0 +1,29 @@
+--- a/drivers/usb/fotg210/fotg210-udc.c
++++ b/drivers/usb/fotg210/fotg210-udc.c
+@@ -29,12 +29,24 @@
+ static const char * const fotg210_ep_name[] = {
+ 	"ep0", "ep1", "ep2", "ep3", "ep4"};
+ 
++/*
++ * The status bits are cleared by writing 0. Where that does not take (AX520: "udc suspend" came back every
++ * few ms and the line never went quiet), the bit is written with 1, and a bit that survives both is masked,
++ * so one stuck status bit can not starve the CPU with an endless interrupt.
++ */
+ static void fotg210_ack_int(struct fotg210_udc *fotg210, u32 offset, u32 mask)
+ {
+ 	u32 value = ioread32(fotg210->reg + offset);
++	u32 mask_reg = offset - (FOTG210_DISGR0 - FOTG210_DMISGR0);
+ 
+-	value &= ~mask;
+-	iowrite32(value, fotg210->reg + offset);
++	iowrite32(value & ~mask, fotg210->reg + offset);
++	if (!(ioread32(fotg210->reg + offset) & mask))
++		return;
++	iowrite32(mask, fotg210->reg + offset);
++	if (!(ioread32(fotg210->reg + offset) & mask))
++		return;
++	iowrite32(ioread32(fotg210->reg + mask_reg) | mask, fotg210->reg + mask_reg);
++	dev_warn_ratelimited(fotg210->dev, "status %03x bit %08x does not clear, masked\n", offset, mask);
+ }
+ 
+ static void fotg210_disable_fifo_int(struct fotg210_ep *ep)

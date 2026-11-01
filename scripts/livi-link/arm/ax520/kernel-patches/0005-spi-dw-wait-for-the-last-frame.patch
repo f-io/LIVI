@@ -1,0 +1,33 @@
+--- a/drivers/spi/spi-dw-core.c
++++ b/drivers/spi/spi-dw-core.c
+@@ -609,7 +609,15 @@
+ 
+ static inline bool dw_spi_ctlr_busy(struct dw_spi *dws)
+ {
+-	return dw_readl(dws, DW_SPI_SR) & DW_SPI_SR_BUSY;
++	u32 sr = dw_readl(dws, DW_SPI_SR);
++
++	/*
++	 * The transfer starts about a bus clock after SER is set, and until then BUSY is still clear
++	 * with the command sitting in the Tx FIFO. Read that early the operation looks finished and
++	 * is cut off. At 5 MHz (AX520) that window is 200 ns and an erase or write enable got lost now
++	 * and then, silently: the sector kept its old data.
++	 */
++	return (sr & DW_SPI_SR_BUSY) || !(sr & DW_SPI_SR_TF_EMPT);
+ }
+ 
+ static int dw_spi_wait_mem_op_done(struct dw_spi *dws)
+@@ -619,7 +627,12 @@
+ 	unsigned long ns, us;
+ 	u32 nents;
+ 
+-	nents = dw_readl(dws, DW_SPI_TXFLR);
++	/*
++	 * TXFLR does not count the frame still in the shift register. Without it the wait is 0 ns once the
++	 * FIFO is empty, the few retries run out while that last frame goes out at a low bus clock (AX520 at
++	 * 5 MHz), and the command is cut off: an erase then never starts and the flash keeps WEL set.
++	 */
++	nents = dw_readl(dws, DW_SPI_TXFLR) + 1;
+ 	ns = NSEC_PER_SEC / dws->current_freq * nents;
+ 	ns *= dws->n_bytes * BITS_PER_BYTE;
+ 	if (ns <= NSEC_PER_USEC) {

@@ -1,39 +1,41 @@
 name: build
-run-name: 'build → ${{ github.event.workflow_run.head_branch || github.ref_name }}'
+run-name: "build → ${{ github.event.workflow_run.head_branch || github.ref_name }}"
 
 on:
   workflow_run:
-    workflows: ['typecheck']
+    workflows: ["checks"]
     branches: [main]
     types: [completed]
 
-  # Manual runs build the branch the workflow is dispatched on
   workflow_dispatch:
     inputs:
       linux_x64:
-        description: 'Build Linux x64'
+        description: "Build Linux x64"
         type: boolean
         default: true
       linux_arm64:
-        description: 'Build Linux arm64'
+        description: "Build Linux arm64"
         type: boolean
         default: true
       macos_arm64:
-        description: 'Build macOS arm64 (dmg)'
+        description: "Build macOS arm64 (dmg)"
         type: boolean
         default: true
       macos_x64:
-        description: 'Build macOS x64 (dmg)'
+        description: "Build macOS x64 (dmg)"
         type: boolean
         default: true
       publish_nightly:
-        description: 'Publish nightly release'
+        description: "Publish nightly release"
         type: boolean
         default: true
 
 permissions:
   contents: write
   actions: write
+
+env:
+  CARGO_INCREMENTAL: 0
 
 jobs:
   plan:
@@ -55,50 +57,25 @@ jobs:
         run: |
           set -euo pipefail
 
-          node <<'NODE'
-          const fs = require('fs');
-
-          const eventName = process.env.EVENT_NAME;
-
-          const isTrue = (v) => String(v).toLowerCase() === 'true';
-
-          const inputs = {
-            linux_x64: isTrue(process.env.IN_LINUX_X64),
-            linux_arm64: isTrue(process.env.IN_LINUX_ARM64),
-            macos_arm64: isTrue(process.env.IN_MACOS_ARM64),
-            macos_x64: isTrue(process.env.IN_MACOS_X64),
-          };
-
-          const include = [];
-          const add = (os, runner, arch, artifact_ext) => {
-            include.push({ os, runner, arch, artifact_ext });
-          };
-
-          if (eventName === 'workflow_run') {
-            // main: always build everything
-            add('linux', 'ubuntu-24.04', 'x64', 'AppImage');
-            add('linux', 'ubuntu-24.04-arm', 'arm64', 'AppImage');
-            add('macos', 'macos-latest', 'arm64', 'dmg');
-            add('macos', 'macos-latest', 'x64', 'dmg');
-          } else {
-            // manual: only selected
-            if (inputs.linux_x64) add('linux', 'ubuntu-24.04', 'x64', 'AppImage');
-            if (inputs.linux_arm64) add('linux', 'ubuntu-24.04-arm', 'arm64', 'AppImage');
-            if (inputs.macos_arm64) add('macos', 'macos-latest', 'arm64', 'dmg');
-            if (inputs.macos_x64) add('macos', 'macos-latest', 'x64', 'dmg');
+          entries=()
+          add() {
+            entries+=("{\"os\":\"$1\",\"runner\":\"$2\",\"arch\":\"$3\",\"artifact_ext\":\"$4\"}")
           }
+          want() {
+            [[ "$EVENT_NAME" == workflow_run || "${1,,}" == true ]]
+          }
+          if want "$IN_LINUX_X64"; then add linux ubuntu-24.04 x64 AppImage; fi
+          if want "$IN_LINUX_ARM64"; then add linux ubuntu-24.04-arm arm64 AppImage; fi
+          if want "$IN_MACOS_ARM64"; then add macos macos-latest arm64 dmg; fi
+          if want "$IN_MACOS_X64"; then add macos macos-latest x64 dmg; fi
 
-          const matrixObj = { include };
-          const matrix = JSON.stringify(matrixObj);
+          matrix="{\"include\":[$(IFS=,; echo "${entries[*]-}")]}"
+          is_empty=$([[ ${#entries[@]} -eq 0 ]] && echo true || echo false)
 
-          const isEmpty = include.length === 0 ? 'true' : 'false';
-
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${matrix}\n`);
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `is_empty=${isEmpty}\n`);
-
-          console.log('Planned matrix:', matrix);
-          console.log('Empty:', isEmpty);
-          NODE
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "is_empty=$is_empty" >> "$GITHUB_OUTPUT"
+          echo "Planned matrix: $matrix"
+          echo "Empty: $is_empty"
 
   build:
     name: Build ${{ matrix.artifact_ext }} (${{ matrix.os }}-${{ matrix.arch }}) on ${{ github.event.workflow_run.head_branch || github.ref_name }}
@@ -107,197 +84,79 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       BUILD_BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
-      HUSKY: 0
-      ELECTRON_CACHE: .cache/electron
-      ELECTRON_BUILDER_CACHE: .cache/electron-builder
+      BUILD_SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
 
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
-          # Dispatch builds the ref the workflow was started on, workflow_run pins the head sha
+          fetch-depth: 1
           ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || github.event.workflow_run.head_sha }}
 
-      - name: Cache pnpm store
-        uses: actions/cache@v5
-        with:
-          path: .pnpm-store
-          key: pnpm-store-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-store-${{ matrix.os }}-${{ matrix.arch }}-
-
-      - name: Cache build caches (vite/esbuild)
-        uses: actions/cache@v5
-        with:
-          path: |
-            node_modules/.vite
-            node_modules/.cache
-          key: build-cache-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            build-cache-${{ matrix.os }}-${{ matrix.arch }}-
-
-      - name: Cache Electron downloads
-        uses: actions/cache@v5
-        with:
-          path: .cache/electron
-          key: electron-cache-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('package.json', 'pnpm-lock.yaml') }}
-          restore-keys: |
-            electron-cache-${{ matrix.os }}-${{ matrix.arch }}-
-
-      - name: Cache electron-builder binaries
-        uses: actions/cache@v5
-        with:
-          path: .cache/electron-builder
-          key: eb-cache-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('package.json', 'pnpm-lock.yaml', 'electron-builder.yml') }}
-          restore-keys: |
-            eb-cache-${{ matrix.os }}-${{ matrix.arch }}-
-
-      - name: Setup Node + pnpm
-        id: pnpm
-        uses: ./.github/actions/pnpm
-        with:
-          node-version: '24'
-          pnpm-major: '11'
-          pnpm-store-dir: '.pnpm-store'
-
-      - name: Read version from package.json
+      - name: Read version from native/Cargo.toml
         id: pkg
         shell: bash
         run: |
-          VERSION=$(node -p "require('./package.json').version")
+          set -euo pipefail
+          VERSION=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' native/Cargo.toml)
+          [[ -n "$VERSION" ]] || { echo "::error::No version in native/Cargo.toml"; exit 1; }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Read Electron semver from package.json
-        id: el
-        shell: bash
-        run: |
-          echo "semver=$(node -p 'require(\"./package.json\").devDependencies.electron')" >> "$GITHUB_OUTPUT"
-
-      # ----------------------------
-      # Linux x64
-      # ----------------------------
-      - name: Install Linux deps [linux-x64]
-        if: matrix.os == 'linux' && matrix.arch == 'x64'
+      - name: Install Linux deps [linux]
+        if: matrix.os == 'linux'
         shell: bash
         run: |
           set -euo pipefail
+          # Not used here, and its index and packages drift apart often enough to break a run.
+          sudo rm -f /etc/apt/sources.list.d/*google*
+          sudo sed -i '\#dl\.google\.com#d' /etc/apt/sources.list
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-              build-essential python3 python3-dev python3-pip \
-              pkg-config libudev1 ca-certificates \
+              build-essential pkg-config libudev1 ca-certificates libssl-dev \
               libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-              ninja-build bison \
-              libegl-dev libgles-dev libgbm-dev libcairo2-dev \
-              libffi-dev libexpat1-dev
+              cmake libwayland-dev libxkbcommon-dev libfontconfig1-dev \
+              libudev-dev libinput-dev libseat-dev libgbm-dev file desktop-file-utils
           sudo rm -rf /var/lib/apt/lists/*
-          sudo pip3 install --break-system-packages --upgrade 'meson>=1.4'
 
-      - name: Install deps (pnpm) [linux-x64]
-        if: matrix.os == 'linux' && matrix.arch == 'x64'
-        run: pnpm install --frozen-lockfile
-
-
-      - name: Build for Linux x64 (native Ubuntu)
-        if: matrix.os == 'linux' && matrix.arch == 'x64'
-        shell: bash
-        run: |
-          set -euo pipefail
-          ELECTRON_VERSION=$(node -p "require('./node_modules/electron/package.json').version")
-          npx --yes node-gyp install --target="$ELECTRON_VERSION" --dist-url=https://artifacts.electronjs.org/headers/dist
-          pnpm run typecheck
-          rm -rf dist
-          pnpm run build:linux:x64
-
-      # ----------------------------
-      # Linux arm64
-      # ----------------------------
-      - name: Install Linux deps [linux-arm64]
-        if: matrix.os == 'linux' && matrix.arch == 'arm64'
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-              build-essential python3 python3-dev python3-pip \
-              pkg-config libudev1 ca-certificates \
-              libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-              ninja-build bison \
-              libegl-dev libgles-dev libgbm-dev libcairo2-dev \
-              libffi-dev libexpat1-dev
-          sudo rm -rf /var/lib/apt/lists/*
-          sudo pip3 install --break-system-packages --upgrade 'meson>=1.4'
-
-      - name: Install deps (pnpm) [linux-arm64]
-        if: matrix.os == 'linux' && matrix.arch == 'arm64'
-        run: pnpm install --frozen-lockfile
-
-      - name: Build for Linux arm64 (native Ubuntu)
-        if: matrix.os == 'linux' && matrix.arch == 'arm64'
-        shell: bash
-        run: |
-          set -euo pipefail
-          ELECTRON_VERSION=$(node -p "require('./node_modules/electron/package.json').version")
-          npx --yes node-gyp install --target="$ELECTRON_VERSION" --dist-url=https://artifacts.electronjs.org/headers/dist
-          pnpm run typecheck
-          rm -rf dist
-          pnpm run build:linux:arm64
-
-      # ----------------------------
-      # macOS arm64
-      # ----------------------------
-      - name: Install deps (brew) [macos-arm64]
+      - name: Install deps (brew) [macos]
         if: matrix.os == 'macos'
         shell: bash
         env:
-          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_AUTO_UPDATE: "1"
         run: |
           set -euo pipefail
-          for pkg in pkg-config; do
-            brew list --versions "$pkg" >/dev/null || brew install "$pkg" >/dev/null
-          done
+          brew list --versions pkg-config >/dev/null || brew install pkg-config >/dev/null
 
-      # Runtime + devel framework so node-gyp can build the gst-video addon
-      # (devel = headers + pkg-config, runtime = the dylibs to link against)
-      - name: Resolve GStreamer version [macos-arm64]
+      - name: GStreamer version [macos]
         id: gstver_mac
         if: matrix.os == 'macos'
         shell: bash
-        run: |
-          set -euo pipefail
-          GST_VERSION=$(curl -fsSL https://gstreamer.freedesktop.org/data/pkg/osx/ \
-            | grep -oE 'href="[0-9]+\.[0-9]+\.[0-9]+/"' \
-            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' \
-            | awk -F. '$2 % 2 == 0' \
-            | sort -V \
-            | tail -1)
-          [ -n "$GST_VERSION" ] || { echo "Failed to resolve GStreamer version"; exit 1; }
-          echo "version=$GST_VERSION" >> "$GITHUB_OUTPUT"
-          echo "Resolved macOS GStreamer: $GST_VERSION"
+        run: echo "version=$(tr -d '[:space:]' < assets/gstreamer/macos-arm64/version.txt)" >> "$GITHUB_OUTPUT"
 
-      - name: Cache GStreamer pkgs [macos-arm64]
+      - name: Cache GStreamer pkgs [macos]
         id: gstcache_mac
         if: matrix.os == 'macos'
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             gst-runtime.pkg
             gst-devel.pkg
           key: gst-pkg-macos-universal-${{ steps.gstver_mac.outputs.version }}
 
-      - name: Download GStreamer pkgs [macos-arm64]
+      - name: Download GStreamer pkgs [macos]
         if: matrix.os == 'macos' && steps.gstcache_mac.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          base="https://gstreamer.freedesktop.org/data/pkg/osx/${{ steps.gstver_mac.outputs.version }}"
-          curl -fL -o gst-runtime.pkg "${base}/gstreamer-1.0-${{ steps.gstver_mac.outputs.version }}-universal.pkg"
-          curl -fL -o gst-devel.pkg "${base}/gstreamer-1.0-devel-${{ steps.gstver_mac.outputs.version }}-universal.pkg"
+          v='${{ steps.gstver_mac.outputs.version }}'
+          base="https://gstreamer.freedesktop.org/data/pkg/osx/$v"
+          curl -fL -o gst-runtime.pkg "$base/gstreamer-1.0-$v-universal.pkg"
+          curl -fL -o gst-devel.pkg "$base/gstreamer-1.0-devel-$v-universal.pkg"
 
-      - name: Install GStreamer (runtime + devel) [macos-arm64]
+      - name: Install GStreamer (runtime + devel) [macos]
         if: matrix.os == 'macos'
         shell: bash
         run: |
@@ -305,141 +164,137 @@ jobs:
           sudo installer -pkg gst-runtime.pkg -target /
           sudo installer -pkg gst-devel.pkg -target /
 
-      - name: Install deps (pnpm) [macos-arm64]
-        if: matrix.os == 'macos'
-        shell: bash
-        run: pnpm install --frozen-lockfile
-
-      - name: Build for macOS (arm64 native, x64 cross-compiled)
-        if: matrix.os == 'macos'
+      - name: Setup Rust
         shell: bash
         run: |
           set -euo pipefail
-          ELECTRON_VERSION=$(node -p "require('./node_modules/electron/package.json').version")
-          npx --yes node-gyp install --target="$ELECTRON_VERSION" --dist-url=https://artifacts.electronjs.org/headers/dist
-          pnpm run typecheck
-          if [ "${{ matrix.arch }}" = "x64" ]; then
-            npx --yes electron-builder install-app-deps --arch=x64
-            pnpm run build:mac:x64
-          else
-            pnpm run build:mac:arm64
-          fi
+          rustup toolchain install
+          rustc --version
 
-      # ----------------------------
-      # Upload artifacts
-      # ----------------------------
-      - name: Upload AppImage [linux-x64]
-        if: matrix.os == 'linux' && matrix.arch == 'x64'
-        uses: actions/upload-artifact@v6
+      - name: Restore cargo cache
+        id: cargo
+        uses: ./.github/actions/cargo-cache/restore
         with:
-          name: LIVI-${{ steps.pkg.outputs.version }}-linux-x64.AppImage
-          path: dist/*.AppImage
-          retention-days: 7
+          name: build-${{ matrix.os }}-${{ matrix.arch }}
 
-      - name: Upload AppImage [linux-arm64]
-        if: matrix.os == 'linux' && matrix.arch == 'arm64'
-        uses: actions/upload-artifact@v6
-        with:
-          name: LIVI-${{ steps.pkg.outputs.version }}-linux-arm64.AppImage
-          path: dist/*.AppImage
-          retention-days: 7
+      - name: Build and package [linux]
+        if: matrix.os == 'linux'
+        working-directory: native
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf ../dist
+          cargo xtask package-linux --arch '${{ matrix.arch }}'
 
-      - name: Upload Artifacts
-        if: matrix.os != 'linux'
-        uses: actions/upload-artifact@v6
+      - name: Build and package (arm64 native, x64 cross-compiled) [macos]
+        if: matrix.os == 'macos'
+        working-directory: native
+        shell: bash
+        env:
+          PKG_CONFIG_PATH: /Library/Frameworks/GStreamer.framework/Versions/1.0/lib/pkgconfig
+        run: |
+          set -euo pipefail
+          rm -rf ../dist
+          cargo xtask package-mac --arch '${{ matrix.arch }}'
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ format('LIVI-{0}-{1}-{2}.{3}', steps.pkg.outputs.version, matrix.os, matrix.arch, matrix.artifact_ext) }}
-          path: |
-            dist/*.dmg
+          path: dist/*.${{ matrix.artifact_ext }}
           retention-days: 7
 
-      - name: Read GStreamer asset version
-        id: gst
-        if: matrix.os == 'linux' && matrix.arch == 'x64' && (env.BUILD_BRANCH == 'main' || env.BUILD_BRANCH == 'dev')
-        shell: bash
-        run: |
-          for f in assets/gstreamer/linux-x64/version.txt \
-                   assets/gstreamer/macos-arm64/version.txt \
-                   assets/gstreamer/linux-arm64/version.txt; do
-            if [[ -f "$f" ]]; then
-              v="$(cat "$f")"
-              echo "version=$v" >> "$GITHUB_OUTPUT"
-              echo "Found GStreamer version $v in $f"
-              exit 0
-            fi
-          done
-          echo "version=" >> "$GITHUB_OUTPUT"
-          echo "No GStreamer version.txt found"
-
-      - name: Read electron release metadata
-        id: electron
-        if: matrix.os == 'linux' && matrix.arch == 'x64' && (env.BUILD_BRANCH == 'main' || env.BUILD_BRANCH == 'dev')
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # Electron version from the installed package.
-          SEMVER="$(node -e "console.log(require('./node_modules/electron/package.json').version)")"
-          echo "semver=${SEMVER}" >> "$GITHUB_OUTPUT"
-
-          # Chromium version + release date come from electron's official release feed
-          FEED="$(curl -fsSL "https://releases.electronjs.org/releases.json" || echo '[]')"
-
-          CHROMIUM="$(printf '%s' "$FEED" | SEMVER="$SEMVER" node -e "
-            let d=''; process.stdin.on('data', c => d+=c); process.stdin.on('end', () => {
-              try {
-                const r = JSON.parse(d).find(x => x.version === process.env.SEMVER);
-                process.stdout.write((r && r.chrome) || 'unknown');
-              } catch { process.stdout.write('unknown'); }
-            });
-          ")"
-          echo "chromium=${CHROMIUM}" >> "$GITHUB_OUTPUT"
-
-          DATE_DE="$(printf '%s' "$FEED" | SEMVER="$SEMVER" node -e "
-            let d=''; process.stdin.on('data', c => d+=c); process.stdin.on('end', () => {
-              try {
-                const r = JSON.parse(d).find(x => x.version === process.env.SEMVER);
-                const iso = r && (r.fullDate || r.date);
-                if (!iso) { process.stdout.write('unknown'); return; }
-                process.stdout.write(new Intl.DateTimeFormat('de-DE', {
-                  timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', year: 'numeric'
-                }).format(new Date(iso)));
-              } catch { process.stdout.write('unknown'); }
-            });
-          ")"
-          echo "date=${DATE_DE}" >> "$GITHUB_OUTPUT"
-
-          echo "electron ${SEMVER} / chromium ${CHROMIUM} / released ${DATE_DE}"
+      - name: Save cargo cache
+        if: ${{ steps.cargo.outputs.hit != 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') }}
+        uses: ./.github/actions/cargo-cache/save
+        with:
+          key: ${{ steps.cargo.outputs.key }}
 
       - name: Push badges to version branch
         if: matrix.os == 'linux' && matrix.arch == 'x64' && (env.BUILD_BRANCH == 'main' || env.BUILD_BRANCH == 'dev')
-        uses: ./.github/actions/badges
-        with:
-          branch: ${{ env.BUILD_BRANCH }}
-          version: ${{ steps.pkg.outputs.version }}
-          node: ${{ steps.pnpm.outputs.node }}
-          pnpm: ${{ steps.pnpm.outputs.pnpm }}
-          electron: ${{ steps.electron.outputs.semver }}
-          chromium: ${{ steps.electron.outputs.chromium }}
-          electron-date: ${{ steps.electron.outputs.date }}
-          gstreamer: ${{ steps.gst.outputs.version }}
-          repo: ${{ github.repository }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.pkg.outputs.version }}
+        run: |
+          set -euo pipefail
+          GSTREAMER="$(tr -d '[:space:]' < assets/gstreamer/linux-x64/version.txt 2>/dev/null || true)"
+          RUST="$(rustc --version | cut -d' ' -f2)"
+          SLINT="$(sed -n '/^name = "slint"$/{n;s/^version = "\(.*\)"/\1/p;}' native/Cargo.lock)"
+          badge() {
+            echo "{\"schemaVersion\":1,\"label\":\"$2\",\"message\":\"$3\",\"color\":\"$4\"}" > ".github/badges/${BUILD_BRANCH}-$1.json"
+          }
+
+          rm -rf "$RUNNER_TEMP/badges"
+          git clone --depth=1 --branch version "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}" "$RUNNER_TEMP/badges"
+          cd "$RUNNER_TEMP/badges"
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          mkdir -p .github/badges
+          badge version "$BUILD_BRANCH" "v${VERSION}" lightblue
+          badge rust rust "$RUST" orange
+          badge slint slint "$SLINT" blue
+          if [[ -n "$GSTREAMER" ]]; then
+            badge gstreamer gstreamer "$GSTREAMER" blue
+          fi
+          git add ".github/badges/${BUILD_BRANCH}-"*.json
+          git commit -m "chore(badges): ${BUILD_BRANCH} -> v${VERSION}, rust ${RUST}, slint ${SLINT}, gstreamer ${GSTREAMER:-n/a}" || echo "No changes"
+          for attempt in 1 2 3; do
+            git push && break
+            [ "$attempt" = 3 ] && exit 1
+            git pull --rebase
+          done
 
   nightly:
     name: Publish rolling nightly
     needs: build
-    # Manual dispatch only
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_nightly }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            assets/livi-link
+            scripts/livi-link
+
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
           path: nightly-assets
+
+      - name: Pick livi-link assets run ID
+        id: tool
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          RUN=$(gh run list --repo "$REPO" \
+                             --workflow livi-link.yml \
+                             -s success \
+                             -L 1 \
+                             --json databaseId \
+                             -q '.[0].databaseId')
+          echo "run_id=$RUN" >> "$GITHUB_OUTPUT"
+
+      - name: Download the LIVI Link tool
+        if: steps.tool.outputs.run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          run-id: ${{ steps.tool.outputs.run_id }}
+          pattern: livi-link-provision-*
+          path: nightly-assets
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add the LIVI Link firmware
+        run: |
+          sh scripts/assets.sh fetch livi-link
+          bash scripts/livi-link/stage-firmware.sh nightly-assets/livi-link
 
       - name: Replace the nightly prerelease
         env:

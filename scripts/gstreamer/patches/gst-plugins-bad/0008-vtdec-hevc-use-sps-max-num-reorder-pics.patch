@@ -1,0 +1,111 @@
+Description: vtdec: size the HEVC reorder queue from sps_max_num_reorder_pics
+ compute_hevc_decode_picture_buffer_size() only used the level-based DPB
+ maximum and never looked at the SPS, so streams signalling
+ sps_max_num_reorder_pics = 0 were still delayed by up to 16 frames.
+ Parse the SPS from the hvcC codec-data and use max_num_reorder_pics of the
+ highest sub-layer. The level-based estimate remains as fallback when no SPS
+ can be parsed.
+Origin: vendor, based on https://github.com/hbouhadji/airplay-rs/blob/main/vendor/gstreamer/airplayvtdec/patches/vtdec-low-latency.patch
+Author: f-io
+Forwarded: no
+
+---
+--- a/sys/applemedia/vtdec.c
++++ b/sys/applemedia/vtdec.c
+@@ -1941,6 +1941,68 @@
+ }
+
+ static gboolean
++get_hevc_reorder_size_from_codec_data (GstVtdec * vtdec,
++    GstBuffer * codec_data, gint * reorder_size)
++{
++  GstH265Parser *parser;
++  GstH265DecoderConfigRecord *config = NULL;
++  GstMapInfo map;
++  gboolean found_sps = FALSE;
++  guint i, j;
++
++  if (!gst_buffer_map (codec_data, &map, GST_MAP_READ))
++    return FALSE;
++
++  parser = gst_h265_parser_new ();
++
++  if (gst_h265_parser_parse_decoder_config_record (parser, map.data, map.size,
++          &config) != GST_H265_PARSER_OK) {
++    GST_WARNING_OBJECT (vtdec, "Failed to parse HEVC codec-data");
++    goto out;
++  }
++
++  *reorder_size = 0;
++
++  for (i = 0; i < config->nalu_array->len; i++) {
++    GstH265DecoderConfigRecordNalUnitArray *array =
++        &g_array_index (config->nalu_array,
++        GstH265DecoderConfigRecordNalUnitArray, i);
++
++    for (j = 0; j < array->nalu->len; j++) {
++      GstH265NalUnit *nalu = &g_array_index (array->nalu, GstH265NalUnit, j);
++      GstH265SPS sps;
++
++      if (nalu->type == GST_H265_NAL_VPS) {
++        GstH265VPS vps;
++
++        gst_h265_parser_parse_vps (parser, nalu, &vps);
++        continue;
++      }
++
++      if (nalu->type != GST_H265_NAL_SPS)
++        continue;
++
++      if (gst_h265_parser_parse_sps (parser, nalu, &sps,
++              FALSE) != GST_H265_PARSER_OK) {
++        GST_WARNING_OBJECT (vtdec, "Failed to parse HEVC SPS");
++        continue;
++      }
++
++      *reorder_size = MAX (*reorder_size,
++          sps.max_num_reorder_pics[sps.max_sub_layers_minus1]);
++      found_sps = TRUE;
++    }
++  }
++
++  gst_h265_decoder_config_record_free (config);
++
++out:
++  gst_h265_parser_free (parser);
++  gst_buffer_unmap (codec_data, &map);
++  return found_sps;
++}
++
++static gboolean
+ get_h264_dpb_size_from_sps (GstVtdec * vtdec, GstH264NalUnit * nalu,
+     gint * dpb_size)
+ {
+@@ -2045,6 +2107,17 @@
+   const gint max_luma_ps = 35651584;
+   const gint max_dpb_pic_buf = 6;
+   gint max_dbp_size, pic_size_samples_y;
++  gint reorder_size;
++
++  /* Prefer the reorder depth signalled in the SPS; the level-based
++   * estimate below is only a fallback. */
++  if (get_hevc_reorder_size_from_codec_data (vtdec, codec_data,
++          &reorder_size)) {
++    GST_INFO_OBJECT (vtdec, "Using HEVC SPS max_num_reorder_pics %d",
++        reorder_size);
++    *length = reorder_size;
++    return TRUE;
++  }
+
+   if (vtdec->video_info.width == 0 || vtdec->video_info.height == 0)
+     return FALSE;
+--- a/sys/applemedia/vtdec.h
++++ b/sys/applemedia/vtdec.h
+@@ -33,6 +33,7 @@
+ #include <gst/vulkan/vulkan.h>
+ #endif
+ #include <gst/codecparsers/gsth264parser.h>
++#include <gst/codecparsers/gsth265parser.h>
+ #include <gst/codecparsers/gstav1parser.h>
+
+ G_BEGIN_DECLS

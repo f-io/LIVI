@@ -1,0 +1,51 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme } from "theme.slint";
+
+export struct MaskData {
+    shown: bool,
+    width: int,
+    height: int,
+    top: int,
+    bottom: int,
+    left: int,
+    right: int,
+}
+
+export component ViewAreaMask inherits Rectangle {
+    in property <MaskData> mask;
+    property <float> w: max(1, root.mask.width);
+    property <float> h: max(1, root.mask.height);
+
+    visible: root.mask.shown;
+
+    Rectangle {
+        width: min(root.width, root.height * root.w / root.h);
+        height: min(root.height, root.width * root.h / root.w);
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+
+        Rectangle {
+            y: 0;
+            height: parent.height * root.mask.top / root.h;
+            background: Theme.background;
+        }
+        Rectangle {
+            height: parent.height * root.mask.bottom / root.h;
+            y: parent.height - self.height;
+            background: Theme.background;
+        }
+        Rectangle {
+            x: 0;
+            width: parent.width * root.mask.left / root.w;
+            background: Theme.background;
+        }
+        Rectangle {
+            width: parent.width * root.mask.right / root.w;
+            x: parent.width - self.width;
+            background: Theme.background;
+        }
+    }
+}

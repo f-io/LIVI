@@ -1,7 +1,0 @@
-syntax="proto2";
-
-package aap_protobuf.service.wifiprojection;
-
-message WifiProjectionService {
-    optional string car_wifi_bssid = 1;
-}

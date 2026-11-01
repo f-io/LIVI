@@ -1,0 +1,164 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+import "control.proto";
+
+enum WirelessSetupMessageId {
+  WIRELESS_SETUP_MESSAGE_ID_WIFI_REQUEST_START_BT = 1;
+  WIRELESS_SETUP_MESSAGE_ID_WIFI_REQUEST_INFO_BT = 2;
+  WIRELESS_SETUP_MESSAGE_ID_WIFI_RESPONSE_INFO_BT = 3;
+  WIRELESS_SETUP_MESSAGE_ID_WIFI_VERSION_REQUEST_BT = 4;
+  WIRELESS_SETUP_MESSAGE_ID_WIFI_VERSION_RESPONSE_BT = 5;
+  WIRELESS_SETUP_MESSAGE_ID_WIFI_CONNECT_STATUS_BT = 6;
+  WIRELESS_SETUP_MESSAGE_ID_WIFI_RESPONSE_START_BT = 7;
+  WIRELESS_SETUP_MESSAGE_ID_WIFI_PING_REQUEST_BT = 8;
+  WIRELESS_SETUP_MESSAGE_ID_WIFI_PING_RESPONSE_BT = 9;
+  WIRELESS_SETUP_MESSAGE_ID_WIFI_CONNECTION_REJECTION_BT = 10;
+  WIRELESS_SETUP_MESSAGE_ID_WIFI_SETUP_INFO_BT = 11;
+}
+
+enum WifiAccessPointType {
+  WIFI_ACCESS_POINT_TYPE_STATIC = 0;
+  WIFI_ACCESS_POINT_TYPE_DYNAMIC = 1;
+}
+
+enum WifiChannelType {
+  WIFI_CHANNEL_TYPE_CHANNELS_5GHZ_ONLY = 0;
+  WIFI_CHANNEL_TYPE_CHANNELS_24GHZ_ONLY = 1;
+  WIFI_CHANNEL_TYPE_CHANNELS_DUAL_BAND = 2;
+  WIFI_CHANNEL_TYPE_NO_CHANNELS_SUPPORTED = 3;
+}
+
+enum WifiConnectionRejectionReason {
+  WIFI_CONNECTION_REJECTION_REASON_UNKNOWN = 0;
+  WIFI_CONNECTION_REJECTION_REASON_MOBILE_DEVICE_ID_NOT_FOUND = 1;
+  WIFI_CONNECTION_REJECTION_REASON_INVALID_SETUP_TOKEN = 2;
+}
+
+enum WifiSecurityMode {
+  WIFI_SECURITY_MODE_UNKNOWN = 0;
+  WIFI_SECURITY_MODE_OPEN = 1;
+  WIFI_SECURITY_MODE_WEP_64 = 2;
+  WIFI_SECURITY_MODE_WEP_128 = 3;
+  WIFI_SECURITY_MODE_WPA_PERSONAL = 4;
+  WIFI_SECURITY_MODE_WPA2_PERSONAL = 8;
+  WIFI_SECURITY_MODE_WPA_WPA2_PERSONAL = 12;
+  WIFI_SECURITY_MODE_WPA_ENTERPRISE = 20;
+  WIFI_SECURITY_MODE_WPA2_ENTERPRISE = 24;
+  WIFI_SECURITY_MODE_WPA_WPA2_ENTERPRISE = 28;
+  WIFI_SECURITY_MODE_WPA3_PERSONAL = 32;
+  WIFI_SECURITY_MODE_WPA2_WPA3_PERSONAL = 40;
+}
+
+enum WifiStartReason {
+  WIFI_START_REASON_USER_REQUEST = 0;
+  WIFI_START_REASON_AUTO_LAUNCH = 1;
+  WIFI_START_REASON_AUTOMATIC_RESTART = 2;
+}
+
+enum WirelessSetupStatus {
+  WIRELESS_SETUP_STATUS_WIFI_NETWORK_UNAVAILABLE = -11;
+  WIRELESS_SETUP_STATUS_PHONE_WIFI_DISABLED = -10;
+  WIRELESS_SETUP_STATUS_INSTRUCT_USER_TO_CHECK_THE_PHONE = -9;
+  WIRELESS_SETUP_STATUS_NO_SUPPORTED_WIFI_CHANNELS = -8;
+  WIRELESS_SETUP_STATUS_INVALID_HOST = -7;
+  WIRELESS_SETUP_STATUS_WIFI_NOT_YET_STARTED = -6;
+  WIRELESS_SETUP_STATUS_WIFI_DISABLED = -5;
+  WIRELESS_SETUP_STATUS_PROJECTION_ALREADY_STARTED = -4;
+  WIRELESS_SETUP_STATUS_WIFI_INCORRECT_CREDENTIALS = -3;
+  WIRELESS_SETUP_STATUS_WIFI_INACCESSIBLE_CHANNEL = -2;
+  WIRELESS_SETUP_STATUS_NO_COMPATIBLE_VERSION = -1;
+  WIRELESS_SETUP_STATUS_SUCCESS = 0;
+  WIRELESS_SETUP_STATUS_UNSOLICITED_MESSAGE = 1;
+}
+
+message MobileDeviceIdentity {
+  optional string mobile_device_id = 1;
+  optional string connectivity_lifetime_id = 2;
+  optional string bluetooth_name = 3;
+  optional string bluetooth_address = 4;
+}
+
+message WifiAccessPoint {
+  optional string ssid = 1;
+  optional string password = 2;
+  optional string bssid = 3;
+  optional WifiSecurityMode security_mode = 4;
+  repeated int32 supported_channel_frequencies_mhz = 6;
+}
+
+message WifiConnectionRejectionNotification {
+  optional WifiConnectionRejectionReason reason = 1;
+}
+
+message WifiConnectStatusNotification {
+  optional WirelessSetupStatus status = 1;
+  optional string error_message_hint = 2;
+}
+
+message WifiInfoRequest {
+}
+
+message WifiInfoResponse {
+  optional string ssid = 1;
+  optional string password = 2;
+  optional string bssid = 3;
+  optional WifiSecurityMode security_mode = 4;
+  optional WifiAccessPointType access_point_type = 5;
+}
+
+message WifiPingRequest {
+  optional int64 timestamp_ms = 1;
+}
+
+message WifiPingResponse {
+  optional int64 timestamp_ms = 1;
+}
+
+message WifiProjectionProtocolEndpoint {
+  optional string ip_address = 1;
+  optional int32 port = 2;
+}
+
+message WifiSetupInfoNotification {
+  optional int32 major_version = 1;
+  optional int32 minor_version = 2;
+  optional bytes setup_token = 3;
+  optional WifiProjectionProtocolEndpoint wifi_projection_protocol_endpoint = 4;
+  optional WifiAccessPoint access_point = 5;
+}
+
+message WifiStartRequest {
+  optional string ip_address = 1;
+  optional int32 port = 2;
+  optional WifiStartReason reason = 3;
+}
+
+message WifiStartResponse {
+  optional string ip_address = 1;
+  optional int32 port = 2;
+  optional WirelessSetupStatus status = 3;
+}
+
+message WifiVersionRequest {
+  optional int32 major_version = 1;
+  optional int32 minor_version = 2;
+  optional WifiChannelType supported_channel_type = 3;
+  repeated int32 supported_channel_frequencies_mhz = 4;
+  optional CarInfo car_info = 5;
+  optional WifiProjectionProtocolEndpoint wifi_projection_protocol_endpoint = 6;
+}
+
+message WifiVersionResponse {
+  optional int32 major_version = 1;
+  optional int32 minor_version = 2;
+  optional string device_serial = 3;
+  optional WirelessSetupStatus status = 4;
+  optional WifiChannelType selected_channel_type = 5;
+  optional MobileDeviceIdentity mobile_device_identity = 6;
+  optional bytes setup_token = 7;
+}

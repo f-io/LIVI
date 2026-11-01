@@ -1,0 +1,384 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme, Ui } from "../theme.slint";
+import { Metrics } from "metrics.slint";
+import { SettingsHeader } from "header.slint";
+import { SettingsRow, RowData, RowKind } from "row.slint";
+import { RowButton } from "actions.slint";
+import { SelectBody, NumberBody, TextBody, ColorBody, SliderBody, PendingBody, PickData, CalibrationBody, KnobData } from "fields.slint";
+import { Focus, FocusZone } from "../focus.slint";
+import { SliderGrab } from "controls.slint";
+
+export { RowData, RowKind, PickData, KnobData }
+
+export enum ScreenKind { list, select, number, text, color, slider, calibration, pending }
+
+export global SettingsState {
+    in property <ScreenKind> kind;
+    in property <string> title;
+    in property <bool> can-back;
+    in property <bool> show-apply;
+    in property <string> apply-text: "Apply";
+    in property <[RowData]> rows;
+    in property <[PickData]> picks;
+    in property <bool> read-only;
+    in property <float> number-value;
+    in property <float> number-min;
+    in property <float> number-max;
+    in property <bool> number-has-min;
+    in property <bool> number-has-max;
+    in property <float> number-step: 1;
+    in property <string> number-text;
+    in property <string> number-raw;
+    in property <string> text-value;
+    in property <int> text-max;
+    in property <color> color-preview;
+    in property <string> color-hex;
+    in property <bool> color-hex-invalid;
+    in property <bool> color-custom;
+    in property <float> color-hue;
+    in property <float> color-saturation;
+    in property <float> color-lightness;
+    in property <color> color-sat-from;
+    in property <color> color-sat-to;
+    in property <color> color-light-mid;
+    in property <string> hue-label: "Hue";
+    in property <string> saturation-label: "Saturation";
+    in property <string> lightness-label: "Lightness";
+    in property <float> level;
+    in property <string> level-text;
+    in property <string> pending-name;
+    in property <bool> cal-wedge;
+    in property <[KnobData]> cal-knobs;
+    in property <image> reset-icon;
+    in property <[int]> focus-rows;
+    in property <bool> dialog-open;
+    in property <bool> capture-open;
+    in property <string> capture-title;
+    in property <string> capture-hint;
+    in property <string> dialog-title;
+    in property <[RowData]> dialog-rows;
+    out property <int> focus-base: (can-back ? 1 : 0) + (show-apply ? 1 : 0);
+
+    callback back();
+    callback apply();
+    callback open(int);
+    callback toggle(int);
+    callback slide(int, float);
+    callback slide-done(int, float);
+    callback pick(int);
+    callback number-set(float);
+    callback number-commit(string);
+    callback text-commit(string);
+    callback color-hex-commit(string);
+    callback color-slide(int, float);
+    callback color-slide-done(int, float);
+    callback color-reset();
+    callback level-moved(float);
+    callback level-done(float);
+    callback cal-moved(int, float);
+    callback cal-done(int, float);
+    callback cal-reset(int);
+    callback press(int);
+    callback tool(int, int);
+    callback dialog-press(int);
+    callback capture(int);
+    callback capture-cancel();
+}
+
+export component SettingsView inherits Rectangle {
+    background: Theme.backdrop;
+
+    property <int> focus-index: Focus.zone == FocusZone.main ? Focus.main-index : -1;
+    property <length> lead: Metrics.header-h + Metrics.header-mb;
+
+    changed focus-index => {
+        if (focus-index < SettingsState.focus-base) {
+            flick.content-y = 0;
+            return;
+        }
+        if (SettingsState.kind != ScreenKind.list && SettingsState.kind != ScreenKind.select) {
+            return;
+        }
+        let k = focus-index - SettingsState.focus-base;
+        let top = lead + (SettingsState.kind == ScreenKind.list && k < SettingsState.focus-rows.length ? SettingsState.focus-rows[k] : k) * Metrics.row-h;
+        if (top + flick.content-y < 0) {
+            flick.content-y = -top;
+        } else if (top + Metrics.row-h + flick.content-y > flick.height) {
+            flick.content-y = flick.height - top - Metrics.row-h;
+        }
+    }
+
+    VerticalLayout {
+        padding-left: Metrics.pad-x;
+        padding-right: Metrics.pad-x;
+        padding-top: Metrics.pad-top;
+        padding-bottom: Metrics.pad-bottom;
+
+        flick := Flickable {
+            interactive: !SliderGrab.held;
+            vertical-stretch: 1;
+            content-height: body.preferred-height;
+            body := VerticalLayout {
+                width: parent.width;
+                SettingsHeader {
+                    title: SettingsState.title;
+                    can-back: SettingsState.can-back;
+                    show-apply: SettingsState.show-apply;
+                    apply-text: SettingsState.apply-text;
+                    back-focused: SettingsState.can-back && Focus.main(0);
+                    apply-focused: SettingsState.show-apply && Focus.main(SettingsState.can-back ? 1 : 0);
+                    back => { SettingsState.back(); }
+                    apply => { SettingsState.apply(); }
+                }
+                Rectangle { height: Metrics.header-mb; }
+                VerticalLayout {
+                    padding-left: 0.5rem;
+                    padding-right: 0.5rem;
+                    padding-bottom: 2px;
+                    if SettingsState.kind == ScreenKind.list: Rectangle {
+                        background: SettingsState.rows.length > 0 ? (Theme.comand ? Theme.panel-base : Theme.paper) : transparent;
+                        border-radius: Theme.comand ? Theme.radius : 10px;
+                        drop-shadow-blur: Theme.comand && SettingsState.rows.length > 0 ? 28px : 0;
+                        drop-shadow-offset-y: 10px;
+                        drop-shadow-color: Theme.panel-shadow;
+                        VerticalLayout {
+                        for r[i] in SettingsState.rows: Rectangle {
+                            property <int> rel: root.focus-index - SettingsState.focus-base - r.focus-at;
+                            property <length> side: clamp(Ui.height * 0.28, 140px, 220px);
+                            height: r.kind == RowKind.progress ? 4px : r.kind == RowKind.picture ? self.side + 2 * Metrics.row-pad : Metrics.row-h;
+                            if r.kind == RowKind.picture: Rectangle {
+                                width: parent.side;
+                                height: parent.side;
+                                border-radius: Theme.comand ? Theme.radius : 8px;
+                                border-width: r.focus-at >= 0 && parent.rel == 0 ? Theme.ring(2px) : 1px;
+                                border-color: r.focus-at >= 0 && parent.rel == 0 ? Theme.focus-color : Theme.rule;
+                                clip: true;
+                                Image {
+                                    width: 100%;
+                                    height: 100%;
+                                    source: r.icon;
+                                    image-fit: contain;
+                                }
+                                TouchArea {
+                                    clicked => { SettingsState.press(i); }
+                                }
+                            }
+                            if r.kind == RowKind.progress: Rectangle {
+                                background: Theme.comand ? Theme.panel-base : Theme.primary.with-alpha(0.3);
+                                Rectangle {
+                                    x: 0;
+                                    width: parent.width * r.level;
+                                    background: Theme.primary;
+                                    drop-shadow-blur: Theme.comand ? 8px : 0;
+                                    drop-shadow-color: Theme.primary;
+                                }
+                            }
+                            if r.kind != RowKind.progress && r.kind != RowKind.picture: SettingsRow {
+                                width: parent.width;
+                                height: parent.height;
+                                data: r;
+                                focused: r.tool-offset != 0 && r.focus-at >= 0 && parent.rel == 0;
+                                capture => { SettingsState.capture(i); }
+                                focus-tool: r.tool-offset >= 0 && r.focus-at >= 0 && parent.rel >= r.tool-offset && parent.rel - r.tool-offset < r.tools.length ? parent.rel - r.tool-offset : -1;
+                                first: i == 0;
+                                last: i == SettingsState.rows.length - 1;
+                                open => { SettingsState.open(r.node); }
+                                toggle => { SettingsState.toggle(i); }
+                                slide(v) => { SettingsState.slide(r.node, v); }
+                                slide-done(v) => { SettingsState.slide-done(r.node, v); }
+                                press => { SettingsState.press(i); }
+                                tool(j) => { SettingsState.tool(i, j); }
+                            }
+                        }
+                        }
+                    }
+                    if SettingsState.kind == ScreenKind.select: SelectBody {
+                        base: SettingsState.focus-base;
+                        picks: SettingsState.picks;
+                        read-only: SettingsState.read-only;
+                        pick(i) => { SettingsState.pick(i); }
+                    }
+                    if SettingsState.kind == ScreenKind.number: NumberBody {
+                        base: SettingsState.focus-base;
+                        value: SettingsState.number-value;
+                        min-value: SettingsState.number-min;
+                        max-value: SettingsState.number-max;
+                        has-min: SettingsState.number-has-min;
+                        has-max: SettingsState.number-has-max;
+                        step: SettingsState.number-step;
+                        text: SettingsState.number-text;
+                        raw: SettingsState.number-raw;
+                        set(v) => { SettingsState.number-set(v); }
+                        commit(s) => { SettingsState.number-commit(s); }
+                    }
+                    if SettingsState.kind == ScreenKind.text: TextBody {
+                        focused: Focus.main(SettingsState.focus-base);
+                        editing: Focus.editing && Focus.main(SettingsState.focus-base);
+                        value: SettingsState.text-value;
+                        max-length: SettingsState.text-max;
+                        commit(s) => { SettingsState.text-commit(s); }
+                    }
+                    if SettingsState.kind == ScreenKind.color: ColorBody {
+                        base: SettingsState.focus-base;
+                        preview: SettingsState.color-preview;
+                        hex: SettingsState.color-hex;
+                        hex-invalid: SettingsState.color-hex-invalid;
+                        custom: SettingsState.color-custom;
+                        hue: SettingsState.color-hue;
+                        saturation: SettingsState.color-saturation;
+                        lightness: SettingsState.color-lightness;
+                        sat-from: SettingsState.color-sat-from;
+                        sat-to: SettingsState.color-sat-to;
+                        light-mid: SettingsState.color-light-mid;
+                        hue-label: SettingsState.hue-label;
+                        saturation-label: SettingsState.saturation-label;
+                        lightness-label: SettingsState.lightness-label;
+                        hex-commit(s) => { SettingsState.color-hex-commit(s); }
+                        slide(i, v) => { SettingsState.color-slide(i, v); }
+                        slide-done(i, v) => { SettingsState.color-slide-done(i, v); }
+                        reset => { SettingsState.color-reset(); }
+                    }
+                    if SettingsState.kind == ScreenKind.slider: SliderBody {
+                        focused: Focus.main(SettingsState.focus-base);
+                        min-height: 160px;
+                        level: SettingsState.level;
+                        text: SettingsState.level-text;
+                        moved(v) => { SettingsState.level-moved(v); }
+                        released(v) => { SettingsState.level-done(v); }
+                    }
+                    if SettingsState.kind == ScreenKind.calibration: CalibrationBody {
+                        base: SettingsState.focus-base;
+                        wedge: SettingsState.cal-wedge;
+                        knobs: SettingsState.cal-knobs;
+                        reset-icon: SettingsState.reset-icon;
+                        moved(i, v) => { SettingsState.cal-moved(i, v); }
+                        released(i, v) => { SettingsState.cal-done(i, v); }
+                        reset(i) => { SettingsState.cal-reset(i); }
+                    }
+                    if SettingsState.kind == ScreenKind.pending: PendingBody {
+                        min-height: 120px;
+                        name: SettingsState.pending-name;
+                    }
+                }
+            }
+        }
+    }
+
+    if SettingsState.dialog-open: Rectangle {
+        background: Theme.comand ? #000000c2 : #00000080;
+        TouchArea {}
+        card := Rectangle {
+            width: min(parent.width - 32px, 444px);
+            height: content.preferred-height;
+            border-radius: Theme.comand ? Theme.radius : 4px;
+            background: Theme.comand ? Theme.panel : Theme.dark ? #383838 : #ffffff;
+            border-width: Theme.comand ? 1px : 0;
+            border-color: Theme.key-edge;
+            drop-shadow-blur: Theme.comand ? 70px : 24px;
+            drop-shadow-color: Theme.comand ? #000000 : #00000080;
+            content := VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 8px;
+                padding-bottom: 8px;
+                spacing: 4px;
+                Text {
+                    text: Theme.comand ? SettingsState.dialog-title.to-uppercase() : SettingsState.dialog-title;
+                    color: Theme.comand ? Theme.primary : Theme.text;
+                    font-size: Theme.comand ? 18px : 20px;
+                    font-weight: 500;
+                    letter-spacing: Theme.comand ? 2.5px : 0;
+                    height: 40px;
+                    vertical-alignment: center;
+                }
+                for r in SettingsState.dialog-rows: Rectangle {
+                    height: r.kind == RowKind.progress ? 4px : r.kind == RowKind.button ? 0 : 24px;
+                    if r.kind == RowKind.progress: Rectangle {
+                        background: Theme.comand ? Theme.panel-base : Theme.primary.with-alpha(0.3);
+                        Rectangle {
+                            x: 0;
+                            width: parent.width * r.level;
+                            background: Theme.primary;
+                            drop-shadow-blur: Theme.comand ? 8px : 0;
+                            drop-shadow-color: Theme.primary;
+                        }
+                    }
+                    if r.kind == RowKind.info: HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: r.label;
+                            color: r.alert ? #f44336 : Theme.text;
+                            font-size: 15px;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                        if r.value != "": Text {
+                            text: r.value;
+                            color: Theme.text-secondary;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                            horizontal-alignment: right;
+                            horizontal-stretch: 0;
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    padding-top: 8px;
+                    height: 52px;
+                    for r[i] in SettingsState.dialog-rows: Rectangle {
+                        visible: r.kind == RowKind.button;
+                        width: r.kind == RowKind.button ? b.width : 0;
+                        b := RowButton {
+                            y: (parent.height - self.height) / 2;
+                            text: r.button;
+                            outlined: r.outlined;
+                            enabled: r.enabled;
+                            focused: Focus.zone == FocusZone.main && r.focus-at >= 0 && Focus.main-index == r.focus-at;
+                            clicked => { SettingsState.dialog-press(i); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if SettingsState.capture-open: Rectangle {
+        background: Theme.comand ? #000000c2 : #00000080;
+        TouchArea {
+            clicked => { SettingsState.capture-cancel(); }
+        }
+        Rectangle {
+            width: min(parent.width - 48px, 460px);
+            height: box.preferred-height;
+            border-radius: Theme.comand ? Theme.radius : 4px;
+            background: Theme.comand ? Theme.panel : Theme.dark ? #383838 : #ffffff;
+            border-width: Theme.comand ? 1px : 0;
+            border-color: Theme.key-edge;
+            drop-shadow-blur: Theme.comand ? 70px : 24px;
+            drop-shadow-color: Theme.comand ? #000000 : #00000080;
+            box := VerticalLayout {
+                padding: 20px;
+                spacing: 8px;
+                Text {
+                    text: Theme.comand ? SettingsState.capture-title.to-uppercase() : SettingsState.capture-title;
+                    color: Theme.comand ? Theme.primary : Theme.text;
+                    font-size: Theme.comand ? 18px : 20px;
+                    font-weight: 500;
+                    letter-spacing: Theme.comand ? 2.5px : 0;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: SettingsState.capture-hint;
+                    color: Theme.text-secondary;
+                    font-size: 14px;
+                }
+            }
+        }
+    }
+}

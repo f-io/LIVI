@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * NXP IW416. The combo firmware mwifiex loads over SDIO runs the Bluetooth half too, btnxpuart
+ * only attaches to it.
+ */
+
+/ {
+	chosen {
+		/* driver_mode 2 adds uap0 next to the station interface. */
+		bootargs = "console=ttymxc0,115200 rdinit=/init mwifiex.driver_mode=2";
+	};
+};
+
+&uart3 {
+	bluetooth {
+		compatible = "nxp,88w8987-bt";
+		fw-init-baudrate = <3000000>;
+	};
+};

@@ -1,0 +1,220 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * LIVI Link on the i.MX6ULL dongle board (128 MiB, 16 MiB QSPI NOR). The board comes with
+ * different Wi-Fi/BT modules, what differs is in imx6ull-<module>.dtsi, included at the end.
+ * Pin settings are the ones the vendor kernel runs with, read off a running board.
+ */
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include "imx6ull.dtsi"
+
+/ {
+	model = "LIVI Link i.MX6ULL";
+	compatible = "livi,link-imx6ull", "fsl,imx6ull";
+
+	chosen {
+		stdout-path = &uart1;
+		bootargs = "console=ttymxc0,115200 rdinit=/init";
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x80000000 0x08000000>;
+	};
+
+	/* Enables the Wi-Fi/BT module (PDn). */
+	reg_wlan: regulator-wlan {
+		compatible = "regulator-fixed";
+		regulator-name = "wlan";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		gpio = <&gpio1 5 GPIO_ACTIVE_LOW>;
+		startup-delay-us = <100000>;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_leds>;
+
+		/* Red and blue is on from the kernel's start, livi-ledd takes over. */
+		led-red {
+			label = "red";
+			gpios = <&gpio1 2 GPIO_ACTIVE_LOW>;
+			default-state = "on";
+		};
+
+		led-blue {
+			label = "blue";
+			gpios = <&gpio1 9 GPIO_ACTIVE_LOW>;
+			default-state = "on";
+		};
+	};
+};
+
+&iomuxc {
+	pinctrl_uart1: uart1grp {
+		fsl,pins = <
+			MX6UL_PAD_UART1_TX_DATA__UART1_DCE_TX	0x1b0b1
+			MX6UL_PAD_UART1_RX_DATA__UART1_DCE_RX	0x1b0b1
+		>;
+	};
+
+	/* Both EVK buses, the MFi coprocessor sits on one of them. */
+	pinctrl_i2c1: i2c1grp {
+		fsl,pins = <
+			MX6UL_PAD_UART4_TX_DATA__I2C1_SCL	0x4001b8b0
+			MX6UL_PAD_UART4_RX_DATA__I2C1_SDA	0x4001b8b0
+		>;
+	};
+
+	pinctrl_i2c2: i2c2grp {
+		fsl,pins = <
+			MX6UL_PAD_UART5_TX_DATA__I2C2_SCL	0x4001b8b0
+			MX6UL_PAD_UART5_RX_DATA__I2C2_SDA	0x4001b8b0
+		>;
+	};
+
+	pinctrl_uart3: uart3grp {
+		fsl,pins = <
+			MX6UL_PAD_UART3_TX_DATA__UART3_DCE_TX	0x1b0b1
+			MX6UL_PAD_UART3_RX_DATA__UART3_DCE_RX	0x1b0b1
+			MX6UL_PAD_UART3_RTS_B__UART3_DCE_RTS	0x1b0b1
+			MX6UL_PAD_UART3_CTS_B__UART3_DCE_CTS	0x1b0b1
+		>;
+	};
+
+	pinctrl_qspi: qspigrp {
+		fsl,pins = <
+			MX6UL_PAD_NAND_WP_B__QSPI_A_SCLK	0x70a1
+			MX6UL_PAD_NAND_READY_B__QSPI_A_DATA00	0x70a1
+			MX6UL_PAD_NAND_CE0_B__QSPI_A_DATA01	0x70a1
+			MX6UL_PAD_NAND_CE1_B__QSPI_A_DATA02	0x70a1
+			MX6UL_PAD_NAND_CLE__QSPI_A_DATA03	0x70a1
+			MX6UL_PAD_NAND_DQS__QSPI_A_SS0_B	0x70a1
+		>;
+	};
+
+	pinctrl_usdhc1: usdhc1grp {
+		fsl,pins = <
+			MX6UL_PAD_SD1_CMD__USDHC1_CMD		0x17059
+			MX6UL_PAD_SD1_CLK__USDHC1_CLK		0x10071
+			MX6UL_PAD_SD1_DATA0__USDHC1_DATA0	0x17059
+			MX6UL_PAD_SD1_DATA1__USDHC1_DATA1	0x17059
+			MX6UL_PAD_SD1_DATA2__USDHC1_DATA2	0x17059
+			MX6UL_PAD_SD1_DATA3__USDHC1_DATA3	0x17059
+			MX6UL_PAD_GPIO1_IO05__GPIO1_IO05	0x17059
+		>;
+	};
+
+	pinctrl_leds: ledsgrp {
+		fsl,pins = <
+			MX6UL_PAD_GPIO1_IO02__GPIO1_IO02	0x17059
+			MX6UL_PAD_GPIO1_IO09__GPIO1_IO09	0x17059
+		>;
+	};
+};
+
+&uart1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_uart1>;
+	status = "okay";
+};
+
+&i2c1 {
+	clock-frequency = <100000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_i2c1>;
+	status = "okay";
+};
+
+&i2c2 {
+	clock-frequency = <100000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_i2c2>;
+	status = "okay";
+};
+
+/* The module's Bluetooth half, its node is in the module's .dtsi. */
+&uart3 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_uart3>;
+	uart-has-rtscts;
+	status = "okay";
+};
+
+/* The port the host sees. OTG1 is a host port with its ID pin grounded. */
+&usbotg2 {
+	dr_mode = "peripheral";
+	disable-over-current;
+	status = "okay";
+};
+
+&usdhc1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_usdhc1>;
+	bus-width = <4>;
+	no-1-8-v;
+	non-removable;
+	keep-power-in-suspend;
+	vmmc-supply = <&reg_wlan>;
+	status = "okay";
+};
+
+&qspi {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_qspi>;
+	status = "okay";
+
+	flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <29000000>;
+		spi-rx-bus-width = <1>;
+		spi-tx-bus-width = <1>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			/* U-Boot, its signature and the update block. */
+			partition@0 {
+				label = "uboot";
+				reg = <0x0 0x30000>;
+				read-only;
+			};
+
+			/* Erasing it makes U-Boot convert the staged kernel on the next boot. */
+			partition@30000 {
+				label = "env";
+				reg = <0x30000 0x10000>;
+			};
+
+			partition@40000 {
+				label = "kernel";
+				reg = <0x40000 0x340000>;
+			};
+
+			partition@380000 {
+				label = "rootfs";
+				reg = <0x380000 0xc60000>;
+			};
+
+			/* livid's saved settings, livid finds them by this name. */
+			partition@fe0000 {
+				label = "customer";
+				reg = <0xfe0000 0x10000>;
+			};
+
+			/* Marks a rootfs boot that has not brought the ways in up yet (initramfs init, rcS). */
+			partition@ff0000 {
+				label = "bootstate";
+				reg = <0xff0000 0x10000>;
+			};
+		};
+	};
+};
+
+#include "imx6ull-livi-link-radio.dtsi"

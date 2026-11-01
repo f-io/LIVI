@@ -1,0 +1,24 @@
+{
+  "config": { "language": "en" },
+  "sessions": { "active": null, "position": 0 },
+  "nowPlaying": {},
+  "dab": {
+    "receiver": "rtl-sdr",
+    "gainsDb": [],
+    "scan": { "channel": "8B", "done": 14, "total": 38, "found": 5 },
+    "active": true,
+    "station": 2,
+    "playing": true,
+    "text": "Now on air: the afternoon show with music and traffic news",
+    "signal": { "locked": true, "quality": 62 },
+    "stations": [
+      { "serviceId": 1, "label": "Radio Eins", "shortLabel": "Eins", "ensemble": "Berlin", "channel": "7D", "frequencyHz": 194064000 },
+      { "serviceId": 2, "label": "Deutschlandfunk", "shortLabel": "DLF", "ensemble": "DR Deutschland", "channel": "5C", "frequencyHz": 178352000, "favorite": true },
+      { "serviceId": 3, "label": "Bayern 3", "shortLabel": "", "ensemble": "BR Bayern", "channel": "11D", "frequencyHz": 222064000 },
+      { "serviceId": 4, "label": "Hidden FM", "shortLabel": "", "ensemble": "E", "channel": "5C", "frequencyHz": 178352000, "hidden": true },
+      { "serviceId": 5, "label": "Jazz Radio", "shortLabel": "Jazz", "ensemble": "Berlin", "channel": "7D", "frequencyHz": 194064000, "favorite": true },
+      { "serviceId": 6, "label": "Klassik Radio", "shortLabel": "Klassik", "ensemble": "DR Deutschland", "channel": "5C", "frequencyHz": 178352000 },
+      { "serviceId": 7, "label": "Fritz", "shortLabel": "", "ensemble": "Berlin", "channel": "7D", "frequencyHz": 194064000 }
+    ]
+  }
+}

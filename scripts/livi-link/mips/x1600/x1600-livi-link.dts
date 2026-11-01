@@ -1,0 +1,164 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+
+#include "x1600.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+	compatible = "livi,link-x1600", "ingenic,x1600";
+	model = "LIVI Link X1600";
+
+	chosen {
+		stdout-path = "serial2:3000000n8";
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x00000000 0x04000000>;
+	};
+
+	wifi_pwrseq: wifi-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		reset-gpios = <&gpa 30 GPIO_ACTIVE_LOW>;
+		post-power-on-delay-ms = <100>;
+		power-off-delay-us = <5000000>;
+	};
+
+	reg_vcc_wifi: regulator-vcc-wifi {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_wifi";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		gpio = <&gpa 29 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+	};
+};
+
+&otg_phy {
+	status = "okay";
+};
+
+&otg {
+	status = "okay";
+};
+
+&uart2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart2_pins>;
+	status = "okay";
+};
+
+&sfc {
+	pinctrl-names = "default";
+	pinctrl-0 = <&sfc_pins>;
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <80000000>;
+		spi-rx-bus-width = <4>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0 {
+				label = "uboot";
+				reg = <0x00000000 0x00100000>;
+			};
+			partition@100000 {
+				label = "kernel";
+				reg = <0x00100000 0x00400000>;
+			};
+			partition@500000 {
+				label = "rootfs";
+				reg = <0x00500000 0x01000000>;
+			};
+			partition@1500000 {
+				label = "kernel2";
+				reg = <0x01500000 0x00400000>;
+			};
+			partition@1900000 {
+				label = "rootfs2";
+				reg = <0x01900000 0x01000000>;
+			};
+			partition@2900000 {
+				label = "ota";
+				reg = <0x02900000 0x00100000>;
+			};
+			partition@2a00000 {
+				label = "userdata";
+				reg = <0x02a00000 0x05300000>;
+			};
+		};
+	};
+};
+
+&mmc1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&mmc1_pins>;
+	status = "okay";
+	bus-width = <4>;
+	non-removable;
+	mmc-pwrseq = <&wifi_pwrseq>;
+	vmmc-supply = <&reg_vcc_wifi>;
+};
+
+&i2c0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c0_pins>;
+	clock-frequency = <100000>;
+	status = "okay";
+};
+
+&{/aliases} {
+	/delete-property/ spi0;
+	spi1 = &spi0;
+};
+
+&spi0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&ssi0_pins>;
+	status = "okay";
+
+	led@0 {
+		compatible = "livi,x1600-led";
+		reg = <0>;
+		spi-max-frequency = <3000000>;
+	};
+};
+
+&pinctrl {
+	uart2_pins: uart2 {
+		function = "uart2";
+		groups = "uart2-data-b";
+		bias-pull-up;
+	};
+
+	sfc_pins: sfc {
+		function = "sfc";
+		groups = "sfc";
+		bias-disable;
+	};
+
+	mmc1_pins: mmc1 {
+		function = "mmc1";
+		groups = "mmc1-1bit", "mmc1-4bit";
+		bias-disable;
+	};
+
+	ssi0_pins: ssi0 {
+		function = "ssi";
+		groups = "ssi-dt-b", "ssi-dr-b", "ssi-clk-b", "ssi-ce0-b";
+		bias-disable;
+	};
+
+	i2c0_pins: i2c0 {
+		function = "i2c0";
+		groups = "i2c0-data-b";
+		bias-pull-up;
+	};
+};

@@ -1,0 +1,37 @@
+{
+  "config": { "language": "en", "updateNightly": false, "carType": 10, "evConnectorTypes": [2, 5], "speedUnit": "kmh", "bindings": { "playPause": "KeyX", "next": "" } },
+  "sessions": { "active": null, "position": 0 },
+  "devices": [
+    { "id": "a", "name": "iPhone 17 Pro", "protocol": "carplay", "lastTransport": "wifi", "status": "active", "batteryLevel": 54, "batteryCharging": true, "signalStrength": 4, "session": 1 },
+    { "id": "b", "name": "Pixel 8", "protocol": "androidauto", "lastTransport": "usb", "status": "available", "batteryLevel": 12, "signalStrength": 2, "session": 2 },
+    { "id": "c", "name": "iPad", "protocol": "carplay", "status": "offline" }
+  ],
+  "nowPlaying": {},
+  "system": { "linkSpeed": { "downMbps": 48.3, "downRate": 866, "upMbps": 2.1, "upRate": 0 } },
+  "update": {
+    "latest": { "version": "9.6.0", "commit": "a1b2c3d4e5", "run": "57", "url": "https://example.invalid/livi.dmg" },
+    "checking": false, "checked": true, "phase": "download", "received": 31457280, "total": 83886080
+  },
+  "telemetry": {
+    "fuelPct": 71.6, "batteryCapacityKwh": 77.0, "batteryLevelKwh": 55.1,
+    "gps": { "lat": 53.551086, "lng": 9.993682, "alt": 12.4, "speedMs": 13.9, "accuracyM": 2.6 },
+    "gnss": {
+      "connected": true, "fixQuality": "gps", "fixMode": "3d", "satellitesUsed": 9, "satellitesVisible": 14,
+      "constellations": ["gps", "galileo", "glonass"], "pdop": 1.6, "hdop": 0.9, "vdop": 1.3,
+      "receiverTime": 1792512000000, "timezone": "Europe/Berlin",
+      "satellites": [
+        { "id": 3, "constellation": "gps", "used": true, "snr": 45 },
+        { "id": 7, "constellation": "gps", "used": true, "snr": 42 },
+        { "id": 9, "constellation": "gps", "used": false, "snr": 28 },
+        { "id": 11, "constellation": "galileo", "used": true, "snr": 40 },
+        { "id": 70, "constellation": "glonass", "used": false, "snr": 31 }
+      ],
+      "version": { "software": "ROM SPG 5.10", "hardware": "000A0000", "model": "NEO-M9N", "protocol": "32.01", "supported": ["GPS", "GAL", "GLO", "BDS"] },
+      "rf": { "jamming": "ok", "antennaStatus": "ok", "antennaPower": "on", "noise": 82, "agc": 6100, "jammingIndicator": 12 }
+    }
+  },
+  "cluster": {
+    "theme": { "displays": [ { "layouts": [ { "id": "livi.navMini", "name": "Nav mini" }, { "id": "livi.clusterOnly", "name": "Map" } ] } ] },
+    "arranged": [ { "id": "livi.navMini", "on": true }, { "id": "livi.clusterOnly", "on": false } ]
+  }
+}

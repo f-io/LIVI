@@ -1,0 +1,111 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { MaskData } from "../mask.slint";
+
+export struct CapData {
+    path: string,
+    opacity: float,
+}
+
+export struct TrailData {
+    path: string,
+    index: int,
+}
+
+export struct LabelData {
+    x: float,
+    y: float,
+    text: string,
+}
+
+export struct GaugeData {
+    box-w: float,
+    box-h: float,
+    minor: string,
+    major: string,
+    red-minor: string,
+    red-major: string,
+    caps: [CapData],
+    trail: [TrailData],
+    labels: [LabelData],
+    label-size: float,
+    cx: float,
+    cy: float,
+    radius: float,
+    gap: float,
+    mirror: bool,
+    fit: float,
+    tick-w: float,
+    tick-h: float,
+    major-h: float,
+    ticks: int,
+    redline-index: float,
+    shadow: image,
+    shadow-half: float,
+}
+
+export global DashState {
+    in property <bool> enabled;
+    in property <bool> gauges: true;
+    in property <bool> map;
+    in property <MaskData> mask;
+    in property <int> center;
+    in property <GaugeData> speed-gauge;
+    in property <GaugeData> rpm-gauge;
+    in property <float> speed-t;
+    in property <float> rpm-t;
+    in property <float> ring-shift;
+    in property <string> speed-text: "0";
+    in property <string> speed-label: "KPH";
+    in property <string> gear: "P";
+    in property <string> gear-label: "GEAR";
+    in property <bool> turn-left;
+    in property <bool> turn-right;
+    in property <bool> hazards;
+    in property <bool> lights;
+    in property <bool> high-beam;
+    in property <bool> parking-brake;
+    in property <string> ambient;
+    in property <int> fuel;
+    in property <bool> fuel-low;
+    in property <bool> battery;
+    in property <string> oil-text: "0°";
+    in property <float> oil-ratio;
+    in property <bool> oil-hot;
+    in property <color> accent;
+    in property <bool> has-accent;
+    in property <int> page-count;
+    in property <int> page-index;
+    in-out property <bool> dots-shown: true;
+    in property <string> clock;
+    in property <bool> nav-active;
+    in property <image> nav-icon;
+    in property <bool> nav-has-image;
+    in property <image> nav-image;
+    in property <int> nav-exit;
+    in property <string> nav-distance;
+    in property <string> nav-maneuver;
+    in property <string> nav-road;
+    in property <string> nav-after-road;
+    in property <string> nav-time-left;
+    in property <string> nav-destination-distance;
+    in property <string> nav-destination;
+    in property <string> nav-app;
+    in property <string> placeholder: "No dashboard on this screen";
+    callback select-page(int);
+    callback step(int);
+}
+
+export global Blink {
+    in-out property <bool> on: true;
+}
+
+export global Signal {
+    out property <color> green: #19e04b;
+    out property <color> blue: #2b8cff;
+    out property <color> red: #ff3b30;
+    out property <color> warn: #f44336;
+    out property <color> amber: #ffa726;
+}

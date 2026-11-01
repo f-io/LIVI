@@ -1,0 +1,97 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+import "car_property.proto";
+import "common.proto";
+
+enum CarControlMessageId {
+  CAR_CONTROL_MESSAGE_ID_SET_CAR_PROPERTY_VALUE_REQUEST = 32769;
+  CAR_CONTROL_MESSAGE_ID_SET_CAR_PROPERTY_VALUE_RESPONSE = 32770;
+  CAR_CONTROL_MESSAGE_ID_REGISTER_CAR_PROPERTY_LISTENERS_REQUEST = 32771;
+  CAR_CONTROL_MESSAGE_ID_REGISTER_CAR_PROPERTY_LISTENERS_RESPONSE = 32772;
+  CAR_CONTROL_MESSAGE_ID_CAR_PROPERTY_CHANGE_EVENT = 32773;
+  CAR_CONTROL_MESSAGE_ID_CAR_ACTION_NOTIFICATION = 32774;
+  CAR_CONTROL_MESSAGE_ID_CAR_CONTROL_GROUP_UPDATE = 32775;
+}
+
+enum CarControlGroupId {
+  CAR_CONTROL_GROUP_ID_UNKNOWN = 0;
+  CAR_CONTROL_GROUP_ID_SYSTEM_UI = 1;
+}
+
+enum CarControlSideAffinity {
+  CAR_CONTROL_SIDE_AFFINITY_UNKNOWN = 0;
+  CAR_CONTROL_SIDE_AFFINITY_UNALIGNED = 1;
+  CAR_CONTROL_SIDE_AFFINITY_DRIVER_ALIGNED = 2;
+  CAR_CONTROL_SIDE_AFFINITY_PASSENGER_ALIGNED = 3;
+}
+
+message CarActionControl {
+  optional CarAction action = 1;
+}
+
+message CarActionNotification {
+  optional CarAction action = 1;
+}
+
+message CarControl {
+  oneof control {
+    CarPropertyControl property_control = 1;
+    CarActionControl action_control = 2;
+    CarControlGroup control_group = 3;
+  }
+  optional bool enabled = 4;
+  repeated CarControlMetadata metadata = 5;
+  optional CarControlSideAffinity side_affinity = 6;
+}
+
+message CarControlGroup {
+  optional CarControlGroupId group_id = 1;
+  repeated CarControl controls = 2;
+}
+
+message CarControlGroupUpdateNotification {
+  optional CarControlGroup control_group = 1;
+}
+
+message CarControlService {
+  repeated CarPropertyConfig property_configs = 1;
+  repeated CarControl controls = 2;
+  repeated SupportedCarAction supported_actions = 3;
+}
+
+message CarPropertyChangeNotification {
+  optional CarProperty property = 1;
+  optional CarPropertyValue value = 2;
+  optional int32 status = 3;
+}
+
+message CarPropertyListenerRegistrationResult {
+  optional CarProperty property = 1;
+  optional MessageStatus status = 2;
+}
+
+message RegisterCarPropertyListenersRequest {
+  repeated CarProperty properties = 1;
+}
+
+message RegisterCarPropertyListenersResponse {
+  repeated CarPropertyListenerRegistrationResult results = 1;
+}
+
+message SetCarPropertyValueRequest {
+  optional CarProperty property = 1;
+  optional CarPropertyValue value = 2;
+  optional string request_id = 3;
+}
+
+message SetCarPropertyValueResponse {
+  optional CarProperty property = 1;
+  optional MessageStatus status = 2;
+  optional string request_id = 3;
+  optional int32 error_code = 4;
+}

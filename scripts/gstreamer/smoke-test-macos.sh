@@ -16,7 +16,18 @@ INSPECT="$ROOT/bin/gst-inspect-1.0"
 "$ROOT/bin/gst-device-monitor-1.0" --version
 
 # Video elements must load self-contained
-for el in h264parse h265parse vtdec vtdec_hw videoconvert videoscale glimagesink osxvideosink; do
+for el in h264parse h265parse vtdec vtdec_hw videoconvert videoscale glimagesink osxvideosink \
+  playbin3 hlsdemux2 souphttpsrc qtdemux; do
+  if "$INSPECT" "$el" >/dev/null 2>&1; then
+    echo "ok   $el"
+  else
+    echo "FAIL $el" >&2
+    exit 1
+  fi
+done
+
+# DAB+ audio needs faad, CarPlay AAC needs avdec_aac
+for el in aacparse faad avdec_aac; do
   if "$INSPECT" "$el" >/dev/null 2>&1; then
     echo "ok   $el"
   else

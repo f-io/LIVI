@@ -1,0 +1,21 @@
+[package]
+name = "livi-video-player"
+version = "0.1.0"
+edition.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+# v1_24 matches the oldest build host, the CI runner.
+[dependencies]
+livi-video.workspace = true
+gstreamer = { workspace = true, features = ["v1_24"] }
+gstreamer-app = { workspace = true, features = ["v1_24"] }
+gstreamer-base = { version = "0.25", features = ["v1_24"] }
+livi-host-proto.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+gstreamer-video = { version = "0.25", features = ["v1_24"], optional = true }
+
+[features]
+window-view = ["dep:gstreamer-video"]

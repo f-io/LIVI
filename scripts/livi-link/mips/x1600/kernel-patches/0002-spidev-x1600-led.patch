@@ -1,0 +1,21 @@
+spidev only binds to compatibles it knows. The RGB LED of this board is driven
+from userspace over /dev/spidev, the same as the "ax520-led" entry.
+---
+--- a/drivers/spi/spidev.c
++++ b/drivers/spi/spidev.c
+@@ -690,6 +690,7 @@
+ 	{ .name = /* dh */ "dhcom-board" },
+ 	{ .name = /* elgin */ "jg10309-01" },
+ 	{ .name = /* gocontroll */ "moduline-module-slot"},
++	{ .name = /* livi */ "x1600-led" },
+ 	{ .name = /* lineartechnology */ "ltc2488" },
+ 	{ .name = /* lwn */ "bk4" },
+ 	{ .name = /* lwn */ "bk4-spi" },
+@@ -724,6 +725,7 @@
+ 	{ .compatible = "dh,dhcom-board", .data = &spidev_of_check },
+ 	{ .compatible = "elgin,jg10309-01", .data = &spidev_of_check },
+ 	{ .compatible = "gocontroll,moduline-module-slot", .data = &spidev_of_check},
++	{ .compatible = "livi,x1600-led", .data = &spidev_of_check },
+ 	{ .compatible = "lineartechnology,ltc2488", .data = &spidev_of_check },
+ 	{ .compatible = "lwn,bk4", .data = &spidev_of_check },
+ 	{ .compatible = "lwn,bk4-spi", .data = &spidev_of_check },

@@ -1,0 +1,9 @@
+[package]
+name = "livi-host-proto"
+version = "0.1.0"
+edition.workspace = true
+
+# Framing of the gst-host control protocol the main process and the host
+# exchange.
+[lib]
+crate-type = ["rlib"]

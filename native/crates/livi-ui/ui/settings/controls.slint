@@ -1,0 +1,197 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme } from "../theme.slint";
+import { Metrics } from "metrics.slint";
+
+export component Switch inherits Rectangle {
+    in property <bool> checked;
+    in property <bool> enabled: true;
+    callback toggled();
+
+    width: 58px;
+    height: 38px;
+
+    // COMAND: square recessed slot with a sliding bevelled block.
+    if Theme.comand: Rectangle {
+        x: 5px;
+        y: 6px;
+        width: 48px;
+        height: 25px;
+        border-radius: 2px;
+        border-width: 1px;
+        border-color: root.checked ? Theme.primary : Theme.rule;
+        background: Theme.groove;
+    }
+    if Theme.comand: Rectangle {
+        x: root.checked ? 31px : 10px;
+        y: 10px;
+        width: 17px;
+        height: 17px;
+        border-radius: 1px;
+        border-width: 1px;
+        border-color: root.checked ? Theme.key-lit-edge : Theme.text.mix(Theme.background, 0.45);
+        background: root.checked
+            ? @linear-gradient(180deg, Theme.highlight 0%, Theme.primary.mix(#000000, 0.75) 100%)
+            : @linear-gradient(180deg, Theme.text.mix(Theme.background, 0.75) 0%, Theme.text.mix(Theme.background, 0.3) 100%);
+        drop-shadow-blur: root.checked ? 8px : 0;
+        drop-shadow-color: Theme.primary;
+        animate x { duration: 150ms; easing: ease-out; }
+    }
+
+    if !Theme.comand: Rectangle {
+        x: 12px;
+        y: 12px;
+        width: 34px;
+        height: 14px;
+        border-radius: 7px;
+        background: root.checked ? Theme.primary.with-alpha(0.5) : (Theme.dark ? #ffffff4d : #00000061);
+    }
+    if !Theme.comand: Rectangle {
+        x: root.checked ? 29px : 9px;
+        y: 9px;
+        width: 20px;
+        height: 20px;
+        border-radius: 10px;
+        background: root.checked ? Theme.primary : (Theme.dark ? #e0e0e0 : #ffffff);
+        drop-shadow-blur: 2px;
+        drop-shadow-offset-y: 1px;
+        drop-shadow-color: #00000066;
+        animate x { duration: 150ms; easing: ease-out; }
+    }
+    TouchArea {
+        enabled: root.enabled;
+        clicked => { root.toggled(); }
+    }
+}
+
+export global SliderGrab {
+    in-out property <bool> held;
+}
+
+export component Slider inherits Rectangle {
+    in property <float> level;
+    in property <bool> enabled: true;
+    in property <bool> focused;
+    in property <color> tint: Theme.primary;
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> has-icon;
+    in property <bool> small;
+    callback moved(float);
+    callback released(float);
+
+    property <bool> dragging;
+    property <float> drag-level;
+    property <float> shown: dragging ? drag-level : level;
+    property <length> pill: root.small ? Metrics.pill-h-small : Metrics.pill-h;
+    property <length> fill: self.width * clamp(root.shown, 0, 1);
+    property <length> gap: root.pill * 0.36;
+    property <bool> inside: root.fill >= label.preferred-width + 2 * root.gap;
+    property <bool> lit: root.focused || root.dragging || touch.has-hover;
+
+    // COMAND: thin recessed groove with a ringed, glowing thumb.
+    property <length> thumb: root.small ? 22px : 26px;
+    property <length> knob-x: clamp(root.fill - root.thumb / 2, 0, root.width - root.thumb);
+    property <bool> fits-right: root.knob-x + root.thumb + root.gap + label.preferred-width <= root.width;
+
+    min-height: Theme.comand ? max(root.pill, root.thumb) : root.pill;
+    horizontal-stretch: 1;
+
+    if !Theme.comand: Rectangle {
+        y: (parent.height - root.pill) / 2;
+        height: root.pill;
+        border-radius: root.pill / 2;
+        background: root.tint.with-alpha(Theme.dark ? 0.26 : 0.18);
+        drop-shadow-blur: root.lit ? 8px : 4px;
+        drop-shadow-color: root.tint.with-alpha(root.lit ? 0.35 : 0.18);
+    }
+    if !Theme.comand: Rectangle {
+        x: 0;
+        y: (parent.height - root.pill) / 2;
+        width: root.fill;
+        height: root.pill;
+        border-radius: root.pill / 2;
+        background: root.tint;
+    }
+    if Theme.comand: Rectangle {
+        y: (parent.height - self.height) / 2;
+        height: 8px;
+        border-radius: 4px;
+        border-width: 1px;
+        border-color: root.tint.mix(Theme.background, 0.45);
+        background: Theme.groove;
+        Rectangle {
+            x: 1px;
+            width: max(0, root.fill - 2px);
+            height: 4px;
+            border-radius: 2px;
+            background: root.tint.with-alpha(0.7);
+        }
+    }
+    if Theme.comand: Rectangle {
+        x: root.knob-x;
+        y: (parent.height - self.height) / 2;
+        width: root.thumb;
+        height: root.thumb;
+        border-radius: self.width / 2;
+        border-width: 3px;
+        border-color: root.tint;
+        background: Theme.background.mix(Theme.text, 0.98);
+        drop-shadow-blur: root.lit ? 18px : 13px;
+        drop-shadow-color: root.tint.with-alpha(root.lit ? 0.9 : 0.58);
+    }
+    if Theme.comand && root.focused: Rectangle {
+        x: root.knob-x - 3px;
+        y: (parent.height - self.height) / 2;
+        width: root.thumb + 6px;
+        height: root.thumb + 6px;
+        border-radius: self.width / 2;
+        border-width: 1px;
+        border-color: Theme.focus-color;
+    }
+    if root.has-icon && !Theme.comand: Image {
+        x: root.pill * 0.4;
+        y: (parent.height - self.height) / 2;
+        width: root.pill * 0.5;
+        height: root.pill * 0.5;
+        source: root.icon;
+        colorize: #ffffff;
+    }
+    label := Text {
+        x: Theme.comand
+            ? (root.fits-right ? root.knob-x + root.thumb + root.gap : root.knob-x - self.width - root.gap)
+            : (root.inside ? root.fill - self.width - root.gap : root.fill + root.gap);
+        y: (parent.height - self.height) / 2;
+        text: root.text;
+        font-size: root.small ? Metrics.pill-font-small : Metrics.pill-font;
+        font-weight: Theme.comand ? 600 : 900;
+        letter-spacing: Theme.tracking;
+        color: Theme.comand ? root.tint : root.inside ? #ffffff : Theme.text;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.dragging = true;
+                SliderGrab.held = true;
+                root.drag-level = clamp(self.mouse-x / self.width, 0, 1);
+                root.moved(root.drag-level);
+            } else if (e.kind == PointerEventKind.up && root.dragging) {
+                root.dragging = false;
+                SliderGrab.held = false;
+                root.released(clamp(self.mouse-x / self.width, 0, 1));
+            } else if (e.kind == PointerEventKind.cancel) {
+                root.dragging = false;
+                SliderGrab.held = false;
+            }
+        }
+        moved => {
+            if (root.dragging) {
+                root.drag-level = clamp(self.mouse-x / self.width, 0, 1);
+                root.moved(root.drag-level);
+            }
+        }
+    }
+}

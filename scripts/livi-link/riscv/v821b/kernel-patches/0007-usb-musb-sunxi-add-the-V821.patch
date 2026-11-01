@@ -1,0 +1,68 @@
+Subject: [PATCH] usb: musb: sunxi: add the V821
+
+The V821 OTG controller has 5 endpoints and no CONFIGDATA register. The USB
+bus and its MBUS port have gates and resets of their own next to the OTG
+ones, so all clocks are held on from probe and the resets are taken as one
+array.
+---
+diff --git a/drivers/usb/musb/sunxi.c b/drivers/usb/musb/sunxi.c
+index a6bd3e968..a5ffa630c 100644
+--- a/drivers/usb/musb/sunxi.c
++++ b/drivers/usb/musb/sunxi.c
+@@ -72,6 +72,8 @@ struct sunxi_musb_cfg {
+ 	bool has_sram;
+ 	bool has_reset;
+ 	bool no_configdata;
++	/* the USB bus and its MBUS port have gates and resets of their own */
++	bool bus_gates;
+ };
+ 
+ /* Our read/write methods need access and do not get passed in a musb ref :| */
+@@ -745,12 +747,23 @@ static int sunxi_musb_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	if (test_bit(SUNXI_MUSB_FL_HAS_RESET, &glue->flags)) {
+-		glue->rst = devm_reset_control_get(&pdev->dev, NULL);
++		if (cfg->bus_gates)
++			glue->rst = devm_reset_control_array_get_exclusive(&pdev->dev);
++		else
++			glue->rst = devm_reset_control_get(&pdev->dev, NULL);
+ 		if (IS_ERR(glue->rst))
+ 			return dev_err_probe(&pdev->dev, PTR_ERR(glue->rst),
+ 					     "Error getting reset\n");
+ 	}
+ 
++	if (cfg->bus_gates) {
++		struct clk_bulk_data *clks;
++
++		ret = devm_clk_bulk_get_all_enabled(&pdev->dev, &clks);
++		if (ret < 0)
++			return dev_err_probe(&pdev->dev, ret, "Error getting bus clocks\n");
++	}
++
+ 	glue->extcon = extcon_get_edev_by_phandle(&pdev->dev, 0);
+ 	if (IS_ERR(glue->extcon))
+ 		return dev_err_probe(&pdev->dev, PTR_ERR(glue->extcon),
+@@ -840,6 +853,13 @@ static const struct sunxi_musb_cfg suniv_f1c100s_musb_cfg = {
+ 	.no_configdata = true,
+ };
+ 
++static const struct sunxi_musb_cfg sun300i_v821_musb_cfg = {
++	.hdrc_config = &sunxi_musb_hdrc_config_5eps,
++	.has_reset = true,
++	.no_configdata = true,
++	.bus_gates = true,
++};
++
+ static const struct of_device_id sunxi_musb_match[] = {
+ 	{ .compatible = "allwinner,sun4i-a10-musb",
+ 	  .data = &sun4i_a10_musb_cfg, },
+@@ -849,6 +869,8 @@ static const struct of_device_id sunxi_musb_match[] = {
+ 	  .data = &sun8i_a33_musb_cfg, },
+ 	{ .compatible = "allwinner,sun8i-h3-musb",
+ 	  .data = &sun8i_h3_musb_cfg, },
++	{ .compatible = "allwinner,sun300i-v821-musb",
++	  .data = &sun300i_v821_musb_cfg, },
+ 	{ .compatible = "allwinner,suniv-f1c100s-musb",
+ 	  .data = &suniv_f1c100s_musb_cfg, },
+ 	{}

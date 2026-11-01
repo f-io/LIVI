@@ -1,0 +1,33 @@
+--- a/aic8800_fdrv/rwnx_main.c
++++ b/aic8800_fdrv/rwnx_main.c
+@@ -3599,8 +3599,10 @@
+  * configured at firmware level.
+  */
+ static int rwnx_cfg80211_set_monitor_channel(struct wiphy *wiphy,
++											 struct net_device *dev,
+ 											 struct cfg80211_chan_def *chandef)
+ {
++	(void)dev;
+ 	struct rwnx_hw *rwnx_hw = wiphy_priv(wiphy);
+ 	struct rwnx_vif *rwnx_vif;
+ 	struct me_config_monitor_cfm cfm;
+@@ -3652,8 +3654,9 @@
+ }
+ 
+ int rwnx_cfg80211_set_monitor_channel_(struct wiphy *wiphy,
++                                             struct net_device *dev,
+                                              struct cfg80211_chan_def *chandef){
+-    return rwnx_cfg80211_set_monitor_channel(wiphy, chandef);
++    return rwnx_cfg80211_set_monitor_channel(wiphy, dev, chandef);
+ }
+ 
+ 
+@@ -4072,7 +4075,7 @@
+ 
+ 	if (rwnx_vif->vif_index == rwnx_hw->monitor_vif) {
+ 		//retrieve channel from firmware
+-		rwnx_cfg80211_set_monitor_channel(wiphy, NULL);
++		rwnx_cfg80211_set_monitor_channel(wiphy, NULL, NULL);
+ 	}
+ 
+ 	//Check if channel context is valid

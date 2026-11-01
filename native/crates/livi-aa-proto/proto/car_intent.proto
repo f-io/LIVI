@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+message CarIntentNotification {
+  optional string metadata = 2;
+}
+
+message CarIntentService {
+}

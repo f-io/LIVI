@@ -1,0 +1,24 @@
+--- a/drivers/usb/chipidea/ci_hdrc_imx.c
++++ b/drivers/usb/chipidea/ci_hdrc_imx.c
+@@ -61,7 +61,8 @@
+ static const struct ci_hdrc_imx_platform_flag imx6ul_usb_data = {
+ 	.flags = CI_HDRC_SUPPORTS_RUNTIME_PM |
+ 		CI_HDRC_TURN_VBUS_EARLY_ON |
+-		CI_HDRC_DISABLE_DEVICE_STREAMING,
++		CI_HDRC_DISABLE_DEVICE_STREAMING |
++		CI_HDRC_FORCE_VBUS_ACTIVE_ALWAYS,
+ };
+
+ static const struct ci_hdrc_imx_platform_flag imx7d_usb_data = {
+--- a/drivers/usb/chipidea/otg.c
++++ b/drivers/usb/chipidea/otg.c
+@@ -133,7 +133,8 @@
+ 	if (ci->role != CI_ROLE_GADGET)
+ 		return;
+
+-	if (!ci->is_otg) {
++	/* A bus-powered gadget has VBUS whenever it runs, whatever OTGSC says. */
++	if (!ci->is_otg || ci->platdata->flags & CI_HDRC_FORCE_VBUS_ACTIVE_ALWAYS) {
+ 		if (ci->platdata->flags & CI_HDRC_FORCE_VBUS_ACTIVE_ALWAYS)
+ 			usb_gadget_vbus_connect(&ci->gadget);
+ 		return;

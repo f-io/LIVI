@@ -1,0 +1,76 @@
+Subject: [PATCH] riscv: v821: map coherent DMA through the uncached alias
+
+Without a way to map memory uncached, dma_alloc_coherent() fails for every
+non-coherent device and the SPIF and SMHC probes stop with -ENOMEM. Map each
+coherent buffer a second time through the non-cacheable alias the vendor
+OpenSBI sets up.
+---
+diff --git a/arch/riscv/Kconfig.socs b/arch/riscv/Kconfig.socs
+index d6bce2220..0a4bb3aef 100644
+--- a/arch/riscv/Kconfig.socs
++++ b/arch/riscv/Kconfig.socs
+@@ -74,9 +74,11 @@ config ARCH_SUNXI_V821
+ 	# It would remap coherent DMA with page attributes this core does not have.
+ 	depends on !ERRATA_THEAD_CMO
+ 	select ANDES_CACHE
++	select ARCH_HAS_DMA_SET_UNCACHED
+ 	select CACHEMAINT_FOR_DMA
+ 	select ERRATA_ANDES
+ 	select RISCV_DMA_NONCOHERENT
++	select VMAP_PFN
+ 	help
+ 	  This enables support for the Allwinner V821 and its Andes A27L2 core.
+ 
+diff --git a/arch/riscv/mm/Makefile b/arch/riscv/mm/Makefile
+index b916a68d3..a78fb9437 100644
+--- a/arch/riscv/mm/Makefile
++++ b/arch/riscv/mm/Makefile
+@@ -32,4 +32,5 @@ endif
+ 
+ obj-$(CONFIG_DEBUG_VIRTUAL) += physaddr.o
+ obj-$(CONFIG_RISCV_DMA_NONCOHERENT) += dma-noncoherent.o
++obj-$(CONFIG_ARCH_SUNXI_V821) += dma-v821.o
+ obj-$(CONFIG_RISCV_NONSTANDARD_CACHE_OPS) += cache-ops.o
+diff --git a/arch/riscv/mm/dma-v821.c b/arch/riscv/mm/dma-v821.c
+new file mode 100644
+index 000000000..b150aa90b
+--- /dev/null
++++ b/arch/riscv/mm/dma-v821.c
+@@ -0,0 +1,37 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * The A27L2 cannot mark a page uncached in its page tables. The vendor
++ * OpenSBI sets an Andes PMA region that makes 0x1_0000_0000 to 0x1_ffff_ffff
++ * non-cacheable, and the bus ignores PA bit 32, so DRAM reached with that
++ * bit set is the same memory without the cache in the way.
++ */
++
++#include <linux/bits.h>
++#include <linux/dma-map-ops.h>
++#include <linux/err.h>
++#include <linux/mm.h>
++#include <linux/slab.h>
++#include <linux/vmalloc.h>
++
++#define V821_UNCACHED_PFN	BIT(32 - PAGE_SHIFT)
++
++/* The alias is a vmalloc address, so dma_direct_free() unmaps it. */
++void *arch_dma_set_uncached(void *addr, size_t size)
++{
++	unsigned int i, count = PAGE_ALIGN(size) >> PAGE_SHIFT;
++	unsigned long pfn = virt_to_pfn(addr);
++	unsigned long *pfns;
++	void *ret;
++
++	pfns = kmalloc_array(count, sizeof(*pfns), GFP_KERNEL);
++	if (!pfns)
++		return ERR_PTR(-ENOMEM);
++
++	for (i = 0; i < count; i++)
++		pfns[i] = (pfn + i) | V821_UNCACHED_PFN;
++
++	ret = vmap_pfn(pfns, count, PAGE_KERNEL);
++	kfree(pfns);
++
++	return ret ?: ERR_PTR(-ENOMEM);
++}

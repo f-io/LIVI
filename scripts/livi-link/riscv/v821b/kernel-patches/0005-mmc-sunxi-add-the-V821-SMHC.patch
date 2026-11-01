@@ -1,0 +1,148 @@
+Subject: [PATCH] mmc: sunxi: add the V821 SMHC
+
+Settings from the vendor driver for this controller: 4 KiB descriptors whose
+length is always written out, word addresses, its FIFO watermarks, and the
+drive and sample phases it switches with the card clock. It also has an MBUS
+gate of its own, taken as an optional clock.
+---
+diff --git a/drivers/mmc/host/sunxi-mmc.c b/drivers/mmc/host/sunxi-mmc.c
+index 8dbcff53a..28b318df6 100644
+--- a/drivers/mmc/host/sunxi-mmc.c
++++ b/drivers/mmc/host/sunxi-mmc.c
+@@ -9,6 +9,7 @@
+  * (C) Copyright 2017 Sootech SA
+  */
+ 
++#include <linux/bitfield.h>
+ #include <linux/clk.h>
+ #include <linux/clk/sunxi-ng.h>
+ #include <linux/delay.h>
+@@ -231,6 +232,11 @@
+ 
+ #define SDXC_CAL_TIMEOUT	3	/* in seconds, 3s is enough*/
+ 
++#define SDXC_V821_CMD_DRV_PH	BIT(16)
++#define SDXC_V821_DAT_DRV_PH	BIT(17)
++#define SDXC_V821_CMD_SAMP_PH	GENMASK(5, 4)
++#define SDXC_V821_DAT_SAMP_PH	GENMASK(9, 8)
++
+ struct sunxi_mmc_clk_delay {
+ 	u32 output;
+ 	u32 sample;
+@@ -264,6 +270,15 @@ struct sunxi_mmc_cfg {
+ 
+ 	/* clock hardware can switch between old and new timing modes */
+ 	bool ccu_has_timings_switch;
++
++	/* REG_FTRGL, when not the 0x20070008 most controllers take */
++	u32 fifo_tl;
++
++	/* a descriptor length of 0 does not stand for the maximum */
++	bool des_size_exact;
++
++	/* drive and sample phases that follow the card clock */
++	bool v821_phases;
+ };
+ 
+ struct sunxi_mmc_host {
+@@ -333,7 +348,7 @@ static int sunxi_mmc_init_host(struct sunxi_mmc_host *host)
+ 	 *
+ 	 * TODO: sun9i has a larger FIFO and supports higher trigger values
+ 	 */
+-	mmc_writel(host, REG_FTRGL, 0x20070008);
++	mmc_writel(host, REG_FTRGL, host->cfg->fifo_tl ?: 0x20070008);
+ 	/* Maximum timeout value */
+ 	mmc_writel(host, REG_TMOUT, 0xffffffff);
+ 	/* Unmask SDIO interrupt if needed */
+@@ -368,7 +383,7 @@ static void sunxi_mmc_init_idma_des(struct sunxi_mmc_host *host,
+ 					     SDXC_IDMAC_DES0_OWN |
+ 					     SDXC_IDMAC_DES0_DIC);
+ 
+-		if (data->sg[i].length == max_len)
++		if (data->sg[i].length == max_len && !host->cfg->des_size_exact)
+ 			pdes[i].buf_size = 0; /* 0 == max_len */
+ 		else
+ 			pdes[i].buf_size = cpu_to_le32(data->sg[i].length);
+@@ -757,6 +772,28 @@ static int sunxi_mmc_clk_set_phase(struct sunxi_mmc_host *host,
+ 	return 0;
+ }
+ 
++/*
++ * The phases the vendor uses on the V821 SMHC: commands driven at 180 degrees, and from high speed on
++ * data at 180 degrees too, with the sample point one step later.
++ */
++static void sunxi_mmc_set_v821_phases(struct sunxi_mmc_host *host, u32 rate)
++{
++	bool hs = rate > 26000000;
++	u32 rval;
++
++	rval = mmc_readl(host, REG_DRV_DL) | SDXC_V821_CMD_DRV_PH;
++	if (hs)
++		rval |= SDXC_V821_DAT_DRV_PH;
++	else
++		rval &= ~SDXC_V821_DAT_DRV_PH;
++	mmc_writel(host, REG_DRV_DL, rval);
++
++	rval = mmc_readl(host, REG_SD_NTSR) & ~(SDXC_V821_CMD_SAMP_PH | SDXC_V821_DAT_SAMP_PH);
++	if (hs)
++		rval |= FIELD_PREP(SDXC_V821_CMD_SAMP_PH, 1) | FIELD_PREP(SDXC_V821_DAT_SAMP_PH, 1);
++	mmc_writel(host, REG_SD_NTSR, rval);
++}
++
+ static int sunxi_mmc_clk_set_rate(struct sunxi_mmc_host *host,
+ 				  struct mmc_ios *ios)
+ {
+@@ -839,6 +876,9 @@ static int sunxi_mmc_clk_set_rate(struct sunxi_mmc_host *host,
+ 		mmc_writel(host, REG_SD_NTSR, rval);
+ 	}
+ 
++	if (host->cfg->v821_phases)
++		sunxi_mmc_set_v821_phases(host, rate);
++
+ 	/* sunxi_mmc_clk_set_phase expects the actual card clock rate */
+ 	ret = sunxi_mmc_clk_set_phase(host, ios, rate);
+ 	if (ret)
+@@ -1176,6 +1216,16 @@ static const struct sunxi_mmc_cfg sun20i_d1_cfg = {
+ 	.needs_new_timings = true,
+ };
+ 
++static const struct sunxi_mmc_cfg sun300i_v821_cfg = {
++	.idma_des_size_bits = 12,
++	.idma_des_shift = 2,
++	.fifo_tl = (2 << 28) | (7 << 16) | 248,
++	.des_size_exact = true,
++	.v821_phases = true,
++	.mask_data0 = true,
++	.needs_new_timings = true,
++};
++
+ static const struct sunxi_mmc_cfg sun50i_a64_cfg = {
+ 	.idma_des_size_bits = 16,
+ 	.clk_delays = NULL,
+@@ -1214,6 +1264,7 @@ static const struct of_device_id sunxi_mmc_of_match[] = {
+ 	{ .compatible = "allwinner,sun8i-a83t-emmc", .data = &sun8i_a83t_emmc_cfg },
+ 	{ .compatible = "allwinner,sun9i-a80-mmc", .data = &sun9i_a80_cfg },
+ 	{ .compatible = "allwinner,sun20i-d1-mmc", .data = &sun20i_d1_cfg },
++	{ .compatible = "allwinner,sun300i-v821-mmc", .data = &sun300i_v821_cfg },
+ 	{ .compatible = "allwinner,sun50i-a64-mmc", .data = &sun50i_a64_cfg },
+ 	{ .compatible = "allwinner,sun50i-a64-emmc", .data = &sun50i_a64_emmc_cfg },
+ 	{ .compatible = "allwinner,sun50i-a100-mmc", .data = &sun20i_d1_cfg },
+@@ -1300,6 +1351,7 @@ static void sunxi_mmc_disable(struct sunxi_mmc_host *host)
+ static int sunxi_mmc_resource_request(struct sunxi_mmc_host *host,
+ 				      struct platform_device *pdev)
+ {
++	struct clk *clk_mbus;
+ 	int ret;
+ 
+ 	host->cfg = of_device_get_match_data(&pdev->dev);
+@@ -1326,6 +1378,10 @@ static int sunxi_mmc_resource_request(struct sunxi_mmc_host *host,
+ 		return PTR_ERR(host->clk_mmc);
+ 	}
+ 
++	clk_mbus = devm_clk_get_optional_enabled(&pdev->dev, "mbus");
++	if (IS_ERR(clk_mbus))
++		return dev_err_probe(&pdev->dev, PTR_ERR(clk_mbus), "Could not get mbus clock\n");
++
+ 	if (host->cfg->clk_delays) {
+ 		host->clk_output = devm_clk_get(&pdev->dev, "output");
+ 		if (IS_ERR(host->clk_output)) {

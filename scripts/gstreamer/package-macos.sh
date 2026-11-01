@@ -1,13 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Modes:
-#   (default)        build the full bundle into OUT (CI only, via gstreamer-assets.yml)
-#   --relocate-node  only retarget gst_video.node at the committed bundle, never
-#                    touch assets/ (used by build:mac; the bundle is built+committed
-#                    in CI, regenerating it locally pollutes file owners/flags)
-MODE="full"
-if [[ "${1:-}" == "--relocate-node" ]]; then MODE="node"; shift || true; fi
+# CI only, via gstreamer-assets.yml.
 
 OUT="${1:-assets/gstreamer/macos-arm64}"
 GST_ROOT="/Library/Frameworks/GStreamer.framework/Versions/1.0"
@@ -25,10 +19,16 @@ copy_required() {
 }
 
 real_path() {
-  python3 - <<'PY' "$1"
-import os, sys
-print(os.path.realpath(sys.argv[1]))
-PY
+  local p=$1 link dir
+  while [ -L "$p" ]; do
+    link=$(readlink "$p")
+    case "$link" in
+      /*) p=$link ;;
+      *) dir=$(dirname "$p"); p=${dir%/}/$link ;;
+    esac
+  done
+  dir=$(cd -P "$(dirname "$p")" 2>/dev/null && pwd -P) || { printf '%s\n' "$p"; return; }
+  printf '%s/%s\n' "${dir%/}" "$(basename "$p")"
 }
 
 # Only follow @rpath deps, system libs (/usr/lib, /System) are absolute and skipped
@@ -79,7 +79,6 @@ copy_all_pending_libs() {
       copy_required "$real_name" "$OUT/lib/$real_base"
     fi
 
-    # Preserve versioned aliases (e.g. libjpeg.8.dylib -> libjpeg.8.3.2.dylib)
     if [[ "$link_name" != "$real_base" && ! -e "$OUT/lib/$link_name" ]]; then
       ln -s "$real_base" "$OUT/lib/$link_name"
     fi
@@ -88,7 +87,6 @@ copy_all_pending_libs() {
   done
 }
 
-# rpath/signing helpers + addon relocation, shared by both modes
 resign() {
   [[ -e "$1" ]] || return 0
   command -v codesign >/dev/null 2>&1 && codesign --force --sign - "$1" >/dev/null 2>&1 || true
@@ -98,35 +96,6 @@ add_rpath() {
   [[ -e "$f" ]] || return 0
   if install_name_tool -add_rpath "$rp" "$f" 2>/dev/null; then resign "$f"; fi
 }
-# Point gst_video.node at the bundle. It ships asar-unpacked, so from
-# .../node_modules/gst-video/build/Release/ the bundle sits 5 levels up at
-# Contents/Resources/gstreamer/macos-arm64/lib. Bundle rpath FIRST (self-contained),
-# the system framework kept as a dev fallback.
-relocate_node() {
-  local REPO_ROOT NODE BUNDLE_RPATH rp
-  REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-  NODE="$REPO_ROOT/native/gst-video/build/Release/gst_video.node"
-  BUNDLE_RPATH="@loader_path/../../../../../gstreamer/macos-arm64/lib"
-  if [[ ! -e "$NODE" ]]; then
-    echo "WARN: $NODE not built yet; build the addon before packaging" >&2
-    return 0
-  fi
-  echo "==> Relocating gst_video.node rpath -> bundle (system framework kept as dev fallback)"
-  while read -r rp; do
-    case "$rp" in
-      "$BUNDLE_RPATH" | *GStreamer.framework*)
-        install_name_tool -delete_rpath "$rp" "$NODE" 2>/dev/null || true ;;
-    esac
-  done < <(otool -l "$NODE" 2>/dev/null | awk '/LC_RPATH/{getline;getline;print $2}')
-  add_rpath "$BUNDLE_RPATH" "$NODE"
-  add_rpath "$GST_ROOT/lib" "$NODE"
-}
-
-# --relocate-node: only the addon, never regenerate or touch the committed bundle
-if [[ "$MODE" == "node" ]]; then
-  relocate_node
-  exit 0
-fi
 
 rm -rf "$OUT"
 mkdir -p \
@@ -137,21 +106,17 @@ mkdir -p \
 
 PENDING_LIBS=()
 
-# bin
 copy_bin_and_deps "$GST_ROOT/bin/gst-launch-1.0"
 copy_bin_and_deps "$GST_ROOT/bin/gst-inspect-1.0"
 copy_bin_and_deps "$GST_ROOT/bin/gst-device-monitor-1.0"
 
-# libexec
 copy_libexec_and_deps "$GST_ROOT/libexec/gstreamer-1.0/gst-plugin-scanner"
 
 plugins=(
-  # core
   libgstapp.dylib
   libgstcoreelements.dylib
   libgsttypefindfunctions.dylib
   libgstautodetect.dylib
-  # audio
   libgstaudioconvert.dylib
   libgstaudiofx.dylib
   libgstaudiomixer.dylib
@@ -169,35 +134,58 @@ plugins=(
   libgstrtp.dylib
   libgstudp.dylib
   libgstrtpmanager.dylib
-  # video parse + decode + scale
   libgstvideoparsersbad.dylib
   libgstapplemedia.dylib
   libgstlibav.dylib
   libgstvideoconvertscale.dylib
-  # video sinks
   libgstopengl.dylib
   libgstosxvideo.dylib
+  libgstjpeg.dylib
+  libgstvideofilter.dylib
+  # video LIVI fetches from a URL: playbin3, hlsdemux2, souphttpsrc, qtdemux, tsdemux
+  libgstplayback.dylib
+  libgstadaptivedemux2.dylib
+  libgstsoup.dylib
+  libgstisomp4.dylib
+  libgstmpegtsdemux.dylib
 )
 
+# PATCHED_APPLEMEDIA (from build-patched-macos.sh) replaces the prebuilt applemedia plugin
+# with our patched build (vtdec low latency, full-range HEVC).
 for plugin in "${plugins[@]}"; do
-  copy_plugin_and_deps "$GST_ROOT/lib/gstreamer-1.0/$plugin"
+  src="$GST_ROOT/lib/gstreamer-1.0/$plugin"
+  if [[ "$plugin" == libgstapplemedia.dylib && -n "${PATCHED_APPLEMEDIA:-}" ]]; then
+    copy_required "$PATCHED_APPLEMEDIA" "$OUT/lib/gstreamer-1.0/$plugin"
+    while read -r dep; do queue_dep "$dep"; done < <(scan_deps "$PATCHED_APPLEMEDIA")
+    continue
+  fi
+  copy_plugin_and_deps "$src"
 done
 
-# Umbrella framework binary (kept for parity with prior bundles)
+# FAAD_PLUGIN (from build-faad-macos.sh): the only decoder here that plays DAB+ audio.
+if [[ -z "${FAAD_PLUGIN:-}" ]]; then
+  echo "FAAD_PLUGIN not set, run build-faad-macos.sh first" >&2
+  exit 1
+fi
+copy_required "$FAAD_PLUGIN" "$OUT/lib/gstreamer-1.0/libgstfaad.dylib"
+while read -r dep; do queue_dep "$dep"; done < <(scan_deps "$FAAD_PLUGIN")
+
+# Both soup plugins dlopen libsoup, so otool never names it.
+if [[ ! -e "$GST_ROOT/lib/libsoup-3.0.0.dylib" ]]; then
+  echo "libsoup-3.0.0.dylib not found, souphttpsrc and hlsdemux2 would not load" >&2
+  exit 1
+fi
+queue_dep libsoup-3.0.0.dylib
+
 copy_required "$GST_ROOT/lib/GStreamer" "$OUT/lib/GStreamer"
 
-# all transitive libs
 copy_all_pending_libs
 
-# Make the bundle self-contained (most framework Mach-Os already carry @loader_path
-# rpaths; add the few that are missing and ad-hoc re-sign).
 echo "==> Relocating rpaths to @loader_path + ad-hoc signing where needed"
 for f in "$OUT"/lib/*.dylib "$OUT/lib/GStreamer"; do add_rpath "@loader_path" "$f"; done
 for f in "$OUT"/lib/gstreamer-1.0/*.dylib; do add_rpath "@loader_path/.." "$f"; done
 for f in "$OUT"/bin/*; do add_rpath "@loader_path/../lib" "$f"; done
 add_rpath "@loader_path/../../lib" "$OUT/libexec/gstreamer-1.0/gst-plugin-scanner"
-
-relocate_node
 
 echo "Created macOS GStreamer bundle at: $OUT"
 echo "Bundle size:"

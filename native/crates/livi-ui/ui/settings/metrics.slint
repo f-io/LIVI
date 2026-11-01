@@ -1,0 +1,36 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Ui } from "../theme.slint";
+
+export global Metrics {
+    pure function clampf(lo: float, v: float, hi: float) -> float { return min(max(v, lo), hi); }
+
+    property <float> vw: Ui.width / 1px / 100;
+    property <float> vh: Ui.height / 1px / 100;
+
+    out property <length> pad-x: clampf(12, 1.5 * vw, 28) * 1px;
+    out property <length> pad-top: clampf(8, 2.2 * vh, 18) * 1px;
+    out property <length> pad-bottom: clampf(10, 2.2 * vh, 18) * 1px;
+    out property <length> header-h: clampf(32, 5.5 * vh, 44) * 1px;
+    out property <length> header-mb: 12px;
+    out property <length> row-h: round(clampf(36, 18.7 * vh, 52)) * 1px;
+    out property <length> row-pad: round(clampf(10, 1.9 * vh, 16)) * 1px;
+    out property <length> row-gap: round(clampf(12, 2.6 * vh, 48)) * 1px;
+    out property <length> row-icon: round(clampf(20, 3.6 * vh, 26)) * 1px;
+    out property <length> row-inset: row-pad + row-icon + row-gap + row-pad;
+    out property <length> row-inset-r: row-pad;
+    out property <length> row-font: clampf(14.4, 2.2 * vh, 16) * 1px;
+    out property <length> slot-left: clampf(36, 6 * vw, 56) * 1px;
+    out property <length> slot-right: clampf(36, 8 * vw, 100) * 1px;
+    out property <length> icon-px: clampf(18, 3.2 * vh, 28) * 1px;
+    out property <length> title-px: clampf(16, 3.6 * vh, 34) * 1px;
+    out property <length> apply-px: clampf(13, 1.8 * vh, 16) * 1px;
+    out property <length> swatch-w: clampf(40, 8 * vh, 56) * 1px;
+    out property <length> swatch-h: clampf(20, 4 * vh, 28) * 1px;
+    out property <length> pill-h: round(clampf(34, 6 * vh, 46)) * 1px;
+    out property <length> pill-h-small: round(clampf(26, 4.6 * vh, 34)) * 1px;
+    out property <length> pill-font: clampf(15.2, 2.5 * vh, 19.2) * 1px;
+    out property <length> pill-font-small: clampf(12, 2 * vh, 15.2) * 1px;
+}

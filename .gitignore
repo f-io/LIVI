@@ -1,11 +1,3 @@
-# Node
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
 # Builds & bundles
 dist/
 build/
@@ -14,23 +6,16 @@ release/
 tmp/
 temp/
 
+# Cargo
+native/**/target/
+
 # Test/coverage
 coverage/
-.nyc_output/
 
 # Caches
-__pycache__/
 .cache/
-.vite/
-.parcel-cache/
-.turbo/
-.eslintcache
-.stylelintcache
-.rpt2_cache/
-.pnpm-store/
-*.tsbuildinfo
 
-# Electron-builder artifacts
+# Packaging artifacts
 *.AppImage
 *.dmg
 *.dmg.blockmap
@@ -38,8 +23,6 @@ __pycache__/
 *.deb
 *.rpm
 *.exe
-!assets/gstreamer/win-x86_64/bin/*.exe
-!assets/gstreamer/win-x86_64/libexec/gstreamer-1.0/*.exe
 *.msi
 *.nupkg
 *.zip
@@ -70,3 +53,16 @@ Thumbs.db
 # Logs
 *.log
 *.log*
+
+# GStreamer bundles, fetched from the assets release
+/assets/gstreamer/*/*
+!/assets/gstreamer/LICENSES/*
+!/assets/gstreamer/*/version.txt
+!/assets/gstreamer/*/packages.txt
+!/assets/gstreamer/*/sha256.txt
+
+# LIVI Link dongle stack — firmware fetched from the assets release
+assets/livi-link/*/*.gz
+assets/livi-link/*/*.lfwb
+assets/livi-link/*/MANIFEST.md5
+native/crates/livi-link-provision/assets/bindshell/*

@@ -1,0 +1,242 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme } from "../theme.slint";
+import { DashState } from "state.slint";
+import { Clock } from "widgets.slint";
+
+export component Maneuver inherits Rectangle {
+    in property <length> size;
+    width: size;
+    height: size;
+    if DashState.nav-has-image: Image {
+        width: parent.width;
+        height: parent.height;
+        source: DashState.nav-image;
+        image-fit: contain;
+    }
+    if !DashState.nav-has-image: Image {
+        width: parent.width;
+        height: parent.height;
+        source: DashState.nav-icon;
+        colorize: Theme.text;
+    }
+    if !DashState.nav-has-image && DashState.nav-exit > 0: Rectangle {
+        x: parent.width - self.width + 6px;
+        y: parent.height - self.height + 6px;
+        width: max(20px, exit.preferred-width + 12px);
+        height: 20px;
+        border-radius: 10px;
+        background: Theme.button-active;
+        exit := Text {
+            text: DashState.nav-exit;
+            font-size: 12px;
+            color: Theme.text;
+        }
+    }
+}
+
+export component Fact inherits HorizontalLayout {
+    in property <image> icon;
+    in property <string> text;
+    in property <length> u;
+    in property <float> size: 18;
+    in property <float> dim: 1;
+    spacing: 8 * u;
+    Image {
+        width: root.size * 1.1 * root.u;
+        height: root.size * 1.1 * root.u;
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        colorize: Theme.text;
+        opacity: root.dim;
+    }
+    Text {
+        text: root.text;
+        font-size: root.size * root.u;
+        color: Theme.text;
+        opacity: root.dim;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+export component NavMini inherits Rectangle {
+    in property <length> u;
+    property <length> divider-y: 532 * u;
+    if !DashState.nav-active: Clock {
+        u: root.u;
+        x: (640 - 140) * root.u;
+        y: (460 - 60) * root.u;
+        width: 280 * root.u;
+        height: 120 * root.u;
+    }
+    if DashState.nav-active: Rectangle {
+        x: (640 - 140) * root.u;
+        y: root.divider-y - top.preferred-height;
+        width: 280 * root.u;
+        height: top.preferred-height;
+        top := VerticalLayout {
+            padding-bottom: 13 * root.u;
+            spacing: 13 * root.u;
+            alignment: end;
+            HorizontalLayout {
+                alignment: center;
+                Maneuver {
+                    size: 84 * root.u;
+                }
+            }
+            Text {
+                text: DashState.nav-distance != "" ? DashState.nav-distance : DashState.nav-maneuver != "" ? DashState.nav-maneuver : "—";
+                font-size: 22 * root.u;
+                font-weight: 600;
+                color: Theme.text;
+                horizontal-alignment: center;
+            }
+        }
+    }
+    if DashState.nav-active: Rectangle {
+        x: (640 - 140 * (DashState.nav-has-image ? 0.72 : 1)) * root.u;
+        y: root.divider-y;
+        width: 280 * root.u * (DashState.nav-has-image ? 0.72 : 1);
+        height: max(1px, 1.4 * root.u);
+        border-radius: self.height / 2;
+        background: Theme.text-secondary;
+        opacity: 0.35;
+    }
+    if DashState.nav-active: HorizontalLayout {
+        x: (640 - 140) * root.u;
+        y: root.divider-y + 13 * root.u;
+        width: 280 * root.u;
+        height: 30 * root.u;
+        alignment: DashState.nav-has-image ? center : space-between;
+        spacing: 18 * root.u;
+        Fact {
+            u: root.u;
+            size: 20;
+            icon: DashState.nav-time-left != "" ? @image-url("../icons/AccessTime.svg") : @image-url("../icons/Signpost.svg");
+            text: DashState.nav-time-left != "" ? DashState.nav-time-left : DashState.nav-road != "" ? DashState.nav-road : "—";
+        }
+        if !DashState.nav-has-image: Fact {
+            u: root.u;
+            size: 22;
+            icon: @image-url("../icons/Route.svg");
+            text: DashState.nav-destination-distance != "" ? DashState.nav-destination-distance : "—";
+        }
+    }
+}
+
+export component NavFull inherits Rectangle {
+    in property <length> u;
+    property <length> divider-y: 532 * u;
+    if !DashState.nav-active: Image {
+        x: (640 - 42) * root.u;
+        y: (460 - 42) * root.u;
+        width: 84 * root.u;
+        height: 84 * root.u;
+        source: @image-url("../icons/NavigationOutlined.svg");
+        colorize: Theme.text;
+        opacity: 0.55;
+    }
+    if DashState.nav-active: Rectangle {
+        x: (640 - 460) * root.u;
+        y: root.divider-y - block.preferred-height;
+        width: 920 * root.u;
+        height: block.preferred-height;
+        block := HorizontalLayout {
+            padding-bottom: 21 * root.u;
+            spacing: 16 * root.u;
+            alignment: center;
+            VerticalLayout {
+                alignment: end;
+                spacing: 4 * root.u;
+                HorizontalLayout {
+                    alignment: center;
+                    Maneuver {
+                        size: 72 * root.u;
+                    }
+                }
+                if DashState.nav-distance != "": Text {
+                    text: DashState.nav-distance;
+                    font-size: 20 * root.u;
+                    font-weight: 600;
+                    color: Theme.text;
+                    horizontal-alignment: center;
+                }
+            }
+            VerticalLayout {
+                alignment: end;
+                spacing: 6 * root.u;
+                if DashState.nav-maneuver != "": Text {
+                    text: DashState.nav-maneuver;
+                    font-size: 24 * root.u;
+                    color: Theme.text;
+                    overflow: elide;
+                }
+                if DashState.nav-road != "" && !DashState.nav-has-image: Fact {
+                    u: root.u;
+                    size: 14;
+                    dim: 0.85;
+                    icon: @image-url("../icons/Signpost.svg");
+                    text: DashState.nav-road;
+                }
+                if DashState.nav-after-road != "" && !DashState.nav-has-image: Text {
+                    text: DashState.nav-after-road;
+                    font-size: 16 * root.u;
+                    color: Theme.text;
+                    overflow: elide;
+                }
+            }
+        }
+    }
+    if DashState.nav-active: Rectangle {
+        x: (640 - 300) * root.u;
+        y: root.divider-y;
+        width: 600 * root.u;
+        height: max(1px, 1.4 * root.u);
+        border-radius: self.height / 2;
+        background: Theme.text-secondary;
+        opacity: 0.35;
+    }
+    if DashState.nav-active: HorizontalLayout {
+        x: (640 - 460) * root.u;
+        y: root.divider-y + 21 * root.u;
+        width: 920 * root.u;
+        height: 26 * root.u;
+        alignment: center;
+        spacing: 24 * root.u;
+        if DashState.nav-has-image && DashState.nav-road != "": Fact {
+            u: root.u;
+            size: 14;
+            dim: 0.85;
+            icon: @image-url("../icons/Signpost.svg");
+            text: DashState.nav-road;
+        }
+        if DashState.nav-time-left != "": Fact {
+            u: root.u;
+            size: 16;
+            icon: @image-url("../icons/AccessTime.svg");
+            text: DashState.nav-time-left;
+        }
+        if DashState.nav-destination-distance != "": Fact {
+            u: root.u;
+            size: 16;
+            icon: @image-url("../icons/Route.svg");
+            text: DashState.nav-destination-distance;
+        }
+        if DashState.nav-destination != "": Fact {
+            u: root.u;
+            size: 16;
+            icon: @image-url("../icons/Place.svg");
+            text: DashState.nav-destination;
+        }
+        if DashState.nav-app != "": Fact {
+            u: root.u;
+            size: 14;
+            dim: 0.85;
+            icon: @image-url("../icons/Apps.svg");
+            text: DashState.nav-app;
+        }
+    }
+}

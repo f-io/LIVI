@@ -1,0 +1,126 @@
+Subject: [PATCH] phy: sun4i-usb: add the V821
+
+The V821 PHY is reached through the same PHYCTL bit bang, with bit 1 held
+while it is accessed. Its registers sit at other addresses, so the squelch
+detect and VBUSVLDEXT of the older PHYs do not apply. The vendor driver sets
+the port up with one tune word (rise time, TX level, pre-emphasis and the
+resistance trim) and only touches the PLL for a 24 MHz DCXO.
+---
+diff --git a/drivers/phy/allwinner/phy-sun4i-usb.c b/drivers/phy/allwinner/phy-sun4i-usb.c
+index 59d38d88e..9739d1334 100644
+--- a/drivers/phy/allwinner/phy-sun4i-usb.c
++++ b/drivers/phy/allwinner/phy-sun4i-usb.c
+@@ -43,6 +43,7 @@
+ #define REG_HCI_PHY_CTL			0x10
+ 
+ #define PHYCTL_DATA			BIT(7)
++#define PHYCTL_NEW_PHY_EN		BIT(1)
+ 
+ #define OTGCTL_ROUTE_MUSB		BIT(0)
+ 
+@@ -107,6 +108,9 @@ struct sun4i_usb_phy_cfg {
+ 	bool siddq_in_base;
+ 	bool poll_vbusen;
+ 	int missing_phys;
++	/* V821 style PHY: other register addresses, tuned with one vendor word */
++	bool new_phy;
++	u32 new_phy_tune;
+ };
+ 
+ struct sun4i_usb_phy_data {
+@@ -192,6 +196,9 @@ static void sun4i_usb_phy_write(struct sun4i_usb_phy *phy, u32 addr, u32 data,
+ 		writel(0, phyctl);
+ 	}
+ 
++	if (phy_data->cfg->new_phy)
++		writeb(PHYCTL_NEW_PHY_EN, phyctl);
++
+ 	for (i = 0; i < len; i++) {
+ 		temp = readl(phyctl);
+ 
+@@ -223,6 +230,9 @@ static void sun4i_usb_phy_write(struct sun4i_usb_phy *phy, u32 addr, u32 data,
+ 		data >>= 1;
+ 	}
+ 
++	if (phy_data->cfg->new_phy)
++		writeb(readb(phyctl) & ~PHYCTL_NEW_PHY_EN, phyctl);
++
+ 	spin_unlock_irqrestore(&phy_data->reg_lock, flags);
+ }
+ 
+@@ -253,6 +263,21 @@ static void sun4i_usb_phy_passby(struct sun4i_usb_phy *phy, int enable)
+ 	writel(reg_value, phy->pmu);
+ }
+ 
++/* resistance [3:0], pre-emphasis [5:4], TX level [9:6], rise time [11:10] */
++static void sun4i_usb_new_phy_tune(struct sun4i_usb_phy *phy, u32 tune)
++{
++	sun4i_usb_phy_write(phy, 0x68, (tune >> 10) & 0x3, 2);
++	sun4i_usb_phy_write(phy, 0x60, (tune >> 6) & 0xf, 4);
++	sun4i_usb_phy_write(phy, 0x64, (tune >> 4) & 0x3, 2);
++
++	/* The resistance at 0x44 counts once 0x43 is set, with its calibration (0x40, 0x41) stopped. */
++	sun4i_usb_phy_write(phy, 0x43, 0, 1);
++	sun4i_usb_phy_write(phy, 0x41, 0, 1);
++	sun4i_usb_phy_write(phy, 0x40, 0, 1);
++	sun4i_usb_phy_write(phy, 0x44, tune & 0xf, 4);
++	sun4i_usb_phy_write(phy, 0x43, 1, 1);
++}
++
+ static int sun4i_usb_phy_init(struct phy *_phy)
+ {
+ 	struct sun4i_usb_phy *phy = phy_get_drvdata(_phy);
+@@ -330,7 +355,8 @@ static int sun4i_usb_phy_init(struct phy *_phy)
+ 	if (data->cfg->siddq_in_base) {
+ 		if (phy->index == 0) {
+ 			val = readl(data->base + data->cfg->phyctl_offset);
+-			val |= PHY_CTL_VBUSVLDEXT;
++			if (!data->cfg->new_phy)
++				val |= PHY_CTL_VBUSVLDEXT;
+ 			val &= ~PHY_CTL_SIDDQ;
+ 			writel(val, data->base + data->cfg->phyctl_offset);
+ 		}
+@@ -347,6 +373,9 @@ static int sun4i_usb_phy_init(struct phy *_phy)
+ 				    data->cfg->disc_thresh, 2);
+ 	}
+ 
++	if (data->cfg->new_phy && phy->index == 0)
++		sun4i_usb_new_phy_tune(phy, data->cfg->new_phy_tune);
++
+ 	sun4i_usb_phy_passby(phy, 1);
+ 
+ 	if (phy->index == 0) {
+@@ -551,6 +580,9 @@ void sun4i_usb_phy_set_squelch_detect(struct phy *_phy, bool enabled)
+ {
+ 	struct sun4i_usb_phy *phy = phy_get_drvdata(_phy);
+ 
++	if (to_sun4i_usb_phy_data(phy)->cfg->new_phy)
++		return;
++
+ 	sun4i_usb_phy_write(phy, PHY_SQUELCH_DETECT, enabled ? 0 : 2, 2);
+ }
+ EXPORT_SYMBOL_GPL(sun4i_usb_phy_set_squelch_detect);
+@@ -987,6 +1019,15 @@ static const struct sun4i_usb_phy_cfg sun20i_d1_cfg = {
+ 	.siddq_in_base = true,
+ };
+ 
++static const struct sun4i_usb_phy_cfg sun300i_v821_cfg = {
++	.phyctl_offset = REG_PHYCTL_A33,
++	.dedicated_clocks = true,
++	.phy0_dual_route = true,
++	.siddq_in_base = true,
++	.new_phy = true,
++	.new_phy_tune = 0x2e8,
++};
++
+ static const struct sun4i_usb_phy_cfg sun50i_a64_cfg = {
+ 	.disc_thresh = 3,
+ 	.phyctl_offset = REG_PHYCTL_A33,
+@@ -1025,6 +1066,7 @@ static const struct of_device_id sun4i_usb_phy_of_match[] = {
+ 	{ .compatible = "allwinner,sun8i-r40-usb-phy", .data = &sun8i_r40_cfg },
+ 	{ .compatible = "allwinner,sun8i-v3s-usb-phy", .data = &sun8i_v3s_cfg },
+ 	{ .compatible = "allwinner,sun20i-d1-usb-phy", .data = &sun20i_d1_cfg },
++	{ .compatible = "allwinner,sun300i-v821-usb-phy", .data = &sun300i_v821_cfg },
+ 	{ .compatible = "allwinner,sun50i-a64-usb-phy",
+ 	  .data = &sun50i_a64_cfg},
+ 	{ .compatible = "allwinner,sun50i-h6-usb-phy", .data = &sun50i_h6_cfg },

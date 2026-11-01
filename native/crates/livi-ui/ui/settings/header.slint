@@ -1,0 +1,79 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme } from "../theme.slint";
+import { Metrics } from "metrics.slint";
+
+export component SettingsHeader inherits Rectangle {
+    in property <string> title;
+    in property <bool> can-back;
+    in property <bool> show-apply;
+    in property <string> apply-text: "Apply";
+    in property <bool> back-focused;
+    in property <bool> apply-focused;
+    callback back();
+    callback apply();
+
+    height: Metrics.header-h;
+
+    property <length> side: max(Metrics.slot-left, Metrics.slot-right);
+
+    if root.can-back: Rectangle {
+        x: 0.5rem;
+        width: Metrics.slot-left;
+        Image {
+            width: Metrics.icon-px;
+            height: Metrics.icon-px;
+            source: @image-url("../icons/ArrowBackIosOutlined.svg");
+            colorize: back-touch.has-hover || back-touch.pressed || root.back-focused ? Theme.primary : Theme.text;
+        }
+        back-touch := TouchArea {
+            clicked => { root.back(); }
+        }
+    }
+
+    Text {
+        x: root.side;
+        width: root.width - 2 * root.side;
+        text: Theme.comand ? root.title.to-uppercase() : root.title;
+        color: Theme.comand ? Theme.primary : Theme.text;
+        font-size: Metrics.title-px;
+        font-weight: Theme.comand ? 700 : 800;
+        letter-spacing: Theme.comand ? 2.5px : 0;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    if root.show-apply: Rectangle {
+        x: root.width - 0.5rem - Metrics.slot-right;
+        width: Metrics.slot-right;
+        Rectangle {
+            border-radius: Theme.comand ? Theme.radius : 6px;
+            border-width: root.apply-focused ? Theme.ring(2px) : 0;
+            border-color: Theme.focus-color;
+        }
+        HorizontalLayout {
+            alignment: center;
+            spacing: 0.5rem;
+            Text {
+                text: root.apply-text;
+                color: Theme.primary;
+                font-size: Metrics.apply-px;
+                letter-spacing: Theme.tracking;
+                vertical-alignment: center;
+            }
+            Image {
+                y: (parent.height - self.height) / 2;
+                width: Metrics.icon-px;
+                height: Metrics.icon-px;
+                source: @image-url("../icons/RestartAltOutlined.svg");
+                colorize: Theme.primary;
+            }
+        }
+        TouchArea {
+            clicked => { root.apply(); }
+        }
+    }
+}

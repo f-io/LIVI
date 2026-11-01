@@ -1,0 +1,10 @@
+[package]
+name = "livi-btd"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true
+livi-net.workspace = true

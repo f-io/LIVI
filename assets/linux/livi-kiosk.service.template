@@ -1,0 +1,25 @@
+# LIVI kiosk unit. Managed by LIVI. Do not edit by hand.
+# LIVI-KIOSK-VERSION=2
+[Unit]
+Description=LIVI kiosk
+After=systemd-user-sessions.service seatd.service getty@tty1.service
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+User=__USERNAME__
+PAMName=livi-kiosk
+WorkingDirectory=__HOME__
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=inherit
+Environment=LIVI_KIOSK=1
+ExecStart=__APPIMAGE__
+ExecStopPost=+__SYSTEMCTL__ --no-block start getty@tty1.service
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

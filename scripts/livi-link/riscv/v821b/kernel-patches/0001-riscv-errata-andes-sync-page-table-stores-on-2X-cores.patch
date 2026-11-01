@@ -1,0 +1,159 @@
+Subject: [PATCH] riscv: errata: andes: sync page table stores on 2X cores
+
+The page table walker of the Andes 2X cores reads past the L1 D-cache, so it
+does not see a page table store that still sits there. sfence.vma writes the
+L1 D-cache back. It now follows every PTE and PMD store and the copy of the
+kernel mappings into a new PGD, with preemption off so it runs on the hart
+that did the store. The 2X cores are found by the series field of marchid.
+---
+diff --git a/arch/riscv/errata/andes/errata.c b/arch/riscv/errata/andes/errata.c
+index dcc9d1ee5..162ac13b6 100644
+--- a/arch/riscv/errata/andes/errata.c
++++ b/arch/riscv/errata/andes/errata.c
+@@ -7,6 +7,7 @@
+  * Author: Lad Prabhakar <prabhakar.mahadev-lad.rj@bp.renesas.com>
+  */
+ 
++#include <linux/bitfield.h>
+ #include <linux/memory.h>
+ #include <linux/module.h>
+ 
+@@ -21,6 +22,7 @@
+ 
+ #define ANDES_AX45MP_MARCHID		0x8000000000008a45UL
+ #define ANDES_AX45MP_MIMPID		0x500UL
++#define ANDES_MARCHID_SERIES		GENMASK(7, 4)
+ #define ANDES_SBI_EXT_ANDES		0x0900031E
+ 
+ #define ANDES_SBI_EXT_IOCP_SW_WORKAROUND	1
+@@ -62,14 +64,51 @@ static void errata_probe_iocp(unsigned int stage, unsigned long arch_id, unsigne
+ 	riscv_noncoherent_supported();
+ }
+ 
++/*
++ * The page table walker of the 2X series reads past the L1 D-cache and misses page table
++ * stores still sitting there. sfence.vma writes the L1 D-cache back, on the hart that runs it.
++ */
++static u32 andes_errata_probe(unsigned long arch_id)
++{
++	static bool reported;
++	u32 errata = 0;
++
++	if (FIELD_GET(ANDES_MARCHID_SERIES, arch_id) == 2)
++		errata |= BIT(ERRATA_ANDES_PTW_L1D);
++
++	if (errata && !reported) {
++		pr_info("Andes: sfence.vma after page table stores\n");
++		reported = true;
++	}
++
++	return errata;
++}
++
+ void __init_or_module andes_errata_patch_func(struct alt_entry *begin, struct alt_entry *end,
+ 					      unsigned long archid, unsigned long impid,
+ 					      unsigned int stage)
+ {
++	struct alt_entry *alt;
++	u32 errata;
++
+ 	BUILD_BUG_ON(ERRATA_ANDES_NUMBER >= RISCV_VENDOR_EXT_ALTERNATIVES_BASE);
+ 
+ 	if (stage == RISCV_ALTERNATIVES_BOOT)
+ 		errata_probe_iocp(stage, archid, impid);
+ 
+-	/* we have nothing to patch here ATM so just return back */
++	if (stage == RISCV_ALTERNATIVES_EARLY_BOOT)
++		return;
++
++	errata = andes_errata_probe(archid);
++
++	for (alt = begin; alt < end; alt++) {
++		if (alt->vendor_id != ANDES_VENDOR_ID || alt->patch_id >= ERRATA_ANDES_NUMBER)
++			continue;
++		if (!(errata & BIT(alt->patch_id)))
++			continue;
++
++		mutex_lock(&text_mutex);
++		patch_text_nosync(ALT_OLD_PTR(alt), ALT_ALT_PTR(alt), alt->alt_len);
++		mutex_unlock(&text_mutex);
++	}
+ }
+diff --git a/arch/riscv/include/asm/errata_list.h b/arch/riscv/include/asm/errata_list.h
+index 6694b5ccd..d4c720968 100644
+--- a/arch/riscv/include/asm/errata_list.h
++++ b/arch/riscv/include/asm/errata_list.h
+@@ -42,6 +42,11 @@ asm(ALTERNATIVE("sfence.vma %0, %1", "sfence.vma", SIFIVE_VENDOR_ID,	\
+ 		ERRATA_SIFIVE_CIP_1200, CONFIG_ERRATA_SIFIVE_CIP_1200)	\
+ 		: : "r" (addr), "r" (asid) : "memory")
+ 
++#define ALT_ANDES_PTW_SYNC()						\
++asm(ALTERNATIVE("nop", "sfence.vma", ANDES_VENDOR_ID,			\
++		ERRATA_ANDES_PTW_L1D, CONFIG_ERRATA_ANDES)		\
++		: : : "memory")
++
+ #define ALT_RISCV_PAUSE()					\
+ asm(ALTERNATIVE(	\
+ 		RISCV_PAUSE, /* Original RISC‑V pause insn */	\
+diff --git a/arch/riscv/include/asm/errata_list_vendors.h b/arch/riscv/include/asm/errata_list_vendors.h
+index ec7eba373..aeb15d0c9 100644
+--- a/arch/riscv/include/asm/errata_list_vendors.h
++++ b/arch/riscv/include/asm/errata_list_vendors.h
+@@ -5,7 +5,8 @@
+ 
+ #ifdef CONFIG_ERRATA_ANDES
+ #define	ERRATA_ANDES_NO_IOCP 0
+-#define	ERRATA_ANDES_NUMBER 1
++#define	ERRATA_ANDES_PTW_L1D 1
++#define	ERRATA_ANDES_NUMBER 2
+ #endif
+ 
+ #ifdef CONFIG_ERRATA_SIFIVE
+diff --git a/arch/riscv/include/asm/pgalloc.h b/arch/riscv/include/asm/pgalloc.h
+index 770ce18a7..16bb82194 100644
+--- a/arch/riscv/include/asm/pgalloc.h
++++ b/arch/riscv/include/asm/pgalloc.h
+@@ -114,8 +114,10 @@ static inline pgd_t *pgd_alloc(struct mm_struct *mm)
+ 
+ 	pgd = __pgd_alloc(mm, 0);
+ 	if (likely(pgd != NULL)) {
++		guard(preempt)();
+ 		/* Copy kernel mappings */
+ 		sync_kernel_mappings(pgd);
++		ALT_ANDES_PTW_SYNC();
+ 	}
+ 	return pgd;
+ }
+diff --git a/arch/riscv/include/asm/pgtable.h b/arch/riscv/include/asm/pgtable.h
+index 9b2e967c9..91fbd3138 100644
+--- a/arch/riscv/include/asm/pgtable.h
++++ b/arch/riscv/include/asm/pgtable.h
+@@ -128,6 +128,8 @@
+ #include <linux/mm_types.h>
+ #include <asm/compat.h>
+ #include <asm/cpufeature.h>
++#include <asm/errata_list.h>
++#include <linux/preempt.h>
+ 
+ #define __page_val_to_pfn(_val)  (((_val) & _PAGE_PFN_MASK) >> _PAGE_PFN_SHIFT)
+ 
+@@ -253,7 +255,9 @@ static inline bool pmd_leaf(pmd_t pmd)
+ 
+ static inline void set_pmd(pmd_t *pmdp, pmd_t pmd)
+ {
++	guard(preempt)();
+ 	WRITE_ONCE(*pmdp, pmd);
++	ALT_ANDES_PTW_SYNC();
+ }
+ 
+ static inline void pmd_clear(pmd_t *pmdp)
+@@ -549,7 +553,9 @@ static inline int pte_same(pte_t pte_a, pte_t pte_b)
+  */
+ static inline void set_pte(pte_t *ptep, pte_t pteval)
+ {
++	guard(preempt)();
+ 	WRITE_ONCE(*ptep, pteval);
++	ALT_ANDES_PTW_SYNC();
+ }
+ 
+ void flush_icache_pte(struct mm_struct *mm, pte_t pte);

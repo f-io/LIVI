@@ -1,0 +1,55 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme } from "theme.slint";
+import { ViewAreaMask, MaskData } from "mask.slint";
+
+export enum TouchPhase { down, move, up, cancel }
+
+export component ProjectionPage inherits Rectangle {
+    in property <int> stream-width: 1280;
+    in property <int> stream-height: 720;
+    in property <bool> streaming;
+    in property <MaskData> mask;
+    in property <image> idle-icon;
+    callback touch(TouchPhase, float, float);
+
+    background: root.streaming ? transparent : Theme.backdrop;
+
+    Rectangle {
+        width: min(root.width, root.height * root.stream-width / root.stream-height);
+        height: min(root.height, root.width * root.stream-height / root.stream-width);
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+
+        TouchArea {
+            enabled: root.streaming;
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) {
+                    root.touch(TouchPhase.down, self.mouse-x / self.width, self.mouse-y / self.height);
+                } else if (e.kind == PointerEventKind.up) {
+                    root.touch(TouchPhase.up, self.mouse-x / self.width, self.mouse-y / self.height);
+                } else if (e.kind == PointerEventKind.cancel) {
+                    root.touch(TouchPhase.cancel, self.mouse-x / self.width, self.mouse-y / self.height);
+                }
+            }
+            moved => {
+                if (self.pressed) {
+                    root.touch(TouchPhase.move, self.mouse-x / self.width, self.mouse-y / self.height);
+                }
+            }
+        }
+    }
+
+    if root.streaming: ViewAreaMask {
+        mask: root.mask;
+    }
+
+    if !root.streaming: Image {
+        source: root.idle-icon;
+        width: min(root.width, root.height) * 0.15;
+        height: self.width;
+        colorize: Theme.text-secondary;
+    }
+}

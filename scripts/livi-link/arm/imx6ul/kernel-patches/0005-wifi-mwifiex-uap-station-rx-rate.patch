@@ -1,0 +1,81 @@
+--- a/drivers/net/wireless/marvell/mwifiex/main.h
++++ b/drivers/net/wireless/marvell/mwifiex/main.h
+@@ -768,8 +768,8 @@
+ 	u32 rx_packets;
+ 	u32 tx_packets;
+ 	u32 tx_failed;
+-	u8 last_tx_rate;
+-	u8 last_tx_htinfo;
++	u8 last_rx_rate;
++	u8 last_rx_htinfo;
+ };
+ 
+ /* This is AP/TDLS specific structure which stores information
+--- a/drivers/net/wireless/marvell/mwifiex/uap_txrx.c
++++ b/drivers/net/wireless/marvell/mwifiex/uap_txrx.c
+@@ -88,7 +88,6 @@
+ 	struct mwifiex_txinfo *tx_info;
+ 	int hdr_chop;
+ 	struct ethhdr *p_ethhdr;
+-	struct mwifiex_sta_node *src_node;
+ 	int index;
+ 
+ 	uap_rx_pd = (struct uap_rxpd *)(skb->data);
+@@ -183,15 +182,6 @@
+ 	tx_info->bss_type = priv->bss_type;
+ 	tx_info->flags |= MWIFIEX_BUF_FLAG_BRIDGED_PKT;
+ 
+-	src_node = mwifiex_get_sta_entry(priv, rx_pkt_hdr->eth803_hdr.h_source);
+-	if (src_node) {
+-		src_node->stats.last_rx = jiffies;
+-		src_node->stats.rx_bytes += skb->len;
+-		src_node->stats.rx_packets++;
+-		src_node->stats.last_tx_rate = uap_rx_pd->rx_rate;
+-		src_node->stats.last_tx_htinfo = uap_rx_pd->ht_info;
+-	}
+-
+ 	if (is_unicast_ether_addr(rx_pkt_hdr->eth803_hdr.h_dest)) {
+ 		/* Update bridge packet statistics as the
+ 		 * packet is not going to kernel/upper layer.
+@@ -425,9 +415,19 @@
+ 	if (rx_pkt_type != PKT_TYPE_BAR && uap_rx_pd->priority < MAX_NUM_TID) {
+ 		spin_lock_bh(&priv->sta_list_spinlock);
+ 		node = mwifiex_get_sta_entry(priv, ta);
+-		if (node)
++		if (node) {
+ 			node->rx_seq[uap_rx_pd->priority] =
+ 						le16_to_cpu(uap_rx_pd->seq_num);
++			/* Every data frame from a station passes here, before reordering
++			 * or bridging, and its receive descriptor carries the rate it was
++			 * sent at.
++			 */
++			node->stats.last_rx = jiffies;
++			node->stats.rx_bytes += le16_to_cpu(uap_rx_pd->rx_pkt_length);
++			node->stats.rx_packets++;
++			node->stats.last_rx_rate = uap_rx_pd->rx_rate;
++			node->stats.last_rx_htinfo = uap_rx_pd->ht_info;
++		}
+ 		spin_unlock_bh(&priv->sta_list_spinlock);
+ 	}
+ 
+--- a/drivers/net/wireless/marvell/mwifiex/cfg80211.c
++++ b/drivers/net/wireless/marvell/mwifiex/cfg80211.c
+@@ -1485,10 +1485,14 @@
+ 		sinfo->tx_packets = node->stats.tx_packets;
+ 		sinfo->tx_failed = node->stats.tx_failed;
+ 
+-		mwifiex_parse_htinfo(priv, priv->tx_rate,
+-				     node->stats.last_tx_htinfo,
+-				     &sinfo->txrate);
+-		sinfo->txrate.legacy = node->stats.last_tx_rate * 5;
++		/* The rate of the last frame from the station. Nothing tells the rate
++		 * the firmware sends to it at.
++		 */
++		sinfo->filled &= ~BIT_ULL(NL80211_STA_INFO_TX_BITRATE);
++		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BITRATE);
++		mwifiex_parse_htinfo(priv, node->stats.last_rx_rate,
++				     node->stats.last_rx_htinfo,
++				     &sinfo->rxrate);
+ 
+ 		return 0;
+ 	}

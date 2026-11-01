@@ -1,0 +1,353 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme, Ui } from "../theme.slint";
+import { Metrics } from "metrics.slint";
+import { Switch, Slider } from "controls.slint";
+import { RowButton, ToolButton } from "actions.slint";
+import { StationBadge } from "../dab.slint";
+import { Battery, SignalBars, StatusDot } from "device.slint";
+
+export enum RowKind { route, value, toggle, slider, key-binding, custom, devices, info, button, progress, item, device, picture, pick }
+
+export struct ToolData {
+    icon: image,
+    on: bool,
+    tint: color,
+    has-tint: bool,
+    enabled: bool,
+    switch: bool,
+}
+
+export struct RowData {
+    kind: RowKind,
+    label: string,
+    icon: image,
+    has-icon: bool,
+    value: string,
+    checked: bool,
+    level: float,
+    enabled: bool,
+    swatch: color,
+    has-swatch: bool,
+    node: int,
+    focus-at: int,
+    button: string,
+    outlined: bool,
+    dimmed: bool,
+    has-badge: bool,
+    badge-initials: string,
+    badge-color: color,
+    badge-has-logo: bool,
+    badge-logo: image,
+    tools: [ToolData],
+    mono: bool,
+    alert: bool,
+    tool-offset: int,
+    icon-active: bool,
+    has-transport: bool,
+    transport: image,
+    has-battery: bool,
+    battery: int,
+    charging: bool,
+    has-signal: bool,
+    signal: int,
+    presence: int,
+}
+
+export component RowFrame inherits Rectangle {
+    in property <image> icon;
+    in property <bool> has-icon;
+    in property <string> label;
+    in property <bool> first;
+    in property <bool> last;
+    in property <bool> enabled: true;
+    in property <bool> clickable;
+    in property <bool> focused;
+    in property <bool> dimmed;
+    in property <bool> alert;
+    in property <color> icon-tint: Theme.text-secondary;
+    in property <bool> has-badge;
+    in property <string> badge-initials;
+    in property <color> badge-color;
+    in property <bool> badge-has-logo;
+    in property <image> badge-logo;
+    out property <bool> active: touch.pressed || touch.has-hover || root.focused;
+    callback clicked();
+
+    property <length> corner: Theme.comand ? Theme.radius : 10px;
+
+    height: Metrics.row-h;
+    background: Theme.comand ? Theme.panel : Theme.paper;
+    border-top-left-radius: root.first ? root.corner : 0;
+    border-top-right-radius: root.first ? root.corner : 0;
+    border-bottom-left-radius: root.last ? root.corner : 0;
+    border-bottom-right-radius: root.last ? root.corner : 0;
+    opacity: root.enabled ? 1 : 0.45;
+
+    // COMAND: each row draws its share of the panel frame (1px rule sides,
+    // top bevel highlight on the first row, dark bevel on the last) so any
+    // list of rows reads as one bevelled panel, plus a wash when lit.
+    if Theme.comand && root.active && (root.clickable || root.focused): Rectangle {
+        border-top-left-radius: parent.border-top-left-radius;
+        border-top-right-radius: parent.border-top-right-radius;
+        border-bottom-left-radius: parent.border-bottom-left-radius;
+        border-bottom-right-radius: parent.border-bottom-right-radius;
+        background: Theme.wash;
+    }
+    if Theme.comand: Rectangle {
+        x: 0;
+        width: 1px;
+        background: Theme.rule;
+    }
+    if Theme.comand: Rectangle {
+        x: parent.width - 1px;
+        width: 1px;
+        background: Theme.rule;
+    }
+    if Theme.comand && root.first: Rectangle {
+        y: 0;
+        height: 1px;
+        background: Theme.rule;
+    }
+    if Theme.comand && root.first: Rectangle {
+        x: 1px;
+        y: 1px;
+        width: parent.width - 2px;
+        height: 1px;
+        background: Theme.bevel-light;
+    }
+    if Theme.comand && root.last: Rectangle {
+        x: 1px;
+        y: parent.height - 2px;
+        width: parent.width - 2px;
+        height: 1px;
+        background: Theme.bevel-dark;
+    }
+    if Theme.comand && root.last: Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.rule;
+    }
+    if Theme.comand && root.focused: Rectangle {
+        border-radius: Theme.radius;
+        border-width: 1px;
+        border-color: Theme.focus-color;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled && root.clickable;
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: Metrics.row-pad;
+        padding-right: Metrics.row-pad;
+        spacing: Metrics.row-gap;
+        Rectangle {
+            width: Metrics.row-icon;
+            opacity: root.dimmed ? 0.45 : 1;
+            if root.has-icon: Image {
+                width: Metrics.row-icon;
+                height: Metrics.row-icon;
+                source: root.icon;
+                colorize: root.icon-tint;
+            }
+            if root.has-badge: StationBadge {
+                size: Metrics.row-icon + 4px;
+                has-logo: root.badge-has-logo;
+                logo: root.badge-logo;
+                initials: root.badge-initials;
+                badge: root.badge-color;
+            }
+        }
+        HorizontalLayout {
+            horizontal-stretch: 1;
+            opacity: root.dimmed ? 0.45 : 1;
+            padding-left: Metrics.row-pad;
+            padding-right: Metrics.row-pad;
+            Text {
+                text: root.label;
+                color: root.alert ? #f44336 : root.active && (root.clickable || root.focused) ? Theme.primary : Theme.comand ? Theme.text : Theme.text-secondary;
+                font-size: Metrics.row-font;
+                letter-spacing: Theme.comand ? 0.8px : 0;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+        @children
+    }
+
+    if !root.last && !Theme.comand: Rectangle {
+        x: Metrics.row-inset;
+        y: parent.height - 2px;
+        width: parent.width - Metrics.row-inset - Metrics.row-inset-r;
+        height: 2px;
+        background: Theme.divider;
+    }
+    if !root.last && Theme.comand: Rectangle {
+        property <bool> lit: root.active && (root.clickable || root.focused);
+        x: self.lit ? 1px : Metrics.row-inset;
+        y: parent.height - 1px;
+        width: self.lit ? parent.width - 2px : parent.width - Metrics.row-inset - Metrics.row-inset-r;
+        height: 1px;
+        background: self.lit ? Theme.primary : Theme.rule.with-alpha(0.74);
+    }
+}
+
+export component Chevron inherits Rectangle {
+    in property <bool> active;
+    width: Metrics.icon-px;
+    Image {
+        x: root.active ? -3px : 0;
+        width: Metrics.icon-px;
+        height: Metrics.icon-px;
+        source: @image-url("../icons/ArrowForwardIosOutlined.svg");
+        colorize: root.active ? Theme.primary : Theme.text;
+        animate x { duration: 300ms; easing: ease-in-out; }
+    }
+}
+
+export component SettingsRow inherits RowFrame {
+    in property <RowData> data;
+    callback open();
+    callback toggle();
+    callback slide(float);
+    callback slide-done(float);
+    callback press();
+    callback capture();
+    callback tool(int);
+    in property <int> focus-tool: -1;
+
+    icon: root.data.icon;
+    has-icon: root.data.has-icon;
+    icon-tint: root.data.icon-active ? Theme.highlight : Theme.text-secondary;
+    has-badge: root.data.has-badge;
+    badge-initials: root.data.badge-initials;
+    badge-color: root.data.badge-color;
+    badge-has-logo: root.data.badge-has-logo;
+    badge-logo: root.data.badge-logo;
+    label: root.data.label;
+    dimmed: root.data.dimmed;
+    alert: root.data.alert;
+    enabled: root.data.kind == RowKind.button || root.data.kind == RowKind.device || root.data.enabled;
+    clickable: root.data.kind == RowKind.route || root.data.kind == RowKind.value || root.data.kind == RowKind.custom || root.data.kind == RowKind.key-binding || root.data.kind == RowKind.pick || (root.data.kind == RowKind.device && root.data.enabled);
+    clicked => {
+        if (root.data.kind == RowKind.key-binding) {
+            root.capture();
+        } else if (root.data.kind == RowKind.device || root.data.kind == RowKind.pick) {
+            root.press();
+        } else {
+            root.open();
+        }
+    }
+
+    if root.data.kind == RowKind.button: RowButton {
+        y: (parent.height - self.height) / 2;
+        text: root.data.button;
+        outlined: root.data.outlined;
+        enabled: root.data.enabled;
+        focused: root.focused;
+        clicked => { root.press(); }
+    }
+    if root.data.kind == RowKind.slider: Slider {
+        width: 40%;
+        focused: root.focused;
+        level: root.data.level;
+        enabled: root.data.enabled;
+        small: true;
+        text: root.data.value;
+        moved(v) => { root.slide(v); }
+        released(v) => { root.slide-done(v); }
+    }
+    if root.data.value != "" && root.data.kind != RowKind.slider: Text {
+        text: root.data.value;
+        color: Theme.text;
+        font-family: root.data.mono ? "monospace" : Theme.font-family;
+        letter-spacing: root.data.mono ? 0 : Theme.tracking;
+        font-size: Metrics.row-font;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        overflow: elide;
+        max-width: Ui.width * 0.3;
+    }
+    if root.data.has-swatch: Rectangle {
+        y: (parent.height - self.height) / 2;
+        width: Metrics.swatch-w;
+        height: Metrics.swatch-h;
+        border-radius: Theme.comand ? Theme.radius : 6px;
+        border-width: 1px;
+        border-color: #80808080;
+        background: root.data.swatch;
+    }
+    if root.data.kind == RowKind.toggle: Switch {
+        y: (parent.height - self.height) / 2;
+        checked: root.data.checked;
+        enabled: root.data.enabled;
+        toggled => { root.toggle(); }
+    }
+    if root.data.kind == RowKind.device: HorizontalLayout {
+        opacity: root.data.dimmed ? 0.45 : 1;
+        spacing: Metrics.row-pad;
+        horizontal-stretch: 0;
+        Rectangle {
+            width: 26px;
+            if root.data.has-transport: Image {
+                width: 18px;
+                height: 18px;
+                source: root.data.transport;
+                colorize: Theme.text-secondary;
+            }
+        }
+        Rectangle {
+            width: 52px;
+            if root.data.has-battery: Battery {
+                level: root.data.battery;
+                charging: root.data.charging;
+            }
+        }
+        Rectangle {
+            width: 26px;
+            if root.data.has-signal: SignalBars {
+                level: root.data.signal;
+            }
+        }
+        Rectangle {
+            width: 20px;
+            StatusDot {
+                presence: root.data.presence;
+            }
+        }
+    }
+    if root.data.tools.length > 0: HorizontalLayout {
+        horizontal-stretch: 0;
+        spacing: 2px;
+        for t[j] in root.data.tools: Rectangle {
+            width: t.switch ? 58px : Metrics.icon-px + 4px + (Ui.width < 600px ? 4px : 12px);
+            if t.switch: Rectangle {
+                y: (parent.height - self.height) / 2;
+                height: 38px;
+                border-radius: Theme.comand ? Theme.radius : 19px;
+                border-width: root.focus-tool == j ? Theme.ring(2px) : 0;
+                border-color: Theme.focus-color;
+                Switch {
+                    checked: t.on;
+                    enabled: t.enabled;
+                    toggled => { root.tool(j); }
+                }
+            }
+            if !t.switch: ToolButton {
+                y: (parent.height - self.height) / 2;
+                icon: t.icon;
+                tint: t.has-tint ? t.tint : Theme.text;
+                enabled: t.enabled;
+                focused: root.focus-tool == j;
+                clicked => { root.tool(j); }
+            }
+        }
+    }
+    if root.data.kind == RowKind.route || root.data.kind == RowKind.value || root.data.kind == RowKind.custom: Chevron {
+        active: root.active;
+    }
+}

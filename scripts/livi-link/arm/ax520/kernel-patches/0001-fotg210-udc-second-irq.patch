@@ -1,0 +1,58 @@
+--- a/drivers/usb/fotg210/fotg210-udc.h
++++ b/drivers/usb/fotg210/fotg210-udc.h
+@@ -249,6 +249,8 @@
+ 	u8			ep0_dir;	/* 0/0x80  out/in */
+ 
+ 	u8			reenum;		/* if re-enumeration */
++
++	int			irq2;		/* optional second line, 0 if none */
+ };
+ 
+ #define gadget_to_fotg210(g)	container_of((g), struct fotg210_udc, gadget)
+--- a/drivers/usb/fotg210/fotg210-udc.c
++++ b/drivers/usb/fotg210/fotg210-udc.c
+@@ -1161,6 +1161,9 @@
+ 	iounmap(fotg210->reg);
+ 	free_irq(platform_get_irq(pdev, 0), fotg210);
+ 
++	if (fotg210->irq2)
++		free_irq(fotg210->irq2, fotg210);
++
+ 	fotg210_ep_free_request(&fotg210->ep[0]->ep, fotg210->ep0_req);
+ 	for (i = 0; i < FOTG210_MAX_NUM_EP; i++)
+ 		kfree(fotg210->ep[i]);
+@@ -1174,7 +1177,7 @@
+ {
+ 	struct fotg210_udc *fotg210 = NULL;
+ 	struct device *dev = &pdev->dev;
+-	int irq;
++	int irq, irq2;
+ 	int ret = 0;
+ 	int i;
+ 
+@@ -1274,6 +1277,16 @@
+ 		goto err_req;
+ 	}
+ 
++	/*
++	 * Some boards list a second line for the same core (AX520: SPI 25 and 22) without saying
++	 * which one the device controller raises. The handler reads the status registers and is
++	 * shared, so hooking both is harmless.
++	 */
++	irq2 = platform_get_irq_optional(pdev, 1);
++	if (irq2 > 0 && irq2 != irq &&
++	    !request_irq(irq2, fotg210_irq, IRQF_SHARED, udc_name, fotg210))
++		fotg210->irq2 = irq2;
++
+ 	if (!IS_ERR_OR_NULL(fotg210->phy))
+ 		usb_register_notifier(fotg210->phy, &fotg210_phy_notifier);
+ 
+@@ -1288,6 +1301,8 @@
+ err_add_udc:
+ 	if (!IS_ERR_OR_NULL(fotg210->phy))
+ 		usb_unregister_notifier(fotg210->phy, &fotg210_phy_notifier);
++	if (fotg210->irq2)
++		free_irq(fotg210->irq2, fotg210);
+ 	free_irq(irq, fotg210);
+ 
+ err_req:

@@ -1,0 +1,187 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme } from "../theme.slint";
+import { GaugeData, Signal } from "state.slint";
+
+export component Gauge inherits Rectangle {
+    in property <GaugeData> g;
+    in property <float> value-t;
+    in property <length> u;
+    in property <color> scale-color;
+    in property <color> major-color;
+    in property <color> pointer-color;
+    in property <color> needle-color: Theme.text;
+    in property <bool> backdrop;
+    in property <color> backdrop-color;
+
+    property <bool> started;
+    property <float> t: started ? value-t : -0.08;
+    property <float> op: started ? 1 : 0;
+    animate t { duration: 420ms; easing: ease-out; }
+    animate op { duration: 700ms; easing: ease-out; }
+    Timer {
+        interval: 50ms;
+        running: !root.started;
+        triggered => { root.started = true; }
+    }
+
+    width: g.box-w * u;
+    height: g.box-h * u;
+
+    property <float> pointer-idx: t * (g.ticks - 1);
+    property <angle> a: (g.gap / 2 + t * (360 - g.gap)) * 1deg;
+    property <float> nx: g.radius * cos(a);
+    property <float> ny: g.radius * sin(a);
+    property <float> px: g.cx + (g.mirror ? -nx : nx);
+    property <float> py: g.cy + ny;
+    property <angle> pang: g.mirror ? 180deg - a : a;
+    property <float> nh: g.major-h + 12 * g.fit;
+    property <float> shift: (nh - g.tick-h) / 2;
+    property <float> nxc: px - cos(pang) * shift;
+    property <float> nyc: py - sin(pang) * shift;
+    property <angle> th: pang + 90deg;
+    property <float> hw: (g.tick-w + g.fit) / 2;
+    property <float> hl: nh / 2;
+
+    if root.backdrop: Image {
+        x: (g.cx - g.shadow-half) * u;
+        y: (g.cy - g.shadow-half) * u;
+        width: g.shadow-half * 2 * u;
+        height: g.shadow-half * 2 * u;
+        source: g.shadow;
+        colorize: root.backdrop-color;
+        image-rendering: smooth;
+    }
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-width: g.box-w;
+        viewbox-height: g.box-h;
+        commands: g.minor;
+        fill: root.scale-color;
+    }
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-width: g.box-w;
+        viewbox-height: g.box-h;
+        commands: g.major;
+        fill: root.major-color;
+    }
+    if g.red-minor != "": Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-width: g.box-w;
+        viewbox-height: g.box-h;
+        commands: g.red-minor;
+        fill: Signal.warn;
+        opacity: 0.55;
+    }
+    if g.red-major != "": Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-width: g.box-w;
+        viewbox-height: g.box-h;
+        commands: g.red-major;
+        fill: Signal.warn;
+    }
+    for c in g.caps: Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-width: g.box-w;
+        viewbox-height: g.box-h;
+        commands: c.path;
+        fill: root.scale-color;
+        opacity: c.opacity;
+    }
+    for tr in g.trail: Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-width: g.box-w;
+        viewbox-height: g.box-h;
+        commands: tr.path;
+        fill: tr.index >= g.redline-index ? Signal.warn : root.pointer-color;
+        opacity: root.pointer-idx > 0 && tr.index <= root.pointer-idx ? root.op * 0.5 * tr.index / root.pointer-idx : 0;
+    }
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-width: g.box-w;
+        viewbox-height: g.box-h;
+        fill: root.t * (g.ticks - 1) >= g.redline-index ? Signal.warn : root.needle-color;
+        opacity: root.op;
+        MoveTo {
+            x: root.nxc + (-root.hw) * cos(root.th) - (-root.hl) * sin(root.th);
+            y: root.nyc + (-root.hw) * sin(root.th) + (-root.hl) * cos(root.th);
+        }
+        LineTo {
+            x: root.nxc + root.hw * cos(root.th) - (-root.hl) * sin(root.th);
+            y: root.nyc + root.hw * sin(root.th) + (-root.hl) * cos(root.th);
+        }
+        LineTo {
+            x: root.nxc + root.hw * cos(root.th) - root.hl * sin(root.th);
+            y: root.nyc + root.hw * sin(root.th) + root.hl * cos(root.th);
+        }
+        LineTo {
+            x: root.nxc + (-root.hw) * cos(root.th) - root.hl * sin(root.th);
+            y: root.nyc + (-root.hw) * sin(root.th) + root.hl * cos(root.th);
+        }
+        Close {}
+    }
+    for l in g.labels: Text {
+        x: l.x * root.u - self.width / 2;
+        y: l.y * root.u - self.height / 2;
+        text: l.text;
+        color: root.major-color;
+        font-size: g.label-size * root.u;
+    }
+}
+
+export component Readout inherits Rectangle {
+    in property <string> value;
+    in property <string> caption;
+    in property <bool> to-end;
+    in property <length> u;
+    in property <bool> backdrop;
+    in property <color> backdrop-color;
+
+    pure function snap(l: length) -> length { return round(l / 1phx) * 1phx; }
+
+    property <length> value-w: snap(3 * 0.56 * 96 * u);
+    property <length> pad-x: snap(18 * u);
+    property <length> pad-y: snap(10 * u);
+    property <length> gap: snap(2 * u);
+    property <length> big-h: snap(big.preferred-height);
+    property <length> small-h: snap(small.preferred-height);
+    Rectangle {
+        width: root.value-w + 2 * root.pad-x;
+        height: root.big-h + root.gap + root.small-h + 2 * root.pad-y;
+        x: root.snap((parent.width - self.width) / 2);
+        y: root.snap((parent.height - self.height) / 2);
+        border-radius: 16 * root.u;
+        background: root.backdrop ? root.backdrop-color : transparent;
+        big := Text {
+            x: root.pad-x;
+            y: root.pad-y;
+            width: root.value-w;
+            text: root.value;
+            font-size: root.snap(96 * root.u);
+            color: Theme.text;
+            horizontal-alignment: root.to-end ? right : left;
+        }
+        small := Text {
+            x: root.pad-x;
+            y: root.pad-y + root.big-h + root.gap;
+            width: root.value-w;
+            text: root.caption;
+            font-size: root.snap(10 * root.u);
+            font-weight: 500;
+            letter-spacing: 1.5 * root.u;
+            color: Theme.text-secondary.with-alpha(0.5);
+            horizontal-alignment: root.to-end ? right : left;
+        }
+    }
+}

@@ -1,0 +1,21 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+export enum FocusZone { none, nav, main }
+
+export global Focus {
+    in-out property <FocusZone> zone;
+    in-out property <int> nav-index;
+    in-out property <int> main-index;
+    in-out property <bool> editing;
+    in-out property <bool> media-art;
+
+    public pure function main(i: int) -> bool {
+        return zone == FocusZone.main && main-index == i;
+    }
+
+    public pure function nav(i: int) -> bool {
+        return zone == FocusZone.nav && nav-index == i;
+    }
+}

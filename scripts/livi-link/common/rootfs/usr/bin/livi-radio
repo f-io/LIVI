@@ -1,0 +1,124 @@
+#!/bin/sh
+# The two halves of the combo chip, as far as they are switched on (/tmp/livi/radio.conf, kept by
+# livid config). wifid calls it for what a boot left out.
+#   livi-radio boot    at boot, from rcS
+#   livi-radio driver  the driver, unless it is loaded already
+#   livi-radio bt      hci0 up, then btd and accessoryd
+#   livi-radio bt-off  btd and accessoryd gone, as after a boot with bluetooth switched off
+#   livi-radio mac     wlan0 on the address it had on its first boot, before it comes up
+. /etc/livi/board.sh
+CONF=/tmp/livi/radio.conf
+MAC=/tmp/livi/wlan-mac
+
+enabled() {
+    ! grep -qx "$1=off" "$CONF" 2>/dev/null
+}
+
+# A driver may make up part of wlan0's address on every boot, and the phone knows the car by it.
+# So the first one is kept and set again, before wlan0 comes up so the radio takes it.
+keep_mac() {
+    [ -e /sys/class/net/wlan0 ] || return 0
+    now=$(cat /sys/class/net/wlan0/address)
+    if [ -s "$MAC" ]; then
+        want=$(cat "$MAC")
+        [ "$want" = "$now" ] || ifconfig wlan0 hw ether "$want"
+    else
+        echo "$now" > "$MAC" && /usr/bin/livid config save >/dev/null 2>&1
+        echo "[livi] wlan0 keeps $now"
+    fi
+}
+
+driver() {
+    [ -e /tmp/livi/driver-loaded ] && return 0
+    touch /tmp/livi/driver-loaded
+    board_wifi
+}
+
+# A driver can register hci0 before its controller answers, so this retries.
+bt() {
+    for i in $(seq 1 20); do
+        if /usr/bin/livi-bt-up 0 2>&1 && [ -e /sys/class/bluetooth/hci0 ]; then
+            echo "[livi] bt-up ok on attempt $i"
+            if ! pidof livi-btd >/dev/null; then
+                /usr/bin/livi-btd >/tmp/livi/btd.log 2>&1 &
+                echo "[livi] btd  pid=$!  :5002"
+            fi
+            if ! pidof livi-accessoryd >/dev/null; then
+                /usr/bin/livi-accessoryd >/tmp/livi/accessory.log 2>&1 &
+                echo "[livi] accessoryd pid=$! :5003/:5004"
+            fi
+            return 0
+        fi
+        sleep 0.5
+    done
+    echo '[livi] bt-up gave up, no btd/accessoryd'
+    return 1
+}
+
+# btd holds hci0 as a user channel while a host tunnels, and the kernel will not take hci0 down
+# under one. wifid takes it down after this.
+bt_off() {
+    for daemon in livi-btd livi-accessoryd; do
+        pids=$(pidof "$daemon") && kill $pids
+    done
+    for i in $(seq 1 20); do
+        pidof livi-btd >/dev/null || pidof livi-accessoryd >/dev/null || break
+        sleep 0.1
+    done
+    rm -f /tmp/livi/led/bt-paging /tmp/livi/led/bt-connected
+    if pidof livi-btd >/dev/null || pidof livi-accessoryd >/dev/null; then
+        echo '[livi] btd or accessoryd would not stop' >&2
+        return 1
+    fi
+    echo '[livi] btd and accessoryd stopped'
+}
+
+boot() {
+    if enabled wifi || enabled bt; then
+        driver
+    else
+        echo '[livi] wifi and bluetooth switched off, no driver'
+    fi
+
+    # Runs either way, a host or the page switches the radios on through it.
+    /usr/bin/livi-wifid >/tmp/livi/wifid.log 2>&1 &
+    echo "[livi] wifid pid=$! :5001"
+
+    if enabled wifi; then
+        for i in $(seq 1 20); do
+            [ -e /sys/class/net/wlan0 ] && break
+            sleep 0.5
+        done
+        if [ -e /sys/class/net/wlan0 ]; then
+            echo '[livi] wlan0 present'
+            keep_mac
+            ifconfig wlan0 up
+            # The AP comes up through wifid, the same path a host takes.
+            sleep 0.3
+            (echo on; sleep 0.05; echo save) | nc 127.0.0.1 5001 >/dev/null 2>&1 ||
+                hostapd -B /tmp/livi/hostapd.conf.saved >/tmp/livi/hostapd.log 2>&1
+        else
+            echo '[livi] wlan0 did not appear within 10s'
+        fi
+    else
+        echo '[livi] wifi switched off'
+    fi
+
+    if enabled bt; then
+        bt &
+    else
+        echo '[livi] bluetooth switched off'
+    fi
+}
+
+case "$1" in
+    boot) boot ;;
+    driver) driver ;;
+    bt) bt ;;
+    bt-off) bt_off ;;
+    mac) keep_mac ;;
+    *)
+        echo "usage: livi-radio boot|driver|bt|bt-off|mac" >&2
+        exit 2
+        ;;
+esac

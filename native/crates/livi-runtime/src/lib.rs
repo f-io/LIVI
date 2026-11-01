@@ -1,0 +1,55 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+pub mod aa_sock;
+pub mod bluetoothd;
+pub mod bonjour;
+pub mod bringup;
+pub mod clock;
+pub mod driver;
+pub mod events;
+pub mod file_transfer;
+pub mod framing;
+pub mod hfp;
+pub mod ident;
+pub mod livi_sock;
+pub mod net;
+pub mod privileged;
+pub mod reconnect;
+pub mod sco;
+pub mod shared_sock;
+pub mod state;
+pub mod sys;
+pub mod vehicle;
+pub mod wifi_ap;
+
+#[cfg(target_os = "linux")]
+pub mod bt;
+pub mod mfi_async;
+
+use std::future::Future;
+
+pub trait ControlChannel {
+    fn send(&mut self, frame: Vec<u8>) -> impl Future<Output = Result<(), ChannelError>> + Send;
+    fn recv(&mut self) -> impl Future<Output = Option<Vec<u8>>> + Send;
+}
+
+pub trait AsyncAuth {
+    fn read_certificate(&mut self) -> impl Future<Output = Result<Vec<u8>, String>> + Send;
+    fn sign(&mut self, challenge: Vec<u8>) -> impl Future<Output = Result<Vec<u8>, String>> + Send;
+    fn protocol_major(&mut self) -> impl Future<Output = Result<u8, String>> + Send;
+}
+
+#[derive(Debug)]
+pub enum ChannelError {
+    Closed,
+}
+
+impl core::fmt::Display for ChannelError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "control channel closed")
+    }
+}
+
+impl std::error::Error for ChannelError {}

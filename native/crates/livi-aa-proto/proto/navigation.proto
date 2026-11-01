@@ -1,0 +1,259 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+enum NavigationStatusMessageId {
+  NAVIGATION_STATUS_MESSAGE_ID_START = 32769;
+  NAVIGATION_STATUS_MESSAGE_ID_STOP = 32770;
+  NAVIGATION_STATUS_MESSAGE_ID_STATUS = 32771;
+  NAVIGATION_STATUS_MESSAGE_ID_NEXT_TURN = 32772;
+  NAVIGATION_STATUS_MESSAGE_ID_NEXT_TURN_DISTANCE = 32773;
+  NAVIGATION_STATUS_MESSAGE_ID_STATE = 32774;
+  NAVIGATION_STATUS_MESSAGE_ID_CURRENT_POSITION = 32775;
+  NAVIGATION_STATUS_MESSAGE_ID_VEHICLE_ENERGY_FORECAST = 32776;
+  NAVIGATION_STATUS_MESSAGE_ID_DRIVER_ASSISTANCE_ROUTE = 32777;
+}
+
+enum NavigationClusterType {
+  NAVIGATION_CLUSTER_TYPE_IMAGE = 1;
+  NAVIGATION_CLUSTER_TYPE_NO_IMAGE = 2;
+}
+
+enum NavigationDistanceUnit {
+  NAVIGATION_DISTANCE_UNIT_UNKNOWN = 0;
+  NAVIGATION_DISTANCE_UNIT_METERS = 1;
+  NAVIGATION_DISTANCE_UNIT_KILOMETERS = 2;
+  NAVIGATION_DISTANCE_UNIT_KILOMETERS_P1 = 3;
+  NAVIGATION_DISTANCE_UNIT_MILES = 4;
+  NAVIGATION_DISTANCE_UNIT_MILES_P1 = 5;
+  NAVIGATION_DISTANCE_UNIT_FEET = 6;
+  NAVIGATION_DISTANCE_UNIT_YARDS = 7;
+}
+
+enum NavigationLaneShape {
+  NAVIGATION_LANE_SHAPE_VALUE_0 = 0;
+  NAVIGATION_LANE_SHAPE_VALUE_1 = 1;
+  NAVIGATION_LANE_SHAPE_VALUE_2 = 2;
+  NAVIGATION_LANE_SHAPE_VALUE_3 = 3;
+  NAVIGATION_LANE_SHAPE_VALUE_4 = 4;
+  NAVIGATION_LANE_SHAPE_VALUE_5 = 5;
+  NAVIGATION_LANE_SHAPE_VALUE_6 = 6;
+  NAVIGATION_LANE_SHAPE_VALUE_7 = 7;
+  NAVIGATION_LANE_SHAPE_VALUE_8 = 8;
+  NAVIGATION_LANE_SHAPE_VALUE_9 = 9;
+}
+
+enum NavigationManeuverType {
+  NAVIGATION_MANEUVER_TYPE_UNKNOWN = 0;
+  NAVIGATION_MANEUVER_TYPE_DEPART = 1;
+  NAVIGATION_MANEUVER_TYPE_NAME_CHANGE = 2;
+  NAVIGATION_MANEUVER_TYPE_KEEP_LEFT = 3;
+  NAVIGATION_MANEUVER_TYPE_KEEP_RIGHT = 4;
+  NAVIGATION_MANEUVER_TYPE_TURN_SLIGHT_LEFT = 5;
+  NAVIGATION_MANEUVER_TYPE_TURN_SLIGHT_RIGHT = 6;
+  NAVIGATION_MANEUVER_TYPE_TURN_NORMAL_LEFT = 7;
+  NAVIGATION_MANEUVER_TYPE_TURN_NORMAL_RIGHT = 8;
+  NAVIGATION_MANEUVER_TYPE_TURN_SHARP_LEFT = 9;
+  NAVIGATION_MANEUVER_TYPE_TURN_SHARP_RIGHT = 10;
+  NAVIGATION_MANEUVER_TYPE_U_TURN_LEFT = 11;
+  NAVIGATION_MANEUVER_TYPE_U_TURN_RIGHT = 12;
+  NAVIGATION_MANEUVER_TYPE_ON_RAMP_SLIGHT_LEFT = 13;
+  NAVIGATION_MANEUVER_TYPE_ON_RAMP_SLIGHT_RIGHT = 14;
+  NAVIGATION_MANEUVER_TYPE_ON_RAMP_NORMAL_LEFT = 15;
+  NAVIGATION_MANEUVER_TYPE_ON_RAMP_NORMAL_RIGHT = 16;
+  NAVIGATION_MANEUVER_TYPE_ON_RAMP_SHARP_LEFT = 17;
+  NAVIGATION_MANEUVER_TYPE_ON_RAMP_SHARP_RIGHT = 18;
+  NAVIGATION_MANEUVER_TYPE_ON_RAMP_U_TURN_LEFT = 19;
+  NAVIGATION_MANEUVER_TYPE_ON_RAMP_U_TURN_RIGHT = 20;
+  NAVIGATION_MANEUVER_TYPE_OFF_RAMP_SLIGHT_LEFT = 21;
+  NAVIGATION_MANEUVER_TYPE_OFF_RAMP_SLIGHT_RIGHT = 22;
+  NAVIGATION_MANEUVER_TYPE_OFF_RAMP_NORMAL_LEFT = 23;
+  NAVIGATION_MANEUVER_TYPE_OFF_RAMP_NORMAL_RIGHT = 24;
+  NAVIGATION_MANEUVER_TYPE_FORK_LEFT = 25;
+  NAVIGATION_MANEUVER_TYPE_FORK_RIGHT = 26;
+  NAVIGATION_MANEUVER_TYPE_MERGE_LEFT = 27;
+  NAVIGATION_MANEUVER_TYPE_MERGE_RIGHT = 28;
+  NAVIGATION_MANEUVER_TYPE_MERGE_SIDE_UNSPECIFIED = 29;
+  NAVIGATION_MANEUVER_TYPE_ROUNDABOUT_ENTER_AND_EXIT_CW = 32;
+  NAVIGATION_MANEUVER_TYPE_ROUNDABOUT_ENTER_AND_EXIT_CW_WITH_ANGLE = 33;
+  NAVIGATION_MANEUVER_TYPE_ROUNDABOUT_ENTER_AND_EXIT_CCW = 34;
+  NAVIGATION_MANEUVER_TYPE_ROUNDABOUT_ENTER_AND_EXIT_CCW_WITH_ANGLE = 35;
+  NAVIGATION_MANEUVER_TYPE_STRAIGHT = 36;
+  NAVIGATION_MANEUVER_TYPE_FERRY_BOAT = 37;
+  NAVIGATION_MANEUVER_TYPE_FERRY_TRAIN = 38;
+  NAVIGATION_MANEUVER_TYPE_DESTINATION = 39;
+  NAVIGATION_MANEUVER_TYPE_DESTINATION_STRAIGHT = 40;
+  NAVIGATION_MANEUVER_TYPE_DESTINATION_LEFT = 41;
+  NAVIGATION_MANEUVER_TYPE_DESTINATION_RIGHT = 42;
+  NAVIGATION_MANEUVER_TYPE_ROUNDABOUT_ENTER_CW = 43;
+  NAVIGATION_MANEUVER_TYPE_ROUNDABOUT_EXIT_CW = 44;
+  NAVIGATION_MANEUVER_TYPE_ROUNDABOUT_ENTER_CCW = 45;
+  NAVIGATION_MANEUVER_TYPE_ROUNDABOUT_EXIT_CCW = 46;
+  NAVIGATION_MANEUVER_TYPE_FERRY_BOAT_LEFT = 47;
+  NAVIGATION_MANEUVER_TYPE_FERRY_BOAT_RIGHT = 48;
+  NAVIGATION_MANEUVER_TYPE_FERRY_TRAIN_LEFT = 49;
+  NAVIGATION_MANEUVER_TYPE_FERRY_TRAIN_RIGHT = 50;
+}
+
+enum NavigationNextTurnType {
+  NAVIGATION_NEXT_TURN_TYPE_UNKNOWN = 0;
+  NAVIGATION_NEXT_TURN_TYPE_DEPART = 1;
+  NAVIGATION_NEXT_TURN_TYPE_NAME_CHANGE = 2;
+  NAVIGATION_NEXT_TURN_TYPE_SLIGHT_TURN = 3;
+  NAVIGATION_NEXT_TURN_TYPE_TURN = 4;
+  NAVIGATION_NEXT_TURN_TYPE_SHARP_TURN = 5;
+  NAVIGATION_NEXT_TURN_TYPE_U_TURN = 6;
+  NAVIGATION_NEXT_TURN_TYPE_ON_RAMP = 7;
+  NAVIGATION_NEXT_TURN_TYPE_OFF_RAMP = 8;
+  NAVIGATION_NEXT_TURN_TYPE_FORK = 9;
+  NAVIGATION_NEXT_TURN_TYPE_MERGE = 10;
+  NAVIGATION_NEXT_TURN_TYPE_ROUNDABOUT_ENTER = 11;
+  NAVIGATION_NEXT_TURN_TYPE_ROUNDABOUT_EXIT = 12;
+  NAVIGATION_NEXT_TURN_TYPE_ROUNDABOUT_ENTER_AND_EXIT = 13;
+  NAVIGATION_NEXT_TURN_TYPE_STRAIGHT = 14;
+  NAVIGATION_NEXT_TURN_TYPE_FERRY_BOAT = 16;
+  NAVIGATION_NEXT_TURN_TYPE_FERRY_TRAIN = 17;
+  NAVIGATION_NEXT_TURN_TYPE_DESTINATION = 19;
+}
+
+enum NavigationStatus {
+  NAVIGATION_STATUS_UNAVAILABLE = 0;
+  NAVIGATION_STATUS_ACTIVE = 1;
+  NAVIGATION_STATUS_INACTIVE = 2;
+  NAVIGATION_STATUS_REROUTING = 3;
+}
+
+enum NavigationTurnSide {
+  NAVIGATION_TURN_SIDE_LEFT = 1;
+  NAVIGATION_TURN_SIDE_RIGHT = 2;
+  NAVIGATION_TURN_SIDE_UNSPECIFIED = 3;
+}
+
+message DriverAssistancePath {
+  repeated sint32 latitude_e7_diffs = 1;
+  repeated sint32 longitude_e7_diffs = 2;
+  repeated sint32 altitude_dm_diffs = 3;
+}
+
+message DriverAssistanceRoute {
+  optional DriverAssistancePath path = 1;
+  optional DriverAssistanceTrip trip = 2;
+}
+
+message DriverAssistanceRouteNotification {
+  optional bytes serialized_route = 1;
+}
+
+message DriverAssistanceTrip {
+  optional string identifier = 1;
+  optional int32 sequence_number = 2;
+  optional DriverAssistancePath most_probable_path = 3;
+}
+
+message NavigationChargingStation {
+  optional int32 min_departure_energy_wh = 1;
+  optional int32 max_rated_power_watts = 2;
+  optional int32 estimated_charging_time_seconds = 3;
+}
+
+message NavigationCue {
+  repeated string alternate_texts = 1;
+}
+
+message NavigationCurrentPositionNotification {
+  optional NavigationStepDistance step_distance = 1;
+  repeated NavigationDestinationDistance destination_distances = 2;
+  optional NavigationRoad current_road = 3;
+}
+
+message NavigationDestination {
+  optional string address = 1;
+  optional NavigationChargingStation charging_station = 2;
+}
+
+message NavigationDestinationDistance {
+  optional NavigationDistance distance = 1;
+  optional string estimated_time_of_arrival = 2;
+  optional int64 time_to_arrival_seconds = 3;
+}
+
+message NavigationDistance {
+  optional int32 distance_m = 1;
+  optional string display_value = 2;
+  optional NavigationDistanceUnit display_unit = 3;
+}
+
+message NavigationImageOptions {
+  required int32 height = 1;
+  required int32 width = 2;
+  required int32 color_depth_bits = 3;
+}
+
+message NavigationLane {
+  repeated NavigationLaneDirection lane_directions = 1;
+}
+
+message NavigationLaneDirection {
+  optional NavigationLaneShape lane_shape = 1;
+  optional bool highlighted = 2;
+}
+
+message NavigationManeuver {
+  optional NavigationManeuverType type = 1;
+  optional int32 roundabout_exit_number = 2;
+  optional int32 roundabout_exit_angle_degrees = 3;
+}
+
+message NavigationNextTurnNotification {
+  required string road_name = 1;
+  optional NavigationTurnSide turn_side = 2;
+  optional NavigationNextTurnType turn_type = 3;
+  optional bytes turn_image = 4;
+  optional int32 roundabout_exit_number = 5;
+  optional int32 roundabout_exit_angle_degrees = 6;
+}
+
+message NavigationRoad {
+  optional string name = 1;
+}
+
+message NavigationStateNotification {
+  repeated NavigationStep steps = 1;
+  repeated NavigationDestination destinations = 2;
+}
+
+message NavigationStatusNotification {
+  required NavigationStatus status = 1;
+}
+
+message NavigationStatusService {
+  required int32 minimum_interval_ms = 1;
+  required NavigationClusterType cluster_type = 2;
+  optional NavigationImageOptions image_options = 3;
+}
+
+message NavigationStep {
+  optional NavigationManeuver maneuver = 1;
+  optional NavigationRoad road = 2;
+  repeated NavigationLane lanes = 3;
+  optional NavigationCue cue = 4;
+}
+
+message NavigationStepDistance {
+  optional NavigationDistance distance = 1;
+  optional int64 time_to_step_seconds = 2;
+}
+
+message NavigationTurnDistanceNotification {
+  required int32 distance_m = 1;
+  required int32 time_to_turn_seconds = 2;
+  optional int32 display_distance_e3 = 3;
+  optional NavigationDistanceUnit display_distance_unit = 4;
+}
+
+message VehicleEnergyForecastNotification {
+  optional bytes serialized_forecast = 1;
+}

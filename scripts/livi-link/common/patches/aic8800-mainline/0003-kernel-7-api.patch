@@ -1,0 +1,224 @@
+Kernel 7 passes the key and station callbacks and cfg80211_new_sta/del_sta the
+wireless_dev instead of its net_device, adds the rx address to remain_on_channel
+and moves the action code of an action frame up next to the category. It also
+dropped in_irq() and strncpy(). The strncpy() calls in rwnx_platform.c copy
+substrings that hold no NUL, so memcpy() does the same. The firmware error
+string was not NUL terminated when the message filled it.
+---
+diff --git a/aic8800_fdrv/rwnx_main.c b/aic8800_fdrv/rwnx_main.c
+--- a/aic8800_fdrv/rwnx_main.c
++++ b/aic8800_fdrv/rwnx_main.c
+@@ -2873,7 +2873,7 @@
+ 			#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 0, 0)
+ 			sinfo.filled |= STATION_INFO_ASSOC_REQ_IES;
+ 			#endif
+-			cfg80211_new_sta(rwnx_vif->ndev, sta->mac_addr, &sinfo, GFP_KERNEL);
++			cfg80211_new_sta(&rwnx_vif->wdev, sta->mac_addr, &sinfo, GFP_KERNEL);
+ 		}
+ 
+ #ifdef CONFIG_BAND_STEERING
+@@ -2989,7 +2989,7 @@
+ 				}
+ 			}
+ 			if (rwnx_vif->wdev.iftype == NL80211_IFTYPE_AP || rwnx_vif->wdev.iftype == NL80211_IFTYPE_P2P_GO) {
+-				cfg80211_del_sta(rwnx_vif->ndev, cur->mac_addr, GFP_KERNEL);
++				cfg80211_del_sta(&rwnx_vif->wdev, cur->mac_addr, GFP_KERNEL);
+ 			}
+ 
+ #ifdef AICWF_RX_REORDER
+@@ -3953,7 +3953,7 @@
+ static int
+ rwnx_cfg80211_remain_on_channel(struct wiphy *wiphy, struct wireless_dev *wdev,
+ 								struct ieee80211_channel *chan,
+-								unsigned int duration, u64 *cookie)
++								unsigned int duration, u64 *cookie, const u8 *rx_addr)
+ {
+ 	return rwnx_cfg80211_remain_on_channel_(wiphy, wdev, chan, duration, cookie, false);
+ }
+@@ -5358,6 +5358,65 @@
+ 	return 0;
+ }
+ 
++/* Kernel 7 passes the key and station callbacks the wireless_dev instead of its net_device. */
++static int rwnx_cfg80211_add_key_wdev(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id,
++				      u8 key_index, bool pairwise, const u8 *mac_addr,
++				      struct key_params *params)
++{
++	return rwnx_cfg80211_add_key(wiphy, wdev->netdev, link_id, key_index, pairwise, mac_addr,
++				     params);
++}
++
++static int rwnx_cfg80211_get_key_wdev(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id,
++				      u8 key_index, bool pairwise, const u8 *mac_addr, void *cookie,
++				      void (*callback)(void *cookie, struct key_params *))
++{
++	return rwnx_cfg80211_get_key(wiphy, wdev->netdev, link_id, key_index, pairwise, mac_addr,
++				     cookie, callback);
++}
++
++static int rwnx_cfg80211_del_key_wdev(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id,
++				      u8 key_index, bool pairwise, const u8 *mac_addr)
++{
++	return rwnx_cfg80211_del_key(wiphy, wdev->netdev, link_id, key_index, pairwise, mac_addr);
++}
++
++static int rwnx_cfg80211_set_default_mgmt_key_wdev(struct wiphy *wiphy, struct wireless_dev *wdev,
++						   int link_id, u8 key_index)
++{
++	return rwnx_cfg80211_set_default_mgmt_key(wiphy, wdev->netdev, link_id, key_index);
++}
++
++static int rwnx_cfg80211_add_station_wdev(struct wiphy *wiphy, struct wireless_dev *wdev,
++					  const u8 *mac, struct station_parameters *params)
++{
++	return rwnx_cfg80211_add_station(wiphy, wdev->netdev, mac, params);
++}
++
++static int rwnx_cfg80211_del_station_wdev(struct wiphy *wiphy, struct wireless_dev *wdev,
++					  struct station_del_parameters *params)
++{
++	return rwnx_cfg80211_del_station_compat(wiphy, wdev->netdev, params);
++}
++
++static int rwnx_cfg80211_change_station_wdev(struct wiphy *wiphy, struct wireless_dev *wdev,
++					     const u8 *mac, struct station_parameters *params)
++{
++	return rwnx_cfg80211_change_station(wiphy, wdev->netdev, mac, params);
++}
++
++static int rwnx_cfg80211_get_station_wdev(struct wiphy *wiphy, struct wireless_dev *wdev,
++					  const u8 *mac, struct station_info *sinfo)
++{
++	return rwnx_cfg80211_get_station(wiphy, wdev->netdev, mac, sinfo);
++}
++
++static int rwnx_cfg80211_dump_station_wdev(struct wiphy *wiphy, struct wireless_dev *wdev, int idx,
++					   u8 *mac, struct station_info *sinfo)
++{
++	return rwnx_cfg80211_dump_station(wiphy, wdev->netdev, idx, mac, sinfo);
++}
++
+ static struct cfg80211_ops rwnx_cfg80211_ops = {
+ 	.add_virtual_intf = rwnx_cfg80211_add_iface,
+ 	.del_virtual_intf = rwnx_cfg80211_del_iface,
+@@ -5367,14 +5426,14 @@
+ 	.scan = rwnx_cfg80211_scan,
+ 	.connect = rwnx_cfg80211_connect,
+ 	.disconnect = rwnx_cfg80211_disconnect,
+-	.add_key = rwnx_cfg80211_add_key,
+-	.get_key = rwnx_cfg80211_get_key,
+-	.del_key = rwnx_cfg80211_del_key,
++	.add_key = rwnx_cfg80211_add_key_wdev,
++	.get_key = rwnx_cfg80211_get_key_wdev,
++	.del_key = rwnx_cfg80211_del_key_wdev,
+ 	.set_default_key = rwnx_cfg80211_set_default_key,
+-	.set_default_mgmt_key = rwnx_cfg80211_set_default_mgmt_key,
+-	.add_station = rwnx_cfg80211_add_station,
+-	.del_station = rwnx_cfg80211_del_station_compat,
+-	.change_station = rwnx_cfg80211_change_station,
++	.set_default_mgmt_key = rwnx_cfg80211_set_default_mgmt_key_wdev,
++	.add_station = rwnx_cfg80211_add_station_wdev,
++	.del_station = rwnx_cfg80211_del_station_wdev,
++	.change_station = rwnx_cfg80211_change_station_wdev,
+ 	.mgmt_tx = rwnx_cfg80211_mgmt_tx,
+ 	.start_ap = rwnx_cfg80211_start_ap,
+ 	.change_beacon = rwnx_cfg80211_change_beacon,
+@@ -5387,7 +5446,7 @@
+ 	.set_tx_power = rwnx_cfg80211_set_tx_power,
+     .get_tx_power = rwnx_cfg80211_get_tx_power,
+ 	.set_power_mgmt = rwnx_cfg80211_set_power_mgmt,
+-	.get_station = rwnx_cfg80211_get_station,
++	.get_station = rwnx_cfg80211_get_station_wdev,
+ 	.remain_on_channel = rwnx_cfg80211_remain_on_channel,
+ 	.cancel_remain_on_channel = rwnx_cfg80211_cancel_remain_on_channel,
+ 	.dump_survey = rwnx_cfg80211_dump_survey,
+@@ -5505,8 +5564,8 @@
+ 	if (!rwnx_mod_params.mesh)
+ 		return;
+ 
+-	rwnx_cfg80211_ops.get_station = rwnx_cfg80211_get_station;
+-	rwnx_cfg80211_ops.dump_station = rwnx_cfg80211_dump_station;
++	rwnx_cfg80211_ops.get_station = rwnx_cfg80211_get_station_wdev;
++	rwnx_cfg80211_ops.dump_station = rwnx_cfg80211_dump_station_wdev;
+ 	rwnx_cfg80211_ops.add_mpath = rwnx_cfg80211_add_mpath;
+ 	rwnx_cfg80211_ops.del_mpath = rwnx_cfg80211_del_mpath;
+ 	rwnx_cfg80211_ops.change_mpath = rwnx_cfg80211_change_mpath;
+diff --git a/aic8800_fdrv/rwnx_msg_tx.c b/aic8800_fdrv/rwnx_msg_tx.c
+--- a/aic8800_fdrv/rwnx_msg_tx.c
++++ b/aic8800_fdrv/rwnx_msg_tx.c
+@@ -308,7 +308,7 @@
+ 
+ 	//RWNX_DBG(RWNX_FN_ENTRY_STR);
+     AICWFDBG(LOGTRACE, "%s (%d)%s reqcfm:%d in_irq:%d in_softirq:%d in_atomic:%d\r\n",
+-    __func__, reqid, RWNX_ID2STR(reqid), reqcfm, (int)in_irq(), (int)in_softirq(), (int)in_atomic());
++    __func__, reqid, RWNX_ID2STR(reqid), reqcfm, (int)in_hardirq(), (int)in_softirq(), (int)in_atomic());
+ 
+ 
+ #ifdef AICWF_USB_SUPPORT
+@@ -416,7 +416,7 @@
+ 
+ //	RWNX_DBG(RWNX_FN_ENTRY_STR);
+     printk("%s (%d)%s reqcfm:%d in_irq:%d in_softirq:%d in_atomic:%d\r\n",
+-    __func__, reqid, RWNX_ID2STR(reqid), reqcfm, (int)in_irq(), (int)in_softirq(), (int)in_atomic());
++    __func__, reqid, RWNX_ID2STR(reqid), reqcfm, (int)in_hardirq(), (int)in_softirq(), (int)in_atomic());
+ 
+ 	rwnx_wakeup_lock(rwnx_hw->ws_tx);
+ 	msg = container_of((void *)msg_params, struct lmac_msg, param);
+@@ -4604,7 +4604,7 @@
+ 		return -ENOMEM;
+ 
+ 	/* Set parameters for the MM_DBG_TRIGGER_REQ message */
+-	strncpy(req->error, msg, sizeof(req->error));
++	strscpy_pad(req->error, msg, sizeof(req->error));
+ 
+ 	/* Send the MM_DBG_TRIGGER_REQ message to LMAC FW */
+ 	return rwnx_send_msg(rwnx_hw, req, 0, -1, NULL);
+diff --git a/aic8800_fdrv/rwnx_platform.c b/aic8800_fdrv/rwnx_platform.c
+--- a/aic8800_fdrv/rwnx_platform.c
++++ b/aic8800_fdrv/rwnx_platform.c
+@@ -1228,7 +1228,7 @@
+ 		p--;
+ 
+ 	p++;
+-	strncpy(val, dst, p -dst);
++	memcpy(val, dst, p - dst);
+ 	val[p - dst] = 0;
+ 	return 0;
+ }
+@@ -2839,7 +2839,7 @@
+     if (c == '\0')
+         return 0;
+     j = (*Start) - 2;
+-    strncpy((char *)Out, (const char *)(In + i), j - i + 1);
++    memcpy(Out, In + i, j - i + 1);
+     return 1;
+ }
+ 
+@@ -3052,7 +3052,7 @@
+ 					goto exit;
+ 				}
+ 
+-				strncpy(reg_name[forCnt], szLine + i_cc, i - i_cc);
++				memcpy(reg_name[forCnt], szLine + i_cc, i - i_cc);
+ 				reg_name[forCnt][i - i_cc] = '\0';
+ 				AICWFDBG(LOGINFO, "reg_name: %s\n", reg_name[forCnt]);
+ 
+diff --git a/aic8800_fdrv/rwnx_tdls.c b/aic8800_fdrv/rwnx_tdls.c
+--- a/aic8800_fdrv/rwnx_tdls.c
++++ b/aic8800_fdrv/rwnx_tdls.c
+@@ -115,11 +115,11 @@
+ 
+ 	switch (action_code) {
+ 	case WLAN_PUB_ACTION_TDLS_DISCOVER_RES:
+-		skb_put(skb, 1 + sizeof(mgmt->u.action.u.tdls_discover_resp));
++		skb_put(skb, IEEE80211_MIN_ACTION_SIZE(tdls_discover_resp) - 24);
+ 		mgmt->u.action.category = WLAN_CATEGORY_PUBLIC;
+-		mgmt->u.action.u.tdls_discover_resp.action_code = WLAN_PUB_ACTION_TDLS_DISCOVER_RES;
+-		mgmt->u.action.u.tdls_discover_resp.dialog_token = dialog_token;
+-		mgmt->u.action.u.tdls_discover_resp.capability =
++		mgmt->u.action.action_code = WLAN_PUB_ACTION_TDLS_DISCOVER_RES;
++		mgmt->u.action.tdls_discover_resp.dialog_token = dialog_token;
++		mgmt->u.action.tdls_discover_resp.capability =
+ 			cpu_to_le16(rwnx_get_tdls_sta_capab(rwnx_vif, status_code));
+ 		break;
+ 	default:

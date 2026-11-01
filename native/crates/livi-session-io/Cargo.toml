@@ -1,0 +1,11 @@
+[package]
+name = "livi-session-io"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+nusb = { workspace = true, features = ["tokio"] }
+tokio = { workspace = true, features = ["rt", "macros", "time", "sync", "io-util", "net"] }
+
+[dev-dependencies]

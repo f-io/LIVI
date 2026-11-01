@@ -1,0 +1,12 @@
+[package]
+name = "livi-video-view"
+version = "0.1.0"
+edition.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+livi-host-proto.workspace = true
+livi-video-player = { workspace = true, features = ["window-view"] }
+
+[build-dependencies]
+cc = "1.10"
+pkg-config = "0.3"

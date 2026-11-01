@@ -1,0 +1,36 @@
+The X1600 UART has the same layout and FIFO depth as the other Ingenic UARTs
+(32-byte TX load, 64-byte FIFO), but 8250_ingenic.c matches no "ingenic,x1600-uart",
+so the console on uart0-3 of x1600.dtsi bound to no driver.
+---
+--- a/drivers/tty/serial/8250/8250_ingenic.c
++++ b/drivers/tty/serial/8250/8250_ingenic.c
+@@ -166,6 +166,9 @@
+ 		    ingenic_early_console_setup);
+
+ OF_EARLYCON_DECLARE(x1000_uart, "ingenic,x1000-uart",
++		    ingenic_early_console_setup);
++
++OF_EARLYCON_DECLARE(x1600_uart, "ingenic,x1600-uart",
+ 		    ingenic_early_console_setup);
+
+ static void ingenic_uart_serial_out(struct uart_port *p, unsigned int offset, u32 value)
+@@ -343,6 +346,11 @@
+ 	.fifosize = 64,
+ };
+
++static const struct ingenic_uart_config x1600_uart_config = {
++	.tx_loadsz = 32,
++	.fifosize = 64,
++};
++
+ static const struct of_device_id of_match[] = {
+ 	{ .compatible = "ingenic,jz4740-uart", .data = &jz4740_uart_config },
+ 	{ .compatible = "ingenic,jz4750-uart", .data = &jz4760_uart_config },
+@@ -351,6 +359,7 @@
+ 	{ .compatible = "ingenic,jz4775-uart", .data = &jz4760_uart_config },
+ 	{ .compatible = "ingenic,jz4780-uart", .data = &jz4780_uart_config },
+ 	{ .compatible = "ingenic,x1000-uart", .data = &x1000_uart_config },
++	{ .compatible = "ingenic,x1600-uart", .data = &x1600_uart_config },
+ 	{ /* sentinel */ }
+ };
+ MODULE_DEVICE_TABLE(of, of_match);

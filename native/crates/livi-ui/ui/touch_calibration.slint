@@ -1,0 +1,78 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme } from "theme.slint";
+
+export global TouchCalibrationState {
+    in property <bool> active;
+    in property <float> target-x;
+    in property <float> target-y;
+    in property <image> close-icon;
+    callback tap(float, float);
+    callback cancel();
+}
+
+export component TouchCalibration inherits Rectangle {
+    property <length> cx: root.width * TouchCalibrationState.target-x;
+    property <length> cy: root.height * TouchCalibrationState.target-y;
+    property <length> arm: 28px;
+
+    background: Theme.background;
+
+    TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                TouchCalibrationState.tap(self.mouse-x / root.width, self.mouse-y / root.height);
+            }
+        }
+    }
+
+    Rectangle {
+        x: root.cx - root.arm;
+        y: root.cy - 1px;
+        width: root.arm * 2;
+        height: 2px;
+        background: Theme.primary;
+    }
+
+    Rectangle {
+        x: root.cx - 1px;
+        y: root.cy - root.arm;
+        width: 2px;
+        height: root.arm * 2;
+        background: Theme.primary;
+    }
+
+    Rectangle {
+        x: root.cx - 14px;
+        y: root.cy - 14px;
+        width: 28px;
+        height: 28px;
+        border-radius: 14px;
+        border-width: 2px;
+        border-color: Theme.primary;
+    }
+
+    Rectangle {
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        width: 56px;
+        height: 56px;
+        border-radius: 28px;
+        background: Theme.surface;
+
+        Image {
+            width: 28px;
+            height: 28px;
+            source: TouchCalibrationState.close-icon;
+            colorize: Theme.text;
+        }
+
+        TouchArea {
+            clicked => {
+                TouchCalibrationState.cancel();
+            }
+        }
+    }
+}

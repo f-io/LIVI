@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Lasse Heitgres
+
+syntax = "proto2";
+
+package livi.aa;
+
+message EnergyValue {
+  optional int64 watt_hours = 1;
+}
+
+message EnergyRate {
+  optional float rate = 1;
+}
+
+message BatteryConfig {
+  optional int32 config_id = 1;
+  optional EnergyValue min_usable_capacity = 3;
+  optional EnergyValue max_capacity = 4;
+  optional EnergyValue reserve_energy = 8;
+  optional int64 max_charge_power_w = 9;
+  optional int64 max_discharge_power_w = 10;
+  optional bool regen_braking_capable = 11;
+}
+
+message EnergyConsumption {
+  optional EnergyRate driving = 1;
+  optional EnergyRate auxiliary = 2;
+  optional EnergyRate aerodynamic = 3;
+}
+
+message ChargingPrefs {
+  optional int32 mode = 3;
+}
+
+message VehicleEnergyModel {
+  optional BatteryConfig battery = 1;
+  optional EnergyConsumption consumption = 2;
+  optional ChargingPrefs charging_prefs = 12;
+}

@@ -1,19 +1,19 @@
 name: gstreamer assets
-run-name: 'gstreamer-assets → ${{ github.ref_name }}'
+run-name: "gstreamer-assets → ${{ github.ref_name }}"
 
 on:
   workflow_dispatch:
     inputs:
       macos_arm64:
-        description: 'Build macOS arm64 bundle'
+        description: "Build macOS arm64 bundle"
         type: boolean
         default: true
       linux_x64:
-        description: 'Build Linux x64 bundle'
+        description: "Build Linux x64 bundle"
         type: boolean
         default: true
       linux_arm64:
-        description: 'Build Linux arm64 bundle'
+        description: "Build Linux arm64 bundle"
         type: boolean
         default: true
 
@@ -38,78 +38,37 @@ jobs:
         run: |
           set -euo pipefail
 
-          node <<'NODE'
-          const fs = require('fs');
-
-          const isTrue = (v) => String(v).toLowerCase() === 'true';
-
-          const inputs = {
-            macos_arm64: isTrue(process.env.IN_MACOS_ARM64),
-            linux_x64: isTrue(process.env.IN_LINUX_X64),
-            linux_arm64: isTrue(process.env.IN_LINUX_ARM64),
-          };
-
-          const include = [];
-          const add = (os, runner, arch, dir_name, artifact_name, archive_name) => {
-            include.push({ os, runner, arch, dir_name, artifact_name, archive_name });
-          };
-
-          if (inputs.macos_arm64) {
-            add(
-              'macos',
-              'macos-latest',
-              'arm64',
-              'macos-arm64',
-              'gstreamer-macos-arm64',
-              'gstreamer-macos-arm64.tar.gz'
-            );
+          entries=()
+          add() {
+            entries+=("{\"os\":\"$1\",\"runner\":\"$2\",\"arch\":\"$3\",\"dir_name\":\"$4\",\"artifact_name\":\"gstreamer-$4\",\"archive_name\":\"gstreamer-$4.tar.gz\"}")
           }
+          if [[ "${IN_MACOS_ARM64,,}" == true ]]; then add macos macos-latest arm64 macos-arm64; fi
+          if [[ "${IN_LINUX_X64,,}" == true ]]; then add linux ubuntu-24.04 x64 linux-x64; fi
+          if [[ "${IN_LINUX_ARM64,,}" == true ]]; then add linux ubuntu-24.04-arm arm64 linux-arm64; fi
 
-          if (inputs.linux_x64) {
-            add(
-              'linux',
-              'ubuntu-24.04',
-              'x64',
-              'linux-x64',
-              'gstreamer-linux-x64',
-              'gstreamer-linux-x64.tar.gz'
-            );
-          }
+          matrix="{\"include\":[$(IFS=,; echo "${entries[*]-}")]}"
+          is_empty=$([[ ${#entries[@]} -eq 0 ]] && echo true || echo false)
 
-          if (inputs.linux_arm64) {
-            add(
-              'linux',
-              'ubuntu-24.04-arm',
-              'arm64',
-              'linux-arm64',
-              'gstreamer-linux-arm64',
-              'gstreamer-linux-arm64.tar.gz'
-            );
-          }
-
-          const matrixObj = { include };
-          const matrix = JSON.stringify(matrixObj);
-          const isEmpty = include.length === 0 ? 'true' : 'false';
-
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${matrix}\n`);
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `is_empty=${isEmpty}\n`);
-
-          console.log('Planned matrix:', matrix);
-          console.log('Empty:', isEmpty);
-          NODE
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "is_empty=$is_empty" >> "$GITHUB_OUTPUT"
+          echo "Planned matrix: $matrix"
+          echo "Empty: $is_empty"
 
   build:
     name: Build assets (${{ matrix.os }}-${{ matrix.arch }})
     needs: plan
     if: ${{ needs.plan.outputs.is_empty != 'true' }}
     runs-on: ${{ matrix.runner }}
+    # A platform that cannot be built right now is an expected picture here, not a broken run. It
+    # stays red in the job list, and publish fails the run if nothing at all came through.
+    continue-on-error: true
 
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # ----------------------------
       # macOS arm64
@@ -131,16 +90,40 @@ jobs:
             exit 1
           fi
           echo "Resolved macOS GStreamer: $GST_VERSION"
-          curl -fL \
-            -o gstreamer-runtime.pkg \
-            "https://gstreamer.freedesktop.org/data/pkg/osx/${GST_VERSION}/gstreamer-1.0-${GST_VERSION}-universal.pkg"
+          echo "GST_VERSION=$GST_VERSION" >> "$GITHUB_ENV"
+          base="https://gstreamer.freedesktop.org/data/pkg/osx/${GST_VERSION}"
+          curl -fL -o gstreamer-runtime.pkg "${base}/gstreamer-1.0-${GST_VERSION}-universal.pkg"
+          # devel pkg carries the headers and .pc files build-patched-macos.sh needs
+          curl -fL -o gstreamer-devel.pkg "${base}/gstreamer-1.0-devel-${GST_VERSION}-universal.pkg"
 
-      - name: Install GStreamer runtime pkg [macos-arm64]
+      - name: Install GStreamer runtime + devel pkg [macos-arm64]
         if: matrix.os == 'macos' && matrix.arch == 'arm64'
         shell: bash
         run: |
           set -euo pipefail
           sudo installer -pkg gstreamer-runtime.pkg -target /
+          sudo installer -pkg gstreamer-devel.pkg -target /
+
+      - name: Build patched applemedia (vtdec) [macos-arm64]
+        if: matrix.os == 'macos' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # glib generator tools (the framework's carry a dead cerbero shebang) + build system
+          brew install glib meson ninja
+          chmod +x scripts/gstreamer/build-patched-macos.sh
+          scripts/gstreamer/build-patched-macos.sh "$RUNNER_TEMP/applemedia"
+          echo "PATCHED_APPLEMEDIA=$RUNNER_TEMP/applemedia/libgstapplemedia.dylib" >> "$GITHUB_ENV"
+
+      - name: Build faad plugin (DAB+ audio) [macos-arm64]
+        if: matrix.os == 'macos' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install cmake
+          chmod +x scripts/gstreamer/build-faad-macos.sh
+          scripts/gstreamer/build-faad-macos.sh "$RUNNER_TEMP/faad"
+          echo "FAAD_PLUGIN=$RUNNER_TEMP/faad/libgstfaad.dylib" >> "$GITHUB_ENV"
 
       - name: Build bundle [macos-arm64]
         if: matrix.os == 'macos' && matrix.arch == 'arm64'
@@ -176,7 +159,7 @@ jobs:
 
       - name: Upload artifact [macos-arm64]
         if: matrix.os == 'macos' && matrix.arch == 'arm64'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.archive_name }}
@@ -185,7 +168,7 @@ jobs:
       # ----------------------------
       # Linux x64
       # ----------------------------
-      - name: Build bundle [linux-x64 via Debian forky]
+      - name: Build bundle [linux-x64 via Debian stable]
         if: matrix.os == 'linux' && matrix.arch == 'x64'
         shell: bash
         run: |
@@ -193,37 +176,26 @@ jobs:
 
           chmod +x scripts/gstreamer/package-linux.sh
           chmod +x scripts/gstreamer/smoke-test-linux.sh
+          chmod +x scripts/gstreamer/build-backport-linux.sh
+
+          # ceiling = glibc of the current Debian stable (the deploy target)
+          GLIBC_CEILING="$(docker run --rm debian:stable-slim getconf GNU_LIBC_VERSION | awk '{print $2}')"
+          echo "glibc ceiling from current Debian stable: GLIBC_$GLIBC_CEILING"
 
           docker run --rm --platform=linux/amd64 \
+            -e GLIBC_CEILING="$GLIBC_CEILING" \
             -v "${GITHUB_WORKSPACE}:/work" \
             -w /work \
-            debian:forky-slim sh -lc '
+            debian:stable-slim sh -lc '
               set -euo pipefail
 
               export DEBIAN_FRONTEND=noninteractive
 
               apt-get update
               apt-get install -y --no-install-recommends \
-                bash coreutils findutils file python3 dpkg-dev patchelf ca-certificates \
-                gstreamer1.0-tools \
-                gstreamer1.0-plugins-base \
-                gstreamer1.0-plugins-base-apps \
-                gstreamer1.0-plugins-good \
-                gstreamer1.0-plugins-bad \
-                gstreamer1.0-libav \
-                gstreamer1.0-gl \
-                gstreamer1.0-x \
-                gstreamer1.0-alsa \
-                gstreamer1.0-pulseaudio \
-                libgstreamer1.0-0 \
-                libgstreamer-plugins-base1.0-0 \
-                libglib2.0-0 \
-                liborc-0.4-0 \
-                libgudev-1.0-0 \
-                zlib1g \
-                libc6 \
-                libgcc-s1 \
-                libstdc++6
+                bash coreutils findutils file dpkg-dev patchelf ca-certificates
+
+              scripts/gstreamer/build-backport-linux.sh
 
               scripts/gstreamer/package-linux.sh "assets/gstreamer/linux-x64"
               scripts/gstreamer/smoke-test-linux.sh "assets/gstreamer/linux-x64"
@@ -250,7 +222,7 @@ jobs:
 
       - name: Upload artifact [linux-x64]
         if: matrix.os == 'linux' && matrix.arch == 'x64'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.archive_name }}
@@ -259,7 +231,7 @@ jobs:
       # ----------------------------
       # Linux arm64
       # ----------------------------
-      - name: Build bundle [linux-arm64 via Debian forky]
+      - name: Build bundle [linux-arm64 via Debian stable]
         if: matrix.os == 'linux' && matrix.arch == 'arm64'
         shell: bash
         run: |
@@ -267,40 +239,26 @@ jobs:
 
           chmod +x scripts/gstreamer/package-linux.sh
           chmod +x scripts/gstreamer/smoke-test-linux.sh
-          chmod +x scripts/gstreamer/build-patched-linux.sh
+          chmod +x scripts/gstreamer/build-backport-linux.sh
+
+          # ceiling = glibc of the current Debian stable (the deploy target)
+          GLIBC_CEILING="$(docker run --rm debian:stable-slim getconf GNU_LIBC_VERSION | awk '{print $2}')"
+          echo "glibc ceiling from current Debian stable: GLIBC_$GLIBC_CEILING"
 
           docker run --rm --platform=linux/arm64/v8 \
+            -e GLIBC_CEILING="$GLIBC_CEILING" \
             -v "${GITHUB_WORKSPACE}:/work" \
             -w /work \
-            debian:forky-slim sh -lc '
+            debian:stable-slim sh -lc '
               set -euo pipefail
 
               export DEBIAN_FRONTEND=noninteractive
 
               apt-get update
               apt-get install -y --no-install-recommends \
-                bash coreutils findutils file python3 dpkg-dev patchelf ca-certificates \
-                gstreamer1.0-tools \
-                gstreamer1.0-plugins-base \
-                gstreamer1.0-plugins-base-apps \
-                gstreamer1.0-plugins-good \
-                gstreamer1.0-plugins-bad \
-                gstreamer1.0-libav \
-                gstreamer1.0-gl \
-                gstreamer1.0-x \
-                gstreamer1.0-alsa \
-                gstreamer1.0-pulseaudio \
-                libgstreamer1.0-0 \
-                libgstreamer-plugins-base1.0-0 \
-                libglib2.0-0 \
-                liborc-0.4-0 \
-                libgudev-1.0-0 \
-                zlib1g \
-                libc6 \
-                libgcc-s1 \
-                libstdc++6
+                bash coreutils findutils file dpkg-dev patchelf ca-certificates
 
-              scripts/gstreamer/build-patched-linux.sh
+              APPLY_PATCHES=1 scripts/gstreamer/build-backport-linux.sh
 
               scripts/gstreamer/package-linux.sh "assets/gstreamer/linux-arm64"
               scripts/gstreamer/smoke-test-linux.sh "assets/gstreamer/linux-arm64"
@@ -327,7 +285,7 @@ jobs:
 
       - name: Upload artifact [linux-arm64]
         if: matrix.os == 'linux' && matrix.arch == 'arm64'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.archive_name }}
@@ -338,65 +296,45 @@ jobs:
     needs:
       - plan
       - build
-    if: ${{ needs.plan.outputs.is_empty != 'true' }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.is_empty != 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
       - name: Checkout source branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.ref }}
 
-      - name: Download artifact [macos-arm64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-macos-arm64"')
+      - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
-          name: gstreamer-macos-arm64
-          path: .artifacts/macos-arm64
+          pattern: gstreamer-*
+          merge-multiple: true
+          path: .artifacts
 
-      - name: Extract artifact [macos-arm64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-macos-arm64"')
+      - name: Check that something was built
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf assets/gstreamer/macos-arm64
-          mkdir -p assets/gstreamer
-          tar -C assets/gstreamer -xzf .artifacts/macos-arm64/gstreamer-macos-arm64.tar.gz
+          if ! ls .artifacts/gstreamer-*.tar.gz >/dev/null 2>&1; then
+            echo "no platform produced an asset"
+            exit 1
+          fi
 
-      - name: Download artifact [linux-x64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-x64"')
-        uses: actions/download-artifact@v8
-        with:
-          name: gstreamer-linux-x64
-          path: .artifacts/linux-x64
-
-      - name: Extract artifact [linux-x64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-x64"')
+      - name: Publish bundles
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          rm -rf assets/gstreamer/linux-x64
-          mkdir -p assets/gstreamer
-          tar -C assets/gstreamer -xzf .artifacts/linux-x64/gstreamer-linux-x64.tar.gz
-
-      - name: Download artifact [linux-arm64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-arm64"')
-        uses: actions/download-artifact@v8
-        with:
-          name: gstreamer-linux-arm64
-          path: .artifacts/linux-arm64
-
-      - name: Extract artifact [linux-arm64]
-        if: contains(needs.plan.outputs.matrix, '"artifact_name":"gstreamer-linux-arm64"')
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf assets/gstreamer/linux-arm64
-          mkdir -p assets/gstreamer
-          tar -C assets/gstreamer -xzf .artifacts/linux-arm64/gstreamer-linux-arm64.tar.gz
+          for plat in macos-arm64 linux-x64 linux-arm64; do
+            archive=".artifacts/gstreamer-${plat}.tar.gz"
+            [[ -f "$archive" ]] || continue
+            sh scripts/assets.sh publish gstreamer "$plat" "$archive"
+          done
 
       - name: Read Linux version for badge
         id: meta
@@ -428,7 +366,7 @@ jobs:
           for plat in linux-x64 linux-arm64 macos-arm64; do
             dir="assets/gstreamer/${plat}"
             [[ -d "$dir" ]] || continue
-            git add -f -A "$dir"
+            git add -A "$dir"
             if git diff --cached --quiet -- "$dir"; then
               continue
             fi

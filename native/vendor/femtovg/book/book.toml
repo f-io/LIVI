@@ -1,0 +1,6 @@
+[book]
+authors = ["Reinis Mazeiks"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Femtovg Book"

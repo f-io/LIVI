@@ -1,0 +1,14 @@
+--- a/drivers/net/wireless/marvell/mwifiex/cfg80211.c
++++ b/drivers/net/wireless/marvell/mwifiex/cfg80211.c
+@@ -1368,8 +1368,10 @@
+ 		     struct rate_info *rate)
+ {
+ 	struct mwifiex_adapter *adapter = priv->adapter;
++	u8 fw_major = (adapter->fw_release_number >> 16) & 0xff;
+ 
+-	if (adapter->is_hw_11ac_capable) {
++	/* This layout came with the 15.x firmware, which 11n-only chips run too */
++	if (adapter->is_hw_11ac_capable || fw_major >= 15) {
+ 		/* bit[1-0]: 00=LG 01=HT 10=VHT */
+ 		if (htinfo & BIT(0)) {
+ 			/* HT */

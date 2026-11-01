@@ -1,0 +1,19 @@
+[package]
+name = "livi-gst-host"
+version = "0.1.0"
+edition.workspace = true
+
+[[bin]]
+name = "livi-gst-host"
+path = "src/main.rs"
+
+[dependencies]
+livi-audio.workspace = true
+livi-video.workspace = true
+livi-host-proto.workspace = true
+livi-screen-stream.workspace = true
+livi-video-player.workspace = true
+realfft = "3.5.1"
+glib.workspace = true
+glib-unix.workspace = true
+libc.workspace = true

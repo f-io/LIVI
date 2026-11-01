@@ -1,0 +1,202 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme } from "theme.slint";
+import { Focus } from "focus.slint";
+
+export global MediaText {
+    in property <string> phone-source: "Phone";
+    in property <string> dab-source: "DAB+";
+    in property <string> no-stations: "No stations yet";
+    in property <string> no-artwork: "No Artwork";
+}
+
+export global Press {
+    in property <bool> play;
+    in property <bool> next;
+    in property <bool> prev;
+}
+
+export component RoundButton inherits Rectangle {
+    in property <bool> focused;
+    in property <bool> flash;
+    in property <bool> pressed;
+    in property <bool> enabled: true;
+    in property <length> size;
+    in property <length> icon-size;
+    in property <image> icon;
+    in property <color> icon-color: Theme.text;
+    callback clicked();
+
+    property <bool> down: touch.pressed || root.flash || root.pressed;
+    property <bool> hover: touch.has-hover && root.enabled;
+
+    width: size;
+    height: size;
+    opacity: enabled ? 1 : 0.4;
+    Rectangle {
+        property <float> s: root.down && !root.focused ? 0.94 : 1;
+        width: root.size * s;
+        height: root.size * s;
+        border-radius: self.width / 2;
+        background: Theme.comand ? (root.down ? Theme.key-lit : Theme.key) : root.hover || root.down || root.focused ? Theme.button-active : Theme.button;
+        drop-shadow-blur: Theme.comand && (root.hover || root.focused) ? 10px : 0;
+        drop-shadow-color: Theme.primary.with-alpha(0.13);
+        animate width, height { duration: 110ms; easing: ease; }
+        if Theme.comand: Rectangle {
+            y: 1px;
+            x: parent.width * 0.2;
+            width: parent.width * 0.6;
+            height: 1px;
+            background: Theme.bevel-light;
+        }
+        Rectangle {
+            border-radius: parent.width / 2;
+            border-width: Theme.comand ? 1px : root.focused ? 3px : root.down ? 4px : root.hover ? 2px : 0;
+            border-color: Theme.comand ? (root.focused ? Theme.focus-color : root.hover || root.down ? Theme.primary : Theme.key-edge) : Theme.primary;
+        }
+        Image {
+            width: root.icon-size;
+            height: root.icon-size;
+            source: root.icon;
+            colorize: Theme.comand && root.down ? Theme.key-lit-text : Theme.comand && (root.hover || root.focused) ? Theme.highlight : root.icon-color;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component Spectrum inherits Rectangle {
+    in property <[float]> bands;
+
+    property <float> spec-w: root.width / 1px;
+    property <float> font: min(16, floor(spec-w / 12));
+    property <bool> labels: font >= 9;
+    property <length> usable-h: round((root.height - (labels ? (font + 4) * 1px : 0)) / 1phx) * 1phx;
+    property <length> bar-w: root.width / 24;
+    property <float> char-w: font * 0.56;
+    property <float> gap: font * 0.5;
+    property <bool> show-10k: spec-w * 0.1 >= char-w * 1.5 + char-w * 3 + gap;
+
+    pure function at(freq: float) -> float {
+        return (log(freq, 10) - log(20, 10)) / (log(20000, 10) - log(20, 10));
+    }
+
+    for b[i] in root.bands: Rectangle {
+        x: i * root.bar-w;
+        y: root.usable-h - self.height;
+        width: root.bar-w * 0.8;
+        height: round(root.usable-h * b / 1phx) * 1phx;
+        background: Theme.highlight;
+    }
+    if root.labels: Text {
+        x: 0;
+        y: root.usable-h + 2px;
+        text: "20";
+        font-size: root.font * 1px;
+        color: Theme.text-secondary.with-alpha(0.9);
+    }
+    if root.labels: Text {
+        x: root.width * root.at(100) - self.width / 2;
+        y: root.usable-h + 2px;
+        text: "100";
+        font-size: root.font * 1px;
+        color: Theme.text-secondary.with-alpha(0.9);
+    }
+    if root.labels: Text {
+        x: root.width * root.at(1000) - self.width / 2;
+        y: root.usable-h + 2px;
+        text: "1k";
+        font-size: root.font * 1px;
+        color: Theme.text-secondary.with-alpha(0.9);
+    }
+    if root.labels && root.show-10k: Text {
+        x: root.width * root.at(10000) - self.width / 2;
+        y: root.usable-h + 2px;
+        text: "10k";
+        font-size: root.font * 1px;
+        color: Theme.text-secondary.with-alpha(0.9);
+    }
+    if root.labels: Text {
+        x: root.width - self.width;
+        y: root.usable-h + 2px;
+        text: "20k";
+        font-size: root.font * 1px;
+        color: Theme.text-secondary.with-alpha(0.9);
+    }
+}
+
+component SourceTab inherits Rectangle {
+    in property <string> label;
+    in property <bool> on;
+    in property <bool> focused;
+    callback picked();
+    height: label-text.preferred-height + 12px;
+    width: label-text.preferred-width + 40px;
+    border-radius: Theme.comand ? Theme.radius : self.height / 2;
+    background: Theme.comand && root.on ? Theme.wash : transparent;
+    border-width: root.focused ? Theme.ring(3px) : 0;
+    border-color: Theme.focus-color;
+    label-text := Text {
+        text: Theme.comand ? root.label.to-uppercase() : root.label;
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: Theme.comand ? Theme.tracking-wide : 0;
+        color: root.on ? Theme.primary : Theme.text;
+        opacity: root.on ? 1 : 0.65;
+    }
+    TouchArea {
+        clicked => {
+            if (!root.on) {
+                root.picked();
+            }
+        }
+    }
+}
+
+export component SourceTabs inherits Rectangle {
+    in property <bool> dab-active;
+    in property <int> focus-base;
+    callback phone();
+    callback dab();
+    height: pill.height + 8px;
+    pill := Rectangle {
+        y: 8px;
+        width: row.preferred-width;
+        height: row.preferred-height;
+        border-radius: Theme.comand ? Theme.radius : self.height / 2;
+        background: Theme.comand ? Theme.panel : #ffffff14;
+        border-width: Theme.comand ? 1px : 0;
+        border-color: Theme.rule;
+        row := HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            padding-top: 4px;
+            padding-bottom: 4px;
+            spacing: 8px;
+            SourceTab {
+                label: MediaText.phone-source;
+                on: !root.dab-active;
+                focused: Focus.main(root.focus-base);
+                picked => { root.phone(); }
+            }
+            Rectangle {
+                width: 1px;
+                VerticalLayout {
+                    padding-top: 6px;
+                    padding-bottom: 6px;
+                    Rectangle { background: Theme.divider; }
+                }
+            }
+            SourceTab {
+                label: MediaText.dab-source;
+                on: root.dab-active;
+                focused: Focus.main(root.focus-base + 1);
+                picked => { root.dab(); }
+            }
+        }
+    }
+}

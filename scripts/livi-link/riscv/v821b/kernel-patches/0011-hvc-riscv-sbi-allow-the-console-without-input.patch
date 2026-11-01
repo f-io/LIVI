@@ -1,0 +1,40 @@
+Subject: [PATCH] hvc: riscv-sbi: allow the console without input
+
+Where the UART's RX line hears its TX line, every character the console
+prints comes back as input, the tty echoes it, and the loop keeps the CPU
+in the SBI putchar that waits for the UART. hvc_riscv_sbi.noinput keeps the
+console for output only, a shell is then reached over the network.
+---
+--- a/drivers/tty/hvc/hvc_riscv_sbi.c
++++ b/drivers/tty/hvc/hvc_riscv_sbi.c
+@@ -15,6 +15,10 @@
+ 
+ #include "hvc_console.h"
+ 
++/* A UART that hears its own output hands every line straight back as input. */
++static bool noinput;
++module_param(noinput, bool, 0444);
++
+ static ssize_t hvc_sbi_tty_put(uint32_t vtermno, const u8 *buf, size_t count)
+ {
+ 	size_t i;
+@@ -30,6 +34,9 @@
+ 	size_t i;
+ 	int c;
+ 
++	if (noinput)
++		return 0;
++
+ 	for (i = 0; i < count; i++) {
+ 		c = sbi_console_getchar();
+ 		if (c < 0)
+@@ -52,6 +59,9 @@
+ 
+ static ssize_t hvc_sbi_dbcn_tty_get(uint32_t vtermno, u8 *buf, size_t count)
+ {
++	if (noinput)
++		return 0;
++
+ 	return sbi_debug_console_read(buf, count);
+ }
+ 

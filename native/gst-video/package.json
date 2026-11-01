@@ -1,8 +1,0 @@
-{
-  "name": "gst-video",
-  "version": "0.1.0",
-  "private": true,
-  "description": "LIVI native GStreamer video addon",
-  "main": "index.js",
-  "gypfile": true
-}

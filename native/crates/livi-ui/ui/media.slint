@@ -1,0 +1,367 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme } from "theme.slint";
+import { Focus } from "focus.slint";
+import { MediaText, Press, RoundButton, Spectrum, SourceTabs } from "media_parts.slint";
+import { DabPage, DabState, StationData } from "dab.slint";
+
+export { MediaText, Press, DabState, StationData }
+
+
+component Progress inherits Rectangle {
+    in property <bool> focused;
+    in property <float> progress;
+    in property <bool> can-seek;
+    in property <float> total-ms;
+    in property <float> elapsed-ms;
+    in property <length> bar-height;
+    callback seek(float);
+
+    property <bool> dragging;
+    property <float> drag-share;
+    property <float> shown: dragging ? drag-share : progress;
+    property <float> shown-ms: shown * total-ms;
+    property <length> knob-h: round(bar-height * 2.4 / 1px) * 1px;
+    property <length> knob-w: round(knob-h * 1.75 / 1px) * 1px;
+
+    pure function clock(ms: float) -> string {
+        let s = floor(max(ms, 0) / 1000);
+        let m = floor(s / 60);
+        let r = mod(s, 60);
+        return m + ":" + (r < 10 ? "0" : "") + r;
+    }
+
+    height: max(knob-h, 20px);
+    HorizontalLayout {
+        spacing: 12px;
+        Text {
+            min-width: 3.5 * 14px;
+            text: root.clock(root.dragging ? root.shown-ms : root.elapsed-ms);
+            color: Theme.text.with-alpha(0.85);
+            font-size: 14px;
+            letter-spacing: Theme.tracking;
+            vertical-alignment: center;
+        }
+        track := Rectangle {
+            horizontal-stretch: 1;
+            Rectangle {
+                y: (parent.height - root.bar-height) / 2;
+                height: root.bar-height;
+                border-radius: Theme.comand ? root.bar-height / 2 : root.bar-height / 1.6;
+                clip: true;
+                background: Theme.comand ? Theme.groove : Theme.track;
+                border-width: Theme.comand ? 1px : 0;
+                border-color: root.focused && Theme.comand ? Theme.focus-color : Theme.rule;
+                drop-shadow-blur: root.focused ? 8px : 0;
+                drop-shadow-color: Theme.highlight.with-alpha(0.35);
+                Rectangle {
+                    x: 0;
+                    width: parent.width * root.shown;
+                    background: Theme.comand ? @linear-gradient(180deg, Theme.highlight 0%, Theme.primary 100%) : Theme.highlight;
+                }
+            }
+            if root.can-seek: Rectangle {
+                width: root.knob-w;
+                height: root.knob-h;
+                y: (parent.height - self.height) / 2;
+                x: clamp(parent.width * root.shown - self.width / 2, 0, parent.width - self.width);
+                border-radius: self.height / 2;
+                background: Theme.comand ? Theme.background.mix(Theme.text, 0.98) : Theme.highlight;
+                border-width: Theme.comand ? 3px : 0;
+                border-color: Theme.highlight;
+                drop-shadow-blur: Theme.comand ? 13px : 4px;
+                drop-shadow-offset-y: Theme.comand ? 0 : 1px;
+                drop-shadow-color: Theme.comand ? Theme.highlight.with-alpha(0.58) : #00000059;
+            }
+            TouchArea {
+                enabled: root.can-seek && root.total-ms > 0;
+                pointer-event(e) => {
+                    if (e.kind == PointerEventKind.down) {
+                        root.dragging = true;
+                        root.drag-share = clamp(self.mouse-x / self.width, 0, 1);
+                    } else if (e.kind == PointerEventKind.up && root.dragging) {
+                        root.dragging = false;
+                        root.seek(clamp(self.mouse-x / self.width, 0, 1));
+                    } else if (e.kind == PointerEventKind.cancel) {
+                        root.dragging = false;
+                    }
+                }
+                moved => {
+                    if (root.dragging) {
+                        root.drag-share = clamp(self.mouse-x / self.width, 0, 1);
+                    }
+                }
+            }
+        }
+        Text {
+            min-width: 3.5 * 14px;
+            text: "-" + root.clock(root.total-ms - (root.dragging ? root.shown-ms : root.elapsed-ms));
+            color: Theme.text.with-alpha(0.85);
+            font-size: 14px;
+            letter-spacing: Theme.tracking;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component PhonePlayer inherits Rectangle {
+    in property <int> focus-base;
+    in property <string> track-title;
+    in property <string> artist;
+    in property <string> album;
+    in property <string> app;
+    in property <image> artwork;
+    in property <bool> has-artwork;
+    in property <bool> playing;
+    in property <float> progress;
+    in property <float> elapsed-ms;
+    in property <float> total-ms;
+    in property <bool> can-seek;
+    in-out property <bool> show-spectrum;
+    in property <[float]> bands;
+    callback play-pause();
+    callback prev();
+    callback next();
+    callback seek(float);
+    callback spectrum-changed(bool);
+
+    out property <bool> art-shown: two-col;
+    property <int> off: focus-base + (two-col ? 1 : 0);
+
+    init => { Focus.media-art = root.art-shown; }
+    changed art-shown => { Focus.media-art = root.art-shown; }
+
+    pure function clampf(v: float, lo: float, hi: float) -> float { return min(max(v, lo), hi); }
+
+    property <float> w: root.width / 1px;
+    property <float> h: root.height / 1px;
+    property <float> min-side: min(w, h);
+    property <bool> tiny: h > 0 && h <= 320;
+    property <float> text-scale: tiny ? 0.88 : 1;
+
+    property <float> page-pad-raw: round(clampf(min-side * 0.02, 12, 22));
+    property <float> page-pad: tiny ? min(page-pad-raw, 10) : page-pad-raw;
+    property <float> col-gap: round(clampf(w * 0.025, 16, 28));
+    property <float> ctrl-size: round(clampf(h * 0.095, 50, 82));
+    property <float> ctrl-gap: round(clampf(w * 0.03, 16, 32));
+    property <float> progress-h-raw: round(clampf(h * 0.012, 8, 12));
+    property <float> progress-h: max(6, round(progress-h-raw * (tiny ? 0.85 : 1)));
+
+    property <float> title-px: max(12, round(round(clampf(min-side * 0.07, 18, 48)) * text-scale));
+    property <float> artist-px: max(11, round(round(clampf(min-side * 0.034, 14, 24)) * text-scale));
+    property <float> album-px: max(10, round(round(clampf(min-side * 0.028, 13, 20)) * text-scale));
+    property <float> app-px: max(10, round(12 * text-scale));
+
+    property <float> bottom-dock-h: ctrl-size + 16 + (progress-h + 20);
+    property <float> content-h: max(0, h - page-pad * 2 - bottom-dock-h);
+    property <float> inner-w: max(0, w - page-pad * 2);
+    property <bool> two-col: inner-w >= 120 + 140 + col-gap;
+    property <float> art-allowance: max(140, floor(inner-w - 120 - col-gap));
+    property <float> art-px: round(clampf(min(content-h, art-allowance), 140, 520));
+    property <float> text-side-pad: max(6, round(page-pad * 0.75));
+
+    VerticalLayout {
+        padding-top: root.page-pad * 1px;
+        padding-left: root.page-pad * 1px;
+        padding-right: root.page-pad * 1px;
+        padding-bottom: (root.tiny ? 2 : root.page-pad) * 1px;
+        spacing: (root.tiny ? 3 : 4) * 1px;
+
+        Rectangle {
+            vertical-stretch: 1;
+            HorizontalLayout {
+                spacing: root.col-gap * 1px;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    min-width: 120px;
+                    padding-left: root.text-side-pad * 1px;
+                    padding-right: root.two-col ? 0 : root.text-side-pad * 1px;
+                    Text {
+                        text: root.track-title;
+                        color: Theme.text;
+                        font-size: root.title-px * 1px;
+                        font-weight: Theme.comand ? 700 : 800;
+                        letter-spacing: Theme.comand ? 1px : 0.2px;
+                        overflow: elide;
+                    }
+                    if root.two-col: Text {
+                        text: root.artist;
+                        color: Theme.text.with-alpha(0.9);
+                        font-size: root.artist-px * 1px;
+                        overflow: elide;
+                    }
+                    if root.two-col: Text {
+                        text: root.album;
+                        color: Theme.text.with-alpha(0.7);
+                        font-size: root.album-px * 1px;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: root.two-col ? root.app : root.artist;
+                        color: Theme.text.with-alpha(0.55);
+                        font-size: root.app-px * 1px;
+                        overflow: elide;
+                    }
+                }
+                if root.two-col: Rectangle {
+                    width: root.art-px * 1px;
+                    Rectangle {
+                        width: root.art-px * 1px;
+                        height: root.art-px * 1px;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: Theme.comand ? Theme.radius : 34px;
+                        border-width: Focus.main(root.focus-base) ? Theme.ring(3px) : Theme.comand ? 1px : 0;
+                        border-color: Focus.main(root.focus-base) ? Theme.focus-color : Theme.rule;
+                        clip: true;
+                        background: root.show-spectrum ? (Theme.comand ? Theme.panel : transparent) : Theme.comand ? Theme.panel : Theme.surface;
+                        if !root.show-spectrum && root.has-artwork: Image {
+                            width: parent.width;
+                            height: parent.height;
+                            source: root.artwork;
+                            image-fit: cover;
+                        }
+                        if !root.show-spectrum && !root.has-artwork: Text {
+                            text: MediaText.no-artwork;
+                            color: Theme.text.with-alpha(0.6);
+                            font-size: 12px;
+                        }
+                        if root.show-spectrum: Spectrum {
+                            x: max(8, round(root.art-px * 0.06)) * 1px;
+                            y: self.x + (parent.height - 2 * self.x) * 0.075;
+                            width: parent.width - 2 * self.x;
+                            height: (parent.height - 2 * self.x) * 0.85;
+                            bands: root.bands;
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.show-spectrum = !root.show-spectrum;
+                                root.spectrum-changed(root.show-spectrum);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: (root.tiny ? 3 : 4) * 1px;
+            padding-bottom: root.tiny ? 0 : 8px;
+            HorizontalLayout {
+                alignment: center;
+                spacing: root.ctrl-gap * 1px;
+                RoundButton {
+                    focused: Focus.main(root.off);
+                    flash: Press.prev;
+                    size: root.ctrl-size * 1px;
+                    icon-size: round(root.ctrl-size * 0.46) * 1px;
+                    icon: @image-url("icons/SkipPrevious.svg");
+                    clicked => { root.prev(); }
+                }
+                RoundButton {
+                    focused: Focus.main(root.off + 1);
+                    flash: Press.play;
+                    size: root.ctrl-size * 1px;
+                    icon-size: round(root.ctrl-size * 0.46) * 1px;
+                    icon: root.playing ? @image-url("icons/Pause.svg") : @image-url("icons/PlayArrow.svg");
+                    clicked => { root.play-pause(); }
+                }
+                RoundButton {
+                    focused: Focus.main(root.off + 2);
+                    flash: Press.next;
+                    size: root.ctrl-size * 1px;
+                    icon-size: round(root.ctrl-size * 0.46) * 1px;
+                    icon: @image-url("icons/SkipNext.svg");
+                    clicked => { root.next(); }
+                }
+            }
+            Progress {
+                focused: root.can-seek && Focus.main(root.off + 3);
+                progress: root.progress;
+                can-seek: root.can-seek;
+                total-ms: root.total-ms;
+                elapsed-ms: root.elapsed-ms;
+                bar-height: root.progress-h * 1px;
+                seek(f) => { root.seek(f); }
+            }
+        }
+    }
+}
+
+export component MediaPage inherits Rectangle {
+    in property <string> track-title;
+    in property <string> artist;
+    in property <string> album;
+    in property <string> app;
+    in property <image> artwork;
+    in property <bool> has-artwork;
+    in property <bool> playing;
+    in property <float> progress;
+    in property <float> elapsed-ms;
+    in property <float> total-ms;
+    in property <bool> can-seek;
+    in-out property <bool> show-spectrum;
+    in property <[float]> bands;
+    callback play-pause();
+    callback prev();
+    callback next();
+    callback seek(float);
+    callback spectrum-changed(bool);
+
+    property <int> base: DabState.receiver ? 2 : 0;
+    property <bool> dab-shown: DabState.receiver && DabState.view-dab;
+    property <length> tabs-h: DabState.receiver ? 48px : 0;
+
+    background: Theme.backdrop;
+
+    Rectangle {
+        if DabState.receiver: SourceTabs {
+            y: 0;
+            width: parent.width;
+            height: root.tabs-h;
+            dab-active: DabState.view-dab;
+            focus-base: 0;
+            phone => { DabState.phone(); }
+            dab => { DabState.resume(); }
+        }
+        if !root.dab-shown: PhonePlayer {
+            y: root.tabs-h;
+            width: parent.width;
+            height: parent.height - root.tabs-h;
+            focus-base: root.base;
+            track-title: root.track-title;
+            artist: root.artist;
+            album: root.album;
+            app: root.app;
+            artwork: root.artwork;
+            has-artwork: root.has-artwork;
+            playing: root.playing;
+            progress: root.progress;
+            elapsed-ms: root.elapsed-ms;
+            total-ms: root.total-ms;
+            can-seek: root.can-seek;
+            show-spectrum <=> root.show-spectrum;
+            bands: root.bands;
+            play-pause => { root.play-pause(); }
+            prev => { root.prev(); }
+            next => { root.next(); }
+            seek(f) => { root.seek(f); }
+            spectrum-changed(on) => { root.spectrum-changed(on); }
+        }
+        if root.dab-shown: DabPage {
+            y: root.tabs-h;
+            width: parent.width;
+            height: parent.height - root.tabs-h;
+            focus-base: root.base;
+            show-spectrum <=> root.show-spectrum;
+            bands: root.bands;
+            spectrum-changed(on) => { root.spectrum-changed(on); }
+            play-pause => { root.play-pause(); }
+            prev => { root.prev(); }
+            next => { root.next(); }
+        }
+    }
+}

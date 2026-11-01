@@ -1,0 +1,16 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+pub mod authentication;
+pub mod car_play;
+pub mod communications;
+pub mod device_notifications;
+pub mod eap;
+pub mod identification;
+pub mod location;
+pub mod now_playing;
+pub mod power;
+pub mod route_guidance;
+pub mod vehicle_status;
+pub mod wifi;

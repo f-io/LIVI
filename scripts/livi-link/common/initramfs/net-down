@@ -1,0 +1,14 @@
+#!/bin/sh
+# net-down: take the USB gadget down again. telnetd keeps running, net-up starts what it needs again.
+G=/sys/kernel/config/usb_gadget/livi
+if [ -d $G ]; then
+    echo "" > $G/UDC 2>/dev/null
+    rm -f $G/configs/c.1/ncm.usb0 $G/configs/c.1/acm.GS0
+    rmdir $G/configs/c.1/strings/0x409 $G/configs/c.1 $G/functions/ncm.usb0 $G/functions/acm.GS0 \
+          $G/strings/0x409 $G 2>/dev/null
+fi
+killall udhcpd 2>/dev/null
+[ -e /tmp/acm-shell.pid ] && kill $(cat /tmp/acm-shell.pid) 2>/dev/null
+rm -f /tmp/acm-shell.pid
+ifconfig usb0 down 2>/dev/null
+exit 0

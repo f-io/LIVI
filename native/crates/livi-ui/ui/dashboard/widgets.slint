@@ -1,0 +1,102 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme } from "../theme.slint";
+import { Blink, DashState, Signal } from "state.slint";
+
+export component Lamp inherits Image {
+    in property <bool> active;
+    in property <bool> blink;
+    in property <color> tint;
+    colorize: root.tint;
+    opacity: root.active && (!root.blink || Blink.on) ? 1 : 0;
+}
+
+export component SegmentBar inherits HorizontalLayout {
+    in property <float> ratio;
+    in property <color> on-color;
+    in property <length> u;
+    property <int> filled: round(clamp(ratio, 0, 1) * 8);
+    spacing: 4 * u;
+    alignment: center;
+    for i in 8: Rectangle {
+        width: 12 * root.u;
+        height: 8 * root.u;
+        y: (parent.height - self.height) / 2;
+        border-radius: Theme.comand ? 1 * root.u : 2 * root.u;
+        background: i < root.filled ? root.on-color : Theme.text-disabled;
+        opacity: i < root.filled ? 1 : 0.5;
+    }
+}
+
+export component Level inherits Rectangle {
+    in property <image> icon;
+    in property <float> ratio;
+    in property <string> value;
+    in property <bool> warn;
+    in property <length> u;
+    width: row.preferred-width;
+    row := HorizontalLayout {
+    spacing: 9 * root.u;
+    alignment: center;
+    Image {
+        width: 22 * root.u;
+        height: 22 * root.u;
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        colorize: root.warn ? Signal.warn : Theme.text-secondary;
+    }
+    SegmentBar {
+        u: root.u;
+        ratio: root.ratio;
+        on-color: root.warn ? Signal.warn : Theme.text;
+    }
+    Text {
+        min-width: 3 * 0.6 * 22 * root.u;
+        text: root.value;
+        font-size: 22 * root.u;
+        color: root.warn ? Signal.warn : Theme.text;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+    }
+    }
+}
+
+export component Clock inherits Text {
+    in property <length> u;
+    text: DashState.clock;
+    font-size: 44 * u;
+    color: Theme.text;
+    opacity: 0.55;
+    letter-spacing: 1.9 * u;
+    horizontal-alignment: center;
+    vertical-alignment: center;
+}
+
+export component Dots inherits Rectangle {
+    property <length> dot: clamp(Ui-height * 0.012, 6px, 10px);
+    in property <length> Ui-height;
+    height: dots.preferred-height;
+    width: dots.preferred-width;
+    border-radius: self.height / 2;
+    background: Theme.dark ? #0000008c : #0000004d;
+    dots := HorizontalLayout {
+        padding: root.dot;
+        spacing: root.dot;
+        for i in DashState.page-count: Rectangle {
+            width: root.dot * 2;
+            height: root.dot * 2;
+            Rectangle {
+                width: root.dot;
+                height: root.dot;
+                border-radius: root.dot / 2;
+                background: i == DashState.page-index ? Theme.primary : Theme.text-secondary;
+                opacity: i == DashState.page-index ? 1 : 0.45;
+            }
+            TouchArea {
+                clicked => { DashState.select-page(i); }
+            }
+        }
+    }
+}

@@ -1,7 +1,0 @@
-syntax="proto2";
-
-package aap_protobuf.service.media.sink.message;
-
-message AudioUnderflowNotification {
-  required int32 session_id = 1;
-}

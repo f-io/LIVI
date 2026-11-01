@@ -1,0 +1,357 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme } from "theme.slint";
+import { Focus, FocusZone } from "focus.slint";
+import { MediaText, Press, RoundButton, Spectrum } from "media_parts.slint";
+
+export struct StationData {
+    service-id: int,
+    number: int,
+    label: string,
+    favorite: bool,
+    tuned: bool,
+    has-logo: bool,
+    logo: image,
+    initials: string,
+    badge: color,
+}
+
+export global DabState {
+    in property <bool> receiver;
+    in property <bool> active;
+    in property <bool> playing;
+    in property <string> title;
+    in property <string> text;
+    in property <string> ensemble;
+    in property <int> signal-bars;
+    in property <bool> has-tuned;
+    in property <bool> favorite;
+    in property <bool> has-logo;
+    in property <image> logo;
+    in property <string> initials;
+    in property <color> badge;
+    in property <[StationData]> stations;
+    in property <int> tuned-index: -1;
+    in-out property <bool> band-shown: true;
+    in-out property <bool> art-shown;
+    in-out property <bool> view-dab;
+    callback phone();
+    callback resume();
+    callback pick(int);
+    callback toggle-favorite();
+}
+
+export component StationBadge inherits Rectangle {
+    in property <length> size;
+    in property <bool> has-logo;
+    in property <image> logo;
+    in property <string> initials;
+    in property <color> badge;
+    width: size;
+    height: size;
+    border-radius: round(size * 0.18 / 1px) * 1px;
+    clip: true;
+    background: has-logo ? #ffffff : badge;
+    if root.has-logo: Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.logo;
+        image-fit: contain;
+    }
+    if !root.has-logo: Text {
+        text: root.initials;
+        color: #ffffff;
+        font-weight: 800;
+        font-size: round(root.size * 0.36 / 1px) * 1px;
+    }
+}
+
+component StationTile inherits Rectangle {
+    in property <StationData> station;
+    in property <length> tile;
+    in property <bool> focused;
+    callback picked();
+    width: tile;
+    height: tile;
+    border-radius: Theme.comand ? Theme.radius : 10px;
+    border-width: root.station.tuned ? (Theme.comand ? 1px : 2px) : Theme.comand ? 1px : 0;
+    border-color: Theme.comand && !root.station.tuned ? Theme.rule : Theme.primary;
+    background: Theme.comand ? (root.station.tuned ? Theme.wash : Theme.panel) : root.focused ? #ffffff33 : root.station.tuned ? #ffffff24 : #ffffff0f;
+    Rectangle {
+        border-radius: Theme.comand ? Theme.radius : 10px;
+        border-width: root.focused ? Theme.ring(3px) : 0;
+        border-color: Theme.focus-color;
+        x: Theme.comand ? -3px : 0;
+        y: Theme.comand ? -3px : 0;
+        width: parent.width + (Theme.comand ? 6px : 0);
+        height: parent.height + (Theme.comand ? 6px : 0);
+    }
+    Text {
+        x: parent.width - self.width - 8px;
+        y: 4px;
+        text: root.station.number;
+        font-size: 12px;
+        color: Theme.text;
+        opacity: 0.7;
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 6px;
+        padding-left: 6px;
+        padding-right: 6px;
+        HorizontalLayout {
+            alignment: center;
+            StationBadge {
+                size: round(root.tile * 0.55 / 1px) * 1px;
+                has-logo: root.station.has-logo;
+                logo: root.station.logo;
+                initials: root.station.initials;
+                badge: root.station.badge;
+            }
+        }
+        Text {
+            text: root.station.label;
+            font-size: 12px;
+            font-weight: 600;
+            color: Theme.text;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+    }
+    if root.station.favorite: Image {
+        x: parent.width - self.width - 4px;
+        y: parent.height - self.height - 4px;
+        width: 18px;
+        height: 18px;
+        source: @image-url("icons/StarRounded.svg");
+        colorize: #ffa726;
+    }
+    TouchArea {
+        clicked => { root.picked(); }
+    }
+}
+
+component StationBand inherits Rectangle {
+    in property <length> tile;
+    in property <int> focus-base;
+    property <length> step: tile + 8px;
+    property <int> focused-index: Focus.zone == FocusZone.main ? Focus.main-index - focus-base : -1;
+
+    function show(i: int) {
+        if (i < 0) {
+            return;
+        }
+        let left = 8px + i * root.step;
+        if (left + flick.content-x < 0) {
+            flick.content-x = -left + 8px;
+        } else if (left + root.tile + flick.content-x > flick.width) {
+            flick.content-x = flick.width - left - root.tile - 8px;
+        }
+    }
+
+    changed focused-index => { root.show(root.focused-index); }
+    init => { root.show(DabState.tuned-index); }
+
+    height: tile + 16px;
+    border-radius: Theme.comand ? Theme.radius : 12px;
+    background: Theme.comand ? Theme.panel-base : #ffffff0f;
+    clip: true;
+    flick := Flickable {
+        content-width: max(self.width, 8px + DabState.stations.length * root.step);
+        content-height: self.height;
+        for st[i] in DabState.stations: StationTile {
+            x: 8px + i * root.step;
+            y: 8px;
+            tile: root.tile;
+            station: st;
+            focused: root.focused-index == i;
+            picked => { DabState.pick(st.service-id); }
+        }
+    }
+    property <int> tuned: DabState.tuned-index;
+    changed tuned => { root.show(root.tuned); }
+}
+
+export component DabPage inherits Rectangle {
+    in property <int> focus-base;
+    callback play-pause();
+    callback prev();
+    callback next();
+
+    pure function clampf(v: float, lo: float, hi: float) -> float { return min(max(v, lo), hi); }
+
+    property <float> w: root.width / 1px;
+    property <float> h: root.height / 1px;
+    property <float> min-side: min(w, h);
+    property <float> page-pad: round(clampf(min-side * 0.02, 12, 22));
+    property <float> col-gap: round(clampf(w * 0.025, 16, 28));
+    property <float> section-gap: round(clampf(h * 0.03, 10, 24));
+    property <float> ctrl-size: min(round(clampf(h * 0.095, 50, 82)), floor((w - page-pad * 2 - 8 - ctrl-gap * 3) / 4));
+    property <float> ctrl-gap: round(clampf(w * 0.03, 16, 32));
+    property <float> title-px: round(clampf(min-side * 0.07, 18, 48));
+    property <float> artist-px: round(clampf(min-side * 0.034, 14, 24));
+    property <float> album-px: round(clampf(min-side * 0.028, 13, 20));
+    property <float> tile: round(clampf(h * 0.26, 88, 140));
+    property <float> art-px: max(0, round(min(h - tile - page-pad * 3 - 16, w * 0.38)));
+    property <length> icon-px: round(ctrl-size * 0.46) * 1px;
+    property <bool> compact: h > 0 && h < 300;
+    property <bool> art-shown: !compact && art-px >= 48;
+
+    in-out property <bool> show-spectrum;
+    in property <[float]> bands;
+    callback spectrum-changed(bool);
+    property <int> off: focus-base + (art-shown ? 1 : 0);
+
+    init => {
+        DabState.band-shown = !root.compact;
+        DabState.art-shown = root.art-shown;
+    }
+    changed art-shown => { DabState.art-shown = root.art-shown; }
+    changed compact => { DabState.band-shown = !root.compact; }
+
+    VerticalLayout {
+        padding: root.page-pad * 1px;
+        spacing: root.page-pad * 1px;
+        HorizontalLayout {
+            vertical-stretch: 1;
+            spacing: root.col-gap * 1px;
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                min-width: 0;
+                spacing: root.section-gap * 1px;
+                padding-left: 8px;
+                VerticalLayout {
+                    if !root.compact: Text {
+                        text: MediaText.dab-source;
+                        color: Theme.primary;
+                        font-weight: 800;
+                        font-size: root.album-px * 1px;
+                        letter-spacing: 1px;
+                    }
+                    Text {
+                        text: DabState.title;
+                        color: Theme.text;
+                        font-weight: 800;
+                        font-size: root.title-px * 1px;
+                        overflow: elide;
+                    }
+                    if !root.compact: Rectangle { height: 8px; }
+                    if !root.compact: Text {
+                        height: root.artist-px * 2.5px;
+                        text: DabState.text;
+                        color: Theme.text.with-alpha(0.9);
+                        font-size: root.artist-px * 1px;
+                        wrap: word-wrap;
+                        overflow: elide;
+                    }
+                    if !root.compact: Rectangle { height: 4px; }
+                    if !root.compact: HorizontalLayout {
+                        height: round((root.album-px + 2) * 1.4) * 1px;
+                        spacing: 8px;
+                        alignment: start;
+                        Text {
+                            text: DabState.ensemble;
+                            color: Theme.text.with-alpha(0.7);
+                            font-size: root.album-px * 1px;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                        Rectangle {
+                            width: (root.album-px + 2) * 1px;
+                            if DabState.signal-bars > 0: Image {
+                                width: parent.width;
+                                height: parent.width;
+                                colorize: Theme.primary;
+                                source: DabState.signal-bars >= 3 ? @image-url("icons/SignalCellularAlt.svg")
+                                    : DabState.signal-bars == 2 ? @image-url("icons/SignalCellularAlt2Bar.svg")
+                                    : @image-url("icons/SignalCellularAlt1Bar.svg");
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    alignment: start;
+                    spacing: root.ctrl-gap * 1px;
+                    RoundButton {
+                        focused: Focus.main(root.off);
+                        flash: Press.prev;
+                        size: root.ctrl-size * 1px;
+                        icon-size: root.icon-px;
+                        icon: @image-url("icons/SkipPrevious.svg");
+                        clicked => { root.prev(); }
+                    }
+                    RoundButton {
+                        focused: Focus.main(root.off + 1);
+                        flash: Press.play;
+                        size: root.ctrl-size * 1px;
+                        icon-size: root.icon-px;
+                        icon: DabState.playing ? @image-url("icons/Pause.svg") : @image-url("icons/PlayArrow.svg");
+                        clicked => { root.play-pause(); }
+                    }
+                    RoundButton {
+                        focused: Focus.main(root.off + 2);
+                        flash: Press.next;
+                        size: root.ctrl-size * 1px;
+                        icon-size: root.icon-px;
+                        icon: @image-url("icons/SkipNext.svg");
+                        clicked => { root.next(); }
+                    }
+                    RoundButton {
+                        focused: Focus.main(root.off + 3);
+                        pressed: DabState.favorite;
+                        enabled: DabState.has-tuned;
+                        size: root.ctrl-size * 1px;
+                        icon-size: root.icon-px;
+                        icon: DabState.favorite ? @image-url("icons/StarRounded.svg") : @image-url("icons/StarBorderRounded.svg");
+                        icon-color: DabState.favorite ? #ffa726 : Theme.text;
+                        clicked => { DabState.toggle-favorite(); }
+                    }
+                }
+            }
+            if root.art-shown: Rectangle {
+                width: root.art-px * 1px;
+                Rectangle {
+                    width: root.art-px * 1px;
+                    height: root.art-px * 1px;
+                    border-radius: Theme.comand ? Theme.radius : 16px;
+                    border-width: Focus.main(root.focus-base) ? Theme.ring(3px) : Theme.comand ? 1px : 0;
+                    border-color: Focus.main(root.focus-base) ? Theme.focus-color : Theme.rule;
+                    clip: true;
+                    background: root.show-spectrum ? transparent : #ffffff14;
+                    if !root.show-spectrum: StationBadge {
+                        size: round(root.art-px * 0.7) * 1px;
+                        has-logo: DabState.has-logo;
+                        logo: DabState.logo;
+                        initials: DabState.initials;
+                        badge: DabState.badge;
+                    }
+                    if root.show-spectrum: Spectrum {
+                        x: max(8, round(root.art-px * 0.06)) * 1px;
+                        y: self.x + (parent.height - 2 * self.x) * 0.075;
+                        width: parent.width - 2 * self.x;
+                        height: (parent.height - 2 * self.x) * 0.85;
+                        bands: root.bands;
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.show-spectrum = !root.show-spectrum;
+                            root.spectrum-changed(root.show-spectrum);
+                        }
+                    }
+                }
+            }
+        }
+        if !root.compact && DabState.stations.length == 0: Text {
+            text: MediaText.no-stations;
+            color: Theme.text.with-alpha(0.7);
+            horizontal-alignment: center;
+        }
+        if !root.compact && DabState.stations.length > 0: StationBand {
+            tile: root.tile * 1px;
+            focus-base: root.off + 4;
+        }
+    }
+}

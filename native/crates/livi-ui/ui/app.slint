@@ -1,0 +1,232 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import "fonts/Roboto-300.ttf";
+import "fonts/Roboto-400.ttf";
+import "fonts/Roboto-500.ttf";
+import "fonts/Roboto-700.ttf";
+import "fonts/D-DIN-400.otf";
+import "fonts/D-DIN-700.otf";
+import { Theme, Ui } from "theme.slint";
+import { Focus, FocusZone } from "focus.slint";
+import { Nav, Page, PhoneState, TabData } from "nav.slint";
+import { MediaPage, MediaText, Press, DabState, StationData } from "media.slint";
+import { ProjectionPage, TouchPhase } from "projection.slint";
+import { SettingsView, SettingsState, ScreenKind, RowData, RowKind, PickData, KnobData } from "settings/view.slint";
+import { Dashboard, DashState, GaugeData, CapData, TrailData, LabelData } from "dashboard.slint";
+import { LevelOverlay, PhoneOverlay, OverlayState } from "overlays.slint";
+import { MaskData } from "mask.slint";
+import { TouchCalibration, TouchCalibrationState } from "touch_calibration.slint";
+import { GamesPage, GamesState, GamesText, GameData, ControllerData } from "games.slint";
+import { MiniDspPage, MiniDspState, DspPhase, DspPresetData, DspControlData } from "minidsp.slint";
+
+export { Theme, Focus, FocusZone, Page, PhoneState, TabData, TouchPhase, SettingsState, ScreenKind, RowData, RowKind, PickData, KnobData, MediaText, Press, DabState, StationData, DashState, GaugeData, CapData, TrailData, LabelData, OverlayState, MaskData, TouchCalibrationState, MiniDspState, DspPhase, DspPresetData, DspControlData, GamesState, GamesText, GameData, ControllerData }
+
+export component AppWindow inherits Window {
+    in-out property <Page> page: Page.media;
+    in property <[TabData]> tabs;
+    in property <image> projection-icon;
+    in property <PhoneState> phone;
+    in property <string> clock;
+    in property <bool> right-hand;
+    in property <int> stream-width: 1280;
+    in property <int> stream-height: 720;
+    in property <MaskData> main-mask;
+    in property <bool> camera-found;
+    in property <string> no-camera: "No camera found";
+    in property <string> status;
+
+    in property <string> track-title;
+    in property <string> artist;
+    in property <string> album;
+    in property <string> app;
+    in property <image> artwork;
+    in property <bool> has-artwork;
+    in property <bool> playing;
+    in property <float> progress;
+    in property <float> elapsed-ms;
+    in property <float> total-ms;
+    in property <bool> can-seek;
+    in-out property <bool> show-spectrum;
+    in property <[float]> bands;
+
+    callback page-chosen(Page);
+    callback touch(TouchPhase, float, float);
+    callback play-pause();
+    callback prev();
+    callback next();
+    callback seek(float);
+    callback spectrum-changed(bool);
+
+    property <bool> nav-hidden: root.page == Page.projection && root.phone == PhoneState.streaming;
+    property <bool> nav-asleep;
+
+    public function wake-nav() {
+        root.nav-asleep = false;
+        DashState.dots-shown = true;
+        if (root.page == Page.telemetry) {
+            nav-timer.start();
+            nav-timer.restart();
+        } else {
+            nav-timer.stop();
+        }
+    }
+
+    nav-timer := Timer {
+        interval: 3s;
+        running: false;
+        triggered => {
+            self.stop();
+            root.nav-asleep = true;
+            DashState.dots-shown = false;
+        }
+    }
+    changed page => {
+        root.wake-nav();
+    }
+
+    title: "LIVI";
+    default-font-family: Theme.font-family;
+    preferred-width: 1280px;
+    preferred-height: 720px;
+    min-width: 320px;
+    min-height: 200px;
+    background: transparent;
+
+    changed height => { Ui.height = self.height; }
+    changed width => { Ui.width = self.width; }
+    init => {
+        Ui.height = self.height;
+        Ui.width = self.width;
+        root.wake-nav();
+    }
+
+    if root.page == Page.telemetry: Dashboard {
+        width: root.width;
+        height: root.height;
+    }
+
+    HorizontalLayout {
+        if !root.right-hand && !root.nav-hidden: Nav {
+            tabs: root.tabs;
+            active: root.page;
+            phone: root.phone;
+            clock: root.clock;
+            right-hand: false;
+            asleep: root.nav-asleep;
+            select(p) => {
+                root.page = p;
+                root.page-chosen(p);
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            if root.page == Page.projection: ProjectionPage {
+                width: parent.width;
+                height: parent.height;
+                streaming: root.phone == PhoneState.streaming;
+                idle-icon: root.projection-icon;
+                stream-width: root.stream-width;
+                stream-height: root.stream-height;
+                mask: root.main-mask;
+                touch(phase, x, y) => { root.touch(phase, x, y); }
+            }
+            if root.page == Page.media: MediaPage {
+                width: parent.width;
+                height: parent.height;
+                track-title: root.track-title;
+                artist: root.artist;
+                album: root.album;
+                app: root.app;
+                artwork: root.artwork;
+                has-artwork: root.has-artwork;
+                playing: root.playing;
+                progress: root.progress;
+                elapsed-ms: root.elapsed-ms;
+                total-ms: root.total-ms;
+                can-seek: root.can-seek;
+                show-spectrum <=> root.show-spectrum;
+                bands: root.bands;
+                play-pause => { root.play-pause(); }
+                prev => { root.prev(); }
+                next => { root.next(); }
+                seek(f) => { root.seek(f); }
+                spectrum-changed(on) => { root.spectrum-changed(on); }
+            }
+            if root.page == Page.games: GamesPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.page == Page.minidsp: MiniDspPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.page == Page.settings: SettingsView {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.page == Page.camera && !root.camera-found: Rectangle {
+                background: Theme.backdrop;
+                Text {
+                    text: root.no-camera;
+                    color: Theme.text-secondary;
+                    font-size: 20px;
+                }
+            }
+            if root.status != "": Text {
+                x: 16px;
+                y: parent.height - 32px;
+                text: root.status;
+                color: #ff8a80;
+                font-size: 14px;
+            }
+        }
+        if root.right-hand && !root.nav-hidden: Nav {
+            tabs: root.tabs;
+            active: root.page;
+            phone: root.phone;
+            clock: root.clock;
+            right-hand: true;
+            asleep: root.nav-asleep;
+            select(p) => {
+                root.page = p;
+                root.page-chosen(p);
+            }
+        }
+    }
+
+    LevelOverlay {
+        window-width: root.width;
+        x: (root.width - self.width) / 2;
+        y: 16px;
+    }
+    PhoneOverlay {
+        window-width: root.width;
+        x: root.width - self.width - 16px;
+        y: 16px;
+    }
+    if TouchCalibrationState.active: TouchCalibration {
+        width: root.width;
+        height: root.height;
+    }
+}
+
+export component SecondaryWindow inherits Window {
+    in property <bool> has-dashboard;
+    in property <string> window-title;
+    title: root.window-title;
+    in property <string> empty-label: "No content on this screen";
+    default-font-family: Theme.font-family;
+    background: root.has-dashboard ? transparent : #000000;
+
+    if root.has-dashboard: Dashboard {
+        width: root.width;
+        height: root.height;
+    }
+    if !root.has-dashboard: Text {
+        text: root.empty-label;
+        color: #ffffff73;
+        font-size: 20px;
+    }
+}

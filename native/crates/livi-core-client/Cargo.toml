@@ -1,0 +1,10 @@
+[package]
+name = "livi-core-client"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+libc.workspace = true
+livi-core-proto.workspace = true
+serde.workspace = true
+serde_json.workspace = true

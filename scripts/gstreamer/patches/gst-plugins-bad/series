@@ -3,5 +3,5 @@
 0003-v4l2codecs-Update-videodev2_h.patch
 0004-v4l2codecs-Add-GST_VIDEO_FORMAT_NV12_128C8.patch
 0005-v4l2codecs-Add-support-for-GST_VIDEO_FORMAT_NV12_10L32_128C8.patch
-wayland_dmabuf.patch
-0006-wayland-dont-crash-on-output-property-updates.patch
+0006-wayland-dmabuf-translate-column-mode-tile-strides.patch
+0007-wayland-dont-crash-on-output-property-updates.patch

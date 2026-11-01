@@ -1,0 +1,33 @@
+{
+  "config": { "language": "en" },
+  "sessions": { "active": null, "position": 0 },
+  "nowPlaying": {},
+  "telemetry": {
+    "speedKph": 87, "rpm": 2400, "gear": "D", "turnSignal": "left",
+    "lights": true, "highBeam": false, "parkingBrake": false,
+    "ambientC": 14.3, "fuelPct": 64, "oilC": 92
+  },
+  "navigation": {
+    "active": true, "maneuverType": 2, "turnSide": 0,
+    "maneuverDistanceText": "350 m", "maneuverText": "Turn right onto Elbchaussee",
+    "roadName": "Max-Brauer-Allee", "timeLeftText": "12 min",
+    "destinationDistanceText": "8.4 km", "destinationName": "Elbphilharmonie", "appName": "Maps"
+  },
+  "cluster": {
+    "theme": {
+      "id": "livi",
+      "displays": [ { "id": "cluster", "kind": "cluster", "layouts": [
+        { "id": "livi.navMini", "name": "Gauges with turn-by-turn", "palettes": [], "zones": [] },
+        { "id": "livi.navFull", "name": "Gauges with turn-by-turn (extended)", "palettes": [], "zones": [] },
+        { "id": "livi.clusterFull", "name": "Gauges with map", "palettes": [], "zones": [] }
+      ] } ],
+      "palettes": [ { "id": "teal", "accentDark": "#00adad", "accentLight": "#008585" } ]
+    },
+    "layout": "livi.navMini",
+    "palette": "teal",
+    "palettes": {},
+    "shown": ["livi.navMini", "livi.navFull", "livi.clusterFull"],
+    "arranged": [],
+    "appearance": "automatic"
+  }
+}

@@ -1,0 +1,12 @@
+--- a/drivers/usb/phy/phy-mxs-usb.c
++++ b/drivers/usb/phy/phy-mxs-usb.c
+@@ -728,6 +728,9 @@
+ 	void __iomem *base = phy->io_priv;
+ 	enum usb_charger_type chgr_type = UNKNOWN_TYPE;
+
++	/* The dongle is powered by the host it talks to, and detection toggles D+/D-. */
++	return UNKNOWN_TYPE;
++
+ 	if (!regmap)
+ 		return UNKNOWN_TYPE;
+

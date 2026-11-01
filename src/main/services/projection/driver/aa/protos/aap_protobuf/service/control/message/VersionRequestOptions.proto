@@ -1,7 +1,0 @@
-syntax="proto2";
-
-package aap_protobuf.channel.control.version;
-
-message VersionRequestOptions {
-  optional int64 snapshot_version = 1;
-}

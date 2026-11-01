@@ -1,0 +1,9 @@
+[package]
+name = "livi-ui-model"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+livi-core-proto.workspace = true
+livi-i18n.workspace = true
+serde_json.workspace = true

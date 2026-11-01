@@ -1,0 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
+/* Realtek RTL8822CS. rtw88 drives the Wi-Fi half over SDIO, the Bluetooth half speaks H5. */
+
+&uart3 {
+	bluetooth {
+		compatible = "realtek,rtl8822cs-bt";
+	};
+};

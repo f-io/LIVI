@@ -1,7 +1,0 @@
-syntax="proto2";
-
-package aap_protobuf.service.navigationstatus.message;
-
-message NavigationCue {
-  repeated string alternate_text = 1;
-}

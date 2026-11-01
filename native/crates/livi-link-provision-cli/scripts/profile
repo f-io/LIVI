@@ -1,0 +1,11 @@
+# Stands in for /etc/profile while a stock dongle is being set up, because rcS sources this and
+# sourcing needs no execute bit. The tool appends the bootstrap call and takes it out again.
+export LD_LIBRARY_PATH=/tmp/lib:/lib:/usr/lib
+export PATH=/tmp/bin:$PATH
+USER=`id -un`
+LOGNAME=$USER
+PS1='[(\t)\u@\w]#'
+export USER LOGNAME PS1 PATH
+
+alias ll='ls -alF'
+alias la='ls -A'
