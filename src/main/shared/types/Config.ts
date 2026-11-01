@@ -233,6 +233,8 @@ export type Config = {
   displayColorB: number
 
   // Camera + dashboards + media slots
+  /** Receive Haltech CAN V2 telemetry from the read-only OS CAN listener. */
+  haltechCanEnabled: boolean
   cameraId: string
   camera: WindowAssignment
   cameraMirror: boolean

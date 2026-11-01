@@ -174,28 +174,42 @@ export class HelperSupervisor extends EventEmitter {
 
   private _spawn(): void {
     if (!this._cfg) return
-    const helperRoot = resolveHelperRoot()
+    const isLiviOs = process.platform === 'linux' && process.env.LIVI_OS === '1'
+    const helperRoot = isLiviOs ? '/usr/lib/livi/driver' : resolveHelperRoot()
     const script = join(helperRoot, 'helper', 'livi-helper.py')
 
-    if (!existsSync(script)) {
+    if (!isLiviOs && !existsSync(script)) {
       this.emit('error', new Error(`livi-helper.py not found at ${script}`))
       return
     }
 
     const env = envFromConfig(this._cfg)
     const useSudo = process.platform === 'linux'
-    const cmd = useSudo ? 'sudo' : this._python
-    const args = useSudo ? ['-n', '-E', this._python, '-u', script] : ['-u', script]
+    const cmd = isLiviOs ? '/usr/bin/sudo' : useSudo ? 'sudo' : this._python
+    const args = isLiviOs
+      ? [
+          '-n',
+          '/usr/libexec/livi-projection-helper',
+          env.LIVI_AA_WIRELESS === '1' ? '1' : '0',
+          env.LIVI_CP_WIRELESS === '1' ? '1' : '0',
+          env.LIVI_CP_PK ?? '',
+          env.LIVI_CP_PI ?? '',
+          env.LIVI_CP_DEBUG === '1' ? '1' : '0'
+        ]
+      : useSudo
+        ? ['-n', '-E', this._python, '-u', script]
+        : ['-u', script]
+    const childEnv = isLiviOs ? { PATH: '/usr/sbin:/usr/bin:/sbin:/bin' } : env
 
     if (DEBUG) {
       console.log(
-        `[helper] spawning ${cmd} ${args.join(' ')} (cwd=${helperRoot}, aa=${env.LIVI_AA_WIRELESS || '0'}, cpWireless=${env.LIVI_CP_WIRELESS || '0'})`
+        `[helper] spawning ${cmd} (cwd=${helperRoot}, aa=${env.LIVI_AA_WIRELESS || '0'}, cpWireless=${env.LIVI_CP_WIRELESS || '0'})`
       )
     }
 
     const child = spawn(cmd, args, {
       cwd: helperRoot,
-      env,
+      env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe']
     })
 

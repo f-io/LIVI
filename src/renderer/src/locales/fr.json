@@ -7,6 +7,8 @@
     "settingsTitle": "Réglages",
     "devices": "Appareils",
     "general": "Général",
+    "vehicleTelemetry": "Télémétrie du véhicule",
+    "haltechCanEnabled": "Recevoir Haltech CAN V2 (can0, 1 Mbit/s, réception uniquement)",
     "windowSettings": "Réglages Fenêtres",
     "tabSettings": "Réglages Onglets",
     "mainVideo": "Affichage Principal",

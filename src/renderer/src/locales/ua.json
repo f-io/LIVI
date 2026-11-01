@@ -7,6 +7,8 @@
     "settingsTitle": "Налаштування",
     "devices": "Пристрої",
     "general": "Загальні",
+    "vehicleTelemetry": "Телеметрія автомобіля",
+    "haltechCanEnabled": "Отримувати Haltech CAN V2 (can0, 1 Мбіт/с, лише приймання)",
     "windowSettings": "Налаштування вікон",
     "tabSettings": "Налаштування вкладок",
     "mainVideo": "Main Video",

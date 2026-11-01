@@ -135,6 +135,7 @@ function installRule(): Promise<void> {
 
 export async function checkAndInstallUdevRule(window: BrowserWindow): Promise<boolean> {
   if (process.platform !== 'linux') return false
+  if (process.env.LIVI_OS === '1') return false
 
   const exists = udevRuleExists()
   const isCurrent = exists && udevRuleIsCurrent()

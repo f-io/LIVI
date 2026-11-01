@@ -108,6 +108,7 @@ function installRule(): Promise<void> {
 
 export async function checkAndInstallHelperSudoers(window: BrowserWindow): Promise<void> {
   if (process.platform !== 'linux') return
+  if (process.env.LIVI_OS === '1') return
   if (helperSudoersExists()) return
   if (!pkexecAvailable()) {
     console.warn('[helperSudoers] pkexec not available — cannot install sudoers drop-in')

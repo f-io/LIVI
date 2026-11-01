@@ -112,6 +112,10 @@ Configure under Settings → Appearance → Contrast / Gamma and Settings → Ap
 
 The Dashboard is a WIP. While the IPC/socket telemetry payload already supports many signals, the UI exposes only a subset. Widgets and layouts will be extended over time.
 
+For the Raspberry Pi 4 Haltech CAN V2 receiver and TJD CarPiHAT wiring,
+configuration, and bring-up steps, see the
+[Haltech CAN wiring and setup guide](https://github.com/DrSkunk/livi-os-buildroot/blob/main/docs/HALTECH-CAN.md).
+
 ### Telemetry CLI (local)
 
 To push test data into a running LIVI, use the CLI in `scripts/tools`. The full
@@ -393,6 +397,11 @@ pnpm run build:linux:x64           # X86_64
 pnpm run build:mac:arm64           # Apple Silicon
 pnpm run build:mac:x64             # Intel
 ```
+
+Linux AppImages include `resources/livi-os-helper-api` to declare the launcher
+contract used by the immutable LIVI OS integration. Keep the marker and the
+`LIVI_OS=1` helper launch path in sync with the OS image's fixed privileged
+helper interface.
 
 
 ## Debugging

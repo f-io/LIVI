@@ -47,6 +47,7 @@ const originalPlatform = process.platform
 const originalResources = process.resourcesPath
 const originalPkexecUid = process.env.PKEXEC_UID
 const originalSudoUser = process.env.SUDO_USER
+const originalLiviOs = process.env.LIVI_OS
 
 beforeEach(() => {
   mockedExec.mockReset()
@@ -62,6 +63,7 @@ beforeEach(() => {
   ;(process as { resourcesPath?: string }).resourcesPath = undefined
   delete process.env.PKEXEC_UID
   delete process.env.SUDO_USER
+  delete process.env.LIVI_OS
 })
 
 afterEach(() => {
@@ -71,6 +73,8 @@ afterEach(() => {
   else process.env.PKEXEC_UID = originalPkexecUid
   if (originalSudoUser === undefined) delete process.env.SUDO_USER
   else process.env.SUDO_USER = originalSudoUser
+  if (originalLiviOs === undefined) delete process.env.LIVI_OS
+  else process.env.LIVI_OS = originalLiviOs
 })
 
 async function install(): Promise<string> {
@@ -111,6 +115,14 @@ describe('checkAndInstallHelperSudoers', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
     await checkAndInstallHelperSudoers(win)
     expect(mockedDialog).not.toHaveBeenCalled()
+  })
+
+  test('does not install a mutable sudoers rule in LIVI OS', async () => {
+    process.env.LIVI_OS = '1'
+    await checkAndInstallHelperSudoers(win)
+    expect(mockedDialog).not.toHaveBeenCalled()
+    expect(mockedSpawn).not.toHaveBeenCalled()
+    expect(mockedExec).not.toHaveBeenCalled()
   })
 
   test('skips when the rule is already active', async () => {

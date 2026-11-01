@@ -972,6 +972,21 @@ export const generalSchema: SettingsNode<Config> = {
           page: { title: 'Thumbnail Directory' }
         }
       ]
+    },
+    {
+      type: 'route',
+      route: 'vehicleTelemetry',
+      label: 'Vehicle Telemetry',
+      labelKey: 'settings.vehicleTelemetry',
+      path: '',
+      children: [
+        {
+          type: 'checkbox',
+          label: 'Receive Haltech CAN V2 telemetry (can0, 1 Mbit/s, listen-only)',
+          labelKey: 'settings.haltechCanEnabled',
+          path: 'haltechCanEnabled'
+        }
+      ]
     }
   ]
 }

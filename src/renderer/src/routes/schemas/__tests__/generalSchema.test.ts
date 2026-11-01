@@ -9,7 +9,21 @@ describe('generalSchema', () => {
     expect(schema.label).toBe('General')
     expect(schema.labelKey).toBe('settings.general')
     expect(schema.path).toBe('')
-    expect(schema.children).toHaveLength(12)
+    expect(schema.children).toHaveLength(13)
+    expect(schema.children[12]).toEqual(
+      expect.objectContaining({
+        type: 'route',
+        route: 'vehicleTelemetry',
+        labelKey: 'settings.vehicleTelemetry'
+      })
+    )
+    expect(schema.children[12].children[0]).toEqual(
+      expect.objectContaining({
+        type: 'checkbox',
+        path: 'haltechCanEnabled',
+        labelKey: 'settings.haltechCanEnabled'
+      })
+    )
   })
 
   test('connections route contains names, wifi and auto connect', () => {
