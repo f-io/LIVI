@@ -60,6 +60,16 @@ component Progress inherits Rectangle {
                 }
             }
             if root.can-seek: Rectangle {
+                width: root.knob-w + 16px;
+                height: root.knob-h + 16px;
+                y: (parent.height - self.height) / 2;
+                x: clamp(parent.width * root.shown - root.knob-w / 2, 0, parent.width - root.knob-w) - 8px;
+                border-radius: self.height / 2;
+                background: Focus.editing ? Theme.text.with-alpha(0.2) : Theme.highlight.with-alpha(0.3);
+                opacity: root.focused ? 1 : 0;
+                animate opacity, background { duration: 140ms; }
+            }
+            if root.can-seek: Rectangle {
                 width: root.knob-w;
                 height: root.knob-h;
                 y: (parent.height - self.height) / 2;

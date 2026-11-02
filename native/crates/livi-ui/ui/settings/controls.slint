@@ -4,6 +4,7 @@
 
 import { Theme } from "../theme.slint";
 import { Metrics } from "metrics.slint";
+import { Focus } from "../focus.slint";
 
 export component Switch inherits Rectangle {
     in property <bool> checked;
@@ -63,6 +64,7 @@ export component Slider inherits Rectangle {
     property <length> gap: root.pill * 0.36;
     property <bool> inside: root.fill >= label.preferred-width + 2 * root.gap;
     property <bool> lit: root.focused || root.dragging || touch.has-hover;
+    property <bool> active: Focus.editing && root.focused;
 
     min-height: root.pill;
     horizontal-stretch: 1;
@@ -74,6 +76,16 @@ export component Slider inherits Rectangle {
         background: root.tint.with-alpha(Theme.dark ? 0.26 : 0.18);
         drop-shadow-blur: root.lit ? 8px : 4px;
         drop-shadow-color: root.tint.with-alpha(root.lit ? 0.35 : 0.18);
+    }
+    Rectangle {
+        width: root.pill + 16px;
+        height: self.width;
+        x: clamp(root.fill, root.pill, parent.width) - root.pill / 2 - self.width / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: self.width / 2;
+        background: root.active ? Theme.text.with-alpha(0.2) : root.tint.with-alpha(0.3);
+        opacity: root.focused ? 1 : 0;
+        animate opacity, background { duration: 140ms; }
     }
     Rectangle {
         x: 0;

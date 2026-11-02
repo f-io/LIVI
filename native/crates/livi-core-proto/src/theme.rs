@@ -139,7 +139,13 @@ impl Cluster {
             return false;
         }
         let next = match self.shown.iter().position(|l| *l == self.layout) {
-            Some(at) => self.shown[(at as i32 + by).rem_euclid(n) as usize].clone(),
+            Some(at) => {
+                let to = (at as i32 + by).clamp(0, n - 1) as usize;
+                if to == at {
+                    return false;
+                }
+                self.shown[to].clone()
+            }
             None => self.shown[0].clone(),
         };
         self.select(&next, None)
@@ -332,16 +338,20 @@ mod tests {
     }
 
     #[test]
-    fn the_cluster_starts_on_the_first_layout_and_wraps_both_ways() {
+    fn the_cluster_starts_on_the_first_layout_and_stops_at_the_ends() {
         let mut c = fresh(livi_theme());
         assert_eq!(
             (c.layout.as_str(), c.palette.as_str()),
             ("livi.navMini", "default")
         );
-        assert!(c.step(-1));
-        assert_eq!(c.layout, "livi.clusterOnly");
-        assert!(c.step(1));
+        assert!(!c.step(-1));
         assert_eq!(c.layout, "livi.navMini");
+        assert!(c.step(1));
+        assert_ne!(c.layout, "livi.navMini");
+        assert!(c.step(-1));
+        assert_eq!(c.layout, "livi.navMini");
+        assert!(c.step(100));
+        assert!(!c.step(1));
     }
 
     #[test]
@@ -436,8 +446,8 @@ mod tests {
             c.layout, "livi.clusterFull",
             "the switched off layout is skipped"
         );
-        assert!(c.step(1));
-        assert_eq!(c.layout, "livi.clusterOnly", "round again");
+        assert!(!c.step(1));
+        assert_eq!(c.layout, "livi.clusterFull", "the last layout stays");
         assert!(!c.arrange(&slots), "same arrangement");
 
         let all_off: BTreeMap<_, _> = c

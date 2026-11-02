@@ -44,6 +44,7 @@ pub struct Context {
     pub streaming: bool,
     pub telemetry: bool,
     pub settings_depth: usize,
+    pub first: bool,
     pub repeat: bool,
 }
 
@@ -112,14 +113,22 @@ pub fn decide(code: &str, ctx: Context, config: &Value) -> Outcome {
 
     if ctx.telemetry && !in_nav && !form {
         if left {
-            return Outcome::Pager(-1);
+            return if ctx.first && !ctx.repeat {
+                Outcome::ToNav
+            } else {
+                Outcome::Pager(-1)
+            };
         }
         if right {
             return Outcome::Pager(1);
         }
     }
 
-    if form && !ctx.editing && code == "Backspace" {
+    if matches!(ctx.focused, Focused::Number | Focused::Text)
+        && in_main
+        && !ctx.editing
+        && code == "Backspace"
+    {
         return Outcome::Pass;
     }
 
@@ -146,8 +155,11 @@ pub fn decide(code: &str, ctx: Context, config: &Value) -> Outcome {
         if code == "Escape" || enter {
             return Outcome::StopEditing;
         }
-        if up || down {
-            return Outcome::Adjust(if up { 1 } else { -1 });
+        if up || right {
+            return Outcome::Adjust(1);
+        }
+        if down || left {
+            return Outcome::Adjust(-1);
         }
         return Outcome::Pass;
     }
@@ -194,8 +206,7 @@ pub fn decide(code: &str, ctx: Context, config: &Value) -> Outcome {
     if in_main && (enter || select_down) {
         return match ctx.focused {
             Focused::Plain => Outcome::Activate,
-            Focused::Slider => Outcome::Ignore,
-            Focused::Number | Focused::Text => {
+            Focused::Slider | Focused::Number | Focused::Text => {
                 if ctx.editing {
                     Outcome::StopEditing
                 } else {
@@ -208,12 +219,19 @@ pub fn decide(code: &str, ctx: Context, config: &Value) -> Outcome {
     if in_main && (left || up || right || down) {
         let delta = if left || up { -1 } else { 1 };
         return match ctx.focused {
-            Focused::Slider if left || right => Outcome::Adjust(delta),
+            Focused::Slider if ctx.editing && (left || right) => Outcome::Adjust(delta),
             Focused::Number if ctx.editing => {
                 if up || down {
                     Outcome::Adjust(-delta)
                 } else {
                     Outcome::Ignore
+                }
+            }
+            _ if delta < 0 && ctx.first && !ctx.repeat => {
+                if ctx.settings_depth > 0 {
+                    Outcome::SettingsBack
+                } else {
+                    Outcome::ToNav
                 }
             }
             _ => Outcome::MainStep(delta),
@@ -258,6 +276,7 @@ mod tests {
             streaming: false,
             telemetry: false,
             settings_depth: 0,
+            first: false,
             repeat: false,
         }
     }
@@ -333,11 +352,46 @@ mod tests {
     }
 
     #[test]
-    fn sliders_take_left_and_right() {
+    fn stepping_back_past_the_first_element_leaves_level_by_level() {
+        let mut c = ctx(Zone::Main);
+        c.first = true;
+        assert_eq!(decide("ArrowLeft", c, &config()), Outcome::ToNav);
+        assert_eq!(decide("ArrowUp", c, &config()), Outcome::ToNav);
+        assert_eq!(decide("ArrowRight", c, &config()), Outcome::MainStep(1));
+        c.settings_depth = 2;
+        assert_eq!(decide("ArrowLeft", c, &config()), Outcome::SettingsBack);
+        c.repeat = true;
+        assert_eq!(decide("ArrowLeft", c, &config()), Outcome::MainStep(-1));
+        c.repeat = false;
+        c.focused = Focused::Slider;
+        c.editing = true;
+        assert_eq!(decide("ArrowLeft", c, &config()), Outcome::Adjust(-1));
+    }
+
+    #[test]
+    fn the_first_dashboard_steps_back_to_the_nav() {
+        let mut c = ctx(Zone::Main);
+        c.telemetry = true;
+        assert_eq!(decide("ArrowLeft", c, &config()), Outcome::Pager(-1));
+        assert_eq!(decide("ArrowRight", c, &config()), Outcome::Pager(1));
+        c.first = true;
+        assert_eq!(decide("ArrowLeft", c, &config()), Outcome::ToNav);
+        assert_eq!(decide("ArrowRight", c, &config()), Outcome::Pager(1));
+    }
+
+    #[test]
+    fn sliders_adjust_only_after_enter() {
         let mut c = ctx(Zone::Main);
         c.focused = Focused::Slider;
+        assert_eq!(decide("ArrowLeft", c, &config()), Outcome::MainStep(-1));
+        assert_eq!(decide("ArrowRight", c, &config()), Outcome::MainStep(1));
+        assert_eq!(decide("Backspace", c, &config()), Outcome::ToNav);
+        assert_eq!(decide("Enter", c, &config()), Outcome::StartEditing);
+        c.editing = true;
         assert_eq!(decide("ArrowLeft", c, &config()), Outcome::Adjust(-1));
-        assert_eq!(decide("ArrowDown", c, &config()), Outcome::MainStep(1));
+        assert_eq!(decide("ArrowRight", c, &config()), Outcome::Adjust(1));
+        assert_eq!(decide("Enter", c, &config()), Outcome::StopEditing);
+        assert_eq!(decide("Backspace", c, &config()), Outcome::StopEditing);
     }
 
     #[test]
@@ -357,7 +411,8 @@ mod tests {
         assert_eq!(decide("ArrowDown", c, &config()), Outcome::Adjust(-1));
         assert_eq!(decide("Digit7", c, &config()), Outcome::Pass);
         assert_eq!(decide("Backspace", c, &config()), Outcome::Pass);
-        assert_eq!(decide("ArrowLeft", c, &config()), Outcome::Pass);
+        assert_eq!(decide("ArrowLeft", c, &config()), Outcome::Adjust(-1));
+        assert_eq!(decide("ArrowRight", c, &config()), Outcome::Adjust(1));
         assert_eq!(decide("Enter", c, &config()), Outcome::StopEditing);
     }
 

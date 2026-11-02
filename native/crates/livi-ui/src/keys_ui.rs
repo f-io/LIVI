@@ -17,7 +17,8 @@ use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
 use slint::{ComponentHandle, Model};
 
 use crate::{
-    AppWindow, DabState, Focus, FocusZone, Page, PhoneState, RowKind, ScreenKind, SettingsState,
+    AppWindow, DabState, DashState, Focus, FocusZone, Page, PhoneState, RowKind, ScreenKind,
+    SettingsState,
 };
 
 const SEEK_STEP_MS: f32 = 15_000.0;
@@ -434,6 +435,11 @@ fn context(ui: &AppWindow, repeat: bool) -> Context {
             crate::settings_ui::depth()
         } else {
             0
+        },
+        first: if page == Page::Telemetry {
+            ui.global::<DashState>().get_page_index() <= 0
+        } else {
+            f.get_main_index() <= 0
         },
         repeat,
     }

@@ -53,8 +53,15 @@ component StepButton inherits Rectangle {
     width: 72px;
     background: touch.pressed ? Theme.button-active : Theme.button;
     opacity: root.enabled ? 1 : 0.4;
-    border-width: root.focused ? 2px : 0;
-    border-color: Theme.primary;
+    Rectangle {
+        x: 6px;
+        y: 6px;
+        width: parent.width - 12px;
+        height: parent.height - 12px;
+        border-radius: 6px;
+        border-width: root.focused ? 2px : 0;
+        border-color: Theme.primary;
+    }
     Text {
         text: root.glyph;
         color: Theme.text;
@@ -109,6 +116,11 @@ export component NumberBody inherits VerticalLayout {
     changed value => {
         if (!root.holding) {
             root.current = root.value;
+        }
+    }
+    changed raw => {
+        if (root.editing) {
+            input.text = root.raw;
         }
     }
     changed editing => {
@@ -218,6 +230,7 @@ component GradientSlider inherits VerticalLayout {
     property <bool> dragging;
     property <float> drag;
     property <float> shown: dragging ? drag : level;
+    property <length> knob: clamp(Metrics.row-h * 0.5, 22px, 28px);
 
     spacing: 4px;
     Text {
@@ -239,7 +252,17 @@ component GradientSlider inherits VerticalLayout {
         Rectangle {
             x: 24px + (parent.width - 48px) * root.shown - self.width / 2;
             y: (parent.height - self.height) / 2;
-            width: clamp(Metrics.row-h * 0.5, 22px, 28px);
+            width: root.knob + 16px;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: Focus.editing ? Theme.text.with-alpha(0.2) : Theme.primary.with-alpha(0.3);
+            opacity: root.focused ? 1 : 0;
+            animate opacity, background { duration: 140ms; }
+        }
+        Rectangle {
+            x: 24px + (parent.width - 48px) * root.shown - self.width / 2;
+            y: (parent.height - self.height) / 2;
+            width: root.knob;
             height: self.width;
             border-radius: self.width / 2;
             background: white;

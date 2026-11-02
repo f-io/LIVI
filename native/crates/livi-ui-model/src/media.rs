@@ -11,6 +11,7 @@ use crate::settings::color::{Hsl, from_hsl};
 const STALL: Duration = Duration::from_millis(3000);
 const OPTIMISTIC: Duration = Duration::from_millis(4000);
 const JUMP_BACK_MS: f64 = 500.0;
+const SEEK_HOLD: Duration = Duration::from_millis(1000);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Shown {
@@ -61,6 +62,7 @@ pub struct Playback {
     last_fraction: f32,
     last_elapsed: f64,
     track: String,
+    seek_until: Option<Instant>,
 }
 
 impl Playback {
@@ -88,14 +90,23 @@ impl Playback {
             self.last_progress = Some(now);
             self.stalled = false;
         }
-        self.live = elapsed_ms.unwrap_or(0.0);
-        self.at = Some(now);
+        if self.seek_until.is_none_or(|until| now >= until) {
+            self.live = elapsed_ms.unwrap_or(0.0);
+            self.at = Some(now);
+        }
         self.guess.settle(playing);
     }
 
     pub fn toggled(&mut self, now: Instant) {
         let real = self.real_playing();
         self.guess.toggle(real, now);
+    }
+
+    pub fn seek(&mut self, position_ms: f64, now: Instant) {
+        self.live = position_ms.clamp(0.0, self.duration);
+        self.at = Some(now);
+        self.back_once = true;
+        self.seek_until = Some(now + SEEK_HOLD);
     }
 
     pub fn went_back(&mut self) {
@@ -338,6 +349,19 @@ mod tests {
         assert_eq!(p.tick(at(t0, 10)).progress, first);
         p.update("a", 100_000.0, Some(10_000.0), true, at(t0, 20));
         assert!(p.tick(at(t0, 20)).progress < first);
+    }
+
+    #[test]
+    fn a_seek_holds_its_target_until_the_phone_caught_up() {
+        let t0 = Instant::now();
+        let mut p = Playback::default();
+        p.update("a", 100_000.0, Some(50_000.0), true, t0);
+        p.tick(t0);
+        p.seek(20_000.0, at(t0, 100));
+        p.update("a", 100_000.0, Some(50_200.0), true, at(t0, 300));
+        assert!((p.tick(at(t0, 300)).elapsed_ms - 20_200.0).abs() < 1.0);
+        p.update("a", 100_000.0, Some(21_000.0), true, at(t0, 1_200));
+        assert!((p.tick(at(t0, 1_200)).elapsed_ms - 21_000.0).abs() < 1.0);
     }
 
     #[test]
