@@ -115,7 +115,7 @@ fn apply_look(ui: &AppWindow, look: Look) {
     ui.set_stream_height(look.stream.1);
     let tabs: Vec<TabData> = look.tabs.iter().copied().map(tab).collect();
     if !tabs.iter().any(|t| t.page == ui.get_page()) {
-        choose(ui, Page::Media);
+        choose(ui, tabs.first().map_or(Page::Settings, |t| t.page));
     }
     ui.set_tabs(ModelRc::from(Rc::new(VecModel::from(tabs))));
     ui.set_projection_icon(tab(Tab::Projection).icon);

@@ -139,6 +139,8 @@ pub struct Config {
     pub sun_latitude: f64,
     pub sun_longitude: f64,
     pub ui_style: UiStyle,
+    #[serde(default)]
+    pub sidebar_tabs: SidebarTabs,
 
     pub display_mode: PerScreen<String>,
     pub display_connector: PerScreen<String>,
@@ -203,6 +205,30 @@ pub struct Config {
     pub bindings: KeyBindings,
 
     pub games: GamesConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SidebarTabs {
+    pub projection: bool,
+    pub telemetry: bool,
+    pub media: bool,
+    pub camera: bool,
+    pub games: bool,
+    pub minidsp: bool,
+}
+
+impl Default for SidebarTabs {
+    fn default() -> Self {
+        Self {
+            projection: true,
+            telemetry: true,
+            media: true,
+            camera: true,
+            games: true,
+            minidsp: true,
+        }
+    }
 }
 
 pub const DEFAULT_ROM_DIRECTORY: &str = "~/Games/roms";
@@ -596,6 +622,7 @@ pub fn defaults() -> Config {
         sun_latitude: 0.0,
         sun_longitude: 0.0,
         ui_style: UiStyle::Comand,
+        sidebar_tabs: SidebarTabs::default(),
         display_mode: PerScreen::default(),
         display_connector: PerScreen::default(),
         display_gamma: 1.0,
@@ -787,5 +814,18 @@ mod tests {
             serde_json::from_value::<UiStyle>(serde_json::json!("standard")).unwrap(),
             UiStyle::Standard
         );
+    }
+
+    #[test]
+    fn sidebar_tabs_default_to_visible_and_accept_older_config_files() {
+        let mut saved = serde_json::to_value(defaults()).unwrap();
+        saved.as_object_mut().unwrap().remove("sidebarTabs");
+        let config: Config = serde_json::from_value(saved).unwrap();
+        assert_eq!(config.sidebar_tabs, SidebarTabs::default());
+
+        let partial: SidebarTabs =
+            serde_json::from_value(serde_json::json!({ "media": false })).unwrap();
+        assert!(!partial.media);
+        assert!(partial.projection);
     }
 }

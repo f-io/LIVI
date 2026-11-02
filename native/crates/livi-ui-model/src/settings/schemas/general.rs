@@ -437,6 +437,43 @@ fn tab_settings() -> Node {
         Label::new("settings.tabSettings", "Tab Settings"),
         vec![
             Node::route(
+                "sidebar",
+                Label::new("settings.sidebar", "Sidebar"),
+                vec![
+                    Node::checkbox(
+                        Label::new("settings.showProjectionTab", "Show Projection"),
+                        "sidebarTabs.projection",
+                    )
+                    .icon("projection"),
+                    Node::checkbox(
+                        Label::new("settings.showDashboardTab", "Show Dashboard"),
+                        "sidebarTabs.telemetry",
+                    )
+                    .icon("dashboards"),
+                    Node::checkbox(
+                        Label::new("settings.showMediaTab", "Show Media"),
+                        "sidebarTabs.media",
+                    )
+                    .icon("media"),
+                    Node::checkbox(
+                        Label::new("settings.showCameraTab", "Show Camera"),
+                        "sidebarTabs.camera",
+                    )
+                    .icon("camera"),
+                    Node::checkbox(
+                        Label::new("settings.showGamesTab", "Show Games"),
+                        "sidebarTabs.games",
+                    )
+                    .icon("games"),
+                    Node::checkbox(
+                        Label::new("settings.showMiniDspTab", "Show MiniDSP"),
+                        "sidebarTabs.minidsp",
+                    )
+                    .icon("minidsp"),
+                ],
+            )
+            .icon("tabSettings"),
+            Node::route(
                 "dashboard",
                 Label::new("settings.dashboard", "Dashboard"),
                 [

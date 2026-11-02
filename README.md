@@ -338,6 +338,8 @@ The Dash and Aux windows are freely assignable and can show the Dashes, the reve
 Configure each window under Settings → General → Screen Settings
 (Main Screen / Cluster Screen / Aux Screen), and assign features under
 Settings → General → Tab Settings.
+Use Tab Settings → Sidebar to choose which page tabs appear in the main window's sidebar.
+Settings remains available, and feature availability (such as an active camera) still applies.
 
 <p align="center">
   <img src="docs/media/multi-display/cluster.png" alt="Dash Screen" width="70%" />

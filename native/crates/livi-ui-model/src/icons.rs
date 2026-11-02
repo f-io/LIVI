@@ -42,6 +42,7 @@ const SETTINGS: &[(&str, &str)] = &[
     ("dpi", "GrainOutlined"),
     ("viewArea", "CropOutlined"),
     ("safeArea", "CropFreeOutlined"),
+    ("projection", "CropPortraitOutlined"),
     ("drawOutside", "BorderStyleOutlined"),
     ("edgeTop", "VerticalAlignTopOutlined"),
     ("edgeBottom", "VerticalAlignBottomOutlined"),

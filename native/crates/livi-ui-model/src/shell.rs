@@ -48,6 +48,10 @@ fn on_main(config: &Value, key: &str, default: bool) -> bool {
     config[key]["main"].as_bool().unwrap_or(default)
 }
 
+fn on_sidebar(config: &Value, key: &str) -> bool {
+    config["sidebarTabs"][key].as_bool().unwrap_or(true)
+}
+
 pub fn hex_color(text: &str) -> Option<[u8; 3]> {
     let hex = text.trim().trim_start_matches('#');
     if hex.len() != 6 {
@@ -59,20 +63,23 @@ pub fn hex_color(text: &str) -> Option<[u8; 3]> {
 
 pub fn tabs(config: &Value) -> Vec<Tab> {
     let camera_ready = config["cameraId"].as_str().is_some_and(|id| !id.is_empty());
-    let mut tabs = vec![Tab::Projection];
-    if on_main(config, "dashboard", false) {
+    let mut tabs = Vec::new();
+    if on_sidebar(config, "projection") {
+        tabs.push(Tab::Projection);
+    }
+    if on_main(config, "dashboard", false) && on_sidebar(config, "telemetry") {
         tabs.push(Tab::Telemetry);
     }
-    if on_main(config, "media", true) {
+    if on_main(config, "media", true) && on_sidebar(config, "media") {
         tabs.push(Tab::Media);
     }
-    if on_main(config, "camera", true) && camera_ready {
+    if on_main(config, "camera", true) && camera_ready && on_sidebar(config, "camera") {
         tabs.push(Tab::Camera);
     }
-    if config["games"]["enabled"].as_bool().unwrap_or(false) {
+    if config["games"]["enabled"].as_bool().unwrap_or(false) && on_sidebar(config, "games") {
         tabs.push(Tab::Games);
     }
-    if config["minidsp"]["enabled"].as_bool().unwrap_or(false) {
+    if config["minidsp"]["enabled"].as_bool().unwrap_or(false) && on_sidebar(config, "minidsp") {
         tabs.push(Tab::MiniDsp);
     }
     tabs.push(Tab::Settings);
@@ -173,6 +180,22 @@ mod tests {
         assert_eq!(
             tabs(&json!({ "minidsp": { "enabled": false } })),
             vec![Tab::Projection, Tab::Media, Tab::Settings]
+        );
+    }
+
+    #[test]
+    fn sidebar_tabs_can_be_hidden_without_disabling_their_features() {
+        assert_eq!(
+            tabs(&json!({
+                "dashboard": { "main": true },
+                "media": { "main": true },
+                "sidebarTabs": {
+                    "projection": false,
+                    "telemetry": false,
+                    "media": false
+                }
+            })),
+            vec![Tab::Settings]
         );
     }
 
