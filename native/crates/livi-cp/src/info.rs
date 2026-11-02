@@ -34,6 +34,17 @@ pub struct Insets {
     pub right: i64,
 }
 
+impl Insets {
+    fn within(self, outer: Insets) -> Insets {
+        Insets {
+            top: self.top.max(outer.top),
+            bottom: self.bottom.max(outer.bottom),
+            left: self.left.max(outer.left),
+            right: self.right.max(outer.right),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct DisplayConfig {
     pub width_pixels: i64,
@@ -184,7 +195,7 @@ fn area(d: &DisplayConfig) -> Option<Value> {
         ("originXPixels".to_string(), num(va.left)),
         ("originYPixels".to_string(), num(va.top)),
     ];
-    if let Some(sa) = d.safe_area {
+    if let Some(sa) = d.safe_area.map(|sa| sa.within(va)) {
         let mut safe = vec![
             ("widthPixels".to_string(), num(w - sa.left - sa.right)),
             ("heightPixels".to_string(), num(h - sa.top - sa.bottom)),
@@ -732,6 +743,42 @@ pub(crate) mod tests {
         let mut cfg = sample();
         cfg.main.status_bar_edge = Some(1);
         assert_eq!(edge(&build(&cfg)), Some(Value::Int(1)));
+    }
+
+    #[test]
+    fn the_safe_area_stays_inside_the_view_area() {
+        let safe = |cfg: &InfoConfig| {
+            let info = build(cfg);
+            let main = &info.get("displays").and_then(Value::as_array).unwrap()[0];
+            let area = &main.get("viewAreas").and_then(Value::as_array).unwrap()[0];
+            let safe = area.get("safeArea").unwrap();
+            [
+                "widthPixels",
+                "heightPixels",
+                "originXPixels",
+                "originYPixels",
+            ]
+            .map(|k| safe.get(k).cloned().unwrap())
+        };
+        let mut cfg = sample();
+        cfg.main.view_area = Some(Insets {
+            bottom: 24,
+            ..Default::default()
+        });
+        assert_eq!(
+            safe(&cfg),
+            [1260, 696, 10, 0].map(Value::Int),
+            "a safe area of 0 keeps to the view area"
+        );
+        cfg.main.safe_area = Some(Insets {
+            bottom: 40,
+            ..Default::default()
+        });
+        assert_eq!(
+            safe(&cfg),
+            [1280, 680, 0, 0].map(Value::Int),
+            "a larger safe area stays as set"
+        );
     }
 
     #[test]
