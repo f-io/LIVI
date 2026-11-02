@@ -4,9 +4,9 @@
 
 # LIVI – Linux In-Vehicle Infotainment
 
-LIVI is an open-source **Apple CarPlay and Android Auto head unit**.
+LIVI is an open-source Apple CarPlay and Android Auto head unit built in Rust with a Slint UI.
 
-It is a standalone cross-platform head unit with a native, zero-copy GStreamer video pipeline and hardware-accelerated decoding across Linux (from x86_64 and arm64 desktops to embedded boards like the Raspberry Pi) and macOS, with low-latency audio, multitouch + D-Pad navigation, and support for very small embedded/OEM displays.
+It runs on Linux desktops and embedded boards as well as on macOS and Android (experimental). A native zero-copy GStreamer pipeline handles hardware-decoded video and low-latency audio. Multitouch and D-Pad navigation are built in, and it works even on very small embedded and OEM displays.
 
 ## Project Status
 
@@ -18,8 +18,8 @@ It is a standalone cross-platform head unit with a native, zero-copy GStreamer v
 
 ## Native Connectivity
 
-- **Apple CarPlay** (wired & wireless) on Linux and Mac, requires [MFi Authentication](#mfi-authentication)
-- **Android Auto** (wired & wireless) on Linux and Mac, wireless on Mac requires a [LIVI Link](LIVI-LINK.md)
+- **Apple CarPlay** (wired & wireless) on Linux and Mac, wired on Android - requires MFi Authentication
+- **Android Auto** (wired & wireless) on Linux and Mac, wired on Android - wireless on Mac requires a LIVI Link
 
 ## Native Apple CarPlay Ultra
 
@@ -313,8 +313,20 @@ In that case:
 
 After this, the app will launch normally and future updates will work without additional steps.
 
+## Android (arm64) – Experimental
+
+> [!WARNING]
+> The Android port is experimental and only part of the nightly builds. It is tested on a Raspberry Pi 5 with AOSP Android 17 and on a Pixel 8 with GrapheneOS.
+
+Install `LIVI-*-android-arm64.apk` on Android 10 or newer.
+
+- Wired CarPlay and wired Android Auto, wireless is not supported yet
+- CarPlay asks once for a local VPN, LIVI uses it to reach the iPhone over USB. Android runs one VPN at a time, so turn other VPNs off
+
 ## Build Environment
 
+![rust](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-rust.json)
+![slint](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-slint.json)
 ![gstreamer](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-gstreamer.json)
 
 ### System Requirements (build)
@@ -379,6 +391,9 @@ cargo xtask package-linux
 # macOS
 cargo xtask package-mac
 cargo xtask package-mac --arch x64    # Intel on Apple Silicon
+
+# Android, needs cargo-ndk and the SDK and NDK named in android/gradle.properties
+cargo xtask package-android
 
 # Native binaries only
 cargo xtask build-native
