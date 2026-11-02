@@ -89,10 +89,11 @@ pub fn released(code: &str, config: &Value) -> Option<String> {
 pub fn decide(code: &str, ctx: Context, config: &Value) -> Outcome {
     let b = |name: &str| binding(config, name);
     let is = |name: &str, fallback: &str| code == or(b(name), fallback);
-    let left = is("left", "ArrowLeft");
-    let right = is("right", "ArrowRight");
-    let up = is("up", "ArrowUp");
-    let down = is("down", "ArrowDown");
+    let knob = |name: &str| !b(name).is_empty() && code == b(name);
+    let left = is("left", "ArrowLeft") || knob("knobLeft");
+    let right = is("right", "ArrowRight") || knob("knobRight");
+    let up = is("up", "ArrowUp") || knob("knobUp");
+    let down = is("down", "ArrowDown") || knob("knobDown");
     let back = (!b("back").is_empty() && code == b("back")) || code == "Escape";
     let enter = code == "Enter" || code == "NumpadEnter";
     let select_down = !b("selectDown").is_empty() && code == b("selectDown");
@@ -299,6 +300,27 @@ mod tests {
             decide("Enter", ctx(Zone::Nav), &config()),
             Outcome::NavOpen { enter_main: true }
         );
+    }
+
+    #[test]
+    fn the_knob_moves_like_the_arrows() {
+        let mut config = config();
+        config["bindings"]["knobLeft"] = json!("KeyQ");
+        config["bindings"]["knobRight"] = json!("KeyE");
+        config["bindings"]["knobDown"] = json!("KeyX");
+        assert_eq!(
+            decide("KeyQ", ctx(Zone::Nav), &config),
+            Outcome::NavStep(-1)
+        );
+        assert_eq!(
+            decide("KeyE", ctx(Zone::Main), &config),
+            Outcome::MainStep(1)
+        );
+        assert_eq!(decide("KeyX", ctx(Zone::None), &config), Outcome::EnterMain);
+        let mut c = ctx(Zone::Main);
+        c.projection = true;
+        c.streaming = true;
+        assert_eq!(decide("KeyE", c, &config), Outcome::ToCore("KeyE".into()));
     }
 
     #[test]
