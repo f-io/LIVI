@@ -25,6 +25,7 @@ use jni::{EnvUnowned, JValue, jni_sig, jni_str};
 use livi_core::{Exit, Helper, Installer, Instance, MediaHost, Paths, Resources};
 use livi_helper::embedded::{Embedded, Host};
 use slint::android::AndroidApp;
+use slint::android::android_activity::WindowManagerFlags;
 
 const CORE_START: Duration = Duration::from_secs(15);
 
@@ -40,6 +41,10 @@ fn android_main(app: AndroidApp) {
 
 fn start(app: AndroidApp) -> Result<(), Box<dyn std::error::Error>> {
     activity::set(&app);
+    app.set_window_flags(
+        WindowManagerFlags::KEEP_SCREEN_ON,
+        WindowManagerFlags::empty(),
+    );
     let socket = CORE.get_or_init(|| core(&app)).clone()?;
     slint::android::init(app.clone())?;
     livi_ui::run(
