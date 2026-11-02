@@ -38,16 +38,32 @@ use livi_ui_model::shell::{Look, Tab, ui_scale};
 slint::include_modules!();
 
 type Kiosk = Box<dyn Fn(bool)>;
+type Pick = Box<dyn Fn()>;
 
 thread_local! {
     static CLIENT: RefCell<Option<Client>> = const { RefCell::new(None) };
     static MAIN: RefCell<Option<Weak<AppWindow>>> = const { RefCell::new(None) };
     static KIOSK: RefCell<Option<Kiosk>> = const { RefCell::new(None) };
+    static PICK: RefCell<Option<Pick>> = const { RefCell::new(None) };
     static BASE_SCALE: Cell<Option<f32>> = const { Cell::new(None) };
     static ZOOM: Cell<f32> = const { Cell::new(1.0) };
 }
 
 const BANDS: usize = 24;
+
+pub(crate) fn system_pick() -> bool {
+    PICK.with_borrow(|p| p.as_ref().map(|pick| pick()).is_some())
+}
+
+pub fn file_picked(path: &std::path::Path) {
+    let Some(weak) = MAIN.with_borrow(Clone::clone) else {
+        return;
+    };
+    let Some(client) = CLIENT.with_borrow(Clone::clone) else {
+        return;
+    };
+    settings_ui::file_picked(&weak, &client, path);
+}
 
 pub(crate) fn apply_zoom(ui: &AppWindow) {
     let Some(base) = BASE_SCALE.get() else { return };
@@ -411,8 +427,10 @@ pub fn run(
     connect: impl FnOnce() -> std::io::Result<UnixStream>,
     fixture: Option<Value>,
     kiosk: impl Fn(bool) + 'static,
+    pick: Option<Pick>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     KIOSK.with_borrow_mut(|k| *k = Some(Box::new(kiosk)));
+    PICK.with_borrow_mut(|p| *p = pick);
     let ui = AppWindow::new()?;
     slint::set_xdg_app_id(
         std::env::var("LIVI_OUTPUT_APP_ID").unwrap_or_else(|_| "dev.f-io.livi".into()),

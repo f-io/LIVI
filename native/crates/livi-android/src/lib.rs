@@ -13,12 +13,13 @@ mod planes;
 mod update;
 
 use std::os::fd::{FromRawFd, OwnedFd};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use iap2_usbmux::TunRequest;
-use jni::objects::{JClass, JObject};
+use jni::errors::LogErrorAndDefault;
+use jni::objects::{JClass, JObject, JString};
 use jni::sys::{jboolean, jfloat, jint};
 use jni::{EnvUnowned, JValue, jni_sig, jni_str};
 use livi_core::{Exit, Helper, Installer, Instance, MediaHost, Paths, Resources};
@@ -49,6 +50,7 @@ fn start(app: AndroidApp) -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("[android] kiosk: {e}");
             }
         },
+        Some(Box::new(pick)),
     )?;
     if let Some(&restart) = CORE_EXIT.get() {
         call(jni_str!("exit"), restart)?;
@@ -120,6 +122,16 @@ fn call(method: &jni::strings::JNIStr, flag: bool) -> jni::errors::Result<()> {
     })
 }
 
+fn pick() {
+    let opened = activity::with(|env, activity| {
+        env.call_method(activity, jni_str!("pick"), jni_sig!("()V"), &[])
+            .map(drop)
+    });
+    if let Err(e) = opened {
+        eprintln!("[android] file picker: {e}");
+    }
+}
+
 fn tun(request: &TunRequest) -> Result<OwnedFd, String> {
     let fd = activity::with(|env, activity| {
         let address = env.new_string(request.address.to_string())?;
@@ -158,6 +170,20 @@ extern "system" fn Java_dev_fio_livi_LiviActivity_screen<'caller>(
         px(width_px),
         px(height_px),
     );
+}
+
+#[unsafe(no_mangle)]
+extern "system" fn Java_dev_fio_livi_LiviActivity_picked<'caller>(
+    mut env: EnvUnowned<'caller>,
+    _class: JClass<'caller>,
+    path: JString<'caller>,
+) {
+    let path = env
+        .with_env(|env| path.try_to_string(env))
+        .resolve::<LogErrorAndDefault>();
+    if !path.is_empty() {
+        let _ = slint::invoke_from_event_loop(move || livi_ui::file_picked(Path::new(&path)));
+    }
 }
 
 #[unsafe(no_mangle)]

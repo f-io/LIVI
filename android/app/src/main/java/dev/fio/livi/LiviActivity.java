@@ -14,6 +14,7 @@ import android.content.IntentFilter;
 import android.content.pm.PackageInstaller;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.FileUtils;
@@ -33,6 +34,7 @@ import android.view.WindowInsetsController;
 import android.widget.FrameLayout;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -45,6 +47,7 @@ import org.freedesktop.gstreamer.GStreamer;
 public class LiviActivity extends NativeActivity {
     private static final float MM_PER_INCH = 25.4f;
     private static final int PERMISSIONS_REQUEST = 2;
+    private static final int PICK_REQUEST = 3;
     private static final String INSTALLED = "dev.fio.livi.INSTALLED";
 
     private final SparseArray<SurfaceView> planes = new SparseArray<>();
@@ -61,6 +64,8 @@ public class LiviActivity extends NativeActivity {
     private static native void surface(int plane, Surface surface);
 
     private static native void screen(int widthPx, int heightPx, float widthMm, float heightMm);
+
+    private static native void picked(String path);
 
     @Override
     protected void onCreate(Bundle state) {
@@ -279,6 +284,38 @@ public class LiviActivity extends NativeActivity {
         } finally {
             unregisterReceiver(receiver);
         }
+    }
+
+    private void pick() {
+        runOnUiThread(() -> startActivityForResult(
+                new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                        .addCategory(Intent.CATEGORY_OPENABLE)
+                        .setType("*/*"),
+                PICK_REQUEST));
+    }
+
+    @Override
+    protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request == PICK_REQUEST && result == RESULT_OK && data != null && data.getData() != null) {
+            Uri uri = data.getData();
+            new Thread(() -> copy(uri)).start();
+        }
+    }
+
+    private void copy(Uri uri) {
+        File picked = new File(getCacheDir(), "picked");
+        try (InputStream in = getContentResolver().openInputStream(uri);
+                OutputStream out = new FileOutputStream(picked)) {
+            if (in == null) {
+                throw new IOException("nothing to read at " + uri);
+            }
+            FileUtils.copy(in, out);
+        } catch (IOException e) {
+            Log.w("livi", "[pick] " + e);
+            return;
+        }
+        picked(picked.getPath());
     }
 
     private int tun(String address, int prefix, int mtu) {

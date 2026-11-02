@@ -71,6 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         || connect(started_by_core, &mut core, &quit_code, &planes),
         fixture,
         |_| {},
+        None,
     )?;
 
     let code = match core {
