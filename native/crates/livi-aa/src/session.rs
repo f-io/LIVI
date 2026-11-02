@@ -240,6 +240,7 @@ where
     let mic_path = format!("{node_path}.mic");
     let _mic_path = SocketPath(mic_path.clone());
     let (mic_tx, mut mic_rx) = mpsc::channel::<(u64, Vec<u8>)>(64);
+    let _ = std::fs::remove_file(&mic_path);
     match UnixListener::bind(&mic_path) {
         Ok(listener) => {
             let _ = std::fs::set_permissions(&mic_path, std::fs::Permissions::from_mode(0o666));

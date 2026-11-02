@@ -31,7 +31,6 @@ export component AppWindow inherits Window {
     in property <MaskData> main-mask;
     in property <bool> camera-found;
     in property <string> no-camera: "No camera found";
-    in property <string> status;
 
     in property <string> track-title;
     in property <string> artist;
@@ -90,20 +89,31 @@ export component AppWindow inherits Window {
     min-height: 200px;
     background: transparent;
 
-    changed height => { Ui.height = self.height; }
-    changed width => { Ui.width = self.width; }
+    out property <length> content-left: self.safe-area-insets.left;
+    out property <length> content-top: self.safe-area-insets.top;
+    out property <length> content-width: self.width - self.safe-area-insets.left - self.safe-area-insets.right;
+    out property <length> content-height: self.height - self.safe-area-insets.top - self.safe-area-insets.bottom;
+
+    changed content-height => { Ui.height = self.content-height; }
+    changed content-width => { Ui.width = self.content-width; }
     init => {
-        Ui.height = self.height;
-        Ui.width = self.width;
+        Ui.height = self.content-height;
+        Ui.width = self.content-width;
         root.wake-nav();
     }
 
     if root.page == Page.telemetry: Dashboard {
-        width: root.width;
-        height: root.height;
+        x: root.content-left;
+        y: root.content-top;
+        width: root.content-width;
+        height: root.content-height;
     }
 
     HorizontalLayout {
+        x: root.content-left;
+        y: root.content-top;
+        width: root.content-width;
+        height: root.content-height;
         if !root.right-hand && !root.nav-hidden: Nav {
             tabs: root.tabs;
             active: root.page;
@@ -162,13 +172,6 @@ export component AppWindow inherits Window {
                     font-size: 20px;
                 }
             }
-            if root.status != "": Text {
-                x: 16px;
-                y: parent.height - 32px;
-                text: root.status;
-                color: #ff8a80;
-                font-size: 14px;
-            }
         }
         if root.right-hand && !root.nav-hidden: Nav {
             tabs: root.tabs;
@@ -185,14 +188,14 @@ export component AppWindow inherits Window {
     }
 
     LevelOverlay {
-        window-width: root.width;
-        x: (root.width - self.width) / 2;
-        y: 16px;
+        window-width: root.content-width;
+        x: root.content-left + (root.content-width - self.width) / 2;
+        y: root.content-top + 16px;
     }
     PhoneOverlay {
-        window-width: root.width;
-        x: root.width - self.width - 16px;
-        y: 16px;
+        window-width: root.content-width;
+        x: root.content-left + root.content-width - self.width - 16px;
+        y: root.content-top + 16px;
     }
     if TouchCalibrationState.active: TouchCalibration {
         width: root.width;

@@ -10,18 +10,11 @@ use livi_session_io::line::LineSock;
 use serde_json::Value;
 use tokio::sync::mpsc;
 
-pub const SOCK_PATH: &str = "/tmp/aa-bt.sock";
 const TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 pub struct AaHelperSock {
     sock: LineSock,
-}
-
-impl Default for AaHelperSock {
-    fn default() -> Self {
-        Self::new(SOCK_PATH)
-    }
 }
 
 impl AaHelperSock {
@@ -164,7 +157,6 @@ pub(crate) mod tests {
                 .unwrap_err()
                 .starts_with("aa sock error")
         );
-        assert_eq!(AaHelperSock::default().sock.path(), Path::new(SOCK_PATH));
     }
 
     #[tokio::test]

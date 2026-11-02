@@ -101,7 +101,7 @@ fn watch_liveness(stream: &TcpStream) {
         );
     };
     set(libc::SOL_SOCKET, libc::SO_KEEPALIVE, 1);
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     set(libc::IPPROTO_TCP, libc::TCP_KEEPIDLE, KEEPALIVE_IDLE);
     #[cfg(target_os = "macos")]
     set(libc::IPPROTO_TCP, libc::TCP_KEEPALIVE, KEEPALIVE_IDLE);

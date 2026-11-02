@@ -163,11 +163,19 @@ pub enum AaCmd {
 #[derive(Clone)]
 pub struct AaHandle {
     cmds: mpsc::UnboundedSender<AaCmd>,
+    phones: watch::Receiver<usize>,
 }
 
 impl AaHandle {
     pub fn from_sender(cmds: mpsc::UnboundedSender<AaCmd>) -> Self {
-        Self { cmds }
+        Self {
+            cmds,
+            phones: watch::channel(0).1,
+        }
+    }
+
+    pub async fn phones_gone(&self) {
+        let _ = self.phones.clone().wait_for(|n| *n == 0).await;
     }
 
     pub fn send(&self, cmd: AaCmd) {
@@ -200,6 +208,7 @@ struct Manager<M: AaMedia> {
     events: mpsc::UnboundedSender<AaEvent>,
     session_events: mpsc::UnboundedSender<AaEvent>,
     attached_tx: mpsc::UnboundedSender<Attached>,
+    phones: watch::Sender<usize>,
     next_id: SessionId,
     sessions: HashMap<SessionId, Entry>,
     attached: bool,
@@ -214,8 +223,9 @@ pub fn start<M: AaMedia>(
     events: mpsc::UnboundedSender<AaEvent>,
 ) -> AaHandle {
     let (cmds, cmd_rx) = mpsc::unbounded_channel();
-    tokio::spawn(run(helper, media, config, cmd_rx, events));
-    AaHandle { cmds }
+    let (phones_tx, phones) = watch::channel(0);
+    tokio::spawn(run(helper, media, config, cmd_rx, events, phones_tx));
+    AaHandle { cmds, phones }
 }
 
 async fn feed_recv(feed: &mut Option<mpsc::UnboundedReceiver<Feed>>) -> Option<Feed> {
@@ -231,6 +241,7 @@ async fn run<M: AaMedia>(
     mut config: watch::Receiver<AaConfig>,
     mut cmds: mpsc::UnboundedReceiver<AaCmd>,
     events: mpsc::UnboundedSender<AaEvent>,
+    phones: watch::Sender<usize>,
 ) {
     let (session_events, mut session_rx) = mpsc::unbounded_channel();
     let (attached_tx, mut attached_rx) = mpsc::unbounded_channel();
@@ -242,6 +253,7 @@ async fn run<M: AaMedia>(
         events,
         session_events,
         attached_tx,
+        phones,
         next_id: 1,
         sessions: HashMap::new(),
         attached: true,
@@ -284,7 +296,7 @@ async fn run<M: AaMedia>(
         }
     }
     for entry in m.sessions.values() {
-        let _ = entry.cmds.send(SessionCmd::Close);
+        let _ = entry.cmds.send(SessionCmd::PowerDown);
     }
     let Manager {
         events,
@@ -375,7 +387,9 @@ impl<M: AaMedia> Manager<M> {
             usb_serial,
             peer,
         });
-        tokio::spawn(driver::run(
+        self.phones.send_modify(|n| *n += 1);
+        let phones = self.phones.clone();
+        let phone = driver::run(
             id,
             link,
             reader,
@@ -384,7 +398,11 @@ impl<M: AaMedia> Manager<M> {
             self.cluster_stream_active,
             cmd_rx,
             self.session_events.clone(),
-        ));
+        );
+        tokio::spawn(async move {
+            phone.await;
+            phones.send_modify(|n| *n -= 1);
+        });
     }
 
     fn supersede_wireless(&mut self, ip: &str) {

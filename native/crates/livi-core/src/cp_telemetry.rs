@@ -360,7 +360,7 @@ mod tests {
     fn the_cluster_follows_the_night_mode_until_it_has_its_own() {
         let (tx, mut cmds) = mpsc::unbounded_channel();
         let cp = CpHandle::from_sender(tx);
-        let mut t = CpTelemetry::new(HelperSock::default());
+        let mut t = CpTelemetry::new(HelperSock::new("/nonexistent/cp-bt.sock"));
         let day = obj(json!({ "nightMode": false }));
         t.follow(&Map::new(), &day, &cp);
         assert_eq!(cmds.try_recv(), Ok(CpCmd::NightMode(false)));
@@ -388,7 +388,7 @@ mod tests {
     fn a_notification_opens_with_its_fields_and_closes() {
         let (tx, mut cmds) = mpsc::unbounded_channel();
         let cp = CpHandle::from_sender(tx);
-        let mut t = CpTelemetry::new(HelperSock::default());
+        let mut t = CpTelemetry::new(HelperSock::new("/nonexistent/cp-bt.sock"));
         let open = obj(json!({ "notification": {
             "title": "Frost", "text": "Glätte möglich", "symbol": "snowflake", "open": true
         } }));
@@ -419,7 +419,7 @@ mod tests {
     fn climate_set_outside_the_phone_reaches_it_and_a_new_session_starts_from_the_store() {
         let (tx, mut cmds) = mpsc::unbounded_channel();
         let cp = CpHandle::from_sender(tx);
-        let mut t = CpTelemetry::new(HelperSock::default());
+        let mut t = CpTelemetry::new(HelperSock::new("/nonexistent/cp-bt.sock"));
         let first = obj(json!({ "climate": { "auto": true, "fanLevel": 3, "source": "default" } }));
         let second =
             obj(json!({ "climate": { "auto": true, "fanLevel": 5, "source": "external" } }));
@@ -452,7 +452,7 @@ mod tests {
     fn park_and_neutral_lift_the_limited_ui_and_only_park_allows_video() {
         let (tx, mut cmds) = mpsc::unbounded_channel();
         let cp = CpHandle::from_sender(tx);
-        let mut t = CpTelemetry::new(HelperSock::default());
+        let mut t = CpTelemetry::new(HelperSock::new("/nonexistent/cp-bt.sock"));
         let mut prev = Map::new();
         let mut step = |next: Value| {
             let next = obj(next);

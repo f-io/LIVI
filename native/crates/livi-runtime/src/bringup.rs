@@ -37,6 +37,7 @@ pub struct CpConfig {
     pub public_key: String,
     pub transport: Transport,
     pub av_iface: Option<String>,
+    pub av_address: Option<String>,
     pub av_iface_late: Option<watch::Receiver<Option<String>>>,
     pub available_current_ma: u16,
     pub device_id: Option<String>,
@@ -314,7 +315,10 @@ fn carplay_start_session(
     mutual: Option<bool>,
 ) -> Option<CarPlayStartSession> {
     if cp.transport == Transport::Wired {
-        let fe80 = net::wlan_link_local(cp.av_iface.as_deref()?)?;
+        let fe80 = match &cp.av_address {
+            Some(address) => address.clone(),
+            None => net::wlan_link_local(cp.av_iface.as_deref()?)?,
+        };
         return Some(CarPlayStartSession {
             wired_attributes: Some(CarPlayStartSessionWiredAttributes {
                 ip_address: vec![fe80],
@@ -796,6 +800,7 @@ mod tests {
             public_key: String::new(),
             transport: Transport::Wireless,
             av_iface: None,
+            av_address: None,
             av_iface_late: None,
             available_current_ma: 500,
             device_id: None,

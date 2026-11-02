@@ -3,15 +3,16 @@
 // Additional terms: see NOTICE
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::Notify;
 
 use iap2_link::LinkConfig;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 use iap2_usbmux::{MuxRegistry, find_iphones};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 use iap2_wired::open_carkit;
 use livi_runtime::bringup::{CpConfig, run_accessory};
 use livi_runtime::driver::spawn_link_stream;
@@ -21,6 +22,7 @@ use livi_runtime::mfi_async::SharedCoprocessor;
 use livi_runtime::state::HelperState;
 
 use crate::link::LinkPresence;
+use crate::short;
 
 fn announce_gone(bcast: &Broadcaster, serial: &str) {
     bcast.push_json(format!(
@@ -30,19 +32,11 @@ fn announce_gone(bcast: &Broadcaster, serial: &str) {
 
 const SCAN_INTERVAL: Duration = Duration::from_secs(2);
 const MFI_RETRY: Duration = Duration::from_secs(1);
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 const GIVE_UP_ATTEMPTS: u32 = 3;
 
-#[cfg(target_os = "linux")]
-pub async fn watch(
-    auth: SharedCoprocessor,
-    identity: Identity,
-    cp: CpConfig,
-    dongle: Dongle,
-    bcast: Broadcaster,
-    state: Arc<HelperState>,
-    link: Arc<LinkPresence>,
-) {
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub async fn watch(wired: Wired) {
     let registry = Arc::new(MuxRegistry::default());
     let mut failed: HashMap<String, u32> = HashMap::new();
     let mut cancels: HashMap<String, Arc<Notify>> = HashMap::new();
@@ -50,10 +44,15 @@ pub async fn watch(
     loop {
         tokio::select! {
             _ = tokio::time::sleep(SCAN_INTERVAL) => {}
-            _ = link.changed().notified() => {}
+            _ = wired.link.changed().notified() => {}
         }
 
-        let present: Vec<String> = find_iphones().into_iter().map(|d| d.serial).collect();
+        let present: Vec<String> = tokio::task::spawn_blocking(find_iphones)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|d| d.serial)
+            .collect();
         failed.retain(|serial, _| present.contains(serial));
         for serial in registry.serials() {
             if !present.contains(&serial) {
@@ -61,11 +60,11 @@ pub async fn watch(
                 if let Some(c) = cancels.remove(&serial) {
                     c.notify_one();
                 }
-                announce_gone(&bcast, &serial);
+                announce_gone(&wired.bcast, &serial);
                 registry.remove(&serial);
             }
         }
-        if !link.is_present() {
+        if !wired.link.is_present() {
             continue;
         }
 
@@ -77,7 +76,11 @@ pub async fn watch(
             if failed.get(&serial).is_some_and(|n| *n >= GIVE_UP_ATTEMPTS) {
                 continue;
             }
-            let dev = match registry.ensure(&serial) {
+            let ensured = {
+                let (registry, serial) = (registry.clone(), serial.clone());
+                tokio::task::spawn_blocking(move || registry.ensure(&serial)).await
+            };
+            let dev = match ensured.unwrap_or_else(|e| Err(e.to_string())) {
                 Ok(dev) => {
                     failed.remove(&serial);
                     dev
@@ -98,22 +101,19 @@ pub async fn watch(
             };
             println!("[wired] {}: usbmux up, opening carkit", short(&serial));
 
-            let ctx = WiredCtx {
-                auth: auth.clone(),
-                identity: identity.clone(),
-                cp: cp.clone(),
-                dongle,
-                bcast: bcast.clone(),
-                state: state.clone(),
-                link: link.clone(),
-            };
+            let ctx = wired.clone();
             let cancel = Arc::new(Notify::new());
             cancels.insert(serial.clone(), cancel.clone());
             let registry = registry.clone();
             tokio::spawn(async move {
-                let ncm = start_ncm_bridge(&dev.serial);
+                let ncm = {
+                    let (serial, wired) = (dev.serial.clone(), ctx.clone());
+                    tokio::task::spawn_blocking(move || start_ncm_bridge(&serial, &wired))
+                        .await
+                        .unwrap_or(LocalNcm::System(None))
+                };
                 let serial = dev.serial.clone();
-                match open_carkit(&dev).await {
+                match open_carkit(&dev, &ctx.lockdown).await {
                     Ok(channel) => match channel.into_stream() {
                         Some(stream) => {
                             println!(
@@ -139,15 +139,7 @@ pub async fn watch(
 }
 
 #[cfg(target_os = "macos")]
-pub async fn watch_usbmuxd(
-    auth: SharedCoprocessor,
-    identity: Identity,
-    cp: CpConfig,
-    dongle: Dongle,
-    bcast: Broadcaster,
-    state: Arc<HelperState>,
-    link: Arc<LinkPresence>,
-) {
+pub async fn watch_usbmuxd(wired: Wired) {
     use std::collections::HashSet;
 
     let mut active: HashMap<String, Arc<Notify>> = HashMap::new();
@@ -155,7 +147,7 @@ pub async fn watch_usbmuxd(
     loop {
         tokio::select! {
             _ = tokio::time::sleep(SCAN_INTERVAL) => {}
-            _ = link.changed().notified() => {}
+            _ = wired.link.changed().notified() => {}
         }
 
         let devices = match iap2_wired::usbmuxd::devices().await {
@@ -164,18 +156,18 @@ pub async fn watch_usbmuxd(
         };
         let present: HashSet<String> = devices.iter().map(|d| d.udid.clone()).collect();
         active.retain(|udid, cancel| {
-            if state.take_redo(udid) {
+            if wired.state.take_redo(udid) {
                 return false;
             }
             let keep = present.contains(udid);
             if !keep {
                 println!("[wired] {} unplugged", short(udid));
                 cancel.notify_one();
-                announce_gone(&bcast, udid);
+                announce_gone(&wired.bcast, udid);
             }
             keep
         });
-        if !link.is_present() {
+        if !wired.link.is_present() {
             continue;
         }
 
@@ -186,15 +178,7 @@ pub async fn watch_usbmuxd(
             let cancel = Arc::new(Notify::new());
             active.insert(device.udid.clone(), cancel.clone());
             let (found, late) = tokio::sync::watch::channel(None);
-            let mut ctx = WiredCtx {
-                auth: auth.clone(),
-                identity: identity.clone(),
-                cp: cp.clone(),
-                dongle,
-                bcast: bcast.clone(),
-                state: state.clone(),
-                link: link.clone(),
-            };
+            let mut ctx = wired.clone();
             ctx.cp.av_iface_late = Some(late);
             tokio::spawn(async move {
                 match iap2_wired::usbmuxd::open(&device).await {
@@ -242,6 +226,9 @@ async fn find_usb_iface(udid: String, found: tokio::sync::watch::Sender<Option<S
     eprintln!("[wired] {}: no USB network interface: {last}", short(&udid));
 }
 
+#[cfg(target_os = "android")]
+const AIRPLAY_NAME: &str = "LIVI";
+
 #[derive(Clone, Copy, Default)]
 pub struct Dongle {
     pub ap_mac: Option<fn() -> Option<String>>,
@@ -249,21 +236,26 @@ pub struct Dongle {
 }
 
 #[derive(Clone)]
-struct WiredCtx {
-    auth: SharedCoprocessor,
-    identity: Identity,
-    cp: CpConfig,
-    dongle: Dongle,
-    bcast: Broadcaster,
-    state: Arc<HelperState>,
-    link: Arc<LinkPresence>,
+pub struct Wired {
+    pub auth: SharedCoprocessor,
+    pub identity: Identity,
+    pub cp: CpConfig,
+    pub dongle: Dongle,
+    pub bcast: Broadcaster,
+    pub state: Arc<HelperState>,
+    pub link: Arc<LinkPresence>,
+    pub lockdown: PathBuf,
+    #[cfg(target_os = "android")]
+    pub tun: iap2_usbmux::OpenTun,
+    #[cfg(target_os = "android")]
+    pub airplay_txt: Vec<String>,
 }
 
 async fn run_wired_session<S>(
     serial: String,
     stream: S,
     ncm: LocalNcm,
-    ctx: WiredCtx,
+    ctx: Wired,
     cancel: Arc<Notify>,
 ) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
@@ -272,6 +264,9 @@ async fn run_wired_session<S>(
     if let Some(name) = ncm.ifname() {
         cp.av_iface = Some(name.to_string());
     }
+    cp.av_address = ncm.address().map(|a| a.to_string());
+    #[cfg(target_os = "android")]
+    let _mdns = announce(&ncm, &cp, &ctx.airplay_txt);
     if let Some(read) = ctx.dongle.ap_mac
         && let Ok(Some(mac)) = tokio::task::spawn_blocking(read).await
     {
@@ -362,12 +357,8 @@ async fn forward_starts(
     }
 }
 
-fn short(serial: &str) -> &str {
-    &serial[..8.min(serial.len())]
-}
-
 enum LocalNcm {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     Local(iap2_usbmux::NcmBridge),
     System(Option<String>),
 }
@@ -375,16 +366,63 @@ enum LocalNcm {
 impl LocalNcm {
     fn ifname(&self) -> Option<&str> {
         match self {
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             LocalNcm::Local(b) => Some(b.ifname.as_str()),
             LocalNcm::System(name) => name.as_deref(),
         }
     }
+
+    fn address(&self) -> Option<std::net::Ipv6Addr> {
+        match self {
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            LocalNcm::Local(b) => b.address,
+            LocalNcm::System(_) => None,
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+fn announce(
+    ncm: &LocalNcm,
+    cp: &CpConfig,
+    txt: &[String],
+) -> Option<livi_mdns::responder::Responder> {
+    use livi_runtime::bonjour::AIRPLAY_SERVICE;
+    let (ifname, address) = (ncm.ifname()?, ncm.address()?);
+    let port = u16::try_from(cp.airplay_port).ok().filter(|&p| p != 0)?;
+    let service = livi_mdns::service::Service::new(
+        AIRPLAY_NAME,
+        AIRPLAY_SERVICE,
+        AIRPLAY_NAME,
+        port,
+        txt,
+        address,
+    );
+    match livi_mdns::responder::Responder::start(ifname, service) {
+        Ok(responder) => {
+            println!("[mdns] {AIRPLAY_SERVICE} port={port} on {ifname}");
+            Some(responder)
+        }
+        Err(e) => {
+            eprintln!("[mdns] {AIRPLAY_SERVICE} not announced on {ifname}: {e}");
+            None
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+fn start_ncm_bridge(serial: &str, wired: &Wired) -> LocalNcm {
+    bridged(serial, iap2_usbmux::NcmBridge::start(serial, &wired.tun))
 }
 
 #[cfg(target_os = "linux")]
-fn start_ncm_bridge(serial: &str) -> LocalNcm {
-    match iap2_usbmux::NcmBridge::start(serial) {
+fn start_ncm_bridge(serial: &str, _wired: &Wired) -> LocalNcm {
+    bridged(serial, iap2_usbmux::NcmBridge::start(serial))
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn bridged(serial: &str, bridge: Result<iap2_usbmux::NcmBridge, String>) -> LocalNcm {
+    match bridge {
         Ok(b) => LocalNcm::Local(b),
         Err(e) => {
             eprintln!("[wired] {}: ncm bridge unavailable: {e}", short(serial));

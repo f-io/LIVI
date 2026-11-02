@@ -54,7 +54,7 @@ async fn every_phone_leaves_the_dongles_access_point() {
     let path = path("deauth");
     let server = tokio::spawn({
         let path = path.clone();
-        async move { serve(&path, None, deps()).await }
+        async move { serve(path.as_ref(), None, deps()).await }
     });
     listening(&path).await;
 
@@ -80,7 +80,7 @@ async fn the_player_state_and_the_events_reach_their_ends() {
     };
     let server = tokio::spawn({
         let path = path.clone();
-        async move { serve(&path, None, deps).await }
+        async move { serve(path.as_ref(), None, deps).await }
     });
     listening(&path).await;
 

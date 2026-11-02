@@ -2,17 +2,42 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use std::time::Duration;
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 
-use nusb::transfer::{Buffer, Bulk, In, Out, TransferError};
-use nusb::{Endpoint, Interface, MaybeFuture};
+use nusb::transfer::{Buffer, Bulk, ControlIn, ControlType, In, Out, Recipient, TransferError};
+use nusb::{Device, Endpoint, Interface, MaybeFuture};
 
-use crate::linux::{find_iphones, open_by_address};
+#[cfg(target_os = "android")]
+use crate::android::open;
+#[cfg(target_os = "linux")]
+use crate::linux::open;
 use crate::pipe::{MuxPipes, MuxReader, MuxWriter};
-use crate::{EP_IN, EP_OUT};
+use crate::{EP_IN, EP_OUT, short};
 
 const USBMUX_IFACE: u8 = 1;
 const READ_CHUNK: usize = 65536;
+const CONFIGS_WAIT: Duration = Duration::from_secs(5);
+const CONFIGS_POLL: Duration = Duration::from_millis(200);
+
+pub(crate) fn await_carplay_configs(
+    serial: &str,
+    exposed: impl Fn() -> bool,
+) -> Result<(), String> {
+    let deadline = Instant::now() + CONFIGS_WAIT;
+    loop {
+        sleep(CONFIGS_POLL);
+        if exposed() {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "iphone {} did not expose CarPlay configs",
+                short(serial)
+            ));
+        }
+    }
+}
 
 pub struct UsbWriter(Endpoint<Bulk, Out>);
 pub struct UsbReader(Endpoint<Bulk, In>);
@@ -49,12 +74,26 @@ impl MuxReader for UsbReader {
     }
 }
 
+pub fn request_carplay_configs(device: &Device) -> Result<(), String> {
+    device
+        .control_in(
+            ControlIn {
+                control_type: ControlType::Vendor,
+                recipient: Recipient::Device,
+                request: 0x52,
+                value: 0x0000,
+                index: 0x0004,
+                length: 1,
+            },
+            Duration::from_secs(1),
+        )
+        .wait()
+        .map_err(|e| format!("vendor request 0x52: {e}"))?;
+    Ok(())
+}
+
 pub fn open_pipes(serial: &str) -> Result<MuxPipes, String> {
-    let dev = find_iphones()
-        .into_iter()
-        .find(|d| d.serial == serial)
-        .ok_or_else(|| format!("iphone {serial} not found"))?;
-    let device = open_by_address(dev.bus, dev.address)?;
+    let device = open(serial)?;
 
     let mut last = String::new();
     let mut iface: Option<Interface> = None;

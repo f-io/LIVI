@@ -26,7 +26,7 @@ use crate::channels::navigation::{
 use crate::channels::{Emit, Frame};
 use crate::commands::{Command, InputCommand, TouchAction, TouchItem};
 use crate::config::{AaConfig, Insets, android_auto_dpi, fitting_tier};
-use crate::config::{Addresses, Codecs, Geometry, from_livi};
+use crate::config::{Addresses, Codecs, Geometry, ScreenWidths, from_livi};
 use crate::control::{ControlChannel, ControlEvent};
 use crate::discovery;
 use crate::driver::{self, SessionCmd};
@@ -1398,7 +1398,13 @@ async fn the_driver_matches() {
             wifi_bssid: Some(wifi.into()),
             access_point: None,
         };
-        let aa = from_livi(&cfg, codecs, seed["initialNightMode"].as_bool(), &addresses);
+        let aa = from_livi(
+            &cfg,
+            ScreenWidths::default(),
+            codecs,
+            seed["initialNightMode"].as_bool(),
+            &addresses,
+        );
         assert_eq!(aa_config_json(&aa), case["aaCfg"], "driver {n} config");
         let g = Geometry::main(&aa);
         let touch = [

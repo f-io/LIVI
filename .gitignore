@@ -35,6 +35,8 @@ app-update.yml
 
 # Android/archives
 *.apk
+.gradle/
+local.properties
 *.tgz
 
 # IDE

@@ -27,7 +27,6 @@ pub enum Update {
     Kiosk(bool),
     Settings,
     Spectrum(Vec<f32>),
-    Status(String),
     Open(String),
     Volume(f64),
     PhoneName(String),

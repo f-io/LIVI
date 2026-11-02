@@ -3,6 +3,7 @@
 // Additional terms: see NOTICE
 
 use std::net::IpAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -17,7 +18,11 @@ use crate::session::Peer;
 const BIND_RETRY: Duration = Duration::from_secs(5);
 const KEEPALIVE: Duration = Duration::from_secs(5);
 
-pub async fn run(port: u16, on_session: impl Fn(&str, IpAddr) + Send + Sync + 'static) {
+pub async fn run(
+    port: u16,
+    sessions: PathBuf,
+    on_session: impl Fn(&str, IpAddr) + Send + Sync + 'static,
+) {
     let listener = loop {
         match TcpListener::bind(("0.0.0.0", port)).await {
             Ok(l) => break l,
@@ -42,7 +47,7 @@ pub async fn run(port: u16, on_session: impl Fn(&str, IpAddr) + Send + Sync + 's
             eprintln!("[aa-tcp] {peer}: socket options: {e}");
         }
 
-        let Some((node, path)) = bind_session_socket("aa-session") else {
+        let Some((node, path)) = bind_session_socket(&sessions, "aa-session") else {
             continue;
         };
         println!("[aa-tcp] connection from {peer}, session socket {path}");

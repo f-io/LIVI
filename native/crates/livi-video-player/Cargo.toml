@@ -17,5 +17,8 @@ livi-host-proto.workspace = true
 [target.'cfg(target_os = "macos")'.dependencies]
 gstreamer-video = { version = "0.25", features = ["v1_24"], optional = true }
 
+[target.'cfg(target_os = "android")'.dependencies]
+gstreamer-video = { version = "0.25", features = ["v1_24"] }
+
 [features]
 window-view = ["dep:gstreamer-video"]

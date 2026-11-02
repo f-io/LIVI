@@ -2,13 +2,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use crate::pipe::{MuxPipes, PhoneInfo};
-
 pub use local::{ensure_carplay_config, find_iphones, open_pipes, reset, restore_default_config};
 
 #[cfg(target_os = "linux")]
 mod local {
-    use super::*;
+    use crate::pipe::{MuxPipes, PhoneInfo};
 
     pub fn find_iphones() -> Vec<PhoneInfo> {
         crate::linux::find_iphones()
@@ -42,9 +40,15 @@ mod local {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "android")]
 mod local {
-    use super::*;
+    pub use crate::android::{ensure_carplay_config, find_iphones, reset, restore_default_config};
+    pub use crate::usb_pipe::open_pipes;
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+mod local {
+    use crate::pipe::{MuxPipes, PhoneInfo};
 
     const NO_LOCAL: &str = "no local USB backend on this platform";
 

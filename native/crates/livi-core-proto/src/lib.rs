@@ -5,6 +5,7 @@
 pub mod config;
 pub mod frame;
 pub mod gnss;
+pub mod helper;
 pub mod icon;
 pub mod input;
 pub mod message;

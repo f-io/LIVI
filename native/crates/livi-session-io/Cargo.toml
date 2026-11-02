@@ -5,7 +5,12 @@ edition.workspace = true
 
 [dependencies]
 serde_json.workspace = true
-nusb = { workspace = true, features = ["tokio"] }
 tokio = { workspace = true, features = ["rt", "macros", "time", "sync", "io-util", "net"] }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+nusb = { workspace = true, features = ["tokio"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+nusb-android = { workspace = true, features = ["tokio"] }
 
 [dev-dependencies]

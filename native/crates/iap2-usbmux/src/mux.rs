@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use crate::backend;
@@ -140,8 +141,9 @@ impl MuxTcpConn {
 }
 
 pub struct MuxHost {
-    ep_out: Mutex<Box<dyn MuxWriter>>,
+    ep_out: Mutex<Option<Box<dyn MuxWriter>>>,
     ep_in: Mutex<Option<Box<dyn MuxReader>>>,
+    reader: Mutex<Option<JoinHandle<()>>>,
     tx: Mutex<u16>,
     conns: Mutex<HashMap<u16, Arc<MuxTcpConn>>>,
     next_sport: AtomicU16,
@@ -161,8 +163,9 @@ impl MuxHost {
         let _ = ep_in.read(Duration::from_millis(2000));
 
         let host = Arc::new(Self {
-            ep_out: Mutex::new(ep_out),
+            ep_out: Mutex::new(Some(ep_out)),
             ep_in: Mutex::new(Some(ep_in)),
+            reader: Mutex::new(None),
             tx: Mutex::new(0),
             conns: Mutex::new(HashMap::new()),
             next_sport: AtomicU16::new(1),
@@ -183,14 +186,17 @@ impl MuxHost {
         pkt.extend_from_slice(&0u16.to_be_bytes());
         pkt.extend_from_slice(payload);
         *tx = tx.wrapping_add(1);
-        let _ = self.ep_out.lock().unwrap().write(&pkt);
+        if let Some(out) = self.ep_out.lock().unwrap().as_mut() {
+            let _ = out.write(&pkt);
+        }
     }
 
     fn spawn_reader(self: Arc<Self>) {
         let Some(mut ep_in) = self.ep_in.lock().unwrap().take() else {
             return;
         };
-        std::thread::spawn(move || {
+        let slot = self.clone();
+        let reader = std::thread::spawn(move || {
             let mut rxbuf: Vec<u8> = Vec::new();
             while self.run.load(Ordering::SeqCst) {
                 let data = match ep_in.read(Duration::from_millis(1000)) {
@@ -221,6 +227,19 @@ impl MuxHost {
                 }
             }
         });
+        *slot.reader.lock().unwrap() = Some(reader);
+    }
+
+    pub fn shutdown(&self) {
+        let conns: Vec<_> = self.conns.lock().unwrap().drain().map(|(_, c)| c).collect();
+        for conn in conns {
+            conn.close();
+        }
+        self.run.store(false, Ordering::SeqCst);
+        self.ep_out.lock().unwrap().take();
+        if let Some(reader) = self.reader.lock().unwrap().take() {
+            let _ = reader.join();
+        }
     }
 
     pub fn connect(self: &Arc<Self>, dport: u16) -> Result<Arc<MuxTcpConn>, String> {

@@ -300,7 +300,8 @@ fn connectors(device: &DrmDevice, probe: bool) -> Vec<Connector> {
                 panel_mm: info
                     .size()
                     .filter(|&(w, h)| w > 0 && h > 0)
-                    .map(|(w, h)| (w as i32, h as i32)),
+                    .map(|(w, h)| (w as i32, h as i32))
+                    .or_else(|| edid.as_deref().and_then(timing_mm)),
                 transform: orientation(device, handle),
                 crtcs,
                 name,
@@ -355,6 +356,16 @@ fn panel_id(edid: &[u8]) -> Option<String> {
         letter(5),
         letter(0)
     ))
+}
+
+fn timing_mm(edid: &[u8]) -> Option<(i32, i32)> {
+    let dtd = edid.get(54..72)?;
+    if dtd[..2] == [0, 0] {
+        return None;
+    }
+    let w = ((i32::from(dtd[14]) & 0xF0) << 4) | i32::from(dtd[12]);
+    let h = ((i32::from(dtd[14]) & 0x0F) << 8) | i32::from(dtd[13]);
+    (w > 0 && h > 0).then_some((w, h))
 }
 
 fn panel_name(edid: &[u8]) -> Option<String> {

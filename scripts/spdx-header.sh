@@ -9,7 +9,7 @@ has_header() {
 }
 
 if [ "${1:-}" = "--check" ]; then
-  missing=$(git -C "$root" ls-files '*.rs' '*.slint' ':!native/vendor' | while read -r f; do
+  missing=$(git -C "$root" ls-files '*.rs' '*.slint' '*.java' ':!native/vendor' | while read -r f; do
     has_header "$root/$f" || echo "$f"
   done)
   [ -z "$missing" ] && exit 0

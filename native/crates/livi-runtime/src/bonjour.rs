@@ -17,7 +17,7 @@ use tokio::sync::watch;
 
 use crate::livi_sock::Broadcaster;
 
-const AIRPLAY_SERVICE: &str = "_airplay._tcp";
+pub const AIRPLAY_SERVICE: &str = "_airplay._tcp";
 const CARPLAY_CTRL: &str = "_carplay-ctrl._tcp";
 
 pub struct Bonjour {
@@ -55,7 +55,7 @@ fn receiver_id(device_id: &str) -> Option<u64> {
         .flatten()
 }
 
-fn txt_records(device_id: &str, source_version: &str, pk: &str, pi: &str) -> Vec<String> {
+pub fn txt_records(device_id: &str, source_version: &str, pk: &str, pi: &str) -> Vec<String> {
     let mut txt = vec![
         format!("deviceid={device_id}"),
         "features=0x44540380,0x61".to_string(),

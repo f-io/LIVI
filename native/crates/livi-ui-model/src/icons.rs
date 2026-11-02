@@ -24,6 +24,8 @@ const SETTINGS: &[(&str, &str)] = &[
     ("touch", "TouchAppOutlined"),
     ("width", "SettingsEthernetOutlined"),
     ("height", "HeightOutlined"),
+    ("screenSize", "StraightenOutlined"),
+    ("windowSize", "OpenInFull"),
     ("fullscreen", "FullscreenOutlined"),
     ("active", "VisibilityOutlined"),
     ("dashboards", "SpeedOutlined"),

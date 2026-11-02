@@ -89,8 +89,10 @@ pub fn bt_mac(adapter: &str) -> Option<String> {
     }
     match bt_mac_in(Path::new(BT_SYSFS), adapter) {
         Ok(Some(mac)) => Some(mac),
-        Ok(None) => busctl(if adapter.is_empty() { "hci0" } else { adapter }),
-        Err(()) => None,
+        Ok(None) if cfg!(target_os = "linux") => {
+            busctl(if adapter.is_empty() { "hci0" } else { adapter })
+        }
+        Ok(None) | Err(()) => None,
     }
 }
 

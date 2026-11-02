@@ -11,7 +11,7 @@ use livi_core_proto::state::AudioDevice;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
-use crate::devices;
+use crate::devices::Shared;
 use crate::hub::Hub;
 use crate::resources::gst_env;
 
@@ -197,11 +197,11 @@ async fn list(gst: Option<&Path>, kind: Kind) -> Vec<AudioDevice> {
     }
 }
 
-async fn paired_audio() -> Vec<Paired> {
+async fn paired_audio(shared: &Shared) -> Vec<Paired> {
     if !cfg!(target_os = "linux") {
         return Vec::new();
     }
-    let Ok(answer) = devices::shared("list_paired".into(), PAIRED_TIMEOUT).await else {
+    let Ok(answer) = shared.request("list_paired".into(), PAIRED_TIMEOUT).await else {
         return Vec::new();
     };
     let Some(list) = answer.get("devices").and_then(|d| d.as_array()) else {
@@ -226,8 +226,8 @@ async fn paired_audio() -> Vec<Paired> {
         .collect()
 }
 
-async fn refresh(hub: &Hub, gst: Option<&Path>) {
-    let paired = paired_audio().await;
+async fn refresh(hub: &Hub, gst: Option<&Path>, shared: &Shared) {
+    let paired = paired_audio(shared).await;
     let sinks = with_paired(list(gst, Kind::Sink).await, &paired, Kind::Sink);
     let sources = with_paired(list(gst, Kind::Source).await, &paired, Kind::Source);
     hub.update(|s| {
@@ -249,7 +249,7 @@ fn topology_changed(line: &str) -> bool {
     }
 }
 
-async fn watch(hub: &Hub, gst: Option<&Path>) -> bool {
+async fn watch(hub: &Hub, gst: Option<&Path>, shared: &Shared) -> bool {
     let mut cmd = monitor(gst);
     cmd.args(["-f", Kind::Sink.class(), Kind::Source.class()])
         .stdout(Stdio::piped());
@@ -267,7 +267,7 @@ async fn watch(hub: &Hub, gst: Option<&Path>) -> bool {
                 Ok(next) => next,
                 Err(_) => {
                     pending = false;
-                    refresh(hub, gst).await;
+                    refresh(hub, gst, shared).await;
                     continue;
                 }
             }
@@ -280,14 +280,14 @@ async fn watch(hub: &Hub, gst: Option<&Path>) -> bool {
         }
     }
     if pending {
-        refresh(hub, gst).await;
+        refresh(hub, gst, shared).await;
     }
     true
 }
 
-pub async fn follow(hub: Arc<Hub>, gst: Option<PathBuf>) {
-    refresh(&hub, gst.as_deref()).await;
-    while watch(&hub, gst.as_deref()).await {
+pub async fn follow(hub: Arc<Hub>, gst: Option<PathBuf>, shared: Shared) {
+    refresh(&hub, gst.as_deref(), &shared).await;
+    while watch(&hub, gst.as_deref(), &shared).await {
         tokio::time::sleep(RESTART_DELAY).await;
     }
     println!("[audio] {MONITOR} does not start, the device lists stay as they are");

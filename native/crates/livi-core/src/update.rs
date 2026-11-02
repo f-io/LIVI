@@ -19,9 +19,19 @@ const USER_AGENT: &str = "LIVI-updater";
 const PROGRESS_EVERY: Duration = Duration::from_millis(250);
 const PACKAGE: &str = if cfg!(target_os = "macos") {
     ".dmg"
+} else if cfg!(target_os = "android") {
+    ".apk"
 } else {
     ".appimage"
 };
+
+pub type Install = dyn Fn(&Path) -> Result<(), String> + Send + Sync;
+
+#[derive(Clone)]
+pub struct Installer {
+    pub downloads: PathBuf,
+    pub install: Arc<Install>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateAsk {
@@ -272,13 +282,27 @@ async fn download(
     Ok(())
 }
 
-pub async fn run(core: Arc<Core>, mut asks: mpsc::UnboundedReceiver<UpdateAsk>) {
-    let client = match reqwest::Client::builder().user_agent(USER_AGENT).build() {
+pub async fn run(
+    core: Arc<Core>,
+    mut asks: mpsc::UnboundedReceiver<UpdateAsk>,
+    installer: Option<Installer>,
+) {
+    let client = match crate::http::builder().user_agent(USER_AGENT).build() {
         Ok(c) => c,
         Err(e) => {
             eprintln!("[update] no http client: {e}");
             return;
         }
+    };
+    let downloads = match &installer {
+        Some(i) => {
+            let _ = tokio::fs::remove_dir_all(&i.downloads).await;
+            if let Err(e) = tokio::fs::create_dir_all(&i.downloads).await {
+                eprintln!("[update] {}: {e}", i.downloads.display());
+            }
+            i.downloads.clone()
+        }
+        None => std::env::temp_dir(),
     };
     let mut state = Update::default();
     let mut running: Option<Download> = None;
@@ -315,8 +339,8 @@ pub async fn run(core: Arc<Core>, mut asks: mpsc::UnboundedReceiver<UpdateAsk>) 
                         publish(&core, &state);
                         continue;
                     };
-                    let target = std::env::temp_dir()
-                        .join(format!("livi-update-{}{PACKAGE}", std::process::id()));
+                    let target =
+                        downloads.join(format!("livi-update-{}{PACKAGE}", std::process::id()));
                     state = Update {
                         latest: state.latest.take(),
                         checked: true,
@@ -354,13 +378,26 @@ pub async fn run(core: Arc<Core>, mut asks: mpsc::UnboundedReceiver<UpdateAsk>) 
                     };
                     state.phase = UpdatePhase::Installing;
                     publish(&core, &state);
-                    match install(&downloaded).await {
-                        Ok(appimage) => {
+                    let installed = match &installer {
+                        Some(i) => {
+                            let (install, file) = (i.install.clone(), downloaded.clone());
+                            tokio::task::spawn_blocking(move || install(&file))
+                                .await
+                                .map_err(|e| e.to_string())
+                                .and_then(|r| r)
+                                .map(|()| None)
+                        }
+                        None => install(&downloaded).await.map(Some),
+                    };
+                    match installed {
+                        Ok(app) => {
                             let _ = tokio::fs::remove_file(&downloaded).await;
                             state.phase = UpdatePhase::Relaunching;
                             publish(&core, &state);
-                            println!("[update] {} replaced, starting it", appimage.display());
-                            core.relaunch(appimage);
+                            if let Some(app) = app {
+                                println!("[update] {} replaced, starting it", app.display());
+                                core.relaunch(app);
+                            }
                         }
                         Err(e) => {
                             state.phase = UpdatePhase::Error;
@@ -409,7 +446,8 @@ mod tests {
             "assets": [
                 { "name": "LIVI-9.1.0-arm64.AppImage", "browser_download_url": "https://x/arm" },
                 { "name": "LIVI-9.1.0-x86_64.AppImage", "browser_download_url": "https://x/x64" },
-                { "name": "LIVI-9.1.0-arm64.dmg", "browser_download_url": "https://x/dmg" }
+                { "name": "LIVI-9.1.0-arm64.dmg", "browser_download_url": "https://x/dmg" },
+                { "name": "LIVI-9.1.0-android-arm64.apk", "browser_download_url": "https://x/apk" }
             ]
         });
         let r = release(&feed);
@@ -431,6 +469,10 @@ mod tests {
             Some("https://x/dmg")
         );
         assert_eq!(pick_asset(assets, "x86_64", ".dmg"), None);
+        assert_eq!(
+            pick_asset(assets, "aarch64", ".apk").as_deref(),
+            Some("https://x/apk")
+        );
         assert_eq!(pick_asset(assets, "riscv64", ".appimage"), None);
         assert_eq!(
             pick_asset(

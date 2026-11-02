@@ -7,3 +7,7 @@ edition.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+libc.workspace = true
+socket2.workspace = true

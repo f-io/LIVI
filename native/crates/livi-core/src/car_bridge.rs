@@ -247,7 +247,7 @@ async fn find_port() -> Option<String> {
     None
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 async fn find_port() -> Option<String> {
     let out = tokio::process::Command::new("ioreg")
         .args(["-r", "-l", "-c", "IOUSBHostDevice"])

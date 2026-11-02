@@ -47,7 +47,7 @@ fn emit_gst_link_flags() {
 fn main() {
     println!("cargo:rerun-if-changed=src/gst_video_mac.mm");
 
-    if !cfg!(target_os = "macos") {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
         return;
     }
 

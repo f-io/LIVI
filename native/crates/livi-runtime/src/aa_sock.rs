@@ -3,12 +3,11 @@
 // Additional terms: see NOTICE
 
 use std::io;
+use std::path::Path;
 
 use tokio::net::UnixStream;
 
 use crate::shared_sock::{bind, err_json, ok_json, read_line, reply, run_subscriber};
-
-pub const SOCK_PATH: &str = "/tmp/aa-bt.sock";
 
 type SetWiredPhones = Box<dyn Fn(Vec<String>) + Send + Sync>;
 type SetScoSink = Box<dyn Fn(Option<(String, u32)>) + Send + Sync>;
@@ -20,8 +19,8 @@ pub struct AaSockDeps {
     pub restart_usb: Box<dyn Fn(&str) -> usize + Send + Sync>,
 }
 
-pub async fn serve(deps: AaSockDeps) -> io::Result<()> {
-    let listener = bind(SOCK_PATH, "aa-sock")?;
+pub async fn serve(path: &Path, deps: AaSockDeps) -> io::Result<()> {
+    let listener = bind(path, "aa-sock")?;
     let deps = std::sync::Arc::new(deps);
     loop {
         let (stream, _) = listener.accept().await?;

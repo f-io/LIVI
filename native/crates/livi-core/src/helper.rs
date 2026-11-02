@@ -9,6 +9,7 @@ use std::time::Duration;
 use std::{fs, io};
 
 use livi_core_proto::config::{CarType, Config};
+use livi_core_proto::helper::{HelperSettings, HelperStart};
 use livi_cp::identity::Identity;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -23,24 +24,23 @@ pub fn debug(cfg: &Config) -> bool {
     cfg.debug_logging || std::env::var("DEBUG").is_ok_and(|v| v == "1")
 }
 
-pub fn helper_env(
+pub fn helper_start(
     cfg: &Config,
     identity: &Identity,
     accessory: &str,
     airplay_port: Option<u16>,
-) -> Vec<(String, String)> {
-    let mut env = settings_env(cfg);
-    env.push(("LIVI_CP_DEVICE_ID".to_string(), accessory.to_string()));
-    env.push(("LIVI_CP_PK".to_string(), identity.pk_hex()));
-    env.push(("LIVI_CP_PI".to_string(), identity.pairing_id.clone()));
-    if let Some(port) = airplay_port.filter(|p| *p > 0) {
-        env.push(("LIVI_CP_AIRPLAY_PORT".to_string(), port.to_string()));
+) -> HelperStart {
+    HelperStart {
+        settings: settings(cfg),
+        device_id: accessory.to_string(),
+        public_key: identity.pk_hex(),
+        pairing_id: identity.pairing_id.clone(),
+        airplay_port,
     }
-    env
 }
 
 pub fn starts_differently(before: &Config, after: &Config) -> bool {
-    settings_env(before) != settings_env(after)
+    settings(before) != settings(after)
 }
 
 fn cp_fuels(car: Option<CarType>) -> &'static str {
@@ -78,48 +78,29 @@ fn cp_connectors(cfg: &Config) -> String {
         .join(",")
 }
 
-fn settings_env(cfg: &Config) -> Vec<(String, String)> {
-    let flag = |on: bool, off: &str| if on { "1".to_string() } else { off.to_string() };
-    let debug = debug(cfg);
+fn settings(cfg: &Config) -> HelperSettings {
     let car_name = if cfg.car_name.is_empty() {
         std::env::var("LIVI_CP_NAME").unwrap_or_default()
     } else {
         cfg.car_name.clone()
     };
-    let channel = if cfg.wifi_channel == 0 {
-        String::new()
-    } else {
-        cfg.wifi_channel.to_string()
-    };
-    vec![
-        (
-            "LIVI_AA_WIRELESS".to_string(),
-            flag(cfg.wireless_aa_enabled, "0"),
-        ),
-        (
-            "LIVI_CP_WIRELESS".to_string(),
-            flag(cfg.wireless_cp_enabled, ""),
-        ),
-        ("DEBUG".to_string(), flag(debug, "")),
-        ("LIVI_CP_NAME".to_string(), car_name),
-        (
-            "LIVI_CP_FUELS".to_string(),
-            cp_fuels(cfg.car_type).to_string(),
-        ),
-        ("LIVI_CP_CONNECTORS".to_string(), cp_connectors(cfg)),
-        ("LIVI_CP_THEME".to_string(), cfg.car_play_theme.clone()),
-        ("LIVI_BT_ADAPTER".to_string(), cfg.bt_adapter.clone()),
-        ("LIVI_MFI_FILES".to_string(), cfg.car_play_mfi_files.clone()),
-        ("LIVI_WIFI_IFACE".to_string(), cfg.wifi_interface.clone()),
-        ("LIVI_PASSPHRASE".to_string(), cfg.wifi_password.clone()),
-        (
-            "LIVI_WIFI_TYPE".to_string(),
-            livi_wifi::Band::setting(crate::wifi_options::band_of(cfg.wifi_type)).to_string(),
-        ),
-        ("LIVI_CHANNEL".to_string(), channel),
-        ("LIVI_COUNTRY".to_string(), cfg.country.clone()),
-        ("LIVI_CP_DEBUG".to_string(), flag(debug, "")),
-    ]
+    HelperSettings {
+        wireless_android_auto: cfg.wireless_aa_enabled,
+        wireless_carplay: cfg.wireless_cp_enabled,
+        debug: debug(cfg),
+        car_name,
+        fuels: cp_fuels(cfg.car_type).to_string(),
+        connectors: cp_connectors(cfg),
+        theme: cfg.car_play_theme.clone(),
+        bt_adapter: cfg.bt_adapter.clone(),
+        mfi_files: cfg.car_play_mfi_files.clone(),
+        wifi_iface: cfg.wifi_interface.clone(),
+        passphrase: cfg.wifi_password.clone(),
+        wifi_type: livi_wifi::Band::setting(crate::wifi_options::band_of(cfg.wifi_type))
+            .to_string(),
+        channel: cfg.wifi_channel,
+        country: cfg.country.clone(),
+    }
 }
 
 fn inside_appimage_mount(p: &Path) -> bool {
@@ -194,9 +175,17 @@ async fn kill_stale() {
     eprintln!("[core] a stale helper outlived SIGKILL");
 }
 
+pub type StartHelper = dyn Fn(HelperStart) -> Result<Box<dyn Send>, String> + Send + Sync;
+
+#[derive(Clone)]
+pub enum Helper {
+    Process(PathBuf),
+    Embedded(Arc<StartHelper>),
+}
+
 pub struct Spec {
-    pub bin: PathBuf,
-    pub env: Box<dyn Fn() -> Vec<(String, String)> + Send + Sync>,
+    pub helper: Helper,
+    pub start: Box<dyn Fn() -> HelperStart + Send + Sync>,
     pub restart: Arc<Notify>,
     pub use_sudo: bool,
     pub restart_delay: Duration,
@@ -223,19 +212,19 @@ impl HelperSupervisor {
     }
 }
 
-fn spawn(spec: &Spec) -> io::Result<Child> {
+fn spawn(bin: &Path, spec: &Spec) -> io::Result<Child> {
     let mut cmd = if spec.use_sudo {
         let mut c = Command::new("sudo");
-        c.arg("-n").arg("-E").arg(&spec.bin);
+        c.arg("-n").arg("-E").arg(bin);
         c
     } else {
-        Command::new(&spec.bin)
+        Command::new(bin)
     };
-    if let Some(dir) = spec.bin.parent() {
+    if let Some(dir) = bin.parent() {
         cmd.current_dir(dir);
     }
     crate::child::with_lifeline(&mut cmd)
-        .envs((spec.env)())
+        .envs((spec.start)().to_env())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
@@ -265,17 +254,47 @@ fn forward_lines(child: &mut Child) {
     }
 }
 
-async fn run(spec: Spec, mut stop: watch::Receiver<bool>) {
+async fn run(spec: Spec, stop: watch::Receiver<bool>) {
+    match spec.helper.clone() {
+        Helper::Process(bin) => run_process(&bin, spec, stop).await,
+        Helper::Embedded(helper) => run_embedded(helper, spec, stop).await,
+    }
+}
+
+async fn run_embedded(helper: Arc<StartHelper>, spec: Spec, mut stop: watch::Receiver<bool>) {
+    loop {
+        let running = match helper((spec.start)()) {
+            Ok(running) => running,
+            Err(e) => {
+                eprintln!("[core] cannot start the helper: {e}");
+                return;
+            }
+        };
+        let again = tokio::select! {
+            _ = spec.restart.notified() => {
+                println!("[core] restarting the helper for new settings");
+                true
+            }
+            _ = stop.changed() => false,
+        };
+        let _ = tokio::task::spawn_blocking(move || drop(running)).await;
+        if !again {
+            return;
+        }
+    }
+}
+
+async fn run_process(bin: &Path, spec: Spec, mut stop: watch::Receiver<bool>) {
     let mut restarts = 0;
     loop {
         if cfg!(target_os = "linux") && spec.use_sudo {
             kill_stale().await;
         }
-        if !spec.bin.exists() {
-            eprintln!("[core] {HELPER_BIN} not found at {}", spec.bin.display());
+        if !bin.exists() {
+            eprintln!("[core] {HELPER_BIN} not found at {}", bin.display());
             return;
         }
-        let mut child = match spawn(&spec) {
+        let mut child = match spawn(bin, &spec) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("[core] cannot start the helper: {e}");
@@ -337,7 +356,7 @@ mod tests {
         let mut cfg = defaults();
         cfg.wireless_aa_enabled = true;
         cfg.wifi_type = WifiBand::Ghz24;
-        let env = helper_env(&cfg, &identity(), "88:00:33:77:8C:26", Some(7000));
+        let env = helper_start(&cfg, &identity(), "88:00:33:77:8C:26", Some(7000)).to_env();
         assert_eq!(get(&env, "LIVI_AA_WIRELESS"), Some("1"));
         assert_eq!(get(&env, "LIVI_CP_WIRELESS"), Some(""));
         assert_eq!(get(&env, "LIVI_CP_PK"), Some("ab".repeat(32).as_str()));
@@ -357,22 +376,22 @@ mod tests {
         ]);
         cfg.ev_max_dc_power_kw = Some(150.0);
         cfg.ev_max_ac_power_kw = Some(11.0);
-        let env = helper_env(&cfg, &identity(), "88:00:33:77:8C:26", None);
+        let env = helper_start(&cfg, &identity(), "88:00:33:77:8C:26", None).to_env();
         assert_eq!(
             get(&env, "LIVI_CP_CONNECTORS"),
             Some("Combo2:150000,Mennekes:11000,Chademo:150000")
         );
         cfg.ev_max_dc_power_kw = None;
-        let env = helper_env(&cfg, &identity(), "88:00:33:77:8C:26", None);
+        let env = helper_start(&cfg, &identity(), "88:00:33:77:8C:26", None).to_env();
         assert_eq!(
             get(&env, "LIVI_CP_CONNECTORS"),
             Some("Combo2,Mennekes:11000,Chademo")
         );
         cfg.car_play_theme = "44C9FA31EC:985:19.0".into();
-        let env = helper_env(&cfg, &identity(), "88:00:33:77:8C:26", None);
+        let env = helper_start(&cfg, &identity(), "88:00:33:77:8C:26", None).to_env();
         assert_eq!(get(&env, "LIVI_CP_THEME"), Some("44C9FA31EC:985:19.0"));
         cfg.debug_logging = true;
-        let env = helper_env(&cfg, &identity(), "88:00:33:77:8C:26", None);
+        let env = helper_start(&cfg, &identity(), "88:00:33:77:8C:26", None).to_env();
         assert_eq!(get(&env, "LIVI_CP_AIRPLAY_PORT"), None);
         assert_eq!(get(&env, "DEBUG"), Some("1"));
     }
@@ -420,6 +439,12 @@ mod tests {
         assert_eq!(fs::read(&dest).unwrap(), b"v2");
     }
 
+    fn start(car_name: &str) -> HelperStart {
+        let mut cfg = defaults();
+        cfg.car_name = car_name.into();
+        helper_start(&cfg, &identity(), "", None)
+    }
+
     fn script(dir: &TempDir, body: &str) -> PathBuf {
         let path = dir.0.join("fake-helper");
         fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
@@ -433,8 +458,8 @@ mod tests {
         let count = dir.0.join("starts");
         let bin = script(&dir, &format!("echo x >> {}", count.display()));
         let sup = HelperSupervisor::start(Spec {
-            bin,
-            env: Box::new(Vec::new),
+            helper: Helper::Process(bin),
+            start: Box::new(|| start("")),
             restart: Arc::new(Notify::new()),
             use_sudo: false,
             restart_delay: Duration::from_millis(10),
@@ -461,8 +486,8 @@ mod tests {
         let dir = TempDir::new();
         let bin = script(&dir, "exec sleep 30");
         let sup = HelperSupervisor::start(Spec {
-            bin,
-            env: Box::new(|| vec![("LIVI_TEST".into(), "1".into())]),
+            helper: Helper::Process(bin),
+            start: Box::new(|| start("1")),
             restart: Arc::new(Notify::new()),
             use_sudo: false,
             restart_delay: Duration::from_secs(5),
@@ -480,16 +505,16 @@ mod tests {
         let count = dir.0.join("starts");
         let bin = script(
             &dir,
-            &format!("echo $LIVI_TEST >> {}\nexec sleep 30", count.display()),
+            &format!("echo $LIVI_CP_NAME >> {}\nexec sleep 30", count.display()),
         );
         let restart = Arc::new(Notify::new());
         let n = Arc::new(std::sync::atomic::AtomicU32::new(0));
         let built = n.clone();
         let sup = HelperSupervisor::start(Spec {
-            bin,
-            env: Box::new(move || {
+            helper: Helper::Process(bin),
+            start: Box::new(move || {
                 let i = built.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                vec![("LIVI_TEST".into(), i.to_string())]
+                start(&i.to_string())
             }),
             restart: restart.clone(),
             use_sudo: false,

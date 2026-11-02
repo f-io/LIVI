@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use livi_core_proto::config::Config;
+use livi_core_proto::helper::HelperSockets;
 use livi_core_proto::state::{Front, Screen, State};
 use livi_cp::helper_sock::HelperSock;
 use livi_cp::pairings::Pairings;
@@ -18,15 +19,17 @@ use tokio::sync::{Notify, mpsc, oneshot, watch};
 
 use crate::android_auto::{self, GstAaMedia};
 use crate::carplay::{ConfigSource, GstMedia};
-use crate::helper::{self, HelperSupervisor, Spec};
+use crate::devices::{Devices, Shared};
+use crate::helper::{self, Helper, HelperSupervisor, Spec};
 use crate::hub::Hub;
+use crate::paths::Paths;
 use crate::projection::{Drivers, Projection, UiAsks};
 use crate::resources::{Resources, gst_env};
 use crate::spectrum;
 use crate::ui::UiSupervisor;
 use livi_aa_stack::helper_sock::AaHelperSock;
 use livi_media::compositor::{self, CompositorControl, Ui, backdrop_hex};
-use livi_media::gst_host::{GstHost, HostEvent, Launch};
+use livi_media::gst_host::{GstHost, HostEvent, Launch, MediaHost, Process};
 use livi_media::planes::{ClusterPlanes, MainPlane, VideoPlane, crop_for};
 
 const HELPER_RESTART_DELAY: Duration = Duration::from_secs(2);
@@ -93,7 +96,11 @@ fn crash_log() -> PathBuf {
     dir.join("livi-gst-host-crash.log")
 }
 
-fn host_launch(res: &Resources, user_data: &Path, ui: Option<&Ui>) -> Launch {
+fn host_launch(res: &Resources, user_data: &Path, ui: Option<&Ui>) -> Option<Launch> {
+    let bin = match res.gst_host.clone()? {
+        MediaHost::Process(bin) => bin,
+        MediaHost::Embedded(host) => return Some(Launch::Embedded(host)),
+    };
     let mut env = res.gstreamer.as_deref().map(gst_env).unwrap_or_default();
     if cfg!(target_os = "linux") {
         if let Ok(preload) = std::env::var("LIVI_GST_PRELOAD") {
@@ -108,22 +115,21 @@ fn host_launch(res: &Resources, user_data: &Path, ui: Option<&Ui>) -> Launch {
             env.push(("LIVI_RENDER_NODE".into(), node.clone()));
         }
     }
-    Launch {
-        bin: res.gst_host.clone(),
+    Some(Launch::Process(Process {
+        bin,
         env,
         log: user_data.join("log/gst-host.log"),
         crash: crash_log(),
-    }
+    }))
 }
 
 impl Services {
     #[allow(clippy::too_many_arguments)]
     pub fn start(
         res: Resources,
-        runtime: &Path,
+        paths: &Paths,
         user_data: &Path,
         hub: Arc<Hub>,
-        core_socket: PathBuf,
         quit: Arc<Notify>,
         mut asks: UiAsks,
         telemetry: mpsc::UnboundedSender<serde_json::Value>,
@@ -146,37 +152,45 @@ impl Services {
         let applied = hub.applied();
         let env_identity = identity.clone();
         let env_accessory = accessory.clone();
-        let helper = HelperSupervisor::start(Spec {
-            bin: helper::resolve_bin(&res.helper, user_data),
-            env: Box::new(move || {
-                let cfg = applied.borrow().clone();
-                helper::helper_env(&cfg, &env_identity, &env_accessory, airplay_port)
-            }),
-            restart: helper_restart.clone(),
-            use_sudo: cfg!(target_os = "linux"),
-            restart_delay: HELPER_RESTART_DELAY,
-            max_restarts: Some(HELPER_MAX_RESTARTS),
+        let helper = res.helper.clone().map(|helper| {
+            let helper = match helper {
+                Helper::Process(bin) => Helper::Process(helper::resolve_bin(&bin, user_data)),
+                embedded => embedded,
+            };
+            HelperSupervisor::start(Spec {
+                helper,
+                start: Box::new(move || {
+                    let cfg = applied.borrow().clone();
+                    helper::helper_start(&cfg, &env_identity, &env_accessory, airplay_port)
+                }),
+                restart: helper_restart.clone(),
+                use_sudo: cfg!(target_os = "linux"),
+                restart_delay: HELPER_RESTART_DELAY,
+                max_restarts: Some(HELPER_MAX_RESTARTS),
+            })
         });
+        if helper.is_none() {
+            println!("[core] running without the helper");
+        }
 
-        let ctrl_path = runtime.join("compositor.ctrl");
-        let compositor = if cfg!(target_os = "linux") {
-            let started = compositor::start(
-                &res.compositor,
-                &cfg,
-                &ctrl_path,
-                &user_data.join("log/compositor.log"),
-            );
-            if started.is_none() {
-                println!("[core] running without the compositor");
+        let ctrl_path = paths.runtime.join("compositor.ctrl");
+        let compositor = match &res.compositor {
+            Some(bin) if cfg!(target_os = "linux") => {
+                let started =
+                    compositor::start(bin, &cfg, &ctrl_path, &user_data.join("log/compositor.log"));
+                if started.is_none() {
+                    println!("[core] running without the compositor");
+                }
+                started
             }
-            started
-        } else {
-            None
+            _ => None,
         };
         let ctrl = CompositorControl::connect(ctrl_path);
         tokio::spawn(follow_displays(ctrl.displays(), hub.clone()));
-        let gst = GstHost::new(runtime.join("gst.sock"));
-        gst.set_launch(host_launch(&res, user_data, None));
+        let gst = GstHost::new(paths.runtime.join("gst.sock"));
+        if let Some(launch) = host_launch(&res, user_data, None) {
+            gst.set_launch(launch);
+        }
         let plane = MainPlane::new(gst.clone(), ctrl.clone());
         let clusters = ClusterPlanes::new(gst.clone(), ctrl.clone());
 
@@ -185,7 +199,7 @@ impl Services {
         let ui = res
             .ui
             .clone()
-            .map(|cmd| UiSupervisor::start(cmd, core_socket, display, quit.clone()));
+            .map(|cmd| UiSupervisor::start(cmd, paths.socket(), display, quit.clone()));
         if ui.is_none() {
             println!("[core] running without a UI");
         }
@@ -230,6 +244,7 @@ impl Services {
                 identity,
                 accessory,
                 user_data: user_data.to_path_buf(),
+                sockets: paths.helper.clone(),
                 probe: host_launch(&res, user_data, None),
                 debug: helper::debug(&cfg),
                 helper_restart,
@@ -256,7 +271,7 @@ impl Services {
         tokio::spawn(follow_host(gst, plane, clusters, state));
 
         Self {
-            helper: Some(helper),
+            helper,
             compositor,
             ui,
         }
@@ -295,7 +310,8 @@ struct CarPlay {
     identity: livi_cp::identity::Identity,
     accessory: String,
     user_data: PathBuf,
-    probe: Launch,
+    sockets: HelperSockets,
+    probe: Option<Launch>,
     debug: bool,
     helper_restart: Arc<Notify>,
     telemetry: mpsc::UnboundedSender<serde_json::Value>,
@@ -313,24 +329,29 @@ impl CarPlay {
         asks: UiAsks,
     ) {
         let state = hub.watch();
-        let (source, config, aa_config) =
-            ConfigSource::new(state.clone(), ctrl.panels(), self.accessory.clone());
+        let (source, config, aa_config) = ConfigSource::new(
+            state.clone(),
+            ctrl.panels(),
+            self.accessory.clone(),
+            self.user_data.join("carplay-images"),
+        );
         source.follow();
         let probing = source.clone();
-        let probe = self.probe;
-        tokio::spawn(async move {
-            let Some(codecs) = livi_media::gst_host::probe_codecs(&probe).await else {
-                return;
-            };
-            println!("[core] gst-host codecs {codecs}");
-            probing.set_codecs(android_auto::codecs(&codecs));
-            let _ = tokio::task::spawn_blocking(move || probing.refresh()).await;
-        });
+        if let Some(probe) = self.probe {
+            tokio::spawn(async move {
+                let Some(codecs) = livi_media::gst_host::probe_codecs(&probe).await else {
+                    return;
+                };
+                println!("[core] gst-host codecs {codecs}");
+                probing.set_codecs(android_auto::codecs(&codecs));
+                let _ = tokio::task::spawn_blocking(move || probing.refresh()).await;
+            });
+        }
         let refreshing = source.clone();
         let ctx = Arc::new(StackCtx {
             identity: self.identity,
             pairings: Pairings::new(self.user_data.join("cp/pairings.json")),
-            helper: HelperSock::default(),
+            helper: HelperSock::new(&self.sockets.carplay),
             media: GstMedia::new(gst.clone(), VideoPlane::new(gst.clone(), ctrl.clone())),
             config,
             refresh: Some(Arc::new(move || refreshing.refresh())),
@@ -343,14 +364,22 @@ impl CarPlay {
         let cp = livi_cp::manager::start(self.listener, ctx, events_tx);
         tokio::spawn(crate::cp_radio::run(hub.clone(), cp.clone()));
         let wants = *asks.wants.borrow();
-        let devices = crate::devices::Devices::new(
+        let shared = Shared::new(&self.sockets.shared);
+        let devices = Devices::new(
             &self.user_data.join("devices.json"),
-            HelperSock::default(),
+            HelperSock::new(&self.sockets.carplay),
+            shared.clone(),
         );
-        let aa_media = GstAaMedia::new(gst.clone(), plane.clone(), clusters.clone(), state.clone());
+        let aa_media = GstAaMedia::new(
+            gst.clone(),
+            plane.clone(),
+            clusters.clone(),
+            state.clone(),
+            self.sockets.sco_mic.clone(),
+        );
         let (aa_events_tx, aa_events) = mpsc::unbounded_channel();
         let aa = livi_aa_stack::manager::start(
-            AaHelperSock::default(),
+            AaHelperSock::new(&self.sockets.android_auto),
             aa_media.clone(),
             aa_config,
             aa_events_tx,
@@ -360,7 +389,8 @@ impl CarPlay {
         tokio::spawn(crate::android_auto::hands_free_io(
             phone_asks,
             aa_media.clone(),
-            AaHelperSock::default(),
+            AaHelperSock::new(&self.sockets.android_auto),
+            shared,
             phone_answers,
         ));
         let drivers = Drivers {
@@ -401,7 +431,9 @@ async fn follow_display(
                 ui.wayland_display,
                 ui.render_node.as_deref().unwrap_or("-")
             );
-            gst.set_launch(host_launch(&res, &user_data, Some(&ui)));
+            if let Some(launch) = host_launch(&res, &user_data, Some(&ui)) {
+                gst.set_launch(launch);
+            }
             host_ready.send_replace(true);
         }
     }
@@ -687,18 +719,23 @@ mod tests {
     #[test]
     fn the_host_lands_on_the_compositor_display() {
         let res = Resources {
-            helper: PathBuf::from("/h"),
-            gst_host: PathBuf::from("/g"),
-            compositor: PathBuf::from("/c"),
+            helper: Some(Helper::Process(PathBuf::from("/h"))),
+            gst_host: Some(MediaHost::Process(PathBuf::from("/g"))),
+            compositor: Some(PathBuf::from("/c")),
             gstreamer: None,
-            templates: PathBuf::from("/t"),
+            templates: Some(PathBuf::from("/t")),
             ui: None,
+            installer: None,
         };
         let ui = Ui {
             wayland_display: "wayland-1".into(),
             render_node: Some("/dev/dri/renderD128".into()),
         };
-        let launch = host_launch(&res, Path::new("/u"), Some(&ui));
+        let process = |launch| match launch {
+            Some(Launch::Process(process)) => process,
+            _ => panic!("the host should be a program"),
+        };
+        let launch = process(host_launch(&res, Path::new("/u"), Some(&ui)));
         let get = |k: &str| {
             launch
                 .env
@@ -716,12 +753,13 @@ mod tests {
         );
         assert_eq!(launch.log, PathBuf::from("/u/log/gst-host.log"));
         assert_eq!(
-            host_launch(&res, Path::new("/u"), None)
+            process(host_launch(&res, Path::new("/u"), None))
                 .env
                 .iter()
                 .filter(|(k, _)| k == "WAYLAND_DISPLAY")
                 .count(),
             0
         );
+        assert!(host_launch(&Resources::embedded(), Path::new("/u"), None).is_none());
     }
 }

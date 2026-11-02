@@ -3,6 +3,13 @@
 // Additional terms: see NOTICE
 
 use super::*;
+use openssl::x509::X509;
+use openssl::x509::store::X509StoreBuilderRef;
+
+const ANDROID_ROOTS: [&str; 2] = [
+    "/apex/com.android.conscrypt/cacerts",
+    "/system/etc/security/cacerts",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Target<'a> {
@@ -79,8 +86,27 @@ pub(super) fn system_trust() -> io::Result<SslConnector> {
             .set_ca_file("/etc/ssl/cert.pem")
             .map_err(io::Error::other)?;
     }
+    if cfg!(target_os = "android") {
+        android_roots(trust.cert_store_mut())?;
+    }
     let trust = trust.build();
     Ok(TRUST.get_or_init(|| trust).clone())
+}
+
+fn android_roots(store: &mut X509StoreBuilderRef) -> io::Result<()> {
+    let dir = ANDROID_ROOTS
+        .iter()
+        .find_map(|dir| std::fs::read_dir(dir).ok())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no android ca store"))?;
+    for entry in dir.flatten() {
+        let Ok(pem) = std::fs::read(entry.path()) else {
+            continue;
+        };
+        if let Ok(cert) = X509::from_pem(&pem) {
+            let _ = store.add_cert(cert);
+        }
+    }
+    Ok(())
 }
 
 #[derive(Default)]
@@ -208,12 +234,12 @@ pub(super) async fn read_answer<S: AsyncRead + Unpin>(
     let mut ended = false;
     loop {
         if let Some((head, body)) = split_answer(&all) {
-            let again = !head.contains("connection: close");
-            if let Some(len) = content_length(&head) {
+            let again = header(&head, "connection") != Some("close");
+            if let Some(len) = header(&head, "content-length").and_then(|v| v.parse().ok()) {
                 if body.len() >= len {
                     return Ok((head, body[..len].to_vec(), again));
                 }
-            } else if head.contains("transfer-encoding: chunked") {
+            } else if header(&head, "transfer-encoding").is_some_and(|v| v.contains("chunked")) {
                 if let Some(out) = dechunk(body) {
                     return Ok((head, out, again));
                 }
@@ -247,10 +273,11 @@ pub(super) fn split_answer(all: &[u8]) -> Option<(String, &[u8])> {
     ))
 }
 
-pub(super) fn content_length(head: &str) -> Option<usize> {
-    head.lines()
-        .find_map(|l| l.strip_prefix("content-length:"))
-        .and_then(|v| v.trim().parse().ok())
+pub(crate) fn header<'a>(head: &'a str, name: &str) -> Option<&'a str> {
+    head.lines().find_map(|line| {
+        let (key, value) = line.split_once(':')?;
+        (key.trim() == name).then(|| value.trim())
+    })
 }
 
 pub(super) fn dechunk(mut body: &[u8]) -> Option<Vec<u8>> {

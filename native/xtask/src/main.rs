@@ -3,6 +3,7 @@
 // Additional terms: see NOTICE
 
 mod build_native;
+mod package_android;
 mod package_linux;
 mod package_mac;
 mod util;
@@ -11,8 +12,7 @@ use std::process::ExitCode;
 
 use util::Arch;
 
-const USAGE: &str =
-    "usage: cargo xtask <build-native|package-mac|package-linux> [--arch x64|arm64]";
+const USAGE: &str = "usage: cargo xtask <build-native|package-mac|package-linux> [--arch x64|arm64]\n       cargo xtask <package-android|check-android>";
 
 fn arch(args: &[String]) -> Result<Arch, String> {
     let mut it = args.iter();
@@ -34,6 +34,8 @@ fn main() -> ExitCode {
         Some("build-native") => arch(&args[1..]).and_then(build_native::run),
         Some("package-mac") => arch(&args[1..]).and_then(package_mac::run),
         Some("package-linux") => arch(&args[1..]).and_then(package_linux::run),
+        Some("package-android") if args.len() == 1 => package_android::run(),
+        Some("check-android") if args.len() == 1 => package_android::check(),
         _ => Err(USAGE.to_string()),
     };
     match result {

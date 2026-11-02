@@ -7,6 +7,10 @@ homepage.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[lib]
+name = "livi_ui"
+path = "src/lib.rs"
+
 [[bin]]
 name = "LIVI"
 path = "src/main.rs"
@@ -23,14 +27,22 @@ serde_json.workspace = true
 slint = { version = "1.18.1", default-features = false, features = [
   "std",
   "compat-1-2",
+  "renderer-software",
+  "raw-window-handle-06",
+  "unstable-fontique-011",
+] }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+slint = { version = "1.18.1", default-features = false, features = [
   "backend-winit",
   "backend-winit-wayland",
   "renderer-femtovg",
-  "renderer-software",
-  "raw-window-handle-06",
   "unstable-winit-030",
-  "unstable-fontique-011",
 ] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+slint = { version = "1.18.1", default-features = false, features = ["backend-android-activity-06"] }
+i-slint-backend-android-activity = { version = "=1.18.1", default-features = false, features = ["aa-06"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 livi-video-view.workspace = true

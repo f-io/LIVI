@@ -25,6 +25,10 @@ on:
         description: "Build macOS x64 (dmg)"
         type: boolean
         default: true
+      android_arm64:
+        description: "Build Android arm64 (apk)"
+        type: boolean
+        default: true
       publish_nightly:
         description: "Publish nightly release"
         type: boolean
@@ -54,6 +58,7 @@ jobs:
           IN_LINUX_ARM64: ${{ inputs.linux_arm64 }}
           IN_MACOS_ARM64: ${{ inputs.macos_arm64 }}
           IN_MACOS_X64: ${{ inputs.macos_x64 }}
+          IN_ANDROID_ARM64: ${{ inputs.android_arm64 }}
         run: |
           set -euo pipefail
 
@@ -68,6 +73,7 @@ jobs:
           if want "$IN_LINUX_ARM64"; then add linux ubuntu-24.04-arm arm64 AppImage; fi
           if want "$IN_MACOS_ARM64"; then add macos macos-latest arm64 dmg; fi
           if want "$IN_MACOS_X64"; then add macos macos-latest x64 dmg; fi
+          if want "$IN_ANDROID_ARM64"; then add android ubuntu-24.04 arm64 apk; fi
 
           matrix="{\"include\":[$(IFS=,; echo "${entries[*]-}")]}"
           is_empty=$([[ ${#entries[@]} -eq 0 ]] && echo true || echo false)
@@ -177,6 +183,10 @@ jobs:
         with:
           name: build-${{ matrix.os }}-${{ matrix.arch }}
 
+      - name: Set up the Android build [android]
+        if: matrix.os == 'android'
+        uses: ./.github/actions/android-setup
+
       - name: Build and package [linux]
         if: matrix.os == 'linux'
         working-directory: native
@@ -196,6 +206,24 @@ jobs:
           set -euo pipefail
           rm -rf ../dist
           cargo xtask package-mac --arch '${{ matrix.arch }}'
+
+      - name: Build and package [android]
+        if: matrix.os == 'android'
+        working-directory: native
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.LIVI_ANDROID_KEYSTORE_BASE64 }}
+          LIVI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.LIVI_ANDROID_KEYSTORE_PASSWORD }}
+          LIVI_ANDROID_KEY_ALIAS: ${{ secrets.LIVI_ANDROID_KEY_ALIAS }}
+          LIVI_ANDROID_KEY_PASSWORD: ${{ secrets.LIVI_ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$KEYSTORE_BASE64" ]]; then
+            printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/livi.jks"
+            export LIVI_ANDROID_KEYSTORE="$RUNNER_TEMP/livi.jks"
+          fi
+          rm -rf ../dist
+          cargo xtask package-android
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

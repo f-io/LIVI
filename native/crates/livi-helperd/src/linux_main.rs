@@ -2,12 +2,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+use livi_core_proto::helper::HelperSockets;
 use std::process::ExitCode;
 
 use iap2_link::LinkConfig;
 use iap2_mfi::{I2cCoprocessor, NcmCoprocessor, NoCoprocessor};
 use std::sync::Arc;
 
+use livi_helper::link::LinkPresence;
+use livi_helper::wired::{Dongle, Wired};
+use livi_helper::{
+    AVAILABLE_CURRENT_MA, DEFAULT_CHANNEL, DEFAULT_NAME, DEFAULT_PASSPHRASE, SOURCE_VERSION,
+};
 use livi_runtime::bonjour::Bonjour;
 use livi_runtime::bringup::{AskOnAir, CpConfig, run_accessory};
 use livi_runtime::bt;
@@ -85,7 +91,7 @@ fn configured_channel(dc: &DeviceConfig) -> Channel {
     let band = Band::of_setting(&dc.string("wifiType", "LIVI_WIFI_TYPE", "5ghz"));
     Channel::of_setting(
         band.unwrap_or(Band::Ghz5),
-        dc.int("wifiChannel", "LIVI_CHANNEL", 36u32),
+        dc.int("wifiChannel", "LIVI_CHANNEL", DEFAULT_CHANNEL),
     )
 }
 
@@ -133,8 +139,8 @@ pub fn run_wifi_ap() -> ExitCode {
     let dc = DeviceConfig::load();
     let cfg = livi_runtime::wifi_ap::ApConfig {
         iface: ap_iface(&dc),
-        ssid: dc.string("carName", "LIVI_CP_NAME", "LIVI"),
-        passphrase: dc.string("wifiPassword", "LIVI_PASSPHRASE", "12345678"),
+        ssid: dc.string("carName", "LIVI_CP_NAME", DEFAULT_NAME),
+        passphrase: dc.string("wifiPassword", "LIVI_PASSPHRASE", DEFAULT_PASSPHRASE),
         channel: configured_channel(&dc),
         width: dc.int("wifiChannelWidth", "LIVI_CHANNEL_WIDTH", 40u32),
         country: dc.string("country", "LIVI_COUNTRY", "DE"),
@@ -250,7 +256,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let dc = DeviceConfig::load();
     let bus_num: u32 = dc.int("carPlayMfiI2cBus", "LIVI_CP_MFI_I2C_BUS", 2);
     let gpio: i32 = dc.int("carPlayMfiPowerGpio", "LIVI_CP_MFI_POWER_GPIO", 21);
-    let name = dc.string("carName", "LIVI_CP_NAME", "LIVI");
+    let name = dc.string("carName", "LIVI_CP_NAME", DEFAULT_NAME);
     let ssid = name.clone();
     let wifi_iface = ap_iface(&dc);
     let dongle_ap =
@@ -259,18 +265,23 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let cp = CpConfig {
         wifi_iface: wifi_iface.clone(),
         ssid: ssid.clone(),
-        passphrase: dc.string("wifiPassword", "LIVI_PASSPHRASE", "12345678"),
+        passphrase: dc.string("wifiPassword", "LIVI_PASSPHRASE", DEFAULT_PASSPHRASE),
         channel: configured_channel(&dc),
         airplay_port: env_or("LIVI_CP_AIRPLAY_PORT", 0),
-        source_version: dc.string("carPlaySourceVersion", "LIVI_CP_SOURCE_VERSION", "950.7.1"),
+        source_version: dc.string(
+            "carPlaySourceVersion",
+            "LIVI_CP_SOURCE_VERSION",
+            SOURCE_VERSION,
+        ),
         public_key: std::env::var("LIVI_CP_PI").unwrap_or_default(),
         transport: Transport::Wireless,
         av_iface: None,
+        av_address: None,
         av_iface_late: None,
         available_current_ma: dc.int(
             "carPlayAvailableCurrentMa",
             "LIVI_CP_AVAILABLE_CURRENT_MA",
-            500u16,
+            AVAILABLE_CURRENT_MA,
         ),
         device_id: std::env::var("LIVI_CP_DEVICE_ID")
             .ok()
@@ -296,16 +307,13 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     let (auth, mfi_link) = match local {
-        Ok(chip) => (
-            SharedCoprocessor::new(chip),
-            crate::link::LinkPresence::always(),
-        ),
+        Ok(chip) => (SharedCoprocessor::new(chip), LinkPresence::always()),
         Err(e) => {
             println!(
                 "[helperd] no local MFi ({e}); a LIVI Link dongle's chip serves once on the bus"
             );
             let auth = SharedCoprocessor::new(Box::new(NoCoprocessor));
-            let link = crate::link::LinkPresence::new();
+            let link = LinkPresence::new();
             let (up_auth, down_auth) = (auth.clone(), auth.clone());
             tokio::spawn(link.clone().resolve(
                 move || {
@@ -338,7 +346,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     };
     let (bluez, bluez_later) = tokio::sync::watch::channel(None);
     let sock_cfg = LiviSockConfig {
-        path: livi_sock::SOCK_PATH.into(),
+        path: HelperSockets::system().carplay,
         identity: identity.clone(),
         cp: cp.clone(),
         disconnect: None,
@@ -372,31 +380,26 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             av_iface: None,
             ..cp.clone()
         };
-        tokio::spawn(crate::wired::watch(
-            auth.clone(),
-            identity.clone(),
-            wired_cp,
-            crate::wired::Dongle {
+        tokio::spawn(livi_helper::wired::watch(Wired {
+            auth: auth.clone(),
+            identity: identity.clone(),
+            cp: wired_cp,
+            dongle: Dongle {
                 ap_mac: dongle_ap.then_some(livi_link_host::ap::mac as fn() -> Option<String>),
                 bt_mac: None,
             },
-            bcast.clone(),
-            state.clone(),
-            mfi_link.clone(),
-        ));
+            bcast: bcast.clone(),
+            state: state.clone(),
+            link: mfi_link.clone(),
+            lockdown: crate::lockdown_dir(),
+        }));
         println!("[helperd] wired CarPlay watcher started");
     }
     if std::env::var("LIVI_AA_USB").unwrap_or_else(|_| "1".into()) != "0" {
-        let events = aa_events.clone();
-        let subscribed = aa_events.clone();
-        tokio::spawn(livi_aa::usb::run(
+        tokio::spawn(livi_helper::aa::watch_usb(
             usb_control.clone(),
-            move |socket, peer, serial| {
-                events.push_json(format!(
-                    "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\",\"transport\":\"usb\",\"serial\":\"{serial}\"}}"
-                ));
-            },
-            async move { subscribed.subscribed().await },
+            HelperSockets::system().sessions,
+            aa_events.clone(),
         ));
         println!("[helperd] Android Auto USB watcher started");
     }
@@ -415,7 +418,9 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             }),
         };
         tokio::spawn(async move {
-            if let Err(e) = livi_runtime::aa_sock::serve(deps).await {
+            if let Err(e) =
+                livi_runtime::aa_sock::serve(&HelperSockets::system().android_auto, deps).await
+            {
                 eprintln!("[aa-sock] ended: {e}");
             }
         });
@@ -465,16 +470,24 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         if let Err(e) = bt::start_hfp(&conn, &adapter, hfp).await {
             eprintln!("[hfp] profile registration failed: {e}");
         }
-        livi_runtime::sco::serve(aa_events.clone(), sco_sink.clone());
+        livi_runtime::sco::serve(
+            HelperSockets::system().sco_mic,
+            aa_events.clone(),
+            sco_sink.clone(),
+        );
 
         if wireless.android_auto {
             let aa_port = env_or("LIVI_PORT", livi_aa::consts::TCP_PORT);
             let events = aa_events.clone();
-            tokio::spawn(livi_aa::server::run(aa_port, move |socket, peer| {
-                events.push_json(format!(
+            tokio::spawn(livi_aa::server::run(
+                aa_port,
+                HelperSockets::system().sessions,
+                move |socket, peer| {
+                    events.push_json(format!(
                 "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\",\"transport\":\"wifi\"}}"
             ));
-            }));
+                },
+            ));
             match bt::start_aa(&conn, &adapter).await {
                 Ok(incoming) => {
                     let aa_cfg = crate::aa::AaConfig {
@@ -528,8 +541,8 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
                     .then_some(livi_link_host::ap::deauth as fn() -> Option<usize>),
             };
             tokio::spawn(async move {
-                let path = livi_runtime::shared_sock::SOCK_PATH;
-                if let Err(e) = livi_runtime::shared_sock::serve(path, Some(bus), deps).await {
+                let path = HelperSockets::system().shared;
+                if let Err(e) = livi_runtime::shared_sock::serve(&path, Some(bus), deps).await {
                     eprintln!("[shared-sock] ended: {e}");
                 }
             });

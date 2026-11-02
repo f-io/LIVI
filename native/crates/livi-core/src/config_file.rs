@@ -134,9 +134,9 @@ fn current_names(file: &Value) -> Value {
     ] {
         rename(top, old, new);
     }
-    if let Some(Value::String(main)) = top.remove("displayMode") {
+    if let Some(Value::String(main)) = top.get("displayMode") {
         let screens = [
-            ("main", main),
+            ("main", main.clone()),
             ("cluster", String::new()),
             ("aux", String::new()),
         ]
@@ -424,6 +424,13 @@ pub mod tests {
         }
         assert_eq!(live["clusterScreenWidth"], 1024);
         assert_eq!(live["dashboard"]["cluster"], true);
+    }
+
+    #[test]
+    fn a_display_mode_per_screen_survives_loading() {
+        let file = json!({ "displayMode": { "main": "1920x1080", "cluster": "", "aux": "" } });
+        let config = merge(&current_names(&file), &defaults());
+        assert_eq!(config.display_mode.main, "1920x1080");
     }
 
     #[test]

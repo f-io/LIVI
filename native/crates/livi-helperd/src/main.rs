@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 mod aa;
@@ -14,7 +16,6 @@ mod linux_main;
 mod mac_main;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod mfi_files;
-mod wired;
 
 const SWITCHES: &[&str] = &[
     "--wifi-ap-status",
@@ -28,6 +29,18 @@ const SWITCHES: &[&str] = &[
     "--bt-tunnel",
     "--wifi-ap",
 ];
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn lockdown_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("LIVI_LOCKDOWN_STORE") {
+        return PathBuf::from(dir);
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(home) = std::env::var_os("HOME") {
+        return PathBuf::from(home).join("Library/Application Support/LIVI/lockdown");
+    }
+    PathBuf::from("/var/lib/lockdown")
+}
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 async fn shutdown_signal() {

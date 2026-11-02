@@ -22,7 +22,6 @@ use livi_core_proto::state::{
     Front, Navigation, NowPlaying, PerScreen, Protocol, Screen, Sessions, State,
 };
 use livi_core_proto::theme::{AppearancePreference, Cluster, LayoutSlot, Theme, livi_theme};
-use livi_cp::helper_sock::HelperSock;
 use livi_cp::hid::{KnobState, media_button, telephony_button};
 use livi_cp::manager::{CallPhase, CpCmd, CpEvent, CpHandle, HelperPresence, Presence, SessionId};
 use livi_cp::stack::{AudioKind, StackCmd, Touch};
@@ -94,6 +93,7 @@ enum Do {
     },
     VideoActive(bool),
     Close,
+    PowerDown,
 }
 
 fn media_index(control: MediaControl) -> u8 {
@@ -589,6 +589,7 @@ impl Projection {
             settings,
             themes,
         } = drivers;
+        let cp_telemetry = CpTelemetry::new(devices.helper.clone());
         let cfg = hub.config();
         cp.send(CpCmd::InitialNightMode(cfg.appearance_mode.night_mode()));
         let cluster_on = shows_cluster(&wants);
@@ -625,7 +626,7 @@ impl Projection {
             reversing: false,
             camera_found: false,
             config_seen: cfg,
-            cp_telemetry: CpTelemetry::new(HelperSock::default()),
+            cp_telemetry,
             aa_telemetry: AaTelemetry::default(),
             bye: None,
             activity: None,
@@ -772,7 +773,7 @@ impl Projection {
                     self.cp.stack(id, StackCmd::VideoActive(on));
                     self.cp.stack(id, StackCmd::AudioActive(on));
                 }
-                Do::Close => self.cp.send(CpCmd::Close { id }),
+                Do::Close | Do::PowerDown => self.cp.send(CpCmd::Close { id }),
             },
             Link::Aa(id) => match what {
                 Do::Keyframe => self.aa.session(id, SessionCmd::Keyframe),
@@ -797,6 +798,7 @@ impl Projection {
                 }
                 Do::VideoActive(on) => self.aa.session(id, SessionCmd::VideoActive(on)),
                 Do::Close => self.aa.send(AaCmd::Close { id }),
+                Do::PowerDown => self.aa.session(id, SessionCmd::PowerDown),
             },
         }
     }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use idevice::Idevice;
@@ -13,18 +13,7 @@ use iap2_usbmux::{AsyncMuxStream, LOCKDOWN_PORT, MuxDevice};
 
 pub const LOCKDOWN_SERVICE: &str = "com.apple.carkit.service";
 
-fn lockdown_store() -> PathBuf {
-    if let Some(dir) = std::env::var_os("LIVI_LOCKDOWN_STORE") {
-        return PathBuf::from(dir);
-    }
-    #[cfg(target_os = "macos")]
-    if let Some(home) = std::env::var_os("HOME") {
-        return PathBuf::from(home).join("Library/Application Support/LIVI/lockdown");
-    }
-    PathBuf::from("/var/lib/lockdown")
-}
-
-pub fn pair_record_path(serial: &str) -> Option<PathBuf> {
+pub fn pair_record_path(store: &Path, serial: &str) -> Option<PathBuf> {
     let dashed = if serial.len() == 24 && !serial.contains('-') {
         format!("{}-{}", &serial[..8], &serial[8..])
     } else {
@@ -36,7 +25,7 @@ pub fn pair_record_path(serial: &str) -> Option<PathBuf> {
         serial.to_string(),
         serial.to_uppercase(),
     ] {
-        let p = lockdown_store().join(format!("{name}.plist"));
+        let p = store.join(format!("{name}.plist"));
         if p.exists() {
             return Some(p);
         }
@@ -62,17 +51,17 @@ impl CarkitChannel {
     }
 }
 
-fn record_file(serial: &str) -> PathBuf {
+fn record_file(store: &Path, serial: &str) -> PathBuf {
     let name = if serial.len() == 24 && !serial.contains('-') {
         format!("{}-{}", &serial[..8], &serial[8..])
     } else {
         serial.to_string()
     };
-    lockdown_store().join(format!("{name}.plist"))
+    store.join(format!("{name}.plist"))
 }
 
-fn system_buid() -> String {
-    let path = lockdown_store().join("SystemConfiguration.plist");
+fn system_buid(store: &Path) -> String {
+    let path = store.join("SystemConfiguration.plist");
     plist::Value::from_file(&path)
         .ok()
         .and_then(|v| v.as_dictionary().and_then(|d| d.get("SystemBUID").cloned()))
@@ -80,13 +69,13 @@ fn system_buid() -> String {
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string().to_uppercase())
 }
 
-fn save_pair_record(serial: &str, pairing: &PairingFile) -> Result<(), String> {
+fn save_pair_record(store: &Path, serial: &str, pairing: &PairingFile) -> Result<(), String> {
     let bytes = pairing
         .clone()
         .serialize()
         .map_err(|e| format!("serialize pair record: {e}"))?;
-    let path = record_file(serial);
-    std::fs::create_dir_all(lockdown_store()).map_err(|e| e.to_string())?;
+    let path = record_file(store, serial);
+    std::fs::create_dir_all(store).map_err(|e| e.to_string())?;
     std::fs::write(&path, bytes).map_err(|e| format!("write {}: {e}", path.display()))?;
     println!("[wired] saved pair record {}", path.display());
     Ok(())
@@ -101,7 +90,7 @@ async fn new_lockdown(dev: &Arc<MuxDevice>) -> Result<LockdownClient, String> {
     )))
 }
 
-pub async fn pair_device(dev: &Arc<MuxDevice>) -> Result<PairingFile, String> {
+pub async fn pair_device(dev: &Arc<MuxDevice>, store: &Path) -> Result<PairingFile, String> {
     let mut lockdown = new_lockdown(dev).await?;
     let host_id = uuid::Uuid::new_v4().to_string().to_uppercase();
     println!(
@@ -109,10 +98,10 @@ pub async fn pair_device(dev: &Arc<MuxDevice>) -> Result<PairingFile, String> {
         short(&dev.serial)
     );
     let pairing = lockdown
-        .pair(host_id, system_buid(), Some("LIVI"))
+        .pair(host_id, system_buid(store), Some("LIVI"))
         .await
         .map_err(|e| format!("pair: {e}"))?;
-    save_pair_record(&dev.serial, &pairing)?;
+    save_pair_record(store, &dev.serial, &pairing)?;
     Ok(pairing)
 }
 
@@ -120,11 +109,12 @@ fn short(serial: &str) -> &str {
     &serial[..8.min(serial.len())]
 }
 
-pub async fn ensure_pairing(dev: &Arc<MuxDevice>) -> Result<PairingFile, String> {
-    let existing = pair_record_path(&dev.serial).and_then(|p| PairingFile::read_from_file(&p).ok());
+pub async fn ensure_pairing(dev: &Arc<MuxDevice>, store: &Path) -> Result<PairingFile, String> {
+    let existing =
+        pair_record_path(store, &dev.serial).and_then(|p| PairingFile::read_from_file(&p).ok());
 
     let Some(pairing) = existing else {
-        return pair_device(dev).await;
+        return pair_device(dev, store).await;
     };
 
     let mut lockdown = new_lockdown(dev).await?;
@@ -135,13 +125,13 @@ pub async fn ensure_pairing(dev: &Arc<MuxDevice>) -> Result<PairingFile, String>
                 "[wired] {}: stored pair record rejected ({e}), re-pairing",
                 short(&dev.serial)
             );
-            pair_device(dev).await
+            pair_device(dev, store).await
         }
     }
 }
 
-pub async fn open_carkit(dev: &Arc<MuxDevice>) -> Result<CarkitChannel, String> {
-    let pairing = ensure_pairing(dev).await?;
+pub async fn open_carkit(dev: &Arc<MuxDevice>, store: &Path) -> Result<CarkitChannel, String> {
+    let pairing = ensure_pairing(dev, store).await?;
 
     let mut lockdown = new_lockdown(dev).await?;
     lockdown

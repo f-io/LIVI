@@ -8,6 +8,8 @@ name = "livi-helperd"
 path = "src/main.rs"
 
 [dependencies]
+livi-core-proto.workspace = true
+livi-helper.workspace = true
 livi-runtime.workspace = true
 livi-wifi.workspace = true
 livi-net.workspace = true

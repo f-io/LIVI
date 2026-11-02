@@ -20,7 +20,9 @@ use crate::link::{Link, LinkItem, LinkReader};
 use crate::log::detail;
 use crate::manager::{AaEvent, SessionId};
 use crate::media::{AaMedia, AudioKind, AudioOutput};
-use crate::protocol::{BYEBYE_USER_SELECTION, Out, Session, SessionEvent, Timer};
+use crate::protocol::{
+    BYEBYE_POWER_DOWN, BYEBYE_USER_SELECTION, Out, Session, SessionEvent, Timer,
+};
 use crate::sensors::Sensor;
 use livi_aa_proto::consts::ch;
 
@@ -45,6 +47,7 @@ pub enum SessionCmd {
     },
     Sensor(Sensor),
     Close,
+    PowerDown,
 }
 
 enum Internal {
@@ -152,7 +155,7 @@ pub(crate) async fn run<M: AaMedia>(
                 Some(cmd) => p.on_cmd(cmd),
                 None => {
                     commands_open = false;
-                    p.begin_close();
+                    p.begin_close(BYEBYE_POWER_DOWN);
                 }
             },
             () = tick(&mut p.ping) => {
@@ -171,7 +174,7 @@ pub(crate) async fn run<M: AaMedia>(
         }
         if p.close_pending {
             p.close_pending = false;
-            p.begin_close();
+            p.begin_close(BYEBYE_USER_SELECTION);
         }
         if p.closing && p.shutdown_done {
             let out = p.session.close("stack restart");
@@ -296,7 +299,7 @@ impl<M: AaMedia> Phone<M> {
         self.emit(AaEvent::Disconnected { id: self.id });
     }
 
-    fn begin_close(&mut self) {
+    fn begin_close(&mut self, reason: u8) {
         if self.closed {
             return;
         }
@@ -304,7 +307,7 @@ impl<M: AaMedia> Phone<M> {
         self.emit_down();
         self.closing = true;
         self.shutdown_done = false;
-        let out = self.session.request_shutdown(BYEBYE_USER_SELECTION);
+        let out = self.session.request_shutdown(reason);
         self.apply(out);
     }
 
@@ -358,7 +361,11 @@ impl<M: AaMedia> Phone<M> {
             }
             SessionCmd::Sensor(s) => self.session.send_sensor(&s),
             SessionCmd::Close => {
-                self.begin_close();
+                self.begin_close(BYEBYE_USER_SELECTION);
+                Vec::new()
+            }
+            SessionCmd::PowerDown => {
+                self.begin_close(BYEBYE_POWER_DOWN);
                 Vec::new()
             }
         };

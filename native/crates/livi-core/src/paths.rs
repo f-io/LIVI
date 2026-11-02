@@ -6,12 +6,14 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use livi_core_proto::helper::HelperSockets;
 use livi_core_proto::runtime::runtime_dir;
 
 pub struct Paths {
     pub config: PathBuf,
     pub config_backup: PathBuf,
     pub runtime: PathBuf,
+    pub helper: HelperSockets,
 }
 
 impl Paths {
@@ -24,7 +26,17 @@ impl Paths {
             config: user_data.join("config.json"),
             config_backup: backup_dir(&home, &user_data).join("config.json"),
             runtime: runtime_dir(std::env::var_os("XDG_RUNTIME_DIR"), uid),
+            helper: HelperSockets::system(),
         })
+    }
+
+    pub fn within(user_data: &Path, runtime: PathBuf) -> Self {
+        Self {
+            config: user_data.join("config.json"),
+            config_backup: user_data.join("backup/config.json"),
+            helper: HelperSockets::within(&runtime),
+            runtime,
+        }
     }
 
     pub fn socket(&self) -> PathBuf {

@@ -17,3 +17,6 @@ realfft = "3.5.1"
 glib.workspace = true
 glib-unix.workspace = true
 libc.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+livi-video-view.workspace = true

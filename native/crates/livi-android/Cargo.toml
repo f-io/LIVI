@@ -1,0 +1,25 @@
+[package]
+name = "livi-android"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "livi"
+crate-type = ["cdylib"]
+
+[target.'cfg(target_os = "android")'.dependencies]
+iap2-usbmux.workspace = true
+jni = "0.22.4"
+libc.workspace = true
+livi-aaudio.workspace = true
+livi-core.workspace = true
+livi-core-client.workspace = true
+livi-gst-host.workspace = true
+livi-helper.workspace = true
+livi-host-proto.workspace = true
+livi-ui.workspace = true
+livi-ui-model.workspace = true
+livi-video-player.workspace = true
+livi-video-view.workspace = true
+slint = { version = "1.18.1", default-features = false, features = ["backend-android-activity-06"] }
+tokio = { workspace = true, features = ["rt-multi-thread"] }

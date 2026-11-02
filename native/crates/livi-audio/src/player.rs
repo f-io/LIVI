@@ -46,6 +46,8 @@ fn decoder_chain(codec: Codec) -> Option<&'static str> {
 const fn audio_sink() -> (&'static str, &'static str) {
     if cfg!(target_os = "macos") {
         ("osxaudiosink", "unique-id")
+    } else if cfg!(target_os = "android") {
+        ("aaudiosink", "device")
     } else {
         ("pulsesink", "device")
     }

@@ -13,10 +13,40 @@ use livi_video_player::{CameraPlayer, Player, Say, UrlPlayer};
 use crate::control::{Line, Region};
 use crate::main_thread::on_main;
 
-unsafe extern "C" {
-    fn livi_set_backdrop(parent: usize, r: f64, g: f64, b: f64);
-    fn livi_prepare_window(ui: usize);
-    fn livi_set_window_curves(ui: usize, rgb: *const f32, count: i32);
+#[cfg(target_os = "macos")]
+mod window {
+    unsafe extern "C" {
+        fn livi_set_backdrop(parent: usize, r: f64, g: f64, b: f64);
+        fn livi_prepare_window(ui: usize);
+        fn livi_set_window_curves(ui: usize, rgb: *const f32, count: i32);
+    }
+
+    pub fn backdrop(window: usize, [r, g, b]: [f64; 3]) {
+        unsafe { livi_set_backdrop(window, r, g, b) };
+    }
+
+    pub fn prepare(window: usize) {
+        unsafe { livi_prepare_window(window) };
+    }
+
+    pub fn curves(window: usize, rgb: &[f32]) {
+        let count = i32::try_from(rgb.len() / 3).unwrap_or(0);
+        let rgb = if count == 0 {
+            std::ptr::null()
+        } else {
+            rgb.as_ptr()
+        };
+        unsafe { livi_set_window_curves(window, rgb, count) };
+    }
+}
+
+#[cfg(target_os = "android")]
+mod window {
+    pub fn backdrop(_window: usize, _rgb: [f64; 3]) {}
+
+    pub fn prepare(_window: usize) {}
+
+    pub fn curves(_window: usize, _rgb: &[f32]) {}
 }
 
 const CURVE_POINTS: usize = 256;
@@ -24,14 +54,14 @@ const CURVE_POINTS: usize = 256;
 fn correct(window: usize, v: [f64; 5]) {
     let correction = Correction::from_line(v);
     if correction.neutral() {
-        unsafe { livi_set_window_curves(window, std::ptr::null(), 0) };
+        window::curves(window, &[]);
         return;
     }
     let [r, g, b] = correction.curves(CURVE_POINTS);
     let rgb: Vec<f32> = (0..CURVE_POINTS)
         .flat_map(|i| [r[i] as f32, g[i] as f32, b[i] as f32])
         .collect();
-    unsafe { livi_set_window_curves(window, rgb.as_ptr(), CURVE_POINTS as i32) };
+    window::curves(window, &rgb);
 }
 
 pub trait View: Send + Sync {
@@ -133,7 +163,7 @@ fn screens() -> MutexGuard<'static, Screens> {
 
 fn paint(window: usize, [r, g, b]: [u8; 3]) {
     let c = |v: u8| f64::from(v) / 255.0;
-    unsafe { livi_set_backdrop(window, c(r), c(g), c(b)) };
+    window::backdrop(window, [c(r), c(g), c(b)]);
 }
 
 pub fn apply(line: Line) -> Option<String> {
@@ -258,7 +288,7 @@ pub fn set_window(screen: &str, window: usize) {
         drop(s);
         gone.iter().for_each(|v| v.stop());
         if window != 0 {
-            unsafe { livi_prepare_window(window) };
+            window::prepare(window);
         }
         if let (true, Some(rgb)) = (window != 0, backdrop) {
             paint(window, rgb);

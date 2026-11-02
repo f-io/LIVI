@@ -5,11 +5,11 @@
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use livi_host_proto::feed::{self as feedproto, Framer};
 
-pub const MIC_SOCK: &str = "/tmp/aa-sco.mic";
 const MIC_BACKLOG: usize = 8000 * 2;
 
 #[derive(Clone, Default)]
@@ -25,13 +25,10 @@ impl ScoSink {
     }
 }
 
-pub fn mic_socket() -> std::io::Result<UnixListener> {
-    let _ = std::fs::remove_file(MIC_SOCK);
-    let mic = UnixListener::bind(MIC_SOCK)?;
-    std::fs::set_permissions(
-        MIC_SOCK,
-        std::os::unix::fs::PermissionsExt::from_mode(0o666),
-    )?;
+pub fn mic_socket(path: &Path) -> std::io::Result<UnixListener> {
+    let _ = std::fs::remove_file(path);
+    let mic = UnixListener::bind(path)?;
+    std::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o666))?;
     mic.set_nonblocking(true)?;
     Ok(mic)
 }
@@ -184,16 +181,18 @@ fn bridge(link: &livi_hfp::sco::Link, mic: &UnixListener, sink: &ScoSink) {
 }
 
 #[cfg(target_os = "linux")]
-pub fn serve(events: crate::livi_sock::Broadcaster, sink: ScoSink) {
-    std::thread::spawn(move || linux::run(events, sink));
+pub fn serve(mic: std::path::PathBuf, events: crate::livi_sock::Broadcaster, sink: ScoSink) {
+    std::thread::spawn(move || linux::run(&mic, events, sink));
 }
 
 #[cfg(target_os = "linux")]
 mod linux {
+    use std::path::Path;
+
     use super::{ScoSink, mic_socket};
 
-    pub fn run(events: crate::livi_sock::Broadcaster, sink: ScoSink) {
-        let mic = match mic_socket() {
+    pub fn run(path: &Path, events: crate::livi_sock::Broadcaster, sink: ScoSink) {
+        let mic = match mic_socket(path) {
             Ok(l) => l,
             Err(e) => {
                 eprintln!("[sco] mic socket failed: {e}");
@@ -207,7 +206,7 @@ mod linux {
                 return;
             }
         };
-        println!("[sco] listening (SCO + {})", super::MIC_SOCK);
+        println!("[sco] listening (SCO + {})", path.display());
 
         loop {
             let link = match livi_hfp::sco::accept(&listen) {

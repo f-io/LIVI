@@ -3,7 +3,7 @@
 // Additional terms: see NOTICE
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -114,12 +114,29 @@ pub struct MicOpts {
     pub device: String,
 }
 
+pub trait EmbeddedHost: Send + Sync {
+    fn serve(&self, sock: &Path);
+    fn probe(&self) -> String;
+}
+
+#[derive(Clone)]
+pub enum MediaHost {
+    Process(PathBuf),
+    Embedded(Arc<dyn EmbeddedHost>),
+}
+
 #[derive(Debug, Clone)]
-pub struct Launch {
+pub struct Process {
     pub bin: PathBuf,
     pub env: Vec<(String, String)>,
     pub log: PathBuf,
     pub crash: PathBuf,
+}
+
+#[derive(Clone)]
+pub enum Launch {
+    Process(Process),
+    Embedded(Arc<dyn EmbeddedHost>),
 }
 
 #[derive(Default)]
@@ -212,12 +229,33 @@ impl GstHost {
         };
         let accept = tokio::spawn(self.clone().accept(listener));
         self.state().accept_task = Some(accept);
-        if let Some(launch) = launch {
-            self.spawn_host(launch);
+        match launch {
+            Some(Launch::Process(process)) => self.spawn_host(process),
+            Some(Launch::Embedded(embedded)) => self.serve_embedded(embedded),
+            None => {}
         }
     }
 
-    fn spawn_host(&self, launch: Launch) {
+    fn serve_embedded(&self, embedded: Arc<dyn EmbeddedHost>) {
+        let host = self.clone();
+        let sock = self.inner.sock_path.clone();
+        let serving = std::thread::Builder::new()
+            .name("gst-host".into())
+            .spawn(move || {
+                embedded.serve(&sock);
+                eprintln!("[core] gst-host ended");
+                let mut st = host.state();
+                host.reset(&mut st);
+            });
+        if let Err(e) = serving {
+            eprintln!("[core] cannot start gst-host, media has nowhere to go: {e}");
+            let mut st = self.state();
+            st.unavailable = true;
+            self.reset(&mut st);
+        }
+    }
+
+    fn spawn_host(&self, launch: Process) {
         let _ = std::fs::remove_file(&launch.crash);
         {
             use std::os::unix::fs::PermissionsExt;
@@ -653,6 +691,16 @@ fn log_file(path: &std::path::Path) -> Option<std::fs::File> {
 }
 
 pub async fn probe_codecs(launch: &Launch) -> Option<serde_json::Value> {
+    let launch = match launch {
+        Launch::Process(process) => process,
+        Launch::Embedded(embedded) => {
+            let embedded = embedded.clone();
+            let json = tokio::task::spawn_blocking(move || embedded.probe())
+                .await
+                .ok()?;
+            return serde_json::from_str(json.trim()).ok();
+        }
+    };
     let run = tokio::process::Command::new(&launch.bin)
         .arg("--probe")
         .envs(launch.env.iter().map(|(k, v)| (k, v)))
@@ -947,13 +995,53 @@ mod tests {
     async fn a_missing_binary_makes_the_host_unavailable() {
         let dir = TempDir::new();
         let gst = host(&dir);
-        gst.set_launch(Launch {
+        gst.set_launch(Launch::Process(Process {
             bin: dir.0.join("no-such-host"),
             env: Vec::new(),
             log: dir.0.join("log/gst-host.log"),
             crash: dir.0.join("crash.log"),
-        });
+        }));
         assert_eq!(gst.open_feed().await, "");
         assert!(gst.state().unavailable);
+    }
+
+    struct EchoFeed;
+
+    impl EmbeddedHost for EchoFeed {
+        fn serve(&self, sock: &Path) {
+            use std::io::{Read, Write};
+            let mut stream = std::os::unix::net::UnixStream::connect(sock).unwrap();
+            let mut framer = Framer::new();
+            let mut buf = [0u8; 4096];
+            let req = loop {
+                if let Some(m) = framer.next_message() {
+                    break m;
+                }
+                let n = stream.read(&mut buf).unwrap();
+                framer.push(&buf[..n]);
+            };
+            stream
+                .write_all(&encode_reply(REPLY_FEED, 0, &req.rest))
+                .unwrap();
+            while stream.read(&mut buf).is_ok_and(|n| n > 0) {}
+        }
+
+        fn probe(&self) -> String {
+            String::from(r#"{"h264":true}"#)
+        }
+    }
+
+    #[tokio::test]
+    async fn an_embedded_host_is_served_over_the_same_socket() {
+        let dir = TempDir::new();
+        let gst = host(&dir);
+        gst.set_launch(Launch::Embedded(Arc::new(EchoFeed)));
+        assert!(gst.open_feed().await.ends_with("gst.sock.feed"));
+    }
+
+    #[tokio::test]
+    async fn an_embedded_host_answers_the_probe_itself() {
+        let probe = probe_codecs(&Launch::Embedded(Arc::new(EchoFeed))).await;
+        assert_eq!(probe, Some(serde_json::json!({ "h264": true })));
     }
 }

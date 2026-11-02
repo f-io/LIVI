@@ -12,7 +12,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Mutex, mpsc};
 use tokio::task::{JoinHandle, JoinSet};
 
-use crate::hls::{self, Client, Conn, Dialer, FETCH_TIMEOUT, Playlist, Target};
+use crate::hls::{self, Client, Conn, Dialer, FETCH_TIMEOUT, Playlist, Target, header};
 
 const BLOCKING: [&str; 3] = ["CAN-BLOCK-RELOAD", "CAN-SKIP-UNTIL", "CAN-SKIP-DATERANGES"];
 const MAX_HEAD: usize = 16 * 1024;
@@ -325,13 +325,6 @@ async fn ask_source(
     let early = all.split_off(end + 4);
     all.truncate(end);
     Ok((conn, String::from_utf8_lossy(&all).into_owned(), early))
-}
-
-fn header<'a>(head: &'a str, name: &str) -> Option<&'a str> {
-    head.lines().find_map(|line| {
-        let (key, value) = line.split_once(':')?;
-        (key.trim() == name).then(|| value.trim())
-    })
 }
 
 enum Body {

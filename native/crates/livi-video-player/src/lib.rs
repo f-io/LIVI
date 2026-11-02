@@ -8,8 +8,12 @@ use gstreamer_app as gst_app;
 use gstreamer_base as gst_base;
 use std::sync::{Arc, Once};
 
+#[cfg(target_os = "android")]
+mod android_view;
 mod camera;
 mod url_player;
+#[cfg(target_os = "android")]
+pub use android_view::{Views, set_surface, set_views};
 pub use camera::{CameraPlayer, direction, watch_cameras};
 pub use url_player::UrlPlayer;
 
@@ -231,6 +235,8 @@ const RANK_CAMERA: i32 = 2;
 struct WindowView {
     #[cfg(all(target_os = "macos", feature = "window-view"))]
     view: core::sync::atomic::AtomicPtr<core::ffi::c_void>,
+    #[cfg(target_os = "android")]
+    view: core::sync::atomic::AtomicU64,
 }
 
 impl WindowView {
@@ -251,7 +257,25 @@ impl WindowView {
         }
     }
 
-    #[cfg(not(all(target_os = "macos", feature = "window-view")))]
+    #[cfg(target_os = "android")]
+    fn attach(&self, handle: usize, rank: i32, sink: Option<&gst::Element>) {
+        if handle == 0 {
+            return;
+        }
+        if let Some(view) = sink.and_then(|s| android_view::open(rank, s)) {
+            self.view.store(view, core::sync::atomic::Ordering::Release);
+        }
+    }
+
+    #[cfg(target_os = "android")]
+    fn shown_view(&self) -> Option<u64> {
+        Some(self.view.load(core::sync::atomic::Ordering::Acquire)).filter(|&v| v != 0)
+    }
+
+    #[cfg(not(any(
+        all(target_os = "macos", feature = "window-view"),
+        target_os = "android"
+    )))]
     fn attach(&self, _handle: usize, _rank: i32, _sink: Option<&gst::Element>) {}
 
     fn set_visible(&self, visible: bool) {
@@ -259,7 +283,14 @@ impl WindowView {
         unsafe {
             livi_set_view_hidden(self.ptr(), !visible)
         };
-        #[cfg(not(all(target_os = "macos", feature = "window-view")))]
+        #[cfg(target_os = "android")]
+        if let Some(view) = self.shown_view() {
+            android_view::show(view, visible);
+        }
+        #[cfg(not(any(
+            all(target_os = "macos", feature = "window-view"),
+            target_os = "android"
+        )))]
         let _ = visible;
     }
 
@@ -284,7 +315,14 @@ impl WindowView {
                 }
             }
         }
-        #[cfg(not(all(target_os = "macos", feature = "window-view")))]
+        #[cfg(target_os = "android")]
+        if let Some(view) = self.shown_view() {
+            android_view::place(view, [crop_l, crop_t, vis_w, vis_h, tier_w, tier_h]);
+        }
+        #[cfg(not(any(
+            all(target_os = "macos", feature = "window-view"),
+            target_os = "android"
+        )))]
         let _ = (crop_l, crop_t, vis_w, vis_h, tier_w, tier_h);
     }
 
@@ -301,6 +339,13 @@ impl WindowView {
                 .swap(core::ptr::null_mut(), core::sync::atomic::Ordering::AcqRel);
             if !view.is_null() {
                 unsafe { livi_remove_view(view) };
+            }
+        }
+        #[cfg(target_os = "android")]
+        {
+            let view = self.view.swap(0, core::sync::atomic::Ordering::AcqRel);
+            if view != 0 {
+                android_view::close(view);
             }
         }
     }
@@ -343,6 +388,12 @@ impl Player {
             && (codec == "h265" || codec == "h264")
         {
             src.set_caps(Some(&length_prefixed_caps(codec, codec_data)));
+        }
+        #[cfg(target_os = "android")]
+        if let Some(src) = &appsrc
+            && let Some(caps) = src.caps()
+        {
+            src.set_caps(Some(&with_variable_rate(caps)));
         }
 
         let player = Self {
@@ -488,6 +539,12 @@ impl Drop for Player {
     }
 }
 
+#[cfg(target_os = "android")]
+fn with_variable_rate(mut caps: gst::Caps) -> gst::Caps {
+    caps.make_mut().set("framerate", gst::Fraction::new(0, 1));
+    caps
+}
+
 fn length_prefixed_caps(codec: &str, codec_data: &[u8]) -> gst::Caps {
     let (media, stream_format) = if codec == "h265" {
         ("video/x-h265", "hvc1")
@@ -524,7 +581,38 @@ fn render_gpu() -> Option<livi_video::codec::RenderGpu> {
     })
 }
 
+#[cfg(target_os = "android")]
+fn media_codecs(codec: &str) -> Vec<String> {
+    let Some(caps) = livi_video::codec::caps_for(codec)
+        .to_str()
+        .ok()
+        .and_then(|caps| caps.parse::<gst::Caps>().ok())
+    else {
+        return Vec::new();
+    };
+    let mut decoders = gst::ElementFactory::factories_with_type(
+        gst::ElementFactoryType::DECODER | gst::ElementFactoryType::MEDIA_VIDEO,
+        gst::Rank::MARGINAL,
+    )
+    .into_iter()
+    .filter(|f| f.name().starts_with("amcviddec") && f.can_sink_any_caps(&caps))
+    .collect::<Vec<_>>();
+    decoders.sort_by_key(|f| std::cmp::Reverse(f.rank()));
+    decoders.into_iter().map(|f| f.name().to_string()).collect()
+}
+
 fn candidates(codec: &str, sw_only: bool) -> Vec<String> {
+    #[cfg(target_os = "android")]
+    if !sw_only {
+        let mut names = media_codecs(codec);
+        names.push(
+            livi_video::codec::sw_decoder_for(codec)
+                .to_str()
+                .unwrap_or("")
+                .to_owned(),
+        );
+        return names;
+    }
     match render_gpu() {
         Some(gpu) => livi_video::codec::decoder_candidates_on(codec, sw_only, &gpu),
         None => livi_video::codec::decoder_candidates(codec, sw_only)

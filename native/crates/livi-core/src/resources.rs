@@ -4,13 +4,19 @@
 
 use std::path::{Path, PathBuf};
 
+use livi_media::gst_host::MediaHost;
+
+use crate::helper::Helper;
+use crate::update::Installer;
+
 pub struct Resources {
-    pub helper: PathBuf,
-    pub gst_host: PathBuf,
-    pub compositor: PathBuf,
+    pub helper: Option<Helper>,
+    pub gst_host: Option<MediaHost>,
+    pub compositor: Option<PathBuf>,
     pub gstreamer: Option<PathBuf>,
-    pub templates: PathBuf,
+    pub templates: Option<PathBuf>,
     pub ui: Option<UiCmd>,
+    pub installer: Option<Installer>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,44 +72,70 @@ impl Resources {
             env_str("LIVI_UI_CMD").map(UiCmd::Shell).or(layout.ui)
         };
         Self {
-            helper: env_path("LIVI_HELPER_BIN").unwrap_or(layout.helper),
-            gst_host: env_path("LIVI_GST_HOST_BIN").unwrap_or(layout.gst_host),
-            compositor: env_path("LIVI_COMPOSITOR_BIN").unwrap_or(layout.compositor),
+            helper: env_path("LIVI_HELPER_BIN")
+                .map(Helper::Process)
+                .or(layout.helper),
+            gst_host: env_path("LIVI_GST_HOST_BIN")
+                .map(MediaHost::Process)
+                .or(layout.gst_host),
+            compositor: env_path("LIVI_COMPOSITOR_BIN").or(layout.compositor),
             gstreamer: layout.gstreamer,
             templates: layout.templates,
             ui,
+            installer: None,
+        }
+    }
+
+    pub fn embedded() -> Self {
+        Self {
+            helper: None,
+            gst_host: None,
+            compositor: None,
+            gstreamer: None,
+            templates: None,
+            ui: None,
+            installer: None,
+        }
+    }
+
+    pub fn helper_bin(&self) -> Option<&Path> {
+        match &self.helper {
+            Some(Helper::Process(bin)) => Some(bin),
+            _ => None,
         }
     }
 
     fn installed(res: &Path) -> Self {
         Self {
-            helper: res.join("driver/livi-helperd"),
-            gst_host: res.join("gst-host/livi-gst-host"),
-            compositor: res.join("compositor/livi-compositor"),
+            helper: Some(Helper::Process(res.join("driver/livi-helperd"))),
+            gst_host: Some(MediaHost::Process(res.join("gst-host/livi-gst-host"))),
+            compositor: Some(res.join("compositor/livi-compositor")),
             gstreamer: platform_dir()
                 .map(|d| res.join("gstreamer").join(d))
                 .filter(|p| p.is_dir()),
-            templates: res.to_path_buf(),
+            templates: Some(res.to_path_buf()),
             ui: res.parent().map(|app| UiCmd::Exec {
                 bin: app.join("livi-ui"),
                 args: Vec::new(),
             }),
+            installer: None,
         }
     }
 
     fn repo(root: &Path) -> Self {
         Self {
-            helper: root.join("out/bin/livi-helperd"),
-            gst_host: root.join("out/bin/livi-gst-host"),
-            compositor: root.join("out/bin/livi-compositor"),
+            helper: Some(Helper::Process(root.join("out/bin/livi-helperd"))),
+            gst_host: Some(MediaHost::Process(root.join("out/bin/livi-gst-host"))),
+            compositor: Some(root.join("out/bin/livi-compositor")),
             gstreamer: platform_dir()
                 .map(|d| root.join("assets/gstreamer").join(d))
                 .filter(|p| p.join("lib").is_dir()),
-            templates: root.join("assets/linux"),
+            templates: Some(root.join("assets/linux")),
             ui: Some(UiCmd::Exec {
                 bin: root.join("out/bin/LIVI"),
                 args: Vec::new(),
             }),
+            installer: None,
         }
     }
 }
@@ -180,10 +212,13 @@ mod tests {
     #[test]
     fn layouts_point_where_the_build_puts_things() {
         let repo = Resources::repo(Path::new("/src/LIVI"));
-        assert_eq!(repo.helper, PathBuf::from("/src/LIVI/out/bin/livi-helperd"));
+        assert_eq!(
+            repo.helper_bin(),
+            Some(Path::new("/src/LIVI/out/bin/livi-helperd"))
+        );
         assert_eq!(
             repo.compositor,
-            PathBuf::from("/src/LIVI/out/bin/livi-compositor")
+            Some(PathBuf::from("/src/LIVI/out/bin/livi-compositor"))
         );
         assert_eq!(
             repo.ui,
@@ -194,13 +229,13 @@ mod tests {
         );
         let installed = Resources::installed(Path::new("/opt/LIVI/resources"));
         assert_eq!(
-            installed.helper,
-            PathBuf::from("/opt/LIVI/resources/driver/livi-helperd")
+            installed.helper_bin(),
+            Some(Path::new("/opt/LIVI/resources/driver/livi-helperd"))
         );
-        assert_eq!(
-            installed.gst_host,
-            PathBuf::from("/opt/LIVI/resources/gst-host/livi-gst-host")
-        );
+        assert!(matches!(
+            &installed.gst_host,
+            Some(MediaHost::Process(bin)) if bin == Path::new("/opt/LIVI/resources/gst-host/livi-gst-host")
+        ));
         assert_eq!(installed.gstreamer, None);
         assert_eq!(
             installed.ui,

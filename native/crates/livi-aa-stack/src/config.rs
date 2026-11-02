@@ -70,6 +70,12 @@ pub struct Addresses {
     pub access_point: Option<OnAir>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ScreenWidths {
+    pub main: Option<f64>,
+    pub cluster: Option<f64>,
+}
+
 const SQUARE_PIXEL_E4: u32 = 10000;
 
 const AA_TIERS: [(u32, u32); 5] = [
@@ -145,6 +151,16 @@ pub fn android_auto_dpi(width: u32, height: u32) -> u32 {
     (round_half_up(dpi / 10.0) * 10.0) as u32
 }
 
+fn video_dpi(set: u32, tier: (u32, u32), display: (u32, u32), width_mm: Option<f64>) -> u32 {
+    if set > 0 {
+        return set;
+    }
+    match width_mm {
+        Some(mm) => (content_area(tier, display).0 / mm * 25.4).round() as u32,
+        None => android_auto_dpi(tier.0, tier.1),
+    }
+}
+
 fn fuel_types(car: Option<CarType>) -> Vec<i32> {
     match car {
         Some(CarType::HybridGasoline) => {
@@ -163,24 +179,27 @@ pub fn cluster_displayed(cfg: &Config) -> bool {
 
 pub fn from_livi(
     cfg: &Config,
+    widths: ScreenWidths,
     codecs: Codecs,
     initial_night_mode: Option<bool>,
     addresses: &Addresses,
 ) -> AaConfig {
     let h264_only = !(codecs.hevc || codecs.vp9 || codecs.av1);
     let (tier_w, tier_h) = fitting_tier(cfg.projection_width, cfg.projection_height, h264_only);
-    let dpi = if cfg.projection_dpi > 0 {
-        cfg.projection_dpi
-    } else {
-        android_auto_dpi(tier_w, tier_h)
-    };
+    let dpi = video_dpi(
+        cfg.projection_dpi,
+        (tier_w, tier_h),
+        (cfg.projection_width, cfg.projection_height),
+        widths.main,
+    );
     let (cluster_tier_w, cluster_tier_h) =
         fitting_tier(cfg.cluster_width, cfg.cluster_height, h264_only);
-    let cluster_dpi = if cfg.cluster_dpi > 0 {
-        cfg.cluster_dpi
-    } else {
-        android_auto_dpi(cluster_tier_w, cluster_tier_h)
-    };
+    let cluster_dpi = video_dpi(
+        cfg.cluster_dpi,
+        (cluster_tier_w, cluster_tier_h),
+        (cfg.cluster_width, cfg.cluster_height),
+        widths.cluster,
+    );
     let name = if cfg.car_name.trim().is_empty() {
         "LIVI".to_string()
     } else {
@@ -364,6 +383,15 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn the_screen_width_gives_the_dpi() {
+        assert_eq!(video_dpi(0, (1280, 720), (1280, 720), Some(155.0)), 210);
+        assert_eq!(video_dpi(0, (1280, 720), (1920, 1080), Some(609.0)), 53);
+        assert_eq!(video_dpi(0, (1280, 720), (1280, 480), Some(200.0)), 163);
+        assert_eq!(video_dpi(160, (1280, 720), (1280, 720), Some(155.0)), 160);
+        assert_eq!(video_dpi(0, (1280, 720), (1280, 720), None), 180);
+    }
+
+    #[test]
     fn the_letterbox_goes_on_the_short_side() {
         assert_eq!(aspect_margins((1920, 720), (1920, 1080)), (0, 360));
         assert_eq!(aspect_margins((1024, 768), (1280, 720)), (320, 0));
@@ -407,7 +435,13 @@ pub(crate) mod tests {
             wifi_bssid: None,
             access_point: None,
         };
-        let aa = from_livi(&cfg, Codecs::default(), Some(true), &addresses);
+        let aa = from_livi(
+            &cfg,
+            ScreenWidths::default(),
+            Codecs::default(),
+            Some(true),
+            &addresses,
+        );
         assert_eq!(aa.hu_name.as_deref(), Some("LIVI"));
         assert_eq!(aa.wifi_ssid, "LIVI");
         assert_eq!(aa.wifi_password, "12345678");
@@ -423,6 +457,15 @@ pub(crate) mod tests {
             cluster: false,
             aux: false,
         };
-        assert!(!from_livi(&cfg, Codecs::default(), None, &addresses).cluster_enabled);
+        assert!(
+            !from_livi(
+                &cfg,
+                ScreenWidths::default(),
+                Codecs::default(),
+                None,
+                &addresses
+            )
+            .cluster_enabled
+        );
     }
 }

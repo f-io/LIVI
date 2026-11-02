@@ -9,7 +9,6 @@ livi-host-proto.workspace = true
 livi-session-io.workspace = true
 livi-wifi.workspace = true
 futures-util.workspace = true
-nusb = { workspace = true, features = ["tokio"] }
 prost.workspace = true
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-pemfile = "2"
@@ -17,6 +16,12 @@ rustls-pki-types = "1"
 serde_json.workspace = true
 socket2 = { workspace = true, features = ["all"] }
 tokio = { workspace = true, features = ["rt", "macros", "time", "sync", "io-util", "net"] }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+nusb = { workspace = true, features = ["tokio"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+nusb-android = { workspace = true, features = ["tokio"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "net"] }

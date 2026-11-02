@@ -237,10 +237,11 @@ async fn server(files: Vec<(&'static str, Vec<u8>, bool)>) -> String {
                 let n = sock.read(&mut ask).await.unwrap_or(0);
                 let ask = String::from_utf8_lossy(&ask[..n]).to_string();
                 let path = ask.split(' ').nth(1).unwrap_or_default().to_string();
-                let answer = match files.iter().find(|(p, _, _)| *p == path) {
+                let file = files.iter().find(|(p, _, _)| *p == path);
+                let answer = match file {
                     Some((_, body, true)) => {
                         let mut a = format!(
-                            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n",
+                            "HTTP/1.1 200 OK\r\nTransfer-Encoding:  chunked\r\nConnection: keep-alive\r\n\r\n{:x}\r\n",
                             body.len()
                         )
                         .into_bytes();
@@ -258,6 +259,9 @@ async fn server(files: Vec<(&'static str, Vec<u8>, bool)>) -> String {
                     None => b"HTTP/1.1 404 Not Found\r\n\r\n".to_vec(),
                 };
                 let _ = sock.write_all(&answer).await;
+                if matches!(file, Some((_, _, true))) {
+                    let _ = sock.read(&mut [0u8; 1]).await;
+                }
             });
         }
     });

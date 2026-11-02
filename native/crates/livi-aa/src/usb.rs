@@ -5,6 +5,7 @@
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use std::time::{Duration, Instant};
@@ -47,8 +48,15 @@ const WATCH_RETRY: Duration = Duration::from_secs(5);
 const RESET_WINDOW: Duration = Duration::from_secs(3);
 const RESET_RETRIES: usize = 10;
 const RESET_RETRY: Duration = Duration::from_millis(100);
+const RESETS: bool = !cfg!(target_os = "android");
+const RESTART_SETTLE: Duration = Duration::from_secs(2);
 
 pub type OnSession = dyn Fn(&str, &str, &str) + Send + Sync;
+
+struct Sessions {
+    dir: PathBuf,
+    announce: Box<OnSession>,
+}
 
 #[derive(Default)]
 struct Phones {
@@ -83,10 +91,14 @@ impl Control {
 
 pub async fn run(
     control: Control,
+    sessions: PathBuf,
     on_session: impl Fn(&str, &str, &str) + Send + Sync + 'static,
     subscribed: impl Future<Output = ()> + Send + 'static,
 ) {
-    let on_session: Arc<OnSession> = Arc::new(on_session);
+    let sessions = Arc::new(Sessions {
+        dir: sessions,
+        announce: Box::new(on_session),
+    });
     let phones: Shared = control.0;
     let (ready_tx, ready) = watch::channel(false);
     tokio::spawn(async move {
@@ -105,7 +117,7 @@ pub async fn run(
     match nusb::list_devices().await {
         Ok(list) => {
             for info in list {
-                seen(&phones, &on_session, &ready, info, true);
+                seen(&phones, &sessions, &ready, info, true);
             }
         }
         Err(e) => eprintln!("[aa-usb] list devices: {e}"),
@@ -113,7 +125,7 @@ pub async fn run(
     println!("[aa-usb] watching for phones");
     while let Some(ev) = watch.next().await {
         match ev {
-            HotplugEvent::Connected(info) => seen(&phones, &on_session, &ready, info, false),
+            HotplugEvent::Connected(info) => seen(&phones, &sessions, &ready, info, false),
             HotplugEvent::Disconnected(id) => gone(&phones, id),
         }
     }
@@ -151,7 +163,7 @@ fn is_candidate(info: &DeviceInfo) -> bool {
 
 fn seen(
     phones: &Shared,
-    on_session: &Arc<OnSession>,
+    sessions: &Arc<Sessions>,
     ready: &watch::Receiver<bool>,
     info: DeviceInfo,
     at_startup: bool,
@@ -187,7 +199,7 @@ fn seen(
     }
     let phones = phones.clone();
     if accessory {
-        let on_session = on_session.clone();
+        let sessions = sessions.clone();
         let mut ready = ready.clone();
         let cancel = Arc::new(Notify::new());
         phones.lock().unwrap().cancel.insert(id, cancel.clone());
@@ -198,7 +210,7 @@ fn seen(
                     _ = cancel.notified() => true,
                 };
                 if !unplugged {
-                    serve(&phones, &on_session, info, serial, cancel).await;
+                    serve(&phones, &sessions, info, serial, cancel).await;
                 }
             }
             let mut p = phones.lock().unwrap();
@@ -280,6 +292,23 @@ async fn switch(info: &DeviceInfo) -> Result<(), String> {
         .map_err(|e| format!("start: {e}"))
 }
 
+async fn restart(info: &DeviceInfo) -> Result<(), String> {
+    reconfigure(info).await?;
+    tokio::time::sleep(RESTART_SETTLE).await;
+    switch(info).await
+}
+
+async fn reconfigure(info: &DeviceInfo) -> Result<(), String> {
+    let dev = info.open().await.map_err(|e| format!("open: {e}"))?;
+    let config = dev
+        .active_configuration()
+        .map_err(|e| format!("configuration: {e}"))?
+        .configuration_value();
+    dev.set_configuration(config)
+        .await
+        .map_err(|e| format!("set configuration {config}: {e}"))
+}
+
 async fn vendor_out(
     dev: &Device,
     request: u8,
@@ -302,10 +331,23 @@ async fn vendor_out(
 
 async fn release_leftover(phones: &Shared, info: &DeviceInfo, serial: &str) -> bool {
     let l = label(serial);
-    println!("[aa-usb] {l}: accessory left over from an earlier run, resetting it");
+    if !RESETS {
+        match restart(info).await {
+            Ok(()) => {
+                println!("[aa-usb] {l}: accessory left over from an earlier run, restarted it");
+                return false;
+            }
+            Err(e) => eprintln!("[aa-usb] {l}: restart: {e}"),
+        }
+    }
     if !serial.is_empty() {
         phones.lock().unwrap().leftover.insert(serial.to_owned());
     }
+    if !RESETS {
+        println!("[aa-usb] {l}: accessory left over from an earlier run, waiting for a replug");
+        return true;
+    }
+    println!("[aa-usb] {l}: accessory left over from an earlier run, resetting it");
     let reset = match info.open().await {
         Ok(dev) => dev.reset().await.map_err(|e| format!("reset: {e}")),
         Err(e) => Err(format!("open accessory: {e}")),
@@ -319,7 +361,7 @@ async fn release_leftover(phones: &Shared, info: &DeviceInfo, serial: &str) -> b
 
 async fn serve(
     phones: &Shared,
-    on_session: &Arc<OnSession>,
+    sessions: &Arc<Sessions>,
     info: DeviceInfo,
     serial: String,
     cancel: Arc<Notify>,
@@ -339,11 +381,11 @@ async fn serve(
             return;
         }
     };
-    let Some((node, path)) = bind_session_socket("aa-session") else {
+    let Some((node, path)) = bind_session_socket(&sessions.dir, "aa-session") else {
         return;
     };
     println!("[aa-usb] {l}: accessory up, session socket {path}");
-    on_session(&path, &l, &serial);
+    (sessions.announce)(&path, &l, &serial);
     let peer = Peer {
         label: l.clone(),
         ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
@@ -354,7 +396,12 @@ async fn serve(
         if end.closed_by_node {
             p.parked.insert(serial.clone());
         }
-        p.resetting.insert(serial.clone(), Instant::now());
+        if RESETS {
+            p.resetting.insert(serial.clone(), Instant::now());
+        }
+    }
+    if !RESETS {
+        return;
     }
     let mut tries = RESET_RETRIES;
     loop {

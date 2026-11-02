@@ -11,6 +11,7 @@ const MIN_HEIGHT: f64 = 200.0;
 const MIN_WIDTH: f64 = 300.0;
 const MAX_WIDTH: f64 = 4096.0;
 const MAX_HEIGHT: f64 = 2160.0;
+const MAX_MM: f64 = 2000.0;
 
 const WIFI_PASSWORD_MIN: usize = 8;
 const WIFI_PASSWORD_MAX: usize = 63;
@@ -97,6 +98,35 @@ fn screen_size(
         .range(Some(min), Some(max), Some(1.0))
         .display_value()
         .page(Label::new(key, title))
+}
+
+fn screen_size_page(width: &'static str, height: &'static str) -> Node {
+    let mm = |key, text, icon, path| {
+        Node::number(Label::new(key, text), path)
+            .icon(icon)
+            .range(Some(0.0), Some(MAX_MM), Some(1.0))
+            .display_value()
+            .page(Label::new(key, text))
+    };
+    Node::route(
+        "screenSize",
+        Label::new("settings.screenSize", "Screen Size"),
+        vec![
+            mm("settings.screenWidthMm", "Width (mm)", "width", width),
+            mm("settings.screenHeightMm", "Height (mm)", "height", height),
+        ],
+    )
+    .icon("screenSize")
+}
+
+fn window_size_page(width: Node, height: Node) -> Node {
+    Node::route(
+        "windowSize",
+        Label::new("settings.windowSize", "Window Size"),
+        vec![width, height],
+    )
+    .icon("windowSize")
+    .disabled(Condition::DisplaysSettable)
 }
 
 fn fullscreen(path: &'static str) -> Node {
@@ -248,23 +278,26 @@ fn screen_settings() -> Node {
                 [
                     display_rows(Screen::Main),
                     vec![
-                        screen_size(
-                            "settings.mainScreenWidth",
-                            "Width",
-                            "width",
-                            "mainScreenWidth",
-                            MIN_WIDTH,
-                            MAX_WIDTH,
-                            "Main Screen Width",
-                        ),
-                        screen_size(
-                            "settings.mainScreenHeight",
-                            "Height",
-                            "height",
-                            "mainScreenHeight",
-                            MIN_HEIGHT,
-                            MAX_HEIGHT,
-                            "Main Screen Height",
+                        screen_size_page("screenWidthMm.main", "screenHeightMm.main"),
+                        window_size_page(
+                            screen_size(
+                                "settings.mainScreenWidth",
+                                "Width",
+                                "width",
+                                "mainScreenWidth",
+                                MIN_WIDTH,
+                                MAX_WIDTH,
+                                "Main Screen Width",
+                            ),
+                            screen_size(
+                                "settings.mainScreenHeight",
+                                "Height",
+                                "height",
+                                "mainScreenHeight",
+                                MIN_HEIGHT,
+                                MAX_HEIGHT,
+                                "Main Screen Height",
+                            ),
                         ),
                         fullscreen("kiosk.main"),
                         touch_page(Screen::Main),
@@ -286,23 +319,26 @@ fn screen_settings() -> Node {
                     ],
                     display_rows(Screen::Cluster),
                     vec![
-                        screen_size(
-                            "settings.clusterScreenWidth",
-                            "Width",
-                            "width",
-                            "clusterScreenWidth",
-                            MIN_WIDTH,
-                            MAX_WIDTH,
-                            "Cluster Screen Width",
-                        ),
-                        screen_size(
-                            "settings.clusterScreenHeight",
-                            "Height",
-                            "height",
-                            "clusterScreenHeight",
-                            MIN_HEIGHT,
-                            MAX_HEIGHT,
-                            "Cluster Screen Height",
+                        screen_size_page("screenWidthMm.cluster", "screenHeightMm.cluster"),
+                        window_size_page(
+                            screen_size(
+                                "settings.clusterScreenWidth",
+                                "Width",
+                                "width",
+                                "clusterScreenWidth",
+                                MIN_WIDTH,
+                                MAX_WIDTH,
+                                "Cluster Screen Width",
+                            ),
+                            screen_size(
+                                "settings.clusterScreenHeight",
+                                "Height",
+                                "height",
+                                "clusterScreenHeight",
+                                MIN_HEIGHT,
+                                MAX_HEIGHT,
+                                "Cluster Screen Height",
+                            ),
                         ),
                         fullscreen("kiosk.cluster"),
                         touch_page(Screen::Cluster),
@@ -324,23 +360,26 @@ fn screen_settings() -> Node {
                     ],
                     display_rows(Screen::Aux),
                     vec![
-                        screen_size(
-                            "settings.auxScreenWidth",
-                            "Width",
-                            "width",
-                            "auxScreenWidth",
-                            MIN_WIDTH,
-                            MAX_WIDTH,
-                            "Aux Screen Width",
-                        ),
-                        screen_size(
-                            "settings.auxScreenHeight",
-                            "Height",
-                            "height",
-                            "auxScreenHeight",
-                            MIN_HEIGHT,
-                            MAX_HEIGHT,
-                            "Aux Screen Height",
+                        screen_size_page("screenWidthMm.aux", "screenHeightMm.aux"),
+                        window_size_page(
+                            screen_size(
+                                "settings.auxScreenWidth",
+                                "Width",
+                                "width",
+                                "auxScreenWidth",
+                                MIN_WIDTH,
+                                MAX_WIDTH,
+                                "Aux Screen Width",
+                            ),
+                            screen_size(
+                                "settings.auxScreenHeight",
+                                "Height",
+                                "height",
+                                "auxScreenHeight",
+                                MIN_HEIGHT,
+                                MAX_HEIGHT,
+                                "Aux Screen Height",
+                            ),
                         ),
                         fullscreen("kiosk.aux"),
                         touch_page(Screen::Aux),

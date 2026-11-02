@@ -9,3 +9,7 @@ tokio = { workspace = true, features = ["rt", "sync", "io-util"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 nusb.workspace = true
 libc.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+nusb-android.workspace = true
+libc.workspace = true

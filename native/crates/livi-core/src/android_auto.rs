@@ -3,6 +3,7 @@
 // Additional terms: see NOTICE
 
 use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use livi_aa_stack::config::Codecs;
@@ -16,10 +17,9 @@ use livi_media::gst_host::{self, Codec, FeedTarget, GstHost};
 use livi_media::planes::{ClusterPlanes, Crop, MainPlane, crop_for};
 use tokio::sync::{broadcast, mpsc, watch};
 
-use crate::devices;
+use crate::devices::Shared;
 use crate::hands_free::{Back, Io};
 
-const SCO_MIC_SOCK: &str = "/tmp/aa-sco.mic";
 const SCO_RATE: u32 = 8000;
 const SCO_CHANNELS: u32 = 1;
 const CALL_TAG: &str = "call";
@@ -112,6 +112,7 @@ pub struct GstAaMedia {
     crop: watch::Sender<Option<Crop>>,
     call: Mutex<Call>,
     sessions: Mutex<Sessions>,
+    mic: PathBuf,
 }
 
 impl GstAaMedia {
@@ -120,8 +121,10 @@ impl GstAaMedia {
         plane: Arc<MainPlane>,
         clusters: Arc<ClusterPlanes>,
         state: watch::Receiver<State>,
+        mic: PathBuf,
     ) -> Arc<Self> {
         Arc::new(Self {
+            mic,
             gst,
             plane,
             clusters,
@@ -234,7 +237,7 @@ impl GstAaMedia {
             .audio_input_device
             .clone()
             .unwrap_or_default();
-        let tap = self.open_mic_tap(SCO_MIC_SOCK, SCO_RATE, SCO_CHANNELS, &device);
+        let tap = self.open_mic_tap(&self.mic.to_string_lossy(), SCO_RATE, SCO_CHANNELS, &device);
         if tap.is_none() {
             eprintln!("[core] no microphone tap, the caller hears nothing");
         }
@@ -508,6 +511,7 @@ pub async fn hands_free_io(
     mut asks: mpsc::UnboundedReceiver<Io>,
     media: Arc<GstAaMedia>,
     helper: AaHelperSock,
+    shared: Shared,
     back: mpsc::UnboundedSender<Back>,
 ) {
     while let Some(ask) = asks.recv().await {
@@ -523,12 +527,12 @@ pub async fn hands_free_io(
                 });
             }
             Io::Nudge(mac) => {
-                tokio::spawn(devices::nudge_hfp(mac));
+                tokio::spawn(shared.clone().nudge_hfp(mac));
             }
             Io::FindPhones => {
-                let back = back.clone();
+                let (back, shared) = (back.clone(), shared.clone());
                 tokio::spawn(async move {
-                    let _ = back.send(Back::Phones(devices::connected_phones().await));
+                    let _ = back.send(Back::Phones(shared.connected_phones().await));
                 });
             }
         }
@@ -684,7 +688,7 @@ mod tests {
         let plane = MainPlane::new(gst.clone(), ctrl.clone());
         let clusters = ClusterPlanes::new(gst.clone(), ctrl);
         let (_state_tx, state_rx) = watch::channel(state());
-        let media = GstAaMedia::new(gst, plane, clusters, state_rx);
+        let media = GstAaMedia::new(gst, plane, clusters, state_rx, dir.0.join("aa-sco.mic"));
         let mut opened = media.audio_output_opened();
 
         media.prime_audio(AudioKind::Speech, 16000, 1, "speech");
@@ -733,7 +737,7 @@ mod tests {
         let plane = MainPlane::new(gst.clone(), ctrl.clone());
         let clusters = ClusterPlanes::new(gst.clone(), ctrl);
         let (_state_tx, state_rx) = watch::channel(state());
-        let media = GstAaMedia::new(gst, plane, clusters, state_rx);
+        let media = GstAaMedia::new(gst, plane, clusters, state_rx, dir.0.join("aa-sco.mic"));
 
         let wifi = media.video_feed(1, false);
         let mut host = FakeHost::connect(&sock).await;
@@ -788,7 +792,7 @@ mod tests {
         let plane = MainPlane::new(gst.clone(), ctrl.clone());
         let clusters = ClusterPlanes::new(gst.clone(), ctrl);
         let (_state_tx, state_rx) = watch::channel(state());
-        let media = GstAaMedia::new(gst, plane, clusters, state_rx);
+        let media = GstAaMedia::new(gst, plane, clusters, state_rx, dir.0.join("aa-sco.mic"));
 
         let back = media.video_feed(2, false);
         let mut host = FakeHost::connect(&sock).await;
@@ -833,7 +837,8 @@ mod tests {
         let mut with_mic = state();
         with_mic.config.audio_input_device = Some("mic1".into());
         let (_state_tx, state_rx) = watch::channel(with_mic);
-        let media = GstAaMedia::new(gst, plane, clusters, state_rx);
+        let mic = dir.0.join("aa-sco.mic");
+        let media = GstAaMedia::new(gst, plane, clusters, state_rx, mic.clone());
         let helper_path = dir.0.join("aa.sock");
         let listener = tokio::net::UnixListener::bind(&helper_path).unwrap();
         let helper = AaHelperSock::new(&helper_path);
@@ -847,7 +852,7 @@ mod tests {
             panic!()
         };
         assert_eq!((*open, *tap_op), (OP_AUDIO_OPEN, OP_TAP_OPEN));
-        assert!(tap_body.ends_with(b"mic1/tmp/aa-sco.mic"));
+        assert!(tap_body.ends_with(format!("mic1{}", mic.display()).as_bytes()));
         let stream = *stream;
         host.stream
             .write_all(&encode_reply(REPLY_AUDIO_PORTS, stream, &[0; 4]))

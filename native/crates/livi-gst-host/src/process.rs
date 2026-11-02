@@ -8,11 +8,12 @@ use std::ffi::CString;
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixStream;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::{Arc, Mutex};
 
-use glib::IOCondition;
+use glib::{ControlFlow, IOCondition, SourceId};
 
 use crate::gst::Gst;
 use crate::{Host, Wire};
@@ -44,6 +45,29 @@ pub fn run(sock_path: &str, crash_log: &str) {
         eprintln!("[gst-host] connect to {sock_path} failed");
         std::process::exit(1);
     };
+    let _sources = attach(sock, || std::process::exit(0));
+    glib::MainLoop::new(None, false).run();
+}
+
+pub fn serve(sock_path: &Path) {
+    livi_video_player::ensure_init();
+    let sock = match UnixStream::connect(sock_path) {
+        Ok(sock) => sock,
+        Err(e) => {
+            eprintln!("[gst-host] connect to {} failed: {e}", sock_path.display());
+            return;
+        }
+    };
+    let main = glib::MainLoop::new(None, false);
+    let quit = main.clone();
+    let sources = attach(sock, move || quit.quit());
+    main.run();
+    for source in sources {
+        source.remove();
+    }
+}
+
+fn attach(sock: UnixStream, hung_up: impl Fn() + 'static) -> Vec<SourceId> {
     let sock = Arc::new(sock);
     let wire = Arc::new(SocketWire {
         sock: sock.clone(),
@@ -53,51 +77,50 @@ pub fn run(sock_path: &str, crash_log: &str) {
 
     let fd = sock.as_raw_fd();
     let reading = host.clone();
-    glib_unix::unix_fd_add_local(
+    let mut sources = vec![glib_unix::unix_fd_add_local(
         fd,
         IOCondition::IN | IOCondition::HUP | IOCondition::ERR,
         move |_, cond| {
-            if cond.contains(IOCondition::HUP) || cond.contains(IOCondition::ERR) {
-                std::process::exit(0);
+            if cond.intersects(IOCondition::HUP | IOCondition::ERR) {
+                hung_up();
+                return ControlFlow::Continue;
             }
             let mut chunk = [0u8; CHUNK];
             let mut from: &UnixStream = &sock;
-            let read = match from.read(&mut chunk) {
-                Ok(0) | Err(_) => std::process::exit(0),
-                Ok(n) => n,
-            };
-            reading.borrow_mut().feed(&chunk[..read]);
-            glib::ControlFlow::Continue
+            match from.read(&mut chunk) {
+                Ok(0) | Err(_) => hung_up(),
+                Ok(n) => reading.borrow_mut().feed(&chunk[..n]),
+            }
+            ControlFlow::Continue
         },
-    );
+    )];
 
     let visualizer_host = host.clone();
-    glib::timeout_add_local(
+    sources.push(glib::timeout_add_local(
         std::time::Duration::from_millis(VISUALIZER_INTERVAL_MS),
         move || {
             visualizer_host.borrow_mut().pump_visualizer();
-            glib::ControlFlow::Continue
+            ControlFlow::Continue
         },
-    );
+    ));
 
     let status_host = host.clone();
-    glib::timeout_add_local(
+    sources.push(glib::timeout_add_local(
         std::time::Duration::from_millis(URL_STATUS_INTERVAL_MS),
         move || {
             status_host.borrow().pump_url_status();
             status_host.borrow().pump_audio_delays();
-            glib::ControlFlow::Continue
+            ControlFlow::Continue
         },
-    );
+    ));
 
-    glib::timeout_add_seconds_local(STATS_SECONDS, move || {
+    sources.push(glib::timeout_add_seconds_local(STATS_SECONDS, move || {
         for line in host.borrow().take_stats() {
             eprintln!("{line}");
         }
-        glib::ControlFlow::Continue
-    });
-
-    glib::MainLoop::new(None, false).run();
+        ControlFlow::Continue
+    }));
+    sources
 }
 
 static CRASH_PATH: AtomicPtr<c_char> = AtomicPtr::new(core::ptr::null_mut());

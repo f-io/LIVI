@@ -62,7 +62,7 @@ pub fn wlan_link_local(iface: &str) -> Option<String> {
         .map(|t| t.split('/').next().unwrap_or(t).to_string())
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 pub fn wlan_link_local(iface: &str) -> Option<String> {
     let want = std::ffi::CString::new(iface).ok()?;
     let mut ifap: *mut libc::ifaddrs = std::ptr::null_mut();

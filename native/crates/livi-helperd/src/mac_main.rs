@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+use livi_core_proto::helper::{HelperSockets, HelperStart};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,19 +14,20 @@ use livi_runtime::bonjour::Bonjour;
 use livi_runtime::bringup::{AskOnAir, CpConfig, run_accessory};
 use livi_runtime::driver::spawn_link_stream;
 use livi_runtime::hfp::Hfp;
-use livi_runtime::ident::{Identity, Theme, Transport};
+use livi_runtime::ident::{Identity, Transport};
 use livi_runtime::livi_sock::{
     self, Broadcaster, LiviSockConfig, SharedTag, pump_artwork, pump_events_for,
 };
 use livi_runtime::mfi_async::SharedCoprocessor;
 use livi_runtime::sco::ScoSink;
 use livi_runtime::state::HelperState;
-use livi_runtime::vehicle::{Fuels, Plugs};
 use livi_wifi::Channel;
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
 use crate::bt_dongle::{Arrival, Dongle, Profiles};
-use crate::link::LinkPresence;
+use livi_helper::link::LinkPresence;
+use livi_helper::wired::Wired;
+use livi_helper::{DEFAULT_CHANNEL, DEFAULT_NAME, DEFAULT_PASSPHRASE};
 
 const AP_WAIT: Duration = Duration::from_secs(15);
 
@@ -53,35 +55,9 @@ fn accessory_mac(pi: &str) -> [u8; 6] {
 }
 
 fn cp_config() -> (CpConfig, Identity) {
-    let name = env_s("LIVI_CP_NAME", "LIVI");
-    let pi = env_s("LIVI_CP_PI", "");
-    let cp = CpConfig {
-        device_id: Some(env_s("LIVI_CP_DEVICE_ID", "")).filter(|s| !s.is_empty()),
-        ap_mac: None,
-        ap_on_air: None,
-        wifi_iface: String::new(),
-        ssid: name.clone(),
-        passphrase: env_s("LIVI_PASSPHRASE", "12345678"),
-        channel: Channel::of_number(env_s("LIVI_CHANNEL", "36").parse().unwrap_or(36)),
-        airplay_port: env_s("LIVI_CP_AIRPLAY_PORT", "").parse().unwrap_or(0),
-        source_version: env_s("LIVI_CP_SOURCE_VERSION", "950.7.1"),
-        public_key: pi.clone(),
-        transport: Transport::Wired,
-        av_iface: None,
-        av_iface_late: None,
-        available_current_ma: 500,
-        on_cable: None,
-        start_again: None,
-        theme: Theme::parse(&env_s("LIVI_CP_THEME", "")),
-    };
-    let identity = Identity {
-        name: name.clone(),
-        ssid: name,
-        bt_mac: accessory_mac(&pi),
-        fuels: Fuels::parse(&env_s("LIVI_CP_FUELS", "")),
-        plugs: Plugs::parse(&env_s("LIVI_CP_CONNECTORS", "")),
-        theme: cp.theme.clone(),
-    };
+    let start = HelperStart::from_env();
+    let (mut identity, cp) = livi_helper::carplay(&start, Transport::Wired);
+    identity.bt_mac = accessory_mac(&start.pairing_id);
     (cp, identity)
 }
 
@@ -256,7 +232,7 @@ fn start_carplay_seam(
         },
     ));
     let sock_cfg = LiviSockConfig {
-        path: livi_sock::SOCK_PATH.into(),
+        path: HelperSockets::system().carplay,
         identity: if over_dongle {
             wireless_identity(&identity)
         } else {
@@ -289,22 +265,23 @@ fn start_carplay_seam(
         (auth.clone(), identity.clone(), cp.clone());
     tokio::spawn(identify_on_link(link.clone(), auth.clone()));
     let dongle_ap = env_s("LIVI_WIFI_IFACE", "") == livi_link_host::link::CHOICE;
-    tokio::spawn(crate::wired::watch_usbmuxd(
+    tokio::spawn(livi_helper::wired::watch_usbmuxd(Wired {
         auth,
         identity,
-        cp.clone(),
-        crate::wired::Dongle {
+        cp: cp.clone(),
+        dongle: livi_helper::wired::Dongle {
             ap_mac: dongle_ap.then_some(livi_link_host::ap::mac as fn() -> Option<String>),
             bt_mac: over_dongle.then_some(livi_link_host::ap::bt_mac as fn() -> Option<[u8; 6]>),
         },
-        bcast.clone(),
-        state.clone(),
-        if own_files {
+        bcast: bcast.clone(),
+        state: state.clone(),
+        link: if own_files {
             LinkPresence::always()
         } else {
             link.clone()
         },
-    ));
+        lockdown: crate::lockdown_dir(),
+    }));
     println!("[helperd] wired CarPlay watcher started (system usbmuxd), waiting for the LIVI Link");
     if dongle_ap {
         tokio::spawn(crate::link::relay_stations(bcast.clone()));
@@ -361,15 +338,19 @@ fn start_android_auto(
         .parse()
         .unwrap_or(livi_aa::consts::TCP_PORT);
     let sessions = events.clone();
-    tokio::spawn(livi_aa::server::run(port, move |socket, peer| {
-        sessions.push_json(format!(
+    tokio::spawn(livi_aa::server::run(
+        port,
+        HelperSockets::system().sessions,
+        move |socket, peer| {
+            sessions.push_json(format!(
             "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\",\"transport\":\"wifi\"}}"
         ));
-    }));
+        },
+    ));
     let cfg = crate::aa::AaConfig {
-        ssid: env_s("LIVI_CP_NAME", "LIVI"),
-        passphrase: env_s("LIVI_PASSPHRASE", "12345678"),
-        channel: Channel::of_number(env_s("LIVI_CHANNEL", "36").parse().unwrap_or(36)),
+        ssid: env_s("LIVI_CP_NAME", DEFAULT_NAME),
+        passphrase: env_s("LIVI_PASSPHRASE", DEFAULT_PASSPHRASE),
+        channel: Channel::of_number(env_s("LIVI_CHANNEL", "").parse().unwrap_or(DEFAULT_CHANNEL)),
         ap_ip: String::new(),
         port,
     };
@@ -406,7 +387,7 @@ fn start_bluetooth(
         events,
         sco_sink,
     };
-    let name = env_s("LIVI_CP_NAME", "LIVI");
+    let name = env_s("LIVI_CP_NAME", DEFAULT_NAME);
     tokio::spawn(crate::bt_dongle::run(
         dongle, link, profiles, state, offered, name,
     ));
@@ -432,8 +413,8 @@ pub fn run() -> ExitCode {
             deauth_dongle: dongle_ap.then_some(livi_link_host::ap::deauth as fn() -> Option<usize>),
         };
         tokio::spawn(async move {
-            let path = livi_runtime::shared_sock::SOCK_PATH;
-            if let Err(e) = livi_runtime::shared_sock::serve(path, None, shared).await {
+            let path = HelperSockets::system().shared;
+            if let Err(e) = livi_runtime::shared_sock::serve(&path, None, shared).await {
                 eprintln!("[shared-sock] ended: {e}");
             }
         });
@@ -457,31 +438,36 @@ pub fn run() -> ExitCode {
             }),
         };
         tokio::spawn(async move {
-            if let Err(e) = livi_runtime::aa_sock::serve(deps).await {
+            if let Err(e) =
+                livi_runtime::aa_sock::serve(&HelperSockets::system().android_auto, deps).await
+            {
                 eprintln!("[aa-sock] ended: {e}");
             }
         });
-        let events = aa_events.clone();
-        let subscribed = aa_events.clone();
-        tokio::spawn(livi_aa::usb::run(
+        tokio::spawn(livi_helper::aa::watch_usb(
             usb_control,
-            move |socket, peer, serial| {
-                events.push_json(format!(
-                    "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\",\"transport\":\"usb\",\"serial\":\"{serial}\"}}"
-                ));
-            },
-            async move { subscribed.subscribed().await },
+            HelperSockets::system().sessions,
+            aa_events.clone(),
         ));
         println!("[helperd] Android Auto USB watcher started");
         let link = LinkPresence::new();
         let link_state = link.clone();
-        tokio::spawn(livi_link_host::run(move |on, _serial| link_state.set_on_bus(on)));
+        tokio::spawn(livi_link_host::run(move |on, _serial| {
+            link_state.set_on_bus(on)
+        }));
         println!("[helperd] dongle watcher started");
 
         let state = Arc::new(HelperState::default());
         let dongle = Dongle::default();
         let carplay = if over_dongle() {
-            start_bluetooth(link.clone(), state.clone(), dongle.clone(), aa_events, wired_phones, sco_sink)
+            start_bluetooth(
+                link.clone(),
+                state.clone(),
+                dongle.clone(),
+                aa_events,
+                wired_phones,
+                sco_sink,
+            )
         } else {
             None
         };

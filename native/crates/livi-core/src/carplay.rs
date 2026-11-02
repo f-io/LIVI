@@ -8,12 +8,12 @@ use std::sync::{Arc, Mutex};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use livi_aa_stack::config::{AaConfig, Addresses as AaAddresses, Codecs};
+use livi_aa_stack::config::{AaConfig, Addresses as AaAddresses, Codecs, ScreenWidths};
 use livi_core_proto::config::{CarType, ClusterContent, Config, DockPosition, HandDriveType};
 use livi_core_proto::icon::{
     DEFAULT_120 as ICON_120, DEFAULT_180 as ICON_180, DEFAULT_256 as ICON_256,
 };
-use livi_core_proto::state::State;
+use livi_core_proto::state::{Screen, State};
 use livi_core_proto::theme::{DisplayKind, Theme};
 use livi_cp::info::{DisplayConfig, Icon, InfoConfig, Insets, ThemeDisplays, mm_at_dpi};
 use livi_cp::media::{AudioCodec, AudioRequest, AudioStream, Media, MicRequest, VideoStatus};
@@ -244,21 +244,6 @@ pub fn cluster_displayed(cfg: &Config) -> bool {
     d.main || d.cluster || d.aux
 }
 
-fn panel_mm(panel: Option<&Panel>, w: u32, h: u32) -> Option<(i64, i64)> {
-    let g = panel?;
-    if g.width_mm == 0 || g.height_mm == 0 || g.width_px == 0 || g.height_px == 0 {
-        return None;
-    }
-    let scale = |mm: u32, px: u32, at: u32| {
-        (f64::from(mm) * (f64::from(at) / f64::from(px)).powf(0.75) + 0.5).floor() as i64
-    };
-    let (wm, hm) = (
-        scale(g.width_mm, g.width_px, w),
-        scale(g.height_mm, g.height_px, h),
-    );
-    (wm > 0 && hm > 0).then_some((wm, hm))
-}
-
 fn status_bar_edge(dock: DockPosition) -> u64 {
     match dock {
         DockPosition::Auto => 0,
@@ -267,14 +252,31 @@ fn status_bar_edge(dock: DockPosition) -> u64 {
     }
 }
 
-fn fullscreen_mm(screen: Option<Panel>, w: u32, h: u32) -> Option<(i64, i64)> {
-    let s = screen?;
-    if s.width_mm == 0 || s.height_mm == 0 || w == 0 || h == 0 {
-        return None;
-    }
-    let fit = (f64::from(s.width_mm) / f64::from(w)).min(f64::from(s.height_mm) / f64::from(h));
-    let mm = |px: u32| (f64::from(px) * fit + 0.5).floor() as i64;
-    Some((mm(w), mm(h)))
+fn panel_mm(panel: Option<&Panel>) -> Option<(i64, i64)> {
+    let s = panel?;
+    (s.width_mm > 0 && s.height_mm > 0).then(|| (s.width_mm.into(), s.height_mm.into()))
+}
+
+fn measured_mm(cfg: &Config, screen: Screen) -> Option<(i64, i64)> {
+    let (w, h) = (
+        *cfg.screen_width_mm.get(screen),
+        *cfg.screen_height_mm.get(screen),
+    );
+    (w > 0 && h > 0).then(|| (w.into(), h.into()))
+}
+
+fn main_mm(
+    cfg: &Config,
+    panels: &HashMap<String, Panel>,
+    screen: Option<&Panel>,
+) -> Option<(i64, i64)> {
+    measured_mm(cfg, Screen::Main)
+        .or_else(|| panel_mm(panels.get("main")))
+        .or_else(|| panel_mm(screen))
+}
+
+fn cluster_mm(cfg: &Config, panels: &HashMap<String, Panel>) -> Option<(i64, i64)> {
+    measured_mm(cfg, Screen::Cluster).or_else(|| panel_mm(panels.get("cluster")))
 }
 
 fn dpi_mm(dpi: u32, w: u32, h: u32) -> Option<(i64, i64)> {
@@ -341,8 +343,7 @@ pub fn stack_config(
         even(or(cfg.projection_height, 1080)),
     );
     let main_mm = dpi_mm(cfg.projection_dpi, main_w, main_h)
-        .or_else(|| panel_mm(panels.get("main"), main_w, main_h))
-        .or_else(|| fullscreen_mm(screen, main_w, main_h));
+        .or_else(|| main_mm(cfg, panels, screen.as_ref()));
     let name = if cfg.car_name.trim().is_empty() {
         "LIVI".to_string()
     } else {
@@ -350,7 +351,7 @@ pub fn stack_config(
     };
     let cluster = cluster_displayed(cfg).then(|| {
         let mm = dpi_mm(cfg.cluster_dpi, cfg.cluster_width, cfg.cluster_height)
-            .or_else(|| panel_mm(panels.get("cluster"), cfg.cluster_width, cfg.cluster_height));
+            .or_else(|| cluster_mm(cfg, panels));
         DisplayConfig {
             width_pixels: cfg.cluster_width.into(),
             height_pixels: cfg.cluster_height.into(),
@@ -513,14 +514,30 @@ pub fn offers_hevc(probe: &serde_json::Value) -> bool {
     flag("h265", "hw") || (flag("h265", "sw") && !flag("h264", "hw"))
 }
 
-fn aa_config(cfg: &Config, codecs: Codecs, addresses: &Addresses) -> AaConfig {
+fn aa_config(
+    cfg: &Config,
+    panels: &HashMap<String, Panel>,
+    screen: Option<&Panel>,
+    codecs: Codecs,
+    addresses: &Addresses,
+) -> AaConfig {
+    let widths = ScreenWidths {
+        main: main_mm(cfg, panels, screen).map(|m| m.0 as f64),
+        cluster: cluster_mm(cfg, panels).map(|m| m.0 as f64),
+    };
     let known = |a: &str| (a != hwaddr::FALLBACK).then(|| a.to_string());
     let addresses = AaAddresses {
         bt_mac: known(&addresses.bt_mac),
         wifi_bssid: known(&addresses.wifi_bssid),
         access_point: addresses.access_point.clone(),
     };
-    livi_aa_stack::config::from_livi(cfg, codecs, cfg.appearance_mode.night_mode(), &addresses)
+    livi_aa_stack::config::from_livi(
+        cfg,
+        widths,
+        codecs,
+        cfg.appearance_mode.night_mode(),
+        &addresses,
+    )
 }
 
 pub struct ConfigSource {
@@ -533,10 +550,7 @@ pub struct ConfigSource {
     addresses: Mutex<Addresses>,
     told: Mutex<HashMap<String, String>>,
     accessory: String,
-}
-
-fn images_dir() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config/LIVI/carplay-images")
+    images: PathBuf,
 }
 
 fn carplay_images(dir: &Path) -> Vec<(String, Vec<u8>)> {
@@ -565,8 +579,8 @@ fn carplay_images(dir: &Path) -> Vec<(String, Vec<u8>)> {
     images
 }
 
-fn with_images(mut cfg: StackConfig) -> StackConfig {
-    cfg.images = carplay_images(&images_dir());
+fn with_images(mut cfg: StackConfig, images: &Path) -> StackConfig {
+    cfg.images = carplay_images(images);
     cfg
 }
 
@@ -588,6 +602,7 @@ impl ConfigSource {
         state: watch::Receiver<State>,
         panels: watch::Receiver<HashMap<String, Panel>>,
         accessory: String,
+        images: PathBuf,
     ) -> (
         Arc<Self>,
         watch::Receiver<StackConfig>,
@@ -605,16 +620,18 @@ impl ConfigSource {
             (s.config.clone(), s.cluster.theme.clone())
         };
         let screen = host::screen_panel();
-        let first = with_images(stack_config(
+        let first = with_images(
+            stack_config(&cfg, &panels.borrow(), screen, false, &addresses, &cluster),
+            &images,
+        );
+        let (tx, rx) = watch::channel(first);
+        let (aa, aa_rx) = watch::channel(aa_config(
             &cfg,
             &panels.borrow(),
-            screen,
-            false,
+            screen.as_ref(),
+            Codecs::default(),
             &addresses,
-            &cluster,
         ));
-        let (tx, rx) = watch::channel(first);
-        let (aa, aa_rx) = watch::channel(aa_config(&cfg, Codecs::default(), &addresses));
         let source = Arc::new(Self {
             tx,
             aa,
@@ -625,6 +642,7 @@ impl ConfigSource {
             addresses: Mutex::new(addresses),
             told: Mutex::new(HashMap::new()),
             accessory,
+            images,
         });
         (source, rx, aa_rx)
     }
@@ -676,21 +694,30 @@ impl ConfigSource {
             known.clone()
         };
         let codecs = *self.codecs.lock().unwrap_or_else(|e| e.into_inner());
-        let next = with_images(stack_config(
-            &cfg,
-            &self.panels.borrow(),
-            self.screen,
-            codecs.hevc,
-            &addresses,
-            &cluster,
-        ));
+        let next = with_images(
+            stack_config(
+                &cfg,
+                &self.panels.borrow(),
+                self.screen,
+                codecs.hevc,
+                &addresses,
+                &cluster,
+            ),
+            &self.images,
+        );
         self.tx.send_if_modified(|cur| {
             let changed = *cur != next;
             *cur = next;
             changed
         });
         livi_aa_stack::log::set_debug(cfg.debug_logging);
-        let aa = aa_config(&cfg, codecs, &addresses);
+        let aa = aa_config(
+            &cfg,
+            &self.panels.borrow(),
+            self.screen.as_ref(),
+            codecs,
+            &addresses,
+        );
         self.aa.send_if_modified(|cur| {
             let changed = *cur != aa;
             *cur = aa;
@@ -848,8 +875,14 @@ mod tests {
         };
         let (_state_tx, state_rx) = watch::channel(state);
         let (_panels_tx, panels_rx) = watch::channel(panels());
-        let (source, config, aa) =
-            ConfigSource::new(state_rx, panels_rx, "02:5A:11:22:33:44".into());
+        let images =
+            std::env::temp_dir().join(format!("livi-source-images-{}", std::process::id()));
+        let (source, config, aa) = ConfigSource::new(
+            state_rx,
+            panels_rx,
+            "02:5A:11:22:33:44".into(),
+            images.clone(),
+        );
         source
             .told
             .lock()
@@ -860,6 +893,7 @@ mod tests {
         assert!(started.elapsed() < std::time::Duration::from_secs(1));
         assert_eq!(config.borrow().info.device_id, "02:5A:11:22:33:44");
         assert_eq!(aa.borrow().wifi_bssid.as_deref(), Some("88:00:33:77:8C:26"));
+        let _ = std::fs::remove_dir_all(&images);
     }
 
     #[test]
@@ -1003,20 +1037,16 @@ mod tests {
     }
 
     #[test]
-    fn panels_scale_sublinearly() {
-        assert_eq!(panel_mm(panels().get("main"), 1280, 720), Some((300, 170)));
-        assert_eq!(panel_mm(panels().get("main"), 2560, 1440), Some((505, 286)));
-        assert_eq!(panel_mm(panels().get("cluster"), 800, 480), None);
-        let flat = HashMap::from([(
-            "main".to_string(),
-            Panel {
-                width_mm: 0,
-                height_mm: 170,
-                width_px: 1280,
-                height_px: 720,
-            },
-        )]);
-        assert_eq!(panel_mm(flat.get("main"), 1280, 720), None);
+    fn the_panel_size_goes_out_as_measured() {
+        assert_eq!(panel_mm(panels().get("main")), Some((300, 170)));
+        assert_eq!(panel_mm(panels().get("cluster")), None);
+        let flat = Panel {
+            width_mm: 0,
+            height_mm: 170,
+            width_px: 1280,
+            height_px: 720,
+        };
+        assert_eq!(panel_mm(Some(&flat)), None);
     }
 
     #[test]
@@ -1038,32 +1068,6 @@ mod tests {
         assert_eq!(edge(&cfg), Some(2));
         cfg.car_play_dock_position = DockPosition::Auto;
         assert_eq!(edge(&cfg), Some(0));
-    }
-
-    #[test]
-    fn the_projection_fills_the_screen() {
-        let screen = Panel {
-            width_mm: 286,
-            height_mm: 179,
-            width_px: 3360,
-            height_px: 2100,
-        };
-        assert_eq!(fullscreen_mm(Some(screen), 2560, 1600), Some((286, 179)));
-        assert_eq!(fullscreen_mm(Some(screen), 1920, 1080), Some((286, 161)));
-        assert_eq!(fullscreen_mm(Some(screen), 1440, 1080), Some((239, 179)));
-        assert_eq!(fullscreen_mm(None, 1920, 1080), None);
-        assert_eq!(
-            fullscreen_mm(
-                Some(Panel {
-                    width_mm: 0,
-                    ..screen
-                }),
-                1920,
-                1080
-            ),
-            None
-        );
-        assert_eq!(fullscreen_mm(Some(screen), 0, 1080), None);
     }
 
     #[test]
@@ -1091,7 +1095,13 @@ mod tests {
             .width_physical_mm
         };
         assert_eq!(main(&cfg, &HashMap::new()), Some(286));
-        assert_eq!(main(&cfg, &panels()), Some(407));
+        assert_eq!(main(&cfg, &panels()), Some(300));
+        cfg.screen_width_mm.main = 347;
+        cfg.screen_height_mm.main = 195;
+        assert_eq!(main(&cfg, &panels()), Some(347));
+        cfg.screen_height_mm.main = 0;
+        assert_eq!(main(&cfg, &panels()), Some(300));
+        cfg.screen_height_mm.main = 195;
         cfg.projection_dpi = 160;
         assert_eq!(main(&cfg, &HashMap::new()), Some(305));
     }

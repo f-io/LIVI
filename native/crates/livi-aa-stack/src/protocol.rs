@@ -44,6 +44,7 @@ const KEYFRAME_FOLLOW_UP: Duration = Duration::from_millis(60);
 const SHUTDOWN_ACK: Duration = Duration::from_secs(1);
 
 pub const BYEBYE_USER_SELECTION: u8 = 1;
+pub const BYEBYE_POWER_DOWN: u8 = 7;
 
 const OK: i32 = MessageStatus::Success as i32;
 

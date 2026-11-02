@@ -145,6 +145,44 @@ jobs:
         with:
           key: ${{ steps.cargo.outputs.key }}
 
+  android:
+    name: Android (clippy)
+    if: ${{ github.actor != 'github-actions' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Setup Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install
+          rustc --version
+
+      - name: Restore cargo cache
+        id: cargo
+        uses: ./.github/actions/cargo-cache/restore
+        with:
+          name: check-android
+
+      - name: Set up the Android build
+        uses: ./.github/actions/android-setup
+
+      - name: Check the Android build (clippy)
+        working-directory: native
+        run: cargo xtask check-android
+
+      - name: Save cargo cache
+        if: ${{ steps.cargo.outputs.hit != 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') }}
+        uses: ./.github/actions/cargo-cache/save
+        with:
+          key: ${{ steps.cargo.outputs.key }}
+
   lint:
     name: Lint (dprint, actionlint, license headers)
     if: ${{ github.actor != 'github-actions' }}

@@ -19,7 +19,7 @@ struct Source {
 
 struct Font {
     script: [u8; 4],
-    #[cfg_attr(target_os = "macos", expect(dead_code))]
+    #[cfg_attr(not(target_os = "linux"), expect(dead_code))]
     fontconfig: &'static str,
     probe: char,
     file: &'static str,
@@ -179,12 +179,12 @@ fn covers(path: &str, probe: char) -> bool {
         .any(|font| font.charmap().map(probe).is_some_and(|g| g.to_u32() != 0))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 async fn system_has(_font: &Font) -> bool {
     true
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 async fn system_has(font: &Font) -> bool {
     tokio::process::Command::new("fc-list")
         .args([format!(":lang={}", font.fontconfig).as_str(), "family"])
@@ -214,7 +214,7 @@ async fn fetch(client: &reqwest::Client, source: &Source) -> Result<Vec<u8>, Str
 }
 
 async fn download(dir: &Path, font: &Font) -> Result<(), String> {
-    let client = reqwest::Client::builder()
+    let client = crate::http::builder()
         .user_agent(USER_AGENT)
         .connect_timeout(CONNECT_TIMEOUT)
         .build()

@@ -52,12 +52,18 @@ pub(crate) fn source_device_property() -> &'static str {
     }
 }
 
-pub fn pipeline_desc(cfg: &UplinkConfig) -> String {
-    let source = if cfg!(target_os = "macos") {
-        format!("osxaudiosrc name={SOURCE_NAME}")
+const fn source_element() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "osxaudiosrc"
+    } else if cfg!(target_os = "android") {
+        "aaudiosrc"
     } else {
-        format!("pulsesrc name={SOURCE_NAME}")
-    };
+        "pulsesrc"
+    }
+}
+
+pub fn pipeline_desc(cfg: &UplinkConfig) -> String {
+    let source = format!("{} name={SOURCE_NAME}", source_element());
 
     let rate = cfg.sample_rate;
     let channels = cfg.channels;
@@ -192,11 +198,7 @@ impl Drop for Uplink {
 }
 
 pub fn capture_desc(sample_rate: u32, channels: u8) -> String {
-    let source = if cfg!(target_os = "macos") {
-        format!("osxaudiosrc name={SOURCE_NAME}")
-    } else {
-        format!("pulsesrc name={SOURCE_NAME}")
-    };
+    let source = format!("{} name={SOURCE_NAME}", source_element());
     format!(
         "{source} ! audioconvert ! audioresample ! \
          audio/x-raw,format=S16LE,layout=interleaved,rate={sample_rate},channels={channels} ! \

@@ -47,7 +47,7 @@ pub async fn fetch(dir: &Path, configured: &str) -> Result<Theme, String> {
     let id = ThemeId::parse(configured).ok_or_else(|| format!("not a theme id: {configured}"))?;
     let catalog = catalog_client().await?;
     let url = package_url(&catalog, &id).await?;
-    let plain = reqwest::Client::new();
+    let plain = crate::http::builder().build().map_err(|e| e.to_string())?;
     let index = ZipIndex::read(&plain, &url).await?;
     let package = json_entry(&plain, &url, &index, PACKAGE).await?;
     let styles = json_entry(&plain, &url, &index, STYLES).await?;
@@ -60,7 +60,13 @@ pub async fn fetch(dir: &Path, configured: &str) -> Result<Theme, String> {
 }
 
 async fn catalog_client() -> Result<reqwest::Client, String> {
-    let der = reqwest::get(ROOT_URL).await.map_err(|e| e.to_string())?;
+    let der = crate::http::builder()
+        .build()
+        .map_err(|e| e.to_string())?
+        .get(ROOT_URL)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
     let der = der
         .error_for_status()
         .map_err(|e| e.to_string())?

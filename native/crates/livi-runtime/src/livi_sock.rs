@@ -5,6 +5,7 @@
 use std::io;
 use std::os::fd::OwnedFd;
 use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use base64::Engine;
@@ -21,8 +22,6 @@ use crate::ident::Identity;
 use crate::state::HelperState;
 use crate::vehicle::VehicleFeed;
 use crate::{AsyncAuth, events};
-
-pub const SOCK_PATH: &str = "/tmp/cp-bt.sock";
 
 #[derive(Clone, Default)]
 pub struct Broadcaster {
@@ -65,7 +64,7 @@ pub struct Bluez {
 
 #[derive(Clone)]
 pub struct LiviSockConfig {
-    pub path: String,
+    pub path: PathBuf,
     pub identity: Identity,
     pub cp: CpConfig,
     pub disconnect: Option<DropLink>,
@@ -93,7 +92,7 @@ where
     let _ = std::fs::remove_file(&cfg.path);
     let listener = UnixListener::bind(&cfg.path)?;
     std::fs::set_permissions(&cfg.path, std::fs::Permissions::from_mode(0o666))?;
-    println!("[cp-sock] listening on {}", cfg.path);
+    println!("[cp-sock] listening on {}", cfg.path.display());
 
     loop {
         let (stream, _) = listener.accept().await?;

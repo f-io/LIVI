@@ -75,6 +75,27 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "android-activity"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee91c0c2905bae44f84bfa4e044536541df26b7703fd0888deeb9060fcc44289"
+dependencies = [
+ "android-properties",
+ "bitflags 2.13.2",
+ "cc",
+ "cesu8",
+ "jni 0.21.1",
+ "jni-sys 0.3.1",
+ "libc 0.2.191",
+ "log",
+ "ndk 0.8.0",
+ "ndk-context",
+ "ndk-sys 0.5.0+25.2.9519653",
+ "num_enum",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "android-activity"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0f2a1bb052857d5dd49572219344a7332b31b76405648eabac5bc68978251bcd"
@@ -82,14 +103,23 @@ dependencies = [
  "android-properties",
  "bitflags 2.13.2",
  "cc",
- "jni",
+ "jni 0.22.4",
  "libc 0.2.191",
  "log",
- "ndk",
+ "ndk 0.9.0",
  "ndk-context",
- "ndk-sys",
+ "ndk-sys 0.6.0+11769913",
  "num_enum",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "android-build"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9fc9904ad2ad097c3c1cfe2eacaaf0fc24710936fa9ed941cb310b7c6ed2ab7"
+dependencies = [
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -716,6 +746,12 @@ dependencies = [
  "libc 0.2.191",
  "shlex 2.0.1",
 ]
+
+[[package]]
+name = "cesu8"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d43a04d8753f35258c91f8ec639f792891f748a1edbd759cf1dcea3382ad83c"
 
 [[package]]
 name = "cexpr"
@@ -1433,6 +1469,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab8ecd87370524b461f8557c119c405552c396ed91fc0a8eec68679eab26f94a"
 dependencies = [
  "libloading",
+]
+
+[[package]]
+name = "dlopen2"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60768c353d76ba6dd1b6332a5dbbdd3bc2dddadc2935f4cc6a9d0f17ca8ecb6a"
+dependencies = [
+ "libc 0.2.191",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2774,6 +2820,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "i-slint-backend-android-activity"
+version = "1.18.1"
+dependencies = [
+ "android-activity 0.5.2",
+ "android-activity 0.6.1",
+ "android-build",
+ "i-slint-common",
+ "i-slint-core",
+ "i-slint-renderer-skia",
+ "jni 0.22.4",
+ "ndk 0.9.0",
+ "raw-window-handle",
+]
+
+[[package]]
 name = "i-slint-backend-linuxkms"
 version = "1.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2805,6 +2866,7 @@ checksum = "fb974705d61ba56034f6129ff61f3e6282a2c0c07752f25e6cb417d81c0f0958"
 dependencies = [
  "cfg-if",
  "cfg_aliases",
+ "i-slint-backend-android-activity",
  "i-slint-backend-linuxkms",
  "i-slint-backend-testing",
  "i-slint-backend-winit",
@@ -3112,7 +3174,8 @@ name = "iap2-usbmux"
 version = "0.1.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
- "nusb",
+ "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",
  "tokio",
 ]
 
@@ -3507,6 +3570,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
+name = "java-locator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09c46c1fe465c59b1474e665e85e1256c3893dd00927b8d55f63b09044c1e64f"
+dependencies = [
+ "glob",
+]
+
+[[package]]
 name = "jiff"
 version = "0.2.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3546,14 +3618,32 @@ dependencies = [
 
 [[package]]
 name = "jni"
+version = "0.21.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a87aa2bb7d2af34197c04845522473242e1aa17c12f4935d5856491a7fb8c97"
+dependencies = [
+ "cesu8",
+ "cfg-if",
+ "combine",
+ "jni-sys 0.3.1",
+ "log",
+ "thiserror 1.0.69",
+ "walkdir",
+ "windows-sys 0.45.0",
+]
+
+[[package]]
+name = "jni"
 version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5efd9a482cf3a427f00d6b35f14332adc7902ce91efb778580e180ff90fa3498"
 dependencies = [
  "cfg-if",
  "combine",
+ "java-locator",
  "jni-macros",
  "jni-sys 0.4.1",
+ "libloading",
  "log",
  "simd_cesu8",
  "thiserror 2.0.21",
@@ -3572,6 +3662,21 @@ dependencies = [
  "rustc_version",
  "simd_cesu8",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "jni-min-helper"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b183b1cbb7b8e7f0b2a104d6514410d85c53a4a3b5f7224844669f5169bdd8a5"
+dependencies = [
+ "android-build",
+ "dlopen2",
+ "jni 0.22.4",
+ "libc 0.2.191",
+ "log",
+ "ndk-context",
+ "process_path",
 ]
 
 [[package]]
@@ -3805,7 +3910,8 @@ dependencies = [
  "livi-host-proto",
  "livi-session-io",
  "livi-wifi",
- "nusb",
+ "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",
  "prost",
  "rustls",
  "rustls-pemfile",
@@ -3838,12 +3944,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "livi-aaudio"
+version = "0.1.0"
+dependencies = [
+ "gstreamer",
+ "gstreamer-audio",
+ "gstreamer-base",
+ "ndk-sys 0.6.0+11769913",
+]
+
+[[package]]
 name = "livi-accessoryd"
 version = "0.1.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
  "livi-bt-host",
  "livi-net",
+]
+
+[[package]]
+name = "livi-android"
+version = "10.3.0"
+dependencies = [
+ "iap2-usbmux",
+ "jni 0.22.4",
+ "libc 1.0.0-alpha.5",
+ "livi-aaudio",
+ "livi-core",
+ "livi-core-client",
+ "livi-gst-host",
+ "livi-helper",
+ "livi-host-proto",
+ "livi-ui",
+ "livi-ui-model",
+ "livi-video-player",
+ "livi-video-view",
+ "slint",
+ "tokio",
 ]
 
 [[package]]
@@ -3900,6 +4037,7 @@ dependencies = [
  "jiff",
  "libc 1.0.0-alpha.5",
  "livi-aa-stack",
+ "livi-aaudio",
  "livi-core-proto",
  "livi-cp",
  "livi-dab",
@@ -3993,7 +4131,25 @@ dependencies = [
  "livi-screen-stream",
  "livi-video",
  "livi-video-player",
+ "livi-video-view",
  "realfft",
+]
+
+[[package]]
+name = "livi-helper"
+version = "0.1.0"
+dependencies = [
+ "iap2-link",
+ "iap2-mfi",
+ "iap2-usbmux",
+ "iap2-wired",
+ "livi-aa",
+ "livi-core-proto",
+ "livi-link-host",
+ "livi-mdns",
+ "livi-runtime",
+ "livi-wifi",
+ "tokio",
 ]
 
 [[package]]
@@ -4008,12 +4164,14 @@ dependencies = [
  "libc 1.0.0-alpha.5",
  "livi-aa",
  "livi-bt-host",
+ "livi-core-proto",
+ "livi-helper",
  "livi-hfp",
  "livi-link-host",
  "livi-net",
  "livi-runtime",
  "livi-wifi",
- "nusb",
+ "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json",
  "tokio",
 ]
@@ -4044,7 +4202,8 @@ dependencies = [
  "libc 1.0.0-alpha.5",
  "livi-net",
  "livi-wifi",
- "nusb",
+ "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",
  "tokio",
 ]
 
@@ -4068,7 +4227,7 @@ dependencies = [
  "livi-link-host",
  "livi-link-provision",
  "livi-session-io",
- "nusb",
+ "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio",
 ]
 
@@ -4077,6 +4236,7 @@ name = "livi-mdns"
 version = "0.1.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
+ "socket2",
 ]
 
 [[package]]
@@ -4097,7 +4257,8 @@ version = "0.1.0"
 name = "livi-rtlsdr"
 version = "0.1.0"
 dependencies = [
- "nusb",
+ "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",
 ]
 
 [[package]]
@@ -4133,7 +4294,8 @@ dependencies = [
 name = "livi-session-io"
 version = "0.1.0"
 dependencies = [
- "nusb",
+ "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",
  "serde_json",
  "tokio",
 ]
@@ -4143,6 +4305,7 @@ name = "livi-ui"
 version = "10.3.0"
 dependencies = [
  "base64 0.23.1",
+ "i-slint-backend-android-activity",
  "image",
  "libc 1.0.0-alpha.5",
  "livi-core-client",
@@ -4551,6 +4714,20 @@ checksum = "308d96db8debc727c3fd9744aac51751243420e46edf401010908da7f8d5e57c"
 
 [[package]]
 name = "ndk"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2076a31b7010b17a38c01907c45b945e8f11495ee4dd588309718901b1f7a5b7"
+dependencies = [
+ "bitflags 2.13.2",
+ "jni-sys 0.3.1",
+ "log",
+ "ndk-sys 0.5.0+25.2.9519653",
+ "num_enum",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "ndk"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3f42e7bbe13d351b6bead8286a43aac9534b82bd3cc43e47037f012ebfd62d4"
@@ -4558,7 +4735,7 @@ dependencies = [
  "bitflags 2.13.2",
  "jni-sys 0.3.1",
  "log",
- "ndk-sys",
+ "ndk-sys 0.6.0+11769913",
  "num_enum",
  "raw-window-handle",
  "thiserror 1.0.69",
@@ -4569,6 +4746,15 @@ name = "ndk-context"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27b02d87554356db9e9a873add8782d4ea6e3e58ea071a9adb9a2e8ddb884a8b"
+
+[[package]]
+name = "ndk-sys"
+version = "0.5.0+25.2.9519653"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c196769dd60fd4f363e11d948139556a344e79d451aeb2fa2fd040738ef7691"
+dependencies = [
+ "jni-sys 0.3.1",
+]
 
 [[package]]
 name = "ndk-sys"
@@ -4731,6 +4917,30 @@ dependencies = [
  "core-foundation-sys",
  "futures-core",
  "io-kit-sys",
+ "js-sys",
+ "linux-raw-sys 0.12.1",
+ "log",
+ "once_cell",
+ "rustix 1.1.6",
+ "slab",
+ "tokio",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "nusb"
+version = "0.2.9"
+source = "git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235#10895e1a7c762498324cb1c36a4b67cf60083235"
+dependencies = [
+ "core-foundation 0.10.1",
+ "core-foundation-sys",
+ "futures-core",
+ "io-kit-sys",
+ "jni 0.22.4",
+ "jni-min-helper",
  "js-sys",
  "linux-raw-sys 0.12.1",
  "log",
@@ -5584,6 +5794,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "process_path"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f676f11eb0b3e2ea0fbaee218fa6b806689e2297b8c8adc5bf73df465c4f6171"
+dependencies = [
+ "libc 0.2.191",
+ "winapi",
+]
+
+[[package]]
 name = "profiling"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6305,7 +6525,7 @@ checksum = "1167586491e2b18b8bfbb293e8180ec17c201c4f076d7cb3070ca964e7598f98"
 dependencies = [
  "core-foundation 0.10.1",
  "core-foundation-sys",
- "jni",
+ "jni 0.22.4",
  "log",
  "once_cell",
  "rustls",
@@ -6723,6 +6943,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "15e477d5ff6fec20909100ff8f7062432ebfbda7a62a0f37d0252aa126f38c83"
 dependencies = [
  "const-field-offset",
+ "i-slint-backend-android-activity",
  "i-slint-backend-linuxkms",
  "i-slint-backend-selector",
  "i-slint-backend-winit",
@@ -6993,7 +7214,7 @@ dependencies = [
  "fastrand",
  "js-sys",
  "memmap2",
- "ndk",
+ "ndk 0.9.0",
  "objc2 0.6.5",
  "objc2-core-foundation",
  "objc2-core-graphics",
@@ -8247,7 +8468,7 @@ version = "1.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2c8ddfbbf66e501434657400268cefe51b95140a0266236415cda7627732df7"
 dependencies = [
- "jni",
+ "jni 0.22.4",
  "log",
  "ndk-context",
  "objc2 0.6.5",
@@ -8428,6 +8649,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "winapi"
+version = "0.3.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c839a674fcd7a98952e593242ea400abe93992746761e38641405d28b00f419"
+dependencies = [
+ "winapi-i686-pc-windows-gnu",
+ "winapi-x86_64-pc-windows-gnu",
+]
+
+[[package]]
+name = "winapi-i686-pc-windows-gnu"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6"
+
+[[package]]
 name = "winapi-util"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8435,6 +8672,12 @@ checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
  "windows-sys 0.48.0",
 ]
+
+[[package]]
+name = "winapi-x86_64-pc-windows-gnu"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "windows"
@@ -8539,6 +8782,15 @@ dependencies = [
 
 [[package]]
 name = "windows-sys"
+version = "0.45.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75283be5efb2831d37ea142365f009c02ec203cd29a3ebecbc093d52315b66d0"
+dependencies = [
+ "windows-targets 0.42.2",
+]
+
+[[package]]
+name = "windows-sys"
 version = "0.48.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "677d2418bec65e3338edb076e806bc1ec15693c5d0104683f2efe857f61056a9"
@@ -8571,6 +8823,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
  "windows-link",
+]
+
+[[package]]
+name = "windows-targets"
+version = "0.42.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e5180c00cd44c9b1c88adb3693291f1cd93605ded80c250a75d472756b4d071"
+dependencies = [
+ "windows_aarch64_gnullvm 0.42.2",
+ "windows_aarch64_msvc 0.42.2",
+ "windows_i686_gnu 0.42.2",
+ "windows_i686_msvc 0.42.2",
+ "windows_x86_64_gnu 0.42.2",
+ "windows_x86_64_gnullvm 0.42.2",
+ "windows_x86_64_msvc 0.42.2",
 ]
 
 [[package]]
@@ -8615,6 +8882,12 @@ dependencies = [
 
 [[package]]
 name = "windows_aarch64_gnullvm"
+version = "0.42.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "597a5118570b68bc08d8d59125332c54f1ba9d9adeedeef5b99b02ba2b0698f8"
+
+[[package]]
+name = "windows_aarch64_gnullvm"
 version = "0.48.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b38e32f0abccf9987a4e3079dfb67dcd799fb61361e53e2882c3cbaf0d905d8"
@@ -8627,6 +8900,12 @@ checksum = "32a4622180e7a0ec044bb555404c800bc9fd9ec262ec147edd5989ccd0c02cd3"
 
 [[package]]
 name = "windows_aarch64_msvc"
+version = "0.42.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e08e8864a60f06ef0d0ff4ba04124db8b0fb3be5776a5cd47641e942e58c4d43"
+
+[[package]]
+name = "windows_aarch64_msvc"
 version = "0.48.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc35310971f3b2dbbf3f0690a219f40e2d9afcf64f9ab7cc1be722937c26b4bc"
@@ -8636,6 +8915,12 @@ name = "windows_aarch64_msvc"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09ec2a7bb152e2252b53fa7803150007879548bc709c039df7627cabbd05d469"
+
+[[package]]
+name = "windows_i686_gnu"
+version = "0.42.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c61d927d8da41da96a81f029489353e68739737d3beca43145c8afec9a31a84f"
 
 [[package]]
 name = "windows_i686_gnu"
@@ -8657,6 +8942,12 @@ checksum = "0eee52d38c090b3caa76c563b86c3a4bd71ef1a819287c19d586d7334ae8ed66"
 
 [[package]]
 name = "windows_i686_msvc"
+version = "0.42.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44d840b6ec649f480a41c8d80f9c65108b92d89345dd94027bfe06ac444d1060"
+
+[[package]]
+name = "windows_i686_msvc"
 version = "0.48.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f55c233f70c4b27f66c523580f78f1004e8b5a8b659e05a4eb49d4166cca406"
@@ -8666,6 +8957,12 @@ name = "windows_i686_msvc"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "240948bc05c5e7c6dabba28bf89d89ffce3e303022809e73deaefe4f6ec56c66"
+
+[[package]]
+name = "windows_x86_64_gnu"
+version = "0.42.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8de912b8b8feb55c064867cf047dda097f92d51efad5b491dfb98f6bbb70cb36"
 
 [[package]]
 name = "windows_x86_64_gnu"
@@ -8681,6 +8978,12 @@ checksum = "147a5c80aabfbf0c7d901cb5895d1de30ef2907eb21fbbab29ca94c5b08b1a78"
 
 [[package]]
 name = "windows_x86_64_gnullvm"
+version = "0.42.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26d41b46a36d453748aedef1486d5c7a85db22e56aff34643984ea85514e94a3"
+
+[[package]]
+name = "windows_x86_64_gnullvm"
 version = "0.48.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b7b52767868a23d5bab768e390dc5f5c55825b6d30b86c844ff2dc7414044cc"
@@ -8690,6 +8993,12 @@ name = "windows_x86_64_gnullvm"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "24d5b23dc417412679681396f2b49f3de8c1473deb516bd34410872eff51ed0d"
+
+[[package]]
+name = "windows_x86_64_msvc"
+version = "0.42.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9aec5da331524158c6d1a4ac0ab1541149c0b9505fde06423b02f5ef0106b9f0"
 
 [[package]]
 name = "windows_x86_64_msvc"
@@ -8710,7 +9019,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6755fa58a9f8350bd1e472d4c3fcc25f824ec358933bba33306d0b63df5978d"
 dependencies = [
  "ahash",
- "android-activity",
+ "android-activity 0.6.1",
  "atomic-waker",
  "bitflags 2.13.2",
  "block2 0.5.1",
@@ -8725,7 +9034,7 @@ dependencies = [
  "js-sys",
  "libc 0.2.191",
  "memmap2",
- "ndk",
+ "ndk 0.9.0",
  "objc2 0.5.3",
  "objc2-app-kit 0.2.2",
  "objc2-foundation 0.2.2",

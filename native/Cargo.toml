@@ -5,6 +5,7 @@ exclude = ["vendor"]
 
 [patch.crates-io]
 femtovg = { path = "vendor/femtovg" }
+i-slint-backend-android-activity = { path = "vendor/i-slint-backend-android-activity" }
 
 [workspace.package]
 version = "10.3.0"
@@ -27,6 +28,7 @@ gstreamer = "0.25.4"
 gstreamer-app = "0.25.2"
 lzokay-native = "0.1.0"
 nusb = "0.2.9"
+nusb-android = { package = "nusb", git = "https://github.com/f-io/nusb", rev = "10895e1a7c762498324cb1c36a4b67cf60083235" }
 prost = "0.14.4"
 serde = "1.0.229"
 serde_json = "1.0.154"
@@ -46,14 +48,18 @@ livi-aa = { path = "crates/livi-aa" }
 livi-aa-proto = { path = "crates/livi-aa-proto" }
 livi-aa-stack = { path = "crates/livi-aa-stack" }
 livi-accessoryd = { path = "crates/livi-accessoryd" }
+livi-aaudio = { path = "crates/livi-aaudio" }
 livi-audio = { path = "crates/livi-audio" }
 livi-bt-host = { path = "crates/livi-bt-host" }
 livi-btd = { path = "crates/livi-btd" }
+livi-core = { path = "crates/livi-core" }
 livi-core-client = { path = "crates/livi-core-client" }
 livi-core-proto = { path = "crates/livi-core-proto" }
 livi-cp = { path = "crates/livi-cp" }
 livi-crypto = { path = "crates/livi-crypto" }
 livi-dab = { path = "crates/livi-dab" }
+livi-gst-host = { path = "crates/livi-gst-host" }
+livi-helper = { path = "crates/livi-helper" }
 livi-hfp = { path = "crates/livi-hfp" }
 livi-host-proto = { path = "crates/livi-host-proto" }
 livi-link-host = { path = "crates/livi-link-host" }
@@ -66,6 +72,7 @@ livi-runtime = { path = "crates/livi-runtime" }
 livi-screen-stream = { path = "crates/livi-screen-stream" }
 livi-session-io = { path = "crates/livi-session-io" }
 livi-i18n = { path = "crates/livi-i18n" }
+livi-ui = { path = "crates/livi-ui" }
 livi-ui-model = { path = "crates/livi-ui-model" }
 livi-video = { path = "crates/livi-video" }
 livi-video-player = { path = "crates/livi-video-player" }

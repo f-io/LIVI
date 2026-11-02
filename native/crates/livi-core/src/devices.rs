@@ -11,7 +11,6 @@ use livi_session_io::line::LineSock;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-const SHARED_SOCK: &str = "/tmp/livi-shared.sock";
 const IAP_PROFILE_UUID: &str = "00000000-deca-fade-deca-deafdecacafe";
 pub const HFP_AG_UUID: &str = "0000111f-0000-1000-8000-00805f9b34fb";
 const BT_MAJOR_AUDIO: u32 = 0x04;
@@ -544,15 +543,17 @@ type Targets = Vec<(String, Option<String>)>;
 
 pub struct Devices {
     pub registry: Registry,
-    helper: HelperSock,
+    pub shared: Shared,
+    pub helper: HelperSock,
     sent: Option<Targets>,
     leaving: bool,
 }
 
 impl Devices {
-    pub fn new(path: &Path, helper: HelperSock) -> Self {
+    pub fn new(path: &Path, helper: HelperSock, shared: Shared) -> Self {
         Self {
             registry: Registry::load(path),
+            shared,
             helper,
             sent: None,
             leaving: false,
@@ -597,27 +598,117 @@ impl Devices {
     }
 }
 
-pub async fn shared(line: String, within: Duration) -> Result<Value, String> {
-    LineSock::new(SHARED_SOCK, "shared sock")
-        .request(&line, within)
-        .await
-}
+#[derive(Debug, Clone)]
+pub struct Shared(LineSock);
 
-pub async fn wake(mac: String, protocol: Option<Protocol>) {
-    let line = match wake_uuid(protocol) {
-        Some(uuid) => format!("connect {mac} {uuid}"),
-        None => format!("connect {mac}"),
-    };
-    println!("[devices] wake {mac}");
-    if let Err(e) = shared(line, Duration::from_secs(32)).await {
-        eprintln!("[devices] wake {mac}: {e}");
+impl Shared {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self(LineSock::new(path, "shared sock"))
     }
-}
 
-pub async fn unpair(mac: String) {
-    let _ = shared(format!("disconnect {mac}"), Duration::from_secs(10)).await;
-    if let Err(e) = shared(format!("remove {mac}"), Duration::from_secs(10)).await {
-        eprintln!("[devices] unpair {mac}: {e}");
+    pub async fn request(&self, line: String, within: Duration) -> Result<Value, String> {
+        self.0.request(&line, within).await
+    }
+
+    pub async fn wake(self, mac: String, protocol: Option<Protocol>) {
+        let line = match wake_uuid(protocol) {
+            Some(uuid) => format!("connect {mac} {uuid}"),
+            None => format!("connect {mac}"),
+        };
+        println!("[devices] wake {mac}");
+        if let Err(e) = self.request(line, Duration::from_secs(32)).await {
+            eprintln!("[devices] wake {mac}: {e}");
+        }
+    }
+
+    pub async fn unpair(self, mac: String) {
+        let _ = self
+            .request(format!("disconnect {mac}"), Duration::from_secs(10))
+            .await;
+        if let Err(e) = self
+            .request(format!("remove {mac}"), Duration::from_secs(10))
+            .await
+        {
+            eprintln!("[devices] unpair {mac}: {e}");
+        }
+    }
+
+    async fn paired(&self) -> Option<Vec<Value>> {
+        let answer = self
+            .request("list_paired".into(), Duration::from_secs(5))
+            .await
+            .ok()?;
+        answer.get("devices").and_then(Value::as_array).cloned()
+    }
+
+    pub async fn connected_phones(self) -> Vec<String> {
+        self.paired()
+            .await
+            .unwrap_or_default()
+            .iter()
+            .filter(|d| d.get("connected").and_then(Value::as_bool) == Some(true))
+            .filter(|d| phone_like(class_of(d)))
+            .filter_map(|d| d.get("mac").and_then(Value::as_str).map(str::to_string))
+            .collect()
+    }
+
+    pub async fn leave_phones(self) {
+        let _ = self
+            .request("deauth-ap".into(), Duration::from_secs(2))
+            .await;
+        for mac in self.clone().connected_phones().await {
+            println!("[devices] goodbye {mac}");
+            let _ = self
+                .request(format!("disconnect {mac}"), Duration::from_millis(1500))
+                .await;
+        }
+    }
+
+    pub async fn connect_paired(self, mac: String) {
+        let Some(list) = self.paired().await else {
+            return;
+        };
+        let phone = list.iter().any(|d| {
+            d.get("mac")
+                .and_then(Value::as_str)
+                .is_some_and(|m| m.eq_ignore_ascii_case(&mac))
+                && phone_like(class_of(d))
+        });
+        if phone {
+            return self.wake(mac, Some(Protocol::Androidauto)).await;
+        }
+        println!("[devices] connect {mac}");
+        if let Err(e) = self
+            .request(format!("connect-full {mac}"), Duration::from_secs(32))
+            .await
+        {
+            eprintln!("[devices] connect {mac}: {e}");
+        }
+    }
+
+    pub async fn nudge_hfp(self, mac: String) {
+        let _ = self
+            .request(
+                format!("disconnect-profile {mac} {HFP_AG_UUID}"),
+                Duration::from_secs(10),
+            )
+            .await;
+        let answer = self
+            .request(
+                format!("connect {mac} {HFP_AG_UUID}"),
+                Duration::from_secs(32),
+            )
+            .await;
+        let outcome = match answer {
+            Ok(v) if v.get("ok").and_then(Value::as_bool) == Some(true) => "sent".to_string(),
+            Ok(v) => v
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("refused")
+                .to_string(),
+            Err(e) => e,
+        };
+        println!("[devices] HFP nudge {mac}: {outcome}");
     }
 }
 
@@ -627,72 +718,6 @@ pub fn phone_like(class: u64) -> bool {
 
 fn class_of(d: &Value) -> u64 {
     d.get("class").and_then(Value::as_u64).unwrap_or(0)
-}
-
-async fn paired() -> Option<Vec<Value>> {
-    let answer = shared("list_paired".into(), Duration::from_secs(5))
-        .await
-        .ok()?;
-    answer.get("devices").and_then(Value::as_array).cloned()
-}
-
-pub async fn connected_phones() -> Vec<String> {
-    paired()
-        .await
-        .unwrap_or_default()
-        .iter()
-        .filter(|d| d.get("connected").and_then(Value::as_bool) == Some(true))
-        .filter(|d| phone_like(class_of(d)))
-        .filter_map(|d| d.get("mac").and_then(Value::as_str).map(str::to_string))
-        .collect()
-}
-
-pub async fn leave_phones() {
-    let _ = shared("deauth-ap".into(), Duration::from_secs(2)).await;
-    for mac in connected_phones().await {
-        println!("[devices] goodbye {mac}");
-        let _ = shared(format!("disconnect {mac}"), Duration::from_millis(1500)).await;
-    }
-}
-
-pub async fn connect_paired(mac: String) {
-    let Some(list) = paired().await else { return };
-    let phone = list.iter().any(|d| {
-        d.get("mac")
-            .and_then(Value::as_str)
-            .is_some_and(|m| m.eq_ignore_ascii_case(&mac))
-            && phone_like(class_of(d))
-    });
-    if phone {
-        return wake(mac, Some(Protocol::Androidauto)).await;
-    }
-    println!("[devices] connect {mac}");
-    if let Err(e) = shared(format!("connect-full {mac}"), Duration::from_secs(32)).await {
-        eprintln!("[devices] connect {mac}: {e}");
-    }
-}
-
-pub async fn nudge_hfp(mac: String) {
-    let _ = shared(
-        format!("disconnect-profile {mac} {HFP_AG_UUID}"),
-        Duration::from_secs(10),
-    )
-    .await;
-    let answer = shared(
-        format!("connect {mac} {HFP_AG_UUID}"),
-        Duration::from_secs(32),
-    )
-    .await;
-    let outcome = match answer {
-        Ok(v) if v.get("ok").and_then(Value::as_bool) == Some(true) => "sent".to_string(),
-        Ok(v) => v
-            .get("error")
-            .and_then(Value::as_str)
-            .unwrap_or("refused")
-            .to_string(),
-        Err(e) => e,
-    };
-    println!("[devices] HFP nudge {mac}: {outcome}");
 }
 
 #[cfg(test)]

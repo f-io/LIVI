@@ -7,6 +7,10 @@ edition.workspace = true
 livi-host-proto.workspace = true
 livi-video-player = { workspace = true, features = ["window-view"] }
 
+[target.'cfg(target_os = "android")'.dependencies]
+livi-host-proto.workspace = true
+livi-video-player.workspace = true
+
 [build-dependencies]
 cc = "1.10"
 pkg-config = "0.3"

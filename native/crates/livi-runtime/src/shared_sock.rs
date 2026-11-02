@@ -4,6 +4,7 @@
 
 use std::io;
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use std::sync::Arc;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -12,8 +13,6 @@ use zbus::Connection;
 use zbus::OwnedVariant;
 
 use crate::livi_sock::Broadcaster;
-
-pub const SOCK_PATH: &str = "/tmp/livi-shared.sock";
 
 const WAKE_UUID: &str = "0000111f-0000-1000-8000-00805f9b34fb";
 
@@ -27,7 +26,7 @@ pub struct SharedSockDeps {
     pub deauth_dongle: Option<fn() -> Option<usize>>,
 }
 
-pub async fn serve(path: &str, bus: Option<Connection>, deps: SharedSockDeps) -> io::Result<()> {
+pub async fn serve(path: &Path, bus: Option<Connection>, deps: SharedSockDeps) -> io::Result<()> {
     let listener = bind(path, "shared-sock")?;
     let deps = Arc::new(deps);
     loop {
@@ -42,11 +41,11 @@ pub async fn serve(path: &str, bus: Option<Connection>, deps: SharedSockDeps) ->
     }
 }
 
-pub(crate) fn bind(path: &str, name: &str) -> io::Result<UnixListener> {
+pub(crate) fn bind(path: &Path, name: &str) -> io::Result<UnixListener> {
     let _ = std::fs::remove_file(path);
     let listener = UnixListener::bind(path)?;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o666))?;
-    println!("[{name}] listening on {path}");
+    println!("[{name}] listening on {}", path.display());
     Ok(listener)
 }
 

@@ -12,7 +12,6 @@ pub fn car_name(hostname: &str, max: usize) -> Option<String> {
 
 pub fn hostname() -> Option<String> {
     let mut buf = [0u8; 256];
-    // SAFETY: the buffer is valid for its whole length and gethostname writes no more.
     let rc = unsafe { libc::gethostname(buf.as_mut_ptr().cast(), buf.len()) };
     if rc != 0 {
         return None;
@@ -77,9 +76,35 @@ pub fn panel_native_px() -> Option<(u32, u32)> {
     Some(px)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
 pub fn panel_native_px() -> Option<(u32, u32)> {
     None
+}
+
+#[cfg(target_os = "android")]
+static SCREEN: std::sync::OnceLock<livi_media::compositor::Panel> = std::sync::OnceLock::new();
+
+#[cfg(target_os = "android")]
+pub fn set_screen(width_mm: f64, height_mm: f64, width_px: usize, height_px: usize) {
+    let Some(panel) = screen_panel_from(width_mm, height_mm, width_px, height_px) else {
+        println!("[core] the display reported no usable size");
+        return;
+    };
+    println!(
+        "[core] screen: {}x{} mm over {}x{} px",
+        panel.width_mm, panel.height_mm, panel.width_px, panel.height_px
+    );
+    let _ = SCREEN.set(panel);
+}
+
+#[cfg(target_os = "android")]
+pub fn panel_native_px() -> Option<(u32, u32)> {
+    SCREEN.get().map(|p| (p.width_px, p.height_px))
+}
+
+#[cfg(target_os = "android")]
+pub fn screen_panel() -> Option<livi_media::compositor::Panel> {
+    SCREEN.get().copied()
 }
 
 #[cfg(target_os = "macos")]
@@ -101,7 +126,6 @@ pub fn screen_panel() -> Option<livi_media::compositor::Panel> {
         fn CGDisplayModeRelease(mode: *mut c_void);
     }
 
-    // SAFETY: plain CoreGraphics queries on the main display, the copied mode is released once.
     let (mm, px) = unsafe {
         let display = CGMainDisplayID();
         let mm = CGDisplayScreenSize(display);
@@ -124,12 +148,12 @@ pub fn screen_panel() -> Option<livi_media::compositor::Panel> {
     Some(panel)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "android")))]
 pub fn screen_panel() -> Option<livi_media::compositor::Panel> {
     None
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "android", test))]
 fn screen_panel_from(
     width_mm: f64,
     height_mm: f64,

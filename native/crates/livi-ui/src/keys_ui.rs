@@ -12,6 +12,7 @@ use livi_ui_model::keys::{
     Context, Focused, HELD_GAP, Outcome, Zone, bound_to, decide, held_factor, released,
 };
 use livi_ui_model::media::pressed;
+#[cfg(not(target_os = "android"))]
 use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
 use slint::{ComponentHandle, Model};
 
@@ -343,12 +344,12 @@ fn open_tab(ui: &AppWindow, enter: bool) {
     }
 }
 
-fn apply(ui: &AppWindow, client: &Client, code: &str, outcome: Outcome) -> EventResult {
+fn apply(ui: &AppWindow, client: &Client, code: &str, outcome: Outcome) -> bool {
     let f = ui.global::<Focus>();
     let list = targets(ui);
     let current = list.get(f.get_main_index().max(0) as usize).copied();
     match outcome {
-        Outcome::Pass => return EventResult::Propagate,
+        Outcome::Pass => return false,
         Outcome::Ignore => {}
         Outcome::ToCore(code) => {
             let name = bound_to(&client.state()["config"], &code);
@@ -391,7 +392,7 @@ fn apply(ui: &AppWindow, client: &Client, code: &str, outcome: Outcome) -> Event
             let enter = code == "Enter" || code == "NumpadEnter";
             if enter && current.is_some_and(|t| matches!(kind(t), Focused::Text | Focused::Number))
             {
-                return EventResult::Propagate;
+                return false;
             }
             f.set_editing(false);
         }
@@ -407,7 +408,7 @@ fn apply(ui: &AppWindow, client: &Client, code: &str, outcome: Outcome) -> Event
         }
         Outcome::Pager(by) => client.act(Action::StepClusterLayout { by }),
     }
-    EventResult::PreventDefault
+    true
 }
 
 fn context(ui: &AppWindow, repeat: bool) -> Context {
@@ -438,6 +439,43 @@ fn context(ui: &AppWindow, repeat: bool) -> Context {
     }
 }
 
+pub fn key(ui: &AppWindow, client: &Client, code: &str, down: bool, repeat: bool) -> bool {
+    ui.invoke_wake_nav();
+    if crate::settings_ui::capturing() {
+        if down && !repeat {
+            crate::settings_ui::captured(ui, client, code);
+        }
+        return true;
+    }
+    let state = client.state();
+    let config = state["config"].clone();
+    drop(state);
+    if !down {
+        if let Some(code) = released(code, &config) {
+            client.input(Input::Key { code, down: false });
+        }
+        return false;
+    }
+    KEY_REPEAT.set(repeat);
+    let ctx = context(ui, repeat);
+    let outcome = decide(code, ctx, &config);
+    apply(ui, client, code, outcome)
+}
+
+pub fn touched(ui: &AppWindow) {
+    let f = ui.global::<Focus>();
+    if !f.get_editing() {
+        f.set_zone(FocusZone::None);
+    }
+    let later = ui.as_weak();
+    slint::Timer::single_shot(std::time::Duration::ZERO, move || {
+        if let Some(ui) = later.upgrade() {
+            ui.invoke_wake_nav();
+        }
+    });
+}
+
+#[cfg(not(target_os = "android"))]
 pub fn wire(ui: &AppWindow, client: &Client) {
     let weak = ui.as_weak();
     let client = client.clone();
@@ -447,30 +485,15 @@ pub fn wire(ui: &AppWindow, client: &Client) {
         };
         match event {
             winit::event::WindowEvent::KeyboardInput { event, .. } => {
-                let winit::keyboard::PhysicalKey::Code(key) = event.physical_key else {
+                let winit::keyboard::PhysicalKey::Code(physical) = event.physical_key else {
                     return EventResult::Propagate;
                 };
-                let code = format!("{key:?}");
-                ui.invoke_wake_nav();
-                if crate::settings_ui::capturing() {
-                    if event.state == winit::event::ElementState::Pressed && !event.repeat {
-                        crate::settings_ui::captured(&ui, &client, &code);
-                    }
-                    return EventResult::PreventDefault;
+                let down = event.state == winit::event::ElementState::Pressed;
+                if key(&ui, &client, &format!("{physical:?}"), down, event.repeat) {
+                    EventResult::PreventDefault
+                } else {
+                    EventResult::Propagate
                 }
-                let state = client.state();
-                let config = state["config"].clone();
-                drop(state);
-                if event.state == winit::event::ElementState::Released {
-                    if let Some(code) = released(&code, &config) {
-                        client.input(Input::Key { code, down: false });
-                    }
-                    return EventResult::Propagate;
-                }
-                KEY_REPEAT.set(event.repeat);
-                let ctx = context(&ui, event.repeat);
-                let outcome = decide(&code, ctx, &config);
-                apply(&ui, &client, &code, outcome)
             }
             winit::event::WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 crate::system_scale_changed(&ui, *scale_factor as f32);
@@ -490,18 +513,9 @@ pub fn wire(ui: &AppWindow, client: &Client) {
                 ..
             }
             | winit::event::WindowEvent::Touch(_) => {
-                let f = ui.global::<Focus>();
-                if !f.get_editing() {
-                    f.set_zone(FocusZone::None);
-                }
-                let later = weak.clone();
-                slint::Timer::single_shot(std::time::Duration::ZERO, move || {
-                    if let Some(ui) = later.upgrade() {
-                        ui.invoke_wake_nav();
-                    }
-                });
+                touched(&ui);
                 if let winit::event::WindowEvent::Touch(touch) = event
-                    && crate::touch_ui::handle(&ui, &client, touch)
+                    && crate::touch_ui::winit(&ui, &client, touch)
                 {
                     return EventResult::PreventDefault;
                 }

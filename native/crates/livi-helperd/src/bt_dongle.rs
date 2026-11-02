@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+use livi_core_proto::helper::HelperSockets;
 use std::collections::{HashMap, HashSet};
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixListener;
@@ -19,7 +20,7 @@ use livi_runtime::state::HelperState;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::link::LinkPresence;
+use livi_helper::link::LinkPresence;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const RETRY: Duration = Duration::from_secs(5);
@@ -106,7 +107,7 @@ pub async fn run(
     offered: Vec<Service>,
     name: String,
 ) {
-    let mic = match livi_runtime::sco::mic_socket() {
+    let mic = match livi_runtime::sco::mic_socket(&HelperSockets::system().sco_mic) {
         Ok(mic) => Arc::new(mic),
         Err(e) => {
             eprintln!("[sco] mic socket failed: {e}");

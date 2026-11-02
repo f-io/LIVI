@@ -3,15 +3,16 @@
 // Additional terms: see NOTICE
 
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use tokio::net::UnixListener;
 
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 
-pub fn bind_session_socket(stem: &str) -> Option<(UnixListener, String)> {
+pub fn bind_session_socket(dir: &Path, stem: &str) -> Option<(UnixListener, String)> {
     let n = NEXT_SESSION.fetch_add(1, Ordering::Relaxed);
-    let path = format!("/tmp/{stem}-{n}.sock");
+    let path = dir.join(format!("{stem}-{n}.sock")).display().to_string();
     let _ = std::fs::remove_file(&path);
     let node = match UnixListener::bind(&path) {
         Ok(l) => l,

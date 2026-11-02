@@ -68,10 +68,12 @@ pub fn maneuver(code: u32, language: Language) -> Option<String> {
         .map(|(_, key, text)| language.0.t(&format!("navigation.{key}"), text))
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
 pub fn unknown_maneuver(language: Language) -> &'static str {
     language.0.get("navigation.unknown").unwrap_or("Unknown")
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
 pub fn no_route(language: Language) -> &'static str {
     language.0.get("navigation.noRoute").unwrap_or("No Route")
 }

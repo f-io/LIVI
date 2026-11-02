@@ -1,0 +1,18 @@
+name: Set up the Android build
+description: Installs the Rust target, the SDK platform, build tools and NDK from android/gradle.properties, cargo-ndk and JDK 21.
+runs:
+  using: composite
+  steps:
+    - name: Install the Android toolchain
+      shell: bash
+      run: |
+        set -euo pipefail
+        prop() { sed -n "s/^livi.$1=//p" android/gradle.properties; }
+        sdk=$(prop compileSdk)
+        ndk=$(prop ndk)
+        rustup target add aarch64-linux-android
+        { yes || true; } | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+          "platforms;android-$sdk.0" "build-tools;$sdk.0.0" "ndk;$ndk" >/dev/null
+        echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$ndk" >> "$GITHUB_ENV"
+        echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+        cargo install cargo-ndk --version 4.1.2 --locked

@@ -129,7 +129,12 @@ pub fn sink_chain(sink_override: Option<&str>) -> String {
         let _ = sink_override;
         "glimagesink name=sink sync=false qos=false force-aspect-ratio=false".to_owned()
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "android")]
+    {
+        let _ = sink_override;
+        "glimagesink name=sink sync=false qos=false".to_owned()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "android")))]
     {
         let name = sink_override
             .filter(|s| !s.is_empty())
@@ -388,7 +393,7 @@ mod pipeline_tests {
         assert!(pipeline_desc("h264", "avdec_h264", "", None).contains("videoconvert ! "));
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "android")))]
     #[test]
     fn the_sink_can_be_replaced_by_name() {
         assert_eq!(sink_chain(None), "waylandsink name=sink sync=false");
@@ -400,6 +405,15 @@ mod pipeline_tests {
         assert!(
             pipeline_desc("h264", "avdec_h264", "", Some("fakesink"))
                 .contains("fakesink name=sink")
+        );
+    }
+
+    #[cfg(target_os = "android")]
+    #[test]
+    fn the_android_sink_draws_into_a_window_and_ignores_the_override() {
+        assert_eq!(
+            sink_chain(Some("fakesink")),
+            "glimagesink name=sink sync=false qos=false"
         );
     }
 

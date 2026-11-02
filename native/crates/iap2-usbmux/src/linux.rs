@@ -4,16 +4,13 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::thread::sleep;
-use std::time::{Duration, Instant};
 
 use nusb::MaybeFuture;
-use nusb::transfer::{ControlIn, ControlType, Recipient};
 
-use crate::{APPLE_VID, CP_CONFIG};
+use crate::usb_pipe::await_carplay_configs;
+use crate::{APPLE_VID, CP_CONFIG, DEFAULT_CONFIG};
 
 const SYSFS_USB: &str = "/sys/bus/usb/devices";
-const DEFAULT_CONFIG: u8 = 4;
 
 #[derive(Debug, Clone)]
 pub struct IPhoneDev {
@@ -77,21 +74,9 @@ pub fn ensure_carplay_config(serial: &str) -> Result<IPhoneDev, String> {
 
     if dev.num_configs < CP_CONFIG {
         request_carplay_configs(&dev)?;
-        let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            sleep(Duration::from_millis(200));
-            if let Some(d) = find_by_serial(serial)
-                && d.num_configs >= CP_CONFIG
-            {
-                break;
-            }
-            if Instant::now() >= deadline {
-                return Err(format!(
-                    "iphone {} did not expose CarPlay configs",
-                    &serial[..8.min(serial.len())]
-                ));
-            }
-        }
+        await_carplay_configs(serial, || {
+            find_by_serial(serial).is_some_and(|d| d.num_configs >= CP_CONFIG)
+        })?;
     }
 
     let dev = find_by_serial(serial).ok_or("iphone gone after config request")?;
@@ -131,22 +116,12 @@ pub fn reset(serial: &str) -> Result<(), String> {
 }
 
 fn request_carplay_configs(dev: &IPhoneDev) -> Result<(), String> {
-    let device = open_by_address(dev.bus, dev.address)?;
-    device
-        .control_in(
-            ControlIn {
-                control_type: ControlType::Vendor,
-                recipient: Recipient::Device,
-                request: 0x52,
-                value: 0x0000,
-                index: 0x0004,
-                length: 1,
-            },
-            Duration::from_secs(1),
-        )
-        .wait()
-        .map_err(|e| format!("vendor request 0x52: {e}"))?;
-    Ok(())
+    crate::usb_pipe::request_carplay_configs(&open_by_address(dev.bus, dev.address)?)
+}
+
+pub fn open(serial: &str) -> Result<nusb::Device, String> {
+    let dev = find_by_serial(serial).ok_or_else(|| format!("iphone {serial} not found"))?;
+    open_by_address(dev.bus, dev.address)
 }
 
 pub fn open_by_address(bus: u8, address: u8) -> Result<nusb::Device, String> {

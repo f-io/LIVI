@@ -7,9 +7,10 @@ use std::sync::{Arc, Mutex};
 
 use crate::backend::{ensure_carplay_config, find_iphones, restore_default_config};
 use crate::mux::MuxHost;
+use crate::short;
 
 pub fn socket_path(serial: &str) -> String {
-    format!("/tmp/livi-usbmux-{}.sock", &serial[..8.min(serial.len())])
+    format!("/tmp/livi-usbmux-{}.sock", short(serial))
 }
 
 pub struct MuxDevice {
@@ -32,6 +33,7 @@ impl MuxDevice {
 
 impl Drop for MuxDevice {
     fn drop(&mut self) {
+        self.host.shutdown();
         restore_default_config(&self.serial);
     }
 }
@@ -75,7 +77,7 @@ impl MuxRegistry {
             if !known.contains(serial) {
                 match self.ensure(serial) {
                     Ok(_) => added.push(serial.clone()),
-                    Err(e) => eprintln!("[muxd] {}: {e}", &serial[..8.min(serial.len())]),
+                    Err(e) => eprintln!("[muxd] {}: {e}", short(serial)),
                 }
             }
         }

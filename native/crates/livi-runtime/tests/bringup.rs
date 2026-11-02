@@ -97,6 +97,7 @@ fn cp_config() -> CpConfig {
         public_key: String::new(),
         transport: Transport::Wireless,
         av_iface: None,
+        av_address: None,
         av_iface_late: None,
         available_current_ma: 500,
         on_cable: None,

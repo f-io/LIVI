@@ -24,7 +24,7 @@ const SHA1_PREFIX: [u8; 15] = [
 
 enum Identity {
     Ec(SigningKey),
-    Rsa(RsaPrivateKey),
+    Rsa(Box<RsaPrivateKey>),
 }
 
 pub struct FileCoprocessor {
@@ -69,7 +69,7 @@ fn identity(bytes: &[u8]) -> Result<Identity, MfiError> {
         return Ok(Identity::Ec(key));
     }
     RsaPrivateKey::from_pkcs8_der(&der)
-        .map(Identity::Rsa)
+        .map(|key| Identity::Rsa(Box::new(key)))
         .map_err(|_| bad("the identity is not an unencrypted PKCS#8 P-256 or RSA key"))
 }
 

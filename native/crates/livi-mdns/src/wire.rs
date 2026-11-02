@@ -10,19 +10,23 @@ const TTL: u32 = 120;
 const LEGACY_TTL: u32 = 10;
 
 const QTYPE_A: u16 = 1;
-const QTYPE_AAAA: u16 = 28;
+pub(crate) const QTYPE_AAAA: u16 = 28;
 const QTYPE_NSEC: u16 = 47;
-const QTYPE_ANY: u16 = 255;
-const CLASS_IN: u16 = 1;
-const CACHE_FLUSH: u16 = 0x8000;
-const UNICAST_REPLY: u16 = 0x8000;
+pub(crate) const QTYPE_ANY: u16 = 255;
+pub(crate) const CLASS_IN: u16 = 1;
+pub(crate) const CACHE_FLUSH: u16 = 0x8000;
+pub(crate) const UNICAST_REPLY: u16 = 0x8000;
 
-pub struct Name(Vec<u8>);
+pub struct Name(pub(crate) Vec<u8>);
 
 impl Name {
     pub fn new(host: &str) -> Self {
+        Self::of(&[host, "local"])
+    }
+
+    pub(crate) fn of(labels: &[&str]) -> Self {
         let mut wire = Vec::new();
-        for label in [host, "local"] {
+        for label in labels {
             let bytes = &label.as_bytes()[..label.len().min(63)];
             wire.push(bytes.len() as u8);
             wire.extend_from_slice(bytes);
@@ -31,7 +35,7 @@ impl Name {
         Self(wire)
     }
 
-    fn matches(&self, other: &[u8]) -> bool {
+    pub(crate) fn matches(&self, other: &[u8]) -> bool {
         self.0.len() == other.len()
             && self
                 .0
@@ -106,27 +110,25 @@ pub fn build_answer(
     b.extend_from_slice(&(u16::from(with_a) + u16::from(with_nsec)).to_be_bytes());
     b.extend_from_slice(&[0, 0, 0, 0]);
     if with_a {
-        put_rr_head(&mut b, name, QTYPE_A, class, ttl);
-        b.extend_from_slice(&4u16.to_be_bytes());
-        b.extend_from_slice(&addr.octets());
+        put_rr(&mut b, name, QTYPE_A, class, ttl, &addr.octets());
     }
     if with_nsec {
-        put_rr_head(&mut b, name, QTYPE_NSEC, class, ttl);
-        b.extend_from_slice(&((name.0.len() + 3) as u16).to_be_bytes());
-        b.extend_from_slice(&name.0);
-        b.extend_from_slice(&[0, 1, 0x40]);
+        let bitmap = [name.0.as_slice(), &[0, 1, 0x40]].concat();
+        put_rr(&mut b, name, QTYPE_NSEC, class, ttl, &bitmap);
     }
     b
 }
 
-fn put_rr_head(b: &mut Vec<u8>, name: &Name, rtype: u16, class: u16, ttl: u32) {
+pub(crate) fn put_rr(b: &mut Vec<u8>, name: &Name, rtype: u16, class: u16, ttl: u32, data: &[u8]) {
     b.extend_from_slice(&name.0);
     b.extend_from_slice(&rtype.to_be_bytes());
     b.extend_from_slice(&class.to_be_bytes());
     b.extend_from_slice(&ttl.to_be_bytes());
+    b.extend_from_slice(&(data.len() as u16).to_be_bytes());
+    b.extend_from_slice(data);
 }
 
-fn read_name(pkt: &[u8], pos: usize) -> Option<(Vec<u8>, usize)> {
+pub(crate) fn read_name(pkt: &[u8], pos: usize) -> Option<(Vec<u8>, usize)> {
     let (mut i, mut end, mut hops) = (pos, None, 0);
     let mut out = Vec::new();
     loop {

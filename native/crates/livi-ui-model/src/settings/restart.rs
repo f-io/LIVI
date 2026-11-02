@@ -14,6 +14,8 @@ const NEEDS_RESTART: &[&str] = &[
     "carPlayVehicleClimate",
     "displayMode",
     "displayConnector",
+    "screenWidthMm",
+    "screenHeightMm",
     "projectionWidth",
     "projectionHeight",
     "projectionFps",
