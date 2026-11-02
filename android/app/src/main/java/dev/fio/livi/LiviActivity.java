@@ -14,7 +14,9 @@ import android.content.IntentFilter;
 import android.content.pm.PackageInstaller;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.FileUtils;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.SparseArray;
@@ -24,6 +26,7 @@ import android.view.Surface;
 import android.view.SurfaceControl;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -66,7 +69,10 @@ public class LiviActivity extends NativeActivity {
         } catch (Exception e) {
             Log.w("livi", "[gst] " + e);
         }
-        Display.Mode mode = getDisplay().getMode();
+        Display display = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                ? getDisplay()
+                : getWindowManager().getDefaultDisplay();
+        Display.Mode mode = display.getMode();
         DisplayMetrics metrics = getResources().getDisplayMetrics();
         int width = mode.getPhysicalWidth();
         int height = mode.getPhysicalHeight();
@@ -197,6 +203,14 @@ public class LiviActivity extends NativeActivity {
 
     private void kiosk(boolean on) {
         runOnUiThread(() -> {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                getWindow().getDecorView().setSystemUiVisibility(on
+                        ? View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                                | View.SYSTEM_UI_FLAG_FULLSCREEN
+                                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        : 0);
+                return;
+            }
             WindowInsetsController bars = getWindow().getInsetsController();
             bars.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
             if (on) {
@@ -224,7 +238,9 @@ public class LiviActivity extends NativeActivity {
             public void onReceive(Context context, Intent intent) {
                 int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
                 if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
-                    startActivity(intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent.class));
+                    startActivity(Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                            ? intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent.class)
+                            : intent.getParcelableExtra(Intent.EXTRA_INTENT));
                 } else if (status == PackageInstaller.STATUS_SUCCESS) {
                     result.complete(null);
                 } else {
@@ -238,13 +254,15 @@ public class LiviActivity extends NativeActivity {
             PackageInstaller installer = getPackageManager().getPackageInstaller();
             PackageInstaller.SessionParams params =
                     new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
-            params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
+            }
             int id = installer.createSession(params);
             try (PackageInstaller.Session session = installer.openSession(id)) {
                 File apk = new File(path);
                 try (InputStream in = new FileInputStream(apk);
                         OutputStream out = session.openWrite("livi.apk", 0, apk.length())) {
-                    in.transferTo(out);
+                    FileUtils.copy(in, out);
                     session.fsync(out);
                 }
                 Intent done = new Intent(INSTALLED).setPackage(getPackageName());

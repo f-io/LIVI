@@ -367,30 +367,44 @@ async fn serve(
     cancel: Arc<Notify>,
 ) {
     let l = label(&serial);
-    let dev = match info.open().await {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("[aa-usb] {l}: open accessory: {e}");
+    let mut restarted = RESETS;
+    let (dev, end) = loop {
+        let dev = match info.open().await {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("[aa-usb] {l}: open accessory: {e}");
+                return;
+            }
+        };
+        let pipe = match open_pipe(&dev).await {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("[aa-usb] {l}: {e}");
+                return;
+            }
+        };
+        let Some((node, path)) = bind_session_socket(&sessions.dir, "aa-session") else {
             return;
+        };
+        println!("[aa-usb] {l}: accessory up, session socket {path}");
+        (sessions.announce)(&path, &l, &serial);
+        let peer = Peer {
+            label: l.clone(),
+            ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
+        };
+        let end = session::run(UsbStream::new(pipe), peer, node, path, cancel.clone()).await;
+        if end.running || std::mem::replace(&mut restarted, true) {
+            break (dev, end);
+        }
+        drop(dev);
+        match restart(&info).await {
+            Ok(()) => println!("[aa-usb] {l}: setup failed, restarted the accessory"),
+            Err(e) => {
+                eprintln!("[aa-usb] {l}: restart: {e}");
+                return;
+            }
         }
     };
-    let pipe = match open_pipe(&dev).await {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("[aa-usb] {l}: {e}");
-            return;
-        }
-    };
-    let Some((node, path)) = bind_session_socket(&sessions.dir, "aa-session") else {
-        return;
-    };
-    println!("[aa-usb] {l}: accessory up, session socket {path}");
-    (sessions.announce)(&path, &l, &serial);
-    let peer = Peer {
-        label: l.clone(),
-        ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
-    };
-    let end = session::run(UsbStream::new(pipe), peer, node, path, cancel).await;
     if !serial.is_empty() {
         let mut p = phones.lock().unwrap();
         if end.closed_by_node {

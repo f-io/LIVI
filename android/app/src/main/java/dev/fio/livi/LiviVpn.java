@@ -8,6 +8,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.VpnService;
+import android.os.Build;
 import android.os.ParcelFileDescriptor;
 import android.system.OsConstants;
 import android.util.Log;
@@ -79,6 +80,9 @@ public class LiviVpn extends VpnService {
     }
 
     private static boolean localNetwork(Activity activity) throws InterruptedException {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN) {
+            return true;
+        }
         BooleanSupplier granted =
                 () -> activity.checkSelfPermission(LOCAL_NETWORK) == PackageManager.PERMISSION_GRANTED;
         if (granted.getAsBoolean()) {

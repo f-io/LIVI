@@ -44,6 +44,7 @@ pub struct Peer {
 
 pub struct SessionEnd {
     pub closed_by_node: bool,
+    pub running: bool,
 }
 
 #[derive(PartialEq, Eq)]
@@ -232,6 +233,7 @@ where
             );
             return SessionEnd {
                 closed_by_node: false,
+                running: false,
             };
         }
     };
@@ -301,6 +303,7 @@ where
         s.closed(&e).await;
         return SessionEnd {
             closed_by_node: false,
+            running: false,
         };
     }
 
@@ -365,6 +368,7 @@ where
     );
     SessionEnd {
         closed_by_node: s.closed_by_node,
+        running: s.phase == Phase::Running,
     }
 }
 
@@ -439,6 +443,9 @@ impl<W: AsyncWrite + Unpin + Send> Session<W> {
 
     async fn on_setup_frame(&mut self, f: RawFrame) -> Result<(), String> {
         if f.flags & frame_flags::ENCRYPTED != 0 {
+            if self.tls.is_none() {
+                return Ok(());
+            }
             return self.on_encrypted(f).await;
         }
         let Some((msg_id, body)) = f.message() else {
