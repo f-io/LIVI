@@ -49,7 +49,7 @@ impl ConfigFile {
             && file.get("projectionHeight").is_none()
             && let Some((w, h)) = host.panel_px
         {
-            let (w, h) = fit_720p(w, h);
+            let (w, h) = fit_720p(w.max(h), w.min(h));
             println!("[core] projection defaults from the panel: {w}x{h}");
             defaults.projection_width = w;
             defaults.projection_height = h;
@@ -360,6 +360,20 @@ pub mod tests {
             (1152, 720)
         );
         assert_eq!((config.cluster_width, config.cluster_height), (1152, 720));
+    }
+
+    #[test]
+    fn a_portrait_panel_gives_a_landscape_projection() {
+        let dir = TempDir::new();
+        let host = HostFacts {
+            car_name: None,
+            panel_px: Some((1080, 2400)),
+        };
+        let config = file_in(&dir).load(&host);
+        assert_eq!(
+            (config.projection_width, config.projection_height),
+            (1280, 576)
+        );
     }
 
     #[test]

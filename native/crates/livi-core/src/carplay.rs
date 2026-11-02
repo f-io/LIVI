@@ -265,6 +265,22 @@ fn measured_mm(cfg: &Config, screen: Screen) -> Option<(i64, i64)> {
     (w > 0 && h > 0).then(|| (w.into(), h.into()))
 }
 
+fn oriented((w_mm, h_mm): (i64, i64), (w, h): (u32, u32)) -> (i64, i64) {
+    if (w > h && w_mm < h_mm) || (w < h && w_mm > h_mm) {
+        (h_mm, w_mm)
+    } else {
+        (w_mm, h_mm)
+    }
+}
+
+fn main_size(cfg: &Config) -> (u32, u32) {
+    let or = |v: u32, d: u32| if v == 0 { d } else { v };
+    (
+        even(or(cfg.projection_width, 1920)),
+        even(or(cfg.projection_height, 1080)),
+    )
+}
+
 fn main_mm(
     cfg: &Config,
     panels: &HashMap<String, Panel>,
@@ -273,10 +289,13 @@ fn main_mm(
     measured_mm(cfg, Screen::Main)
         .or_else(|| panel_mm(panels.get("main")))
         .or_else(|| panel_mm(screen))
+        .map(|mm| oriented(mm, main_size(cfg)))
 }
 
 fn cluster_mm(cfg: &Config, panels: &HashMap<String, Panel>) -> Option<(i64, i64)> {
-    measured_mm(cfg, Screen::Cluster).or_else(|| panel_mm(panels.get("cluster")))
+    measured_mm(cfg, Screen::Cluster)
+        .or_else(|| panel_mm(panels.get("cluster")))
+        .map(|mm| oriented(mm, (cfg.cluster_width, cfg.cluster_height)))
 }
 
 fn dpi_mm(dpi: u32, w: u32, h: u32) -> Option<(i64, i64)> {
@@ -338,10 +357,7 @@ pub fn stack_config(
     theme: &Theme,
 ) -> StackConfig {
     let or = |v: u32, d: u32| if v == 0 { d } else { v };
-    let (main_w, main_h) = (
-        even(or(cfg.projection_width, 1920)),
-        even(or(cfg.projection_height, 1080)),
-    );
+    let (main_w, main_h) = main_size(cfg);
     let main_mm = dpi_mm(cfg.projection_dpi, main_w, main_h)
         .or_else(|| main_mm(cfg, panels, screen.as_ref()));
     let name = if cfg.car_name.trim().is_empty() {
@@ -1104,6 +1120,36 @@ mod tests {
         cfg.screen_height_mm.main = 195;
         cfg.projection_dpi = 160;
         assert_eq!(main(&cfg, &HashMap::new()), Some(305));
+    }
+
+    #[test]
+    fn a_portrait_screen_turns_with_a_landscape_projection() {
+        let screen = Panel {
+            width_mm: 65,
+            height_mm: 145,
+            width_px: 1080,
+            height_px: 2400,
+        };
+        let mut cfg = livi_core_proto::config::defaults();
+        cfg.projection_width = 1280;
+        cfg.projection_height = 576;
+        let mm = |cfg: &Config| {
+            let main = stack_config(
+                cfg,
+                &HashMap::new(),
+                Some(screen),
+                false,
+                &addresses(),
+                &livi_theme(),
+            )
+            .info
+            .main;
+            (main.width_physical_mm, main.height_physical_mm)
+        };
+        assert_eq!(mm(&cfg), (Some(145), Some(65)));
+        cfg.projection_width = 576;
+        cfg.projection_height = 1280;
+        assert_eq!(mm(&cfg), (Some(65), Some(145)));
     }
 
     #[test]
