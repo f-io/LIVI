@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      actions: read
+      actions: write
 
     steps:
       - name: Pick build run ID
@@ -156,3 +156,10 @@ jobs:
           done < <(find release-assets -type f -print0)
 
           gh release create "${args[@]}"
+
+      - name: Refresh the website and the dongle firmware
+        if: ${{ github.event.inputs.draft != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: gh workflow run pages.yml --repo "$REPO" --ref main

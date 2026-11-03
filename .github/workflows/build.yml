@@ -281,6 +281,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
 
     steps:
       - uses: actions/checkout@v7
@@ -353,3 +354,9 @@ jobs:
 
           gh release delete nightly --repo "$REPO" --yes --cleanup-tag || true
           gh release create "${args[@]}"
+
+      - name: Refresh the website and the dongle firmware
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: gh workflow run pages.yml --repo "$REPO" --ref main

@@ -1,0 +1,51 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**", "scripts/livi-link/pages-firmware.sh", ".github/workflows/pages.yml"]
+  release:
+    types: [published, unpublished, deleted]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Website and dongle firmware
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            docs
+            scripts/livi-link
+
+      - name: Gather the site
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p site
+          cp -a docs/. site/
+          bash scripts/livi-link/pages-firmware.sh site/firmware
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v5
