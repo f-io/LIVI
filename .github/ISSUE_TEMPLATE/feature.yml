@@ -1,6 +1,5 @@
 name: Feature request
 description: Something LIVI should do.
-labels: ["💫 feature request"]
 body:
   - type: textarea
     id: need
