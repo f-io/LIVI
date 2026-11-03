@@ -18,7 +18,7 @@ license = "GPL-3.0-or-later"
 [workspace.dependencies]
 # Every crate takes libc from here, so all of them follow the 1.0 API.
 libc = "1.0.0-alpha.5"
-aes = "0.9.3"
+aes = "0.9.4"
 base64 = "0.23.1"
 flate2 = "1.1.10"
 futures-util = "0.3.34"
@@ -36,7 +36,7 @@ sha2 = "0.11.1"
 socket2 = "0.6.5"
 tokio = "1.54.1"
 uuid = "1.29.0"
-zbus = { version = "6.2.0", default-features = false }
+zbus = { version = "6.2.1", default-features = false }
 
 iap2-csm = { path = "crates/iap2-csm" }
 iap2-link = { path = "crates/iap2-link" }

@@ -27,14 +27,14 @@ livi-wifi.workspace = true
 axum = "0.8.9"
 base64.workspace = true
 flate2.workspace = true
-jiff = { version = "0.2.38", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
+jiff = { version = "0.2.39", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
 libc.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
 sha2.workspace = true
 skrifa = { version = "0.49.0", default-features = false, features = ["std"] }
-socketioxide = "0.18.7"
+socketioxide = "0.18.9"
 tokio = { workspace = true, features = [
   "rt-multi-thread",
   "macros",

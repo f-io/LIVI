@@ -12,5 +12,5 @@ livi-host-proto.workspace = true
 livi-video-player.workspace = true
 
 [build-dependencies]
-cc = "1.10"
+cc = "1.11"
 pkg-config = "0.3"

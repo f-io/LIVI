@@ -1,6 +1,6 @@
 # Sourced by arm/common.sh and riscv/common.sh: the pinned kernel.org tree and the helpers every board's
 # kernel build uses. Needs BOARD, TOP and COMMON.
-KVER=7.3
+KVER=7.3.1
 KMAJOR=${KVER%%.*}
 KURL="https://cdn.kernel.org/pub/linux/kernel/v${KMAJOR}.x/linux-${KVER}.tar.xz"
 KDIR=$TOP/linux-$KVER

@@ -15,8 +15,8 @@ getrandom = "0.4.3"
 hkdf = "0.13.0"
 livi-session-io.workspace = true
 num-bigint = "0.5.1"
-openssl = "0.10.81"
-openssl-sys = "0.9.117"
+openssl = "0.10.82"
+openssl-sys = "0.9.118"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha1 = "0.11.0"
@@ -28,7 +28,7 @@ uuid = { workspace = true, features = ["v4"] }
 x25519-dalek = { version = "3.0.0", features = ["getrandom"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "android"))'.dependencies]
-openssl = { version = "0.10.81", features = ["vendored"] }
+openssl = { version = "0.10.82", features = ["vendored"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "test-util"] }
