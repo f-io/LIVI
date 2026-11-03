@@ -1,5 +1,5 @@
 [toolchain]
-# 1.100.0-beta.7, pinned and raised by hand.
-channel = "beta-2026-10-18"
+# 1.100.0-beta.8, pinned and raised by hand.
+channel = "beta-2026-11-03"
 components = ["clippy", "rustfmt"]
 profile = "minimal"
