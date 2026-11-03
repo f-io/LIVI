@@ -67,6 +67,14 @@ pub enum Action {
     Seek {
         position_ms: u32,
     },
+    VideoPlay {
+        playing: bool,
+    },
+    #[serde(rename_all = "camelCase")]
+    VideoSeek {
+        position_ms: u32,
+    },
+    VideoClose,
     SelectDevice {
         id: String,
     },

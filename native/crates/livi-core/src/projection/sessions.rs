@@ -40,6 +40,7 @@ impl Projection {
                     duck_level: 1.0,
                     duck_ramp_ms: RAMP_UP_MS,
                     now_playing: NowPlaying::default(),
+                    video_playback: None,
                     navigation: Navigation::default(),
                 };
                 entry.device.merge(device);
@@ -313,9 +314,15 @@ impl Projection {
             position: position.map_or(0, |i| i as u32 + 1),
             total: self.sessions.len() as u32,
         };
-        let (now_playing, mut navigation) = self
+        let (now_playing, video_playback, mut navigation) = self
             .active()
-            .map(|s| (s.now_playing.clone(), s.navigation.clone()))
+            .map(|s| {
+                (
+                    s.now_playing.clone(),
+                    s.video_playback,
+                    s.navigation.clone(),
+                )
+            })
             .unwrap_or_default();
         written_out(
             &mut navigation,
@@ -327,6 +334,7 @@ impl Projection {
             s.front.aux = aux;
             s.sessions = sessions;
             s.now_playing = now_playing;
+            s.video_playback = video_playback;
             s.navigation = navigation;
             s.devices = list;
             s.cluster = self.cluster.clone();

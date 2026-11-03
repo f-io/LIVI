@@ -343,6 +343,7 @@ mod tests {
             front: livi,
             sessions: Default::default(),
             now_playing: Default::default(),
+            video_playback: None,
             navigation: Default::default(),
             system: Default::default(),
             devices: Default::default(),

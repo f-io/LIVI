@@ -19,7 +19,7 @@ use livi_core_proto::config::{Config, KeyBindings};
 use livi_core_proto::input::{Input, Phase, Point};
 use livi_core_proto::message::{MediaControl, Radio};
 use livi_core_proto::state::{
-    Front, Navigation, NowPlaying, PerScreen, Protocol, Screen, Sessions, State,
+    Front, Navigation, NowPlaying, PerScreen, Protocol, Screen, Sessions, State, VideoPlayback,
 };
 use livi_core_proto::theme::{AppearancePreference, Cluster, LayoutSlot, Theme, livi_theme};
 use livi_cp::hid::{KnobState, media_button, telephony_button};
@@ -200,6 +200,7 @@ struct Entry {
     duck_level: f64,
     duck_ramp_ms: u32,
     now_playing: NowPlaying,
+    video_playback: Option<VideoPlayback>,
     navigation: Navigation,
 }
 
@@ -471,6 +472,9 @@ pub struct Projection {
 pub enum UiCommand {
     Media(MediaControl),
     Seek(u32),
+    VideoPlay(bool),
+    VideoSeek(u32),
+    VideoClose,
     NextDevice,
     SelectClusterLayout(String),
     StepClusterLayout(i32),
@@ -679,6 +683,11 @@ impl Projection {
                 Some(command) = asks.commands.recv() => match command {
                     UiCommand::Media(control) => self.media(control),
                     UiCommand::Seek(ms) => self.seek(ms),
+                    UiCommand::VideoPlay(playing) => self.to_video(StackCmd::VideoPlay(playing)),
+                    UiCommand::VideoSeek(ms) => {
+                        self.to_video(StackCmd::VideoSeek(f64::from(ms) / 1000.0));
+                    }
+                    UiCommand::VideoClose => self.to_video(StackCmd::VideoClose),
                     UiCommand::NextDevice => self.activate_next(),
                     UiCommand::SelectClusterLayout(layout) => {
                         if self.cluster.select(&layout, None) {

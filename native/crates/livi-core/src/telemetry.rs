@@ -400,6 +400,7 @@ mod tests {
             },
             sessions: Default::default(),
             now_playing: Default::default(),
+            video_playback: None,
             telemetry,
             navigation: Default::default(),
             system: Default::default(),

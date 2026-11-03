@@ -258,6 +258,9 @@ impl<M: Media> Conn<M> {
                 ]))
                 .await;
             }
+            StackCmd::VideoPlay(playing) => self.play_video_here(playing).await,
+            StackCmd::VideoSeek(to) => self.seek_video_here(to),
+            StackCmd::VideoClose => self.close_video_here().await,
             StackCmd::NightMode(night) => {
                 self.night_mode = Some(night);
                 self.send_night_mode(night).await;

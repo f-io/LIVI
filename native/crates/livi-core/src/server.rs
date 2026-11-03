@@ -207,6 +207,18 @@ impl Core {
                 let _ = self.asks.commands.send(UiCommand::Seek(position_ms));
                 Ok(())
             }
+            Action::VideoPlay { playing } => {
+                let _ = self.asks.commands.send(UiCommand::VideoPlay(playing));
+                Ok(())
+            }
+            Action::VideoSeek { position_ms } => {
+                let _ = self.asks.commands.send(UiCommand::VideoSeek(position_ms));
+                Ok(())
+            }
+            Action::VideoClose => {
+                let _ = self.asks.commands.send(UiCommand::VideoClose);
+                Ok(())
+            }
             Action::NextDevice => {
                 let _ = self.asks.commands.send(UiCommand::NextDevice);
                 Ok(())
@@ -473,6 +485,7 @@ mod tests {
             front: livi,
             sessions: Default::default(),
             now_playing: Default::default(),
+            video_playback: None,
             telemetry: Default::default(),
             navigation: Default::default(),
             system: Default::default(),

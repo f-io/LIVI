@@ -9,6 +9,12 @@ impl Projection {
         self.to_active(Do::Media(control));
     }
 
+    pub(super) fn to_video(&self, cmd: StackCmd) {
+        if let Some(Link::Cp(id)) = self.active().map(|s| s.link) {
+            self.cp.stack(id, cmd);
+        }
+    }
+
     pub(super) fn seek(&self, ms: u32) {
         if let Some(s) = self.active().filter(|s| matches!(s.link, Link::Cp(_))) {
             self.devices.seek(ms, s.device.bt_mac.clone());

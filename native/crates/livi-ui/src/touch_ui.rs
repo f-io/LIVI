@@ -96,7 +96,9 @@ fn handle(
     (x, y): (f64, f64),
     change: Change,
 ) -> bool {
-    let on_picture = ui.get_page() == Page::Projection && ui.get_phone() == PhoneState::Streaming;
+    let on_picture = ui.get_page() == Page::Projection
+        && ui.get_phone() == PhoneState::Streaming
+        && !ui.get_video_shown();
     let held = FINGERS.with_borrow(|f| f.holds(finger));
     if !on_picture && !held {
         return false;

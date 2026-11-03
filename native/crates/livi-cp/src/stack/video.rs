@@ -11,8 +11,61 @@ impl<M: Media> Conn<M> {
         }
         println!("[cpStack] borrowing the screen for video");
         self.video_screen_borrowed = true;
+        self.ctx.media.set_video_shown(self.video_allowed);
         self.send_event_command(&video_playback::borrow_screen(true))
             .await;
+        self.tell_video();
+    }
+
+    pub(super) fn tell_video(&mut self) {
+        let shown = (self.video_tunnel.is_some()
+            && self.video_screen_borrowed
+            && self.video_allowed)
+            .then(|| {
+                let status = self.ctx.media.video_status();
+                self.video_player.shown(status.as_ref())
+            });
+        if self.video_told != shown {
+            self.video_told = shown;
+            self.emit(StackEvent::Video(shown));
+        }
+    }
+
+    pub(super) async fn play_video_here(&mut self, playing: bool) {
+        if self.video_tunnel.is_none() || playing == (self.video_player.rate() > 0.0) {
+            return;
+        }
+        println!(
+            "[cpStack] the driver {} the video, asking the phone",
+            if playing { "resumes" } else { "pauses" }
+        );
+        let toggle = hid::media_report(hid::media_button::PLAY_PAUSE);
+        self.send_hid(hid::MEDIA_HID_UID, &toggle).await;
+        self.send_hid(hid::MEDIA_HID_UID, &hid::media_report(0))
+            .await;
+    }
+
+    pub(super) fn seek_video_here(&mut self, to: f64) {
+        if self.video_tunnel.is_none() {
+            return;
+        }
+        println!("[cpStack] the driver seeks the video to {to:.1} s");
+        self.video_player.seek(to);
+        self.ctx.media.seek_video(self.video_player.position());
+        self.tell_video();
+    }
+
+    pub(super) async fn close_video_here(&mut self) {
+        if !self.video_screen_borrowed {
+            return;
+        }
+        println!("[cpStack] the driver closes the video, giving the screen back");
+        self.play_video_here(false).await;
+        self.video_screen_borrowed = false;
+        self.ctx.media.set_video_shown(false);
+        self.send_event_command(&video_playback::borrow_screen(false))
+            .await;
+        self.tell_video();
     }
 
     pub(super) fn keep_side_message(&mut self, source: &str, message: &[u8]) {
@@ -106,6 +159,7 @@ impl<M: Media> Conn<M> {
             self.send_event_command(&video_playback::borrow_screen(false))
                 .await;
         }
+        self.tell_video();
     }
 
     pub(super) fn video_status_word(&self) -> &'static str {
@@ -137,6 +191,7 @@ impl<M: Media> Conn<M> {
         if allowed && self.video_tunnel.is_some() {
             self.borrow_screen_for_video().await;
         }
+        self.tell_video();
     }
 
     pub(super) async fn open_video_tunnel(&mut self, message: &Value) {

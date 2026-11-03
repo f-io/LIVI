@@ -147,6 +147,13 @@ pub fn describe(message: &Value) -> String {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Shown {
+    pub playing: bool,
+    pub position: f64,
+    pub duration: Option<f64>,
+}
+
 #[derive(Default)]
 pub struct Playback {
     item: Option<String>,
@@ -165,6 +172,28 @@ impl Playback {
         self.rate
     }
 
+    pub fn set_rate(&mut self, rate: f64) -> bool {
+        self.start_s = self.position();
+        let started = rate > 0.0 && self.rate == 0.0;
+        self.rate = rate;
+        self.since = Some(Instant::now());
+        started
+    }
+
+    pub fn seek(&mut self, to: f64) {
+        self.start_s = to;
+        self.since = self.since.map(|_| Instant::now());
+    }
+
+    pub fn shown(&self, status: Option<&VideoStatus>) -> Shown {
+        let s = status.copied().unwrap_or_default();
+        Shown {
+            playing: self.rate > 0.0 && !s.ended && !s.failed,
+            position: s.position.unwrap_or_else(|| self.position()),
+            duration: s.duration.filter(|d| *d > 0.0),
+        }
+    }
+
     pub fn handle(
         &mut self,
         message: &Value,
@@ -179,16 +208,11 @@ impl Playback {
                 self.since = None;
             }
             Some("setRate") => {
-                let rate = seconds(message.get("rate")).unwrap_or(0.0);
-                self.start_s = self.position();
-                started = rate > 0.0 && self.rate == 0.0;
-                self.rate = rate;
-                self.since = Some(Instant::now());
+                started = self.set_rate(seconds(message.get("rate")).unwrap_or(0.0));
             }
             Some("seek") => {
                 if let Some(to) = seconds(message.get("time")) {
-                    self.start_s = to;
-                    self.since = self.since.map(|_| Instant::now());
+                    self.seek(to);
                 }
             }
             Some("stop") => *self = Self::default(),

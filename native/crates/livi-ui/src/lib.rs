@@ -19,6 +19,7 @@ mod overlay_ui;
 mod secondary;
 mod settings_ui;
 mod touch_ui;
+mod video_ui;
 
 use std::cell::{Cell, RefCell};
 use std::os::unix::net::UnixStream;
@@ -208,6 +209,7 @@ fn apply(ui: &AppWindow, update: Update) {
         Update::PhoneName(name) => overlay_ui::phone(ui, &name),
         Update::Camera(found) => ui.set_camera_found(found),
         Update::MainMask(mask) => ui.set_main_mask(dashboard_ui::mask_data(mask)),
+        Update::Video(video) => video_ui::show(ui, video),
         Update::Fonts(paths) => {
             if fonts::register(&paths) {
                 let lang = settings_ui::language();
@@ -461,6 +463,7 @@ pub fn run(
     keys_ui::wire(&ui, &client);
     #[cfg(target_os = "android")]
     touch_ui::wire(&ui, &client);
+    video_ui::wire(&ui, &client);
     wire(&ui, &client);
     if let Some(state) = fixture {
         *client.state() = state.clone();

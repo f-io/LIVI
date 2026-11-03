@@ -4,6 +4,7 @@
 
 import { Theme } from "theme.slint";
 import { ViewAreaMask, MaskData } from "mask.slint";
+import { VideoControls } from "video_controls.slint";
 
 export enum TouchPhase { down, move, up, cancel }
 
@@ -13,7 +14,15 @@ export component ProjectionPage inherits Rectangle {
     in property <bool> streaming;
     in property <MaskData> mask;
     in property <image> idle-icon;
+    in property <bool> video-shown;
+    in property <bool> video-playing;
+    in property <float> video-elapsed-ms;
+    in property <float> video-total-ms;
+    in property <bool> video-can-seek;
     callback touch(TouchPhase, float, float);
+    callback video-play-pause();
+    callback video-seek(float);
+    callback video-close();
 
     background: root.streaming ? transparent : Theme.background;
 
@@ -24,7 +33,7 @@ export component ProjectionPage inherits Rectangle {
         y: (root.height - self.height) / 2;
 
         TouchArea {
-            enabled: root.streaming;
+            enabled: root.streaming && !root.video-shown;
             pointer-event(e) => {
                 if (e.kind == PointerEventKind.down) {
                     root.touch(TouchPhase.down, self.mouse-x / self.width, self.mouse-y / self.height);
@@ -44,6 +53,18 @@ export component ProjectionPage inherits Rectangle {
 
     if root.streaming: ViewAreaMask {
         mask: root.mask;
+    }
+
+    if root.streaming && root.video-shown: VideoControls {
+        width: root.width;
+        height: root.height;
+        playing: root.video-playing;
+        elapsed-ms: root.video-elapsed-ms;
+        total-ms: root.video-total-ms;
+        can-seek: root.video-can-seek;
+        play-pause => { root.video-play-pause(); }
+        seek(f) => { root.video-seek(f); }
+        close => { root.video-close(); }
     }
 
     if !root.streaming: Image {

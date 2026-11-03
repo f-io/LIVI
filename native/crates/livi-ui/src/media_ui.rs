@@ -48,7 +48,7 @@ fn tick(ui: &AppWindow) {
             .set_playing(l.dab_guess.shown(l.dab_playing, now));
         l.playback.running() || l.playback.guessing(now) || l.dab_guess.pending(now)
     });
-    let wanted = keep && ui.get_page() == Page::Media;
+    let wanted = keep && (ui.get_page() == Page::Media || ui.get_video_shown());
     TICK.with(|t| match (wanted, t.running()) {
         (true, false) => {
             let weak = ui.as_weak();

@@ -122,6 +122,10 @@ pub enum CpEvent {
     HostUiRequested {
         id: SessionId,
     },
+    Video {
+        id: SessionId,
+        shown: Option<crate::video_playback::Shown>,
+    },
     SpeechActive {
         id: SessionId,
         active: bool,
@@ -493,6 +497,7 @@ impl<M: Media> Manager<M> {
                 });
             }
             StackEvent::HostUiRequested => self.emit(CpEvent::HostUiRequested { id }),
+            StackEvent::Video(shown) => self.emit(CpEvent::Video { id, shown }),
             StackEvent::SpeechActive(active) => self.emit(CpEvent::SpeechActive { id, active }),
             StackEvent::Climate(climate) => self.emit(CpEvent::Climate { id, climate }),
             StackEvent::NotificationClosed => {

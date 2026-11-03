@@ -10,13 +10,14 @@ import { DabPage, DabState, StationData } from "dab.slint";
 export { MediaText, Press, DabState, StationData }
 
 
-component Progress inherits Rectangle {
+export component Progress inherits Rectangle {
     in property <bool> focused;
     in property <float> progress;
     in property <bool> can-seek;
     in property <float> total-ms;
     in property <float> elapsed-ms;
     in property <length> bar-height;
+    in property <color> text-color: Theme.text.with-alpha(0.85);
     callback seek(float);
 
     property <bool> dragging;
@@ -39,7 +40,7 @@ component Progress inherits Rectangle {
         Text {
             min-width: 3.5 * 14px;
             text: root.clock(root.dragging ? root.shown-ms : root.elapsed-ms);
-            color: Theme.text.with-alpha(0.85);
+            color: root.text-color;
             font-size: 14px;
             vertical-alignment: center;
         }
@@ -103,7 +104,7 @@ component Progress inherits Rectangle {
         Text {
             min-width: 3.5 * 14px;
             text: "-" + root.clock(root.total-ms - (root.dragging ? root.shown-ms : root.elapsed-ms));
-            color: Theme.text.with-alpha(0.85);
+            color: root.text-color;
             font-size: 14px;
             horizontal-alignment: right;
             vertical-alignment: center;

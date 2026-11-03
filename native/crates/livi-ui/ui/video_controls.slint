@@ -1,0 +1,110 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { RoundButton } from "media_parts.slint";
+import { Progress } from "media.slint";
+
+export component VideoControls inherits Rectangle {
+    in property <bool> playing;
+    in property <float> elapsed-ms;
+    in property <float> total-ms;
+    in property <bool> can-seek;
+    callback play-pause();
+    callback seek(float);
+    callback close();
+
+    property <bool> shown: true;
+    property <int> idle;
+    property <length> unit: min(root.width, root.height);
+    property <length> margin: round(root.unit * 0.05 / 1px) * 1px;
+    property <length> small: clamp(round(root.unit * 0.12 / 1px) * 1px, 44px, 72px);
+    property <length> big: clamp(round(root.unit * 0.2 / 1px) * 1px, 64px, 120px);
+
+    function wake() {
+        root.shown = true;
+        root.idle = 0;
+    }
+
+    changed playing => {
+        root.wake();
+    }
+
+    Timer {
+        interval: 250ms;
+        running: root.shown && root.playing;
+        triggered => {
+            root.idle += 1;
+            if (root.idle >= 16) {
+                root.shown = false;
+            }
+        }
+    }
+
+    TouchArea {
+        enabled: root.shown;
+        clicked => {
+            root.shown = false;
+        }
+    }
+
+    Rectangle {
+        opacity: root.shown ? 1 : 0;
+        animate opacity { duration: 200ms; easing: ease; }
+
+        Rectangle {
+            y: 0;
+            height: root.small + 2 * root.margin;
+            background: @linear-gradient(180deg, #000000a0 0%, #00000000 100%);
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            height: root.small + 2 * root.margin;
+            background: @linear-gradient(0deg, #000000a0 0%, #00000000 100%);
+        }
+
+        RoundButton {
+            x: root.margin;
+            y: root.margin;
+            enabled: root.shown;
+            size: root.small;
+            icon-size: round(root.small * 0.46 / 1px) * 1px;
+            icon: @image-url("icons/Close.svg");
+            clicked => { root.close(); }
+        }
+
+        RoundButton {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            enabled: root.shown;
+            size: root.big;
+            icon-size: round(root.big * 0.46 / 1px) * 1px;
+            icon: root.playing ? @image-url("icons/Pause.svg") : @image-url("icons/PlayArrow.svg");
+            clicked => {
+                root.wake();
+                root.play-pause();
+            }
+        }
+
+        if root.total-ms > 0: Progress {
+            x: root.margin;
+            y: parent.height - root.margin - self.height;
+            width: parent.width - 2 * root.margin;
+            can-seek: root.shown && root.can-seek;
+            progress: clamp(root.elapsed-ms / root.total-ms, 0, 1);
+            elapsed-ms: root.elapsed-ms;
+            total-ms: root.total-ms;
+            bar-height: 8px;
+            text-color: #ffffffd9;
+            seek(f) => {
+                root.wake();
+                root.seek(f);
+            }
+        }
+    }
+
+    TouchArea {
+        enabled: !root.shown;
+        clicked => { root.wake(); }
+    }
+}

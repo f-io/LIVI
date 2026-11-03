@@ -184,6 +184,9 @@ pub enum StackCmd {
     Gauges(Gauges),
     Radio(Box<Radio>),
     RequestUi(String),
+    VideoPlay(bool),
+    VideoSeek(f64),
+    VideoClose,
     Stop,
 }
 
@@ -232,6 +235,7 @@ pub enum StackEvent {
     },
     NotificationClosed,
     HistoryHidden(u64),
+    Video(Option<video_playback::Shown>),
 }
 
 pub struct StackCtx<M: Media> {
@@ -314,6 +318,7 @@ struct Conn<M: Media> {
     vehicle_in: Option<mpsc::UnboundedSender<(Lane, Vec<u8>)>>,
     vehicle_out: Option<mpsc::UnboundedReceiver<(Lane, Vec<u8>)>>,
     video_screen_borrowed: bool,
+    video_told: Option<video_playback::Shown>,
     video_allowed: bool,
     video_proxy: Option<Arc<ProxyOffer>>,
     video_tunnel: Option<VideoRun>,
@@ -581,6 +586,7 @@ pub async fn run<M: Media>(
         vehicle_in: None,
         vehicle_out: None,
         video_screen_borrowed: false,
+        video_told: None,
         video_allowed: true,
         video_proxy: None,
         video_tunnel: None,

@@ -546,6 +546,118 @@ async fn a_queued_video_plays_on_the_host_and_follows_the_phone() {
 }
 
 #[tokio::test]
+async fn the_driver_pauses_seeks_and_closes_the_video() {
+    let mut rig = Rig::with_video(true, false).await;
+    let secret = rig.secret;
+    rig.phone.verify(&secret, b"phone-1").await;
+    let offered = Value::Array(vec![Value::String(video_playback::FEATURE.into())]);
+    let session = dict([("timingPort", Value::Int(9)), ("features", offered)]);
+    rig.phone.plist("SETUP", "/s", &session).await;
+    let video = dict([
+        ("type", Value::Int(STREAM_DATA)),
+        (
+            "clientTypeUUID",
+            Value::String(video_playback::DATASTREAM_UUID.to_lowercase()),
+        ),
+    ]);
+    rig.phone
+        .plist(
+            "SETUP",
+            "/s",
+            &dict([("streams", Value::Array(vec![video]))]),
+        )
+        .await;
+    let offer = dict([
+        ("type", Value::String("setProxyParameters".into())),
+        (
+            "params",
+            dict([
+                ("proxyUrl", Value::String("https://[fe80::1]".into())),
+                ("proxyPort", Value::Int(60664)),
+                ("proxyPsk", Value::Data(vec![1; 32])),
+                ("proxyPskIdentity", Value::Data(vec![2; 16])),
+                ("proxyAuthorization", Value::String("Basic eDp5".into())),
+            ]),
+        ),
+    ]);
+    rig.phone
+        .request("POST", "/command", &bplist::encode(&offer))
+        .await;
+    let item = dict([(
+        "Content-Location",
+        Value::String("http://127.0.0.1:58539/mirror/index.m3u8".into()),
+    )]);
+    let kind = |t: &str| ("type", Value::String(t.into()));
+    for message in [
+        dict([kind("insertPlayQueueItem"), ("item", item)]),
+        dict([kind("setRate"), ("rate", Value::Real(1.0))]),
+    ] {
+        let body = dict([(
+            "params",
+            dict([("data", Value::Data(bplist::encode(&message)))]),
+        )]);
+        rig.phone
+            .request_with(
+                "POST",
+                "/command",
+                "X-Apple-StreamID: 2\r\n",
+                &bplist::encode(&body),
+            )
+            .await;
+    }
+    let mut video_until = async |wanted: fn(Option<video_playback::Shown>) -> bool| loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), rig.events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        if let StackEvent::Video(shown) = event
+            && wanted(shown)
+        {
+            return;
+        }
+    };
+    video_until(|v| v.is_some_and(|v| v.playing)).await;
+
+    rig.cmds.send(StackCmd::VideoPlay(false)).unwrap();
+    let pause = dict([kind("setRate"), ("rate", Value::Real(0.0))]);
+    let body = dict([(
+        "params",
+        dict([("data", Value::Data(bplist::encode(&pause)))]),
+    )]);
+    rig.phone
+        .request_with(
+            "POST",
+            "/command",
+            "X-Apple-StreamID: 2\r\n",
+            &bplist::encode(&body),
+        )
+        .await;
+    video_until(|v| v.is_some_and(|v| !v.playing)).await;
+    rig.cmds.send(StackCmd::VideoSeek(30.0)).unwrap();
+    video_until(|v| v.is_some_and(|v| v.position == 30.0)).await;
+    rig.cmds.send(StackCmd::VideoClose).unwrap();
+    video_until(|v| v.is_none()).await;
+
+    let calls = rig.media.calls();
+    let after_play = calls
+        .iter()
+        .skip_while(|c| !c.starts_with("play_video"))
+        .filter(|c| c.contains("video") && !c.starts_with("play_video"))
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        after_play,
+        [
+            "show_video true",
+            "video_rate 1",
+            "video_rate 0",
+            "seek_video 30",
+            "show_video false"
+        ]
+    );
+}
+
+#[tokio::test]
 async fn a_muted_item_starts_muted() {
     let mut rig = Rig::with_video(true, false).await;
     let secret = rig.secret;

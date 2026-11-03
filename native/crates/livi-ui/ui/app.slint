@@ -29,6 +29,10 @@ export component AppWindow inherits Window {
     in property <int> stream-width: 1280;
     in property <int> stream-height: 720;
     in property <MaskData> main-mask;
+    in property <bool> video-shown;
+    in property <bool> video-playing;
+    in property <float> video-elapsed-ms;
+    in property <float> video-total-ms;
     in property <bool> camera-found;
     in property <string> no-camera: "No camera found";
 
@@ -48,6 +52,9 @@ export component AppWindow inherits Window {
 
     callback page-chosen(Page);
     callback touch(TouchPhase, float, float);
+    callback video-play-pause();
+    callback video-seek(float);
+    callback video-close();
     callback play-pause();
     callback prev();
     callback next();
@@ -136,7 +143,21 @@ export component AppWindow inherits Window {
                 stream-width: root.stream-width;
                 stream-height: root.stream-height;
                 mask: root.main-mask;
+                video-shown: root.video-shown;
+                video-playing: root.video-playing;
+                video-elapsed-ms: root.video-total-ms > 0 ? root.video-elapsed-ms : root.elapsed-ms;
+                video-total-ms: root.video-total-ms > 0 ? root.video-total-ms : root.total-ms;
+                video-can-seek: root.video-total-ms > 0 || root.can-seek;
                 touch(phase, x, y) => { root.touch(phase, x, y); }
+                video-play-pause => { root.video-play-pause(); }
+                video-seek(f) => {
+                    if (root.video-total-ms > 0) {
+                        root.video-seek(f);
+                    } else {
+                        root.seek(f);
+                    }
+                }
+                video-close => { root.video-close(); }
             }
             if root.page == Page.media: MediaPage {
                 width: parent.width;

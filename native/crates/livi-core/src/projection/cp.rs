@@ -107,6 +107,16 @@ impl Projection {
                     self.host_ui();
                 }
             }
+            CpEvent::Video { id, shown } => {
+                if let Some(entry) = self.by_link(Link::Cp(id)) {
+                    entry.video_playback = shown.map(|v| VideoPlayback {
+                        playing: v.playing,
+                        position_ms: v.position * 1000.0,
+                        duration_ms: v.duration.map(|d| d * 1000.0),
+                    });
+                    self.publish();
+                }
+            }
             CpEvent::SpeechActive { id, active } => {
                 println!(
                     "[core] CarPlay Siri {}",

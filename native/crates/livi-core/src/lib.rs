@@ -139,6 +139,7 @@ pub async fn run(
         front: livi,
         sessions: Default::default(),
         now_playing: Default::default(),
+        video_playback: None,
         telemetry: Default::default(),
         navigation: Default::default(),
         system: livi_core_proto::state::System {
