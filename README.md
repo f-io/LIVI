@@ -316,7 +316,7 @@ After this, the app will launch normally and future updates will work without ad
 ## Android (arm64) – Experimental
 
 > [!WARNING]
-> The Android port is experimental and only part of the nightly builds. It is tested on a Raspberry Pi 5 with AOSP Android 17 and on a Pixel 8 with GrapheneOS.
+> The Android port is experimental. It is tested on AOSP Android 17 and on a Pixel 8 with latest GrapheneOS.
 
 Install `LIVI-*-android-arm64.apk` on Android 10 or newer.
 
