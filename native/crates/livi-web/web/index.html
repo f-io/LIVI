@@ -392,13 +392,13 @@ function cmpVersion(a, b) {
 
 async function otaRelease() {
   const forced = new URLSearchParams(location.search).get('ref');
-  if (forced) return { name: forced, ref: forced, assets: null };
+  if (forced) return { name: forced, ref: forced };
   const feed = otaNightly.checked ? 'releases/tags/nightly' : 'releases/latest';
   const r = await fetch(`https://api.github.com/repos/${OTA_REPO}/${feed}`, { cache: 'no-store' });
   if (r.status === 404) throw new Error(otaNightly.checked ? 'there is no nightly' : 'there is no release');
   if (!r.ok) throw new Error(`release feed: ${r.status}`);
   const rel = await r.json();
-  return { name: rel.name || rel.tag_name, ref: rel.tag_name, assets: rel.assets || [] };
+  return { name: rel.name || rel.tag_name, ref: rel.tag_name };
 }
 
 document.getElementById('ota-check').addEventListener('click', async () => {
@@ -412,13 +412,6 @@ document.getElementById('ota-check').addEventListener('click', async () => {
     if (r.status === 404) throw new Error(`${rel.name} carries no firmware for this dongle`);
     if (!r.ok) throw new Error(`firmware.json: ${r.status}`);
     const fw = await r.json();
-    if (rel.assets) {
-      const asset = rel.assets.find(a => a.name === fw.file);
-      if (!asset) throw new Error(`${rel.name} carries no firmware for this dongle`);
-      if (asset.size !== fw.size || (asset.digest && asset.digest !== 'sha256:' + fw.sha256)) {
-        throw new Error(`${fw.file} is not the file ${rel.name} carries`);
-      }
-    }
     if (fw.build === installed.build) {
       otaState.textContent = `Up to date: ${fw.version} (${fw.build})`;
       return;
