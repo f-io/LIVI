@@ -161,7 +161,6 @@ impl R820t {
         self.set_mask(regs, 0x1c, 0x00, 0x04)?;
         self.set_mask(regs, 0x06, 0x00, 0x40)?;
         self.set_mask(regs, 0x1a, 0x30, 0x30)?;
-        sleep(Duration::from_millis(250));
         self.set_mask(regs, 0x1d, 0x18, 0x38)?;
         self.set_mask(regs, 0x1c, mixer_top, 0x04)?;
         self.set_mask(regs, 0x1e, 14, 0x1f)?;
