@@ -199,8 +199,8 @@
 
       <h2>Features</h2>
       <ul>
-        <li><strong>Apple CarPlay Ultra</strong> (wired &amp; wireless) on Linux and Mac, requires MFi authentication</li>
-        <li><strong>Android Auto</strong> (wired &amp; wireless) on Linux and Mac, wireless on Mac requires a LIVI Link</li>
+        <li><strong>Apple CarPlay Ultra</strong> (wired &amp; wireless) on Linux, Mac and Android</li>
+        <li><strong>Android Auto</strong> (wired &amp; wireless) on Linux, Mac and Android, wireless on Mac requires a LIVI Link</li>
         <li><strong>Multi-session</strong> with live switching between connected phones</li>
         <li><strong>Video in the car</strong> (AirPlay video while parked, no FairPlay-protected content)</li>
         <li>Native, zero-copy video pipeline via GStreamer (hardware-accelerated decoding)</li>
@@ -278,8 +278,8 @@
 
       <p>
         Apple CarPlay and Android Auto are supported natively. Native CarPlay (wired &amp; wireless) runs on
-        Linux and on Mac and requires MFi authentication (see below), either from a coprocessor on the board
-        or from a <a href="https://github.com/f-io/LIVI/blob/main/LIVI-LINK.md">LIVI Link</a>. Android Auto (wired &amp; wireless) is native on Linux and on Mac, wireless on Mac requires a LIVI Link.
+        Linux, Mac and Android and requires MFi authentication (see below), either from a coprocessor on the board
+        or from a <a href="https://github.com/f-io/LIVI/blob/main/LIVI-LINK.md">LIVI Link</a>. Android Auto (wired &amp; wireless) is native on Linux, Mac and Android, wireless on Mac requires a LIVI Link.
       </p>
 
       <h2>Installation</h2>
@@ -290,8 +290,8 @@
 
       <h2>How it works</h2>
       <p>
-        LIVI implements the CarPlay and Android Auto accessory side natively, wired and wireless, on Linux
-        and on macOS. Wireless sessions run over LIVI's own Wi-Fi access point with Bluetooth pairing, wired
+        LIVI implements the CarPlay and Android Auto accessory side natively, wired and wireless, on Linux,
+        macOS and Android. Wireless sessions run over LIVI's own Wi-Fi access point with Bluetooth pairing, wired
         sessions run directly over the USB cable. Video is decoded on the platform's hardware decoder and
         stays on the GPU end to end through the zero-copy GStreamer pipeline.
       </p>

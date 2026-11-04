@@ -18,12 +18,12 @@ It runs on Linux desktops and embedded boards as well as on macOS and Android (e
 
 ## Native Connectivity
 
-- **Apple CarPlay** (wired & wireless) on Linux and Mac, wired on Android - requires MFi Authentication
-- **Android Auto** (wired & wireless) on Linux and Mac, wired on Android - wireless on Mac requires a LIVI Link
+- **Apple CarPlay** (wired & wireless) on Linux, Mac and Android
+- **Android Auto** (wired & wireless) on Linux, Mac and Android - wireless on Mac requires a LIVI Link
 
 ## Native Apple CarPlay Ultra
 
-LIVI implements the CarPlay accessory side natively, wired and wireless, on Linux and on macOS. Wireless sessions run over LIVI's own Wi-Fi access point with Bluetooth pairing, wired sessions run directly over the USB cable (no OTG required).
+LIVI implements the CarPlay accessory side natively, wired and wireless, on Linux, macOS and Android. Wireless sessions run over LIVI's own Wi-Fi access point with Bluetooth pairing, wired sessions run directly over the USB cable (no OTG required).
 
 - main and instrument cluster video (H.264 and H.265/HEVC, hardware decoded, zero-copy)
 - configurable cluster content: map or maneuver card, compass, ETA, speed limit
@@ -320,8 +320,9 @@ After this, the app will launch normally and future updates will work without ad
 
 Install `LIVI-*-android-arm64.apk` on Android 10 or newer.
 
-- Wired CarPlay and wired Android Auto, wireless is not supported yet
-- CarPlay asks once for a local VPN, LIVI uses it to reach the iPhone over USB. Android runs one VPN at a time, so turn other VPNs off
+- Wired and wireless CarPlay and Android Auto, wireless over the device's own Bluetooth and Wi-Fi or over a LIVI Link
+- LIVI asks once for a local VPN, it uses it to reach the iPhone and the LIVI Link over USB. Android runs one VPN at a time, so turn other VPNs off
+- The LIVI Link's web page is at http://10.10.10.1, Android does not resolve `livi-link.local` over a VPN
 
 ## Build Environment
 
