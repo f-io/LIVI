@@ -29,7 +29,7 @@ The provisioning tool probes for the required firmware.
 
 Flashing a dongle is at your own risk. If something goes wrong, open an [issue](https://github.com/f-io/LIVI/issues).
 
-Download `livi-link-provision` for your platform from the release page, then with the dongle plugged in (with some dongles you also need to be on their Wi-Fi):
+Download `livi-link-provision` for your platform from the [firmware page](https://f-io.github.io/LIVI/firmware/), then with the dongle plugged in (with some dongles you also need to be on their Wi-Fi):
 
 ```bash
 chmod +x livi-link-provision
@@ -60,7 +60,7 @@ Some i.MX6UL with older kernels offer no network over USB on their vendor firmwa
 
 Under **Firmware**, **Check** looks for a newer version and **Update** installs it. With **Nightly** on it checks the nightly builds instead of the latest release. Do not unplug the dongle while it writes. Some dongles restarts twice when an update brings a new kernel.
 
-Every release has the firmware files attached, so you can also upload one by hand.
+The [firmware page](https://f-io.github.io/LIVI/firmware/) has every firmware file, so you can also upload one by hand.
 
 ## LED
 

@@ -1,10 +1,12 @@
 #!/bin/sh
-# GStreamer bundles and dongle firmware, kept on the "assets" release instead of in git.
+# GStreamer bundles, dongle firmware and the provisioning tool, kept on the "assets" release
+# instead of in git.
 #
 # usage: assets.sh fetch gstreamer <platform>...
 #        assets.sh fetch livi-link
 #        assets.sh publish gstreamer <platform> <archive>
 #        assets.sh publish livi-link
+#        assets.sh publish provision <dir>
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TAG=assets
@@ -96,10 +98,26 @@ publish_livi_link() {
   done
 }
 
+publish_provision() {
+  dir=$ROOT/assets/livi-link-provision
+  version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' "$ROOT/native/Cargo.toml")
+  build=${LIVI_BUILD:-$(git -C "$ROOT" rev-parse --short=8 HEAD)}
+  mkdir -p "$dir"
+  for tool in "$1"/livi-link-provision-*; do
+    [ -f "$tool" ] || continue
+    name=$(basename "$tool")
+    sum=$(sha "$tool")
+    upload "$tool" "$name-$(short "$sum")"
+    printf '{\n  "version": "%s",\n  "build": "%s",\n  "file": "%s",\n  "size": %s,\n  "sha256": "%s"\n}\n' \
+      "$version" "$build" "$name" "$(wc -c < "$tool" | tr -d ' ')" "$sum" > "$dir/${name#livi-link-provision-}.json"
+  done
+}
+
 case "${1:-} ${2:-}" in
   "fetch gstreamer") shift 2; for p in "$@"; do fetch_gstreamer "$p"; done ;;
   "fetch livi-link") fetch_livi_link ;;
   "publish gstreamer") publish_gstreamer "$3" "$4" ;;
   "publish livi-link") publish_livi_link ;;
-  *) sed -n '4,7s/^# //p' "$0" >&2; exit 2 ;;
+  "publish provision") publish_provision "$3" ;;
+  *) sed -n '5,9s/^# //p' "$0" >&2; exit 2 ;;
 esac

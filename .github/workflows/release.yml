@@ -91,36 +91,6 @@ jobs:
           path: release-assets
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pick livi-link assets run ID
-        id: tool
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-        run: |
-          RUN=$(gh run list --repo "$REPO" \
-                             --workflow livi-link.yml \
-                             -s success \
-                             -L 1 \
-                             --json databaseId \
-                             -q '.[0].databaseId')
-          echo "run_id=$RUN" >> "$GITHUB_OUTPUT"
-
-      - name: Download the LIVI Link tool
-        if: steps.tool.outputs.run_id != ''
-        continue-on-error: true
-        uses: actions/download-artifact@v8
-        with:
-          run-id: ${{ steps.tool.outputs.run_id }}
-          pattern: livi-link-provision-*
-          path: release-assets
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Add the LIVI Link firmware
-        run: |
-          sh scripts/assets.sh fetch livi-link
-          bash scripts/livi-link/stage-firmware.sh release-assets
-
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

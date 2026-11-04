@@ -386,7 +386,7 @@ jobs:
 
   commit:
     name: Commit updated assets
-    needs: [targets, build, bindshell]
+    needs: [targets, build, bindshell, tool]
     if: |
       always() &&
       needs.targets.result == 'success' &&
@@ -460,6 +460,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: sh scripts/assets.sh publish livi-link
 
+      - name: Download the provisioning tool
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: livi-link-provision-*
+          path: provision
+          merge-multiple: true
+
+      - name: Publish the provisioning tool
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LIVI_BUILD: ${{ github.sha }}
+        run: LIVI_BUILD="${LIVI_BUILD::8}" sh scripts/assets.sh publish provision provision
+
       - name: Commit and push
         shell: bash
         env:
@@ -469,9 +483,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A assets/livi-link
+          git add -A assets/livi-link assets/livi-link-provision
           git add -f -A "$BINDSHELL_DIR"
-          if git diff --cached --quiet -- assets/livi-link "$BINDSHELL_DIR"; then
+          if git diff --cached --quiet -- assets/livi-link assets/livi-link-provision "$BINDSHELL_DIR"; then
             echo "No asset changes to commit"
             exit 0
           fi
@@ -481,6 +495,9 @@ jobs:
             | paste -sd, - | sed 's/,/, /g')"
           if ! git diff --cached --quiet -- "$BINDSHELL_DIR"; then
             details="${details:+$details, }bind-shells"
+          fi
+          if ! git diff --cached --quiet -- assets/livi-link-provision; then
+            details="${details:+$details, }provisioning tool"
           fi
 
           msg="chore(livi-link): update dongle stack"
