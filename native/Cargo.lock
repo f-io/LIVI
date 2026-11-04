@@ -4144,9 +4144,12 @@ dependencies = [
  "iap2-usbmux",
  "iap2-wired",
  "livi-aa",
+ "livi-bt-host",
  "livi-core-proto",
+ "livi-hfp",
  "livi-link-host",
  "livi-mdns",
+ "livi-net",
  "livi-runtime",
  "livi-wifi",
  "tokio",
@@ -4199,6 +4202,7 @@ name = "livi-link-host"
 version = "0.1.0"
 dependencies = [
  "futures-util",
+ "iap2-usbmux",
  "libc 1.0.0-alpha.5",
  "livi-net",
  "livi-wifi",

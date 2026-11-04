@@ -628,7 +628,11 @@ impl ConfigSource {
         let addresses = Addresses {
             accessory: accessory.clone(),
             wifi_bssid: hwaddr::FALLBACK.into(),
-            bt_mac: hwaddr::FALLBACK.into(),
+            bt_mac: if cfg!(target_os = "android") {
+                hwaddr::android_bt_mac().unwrap_or_else(|| accessory.clone())
+            } else {
+                hwaddr::FALLBACK.into()
+            },
             access_point: None,
         };
         let (cfg, cluster) = {
@@ -684,13 +688,19 @@ impl ConfigSource {
                     wifi.then(|| hwaddr::accessory_id(&cfg.wifi_interface))
                         .flatten(),
                 ),
-                bt_mac: remembered(
-                    &mut told,
-                    format!("bt {}", cfg.bt_adapter),
-                    reachable(&cfg.bt_adapter)
-                        .then(|| hwaddr::bt_mac(&cfg.bt_adapter))
-                        .flatten(),
-                ),
+                bt_mac: if cfg!(target_os = "android")
+                    && cfg.bt_adapter != livi_link_host::link::CHOICE
+                {
+                    hwaddr::android_bt_mac().unwrap_or_else(|| self.accessory.clone())
+                } else {
+                    remembered(
+                        &mut told,
+                        format!("bt {}", cfg.bt_adapter),
+                        reachable(&cfg.bt_adapter)
+                            .then(|| hwaddr::bt_mac(&cfg.bt_adapter))
+                            .flatten(),
+                    )
+                },
                 access_point: wifi
                     .then(|| livi_link_host::on_air(&cfg.wifi_interface))
                     .flatten(),

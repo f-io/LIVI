@@ -18,12 +18,15 @@ const WAKE_UUID: &str = "0000111f-0000-1000-8000-00805f9b34fb";
 
 type SetPlaybackStatus = Box<dyn Fn(&str) + Send + Sync>;
 
+pub type Bluetooth = Arc<dyn Fn(&str, &str) -> Result<(), String> + Send + Sync>;
+
 pub struct SharedSockDeps {
     pub adapter: String,
     pub wifi_iface: String,
     pub events: Broadcaster,
     pub set_playback_status: SetPlaybackStatus,
     pub deauth_dongle: Option<fn() -> Option<usize>>,
+    pub bluetooth: Option<Bluetooth>,
 }
 
 pub async fn serve(path: &Path, bus: Option<Connection>, deps: SharedSockDeps) -> io::Result<()> {
@@ -66,9 +69,15 @@ async fn handle(
 
     let json = match verb {
         "list_paired" | "connect" | "disconnect-profile" | "connect-full" | "disconnect"
-        | "remove" => match bus.as_ref() {
-            None => err_json("bluetooth unavailable on this platform"),
-            Some(bus) => bluez_verb(bus, verb, arg, &deps.adapter).await,
+        | "remove" => match (bus.as_ref(), deps.bluetooth.clone()) {
+            (Some(bus), _) => bluez_verb(bus, verb, arg, &deps.adapter).await,
+            (None, Some(bluetooth)) => {
+                let (verb, arg) = (verb.to_string(), arg.to_string());
+                tokio::task::spawn_blocking(move || action(bluetooth(&verb, &arg)))
+                    .await
+                    .unwrap_or_else(|e| err_json(&e.to_string()))
+            }
+            (None, None) => err_json("bluetooth unavailable on this platform"),
         },
         "playback-status" => match arg {
             "playing" | "paused" | "stopped" => {

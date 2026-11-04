@@ -64,7 +64,6 @@ pub fn wlan_link_local(iface: &str) -> Option<String> {
 
 #[cfg(not(target_os = "linux"))]
 pub fn wlan_link_local(iface: &str) -> Option<String> {
-    let want = std::ffi::CString::new(iface).ok()?;
     let mut ifap: *mut libc::ifaddrs = std::ptr::null_mut();
     if unsafe { libc::getifaddrs(&mut ifap) } != 0 {
         return None;
@@ -77,7 +76,8 @@ pub fn wlan_link_local(iface: &str) -> Option<String> {
         if ifa.ifa_addr.is_null() || ifa.ifa_name.is_null() {
             continue;
         }
-        if unsafe { std::ffi::CStr::from_ptr(ifa.ifa_name) } != want.as_c_str() {
+        let name = unsafe { std::ffi::CStr::from_ptr(ifa.ifa_name) }.to_str();
+        if name.map(device) != Ok(iface) {
             continue;
         }
         let sa = unsafe { &*ifa.ifa_addr };
@@ -140,7 +140,9 @@ fn first_ipv4(
         }
         let sin = unsafe { &*(ifa.ifa_addr as *const libc::sockaddr_in) };
         let own = std::net::Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr));
-        if let Ok(name) = unsafe { std::ffi::CStr::from_ptr(ifa.ifa_name) }.to_str()
+        if let Ok(name) = unsafe { std::ffi::CStr::from_ptr(ifa.ifa_name) }
+            .to_str()
+            .map(device)
             && wanted(name, own)
         {
             out = Some((name.to_string(), own));
@@ -149,6 +151,12 @@ fn first_ipv4(
     }
     unsafe { libc::freeifaddrs(ifap) };
     out
+}
+
+/// getifaddrs names an address by its label ("tun0:1"), and bionic hands an
+/// interface's IPv6 entries the label of its IPv4 one; ':' is never part of a device name.
+fn device(label: &str) -> &str {
+    label.split(':').next().unwrap_or(label)
 }
 
 #[cfg(test)]

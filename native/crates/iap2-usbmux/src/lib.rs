@@ -50,12 +50,14 @@ mod ether;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 mod ncm;
+#[cfg(target_os = "android")]
+pub use ether::{FromPhone, Ip};
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub use ncm::NcmBridge;
 #[cfg(target_os = "linux")]
 pub use ncm::drop_name_bound_profiles;
 #[cfg(target_os = "android")]
-pub use ncm::{OpenTun, TunRequest};
+pub use ncm::{Link, OpenTun, Port, TunRequest, Tunnel};
 
 mod async_stream;
 pub use async_stream::AsyncMuxStream;

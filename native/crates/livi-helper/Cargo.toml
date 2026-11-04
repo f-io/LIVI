@@ -8,12 +8,17 @@ livi-aa.workspace = true
 livi-core-proto.workspace = true
 livi-runtime.workspace = true
 livi-link-host.workspace = true
+livi-net.workspace = true
 livi-wifi.workspace = true
 iap2-link.workspace = true
 iap2-mfi = { workspace = true, features = ["files"] }
 iap2-usbmux.workspace = true
 iap2-wired.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "net"] }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+livi-bt-host.workspace = true
+livi-hfp.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
 livi-mdns.workspace = true

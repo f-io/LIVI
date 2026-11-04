@@ -6,11 +6,13 @@
 mod android;
 #[cfg(target_os = "linux")]
 mod linux;
-
 #[cfg(target_os = "android")]
-pub use android::{OpenTun, TunRequest};
+mod tunnel;
+
 #[cfg(target_os = "linux")]
 pub use linux::drop_name_bound_profiles;
+#[cfg(target_os = "android")]
+pub use tunnel::{OpenTun, Port, TunRequest, Tunnel};
 
 use std::io;
 use std::net::Ipv6Addr;
@@ -51,7 +53,7 @@ const PACKET_FILTER: u16 = 0x000e;
 const NTB_INPUT_SIZE: u32 = 16384;
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(1);
 
-trait Link: Send + Sync + 'static {
+pub trait Link: Send + Sync + 'static {
     fn deliver(&self, frame: &[u8]) -> io::Result<Option<Vec<u8>>>;
     fn next(&self) -> io::Result<Option<Vec<u8>>>;
 }

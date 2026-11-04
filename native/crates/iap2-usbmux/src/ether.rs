@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+use std::collections::HashMap;
 use std::net::Ipv6Addr;
 use std::sync::Mutex;
 
@@ -50,18 +51,35 @@ pub enum FromPhone<'a> {
     Ignore,
 }
 
+pub type Owns = Box<dyn Fn(Ipv6Addr) -> bool + Send + Sync>;
+
 pub struct Ip {
     mac: Mac,
     address: Ipv6Addr,
     phone: Mutex<Option<Mac>>,
+    neighbours: Mutex<HashMap<Ipv6Addr, Mac>>,
+    owns: Option<Owns>,
 }
 
 impl Ip {
     pub fn new(mac: Mac) -> Self {
+        Self::with_address(mac, link_local(mac))
+    }
+
+    pub fn with_address(mac: Mac, address: Ipv6Addr) -> Self {
         Self {
             mac,
-            address: link_local(mac),
+            address,
             phone: Mutex::new(None),
+            neighbours: Mutex::new(HashMap::new()),
+            owns: None,
+        }
+    }
+
+    pub fn shared(mac: Mac, address: Ipv6Addr, owns: Owns) -> Self {
+        Self {
+            owns: Some(owns),
+            ..Self::with_address(mac, address)
         }
     }
 
@@ -80,12 +98,15 @@ impl Ip {
         let packet = &frame[ETH_HEADER..];
         match u16::from_be_bytes([frame[12], frame[13]]) {
             ETHERTYPE_IPV6 if neighbor_solicitation(packet) => match solicited(packet) {
-                Some((asker, target)) => {
+                Some((asker, target)) if self.answers(target) => {
                     FromPhone::Answer(self.advertisement(source, asker, target))
                 }
-                None => FromPhone::Ignore,
+                _ => FromPhone::Ignore,
             },
-            ETHERTYPE_IPV6 if packet.len() >= IPV6_HEADER => FromPhone::Deliver(packet),
+            ETHERTYPE_IPV6 if packet.len() >= IPV6_HEADER => {
+                self.learn(packet, source);
+                FromPhone::Deliver(packet)
+            }
             ETHERTYPE_IPV4 => FromPhone::Deliver(packet),
             _ => FromPhone::Ignore,
         }
@@ -98,7 +119,8 @@ impl Ip {
                 let mac = if dest[0] == 0xff {
                     [0x33, 0x33, dest[12], dest[13], dest[14], dest[15]]
                 } else {
-                    self.phone()
+                    let dest = Ipv6Addr::from(<[u8; 16]>::try_from(dest).ok()?);
+                    self.neighbour(dest).unwrap_or_else(|| self.phone())
                 };
                 (ETHERTYPE_IPV6, mac)
             }
@@ -123,6 +145,24 @@ impl Ip {
 
     fn phone(&self) -> Mac {
         self.phone.lock().unwrap().unwrap_or(BROADCAST)
+    }
+
+    fn answers(&self, target: Ipv6Addr) -> bool {
+        self.owns.as_ref().is_none_or(|owns| owns(target))
+    }
+
+    fn learn(&self, packet: &[u8], mac: Mac) {
+        let Ok(source) = <[u8; 16]>::try_from(&packet[8..24]) else {
+            return;
+        };
+        let source = Ipv6Addr::from(source);
+        if mac[0] & 1 == 0 && !source.is_unspecified() {
+            self.neighbours.lock().unwrap().insert(source, mac);
+        }
+    }
+
+    fn neighbour(&self, address: Ipv6Addr) -> Option<Mac> {
+        self.neighbours.lock().unwrap().get(&address).copied()
     }
 
     fn advertisement(&self, mac: Mac, to: Ipv6Addr, target: Ipv6Addr) -> Vec<u8> {
@@ -328,6 +368,34 @@ mod tests {
         assert_eq!(&back[6..12], &OURS);
         assert_eq!(&back[12..14], &ETHERTYPE_IPV6.to_be_bytes());
         assert_eq!(&back[ETH_HEADER..], tcp.as_slice());
+    }
+
+    #[test]
+    fn on_a_shared_link_only_our_addresses_are_answered() {
+        let ours: Ipv6Addr = "fe80::1".parse().unwrap();
+        let ip = Ip::shared(OURS, ours, Box::new(move |a| a == ours));
+        let other: Ipv6Addr = "fe80::2465:8a71:a6f4:9a77".parse().unwrap();
+        let ns = ipv6(NEXT_ICMPV6, phone_ip(), other, &solicitation(other));
+        let f = frame(BROADCAST, PHONE, ETHERTYPE_IPV6, &ns);
+        assert_eq!(ip.incoming(&f), FromPhone::Ignore);
+        let ns = ipv6(NEXT_ICMPV6, phone_ip(), ours, &solicitation(ours));
+        let f = frame(BROADCAST, PHONE, ETHERTYPE_IPV6, &ns);
+        assert!(matches!(ip.incoming(&f), FromPhone::Answer(_)));
+    }
+
+    #[test]
+    fn each_neighbour_gets_its_own_mac() {
+        const LAPTOP: Mac = [0x3a, 0, 0, 0, 0, 0x01];
+        let ip = Ip::new(OURS);
+        let laptop: Ipv6Addr = "fe80::38ff:fe00:1".parse().unwrap();
+        for (mac, source) in [(PHONE, phone_ip()), (LAPTOP, laptop)] {
+            let hello = ipv6(6, source, ip.address(), &[0; 20]);
+            ip.incoming(&frame(OURS, mac, ETHERTYPE_IPV6, &hello));
+        }
+        let to_phone = ipv6(6, ip.address(), phone_ip(), &[0; 20]);
+        assert_eq!(&ip.outgoing(&to_phone).unwrap()[0..6], &PHONE);
+        let to_laptop = ipv6(6, ip.address(), laptop, &[0; 20]);
+        assert_eq!(&ip.outgoing(&to_laptop).unwrap()[0..6], &LAPTOP);
     }
 
     #[test]

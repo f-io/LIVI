@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::stream::{CAT, Direction, Failure, Stream};
 use gstreamer as gst;
@@ -101,16 +101,11 @@ impl Endpoint {
     }
 }
 
-pub(crate) fn properties() -> &'static [glib::ParamSpec] {
-    static PROPERTIES: LazyLock<Vec<glib::ParamSpec>> = LazyLock::new(|| {
-        vec![
-            glib::ParamSpecString::builder("device")
-                .nick("Device")
-                .blurb("Android audio device, empty for the default")
-                .build(),
-        ]
-    });
-    PROPERTIES.as_ref()
+pub(crate) fn device() -> glib::ParamSpec {
+    glib::ParamSpecString::builder("device")
+        .nick("Device")
+        .blurb("Android audio device, empty for the default")
+        .build()
 }
 
 pub(crate) fn pad_templates(name: &str, direction: gst::PadDirection) -> Vec<gst::PadTemplate> {

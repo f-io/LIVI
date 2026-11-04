@@ -109,7 +109,7 @@ fn watch_liveness(stream: &TcpStream) {
     set(libc::IPPROTO_TCP, libc::TCP_KEEPCNT, KEEPALIVE_TRIES);
 }
 
-fn address(text: &str) -> Option<[u8; 6]> {
+pub fn address(text: &str) -> Option<[u8; 6]> {
     let mut out = [0u8; 6];
     let mut parts = text.trim().split(':');
     for byte in &mut out {

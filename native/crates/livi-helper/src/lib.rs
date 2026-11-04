@@ -3,10 +3,16 @@
 // Additional terms: see NOTICE
 
 pub mod aa;
+#[cfg(not(target_os = "linux"))]
+pub mod bt_dongle;
+#[cfg(not(target_os = "linux"))]
+pub mod dongle;
 pub mod embedded;
 pub mod link;
 pub mod mfi;
 pub mod wired;
+#[cfg(target_os = "android")]
+pub mod wireless;
 
 use livi_core_proto::helper::HelperStart;
 use livi_runtime::bringup::CpConfig;
@@ -20,7 +26,7 @@ pub const DEFAULT_CHANNEL: u32 = 36;
 pub const SOURCE_VERSION: &str = "950.7.1";
 pub const AVAILABLE_CURRENT_MA: u16 = 500;
 
-fn or(value: &str, default: &str) -> String {
+pub(crate) fn or(value: &str, default: &str) -> String {
     if value.is_empty() {
         default.to_string()
     } else {

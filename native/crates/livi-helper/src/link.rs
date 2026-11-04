@@ -9,6 +9,7 @@ use std::time::Duration;
 use tokio::sync::Notify;
 
 const RESOLVE_INTERVAL: Duration = Duration::from_millis(500);
+const WATCH_RETRY: Duration = Duration::from_secs(2);
 
 #[cfg(target_os = "linux")]
 async fn ask_for_address(asked: &mut bool) {
@@ -125,5 +126,22 @@ impl LinkPresence {
             on_down();
             println!("[helper] LIVI Link gone");
         }
+    }
+}
+
+pub async fn relay_stations(bcast: livi_runtime::livi_sock::Broadcaster) {
+    loop {
+        let events = bcast.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            livi_link_host::ap::watch_stations(|joined, mac| {
+                let event = if joined { "joined" } else { "left" };
+                println!("[helper] {mac} {event} the dongle's access point");
+                events.push_json(format!(
+                    "{{\"type\":\"wifi\",\"event\":\"{event}\",\"mac\":\"{mac}\"}}"
+                ));
+            })
+        })
+        .await;
+        tokio::time::sleep(WATCH_RETRY).await;
     }
 }

@@ -539,6 +539,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
                 }),
                 deauth_dongle: dongle_ap
                     .then_some(livi_link_host::ap::deauth as fn() -> Option<usize>),
+                bluetooth: None,
             };
             tokio::spawn(async move {
                 let path = HelperSockets::system().shared;
@@ -549,7 +550,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if dongle_ap {
-            tokio::spawn(crate::link::relay_stations(bcast.clone()));
+            tokio::spawn(livi_helper::link::relay_stations(bcast.clone()));
         }
 
         let device_id =

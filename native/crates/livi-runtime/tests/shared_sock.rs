@@ -17,6 +17,7 @@ fn deps() -> SharedSockDeps {
         events: Broadcaster::default(),
         set_playback_status: Box::new(|_| {}),
         deauth_dongle: Some(|| Some(2)),
+        bluetooth: None,
     }
 }
 

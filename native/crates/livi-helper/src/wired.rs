@@ -246,7 +246,7 @@ pub struct Wired {
     pub link: Arc<LinkPresence>,
     pub lockdown: PathBuf,
     #[cfg(target_os = "android")]
-    pub tun: iap2_usbmux::OpenTun,
+    pub tunnel: Arc<iap2_usbmux::Tunnel>,
     #[cfg(target_os = "android")]
     pub airplay_txt: Vec<String>,
 }
@@ -266,7 +266,10 @@ async fn run_wired_session<S>(
     }
     cp.av_address = ncm.address().map(|a| a.to_string());
     #[cfg(target_os = "android")]
-    let _mdns = announce(&ncm, &cp, &ctx.airplay_txt);
+    let _mdns = ncm
+        .ifname()
+        .zip(ncm.address())
+        .and_then(|(ifname, address)| announce(ifname, address, &cp, &ctx.airplay_txt));
     if let Some(read) = ctx.dongle.ap_mac
         && let Ok(Some(mac)) = tokio::task::spawn_blocking(read).await
     {
@@ -382,13 +385,13 @@ impl LocalNcm {
 }
 
 #[cfg(target_os = "android")]
-fn announce(
-    ncm: &LocalNcm,
+pub(crate) fn announce(
+    ifname: &str,
+    address: std::net::Ipv6Addr,
     cp: &CpConfig,
     txt: &[String],
 ) -> Option<livi_mdns::responder::Responder> {
     use livi_runtime::bonjour::AIRPLAY_SERVICE;
-    let (ifname, address) = (ncm.ifname()?, ncm.address()?);
     let port = u16::try_from(cp.airplay_port).ok().filter(|&p| p != 0)?;
     let service = livi_mdns::service::Service::new(
         AIRPLAY_NAME,
@@ -412,7 +415,7 @@ fn announce(
 
 #[cfg(target_os = "android")]
 fn start_ncm_bridge(serial: &str, wired: &Wired) -> LocalNcm {
-    bridged(serial, iap2_usbmux::NcmBridge::start(serial, &wired.tun))
+    bridged(serial, iap2_usbmux::NcmBridge::start(serial, &wired.tunnel))
 }
 
 #[cfg(target_os = "linux")]

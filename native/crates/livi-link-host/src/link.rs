@@ -7,7 +7,10 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+#[cfg(not(target_os = "android"))]
 pub const LINK_NAME: &str = "livi-link.local";
+#[cfg(target_os = "android")]
+pub const LINK_NAME: &str = "10.10.10.1";
 
 pub const CHOICE: &str = "livi-link";
 

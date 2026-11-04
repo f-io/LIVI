@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use livi_core_proto::helper::HelperSockets;
 use std::collections::{HashMap, HashSet};
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixListener;
@@ -20,7 +19,7 @@ use livi_runtime::state::HelperState;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::UnboundedSender;
 
-use livi_helper::link::LinkPresence;
+use crate::link::LinkPresence;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const RETRY: Duration = Duration::from_secs(5);
@@ -81,22 +80,19 @@ impl Dongle {
     }
 }
 
-fn keys_path() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config/LIVI/bluetooth-keys")
+pub struct Radio {
+    pub name: String,
+    pub keys: PathBuf,
+    pub mic: PathBuf,
+    pub offered: Vec<Service>,
 }
 
-fn open(name: String) -> Result<(Stack, Inbox), String> {
+fn open(name: String, keys: PathBuf) -> Result<(Stack, Inbox), String> {
     let at = (livi_link_host::link::LINK_NAME, livi_net::port::HCI);
     let tunnel = livi_net::connect(at, CONNECT_TIMEOUT)
         .map_err(|e| format!("the dongle's controller: {e}"))?;
     let _ = tunnel.set_nodelay(true);
-    Stack::start(
-        tunnel,
-        Config {
-            name,
-            keys: keys_path(),
-        },
-    )
+    Stack::start(tunnel, Config { name, keys })
 }
 
 pub async fn run(
@@ -104,10 +100,9 @@ pub async fn run(
     link: Arc<LinkPresence>,
     profiles: Profiles,
     state: Arc<HelperState>,
-    offered: Vec<Service>,
-    name: String,
+    radio: Radio,
 ) {
-    let mic = match livi_runtime::sco::mic_socket(&HelperSockets::system().sco_mic) {
+    let mic = match livi_runtime::sco::mic_socket(&radio.mic) {
         Ok(mic) => Arc::new(mic),
         Err(e) => {
             eprintln!("[sco] mic socket failed: {e}");
@@ -116,8 +111,8 @@ pub async fn run(
     };
     loop {
         link.wait_until(true).await;
-        let named = name.clone();
-        let (stack, inbox) = match tokio::task::spawn_blocking(move || open(named)).await {
+        let (named, keys) = (radio.name.clone(), radio.keys.clone());
+        let (stack, inbox) = match tokio::task::spawn_blocking(move || open(named, keys)).await {
             Ok(Ok(up)) => up,
             Ok(Err(e)) => {
                 eprintln!("[bt] {e}");
@@ -126,7 +121,7 @@ pub async fn run(
             }
             Err(_) => return,
         };
-        for service in &offered {
+        for service in &radio.offered {
             if let Err(e) = stack.offer(*service, true) {
                 eprintln!("[bt] {e}");
             }

@@ -7,6 +7,7 @@ package dev.fio.livi;
 import android.Manifest;
 import android.app.NativeActivity;
 import android.app.PendingIntent;
+import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -18,6 +19,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.FileUtils;
+import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.SparseArray;
@@ -38,6 +40,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -67,6 +72,8 @@ public class LiviActivity extends NativeActivity {
 
     private static native void picked(String path);
 
+    private static native void bluetoothAddress(String address);
+
     @Override
     protected void onCreate(Bundle state) {
         try {
@@ -82,9 +89,13 @@ public class LiviActivity extends NativeActivity {
         int width = mode.getPhysicalWidth();
         int height = mode.getPhysicalHeight();
         screen(width, height, width / metrics.xdpi * MM_PER_INCH, height / metrics.ydpi * MM_PER_INCH);
+        bluetoothAddress(LiviBluetooth.address(this));
         super.onCreate(state);
         getWindow().setFormat(PixelFormat.TRANSLUCENT);
-        requestPermissions(new String[] {Manifest.permission.RECORD_AUDIO}, PERMISSIONS_REQUEST);
+        List<String> wanted = new ArrayList<>(Arrays.asList(LiviBluetooth.PERMISSIONS));
+        wanted.addAll(Arrays.asList(LiviHotspot.PERMISSIONS));
+        wanted.add(Manifest.permission.RECORD_AUDIO);
+        requestPermissions(wanted.toArray(new String[0]), PERMISSIONS_REQUEST);
         stage = new FrameLayout(this);
         stage.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
             for (int i = 0; i < planes.size(); i++) {
@@ -318,8 +329,37 @@ public class LiviActivity extends NativeActivity {
         picked(picked.getPath());
     }
 
-    private int tun(String address, int prefix, int mtu) {
-        return LiviVpn.open(this, address, prefix, mtu);
+    private int tun(String addresses, int mtu) {
+        return LiviVpn.open(this, addresses, mtu);
+    }
+
+    private boolean bluetooth(String name, boolean carplay, boolean androidAuto) {
+        return LiviBluetooth.listen(this, name, carplay, androidAuto);
+    }
+
+    private boolean dropPhone(String peer) {
+        return LiviBluetooth.drop(peer);
+    }
+
+    private String pagePhone(String peer, String uuid) {
+        return LiviBluetooth.page(peer, uuid);
+    }
+
+    private String[] hotspot(String name, String passphrase, int frequency) {
+        return LiviHotspot.start(this, name, passphrase, frequency);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(request, permissions, results);
+        if (request != PERMISSIONS_REQUEST || Settings.canDrawOverlays(this)) {
+            return;
+        }
+        try {
+            startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())));
+        } catch (ActivityNotFoundException e) {
+            Log.w("livi", "[boot] " + e);
+        }
     }
 
     private static boolean system(int keyCode) {

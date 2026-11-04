@@ -12,7 +12,9 @@ import android.os.Build;
 import android.os.ParcelFileDescriptor;
 import android.system.OsConstants;
 import android.util.Log;
+import java.net.Inet4Address;
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
@@ -39,7 +41,7 @@ public class LiviVpn extends VpnService {
         super.onDestroy();
     }
 
-    static int open(Activity activity, String address, int prefix, int mtu) {
+    static int open(Activity activity, String addresses, int mtu) {
         try {
             if (!consented(activity)) {
                 Log.w(TAG, "[vpn] no consent for the USB network");
@@ -51,12 +53,21 @@ public class LiviVpn extends VpnService {
             }
             activity.startService(new Intent(activity, LiviVpn.class));
             LiviVpn vpn = running.get(START_WAIT_S, TimeUnit.SECONDS);
-            ParcelFileDescriptor tun = vpn.new Builder()
+            VpnService.Builder builder = vpn.new Builder();
+            for (String entry : addresses.split(" ")) {
+                int slash = entry.indexOf('/');
+                InetAddress own = InetAddress.getByName(entry.substring(0, slash));
+                int prefix = Integer.parseInt(entry.substring(slash + 1));
+                builder.addAddress(own, prefix);
+                if (own instanceof Inet4Address) {
+                    builder.addRoute(subnet((Inet4Address) own, prefix), prefix);
+                }
+            }
+            ParcelFileDescriptor tun = builder
                     .setSession("LIVI")
-                    .addAddress(InetAddress.getByName(address), prefix)
                     .setMtu(mtu)
                     .allowFamily(OsConstants.AF_INET)
-                    .addAllowedApplication(activity.getPackageName())
+                    .allowFamily(OsConstants.AF_INET6)
                     .setMetered(false)
                     .establish();
             if (tun == null) {
@@ -68,6 +79,15 @@ public class LiviVpn extends VpnService {
             Log.w(TAG, "[vpn] " + e);
             return -1;
         }
+    }
+
+    private static InetAddress subnet(Inet4Address address, int prefix) throws UnknownHostException {
+        byte[] bytes = address.getAddress();
+        int bits = ((bytes[0] & 0xff) << 24) | ((bytes[1] & 0xff) << 16) | ((bytes[2] & 0xff) << 8) | (bytes[3] & 0xff);
+        int masked = prefix == 0 ? 0 : bits & (-1 << (32 - prefix));
+        return InetAddress.getByAddress(new byte[] {
+            (byte) (masked >>> 24), (byte) (masked >>> 16), (byte) (masked >>> 8), (byte) masked
+        });
     }
 
     private static boolean consented(Activity activity) throws InterruptedException {
@@ -92,7 +112,7 @@ public class LiviVpn extends VpnService {
         return awaited(granted);
     }
 
-    private static boolean awaited(BooleanSupplier done) throws InterruptedException {
+    static boolean awaited(BooleanSupplier done) throws InterruptedException {
         long deadline = System.currentTimeMillis() + CONSENT_WAIT_MS;
         while (!done.getAsBoolean()) {
             if (System.currentTimeMillis() > deadline) {

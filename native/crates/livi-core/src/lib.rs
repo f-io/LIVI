@@ -72,6 +72,8 @@ pub use helper::Helper;
 #[cfg(target_os = "android")]
 pub use host::set_screen;
 use hub::Hub;
+#[cfg(target_os = "android")]
+pub use hwaddr::set_bt_mac;
 pub use livi_media::gst_host::{EmbeddedHost, MediaHost};
 pub use paths::Paths;
 pub use resources::Resources;

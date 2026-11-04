@@ -25,7 +25,9 @@ impl ObjectSubclass for Imp {
 
 impl ObjectImpl for Imp {
     fn properties() -> &'static [glib::ParamSpec] {
-        endpoint::properties()
+        static PROPERTIES: LazyLock<Vec<glib::ParamSpec>> =
+            LazyLock::new(|| vec![endpoint::device()]);
+        PROPERTIES.as_ref()
     }
 
     fn set_property(&self, _id: usize, value: &glib::Value, _pspec: &glib::ParamSpec) {

@@ -7,6 +7,8 @@
 mod activity;
 mod audio;
 mod black;
+mod bluetooth;
+mod hotspot;
 mod logcat;
 mod media;
 mod planes;
@@ -80,7 +82,12 @@ fn core(app: &AndroidApp) -> Result<PathBuf, String> {
         sockets: paths.helper.clone(),
         mfi: files.join("mfi"),
         lockdown: files.join("lockdown"),
-        tun: Arc::new(tun),
+        tunnel: iap2_usbmux::Tunnel::new(Arc::new(tun)),
+        phones: Arc::new(bluetooth::phones),
+        hotspot: Arc::new(hotspot::open),
+        drop_phone: Arc::new(bluetooth::drop),
+        page_phone: Arc::new(bluetooth::page),
+        bt_keys: files.join("bluetooth-keys"),
     };
     let res = Resources {
         helper: Some(Helper::Embedded(Arc::new(move |start| {
@@ -139,14 +146,19 @@ fn pick() {
 
 fn tun(request: &TunRequest) -> Result<OwnedFd, String> {
     let fd = activity::with(|env, activity| {
-        let address = env.new_string(request.address.to_string())?;
+        let addresses = request
+            .addresses
+            .iter()
+            .map(|(address, prefix)| format!("{address}/{prefix}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let addresses = env.new_string(addresses)?;
         env.call_method(
             activity,
             jni_str!("tun"),
-            jni_sig!("(Ljava/lang/String;II)I"),
+            jni_sig!("(Ljava/lang/String;I)I"),
             &[
-                JValue::Object(&address),
-                JValue::Int(jint::from(request.prefix)),
+                JValue::Object(&addresses),
                 JValue::Int(jint::from(request.mtu)),
             ],
         )?
@@ -175,6 +187,18 @@ extern "system" fn Java_dev_fio_livi_LiviActivity_screen<'caller>(
         px(width_px),
         px(height_px),
     );
+}
+
+#[unsafe(no_mangle)]
+extern "system" fn Java_dev_fio_livi_LiviActivity_bluetoothAddress<'caller>(
+    mut env: EnvUnowned<'caller>,
+    _class: JClass<'caller>,
+    address: JString<'caller>,
+) {
+    let address = env
+        .with_env(|env| address.try_to_string(env))
+        .resolve::<LogErrorAndDefault>();
+    livi_core::set_bt_mac(&address);
 }
 
 #[unsafe(no_mangle)]

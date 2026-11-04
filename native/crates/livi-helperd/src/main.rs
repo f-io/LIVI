@@ -6,9 +6,9 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+#[cfg(target_os = "linux")]
 mod aa;
-#[cfg(target_os = "macos")]
-mod bt_dongle;
+#[cfg(target_os = "linux")]
 mod link;
 #[cfg(target_os = "linux")]
 mod linux_main;
