@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Dongle firmware and the provisioning tool of the nightly and the latest release, for GitHub Pages.
-# The manifests come from git at the release's tag, the files from the "assets" release.
+# The manifests come from the livi-link-<channel> branch that livi-link runs update, the release's
+# from its tag once the release is newer than that branch; the files from the "assets" release.
 #
 # usage: pages-firmware.sh <dest-dir>
 set -euo pipefail
@@ -56,8 +57,15 @@ HTML
 
 tags=()
 gh release view nightly --repo "$REPO" >/dev/null 2>&1 && tags+=(nightly)
-latest=$(gh api "repos/$REPO/releases/latest" -q .tag_name 2>/dev/null || true)
+latest='' published=''
+if release=$(gh api "repos/$REPO/releases/latest" -q '.tag_name + " " + .published_at' 2>/dev/null); then
+  read -r latest published <<<"$release"
+fi
 [ -n "$latest" ] && tags+=("$latest")
+
+branch_date() {
+  gh api "repos/$REPO/commits/livi-link-$1" -q .commit.committer.date 2>/dev/null
+}
 
 platform() {
   case $1 in
@@ -72,12 +80,12 @@ platform() {
 tools() {
   local dir=$DEST/$1/provision rows= json platforms
   mkdir -p "$dir"
-  platforms=$(gh api "repos/$REPO/contents/assets/livi-link-provision?ref=$1" \
+  platforms=$(gh api "repos/$REPO/contents/assets/livi-link-provision?ref=$2" \
     -q '.[] | select(.name | endswith(".json")) | .name | rtrimstr(".json")' 2>/dev/null) || platforms=
   for platform in $platforms; do
     json=$dir/$platform.json
     gh api -H 'Accept: application/vnd.github.raw+json' \
-      "repos/$REPO/contents/assets/livi-link-provision/$platform.json?ref=$1" > "$json"
+      "repos/$REPO/contents/assets/livi-link-provision/$platform.json?ref=$2" > "$json"
     name=$(field "$json" file)
     want=$(field "$json" sha256)
     gh release download assets --repo "$REPO" --pattern "$name-${want:0:16}" --output "$dir/$name"
@@ -93,15 +101,21 @@ tools() {
 
 channels='<tr><th>Channel</th><th>Version</th><th>Built</th><th>Targets</th><th>Provisioning tool</th></tr>'
 for tag in "${tags[@]}"; do
+  ref=$tag
+  if [ "$tag" = nightly ]; then
+    branch_date nightly >/dev/null && ref=livi-link-nightly
+  elif head=$(branch_date release) && [[ "$head" > "$published" ]]; then
+    ref=livi-link-release
+  fi
   rows='<tr><th>Target</th><th>Version</th><th>Built</th><th>Bundle</th><th>Size</th><th>Manifest</th></tr>'
   version=
   built=
   count=0
-  targets=$(gh api "repos/$REPO/contents/assets/livi-link?ref=$tag" -q '.[] | select(.type == "dir") | .name')
+  targets=$(gh api "repos/$REPO/contents/assets/livi-link?ref=$ref" -q '.[] | select(.type == "dir") | .name')
   for target in $targets; do
     dir=$DEST/$tag/$target
     mkdir -p "$dir"
-    manifest "$tag" "$target" > "$dir/firmware.json" || { rm -rf "$dir"; continue; }
+    manifest "$ref" "$target" > "$dir/firmware.json" || { rm -rf "$dir"; continue; }
     file=$(field "$dir/firmware.json" file)
     want=$(field "$dir/firmware.json" sha256)
     gh release download assets --repo "$REPO" --pattern "${file%.lfwb}-${want:0:16}.lfwb" --output "$dir/$file"
@@ -115,7 +129,7 @@ for tag in "${tags[@]}"; do
     count=$((count + 1))
     echo "$tag/$target: $file"
   done
-  provision=$(tools "$tag")
+  provision=$(tools "$tag" "$ref")
   page "LIVI Link firmware · $tag" "<a href=\"../\">All channels</a> · <a href=\"https://github.com/$REPO/releases/tag/$tag\">Release</a>" \
     "<h2>Firmware</h2><table>$rows</table>$provision" > "$DEST/$tag/index.html"
   channels+="<tr><td><a href=\"$tag/\">$tag</a></td><td>$version</td><td>$built</td><td>$count</td><td>${provision:+<a href=\"$tag/#provision\">download</a>}</td></tr>"

@@ -416,7 +416,7 @@ document.getElementById('ota-check').addEventListener('click', async () => {
       otaState.textContent = `Up to date: ${fw.version} (${fw.build})`;
       return;
     }
-    const downgrade = !otaNightly.checked && cmpVersion(installed.version, fw.version) >= 0;
+    const downgrade = !otaNightly.checked && cmpVersion(installed.version, fw.version) > 0;
     offered = { base, downgrade, ...fw };
     otaState.textContent = `${downgrade ? 'Downgrade' : 'Update'} available: ${fw.version} (${fw.build}), ${fmtKB(fw.size)}`;
     otaInstall.textContent = downgrade ? 'Downgrade' : 'Update';

@@ -36,6 +36,11 @@ on:
         description: "Rebuild the provisioner bind-shells (armv7, riscv32, mipsel)"
         type: boolean
         default: false
+      pages:
+        description: "Publish the built firmware and the tool on GitHub Pages (release also updates the nightly)"
+        type: choice
+        options: [nightly, release, none]
+        default: nightly
 
 permissions:
   contents: write
@@ -393,6 +398,9 @@ jobs:
       (needs.build.result == 'success' || needs.build.result == 'skipped') &&
       (needs.bindshell.result == 'success' || needs.bindshell.result == 'skipped')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -504,6 +512,76 @@ jobs:
           [[ -n "$details" ]] && msg="$msg (${details})"
           git commit -m "$msg"
           git push
+
+      # Pages reads each channel's manifests from livi-link-<channel>; a run replaces only what it built.
+      # The release channel starts over from the latest LIVI release's manifests once that is newer.
+      - name: Publish on GitHub Pages
+        if: inputs.pages != 'none'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILT: ${{ needs.targets.outputs.any }}
+          CHANNELS: ${{ inputs.pages == 'release' && 'nightly release' || 'nightly' }}
+        run: |
+          set -euo pipefail
+          repo=$GITHUB_REPOSITORY
+          here=$(git rev-parse HEAD)
+          targets=$(tr -d '"' <<<"$BUILT" | tr , ' ')
+          tag='' published=''
+          if latest=$(gh api "repos/$repo/releases/latest" -q '.tag_name + " " + .published_at' 2>/dev/null); then
+            read -r tag published <<<"$latest"
+          fi
+
+          seed() {
+            git -C "$1" rm -rq --ignore-unmatch .
+            for p in assets/livi-link assets/livi-link-provision; do
+              git -C "$1" checkout "$2" -- "$p" 2>/dev/null || true
+            done
+          }
+
+          changed=
+          for channel in $CHANNELS; do
+            branch=livi-link-$channel
+            work=$RUNNER_TEMP/$branch
+            base=
+            if git fetch -q --depth 1 origin "$branch" 2>/dev/null; then
+              git worktree add -q -B "$branch" "$work" FETCH_HEAD
+              if [ "$channel" = release ] && [ -n "$tag" ]; then
+                head=$(gh api "repos/$repo/commits/$branch" -q .commit.committer.date)
+                [[ "$head" > "$published" ]] || base=tag
+              fi
+            else
+              git worktree add -q --orphan -b "$branch" "$work"
+              base=here
+              [ "$channel" = release ] && [ -n "$tag" ] && base=tag
+            fi
+            case $base in
+              here) seed "$work" "$here" ;;
+              tag)
+                git fetch -q --depth 1 origin "refs/tags/$tag:refs/tags/$tag"
+                seed "$work" "refs/tags/$tag" ;;
+            esac
+
+            for t in $targets; do
+              [ -f "assets/livi-link/$t/firmware.json" ] || continue
+              mkdir -p "$work/assets/livi-link/$t"
+              cp "assets/livi-link/$t/firmware.json" "$work/assets/livi-link/$t/"
+            done
+            if compgen -G 'provision/livi-link-provision-*' >/dev/null; then
+              mkdir -p "$work/assets/livi-link-provision"
+              cp assets/livi-link-provision/*.json "$work/assets/livi-link-provision/"
+            fi
+
+            git -C "$work" add -A .
+            if git -C "$work" diff --cached --quiet; then
+              echo "$channel on Pages already has these files"
+              continue
+            fi
+            git -C "$work" commit -qm "chore(livi-link): $channel from ${GITHUB_REF_NAME} (${GITHUB_SHA::8})"
+            git -C "$work" push -q origin "$branch"
+            changed=1
+          done
+          [ -z "$changed" ] || gh workflow run pages.yml --repo "$repo" --ref main
 
   tool:
     name: Build the provisioning tool (${{ matrix.name }})
