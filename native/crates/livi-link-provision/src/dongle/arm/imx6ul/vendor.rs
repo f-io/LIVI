@@ -320,7 +320,12 @@ pub fn reinstall(
         "cd /tmp && rm -rf update update.tar.gz *_Update.img; echo 3 > /proc/sys/vm/drop_caches",
     )?;
     progress("copying the vendor firmware to the dongle");
-    sh.land(image, &path, PUSH_PORT, &want)?;
+    sh.land(image, &path, PUSH_PORT, &want).map_err(|e| {
+        format!(
+            "{path} could not be copied to the dongle: {e} ({})",
+            facts(sh)
+        )
+    })?;
 
     progress("unpacking it on the dongle to check it");
     let listing = sh.run(
@@ -346,9 +351,13 @@ pub fn reinstall(
         let _ = sh.sh(&format!("rm -f {path}"));
         return Err(e);
     }
-    if sh.md5(&path).as_deref() != Some(want.as_str()) {
-        return Err(format!("{path} changed while it was checked"));
-    }
+    progress("copying the vendor firmware to the dongle again for its updater");
+    sh.land(image, &path, PUSH_PORT, &want).map_err(|e| {
+        format!(
+            "{path} could not be copied to the dongle again after the check: {e} ({})",
+            facts(sh)
+        )
+    })?;
 
     progress("the vendor's updater runs now, do not unplug the dongle");
     sh.sh(&format!(
@@ -356,6 +365,20 @@ pub fn reinstall(
          setsid {UPDATER} </dev/null >/dev/null 2>&1 &"
     ))?;
     watch(sh, progress)
+}
+
+/// What the dongle looks like when the image does not land: free space in /tmp, free memory
+/// and whatever else is busy with an update.
+fn facts(sh: &Shell) -> String {
+    sh.sh("df -k /tmp; free; ps w | grep -i -E 'update|ARM' | grep -v grep")
+        .map(|out| {
+            out.lines()
+                .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+                .filter(|l| !l.is_empty())
+                .collect::<Vec<_>>()
+                .join("; ")
+        })
+        .unwrap_or_else(|e| format!("the dongle did not say more: {e}"))
 }
 
 fn watch(sh: &Shell, progress: &dyn Fn(&str)) -> Result<(), String> {

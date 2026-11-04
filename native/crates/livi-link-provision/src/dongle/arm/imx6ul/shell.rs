@@ -111,11 +111,7 @@ impl Shell {
     }
 
     pub fn md5(&self, path: &str) -> Option<String> {
-        let out = self
-            .sh(&format!("md5sum {path} 2>/dev/null | cut -d' ' -f1"))
-            .ok()?;
-        let out = out.trim();
-        (out.len() >= 32).then(|| out[out.len() - 32..].to_string())
+        md5_in(&self.sh(&format!("md5sum {path} 2>/dev/null")).ok()?)
     }
 
     pub fn reachable(&self) -> bool {
@@ -245,6 +241,12 @@ fn sysfs_ifindex(iface: &str) -> Option<u32> {
         .ok()
 }
 
+fn md5_in(out: &str) -> Option<String> {
+    out.split_whitespace()
+        .find(|w| w.len() == 32 && w.bytes().all(|b| b.is_ascii_hexdigit()))
+        .map(str::to_ascii_lowercase)
+}
+
 pub fn md5_hex(data: &[u8]) -> String {
     use md5::{Digest, Md5};
     Md5::digest(data)
@@ -335,6 +337,27 @@ mod tests {
     #[test]
     fn hashes_like_md5sum() {
         assert_eq!(md5_hex(b"abc"), "900150983cd24fb0d6963f7d28e17f72");
+    }
+
+    #[test]
+    fn the_hash_is_found_among_other_output() {
+        let hash = "900150983cd24fb0d6963f7d28e17f72";
+        assert_eq!(
+            md5_in(&format!("{hash}  /tmp/a.img")).as_deref(),
+            Some(hash)
+        );
+        assert_eq!(
+            md5_in(&format!(
+                "{hash}  /tmp/a.img\n[1]+  Done  setsid sh -c 'nc -l -p 8000'"
+            ))
+            .as_deref(),
+            Some(hash)
+        );
+        assert_eq!(
+            md5_in("md5sum: /tmp/a.img: No such file or directory"),
+            None
+        );
+        assert_eq!(md5_in(""), None);
     }
 
     #[test]
