@@ -123,6 +123,7 @@ pub struct Config {
     pub dab_gain_auto: bool,
     pub dab_gain_db: f64,
     pub dab_ppm: i32,
+    pub fm_deemphasis_us: u32,
 
     pub auto_conn: bool,
     pub auto_switch_on_reverse: bool,
@@ -521,6 +522,7 @@ pub fn defaults() -> Config {
         dab_gain_auto: true,
         dab_gain_db: 19.7,
         dab_ppm: 0,
+        fm_deemphasis_us: 50,
         auto_conn: true,
         auto_switch_on_reverse: true,
         start_page: "/".into(),

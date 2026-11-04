@@ -134,7 +134,7 @@ impl Services {
         mut asks: UiAsks,
         telemetry: mpsc::UnboundedSender<serde_json::Value>,
         settings: mpsc::UnboundedSender<serde_json::Value>,
-        resume_dab: bool,
+        resume_radio: Option<crate::radio::Band>,
     ) -> Self {
         let state = hub.watch();
         let cfg = state.borrow().config.clone();
@@ -228,13 +228,13 @@ impl Services {
             hub.clone(),
             settings.clone(),
         ));
-        if let Some(dab_asks) = asks.dab.take() {
-            tokio::spawn(crate::dab::run(
+        if let Some(radio_asks) = asks.radio.take() {
+            tokio::spawn(crate::radio::run(
                 hub.clone(),
                 gst.clone(),
-                dab_asks,
+                radio_asks,
                 user_data.to_path_buf(),
-                resume_dab,
+                resume_radio,
             ));
         }
 

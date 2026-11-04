@@ -4041,6 +4041,7 @@ dependencies = [
  "livi-core-proto",
  "livi-cp",
  "livi-dab",
+ "livi-fm",
  "livi-host-proto",
  "livi-i18n",
  "livi-link-host",
@@ -4117,6 +4118,13 @@ name = "livi-dab"
 version = "0.1.0"
 dependencies = [
  "rustfft",
+]
+
+[[package]]
+name = "livi-fm"
+version = "0.1.0"
+dependencies = [
+ "livi-dab",
 ]
 
 [[package]]

@@ -316,7 +316,11 @@
     "dabGain": "Підсилення",
     "moveUp": "Вгору",
     "moveDown": "Вниз",
-    "dabPpm": "Корекція частоти"
+    "dabPpm": "Корекція частоти",
+    "fm": "FM",
+    "fmDeemphasis": "Деемфазис",
+    "fmDeemphasis50": "50 мкс (Європа)",
+    "fmDeemphasis75": "75 мкс (Америка, Корея)"
   },
   "softwareUpdate": {
     "channelNightly": "Nightly",
@@ -346,6 +350,8 @@
     "source": "Джерело",
     "phoneSource": "Телефон",
     "dabSource": "DAB+",
+    "fmSource": "FM",
+    "noFmStations": "Станцій ще немає, шукайте в Налаштування > Загальні > FM",
     "stationList": "Список станцій",
     "favorite": "Обране",
     "noStations": "Станцій ще немає, шукайте в Налаштування > Загальні > DAB+",

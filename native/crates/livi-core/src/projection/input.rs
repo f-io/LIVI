@@ -77,10 +77,10 @@ impl Projection {
         }
     }
 
-    pub(super) fn dab_media_ask(&self, control: MediaControl) -> Option<crate::dab::DabAsk> {
+    pub(super) fn radio_media_ask(&self, control: MediaControl) -> Option<crate::radio::RadioAsk> {
         let state = self.hub.watch();
         let s = state.borrow();
-        crate::dab::media_ask(&s.dab, s.sessions.active.is_some(), control)
+        crate::radio::media_ask(&s.dab, &s.fm, s.sessions.active.is_some(), control)
     }
 
     pub(super) fn key(&mut self, code: &str, down: bool) {
@@ -93,11 +93,11 @@ impl Projection {
             }
             return;
         }
-        if let (Some(control), Some(dab)) = (key.media_control(), &self.dab)
-            && let Some(ask) = self.dab_media_ask(control)
+        if let (Some(control), Some(radio)) = (key.media_control(), &self.radio)
+            && let Some(ask) = self.radio_media_ask(control)
         {
             if down {
-                let _ = dab.send(ask);
+                let _ = radio.send(ask);
             }
             return;
         }

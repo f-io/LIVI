@@ -158,7 +158,7 @@ fn render_settings(ui: &AppWindow) {
 fn apply(ui: &AppWindow, update: Update) {
     match update {
         Update::Media(m) => CLIENT.with_borrow(|c| media_ui::apply_media(ui, c.as_ref(), m)),
-        Update::Dab(d) => media_ui::apply_dab(ui, d),
+        Update::Radio(r) => media_ui::apply_radio(ui, *r),
         Update::Dash(d) => {
             let before = dashboard_ui::map_shown(ui);
             dashboard_ui::apply(ui, *d);
@@ -246,8 +246,9 @@ fn open_path(ui: &AppWindow, path: &str) {
         }
     };
     match (page, parts.get(1).copied()) {
-        (Page::Media, Some("dabplus")) => ui.global::<DabState>().set_view_dab(true),
-        (Page::Media, Some("phone")) => ui.global::<DabState>().set_view_dab(false),
+        (Page::Media, Some("dabplus")) => media_ui::show(ui, MediaSource::Dab),
+        (Page::Media, Some("fm")) => media_ui::show(ui, MediaSource::Fm),
+        (Page::Media, Some("phone")) => media_ui::show(ui, MediaSource::Phone),
         _ => {}
     }
     choose(ui, page);

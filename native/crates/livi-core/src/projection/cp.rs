@@ -162,8 +162,8 @@ impl Projection {
                 }
             }
             CpEvent::Radio { command, .. } => {
-                if let (Some(dab), Some(ask)) = (&self.dab, crate::cp_radio::ask(command)) {
-                    let _ = dab.send(ask);
+                if let (Some(radio), Some(ask)) = (&self.radio, crate::cp_radio::ask(command)) {
+                    let _ = radio.send(ask);
                 }
             }
             CpEvent::VideoCodec { id, cluster, .. } => {

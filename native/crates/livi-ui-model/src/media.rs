@@ -175,7 +175,7 @@ impl Playback {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Station {
-    pub service_id: u32,
+    pub id: u32,
     pub number: usize,
     pub label: String,
     pub favorite: bool,
@@ -186,13 +186,14 @@ pub struct Station {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct Dab {
+pub struct Radio {
     pub receiver: bool,
     pub active: bool,
     pub playing: bool,
     pub title: Option<String>,
     pub text: String,
     pub ensemble: String,
+    pub stereo: bool,
     pub signal_bars: u8,
     pub tuned: Option<u32>,
     pub tuned_favorite: bool,
@@ -252,27 +253,34 @@ pub fn badge(label: &str) -> [u8; 3] {
     })
 }
 
-pub fn dab(state: &Value) -> Dab {
+fn signal_bars(quality: u64) -> u8 {
+    if quality >= 80 {
+        3
+    } else if quality >= 40 {
+        2
+    } else {
+        1
+    }
+}
+
+pub fn mhz(khz: u32) -> String {
+    format!("{}.{}", khz / 1000, khz % 1000 / 100)
+}
+
+pub fn dab(state: &Value) -> Radio {
     let d = &state["dab"];
     let tuned = d["station"].as_u64().map(|v| v as u32);
-    let mut out = Dab {
+    let mut out = Radio {
         receiver: !d["receiver"].is_null(),
         active: d["active"].as_bool().unwrap_or(false),
         playing: d["playing"].as_bool().unwrap_or(false),
         text: d["text"].as_str().unwrap_or("").to_string(),
         tuned,
-        ..Dab::default()
+        ..Radio::default()
     };
     let signal = &d["signal"];
     if signal["locked"].as_bool() == Some(true) {
-        let q = signal["quality"].as_u64().unwrap_or(0);
-        out.signal_bars = if q >= 80 {
-            3
-        } else if q >= 40 {
-            2
-        } else {
-            1
-        };
+        out.signal_bars = signal_bars(signal["quality"].as_u64().unwrap_or(0));
     }
     let all = d["stations"].as_array().cloned().unwrap_or_default();
     for st in &all {
@@ -301,7 +309,7 @@ pub fn dab(state: &Value) -> Dab {
             let label = st["label"].as_str().unwrap_or("");
             let short = st["shortLabel"].as_str().unwrap_or("");
             Station {
-                service_id: id,
+                id,
                 number: i + 1,
                 label: if short.is_empty() { label } else { short }.to_string(),
                 favorite: st["favorite"].as_bool().unwrap_or(false),
@@ -314,6 +322,78 @@ pub fn dab(state: &Value) -> Dab {
         .collect();
     out.tuned_index = out.stations.iter().position(|s| s.tuned);
     out
+}
+
+fn fm_name(st: &Value) -> Option<String> {
+    let name = st["name"].as_str().unwrap_or("").trim();
+    (!name.is_empty()).then(|| name.to_string())
+}
+
+pub fn fm(state: &Value) -> Radio {
+    let f = &state["fm"];
+    let tuned = f["station"].as_u64().map(|v| v as u32);
+    let all = f["stations"].as_array().cloned().unwrap_or_default();
+    let khz_of = |st: &Value| st["khz"].as_u64().unwrap_or(0) as u32;
+    let mut out = Radio {
+        receiver: !state["dab"]["receiver"].is_null(),
+        active: f["active"].as_bool().unwrap_or(false),
+        playing: f["playing"].as_bool().unwrap_or(false),
+        text: f["text"].as_str().unwrap_or("").to_string(),
+        tuned,
+        ..Radio::default()
+    };
+    let signal = &f["signal"];
+    let quality = signal["quality"].as_u64().unwrap_or(0);
+    if out.active && quality > 0 {
+        out.signal_bars = signal_bars(quality);
+    }
+    let mut name = None;
+    if let Some(khz) = tuned {
+        let listed = all.iter().find(|st| khz_of(st) == khz);
+        name = f["name"]
+            .as_str()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .map(str::to_string)
+            .or_else(|| listed.and_then(fm_name));
+        out.title = Some(name.clone().unwrap_or_else(|| format!("{} MHz", mhz(khz))));
+        out.ensemble = format!("{} MHz", mhz(khz));
+        out.stereo = out.active && signal["stereo"].as_bool() == Some(true);
+        out.tuned_favorite = listed.is_some_and(|st| st["favorite"].as_bool() == Some(true));
+    }
+    let shown = name.or_else(|| tuned.map(mhz));
+    out.tuned_initials = shown.as_deref().map_or("FM".into(), fm_initials);
+    out.tuned_badge = badge(shown.as_deref().unwrap_or("FM"));
+    out.stations = all
+        .iter()
+        .filter(|st| st["hidden"].as_bool() != Some(true))
+        .enumerate()
+        .map(|(i, st)| {
+            let khz = khz_of(st);
+            let label = fm_name(st).unwrap_or_else(|| mhz(khz));
+            Station {
+                id: khz,
+                number: i + 1,
+                favorite: st["favorite"].as_bool().unwrap_or(false),
+                tuned: Some(khz) == tuned,
+                logo: None,
+                initials: fm_initials(&label),
+                badge: badge(&label),
+                label,
+            }
+        })
+        .collect();
+    out.tuned_index = out.stations.iter().position(|s| s.tuned);
+    out
+}
+
+/// A station without a name shows its frequency on the badge.
+fn fm_initials(label: &str) -> String {
+    if label.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        label.to_string()
+    } else {
+        initials(label)
+    }
 }
 
 #[cfg(test)]
@@ -415,5 +495,42 @@ mod tests {
         assert_eq!(d.stations.len(), 1);
         assert_eq!(d.stations[0].label, "Eins");
         assert_eq!(d.tuned_index, Some(0));
+    }
+
+    #[test]
+    fn fm_view_from_state() {
+        let state = json!({
+            "dab": { "receiver": "rtl-sdr" },
+            "fm": {
+                "active": true, "station": 98100, "playing": true, "name": "NDR 2",
+                "text": "Moin", "signal": { "quality": 90, "stereo": true, "rds": true },
+                "stations": [
+                    { "khz": 89000, "name": "", "hidden": false },
+                    { "khz": 91700, "name": "gone", "hidden": true },
+                    { "khz": 98100, "name": "N2", "favorite": true }
+                ]
+            }
+        });
+        let f = fm(&state);
+        assert!(f.receiver && f.active && f.stereo);
+        assert_eq!(f.title.as_deref(), Some("NDR 2"), "RDS names it on air");
+        assert_eq!(f.ensemble, "98.1 MHz");
+        assert_eq!(f.signal_bars, 3);
+        assert!(f.tuned_favorite);
+        let labels: Vec<&str> = f.stations.iter().map(|s| s.label.as_str()).collect();
+        assert_eq!(labels, ["89.0", "N2"]);
+        assert_eq!(f.stations[0].initials, "89.0");
+        assert_eq!(f.tuned_index, Some(1));
+    }
+
+    #[test]
+    fn a_manually_tuned_frequency_is_its_own_title() {
+        let state = json!({ "fm": { "active": true, "station": 104000, "stations": [] } });
+        let f = fm(&state);
+        assert!(!f.receiver);
+        assert_eq!(f.title.as_deref(), Some("104.0 MHz"));
+        assert_eq!(f.tuned_initials, "104.0");
+        assert!(!f.tuned_favorite && f.tuned_index.is_none());
+        assert_eq!(fm(&json!({})).tuned_initials, "FM");
     }
 }

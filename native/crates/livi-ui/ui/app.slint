@@ -9,7 +9,7 @@ import "fonts/Roboto-700.ttf";
 import { Theme, Ui } from "theme.slint";
 import { Focus, FocusZone } from "focus.slint";
 import { Nav, Page, PhoneState, TabData } from "nav.slint";
-import { MediaPage, MediaText, Press, DabState, StationData } from "media.slint";
+import { MediaPage, MediaSource, MediaText, Press, DabState, StationData } from "media.slint";
 import { ProjectionPage, TouchPhase } from "projection.slint";
 import { SettingsView, SettingsState, ScreenKind, RowData, RowKind, PickData, KnobData } from "settings/view.slint";
 import { Dashboard, DashState, GaugeData, CapData, TrailData, LabelData } from "dashboard.slint";
@@ -17,7 +17,7 @@ import { LevelOverlay, PhoneOverlay, OverlayState } from "overlays.slint";
 import { MaskData } from "mask.slint";
 import { TouchCalibration, TouchCalibrationState } from "touch_calibration.slint";
 
-export { Theme, Focus, FocusZone, Page, PhoneState, TabData, TouchPhase, SettingsState, ScreenKind, RowData, RowKind, PickData, KnobData, MediaText, Press, DabState, StationData, DashState, GaugeData, CapData, TrailData, LabelData, OverlayState, MaskData, TouchCalibrationState }
+export { Theme, Focus, FocusZone, Page, PhoneState, TabData, TouchPhase, SettingsState, ScreenKind, RowData, RowKind, PickData, KnobData, MediaSource, MediaText, Press, DabState, StationData, DashState, GaugeData, CapData, TrailData, LabelData, OverlayState, MaskData, TouchCalibrationState }
 
 export component AppWindow inherits Window {
     in-out property <Page> page: Page.media;

@@ -17,8 +17,8 @@ use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
 use slint::{ComponentHandle, Model};
 
 use crate::{
-    AppWindow, DabState, DashState, Focus, FocusZone, Page, PhoneState, RowKind, ScreenKind,
-    SettingsState,
+    AppWindow, DabState, DashState, Focus, FocusZone, MediaSource, Page, PhoneState, RowKind,
+    ScreenKind, SettingsState,
 };
 
 const SEEK_STEP_MS: f32 = 15_000.0;
@@ -46,8 +46,9 @@ enum Target {
     PlayPause,
     Next,
     Progress,
-    Source(bool),
+    Source(MediaSource),
     Favorite,
+    Tune(i32),
     Station(usize),
 }
 
@@ -114,9 +115,13 @@ fn targets(ui: &AppWindow) -> Vec<Target> {
             let mut out = Vec::new();
             let d = ui.global::<DabState>();
             if d.get_receiver() {
-                out.extend([Target::Source(false), Target::Source(true)]);
+                out.extend([
+                    Target::Source(MediaSource::Phone),
+                    Target::Source(MediaSource::Dab),
+                    Target::Source(MediaSource::Fm),
+                ]);
             }
-            if d.get_receiver() && d.get_view_dab() {
+            if d.get_receiver() && d.get_view() != MediaSource::Phone {
                 if d.get_art_shown() {
                     out.push(Target::Artwork);
                 }
@@ -126,6 +131,9 @@ fn targets(ui: &AppWindow) -> Vec<Target> {
                     Target::Next,
                     Target::Favorite,
                 ]);
+                if d.get_tunable() {
+                    out.extend([Target::Tune(-1), Target::Tune(1)]);
+                }
                 if d.get_band_shown() {
                     out.extend((0..d.get_stations().row_count()).map(Target::Station));
                 }
@@ -268,12 +276,14 @@ fn activate(ui: &AppWindow, target: Target) {
         Target::Prev => ui.invoke_prev(),
         Target::PlayPause => ui.invoke_play_pause(),
         Target::Next => ui.invoke_next(),
-        Target::Source(false) => d.invoke_phone(),
-        Target::Source(true) => d.invoke_resume(),
+        Target::Source(MediaSource::Phone) => d.invoke_phone(),
+        Target::Source(MediaSource::Dab) => d.invoke_resume(),
+        Target::Source(MediaSource::Fm) => d.invoke_resume_fm(),
         Target::Favorite => d.invoke_toggle_favorite(),
+        Target::Tune(by) => d.invoke_tune(by),
         Target::Station(i) => {
             if let Some(st) = d.get_stations().row_data(i) {
-                d.invoke_pick(st.service_id);
+                d.invoke_pick(st.id);
             }
         }
         _ => {}

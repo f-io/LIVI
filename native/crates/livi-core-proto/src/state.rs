@@ -27,6 +27,8 @@ pub struct State {
     pub update: Update,
     pub cluster: Cluster,
     pub dab: Dab,
+    #[serde(default)]
+    pub fm: Fm,
     pub config: Config,
 }
 
@@ -61,6 +63,43 @@ pub struct DabStation {
     pub hidden: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logo: Option<String>,
+}
+
+/// The stick is the DAB+ one, so its `receiver` in [`Dab`] says whether FM can play too.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Fm {
+    pub stations: Vec<FmStation>,
+    pub last_station: Option<u32>,
+    pub scan: Option<DabScan>,
+    pub active: bool,
+    pub station: Option<u32>,
+    pub playing: bool,
+    pub name: Option<String>,
+    pub text: Option<String>,
+    pub signal: FmSignal,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FmStation {
+    pub khz: u32,
+    pub name: String,
+    #[serde(default)]
+    pub pi: Option<u16>,
+    #[serde(default)]
+    pub favorite: bool,
+    #[serde(default)]
+    pub hidden: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FmSignal {
+    pub quality: u32,
+    pub stereo: bool,
+    pub rds: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

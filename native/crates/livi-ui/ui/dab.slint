@@ -4,10 +4,10 @@
 
 import { Theme } from "theme.slint";
 import { Focus, FocusZone } from "focus.slint";
-import { MediaText, Press, RoundButton, Spectrum } from "media_parts.slint";
+import { MediaSource, MediaText, Press, RoundButton, Spectrum } from "media_parts.slint";
 
 export struct StationData {
-    service-id: int,
+    id: int,
     number: int,
     label: string,
     favorite: bool,
@@ -18,8 +18,12 @@ export struct StationData {
     badge: color,
 }
 
+/// The radio page, filled with the band in `view`.
 export global DabState {
     in property <bool> receiver;
+    in property <string> source;
+    in property <bool> tunable;
+    in property <bool> stereo;
     in property <bool> active;
     in property <bool> playing;
     in property <string> title;
@@ -36,11 +40,13 @@ export global DabState {
     in property <int> tuned-index: -1;
     in-out property <bool> band-shown: true;
     in-out property <bool> art-shown;
-    in-out property <bool> view-dab;
+    in-out property <MediaSource> view;
     callback phone();
     callback resume();
+    callback resume-fm();
     callback pick(int);
     callback toggle-favorite();
+    callback tune(int);
 }
 
 export component StationBadge inherits Rectangle {
@@ -64,7 +70,7 @@ export component StationBadge inherits Rectangle {
         text: root.initials;
         color: #ffffff;
         font-weight: 800;
-        font-size: round(root.size * 0.36 / 1px) * 1px;
+        font-size: round(root.size * (root.initials.character-count > 4 ? 0.29 : 0.36) / 1px) * 1px;
     }
 }
 
@@ -163,7 +169,7 @@ component StationBand inherits Rectangle {
             tile: root.tile;
             station: st;
             focused: root.focused-index == i;
-            picked => { DabState.pick(st.service-id); }
+            picked => { DabState.pick(st.id); }
         }
     }
     property <int> tuned: DabState.tuned-index;
@@ -184,7 +190,8 @@ export component DabPage inherits Rectangle {
     property <float> page-pad: round(clampf(min-side * 0.02, 12, 22));
     property <float> col-gap: round(clampf(w * 0.025, 16, 28));
     property <float> section-gap: round(clampf(h * 0.03, 10, 24));
-    property <float> ctrl-size: min(round(clampf(h * 0.095, 50, 82)), floor((w - page-pad * 2 - 8 - ctrl-gap * 3) / 4));
+    property <int> buttons: DabState.tunable ? 6 : 4;
+    property <float> ctrl-size: min(round(clampf(h * 0.095, 50, 82)), floor((w - page-pad * 2 - 8 - ctrl-gap * (buttons - 1)) / buttons));
     property <float> ctrl-gap: round(clampf(w * 0.03, 16, 32));
     property <float> title-px: round(clampf(min-side * 0.07, 18, 48));
     property <float> artist-px: round(clampf(min-side * 0.034, 14, 24));
@@ -221,7 +228,7 @@ export component DabPage inherits Rectangle {
                 padding-left: 8px;
                 VerticalLayout {
                     if !root.compact: Text {
-                        text: MediaText.dab-source;
+                        text: DabState.source;
                         color: Theme.primary;
                         font-weight: 800;
                         font-size: root.album-px * 1px;
@@ -266,6 +273,27 @@ export component DabPage inherits Rectangle {
                                     : @image-url("icons/SignalCellularAlt1Bar.svg");
                             }
                         }
+                        // Stereo as two overlapping rings, in a space kept free so nothing moves.
+                        Rectangle {
+                            property <length> ring: (root.album-px + 2) * 0.7px;
+                            width: self.ring * 1.6;
+                            if DabState.stereo: Rectangle {
+                                x: 0;
+                                width: parent.ring;
+                                height: parent.ring;
+                                border-radius: self.width / 2;
+                                border-width: max(1.5px, parent.ring * 0.13);
+                                border-color: Theme.primary;
+                            }
+                            if DabState.stereo: Rectangle {
+                                x: parent.ring * 0.6;
+                                width: parent.ring;
+                                height: parent.ring;
+                                border-radius: self.width / 2;
+                                border-width: max(1.5px, parent.ring * 0.13);
+                                border-color: Theme.primary;
+                            }
+                        }
                     }
                 }
                 HorizontalLayout {
@@ -305,6 +333,20 @@ export component DabPage inherits Rectangle {
                         icon-color: DabState.favorite ? #ffa726 : Theme.text;
                         clicked => { DabState.toggle-favorite(); }
                     }
+                    if DabState.tunable: RoundButton {
+                        focused: Focus.main(root.off + 4);
+                        size: root.ctrl-size * 1px;
+                        icon-size: root.icon-px;
+                        icon: @image-url("icons/Remove.svg");
+                        clicked => { DabState.tune(-1); }
+                    }
+                    if DabState.tunable: RoundButton {
+                        focused: Focus.main(root.off + 5);
+                        size: root.ctrl-size * 1px;
+                        icon-size: root.icon-px;
+                        icon: @image-url("icons/Add.svg");
+                        clicked => { DabState.tune(1); }
+                    }
                 }
             }
             if root.art-shown: Rectangle {
@@ -341,13 +383,13 @@ export component DabPage inherits Rectangle {
             }
         }
         if !root.compact && DabState.stations.length == 0: Text {
-            text: MediaText.no-stations;
+            text: DabState.tunable ? MediaText.no-fm-stations : MediaText.no-stations;
             color: Theme.text.with-alpha(0.7);
             horizontal-alignment: center;
         }
         if !root.compact && DabState.stations.length > 0: StationBand {
             tile: root.tile * 1px;
-            focus-base: root.off + 4;
+            focus-base: root.off + root.buttons;
         }
     }
 }

@@ -97,6 +97,8 @@ const SETTINGS: &[(&str, &str)] = &[
     ("dabGainAuto", "BrightnessAutoOutlined"),
     ("dabGain", "EqualizerOutlined"),
     ("dabPpm", "TuneOutlined"),
+    ("fm", "RadioOutlined"),
+    ("fmDeemphasis", "GraphicEqOutlined"),
     ("mainVideo", "MonitorOutlined"),
     ("clusterVideo", "SpeedOutlined"),
     ("clusterContent", "NavigationOutlined"),

@@ -316,7 +316,11 @@
     "dabGain": "增益",
     "moveUp": "上移",
     "moveDown": "下移",
-    "dabPpm": "频率校正"
+    "dabPpm": "频率校正",
+    "fm": "FM",
+    "fmDeemphasis": "去加重",
+    "fmDeemphasis50": "50 µs（欧洲）",
+    "fmDeemphasis75": "75 µs（美洲、韩国）"
   },
   "softwareUpdate": {
     "channelNightly": "每日构建",
@@ -346,6 +350,8 @@
     "source": "来源",
     "phoneSource": "手机",
     "dabSource": "DAB+",
+    "fmSource": "FM",
+    "noFmStations": "暂无电台，请在 设置 > 通用 > FM 中扫描",
     "stationList": "电台列表",
     "favorite": "收藏",
     "noStations": "暂无电台，请在 设置 > 通用 > DAB+ 中扫描",

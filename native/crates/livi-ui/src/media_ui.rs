@@ -11,8 +11,8 @@ use livi_core_proto::message::{Action, MediaControl};
 use livi_ui_model::media::{Guess, Playback, Pressed};
 use slint::{Color, ComponentHandle, Image, ModelRc, Timer, TimerMode, VecModel};
 
-use crate::media::{DabView, MediaView};
-use crate::{AppWindow, DabState, MediaText, Page, Press, StationData};
+use crate::media::{MediaView, RadioView, Radios};
+use crate::{AppWindow, DabState, MediaSource, MediaText, Page, Press, StationData};
 
 const UI_INTERVAL: Duration = Duration::from_millis(120);
 const FLASH: Duration = Duration::from_millis(140);
@@ -22,9 +22,10 @@ struct Live {
     playback: Playback,
     session: Option<String>,
     duration_ms: f64,
-    dab_active: bool,
-    dab_playing: bool,
-    dab_guess: Guess,
+    radios: Option<Radios>,
+    on_air: Option<MediaSource>,
+    radio_playing: bool,
+    radio_guess: Guess,
     tuned: Option<(u32, bool)>,
 }
 
@@ -45,8 +46,8 @@ fn tick(ui: &AppWindow) {
         ui.set_elapsed_ms(shown.elapsed_ms as f32);
         ui.set_playing(shown.playing);
         ui.global::<DabState>()
-            .set_playing(l.dab_guess.shown(l.dab_playing, now));
-        l.playback.running() || l.playback.guessing(now) || l.dab_guess.pending(now)
+            .set_playing(l.radio_guess.shown(l.radio_playing, now));
+        l.playback.running() || l.playback.guessing(now) || l.radio_guess.pending(now)
     });
     let wanted = keep && (ui.get_page() == Page::Media || ui.get_video_shown());
     TICK.with(|t| match (wanted, t.running()) {
@@ -108,13 +109,57 @@ pub fn apply_media(ui: &AppWindow, client: Option<&Client>, mut m: MediaView) {
     tick(ui);
 }
 
-pub fn apply_dab(ui: &AppWindow, v: DabView) {
+pub fn apply_radio(ui: &AppWindow, r: Radios) {
     let before = path(ui);
+    let on_air = if r.dab.radio.active {
+        Some(MediaSource::Dab)
+    } else if r.fm.radio.active {
+        Some(MediaSource::Fm)
+    } else {
+        None
+    };
+    ui.global::<DabState>().set_receiver(r.dab.radio.receiver);
+    let switched = LIVE.with_borrow_mut(|l| {
+        l.radios = Some(r);
+        std::mem::replace(&mut l.on_air, on_air) != on_air
+    });
+    if switched {
+        ui.global::<DabState>()
+            .set_view(on_air.unwrap_or(MediaSource::Phone));
+    }
+    render(ui);
+    if path(ui) != before {
+        crate::report_page(ui);
+    }
+    tick(ui);
+}
+
+fn render(ui: &AppWindow) {
     let s = ui.global::<DabState>();
-    let d = v.dab;
-    s.set_receiver(d.receiver);
+    let fm = s.get_view() == MediaSource::Fm;
+    let shown = LIVE.with_borrow(|l| {
+        l.radios
+            .as_ref()
+            .map(|r| if fm { r.fm.clone() } else { r.dab.clone() })
+    });
+    let Some(RadioView {
+        radio: d,
+        logos,
+        tuned_logo,
+    }) = shown
+    else {
+        return;
+    };
+    let t = ui.global::<MediaText>();
+    let source = if fm {
+        t.get_fm_source()
+    } else {
+        t.get_dab_source()
+    };
+    s.set_tunable(fm);
     s.set_active(d.active);
-    s.set_title(d.title.clone().unwrap_or_else(|| "DAB+".into()).into());
+    s.set_title(d.title.clone().map_or_else(|| source.clone(), Into::into));
+    s.set_source(source);
     s.set_text(d.text.into());
     s.set_ensemble(
         if d.title.is_some() {
@@ -124,11 +169,12 @@ pub fn apply_dab(ui: &AppWindow, v: DabView) {
         }
         .into(),
     );
+    s.set_stereo(d.stereo);
     s.set_signal_bars(i32::from(d.signal_bars));
     s.set_has_tuned(d.title.is_some());
     s.set_favorite(d.tuned_favorite);
-    s.set_has_logo(v.tuned_logo.is_some());
-    if let Some(px) = v.tuned_logo {
+    s.set_has_logo(tuned_logo.is_some());
+    if let Some(px) = tuned_logo {
         s.set_logo(Image::from_rgba8(px));
     }
     s.set_initials(d.tuned_initials.into());
@@ -136,9 +182,9 @@ pub fn apply_dab(ui: &AppWindow, v: DabView) {
     let stations: Vec<StationData> = d
         .stations
         .into_iter()
-        .zip(v.logos)
+        .zip(logos)
         .map(|(st, logo)| StationData {
-            service_id: st.service_id as i32,
+            id: st.id as i32,
             number: st.number as i32,
             label: st.label.into(),
             favorite: st.favorite,
@@ -151,40 +197,40 @@ pub fn apply_dab(ui: &AppWindow, v: DabView) {
         .collect();
     s.set_stations(ModelRc::from(Rc::new(VecModel::from(stations))));
     s.set_tuned_index(d.tuned_index.map_or(-1, |i| i as i32));
-    let switched = LIVE.with_borrow(|l| l.dab_active != d.active);
     LIVE.with_borrow_mut(|l| {
-        l.dab_active = d.active;
-        l.dab_playing = d.playing;
-        l.dab_guess.settle(d.playing);
+        l.radio_playing = d.playing;
+        l.radio_guess.settle(d.playing);
         l.tuned = d
             .tuned
             .filter(|_| d.title.is_some())
             .map(|id| (id, d.tuned_favorite));
     });
-    if switched {
-        set_view(ui, d.active);
-    }
-    if path(ui) != before {
-        crate::report_page(ui);
-    }
-    tick(ui);
 }
 
-pub fn set_view(ui: &AppWindow, dab: bool) {
+/// Shows a source without telling the core, for a page it opened itself.
+pub fn show(ui: &AppWindow, view: MediaSource) {
     let d = ui.global::<DabState>();
-    if d.get_view_dab() == dab {
+    if d.get_view() != view {
+        d.set_view(view);
+        render(ui);
+    }
+}
+
+pub fn set_view(ui: &AppWindow, view: MediaSource) {
+    if ui.global::<DabState>().get_view() == view {
         return;
     }
-    d.set_view_dab(dab);
+    show(ui, view);
     crate::report_page(ui);
 }
 
 pub fn path(ui: &AppWindow) -> &'static str {
     let d = ui.global::<DabState>();
-    match (d.get_receiver(), d.get_view_dab()) {
+    match (d.get_receiver(), d.get_view()) {
         (false, _) => "/media",
-        (true, true) => "/media/dabplus",
-        (true, false) => "/media/phone",
+        (true, MediaSource::Dab) => "/media/dabplus",
+        (true, MediaSource::Fm) => "/media/fm",
+        (true, MediaSource::Phone) => "/media/phone",
     }
 }
 
@@ -192,7 +238,9 @@ pub fn set_texts(ui: &AppWindow, tr: impl Fn(&str, &str) -> String) {
     let t = ui.global::<MediaText>();
     t.set_phone_source(tr("media.phoneSource", "Phone").into());
     t.set_dab_source(tr("media.dabSource", "DAB+").into());
+    t.set_fm_source(tr("media.fmSource", "FM").into());
     t.set_no_stations(tr("media.noStations", "No stations yet").into());
+    t.set_no_fm_stations(tr("media.noFmStations", "No stations yet").into());
     t.set_no_artwork(tr("media.noArtwork", "No Artwork").into());
 }
 
@@ -216,7 +264,7 @@ pub fn pressed_feedback(ui: &AppWindow, which: Pressed) {
     flash(ui, which);
     let now = Instant::now();
     LIVE.with_borrow_mut(|l| match which {
-        Pressed::Play if l.dab_active => l.dab_guess.toggle(l.dab_playing, now),
+        Pressed::Play if l.on_air.is_some() => l.radio_guess.toggle(l.radio_playing, now),
         Pressed::Play => l.playback.toggled(now),
         Pressed::Prev => l.playback.went_back(),
         Pressed::Next => {}
@@ -233,12 +281,14 @@ pub fn wire(ui: &AppWindow, client: &Client) {
             let Some(ui) = weak.upgrade() else { return };
             pressed_feedback(&ui, which);
             let d = ui.global::<DabState>();
-            let dab_idle =
-                d.get_receiver() && d.get_view_dab() && !LIVE.with_borrow(|l| l.dab_active);
-            if dab_idle {
-                c.act(Action::DabResume);
-            } else {
-                c.act(Action::Media { control });
+            let view = d.get_view();
+            let idle = d.get_receiver()
+                && view != MediaSource::Phone
+                && LIVE.with_borrow(|l| l.on_air != Some(view));
+            match view {
+                MediaSource::Dab if idle => c.act(Action::DabResume),
+                MediaSource::Fm if idle => c.act(Action::FmResume),
+                _ => c.act(Action::Media { control }),
             }
         }
     };
@@ -266,7 +316,7 @@ pub fn wire(ui: &AppWindow, client: &Client) {
         let (c, weak) = (client.clone(), weak.clone());
         move || {
             if let Some(ui) = weak.upgrade() {
-                set_view(&ui, false);
+                set_view(&ui, MediaSource::Phone);
             }
             c.act(Action::DabStop)
         }
@@ -275,28 +325,52 @@ pub fn wire(ui: &AppWindow, client: &Client) {
         let (c, weak) = (client.clone(), weak.clone());
         move || {
             if let Some(ui) = weak.upgrade() {
-                set_view(&ui, true);
+                set_view(&ui, MediaSource::Dab);
             }
             c.act(Action::DabResume)
         }
     });
+    d.on_resume_fm({
+        let (c, weak) = (client.clone(), weak.clone());
+        move || {
+            if let Some(ui) = weak.upgrade() {
+                set_view(&ui, MediaSource::Fm);
+            }
+            c.act(Action::FmResume)
+        }
+    });
     d.on_pick({
-        let c = client.clone();
+        let (c, weak) = (client.clone(), weak.clone());
         move |id| {
-            c.act(Action::DabPlay {
-                service_id: id as u32,
+            let Some(ui) = weak.upgrade() else { return };
+            let id = id as u32;
+            c.act(match ui.global::<DabState>().get_view() {
+                MediaSource::Fm => Action::FmPlay { khz: id },
+                _ => Action::DabPlay { service_id: id },
             })
         }
     });
     d.on_toggle_favorite({
-        let c = client.clone();
+        let (c, weak) = (client.clone(), weak.clone());
         move || {
-            if let Some((service_id, favorite)) = LIVE.with_borrow(|l| l.tuned) {
-                c.act(Action::DabFavorite {
-                    service_id,
-                    favorite: !favorite,
-                });
-            }
+            let Some(ui) = weak.upgrade() else { return };
+            let Some((id, favorite)) = LIVE.with_borrow(|l| l.tuned) else {
+                return;
+            };
+            let favorite = !favorite;
+            c.act(match ui.global::<DabState>().get_view() {
+                MediaSource::Fm => Action::FmFavorite { khz: id, favorite },
+                _ => Action::DabFavorite {
+                    service_id: id,
+                    favorite,
+                },
+            })
+        }
+    });
+    d.on_tune({
+        let c = client.clone();
+        move |by| {
+            c.act(Action::FmSeek { up: by > 0 });
         }
     });
 }

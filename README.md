@@ -214,13 +214,17 @@ On a Raspberry Pi 5, `/dev/ttyAMA0` on GPIO 14/15 (PIN 8/10) does not exist unti
   <img src="docs/media/gps/gps_info.png" alt="GPS data info" width="42%" align="top" />
 </p>
 
-## DAB+
+## DAB+ and FM
 
-DAB+ radio via USB RTL-SDR (RTL2832U with R820T2).
+DAB+ and FM radio via USB RTL-SDR (RTL2832U with R820T2).
 
 - station scan, station list with logos, favourites and hidden stations
 - radio text and station logos in LIVI's media player
-- station order and hidden stations in Settings → DAB+
+- station order and hidden stations in Settings → DAB+ / FM
+
+<p align="center">
+  <img src="docs/media/dabplus.png" alt="Telemetry Dashboard" width="70%" />
+</p>
 
 ## Multi-Display
 

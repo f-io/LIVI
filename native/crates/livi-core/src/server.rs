@@ -18,11 +18,11 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Mutex, Notify, broadcast, oneshot, watch};
 
 use crate::config_file::{ConfigFile, apply_patch};
-use crate::dab::DabAsk;
 use crate::devices::Shared;
 use crate::dongle::LinkSpeedViewer;
 use crate::hub::{Frame, Hub};
 use crate::projection::{UiCommand, UiSenders};
+use crate::radio::{Band, RadioAsk, Station};
 use crate::spectrum::Viewer;
 use crate::status_file::Activity;
 use crate::update::UpdateAsk;
@@ -121,25 +121,25 @@ impl Core {
     }
 
     pub fn media(&self, control: MediaControl) {
-        if !self.dab_media(control) {
+        if !self.radio_media(control) {
             let _ = self.asks.commands.send(UiCommand::Media(control));
         }
     }
 
-    fn ask_dab(&self, ask: DabAsk) -> Result<(), String> {
+    fn ask_radio(&self, ask: RadioAsk) -> Result<(), String> {
         self.asks
-            .dab
+            .radio
             .send(ask)
-            .map_err(|_| "DAB+ is not available".to_string())
+            .map_err(|_| "the radio is not available".to_string())
     }
 
-    fn dab_media(&self, control: MediaControl) -> bool {
+    fn radio_media(&self, control: MediaControl) -> bool {
         let ask = {
             let state = self.hub.watch();
             let s = state.borrow();
-            crate::dab::media_ask(&s.dab, s.sessions.active.is_some(), control)
+            crate::radio::media_ask(&s.dab, &s.fm, s.sessions.active.is_some(), control)
         };
-        ask.is_some_and(|ask| self.ask_dab(ask).is_ok())
+        ask.is_some_and(|ask| self.ask_radio(ask).is_ok())
     }
 
     pub fn goodbye(&self) -> oneshot::Receiver<()> {
@@ -182,25 +182,43 @@ impl Core {
                 crate::mfi::remove(&self.mfi_dir, file)?;
                 self.refresh_mfi().await
             }
-            Action::DabScan => self.ask_dab(DabAsk::Scan),
-            Action::DabStopScan => self.ask_dab(DabAsk::StopScan),
-            Action::DabPlay { service_id } => self.ask_dab(DabAsk::Play(service_id)),
-            Action::DabResume => self.ask_dab(DabAsk::Resume),
-            Action::DabPause => self.ask_dab(DabAsk::Pause),
-            Action::DabStop => self.ask_dab(DabAsk::Stop),
+            Action::DabScan => self.ask_radio(RadioAsk::Scan(Band::Dab)),
+            Action::FmScan => self.ask_radio(RadioAsk::Scan(Band::Fm)),
+            Action::DabStopScan => self.ask_radio(RadioAsk::StopScan),
+            Action::DabPlay { service_id } => {
+                self.ask_radio(RadioAsk::Play(Station::dab(service_id)))
+            }
+            Action::FmPlay { khz } => self.ask_radio(RadioAsk::Play(Station::fm(khz))),
+            Action::FmSeek { up } => self.ask_radio(RadioAsk::Seek { up }),
+            Action::DabResume => self.ask_radio(RadioAsk::Resume(Some(Band::Dab))),
+            Action::FmResume => self.ask_radio(RadioAsk::Resume(Some(Band::Fm))),
+            Action::DabPause => self.ask_radio(RadioAsk::Pause),
+            Action::DabStop => self.ask_radio(RadioAsk::Stop),
             Action::DabFavorite {
                 service_id,
                 favorite,
-            } => self.ask_dab(DabAsk::Favorite {
-                service: service_id,
+            } => self.ask_radio(RadioAsk::Favorite {
+                station: Station::dab(service_id),
                 favorite,
             }),
-            Action::DabHide { service_id, hidden } => self.ask_dab(DabAsk::Hide {
-                service: service_id,
+            Action::FmFavorite { khz, favorite } => self.ask_radio(RadioAsk::Favorite {
+                station: Station::fm(khz),
+                favorite,
+            }),
+            Action::DabHide { service_id, hidden } => self.ask_radio(RadioAsk::Hide {
+                station: Station::dab(service_id),
                 hidden,
             }),
-            Action::DabMove { service_id, by } => self.ask_dab(DabAsk::Move {
-                service: service_id,
+            Action::FmHide { khz, hidden } => self.ask_radio(RadioAsk::Hide {
+                station: Station::fm(khz),
+                hidden,
+            }),
+            Action::DabMove { service_id, by } => self.ask_radio(RadioAsk::Move {
+                station: Station::dab(service_id),
+                by,
+            }),
+            Action::FmMove { khz, by } => self.ask_radio(RadioAsk::Move {
+                station: Station::fm(khz),
                 by,
             }),
             Action::Seek { position_ms } => {
@@ -493,6 +511,7 @@ mod tests {
             update: Default::default(),
             cluster: Default::default(),
             dab: Default::default(),
+            fm: Default::default(),
             cameras: Vec::new(),
             mfi: Default::default(),
             config: defaults(),

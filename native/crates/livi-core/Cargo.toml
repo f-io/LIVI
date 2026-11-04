@@ -21,6 +21,7 @@ livi-link-host.workspace = true
 livi-host-proto.workspace = true
 livi-media.workspace = true
 livi-dab.workspace = true
+livi-fm.workspace = true
 livi-rtlsdr.workspace = true
 livi-session-io.workspace = true
 livi-wifi.workspace = true

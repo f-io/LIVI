@@ -76,6 +76,7 @@ impl Rig {
             update: Default::default(),
             cluster: Default::default(),
             dab: Default::default(),
+            fm: Default::default(),
             cameras: Vec::new(),
             mfi: Default::default(),
             config: defaults(),
@@ -528,7 +529,7 @@ async fn buttons_and_touch_go_to_the_active_phone() {
 async fn media_keys_go_to_the_radio_while_it_is_the_source() {
     let mut rig = Rig::new();
     let (tx, mut radio) = mpsc::unbounded_channel();
-    rig.p.dab = Some(tx);
+    rig.p.radio = Some(tx);
     rig.connect(1, true);
     rig.drain();
 
@@ -547,8 +548,8 @@ async fn media_keys_go_to_the_radio_while_it_is_the_source() {
     });
     rig.p.input(press("KeyN"));
     assert!(rig.drain().is_empty(), "nothing reaches the phone");
-    assert_eq!(radio.try_recv(), Ok(crate::dab::DabAsk::Resume));
-    assert_eq!(radio.try_recv(), Ok(crate::dab::DabAsk::Step(1)));
+    assert_eq!(radio.try_recv(), Ok(crate::radio::RadioAsk::Resume(None)));
+    assert_eq!(radio.try_recv(), Ok(crate::radio::RadioAsk::Step(1)));
     assert!(radio.try_recv().is_err(), "the release does nothing");
 }
 

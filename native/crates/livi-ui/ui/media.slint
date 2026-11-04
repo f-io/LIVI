@@ -4,10 +4,10 @@
 
 import { Theme } from "theme.slint";
 import { Focus } from "focus.slint";
-import { MediaText, Press, RoundButton, Spectrum, SourceTabs } from "media_parts.slint";
+import { MediaSource, MediaText, Press, RoundButton, Spectrum, SourceTabs } from "media_parts.slint";
 import { DabPage, DabState, StationData } from "dab.slint";
 
-export { MediaText, Press, DabState, StationData }
+export { MediaSource, MediaText, Press, DabState, StationData }
 
 
 export component Progress inherits Rectangle {
@@ -316,8 +316,8 @@ export component MediaPage inherits Rectangle {
     callback seek(float);
     callback spectrum-changed(bool);
 
-    property <int> base: DabState.receiver ? 2 : 0;
-    property <bool> dab-shown: DabState.receiver && DabState.view-dab;
+    property <int> base: DabState.receiver ? 3 : 0;
+    property <bool> dab-shown: DabState.receiver && DabState.view != MediaSource.phone;
     property <length> tabs-h: DabState.receiver ? 48px : 0;
 
     background: Theme.background;
@@ -327,10 +327,11 @@ export component MediaPage inherits Rectangle {
             y: 0;
             width: parent.width;
             height: root.tabs-h;
-            dab-active: DabState.view-dab;
+            view: DabState.view;
             focus-base: 0;
             phone => { DabState.phone(); }
             dab => { DabState.resume(); }
+            fm => { DabState.resume-fm(); }
         }
         if !root.dab-shown: PhonePlayer {
             y: root.tabs-h;

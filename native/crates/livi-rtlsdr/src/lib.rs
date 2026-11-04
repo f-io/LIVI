@@ -173,7 +173,7 @@ impl RtlSdr {
         self.regs.demod_write(1, 0x1b, (v & 0xff) as u16, 1)
     }
 
-    fn set_sample_rate(&mut self, rate: u32) -> Result<(), Error> {
+    pub fn set_sample_rate(&mut self, rate: u32) -> Result<(), Error> {
         let xtal = self.xtal() as u64;
         let ratio = ((xtal << 22) / rate as u64) as u32 & 0x0fff_fffc;
         let real_ratio = ratio | ((ratio & 0x0800_0000) << 1);
@@ -192,6 +192,10 @@ impl RtlSdr {
         self.write_ppm()?;
         self.regs.demod_write(1, 0x01, 0x14, 1)?;
         self.regs.demod_write(1, 0x01, 0x10, 1)
+    }
+
+    pub fn check(&self) -> Result<(), Error> {
+        self.regs.demod_read(0x0a, 0x01).map(|_| ())
     }
 
     pub fn set_center_freq(&mut self, freq: u32) -> Result<(), Error> {

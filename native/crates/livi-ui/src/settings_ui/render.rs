@@ -135,6 +135,8 @@ pub(super) fn custom_name(page: CustomPage) -> &'static str {
         CustomPage::DabReceiver => "DAB receiver",
         CustomPage::DabStations => "DAB stations",
         CustomPage::DashboardLayouts => "Dashboard layouts",
+        CustomPage::FmReceiver => "FM receiver",
+        CustomPage::FmStations => "FM stations",
         CustomPage::GpsHwInfo => "GPS hardware",
         CustomPage::GpsInfo => "GPS info",
         CustomPage::IconUploader => "UI icon",

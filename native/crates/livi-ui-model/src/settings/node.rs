@@ -109,6 +109,8 @@ pub enum CustomPage {
     DabReceiver,
     DabStations,
     DashboardLayouts,
+    FmReceiver,
+    FmStations,
     GpsHwInfo,
     GpsInfo,
     IconUploader,

@@ -58,6 +58,7 @@ livi-core-proto = { path = "crates/livi-core-proto" }
 livi-cp = { path = "crates/livi-cp" }
 livi-crypto = { path = "crates/livi-crypto" }
 livi-dab = { path = "crates/livi-dab" }
+livi-fm = { path = "crates/livi-fm" }
 livi-gst-host = { path = "crates/livi-gst-host" }
 livi-helper = { path = "crates/livi-helper" }
 livi-hfp = { path = "crates/livi-hfp" }
@@ -81,8 +82,11 @@ livi-web = { path = "crates/livi-web" }
 livi-wifi = { path = "crates/livi-wifi" }
 livi-wifid = { path = "crates/livi-wifid" }
 
-# The DAB+ receiver demodulates in real time, also in debug builds.
+# The DAB+ and FM receivers demodulate in real time, also in debug builds.
 [profile.dev.package.livi-dab]
+opt-level = 3
+
+[profile.dev.package.livi-fm]
 opt-level = 3
 
 [profile.dev.package.rustfft]

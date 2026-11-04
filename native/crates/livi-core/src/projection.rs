@@ -465,7 +465,7 @@ pub struct Projection {
     themes: PathBuf,
     theme_asked: String,
     theme_ready: (mpsc::UnboundedSender<Theme>, mpsc::UnboundedReceiver<Theme>),
-    dab: Option<mpsc::UnboundedSender<crate::dab::DabAsk>>,
+    radio: Option<mpsc::UnboundedSender<crate::radio::RadioAsk>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -503,8 +503,8 @@ pub struct UiAsks {
     pub spectrum: Arc<spectrum::Feed>,
     pub goodbye: mpsc::UnboundedReceiver<oneshot::Sender<()>>,
     pub activity: watch::Sender<Activity>,
-    pub dab: Option<crate::dab::DabAsks>,
-    pub dab_from_phone: mpsc::UnboundedSender<crate::dab::DabAsk>,
+    pub radio: Option<crate::radio::RadioAsks>,
+    pub radio_from_phone: mpsc::UnboundedSender<crate::radio::RadioAsk>,
     pub input_from_compositor: mpsc::UnboundedSender<Input>,
     pub camera_found: mpsc::UnboundedSender<UiCommand>,
 }
@@ -519,7 +519,7 @@ pub struct UiSenders {
     pub goodbye: mpsc::UnboundedSender<oneshot::Sender<()>>,
     pub update: mpsc::UnboundedSender<UpdateAsk>,
     pub activity: watch::Receiver<Activity>,
-    pub dab: mpsc::UnboundedSender<crate::dab::DabAsk>,
+    pub radio: mpsc::UnboundedSender<crate::radio::RadioAsk>,
 }
 
 pub struct DongleAsks {
@@ -538,7 +538,7 @@ pub fn ui_channels(wants: PerScreen<Front>) -> (UiSenders, UiAsks, DongleAsks, U
     let (goodbye_tx, goodbye_rx) = mpsc::unbounded_channel();
     let (update_tx, update_rx) = mpsc::unbounded_channel();
     let (activity_tx, activity_rx) = watch::channel(Activity::default());
-    let (dab_tx, dab_rx) = mpsc::unbounded_channel();
+    let (radio_tx, radio_rx) = mpsc::unbounded_channel();
     let feed = spectrum::Feed::new();
     (
         UiSenders {
@@ -551,7 +551,7 @@ pub fn ui_channels(wants: PerScreen<Front>) -> (UiSenders, UiAsks, DongleAsks, U
             goodbye: goodbye_tx,
             update: update_tx,
             activity: activity_rx,
-            dab: dab_tx.clone(),
+            radio: radio_tx.clone(),
         },
         UiAsks {
             wants: wants_rx,
@@ -560,8 +560,8 @@ pub fn ui_channels(wants: PerScreen<Front>) -> (UiSenders, UiAsks, DongleAsks, U
             spectrum: feed,
             goodbye: goodbye_rx,
             activity: activity_tx,
-            dab: Some(dab_rx),
-            dab_from_phone: dab_tx,
+            radio: Some(radio_rx),
+            radio_from_phone: radio_tx,
             input_from_compositor: input_tx,
             camera_found: commands_tx,
         },
@@ -639,7 +639,7 @@ impl Projection {
             themes,
             theme_asked: String::new(),
             theme_ready: mpsc::unbounded_channel(),
-            dab: None,
+            radio: None,
             hub,
         }
     }
@@ -660,7 +660,7 @@ impl Projection {
         let mut themes = std::mem::replace(&mut self.theme_ready.1, mpsc::unbounded_channel().1);
         self.follow_theme(&self.config_seen.clone());
         self.activity = Some(asks.activity);
-        self.dab = Some(asks.dab_from_phone);
+        self.radio = Some(asks.radio_from_phone);
         let mut keep = tokio::time::interval(hands_free::KEEP_EVERY);
         keep.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {

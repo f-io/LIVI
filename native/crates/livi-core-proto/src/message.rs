@@ -135,6 +135,26 @@ pub enum Action {
         service_id: u32,
         by: i32,
     },
+    FmScan,
+    FmPlay {
+        khz: u32,
+    },
+    FmSeek {
+        up: bool,
+    },
+    FmResume,
+    FmFavorite {
+        khz: u32,
+        favorite: bool,
+    },
+    FmHide {
+        khz: u32,
+        hidden: bool,
+    },
+    FmMove {
+        khz: u32,
+        by: i32,
+    },
     SetDongleRadio {
         radio: Radio,
         on: bool,

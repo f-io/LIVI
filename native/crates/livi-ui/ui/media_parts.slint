@@ -5,10 +5,14 @@
 import { Theme } from "theme.slint";
 import { Focus } from "focus.slint";
 
+export enum MediaSource { phone, dab, fm }
+
 export global MediaText {
     in property <string> phone-source: "Phone";
     in property <string> dab-source: "DAB+";
+    in property <string> fm-source: "FM";
     in property <string> no-stations: "No stations yet";
+    in property <string> no-fm-stations: "No stations yet";
     in property <string> no-artwork: "No Artwork";
 }
 
@@ -146,11 +150,21 @@ component SourceTab inherits Rectangle {
     }
 }
 
+component TabDivider inherits Rectangle {
+    width: 1px;
+    VerticalLayout {
+        padding-top: 6px;
+        padding-bottom: 6px;
+        Rectangle { background: Theme.divider; }
+    }
+}
+
 export component SourceTabs inherits Rectangle {
-    in property <bool> dab-active;
+    in property <MediaSource> view;
     in property <int> focus-base;
     callback phone();
     callback dab();
+    callback fm();
     height: pill.height + 8px;
     pill := Rectangle {
         y: 8px;
@@ -166,23 +180,23 @@ export component SourceTabs inherits Rectangle {
             spacing: 8px;
             SourceTab {
                 label: MediaText.phone-source;
-                on: !root.dab-active;
+                on: root.view == MediaSource.phone;
                 focused: Focus.main(root.focus-base);
                 picked => { root.phone(); }
             }
-            Rectangle {
-                width: 1px;
-                VerticalLayout {
-                    padding-top: 6px;
-                    padding-bottom: 6px;
-                    Rectangle { background: Theme.divider; }
-                }
-            }
+            TabDivider { }
             SourceTab {
                 label: MediaText.dab-source;
-                on: root.dab-active;
+                on: root.view == MediaSource.dab;
                 focused: Focus.main(root.focus-base + 1);
                 picked => { root.dab(); }
+            }
+            TabDivider { }
+            SourceTab {
+                label: MediaText.fm-source;
+                on: root.view == MediaSource.fm;
+                focused: Focus.main(root.focus-base + 2);
+                picked => { root.fm(); }
             }
         }
     }

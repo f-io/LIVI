@@ -6,11 +6,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use livi_core_proto::state::{DabStation, State};
+use livi_core_proto::state::{DabStation, FmStation, State};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use tokio::sync::watch;
 
+use crate::radio::Band;
 use crate::server::Core;
 use crate::status_file::{self, Activity};
 use crate::telemetry::CLIMATE;
@@ -72,6 +73,8 @@ const SDR: Kind = Kind {
 pub struct Sdr {
     pub stations: Vec<DabStation>,
     pub last_station: Option<u32>,
+    pub fm_stations: Vec<FmStation>,
+    pub last_fm: Option<u32>,
 }
 
 pub fn load_sdr(user_data: &Path) -> Sdr {
@@ -249,15 +252,22 @@ async fn status(core: Arc<Core>, mut activity: watch::Receiver<Activity>, mut wr
     let mut state = core.hub.watch();
     let mut path = core.ui_path.subscribe();
     loop {
-        let (active, dab) = {
+        let (active, radio) = {
             let s = state.borrow_and_update();
-            (s.sessions.active, s.dab.active)
+            let radio = if s.dab.active {
+                Some(Band::Dab)
+            } else if s.fm.active {
+                Some(Band::Fm)
+            } else {
+                None
+            };
+            (s.sessions.active, radio)
         };
         let payload = status_file::payload(
             &path.borrow_and_update(),
             active,
             *activity.borrow_and_update(),
-            dab,
+            radio,
         );
         writer.offer(Some(payload)).await;
         tokio::select! {
@@ -306,7 +316,7 @@ pub struct Saved {
     pub gps: Option<Map<String, Value>>,
     pub vehicle: Option<Map<String, Value>>,
     pub ui_path: Option<String>,
-    pub dab: bool,
+    pub radio: Option<Band>,
 }
 
 fn payload_of(user_data: &Path, kind: &Kind) -> Option<Value> {
@@ -336,7 +346,7 @@ pub fn saved(user_data: &Path) -> Saved {
             .as_str()
             .filter(|p| !p.is_empty())
             .map(str::to_string),
-        dab: status["media"]["source"].as_str() == Some("dabplus"),
+        radio: status_file::band(status["media"]["source"].as_str().unwrap_or("")),
     }
 }
 
@@ -365,6 +375,7 @@ mod tests {
             update: Default::default(),
             cluster: Default::default(),
             dab: Default::default(),
+            fm: Default::default(),
             cameras: Vec::new(),
             mfi: Default::default(),
             config: defaults(),
@@ -484,7 +495,7 @@ mod tests {
         );
         let back = saved(&dir.0);
         assert_eq!(back.ui_path.as_deref(), Some("/media/dabplus"));
-        assert!(back.dab);
+        assert_eq!(back.radio, Some(Band::Dab));
         let old = json!({ "ui": { "path": "/media" } });
         write(
             &dir.0.join(DIR).join("status.json"),
@@ -573,12 +584,21 @@ mod tests {
                 logo: None,
             }],
             last_station: Some(0xd210),
+            fm_stations: vec![FmStation {
+                khz: 98_100,
+                name: "NDR 2".into(),
+                pi: Some(0xd3c2),
+                favorite: true,
+                hidden: false,
+            }],
+            last_fm: Some(98_100),
         };
         save_sdr(&dir.0, &sdr);
         let file = read(&dir, "sdr.json");
         assert_eq!(file["version"], 1);
         assert_eq!(file["payload"]["lastStation"], 0xd210);
         assert_eq!(file["payload"]["stations"][0]["channel"], "5C");
+        assert_eq!(file["payload"]["fmStations"][0]["khz"], 98_100);
         assert_eq!(load_sdr(&dir.0), sdr);
 
         std::fs::write(dir.0.join(DIR).join("sdr.json"), "{ broken").unwrap();

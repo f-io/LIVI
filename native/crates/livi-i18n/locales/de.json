@@ -316,7 +316,11 @@
     "dabGain": "Verstärkung",
     "moveUp": "Nach oben",
     "moveDown": "Nach unten",
-    "dabPpm": "Frequenzkorrektur"
+    "dabPpm": "Frequenzkorrektur",
+    "fm": "FM",
+    "fmDeemphasis": "Deemphasis",
+    "fmDeemphasis50": "50 µs (Europa)",
+    "fmDeemphasis75": "75 µs (Amerika, Korea)"
   },
   "softwareUpdate": {
     "channelNightly": "Nightly",
@@ -346,6 +350,8 @@
     "source": "Quelle",
     "phoneSource": "Telefon",
     "dabSource": "DAB+",
+    "fmSource": "FM",
+    "noFmStations": "Noch keine Sender, Suche unter Einstellungen > Allgemein > FM",
     "stationList": "Senderliste",
     "favorite": "Favorit",
     "noStations": "Noch keine Sender, Suche unter Einstellungen > Allgemein > DAB+",

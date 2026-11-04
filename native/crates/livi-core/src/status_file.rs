@@ -6,6 +6,8 @@ use livi_core_proto::state::Protocol;
 use livi_cp::stack::AudioKind;
 use serde::Serialize;
 
+use crate::radio::Band;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Activity {
     pub media: bool,
@@ -82,7 +84,18 @@ pub struct Payload {
     media: Media,
 }
 
-pub fn payload(path: &str, active: Option<Protocol>, a: Activity, dab: bool) -> Payload {
+const DAB_SOURCE: &str = "dabplus";
+const FM_SOURCE: &str = "fm";
+
+pub fn band(source: &str) -> Option<Band> {
+    match source {
+        DAB_SOURCE => Some(Band::Dab),
+        FM_SOURCE => Some(Band::Fm),
+        _ => None,
+    }
+}
+
+pub fn payload(path: &str, active: Option<Protocol>, a: Activity, radio: Option<Band>) -> Payload {
     let (protocol, phone_type) = match active {
         Some(Protocol::Carplay) => (Some("cp"), Some("CarPlay")),
         Some(Protocol::Androidauto) => (Some("aa"), Some("AndroidAuto")),
@@ -110,7 +123,11 @@ pub fn payload(path: &str, active: Option<Protocol>, a: Activity, dab: bool) -> 
             announcing: a.nav_announcing,
         },
         media: Media {
-            source: if dab { "dabplus" } else { "phone" },
+            source: match radio {
+                Some(Band::Dab) => DAB_SOURCE,
+                Some(Band::Fm) => FM_SOURCE,
+                None => "phone",
+            },
         },
     }
 }
@@ -126,9 +143,13 @@ mod tests {
         let mut a = Activity::default();
         a.stream(AudioKind::Alert, true);
         a.stream(AudioKind::Call, true);
-        let text =
-            serde_json::to_string_pretty(&payload("/media", Some(Protocol::Carplay), a, true))
-                .unwrap();
+        let text = serde_json::to_string_pretty(&payload(
+            "/media",
+            Some(Protocol::Carplay),
+            a,
+            Some(Band::Dab),
+        ))
+        .unwrap();
         let v: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(
             v,
@@ -167,10 +188,23 @@ mod tests {
 
     #[test]
     fn android_auto_reads_as_aa() {
-        let aa = payload("", Some(Protocol::Androidauto), Activity::default(), false);
+        let aa = payload("", Some(Protocol::Androidauto), Activity::default(), None);
         assert_eq!(
             (aa.projection.active, aa.projection.phone_type),
             (Some("aa"), Some("AndroidAuto"))
         );
+    }
+
+    #[test]
+    fn the_radio_band_is_the_media_source() {
+        for b in [Band::Dab, Band::Fm] {
+            let p = payload("", None, Activity::default(), Some(b));
+            assert_eq!(band(p.media.source), Some(b));
+        }
+        assert_eq!(
+            payload("", None, Activity::default(), None).media.source,
+            "phone"
+        );
+        assert_eq!(band("phone"), None);
     }
 }

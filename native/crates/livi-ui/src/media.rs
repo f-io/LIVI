@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use base64::Engine;
 use livi_core_proto::state::{NowPlaying, Protocol, Sessions};
-use livi_ui_model::media::{Dab, dab};
+use livi_ui_model::media::{Radio, dab, fm};
 use serde_json::Value;
 use slint::{Rgba8Pixel, SharedPixelBuffer};
 
@@ -27,17 +27,24 @@ pub struct MediaView {
     pub session: String,
 }
 
-pub struct DabView {
-    pub dab: Dab,
+#[derive(Clone)]
+pub struct RadioView {
+    pub radio: Radio,
     pub logos: Vec<Option<Pixels>>,
     pub tuned_logo: Option<Pixels>,
+}
+
+#[derive(Clone)]
+pub struct Radios {
+    pub dab: RadioView,
+    pub fm: RadioView,
 }
 
 #[derive(Default)]
 pub struct MediaReader {
     artwork: Option<String>,
     logos: HashMap<String, Option<Pixels>>,
-    last_dab: Option<Dab>,
+    last_radio: Option<(Radio, Radio)>,
 }
 
 fn text_or_dash(v: Option<String>) -> String {
@@ -71,12 +78,19 @@ impl MediaReader {
         }
     }
 
-    pub fn read_dab(&mut self, state: &Value) -> Option<DabView> {
-        let next = dab(state);
-        if self.last_dab.as_ref() == Some(&next) {
+    pub fn read_radio(&mut self, state: &Value) -> Option<Radios> {
+        let next = (dab(state), fm(state));
+        if self.last_radio.as_ref() == Some(&next) {
             return None;
         }
-        self.last_dab = Some(next.clone());
+        self.last_radio = Some(next.clone());
+        Some(Radios {
+            dab: self.view(next.0),
+            fm: self.view(next.1),
+        })
+    }
+
+    fn view(&mut self, radio: Radio) -> RadioView {
         let mut logo = |b64: &Option<String>| {
             b64.as_ref().and_then(|s| {
                 self.logos
@@ -85,13 +99,13 @@ impl MediaReader {
                     .clone()
             })
         };
-        let logos = next.stations.iter().map(|s| logo(&s.logo)).collect();
-        let tuned_logo = logo(&next.tuned_logo);
-        Some(DabView {
-            dab: next,
+        let logos = radio.stations.iter().map(|s| logo(&s.logo)).collect();
+        let tuned_logo = logo(&radio.tuned_logo);
+        RadioView {
+            radio,
             logos,
             tuned_logo,
-        })
+        }
     }
 }
 

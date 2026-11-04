@@ -9,20 +9,20 @@ use livi_core_proto::state::{Dab, DabStation};
 use livi_cp::manager::{CpCmd, CpHandle};
 use livi_cp::vehicle_state::{Radio, RadioCommand, RadioStation};
 
-use crate::dab::DabAsk;
 use crate::hub::Hub;
+use crate::radio::{Band, RadioAsk, Station};
 
 pub fn station_id(service: u32) -> String {
     format!("{service:x}")
 }
 
-pub fn ask(command: RadioCommand) -> Option<DabAsk> {
+pub fn ask(command: RadioCommand) -> Option<RadioAsk> {
     Some(match command {
-        RadioCommand::Tune(id) => DabAsk::Play(u32::from_str_radix(&id, 16).ok()?),
-        RadioCommand::Play => DabAsk::Resume,
-        RadioCommand::Pause => DabAsk::Pause,
-        RadioCommand::Next => DabAsk::Step(1),
-        RadioCommand::Previous => DabAsk::Step(-1),
+        RadioCommand::Tune(id) => RadioAsk::Play(Station::dab(u32::from_str_radix(&id, 16).ok()?)),
+        RadioCommand::Play => RadioAsk::Resume(Some(Band::Dab)),
+        RadioCommand::Pause => RadioAsk::Pause,
+        RadioCommand::Next => RadioAsk::Step(1),
+        RadioCommand::Previous => RadioAsk::Step(-1),
     })
 }
 
@@ -150,12 +150,15 @@ mod tests {
     fn radio_app_commands_become_dab_asks() {
         assert_eq!(
             ask(RadioCommand::Tune("d220".into())),
-            Some(DabAsk::Play(0xd220))
+            Some(RadioAsk::Play(Station::dab(0xd220)))
         );
         assert_eq!(ask(RadioCommand::Tune("nope".into())), None);
-        assert_eq!(ask(RadioCommand::Play), Some(DabAsk::Resume));
-        assert_eq!(ask(RadioCommand::Pause), Some(DabAsk::Pause));
-        assert_eq!(ask(RadioCommand::Next), Some(DabAsk::Step(1)));
-        assert_eq!(ask(RadioCommand::Previous), Some(DabAsk::Step(-1)));
+        assert_eq!(
+            ask(RadioCommand::Play),
+            Some(RadioAsk::Resume(Some(Band::Dab)))
+        );
+        assert_eq!(ask(RadioCommand::Pause), Some(RadioAsk::Pause));
+        assert_eq!(ask(RadioCommand::Next), Some(RadioAsk::Step(1)));
+        assert_eq!(ask(RadioCommand::Previous), Some(RadioAsk::Step(-1)));
     }
 }
