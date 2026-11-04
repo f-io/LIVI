@@ -19,6 +19,7 @@
   while [ ! -e "$A/enable" ] && [ $i -lt 50 ]; do i=$((i + 1)); sleep 0.1; done
   [ -e "$A/enable" ] || exit 0
 
+  vendor=$(cat "$A/functions" 2>/dev/null)
   echo 0 > "$A/enable"
 
   printf f-io.dev > "$A/iManufacturer"
@@ -30,6 +31,13 @@
   echo 1 > "$A/enable"
   i=0
   until [ -e /sys/class/net/ncm0 ] || [ $i -ge 20 ]; do i=$((i + 1)); sleep 0.1; done
+  # Without NCM the gadget would have no configuration left and the host could not even
+  # enumerate it, so the vendor's functions go back under the LIVI Link name.
+  if [ ! -e /sys/class/net/ncm0 ] && [ -n "$vendor" ]; then
+    echo 0 > "$A/enable"
+    echo "$vendor" > "$A/functions"
+    echo 1 > "$A/enable"
+  fi
 
   # A kernel without NCM leaves no ncm0. The vendor then opens its own access point, which it only
   # does while no udhcpd runs.

@@ -122,4 +122,4 @@ for tag in "${tags[@]}"; do
 done
 
 mkdir -p "$DEST"
-page "LIVI Link firmware" "Firmware and the provisioning tool for the LIVI Link, from the latest release and the nightly. Setup and updating are described in <a href=\"https://github.com/$REPO/blob/main/LIVI-LINK.md\">LIVI-LINK.md</a>." "<table>$channels</table>" > "$DEST/index.html"
+page "LIVI Link firmware" "Firmware and the provisioning tool for the <a href=\"https://github.com/$REPO/blob/main/LIVI-LINK.md\">LIVI-LINK</a>." "<table>$channels</table>" > "$DEST/index.html"

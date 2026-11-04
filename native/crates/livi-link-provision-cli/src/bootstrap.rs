@@ -72,8 +72,6 @@ pub fn stock_dongle_once() -> bool {
     })
 }
 
-pub const VENDOR_AP_HOSTS: [&str; 2] = ["192.168.50.2", "192.168.43.1"];
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkOnUsb {
     Ncm,

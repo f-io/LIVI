@@ -9,6 +9,7 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 pub const DEFAULT_HOST: &str = "10.10.10.1";
+pub const VENDOR_AP_HOSTS: [&str; 2] = ["192.168.50.2", "192.168.43.1"];
 pub const TELNET_PORT: u16 = 2323;
 pub const LIVI_TELNET_PORT: u16 = 23;
 pub const PUSH_PORT: u16 = 5610;
@@ -239,6 +240,12 @@ fn sysfs_ifindex(iface: &str) -> Option<u32> {
         .trim()
         .parse()
         .ok()
+}
+
+pub fn on_vendor_ap() -> Option<&'static str> {
+    VENDOR_AP_HOSTS
+        .into_iter()
+        .find(|host| Shell::new(host).port_open(TELNET_PORT))
 }
 
 fn md5_in(out: &str) -> Option<String> {

@@ -56,5 +56,10 @@ pub fn detect() -> Detected {
             host: shell::DEFAULT_HOST.to_string(),
         };
     }
+    if let Some(host) = shell::on_vendor_ap() {
+        return Detected::Imx6ul {
+            host: host.to_string(),
+        };
+    }
     Detected::Nothing
 }

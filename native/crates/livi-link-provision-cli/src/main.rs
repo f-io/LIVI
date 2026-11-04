@@ -17,7 +17,13 @@ use livi_link_provision::dongle::probe::{Family, Probe};
 use livi_link_provision::dongle::rescue;
 
 fn pick_host() -> String {
-    std::env::var("LIVI_LINK_HOST").unwrap_or_else(|_| DEFAULT_HOST.to_string())
+    if let Ok(host) = std::env::var("LIVI_LINK_HOST") {
+        return host;
+    }
+    if Shell::new(DEFAULT_HOST).reachable() {
+        return DEFAULT_HOST.to_string();
+    }
+    shell::on_vendor_ap().unwrap_or(DEFAULT_HOST).to_string()
 }
 
 fn main() -> std::process::ExitCode {
@@ -619,23 +625,48 @@ fn wait_for_livi_link(host: &str) -> Result<link::Status, String> {
     Err("the dongle did not come back as LIVI Link within four minutes".into())
 }
 
+/// Rounds of the wait for the shell with nothing on USB, before the dongle's Wi-Fi is asked for.
+const USB_SILENT: u32 = 15;
+
 fn wait_for_shell(sh: &Shell) -> Result<(), String> {
     let mut asked = false;
+    let mut unseen = 0;
     for _ in 0..60 {
         if sh.port_open(shell::TELNET_PORT) {
             println!("== shell is up");
             return Ok(());
         }
+        if let Some(host) = shell::on_vendor_ap() {
+            sh.move_to(host);
+            println!("== shell is up at {host}");
+            return Ok(());
+        }
         match bootstrap::livi_link_on_usb() {
-            Some(bootstrap::LinkOnUsb::NoNcm) => return shell_over_wifi(sh),
+            Some(bootstrap::LinkOnUsb::NoNcm) => {
+                return shell_over_wifi(
+                    sh,
+                    "the dongle's kernel has no network over USB (no NCM), its Wi-Fi is the way in",
+                );
+            }
             Some(bootstrap::LinkOnUsb::Ncm) => {
+                unseen = 0;
                 if let Some(host) = link_local_shell(&mut asked) {
                     sh.move_to(&host);
                     println!("== shell is up on {host}");
                     return Ok(());
                 }
             }
-            None => {}
+            None if bootstrap::stock_dongle_once() => unseen = 0,
+            None => {
+                unseen += 1;
+                if unseen == USB_SILENT {
+                    return shell_over_wifi(
+                        sh,
+                        "the dongle does not show up on USB, its kernel likely offers nothing \
+                         there, its Wi-Fi is the way in",
+                    );
+                }
+            }
         }
         std::thread::sleep(Duration::from_secs(2));
     }
@@ -668,14 +699,11 @@ fn link_local_shell(asked: &mut bool) -> Option<String> {
         .then_some(host)
 }
 
-fn shell_over_wifi(sh: &Shell) -> Result<(), String> {
-    println!("== the dongle's kernel has no network over USB (no NCM), its Wi-Fi is the way in");
+fn shell_over_wifi(sh: &Shell, why: &str) -> Result<(), String> {
+    println!("== {why}");
     ask("join the dongle's own Wi-Fi from this computer, then press enter")?;
     for _ in 0..30 {
-        let answering = bootstrap::VENDOR_AP_HOSTS
-            .into_iter()
-            .find(|host| Shell::new(host).port_open(shell::TELNET_PORT));
-        if let Some(host) = answering {
+        if let Some(host) = shell::on_vendor_ap() {
             sh.move_to(host);
             println!("== shell is up at {host}");
             return Ok(());
