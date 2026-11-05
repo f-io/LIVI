@@ -46,7 +46,15 @@ i-slint-backend-android-activity = { version = "=1.18.1", default-features = fal
 
 [target.'cfg(target_os = "macos")'.dependencies]
 livi-video-view.workspace = true
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSCursor"] }
+objc2 = "0.6.5"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "NSCursor",
+  "NSResponder",
+  "NSView",
+  "NSWindow",
+] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSAppleEventManager"] }
 
 [build-dependencies]
 slint-build = "1.18.1"

@@ -6,6 +6,8 @@ pub mod clock;
 #[cfg(not(target_os = "android"))]
 mod cursor_ui;
 mod dashboard_ui;
+#[cfg(target_os = "macos")]
+mod dock_ui;
 mod files_ui;
 mod follow;
 mod fonts;
@@ -530,6 +532,8 @@ pub fn run(
     {
         ui.window().set_size(slint::LogicalSize::new(w, h));
     }
+    #[cfg(target_os = "macos")]
+    dock_ui::keep(&ui);
     ui.show()?;
     reported(&ui, &client, ui.get_page());
     if let Ok(page) = std::env::var("LIVI_UI_PAGE") {
