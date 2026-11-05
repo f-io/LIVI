@@ -52,6 +52,7 @@ zbus = { workspace = true, features = ["tokio"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 livi-aaudio.workspace = true
+livi-net.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

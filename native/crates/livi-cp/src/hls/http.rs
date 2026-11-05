@@ -6,11 +6,6 @@ use super::*;
 use openssl::x509::X509;
 use openssl::x509::store::X509StoreBuilderRef;
 
-const ANDROID_ROOTS: [&str; 2] = [
-    "/apex/com.android.conscrypt/cacerts",
-    "/system/etc/security/cacerts",
-];
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Target<'a> {
     pub tls: bool,
@@ -94,14 +89,14 @@ pub(super) fn system_trust() -> io::Result<SslConnector> {
 }
 
 fn android_roots(store: &mut X509StoreBuilderRef) -> io::Result<()> {
-    let dir = ANDROID_ROOTS
-        .iter()
-        .find_map(|dir| std::fs::read_dir(dir).ok())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no android ca store"))?;
-    for entry in dir.flatten() {
-        let Ok(pem) = std::fs::read(entry.path()) else {
-            continue;
-        };
+    let roots = livi_net::ca::android_roots();
+    if roots.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "no android ca store",
+        ));
+    }
+    for pem in roots {
         if let Ok(cert) = X509::from_pem(&pem) {
             let _ = store.add_cert(cert);
         }

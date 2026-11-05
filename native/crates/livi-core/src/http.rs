@@ -15,20 +15,15 @@ mod android {
 
     use reqwest::Certificate;
 
-    const SYSTEM_ROOTS: &str = "/apex/com.android.conscrypt/cacerts";
-
     pub fn roots() -> &'static [Certificate] {
         static ROOTS: OnceLock<Vec<Certificate>> = OnceLock::new();
         ROOTS.get_or_init(|| {
-            let roots: Vec<Certificate> = std::fs::read_dir(SYSTEM_ROOTS)
-                .into_iter()
-                .flatten()
-                .flatten()
-                .filter_map(|entry| std::fs::read(entry.path()).ok())
-                .filter_map(|pem| Certificate::from_pem(&pem).ok())
+            let roots: Vec<Certificate> = livi_net::ca::android_roots()
+                .iter()
+                .filter_map(|pem| Certificate::from_pem(pem).ok())
                 .collect();
             if roots.is_empty() {
-                eprintln!("[http] no root certificates in {SYSTEM_ROOTS}");
+                eprintln!("[http] no root certificates on this device");
             }
             roots
         })
