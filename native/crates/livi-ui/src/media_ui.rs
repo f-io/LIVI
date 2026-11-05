@@ -16,6 +16,7 @@ use crate::{AppWindow, DabState, MediaSource, MediaText, Page, Press, StationDat
 
 const UI_INTERVAL: Duration = Duration::from_millis(120);
 const FLASH: Duration = Duration::from_millis(140);
+const PICK_HOLD: Duration = Duration::from_millis(6000);
 
 #[derive(Default)]
 struct Live {
@@ -27,6 +28,7 @@ struct Live {
     radio_playing: bool,
     radio_guess: Guess,
     tuned: Option<(u32, bool)>,
+    picked: Option<(u32, Instant)>,
 }
 
 thread_local! {
@@ -47,7 +49,14 @@ fn tick(ui: &AppWindow) {
         ui.set_playing(shown.playing);
         ui.global::<DabState>()
             .set_playing(l.radio_guess.shown(l.radio_playing, now));
-        l.playback.running() || l.playback.guessing(now) || l.radio_guess.pending(now)
+        if l.picked.is_some_and(|(_, until)| now >= until) {
+            l.picked = None;
+            ui.global::<DabState>().set_picked(-1);
+        }
+        l.playback.running()
+            || l.playback.guessing(now)
+            || l.radio_guess.pending(now)
+            || l.picked.is_some()
     });
     let wanted = keep && (ui.get_page() == Page::Media || ui.get_video_shown());
     TICK.with(|t| match (wanted, t.running()) {
@@ -204,6 +213,12 @@ fn render(ui: &AppWindow) {
             .tuned
             .filter(|_| d.title.is_some())
             .map(|id| (id, d.tuned_favorite));
+        if l.picked
+            .is_some_and(|(id, _)| d.playing && l.tuned.is_some_and(|(t, _)| t == id))
+        {
+            l.picked = None;
+            s.set_picked(-1);
+        }
     });
 }
 
@@ -344,7 +359,19 @@ pub fn wire(ui: &AppWindow, client: &Client) {
         move |id| {
             let Some(ui) = weak.upgrade() else { return };
             let id = id as u32;
-            c.act(match ui.global::<DabState>().get_view() {
+            let d = ui.global::<DabState>();
+            let (picked, tuned) =
+                LIVE.with_borrow(|l| (l.picked.map(|(p, _)| p), l.tuned.map(|(t, _)| t)));
+            if picked == Some(id) || (picked.is_none() && tuned == Some(id) && d.get_playing()) {
+                LIVE.with_borrow_mut(|l| l.picked = None);
+                d.set_picked(-1);
+                pressed_feedback(&ui, Pressed::Play);
+                return c.act(Action::DabPause);
+            }
+            LIVE.with_borrow_mut(|l| l.picked = Some((id, Instant::now() + PICK_HOLD)));
+            d.set_picked(id as i32);
+            tick(&ui);
+            c.act(match d.get_view() {
                 MediaSource::Fm => Action::FmPlay { khz: id },
                 _ => Action::DabPlay { service_id: id },
             })
@@ -365,12 +392,6 @@ pub fn wire(ui: &AppWindow, client: &Client) {
                     favorite,
                 },
             })
-        }
-    });
-    d.on_tune({
-        let c = client.clone();
-        move |by| {
-            c.act(Action::FmSeek { up: by > 0 });
         }
     });
 }

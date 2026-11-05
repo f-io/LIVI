@@ -4,8 +4,8 @@
 
 import { Theme } from "theme.slint";
 import { Focus } from "focus.slint";
-import { MediaSource, MediaText, Press, RoundButton, Spectrum, SourceTabs } from "media_parts.slint";
-import { DabPage, DabState, StationData } from "dab.slint";
+import { MediaGeometry, MediaSource, MediaText, Press, Spectrum, Transport } from "media_parts.slint";
+import { DabPage, DabState, MediaTabs, StationData } from "dab.slint";
 
 export { MediaSource, MediaText, Press, DabState, StationData }
 
@@ -114,6 +114,7 @@ export component Progress inherits Rectangle {
 
 component PhonePlayer inherits Rectangle {
     in property <int> focus-base;
+    in property <length> tabs-h;
     in property <string> track-title;
     in property <string> artist;
     in property <string> album;
@@ -133,90 +134,72 @@ component PhonePlayer inherits Rectangle {
     callback seek(float);
     callback spectrum-changed(bool);
 
-    out property <bool> art-shown: two-col;
-    property <int> off: focus-base + (two-col ? 1 : 0);
+    geo := MediaGeometry {
+        w: root.width / 1px;
+        h: root.height / 1px;
+    }
+
+    out property <bool> art-shown: geo.two-col;
+    property <int> off: focus-base + (geo.two-col ? 1 : 0);
 
     init => { Focus.media-art = root.art-shown; }
     changed art-shown => { Focus.media-art = root.art-shown; }
 
-    pure function clampf(v: float, lo: float, hi: float) -> float { return min(max(v, lo), hi); }
-
-    property <float> w: root.width / 1px;
-    property <float> h: root.height / 1px;
-    property <float> min-side: min(w, h);
-    property <bool> tiny: h > 0 && h <= 320;
-    property <float> text-scale: tiny ? 0.88 : 1;
-
-    property <float> page-pad-raw: round(clampf(min-side * 0.02, 12, 22));
-    property <float> page-pad: tiny ? min(page-pad-raw, 10) : page-pad-raw;
-    property <float> col-gap: round(clampf(w * 0.025, 16, 28));
-    property <float> ctrl-size: round(clampf(h * 0.095, 50, 82));
-    property <float> ctrl-gap: round(clampf(w * 0.03, 16, 32));
-    property <float> progress-h-raw: round(clampf(h * 0.012, 8, 12));
-    property <float> progress-h: max(6, round(progress-h-raw * (tiny ? 0.85 : 1)));
-
-    property <float> title-px: max(12, round(round(clampf(min-side * 0.07, 18, 48)) * text-scale));
-    property <float> artist-px: max(11, round(round(clampf(min-side * 0.034, 14, 24)) * text-scale));
-    property <float> album-px: max(10, round(round(clampf(min-side * 0.028, 13, 20)) * text-scale));
-    property <float> app-px: max(10, round(12 * text-scale));
-
-    property <float> bottom-dock-h: ctrl-size + 16 + (progress-h + 20);
-    property <float> content-h: max(0, h - page-pad * 2 - bottom-dock-h);
-    property <float> inner-w: max(0, w - page-pad * 2);
-    property <bool> two-col: inner-w >= 120 + 140 + col-gap;
-    property <float> art-allowance: max(140, floor(inner-w - 120 - col-gap));
-    property <float> art-px: round(clampf(min(content-h, art-allowance), 140, 520));
-    property <float> text-side-pad: max(6, round(page-pad * 0.75));
-
     VerticalLayout {
-        padding-top: root.page-pad * 1px;
-        padding-left: root.page-pad * 1px;
-        padding-right: root.page-pad * 1px;
-        padding-bottom: (root.tiny ? 2 : root.page-pad) * 1px;
-        spacing: (root.tiny ? 3 : 4) * 1px;
+        padding-top: geo.page-pad * 1px;
+        padding-left: geo.page-pad * 1px;
+        padding-right: geo.page-pad * 1px;
+        padding-bottom: geo.bottom-pad * 1px;
+        spacing: (geo.tiny ? 3 : 4) * 1px;
 
         Rectangle {
             vertical-stretch: 1;
             HorizontalLayout {
-                spacing: root.col-gap * 1px;
+                spacing: geo.col-gap * 1px;
                 VerticalLayout {
-                    alignment: center;
                     horizontal-stretch: 1;
                     min-width: 120px;
-                    padding-left: root.text-side-pad * 1px;
-                    padding-right: root.two-col ? 0 : root.text-side-pad * 1px;
-                    Text {
-                        text: root.track-title;
-                        color: Theme.text;
-                        font-size: root.title-px * 1px;
-                        font-weight: 800;
-                        letter-spacing: 0.2px;
-                        overflow: elide;
-                    }
-                    if root.two-col: Text {
-                        text: root.artist;
-                        color: Theme.text.with-alpha(0.9);
-                        font-size: root.artist-px * 1px;
-                        overflow: elide;
-                    }
-                    if root.two-col: Text {
-                        text: root.album;
-                        color: Theme.text.with-alpha(0.7);
-                        font-size: root.album-px * 1px;
-                        overflow: elide;
-                    }
-                    Text {
-                        text: root.two-col ? root.app : root.artist;
-                        color: Theme.text.with-alpha(0.55);
-                        font-size: root.app-px * 1px;
-                        overflow: elide;
+                    padding-top: geo.art-inset * 1px;
+                    padding-bottom: geo.art-inset * 1px;
+                    Rectangle { height: root.tabs-h; }
+                    VerticalLayout {
+                        alignment: center;
+                        vertical-stretch: 1;
+                        padding-left: geo.text-side-pad * 1px;
+                        padding-right: geo.two-col ? 0 : geo.text-side-pad * 1px;
+                        Text {
+                            text: root.track-title;
+                            color: Theme.text;
+                            font-size: geo.title-px * 1px;
+                            font-weight: 800;
+                            letter-spacing: 0.2px;
+                            overflow: elide;
+                        }
+                        if geo.two-col: Text {
+                            text: root.artist;
+                            color: Theme.text.with-alpha(0.9);
+                            font-size: geo.artist-px * 1px;
+                            overflow: elide;
+                        }
+                        if geo.two-col: Text {
+                            text: root.album;
+                            color: Theme.text.with-alpha(0.7);
+                            font-size: geo.album-px * 1px;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: geo.two-col ? root.app : root.artist;
+                            color: Theme.text.with-alpha(0.55);
+                            font-size: geo.app-px * 1px;
+                            overflow: elide;
+                        }
                     }
                 }
-                if root.two-col: Rectangle {
-                    width: root.art-px * 1px;
+                if geo.two-col: Rectangle {
+                    width: geo.art-px * 1px;
                     Rectangle {
-                        width: root.art-px * 1px;
-                        height: root.art-px * 1px;
+                        width: geo.art-px * 1px;
+                        height: geo.art-px * 1px;
                         y: (parent.height - self.height) / 2;
                         border-radius: 34px;
                         border-width: Focus.main(root.focus-base) ? 3px : 0;
@@ -235,7 +218,7 @@ component PhonePlayer inherits Rectangle {
                             font-size: 12px;
                         }
                         if root.show-spectrum: Spectrum {
-                            x: max(8, round(root.art-px * 0.06)) * 1px;
+                            x: max(8, round(geo.art-px * 0.06)) * 1px;
                             y: self.x + (parent.height - 2 * self.x) * 0.075;
                             width: parent.width - 2 * self.x;
                             height: (parent.height - 2 * self.x) * 0.85;
@@ -253,35 +236,16 @@ component PhonePlayer inherits Rectangle {
         }
 
         VerticalLayout {
-            spacing: (root.tiny ? 3 : 4) * 1px;
-            padding-bottom: root.tiny ? 0 : 8px;
-            HorizontalLayout {
-                alignment: center;
-                spacing: root.ctrl-gap * 1px;
-                RoundButton {
-                    focused: Focus.main(root.off);
-                    flash: Press.prev;
-                    size: root.ctrl-size * 1px;
-                    icon-size: round(root.ctrl-size * 0.46) * 1px;
-                    icon: @image-url("icons/SkipPrevious.svg");
-                    clicked => { root.prev(); }
-                }
-                RoundButton {
-                    focused: Focus.main(root.off + 1);
-                    flash: Press.play;
-                    size: root.ctrl-size * 1px;
-                    icon-size: round(root.ctrl-size * 0.46) * 1px;
-                    icon: root.playing ? @image-url("icons/Pause.svg") : @image-url("icons/PlayArrow.svg");
-                    clicked => { root.play-pause(); }
-                }
-                RoundButton {
-                    focused: Focus.main(root.off + 2);
-                    flash: Press.next;
-                    size: root.ctrl-size * 1px;
-                    icon-size: round(root.ctrl-size * 0.46) * 1px;
-                    icon: @image-url("icons/SkipNext.svg");
-                    clicked => { root.next(); }
-                }
+            spacing: (geo.tiny ? 3 : 4) * 1px;
+            padding-bottom: geo.tiny ? 0 : 8px;
+            Transport {
+                focus-base: root.off;
+                playing: root.playing;
+                size: geo.ctrl-size * 1px;
+                gap: geo.ctrl-gap * 1px;
+                prev => { root.prev(); }
+                play-pause => { root.play-pause(); }
+                next => { root.next(); }
             }
             Progress {
                 focused: root.can-seek && Focus.main(root.off + 3);
@@ -289,7 +253,7 @@ component PhonePlayer inherits Rectangle {
                 can-seek: root.can-seek;
                 total-ms: root.total-ms;
                 elapsed-ms: root.elapsed-ms;
-                bar-height: root.progress-h * 1px;
+                bar-height: geo.progress-h * 1px;
                 seek(f) => { root.seek(f); }
             }
         }
@@ -318,56 +282,52 @@ export component MediaPage inherits Rectangle {
 
     property <int> base: DabState.receiver ? 3 : 0;
     property <bool> dab-shown: DabState.receiver && DabState.view != MediaSource.phone;
-    property <length> tabs-h: DabState.receiver ? 48px : 0;
+    property <length> tabs-h: DabState.receiver ? tabs.height + (geo.tiny ? 4px : 8px) : 0;
+
+    geo := MediaGeometry {
+        w: root.width / 1px;
+        h: root.height / 1px;
+    }
 
     background: Theme.background;
 
-    Rectangle {
-        if DabState.receiver: SourceTabs {
-            y: 0;
-            width: parent.width;
-            height: root.tabs-h;
-            view: DabState.view;
-            focus-base: 0;
-            phone => { DabState.phone(); }
-            dab => { DabState.resume(); }
-            fm => { DabState.resume-fm(); }
-        }
-        if !root.dab-shown: PhonePlayer {
-            y: root.tabs-h;
-            width: parent.width;
-            height: parent.height - root.tabs-h;
-            focus-base: root.base;
-            track-title: root.track-title;
-            artist: root.artist;
-            album: root.album;
-            app: root.app;
-            artwork: root.artwork;
-            has-artwork: root.has-artwork;
-            playing: root.playing;
-            progress: root.progress;
-            elapsed-ms: root.elapsed-ms;
-            total-ms: root.total-ms;
-            can-seek: root.can-seek;
-            show-spectrum <=> root.show-spectrum;
-            bands: root.bands;
-            play-pause => { root.play-pause(); }
-            prev => { root.prev(); }
-            next => { root.next(); }
-            seek(f) => { root.seek(f); }
-            spectrum-changed(on) => { root.spectrum-changed(on); }
-        }
-        if root.dab-shown: DabPage {
-            y: root.tabs-h;
-            width: parent.width;
-            height: parent.height - root.tabs-h;
-            focus-base: root.base;
-            show-spectrum <=> root.show-spectrum;
-            bands: root.bands;
-            spectrum-changed(on) => { root.spectrum-changed(on); }
-            play-pause => { root.play-pause(); }
-            prev => { root.prev(); }
-            next => { root.next(); }
-        }
+    if !root.dab-shown: PhonePlayer {
+        width: parent.width;
+        height: parent.height;
+        focus-base: root.base;
+        tabs-h: root.tabs-h;
+        track-title: root.track-title;
+        artist: root.artist;
+        album: root.album;
+        app: root.app;
+        artwork: root.artwork;
+        has-artwork: root.has-artwork;
+        playing: root.playing;
+        progress: root.progress;
+        elapsed-ms: root.elapsed-ms;
+        total-ms: root.total-ms;
+        can-seek: root.can-seek;
+        show-spectrum <=> root.show-spectrum;
+        bands: root.bands;
+        play-pause => { root.play-pause(); }
+        prev => { root.prev(); }
+        next => { root.next(); }
+        seek(f) => { root.seek(f); }
+        spectrum-changed(on) => { root.spectrum-changed(on); }
+    }
+    if root.dab-shown: DabPage {
+        width: parent.width;
+        height: parent.height;
+        focus-base: root.base;
+        tabs-h: root.tabs-h;
+        show-spectrum <=> root.show-spectrum;
+        bands: root.bands;
+        spectrum-changed(on) => { root.spectrum-changed(on); }
+    }
+    tabs := MediaTabs {
+        visible: DabState.receiver;
+        room: geo.left-w * 1px;
+        x: geo.page-pad * 1px + max(0, geo.left-w * 1px - self.width) / 2;
+        y: (geo.page-pad + geo.art-inset) * 1px;
     }
 }

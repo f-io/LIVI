@@ -48,7 +48,6 @@ enum Target {
     Progress,
     Source(MediaSource),
     Favorite,
-    Tune(i32),
     Station(usize),
 }
 
@@ -123,16 +122,7 @@ fn targets(ui: &AppWindow) -> Vec<Target> {
             }
             if d.get_receiver() && d.get_view() != MediaSource::Phone {
                 if d.get_art_shown() {
-                    out.push(Target::Artwork);
-                }
-                out.extend([
-                    Target::Prev,
-                    Target::PlayPause,
-                    Target::Next,
-                    Target::Favorite,
-                ]);
-                if d.get_tunable() {
-                    out.extend([Target::Tune(-1), Target::Tune(1)]);
+                    out.extend([Target::Artwork, Target::Favorite]);
                 }
                 if d.get_band_shown() {
                     out.extend((0..d.get_stations().row_count()).map(Target::Station));
@@ -280,7 +270,6 @@ fn activate(ui: &AppWindow, target: Target) {
         Target::Source(MediaSource::Dab) => d.invoke_resume(),
         Target::Source(MediaSource::Fm) => d.invoke_resume_fm(),
         Target::Favorite => d.invoke_toggle_favorite(),
-        Target::Tune(by) => d.invoke_tune(by),
         Target::Station(i) => {
             if let Some(st) = d.get_stations().row_data(i) {
                 d.invoke_pick(st.id);
