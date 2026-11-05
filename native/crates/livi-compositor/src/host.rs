@@ -557,30 +557,7 @@ pub fn panel_mm(state: &LiviState, screen_idx: usize) -> Option<(i32, i32)> {
         info.transform,
         CTransform::_90 | CTransform::_270 | CTransform::Flipped90 | CTransform::Flipped270
     );
-    let mm = if turned { (h, w) } else { (w, h) };
-    let screen = state.screens.get(screen_idx)?;
-    let logical = info
-        .logical_size
-        .filter(|&(w, h)| w > 0 && h > 0)
-        .or_else(|| {
-            let (w, h) = info.modes.iter().find(|m| m.current)?.dimensions;
-            let scale = info.scale_factor.max(1);
-            let (w, h) = if turned { (h, w) } else { (w, h) };
-            (w > 0 && h > 0).then_some((w / scale, h / scale))
-        });
-    match logical {
-        Some(output) => Some(share_of_panel(mm, (screen.width, screen.height), output)),
-        None => Some(mm),
-    }
-}
-
-fn share_of_panel(mm: (i32, i32), window: (i32, i32), output: (i32, i32)) -> (i32, i32) {
-    let scale =
-        |mm: i32, px: i32, of: i32| ((mm as i64 * px as i64 + of as i64 / 2) / of as i64) as i32;
-    (
-        scale(mm.0, window.0, output.0),
-        scale(mm.1, window.1, output.1),
-    )
+    Some(if turned { (h, w) } else { (w, h) })
 }
 
 #[cfg(test)]
