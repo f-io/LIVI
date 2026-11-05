@@ -155,7 +155,7 @@ impl Core {
         let ask = {
             let state = self.hub.watch();
             let s = state.borrow();
-            crate::radio::media_ask(&s.dab, &s.fm, s.sessions.active.is_some(), control)
+            crate::radio::media_ask(&s.dab, &s.fm, s.sessions.active, control)
         };
         ask.is_some_and(|ask| self.ask_radio(ask).is_ok())
     }
@@ -185,6 +185,10 @@ impl Core {
             }
             Action::Media { control } => {
                 self.media(control);
+                Ok(())
+            }
+            Action::PhoneMedia { control } => {
+                let _ = self.asks.commands.send(UiCommand::Media(control));
                 Ok(())
             }
             Action::ImportMfi { file, path } => {
@@ -573,6 +577,36 @@ mod tests {
             asks.commands.recv().await,
             Some(UiCommand::Media(MediaControl::PlayPause))
         );
+    }
+
+    #[tokio::test]
+    async fn the_phone_page_steers_the_phone_while_the_radio_plays() {
+        use livi_core_proto::message::MediaControl;
+
+        let dir = TempDir::new();
+        let (core, path, mut asks, _dongle, _update) = start_with_asks(&dir);
+        let mut ui = Peer::hello(&path).await;
+        core.hub.update(|s| {
+            s.dab.active = true;
+            s.dab.playing = true;
+        });
+        assert!(matches!(ui.recv().await, Some(FromCore::Patch { .. })));
+        ui.send(&ToCore::Action {
+            id: 1,
+            action: Action::PhoneMedia {
+                control: MediaControl::Next,
+            },
+        })
+        .await;
+        assert_eq!(
+            ui.recv().await,
+            Some(FromCore::Reply { id: 1, error: None })
+        );
+        assert_eq!(
+            asks.commands.recv().await,
+            Some(UiCommand::Media(MediaControl::Next))
+        );
+        assert!(asks.radio.as_mut().unwrap().try_recv().is_err());
     }
 
     #[tokio::test]

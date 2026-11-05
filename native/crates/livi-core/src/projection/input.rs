@@ -80,7 +80,7 @@ impl Projection {
     pub(super) fn radio_media_ask(&self, control: MediaControl) -> Option<crate::radio::RadioAsk> {
         let state = self.hub.watch();
         let s = state.borrow();
-        crate::radio::media_ask(&s.dab, &s.fm, s.sessions.active.is_some(), control)
+        crate::radio::media_ask(&s.dab, &s.fm, s.sessions.active, control)
     }
 
     pub(super) fn key(&mut self, code: &str, down: bool) {

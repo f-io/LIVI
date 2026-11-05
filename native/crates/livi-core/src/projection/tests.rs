@@ -568,7 +568,7 @@ async fn the_phone_ducks_the_radio_too() {
 }
 
 #[tokio::test]
-async fn media_keys_go_to_the_radio_while_it_is_the_source() {
+async fn carplay_keeps_the_media_keys_while_the_radio_plays() {
     let mut rig = Rig::new();
     let (tx, mut radio) = mpsc::unbounded_channel();
     rig.p.radio = Some(tx);
@@ -578,22 +578,17 @@ async fn media_keys_go_to_the_radio_while_it_is_the_source() {
 
     rig.p.input(press("KeyN"));
     assert_eq!(rig.drain(), [stack(1, StackCmd::Media(media_button::NEXT))]);
-    assert!(
-        radio.try_recv().is_err(),
-        "the phone keeps the keys while it is the source"
-    );
 
-    rig.hub.update(|s| s.dab.active = true);
-    rig.p.input(press("KeyP"));
-    rig.p.input(Input::Key {
-        code: "KeyP".into(),
-        down: false,
+    rig.hub.update(|s| {
+        s.dab.active = true;
+        s.dab.playing = true;
     });
     rig.p.input(press("KeyN"));
-    assert!(rig.drain().is_empty(), "nothing reaches the phone");
-    assert_eq!(radio.try_recv(), Ok(crate::radio::RadioAsk::Resume(None)));
-    assert_eq!(radio.try_recv(), Ok(crate::radio::RadioAsk::Step(1)));
-    assert!(radio.try_recv().is_err(), "the release does nothing");
+    assert_eq!(rig.drain(), [stack(1, StackCmd::Media(media_button::NEXT))]);
+    assert!(
+        radio.try_recv().is_err(),
+        "the iPhone steers the radio as its own source"
+    );
 }
 
 #[tokio::test]

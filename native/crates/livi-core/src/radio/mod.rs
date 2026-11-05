@@ -16,7 +16,7 @@ use std::sync::mpsc as std_mpsc;
 
 use base64::Engine;
 use livi_core_proto::message::MediaControl;
-use livi_core_proto::state::{Dab, DabScan, DabStation, Fm, FmStation, State};
+use livi_core_proto::state::{Dab, DabScan, DabStation, Fm, FmStation, Protocol, State};
 use livi_dab::CHANNELS;
 use livi_fm::Rds;
 use livi_media::gst_host::GstHost;
@@ -97,15 +97,20 @@ pub type RadioAsks = mpsc::UnboundedReceiver<RadioAsk>;
 pub fn media_ask(
     dab: &Dab,
     fm: &Fm,
-    phone_in_front: bool,
+    phone: Option<Protocol>,
     control: MediaControl,
 ) -> Option<RadioAsk> {
+    dab.receiver.as_ref()?;
+    let playing = dab.playing || fm.playing;
     let stations = !dab.stations.is_empty() || !fm.stations.is_empty();
-    let idle = !phone_in_front && stations;
-    if !dab.active && !fm.active && !idle {
+    let take = match phone {
+        Some(Protocol::Carplay) => false,
+        Some(Protocol::Androidauto) => playing,
+        None => dab.active || fm.active || stations,
+    };
+    if !take {
         return None;
     }
-    let playing = dab.playing || fm.playing;
     Some(match control {
         MediaControl::Next => RadioAsk::Step(1),
         MediaControl::Prev => RadioAsk::Step(-1),
@@ -697,54 +702,114 @@ mod tests {
 
     #[test]
     fn media_keys_steer_the_radio_while_it_is_the_source() {
-        let (mut dab, mut fm) = (Dab::default(), Fm::default());
-        let mut phone = false;
+        let stick = Dab {
+            receiver: Some("stick".into()),
+            ..Default::default()
+        };
+        let (mut dab, mut fm) = (stick.clone(), Fm::default());
         assert_eq!(
-            media_ask(&dab, &fm, phone, MediaControl::Next),
+            media_ask(&dab, &fm, None, MediaControl::Next),
             None,
             "no stations, the phone keeps the keys"
         );
         fm.stations = vec![fm_station(98_100)];
         assert_eq!(
-            media_ask(&dab, &fm, phone, MediaControl::Next),
+            media_ask(&dab, &fm, None, MediaControl::Next),
             Some(RadioAsk::Step(1)),
             "nothing else plays"
         );
-        phone = true;
-        assert_eq!(
-            media_ask(&dab, &fm, phone, MediaControl::Next),
-            None,
-            "a phone is in front"
-        );
         dab.active = true;
         assert_eq!(
-            media_ask(&dab, &fm, phone, MediaControl::Prev),
+            media_ask(&dab, &fm, None, MediaControl::Prev),
             Some(RadioAsk::Step(-1))
         );
         assert_eq!(
-            media_ask(&dab, &fm, phone, MediaControl::Pause),
+            media_ask(&dab, &fm, None, MediaControl::Pause),
             Some(RadioAsk::Pause)
         );
         assert_eq!(
-            media_ask(&dab, &fm, phone, MediaControl::PlayPause),
+            media_ask(&dab, &fm, None, MediaControl::PlayPause),
             Some(RadioAsk::Resume(None))
         );
         assert_eq!(
-            media_ask(&dab, &fm, phone, MediaControl::Play),
+            media_ask(&dab, &fm, None, MediaControl::Play),
             Some(RadioAsk::Resume(None))
         );
         dab.playing = true;
         assert_eq!(
-            media_ask(&dab, &fm, phone, MediaControl::PlayPause),
+            media_ask(&dab, &fm, None, MediaControl::PlayPause),
             Some(RadioAsk::Pause)
         );
-        dab = Dab::default();
+        dab = stick;
         fm.active = true;
         fm.playing = true;
         assert_eq!(
-            media_ask(&dab, &fm, phone, MediaControl::PlayPause),
+            media_ask(&dab, &fm, None, MediaControl::PlayPause),
             Some(RadioAsk::Pause),
             "FM is the source too"
+        );
+    }
+
+    #[test]
+    fn without_a_stick_the_keys_stay_with_the_phone() {
+        let dab = Dab {
+            active: true,
+            playing: true,
+            stations: vec![dab_station(1)],
+            ..Default::default()
+        };
+        let fm = Fm {
+            active: true,
+            stations: vec![fm_station(98_100)],
+            ..Default::default()
+        };
+        for phone in [None, Some(Protocol::Androidauto)] {
+            assert_eq!(media_ask(&dab, &fm, phone, MediaControl::Next), None);
+        }
+    }
+
+    #[test]
+    fn carplay_keeps_the_keys_and_resumes_the_last_source_itself() {
+        let dab = Dab {
+            active: true,
+            playing: true,
+            stations: vec![dab_station(1)],
+            ..Default::default()
+        };
+        for control in [
+            MediaControl::PlayPause,
+            MediaControl::Next,
+            MediaControl::Prev,
+        ] {
+            assert_eq!(
+                media_ask(&dab, &Fm::default(), Some(Protocol::Carplay), control),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn android_auto_hands_the_keys_to_the_radio_only_while_it_plays() {
+        let aa = Some(Protocol::Androidauto);
+        let mut dab = Dab {
+            receiver: Some("stick".into()),
+            active: true,
+            stations: vec![dab_station(1)],
+            ..Default::default()
+        };
+        assert_eq!(
+            media_ask(&dab, &Fm::default(), aa, MediaControl::PlayPause),
+            None,
+            "paused for the phone, the phone keeps the keys"
+        );
+        dab.playing = true;
+        assert_eq!(
+            media_ask(&dab, &Fm::default(), aa, MediaControl::Next),
+            Some(RadioAsk::Step(1))
+        );
+        assert_eq!(
+            media_ask(&dab, &Fm::default(), aa, MediaControl::PlayPause),
+            Some(RadioAsk::Pause)
         );
     }
 

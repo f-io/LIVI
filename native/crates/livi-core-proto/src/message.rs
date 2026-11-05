@@ -63,6 +63,9 @@ pub enum Action {
     Media {
         control: MediaControl,
     },
+    PhoneMedia {
+        control: MediaControl,
+    },
     #[serde(rename_all = "camelCase")]
     Seek {
         position_ms: u32,

@@ -297,9 +297,11 @@ pub fn wire(ui: &AppWindow, client: &Client) {
             pressed_feedback(&ui, which);
             let d = ui.global::<DabState>();
             let view = d.get_view();
-            let idle = d.get_receiver()
-                && view != MediaSource::Phone
-                && LIVE.with_borrow(|l| l.on_air != Some(view));
+            if !d.get_receiver() || view == MediaSource::Phone {
+                c.act(Action::PhoneMedia { control });
+                return;
+            }
+            let idle = LIVE.with_borrow(|l| l.on_air != Some(view));
             match view {
                 MediaSource::Dab if idle => c.act(Action::DabResume),
                 MediaSource::Fm if idle => c.act(Action::FmResume),
