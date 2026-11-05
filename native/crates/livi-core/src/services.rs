@@ -189,7 +189,11 @@ impl Services {
         tokio::spawn(follow_displays(ctrl.displays(), hub.clone()));
         let gst = GstHost::new(paths.runtime.join("gst.sock"));
         if let Some(launch) = host_launch(&res, user_data, None) {
-            gst.set_launch(launch);
+            if compositor.is_some() {
+                gst.hold_launch();
+            } else {
+                gst.set_launch(launch);
+            }
         }
         let plane = MainPlane::new(gst.clone(), ctrl.clone());
         let clusters = ClusterPlanes::new(gst.clone(), ctrl.clone());

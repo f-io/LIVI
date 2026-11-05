@@ -145,6 +145,8 @@ struct State {
     queue: Vec<Vec<u8>>,
     running: bool,
     unavailable: bool,
+    held: bool,
+    wanted: bool,
     port_waiters: HashMap<u32, oneshot::Sender<u16>>,
     audio_waiters: HashMap<u32, oneshot::Sender<(u16, u16)>>,
     feed_waiter: Option<oneshot::Sender<String>>,
@@ -190,6 +192,18 @@ impl GstHost {
 
     pub fn set_launch(&self, launch: Launch) {
         *self.inner.launch.lock().unwrap_or_else(|e| e.into_inner()) = Some(launch);
+        let wanted = {
+            let mut st = self.state();
+            st.held = false;
+            std::mem::take(&mut st.wanted)
+        };
+        if wanted {
+            self.start();
+        }
+    }
+
+    pub fn hold_launch(&self) {
+        self.state().held = true;
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<HostEvent> {
@@ -205,19 +219,23 @@ impl GstHost {
     }
 
     fn start(&self) {
+        {
+            let mut st = self.state();
+            if st.held {
+                st.wanted = true;
+                return;
+            }
+            if st.running || st.unavailable {
+                return;
+            }
+            st.running = true;
+        }
         let launch = self
             .inner
             .launch
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
-        {
-            let mut st = self.state();
-            if st.running || st.unavailable {
-                return;
-            }
-            st.running = true;
-        }
         let _ = std::fs::remove_file(&self.inner.sock_path);
         let listener = match UnixListener::bind(&self.inner.sock_path) {
             Ok(l) => l,
@@ -1037,6 +1055,22 @@ mod tests {
         let gst = host(&dir);
         gst.set_launch(Launch::Embedded(Arc::new(EchoFeed)));
         assert!(gst.open_feed().await.ends_with("gst.sock.feed"));
+    }
+
+    #[tokio::test]
+    async fn a_held_host_starts_only_once_its_launch_arrives() {
+        let dir = TempDir::new();
+        let gst = host(&dir);
+        gst.hold_launch();
+        let feed = tokio::spawn({
+            let gst = gst.clone();
+            async move { gst.open_feed().await }
+        });
+        tokio::task::yield_now().await;
+        assert!(!gst.state().running);
+        assert!(!gst.inner.sock_path.exists());
+        gst.set_launch(Launch::Embedded(Arc::new(EchoFeed)));
+        assert!(feed.await.unwrap().ends_with("gst.sock.feed"));
     }
 
     #[tokio::test]
