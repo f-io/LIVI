@@ -100,16 +100,20 @@ impl Net {
             None => self.tunnel.join(v4).map(|p| port.replace(p).is_none()),
         };
         match joined {
-            Ok(false) => {}
-            Ok(true) => println!(
-                "[link] {}/{} from {} and {} on the LIVI Link",
-                lease.address,
-                lease.prefix,
-                lease.server,
-                self.tunnel.address()
-            ),
+            Ok(false) => crate::link::served_by(Some(lease.server)),
+            Ok(true) => {
+                crate::link::served_by(Some(lease.server));
+                println!(
+                    "[link] {}/{} from {} and {} on the LIVI Link",
+                    lease.address,
+                    lease.prefix,
+                    lease.server,
+                    self.tunnel.address()
+                );
+            }
             Err(e) => {
                 eprintln!("[link] no interface for the LIVI Link: {e}");
+                crate::link::served_by(None);
                 *port = None;
                 *self.net.lock().unwrap() = Net4::new(self.mac, xid());
             }

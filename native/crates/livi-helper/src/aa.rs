@@ -70,7 +70,8 @@ fn ip_facing_dongle() -> Option<String> {
     #[cfg(target_os = "linux")]
     let iface = livi_link_host::link::host_iface();
     #[cfg(not(target_os = "linux"))]
-    let iface = livi_runtime::net::iface_facing(livi_link_host::link::LINK_NAME);
+    let iface =
+        livi_link_host::link::name().and_then(|name| livi_runtime::net::iface_facing(&name));
     iface
         .and_then(|iface| livi_runtime::net::ipv4_of(&iface))
         .map(|a| a.to_string())

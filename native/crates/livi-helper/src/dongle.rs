@@ -43,7 +43,8 @@ pub fn wireless_config(base: &CpConfig) -> CpConfig {
     CpConfig {
         ap_mac: livi_link_host::ap::mac(),
         ssid: livi_link_host::ap::ssid().unwrap_or_else(|| base.ssid.clone()),
-        wifi_iface: livi_runtime::net::iface_facing(livi_link_host::link::LINK_NAME)
+        wifi_iface: livi_link_host::link::name()
+            .and_then(|name| livi_runtime::net::iface_facing(&name))
             .unwrap_or_default(),
         channel: livi_link_host::ap::status_field("channel")
             .and_then(|c| c.parse().ok())
@@ -174,10 +175,8 @@ pub fn follow_link(
     let (arrived, left) = (bcast.clone(), bcast);
     tokio::spawn(link.resolve(
         move || {
-            if !own_files {
-                up_auth.replace(Box::new(NcmCoprocessor::new(&livi_link_host::link::addr(
-                    livi_net::port::MFI,
-                ))));
+            if !own_files && let Some(addr) = livi_link_host::link::addr(livi_net::port::MFI) {
+                up_auth.replace(Box::new(NcmCoprocessor::new(&addr)));
             }
             arrived.push_json("{\"type\":\"link\",\"up\":true}".into());
         },

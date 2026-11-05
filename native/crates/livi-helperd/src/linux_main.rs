@@ -317,9 +317,9 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             let (up_auth, down_auth) = (auth.clone(), auth.clone());
             tokio::spawn(link.clone().resolve(
                 move || {
-                    up_auth.replace(Box::new(NcmCoprocessor::new(&livi_link_host::link::addr(
-                        livi_net::port::MFI,
-                    ))))
+                    if let Some(addr) = livi_link_host::link::addr(livi_net::port::MFI) {
+                        up_auth.replace(Box::new(NcmCoprocessor::new(&addr)));
+                    }
                 },
                 move || down_auth.replace(Box::new(NoCoprocessor)),
             ));

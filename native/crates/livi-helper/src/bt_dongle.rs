@@ -88,8 +88,8 @@ pub struct Radio {
 }
 
 fn open(name: String, keys: PathBuf) -> Result<(Stack, Inbox), String> {
-    let at = (livi_link_host::link::LINK_NAME, livi_net::port::HCI);
-    let tunnel = livi_net::connect(at, CONNECT_TIMEOUT)
+    let host = livi_link_host::link::name().ok_or("the dongle has no address yet")?;
+    let tunnel = livi_net::connect((host.as_str(), livi_net::port::HCI), CONNECT_TIMEOUT)
         .map_err(|e| format!("the dongle's controller: {e}"))?;
     let _ = tunnel.set_nodelay(true);
     Stack::start(tunnel, Config { name, keys })

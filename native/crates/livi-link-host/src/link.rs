@@ -3,14 +3,34 @@
 // Additional terms: see NOTICE
 
 use std::io;
+#[cfg(target_os = "android")]
+use std::net::Ipv4Addr;
 use std::net::{TcpStream, ToSocketAddrs};
+#[cfg(target_os = "android")]
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-#[cfg(not(target_os = "android"))]
-pub const LINK_NAME: &str = "livi-link.local";
 #[cfg(target_os = "android")]
-pub const LINK_NAME: &str = "10.10.10.1";
+static SERVER: Mutex<Option<Ipv4Addr>> = Mutex::new(None);
+
+#[cfg(not(target_os = "android"))]
+pub fn name() -> Option<String> {
+    Some("livi-link.local".into())
+}
+
+#[cfg(target_os = "android")]
+pub fn name() -> Option<String> {
+    SERVER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .map(|a| a.to_string())
+}
+
+#[cfg(target_os = "android")]
+pub(crate) fn served_by(server: Option<Ipv4Addr>) {
+    *SERVER.lock().unwrap_or_else(|e| e.into_inner()) = server;
+}
 
 pub const CHOICE: &str = "livi-link";
 
@@ -36,21 +56,29 @@ pub fn connect(port: u16, timeout: Duration) -> io::Result<TcpStream> {
             "the LIVI Link is not on the bus",
         ));
     }
-    livi_net::connect((LINK_NAME, port), timeout)
+    let name = name().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotConnected,
+            "the LIVI Link has no address yet",
+        )
+    })?;
+    livi_net::connect((name.as_str(), port), timeout)
 }
 
 pub fn resolves() -> bool {
     if absent() {
         return false;
     }
-    (LINK_NAME, 0u16)
-        .to_socket_addrs()
-        .map(|mut a| a.any(|a| a.is_ipv4()))
-        .unwrap_or(false)
+    name().is_some_and(|name| {
+        (name.as_str(), 0u16)
+            .to_socket_addrs()
+            .map(|mut a| a.any(|a| a.is_ipv4()))
+            .unwrap_or(false)
+    })
 }
 
-pub fn addr(port: u16) -> String {
-    format!("{LINK_NAME}:{port}")
+pub fn addr(port: u16) -> Option<String> {
+    name().map(|name| format!("{name}:{port}"))
 }
 
 #[cfg(target_os = "linux")]

@@ -117,7 +117,7 @@ impl LinkPresence {
             }
             println!(
                 "[helper] LIVI Link up: {} resolves",
-                livi_link_host::link::LINK_NAME
+                livi_link_host::link::name().unwrap_or_default()
             );
             on_up();
             self.set_present(true);
