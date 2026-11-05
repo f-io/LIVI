@@ -13,10 +13,20 @@ pub struct Format {
     pub channels: u8,
 }
 
-#[derive(Default)]
 pub struct Audio {
     pub stream: Option<u32>,
     level: f64,
+    duck: f64,
+}
+
+impl Default for Audio {
+    fn default() -> Self {
+        Self {
+            stream: None,
+            level: 0.0,
+            duck: 1.0,
+        }
+    }
 }
 
 impl Audio {
@@ -41,9 +51,9 @@ impl Audio {
             return;
         }
         gst.set_audio_active(id, true);
-        gst.set_audio_volume(id, s.config.audio_volume, 0);
         self.stream = Some(id);
         self.level = s.config.audio_volume;
+        gst.set_audio_volume(id, self.level * self.duck, 0);
     }
 
     pub fn push(&self, gst: &GstHost, units: &[Vec<u8>]) {
@@ -62,7 +72,14 @@ impl Audio {
         }
         if s.config.audio_volume != self.level {
             self.level = s.config.audio_volume;
-            gst.set_audio_volume(id, self.level, 100);
+            gst.set_audio_volume(id, self.level * self.duck, 100);
+        }
+    }
+
+    pub fn duck(&mut self, gst: &GstHost, level: f64, ramp_ms: u32) {
+        self.duck = level.clamp(0.0, 1.0);
+        if let Some(id) = self.stream {
+            gst.set_audio_volume(id, self.level * self.duck, ramp_ms);
         }
     }
 

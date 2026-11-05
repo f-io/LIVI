@@ -182,6 +182,7 @@ impl Projection {
                 self.clusters.dispose();
                 self.duck_level = 1.0;
                 self.duck_ramp_ms = RAMP_UP_MS;
+                self.duck_radio(1.0, RAMP_UP_MS);
             }
         }
     }

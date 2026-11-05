@@ -318,7 +318,7 @@ pub fn wire(ui: &AppWindow, client: &Client) {
             if let Some(ui) = weak.upgrade() {
                 set_view(&ui, MediaSource::Phone);
             }
-            c.act(Action::DabStop)
+            c.act(Action::PhoneResume)
         }
     });
     d.on_resume({

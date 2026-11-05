@@ -233,6 +233,7 @@ impl Services {
                 hub.clone(),
                 gst.clone(),
                 radio_asks,
+                asks.activity.subscribe(),
                 user_data.to_path_buf(),
                 resume_radio,
             ));

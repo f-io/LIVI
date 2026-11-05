@@ -143,6 +143,7 @@ pub enum Action {
         up: bool,
     },
     FmResume,
+    PhoneResume,
     FmFavorite {
         khz: u32,
         favorite: bool,

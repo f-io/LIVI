@@ -133,6 +133,24 @@ impl Core {
             .map_err(|_| "the radio is not available".to_string())
     }
 
+    fn phone_resume(&self) {
+        let (radio_on, phone_playing) = {
+            let state = self.hub.watch();
+            let s = state.borrow();
+            (
+                s.dab.active || s.fm.active,
+                s.now_playing.playing == Some(true),
+            )
+        };
+        let _ = self.ask_radio(RadioAsk::Stop);
+        if radio_on && !phone_playing {
+            let _ = self
+                .asks
+                .commands
+                .send(UiCommand::Media(MediaControl::PlayPause));
+        }
+    }
+
     fn radio_media(&self, control: MediaControl) -> bool {
         let ask = {
             let state = self.hub.watch();
@@ -194,6 +212,10 @@ impl Core {
             Action::FmResume => self.ask_radio(RadioAsk::Resume(Some(Band::Fm))),
             Action::DabPause => self.ask_radio(RadioAsk::Pause),
             Action::DabStop => self.ask_radio(RadioAsk::Stop),
+            Action::PhoneResume => {
+                self.phone_resume();
+                Ok(())
+            }
             Action::DabFavorite {
                 service_id,
                 favorite,
@@ -525,6 +547,32 @@ mod tests {
         let listener = UnixListener::bind(&path).unwrap();
         tokio::spawn(serve(core.clone(), listener));
         (core, path, asks, dongle, update)
+    }
+
+    #[tokio::test]
+    async fn leaving_the_radio_for_the_phone_plays_the_phone() {
+        use livi_core_proto::message::MediaControl;
+
+        let dir = TempDir::new();
+        let (core, path, mut asks, _dongle, _update) = start_with_asks(&dir);
+        let mut ui = Peer::hello(&path).await;
+        core.hub.update(|s| s.dab.active = true);
+        assert!(matches!(ui.recv().await, Some(FromCore::Patch { .. })));
+        ui.send(&ToCore::Action {
+            id: 1,
+            action: Action::PhoneResume,
+        })
+        .await;
+        assert_eq!(
+            ui.recv().await,
+            Some(FromCore::Reply { id: 1, error: None })
+        );
+        let radio = asks.radio.as_mut().unwrap();
+        assert_eq!(radio.recv().await, Some(RadioAsk::Stop));
+        assert_eq!(
+            asks.commands.recv().await,
+            Some(UiCommand::Media(MediaControl::PlayPause))
+        );
     }
 
     #[tokio::test]

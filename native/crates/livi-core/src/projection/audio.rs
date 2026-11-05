@@ -37,6 +37,13 @@ impl Projection {
         self.duck_level = level.clamp(0.0, 1.0);
         self.duck_ramp_ms = ramp_ms;
         self.push_level(AudioKind::Media, ramp_ms);
+        self.duck_radio(self.duck_level, ramp_ms);
+    }
+
+    pub(super) fn duck_radio(&self, level: f64, ramp_ms: u32) {
+        if let Some(radio) = &self.radio {
+            let _ = radio.send(crate::radio::RadioAsk::Duck { level, ramp_ms });
+        }
     }
 
     pub(super) fn stream_volumes_to_phone(&self) {

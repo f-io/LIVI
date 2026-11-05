@@ -49,6 +49,7 @@ mod audio;
 mod cluster;
 mod cp;
 mod input;
+mod players;
 mod screens;
 mod sessions;
 mod state;
@@ -466,6 +467,7 @@ pub struct Projection {
     theme_asked: String,
     theme_ready: (mpsc::UnboundedSender<Theme>, mpsc::UnboundedReceiver<Theme>),
     radio: Option<mpsc::UnboundedSender<crate::radio::RadioAsk>>,
+    players: players::Players,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -640,6 +642,7 @@ impl Projection {
             theme_asked: String::new(),
             theme_ready: mpsc::unbounded_channel(),
             radio: None,
+            players: players::Players::default(),
             hub,
         }
     }
@@ -718,11 +721,17 @@ impl Projection {
                     if changed.is_err() {
                         return;
                     }
-                    let (cfg, telemetry) = {
+                    let (cfg, telemetry, phone, radio) = {
                         let s = state.borrow_and_update();
-                        (s.config.clone(), s.telemetry.clone())
+                        (
+                            s.config.clone(),
+                            s.telemetry.clone(),
+                            s.now_playing.playing == Some(true),
+                            s.dab.playing || s.fm.playing,
+                        )
                     };
                     self.on_state(cfg, telemetry);
+                    self.follow_players(phone, radio);
                 }
                 made = player_created(&mut created) => match made {
                     Ok(()) => self.keyframe(),

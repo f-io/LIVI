@@ -526,12 +526,63 @@ async fn buttons_and_touch_go_to_the_active_phone() {
 }
 
 #[tokio::test]
+async fn the_player_started_last_stops_the_other() {
+    let mut rig = Rig::new();
+    let (tx, mut radio) = mpsc::unbounded_channel();
+    rig.p.radio = Some(tx);
+    rig.connect(1, true);
+    rig.drain();
+    while radio.try_recv().is_ok() {}
+
+    rig.p.follow_players(true, false);
+    rig.p.follow_players(true, true);
+    assert_eq!(
+        rig.drain(),
+        [stack(1, StackCmd::Media(media_button::PAUSE))]
+    );
+    assert!(radio.try_recv().is_err());
+
+    rig.p.follow_players(false, true);
+    rig.p.follow_players(true, true);
+    assert_eq!(radio.try_recv(), Ok(crate::radio::RadioAsk::Stop));
+    assert!(rig.drain().is_empty());
+}
+
+#[tokio::test]
+async fn the_phone_ducks_the_radio_too() {
+    let mut rig = Rig::new();
+    let (tx, mut radio) = mpsc::unbounded_channel();
+    rig.p.radio = Some(tx);
+    rig.connect(1, true);
+    while radio.try_recv().is_ok() {}
+    rig.p.on_event(CpEvent::Duck {
+        id: 1,
+        level: 0.3,
+        duration_ms: 200,
+    });
+    assert_eq!(
+        radio.try_recv(),
+        Ok(crate::radio::RadioAsk::Duck {
+            level: 0.3,
+            ramp_ms: 200
+        })
+    );
+    rig.p.on_event(CpEvent::Duck {
+        id: 9,
+        level: 0.1,
+        duration_ms: 0,
+    });
+    assert!(radio.try_recv().is_err(), "only the phone in front ducks");
+}
+
+#[tokio::test]
 async fn media_keys_go_to_the_radio_while_it_is_the_source() {
     let mut rig = Rig::new();
     let (tx, mut radio) = mpsc::unbounded_channel();
     rig.p.radio = Some(tx);
     rig.connect(1, true);
     rig.drain();
+    while radio.try_recv().is_ok() {}
 
     rig.p.input(press("KeyN"));
     assert_eq!(rig.drain(), [stack(1, StackCmd::Media(media_button::NEXT))]);

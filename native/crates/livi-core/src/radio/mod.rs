@@ -5,6 +5,7 @@
 mod audio;
 mod dab;
 mod fm;
+mod focus;
 mod list;
 mod thread;
 
@@ -23,7 +24,9 @@ use tokio::sync::{mpsc, watch};
 
 use crate::hub::Hub;
 use crate::state_files::{Sdr, load_sdr, save_sdr};
+use crate::status_file::Activity;
 use audio::Audio;
+use focus::{Focus, Turn};
 use list::{hidden_last, merged, move_station, star, step_target};
 use thread::{Cmd, Radio};
 
@@ -57,7 +60,7 @@ impl Station {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RadioAsk {
     Scan(Band),
     StopScan,
@@ -82,6 +85,10 @@ pub enum RadioAsk {
     Move {
         station: Station,
         by: i32,
+    },
+    Duck {
+        level: f64,
+        ramp_ms: u32,
     },
 }
 
@@ -108,7 +115,7 @@ pub fn media_ask(
     })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct Tuning {
     gain: Option<i32>,
     ppm: i32,
@@ -152,6 +159,7 @@ pub async fn run(
     hub: Arc<Hub>,
     gst: GstHost,
     mut asks: RadioAsks,
+    mut activity: watch::Receiver<Activity>,
     user_data: PathBuf,
     resume: Option<Band>,
 ) {
@@ -173,25 +181,32 @@ pub async fn run(
         .collect();
     hub.update(|s| s.dab.gains_db = gains_db);
     out.publish();
+    let mut state: watch::Receiver<State> = hub.watch();
+    let mut tune = tuning(&state.borrow());
     let started = std::thread::Builder::new()
         .name("radio".into())
-        .spawn(move || thread::run(cmd_rx, ev_tx));
+        .spawn(move || thread::run(cmd_rx, ev_tx, tune));
     if let Err(e) = started {
         eprintln!("[radio] no radio thread: {e}");
         return;
     }
-    let mut state: watch::Receiver<State> = hub.watch();
-    let mut tune = tuning(&state.borrow());
     let mut audio = Audio::default();
     let mut found = Found::default();
     let mut band = resume.unwrap_or(Band::Dab);
     let mut resume = resume.is_some();
+    let mut focus = Focus::default();
 
     loop {
         tokio::select! {
             ask = asks.recv() => {
                 let Some(ask) = ask else { return };
                 let s = state.borrow().clone();
+                if !matches!(
+                    ask,
+                    RadioAsk::Duck { .. } | RadioAsk::Favorite { .. } | RadioAsk::Hide { .. } | RadioAsk::Move { .. }
+                ) {
+                    focus.let_go();
+                }
                 match ask {
                     RadioAsk::Scan(b) => {
                         band = b;
@@ -209,32 +224,26 @@ pub async fn run(
                                 Band::Fm => s.fm.scan = scan,
                             }
                         });
-                        let _ = cmd_tx.send(Cmd::Scan(b, tune));
+                        let _ = cmd_tx.send(Cmd::Scan(b));
                     }
                     RadioAsk::StopScan | RadioAsk::Stop => {
                         audio.close(&gst);
                         let _ = cmd_tx.send(Cmd::Stop);
                         hub.update(|s| quiet(&mut s.dab, &mut s.fm));
                     }
-                    RadioAsk::Pause => {
-                        audio.close(&gst);
-                        let _ = cmd_tx.send(Cmd::Stop);
-                        hub.update(|s| {
-                            s.dab.playing = false;
-                            s.fm.playing = false;
-                        });
-                    }
+                    RadioAsk::Pause => out.pause(&mut audio),
+                    RadioAsk::Duck { level, ramp_ms } => audio.duck(&gst, level, ramp_ms),
                     RadioAsk::Play(station) => {
                         band = station.band;
-                        out.play(&mut audio, &s, station, tune);
+                        out.play(&mut audio, &s, station);
                     }
                     RadioAsk::Resume(b) => {
                         band = b.unwrap_or(band);
-                        out.resume(&mut audio, &s, band, tune);
+                        out.resume(&mut audio, &s, band);
                     }
                     RadioAsk::Seek { up } => {
                         band = Band::Fm;
-                        out.seek(&mut audio, &s, up, tune);
+                        out.seek(&mut audio, &s, up);
                     }
                     RadioAsk::Favorite { station, favorite } => out.favorite(&s, station, favorite),
                     RadioAsk::Hide { station, hidden } => out.hide(station, hidden),
@@ -245,7 +254,7 @@ pub async fn run(
                             Band::Fm => step_target(&s.fm.stations, s.fm.station, by).map(Station::fm),
                         };
                         if let Some(station) = next {
-                            out.play(&mut audio, &s, station, tune);
+                            out.play(&mut audio, &s, station);
                         }
                     }
                 }
@@ -263,7 +272,7 @@ pub async fn run(
                         hub.update(|s| s.dab.receiver = name);
                         if std::mem::take(&mut resume) {
                             let s = state.borrow().clone();
-                            out.resume(&mut audio, &s, band, tune);
+                            out.resume(&mut audio, &s, band);
                         }
                     }
                     Radio::Progress(b, p) => {
@@ -362,6 +371,24 @@ pub async fn run(
                     }
                 }
             }
+            changed = activity.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+                let now = *activity.borrow_and_update();
+                let s = state.borrow().clone();
+                match focus.next(now, s.dab.playing || s.fm.playing) {
+                    Some(Turn::Pause) => {
+                        println!("[radio] paused for the phone");
+                        out.pause(&mut audio);
+                    }
+                    Some(Turn::Resume) => {
+                        println!("[radio] back after the phone");
+                        out.resume(&mut audio, &s, band);
+                    }
+                    None => {}
+                }
+            }
             changed = state.changed() => {
                 if changed.is_err() {
                     return;
@@ -446,6 +473,15 @@ struct Out {
 }
 
 impl Out {
+    fn pause(&self, audio: &mut Audio) {
+        audio.close(&self.gst);
+        let _ = self.cmds.send(Cmd::Stop);
+        self.hub.update(|s| {
+            s.dab.playing = false;
+            s.fm.playing = false;
+        });
+    }
+
     fn publish(&self) {
         let own = &self.own;
         let mut stations = own.stations.clone();
@@ -467,7 +503,7 @@ impl Out {
         self.publish();
     }
 
-    fn resume(&mut self, audio: &mut Audio, s: &State, band: Band, tuning: Tuning) {
+    fn resume(&mut self, audio: &mut Audio, s: &State, band: Band) {
         let playing = match band {
             Band::Dab => s.dab.playing,
             Band::Fm => s.fm.playing,
@@ -492,18 +528,18 @@ impl Out {
             }
         };
         if let Some(station) = pick {
-            self.play(audio, s, station, tuning);
+            self.play(audio, s, station);
         }
     }
 
-    fn play(&mut self, audio: &mut Audio, s: &State, station: Station, tuning: Tuning) {
+    fn play(&mut self, audio: &mut Audio, s: &State, station: Station) {
         match station.band {
-            Band::Dab => self.play_dab(audio, s, station.id, tuning),
-            Band::Fm => self.play_fm(audio, station.id, tuning),
+            Band::Dab => self.play_dab(audio, s, station.id),
+            Band::Fm => self.play_fm(audio, station.id),
         }
     }
 
-    fn play_dab(&mut self, audio: &mut Audio, s: &State, service: u32, tuning: Tuning) {
+    fn play_dab(&mut self, audio: &mut Audio, s: &State, service: u32) {
         let Some(st) = s.dab.stations.iter().find(|st| st.service_id == service) else {
             self.hub
                 .update(|s| s.dab.error = Some("station not in the list, scan again".into()));
@@ -513,7 +549,6 @@ impl Out {
         let _ = self.cmds.send(Cmd::Play {
             frequency: st.frequency_hz,
             service,
-            tuning,
         });
         if self.own.last_station != Some(service) {
             self.own.last_station = Some(service);
@@ -527,14 +562,14 @@ impl Out {
         });
     }
 
-    fn play_fm(&mut self, audio: &mut Audio, khz: u32, tuning: Tuning) {
+    fn play_fm(&mut self, audio: &mut Audio, khz: u32) {
         if !fm::in_band(khz) {
             self.hub
                 .update(|s| s.fm.error = Some(format!("{khz} kHz is outside the FM band")));
             return;
         }
         audio.close(&self.gst);
-        let _ = self.cmds.send(Cmd::PlayFm { khz, tuning });
+        let _ = self.cmds.send(Cmd::PlayFm { khz });
         self.keep_last_fm(khz);
         self.hub.update(|s| {
             quiet(&mut s.dab, &mut s.fm);
@@ -544,13 +579,13 @@ impl Out {
         });
     }
 
-    fn seek(&mut self, audio: &mut Audio, s: &State, up: bool, tuning: Tuning) {
+    fn seek(&mut self, audio: &mut Audio, s: &State, up: bool) {
         let from =
             s.fm.station
                 .or(s.fm.last_station)
                 .unwrap_or(livi_fm::LOWEST_KHZ);
         audio.close(&self.gst);
-        let _ = self.cmds.send(Cmd::SeekFm { from, up, tuning });
+        let _ = self.cmds.send(Cmd::SeekFm { from, up });
         self.hub.update(|s| {
             quiet(&mut s.dab, &mut s.fm);
             s.fm.active = true;
