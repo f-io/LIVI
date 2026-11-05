@@ -25,6 +25,8 @@ pub enum Update {
     Phone(PhoneState),
     Look(Look),
     Kiosk(bool),
+    #[cfg(target_os = "macos")]
+    Shape(u32, u32),
     Settings,
     Spectrum(Vec<f32>),
     Open(String),
@@ -43,6 +45,8 @@ pub struct Follow {
     phone: Option<PhoneState>,
     look: Option<Look>,
     kiosk: Option<bool>,
+    #[cfg(target_os = "macos")]
+    shape: Option<(u32, u32)>,
     dash: DashReader,
     others: Vec<(livi_core_proto::state::Screen, DashReader)>,
     secondary: Option<Vec<livi_ui_model::dashboard::screens::Secondary>>,
@@ -99,6 +103,22 @@ impl Follow {
             if self.kiosk != Some(kiosk) {
                 self.kiosk = Some(kiosk);
                 out.push(Update::Kiosk(kiosk));
+            }
+            #[cfg(target_os = "macos")]
+            {
+                let size = |k: &str| {
+                    state["config"][k]
+                        .as_u64()
+                        .and_then(|v| u32::try_from(v).ok())
+                        .filter(|v| *v > 0)
+                };
+                let shape = size("mainScreenWidth").zip(size("mainScreenHeight"));
+                if let Some((w, h)) = shape
+                    && self.shape != shape
+                {
+                    self.shape = shape;
+                    out.push(Update::Shape(w, h));
+                }
             }
         }
         if hit("videoPlayback") {

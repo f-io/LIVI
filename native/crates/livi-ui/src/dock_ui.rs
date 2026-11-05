@@ -43,7 +43,7 @@ define_class!(
     }
 );
 
-fn ns_window(ui: &AppWindow) -> Option<Retained<NSWindow>> {
+pub fn ns_window(ui: &AppWindow) -> Option<Retained<NSWindow>> {
     let window = ui.window().window_handle();
     let handle = window.window_handle().ok()?;
     let RawWindowHandle::AppKit(h) = handle.as_raw() else {

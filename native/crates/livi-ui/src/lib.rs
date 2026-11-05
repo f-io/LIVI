@@ -20,6 +20,8 @@ mod media_ui;
 mod overlay_ui;
 mod secondary;
 mod settings_ui;
+#[cfg(target_os = "macos")]
+mod shape_ui;
 mod touch_ui;
 mod video_ui;
 
@@ -189,6 +191,8 @@ fn apply(ui: &AppWindow, update: Update) {
             settle_projection_focus(ui);
         }
         Update::Look(look) => apply_look(ui, look),
+        #[cfg(target_os = "macos")]
+        Update::Shape(w, h) => shape_ui::follow(ui, w, h),
         Update::Kiosk(on) => {
             fullscreen::follow_main(ui.window(), on);
             KIOSK.with_borrow(|k| {
@@ -535,6 +539,8 @@ pub fn run(
     #[cfg(target_os = "macos")]
     dock_ui::keep(&ui);
     ui.show()?;
+    #[cfg(target_os = "macos")]
+    shape_ui::apply(&ui);
     reported(&ui, &client, ui.get_page());
     if let Ok(page) = std::env::var("LIVI_UI_PAGE") {
         let page = match page.as_str() {
