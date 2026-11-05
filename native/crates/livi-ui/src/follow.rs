@@ -70,8 +70,10 @@ impl Follow {
         if hit("sessions") {
             let phone = if state["sessions"]["active"].is_null() {
                 PhoneState::None
-            } else {
+            } else if state["sessions"]["video"].as_bool() == Some(true) {
                 PhoneState::Streaming
+            } else {
+                PhoneState::Connected
             };
             if self.phone != Some(phone) {
                 self.phone = Some(phone);

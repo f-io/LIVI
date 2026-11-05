@@ -319,6 +319,7 @@ impl Projection {
         let position = self.sessions.iter().position(|s| s.active);
         let sessions = Sessions {
             active: position.map(|i| self.sessions[i].link.protocol()),
+            video: position.is_some_and(|i| self.sessions[i].video),
             position: position.map_or(0, |i| i as u32 + 1),
             total: self.sessions.len() as u32,
         };
