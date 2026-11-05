@@ -18,6 +18,7 @@ use livi_runtime::mfi_async::SharedCoprocessor;
 use livi_runtime::shared_sock::Bluetooth;
 use livi_runtime::state::HelperState;
 use livi_wifi::{Channel, OnAir, Security};
+use tokio::sync::Notify;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::aa::{AaConfig, Told, WiredPhones};
@@ -60,6 +61,8 @@ const HFP_AG_UUID: &str = "0000111f-0000-1000-8000-00805f9b34fb";
 const FAST_INTERVAL: Duration = Duration::from_secs(1);
 const FAST_ATTEMPTS: u32 = 15;
 const SLOW_INTERVAL: Duration = Duration::from_secs(30);
+const AP_RETRY_FIRST: Duration = Duration::from_secs(5);
+const AP_RETRY_LONGEST: Duration = Duration::from_secs(80);
 
 pub struct Wireless {
     pub auth: SharedCoprocessor,
@@ -81,6 +84,7 @@ pub struct AndroidAuto {
 
 static ON_AIR: Mutex<Option<OnAir>> = Mutex::new(None);
 static GRANTED: Mutex<Option<ApGranted>> = Mutex::new(None);
+static OFF_AIR: Notify = Notify::const_new();
 
 fn on_air() -> Option<OnAir> {
     ON_AIR.lock().unwrap_or_else(|e| e.into_inner()).clone()
@@ -89,6 +93,7 @@ fn on_air() -> Option<OnAir> {
 pub fn off_air() {
     *ON_AIR.lock().unwrap_or_else(|e| e.into_inner()) = None;
     *GRANTED.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    OFF_AIR.notify_one();
 }
 
 pub fn session_cp(base: &CpConfig) -> CpConfig {
@@ -106,8 +111,15 @@ pub fn session_cp(base: &CpConfig) -> CpConfig {
     cp
 }
 
-pub async fn listen(phones: Phones, hotspot: Hotspot, page: Page, mut ctx: Wireless) {
-    let _mdns = on_air_with(hotspot, &mut ctx).await;
+pub async fn listen(phones: Phones, hotspot: Hotspot, page: Page, ctx: Wireless) {
+    let mdns = on_air_with(&hotspot, &ctx.cp, &ctx.airplay_txt, ctx.carplay).await;
+    tokio::spawn(keep_on_air(
+        hotspot,
+        ctx.cp.clone(),
+        ctx.airplay_txt.clone(),
+        ctx.carplay,
+        mdns,
+    ));
     let name = ctx.identity.name.clone();
     let (carplay, android_auto) = (ctx.carplay, ctx.android_auto.is_some());
     let mut phones =
@@ -182,7 +194,7 @@ fn carplay_phone(ctx: &Wireless, fd: OwnedFd, peer: String) {
             }
             cabled
         }))),
-        ..ctx.cp.clone()
+        ..session_cp(&ctx.cp)
     };
     let cfg = LinkConfig {
         max_outgoing: 4,
@@ -315,12 +327,39 @@ async fn page_known(
     }
 }
 
-async fn on_air_with(hotspot: Hotspot, ctx: &mut Wireless) -> Option<Responder> {
+async fn keep_on_air(
+    hotspot: Hotspot,
+    base: CpConfig,
+    airplay_txt: Vec<String>,
+    carplay: bool,
+    mut mdns: Option<Responder>,
+) {
+    let mut retry = AP_RETRY_FIRST;
+    loop {
+        if on_air().is_some() {
+            retry = AP_RETRY_FIRST;
+            OFF_AIR.notified().await;
+            continue;
+        }
+        drop(mdns.take());
+        tokio::time::sleep(retry).await;
+        retry = (retry * 2).min(AP_RETRY_LONGEST);
+        mdns = on_air_with(&hotspot, &base, &airplay_txt, carplay).await;
+    }
+}
+
+async fn on_air_with(
+    hotspot: &Hotspot,
+    base: &CpConfig,
+    airplay_txt: &[String],
+    carplay: bool,
+) -> Option<Responder> {
     let request = ApRequest {
-        ssid: ctx.cp.ssid.clone(),
-        passphrase: ctx.cp.passphrase.clone(),
-        frequency: ctx.cp.channel.freq_mhz(),
+        ssid: base.ssid.clone(),
+        passphrase: base.passphrase.clone(),
+        frequency: base.channel.freq_mhz(),
     };
+    let hotspot = hotspot.clone();
     let granted = match tokio::task::spawn_blocking(move || hotspot(&request)).await {
         Ok(Ok(granted)) => granted,
         Ok(Err(e)) => {
@@ -334,13 +373,12 @@ async fn on_air_with(hotspot: Hotspot, ctx: &mut Wireless) -> Option<Responder> 
     };
     *ON_AIR.lock().unwrap_or_else(|e| e.into_inner()) = Some(OnAir {
         ssid: granted.ssid.clone(),
-        channel: Channel::of_freq(granted.frequency).unwrap_or(ctx.cp.channel),
+        channel: Channel::of_freq(granted.frequency).unwrap_or(base.channel),
         security: Security::Wpa2,
     });
     let iface = granted.iface.clone();
     *GRANTED.lock().unwrap_or_else(|e| e.into_inner()) = Some(granted);
-    ctx.cp = session_cp(&ctx.cp);
-    if !ctx.carplay {
+    if !carplay {
         return None;
     }
     let Some(address) = livi_runtime::net::wlan_link_local(&iface).and_then(|a| a.parse().ok())
@@ -348,5 +386,5 @@ async fn on_air_with(hotspot: Hotspot, ctx: &mut Wireless) -> Option<Responder> 
         eprintln!("[wireless] {iface} has no link-local address, CarPlay is not announced");
         return None;
     };
-    crate::wired::announce(&iface, address, &ctx.cp, &ctx.airplay_txt)
+    crate::wired::announce(&iface, address, &session_cp(base), airplay_txt)
 }
