@@ -17,14 +17,12 @@ pub struct Implausible(pub usize);
 pub trait ScreenSink {
     fn on_config(&mut self, codec: CpCodec, atom: &[u8]);
     fn on_frame(&mut self, nal: &[u8]);
-    fn on_started(&mut self);
 }
 
 pub struct ScreenStream {
     key: [u8; 32],
     counter: u64,
     acc: Vec<u8>,
-    started: bool,
     sink: Box<dyn ScreenSink>,
 }
 
@@ -34,7 +32,6 @@ impl ScreenStream {
             key,
             counter: 0,
             acc: Vec::new(),
-            started: false,
             sink,
         }
     }
@@ -42,7 +39,6 @@ impl ScreenStream {
     pub fn reset(&mut self) {
         self.acc.clear();
         self.counter = 0;
-        self.started = false;
     }
 
     pub fn push(&mut self, chunk: &[u8]) -> Result<(), Implausible> {
@@ -91,10 +87,6 @@ impl ScreenStream {
             body
         };
 
-        if !self.started {
-            self.started = true;
-            self.sink.on_started();
-        }
         self.sink.on_frame(frame);
     }
 
@@ -116,7 +108,6 @@ mod tests {
     struct Reports {
         configs: Vec<(CpCodec, Vec<u8>)>,
         frames: Vec<Vec<u8>>,
-        started: usize,
     }
 
     #[derive(Default, Clone)]
@@ -130,10 +121,6 @@ mod tests {
         fn frames(&self) -> Vec<Vec<u8>> {
             self.0.borrow().frames.clone()
         }
-
-        fn started(&self) -> usize {
-            self.0.borrow().started
-        }
     }
 
     impl ScreenSink for Seen {
@@ -143,10 +130,6 @@ mod tests {
 
         fn on_frame(&mut self, nal: &[u8]) {
             self.0.borrow_mut().frames.push(nal.to_vec());
-        }
-
-        fn on_started(&mut self) {
-            self.0.borrow_mut().started += 1;
         }
     }
 
@@ -189,14 +172,13 @@ mod tests {
     }
 
     #[test]
-    fn a_sealed_frame_arrives_decrypted_and_announces_the_start_once() {
+    fn a_sealed_frame_arrives_decrypted() {
         let seen = Seen::default();
         let mut s = stream(&seen);
 
         s.push(&sealed_frame(0, b"first")).unwrap();
         s.push(&sealed_frame(1, b"second")).unwrap();
 
-        assert_eq!(seen.started(), 1);
         assert_eq!(seen.frames(), vec![b"first".to_vec(), b"second".to_vec()]);
     }
 
@@ -209,7 +191,6 @@ mod tests {
 
         s.push(&bad).unwrap();
         assert!(seen.frames().is_empty());
-        assert_eq!(seen.started(), 0);
 
         s.push(&sealed_frame(0, b"again")).unwrap();
         assert_eq!(seen.frames(), vec![b"again".to_vec()]);
@@ -223,7 +204,6 @@ mod tests {
         s.push(&message(OP_VIDEO_FRAME, &[1, 2, 3])).unwrap();
 
         assert_eq!(seen.frames(), vec![vec![1, 2, 3]]);
-        assert_eq!(seen.started(), 1);
     }
 
     #[test]
@@ -283,7 +263,6 @@ mod tests {
         s.push(&sealed_frame(0, b"fresh")).unwrap();
 
         assert_eq!(seen.frames(), vec![b"fresh".to_vec()]);
-        assert_eq!(seen.started(), 1);
     }
 }
 

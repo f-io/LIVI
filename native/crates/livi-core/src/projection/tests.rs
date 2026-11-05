@@ -164,11 +164,7 @@ impl Rig {
             wired,
             controller_id: None,
         });
-        self.p.on_event(CpEvent::VideoCodec {
-            id,
-            cluster: false,
-            codec: livi_cp::stack::ScreenCodec::H264,
-        });
+        self.p.main_video_shown();
     }
 
     fn device(&mut self, id: SessionId, wired: bool, bt: &str, wifi: &str) {
@@ -277,15 +273,11 @@ async fn a_session_without_video_keeps_the_ui_in_front() {
     assert_eq!(rig.front(), Front::Livi);
     rig.p.on_event(CpEvent::VideoCodec {
         id: 1,
-        cluster: true,
-        codec: livi_cp::stack::ScreenCodec::H264,
-    });
-    assert_eq!(rig.front(), Front::Livi);
-    rig.p.on_event(CpEvent::VideoCodec {
-        id: 1,
         cluster: false,
         codec: livi_cp::stack::ScreenCodec::H264,
     });
+    assert_eq!(rig.front(), Front::Livi, "the codec alone shows nothing");
+    rig.p.main_video_shown();
     assert_eq!(rig.front(), Front::Projection);
 }
 
@@ -1445,11 +1437,7 @@ impl Rig {
             peer: String::new(),
         });
         self.p.on_aa(AaEvent::Connected { id });
-        self.p.on_aa(AaEvent::VideoCodec {
-            id,
-            cluster: false,
-            codec: livi_aa_stack::discovery::VideoCodec::H264,
-        });
+        self.p.main_video_shown();
     }
 }
 

@@ -26,6 +26,8 @@ use livi_cp::hid::{KnobState, media_button, telephony_button};
 use livi_cp::manager::{CallPhase, CpCmd, CpEvent, CpHandle, HelperPresence, Presence, SessionId};
 use livi_cp::stack::{AudioKind, StackCmd, Touch};
 use livi_cp::ui_sync::{self, Appearance, PhoneChoice};
+use livi_host_proto::PLANE_MAIN;
+use livi_media::gst_host::HostEvent;
 use livi_media::planes::{ClusterPlanes, Crop, MainPlane};
 use serde_json::{Map, Value};
 use tokio::sync::{Notify, broadcast, mpsc, oneshot, watch};
@@ -655,6 +657,7 @@ impl Projection {
         mut state: watch::Receiver<State>,
     ) {
         let mut created = Some(self.plane.player_created());
+        let mut host = Some(self.plane.host_events());
         let mut cluster_created = Some(self.clusters.player_created());
         let mut back = self
             .phone_back
@@ -733,12 +736,17 @@ impl Projection {
                     self.on_state(cfg, telemetry);
                     self.follow_players(phone, radio);
                 }
-                made = player_created(&mut created) => match made {
+                made = next_of(&mut created) => match made {
                     Ok(()) => self.keyframe(),
                     Err(broadcast::error::RecvError::Lagged(_)) => {}
                     Err(broadcast::error::RecvError::Closed) => created = None,
                 },
-                made = player_created(&mut cluster_created) => match made {
+                ev = next_of(&mut host) => match ev {
+                    Ok(HostEvent::Started { plane: PLANE_MAIN }) => self.main_video_shown(),
+                    Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => host = None,
+                },
+                made = next_of(&mut cluster_created) => match made {
                     Ok(()) => self.keyframe(),
                     Err(broadcast::error::RecvError::Lagged(_)) => {}
                     Err(broadcast::error::RecvError::Closed) => cluster_created = None,
@@ -847,9 +855,9 @@ fn written_out(nav: &mut Navigation, language: nav_text::Language) {
     }
 }
 
-async fn player_created(
-    rx: &mut Option<broadcast::Receiver<()>>,
-) -> Result<(), broadcast::error::RecvError> {
+async fn next_of<T: Clone>(
+    rx: &mut Option<broadcast::Receiver<T>>,
+) -> Result<T, broadcast::error::RecvError> {
     match rx {
         Some(rx) => rx.recv().await,
         None => std::future::pending().await,

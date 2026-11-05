@@ -12,7 +12,7 @@ use livi_host_proto::{
 use tokio::sync::broadcast;
 
 use crate::compositor::CompositorControl;
-use crate::gst_host::{Codec, GstHost};
+use crate::gst_host::{Codec, GstHost, HostEvent};
 
 const TAG: &str = MAIN_TAG;
 const SCREEN: &str = SCREENS[0];
@@ -91,6 +91,10 @@ impl MainPlane {
 
     pub fn player_created(&self) -> broadcast::Receiver<()> {
         self.created.subscribe()
+    }
+
+    pub fn host_events(&self) -> broadcast::Receiver<HostEvent> {
+        self.gst.subscribe()
     }
 
     pub fn prepare(self: &Arc<Self>, codec: Codec, atom: Vec<u8>) {

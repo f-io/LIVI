@@ -761,10 +761,6 @@ impl Fixture {
         self.sink(i).borrow_mut().on_frame(nal);
     }
 
-    fn started_in(&self, i: usize) {
-        self.sink(i).borrow_mut().on_started();
-    }
-
     fn replies(&self) -> Vec<Reply> {
         self.sent.0.lock().unwrap().clone()
     }
@@ -1318,27 +1314,42 @@ fn a_keepalive_configuration_keeps_the_last_record() {
     );
 }
 
+fn starts(f: &Fixture) -> usize {
+    f.replies()
+        .iter()
+        .filter(|r| **r == (REPLY_STARTED, MAIN_PLANE, vec![]))
+        .count()
+}
+
 #[test]
-fn the_start_of_a_stream_is_reported_while_the_receiver_is_active() {
+fn the_first_frame_shown_after_activation_is_reported_once() {
     let mut f = Fixture::new();
     f.feeder(42, MAIN_PLANE, false);
+    f.send(OP_CREATE, MAIN_PLANE, &create_body("h264", &[]));
+    f.config(0, CpCodec::H264, &[1, 2]);
 
-    f.started_in(0);
+    f.frame_in(0, &nal(DELTA, 1));
+    assert_eq!(starts(&f), 0);
+    f.frame_in(0, &nal(KEYFRAME, 2));
+    f.frame_in(0, &nal(DELTA, 3));
+    assert_eq!(starts(&f), 1);
 
-    assert_eq!(
-        f.replies().last(),
-        Some(&(REPLY_STARTED, MAIN_PLANE, vec![]))
-    );
+    f.send(OP_SET_ACTIVE, 42, &[0]);
+    f.send(OP_SET_ACTIVE, 42, &[1]);
+    f.frame_in(0, &nal(KEYFRAME, 4));
+    assert_eq!(starts(&f), 2);
 }
 
 #[test]
 fn a_passive_receiver_reports_no_start() {
     let mut f = Fixture::new();
     f.send(OP_LISTEN, 42, &listen_body(MAIN_PLANE, false, 1));
+    f.send(OP_CREATE, MAIN_PLANE, &create_body("h264", &[]));
+    f.config(0, CpCodec::H264, &[1, 2]);
 
-    f.started_in(0);
+    f.frame_in(0, &nal(KEYFRAME, 1));
 
-    assert_eq!(f.replies().len(), 1);
+    assert_eq!(starts(&f), 0);
 }
 
 fn audio_body(codec: u8, realtime: bool, device: &str) -> Vec<u8> {

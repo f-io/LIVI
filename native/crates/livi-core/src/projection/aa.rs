@@ -89,11 +89,7 @@ impl Projection {
                     self.host_ui();
                 }
             }
-            AaEvent::VideoCodec { id, cluster, .. } => {
-                if !cluster {
-                    self.video_up(Link::Aa(id));
-                }
-            }
+            AaEvent::VideoCodec { .. } => {}
             AaEvent::NowPlaying { id, now_playing } => self.aa_now_playing(id, now_playing),
             AaEvent::Navigation { id, navigation } => self.aa_navigation(id, navigation),
             AaEvent::NavigationImage { id, image } => {

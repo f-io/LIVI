@@ -85,6 +85,7 @@ impl<O: Outside> Host<O> {
         };
         self.helper_feed = None;
         let sink = MediaFeed::<O> {
+            wire: self.wire.clone(),
             planes: self.planes.clone(),
             audio: self.audio.clone(),
             fans: self.feed_fans.clone(),

@@ -68,6 +68,12 @@ impl Projection {
         }
     }
 
+    pub(super) fn main_video_shown(&mut self) {
+        if let Some(link) = self.active().map(|s| s.link) {
+            self.video_up(link);
+        }
+    }
+
     pub(super) fn auto_activate(&mut self, index: u32) {
         if self.active().is_none() {
             self.activate(index);
@@ -169,6 +175,7 @@ impl Projection {
         self.activity(|a| *a = Activity::default());
         match next {
             Some(i) => {
+                self.sessions[i].video = false;
                 let (level, ramp) = (self.sessions[i].duck_level, self.sessions[i].duck_ramp_ms);
                 self.duck(level, ramp);
                 if !had_prev {

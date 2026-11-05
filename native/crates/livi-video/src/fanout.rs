@@ -25,6 +25,7 @@ pub struct Fanout {
     cache_valid: bool,
     params: Vec<Vec<u8>>,
     params_closed: bool,
+    shown: bool,
     stats: Stats,
 }
 
@@ -45,12 +46,20 @@ impl Fanout {
             cache_valid: false,
             params: Vec::new(),
             params_closed: false,
+            shown: false,
             stats: Stats::default(),
         }
     }
 
     pub fn set_active(&mut self, active: bool) {
         self.active = active;
+        if !active {
+            self.shown = false;
+        }
+    }
+
+    pub fn newly_shown(&mut self) -> bool {
+        !core::mem::replace(&mut self.shown, true)
     }
 
     pub fn is_active(&self) -> bool {
@@ -63,6 +72,7 @@ impl Fanout {
     }
 
     pub fn restart(&mut self) {
+        self.shown = false;
         self.awaiting_keyframe = true;
         self.cache.clear();
         self.cache_valid = false;
@@ -163,6 +173,19 @@ mod tests {
         f.set_active(true);
         f.set_codec(CpCodec::H264);
         f
+    }
+
+    #[test]
+    fn the_first_shown_frame_counts_once_per_activation() {
+        let mut f = running();
+
+        assert!(f.newly_shown());
+        assert!(!f.newly_shown());
+        f.restart();
+        assert!(f.newly_shown());
+        f.set_active(false);
+        f.set_active(true);
+        assert!(f.newly_shown());
     }
 
     #[test]

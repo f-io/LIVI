@@ -195,13 +195,9 @@ impl<O: Outside> ScreenSink for Feed<O> {
         let has_target = st.has_target(&planes);
         if st.fan.take(nal, has_target) {
             st.for_each_target(&planes, |p| p.push(nal));
-        }
-    }
-
-    fn on_started(&mut self) {
-        let st = self.state.borrow();
-        if st.fan.is_active() {
-            self.wire.reply(REPLY_STARTED, st.plane_id, &[]);
+            if st.fan.newly_shown() {
+                self.wire.reply(REPLY_STARTED, st.plane_id, &[]);
+            }
         }
     }
 }
@@ -278,6 +274,7 @@ enum Route {
 type FeedRoutes = Rc<RefCell<HashMap<u32, Route>>>;
 
 struct MediaFeed<O: Outside> {
+    wire: Arc<dyn Wire>,
     planes: Planes<O::Plane>,
     audio: Streams<O::Speaker, O::AudioEars>,
     fans: FeedFans,
@@ -324,12 +321,18 @@ impl<O: Outside> MediaSink for MediaFeed<O> {
                 let planes = self.planes.borrow();
                 let mut has_target = false;
                 Self::for_each_target(&planes, target, |_| has_target = true);
-                let pass = match self.fans.borrow_mut().get_mut(&r.id) {
-                    Some(Some(fan)) => fan.take(&r.payload, has_target),
-                    _ => has_target,
+                let (pass, shown) = match self.fans.borrow_mut().get_mut(&r.id) {
+                    Some(Some(fan)) => {
+                        let pass = fan.take(&r.payload, has_target);
+                        (pass, pass && fan.newly_shown())
+                    }
+                    _ => (has_target, false),
                 };
                 if pass {
                     Self::for_each_target(&planes, target, |p| p.push(&r.payload));
+                }
+                if shown {
+                    self.wire.reply(REPLY_STARTED, target, &[]);
                 }
             }
             feedproto::KIND_AUDIO => {

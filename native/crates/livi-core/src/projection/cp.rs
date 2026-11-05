@@ -166,11 +166,7 @@ impl Projection {
                     let _ = radio.send(ask);
                 }
             }
-            CpEvent::VideoCodec { id, cluster, .. } => {
-                if !cluster {
-                    self.video_up(Link::Cp(id));
-                }
-            }
+            CpEvent::VideoCodec { .. } => {}
             CpEvent::PhoneUtcOffset { minutes } => {
                 tokio::spawn(crate::gnss::timezone::apply_phone_offset(minutes));
             }
