@@ -133,7 +133,6 @@ pub struct StackConfig {
     pub info: InfoConfig,
     pub audio_device: String,
     pub audio_input_device: String,
-    pub hls_video: bool,
     pub vehicle_climate: bool,
     pub app_version: String,
     pub app_build_date: String,

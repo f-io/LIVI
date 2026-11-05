@@ -73,7 +73,7 @@ impl<M: Media> Conn<M> {
         if !offered.is_empty() {
             println!("[cpStack] phone offers {}", offered.join(", "));
         }
-        if offered.contains(&video_playback::FEATURE) && self.ctx.config.borrow().hls_video {
+        if offered.contains(&video_playback::FEATURE) {
             self.video_playback = true;
             if let Some(root) = &self.ctx.video_capture {
                 let capture = video_playback::Capture::new(root);

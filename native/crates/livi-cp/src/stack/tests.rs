@@ -241,10 +241,10 @@ struct Rig {
 
 impl Rig {
     async fn new() -> Self {
-        Self::with_video(false, false).await
+        Self::with_capture(false).await
     }
 
-    async fn with_video(video: bool, capture: bool) -> Self {
+    async fn with_capture(capture: bool) -> Self {
         let dir = TempDir::new();
         let identity = load_or_create(&dir.0.join("identity.json"));
         let pairings = Pairings::new(dir.0.join("pairings.json"));
@@ -258,7 +258,6 @@ impl Rig {
             info,
             audio_device: "out".into(),
             audio_input_device: "in".into(),
-            hls_video: video,
             vehicle_climate: true,
             app_version: "9.5.0".into(),
             app_build_date: String::new(),
@@ -443,7 +442,7 @@ async fn a_phone_that_falls_silent_ends_the_session() {
 
 #[tokio::test]
 async fn a_queued_video_plays_on_the_host_and_follows_the_phone() {
-    let mut rig = Rig::with_video(true, false).await;
+    let mut rig = Rig::new().await;
     let secret = rig.secret;
     rig.phone.verify(&secret, b"phone-1").await;
     let offered = Value::Array(vec![Value::String(video_playback::FEATURE.into())]);
@@ -547,7 +546,7 @@ async fn a_queued_video_plays_on_the_host_and_follows_the_phone() {
 
 #[tokio::test]
 async fn the_driver_pauses_seeks_and_closes_the_video() {
-    let mut rig = Rig::with_video(true, false).await;
+    let mut rig = Rig::new().await;
     let secret = rig.secret;
     rig.phone.verify(&secret, b"phone-1").await;
     let offered = Value::Array(vec![Value::String(video_playback::FEATURE.into())]);
@@ -659,7 +658,7 @@ async fn the_driver_pauses_seeks_and_closes_the_video() {
 
 #[tokio::test]
 async fn a_muted_item_starts_muted() {
-    let mut rig = Rig::with_video(true, false).await;
+    let mut rig = Rig::new().await;
     let secret = rig.secret;
     rig.phone.verify(&secret, b"phone-1").await;
     let offered = Value::Array(vec![Value::String(video_playback::FEATURE.into())]);
@@ -741,7 +740,7 @@ async fn a_muted_item_starts_muted() {
 
 #[tokio::test]
 async fn leaving_park_hides_the_picture_and_the_sound_plays_on() {
-    let mut rig = Rig::with_video(true, false).await;
+    let mut rig = Rig::new().await;
     let secret = rig.secret;
     rig.phone.verify(&secret, b"phone-1").await;
     let offered = Value::Array(vec![Value::String(video_playback::FEATURE.into())]);
@@ -874,7 +873,7 @@ async fn leaving_park_hides_the_picture_and_the_sound_plays_on() {
 
 #[tokio::test]
 async fn the_video_playback_trial_claims_the_feature_and_keeps_payloads() {
-    let mut rig = Rig::with_video(true, true).await;
+    let mut rig = Rig::with_capture(true).await;
     let secret = rig.secret;
     rig.phone.verify(&secret, b"phone-1").await;
     let offered = ["hevc", video_playback::FEATURE].map(|f| Value::String(f.into()));

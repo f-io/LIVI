@@ -159,11 +159,6 @@ pub fn schema() -> Node {
                 "carPlayVehicleClimate",
             )
             .icon("carPlayVehicleClimate"),
-            Node::checkbox(
-                Label::new("settings.carPlayHlsVideo", "Video in the car"),
-                "carPlayHlsVideo",
-            )
-            .icon("media"),
             Node::custom(
                 Label::new("settings.carData", "Car Data"),
                 "carType",
