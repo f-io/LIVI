@@ -6,60 +6,20 @@ use livi_audio::player::uplink::{SocketTap, Uplink, UplinkConfig as UplinkPipeli
 use livi_audio::player::{Config as AudioPipeline, Player as AudioPipelinePlayer};
 use livi_audio::stream::AudioSink;
 use livi_screen_stream::ScreenSink;
-#[cfg(not(target_os = "macos"))]
-use livi_video_player::{Player, UrlPlayer};
 
-#[cfg(target_os = "android")]
-use crate::shown::Shown;
-#[cfg(target_os = "macos")]
-use crate::ui_plane::{UiPlane, UiUrlPlayer};
 use crate::{AudioConfig, MediaSink, Outside, Speaker, TapConfig, UplinkConfig};
+
+#[cfg_attr(target_os = "android", path = "gst/android.rs")]
+#[cfg_attr(target_os = "macos", path = "gst/mac.rs")]
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "android")),
+    path = "gst/linux.rs"
+)]
+mod platform;
 #[cfg(not(target_os = "macos"))]
-use crate::{Plane, UrlPlay};
+mod players;
 
 pub struct Tap(#[allow(dead_code)] SocketTap);
-
-#[cfg(not(target_os = "macos"))]
-impl Plane for Player {
-    fn start(&self) {
-        Player::start(self)
-    }
-
-    fn push(&self, nal: &[u8]) {
-        Player::push(self, nal);
-    }
-
-    fn flush(&self) {
-        Player::flush(self)
-    }
-
-    fn set_gamma(&self, gamma: f64, contrast: f64, r: f64, g: f64, b: f64) {
-        Player::set_gamma(self, gamma, contrast, r, g, b)
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-impl UrlPlay for UrlPlayer {
-    fn start(&self) {
-        UrlPlayer::start(self)
-    }
-
-    fn set_rate(&self, rate: f64) {
-        UrlPlayer::set_rate(self, rate)
-    }
-
-    fn seek(&self, seconds: f64) {
-        UrlPlayer::seek(self, seconds)
-    }
-
-    fn set_muted(&self, muted: bool) {
-        UrlPlayer::set_muted(self, muted)
-    }
-
-    fn status(&self) -> crate::UrlStatus {
-        UrlPlayer::status(self)
-    }
-}
 
 pub struct Ears(#[allow(dead_code)] livi_screen_stream::receiver::ScreenReceiver);
 
@@ -96,18 +56,9 @@ impl Speaker for AudioPipelinePlayer {
 pub struct Gst;
 
 impl Outside for Gst {
-    #[cfg(not(any(target_os = "macos", target_os = "android")))]
-    type Plane = Player;
-    #[cfg(target_os = "android")]
-    type Plane = Shown<Player>;
-    #[cfg(target_os = "macos")]
-    type Plane = UiPlane;
-    #[cfg(not(any(target_os = "macos", target_os = "android")))]
-    type UrlPlayer = UrlPlayer;
-    #[cfg(target_os = "android")]
-    type UrlPlayer = Shown<UrlPlayer>;
-    #[cfg(target_os = "macos")]
-    type UrlPlayer = UiUrlPlayer;
+    type Plane = platform::Plane;
+    type UrlPlayer = platform::Url;
+    type Camera = platform::Camera;
     type Ears = Ears;
     type Speaker = AudioPipelinePlayer;
     type AudioEars = AudioEars;
@@ -125,83 +76,20 @@ impl Outside for Gst {
         .map(Tap)
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "android")))]
-    fn create_plane(&self, _id: u32, codec: &str, codec_data: &[u8]) -> Option<Player> {
-        Player::new(codec, 0, codec_data)
+    fn create_plane(&self, id: u32, codec: &str, codec_data: &[u8]) -> Option<platform::Plane> {
+        platform::create_plane(id, codec, codec_data)
     }
 
-    #[cfg(target_os = "android")]
-    fn create_plane(&self, id: u32, codec: &str, codec_data: &[u8]) -> Option<Shown<Player>> {
-        Shown::new(id, livi_video_view::create(id, codec, codec_data))
-    }
-
-    #[cfg(target_os = "macos")]
-    fn create_plane(&self, id: u32, codec: &str, codec_data: &[u8]) -> Option<UiPlane> {
-        UiPlane::open(&ui_planes_path(id)?, id, codec, codec_data)
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "android")))]
-    type Camera = livi_video_player::CameraPlayer;
-    #[cfg(target_os = "android")]
-    type Camera = Shown<livi_video_player::CameraPlayer>;
-    #[cfg(target_os = "macos")]
-    type Camera = crate::ui_plane::UiCamera;
-
-    #[cfg(target_os = "android")]
-    fn open_camera(
-        &self,
-        id: u32,
-        order: &crate::CameraOrder,
-    ) -> Option<Shown<livi_video_player::CameraPlayer>> {
-        let camera = Shown::new(
-            id,
-            livi_video_view::camera(id, order.clone(), livi_video_player::to_stderr()),
-        )?;
-        camera.start();
-        Some(camera)
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "android")))]
-    fn open_camera(
-        &self,
-        _id: u32,
-        order: &crate::CameraOrder,
-    ) -> Option<livi_video_player::CameraPlayer> {
-        let camera =
-            livi_video_player::CameraPlayer::new(order, 0, livi_video_player::to_stderr())?;
-        camera.start();
-        Some(camera)
-    }
-
-    #[cfg(target_os = "macos")]
-    fn open_camera(
-        &self,
-        id: u32,
-        order: &crate::CameraOrder,
-    ) -> Option<crate::ui_plane::UiCamera> {
-        crate::ui_plane::UiCamera::open(&ui_planes_path(id)?, id, order)
+    fn open_camera(&self, id: u32, order: &crate::CameraOrder) -> Option<platform::Camera> {
+        platform::open_camera(id, order)
     }
 
     fn watch_cameras(&self, report: Box<dyn Fn(Vec<crate::CameraSeen>) + Send>) {
         livi_video_player::watch_cameras(report);
     }
 
-    #[cfg(target_os = "android")]
-    fn play_url(&self, id: u32, url: &str, audio_device: &str) -> Option<Shown<UrlPlayer>> {
-        Shown::new(
-            id,
-            livi_video_view::play(id, url, audio_device, livi_video_player::to_stderr()),
-        )
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "android")))]
-    fn play_url(&self, _id: u32, url: &str, audio_device: &str) -> Option<UrlPlayer> {
-        UrlPlayer::new(url, audio_device, 0, livi_video_player::to_stderr())
-    }
-
-    #[cfg(target_os = "macos")]
-    fn play_url(&self, id: u32, url: &str, audio_device: &str) -> Option<UiUrlPlayer> {
-        UiUrlPlayer::open(&ui_planes_path(id)?, id, url, audio_device)
+    fn play_url(&self, id: u32, url: &str, audio_device: &str) -> Option<platform::Url> {
+        platform::play_url(id, url, audio_device)
     }
 
     fn listen(&self, key: [u8; 32], sink: Box<dyn ScreenSink>) -> Option<(Ears, u16)> {
@@ -288,11 +176,4 @@ pub fn probe_json() -> String {
     }
     out.push('}');
     out
-}
-
-#[cfg(target_os = "macos")]
-fn ui_planes_path(id: u32) -> Option<String> {
-    std::env::var(livi_host_proto::ui_planes::PATH_ENV)
-        .inspect_err(|_| eprintln!("[gst-host] no UI to draw plane 0x{id:x} in"))
-        .ok()
 }

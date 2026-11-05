@@ -366,7 +366,7 @@ impl CameraPlayer {
                 gst::PadProbeReturn::Remove
             });
         }
-        let view = crate::WindowView::default();
+        let view = crate::WindowView::new();
         view.attach(window, crate::RANK_CAMERA, Some(&sink));
         say(&format!(
             "[camera] rotation {} mirror {}",

@@ -72,7 +72,7 @@ impl UrlPlayer {
             .ok()?;
         playbin.set_property_from_str("flags", "video+audio+soft-volume+buffering");
         let video = video_sink(&say)?;
-        let view = crate::WindowView::default();
+        let view = crate::WindowView::new();
         view.attach(window, crate::RANK_URL, Some(&video));
         let heard = Arc::new(Mutex::new(Heard::default()));
         playbin.set_property("video-sink", video);

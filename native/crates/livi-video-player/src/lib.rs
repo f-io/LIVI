@@ -12,10 +12,24 @@ use std::sync::{Arc, Once};
 mod android_view;
 mod camera;
 mod url_player;
+#[cfg_attr(
+    all(target_os = "macos", feature = "window-view"),
+    path = "view/mac.rs"
+)]
+#[cfg_attr(target_os = "android", path = "view/android.rs")]
+#[cfg_attr(
+    not(any(
+        all(target_os = "macos", feature = "window-view"),
+        target_os = "android"
+    )),
+    path = "view/none.rs"
+)]
+mod view;
 #[cfg(target_os = "android")]
 pub use android_view::{Views, set_surface, set_views};
 pub use camera::{CameraPlayer, direction, watch_cameras};
 pub use url_player::UrlPlayer;
+use view::WindowView;
 
 pub type Say = Arc<dyn Fn(&str) + Send + Sync>;
 
@@ -210,146 +224,9 @@ fn install_decoder_probes(dec: &gst::Element, decoder_name: &str, say: &Say) {
     });
 }
 
-#[cfg(all(target_os = "macos", feature = "window-view"))]
-unsafe extern "C" {
-    fn livi_attach_view(parent: usize, rank: i32, out_view: *mut *mut core::ffi::c_void) -> usize;
-    fn livi_remove_view(view: *mut core::ffi::c_void);
-    fn livi_set_view_hidden(view: *mut core::ffi::c_void, hidden: bool);
-    fn livi_set_content_region(
-        view: *mut core::ffi::c_void,
-        sink: *mut core::ffi::c_void,
-        crop_l: f64,
-        crop_t: f64,
-        vis_w: f64,
-        vis_h: f64,
-        tier_w: f64,
-        tier_h: f64,
-    );
-}
-
 const RANK_FRAMES: i32 = 0;
 const RANK_URL: i32 = 1;
 const RANK_CAMERA: i32 = 2;
-
-#[derive(Default)]
-struct WindowView {
-    #[cfg(all(target_os = "macos", feature = "window-view"))]
-    view: core::sync::atomic::AtomicPtr<core::ffi::c_void>,
-    #[cfg(target_os = "android")]
-    view: core::sync::atomic::AtomicU64,
-}
-
-impl WindowView {
-    #[cfg(all(target_os = "macos", feature = "window-view"))]
-    fn attach(&self, handle: usize, rank: i32, sink: Option<&gst::Element>) {
-        use gstreamer_video::prelude::VideoOverlayExtManual;
-        if handle == 0 {
-            return;
-        }
-        let mut view = core::ptr::null_mut();
-        let overlay = unsafe { livi_attach_view(handle, rank, &mut view) };
-        self.view.store(view, core::sync::atomic::Ordering::Release);
-        if overlay == 0 {
-            return;
-        }
-        if let Some(o) = sink.and_then(|s| s.dynamic_cast_ref::<gstreamer_video::VideoOverlay>()) {
-            unsafe { o.set_window_handle(overlay) };
-        }
-    }
-
-    #[cfg(target_os = "android")]
-    fn attach(&self, handle: usize, rank: i32, sink: Option<&gst::Element>) {
-        if handle == 0 {
-            return;
-        }
-        if let Some(view) = sink.and_then(|s| android_view::open(rank, s)) {
-            self.view.store(view, core::sync::atomic::Ordering::Release);
-        }
-    }
-
-    #[cfg(target_os = "android")]
-    fn shown_view(&self) -> Option<u64> {
-        Some(self.view.load(core::sync::atomic::Ordering::Acquire)).filter(|&v| v != 0)
-    }
-
-    #[cfg(not(any(
-        all(target_os = "macos", feature = "window-view"),
-        target_os = "android"
-    )))]
-    fn attach(&self, _handle: usize, _rank: i32, _sink: Option<&gst::Element>) {}
-
-    fn set_visible(&self, visible: bool) {
-        #[cfg(all(target_os = "macos", feature = "window-view"))]
-        unsafe {
-            livi_set_view_hidden(self.ptr(), !visible)
-        };
-        #[cfg(target_os = "android")]
-        if let Some(view) = self.shown_view() {
-            android_view::show(view, visible);
-        }
-        #[cfg(not(any(
-            all(target_os = "macos", feature = "window-view"),
-            target_os = "android"
-        )))]
-        let _ = visible;
-    }
-
-    fn set_region(
-        &self,
-        crop_l: f64,
-        crop_t: f64,
-        vis_w: f64,
-        vis_h: f64,
-        tier_w: f64,
-        tier_h: f64,
-    ) {
-        #[cfg(all(target_os = "macos", feature = "window-view"))]
-        {
-            let view = self.ptr();
-            if !view.is_null() {
-                let sink = core::ptr::null_mut();
-                unsafe {
-                    livi_set_content_region(
-                        view, sink, crop_l, crop_t, vis_w, vis_h, tier_w, tier_h,
-                    )
-                }
-            }
-        }
-        #[cfg(target_os = "android")]
-        if let Some(view) = self.shown_view() {
-            android_view::place(view, [crop_l, crop_t, vis_w, vis_h, tier_w, tier_h]);
-        }
-        #[cfg(not(any(
-            all(target_os = "macos", feature = "window-view"),
-            target_os = "android"
-        )))]
-        let _ = (crop_l, crop_t, vis_w, vis_h, tier_w, tier_h);
-    }
-
-    #[cfg(all(target_os = "macos", feature = "window-view"))]
-    fn ptr(&self) -> *mut core::ffi::c_void {
-        self.view.load(core::sync::atomic::Ordering::Acquire)
-    }
-
-    fn remove(&self) {
-        #[cfg(all(target_os = "macos", feature = "window-view"))]
-        {
-            let view = self
-                .view
-                .swap(core::ptr::null_mut(), core::sync::atomic::Ordering::AcqRel);
-            if !view.is_null() {
-                unsafe { livi_remove_view(view) };
-            }
-        }
-        #[cfg(target_os = "android")]
-        {
-            let view = self.view.swap(0, core::sync::atomic::Ordering::AcqRel);
-            if view != 0 {
-                android_view::close(view);
-            }
-        }
-    }
-}
 
 pub struct Player {
     pipeline: gst::Pipeline,
@@ -398,7 +275,7 @@ impl Player {
 
         let player = Self {
             glshader: pipeline.by_name("cal"),
-            view: WindowView::default(),
+            view: WindowView::new(),
             appsrc,
             pipeline,
         };
