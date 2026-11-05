@@ -15,11 +15,5 @@ pub fn drop_dongle_link(mac: String) {
 }
 
 pub fn dongle_on_cable(state: Arc<HelperState>) -> OnCable {
-    OnCable(Arc::new(move |mac: &str| {
-        let cabled = state.carkit_claims(mac);
-        if cabled {
-            drop_dongle_link(mac.to_string());
-        }
-        cabled
-    }))
+    OnCable::dropping(state, |mac| drop_dongle_link(mac.to_string()))
 }

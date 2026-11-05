@@ -4169,22 +4169,16 @@ dependencies = [
 name = "livi-helperd"
 version = "0.1.0"
 dependencies = [
- "iap2-csm",
- "iap2-link",
  "iap2-mfi",
  "iap2-usbmux",
- "iap2-wired",
  "libc 1.0.0-alpha.5",
  "livi-aa",
- "livi-bt-host",
  "livi-core-proto",
  "livi-helper",
- "livi-hfp",
  "livi-link-host",
  "livi-net",
  "livi-runtime",
  "livi-wifi",
- "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json",
  "tokio",
 ]

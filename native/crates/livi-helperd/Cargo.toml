@@ -13,18 +13,10 @@ livi-helper.workspace = true
 livi-runtime.workspace = true
 livi-wifi.workspace = true
 livi-net.workspace = true
-iap2-csm.workspace = true
 iap2-mfi = { workspace = true, features = ["files"] }
-iap2-link.workspace = true
 livi-aa.workspace = true
 livi-link-host.workspace = true
 iap2-usbmux.workspace = true
-iap2-wired.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
 serde_json.workspace = true
 libc.workspace = true
-nusb.workspace = true
-
-[target.'cfg(target_os = "macos")'.dependencies]
-livi-bt-host.workspace = true
-livi-hfp.workspace = true

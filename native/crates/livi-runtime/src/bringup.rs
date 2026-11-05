@@ -53,6 +53,21 @@ pub type AskOnAir = fn() -> Option<OnAir>;
 #[derive(Clone)]
 pub struct OnCable(pub Arc<dyn Fn(&str) -> bool + Send + Sync>);
 
+impl OnCable {
+    pub fn dropping(
+        state: Arc<crate::state::HelperState>,
+        drop: impl Fn(&str) + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(move |mac: &str| {
+            let cabled = state.carkit_claims(mac);
+            if cabled {
+                drop(mac);
+            }
+            cabled
+        }))
+    }
+}
+
 impl core::fmt::Debug for OnCable {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("OnCable")

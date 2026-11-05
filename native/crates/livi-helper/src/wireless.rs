@@ -2,19 +2,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use std::collections::HashMap;
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use iap2_link::LinkConfig;
 use livi_mdns::responder::Responder;
-use livi_runtime::bringup::{AskOnAir, CpConfig, OnCable, run_accessory};
+use livi_runtime::bringup::{AskOnAir, CpConfig, OnCable};
 use livi_runtime::driver::spawn_link;
 use livi_runtime::hfp::Hfp;
 use livi_runtime::ident::{Identity, Transport};
-use livi_runtime::livi_sock::{Broadcaster, DropLink, SharedTag, pump_artwork, pump_events_for};
+use livi_runtime::livi_sock::{Broadcaster, DropLink, run_bluetooth};
 use livi_runtime::mfi_async::SharedCoprocessor;
+use livi_runtime::reconnect::{self, Paging};
 use livi_runtime::shared_sock::Bluetooth;
 use livi_runtime::state::HelperState;
 use livi_wifi::{Channel, OnAir, Security};
@@ -58,9 +57,6 @@ pub type Page = Arc<dyn Fn(&str, &str) -> Result<(), String> + Send + Sync>;
 
 const IAP_PHONE_UUID: &str = "00000000-deca-fade-deca-deafdecacafe";
 const HFP_AG_UUID: &str = "0000111f-0000-1000-8000-00805f9b34fb";
-const FAST_INTERVAL: Duration = Duration::from_secs(1);
-const FAST_ATTEMPTS: u32 = 15;
-const SLOW_INTERVAL: Duration = Duration::from_secs(30);
 const AP_RETRY_FIRST: Duration = Duration::from_secs(5);
 const AP_RETRY_LONGEST: Duration = Duration::from_secs(80);
 
@@ -148,7 +144,10 @@ pub async fn listen(phones: Phones, hotspot: Hotspot, page: Page, ctx: Wireless)
         wakes.push(HFP_AG_UUID);
     }
     let hfp = ctx.android_auto.as_ref().map(|aa| aa.hfp.clone());
-    tokio::spawn(page_known(ctx.state.clone(), page, wakes, hfp));
+    tokio::spawn(reconnect::run(
+        Pager { page, wakes, hfp },
+        ctx.state.clone(),
+    ));
     while let Some(phone) = phones.recv().await {
         match (phone.service, &ctx.android_auto) {
             (Service::Iap, _) if ctx.carplay => carplay_phone(&ctx, phone.fd, phone.peer),
@@ -179,53 +178,24 @@ pub fn bluetooth(page: Page, drop: DropLink, hfp: Option<Hfp>) -> Bluetooth {
 }
 
 fn carplay_phone(ctx: &Wireless, fd: OwnedFd, peer: String) {
-    if ctx.state.carkit_claims(&peer) {
-        println!("[wireless] {peer} is on the cable, its Bluetooth link goes");
-        return;
-    }
-    println!("[wireless] phone connected mac={peer}");
     let drop = ctx.drop.clone();
-    let links = ctx.state.clone();
     let cp = CpConfig {
-        on_cable: Some(OnCable(Arc::new(move |mac: &str| {
-            let cabled = links.carkit_claims(mac);
-            if cabled && let Err(e) = drop(mac.to_string()) {
+        on_cable: Some(OnCable::dropping(ctx.state.clone(), move |mac| {
+            if let Err(e) = drop(mac.to_string()) {
                 eprintln!("[wireless] {e}");
             }
-            cabled
-        }))),
+        })),
         ..session_cp(&ctx.cp)
     };
-    let cfg = LinkConfig {
-        max_outgoing: 4,
-        control_version: 2,
-        ..LinkConfig::default()
-    };
-    let (channel, art_rx) = spawn_link(fd, cfg, false);
-    let (tx, rx) = tokio::sync::mpsc::channel(64);
-    let accessory = run_accessory(
-        channel,
+    run_bluetooth(
+        |cfg| spawn_link(fd, cfg, false),
         ctx.auth.clone(),
         ctx.identity.clone(),
         cp,
-        tx,
-        ctx.state.vehicle_feed(),
-    );
-    let (links, mac) = (ctx.state.clone(), peer);
-    tokio::spawn(async move {
-        links.link_up(&mac);
-        accessory.await;
-        links.link_down(&mac);
-    });
-    let ident: SharedTag = Default::default();
-    tokio::spawn(pump_events_for(
-        rx,
         ctx.bcast.clone(),
-        "bt",
-        None,
-        ident.clone(),
-    ));
-    tokio::spawn(pump_artwork(art_rx, ctx.bcast.clone(), ident));
+        ctx.state.clone(),
+        peer,
+    );
 }
 
 fn android_auto_phone(aa: &AndroidAuto, state: Arc<HelperState>, fd: OwnedFd, mac: String) {
@@ -236,26 +206,11 @@ fn android_auto_phone(aa: &AndroidAuto, state: Arc<HelperState>, fd: OwnedFd, ma
     };
     let (events, wired) = (aa.events.clone(), aa.wired.clone());
     tokio::spawn(async move {
-        let sock = match stream(fd) {
-            Ok(sock) => sock,
-            Err(e) => {
-                eprintln!("[aa] {mac}: {e}");
-                return;
-            }
-        };
-        state.link_up(&mac);
-        let ended = crate::aa::handshake(sock, &mac, told, &events, &wired).await;
-        state.link_down(&mac);
-        if let Err(e) = ended {
-            println!("[aa] {mac}: bootstrap ended: {e}");
+        match crate::aa::stream(fd) {
+            Ok(sock) => crate::aa::bootstrap(sock, &mac, told, &events, &wired, &state).await,
+            Err(e) => eprintln!("[aa] {mac}: {e}"),
         }
     });
-}
-
-fn stream(fd: OwnedFd) -> std::io::Result<tokio::net::UnixStream> {
-    let stream = std::os::unix::net::UnixStream::from(fd);
-    stream.set_nonblocking(true)?;
-    tokio::net::UnixStream::from_std(stream)
 }
 
 fn offer() -> Option<Told> {
@@ -272,57 +227,48 @@ fn offer() -> Option<Told> {
     Some((told, Security::Wpa2, bssid))
 }
 
-async fn page_known(
-    state: Arc<HelperState>,
+struct Pager {
     page: Page,
     wakes: Vec<&'static str>,
     hfp: Option<Hfp>,
-) {
-    let mut turn: usize = 0;
-    let mut attempts: HashMap<String, u32> = HashMap::new();
-    let mut next_try: HashMap<String, Instant> = HashMap::new();
-    loop {
-        tokio::time::sleep(FAST_INTERVAL).await;
-        let targets: Vec<(String, &'static str)> = state
-            .reconnect_targets()
-            .into_iter()
-            .filter_map(|(mac, uuid)| {
-                let wake = wakes.iter().find(|w| uuid.as_deref() == Some(**w))?;
-                Some((mac, *wake))
-            })
-            .collect();
-        attempts.retain(|mac, _| targets.iter().any(|(m, _)| m == mac));
-        next_try.retain(|mac, _| targets.iter().any(|(m, _)| m == mac));
-        if targets.is_empty() {
-            continue;
-        }
-        let (mac, wake) = targets[turn % targets.len()].clone();
-        turn = turn.wrapping_add(1);
-        let hands_free = wake == HFP_AG_UUID && hfp.as_ref().is_some_and(|h| h.linked(&mac));
-        if state.link_active(&mac) || hands_free {
-            attempts.remove(&mac);
-            next_try.remove(&mac);
-            continue;
-        }
-        if on_air().is_none() || next_try.get(&mac).is_some_and(|t| Instant::now() < *t) {
-            continue;
-        }
+}
+
+impl Pager {
+    fn wake(&self, wake: Option<&str>) -> Option<&'static str> {
+        self.wakes.iter().find(|w| wake == Some(**w)).copied()
+    }
+}
+
+impl Paging for Pager {
+    fn ready(&self) -> bool {
+        on_air().is_some()
+    }
+
+    fn wanted(&self, wake: Option<&str>) -> bool {
+        self.wake(wake).is_some()
+    }
+
+    fn served(&self, mac: &str, wake: Option<&str>) -> bool {
+        wake == Some(HFP_AG_UUID) && self.hfp.as_ref().is_some_and(|h| h.linked(mac))
+    }
+
+    async fn page(&self, mac: &str, wake: Option<&str>) -> Option<bool> {
+        let wake = self.wake(wake)?;
         println!("[wireless] paging {mac}");
-        let (page, peer) = (page.clone(), mac.clone());
+        let (page, peer) = (self.page.clone(), mac.to_string());
         match tokio::task::spawn_blocking(move || page(&peer, wake)).await {
             Ok(Ok(())) => {
                 println!("[wireless] {mac} answered the page");
-                attempts.remove(&mac);
-                next_try.remove(&mac);
-                continue;
+                Some(true)
             }
-            Ok(Err(e)) => println!("[wireless] {mac} page failed: {e}"),
-            Err(e) => eprintln!("[wireless] {e}"),
-        }
-        let n = attempts.entry(mac.clone()).or_insert(0);
-        *n += 1;
-        if *n >= FAST_ATTEMPTS {
-            next_try.insert(mac, Instant::now() + SLOW_INTERVAL);
+            Ok(Err(e)) => {
+                println!("[wireless] {mac} page failed: {e}");
+                Some(false)
+            }
+            Err(e) => {
+                eprintln!("[wireless] {e}");
+                Some(false)
+            }
         }
     }
 }

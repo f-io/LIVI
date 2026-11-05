@@ -2,18 +2,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use livi_bt_host::sdp::{self, Service};
 use livi_bt_host::{Call, Config, Inbox, Incoming, Notice, Stack, hci};
 use livi_runtime::bringup::OnCable;
 use livi_runtime::hfp::Hfp;
 use livi_runtime::livi_sock::Broadcaster;
+use livi_runtime::reconnect::{self, Link, PING_TIMEOUT, Paging};
 use livi_runtime::sco::ScoSink;
 use livi_runtime::state::HelperState;
 use tokio::runtime::Handle;
@@ -23,11 +24,6 @@ use crate::link::LinkPresence;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const RETRY: Duration = Duration::from_secs(5);
-const PING_TIMEOUT: Duration = Duration::from_secs(1);
-const FAST_INTERVAL: Duration = Duration::from_secs(1);
-const FAST_ATTEMPTS: u32 = 15;
-const SLOW_INTERVAL: Duration = Duration::from_secs(30);
-const STALE: Duration = Duration::from_secs(10);
 
 pub struct Arrival {
     pub peer: String,
@@ -70,13 +66,11 @@ impl Dongle {
 
     pub fn on_cable(&self, state: Arc<HelperState>) -> OnCable {
         let dongle = self.clone();
-        OnCable(Arc::new(move |mac: &str| {
-            let cabled = state.carkit_claims(mac);
-            if cabled && let Err(e) = dongle.disconnect(mac) {
+        OnCable::dropping(state, move |mac| {
+            if let Err(e) = dongle.disconnect(mac) {
                 eprintln!("[bt] {mac} stays on the dongle's bluetooth: {e}");
             }
-            cabled
-        }))
+        })
     }
 }
 
@@ -145,7 +139,15 @@ pub async fn run(
                 answer(call, &p, &m);
             }
         });
-        tokio::spawn(page(stack.clone(), state.clone(), profiles.clone(), rt));
+        tokio::spawn(reconnect::run(
+            Pager {
+                stack: stack.clone(),
+                profiles: profiles.clone(),
+                rt,
+                busy: Arc::default(),
+            },
+            state.clone(),
+        ));
         let _ =
             tokio::task::spawn_blocking(move || notices.iter().find(|n| *n == Notice::Ended)).await;
         dongle.0.lock().unwrap().take();
@@ -281,67 +283,48 @@ fn poke(
     }))
 }
 
-async fn page(stack: Stack, state: Arc<HelperState>, profiles: Profiles, rt: Handle) {
-    let mut turn: usize = 0;
-    let mut attempts: HashMap<String, u32> = HashMap::new();
-    let mut next_try: HashMap<String, Instant> = HashMap::new();
-    let mut stale_since: HashMap<String, Instant> = HashMap::new();
-    let busy: Arc<Mutex<HashSet<String>>> = Arc::default();
+struct Pager {
+    stack: Stack,
+    profiles: Profiles,
+    rt: Handle,
+    busy: Arc<Mutex<HashSet<String>>>,
+}
 
-    while stack.alive() {
-        tokio::time::sleep(FAST_INTERVAL).await;
-        let targets = state.reconnect_targets();
-        let listed = |mac: &String| targets.iter().any(|(m, _)| m == mac);
-        attempts.retain(|mac, _| listed(mac));
-        next_try.retain(|mac, _| listed(mac));
-        stale_since.retain(|mac, _| listed(mac));
-        if targets.is_empty() {
-            continue;
-        }
-        let (mac, wake) = targets[turn % targets.len()].clone();
-        turn = turn.wrapping_add(1);
-        let Some(addr) = hci::parse_addr(&mac) else {
-            continue;
-        };
+impl Paging for Pager {
+    fn alive(&self) -> bool {
+        self.stack.alive()
+    }
 
-        if stack.connected(&addr) {
-            attempts.remove(&mac);
-            next_try.remove(&mac);
-            if state.link_active(&mac) {
-                stale_since.remove(&mac);
-                continue;
-            }
-            let since = *stale_since.entry(mac.clone()).or_insert_with(Instant::now);
-            if since.elapsed() >= STALE {
-                stale_since.remove(&mac);
-                println!("[bt] {mac} connected but no session, disconnecting");
-                stack.disconnect(&addr);
-            } else if !stack.in_use(&addr) {
-                poke(&stack, &profiles, &rt, &busy, &mac, wake.as_deref());
-            }
-            continue;
-        }
-        stale_since.remove(&mac);
+    fn ready(&self) -> bool {
+        !self.profiles.hfp.in_call()
+    }
 
-        if next_try.get(&mac).is_some_and(|t| Instant::now() < *t) {
-            continue;
+    async fn link(&self, mac: &str) -> Link {
+        match hci::parse_addr(mac) {
+            Some(addr) if self.stack.connected(&addr) => Link::Up,
+            Some(_) => Link::Down,
+            None => Link::Unknown,
         }
-        if profiles.hfp.in_call() {
-            continue;
+    }
+
+    async fn poke(&self, mac: &str, wake: Option<&str>) {
+        if hci::parse_addr(mac).is_some_and(|addr| !self.stack.in_use(&addr)) {
+            poke(&self.stack, &self.profiles, &self.rt, &self.busy, mac, wake);
         }
-        let Some(paging) = poke(&stack, &profiles, &rt, &busy, &mac, wake.as_deref()) else {
-            continue;
-        };
+    }
+
+    async fn page(&self, mac: &str, wake: Option<&str>) -> Option<bool> {
+        let paging = poke(&self.stack, &self.profiles, &self.rt, &self.busy, mac, wake)?;
         println!("[bt] paging {mac}");
-        if let Ok(Ok(true)) = tokio::time::timeout(PING_TIMEOUT, paging).await {
-            attempts.remove(&mac);
-            next_try.remove(&mac);
-            continue;
-        }
-        let n = attempts.entry(mac.clone()).or_insert(0);
-        *n += 1;
-        if *n >= FAST_ATTEMPTS {
-            next_try.insert(mac, Instant::now() + SLOW_INTERVAL);
+        Some(matches!(
+            tokio::time::timeout(PING_TIMEOUT, paging).await,
+            Ok(Ok(true))
+        ))
+    }
+
+    async fn disconnect(&self, mac: &str) {
+        if let Some(addr) = hci::parse_addr(mac) {
+            self.stack.disconnect(&addr);
         }
     }
 }

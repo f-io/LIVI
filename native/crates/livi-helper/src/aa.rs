@@ -2,13 +2,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+use std::os::fd::OwnedFd;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use livi_aa::usb::Control;
 use livi_aa::wpp;
+use livi_core_proto::helper::HelperSockets;
+use livi_runtime::aa_sock::{self, AaSockDeps};
 use livi_runtime::livi_sock::Broadcaster;
+use livi_runtime::sco::ScoSink;
+use livi_runtime::state::HelperState;
 use livi_wifi::{Channel, Security};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
@@ -98,17 +103,41 @@ pub async fn watch_dongle(
             let told =
                 tokio::task::spawn_blocking(move || on_dongle(&cfg, cfg.passphrase.clone())).await;
             let Ok(told) = told else { return };
-            state.link_up(&mac);
-            let ended = handshake(arrival.stream, &mac, told, &bcast, &wired).await;
-            state.link_down(&mac);
-            if let Err(e) = ended {
-                println!("[aa] {mac}: bootstrap ended: {e}");
-            }
+            bootstrap(arrival.stream, &mac, told, &bcast, &wired, &state).await;
         });
     }
 }
 
-pub async fn watch_usb(control: Control, sessions: PathBuf, events: Broadcaster) {
+pub fn serve(sockets: &HelperSockets, sco_sink: ScoSink, usb: bool) -> (Broadcaster, WiredPhones) {
+    let events = Broadcaster::default();
+    let wired = WiredPhones::default();
+    let control = Control::default();
+    let deps = AaSockDeps {
+        set_wired_phones: Box::new({
+            let wired = wired.clone();
+            move |ids| wired.set(ids)
+        }),
+        events: events.clone(),
+        set_sco_sink: Box::new(move |target| sco_sink.set(target)),
+        restart_usb: Box::new({
+            let control = control.clone();
+            move |serial| control.restart(serial)
+        }),
+    };
+    let path = sockets.android_auto.clone();
+    tokio::spawn(async move {
+        if let Err(e) = aa_sock::serve(&path, deps).await {
+            eprintln!("[aa-sock] ended: {e}");
+        }
+    });
+    if usb {
+        tokio::spawn(watch_usb(control, sockets.sessions.clone(), events.clone()));
+        println!("[helper] Android Auto USB watcher started");
+    }
+    (events, wired)
+}
+
+async fn watch_usb(control: Control, sessions: PathBuf, events: Broadcaster) {
     let subscribed = events.clone();
     livi_aa::usb::run(
         control,
@@ -123,7 +152,29 @@ pub async fn watch_usb(control: Control, sessions: PathBuf, events: Broadcaster)
     .await;
 }
 
-pub async fn handshake(
+pub fn stream(fd: OwnedFd) -> std::io::Result<tokio::net::UnixStream> {
+    let stream = std::os::unix::net::UnixStream::from(fd);
+    stream.set_nonblocking(true)?;
+    tokio::net::UnixStream::from_std(stream)
+}
+
+pub async fn bootstrap(
+    sock: impl AsyncRead + AsyncWrite + Unpin,
+    mac: &str,
+    told: Told,
+    bcast: &Broadcaster,
+    wired: &WiredPhones,
+    state: &HelperState,
+) {
+    state.link_up(mac);
+    let ended = handshake(sock, mac, told, bcast, wired).await;
+    state.link_down(mac);
+    if let Err(e) = ended {
+        println!("[aa] {mac}: bootstrap ended: {e}");
+    }
+}
+
+async fn handshake(
     mut sock: impl AsyncRead + AsyncWrite + Unpin,
     mac: &str,
     told: Told,

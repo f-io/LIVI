@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 pub use livi_helper::aa::{AaConfig, WiredPhones};
-use livi_helper::aa::{Told, handshake, on_dongle};
+use livi_helper::aa::{Told, bootstrap, on_dongle, stream};
 use livi_runtime::livi_sock::Broadcaster;
 use livi_runtime::net;
 use livi_wifi::Security;
@@ -51,25 +51,14 @@ pub async fn watch(
         println!("[aa] phone connected mac={}", conn.peer_mac);
         let (cfg, bcast, wired, state) = (cfg.clone(), bcast.clone(), wired.clone(), state.clone());
         tokio::spawn(async move {
-            state.link_up(&conn.peer_mac);
-            let ended = over_bluez(conn.fd, &conn.peer_mac, &cfg, &bcast, &wired).await;
-            state.link_down(&conn.peer_mac);
-            if let Err(e) = ended {
-                println!("[aa] {}: bootstrap ended: {e}", conn.peer_mac);
+            let mac = conn.peer_mac;
+            match stream(conn.fd) {
+                Ok(sock) => {
+                    let told = access_point(&cfg).await;
+                    bootstrap(sock, &mac, told, &bcast, &wired, &state).await;
+                }
+                Err(e) => eprintln!("[aa] {mac}: {e}"),
             }
         });
     }
-}
-
-async fn over_bluez(
-    fd: std::os::fd::OwnedFd,
-    mac: &str,
-    cfg: &AaConfig,
-    bcast: &Broadcaster,
-    wired: &WiredPhones,
-) -> std::io::Result<()> {
-    let std_stream = std::os::unix::net::UnixStream::from(fd);
-    std_stream.set_nonblocking(true)?;
-    let sock = tokio::net::UnixStream::from_std(std_stream)?;
-    handshake(sock, mac, access_point(cfg).await, bcast, wired).await
 }

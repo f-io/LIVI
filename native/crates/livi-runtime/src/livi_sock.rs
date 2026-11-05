@@ -17,7 +17,7 @@ use tokio::sync::{Notify, mpsc, watch};
 use iap2_link::LinkConfig;
 
 use crate::bringup::{BringupEvent, CpConfig, run_accessory};
-use crate::driver::spawn_link;
+use crate::driver::{ArtworkRx, LinkChannel, spawn_link};
 use crate::ident::Identity;
 use crate::state::HelperState;
 use crate::vehicle::VehicleFeed;
@@ -377,6 +377,45 @@ fn run_tunnel<A>(
         rx,
         bcast.clone(),
         "tunnel",
+        None,
+        ident.clone(),
+    ));
+    tokio::spawn(pump_artwork(art_rx, bcast, ident));
+}
+
+pub fn run_bluetooth<A>(
+    link: impl FnOnce(LinkConfig) -> (LinkChannel, ArtworkRx),
+    auth: A,
+    identity: Identity,
+    cp: CpConfig,
+    bcast: Broadcaster,
+    state: Arc<HelperState>,
+    peer: String,
+) where
+    A: AsyncAuth + Send + 'static,
+{
+    if cp.on_cable.as_ref().is_some_and(|cabled| (cabled.0)(&peer)) {
+        println!("[bt] {peer} is on the cable, its Bluetooth link goes");
+        return;
+    }
+    println!("[bt] phone connected mac={peer}");
+    let (channel, art_rx) = link(LinkConfig {
+        max_outgoing: 4,
+        control_version: 2,
+        ..LinkConfig::default()
+    });
+    let (tx, rx) = mpsc::channel(64);
+    let accessory = run_accessory(channel, auth, identity, cp, tx, state.vehicle_feed());
+    tokio::spawn(async move {
+        state.link_up(&peer);
+        accessory.await;
+        state.link_down(&peer);
+    });
+    let ident: SharedTag = Default::default();
+    tokio::spawn(pump_events_for(
+        rx,
+        bcast.clone(),
+        "bt",
         None,
         ident.clone(),
     ));

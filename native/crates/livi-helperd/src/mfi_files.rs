@@ -6,13 +6,6 @@ use std::path::PathBuf;
 
 use iap2_mfi::FileCoprocessor;
 
-#[cfg(target_os = "macos")]
-fn dir() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join("Library/Application Support/LIVI/mfi")
-}
-
-#[cfg(target_os = "linux")]
 fn dir() -> PathBuf {
     crate::linux_main::config_path().with_file_name("mfi")
 }

@@ -914,13 +914,9 @@ pub fn on_cable(
     adapter: &str,
 ) -> crate::bringup::OnCable {
     let (conn, adapter) = (conn.clone(), adapter.to_string());
-    crate::bringup::OnCable(std::sync::Arc::new(move |mac: &str| {
-        let cabled = state.carkit_claims(mac);
-        if cabled {
-            drop_link(&conn, &adapter, mac.to_string());
-        }
-        cabled
-    }))
+    crate::bringup::OnCable::dropping(state, move |mac| {
+        drop_link(&conn, &adapter, mac.to_string())
+    })
 }
 
 #[cfg(test)]

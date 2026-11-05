@@ -6,15 +6,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use iap2_link::LinkConfig;
 use iap2_mfi::{NcmCoprocessor, NoCoprocessor};
 use livi_bt_host::sdp::Service;
 use livi_core_proto::helper::HelperSockets;
-use livi_runtime::bringup::{AskOnAir, CpConfig, run_accessory};
+use livi_runtime::bringup::{AskOnAir, CpConfig};
 use livi_runtime::driver::spawn_link_stream;
 use livi_runtime::hfp::Hfp;
 use livi_runtime::ident::{Identity, Transport};
-use livi_runtime::livi_sock::{Broadcaster, SharedTag, pump_artwork, pump_events_for};
+use livi_runtime::livi_sock::{Broadcaster, run_bluetooth};
 use livi_runtime::mfi_async::SharedCoprocessor;
 use livi_runtime::sco::ScoSink;
 use livi_runtime::state::HelperState;
@@ -72,19 +71,6 @@ pub async fn wireless_sessions(
     dongle: Dongle,
 ) {
     while let Some(session) = arrivals.recv().await {
-        if state.carkit_claims(&session.peer) {
-            println!(
-                "[helper] {} is on the cable, its Bluetooth link goes",
-                session.peer
-            );
-            if let Err(e) = dongle.disconnect(&session.peer) {
-                eprintln!(
-                    "[helper] {} stays on the dongle's bluetooth: {e}",
-                    session.peer
-                );
-            }
-            continue;
-        }
         if !tokio::task::spawn_blocking(|| livi_link_host::ap::ready(AP_WAIT))
             .await
             .unwrap_or(false)
@@ -101,35 +87,21 @@ pub async fn wireless_sessions(
             ..identity.clone()
         };
         println!(
-            "[helper] phone connected mac={} over the dongle, ap {} channel {}",
+            "[helper] {} is on the dongle, ap {} channel {}",
             session.peer,
             cp.ap_mac.clone().unwrap_or_default(),
             cp.channel
         );
-        let cfg = LinkConfig {
-            max_outgoing: 4,
-            control_version: 2,
-            ..LinkConfig::default()
-        };
-        let (channel, art_rx) = spawn_link_stream(session.stream, cfg, false);
-        let (tx, rx) = tokio::sync::mpsc::channel(64);
-        tokio::spawn(run_accessory(
-            channel,
+        let peer = session.peer.to_string();
+        run_bluetooth(
+            |cfg| spawn_link_stream(session.stream, cfg, false),
             auth.clone(),
             identity,
             cp,
-            tx,
-            state.vehicle_feed(),
-        ));
-        let ident: SharedTag = Default::default();
-        tokio::spawn(pump_events_for(
-            rx,
             bcast.clone(),
-            "bt",
-            None,
-            ident.clone(),
-        ));
-        tokio::spawn(pump_artwork(art_rx, bcast.clone(), ident));
+            state.clone(),
+            peer,
+        );
     }
 }
 

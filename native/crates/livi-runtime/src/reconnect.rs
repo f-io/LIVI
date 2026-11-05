@@ -3,7 +3,6 @@
 // Additional terms: see NOTICE
 
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -11,92 +10,162 @@ use zbus::Connection;
 
 use crate::state::HelperState;
 
-const PING_TIMEOUT: Duration = Duration::from_secs(1);
+pub const PING_TIMEOUT: Duration = Duration::from_secs(1);
 const FAST_INTERVAL: Duration = Duration::from_secs(1);
 const FAST_ATTEMPTS: u32 = 15;
 const SLOW_INTERVAL: Duration = Duration::from_secs(30);
 const STALE: Duration = Duration::from_secs(10);
 
-pub async fn run(conn: Connection, adapter: String, ap_iface: String, state: Arc<HelperState>) {
-    let mut rr: usize = 0;
+pub enum Link {
+    Up,
+    Down,
+    Unknown,
+}
+
+pub trait Paging {
+    fn ready(&self) -> bool;
+
+    fn page(&self, mac: &str, wake: Option<&str>) -> impl Future<Output = Option<bool>> + Send;
+
+    fn alive(&self) -> bool {
+        true
+    }
+
+    fn wanted(&self, _wake: Option<&str>) -> bool {
+        true
+    }
+
+    fn served(&self, _mac: &str, _wake: Option<&str>) -> bool {
+        false
+    }
+
+    fn link(&self, _mac: &str) -> impl Future<Output = Link> + Send {
+        async { Link::Down }
+    }
+
+    fn poke(&self, _mac: &str, _wake: Option<&str>) -> impl Future<Output = ()> + Send {
+        async {}
+    }
+
+    fn disconnect(&self, _mac: &str) -> impl Future<Output = ()> + Send {
+        async {}
+    }
+}
+
+pub async fn run(radio: impl Paging, state: Arc<HelperState>) {
+    let mut turn: usize = 0;
     let mut attempts: HashMap<String, u32> = HashMap::new();
     let mut next_try: HashMap<String, Instant> = HashMap::new();
     let mut stale_since: HashMap<String, Instant> = HashMap::new();
 
-    loop {
+    while radio.alive() {
         tokio::time::sleep(FAST_INTERVAL).await;
-        let targets = state.reconnect_targets();
-        attempts.retain(|mac, _| targets.iter().any(|(m, _)| m == mac));
-        next_try.retain(|mac, _| targets.iter().any(|(m, _)| m == mac));
-        stale_since.retain(|mac, _| targets.iter().any(|(m, _)| m == mac));
+        let targets: Vec<_> = state
+            .reconnect_targets()
+            .into_iter()
+            .filter(|(_, wake)| radio.wanted(wake.as_deref()))
+            .collect();
+        let listed = |mac: &String| targets.iter().any(|(m, _)| m == mac);
+        attempts.retain(|mac, _| listed(mac));
+        next_try.retain(|mac, _| listed(mac));
+        stale_since.retain(|mac, _| listed(mac));
         if targets.is_empty() {
             continue;
         }
+        let (mac, wake) = &targets[turn % targets.len()];
+        turn = turn.wrapping_add(1);
+        let wake = wake.as_deref();
 
-        let (mac, uuid) = targets[rr % targets.len()].clone();
-        rr = rr.wrapping_add(1);
+        if state.link_active(mac) || radio.served(mac, wake) {
+            attempts.remove(mac);
+            next_try.remove(mac);
+            stale_since.remove(mac);
+            continue;
+        }
+        match radio.link(mac).await {
+            Link::Unknown => continue,
+            Link::Up => {
+                attempts.remove(mac);
+                next_try.remove(mac);
+                let since = *stale_since.entry(mac.clone()).or_insert_with(Instant::now);
+                if since.elapsed() >= STALE {
+                    stale_since.remove(mac);
+                    println!("[bt] {mac} connected but no session, disconnecting");
+                    radio.disconnect(mac).await;
+                } else {
+                    radio.poke(mac, wake).await;
+                }
+                continue;
+            }
+            Link::Down => {
+                stale_since.remove(mac);
+            }
+        }
 
-        let path = device_path(&adapter, &mac);
-        let connected = match device_connected(&conn, &path).await {
-            Some(c) => c,
+        if next_try.get(mac).is_some_and(|t| Instant::now() < *t) || !radio.ready() {
+            continue;
+        }
+        match radio.page(mac, wake).await {
             None => continue,
-        };
-
-        if connected {
-            attempts.remove(&mac);
-            next_try.remove(&mac);
-            if state.link_active(&mac) {
-                stale_since.remove(&mac);
+            Some(true) => {
+                attempts.remove(mac);
+                next_try.remove(mac);
                 continue;
             }
-            let stale = match stale_since.entry(mac.clone()) {
-                Entry::Vacant(e) => {
-                    e.insert(Instant::now());
-                    false
-                }
-                Entry::Occupied(e) => {
-                    e.get().elapsed() >= STALE && {
-                        e.remove();
-                        true
-                    }
-                }
-            };
-            if stale {
-                println!("[cp] reconnect: {mac} connected but no session, disconnecting");
-                let _ = disconnect(&conn, &path).await;
-            } else if uuid.is_some() {
-                let _ =
-                    tokio::time::timeout(PING_TIMEOUT, page(&conn, &path, uuid.as_deref())).await;
-            }
-            continue;
+            Some(false) => {}
         }
-
-        stale_since.remove(&mac);
-
-        if next_try.get(&mac).is_some_and(|t| Instant::now() < *t) {
-            continue;
-        }
-
-        if crate::net::wlan_link_local(&ap_iface).is_none() {
-            continue;
-        }
-        println!("[cp] reconnect: paging {mac}");
-        match tokio::time::timeout(PING_TIMEOUT, page(&conn, &path, uuid.as_deref())).await {
-            Ok(Ok(())) => {
-                println!("[cp] reconnect: {mac} connected");
-                attempts.remove(&mac);
-                next_try.remove(&mac);
-                continue;
-            }
-            Ok(Err(e)) => println!("[cp] reconnect: {mac} page failed: {e}"),
-            Err(_) => {}
-        }
-
         let n = attempts.entry(mac.clone()).or_insert(0);
         *n += 1;
         if *n >= FAST_ATTEMPTS {
-            next_try.insert(mac, Instant::now() + SLOW_INTERVAL);
+            next_try.insert(mac.clone(), Instant::now() + SLOW_INTERVAL);
         }
+    }
+}
+
+pub struct Bluez {
+    pub conn: Connection,
+    pub adapter: String,
+    pub ap_iface: String,
+}
+
+impl Paging for Bluez {
+    fn ready(&self) -> bool {
+        crate::net::wlan_link_local(&self.ap_iface).is_some()
+    }
+
+    async fn link(&self, mac: &str) -> Link {
+        match device_connected(&self.conn, &device_path(&self.adapter, mac)).await {
+            Some(true) => Link::Up,
+            Some(false) => Link::Down,
+            None => Link::Unknown,
+        }
+    }
+
+    async fn poke(&self, mac: &str, wake: Option<&str>) {
+        if wake.is_some() {
+            let path = device_path(&self.adapter, mac);
+            let _ = tokio::time::timeout(PING_TIMEOUT, page(&self.conn, &path, wake)).await;
+        }
+    }
+
+    async fn page(&self, mac: &str, wake: Option<&str>) -> Option<bool> {
+        println!("[bt] paging {mac}");
+        let path = device_path(&self.adapter, mac);
+        match tokio::time::timeout(PING_TIMEOUT, page(&self.conn, &path, wake)).await {
+            Ok(Ok(())) => {
+                println!("[bt] {mac} connected");
+                Some(true)
+            }
+            Ok(Err(e)) => {
+                println!("[bt] {mac} page failed: {e}");
+                Some(false)
+            }
+            Err(_) => Some(false),
+        }
+    }
+
+    async fn disconnect(&self, mac: &str) {
+        let _ = disconnect(&self.conn, &device_path(&self.adapter, mac)).await;
     }
 }
 

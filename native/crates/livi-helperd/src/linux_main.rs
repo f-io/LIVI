@@ -5,7 +5,6 @@
 use livi_core_proto::helper::HelperSockets;
 use std::process::ExitCode;
 
-use iap2_link::LinkConfig;
 use iap2_mfi::{I2cCoprocessor, NcmCoprocessor, NoCoprocessor};
 use std::sync::Arc;
 
@@ -15,13 +14,11 @@ use livi_helper::{
     AVAILABLE_CURRENT_MA, DEFAULT_CHANNEL, DEFAULT_NAME, DEFAULT_PASSPHRASE, SOURCE_VERSION,
 };
 use livi_runtime::bonjour::Bonjour;
-use livi_runtime::bringup::{AskOnAir, CpConfig, run_accessory};
+use livi_runtime::bringup::{AskOnAir, CpConfig};
 use livi_runtime::bt;
 use livi_runtime::driver::{spawn_link, spawn_link_stream};
 use livi_runtime::ident::{Identity, Theme, Transport};
-use livi_runtime::livi_sock::{
-    self, Bluez, Broadcaster, LiviSockConfig, SharedTag, pump_artwork, pump_events_for,
-};
+use livi_runtime::livi_sock::{self, Bluez, Broadcaster, LiviSockConfig, run_bluetooth};
 use livi_runtime::mfi_async::SharedCoprocessor;
 use livi_runtime::reconnect;
 use livi_runtime::state::HelperState;
@@ -328,11 +325,13 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let bcast = Broadcaster::default();
-    let aa_events = Broadcaster::default();
     let state = Arc::new(HelperState::default());
-    let wired_phones = crate::aa::WiredPhones::default();
-    let usb_control = livi_aa::usb::Control::default();
     let sco_sink = livi_runtime::sco::ScoSink::default();
+    let (aa_events, wired_phones) = livi_helper::aa::serve(
+        &HelperSockets::system(),
+        sco_sink.clone(),
+        std::env::var("LIVI_AA_USB").unwrap_or_else(|_| "1".into()) != "0",
+    );
 
     let fuels = Fuels::parse(&std::env::var("LIVI_CP_FUELS").unwrap_or_default());
     let plugs = Plugs::parse(&std::env::var("LIVI_CP_CONNECTORS").unwrap_or_default());
@@ -395,37 +394,6 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         }));
         println!("[helperd] wired CarPlay watcher started");
     }
-    if std::env::var("LIVI_AA_USB").unwrap_or_else(|_| "1".into()) != "0" {
-        tokio::spawn(livi_helper::aa::watch_usb(
-            usb_control.clone(),
-            HelperSockets::system().sessions,
-            aa_events.clone(),
-        ));
-        println!("[helperd] Android Auto USB watcher started");
-    }
-    {
-        let wired = wired_phones.clone();
-        let deps = livi_runtime::aa_sock::AaSockDeps {
-            set_wired_phones: Box::new(move |ids| wired.set(ids)),
-            restart_usb: Box::new({
-                let usb = usb_control.clone();
-                move |serial| usb.restart(serial)
-            }),
-            events: aa_events.clone(),
-            set_sco_sink: Box::new({
-                let sink = sco_sink.clone();
-                move |target| sink.set(target)
-            }),
-        };
-        tokio::spawn(async move {
-            if let Err(e) =
-                livi_runtime::aa_sock::serve(&HelperSockets::system().android_auto, deps).await
-            {
-                eprintln!("[aa-sock] ended: {e}");
-            }
-        });
-    }
-
     let wireless = bt::Wireless {
         carplay: std::env::var("LIVI_CP_WIRELESS").is_ok_and(|v| v == "1"),
         android_auto: std::env::var("LIVI_AA_WIRELESS").unwrap_or_else(|_| "1".into()) != "0",
@@ -459,9 +427,11 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         }));
 
         tokio::spawn(reconnect::run(
-            conn.clone(),
-            adapter.clone(),
-            ap_iface(&DeviceConfig::load()),
+            reconnect::Bluez {
+                conn: conn.clone(),
+                adapter: adapter.clone(),
+                ap_iface: ap_iface(&DeviceConfig::load()),
+            },
             state.clone(),
         ));
 
@@ -586,51 +556,14 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 session = async { dongle_iap.as_mut().unwrap().recv().await }, if dongle_iap.is_some() => {
                     let Some(session) = session else { return Ok(()) };
-                    if state.carkit_claims(&session.peer) {
-                        println!("[helperd] {} is on the cable, its Bluetooth link goes", session.peer);
-                        crate::link::drop_dongle_link(session.peer.to_string());
-                        continue;
-                    }
-                    let auth = auth.clone();
-                    println!("[helperd] phone connected mac={}", session.peer);
-                    let cfg = LinkConfig { max_outgoing: 4, control_version: 2, ..LinkConfig::default() };
-                    let (channel, art_rx) = spawn_link_stream(session.stream, cfg, false);
-                    let (tx, rx) = tokio::sync::mpsc::channel(64);
                     let cp = CpConfig { on_cable: Some(crate::link::dongle_on_cable(state.clone())), ..session_cp(&cp, dongle_ap) };
-                    let (accessory, mac) = (run_accessory(channel, auth, identity.clone(), cp, tx, state.vehicle_feed()), session.peer.to_string());
-                    let links = state.clone();
-                    tokio::spawn(async move {
-                        links.link_up(&mac);
-                        accessory.await;
-                        links.link_down(&mac);
-                    });
-                    let ident: SharedTag = Default::default();
-                    tokio::spawn(pump_events_for(rx, bcast.clone(), "bt", None, ident.clone()));
-                    tokio::spawn(pump_artwork(art_rx, bcast.clone(), ident));
+                    let peer = session.peer.to_string();
+                    run_bluetooth(|cfg| spawn_link_stream(session.stream, cfg, false), auth.clone(), identity.clone(), cp, bcast.clone(), state.clone(), peer);
                 }
                 conn = incoming.recv(), if wireless.carplay => {
                     let Some(conn) = conn else { return Ok(()) };
-                    if state.carkit_claims(&conn.peer_mac) {
-                        println!("[helperd] {} is on the cable, its Bluetooth link goes", conn.peer_mac);
-                        bt::drop_link(&bus, &adapter, conn.peer_mac.clone());
-                        continue;
-                    }
-                    let auth = auth.clone();
-                    println!("[helperd] phone connected mac={}", conn.peer_mac);
-                    let cfg = LinkConfig { max_outgoing: 4, control_version: 2, ..LinkConfig::default() };
-                    let (channel, art_rx) = spawn_link(conn.fd, cfg, false);
-                    let (tx, rx) = tokio::sync::mpsc::channel(64);
                     let cp = CpConfig { on_cable: Some(bt::on_cable(state.clone(), &bus, &adapter)), ..session_cp(&cp, dongle_ap) };
-                    let (accessory, mac) = (run_accessory(channel, auth, identity.clone(), cp, tx, state.vehicle_feed()), conn.peer_mac.clone());
-                    let links = state.clone();
-                    tokio::spawn(async move {
-                        links.link_up(&mac);
-                        accessory.await;
-                        links.link_down(&mac);
-                    });
-                    let ident: SharedTag = Default::default();
-                    tokio::spawn(pump_events_for(rx, bcast.clone(), "bt", None, ident.clone()));
-                    tokio::spawn(pump_artwork(art_rx, bcast.clone(), ident));
+                    run_bluetooth(|cfg| spawn_link(conn.fd, cfg, false), auth.clone(), identity.clone(), cp, bcast.clone(), state.clone(), conn.peer_mac);
                 }
             }
         }

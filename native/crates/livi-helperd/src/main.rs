@@ -14,7 +14,7 @@ mod link;
 mod linux_main;
 #[cfg(target_os = "macos")]
 mod mac_main;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "linux")]
 mod mfi_files;
 
 const SWITCHES: &[&str] = &[
