@@ -93,6 +93,8 @@ struct Characteristic {
     units: Option<i64>,
     enabled: bool,
     large: bool,
+    notifier: Option<i64>,
+    invalidable: bool,
     initial: Option<Value>,
 }
 
@@ -117,6 +119,8 @@ fn characteristic(
         units: None,
         enabled: false,
         large: false,
+        notifier: None,
+        invalidable: owner == Owner::Phone && format != Format::Uint8,
         initial,
     }
 }
@@ -172,9 +176,17 @@ impl Characteristic {
         }
     }
 
-    fn large(self) -> Self {
+    fn large(self, notifier: i64) -> Self {
         Self {
             large: true,
+            notifier: Some(notifier),
+            ..self
+        }
+    }
+
+    fn invalidable(self) -> Self {
+        Self {
+            invalidable: true,
             ..self
         }
     }
@@ -227,13 +239,16 @@ impl Characteristic {
         if self.large {
             d.push(("largePayload", Value::Bool(true)));
         }
+        if let Some(notifier) = self.notifier {
+            d.push(("iidNotifier", Value::Int(notifier)));
+        }
         if self.enabled {
             d.push(("disabled", Value::Bool(false)));
         }
         if let Some(units) = self.units {
             d.push(("units", Value::Int(units)));
         }
-        if self.owner == Owner::Phone && self.format != Format::Uint8 {
+        if self.invalidable {
             d.push(("supportsInvalid", Value::Bool(true)));
         }
         if let Some(v) = &self.initial {
@@ -262,6 +277,7 @@ struct Control {
     name: &'static str,
     parameters: Vec<(&'static str, Format)>,
     response: Vec<(&'static str, Format)>,
+    urgent: bool,
 }
 
 impl Control {
@@ -272,6 +288,9 @@ impl Control {
             ("sender", Value::Int(SENT_BY_PHONE)),
             ("hasResponse", Value::Bool(true)),
         ];
+        if self.urgent {
+            d.push(("priority", Value::Int(HIGH_PRIORITY)));
+        }
         let described = |values: &[(&'static str, Format)]| {
             let values = values.iter().map(|(name, format)| {
                 dict([
@@ -450,6 +469,7 @@ impl VehicleState {
                 name: "getImageArchive",
                 parameters: Vec::new(),
                 response: vec![("imageArchive", Format::Data)],
+                urgent: false,
             },
         ));
         self.values.insert(version_iid, version);
@@ -761,6 +781,10 @@ impl VehicleState {
                 }
                 out
             }
+            "readRequest" => {
+                let iids = values.and_then(Value::as_array).unwrap_or(&[]);
+                vec![(lane, wrap(&self.read(iids, transaction)))]
+            }
             "writeRequest" => {
                 let written = values.and_then(Value::as_dict).unwrap_or(&[]);
                 self.write(lane, written, transaction)
@@ -790,6 +814,12 @@ impl VehicleState {
     }
 
     fn control(&mut self, commands: &[(Value, Value)], transaction: Value) -> Value {
+        let heard = self
+            .values
+            .get(&NOW_PLAYING_SOURCE)
+            .and_then(Value::as_str)
+            .and_then(RadioBand::named)
+            .unwrap_or_default();
         let mut answered = Vec::new();
         let mut refused = Vec::new();
         for (key, parameters) in commands {
@@ -816,18 +846,25 @@ impl VehicleState {
             }
             println!("[cpVehicle] phone pressed {name} {}", shown(parameters));
             let text = |k| parameters.get(k).and_then(Value::as_str);
-            let ours = |k| text(k).is_none_or(|s| s == RADIO_SOURCE);
+            let band = text("sourceIdentifier").map_or(Some(heard), RadioBand::named);
+            let khz = parameters
+                .get("frequency")
+                .and_then(Value::as_int)
+                .and_then(|n| u32::try_from(n).ok());
             let command = match name {
                 "play" => Some(RadioCommand::Play),
                 "pause" => Some(RadioCommand::Pause),
                 "nextItem" => Some(RadioCommand::Next),
                 "previousItem" => Some(RadioCommand::Previous),
-                "tuneToIdentifier" if ours("sourceIdentifier") => {
-                    text("identifier").map(|id| RadioCommand::Tune(id.to_string()))
+                "tuneToIdentifier" => band
+                    .zip(text("identifier"))
+                    .map(|(b, id)| RadioCommand::Tune(b, id.to_string())),
+                "tuneToFrequency" if text("sourceIdentifier").is_none_or(|s| s == FM_SOURCE) => {
+                    khz.map(RadioCommand::TuneFrequency)
                 }
-                "changeMediaSource" if text("identifier") == Some(RADIO_SOURCE) => {
-                    Some(RadioCommand::Play)
-                }
+                "changeMediaSource" => text("identifier")
+                    .and_then(RadioBand::named)
+                    .map(RadioCommand::Source),
                 _ => None,
             };
             self.radio_commands.extend(command);
@@ -851,9 +888,18 @@ impl VehicleState {
     }
 
     pub fn set_radio(&mut self, radio: &Radio) -> Vec<(Lane, Vec<u8>)> {
-        let items = Value::Array(radio.stations.iter().map(radio_item).collect());
+        let items = |source: &RadioSource, band| {
+            Value::Array(
+                source
+                    .stations
+                    .iter()
+                    .map(|s| radio_item(s, band))
+                    .collect(),
+            )
+        };
         let images = Value::Array(
             radio
+                .dab
                 .stations
                 .iter()
                 .filter_map(|s| {
@@ -865,14 +911,26 @@ impl VehicleState {
                 })
                 .collect(),
         );
-        let disabled = !radio.available || radio.stations.is_empty();
+        let current =
+            |source: &RadioSource| Value::String(source.current.clone().unwrap_or_default());
+        let dab_off = !radio.available || radio.dab.stations.is_empty();
         let state = if radio.playing { PLAYING } else { PAUSED };
         let mut changed = Vec::new();
-        self.car_sets(RADIO_DISABLED, Value::Bool(disabled), &mut changed);
-        self.car_sets(RADIO_ITEMS, items, &mut changed);
+        self.car_sets(RADIO_DISABLED, Value::Bool(dab_off), &mut changed);
+        self.car_sets(RADIO_ITEMS, items(&radio.dab, RadioBand::Dab), &mut changed);
         self.car_sets(RADIO_ITEM_IMAGES, images, &mut changed);
-        let current = radio.current.clone().unwrap_or_default();
-        self.car_sets(RADIO_CURRENT_ITEM, Value::String(current), &mut changed);
+        self.car_sets(RADIO_CURRENT_ITEM, current(&radio.dab), &mut changed);
+        self.car_sets(FM_DISABLED, Value::Bool(!radio.available), &mut changed);
+        self.car_sets(FM_ITEMS, items(&radio.fm, RadioBand::Fm), &mut changed);
+        self.car_sets(FM_CURRENT_ITEM, current(&radio.fm), &mut changed);
+        if let Some(khz) = radio.frequency {
+            self.car_sets(FM_FREQUENCY, Value::Int(i64::from(khz)), &mut changed);
+        }
+        self.car_sets(
+            NOW_PLAYING_SOURCE,
+            Value::str(radio.band.source()),
+            &mut changed,
+        );
         self.car_sets(NOW_PLAYING_TITLE, Value::str(&radio.title), &mut changed);
         self.car_sets(NOW_PLAYING_ARTIST, Value::str(&radio.artist), &mut changed);
         self.car_sets(NOW_PLAYING_ALBUM, Value::str(&radio.album), &mut changed);
@@ -920,6 +978,31 @@ impl VehicleState {
             (Value::str("transactionID"), transaction),
             (Value::str("values"), Value::Dict(held)),
         ];
+        if !missing.is_empty() {
+            answer.push((Value::str("errors"), Value::Dict(missing)));
+        }
+        Value::Dict(answer)
+    }
+
+    fn read(&self, iids: &[Value], transaction: Value) -> Value {
+        let mut held = Vec::new();
+        let mut missing = Vec::new();
+        let mut names = Vec::new();
+        for iid in iids.iter().filter_map(Value::as_int) {
+            names.extend(self.characteristic(iid).map(|c| c.name));
+            match self.values.get(&iid) {
+                Some(v) => held.push((Value::Int(iid), v.clone())),
+                None => missing.push((Value::Int(iid), Value::Int(NO_VALUE))),
+            }
+        }
+        println!("[cpVehicle] phone reads {}", names.join(" "));
+        let mut answer = vec![
+            (Value::str("command"), Value::str("readResponse")),
+            (Value::str("transactionID"), transaction),
+        ];
+        if !held.is_empty() {
+            answer.push((Value::str("values"), Value::Dict(held)));
+        }
         if !missing.is_empty() {
             answer.push((Value::str("errors"), Value::Dict(missing)));
         }

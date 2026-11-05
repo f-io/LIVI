@@ -1283,7 +1283,7 @@ fn service_of(state: &VehicleState, iid: i64) -> Value {
 }
 
 #[test]
-fn the_radio_app_finds_one_dab_source_and_its_commands() {
+fn the_radio_app_finds_dab_and_fm_sources_and_their_commands() {
     let state = VehicleState::new(false, "9.5.0", "2026-10-15 14:30");
     let source = service_of(&state, RADIO_SOURCE_SERVICE);
     assert_eq!(
@@ -1294,6 +1294,17 @@ fn the_radio_app_finds_one_dab_source_and_its_commands() {
     assert_eq!(state.values.get(&4098), Some(&Value::str("DAB")));
     assert_eq!(state.values.get(&4099), Some(&Value::Int(DAB_SOURCE)));
     assert_eq!(state.values.get(&RADIO_DISABLED), Some(&Value::Bool(true)));
+    let fm = service_of(&state, FM_SOURCE_SERVICE);
+    assert_eq!(fm.get("type").and_then(Value::as_int), Some(0x1400_0006));
+    assert_eq!(state.values.get(&4113), Some(&Value::str("FM")));
+    assert_eq!(state.values.get(&4114), Some(&Value::Int(FM_SEMANTIC)));
+    assert_eq!(state.values.get(&FM_DISABLED), Some(&Value::Bool(true)));
+    let frequency = state.characteristic(FM_FREQUENCY).unwrap().describe();
+    assert_eq!(
+        frequency.get("format").and_then(Value::as_int),
+        Some(Format::Uint32 as i64)
+    );
+    assert_eq!(frequency.get("supportsInvalid"), Some(&Value::Bool(true)));
     let items = state.characteristic(RADIO_ITEMS).unwrap().describe();
     assert_eq!(items.get("largePayload"), Some(&Value::Bool(true)));
     assert_eq!(
@@ -1308,6 +1319,24 @@ fn the_radio_app_finds_one_dab_source_and_its_commands() {
         artwork.get("format").and_then(Value::as_int),
         Some(Format::Data as i64)
     );
+    let notifiers = [
+        (RADIO_ITEMS, RADIO_ITEMS_NOTIFIER),
+        (RADIO_ITEM_IMAGES, RADIO_ITEM_IMAGES_NOTIFIER),
+        (FM_ITEMS, FM_ITEMS_NOTIFIER),
+        (NOW_PLAYING_ARTWORK, NOW_PLAYING_ARTWORK_NOTIFIER),
+    ];
+    for (large, notifier) in notifiers {
+        let described = state.characteristic(large).unwrap().describe();
+        assert_eq!(
+            described.get("iidNotifier").and_then(Value::as_int),
+            Some(notifier)
+        );
+        assert_eq!(state.values.get(&notifier), Some(&Value::Int(0)));
+    }
+    let current = state.characteristic(RADIO_CURRENT_ITEM).unwrap().describe();
+    assert_eq!(current.get("supportsInvalid"), Some(&Value::Bool(true)));
+    let source = state.characteristic(4098).unwrap().describe();
+    assert!(source.get("supportsInvalid").is_none());
 
     let playing = service_of(&state, NOW_PLAYING_SERVICE);
     let controls = playing.get("controls").and_then(Value::as_array).unwrap();
@@ -1321,6 +1350,11 @@ fn the_radio_app_finds_one_dab_source_and_its_commands() {
         Some(SENT_BY_PHONE)
     );
     assert_eq!(tune.get("hasResponse"), Some(&Value::Bool(true)));
+    assert!(
+        controls
+            .iter()
+            .all(|c| c.get("priority").and_then(Value::as_int) == Some(HIGH_PRIORITY))
+    );
     let names: Vec<&str> = tune
         .get("requestParameters")
         .and_then(Value::as_array)
@@ -1639,6 +1673,14 @@ fn radio_app_commands_are_answered_and_handed_on() {
         (4366, dict([("identifier", Value::str("DAB"))])),
         (4365, dict([("frequency", Value::Int(94_800))])),
         (4364, elsewhere),
+        (4366, dict([("identifier", Value::str("AM"))])),
+        (
+            4365,
+            dict([
+                ("frequency", Value::Int(1_000)),
+                ("sourceIdentifier", Value::str("DAB")),
+            ]),
+        ),
         (9999, Value::Null),
     ]);
     let answers = state.handle(Lane::Normal, &command("controlRequest", pressed));
@@ -1655,7 +1697,7 @@ fn radio_app_commands_are_answered_and_handed_on() {
             .get("values")
             .and_then(Value::as_dict)
             .map(<[_]>::len),
-        Some(8)
+        Some(10)
     );
     assert_eq!(
         answer.get("errors"),
@@ -1664,12 +1706,14 @@ fn radio_app_commands_are_answered_and_handed_on() {
     assert_eq!(
         state.take_radio_commands(),
         vec![
-            RadioCommand::Tune("d220".into()),
+            RadioCommand::Tune(RadioBand::Dab, "d220".into()),
             RadioCommand::Play,
             RadioCommand::Pause,
             RadioCommand::Next,
             RadioCommand::Previous,
-            RadioCommand::Play,
+            RadioCommand::Source(RadioBand::Dab),
+            RadioCommand::TuneFrequency(94_800),
+            RadioCommand::Tune(RadioBand::Fm, "x".into()),
         ]
     );
     assert!(state.take_radio_commands().is_empty());
@@ -1681,7 +1725,12 @@ fn the_radio_reaches_the_phone_as_updates() {
     let followed = [
         RADIO_DISABLED,
         RADIO_ITEMS,
+        RADIO_ITEMS_NOTIFIER,
         RADIO_ITEM_IMAGES,
+        FM_DISABLED,
+        FM_ITEMS,
+        FM_FREQUENCY,
+        NOW_PLAYING_SOURCE,
         NOW_PLAYING_TITLE,
         PLAYBACK_STATE,
     ];
@@ -1689,23 +1738,40 @@ fn the_radio_reaches_the_phone_as_updates() {
     state.handle(Lane::High, &command("registerRequest", Value::Array(iids)));
     let radio = Radio {
         available: true,
-        stations: vec![
-            RadioStation {
-                id: "d220".into(),
-                name: "Dlf Kultur".into(),
-                short_name: "Kultur".into(),
-                ensemble: "DR Deutschland".into(),
-                image: Some(vec![0xff, 0xd8]),
-            },
-            RadioStation {
-                id: "d210".into(),
-                name: "Dlf".into(),
-                short_name: "Dlf".into(),
-                ensemble: "DR Deutschland".into(),
+        dab: RadioSource {
+            stations: vec![
+                RadioStation {
+                    id: "d220".into(),
+                    name: "Dlf Kultur".into(),
+                    short_name: "Kultur".into(),
+                    ensemble: "DR Deutschland".into(),
+                    frequency: None,
+                    image: Some(vec![0xff, 0xd8]),
+                },
+                RadioStation {
+                    id: "d210".into(),
+                    name: "Dlf".into(),
+                    short_name: "Dlf".into(),
+                    ensemble: "DR Deutschland".into(),
+                    frequency: None,
+                    image: None,
+                },
+            ],
+            current: Some("d220".into()),
+        },
+        fm: RadioSource {
+            stations: vec![RadioStation {
+                id: "99100".into(),
+                name: "NDR 2".into(),
+                short_name: "NDR 2".into(),
+                ensemble: String::new(),
+                frequency: Some(99_100),
                 image: None,
-            },
-        ],
-        current: Some("d220".into()),
+            }],
+            current: Some("99100".into()),
+        },
+        band: RadioBand::Dab,
+        frequency: Some(99_100),
         title: "Lesart".into(),
         artist: "Dlf Kultur".into(),
         album: "DR Deutschland".into(),
@@ -1723,6 +1789,19 @@ fn the_radio_reaches_the_phone_as_updates() {
             .map(|(_, v)| v)
     };
     assert_eq!(value(RADIO_DISABLED), Some(&Value::Bool(false)));
+    assert_eq!(value(FM_DISABLED), Some(&Value::Bool(false)));
+    assert_eq!(value(FM_FREQUENCY), Some(&Value::Int(99_100)));
+    assert!(
+        value(NOW_PLAYING_SOURCE).is_none(),
+        "DAB was the source already"
+    );
+    let fm = value(FM_ITEMS).and_then(Value::as_array).unwrap();
+    assert_eq!(
+        fm[0].get("mediaItemType").and_then(Value::as_str),
+        Some("fm")
+    );
+    assert_eq!(fm[0].get("frequency").and_then(Value::as_int), Some(99_100));
+    assert!(fm[0].get("ensemble").is_none());
     assert_eq!(value(NOW_PLAYING_TITLE), Some(&Value::str("Lesart")));
     assert_eq!(value(PLAYBACK_STATE), Some(&Value::Int(PLAYING)));
     let items = value(RADIO_ITEMS).and_then(Value::as_array).unwrap();
@@ -1751,10 +1830,54 @@ fn the_radio_reaches_the_phone_as_updates() {
         state.values.get(&NOW_PLAYING_ARTWORK),
         Some(&Value::Data(vec![1, 2]))
     );
+    assert_eq!(value(RADIO_ITEMS_NOTIFIER), Some(&Value::Int(1)));
+    assert!(value(RADIO_ITEM_IMAGES_NOTIFIER).is_none());
+    assert_eq!(
+        state.values.get(&NOW_PLAYING_ARTWORK_NOTIFIER),
+        Some(&Value::Int(1))
+    );
 
     assert!(
         state.set_radio(&radio).is_empty(),
         "nothing changed, nothing sent"
+    );
+    assert_eq!(
+        state.values.get(&RADIO_ITEMS_NOTIFIER),
+        Some(&Value::Int(1))
+    );
+
+    let read = state.handle(
+        Lane::Normal,
+        &command(
+            "readRequest",
+            Value::Array(vec![Value::Int(NOW_PLAYING_ARTWORK), Value::Int(9999)]),
+        ),
+    );
+    assert_eq!(read.len(), 1);
+    assert_eq!(read[0].0, Lane::Normal);
+    let answer = opened(&read[0].1);
+    assert_eq!(
+        answer.get("command").and_then(Value::as_str),
+        Some("readResponse")
+    );
+    assert_eq!(answer.get("transactionID"), Some(&Value::Int(8)));
+    assert_eq!(
+        answer.get("values"),
+        Some(&by_iid(&[(NOW_PLAYING_ARTWORK, Value::Data(vec![1, 2]))]))
+    );
+    assert_eq!(
+        answer.get("errors"),
+        Some(&by_iid(&[(9999, Value::Int(NO_VALUE))]))
+    );
+    let on_fm = Radio {
+        band: RadioBand::Fm,
+        ..radio
+    };
+    let switched = state.set_radio(&on_fm);
+    let update = opened(&switched[0].1);
+    assert_eq!(
+        update.get("values"),
+        Some(&by_iid(&[(NOW_PLAYING_SOURCE, Value::str("FM"))]))
     );
     assert_eq!(shown(&Value::Data(vec![0; 3])), "3 B");
     assert_eq!(shown(&Value::Array(vec![Value::Null; 5])), "5 items");

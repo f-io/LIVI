@@ -180,12 +180,21 @@ impl VehicleState {
         if self.values.get(&iid) == Some(&v) {
             return;
         }
-        if let Some(c) = self.characteristic(iid) {
+        let notifier = self.characteristic(iid).and_then(|c| {
             println!("[cpVehicle] car set {} to {}", c.name, shown(&v));
-        }
+            c.notifier
+        });
         self.values.insert(iid, v.clone());
         if self.followed.contains(&iid) {
             changed.push((Value::Int(iid), v));
+        }
+        if let Some(notifier) = notifier {
+            let count = self.values.get(&notifier).and_then(Value::as_int);
+            let next = Value::Int((count.unwrap_or(0) + 1) % 256);
+            self.values.insert(notifier, next.clone());
+            if self.followed.contains(&notifier) {
+                changed.push((Value::Int(notifier), next));
+            }
         }
     }
 }
