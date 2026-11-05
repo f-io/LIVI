@@ -81,7 +81,7 @@ component StepButton inherits Rectangle {
         running: root.held;
         triggered => {
             root.repeats += 1;
-            root.step(root.repeats >= 40 ? 100 : root.repeats >= 12 ? 10 : 1);
+            root.step(root.repeats >= 12 ? 10 : 1);
         }
     }
 }
