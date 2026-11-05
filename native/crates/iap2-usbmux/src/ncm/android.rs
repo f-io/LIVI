@@ -86,12 +86,13 @@ pub(super) fn ipv6_on(ifname: &str) -> Vec<Ipv6Addr> {
 impl NcmBridge {
     pub fn over<L: Link>(
         device: &nusb::Device,
+        serial: &str,
         ifname: &str,
-        link: impl FnOnce(Option<[u8; 6]>) -> L,
+        link: impl FnOnce(Mac) -> L,
     ) -> Result<Self, String> {
         let func = find_ncm_function(device).ok_or("no NCM function in the active config")?;
         let usb = open_usb(device, &func)?;
-        let link = link(host_mac(device, &func));
+        let link = link(host_mac(device, &func).unwrap_or_else(|| made_up_mac(serial)));
         Ok(Self::up(ifname.to_string(), usb, link))
     }
 

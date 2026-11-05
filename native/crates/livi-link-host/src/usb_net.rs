@@ -31,8 +31,7 @@ pub fn attach(tunnel: Arc<Tunnel>) -> Result<UsbNet, String> {
         .open()
         .wait()
         .map_err(|e| format!("open the LIVI Link: {e}"))?;
-    let bridge = NcmBridge::over(&device, IFNAME, |host| {
-        let mac = host.unwrap_or_else(|| made_up_mac(&serial));
+    let bridge = NcmBridge::over(&device, &serial, IFNAME, |mac| {
         let owner = tunnel.clone();
         Net {
             mac,
@@ -45,14 +44,6 @@ pub fn attach(tunnel: Arc<Tunnel>) -> Result<UsbNet, String> {
     })?;
     println!("[link] the LIVI Link {serial} is on USB, asking for an address");
     Ok(UsbNet { _bridge: bridge })
-}
-
-fn made_up_mac(serial: &str) -> Mac {
-    let mut mac = [0x02, 0, 0, 0, 0, 0];
-    for (i, b) in serial.bytes().enumerate() {
-        mac[1 + i % 5] ^= b;
-    }
-    mac
 }
 
 fn xid() -> u32 {
