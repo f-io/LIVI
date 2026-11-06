@@ -7,15 +7,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 #[cfg(target_os = "linux")]
-mod aa;
-#[cfg(target_os = "linux")]
-mod link;
-#[cfg(target_os = "linux")]
 mod linux_main;
 #[cfg(target_os = "macos")]
 mod mac_main;
-#[cfg(target_os = "linux")]
-mod mfi_files;
 
 const SWITCHES: &[&str] = &[
     "--wifi-ap-status",
@@ -79,6 +73,34 @@ fn leave_with_core() {
         });
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn run(host: livi_helper::embedded::Host) -> ExitCode {
+    let start = livi_core_proto::helper::HelperStart::from_env();
+    let helper = match livi_helper::embedded::Embedded::start(start, host) {
+        Ok(helper) => helper,
+        Err(e) => {
+            eprintln!("[helperd] runtime: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let signals = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("[helperd] runtime: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    signals.block_on(shutdown_signal());
+    println!("[helperd] shutting down");
+    drop(helper);
+    #[cfg(target_os = "macos")]
+    livi_runtime::bonjour::stop();
+    ExitCode::SUCCESS
+}
+
 fn unknown_switch<I: Iterator<Item = String>>(args: I) -> Option<String> {
     args.take_while(|a| a.starts_with("--"))
         .find(|a| !SWITCHES.contains(&a.as_str()))
@@ -126,12 +148,12 @@ fn main() -> ExitCode {
             return linux_main::run_wifi_ap();
         }
         leave_with_core();
-        linux_main::run()
+        run(linux_main::host())
     }
     #[cfg(target_os = "macos")]
     {
         leave_with_core();
-        mac_main::run()
+        run(mac_main::host())
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {

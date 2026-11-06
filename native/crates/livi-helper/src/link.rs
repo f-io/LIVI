@@ -6,11 +6,15 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use iap2_mfi::{NcmCoprocessor, NoCoprocessor};
 use livi_core_proto::helper_events::{HelperEvent, HelperKind, StationEvent};
+use livi_runtime::livi_sock::Broadcaster;
+use livi_runtime::mfi_async::SharedCoprocessor;
 use tokio::sync::Notify;
 
 const RESOLVE_INTERVAL: Duration = Duration::from_millis(500);
 const WATCH_RETRY: Duration = Duration::from_secs(2);
+const MFI_RETRY: Duration = Duration::from_secs(2);
 
 #[cfg(target_os = "linux")]
 async fn ask_for_address(asked: &mut bool) {
@@ -130,7 +134,7 @@ impl LinkPresence {
     }
 }
 
-pub async fn relay_stations(bcast: livi_runtime::livi_sock::Broadcaster) {
+pub async fn relay_stations(bcast: Broadcaster) {
     loop {
         let events = bcast.clone();
         let _ = tokio::task::spawn_blocking(move || {
@@ -157,4 +161,62 @@ pub async fn relay_stations(bcast: livi_runtime::livi_sock::Broadcaster) {
         .await;
         tokio::time::sleep(WATCH_RETRY).await;
     }
+}
+
+pub async fn identify_on_link(link: Arc<LinkPresence>, mut auth: SharedCoprocessor) {
+    use livi_runtime::AsyncAuth;
+    loop {
+        link.wait_until(true).await;
+        let mut reported = false;
+        let major = loop {
+            if !link.is_present() {
+                break None;
+            }
+            match auth.protocol_major().await {
+                Ok(major) => break Some(major),
+                Err(e) => {
+                    if !reported {
+                        eprintln!("[helper] MFi coprocessor not answering yet: {e}");
+                        reported = true;
+                    }
+                    tokio::time::sleep(MFI_RETRY).await;
+                }
+            }
+        };
+        let Some(major) = major else { continue };
+        let kind = if major == 2 {
+            "2.0 (RSA, SHA-1)"
+        } else {
+            "3.0 (ECDSA, SHA-256)"
+        };
+        println!("[helper] MFi coprocessor: auth protocol major {major} — {kind}");
+        link.wait_until(false).await;
+    }
+}
+
+pub fn follow_link(
+    link: Arc<LinkPresence>,
+    auth: SharedCoprocessor,
+    own_chip: bool,
+    bcast: Broadcaster,
+    gone: impl Fn() + Send + 'static,
+) {
+    let (up_auth, down_auth) = (auth.clone(), auth);
+    let (arrived, left) = (bcast.clone(), bcast);
+    tokio::spawn(link.resolve(
+        move || {
+            if !own_chip && let Some(addr) = livi_link_host::link::addr(livi_net::port::MFI) {
+                up_auth.replace(Box::new(NcmCoprocessor::new(&addr)));
+            }
+            arrived.push_json(HelperEvent::from(HelperKind::Link { up: true }).to_line());
+        },
+        move || {
+            if !own_chip {
+                down_auth.replace(Box::new(NoCoprocessor));
+            }
+            gone();
+            println!("[helper] the dongle went");
+            left.push_json(HelperEvent::from(HelperKind::Link { up: false }).to_line());
+        },
+    ));
 }

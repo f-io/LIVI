@@ -3,11 +3,12 @@
 // Additional terms: see NOTICE
 
 pub mod aa;
+#[cfg(target_os = "linux")]
+pub mod bluez;
 #[cfg(not(target_os = "linux"))]
 pub mod bt_dongle;
 #[cfg(not(target_os = "linux"))]
 pub mod dongle;
-#[cfg(not(target_os = "linux"))]
 pub mod embedded;
 pub mod link;
 pub mod mfi;

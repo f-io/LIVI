@@ -4171,14 +4171,10 @@ dependencies = [
 name = "livi-helperd"
 version = "0.1.0"
 dependencies = [
- "iap2-mfi",
- "iap2-usbmux",
  "libc 1.0.0-alpha.5",
- "livi-aa",
  "livi-core-proto",
  "livi-helper",
  "livi-link-host",
- "livi-net",
  "livi-runtime",
  "livi-wifi",
  "serde_json",

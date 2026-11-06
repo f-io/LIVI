@@ -10,9 +10,9 @@ use std::time::Duration;
 
 use iap2_mfi::{AuthCoprocessor, NoCoprocessor};
 use livi_core_proto::helper::{HelperSockets, HelperStart};
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "android"))]
 use livi_runtime::bonjour::Bonjour;
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "android"))]
 use livi_runtime::bringup::CpConfig;
 use livi_runtime::ident::Transport;
 use livi_runtime::livi_sock::{self, Broadcaster, LiviSockConfig};
@@ -46,9 +46,23 @@ pub struct Host {
 }
 
 struct Held {
-    _bluez: watch::Sender<Option<livi_sock::Bluez>>,
-    #[cfg(target_os = "macos")]
+    _bluez: Arc<watch::Sender<Option<livi_sock::Bluez>>>,
+    #[cfg(not(target_os = "android"))]
     _bonjour: Option<Bonjour>,
+    #[cfg(target_os = "linux")]
+    bluetooth: (watch::Sender<bool>, tokio::task::JoinHandle<()>),
+}
+
+impl Held {
+    async fn release(self) {
+        #[cfg(target_os = "linux")]
+        {
+            let (stop, task) = self.bluetooth;
+            let _ = stop.send(true);
+            let _ = tokio::time::timeout(SHUTDOWN, task).await;
+            iap2_usbmux::restore_all_default_config();
+        }
+    }
 }
 
 pub struct Embedded {
@@ -67,8 +81,9 @@ impl Embedded {
             .name("helper".into())
             .spawn(move || {
                 runtime.block_on(async move {
-                    let _held = serve(start, host);
+                    let held = serve(start, host);
                     let _ = stopped.await;
+                    held.release().await;
                 });
                 runtime.shutdown_timeout(SHUTDOWN);
             })?;
@@ -90,28 +105,55 @@ impl Drop for Embedded {
     }
 }
 
-fn serve(start: HelperStart, host: Host) -> Held {
-    let files = crate::mfi::open_in(&host.mfi);
-    let own_files = files.is_some();
-    if !own_files {
-        println!(
-            "[helper] no MFi files in {}, CarPlay waits for them",
-            host.mfi.display()
-        );
+fn chip(start: &HelperStart, host: &Host) -> Option<Box<dyn AuthCoprocessor + Send>> {
+    if let Some(files) = crate::mfi::open_in(&host.mfi) {
+        return Some(Box::new(files));
     }
+    #[cfg(target_os = "linux")]
+    {
+        let (bus, gpio) = (start.settings.mfi_i2c_bus, start.settings.mfi_power_gpio);
+        println!("[helper] opening MFi bus={bus} gpio={gpio}");
+        match iap2_mfi::I2cCoprocessor::open(bus, gpio) {
+            Ok(chip) => {
+                println!("[helper] MFi addr=0x{:02X}", chip.address());
+                return Some(Box::new(chip));
+            }
+            Err(e) => println!("[helper] no MFi chip on the bus: {e}"),
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = start;
+    println!(
+        "[helper] no MFi files in {}, CarPlay waits for a LIVI Link dongle's chip",
+        host.mfi.display()
+    );
+    None
+}
+
+fn serve(start: HelperStart, host: Host) -> Held {
+    #[cfg(target_os = "linux")]
+    tokio::task::spawn_blocking(iap2_usbmux::drop_name_bound_profiles);
+    let chip = chip(&start, &host);
+    let own_chip = chip.is_some();
     let link = watch_link(&host);
     let over_dongle = start.settings.bt_adapter == livi_link_host::link::CHOICE;
     let dongle_ap = start.settings.wifi_iface == livi_link_host::link::CHOICE;
+    #[cfg(not(target_os = "linux"))]
     let dongle = crate::bt_dongle::Dongle::default();
-    let chip: Box<dyn AuthCoprocessor + Send> = match files {
-        Some(files) => Box::new(files),
-        None => Box::new(NoCoprocessor),
-    };
-    let auth = SharedCoprocessor::new(chip);
+    let auth = SharedCoprocessor::new(chip.unwrap_or_else(|| Box::new(NoCoprocessor)));
     let (identity, cp) = crate::carplay(&start, Transport::Wired);
+    #[cfg(target_os = "linux")]
+    let cp = livi_runtime::bringup::CpConfig {
+        wifi_iface: crate::bluez::ap_iface(&start.settings.wifi_iface),
+        ap_mac: dongle_ap.then(livi_link_host::ap::mac).flatten(),
+        ap_on_air: dongle_ap
+            .then_some(livi_link_host::ap::on_air as livi_runtime::bringup::AskOnAir),
+        ..cp
+    };
     let bcast = Broadcaster::default();
     let state = Arc::new(HelperState::default());
     let (bluez, bluez_later) = watch::channel(None);
+    let bluez = Arc::new(bluez);
     let sco_sink = livi_runtime::sco::ScoSink::default();
     let (aa_events, wired_phones) = crate::aa::serve(&host.sockets, sco_sink.clone(), true);
     #[cfg_attr(not(target_os = "android"), allow(unused_variables))]
@@ -141,6 +183,22 @@ fn serve(start: HelperStart, host: Host) -> Held {
         targets: None,
         cp_live: None,
     };
+    #[cfg(target_os = "linux")]
+    let sock = LiviSockConfig {
+        cp: livi_runtime::bringup::CpConfig {
+            transport: Transport::Wireless,
+            ..cp.clone()
+        },
+        cp_live: dongle_ap.then(|| {
+            let base = livi_runtime::bringup::CpConfig {
+                transport: Transport::Wireless,
+                ..cp.clone()
+            };
+            Arc::new(move || crate::bluez::session_cp(&base, true)) as _
+        }),
+        ..sock
+    };
+    #[cfg(not(target_os = "linux"))]
     let sock = if over_dongle {
         let base = cp.clone();
         let dongle = dongle.clone();
@@ -175,17 +233,19 @@ fn serve(start: HelperStart, host: Host) -> Held {
             }
         });
     }
-    crate::dongle::follow_link(
-        link.clone(),
-        auth.clone(),
-        own_files,
-        bcast.clone(),
-        dongle.clone(),
-    );
-    tokio::spawn(crate::dongle::identify_on_link(link.clone(), auth.clone()));
+    #[cfg(not(target_os = "linux"))]
+    let gone = {
+        let dongle = dongle.clone();
+        move || dongle.end()
+    };
+    #[cfg(target_os = "linux")]
+    let gone = || {};
+    crate::link::follow_link(link.clone(), auth.clone(), own_chip, bcast.clone(), gone);
+    tokio::spawn(crate::link::identify_on_link(link.clone(), auth.clone()));
     if dongle_ap {
         tokio::spawn(crate::link::relay_stations(bcast.clone()));
     }
+    #[cfg(not(target_os = "linux"))]
     if over_dongle {
         let arrivals = crate::dongle::start_bluetooth(
             radios(&start, &host),
@@ -276,10 +336,46 @@ fn serve(start: HelperStart, host: Host) -> Held {
         ));
         bluetooth
     });
-    #[cfg(not(target_os = "android"))]
-    let shared_bluetooth = None;
-    serve_shared(&host.sockets.shared, shared_bluetooth, dongle_ap);
     #[cfg(target_os = "macos")]
+    let shared_bluetooth = None;
+    #[cfg(not(target_os = "linux"))]
+    serve_shared(&host.sockets.shared, shared_bluetooth, dongle_ap);
+    #[cfg(target_os = "linux")]
+    let bluetooth = {
+        let (stop, stopped) = watch::channel(false);
+        let b = crate::bluez::Bluetooth {
+            adapter: start.settings.bt_adapter.clone(),
+            wireless: livi_runtime::bt::Wireless {
+                carplay: start.settings.wireless_carplay,
+                android_auto: start.settings.wireless_android_auto,
+            },
+            sockets: host.sockets.clone(),
+            auth: auth.clone(),
+            identity: identity.clone(),
+            cp: livi_runtime::bringup::CpConfig {
+                transport: Transport::Wireless,
+                ..cp.clone()
+            },
+            dongle_ap,
+            bcast: bcast.clone(),
+            state: state.clone(),
+            bluez: bluez.clone(),
+            aa_events: aa_events.clone(),
+            wired_phones: wired_phones.clone(),
+            sco_sink: sco_sink.clone(),
+        };
+        let shared = host.sockets.shared.clone();
+        let task = tokio::spawn(async move {
+            if let Err(e) = crate::bluez::serve(b, stopped).await {
+                eprintln!(
+                    "[helper] no Bluetooth ({e}), wireless Android Auto and calls are off, wired Android Auto and CarPlay carry on"
+                );
+                serve_shared(&shared, None, dongle_ap);
+            }
+        });
+        (stop, task)
+    };
+    #[cfg(not(target_os = "android"))]
     let bonjour = announce(&cp, &start, bcast.clone());
     let wired = Wired {
         auth,
@@ -287,11 +383,12 @@ fn serve(start: HelperStart, host: Host) -> Held {
         cp,
         dongle: Dongle {
             ap_mac: dongle_ap.then_some(livi_link_host::ap::mac as fn() -> Option<String>),
-            bt_mac: over_dongle.then_some(livi_link_host::ap::bt_mac as fn() -> Option<[u8; 6]>),
+            bt_mac: (over_dongle && cfg!(not(target_os = "linux")))
+                .then_some(livi_link_host::ap::bt_mac as fn() -> Option<[u8; 6]>),
         },
         bcast,
         state,
-        link: if own_files {
+        link: if own_chip {
             LinkPresence::always()
         } else {
             link
@@ -302,18 +399,20 @@ fn serve(start: HelperStart, host: Host) -> Held {
         #[cfg(target_os = "android")]
         airplay_txt,
     };
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     tokio::spawn(crate::wired::watch(wired));
     #[cfg(target_os = "macos")]
     tokio::spawn(crate::wired::watch_usbmuxd(wired));
     Held {
         _bluez: bluez,
-        #[cfg(target_os = "macos")]
+        #[cfg(not(target_os = "android"))]
         _bonjour: bonjour,
+        #[cfg(target_os = "linux")]
+        bluetooth,
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "android"))]
 fn announce(cp: &CpConfig, start: &HelperStart, bcast: Broadcaster) -> Option<Bonjour> {
     if cp.airplay_port == 0 {
         eprintln!("[helper] LIVI opened no CarPlay port, CarPlay is not announced");
@@ -386,6 +485,7 @@ fn attach_net(
     });
 }
 
+#[cfg(not(target_os = "linux"))]
 fn radios(start: &HelperStart, host: &Host) -> crate::dongle::Radios {
     let s = &start.settings;
     let channel = if s.channel == 0 {

@@ -12,11 +12,7 @@ livi-core-proto.workspace = true
 livi-helper.workspace = true
 livi-runtime.workspace = true
 livi-wifi.workspace = true
-livi-net.workspace = true
-iap2-mfi = { workspace = true, features = ["files"] }
-livi-aa.workspace = true
 livi-link-host.workspace = true
-iap2-usbmux.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
 serde_json.workspace = true
 libc.workspace = true
