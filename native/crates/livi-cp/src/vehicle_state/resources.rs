@@ -51,8 +51,9 @@ pub(super) fn vehicle_resources() -> Accessory {
     }
 }
 
-pub(super) fn fetched_archives() -> std::sync::MutexGuard<'static, BTreeSet<String>> {
-    static FETCHED: std::sync::Mutex<BTreeSet<String>> = std::sync::Mutex::new(BTreeSet::new());
+pub(super) fn fetched_archives() -> std::sync::MutexGuard<'static, BTreeSet<(String, String)>> {
+    static FETCHED: std::sync::Mutex<BTreeSet<(String, String)>> =
+        std::sync::Mutex::new(BTreeSet::new());
     FETCHED.lock().unwrap_or_else(|e| e.into_inner())
 }
 

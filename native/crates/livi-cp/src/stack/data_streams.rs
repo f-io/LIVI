@@ -10,6 +10,11 @@ impl<M: Media> Conn<M> {
             .pair_verify
             .shared_secret()
             .ok_or("vehicle state DataStream SETUP arrived before pair-verify")?;
+        if let (Some(state), Some(phone)) =
+            (&mut self.vehicle_state, self.pair_verify.controller_id())
+        {
+            state.set_phone(phone);
+        }
         let into_session = self
             .vehicle_in
             .get_or_insert_with(|| {

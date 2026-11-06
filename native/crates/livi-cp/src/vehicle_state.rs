@@ -383,6 +383,7 @@ pub struct VehicleState {
     history: Vec<HistoryEntry>,
     hidden_by_phone: Vec<u64>,
     zone_ready: bool,
+    phone: String,
     debug: bool,
 }
 
@@ -413,6 +414,7 @@ impl VehicleState {
             history: Vec::new(),
             hidden_by_phone: Vec::new(),
             zone_ready: false,
+            phone: String::new(),
             debug,
         }
     }
@@ -497,9 +499,18 @@ impl VehicleState {
             .and_then(Value::as_str)
     }
 
-    fn archive_fetched(&self) -> bool {
+    pub fn set_phone(&mut self, controller_id: &str) {
+        self.phone = controller_id.to_string();
+    }
+
+    fn archive_key(&self) -> Option<(String, String)> {
         self.archive_version()
-            .is_some_and(|v| fetched_archives().contains(v))
+            .map(|v| (self.phone.clone(), v.to_string()))
+    }
+
+    fn archive_fetched(&self) -> bool {
+        self.archive_key()
+            .is_some_and(|k| fetched_archives().contains(&k))
     }
 
     fn symbol_name(&self, name: &str) -> String {
@@ -796,8 +807,8 @@ impl VehicleState {
                     .any(|(k, _)| k.as_int() == Some(GET_IMAGE_ARCHIVE));
                 let mut out = vec![(lane, wrap(&self.control(commands, transaction)))];
                 if fetched && self.image_archive.is_some() {
-                    if let Some(version) = self.archive_version() {
-                        fetched_archives().insert(version.to_string());
+                    if let Some(key) = self.archive_key() {
+                        fetched_archives().insert(key);
                     }
                     out.extend(self.logo_symbol_update());
                     if self.followed.contains(&(history_slot(0) + 1)) {

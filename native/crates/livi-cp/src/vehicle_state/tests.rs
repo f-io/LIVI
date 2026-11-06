@@ -1553,6 +1553,11 @@ fn the_image_archive_is_described_and_handed_out() {
         2,
         "the next session knows the phone has the archive"
     );
+    let mut other = VehicleState::new(false, "9.5.0", "").with_images(&images);
+    other.set_phone("another phone");
+    let line = Value::Array(vec![Value::Int(VERSION_LINE + 5)]);
+    let out = other.handle(Lane::Normal, &command("registerRequest", line));
+    assert_eq!(out.len(), 1, "another phone still has to fetch it");
     assert!(state.take_radio_commands().is_empty());
     assert!(
         VehicleState::new(false, "", "")
