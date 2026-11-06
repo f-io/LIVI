@@ -855,44 +855,6 @@ async fn next_device_goes_round_the_phones() {
 }
 
 #[tokio::test]
-async fn the_helper_ends_sessions_whose_transport_went() {
-    let mut rig = Rig::new();
-    rig.device(1, false, "AA:BB", "cc:dd");
-    rig.device(2, true, "EE:FF", "");
-    rig.p.on_event(CpEvent::Presence {
-        id: 2,
-        wired: true,
-        presence: Presence::Device {
-            bt_mac: String::new(),
-            wifi_mac: String::new(),
-            ip: String::new(),
-            usb_udid: "u2".into(),
-            name: String::new(),
-            model: String::new(),
-        },
-    });
-    rig.drain();
-    rig.p
-        .on_event(CpEvent::HelperPresence(HelperPresence::Wifi {
-            wifi_mac: "CC:DD".into(),
-            ip: String::new(),
-            connected: false,
-        }));
-    assert_eq!(rig.drain(), [CpCmd::Close { id: 1 }]);
-    rig.p
-        .on_event(CpEvent::HelperPresence(HelperPresence::DeviceGone {
-            usb_udid: "u2".into(),
-        }));
-    assert_eq!(rig.drain(), [CpCmd::Close { id: 2 }]);
-    rig.p
-        .on_event(CpEvent::HelperPresence(HelperPresence::DeviceGone {
-            usb_udid: "zz".into(),
-        }));
-    rig.p.on_event(CpEvent::HelperConnected);
-    assert!(rig.drain().is_empty());
-}
-
-#[tokio::test]
 async fn a_call_or_siri_brings_the_projection_forward_and_back() {
     let mut rig = Rig::new();
     rig.connect(1, true);

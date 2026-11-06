@@ -162,14 +162,6 @@ impl Projection {
         self.changed();
     }
 
-    pub(super) fn close_on_transport(&mut self, ids: &Ids, transport: Transport) {
-        if let Some(i) = self.by_identity(ids)
-            && self.sessions[i].transport == transport
-        {
-            self.tell(self.sessions[i].link, Do::Close);
-        }
-    }
-
     pub(super) fn on_active_changed(&mut self, next: Option<usize>, had_prev: bool) {
         self.attention = None;
         self.activity(|a| *a = Activity::default());

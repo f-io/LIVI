@@ -64,9 +64,6 @@ impl Projection {
                     ..Default::default()
                 };
                 self.devices.registry.note_wifi(&ids, connected);
-                if !connected {
-                    self.close_on_transport(&session_ids(&ids), Transport::Wifi);
-                }
                 self.publish();
             }
             CpEvent::HelperPresence(HelperPresence::Device { ids }) => {
@@ -93,13 +90,6 @@ impl Projection {
             CpEvent::HelperConnected => {
                 let targets = self.targets();
                 self.devices.page(targets, true);
-            }
-            CpEvent::HelperPresence(HelperPresence::DeviceGone { usb_udid }) => {
-                let ids = Ids {
-                    usb_udid: opt(&usb_udid),
-                    ..Default::default()
-                };
-                self.close_on_transport(&ids, Transport::Usb);
             }
             CpEvent::HostUiRequested { id } => {
                 println!("[core] CarPlay asks for the car's own UI");

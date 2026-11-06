@@ -69,9 +69,6 @@ pub enum HelperPresence {
     Device {
         ids: DeviceIds,
     },
-    DeviceGone {
-        usb_udid: String,
-    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -855,9 +852,6 @@ impl<M: Media> Manager<M> {
                 self.wired.retain(|_, u| *u != udid);
                 self.cable_addrs.remove(&udid);
                 self.came_over(&udid);
-                self.emit(CpEvent::HelperPresence(HelperPresence::DeviceGone {
-                    usb_udid: udid.clone(),
-                }));
                 let ids = DeviceIds {
                     usb_udid: Some(udid.clone()),
                     ..Default::default()
@@ -1519,12 +1513,10 @@ mod tests {
             .push(serde_json::json!({ "type": "device-gone", "src": "carkit", "usbUdid": "u1" }))
             .await;
         assert_eq!(
-            rig.until(|e| matches!(e, CpEvent::HelperPresence(_))).await,
-            CpEvent::HelperPresence(HelperPresence::DeviceGone {
-                usb_udid: "u1".into()
-            })
+            rig.until(|e| matches!(e, CpEvent::Disconnected { .. }))
+                .await,
+            CpEvent::Disconnected { id: again }
         );
-        assert_eq!(rig.event().await, CpEvent::Disconnected { id: again });
         rig.handle.send(CpCmd::DropSessions);
         assert_eq!(rig.event().await, CpEvent::Disconnected { id: meta });
         rig.helper.saw("drop-iap2").await;
