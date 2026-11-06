@@ -3,6 +3,7 @@
 // Additional terms: see NOTICE
 
 use livi_core_proto::aa_events::AaHelperEvent;
+use livi_core_proto::ids::same_mac;
 
 use super::*;
 
@@ -222,6 +223,10 @@ impl Projection {
                 .map(|s| s.device.instance_id.clone())
                 .collect();
             for instance in unnamed {
+                if self.another_phone_has(mac, instance.as_deref()) {
+                    println!("[core] {mac} belongs to another phone, not taken for android auto");
+                    continue;
+                }
                 if let Some(instance) = &instance {
                     self.hands_free
                         .bt_by_instance
@@ -244,6 +249,21 @@ impl Projection {
         for mac in phones {
             self.keep_link(&mac);
         }
+    }
+
+    fn another_phone_has(&self, mac: &str, instance: Option<&str>) -> bool {
+        let has = |m: Option<&str>| m.is_some_and(|m| same_mac(m, mac));
+        self.sessions
+            .iter()
+            .any(|s| has(s.device.bt_mac.as_deref()))
+            || self.devices.registry.entries().iter().any(|e| {
+                has(e.bt_mac())
+                    && (e.view_protocol() == Some(Protocol::Carplay)
+                        || matches!(
+                            (e.ids().instance_id.as_deref(), instance),
+                            (Some(a), Some(b)) if a != b
+                        ))
+            })
     }
 
     pub(super) fn keep_link(&mut self, mac: &str) {

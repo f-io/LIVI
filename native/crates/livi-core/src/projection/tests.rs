@@ -1995,3 +1995,25 @@ async fn the_one_connected_phone_is_taken_for_an_unnamed_android_auto_session() 
     assert_eq!(rig.p.hands_free.bt_by_instance.len(), 1);
     assert_eq!(rig.io_drain().len(), 2);
 }
+
+#[tokio::test]
+async fn an_iphone_mac_is_not_taken_for_an_unnamed_android_auto_session() {
+    let mut rig = Rig::new();
+    rig.connect(1, false);
+    rig.device(1, false, "AA:00:00:00:00:07", "");
+    rig.aa_connect(5, false);
+    rig.p.on_aa(aa_device(5, "Pixel", "inst5"));
+    rig.io_drain();
+
+    rig.p
+        .on_back(Back::Phones(vec!["AA:00:00:00:00:07".into()]));
+    assert!(rig.p.hands_free.bt_by_instance.is_empty());
+    let mut ids: Vec<String> = listed(&rig).into_iter().map(|d| d.id).collect();
+    ids.sort();
+    assert_eq!(ids, ["aa:00:00:00:00:07", "inst5"]);
+
+    rig.p.on_event(CpEvent::Disconnected { id: 1 });
+    rig.p
+        .on_back(Back::Phones(vec!["AA:00:00:00:00:07".into()]));
+    assert!(rig.p.hands_free.bt_by_instance.is_empty());
+}
