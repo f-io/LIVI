@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 
 use livi_core_client::Client;
 use livi_core_proto::message::{Action, MediaControl};
-use livi_ui_model::media::{Guess, Playback, Pressed};
-use slint::{Color, ComponentHandle, Image, ModelRc, Timer, TimerMode, VecModel};
+use livi_ui_model::media::{Guess, Playback, Pressed, Station};
+use slint::{Color, ComponentHandle, Image, Model, ModelRc, Timer, TimerMode, VecModel};
 
 use crate::media::{MediaView, RadioView, Radios};
 use crate::{AppWindow, DabState, MediaSource, MediaText, Page, Press, StationData};
@@ -29,6 +29,13 @@ struct Live {
     radio_guess: Guess,
     tuned: Option<(u32, bool)>,
     picked: Option<(u32, Instant)>,
+    rows: Option<Rows>,
+}
+
+struct Rows {
+    fm: bool,
+    stations: Vec<Station>,
+    model: Rc<VecModel<StationData>>,
 }
 
 thread_local! {
@@ -146,19 +153,14 @@ pub fn apply_radio(ui: &AppWindow, r: Radios) {
 fn render(ui: &AppWindow) {
     let s = ui.global::<DabState>();
     let fm = s.get_view() == MediaSource::Fm;
-    let shown = LIVE.with_borrow(|l| {
-        l.radios
-            .as_ref()
-            .map(|r| if fm { r.fm.clone() } else { r.dab.clone() })
-    });
-    let Some(RadioView {
+    let Some(radios) = LIVE.with_borrow_mut(|l| l.radios.take()) else {
+        return;
+    };
+    let RadioView {
         radio: d,
         logos,
         tuned_logo,
-    }) = shown
-    else {
-        return;
-    };
+    } = if fm { &radios.fm } else { &radios.dab };
     let t = ui.global::<MediaText>();
     let source = if fm {
         t.get_fm_source()
@@ -169,12 +171,12 @@ fn render(ui: &AppWindow) {
     s.set_active(d.active);
     s.set_title(d.title.clone().map_or_else(|| source.clone(), Into::into));
     s.set_source(source);
-    s.set_text(d.text.into());
+    s.set_text(d.text.as_str().into());
     s.set_ensemble(
         if d.title.is_some() {
-            d.ensemble
+            d.ensemble.as_str()
         } else {
-            String::new()
+            ""
         }
         .into(),
     );
@@ -184,41 +186,99 @@ fn render(ui: &AppWindow) {
     s.set_favorite(d.tuned_favorite);
     s.set_has_logo(tuned_logo.is_some());
     if let Some(px) = tuned_logo {
-        s.set_logo(Image::from_rgba8(px));
+        s.set_logo(Image::from_rgba8(px.clone()));
     }
-    s.set_initials(d.tuned_initials.into());
+    s.set_initials(d.tuned_initials.as_str().into());
     s.set_badge(rgb(d.tuned_badge));
-    let stations: Vec<StationData> = d
-        .stations
-        .into_iter()
-        .zip(logos)
-        .map(|(st, logo)| StationData {
-            id: st.id as i32,
-            number: st.number as i32,
-            label: st.label.into(),
-            favorite: st.favorite,
-            tuned: st.tuned,
-            has_logo: logo.is_some(),
-            logo: logo.map(Image::from_rgba8).unwrap_or_default(),
-            initials: st.initials.into(),
-            badge: rgb(st.badge),
-        })
-        .collect();
-    s.set_stations(ModelRc::from(Rc::new(VecModel::from(stations))));
+    show_stations(&s, fm, &d.stations, logos);
     s.set_tuned_index(d.tuned_index.map_or(-1, |i| i as i32));
-    LIVE.with_borrow_mut(|l| {
-        l.radio_playing = d.playing;
-        l.radio_guess.settle(d.playing);
-        l.tuned = d
-            .tuned
+    let (playing, tuned) = (
+        d.playing,
+        d.tuned
             .filter(|_| d.title.is_some())
-            .map(|id| (id, d.tuned_favorite));
+            .map(|id| (id, d.tuned_favorite)),
+    );
+    LIVE.with_borrow_mut(|l| {
+        l.radios = Some(radios);
+        l.radio_playing = playing;
+        l.radio_guess.settle(playing);
+        l.tuned = tuned;
         if l.picked
-            .is_some_and(|(id, _)| d.playing && l.tuned.is_some_and(|(t, _)| t == id))
+            .is_some_and(|(id, _)| playing && l.tuned.is_some_and(|(t, _)| t == id))
         {
             l.picked = None;
             s.set_picked(-1);
         }
+    });
+}
+
+fn station_row(st: &Station, logo: &Option<crate::media::Pixels>) -> StationData {
+    StationData {
+        id: st.id as i32,
+        number: st.number as i32,
+        label: st.label.as_str().into(),
+        favorite: st.favorite,
+        tuned: st.tuned,
+        has_logo: logo.is_some(),
+        logo: logo.clone().map(Image::from_rgba8).unwrap_or_default(),
+        initials: st.initials.as_str().into(),
+        badge: rgb(st.badge),
+    }
+}
+
+fn show_stations(
+    s: &DabState<'_>,
+    fm: bool,
+    stations: &[Station],
+    logos: &[Option<crate::media::Pixels>],
+) {
+    let marks_only = |a: &Station, b: &Station| {
+        (a.id, a.number, &a.label, &a.logo, &a.initials, a.badge)
+            == (b.id, b.number, &b.label, &b.logo, &b.initials, b.badge)
+    };
+    let kept = LIVE.with_borrow_mut(|l| {
+        let rows = l.rows.as_mut().filter(|r| r.fm == fm)?;
+        if rows.stations == stations {
+            return Some(());
+        }
+        if rows.stations.len() != stations.len()
+            || !rows
+                .stations
+                .iter()
+                .zip(stations)
+                .all(|(a, b)| marks_only(a, b))
+        {
+            return None;
+        }
+        for (i, (old, new)) in rows.stations.iter().zip(stations).enumerate() {
+            if old != new
+                && let Some(mut row) = rows.model.row_data(i)
+            {
+                row.favorite = new.favorite;
+                row.tuned = new.tuned;
+                rows.model.set_row_data(i, row);
+            }
+        }
+        rows.stations = stations.to_vec();
+        Some(())
+    });
+    if kept.is_some() {
+        return;
+    }
+    let model = Rc::new(VecModel::from(
+        stations
+            .iter()
+            .zip(logos)
+            .map(|(st, logo)| station_row(st, logo))
+            .collect::<Vec<_>>(),
+    ));
+    s.set_stations(ModelRc::from(model.clone()));
+    LIVE.with_borrow_mut(|l| {
+        l.rows = Some(Rows {
+            fm,
+            stations: stations.to_vec(),
+            model,
+        });
     });
 }
 

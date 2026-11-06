@@ -282,8 +282,8 @@ pub fn dab(state: &Value) -> Radio {
     if signal["locked"].as_bool() == Some(true) {
         out.signal_bars = signal_bars(signal["quality"].as_u64().unwrap_or(0));
     }
-    let all = d["stations"].as_array().cloned().unwrap_or_default();
-    for st in &all {
+    let all = d["stations"].as_array().map_or(&[][..], Vec::as_slice);
+    for st in all {
         let id = st["serviceId"].as_u64().unwrap_or(0) as u32;
         let label = st["label"].as_str().unwrap_or("").to_string();
         if Some(id) == tuned {
@@ -332,7 +332,7 @@ fn fm_name(st: &Value) -> Option<String> {
 pub fn fm(state: &Value) -> Radio {
     let f = &state["fm"];
     let tuned = f["station"].as_u64().map(|v| v as u32);
-    let all = f["stations"].as_array().cloned().unwrap_or_default();
+    let all = f["stations"].as_array().map_or(&[][..], Vec::as_slice);
     let khz_of = |st: &Value| st["khz"].as_u64().unwrap_or(0) as u32;
     let mut out = Radio {
         receiver: !state["dab"]["receiver"].is_null(),
