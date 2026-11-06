@@ -142,11 +142,7 @@ async fn watch_usb(control: Control, sessions: PathBuf, events: Broadcaster) {
     livi_aa::usb::run(
         control,
         sessions,
-        move |socket, peer, serial| {
-            events.push_json(format!(
-                "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\",\"transport\":\"usb\",\"serial\":\"{serial}\"}}"
-            ));
-        },
+        move |socket, peer, serial| announce_session(&events, socket, peer, "usb", Some(serial)),
         async move { subscribed.subscribed().await },
     )
     .await;
@@ -287,10 +283,30 @@ fn emit_device(bcast: &Broadcaster, mac: &str, id: &wpp::Identity) {
             &id.serial
         }
     );
-    bcast.push_json(format!(
-        "{{\"event\":\"aa-device\",\"btMac\":\"{}\",\"instanceId\":\"{}\",\"usbSerial\":\"{}\"}}",
-        mac.to_uppercase(),
-        id.instance_id,
-        id.serial
-    ));
+    let event = serde_json::json!({
+        "event": "aa-device",
+        "btMac": mac.to_uppercase(),
+        "instanceId": id.instance_id,
+        "usbSerial": id.serial,
+    });
+    bcast.push_json(event.to_string());
+}
+
+pub fn announce_session(
+    bcast: &Broadcaster,
+    socket: &str,
+    peer: impl ToString,
+    transport: &str,
+    serial: Option<&str>,
+) {
+    let mut event = serde_json::json!({
+        "event": "aa-session",
+        "socket": socket,
+        "peer": peer.to_string(),
+        "transport": transport,
+    });
+    if let Some(serial) = serial {
+        event["serial"] = serial.into();
+    }
+    bcast.push_json(event.to_string());
 }

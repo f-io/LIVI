@@ -4162,6 +4162,7 @@ dependencies = [
  "livi-net",
  "livi-runtime",
  "livi-wifi",
+ "serde_json",
  "tokio",
 ]
 

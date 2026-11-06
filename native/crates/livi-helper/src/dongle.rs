@@ -175,9 +175,7 @@ fn start_android_auto(
         radios.port,
         radios.sockets.sessions.clone(),
         move |socket, peer| {
-            sessions.push_json(format!(
-            "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\",\"transport\":\"wifi\"}}"
-        ));
+            crate::aa::announce_session(&sessions, socket, peer, "wifi", None);
         },
     ));
     let cfg = AaConfig {

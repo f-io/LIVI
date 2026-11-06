@@ -317,7 +317,7 @@ fn parse_reconnect_targets(arg: &str) -> Result<Vec<(String, Option<String>)>, S
 }
 
 fn err_json(msg: &str) -> String {
-    format!("{{\"ok\":false,\"error\":\"{}\"}}", msg.replace('"', "'"))
+    serde_json::json!({ "ok": false, "error": msg }).to_string()
 }
 
 async fn run_subscriber(mut stream: UnixStream, bcast: Broadcaster) -> io::Result<()> {

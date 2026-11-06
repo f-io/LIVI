@@ -453,9 +453,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
                 aa_port,
                 HelperSockets::system().sessions,
                 move |socket, peer| {
-                    events.push_json(format!(
-                "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\",\"transport\":\"wifi\"}}"
-            ));
+                    livi_helper::aa::announce_session(&events, socket, peer, "wifi", None);
                 },
             ));
             match bt::start_aa(&conn, &adapter).await {

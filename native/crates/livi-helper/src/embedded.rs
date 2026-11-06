@@ -234,9 +234,7 @@ fn serve(start: HelperStart, host: Host) -> Held {
                 livi_aa::consts::TCP_PORT,
                 sessions,
                 move |socket, peer| {
-                    events.push_json(format!(
-                "{{\"event\":\"aa-session\",\"socket\":\"{socket}\",\"peer\":\"{peer}\",\"transport\":\"wifi\"}}"
-            ));
+                    crate::aa::announce_session(&events, socket, peer, "wifi", None);
                 },
             ));
             let hfp = livi_runtime::hfp::Hfp::default();
