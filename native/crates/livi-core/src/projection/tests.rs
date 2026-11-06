@@ -1024,15 +1024,15 @@ async fn now_playing_follows_the_phone_in_front() {
     rig.device(2, false, "AA:BB", "cc:dd");
     rig.meta(
         1,
-        json!({ "type": "nowplaying", "title": "One", "artist": "A", "appName": "Music",
-                "durationMs": 1000, "elapsedMs": 10, "playing": 1 }),
+        json!({ "type": "nowplaying", "title": "One", "artist": "A", "app": "Music",
+                "durationMs": 1000, "elapsedMs": 10, "playing": true }),
     );
     rig.meta(
         1,
-        json!({ "type": "nowplaying", "elapsedMs": 20, "playing": 0, "album": 5 }),
+        json!({ "type": "nowplaying", "elapsedMs": 20, "playing": false }),
     );
-    rig.meta(1, json!({ "type": "albumart", "dataB64": "AAAA" }));
-    rig.meta(1, json!({ "type": "albumart", "dataB64": "" }));
+    rig.meta(1, json!({ "type": "nowplaying", "artwork": "AAAA" }));
+    rig.meta(1, json!({ "type": "nowplaying", "artwork": "" }));
     rig.meta(2, json!({ "type": "nowplaying", "title": "Two" }));
     rig.meta(9, json!({ "type": "nowplaying", "title": "Nobody" }));
     assert_eq!(
@@ -1065,10 +1065,11 @@ async fn navigation_follows_the_phone_in_front_and_clears_at_the_end() {
     rig.meta(
         1,
         json!({ "type": "navigation", "status": 1, "orderType": 2, "roadName": "Main St",
-                "afterRoadName": "Side St", "destinationName": "Home",
+"destinationName": "Home",
                 "timeToDestination": 600, "distanceToDestination": 5000,
-                "remainDistance": 200, "maneuverType": 1, "turnSide": 0,
-                "junctionType": 1, "turnAngle": -90, "etaEpoch": 1_800_000_000,
+                "remainDistance": 200, "etaEpoch": 1_800_000_000,
+                "turn": { "maneuverType": 1, "turnSide": 0, "junctionType": 1,
+                          "turnAngle": -90, "afterRoadName": "Side St" },
                 "maneuvers": [
                     { "index": 0, "maneuverType": 1, "afterRoadName": "Side St" },
                     { "index": 1, "maneuverType": 12 }

@@ -13,12 +13,14 @@ use iap2_csm::messages::power::PowerUpdate;
 use iap2_csm::messages::route_guidance::{
     LaneGuidanceInformation, RouteGuidanceManeuverUpdate, RouteGuidanceUpdate,
 };
-use livi_core_proto::helper_events::{CallPhase, DeviceSource, HelperEvent, HelperKind};
-use serde_json::{Map, Value, json};
+use livi_core_proto::helper_events::{
+    CallPhase, DeviceSource, HelperEvent, HelperKind, NavigationPatch, NowPlayingPatch, Turn,
+};
+use livi_core_proto::state::{Lane, LaneGuidance, Maneuver};
 
 use crate::framing::frame_msg_id;
 
-pub fn device_json(frame: &[u8], usb_udid: Option<&str>) -> Option<String> {
+pub fn device_event(frame: &[u8], usb_udid: Option<&str>) -> Option<HelperKind> {
     use iap2_csm::messages::car_play::DeviceTransportIdentifierNotification;
 
     if frame_msg_id(frame)? != 0x4E0E {
@@ -36,18 +38,14 @@ pub fn device_json(frame: &[u8], usb_udid: Option<&str>) -> Option<String> {
         ip: None,
         name: None,
     };
-    Some(line(seen))
+    Some(seen)
 }
 
-pub fn wired_start_json(usb_udid: &str, ip: &str) -> String {
-    line(HelperKind::WiredStart {
+pub fn wired_start_event(usb_udid: &str, ip: &str) -> HelperKind {
+    HelperKind::WiredStart {
         usb_udid: usb_udid.to_string(),
         ip: ip.to_string(),
-    })
-}
-
-fn line(kind: HelperKind) -> String {
-    HelperEvent::from(kind).to_line()
+    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -88,12 +86,10 @@ impl Navigation {
         }
     }
 
-    fn lists(&self, o: &mut Obj) {
-        let maneuvers: Vec<Value> = self.maneuvers.values().map(maneuver_value).collect();
-        let lanes: Vec<Value> = self.lanes.values().map(lane_guidance_value).collect();
-        o.raw("maneuvers", &Value::from(maneuvers).to_string());
-        o.raw("currentManeuvers", &json!(self.current).to_string());
-        o.raw("laneGuidance", &Value::from(lanes).to_string());
+    fn lists(&self, patch: &mut NavigationPatch) {
+        patch.maneuvers = Some(self.maneuvers.values().map(maneuver).collect());
+        patch.current_maneuvers = Some(self.current.iter().map(|&i| u32::from(i)).collect());
+        patch.lane_guidance = Some(self.lanes.values().map(lane_guidance).collect());
     }
 
     fn current_turn(&self) -> Option<&RouteGuidanceManeuverUpdate> {
@@ -118,7 +114,8 @@ impl EventTag {
         }
     }
 
-    pub fn navigation_json(&mut self, frame: &[u8]) -> Option<String> {
+    pub fn navigation_event(&mut self, frame: &[u8]) -> Option<HelperKind> {
+        let mut patch = NavigationPatch::default();
         match frame_msg_id(frame)? {
             0x5201 => {
                 let m = RouteGuidanceUpdate::decode(frame).ok()?;
@@ -132,72 +129,32 @@ impl EventTag {
                 nav.count = m.maneuver_count.or(nav.count);
                 nav.lane_index = m.lane_guidance_index.or(nav.lane_index);
                 nav.prune();
-                let mut o = Obj::new("navigation");
-                if let Some(v) = m.state {
-                    o.num("status", v);
-                }
-                if let Some(v) = m.maneuver_state {
-                    o.num("orderType", v);
-                }
-                if let Some(v) = &m.current_road_name {
-                    o.str("roadName", v);
-                }
-                if let Some(v) = &m.destination_name {
-                    o.str("destinationName", v);
-                }
-                if let Some(v) = m.eta {
-                    o.num("etaEpoch", v);
-                }
-                if let Some(v) = m.time_remaining {
-                    o.num("timeToDestination", v);
-                }
-                if let Some(v) = m.distance_remaining {
-                    o.num("distanceToDestination", v);
-                }
-                if let Some(v) = &m.distance_remaining_display {
-                    o.str("distanceToDestinationDisplay", v);
-                }
-                if let Some(v) = m.distance_remaining_units {
-                    o.num("distanceToDestinationUnits", v);
-                }
-                if let Some(v) = m.distance_to_maneuver {
-                    o.num("remainDistance", v);
-                }
-                if let Some(v) = &m.distance_to_maneuver_display {
-                    o.str("remainDistanceDisplay", v);
-                }
-                if let Some(v) = m.distance_to_maneuver_units {
-                    o.num("remainDistanceUnits", v);
-                }
-                if let Some(v) = m.maneuver_count {
-                    o.num("maneuverCount", v);
-                }
-                if let Some(v) = m.visible_in_app {
-                    o.bool("visibleInApp", v);
-                }
-                if let Some(v) = m.lane_guidance_index {
-                    o.num("laneGuidanceIndex", v);
-                }
-                if let Some(v) = m.lane_guidance_count {
-                    o.num("laneGuidanceCount", v);
-                }
-                if let Some(v) = m.lane_guidance_shown {
-                    o.bool("laneGuidanceShown", v);
-                }
-                if let Some(v) = &m.source_name {
-                    o.str("appName", v);
-                }
-                if let Some(v) = m.source_supports_route_guidance {
-                    o.bool("sourceSupportsRouteGuidance", v);
-                }
-                if let Some(v) = m.destination_time_zone_offset_minutes {
-                    o.num("destinationTimeZoneOffsetMinutes", v);
-                }
-                if let Some(turn) = nav.current_turn() {
-                    maneuver_fields(&mut o, turn);
-                }
-                nav.lists(&mut o);
-                o.finish()
+                patch = NavigationPatch {
+                    status: m.state,
+                    order_type: m.maneuver_state.map(u32::from),
+                    road_name: m.current_road_name,
+                    destination_name: m.destination_name,
+                    eta_epoch: m.eta.map(|v| v as f64),
+                    time_to_destination: m.time_remaining.map(|v| v as f64),
+                    distance_to_destination: m.distance_remaining.map(f64::from),
+                    distance_to_destination_display: m.distance_remaining_display,
+                    distance_to_destination_units: m.distance_remaining_units.map(u32::from),
+                    remain_distance: m.distance_to_maneuver.map(f64::from),
+                    remain_distance_display: m.distance_to_maneuver_display,
+                    remain_distance_units: m.distance_to_maneuver_units.map(u32::from),
+                    maneuver_count: m.maneuver_count.map(u32::from),
+                    visible_in_app: m.visible_in_app,
+                    lane_guidance_index: m.lane_guidance_index.map(u32::from),
+                    lane_guidance_count: m.lane_guidance_count.map(u32::from),
+                    lane_guidance_shown: m.lane_guidance_shown,
+                    app_name: m.source_name,
+                    source_supports_route_guidance: m.source_supports_route_guidance,
+                    destination_time_zone_offset_minutes: m
+                        .destination_time_zone_offset_minutes
+                        .map(i32::from),
+                    turn: nav.current_turn().map(turn),
+                    ..Default::default()
+                };
             }
             0x5202 => {
                 let m = RouteGuidanceManeuverUpdate::decode(frame).ok()?;
@@ -205,14 +162,9 @@ impl EventTag {
                 let nav = &mut self.navigation;
                 nav.maneuvers.insert(index, m);
                 nav.prune();
-                let mut o = Obj::new("navigation");
-                if nav.current.first() == Some(&index)
-                    && let Some(turn) = nav.current_turn()
-                {
-                    maneuver_fields(&mut o, turn);
+                if nav.current.first() == Some(&index) {
+                    patch.turn = nav.current_turn().map(turn);
                 }
-                nav.lists(&mut o);
-                o.finish()
             }
             0x5204 => {
                 let m = LaneGuidanceInformation::decode(frame).ok()?;
@@ -220,29 +172,21 @@ impl EventTag {
                 let nav = &mut self.navigation;
                 nav.lanes.insert(index, m);
                 nav.prune();
-                let mut o = Obj::new("navigation");
-                nav.lists(&mut o);
-                o.finish()
             }
-            _ => None,
+            _ => return None,
         }
+        self.navigation.lists(&mut patch);
+        Some(HelperKind::Navigation(Box::new(patch)))
     }
 
-    pub fn apply(&self, json: String) -> String {
-        let mut extra = String::new();
-        for (key, value) in [
-            ("cid", self.cid.as_deref()),
-            ("phoneId", self.phone_id.as_deref()),
-            ("usbTransportId", self.usb_transport_id.as_deref()),
-        ] {
-            if let Some(v) = value {
-                extra.push_str(&format!(",\"{key}\":\"{}\"", escape(v)));
-            }
+    pub fn tagged(&self, kind: HelperKind) -> String {
+        HelperEvent {
+            cid: self.cid.clone(),
+            phone_id: self.phone_id.clone(),
+            usb_transport_id: self.usb_transport_id.clone(),
+            kind,
         }
-        if extra.is_empty() || !json.ends_with('}') {
-            return json;
-        }
-        format!("{}{extra}}}", &json[..json.len() - 1])
+        .to_line()
     }
 }
 
@@ -255,7 +199,7 @@ pub fn device_time(frame: &[u8]) -> Option<i64> {
         .seconds_since_reference_date
 }
 
-pub fn to_json(frame: &[u8]) -> Option<String> {
+pub fn phone_event(frame: &[u8]) -> Option<HelperKind> {
     match frame_msg_id(frame)? {
         0x5001 => now_playing(frame),
         0xAE01 => power(frame),
@@ -266,111 +210,49 @@ pub fn to_json(frame: &[u8]) -> Option<String> {
     }
 }
 
-struct Obj {
-    parts: Vec<String>,
-}
-
-impl Obj {
-    fn new(kind: &str) -> Self {
-        Self {
-            parts: vec![format!("\"type\":\"{kind}\"")],
-        }
-    }
-    fn raw(&mut self, key: &str, json: &str) {
-        self.parts.push(format!("\"{key}\":{json}"));
-    }
-
-    fn str(&mut self, key: &str, value: &str) {
-        self.parts.push(format!("\"{key}\":\"{}\"", escape(value)));
-    }
-    fn num(&mut self, key: &str, value: impl std::fmt::Display) {
-        self.parts.push(format!("\"{key}\":{value}"));
-    }
-    fn bool(&mut self, key: &str, value: bool) {
-        self.parts.push(format!("\"{key}\":{value}"));
-    }
-    fn finish(self) -> Option<String> {
-        if self.parts.len() <= 1 {
-            None
-        } else {
-            Some(format!("{{{}}}", self.parts.join(",")))
-        }
-    }
-}
-
-fn escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push(' '),
-            c => out.push(c),
-        }
-    }
-    out
-}
-
-fn now_playing(frame: &[u8]) -> Option<String> {
+fn now_playing(frame: &[u8]) -> Option<HelperKind> {
     let m = NowPlayingUpdate::decode(frame).ok()?;
-    let mut o = Obj::new("nowplaying");
+    let mut patch = NowPlayingPatch::default();
     if let Some(mi) = m.media_item_attributes {
-        if let Some(t) = mi.title {
-            o.str("title", &t);
-        }
-        if let Some(a) = mi.artist {
-            o.str("artist", &a);
-        }
-        if let Some(a) = mi.album {
-            o.str("album", &a);
-        }
-        if let Some(d) = mi.duration_ms {
-            o.num("durationMs", d);
-        }
+        patch.title = mi.title;
+        patch.artist = mi.artist;
+        patch.album = mi.album;
+        patch.duration_ms = mi.duration_ms.map(|v| v as f64);
     }
     if let Some(pb) = m.playback_attributes {
-        if let Some(s) = pb.status {
-            o.num("playing", if s == PlaybackStatus::Playing { 1 } else { 0 });
-        }
-        if let Some(e) = pb.elapsed_ms {
-            o.num("elapsedMs", e);
-        }
-        if let Some(n) = pb.app_name {
-            o.str("appName", &n);
-        }
+        patch.playing = pb.status.map(|s| s == PlaybackStatus::Playing);
+        patch.elapsed_ms = pb.elapsed_ms.map(|v| v as f64);
+        patch.app = pb.app_name;
     }
-    o.finish()
+    (!patch.is_empty()).then_some(HelperKind::NowPlaying(patch))
 }
 
-fn power(frame: &[u8]) -> Option<String> {
+fn power(frame: &[u8]) -> Option<HelperKind> {
     let m = PowerUpdate::decode(frame).ok()?;
     let (level, charging) = (m.battery_charge_level, m.is_external_charger_connected);
-    (level.is_some() || charging.is_some()).then(|| line(HelperKind::Power { level, charging }))
+    (level.is_some() || charging.is_some()).then_some(HelperKind::Power { level, charging })
 }
 
-fn cellular(frame: &[u8]) -> Option<String> {
+fn cellular(frame: &[u8]) -> Option<HelperKind> {
     let m = CommunicationsUpdate::decode(frame).ok()?;
     let signal = m.signal_strength.as_ref().and_then(|v| v.first()).copied();
     let (carrier, cellular_supported) = (m.carrier_name, m.cellular_supported);
-    (signal.is_some() || carrier.is_some() || cellular_supported.is_some()).then(|| {
-        line(HelperKind::Cellular {
+    (signal.is_some() || carrier.is_some() || cellular_supported.is_some()).then_some(
+        HelperKind::Cellular {
             signal,
             carrier,
             cellular_supported,
-        })
-    })
+        },
+    )
 }
 
-fn utc_offset(frame: &[u8]) -> Option<String> {
+fn utc_offset(frame: &[u8]) -> Option<HelperKind> {
     let m = DeviceTimeUpdate::decode(frame).ok()?;
     let utc_offset_minutes = i32::from(m.time_zone_offset_minutes?);
-    Some(line(HelperKind::DeviceTime { utc_offset_minutes }))
+    Some(HelperKind::DeviceTime { utc_offset_minutes })
 }
 
-fn call(frame: &[u8]) -> Option<String> {
+fn call(frame: &[u8]) -> Option<HelperKind> {
     let m = CallStateUpdate::decode(frame).ok()?;
     let phase = match m.status? {
         0 => CallPhase::Ended,
@@ -378,11 +260,11 @@ fn call(frame: &[u8]) -> Option<String> {
         _ => CallPhase::Active,
     };
     let ongoing = phase != CallPhase::Ended;
-    Some(line(HelperKind::Call {
+    Some(HelperKind::Call {
         phase,
         number: m.remote_id.filter(|_| ongoing),
         name: m.display_name.filter(|_| ongoing),
-    }))
+    })
 }
 
 fn indices(list: &[u8]) -> Vec<u16> {
@@ -393,67 +275,55 @@ fn indices(list: &[u8]) -> Vec<u16> {
         .collect()
 }
 
-fn maneuver_fields(o: &mut Obj, turn: &RouteGuidanceManeuverUpdate) {
-    o.raw("maneuverType", &opt(turn.maneuver_type));
-    o.raw("turnSide", &opt(turn.driving_side));
-    o.raw("junctionType", &opt(turn.junction_type));
-    o.raw("turnAngle", &opt(turn.exit_angle));
-    o.raw(
-        "afterRoadName",
-        &opt(turn.after_maneuver_road_name.as_deref()),
-    );
-}
-
-fn opt<T: Into<Value>>(v: Option<T>) -> String {
-    v.map_or(Value::Null, Into::into).to_string()
-}
-
-fn set(map: &mut Map<String, Value>, key: &str, value: Option<impl Into<Value>>) {
-    if let Some(v) = value {
-        map.insert(key.into(), v.into());
+fn turn(m: &RouteGuidanceManeuverUpdate) -> Turn {
+    Turn {
+        maneuver_type: m.maneuver_type.map(u32::from),
+        turn_side: m.driving_side.map(u32::from),
+        junction_type: m.junction_type.map(u32::from),
+        turn_angle: m.exit_angle.map(i32::from),
+        after_road_name: m.after_maneuver_road_name.clone(),
     }
 }
 
-fn maneuver_value(m: &RouteGuidanceManeuverUpdate) -> Value {
-    let mut o = Map::new();
-    set(&mut o, "index", m.index);
-    set(&mut o, "maneuverType", m.maneuver_type);
-    set(&mut o, "turnSide", m.driving_side);
-    set(&mut o, "junctionType", m.junction_type);
-    set(&mut o, "turnAngle", m.exit_angle);
-    set(&mut o, "afterRoadName", m.after_maneuver_road_name.clone());
-    set(&mut o, "description", m.description.clone());
-    set(&mut o, "distanceBetween", m.distance_between);
-    set(
-        &mut o,
-        "distanceBetweenDisplay",
-        m.distance_between_display.clone(),
-    );
-    set(&mut o, "distanceBetweenUnits", m.distance_between_units);
-    o.insert("junctionAngles".into(), json!(m.junction_element_angles));
-    set(&mut o, "linkedLaneGuidance", m.linked_lane_guidance);
-    set(&mut o, "exitInfo", m.exit_info.clone());
-    Value::Object(o)
+fn maneuver(m: &RouteGuidanceManeuverUpdate) -> Maneuver {
+    let turn = turn(m);
+    Maneuver {
+        index: m.index.map_or(0, u32::from),
+        maneuver_type: turn.maneuver_type,
+        turn_side: turn.turn_side,
+        junction_type: turn.junction_type,
+        turn_angle: turn.turn_angle,
+        after_road_name: turn.after_road_name,
+        description: m.description.clone(),
+        distance_between: m.distance_between,
+        distance_between_display: m.distance_between_display.clone(),
+        distance_between_units: m.distance_between_units.map(u32::from),
+        junction_angles: m
+            .junction_element_angles
+            .iter()
+            .map(|&a| i32::from(a))
+            .collect(),
+        linked_lane_guidance: m.linked_lane_guidance.map(u32::from),
+        exit_info: m.exit_info.clone(),
+        maneuver_text: None,
+    }
 }
 
-fn lane_guidance_value(g: &LaneGuidanceInformation) -> Value {
-    let lanes: Vec<Value> = g
-        .lanes
-        .iter()
-        .map(|l| {
-            let mut o = Map::new();
-            set(&mut o, "index", l.index);
-            set(&mut o, "status", l.status);
-            o.insert("angles".into(), json!(l.angles));
-            set(&mut o, "highlightAngle", l.highlight_angle);
-            Value::Object(o)
-        })
-        .collect();
-    let mut o = Map::new();
-    set(&mut o, "index", g.index);
-    set(&mut o, "description", g.description.clone());
-    o.insert("lanes".into(), Value::from(lanes));
-    Value::Object(o)
+fn lane_guidance(g: &LaneGuidanceInformation) -> LaneGuidance {
+    LaneGuidance {
+        index: g.index.map_or(0, u32::from),
+        description: g.description.clone(),
+        lanes: g
+            .lanes
+            .iter()
+            .map(|l| Lane {
+                index: l.index.map_or(0, u32::from),
+                status: l.status.map(u32::from),
+                angles: l.angles.iter().map(|&a| i32::from(a)).collect(),
+                highlight_angle: l.highlight_angle.map(i32::from),
+            })
+            .collect(),
+    }
 }
 
 #[cfg(test)]
@@ -506,8 +376,11 @@ mod tests {
         }
     }
 
-    fn parsed(json: Option<String>) -> serde_json::Value {
-        serde_json::from_str(&json.expect("an event")).unwrap()
+    fn nav(kind: Option<HelperKind>) -> NavigationPatch {
+        match kind {
+            Some(HelperKind::Navigation(p)) => *p,
+            other => panic!("a navigation event: {other:?}"),
+        }
     }
 
     #[test]
@@ -515,7 +388,7 @@ mod tests {
         let mut tag = EventTag::default();
         let mut exit = turn(2, 4, "Elbchaussee");
         exit.exit_angle = Some(-90);
-        tag.navigation_json(&exit.encode());
+        tag.navigation_event(&exit.encode());
 
         let mut update = guidance(&[2], 1);
         update.maneuver_state = Some(2);
@@ -525,28 +398,27 @@ mod tests {
         update.distance_to_maneuver_display = Some("350".into());
         update.distance_to_maneuver_units = Some(2);
         update.source_name = Some("Maps".into());
-        let v = parsed(tag.navigation_json(&update.encode()));
-        assert_eq!(v["status"], 1);
-        assert_eq!(v["orderType"], 2);
-        assert_eq!(v["roadName"], "Reeperbahn");
-        assert_eq!(v["remainDistance"], 350);
-        assert_eq!(v["remainDistanceDisplay"], "350");
-        assert_eq!(v["remainDistanceUnits"], 2);
-        assert_eq!(v["appName"], "Maps");
-        assert_eq!(v["maneuverType"], 4);
-        assert_eq!(v["turnAngle"], -90);
-        assert_eq!(v["afterRoadName"], "Elbchaussee");
+        let v = nav(tag.navigation_event(&update.encode()));
+        assert_eq!(v.status, Some(1));
+        assert_eq!(v.order_type, Some(2));
+        assert_eq!(v.road_name.as_deref(), Some("Reeperbahn"));
+        assert_eq!(v.remain_distance, Some(350.0));
+        assert_eq!(v.remain_distance_display.as_deref(), Some("350"));
+        assert_eq!(v.remain_distance_units, Some(2));
+        assert_eq!(v.app_name.as_deref(), Some("Maps"));
+        let t = v.turn.expect("the current turn");
+        assert_eq!(t.maneuver_type, Some(4));
+        assert_eq!(t.turn_angle, Some(-90));
+        assert_eq!(t.after_road_name.as_deref(), Some("Elbchaussee"));
 
         let mut replaced = turn(2, 4, "Elbchaussee");
         replaced.maneuver_type = None;
         replaced.junction_type = Some(1);
-        let v = parsed(tag.navigation_json(&replaced.encode()));
-        assert_eq!(v["junctionType"], 1);
-        assert!(
-            v["maneuverType"].is_null(),
-            "an update replaces the turn: {v}"
-        );
-        assert!(v["turnAngle"].is_null(), "an update replaces the turn: {v}");
+        let v = nav(tag.navigation_event(&replaced.encode()));
+        let t = v.turn.expect("the current turn");
+        assert_eq!(t.junction_type, Some(1));
+        assert_eq!(t.maneuver_type, None, "an update replaces the turn");
+        assert_eq!(t.turn_angle, None, "an update replaces the turn");
     }
 
     #[test]
@@ -556,31 +428,28 @@ mod tests {
             let mut t = turn(index, kind, road);
             t.distance_between = Some(100 * u32::from(index));
             t.junction_element_angles = vec![-90, 45];
-            let v = parsed(tag.navigation_json(&t.encode()));
-            assert_eq!(
-                v["maneuvers"].as_array().unwrap().len(),
-                usize::from(index) + 1
-            );
+            let v = nav(tag.navigation_event(&t.encode()));
+            assert_eq!(v.maneuvers.unwrap().len(), usize::from(index) + 1);
         }
 
-        let v = parsed(tag.navigation_json(&guidance(&[0], 1).encode()));
-        let list = v["maneuvers"].as_array().unwrap();
+        let v = nav(tag.navigation_event(&guidance(&[0], 1).encode()));
+        let list = v.maneuvers.unwrap();
         assert_eq!(list.len(), 3);
-        assert_eq!(list[1]["afterRoadName"], "B");
-        assert_eq!(list[2]["distanceBetween"], 200);
-        assert_eq!(list[0]["junctionAngles"], serde_json::json!([-90, 45]));
-        assert_eq!(v["currentManeuvers"], serde_json::json!([0]));
+        assert_eq!(list[1].after_road_name.as_deref(), Some("B"));
+        assert_eq!(list[2].distance_between, Some(200));
+        assert_eq!(list[0].junction_angles, [-90, 45]);
+        assert_eq!(v.current_maneuvers, Some(vec![0]));
 
-        let v = parsed(tag.navigation_json(&guidance(&[1, 2], 1).encode()));
-        let list = v["maneuvers"].as_array().unwrap();
+        let v = nav(tag.navigation_event(&guidance(&[1, 2], 1).encode()));
+        let list = v.maneuvers.unwrap();
         assert_eq!(list.len(), 2);
-        assert_eq!(list[0]["index"], 1);
-        assert_eq!(v["currentManeuvers"], serde_json::json!([1, 2]));
+        assert_eq!(list[0].index, 1);
+        assert_eq!(v.current_maneuvers, Some(vec![1, 2]));
 
         let mut ended = guidance(&[], 0);
         ended.current_maneuver_list = None;
-        let v = parsed(tag.navigation_json(&ended.encode()));
-        assert_eq!(v["maneuvers"], serde_json::json!([]));
+        let v = nav(tag.navigation_event(&ended.encode()));
+        assert_eq!(v.maneuvers, Some(Vec::new()));
         assert!(tag.navigation.maneuvers.is_empty());
     }
 
@@ -609,24 +478,24 @@ mod tests {
                 ],
                 description: None,
             };
-            tag.navigation_json(&lanes.encode());
+            tag.navigation_event(&lanes.encode());
         }
         let mut update = guidance(&[0], 1);
         update.lane_guidance_index = Some(1);
         update.lane_guidance_shown = Some(true);
-        let v = parsed(tag.navigation_json(&update.encode()));
-        assert_eq!(v["laneGuidanceShown"], true);
-        let lanes = v["laneGuidance"].as_array().unwrap();
+        let v = nav(tag.navigation_event(&update.encode()));
+        assert_eq!(v.lane_guidance_shown, Some(true));
+        let lanes = v.lane_guidance.unwrap();
         assert_eq!(lanes.len(), 2);
-        assert_eq!(lanes[0]["index"], 1);
-        assert_eq!(lanes[0]["lanes"][1]["status"], 2);
-        assert_eq!(lanes[0]["lanes"][1]["highlightAngle"], 45);
+        assert_eq!(lanes[0].index, 1);
+        assert_eq!(lanes[0].lanes[1].status, Some(2));
+        assert_eq!(lanes[0].lanes[1].highlight_angle, Some(45));
     }
 
     use iap2_csm::messages::now_playing::{MediaItemAttributes, PlaybackAttributes};
 
     #[test]
-    fn now_playing_json() {
+    fn now_playing_is_a_patch() {
         let frame = NowPlayingUpdate {
             media_item_attributes: Some(MediaItemAttributes {
                 persistent_id: None,
@@ -646,11 +515,18 @@ mod tests {
             }),
         }
         .encode();
-        let json = to_json(&frame).unwrap();
-        assert!(json.contains("\"type\":\"nowplaying\""));
-        assert!(json.contains("\"title\":\"Song \\\"A\\\"\""));
-        assert!(json.contains("\"playing\":1"));
-        assert!(json.contains("\"appName\":\"Music\""));
+        assert_eq!(
+            phone_event(&frame),
+            Some(HelperKind::NowPlaying(NowPlayingPatch {
+                title: Some("Song \"A\"".into()),
+                artist: Some("Artist".into()),
+                duration_ms: Some(180000.0),
+                elapsed_ms: Some(42000.0),
+                playing: Some(true),
+                app: Some("Music".into()),
+                ..Default::default()
+            }))
+        );
     }
 }
 
@@ -671,13 +547,13 @@ mod device_tests {
     fn the_wired_start_names_the_cable_the_phone_and_the_address() {
         let mut tag = EventTag::default();
         tag.learn(&frame());
-        let json = tag.apply(wired_start_json(
+        let json = tag.tagged(wired_start_event(
             "00008120000924CE2E51A01E",
             "fe80::80a:a1ca",
         ));
         assert_eq!(
-            serde_json::from_str::<Value>(&json).unwrap(),
-            json!({
+            serde_json::from_str::<serde_json::Value>(&json).unwrap(),
+            serde_json::json!({
                 "type": "wired-start",
                 "usbUdid": "00008120000924CE2E51A01E",
                 "ip": "fe80::80a:a1ca",
@@ -689,7 +565,9 @@ mod device_tests {
 
     #[test]
     fn wired_marks_usb_udid() {
-        let json = device_json(&frame(), Some("00008120000924CE2E51A01E")).unwrap();
+        let json =
+            HelperEvent::from(device_event(&frame(), Some("00008120000924CE2E51A01E")).unwrap())
+                .to_line();
         assert!(json.contains("\"src\":\"carkit\""));
         assert!(json.contains("\"usbUdid\":\"00008120000924CE2E51A01E\""));
         assert!(json.contains("\"btMac\":\"0C:6A:C4:4E:F3:2A\""));
@@ -716,11 +594,11 @@ mod device_tests {
             playback_attributes: None,
         }
         .encode();
-        let json = tag.apply(to_json(&np).unwrap());
+        let json = tag.tagged(phone_event(&np).unwrap());
         assert!(json.contains("\"phoneId\":\"0C:6A:C4:4E:F3:2A\""), "{json}");
         assert!(json.contains("\"cid\":\"ctrl-1\""), "{json}");
         assert!(json.contains("\"usbTransportId\":\"usb-1\""), "{json}");
-        assert!(json.starts_with("{\"type\":\"nowplaying\""));
+        assert!(json.contains("\"type\":\"nowplaying\""), "{json}");
     }
 
     #[test]
@@ -731,15 +609,22 @@ mod device_tests {
             daylight_savings_offset_minutes: Some(60),
         };
         assert_eq!(
-            to_json(&summer.encode()).as_deref(),
-            Some("{\"type\":\"deviceTime\",\"utcOffsetMinutes\":120}")
+            phone_event(&summer.encode()),
+            Some(HelperKind::DeviceTime {
+                utc_offset_minutes: 120
+            })
         );
         let winter = DeviceTimeUpdate {
             time_zone_offset_minutes: Some(60),
             daylight_savings_offset_minutes: None,
             ..summer
         };
-        assert!(to_json(&winter.encode()).unwrap().ends_with(":60}"));
+        assert_eq!(
+            phone_event(&winter.encode()),
+            Some(HelperKind::DeviceTime {
+                utc_offset_minutes: 60
+            })
+        );
     }
 
     #[test]
@@ -749,12 +634,12 @@ mod device_tests {
             time_zone_offset_minutes: None,
             daylight_savings_offset_minutes: None,
         };
-        assert_eq!(to_json(&update.encode()), None);
+        assert_eq!(phone_event(&update.encode()), None);
     }
 
     #[test]
     fn wireless_has_no_udid() {
-        let json = device_json(&frame(), None).unwrap();
+        let json = HelperEvent::from(device_event(&frame(), None).unwrap()).to_line();
         assert!(json.contains("\"src\":\"bt\""));
         assert!(!json.contains("usbUdid"));
     }

@@ -967,9 +967,7 @@ impl<M: Media> Manager<M> {
                 };
                 self.emit(CpEvent::Call { id, phase });
             }
-            event @ (HelperKind::AlbumArt(_)
-            | HelperKind::Navigation(_)
-            | HelperKind::NowPlaying(_)) => {
+            event @ (HelperKind::Navigation(_) | HelperKind::NowPlaying(_)) => {
                 self.emit(CpEvent::Metadata { id, event });
             }
             _ => {}

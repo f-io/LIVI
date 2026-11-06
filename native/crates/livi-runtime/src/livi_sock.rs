@@ -15,6 +15,7 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Notify, mpsc, watch};
 
 use iap2_link::LinkConfig;
+use livi_core_proto::helper_events::{HelperKind, NowPlayingPatch};
 
 use crate::bringup::{BringupEvent, CpConfig, run_accessory};
 use crate::driver::{ArtworkRx, LinkChannel, spawn_link};
@@ -436,11 +437,11 @@ pub async fn pump_artwork(
         if data.is_empty() {
             continue;
         }
-        let json = format!(
-            "{{\"type\":\"albumart\",\"dataB64\":\"{}\"}}",
-            STANDARD.encode(&data)
-        );
-        bcast.push_json(ident.lock().unwrap().apply(json));
+        let art = HelperKind::NowPlaying(NowPlayingPatch {
+            artwork: Some(STANDARD.encode(&data)),
+            ..Default::default()
+        });
+        bcast.push_json(ident.lock().unwrap().tagged(art));
     }
 }
 
@@ -465,10 +466,10 @@ pub async fn pump_events_for(
                     let mut t = ident.lock().unwrap();
                     t.learn(&frame);
                     (
-                        events::device_json(&frame, usb_udid.as_deref()).map(|j| t.apply(j)),
-                        events::to_json(&frame)
-                            .or_else(|| t.navigation_json(&frame))
-                            .map(|j| t.apply(j)),
+                        events::device_event(&frame, usb_udid.as_deref()).map(|k| t.tagged(k)),
+                        events::phone_event(&frame)
+                            .or_else(|| t.navigation_event(&frame))
+                            .map(|k| t.tagged(k)),
                     )
                 };
                 if let Some(json) = tagged.0 {
@@ -484,8 +485,8 @@ pub async fn pump_events_for(
             BringupEvent::CarPlayStartSent { ip } => {
                 println!("[cp] {tag}: CarPlayStartSession sent");
                 if let Some(udid) = usb_udid.as_deref() {
-                    let json = events::wired_start_json(udid, &ip);
-                    bcast.push_json(ident.lock().unwrap().apply(json));
+                    let start = events::wired_start_event(udid, &ip);
+                    bcast.push_json(ident.lock().unwrap().tagged(start));
                 }
             }
             _ => {}

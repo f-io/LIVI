@@ -16,7 +16,7 @@ use livi_aa_stack::driver::SessionCmd;
 use livi_aa_stack::manager::{AaCmd, AaEvent, AaHandle, SessionId as AaId};
 use livi_aa_stack::media::AudioKind as AaKind;
 use livi_core_proto::config::{Config, KeyBindings};
-use livi_core_proto::helper_events::HelperKind;
+use livi_core_proto::helper_events::{HelperKind, NowPlayingPatch};
 use livi_core_proto::input::{Input, Phase, Point};
 use livi_core_proto::message::{MediaControl, Radio};
 use livi_core_proto::state::{

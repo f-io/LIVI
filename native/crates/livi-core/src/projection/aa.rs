@@ -277,29 +277,17 @@ impl Projection {
         let Some(entry) = self.by_link(link) else {
             return;
         };
-        let np = &mut entry.now_playing;
-        for (field, value) in [
-            (&mut np.title, from.title),
-            (&mut np.artist, from.artist),
-            (&mut np.album, from.album),
-            (&mut np.app, from.app),
-        ] {
-            if value.is_some() {
-                *field = value;
-            }
+        NowPlayingPatch {
+            title: from.title,
+            artist: from.artist,
+            album: from.album,
+            app: from.app,
+            duration_ms: from.duration_ms.map(|ms| ms as f64),
+            elapsed_ms: from.elapsed_ms.map(|ms| ms as f64),
+            playing: from.playing,
+            artwork: from.artwork.map(|art| STANDARD.encode(art)),
         }
-        if let Some(ms) = from.duration_ms {
-            np.duration_ms = Some(ms as f64);
-        }
-        if let Some(ms) = from.elapsed_ms {
-            np.elapsed_ms = Some(ms as f64);
-        }
-        if from.playing.is_some() {
-            np.playing = from.playing;
-        }
-        if let Some(art) = from.artwork.filter(|a| !a.is_empty()) {
-            np.artwork = Some(STANDARD.encode(art));
-        }
+        .apply_to(&mut entry.now_playing);
         if self.is_active(link) {
             self.publish();
         }

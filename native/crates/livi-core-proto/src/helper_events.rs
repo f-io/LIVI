@@ -3,7 +3,8 @@
 // Additional terms: see NOTICE
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+
+use crate::state::{LaneGuidance, Maneuver, Navigation, NowPlaying};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -113,16 +114,185 @@ pub enum HelperKind {
         name: Option<String>,
     },
     #[serde(rename = "nowplaying")]
-    NowPlaying(Map<String, Value>),
+    NowPlaying(NowPlayingPatch),
     #[serde(rename = "navigation")]
-    Navigation(Map<String, Value>),
-    #[serde(rename = "albumart")]
-    AlbumArt(Map<String, Value>),
+    Navigation(Box<NavigationPatch>),
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NowPlayingPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artist: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub album: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub elapsed_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub playing: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artwork: Option<String>,
+}
+
+impl NowPlayingPatch {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    pub fn apply_to(self, np: &mut NowPlaying) {
+        take(&mut np.title, self.title);
+        take(&mut np.artist, self.artist);
+        take(&mut np.album, self.album);
+        take(&mut np.app, self.app);
+        take(&mut np.duration_ms, self.duration_ms);
+        take(&mut np.elapsed_ms, self.elapsed_ms);
+        take(&mut np.playing, self.playing);
+        take(&mut np.artwork, self.artwork.filter(|a| !a.is_empty()));
+    }
+}
+
+fn take<T>(into: &mut Option<T>, from: Option<T>) {
+    if from.is_some() {
+        *into = from;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Turn {
+    pub maneuver_type: Option<u32>,
+    pub turn_side: Option<u32>,
+    pub junction_type: Option<u32>,
+    pub turn_angle: Option<i32>,
+    pub after_road_name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NavigationPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_type: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub road_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub destination_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eta_epoch: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_to_destination: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distance_to_destination: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distance_to_destination_display: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub distance_to_destination_units: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remain_distance: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remain_distance_display: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remain_distance_units: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub maneuver_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visible_in_app: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lane_guidance_index: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lane_guidance_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lane_guidance_shown: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_supports_route_guidance: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub destination_time_zone_offset_minutes: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn: Option<Turn>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub maneuvers: Option<Vec<Maneuver>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_maneuvers: Option<Vec<u32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lane_guidance: Option<Vec<LaneGuidance>>,
+}
+
+impl NavigationPatch {
+    pub fn apply_to(self, nav: &mut Navigation) {
+        if let Some(status) = self.status {
+            if status == 0 {
+                *nav = Navigation::default();
+            }
+            nav.active = Some(status != 0);
+        }
+        take(&mut nav.order_type, self.order_type);
+        take(&mut nav.road_name, self.road_name);
+        take(&mut nav.destination_name, self.destination_name);
+        take(&mut nav.eta, self.eta_epoch.filter(|v| *v > 0.0));
+        take(&mut nav.time_to_destination, self.time_to_destination);
+        take(
+            &mut nav.distance_to_destination,
+            self.distance_to_destination,
+        );
+        take(
+            &mut nav.distance_to_destination_display,
+            self.distance_to_destination_display,
+        );
+        take(
+            &mut nav.distance_to_destination_units,
+            self.distance_to_destination_units,
+        );
+        take(&mut nav.remain_distance, self.remain_distance);
+        take(
+            &mut nav.remain_distance_display,
+            self.remain_distance_display,
+        );
+        take(&mut nav.remain_distance_units, self.remain_distance_units);
+        take(&mut nav.maneuver_count, self.maneuver_count);
+        take(&mut nav.visible_in_app, self.visible_in_app);
+        take(&mut nav.lane_guidance_index, self.lane_guidance_index);
+        take(&mut nav.lane_guidance_count, self.lane_guidance_count);
+        take(&mut nav.lane_guidance_shown, self.lane_guidance_shown);
+        take(&mut nav.app_name, self.app_name);
+        take(
+            &mut nav.source_supports_route_guidance,
+            self.source_supports_route_guidance,
+        );
+        take(
+            &mut nav.destination_time_zone_offset_minutes,
+            self.destination_time_zone_offset_minutes,
+        );
+        if let Some(turn) = self.turn {
+            nav.maneuver_type = turn.maneuver_type;
+            nav.turn_side = turn.turn_side;
+            nav.junction_type = turn.junction_type;
+            nav.turn_angle = turn.turn_angle;
+            nav.after_road_name = turn.after_road_name;
+        }
+        if let Some(v) = self.maneuvers {
+            nav.maneuvers = v;
+        }
+        if let Some(v) = self.current_maneuvers {
+            nav.current_maneuvers = v;
+        }
+        if let Some(v) = self.lane_guidance {
+            nav.lane_guidance = v;
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     use super::*;
 
@@ -171,15 +341,74 @@ mod tests {
             json!({ "type": "cellular", "signal": 3, "carrier": "X", "cellularSupported": true }),
             json!({ "type": "call", "phase": "ringing", "number": "123" }),
             json!({ "type": "nowplaying", "title": "Song", "cid": "c1" }),
-            json!({ "type": "navigation", "status": 1, "maneuvers": [] }),
+            json!({ "type": "nowplaying", "artwork": "AAEC" }),
+            json!({ "type": "navigation", "status": 1, "turn": { "maneuverType": 4, "turnSide": null, "junctionType": null, "turnAngle": null, "afterRoadName": "A9" } }),
         ] {
             let ev = read(v.clone());
             assert_eq!(serde_json::to_value(&ev).unwrap(), v);
         }
         let np = read(json!({ "type": "nowplaying", "title": "Song", "cid": "c1" }));
         assert_eq!(np.cid.as_deref(), Some("c1"));
-        assert!(
-            matches!(np.kind, HelperKind::NowPlaying(m) if m.get("title") == Some(&json!("Song")) && !m.contains_key("cid"))
+        assert!(matches!(np.kind, HelperKind::NowPlaying(p) if p.title.as_deref() == Some("Song")));
+    }
+
+    #[test]
+    fn a_now_playing_patch_overwrites_only_what_it_carries() {
+        let mut np = NowPlaying {
+            title: Some("Old".into()),
+            artist: Some("Band".into()),
+            artwork: Some("AAEC".into()),
+            ..Default::default()
+        };
+        NowPlayingPatch {
+            title: Some("New".into()),
+            playing: Some(true),
+            artwork: Some(String::new()),
+            ..Default::default()
+        }
+        .apply_to(&mut np);
+        assert_eq!(np.title.as_deref(), Some("New"));
+        assert_eq!(np.artist.as_deref(), Some("Band"));
+        assert_eq!(np.playing, Some(true));
+        assert_eq!(np.artwork.as_deref(), Some("AAEC"));
+    }
+
+    #[test]
+    fn a_navigation_patch_merges_and_a_stop_clears() {
+        let mut nav = Navigation::default();
+        NavigationPatch {
+            status: Some(1),
+            road_name: Some("A9".into()),
+            eta_epoch: Some(0.0),
+            turn: Some(Turn {
+                maneuver_type: Some(4),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+        .apply_to(&mut nav);
+        assert_eq!(nav.active, Some(true));
+        assert_eq!(nav.road_name.as_deref(), Some("A9"));
+        assert_eq!(nav.eta, None);
+        assert_eq!(nav.maneuver_type, Some(4));
+        NavigationPatch {
+            turn: Some(Turn::default()),
+            ..Default::default()
+        }
+        .apply_to(&mut nav);
+        assert_eq!(nav.maneuver_type, None);
+        assert_eq!(nav.road_name.as_deref(), Some("A9"));
+        NavigationPatch {
+            status: Some(0),
+            ..Default::default()
+        }
+        .apply_to(&mut nav);
+        assert_eq!(
+            nav,
+            Navigation {
+                active: Some(false),
+                ..Default::default()
+            }
         );
     }
 
