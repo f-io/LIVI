@@ -139,6 +139,7 @@ export component AppWindow inherits Window {
                 width: parent.width;
                 height: parent.height;
                 streaming: root.phone == PhoneState.streaming;
+                waiting: root.phone == PhoneState.connected;
                 idle-icon: root.projection-icon;
                 stream-width: root.stream-width;
                 stream-height: root.stream-height;

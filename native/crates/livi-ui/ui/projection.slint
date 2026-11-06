@@ -12,6 +12,7 @@ export component ProjectionPage inherits Rectangle {
     in property <int> stream-width: 1280;
     in property <int> stream-height: 720;
     in property <bool> streaming;
+    in property <bool> waiting;
     in property <MaskData> mask;
     in property <image> idle-icon;
     in property <bool> video-shown;
@@ -72,5 +73,6 @@ export component ProjectionPage inherits Rectangle {
         width: min(root.width, root.height) * 0.15;
         height: self.width;
         colorize: Theme.text-secondary;
+        opacity: root.waiting ? 0.6 + 0.4 * sin(animation-tick() / 1600ms * 360deg) : 1;
     }
 }

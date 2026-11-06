@@ -184,6 +184,7 @@ fn apply(ui: &AppWindow, update: Update) {
         Update::Front(front) => match (front, ui.get_page()) {
             (Front::Projection, Page::Projection) => {}
             (Front::Projection, _) => choose(ui, Page::Projection),
+            (Front::Livi, Page::Projection) if ui.get_phone() == PhoneState::Connected => {}
             (_, Page::Projection) => choose(ui, Page::Media),
             _ => {}
         },
