@@ -443,7 +443,7 @@ pub fn stack_config(
         audio_device: cfg.audio_output_device.clone().unwrap_or_default(),
         audio_input_device: cfg.audio_input_device.clone().unwrap_or_default(),
         vehicle_climate: cfg.car_play_vehicle_climate,
-        app_version: option_env!("LIVI_VERSION").unwrap_or_default().into(),
+        app_version: env!("CARGO_PKG_VERSION").into(),
         app_build_date: option_env!("LIVI_BUILD_DATE").unwrap_or_default().into(),
         cluster_url: cluster_url(cfg),
         vehicle_variant: cfg.car_play_vehicle_model.clone(),
