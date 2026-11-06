@@ -6,6 +6,7 @@ use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use gstreamer_base as gst_base;
+use livi_host_proto::VideoCodec;
 use std::sync::{Arc, Once};
 
 #[cfg(target_os = "android")]
@@ -236,7 +237,7 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn new(codec: &str, handle: usize, codec_data: &[u8]) -> Option<Self> {
+    pub fn new(codec: VideoCodec, handle: usize, codec_data: &[u8]) -> Option<Self> {
         ensure_init();
 
         let sw_only = std::env::var_os("LIVI_GST_SWDEC").is_some();
@@ -262,7 +263,7 @@ impl Player {
             .and_then(|e| e.downcast::<gst_app::AppSrc>().ok());
         if let Some(src) = &appsrc
             && !codec_data.is_empty()
-            && (codec == "h265" || codec == "h264")
+            && matches!(codec, VideoCodec::H264 | VideoCodec::H265)
         {
             src.set_caps(Some(&length_prefixed_caps(codec, codec_data)));
         }
@@ -311,7 +312,12 @@ impl Player {
         Some(player)
     }
 
-    fn parse(codec: &str, decoder: &str, with_cal: bool, handle: usize) -> Option<gst::Pipeline> {
+    fn parse(
+        codec: VideoCodec,
+        decoder: &str,
+        with_cal: bool,
+        handle: usize,
+    ) -> Option<gst::Pipeline> {
         let describe = |cal: bool| {
             livi_video::codec::pipeline_desc(
                 codec,
@@ -422,8 +428,8 @@ fn with_variable_rate(mut caps: gst::Caps) -> gst::Caps {
     caps
 }
 
-fn length_prefixed_caps(codec: &str, codec_data: &[u8]) -> gst::Caps {
-    let (media, stream_format) = if codec == "h265" {
+fn length_prefixed_caps(codec: VideoCodec, codec_data: &[u8]) -> gst::Caps {
+    let (media, stream_format) = if codec == VideoCodec::H265 {
         ("video/x-h265", "hvc1")
     } else {
         ("video/x-h264", "avc")
@@ -459,7 +465,7 @@ fn render_gpu() -> Option<livi_video::codec::RenderGpu> {
 }
 
 #[cfg(target_os = "android")]
-fn media_codecs(codec: &str) -> Vec<String> {
+fn media_codecs(codec: VideoCodec) -> Vec<String> {
     let Some(caps) = livi_video::codec::caps_for(codec)
         .to_str()
         .ok()
@@ -478,7 +484,7 @@ fn media_codecs(codec: &str) -> Vec<String> {
     decoders.into_iter().map(|f| f.name().to_string()).collect()
 }
 
-fn candidates(codec: &str, sw_only: bool) -> Vec<String> {
+fn candidates(codec: VideoCodec, sw_only: bool) -> Vec<String> {
     #[cfg(target_os = "android")]
     if !sw_only {
         let mut names = media_codecs(codec);
@@ -517,7 +523,7 @@ fn usable(name: &str) -> bool {
         || dec.property::<Option<String>>("device-path").as_deref() == Some(node.as_str())
 }
 
-pub fn probe(codec: &str) -> (bool, bool) {
+pub fn probe(codec: VideoCodec) -> (bool, bool) {
     ensure_init();
     let exists = |name: &str| gst::ElementFactory::find(name).is_some();
 

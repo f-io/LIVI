@@ -5,9 +5,10 @@
 use livi_audio::player::uplink::{SocketTap, Uplink, UplinkConfig as UplinkPipeline};
 use livi_audio::player::{Config as AudioPipeline, Player as AudioPipelinePlayer};
 use livi_audio::stream::AudioSink;
+use livi_host_proto::{Decoders, Probe};
 use livi_screen_stream::ScreenSink;
 
-use crate::{AudioConfig, MediaSink, Outside, Speaker, TapConfig, UplinkConfig};
+use crate::{AudioConfig, MediaSink, Outside, Speaker, TapConfig, UplinkConfig, VideoCodec};
 
 #[cfg_attr(target_os = "android", path = "gst/android.rs")]
 #[cfg_attr(target_os = "macos", path = "gst/mac.rs")]
@@ -76,7 +77,12 @@ impl Outside for Gst {
         .map(Tap)
     }
 
-    fn create_plane(&self, id: u32, codec: &str, codec_data: &[u8]) -> Option<platform::Plane> {
+    fn create_plane(
+        &self,
+        id: u32,
+        codec: VideoCodec,
+        codec_data: &[u8],
+    ) -> Option<platform::Plane> {
         platform::create_plane(id, codec, codec_data)
     }
 
@@ -164,16 +170,10 @@ impl Outside for Gst {
     }
 }
 
-pub fn probe_json() -> String {
+pub fn probe() -> Probe {
     livi_video_player::ensure_init();
-    let mut out = String::from("{");
-    for (i, codec) in ["h264", "h265", "vp9", "av1"].iter().enumerate() {
+    Probe::of(|codec| {
         let (hw, sw) = livi_video_player::probe(codec);
-        if i > 0 {
-            out.push(',');
-        }
-        out.push_str(&format!("\"{codec}\":{{\"hw\":{hw},\"sw\":{sw}}}"));
-    }
-    out.push('}');
-    out
+        Decoders { hw, sw }
+    })
 }

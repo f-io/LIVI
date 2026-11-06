@@ -12,7 +12,7 @@ use livi_host_proto::{
 use tokio::sync::broadcast;
 
 use crate::compositor::CompositorControl;
-use crate::gst_host::{Codec, GstHost, HostEvent};
+use crate::gst_host::{GstHost, HostEvent, VideoCodec};
 
 const TAG: &str = MAIN_TAG;
 const SCREEN: &str = SCREENS[0];
@@ -54,7 +54,7 @@ pub fn crop_for(tier: (u32, u32), display: (u32, u32)) -> Option<Crop> {
     })
 }
 
-fn same_stream(codec: Option<Codec>, data: &[u8], next: Codec, atom: &[u8]) -> bool {
+fn same_stream(codec: Option<VideoCodec>, data: &[u8], next: VideoCodec, atom: &[u8]) -> bool {
     codec == Some(next) && data == atom
 }
 
@@ -62,7 +62,7 @@ fn same_stream(codec: Option<Codec>, data: &[u8], next: Codec, atom: &[u8]) -> b
 struct State {
     started: bool,
     claiming: bool,
-    codec: Option<Codec>,
+    codec: Option<VideoCodec>,
     codec_data: Vec<u8>,
     generation: u64,
 }
@@ -97,7 +97,7 @@ impl MainPlane {
         self.gst.subscribe()
     }
 
-    pub fn prepare(self: &Arc<Self>, codec: Codec, atom: Vec<u8>) {
+    pub fn prepare(self: &Arc<Self>, codec: VideoCodec, atom: Vec<u8>) {
         let generation = {
             let st = self.state();
             if (st.started || st.claiming) && same_stream(st.codec, &st.codec_data, codec, &atom) {
@@ -286,7 +286,7 @@ struct Slot {
 
 #[derive(Default)]
 struct ClusterState {
-    codec: Option<Codec>,
+    codec: Option<VideoCodec>,
     codec_data: Vec<u8>,
     crop: Option<Crop>,
     slots: [Slot; 3],
@@ -318,7 +318,7 @@ impl ClusterPlanes {
         self.created.subscribe()
     }
 
-    pub fn prepare(self: &Arc<Self>, codec: Codec, atom: Vec<u8>) {
+    pub fn prepare(self: &Arc<Self>, codec: VideoCodec, atom: Vec<u8>) {
         let restart = {
             let mut st = self.state();
             let same = same_stream(st.codec, &st.codec_data, codec, &atom);
@@ -468,20 +468,30 @@ mod tests {
     #[test]
     fn only_the_same_stream_keeps_the_running_player() {
         assert!(same_stream(
-            Some(Codec::H265),
+            Some(VideoCodec::H265),
             &[1, 2],
-            Codec::H265,
+            VideoCodec::H265,
             &[1, 2]
         ));
-        assert!(!same_stream(Some(Codec::H265), &[1, 2], Codec::H265, &[]));
         assert!(!same_stream(
-            Some(Codec::H265),
+            Some(VideoCodec::H265),
             &[1, 2],
-            Codec::H265,
+            VideoCodec::H265,
+            &[]
+        ));
+        assert!(!same_stream(
+            Some(VideoCodec::H265),
+            &[1, 2],
+            VideoCodec::H265,
             &[3, 4]
         ));
-        assert!(!same_stream(Some(Codec::H264), &[], Codec::H265, &[]));
-        assert!(!same_stream(None, &[], Codec::H265, &[]));
+        assert!(!same_stream(
+            Some(VideoCodec::H264),
+            &[],
+            VideoCodec::H265,
+            &[]
+        ));
+        assert!(!same_stream(None, &[], VideoCodec::H265, &[]));
     }
 
     #[tokio::test]
@@ -493,8 +503,8 @@ mod tests {
         let mut created = plane.player_created();
 
         plane.set_visible(true);
-        plane.prepare(Codec::H264, vec![1, 2]);
-        plane.prepare(Codec::H264, vec![1, 2]);
+        plane.prepare(VideoCodec::H264, vec![1, 2]);
+        plane.prepare(VideoCodec::H264, vec![1, 2]);
         tokio::time::timeout(Duration::from_secs(5), created.recv())
             .await
             .unwrap()
@@ -568,7 +578,7 @@ mod tests {
 
         planes.show_on([false, true, false]);
         planes.set_crop(None);
-        planes.prepare(Codec::H264, vec![7]);
+        planes.prepare(VideoCodec::H264, vec![7]);
         tokio::time::timeout(Duration::from_secs(5), created.recv())
             .await
             .unwrap()

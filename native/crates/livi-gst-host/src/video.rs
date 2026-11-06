@@ -12,7 +12,7 @@ impl<O: Outside> Host<O> {
 
         self.planes.borrow_mut().remove(&id);
         self.url_players.remove(&id);
-        let Some(plane) = self.outside.create_plane(id, &codec, codec_data) else {
+        let Some(plane) = self.outside.create_plane(id, codec, codec_data) else {
             eprintln!("livi: create player 0x{id:x} (codec {codec}) FAILED");
             return;
         };

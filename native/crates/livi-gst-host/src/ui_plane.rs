@@ -10,8 +10,8 @@ use std::sync::mpsc::{SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 
 use livi_host_proto::{
-    CameraOrder, Framer, UrlStatus, camera_body, encode_reply, parse_url_status, plane_body,
-    ui_planes, url_body,
+    CameraOrder, Framer, UrlStatus, VideoCodec, camera_body, encode_reply, parse_url_status,
+    plane_body, ui_planes, url_body,
 };
 
 use crate::{Plane, UrlPlay};
@@ -45,7 +45,7 @@ pub struct UiPlane {
 }
 
 impl UiPlane {
-    pub fn open(path: &str, id: u32, codec: &str, codec_data: &[u8]) -> Option<Self> {
+    pub fn open(path: &str, id: u32, codec: VideoCodec, codec_data: &[u8]) -> Option<Self> {
         let create = encode_reply(ui_planes::CREATE, id, &plane_body(codec, codec_data));
         let (out, _) = connect(path, id, create)?;
         Some(Self {
@@ -223,7 +223,13 @@ mod tests {
     fn the_ui_gets_the_create_then_the_frames_until_the_plane_goes() {
         let path = socket_path("frames");
         let listener = UnixListener::bind(&path).unwrap();
-        let plane = UiPlane::open(path.to_str().unwrap(), 0x7a00_0001, "h264", &[1, 2]).unwrap();
+        let plane = UiPlane::open(
+            path.to_str().unwrap(),
+            0x7a00_0001,
+            VideoCodec::H264,
+            &[1, 2],
+        )
+        .unwrap();
         plane.push(&[5, 5]);
         plane.flush();
         drop(plane);
@@ -240,14 +246,14 @@ mod tests {
                 (ui_planes::FLUSH, 0x7a00_0001)
             ]
         );
-        assert_eq!(got[0].rest, plane_body("h264", &[1, 2]));
+        assert_eq!(got[0].rest, plane_body(VideoCodec::H264, &[1, 2]));
         assert_eq!(got[1].rest, [5, 5]);
     }
 
     #[test]
     fn without_a_ui_there_is_no_plane() {
         let path = socket_path("nobody");
-        assert!(UiPlane::open(path.to_str().unwrap(), 1, "h264", &[]).is_none());
+        assert!(UiPlane::open(path.to_str().unwrap(), 1, VideoCodec::H264, &[]).is_none());
         assert!(UiUrlPlayer::open(path.to_str().unwrap(), 1, "http://h/", "").is_none());
     }
 

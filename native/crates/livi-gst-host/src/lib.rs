@@ -15,7 +15,7 @@ use livi_host_proto::{
     CLUSTER_PLANE_MAX, CLUSTER_PLANE_MIN, CLUSTER_RECV_ID, Framer, cameras_body, feed as feedproto,
     feeder_of, parse_camera_body, parse_plane_body, parse_url_body, url_status_body,
 };
-pub use livi_host_proto::{CameraOrder, CameraSeen};
+pub use livi_host_proto::{CameraOrder, CameraSeen, VideoCodec};
 use livi_screen_stream::ScreenSink;
 use livi_video::fanout::Fanout;
 use livi_video::nal::CpCodec;
@@ -100,7 +100,7 @@ pub trait Outside: 'static {
     type Speaker: Speaker;
     type AudioEars;
 
-    fn create_plane(&self, id: u32, codec: &str, codec_data: &[u8]) -> Option<Self::Plane>;
+    fn create_plane(&self, id: u32, codec: VideoCodec, codec_data: &[u8]) -> Option<Self::Plane>;
 
     fn play_url(&self, id: u32, url: &str, audio_device: &str) -> Option<Self::UrlPlayer>;
 

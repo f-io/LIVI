@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use gstreamer as gst;
 use gstreamer::prelude::*;
-use livi_host_proto::{CameraOrder, CameraSeen};
+use livi_host_proto::{CameraOrder, CameraSeen, VideoCodec};
 
 use crate::Say;
 
@@ -156,7 +156,7 @@ fn chain(mode: Option<Mode>, jpeg: Option<&str>, h264: Option<&str>) -> String {
 
 fn intake(caps: Option<&gst::Caps>, say: &Say) -> String {
     let jpeg = JPEG_DECODERS.iter().copied().find(|n| crate::usable(n));
-    let h264 = crate::candidates("h264", false)
+    let h264 = crate::candidates(VideoCodec::H264, false)
         .into_iter()
         .find(|n| crate::usable(n));
     let mode = caps

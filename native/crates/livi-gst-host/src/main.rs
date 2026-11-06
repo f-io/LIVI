@@ -5,7 +5,7 @@
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|a| a == "--probe") {
-        println!("{}", livi_gst_host::gst::probe_json());
+        println!("{}", livi_gst_host::gst::probe());
         return;
     }
 

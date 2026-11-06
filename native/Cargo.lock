@@ -4342,6 +4342,9 @@ dependencies = [
 [[package]]
 name = "livi-video"
 version = "0.1.0"
+dependencies = [
+ "livi-host-proto",
+]
 
 [[package]]
 name = "livi-video-player"

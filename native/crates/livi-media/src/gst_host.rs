@@ -17,30 +17,13 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(4);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Codec {
-    H264,
-    H265,
-    Vp9,
-    Av1,
-}
-
-impl Codec {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Codec::H264 => "h264",
-            Codec::H265 => "h265",
-            Codec::Vp9 => "vp9",
-            Codec::Av1 => "av1",
-        }
-    }
-}
+pub use livi_host_proto::VideoCodec;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum HostEvent {
     Config {
         plane: u32,
-        codec: Codec,
+        codec: VideoCodec,
         atom: Vec<u8>,
     },
     Started {
@@ -116,7 +99,7 @@ pub struct MicOpts {
 
 pub trait EmbeddedHost: Send + Sync {
     fn serve(&self, sock: &Path);
-    fn probe(&self) -> String;
+    fn probe(&self) -> livi_host_proto::Probe;
 }
 
 #[derive(Clone)]
@@ -416,9 +399,9 @@ impl GstHost {
             }
             REPLY_CONFIG => {
                 let codec = if rest.first() == Some(&1) {
-                    Codec::H265
+                    VideoCodec::H265
                 } else {
-                    Codec::H264
+                    VideoCodec::H264
                 };
                 let atom = rest.get(1..).unwrap_or_default().to_vec();
                 let _ = self.inner.events.send(HostEvent::Config {
@@ -670,11 +653,11 @@ impl GstHost {
         self.send(frame(OP_TAP_STOP, id, &[]));
     }
 
-    pub fn create_player(&self, plane: u32, codec: Codec, codec_data: &[u8]) {
+    pub fn create_player(&self, plane: u32, codec: VideoCodec, codec_data: &[u8]) {
         self.send(frame(
             OP_CREATE,
             plane,
-            &livi_host_proto::plane_body(codec.as_str(), codec_data),
+            &livi_host_proto::plane_body(codec, codec_data),
         ));
     }
 
@@ -708,15 +691,14 @@ fn log_file(path: &std::path::Path) -> Option<std::fs::File> {
     std::fs::File::create(path).ok()
 }
 
-pub async fn probe_codecs(launch: &Launch) -> Option<serde_json::Value> {
+pub async fn probe_codecs(launch: &Launch) -> Option<livi_host_proto::Probe> {
     let launch = match launch {
         Launch::Process(process) => process,
         Launch::Embedded(embedded) => {
             let embedded = embedded.clone();
-            let json = tokio::task::spawn_blocking(move || embedded.probe())
+            return tokio::task::spawn_blocking(move || embedded.probe())
                 .await
-                .ok()?;
-            return serde_json::from_str(json.trim()).ok();
+                .ok();
         }
     };
     let run = tokio::process::Command::new(&launch.bin)
@@ -726,9 +708,11 @@ pub async fn probe_codecs(launch: &Launch) -> Option<serde_json::Value> {
         .stderr(Stdio::null())
         .output();
     match tokio::time::timeout(Duration::from_secs(10), run).await {
-        Ok(Ok(out)) => {
-            serde_json::from_slice(String::from_utf8_lossy(&out.stdout).trim().as_bytes()).ok()
-        }
+        Ok(Ok(out)) => String::from_utf8_lossy(&out.stdout)
+            .trim()
+            .parse()
+            .inspect_err(|e| eprintln!("[core] gst-host codec probe unreadable: {e}"))
+            .ok(),
         _ => {
             eprintln!("[core] gst-host codec probe failed");
             None
@@ -799,7 +783,7 @@ mod tests {
             (OP_VISUALIZER, &[1u8][..])
         );
         assert_eq!(fake.next().await.op, OP_STOP);
-        gst.create_player(0x7a00_0001, Codec::H265, &[9, 9]);
+        gst.create_player(0x7a00_0001, VideoCodec::H265, &[9, 9]);
         let create = fake.next().await;
         assert_eq!((create.op, create.id), (OP_CREATE, 0x7a00_0001));
         assert_eq!(create.rest, [&[4u8][..], b"h265", &[9, 9]].concat());
@@ -958,7 +942,7 @@ mod tests {
             events.recv().await.unwrap(),
             HostEvent::Config {
                 plane: 0x7a00_0001,
-                codec: Codec::H265,
+                codec: VideoCodec::H265,
                 atom: vec![0xaa, 0xbb]
             }
         );
@@ -1044,8 +1028,8 @@ mod tests {
             while stream.read(&mut buf).is_ok_and(|n| n > 0) {}
         }
 
-        fn probe(&self) -> String {
-            String::from(r#"{"h264":true}"#)
+        fn probe(&self) -> livi_host_proto::Probe {
+            "h264=hw".parse().unwrap()
         }
     }
 
@@ -1076,6 +1060,6 @@ mod tests {
     #[tokio::test]
     async fn an_embedded_host_answers_the_probe_itself() {
         let probe = probe_codecs(&Launch::Embedded(Arc::new(EchoFeed))).await;
-        assert_eq!(probe, Some(serde_json::json!({ "h264": true })));
+        assert_eq!(probe, Some("h264=hw".parse().unwrap()));
     }
 }

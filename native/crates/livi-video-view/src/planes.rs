@@ -43,7 +43,7 @@ fn serve_plane(mut conn: UnixStream) {
                         screens::remove(id, &player);
                     }
                     drawn = parse_plane_body(&m.rest)
-                        .and_then(|(codec, data)| screens::create(m.id, &codec, data))
+                        .and_then(|(codec, data)| screens::create(m.id, codec, data))
                         .map(|player| (m.id, player));
                 }
                 ui_planes::FRAME => {

@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use crate::CameraOrder;
 use crate::ui_plane::{UiCamera, UiPlane, UiUrlPlayer};
+use crate::{CameraOrder, VideoCodec};
 
 pub type Plane = UiPlane;
 pub type Url = UiUrlPlayer;
 pub type Camera = UiCamera;
 
-pub fn create_plane(id: u32, codec: &str, codec_data: &[u8]) -> Option<Plane> {
+pub fn create_plane(id: u32, codec: VideoCodec, codec_data: &[u8]) -> Option<Plane> {
     UiPlane::open(&ui_planes_path(id)?, id, codec, codec_data)
 }
 

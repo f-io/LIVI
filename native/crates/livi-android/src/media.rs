@@ -17,8 +17,8 @@ impl EmbeddedHost for InProcess {
         livi_gst_host::process::serve(sock);
     }
 
-    fn probe(&self) -> String {
-        livi_gst_host::gst::probe_json()
+    fn probe(&self) -> livi_host_proto::Probe {
+        livi_gst_host::gst::probe()
     }
 }
 

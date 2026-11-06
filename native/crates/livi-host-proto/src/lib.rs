@@ -108,10 +108,97 @@ pub fn plane_place(id: u32) -> Option<(String, &'static str)> {
     Some((cluster_tag(screen), screen))
 }
 
-const CODEC_MAX: usize = 15;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum VideoCodec {
+    H264,
+    H265,
+    Vp9,
+    Av1,
+}
 
-pub fn plane_body(codec: &str, codec_data: &[u8]) -> Vec<u8> {
-    let codec = &codec.as_bytes()[..codec.len().min(CODEC_MAX)];
+impl VideoCodec {
+    pub const ALL: [VideoCodec; 4] = [Self::H264, Self::H265, Self::Vp9, Self::Av1];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::H264 => "h264",
+            Self::H265 => "h265",
+            Self::Vp9 => "vp9",
+            Self::Av1 => "av1",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|c| c.name() == name)
+    }
+}
+
+impl std::fmt::Display for VideoCodec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Decoders {
+    pub hw: bool,
+    pub sw: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Probe([Decoders; 4]);
+
+impl Probe {
+    pub fn of(found: impl Fn(VideoCodec) -> Decoders) -> Self {
+        Self(VideoCodec::ALL.map(found))
+    }
+
+    pub fn get(&self, codec: VideoCodec) -> Decoders {
+        self.0[codec as usize]
+    }
+}
+
+impl std::fmt::Display for Probe {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, codec) in VideoCodec::ALL.into_iter().enumerate() {
+            let d = self.get(codec);
+            let kinds = match (d.hw, d.sw) {
+                (true, true) => "hw+sw",
+                (true, false) => "hw",
+                (false, true) => "sw",
+                (false, false) => "-",
+            };
+            let gap = if i > 0 { " " } else { "" };
+            write!(f, "{gap}{codec}={kinds}")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::str::FromStr for Probe {
+    type Err = String;
+
+    fn from_str(line: &str) -> Result<Self, String> {
+        let mut probe = Probe::default();
+        for word in line.split_whitespace() {
+            let (name, kinds) = word.split_once('=').ok_or(format!("no '=' in {word:?}"))?;
+            let codec = VideoCodec::from_name(name).ok_or(format!("unknown codec {name:?}"))?;
+            let d = &mut probe.0[codec as usize];
+            for kind in kinds.split('+') {
+                match kind {
+                    "hw" => d.hw = true,
+                    "sw" => d.sw = true,
+                    "-" => {}
+                    other => return Err(format!("unknown decoder kind {other:?}")),
+                }
+            }
+        }
+        Ok(probe)
+    }
+}
+
+pub fn plane_body(codec: VideoCodec, codec_data: &[u8]) -> Vec<u8> {
+    let codec = codec.name().as_bytes();
     let mut rest = Vec::with_capacity(1 + codec.len() + codec_data.len());
     rest.push(codec.len() as u8);
     rest.extend_from_slice(codec);
@@ -119,13 +206,10 @@ pub fn plane_body(codec: &str, codec_data: &[u8]) -> Vec<u8> {
     rest
 }
 
-pub fn parse_plane_body(rest: &[u8]) -> Option<(String, &[u8])> {
-    let len = usize::from(*rest.first()?).min(CODEC_MAX);
-    let codec = rest.get(1..1 + len)?;
-    Some((
-        String::from_utf8_lossy(codec).into_owned(),
-        &rest[1 + len..],
-    ))
+pub fn parse_plane_body(rest: &[u8]) -> Option<(VideoCodec, &[u8])> {
+    let len = usize::from(*rest.first()?);
+    let codec = std::str::from_utf8(rest.get(1..1 + len)?).ok()?;
+    Some((VideoCodec::from_name(codec)?, &rest[1 + len..]))
 }
 
 pub fn url_body(url: &str, audio_device: &str) -> Vec<u8> {
@@ -380,14 +464,28 @@ mod tests {
 
     #[test]
     fn a_plane_body_comes_back_apart() {
-        let body = plane_body("h265", &[1, 2]);
+        let body = plane_body(VideoCodec::H265, &[1, 2]);
         assert_eq!(body, [&[4u8][..], b"h265", &[1, 2]].concat());
         assert_eq!(
             parse_plane_body(&body),
-            Some(("h265".into(), &[1u8, 2][..]))
+            Some((VideoCodec::H265, &[1u8, 2][..]))
         );
         assert_eq!(parse_plane_body(&[4, b'h', b'2']), None);
+        assert_eq!(parse_plane_body(&[4, b'h', b'2', b'6', b'6']), None);
         assert_eq!(parse_plane_body(&[]), None);
+    }
+
+    #[test]
+    fn a_probe_reads_back_what_it_printed() {
+        let probe = Probe::of(|c| Decoders {
+            hw: c == VideoCodec::H264,
+            sw: c != VideoCodec::Av1,
+        });
+        let line = probe.to_string();
+        assert_eq!(line, "h264=hw+sw h265=sw vp9=sw av1=-");
+        assert_eq!(line.parse::<Probe>(), Ok(probe));
+        assert!("h266=hw".parse::<Probe>().is_err());
+        assert_eq!("".parse::<Probe>(), Ok(Probe::default()));
     }
 
     #[test]

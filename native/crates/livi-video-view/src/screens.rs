@@ -199,7 +199,11 @@ pub fn apply(line: Line) -> Option<String> {
     None
 }
 
-pub fn create(id: u32, codec: &str, codec_data: &[u8]) -> Option<Arc<Player>> {
+pub fn create(
+    id: u32,
+    codec: livi_host_proto::VideoCodec,
+    codec_data: &[u8],
+) -> Option<Arc<Player>> {
     draw(id, |window| Player::new(codec, window, codec_data))
 }
 

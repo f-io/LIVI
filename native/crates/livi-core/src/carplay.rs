@@ -19,7 +19,7 @@ use livi_cp::info::{DisplayConfig, Icon, InfoConfig, Insets, ThemeDisplays, mm_a
 use livi_cp::media::{AudioCodec, AudioRequest, AudioStream, Media, MicRequest, VideoStatus};
 use livi_cp::stack::StackConfig;
 use livi_cp::vehicle_state::{Engines, Rpm};
-use livi_host_proto::{PLANE_CLUSTER_RECV, PLANE_MAIN, PLANE_VIDEO, UrlStatus};
+use livi_host_proto::{PLANE_CLUSTER_RECV, PLANE_MAIN, PLANE_VIDEO, Probe, UrlStatus, VideoCodec};
 use livi_media::compositor::Panel;
 use livi_media::gst_host::{self, GstHost, HostEvent};
 use livi_media::planes::VideoPlane;
@@ -524,9 +524,9 @@ fn cluster_url(cfg: &Config) -> String {
     )
 }
 
-pub fn offers_hevc(probe: &serde_json::Value) -> bool {
-    let flag = |codec: &str, kind: &str| probe[codec][kind].as_bool().unwrap_or(false);
-    flag("h265", "hw") || (flag("h265", "sw") && !flag("h264", "hw"))
+pub fn offers_hevc(probe: &Probe) -> bool {
+    let (h264, h265) = (probe.get(VideoCodec::H264), probe.get(VideoCodec::H265));
+    h265.hw || (h265.sw && !h264.hw)
 }
 
 fn aa_config(
@@ -1056,11 +1056,24 @@ mod tests {
 
     #[test]
     fn hevc_needs_hardware_or_no_hardware_h264() {
-        let probe = |h264hw: bool, h265hw: bool, h265sw: bool| serde_json::json!({ "h264": { "hw": h264hw, "sw": true }, "h265": { "hw": h265hw, "sw": h265sw } });
+        let probe = |h264hw: bool, h265hw: bool, h265sw: bool| {
+            format!(
+                "h264={} h265={}",
+                if h264hw { "hw+sw" } else { "sw" },
+                match (h265hw, h265sw) {
+                    (true, true) => "hw+sw",
+                    (true, false) => "hw",
+                    (false, true) => "sw",
+                    (false, false) => "-",
+                }
+            )
+            .parse::<Probe>()
+            .unwrap()
+        };
         assert!(offers_hevc(&probe(true, true, false)));
         assert!(!offers_hevc(&probe(true, false, true)));
         assert!(offers_hevc(&probe(false, false, true)));
-        assert!(!offers_hevc(&serde_json::json!({})));
+        assert!(!offers_hevc(&Probe::default()));
     }
 
     #[test]

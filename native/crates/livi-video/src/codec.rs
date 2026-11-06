@@ -7,35 +7,32 @@
 
 use core::ffi::CStr;
 
-const H264: &CStr = c"h264";
-const H265: &CStr = c"h265";
-const VP9: &CStr = c"vp9";
-const AV1: &CStr = c"av1";
+use livi_host_proto::VideoCodec;
 
-pub fn parser_for(codec: &str) -> &'static CStr {
+pub fn parser_for(codec: VideoCodec) -> &'static CStr {
     match codec {
-        "h265" => c"h265parse",
-        "vp9" => c"vp9parse",
-        "av1" => c"av1parse",
-        _ => c"h264parse",
+        VideoCodec::H265 => c"h265parse",
+        VideoCodec::Vp9 => c"vp9parse",
+        VideoCodec::Av1 => c"av1parse",
+        VideoCodec::H264 => c"h264parse",
     }
 }
 
-pub fn caps_for(codec: &str) -> &'static CStr {
+pub fn caps_for(codec: VideoCodec) -> &'static CStr {
     match codec {
-        "h265" => c"video/x-h265,stream-format=byte-stream",
-        "vp9" => c"video/x-vp9",
-        "av1" => c"video/x-av1",
-        _ => c"video/x-h264,stream-format=byte-stream",
+        VideoCodec::H265 => c"video/x-h265,stream-format=byte-stream",
+        VideoCodec::Vp9 => c"video/x-vp9",
+        VideoCodec::Av1 => c"video/x-av1",
+        VideoCodec::H264 => c"video/x-h264,stream-format=byte-stream",
     }
 }
 
-pub fn sw_decoder_for(codec: &str) -> &'static CStr {
+pub fn sw_decoder_for(codec: VideoCodec) -> &'static CStr {
     match codec {
-        "h265" => c"avdec_h265",
-        "vp9" => c"vp9dec",
-        "av1" => c"dav1ddec",
-        _ => c"avdec_h264",
+        VideoCodec::H265 => c"avdec_h265",
+        VideoCodec::Vp9 => c"vp9dec",
+        VideoCodec::Av1 => c"dav1ddec",
+        VideoCodec::H264 => c"avdec_h264",
     }
 }
 
@@ -49,36 +46,36 @@ pub fn is_hw_decoder(name: &str) -> bool {
     !matches!(name, "vp9dec" | "vp8dec" | "dav1ddec" | "openh264dec")
 }
 
-pub fn decoder_candidates(codec: &str, sw_only: bool) -> &'static [&'static CStr] {
+pub fn decoder_candidates(codec: VideoCodec, sw_only: bool) -> &'static [&'static CStr] {
     if sw_only {
         return match codec {
-            "h265" => &[c"avdec_h265"],
-            "vp9" => &[c"vp9dec"],
-            "av1" => &[c"dav1ddec"],
-            _ => &[c"avdec_h264"],
+            VideoCodec::H265 => &[c"avdec_h265"],
+            VideoCodec::Vp9 => &[c"vp9dec"],
+            VideoCodec::Av1 => &[c"dav1ddec"],
+            VideoCodec::H264 => &[c"avdec_h264"],
         };
     }
     #[cfg(target_os = "macos")]
     {
         match codec {
-            "h265" => &[c"vtdec", c"avdec_h265"],
-            "vp9" => &[c"vp9dec"],
-            "av1" => &[c"dav1ddec"],
-            _ => &[c"vtdec", c"avdec_h264"],
+            VideoCodec::H265 => &[c"vtdec", c"avdec_h265"],
+            VideoCodec::Vp9 => &[c"vp9dec"],
+            VideoCodec::Av1 => &[c"dav1ddec"],
+            VideoCodec::H264 => &[c"vtdec", c"avdec_h264"],
         }
     }
     #[cfg(not(target_os = "macos"))]
     {
         match codec {
-            "h265" => &[
+            VideoCodec::H265 => &[
                 c"v4l2slh265dec",
                 c"v4l2h265dec",
                 c"vah265dec",
                 c"avdec_h265",
             ],
-            "vp9" => &[c"v4l2slvp9dec", c"v4l2vp9dec", c"vavp9dec", c"vp9dec"],
-            "av1" => &[c"vaav1dec", c"dav1ddec"],
-            _ => &[
+            VideoCodec::Vp9 => &[c"v4l2slvp9dec", c"v4l2vp9dec", c"vavp9dec", c"vp9dec"],
+            VideoCodec::Av1 => &[c"vaav1dec", c"dav1ddec"],
+            VideoCodec::H264 => &[
                 c"v4l2slh264dec",
                 c"v4l2h264dec",
                 c"vah264dec",
@@ -94,14 +91,10 @@ pub enum RenderGpu {
     Node(String),
 }
 
-pub fn decoder_candidates_on(codec: &str, sw_only: bool, gpu: &RenderGpu) -> Vec<String> {
+pub fn decoder_candidates_on(codec: VideoCodec, sw_only: bool, gpu: &RenderGpu) -> Vec<String> {
     let mut names = Vec::new();
     if !sw_only && *gpu == RenderGpu::Nvidia {
-        let c = match codec {
-            "h265" | "vp9" | "av1" => codec,
-            _ => "h264",
-        };
-        names.push(format!("nv{c}dec"));
+        names.push(format!("nv{codec}dec"));
     }
     for name in decoder_candidates(codec, sw_only)
         .iter()
@@ -117,10 +110,6 @@ pub fn decoder_candidates_on(codec: &str, sw_only: bool, gpu: &RenderGpu) -> Vec
         names.push(name.to_owned());
     }
     names
-}
-
-pub fn known_codecs() -> [&'static CStr; 4] {
-    [H264, H265, VP9, AV1]
 }
 
 pub fn sink_chain(sink_override: Option<&str>) -> String {
@@ -167,7 +156,12 @@ pub fn calibration() -> &'static str {
     }
 }
 
-pub fn pipeline_desc(codec: &str, decoder: &str, cal: &str, sink_override: Option<&str>) -> String {
+pub fn pipeline_desc(
+    codec: VideoCodec,
+    decoder: &str,
+    cal: &str,
+    sink_override: Option<&str>,
+) -> String {
     format!(
         "appsrc name=src is-live=true do-timestamp=true format=time \
          min-latency=0 max-latency=0 caps={caps} \
@@ -189,32 +183,22 @@ mod tests {
 
     #[test]
     fn every_known_codec_gets_its_parser_and_caps() {
-        assert_eq!(parser_for("h265"), c"h265parse");
-        assert_eq!(parser_for("vp9"), c"vp9parse");
-        assert_eq!(parser_for("av1"), c"av1parse");
-        assert_eq!(caps_for("h265"), c"video/x-h265,stream-format=byte-stream");
-        assert_eq!(caps_for("vp9"), c"video/x-vp9");
-        assert_eq!(caps_for("av1"), c"video/x-av1");
-    }
-
-    #[test]
-    fn anything_unknown_is_read_as_h264() {
-        for codec in ["h264", "", "H265", "mpeg2", "hevc"] {
-            assert_eq!(parser_for(codec), c"h264parse", "{codec}");
-            assert_eq!(
-                caps_for(codec),
-                c"video/x-h264,stream-format=byte-stream",
-                "{codec}"
-            );
-            assert_eq!(sw_decoder_for(codec), c"avdec_h264", "{codec}");
-        }
+        assert_eq!(parser_for(VideoCodec::H265), c"h265parse");
+        assert_eq!(parser_for(VideoCodec::Vp9), c"vp9parse");
+        assert_eq!(parser_for(VideoCodec::Av1), c"av1parse");
+        assert_eq!(
+            caps_for(VideoCodec::H265),
+            c"video/x-h265,stream-format=byte-stream"
+        );
+        assert_eq!(caps_for(VideoCodec::Vp9), c"video/x-vp9");
+        assert_eq!(caps_for(VideoCodec::Av1), c"video/x-av1");
     }
 
     #[test]
     fn the_software_decoders_are_named_per_codec() {
-        assert_eq!(sw_decoder_for("h265"), c"avdec_h265");
-        assert_eq!(sw_decoder_for("vp9"), c"vp9dec");
-        assert_eq!(sw_decoder_for("av1"), c"dav1ddec");
+        assert_eq!(sw_decoder_for(VideoCodec::H265), c"avdec_h265");
+        assert_eq!(sw_decoder_for(VideoCodec::Vp9), c"vp9dec");
+        assert_eq!(sw_decoder_for(VideoCodec::Av1), c"dav1ddec");
     }
 
     #[test]
@@ -241,7 +225,7 @@ mod tests {
 
     #[test]
     fn sw_only_leaves_one_candidate_and_it_is_the_software_one() {
-        for codec in ["h264", "h265", "vp9", "av1"] {
+        for codec in VideoCodec::ALL {
             let names = decoder_candidates(codec, true);
             assert_eq!(names.len(), 1, "{codec}");
             assert_eq!(names[0], sw_decoder_for(codec), "{codec}");
@@ -251,7 +235,7 @@ mod tests {
 
     #[test]
     fn every_candidate_list_holds_a_software_fallback() {
-        for codec in ["h264", "h265", "vp9", "av1"] {
+        for codec in VideoCodec::ALL {
             let names = decoder_candidates(codec, false);
             assert!(!names.is_empty(), "{codec}");
             assert!(
@@ -263,7 +247,7 @@ mod tests {
 
     #[test]
     fn candidates_carry_no_duplicates() {
-        for codec in ["h264", "h265", "vp9", "av1"] {
+        for codec in VideoCodec::ALL {
             let names = decoder_candidates(codec, false);
             for (i, a) in names.iter().enumerate() {
                 assert!(!names[i + 1..].contains(a), "{codec} repeats {a:?}");
@@ -272,21 +256,13 @@ mod tests {
     }
 
     #[test]
-    fn the_known_codec_names_are_the_ones_the_tables_answer_to() {
-        for codec in known_codecs() {
-            let name = codec.to_str().unwrap();
-            assert_eq!(decoder_candidates(name, true)[0], sw_decoder_for(name));
-        }
-    }
-
-    #[test]
     fn nvidia_gets_nvdec_and_no_decoder_of_another_gpu() {
         assert_eq!(
-            decoder_candidates_on("h265", false, &RenderGpu::Nvidia),
+            decoder_candidates_on(VideoCodec::H265, false, &RenderGpu::Nvidia),
             ["nvh265dec", "avdec_h265"]
         );
         assert_eq!(
-            decoder_candidates_on("mpeg2", false, &RenderGpu::Nvidia),
+            decoder_candidates_on(VideoCodec::H264, false, &RenderGpu::Nvidia),
             ["nvh264dec", "avdec_h264"]
         );
     }
@@ -294,7 +270,11 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn another_gpu_tries_the_va_decoder_of_its_own_node_first() {
-        let names = decoder_candidates_on("h265", false, &RenderGpu::Node("renderD129".into()));
+        let names = decoder_candidates_on(
+            VideoCodec::H265,
+            false,
+            &RenderGpu::Node("renderD129".into()),
+        );
         let own = names
             .iter()
             .position(|n| n == "varenderD129h265dec")
@@ -307,7 +287,10 @@ mod tests {
     #[test]
     fn software_only_stays_software_on_every_gpu() {
         for gpu in [RenderGpu::Nvidia, RenderGpu::Node("renderD128".into())] {
-            assert_eq!(decoder_candidates_on("h264", true, &gpu), ["avdec_h264"]);
+            assert_eq!(
+                decoder_candidates_on(VideoCodec::H264, true, &gpu),
+                ["avdec_h264"]
+            );
         }
     }
 
@@ -325,7 +308,7 @@ mod pipeline_tests {
 
     #[test]
     fn the_description_names_source_parser_decoder_and_sink() {
-        let d = pipeline_desc("h265", "avdec_h265", "", None);
+        let d = pipeline_desc(VideoCodec::H265, "avdec_h265", "", None);
 
         assert!(d.starts_with("appsrc name=src"));
         assert!(d.contains("caps=video/x-h265,stream-format=byte-stream"));
@@ -337,7 +320,7 @@ mod pipeline_tests {
     #[test]
     fn every_link_is_a_bang_between_two_spaces() {
         for cal in ["", "glupload ! glshader name=cal ! "] {
-            let d = pipeline_desc("h264", "avdec_h264", cal, None);
+            let d = pipeline_desc(VideoCodec::H264, "avdec_h264", cal, None);
             let bytes = d.as_bytes();
             for (i, c) in bytes.iter().enumerate() {
                 if *c != b'!' {
@@ -351,7 +334,7 @@ mod pipeline_tests {
 
     #[test]
     fn each_stage_carries_exactly_one_element() {
-        let d = pipeline_desc("h265", "avdec_h265", "", None);
+        let d = pipeline_desc(VideoCodec::H265, "avdec_h265", "", None);
         let stages: Vec<&str> = d.split(" ! ").collect();
 
         assert!(stages.len() >= 5, "{d}");
@@ -364,7 +347,7 @@ mod pipeline_tests {
 
     #[test]
     fn the_queue_ahead_of_the_decoder_never_leaks() {
-        let d = pipeline_desc("h264", "avdec_h264", "", None);
+        let d = pipeline_desc(VideoCodec::H264, "avdec_h264", "", None);
         let (before, after) = d.split_once("name=dec").unwrap();
 
         assert!(!before.contains("leaky"));
@@ -373,7 +356,12 @@ mod pipeline_tests {
 
     #[test]
     fn a_calibration_pass_sits_between_the_queue_and_the_sink() {
-        let d = pipeline_desc("h264", "vtdec", "glupload ! glshader name=cal ! ", None);
+        let d = pipeline_desc(
+            VideoCodec::H264,
+            "vtdec",
+            "glupload ! glshader name=cal ! ",
+            None,
+        );
         let i = d.find("glshader name=cal").unwrap();
 
         assert!(i > d.find("name=dec").unwrap());
@@ -382,7 +370,7 @@ mod pipeline_tests {
 
     #[test]
     fn an_empty_calibration_leaves_the_chain_untouched() {
-        assert!(!pipeline_desc("h264", "avdec_h264", "", None).contains("glshader"));
+        assert!(!pipeline_desc(VideoCodec::H264, "avdec_h264", "", None).contains("glshader"));
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -390,7 +378,9 @@ mod pipeline_tests {
     fn a_software_decoder_gets_a_converter_and_a_hardware_one_does_not() {
         assert_eq!(presink("avdec_h264"), "videoconvert ! ");
         assert_eq!(presink("v4l2slh264dec"), "");
-        assert!(pipeline_desc("h264", "avdec_h264", "", None).contains("videoconvert ! "));
+        assert!(
+            pipeline_desc(VideoCodec::H264, "avdec_h264", "", None).contains("videoconvert ! ")
+        );
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "android")))]
@@ -403,7 +393,7 @@ mod pipeline_tests {
             "fakesink name=sink sync=false"
         );
         assert!(
-            pipeline_desc("h264", "avdec_h264", "", Some("fakesink"))
+            pipeline_desc(VideoCodec::H264, "avdec_h264", "", Some("fakesink"))
                 .contains("fakesink name=sink")
         );
     }

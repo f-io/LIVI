@@ -4,13 +4,13 @@
 
 use livi_video_player::{CameraPlayer, Player, UrlPlayer};
 
-use crate::CameraOrder;
+use crate::{CameraOrder, VideoCodec};
 
 pub type Plane = Player;
 pub type Url = UrlPlayer;
 pub type Camera = CameraPlayer;
 
-pub fn create_plane(_id: u32, codec: &str, codec_data: &[u8]) -> Option<Plane> {
+pub fn create_plane(_id: u32, codec: VideoCodec, codec_data: &[u8]) -> Option<Plane> {
     Player::new(codec, 0, codec_data)
 }
 

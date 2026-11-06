@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use gstreamer as gst;
 use gstreamer::prelude::*;
-use livi_host_proto::UrlStatus;
+use livi_host_proto::{UrlStatus, VideoCodec};
 
 use crate::Say;
 
@@ -194,7 +194,7 @@ impl Drop for UrlPlayer {
 
 fn prefer_our_decoders() {
     let sw_only = std::env::var_os("LIVI_GST_SWDEC").is_some();
-    for codec in ["h264", "h265"] {
+    for codec in [VideoCodec::H264, VideoCodec::H265] {
         let picked = crate::candidates(codec, sw_only)
             .into_iter()
             .find(|n| crate::usable(n));

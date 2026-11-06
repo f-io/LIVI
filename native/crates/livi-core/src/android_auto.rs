@@ -7,13 +7,13 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use livi_aa_stack::config::Codecs;
-use livi_aa_stack::discovery::VideoCodec;
+use livi_aa_stack::discovery::VideoCodec as AaCodec;
 use livi_aa_stack::helper_sock::AaHelperSock;
 use livi_aa_stack::manager::SessionId;
 use livi_aa_stack::media::{AaMedia, AudioKind, AudioOutput};
 use livi_core_proto::state::State;
-use livi_host_proto::{PLANE_CLUSTER_RECV, PLANE_MAIN};
-use livi_media::gst_host::{self, Codec, FeedTarget, GstHost};
+use livi_host_proto::{PLANE_CLUSTER_RECV, PLANE_MAIN, Probe, VideoCodec};
+use livi_media::gst_host::{self, FeedTarget, GstHost};
 use livi_media::planes::{ClusterPlanes, Crop, MainPlane, crop_for};
 use tokio::sync::{broadcast, mpsc, watch};
 
@@ -24,21 +24,20 @@ const SCO_RATE: u32 = 8000;
 const SCO_CHANNELS: u32 = 1;
 const CALL_TAG: &str = "call";
 
-pub fn codecs(probe: &serde_json::Value) -> Codecs {
-    let hw = |codec: &str| probe[codec]["hw"].as_bool().unwrap_or(false);
+pub fn codecs(probe: &Probe) -> Codecs {
     Codecs {
         hevc: crate::carplay::offers_hevc(probe),
-        vp9: hw("vp9"),
-        av1: hw("av1"),
+        vp9: probe.get(VideoCodec::Vp9).hw,
+        av1: probe.get(VideoCodec::Av1).hw,
     }
 }
 
-fn codec(c: VideoCodec) -> Codec {
+fn codec(c: AaCodec) -> VideoCodec {
     match c {
-        VideoCodec::H264 => Codec::H264,
-        VideoCodec::H265 => Codec::H265,
-        VideoCodec::Vp9 => Codec::Vp9,
-        VideoCodec::Av1 => Codec::Av1,
+        AaCodec::H264 => VideoCodec::H264,
+        AaCodec::H265 => VideoCodec::H265,
+        AaCodec::Vp9 => VideoCodec::Vp9,
+        AaCodec::Av1 => VideoCodec::Av1,
     }
 }
 
@@ -81,7 +80,7 @@ struct Audio {
 struct Feeds {
     active: bool,
     video: BTreeMap<bool, u32>,
-    codecs: BTreeMap<bool, Codec>,
+    codecs: BTreeMap<bool, VideoCodec>,
     audio: BTreeMap<u32, u32>,
 }
 
@@ -287,7 +286,7 @@ impl GstAaMedia {
         lock(&self.audio)
     }
 
-    fn prepare(&self, cluster: bool, codec: Codec) {
+    fn prepare(&self, cluster: bool, codec: VideoCodec) {
         if cluster {
             self.clusters.prepare(codec, Vec::new());
         } else {
@@ -326,7 +325,7 @@ impl AaMedia for GstAaMedia {
         )
     }
 
-    fn prime_video(&self, session: SessionId, cluster: bool, video: VideoCodec) {
+    fn prime_video(&self, session: SessionId, cluster: bool, video: AaCodec) {
         let active = {
             let mut sessions = self.sessions();
             let feeds = sessions.feeds.entry(session).or_default();
@@ -546,7 +545,6 @@ mod tests {
     use livi_core_proto::state::{Front, PerScreen};
     use livi_host_proto::{Framer, encode_reply};
     use livi_media::compositor::CompositorControl;
-    use serde_json::json;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
 
@@ -664,12 +662,7 @@ mod tests {
 
     #[test]
     fn the_phone_is_offered_what_the_host_decodes() {
-        let probe = json!({
-            "h264": { "hw": true, "sw": true },
-            "h265": { "hw": false, "sw": true },
-            "vp9": { "hw": true, "sw": true },
-            "av1": { "hw": false, "sw": true }
-        });
+        let probe: Probe = "h264=hw+sw h265=sw vp9=hw+sw av1=sw".parse().unwrap();
         assert_eq!(
             codecs(&probe),
             Codecs {
@@ -678,7 +671,7 @@ mod tests {
                 av1: false
             }
         );
-        assert_eq!(codecs(&json!({})), Codecs::default());
+        assert_eq!(codecs(&Probe::default()), Codecs::default());
     }
 
     #[tokio::test]
@@ -802,13 +795,13 @@ mod tests {
             host.next().await,
             (OP_FEED_ROUTE, back, route(0, PLANE_MAIN, false))
         );
-        media.prime_video(2, false, VideoCodec::H265);
+        media.prime_video(2, false, AaCodec::H265);
         tokio::time::sleep(Duration::from_millis(100)).await;
         media.release(2);
         assert_eq!(host.next().await, (OP_FEED_CLOSE, back, vec![]));
 
         media.set_active(3, true);
-        media.prime_video(3, false, VideoCodec::H265);
+        media.prime_video(3, false, AaCodec::H265);
         let (op, id, rest) = host.next().await;
         assert_eq!((op, id), (OP_CREATE, PLANE_MAIN));
         assert_eq!(rest, [&[4u8][..], b"h265"].concat());
