@@ -3,7 +3,7 @@
 // Additional terms: see NOTICE
 
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 
 use crate::{AuthCoprocessor, CHALLENGE_MAX, CHALLENGE_MIN, MfiError};
@@ -92,40 +92,14 @@ pub fn listen<C: AuthCoprocessor + Send + 'static>(listener: TcpListener, chip: 
     for mut stream in livi_net::bridge::from_usb(&listener) {
         let mut chip = Shared(chip.clone());
         std::thread::spawn(move || {
-            keepalive(&stream);
+            #[cfg(target_os = "linux")]
+            if let Err(e) = livi_net::tunnel::notice_loss(&stream, None) {
+                eprintln!("[mfid] keepalive: {e}");
+            }
             serve(&mut stream, &mut chip);
         });
     }
 }
-
-#[cfg(target_os = "linux")]
-fn keepalive(stream: &TcpStream) {
-    use std::os::fd::AsRawFd;
-
-    for (level, name, value) in [
-        (libc::SOL_SOCKET, libc::SO_KEEPALIVE, 1),
-        (libc::IPPROTO_TCP, libc::TCP_KEEPIDLE, 1),
-        (libc::IPPROTO_TCP, libc::TCP_KEEPINTVL, 1),
-        (libc::IPPROTO_TCP, libc::TCP_KEEPCNT, 2),
-    ] {
-        let value: libc::c_int = value;
-        let rc = unsafe {
-            libc::setsockopt(
-                stream.as_raw_fd(),
-                level,
-                name,
-                (&raw const value).cast(),
-                size_of::<libc::c_int>() as libc::socklen_t,
-            )
-        };
-        if rc != 0 {
-            eprintln!("[mfid] keepalive: {}", std::io::Error::last_os_error());
-        }
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn keepalive(_stream: &TcpStream) {}
 
 pub fn protocol_major(chip: &mut dyn AuthCoprocessor) -> Option<u8> {
     match chip.protocol_major() {
@@ -150,6 +124,8 @@ fn respond<S: Write>(io: &mut S, status: u8, data: &[u8]) -> std::io::Result<()>
 
 #[cfg(test)]
 mod tests {
+    use std::net::TcpStream;
+
     use super::*;
 
     struct Chip;

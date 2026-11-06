@@ -3955,7 +3955,7 @@ dependencies = [
 
 [[package]]
 name = "livi-android"
-version = "10.4.0"
+version = "10.5.0"
 dependencies = [
  "iap2-usbmux",
  "jni 0.22.4",
@@ -3991,6 +3991,9 @@ dependencies = [
 [[package]]
 name = "livi-bt-host"
 version = "0.1.0"
+dependencies = [
+ "livi-net",
+]
 
 [[package]]
 name = "livi-btd"
@@ -4019,7 +4022,7 @@ dependencies = [
 
 [[package]]
 name = "livi-core"
-version = "10.4.0"
+version = "10.5.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -4249,6 +4252,9 @@ dependencies = [
 [[package]]
 name = "livi-net"
 version = "0.1.0"
+dependencies = [
+ "libc 1.0.0-alpha.5",
+]
 
 [[package]]
 name = "livi-rtlsdr"
@@ -4300,7 +4306,7 @@ dependencies = [
 
 [[package]]
 name = "livi-ui"
-version = "10.4.0"
+version = "10.5.0"
 dependencies = [
  "base64 0.23.1",
  "i-slint-backend-android-activity",

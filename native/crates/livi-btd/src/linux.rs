@@ -12,17 +12,18 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use livi_net::port::HCI;
+use livi_net::tunnel::{self, PACKET_MAX};
 const BTPROTO_HCI: libc::c_int = 1;
 const HCI_CHANNEL_USER: u16 = 1;
 const DEV: u16 = 0;
 const IFACE: &str = "hci0";
-const PACKET_MAX: usize = 4096;
 const HCI_EVT_PKT: u8 = 0x04;
 const EV_CONN_COMPLETE: u8 = 0x03;
 const EV_CONN_REQUEST: u8 = 0x04;
 const EV_DISCONN_COMPLETE: u8 = 0x05;
 const LINK_ACL: u8 = 0x01;
 const POLL_MS: i32 = 200;
+const GIVE_UP: std::time::Duration = std::time::Duration::from_secs(3);
 const CONTROLLER_TRIES: u32 = 120;
 const CONTROLLER_POLL: std::time::Duration = std::time::Duration::from_millis(500);
 
@@ -70,7 +71,9 @@ pub fn run() -> ExitCode {
     });
     while let Some(stream) = hosts.next() {
         let _ = stream.set_nodelay(true);
-        notice_loss(&stream);
+        if let Err(e) = tunnel::notice_loss(&stream, Some(GIVE_UP)) {
+            eprintln!("[btd] tunnel timeout: {e}");
+        }
         if let Err(e) = crate::hci::down(DEV) {
             eprintln!("[btd] {IFACE} down: {e}");
         }
@@ -91,30 +94,6 @@ pub fn run() -> ExitCode {
         }
     }
     ExitCode::SUCCESS
-}
-
-fn notice_loss(stream: &TcpStream) {
-    for (level, name, value) in [
-        (libc::SOL_SOCKET, libc::SO_KEEPALIVE, 1),
-        (libc::IPPROTO_TCP, libc::TCP_KEEPIDLE, 1),
-        (libc::IPPROTO_TCP, libc::TCP_KEEPINTVL, 1),
-        (libc::IPPROTO_TCP, libc::TCP_KEEPCNT, 2),
-        (libc::IPPROTO_TCP, libc::TCP_USER_TIMEOUT, 3000),
-    ] {
-        let value: libc::c_int = value;
-        let rc = unsafe {
-            libc::setsockopt(
-                stream.as_raw_fd(),
-                level,
-                name,
-                (&raw const value).cast(),
-                size_of::<libc::c_int>() as libc::socklen_t,
-            )
-        };
-        if rc != 0 {
-            eprintln!("[btd] tunnel timeout: {}", std::io::Error::last_os_error());
-        }
-    }
 }
 
 fn await_controller() -> bool {
@@ -190,10 +169,7 @@ fn out_bound(dev: File, mut out: TcpStream, stop: &AtomicBool) {
             }
         };
         watch_link(&buf[..n], &mut links);
-        if let Err(e) = out
-            .write_all(&(n as u16).to_be_bytes())
-            .and_then(|()| out.write_all(&buf[..n]))
-        {
+        if let Err(e) = out.write_all(&tunnel::frame(&buf[..n])) {
             eprintln!("[btd] send: {e}");
             return;
         }
@@ -236,24 +212,17 @@ fn led_signal(name: &str, on: bool) {
 
 fn in_bound(mut dev: File, stream: &TcpStream) {
     let mut input = stream;
-    let mut len = [0u8; 2];
     let mut buf = [0u8; PACKET_MAX];
     loop {
-        if let Err(e) = input.read_exact(&mut len) {
-            if e.kind() != std::io::ErrorKind::UnexpectedEof {
-                eprintln!("[btd] receive: {e}");
+        let n = match tunnel::receive(&mut input, &mut buf) {
+            Ok(n) => n,
+            Err(e) => {
+                if e.kind() != std::io::ErrorKind::UnexpectedEof {
+                    eprintln!("[btd] receive: {e}");
+                }
+                return;
             }
-            return;
-        }
-        let n = u16::from_be_bytes(len) as usize;
-        if n == 0 || n > PACKET_MAX {
-            eprintln!("[btd] frame of {n} bytes, dropping the tunnel");
-            return;
-        }
-        if let Err(e) = input.read_exact(&mut buf[..n]) {
-            eprintln!("[btd] receive: {e}");
-            return;
-        }
+        };
         if let Err(e) = dev.write_all(&buf[..n]) {
             if e.raw_os_error() != Some(libc::EINVAL) {
                 eprintln!("[btd] write {IFACE}: {e}");

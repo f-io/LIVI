@@ -10,16 +10,18 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use livi_net::tunnel::{self, PACKET_MAX};
+
 use crate::link;
 
 const VHCI: &str = "/dev/vhci";
 const RFKILL: &str = "/sys/class/rfkill";
 const VENDOR_PKT: u8 = 0xff;
 const CREATE_PRIMARY: [u8; 2] = [VENDOR_PKT, 0x00];
-const PACKET_MAX: usize = 4096;
 const POLL_MS: i32 = 200;
 const RETRY: Duration = Duration::from_secs(5);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+const GIVE_UP: Duration = Duration::from_secs(3);
 
 pub fn attach(
     on_adapter: impl Fn(u16) + Send + Sync + 'static,
@@ -59,7 +61,9 @@ pub fn tunnel(on_adapter: &(impl Fn(u16) + Sync)) -> Result<bool, TunnelError> {
     stream
         .set_nodelay(true)
         .map_err(|e| failed(format!("nodelay: {e}")))?;
-    notice_loss(&stream);
+    if let Err(e) = tunnel::notice_loss(&stream, Some(GIVE_UP)) {
+        eprintln!("[bt] tunnel timeout: {e}");
+    }
     let mut dev = OpenOptions::new()
         .read(true)
         .write(true)
@@ -74,30 +78,6 @@ pub fn tunnel(on_adapter: &(impl Fn(u16) + Sync)) -> Result<bool, TunnelError> {
     });
     println!("[bt] tunnel closed");
     Ok(made.load(Ordering::Relaxed))
-}
-
-fn notice_loss(stream: &TcpStream) {
-    for (level, name, value) in [
-        (libc::SOL_SOCKET, libc::SO_KEEPALIVE, 1),
-        (libc::IPPROTO_TCP, libc::TCP_KEEPIDLE, 1),
-        (libc::IPPROTO_TCP, libc::TCP_KEEPINTVL, 1),
-        (libc::IPPROTO_TCP, libc::TCP_KEEPCNT, 2),
-        (libc::IPPROTO_TCP, libc::TCP_USER_TIMEOUT, 3000),
-    ] {
-        let value: libc::c_int = value;
-        let rc = unsafe {
-            libc::setsockopt(
-                stream.as_raw_fd(),
-                level,
-                name,
-                (&raw const value).cast(),
-                size_of::<libc::c_int>() as libc::socklen_t,
-            )
-        };
-        if rc != 0 {
-            eprintln!("[bt] tunnel timeout: {}", std::io::Error::last_os_error());
-        }
-    }
 }
 
 fn pump(dev: File, stream: TcpStream, named: &(impl Fn(u16) + Sync)) {
@@ -146,10 +126,7 @@ fn out_bound(dev: File, out: &Mutex<TcpStream>, stop: &AtomicBool, named: &impl 
 }
 
 fn send(out: &Mutex<TcpStream>, pkt: &[u8]) -> std::io::Result<()> {
-    let mut frame = Vec::with_capacity(2 + pkt.len());
-    frame.extend_from_slice(&(pkt.len() as u16).to_be_bytes());
-    frame.extend_from_slice(pkt);
-    out.lock().unwrap().write_all(&frame)
+    out.lock().unwrap().write_all(&tunnel::frame(pkt))
 }
 
 fn unblock(index: u16) {
@@ -170,25 +147,18 @@ fn unblock(index: u16) {
 
 fn in_bound(mut dev: File, stream: &TcpStream, out: &Mutex<TcpStream>) {
     let mut input = stream;
-    let mut len = [0u8; 2];
     let mut buf = [0u8; PACKET_MAX];
     let mut own_orders = 0u32;
     loop {
-        if let Err(e) = input.read_exact(&mut len) {
-            if e.kind() != std::io::ErrorKind::UnexpectedEof {
-                eprintln!("[bt] receive: {e}");
+        let n = match tunnel::receive(&mut input, &mut buf) {
+            Ok(n) => n,
+            Err(e) => {
+                if e.kind() != std::io::ErrorKind::UnexpectedEof {
+                    eprintln!("[bt] receive: {e}");
+                }
+                return;
             }
-            return;
-        }
-        let n = u16::from_be_bytes(len) as usize;
-        if n == 0 || n > PACKET_MAX {
-            eprintln!("[bt] frame of {n} bytes, dropping the tunnel");
-            return;
-        }
-        if let Err(e) = input.read_exact(&mut buf[..n]) {
-            eprintln!("[bt] receive: {e}");
-            return;
-        }
+        };
         if own_orders > 0 && answers(&buf[..n], WRITE_VOICE_SETTING) {
             own_orders -= 1;
             continue;

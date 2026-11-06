@@ -11,6 +11,8 @@ use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use livi_net::tunnel::{self, PACKET_MAX};
+
 use crate::hci::{self, Addr, Event, text};
 use crate::keys::Keys;
 use crate::l2cap::{self, Signal};
@@ -22,7 +24,6 @@ const COMMAND_STALL: Duration = Duration::from_secs(2);
 const PAGE_WAIT: Duration = Duration::from_secs(10);
 const SECURE_WAIT: Duration = Duration::from_secs(30);
 const STEP_WAIT: Duration = Duration::from_secs(10);
-const PACKET_MAX: usize = 4096;
 const IO_CAPABILITY: [u8; 3] = [0x03, 0x00, 0x04];
 const EVENT_MASK: [u8; 8] = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xbf, 0x3d];
 const CLASS: [u8; 3] = [0x20, 0x04, 0x20];
@@ -268,13 +269,10 @@ impl Shared {
     }
 
     fn write(&self, pkt: &[u8]) -> std::io::Result<()> {
-        let mut frame = Vec::with_capacity(2 + pkt.len());
-        frame.extend_from_slice(&(pkt.len() as u16).to_be_bytes());
-        frame.extend_from_slice(pkt);
         self.tunnel
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .write_all(&frame)
+            .write_all(&tunnel::frame(pkt))
     }
 
     fn outlet(&self, give: impl FnOnce(&Outlets)) {
@@ -845,22 +843,18 @@ fn call_pump(shared: &Shared, handle: u16, socket: &UnixDatagram) {
     }
 }
 
-fn read_tunnel(shared: &Arc<Shared>, mut tunnel: TcpStream) {
-    let mut len = [0u8; 2];
-    let mut buf = vec![0u8; PACKET_MAX];
+fn read_tunnel(shared: &Arc<Shared>, mut stream: TcpStream) {
+    let mut buf = [0u8; PACKET_MAX];
     loop {
-        if tunnel.read_exact(&mut len).is_err() {
-            break;
+        match tunnel::receive(&mut stream, &mut buf) {
+            Ok(n) => shared.packet(&buf[..n]),
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::InvalidData {
+                    eprintln!("[bt] {e} from the dongle, closing the tunnel");
+                }
+                break;
+            }
         }
-        let n = usize::from(u16::from_be_bytes(len));
-        if n == 0 || n > PACKET_MAX {
-            eprintln!("[bt] a frame of {n} bytes from the dongle, closing the tunnel");
-            break;
-        }
-        if tunnel.read_exact(&mut buf[..n]).is_err() {
-            break;
-        }
-        shared.packet(&buf[..n]);
     }
     shared.end();
 }
