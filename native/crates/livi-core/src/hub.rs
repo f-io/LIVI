@@ -8,9 +8,9 @@ use livi_core_proto::PROTOCOL;
 use livi_core_proto::config::Config;
 use livi_core_proto::frame::encode;
 use livi_core_proto::message::FromCore;
-use livi_core_proto::patch::diff;
+use livi_core_proto::patch::{PatchOp, diff};
 use livi_core_proto::state::State;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use tokio::sync::{broadcast, watch};
 
 const BACKLOG: usize = 256;
@@ -26,13 +26,16 @@ pub struct Hub {
 
 struct Inner {
     state: State,
-    value: Value,
+    value: Map<String, Value>,
     rev: u64,
 }
 
 impl Hub {
     pub fn new(state: State) -> Self {
-        let value = serde_json::to_value(&state).unwrap_or(Value::Null);
+        let value = match serde_json::to_value(&state) {
+            Ok(Value::Object(value)) => value,
+            _ => Map::new(),
+        };
         let (patches, _) = broadcast::channel(BACKLOG);
         let (current, _) = watch::channel(state.clone());
         let (applied, _) = watch::channel(state.config.clone());
@@ -92,14 +95,21 @@ impl Hub {
     pub fn update(&self, change: impl FnOnce(&mut State)) {
         let mut inner = self.lock();
         change(&mut inner.state);
-        let value = serde_json::to_value(&inner.state).unwrap_or(Value::Null);
-        let ops = diff(&inner.value, &value);
+        let mut changed = Vec::new();
+        self.current.send_if_modified(|shown| {
+            changed = take_changes(shown, &inner.state);
+            !changed.is_empty()
+        });
+        let mut ops = Vec::new();
+        for (key, value) in changed {
+            let slot = inner.value.entry(key).or_insert(Value::Null);
+            ops.extend(diff(slot, &value).into_iter().map(|op| under(key, op)));
+            *slot = value;
+        }
         if ops.is_empty() {
             return;
         }
         inner.rev += 1;
-        inner.value = value;
-        self.current.send_replace(inner.state.clone());
         match encode(&FromCore::Patch {
             rev: inner.rev,
             ops,
@@ -109,6 +119,56 @@ impl Hub {
             }
             Err(e) => eprintln!("[core] patch {} not sent: {e}", inner.rev),
         }
+    }
+}
+
+macro_rules! sections {
+    ($then:ident) => {
+        $then!(
+            cameras "cameras",
+            cluster "cluster",
+            config "config",
+            dab "dab",
+            devices "devices",
+            fm "fm",
+            front "front",
+            mfi "mfi",
+            navigation "navigation",
+            now_playing "nowPlaying",
+            sessions "sessions",
+            system "system",
+            telemetry "telemetry",
+            update "update",
+            video_playback "videoPlayback"
+        )
+    };
+}
+
+fn take_changes(shown: &mut State, state: &State) -> Vec<(&'static str, Value)> {
+    let mut changed = Vec::new();
+    macro_rules! compare {
+        ($($field:ident $key:literal),*) => {$(
+            if shown.$field != state.$field {
+                shown.$field = state.$field.clone();
+                changed.push(($key, serde_json::to_value(&state.$field).unwrap_or(Value::Null)));
+            }
+        )*};
+    }
+    sections!(compare);
+    changed
+}
+
+fn under(key: &str, op: PatchOp) -> PatchOp {
+    let nest = |mut path: Vec<String>| {
+        path.insert(0, key.to_string());
+        path
+    };
+    match op {
+        PatchOp::Set { path, value } => PatchOp::Set {
+            path: nest(path),
+            value,
+        },
+        PatchOp::Remove { path } => PatchOp::Remove { path: nest(path) },
     }
 }
 
@@ -181,6 +241,52 @@ mod tests {
         let (_, mut patches) = hub.welcome();
         hub.update(|s| s.front.main = Front::Livi);
         assert!(patches.try_recv().is_err());
+    }
+
+    #[test]
+    fn every_section_goes_out_under_its_wire_name() {
+        macro_rules! names {
+            ($($field:ident $key:literal),*) => {
+                vec![$($key),*]
+            };
+        }
+        let listed: Vec<&str> = sections!(names);
+        let whole = serde_json::to_value(&hub().lock().state).unwrap();
+        let wire: Vec<&str> = whole
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(listed, wire);
+    }
+
+    #[test]
+    fn a_nested_change_patches_only_its_leaf() {
+        let hub = hub();
+        let (_, mut patches) = hub.welcome();
+        hub.update(|s| {
+            s.telemetry.insert("speed".into(), json!(50));
+            s.dab.active = true;
+        });
+        let FromCore::Patch { rev, ops } = decode(&patches.try_recv().unwrap()) else {
+            panic!("a patch");
+        };
+        assert_eq!(rev, 1);
+        assert_eq!(
+            ops,
+            vec![
+                PatchOp::Set {
+                    path: vec!["dab".into(), "active".into()],
+                    value: json!(true)
+                },
+                PatchOp::Set {
+                    path: vec!["telemetry".into(), "speed".into()],
+                    value: json!(50)
+                },
+            ]
+        );
+        assert_eq!(*hub.watch().borrow(), hub.lock().state);
     }
 
     #[test]

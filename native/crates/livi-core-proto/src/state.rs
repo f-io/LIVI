@@ -36,7 +36,6 @@ pub struct State {
 #[serde(rename_all = "camelCase")]
 pub struct Dab {
     pub receiver: Option<String>,
-    pub stations: Vec<DabStation>,
     pub last_station: Option<u32>,
     pub scan: Option<DabScan>,
     pub active: bool,
@@ -46,6 +45,8 @@ pub struct Dab {
     pub signal: DabSignal,
     pub error: Option<String>,
     pub gains_db: Vec<f64>,
+    /// Last, so comparing two states stops at a changed small field before the logos.
+    pub stations: Vec<DabStation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -69,7 +70,6 @@ pub struct DabStation {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Fm {
-    pub stations: Vec<FmStation>,
     pub last_station: Option<u32>,
     pub scan: Option<DabScan>,
     pub active: bool,
@@ -79,6 +79,8 @@ pub struct Fm {
     pub text: Option<String>,
     pub signal: FmSignal,
     pub error: Option<String>,
+    /// Last, so comparing two states stops at a changed small field before the logos.
+    pub stations: Vec<FmStation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
