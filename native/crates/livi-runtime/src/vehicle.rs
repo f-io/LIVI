@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use base64::Engine;
 use tokio::sync::watch;
 
 use iap2_csm::messages::identification::{ChargingConnectorType, EngineType};
@@ -104,8 +103,7 @@ impl VehicleStatus {
         *self == Self::default()
     }
 
-    pub fn merge(&mut self, json: &str) -> Result<(), String> {
-        let value: serde_json::Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    pub fn merge(&mut self, value: &serde_json::Value) {
         let km = |key: &str, slot: &mut Option<u16>| {
             if let Some(n) = value.get(key).and_then(|v| v.as_u64()) {
                 *slot = Some(n.min(u16::MAX as u64) as u16);
@@ -138,7 +136,6 @@ impl VehicleStatus {
         if let Some(n) = value.get("outsideTemperature").and_then(|v| v.as_i64()) {
             self.outside_temperature = Some(n.clamp(i16::MIN as i64, i16::MAX as i64) as i16);
         }
-        Ok(())
     }
 
     pub fn update(&self, fuels: Fuels) -> VehicleStatusUpdate {
@@ -252,38 +249,26 @@ impl Vehicle {
         }
     }
 
-    pub fn push_seek(&self, arg: &str) -> Result<(), String> {
-        let mut words = arg.split_whitespace();
-        let ms: u32 = words
-            .next()
-            .and_then(|w| w.parse().ok())
-            .ok_or_else(|| format!("not a position in ms: {arg:?}"))?;
-        let bt_mac = words.next().map(str::to_string);
+    pub fn push_seek(&self, ms: u32, bt_mac: Option<String>) {
         self.seek.send_modify(|slot| {
             slot.0 = slot.0.wrapping_add(1);
             slot.1 = Seek { ms, bt_mac };
         });
-        Ok(())
     }
 
-    pub fn push_location(&self, arg: &str) -> Result<(), String> {
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(arg.trim())
-            .map_err(|e| e.to_string())?;
-        let nmea = String::from_utf8_lossy(&bytes).into_owned();
+    pub fn push_location(&self, nmea: String) {
         if nmea.trim().is_empty() {
-            return Ok(());
+            return;
         }
         self.location.send_modify(|slot| {
             slot.0 = slot.0.wrapping_add(1);
             slot.1 = nmea;
         });
-        Ok(())
     }
 
-    pub fn push_status(&self, json: &str) -> Result<(), String> {
+    pub fn push_status(&self, status: &serde_json::Value) {
         let mut next = self.status.borrow().clone();
-        next.merge(json)?;
+        next.merge(status);
         self.status.send_if_modified(|current| {
             if *current == next {
                 return false;
@@ -291,7 +276,6 @@ impl Vehicle {
             *current = next;
             true
         });
-        Ok(())
     }
 }
 
@@ -303,18 +287,16 @@ impl VehicleFeed {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     #[test]
     fn a_status_merges_key_by_key() {
         let mut status = VehicleStatus::default();
-        status
-            .merge(r#"{"range":70000,"outsideTemperature":-3}"#)
-            .unwrap();
-        status.merge(r#"{"rangeWarning":true}"#).unwrap();
-        status
-            .merge(r#"{"rangeFuel":512,"rangeElectric":40}"#)
-            .unwrap();
+        status.merge(&json!({ "range": 70000, "outsideTemperature": -3 }));
+        status.merge(&json!({ "rangeWarning": true }));
+        status.merge(&json!({ "rangeFuel": 512, "rangeElectric": 40 }));
         assert_eq!(
             status,
             VehicleStatus {
@@ -326,7 +308,6 @@ mod tests {
                 ..Default::default()
             }
         );
-        assert!(status.merge("nope").is_err());
     }
 
     #[test]
@@ -345,13 +326,11 @@ mod tests {
     #[test]
     fn only_a_car_that_charges_tells_its_battery() {
         let mut status = VehicleStatus::default();
-        status
-            .merge(
-                r#"{"range":300,"batteryMinWh":0,"batteryMaxWh":77000,"batteryWh":38500,
-                "batteryPercentE3":50000,"charging":true,"activeConnector":1,
-                "rangeMaxElectric":520}"#,
-            )
-            .unwrap();
+        status.merge(&json!({
+            "range": 300, "batteryMinWh": 0, "batteryMaxWh": 77000, "batteryWh": 38500,
+            "batteryPercentE3": 50000, "charging": true, "activeConnector": 1,
+            "rangeMaxElectric": 520
+        }));
         let ev = status.update(Fuels::parse("Electric"));
         assert_eq!(
             (
@@ -378,7 +357,7 @@ mod tests {
             ),
             (None, None, None)
         );
-        status.merge(r#"{"activeConnector":42}"#).unwrap();
+        status.merge(&json!({ "activeConnector": 42 }));
         assert_eq!(status.active_connector, None, "an unknown plug names none");
     }
 
@@ -475,25 +454,24 @@ mod tests {
     fn a_location_push_wakes_the_feed_and_an_unchanged_status_does_not() {
         let vehicle = Vehicle::default();
         let mut feed = vehicle.feed();
-        vehicle
-            .push_location(&base64::engine::general_purpose::STANDARD.encode("$GPGGA,1*00"))
-            .unwrap();
+        vehicle.push_location("$GPGGA,1*00".into());
         assert!(feed.location.has_changed().unwrap());
         assert_eq!(feed.location.borrow_and_update().1, "$GPGGA,1*00");
 
-        vehicle.push_status(r#"{"range":100}"#).unwrap();
+        vehicle.push_status(&json!({ "range": 100 }));
         assert!(feed.status.has_changed().unwrap());
         feed.status.borrow_and_update();
-        vehicle.push_status(r#"{"range":100}"#).unwrap();
+        vehicle.push_status(&json!({ "range": 100 }));
         assert!(!feed.status.has_changed().unwrap());
-        assert!(vehicle.push_status("{").is_err());
+        vehicle.push_location(" ".into());
+        assert!(!feed.location.has_changed().unwrap());
     }
 
     #[test]
     fn every_seek_wakes_the_feed_even_to_the_same_position() {
         let vehicle = Vehicle::default();
         let mut feed = vehicle.feed();
-        vehicle.push_seek("60000").unwrap();
+        vehicle.push_seek(60000, None);
         assert!(feed.seek.has_changed().unwrap());
         assert_eq!(
             feed.seek.borrow_and_update().1,
@@ -502,7 +480,7 @@ mod tests {
                 bt_mac: None
             }
         );
-        vehicle.push_seek(" 60000  AA:BB:CC:DD:EE:FF ").unwrap();
+        vehicle.push_seek(60000, Some("AA:BB:CC:DD:EE:FF".into()));
         assert!(feed.seek.has_changed().unwrap());
         assert_eq!(
             feed.seek.borrow_and_update().1,
@@ -511,8 +489,6 @@ mod tests {
                 bt_mac: Some("AA:BB:CC:DD:EE:FF".into())
             }
         );
-        assert!(vehicle.push_seek("1:00").is_err());
-        assert!(vehicle.push_seek("").is_err());
     }
 
     #[test]

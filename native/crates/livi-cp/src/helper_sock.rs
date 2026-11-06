@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
+use livi_core_proto::helper_requests::CpRequest;
 pub use livi_session_io::line::Feed;
 use livi_session_io::line::LineSock;
 use serde_json::Value;
@@ -42,12 +43,12 @@ impl HelperSock {
         }
     }
 
-    async fn request(&self, line: &str) -> Result<Value, String> {
-        self.sock.request(line, TIMEOUT).await
+    async fn request(&self, request: CpRequest) -> Result<Value, String> {
+        self.sock.request(&request.to_string(), TIMEOUT).await
     }
 
-    async fn request_ok(&self, line: &str) -> Result<Value, String> {
-        let res = self.request(line).await?;
+    async fn request_ok(&self, request: CpRequest) -> Result<Value, String> {
+        let res = self.request(request).await?;
         if res.get("ok") == Some(&Value::Bool(true)) {
             Ok(res)
         } else {
@@ -60,7 +61,7 @@ impl HelperSock {
     }
 
     pub async fn certificate(&self) -> Result<Vec<u8>, String> {
-        let res = self.request_ok("certificate").await?;
+        let res = self.request_ok(CpRequest::Certificate).await?;
         if let Some(major) = res.get("protocolMajor").and_then(Value::as_u64) {
             *self
                 .protocol_major
@@ -84,53 +85,50 @@ impl HelperSock {
     }
 
     pub async fn sign(&self, digest: &[u8]) -> Result<Vec<u8>, String> {
-        data_of(
-            &self
-                .request_ok(&format!("sign {}", STANDARD.encode(digest)))
-                .await?,
-        )
+        data_of(&self.request_ok(CpRequest::Sign(digest.to_vec())).await?)
     }
 
     pub async fn disconnect_bt(&self, mac: &str) -> Result<(), String> {
-        self.request_ok(&format!("disconnect {mac}"))
+        self.request_ok(CpRequest::Disconnect(mac.to_string()))
             .await
             .map(drop)
     }
 
     pub async fn drop_iap2(&self) -> Result<(), String> {
-        self.request_ok("drop-iap2").await.map(drop)
+        self.request_ok(CpRequest::DropIap2).await.map(drop)
     }
 
     pub async fn start_wired(&self, usb_udid: &str) -> Result<(), String> {
-        self.request_ok(&format!("start-wired {usb_udid}"))
+        self.request_ok(CpRequest::StartWired(usb_udid.to_string()))
             .await
             .map(drop)
     }
 
     pub async fn reset_wired(&self, usb_udid: &str) -> Result<(), String> {
-        self.request_ok(&format!("reset-wired {usb_udid}"))
+        self.request_ok(CpRequest::ResetWired(usb_udid.to_string()))
             .await
             .map(drop)
     }
 
     pub async fn send_location(&self, nmea: &str) -> Result<(), String> {
-        self.request(&format!("location {}", STANDARD.encode(nmea)))
+        self.request(CpRequest::Location(nmea.to_string()))
             .await
             .map(drop)
     }
 
     pub async fn send_vehicle_status(&self, status: &Value) -> Result<(), String> {
-        self.request(&format!("vehicle-status {status}"))
+        self.request(CpRequest::VehicleStatus(status.clone()))
             .await
             .map(drop)
     }
 
     pub async fn seek(&self, ms: u32, bt_mac: Option<&str>) -> Result<(), String> {
-        let line = match bt_mac {
-            Some(mac) => format!("seek {ms} {mac}"),
-            None => format!("seek {ms}"),
-        };
-        self.request(&line).await.map(drop)
+        self.request(CpRequest::Seek {
+            ms,
+            bt_mac: bt_mac.map(str::to_string),
+        })
+        .await
+        .map(drop)
     }
 
     pub async fn send_reconnect_targets(
@@ -138,20 +136,18 @@ impl HelperSock {
         targets: &[(String, Option<String>)],
     ) -> Result<(), String> {
         let _in_turn = self.targets.lock().await;
-        let list: Vec<Value> = targets
-            .iter()
-            .map(|(mac, uuid)| Value::Array(vec![mac.clone().into(), uuid.clone().into()]))
-            .collect();
-        self.request(&format!("reconnect-targets {}", Value::Array(list)))
+        self.request(CpRequest::ReconnectTargets(targets.to_vec()))
             .await
             .map(drop)
     }
 
     pub async fn open_tunnel(&self, cid: &str, bt_mac: &str) -> std::io::Result<UnixStream> {
         let mut sock = UnixStream::connect(self.sock.path()).await?;
-        let header = format!("tunnel {cid} {bt_mac}");
-        sock.write_all(format!("{}\n", header.trim_end()).as_bytes())
-            .await?;
+        let header = CpRequest::Tunnel {
+            cid: cid.to_string(),
+            bt_mac: Some(bt_mac.to_string()).filter(|m| !m.is_empty()),
+        };
+        sock.write_all(format!("{header}\n").as_bytes()).await?;
         Ok(sock)
     }
 

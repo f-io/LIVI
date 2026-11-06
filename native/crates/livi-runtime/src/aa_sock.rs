@@ -5,6 +5,7 @@
 use std::io;
 use std::path::Path;
 
+use livi_core_proto::helper_requests::AaRequest;
 use tokio::net::UnixStream;
 
 use crate::shared_sock::{bind, err_json, ok_json, read_line, reply, run_subscriber};
@@ -35,38 +36,24 @@ pub async fn serve(path: &Path, deps: AaSockDeps) -> io::Result<()> {
 
 async fn handle(mut stream: UnixStream, deps: std::sync::Arc<AaSockDeps>) -> io::Result<()> {
     let line = read_line(&mut stream).await?;
-    let (verb, arg) = match line.split_once(' ') {
-        Some((v, a)) => (v, a.trim()),
-        None => (line.as_str(), ""),
-    };
-
-    if verb == "subscribe" {
-        return run_subscriber(stream, deps.events.clone(), "aa-sock").await;
-    }
-
-    let json = match verb {
-        "wired-phones" => {
-            let ids: Vec<String> =
-                serde_json::from_str(if arg.is_empty() { "[]" } else { arg }).unwrap_or_default();
+    let json = match AaRequest::parse(&line) {
+        Ok(AaRequest::Subscribe) => {
+            return run_subscriber(stream, deps.events.clone(), "aa-sock").await;
+        }
+        Ok(AaRequest::WiredPhones(ids)) => {
             (deps.set_wired_phones)(ids);
             ok_json()
         }
-        "sco-sink" => {
-            let target = arg.split_once(' ').and_then(|(feed, id)| {
-                id.trim()
-                    .parse::<u32>()
-                    .ok()
-                    .map(|id| (feed.to_owned(), id))
-            });
+        Ok(AaRequest::ScoSink(target)) => {
             (deps.set_sco_sink)(target);
             ok_json()
         }
-        "restart-usb" => {
-            let n = (deps.restart_usb)(arg);
+        Ok(AaRequest::RestartUsb(serial)) => {
+            let n = (deps.restart_usb)(serial.as_deref().unwrap_or(""));
             println!("[aa-sock] restart-usb: {n} session(s) end for a fresh start");
             format!("{{\"ok\":true,\"count\":{n}}}")
         }
-        other => err_json(&format!("unknown command: {other}")),
+        Err(e) => err_json(&e),
     };
     reply(&mut stream, &json).await
 }

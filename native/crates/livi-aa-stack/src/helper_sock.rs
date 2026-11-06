@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use livi_core_proto::helper_requests::AaRequest;
 pub use livi_session_io::line::Feed;
 use livi_session_io::line::LineSock;
 use serde_json::Value;
@@ -24,26 +25,23 @@ impl AaHelperSock {
         }
     }
 
-    pub async fn request(&self, line: &str) -> Result<Value, String> {
-        self.sock.request(line, TIMEOUT).await
+    async fn request(&self, request: AaRequest) -> Result<Value, String> {
+        self.sock.request(&request.to_string(), TIMEOUT).await
     }
 
     pub async fn set_wired_phones(&self, ids: &[String]) -> Result<Value, String> {
-        self.request(&format!("wired-phones {}", Value::from(ids.to_vec())))
-            .await
+        self.request(AaRequest::WiredPhones(ids.to_vec())).await
     }
 
     pub async fn set_sco_sink(&self, sink: Option<(&str, u32)>) -> Result<Value, String> {
-        match sink {
-            Some((feed, stream)) if !feed.is_empty() => {
-                self.request(&format!("sco-sink {feed} {stream}")).await
-            }
-            _ => self.request("sco-sink").await,
-        }
+        let sink = sink
+            .filter(|(feed, _)| !feed.is_empty())
+            .map(|(feed, stream)| (feed.to_string(), stream));
+        self.request(AaRequest::ScoSink(sink)).await
     }
 
     pub async fn restart_usb(&self) -> Result<Value, String> {
-        self.request("restart-usb").await
+        self.request(AaRequest::RestartUsb(None)).await
     }
 
     pub fn subscribe(&self, retry: Duration) -> mpsc::UnboundedReceiver<Feed> {

@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use tokio::sync::{Notify, mpsc};
 
-use base64::Engine;
 use iap2_csm::CsmMessage;
 use iap2_csm::messages::authentication::*;
 use iap2_csm::messages::car_play::*;
@@ -473,12 +472,9 @@ async fn location_and_vehicle_status_reach_the_phone_that_asked() {
     ));
     bring_up(&mut phone, &mut rx).await;
 
-    vehicle
-        .push_status(r#"{"range":320,"outsideTemperature":12}"#)
-        .unwrap();
-    let block = base64::engine::general_purpose::STANDARD
-        .encode("$GPGGA,1*00\r\n$GPRMC,2*00\r\n$GPGSV,3*00\r\n");
-    vehicle.push_location(&block).unwrap();
+    vehicle.push_status(&serde_json::json!({ "range": 320, "outsideTemperature": 12 }));
+    let block = "$GPGGA,1*00\r\n$GPRMC,2*00\r\n$GPGSV,3*00\r\n".to_string();
+    vehicle.push_location(block.clone());
 
     phone
         .send(StartVehicleStatusUpdates {}.encode())
@@ -515,7 +511,7 @@ async fn location_and_vehicle_status_reach_the_phone_that_asked() {
         Some(BringupEvent::Incoming { msg_id: 0xFFFA, .. })
     ) {}
 
-    vehicle.push_location(&block).unwrap();
+    vehicle.push_location(block.clone());
     let first = LocationInformation::decode(&phone.expect(0xFFFB).await).unwrap();
     let second = LocationInformation::decode(&phone.expect(0xFFFB).await).unwrap();
     assert_eq!(
@@ -523,7 +519,7 @@ async fn location_and_vehicle_status_reach_the_phone_that_asked() {
         ("$GPGGA,1*00", "$GPRMC,2*00")
     );
 
-    vehicle.push_status(r#"{"range":300}"#).unwrap();
+    vehicle.push_status(&serde_json::json!({ "range": 300 }));
     let status = VehicleStatusUpdate::decode(&phone.expect(0xA101).await).unwrap();
     assert_eq!(
         (status.range, status.outside_temperature),
@@ -542,8 +538,8 @@ async fn location_and_vehicle_status_reach_the_phone_that_asked() {
         rx.recv().await,
         Some(BringupEvent::Incoming { msg_id: 0xA102, .. })
     ) {}
-    vehicle.push_location(&block).unwrap();
-    vehicle.push_status(r#"{"range":290}"#).unwrap();
+    vehicle.push_location(block.clone());
+    vehicle.push_status(&serde_json::json!({ "range": 290 }));
     phone
         .send(StartVehicleStatusUpdates {}.encode())
         .await
@@ -567,7 +563,7 @@ async fn a_seek_reaches_the_phone_as_the_new_elapsed_time() {
     ));
     bring_up(&mut phone, &mut rx).await;
 
-    vehicle.push_seek("61000").unwrap();
+    vehicle.push_seek(61000, None);
     let jump = SetNowPlayingInformation::decode(&phone.expect(0x5003).await).unwrap();
     assert_eq!(jump.elapsed_ms, Some(61000));
 
@@ -580,7 +576,7 @@ async fn a_seek_reaches_the_phone_as_the_new_elapsed_time() {
         rx.recv().await,
         Some(BringupEvent::Incoming { msg_id: 0x4E0E, .. })
     ) {}
-    vehicle.push_seek("62000 aa:bb:cc:dd:ee:ff").unwrap();
+    vehicle.push_seek(62000, Some("aa:bb:cc:dd:ee:ff".into()));
     let jump = SetNowPlayingInformation::decode(&phone.expect(0x5003).await).unwrap();
     assert_eq!(jump.elapsed_ms, Some(62000));
 }

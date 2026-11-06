@@ -16,6 +16,7 @@ use tokio::sync::{Notify, mpsc, watch};
 
 use iap2_link::LinkConfig;
 use livi_core_proto::helper_events::{HelperKind, NowPlayingPatch};
+use livi_core_proto::helper_requests::CpRequest;
 
 use crate::bringup::{BringupEvent, CpConfig, run_accessory};
 use crate::driver::{ArtworkRx, LinkChannel, spawn_link};
@@ -143,29 +144,22 @@ where
     A: AsyncAuth + Clone + Send + 'static,
 {
     let line = read_header(&mut stream).await?;
-    let (verb, arg) = match line.split_once(' ') {
-        Some((v, a)) => (v, a.trim()),
-        None => (line.as_str(), ""),
+    let request = match CpRequest::parse(&line) {
+        Ok(request) => request,
+        Err(e) => return reply(&mut stream, &err_json(&e)).await,
     };
 
-    match verb {
-        "subscribe" => run_subscriber(stream, bcast).await,
-        "tunnel" => {
-            let (cid, bt_mac) = match arg.rsplit_once(' ') {
-                Some((c, m)) if m.contains(':') => (c.trim(), m),
-                _ => (arg, ""),
-            };
-            if state.carkit_blocks(bt_mac) {
+    let json = match request {
+        CpRequest::Subscribe => return run_subscriber(stream, bcast).await,
+        CpRequest::Tunnel { cid, bt_mac } => {
+            let shown = bt_mac.as_deref().unwrap_or("unknown");
+            if state.carkit_blocks(bt_mac.as_deref().unwrap_or("")) {
                 println!(
-                    "[cp-sock] tunnel refused, iAP2 already runs over USB carkit (cid={cid}, btMac={})",
-                    if bt_mac.is_empty() { "unknown" } else { bt_mac }
+                    "[cp-sock] tunnel refused, iAP2 already runs over USB carkit (cid={cid}, btMac={shown})"
                 );
                 return Ok(());
             }
-            println!(
-                "[cp-sock] tunnel up (cid={cid}, btMac={})",
-                if bt_mac.is_empty() { "unknown" } else { bt_mac }
-            );
+            println!("[cp-sock] tunnel up (cid={cid}, btMac={shown})");
             let cfg = match &bluez {
                 Some(bluez) => LiviSockConfig {
                     identity: Identity {
@@ -176,145 +170,92 @@ where
                 },
                 None => cfg,
             };
-            run_tunnel(
-                stream,
-                auth,
-                cfg,
-                bcast,
-                cid.to_string(),
-                state.vehicle_feed(),
-            );
-            Ok(())
+            run_tunnel(stream, auth, cfg, bcast, cid, state.vehicle_feed());
+            return Ok(());
         }
-        "certificate" => {
-            let json = match (auth.read_certificate().await, auth.protocol_major().await) {
+        CpRequest::Certificate => {
+            match (auth.read_certificate().await, auth.protocol_major().await) {
                 (Ok(cert), Ok(major)) => format!(
                     "{{\"ok\":true,\"data\":\"{}\",\"protocolMajor\":{}}}",
                     STANDARD.encode(&cert),
                     major
                 ),
                 (Err(e), _) | (_, Err(e)) => err_json(&format!("MFi: {e}")),
-            };
-            reply(&mut stream, &json).await
+            }
         }
-        "sign" => {
-            let json = match STANDARD.decode(arg) {
-                Ok(digest) => match auth.sign(digest).await {
-                    Ok(sig) => format!("{{\"ok\":true,\"data\":\"{}\"}}", STANDARD.encode(&sig)),
-                    Err(e) => err_json(&e),
+        CpRequest::Sign(digest) => match auth.sign(digest).await {
+            Ok(sig) => format!("{{\"ok\":true,\"data\":\"{}\"}}", STANDARD.encode(&sig)),
+            Err(e) => err_json(&e),
+        },
+        CpRequest::Disconnect(mac) => match bluez.as_ref() {
+            Some(bluez) => answer(device_disconnect(&bluez.bus, &bluez.adapter, &mac).await),
+            None => match cfg.disconnect.clone() {
+                Some(drop) => match tokio::task::spawn_blocking(move || drop(mac)).await {
+                    Ok(done) => answer(done),
+                    Err(e) => err_json(&e.to_string()),
                 },
-                Err(e) => err_json(&format!("bad base64: {e}")),
-            };
-            reply(&mut stream, &json).await
-        }
-        "disconnect" => {
-            let json = if arg.is_empty() {
-                err_json("disconnect requires a MAC")
-            } else {
-                match bluez.as_ref() {
-                    Some(bluez) => match device_disconnect(&bluez.bus, &bluez.adapter, arg).await {
-                        Ok(()) => "{\"ok\":true}".to_string(),
-                        Err(e) => err_json(&e),
-                    },
-                    None => match cfg.disconnect.clone() {
-                        Some(drop) => {
-                            let mac = arg.to_string();
-                            match tokio::task::spawn_blocking(move || drop(mac)).await {
-                                Ok(Ok(())) => "{\"ok\":true}".to_string(),
-                                Ok(Err(e)) => err_json(&e),
-                                Err(e) => err_json(&e.to_string()),
-                            }
-                        }
-                        None => err_json("nothing here can drop a bluetooth link"),
-                    },
+                None => err_json("nothing here can drop a bluetooth link"),
+            },
+        },
+        CpRequest::ReconnectTargets(targets) => {
+            let before = state.reconnect_targets();
+            state.set_reconnect_targets(targets);
+            let after = state.reconnect_targets();
+            if before != after
+                && let Some(push) = cfg.targets.clone()
+            {
+                let macs: Vec<&str> = after.iter().map(|(mac, _)| mac.as_str()).collect();
+                println!("[helperd] the dongle pages {macs:?}");
+                if let Ok(Err(e)) = tokio::task::spawn_blocking(move || push(after)).await {
+                    eprintln!("[helperd] the dongle refused the paging list: {e}");
                 }
-            };
-            reply(&mut stream, &json).await
+            }
+            OK.to_string()
         }
-        "reconnect-targets" => {
-            let json = match parse_reconnect_targets(arg) {
-                Ok(targets) => {
-                    let before = state.reconnect_targets();
-                    state.set_reconnect_targets(targets);
-                    let after = state.reconnect_targets();
-                    if before != after
-                        && let Some(push) = cfg.targets.clone()
-                    {
-                        let macs: Vec<&str> = after.iter().map(|(mac, _)| mac.as_str()).collect();
-                        println!("[helperd] the dongle pages {macs:?}");
-                        if let Ok(Err(e)) = tokio::task::spawn_blocking(move || push(after)).await {
-                            eprintln!("[helperd] the dongle refused the paging list: {e}");
-                        }
-                    }
-                    "{\"ok\":true}".to_string()
-                }
-                Err(e) => err_json(&e),
-            };
-            reply(&mut stream, &json).await
+        CpRequest::Location(nmea) => {
+            state.vehicle().push_location(nmea);
+            OK.to_string()
         }
-        "location" => {
-            let json = match state.vehicle().push_location(arg) {
-                Ok(()) => "{\"ok\":true}".to_string(),
-                Err(e) => err_json(&e),
-            };
-            reply(&mut stream, &json).await
+        CpRequest::VehicleStatus(status) => {
+            state.vehicle().push_status(&status);
+            OK.to_string()
         }
-        "vehicle-status" => {
-            let json = match state.vehicle().push_status(arg) {
-                Ok(()) => "{\"ok\":true}".to_string(),
-                Err(e) => err_json(&e),
-            };
-            reply(&mut stream, &json).await
+        CpRequest::Seek { ms, bt_mac } => {
+            state.vehicle().push_seek(ms, bt_mac);
+            OK.to_string()
         }
-        "seek" => {
-            let json = match state.vehicle().push_seek(arg) {
-                Ok(()) => "{\"ok\":true}".to_string(),
-                Err(e) => err_json(&e),
-            };
-            reply(&mut stream, &json).await
-        }
-        "drop-iap2" => {
+        CpRequest::DropIap2 => {
             let n = state.restart_wired();
             println!("[cp-sock] drop-iap2: {n} wired session(s) end for a fresh start");
-            reply(&mut stream, "{\"ok\":true}").await
+            OK.to_string()
         }
-        "start-wired" => {
-            let json = if state.start_wired_again(arg) {
-                println!("[cp-sock] start-wired: {arg} offers CarPlay again");
-                "{\"ok\":true}".to_string()
+        CpRequest::StartWired(udid) => {
+            if state.start_wired_again(&udid) {
+                println!("[cp-sock] start-wired: {udid} offers CarPlay again");
+                OK.to_string()
             } else {
-                err_json(&format!("no wired session for {arg:?}"))
-            };
-            reply(&mut stream, &json).await
+                err_json(&format!("no wired session for {udid:?}"))
+            }
         }
-        "reset-wired" => {
-            let json = if state.reset_wired(arg) {
-                println!("[cp-sock] reset-wired: {arg} gets a USB reset");
-                "{\"ok\":true}".to_string()
+        CpRequest::ResetWired(udid) => {
+            if state.reset_wired(&udid) {
+                println!("[cp-sock] reset-wired: {udid} gets a USB reset");
+                OK.to_string()
             } else {
-                err_json(&format!("no wired session for {arg:?}"))
-            };
-            reply(&mut stream, &json).await
+                err_json(&format!("no wired session for {udid:?}"))
+            }
         }
-        other => reply(&mut stream, &err_json(&format!("unknown command: {other}"))).await,
-    }
+    };
+    reply(&mut stream, &json).await
 }
 
-fn parse_reconnect_targets(arg: &str) -> Result<Vec<(String, Option<String>)>, String> {
-    let value: serde_json::Value = serde_json::from_str(arg).map_err(|e| e.to_string())?;
-    let list = value
-        .as_array()
-        .ok_or("reconnect-targets expects a JSON array")?;
-    list.iter()
-        .map(|pair| {
-            let mac = pair
-                .get(0)
-                .and_then(|v| v.as_str())
-                .ok_or("reconnect-targets entries are [mac, uuid] pairs")?;
-            let uuid = pair.get(1).and_then(|v| v.as_str()).map(str::to_string);
-            Ok((mac.to_string(), uuid))
-        })
-        .collect()
+const OK: &str = "{\"ok\":true}";
+
+fn answer(done: Result<(), String>) -> String {
+    match done {
+        Ok(()) => OK.to_string(),
+        Err(e) => err_json(&e),
+    }
 }
 
 fn err_json(msg: &str) -> String {
