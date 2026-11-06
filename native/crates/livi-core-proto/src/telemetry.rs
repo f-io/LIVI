@@ -177,6 +177,8 @@ pub struct TelemetrySnapshot {
     /// Only LIVI's own receiver sends it, a push replaces it whole.
     pub gnss: Option<GnssInfo>,
     pub tire_pressure: Option<TirePressure>,
+    pub telltales: Option<Telltales>,
+    pub dash_test: Option<bool>,
     /// No receiver uses it, it is for tooling and diagnostics.
     pub can: Option<CanFrame>,
     pub climate: Option<Climate>,
@@ -199,6 +201,33 @@ pub struct TirePressure {
     pub front_right_kpa: Option<f64>,
     pub rear_left_kpa: Option<f64>,
     pub rear_right_kpa: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Telltales {
+    pub brake: Option<bool>,
+    pub seat_belt: Option<bool>,
+    pub airbag: Option<bool>,
+    pub side_airbag: Option<bool>,
+    pub oil_pressure: Option<bool>,
+    pub coolant: Option<bool>,
+    pub charging: Option<bool>,
+    pub abs: Option<bool>,
+    pub esc: Option<bool>,
+    pub tyre_pressure: Option<bool>,
+    pub engine: Option<bool>,
+    pub brake_wear: Option<bool>,
+    pub preheat: Option<bool>,
+    pub choke: Option<bool>,
+    pub rear_fog: Option<bool>,
+    pub passenger_airbag_off: Option<bool>,
+    pub windscreen_defrost: Option<bool>,
+    pub rear_defrost: Option<bool>,
+    pub position: Option<bool>,
+    pub parking_lamps: Option<bool>,
+    pub front_fog: Option<bool>,
+    pub auto_high_beam: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -286,6 +315,11 @@ mod tests {
                 driver_target_c: Some(21.5),
                 ..Default::default()
             }),
+            dash_test: Some(true),
+            telltales: Some(Telltales {
+                passenger_airbag_off: Some(true),
+                ..Default::default()
+            }),
             ..Default::default()
         };
         let named = serde_json::to_value(&snapshot).unwrap();
@@ -298,6 +332,8 @@ mod tests {
             (&json!(1), &json!([2]))
         );
         assert_eq!(named["climate"]["driverTargetC"], 21.5);
+        assert_eq!(named["telltales"]["passengerAirbagOff"], true);
+        assert_eq!(named["dashTest"], true);
         let unknown = serde_json::from_value::<Climate>(json!({ "seatCooling": 1 }));
         assert!(
             unknown.is_err(),

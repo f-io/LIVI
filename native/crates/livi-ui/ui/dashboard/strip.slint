@@ -1,0 +1,360 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { Theme } from "../theme.slint";
+import { Blink, DashState, LampData, Signal } from "state.slint";
+import { Fact, Maneuver } from "nav.slint";
+
+component Plate inherits Rectangle {
+    in property <length> u;
+    border-radius: 22 * u;
+    background: Theme.dark ? #0b1512d0 : #ffffffd8;
+    drop-shadow-blur: 18 * u;
+    drop-shadow-color: #00000040;
+}
+
+component Bar inherits Rectangle {
+    in property <length> u;
+    in property <float> ratio;
+    in property <bool> warn;
+    in property <float> mark;
+    property <length> fill: self.width * clamp(root.ratio, 0, 1);
+    property <length> red-from: root.mark > 0 ? self.width * clamp(root.mark, 0, 1) : self.width;
+    height: 14 * u;
+    border-radius: self.height / 2;
+    background: Theme.text.with-alpha(0.18);
+    animate fill { duration: 420ms; easing: ease-out; }
+    if root.mark > 0: Rectangle {
+        x: root.red-from;
+        width: root.width - root.red-from;
+        border-top-right-radius: root.border-radius;
+        border-bottom-right-radius: root.border-radius;
+        background: Signal.red.with-alpha(0.35);
+    }
+    Rectangle {
+        x: 0;
+        width: min(root.fill, root.red-from);
+        border-top-left-radius: root.border-radius;
+        border-bottom-left-radius: root.border-radius;
+        border-top-right-radius: root.fill > root.red-from ? 0 : root.border-radius;
+        border-bottom-right-radius: root.fill > root.red-from ? 0 : root.border-radius;
+        background: root.warn ? Signal.amber : Theme.text.with-alpha(0.9);
+    }
+    if root.fill > root.red-from: Rectangle {
+        x: root.red-from;
+        width: root.fill - root.red-from;
+        border-top-right-radius: root.border-radius;
+        border-bottom-right-radius: root.border-radius;
+        background: Signal.red;
+    }
+    if root.mark > 0: Rectangle {
+        x: root.red-from - self.width / 2;
+        y: (root.height - self.height) / 2;
+        width: 4 * root.u;
+        height: root.height + 6 * root.u;
+        border-radius: self.width / 2;
+        background: Signal.red;
+    }
+}
+
+component Arrow inherits Rectangle {
+    in property <bool> on;
+    in property <bool> left;
+    Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../icons/PlayArrow.svg");
+        transform-rotation: root.left ? 180deg : 0deg;
+        colorize: root.on && Blink.on ? Signal.green : Theme.text.with-alpha(0.12);
+    }
+}
+
+component Lamps inherits Rectangle {
+    in property <length> u;
+    in property <length> room;
+    in property <[LampData]> lamps;
+    in property <length> most: 50 * root.u;
+    property <length> cell: clamp((root.room / max(1, root.lamps.length)) / 1.35, 24 * root.u, root.most);
+    width: row.preferred-width;
+    height: root.cell;
+    row := HorizontalLayout {
+        spacing: root.cell * 0.35;
+        for lamp in root.lamps: Rectangle {
+            width: root.cell;
+            property <color> tint: lamp.tint == 0 ? Signal.red : lamp.tint == 1 ? Signal.amber : lamp.tint == 2 ? Signal.green : Signal.blue;
+            opacity: !lamp.blink || Blink.on ? 1 : 0;
+            Image {
+                width: root.cell * 0.85;
+                height: root.cell * 0.85;
+                source: lamp.icon;
+                colorize: parent.tint;
+            }
+            if lamp.glyph != "": Text {
+                x: (parent.width - self.width) / 2 + (lamp.glyph == "P" ? root.cell * 0.04 : 0);
+                width: self.preferred-width;
+                text: lamp.glyph;
+                font-size: (lamp.glyph.character-count > 1 ? 6.6 : 9.5) / 24 * 0.85 * root.cell;
+                font-weight: 700;
+                color: parent.tint;
+            }
+        }
+    }
+}
+
+export component Strip inherits Rectangle {
+    property <length> u: min(root.height / 720, root.width / 1280);
+    property <length> pad: 40 * u;
+    property <length> line-h: 136 * u;
+    property <length> bar-h: root.line-h;
+    property <length> map-h: root.height - root.bar-h;
+    property <length> bar-w: clamp(root.width / 2 - 300 * root.u - root.pad - 200 * root.u, 100 * root.u, 220 * root.u);
+    property <length> card-y: 28 * u;
+    property <length> card-h: 124 * u;
+    property <length> lamp-room: root.width - 2 * root.pad - 2 * 450 * root.u;
+
+    Rectangle {
+        y: root.map-h - 60 * root.u;
+        height: 60 * root.u;
+        background: @linear-gradient(180deg, transparent 0%, Theme.background 100%);
+    }
+    Rectangle {
+        y: root.map-h;
+        height: root.bar-h;
+        background: Theme.background;
+    }
+
+    if DashState.nav-active: Plate {
+        u: root.u;
+        x: root.pad;
+        y: root.card-y;
+        width: 440 * root.u;
+        height: root.card-h;
+        HorizontalLayout {
+            padding-left: 26 * root.u;
+            padding-right: 26 * root.u;
+            spacing: 22 * root.u;
+            Maneuver {
+                y: (parent.height - self.height) / 2;
+                size: 62 * root.u;
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 2 * root.u;
+                Text {
+                    text: DashState.nav-distance != "" ? DashState.nav-distance : "—";
+                    font-size: 40 * root.u;
+                    font-weight: 700;
+                    color: Theme.text;
+                }
+                Text {
+                    text: DashState.nav-after-road != "" ? DashState.nav-after-road : DashState.nav-maneuver != "" ? DashState.nav-maneuver : DashState.nav-road;
+                    font-size: 26 * root.u;
+                    color: Theme.text.with-alpha(0.8);
+                    overflow: elide;
+                }
+            }
+        }
+    }
+
+    if DashState.nav-active && DashState.nav-lanes.length > 0: Plate {
+        u: root.u;
+        x: root.pad;
+        y: root.card-y + root.card-h + 12 * root.u;
+        width: lanes.preferred-width;
+        height: 72 * root.u;
+        lanes := HorizontalLayout {
+            padding-left: 18 * root.u;
+            padding-right: 18 * root.u;
+            spacing: 6 * root.u;
+            for lane in DashState.nav-lanes: Rectangle {
+                width: 46 * root.u;
+                for arrow in lane.arrows: Image {
+                    width: 40 * root.u;
+                    height: 40 * root.u;
+                    source: @image-url("../icons/Straight.svg");
+                    transform-rotation: arrow.angle * 1deg;
+                    colorize: arrow.on ? Theme.text : Theme.text.with-alpha(0.25);
+                }
+            }
+        }
+    }
+
+    if DashState.nav-active && (DashState.nav-eta != "" || DashState.nav-time-left != "" || DashState.nav-destination-distance != ""): Plate {
+        u: root.u;
+        x: root.pad;
+        y: root.map-h - 30 * root.u - self.height;
+        width: eta.preferred-width;
+        height: 58 * root.u;
+        border-radius: 29 * root.u;
+        eta := HorizontalLayout {
+            padding-left: 24 * root.u;
+            padding-right: 24 * root.u;
+            spacing: 26 * root.u;
+            if DashState.nav-eta != "": Fact {
+                u: root.u;
+                size: 24;
+                icon: @image-url("../icons/Flag.svg");
+                text: DashState.nav-eta;
+            }
+            if DashState.nav-time-left != "": Fact {
+                u: root.u;
+                size: 24;
+                dim: 0.75;
+                icon: @image-url("../icons/AccessTime.svg");
+                text: DashState.nav-time-left;
+            }
+            if DashState.nav-destination-distance != "": Fact {
+                u: root.u;
+                size: 24;
+                dim: 0.75;
+                icon: @image-url("../icons/Route.svg");
+                text: DashState.nav-destination-distance;
+            }
+        }
+    }
+
+    HorizontalLayout {
+        x: 0;
+        width: root.width - root.pad;
+        y: 24 * root.u;
+        height: 40 * root.u;
+        spacing: 26 * root.u;
+        alignment: end;
+        if DashState.ambient != "": Text {
+            text: DashState.ambient;
+            font-size: 26 * root.u;
+            font-weight: 500;
+            color: Theme.text;
+            vertical-alignment: center;
+        }
+        Text {
+            text: DashState.clock;
+            font-size: 26 * root.u;
+            font-weight: 500;
+            color: Theme.text;
+            vertical-alignment: center;
+        }
+    }
+
+    lights := Lamps {
+        u: root.u;
+        room: root.lamp-room;
+        lamps: DashState.light-lamps;
+        x: (root.width - self.width) / 2;
+        y: root.map-h - 34 * root.u - self.height / 2;
+    }
+    warn := Lamps {
+        u: root.u;
+        room: root.width - 2 * root.pad;
+        lamps: DashState.warn-lamps;
+        most: 30 * root.u;
+        x: (root.width - self.width) / 2;
+        y: root.map-h + 1 * root.u;
+    }
+
+    Rectangle {
+        y: root.map-h + 4 * root.u;
+        height: root.line-h;
+
+        HorizontalLayout {
+            x: root.pad + 10 * root.u;
+            spacing: 16 * root.u;
+            Image {
+                y: (parent.height - self.height) / 2;
+                width: 36 * root.u;
+                height: 36 * root.u;
+                source: DashState.battery ? @image-url("../icons/BatteryHorizontal.svg") : @image-url("../icons/LocalGasStationOutlined.svg");
+                colorize: DashState.fuel-low ? Signal.amber : Theme.text;
+            }
+            Bar {
+                y: (parent.height - self.height) / 2;
+                width: root.bar-w;
+                u: root.u;
+                ratio: DashState.fuel / 100;
+                warn: DashState.fuel-low;
+            }
+            Text {
+                text: DashState.range != "" ? DashState.range : DashState.fuel + "%";
+                font-size: 30 * root.u;
+                color: DashState.fuel-low ? Signal.amber : Theme.text;
+                vertical-alignment: center;
+            }
+        }
+
+        Arrow {
+            x: root.width / 2 - 260 * root.u - self.width;
+            y: (parent.height - self.height) / 2;
+            width: 40 * root.u;
+            height: 40 * root.u;
+            left: true;
+            on: DashState.turn-left || DashState.hazards;
+        }
+
+        speed := Text {
+            x: (root.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            text: DashState.speed-text;
+            font-size: 92 * root.u;
+            font-weight: 500;
+            color: Theme.text;
+        }
+        Text {
+            x: root.width / 2 + speed.width / 2 + 12 * root.u;
+            y: (parent.height - self.height) / 2 + 22 * root.u;
+            text: DashState.speed-label == "MPH" ? "mph" : "km/h";
+            font-size: 24 * root.u;
+            color: Theme.text.with-alpha(0.6);
+        }
+
+        Rectangle {
+            x: root.width / 2 + 170 * root.u;
+            y: (parent.height - self.height) / 2;
+            width: 64 * root.u;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: Theme.text.with-alpha(0.14);
+            Text {
+                text: DashState.gear;
+                font-size: 32 * root.u;
+                font-weight: 700;
+                color: Theme.text;
+            }
+        }
+
+        Arrow {
+            x: root.width / 2 + 260 * root.u;
+            y: (parent.height - self.height) / 2;
+            width: 40 * root.u;
+            height: 40 * root.u;
+            left: false;
+            on: DashState.turn-right || DashState.hazards;
+        }
+
+        HorizontalLayout {
+            x: root.width - root.pad - 10 * root.u - self.width;
+            spacing: 16 * root.u;
+            alignment: end;
+            Text {
+                text: DashState.rpm-text;
+                font-size: 30 * root.u;
+                color: Theme.text;
+                vertical-alignment: center;
+            }
+            Bar {
+                y: (parent.height - self.height) / 2;
+                width: root.bar-w;
+                u: root.u;
+                ratio: DashState.rpm-t;
+                mark: DashState.redline-t;
+            }
+            Image {
+                y: (parent.height - self.height) / 2;
+                width: 36 * root.u;
+                height: 36 * root.u;
+                source: @image-url("../icons/SpeedOutlined.svg");
+                colorize: Theme.text;
+            }
+        }
+    }
+}

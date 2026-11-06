@@ -7,9 +7,10 @@ import { Theme } from "theme.slint";
 import { Gauge, Readout } from "dashboard/gauge.slint";
 import { NavFull, NavMini } from "dashboard/nav.slint";
 import { Blink, DashState, Signal } from "dashboard/state.slint";
+import { Strip } from "dashboard/strip.slint";
 import { Dots, Lamp, Level } from "dashboard/widgets.slint";
 
-export { CapData, DashState, GaugeData, LabelData, TrailData } from "dashboard/state.slint";
+export { CapData, DashState, GaugeData, LabelData, LampData, LaneArrowData, LaneData, TrailData } from "dashboard/state.slint";
 
 export component Dashboard inherits Rectangle {
     property <float> s: min(root.width / 1280px, root.height / 720px);
@@ -214,10 +215,15 @@ export component Dashboard inherits Rectangle {
         u: root.u;
     }
 
+    if DashState.enabled && DashState.strip: Strip {
+        width: root.width;
+        height: root.height;
+    }
+
     if DashState.enabled && DashState.page-count > 1: Dots {
         Ui-height: root.height;
         x: (root.width - self.width) / 2;
-        y: root.height - self.height - clamp(root.height * 0.022, 10px, 18px);
+        y: DashState.strip ? clamp(root.height * 0.022, 10px, 18px) : root.height - self.height - clamp(root.height * 0.022, 10px, 18px);
         opacity: DashState.dots-shown ? 1 : 0;
         animate opacity { duration: 220ms; }
     }

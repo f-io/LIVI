@@ -23,19 +23,30 @@ component Tab inherits Rectangle {
     in property <bool> enabled: true;
     callback clicked();
 
+    property <bool> cursor: touch.has-hover || root.focused;
     property <color> tint: page == Page.projection
         ? (phone == PhoneState.streaming ? Theme.highlight : phone == PhoneState.connected ? Theme.text : Theme.text-disabled)
-        : Theme.text;
+        : root.active ? Theme.text : Theme.text-secondary;
 
     vertical-stretch: 1;
     min-height: Ui.icon-size;
     preferred-height: Ui.icon-size + (Ui.xs-icons ? 10px : 20px);
 
+    Rectangle {
+        width: min(Ui.icon-size + 16px, root.height);
+        height: self.width;
+        border-radius: 12px;
+        background: root.active ? Theme.lit-pressed : touch.pressed ? Theme.lit : transparent;
+        border-width: root.cursor ? 2px : 0;
+        border-color: Theme.primary;
+        animate background { duration: 120ms; }
+    }
+
     Image {
         width: Ui.icon-size;
         height: Ui.icon-size;
-        colorize: touch.has-hover || root.focused ? Theme.primary : root.tint;
-        opacity: root.active || touch.has-hover || root.focused || root.page == Page.projection ? 1 : 0.6;
+        colorize: root.cursor ? Theme.primary : root.tint;
+        opacity: root.active || root.cursor || root.page == Page.projection ? 1 : 0.7;
         source: root.icon;
     }
 
@@ -54,7 +65,7 @@ export component Nav inherits Rectangle {
     in property <bool> asleep;
     callback select(Page);
 
-    width: Ui.xs-icons ? Ui.nav-width : max(Ui.icon-size, Ui.show-clock ? clock-text.preferred-width : 0) + 2 * Ui.nav-pad + 1px;
+    width: Ui.xs-icons ? Ui.nav-width : max(Ui.icon-size + 16px, Ui.show-clock ? clock-text.preferred-width : 0) + 2 * Ui.nav-pad + 1px;
     background: Theme.background;
     opacity: root.asleep ? 0 : 1;
     animate opacity { duration: 220ms; easing: ease; }
@@ -68,7 +79,8 @@ export component Nav inherits Rectangle {
                 y: 16px;
                 text: root.clock;
                 color: Theme.text;
-                font-size: Ui.xs-icons ? 16px : 24px;
+                font-size: Ui.xs-icons ? 16px : 20px;
+                font-weight: 500;
             }
         }
         for tab[i] in root.tabs: Tab {
@@ -86,6 +98,6 @@ export component Nav inherits Rectangle {
     Rectangle {
         x: root.right-hand ? 0 : parent.width - 1px;
         width: 1px;
-        background: Theme.divider;
+        background: Theme.hairline;
     }
 }

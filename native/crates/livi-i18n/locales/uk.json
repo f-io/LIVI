@@ -44,6 +44,7 @@
     "telemetry": "Телеметрія",
     "dashboard": "Дашборд",
     "dashboardLayouts": "Дашборди",
+    "layout_livi_strip": "Карта з інформаційною смугою",
     "layout_livi_navMini": "Прилади з покроковою навігацією",
     "layout_livi_navFull": "Прилади з покроковою навігацією (розширено)",
     "layout_livi_clusterFull": "Прилади з картою",

@@ -510,6 +510,8 @@ pub struct Devices {
     pub helper: HelperSock,
     sent: Option<Targets>,
     leaving: bool,
+    ap_ready: bool,
+    held: bool,
 }
 
 impl Devices {
@@ -520,11 +522,30 @@ impl Devices {
             helper,
             sent: None,
             leaving: false,
+            ap_ready: true,
+            held: false,
         }
+    }
+
+    pub fn ap_ready(&mut self, ready: bool) -> bool {
+        let opened = ready && !self.ap_ready;
+        self.ap_ready = ready;
+        if opened && self.held {
+            println!("[devices] the access point is up, paging starts");
+        }
+        self.held = false;
+        opened
     }
 
     pub fn page(&mut self, targets: Targets, again: bool) {
         if self.leaving || (!again && self.sent.as_ref() == Some(&targets)) {
+            return;
+        }
+        if !self.ap_ready {
+            if !targets.is_empty() && !self.held {
+                println!("[devices] paging waits for the access point");
+            }
+            self.held = true;
             return;
         }
         if !targets.is_empty() {
@@ -706,6 +727,24 @@ mod tests {
             wired,
             ..Default::default()
         }
+    }
+
+    #[tokio::test]
+    async fn paging_waits_for_the_access_point() {
+        let dir = TempDir::new();
+        let mut d = Devices::new(
+            &dir.0.join("devices.json"),
+            HelperSock::new(dir.0.join("cp-bt.sock")),
+            Shared::new(dir.0.join("shared.sock")),
+        );
+        let targets = vec![("AA:BB:CC:DD:EE:01".to_string(), None)];
+        assert!(!d.ap_ready(false));
+        d.page(targets.clone(), false);
+        assert_eq!(d.sent, None);
+        assert!(d.ap_ready(true));
+        d.page(targets.clone(), true);
+        assert_eq!(d.sent, Some(targets));
+        assert!(!d.ap_ready(true));
     }
 
     #[test]

@@ -439,6 +439,7 @@ pub struct UiAsks {
     pub radio_from_phone: mpsc::UnboundedSender<crate::radio::RadioAsk>,
     pub input_from_compositor: mpsc::UnboundedSender<Input>,
     pub commands_back: mpsc::UnboundedSender<UiCommand>,
+    pub ap_ready: watch::Receiver<bool>,
 }
 
 pub struct UiSenders {
@@ -452,6 +453,7 @@ pub struct UiSenders {
     pub update: mpsc::UnboundedSender<UpdateAsk>,
     pub activity: watch::Receiver<Activity>,
     pub radio: mpsc::UnboundedSender<crate::radio::RadioAsk>,
+    pub ap_ready: watch::Sender<bool>,
 }
 
 pub struct DongleAsks {
@@ -471,6 +473,7 @@ pub fn ui_channels(wants: PerScreen<Front>) -> (UiSenders, UiAsks, DongleAsks, U
     let (update_tx, update_rx) = mpsc::unbounded_channel();
     let (activity_tx, activity_rx) = watch::channel(Activity::default());
     let (radio_tx, radio_rx) = mpsc::unbounded_channel();
+    let (ap_ready_tx, ap_ready_rx) = watch::channel(true);
     let feed = spectrum::Feed::new();
     (
         UiSenders {
@@ -484,6 +487,7 @@ pub fn ui_channels(wants: PerScreen<Front>) -> (UiSenders, UiAsks, DongleAsks, U
             update: update_tx,
             activity: activity_rx,
             radio: radio_tx.clone(),
+            ap_ready: ap_ready_tx,
         },
         UiAsks {
             wants: wants_rx,
@@ -496,6 +500,7 @@ pub fn ui_channels(wants: PerScreen<Front>) -> (UiSenders, UiAsks, DongleAsks, U
             radio_from_phone: radio_tx,
             input_from_compositor: input_tx,
             commands_back: commands_tx,
+            ap_ready: ap_ready_rx,
         },
         DongleAsks {
             radios: dongle_rx,
@@ -593,6 +598,7 @@ impl Projection {
             .unwrap_or_else(|| mpsc::unbounded_channel().1);
         let mut themes = std::mem::replace(&mut self.theme_ready.1, mpsc::unbounded_channel().1);
         self.follow_theme(&self.config_seen.clone());
+        self.devices.ap_ready(*asks.ap_ready.borrow_and_update());
         self.activity = Some(asks.activity);
         self.radio = Some(asks.radio_from_phone);
         let mut keep = tokio::time::interval(hands_free::KEEP_EVERY);
@@ -613,6 +619,16 @@ impl Projection {
                     }
                     let wants = *asks.wants.borrow_and_update();
                     self.asked(wants);
+                }
+                changed = asks.ap_ready.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    let ready = *asks.ap_ready.borrow_and_update();
+                    if self.devices.ap_ready(ready) {
+                        let targets = self.targets();
+                        self.devices.page(targets, true);
+                    }
                 }
                 Some(command) = asks.commands.recv() => match command {
                     UiCommand::Media(control) => self.media(control),

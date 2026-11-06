@@ -17,7 +17,8 @@ export component SettingsHeader inherits Rectangle {
 
     height: Metrics.header-h;
 
-    property <length> side: max(Metrics.slot-left, Metrics.slot-right);
+    property <length> lead: root.can-back ? 0.5rem + Metrics.slot-left : 0.5rem + 4px;
+    property <length> trail: root.show-apply ? 0.5rem + Metrics.slot-right : 0;
 
     if root.can-back: Rectangle {
         x: 0.5rem;
@@ -34,13 +35,13 @@ export component SettingsHeader inherits Rectangle {
     }
 
     Text {
-        x: root.side;
-        width: root.width - 2 * root.side;
+        x: root.lead;
+        width: root.width - root.lead - root.trail;
         text: root.title;
         color: Theme.text;
-        font-size: Metrics.title-px;
-        font-weight: 800;
-        horizontal-alignment: center;
+        font-size: Metrics.title-px + 3px;
+        font-weight: 700;
+        horizontal-alignment: left;
         vertical-alignment: center;
         overflow: elide;
     }

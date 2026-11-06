@@ -17,25 +17,34 @@ pub struct Spec {
     pub gauges: bool,
     pub map: bool,
     pub center: Center,
+    pub strip: bool,
 }
 
 const MAP_WITH_GAUGES: Spec = Spec {
     gauges: true,
     map: true,
     center: Center::None,
+    strip: false,
 };
 
 pub fn spec(layout: &str) -> Spec {
     match layout {
+        "livi.strip" => Spec {
+            gauges: false,
+            strip: true,
+            ..MAP_WITH_GAUGES
+        },
         "livi.navMini" => Spec {
             gauges: true,
             map: false,
             center: Center::NavMini,
+            strip: false,
         },
         "livi.navFull" => Spec {
             gauges: true,
             map: false,
             center: Center::NavFull,
+            strip: false,
         },
         "livi.clusterOnly" => Spec {
             gauges: false,
@@ -103,5 +112,7 @@ mod tests {
         assert_eq!(spec("vendor.x"), MAP_WITH_GAUGES);
         assert!(!spec("livi.clusterOnly").gauges);
         assert_eq!(spec("livi.navFull").center, Center::NavFull);
+        let strip = spec("livi.strip");
+        assert!(strip.strip && strip.map && !strip.gauges);
     }
 }

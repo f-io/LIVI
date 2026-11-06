@@ -68,6 +68,10 @@ impl Core {
         }
     }
 
+    pub fn ap_ready(&self) -> &watch::Sender<bool> {
+        &self.asks.ap_ready
+    }
+
     pub fn with_mfi(mut self, dir: PathBuf) -> Self {
         self.mfi_dir = dir;
         self

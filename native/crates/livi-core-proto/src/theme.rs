@@ -265,6 +265,7 @@ pub fn livi_theme() -> Theme {
                 id: LIVI_CLUSTER.into(),
                 kind: DisplayKind::Cluster,
                 layouts: vec![
+                    layout("livi.strip", "Map with info strip", "map"),
                     layout("livi.navMini", "Gauges with turn-by-turn", "maneuver"),
                     layout(
                         "livi.navFull",
@@ -342,14 +343,14 @@ mod tests {
         let mut c = fresh(livi_theme());
         assert_eq!(
             (c.layout.as_str(), c.palette.as_str()),
-            ("livi.navMini", "default")
+            ("livi.strip", "default")
         );
         assert!(!c.step(-1));
-        assert_eq!(c.layout, "livi.navMini");
+        assert_eq!(c.layout, "livi.strip");
         assert!(c.step(1));
-        assert_ne!(c.layout, "livi.navMini");
+        assert_ne!(c.layout, "livi.strip");
         assert!(c.step(-1));
-        assert_eq!(c.layout, "livi.navMini");
+        assert_eq!(c.layout, "livi.strip");
         assert!(c.step(100));
         assert!(!c.step(1));
     }
@@ -429,23 +430,30 @@ mod tests {
         let slot = |on, pos| LayoutSlot { on, pos };
         let slots = BTreeMap::from([
             ("livi.clusterOnly".to_string(), slot(true, 1)),
-            ("livi.navFull".to_string(), slot(false, 2)),
-            ("livi.navMini".to_string(), slot(true, 3)),
+            ("livi.strip".to_string(), slot(true, 2)),
+            ("livi.navFull".to_string(), slot(false, 3)),
+            ("livi.navMini".to_string(), slot(true, 4)),
         ]);
         let mut c = Cluster::new(livi_theme(), "", &BTreeMap::new(), &slots);
         assert_eq!(
             c.shown,
-            ["livi.clusterOnly", "livi.navMini", "livi.clusterFull"]
+            [
+                "livi.clusterOnly",
+                "livi.strip",
+                "livi.navMini",
+                "livi.clusterFull"
+            ]
         );
         assert_eq!(
-            c.layout, "livi.navMini",
+            c.layout, "livi.strip",
             "the first theme layout until one is picked"
         );
         assert!(c.step(1));
         assert_eq!(
-            c.layout, "livi.clusterFull",
+            c.layout, "livi.navMini",
             "the switched off layout is skipped"
         );
+        assert!(c.step(1));
         assert!(!c.step(1));
         assert_eq!(c.layout, "livi.clusterFull", "the last layout stays");
         assert!(!c.arrange(&slots), "same arrangement");
@@ -457,7 +465,7 @@ mod tests {
             .map(|l| (l.clone(), slot(false, 0)))
             .collect();
         assert!(c.arrange(&all_off));
-        assert_eq!(c.shown.len(), 4, "never empty");
+        assert_eq!(c.shown.len(), 5, "never empty");
 
         c.arrange(&BTreeMap::from([(
             "livi.navMini".to_string(),
@@ -466,7 +474,7 @@ mod tests {
         assert!(c.select("livi.navMini", None));
         assert!(c.step(1));
         assert_eq!(
-            c.layout, "livi.navFull",
+            c.layout, "livi.strip",
             "from a hidden layout to the first shown"
         );
     }
@@ -478,6 +486,7 @@ mod tests {
         assert_eq!(
             ids(&c),
             [
+                "livi.strip",
                 "livi.navMini",
                 "livi.navFull",
                 "livi.clusterFull",
@@ -490,23 +499,28 @@ mod tests {
         );
 
         let slots = c.moved("livi.clusterOnly", -1).unwrap();
-        assert_eq!(slots["livi.clusterOnly"], LayoutSlot { on: true, pos: 3 });
-        assert_eq!(slots["livi.clusterFull"], LayoutSlot { on: true, pos: 4 });
+        assert_eq!(slots["livi.clusterOnly"], LayoutSlot { on: true, pos: 4 });
+        assert_eq!(slots["livi.clusterFull"], LayoutSlot { on: true, pos: 5 });
         assert!(c.arrange(&slots));
-        assert_eq!(ids(&c)[2..], ["livi.clusterOnly", "livi.clusterFull"]);
-        assert_eq!(c.moved("livi.navMini", -1), None, "the first stays first");
+        assert_eq!(ids(&c)[3..], ["livi.clusterOnly", "livi.clusterFull"]);
+        assert_eq!(c.moved("livi.strip", -1), None, "the first stays first");
         assert_eq!(c.moved("livi.clusterFull", 1), None, "the last stays last");
         assert_eq!(c.moved("nope", 1), None);
 
         let slots = c.switched("livi.navFull", false).unwrap();
-        assert_eq!(slots["livi.navFull"], LayoutSlot { on: false, pos: 2 });
+        assert_eq!(slots["livi.navFull"], LayoutSlot { on: false, pos: 3 });
         c.arrange(&slots);
         assert_eq!(
             c.shown,
-            ["livi.navMini", "livi.clusterOnly", "livi.clusterFull"]
+            [
+                "livi.strip",
+                "livi.navMini",
+                "livi.clusterOnly",
+                "livi.clusterFull"
+            ]
         );
         assert!(
-            !c.arranged[1].on,
+            !c.arranged[2].on,
             "the arrangement keeps the switched off layout"
         );
         assert_eq!(c.switched("nope", true), None);

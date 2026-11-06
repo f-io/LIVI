@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use livi_core_proto::state::State;
+use livi_core_proto::state::{Navigation, State};
 
 const ROUNDABOUT_EXIT_FIRST: u32 = 28;
 const ROUNDABOUT_EXIT_LAST: u32 = 46;
@@ -22,6 +22,44 @@ pub struct Nav {
     pub destination_distance: String,
     pub destination: String,
     pub app: String,
+    pub eta: String,
+    pub lanes: Vec<Lane>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Lane {
+    pub arrows: Vec<LaneArrow>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LaneArrow {
+    pub angle: i32,
+    pub on: bool,
+}
+
+fn lanes(n: &Navigation) -> Vec<Lane> {
+    if n.lane_guidance_shown != Some(true) {
+        return Vec::new();
+    }
+    n.lane_guidance
+        .iter()
+        .find(|g| Some(g.index) == n.lane_guidance_index)
+        .map(|g| {
+            g.lanes
+                .iter()
+                .map(|l| Lane {
+                    arrows: l
+                        .angles
+                        .iter()
+                        .map(|&angle| LaneArrow {
+                            angle,
+                            on: l.highlight_angle == Some(angle),
+                        })
+                        .collect(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 pub fn icon(kind: Option<u32>, turn_side: Option<u32>) -> &'static str {
@@ -76,6 +114,8 @@ pub fn nav(state: &State) -> Nav {
         destination_distance: text(&n.destination_distance_text),
         destination: text(&n.destination_name),
         app: text(&n.app_name),
+        eta: text(&n.eta_text),
+        lanes: lanes(n),
     }
 }
 
@@ -101,5 +141,45 @@ mod tests {
         assert_eq!(n.roundabout_exit, Some(3));
         assert_eq!(n.icon, "RoundaboutRight");
         assert!(n.active);
+    }
+
+    #[test]
+    fn lanes_come_from_the_shown_guidance_entry() {
+        let guidance = |shown: bool| {
+            nav(&crate::testing::state(json!({ "navigation": {
+                "laneGuidanceShown": shown,
+                "laneGuidanceIndex": 1,
+                "laneGuidance": [
+                    { "index": 0, "lanes": [{ "angles": [-90] }] },
+                    { "index": 1, "lanes": [
+                        { "angles": [0] },
+                        { "angles": [0, 45], "highlightAngle": 45 }
+                    ] }
+                ]
+            } })))
+        };
+        let n = guidance(true);
+        assert_eq!(n.lanes.len(), 2);
+        assert_eq!(
+            n.lanes[0].arrows,
+            [LaneArrow {
+                angle: 0,
+                on: false
+            }]
+        );
+        assert_eq!(
+            n.lanes[1].arrows,
+            [
+                LaneArrow {
+                    angle: 0,
+                    on: false
+                },
+                LaneArrow {
+                    angle: 45,
+                    on: true
+                }
+            ]
+        );
+        assert!(guidance(false).lanes.is_empty());
     }
 }

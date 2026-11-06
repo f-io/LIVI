@@ -707,7 +707,7 @@ async fn keys_follow_the_bindings() {
         assert_eq!(rig.drain(), [stack(1, cmd)], "{code}");
     }
     rig.p.input(press("KeyC"));
-    assert_eq!(rig.hub.watch().borrow().cluster.layout, "livi.navFull");
+    assert_eq!(rig.hub.watch().borrow().cluster.layout, "livi.navMini");
     rig.p.input(press("KeyS"));
     rig.p.input(press("KeyW"));
     assert!(rig.drain().is_empty());
@@ -723,7 +723,12 @@ async fn the_dashboard_offers_the_layouts_as_arranged() {
     let shown = rig.hub.watch().borrow().cluster.shown.clone();
     assert_eq!(
         shown,
-        ["livi.navFull", "livi.clusterFull", "livi.clusterOnly"]
+        [
+            "livi.strip",
+            "livi.navFull",
+            "livi.clusterFull",
+            "livi.clusterOnly"
+        ]
     );
 
     rig.p
@@ -731,7 +736,7 @@ async fn the_dashboard_offers_the_layouts_as_arranged() {
     let patch = rig.patches.try_recv().unwrap();
     assert_eq!(
         patch["dashboardLayouts"]["livi.clusterOnly"],
-        serde_json::json!({ "on": true, "pos": 3 })
+        serde_json::json!({ "on": true, "pos": 4 })
     );
     rig.p
         .arrange_dashboard(rig.p.cluster.moved("livi.clusterOnly", 9));

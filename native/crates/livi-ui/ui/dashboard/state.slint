@@ -46,16 +46,34 @@ export struct GaugeData {
     shadow-half: float,
 }
 
+export struct LaneArrowData {
+    angle: float,
+    on: bool,
+}
+
+export struct LampData {
+    icon: image,
+    glyph: string,
+    tint: int,
+    blink: bool,
+}
+
+export struct LaneData {
+    arrows: [LaneArrowData],
+}
+
 export global DashState {
     in property <bool> enabled;
     in property <bool> gauges: true;
     in property <bool> map;
+    in property <bool> strip;
     in property <MaskData> mask;
     in property <int> center;
     in property <GaugeData> speed-gauge;
     in property <GaugeData> rpm-gauge;
     in property <float> speed-t;
     in property <float> rpm-t;
+    in property <float> redline-t;
     in property <float> ring-shift;
     in property <string> speed-text: "0";
     in property <string> speed-label: "KPH";
@@ -70,6 +88,10 @@ export global DashState {
     in property <string> ambient;
     in property <int> fuel;
     in property <bool> fuel-low;
+    in property <string> range;
+    in property <string> rpm-text: "0";
+    in property <[LampData]> warn-lamps;
+    in property <[LampData]> light-lamps;
     in property <bool> battery;
     in property <string> oil-text: "0°";
     in property <float> oil-ratio;
@@ -93,6 +115,8 @@ export global DashState {
     in property <string> nav-destination-distance;
     in property <string> nav-destination;
     in property <string> nav-app;
+    in property <string> nav-eta;
+    in property <[LaneData]> nav-lanes;
     in property <string> placeholder: "No dashboard on this screen";
     callback select-page(int);
     callback step(int);

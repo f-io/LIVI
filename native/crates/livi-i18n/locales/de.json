@@ -44,6 +44,7 @@
     "telemetry": "Telemetrie",
     "dashboard": "Dashboard",
     "dashboardLayouts": "Dashboards",
+    "layout_livi_strip": "Karte mit Infoleiste",
     "layout_livi_navMini": "Instrumente mit turn-by-turn",
     "layout_livi_navFull": "Instrumente mit turn-by-turn (erweitert)",
     "layout_livi_clusterFull": "Instrumente mit Karte",

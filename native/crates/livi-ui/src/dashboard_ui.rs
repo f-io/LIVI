@@ -9,13 +9,17 @@ use livi_core_proto::message::Action;
 use livi_core_proto::state::{Screen, State};
 use livi_ui_model::dashboard::gauge::{self, Drawing, Scale, Spec, draw, groups, label_overflow};
 use livi_ui_model::dashboard::layout::{Center, pages, spec};
-use livi_ui_model::dashboard::nav::{Nav, nav};
+use livi_ui_model::dashboard::nav::{Lane, Nav, nav};
 use livi_ui_model::dashboard::readings::{Readings, Turn, readings};
+use livi_ui_model::dashboard::telltales::{Lamp, Tint, lamps};
 use livi_ui_model::mask::{Mask, Stream, mask};
 use slint::{Color, ComponentHandle, Image, ModelRc, SharedString, VecModel};
 
 use crate::media::{Pixels, decode};
-use crate::{AppWindow, CapData, DashState, GaugeData, LabelData, MaskData, TrailData};
+use crate::{
+    AppWindow, CapData, DashState, GaugeData, LabelData, LampData, LaneArrowData, LaneData,
+    MaskData, TrailData,
+};
 
 pub fn set_texts(d: &DashState, tr: impl Fn(&str, &str) -> String) {
     d.set_gear_label(tr("dashboard.gear", "GEAR").into());
@@ -57,12 +61,15 @@ pub struct DashView {
     gauges: bool,
     map: bool,
     center: Center,
+    strip: bool,
     page_count: usize,
     page_index: Option<usize>,
     accent: Option<String>,
     nav: Nav,
     nav_image: Option<Option<Pixels>>,
     nav_image_raw: Option<Option<String>>,
+    lanes: Option<Vec<Lane>>,
+    lamps: Option<Vec<Lamp>>,
     mask: Option<Mask>,
 }
 
@@ -71,6 +78,8 @@ pub struct DashReader {
     speed_key: Option<(Scale, f64)>,
     rpm_key: Option<(Scale, f64)>,
     image: Option<String>,
+    lanes: Vec<Lane>,
+    lamps: Vec<Lamp>,
 }
 
 fn gauge_view(scale: &Scale, mirror: bool, redline: f64) -> GaugeView {
@@ -102,6 +111,11 @@ fn gauge_view(scale: &Scale, mirror: bool, redline: f64) -> GaugeView {
 impl DashReader {
     pub fn read(&mut self, state: &State, screen: Screen, dark: bool) -> DashView {
         let r = readings(state, screen);
+        let lit = lamps(state, &r);
+        let lamps = (lit != self.lamps).then(|| {
+            self.lamps = lit.clone();
+            lit
+        });
         let speed_key = (r.speed_scale.clone(), 0.0);
         let speed_gauge = (self.speed_key.as_ref() != Some(&speed_key)).then(|| {
             self.speed_key = Some(speed_key);
@@ -128,6 +142,10 @@ impl DashReader {
             self.image = n.image.clone();
             n.image.clone()
         });
+        let lanes = (n.lanes != self.lanes).then(|| {
+            self.lanes = n.lanes.clone();
+            n.lanes.clone()
+        });
         DashView {
             readings: r,
             speed_gauge,
@@ -136,12 +154,15 @@ impl DashReader {
             gauges: layout.gauges,
             map: layout.map,
             center: layout.center,
+            strip: layout.strip,
             page_count: p.count,
             page_index: p.index,
             accent: p.accent,
             nav: n,
             nav_image: None,
             nav_image_raw,
+            lanes,
+            lamps,
             mask: mask(state, Stream::Cluster),
         }
     }
@@ -240,6 +261,7 @@ pub fn fill(d: &DashState<'_>, mut v: DashView) {
     d.set_enabled(r.enabled);
     d.set_gauges(v.gauges);
     d.set_map(v.map);
+    d.set_strip(v.strip);
     d.set_mask(mask_data(v.mask));
     d.set_center(match v.center {
         Center::None => 0,
@@ -254,6 +276,11 @@ pub fn fill(d: &DashState<'_>, mut v: DashView) {
     }
     d.set_speed_t((r.speed / r.speed_scale.max.max(1.0)).clamp(0.0, 1.0) as f32);
     d.set_rpm_t((r.rpm / r.rpm_scale.max.max(1.0)).clamp(0.0, 1.0) as f32);
+    d.set_redline_t(if r.redline > 0.0 {
+        (r.redline / r.rpm_scale.max.max(1.0)).clamp(0.0, 1.0) as f32
+    } else {
+        0.0
+    });
     d.set_ring_shift(v.ring_shift as f32);
     d.set_speed_text(r.speed_text.clone().into());
     d.set_speed_label(r.speed_label.into());
@@ -267,6 +294,26 @@ pub fn fill(d: &DashState<'_>, mut v: DashView) {
     d.set_ambient(r.ambient.clone().unwrap_or_default().into());
     d.set_fuel(r.fuel);
     d.set_fuel_low(r.fuel_low);
+    d.set_range(r.range.clone().unwrap_or_default().into());
+    d.set_rpm_text(r.rpm_text.clone().into());
+    if let Some(lit) = v.lamps.take() {
+        let data = |l: &Lamp| LampData {
+            icon: crate::icons::icon(l.icon).unwrap_or_default(),
+            glyph: l.glyph.into(),
+            tint: match l.tint {
+                Tint::Red => 0,
+                Tint::Amber => 1,
+                Tint::Green => 2,
+                Tint::Blue => 3,
+            },
+            blink: l.blink,
+        };
+        let (warn, light): (Vec<&Lamp>, Vec<&Lamp>) = lit
+            .iter()
+            .partition(|l| matches!(l.tint, Tint::Red | Tint::Amber));
+        d.set_warn_lamps(model(warn.into_iter().map(data).collect()));
+        d.set_light_lamps(model(light.into_iter().map(data).collect()));
+    }
     d.set_battery(r.battery);
     d.set_oil_text(r.oil_text.clone().into());
     d.set_oil_ratio(r.oil_ratio as f32);
@@ -293,6 +340,25 @@ pub fn fill(d: &DashState<'_>, mut v: DashView) {
     d.set_nav_destination_distance(s(&n.destination_distance));
     d.set_nav_destination(s(&n.destination));
     d.set_nav_app(s(&n.app));
+    d.set_nav_eta(s(&n.eta));
+    if let Some(lanes) = v.lanes.take() {
+        d.set_nav_lanes(model(
+            lanes
+                .iter()
+                .map(|l| LaneData {
+                    arrows: model(
+                        l.arrows
+                            .iter()
+                            .map(|a| LaneArrowData {
+                                angle: a.angle as f32,
+                                on: a.on,
+                            })
+                            .collect(),
+                    ),
+                })
+                .collect(),
+        ));
+    }
 }
 
 pub fn wire(d: &DashState<'_>, client: &Client) {

@@ -334,6 +334,12 @@ impl Projection {
                     s.front.main
                 );
             }
+            if s.front.cluster != cluster {
+                println!("[core] cluster screen {:?} -> {cluster:?}", s.front.cluster);
+            }
+            if s.front.aux != aux {
+                println!("[core] aux screen {:?} -> {aux:?}", s.front.aux);
+            }
             s.front.main = main;
             s.front.cluster = cluster;
             s.front.aux = aux;

@@ -24,8 +24,10 @@ const SUDOERS_TEMPLATE: &str = "99-LIVI-wifi-ap.sudoers.template";
 const MARKER: &str = ".wifi-ap-install";
 const SETTLE_TRIES: u32 = 15;
 const SETTLE_EVERY: Duration = Duration::from_secs(2);
+const ON_AIR_WAIT: Duration = Duration::from_secs(30);
+const ON_AIR_POLL: Duration = Duration::from_millis(250);
 
-fn wanted(cfg: &Config) -> bool {
+pub(crate) fn wanted(cfg: &Config) -> bool {
     cfg.wifi_interface != CHOICE
         && (cfg.wifi_dedicated_interface || cfg.wireless_cp_enabled || cfg.wireless_aa_enabled)
 }
@@ -111,12 +113,12 @@ async fn release_interface(p: &Privileged) {
     sudo(&[&helper, "--wifi-ap-teardown"]).await;
 }
 
-async fn reconcile(p: &Privileged, cfg: &Config) {
+async fn reconcile(p: &Privileged, cfg: &Config) -> bool {
     if !wanted(cfg) {
         release_interface(p).await;
-        return;
+        return false;
     }
-    let Some(u) = render(p) else { return };
+    let Some(u) = render(p) else { return false };
     if needs_install(p, &u).await {
         if !p
             .helper_installs("install-wifi-ap", &[("unit", &u.unit), ("rule", &u.rule)])
@@ -126,7 +128,7 @@ async fn reconcile(p: &Privileged, cfg: &Config) {
                 "[wifi-ap] {UNIT_PATH} not installed, the helper does not run as root. \
                  Run the LIVI install script on this host."
             );
-            return;
+            return false;
         }
         p.write_marker(MARKER, &u.rule);
     }
@@ -143,6 +145,14 @@ async fn reconcile(p: &Privileged, cfg: &Config) {
         "start"
     };
     sudo(&[&sc, start, SERVICE]).await;
+    true
+}
+
+async fn on_air(iface: &str) {
+    let deadline = tokio::time::Instant::now() + ON_AIR_WAIT;
+    while livi_wifi::on_air(iface).is_none() && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(ON_AIR_POLL).await;
+    }
 }
 
 async fn runs_older_helper() -> bool {
@@ -255,7 +265,10 @@ pub async fn follow(core: Arc<Core>, p: Privileged) {
     }
     let mut applied = core.hub.applied();
     let cfg = applied.borrow_and_update().clone();
-    reconcile(&p, &cfg).await;
+    if reconcile(&p, &cfg).await {
+        on_air(&cfg.wifi_interface).await;
+    }
+    core.ap_ready().send_replace(true);
     let ran = settle(&p, &core, &cfg).await;
     let mut linked = link_settings(&ran);
     let mut started_with = ap_settings(&ran);
@@ -273,15 +286,18 @@ pub async fn follow(core: Arc<Core>, p: Privileged) {
             continue;
         }
         println!("[wifi-ap] restarting with the new settings");
+        core.ap_ready().send_replace(false);
         sudo(&[&systemctl(), "restart", SERVICE]).await;
+        on_air(&cfg.wifi_interface).await;
+        core.ap_ready().send_replace(true);
         let ran = settle(&p, &core, &cfg).await;
         linked = link_settings(&ran);
         started_with = ap_settings(&ran);
     }
 }
 
-pub async fn release_for_quit(cfg: &Config) {
-    if !cfg!(target_os = "linux") || cfg.wifi_dedicated_interface {
+pub async fn release_for_quit() {
+    if !cfg!(target_os = "linux") {
         return;
     }
     sudo(&[&systemctl(), "stop", SERVICE]).await;

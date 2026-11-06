@@ -212,6 +212,9 @@ pub async fn run(
             return Ok(Exit::Quit);
         }
         tokio::spawn(gvfs_guard::start(privileged.clone()));
+        if cfg!(target_os = "linux") && wifi_ap::wanted(&core.hub.config()) {
+            core.ap_ready().send_replace(false);
+        }
         tokio::spawn(wifi_ap::follow(core.clone(), privileged));
     }
     host_output::prepare(&core.hub).await;
@@ -244,11 +247,7 @@ pub async fn run(
     let _ = tokio::time::timeout(Duration::from_secs(2), gvfs_guard::stop()).await;
     goodbye(&core).await;
     services.stop().await;
-    let _ = tokio::time::timeout(
-        Duration::from_secs(2),
-        wifi_ap::release_for_quit(&core.hub.config()),
-    )
-    .await;
+    let _ = tokio::time::timeout(Duration::from_secs(2), wifi_ap::release_for_quit()).await;
     let _ = fs::remove_file(&socket);
     Ok(if core.restart.load(Ordering::SeqCst) {
         Exit::Restart(

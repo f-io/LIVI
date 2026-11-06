@@ -31,7 +31,14 @@ const FROM_OUTSIDE: &str = "external";
 const FROM_DEFAULTS: &str = "default";
 const FROM_LAST_RUN: &str = "saved";
 const RENAMED: [(&str, &str); 1] = [("turn", "turnSignal")];
-const NESTED: [&str; 5] = ["gps", "can", CLIMATE, "tirePressure", NOTIFICATION];
+const NESTED: [&str; 6] = [
+    "gps",
+    "can",
+    CLIMATE,
+    "tirePressure",
+    NOTIFICATION,
+    "telltales",
+];
 const VOLUME_STEP: f64 = 0.005;
 
 fn now_ms() -> u64 {
@@ -472,6 +479,9 @@ mod tests {
             snap["notification"],
             json!({ "title": "Frost", "open": false })
         );
+        merge(&mut snap, &json!({ "telltales": { "abs": true } }));
+        merge(&mut snap, &json!({ "telltales": { "seatBelt": true } }));
+        assert_eq!(snap["telltales"], json!({ "abs": true, "seatBelt": true }));
 
         let changed = merge(&mut snap, &json!({ "can": { "id": 1 }, "ts": 7 })).unwrap();
         assert_eq!(
