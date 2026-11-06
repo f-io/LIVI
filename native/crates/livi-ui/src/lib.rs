@@ -28,6 +28,7 @@ mod video_ui;
 use std::cell::{Cell, RefCell};
 use std::os::unix::net::UnixStream;
 use std::rc::Rc;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use livi_core_client::{Client, Event};
@@ -345,15 +346,16 @@ pub(crate) fn detach_video(screen: &str) {
     let _ = screen;
 }
 
-fn follow_core(weak: Weak<AppWindow>) -> impl FnMut(Event, &Value) + Send + 'static {
+fn follow_core(weak: Weak<AppWindow>) -> impl FnMut(Event, &Mutex<Value>) + Send + 'static {
     let mut follow = Follow::default();
     move |ev, state| {
-        let updates = match ev {
+        let read = || state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut updates = match ev {
             Event::Welcome { version } => {
                 println!("[ui] core {version}");
-                follow.changed(None, state)
+                follow.changed(None, &read())
             }
-            Event::Changed(keys) => follow.changed(Some(&keys), state),
+            Event::Changed(keys) => follow.changed(Some(&keys), &read()),
             Event::Spectrum(bands) => vec![Update::Spectrum(bands)],
             Event::OpenPage(path) => vec![Update::Open(path)],
             Event::Gone(why) => {
@@ -364,6 +366,7 @@ fn follow_core(weak: Weak<AppWindow>) -> impl FnMut(Event, &Value) + Send + 'sta
         if updates.is_empty() {
             return;
         }
+        follow.decode(&mut updates);
         let weak = weak.clone();
         let _ = slint::invoke_from_event_loop(move || {
             let Some(ui) = weak.upgrade() else { return };

@@ -59,6 +59,17 @@ pub struct Follow {
 }
 
 impl Follow {
+    pub fn decode(&mut self, updates: &mut [Update]) {
+        for update in updates {
+            match update {
+                Update::Media(m) => m.decode(),
+                Update::Radio(r) => self.media.decode_radios(r),
+                Update::Dash(d) | Update::DashOn(_, d) => d.decode(),
+                _ => {}
+            }
+        }
+    }
+
     pub fn changed(&mut self, keys: Option<&BTreeSet<String>>, state: &Value) -> Vec<Update> {
         let all = keys.is_none_or(|k| k.contains(""));
         let hit = |key: &str| all || keys.is_some_and(|k| k.contains(key));

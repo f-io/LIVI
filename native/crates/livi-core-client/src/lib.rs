@@ -61,7 +61,7 @@ impl Client {
     pub fn start(
         stream: UnixStream,
         name: &str,
-        on_event: impl FnMut(Event, &Value) + Send + 'static,
+        on_event: impl FnMut(Event, &Mutex<Value>) + Send + 'static,
     ) -> io::Result<Client> {
         let reader = stream.try_clone()?;
         let client = Client {
@@ -119,12 +119,9 @@ impl Client {
 fn read_loop(
     mut stream: UnixStream,
     state: &Mutex<Value>,
-    mut on_event: impl FnMut(Event, &Value),
+    mut on_event: impl FnMut(Event, &Mutex<Value>),
 ) {
-    let mut emit = |ev: Event| {
-        let s = state.lock().unwrap_or_else(|e| e.into_inner());
-        on_event(ev, &s);
-    };
+    let mut emit = |ev: Event| on_event(ev, state);
     let mut dec = Decoder::new();
     let mut buf = vec![0u8; 64 * 1024];
     loop {

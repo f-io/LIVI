@@ -24,6 +24,12 @@ pub fn set_texts(d: &DashState, tr: impl Fn(&str, &str) -> String) {
 }
 
 impl DashView {
+    pub fn decode(&mut self) {
+        if let Some(raw) = self.nav_image_raw.take() {
+            self.nav_image = Some(raw.as_deref().and_then(decode));
+        }
+    }
+
     pub fn map(&self) -> bool {
         self.readings.enabled && self.map
     }
@@ -57,6 +63,7 @@ pub struct DashView {
     accent: Option<String>,
     nav: Nav,
     nav_image: Option<Option<Pixels>>,
+    nav_image_raw: Option<Option<String>>,
     mask: Option<Mask>,
 }
 
@@ -118,9 +125,9 @@ impl DashReader {
         let p = pages(state, dark);
         let layout = spec(p.active.as_deref().unwrap_or(""));
         let n = nav(state);
-        let nav_image = (n.image != self.image).then(|| {
+        let nav_image_raw = (n.image != self.image).then(|| {
             self.image = n.image.clone();
-            n.image.as_deref().and_then(decode)
+            n.image.clone()
         });
         DashView {
             readings: r,
@@ -134,7 +141,8 @@ impl DashReader {
             page_index: p.index,
             accent: p.accent,
             nav: n,
-            nav_image,
+            nav_image: None,
+            nav_image_raw,
             mask: mask(state, Stream::Cluster),
         }
     }
