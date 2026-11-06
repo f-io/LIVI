@@ -417,6 +417,7 @@ impl Bridge {
                         ..Default::default()
                     },
                 );
+                self.navi = Navigation::default();
             }
             NavigationEvent::Status(state) => {
                 self.navi_active =
@@ -596,9 +597,13 @@ mod tests {
             panic!()
         };
         assert_eq!(
-            (n.active, n.app_name.as_deref()),
-            (Some(false), Some("Google Maps"))
+            (n.active, n.app_name.as_deref(), n.road_name.as_deref()),
+            (Some(false), Some("Google Maps"), Some("A9"))
         );
+        let Report::Navigation(n) = &nav(&mut b, NavigationEvent::Start)[0] else {
+            panic!()
+        };
+        assert_eq!((n.road_name.as_deref(), n.remain_distance), (None, None));
 
         b.on_event(SessionEvent::VideoFocusProjected, &cfg);
         let out = reports(b.on_event(SessionEvent::Disconnected("x".into()), &cfg));
