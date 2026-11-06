@@ -82,8 +82,8 @@ impl<M: Media> Conn<M> {
             }
         }
         self.offered_vehicle_state = offered.contains(&vehicle_state::FEATURE);
-        self.ui_sync_on = offered.contains(&ui_sync::FEATURE)
-            && self.ctx.config.borrow().info.theme_displays.is_some();
+        self.ui_sync_on =
+            offered.contains(&ui_sync::FEATURE) && self.told(|info| info.theme_displays.is_some());
 
         let mut timing = match TimingSync::listen() {
             Ok(t) => t,
@@ -120,7 +120,7 @@ impl<M: Media> Conn<M> {
         println!(
             "[cpStack] SETUP session (timingPort={timing_port}, eventPort={event_port}, keepAlivePort={keep_alive_port})"
         );
-        let cfg = self.ctx.config.borrow().info.clone();
+        let cfg = self.told(InfoConfig::clone);
         let mut features = Vec::new();
         if cfg.hevc {
             features.push(Value::String("hevc".into()));
@@ -168,7 +168,7 @@ impl<M: Media> Conn<M> {
             .ok_or("screen SETUP arrived before pair-verify")?;
         let id = id_text(sd.get("streamConnectionID"));
         let key = stream_key(&shared, &id, "DataStream-Output-Encryption-Key");
-        let codec = if self.ctx.config.borrow().info.hevc {
+        let codec = if self.told(|info| info.hevc) {
             ScreenCodec::H265
         } else {
             ScreenCodec::H264

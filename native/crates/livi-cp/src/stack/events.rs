@@ -121,7 +121,7 @@ impl<M: Media> Conn<M> {
     }
 
     pub(super) async fn send_cluster_appearance(&mut self, night: bool) {
-        if self.ctx.config.borrow().info.cluster.is_none() {
+        if self.told(|info| info.cluster.is_none()) {
             return;
         }
         self.send_appearance(self.alt_uuid(), night).await;
@@ -177,12 +177,19 @@ impl<M: Media> Conn<M> {
         self.force_keyframe(&self.alt_uuid()).await;
     }
 
+    pub(super) fn told<T>(&self, read: impl FnOnce(&InfoConfig) -> T) -> T {
+        match &self.told_info {
+            Some(info) => read(info),
+            None => read(&self.ctx.config.borrow().info),
+        }
+    }
+
     pub(super) fn main_uuid(&self) -> String {
-        info::display_uuids(&self.ctx.config.borrow().info).0
+        self.told(|info| info::display_uuids(info).0)
     }
 
     pub(super) fn alt_uuid(&self) -> String {
-        info::display_uuids(&self.ctx.config.borrow().info).1
+        self.told(|info| info::display_uuids(info).1)
     }
 
     pub(super) fn wanted_cluster_url(&self) -> String {

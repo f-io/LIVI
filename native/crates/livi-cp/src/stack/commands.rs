@@ -146,13 +146,12 @@ impl<M: Media> Conn<M> {
                 if self.event.is_none() {
                     return;
                 }
-                let (w, h) = {
-                    let cfg = self.ctx.config.borrow();
+                let (w, h) = self.told(|info| {
                     (
-                        cfg.info.main.width_pixels as f64,
-                        cfg.info.main.height_pixels as f64,
+                        info.main.width_pixels as f64,
+                        info.main.height_pixels as f64,
                     )
-                };
+                });
                 let contacts: Vec<Contact> = touches
                     .iter()
                     .map(|t| Contact {
@@ -298,7 +297,7 @@ impl<M: Media> Conn<M> {
                 }
             }
             StackCmd::ClusterActive(active) => {
-                if self.ctx.config.borrow().info.cluster.is_none() {
+                if self.told(|info| info.cluster.is_none()) {
                     return;
                 }
                 self.cluster_want = active;

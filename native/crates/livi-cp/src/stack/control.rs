@@ -192,6 +192,7 @@ impl<M: Media> Conn<M> {
                 let _ = tokio::task::spawn_blocking(move || refresh()).await;
             }
             let cfg = self.ctx.config.borrow().info.clone();
+            self.told_info = Some(cfg.clone());
             let mut info = info::build(&cfg);
             if self.video_playback {
                 let features = info.get("features").and_then(Value::as_int).unwrap_or(0);
