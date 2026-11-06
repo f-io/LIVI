@@ -78,11 +78,23 @@ pub fn version() -> Result<String, String> {
 }
 
 pub fn build_date() -> String {
+    read(
+        Command::new("git")
+            .arg("-C")
+            .arg(root())
+            .args(["log", "-1", "--format=%cs"]),
+    )
+    .map(|d| d.trim().to_string())
+    .ok()
+    .filter(|d| d.len() == "2026-10-20".len())
+    .unwrap_or_else(today)
+}
+
+fn today() -> String {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
     let days = (secs / 86_400) as i64;
-    let (h, m) = ((secs % 86_400) / 3600, (secs % 3600) / 60);
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;
@@ -92,7 +104,7 @@ pub fn build_date() -> String {
     let d = doy - (153 * mp + 2) / 5 + 1;
     let mo = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = yoe + era * 400 + i64::from(mo <= 2);
-    format!("{y:04}-{mo:02}-{d:02} {h:02}:{m:02} UTC")
+    format!("{y:04}-{mo:02}-{d:02}")
 }
 
 pub fn build_sha() -> String {
@@ -191,9 +203,10 @@ mod tests {
     }
 
     #[test]
-    fn the_build_date_is_utc_minutes() {
-        let d = build_date();
-        assert_eq!(d.len(), "2026-10-20 14:30 UTC".len());
-        assert!(d.ends_with(" UTC"));
+    fn the_build_date_is_a_day() {
+        for d in [build_date(), today()] {
+            assert_eq!(d.len(), "2026-10-20".len(), "{d}");
+            assert_eq!(d.matches('-').count(), 2, "{d}");
+        }
     }
 }
