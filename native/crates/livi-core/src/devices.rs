@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use livi_core_proto::state::{DeviceStatus, DeviceView, Protocol};
 use livi_cp::helper_sock::HelperSock;
-use livi_session_io::line::LineSock;
+use livi_session_io::line::{Feed, LineSock};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -604,6 +604,11 @@ pub struct Shared(LineSock);
 impl Shared {
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self(LineSock::new(path, "shared sock"))
+    }
+
+    pub fn subscribe(&self) -> tokio::sync::mpsc::UnboundedReceiver<Feed> {
+        self.0
+            .subscribe(Duration::from_secs(2), |event| event.get("event").is_some())
     }
 
     pub async fn request(&self, line: String, within: Duration) -> Result<Value, String> {

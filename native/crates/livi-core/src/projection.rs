@@ -511,7 +511,7 @@ pub struct UiAsks {
     pub radio: Option<crate::radio::RadioAsks>,
     pub radio_from_phone: mpsc::UnboundedSender<crate::radio::RadioAsk>,
     pub input_from_compositor: mpsc::UnboundedSender<Input>,
-    pub camera_found: mpsc::UnboundedSender<UiCommand>,
+    pub commands_back: mpsc::UnboundedSender<UiCommand>,
 }
 
 pub struct UiSenders {
@@ -568,7 +568,7 @@ pub fn ui_channels(wants: PerScreen<Front>) -> (UiSenders, UiAsks, DongleAsks, U
             radio: Some(radio_rx),
             radio_from_phone: radio_tx,
             input_from_compositor: input_tx,
-            camera_found: commands_tx,
+            commands_back: commands_tx,
         },
         DongleAsks {
             radios: dongle_rx,

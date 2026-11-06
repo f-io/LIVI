@@ -6,13 +6,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use livi_core_proto::aa_events::{AaHelperEvent, RemoteCommand};
 use livi_core_proto::config::Config;
 use livi_core_proto::helper::HelperSockets;
+use livi_core_proto::message::MediaControl;
 use livi_core_proto::state::{Front, Screen, State};
 use livi_cp::helper_sock::HelperSock;
 use livi_cp::pairings::Pairings;
 use livi_cp::stack::StackCtx;
 use livi_host_proto::{PLANE_CLUSTER_RECV, PLANE_MAIN};
+use livi_session_io::line::Feed;
 use tokio::net::TcpListener;
 use tokio::process::Child;
 use tokio::sync::{Notify, mpsc, oneshot, watch};
@@ -23,7 +26,7 @@ use crate::devices::{Devices, Shared};
 use crate::helper::{self, Helper, HelperSupervisor, Spec};
 use crate::hub::Hub;
 use crate::paths::Paths;
-use crate::projection::{Drivers, Projection, UiAsks};
+use crate::projection::{Drivers, Projection, UiAsks, UiCommand};
 use crate::resources::{Resources, gst_env};
 use crate::spectrum;
 use crate::ui::UiSupervisor;
@@ -218,7 +221,7 @@ impl Services {
             hub.clone(),
             gst.clone(),
             livi_media::planes::CameraPlane::new(gst.clone(), ctrl.clone()),
-            asks.camera_found.clone(),
+            asks.commands_back.clone(),
             settings.clone(),
             host_ready_rx,
         ));
@@ -368,6 +371,7 @@ impl CarPlay {
         tokio::spawn(crate::cp_radio::run(hub.clone(), cp.clone()));
         let wants = *asks.wants.borrow();
         let shared = Shared::new(&self.sockets.shared);
+        tokio::spawn(remote_input(shared.clone(), asks.commands_back.clone()));
         let devices = Devices::new(
             &self.user_data.join("devices.json"),
             HelperSock::new(&self.sockets.carplay),
@@ -416,6 +420,39 @@ impl CarPlay {
             wants,
         );
         tokio::spawn(projection.run(events, aa_events, asks, state));
+    }
+}
+
+async fn remote_input(shared: Shared, commands: mpsc::UnboundedSender<UiCommand>) {
+    let mut feed = shared.subscribe();
+    while let Some(item) = feed.recv().await {
+        let Feed::Event(event) = item else { continue };
+        let command = match serde_json::from_value::<AaHelperEvent>(event) {
+            Ok(AaHelperEvent::Input { command }) => command,
+            Ok(_) => continue,
+            Err(e) => {
+                eprintln!("[core] shared sock event not understood: {e}");
+                continue;
+            }
+        };
+        match media_control(command) {
+            Some(control) => {
+                println!("[core] remote input {command:?}");
+                let _ = commands.send(UiCommand::Media(control));
+            }
+            None => println!("[core] remote input {command:?} has no phone counterpart"),
+        }
+    }
+}
+
+fn media_control(command: RemoteCommand) -> Option<MediaControl> {
+    match command {
+        RemoteCommand::Play => Some(MediaControl::Play),
+        RemoteCommand::Pause => Some(MediaControl::Pause),
+        RemoteCommand::PlayPause => Some(MediaControl::PlayPause),
+        RemoteCommand::Next => Some(MediaControl::Next),
+        RemoteCommand::Previous => Some(MediaControl::Prev),
+        RemoteCommand::Stop | RemoteCommand::FastForward | RemoteCommand::Rewind => None,
     }
 }
 
@@ -670,6 +707,37 @@ fn place_carplay(plane: &MainPlane, cfg: &Config) {
 mod tests {
     use super::*;
     use crate::config_file::defaults;
+
+    #[tokio::test]
+    async fn a_bluetooth_remote_reaches_the_phone_in_front() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let dir = std::env::temp_dir().join(format!("livi-remote-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("shared.sock");
+        let _ = std::fs::remove_file(&path);
+        let listener = tokio::net::UnixListener::bind(&path).unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        tokio::spawn(remote_input(Shared::new(&path), tx));
+        let (mut sock, _) = listener.accept().await.unwrap();
+        let mut asked = [0u8; 10];
+        sock.read_exact(&mut asked).await.unwrap();
+        assert_eq!(&asked, b"subscribe\n");
+        sock.write_all(
+            b"{\"event\":\"input\",\"command\":\"previous\"}\n\
+              {\"event\":\"input\",\"command\":\"rewind\"}\n\
+              {\"event\":\"input\",\"command\":\"eject\"}\n\
+              {\"event\":\"input\",\"command\":\"playPause\"}\n",
+        )
+        .await
+        .unwrap();
+        assert_eq!(rx.recv().await, Some(UiCommand::Media(MediaControl::Prev)));
+        assert_eq!(
+            rx.recv().await,
+            Some(UiCommand::Media(MediaControl::PlayPause))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn carplay_tier_falls_back_to_1080p() {
