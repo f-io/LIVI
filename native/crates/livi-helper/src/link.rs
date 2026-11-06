@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use livi_core_proto::helper_events::{HelperEvent, HelperKind, StationEvent};
 use tokio::sync::Notify;
 
 const RESOLVE_INTERVAL: Duration = Duration::from_millis(500);
@@ -134,11 +135,23 @@ pub async fn relay_stations(bcast: livi_runtime::livi_sock::Broadcaster) {
         let events = bcast.clone();
         let _ = tokio::task::spawn_blocking(move || {
             livi_link_host::ap::watch_stations(|joined, mac| {
-                let event = if joined { "joined" } else { "left" };
-                println!("[helper] {mac} {event} the dongle's access point");
-                events.push_json(format!(
-                    "{{\"type\":\"wifi\",\"event\":\"{event}\",\"mac\":\"{mac}\"}}"
-                ));
+                let event = if joined {
+                    StationEvent::Joined
+                } else {
+                    StationEvent::Left
+                };
+                println!(
+                    "[helper] {mac} {} the dongle's access point",
+                    if joined { "joined" } else { "left" }
+                );
+                events.push_json(
+                    HelperEvent::from(HelperKind::Wifi {
+                        event,
+                        mac: mac.to_string(),
+                        ip: None,
+                    })
+                    .to_line(),
+                );
             })
         })
         .await;

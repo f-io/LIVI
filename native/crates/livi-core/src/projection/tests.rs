@@ -202,6 +202,7 @@ impl Rig {
     }
 
     fn meta(&mut self, id: SessionId, event: Value) {
+        let event = serde_json::from_value(event).expect("a helper event");
         self.p.on_event(CpEvent::Metadata { id, event });
     }
 

@@ -246,15 +246,21 @@ impl Projection {
         }
     }
 
-    pub(super) fn metadata(&mut self, link: Link, event: &Value) {
+    pub(super) fn metadata(&mut self, link: Link, event: &HelperKind) {
+        let (HelperKind::Navigation(fields)
+        | HelperKind::NowPlaying(fields)
+        | HelperKind::AlbumArt(fields)) = event
+        else {
+            return;
+        };
         let Some(entry) = self.by_link(link) else {
             return;
         };
-        let text = |key: &str| event.get(key).and_then(Value::as_str).map(str::to_string);
-        let num = |key: &str| event.get(key).and_then(Value::as_f64);
+        let text = |key: &str| fields.get(key).and_then(Value::as_str).map(str::to_string);
+        let num = |key: &str| fields.get(key).and_then(Value::as_f64);
         let code = |key: &str| num(key).map(|v| v as u32);
-        match event.get("type").and_then(Value::as_str) {
-            Some("navigation") => {
+        match event {
+            HelperKind::Navigation(_) => {
                 let nav = &mut entry.navigation;
                 if let Some(status) = num("status") {
                     if status == 0.0 {
@@ -308,7 +314,7 @@ impl Projection {
                         "sourceSupportsRouteGuidance",
                     ),
                 ] {
-                    if let Some(v) = event.get(key).and_then(Value::as_bool) {
+                    if let Some(v) = fields.get(key).and_then(Value::as_bool) {
                         *field = Some(v);
                     }
                 }
@@ -320,30 +326,30 @@ impl Projection {
                     (&mut nav.turn_side, "turnSide"),
                     (&mut nav.junction_type, "junctionType"),
                 ] {
-                    if event.get(key).is_some() {
+                    if fields.get(key).is_some() {
                         *field = code(key);
                     }
                 }
-                if event.get("turnAngle").is_some() {
+                if fields.get("turnAngle").is_some() {
                     nav.turn_angle = num("turnAngle").map(|v| v as i32);
                 }
-                if event.get("afterRoadName").is_some() {
+                if fields.get("afterRoadName").is_some() {
                     nav.after_road_name = text("afterRoadName");
                 }
                 if let Some(v) = num("etaEpoch").filter(|v| *v > 0.0) {
                     nav.eta = Some(v);
                 }
-                if let Some(Ok(v)) = event.get("maneuvers").cloned().map(serde_json::from_value) {
+                if let Some(Ok(v)) = fields.get("maneuvers").cloned().map(serde_json::from_value) {
                     nav.maneuvers = v;
                 }
-                if let Some(Ok(v)) = event
+                if let Some(Ok(v)) = fields
                     .get("currentManeuvers")
                     .cloned()
                     .map(serde_json::from_value)
                 {
                     nav.current_maneuvers = v;
                 }
-                if let Some(Ok(v)) = event
+                if let Some(Ok(v)) = fields
                     .get("laneGuidance")
                     .cloned()
                     .map(serde_json::from_value)
@@ -351,7 +357,7 @@ impl Projection {
                     nav.lane_guidance = v;
                 }
             }
-            Some("nowplaying") => {
+            HelperKind::NowPlaying(_) => {
                 let np = &mut entry.now_playing;
                 for (field, key) in [
                     (&mut np.title, "title"),
@@ -375,7 +381,7 @@ impl Projection {
                     np.playing = Some(v == 1.0);
                 }
             }
-            Some("albumart") => match text("dataB64") {
+            HelperKind::AlbumArt(_) => match text("dataB64") {
                 Some(b64) if !b64.is_empty() => entry.now_playing.artwork = Some(b64),
                 _ => return,
             },

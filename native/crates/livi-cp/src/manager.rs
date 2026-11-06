@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::Value;
+use livi_core_proto::helper_events::{CallPhase as Phase, HelperEvent, HelperKind, StationEvent};
 use socket2::{SockRef, TcpKeepalive};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
@@ -136,7 +136,7 @@ pub enum CpEvent {
     },
     Metadata {
         id: SessionId,
-        event: Value,
+        event: HelperKind,
     },
     Climate {
         id: SessionId,
@@ -233,15 +233,8 @@ impl Session {
     }
 }
 
-fn str_of(ev: &Value, key: &str) -> String {
-    ev.get(key)
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string()
-}
-
-fn opt(s: String) -> Option<String> {
-    (!s.is_empty()).then_some(s)
+fn opt(s: &Option<String>) -> Option<String> {
+    s.clone().filter(|s| !s.is_empty())
 }
 
 struct Manager<M: Media> {
@@ -320,7 +313,10 @@ async fn run<M: Media>(
             }
             item = feed.recv() => match item {
                 Some(Feed::Connected) => m.emit(CpEvent::HelperConnected),
-                Some(Feed::Event(ev)) => m.on_helper_event(&ev),
+                Some(Feed::Event(ev)) => match serde_json::from_value::<HelperEvent>(ev) {
+                    Ok(ev) => m.on_helper_event(ev),
+                    Err(e) => println!("[CpManager] helper event not understood: {e}"),
+                },
                 None => feed = m.ctx.helper.subscribe(),
             },
             Some((id, ev)) = stack_rx.recv() => m.on_stack_event(id, ev),
@@ -757,26 +753,31 @@ impl<M: Media> Manager<M> {
         }
     }
 
-    fn on_helper_event(&mut self, ev: &Value) {
-        match ev.get("type").and_then(Value::as_str).unwrap_or("") {
-            "wifi" => {
-                let wifi_mac = str_of(ev, "mac");
-                let connected = str_of(ev, "event") == "joined";
-                if !connected && !wifi_mac.is_empty() {
-                    self.left_wifi(&wifi_mac);
+    fn on_helper_event(&mut self, ev: HelperEvent) {
+        match &ev.kind {
+            HelperKind::Wifi { event, mac, ip } => {
+                let connected = *event == StationEvent::Joined;
+                if !connected && !mac.is_empty() {
+                    self.left_wifi(mac);
                 }
                 self.emit(CpEvent::HelperPresence(HelperPresence::Wifi {
-                    wifi_mac,
-                    ip: str_of(ev, "ip"),
+                    wifi_mac: mac.clone(),
+                    ip: ip.clone().unwrap_or_default(),
                     connected,
                 }));
             }
-            "device" => {
+            HelperKind::Device {
+                bt_mac,
+                usb_udid,
+                ip,
+                name,
+                ..
+            } => {
                 let ids = DeviceIds {
-                    bt_mac: opt(str_of(ev, "btMac")),
-                    ip: opt(str_of(ev, "ip")),
-                    usb_udid: opt(str_of(ev, "usbUdid")),
-                    name: opt(str_of(ev, "name")),
+                    bt_mac: opt(bt_mac),
+                    ip: opt(ip),
+                    usb_udid: opt(usb_udid),
+                    name: opt(name),
                     ..Default::default()
                 };
                 if let Some(mac) = &ids.bt_mac {
@@ -801,8 +802,8 @@ impl<M: Media> Manager<M> {
                     None => self.buffer_pending(ids),
                 }
             }
-            "link" => {
-                if ev.get("up") == Some(&Value::Bool(false)) {
+            HelperKind::Link { up } => {
+                if !up {
                     let wireless: Vec<SessionId> = self
                         .sessions
                         .keys()
@@ -815,9 +816,9 @@ impl<M: Media> Manager<M> {
                     self.pending.retain(|d| d.usb_udid.is_some());
                 }
             }
-            "wired-start" => {
-                let udid = str_of(ev, "usbUdid");
-                let ip = norm_host(&str_of(ev, "ip"));
+            HelperKind::WiredStart { usb_udid, ip } => {
+                let udid = usb_udid.clone();
+                let ip = norm_host(ip);
                 if udid.is_empty() || ip.is_empty() {
                     return;
                 }
@@ -825,7 +826,7 @@ impl<M: Media> Manager<M> {
                 self.await_session(&udid);
                 let ids = DeviceIds {
                     usb_udid: Some(udid.clone()),
-                    bt_mac: opt(str_of(ev, "phoneId")),
+                    bt_mac: opt(&ev.phone_id),
                     ..Default::default()
                 };
                 let leaving: Vec<SessionId> = self
@@ -841,15 +842,13 @@ impl<M: Media> Manager<M> {
                     self.close(id);
                 }
             }
-            "deviceTime" => {
-                if let Some(minutes) = ev.get("utcOffsetMinutes").and_then(Value::as_f64) {
-                    self.emit(CpEvent::PhoneUtcOffset {
-                        minutes: minutes as i32,
-                    });
-                }
+            HelperKind::DeviceTime { utc_offset_minutes } => {
+                self.emit(CpEvent::PhoneUtcOffset {
+                    minutes: *utc_offset_minutes,
+                });
             }
-            "device-gone" => {
-                let udid = str_of(ev, "usbUdid");
+            HelperKind::DeviceGone { usb_udid, .. } => {
+                let udid = usb_udid.clone();
                 if udid.is_empty() {
                     return;
                 }
@@ -900,9 +899,9 @@ impl<M: Media> Manager<M> {
         }
     }
 
-    fn route_metadata(&mut self, ev: &Value) {
-        let phone_id = str_of(ev, "phoneId");
-        let cid = str_of(ev, "cid");
+    fn route_metadata(&mut self, ev: HelperEvent) {
+        let phone_id = ev.phone_id.clone().unwrap_or_default();
+        let cid = ev.cid.clone().unwrap_or_default();
         let by = |ids: DeviceIds| self.match_session(&ids);
         let mut target = None;
         if !phone_id.is_empty() {
@@ -934,48 +933,44 @@ impl<M: Media> Manager<M> {
             }
         }
         if let Some(id) = target {
-            self.ingest(id, ev);
+            self.ingest(id, ev.kind);
         }
     }
 
-    fn ingest(&mut self, id: SessionId, ev: &Value) {
-        let num = |k: &str| ev.get(k).and_then(Value::as_f64);
-        match ev.get("type").and_then(Value::as_str).unwrap_or("") {
-            "power" => self.presence(
+    fn ingest(&mut self, id: SessionId, kind: HelperKind) {
+        match kind {
+            HelperKind::Power { level, charging } => self.presence(
                 id,
                 Presence::Status {
-                    battery_level: num("level"),
-                    battery_charging: ev.get("charging").and_then(Value::as_bool),
+                    battery_level: level.map(f64::from),
+                    battery_charging: charging,
                     signal_strength: None,
                     carrier_name: None,
                 },
             ),
-            "cellular" => self.presence(
+            HelperKind::Cellular {
+                signal, carrier, ..
+            } => self.presence(
                 id,
                 Presence::Status {
                     battery_level: None,
                     battery_charging: None,
-                    signal_strength: num("signal"),
-                    carrier_name: ev
-                        .get("carrier")
-                        .and_then(Value::as_str)
-                        .map(str::to_string),
+                    signal_strength: signal.map(f64::from),
+                    carrier_name: carrier,
                 },
             ),
-            "call" => {
-                let phase = match ev.get("phase").and_then(Value::as_str) {
-                    Some("ringing") => CallPhase::Ringing,
-                    Some("active") => CallPhase::Active,
-                    Some("ended") => CallPhase::Ended,
-                    _ => return,
+            HelperKind::Call { phase, .. } => {
+                let phase = match phase {
+                    Phase::Ringing => CallPhase::Ringing,
+                    Phase::Active => CallPhase::Active,
+                    Phase::Ended => CallPhase::Ended,
                 };
                 self.emit(CpEvent::Call { id, phase });
             }
-            "albumart" | "navigation" | "nowplaying" => {
-                self.emit(CpEvent::Metadata {
-                    id,
-                    event: ev.clone(),
-                });
+            event @ (HelperKind::AlbumArt(_)
+            | HelperKind::Navigation(_)
+            | HelperKind::NowPlaying(_)) => {
+                self.emit(CpEvent::Metadata { id, event });
             }
             _ => {}
         }
@@ -1340,7 +1335,7 @@ mod tests {
     async fn a_session_takes_its_identity_and_its_metadata() {
         let mut rig = Rig::new().await;
         rig.helper
-            .push(serde_json::json!({ "type": "device", "btMac": "AA:BB", "usbUdid": "u1", "ip": "10.0.0.2" }))
+            .push(serde_json::json!({ "type": "device", "src": "carkit", "btMac": "AA:BB", "usbUdid": "u1", "ip": "10.0.0.2" }))
             .await;
         let ids = DeviceIds {
             bt_mac: Some("AA:BB".into()),
@@ -1523,7 +1518,7 @@ mod tests {
             unreachable!()
         };
         rig.helper
-            .push(serde_json::json!({ "type": "device-gone", "usbUdid": "u1" }))
+            .push(serde_json::json!({ "type": "device-gone", "src": "carkit", "usbUdid": "u1" }))
             .await;
         assert_eq!(
             rig.until(|e| matches!(e, CpEvent::HelperPresence(_))).await,
@@ -1555,7 +1550,7 @@ mod tests {
         .await;
 
         rig.helper
-            .push(serde_json::json!({ "type": "device", "btMac": "GG:HH", "usbUdid": "u3" }))
+            .push(serde_json::json!({ "type": "device", "src": "carkit", "btMac": "GG:HH", "usbUdid": "u3" }))
             .await;
         rig.until(|e| matches!(e, CpEvent::Presence { presence: Presence::Device { usb_udid, .. }, .. } if usb_udid == "u3")).await;
         rig.helper
@@ -1585,10 +1580,10 @@ mod tests {
             .push(serde_json::json!({ "type": "link", "up": false }))
             .await;
         rig.helper
-            .push(serde_json::json!({ "type": "device", "btMac": "GG:HH", "usbUdid": "u3" }))
+            .push(serde_json::json!({ "type": "device", "src": "carkit", "btMac": "GG:HH", "usbUdid": "u3" }))
             .await;
         rig.helper
-            .push(serde_json::json!({ "type": "device-gone", "usbUdid": "u3" }))
+            .push(serde_json::json!({ "type": "device-gone", "src": "carkit", "usbUdid": "u3" }))
             .await;
         assert_eq!(
             rig.until(|e| matches!(e, CpEvent::Disconnected { .. }))
@@ -1630,7 +1625,7 @@ mod tests {
             })
         );
         rig.helper
-            .push(serde_json::json!({ "type": "device", "usbUdid": "u9" }))
+            .push(serde_json::json!({ "type": "device", "src": "carkit", "usbUdid": "u9" }))
             .await;
         rig.helper
             .push(serde_json::json!({ "type": "link", "up": false }))

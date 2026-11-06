@@ -9,6 +9,7 @@ use std::time::Duration;
 use iap2_mfi::{NcmCoprocessor, NoCoprocessor};
 use livi_bt_host::sdp::Service;
 use livi_core_proto::helper::HelperSockets;
+use livi_core_proto::helper_events::{HelperEvent, HelperKind};
 use livi_runtime::bringup::{AskOnAir, CpConfig};
 use livi_runtime::driver::spawn_link_stream;
 use livi_runtime::hfp::Hfp;
@@ -154,7 +155,7 @@ pub fn follow_link(
             if !own_files && let Some(addr) = livi_link_host::link::addr(livi_net::port::MFI) {
                 up_auth.replace(Box::new(NcmCoprocessor::new(&addr)));
             }
-            arrived.push_json("{\"type\":\"link\",\"up\":true}".into());
+            arrived.push_json(HelperEvent::from(HelperKind::Link { up: true }).to_line());
         },
         move || {
             if !own_files {
@@ -162,7 +163,7 @@ pub fn follow_link(
             }
             dongle.end();
             println!("[helper] the dongle went");
-            left.push_json("{\"type\":\"link\",\"up\":false}".into());
+            left.push_json(HelperEvent::from(HelperKind::Link { up: false }).to_line());
         },
     ));
 }

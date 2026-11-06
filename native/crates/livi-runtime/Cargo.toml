@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 livi-wifi.workspace = true
+livi-core-proto.workspace = true
 livi-host-proto.workspace = true
 iap2-csm.workspace = true
 iap2-link.workspace = true

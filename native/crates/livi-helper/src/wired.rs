@@ -14,6 +14,7 @@ use iap2_link::LinkConfig;
 use iap2_usbmux::{MuxRegistry, find_iphones};
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use iap2_wired::open_carkit;
+use livi_core_proto::helper_events::{DeviceSource, HelperEvent, HelperKind};
 use livi_runtime::bringup::{CpConfig, run_accessory};
 use livi_runtime::driver::spawn_link_stream;
 use livi_runtime::ident::Identity;
@@ -25,9 +26,13 @@ use crate::link::LinkPresence;
 use crate::short;
 
 fn announce_gone(bcast: &Broadcaster, serial: &str) {
-    bcast.push_json(format!(
-        "{{\"type\":\"device-gone\",\"src\":\"carkit\",\"usbUdid\":\"{serial}\"}}"
-    ));
+    bcast.push_json(
+        HelperEvent::from(HelperKind::DeviceGone {
+            src: DeviceSource::Carkit,
+            usb_udid: serial.to_string(),
+        })
+        .to_line(),
+    );
 }
 
 const SCAN_INTERVAL: Duration = Duration::from_secs(2);

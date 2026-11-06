@@ -10,6 +10,7 @@ use std::process::Stdio;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
+use livi_core_proto::helper_events::{DeviceSource, HelperEvent, HelperKind};
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
@@ -273,9 +274,7 @@ async fn browse_once(
         );
         if let Some(mac) = &ep.phone_bt {
             let ip = ep.address.split('%').next().unwrap_or(&ep.address);
-            bcast.push_json(format!(
-                "{{\"type\":\"device\",\"src\":\"bonjour\",\"btMac\":\"{mac}\",\"ip\":\"{ip}\"}}"
-            ));
+            bcast.push_json(seen_over_bonjour(mac, ip));
         }
         let device_id = device_id.lock().unwrap().clone();
         let source_version = source_version.to_string();
@@ -439,9 +438,7 @@ fn macos_browse_once(
         );
         if let Some(mac) = &ep.phone_bt {
             let ip = ep.address.split('%').next().unwrap_or(&ep.address);
-            bcast.push_json(format!(
-                "{{\"type\":\"device\",\"src\":\"bonjour\",\"btMac\":\"{mac}\",\"ip\":\"{ip}\"}}"
-            ));
+            bcast.push_json(seen_over_bonjour(mac, ip));
         }
         let device_id = device_id.lock().unwrap().clone();
         connect_probe(&ep, &device_id, source_version);
@@ -567,6 +564,17 @@ fn ifname_from_index(idx: u32) -> Option<String> {
         .to_str()
         .ok()
         .map(|s| s.to_string())
+}
+
+fn seen_over_bonjour(mac: &str, ip: &str) -> String {
+    HelperEvent::from(HelperKind::Device {
+        src: DeviceSource::Bonjour,
+        bt_mac: Some(mac.to_string()),
+        usb_udid: None,
+        ip: Some(ip.to_string()),
+        name: None,
+    })
+    .to_line()
 }
 
 #[cfg(test)]

@@ -13,6 +13,7 @@ ed25519-dalek = "3.0.0"
 foreign-types = "0.3.2"
 getrandom = "0.4.3"
 hkdf = "0.13.0"
+livi-core-proto.workspace = true
 livi-net.workspace = true
 livi-session-io.workspace = true
 num-bigint = "0.5.1"

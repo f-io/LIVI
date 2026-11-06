@@ -6,6 +6,7 @@ pub mod config;
 pub mod frame;
 pub mod gnss;
 pub mod helper;
+pub mod helper_events;
 pub mod icon;
 pub mod input;
 pub mod message;

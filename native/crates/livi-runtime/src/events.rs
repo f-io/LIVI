@@ -13,6 +13,7 @@ use iap2_csm::messages::power::PowerUpdate;
 use iap2_csm::messages::route_guidance::{
     LaneGuidanceInformation, RouteGuidanceManeuverUpdate, RouteGuidanceUpdate,
 };
+use livi_core_proto::helper_events::{CallPhase, DeviceSource, HelperEvent, HelperKind};
 use serde_json::{Map, Value, json};
 
 use crate::framing::frame_msg_id;
@@ -24,22 +25,29 @@ pub fn device_json(frame: &[u8], usb_udid: Option<&str>) -> Option<String> {
         return None;
     }
     let m = DeviceTransportIdentifierNotification::decode(frame).ok()?;
-    let mut o = Obj::new("device");
-    o.str("src", if usb_udid.is_some() { "carkit" } else { "bt" });
-    if !m.bluetooth_transport_id.is_empty() {
-        o.str("btMac", &m.bluetooth_transport_id);
-    }
-    if let Some(udid) = usb_udid {
-        o.str("usbUdid", udid);
-    }
-    o.finish()
+    let seen = HelperKind::Device {
+        src: if usb_udid.is_some() {
+            DeviceSource::Carkit
+        } else {
+            DeviceSource::Bt
+        },
+        bt_mac: Some(m.bluetooth_transport_id).filter(|m| !m.is_empty()),
+        usb_udid: usb_udid.map(str::to_string),
+        ip: None,
+        name: None,
+    };
+    Some(line(seen))
 }
 
 pub fn wired_start_json(usb_udid: &str, ip: &str) -> String {
-    let mut o = Obj::new("wired-start");
-    o.str("usbUdid", usb_udid);
-    o.str("ip", ip);
-    o.finish().unwrap_or_default()
+    line(HelperKind::WiredStart {
+        usb_udid: usb_udid.to_string(),
+        ip: ip.to_string(),
+    })
+}
+
+fn line(kind: HelperKind) -> String {
+    HelperEvent::from(kind).to_line()
 }
 
 #[derive(Debug, Default, Clone)]
@@ -339,58 +347,42 @@ fn now_playing(frame: &[u8]) -> Option<String> {
 
 fn power(frame: &[u8]) -> Option<String> {
     let m = PowerUpdate::decode(frame).ok()?;
-    let mut o = Obj::new("power");
-    if let Some(l) = m.battery_charge_level {
-        o.num("level", l);
-    }
-    if let Some(c) = m.is_external_charger_connected {
-        o.bool("charging", c);
-    }
-    o.finish()
+    let (level, charging) = (m.battery_charge_level, m.is_external_charger_connected);
+    (level.is_some() || charging.is_some()).then(|| line(HelperKind::Power { level, charging }))
 }
 
 fn cellular(frame: &[u8]) -> Option<String> {
     let m = CommunicationsUpdate::decode(frame).ok()?;
-    let mut o = Obj::new("cellular");
-    if let Some(s) = m.signal_strength.as_ref().and_then(|v| v.first()) {
-        o.num("signal", s);
-    }
-    if let Some(c) = m.carrier_name {
-        o.str("carrier", &c);
-    }
-    if let Some(s) = m.cellular_supported {
-        o.bool("cellularSupported", s);
-    }
-    o.finish()
+    let signal = m.signal_strength.as_ref().and_then(|v| v.first()).copied();
+    let (carrier, cellular_supported) = (m.carrier_name, m.cellular_supported);
+    (signal.is_some() || carrier.is_some() || cellular_supported.is_some()).then(|| {
+        line(HelperKind::Cellular {
+            signal,
+            carrier,
+            cellular_supported,
+        })
+    })
 }
 
 fn utc_offset(frame: &[u8]) -> Option<String> {
     let m = DeviceTimeUpdate::decode(frame).ok()?;
-    let minutes = i32::from(m.time_zone_offset_minutes?);
-    let mut o = Obj::new("deviceTime");
-    o.num("utcOffsetMinutes", minutes);
-    o.finish()
+    let utc_offset_minutes = i32::from(m.time_zone_offset_minutes?);
+    Some(line(HelperKind::DeviceTime { utc_offset_minutes }))
 }
 
 fn call(frame: &[u8]) -> Option<String> {
     let m = CallStateUpdate::decode(frame).ok()?;
-    let status = m.status?;
-    let phase = match status {
-        0 => "ended",
-        2 => "ringing",
-        _ => "active",
+    let phase = match m.status? {
+        0 => CallPhase::Ended,
+        2 => CallPhase::Ringing,
+        _ => CallPhase::Active,
     };
-    let mut o = Obj::new("call");
-    o.str("phase", phase);
-    if phase != "ended" {
-        if let Some(n) = m.remote_id {
-            o.str("number", &n);
-        }
-        if let Some(n) = m.display_name {
-            o.str("name", &n);
-        }
-    }
-    o.finish()
+    let ongoing = phase != CallPhase::Ended;
+    Some(line(HelperKind::Call {
+        phase,
+        number: m.remote_id.filter(|_| ongoing),
+        name: m.display_name.filter(|_| ongoing),
+    }))
 }
 
 fn indices(list: &[u8]) -> Vec<u16> {
@@ -684,8 +676,14 @@ mod device_tests {
             "fe80::80a:a1ca",
         ));
         assert_eq!(
-            json,
-            "{\"type\":\"wired-start\",\"usbUdid\":\"00008120000924CE2E51A01E\",\"ip\":\"fe80::80a:a1ca\",\"phoneId\":\"0C:6A:C4:4E:F3:2A\",\"usbTransportId\":\"usb-1\"}"
+            serde_json::from_str::<Value>(&json).unwrap(),
+            json!({
+                "type": "wired-start",
+                "usbUdid": "00008120000924CE2E51A01E",
+                "ip": "fe80::80a:a1ca",
+                "phoneId": "0C:6A:C4:4E:F3:2A",
+                "usbTransportId": "usb-1"
+            })
         );
     }
 
