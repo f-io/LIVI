@@ -95,12 +95,14 @@ const ARRAY: u8 = 0xD0;
 const DICT: u8 = 0xE0;
 const SHORT_COUNT: usize = 14;
 const OPEN: u8 = 0x0F;
+const MAX_DEPTH: usize = 64;
 
 pub fn decode(buf: &[u8]) -> Option<Value> {
     let mut reader = Reader {
         buf,
         at: 0,
         seen: Vec::new(),
+        depth: 0,
     };
     let v = reader.value()?;
     (reader.at == buf.len()).then_some(v)
@@ -110,6 +112,7 @@ struct Reader<'a> {
     buf: &'a [u8],
     at: usize,
     seen: Vec<Value>,
+    depth: usize,
 }
 
 impl Reader<'_> {
@@ -148,6 +151,17 @@ impl Reader<'_> {
     }
 
     fn value(&mut self) -> Option<Value> {
+        self.depth += 1;
+        let v = if self.depth > MAX_DEPTH {
+            None
+        } else {
+            self.item()
+        };
+        self.depth -= 1;
+        v
+    }
+
+    fn item(&mut self) -> Option<Value> {
         let tag = *self.take(1)?.first()?;
         Some(match tag {
             TRUE => Value::Bool(true),
@@ -305,6 +319,13 @@ fn write(out: &mut Vec<u8>, v: &Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nesting_stops_at_the_depth_limit() {
+        let nested = |n: usize| [vec![ARRAY + 1; n], vec![NULL]].concat();
+        assert!(decode(&nested(MAX_DEPTH - 1)).is_some());
+        assert_eq!(decode(&nested(100_000)), None);
+    }
 
     #[test]
     fn values_come_back_as_they_went() {
