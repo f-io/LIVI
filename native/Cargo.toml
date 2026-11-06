@@ -47,7 +47,6 @@ imx6ul-uboot = { path = "crates/imx6ul-uboot" }
 livi-aa = { path = "crates/livi-aa" }
 livi-aa-proto = { path = "crates/livi-aa-proto" }
 livi-aa-stack = { path = "crates/livi-aa-stack" }
-livi-accessoryd = { path = "crates/livi-accessoryd" }
 livi-aaudio = { path = "crates/livi-aaudio" }
 livi-audio = { path = "crates/livi-audio" }
 livi-bt-host = { path = "crates/livi-bt-host" }

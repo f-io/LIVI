@@ -14,7 +14,6 @@ livi-mdns.workspace = true
 livi-wifid.workspace = true
 livi-web.workspace = true
 livi-btd.workspace = true
-livi-accessoryd.workspace = true
 livi-net.workspace = true
 iap2-mfi.workspace = true
 libc.workspace = true

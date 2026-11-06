@@ -3,7 +3,6 @@
 // Additional terms: see NOTICE
 
 use std::io::{BufRead, BufReader, Write};
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -28,11 +27,6 @@ const BT: &str = "hci0";
 const BT_MAC: &str = "/tmp/livi/bt-mac";
 const BT_DEV: u16 = 0;
 const LIVI_RADIO: &str = "/usr/bin/livi-radio";
-const ACCESSORY: SocketAddr = SocketAddr::V4(SocketAddrV4::new(
-    Ipv4Addr::LOCALHOST,
-    livi_net::port::ACCESSORY,
-));
-const ACCESSORY_WAIT: Duration = Duration::from_secs(3);
 
 pub type OnSave = Box<dyn Fn() + Send + Sync>;
 
@@ -85,7 +79,6 @@ enum Cmd<'a> {
     On,
     Off,
     Bt(bool),
-    Accessory(&'a str),
     Empty,
     Unknown(&'a str),
 }
@@ -156,7 +149,6 @@ pub fn serve<S: std::io::Read + Write>(io: &mut S, ap: &Mutex<Ap>) {
                     Err(e) => format!("error {e}\n"),
                 }
             }
-            Cmd::Accessory(order) => accessory(ACCESSORY, order),
             Cmd::Empty => continue,
             Cmd::Unknown(what) => format!("error unknown command {what}\n"),
         };
@@ -186,7 +178,6 @@ fn command(line: &str) -> Cmd<'_> {
             "off" => Cmd::Bt(false),
             _ => Cmd::Unknown(line),
         },
-        "accessory" if !rest.trim().is_empty() => Cmd::Accessory(rest.trim()),
         "set" => match rest.split_once(' ') {
             Some((key, value)) => Cmd::Set(key, value),
             None => Cmd::Unknown(line),
@@ -197,28 +188,6 @@ fn command(line: &str) -> Cmd<'_> {
 
 fn held(ap: &Mutex<Ap>) -> MutexGuard<'_, Ap> {
     ap.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-fn accessory(at: SocketAddr, order: &str) -> String {
-    ask(at, order).unwrap_or_else(|e| format!("error accessory: {e}\n"))
-}
-
-fn ask(at: SocketAddr, order: &str) -> std::io::Result<String> {
-    let mut stream = TcpStream::connect_timeout(&at, ACCESSORY_WAIT)?;
-    stream.set_read_timeout(Some(ACCESSORY_WAIT))?;
-    writeln!(stream, "{order}")?;
-    let mut reader = BufReader::new(stream);
-    let (mut answer, mut line) = (String::new(), String::new());
-    loop {
-        line.clear();
-        if reader.read_line(&mut line)? == 0 {
-            return Err(std::io::ErrorKind::UnexpectedEof.into());
-        }
-        answer.push_str(&line);
-        if line == "ok\n" || line.starts_with("error ") {
-            return Ok(answer);
-        }
-    }
 }
 
 fn remember(wanted: &mut Wanted, key: &str, value: &str) -> Result<(), String> {
@@ -433,7 +402,7 @@ fn off(ap: &mut Ap) {
 
 fn bluetooth(up: bool) -> Result<(), String> {
     if !up {
-        livi_radio("bt-off", "btd and accessoryd would not stop")?;
+        livi_radio("bt-off", "btd would not stop")?;
         return livi_btd::hci::down(BT_DEV).map_err(|e| format!("{BT} would not go down: {e}"));
     }
     driver();
@@ -650,19 +619,6 @@ mod tests {
         assert!(remember(&mut w, "width", "wide").is_err());
     }
 
-    fn accessoryd(answer: &'static str) -> (SocketAddr, std::thread::JoinHandle<String>) {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let at = listener.local_addr().unwrap();
-        let heard = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut order = String::new();
-            BufReader::new(&stream).read_line(&mut order).unwrap();
-            stream.write_all(answer.as_bytes()).unwrap();
-            order
-        });
-        (at, heard)
-    }
-
     #[test]
     fn down_is_a_command_of_its_own() {
         assert!(matches!(command("down"), Cmd::Down));
@@ -691,35 +647,5 @@ mod tests {
         );
         let _ = std::fs::remove_file(&path);
         assert!(with_ctrl(&path).is_err());
-    }
-
-    #[test]
-    fn an_accessory_order_goes_to_the_accessory_and_comes_back_whole() {
-        assert!(matches!(
-            command("accessory targets aa bb"),
-            Cmd::Accessory("targets aa bb")
-        ));
-        assert!(matches!(command("accessory"), Cmd::Unknown("accessory")));
-
-        let (at, heard) = accessoryd("bonds 1\noffered on\ntargets 0\nok\n");
-        assert_eq!(
-            accessory(at, "status"),
-            "bonds 1\noffered on\ntargets 0\nok\n"
-        );
-        assert_eq!(heard.join().unwrap(), "status\n");
-
-        let (at, _) = accessoryd("error not an address\n");
-        assert_eq!(accessory(at, "disconnect x"), "error not an address\n");
-    }
-
-    #[test]
-    fn an_accessory_that_is_gone_or_hangs_up_is_an_error() {
-        let (at, _) = accessoryd("bonds 1\n");
-        assert!(accessory(at, "status").starts_with("error accessory: "));
-        let gone = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap();
-        assert!(accessory(gone, "on").starts_with("error accessory: "));
     }
 }

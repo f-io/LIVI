@@ -8,9 +8,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use livi_core_proto::aa_events::AaTransport;
 use livi_core_proto::helper::HelperSockets;
-use livi_runtime::bringup::{CpConfig, OnCable};
+use livi_runtime::bringup::CpConfig;
 use livi_runtime::bt;
-use livi_runtime::driver::{spawn_link, spawn_link_stream};
+use livi_runtime::driver::spawn_link;
 use livi_runtime::ident::Identity;
 use livi_runtime::livi_sock::{Bluez, Broadcaster, run_bluetooth};
 use livi_runtime::mfi_async::SharedCoprocessor;
@@ -98,17 +98,6 @@ async fn adapter(chosen: &str) -> String {
     }
 }
 
-fn dongle_on_cable(state: Arc<HelperState>) -> OnCable {
-    OnCable::dropping(state, |mac| {
-        let mac = mac.to_string();
-        tokio::task::spawn_blocking(move || {
-            if let Err(e) = livi_link_host::accessory::drop_link(&mac) {
-                eprintln!("[helper] {mac} stays on the dongle's bluetooth: {e}");
-            }
-        });
-    })
-}
-
 pub async fn serve(b: Bluetooth, mut stop: watch::Receiver<bool>) -> Result<(), Box<dyn Error>> {
     let wireless = b.wireless;
     let adapter = adapter(&b.adapter).await;
@@ -119,9 +108,6 @@ pub async fn serve(b: Bluetooth, mut stop: watch::Receiver<bool>) -> Result<(), 
         if wireless.android_auto { "on" } else { "off" }
     );
     let (conn, mut incoming, held) = bt::start(&adapter, &b.identity.name, wireless).await?;
-    let mut dongle_iap = std::env::var("LIVI_BT_VIA_DONGLE")
-        .is_ok_and(|v| v == "1" && wireless.carplay)
-        .then(|| livi_link_host::accessory::sessions(|| true));
     let bt_mac = bt::adapter_address(&conn, &adapter).await?;
     println!(
         "[helper] adapter {} up (RFCOMM ch {})",
@@ -238,12 +224,6 @@ pub async fn serve(b: Bluetooth, mut stop: watch::Receiver<bool>) -> Result<(), 
             _ = stop.changed() => {
                 bt::let_go(&conn, &adapter, &held).await;
                 return Ok(());
-            }
-            session = async { dongle_iap.as_mut().unwrap().recv().await }, if dongle_iap.is_some() => {
-                let Some(session) = session else { return Ok(()) };
-                let cp = CpConfig { on_cable: Some(dongle_on_cable(b.state.clone())), ..resolve_cp(&b.cp, b.dongle_ap).await };
-                let peer = session.peer.to_string();
-                run_bluetooth(|cfg| spawn_link_stream(session.stream, cfg, false), b.auth.clone(), identity.clone(), cp, b.bcast.clone(), b.state.clone(), peer);
             }
             conn = incoming.recv(), if wireless.carplay => {
                 let Some(conn) = conn else { return Ok(()) };

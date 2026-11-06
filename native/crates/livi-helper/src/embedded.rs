@@ -165,8 +165,7 @@ fn serve(start: HelperStart, host: Host) -> Held {
     let wireless = (!over_dongle && (carplay || android_auto)).then(|| {
         (
             livi_runtime::ident::Identity {
-                bt_mac: livi_link_host::accessory::address(&start.device_id)
-                    .unwrap_or(identity.bt_mac),
+                bt_mac: livi_link_host::ap::address(&start.device_id).unwrap_or(identity.bt_mac),
                 ..identity.clone()
             },
             livi_runtime::bringup::CpConfig {

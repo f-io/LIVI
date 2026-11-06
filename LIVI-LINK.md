@@ -5,7 +5,7 @@ stacks. It is supported on Linux and macOS, and can provide:
 
 - **MFi authentication** over the network
 - **A Wi-Fi access point**
-- **Bluetooth** as a vhci on Linux and on macOS the dongle pairs the phone
+- **Bluetooth** as a vhci on Linux and to LIVI's own Bluetooth stack on macOS
 
 Each one is enabled separately in the settings. While the dongle is not selected in the settings,
 LIVI turns its access point temporarily off to keep interference low.

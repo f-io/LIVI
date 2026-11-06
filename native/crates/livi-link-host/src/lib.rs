@@ -5,7 +5,6 @@
 #[cfg(target_os = "android")]
 extern crate nusb_android as nusb;
 
-pub mod accessory;
 pub mod ap;
 #[cfg(target_os = "linux")]
 pub mod bt;

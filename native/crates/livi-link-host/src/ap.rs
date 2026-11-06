@@ -34,27 +34,6 @@ fn fields(answer: impl BufRead) -> HashMap<String, String> {
     fields
 }
 
-pub(crate) fn order(command: &str) -> Result<(), String> {
-    let mut stream =
-        link::connect(livi_net::port::CONTROL, TIMEOUT).map_err(|e| format!("dongle: {e}"))?;
-    stream
-        .set_read_timeout(Some(TIMEOUT))
-        .map_err(|e| format!("dongle: {e}"))?;
-    writeln!(stream, "{command}").map_err(|e| format!("dongle: {e}"))?;
-    let mut answer = String::new();
-    BufReader::new(&stream)
-        .read_line(&mut answer)
-        .map_err(|e| format!("dongle: {e}"))?;
-    answered(&answer)
-}
-
-fn answered(answer: &str) -> Result<(), String> {
-    match answer.trim() {
-        "ok" => Ok(()),
-        other => Err(other.trim_start_matches("error ").to_string()),
-    }
-}
-
 pub fn status() -> Option<HashMap<String, String>> {
     ask("status")
 }
@@ -172,7 +151,10 @@ pub fn mac() -> Option<String> {
 }
 
 pub fn bt_mac() -> Option<[u8; 6]> {
-    let text = status_field("btmac")?;
+    address(&status_field("btmac")?)
+}
+
+pub fn address(text: &str) -> Option<[u8; 6]> {
     let mut out = [0u8; 6];
     let mut parts = text.trim().split(':');
     for byte in &mut out {
@@ -184,6 +166,17 @@ pub fn bt_mac() -> Option<[u8; 6]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_address_reads_in_the_order_it_is_written() {
+        assert_eq!(
+            address("38:BA:B0:A0:E6:6F"),
+            Some([0x38, 0xba, 0xb0, 0xa0, 0xe6, 0x6f])
+        );
+        assert_eq!(address("38:BA:B0:A0:E6"), None);
+        assert_eq!(address("38:BA:B0:A0:E6:6F:11"), None);
+        assert_eq!(address("not an address"), None);
+    }
 
     fn status_of(text: &str) -> HashMap<String, String> {
         fields(text.as_bytes())
@@ -261,16 +254,6 @@ mod tests {
         assert_eq!(answer.get("deauth").map(String::as_str), Some("2"));
         assert!(!answer.contains_key("state"));
         assert!(fields("error hostapd is gone\n".as_bytes()).is_empty());
-    }
-
-    #[test]
-    fn an_order_is_done_on_ok_and_names_what_went_wrong_otherwise() {
-        assert_eq!(answered("ok\n"), Ok(()));
-        assert_eq!(
-            answered("error not an address\n").unwrap_err(),
-            "not an address"
-        );
-        assert!(answered("").is_err());
     }
 
     #[test]

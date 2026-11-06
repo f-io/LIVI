@@ -3954,15 +3954,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "livi-accessoryd"
-version = "0.1.0"
-dependencies = [
- "libc 1.0.0-alpha.5",
- "livi-bt-host",
- "livi-net",
-]
-
-[[package]]
 name = "livi-android"
 version = "10.4.0"
 dependencies = [
@@ -4400,7 +4391,6 @@ dependencies = [
  "iap2-mfi",
  "imx6ul-uboot",
  "libc 1.0.0-alpha.5",
- "livi-accessoryd",
  "livi-btd",
  "livi-mdns",
  "livi-net",

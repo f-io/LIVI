@@ -11,7 +11,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use livi_net::port::{ACCESSORY, HCI};
+use livi_net::port::HCI;
 const BTPROTO_HCI: libc::c_int = 1;
 const HCI_CHANNEL_USER: u16 = 1;
 const DEV: u16 = 0;
@@ -23,7 +23,6 @@ const EV_CONN_REQUEST: u8 = 0x04;
 const EV_DISCONN_COMPLETE: u8 = 0x05;
 const LINK_ACL: u8 = 0x01;
 const POLL_MS: i32 = 200;
-const ORDER_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
 const CONTROLLER_TRIES: u32 = 120;
 const CONTROLLER_POLL: std::time::Duration = std::time::Duration::from_millis(500);
 
@@ -72,7 +71,6 @@ pub fn run() -> ExitCode {
     while let Some(stream) = hosts.next() {
         let _ = stream.set_nodelay(true);
         notice_loss(&stream);
-        tell_accessory("off");
         if let Err(e) = crate::hci::down(DEV) {
             eprintln!("[btd] {IFACE} down: {e}");
         }
@@ -117,16 +115,6 @@ fn notice_loss(stream: &TcpStream) {
             eprintln!("[btd] tunnel timeout: {}", std::io::Error::last_os_error());
         }
     }
-}
-
-fn tell_accessory(order: &str) {
-    let Ok(mut control) = TcpStream::connect(("127.0.0.1", ACCESSORY)) else {
-        return;
-    };
-    let _ = control.write_all(format!("{order}\n").as_bytes());
-    let mut answer = [0u8; 32];
-    let _ = control.set_read_timeout(Some(ORDER_WAIT));
-    let _ = (&control).read(&mut answer);
 }
 
 fn await_controller() -> bool {
