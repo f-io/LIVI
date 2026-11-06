@@ -3,7 +3,6 @@
 // Additional terms: see NOTICE
 
 #[cfg(any(target_os = "macos", target_os = "android"))]
-mod control;
 #[cfg(any(target_os = "macos", target_os = "android"))]
 mod main_thread;
 #[cfg(target_os = "macos")]

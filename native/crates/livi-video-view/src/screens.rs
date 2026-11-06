@@ -6,11 +6,11 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 
 use livi_host_proto::CameraOrder;
+use livi_host_proto::ctrl::{Command, Region};
 use livi_host_proto::display::Correction;
 use livi_host_proto::plane_place;
 use livi_video_player::{CameraPlayer, Player, Say, UrlPlayer};
 
-use crate::control::{Line, Region};
 use crate::main_thread::on_main;
 
 #[cfg(target_os = "macos")]
@@ -166,10 +166,10 @@ fn paint(window: usize, [r, g, b]: [u8; 3]) {
     window::backdrop(window, [c(r), c(g), c(b)]);
 }
 
-pub fn apply(line: Line) -> Option<String> {
-    match line {
-        Line::Claim(tag) => return Some(format!("bound {tag}\n")),
-        Line::Place { tag, region } => on_main(|| {
+pub fn apply(cmd: Command) -> Option<String> {
+    match cmd {
+        Command::Claim(tag) => return Some(format!("bound {tag}\n")),
+        Command::Place { tag, region, .. } => on_main(|| {
             let mut s = screens();
             s.placements.entry(tag.clone()).or_default().region = region;
             s.drawn
@@ -177,7 +177,7 @@ pub fn apply(line: Line) -> Option<String> {
                 .filter(|d| d.tag == tag)
                 .for_each(|d| d.view.place(region));
         }),
-        Line::Show { tag, shown } => on_main(|| {
+        Command::Show { tag, shown } => on_main(|| {
             let mut s = screens();
             s.placements.entry(tag.clone()).or_default().shown = shown;
             s.drawn
@@ -185,16 +185,17 @@ pub fn apply(line: Line) -> Option<String> {
                 .filter(|d| d.tag == tag)
                 .for_each(|d| d.view.set_visible(shown));
         }),
-        Line::Backdrop(rgb) => on_main(|| {
+        Command::Backdrop(rgb) => on_main(|| {
             let mut s = screens();
             s.backdrop = Some(rgb);
             s.windows.values().for_each(|&w| paint(w, rgb));
         }),
-        Line::Gamma(v) => on_main(|| {
+        Command::Gamma(v) => on_main(|| {
             let mut s = screens();
             s.gamma = Some(v);
             s.windows.values().for_each(|&w| correct(w, v));
         }),
+        _ => {}
     }
     None
 }

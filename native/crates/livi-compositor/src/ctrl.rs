@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 
+use livi_host_proto::ctrl::Command;
+
 use crate::state::LiviState;
 
 pub fn leave_with_core(handle: &LoopHandle<'static, LiviState>) {
@@ -196,165 +198,122 @@ pub fn send_panels(state: &mut LiviState) {
 }
 
 fn handle_line(state: &mut LiviState, line: &str) {
-    if line == "restart" {
-        log::info!("restart requested -> waiting for inner UI to quit, then re-exec");
-        state.full_restart = true;
-        if state.startup_pid.is_some() {
-            state.restart_deadline = Some(Instant::now() + Duration::from_secs(8));
-            crate::spawn::terminate_child(state);
-        } else {
-            state.running = false;
+    let Some(cmd) = Command::parse(line) else {
+        if !line.is_empty() {
+            log::info!("ctrl < {line} (not understood)");
         }
         return;
-    }
-
-    let mut parts = line.split_whitespace();
-    match parts.next() {
-        Some("screen") => {
-            let Some(role) = parts.next() else { return };
-            let Some(onoff) = parts.next().and_then(|v| v.parse::<i32>().ok()) else {
-                return;
-            };
-            let w = parts.next().and_then(|v| v.parse::<i32>().ok());
-            let h = parts.next().and_then(|v| v.parse::<i32>().ok());
-            let Some(idx) = state.screen_idx_by_role(role) else {
-                return;
-            };
-            if let (Some(w), Some(h)) = (w, h)
-                && w > 0
-                && h > 0
-            {
-                state.screens[idx].req_width = w;
-                state.screens[idx].req_height = h;
+    };
+    match cmd {
+        Command::Restart => {
+            log::info!("restart requested -> waiting for inner UI to quit, then re-exec");
+            state.full_restart = true;
+            if state.startup_pid.is_some() {
+                state.restart_deadline = Some(Instant::now() + Duration::from_secs(8));
+                crate::spawn::terminate_child(state);
+            } else {
+                state.running = false;
             }
-            if onoff != 0 {
+        }
+        Command::Screen { role, on, size } => {
+            let Some(idx) = state.screen_idx_by_role(&role) else {
+                return;
+            };
+            if let Some((w, h)) = size {
+                state.screens[idx].req_width = w as i32;
+                state.screens[idx].req_height = h as i32;
+            }
+            if on {
                 crate::host::open_screen(state, idx);
             } else {
                 crate::host::close_screen(state, idx);
             }
         }
-        Some("fullscreen") => {
-            let (Some(role), Some(on)) = (
-                parts.next(),
-                parts.next().and_then(|v| v.parse::<u8>().ok()),
-            ) else {
+        Command::Fullscreen { role, on } => {
+            let Some(idx) = state.screen_idx_by_role(&role) else {
                 return;
             };
-            let Some(idx) = state.screen_idx_by_role(role) else {
-                return;
-            };
-            let want = on != 0;
-            if state.drm.is_none() && state.screens[idx].fullscreen != want {
+            if state.drm.is_none() && state.screens[idx].fullscreen != on {
                 log::info!("ctrl < {line}");
-                crate::layout::set_fullscreen(state, idx, want);
+                crate::layout::set_fullscreen(state, idx, on);
             }
         }
-        Some("claim") => {
-            if let Some(tag) = parts.next() {
-                if crate::shell::bind_waiting_plane(state, tag) {
-                    log::info!("ctrl < claim {tag} (took the plane already waiting)");
-                } else if state.pending_video_tags.len() < 16 {
-                    state.pending_video_tags.push_back(tag.to_string());
-                    log::info!(
-                        "ctrl < claim {tag} (pending: {:?})",
-                        state.pending_video_tags
-                    );
-                }
-            }
-        }
-        Some("unclaim") => {
-            if let Some(tag) = parts.next() {
-                state.pending_video_tags.retain(|t| t != tag);
+        Command::Claim(tag) => {
+            if crate::shell::bind_waiting_plane(state, &tag) {
+                log::info!("ctrl < claim {tag} (took the plane already waiting)");
+            } else if state.pending_video_tags.len() < 16 {
+                state.pending_video_tags.push_back(tag.clone());
                 log::info!(
-                    "ctrl < unclaim {tag} (pending: {:?})",
+                    "ctrl < claim {tag} (pending: {:?})",
                     state.pending_video_tags
                 );
             }
         }
-        Some("videocfg") => {
+        Command::Unclaim(tag) => {
+            state.pending_video_tags.retain(|t| *t != tag);
+            log::info!(
+                "ctrl < unclaim {tag} (pending: {:?})",
+                state.pending_video_tags
+            );
+        }
+        Command::Place {
+            tag,
+            screen,
+            region: r,
+        } => {
             log::info!("ctrl < {line}");
-            let (Some(tag), Some(screen)) = (parts.next(), parts.next()) else {
-                return;
-            };
-            let nums: Vec<f64> = parts.filter_map(|v| v.parse().ok()).collect();
-            if nums.len() != 6 {
-                return;
-            }
-            let tag = tag.to_string();
             {
                 let cfg = state.cfg_for_tag(&tag);
-                cfg.screen = screen.to_string();
-                cfg.has_crop = nums[2] > 0.0 && nums[3] > 0.0;
-                cfg.crop_l = nums[0];
-                cfg.crop_t = nums[1];
-                cfg.vis_w = nums[2];
-                cfg.vis_h = nums[3];
-                cfg.tier_w = nums[4];
-                cfg.tier_h = nums[5];
+                cfg.screen = screen;
+                cfg.has_crop = r.vis_w > 0.0 && r.vis_h > 0.0;
+                cfg.crop_l = r.crop_l;
+                cfg.crop_t = r.crop_t;
+                cfg.vis_w = r.vis_w;
+                cfg.vis_h = r.vis_h;
+                cfg.tier_w = r.tier_w;
+                cfg.tier_h = r.tier_h;
             }
             if let Some(v) = state.find_video_by_tag(&tag) {
                 crate::layout::apply_cfg_to_video(state, &tag, v);
             }
         }
-        Some("videoshow") => {
+        Command::Show { tag, shown } => {
             log::info!("ctrl < {line}");
-            let (Some(tag), Some(onoff)) = (
-                parts.next(),
-                parts.next().and_then(|v| v.parse::<i32>().ok()),
-            ) else {
-                return;
-            };
-            let tag = tag.to_string();
             {
                 let cfg = state.cfg_for_tag(&tag);
                 cfg.has_visible = true;
-                cfg.visible = onoff != 0;
+                cfg.visible = shown;
             }
             if let Some(v) = state.find_video_by_tag(&tag) {
-                state.toplevels[v].visible = onoff != 0;
+                state.toplevels[v].visible = shown;
                 crate::host::damage_all(state);
             }
         }
-        Some("aspect") => {
-            let Some(idx) = parts.next().and_then(|role| state.screen_idx_by_role(role)) else {
+        Command::Aspect { role, size } => {
+            let Some(idx) = state.screen_idx_by_role(&role) else {
                 return;
             };
-            let w = parts
-                .next()
-                .and_then(|v| v.parse::<i32>().ok())
-                .unwrap_or(0);
-            let h = parts
-                .next()
-                .and_then(|v| v.parse::<i32>().ok())
-                .unwrap_or(0);
-            let aspect = (w > 0 && h > 0).then_some((w, h));
+            let aspect = size.map(|(w, h)| (w as i32, h as i32));
             if state.screens[idx].aspect != aspect {
                 log::info!("ctrl < {line}");
                 state.screens[idx].aspect = aspect;
                 crate::host::refit(state, idx);
             }
         }
-        Some("mode") => {
-            let (Some(idx), Some(mode)) = (
-                parts.next().and_then(|role| state.screen_idx_by_role(role)),
-                parts.next(),
-            ) else {
+        Command::Mode { role, mode } => {
+            let Some(idx) = state.screen_idx_by_role(&role) else {
                 return;
             };
             log::info!("ctrl < {line}");
-            crate::drm::set_mode(state, idx, (mode != "-").then(|| mode.to_string()));
+            crate::drm::set_mode(state, idx, mode);
         }
-        Some("backdrop") => {
-            let nums: Vec<i32> = parts.filter_map(|v| v.parse().ok()).collect();
-            if nums.len() != 3 {
-                return;
-            }
+        Command::Backdrop([r, g, b]) => {
             let dbg = std::env::var("LIVI_DEBUG_BG").is_ok();
             for s in &mut state.screens {
                 s.backdrop_color = [
-                    nums[0] as f32 / 255.0,
-                    nums[1] as f32 / 255.0,
-                    nums[2] as f32 / 255.0,
+                    f32::from(r) / 255.0,
+                    f32::from(g) / 255.0,
+                    f32::from(b) / 255.0,
                     1.0,
                 ];
                 s.has_backdrop_color = true;
@@ -363,20 +322,16 @@ fn handle_line(state: &mut LiviState, line: &str) {
                 crate::host::damage_all(state);
             }
         }
-        Some("touchcals" | "touchcal") => crate::drm::touch_calibration(state, line),
-        Some("gamma") => {
+        Command::TouchCals(count) => crate::drm::touch_calibrations(state, count),
+        Command::TouchCal { name, cal } => crate::drm::touch_calibration(state, name, cal),
+        Command::Gamma(v) => {
             log::info!("ctrl < {line}");
-            let nums: Vec<f64> = parts.filter_map(|v| v.parse().ok()).collect();
-            if nums.len() != 5 {
-                return;
-            }
-            state.cal.gamma = nums[0] as f32;
-            state.cal.contrast = nums[1] as f32;
-            state.cal.gain = [nums[2] as f32, nums[3] as f32, nums[4] as f32];
-            state.cal.active = nums.iter().any(|&v| v != 1.0);
+            state.cal.gamma = v[0] as f32;
+            state.cal.contrast = v[1] as f32;
+            state.cal.gain = [v[2] as f32, v[3] as f32, v[4] as f32];
+            state.cal.active = v.iter().any(|&v| v != 1.0);
             crate::drm::apply_calibration(state);
             crate::host::damage_all(state);
         }
-        _ => {}
     }
 }

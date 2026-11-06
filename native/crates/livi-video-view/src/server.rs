@@ -7,7 +7,9 @@ use std::os::unix::fs::DirBuilderExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 
-use crate::{control, screens};
+use livi_host_proto::ctrl::Command;
+
+use crate::screens;
 
 pub(crate) fn bind(path: &Path) -> std::io::Result<UnixListener> {
     if let Some(dir) = path.parent() {
@@ -48,7 +50,7 @@ fn serve_control(conn: UnixStream) {
     };
     for line in BufReader::new(conn).lines() {
         let Ok(line) = line else { return };
-        let Some(answer) = control::parse(&line).and_then(screens::apply) else {
+        let Some(answer) = Command::parse(&line).and_then(screens::apply) else {
             continue;
         };
         if answers.write_all(answer.as_bytes()).is_err() {

@@ -10,6 +10,7 @@ use std::time::Duration;
 use livi_core_proto::config::{Config, TouchCalibration};
 use livi_core_proto::input::{Input, Phase, Point};
 use livi_core_proto::state::{Display, Screen};
+use livi_host_proto::ctrl::{Command, Region, TouchCal};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
@@ -107,20 +108,21 @@ fn touch_panel_of(line: &str) -> Option<(&str, &str)> {
     (!name.is_empty()).then_some((connector, name))
 }
 
+fn ctrl_line(cmd: Command) -> String {
+    format!("{cmd}\n")
+}
+
 fn touch_calibration_lines(entries: &BTreeMap<String, TouchCalibration>) -> String {
-    let mut out = format!("touchcals {}\n", entries.len());
+    let mut out = ctrl_line(Command::TouchCals(entries.len()));
     for (name, c) in entries {
-        let display = if c.display.is_empty() {
-            "-"
-        } else {
-            &c.display
-        };
-        let matrix: Vec<String> = c.matrix.iter().map(f64::to_string).collect();
-        out.push_str(&format!(
-            "touchcal {} {display} {} {name}\n",
-            u8::from(c.enabled),
-            matrix.join(" ")
-        ));
+        out.push_str(&ctrl_line(Command::TouchCal {
+            name: name.clone(),
+            cal: TouchCal {
+                enabled: c.enabled,
+                display: c.display.clone(),
+                matrix: c.matrix,
+            },
+        }));
     }
     out
 }
@@ -292,29 +294,36 @@ impl CompositorControl {
         tier_w: f64,
         tier_h: f64,
     ) {
-        let n = |v: f64| round_half_up(v) as i64;
-        let line = format!(
-            "videocfg {tag} {screen} {} {} {} {} {} {}\n",
-            n(crop_l),
-            n(crop_t),
-            n(vis_w),
-            n(vis_h),
-            n(tier_w),
-            n(tier_h)
-        );
+        let n = |v: f64| round_half_up(v) as i64 as f64;
+        let line = ctrl_line(Command::Place {
+            tag: tag.to_string(),
+            screen: screen.to_string(),
+            region: Region {
+                crop_l: n(crop_l),
+                crop_t: n(crop_t),
+                vis_w: n(vis_w),
+                vis_h: n(vis_h),
+                tier_w: n(tier_w),
+                tier_h: n(tier_h),
+            },
+        });
         let _ = self.tx.send(Cmd::State(format!("cfg:{tag}"), line));
     }
 
     pub fn videoshow(&self, tag: &str, visible: bool) {
-        let line = format!("videoshow {tag} {}\n", u8::from(visible));
+        let line = ctrl_line(Command::Show {
+            tag: tag.to_string(),
+            shown: visible,
+        });
         let _ = self.tx.send(Cmd::State(format!("show:{tag}"), line));
     }
 
     pub fn screen(&self, role: &str, on: bool, size: Option<(u32, u32)>) {
-        let size = size
-            .filter(|(w, h)| *w > 0 && *h > 0)
-            .map_or(String::new(), |(w, h)| format!(" {w} {h}"));
-        let line = format!("screen {role} {}{size}\n", u8::from(on));
+        let line = ctrl_line(Command::Screen {
+            role: role.to_string(),
+            on,
+            size,
+        });
         let _ = self.tx.send(Cmd::State(format!("screen:{role}"), line));
     }
 
@@ -326,18 +335,22 @@ impl CompositorControl {
     }
 
     pub fn aspect(&self, role: &str, size: Option<(u32, u32)>) {
-        let (w, h) = size.filter(|(w, h)| *w > 0 && *h > 0).unwrap_or((0, 0));
         let _ = self.tx.send(Cmd::State(
             format!("aspect:{role}"),
-            format!("aspect {role} {w} {h}\n"),
+            ctrl_line(Command::Aspect {
+                role: role.to_string(),
+                size,
+            }),
         ));
     }
 
     pub fn mode(&self, role: &str, mode: &str) {
-        let mode = if mode.is_empty() { "-" } else { mode };
         let _ = self.tx.send(Cmd::State(
             format!("mode:{role}"),
-            format!("mode {role} {mode}\n"),
+            ctrl_line(Command::Mode {
+                role: role.to_string(),
+                mode: (!mode.is_empty()).then(|| mode.to_string()),
+            }),
         ));
     }
 
@@ -345,12 +358,12 @@ impl CompositorControl {
         let (r, g, b) = rgb(hex);
         let _ = self.tx.send(Cmd::State(
             "__backdrop__".into(),
-            format!("backdrop {r} {g} {b}\n"),
+            ctrl_line(Command::Backdrop([r, g, b])),
         ));
     }
 
     pub fn gamma(&self, gamma: f64, contrast: f64, r: f64, g: f64, b: f64) {
-        let line = format!("gamma {gamma} {contrast} {r} {g} {b}\n");
+        let line = ctrl_line(Command::Gamma([gamma, contrast, r, g, b]));
         let _ = self.tx.send(Cmd::State("__gamma__".into(), line));
     }
 
@@ -369,7 +382,10 @@ impl CompositorControl {
 }
 
 fn fullscreen_line(role: &str, on: bool) -> String {
-    format!("fullscreen {role} {}\n", u8::from(on))
+    ctrl_line(Command::Fullscreen {
+        role: role.to_string(),
+        on,
+    })
 }
 
 fn rgb(hex: &str) -> (u8, u8, u8) {
@@ -511,7 +527,7 @@ impl Actor {
             return;
         }
         let (tag, done) = self.queue.remove(0);
-        self.outbox.push(format!("claim {tag}\n"));
+        self.outbox.push(ctrl_line(Command::Claim(tag.clone())));
         self.flush().await;
         self.in_flight = Some(tag);
         self.claim_deadline = Some(tokio::time::Instant::now() + CLAIM_TIMEOUT);
@@ -520,7 +536,7 @@ impl Actor {
 
     async fn abort_in_flight(&mut self) {
         if let Some(tag) = self.in_flight.take() {
-            self.outbox.push(format!("unclaim {tag}\n"));
+            self.outbox.push(ctrl_line(Command::Unclaim(tag.clone())));
             self.flush().await;
         }
         self.end_claim().await;

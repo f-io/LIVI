@@ -3,8 +3,7 @@
 // Additional terms: see NOTICE
 
 use super::{
-    Offered, assign, calibrated, choose, panel_id, panel_name, size_of, timing_mm, touch_cal_of,
-    wl_output_in,
+    Offered, assign, calibrated, choose, panel_id, panel_name, size_of, timing_mm, wl_output_in,
 };
 
 fn mode(w: u16, h: u16, refresh: u32, preferred: bool) -> Offered {
@@ -161,20 +160,6 @@ fn the_panel_id_comes_from_vendor_product_and_serial() {
     assert_eq!(panel_id(&edid).as_deref(), Some("DEL-a0b1-00000001"));
     assert_eq!(panel_id(&[0u8; 128]), None);
     assert_eq!(panel_id(&edid[..12]), None);
-}
-
-#[test]
-fn a_touch_calibration_line_names_its_device_last() {
-    let (name, cal) =
-        touch_cal_of("touchcal 1 DEL-a0b1-00000001 1 0 0.02 0 0.98 0 ILITEK ILITEK-TP").unwrap();
-    assert_eq!(name, "ILITEK ILITEK-TP");
-    assert!(cal.enabled);
-    assert_eq!(cal.display, "DEL-a0b1-00000001");
-    assert_eq!(cal.matrix, [1.0, 0.0, 0.02, 0.0, 0.98, 0.0]);
-    let (_, off) = touch_cal_of("touchcal 0 - 1 0 0 0 1 0 Other").unwrap();
-    assert!(!off.enabled && off.display.is_empty());
-    assert!(touch_cal_of("touchcal 1 - 1 0 0 0 1 Short").is_none());
-    assert!(touch_cal_of("touchcal 1 - 1 0 0 0 1 0 ").is_none());
 }
 
 #[test]
