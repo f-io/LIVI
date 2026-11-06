@@ -13,6 +13,7 @@ fi
 # shellcheck source=../common.sh
 . "$LIVI_LIB"
 
+livi_require_regular_user
 livi_require_sudo
 
 USER_HOME="$HOME"
