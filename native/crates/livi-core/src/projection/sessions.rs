@@ -326,7 +326,14 @@ impl Projection {
             &mut navigation,
             nav_text::Language::of(&self.config_seen.language),
         );
+        let (asked, video) = (self.wants.main, sessions.video);
         self.hub.update(|s| {
+            if s.front.main != main {
+                println!(
+                    "[core] main screen {:?} -> {main:?} (asked {asked:?}, video {video})",
+                    s.front.main
+                );
+            }
             s.front.main = main;
             s.front.cluster = cluster;
             s.front.aux = aux;

@@ -670,8 +670,14 @@ impl Projection {
                     Err(broadcast::error::RecvError::Closed) => created = None,
                 },
                 ev = next_of(&mut host) => match ev {
-                    Ok(HostEvent::Started { plane: PLANE_MAIN }) => self.main_video_shown(),
-                    Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Ok(HostEvent::Started { plane: PLANE_MAIN }) => {
+                        println!("[core] main video: first frame at the decoder");
+                        self.main_video_shown();
+                    }
+                    Ok(_) => {}
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        eprintln!("[core] missed {n} gst-host events");
+                    }
                     Err(broadcast::error::RecvError::Closed) => host = None,
                 },
                 made = next_of(&mut cluster_created) => match made {
