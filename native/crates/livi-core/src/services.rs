@@ -243,21 +243,19 @@ impl Services {
             ));
         }
 
-        if let Some(listener) = airplay {
-            let carplay = CarPlay {
-                listener,
-                identity,
-                accessory,
-                user_data: user_data.to_path_buf(),
-                sockets: paths.helper.clone(),
-                probe: host_launch(&res, user_data, None),
-                debug: helper::debug(&cfg),
-                helper_restart,
-                telemetry,
-                settings,
-            };
-            carplay.start(hub, &ctrl, &gst, plane.clone(), clusters.clone(), asks);
-        }
+        let carplay = CarPlay {
+            listener: airplay,
+            identity,
+            accessory,
+            user_data: user_data.to_path_buf(),
+            sockets: paths.helper.clone(),
+            probe: host_launch(&res, user_data, None),
+            debug: helper::debug(&cfg),
+            helper_restart,
+            telemetry,
+            settings,
+        };
+        carplay.start(hub, &ctrl, &gst, plane.clone(), clusters.clone(), asks);
 
         tokio::spawn(follow_display(
             ctrl.ui(),
@@ -311,7 +309,7 @@ fn carplay_listener() -> Option<TcpListener> {
 }
 
 struct CarPlay {
-    listener: TcpListener,
+    listener: Option<TcpListener>,
     identity: livi_cp::identity::Identity,
     accessory: String,
     user_data: PathBuf,

@@ -269,7 +269,7 @@ struct Manager<M: Media> {
 }
 
 pub fn start<M: Media>(
-    listener: TcpListener,
+    listener: Option<TcpListener>,
     ctx: Arc<StackCtx<M>>,
     events: mpsc::UnboundedSender<CpEvent>,
 ) -> CpHandle {
@@ -279,7 +279,7 @@ pub fn start<M: Media>(
 }
 
 async fn run<M: Media>(
-    listener: TcpListener,
+    listener: Option<TcpListener>,
     ctx: Arc<StackCtx<M>>,
     mut cmds: mpsc::UnboundedReceiver<CpCmd>,
     events: mpsc::UnboundedSender<CpEvent>,
@@ -313,8 +313,8 @@ async fn run<M: Media>(
     };
     loop {
         tokio::select! {
-            accepted = listener.accept() => {
-                if let Ok((sock, _)) = accepted {
+            accepted = async { listener.as_ref()?.accept().await.ok() }, if listener.is_some() => {
+                if let Some((sock, _)) = accepted {
                     m.spawn(sock);
                 }
             }
@@ -1223,7 +1223,7 @@ mod tests {
             let listener = net::tcp_listener().unwrap();
             let port = net::local_port(listener.local_addr());
             let (ev_tx, events) = mpsc::unbounded_channel();
-            let handle = start(listener, ctx, ev_tx);
+            let handle = start(Some(listener), ctx, ev_tx);
             let mut rig = Self {
                 _dir: dir,
                 helper,
