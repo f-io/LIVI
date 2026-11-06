@@ -224,7 +224,7 @@ arg="${1:-}"
 case "$arg" in
   clear) new="" ;;
   *)
-    [[ "$arg" =~ ^[A-Za-z0-9-]+:[0-9]+x[0-9]+@[0-9]+D?$ ]] || {
+    [[ "$arg" =~ ^[A-Za-z0-9-]+:[0-9]+x[0-9]+@[0-9]+i?D?$ ]] || {
       echo "usage: livi-video-mode.sh <CONNECTOR:WxH@Hz>|clear" >&2
       exit 2
     }

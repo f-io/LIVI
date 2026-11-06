@@ -44,7 +44,7 @@ pub(super) fn choose(modes: &[Offered], configured: Option<(u16, u16)>) -> Optio
             .iter()
             .enumerate()
             .filter(|(_, m)| fits(m))
-            .max_by_key(|(_, m)| (m.area(), m.refresh))
+            .min_by_key(|(_, m)| std::cmp::Reverse((m.area(), m.refresh)))
             .map(|(i, _)| i)
     };
     if let Some(size) = configured

@@ -467,18 +467,23 @@ EOF
   sudo chmod +x /etc/kernel/postinst.d/livi-vc4
 }
 
-# Mode of the EDID's first DTD as "WxH@Hz", the mode the panel actually runs.
+# Mode of the EDID's first DTD as the kernel matches it: "WxH@Hz", interlaced as
+# "WxH@Hzi" with the doubled rate the kernel reports for it.
 edid_video_mode() {
   local -a b
-  read -r -a b <<< "$(od -An -tu1 -v -j 54 -N 8 "$EDID_SRC" | tr '\n' ' ')"
-  local clk=$(( (b[1] << 8 | b[0]) * 10000 ))
+  read -r -a b <<< "$(od -An -tu1 -v -j 54 -N 18 "$EDID_SRC" | tr '\n' ' ')"
+  local clk=$(( (b[1] << 8 | b[0]) * 10000 )) scan=""
   local hact=$(( (b[4] & 0xF0) << 4 | b[2] ))
   local hbl=$((  (b[4] & 0x0F) << 8 | b[3] ))
   local vact=$(( (b[7] & 0xF0) << 4 | b[5] ))
   local vbl=$((  (b[7] & 0x0F) << 8 | b[6] ))
   local total=$(( (hact + hbl) * (vact + vbl) ))
   (( clk == 0 || total == 0 || hact == 0 || vact == 0 )) && return 1
-  printf '%sx%s@%s' "$hact" "$vact" "$(( (clk + total / 2) / total ))"
+  if (( b[17] & 0x80 )); then
+    clk=$(( clk * 2 ))
+    scan="i"
+  fi
+  printf '%sx%s@%s%s' "$hact" "$vact" "$(( (clk + total / 2) / total ))" "$scan"
 }
 
 # Force the panel EDID and reference it from cmdline.txt.

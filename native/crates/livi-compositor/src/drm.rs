@@ -31,7 +31,9 @@ use smithay::output::OutputModeSource;
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::drm::control::property::ValueType;
-use smithay::reexports::drm::control::{Device as _, Mode, ModeTypeFlags, connector, crtc};
+use smithay::reexports::drm::control::{
+    Device as _, Mode, ModeFlags, ModeTypeFlags, connector, crtc,
+};
 use smithay::reexports::input::Libinput;
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::utils::{DeviceFd, Point, SERIAL_COUNTER, Scale, Size, Transform};
@@ -645,7 +647,12 @@ pub fn displays_lines(state: &LiviState) -> Option<String> {
             .map_or("-", |s| s.role.as_str());
         let current = output.map_or("-".to_string(), |o| {
             let (w, h) = o.mode.size();
-            format!("{w}x{h}@{}", o.mode.vrefresh())
+            let scan = if o.mode.flags().contains(ModeFlags::INTERLACE) {
+                "i"
+            } else {
+                ""
+            };
+            format!("{w}x{h}@{}{scan}", o.mode.vrefresh())
         });
         let modes = sizes(&c.modes);
         let modes = if modes.is_empty() {

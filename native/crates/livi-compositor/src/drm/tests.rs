@@ -23,6 +23,12 @@ fn the_setting_wins_with_its_fastest_refresh() {
         mode(1280, 720, 60, false),
     ];
     assert_eq!(choose(&modes, Some((1280, 720))), Some(2));
+    let pinned = [mode(800, 470, 120, true), mode(800, 470, 120, false)];
+    assert_eq!(
+        choose(&pinned, Some((800, 470))),
+        Some(0),
+        "the panel's own mode beats a cmdline mode of the same rate"
+    );
     assert_eq!(size_of("1024x600"), Some((1024, 600)));
     assert_eq!(size_of("auto"), None);
 }
