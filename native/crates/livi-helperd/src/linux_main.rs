@@ -400,7 +400,8 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     };
     let bluetooth = async || -> Result<(), Box<dyn std::error::Error>> {
         let adapter = bt_adapter(&dc).await;
-        livi_runtime::bluetoothd::setup(wireless);
+        let _ =
+            tokio::task::spawn_blocking(move || livi_runtime::bluetoothd::setup(wireless)).await;
         println!(
             "[helperd] starting BlueZ profile on {adapter} (wireless CarPlay {}, wireless Android Auto {})",
             if wireless.carplay { "on" } else { "off" },
@@ -554,13 +555,13 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 session = async { dongle_iap.as_mut().unwrap().recv().await }, if dongle_iap.is_some() => {
                     let Some(session) = session else { return Ok(()) };
-                    let cp = CpConfig { on_cable: Some(crate::link::dongle_on_cable(state.clone())), ..session_cp(&cp, dongle_ap) };
+                    let cp = CpConfig { on_cable: Some(crate::link::dongle_on_cable(state.clone())), ..resolve_cp(&cp, dongle_ap).await };
                     let peer = session.peer.to_string();
                     run_bluetooth(|cfg| spawn_link_stream(session.stream, cfg, false), auth.clone(), identity.clone(), cp, bcast.clone(), state.clone(), peer);
                 }
                 conn = incoming.recv(), if wireless.carplay => {
                     let Some(conn) = conn else { return Ok(()) };
-                    let cp = CpConfig { on_cable: Some(bt::on_cable(state.clone(), &bus, &adapter)), ..session_cp(&cp, dongle_ap) };
+                    let cp = CpConfig { on_cable: Some(bt::on_cable(state.clone(), &bus, &adapter)), ..resolve_cp(&cp, dongle_ap).await };
                     run_bluetooth(|cfg| spawn_link(conn.fd, cfg, false), auth.clone(), identity.clone(), cp, bcast.clone(), state.clone(), conn.peer_mac);
                 }
             }
@@ -576,6 +577,13 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         iap2_usbmux::restore_all_default_config();
     }
     Ok(())
+}
+
+async fn resolve_cp(cp: &CpConfig, dongle_ap: bool) -> CpConfig {
+    let base = cp.clone();
+    tokio::task::spawn_blocking(move || session_cp(&base, dongle_ap))
+        .await
+        .unwrap_or_else(|_| cp.clone())
 }
 
 fn session_cp(cp: &CpConfig, dongle_ap: bool) -> CpConfig {

@@ -78,9 +78,13 @@ pub async fn wireless_sessions(
             eprintln!("[helper] the dongle's access point is not up, not starting a session");
             continue;
         }
+        let base = cp.clone();
+        let resolved = tokio::task::spawn_blocking(move || wireless_config(&base))
+            .await
+            .unwrap_or_else(|_| cp.clone());
         let cp = CpConfig {
             on_cable: Some(dongle.on_cable(state.clone())),
-            ..wireless_config(&cp)
+            ..resolved
         };
         let identity = Identity {
             bt_mac: session.local,

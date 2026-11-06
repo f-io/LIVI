@@ -9,7 +9,7 @@ use idevice::Idevice;
 use idevice::pairing_file::PairingFile;
 use idevice::services::lockdown::LockdownClient;
 
-use iap2_usbmux::{AsyncMuxStream, LOCKDOWN_PORT, MuxDevice};
+use iap2_usbmux::{AsyncMuxStream, LOCKDOWN_PORT, MuxDevice, MuxTcpConn};
 
 pub const LOCKDOWN_SERVICE: &str = "com.apple.carkit.service";
 
@@ -81,8 +81,15 @@ fn save_pair_record(store: &Path, serial: &str, pairing: &PairingFile) -> Result
     Ok(())
 }
 
+async fn connect(dev: &Arc<MuxDevice>, port: u16) -> Result<Arc<MuxTcpConn>, String> {
+    let host = dev.host.clone();
+    tokio::task::spawn_blocking(move || host.connect(port))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 async fn new_lockdown(dev: &Arc<MuxDevice>) -> Result<LockdownClient, String> {
-    let conn = dev.host.connect(LOCKDOWN_PORT)?;
+    let conn = connect(dev, LOCKDOWN_PORT).await?;
     let stream = AsyncMuxStream::new(conn);
     Ok(LockdownClient::new(Idevice::new(
         Box::new(stream),
@@ -143,7 +150,7 @@ pub async fn open_carkit(dev: &Arc<MuxDevice>, store: &Path) -> Result<CarkitCha
         .await
         .map_err(|e| format!("start {LOCKDOWN_SERVICE}: {e}"))?;
 
-    let conn = dev.host.connect(port)?;
+    let conn = connect(dev, port).await?;
     let stream = AsyncMuxStream::new(conn);
     let mut idevice = Idevice::new(Box::new(stream), "livi-carkit");
     if ssl {

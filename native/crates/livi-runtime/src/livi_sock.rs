@@ -364,11 +364,16 @@ fn run_tunnel<A>(
     };
     let (channel, art_rx) = spawn_link(fd, link_cfg, true);
     let (tx, rx) = mpsc::channel(64);
-    let cp = match &cfg.cp_live {
-        Some(resolve) => resolve(),
-        None => cfg.cp,
-    };
-    tokio::spawn(run_accessory(channel, auth, cfg.identity, cp, tx, vehicle));
+    let (base, live, identity) = (cfg.cp, cfg.cp_live, cfg.identity);
+    tokio::spawn(async move {
+        let cp = match live {
+            Some(resolve) => tokio::task::spawn_blocking(move || resolve())
+                .await
+                .unwrap_or(base),
+            None => base,
+        };
+        run_accessory(channel, auth, identity, cp, tx, vehicle).await;
+    });
     let ident: SharedTag = Arc::new(Mutex::new(events::EventTag {
         cid: (!cid.is_empty()).then_some(cid),
         ..Default::default()
@@ -454,7 +459,7 @@ pub async fn pump_events_for(
             BringupEvent::Incoming { frame, .. } => {
                 if !time_synced && let Some(secs) = events::device_time(&frame) {
                     time_synced = true;
-                    crate::clock::step_to(secs);
+                    tokio::task::spawn_blocking(move || crate::clock::step_to(secs));
                 }
                 let tagged = {
                     let mut t = ident.lock().unwrap();
