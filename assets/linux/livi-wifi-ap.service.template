@@ -10,7 +10,7 @@ Type=simple
 Environment=SUDO_USER=__USERNAME__
 ExecStartPre=/usr/local/sbin/livi-helperd --wifi-ap-claim
 ExecStart=/usr/local/sbin/livi-helperd --wifi-ap
-ExecStop=/usr/local/sbin/livi-helperd --wifi-ap-teardown
+ExecStopPost=/usr/local/sbin/livi-helperd --wifi-ap-teardown
 TimeoutStopSec=8
 Restart=on-failure
 RestartSec=5
