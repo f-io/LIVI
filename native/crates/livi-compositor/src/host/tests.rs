@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use super::{CursorIcon, HostState, cursor_requested, fit_aspect, shown_cursor};
+use super::{CursorIcon, HostState, cursor_requested, fit_aspect, shown_cursor, window_mm};
 
 fn over_ui() -> HostState {
     let mut host = HostState::new();
@@ -56,4 +56,14 @@ fn a_floating_window_keeps_the_stream_shape_below_the_titlebar() {
 fn the_minimum_size_wins_over_the_offer() {
     assert_eq!(fit_aspect((100, 50), 32, (16, 9)), (320, 212));
     assert_eq!(fit_aspect((100, 50), 32, (1, 4)), (320, 1312));
+}
+
+#[test]
+fn a_window_gets_its_share_of_the_monitor() {
+    assert_eq!(window_mm((340, 190), (1920, 1080), (1502, 874)), (266, 154));
+    assert_eq!(
+        window_mm((340, 190), (1920, 1080), (1920, 1080)),
+        (340, 190)
+    );
+    assert_eq!(window_mm((340, 190), (1920, 1080), (2400, 0)), (340, 190));
 }

@@ -252,9 +252,25 @@ fn status_bar_edge(dock: DockPosition) -> u64 {
     }
 }
 
-fn panel_mm(panel: Option<&Panel>) -> Option<(i64, i64)> {
+fn panel_mm(panel: Option<&Panel>, (w, h): (u32, u32)) -> Option<(i64, i64)> {
     let s = panel?;
-    (s.width_mm > 0 && s.height_mm > 0).then(|| (s.width_mm.into(), s.height_mm.into()))
+    if s.width_mm == 0 || s.height_mm == 0 {
+        return None;
+    }
+    let turn = (w > h && s.width_mm < s.height_mm) || (w < h && s.width_mm > s.height_mm);
+    let (mm_w, mm_h, px_w, px_h) = if turn {
+        (s.height_mm, s.width_mm, s.height_px, s.width_px)
+    } else {
+        (s.width_mm, s.height_mm, s.width_px, s.height_px)
+    };
+    if px_w == 0 || px_h == 0 || w == 0 || h == 0 {
+        return Some((mm_w.into(), mm_h.into()));
+    }
+    let fit = (f64::from(px_w) / f64::from(w)).min(f64::from(px_h) / f64::from(h));
+    let shown = |px: u32, mm: u32, panel_px: u32| {
+        (f64::from(px) * fit * f64::from(mm) / f64::from(panel_px)).round() as i64
+    };
+    Some((shown(w, mm_w, px_w), shown(h, mm_h, px_h)))
 }
 
 fn measured_mm(cfg: &Config, screen: Screen) -> Option<(i64, i64)> {
@@ -286,16 +302,18 @@ fn main_mm(
     panels: &HashMap<String, Panel>,
     screen: Option<&Panel>,
 ) -> Option<(i64, i64)> {
+    let size = main_size(cfg);
     measured_mm(cfg, Screen::Main)
-        .or_else(|| panel_mm(panels.get("main")))
-        .or_else(|| panel_mm(screen))
-        .map(|mm| oriented(mm, main_size(cfg)))
+        .map(|mm| oriented(mm, size))
+        .or_else(|| panel_mm(panels.get("main"), size))
+        .or_else(|| panel_mm(screen, size))
 }
 
 fn cluster_mm(cfg: &Config, panels: &HashMap<String, Panel>) -> Option<(i64, i64)> {
+    let size = (cfg.cluster_width, cfg.cluster_height);
     measured_mm(cfg, Screen::Cluster)
-        .or_else(|| panel_mm(panels.get("cluster")))
-        .map(|mm| oriented(mm, (cfg.cluster_width, cfg.cluster_height)))
+        .map(|mm| oriented(mm, size))
+        .or_else(|| panel_mm(panels.get("cluster"), size))
 }
 
 fn dpi_mm(dpi: u32, w: u32, h: u32) -> Option<(i64, i64)> {
@@ -1078,15 +1096,18 @@ mod tests {
 
     #[test]
     fn the_panel_size_goes_out_as_measured() {
-        assert_eq!(panel_mm(panels().get("main")), Some((300, 170)));
-        assert_eq!(panel_mm(panels().get("cluster")), None);
+        assert_eq!(
+            panel_mm(panels().get("main"), (1280, 720)),
+            Some((300, 170))
+        );
+        assert_eq!(panel_mm(panels().get("cluster"), (1920, 720)), None);
         let flat = Panel {
             width_mm: 0,
             height_mm: 170,
             width_px: 1280,
             height_px: 720,
         };
-        assert_eq!(panel_mm(Some(&flat)), None);
+        assert_eq!(panel_mm(Some(&flat), (1280, 720)), None);
     }
 
     #[test]
@@ -1174,6 +1195,18 @@ mod tests {
         cfg.projection_width = 576;
         cfg.projection_height = 1280;
         assert_eq!(mm(&cfg), (Some(65), Some(145)));
+    }
+
+    #[test]
+    fn a_stream_wider_than_its_panel_gets_the_size_it_is_shown_at() {
+        let monitor = Panel {
+            width_mm: 340,
+            height_mm: 190,
+            width_px: 1920,
+            height_px: 1080,
+        };
+        assert_eq!(panel_mm(Some(&monitor), (1920, 720)), Some((340, 127)));
+        assert_eq!(panel_mm(Some(&monitor), (1920, 1080)), Some((340, 190)));
     }
 
     #[test]
