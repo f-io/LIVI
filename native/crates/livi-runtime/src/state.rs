@@ -13,7 +13,7 @@ use tokio::sync::Notify;
 pub struct HelperState {
     reconnect_targets: Mutex<Vec<(String, Option<String>)>>,
     carkit: Mutex<Vec<SharedTag>>,
-    links: Mutex<HashSet<String>>,
+    links: Mutex<HashMap<String, usize>>,
     vehicle: Vehicle,
     wired: Mutex<HashMap<String, Wired>>,
     redo: Mutex<HashSet<String>>,
@@ -87,15 +87,27 @@ impl HelperState {
     }
 
     pub fn link_up(&self, mac: &str) {
-        self.links.lock().unwrap().insert(mac.to_uppercase());
+        *self
+            .links
+            .lock()
+            .unwrap()
+            .entry(mac.to_uppercase())
+            .or_default() += 1;
     }
 
     pub fn link_down(&self, mac: &str) {
-        self.links.lock().unwrap().remove(&mac.to_uppercase());
+        let mut links = self.links.lock().unwrap();
+        let key = mac.to_uppercase();
+        if let Some(n) = links.get_mut(&key) {
+            *n -= 1;
+            if *n == 0 {
+                links.remove(&key);
+            }
+        }
     }
 
     pub fn link_active(&self, mac: &str) -> bool {
-        self.links.lock().unwrap().contains(&mac.to_uppercase())
+        self.links.lock().unwrap().contains_key(&mac.to_uppercase())
     }
 
     pub fn set_reconnect_targets(&self, targets: Vec<(String, Option<String>)>) {
@@ -230,5 +242,16 @@ mod tests {
         assert!(state.link_active("0C:6A:C4:4E:F3:2A"));
         state.link_down("0C:6A:C4:4E:F3:2A");
         assert!(!state.link_active("0c:6a:c4:4e:f3:2a"));
+    }
+
+    #[test]
+    fn an_old_link_ending_keeps_the_new_one() {
+        let state = HelperState::default();
+        state.link_up("0C:6A:C4:4E:F3:2A");
+        state.link_up("0C:6A:C4:4E:F3:2A");
+        state.link_down("0C:6A:C4:4E:F3:2A");
+        assert!(state.link_active("0C:6A:C4:4E:F3:2A"));
+        state.link_down("0C:6A:C4:4E:F3:2A");
+        assert!(!state.link_active("0C:6A:C4:4E:F3:2A"));
     }
 }
