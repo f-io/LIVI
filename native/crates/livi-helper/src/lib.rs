@@ -27,7 +27,7 @@ pub const DEFAULT_CHANNEL: u32 = 36;
 pub const SOURCE_VERSION: &str = "950.7.1";
 pub const AVAILABLE_CURRENT_MA: u16 = 500;
 
-pub(crate) fn or(value: &str, default: &str) -> String {
+pub fn or(value: &str, default: &str) -> String {
     if value.is_empty() {
         default.to_string()
     } else {
@@ -53,7 +53,7 @@ pub fn carplay(start: &HelperStart, transport: Transport) -> (Identity, CpConfig
             channel,
         ),
         airplay_port: start.airplay_port.map_or(0, u32::from),
-        source_version: SOURCE_VERSION.to_string(),
+        source_version: or(&s.source_version, SOURCE_VERSION),
         public_key: start.pairing_id.clone(),
         transport,
         av_iface: None,

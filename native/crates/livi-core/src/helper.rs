@@ -100,6 +100,9 @@ fn settings(cfg: &Config) -> HelperSettings {
             .to_string(),
         channel: cfg.wifi_channel,
         country: cfg.country.clone(),
+        source_version: cfg.car_play_source_version.clone(),
+        mfi_i2c_bus: cfg.car_play_mfi_i2c_bus,
+        mfi_power_gpio: cfg.car_play_mfi_power_gpio,
     }
 }
 

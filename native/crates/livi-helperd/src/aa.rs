@@ -10,13 +10,12 @@ use livi_runtime::livi_sock::Broadcaster;
 use livi_runtime::net;
 use livi_wifi::Security;
 
-async fn access_point(cfg: &AaConfig) -> Told {
+async fn access_point(cfg: &AaConfig, dongle_ap: bool) -> Told {
     let base = cfg.clone();
     tokio::task::spawn_blocking(move || {
-        let dc = crate::linux_main::DeviceConfig::load();
-        let iface = dc.string("wifiInterface", "LIVI_WIFI_IFACE", &base.wifi_iface);
-        let passphrase = dc.string("wifiPassword", "LIVI_PASSPHRASE", &base.passphrase);
-        if iface == livi_link_host::link::CHOICE {
+        let iface = base.wifi_iface.clone();
+        let passphrase = base.passphrase.clone();
+        if dongle_ap {
             return on_dongle(&base, passphrase);
         }
         let live = livi_link_host::on_air(&iface);
@@ -46,6 +45,7 @@ pub async fn watch(
     bcast: Broadcaster,
     wired: WiredPhones,
     state: Arc<livi_runtime::state::HelperState>,
+    dongle_ap: bool,
 ) {
     while let Some(conn) = incoming.recv().await {
         println!("[aa] phone connected mac={}", conn.peer_mac);
@@ -54,7 +54,7 @@ pub async fn watch(
             let mac = conn.peer_mac;
             match stream(conn.fd) {
                 Ok(sock) => {
-                    let told = access_point(&cfg).await;
+                    let told = access_point(&cfg, dongle_ap).await;
                     bootstrap(sock, &mac, told, &bcast, &wired, &state).await;
                 }
                 Err(e) => eprintln!("[aa] {mac}: {e}"),

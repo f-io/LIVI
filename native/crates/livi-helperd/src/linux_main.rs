@@ -3,7 +3,7 @@
 // Additional terms: see NOTICE
 
 use livi_core_proto::aa_events::AaTransport;
-use livi_core_proto::helper::HelperSockets;
+use livi_core_proto::helper::{HelperSockets, HelperStart};
 use std::process::ExitCode;
 
 use iap2_mfi::{I2cCoprocessor, NcmCoprocessor, NoCoprocessor};
@@ -11,19 +11,16 @@ use std::sync::Arc;
 
 use livi_helper::link::LinkPresence;
 use livi_helper::wired::{Dongle, Wired};
-use livi_helper::{
-    AVAILABLE_CURRENT_MA, DEFAULT_CHANNEL, DEFAULT_NAME, DEFAULT_PASSPHRASE, SOURCE_VERSION,
-};
+use livi_helper::{DEFAULT_CHANNEL, DEFAULT_NAME, DEFAULT_PASSPHRASE, or};
 use livi_runtime::bonjour::Bonjour;
 use livi_runtime::bringup::{AskOnAir, CpConfig};
 use livi_runtime::bt;
 use livi_runtime::driver::{spawn_link, spawn_link_stream};
-use livi_runtime::ident::{Identity, Theme, Transport};
+use livi_runtime::ident::{Identity, Transport};
 use livi_runtime::livi_sock::{self, Bluez, Broadcaster, LiviSockConfig, run_bluetooth};
 use livi_runtime::mfi_async::SharedCoprocessor;
 use livi_runtime::reconnect;
 use livi_runtime::state::HelperState;
-use livi_runtime::vehicle::{Fuels, Plugs};
 use livi_wifi::{Band, Channel};
 
 fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
@@ -94,15 +91,18 @@ fn configured_channel(dc: &DeviceConfig) -> Channel {
 }
 
 fn ap_iface(dc: &DeviceConfig) -> String {
-    let iface = dc.string("wifiInterface", "LIVI_WIFI_IFACE", "wlan0");
+    on_host(dc.string("wifiInterface", "LIVI_WIFI_IFACE", "wlan0"))
+}
+
+fn on_host(iface: String) -> String {
     if iface != livi_link_host::link::CHOICE {
         return iface;
     }
     livi_link_host::link::host_iface().unwrap_or(iface)
 }
 
-async fn bt_adapter(dc: &DeviceConfig) -> String {
-    let adapter = dc.string("btAdapter", "LIVI_BT_ADAPTER", "hci0");
+async fn bt_adapter(chosen: &str) -> String {
+    let adapter = or(chosen, "hci0");
     if adapter != livi_link_host::link::CHOICE {
         return adapter;
     }
@@ -251,47 +251,18 @@ pub fn run() -> ExitCode {
 }
 
 async fn serve() -> Result<(), Box<dyn std::error::Error>> {
-    let dc = DeviceConfig::load();
-    let bus_num: u32 = dc.int("carPlayMfiI2cBus", "LIVI_CP_MFI_I2C_BUS", 2);
-    let gpio: i32 = dc.int("carPlayMfiPowerGpio", "LIVI_CP_MFI_POWER_GPIO", 21);
-    let name = dc.string("carName", "LIVI_CP_NAME", DEFAULT_NAME);
-    let ssid = name.clone();
-    let wifi_iface = ap_iface(&dc);
-    let dongle_ap =
-        dc.string("wifiInterface", "LIVI_WIFI_IFACE", "wlan0") == livi_link_host::link::CHOICE;
-    let ap_mac = dongle_ap.then(livi_link_host::ap::mac).flatten();
+    let start = HelperStart::from_env();
+    let settings = &start.settings;
+    let (bus_num, gpio) = (settings.mfi_i2c_bus, settings.mfi_power_gpio);
+    let wifi_iface = on_host(or(&settings.wifi_iface, "wlan0"));
+    let dongle_ap = settings.wifi_iface == livi_link_host::link::CHOICE;
+    let (identity, cp) = livi_helper::carplay(&start, Transport::Wireless);
     let cp = CpConfig {
         wifi_iface: wifi_iface.clone(),
-        ssid: ssid.clone(),
-        passphrase: dc.string("wifiPassword", "LIVI_PASSPHRASE", DEFAULT_PASSPHRASE),
-        channel: configured_channel(&dc),
-        airplay_port: env_or("LIVI_CP_AIRPLAY_PORT", 0),
-        source_version: dc.string(
-            "carPlaySourceVersion",
-            "LIVI_CP_SOURCE_VERSION",
-            SOURCE_VERSION,
-        ),
-        public_key: std::env::var("LIVI_CP_PI").unwrap_or_default(),
-        transport: Transport::Wireless,
-        av_iface: None,
-        av_address: None,
-        av_iface_late: None,
-        available_current_ma: dc.int(
-            "carPlayAvailableCurrentMa",
-            "LIVI_CP_AVAILABLE_CURRENT_MA",
-            AVAILABLE_CURRENT_MA,
-        ),
-        device_id: std::env::var("LIVI_CP_DEVICE_ID")
-            .ok()
-            .filter(|s| !s.is_empty()),
-        ap_mac: ap_mac.clone(),
+        ap_mac: dongle_ap.then(livi_link_host::ap::mac).flatten(),
         ap_on_air: dongle_ap.then_some(livi_link_host::ap::on_air as AskOnAir),
-        on_cable: None,
-        start_again: None,
-        theme: Theme::parse(&std::env::var("LIVI_CP_THEME").unwrap_or_default()),
+        ..cp
     };
-    let pk = std::env::var("LIVI_CP_PK").unwrap_or_default();
-    let pi = std::env::var("LIVI_CP_PI").unwrap_or_default();
 
     let local: Result<Box<dyn iap2_mfi::AuthCoprocessor + Send>, _> = match crate::mfi_files::open()
     {
@@ -334,16 +305,6 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         std::env::var("LIVI_AA_USB").unwrap_or_else(|_| "1".into()) != "0",
     );
 
-    let fuels = Fuels::parse(&std::env::var("LIVI_CP_FUELS").unwrap_or_default());
-    let plugs = Plugs::parse(&std::env::var("LIVI_CP_CONNECTORS").unwrap_or_default());
-    let identity = Identity {
-        name,
-        ssid,
-        bt_mac: [0; 6],
-        fuels,
-        plugs,
-        theme: cp.theme.clone(),
-    };
     let (bluez, bluez_later) = tokio::sync::watch::channel(None);
     let sock_cfg = LiviSockConfig {
         path: HelperSockets::system().carplay,
@@ -396,11 +357,11 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         println!("[helperd] wired CarPlay watcher started");
     }
     let wireless = bt::Wireless {
-        carplay: std::env::var("LIVI_CP_WIRELESS").is_ok_and(|v| v == "1"),
-        android_auto: std::env::var("LIVI_AA_WIRELESS").unwrap_or_else(|_| "1".into()) != "0",
+        carplay: settings.wireless_carplay,
+        android_auto: settings.wireless_android_auto,
     };
     let bluetooth = async || -> Result<(), Box<dyn std::error::Error>> {
-        let adapter = bt_adapter(&dc).await;
+        let adapter = bt_adapter(&settings.bt_adapter).await;
         let _ =
             tokio::task::spawn_blocking(move || livi_runtime::bluetoothd::setup(wireless)).await;
         println!(
@@ -432,7 +393,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             reconnect::Bluez {
                 conn: conn.clone(),
                 adapter: adapter.clone(),
-                ap_iface: ap_iface(&DeviceConfig::load()),
+                ap_iface: wifi_iface.clone(),
             },
             state.clone(),
         ));
@@ -483,6 +444,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
                         aa_events.clone(),
                         wired_phones.clone(),
                         state.clone(),
+                        dongle_ap,
                     ));
                 }
                 Err(e) => eprintln!("[aa] profile registration failed: {e}"),
@@ -539,8 +501,8 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
                 device_id,
                 cp.airplay_port as u16,
                 cp.source_version.clone(),
-                pk,
-                pi,
+                start.public_key.clone(),
+                start.pairing_id.clone(),
                 bcast.clone(),
             ) {
                 Ok(b) => Some(b),
