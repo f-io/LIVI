@@ -133,9 +133,7 @@ impl Projection {
             return;
         };
         let closed = self.sessions.remove(i);
-        self.devices
-            .registry
-            .clear_presence(&registry_ids(&closed.device));
+        self.devices.registry.clear_presence(&closed.device);
         if self.sessions.is_empty() {
             self.next_index = 1;
             if let Some(done) = self.bye.take() {
@@ -220,12 +218,11 @@ impl Projection {
         }
     }
 
-    pub(super) fn session_of(&self, ids: &devices::Ids) -> Option<(u32, bool)> {
-        let ids = session_ids(ids);
+    pub(super) fn session_of(&self, ids: &Ids) -> Option<(u32, bool)> {
         if !ids.any() {
             return None;
         }
-        let i = self.sessions.iter().position(|s| s.device.overlaps(&ids))?;
+        let i = self.sessions.iter().position(|s| s.device.overlaps(ids))?;
         Some((i as u32 + 1, self.sessions[i].active))
     }
 
@@ -250,7 +247,7 @@ impl Projection {
     pub(super) fn select_device(&mut self, id: &str) {
         let ids = match self.devices.registry.by_id(id) {
             Some(e) => e.ids(),
-            None => devices::Ids {
+            None => Ids {
                 bt_mac: Some(id.to_string()),
                 wifi_mac: Some(id.to_string()),
                 usb_udid: Some(id.to_string()),
@@ -258,7 +255,7 @@ impl Projection {
                 ..Default::default()
             },
         };
-        match self.by_identity(&session_ids(&ids)) {
+        match self.by_identity(&ids) {
             Some(i) => {
                 println!("[core] picked {id}, session #{}", self.sessions[i].index);
                 let index = self.sessions[i].index;
@@ -281,7 +278,7 @@ impl Projection {
         let Some(gone) = self.devices.registry.forget(id) else {
             return;
         };
-        if let Some(i) = self.by_identity(&session_ids(&gone.ids())) {
+        if let Some(i) = self.by_identity(&gone.ids()) {
             let session = self.sessions[i].link;
             println!(
                 "[core] forget {id} ends session #{}",

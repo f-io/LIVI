@@ -17,6 +17,7 @@ use livi_aa_stack::manager::{AaCmd, AaEvent, AaHandle, SessionId as AaId};
 use livi_aa_stack::media::AudioKind as AaKind;
 use livi_core_proto::config::{Config, KeyBindings};
 use livi_core_proto::helper_events::{HelperKind, NowPlayingPatch};
+use livi_core_proto::ids::Ids;
 use livi_core_proto::input::{Input, Phase, Point};
 use livi_core_proto::message::{MediaControl, Radio};
 use livi_core_proto::state::{
@@ -135,57 +136,6 @@ fn cp_kind(kind: AaKind) -> AudioKind {
         AaKind::Alert => AudioKind::Alert,
         AaKind::Speech => AudioKind::Speech,
         AaKind::Call => AudioKind::Call,
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Ids {
-    pub bt_mac: Option<String>,
-    pub wifi_mac: Option<String>,
-    pub usb_udid: Option<String>,
-    pub usb_serial: Option<String>,
-    pub instance_id: Option<String>,
-    pub controller_id: Option<String>,
-    pub ip: Option<String>,
-}
-
-impl Ids {
-    fn any(&self) -> bool {
-        self.bt_mac.is_some()
-            || self.wifi_mac.is_some()
-            || self.usb_udid.is_some()
-            || self.usb_serial.is_some()
-            || self.instance_id.is_some()
-            || self.controller_id.is_some()
-            || self.ip.is_some()
-    }
-
-    fn overlaps(&self, other: &Ids) -> bool {
-        let mac = |a: &Option<String>, b: &Option<String>| matches!((a, b), (Some(a), Some(b)) if a.eq_ignore_ascii_case(b));
-        let same =
-            |a: &Option<String>, b: &Option<String>| matches!((a, b), (Some(a), Some(b)) if a == b);
-        mac(&self.bt_mac, &other.bt_mac)
-            || mac(&self.wifi_mac, &other.wifi_mac)
-            || same(&self.usb_udid, &other.usb_udid)
-            || same(&self.usb_serial, &other.usb_serial)
-            || same(&self.instance_id, &other.instance_id)
-            || same(&self.controller_id, &other.controller_id)
-            || same(&self.ip, &other.ip)
-    }
-
-    fn merge(&mut self, from: &Ids) {
-        let take = |into: &mut Option<String>, v: &Option<String>, lower: bool| {
-            if let Some(v) = v.as_ref().filter(|v| !v.is_empty()) {
-                *into = Some(if lower { v.to_lowercase() } else { v.clone() });
-            }
-        };
-        take(&mut self.bt_mac, &from.bt_mac, true);
-        take(&mut self.wifi_mac, &from.wifi_mac, true);
-        take(&mut self.usb_udid, &from.usb_udid, false);
-        take(&mut self.usb_serial, &from.usb_serial, false);
-        take(&mut self.instance_id, &from.instance_id, false);
-        take(&mut self.controller_id, &from.controller_id, false);
-        take(&mut self.ip, &from.ip, false);
     }
 }
 
@@ -377,29 +327,6 @@ pub fn first_wants(start: &str) -> PerScreen<Front> {
 
 fn shows_cluster(wants: &PerScreen<Front>) -> bool {
     [wants.main, wants.cluster, wants.aux].contains(&Front::Cluster)
-}
-
-fn session_ids(ids: &devices::Ids) -> Ids {
-    Ids {
-        bt_mac: ids.bt_mac.clone(),
-        wifi_mac: ids.wifi_mac.clone(),
-        usb_udid: ids.usb_udid.clone(),
-        usb_serial: ids.usb_serial.clone(),
-        instance_id: ids.instance_id.clone(),
-        controller_id: None,
-        ip: ids.ip.clone(),
-    }
-}
-
-fn registry_ids(ids: &Ids) -> devices::Ids {
-    devices::Ids {
-        bt_mac: ids.bt_mac.clone(),
-        wifi_mac: ids.wifi_mac.clone(),
-        usb_udid: ids.usb_udid.clone(),
-        usb_serial: ids.usb_serial.clone(),
-        instance_id: ids.instance_id.clone(),
-        ip: ids.ip.clone(),
-    }
 }
 
 fn knob(state: KnobState) -> StackCmd {

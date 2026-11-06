@@ -47,8 +47,8 @@ impl Projection {
             AaEvent::Status { id, status } => {
                 let link = Link::Aa(id);
                 let ids = match self.sessions.iter().find(|s| s.link == link) {
-                    Some(s) => registry_ids(&s.device),
-                    None => devices::Ids {
+                    Some(s) => s.device.clone(),
+                    None => Ids {
                         ip: opt(&status.ip),
                         ..Default::default()
                     },
@@ -120,7 +120,7 @@ impl Projection {
                 if self.hands_free.battery_precise || mac.is_empty() {
                     return;
                 }
-                let ids = devices::Ids {
+                let ids = Ids {
                     bt_mac: Some(mac),
                     ..Default::default()
                 };
@@ -190,7 +190,7 @@ impl Projection {
             ..Default::default()
         };
         let seen = Seen {
-            ids: registry_ids(&ids),
+            ids: ids.clone(),
             name: opt(&name),
             model: opt(&model),
             protocol: Some(Protocol::Androidauto),
@@ -227,7 +227,7 @@ impl Projection {
                         .bt_by_instance
                         .insert(instance.clone(), mac.clone());
                 }
-                let ids = devices::Ids {
+                let ids = Ids {
                     bt_mac: Some(mac.clone()),
                     instance_id: instance,
                     ..Default::default()

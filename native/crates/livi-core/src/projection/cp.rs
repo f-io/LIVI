@@ -58,7 +58,7 @@ impl Projection {
                 ip,
                 connected,
             }) => {
-                let ids = devices::Ids {
+                let ids = Ids {
                     wifi_mac: opt(&wifi_mac),
                     ip: opt(&ip),
                     ..Default::default()
@@ -66,20 +66,14 @@ impl Projection {
                 self.devices.registry.note_wifi(&ids, connected);
                 self.publish();
             }
-            CpEvent::HelperPresence(HelperPresence::Device { ids }) => {
-                let found = devices::Ids {
-                    bt_mac: ids.bt_mac,
-                    usb_udid: ids.usb_udid,
-                    ip: ids.ip,
-                    ..Default::default()
-                };
-                let live = self.by_identity(&session_ids(&found));
-                let wired = live.map_or(found.usb_udid.is_some(), |i| {
+            CpEvent::HelperPresence(HelperPresence::Device { ids, name }) => {
+                let live = self.by_identity(&ids);
+                let wired = live.map_or(ids.usb_udid.is_some(), |i| {
                     self.sessions[i].transport == Transport::Usb
                 });
                 let seen = Seen {
-                    ids: found,
-                    name: ids.name,
+                    ids,
+                    name,
                     protocol: Some(Protocol::Carplay),
                     wired,
                     ..Default::default()
@@ -181,7 +175,7 @@ impl Projection {
                     ..Default::default()
                 };
                 let seen = Seen {
-                    ids: devices::Ids {
+                    ids: Ids {
                         bt_mac: ids.bt_mac.clone(),
                         wifi_mac: ids.wifi_mac.clone(),
                         usb_udid: ids.usb_udid.clone(),
@@ -220,7 +214,7 @@ impl Projection {
                     .sessions
                     .iter()
                     .find(|s| s.link == Link::Cp(id))
-                    .map(|s| registry_ids(&s.device))
+                    .map(|s| s.device.clone())
                 else {
                     return;
                 };

@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use livi_core_proto::ids::{Ids, norm_mac};
 use livi_core_proto::state::{DeviceStatus, DeviceView, Protocol};
 use livi_cp::helper_sock::HelperSock;
 use livi_session_io::line::{Feed, LineSock};
@@ -14,16 +15,6 @@ use serde_json::Value;
 const IAP_PROFILE_UUID: &str = "00000000-deca-fade-deca-deafdecacafe";
 pub const HFP_AG_UUID: &str = "0000111f-0000-1000-8000-00805f9b34fb";
 const BT_MAJOR_AUDIO: u32 = 0x04;
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Ids {
-    pub bt_mac: Option<String>,
-    pub wifi_mac: Option<String>,
-    pub usb_udid: Option<String>,
-    pub usb_serial: Option<String>,
-    pub instance_id: Option<String>,
-    pub ip: Option<String>,
-}
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -85,6 +76,7 @@ impl Entry {
             usb_serial: s.usb_serial.clone(),
             instance_id: s.instance_id.clone(),
             ip: self.current_ip.clone(),
+            ..Default::default()
         }
     }
 
@@ -135,18 +127,6 @@ impl Entry {
     }
 }
 
-pub fn norm_mac(v: &str) -> String {
-    let hex: String = v.chars().filter(char::is_ascii_hexdigit).collect();
-    if hex.len() != 12 {
-        return v.to_lowercase();
-    }
-    let hex = hex.to_lowercase();
-    (0..6)
-        .map(|i| &hex[i * 2..i * 2 + 2])
-        .collect::<Vec<_>>()
-        .join(":")
-}
-
 fn real_name(v: Option<&str>) -> Option<String> {
     let name = v?.trim();
     (!name.is_empty() && !name.eq_ignore_ascii_case("android")).then(|| name.to_string())
@@ -156,14 +136,6 @@ fn now_ms() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0.0, |d| d.as_millis() as f64)
-}
-
-fn same_mac(a: &Option<String>, b: &Option<String>) -> bool {
-    matches!((a, b), (Some(a), Some(b)) if norm_mac(a) == norm_mac(b))
-}
-
-fn same(a: &Option<String>, b: &Option<String>) -> bool {
-    matches!((a, b), (Some(a), Some(b)) if a == b)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -261,16 +233,7 @@ impl Registry {
 
     fn find_all(&self, ids: &Ids) -> Vec<usize> {
         (0..self.entries.len())
-            .filter(|&i| {
-                let e = &self.entries[i];
-                let s = &e.stored;
-                same_mac(&ids.bt_mac, &s.bt_mac)
-                    || same_mac(&ids.wifi_mac, &s.wifi_mac)
-                    || same(&ids.usb_udid, &s.usb_udid)
-                    || same(&ids.usb_serial, &s.usb_serial)
-                    || same(&ids.instance_id, &s.instance_id)
-                    || same(&ids.ip, &e.current_ip)
-            })
+            .filter(|&i| ids.overlaps(&self.entries[i].ids()))
             .collect()
     }
 
@@ -746,10 +709,7 @@ mod tests {
     }
 
     #[test]
-    fn macs_are_written_one_way() {
-        assert_eq!(norm_mac("AA-BB-CC-DD-EE-FF"), "aa:bb:cc:dd:ee:ff");
-        assert_eq!(norm_mac("aabbccddeeff"), "aa:bb:cc:dd:ee:ff");
-        assert_eq!(norm_mac("XYZ"), "xyz");
+    fn a_bare_android_is_no_name() {
         assert_eq!(real_name(Some(" Android ")), None);
         assert_eq!(real_name(Some("Pixel")), Some("Pixel".into()));
     }

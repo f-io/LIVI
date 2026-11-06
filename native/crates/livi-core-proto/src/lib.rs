@@ -10,6 +10,7 @@ pub mod helper;
 pub mod helper_events;
 pub mod helper_requests;
 pub mod icon;
+pub mod ids;
 pub mod input;
 pub mod message;
 pub mod patch;

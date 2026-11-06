@@ -1202,7 +1202,6 @@ fn listed(rig: &Rig) -> Vec<livi_core_proto::state::DeviceView> {
 #[tokio::test]
 async fn the_phones_seen_make_the_device_list() {
     use livi_core_proto::state::DeviceStatus;
-    use livi_cp::manager::DeviceIds;
 
     let mut rig = Rig::new();
     rig.connect(1, false);
@@ -1232,12 +1231,12 @@ async fn the_phones_seen_make_the_device_list() {
 
     rig.p
         .on_event(CpEvent::HelperPresence(HelperPresence::Device {
-            ids: DeviceIds {
+            ids: Ids {
                 bt_mac: Some("aa:bb:cc:dd:ee:03".into()),
                 usb_udid: Some("u3".into()),
-                name: Some("Cable".into()),
                 ..Default::default()
             },
+            name: Some("Cable".into()),
         }));
     let cable = listed(&rig)
         .into_iter()
