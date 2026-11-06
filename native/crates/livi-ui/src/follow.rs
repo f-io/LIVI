@@ -4,9 +4,8 @@
 
 use std::collections::BTreeSet;
 
-use livi_core_proto::state::{Front, VideoPlayback};
+use livi_core_proto::state::{Front, State, VideoPlayback};
 use livi_ui_model::shell::{Look, look};
-use serde_json::Value;
 
 use crate::PhoneState;
 use crate::dashboard_ui::{DashReader, DashView};
@@ -70,7 +69,7 @@ impl Follow {
         }
     }
 
-    pub fn changed(&mut self, keys: Option<&BTreeSet<String>>, state: &Value) -> Vec<Update> {
+    pub fn changed(&mut self, keys: Option<&BTreeSet<String>>, state: &State) -> Vec<Update> {
         let all = keys.is_none_or(|k| k.contains(""));
         let hit = |key: &str| all || keys.is_some_and(|k| k.contains(key));
         let mut out = Vec::new();
@@ -83,9 +82,9 @@ impl Follow {
             out.push(Update::Radio(Box::new(r)));
         }
         if hit("sessions") {
-            let phone = if state["sessions"]["active"].is_null() {
+            let phone = if state.sessions.active.is_none() {
                 PhoneState::None
-            } else if state["sessions"]["video"].as_bool() == Some(true) {
+            } else if state.sessions.video {
                 PhoneState::Streaming
             } else {
                 PhoneState::Connected
@@ -96,34 +95,28 @@ impl Follow {
             }
         }
         if hit("front") {
-            let front: Option<Front> = serde_json::from_value(state["front"]["main"].clone()).ok();
-            if let Some(front) = front
-                && self.front != Some(front)
-            {
+            let front = state.front.main;
+            if self.front != Some(front) {
                 self.front = Some(front);
                 out.push(Update::Front(front));
             }
         }
         if hit("config") {
-            let next = look(&state["config"]);
+            let next = look(&state.config);
             if self.look.as_ref() != Some(&next) {
                 self.look = Some(next.clone());
                 out.push(Update::Look(next));
             }
-            let kiosk = state["config"]["kiosk"]["main"].as_bool().unwrap_or(false);
+            let kiosk = state.config.kiosk.main;
             if self.kiosk != Some(kiosk) {
                 self.kiosk = Some(kiosk);
                 out.push(Update::Kiosk(kiosk));
             }
             #[cfg(target_os = "macos")]
             {
-                let size = |k: &str| {
-                    state["config"][k]
-                        .as_u64()
-                        .and_then(|v| u32::try_from(v).ok())
-                        .filter(|v| *v > 0)
-                };
-                let shape = size("mainScreenWidth").zip(size("mainScreenHeight"));
+                let size = |v: u32| (v > 0).then_some(v);
+                let shape =
+                    size(state.config.main_screen_width).zip(size(state.config.main_screen_height));
                 if let Some((w, h)) = shape
                     && self.shape != shape
                 {
@@ -133,9 +126,7 @@ impl Follow {
             }
         }
         if hit("videoPlayback") {
-            let next = serde_json::from_value(state["videoPlayback"].clone())
-                .ok()
-                .flatten();
+            let next = state.video_playback;
             if self.video != Some(next) {
                 self.video = Some(next);
                 out.push(Update::Video(next));
@@ -182,19 +173,14 @@ impl Follow {
             }
         }
         if hit("system") {
-            let fonts: Vec<String> = state["system"]["fonts"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|f| f.as_str().map(str::to_string))
-                .collect();
+            let fonts = state.system.fonts.clone();
             if self.fonts.as_ref() != Some(&fonts) {
                 self.fonts = Some(fonts.clone());
                 out.push(Update::Fonts(fonts));
             }
         }
         if hit("cameras") {
-            let found = state["cameras"].as_array().is_some_and(|c| !c.is_empty());
+            let found = !state.cameras.is_empty();
             out.push(Update::Camera(found));
         }
         if livi_ui_model::settings::STATE_READ
@@ -217,9 +203,36 @@ impl Follow {
             && !std::mem::replace(&mut self.started, true)
             && std::env::var_os("LIVI_UI_PAGE").is_none()
         {
-            let start = state["system"]["startPage"].as_str().unwrap_or("/");
+            let start = &state.system.start_page;
+            let start = if start.is_empty() { "/" } else { start };
             out.push(Update::Open(start.to_string()));
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::Value;
+
+    use super::*;
+
+    #[test]
+    fn every_fixture_reads_into_the_typed_state() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures");
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            let partial: Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let Value::Object(sections) = State::filled(partial) else {
+                panic!("{} is not an object", path.display());
+            };
+            let mut state = State::default();
+            for (section, value) in &sections {
+                if let Err(e) = state.refresh(section, value) {
+                    panic!("{} {section}: {e}", path.display());
+                }
+            }
+        }
     }
 }

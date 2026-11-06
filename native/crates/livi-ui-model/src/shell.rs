@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use serde_json::Value;
+use livi_core_proto::config::{Config, HandDriveType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
@@ -27,10 +27,6 @@ pub struct Look {
     pub language: String,
 }
 
-fn on_main(config: &Value, key: &str, default: bool) -> bool {
-    config[key]["main"].as_bool().unwrap_or(default)
-}
-
 pub fn hex_color(text: &str) -> Option<[u8; 3]> {
     let hex = text.trim().trim_start_matches('#');
     if hex.len() != 6 {
@@ -40,16 +36,15 @@ pub fn hex_color(text: &str) -> Option<[u8; 3]> {
     Some([(v >> 16) as u8, (v >> 8) as u8, v as u8])
 }
 
-pub fn tabs(config: &Value) -> Vec<Tab> {
-    let camera_ready = config["cameraId"].as_str().is_some_and(|id| !id.is_empty());
+pub fn tabs(config: &Config) -> Vec<Tab> {
     let mut tabs = vec![Tab::Projection];
-    if on_main(config, "dashboard", false) {
+    if config.dashboard.main {
         tabs.push(Tab::Telemetry);
     }
-    if on_main(config, "media", true) {
+    if config.media.main {
         tabs.push(Tab::Media);
     }
-    if on_main(config, "camera", true) && camera_ready {
+    if config.camera.main && !config.camera_id.is_empty() {
         tabs.push(Tab::Camera);
     }
     tabs.push(Tab::Settings);
@@ -68,52 +63,59 @@ pub fn ui_scale(base: f32, zoom: f32, physical_height: f32) -> f32 {
     base * zoom * fit
 }
 
-pub fn look(config: &Value) -> Look {
-    let dark = config["darkMode"].as_bool().unwrap_or(true);
-    let pick = |dark_key: &str, light_key: &str| {
-        config[if dark { dark_key } else { light_key }]
-            .as_str()
+pub fn look(config: &Config) -> Look {
+    let dark = config.dark_mode;
+    let pick = |on_dark: &Option<String>, on_light: &Option<String>| {
+        if dark { on_dark } else { on_light }
+            .as_deref()
             .and_then(hex_color)
     };
-    let w = config["projectionWidth"]
-        .as_i64()
-        .filter(|v| *v > 0)
-        .unwrap_or(1280) as i32;
-    let h = config["projectionHeight"]
-        .as_i64()
-        .filter(|v| *v > 0)
-        .unwrap_or(720) as i32;
+    let positive = |v: u32, fallback: i32| if v > 0 { v as i32 } else { fallback };
     Look {
         tabs: tabs(config),
-        right_hand: config["hand"].as_i64() == Some(1),
+        right_hand: config.hand == HandDriveType::Rhd,
         dark,
-        primary: pick("primaryColorDark", "primaryColorLight"),
-        highlight: pick("highlightColorDark", "highlightColorLight"),
-        background: pick("backgroundColorDark", "backgroundColorLight"),
-        text: pick("textColorDark", "textColorLight"),
-        zoom: config["uiZoomPercent"]
-            .as_f64()
-            .filter(|z| *z > 0.0)
-            .map_or(1.0, |z| (z / 100.0) as f32),
-        stream: (w, h),
-        language: config["language"].as_str().unwrap_or("en").to_string(),
+        primary: pick(&config.primary_color_dark, &config.primary_color_light),
+        highlight: pick(&config.highlight_color_dark, &config.highlight_color_light),
+        background: pick(
+            &config.background_color_dark,
+            &config.background_color_light,
+        ),
+        text: pick(&config.text_color_dark, &config.text_color_light),
+        zoom: if config.ui_zoom_percent > 0 {
+            config.ui_zoom_percent as f32 / 100.0
+        } else {
+            1.0
+        },
+        stream: (
+            positive(config.projection_width, 1280),
+            positive(config.projection_height, 720),
+        ),
+        language: config.language.clone(),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use livi_core_proto::config::defaults;
 
     use super::*;
 
     #[test]
     fn tabs_follow_the_config() {
+        let mut config = defaults();
+        config.dashboard.main = false;
+        config.media.main = true;
+        config.camera.main = true;
+        config.camera_id.clear();
         assert_eq!(
-            tabs(&json!({})),
+            tabs(&config),
             vec![Tab::Projection, Tab::Media, Tab::Settings]
         );
+        config.dashboard.main = true;
+        config.camera_id = "cam0".into();
         assert_eq!(
-            tabs(&json!({ "dashboard": { "main": true }, "cameraId": "cam0" })),
+            tabs(&config),
             vec![
                 Tab::Projection,
                 Tab::Telemetry,
@@ -136,9 +138,12 @@ mod tests {
 
     #[test]
     fn colors_and_zoom() {
-        let l = look(
-            &json!({ "darkMode": true, "primaryColorDark": "#00ADAD", "uiZoomPercent": 200, "hand": 1 }),
-        );
+        let mut config = defaults();
+        config.dark_mode = true;
+        config.primary_color_dark = Some("#00ADAD".into());
+        config.ui_zoom_percent = 200;
+        config.hand = HandDriveType::Rhd;
+        let l = look(&config);
         assert_eq!(l.primary, Some([0, 0xad, 0xad]));
         assert_eq!(l.zoom, 2.0);
         assert!(l.right_hand);

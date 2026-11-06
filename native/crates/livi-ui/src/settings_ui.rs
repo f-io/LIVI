@@ -169,7 +169,7 @@ fn act(
     f: impl FnOnce(&mut Controller, &Value) -> (Vec<Change>, bool),
 ) {
     let Some(ui) = weak.upgrade() else { return };
-    let state = client.state().clone();
+    let state = client.mirror().json.clone();
     let Some((changes, _)) = with(|c| {
         let out = f(c, &state);
         if out.1 {
@@ -358,7 +358,7 @@ pub fn wire(ui: &AppWindow, client: &Client, lang: &str) {
         let (weak, client) = (weak.clone(), client.clone());
         move || {
             client.act(Action::ApplySettings);
-            let state = client.state().clone();
+            let state = client.mirror().json.clone();
             with(|c| c.baseline = Some(state["config"].clone()));
             if let Some(ui) = weak.upgrade() {
                 render(&ui, &client);
@@ -649,7 +649,7 @@ fn follow_watches(client: &Client, now: Vec<Watch>) {
 }
 
 pub fn render(ui: &AppWindow, client: &Client) {
-    let state = client.state().clone();
+    let state = client.mirror().json.clone();
     with(|c| render_screen(c, &ui.global::<SettingsState>(), &state));
     let now = with(|c| c.model.watches(&c.stack)).unwrap_or_default();
     follow_watches(client, now);

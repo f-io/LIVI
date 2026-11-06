@@ -43,7 +43,7 @@ fn show(ui: &AppWindow, step: Option<usize>) {
 }
 
 pub fn start(ui: &AppWindow, client: &Client, n: usize) {
-    let state = client.state().clone();
+    let state = client.mirror().json.clone();
     let Some((name, display)) = on_main(&state, n) else {
         return;
     };

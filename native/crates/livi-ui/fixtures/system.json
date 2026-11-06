@@ -31,7 +31,7 @@
     }
   },
   "cluster": {
-    "theme": { "displays": [ { "layouts": [ { "id": "livi.navMini", "name": "Nav mini" }, { "id": "livi.clusterOnly", "name": "Map" } ] } ] },
+    "theme": { "displays": [ { "id": "cluster", "kind": "cluster", "layouts": [ { "id": "livi.navMini", "name": "Nav mini", "palettes": [], "zones": [] }, { "id": "livi.clusterOnly", "name": "Map", "palettes": [], "zones": [] } ] } ] },
     "arranged": [ { "id": "livi.navMini", "on": true }, { "id": "livi.clusterOnly", "on": false } ]
   }
 }

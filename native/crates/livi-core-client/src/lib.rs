@@ -16,8 +16,7 @@ use livi_core_proto::frame::{Decoder, FrameError, encode};
 use livi_core_proto::input::Input;
 use livi_core_proto::message::{Action, ToCore};
 use livi_core_proto::patch::{PatchOp, apply};
-use livi_core_proto::state::{Front, Screen};
-use serde::de::DeserializeOwned;
+use livi_core_proto::state::{Front, Screen, State};
 use serde_json::Value;
 
 #[derive(Debug, Clone)]
@@ -29,10 +28,54 @@ pub enum Event {
     Gone(String),
 }
 
+#[derive(Debug, Default)]
+pub struct Mirror {
+    pub json: Value,
+    pub state: State,
+}
+
+impl Mirror {
+    pub fn new(json: Value) -> Mirror {
+        let mut mirror = Mirror {
+            json,
+            state: State::default(),
+        };
+        let sections: Vec<String> = mirror
+            .json
+            .as_object()
+            .map(|o| o.keys().cloned().collect())
+            .unwrap_or_default();
+        sections.iter().for_each(|s| mirror.refresh(s));
+        mirror
+    }
+
+    fn patch(&mut self, ops: &[PatchOp]) -> BTreeSet<String> {
+        let mut sections = BTreeSet::new();
+        for op in ops {
+            let (PatchOp::Set { path, .. } | PatchOp::Remove { path }) = op;
+            sections.insert(path.first().cloned().unwrap_or_default());
+            let _ = apply(&mut self.json, op);
+        }
+        if sections.contains("") {
+            *self = Mirror::new(std::mem::take(&mut self.json));
+        } else {
+            sections.iter().for_each(|s| self.refresh(s));
+        }
+        sections
+    }
+
+    fn refresh(&mut self, section: &str) {
+        let value = self.json.get(section).unwrap_or(&Value::Null);
+        if let Err(e) = self.state.refresh(section, value) {
+            eprintln!("[core-client] {section}: {e}");
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Client {
     stream: Arc<Mutex<UnixStream>>,
-    state: Arc<Mutex<Value>>,
+    mirror: Arc<Mutex<Mirror>>,
     next_id: Arc<AtomicU32>,
 }
 
@@ -61,31 +104,27 @@ impl Client {
     pub fn start(
         stream: UnixStream,
         name: &str,
-        on_event: impl FnMut(Event, &Mutex<Value>) + Send + 'static,
+        on_event: impl FnMut(Event, &Mutex<Mirror>) + Send + 'static,
     ) -> io::Result<Client> {
         let reader = stream.try_clone()?;
         let client = Client {
             stream: Arc::new(Mutex::new(stream)),
-            state: Arc::new(Mutex::new(Value::Null)),
+            mirror: Arc::new(Mutex::new(Mirror::default())),
             next_id: Arc::new(AtomicU32::new(1)),
         };
         client.send(&ToCore::Hello {
             protocol: PROTOCOL,
             client: name.into(),
         });
-        let state = client.state.clone();
+        let mirror = client.mirror.clone();
         thread::Builder::new()
             .name("core-client".into())
-            .spawn(move || read_loop(reader, &state, on_event))?;
+            .spawn(move || read_loop(reader, &mirror, on_event))?;
         Ok(client)
     }
 
-    pub fn state(&self) -> MutexGuard<'_, Value> {
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    pub fn get<T: DeserializeOwned>(&self, key: &str) -> Option<T> {
-        serde_json::from_value(self.state().get(key)?.clone()).ok()
+    pub fn mirror(&self) -> MutexGuard<'_, Mirror> {
+        self.mirror.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn send(&self, msg: &ToCore) {
@@ -118,10 +157,11 @@ impl Client {
 
 fn read_loop(
     mut stream: UnixStream,
-    state: &Mutex<Value>,
-    mut on_event: impl FnMut(Event, &Mutex<Value>),
+    mirror: &Mutex<Mirror>,
+    mut on_event: impl FnMut(Event, &Mutex<Mirror>),
 ) {
-    let mut emit = |ev: Event| on_event(ev, state);
+    let mut emit = |ev: Event| on_event(ev, mirror);
+    let lock = || mirror.lock().unwrap_or_else(|e| e.into_inner());
     let mut dec = Decoder::new();
     let mut buf = vec![0u8; 64 * 1024];
     loop {
@@ -139,23 +179,15 @@ fn read_loop(
             };
             match msg["type"].as_str() {
                 Some("welcome") => {
-                    *state.lock().unwrap_or_else(|e| e.into_inner()) = msg["state"].take();
+                    *lock() = Mirror::new(msg["state"].take());
                     let version = msg["version"].as_str().unwrap_or("").to_string();
                     emit(Event::Welcome { version });
                 }
                 Some("patch") => {
                     let ops: Vec<PatchOp> =
                         serde_json::from_value(msg["ops"].take()).unwrap_or_default();
-                    let mut keys = BTreeSet::new();
-                    {
-                        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                        for op in &ops {
-                            let (PatchOp::Set { path, .. } | PatchOp::Remove { path }) = op;
-                            keys.insert(path.first().cloned().unwrap_or_default());
-                            let _ = apply(&mut s, op);
-                        }
-                    }
-                    emit(Event::Changed(keys));
+                    let sections = lock().patch(&ops);
+                    emit(Event::Changed(sections));
                 }
                 Some("spectrum") => {
                     let bands = msg["bands"]
@@ -178,5 +210,53 @@ fn read_loop(
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use livi_core_proto::state::Protocol;
+    use serde_json::json;
+
+    use super::*;
+
+    fn set(path: &[&str], value: Value) -> PatchOp {
+        PatchOp::Set {
+            path: path.iter().map(|p| p.to_string()).collect(),
+            value,
+        }
+    }
+
+    #[test]
+    fn a_patch_reads_the_touched_sections_again() {
+        let mut mirror = Mirror::new(State::filled(json!({})));
+        let sections = mirror.patch(&[
+            set(&["sessions", "active"], json!("carplay")),
+            set(&["config", "language"], json!("de")),
+        ]);
+        assert_eq!(
+            sections,
+            BTreeSet::from(["config".to_string(), "sessions".to_string()])
+        );
+        assert_eq!(mirror.state.sessions.active, Some(Protocol::Carplay));
+        assert_eq!(mirror.state.config.language, "de");
+        assert_eq!(mirror.json["config"]["language"], "de");
+    }
+
+    #[test]
+    fn a_new_root_reads_every_section() {
+        let mut mirror = Mirror::default();
+        mirror.patch(&[set(
+            &[],
+            State::filled(json!({ "sessions": { "total": 2 } })),
+        )]);
+        assert_eq!(mirror.state.sessions.total, 2);
+    }
+
+    #[test]
+    fn a_broken_section_keeps_what_was_read_before() {
+        let mut mirror = Mirror::new(State::filled(json!({ "sessions": { "total": 2 } })));
+        mirror.patch(&[set(&["sessions", "total"], json!("many"))]);
+        assert_eq!(mirror.state.sessions.total, 2);
     }
 }

@@ -4067,7 +4067,6 @@ version = "0.1.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
  "livi-core-proto",
- "serde",
  "serde_json",
 ]
 

@@ -3,10 +3,7 @@
 // Additional terms: see NOTICE
 
 use livi_core_proto::config::WindowBounds;
-use livi_core_proto::state::Screen;
-use serde_json::Value;
-
-use super::readings::config;
+use livi_core_proto::state::{Screen, State};
 
 const MIN_SIZE: u32 = 200;
 const MAX_SIZE: u32 = 7680;
@@ -29,8 +26,8 @@ pub fn name(screen: Screen) -> &'static str {
     }
 }
 
-pub fn secondary(state: &Value) -> Vec<Secondary> {
-    let c = config(state);
+pub fn secondary(state: &State) -> Vec<Secondary> {
+    let c = &state.config;
     let size = |v: u32| v.clamp(MIN_SIZE, MAX_SIZE);
     [
         (
@@ -63,17 +60,15 @@ pub fn secondary(state: &Value) -> Vec<Secondary> {
 
 #[cfg(test)]
 mod tests {
-    use livi_core_proto::config::defaults;
-    use serde_json::json;
-
     use super::*;
 
     #[test]
     fn only_active_screens_get_a_window() {
-        let mut c = serde_json::to_value(defaults()).unwrap();
-        c["clusterScreenActive"] = json!(true);
-        c["clusterScreenWidth"] = json!(50);
-        let s = secondary(&json!({ "config": c }));
+        let mut state = State::default();
+        state.config.cluster_screen_active = true;
+        state.config.cluster_screen_width = 50;
+        state.config.aux_screen_active = false;
+        let s = secondary(&state);
         assert_eq!(s.len(), 1);
         assert_eq!(s[0].screen, Screen::Cluster);
         assert_eq!(s[0].width, MIN_SIZE);

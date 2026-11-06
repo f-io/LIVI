@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+use livi_core_proto::state::State;
 use livi_core_proto::theme::{Cluster, DisplayKind, ThemeLayout};
-use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Center {
@@ -54,10 +54,6 @@ pub struct Pages {
     pub accent: Option<String>,
 }
 
-pub fn cluster(state: &Value) -> Option<Cluster> {
-    serde_json::from_value(state["cluster"].clone()).ok()
-}
-
 fn layouts(c: &Cluster) -> Vec<ThemeLayout> {
     c.theme
         .displays
@@ -67,17 +63,9 @@ fn layouts(c: &Cluster) -> Vec<ThemeLayout> {
         .unwrap_or_default()
 }
 
-pub fn pages(state: &Value, dark: bool) -> Pages {
-    let Some(c) = cluster(state) else {
-        return Pages {
-            active: None,
-            index: None,
-            count: 0,
-            ids: Vec::new(),
-            accent: None,
-        };
-    };
-    let all = layouts(&c);
+pub fn pages(state: &State, dark: bool) -> Pages {
+    let c = &state.cluster;
+    let all = layouts(c);
     let ids: Vec<String> = c
         .shown
         .iter()

@@ -4,7 +4,7 @@
 
 use std::time::{Duration, Instant};
 
-use serde_json::Value;
+use livi_core_proto::state::{FmStation, State};
 
 use crate::settings::color::{Hsl, from_hsl};
 
@@ -253,7 +253,7 @@ pub fn badge(label: &str) -> [u8; 3] {
     })
 }
 
-fn signal_bars(quality: u64) -> u8 {
+fn signal_bars(quality: u32) -> u8 {
     if quality >= 80 {
         3
     } else if quality >= 40 {
@@ -267,54 +267,46 @@ pub fn mhz(khz: u32) -> String {
     format!("{}.{}", khz / 1000, khz % 1000 / 100)
 }
 
-pub fn dab(state: &Value) -> Radio {
-    let d = &state["dab"];
-    let tuned = d["station"].as_u64().map(|v| v as u32);
+pub fn dab(state: &State) -> Radio {
+    let d = &state.dab;
+    let tuned = d.station;
     let mut out = Radio {
-        receiver: !d["receiver"].is_null(),
-        active: d["active"].as_bool().unwrap_or(false),
-        playing: d["playing"].as_bool().unwrap_or(false),
-        text: d["text"].as_str().unwrap_or("").to_string(),
+        receiver: d.receiver.is_some(),
+        active: d.active,
+        playing: d.playing,
+        text: d.text.clone().unwrap_or_default(),
         tuned,
         ..Radio::default()
     };
-    let signal = &d["signal"];
-    if signal["locked"].as_bool() == Some(true) {
-        out.signal_bars = signal_bars(signal["quality"].as_u64().unwrap_or(0));
+    if d.signal.locked {
+        out.signal_bars = signal_bars(d.signal.quality);
     }
-    let all = d["stations"].as_array().map_or(&[][..], Vec::as_slice);
-    for st in all {
-        let id = st["serviceId"].as_u64().unwrap_or(0) as u32;
-        let label = st["label"].as_str().unwrap_or("").to_string();
-        if Some(id) == tuned {
-            out.title = Some(label.clone());
-            out.ensemble = format!(
-                "{} · {}",
-                st["ensemble"].as_str().unwrap_or(""),
-                st["channel"].as_str().unwrap_or("")
-            );
-            out.tuned_favorite = st["favorite"].as_bool().unwrap_or(false);
-            out.tuned_logo = st["logo"].as_str().map(str::to_string);
+    for st in &d.stations {
+        if Some(st.service_id) == tuned {
+            out.title = Some(st.label.clone());
+            out.ensemble = format!("{} · {}", st.ensemble, st.channel);
+            out.tuned_favorite = st.favorite;
+            out.tuned_logo = st.logo.clone();
         }
     }
     let shown_label = out.title.clone().unwrap_or_else(|| "DAB+".into());
     out.tuned_initials = initials(&shown_label);
     out.tuned_badge = badge(&shown_label);
-    out.stations = all
+    out.stations = d
+        .stations
         .iter()
-        .filter(|st| st["hidden"].as_bool() != Some(true))
+        .filter(|st| !st.hidden)
         .enumerate()
         .map(|(i, st)| {
-            let id = st["serviceId"].as_u64().unwrap_or(0) as u32;
-            let label = st["label"].as_str().unwrap_or("");
-            let short = st["shortLabel"].as_str().unwrap_or("");
+            let label = &st.label;
+            let short = &st.short_label;
             Station {
-                id,
+                id: st.service_id,
                 number: i + 1,
-                label: if short.is_empty() { label } else { short }.to_string(),
-                favorite: st["favorite"].as_bool().unwrap_or(false),
-                tuned: Some(id) == tuned,
-                logo: st["logo"].as_str().map(str::to_string),
+                label: if short.is_empty() { label } else { short }.clone(),
+                favorite: st.favorite,
+                tuned: Some(st.service_id) == tuned,
+                logo: st.logo.clone(),
                 initials: initials(label),
                 badge: badge(label),
             }
@@ -324,57 +316,55 @@ pub fn dab(state: &Value) -> Radio {
     out
 }
 
-fn fm_name(st: &Value) -> Option<String> {
-    let name = st["name"].as_str().unwrap_or("").trim();
+fn fm_name(st: &FmStation) -> Option<String> {
+    let name = st.name.trim();
     (!name.is_empty()).then(|| name.to_string())
 }
 
-pub fn fm(state: &Value) -> Radio {
-    let f = &state["fm"];
-    let tuned = f["station"].as_u64().map(|v| v as u32);
-    let all = f["stations"].as_array().map_or(&[][..], Vec::as_slice);
-    let khz_of = |st: &Value| st["khz"].as_u64().unwrap_or(0) as u32;
+pub fn fm(state: &State) -> Radio {
+    let f = &state.fm;
+    let tuned = f.station;
     let mut out = Radio {
-        receiver: !state["dab"]["receiver"].is_null(),
-        active: f["active"].as_bool().unwrap_or(false),
-        playing: f["playing"].as_bool().unwrap_or(false),
-        text: f["text"].as_str().unwrap_or("").to_string(),
+        receiver: state.dab.receiver.is_some(),
+        active: f.active,
+        playing: f.playing,
+        text: f.text.clone().unwrap_or_default(),
         tuned,
         ..Radio::default()
     };
-    let signal = &f["signal"];
-    let quality = signal["quality"].as_u64().unwrap_or(0);
-    if out.active && quality > 0 {
-        out.signal_bars = signal_bars(quality);
+    if out.active && f.signal.quality > 0 {
+        out.signal_bars = signal_bars(f.signal.quality);
     }
     let mut name = None;
     if let Some(khz) = tuned {
-        let listed = all.iter().find(|st| khz_of(st) == khz);
-        name = f["name"]
-            .as_str()
+        let listed = f.stations.iter().find(|st| st.khz == khz);
+        name = f
+            .name
+            .as_deref()
             .map(str::trim)
             .filter(|n| !n.is_empty())
             .map(str::to_string)
             .or_else(|| listed.and_then(fm_name));
         out.title = Some(name.clone().unwrap_or_else(|| format!("{} MHz", mhz(khz))));
         out.ensemble = format!("{} MHz", mhz(khz));
-        out.stereo = out.active && signal["stereo"].as_bool() == Some(true);
-        out.tuned_favorite = listed.is_some_and(|st| st["favorite"].as_bool() == Some(true));
+        out.stereo = out.active && f.signal.stereo;
+        out.tuned_favorite = listed.is_some_and(|st| st.favorite);
     }
     let shown = name.or_else(|| tuned.map(mhz));
     out.tuned_initials = shown.as_deref().map_or("FM".into(), fm_initials);
     out.tuned_badge = badge(shown.as_deref().unwrap_or("FM"));
-    out.stations = all
+    out.stations = f
+        .stations
         .iter()
-        .filter(|st| st["hidden"].as_bool() != Some(true))
+        .filter(|st| !st.hidden)
         .enumerate()
         .map(|(i, st)| {
-            let khz = khz_of(st);
+            let khz = st.khz;
             let label = fm_name(st).unwrap_or_else(|| mhz(khz));
             Station {
                 id: khz,
                 number: i + 1,
-                favorite: st["favorite"].as_bool().unwrap_or(false),
+                favorite: st.favorite,
                 tuned: Some(khz) == tuned,
                 logo: None,
                 initials: fm_initials(&label),
@@ -401,6 +391,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::testing::state;
 
     fn at(base: Instant, ms: u64) -> Instant {
         base + Duration::from_millis(ms)
@@ -479,14 +470,14 @@ mod tests {
 
     #[test]
     fn dab_view_from_state() {
-        let state = json!({ "dab": {
+        let state = state(json!({ "dab": {
             "receiver": "rtl-sdr", "active": true, "station": 2, "playing": true,
             "text": "Now on air", "signal": { "locked": true, "quality": 55 },
             "stations": [
-                { "serviceId": 1, "label": "Hidden FM", "shortLabel": "", "ensemble": "E", "channel": "5C", "hidden": true },
-                { "serviceId": 2, "label": "Radio Eins", "shortLabel": "Eins", "ensemble": "Berlin", "channel": "7D", "favorite": true }
+                { "serviceId": 1, "label": "Hidden FM", "shortLabel": "", "ensemble": "E", "channel": "5C", "frequencyHz": 178352000, "hidden": true },
+                { "serviceId": 2, "label": "Radio Eins", "shortLabel": "Eins", "ensemble": "Berlin", "channel": "7D", "frequencyHz": 194064000, "favorite": true }
             ]
-        } });
+        } }));
         let d = dab(&state);
         assert!(d.receiver && d.active);
         assert_eq!(d.title.as_deref(), Some("Radio Eins"));
@@ -499,7 +490,7 @@ mod tests {
 
     #[test]
     fn fm_view_from_state() {
-        let state = json!({
+        let state = state(json!({
             "dab": { "receiver": "rtl-sdr" },
             "fm": {
                 "active": true, "station": 98100, "playing": true, "name": "NDR 2",
@@ -510,7 +501,7 @@ mod tests {
                     { "khz": 98100, "name": "N2", "favorite": true }
                 ]
             }
-        });
+        }));
         let f = fm(&state);
         assert!(f.receiver && f.active && f.stereo);
         assert_eq!(f.title.as_deref(), Some("NDR 2"), "RDS names it on air");
@@ -525,12 +516,12 @@ mod tests {
 
     #[test]
     fn a_manually_tuned_frequency_is_its_own_title() {
-        let state = json!({ "fm": { "active": true, "station": 104000, "stations": [] } });
+        let state = state(json!({ "fm": { "active": true, "station": 104000, "stations": [] } }));
         let f = fm(&state);
         assert!(!f.receiver);
         assert_eq!(f.title.as_deref(), Some("104.0 MHz"));
         assert_eq!(f.tuned_initials, "104.0");
         assert!(!f.tuned_favorite && f.tuned_index.is_none());
-        assert_eq!(fm(&json!({})).tuned_initials, "FM");
+        assert_eq!(fm(&State::default()).tuned_initials, "FM");
     }
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use serde_json::Value;
+use livi_core_proto::state::{Protocol, State};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stream {
@@ -20,33 +20,28 @@ pub struct Mask {
     pub right: u32,
 }
 
-fn prefix(stream: Stream) -> &'static str {
-    match stream {
-        Stream::Main => "projection",
-        Stream::Cluster => "cluster",
-    }
-}
-
-fn number(config: &Value, key: String) -> u32 {
-    config[key.as_str()]
-        .as_u64()
-        .and_then(|v| u32::try_from(v).ok())
-        .unwrap_or(0)
-}
-
-pub fn mask(state: &Value, stream: Stream) -> Option<Mask> {
-    if state["sessions"]["active"].as_str() != Some("androidauto") {
+pub fn mask(state: &State, stream: Stream) -> Option<Mask> {
+    if state.sessions.active != Some(Protocol::Androidauto) {
         return None;
     }
-    let config = &state["config"];
-    let p = prefix(stream);
-    let m = Mask {
-        width: number(config, format!("{p}Width")),
-        height: number(config, format!("{p}Height")),
-        top: number(config, format!("{p}ViewAreaTop")),
-        bottom: number(config, format!("{p}ViewAreaBottom")),
-        left: number(config, format!("{p}ViewAreaLeft")),
-        right: number(config, format!("{p}ViewAreaRight")),
+    let c = &state.config;
+    let m = match stream {
+        Stream::Main => Mask {
+            width: c.projection_width,
+            height: c.projection_height,
+            top: c.projection_view_area_top,
+            bottom: c.projection_view_area_bottom,
+            left: c.projection_view_area_left,
+            right: c.projection_view_area_right,
+        },
+        Stream::Cluster => Mask {
+            width: c.cluster_width,
+            height: c.cluster_height,
+            top: c.cluster_view_area_top,
+            bottom: c.cluster_view_area_bottom,
+            left: c.cluster_view_area_left,
+            right: c.cluster_view_area_right,
+        },
     };
     let insets = m.top + m.bottom + m.left + m.right;
     (m.width > 0 && m.height > 0 && insets > 0).then_some(m)
@@ -54,12 +49,12 @@ pub fn mask(state: &Value, stream: Stream) -> Option<Mask> {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     use super::*;
 
-    fn state(active: Value) -> Value {
-        json!({
+    fn state(active: Value) -> State {
+        crate::testing::state(json!({
             "sessions": { "active": active },
             "config": {
                 "projectionWidth": 1280,
@@ -75,7 +70,7 @@ mod tests {
                 "clusterViewAreaLeft": 0,
                 "clusterViewAreaRight": 0
             }
-        })
+        }))
     }
 
     #[test]
@@ -99,7 +94,7 @@ mod tests {
     fn each_stream_uses_its_own_values() {
         let mut s = state(json!("androidauto"));
         assert_eq!(mask(&s, Stream::Cluster), None);
-        s["config"]["clusterViewAreaBottom"] = json!(30);
+        s.config.cluster_view_area_bottom = 30;
         assert_eq!(
             mask(&s, Stream::Cluster),
             Some(Mask {

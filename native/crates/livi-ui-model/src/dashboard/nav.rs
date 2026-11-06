@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use livi_core_proto::state::Navigation;
-use serde_json::Value;
+use livi_core_proto::state::State;
 
 const ROUNDABOUT_EXIT_FIRST: u32 = 28;
 const ROUNDABOUT_EXIT_LAST: u32 = 46;
@@ -58,8 +57,8 @@ pub fn icon(kind: Option<u32>, turn_side: Option<u32>) -> &'static str {
     }
 }
 
-pub fn nav(state: &Value) -> Nav {
-    let n: Navigation = serde_json::from_value(state["navigation"].clone()).unwrap_or_default();
+pub fn nav(state: &State) -> Nav {
+    let n = &state.navigation;
     let text = |s: &Option<String>| s.clone().unwrap_or_default();
     Nav {
         active: n.active == Some(true),
@@ -96,7 +95,9 @@ mod tests {
 
     #[test]
     fn a_roundabout_exit_carries_its_number() {
-        let n = nav(&json!({ "navigation": { "active": true, "maneuverType": 30 } }));
+        let n = nav(&crate::testing::state(
+            json!({ "navigation": { "active": true, "maneuverType": 30 } }),
+        ));
         assert_eq!(n.roundabout_exit, Some(3));
         assert_eq!(n.icon, "RoundaboutRight");
         assert!(n.active);

@@ -6,13 +6,12 @@ use std::rc::Rc;
 
 use livi_core_client::Client;
 use livi_core_proto::message::Action;
-use livi_core_proto::state::Screen;
+use livi_core_proto::state::{Screen, State};
 use livi_ui_model::dashboard::gauge::{self, Drawing, Scale, Spec, draw, groups, label_overflow};
 use livi_ui_model::dashboard::layout::{Center, pages, spec};
 use livi_ui_model::dashboard::nav::{Nav, nav};
 use livi_ui_model::dashboard::readings::{Readings, Turn, readings};
 use livi_ui_model::mask::{Mask, Stream, mask};
-use serde_json::Value;
 use slint::{Color, ComponentHandle, Image, ModelRc, SharedString, VecModel};
 
 use crate::media::{Pixels, decode};
@@ -101,7 +100,7 @@ fn gauge_view(scale: &Scale, mirror: bool, redline: f64) -> GaugeView {
 }
 
 impl DashReader {
-    pub fn read(&mut self, state: &Value, screen: Screen, dark: bool) -> DashView {
+    pub fn read(&mut self, state: &State, screen: Screen, dark: bool) -> DashView {
         let r = readings(state, screen);
         let speed_key = (r.speed_scale.clone(), 0.0);
         let speed_gauge = (self.speed_key.as_ref() != Some(&speed_key)).then(|| {
@@ -304,9 +303,9 @@ pub fn wire(d: &DashState<'_>, client: &Client) {
     d.on_select_page({
         let c = client.clone();
         move |i| {
-            let layout = c.state()["cluster"]["shown"][i as usize]
-                .as_str()
-                .map(str::to_string);
+            let layout = usize::try_from(i)
+                .ok()
+                .and_then(|i| c.mirror().state.cluster.shown.get(i).cloned());
             if let Some(layout) = layout {
                 c.act(Action::SelectClusterLayout { layout });
             }

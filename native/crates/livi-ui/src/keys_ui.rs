@@ -352,7 +352,7 @@ fn apply(ui: &AppWindow, client: &Client, code: &str, outcome: Outcome) -> bool 
         Outcome::Pass => return false,
         Outcome::Ignore => {}
         Outcome::ToCore(code) => {
-            let name = bound_to(&client.state()["config"], &code);
+            let name = bound_to(&client.mirror().json["config"], &code);
             if let Some(p) = name.as_deref().and_then(pressed) {
                 crate::media_ui::pressed_feedback(ui, p);
             }
@@ -360,7 +360,7 @@ fn apply(ui: &AppWindow, client: &Client, code: &str, outcome: Outcome) -> bool 
         }
         Outcome::CycleSession => {
             client.act(Action::NextDevice);
-            let name = livi_ui_model::overlay::cycled(&client.state());
+            let name = livi_ui_model::overlay::cycled(&client.mirror().state);
             if let Some(name) = name {
                 crate::overlay_ui::phone(ui, &name);
             }
@@ -452,9 +452,7 @@ pub fn key(ui: &AppWindow, client: &Client, code: &str, down: bool, repeat: bool
         }
         return true;
     }
-    let state = client.state();
-    let config = state["config"].clone();
-    drop(state);
+    let config = client.mirror().json["config"].clone();
     if !down {
         if let Some(code) = released(code, &config) {
             client.input(Input::Key { code, down: false });

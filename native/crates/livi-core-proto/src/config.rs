@@ -412,6 +412,12 @@ pub struct KeyBindings {
     pub voice_assistant_release: String,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        defaults()
+    }
+}
+
 pub fn defaults() -> Config {
     let off = PerScreen {
         main: false,

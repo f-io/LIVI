@@ -31,9 +31,9 @@ use std::rc::Rc;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use livi_core_client::{Client, Event};
+use livi_core_client::{Client, Event, Mirror};
 use livi_core_proto::input::{Input, Phase, Point};
-use livi_core_proto::state::{Front, Screen};
+use livi_core_proto::state::{Front, Screen, State};
 use serde_json::Value;
 use slint::platform::WindowEvent;
 use slint::{Color, Model, ModelRc, Timer, TimerMode, VecModel, Weak};
@@ -346,16 +346,16 @@ pub(crate) fn detach_video(screen: &str) {
     let _ = screen;
 }
 
-fn follow_core(weak: Weak<AppWindow>) -> impl FnMut(Event, &Mutex<Value>) + Send + 'static {
+fn follow_core(weak: Weak<AppWindow>) -> impl FnMut(Event, &Mutex<Mirror>) + Send + 'static {
     let mut follow = Follow::default();
-    move |ev, state| {
-        let read = || state.lock().unwrap_or_else(|e| e.into_inner());
+    move |ev, mirror| {
+        let read = || mirror.lock().unwrap_or_else(|e| e.into_inner());
         let mut updates = match ev {
             Event::Welcome { version } => {
                 println!("[ui] core {version}");
-                follow.changed(None, &read())
+                follow.changed(None, &read().state)
             }
-            Event::Changed(keys) => follow.changed(Some(&keys), &read()),
+            Event::Changed(keys) => follow.changed(Some(&keys), &read().state),
             Event::Spectrum(bands) => vec![Update::Spectrum(bands)],
             Event::OpenPage(path) => vec![Update::Open(path)],
             Event::Gone(why) => {
@@ -463,11 +463,7 @@ pub fn run(
     let client = Client::start(stream, "LIVI", follow_core(weak.clone()))?;
     CLIENT.with_borrow_mut(|c| *c = Some(client.clone()));
     MAIN.with_borrow_mut(|m| *m = Some(weak.clone()));
-    let lang = client
-        .state()
-        .get("config")
-        .and_then(|c| c["language"].as_str().map(str::to_string))
-        .unwrap_or_else(|| "en".into());
+    let lang = client.mirror().state.config.language.clone();
     settings_ui::wire(&ui, &client, &lang);
     #[cfg(not(target_os = "android"))]
     keys_ui::wire(&ui, &client);
@@ -476,11 +472,11 @@ pub fn run(
     video_ui::wire(&ui, &client);
     wire(&ui, &client);
     if let Some(state) = fixture {
-        *client.state() = state.clone();
-        Follow::default()
-            .changed(None, &state)
-            .into_iter()
-            .for_each(|u| apply(&ui, u));
+        let mut mirror = client.mirror();
+        *mirror = Mirror::new(State::filled(state));
+        let updates = Follow::default().changed(None, &mirror.state);
+        drop(mirror);
+        updates.into_iter().for_each(|u| apply(&ui, u));
     }
 
     let clock_timer = Timer::default();

@@ -4,8 +4,7 @@
 
 use std::collections::BTreeSet;
 
-use livi_core_proto::state::{DeviceStatus, DeviceView};
-use serde_json::Value;
+use livi_core_proto::state::{DeviceStatus, DeviceView, State};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VolumeIcon {
@@ -28,8 +27,8 @@ pub fn percent(level: f64) -> u32 {
     (level.clamp(0.0, 1.0) * 100.0).round() as u32
 }
 
-pub fn enabled(state: &Value) -> bool {
-    state["config"]["overlayMessages"].as_bool() != Some(false)
+pub fn enabled(state: &State) -> bool {
+    state.config.overlay_messages
 }
 
 #[derive(Default)]
@@ -38,18 +37,14 @@ pub struct Volume {
 }
 
 impl Volume {
-    pub fn update(&mut self, state: &Value) -> Option<f64> {
-        let level = state["config"]["huVolume"].as_f64();
+    pub fn update(&mut self, state: &State) -> Option<f64> {
+        let level = Some(state.config.hu_volume);
         let before = std::mem::replace(&mut self.seen, level);
         match (before, level) {
             (Some(b), Some(l)) if b != l && enabled(state) => Some(l),
             _ => None,
         }
     }
-}
-
-fn devices(state: &Value) -> Vec<DeviceView> {
-    serde_json::from_value(state["devices"].clone()).unwrap_or_default()
 }
 
 fn name(d: &DeviceView) -> Option<String> {
@@ -65,12 +60,8 @@ pub struct Phone {
 }
 
 impl Phone {
-    pub fn update(&mut self, state: &Value) -> Option<String> {
-        if state["config"].is_null() {
-            self.seen = None;
-            return None;
-        }
-        let list = devices(state);
+    pub fn update(&mut self, state: &State) -> Option<String> {
+        let list = &state.devices;
         let connected: BTreeSet<String> = list
             .iter()
             .filter(|d| d.status != DeviceStatus::Offline)
@@ -91,11 +82,12 @@ impl Phone {
     }
 }
 
-pub fn cycled(state: &Value) -> Option<String> {
-    if state["sessions"]["total"].as_u64().unwrap_or(0) > 1 || !enabled(state) {
+pub fn cycled(state: &State) -> Option<String> {
+    if state.sessions.total > 1 || !enabled(state) {
         return None;
     }
-    devices(state)
+    state
+        .devices
         .iter()
         .find(|d| d.status == DeviceStatus::Active)
         .and_then(name)
@@ -103,12 +95,13 @@ pub fn cycled(state: &Value) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     use super::*;
+    use crate::testing::state;
 
-    fn with_volume(v: f64) -> Value {
-        json!({ "config": { "huVolume": v } })
+    fn with_volume(v: f64) -> State {
+        state(json!({ "config": { "huVolume": v } }))
     }
 
     #[test]
@@ -117,7 +110,7 @@ mod tests {
         assert_eq!(w.update(&with_volume(0.5)), None);
         assert_eq!(w.update(&with_volume(0.5)), None);
         assert_eq!(w.update(&with_volume(0.6)), Some(0.6));
-        let off = json!({ "config": { "huVolume": 0.2, "overlayMessages": false } });
+        let off = state(json!({ "config": { "huVolume": 0.2, "overlayMessages": false } }));
         assert_eq!(w.update(&off), None);
     }
 
@@ -130,8 +123,8 @@ mod tests {
         assert_eq!(percent(1.4), 100);
     }
 
-    fn phones(list: Value) -> Value {
-        json!({ "config": {}, "devices": list, "sessions": { "total": 1 } })
+    fn phones(list: Value) -> State {
+        state(json!({ "devices": list, "sessions": { "total": 1 } }))
     }
 
     #[test]

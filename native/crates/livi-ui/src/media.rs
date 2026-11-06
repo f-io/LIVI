@@ -5,9 +5,8 @@
 use std::collections::HashMap;
 
 use base64::Engine;
-use livi_core_proto::state::{NowPlaying, Protocol, Sessions};
+use livi_core_proto::state::{Protocol, State};
 use livi_ui_model::media::{Radio, Station, dab, fm};
-use serde_json::Value;
 use slint::{Rgba8Pixel, SharedPixelBuffer};
 
 const EMPTY: &str = "—";
@@ -68,11 +67,9 @@ fn text_or_dash(v: Option<String>) -> String {
 }
 
 impl MediaReader {
-    pub fn read(&mut self, state: &Value) -> MediaView {
-        let now: NowPlaying =
-            serde_json::from_value(state["nowPlaying"].clone()).unwrap_or_default();
-        let sessions: Sessions =
-            serde_json::from_value(state["sessions"].clone()).unwrap_or_default();
+    pub fn read(&mut self, state: &State) -> MediaView {
+        let now = state.now_playing.clone();
+        let sessions = state.sessions;
         let artwork_raw = (now.artwork != self.artwork).then(|| {
             self.artwork = now.artwork.clone();
             now.artwork.clone()
@@ -88,14 +85,11 @@ impl MediaReader {
             can_seek: sessions.active == Some(Protocol::Carplay),
             artwork: None,
             artwork_raw,
-            session: format!(
-                "{}:{}",
-                state["sessions"]["active"], state["sessions"]["position"]
-            ),
+            session: format!("{:?}:{}", sessions.active, sessions.position),
         }
     }
 
-    pub fn read_radio(&mut self, state: &Value) -> Option<Radios> {
+    pub fn read_radio(&mut self, state: &State) -> Option<Radios> {
         let next = (dab(state), fm(state));
         if self.last_radio.as_ref() == Some(&next) {
             return None;
@@ -159,8 +153,9 @@ pub fn decode(base64: &str) -> Option<Pixels> {
 
 #[cfg(test)]
 mod tests {
+    use livi_core_proto::state::DabStation;
+
     use super::*;
-    use serde_json::json;
 
     fn png() -> String {
         let mut bytes = Vec::new();
@@ -173,16 +168,24 @@ mod tests {
         base64::engine::general_purpose::STANDARD.encode(bytes)
     }
 
-    fn state(quality: u64, logo: &str) -> Value {
-        json!({
-            "dab": {
-                "receiver": "stick",
-                "station": 1,
-                "signal": { "locked": true, "quality": quality },
-                "stations": [{ "serviceId": 1, "label": "One", "logo": logo }],
-            },
-            "fm": {},
-        })
+    fn state(quality: u32, logo: &str) -> State {
+        let mut state = State::default();
+        state.dab.receiver = Some("stick".into());
+        state.dab.station = Some(1);
+        state.dab.signal.locked = true;
+        state.dab.signal.quality = quality;
+        state.dab.stations = vec![DabStation {
+            service_id: 1,
+            label: "One".into(),
+            short_label: String::new(),
+            ensemble: String::new(),
+            channel: String::new(),
+            frequency_hz: 0,
+            favorite: false,
+            hidden: false,
+            logo: Some(logo.into()),
+        }];
+        state
     }
 
     #[test]

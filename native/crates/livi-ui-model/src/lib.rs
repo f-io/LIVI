@@ -13,3 +13,13 @@ pub mod scancode;
 pub mod settings;
 pub mod shell;
 pub mod touch;
+
+#[cfg(test)]
+mod testing {
+    use livi_core_proto::state::State;
+    use serde_json::Value;
+
+    pub fn state(partial: Value) -> State {
+        serde_json::from_value(State::filled(partial)).expect("a filled state reads")
+    }
+}

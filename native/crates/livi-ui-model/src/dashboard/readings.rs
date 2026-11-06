@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use livi_core_proto::config::{CarType, Config, SpeedUnit, TemperatureUnit, defaults};
-use livi_core_proto::state::Screen;
+use livi_core_proto::config::{CarType, SpeedUnit, TemperatureUnit};
+use livi_core_proto::state::{Screen, State};
 use serde_json::Value;
 
 use super::gauge::{Scale, scale};
@@ -50,10 +50,6 @@ pub struct Readings {
     pub oil_hot: bool,
 }
 
-pub fn config(state: &Value) -> Config {
-    serde_json::from_value(state["config"].clone()).unwrap_or_else(|_| defaults())
-}
-
 pub fn gear(v: &Value) -> String {
     let s = match v {
         Value::String(s) => s.trim().to_uppercase(),
@@ -86,13 +82,10 @@ fn speed(kph: f64, unit: SpeedUnit) -> f64 {
     }
 }
 
-fn num(v: &Value) -> Option<f64> {
-    v.as_f64().filter(|f| f.is_finite())
-}
-
-pub fn readings(state: &Value, screen: Screen) -> Readings {
-    let c = config(state);
-    let t = &state["telemetry"];
+pub fn readings(state: &State, screen: Screen) -> Readings {
+    let c = &state.config;
+    let t = |key: &str| state.telemetry.get(key).unwrap_or(&Value::Null);
+    let num = |key: &str| t(key).as_f64().filter(|f| f.is_finite());
     let enabled = *c.dashboard.get(screen);
     let unit = c.speed_unit;
     let temp_unit = c.temperature_unit;
@@ -105,11 +98,11 @@ pub fn readings(state: &Value, screen: Screen) -> Readings {
     let rpm_scale = scale(f64::from(c.max_rpm), RPM_STEP, RPM_MAX_SECTIONS, |v| {
         format!("{}", v / 1000.0)
     });
-    let shown_speed = speed(num(&t["speedKph"]).unwrap_or(0.0), unit);
-    let fuel = num(&t["fuelPct"]).unwrap_or(0.0).round().clamp(0.0, 100.0) as i32;
-    let oil = num(&t["oilC"]).unwrap_or(0.0);
+    let shown_speed = speed(num("speedKph").unwrap_or(0.0), unit);
+    let fuel = num("fuelPct").unwrap_or(0.0).round().clamp(0.0, 100.0) as i32;
+    let oil = num("oilC").unwrap_or(0.0);
     let oil_round = oil.round();
-    let turn = match t["turnSignal"].as_str() {
+    let turn = match t("turnSignal").as_str() {
         Some("left") => Turn::Left,
         Some("right") => Turn::Right,
         _ => Turn::None,
@@ -127,17 +120,21 @@ pub fn readings(state: &Value, screen: Screen) -> Readings {
             SpeedUnit::Mph => "MPH",
         },
         speed_scale,
-        rpm: num(&t["rpm"]).unwrap_or(0.0),
+        rpm: num("rpm").unwrap_or(0.0),
         rpm_scale,
         redline: f64::from(c.redline_rpm),
-        gear: gear(t.get("gear").unwrap_or(&Value::String("P".into()))),
+        gear: gear(
+            state
+                .telemetry
+                .get("gear")
+                .unwrap_or(&Value::String("P".into())),
+        ),
         turn,
-        hazards: t["hazards"].as_bool() == Some(true),
-        lights: t["lights"].as_bool() == Some(true),
-        high_beam: t["highBeam"].as_bool() == Some(true),
-        parking_brake: t["parkingBrake"].as_bool() == Some(true),
-        ambient: num(&t["ambientC"])
-            .map(|a| format!("{}{suffix}", temperature(a, temp_unit).round())),
+        hazards: t("hazards").as_bool() == Some(true),
+        lights: t("lights").as_bool() == Some(true),
+        high_beam: t("highBeam").as_bool() == Some(true),
+        parking_brake: t("parkingBrake").as_bool() == Some(true),
+        ambient: num("ambientC").map(|a| format!("{}{suffix}", temperature(a, temp_unit).round())),
         fuel,
         fuel_low: fuel <= FUEL_WARN_BELOW,
         battery: c.car_type == Some(CarType::Electric),
@@ -153,12 +150,8 @@ mod tests {
 
     use super::*;
 
-    fn state(telemetry: Value, patch: Value) -> Value {
-        let mut config = serde_json::to_value(defaults()).unwrap();
-        if let (Some(c), Some(p)) = (config.as_object_mut(), patch.as_object()) {
-            c.extend(p.clone());
-        }
-        json!({ "config": config, "telemetry": telemetry })
+    fn state(telemetry: Value, config: Value) -> State {
+        crate::testing::state(json!({ "config": config, "telemetry": telemetry }))
     }
 
     #[test]
