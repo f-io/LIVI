@@ -64,7 +64,7 @@ livi_pm_install() {
   case "$(livi_pm)" in
     apt)    sudo apt-get update && sudo apt-get install -y "$@" ;;
     dnf)    sudo dnf install -y "$@" ;;
-    pacman) sudo pacman -Sy --needed --noconfirm "$@" ;;
+    pacman) sudo pacman -Syu --needed --noconfirm "$@" ;;
     *)      echo "Error: no supported package manager (apt/dnf/pacman) found" >&2; return 1 ;;
   esac
 }
