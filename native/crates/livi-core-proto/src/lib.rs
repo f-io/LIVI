@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+pub mod aa_events;
 pub mod config;
 pub mod frame;
 pub mod gnss;

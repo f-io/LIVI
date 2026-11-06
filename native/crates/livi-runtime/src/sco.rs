@@ -8,6 +8,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use livi_core_proto::aa_events::AaHelperEvent;
 use livi_host_proto::feed::{self as feedproto, Framer};
 
 const MIC_BACKLOG: usize = 8000 * 2;
@@ -150,10 +151,22 @@ fn now_ns() -> u64 {
 fn announce(events: &crate::livi_sock::Broadcaster, up: bool, mtu: usize) {
     if up {
         println!("[sco] audio connected (mtu {mtu})");
-        events.push_json(format!("{{\"event\":\"sco\",\"up\":true,\"mtu\":{mtu}}}"));
+        events.push_json(
+            AaHelperEvent::Sco {
+                up: true,
+                mtu: Some(mtu),
+            }
+            .to_line(),
+        );
     } else {
         println!("[sco] audio closed");
-        events.push_json("{\"event\":\"sco\",\"up\":false}".to_string());
+        events.push_json(
+            AaHelperEvent::Sco {
+                up: false,
+                mtu: None,
+            }
+            .to_line(),
+        );
     }
 }
 

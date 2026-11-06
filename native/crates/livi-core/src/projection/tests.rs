@@ -1918,7 +1918,7 @@ fn aa_device(id: AaId, model: &str, instance: &str) -> AaEvent {
 }
 
 fn helper(ev: Value) -> AaEvent {
-    AaEvent::Helper(ev)
+    AaEvent::Helper(serde_json::from_value(ev).expect("a helper event"))
 }
 
 #[tokio::test]

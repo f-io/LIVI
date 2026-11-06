@@ -48,6 +48,7 @@ impl Hfp {
 
 mod slc {
     use super::HfpInner;
+    use livi_core_proto::aa_events::AaHelperEvent;
     use livi_hfp::Slc;
     use std::os::fd::{AsRawFd, OwnedFd};
     use std::sync::atomic::Ordering;
@@ -87,18 +88,21 @@ mod slc {
                     inner.established.store(true, Ordering::SeqCst);
                     emit(
                         inner,
-                        &format!("{{\"event\":\"hfp\",\"up\":true,\"mac\":\"{mac}\"}}"),
+                        AaHelperEvent::Hfp {
+                            up: true,
+                            mac: Some(mac.to_string()),
+                        },
                     );
                 }
                 if slc.battchg != last_batt {
                     last_batt = slc.battchg;
                     if let Some(b) = slc.battchg {
-                        let pct = u32::from(b.min(5)) * 20;
                         emit(
                             inner,
-                            &format!(
-                                "{{\"event\":\"phone-battery\",\"mac\":\"{mac}\",\"pct\":{pct}}}"
-                            ),
+                            AaHelperEvent::PhoneBattery {
+                                mac: mac.to_string(),
+                                pct: b.min(5) * 20,
+                            },
                         );
                     }
                 }
@@ -123,9 +127,9 @@ mod slc {
         }
     }
 
-    fn emit(inner: &HfpInner, line: &str) {
+    fn emit(inner: &HfpInner, event: AaHelperEvent) {
         if let Some(ev) = inner.events.lock().unwrap().as_ref() {
-            ev.push_json(line.to_string());
+            ev.push_json(event.to_line());
         }
     }
 
@@ -138,7 +142,10 @@ mod slc {
         if was_up {
             emit(
                 inner,
-                &format!("{{\"event\":\"hfp\",\"up\":false,\"mac\":\"{mac}\"}}"),
+                AaHelperEvent::Hfp {
+                    up: false,
+                    mac: Some(mac.to_string()),
+                },
             );
         }
     }

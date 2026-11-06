@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use iap2_mfi::{NcmCoprocessor, NoCoprocessor};
 use livi_bt_host::sdp::Service;
+use livi_core_proto::aa_events::AaTransport;
 use livi_core_proto::helper::HelperSockets;
 use livi_core_proto::helper_events::{HelperEvent, HelperKind};
 use livi_runtime::bringup::{AskOnAir, CpConfig};
@@ -180,7 +181,7 @@ fn start_android_auto(
         radios.port,
         radios.sockets.sessions.clone(),
         move |socket, peer| {
-            crate::aa::announce_session(&sessions, socket, peer, "wifi", None);
+            crate::aa::announce_session(&sessions, socket, peer, AaTransport::Wifi, None);
         },
     ));
     let cfg = AaConfig {

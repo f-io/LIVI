@@ -234,7 +234,13 @@ fn serve(start: HelperStart, host: Host) -> Held {
                 livi_aa::consts::TCP_PORT,
                 sessions,
                 move |socket, peer| {
-                    crate::aa::announce_session(&events, socket, peer, "wifi", None);
+                    crate::aa::announce_session(
+                        &events,
+                        socket,
+                        peer,
+                        livi_core_proto::aa_events::AaTransport::Wifi,
+                        None,
+                    );
                 },
             ));
             let hfp = livi_runtime::hfp::Hfp::default();

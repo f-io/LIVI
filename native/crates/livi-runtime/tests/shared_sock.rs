@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
+use livi_core_proto::aa_events::{AaHelperEvent, RemoteCommand};
 use livi_runtime::livi_sock::Broadcaster;
 use livi_runtime::shared_sock::{SharedSockDeps, serve};
 
@@ -107,7 +108,12 @@ async fn the_player_state_and_the_events_reach_their_ends() {
     let mut reader = BufReader::new(stream);
     reader.get_mut().write_all(b"subscribe\n").await.unwrap();
     events.subscribed().await;
-    events.push_json("{\"event\":\"input\",\"command\":\"next\"}".into());
+    events.push_json(
+        AaHelperEvent::Input {
+            command: RemoteCommand::Next,
+        }
+        .to_line(),
+    );
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.contains("\"command\":\"next\""));

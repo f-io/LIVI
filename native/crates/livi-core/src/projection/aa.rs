@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+use livi_core_proto::aa_events::AaHelperEvent;
+
 use super::*;
 
 impl Projection {
@@ -32,7 +34,7 @@ impl Projection {
                 self.aa_telemetry.hydrate(&self.telemetry_seen, &self.aa);
             }
             AaEvent::HelperConnected => self.push_wired(true),
-            AaEvent::Helper(ev) => self.on_aa_helper(&ev),
+            AaEvent::Helper(ev) => self.on_aa_helper(ev),
             AaEvent::Device {
                 id,
                 name,
@@ -106,51 +108,50 @@ impl Projection {
         }
     }
 
-    pub(super) fn on_aa_helper(&mut self, ev: &Value) {
-        let text = |key: &str| {
-            ev.get(key)
-                .and_then(Value::as_str)
-                .filter(|v| !v.is_empty())
-        };
-        let up = ev.get("up").and_then(Value::as_bool) == Some(true);
-        match text("event") {
-            Some("sco") => self.call_audio(up),
-            Some("hfp") => self.hands_free.on_link(up, text("mac")),
-            Some("phone-battery") => {
-                let pct = ev.get("pct").and_then(Value::as_f64);
-                let Some(mac) = text("mac") else { return };
-                println!("[core] HFP battery {mac}: ~{}%", pct.unwrap_or(0.0));
-                if self.hands_free.battery_precise || pct.is_none() {
+    pub(super) fn on_aa_helper(&mut self, ev: AaHelperEvent) {
+        let given = |v: &str| (!v.is_empty()).then(|| v.to_string());
+        match ev {
+            AaHelperEvent::Sco { up, .. } => self.call_audio(up),
+            AaHelperEvent::Hfp { up, mac } => self
+                .hands_free
+                .on_link(up, mac.as_deref().filter(|m| !m.is_empty())),
+            AaHelperEvent::PhoneBattery { mac, pct } => {
+                println!("[core] HFP battery {mac}: ~{pct}%");
+                if self.hands_free.battery_precise || mac.is_empty() {
                     return;
                 }
                 let ids = devices::Ids {
-                    bt_mac: Some(mac.to_string()),
+                    bt_mac: Some(mac),
                     ..Default::default()
                 };
                 let status = devices::Status {
-                    battery_level: pct,
+                    battery_level: Some(f64::from(pct)),
                     ..Default::default()
                 };
                 self.devices.registry.note_status(&ids, &status);
                 self.publish();
             }
-            Some("aa-device") => {
-                let Some(instance) = text("instanceId") else {
+            AaHelperEvent::AaDevice {
+                bt_mac,
+                instance_id,
+                usb_serial,
+            } => {
+                if instance_id.is_empty() {
                     return;
-                };
-                if let Some(mac) = text("btMac") {
+                }
+                if let Some(mac) = given(&bt_mac) {
                     self.hands_free
                         .bt_by_instance
-                        .insert(instance.into(), mac.into());
-                    self.keep_link(mac);
+                        .insert(instance_id.clone(), mac.clone());
+                    self.keep_link(&mac);
                 }
-                if let Some(serial) = text("usbSerial") {
+                if let Some(serial) = given(&usb_serial) {
                     self.hands_free
                         .serial_by_instance
-                        .insert(instance.into(), serial.into());
+                        .insert(instance_id, serial);
                 }
             }
-            _ => {}
+            AaHelperEvent::Input { .. } | AaHelperEvent::AaSession { .. } => {}
         }
     }
 

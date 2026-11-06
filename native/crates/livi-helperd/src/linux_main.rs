@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+use livi_core_proto::aa_events::AaTransport;
 use livi_core_proto::helper::HelperSockets;
 use std::process::ExitCode;
 
@@ -454,7 +455,13 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
                 aa_port,
                 HelperSockets::system().sessions,
                 move |socket, peer| {
-                    livi_helper::aa::announce_session(&events, socket, peer, "wifi", None);
+                    livi_helper::aa::announce_session(
+                        &events,
+                        socket,
+                        peer,
+                        AaTransport::Wifi,
+                        None,
+                    );
                 },
             ));
             match bt::start_aa(&conn, &adapter).await {

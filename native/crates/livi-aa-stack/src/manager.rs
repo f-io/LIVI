@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use livi_core_proto::aa_events::{AaHelperEvent, AaTransport};
 use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 
@@ -28,7 +29,7 @@ pub type SessionId = u64;
 #[derive(Debug, Clone, PartialEq)]
 pub enum AaEvent {
     HelperConnected,
-    Helper(Value),
+    Helper(AaHelperEvent),
     Spawned {
         id: SessionId,
         wired: bool,
@@ -316,28 +317,29 @@ impl<M: AaMedia> Manager<M> {
     }
 
     fn on_helper_event(&mut self, ev: Value) {
-        let socket = ev.get("socket").and_then(Value::as_str);
-        let (Some("aa-session"), Some(socket)) = (ev.get("event").and_then(Value::as_str), socket)
+        let ev = match serde_json::from_value::<AaHelperEvent>(ev) {
+            Ok(ev) => ev,
+            Err(e) => {
+                eprintln!("[AaManager] helper event not understood: {e}");
+                return;
+            }
+        };
+        let AaHelperEvent::AaSession {
+            socket,
+            peer,
+            transport,
+            serial,
+        } = ev
         else {
             self.emit(AaEvent::Helper(ev));
             return;
         };
-        let peer = ev
-            .get("peer")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
-        let wired = ev.get("transport").and_then(Value::as_str) == Some("usb");
-        let usb_serial = ev
-            .get("serial")
-            .and_then(Value::as_str)
-            .filter(|_| wired)
-            .map(str::to_string);
+        let wired = transport == AaTransport::Usb;
+        let usb_serial = serial.filter(|_| wired);
         println!(
             "[AaManager] helper session {socket} from {peer}{}",
             if wired { " (usb)" } else { "" }
         );
-        let socket = socket.to_string();
         let tx = self.attached_tx.clone();
         tokio::spawn(async move {
             match link::connect(&socket, &peer).await {
@@ -657,7 +659,10 @@ mod tests {
             .await;
         assert_eq!(
             rig.event().await,
-            AaEvent::Helper(json!({ "event": "hfp", "up": true, "mac": "aa" }))
+            AaEvent::Helper(AaHelperEvent::Hfp {
+                up: true,
+                mac: Some("aa".into())
+            })
         );
         rig.push(json!({ "event": "aa-session" })).await;
         rig.push(json!({ "type": "not an event" })).await;
@@ -715,13 +720,16 @@ mod tests {
         let mut rig = Rig::new().await;
         let (a, _pa) = rig.phone("10.0.0.4", "wifi", None).await;
         rig.push(
-            json!({ "event": "aa-session", "socket": rig.dir.0.join("nothing.sock"), "peer": "x" }),
+            json!({ "event": "aa-session", "socket": rig.dir.0.join("nothing.sock"), "peer": "x", "transport": "wifi" }),
         )
         .await;
         rig.push(json!({ "event": "sco", "up": false })).await;
         assert_eq!(
             rig.event().await,
-            AaEvent::Helper(json!({ "event": "sco", "up": false }))
+            AaEvent::Helper(AaHelperEvent::Sco {
+                up: false,
+                mtu: None
+            })
         );
         rig.handle.send(AaCmd::Detach);
         assert_eq!(rig.event().await, AaEvent::Disconnected { id: a });

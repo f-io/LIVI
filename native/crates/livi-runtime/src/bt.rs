@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::os::fd::OwnedFd;
 
+use livi_core_proto::aa_events::{AaHelperEvent, RemoteCommand};
 use tokio::sync::mpsc;
 use zbus::Connection;
 use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant};
@@ -722,34 +723,38 @@ impl MediaPlayerHandle {
 }
 
 impl MprisPlayer {
-    fn emit(&self, command: &str) {
+    fn emit(&self, command: RemoteCommand) {
         self.events
-            .push_json(format!("{{\"event\":\"input\",\"command\":\"{command}\"}}"));
+            .push_json(AaHelperEvent::Input { command }.to_line());
     }
 }
 
 #[zbus::interface(name = "org.mpris.MediaPlayer2.Player")]
 impl MprisPlayer {
     fn play(&self) {
-        self.emit("play");
+        self.emit(RemoteCommand::Play);
     }
     fn pause(&self) {
-        self.emit("pause");
+        self.emit(RemoteCommand::Pause);
     }
     fn play_pause(&self) {
-        self.emit("playPause");
+        self.emit(RemoteCommand::PlayPause);
     }
     fn stop(&self) {
-        self.emit("stop");
+        self.emit(RemoteCommand::Stop);
     }
     fn next(&self) {
-        self.emit("next");
+        self.emit(RemoteCommand::Next);
     }
     fn previous(&self) {
-        self.emit("previous");
+        self.emit(RemoteCommand::Previous);
     }
     fn seek(&self, offset: i64) {
-        self.emit(if offset > 0 { "fastForward" } else { "rewind" });
+        self.emit(if offset > 0 {
+            RemoteCommand::FastForward
+        } else {
+            RemoteCommand::Rewind
+        });
     }
     fn set_position(&self, _track: ObjectPath<'_>, _position: i64) {}
     fn open_uri(&self, _uri: String) {}

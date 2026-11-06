@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use livi_aa::usb::Control;
 use livi_aa::wpp;
+use livi_core_proto::aa_events::{AaHelperEvent, AaTransport};
 use livi_core_proto::helper::HelperSockets;
 use livi_runtime::aa_sock::{self, AaSockDeps};
 use livi_runtime::livi_sock::Broadcaster;
@@ -142,7 +143,9 @@ async fn watch_usb(control: Control, sessions: PathBuf, events: Broadcaster) {
     livi_aa::usb::run(
         control,
         sessions,
-        move |socket, peer, serial| announce_session(&events, socket, peer, "usb", Some(serial)),
+        move |socket, peer, serial| {
+            announce_session(&events, socket, peer, AaTransport::Usb, Some(serial))
+        },
         async move { subscribed.subscribed().await },
     )
     .await;
@@ -283,30 +286,26 @@ fn emit_device(bcast: &Broadcaster, mac: &str, id: &wpp::Identity) {
             &id.serial
         }
     );
-    let event = serde_json::json!({
-        "event": "aa-device",
-        "btMac": mac.to_uppercase(),
-        "instanceId": id.instance_id,
-        "usbSerial": id.serial,
-    });
-    bcast.push_json(event.to_string());
+    let event = AaHelperEvent::AaDevice {
+        bt_mac: mac.to_uppercase(),
+        instance_id: id.instance_id.clone(),
+        usb_serial: id.serial.clone(),
+    };
+    bcast.push_json(event.to_line());
 }
 
 pub fn announce_session(
     bcast: &Broadcaster,
     socket: &str,
     peer: impl ToString,
-    transport: &str,
+    transport: AaTransport,
     serial: Option<&str>,
 ) {
-    let mut event = serde_json::json!({
-        "event": "aa-session",
-        "socket": socket,
-        "peer": peer.to_string(),
-        "transport": transport,
-    });
-    if let Some(serial) = serial {
-        event["serial"] = serial.into();
-    }
-    bcast.push_json(event.to_string());
+    let event = AaHelperEvent::AaSession {
+        socket: socket.to_string(),
+        peer: peer.to_string(),
+        transport,
+        serial: serial.map(str::to_string),
+    };
+    bcast.push_json(event.to_line());
 }
