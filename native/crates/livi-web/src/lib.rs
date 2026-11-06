@@ -102,11 +102,24 @@ fn handle(mut sock: TcpStream) {
         return;
     };
 
-    let (status, ctype, resp) = route(&method, &path, body.as_deref(), content_length);
+    let (status, ctype, resp) = match body {
+        Ok(body) => route(&method, &path, body.as_deref(), content_length),
+        Err(TooLarge) => (S_413, T_JSON, err_json("body too large")),
+    };
     let _ = write_response(&mut sock, status, ctype, &resp);
 }
 
-fn read_request(sock: &TcpStream) -> Option<(String, String, u64, Option<Vec<u8>>)> {
+struct TooLarge;
+
+const SMALL_BODY: u64 = 64 << 10;
+
+fn max_body() -> u64 {
+    caps().flash.mtd.iter().map(|slot| slot.size).sum::<u64>() + SMALL_BODY
+}
+
+type Body = Result<Option<Vec<u8>>, TooLarge>;
+
+fn read_request(sock: &TcpStream) -> Option<(String, String, u64, Body)> {
     let mut reader = BufReader::new(sock);
 
     let mut first = String::new();
@@ -127,16 +140,18 @@ fn read_request(sock: &TcpStream) -> Option<(String, String, u64, Option<Vec<u8>
         }
         let lower = line.to_ascii_lowercase();
         if let Some(v) = lower.strip_prefix("content-length:") {
-            content_length = v.trim().parse().unwrap_or(0);
+            content_length = v.trim().parse().unwrap_or(u64::MAX);
         }
     }
 
-    let body = if content_length > 0 {
+    let body = if content_length > max_body() {
+        Err(TooLarge)
+    } else if content_length > 0 {
         let mut buf = vec![0u8; content_length as usize];
         reader.read_exact(&mut buf).ok()?;
-        Some(buf)
+        Ok(Some(buf))
     } else {
-        None
+        Ok(None)
     };
 
     Some((method, path, content_length, body))
@@ -1077,6 +1092,7 @@ fn write_response(
 const S_200: &str = "200 OK";
 const S_400: &str = "400 Bad Request";
 const S_404: &str = "404 Not Found";
+const S_413: &str = "413 Content Too Large";
 const S_500: &str = "500 Internal Server Error";
 const T_HTML: &str = "text/html; charset=utf-8";
 const T_JSON: &str = "application/json";
