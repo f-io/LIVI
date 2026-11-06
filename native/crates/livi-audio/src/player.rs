@@ -310,7 +310,9 @@ impl Player {
         }
 
         let now = now.unwrap();
-        self.level.set(now, self.volume.property::<f64>("volume"));
+        let from = self.volume.property::<f64>("volume");
+        self.level.unset_all();
+        self.level.set(now, from);
         self.level
             .set(now + gst::ClockTime::from_mseconds(ms), target);
         self.volume.set_control_binding_disabled("volume", false);
