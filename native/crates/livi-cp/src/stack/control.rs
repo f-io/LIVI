@@ -20,7 +20,8 @@ impl<M: Media> Conn<M> {
         } else {
             self.plain.extend_from_slice(chunk);
         }
-        let (requests, rest) = rtsp::parse(&self.plain);
+        let (requests, rest) =
+            rtsp::parse(&self.plain).map_err(|_| io::Error::other("control request too large"))?;
         self.plain = rest;
         for req in requests {
             let res = self.handle(&req).await;
@@ -85,6 +86,13 @@ impl<M: Media> Conn<M> {
                     Err(_) => println!("[cpStack]   body: not a plist ({}B)", req.body.len()),
                 }
             }
+        }
+        if self.cipher.is_none() && !before_pairing(&req.method, &path) {
+            println!(
+                "[cpStack] {} {} refused before pair-verify",
+                req.method, req.path
+            );
+            return status(470);
         }
         match req.method.as_str() {
             "SETUP" => return self.handle_setup(req).await,
@@ -227,4 +235,11 @@ impl<M: Media> Conn<M> {
         );
         status(200)
     }
+}
+
+fn before_pairing(method: &str, path: &str) -> bool {
+    method == "OPTIONS"
+        || ["/info", "/pair-setup", "/pair-verify", "/auth-setup"]
+            .iter()
+            .any(|p| path.ends_with(p))
 }

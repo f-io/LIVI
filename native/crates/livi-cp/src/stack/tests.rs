@@ -186,7 +186,7 @@ impl Phone {
                 }
                 None => self.buf.extend_from_slice(&chunk[..n]),
             }
-            let (mut answers, rest) = rtsp::parse(&self.buf);
+            let (mut answers, rest) = rtsp::parse(&self.buf).unwrap();
             if let Some(answer) = answers.pop() {
                 self.buf = rest;
                 return (answer.path, answer.body);
@@ -376,31 +376,29 @@ async fn plain_requests_before_pairing() {
     assert!(info.get("displays").is_some());
     let (code, _) = rig.phone.request("OPTIONS", "*", b"").await;
     assert_eq!(code, "200");
-    let (code, _) = rig.phone.request("GET", "/whatever", b"").await;
-    assert_eq!(code, "200");
-    let (code, _) = rig.phone.request("SETUP", "/s", b"nope").await;
-    assert_eq!(code, "400");
-    let screen = dict([(
-        "streams",
-        Value::Array(vec![dict([("type", Value::Int(110))])]),
-    )]);
-    let (code, _) = rig
-        .phone
-        .request("SETUP", "/s", &bplist::encode(&screen))
-        .await;
-    assert_eq!(code, "500");
     let (code, _) = rig.phone.request("POST", "/auth-setup", b"short").await;
     assert_eq!(code, "400");
-    let (code, _) = rig.phone.request("TEARDOWN", "/s", b"").await;
-    assert_eq!(code, "200");
-    let (code, _) = rig.phone.request("POST", "/feedback", b"").await;
-    assert_eq!(code, "200");
+    for (method, path) in [
+        ("GET", "/whatever"),
+        ("SETUP", "/s"),
+        ("RECORD", "/s"),
+        ("POST", "/command"),
+        ("TEARDOWN", "/s"),
+        ("POST", "/feedback"),
+    ] {
+        let (code, _) = rig.phone.request(method, path, b"").await;
+        assert_eq!(code, "470", "{method} {path} needs pair-verify first");
+    }
     let (code, setup) = rig
         .phone
         .request("POST", "/pair-setup", &tlv8::encode(&[(tlv::STATE, &[1])]))
         .await;
     assert_eq!(code, "200");
     assert!(!setup.is_empty());
+    let secret = rig.secret;
+    rig.phone.verify(&secret, b"phone-1").await;
+    let (code, _) = rig.phone.request("SETUP", "/s", b"nope").await;
+    assert_eq!(code, "400");
     rig.phone.sock.shutdown().await.unwrap();
     assert_eq!(rig.event().await, StackEvent::Closed { was_active: false });
 }
@@ -1443,7 +1441,7 @@ async fn a_verified_session_streams_and_takes_input() {
         let (data, rest) = event_cipher.decrypt(&sealed).unwrap();
         sealed = rest;
         plain.extend(data);
-        let (msgs, rest) = rtsp::parse(&plain);
+        let (msgs, rest) = rtsp::parse(&plain).unwrap();
         plain = rest;
         for m in msgs {
             let body = bplist::decode(&m.body).unwrap();
@@ -1487,7 +1485,7 @@ async fn a_verified_session_streams_and_takes_input() {
         let (data, rest) = event_cipher.decrypt(&sealed).unwrap();
         sealed = rest;
         plain.extend(data);
-        let (mut msgs, rest) = rtsp::parse(&plain);
+        let (mut msgs, rest) = rtsp::parse(&plain).unwrap();
         plain = rest;
         if let Some(m) = msgs.pop() {
             break m;

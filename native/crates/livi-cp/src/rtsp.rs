@@ -23,8 +23,12 @@ pub struct Response {
 }
 
 const HEADER_END: &[u8] = b"\r\n\r\n";
+const MAX_BODY: usize = 16 << 20;
 
-pub fn parse(buf: &[u8]) -> (Vec<Request>, Vec<u8>) {
+#[derive(Debug, PartialEq)]
+pub struct TooLarge;
+
+pub fn parse(buf: &[u8]) -> Result<(Vec<Request>, Vec<u8>), TooLarge> {
     let mut out = Vec::new();
     let mut offset = 0;
     while offset < buf.len() {
@@ -50,7 +54,8 @@ pub fn parse(buf: &[u8]) -> (Vec<Request>, Vec<u8>) {
         }
 
         let body_start = head_end + HEADER_END.len();
-        let body_end = body_start + content_length(headers.get("content-length"));
+        let body_end =
+            body_start + content_length(headers.get("content-length")).ok_or(TooLarge)?;
         if body_end > buf.len() {
             break;
         }
@@ -63,24 +68,28 @@ pub fn parse(buf: &[u8]) -> (Vec<Request>, Vec<u8>) {
         });
         offset = body_end;
     }
-    (out, buf[offset..].to_vec())
+    Ok((out, buf[offset..].to_vec()))
 }
 
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
 }
 
-fn content_length(value: Option<&String>) -> usize {
+fn content_length(value: Option<&String>) -> Option<usize> {
     let digits: String = value
         .map(|v| v.chars().take_while(char::is_ascii_digit).collect())
         .unwrap_or_default();
-    digits.parse().unwrap_or(0)
+    if digits.is_empty() {
+        return Some(0);
+    }
+    digits.parse().ok().filter(|&len| len <= MAX_BODY)
 }
 
 fn status_text(status: u16) -> &'static str {
     match status {
         400 => "Bad Request",
         404 => "Not Found",
+        470 => "Connection Authorization Required",
         500 => "Internal Server Error",
         _ => "OK",
     }
@@ -122,7 +131,7 @@ mod tests {
         let buf = b"POST /pair-verify RTSP/1.0\r\nCSeq: 3\r\nContent-Length: 4\r\n\r\nbody\
                     GET /info RTSP/1.0\r\nCSeq: 4\r\n\r\n\
                     POST /feedback RTSP/1.0\r\nContent-Length: 10\r\n\r\npart";
-        let (reqs, rest) = parse(buf);
+        let (reqs, rest) = parse(buf).unwrap();
         assert_eq!(reqs.len(), 2);
         assert_eq!(reqs[0].method, "POST");
         assert_eq!(reqs[0].path, "/pair-verify");
@@ -135,22 +144,35 @@ mod tests {
 
     #[test]
     fn a_missing_protocol_defaults_to_rtsp() {
-        let (reqs, _) = parse(b"OPTIONS *\r\n\r\n");
+        let (reqs, _) = parse(b"OPTIONS *\r\n\r\n").unwrap();
         assert_eq!(reqs[0].protocol, "RTSP/1.0");
-        let (reqs, _) = parse(b"OPTIONS\r\n\r\n");
+        let (reqs, _) = parse(b"OPTIONS\r\n\r\n").unwrap();
         assert_eq!(reqs[0].path, "");
     }
 
     #[test]
     fn content_length_reads_leading_digits() {
-        assert_eq!(content_length(Some(&"12abc".to_string())), 12);
-        assert_eq!(content_length(Some(&"x".to_string())), 0);
-        assert_eq!(content_length(None), 0);
+        assert_eq!(content_length(Some(&"12abc".to_string())), Some(12));
+        assert_eq!(content_length(Some(&"x".to_string())), Some(0));
+        assert_eq!(content_length(None), Some(0));
+    }
+
+    #[test]
+    fn an_oversized_body_is_refused_instead_of_buffered() {
+        let huge = b"POST /command RTSP/1.0\r\nContent-Length: 18446744073709551615\r\n\r\n";
+        assert_eq!(parse(huge), Err(TooLarge));
+        let past = b"POST /command RTSP/1.0\r\nContent-Length: 99999999999999999999999\r\n\r\n";
+        assert_eq!(parse(past), Err(TooLarge));
+        let big = format!(
+            "POST /command RTSP/1.0\r\nContent-Length: {}\r\n\r\n",
+            MAX_BODY + 1
+        );
+        assert_eq!(parse(big.as_bytes()), Err(TooLarge));
     }
 
     #[test]
     fn response_echoes_cseq_and_counts_the_body() {
-        let (reqs, _) = parse(b"GET /info RTSP/1.0\r\nCSeq: 9\r\n\r\n");
+        let (reqs, _) = parse(b"GET /info RTSP/1.0\r\nCSeq: 9\r\n\r\n").unwrap();
         let res = Response {
             headers: vec![(
                 "Content-Type".into(),

@@ -93,7 +93,7 @@ fn tlv8_matches() {
 
 #[test]
 fn rtsp_matches() {
-    let (reqs, _) = parse(b"GET /info RTSP/1.0\r\nCSeq: 5\r\n\r\n");
+    let (reqs, _) = parse(b"GET /info RTSP/1.0\r\nCSeq: 5\r\n\r\n").unwrap();
     let res = Response {
         headers: vec![
             (

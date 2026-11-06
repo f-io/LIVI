@@ -39,7 +39,11 @@ impl<M: Media> Conn<M> {
                 return;
             }
         }
-        let (messages, rest) = rtsp::parse(&ev.plain);
+        let Ok((messages, rest)) = rtsp::parse(&ev.plain) else {
+            println!("[cpStack] event message too large, event channel dropped");
+            self.event = None;
+            return;
+        };
         ev.plain = rest;
         for msg in messages {
             if msg.method.starts_with("RTSP/") || msg.method.starts_with("HTTP/") {
