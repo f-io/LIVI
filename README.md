@@ -158,7 +158,7 @@ curl -d '{"gear":"R"}' http://livi.local:4000/telemetry
 ```
 
 <p align="center">
-  <img src="docs/media/telemetry.png" alt="Telemetry Dashboard" width="70%" />
+  <img src="docs/media/dash.png" alt="Telemetry Dashboard" width="70%" />
 </p>
 
 ## Climate
@@ -209,9 +209,7 @@ mirrored to `state/gps.json` for external tools.
 On a Raspberry Pi 5, `/dev/ttyAMA0` on GPIO 14/15 (PIN 8/10) does not exist until `dtoverlay=uart0` is set in `config.txt`.
 
 <p align="center">
-  <img src="docs/media/gps/gps_hw.png" alt="GPS module info" width="42%" align="top" />
-  &emsp;
-  <img src="docs/media/gps/gps_info.png" alt="GPS data info" width="42%" align="top" />
+  <img src="docs/media/gps/gps.png" alt="Connected devices" width="70%" />
 </p>
 
 ## DAB+ and FM
@@ -242,26 +240,6 @@ Settings → General → Tab Settings.
 <p align="center">
   <img src="docs/media/multi-display/auxilary.png" alt="Aux Screen" width="34%" align="top" />
   <img src="docs/media/multi-display/main.png" alt="Main Screen" width="34%" align="top" />
-</p>
-
-## View and Safe Area
-
-Stream resolution, view area insets, and safe area can be configured independently for the main and cluster streams. This is supported for Android Auto as well as CarPlay.
-
-### Main Stream
-
-Video: 1280x720 - View Area: 0/0/100/0 (T/B/L/R) - Safe Area: 100/100/100/100 (T/B/L/R) - Draw Outside: true
-
-<p align="center">
-  <img src="docs/media/area/main_safe_area_view_area_aa.png" alt="Safe area main stream Android Auto" width="70%" />
-</p>
-
-### Cluster Stream
-
-Video: 1920x1080 - View Area: 0/0/0/0 (T/B/L/R) - Safe Area: 120/20/500/500 (T/B/L/R)
-
-<p align="center">
-  <img src="docs/media/area/dash_safe_area_aa.png" alt="Safe area cluster stream Android Auto" width="70%" />
 </p>
 
 ## Images
