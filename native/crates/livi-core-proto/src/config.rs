@@ -452,7 +452,7 @@ pub fn defaults() -> Config {
         car_play_mfi_i2c_bus: 2,
         car_play_mfi_power_gpio: -1,
         car_play_mfi_files: String::new(),
-        car_play_vehicle_climate: true,
+        car_play_vehicle_climate: false,
         car_play_dock_position: DockPosition::Bottom,
         car_play_cluster_content: ClusterContent::Map,
         car_play_cluster_compass: true,
