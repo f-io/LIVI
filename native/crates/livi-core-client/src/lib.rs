@@ -12,7 +12,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use livi_core_proto::PROTOCOL;
-use livi_core_proto::frame::{Decoder, encode};
+use livi_core_proto::frame::{Decoder, FrameError, encode};
 use livi_core_proto::input::Input;
 use livi_core_proto::message::{Action, ToCore};
 use livi_core_proto::patch::{PatchOp, apply};
@@ -135,7 +135,11 @@ fn read_loop(
         };
         dec.push(&buf[..n]);
         while let Some(msg) = dec.next_message::<Value>() {
-            let Ok(mut msg) = msg else { continue };
+            let mut msg = match msg {
+                Ok(msg) => msg,
+                Err(FrameError::Json(_)) => continue,
+                Err(e @ FrameError::TooLarge(_)) => return emit(Event::Gone(e.to_string())),
+            };
             match msg["type"].as_str() {
                 Some("welcome") => {
                     *state.lock().unwrap_or_else(|e| e.into_inner()) = msg["state"].take();
