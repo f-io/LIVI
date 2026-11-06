@@ -17,6 +17,7 @@ const P_TCP: u32 = 6;
 const MUX_MAGIC: u32 = 0xFEED_FACE;
 const TX_WIN: u32 = 131072;
 const MAX_PAYLOAD: usize = 16384;
+const MAX_PACKET: usize = 1 << 20;
 
 pub const LOCKDOWN_PORT: u16 = 62078;
 
@@ -198,7 +199,7 @@ impl MuxHost {
         let slot = self.clone();
         let reader = std::thread::spawn(move || {
             let mut rxbuf: Vec<u8> = Vec::new();
-            while self.run.load(Ordering::SeqCst) {
+            'read: while self.run.load(Ordering::SeqCst) {
                 let data = match ep_in.read(Duration::from_millis(1000)) {
                     Ok(d) => d,
                     Err(_) => break,
@@ -210,7 +211,13 @@ impl MuxHost {
                 while rxbuf.len() >= 8 {
                     let proto = u32::from_be_bytes(rxbuf[0..4].try_into().unwrap());
                     let length = u32::from_be_bytes(rxbuf[4..8].try_into().unwrap()) as usize;
-                    if length < 8 || rxbuf.len() < length {
+                    if !(8..=MAX_PACKET).contains(&length) {
+                        eprintln!(
+                            "[usbmux] mux packet of {length} bytes, the stream is out of step"
+                        );
+                        break 'read;
+                    }
+                    if rxbuf.len() < length {
                         break;
                     }
                     let pkt: Vec<u8> = rxbuf.drain(..length).collect();

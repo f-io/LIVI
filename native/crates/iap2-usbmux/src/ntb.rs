@@ -19,7 +19,9 @@ pub fn parse_ntb(ntb: &[u8]) -> Vec<Vec<u8>> {
         return frames;
     }
     let mut ndp_idx = u16le(ntb, 10) as usize;
-    while ndp_idx != 0 && ndp_idx + 12 <= ntb.len() {
+    let mut seen = Vec::new();
+    while ndp_idx != 0 && ndp_idx + 12 <= ntb.len() && !seen.contains(&ndp_idx) {
+        seen.push(ndp_idx);
         let nsig = u32le(ntb, ndp_idx);
         if nsig & 0x00FF_FFFF != NDP16_SIG & 0x00FF_FFFF {
             break;
@@ -115,6 +117,13 @@ mod tests {
         ntb.extend_from_slice(&a);
         ntb.extend_from_slice(&b);
         assert_eq!(parse_ntb(&ntb), vec![a, b]);
+    }
+
+    #[test]
+    fn an_ndp_pointing_back_is_read_once() {
+        let mut ntb = build_ntb(&[7u8; 4], 0);
+        ntb[18..20].copy_from_slice(&12u16.to_le_bytes());
+        assert_eq!(parse_ntb(&ntb), vec![vec![7u8; 4]]);
     }
 
     #[test]
