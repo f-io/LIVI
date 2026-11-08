@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# forky's prebuilt libraries reference glibc symbols newer than the stable deploy target
-# (sqrtf@GLIBC_2.43, ...). Build GStreamer from forky sources against the container's own
+# sid's prebuilt libraries reference glibc symbols newer than the stable deploy target
+# (sqrtf@GLIBC_2.43, ...). Build GStreamer from sid sources against the container's own
 # stable libraries instead, so the bundle never needs more glibc than the target has.
 
 REPO="$(pwd)"
 PATCHES="$REPO/scripts/gstreamer/patches"
 APPLY_PATCHES="${APPLY_PATCHES:-0}"
-SOURCE_SUITE="${SOURCE_SUITE:-forky}"
+SOURCE_SUITE="${SOURCE_SUITE:-sid}"
 PROVENANCE=/usr/share/gst-build/meson-builds.txt
 
 export DEBIAN_FRONTEND=noninteractive
