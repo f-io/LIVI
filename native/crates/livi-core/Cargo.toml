@@ -28,7 +28,7 @@ livi-wifi.workspace = true
 axum = "0.8.9"
 base64.workspace = true
 flate2.workspace = true
-jiff = { version = "0.2.39", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
+jiff = { version = "0.2.40", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
 libc.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
