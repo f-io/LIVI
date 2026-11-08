@@ -115,8 +115,8 @@ jobs:
           set -euo pipefail
           v='${{ steps.gst.outputs.version }}'
           base="https://gstreamer.freedesktop.org/data/pkg/osx/$v"
-          curl -fL -o gst-runtime.pkg "$base/gstreamer-1.0-$v-universal.pkg"
-          curl -fL -o gst-devel.pkg "$base/gstreamer-1.0-devel-$v-universal.pkg"
+          curl -fL -C - --retry 10 --retry-all-errors --retry-delay 5 -o gst-runtime.pkg "$base/gstreamer-1.0-$v-universal.pkg"
+          curl -fL -C - --retry 10 --retry-all-errors --retry-delay 5 -o gst-devel.pkg "$base/gstreamer-1.0-devel-$v-universal.pkg"
 
       - name: Install GStreamer (runtime + devel)
         run: |

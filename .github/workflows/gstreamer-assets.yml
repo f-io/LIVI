@@ -85,7 +85,7 @@ jobs:
         run: |
           set -euo pipefail
           # GStreamer uses GNOME-style versioning: even minor = stable, odd = dev.
-          GST_VERSION=$(curl -fsSL https://gstreamer.freedesktop.org/data/pkg/osx/ \
+          GST_VERSION=$(curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 https://gstreamer.freedesktop.org/data/pkg/osx/ \
             | grep -oE 'href="[0-9]+\.[0-9]+\.[0-9]+/"' \
             | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' \
             | awk -F. '$2 % 2 == 0' \
@@ -98,9 +98,9 @@ jobs:
           echo "Resolved macOS GStreamer: $GST_VERSION"
           echo "GST_VERSION=$GST_VERSION" >> "$GITHUB_ENV"
           base="https://gstreamer.freedesktop.org/data/pkg/osx/${GST_VERSION}"
-          curl -fL -o gstreamer-runtime.pkg "${base}/gstreamer-1.0-${GST_VERSION}-universal.pkg"
+          curl -fL -C - --retry 10 --retry-all-errors --retry-delay 5 -o gstreamer-runtime.pkg "${base}/gstreamer-1.0-${GST_VERSION}-universal.pkg"
           # devel pkg carries the headers and .pc files build-patched-macos.sh needs
-          curl -fL -o gstreamer-devel.pkg "${base}/gstreamer-1.0-devel-${GST_VERSION}-universal.pkg"
+          curl -fL -C - --retry 10 --retry-all-errors --retry-delay 5 -o gstreamer-devel.pkg "${base}/gstreamer-1.0-devel-${GST_VERSION}-universal.pkg"
 
       - name: Install GStreamer runtime + devel pkg [macos-arm64]
         if: matrix.os == 'macos' && matrix.arch == 'arm64'
@@ -306,7 +306,7 @@ jobs:
         run: |
           set -euo pipefail
           # GStreamer uses GNOME-style versioning: even minor = stable, odd = dev.
-          GST_VERSION=$(curl -fsSL https://gstreamer.freedesktop.org/data/pkg/android/ \
+          GST_VERSION=$(curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 https://gstreamer.freedesktop.org/data/pkg/android/ \
             | grep -oE 'href="[0-9]+\.[0-9]+\.[0-9]+/"' \
             | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' \
             | awk -F. '$2 % 2 == 0' \
@@ -320,8 +320,8 @@ jobs:
           echo "GST_VERSION=$GST_VERSION" >> "$GITHUB_ENV"
           base="https://gstreamer.freedesktop.org/data/pkg/android/${GST_VERSION}"
           sdk="gstreamer-1.0-android-universal-${GST_VERSION}.tar.xz"
-          curl -fL -o "$sdk" "${base}/${sdk}"
-          curl -fsSL "${base}/${sdk}.sha256sum" | sha256sum -c -
+          curl -fL -C - --retry 10 --retry-all-errors --retry-delay 5 -o "$sdk" "${base}/${sdk}"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "${base}/${sdk}.sha256sum" | sha256sum -c -
           # the universal SDK carries every ABI, only arm64 is unpacked
           mkdir -p "$RUNNER_TEMP/gst-android"
           tar -xJf "$sdk" -C "$RUNNER_TEMP/gst-android" arm64
