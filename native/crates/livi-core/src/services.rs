@@ -168,6 +168,7 @@ impl Services {
                 }),
                 restart: helper_restart.clone(),
                 use_sudo: cfg!(target_os = "linux"),
+                user_data: user_data.to_path_buf(),
                 restart_delay: HELPER_RESTART_DELAY,
                 max_restarts: Some(HELPER_MAX_RESTARTS),
             })

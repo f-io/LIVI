@@ -113,7 +113,7 @@ Categories=AudioVideo;
 StartupWMClass=dev.f-io.livi
 EOF
 echo "Autostart entry at $AUTOSTART_DIR/LIVI.desktop"
-echo "The app writes rotating logs to ~/.config/LIVI/log/"
+echo "The app writes rotating logs to $LIVI_USER_DATA/log/"
 
 echo "→ Creating desktop shortcut"
 if command -v xdg-user-dir >/dev/null 2>&1; then

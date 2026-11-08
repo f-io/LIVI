@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 
 const HELPER_DIR: &str = "/tmp";
+pub const USER_DATA: &str = "LIVI_USER_DATA";
 
 const AA_WIRELESS: &str = "LIVI_AA_WIRELESS";
 const CP_WIRELESS: &str = "LIVI_CP_WIRELESS";

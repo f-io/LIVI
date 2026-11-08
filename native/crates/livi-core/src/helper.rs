@@ -9,7 +9,7 @@ use std::time::Duration;
 use std::{fs, io};
 
 use livi_core_proto::config::{CarType, Config};
-use livi_core_proto::helper::{HelperSettings, HelperStart};
+use livi_core_proto::helper::{HelperSettings, HelperStart, USER_DATA};
 use livi_cp::identity::Identity;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -191,6 +191,7 @@ pub struct Spec {
     pub start: Box<dyn Fn() -> HelperStart + Send + Sync>,
     pub restart: Arc<Notify>,
     pub use_sudo: bool,
+    pub user_data: PathBuf,
     pub restart_delay: Duration,
     pub max_restarts: Option<u32>,
 }
@@ -228,6 +229,7 @@ fn spawn(bin: &Path, spec: &Spec) -> io::Result<Child> {
     }
     crate::child::with_lifeline(&mut cmd)
         .envs((spec.start)().to_env())
+        .env(USER_DATA, &spec.user_data)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
@@ -465,6 +467,7 @@ mod tests {
             start: Box::new(|| start("")),
             restart: Arc::new(Notify::new()),
             use_sudo: false,
+            user_data: PathBuf::new(),
             restart_delay: Duration::from_millis(10),
             max_restarts: Some(2),
         });
@@ -493,6 +496,7 @@ mod tests {
             start: Box::new(|| start("1")),
             restart: Arc::new(Notify::new()),
             use_sudo: false,
+            user_data: PathBuf::new(),
             restart_delay: Duration::from_secs(5),
             max_restarts: None,
         });
@@ -521,6 +525,7 @@ mod tests {
             }),
             restart: restart.clone(),
             use_sudo: false,
+            user_data: PathBuf::new(),
             restart_delay: Duration::from_secs(60),
             max_restarts: Some(0),
         });

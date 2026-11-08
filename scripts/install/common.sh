@@ -18,7 +18,8 @@ LIVI_BOOT_CONFIG="${LIVI_BOOT_CONFIG:-/boot/firmware/config.txt}"
 # I2C for the Apple MFi coprocessor, matching carPlayMfiI2cBus in config.json
 LIVI_MFI_I2C_BUS=""
 LIVI_MFI_POWER_GPIO="21"
-LIVI_APP_CONFIG="${LIVI_APP_CONFIG:-$HOME/.config/LIVI/config.json}"
+LIVI_USER_DATA="${LIVI_USER_DATA:-${XDG_CONFIG_HOME:-$HOME/.config}/LIVI}"
+LIVI_APP_CONFIG="${LIVI_APP_CONFIG:-$LIVI_USER_DATA/config.json}"
 LIVI_MFI_OVERLAY_MATCH='^dtoverlay=i2c-gpio,.*i2c_gpio_sda=19'
 LIVI_I2C_DEVICES="${LIVI_I2C_DEVICES:-/sys/bus/i2c/devices}"
 LIVI_DEVICE_TREE="${LIVI_DEVICE_TREE:-/proc/device-tree}"
@@ -518,7 +519,9 @@ livi_write_sudoers() {
   local template="$1" staged
   echo "→ Writing $LIVI_SUDOERS_FILE"
   staged="$(mktemp)"
-  sed -e "s/__USERNAME__/$USER/g" "$template" > "$staged"
+  sed -e "s|__USERNAME__|$USER|g" \
+      -e "s|__HELPER__|$LIVI_USER_DATA/driver/livi-helperd|g" \
+      "$template" > "$staged"
   sudo install -m 0440 -o root -g root "$staged" "$LIVI_SUDOERS_FILE.livi-tmp"
   rm -f "$staged"
   if sudo visudo -c -f "$LIVI_SUDOERS_FILE.livi-tmp" >/dev/null; then

@@ -17,6 +17,11 @@ fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
 }
 
 pub(crate) fn config_path() -> std::path::PathBuf {
+    if let Some(dir) =
+        std::env::var_os(livi_core_proto::helper::USER_DATA).filter(|d| !d.is_empty())
+    {
+        return std::path::PathBuf::from(dir).join("config.json");
+    }
     let user = std::env::var("SUDO_USER")
         .ok()
         .filter(|u| !u.is_empty() && u != "root")

@@ -8,6 +8,7 @@ ConditionPathExists=/usr/local/sbin/livi-helperd
 [Service]
 Type=simple
 Environment=SUDO_USER=__USERNAME__
+Environment="LIVI_USER_DATA=__USER_DATA__"
 ExecStartPre=/usr/local/sbin/livi-helperd --wifi-ap-claim
 ExecStart=/usr/local/sbin/livi-helperd --wifi-ap
 ExecStopPost=/usr/local/sbin/livi-helperd --wifi-ap-teardown

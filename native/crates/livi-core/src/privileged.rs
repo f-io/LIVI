@@ -103,6 +103,7 @@ impl Privileged {
         Ok(text
             .replace("__HELPER__", &self.helper_named.display().to_string())
             .replace("__USERNAME__", &username())
+            .replace("__USER_DATA__", &self.user_data.display().to_string())
             .replace("__SYSTEMCTL__", &systemctl()))
     }
 
@@ -177,7 +178,7 @@ mod tests {
         let dir = TempDir::new();
         std::fs::write(
             dir.0.join("t"),
-            "__HELPER__ for __USERNAME__ via __SYSTEMCTL__",
+            "__HELPER__ for __USERNAME__ via __SYSTEMCTL__ in __USER_DATA__",
         )
         .unwrap();
         let p = privileged(&dir);
