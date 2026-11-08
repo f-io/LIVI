@@ -154,7 +154,7 @@ jobs:
           set -euo pipefail
           ZIG_VER=0.17.0
           ZIG_SHA=1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
-          curl -sSL "https://ziglang.org/download/${ZIG_VER}/zig-x86_64-linux-${ZIG_VER}.tar.xz" -o /tmp/zig.tar.xz
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "https://ziglang.org/download/${ZIG_VER}/zig-x86_64-linux-${ZIG_VER}.tar.xz" -o /tmp/zig.tar.xz
           echo "$ZIG_SHA  /tmp/zig.tar.xz" | sha256sum -c
           mkdir -p "$HOME/zig"
           tar -xJf /tmp/zig.tar.xz -C "$HOME/zig" --strip-components=1
@@ -222,7 +222,7 @@ jobs:
           TC_SHA=0d9ee91376785835a10b1631cfc9e4d6d61326c0512da774c012fdac53c2bc3a
           TC_DIR=$HOME/andes
           mkdir -p "$TC_DIR"
-          curl -sSL "$TC_URL" -o /tmp/andes.txz
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "$TC_URL" -o /tmp/andes.txz
           echo "$TC_SHA  /tmp/andes.txz" | sha256sum -c
           tar -xJf /tmp/andes.txz -C "$TC_DIR"
           TC_BIN="$TC_DIR/nds32le-linux-glibc-v5d/bin"
@@ -329,7 +329,7 @@ jobs:
           TC_VER=2026.08-1
           TC_SHA=e8517d51ba86699d5efaac62fc50fd9267dbdbc8b2cd3eb5b658db3582286778
           TC_URL="https://toolchains.bootlin.com/downloads/releases/toolchains/mips32el/tarballs/mips32el--musl--stable-${TC_VER}.tar.xz"
-          curl -sSL "$TC_URL" -o /tmp/mips-tc.tar.xz
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "$TC_URL" -o /tmp/mips-tc.tar.xz
           echo "$TC_SHA  /tmp/mips-tc.tar.xz" | sha256sum -c
           mkdir -p "$HOME/mips-tc"
           tar -xJf /tmp/mips-tc.tar.xz -C "$HOME/mips-tc" --strip-components=1

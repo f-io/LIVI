@@ -97,12 +97,12 @@ fetch_firmware() {
     esac
     log "fetch $as"
     mkdir -p "$(dirname "$FIRMWARE/$as")"
-    curl -sSfL "$url" -o "$FIRMWARE/$as"
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "$url" -o "$FIRMWARE/$as"
     echo "$sha  $FIRMWARE/$as" | sha256sum -c - || { log "$as changed upstream, check it and update its hash"; exit 3; }
   done
   if [[ ! -f $REGDB ]]; then
     log "fetch wireless-regdb $REGDB_VER"
-    curl -sSL "https://cdn.kernel.org/pub/software/network/wireless-regdb/wireless-regdb-$REGDB_VER.tar.xz" \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "https://cdn.kernel.org/pub/software/network/wireless-regdb/wireless-regdb-$REGDB_VER.tar.xz" \
       -o "$TOP/wireless-regdb-$REGDB_VER.tar.xz"
     echo "$REGDB_SHA  $TOP/wireless-regdb-$REGDB_VER.tar.xz" | sha256sum -c -
     tar -xJf "$TOP/wireless-regdb-$REGDB_VER.tar.xz" -C "$TOP"

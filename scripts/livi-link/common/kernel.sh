@@ -20,8 +20,8 @@ krelease() { cat "$KDIR/include/config/kernel.release"; }
 fetch_kernel() {
   [[ -d $KDIR ]] && return 0
   log "fetch linux-$KVER"
-  curl -sSL "$KURL" -o "$TOP/linux-$KVER.tar.xz"
-  curl -sSL "https://cdn.kernel.org/pub/linux/kernel/v${KMAJOR}.x/sha256sums.asc" -o "$TOP/sha256sums.asc"
+  curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "$KURL" -o "$TOP/linux-$KVER.tar.xz"
+  curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "https://cdn.kernel.org/pub/linux/kernel/v${KMAJOR}.x/sha256sums.asc" -o "$TOP/sha256sums.asc"
   local expected
   expected=$(grep " linux-$KVER.tar.xz\$" "$TOP/sha256sums.asc" | awk '{print $1}')
   [[ -n $expected ]] || { log "linux-$KVER.tar.xz not found in kernel.org sha256sums"; exit 3; }

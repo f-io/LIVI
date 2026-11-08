@@ -62,7 +62,7 @@ fetch() {
     rm -f "$out"
   fi
   log "fetch $(basename "$out")"
-  curl -sSL "$url" -o "$out"
+  curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "$url" -o "$out"
   if [[ -n "$sha" ]]; then
     echo "$sha  $out" | sha256sum -c || {
       rm -f "$out"
