@@ -187,6 +187,16 @@ jobs:
         if: matrix.os == 'android'
         uses: ./.github/actions/android-setup
 
+      - name: Cache Gradle [android]
+        if: matrix.os == 'android'
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/wrapper/dists
+            ~/.gradle/caches
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/**/*.gradle.kts', 'android/gradle.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
       - name: Build and package [linux]
         if: matrix.os == 'linux'
         working-directory: native
