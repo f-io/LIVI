@@ -14,5 +14,6 @@ runs:
         { yes || true; } | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
           "platforms;android-$sdk.0" "build-tools;$sdk.0.0" "ndk;$ndk" >/dev/null
         echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$ndk" >> "$GITHUB_ENV"
+        echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/$ndk" >> "$GITHUB_ENV"
         echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
         cargo install cargo-ndk --version 4.1.2 --locked
