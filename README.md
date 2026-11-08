@@ -141,7 +141,10 @@ livi-core telemetry set gps.lat=53.5912 gps.lng=10.015
 livi-core telemetry set speedKph=90 rpm=2500 --every-ms 1000
 
 # Light main screen, dark CarPlay cluster
-livi-core telemetry set nightMode=false clusterNightMode=true
+livi-core telemetry set nightMode=false clusterUiNightMode=true clusterMapNightMode=true
+
+# Dark UI, light map
+livi-core telemetry set nightMode=true mainMapNightMode=false
 
 # LIVI's own UI
 livi-core telemetry set darkMode=false nightMode=true

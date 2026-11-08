@@ -10,8 +10,6 @@ const STREAM_TYPE_ALT_SCREEN: u64 = 111;
 const DISPLAY_FEATURE_KNOBS: u64 = 0x02;
 const DISPLAY_FEATURE_HIGH_FIDELITY_TOUCH: u64 = 0x08;
 const PRIMARY_INPUT_KNOBS: u64 = 3;
-const APPEARANCE_DARK: u64 = 1;
-const APPEARANCE_AUTOMATIC: u64 = 0;
 
 const CARPLAY_FEATURES: u64 = 0x61_5653_aee2;
 const CARPLAY_AUDIO_FEATURES: u64 = 0x100_0454_0a00;
@@ -58,6 +56,8 @@ pub struct DisplayConfig {
     pub safe_area_draw_outside: Option<bool>,
     pub status_bar_edge: Option<u64>,
     pub initial_url: Option<String>,
+    pub ui_night: bool,
+    pub map_night: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,6 +82,7 @@ pub struct InfoConfig {
     pub icons: Vec<Icon>,
     pub right_hand_drive: bool,
     pub theme_displays: Option<ThemeDisplays>,
+    pub appearance_setting: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -224,7 +225,11 @@ pub fn mm_at_dpi(pixels: i64, dpi: f64) -> i64 {
     (hid::round_half_up(pixels as f64 * 25.4 / dpi) as i64).max(1)
 }
 
-fn display(d: &DisplayConfig, kind: u64, uuid: &str) -> Value {
+fn appearance(night: bool) -> Value {
+    Value::Int(u64::from(night))
+}
+
+fn display(d: &DisplayConfig, kind: u64, uuid: &str, setting: u64) -> Value {
     let width_physical = d
         .width_physical_mm
         .unwrap_or_else(|| mm_at_dpi(d.width_pixels, FALLBACK_DPI));
@@ -250,16 +255,10 @@ fn display(d: &DisplayConfig, kind: u64, uuid: &str) -> Value {
         ),
         ("cornerMasks".to_string(), Value::Bool(false)),
         ("adjacentViewAreas".to_string(), Value::Array(Vec::new())),
-        ("uiAppearanceMode".to_string(), Value::Int(APPEARANCE_DARK)),
-        (
-            "uiAppearanceSetting".to_string(),
-            Value::Int(APPEARANCE_AUTOMATIC),
-        ),
-        ("mapAppearanceMode".to_string(), Value::Int(APPEARANCE_DARK)),
-        (
-            "mapAppearanceSetting".to_string(),
-            Value::Int(APPEARANCE_AUTOMATIC),
-        ),
+        ("uiAppearanceMode".to_string(), appearance(d.ui_night)),
+        ("uiAppearanceSetting".to_string(), Value::Int(setting)),
+        ("mapAppearanceMode".to_string(), appearance(d.map_night)),
+        ("mapAppearanceSetting".to_string(), Value::Int(setting)),
     ];
     if let Some(view) = area(d) {
         entry.push(("viewAreas".to_string(), Value::Array(vec![view])));
@@ -284,9 +283,19 @@ pub fn display_uuids(cfg: &InfoConfig) -> (String, String) {
 
 pub fn build(cfg: &InfoConfig) -> Value {
     let (main_uuid, alt_uuid) = display_uuids(cfg);
-    let mut displays = vec![display(&cfg.main, STREAM_TYPE_MAIN_SCREEN, &main_uuid)];
+    let mut displays = vec![display(
+        &cfg.main,
+        STREAM_TYPE_MAIN_SCREEN,
+        &main_uuid,
+        cfg.appearance_setting,
+    )];
     if let Some(cluster) = &cfg.cluster {
-        displays.push(display(cluster, STREAM_TYPE_ALT_SCREEN, &alt_uuid));
+        displays.push(display(
+            cluster,
+            STREAM_TYPE_ALT_SCREEN,
+            &alt_uuid,
+            cfg.appearance_setting,
+        ));
     }
     let features = if cfg.disable_audio_output {
         CARPLAY_FEATURES & !CARPLAY_AUDIO_FEATURES
@@ -309,6 +318,7 @@ pub fn build(cfg: &InfoConfig) -> Value {
             Value::Array(vec![Value::String(cfg.bt_mac.clone())]),
         ),
         ("name".to_string(), Value::String(cfg.device_name.clone())),
+        ("nightMode".to_string(), Value::Bool(cfg.main.map_night)),
         (
             "rightHandDrive".to_string(),
             Value::Bool(cfg.right_hand_drive),
@@ -487,6 +497,7 @@ pub(crate) mod tests {
             icons: Vec::new(),
             right_hand_drive: false,
             theme_displays: None,
+            appearance_setting: 1,
         }
     }
 
@@ -496,13 +507,6 @@ pub(crate) mod tests {
             let info = build(cfg);
             let main = &info.get("displays").and_then(Value::as_array).unwrap()[0];
             assert_eq!(main.get("type"), Some(&Value::Int(110)));
-            for key in ["uiAppearanceMode", "mapAppearanceMode"] {
-                assert_eq!(main.get(key), Some(&Value::Int(APPEARANCE_DARK)), "{key}");
-            }
-            assert_eq!(
-                main.get("uiAppearanceSetting"),
-                Some(&Value::Int(APPEARANCE_AUTOMATIC))
-            );
             (
                 main.get("widthPhysical").cloned(),
                 main.get("heightPhysical").cloned(),
@@ -516,6 +520,60 @@ pub(crate) mod tests {
         wide.main.width_pixels = 1920;
         wide.main.height_pixels = 1080;
         assert_eq!(size(&wide), (Some(Value::Int(244)), Some(Value::Int(137))));
+    }
+
+    #[test]
+    fn each_display_starts_with_its_own_ui_and_map_appearance() {
+        let mut cfg = sample();
+        cfg.main.ui_night = true;
+        cfg.main.map_night = false;
+        cfg.cluster = Some(DisplayConfig {
+            width_pixels: 800,
+            height_pixels: 480,
+            map_night: true,
+            ..Default::default()
+        });
+        let info = build(&cfg);
+        let modes: Vec<_> = info
+            .get("displays")
+            .and_then(Value::as_array)
+            .unwrap()
+            .iter()
+            .map(|d| {
+                (
+                    d.get("uiAppearanceMode").cloned(),
+                    d.get("mapAppearanceMode").cloned(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            modes,
+            [
+                (Some(Value::Int(1)), Some(Value::Int(0))),
+                (Some(Value::Int(0)), Some(Value::Int(1)))
+            ]
+        );
+    }
+
+    #[test]
+    fn the_main_map_is_the_night_mode() {
+        let mut cfg = sample();
+        cfg.main.map_night = true;
+        assert_eq!(build(&cfg).get("nightMode"), Some(&Value::Bool(true)));
+        cfg.main.map_night = false;
+        assert_eq!(build(&cfg).get("nightMode"), Some(&Value::Bool(false)));
+    }
+
+    #[test]
+    fn every_display_reports_the_appearance_setting() {
+        let mut cfg = sample();
+        cfg.appearance_setting = 2;
+        cfg.cluster = Some(DisplayConfig::default());
+        let info = build(&cfg);
+        for d in info.get("displays").and_then(Value::as_array).unwrap() {
+            assert_eq!(d.get("uiAppearanceSetting"), Some(&Value::Int(2)));
+            assert_eq!(d.get("mapAppearanceSetting"), Some(&Value::Int(2)));
+        }
     }
 
     #[test]

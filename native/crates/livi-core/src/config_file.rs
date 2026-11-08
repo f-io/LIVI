@@ -58,6 +58,7 @@ impl ConfigFile {
         }
 
         let mut config = merge(&current_names(&file), &defaults);
+        config.settle_night_modes(|_| false);
         if !WIFI_PASSWORD_LEN.contains(&config.wifi_password.chars().count()) {
             println!("[core] wifiPassword is no WPA passphrase, falling back to the default");
             config.wifi_password = self::defaults().wifi_password;
@@ -292,6 +293,8 @@ pub fn apply_patch(current: &Config, patch: &Value) -> Result<Config, String> {
     {
         return Err("wifiPassword needs 8 to 63 characters".into());
     }
+    let mut next = next;
+    next.settle_night_modes(|key| patch.contains_key(key));
     Ok(next)
 }
 
@@ -299,6 +302,7 @@ pub fn apply_patch(current: &Config, patch: &Value) -> Result<Config, String> {
 pub mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
 
+    use livi_core_proto::config::AppearanceMode;
     use livi_core_proto::state::PerScreen;
     use serde_json::json;
 
@@ -534,6 +538,34 @@ pub mod tests {
     }
 
     #[test]
+    fn the_night_modes_start_from_the_phone_appearance() {
+        let dir = TempDir::new();
+        let file = file_in(&dir);
+        let path = dir.0.join("LIVI/config.json");
+        assert_eq!(file.load(&HostFacts::default()).night_modes(), [true; 4]);
+        fs::write(
+            &path,
+            r#"{ "appearanceMode": "day", "mainMapNightMode": true }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            file.load(&HostFacts::default()).night_modes(),
+            [false; 4],
+            "Day fixes them all"
+        );
+        fs::write(
+            &path,
+            r#"{ "appearanceMode": "auto", "mainUiNightMode": false, "mainMapNightMode": false }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            file.load(&HostFacts::default()).night_modes(),
+            [false, false, true, true],
+            "Auto keeps the saved ones"
+        );
+    }
+
+    #[test]
     fn an_unchanged_file_is_left_alone() {
         let dir = TempDir::new();
         let file = file_in(&dir);
@@ -603,6 +635,11 @@ pub mod tests {
             Err("unknown setting nightMode".into())
         );
         assert!(apply_patch(&current, &json!({ "wifiPassword": "short" })).is_err());
+        let light = apply_patch(&current, &json!({ "mainUiNightMode": false })).unwrap();
+        assert_eq!(light.night_modes(), [false, false, true, true]);
+        assert_eq!(light.appearance_mode, AppearanceMode::Auto);
+        let day = apply_patch(&light, &json!({ "appearanceMode": "day" })).unwrap();
+        assert_eq!(day.night_modes(), [false; 4]);
         assert!(apply_patch(&current, &json!([1])).is_err());
     }
 

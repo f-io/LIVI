@@ -99,12 +99,7 @@ impl<M: Media> Conn<M> {
             "RECORD" => {
                 println!("[cpStack] RECORD (session started)");
                 self.live = true;
-                if let Some(night) = self.night_mode {
-                    self.send_night_mode(night).await;
-                }
-                if let Some(night) = self.cluster_night_mode {
-                    self.send_cluster_appearance(night).await;
-                }
+                self.send_surfaces().await;
                 if let Some(limited) = self.limited_ui {
                     self.send_limited_ui(limited).await;
                 }

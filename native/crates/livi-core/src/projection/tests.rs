@@ -129,7 +129,7 @@ impl Rig {
         };
         assert_eq!(
             rig.drain(),
-            [CpCmd::InitialNightMode(None), CpCmd::ClusterActive(false)]
+            [CpCmd::NightModes([true; 4]), CpCmd::ClusterActive(false)]
         );
         rig
     }
@@ -417,7 +417,7 @@ async fn levels_follow_the_config_and_the_ducking() {
         [
             volume(1, AudioKind::Alert, 0.5, RAMP_DOWN_MS),
             volume(1, AudioKind::Call, 1.0, RAMP_UP_MS),
-            CpCmd::InitialNightMode(Some(true)),
+            CpCmd::NightModes([true; 4]),
             stream_volumes(cfg.audio_volume, 0.5, 1.0, cfg.voice_assistant_volume),
         ]
     );
@@ -1342,7 +1342,7 @@ async fn the_phone_hands_the_screen_back() {
 }
 
 #[tokio::test]
-async fn telemetry_reaches_carplay_and_only_a_config_change_sets_the_night_mode_again() {
+async fn only_the_config_sets_the_night_modes() {
     let mut rig = Rig::new();
     let cfg = rig.p.config_seen.clone();
     let snap = |v: Value| v.as_object().cloned().unwrap_or_default();
@@ -1352,7 +1352,8 @@ async fn telemetry_reaches_carplay_and_only_a_config_change_sets_the_night_mode_
         .on_state(cfg.clone(), snap(json!({ "nightMode": true, "ts": 2 })));
     assert_eq!(
         rig.drain(),
-        [CpCmd::NightMode(true), CpCmd::ClusterNightMode(true)]
+        [],
+        "telemetry reaches carplay through the config"
     );
 
     let mut day = cfg.clone();
@@ -1365,21 +1366,10 @@ async fn telemetry_reaches_carplay_and_only_a_config_change_sets_the_night_mode_
         cfg.call_volume,
         cfg.voice_assistant_volume,
     );
-    assert_eq!(
-        rig.drain(),
-        [CpCmd::InitialNightMode(Some(false)), levels.clone()]
-    );
+    assert_eq!(rig.drain(), [CpCmd::NightModes([true; 4]), levels.clone()]);
 
     rig.p.on_event(CpEvent::Spawned { id: 1 });
-    assert_eq!(
-        rig.drain(),
-        [
-            CpCmd::NightMode(true),
-            CpCmd::ClusterNightMode(true),
-            levels
-        ],
-        "a new session hears the volumes"
-    );
+    assert_eq!(rig.drain(), [levels], "a new session hears the volumes");
 }
 
 fn aa(id: AaId, cmd: SessionCmd) -> AaCmd {

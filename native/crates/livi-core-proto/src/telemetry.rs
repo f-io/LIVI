@@ -29,7 +29,10 @@
 //! | lights, highBeam, hazards           | ✓    | ✓            | ·               | ·             |
 //! | parkingBrake                        | ✓    | ✓            | ·               | ·             |
 //! | nightMode                           | ·    | ✓            | ✓               | ✓             |
-//! | clusterNightMode                    | ·    | ·            | ✓               | ✓             |
+//! | mainUiNightMode, mainMapNightMode   | ·    | ·            | ✓               | ✓             |
+//! | clusterUiNightMode                  | ·    | ·            | ✓               | ✓             |
+//! | clusterMapNightMode                 | ·    | ·            | ✓               | ✓             |
+//! | appearanceSetting                   | ·    | ·            | ✓               | ✓             |
 //! | darkMode                            | ✓    | ·            | ·               | ·             |
 //! | path                                | ✓    | ·            | ·               | ·             |
 //! | volume                              | ✓    | ·            | ·               | ✓             |
@@ -154,11 +157,23 @@ pub struct TelemetrySnapshot {
     pub ambient_lux: Option<f64>,
     /// The dimmer of the panel lights, 0 to 100.
     pub dimmer_pct: Option<f64>,
-    /// Day or night for Android Auto and CarPlay, LIVI's own look follows `darkMode`.
+    /// Day or night for Android Auto and CarPlay, LIVI's own look follows `darkMode`. It sets the
+    /// four below at once, those of them in the same push apply after it. LIVI's appearance
+    /// setting at Day or Night sets it too. Any of the five turns that setting to Auto.
     pub night_mode: Option<bool>,
-    /// Day or night for the CarPlay cluster, it follows `nightMode` while absent or null. A
-    /// change of LIVI's appearance setting sets `nightMode` and clears this one.
-    pub cluster_night_mode: Option<bool>,
+    /// Day or night for the UI on the main screen. Each of the four is saved as the setting of the
+    /// same name and the phone starts with it. A map is never darker than its UI: a UI takes its
+    /// map along, a dark map darkens its UI, and only a dark UI keeps a light map.
+    pub main_ui_night_mode: Option<bool>,
+    /// The map on the main screen, sent to the phone as its night mode.
+    pub main_map_night_mode: Option<bool>,
+    /// The UI on the cluster.
+    pub cluster_ui_night_mode: Option<bool>,
+    /// The map on the cluster.
+    pub cluster_map_night_mode: Option<bool>,
+    /// How carplay treats the four above, `auto`, `user` or `always`, saved as the setting of the
+    /// same name, `user` when never set.
+    pub appearance_setting: Option<String>,
     /// LIVI's own look, dark or light. A push sets the Dark Mode setting, a change of that
     /// setting shows up here.
     pub dark_mode: Option<bool>,

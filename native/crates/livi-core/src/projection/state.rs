@@ -105,8 +105,7 @@ impl Projection {
             }
             self.push_level(kind, if prev > to { RAMP_DOWN_MS } else { RAMP_UP_MS });
         }
-        self.cp
-            .send(CpCmd::InitialNightMode(cfg.appearance_mode.night_mode()));
+        self.cp.send(CpCmd::NightModes(cfg.night_modes()));
         self.bindings = cfg.bindings.clone();
         self.stream_volumes_to_phone();
     }

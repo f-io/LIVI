@@ -1400,8 +1400,9 @@ async fn a_verified_session_streams_and_takes_input() {
         }]))
         .unwrap();
     rig.cmds.send(StackCmd::Keyframe).unwrap();
-    rig.cmds.send(StackCmd::NightMode(true)).unwrap();
-    rig.cmds.send(StackCmd::ClusterNightMode(true)).unwrap();
+    for surface in Surface::ALL {
+        rig.cmds.send(StackCmd::Appearance(surface, true)).unwrap();
+    }
     rig.cmds.send(StackCmd::LimitedUi(true)).unwrap();
     rig.cmds.send(StackCmd::Siri).unwrap();
     rig.cmds
@@ -1432,7 +1433,7 @@ async fn a_verified_session_streams_and_takes_input() {
     let mut plain = Vec::new();
     let mut chunk = vec![0u8; 16 * 1024];
     let mut commands = Vec::new();
-    while commands.len() < 15 {
+    while commands.len() < 14 {
         let n = tokio::time::timeout(Duration::from_secs(5), event.read(&mut chunk))
             .await
             .unwrap()
@@ -1458,9 +1459,8 @@ async fn a_verified_session_streams_and_takes_input() {
         [
             "hidSendReport",
             "forceKeyFrame",
-            "setNightMode",
             "uiAppearanceUpdate",
-            "mapAppearanceUpdate",
+            "setNightMode",
             "setLimitedUI",
             "requestSiri",
             "requestSiri",

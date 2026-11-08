@@ -16,7 +16,7 @@ use tokio::task::JoinHandle;
 use crate::helper_sock::Feed;
 use crate::media::Media;
 use crate::net::{host_of, norm_host};
-use crate::stack::{self, AudioProfile, ScreenCodec, StackCmd, StackCtx, StackEvent};
+use crate::stack::{self, AudioProfile, ScreenCodec, StackCmd, StackCtx, StackEvent, Surface};
 use crate::vehicle_state::{Climate, Gauges, Radio, RadioCommand};
 
 const RESTART_FIRST: Duration = Duration::from_millis(500);
@@ -152,9 +152,7 @@ pub enum CpEvent {
 #[derive(Debug, Clone, PartialEq)]
 pub enum CpCmd {
     Stack { id: SessionId, cmd: StackCmd },
-    NightMode(bool),
-    ClusterNightMode(bool),
-    InitialNightMode(Option<bool>),
+    NightModes([bool; 4]),
     LimitedUi(bool),
     VideoAllowed(bool),
     ClusterActive(bool),
@@ -204,6 +202,12 @@ impl Session {
         }
     }
 
+    fn night_modes(&self, modes: [bool; 4]) {
+        for (surface, night) in Surface::ALL.into_iter().zip(modes) {
+            self.send(StackCmd::Appearance(surface, night));
+        }
+    }
+
     fn matches(&self, ids: &Ids) -> bool {
         let same = |a: &Option<String>, b: &str| a.as_deref().is_some_and(|a| same_mac(a, b));
         same(&ids.bt_mac, &self.bt_mac)
@@ -240,7 +244,7 @@ struct Manager<M: Media> {
     to_cable: HashMap<String, JoinHandle<()>>,
     awaiting: HashMap<String, JoinHandle<()>>,
     reset_once: HashSet<String>,
-    initial_night_mode: Option<bool>,
+    night_modes: Option<[bool; 4]>,
     notices: Notices,
     cluster_stream_active: bool,
     video_allowed: bool,
@@ -284,7 +288,7 @@ async fn run<M: Media>(
         to_cable: HashMap::new(),
         awaiting: HashMap::new(),
         reset_once: HashSet::new(),
-        initial_night_mode: None,
+        night_modes: None,
         notices: Notices::default(),
         cluster_stream_active: true,
         video_allowed: true,
@@ -366,9 +370,8 @@ impl<M: Media> Manager<M> {
     fn register(&mut self, session: Session) -> SessionId {
         let id = self.next_id;
         self.next_id += 1;
-        if let Some(night) = self.initial_night_mode {
-            session.send(StackCmd::NightMode(night));
-            session.send(StackCmd::ClusterNightMode(night));
+        if let Some(modes) = self.night_modes {
+            session.night_modes(modes);
         }
         session.send(StackCmd::ClusterActive(self.cluster_stream_active));
         if !self.notices.history.is_empty() {
@@ -965,22 +968,11 @@ impl<M: Media> Manager<M> {
                     s.send(cmd);
                 }
             }
-            CpCmd::NightMode(night) => {
-                for s in self.sessions.values() {
-                    s.send(StackCmd::NightMode(night));
-                }
-            }
-            CpCmd::ClusterNightMode(night) => {
-                for s in self.sessions.values() {
-                    s.send(StackCmd::ClusterNightMode(night));
-                }
-            }
-            CpCmd::InitialNightMode(night) => {
-                self.initial_night_mode = night;
-                if let Some(night) = night {
+            CpCmd::NightModes(modes) => {
+                if self.night_modes != Some(modes) {
+                    self.night_modes = Some(modes);
                     for s in self.sessions.values() {
-                        s.send(StackCmd::NightMode(night));
-                        s.send(StackCmd::ClusterNightMode(night));
+                        s.night_modes(modes);
                     }
                 }
             }
@@ -1456,9 +1448,7 @@ mod tests {
             .await;
 
         rig.handle.stack(id, StackCmd::Keyframe);
-        rig.handle.send(CpCmd::NightMode(true));
-        rig.handle.send(CpCmd::ClusterNightMode(true));
-        rig.handle.send(CpCmd::InitialNightMode(Some(false)));
+        rig.handle.send(CpCmd::NightModes([true; 4]));
         rig.handle.send(CpCmd::LimitedUi(true));
         rig.handle.send(CpCmd::VideoAllowed(false));
         rig.handle.send(CpCmd::ClusterActive(false));

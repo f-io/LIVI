@@ -260,18 +260,13 @@ impl<M: Media> Conn<M> {
             StackCmd::VideoPlay(playing) => self.play_video_here(playing).await,
             StackCmd::VideoSeek(to) => self.seek_video_here(to),
             StackCmd::VideoClose => self.close_video_here().await,
-            StackCmd::NightMode(night) => {
-                self.night_mode = Some(night);
-                self.send_night_mode(night).await;
-                if let Some(cluster) = self.cluster_night_mode {
-                    self.send_cluster_appearance(cluster).await;
+            StackCmd::Appearance(surface, night) => {
+                self.appearance[surface as usize] = Some(night);
+                self.send_surface(surface, night).await;
+                if surface == Surface::ClusterUi {
+                    let answers = self.ui_sync_state.set_dark(night);
+                    self.to_ui_sync(answers);
                 }
-            }
-            StackCmd::ClusterNightMode(night) => {
-                self.cluster_night_mode = Some(night);
-                self.send_cluster_appearance(night).await;
-                let answers = self.ui_sync_state.set_dark(night);
-                self.to_ui_sync(answers);
             }
             StackCmd::LimitedUi(limited) => {
                 self.limited_ui = Some(limited);

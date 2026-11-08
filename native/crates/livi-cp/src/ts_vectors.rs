@@ -60,6 +60,8 @@ fn info_config() -> InfoConfig {
                 right: 10,
             }),
             safe_area_draw_outside: Some(true),
+            ui_night: true,
+            map_night: true,
             ..Default::default()
         },
         cluster: Some(DisplayConfig {
@@ -68,6 +70,8 @@ fn info_config() -> InfoConfig {
             fps: Some(30),
             width_physical_mm: Some(150),
             initial_url: Some("maps:/car/instrumentcluster".into()),
+            ui_night: true,
+            map_night: true,
             ..Default::default()
         }),
         entertainment_sample_rate: 44100,
@@ -80,6 +84,7 @@ fn info_config() -> InfoConfig {
         }],
         right_hand_drive: true,
         theme_displays: None,
+        appearance_setting: 1,
     }
 }
 

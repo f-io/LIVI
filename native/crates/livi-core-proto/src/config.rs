@@ -132,6 +132,11 @@ pub struct Config {
     pub kiosk: PerScreen<bool>,
     pub ui_zoom_percent: u32,
     pub appearance_mode: AppearanceMode,
+    pub appearance_setting: AppearanceSetting,
+    pub main_ui_night_mode: bool,
+    pub main_map_night_mode: bool,
+    pub cluster_ui_night_mode: bool,
+    pub cluster_map_night_mode: bool,
 
     pub display_mode: PerScreen<String>,
     pub display_connector: PerScreen<String>,
@@ -223,6 +228,24 @@ impl AppearanceMode {
             AppearanceMode::Night => Some(true),
             AppearanceMode::Day => Some(false),
             AppearanceMode::Auto => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AppearanceSetting {
+    Auto,
+    User,
+    Always,
+}
+
+impl AppearanceSetting {
+    pub fn code(self) -> u64 {
+        match self {
+            AppearanceSetting::Auto => 0,
+            AppearanceSetting::User => 1,
+            AppearanceSetting::Always => 2,
         }
     }
 }
@@ -412,6 +435,73 @@ pub struct KeyBindings {
     pub voice_assistant_release: String,
 }
 
+pub const APPEARANCE_MODE: &str = "appearanceMode";
+
+pub const NIGHT_MODE_KEYS: [&str; 4] = [
+    "mainUiNightMode",
+    "mainMapNightMode",
+    "clusterUiNightMode",
+    "clusterMapNightMode",
+];
+
+impl Config {
+    pub fn night_modes(&self) -> [bool; 4] {
+        [
+            self.main_ui_night_mode,
+            self.main_map_night_mode,
+            self.cluster_ui_night_mode,
+            self.cluster_map_night_mode,
+        ]
+    }
+
+    pub fn set_night_modes(&mut self, [main_ui, main_map, cluster_ui, cluster_map]: [bool; 4]) {
+        self.main_ui_night_mode = main_ui;
+        self.main_map_night_mode = main_map;
+        self.cluster_ui_night_mode = cluster_ui;
+        self.cluster_map_night_mode = cluster_map;
+    }
+
+    /// iOS never shows a dark map under a light UI. An asked UI takes its map along,
+    /// an asked dark map darkens its UI, and only a dark UI keeps a light map.
+    pub fn couple_night_modes(&mut self, asked: impl Fn(&str) -> bool) {
+        let [main_ui, main_map, cluster_ui, cluster_map] = NIGHT_MODE_KEYS;
+        couple(
+            &mut self.main_ui_night_mode,
+            &mut self.main_map_night_mode,
+            asked(main_ui),
+            asked(main_map),
+        );
+        couple(
+            &mut self.cluster_ui_night_mode,
+            &mut self.cluster_map_night_mode,
+            asked(cluster_ui),
+            asked(cluster_map),
+        );
+    }
+
+    pub fn settle_night_modes(&mut self, asked: impl Fn(&str) -> bool) {
+        if !asked(APPEARANCE_MODE) && NIGHT_MODE_KEYS.iter().any(|k| asked(k)) {
+            self.appearance_mode = AppearanceMode::Auto;
+        }
+        if let Some(night) = self.appearance_mode.night_mode() {
+            self.set_night_modes([night; 4]);
+        }
+        self.couple_night_modes(asked);
+    }
+}
+
+fn couple(ui: &mut bool, map: &mut bool, ui_asked: bool, map_asked: bool) {
+    if ui_asked && !map_asked {
+        *map = *ui;
+    } else if *map && !*ui {
+        if map_asked && !ui_asked {
+            *ui = true;
+        } else {
+            *map = false;
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         defaults()
@@ -533,7 +623,12 @@ pub fn defaults() -> Config {
         language: "en".into(),
         kiosk: off,
         ui_zoom_percent: 100,
-        appearance_mode: AppearanceMode::Auto,
+        appearance_mode: AppearanceMode::Night,
+        appearance_setting: AppearanceSetting::User,
+        main_ui_night_mode: true,
+        main_map_night_mode: true,
+        cluster_ui_night_mode: true,
+        cluster_map_night_mode: true,
         display_mode: PerScreen::default(),
         display_connector: PerScreen::default(),
         screen_width_mm: PerScreen::default(),
@@ -625,6 +720,97 @@ fn default_bindings() -> KeyBindings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn coupled(stored: [bool; 4], asked: &[(&str, bool)]) -> [bool; 4] {
+        let mut cfg = defaults();
+        cfg.set_night_modes(stored);
+        let mut modes = stored;
+        for (key, night) in asked {
+            let at = NIGHT_MODE_KEYS.iter().position(|k| k == key).unwrap();
+            modes[at] = *night;
+        }
+        cfg.set_night_modes(modes);
+        cfg.couple_night_modes(|k| asked.iter().any(|(key, _)| *key == k));
+        cfg.night_modes()
+    }
+
+    #[test]
+    fn a_map_is_never_darker_than_its_ui() {
+        let dark = [true; 4];
+        let light = [false; 4];
+        assert_eq!(
+            coupled(
+                light,
+                &[("mainUiNightMode", true), ("clusterUiNightMode", true)]
+            ),
+            dark,
+            "a dark UI darkens its map"
+        );
+        assert_eq!(
+            coupled(dark, &[("mainUiNightMode", false)]),
+            [false, false, true, true],
+            "a light UI lightens its map"
+        );
+        assert_eq!(
+            coupled(dark, &[("mainMapNightMode", false)]),
+            [true, false, true, true],
+            "a light map under a dark UI stays"
+        );
+        assert_eq!(
+            coupled(light, &[("clusterMapNightMode", true)]),
+            [false, false, true, true],
+            "a dark map darkens its UI"
+        );
+        assert_eq!(
+            coupled(
+                light,
+                &[("mainUiNightMode", true), ("mainMapNightMode", false)]
+            ),
+            [true, false, false, false],
+            "both asked, both kept"
+        );
+        assert_eq!(
+            coupled(
+                dark,
+                &[("mainUiNightMode", false), ("mainMapNightMode", true)]
+            ),
+            [false, false, true, true],
+            "both asked against iOS, the UI wins"
+        );
+        assert_eq!(
+            coupled([false, true, false, false], &[]),
+            light,
+            "a stored dark map under a light UI turns light"
+        );
+    }
+
+    #[test]
+    fn day_and_night_fix_the_night_modes_until_a_night_mode_arrives() {
+        let mut cfg = defaults();
+        assert_eq!(cfg.appearance_mode, AppearanceMode::Night);
+        cfg.appearance_mode = AppearanceMode::Day;
+        cfg.settle_night_modes(|k| k == APPEARANCE_MODE);
+        assert_eq!(cfg.night_modes(), [false; 4]);
+
+        cfg.main_ui_night_mode = true;
+        cfg.settle_night_modes(|k| k == "mainUiNightMode");
+        assert_eq!(cfg.appearance_mode, AppearanceMode::Auto);
+        assert_eq!(cfg.night_modes(), [true, true, false, false]);
+
+        cfg.appearance_mode = AppearanceMode::Auto;
+        cfg.settle_night_modes(|k| k == APPEARANCE_MODE);
+        assert_eq!(
+            cfg.night_modes(),
+            [true, true, false, false],
+            "Auto keeps what the API set"
+        );
+
+        cfg.appearance_mode = AppearanceMode::Night;
+        cfg.main_map_night_mode = false;
+        cfg.settle_night_modes(|k| k == APPEARANCE_MODE || k == "mainMapNightMode");
+        assert_eq!(cfg.appearance_mode, AppearanceMode::Night, "the mode wins");
+        assert_eq!(cfg.night_modes(), [true; 4]);
+    }
 
     #[test]
     fn names_from_telemetry_match_in_any_case() {
