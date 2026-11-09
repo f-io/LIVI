@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use livi_core_proto::config::WindowBounds;
+use livi_core_proto::config::{ViewArea, WindowBounds};
 use livi_core_proto::state::{Screen, State};
 
 const MIN_SIZE: u32 = 200;
@@ -16,6 +16,7 @@ pub struct Secondary {
     pub bounds: Option<WindowBounds>,
     pub kiosk: bool,
     pub dashboard: bool,
+    pub view_area: ViewArea,
 }
 
 pub fn name(screen: Screen) -> &'static str {
@@ -54,6 +55,7 @@ pub fn secondary(state: &State) -> Vec<Secondary> {
         bounds: bounds.filter(|b| b.width >= MIN_SIZE && b.height >= MIN_SIZE),
         kiosk: *c.kiosk.get(screen),
         dashboard: *c.dashboard.get(screen),
+        view_area: *c.view_area.get(screen),
     })
     .collect()
 }
@@ -73,5 +75,20 @@ mod tests {
         assert_eq!(s[0].screen, Screen::Cluster);
         assert_eq!(s[0].width, MIN_SIZE);
         assert_eq!(name(s[0].screen), "cluster");
+    }
+
+    #[test]
+    fn each_window_gets_its_own_view_area() {
+        let mut state = State::default();
+        state.config.cluster_screen_active = true;
+        state.config.aux_screen_active = true;
+        state.config.view_area.cluster.left = 40;
+        state.config.view_area.aux.bottom = 12;
+        state.config.cluster_view_area_left = 300;
+        let s = secondary(&state);
+        assert_eq!(s[0].view_area.left, 40);
+        assert_eq!(s[0].view_area.bottom, 0);
+        assert_eq!(s[1].view_area.bottom, 12);
+        assert_eq!(s[1].view_area.left, 0);
     }
 }

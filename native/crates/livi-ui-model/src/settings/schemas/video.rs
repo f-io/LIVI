@@ -35,7 +35,7 @@ fn number(
         .page(Label::new(key, title))
 }
 
-fn top(path: &'static str, title: &'static str) -> Node {
+pub(super) fn top(path: &'static str, title: &'static str) -> Node {
     number(
         "settings.top",
         "Top",
@@ -48,7 +48,7 @@ fn top(path: &'static str, title: &'static str) -> Node {
     )
 }
 
-fn bottom(path: &'static str, title: &'static str) -> Node {
+pub(super) fn bottom(path: &'static str, title: &'static str) -> Node {
     number(
         "settings.bottom",
         "Bottom",
@@ -61,7 +61,7 @@ fn bottom(path: &'static str, title: &'static str) -> Node {
     )
 }
 
-fn left(path: &'static str, title: &'static str) -> Node {
+pub(super) fn left(path: &'static str, title: &'static str) -> Node {
     number(
         "settings.left",
         "Left",
@@ -74,7 +74,7 @@ fn left(path: &'static str, title: &'static str) -> Node {
     )
 }
 
-fn right(path: &'static str, title: &'static str) -> Node {
+pub(super) fn right(path: &'static str, title: &'static str) -> Node {
     number(
         "settings.right",
         "Right",
@@ -87,7 +87,7 @@ fn right(path: &'static str, title: &'static str) -> Node {
     )
 }
 
-fn view_area(children: Vec<Node>) -> Node {
+pub(super) fn view_area(children: Vec<Node>) -> Node {
     Node::route(
         "viewArea",
         Label::new("settings.viewArea", "View Area"),

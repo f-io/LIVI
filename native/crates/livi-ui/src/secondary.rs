@@ -53,6 +53,7 @@ fn open(main: &AppWindow, client: &Client, spec: &Secondary) -> Option<Secondary
     crate::dashboard_ui::wire(&w.global::<DashState>(), client);
     w.set_window_title(title(spec.screen).into());
     w.set_has_dashboard(spec.dashboard);
+    w.set_view_area(crate::view_area(spec.view_area));
     copy_theme(main, &w);
     set_window_texts(&w);
     w.global::<DashState>()
@@ -116,6 +117,7 @@ pub fn follow(main: &AppWindow, client: &Client, wanted: Vec<Secondary>) {
                 Some(o) if o.spec == spec => {}
                 Some(o) => {
                     o.window.set_has_dashboard(spec.dashboard);
+                    o.window.set_view_area(crate::view_area(spec.view_area));
                     if let Some(t) = o.fullscreen.as_mut() {
                         t.apply(o.window.window(), spec.kiosk);
                     }

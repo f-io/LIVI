@@ -608,6 +608,21 @@ pub mod tests {
     }
 
     #[test]
+    fn a_screen_view_area_edge_changes_alone_and_leaves_the_projection() {
+        let before = defaults();
+        assert_eq!(before.view_area.main.top, 0);
+        let next = apply_patch(
+            &before,
+            &json!({ "viewArea": { "cluster": { "left": 40 } } }),
+        )
+        .unwrap();
+        assert_eq!(next.view_area.cluster.left, 40);
+        assert_eq!(next.view_area.cluster.top, 0);
+        assert_eq!(next.view_area.main, before.view_area.main);
+        assert_eq!(next.cluster_view_area_left, before.cluster_view_area_left);
+    }
+
+    #[test]
     fn null_clears_only_optional_fields() {
         let next = apply_patch(&defaults(), &json!({ "primaryColorDark": null })).unwrap();
         assert_eq!(next.primary_color_dark, None);

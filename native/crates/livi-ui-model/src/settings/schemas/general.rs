@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+use super::video;
 use crate::settings::node::{
     Choice, Condition, CustomPage, Label, Node, OnPick, OptionSource, OptionValue, Radio, Screen,
     Shown, choice, number_choice,
@@ -127,6 +128,35 @@ fn window_size_page(width: Node, height: Node) -> Node {
     )
     .icon("windowSize")
     .disabled(Condition::DisplaysSettable)
+}
+
+fn view_area_page(screen: Screen) -> Node {
+    let (top, bottom, left, right) = match screen {
+        Screen::Main => (
+            ("viewArea.main.top", "Main Screen View Area Top"),
+            ("viewArea.main.bottom", "Main Screen View Area Bottom"),
+            ("viewArea.main.left", "Main Screen View Area Left"),
+            ("viewArea.main.right", "Main Screen View Area Right"),
+        ),
+        Screen::Cluster => (
+            ("viewArea.cluster.top", "Cluster Screen View Area Top"),
+            ("viewArea.cluster.bottom", "Cluster Screen View Area Bottom"),
+            ("viewArea.cluster.left", "Cluster Screen View Area Left"),
+            ("viewArea.cluster.right", "Cluster Screen View Area Right"),
+        ),
+        Screen::Aux => (
+            ("viewArea.aux.top", "Aux Screen View Area Top"),
+            ("viewArea.aux.bottom", "Aux Screen View Area Bottom"),
+            ("viewArea.aux.left", "Aux Screen View Area Left"),
+            ("viewArea.aux.right", "Aux Screen View Area Right"),
+        ),
+    };
+    video::view_area(vec![
+        video::top(top.0, top.1),
+        video::bottom(bottom.0, bottom.1),
+        video::left(left.0, left.1),
+        video::right(right.0, right.1),
+    ])
 }
 
 fn fullscreen(path: &'static str) -> Node {
@@ -299,6 +329,7 @@ fn screen_settings() -> Node {
                                 "Main Screen Height",
                             ),
                         ),
+                        view_area_page(Screen::Main),
                         fullscreen("kiosk.main"),
                         touch_page(Screen::Main),
                     ],
@@ -340,6 +371,7 @@ fn screen_settings() -> Node {
                                 "Cluster Screen Height",
                             ),
                         ),
+                        view_area_page(Screen::Cluster),
                         fullscreen("kiosk.cluster"),
                         touch_page(Screen::Cluster),
                     ],
@@ -381,6 +413,7 @@ fn screen_settings() -> Node {
                                 "Aux Screen Height",
                             ),
                         ),
+                        view_area_page(Screen::Aux),
                         fullscreen("kiosk.aux"),
                         touch_page(Screen::Aux),
                     ],

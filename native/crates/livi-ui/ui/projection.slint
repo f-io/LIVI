@@ -3,7 +3,7 @@
 // Additional terms: see NOTICE
 
 import { Theme } from "theme.slint";
-import { ViewAreaMask, MaskData } from "mask.slint";
+import { ViewArea, ViewAreaMask, MaskData } from "mask.slint";
 import { VideoControls } from "video_controls.slint";
 
 export enum TouchPhase { down, move, up, cancel }
@@ -14,6 +14,7 @@ export component ProjectionPage inherits Rectangle {
     in property <bool> streaming;
     in property <bool> waiting;
     in property <MaskData> mask;
+    in property <ViewArea> view-area;
     in property <image> idle-icon;
     in property <bool> video-shown;
     in property <bool> video-playing;
@@ -57,8 +58,10 @@ export component ProjectionPage inherits Rectangle {
     }
 
     if root.streaming && root.video-shown: VideoControls {
-        width: root.width;
-        height: root.height;
+        x: root.view-area.left * 1phx;
+        y: root.view-area.top * 1phx;
+        width: max(1px, root.width - (root.view-area.left + root.view-area.right) * 1phx);
+        height: max(1px, root.height - (root.view-area.top + root.view-area.bottom) * 1phx);
         playing: root.video-playing;
         elapsed-ms: root.video-elapsed-ms;
         total-ms: root.video-total-ms;

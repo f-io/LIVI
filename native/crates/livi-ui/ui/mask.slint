@@ -14,6 +14,13 @@ export struct MaskData {
     right: int,
 }
 
+export struct ViewArea {
+    top: int,
+    bottom: int,
+    left: int,
+    right: int,
+}
+
 export component ViewAreaMask inherits Rectangle {
     in property <MaskData> mask;
     property <float> w: max(1, root.mask.width);

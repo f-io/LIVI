@@ -33,6 +33,7 @@ pub enum Update {
     PhoneName(String),
     Camera(bool),
     MainMask(Option<Mask>),
+    ViewArea(livi_core_proto::config::ViewArea),
     Fonts(Vec<String>),
     Video(Option<VideoPlayback>),
 }
@@ -53,6 +54,7 @@ pub struct Follow {
     phones: overlay::Phone,
     started: bool,
     main_mask: Option<Option<Mask>>,
+    view_area: Option<livi_core_proto::config::ViewArea>,
     fonts: Option<Vec<String>>,
     video: Option<Option<VideoPlayback>>,
 }
@@ -106,6 +108,11 @@ impl Follow {
             if self.look.as_ref() != Some(&next) {
                 self.look = Some(next.clone());
                 out.push(Update::Look(next));
+            }
+            let area = state.config.view_area.main;
+            if self.view_area != Some(area) {
+                self.view_area = Some(area);
+                out.push(Update::ViewArea(area));
             }
             let kiosk = state.config.kiosk.main;
             if self.kiosk != Some(kiosk) {

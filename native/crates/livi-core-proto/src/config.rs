@@ -143,6 +143,7 @@ pub struct Config {
 
     pub screen_width_mm: PerScreen<u32>,
     pub screen_height_mm: PerScreen<u32>,
+    pub view_area: PerScreen<ViewArea>,
 
     pub display_gamma: f64,
     pub display_contrast: f64,
@@ -359,6 +360,14 @@ impl EvConnectorType {
             .find(|(n, _)| n.eq_ignore_ascii_case(name.trim()))
             .map(|(_, t)| *t)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ViewArea {
+    pub top: u32,
+    pub bottom: u32,
+    pub left: u32,
+    pub right: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -633,6 +642,7 @@ pub fn defaults() -> Config {
         display_connector: PerScreen::default(),
         screen_width_mm: PerScreen::default(),
         screen_height_mm: PerScreen::default(),
+        view_area: PerScreen::default(),
         display_gamma: 1.0,
         display_contrast: 1.0,
         display_color_r: 1.0,
