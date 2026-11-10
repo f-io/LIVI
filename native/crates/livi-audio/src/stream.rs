@@ -75,6 +75,9 @@ pub enum Codec {
     Lpcm,
     PcmLe,
     AacRaw,
+    AacEld,
+    Alac,
+    Alac24,
 }
 
 fn aac_freq_index(clock_rate: u32) -> u16 {
@@ -101,6 +104,34 @@ pub fn lpcm_caps(codec: Codec, clock_rate: u32, channels: u8) -> String {
     format!("audio/x-raw,format={format},layout=interleaved,rate={clock_rate},channels={channels}")
 }
 
+const AOT_ESCAPE: u32 = 31;
+const AOT_ER_AAC_ELD: u32 = 39;
+const ALAC_FRAMES: u32 = 352;
+
+fn eld_config(clock_rate: u32, channels: u8) -> String {
+    let frame_length_480 = 1;
+    let config = (AOT_ESCAPE << 27)
+        | ((AOT_ER_AAC_ELD - 32) << 21)
+        | (u32::from(aac_freq_index(clock_rate)) << 17)
+        | (u32::from(channels) << 13)
+        | (frame_length_480 << 12);
+    format!("{config:08x}")
+}
+
+fn alac_cookie(clock_rate: u32, channels: u8, bits: u8) -> String {
+    format!(
+        "00000024616c616300000000{ALAC_FRAMES:08x}00{bits:02x}280a0e{channels:02x}00ff0000000000000000{clock_rate:08x}"
+    )
+}
+
+pub fn alac_caps(clock_rate: u32, channels: u8, bits: u8) -> String {
+    format!(
+        "audio/x-alac,rate=(int){clock_rate},channels=(int){channels},samplesize=(int){bits},\
+         codec_data=(buffer){}",
+        alac_cookie(clock_rate, channels, bits)
+    )
+}
+
 pub fn aac_raw_caps(asc: &[u8], clock_rate: u32, channels: u8) -> String {
     let hex: String = asc.iter().map(|b| format!("{b:02x}")).collect();
     format!(
@@ -121,11 +152,16 @@ pub fn rtp_caps(codec: Codec, payload_type: u8, clock_rate: u32, channels: u8) -
         return caps;
     }
 
-    let asc = (2u16 << 11) | (aac_freq_index(clock_rate) << 7) | ((channels as u16) << 3);
+    let config = if codec == Codec::AacEld {
+        eld_config(clock_rate, channels)
+    } else {
+        let asc = (2u16 << 11) | (aac_freq_index(clock_rate) << 7) | ((channels as u16) << 3);
+        format!("{asc:04x}")
+    };
     let mut caps = String::from("application/x-rtp,media=(string)audio");
     caps.push_str(&format!(",clock-rate=(int){clock_rate}"));
     caps.push_str(",encoding-name=(string)MPEG4-GENERIC,mode=(string)AAC-hbr");
-    caps.push_str(&format!(",config=(string){asc:04x}"));
+    caps.push_str(&format!(",config=(string){config}"));
     caps.push_str(",sizelength=(string)13,indexlength=(string)3,indexdeltalength=(string)3");
     caps.push_str(&format!(",payload=(int){payload_type}"));
     caps
@@ -148,6 +184,18 @@ pub fn reframe_aac(rtp: &[u8], payload_type: u8) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn airplay_decoder_configs_follow_the_sample_rate() {
+        assert_eq!(eld_config(44100, 2), "f8e85000");
+        assert_eq!(eld_config(48000, 2), "f8e65000");
+        assert_eq!(
+            alac_cookie(44100, 2, 16),
+            "00000024616c616300000000000001600010280a0e0200ff00000000000000000000ac44"
+        );
+        assert!(alac_cookie(48000, 2, 16).ends_with("0000bb80"));
+        assert!(alac_cookie(44100, 2, 24).starts_with("00000024616c61630000000000000160001828"));
+    }
+
     use super::*;
     use livi_crypto::seal;
     use std::sync::{Arc, Mutex};

@@ -450,7 +450,7 @@ async fn sleep_until(at: Option<tokio::time::Instant>) {
     }
 }
 
-fn id_text(v: Option<&Value>) -> String {
+pub(crate) fn id_text(v: Option<&Value>) -> String {
     match v {
         Some(Value::Int(n)) => n.to_string(),
         Some(Value::Real(f)) if f.fract() == 0.0 && f.abs() < 1e21 => format!("{}", *f as i64),

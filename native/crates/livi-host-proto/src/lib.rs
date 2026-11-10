@@ -69,6 +69,7 @@ pub fn encode_reply(op: u8, id: u32, rest: &[u8]) -> Vec<u8> {
 pub const PLANE_MAIN: u32 = 0x7a00_0001;
 pub const PLANE_VIDEO: u32 = 0x7a00_0002;
 pub const PLANE_CAMERA: u32 = 0x7a00_0003;
+pub const PLANE_AIRPLAY: u32 = 0x7a00_0004;
 pub const PLANE_CLUSTER_RECV: u32 = 0x7a00_0010;
 pub const CLUSTER_RECV_ID: u32 = 0x7a00_0010;
 pub const CLUSTER_PLANE_MIN: u32 = 0x7a00_0011;
@@ -90,6 +91,7 @@ pub const SCREENS: [&str; 3] = ["main", "cluster", "aux"];
 pub const MAIN_TAG: &str = "main";
 pub const VIDEO_TAG: &str = "video";
 pub const CAMERA_TAG: &str = "camera";
+pub const AIRPLAY_TAG: &str = "airplay";
 
 pub fn cluster_tag(screen: &str) -> String {
     format!("cluster-{screen}")
@@ -104,6 +106,9 @@ pub fn plane_place(id: u32) -> Option<(String, &'static str)> {
     }
     if id == PLANE_CAMERA {
         return Some((CAMERA_TAG.into(), SCREENS[0]));
+    }
+    if id == PLANE_AIRPLAY {
+        return Some((AIRPLAY_TAG.into(), SCREENS[0]));
     }
     let screen = SCREENS.get(id.checked_sub(CLUSTER_PLANE_MIN)? as usize)?;
     Some((cluster_tag(screen), screen))
@@ -425,6 +430,7 @@ mod tests {
         assert_eq!(plane_place(PLANE_MAIN), Some(("main".into(), "main")));
         assert_eq!(plane_place(PLANE_VIDEO), Some(("video".into(), "main")));
         assert_eq!(plane_place(PLANE_CAMERA), Some(("camera".into(), "main")));
+        assert_eq!(plane_place(PLANE_AIRPLAY), Some(("airplay".into(), "main")));
         assert_eq!(
             plane_place(CLUSTER_PLANE_MIN + 1),
             Some(("cluster-cluster".into(), "cluster"))

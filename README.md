@@ -20,6 +20,7 @@ It runs on Linux desktops and embedded boards as well as on macOS and Android (e
 
 - **Apple CarPlay** (wired & wireless) on Linux, Mac and Android
 - **Android Auto** (wired & wireless) on Linux, Mac and Android - wireless on Mac requires a LIVI Link
+- **AirPlay** audio and Screen Mirroring on Linux, Mac and Android
 
 ## Native Apple CarPlay Ultra
 
@@ -395,7 +396,7 @@ See [CREDITS](CREDITS.md) for acknowledgements and prior art.
 
 ## Disclaimer
 
-_Apple and CarPlay are trademarks of Apple Inc. Android and Android Auto are trademarks of Google LLC. This project is not affiliated with or endorsed by Apple or Google. All product names, logos, and brands are the property of their respective owners._
+_Apple, AirPlay and CarPlay are trademarks of Apple Inc. Android and Android Auto are trademarks of Google LLC. This project is not affiliated with or endorsed by Apple or Google. All product names, logos, and brands are the property of their respective owners._
 
 ## License
 

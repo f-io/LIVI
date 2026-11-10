@@ -29,7 +29,10 @@ const ON_AIR_POLL: Duration = Duration::from_millis(250);
 
 pub(crate) fn wanted(cfg: &Config) -> bool {
     cfg.wifi_interface != CHOICE
-        && (cfg.wifi_dedicated_interface || cfg.wireless_cp_enabled || cfg.wireless_aa_enabled)
+        && (cfg.wifi_dedicated_interface
+            || cfg.wireless_cp_enabled
+            || cfg.wireless_aa_enabled
+            || cfg.airplay_enabled)
 }
 
 fn ap_settings(cfg: &Config) -> String {

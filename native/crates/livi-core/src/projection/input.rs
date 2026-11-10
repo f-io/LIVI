@@ -16,8 +16,13 @@ impl Projection {
     }
 
     pub(super) fn seek(&self, ms: u32) {
-        if let Some(s) = self.active().filter(|s| matches!(s.link, Link::Cp(_))) {
-            self.devices.seek(ms, s.device.bt_mac.clone());
+        let Some(s) = self.active() else {
+            return;
+        };
+        match s.link {
+            Link::Cp(_) => self.devices.seek(ms, s.device.bt_mac.clone()),
+            Link::Ap(id) => self.ap_seek(id, ms),
+            Link::Aa(_) => {}
         }
     }
 
@@ -73,7 +78,7 @@ impl Projection {
                     .collect();
                 self.aa.session(id, SessionCmd::MultiTouch(touches));
             }
-            None => {}
+            Some(Link::Ap(_)) | None => {}
         }
     }
 
@@ -107,6 +112,11 @@ impl Projection {
         match self.active().map(|s| s.link) {
             Some(Link::Cp(id)) if down => self.cp_key(id, key),
             Some(Link::Aa(id)) => self.aa_key(id, key, down),
+            Some(Link::Ap(id)) if down => {
+                if let Some(control) = key.media_control() {
+                    self.ap_media(id, control);
+                }
+            }
             _ => {}
         }
     }
@@ -129,6 +139,7 @@ impl Projection {
                     self.aa.session(id, SessionCmd::Command(cmd));
                 }
             }
+            Link::Ap(_) => {}
         }
     }
 

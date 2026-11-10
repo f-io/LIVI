@@ -9,7 +9,7 @@ use livi_core_client::Client;
 use livi_core_proto::input::Input;
 use livi_core_proto::message::Action;
 use livi_ui_model::keys::{
-    Context, Focused, HELD_GAP, Outcome, Zone, bound_to, decide, held_factor, released,
+    Context, Focused, HELD_GAP, MirrorKey, Outcome, Zone, bound_to, decide, held_factor, released,
 };
 use livi_ui_model::media::pressed;
 #[cfg(not(target_os = "android"))]
@@ -453,6 +453,19 @@ pub fn key(ui: &AppWindow, client: &Client, code: &str, down: bool, repeat: bool
         return true;
     }
     let config = client.mirror().json["config"].clone();
+    if down && crate::video_ui::mirror_on_screen(ui) {
+        match livi_ui_model::keys::mirror_key(code, &config, ui.get_mirror_shown()) {
+            MirrorKey::Leave => {
+                crate::video_ui::leave_mirror(ui);
+                return true;
+            }
+            MirrorKey::Show => {
+                crate::video_ui::wake_mirror(ui);
+                return true;
+            }
+            MirrorKey::Pass => {}
+        }
+    }
     if !down {
         if let Some(code) = released(code, &config) {
             client.input(Input::Key { code, down: false });
@@ -526,6 +539,9 @@ pub fn wire(ui: &AppWindow, client: &Client) {
             }
             winit::event::WindowEvent::CursorMoved { position, .. } => {
                 crate::cursor_ui::moved(&ui, *position);
+                if crate::video_ui::mirror_on_screen(&ui) {
+                    crate::video_ui::wake_mirror(&ui);
+                }
                 ui.invoke_wake_nav();
                 EventResult::Propagate
             }

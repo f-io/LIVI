@@ -30,6 +30,7 @@
     "wifiLinkUp": "Link ↑",
     "wirelessAaEnabled": "Android Auto sans-fil",
     "wirelessCpEnabled": "CarPlay sans-fil",
+    "airplayEnabled": "AirPlay",
     "mfi": "MFi",
     "i2cBus": "Bus I2C",
     "mfiPowerGpio": "Broche d'alimentation",

@@ -12,7 +12,7 @@ use gstreamer_audio as gst_audio;
 use gstreamer_controller as gst_controller;
 use gstreamer_controller::prelude::*;
 
-use crate::stream::{Codec, RTP_HEADER_LEN, aac_raw_caps, reframe_aac, rtp_caps};
+use crate::stream::{Codec, RTP_HEADER_LEN, aac_raw_caps, alac_caps, reframe_aac, rtp_caps};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Once};
@@ -34,6 +34,11 @@ fn decoder_chain(codec: Codec) -> Option<&'static str> {
         Codec::Lpcm | Codec::PcmLe => None,
         Codec::Opus => Some("rtpjitterbuffer latency={latency} ! rtpopusdepay ! opusdec"),
         Codec::AacRaw => Some("aacparse ! faad"),
+        Codec::Alac | Codec::Alac24 => Some("avdec_alac"),
+        Codec::AacEld => Some(
+            "rtpjitterbuffer latency={latency} ! rtpmp4gdepay ! \
+             audio/mpeg,rate={rate},channels=2 ! avdec_aac",
+        ),
         #[cfg(target_os = "linux")]
         Codec::AacLc => Some("rtpjitterbuffer latency={latency} ! rtpmp4gdepay ! aacparse ! faad"),
         #[cfg(not(target_os = "linux"))]
@@ -69,7 +74,9 @@ pub fn pipeline_desc(cfg: &Config) -> String {
         Some(chain) => {
             format!(
                 "{} ! ",
-                chain.replace("{latency}", &cfg.latency_ms.max(100).to_string())
+                chain
+                    .replace("{latency}", &cfg.latency_ms.max(100).to_string())
+                    .replace("{rate}", &cfg.clock_rate.to_string())
             )
         }
         None => String::new(),
@@ -147,6 +154,8 @@ impl Player {
             .ok()?;
         let caps = match cfg.codec {
             Codec::AacRaw => aac_raw_caps(&cfg.codec_data, cfg.clock_rate, cfg.channels),
+            Codec::Alac => alac_caps(cfg.clock_rate, cfg.channels, 16),
+            Codec::Alac24 => alac_caps(cfg.clock_rate, cfg.channels, 24),
             _ => rtp_caps(cfg.codec, cfg.payload_type, cfg.clock_rate, cfg.channels),
         };
         let caps = gst::Caps::from_str(&caps).ok()?;
@@ -269,9 +278,11 @@ impl Player {
 
     pub fn push_rtp(&self, rtp: &[u8]) -> bool {
         let packet = match self.codec {
-            Codec::AacLc => reframe_aac(rtp, self.payload_type),
+            Codec::AacLc | Codec::AacEld => reframe_aac(rtp, self.payload_type),
             Codec::Opus | Codec::AacRaw => rtp.to_vec(),
-            Codec::Lpcm | Codec::PcmLe => rtp[RTP_HEADER_LEN.min(rtp.len())..].to_vec(),
+            Codec::Lpcm | Codec::PcmLe | Codec::Alac | Codec::Alac24 => {
+                rtp[RTP_HEADER_LEN.min(rtp.len())..].to_vec()
+            }
         };
         self.appsrc
             .push_buffer(gst::Buffer::from_slice(packet))

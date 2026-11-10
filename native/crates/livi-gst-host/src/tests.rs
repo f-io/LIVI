@@ -1571,6 +1571,8 @@ fn the_codec_byte_picks_the_pipeline() {
         (1, AudioCodec::Opus),
         (2, AudioCodec::Lpcm),
         (4, AudioCodec::AacRaw),
+        (6, AudioCodec::Alac),
+        (7, AudioCodec::Alac24),
     ] {
         let mut f = Fixture::new();
         f.send(OP_AUDIO_OPEN, MUSIC, &audio_body(byte, false, ""));

@@ -5,6 +5,7 @@
 use core::ffi::c_void;
 use core::ptr::null_mut;
 use core::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::Mutex;
 
 use gstreamer as gst;
 use gstreamer::prelude::*;
@@ -26,9 +27,12 @@ unsafe extern "C" {
     );
 }
 
+const FIT: &str = "force-aspect-ratio";
+
 #[derive(Default)]
 pub struct WindowView {
     view: AtomicPtr<c_void>,
+    stretched: Mutex<Option<gst::Element>>,
 }
 
 impl WindowView {
@@ -43,6 +47,9 @@ impl WindowView {
         let mut view = null_mut();
         let overlay = unsafe { livi_attach_view(handle, rank, &mut view) };
         self.view.store(view, Ordering::Release);
+        *self.stretched.lock().unwrap_or_else(|e| e.into_inner()) = sink
+            .filter(|s| s.find_property(FIT).is_some() && !s.property::<bool>(FIT))
+            .cloned();
         if overlay == 0 {
             return;
         }
@@ -64,6 +71,10 @@ impl WindowView {
         tier_w: f64,
         tier_h: f64,
     ) {
+        if let Some(sink) = &*self.stretched.lock().unwrap_or_else(|e| e.into_inner()) {
+            let placed = vis_w > 0.0 && vis_h > 0.0 && tier_w > 0.0 && tier_h > 0.0;
+            sink.set_property(FIT, !placed);
+        }
         let view = self.view.load(Ordering::Acquire);
         if !view.is_null() {
             unsafe {
@@ -82,6 +93,10 @@ impl WindowView {
     }
 
     pub fn remove(&self) {
+        self.stretched
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
         let view = self.view.swap(null_mut(), Ordering::AcqRel);
         if !view.is_null() {
             unsafe { livi_remove_view(view) };

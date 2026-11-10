@@ -45,7 +45,7 @@ fn device(d: &DeviceView, t: &Strings) -> Row {
         local: selectable.then_some(Local::ToProjection),
         device: Some(Device {
             protocol_icon: match d.protocol {
-                Some(Protocol::Carplay) => "PhoneIphone",
+                Some(Protocol::Carplay | Protocol::Airplay) => "PhoneIphone",
                 Some(Protocol::Androidauto) => "Android",
                 None => "DirectionsCar",
             },

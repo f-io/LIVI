@@ -66,7 +66,7 @@ pub struct Wireless {
     pub cp: CpConfig,
     pub bcast: Broadcaster,
     pub state: Arc<HelperState>,
-    pub airplay_txt: Vec<String>,
+    pub airplay: crate::wired::Airplay,
     pub drop: DropLink,
     pub carplay: bool,
     pub android_auto: Option<AndroidAuto>,
@@ -108,11 +108,11 @@ pub fn session_cp(base: &CpConfig) -> CpConfig {
 }
 
 pub async fn listen(phones: Phones, hotspot: Hotspot, page: Page, ctx: Wireless) {
-    let mdns = on_air_with(&hotspot, &ctx.cp, &ctx.airplay_txt, ctx.carplay).await;
+    let mdns = on_air_with(&hotspot, &ctx.cp, &ctx.airplay, ctx.carplay).await;
     tokio::spawn(keep_on_air(
         hotspot,
         ctx.cp.clone(),
-        ctx.airplay_txt.clone(),
+        ctx.airplay.clone(),
         ctx.carplay,
         mdns,
     ));
@@ -276,9 +276,9 @@ impl Paging for Pager {
 async fn keep_on_air(
     hotspot: Hotspot,
     base: CpConfig,
-    airplay_txt: Vec<String>,
+    airplay: crate::wired::Airplay,
     carplay: bool,
-    mut mdns: Option<Responder>,
+    mut mdns: Vec<Responder>,
 ) {
     let mut retry = AP_RETRY_FIRST;
     loop {
@@ -287,19 +287,19 @@ async fn keep_on_air(
             OFF_AIR.notified().await;
             continue;
         }
-        drop(mdns.take());
+        mdns.clear();
         tokio::time::sleep(retry).await;
         retry = (retry * 2).min(AP_RETRY_LONGEST);
-        mdns = on_air_with(&hotspot, &base, &airplay_txt, carplay).await;
+        mdns = on_air_with(&hotspot, &base, &airplay, carplay).await;
     }
 }
 
 async fn on_air_with(
     hotspot: &Hotspot,
     base: &CpConfig,
-    airplay_txt: &[String],
+    airplay: &crate::wired::Airplay,
     carplay: bool,
-) -> Option<Responder> {
+) -> Vec<Responder> {
     let request = ApRequest {
         ssid: base.ssid.clone(),
         passphrase: base.passphrase.clone(),
@@ -310,11 +310,11 @@ async fn on_air_with(
         Ok(Ok(granted)) => granted,
         Ok(Err(e)) => {
             eprintln!("[wireless] no access point: {e}");
-            return None;
+            return Vec::new();
         }
         Err(e) => {
             eprintln!("[wireless] {e}");
-            return None;
+            return Vec::new();
         }
     };
     *ON_AIR.lock().unwrap_or_else(|e| e.into_inner()) = Some(OnAir {
@@ -324,13 +324,13 @@ async fn on_air_with(
     });
     let iface = granted.iface.clone();
     *GRANTED.lock().unwrap_or_else(|e| e.into_inner()) = Some(granted);
-    if !carplay {
-        return None;
+    if !carplay && airplay.mirror.is_none() {
+        return Vec::new();
     }
     let Some(address) = livi_runtime::net::wlan_link_local(&iface).and_then(|a| a.parse().ok())
     else {
-        eprintln!("[wireless] {iface} has no link-local address, CarPlay is not announced");
-        return None;
+        eprintln!("[wireless] {iface} has no link-local address, AirPlay is not announced");
+        return Vec::new();
     };
-    crate::wired::announce(&iface, address, &session_cp(base), airplay_txt)
+    crate::wired::announce(&iface, address, &session_cp(base), airplay, carplay)
 }

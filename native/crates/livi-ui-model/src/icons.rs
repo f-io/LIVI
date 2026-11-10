@@ -15,6 +15,7 @@ const SETTINGS: &[(&str, &str)] = &[
     ("dedicatedInterface", "LanOutlined"),
     ("wirelessAa", "AndroidOutlined"),
     ("wirelessCp", "PhoneIphoneOutlined"),
+    ("airplay", "TvOutlined"),
     ("autoConnect", "AutorenewOutlined"),
     ("mainScreen", "MonitorOutlined"),
     ("clusterScreen", "SpeedOutlined"),

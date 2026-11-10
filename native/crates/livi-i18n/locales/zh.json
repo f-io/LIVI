@@ -30,6 +30,7 @@
     "wifiLinkUp": "上行链路",
     "wirelessAaEnabled": "无线 Android Auto",
     "wirelessCpEnabled": "无线 CarPlay",
+    "airplayEnabled": "AirPlay",
     "mfi": "MFi",
     "i2cBus": "I2C 总线",
     "mfiPowerGpio": "电源引脚",

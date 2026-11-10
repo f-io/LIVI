@@ -6,15 +6,14 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use livi_host_proto::{
-    CAMERA_TAG, CLUSTER_PLANE_MIN, CameraOrder, MAIN_TAG, PLANE_CAMERA, PLANE_MAIN, PLANE_VIDEO,
-    SCREENS, VIDEO_TAG,
+    AIRPLAY_TAG, CAMERA_TAG, CLUSTER_PLANE_MIN, CameraOrder, MAIN_TAG, PLANE_AIRPLAY, PLANE_CAMERA,
+    PLANE_MAIN, PLANE_VIDEO, SCREENS, VIDEO_TAG,
 };
 use tokio::sync::broadcast;
 
 use crate::compositor::CompositorControl;
 use crate::gst_host::{GstHost, HostEvent, VideoCodec};
 
-const TAG: &str = MAIN_TAG;
 const SCREEN: &str = SCREENS[0];
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -68,6 +67,8 @@ struct State {
 }
 
 pub struct MainPlane {
+    id: u32,
+    tag: &'static str,
     gst: GstHost,
     comp: CompositorControl,
     state: Mutex<State>,
@@ -76,8 +77,18 @@ pub struct MainPlane {
 
 impl MainPlane {
     pub fn new(gst: GstHost, comp: CompositorControl) -> Arc<Self> {
+        Self::on(PLANE_MAIN, MAIN_TAG, gst, comp)
+    }
+
+    pub fn airplay(gst: GstHost, comp: CompositorControl) -> Arc<Self> {
+        Self::on(PLANE_AIRPLAY, AIRPLAY_TAG, gst, comp)
+    }
+
+    fn on(id: u32, tag: &'static str, gst: GstHost, comp: CompositorControl) -> Arc<Self> {
         let (created, _) = broadcast::channel(8);
         Arc::new(Self {
+            id,
+            tag,
             gst,
             comp,
             state: Mutex::new(State::default()),
@@ -113,7 +124,7 @@ impl MainPlane {
         };
         let plane = self.clone();
         tokio::spawn(async move {
-            plane.comp.claim(TAG).await;
+            plane.comp.claim(plane.tag).await;
             let data = {
                 let mut st = plane.state();
                 if st.generation != generation {
@@ -124,7 +135,7 @@ impl MainPlane {
                 st.codec = Some(codec);
                 st.codec_data.clone()
             };
-            plane.gst.create_player(PLANE_MAIN, codec, &data);
+            plane.gst.create_player(plane.id, codec, &data);
             let _ = plane.created.send(());
         });
     }
@@ -139,12 +150,12 @@ impl MainPlane {
             tier_h: 0.0,
         });
         self.comp.videocfg(
-            TAG, SCREEN, c.crop_l, c.crop_t, c.vis_w, c.vis_h, c.tier_w, c.tier_h,
+            self.tag, SCREEN, c.crop_l, c.crop_t, c.vis_w, c.vis_h, c.tier_w, c.tier_h,
         );
     }
 
     pub fn set_visible(&self, visible: bool) {
-        self.comp.videoshow(TAG, visible);
+        self.comp.videoshow(self.tag, visible);
     }
 
     pub fn dispose(&self) {
@@ -155,9 +166,9 @@ impl MainPlane {
             st.codec = None;
             std::mem::take(&mut st.started)
         };
-        self.comp.release(TAG);
+        self.comp.release(self.tag);
         if started {
-            self.gst.stop(PLANE_MAIN);
+            self.gst.stop(self.id);
         }
     }
 }

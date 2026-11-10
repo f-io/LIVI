@@ -408,6 +408,7 @@ pub struct Sessions {
 pub enum Protocol {
     Carplay,
     Androidauto,
+    Airplay,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

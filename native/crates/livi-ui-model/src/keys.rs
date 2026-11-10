@@ -241,6 +241,31 @@ pub fn decide(code: &str, ctx: Context, config: &Value) -> Outcome {
     Outcome::Ignore
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MirrorKey {
+    Show,
+    Leave,
+    Pass,
+}
+
+pub fn mirror_key(code: &str, config: &Value, shown: bool) -> MirrorKey {
+    let b = |name: &str| binding(config, name);
+    if code == or(b("cycleSession"), "KeyS") {
+        return MirrorKey::Pass;
+    }
+    let bound = |name: &str| !b(name).is_empty() && code == b(name);
+    let leave = code == "Escape"
+        || code == "Enter"
+        || code == "NumpadEnter"
+        || bound("back")
+        || bound("selectDown");
+    if shown && leave {
+        MirrorKey::Leave
+    } else {
+        MirrorKey::Show
+    }
+}
+
 pub const HELD_GAP: Duration = Duration::from_millis(600);
 
 pub fn held_factor(held: Duration) -> f32 {
@@ -279,6 +304,14 @@ mod tests {
             first: false,
             repeat: false,
         }
+    }
+
+    #[test]
+    fn a_mirror_key_first_shows_the_overlay_then_leaves() {
+        assert_eq!(mirror_key("Backspace", &config(), false), MirrorKey::Show);
+        assert_eq!(mirror_key("Backspace", &config(), true), MirrorKey::Leave);
+        assert_eq!(mirror_key("ArrowLeft", &config(), true), MirrorKey::Show);
+        assert_eq!(mirror_key("KeyS", &config(), true), MirrorKey::Pass);
     }
 
     #[test]

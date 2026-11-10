@@ -31,6 +31,9 @@ const DEVICE_ID: &str = "LIVI_CP_DEVICE_ID";
 const PUBLIC_KEY: &str = "LIVI_CP_PK";
 const PAIRING_ID: &str = "LIVI_CP_PI";
 const AIRPLAY_PORT: &str = "LIVI_CP_AIRPLAY_PORT";
+const MIRROR_PORT: &str = "LIVI_AIRPLAY_PORT";
+const MIRROR_TXT: &str = "LIVI_AIRPLAY_TXT";
+pub const MIRROR_NAME: &str = "LIVI Mirror";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HelperSockets {
@@ -85,6 +88,13 @@ pub struct HelperStart {
     pub public_key: String,
     pub pairing_id: String,
     pub airplay_port: Option<u16>,
+    pub mirror: Option<Mirror>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mirror {
+    pub port: u16,
+    pub txt: Vec<String>,
 }
 
 impl Default for HelperSettings {
@@ -149,6 +159,10 @@ impl HelperStart {
         if let Some(port) = self.airplay_port.filter(|p| *p > 0) {
             env.push((AIRPLAY_PORT, port.to_string()));
         }
+        if let Some(mirror) = &self.mirror {
+            env.push((MIRROR_PORT, mirror.port.to_string()));
+            env.push((MIRROR_TXT, mirror.txt.join("\n")));
+        }
         env.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
     }
 
@@ -188,6 +202,13 @@ impl HelperStart {
             airplay_port: var(AIRPLAY_PORT)
                 .and_then(|v| v.parse().ok())
                 .filter(|p| *p > 0),
+            mirror: var(MIRROR_PORT)
+                .and_then(|v| v.parse().ok())
+                .filter(|p| *p > 0)
+                .map(|port| Mirror {
+                    port,
+                    txt: text(MIRROR_TXT).lines().map(str::to_string).collect(),
+                }),
         }
     }
 }
@@ -221,6 +242,10 @@ mod tests {
             public_key: "ab".repeat(32),
             pairing_id: "pi-1".into(),
             airplay_port: Some(7000),
+            mirror: Some(Mirror {
+                port: 7100,
+                txt: vec!["deviceid=88:00:33:77:8C:27".into(), "acl=0".into()],
+            }),
         }
     }
 
@@ -235,6 +260,7 @@ mod tests {
         let quiet = HelperStart {
             settings: HelperSettings::default(),
             airplay_port: None,
+            mirror: None,
             ..start
         };
         assert_eq!(back(&quiet.to_env()), quiet);
@@ -245,6 +271,7 @@ mod tests {
         let start = back(&[]);
         assert_eq!(start.settings, HelperSettings::default());
         assert_eq!(start.airplay_port, None);
+        assert_eq!(start.mirror, None);
     }
 
     #[test]

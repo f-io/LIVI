@@ -99,6 +99,7 @@ pub fn payload(path: &str, active: Option<Protocol>, a: Activity, radio: Option<
     let (protocol, phone_type) = match active {
         Some(Protocol::Carplay) => (Some("cp"), Some("CarPlay")),
         Some(Protocol::Androidauto) => (Some("aa"), Some("AndroidAuto")),
+        Some(Protocol::Airplay) => (Some("ap"), Some("AirPlay")),
         None => (None, None),
     };
     Payload {

@@ -194,8 +194,9 @@ fn main_ui_surface(state: &LiviState) -> Option<WlSurface> {
 
 fn video_rank(tag: &str) -> u8 {
     match tag {
-        "camera" => 3,
-        "video" => 2,
+        "camera" => 4,
+        "video" => 3,
+        "airplay" => 2,
         "main" => 1,
         _ => 0,
     }

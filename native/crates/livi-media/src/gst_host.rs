@@ -62,6 +62,9 @@ pub enum AudioCodec {
     Pcm = 2,
     PcmLe = 3,
     AacRaw = 4,
+    AacEld = 5,
+    Alac = 6,
+    Alac24 = 7,
 }
 
 pub fn aac_raw_key(asc: &[u8]) -> [u8; 32] {

@@ -1,0 +1,64 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+import { RoundButton } from "media_parts.slint";
+
+export component MirrorControls inherits Rectangle {
+    in-out property <bool> shown;
+    in-out property <int> idle;
+    callback leave();
+
+    property <length> unit: min(root.width, root.height);
+    property <length> margin: round(root.unit * 0.05 / 1px) * 1px;
+    property <length> small: clamp(round(root.unit * 0.12 / 1px) * 1px, 44px, 72px);
+
+    function wake() {
+        root.shown = true;
+        root.idle = 0;
+    }
+
+    Timer {
+        interval: 250ms;
+        running: root.shown;
+        triggered => {
+            root.idle += 1;
+            if (root.idle >= 16) {
+                root.shown = false;
+            }
+        }
+    }
+
+    TouchArea {
+        enabled: root.shown;
+        clicked => {
+            root.shown = false;
+        }
+    }
+
+    Rectangle {
+        opacity: root.shown ? 1 : 0;
+        animate opacity { duration: 200ms; easing: ease; }
+
+        Rectangle {
+            y: 0;
+            height: root.small + 2 * root.margin;
+            background: @linear-gradient(180deg, #000000a0 0%, #00000000 100%);
+        }
+
+        RoundButton {
+            x: root.margin;
+            y: root.margin;
+            enabled: root.shown;
+            size: root.small;
+            icon-size: round(root.small * 0.46 / 1px) * 1px;
+            icon: @image-url("icons/Close.svg");
+            clicked => { root.leave(); }
+        }
+    }
+
+    TouchArea {
+        enabled: !root.shown;
+        clicked => { root.wake(); }
+    }
+}

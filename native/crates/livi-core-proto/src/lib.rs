@@ -4,6 +4,7 @@
 
 pub mod aa_events;
 pub mod config;
+pub mod features;
 pub mod frame;
 pub mod gnss;
 pub mod helper;

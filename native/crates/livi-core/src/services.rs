@@ -10,11 +10,11 @@ use livi_core_proto::aa_events::{AaHelperEvent, RemoteCommand};
 use livi_core_proto::config::Config;
 use livi_core_proto::helper::HelperSockets;
 use livi_core_proto::message::MediaControl;
-use livi_core_proto::state::{Front, Screen, State};
+use livi_core_proto::state::{Front, Protocol, Screen, State};
 use livi_cp::helper_sock::HelperSock;
 use livi_cp::pairings::Pairings;
 use livi_cp::stack::StackCtx;
-use livi_host_proto::{PLANE_CLUSTER_RECV, PLANE_MAIN};
+use livi_host_proto::{PLANE_AIRPLAY, PLANE_CLUSTER_RECV, PLANE_MAIN};
 use livi_session_io::line::Feed;
 use tokio::net::TcpListener;
 use tokio::process::Child;
@@ -151,6 +151,20 @@ impl Services {
         let airplay_port = airplay
             .as_ref()
             .map(|l| livi_cp::net::local_port(l.local_addr()));
+        let receiver = cfg
+            .airplay_enabled
+            .then(|| {
+                crate::airplay::bind(
+                    &identity,
+                    &accessory,
+                    match cfg.car_play_source_version.trim() {
+                        "" => livi_core_proto::config::defaults().car_play_source_version,
+                        s => s.to_string(),
+                    },
+                )
+            })
+            .flatten();
+        let mirror = receiver.as_ref().map(crate::airplay::Receiver::mirror);
         let helper_restart = Arc::new(Notify::new());
         let applied = hub.applied();
         let env_identity = identity.clone();
@@ -164,7 +178,10 @@ impl Services {
                 helper,
                 start: Box::new(move || {
                     let cfg = applied.borrow().clone();
-                    helper::helper_start(&cfg, &env_identity, &env_accessory, airplay_port)
+                    livi_core_proto::helper::HelperStart {
+                        mirror: mirror.clone(),
+                        ..helper::helper_start(&cfg, &env_identity, &env_accessory, airplay_port)
+                    }
                 }),
                 restart: helper_restart.clone(),
                 use_sudo: cfg!(target_os = "linux"),
@@ -201,6 +218,25 @@ impl Services {
         }
         let plane = MainPlane::new(gst.clone(), ctrl.clone());
         let clusters = ClusterPlanes::new(gst.clone(), ctrl.clone());
+        let airplay_plane = MainPlane::airplay(gst.clone(), ctrl.clone());
+        let (airplay_events_tx, airplay_events) = mpsc::unbounded_channel();
+        let airplay_audio = crate::airplay::ApAudio::new(gst.clone());
+        if let Some(receiver) = receiver {
+            crate::airplay::start(
+                receiver,
+                user_data,
+                &identity,
+                &paths.helper.carplay,
+                gst.clone(),
+                crate::airplay::Airplay {
+                    plane: airplay_plane.clone(),
+                    audio: airplay_audio.clone(),
+                    events: airplay_events_tx,
+                    hub: hub.clone(),
+                    settings: settings.clone(),
+                },
+            );
+        }
 
         let (host_ready, host_ready_rx) = watch::channel(compositor.is_none());
         let display = compositor.is_some().then(|| ctrl.ui());
@@ -248,6 +284,8 @@ impl Services {
         }
 
         let carplay = CarPlay {
+            airplay_events,
+            airplay_audio,
             listener: airplay,
             identity,
             accessory,
@@ -272,10 +310,11 @@ impl Services {
             state.clone(),
             ctrl,
             plane.clone(),
+            airplay_plane.clone(),
             clusters.clone(),
         ));
         tokio::spawn(follow_audio_output(state.clone(), gst.clone()));
-        tokio::spawn(follow_host(gst, plane, clusters, state));
+        tokio::spawn(follow_host(gst, plane, airplay_plane, clusters, state));
 
         Self {
             helper,
@@ -313,6 +352,8 @@ fn carplay_listener() -> Option<TcpListener> {
 }
 
 struct CarPlay {
+    airplay_events: mpsc::UnboundedReceiver<crate::projection::ApEvent>,
+    airplay_audio: Arc<crate::airplay::ApAudio>,
     listener: Option<TcpListener>,
     identity: livi_cp::identity::Identity,
     accessory: String,
@@ -411,7 +452,7 @@ impl CarPlay {
             settings: self.settings,
             themes: self.user_data.join("themes"),
         };
-        let projection = Projection::new(
+        let mut projection = Projection::new(
             hub,
             drivers,
             plane,
@@ -420,6 +461,7 @@ impl CarPlay {
             devices,
             wants,
         );
+        projection.hear_airplay(self.airplay_events, self.airplay_audio);
         tokio::spawn(projection.run(events, aa_events, asks, state));
     }
 }
@@ -523,6 +565,7 @@ async fn follow_state(
     mut state: watch::Receiver<State>,
     ctrl: CompositorControl,
     plane: Arc<MainPlane>,
+    airplay: Arc<MainPlane>,
     clusters: Arc<ClusterPlanes>,
 ) {
     let mut last: Option<State> = None;
@@ -566,8 +609,16 @@ async fn follow_state(
         {
             ctrl.aspect("main", Some(stream(&now.config)));
         }
-        if last.as_ref().is_none_or(|l| l.front.main != now.front.main) {
-            plane.set_visible(now.front.main == Front::Projection);
+        let shown = |s: &State| {
+            (
+                s.front.main == Front::Projection,
+                s.sessions.active == Some(Protocol::Airplay),
+            )
+        };
+        if last.as_ref().is_none_or(|l| shown(l) != shown(&now)) {
+            let (projection, mirrored) = shown(&now);
+            plane.set_visible(projection && !mirrored);
+            airplay.set_visible(projection && mirrored);
         }
         if last.as_ref().is_none_or(|l| l.front != now.front) {
             let f = &now.front;
@@ -657,6 +708,7 @@ async fn follow_audio_output(mut state: watch::Receiver<State>, gst: GstHost) {
 async fn follow_host(
     gst: GstHost,
     plane: Arc<MainPlane>,
+    airplay: Arc<MainPlane>,
     clusters: Arc<ClusterPlanes>,
     state: watch::Receiver<State>,
 ) {
@@ -670,6 +722,14 @@ async fn follow_host(
             }) => {
                 plane.prepare(codec, atom);
                 place_carplay(&plane, &state.borrow().config);
+            }
+            Ok(HostEvent::Config {
+                plane: PLANE_AIRPLAY,
+                codec,
+                atom,
+            }) => {
+                airplay.prepare(codec, atom);
+                airplay.set_crop(None);
             }
             Ok(HostEvent::Config {
                 plane: PLANE_CLUSTER_RECV,

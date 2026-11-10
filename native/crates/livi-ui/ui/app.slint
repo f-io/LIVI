@@ -34,6 +34,9 @@ export component AppWindow inherits Window {
     in property <bool> video-playing;
     in property <float> video-elapsed-ms;
     in property <float> video-total-ms;
+    in property <bool> mirrored;
+    in-out property <bool> mirror-shown: true;
+    in-out property <int> mirror-idle;
     in property <bool> camera-found;
     in property <string> no-camera: "No camera found";
 
@@ -56,6 +59,7 @@ export component AppWindow inherits Window {
     callback video-play-pause();
     callback video-seek(float);
     callback video-close();
+    callback mirror-leave();
     callback play-pause();
     callback prev();
     callback next();
@@ -166,6 +170,10 @@ export component AppWindow inherits Window {
                     }
                 }
                 video-close => { root.video-close(); }
+                mirrored: root.mirrored;
+                mirror-shown <=> root.mirror-shown;
+                mirror-idle <=> root.mirror-idle;
+                mirror-leave => { root.mirror-leave(); }
             }
             if root.page == Page.media: MediaPage {
                 width: parent.width;

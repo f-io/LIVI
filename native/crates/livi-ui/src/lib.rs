@@ -219,6 +219,7 @@ fn apply(ui: &AppWindow, update: Update) {
         Update::MainMask(mask) => ui.set_main_mask(dashboard_ui::mask_data(mask)),
         Update::ViewArea(area) => ui.set_view_area(view_area(area)),
         Update::Video(video) => video_ui::show(ui, video),
+        Update::Mirrored(mirrored) => video_ui::mirrored(ui, mirrored),
         Update::Fonts(paths) => {
             if fonts::register(&paths) {
                 let lang = settings_ui::language();
@@ -280,7 +281,7 @@ fn open_path(ui: &AppWindow, path: &str) {
     }
 }
 
-fn choose(ui: &AppWindow, page: Page) {
+pub(crate) fn choose(ui: &AppWindow, page: Page) {
     ui.set_page(page);
     CLIENT.with_borrow(|c| {
         if let Some(c) = c {

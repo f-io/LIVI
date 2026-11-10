@@ -36,6 +36,7 @@ pub fn helper_start(
         public_key: identity.pk_hex(),
         pairing_id: identity.pairing_id.clone(),
         airplay_port,
+        mirror: None,
     }
 }
 

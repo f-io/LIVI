@@ -239,7 +239,8 @@ impl Projection {
             HelperKind::NowPlaying(patch) => patch.apply_to(&mut entry.now_playing),
             _ => return,
         }
-        if self.is_active(link) {
+        let beside_airplay = self.active().is_some_and(|a| matches!(a.link, Link::Ap(_)));
+        if self.is_active(link) || beside_airplay {
             self.publish();
         }
     }

@@ -17,6 +17,7 @@ pub struct Config {
 
     pub wireless_aa_enabled: bool,
     pub wireless_cp_enabled: bool,
+    pub airplay_enabled: bool,
 
     pub wifi_password: String,
     pub bt_adapter: String,
@@ -539,6 +540,7 @@ pub fn defaults() -> Config {
         debug_logging: false,
         wireless_aa_enabled: false,
         wireless_cp_enabled: false,
+        airplay_enabled: false,
         wifi_password: "12345678".into(),
         bt_adapter: "hci0".into(),
         wifi_interface: "wlan0".into(),

@@ -11,11 +11,11 @@
   },
   "info": {
     "len": 5378,
-    "sha256": "eeb8b0116f3e51e4eb30f2db1bf49e3301e0ce4c8705b08bf55dc19c81c74dc5"
+    "sha256": "7c7827af17bc9469d4cb84aa9e7ffcf2aa36527a045e99a1376d97be9b95605e"
   },
   "infoNoAudio": {
     "len": 2690,
-    "sha256": "859c908bb0eef6f19144f36b113bf098ee8d51aca25dec2192ef16bbdcb1970a"
+    "sha256": "c674c555ae88f9b74a76dc274158889e2ab8bf106db97cc62adf8b6d371eacd1"
   },
   "touch": "00016500cf02010003000400",
   "knob": "018104ff",

@@ -105,7 +105,7 @@ pub fn media_ask(
     let stations = !dab.stations.is_empty() || !fm.stations.is_empty();
     let take = match phone {
         Some(Protocol::Carplay) => false,
-        Some(Protocol::Androidauto) => playing,
+        Some(Protocol::Androidauto | Protocol::Airplay) => playing,
         None => dab.active || fm.active || stations,
     };
     if !take {

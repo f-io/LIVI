@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+pub mod airplay;
 pub mod auth_setup;
 pub mod bplist;
 pub mod control_cipher;

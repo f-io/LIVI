@@ -10,6 +10,8 @@ use std::process::Stdio;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
+use livi_core_proto::features::{self, CARPLAY_FEATURES};
+use livi_core_proto::helper::{MIRROR_NAME, Mirror};
 use livi_core_proto::helper_events::{DeviceSource, HelperEvent, HelperKind};
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -23,6 +25,7 @@ const CARPLAY_CTRL: &str = "_carplay-ctrl._tcp";
 
 pub struct Bonjour {
     publisher: Arc<Mutex<Option<Child>>>,
+    mirror: Option<Child>,
     device_id: Arc<Mutex<String>>,
     source_version: String,
     bcast: Broadcaster,
@@ -59,7 +62,7 @@ fn receiver_id(device_id: &str) -> Option<u64> {
 pub fn txt_records(device_id: &str, source_version: &str, pk: &str, pi: &str) -> Vec<String> {
     let mut txt = vec![
         format!("deviceid={device_id}"),
-        "features=0x44540380,0x61".to_string(),
+        format!("features={}", features::txt(CARPLAY_FEATURES)),
         "flags=0x4".to_string(),
         "model=LIVI".to_string(),
         format!("srcvers={source_version}"),
@@ -103,15 +106,22 @@ impl Drop for Bonjour {
         if let Some(mut publisher) = self.publisher.lock().unwrap().take() {
             let _ = publisher.start_kill();
         }
+        if let Some(mirror) = self.mirror.as_mut() {
+            let _ = mirror.start_kill();
+        }
     }
 }
 
 fn publish(record: &Record, device_id: &str) -> std::io::Result<Child> {
     let txt = txt_records(device_id, &record.source_version, &record.pk, &record.pi);
-    let port = record.airplay_port.to_string();
+    spawn("LIVI", record.airplay_port, &txt)
+}
+
+fn spawn(name: &str, port: u16, txt: &[String]) -> std::io::Result<Child> {
+    let port = port.to_string();
     #[cfg(target_os = "macos")]
     {
-        let mut args = vec!["-R", "LIVI", AIRPLAY_SERVICE, ".", port.as_str()];
+        let mut args = vec!["-R", name, AIRPLAY_SERVICE, ".", port.as_str()];
         args.extend(txt.iter().map(String::as_str));
         let mut running = DNS_SD.lock().unwrap();
         let pids = running
@@ -127,7 +137,7 @@ fn publish(record: &Record, device_id: &str) -> std::io::Result<Child> {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let mut args = vec!["LIVI", AIRPLAY_SERVICE, port.as_str()];
+        let mut args = vec![name, AIRPLAY_SERVICE, port.as_str()];
         args.extend(txt.iter().map(String::as_str));
         Command::new(crate::sys::tool("avahi-publish-service"))
             .args(&args)
@@ -152,6 +162,7 @@ impl Bonjour {
         source_version: String,
         pk: String,
         pi: String,
+        mirror: Option<Mirror>,
         bcast: Broadcaster,
     ) -> std::io::Result<Self> {
         reap(&format!("{PUBLISHER}.*{AIRPLAY_SERVICE}"));
@@ -165,9 +176,23 @@ impl Bonjour {
         };
         let publisher = publish(&record, &device_id)?;
         println!("[cp] published {AIRPLAY_SERVICE} port={airplay_port} deviceid={device_id}");
+        let mirror = mirror.and_then(|m| match spawn(MIRROR_NAME, m.port, &m.txt) {
+            Ok(child) => {
+                println!(
+                    "[airplay] published {AIRPLAY_SERVICE} {MIRROR_NAME:?} port={}",
+                    m.port
+                );
+                Some(child)
+            }
+            Err(e) => {
+                eprintln!("[airplay] {AIRPLAY_SERVICE} {MIRROR_NAME:?} not published: {e}");
+                None
+            }
+        });
 
         let bonjour = Self {
             publisher: Arc::new(Mutex::new(Some(publisher))),
+            mirror,
             device_id: Arc::new(Mutex::new(device_id)),
             source_version,
             bcast,

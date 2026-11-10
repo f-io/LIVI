@@ -269,19 +269,23 @@ fn serve(start: HelperStart, host: Host) -> Held {
         }
     }
     #[cfg(target_os = "android")]
-    let airplay_txt = livi_runtime::bonjour::txt_records(
-        &livi_runtime::bringup::accessory_id(&cp).unwrap_or_default(),
-        &cp.source_version,
-        &start.public_key,
-        &start.pairing_id,
-    );
+    let airplay = crate::wired::Airplay {
+        txt: livi_runtime::bonjour::txt_records(
+            &livi_runtime::bringup::accessory_id(&cp).unwrap_or_default(),
+            &cp.source_version,
+            &start.public_key,
+            &start.pairing_id,
+        ),
+        mirror: start.mirror.clone(),
+    };
     #[cfg(target_os = "android")]
-    if over_dongle && carplay {
+    if over_dongle && (carplay || airplay.mirror.is_some()) {
         tokio::spawn(announce_on_link(
             link.clone(),
             host.tunnel.clone(),
             cp.clone(),
-            airplay_txt.clone(),
+            airplay.clone(),
+            carplay,
         ));
     }
     #[cfg(target_os = "android")]
@@ -327,7 +331,7 @@ fn serve(start: HelperStart, host: Host) -> Held {
                 cp,
                 bcast: bcast.clone(),
                 state: state.clone(),
-                airplay_txt: airplay_txt.clone(),
+                airplay: airplay.clone(),
                 drop: host.drop_phone.clone(),
                 carplay,
                 android_auto,
@@ -396,7 +400,7 @@ fn serve(start: HelperStart, host: Host) -> Held {
         #[cfg(target_os = "android")]
         tunnel: host.tunnel.clone(),
         #[cfg(target_os = "android")]
-        airplay_txt,
+        airplay,
     };
     #[cfg(any(target_os = "linux", target_os = "android"))]
     tokio::spawn(crate::wired::watch(wired));
@@ -423,6 +427,7 @@ fn announce(cp: &CpConfig, start: &HelperStart, bcast: Broadcaster) -> Option<Bo
         cp.source_version.clone(),
         start.public_key.clone(),
         start.pairing_id.clone(),
+        start.mirror.clone(),
         bcast,
     ) {
         Ok(bonjour) => Some(bonjour),
@@ -438,15 +443,17 @@ async fn announce_on_link(
     link: Arc<LinkPresence>,
     tunnel: Arc<iap2_usbmux::Tunnel>,
     cp: livi_runtime::bringup::CpConfig,
-    txt: Vec<String>,
+    airplay: crate::wired::Airplay,
+    carplay: bool,
 ) {
-    let mut held: Option<(String, Option<livi_mdns::responder::Responder>)> = None;
+    let mut held: Option<(String, Vec<livi_mdns::responder::Responder>)> = None;
     loop {
         let ifname = link.is_present().then(|| tunnel.ifname()).flatten();
         if held.as_ref().map(|(name, _)| name) != ifname.as_ref() {
             held = ifname.map(|name| {
-                let responder = crate::wired::announce(&name, tunnel.address(), &cp, &txt);
-                (name, responder)
+                let responders =
+                    crate::wired::announce(&name, tunnel.address(), &cp, &airplay, carplay);
+                (name, responders)
             });
         }
         tokio::time::sleep(LINK_ANNOUNCE_CHECK).await;

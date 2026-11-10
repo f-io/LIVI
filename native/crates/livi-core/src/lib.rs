@@ -14,6 +14,7 @@ use tokio::net::UnixListener;
 use tokio::sync::Notify;
 
 mod aa_telemetry;
+mod airplay;
 mod android_auto;
 #[cfg_attr(target_os = "android", path = "audio_devices/android.rs")]
 mod audio_devices;

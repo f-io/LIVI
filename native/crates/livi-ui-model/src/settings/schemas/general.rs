@@ -288,6 +288,11 @@ fn connections() -> Node {
             )
             .icon("wirelessCp"),
             Node::checkbox(
+                Label::new("settings.airplayEnabled", "AirPlay"),
+                "airplayEnabled",
+            )
+            .icon("airplay"),
+            Node::checkbox(
                 Label::new("settings.autoConnect", "Auto Connect"),
                 "autoConn",
             )

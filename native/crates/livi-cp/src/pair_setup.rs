@@ -44,6 +44,10 @@ impl PairSetup {
         self.complete
     }
 
+    pub fn session_key(&self) -> Option<[u8; 64]> {
+        self.session_key
+    }
+
     pub fn handle(&mut self, body: &[u8], identity: &Identity, pairings: &Pairings) -> Vec<u8> {
         let msg = tlv8::decode(body);
         let state = msg.get(&tlv::STATE).and_then(|s| s.first().copied());

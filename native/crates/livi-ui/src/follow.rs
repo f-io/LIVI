@@ -4,7 +4,7 @@
 
 use std::collections::BTreeSet;
 
-use livi_core_proto::state::{Front, State, VideoPlayback};
+use livi_core_proto::state::{Front, Protocol, State, VideoPlayback};
 use livi_ui_model::shell::{Look, look};
 
 use crate::PhoneState;
@@ -36,6 +36,7 @@ pub enum Update {
     ViewArea(livi_core_proto::config::ViewArea),
     Fonts(Vec<String>),
     Video(Option<VideoPlayback>),
+    Mirrored(bool),
 }
 
 #[derive(Default)]
@@ -57,6 +58,7 @@ pub struct Follow {
     view_area: Option<livi_core_proto::config::ViewArea>,
     fonts: Option<Vec<String>>,
     video: Option<Option<VideoPlayback>>,
+    mirrored: Option<bool>,
 }
 
 impl Follow {
@@ -94,6 +96,11 @@ impl Follow {
             if self.phone != Some(phone) {
                 self.phone = Some(phone);
                 out.push(Update::Phone(phone));
+            }
+            let mirrored = state.sessions.active == Some(Protocol::Airplay);
+            if self.mirrored != Some(mirrored) {
+                self.mirrored = Some(mirrored);
+                out.push(Update::Mirrored(mirrored));
             }
         }
         if hit("front") {

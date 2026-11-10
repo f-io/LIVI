@@ -96,6 +96,10 @@ impl Entry {
         .unwrap_or_default()
     }
 
+    pub fn name(&self) -> Option<&str> {
+        self.stored.name.as_deref()
+    }
+
     pub fn bt_mac(&self) -> Option<&str> {
         self.stored.bt_mac.as_deref()
     }
@@ -322,7 +326,7 @@ impl Registry {
         let protocol = match seen.protocol {
             Some(Protocol::Androidauto) => "androidauto",
             Some(Protocol::Carplay) => "carplay",
-            None => s.protocol.as_deref().unwrap_or("carplay"),
+            Some(Protocol::Airplay) | None => s.protocol.as_deref().unwrap_or("carplay"),
         };
         s.protocol = Some(protocol.into());
         if seen.wired {
@@ -447,6 +451,7 @@ fn wake_uuid(protocol: Option<Protocol>) -> Option<String> {
     match protocol? {
         Protocol::Carplay => Some(IAP_PROFILE_UUID.into()),
         Protocol::Androidauto => Some(HFP_AG_UUID.into()),
+        Protocol::Airplay => None,
     }
 }
 
@@ -470,6 +475,7 @@ impl Paging {
         match protocol {
             Some(Protocol::Carplay) => self.carplay,
             Some(Protocol::Androidauto) => self.android_auto,
+            Some(Protocol::Airplay) => false,
             None => self.carplay || self.android_auto,
         }
     }

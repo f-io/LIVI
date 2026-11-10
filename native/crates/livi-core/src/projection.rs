@@ -28,7 +28,7 @@ use livi_cp::hid::{KnobState, media_button, telephony_button};
 use livi_cp::manager::{CallPhase, CpCmd, CpEvent, CpHandle, HelperPresence, Presence, SessionId};
 use livi_cp::stack::{AudioKind, StackCmd, Touch};
 use livi_cp::ui_sync::{self, Appearance, PhoneChoice};
-use livi_host_proto::PLANE_MAIN;
+use livi_host_proto::{PLANE_AIRPLAY, PLANE_MAIN};
 use livi_media::gst_host::HostEvent;
 use livi_media::planes::{ClusterPlanes, Crop, MainPlane};
 use serde_json::{Map, Value};
@@ -48,7 +48,10 @@ use crate::telemetry::{CLIMATE, NOTIFICATION, SOURCE};
 use crate::theme_catalog::{self, ThemeId};
 use crate::update::UpdateAsk;
 
+pub use ap::ApEvent;
+
 mod aa;
+mod ap;
 mod audio;
 mod cluster;
 mod cp;
@@ -75,6 +78,7 @@ pub enum Transport {
 pub enum Link {
     Cp(SessionId),
     Aa(AaId),
+    Ap(u64),
 }
 
 impl Link {
@@ -82,6 +86,7 @@ impl Link {
         match self {
             Link::Cp(_) => Protocol::Carplay,
             Link::Aa(_) => Protocol::Androidauto,
+            Link::Ap(_) => Protocol::Airplay,
         }
     }
 }
@@ -97,6 +102,7 @@ enum Do {
         ramp_ms: u32,
     },
     VideoActive(bool),
+    ScreenOff,
     Close,
     PowerDown,
 }
@@ -398,6 +404,9 @@ pub struct Projection {
     theme_ready: (mpsc::UnboundedSender<Theme>, mpsc::UnboundedReceiver<Theme>),
     radio: Option<mpsc::UnboundedSender<crate::radio::RadioAsk>>,
     players: players::Players,
+    ap_events: Option<mpsc::UnboundedReceiver<ApEvent>>,
+    ap_peers: HashMap<u64, ap::ApPeer>,
+    ap_audio: Option<Arc<crate::airplay::ApAudio>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -578,8 +587,20 @@ impl Projection {
             theme_ready: mpsc::unbounded_channel(),
             radio: None,
             players: players::Players::default(),
+            ap_events: None,
+            ap_peers: HashMap::new(),
+            ap_audio: None,
             hub,
         }
+    }
+
+    pub fn hear_airplay(
+        &mut self,
+        events: mpsc::UnboundedReceiver<ApEvent>,
+        audio: Arc<crate::airplay::ApAudio>,
+    ) {
+        self.ap_events = Some(events);
+        self.ap_audio = Some(audio);
     }
 
     pub async fn run(
@@ -597,6 +618,10 @@ impl Projection {
             .take()
             .unwrap_or_else(|| mpsc::unbounded_channel().1);
         let mut themes = std::mem::replace(&mut self.theme_ready.1, mpsc::unbounded_channel().1);
+        let mut ap_events = self
+            .ap_events
+            .take()
+            .unwrap_or_else(|| mpsc::unbounded_channel().1);
         self.follow_theme(&self.config_seen.clone());
         self.devices.ap_ready(*asks.ap_ready.borrow_and_update());
         self.activity = Some(asks.activity);
@@ -610,6 +635,7 @@ impl Projection {
                     None => return,
                 },
                 Some(ev) = aa_events.recv() => self.on_aa(ev),
+                Some(ev) = ap_events.recv() => self.on_ap(ev),
                 Some(answer) = back.recv() => self.on_back(answer),
                 Some(theme) = themes.recv() => self.theme_fetched(theme),
                 _ = keep.tick() => self.keep_links(),
@@ -690,6 +716,10 @@ impl Projection {
                         println!("[core] main video: first frame at the decoder");
                         self.main_video_shown();
                     }
+                    Ok(HostEvent::Started { plane: PLANE_AIRPLAY }) => {
+                        println!("[core] airplay video: first frame at the decoder");
+                        self.ap_video_shown();
+                    }
                     Ok(_) => {}
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         eprintln!("[core] missed {n} gst-host events");
@@ -749,6 +779,7 @@ impl Projection {
                     self.cp.stack(id, StackCmd::VideoActive(on));
                     self.cp.stack(id, StackCmd::AudioActive(on));
                 }
+                Do::ScreenOff => self.cp.stack(id, StackCmd::VideoActive(false)),
                 Do::Close | Do::PowerDown => self.cp.send(CpCmd::Close { id }),
             },
             Link::Aa(id) => match what {
@@ -773,8 +804,22 @@ impl Projection {
                     );
                 }
                 Do::VideoActive(on) => self.aa.session(id, SessionCmd::VideoActive(on)),
+                Do::ScreenOff => self.aa.session(id, SessionCmd::VideoActive(false)),
                 Do::Close => self.aa.send(AaCmd::Close { id }),
                 Do::PowerDown => self.aa.session(id, SessionCmd::PowerDown),
+            },
+            Link::Ap(id) => match what {
+                Do::Close | Do::PowerDown => {
+                    if let Some(peer) = self.ap_peers.get(&id) {
+                        peer.close.notify_one();
+                    }
+                }
+                Do::Media(control) => self.ap_media(id, control),
+                Do::Keyframe
+                | Do::Home
+                | Do::Volume { .. }
+                | Do::VideoActive(_)
+                | Do::ScreenOff => {}
             },
         }
     }

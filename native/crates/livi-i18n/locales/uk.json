@@ -30,6 +30,7 @@
     "wifiLinkUp": "З'єднання ↑",
     "wirelessAaEnabled": "Бездротовий Android Auto",
     "wirelessCpEnabled": "Бездротовий CarPlay",
+    "airplayEnabled": "AirPlay",
     "mfi": "MFi",
     "i2cBus": "Шина I2C",
     "mfiPowerGpio": "Пін живлення",

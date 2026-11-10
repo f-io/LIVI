@@ -234,6 +234,13 @@ async fn find_usb_iface(udid: String, found: tokio::sync::watch::Sender<Option<S
 #[cfg(target_os = "android")]
 const AIRPLAY_NAME: &str = "LIVI";
 
+#[cfg(target_os = "android")]
+#[derive(Clone)]
+pub struct Airplay {
+    pub txt: Vec<String>,
+    pub mirror: Option<livi_core_proto::helper::Mirror>,
+}
+
 #[derive(Clone, Copy, Default)]
 pub struct Dongle {
     pub ap_mac: Option<fn() -> Option<String>>,
@@ -253,7 +260,7 @@ pub struct Wired {
     #[cfg(target_os = "android")]
     pub tunnel: Arc<iap2_usbmux::Tunnel>,
     #[cfg(target_os = "android")]
-    pub airplay_txt: Vec<String>,
+    pub airplay: Airplay,
 }
 
 async fn run_wired_session<S>(
@@ -274,7 +281,7 @@ async fn run_wired_session<S>(
     let _mdns = ncm
         .ifname()
         .zip(ncm.address())
-        .and_then(|(ifname, address)| announce(ifname, address, &cp, &ctx.airplay_txt));
+        .map(|(ifname, address)| announce(ifname, address, &cp, &ctx.airplay, true));
     if let Some(read) = ctx.dongle.ap_mac
         && let Ok(Some(mac)) = tokio::task::spawn_blocking(read).await
     {
@@ -394,28 +401,43 @@ pub(crate) fn announce(
     ifname: &str,
     address: std::net::Ipv6Addr,
     cp: &CpConfig,
-    txt: &[String],
-) -> Option<livi_mdns::responder::Responder> {
+    airplay: &Airplay,
+    carplay: bool,
+) -> Vec<livi_mdns::responder::Responder> {
+    use livi_core_proto::helper::MIRROR_NAME;
     use livi_runtime::bonjour::AIRPLAY_SERVICE;
-    let port = u16::try_from(cp.airplay_port).ok().filter(|&p| p != 0)?;
-    let service = livi_mdns::service::Service::new(
-        AIRPLAY_NAME,
-        AIRPLAY_SERVICE,
-        AIRPLAY_NAME,
-        port,
-        txt,
-        address,
-    );
-    match livi_mdns::responder::Responder::start(ifname, service) {
-        Ok(responder) => {
-            println!("[mdns] {AIRPLAY_SERVICE} port={port} on {ifname}");
-            Some(responder)
-        }
-        Err(e) => {
-            eprintln!("[mdns] {AIRPLAY_SERVICE} not announced on {ifname}: {e}");
-            None
-        }
-    }
+    let carplay = u16::try_from(cp.airplay_port)
+        .ok()
+        .filter(|&p| carplay && p != 0)
+        .map(|port| (AIRPLAY_NAME, port, airplay.txt.as_slice()));
+    let mirror = airplay
+        .mirror
+        .as_ref()
+        .map(|m| (MIRROR_NAME, m.port, m.txt.as_slice()));
+    carplay
+        .into_iter()
+        .chain(mirror)
+        .filter_map(|(name, port, txt)| {
+            let service = livi_mdns::service::Service::new(
+                name,
+                AIRPLAY_SERVICE,
+                AIRPLAY_NAME,
+                port,
+                txt,
+                address,
+            );
+            match livi_mdns::responder::Responder::start(ifname, service) {
+                Ok(responder) => {
+                    println!("[mdns] {AIRPLAY_SERVICE} {name:?} port={port} on {ifname}");
+                    Some(responder)
+                }
+                Err(e) => {
+                    eprintln!("[mdns] {AIRPLAY_SERVICE} {name:?} not announced on {ifname}: {e}");
+                    None
+                }
+            }
+        })
+        .collect()
 }
 
 #[cfg(target_os = "android")]

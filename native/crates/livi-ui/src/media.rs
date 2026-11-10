@@ -82,7 +82,7 @@ impl MediaReader {
             duration_ms: now.duration_ms.unwrap_or(0.0),
             elapsed_ms: now.elapsed_ms,
             playing: now.playing.unwrap_or(false),
-            can_seek: sessions.active == Some(Protocol::Carplay),
+            can_seek: matches!(sessions.active, Some(Protocol::Carplay | Protocol::Airplay)),
             artwork: None,
             artwork_raw,
             session: format!("{:?}:{}", sessions.active, sessions.position),

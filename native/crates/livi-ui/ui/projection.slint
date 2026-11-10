@@ -5,6 +5,7 @@
 import { Theme } from "theme.slint";
 import { ViewArea, ViewAreaMask, MaskData } from "mask.slint";
 import { VideoControls } from "video_controls.slint";
+import { MirrorControls } from "mirror_controls.slint";
 
 export enum TouchPhase { down, move, up, cancel }
 
@@ -21,10 +22,14 @@ export component ProjectionPage inherits Rectangle {
     in property <float> video-elapsed-ms;
     in property <float> video-total-ms;
     in property <bool> video-can-seek;
+    in property <bool> mirrored;
+    in-out property <bool> mirror-shown;
+    in-out property <int> mirror-idle;
     callback touch(TouchPhase, float, float);
     callback video-play-pause();
     callback video-seek(float);
     callback video-close();
+    callback mirror-leave();
 
     background: root.streaming ? transparent : Theme.background;
 
@@ -35,7 +40,7 @@ export component ProjectionPage inherits Rectangle {
         y: (root.height - self.height) / 2;
 
         TouchArea {
-            enabled: root.streaming && !root.video-shown;
+            enabled: root.streaming && !root.video-shown && !root.mirrored;
             pointer-event(e) => {
                 if (e.kind == PointerEventKind.down) {
                     root.touch(TouchPhase.down, self.mouse-x / self.width, self.mouse-y / self.height);
@@ -69,6 +74,16 @@ export component ProjectionPage inherits Rectangle {
         play-pause => { root.video-play-pause(); }
         seek(f) => { root.video-seek(f); }
         close => { root.video-close(); }
+    }
+
+    if root.streaming && root.mirrored && !root.video-shown: MirrorControls {
+        x: root.view-area.left * 1phx;
+        y: root.view-area.top * 1phx;
+        width: max(1px, root.width - (root.view-area.left + root.view-area.right) * 1phx);
+        height: max(1px, root.height - (root.view-area.top + root.view-area.bottom) * 1phx);
+        shown <=> root.mirror-shown;
+        idle <=> root.mirror-idle;
+        leave => { root.mirror-leave(); }
     }
 
     if !root.streaming: Image {

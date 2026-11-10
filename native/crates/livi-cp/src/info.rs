@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+use livi_core_proto::features::{CARPLAY_AUDIO_FEATURES, CARPLAY_FEATURES};
+
 use crate::bplist::{Value, dict};
 use crate::hid;
 
@@ -10,9 +12,6 @@ const STREAM_TYPE_ALT_SCREEN: u64 = 111;
 const DISPLAY_FEATURE_KNOBS: u64 = 0x02;
 const DISPLAY_FEATURE_HIGH_FIDELITY_TOUCH: u64 = 0x08;
 const PRIMARY_INPUT_KNOBS: u64 = 3;
-
-const CARPLAY_FEATURES: u64 = 0x61_5653_aee2;
-const CARPLAY_AUDIO_FEATURES: u64 = 0x100_0454_0a00;
 
 pub const MAIN_UUID: &str = "b7e6c5a0-1111-4000-8000-000000000001";
 pub const ALT_UUID: &str = "b7e6c5a0-2222-4000-8000-000000000002";
