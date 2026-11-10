@@ -9,8 +9,7 @@ use base64::engine::general_purpose::STANDARD;
 use p256::ecdsa::signature::hazmat::PrehashSigner;
 use p256::ecdsa::{Signature, SigningKey};
 use p256::pkcs8::DecodePrivateKey as _;
-use rsa::pkcs8::DecodePrivateKey as _;
-use rsa::{Pkcs1v15Sign, RsaPrivateKey};
+use rsa::{Pkcs1v15Sign, PrivateKey};
 
 use crate::{AuthCoprocessor, CHALLENGE_MAX, CHALLENGE_MIN, MfiError};
 
@@ -24,7 +23,7 @@ const SHA1_PREFIX: [u8; 15] = [
 
 enum Identity {
     Ec(SigningKey),
-    Rsa(Box<RsaPrivateKey>),
+    Rsa(Box<PrivateKey>),
 }
 
 pub struct FileCoprocessor {
@@ -68,7 +67,7 @@ fn identity(bytes: &[u8]) -> Result<Identity, MfiError> {
     if let Ok(key) = SigningKey::from_pkcs8_der(&der) {
         return Ok(Identity::Ec(key));
     }
-    RsaPrivateKey::from_pkcs8_der(&der)
+    PrivateKey::from_pkcs8_der(&der)
         .map(|key| Identity::Rsa(Box::new(key)))
         .map_err(|_| bad("the identity is not an unencrypted PKCS#8 P-256 or RSA key"))
 }
@@ -138,7 +137,7 @@ impl AuthCoprocessor for FileCoprocessor {
 mod tests {
     use p256::ecdsa::VerifyingKey;
     use p256::ecdsa::signature::hazmat::PrehashVerifier;
-    use rsa::RsaPublicKey;
+    use rsa::PublicKey;
 
     use super::*;
 
@@ -185,12 +184,12 @@ mod tests {
         let digest = [9u8; SHA1_LEN];
         let signature = chip.generate_challenge_response(&digest).unwrap();
         assert_eq!(signature.len(), 128);
-        let key = RsaPrivateKey::from_pkcs8_der(&der(RSA_PEM.as_bytes()).unwrap()).unwrap();
+        let key = PrivateKey::from_pkcs8_der(&der(RSA_PEM.as_bytes()).unwrap()).unwrap();
         let scheme = Pkcs1v15Sign {
             hash_len: Some(SHA1_LEN),
             prefix: SHA1_PREFIX.into(),
         };
-        RsaPublicKey::from(&key)
+        PublicKey::from(&key)
             .verify(scheme, &digest, &signature)
             .unwrap();
         assert!(chip.generate_challenge_response(&[1u8; 32]).is_err());

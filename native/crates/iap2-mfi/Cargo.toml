@@ -10,7 +10,7 @@ files = ["dep:base64", "dep:p256", "dep:rsa"]
 livi-net.workspace = true
 base64 = { workspace = true, optional = true }
 p256 = { version = "0.14.0", features = ["pkcs8"], optional = true }
-rsa = { version = "0.9.10", optional = true }
+rsa = { version = "0.10.0", features = ["pkcs1v15"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true
