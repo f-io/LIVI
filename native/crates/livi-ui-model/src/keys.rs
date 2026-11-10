@@ -248,9 +248,12 @@ pub enum MirrorKey {
     Pass,
 }
 
+const MEDIA_BINDINGS: [&str; 5] = ["playPause", "play", "pause", "next", "prev"];
+
 pub fn mirror_key(code: &str, config: &Value, shown: bool) -> MirrorKey {
     let b = |name: &str| binding(config, name);
-    if code == or(b("cycleSession"), "KeyS") {
+    let media = bound_to(config, code).is_some_and(|name| MEDIA_BINDINGS.contains(&name.as_str()));
+    if media || code == or(b("cycleSession"), "KeyS") {
         return MirrorKey::Pass;
     }
     let bound = |name: &str| !b(name).is_empty() && code == b(name);
@@ -312,6 +315,12 @@ mod tests {
         assert_eq!(mirror_key("Backspace", &config(), true), MirrorKey::Leave);
         assert_eq!(mirror_key("ArrowLeft", &config(), true), MirrorKey::Show);
         assert_eq!(mirror_key("KeyS", &config(), true), MirrorKey::Pass);
+    }
+
+    #[test]
+    fn media_keys_reach_the_phone_while_mirroring() {
+        assert_eq!(mirror_key("KeyP", &config(), false), MirrorKey::Pass);
+        assert_eq!(mirror_key("KeyP", &config(), true), MirrorKey::Pass);
     }
 
     #[test]

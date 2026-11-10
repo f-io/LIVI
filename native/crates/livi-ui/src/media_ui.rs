@@ -65,7 +65,8 @@ fn tick(ui: &AppWindow) {
             || l.radio_guess.pending(now)
             || l.picked.is_some()
     });
-    let wanted = keep && (ui.get_page() == Page::Media || ui.get_video_shown());
+    let wanted =
+        keep && (ui.get_page() == Page::Media || ui.get_video_shown() || ui.get_mirrored());
     TICK.with(|t| match (wanted, t.running()) {
         (true, false) => {
             let weak = ui.as_weak();

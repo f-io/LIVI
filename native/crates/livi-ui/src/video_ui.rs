@@ -3,13 +3,17 @@
 // Additional terms: see NOTICE
 
 use livi_core_client::Client;
-use livi_core_proto::message::Action;
+use livi_core_proto::message::{Action, MediaControl};
 use livi_core_proto::state::VideoPlayback;
+use livi_ui_model::media::Pressed;
 use slint::ComponentHandle;
 
 use crate::{AppWindow, Page, PhoneState};
 
 pub fn show(ui: &AppWindow, video: Option<VideoPlayback>) {
+    if video.is_some() && !ui.get_video_shown() {
+        wake_mirror(ui);
+    }
     ui.set_video_shown(video.is_some());
     let v = video.unwrap_or_default();
     ui.set_video_playing(v.playing);
@@ -55,9 +59,15 @@ pub fn wire(ui: &AppWindow, client: &Client) {
     ui.on_video_play_pause({
         let (c, weak) = (client.clone(), weak.clone());
         move || {
-            if let Some(ui) = weak.upgrade() {
+            let Some(ui) = weak.upgrade() else { return };
+            if ui.get_video_shown() {
                 c.act(Action::VideoPlay {
                     playing: !ui.get_video_playing(),
+                });
+            } else {
+                crate::media_ui::pressed_feedback(&ui, Pressed::Play);
+                c.act(Action::PhoneMedia {
+                    control: MediaControl::PlayPause,
                 });
             }
         }

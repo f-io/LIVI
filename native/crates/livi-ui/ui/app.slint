@@ -157,7 +157,7 @@ export component AppWindow inherits Window {
                 mask: root.main-mask;
                 view-area: root.view-area;
                 video-shown: root.video-shown;
-                video-playing: root.video-playing;
+                video-playing: root.video-shown ? root.video-playing : root.playing;
                 video-elapsed-ms: root.video-total-ms > 0 ? root.video-elapsed-ms : root.elapsed-ms;
                 video-total-ms: root.video-total-ms > 0 ? root.video-total-ms : root.total-ms;
                 video-can-seek: root.video-total-ms > 0 || root.can-seek;

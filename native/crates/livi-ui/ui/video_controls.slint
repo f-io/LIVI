@@ -10,12 +10,12 @@ export component VideoControls inherits Rectangle {
     in property <float> elapsed-ms;
     in property <float> total-ms;
     in property <bool> can-seek;
+    in-out property <bool> shown: true;
+    in-out property <int> idle;
     callback play-pause();
     callback seek(float);
     callback close();
 
-    property <bool> shown: true;
-    property <int> idle;
     property <length> unit: min(root.width, root.height);
     property <length> margin: round(root.unit * 0.05 / 1px) * 1px;
     property <length> small: clamp(round(root.unit * 0.12 / 1px) * 1px, 44px, 72px);

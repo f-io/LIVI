@@ -5,7 +5,6 @@
 import { Theme } from "theme.slint";
 import { ViewArea, ViewAreaMask, MaskData } from "mask.slint";
 import { VideoControls } from "video_controls.slint";
-import { MirrorControls } from "mirror_controls.slint";
 
 export enum TouchPhase { down, move, up, cancel }
 
@@ -63,20 +62,6 @@ export component ProjectionPage inherits Rectangle {
         mask: root.mask;
     }
 
-    if root.streaming && root.video-shown: VideoControls {
-        x: root.view-area.left * 1phx;
-        y: root.view-area.top * 1phx;
-        width: max(1px, root.width - (root.view-area.left + root.view-area.right) * 1phx);
-        height: max(1px, root.height - (root.view-area.top + root.view-area.bottom) * 1phx);
-        playing: root.video-playing;
-        elapsed-ms: root.video-elapsed-ms;
-        total-ms: root.video-total-ms;
-        can-seek: root.video-can-seek;
-        play-pause => { root.video-play-pause(); }
-        seek(f) => { root.video-seek(f); }
-        close => { root.video-close(); }
-    }
-
     if root.streaming && root.held: Rectangle {
         background: Theme.background;
 
@@ -88,14 +73,26 @@ export component ProjectionPage inherits Rectangle {
         }
     }
 
-    if root.streaming && root.mirrored && !root.video-shown: MirrorControls {
+    if root.streaming && (root.video-shown || root.mirrored): VideoControls {
         x: root.view-area.left * 1phx;
         y: root.view-area.top * 1phx;
         width: max(1px, root.width - (root.view-area.left + root.view-area.right) * 1phx);
         height: max(1px, root.height - (root.view-area.top + root.view-area.bottom) * 1phx);
+        playing: root.video-playing;
+        elapsed-ms: root.video-elapsed-ms;
+        total-ms: root.video-total-ms;
+        can-seek: root.video-can-seek;
         shown <=> root.mirror-shown;
         idle <=> root.mirror-idle;
-        leave => { root.mirror-leave(); }
+        play-pause => { root.video-play-pause(); }
+        seek(f) => { root.video-seek(f); }
+        close => {
+            if (root.video-shown) {
+                root.video-close();
+            } else {
+                root.mirror-leave();
+            }
+        }
     }
 
     if !root.streaming: Image {
