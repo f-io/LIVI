@@ -35,6 +35,7 @@ export component AppWindow inherits Window {
     in property <float> video-elapsed-ms;
     in property <float> video-total-ms;
     in property <bool> mirrored;
+    in property <bool> held;
     in-out property <bool> mirror-shown: true;
     in-out property <int> mirror-idle;
     in property <bool> camera-found;
@@ -171,6 +172,7 @@ export component AppWindow inherits Window {
                 }
                 video-close => { root.video-close(); }
                 mirrored: root.mirrored;
+                held: root.held;
                 mirror-shown <=> root.mirror-shown;
                 mirror-idle <=> root.mirror-idle;
                 mirror-leave => { root.mirror-leave(); }

@@ -37,6 +37,7 @@ pub enum Update {
     Fonts(Vec<String>),
     Video(Option<VideoPlayback>),
     Mirrored(bool),
+    Held(bool),
 }
 
 #[derive(Default)]
@@ -59,6 +60,7 @@ pub struct Follow {
     fonts: Option<Vec<String>>,
     video: Option<Option<VideoPlayback>>,
     mirrored: Option<bool>,
+    held: Option<bool>,
 }
 
 impl Follow {
@@ -101,6 +103,11 @@ impl Follow {
             if self.mirrored != Some(mirrored) {
                 self.mirrored = Some(mirrored);
                 out.push(Update::Mirrored(mirrored));
+            }
+            let held = state.sessions.held;
+            if self.held != Some(held) {
+                self.held = Some(held);
+                out.push(Update::Held(held));
             }
         }
         if hit("front") {

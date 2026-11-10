@@ -2030,6 +2030,21 @@ fn airplay(rig: &mut Rig, id: u64, name: &str) -> UnboundedReceiver<AirplayComma
 }
 
 #[tokio::test]
+async fn the_mirror_picture_waits_for_park() {
+    let mut rig = Rig::new();
+    let _commands = airplay(&mut rig, 1, "LaPhone");
+    rig.p.video_up(Link::Ap(1));
+    let cfg = rig.p.config_seen.clone();
+    let car = |v: Value| v.as_object().cloned().unwrap();
+    let held = |rig: &Rig| rig.hub.watch().borrow().sessions.held;
+    assert!(!held(&rig), "no gear known yet");
+    rig.p.on_state(cfg.clone(), car(json!({ "gear": "D" })));
+    assert!(held(&rig));
+    rig.p.on_state(cfg.clone(), car(json!({ "gear": "P" })));
+    assert!(!held(&rig));
+}
+
+#[tokio::test]
 async fn media_keys_reach_the_airplay_sender() {
     let mut rig = Rig::new();
     let mut commands = airplay(&mut rig, 1, "LaPhone");

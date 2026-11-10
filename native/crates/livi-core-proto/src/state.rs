@@ -399,6 +399,7 @@ pub struct VideoPlayback {
 pub struct Sessions {
     pub active: Option<Protocol>,
     pub video: bool,
+    pub held: bool,
     pub position: u32,
     pub total: u32,
 }
@@ -560,16 +561,17 @@ mod tests {
         let sessions = Sessions {
             active: Some(Protocol::Androidauto),
             video: true,
+            held: false,
             position: 1,
             total: 2,
         };
         assert_eq!(
             serde_json::to_string(&sessions).unwrap(),
-            r#"{"active":"androidauto","video":true,"position":1,"total":2}"#
+            r#"{"active":"androidauto","video":true,"held":false,"position":1,"total":2}"#
         );
         assert_eq!(
             serde_json::to_string(&Sessions::default()).unwrap(),
-            r#"{"active":null,"video":false,"position":0,"total":0}"#
+            r#"{"active":null,"video":false,"held":false,"position":0,"total":0}"#
         );
     }
 }

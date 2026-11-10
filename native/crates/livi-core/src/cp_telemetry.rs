@@ -192,6 +192,10 @@ impl CpTelemetry {
         }
     }
 
+    pub fn video_allowed(&self) -> bool {
+        self.video_allowed != Some(false)
+    }
+
     pub fn hydrate(&mut self, snap: &Map<String, Value>, cp: &CpHandle) {
         self.limited_ui = None;
         self.video_allowed = None;

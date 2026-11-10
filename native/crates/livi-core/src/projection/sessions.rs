@@ -330,9 +330,12 @@ impl Projection {
         let main = self.front_main();
         let (cluster, aux) = (self.wants.cluster, self.wants.aux);
         let position = self.sessions.iter().position(|s| s.active);
+        let active = position.map(|i| self.sessions[i].link.protocol());
+        let video = position.is_some_and(|i| self.sessions[i].video);
         let sessions = Sessions {
-            active: position.map(|i| self.sessions[i].link.protocol()),
-            video: position.is_some_and(|i| self.sessions[i].video),
+            active,
+            video,
+            held: video && active == Some(Protocol::Airplay) && !self.cp_telemetry.video_allowed(),
             position: position.map_or(0, |i| i as u32 + 1),
             total: self.sessions.len() as u32,
         };

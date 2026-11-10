@@ -613,12 +613,13 @@ async fn follow_state(
             (
                 s.front.main == Front::Projection,
                 s.sessions.active == Some(Protocol::Airplay),
+                s.sessions.held,
             )
         };
         if last.as_ref().is_none_or(|l| shown(l) != shown(&now)) {
-            let (projection, mirrored) = shown(&now);
+            let (projection, mirrored, held) = shown(&now);
             plane.set_visible(projection && !mirrored);
-            airplay.set_visible(projection && mirrored);
+            airplay.set_visible(projection && mirrored && !held);
         }
         if last.as_ref().is_none_or(|l| l.front != now.front) {
             let f = &now.front;

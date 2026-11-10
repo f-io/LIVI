@@ -220,6 +220,7 @@ fn apply(ui: &AppWindow, update: Update) {
         Update::ViewArea(area) => ui.set_view_area(view_area(area)),
         Update::Video(video) => video_ui::show(ui, video),
         Update::Mirrored(mirrored) => video_ui::mirrored(ui, mirrored),
+        Update::Held(held) => ui.set_held(held),
         Update::Fonts(paths) => {
             if fonts::register(&paths) {
                 let lang = settings_ui::language();

@@ -73,6 +73,7 @@ impl Projection {
             self.apply_when_idle();
         }
         if telemetry != self.telemetry_seen {
+            let allowed = self.cp_telemetry.video_allowed();
             self.cp_telemetry
                 .follow(&self.telemetry_seen, &telemetry, &self.cp);
             self.aa_telemetry
@@ -81,6 +82,9 @@ impl Projection {
                 self.reversing = reversing;
             }
             self.telemetry_seen = telemetry;
+            if self.cp_telemetry.video_allowed() != allowed {
+                self.publish();
+            }
         }
         self.camera_follows(camera);
     }
