@@ -20,6 +20,13 @@ const MAX_IMAGE: u64 = 64 * 1024 * 1024;
 const UPDATE_TIMEOUT: Duration = Duration::from_secs(900);
 const UPDATER: &str = "/script/update_box_ota.sh";
 
+const KNOWN: [(&str, &str, &str, u64); 1] = [(
+    "A15W",
+    "2025.10.15.1127",
+    "504a1fe17bab6a9af946e2e735057098",
+    11_342_661,
+)];
+
 const ROOTFS: [(&str, &str); 9] = [
     ("0xb822", "rtl8822_rootfs.tar.gz"),
     ("0x4354", "bcm4354_rootfs.tar.gz"),
@@ -107,7 +114,7 @@ fn form(unit: &Unit, ver: &str) -> Vec<(&'static str, String)> {
     ]
 }
 
-fn check(unit: &Unit, ver: &str) -> Result<Option<Offer>, String> {
+fn ask(unit: &Unit, ver: &str) -> Result<String, String> {
     let mut reply = crate::http()
         .post(CHECK_URL)
         .config()
@@ -115,20 +122,57 @@ fn check(unit: &Unit, ver: &str) -> Result<Option<Offer>, String> {
         .build()
         .send_form(form(unit, ver))
         .map_err(|e| format!("{CHECK_URL}: {e}"))?;
-    let body = reply
+    reply
         .body_mut()
         .read_to_string()
-        .map_err(|e| format!("{CHECK_URL}: {e}"))?;
-    offer_from(&body, ver)
+        .map_err(|e| format!("{CHECK_URL}: {e}"))
 }
 
-fn offer_from(body: &str, asked: &str) -> Result<Option<Offer>, String> {
+fn check(unit: &Unit, ver: &str) -> Result<Option<Offer>, String> {
+    offer_from(&ask(unit, ver)?, ver)
+}
+
+fn reply_of(body: &str) -> Result<Value, String> {
     let reply: Value = serde_json::from_str(body)
         .map_err(|e| format!("the vendor's server answered something else than JSON: {e}"))?;
     if reply["err"].as_i64() != Some(0) {
         let head: String = body.chars().take(200).collect();
         return Err(format!("the vendor's server refused: {head}"));
     }
+    Ok(reply)
+}
+
+fn token_from(body: &str) -> Result<String, String> {
+    reply_of(body)?["token"]
+        .as_str()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| "the vendor's server gave no token".into())
+}
+
+fn known_for(model: &str) -> Option<(&'static str, &'static str, u64)> {
+    KNOWN
+        .iter()
+        .find(|(m, ..)| *m == model)
+        .map(|&(_, version, id, size)| (version, id, size))
+}
+
+fn known(unit: &Unit) -> Result<Option<Offer>, String> {
+    let Some((version, id, size)) = known_for(&unit.model) else {
+        return Ok(None);
+    };
+    Ok(Some(Offer {
+        version: version.into(),
+        size,
+        id: id.into(),
+        token: token_from(&ask(unit, &unit.version)?)?,
+        asked: unit.version.clone(),
+    }))
+}
+
+fn offer_from(body: &str, asked: &str) -> Result<Option<Offer>, String> {
+    let reply = reply_of(body)?;
     let text = |key: &str| match &reply[key] {
         Value::String(s) => s.trim().to_string(),
         Value::Number(n) => n.to_string(),
@@ -199,6 +243,9 @@ pub fn find(unit: &Unit) -> Result<Offer, String> {
         if let Some(found) = newest_from(unit, &seed)? {
             return Ok(found);
         }
+    }
+    if let Some(offer) = known(unit)? {
+        return Ok(offer);
     }
     Err(format!(
         "the vendor's server has no firmware for this {} (serial {})",
@@ -466,6 +513,27 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn a_reply_without_an_offer_still_carries_its_token() {
+        let none = r#"{"err":0,"token":" t.k ","ver":"","size":0,"id":"","notes":"","forced":0}"#;
+        assert_eq!(token_from(none).unwrap(), "t.k");
+        assert!(token_from(r#"{"err":0,"token":""}"#).is_err());
+        assert!(token_from(r#"{"err":1,"token":"t"}"#).is_err());
+    }
+
+    #[test]
+    fn known_images_are_picked_by_product_type() {
+        assert_eq!(
+            known_for("A15W"),
+            Some((
+                "2025.10.15.1127",
+                "504a1fe17bab6a9af946e2e735057098",
+                11_342_661
+            ))
+        );
+        assert_eq!(known_for("Auto_Box"), None);
     }
 
     #[test]

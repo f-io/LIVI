@@ -412,31 +412,17 @@ fn imx6ul_provision(lfwb: Option<&Path>) -> Result<(), String> {
         }
         wait_for_shell(&sh)?;
     }
-    if imx6ul::running(&sh)? == imx6ul::Running::Vendor && !boot::key_fits(&sh, &report)? {
-        imx6ul_vendor_again(&sh)?;
+    let ready = imx6ul_ready(&sh);
+    match (remove_bootstrap(&sh), &ready) {
+        (Ok(true), Ok(())) => println!("== bootstrap removed again"),
+        (Ok(true), Err(_)) => {
+            println!("== bootstrap removed again, the dongle starts as before")
+        }
+        (Ok(false), _) => {}
+        (Err(e), Ok(())) => return Err(e),
+        (Err(e), Err(_)) => println!("== the bootstrap could not be removed: {e}"),
     }
-    if sh
-        .sh(&format!(
-            "[ -e {} ] && echo yes || echo no",
-            bootstrap::BOOT_HOOK
-        ))?
-        .trim()
-        == "yes"
-    {
-        let carrier = bootstrap::carrier_body().as_bytes();
-        sh.push(
-            carrier,
-            bootstrap::CARRIER,
-            shell::PUSH_PORT,
-            &shell::md5_hex(carrier),
-        )?;
-        sh.sh(&format!(
-            "chmod 755 {}; rm -f {}; sync",
-            bootstrap::CARRIER,
-            bootstrap::BOOT_HOOK
-        ))?;
-        println!("== bootstrap removed again");
-    }
+    ready?;
     let bundle = match given {
         Some(bundle) => bundle,
         None => imx6ul_bundle(&sh)?.to_vec(),
@@ -448,6 +434,36 @@ fn imx6ul_provision(lfwb: Option<&Path>) -> Result<(), String> {
         now.version, now.build
     );
     Ok(())
+}
+
+fn imx6ul_ready(sh: &Shell) -> Result<(), String> {
+    if imx6ul::running(sh)? == imx6ul::Running::Vendor && !boot::key_fits(sh, &report)? {
+        imx6ul_vendor_again(sh)?;
+    }
+    Ok(())
+}
+
+fn remove_bootstrap(sh: &Shell) -> Result<bool, String> {
+    let hooked = sh.sh(&format!(
+        "[ -e {} ] && echo yes || echo no",
+        bootstrap::BOOT_HOOK
+    ))?;
+    if hooked.trim() != "yes" {
+        return Ok(false);
+    }
+    let carrier = bootstrap::carrier_body().as_bytes();
+    sh.push(
+        carrier,
+        bootstrap::CARRIER,
+        shell::PUSH_PORT,
+        &shell::md5_hex(carrier),
+    )?;
+    sh.sh(&format!(
+        "chmod 755 {}; rm -f {}; sync",
+        bootstrap::CARRIER,
+        bootstrap::BOOT_HOOK
+    ))?;
+    Ok(true)
 }
 
 fn imx6ul_vendor_again(sh: &Shell) -> Result<(), String> {
