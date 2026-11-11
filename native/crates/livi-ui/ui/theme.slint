@@ -22,9 +22,9 @@ export global Theme {
     out property <color> lit: text.with-alpha(0.07);
     out property <color> lit-pressed: text.with-alpha(0.1);
     out property <color> surface: dark ? #ffffff0f : #0000000f;
-    out property <color> button: #ffffff29;
-    out property <color> button-active: #ffffff3d;
-    out property <color> track: #ffffff47;
+    out property <color> button: dark ? #ffffff29 : #0000001a;
+    out property <color> button-active: dark ? #ffffff3d : #0000002e;
+    out property <color> track: dark ? #ffffff47 : #00000033;
 }
 
 export global Ui {

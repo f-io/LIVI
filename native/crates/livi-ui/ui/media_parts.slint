@@ -179,7 +179,7 @@ export component SourceTabs inherits Rectangle {
         width: row.preferred-width;
         height: row.preferred-height;
         border-radius: self.height / 2;
-        background: #ffffff14;
+        background: Theme.dark ? #ffffff14 : #00000012;
         row := HorizontalLayout {
             padding-left: 8px * root.pad;
             padding-right: 8px * root.pad;

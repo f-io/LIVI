@@ -86,7 +86,7 @@ component StationTile inherits Rectangle {
     border-radius: 10px;
     border-width: root.on-air ? 2px : 0;
     border-color: Theme.primary;
-    background: root.focused ? #ffffff33 : root.on-air ? #ffffff24 : #ffffff0f;
+    background: root.focused ? (Theme.dark ? #ffffff33 : #00000026) : root.on-air ? (Theme.dark ? #ffffff24 : #0000001a) : Theme.surface;
     Rectangle {
         border-radius: 10px;
         border-width: root.focused ? 3px : 0;
@@ -161,7 +161,7 @@ component StationBand inherits Rectangle {
 
     height: tile + 16px;
     border-radius: 12px;
-    background: #ffffff0f;
+    background: Theme.surface;
     clip: true;
     flick := Flickable {
         content-width: max(self.width, 8px + DabState.stations.length * root.step);
