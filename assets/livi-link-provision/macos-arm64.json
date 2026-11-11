@@ -1,7 +1,7 @@
 {
   "version": "10.5.0",
-  "build": "e3c0ee12",
+  "build": "e4cee07d",
   "file": "livi-link-provision-macos-arm64",
-  "size": 58594272,
-  "sha256": "cb09c58a03b3f523191aa6de427239bb4881c2c7573e8556d05b4a9e52f9d95a"
+  "size": 60167168,
+  "sha256": "0757bb5fcc9deeaa236fd14cc9d06aa249a3140dc22c69a8cb85b32a8ddfe295"
 }
