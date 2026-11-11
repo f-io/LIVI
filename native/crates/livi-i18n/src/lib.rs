@@ -239,6 +239,71 @@ mod tests {
         }
     }
 
+    fn literal(s: &str) -> Option<(String, &str)> {
+        let body = s.trim_start().strip_prefix('"')?;
+        let mut chars = body.char_indices();
+        let mut out = String::new();
+        while let Some((i, c)) = chars.next() {
+            match c {
+                '"' => return Some((out, &body[i + 1..])),
+                '\\' => match chars.next()?.1 {
+                    'n' => out.push('\n'),
+                    c => out.push(c),
+                },
+                c => out.push(c),
+            }
+        }
+        None
+    }
+
+    fn inline_texts(src: &str) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        for call in [".t(", ".with(", "Label::new("] {
+            for (at, _) in src.match_indices(call) {
+                let rest = &src[at + call.len()..];
+                if let Some((key, rest)) = literal(rest)
+                    && let Some(rest) = rest.trim_start().strip_prefix(',')
+                    && let Some((text, _)) = literal(rest)
+                {
+                    out.push((key, text));
+                }
+            }
+        }
+        out
+    }
+
+    fn rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                rust_files(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                out.push(path);
+            }
+        }
+    }
+
+    #[test]
+    fn inline_english_matches_en_json() {
+        let en = table(EN);
+        let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let mut files = Vec::new();
+        for entry in std::fs::read_dir(&crates).unwrap().flatten() {
+            if entry.file_name() != "livi-i18n" {
+                rust_files(&entry.path().join("src"), &mut files);
+            }
+        }
+        let drift: Vec<_> = files
+            .iter()
+            .flat_map(|f| inline_texts(&std::fs::read_to_string(f).unwrap_or_default()))
+            .filter(|(key, text)| en.get(key).is_some_and(|e| e != text))
+            .collect();
+        assert!(
+            drift.is_empty(),
+            "inline text differs from en.json: {drift:?}"
+        );
+    }
+
     #[test]
     fn placeholders_are_filled() {
         let en = Strings::new("en");

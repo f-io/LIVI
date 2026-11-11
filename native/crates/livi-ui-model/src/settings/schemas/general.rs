@@ -165,10 +165,13 @@ fn fullscreen(path: &'static str) -> Node {
 
 fn screens(main: &'static str, cluster: &'static str, aux: &'static str) -> Vec<Node> {
     vec![
-        Node::checkbox(Label::new("settings.mainScreen", "Main"), main).icon("mainScreen"),
-        Node::checkbox(Label::new("settings.clusterScreen", "Cluster"), cluster)
-            .icon("clusterScreen"),
-        Node::checkbox(Label::new("settings.auxScreen", "Aux"), aux).icon("auxScreen"),
+        Node::checkbox(Label::new("settings.mainScreen", "Main Screen"), main).icon("mainScreen"),
+        Node::checkbox(
+            Label::new("settings.clusterScreen", "Cluster Screen"),
+            cluster,
+        )
+        .icon("clusterScreen"),
+        Node::checkbox(Label::new("settings.auxScreen", "Aux Screen"), aux).icon("auxScreen"),
     ]
 }
 
@@ -477,7 +480,7 @@ fn tab_settings() -> Node {
                     screens("camera.main", "camera.cluster", "camera.aux"),
                     vec![
                         Node::checkbox(
-                            Label::new("settings.cameraMirror", "Mirror"),
+                            Label::new("settings.cameraMirror", "Mirroring"),
                             "cameraMirror",
                         )
                         .icon("cameraMirror"),
@@ -493,7 +496,7 @@ fn tab_settings() -> Node {
                         )
                         .icon("cameraRotation")
                         .display_value()
-                        .page(Label::new("settings.cameraRotation", "Camera Rotation")),
+                        .page(Label::new("settings.cameraRotation", "Rotation")),
                         Node::select(Label::new("settings.camera", "Camera"), "cameraId", vec![])
                             .icon("camera")
                             .display_value()
@@ -718,7 +721,7 @@ pub fn schema() -> Node {
             .icon("fftDelay")
             .display_value()
             .shown(Shown::Suffix(" ms"))
-            .page(Label::new("settings.fftDelay", "FFT Visualization Delay")),
+            .page(Label::new("settings.fftDelay", "FFT Delay")),
             Node::number(Label::new("settings.uiZoom", "UI Zoom"), "uiZoomPercent")
                 .icon("uiZoom")
                 .display_value()

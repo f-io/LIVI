@@ -65,15 +65,15 @@ pub fn schema() -> Node {
             .display_value()
             .page(Label::new("settings.carType", "Fuel Type")),
             Node::select(
-                Label::new("settings.steeringWheelPosition", "Steering wheel position"),
+                Label::new("settings.steeringWheelPosition", "Steering Wheel Position"),
                 "hand",
                 vec![
                     choice(
-                        Label::new("settings.lhdr", "LHD"),
+                        Label::new("settings.lhdr", "Left-Hand Drive"),
                         OptionValue::Number(HAND_LHD),
                     ),
                     choice(
-                        Label::new("settings.rhdr", "RHD"),
+                        Label::new("settings.rhdr", "Right-Hand Drive"),
                         OptionValue::Number(HAND_RHD),
                     ),
                 ],
@@ -82,7 +82,7 @@ pub fn schema() -> Node {
             .display_value()
             .page(Label::new(
                 "settings.steeringWheelPosition",
-                "Steering wheel position",
+                "Steering Wheel Position",
             )),
             Node::number(Label::new("settings.maxSpeed", "Max Speed"), "maxSpeedKph")
                 .icon("maxSpeed")
