@@ -151,11 +151,7 @@ impl UsbStream {
     }
 }
 
-async fn pump_in(
-    mut ep: Endpoint<Bulk, In>,
-    tx: mpsc::Sender<Vec<u8>>,
-    _iface: Interface,
-) {
+async fn pump_in(mut ep: Endpoint<Bulk, In>, tx: mpsc::Sender<Vec<u8>>, _iface: Interface) {
     for _ in 0..READS_IN_FLIGHT {
         let buf = ep.allocate(READ_LEN);
         ep.submit(buf);
@@ -192,11 +188,7 @@ async fn pump_in(
     }
 }
 
-async fn pump_out(
-    mut ep: Endpoint<Bulk, Out>,
-    mut rx: mpsc::Receiver<Vec<u8>>,
-    zlp: bool,
-) {
+async fn pump_out(mut ep: Endpoint<Bulk, Out>, mut rx: mpsc::Receiver<Vec<u8>>, zlp: bool) {
     while let Some(chunk) = rx.recv().await {
         let empty_after = zlp && ends_on_packet(chunk.len(), ep.max_packet_size());
         if !transfer(&mut ep, &rx, chunk).await

@@ -32,11 +32,7 @@ pub struct IapTunnel {
 }
 
 impl IapTunnel {
-    pub fn listen(
-        shared: &[u8; 32],
-        seed: &str,
-        out: mpsc::Sender<Vec<u8>>,
-    ) -> io::Result<Self> {
+    pub fn listen(shared: &[u8; 32], seed: &str, out: mpsc::Sender<Vec<u8>>) -> io::Result<Self> {
         Self::listen_as("iAP", shared, seed, out)
     }
 
