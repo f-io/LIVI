@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-pub use local::{ensure_carplay_config, find_iphones, open_pipes, reset, restore_default_config};
+pub use local::{ensure_carplay_config, find_iphones, open_stream, reset, restore_default_config};
 
 #[cfg(target_os = "linux")]
 mod local {
-    use crate::pipe::{MuxPipes, PhoneInfo};
+    use crate::pipe::PhoneInfo;
+
+    pub use crate::usb_pipe::open_stream;
 
     pub fn find_iphones() -> Vec<PhoneInfo> {
         crate::linux::find_iphones()
@@ -34,21 +36,19 @@ mod local {
     pub fn reset(serial: &str) -> Result<(), String> {
         crate::linux::reset(serial)
     }
-
-    pub fn open_pipes(serial: &str) -> Result<MuxPipes, String> {
-        crate::usb_pipe::open_pipes(serial)
-    }
 }
 
 #[cfg(target_os = "android")]
 mod local {
     pub use crate::android::{ensure_carplay_config, find_iphones, reset, restore_default_config};
-    pub use crate::usb_pipe::open_pipes;
+    pub use crate::usb_pipe::open_stream;
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
 mod local {
-    use crate::pipe::{MuxPipes, PhoneInfo};
+    use livi_session_io::usb::UsbStream;
+
+    use crate::pipe::PhoneInfo;
 
     const NO_LOCAL: &str = "no local USB backend on this platform";
 
@@ -66,7 +66,7 @@ mod local {
         Err(NO_LOCAL.into())
     }
 
-    pub fn open_pipes(_serial: &str) -> Result<MuxPipes, String> {
+    pub async fn open_stream(_serial: &str) -> Result<UsbStream, String> {
         Err(NO_LOCAL.into())
     }
 }

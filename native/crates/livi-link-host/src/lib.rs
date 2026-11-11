@@ -15,17 +15,13 @@ mod net4;
 pub mod usb_net;
 
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
-use futures_util::StreamExt;
-use nusb::hotplug::HotplugEvent;
+use livi_session_io::hotplug::{self, Event};
 use nusb::{DeviceId, DeviceInfo};
 
 pub const VENDOR: u16 = 0x1314;
 pub const PRODUCTS: [u16; 2] = [0x1520, 0x1521];
 pub const LINK_PRODUCT: &str = "LIVI Link";
-
-const WATCH_RETRY: Duration = Duration::from_secs(5);
 
 pub type OnLink = dyn Fn(bool, &str) + Send + Sync;
 
@@ -48,42 +44,25 @@ pub fn is_dongle(info: &DeviceInfo) -> bool {
 pub async fn run(on_link: impl Fn(bool, &str) + Send + Sync + 'static) {
     let on_link: Arc<OnLink> = Arc::new(on_link);
     let link: Arc<Mutex<Option<DeviceId>>> = Arc::default();
-    let mut watch = loop {
-        match nusb::watch_devices() {
-            Ok(w) => break w,
-            Err(e) => {
-                eprintln!("[dongle] hotplug watch: {e}, retrying");
-                tokio::time::sleep(WATCH_RETRY).await;
+    hotplug::watch("dongle", |ev| match ev {
+        Event::Present(info) | Event::Arrived(info) => seen(&link, &on_link, info),
+        Event::Listed => {
+            link::watching();
+            println!("[dongle] watching for dongles");
+        }
+        Event::Left(id) => {
+            let gone = {
+                let mut l = link.lock().unwrap();
+                *l == Some(id) && l.take().is_some()
+            };
+            if gone {
+                println!("[dongle] LIVI Link left the bus");
+                link::set_on_bus(false);
+                on_link(false, "");
             }
         }
-    };
-    match nusb::list_devices().await {
-        Ok(list) => {
-            for info in list {
-                seen(&link, &on_link, info);
-            }
-        }
-        Err(e) => eprintln!("[dongle] list devices: {e}"),
-    }
-    link::watching();
-    println!("[dongle] watching for dongles");
-    while let Some(ev) = watch.next().await {
-        match ev {
-            HotplugEvent::Connected(info) => seen(&link, &on_link, info),
-            HotplugEvent::Disconnected(id) => {
-                let gone = {
-                    let mut l = link.lock().unwrap();
-                    *l == Some(id) && l.take().is_some()
-                };
-                if gone {
-                    println!("[dongle] LIVI Link left the bus");
-                    link::set_on_bus(false);
-                    on_link(false, "");
-                }
-            }
-        }
-    }
-    eprintln!("[dongle] hotplug watch ended");
+    })
+    .await;
 }
 
 fn seen(link: &Mutex<Option<DeviceId>>, on_link: &Arc<OnLink>, info: DeviceInfo) {

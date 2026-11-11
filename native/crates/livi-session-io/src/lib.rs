@@ -6,6 +6,7 @@
 extern crate nusb_android as nusb;
 
 pub mod feed;
+pub mod hotplug;
 pub mod line;
 pub mod link;
 pub mod sock;

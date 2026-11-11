@@ -842,9 +842,6 @@ impl<M: Media> Manager<M> {
                 if udid.is_empty() {
                     return;
                 }
-                self.wired.retain(|_, u| *u != udid);
-                self.cable_addrs.remove(&udid);
-                self.came_over(&udid);
                 let ids = Ids {
                     usb_udid: Some(udid.clone()),
                     ..Default::default()
@@ -852,9 +849,16 @@ impl<M: Media> Manager<M> {
                 let matching: Vec<SessionId> = self
                     .sessions
                     .iter()
-                    .filter(|(_, s)| s.matches(&ids))
+                    .filter(|(_, s)| {
+                        s.matches(&ids)
+                            || self.cable_udid(&s.local_ip).as_deref() == Some(udid.as_str())
+                            || self.wired.get(&norm_mac(&s.bt_mac)) == Some(&udid)
+                    })
                     .map(|(id, _)| *id)
                     .collect();
+                self.wired.retain(|_, u| *u != udid);
+                self.cable_addrs.remove(&udid);
+                self.came_over(&udid);
                 for id in matching {
                     if self.cabled.remove(&id) {
                         continue;

@@ -13,10 +13,10 @@ const DEFAULT_CONFIG: u8 = 4;
 pub mod ntb;
 
 mod pipe;
-pub use pipe::{MuxReader, MuxWriter, PhoneInfo};
+pub use pipe::PhoneInfo;
 
 mod backend;
-pub use backend::{ensure_carplay_config, find_iphones, open_pipes, reset, restore_default_config};
+pub use backend::{ensure_carplay_config, find_iphones, reset, restore_default_config};
 
 #[cfg(any(target_os = "linux", target_os = "android", test))]
 pub(crate) type Mac = [u8; 6];
@@ -40,7 +40,7 @@ mod android;
 mod usb_pipe;
 
 mod mux;
-pub use mux::{LOCKDOWN_PORT, MuxHost, MuxTcpConn};
+pub use mux::{LOCKDOWN_PORT, MuxHost, MuxStream};
 
 mod device;
 pub use device::{MuxDevice, MuxRegistry, socket_path};
@@ -58,6 +58,3 @@ pub use ncm::NcmBridge;
 pub use ncm::drop_name_bound_profiles;
 #[cfg(target_os = "android")]
 pub use ncm::{Link, OpenTun, Port, TunRequest, Tunnel};
-
-mod async_stream;
-pub use async_stream::AsyncMuxStream;

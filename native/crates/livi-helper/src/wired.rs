@@ -45,11 +45,14 @@ pub async fn watch(wired: Wired) {
     let registry = Arc::new(MuxRegistry::default());
     let mut failed: HashMap<String, u32> = HashMap::new();
     let mut cancels: HashMap<String, Arc<Notify>> = HashMap::new();
+    let mut seen: Vec<String> = Vec::new();
+    let rescan = Arc::new(Notify::new());
 
     loop {
         tokio::select! {
             _ = tokio::time::sleep(SCAN_INTERVAL) => {}
             _ = wired.link.changed().notified() => {}
+            _ = rescan.notified() => {}
         }
 
         let present: Vec<String> = tokio::task::spawn_blocking(find_iphones)
@@ -59,7 +62,7 @@ pub async fn watch(wired: Wired) {
             .map(|d| d.serial)
             .collect();
         failed.retain(|serial, _| present.contains(serial));
-        for serial in registry.serials() {
+        for serial in std::mem::replace(&mut seen, present.clone()) {
             if !present.contains(&serial) {
                 println!("[wired] {} unplugged", short(&serial));
                 if let Some(c) = cancels.remove(&serial) {
@@ -81,11 +84,7 @@ pub async fn watch(wired: Wired) {
             if failed.get(&serial).is_some_and(|n| *n >= GIVE_UP_ATTEMPTS) {
                 continue;
             }
-            let ensured = {
-                let (registry, serial) = (registry.clone(), serial.clone());
-                tokio::task::spawn_blocking(move || registry.ensure(&serial)).await
-            };
-            let dev = match ensured.unwrap_or_else(|e| Err(e.to_string())) {
+            let dev = match registry.ensure(&serial).await {
                 Ok(dev) => {
                     failed.remove(&serial);
                     dev
@@ -109,7 +108,7 @@ pub async fn watch(wired: Wired) {
             let ctx = wired.clone();
             let cancel = Arc::new(Notify::new());
             cancels.insert(serial.clone(), cancel.clone());
-            let registry = registry.clone();
+            let (registry, rescan) = (registry.clone(), rescan.clone());
             tokio::spawn(async move {
                 let ncm = {
                     let (serial, wired) = (dev.serial.clone(), ctx.clone());
@@ -138,6 +137,7 @@ pub async fn watch(wired: Wired) {
                     }
                 }
                 registry.remove(&serial);
+                rescan.notify_one();
             });
         }
     }

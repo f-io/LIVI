@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 livi-base.workspace = true
+futures-util.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "time", "sync", "io-util", "net"] }
 

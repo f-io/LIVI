@@ -9,7 +9,6 @@ livi-aa-proto.workspace = true
 livi-host-proto.workspace = true
 livi-session-io.workspace = true
 livi-wifi.workspace = true
-futures-util.workspace = true
 prost.workspace = true
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
 rustls-pemfile = "2"

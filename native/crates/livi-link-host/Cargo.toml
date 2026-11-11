@@ -5,9 +5,9 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-futures-util.workspace = true
 libc.workspace = true
 livi-net.workspace = true
+livi-session-io.workspace = true
 livi-wifi.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "time", "sync", "io-util", "net"] }
 

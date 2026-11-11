@@ -23,6 +23,14 @@ pub struct Pipe {
     iface: Interface,
     ep_in: Endpoint<Bulk, In>,
     ep_out: Endpoint<Bulk, Out>,
+    zlp: bool,
+}
+
+impl Pipe {
+    pub fn with_zlp(mut self) -> Self {
+        self.zlp = true;
+        self
+    }
 }
 
 pub async fn open_pipe(dev: &Device) -> Result<Pipe, String> {
@@ -41,8 +49,19 @@ pub async fn open_pipe(dev: &Device) -> Result<Pipe, String> {
             .map_err(|e| format!("configuration: {e}"))?;
         bulk_pair(&cfg).ok_or("no interface with bulk in and out")?
     };
+    claim(dev, number, in_addr, out_addr, CLAIM_RETRIES, CLAIM_RETRY).await
+}
+
+pub async fn claim(
+    dev: &Device,
+    number: u8,
+    in_addr: u8,
+    out_addr: u8,
+    tries: usize,
+    wait: Duration,
+) -> Result<Pipe, String> {
     let mut last = String::new();
-    for _ in 0..CLAIM_RETRIES {
+    for _ in 0..tries {
         match dev.claim_interface(number).await {
             Ok(iface) => {
                 let ep_in = iface
@@ -55,11 +74,12 @@ pub async fn open_pipe(dev: &Device) -> Result<Pipe, String> {
                     iface,
                     ep_in,
                     ep_out,
+                    zlp: false,
                 });
             }
             Err(e) => {
                 last = e.to_string();
-                tokio::time::sleep(CLAIM_RETRY).await;
+                tokio::time::sleep(wait).await;
             }
         }
     }
@@ -100,7 +120,7 @@ impl UsbStream {
         let (in_tx, in_rx) = mpsc::unbounded_channel();
         let (out_tx, out_rx) = mpsc::unbounded_channel();
         tokio::spawn(pump_in(pipe.ep_in, in_tx, pipe.iface));
-        tokio::spawn(pump_out(pipe.ep_out, out_rx));
+        tokio::spawn(pump_out(pipe.ep_out, out_rx, pipe.zlp));
         Self {
             rx: in_rx,
             tx: Some(out_tx),
@@ -147,21 +167,43 @@ async fn pump_in(
     }
 }
 
-async fn pump_out(mut ep: Endpoint<Bulk, Out>, mut rx: mpsc::UnboundedReceiver<Vec<u8>>) {
+async fn pump_out(
+    mut ep: Endpoint<Bulk, Out>,
+    mut rx: mpsc::UnboundedReceiver<Vec<u8>>,
+    zlp: bool,
+) {
     while let Some(chunk) = rx.recv().await {
-        ep.submit(Buffer::from(chunk));
-        let done = loop {
-            match tokio::time::timeout(WRITE_DRAIN, ep.next_complete()).await {
-                Ok(done) => break done,
-                Err(_) if rx.is_closed() => return,
-                Err(_) => {}
-            }
-        };
-        if let Err(e) = done.status {
-            eprintln!("[usb] write: {e}");
+        let empty_after = zlp && ends_on_packet(chunk.len(), ep.max_packet_size());
+        if !transfer(&mut ep, &rx, chunk).await
+            || (empty_after && !transfer(&mut ep, &rx, Vec::new()).await)
+        {
             break;
         }
     }
+}
+
+async fn transfer(
+    ep: &mut Endpoint<Bulk, Out>,
+    rx: &mpsc::UnboundedReceiver<Vec<u8>>,
+    chunk: Vec<u8>,
+) -> bool {
+    ep.submit(Buffer::from(chunk));
+    let done = loop {
+        match tokio::time::timeout(WRITE_DRAIN, ep.next_complete()).await {
+            Ok(done) => break done,
+            Err(_) if rx.is_closed() => return false,
+            Err(_) => {}
+        }
+    };
+    if let Err(e) = done.status {
+        eprintln!("[usb] write: {e}");
+        return false;
+    }
+    true
+}
+
+fn ends_on_packet(len: usize, max_packet: usize) -> bool {
+    len != 0 && len.is_multiple_of(max_packet)
 }
 
 impl AsyncRead for UsbStream {
@@ -239,6 +281,16 @@ mod tests {
             in_tx,
             out_rx,
         )
+    }
+
+    #[test]
+    fn only_a_transfer_that_fills_its_last_packet_needs_an_empty_one() {
+        assert!(ends_on_packet(512, 512));
+        assert!(ends_on_packet(1024, 512));
+        assert!(!ends_on_packet(476, 512));
+        assert!(!ends_on_packet(513, 512));
+        assert!(!ends_on_packet(0, 512));
+        assert!(!ends_on_packet(512, 0));
     }
 
     #[tokio::test]

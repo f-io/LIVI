@@ -3059,6 +3059,7 @@ name = "iap2-usbmux"
 version = "10.5.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
+ "livi-session-io",
  "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",
  "tokio",
@@ -3788,7 +3789,6 @@ checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 name = "livi-aa"
 version = "10.5.0"
 dependencies = [
- "futures-util",
  "livi-aa-proto",
  "livi-host-proto",
  "livi-session-io",
@@ -4082,10 +4082,10 @@ dependencies = [
 name = "livi-link-host"
 version = "10.5.0"
 dependencies = [
- "futures-util",
  "iap2-usbmux",
  "libc 1.0.0-alpha.5",
  "livi-net",
+ "livi-session-io",
  "livi-wifi",
  "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",
@@ -4186,6 +4186,7 @@ dependencies = [
 name = "livi-session-io"
 version = "10.5.0"
 dependencies = [
+ "futures-util",
  "livi-base",
  "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",

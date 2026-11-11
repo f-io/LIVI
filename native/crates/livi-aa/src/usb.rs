@@ -11,11 +11,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::{Notify, watch};
 
-use futures_util::StreamExt;
-use nusb::hotplug::HotplugEvent;
 use nusb::transfer::{ControlIn, ControlOut, ControlType, Recipient, TransferError};
 use nusb::{Device, DeviceId, DeviceInfo, ErrorKind};
 
+use livi_session_io::hotplug::{self, Event};
 use livi_session_io::sock::bind_session_socket;
 use livi_session_io::usb::{UsbStream, open_pipe};
 
@@ -44,7 +43,6 @@ const AOAP_STRINGS: [(u16, &str); 6] = [
 ];
 
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
-const WATCH_RETRY: Duration = Duration::from_secs(5);
 const RESET_WINDOW: Duration = Duration::from_secs(3);
 const RESET_RETRIES: usize = 10;
 const RESET_RETRY: Duration = Duration::from_millis(100);
@@ -105,31 +103,13 @@ pub async fn run(
         subscribed.await;
         let _ = ready_tx.send(true);
     });
-    let mut watch = loop {
-        match nusb::watch_devices() {
-            Ok(w) => break w,
-            Err(e) => {
-                eprintln!("[aa-usb] hotplug watch: {e}, retrying");
-                tokio::time::sleep(WATCH_RETRY).await;
-            }
-        }
-    };
-    match nusb::list_devices().await {
-        Ok(list) => {
-            for info in list {
-                seen(&phones, &sessions, &ready, info, true);
-            }
-        }
-        Err(e) => eprintln!("[aa-usb] list devices: {e}"),
-    }
-    println!("[aa-usb] watching for phones");
-    while let Some(ev) = watch.next().await {
-        match ev {
-            HotplugEvent::Connected(info) => seen(&phones, &sessions, &ready, info, false),
-            HotplugEvent::Disconnected(id) => gone(&phones, id),
-        }
-    }
-    eprintln!("[aa-usb] hotplug watch ended");
+    hotplug::watch("aa-usb", |ev| match ev {
+        Event::Present(info) => seen(&phones, &sessions, &ready, info, true),
+        Event::Listed => println!("[aa-usb] watching for phones"),
+        Event::Arrived(info) => seen(&phones, &sessions, &ready, info, false),
+        Event::Left(id) => gone(&phones, id),
+    })
+    .await;
 }
 
 fn label(serial: &str) -> String {

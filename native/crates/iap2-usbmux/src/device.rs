@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::backend::{ensure_carplay_config, find_iphones, restore_default_config};
+use crate::backend::{ensure_carplay_config, restore_default_config};
 use crate::mux::MuxHost;
 use crate::short;
 
@@ -20,9 +20,12 @@ pub struct MuxDevice {
 }
 
 impl MuxDevice {
-    pub fn start(serial: &str) -> Result<Self, String> {
-        ensure_carplay_config(serial)?;
-        let host = MuxHost::open(serial)?;
+    pub async fn start(serial: &str) -> Result<Self, String> {
+        let owned = serial.to_string();
+        tokio::task::spawn_blocking(move || ensure_carplay_config(&owned))
+            .await
+            .map_err(|e| e.to_string())??;
+        let host = MuxHost::open(serial).await?;
         Ok(Self {
             serial: serial.to_string(),
             socket_path: socket_path(serial),
@@ -52,11 +55,11 @@ impl MuxRegistry {
         self.devices.lock().unwrap().keys().cloned().collect()
     }
 
-    pub fn ensure(&self, serial: &str) -> Result<Arc<MuxDevice>, String> {
+    pub async fn ensure(&self, serial: &str) -> Result<Arc<MuxDevice>, String> {
         if let Some(dev) = self.get(serial) {
             return Ok(dev);
         }
-        let dev = Arc::new(MuxDevice::start(serial)?);
+        let dev = Arc::new(MuxDevice::start(serial).await?);
         self.devices
             .lock()
             .unwrap()
@@ -66,29 +69,5 @@ impl MuxRegistry {
 
     pub fn remove(&self, serial: &str) {
         self.devices.lock().unwrap().remove(serial);
-    }
-
-    pub fn sync(&self) -> (Vec<String>, Vec<String>) {
-        let present: Vec<String> = find_iphones().into_iter().map(|d| d.serial).collect();
-        let known = self.serials();
-
-        let mut added = Vec::new();
-        for serial in &present {
-            if !known.contains(serial) {
-                match self.ensure(serial) {
-                    Ok(_) => added.push(serial.clone()),
-                    Err(e) => eprintln!("[muxd] {}: {e}", short(serial)),
-                }
-            }
-        }
-
-        let mut removed = Vec::new();
-        for serial in known {
-            if !present.contains(&serial) {
-                self.remove(&serial);
-                removed.push(serial);
-            }
-        }
-        (added, removed)
     }
 }
