@@ -213,8 +213,6 @@ jobs:
         if: matrix.os == 'macos'
         working-directory: native
         shell: bash
-        env:
-          PKG_CONFIG_PATH: /Library/Frameworks/GStreamer.framework/Versions/1.0/lib/pkgconfig
         run: |
           set -euo pipefail
           rm -rf ../dist

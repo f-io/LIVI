@@ -21,7 +21,8 @@ rustflags = [
 xtask = "run --quiet --package xtask --"
 
 [env]
-PKG_CONFIG_PATH = "/Library/Frameworks/GStreamer.framework/Versions/1.0/lib/pkgconfig"
+PKG_CONFIG_PATH_aarch64_apple_darwin = "/Library/Frameworks/GStreamer.framework/Versions/1.0/lib/pkgconfig"
+PKG_CONFIG_PATH_x86_64_apple_darwin = "/Library/Frameworks/GStreamer.framework/Versions/1.0/lib/pkgconfig"
 
 [target.'cfg(target_os = "macos")']
 rustflags = ["-C", "link-arg=-Wl,-rpath,/Library/Frameworks/GStreamer.framework/Versions/1.0/lib"]

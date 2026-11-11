@@ -77,8 +77,6 @@ jobs:
     if: ${{ github.actor != 'github-actions' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') }}
     runs-on: macos-latest
     timeout-minutes: 40
-    env:
-      PKG_CONFIG_PATH: /Library/Frameworks/GStreamer.framework/Versions/1.0/lib/pkgconfig
 
     steps:
       - uses: actions/checkout@v7
