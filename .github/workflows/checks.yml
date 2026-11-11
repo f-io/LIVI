@@ -117,6 +117,9 @@ jobs:
           base="https://gstreamer.freedesktop.org/data/pkg/osx/$v"
           curl -fL -C - --retry 10 --retry-all-errors --retry-delay 5 -o gst-runtime.pkg "$base/gstreamer-1.0-$v-universal.pkg"
           curl -fL -C - --retry 10 --retry-all-errors --retry-delay 5 -o gst-devel.pkg "$base/gstreamer-1.0-devel-$v-universal.pkg"
+          runtime_sha=$(curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "$base/gstreamer-1.0-$v-universal.pkg.sha256sum" | cut -d' ' -f1)
+          devel_sha=$(curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "$base/gstreamer-1.0-devel-$v-universal.pkg.sha256sum" | cut -d' ' -f1)
+          printf '%s  gst-runtime.pkg\n%s  gst-devel.pkg\n' "$runtime_sha" "$devel_sha" | shasum -a 256 -c
 
       - name: Install GStreamer (runtime + devel)
         run: |
@@ -199,14 +202,20 @@ jobs:
       - name: Check formatting (YAML, Markdown, JSON, TOML)
         run: |
           set -euo pipefail
-          curl -fsSL https://dprint.dev/install.sh | sh -s 0.64.3 >/dev/null
-          "$HOME/.dprint/bin/dprint" check
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o "$RUNNER_TEMP/dprint.zip" \
+            https://github.com/dprint/dprint/releases/download/0.64.3/dprint-x86_64-unknown-linux-gnu.zip
+          echo "f71cb7e22d6776439eba168d5cb296092d6413fea7148fe4d70684a2702a4fee  $RUNNER_TEMP/dprint.zip" | sha256sum -c
+          unzip -q "$RUNNER_TEMP/dprint.zip" -d "$RUNNER_TEMP/dprint"
+          "$RUNNER_TEMP/dprint/dprint" check
 
       - name: Lint the workflows
         run: |
           set -euo pipefail
-          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
-          ./actionlint -color
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o "$RUNNER_TEMP/actionlint.tar.gz" \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color
 
       - name: Check the license headers
         run: sh scripts/spdx-header.sh --check

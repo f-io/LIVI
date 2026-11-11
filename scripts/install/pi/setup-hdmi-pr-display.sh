@@ -72,11 +72,21 @@ require_pi() {
   fi
 }
 
+RPI_SOURCE_REV=33374350a1f4b1850530c9c16ce8e256bc269e2d
+RPI_SOURCE_SHA256=80297168a4659f619c335319b53ad392d0090be3ec1a640d8faf7c9bd51225ba
+
 ensure_rpi_source() {
   if ! command -v rpi-source >/dev/null 2>&1; then
-    sudo wget -q https://raw.githubusercontent.com/RPi-Distro/rpi-source/master/rpi-source \
-      -O /usr/local/bin/rpi-source
-    sudo chmod +x /usr/local/bin/rpi-source
+    local tmp
+    tmp=$(mktemp)
+    wget -q "https://raw.githubusercontent.com/RPi-Distro/rpi-source/$RPI_SOURCE_REV/rpi-source" -O "$tmp"
+    echo "$RPI_SOURCE_SHA256  $tmp" | sha256sum -c --status || {
+      rm -f "$tmp"
+      echo "rpi-source does not match its sha256" >&2
+      exit 1
+    }
+    sudo install -m 0755 "$tmp" /usr/local/bin/rpi-source
+    rm -f "$tmp"
   fi
 }
 

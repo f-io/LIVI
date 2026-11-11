@@ -9,7 +9,17 @@ use std::process::Command;
 
 use crate::util::{Arch, copy_exe, copy_tree, exec, fetch_gstreamer, read, root, version};
 
-const APPIMAGETOOL: &str = "https://api.github.com/repos/AppImage/appimagetool/releases/latest";
+const APPIMAGETOOL_VERSION: &str = "1.9.1";
+const APPIMAGETOOL_SHA256: [(&str, &str); 2] = [
+    (
+        "x86_64",
+        "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0",
+    ),
+    (
+        "aarch64",
+        "f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158",
+    ),
+];
 
 const START: &str = r#"#!/bin/sh
 HERE="$(dirname "$(readlink -f "$0")")"
@@ -61,18 +71,6 @@ fn sha256(path: &Path) -> Result<String, String> {
         .to_string())
 }
 
-fn cached(dir: &Path, prefix: &str) -> Option<PathBuf> {
-    fs::read_dir(dir)
-        .ok()?
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with(prefix) && !n.ends_with(".part"))
-        })
-        .max_by_key(|p| fs::metadata(p).and_then(|m| m.modified()).ok())
-}
-
 fn appimagetool() -> Result<PathBuf, String> {
     if let Ok(tool) = std::env::var("APPIMAGETOOL") {
         return Ok(tool.into());
@@ -80,30 +78,16 @@ fn appimagetool() -> Result<PathBuf, String> {
     let host = std::env::consts::ARCH;
     let asset = format!("appimagetool-{host}.AppImage");
     let prefix = format!("appimagetool-{host}-");
+    let want = APPIMAGETOOL_SHA256
+        .iter()
+        .find(|(arch, _)| *arch == host)
+        .map(|(_, sha)| *sha)
+        .ok_or_else(|| format!("no pinned appimagetool for {host}, set APPIMAGETOOL"))?;
+    let url = format!(
+        "https://github.com/AppImage/appimagetool/releases/download/{APPIMAGETOOL_VERSION}/{asset}"
+    );
     let dir = root().join("native/target/tools");
-    let release = read(Command::new("curl").args(["-fsSL", "--retry", "3", APPIMAGETOOL]));
-    let release: serde_json::Value = match release {
-        Ok(json) => serde_json::from_str(&json).map_err(|e| format!("{APPIMAGETOOL}: {e}"))?,
-        Err(e) => {
-            return cached(&dir, &prefix).ok_or(e).inspect(|tool| {
-                println!("[package-linux] offline, using {}", tool.display());
-            });
-        }
-    };
-    let found = release["assets"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|a| a["name"] == asset.as_str())
-        .ok_or_else(|| format!("no {asset} in the latest appimagetool release"))?;
-    let url = found["browser_download_url"]
-        .as_str()
-        .ok_or_else(|| format!("{asset} has no download url"))?;
-    let want = found["digest"]
-        .as_str()
-        .and_then(|d| d.strip_prefix("sha256:"))
-        .ok_or_else(|| format!("{asset} has no sha256"))?;
-    let name = format!("{prefix}{}", &want[..want.len().min(12)]);
+    let name = format!("{prefix}{APPIMAGETOOL_VERSION}");
     let tool = dir.join(&name);
     if tool.exists() && sha256(&tool)? == want {
         return Ok(tool);
@@ -115,7 +99,7 @@ fn appimagetool() -> Result<PathBuf, String> {
         Command::new("curl")
             .args(["-fsSL", "--retry", "3", "-o"])
             .arg(&part)
-            .arg(url),
+            .arg(&url),
     )?;
     let got = sha256(&part)?;
     if got != want {

@@ -127,7 +127,7 @@ livi_pick_channel() {
 # livi_fetch_appimage <dest> [source]
 # source is an optional local path or http(s) URL, otherwise the picked channel.
 livi_fetch_appimage() {
-  local dest="$1" src="${2:-}" arch url tmp
+  local dest="$1" src="${2:-}" arch url sha tmp
   mkdir -p "$(dirname "$dest")"
   tmp="$dest.download"
 
@@ -145,16 +145,21 @@ livi_fetch_appimage() {
   else
     arch="$(livi_asset_arch)" || return 1
     echo "→ Fetching the latest $LIVI_CHANNEL build for $arch"
-    url="$(curl -s "$LIVI_RELEASE_API" \
-      | grep browser_download_url \
-      | grep "linux-${arch}.AppImage" \
-      | cut -d '"' -f 4)"
-    if [ -z "$url" ]; then
+    read -r url sha < <(curl -fsSL "$LIVI_RELEASE_API" | awk -F'"' -v want="linux-${arch}.AppImage" '
+      /"digest":/ { d = $4 }
+      /"browser_download_url":/ && index($4, want) { sub(/^sha256:/, "", d); print $4, d; exit }
+    ') || true
+    if [ -z "${url:-}" ]; then
       echo "Error: no ${arch} AppImage in the latest $LIVI_CHANNEL build" >&2
+      return 1
+    fi
+    if [ -z "${sha:-}" ]; then
+      echo "Error: the $LIVI_CHANNEL build publishes no sha256 for $url" >&2
       return 1
     fi
     echo "   Download URL: $url"
     curl -fL "$url" --output "$tmp" || { rm -f "$tmp"; echo "Error: download failed" >&2; return 1; }
+    echo "$sha  $tmp" | sha256sum -c --status || { rm -f "$tmp"; echo "Error: $url does not match its sha256" >&2; return 1; }
   fi
 
   mv -f "$tmp" "$dest"

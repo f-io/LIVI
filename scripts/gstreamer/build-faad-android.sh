@@ -5,11 +5,12 @@ set -euo pipefail
 # then ext/faad from the gst-plugins-bad source matching the GStreamer Android SDK. The SDK
 # ships no decoder that plays DAB+ (960 sample frames with SBR and PS). Leaves libgstfaad.a
 # and libfaad.a in OUT_DIR for package-android.sh.
-#   build-faad-android.sh GST_ROOT [OUT_DIR]   (ANDROID_NDK_HOME, ANDROID_API, FAAD2_VERSION overridable)
+#   build-faad-android.sh GST_ROOT [OUT_DIR]   (ANDROID_NDK_HOME, ANDROID_API, FAAD2_VERSION, FAAD2_SHA256 overridable)
 
 GST_ROOT="$(cd "${1:?GStreamer Android SDK arm64 root required}" && pwd)"
 OUT="${2:-$(mktemp -d)}"
 FAAD2_VERSION="${FAAD2_VERSION:-2.11.4}"
+FAAD2_SHA256="${FAAD2_SHA256:-ee479ccbae4a8387ab696e6f21a481bd83fe3881471cafa81b4ae59d7d3aed43}"
 ANDROID_API="${ANDROID_API:-24}"
 NDK="${ANDROID_NDK_HOME:?ANDROID_NDK_HOME not set}"
 
@@ -46,6 +47,8 @@ OUT="$(cd "$OUT" && pwd)"
   cd "$work"
   curl -fsSL -o faad2.tar.gz "$FAAD_URL"
   curl -fsSL -o bad.tar.xz "$GST_URL"
+  bad_sha256=$(curl -fsSL "$GST_URL.sha256sum" | cut -d' ' -f1)
+  printf '%s  faad2.tar.gz\n%s  bad.tar.xz\n' "$FAAD2_SHA256" "$bad_sha256" | sha256sum -c -
   tar -xf faad2.tar.gz
   tar -xf bad.tar.xz
 

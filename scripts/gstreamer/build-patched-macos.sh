@@ -45,6 +45,8 @@ work="$(mktemp -d)"
 (
   cd "$work"
   curl -fsSL -o src.tar.xz "$SRC_URL"
+  src_sha256=$(curl -fsSL "$SRC_URL.sha256sum" | cut -d' ' -f1)
+  echo "$src_sha256  src.tar.xz" | sha256sum -c -
   tar -xf src.tar.xz
   cd "gst-plugins-bad-${GST_VERSION}"
   apply_series "$PATCHES/series-macos"

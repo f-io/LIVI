@@ -5,11 +5,12 @@ set -euo pipefail
 # ext/faad from the gst-plugins-bad source matching the installed GStreamer.framework. The
 # framework ships no decoder that plays DAB+ (960 sample frames with SBR and PS), libav
 # drops SBR there. Prints the path of libgstfaad.dylib for package-macos.sh.
-#   build-faad-macos.sh [OUT_DIR]      (GST_VERSION, GST_ROOT, FAAD2_VERSION overridable)
+#   build-faad-macos.sh [OUT_DIR]      (GST_VERSION, GST_ROOT, FAAD2_VERSION, FAAD2_SHA256 overridable)
 
 GST_ROOT="${GST_ROOT:-/Library/Frameworks/GStreamer.framework/Versions/1.0}"
 OUT="${1:-$(mktemp -d)}"
 FAAD2_VERSION="${FAAD2_VERSION:-2.11.4}"
+FAAD2_SHA256="${FAAD2_SHA256:-ee479ccbae4a8387ab696e6f21a481bd83fe3881471cafa81b4ae59d7d3aed43}"
 ARCHS=(arm64 x86_64)
 
 export PKG_CONFIG_PATH="$GST_ROOT/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
@@ -37,6 +38,8 @@ work="$(mktemp -d)"
   cd "$work"
   curl -fsSL -o faad2.tar.gz "$FAAD_URL"
   curl -fsSL -o bad.tar.xz "$GST_URL"
+  bad_sha256=$(curl -fsSL "$GST_URL.sha256sum" | cut -d' ' -f1)
+  printf '%s  faad2.tar.gz\n%s  bad.tar.xz\n' "$FAAD2_SHA256" "$bad_sha256" | sha256sum -c -
   tar -xf faad2.tar.gz
   tar -xf bad.tar.xz
   slices=()
