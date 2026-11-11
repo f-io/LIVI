@@ -6,26 +6,13 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use livi_base::fs::{PRIVATE, write_atomic};
+use livi_base::hex::{decode as unhex, encode as hex};
 
 use crate::hci::{self, Addr};
 
 pub struct Keys {
     path: PathBuf,
     keys: BTreeMap<Addr, ([u8; 16], u8)>,
-}
-
-fn unhex(text: &str) -> Option<Vec<u8>> {
-    if !text.len().is_multiple_of(2) {
-        return None;
-    }
-    (0..text.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok())
-        .collect()
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 impl Keys {

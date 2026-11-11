@@ -6,6 +6,8 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
 
+use livi_base::checksum::crc32;
+
 const MAGIC: &[u8; 4] = b"LVCF";
 const VERSION_V1: u16 = 1;
 const VERSION_V2: u16 = 2;
@@ -306,22 +308,6 @@ fn write_blob(blob: &[u8]) -> std::io::Result<()> {
         libc::sync();
     }
     Ok(())
-}
-
-fn crc32(data: &[u8]) -> u32 {
-    let mut crc = 0xFFFF_FFFFu32;
-    for &b in data {
-        let mut byte = b as u32;
-        for _ in 0..8 {
-            let mix = (crc ^ byte) & 1;
-            crc >>= 1;
-            if mix != 0 {
-                crc ^= 0xEDB8_8320;
-            }
-            byte >>= 1;
-        }
-    }
-    !crc
 }
 
 fn io_err(msg: &str) -> std::io::Error {

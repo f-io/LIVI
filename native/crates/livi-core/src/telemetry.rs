@@ -3,9 +3,9 @@
 // Additional terms: see NOTICE
 
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::http::StatusCode;
+use livi_base::time::unix_ms;
 use livi_core_proto::config::{
     AppearanceMode, AppearanceSetting, CarType, Config, EvConnectorType, NIGHT_MODE_KEYS,
 };
@@ -43,12 +43,6 @@ const NESTED: [&str; 6] = [
 ];
 const VOLUME_STEP: f64 = 0.005;
 
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis() as u64)
-}
-
 pub fn merge(snap: &mut Snapshot, patch: &Value) -> Option<Snapshot> {
     let patch = patch.as_object().filter(|p| !p.is_empty())?;
     let mut changed = Snapshot::new();
@@ -71,7 +65,7 @@ pub fn merge(snap: &mut Snapshot, patch: &Value) -> Option<Snapshot> {
         changed.insert(key.to_string(), merged);
     }
     if !patch.contains_key("ts") {
-        let ts = Value::from(now_ms());
+        let ts = Value::from(unix_ms() as u64);
         snap.insert("ts".into(), ts.clone());
         changed.insert("ts".into(), ts);
     }

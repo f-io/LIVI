@@ -2,5 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+pub mod checksum;
 pub mod frame;
 pub mod fs;
+pub mod hex;
+pub mod num;
+pub mod time;

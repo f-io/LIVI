@@ -80,17 +80,7 @@ fn zip(files: &[(&str, &[u8])]) -> Vec<u8> {
     out
 }
 
-pub fn crc32(data: &[u8]) -> u32 {
-    !data.iter().fold(!0, |crc, &byte| {
-        (0..8).fold(crc ^ u32::from(byte), |c, _| {
-            if c & 1 == 1 {
-                (c >> 1) ^ 0xEDB8_8320
-            } else {
-                c >> 1
-            }
-        })
-    })
-}
+pub use livi_base::checksum::crc32;
 
 #[cfg(test)]
 mod tests {

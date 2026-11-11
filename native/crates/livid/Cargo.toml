@@ -1,13 +1,15 @@
 [package]
 name = "livid"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "livid"
 path = "src/main.rs"
 
 [dependencies]
+livi-base.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 livi-mdns.workspace = true

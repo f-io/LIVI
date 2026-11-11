@@ -2,10 +2,7 @@
 name = "livi-core"
 version.workspace = true
 edition.workspace = true
-
-[lib]
-name = "livi_core"
-path = "src/lib.rs"
+license.workspace = true
 
 [[bin]]
 name = "livi-core"

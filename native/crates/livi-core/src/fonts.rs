@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use livi_base::hex::encode as hex;
 use sha2::{Digest, Sha256};
 use skrifa::MetadataProvider;
 use skrifa::raw::FileRef;
@@ -191,10 +192,6 @@ async fn system_has(font: &Font) -> bool {
         .output()
         .await
         .is_ok_and(|o| o.status.success() && !o.stdout.trim_ascii().is_empty())
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 async fn fetch(client: &reqwest::Client, source: &Source) -> Result<Vec<u8>, String> {

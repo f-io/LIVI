@@ -69,21 +69,7 @@ pub fn image(images: &[(u8, Vec<u8>)], typ: u8) -> Option<&[u8]> {
         .map(|(_, data)| data.as_slice())
 }
 
-pub fn crc32(data: &[u8]) -> u32 {
-    let mut crc = 0xFFFF_FFFFu32;
-    for &b in data {
-        let mut byte = b as u32;
-        for _ in 0..8 {
-            let mix = (crc ^ byte) & 1;
-            crc >>= 1;
-            if mix != 0 {
-                crc ^= 0xEDB8_8320;
-            }
-            byte >>= 1;
-        }
-    }
-    !crc
-}
+pub use livi_base::checksum::crc32;
 
 fn md5_hex(data: &[u8]) -> String {
     Md5::digest(data)

@@ -172,10 +172,7 @@ pub fn has_field(buf: &[u8], field: u32) -> bool {
     decode_fields(buf).any(|f| f.field == field)
 }
 
-pub fn round_half_up(x: f64) -> f64 {
-    let floor = x.floor();
-    if x - floor >= 0.5 { floor + 1.0 } else { floor }
-}
+pub use livi_base::num::round_half_up;
 
 #[cfg(test)]
 mod tests {

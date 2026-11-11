@@ -1,7 +1,8 @@
 [package]
 name = "livi-compositor"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 # Nested Wayland compositor for LIVI: hosts the LIVI UI and tagged GStreamer
 # waylandsink video planes as windows of the outer session, composited zero-copy.

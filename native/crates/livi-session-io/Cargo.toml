@@ -1,7 +1,8 @@
 [package]
 name = "livi-session-io"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [dependencies]
 livi-base.workspace = true
@@ -14,4 +15,3 @@ nusb = { workspace = true, features = ["tokio"] }
 [target.'cfg(target_os = "android")'.dependencies]
 nusb-android = { workspace = true, features = ["tokio"] }
 
-[dev-dependencies]

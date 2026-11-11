@@ -34,6 +34,4 @@ fn env_on(name: &str) -> bool {
     std::env::var(name).is_ok_and(|v| v == "1")
 }
 
-pub fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
+pub use livi_base::hex::encode as hex;

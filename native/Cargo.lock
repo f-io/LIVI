@@ -3134,15 +3134,15 @@ dependencies = [
 
 [[package]]
 name = "iap2-csm"
-version = "0.1.0"
+version = "10.5.0"
 
 [[package]]
 name = "iap2-link"
-version = "0.1.0"
+version = "10.5.0"
 
 [[package]]
 name = "iap2-mfi"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "base64 0.23.1",
  "libc 1.0.0-alpha.5",
@@ -3153,7 +3153,7 @@ dependencies = [
 
 [[package]]
 name = "iap2-usbmux"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
  "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -3163,7 +3163,7 @@ dependencies = [
 
 [[package]]
 name = "iap2-wired"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "iap2-usbmux",
  "idevice",
@@ -3434,7 +3434,7 @@ checksum = "6e44b0a4eaa4c82f441d50a963f2d5f05a787240aeee097597033e72accfd22f"
 
 [[package]]
 name = "imx6ul-uboot"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "aes",
  "flate2",
@@ -3883,7 +3883,7 @@ checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 
 [[package]]
 name = "livi-aa"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "futures-util",
  "livi-aa-proto",
@@ -3895,7 +3895,6 @@ dependencies = [
  "prost",
  "rustls",
  "rustls-pemfile",
- "rustls-pki-types",
  "serde_json",
  "socket2",
  "tokio",
@@ -3903,7 +3902,7 @@ dependencies = [
 
 [[package]]
 name = "livi-aa-proto"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "prost",
  "prost-build",
@@ -3912,9 +3911,10 @@ dependencies = [
 
 [[package]]
 name = "livi-aa-stack"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "livi-aa-proto",
+ "livi-base",
  "livi-core-proto",
  "livi-session-io",
  "livi-wifi",
@@ -3925,7 +3925,7 @@ dependencies = [
 
 [[package]]
 name = "livi-aaudio"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "gstreamer",
  "gstreamer-audio",
@@ -3956,7 +3956,7 @@ dependencies = [
 
 [[package]]
 name = "livi-audio"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "gstreamer",
  "gstreamer-app",
@@ -3970,11 +3970,11 @@ dependencies = [
 
 [[package]]
 name = "livi-base"
-version = "0.1.0"
+version = "10.5.0"
 
 [[package]]
 name = "livi-bt-host"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "livi-base",
  "livi-net",
@@ -3982,7 +3982,7 @@ dependencies = [
 
 [[package]]
 name = "livi-btd"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
  "livi-net",
@@ -3990,7 +3990,7 @@ dependencies = [
 
 [[package]]
 name = "livi-compositor"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "ab_glyph",
  "calloop-wayland-source 0.4.1",
@@ -4043,7 +4043,7 @@ dependencies = [
 
 [[package]]
 name = "livi-core-client"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
  "livi-core-proto",
@@ -4052,7 +4052,7 @@ dependencies = [
 
 [[package]]
 name = "livi-core-proto"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "base64 0.23.1",
  "livi-base",
@@ -4063,7 +4063,7 @@ dependencies = [
 
 [[package]]
 name = "livi-cp"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "aes",
  "base64 0.23.1",
@@ -4093,28 +4093,28 @@ dependencies = [
 
 [[package]]
 name = "livi-crypto"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "aws-lc-rs",
 ]
 
 [[package]]
 name = "livi-dab"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "rustfft",
 ]
 
 [[package]]
 name = "livi-fm"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "livi-dab",
 ]
 
 [[package]]
 name = "livi-gst-host"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "glib",
  "glib-unix",
@@ -4130,7 +4130,7 @@ dependencies = [
 
 [[package]]
 name = "livi-helper"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "iap2-link",
  "iap2-mfi",
@@ -4145,13 +4145,12 @@ dependencies = [
  "livi-net",
  "livi-runtime",
  "livi-wifi",
- "serde_json",
  "tokio",
 ]
 
 [[package]]
 name = "livi-helperd"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
  "livi-core-proto",
@@ -4165,28 +4164,28 @@ dependencies = [
 
 [[package]]
 name = "livi-hfp"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
 ]
 
 [[package]]
 name = "livi-host-proto"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "livi-base",
 ]
 
 [[package]]
 name = "livi-i18n"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "livi-link-host"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "futures-util",
  "iap2-usbmux",
@@ -4200,10 +4199,11 @@ dependencies = [
 
 [[package]]
 name = "livi-link-provision"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "backhand",
  "imx6ul-uboot",
+ "livi-base",
  "md-5",
  "serde",
  "serde_json",
@@ -4213,7 +4213,7 @@ dependencies = [
 
 [[package]]
 name = "livi-link-provision-cli"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "livi-link-host",
  "livi-link-provision",
@@ -4224,7 +4224,7 @@ dependencies = [
 
 [[package]]
 name = "livi-mdns"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
  "socket2",
@@ -4232,24 +4232,24 @@ dependencies = [
 
 [[package]]
 name = "livi-media"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
+ "livi-base",
  "livi-core-proto",
  "livi-host-proto",
- "serde_json",
  "tokio",
 ]
 
 [[package]]
 name = "livi-net"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
 ]
 
 [[package]]
 name = "livi-rtlsdr"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",
@@ -4257,7 +4257,7 @@ dependencies = [
 
 [[package]]
 name = "livi-runtime"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "base64 0.23.1",
  "iap2-csm",
@@ -4277,7 +4277,7 @@ dependencies = [
 
 [[package]]
 name = "livi-screen-stream"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "glib",
  "glib-unix",
@@ -4288,7 +4288,7 @@ dependencies = [
 
 [[package]]
 name = "livi-session-io"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "livi-base",
  "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -4320,8 +4320,9 @@ dependencies = [
 
 [[package]]
 name = "livi-ui-model"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
+ "livi-base",
  "livi-core-proto",
  "livi-i18n",
  "serde_json",
@@ -4329,14 +4330,14 @@ dependencies = [
 
 [[package]]
 name = "livi-video"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "livi-host-proto",
 ]
 
 [[package]]
 name = "livi-video-player"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "gstreamer",
  "gstreamer-app",
@@ -4348,7 +4349,7 @@ dependencies = [
 
 [[package]]
 name = "livi-video-view"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "cc",
  "livi-host-proto",
@@ -4358,9 +4359,10 @@ dependencies = [
 
 [[package]]
 name = "livi-web"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
+ "livi-base",
  "livi-net",
  "livi-wifi",
  "livi-wifid",
@@ -4368,29 +4370,28 @@ dependencies = [
 
 [[package]]
 name = "livi-wifi"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
 ]
 
 [[package]]
 name = "livi-wifid"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
- "libc 1.0.0-alpha.5",
  "livi-base",
  "livi-btd",
- "livi-net",
  "livi-wifi",
 ]
 
 [[package]]
 name = "livid"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "iap2-mfi",
  "imx6ul-uboot",
  "libc 1.0.0-alpha.5",
+ "livi-base",
  "livi-btd",
  "livi-mdns",
  "livi-net",
@@ -4624,7 +4625,7 @@ dependencies = [
 
 [[package]]
 name = "mkbootimg-v821b"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "flate2",
 ]
@@ -9310,7 +9311,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "0.1.0"
+version = "10.5.0"
 dependencies = [
  "serde_json",
 ]

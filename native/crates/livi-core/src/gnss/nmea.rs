@@ -4,6 +4,8 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use livi_base::time::days_from_civil;
+
 use super::info::{Constellation, FixMode, FixQuality, GpsFix, Satellite};
 use super::{latin1, trim};
 
@@ -366,20 +368,7 @@ fn utc_ms(time: Option<&str>, date: &str) -> Option<f64> {
     ))
 }
 
-pub(super) fn round_half_up(x: f64) -> f64 {
-    let floor = x.floor();
-    if x - floor >= 0.5 { floor + 1.0 } else { floor }
-}
-
-fn days_to_month(year: i64, month: i64) -> i64 {
-    let y = if month <= 2 { year - 1 } else { year };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let mp = (month + 9) % 12;
-    let doy = (153 * mp + 2) / 5;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
-}
+pub(super) use livi_base::num::round_half_up;
 
 fn date_utc(
     year: f64,
@@ -393,7 +382,7 @@ fn date_utc(
     let (year, month) = (year.trunc(), month.trunc());
     let year = year + (month / 12.0).floor();
     let month = month.rem_euclid(12.0);
-    let days = days_to_month(year as i64, month as i64 + 1) as f64 + day.trunc() - 1.0;
+    let days = days_from_civil(year as i64, month as i64 + 1, 1) as f64 + day.trunc() - 1.0;
     let time = hours.trunc() * 3_600_000.0
         + minutes.trunc() * 60_000.0
         + seconds.trunc() * 1000.0

@@ -7,10 +7,6 @@ homepage.workspace = true
 authors.workspace = true
 license.workspace = true
 
-[lib]
-name = "livi_ui"
-path = "src/lib.rs"
-
 [[bin]]
 name = "LIVI"
 path = "src/main.rs"
@@ -24,7 +20,7 @@ livi-core-proto.workspace = true
 livi-ui-model.workspace = true
 raw-window-handle = "0.6.2"
 serde_json.workspace = true
-slint = { version = "1.18.1", default-features = false, features = [
+slint = { workspace = true, features = [
   "std",
   "compat-1-2",
   "renderer-software",
@@ -33,7 +29,7 @@ slint = { version = "1.18.1", default-features = false, features = [
 ] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
-slint = { version = "1.18.1", default-features = false, features = [
+slint = { workspace = true, features = [
   "backend-winit",
   "backend-winit-wayland",
   "renderer-femtovg",
@@ -41,7 +37,7 @@ slint = { version = "1.18.1", default-features = false, features = [
 ] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-slint = { version = "1.18.1", default-features = false, features = ["backend-android-activity-06"] }
+slint = { workspace = true, features = ["backend-android-activity-06"] }
 i-slint-backend-android-activity = { version = "=1.18.1", default-features = false, features = ["aa-06"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -62,4 +58,4 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = [
 ] }
 
 [build-dependencies]
-slint-build = "1.18.1"
+slint-build.workspace = true

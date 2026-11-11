@@ -5,6 +5,7 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use livi_base::hex::encode as hex;
 use livi_core_proto::theme::{DisplayKind, Palette, Theme, ThemeDisplay, ThemeLayout, Zone};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -276,10 +277,6 @@ fn inflate(data: &[u8]) -> Result<Vec<u8>, String> {
         .read_to_end(&mut out)
         .map_err(|e| e.to_string())?;
     Ok(out)
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 pub fn from_package(id: &str, package: &Value, styles: &Value) -> Option<Theme> {

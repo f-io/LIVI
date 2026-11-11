@@ -3,9 +3,10 @@
 // Additional terms: see NOTICE
 
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use livi_base::fs::{SHARED, write_atomic};
+use livi_base::time::unix_ms;
 use livi_core_proto::ids::{Ids, norm_mac};
 use livi_core_proto::state::{DeviceStatus, DeviceView, Protocol};
 use livi_cp::helper_sock::HelperSock;
@@ -135,12 +136,6 @@ impl Entry {
 fn real_name(v: Option<&str>) -> Option<String> {
     let name = v?.trim();
     (!name.is_empty() && !name.eq_ignore_ascii_case("android")).then(|| name.to_string())
-}
-
-fn now_ms() -> f64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0.0, |d| d.as_millis() as f64)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -333,7 +328,7 @@ impl Registry {
         } else {
             e.present.wifi = true;
         }
-        s.last_seen = Some(now_ms());
+        s.last_seen = Some(unix_ms().floor());
         self.persist();
     }
 
@@ -345,7 +340,7 @@ impl Registry {
             if ids.ip.is_some() {
                 e.current_ip.clone_from(&ids.ip);
             }
-            e.stored.last_seen = Some(now_ms());
+            e.stored.last_seen = Some(unix_ms().floor());
         }
     }
 

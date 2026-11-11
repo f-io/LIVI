@@ -1,10 +1,11 @@
 [package]
 name = "livi-aaudio"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
 gstreamer = { workspace = true, features = ["v1_24"] }
-gstreamer-audio = { version = "0.25", features = ["v1_24"] }
-gstreamer-base = { version = "0.25", features = ["v1_24"] }
+gstreamer-audio = { workspace = true, features = ["v1_24"] }
+gstreamer-base = { workspace = true, features = ["v1_24"] }
 ndk-sys = { version = "0.6", features = ["audio"] }

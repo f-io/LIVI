@@ -131,9 +131,7 @@ pub fn touch_report(contacts: &[Contact]) -> [u8; BYTES_PER_FINGER * TOUCH_CONTA
     r
 }
 
-pub(crate) fn round_half_up(v: f64) -> f64 {
-    (v + 0.5).floor()
-}
+pub(crate) use livi_base::num::round_half_up;
 
 fn axis(v: f64) -> u16 {
     round_half_up(v).clamp(0.0, f64::from(u16::MAX)) as u16

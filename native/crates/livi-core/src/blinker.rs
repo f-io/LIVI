@@ -4,8 +4,9 @@
 
 use std::f64::consts::PI;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
+use livi_base::time::unix_ms;
 use livi_core_proto::state::State;
 use livi_media::gst_host::{AudioCodec, AudioOpts, GstHost};
 use tokio::sync::watch;
@@ -89,12 +90,6 @@ fn relay_click(on: bool) -> Vec<f32> {
         *sample = (f64::from(*sample) * norm) as f32;
     }
     out
-}
-
-fn now_ms() -> f64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0.0, |d| d.as_secs_f64() * 1000.0)
 }
 
 struct Clicks {
@@ -191,7 +186,7 @@ async fn open(gst: &GstHost, device: &str) -> Option<Stream> {
     Some(Stream {
         id,
         device: device.to_string(),
-        clicks: Clicks::new(now_ms()),
+        clicks: Clicks::new(unix_ms()),
     })
 }
 
@@ -233,7 +228,7 @@ pub async fn run(hub: Arc<Hub>, gst: GstHost) {
             changed = state.changed() => if changed.is_err() { return },
             _ = tick.tick(), if stream.is_some() => {
                 if let Some(s) = stream.as_mut() {
-                    let pcm = s.clicks.generate(now_ms(), active, gain(volume));
+                    let pcm = s.clicks.generate(unix_ms(), active, gain(volume));
                     if !pcm.is_empty() {
                         gst.push_audio(s.id, &pcm);
                     }

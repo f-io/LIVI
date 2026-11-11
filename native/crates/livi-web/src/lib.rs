@@ -69,6 +69,7 @@ use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
+use livi_base::checksum::crc32;
 use livi_wifid::radio::{self, Radio};
 
 const INDEX_HTML: &str = include_str!("../web/index.html");
@@ -491,22 +492,6 @@ fn flash_matches(path: &str, expected: &[u8]) -> std::io::Result<bool> {
     let mut buf = vec![0u8; expected.len()];
     f.read_exact(&mut buf)?;
     Ok(crc32(&buf) == crc32(expected))
-}
-
-fn crc32(data: &[u8]) -> u32 {
-    let mut crc = 0xFFFF_FFFFu32;
-    for &b in data {
-        let mut byte = b as u32;
-        for _ in 0..8 {
-            let mix = (crc ^ byte) & 1;
-            crc >>= 1;
-            if mix != 0 {
-                crc ^= 0xEDB8_8320;
-            }
-            byte >>= 1;
-        }
-    }
-    !crc
 }
 
 fn write_chunked(path: &str, data: &[u8], node: &str) -> std::io::Result<()> {

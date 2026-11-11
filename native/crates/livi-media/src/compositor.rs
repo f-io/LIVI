@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
+use livi_base::num::round_half_up;
 use livi_core_proto::config::{Config, TouchCalibration};
 use livi_core_proto::input::{Input, Phase, Point};
 use livi_core_proto::state::{Display, Screen};
@@ -215,10 +216,6 @@ enum Cmd {
     Claim(String, oneshot::Sender<()>),
     Release(String),
     State(String, String),
-}
-
-fn round_half_up(v: f64) -> f64 {
-    (v + 0.5).floor()
 }
 
 #[derive(Clone)]

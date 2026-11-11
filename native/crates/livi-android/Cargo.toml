@@ -2,6 +2,7 @@
 name = "livi-android"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [lib]
 name = "livi"
@@ -21,5 +22,5 @@ livi-ui.workspace = true
 livi-ui-model.workspace = true
 livi-video-player.workspace = true
 livi-video-view.workspace = true
-slint = { version = "1.18.1", default-features = false, features = ["backend-android-activity-06"] }
+slint = { workspace = true, features = ["backend-android-activity-06"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }

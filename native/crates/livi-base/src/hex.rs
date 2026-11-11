@@ -1,0 +1,52 @@
+// SPDX-FileCopyrightText: 2025-2026 Lasse Heitgres
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional terms: see NOTICE
+
+const DIGITS: &[u8; 16] = b"0123456789abcdef";
+
+pub fn encode(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        out.push(char::from(DIGITS[usize::from(b >> 4)]));
+        out.push(char::from(DIGITS[usize::from(b & 0x0f)]));
+    }
+    out
+}
+
+pub fn decode(text: &str) -> Option<Vec<u8>> {
+    let (pairs, rest) = text.as_bytes().as_chunks::<2>();
+    if !rest.is_empty() {
+        return None;
+    }
+    pairs
+        .iter()
+        .map(|&[hi, lo]| Some(nibble(hi)? << 4 | nibble(lo)?))
+        .collect()
+}
+
+fn nibble(c: u8) -> Option<u8> {
+    char::from(c).to_digit(16).map(|d| d as u8)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bytes_round_trip_in_lowercase() {
+        let bytes = [0x00, 0x0f, 0xa5, 0xff];
+        assert_eq!(encode(&bytes), "000fa5ff");
+        assert_eq!(decode("000fa5ff"), Some(bytes.to_vec()));
+        assert_eq!(decode("000FA5FF"), Some(bytes.to_vec()));
+        assert_eq!(encode(&[]), "");
+        assert_eq!(decode(""), Some(Vec::new()));
+    }
+
+    #[test]
+    fn malformed_text_is_nothing() {
+        assert_eq!(decode("abc"), None);
+        assert_eq!(decode("zz"), None);
+        assert_eq!(decode("+f"), None);
+        assert_eq!(decode("é0"), None);
+    }
+}

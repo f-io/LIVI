@@ -1,7 +1,8 @@
 [package]
 name = "livi-aa"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [dependencies]
 livi-aa-proto.workspace = true
@@ -12,7 +13,6 @@ futures-util.workspace = true
 prost.workspace = true
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-pemfile = "2"
-rustls-pki-types = "1"
 serde_json.workspace = true
 socket2 = { workspace = true, features = ["all"] }
 tokio = { workspace = true, features = ["rt", "macros", "time", "sync", "io-util", "net"] }
