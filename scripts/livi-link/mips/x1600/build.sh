@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # LIVI-Link X1600+AIC8800D80 dongle kernel build.
-# Order: ../build-userspace.sh <this dir>, build.sh, ../../common/build-rootfs.sh <this dir>,
+# Order: ../../common/build-userspace.sh <this dir>, build.sh, ../../common/build-rootfs.sh <this dir>,
 # ../../common/pack-bundle.sh <this dir>.
 set -euo pipefail
 

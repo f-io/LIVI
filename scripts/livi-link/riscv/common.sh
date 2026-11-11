@@ -8,6 +8,14 @@ JOBS=${JOBS:-$(nproc)}
 CROSS_COMPILE=${CROSS_COMPILE:-riscv64-linux-gnu-}
 # The Andes gcc builds the userspace and links livid. CI unpacks it under ~/andes.
 TC_BIN=${TC_BIN:-$HOME/andes/nds32le-linux-glibc-v5d/bin}
+US_PATH=$TC_BIN
+US_CROSS=riscv32-linux-
+US_ARCH=riscv
+US_LINK=shared
+MUSL_TARGET=riscv32-linux
+MUSL_WRAPPER=1
+MUSL_LDSO=ld-musl-riscv32.so.1
+LIBNL_HOST=riscv32-linux-musl
 
 RUST_NIGHTLY=$(<"$COMMON/rust-nightly")
 

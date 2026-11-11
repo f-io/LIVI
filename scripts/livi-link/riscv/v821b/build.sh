@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Order: build-userspace.sh, build.sh, ../../common/build-rootfs.sh <this dir>,
+# Order: ../../common/build-userspace.sh <this dir>, build.sh, ../../common/build-rootfs.sh <this dir>,
 # ../../common/pack-bundle.sh <this dir>.
 set -euo pipefail
 

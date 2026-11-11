@@ -5,6 +5,9 @@ REPO=$(cd "$MIPS/../../.." && pwd)
 TOP=${TOP:-${XDG_CACHE_HOME:-$HOME/.cache}/livi/$BOARD-kernel}
 JOBS=${JOBS:-$(nproc)}
 CROSS_COMPILE=${CROSS_COMPILE:-mipsel-buildroot-linux-musl-}
+US_ARCH=mips
+US_LINK=static
+MUSL_TARGET=mipsel-linux-musl
 RUST_NIGHTLY=$(<"$COMMON/rust-nightly")
 
 source "$COMMON/kernel.sh"

@@ -208,7 +208,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          init=https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "$init" -o /tmp/rustup-init
+          init_sha=$(curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "$init.sha256" | cut -d' ' -f1)
+          echo "$init_sha  /tmp/rustup-init" | sha256sum -c
+          chmod +x /tmp/rustup-init
+          /tmp/rustup-init -y --profile minimal --default-toolchain none
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           "$HOME/.cargo/bin/rustup" toolchain install
           "$HOME/.cargo/bin/rustc" --version
@@ -266,7 +271,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$TOP"
-          bash "$BOARD_DIR/build-userspace.sh"
+          bash scripts/livi-link/common/build-userspace.sh "$BOARD_DIR"
           bash "$BOARD_DIR/build.sh"
           bash scripts/livi-link/common/build-rootfs.sh "$BOARD_DIR"
           bash scripts/livi-link/common/pack-bundle.sh "$BOARD_DIR"
@@ -307,7 +312,7 @@ jobs:
           set -euo pipefail
           if [[ $TARGET == imx6ul_* ]]; then export RADIO=${TARGET#imx6ul_}; fi
           mkdir -p "$TOP"
-          bash scripts/livi-link/arm/build-userspace.sh "$BOARD_DIR"
+          bash scripts/livi-link/common/build-userspace.sh "$BOARD_DIR"
           bash "$BOARD_DIR/build.sh"
           bash scripts/livi-link/common/build-rootfs.sh "$BOARD_DIR"
           bash scripts/livi-link/common/pack-bundle.sh "$BOARD_DIR"
@@ -365,7 +370,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$TOP"
-          bash scripts/livi-link/mips/build-userspace.sh "$BOARD_DIR"
+          bash scripts/livi-link/common/build-userspace.sh "$BOARD_DIR"
           bash "$BOARD_DIR/build.sh"
           bash scripts/livi-link/common/build-rootfs.sh "$BOARD_DIR"
           bash scripts/livi-link/common/pack-bundle.sh "$BOARD_DIR"

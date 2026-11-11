@@ -5,6 +5,10 @@ REPO=$(cd "$ARM/../../.." && pwd)
 TOP=${TOP:-${XDG_CACHE_HOME:-$HOME/.cache}/livi/$BOARD-kernel}
 JOBS=${JOBS:-$(nproc)}
 CROSS_COMPILE=${CROSS_COMPILE:-arm-linux-gnu-}
+US_ARCH=arm
+US_LINK=static
+MUSL_TARGET=arm-linux-gnueabihf
+MUSL_WRAPPER=1
 
 source "$COMMON/kernel.sh"
 
