@@ -6,13 +6,13 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use super::*;
-use crate::crypto::{X25519, chacha_seal, ed25519_public, ed25519_sign, nonce_label, random_bytes};
 use crate::identity::load_or_create;
 use crate::media::AudioStream;
 use crate::opack;
 use crate::pair_setup::tlv;
 use crate::pairings::tests::TempDir;
 use crate::tlv8;
+use livi_crypto::{X25519, chacha_seal, ed25519_public, ed25519_sign, nonce_label, random_bytes};
 
 pub(crate) struct FakeMedia {
     calls: Mutex<Vec<String>>,

@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 
 use num_bigint::BigUint;
 
-use crate::crypto::{random_bytes, sha512};
+use livi_crypto::{random_bytes, sha512};
 
 const N_HEX: &str = "\
 FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74\

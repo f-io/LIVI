@@ -11,7 +11,7 @@ livi-session-io.workspace = true
 livi-wifi.workspace = true
 futures-util.workspace = true
 prost.workspace = true
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
 rustls-pemfile = "2"
 serde_json.workspace = true
 socket2 = { workspace = true, features = ["all"] }

@@ -8,7 +8,7 @@ use super::cert::{self, Trust, Unpacked};
 use super::keys::{self, Channel, Ephemeral, Keys, POINT, TAG};
 use super::wire::{self, CLEAR, HEADER, Message, TUNNELED};
 use crate::auth_setup::MfiSigner;
-use crate::crypto::{random_bytes, sha256};
+use livi_crypto::{random_bytes, sha256};
 
 mod id {
     pub const PHONE_SETUP: u16 = 0x5100;

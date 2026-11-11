@@ -8,7 +8,7 @@ use std::path::Path;
 use livi_base::fs::{PRIVATE, write_atomic};
 use serde::{Deserialize, Serialize};
 
-use crate::crypto::{ed25519_public, random_bytes};
+use livi_crypto::{ed25519_public, random_bytes};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Identity {
@@ -82,8 +82,7 @@ fn as_mac(text: &str) -> Option<String> {
 }
 
 pub fn derived_accessory_id(pairing_id: &str) -> String {
-    use sha2::{Digest, Sha256};
-    let digest = Sha256::digest(pairing_id.as_bytes());
+    let digest = livi_crypto::sha256(&[pairing_id.as_bytes()]);
     let mut mac = [0u8; 6];
     mac.copy_from_slice(&digest[..6]);
     mac[0] = (mac[0] & 0xfc) | 0x02;

@@ -6,10 +6,16 @@ license.workspace = true
 
 [dependencies]
 livi-base.workspace = true
+livi-crypto.workspace = true
 backhand = { version = "0.25", default-features = false, features = ["xz", "xz-static", "gzip", "error-strings"] }
 imx6ul-uboot.workspace = true
 md-5 = "0.11"
-sha2.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-ureq = { version = "3", features = ["json"] }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+ureq = { version = "3", default-features = false, features = [
+  "gzip",
+  "json",
+  "rustls-no-provider",
+  "rustls-webpki-roots",
+] }

@@ -198,7 +198,7 @@ pub(crate) mod tests {
     }
 
     fn rand_suffix() -> u64 {
-        u64::from_le_bytes(crate::crypto::random_bytes::<8>())
+        u64::from_le_bytes(livi_crypto::random_bytes::<8>())
     }
 
     pub(crate) fn serve(

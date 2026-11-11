@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use livi_crypto::seal;
+use livi_crypto::{ChaCha, nonce64};
 
 pub const RTP_HEADER_LEN: usize = 12;
 
@@ -29,17 +29,15 @@ pub fn rtp_header(payload_type: u8, seq: u16, timestamp: u32) -> [u8; RTP_HEADER
 }
 
 pub fn seal_packet(
-    key: &[u8; 32],
+    key: &ChaCha,
     payload_type: u8,
     counters: &mut Counters,
     body: &[u8],
     samples: u32,
-) -> Option<Vec<u8>> {
+) -> Vec<u8> {
     let header = rtp_header(payload_type, counters.seq, counters.timestamp);
 
-    let mut nonce = [0u8; 12];
-    nonce[4..].copy_from_slice(&counters.nonce.to_le_bytes());
-    let sealed = seal(key, &nonce, body, &header[4..])?;
+    let sealed = key.seal(&nonce64(counters.nonce), body, &header[4..]);
 
     let mut packet = Vec::with_capacity(RTP_HEADER_LEN + sealed.len() + 8);
     packet.extend_from_slice(&header);
@@ -49,7 +47,7 @@ pub fn seal_packet(
     counters.seq = counters.seq.wrapping_add(1);
     counters.timestamp = counters.timestamp.wrapping_add(samples);
     counters.nonce += 1;
-    Some(packet)
+    packet
 }
 
 pub fn to_wire_pcm(pcm_le: &[u8]) -> Vec<u8> {
@@ -63,7 +61,7 @@ pub fn to_wire_pcm(pcm_le: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use livi_crypto::open;
+    use livi_crypto::chacha_open;
 
     const KEY: [u8; 32] = [3u8; 32];
 
@@ -81,14 +79,12 @@ mod tests {
     #[test]
     fn a_packet_opens_again_with_the_header_as_associated_data() {
         let mut c = Counters::default();
-        let packet = seal_packet(&KEY, 97, &mut c, b"hello", 480).unwrap();
+        let packet = seal_packet(&ChaCha::new(&KEY), 97, &mut c, b"hello", 480);
 
         let end = packet.len();
-        let nonce8 = &packet[end - 8..];
-        let mut nonce = [0u8; 12];
-        nonce[4..].copy_from_slice(nonce8);
+        let counter = u64::from_le_bytes(packet[end - 8..].try_into().unwrap());
         let body = &packet[RTP_HEADER_LEN..end - 8];
-        let plain = open(&KEY, &nonce, body, &packet[4..RTP_HEADER_LEN]).unwrap();
+        let plain = chacha_open(&KEY, &nonce64(counter), body, &packet[4..RTP_HEADER_LEN]).unwrap();
 
         assert_eq!(plain, b"hello");
     }
@@ -97,8 +93,8 @@ mod tests {
     fn the_counters_move_on_by_one_packet_and_its_samples() {
         let mut c = Counters::default();
 
-        seal_packet(&KEY, 97, &mut c, b"a", 480).unwrap();
-        seal_packet(&KEY, 97, &mut c, b"b", 480).unwrap();
+        seal_packet(&ChaCha::new(&KEY), 97, &mut c, b"a", 480);
+        seal_packet(&ChaCha::new(&KEY), 97, &mut c, b"b", 480);
 
         assert_eq!(c.seq, 2);
         assert_eq!(c.timestamp, 960);
@@ -113,7 +109,7 @@ mod tests {
             nonce: 0,
         };
 
-        seal_packet(&KEY, 97, &mut c, b"a", 0).unwrap();
+        seal_packet(&ChaCha::new(&KEY), 97, &mut c, b"a", 0);
 
         assert_eq!(c.seq, 0);
     }

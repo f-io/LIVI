@@ -2,14 +2,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use livi_crypto::open;
+use livi_crypto::{ChaCha, TAG_LEN, nonce64};
 use livi_video::nal::{CpCodec, detect_codec};
 
 pub const HEADER_LEN: usize = 128;
 const OP_VIDEO_FRAME: u8 = 0;
 const OP_VIDEO_CONFIG: u8 = 1;
 const MAX_BODY: usize = 8 * 1024 * 1024;
-const TAG_LEN: usize = 16;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Implausible(pub usize);
@@ -20,7 +19,7 @@ pub trait ScreenSink {
 }
 
 pub struct ScreenStream {
-    key: [u8; 32],
+    key: ChaCha,
     counter: u64,
     acc: Vec<u8>,
     sink: Box<dyn ScreenSink>,
@@ -29,7 +28,7 @@ pub struct ScreenStream {
 impl ScreenStream {
     pub fn new(key: [u8; 32], sink: Box<dyn ScreenSink>) -> Self {
         Self {
-            key,
+            key: ChaCha::new(&key),
             counter: 0,
             acc: Vec::new(),
             sink,
@@ -76,7 +75,7 @@ impl ScreenStream {
 
         let opened;
         let frame: &[u8] = if body.len() >= TAG_LEN {
-            let Some(plain) = Self::open(&self.key, self.counter, header, body) else {
+            let Some(plain) = self.key.open(&nonce64(self.counter), body, header) else {
                 eprintln!("[cp_screen] frame auth failed at counter {}", self.counter);
                 return;
             };
@@ -89,18 +88,12 @@ impl ScreenStream {
 
         self.sink.on_frame(frame);
     }
-
-    fn open(key: &[u8; 32], counter: u64, header: &[u8], body: &[u8]) -> Option<Vec<u8>> {
-        let mut nonce = [0u8; 12];
-        nonce[4..].copy_from_slice(&counter.to_le_bytes());
-        open(key, &nonce, body, header)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use livi_crypto::seal;
+    use livi_crypto::chacha_seal;
 
     const KEY: [u8; 32] = [7u8; 32];
 
@@ -149,9 +142,7 @@ mod tests {
         let mut header = vec![0u8; HEADER_LEN];
         header[..4].copy_from_slice(&((plain.len() + TAG_LEN) as u32).to_le_bytes());
         header[4] = OP_VIDEO_FRAME;
-        let mut nonce = [0u8; 12];
-        nonce[4..].copy_from_slice(&counter.to_le_bytes());
-        let body = seal(&KEY, &nonce, plain, &header).unwrap();
+        let body = chacha_seal(&KEY, &nonce64(counter), plain, &header);
 
         let mut msg = header;
         msg.extend_from_slice(&body);

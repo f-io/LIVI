@@ -4,13 +4,13 @@
 
 use std::collections::BTreeMap;
 
-use crate::crypto::{
-    X25519, chacha_open, chacha_seal, ed25519_sign, ed25519_verify, hkdf_sha512, nonce_label,
-};
 use crate::identity::Identity;
 use crate::pair_setup::{error_reply, tlv};
 use crate::pairings::Pairings;
 use crate::tlv8;
+use livi_crypto::{
+    X25519, chacha_open, chacha_seal, ed25519_sign, ed25519_verify, hkdf_sha512, nonce_label,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ControlKeys {
@@ -168,10 +168,10 @@ impl PairVerify {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::{ed25519_public, random_bytes};
     use crate::identity::load_or_create;
     use crate::pair_setup::ERR_AUTHENTICATION;
     use crate::pairings::tests::TempDir;
+    use livi_crypto::{ed25519_public, random_bytes};
 
     struct Phone {
         secret: [u8; 32],

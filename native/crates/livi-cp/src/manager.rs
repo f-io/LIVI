@@ -1082,7 +1082,6 @@ mod tests {
 
     use super::*;
     use crate::bplist::{Value as Plist, dict};
-    use crate::crypto::{ed25519_public, random_bytes};
     use crate::helper_sock::HelperSock;
     use crate::identity::load_or_create;
     use crate::net;
@@ -1090,6 +1089,7 @@ mod tests {
     use crate::pairings::tests::TempDir;
     use crate::stack::StackConfig;
     use crate::stack::tests::{FakeMedia, Phone};
+    use livi_crypto::{ed25519_public, random_bytes};
 
     struct FakeHelper {
         lines: Arc<Mutex<Vec<String>>>,

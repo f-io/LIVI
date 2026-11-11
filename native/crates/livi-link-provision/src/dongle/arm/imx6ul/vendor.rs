@@ -108,7 +108,8 @@ fn form(unit: &Unit, ver: &str) -> Vec<(&'static str, String)> {
 }
 
 fn check(unit: &Unit, ver: &str) -> Result<Option<Offer>, String> {
-    let mut reply = ureq::post(CHECK_URL)
+    let mut reply = crate::http()
+        .post(CHECK_URL)
         .config()
         .timeout_global(Some(Duration::from_secs(30)))
         .build()
@@ -227,7 +228,8 @@ pub fn download(
     ));
     let mut fields = form(unit, &offer.asked);
     fields.push(("id", offer.id.clone()));
-    let reply = ureq::post(DOWN_URL)
+    let reply = crate::http()
+        .post(DOWN_URL)
         .header("Authorization", &offer.token)
         .header("User-Agent", "LIVI")
         .config()

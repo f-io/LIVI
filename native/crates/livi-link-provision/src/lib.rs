@@ -3,9 +3,21 @@
 // Additional terms: see NOTICE
 
 use std::path::Path;
+use std::sync::{Arc, OnceLock};
 
 pub mod detect;
 pub mod dongle;
+
+pub(crate) fn http() -> &'static ureq::Agent {
+    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+    AGENT.get_or_init(|| {
+        let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+        let tls = ureq::tls::TlsConfig::builder()
+            .unversioned_rustls_crypto_provider(provider)
+            .build();
+        ureq::Agent::config_builder().tls_config(tls).build().into()
+    })
+}
 
 pub fn tilde(path: &Path) -> String {
     shorten(

@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use sha2::{Digest, Sha256};
 use tokio::process::Command;
 
 const SUDO_TIMEOUT: Duration = Duration::from_secs(12);
@@ -49,8 +48,7 @@ pub fn systemctl() -> String {
 }
 
 fn stamp(content: &str) -> String {
-    let digest = Sha256::digest(content.as_bytes());
-    digest.iter().take(8).map(|b| format!("{b:02x}")).collect()
+    livi_base::hex::encode(&livi_crypto::sha256(&[content.as_bytes()])[..8])
 }
 
 pub async fn sudo(args: &[&str]) -> bool {

@@ -13,7 +13,7 @@ use openssl::pkey::{PKey, Private};
 use openssl::sign::Signer;
 use openssl::symm::Cipher;
 
-use crate::crypto::sha256;
+use livi_crypto::sha256;
 
 pub const POINT: usize = 33;
 pub const TAG: usize = 16;

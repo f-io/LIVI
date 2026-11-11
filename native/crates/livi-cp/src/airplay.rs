@@ -17,7 +17,6 @@ use tokio::sync::{Notify, mpsc};
 
 use crate::bplist::{self, Value, dict};
 use crate::control_cipher::ControlCipher;
-use crate::crypto::hkdf_sha512;
 use crate::helper_sock::HelperSock;
 use crate::identity::Identity;
 use crate::pair_setup::PairSetup;
@@ -26,6 +25,7 @@ use crate::pairings::Pairings;
 use crate::rtsp::{self, Request, Response};
 use crate::timing_sync::TimingSync;
 use crate::{auth_setup, mfi4, net, tlv8};
+use livi_crypto::hkdf_sha512;
 
 const TAG: &str = "[airplay]";
 const TLV_FLAGS: u8 = 0x13;

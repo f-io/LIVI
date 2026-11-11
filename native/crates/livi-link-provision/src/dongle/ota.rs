@@ -354,7 +354,8 @@ fn image_url(version_json: &str, origin: &str) -> Result<String, String> {
 }
 
 fn get(url: &str, limit: u64) -> Result<Vec<u8>, String> {
-    let response = ureq::get(url)
+    let response = crate::http()
+        .get(url)
         .config()
         .timeout_global(Some(Duration::from_secs(300)))
         .build()

@@ -6,15 +6,15 @@ use serde_json::Value as Json;
 
 use crate::bplist::{self, Value, dict};
 use crate::control_cipher::ControlCipher;
-use crate::crypto::{
-    aes_ctr128, chacha_seal, ed25519_sign, hkdf_sha512, nonce_label, nonce64, sha1, sha256,
-};
 use crate::hid::{Contact, KnobState, knob_report, touch_device, touch_report};
 use crate::identity::hex;
 use crate::info::{DisplayConfig, Icon, InfoConfig, Insets, build};
 use crate::rtsp::{Response, build_response, parse};
 use crate::srp::SrpServer;
 use crate::tlv8;
+use livi_crypto::{
+    aes_ctr128, chacha_seal, ed25519_sign, hkdf_sha512, nonce_label, nonce64, sha1, sha256,
+};
 
 fn vectors() -> Json {
     serde_json::from_str(include_str!("ts_vectors.json")).expect("valid vector file")

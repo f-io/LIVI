@@ -17,7 +17,6 @@ use tokio::sync::{broadcast, mpsc, watch};
 use crate::auth_setup;
 use crate::bplist::{self, Value, dict};
 use crate::control_cipher::ControlCipher;
-use crate::crypto::hkdf_sha512;
 use crate::helper_sock::HelperSock;
 use crate::hid::{self, Contact, KnobState};
 use crate::hls::Client;
@@ -41,6 +40,7 @@ use crate::vehicle_state::{
 };
 use crate::video_playback;
 use crate::video_proxy::ProxyOffer;
+use livi_crypto::hkdf_sha512;
 
 mod commands;
 mod control;

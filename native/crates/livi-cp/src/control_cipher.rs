@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use crate::crypto::{chacha_open, chacha_seal, nonce64};
+use livi_crypto::{chacha_open, chacha_seal, nonce64};
 
 const MAX_PAYLOAD: usize = 0x4000;
 

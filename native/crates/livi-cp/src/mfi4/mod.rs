@@ -13,7 +13,7 @@ use openssl::sign::Signer;
 
 pub use session::Session;
 
-use crate::crypto::hkdf_sha512;
+use livi_crypto::hkdf_sha512;
 
 pub const AUTH_TYPE: u32 = 0x20;
 

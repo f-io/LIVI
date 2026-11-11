@@ -6,7 +6,6 @@ pub mod airplay;
 pub mod auth_setup;
 pub mod bplist;
 pub mod control_cipher;
-pub mod crypto;
 pub mod helper_sock;
 pub mod hid;
 pub mod hls;

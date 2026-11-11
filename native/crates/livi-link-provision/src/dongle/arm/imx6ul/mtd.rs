@@ -8,8 +8,6 @@ use std::path::{Path, PathBuf};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use sha2::{Digest, Sha256};
-
 use super::shell::{PUSH_PORT, Shell};
 
 const READ_SLICE: Duration = Duration::from_secs(30);
@@ -173,10 +171,7 @@ pub fn backup(sh: &Shell, root: &Path, progress: &dyn Fn(&str)) -> Result<PathBu
 }
 
 pub fn sha256_hex(data: &[u8]) -> String {
-    Sha256::digest(data)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    livi_base::hex::encode(&livi_crypto::sha256(&[data]))
 }
 
 pub(crate) fn stamp() -> String {

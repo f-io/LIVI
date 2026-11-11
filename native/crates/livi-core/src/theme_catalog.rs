@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 use livi_base::hex::encode as hex;
 use livi_core_proto::theme::{DisplayKind, Palette, Theme, ThemeDisplay, ThemeLayout, Zone};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 
 const CATALOG: &str = "https://gdmf.apple.com/v2/assets";
 const ROOT_URL: &str = "https://www.apple.com/appleca/AppleIncRootCertificate.cer";
@@ -74,7 +73,7 @@ async fn catalog_client() -> Result<reqwest::Client, String> {
         .bytes()
         .await;
     let der = der.map_err(|e| e.to_string())?;
-    if hex(&Sha256::digest(&der)) != ROOT_SHA256 {
+    if hex(&livi_crypto::sha256(&[&der])) != ROOT_SHA256 {
         return Err("Apple's root certificate does not match".into());
     }
     let root = reqwest::Certificate::from_der(&der).map_err(|e| e.to_string())?;

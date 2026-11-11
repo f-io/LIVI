@@ -6,15 +6,10 @@ license.workspace = true
 
 [dependencies]
 livi-base.workspace = true
-aes.workspace = true
+livi-crypto.workspace = true
 base64.workspace = true
-chacha20poly1305 = "0.11.0"
-ctr = "0.10.1"
-ed25519-dalek = "3.0.0"
 # The version the openssl crate implements, its trait is where Ssl::as_ptr comes from.
 foreign-types = "0.3.2"
-getrandom = "0.4.3"
-hkdf = "0.13.0"
 livi-core-proto.workspace = true
 livi-net.workspace = true
 livi-session-io.workspace = true
@@ -23,13 +18,10 @@ openssl = "0.10.82"
 openssl-sys = "0.9.118"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-sha1 = "0.11.0"
-sha2.workspace = true
 socket2 = { workspace = true, features = ["all"] }
 tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "sync", "time"] }
 tokio-openssl = "0.6.5"
 uuid = { workspace = true, features = ["v4"] }
-x25519-dalek = { version = "3.0.0", features = ["getrandom"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "android"))'.dependencies]
 openssl = { version = "0.10.82", features = ["vendored"] }

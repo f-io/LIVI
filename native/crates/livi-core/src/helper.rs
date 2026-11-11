@@ -11,7 +11,6 @@ use std::{fs, io};
 use livi_core_proto::config::{CarType, Config};
 use livi_core_proto::helper::{HelperSettings, HelperStart, USER_DATA};
 use livi_cp::identity::Identity;
-use sha2::{Digest, Sha256};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{Notify, watch};
@@ -116,7 +115,7 @@ fn inside_appimage_mount(p: &Path) -> bool {
 }
 
 fn digest(p: &Path) -> io::Result<Vec<u8>> {
-    Ok(Sha256::digest(fs::read(p)?).to_vec())
+    Ok(livi_crypto::sha256(&[&fs::read(p)?]).to_vec())
 }
 
 fn stage(src: &Path, dest: &Path) -> io::Result<()> {

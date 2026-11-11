@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use livi_base::hex::encode as hex;
-use sha2::{Digest, Sha256};
 use skrifa::MetadataProvider;
 use skrifa::raw::FileRef;
 
@@ -204,7 +203,7 @@ async fn fetch(client: &reqwest::Client, source: &Source) -> Result<Vec<u8>, Str
         return Err(format!("download {}", res.status().as_u16()));
     }
     let body = res.bytes().await.map_err(|e| e.to_string())?;
-    if hex(&Sha256::digest(&body)) != source.sha256 {
+    if hex(&livi_crypto::sha256(&[&body])) != source.sha256 {
         return Err("checksum mismatch".into());
     }
     Ok(body.to_vec())

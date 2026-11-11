@@ -4,7 +4,7 @@
 
 use std::future::Future;
 
-use crate::crypto::{X25519, aes_ctr128, sha1, sha256};
+use livi_crypto::{X25519, aes_ctr128, sha1, sha256};
 
 pub trait MfiSigner {
     fn certificate(&self) -> impl Future<Output = Result<Vec<u8>, String>> + Send;

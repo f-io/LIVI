@@ -15,7 +15,8 @@ pub struct Status {
 }
 
 pub fn status(host: &str) -> Option<Status> {
-    ureq::get(&format!("http://{host}/api/status"))
+    crate::http()
+        .get(&format!("http://{host}/api/status"))
         .config()
         .timeout_global(Some(Duration::from_secs(2)))
         .build()
@@ -40,7 +41,8 @@ pub fn bundle(target: &str) -> Option<&'static [u8]> {
 }
 
 pub fn update(host: &str, bundle: &[u8]) -> Result<String, String> {
-    let mut reply = ureq::post(&format!("http://{host}/api/flash"))
+    let mut reply = crate::http()
+        .post(&format!("http://{host}/api/flash"))
         .header("Content-Type", "application/octet-stream")
         .config()
         .timeout_global(Some(Duration::from_secs(900)))

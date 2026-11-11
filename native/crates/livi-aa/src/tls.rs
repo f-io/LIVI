@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use rustls::client::ResolvesClientCert;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use rustls::crypto::{CryptoProvider, WebPkiSupportedAlgorithms, ring};
+use rustls::crypto::{CryptoProvider, WebPkiSupportedAlgorithms, aws_lc_rs};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
 use rustls::sign::CertifiedKey;
 use rustls::{ClientConfig, ClientConnection, DigitallySignedStruct, SignatureScheme};
@@ -122,7 +122,7 @@ impl ResolvesClientCert for HuCert {
 }
 
 fn client_config() -> Result<Arc<ClientConfig>, Error> {
-    let provider = Arc::new(ring::default_provider());
+    let provider = Arc::new(aws_lc_rs::default_provider());
     let algorithms = provider.signature_verification_algorithms;
     let identity = hu_identity(&provider)?;
     let config = ClientConfig::builder_with_provider(provider)
@@ -262,7 +262,7 @@ mod tests {
     }
 
     fn phone() -> ServerConnection {
-        let provider = Arc::new(ring::default_provider());
+        let provider = Arc::new(aws_lc_rs::default_provider());
         let identity = hu_identity(&provider).unwrap();
         let config = ServerConfig::builder_with_provider(provider)
             .with_protocol_versions(&[&rustls::version::TLS12])

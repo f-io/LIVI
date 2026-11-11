@@ -11,7 +11,7 @@ use openssl::pkey::{PKey, Public};
 use openssl::x509::X509;
 
 use super::keys::{POINT, group};
-use crate::crypto::{sha1, sha256};
+use livi_crypto::{sha1, sha256};
 
 const ROOT_SHA256: [u8; 32] = [
     0x77, 0x57, 0xb6, 0x1f, 0x5b, 0xe7, 0xfc, 0x25, 0x9c, 0xad, 0x89, 0xa5, 0x9c, 0x11, 0x74, 0xb9,

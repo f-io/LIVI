@@ -30,7 +30,8 @@ fn cgi_url() -> String {
 
 pub fn host() -> Result<HostInfo, String> {
     let url = format!("{}?id=host", cgi_url());
-    let mut resp = ureq::get(&url)
+    let mut resp = crate::http()
+        .get(&url)
         .config()
         .timeout_global(Some(Duration::from_secs(5)))
         .build()
@@ -53,7 +54,8 @@ pub fn upload(image: &[u8]) -> Result<(), String> {
     body.extend_from_slice(image);
     body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
 
-    let resp = ureq::post(&url)
+    let resp = crate::http()
+        .post(&url)
         .header(
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),

@@ -11,8 +11,8 @@ use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinHandle;
 
 use crate::control_cipher::ControlCipher;
-use crate::crypto::hkdf_sha512;
 use crate::net;
+use livi_crypto::hkdf_sha512;
 
 const PKG_HEADER: usize = 32;
 const MSG_TYPE_COMM: u32 = 0x636f_6d6d;
