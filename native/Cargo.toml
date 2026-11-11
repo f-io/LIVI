@@ -43,6 +43,7 @@ slint = { version = "1.18.1", default-features = false }
 slint-build = "1.18.1"
 socket2 = "0.6.5"
 tokio = "1.54.1"
+tokio-util = "0.7.20"
 uuid = "1.29.2"
 zbus = { version = "6.2.1", default-features = false }
 

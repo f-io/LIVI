@@ -32,7 +32,10 @@ impl ControlChannel for LinkChannel {
     }
 }
 
-pub type ArtworkRx = mpsc::UnboundedReceiver<Vec<u8>>;
+pub type ArtworkRx = mpsc::Receiver<Vec<u8>>;
+
+const ARTWORK_QUEUED: usize = 4;
+const READS_QUEUED: usize = 64;
 
 pub fn spawn_link(
     fd: OwnedFd,
@@ -42,7 +45,7 @@ pub fn spawn_link(
     set_nonblocking(fd.as_raw_fd());
     let (out_tx, out_rx) = mpsc::unbounded_channel();
     let (in_tx, in_rx) = mpsc::unbounded_channel();
-    let (art_tx, art_rx) = mpsc::unbounded_channel();
+    let (art_tx, art_rx) = mpsc::channel(ARTWORK_QUEUED);
     tokio::spawn(async move {
         if let Err(e) = pump(fd, cfg, initiate_negotiate, out_rx, in_tx, art_tx).await {
             eprintln!("[link] pump ended: {e}");
@@ -57,7 +60,7 @@ async fn pump(
     initiate_negotiate: bool,
     mut out_rx: mpsc::UnboundedReceiver<Vec<u8>>,
     in_tx: mpsc::UnboundedSender<Vec<u8>>,
-    art_tx: mpsc::UnboundedSender<Vec<u8>>,
+    art_tx: mpsc::Sender<Vec<u8>>,
 ) -> io::Result<()> {
     // SAFETY: the AsyncFd owns fd, so it stays open and unchanged for the AsyncFd's lifetime.
     let async_fd =
@@ -116,18 +119,20 @@ async fn pump(
             &art_tx,
             &mut pending,
             now(),
-        ) {
+        )
+        .await
+        {
             return Ok(());
         }
     }
 }
 
-fn drain_events(
+async fn drain_events(
     engine: &mut LinkEngine,
     reader: &mut FrameReader,
     ft: &mut FileTransferReceiver,
     in_tx: &mpsc::UnboundedSender<Vec<u8>>,
-    art_tx: &mpsc::UnboundedSender<Vec<u8>>,
+    art_tx: &mpsc::Sender<Vec<u8>>,
     pending: &mut Vec<u8>,
     now: u64,
 ) -> bool {
@@ -147,7 +152,7 @@ fn drain_events(
                     match out {
                         FtOutput::Reply(bytes) => ft_replies.push(bytes),
                         FtOutput::Complete(data) => {
-                            let _ = art_tx.send(data);
+                            let _ = art_tx.send(data).await;
                         }
                     }
                 }
@@ -180,7 +185,7 @@ where
 {
     let (out_tx, out_rx) = mpsc::unbounded_channel();
     let (in_tx, in_rx) = mpsc::unbounded_channel();
-    let (art_tx, art_rx) = mpsc::unbounded_channel();
+    let (art_tx, art_rx) = mpsc::channel(ARTWORK_QUEUED);
     tokio::spawn(async move {
         if let Err(e) = pump_stream(stream, cfg, initiate_negotiate, out_rx, in_tx, art_tx).await {
             eprintln!("[link] stream pump ended: {e}");
@@ -195,7 +200,7 @@ async fn pump_stream<S>(
     initiate_negotiate: bool,
     mut out_rx: mpsc::UnboundedReceiver<Vec<u8>>,
     in_tx: mpsc::UnboundedSender<Vec<u8>>,
-    art_tx: mpsc::UnboundedSender<Vec<u8>>,
+    art_tx: mpsc::Sender<Vec<u8>>,
 ) -> io::Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
@@ -203,7 +208,7 @@ where
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let (mut rd, mut wr) = tokio::io::split(stream);
-    let (rx_tx, mut rx_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (rx_tx, mut rx_rx) = mpsc::channel::<Vec<u8>>(READS_QUEUED);
     tokio::spawn(async move {
         let mut buf = [0u8; 8192];
         loop {
@@ -214,7 +219,7 @@ where
                     break;
                 }
                 Ok(n) => {
-                    if rx_tx.send(buf[..n].to_vec()).is_err() {
+                    if rx_tx.send(buf[..n].to_vec()).await.is_err() {
                         break;
                     }
                 }
@@ -267,7 +272,8 @@ where
             &art_tx,
             &mut pending,
             now(),
-        );
+        )
+        .await;
         if engine.state() != state {
             println!(
                 "[link] {state:?} -> {:?} after {} ms",

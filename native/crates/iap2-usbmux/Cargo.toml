@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 livi-session-io.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "io-util", "time"] }
+tokio-util = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 nusb.workspace = true

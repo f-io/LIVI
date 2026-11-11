@@ -3063,6 +3063,7 @@ dependencies = [
  "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -4192,6 +4193,7 @@ dependencies = [
  "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",
  "serde_json",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

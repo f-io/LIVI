@@ -8,13 +8,14 @@ use std::io;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, ready};
 use std::time::Duration;
 
 use livi_session_io::usb::UsbStream;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf, ReadHalf};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
+use tokio_util::sync::PollSender;
 
 use crate::backend;
 
@@ -28,6 +29,7 @@ const MAX_PACKET: usize = 1 << 20;
 const READ_CHUNK: usize = 65536;
 const VERSION_WAIT: Duration = Duration::from_secs(2);
 const CONNECT_WAIT: Duration = Duration::from_secs(5);
+const QUEUED: usize = 64;
 
 pub const LOCKDOWN_PORT: u16 = 62078;
 
@@ -36,14 +38,20 @@ const TH_SYN: u8 = 0x02;
 const TH_RST: u8 = 0x04;
 const TH_ACK: u8 = 0x10;
 
-type Out = mpsc::UnboundedSender<(u32, Vec<u8>)>;
+type Out = mpsc::Sender<(u32, Vec<u8>)>;
 
 struct ConnState {
     tx_seq: u32,
     tx_ack: u32,
     closed: bool,
     up: Option<oneshot::Sender<()>>,
-    rx: Option<mpsc::UnboundedSender<Vec<u8>>>,
+    rx: Option<mpsc::Sender<Vec<u8>>>,
+}
+
+#[derive(Default)]
+struct Reaction {
+    data: Option<(mpsc::Sender<Vec<u8>>, Vec<u8>)>,
+    replies: Vec<Vec<u8>>,
 }
 
 struct Conn {
@@ -67,56 +75,64 @@ impl Conn {
         th
     }
 
-    fn tcp(&self, out: &Out, s: &ConnState, flags: u8, payload: &[u8]) -> bool {
-        out.send((P_TCP, self.segment(s, flags, payload))).is_ok()
-    }
-
-    fn on_packet(&self, out: &Out, flags: u8, seq: u32, payload: &[u8]) {
+    fn on_packet(&self, flags: u8, seq: u32, payload: &[u8]) -> Reaction {
         let mut s = self.state.lock().unwrap();
+        let mut reaction = Reaction::default();
         if flags & TH_SYN != 0 && flags & TH_ACK != 0 {
             s.tx_seq = s.tx_seq.wrapping_add(1);
             s.tx_ack = seq.wrapping_add(1);
-            self.tcp(out, &s, TH_ACK, &[]);
+            reaction.replies.push(self.segment(&s, TH_ACK, &[]));
             if let Some(up) = s.up.take() {
                 let _ = up.send(());
             }
-            return;
+            return reaction;
         }
         if flags & TH_RST != 0 {
             end(&mut s);
-            return;
+            return reaction;
         }
         if !payload.is_empty() {
             s.tx_ack = s.tx_ack.wrapping_add(payload.len() as u32);
-            if let Some(rx) = &s.rx {
-                let _ = rx.send(payload.to_vec());
-            }
-            self.tcp(out, &s, TH_ACK, &[]);
+            reaction.data = s.rx.clone().map(|rx| (rx, payload.to_vec()));
+            reaction.replies.push(self.segment(&s, TH_ACK, &[]));
         }
         if flags & TH_FIN != 0 {
             s.tx_ack = s.tx_ack.wrapping_add(1);
-            self.tcp(out, &s, TH_ACK, &[]);
+            reaction.replies.push(self.segment(&s, TH_ACK, &[]));
             end(&mut s);
         }
+        reaction
     }
 
-    fn send(&self, out: &Out, data: &[u8]) -> bool {
+    fn data(&self, chunk: &[u8]) -> Vec<u8> {
         let mut s = self.state.lock().unwrap();
-        for chunk in data.chunks(MAX_PAYLOAD) {
-            if !self.tcp(out, &s, TH_ACK, chunk) {
-                return false;
-            }
-            s.tx_seq = s.tx_seq.wrapping_add(chunk.len() as u32);
-        }
-        true
+        let segment = self.segment(&s, TH_ACK, chunk);
+        s.tx_seq = s.tx_seq.wrapping_add(chunk.len() as u32);
+        segment
+    }
+
+    fn fin(&self) -> Option<Vec<u8>> {
+        let mut s = self.state.lock().unwrap();
+        let fin = (!s.closed).then(|| self.segment(&s, TH_FIN | TH_ACK, &[]));
+        end(&mut s);
+        fin
     }
 
     fn close(&self, out: &Out) {
-        let mut s = self.state.lock().unwrap();
-        if !s.closed {
-            self.tcp(out, &s, TH_FIN | TH_ACK, &[]);
+        if let Some(fin) = self.fin() {
+            send_soon(out, fin);
         }
-        end(&mut s);
+    }
+}
+
+fn send_soon(out: &Out, segment: Vec<u8>) {
+    if let Err(mpsc::error::TrySendError::Full(packet)) = out.try_send((P_TCP, segment))
+        && let Ok(rt) = tokio::runtime::Handle::try_current()
+    {
+        let out = out.clone();
+        rt.spawn(async move {
+            let _ = out.send(packet).await;
+        });
     }
 }
 
@@ -165,7 +181,7 @@ impl MuxHost {
         let mut reply = vec![0u8; READ_CHUNK];
         let _ = tokio::time::timeout(VERSION_WAIT, rd.read(&mut reply)).await;
 
-        let (out, mut packets) = mpsc::unbounded_channel::<(u32, Vec<u8>)>();
+        let (out, mut packets) = mpsc::channel::<(u32, Vec<u8>)>(QUEUED);
         let writer = tokio::spawn(async move {
             let mut tx = 0u16;
             while let Some((proto, payload)) = packets.recv().await {
@@ -181,7 +197,7 @@ impl MuxHost {
         });
         let conns = Conns::default();
         let reader = tokio::spawn(read_packets(rd, out.clone(), conns.clone()));
-        let _ = out.send((P_SETUP, vec![0x07]));
+        let _ = out.send((P_SETUP, vec![0x07])).await;
         Ok(Arc::new(Self {
             out,
             conns,
@@ -203,7 +219,7 @@ impl MuxHost {
     pub async fn connect(self: &Arc<Self>, dport: u16) -> Result<MuxStream, String> {
         let sport = self.next_sport.fetch_add(1, Ordering::SeqCst);
         let (up_tx, up) = oneshot::channel();
-        let (rx_tx, rx) = mpsc::unbounded_channel();
+        let (rx_tx, rx) = mpsc::channel(QUEUED);
         let conn = Arc::new(Conn {
             sport,
             dport,
@@ -216,17 +232,16 @@ impl MuxHost {
             }),
         });
         self.conns.lock().unwrap().insert(sport, conn.clone());
-        {
-            let s = conn.state.lock().unwrap();
-            conn.tcp(&self.out, &s, TH_SYN, &[]);
-        }
-        if !matches!(tokio::time::timeout(CONNECT_WAIT, up).await, Ok(Ok(()))) {
+        let syn = conn.segment(&conn.state.lock().unwrap(), TH_SYN, &[]);
+        let sent = self.out.send((P_TCP, syn)).await.is_ok();
+        if !sent || !matches!(tokio::time::timeout(CONNECT_WAIT, up).await, Ok(Ok(()))) {
             self.conns.lock().unwrap().remove(&sport);
             return Err(format!("mux connect to port {dport} failed"));
         }
         Ok(MuxStream {
             host: self.clone(),
             conn,
+            tx: PollSender::new(self.out.clone()),
             rx,
             leftover: Vec::new(),
             eof: false,
@@ -265,8 +280,17 @@ async fn read_packets(mut rd: ReadHalf<UsbStream>, out: Out, conns: Conns) {
                 let seq = u32::from_be_bytes(pkt[20..24].try_into().unwrap());
                 let flags = pkt[29];
                 let conn = conns.lock().unwrap().get(&dport).cloned();
-                if let Some(conn) = conn {
-                    conn.on_packet(&out, flags, seq, &pkt[36..length]);
+                let Some(conn) = conn else {
+                    continue;
+                };
+                let reaction = conn.on_packet(flags, seq, &pkt[36..length]);
+                if let Some((rx, data)) = reaction.data {
+                    let _ = rx.send(data).await;
+                }
+                for reply in reaction.replies {
+                    if out.send((P_TCP, reply)).await.is_err() {
+                        break 'read;
+                    }
                 }
             }
         }
@@ -280,7 +304,8 @@ async fn read_packets(mut rd: ReadHalf<UsbStream>, out: Out, conns: Conns) {
 pub struct MuxStream {
     host: Arc<MuxHost>,
     conn: Arc<Conn>,
-    rx: mpsc::UnboundedReceiver<Vec<u8>>,
+    tx: PollSender<(u32, Vec<u8>)>,
+    rx: mpsc::Receiver<Vec<u8>>,
     leftover: Vec<u8>,
     eof: bool,
 }
@@ -323,23 +348,48 @@ impl AsyncRead for MuxStream {
 impl AsyncWrite for MuxStream {
     fn poll_write(
         self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
+        cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        if self.conn.send(&self.host.out, buf) {
-            Poll::Ready(Ok(buf.len()))
-        } else {
-            Poll::Ready(Err(io::Error::new(io::ErrorKind::BrokenPipe, "mux closed")))
+        let this = self.get_mut();
+        if let Err(e) = ready!(this.reserve(cx)) {
+            return Poll::Ready(Err(e));
         }
+        let chunk = &buf[..buf.len().min(MAX_PAYLOAD)];
+        let segment = this.conn.data(chunk);
+        Poll::Ready(
+            this.tx
+                .send_item((P_TCP, segment))
+                .map(|()| chunk.len())
+                .map_err(|_| closed()),
+        )
     }
 
     fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Poll::Ready(Ok(()))
     }
 
-    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.conn.close(&self.host.out);
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        if ready!(this.reserve(cx)).is_err() {
+            return Poll::Ready(Ok(()));
+        }
+        if let Some(fin) = this.conn.fin() {
+            let _ = this.tx.send_item((P_TCP, fin));
+        } else {
+            this.tx.abort_send();
+        }
         Poll::Ready(Ok(()))
+    }
+}
+
+fn closed() -> io::Error {
+    io::Error::new(io::ErrorKind::BrokenPipe, "mux closed")
+}
+
+impl MuxStream {
+    fn reserve(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.tx.poll_reserve(cx).map_err(|_| closed())
     }
 }
 
@@ -347,5 +397,51 @@ impl Drop for MuxStream {
     fn drop(&mut self) {
         self.conn.close(&self.host.out);
         self.host.conns.lock().unwrap().remove(&self.conn.sport);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn conn(rx: mpsc::Sender<Vec<u8>>) -> Conn {
+        Conn {
+            sport: 1,
+            dport: 2,
+            state: Mutex::new(ConnState {
+                tx_seq: 10,
+                tx_ack: 100,
+                closed: false,
+                up: None,
+                rx: Some(rx),
+            }),
+        }
+    }
+
+    fn ack_of(segment: &[u8]) -> u32 {
+        u32::from_be_bytes(segment[8..12].try_into().unwrap())
+    }
+
+    #[test]
+    fn data_with_fin_hands_the_payload_over_and_acks_both() {
+        let (tx, _rx) = mpsc::channel(1);
+        let c = conn(tx);
+        let r = c.on_packet(TH_ACK | TH_FIN, 100, &[1, 2, 3]);
+        assert_eq!(r.data.map(|(_, d)| d), Some(vec![1, 2, 3]));
+        let acks: Vec<u32> = r.replies.iter().map(|s| ack_of(s)).collect();
+        assert_eq!(acks, [103, 104]);
+        assert!(c.fin().is_none());
+    }
+
+    #[test]
+    fn written_chunks_advance_the_sequence() {
+        let (tx, _rx) = mpsc::channel(1);
+        let c = conn(tx);
+        let first = c.data(&[0; 5]);
+        let second = c.data(&[0; 2]);
+        let seq = |s: &[u8]| u32::from_be_bytes(s[4..8].try_into().unwrap());
+        assert_eq!((seq(&first), seq(&second)), (10, 15));
+        assert!(c.fin().is_some());
+        assert!(c.fin().is_none());
     }
 }

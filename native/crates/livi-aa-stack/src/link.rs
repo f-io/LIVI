@@ -4,13 +4,16 @@
 
 use std::io;
 use std::path::Path;
+use std::sync::Arc;
 
 use livi_session_io::link::{Framer, Item, encode_control, encode_message};
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::net::unix::OwnedReadHalf;
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
+
+const QUEUED: usize = 1024;
 
 use crate::channels::Frame;
 
@@ -21,7 +24,8 @@ enum Write {
 
 pub struct Link {
     pub peer: String,
-    tx: mpsc::UnboundedSender<Write>,
+    tx: mpsc::Sender<Write>,
+    stalled: Arc<Notify>,
     writable: bool,
     closed: bool,
 }
@@ -45,21 +49,30 @@ pub async fn connect(path: impl AsRef<Path>, peer: &str) -> io::Result<(Link, Li
 
 pub fn attach(sock: UnixStream, peer: &str) -> (Link, LinkReader) {
     let (rd, mut wr) = sock.into_split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<Write>();
+    let (tx, mut rx) = mpsc::channel::<Write>(QUEUED);
+    let stalled = Arc::new(Notify::new());
+    let stop = stalled.clone();
     tokio::spawn(async move {
-        while let Some(w) = rx.recv().await {
-            let result = match w {
-                Write::Bytes(bytes) => wr.write_all(&bytes).await,
-                Write::Shutdown => wr.shutdown().await,
-            };
-            if result.is_err() {
-                return;
+        let writes = async {
+            while let Some(w) = rx.recv().await {
+                let result = match w {
+                    Write::Bytes(bytes) => wr.write_all(&bytes).await,
+                    Write::Shutdown => wr.shutdown().await,
+                };
+                if result.is_err() {
+                    return;
+                }
             }
+        };
+        tokio::select! {
+            () = writes => {}
+            () = stop.notified() => {}
         }
     });
     let link = Link {
         peer: peer.to_string(),
         tx,
+        stalled,
         writable: true,
         closed: false,
     };
@@ -78,7 +91,14 @@ impl Link {
         if self.closed || !self.writable {
             return;
         }
-        let _ = self.tx.send(Write::Bytes(bytes));
+        self.queue(Write::Bytes(bytes));
+    }
+
+    fn queue(&self, w: Write) {
+        if let Err(mpsc::error::TrySendError::Full(_)) = self.tx.try_send(w) {
+            eprintln!("[aa] {} takes nothing more, the link ends", self.peer);
+            self.stalled.notify_one();
+        }
     }
 
     pub fn send(&self, frame: &Frame) {
@@ -105,7 +125,7 @@ impl Link {
         self.control(&serde_json::json!({ "type": "close" }));
         if self.writable {
             self.writable = false;
-            let _ = self.tx.send(Write::Shutdown);
+            self.queue(Write::Shutdown);
         }
     }
 
@@ -202,6 +222,23 @@ mod tests {
         assert_eq!(reader.next().await, LinkItem::Closed(None));
         link.mark_closed();
         link.destroy();
+    }
+
+    #[tokio::test]
+    async fn a_peer_that_stops_reading_gets_the_link_closed() {
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let (link, _reader) = attach(ours, "stuck");
+        for _ in 0..QUEUED + 64 {
+            link.send(&Frame::new(3, 0x0b, 0x8004, vec![0; 16384]));
+            tokio::task::yield_now().await;
+        }
+        let mut sink = Vec::new();
+        let drained = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            theirs.read_to_end(&mut sink),
+        )
+        .await;
+        assert!(matches!(drained, Ok(Ok(_))));
     }
 
     #[tokio::test]

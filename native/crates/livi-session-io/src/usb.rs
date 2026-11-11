@@ -12,12 +12,14 @@ use nusb::transfer::{Buffer, Bulk, Direction, In, Out, TransferError};
 use nusb::{Device, Endpoint, Interface};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::mpsc;
+use tokio_util::sync::PollSender;
 
 const CLAIM_RETRIES: usize = 5;
 const CLAIM_RETRY: Duration = Duration::from_millis(100);
 const READ_LEN: usize = 16384;
 const READS_IN_FLIGHT: usize = 4;
 const WRITE_DRAIN: Duration = Duration::from_millis(250);
+const QUEUED: usize = 64;
 
 pub struct Pipe {
     iface: Interface,
@@ -109,21 +111,21 @@ fn bulk_pair(cfg: &ConfigurationDescriptor<'_>) -> Option<(u8, u8, u8)> {
 }
 
 pub struct UsbStream {
-    rx: mpsc::UnboundedReceiver<Vec<u8>>,
-    tx: Option<mpsc::UnboundedSender<Vec<u8>>>,
+    rx: mpsc::Receiver<Vec<u8>>,
+    tx: Option<PollSender<Vec<u8>>>,
     leftover: Vec<u8>,
     eof: bool,
 }
 
 impl UsbStream {
     pub fn new(pipe: Pipe) -> Self {
-        let (in_tx, in_rx) = mpsc::unbounded_channel();
-        let (out_tx, out_rx) = mpsc::unbounded_channel();
+        let (in_tx, in_rx) = mpsc::channel(QUEUED);
+        let (out_tx, out_rx) = mpsc::channel(QUEUED);
         tokio::spawn(pump_in(pipe.ep_in, in_tx, pipe.iface));
         tokio::spawn(pump_out(pipe.ep_out, out_rx, pipe.zlp));
         Self {
             rx: in_rx,
-            tx: Some(out_tx),
+            tx: Some(PollSender::new(out_tx)),
             leftover: Vec::new(),
             eof: false,
         }
@@ -132,7 +134,7 @@ impl UsbStream {
 
 async fn pump_in(
     mut ep: Endpoint<Bulk, In>,
-    tx: mpsc::UnboundedSender<Vec<u8>>,
+    tx: mpsc::Sender<Vec<u8>>,
     _iface: Interface,
 ) {
     for _ in 0..READS_IN_FLIGHT {
@@ -146,7 +148,11 @@ async fn pump_in(
         };
         match done.status {
             Ok(()) => {
-                if done.actual_len > 0 && tx.send(done.buffer[..done.actual_len].to_vec()).is_err()
+                if done.actual_len > 0
+                    && tx
+                        .send(done.buffer[..done.actual_len].to_vec())
+                        .await
+                        .is_err()
                 {
                     break;
                 }
@@ -169,7 +175,7 @@ async fn pump_in(
 
 async fn pump_out(
     mut ep: Endpoint<Bulk, Out>,
-    mut rx: mpsc::UnboundedReceiver<Vec<u8>>,
+    mut rx: mpsc::Receiver<Vec<u8>>,
     zlp: bool,
 ) {
     while let Some(chunk) = rx.recv().await {
@@ -184,7 +190,7 @@ async fn pump_out(
 
 async fn transfer(
     ep: &mut Endpoint<Bulk, Out>,
-    rx: &mpsc::UnboundedReceiver<Vec<u8>>,
+    rx: &mpsc::Receiver<Vec<u8>>,
     chunk: Vec<u8>,
 ) -> bool {
     ep.submit(Buffer::from(chunk));
@@ -235,17 +241,21 @@ impl AsyncRead for UsbStream {
 impl AsyncWrite for UsbStream {
     fn poll_write(
         self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
+        cx: &mut Context<'_>,
         data: &[u8],
     ) -> Poll<io::Result<usize>> {
-        let sent = self
-            .tx
-            .as_ref()
-            .is_some_and(|tx| tx.send(data.to_vec()).is_ok());
-        if sent {
-            Poll::Ready(Ok(data.len()))
-        } else {
-            Poll::Ready(Err(io::Error::from(io::ErrorKind::BrokenPipe)))
+        let broken = || io::Error::from(io::ErrorKind::BrokenPipe);
+        let Some(tx) = self.get_mut().tx.as_mut() else {
+            return Poll::Ready(Err(broken()));
+        };
+        match tx.poll_reserve(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Err(_)) => Poll::Ready(Err(broken())),
+            Poll::Ready(Ok(())) => Poll::Ready(
+                tx.send_item(data.to_vec())
+                    .map(|()| data.len())
+                    .map_err(|_| broken()),
+            ),
         }
     }
 
@@ -264,17 +274,13 @@ mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    fn stream() -> (
-        UsbStream,
-        mpsc::UnboundedSender<Vec<u8>>,
-        mpsc::UnboundedReceiver<Vec<u8>>,
-    ) {
-        let (in_tx, in_rx) = mpsc::unbounded_channel();
-        let (out_tx, out_rx) = mpsc::unbounded_channel();
+    fn stream() -> (UsbStream, mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>) {
+        let (in_tx, in_rx) = mpsc::channel(QUEUED);
+        let (out_tx, out_rx) = mpsc::channel(1);
         (
             UsbStream {
                 rx: in_rx,
-                tx: Some(out_tx),
+                tx: Some(PollSender::new(out_tx)),
                 leftover: Vec::new(),
                 eof: false,
             },
@@ -296,7 +302,7 @@ mod tests {
     #[tokio::test]
     async fn reads_hand_out_a_chunk_across_short_reads_and_end_at_eof() {
         let (mut s, in_tx, _out) = stream();
-        in_tx.send(vec![1, 2, 3, 4, 5]).unwrap();
+        in_tx.send(vec![1, 2, 3, 4, 5]).await.unwrap();
         drop(in_tx);
         let mut buf = [0u8; 3];
         assert_eq!(s.read(&mut buf).await.unwrap(), 3);
@@ -314,5 +320,16 @@ mod tests {
         s.shutdown().await.unwrap();
         assert!(s.write_all(&[1]).await.is_err());
         assert!(out.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_full_queue_holds_the_writer_back_until_usb_drains_it() {
+        let (mut s, _in, mut out) = stream();
+        s.write_all(&[1]).await.unwrap();
+        let mut second = std::pin::pin!(s.write_all(&[2]));
+        assert!(futures_util::poll!(second.as_mut()).is_pending());
+        assert_eq!(out.recv().await.unwrap(), vec![1]);
+        second.await.unwrap();
+        assert_eq!(out.recv().await.unwrap(), vec![2]);
     }
 }

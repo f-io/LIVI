@@ -24,6 +24,8 @@ const MAX_PACKAGE: usize = 4 * 1024 * 1024;
 
 pub type Deliver = Arc<dyn Fn(Vec<u8>) + Send + Sync>;
 
+pub const QUEUED: usize = 64;
+
 pub struct IapTunnel {
     port: u16,
     task: JoinHandle<()>,
@@ -33,7 +35,7 @@ impl IapTunnel {
     pub fn listen(
         shared: &[u8; 32],
         seed: &str,
-        out: mpsc::UnboundedSender<Vec<u8>>,
+        out: mpsc::Sender<Vec<u8>>,
     ) -> io::Result<Self> {
         Self::listen_as("iAP", shared, seed, out)
     }
@@ -42,7 +44,7 @@ impl IapTunnel {
         name: &'static str,
         shared: &[u8; 32],
         seed: &str,
-        out: mpsc::UnboundedSender<Vec<u8>>,
+        out: mpsc::Sender<Vec<u8>>,
     ) -> io::Result<Self> {
         let key = stream_key(shared, seed, b"DataStream-Output-Encryption-Key");
         let listener = net::tcp_listener()?;
@@ -146,7 +148,7 @@ fn package(kind: u32, message_type: u32, reply_token: u64, body: &[u8]) -> Vec<u
     p
 }
 
-async fn read(name: &str, mut sock: TcpStream, key: [u8; 32], out: mpsc::UnboundedSender<Vec<u8>>) {
+async fn read(name: &str, mut sock: TcpStream, key: [u8; 32], out: mpsc::Sender<Vec<u8>>) {
     let mut cipher = ControlCipher::new(key, [0; 32]);
     let mut sealed = Vec::new();
     let mut plain = Vec::new();
@@ -170,7 +172,7 @@ async fn read(name: &str, mut sock: TcpStream, key: [u8; 32], out: mpsc::Unbound
         loop {
             match next_package(&mut plain) {
                 Ok(Some(p)) if p.message_type == MSG_TYPE_COMM => {
-                    let _ = out.send(p.body);
+                    let _ = out.send(p.body).await;
                 }
                 Ok(Some(p)) => {
                     if name != "iAP" {
@@ -268,7 +270,7 @@ mod tests {
     #[tokio::test]
     async fn comm_packages_carry_iap2_out() {
         let shared = [7u8; 32];
-        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::channel(QUEUED);
         let tunnel = IapTunnel::listen(&shared, "42", tx).unwrap();
         let key = hkdf_sha512(
             &shared,
@@ -366,7 +368,7 @@ mod tests {
 
     #[tokio::test]
     async fn garbage_ends_the_connection() {
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::channel(QUEUED);
         let tunnel = IapTunnel::listen(&[1; 32], "1", tx).unwrap();
         let mut sock = TcpStream::connect(("127.0.0.1", tunnel.port()))
             .await
@@ -383,7 +385,7 @@ mod tests {
     #[tokio::test]
     async fn an_implausible_package_ends_the_connection() {
         let shared = [3u8; 32];
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::channel(QUEUED);
         let tunnel = IapTunnel::listen(&shared, "9", tx).unwrap();
         let key = hkdf_sha512(
             &shared,
