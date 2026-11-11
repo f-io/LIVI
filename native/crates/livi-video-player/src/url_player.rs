@@ -211,11 +211,9 @@ pub(crate) fn video_sink(say: &Say) -> Option<gst::Element> {
             .inspect_err(|e| say(&format!("[gst_video] no glimagesink: {e}")))
             .ok();
     }
-    let desc = std::env::var("LIVI_GST_SINK")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "waylandsink".to_owned());
-    gst::parse::bin_from_description(&desc, true)
+    let chosen = livi_video::codec::sink_override();
+    let desc = livi_video::codec::desktop_sink(chosen.as_deref());
+    gst::parse::bin_from_description(desc, true)
         .inspect_err(|e| say(&format!("[gst_video] no video sink {desc}: {e}")))
         .ok()
         .map(|bin| bin.upcast())

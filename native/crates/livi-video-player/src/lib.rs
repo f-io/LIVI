@@ -327,7 +327,7 @@ impl Player {
                 } else {
                     ""
                 },
-                std::env::var("LIVI_GST_SINK").ok().as_deref(),
+                livi_video::codec::sink_override().as_deref(),
             )
         };
 

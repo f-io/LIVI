@@ -112,6 +112,18 @@ pub fn decoder_candidates_on(codec: VideoCodec, sw_only: bool, gpu: &RenderGpu) 
     names
 }
 
+const SINK_ENV: &str = "LIVI_GST_SINK";
+
+pub fn sink_override() -> Option<String> {
+    std::env::var(SINK_ENV).ok().filter(|s| !s.is_empty())
+}
+
+pub fn desktop_sink(sink_override: Option<&str>) -> &str {
+    sink_override
+        .filter(|s| !s.is_empty())
+        .unwrap_or("waylandsink")
+}
+
 pub fn sink_chain(sink_override: Option<&str>) -> String {
     #[cfg(target_os = "macos")]
     {
@@ -125,10 +137,7 @@ pub fn sink_chain(sink_override: Option<&str>) -> String {
     }
     #[cfg(not(any(target_os = "macos", target_os = "android")))]
     {
-        let name = sink_override
-            .filter(|s| !s.is_empty())
-            .unwrap_or("waylandsink");
-        format!("{name} name=sink sync=false")
+        format!("{} name=sink sync=false", desktop_sink(sink_override))
     }
 }
 
