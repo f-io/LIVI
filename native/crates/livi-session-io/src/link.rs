@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-const LEN_BYTES: usize = 4;
+use livi_base::frame::{self, Frames, TooLarge};
 
 pub const KIND_MESSAGE: u8 = 0;
 pub const KIND_CONTROL: u8 = 1;
@@ -19,63 +19,48 @@ pub enum Item {
 }
 
 pub fn encode_message(ch: u8, flags: u8, msg_id: u16, payload: &[u8]) -> Vec<u8> {
-    let len = (1 + 4 + payload.len()) as u32;
-    let mut out = Vec::with_capacity(LEN_BYTES + len as usize);
-    out.extend_from_slice(&len.to_le_bytes());
+    let mut out = frame::open(1 + 4 + payload.len());
     out.push(KIND_MESSAGE);
     out.push(ch);
     out.push(flags);
     out.extend_from_slice(&msg_id.to_be_bytes());
     out.extend_from_slice(payload);
-    out
+    frame::seal(out)
 }
 
 pub fn encode_control(json: &str) -> Vec<u8> {
-    let len = (1 + json.len()) as u32;
-    let mut out = Vec::with_capacity(LEN_BYTES + len as usize);
-    out.extend_from_slice(&len.to_le_bytes());
+    let mut out = frame::open(1 + json.len());
     out.push(KIND_CONTROL);
     out.extend_from_slice(json.as_bytes());
-    out
+    frame::seal(out)
 }
 
 #[derive(Default)]
 pub struct Framer {
-    buf: Vec<u8>,
+    frames: Frames,
 }
 
 impl Framer {
     pub fn push(&mut self, chunk: &[u8]) {
-        self.buf.extend_from_slice(chunk);
+        self.frames.push(chunk);
     }
 
-    pub fn next_item(&mut self) -> Option<Item> {
+    pub fn next_item(&mut self) -> Option<Result<Item, TooLarge>> {
         loop {
-            if self.buf.len() < LEN_BYTES {
-                return None;
-            }
-            let len = u32::from_le_bytes(self.buf[..LEN_BYTES].try_into().unwrap()) as usize;
-            if self.buf.len() < LEN_BYTES + len {
-                return None;
-            }
-            let body = self.buf[LEN_BYTES..LEN_BYTES + len].to_vec();
-            self.buf.drain(..LEN_BYTES + len);
-            let Some((&kind, rest)) = body.split_first() else {
-                continue;
-            };
-            match kind {
-                KIND_MESSAGE if rest.len() >= 4 => {
-                    return Some(Item::Message {
-                        ch: rest[0],
-                        flags: rest[1],
-                        msg_id: u16::from_be_bytes([rest[2], rest[3]]),
-                        payload: rest[4..].to_vec(),
-                    });
+            let item = self.frames.next_with(|body| match body.split_first()? {
+                (&KIND_MESSAGE, &[ch, flags, a, b, ref payload @ ..]) => Some(Item::Message {
+                    ch,
+                    flags,
+                    msg_id: u16::from_be_bytes([a, b]),
+                    payload: payload.to_vec(),
+                }),
+                (&KIND_CONTROL, rest) => {
+                    Some(Item::Control(String::from_utf8_lossy(rest).into_owned()))
                 }
-                KIND_CONTROL => {
-                    return Some(Item::Control(String::from_utf8_lossy(rest).into_owned()));
-                }
-                _ => continue,
+                _ => None,
+            })?;
+            if let Some(item) = item.transpose() {
+                return Some(item);
             }
         }
     }
@@ -91,12 +76,12 @@ mod tests {
         f.push(&encode_message(3, 0x0b, 0x8004, &[8, 1]));
         assert_eq!(
             f.next_item(),
-            Some(Item::Message {
+            Some(Ok(Item::Message {
                 ch: 3,
                 flags: 0x0b,
                 msg_id: 0x8004,
                 payload: vec![8, 1]
-            })
+            }))
         );
         assert_eq!(f.next_item(), None);
     }
@@ -111,16 +96,16 @@ mod tests {
         }
         assert_eq!(
             f.next_item(),
-            Some(Item::Control("{\"type\":\"ready\"}".into()))
+            Some(Ok(Item::Control("{\"type\":\"ready\"}".into())))
         );
         assert_eq!(
             f.next_item(),
-            Some(Item::Message {
+            Some(Ok(Item::Message {
                 ch: 0,
                 flags: 3,
                 msg_id: 1,
                 payload: vec![]
-            })
+            }))
         );
     }
 
@@ -131,7 +116,7 @@ mod tests {
         let mut f = Framer::default();
         f.push(&wire);
         assert_eq!(
-            f.next_item().unwrap(),
+            f.next_item().unwrap().unwrap(),
             Item::Message {
                 ch: 1,
                 flags: 2,

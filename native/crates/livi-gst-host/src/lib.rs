@@ -12,8 +12,9 @@ use livi_audio::stream::{AudioSink, Codec as AudioCodec};
 use livi_audio::uplink::UplinkCodec;
 pub use livi_host_proto::UrlStatus;
 use livi_host_proto::{
-    CLUSTER_PLANE_MAX, CLUSTER_PLANE_MIN, CLUSTER_RECV_ID, Framer, cameras_body, feed as feedproto,
-    feeder_of, parse_camera_body, parse_plane_body, parse_url_body, url_status_body,
+    CLUSTER_PLANE_MAX, CLUSTER_PLANE_MIN, CLUSTER_RECV_ID, Framer, TooLarge, cameras_body,
+    feed as feedproto, feeder_of, parse_camera_body, parse_plane_body, parse_url_body,
+    url_status_body,
 };
 pub use livi_host_proto::{CameraOrder, CameraSeen, VideoCodec};
 use livi_screen_stream::ScreenSink;
@@ -398,11 +399,13 @@ impl<O: Outside> Host<O> {
         }
     }
 
-    pub fn feed(&mut self, chunk: &[u8]) {
+    pub fn feed(&mut self, chunk: &[u8]) -> Result<(), TooLarge> {
         self.framer.push(chunk);
         while let Some(m) = self.framer.next_message() {
+            let m = m?;
             self.dispatch(m.op, m.id, &m.rest);
         }
+        Ok(())
     }
 
     fn dispatch(&mut self, op: u8, id: u32, rest: &[u8]) {

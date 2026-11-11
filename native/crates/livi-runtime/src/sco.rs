@@ -118,6 +118,11 @@ impl<'a> Call<'a> {
             Ok(read) => {
                 self.framer.push(&self.chunk[..read]);
                 while let Some(r) = self.framer.next_record() {
+                    let Ok(r) = r else {
+                        println!("[sco] microphone tap detached");
+                        self.tap = None;
+                        break;
+                    };
                     if r.kind == feedproto::KIND_MIC {
                         self.pending.extend(r.payload);
                     }

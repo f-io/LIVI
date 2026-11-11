@@ -12,6 +12,7 @@ name = "livi-core"
 path = "src/main.rs"
 
 [dependencies]
+livi-base.workspace = true
 livi-core-proto.workspace = true
 livi-i18n.workspace = true
 iap2-mfi = { workspace = true, features = ["files"] }

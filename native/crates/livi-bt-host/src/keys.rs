@@ -5,6 +5,8 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use livi_base::fs::{PRIVATE, write_atomic};
+
 use crate::hci::{self, Addr};
 
 pub struct Keys {
@@ -72,16 +74,7 @@ impl Keys {
             .iter()
             .map(|(addr, (key, kind))| format!("{} {} {kind}\n", hci::text(addr), hex(key)))
             .collect();
-        let aside = self.path.with_extension("new");
-        if let Some(dir) = self.path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let written = std::fs::write(&aside, text).and_then(|()| {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&aside, std::fs::Permissions::from_mode(0o600))?;
-            std::fs::rename(&aside, &self.path)
-        });
-        if let Err(e) = written {
+        if let Err(e) = write_atomic(&self.path, text, PRIVATE) {
             eprintln!(
                 "[bt] could not keep the link keys in {}: {e}",
                 self.path.display()

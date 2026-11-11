@@ -6,7 +6,9 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::identity::{hex, unhex, write_private};
+use livi_base::fs::{PRIVATE, write_atomic};
+
+use crate::identity::{hex, unhex};
 
 pub struct Pairings {
     path: PathBuf,
@@ -32,7 +34,7 @@ impl Pairings {
         let mut all = self.load();
         all.insert(controller.to_string(), hex(public));
         let json = serde_json::to_string(&all).expect("strings always serialize");
-        if let Err(e) = write_private(&self.path, &json) {
+        if let Err(e) = write_atomic(&self.path, &json, PRIVATE) {
             eprintln!("[cp] could not persist the pairing: {e}");
         }
     }

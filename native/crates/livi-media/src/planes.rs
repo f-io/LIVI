@@ -547,7 +547,7 @@ mod tests {
             .unwrap();
         let mut framer = livi_host_proto::Framer::new();
         framer.push(&buf[..n]);
-        let msg = framer.next_message().unwrap();
+        let msg = framer.next_message().unwrap().unwrap();
         assert_eq!((msg.op, msg.id), (1, PLANE_MAIN));
         assert_eq!(msg.rest, [&[4u8][..], b"h264", &[1, 2]].concat());
         assert!(created.try_recv().is_err());
@@ -567,7 +567,7 @@ mod tests {
     ) -> livi_host_proto::Message {
         loop {
             if let Some(msg) = framer.next_message() {
-                return msg;
+                return msg.unwrap();
             }
             let mut buf = vec![0u8; 64];
             let n = tokio::time::timeout(Duration::from_secs(5), host.read(&mut buf))

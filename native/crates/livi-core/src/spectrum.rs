@@ -158,7 +158,7 @@ mod tests {
         async fn next(&mut self) -> (u8, Vec<u8>) {
             let mut buf = [0u8; 256];
             loop {
-                if let Some(m) = self.framer.next_message() {
+                if let Some(m) = self.framer.next_message().map(Result::unwrap) {
                     return (m.op, m.rest);
                 }
                 let n = tokio::time::timeout(Duration::from_secs(5), self.stream.read(&mut buf))

@@ -30,13 +30,14 @@ fn serve_plane(mut conn: UnixStream) {
     let mut drawn: Option<(u32, Arc<Player>)> = None;
     let mut playing: Option<(u32, Arc<UrlPlayer>)> = None;
     let mut filming: Option<(u32, Arc<CameraPlayer>)> = None;
-    loop {
+    'conn: loop {
         let read = match conn.read(&mut chunk) {
             Ok(0) | Err(_) => break,
             Ok(n) => n,
         };
         framer.push(&chunk[..read]);
         while let Some(m) = framer.next_message() {
+            let Ok(m) = m else { break 'conn };
             match m.op {
                 ui_planes::CREATE => {
                     if let Some((id, player)) = drawn.take() {

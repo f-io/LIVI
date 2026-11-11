@@ -7,3 +7,6 @@ edition.workspace = true
 # exchange.
 [lib]
 crate-type = ["rlib"]
+
+[dependencies]
+livi-base.workspace = true

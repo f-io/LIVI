@@ -89,7 +89,13 @@ fn attach(sock: UnixStream, hung_up: impl Fn() + 'static) -> Vec<SourceId> {
             let mut from: &UnixStream = &sock;
             match from.read(&mut chunk) {
                 Ok(0) | Err(_) => hung_up(),
-                Ok(n) => reading.borrow_mut().feed(&chunk[..n]),
+                Ok(n) => {
+                    let fed = reading.borrow_mut().feed(&chunk[..n]);
+                    if let Err(e) = fed {
+                        eprintln!("[gst-host] {e}");
+                        hung_up();
+                    }
+                }
             }
             ControlFlow::Continue
         },

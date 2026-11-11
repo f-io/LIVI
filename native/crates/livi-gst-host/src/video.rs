@@ -116,7 +116,7 @@ impl<O: Outside> Host<O> {
         let mut v = [0f64; N];
         for (i, slot) in v.iter_mut().enumerate() {
             let bytes = &rest[i * size_of::<f64>()..][..size_of::<f64>()];
-            *slot = f64::from_ne_bytes(bytes.try_into().unwrap());
+            *slot = f64::from_le_bytes(bytes.try_into().unwrap());
         }
         if let Some(p) = self.planes.borrow().get(&id) {
             p.set_gamma(v[0], v[1], v[2], v[3], v[4]);
@@ -131,7 +131,7 @@ impl<O: Outside> Host<O> {
         }
 
         let state = Rc::new(RefCell::new(ReceiverState {
-            plane_id: u32::from_ne_bytes(rest[..4].try_into().unwrap()),
+            plane_id: u32::from_le_bytes(rest[..4].try_into().unwrap()),
             is_cluster: rest[4] & 1 != 0,
             config: Vec::new(),
             fan: Fanout::new(),

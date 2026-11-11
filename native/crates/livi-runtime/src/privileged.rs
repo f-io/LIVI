@@ -19,11 +19,7 @@ fn read(src: &str) -> Result<Vec<u8>, String> {
 
 pub fn write_root_file(path: &str, content: &[u8], mode: u32) -> Result<(), String> {
     require_root()?;
-    if let Some(dir) = std::path::Path::new(path).parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    }
-    std::fs::write(path, content).map_err(|e| format!("{path}: {e}"))?;
-    std::fs::set_permissions(path, PermissionsExt::from_mode(mode))
+    livi_base::fs::write_atomic(std::path::Path::new(path), content, mode)
         .map_err(|e| format!("{path}: {e}"))
 }
 

@@ -8,7 +8,9 @@ pub mod feed;
 pub mod ops;
 pub mod ui_planes;
 
-const LEN_BYTES: usize = 4;
+pub use livi_base::frame::TooLarge;
+use livi_base::frame::{self, Frames};
+
 const HEAD_BYTES: usize = 5;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -20,7 +22,7 @@ pub struct Message {
 
 #[derive(Default)]
 pub struct Framer {
-    buf: Vec<u8>,
+    frames: Frames,
 }
 
 impl Framer {
@@ -29,41 +31,32 @@ impl Framer {
     }
 
     pub fn push(&mut self, chunk: &[u8]) {
-        self.buf.extend_from_slice(chunk);
+        self.frames.push(chunk);
     }
 
-    pub fn next_message(&mut self) -> Option<Message> {
+    pub fn next_message(&mut self) -> Option<Result<Message, TooLarge>> {
         loop {
-            if self.buf.len() < LEN_BYTES {
-                return None;
+            let message = self.frames.next_with(|body| {
+                let (&[op, a, b, c, d], rest) = body.split_first_chunk::<HEAD_BYTES>()?;
+                Some(Message {
+                    op,
+                    id: u32::from_le_bytes([a, b, c, d]),
+                    rest: rest.to_vec(),
+                })
+            })?;
+            if let Some(message) = message.transpose() {
+                return Some(message);
             }
-            let len =
-                u32::from_ne_bytes([self.buf[0], self.buf[1], self.buf[2], self.buf[3]]) as usize;
-            if self.buf.len() < LEN_BYTES + len {
-                return None;
-            }
-
-            let frame: Vec<u8> = self.buf.drain(..LEN_BYTES + len).skip(LEN_BYTES).collect();
-            if len < HEAD_BYTES {
-                continue;
-            }
-            return Some(Message {
-                op: frame[0],
-                id: u32::from_ne_bytes([frame[1], frame[2], frame[3], frame[4]]),
-                rest: frame[HEAD_BYTES..].to_vec(),
-            });
         }
     }
 }
 
 pub fn encode_reply(op: u8, id: u32, rest: &[u8]) -> Vec<u8> {
-    let len = (HEAD_BYTES + rest.len()) as u32;
-    let mut out = Vec::with_capacity(LEN_BYTES + len as usize);
-    out.extend_from_slice(&len.to_ne_bytes());
+    let mut out = frame::open(HEAD_BYTES + rest.len());
     out.push(op);
-    out.extend_from_slice(&id.to_ne_bytes());
+    out.extend_from_slice(&id.to_le_bytes());
     out.extend_from_slice(rest);
-    out
+    frame::seal(out)
 }
 
 pub const PLANE_MAIN: u32 = 0x7a00_0001;
@@ -358,11 +351,11 @@ mod tests {
 
         assert_eq!(
             f.next_message(),
-            Some(Message {
+            Some(Ok(Message {
                 op: 2,
                 id: 0x7a00_0001,
                 rest: vec![1, 2, 3]
-            })
+            }))
         );
         assert_eq!(f.next_message(), None);
     }
@@ -376,7 +369,7 @@ mod tests {
             f.push(piece);
         }
 
-        assert_eq!(f.next_message().unwrap().rest.len(), 40);
+        assert_eq!(f.next_message().unwrap().unwrap().rest.len(), 40);
     }
 
     #[test]
@@ -386,20 +379,20 @@ mod tests {
         let mut f = Framer::new();
         f.push(&buf);
 
-        assert_eq!(f.next_message().unwrap().id, 10);
-        assert_eq!(f.next_message().unwrap().id, 20);
+        assert_eq!(f.next_message().unwrap().unwrap().id, 10);
+        assert_eq!(f.next_message().unwrap().unwrap().id, 20);
         assert_eq!(f.next_message(), None);
     }
 
     #[test]
     fn a_payload_too_short_for_a_header_is_skipped() {
-        let mut buf = 3u32.to_ne_bytes().to_vec();
+        let mut buf = 3u32.to_le_bytes().to_vec();
         buf.extend_from_slice(&[9, 9, 9]);
         buf.extend(frame(4, 5, b"ok"));
         let mut f = Framer::new();
         f.push(&buf);
 
-        assert_eq!(f.next_message().unwrap().id, 5);
+        assert_eq!(f.next_message().unwrap().unwrap().id, 5);
     }
 
     #[test]
@@ -409,11 +402,11 @@ mod tests {
 
         assert_eq!(
             f.next_message(),
-            Some(Message {
+            Some(Ok(Message {
                 op: 3,
                 id: 99,
                 rest: vec![]
-            })
+            }))
         );
     }
 
@@ -522,12 +515,9 @@ mod tests {
         let out = encode_reply(2, 0x0102_0304, &[7, 8]);
 
         assert_eq!(out.len(), 4 + 5 + 2);
-        assert_eq!(u32::from_ne_bytes([out[0], out[1], out[2], out[3]]), 7);
+        assert_eq!(&out[..4], &[7, 0, 0, 0]);
         assert_eq!(out[4], 2);
-        assert_eq!(
-            u32::from_ne_bytes([out[5], out[6], out[7], out[8]]),
-            0x0102_0304
-        );
+        assert_eq!(&out[5..9], &[4, 3, 2, 1]);
         assert_eq!(&out[9..], &[7, 8]);
     }
 

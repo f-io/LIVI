@@ -3,10 +3,9 @@
 // Additional terms: see NOTICE
 
 use std::fs;
-use std::io;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
+use livi_base::fs::{PRIVATE, write_atomic};
 use serde::{Deserialize, Serialize};
 
 use crate::crypto::{ed25519_public, random_bytes};
@@ -56,21 +55,6 @@ fn read(path: &Path) -> Option<Identity> {
     })
 }
 
-pub(crate) fn write_private(path: &Path, data: &str) -> io::Result<()> {
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    let tmp = path.with_extension("json.tmp");
-    let _ = fs::remove_file(&tmp);
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&tmp)?;
-    io::Write::write_all(&mut file, data.as_bytes())?;
-    fs::rename(&tmp, path)
-}
-
 pub fn load_or_create(path: &Path) -> Identity {
     if let Some(id) = read(path) {
         return id;
@@ -87,7 +71,7 @@ pub fn load_or_create(path: &Path) -> Identity {
         pi: id.pairing_id.clone(),
     };
     let json = serde_json::to_string(&stored).expect("strings always serialize");
-    if let Err(e) = write_private(path, &json) {
+    if let Err(e) = write_atomic(path, &json, PRIVATE) {
         eprintln!("[cp] could not persist the identity: {e}");
     }
     id
@@ -132,7 +116,7 @@ pub fn accessory_id(
     let id = hardware()
         .and_then(|m| as_mac(&m))
         .unwrap_or_else(|| derived_accessory_id(pairing_id));
-    match write_private(path, &format!("{id}\n")) {
+    match write_atomic(path, format!("{id}\n"), PRIVATE) {
         Ok(()) => println!("[cp] the accessory is {id} from now on"),
         Err(e) => eprintln!("[cp] could not keep the accessory id: {e}"),
     }

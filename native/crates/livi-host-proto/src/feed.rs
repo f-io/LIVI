@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-const LEN_BYTES: usize = 4;
+use livi_base::frame::{self, Frames, TooLarge};
+
 const HEAD_BYTES: usize = 13;
 
 pub const KIND_VIDEO: u8 = 1;
@@ -20,7 +21,7 @@ pub struct Record {
 
 #[derive(Default)]
 pub struct Framer {
-    buf: Vec<u8>,
+    frames: Frames,
 }
 
 impl Framer {
@@ -29,44 +30,34 @@ impl Framer {
     }
 
     pub fn push(&mut self, chunk: &[u8]) {
-        self.buf.extend_from_slice(chunk);
+        self.frames.push(chunk);
     }
 
-    pub fn next_record(&mut self) -> Option<Record> {
+    pub fn next_record(&mut self) -> Option<Result<Record, TooLarge>> {
         loop {
-            if self.buf.len() < LEN_BYTES {
-                return None;
+            let record = self.frames.next_with(|body| {
+                let (head, payload) = body.split_first_chunk::<HEAD_BYTES>()?;
+                Some(Record {
+                    kind: head[0],
+                    id: u32::from_le_bytes(head[1..5].try_into().ok()?),
+                    ts: u64::from_le_bytes(head[5..].try_into().ok()?),
+                    payload: payload.to_vec(),
+                })
+            })?;
+            if let Some(record) = record.transpose() {
+                return Some(record);
             }
-            let len = u32::from_ne_bytes(self.buf[..LEN_BYTES].try_into().unwrap()) as usize;
-            if self.buf.len() < LEN_BYTES + len {
-                return None;
-            }
-            if len < HEAD_BYTES {
-                self.buf.drain(..LEN_BYTES + len);
-                continue;
-            }
-            let head = &self.buf[LEN_BYTES..LEN_BYTES + HEAD_BYTES];
-            let record = Record {
-                kind: head[0],
-                id: u32::from_ne_bytes(head[1..5].try_into().unwrap()),
-                ts: u64::from_ne_bytes(head[5..13].try_into().unwrap()),
-                payload: self.buf[LEN_BYTES + HEAD_BYTES..LEN_BYTES + len].to_vec(),
-            };
-            self.buf.drain(..LEN_BYTES + len);
-            return Some(record);
         }
     }
 }
 
 pub fn encode(kind: u8, id: u32, ts: u64, payload: &[u8]) -> Vec<u8> {
-    let len = (HEAD_BYTES + payload.len()) as u32;
-    let mut out = Vec::with_capacity(LEN_BYTES + len as usize);
-    out.extend_from_slice(&len.to_ne_bytes());
+    let mut out = frame::open(HEAD_BYTES + payload.len());
     out.push(kind);
-    out.extend_from_slice(&id.to_ne_bytes());
-    out.extend_from_slice(&ts.to_ne_bytes());
+    out.extend_from_slice(&id.to_le_bytes());
+    out.extend_from_slice(&ts.to_le_bytes());
     out.extend_from_slice(payload);
-    out
+    frame::seal(out)
 }
 
 #[cfg(test)]
@@ -80,12 +71,12 @@ mod tests {
 
         assert_eq!(
             f.next_record(),
-            Some(Record {
+            Some(Ok(Record {
                 kind: KIND_VIDEO,
                 id: 0x7a00_0001,
                 ts: 42,
                 payload: vec![1, 2, 3]
-            })
+            }))
         );
         assert_eq!(f.next_record(), None);
     }
@@ -97,7 +88,7 @@ mod tests {
         for piece in msg.chunks(5) {
             f.push(piece);
         }
-        assert_eq!(f.next_record().unwrap().payload.len(), 40);
+        assert_eq!(f.next_record().unwrap().unwrap().payload.len(), 40);
     }
 
     #[test]
@@ -107,20 +98,20 @@ mod tests {
         let mut f = Framer::new();
         f.push(&buf);
 
-        assert_eq!(f.next_record().unwrap().kind, KIND_VIDEO_START);
-        assert_eq!(f.next_record().unwrap().payload, b"nal");
+        assert_eq!(f.next_record().unwrap().unwrap().kind, KIND_VIDEO_START);
+        assert_eq!(f.next_record().unwrap().unwrap().payload, b"nal");
         assert_eq!(f.next_record(), None);
     }
 
     #[test]
     fn a_payload_too_short_for_a_header_is_skipped() {
-        let mut buf = 3u32.to_ne_bytes().to_vec();
+        let mut buf = 3u32.to_le_bytes().to_vec();
         buf.extend_from_slice(&[9, 9, 9]);
         buf.extend(encode(KIND_VIDEO, 5, 0, b"ok"));
         let mut f = Framer::new();
         f.push(&buf);
 
-        assert_eq!(f.next_record().unwrap().id, 5);
+        assert_eq!(f.next_record().unwrap().unwrap().id, 5);
     }
 
     #[test]
@@ -129,12 +120,12 @@ mod tests {
         f.push(&encode(KIND_VIDEO, 99, 5, &[]));
         assert_eq!(
             f.next_record(),
-            Some(Record {
+            Some(Ok(Record {
                 kind: KIND_VIDEO,
                 id: 99,
                 ts: 5,
                 payload: vec![]
-            })
+            }))
         );
     }
 }

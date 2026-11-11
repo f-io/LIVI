@@ -99,9 +99,10 @@ impl UiUrlPlayer {
             .spawn(move || {
                 let mut framer = Framer::new();
                 let mut chunk = [0u8; 256];
-                while let Ok(n @ 1..) = from_ui.read(&mut chunk) {
+                'read: while let Ok(n @ 1..) = from_ui.read(&mut chunk) {
                     framer.push(&chunk[..n]);
                     while let Some(m) = framer.next_message() {
+                        let Ok(m) = m else { break 'read };
                         match m.op {
                             ui_planes::STATUS => {
                                 if let Some(s) = parse_url_status(&m.rest) {
@@ -173,9 +174,10 @@ impl UiCamera {
             .spawn(move || {
                 let mut framer = Framer::new();
                 let mut chunk = [0u8; 256];
-                while let Ok(n @ 1..) = from_ui.read(&mut chunk) {
+                'read: while let Ok(n @ 1..) = from_ui.read(&mut chunk) {
                     framer.push(&chunk[..n]);
                     while let Some(m) = framer.next_message() {
+                        let Ok(m) = m else { break 'read };
                         if m.op == ui_planes::LOG {
                             let line = String::from_utf8_lossy(&m.rest);
                             eprintln!("{}", livi_video_player::stamped(&line));
@@ -216,7 +218,7 @@ mod tests {
         conn.read_to_end(&mut bytes).unwrap();
         let mut framer = Framer::new();
         framer.push(&bytes);
-        std::iter::from_fn(|| framer.next_message()).collect()
+        std::iter::from_fn(|| framer.next_message().map(Result::unwrap)).collect()
     }
 
     #[test]
@@ -261,7 +263,7 @@ mod tests {
         let mut chunk = [0u8; 256];
         loop {
             if let Some(m) = framer.next_message() {
-                return m;
+                return m.unwrap();
             }
             let n = conn.read(&mut chunk).unwrap();
             assert!(n > 0, "the player hung up early");

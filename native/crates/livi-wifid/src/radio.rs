@@ -28,12 +28,8 @@ pub fn set(radio: Radio, on: bool) -> std::io::Result<bool> {
     if enabled_in(&text, radio) == on {
         return Ok(false);
     }
-    if let Some(dir) = std::path::Path::new(PATH).parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let temp = format!("{PATH}.new");
-    std::fs::write(&temp, with(&text, radio, on))?;
-    std::fs::rename(&temp, PATH)?;
+    let path = std::path::Path::new(PATH);
+    livi_base::fs::write_atomic(path, with(&text, radio, on), livi_base::fs::SHARED)?;
     Ok(true)
 }
 

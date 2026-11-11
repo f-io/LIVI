@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use livi_base::fs::{SHARED, write_atomic};
 use livi_core_proto::state::{DabStation, FmStation, State};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -167,13 +168,7 @@ fn render<T: Serialize>(version: u32, payload: &T, now: SystemTime) -> String {
 }
 
 fn write(target: &Path, text: &str) {
-    let tmp = target.with_extension("json.tmp");
-    let written = target
-        .parent()
-        .map_or(Ok(()), std::fs::create_dir_all)
-        .and_then(|()| std::fs::write(&tmp, text))
-        .and_then(|()| std::fs::rename(&tmp, target));
-    if let Err(e) = written {
+    if let Err(e) = write_atomic(target, text, SHARED) {
         eprintln!("[core] {} not written: {e}", target.display());
     }
 }

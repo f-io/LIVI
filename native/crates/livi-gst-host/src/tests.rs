@@ -363,9 +363,9 @@ impl Wire for Sent {
 }
 
 fn frame(op: u8, id: u32, rest: &[u8]) -> Vec<u8> {
-    let mut v = ((HEAD + rest.len()) as u32).to_ne_bytes().to_vec();
+    let mut v = ((HEAD + rest.len()) as u32).to_le_bytes().to_vec();
     v.push(op);
-    v.extend_from_slice(&id.to_ne_bytes());
+    v.extend_from_slice(&id.to_le_bytes());
     v.extend_from_slice(rest);
     v
 }
@@ -373,14 +373,14 @@ fn frame(op: u8, id: u32, rest: &[u8]) -> Vec<u8> {
 const HEAD: usize = 5;
 
 fn listen_body(plane_id: u32, cluster: bool, key: u8) -> Vec<u8> {
-    let mut v = plane_id.to_ne_bytes().to_vec();
+    let mut v = plane_id.to_le_bytes().to_vec();
     v.push(u8::from(cluster));
     v.extend_from_slice(&[key; 32]);
     v
 }
 
 fn gamma_body(v: [f64; 5]) -> Vec<u8> {
-    v.iter().flat_map(|d| d.to_ne_bytes()).collect()
+    v.iter().flat_map(|d| d.to_le_bytes()).collect()
 }
 
 fn nal(kind: u8, mark: u8) -> Vec<u8> {
@@ -791,7 +791,7 @@ impl Fixture {
     }
 
     fn send(&mut self, op: u8, id: u32, rest: &[u8]) {
-        self.host.feed(&frame(op, id, rest));
+        self.host.feed(&frame(op, id, rest)).unwrap();
     }
 
     fn plane(&self, i: usize) -> FakePlane {
@@ -1147,7 +1147,7 @@ fn two_messages_in_one_chunk_are_both_acted_on() {
     );
     chunk.extend(frame(OP_DATA, MAIN_PLANE, &[4]));
 
-    f.host.feed(&chunk);
+    f.host.feed(&chunk).unwrap();
 
     assert_eq!(f.plane(0).pushed(), vec![vec![4]]);
 }
@@ -1161,10 +1161,10 @@ fn a_message_split_across_chunks_waits_for_the_rest() {
         &livi_host_proto::plane_body(VideoCodec::H264, &[]),
     );
 
-    f.host.feed(&msg[..6]);
+    f.host.feed(&msg[..6]).unwrap();
     assert_eq!(f.planes(), 0);
 
-    f.host.feed(&msg[6..]);
+    f.host.feed(&msg[6..]).unwrap();
     assert_eq!(f.planes(), 1);
 }
 

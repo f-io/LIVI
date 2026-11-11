@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use livi_base::fs::{SHARED, write_atomic};
 use livi_core_proto::ids::{Ids, norm_mac};
 use livi_core_proto::state::{DeviceStatus, DeviceView, Protocol};
 use livi_cp::helper_sock::HelperSock;
@@ -228,9 +229,7 @@ impl Registry {
         let Ok(text) = serde_json::to_string_pretty(&stored) else {
             return;
         };
-        let tmp = self.path.with_extension("json.tmp");
-        let written = std::fs::write(&tmp, text).and_then(|()| std::fs::rename(&tmp, &self.path));
-        if let Err(e) = written {
+        if let Err(e) = write_atomic(&self.path, text, SHARED) {
             eprintln!("[devices] {} not saved: {e}", self.path.display());
         }
     }

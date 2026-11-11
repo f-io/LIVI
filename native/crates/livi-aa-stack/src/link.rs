@@ -119,12 +119,13 @@ impl LinkReader {
         loop {
             while let Some(item) = self.framer.next_item() {
                 match item {
-                    Item::Message {
+                    Err(e) => return LinkItem::Closed(Some(e.to_string())),
+                    Ok(Item::Message {
                         ch,
                         flags,
                         msg_id,
                         payload,
-                    } => {
+                    }) => {
                         return LinkItem::Message(Frame {
                             ch,
                             flags,
@@ -132,7 +133,7 @@ impl LinkReader {
                             payload,
                         });
                     }
-                    Item::Control(json) => {
+                    Ok(Item::Control(json)) => {
                         if let Ok(v @ Value::Object(_)) = serde_json::from_str::<Value>(&json)
                             && v.get("type").is_some_and(Value::is_string)
                         {

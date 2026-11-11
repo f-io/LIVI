@@ -4,12 +4,11 @@
 
 use std::fmt;
 
+use livi_base::frame::{self, Frames, LEN_BYTES, TooLarge};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-const LEN_BYTES: usize = 4;
-
-pub const MAX_FRAME: usize = 16 << 20;
+pub use livi_base::frame::MAX_FRAME;
 
 #[derive(Debug)]
 pub enum FrameError {
@@ -20,7 +19,7 @@ pub enum FrameError {
 impl fmt::Display for FrameError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::TooLarge(len) => write!(f, "frame of {len} bytes exceeds {MAX_FRAME}"),
+            Self::TooLarge(len) => TooLarge(*len).fmt(f),
             Self::Json(e) => write!(f, "frame is not a valid message: {e}"),
         }
     }
@@ -29,19 +28,18 @@ impl fmt::Display for FrameError {
 impl std::error::Error for FrameError {}
 
 pub fn encode<T: Serialize>(msg: &T) -> Result<Vec<u8>, FrameError> {
-    let mut out = vec![0; LEN_BYTES];
+    let mut out = frame::open(0);
     serde_json::to_writer(&mut out, msg).map_err(FrameError::Json)?;
     let len = out.len() - LEN_BYTES;
     if len > MAX_FRAME {
         return Err(FrameError::TooLarge(len));
     }
-    out[..LEN_BYTES].copy_from_slice(&(len as u32).to_le_bytes());
-    Ok(out)
+    Ok(frame::seal(out))
 }
 
 #[derive(Default)]
 pub struct Decoder {
-    buf: Vec<u8>,
+    frames: Frames,
 }
 
 impl Decoder {
@@ -50,20 +48,17 @@ impl Decoder {
     }
 
     pub fn push(&mut self, chunk: &[u8]) {
-        self.buf.extend_from_slice(chunk);
+        self.frames.push(chunk);
     }
 
     pub fn next_message<T: DeserializeOwned>(&mut self) -> Option<Result<T, FrameError>> {
-        let mut head = [0; LEN_BYTES];
-        head.copy_from_slice(self.buf.get(..LEN_BYTES)?);
-        let len = u32::from_le_bytes(head) as usize;
-        if len > MAX_FRAME {
-            return Some(Err(FrameError::TooLarge(len)));
-        }
-        let body = self.buf.get(LEN_BYTES..LEN_BYTES + len)?;
-        let msg = serde_json::from_slice(body).map_err(FrameError::Json);
-        self.buf.drain(..LEN_BYTES + len);
-        Some(msg)
+        let msg = self
+            .frames
+            .next_with(|body| serde_json::from_slice::<T>(body))?;
+        Some(match msg {
+            Ok(msg) => msg.map_err(FrameError::Json),
+            Err(TooLarge(len)) => Err(FrameError::TooLarge(len)),
+        })
     }
 }
 

@@ -321,9 +321,8 @@ fn save(ap: &Ap) -> Result<(), String> {
     if next == base {
         return Ok(());
     }
-    let temp = ap.base.with_extension("new");
-    std::fs::write(&temp, next).map_err(|e| format!("{}: {e}", temp.display()))?;
-    std::fs::rename(&temp, &ap.base).map_err(|e| format!("{}: {e}", ap.base.display()))?;
+    livi_base::fs::write_atomic(&ap.base, next, livi_base::fs::SHARED)
+        .map_err(|e| format!("{}: {e}", ap.base.display()))?;
     let _ = Command::new("sync").status();
     if let Some(cb) = ap.on_save.as_ref() {
         cb();

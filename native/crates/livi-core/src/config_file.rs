@@ -6,6 +6,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use livi_base::fs::{SHARED, write_atomic};
 use livi_core_proto::config::Config;
 pub use livi_core_proto::config::defaults;
 use serde_json::{Map, Value};
@@ -75,8 +76,8 @@ impl ConfigFile {
 
     pub fn save(&self, config: &Config) -> io::Result<()> {
         let json = serde_json::to_string_pretty(&for_file(config))?;
-        write_atomic(&self.path, &json)?;
-        if let Err(e) = write_atomic(&self.backup, &json) {
+        write_atomic(&self.path, &json, SHARED)?;
+        if let Err(e) = write_atomic(&self.backup, &json, SHARED) {
             eprintln!("[core] config backup mirror failed: {e}");
         }
         Ok(())
@@ -95,15 +96,6 @@ fn read_json(path: &Path) -> Option<Value> {
             None
         }
     }
-}
-
-fn write_atomic(path: &Path, data: &str) -> io::Result<()> {
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, data)?;
-    fs::rename(&tmp, path)
 }
 
 fn for_file(config: &Config) -> Value {

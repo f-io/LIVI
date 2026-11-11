@@ -354,12 +354,13 @@ impl GstHost {
             tokio::spawn(async move {
                 let mut framer = Framer::new();
                 let mut buf = vec![0u8; 64 * 1024];
-                while let Ok(n) = rd.read(&mut buf).await {
+                'read: while let Ok(n) = rd.read(&mut buf).await {
                     if n == 0 {
                         break;
                     }
                     framer.push(&buf[..n]);
                     while let Some(msg) = framer.next_message() {
+                        let Ok(msg) = msg else { break 'read };
                         host.on_reply(msg.op, msg.id, &msg.rest);
                     }
                 }
@@ -750,7 +751,7 @@ mod tests {
             let mut buf = [0u8; 4096];
             loop {
                 if let Some(m) = self.framer.next_message() {
-                    return m;
+                    return m.unwrap();
                 }
                 let n = tokio::time::timeout(Duration::from_secs(5), self.stream.read(&mut buf))
                     .await
@@ -1020,7 +1021,7 @@ mod tests {
             let mut buf = [0u8; 4096];
             let req = loop {
                 if let Some(m) = framer.next_message() {
-                    break m;
+                    break m.unwrap();
                 }
                 let n = stream.read(&mut buf).unwrap();
                 framer.push(&buf[..n]);

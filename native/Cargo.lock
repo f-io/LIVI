@@ -3969,9 +3969,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "livi-base"
+version = "0.1.0"
+
+[[package]]
 name = "livi-bt-host"
 version = "0.1.0"
 dependencies = [
+ "livi-base",
  "livi-net",
 ]
 
@@ -4012,6 +4017,7 @@ dependencies = [
  "libc 1.0.0-alpha.5",
  "livi-aa-stack",
  "livi-aaudio",
+ "livi-base",
  "livi-core-proto",
  "livi-cp",
  "livi-dab",
@@ -4049,6 +4055,7 @@ name = "livi-core-proto"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
+ "livi-base",
  "serde",
  "serde_json",
  "serde_repr",
@@ -4066,6 +4073,7 @@ dependencies = [
  "foreign-types 0.3.2",
  "getrandom 0.4.3",
  "hkdf",
+ "livi-base",
  "livi-core-proto",
  "livi-net",
  "livi-session-io",
@@ -4165,6 +4173,9 @@ dependencies = [
 [[package]]
 name = "livi-host-proto"
 version = "0.1.0"
+dependencies = [
+ "livi-base",
+]
 
 [[package]]
 name = "livi-i18n"
@@ -4253,6 +4264,7 @@ dependencies = [
  "iap2-link",
  "iap2-mfi",
  "libc 1.0.0-alpha.5",
+ "livi-base",
  "livi-core-proto",
  "livi-hfp",
  "livi-host-proto",
@@ -4278,6 +4290,7 @@ dependencies = [
 name = "livi-session-io"
 version = "0.1.0"
 dependencies = [
+ "livi-base",
  "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",
  "serde_json",
@@ -4365,6 +4378,7 @@ name = "livi-wifid"
 version = "0.1.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
+ "livi-base",
  "livi-btd",
  "livi-net",
  "livi-wifi",

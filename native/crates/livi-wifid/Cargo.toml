@@ -4,6 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
+livi-base.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 livi-wifi.workspace = true

@@ -77,21 +77,26 @@ fn watch_client(fd: RawFd, generation: u64, clients: Clients, sink: Sink) {
                 None => return glib::ControlFlow::Break,
             }
         };
-        match read {
-            Some(n) => {
-                framer.push(&chunk[..n]);
-                let mut s = sink.borrow_mut();
-                while let Some(record) = framer.next_record() {
-                    s.on_record(record);
+        let alive = read.is_some_and(|n| {
+            framer.push(&chunk[..n]);
+            let mut s = sink.borrow_mut();
+            while let Some(record) = framer.next_record() {
+                match record {
+                    Ok(record) => s.on_record(record),
+                    Err(e) => {
+                        eprintln!("[feed] {e}");
+                        return false;
+                    }
                 }
-                glib::ControlFlow::Continue
             }
-            None => {
-                clients.borrow_mut().retain(|(g, _)| *g != generation);
-                eprintln!("[feed] connection closed");
-                glib::ControlFlow::Break
-            }
+            true
+        });
+        if alive {
+            return glib::ControlFlow::Continue;
         }
+        clients.borrow_mut().retain(|(g, _)| *g != generation);
+        eprintln!("[feed] connection closed");
+        glib::ControlFlow::Break
     });
 }
 
