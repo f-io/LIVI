@@ -6,7 +6,7 @@ case $RADIO in
   iw416 | rtl8822cs | rtl8822bs | bcm4354) ;;
   *) echo "RADIO=$RADIO: this board has builds for iw416, rtl8822cs, rtl8822bs and bcm4354" >&2; exit 2 ;;
 esac
-: "${TOP:=$HOME/LocalDev/imx6ul-$RADIO-kernel}"
+: "${TOP:=${XDG_CACHE_HOME:-$HOME/.cache}/livi/imx6ul-$RADIO-kernel}"
 source "$HERE/../common.sh"
 
 # The vendor U-Boot reads a fixed number of kernel bytes, too few for the full busybox next to the

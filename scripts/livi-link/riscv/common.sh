@@ -2,7 +2,7 @@
 RISCV=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 COMMON=$(cd "$RISCV/../common" && pwd)
 REPO=$(cd "$RISCV/../../.." && pwd)
-TOP=${TOP:-$HOME/LocalDev/$BOARD-kernel}
+TOP=${TOP:-${XDG_CACHE_HOME:-$HOME/.cache}/livi/$BOARD-kernel}
 JOBS=${JOBS:-$(nproc)}
 # A riscv64 toolchain builds the rv32 kernel as well.
 CROSS_COMPILE=${CROSS_COMPILE:-riscv64-linux-gnu-}

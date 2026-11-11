@@ -2,7 +2,7 @@
 ARM=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 COMMON=$(cd "$ARM/../common" && pwd)
 REPO=$(cd "$ARM/../../.." && pwd)
-TOP=${TOP:-$HOME/LocalDev/$BOARD-kernel}
+TOP=${TOP:-${XDG_CACHE_HOME:-$HOME/.cache}/livi/$BOARD-kernel}
 JOBS=${JOBS:-$(nproc)}
 CROSS_COMPILE=${CROSS_COMPILE:-arm-linux-gnu-}
 

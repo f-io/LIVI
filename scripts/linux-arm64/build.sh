@@ -5,7 +5,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "${1:?repo copy}" && pwd)"
-cache="${2:-$HOME/LocalDev/linux-arm64-cache}"
+cache="${2:-${XDG_CACHE_HOME:-$HOME/.cache}/livi/linux-arm64}"
 image=livi-linux-arm64-build
 
 mkdir -p "$cache/registry" "$cache/git" "$cache/rustup" "$cache/target"

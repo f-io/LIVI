@@ -2,7 +2,7 @@
 MIPS=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 COMMON=$(cd "$MIPS/../common" && pwd)
 REPO=$(cd "$MIPS/../../.." && pwd)
-TOP=${TOP:-$HOME/LocalDev/$BOARD-kernel}
+TOP=${TOP:-${XDG_CACHE_HOME:-$HOME/.cache}/livi/$BOARD-kernel}
 JOBS=${JOBS:-$(nproc)}
 CROSS_COMPILE=${CROSS_COMPILE:-mipsel-buildroot-linux-musl-}
 RUST_NIGHTLY=$(<"$COMMON/rust-nightly")
