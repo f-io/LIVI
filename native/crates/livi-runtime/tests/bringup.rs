@@ -18,7 +18,7 @@ use livi_runtime::bringup::{BringupEvent, CpConfig, OnCable, run_accessory};
 use livi_runtime::framing::frame_msg_id;
 use livi_runtime::ident::{Identity, Transport};
 use livi_runtime::vehicle::{Fuels, Plugs, Vehicle, VehicleFeed};
-use livi_runtime::{AsyncAuth, ChannelError, ControlChannel};
+use livi_runtime::{AsyncAuth, AuthError, ChannelError, ControlChannel};
 
 struct PairChannel {
     tx: mpsc::UnboundedSender<Vec<u8>>,
@@ -48,13 +48,13 @@ struct MockAuth {
 }
 
 impl AsyncAuth for MockAuth {
-    async fn read_certificate(&mut self) -> Result<Vec<u8>, String> {
+    async fn read_certificate(&mut self) -> Result<Vec<u8>, AuthError> {
         Ok(self.cert.clone())
     }
-    async fn sign(&mut self, challenge: Vec<u8>) -> Result<Vec<u8>, String> {
+    async fn sign(&mut self, challenge: Vec<u8>) -> Result<Vec<u8>, AuthError> {
         Ok(challenge.iter().rev().copied().collect())
     }
-    async fn protocol_major(&mut self) -> Result<u8, String> {
+    async fn protocol_major(&mut self) -> Result<u8, AuthError> {
         Ok(3)
     }
 }

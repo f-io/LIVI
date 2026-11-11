@@ -54,9 +54,9 @@ impl<M: Media> Conn<M> {
         let mut check = |shown: &[u8]| {
             let (expected, ours) = pair_verify
                 .transcript_proofs()
-                .ok_or_else(|| "nothing to bind, pair-verify has not run".to_string())?;
+                .ok_or(mfi4::session::TunnelError::NotVerified)?;
             if shown.get(..expected.len()) != Some(&expected[..]) {
-                return Err("the phone's transcript proof does not match".to_string());
+                return Err(mfi4::session::TunnelError::ProofMismatch);
             }
             bound = true;
             Ok(ours.to_vec())

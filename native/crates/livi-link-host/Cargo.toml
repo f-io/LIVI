@@ -9,6 +9,7 @@ libc.workspace = true
 livi-net.workspace = true
 livi-session-io.workspace = true
 livi-wifi.workspace = true
+thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "time", "sync", "io-util", "net"] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]

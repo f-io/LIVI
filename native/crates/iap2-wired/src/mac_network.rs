@@ -2,9 +2,23 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+use std::io;
+
 use tokio::process::Command;
 
 const NCM_DATA: [&str; 2] = ["AppleUSBNCMData", "AppleUSBNCM11Data"];
+
+#[derive(Debug, thiserror::Error)]
+pub enum NetworkError {
+    #[error("ioreg: {0}")]
+    Ioreg(#[source] io::Error),
+    #[error("ioreg -n iPhone failed")]
+    IoregFailed,
+    #[error("iPhone serial not found in the IORegistry")]
+    NotRegistered,
+    #[error("no NCM data interface for this iPhone")]
+    NoNcmInterface,
+}
 
 fn normalize(serial: &str) -> String {
     serial
@@ -14,14 +28,14 @@ fn normalize(serial: &str) -> String {
         .to_ascii_lowercase()
 }
 
-pub async fn ncm_interfaces(udid: &str) -> Result<Vec<String>, String> {
+pub async fn ncm_interfaces(udid: &str) -> Result<Vec<String>, NetworkError> {
     let out = Command::new("/usr/sbin/ioreg")
         .args(["-r", "-n", "iPhone", "-l", "-w", "0"])
         .output()
         .await
-        .map_err(|e| format!("ioreg: {e}"))?;
+        .map_err(NetworkError::Ioreg)?;
     if !out.status.success() {
-        return Err("ioreg -n iPhone failed".into());
+        return Err(NetworkError::IoregFailed);
     }
     ncm_interfaces_in(&String::from_utf8_lossy(&out.stdout), udid)
 }
@@ -36,7 +50,7 @@ fn node_class(line: &str) -> Option<&str> {
     line.split_once("<class ")?.1.split([',', '>']).next()
 }
 
-fn ncm_interfaces_in(ioreg: &str, udid: &str) -> Result<Vec<String>, String> {
+fn ncm_interfaces_in(ioreg: &str, udid: &str) -> Result<Vec<String>, NetworkError> {
     let want = normalize(udid);
     for block in ioreg.split("+-o iPhone@") {
         let serial = block
@@ -66,15 +80,15 @@ fn ncm_interfaces_in(ioreg: &str, udid: &str) -> Result<Vec<String>, String> {
         }
         return Ok(ifaces);
     }
-    Err("iPhone serial not found in the IORegistry".into())
+    Err(NetworkError::NotRegistered)
 }
 
-pub async fn discover(udid: &str) -> Result<String, String> {
+pub async fn discover(udid: &str) -> Result<String, NetworkError> {
     ncm_interfaces(udid)
         .await?
         .into_iter()
         .next()
-        .ok_or_else(|| "no NCM data interface for this iPhone".into())
+        .ok_or(NetworkError::NoNcmInterface)
 }
 
 #[cfg(test)]

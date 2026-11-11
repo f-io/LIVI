@@ -10,6 +10,9 @@ pub const CP_CONFIG: u8 = 6;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 const DEFAULT_CONFIG: u8 = 4;
 
+mod error;
+pub use error::Error;
+
 pub mod ntb;
 
 mod pipe;

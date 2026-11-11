@@ -115,7 +115,10 @@ pub fn run_wifi_ap_status() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn installed(what: &str, result: Result<(), String>) -> ExitCode {
+fn installed(
+    what: &str,
+    result: Result<(), livi_runtime::privileged::PrivilegedError>,
+) -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

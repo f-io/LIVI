@@ -248,7 +248,10 @@ async fn run_auth<C: ControlChannel, A: AsyncAuth>(
     ch: &mut C,
     auth: &mut A,
 ) -> Result<(), BringupError> {
-    let cert = auth.read_certificate().await.map_err(BringupError::Auth)?;
+    let cert = auth
+        .read_certificate()
+        .await
+        .map_err(|e| BringupError::Auth(e.to_string()))?;
     loop {
         let frame = recv(ch).await?;
         match frame_msg_id(&frame) {
@@ -265,7 +268,10 @@ async fn run_auth<C: ControlChannel, A: AsyncAuth>(
             Some(0xAA02) => {
                 let req = RequestAuthenticationChallengeResponse::decode(&frame)
                     .map_err(|e| BringupError::Auth(e.to_string()))?;
-                let sig = auth.sign(req.challenge).await.map_err(BringupError::Auth)?;
+                let sig = auth
+                    .sign(req.challenge)
+                    .await
+                    .map_err(|e| BringupError::Auth(e.to_string()))?;
                 ch.send(AuthenticationResponse { response: sig }.encode())
                     .await
                     .map_err(|_| BringupError::Channel)?;

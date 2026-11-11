@@ -13,7 +13,7 @@ use nusb::{Device, MaybeFuture};
 use crate::android::open;
 #[cfg(target_os = "linux")]
 use crate::linux::open;
-use crate::{EP_IN, EP_OUT, short};
+use crate::{EP_IN, EP_OUT, Error, short};
 
 const USBMUX_IFACE: u8 = 1;
 const CLAIM_TRIES: usize = 12;
@@ -21,10 +21,7 @@ const CLAIM_RETRY: Duration = Duration::from_millis(300);
 const CONFIGS_WAIT: Duration = Duration::from_secs(5);
 const CONFIGS_POLL: Duration = Duration::from_millis(200);
 
-pub(crate) fn await_carplay_configs(
-    serial: &str,
-    exposed: impl Fn() -> bool,
-) -> Result<(), String> {
+pub(crate) fn await_carplay_configs(serial: &str, exposed: impl Fn() -> bool) -> Result<(), Error> {
     let deadline = Instant::now() + CONFIGS_WAIT;
     loop {
         sleep(CONFIGS_POLL);
@@ -32,15 +29,12 @@ pub(crate) fn await_carplay_configs(
             return Ok(());
         }
         if Instant::now() >= deadline {
-            return Err(format!(
-                "iphone {} did not expose CarPlay configs",
-                short(serial)
-            ));
+            return Err(Error::NoCarplayConfigs(short(serial).to_string()));
         }
     }
 }
 
-pub fn request_carplay_configs(device: &Device) -> Result<(), String> {
+pub fn request_carplay_configs(device: &Device) -> Result<(), Error> {
     device
         .control_in(
             ControlIn {
@@ -54,11 +48,14 @@ pub fn request_carplay_configs(device: &Device) -> Result<(), String> {
             Duration::from_secs(1),
         )
         .wait()
-        .map_err(|e| format!("vendor request 0x52: {e}"))?;
+        .map_err(|source| Error::Transfer {
+            what: "vendor request 0x52".into(),
+            source,
+        })?;
     Ok(())
 }
 
-pub async fn open_stream(serial: &str) -> Result<UsbStream, String> {
+pub async fn open_stream(serial: &str) -> Result<UsbStream, Error> {
     let device = open(serial)?;
     let pipe = livi_session_io::usb::claim(
         &device,
@@ -68,7 +65,6 @@ pub async fn open_stream(serial: &str) -> Result<UsbStream, String> {
         CLAIM_TRIES,
         CLAIM_RETRY,
     )
-    .await
-    .map_err(|e| format!("usbmux interface: {e}"))?;
+    .await?;
     Ok(UsbStream::new(pipe.with_zlp()))
 }

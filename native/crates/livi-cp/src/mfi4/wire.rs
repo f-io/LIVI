@@ -8,6 +8,16 @@ const PARAM_HEADER: usize = 4;
 pub const CLEAR: u16 = 0x0000;
 pub const TUNNELED: u16 = 0x4040;
 
+#[derive(Debug, thiserror::Error)]
+pub enum WireError {
+    #[error("not one whole message")]
+    NotWhole,
+    #[error("a parameter cut short")]
+    CutShort,
+    #[error("a parameter of length {length} in {left} bytes")]
+    BadLength { length: usize, left: usize },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
     pub start: u16,
@@ -99,8 +109,8 @@ pub fn peek(buf: &[u8]) -> Option<(u16, u16)> {
     })
 }
 
-pub fn decode(buf: &[u8]) -> Result<Message, String> {
-    let (start, id) = peek(buf).ok_or("not one whole message")?;
+pub fn decode(buf: &[u8]) -> Result<Message, WireError> {
+    let (start, id) = peek(buf).ok_or(WireError::NotWhole)?;
     Ok(Message {
         start,
         id,
@@ -108,18 +118,18 @@ pub fn decode(buf: &[u8]) -> Result<Message, String> {
     })
 }
 
-pub fn decode_params(mut buf: &[u8]) -> Result<Vec<(u16, Vec<u8>)>, String> {
+pub fn decode_params(mut buf: &[u8]) -> Result<Vec<(u16, Vec<u8>)>, WireError> {
     let mut params = Vec::new();
     while !buf.is_empty() {
         if buf.len() < PARAM_HEADER {
-            return Err("a parameter cut short".into());
+            return Err(WireError::CutShort);
         }
         let length = usize::from(u16::from_be_bytes([buf[0], buf[1]]));
         if length < PARAM_HEADER || length > buf.len() {
-            return Err(format!(
-                "a parameter of length {length} in {} bytes",
-                buf.len()
-            ));
+            return Err(WireError::BadLength {
+                length,
+                left: buf.len(),
+            });
         }
         params.push((
             u16::from_be_bytes([buf[2], buf[3]]),

@@ -86,7 +86,7 @@ fn open(name: String, keys: PathBuf) -> Result<(Stack, Inbox), String> {
     let tunnel = livi_net::connect((host.as_str(), livi_net::port::HCI), CONNECT_TIMEOUT)
         .map_err(|e| format!("the dongle's controller: {e}"))?;
     let _ = tunnel.set_nodelay(true);
-    Stack::start(tunnel, Config { name, keys })
+    Stack::start(tunnel, Config { name, keys }).map_err(|e| e.to_string())
 }
 
 pub async fn run(

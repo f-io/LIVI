@@ -596,7 +596,10 @@ impl Shared {
     }
 
     pub async fn request(&self, line: String, within: Duration) -> Result<Value, String> {
-        self.0.request(&line, within).await
+        self.0
+            .request(&line, within)
+            .await
+            .map_err(|e| e.to_string())
     }
 
     pub async fn wake(self, mac: String, protocol: Option<Protocol>) {

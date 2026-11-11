@@ -519,7 +519,7 @@ fn status(code: u16) -> Response {
     }
 }
 
-fn octet(result: Result<Vec<u8>, String>, what: &str) -> Response {
+fn octet(result: Result<Vec<u8>, impl std::fmt::Display>, what: &str) -> Response {
     match result {
         Ok(body) => Response {
             headers: vec![("Content-Type".into(), OCTET.into())],

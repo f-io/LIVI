@@ -6,8 +6,9 @@ use std::path::Path;
 
 use super::cert::{self, Trust, Unpacked};
 use super::keys::{self, Channel, Ephemeral, Keys, POINT, TAG};
-use super::wire::{self, CLEAR, HEADER, Message, TUNNELED};
+use super::wire::{self, CLEAR, HEADER, Message, TUNNELED, WireError};
 use crate::auth_setup::MfiSigner;
+use crate::helper_sock::HelperError;
 use livi_crypto::{random_bytes, sha256};
 
 mod id {
@@ -54,7 +55,29 @@ const SIGNATURE: usize = 64;
 const PREFIX: usize = 16;
 const PAIRING_DATA: u8 = 1;
 
-pub type Tunnel<'a> = &'a mut (dyn FnMut(&[u8]) -> Result<Vec<u8>, String> + Send);
+pub type Tunnel<'a> = &'a mut (dyn FnMut(&[u8]) -> Result<Vec<u8>, TunnelError> + Send);
+
+#[derive(Debug, thiserror::Error)]
+pub enum TunnelError {
+    #[error("nothing to bind, pair-verify has not run")]
+    NotVerified,
+    #[error("the phone's transcript proof does not match")]
+    ProofMismatch,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SessionError {
+    #[error("the authentication on this connection is over")]
+    Over,
+    #[error(transparent)]
+    Wire(#[from] WireError),
+    #[error("the phone gave up ({0:#06x})")]
+    PhoneGaveUp(u16),
+    #[error(transparent)]
+    Chip(#[from] HelperError),
+    #[error("mutual authentication needs a 3.0 coprocessor")]
+    NotVersion3,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Step {
@@ -90,6 +113,7 @@ pub struct Session {
 enum Fault {
     Malformed(String),
     Operation(String),
+    Chip(HelperError),
 }
 
 impl Session {
@@ -131,7 +155,7 @@ impl Session {
         body: &[u8],
         chip: &impl MfiSigner,
         tunnel: Tunnel<'_>,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, SessionError> {
         let asked = wire::peek(body).map_or(0, |(_, id)| id);
         let answer = self.answer(body, chip, tunnel).await;
         match &answer {
@@ -149,14 +173,14 @@ impl Session {
         body: &[u8],
         chip: &impl MfiSigner,
         tunnel: Tunnel<'_>,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, SessionError> {
         if self.step == Step::Ended {
-            return Err("the authentication on this connection is over".into());
+            return Err(SessionError::Over);
         }
-        let (start, msg_id) = wire::peek(body).ok_or("not one whole message")?;
+        let (start, msg_id) = wire::peek(body).ok_or(WireError::NotWhole)?;
         if [id::PHONE_SETUP_FAILED, id::PHONE_FAILED, id::PHONE_GAVE_UP].contains(&msg_id) {
             self.step = Step::Ended;
-            return Err(format!("the phone gave up ({msg_id:#06x})"));
+            return Err(SessionError::PhoneGaveUp(msg_id));
         }
         let msg = if start == CLEAR {
             wire::decode(body)?
@@ -176,7 +200,7 @@ impl Session {
         let answer = match (msg_id, self.step) {
             (id::PHONE_SETUP, Step::Fresh) => {
                 if chip.protocol_major().await? != OUR_VERSION {
-                    return Err("mutual authentication needs a 3.0 coprocessor".into());
+                    return Err(SessionError::NotVersion3);
                 }
                 return Ok(self.setup(&msg).unwrap_or_else(|e| {
                     println!("[cp] mfi4: setup refused: {e}");
@@ -211,6 +235,10 @@ impl Session {
                 clear(id::FAILED)
             }
             Err(Fault::Operation(e)) => {
+                println!("[cp] mfi4: {e}");
+                clear(id::GAVE_UP)
+            }
+            Err(Fault::Chip(e)) => {
                 println!("[cp] mfi4: {e}");
                 clear(id::GAVE_UP)
             }
@@ -250,7 +278,7 @@ impl Session {
                 break n;
             }
         };
-        let ephemeral = Ephemeral::generate()?;
+        let ephemeral = Ephemeral::generate().map_err(|e| e.to_string())?;
         let answer = Message::new(CLEAR, id::SETUP)
             .with(0, [self.version])
             .with(1, [WE_RESPOND])
@@ -279,7 +307,9 @@ impl Session {
             return Err(malformed("both nonces are the same"));
         }
         let ephemeral = self.ephemeral.as_ref().expect("set up before");
-        let shared = ephemeral.shared(&point).map_err(Fault::Malformed)?;
+        let shared = ephemeral
+            .shared(&point)
+            .map_err(|e| Fault::Malformed(e.to_string()))?;
         let negotiation = [
             &[OUR_VERSION][..],
             &self.phone_auth_types,
@@ -298,7 +328,7 @@ impl Session {
         self.phone_point = point;
         self.keys = Some(keys);
         self.our_prefix = random_bytes::<PREFIX>();
-        self.our_cert = chip.certificate().await.map_err(Fault::Operation)?;
+        self.our_cert = chip.certificate().await.map_err(Fault::Chip)?;
         self.our_hash = sha256(&[&self.our_prefix, &self.our_cert]);
         self.step = Step::AwaitingPhoneCert;
         Ok(Message::new(self.session_id, id::WANT_CERT).with(0, self.phone_hash))
@@ -310,7 +340,7 @@ impl Session {
         let packed = msg.param(1).ok_or_else(|| malformed("none".into()))?;
         let mut ids = msg.ids();
         ids.sort_unstable();
-        let unpacked = cert::unpack(packed).map_err(malformed)?;
+        let unpacked = cert::unpack(packed).map_err(|e| malformed(e.to_string()))?;
         if kind == PHONE_LEAF {
             if ids != [0, 1, 2] {
                 return Err(malformed(format!("leaf parameters {ids:?}")));
@@ -329,7 +359,9 @@ impl Session {
         if !PHONE_INTERMEDIATE.contains(&kind) || ids != [0, 1] {
             return Err(malformed(format!("kind {kind} with {ids:?}")));
         }
-        self.trust.admit(&unpacked).map_err(malformed)?;
+        self.trust
+            .admit(&unpacked)
+            .map_err(|e| malformed(e.to_string()))?;
         let leaf = self
             .leaf_waiting
             .take()
@@ -345,14 +377,16 @@ impl Session {
         let ours = self.ephemeral.as_ref().expect("set up before").public;
         let phone_mac = keys::cmac(&keys.phone_mac, &self.phone_hash);
         let theirs = keys::signed_data(&ours, &self.phone_point, &phone_mac);
-        if !cert::signed_by(&leaf, &theirs, &self.phone_signature).map_err(Fault::Malformed)? {
+        if !cert::signed_by(&leaf, &theirs, &self.phone_signature)
+            .map_err(|e| Fault::Malformed(e.to_string()))?
+        {
             return Err(Fault::Malformed(
                 "the phone's signature does not verify".into(),
             ));
         }
         let our_mac = keys::cmac(&keys.our_mac, &self.our_hash);
         let digest = sha256(&[&keys::signed_data(&ours, &self.phone_point, &our_mac)]);
-        let signature = chip.sign(&digest).await.map_err(Fault::Operation)?;
+        let signature = chip.sign(&digest).await.map_err(Fault::Chip)?;
         if signature.len() != SIGNATURE {
             return Err(Fault::Operation(format!(
                 "a {} byte signature",
@@ -389,7 +423,7 @@ impl Session {
                 return Err("the phone did not say it binds the pairing".to_string());
             }
             let (_, outer) = msg.params.first().ok_or("an empty tunnel message")?;
-            let inner = wire::decode(outer)?;
+            let inner = wire::decode(outer).map_err(|e| e.to_string())?;
             if inner.start != TUNNELED
                 || ![id::TUNNELED_FROM_PHONE, id::TUNNELED_FROM_US].contains(&inner.id)
             {
@@ -399,6 +433,7 @@ impl Session {
                 ));
             }
             tunnel(inner.param(1).ok_or("tunneled message without data")?)
+                .map_err(|e| e.to_string())
         })();
         match result {
             Ok(out) => {

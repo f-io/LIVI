@@ -3,13 +3,14 @@
 // Additional terms: see NOTICE
 
 use std::collections::HashMap;
-use std::error::Error;
 use std::os::fd::OwnedFd;
 
 use livi_core_proto::aa_events::{AaHelperEvent, RemoteCommand};
 use tokio::sync::mpsc;
 use zbus::Connection;
 use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant};
+
+use crate::BtError;
 
 pub use crate::bluetoothd::Wireless;
 
@@ -157,7 +158,7 @@ fn to_put_back(found: Found, alias: &str) -> Found {
     }
 }
 
-async fn controllers(conn: &Connection) -> Result<Vec<(String, Found)>, Box<dyn Error>> {
+async fn controllers(conn: &Connection) -> Result<Vec<(String, Found)>, BtError> {
     let reply = conn
         .call_method(
             Some("org.bluez"),
@@ -276,7 +277,7 @@ async fn register_profile(
     path: &str,
     uuid: &str,
     options: HashMap<&str, Variant<'_>>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), BtError> {
     let object_path = ObjectPath::try_from(path)?;
     conn.call_method(
         Some("org.bluez"),
@@ -293,7 +294,7 @@ pub async fn start(
     adapter: &str,
     alias: &str,
     wireless: Wireless,
-) -> Result<(Connection, mpsc::UnboundedReceiver<IncomingConn>, Held), Box<dyn Error>> {
+) -> Result<(Connection, mpsc::UnboundedReceiver<IncomingConn>, Held), BtError> {
     let conn = Connection::system().await?;
     let (tx, rx) = mpsc::unbounded_channel();
 
@@ -357,7 +358,7 @@ async fn start_carplay(
     conn: &Connection,
     adapter: &str,
     tx: mpsc::UnboundedSender<IncomingConn>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), BtError> {
     let ours = || adapter.to_string();
     conn.object_server()
         .at(
@@ -415,7 +416,7 @@ async fn start_carplay(
     Ok(())
 }
 
-async fn wait_for_adapter(conn: &Connection, path: &str) -> Result<(), Box<dyn Error>> {
+async fn wait_for_adapter(conn: &Connection, path: &str) -> Result<(), BtError> {
     let deadline = std::time::Instant::now() + ADAPTER_WAIT;
     loop {
         let asked = conn
@@ -430,7 +431,10 @@ async fn wait_for_adapter(conn: &Connection, path: &str) -> Result<(), Box<dyn E
         match asked {
             Ok(_) => return Ok(()),
             Err(e) if std::time::Instant::now() >= deadline => {
-                return Err(format!("BlueZ never published {path}: {e}").into());
+                return Err(BtError::NoAdapter {
+                    path: path.to_string(),
+                    source: e,
+                });
             }
             Err(_) => tokio::time::sleep(ADAPTER_POLL).await,
         }
@@ -442,7 +446,7 @@ async fn set_prop(
     path: &str,
     name: &str,
     value: Variant<'_>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), BtError> {
     set_prop_within(conn, path, name, value, ADAPTER_WAIT).await
 }
 
@@ -452,7 +456,7 @@ async fn set_prop_within(
     name: &str,
     value: Variant<'_>,
     patience: std::time::Duration,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), BtError> {
     let deadline = std::time::Instant::now() + patience;
     loop {
         let asked = conn
@@ -506,7 +510,7 @@ fn busy_answer(name: &str, message: Option<&str>) -> bool {
 pub async fn start_aa(
     conn: &Connection,
     adapter: &str,
-) -> Result<mpsc::UnboundedReceiver<IncomingConn>, Box<dyn Error>> {
+) -> Result<mpsc::UnboundedReceiver<IncomingConn>, BtError> {
     let (tx, rx) = mpsc::unbounded_channel();
     conn.object_server()
         .at(
@@ -563,7 +567,7 @@ pub async fn start_hfp(
     conn: &Connection,
     adapter: &str,
     hfp: crate::hfp::Hfp,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), BtError> {
     conn.object_server()
         .at(
             HFP_PATH,
@@ -611,11 +615,7 @@ impl BleAd {
     }
 }
 
-pub async fn start_ble_ad(
-    conn: &Connection,
-    adapter: &str,
-    name: &str,
-) -> Result<(), Box<dyn Error>> {
+pub async fn start_ble_ad(conn: &Connection, adapter: &str, name: &str) -> Result<(), BtError> {
     conn.object_server()
         .at(BLE_AD_PATH, BleAd { name: name.into() })
         .await?;
@@ -839,7 +839,7 @@ pub async fn start_media_player(
     conn: &Connection,
     adapter: &str,
     events: crate::livi_sock::Broadcaster,
-) -> Result<MediaPlayerHandle, Box<dyn Error>> {
+) -> Result<MediaPlayerHandle, BtError> {
     let status = std::sync::Arc::new(std::sync::Mutex::new("Playing".to_string()));
     conn.object_server().at(PLAYER_PATH, MprisRoot).await?;
     conn.object_server()
@@ -884,7 +884,7 @@ pub async fn start_media_player(
     })
 }
 
-pub async fn adapter_address(conn: &Connection, adapter: &str) -> Result<[u8; 6], Box<dyn Error>> {
+pub async fn adapter_address(conn: &Connection, adapter: &str) -> Result<[u8; 6], BtError> {
     let path = format!("/org/bluez/{adapter}");
     let reply = conn
         .call_method(

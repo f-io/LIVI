@@ -22,6 +22,14 @@ const EXTRACTION: &[u8] = b"MFi 4.0 SIGMA-I Authentication Randomness Extraction
 const EXPANSION: &[u8] = b"MFi 4.0 SIGMA-I Authentication Key Expansion";
 pub const SIGMA: u8 = 0x01;
 
+#[derive(Debug, thiserror::Error)]
+pub enum KeyError {
+    #[error("{0}")]
+    Openssl(#[from] ErrorStack),
+    #[error("a point that is no 33 bytes")]
+    PointSize,
+}
+
 pub fn group() -> EcGroup {
     EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).expect("P-256 is built in")
 }
@@ -32,33 +40,30 @@ pub struct Ephemeral {
 }
 
 impl Ephemeral {
-    pub fn generate() -> Result<Self, String> {
+    pub fn generate() -> Result<Self, KeyError> {
         let group = group();
-        let key = EcKey::generate(&group).map_err(|e| e.to_string())?;
-        let mut ctx = BigNumContext::new().map_err(|e| e.to_string())?;
-        let public = key
-            .public_key()
-            .to_bytes(&group, PointConversionForm::COMPRESSED, &mut ctx)
-            .map_err(|e| e.to_string())?;
+        let key = EcKey::generate(&group)?;
+        let mut ctx = BigNumContext::new()?;
+        let public =
+            key.public_key()
+                .to_bytes(&group, PointConversionForm::COMPRESSED, &mut ctx)?;
         Ok(Self {
             key,
-            public: public
-                .try_into()
-                .map_err(|_| "a point that is no 33 bytes")?,
+            public: public.try_into().map_err(|_| KeyError::PointSize)?,
         })
     }
 
-    pub fn shared(&self, peer: &[u8; POINT]) -> Result<Vec<u8>, String> {
+    pub fn shared(&self, peer: &[u8; POINT]) -> Result<Vec<u8>, KeyError> {
         let group = group();
-        let mut ctx = BigNumContext::new().map_err(|e| e.to_string())?;
-        let point = EcPoint::from_bytes(&group, peer, &mut ctx).map_err(|e| e.to_string())?;
-        let peer = EcKey::from_public_key(&group, &point).map_err(|e| e.to_string())?;
-        peer.check_key().map_err(|e| e.to_string())?;
-        let ours = PKey::from_ec_key(self.key.clone()).map_err(|e| e.to_string())?;
-        let theirs = PKey::from_ec_key(peer).map_err(|e| e.to_string())?;
-        let mut deriver = Deriver::new(&ours).map_err(|e| e.to_string())?;
-        deriver.set_peer(&theirs).map_err(|e| e.to_string())?;
-        deriver.derive_to_vec().map_err(|e| e.to_string())
+        let mut ctx = BigNumContext::new()?;
+        let point = EcPoint::from_bytes(&group, peer, &mut ctx)?;
+        let peer = EcKey::from_public_key(&group, &point)?;
+        peer.check_key()?;
+        let ours = PKey::from_ec_key(self.key.clone())?;
+        let theirs = PKey::from_ec_key(peer)?;
+        let mut deriver = Deriver::new(&ours)?;
+        deriver.set_peer(&theirs)?;
+        Ok(deriver.derive_to_vec()?)
     }
 }
 

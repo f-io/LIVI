@@ -224,7 +224,7 @@ async fn find_usb_iface(udid: String, found: tokio::sync::watch::Sender<Option<S
                 let _ = found.send(Some(iface));
                 return;
             }
-            Err(e) => last = e,
+            Err(e) => last = e.to_string(),
         }
         tokio::time::sleep(USB_IFACE_POLL).await;
     }
@@ -451,7 +451,7 @@ fn start_ncm_bridge(serial: &str, _wired: &Wired) -> LocalNcm {
 }
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
-fn bridged(serial: &str, bridge: Result<iap2_usbmux::NcmBridge, String>) -> LocalNcm {
+fn bridged(serial: &str, bridge: Result<iap2_usbmux::NcmBridge, iap2_usbmux::Error>) -> LocalNcm {
     match bridge {
         Ok(b) => LocalNcm::Local(b),
         Err(e) => {

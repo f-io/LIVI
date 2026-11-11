@@ -21,6 +21,25 @@ const READS_IN_FLIGHT: usize = 4;
 const WRITE_DRAIN: Duration = Duration::from_millis(250);
 const QUEUED: usize = 64;
 
+#[derive(Debug, thiserror::Error)]
+pub enum UsbError {
+    #[error("{what}: {source}")]
+    Usb {
+        what: &'static str,
+        source: nusb::Error,
+    },
+    #[error("configuration: {0}")]
+    Configuration(#[from] nusb::ActiveConfigurationError),
+    #[error("no interface with bulk in and out")]
+    NoBulkPair,
+    #[error("claim interface {number}: {source}")]
+    Claim { number: u8, source: nusb::Error },
+}
+
+fn usb(what: &'static str) -> impl FnOnce(nusb::Error) -> UsbError {
+    move |source| UsbError::Usb { what, source }
+}
+
 pub struct Pipe {
     iface: Interface,
     ep_in: Endpoint<Bulk, In>,
@@ -35,7 +54,7 @@ impl Pipe {
     }
 }
 
-pub async fn open_pipe(dev: &Device) -> Result<Pipe, String> {
+pub async fn open_pipe(dev: &Device) -> Result<Pipe, UsbError> {
     let active = dev
         .active_configuration()
         .map(|c| c.configuration_value())
@@ -43,13 +62,11 @@ pub async fn open_pipe(dev: &Device) -> Result<Pipe, String> {
     if active != Some(1) {
         dev.set_configuration(1)
             .await
-            .map_err(|e| format!("set configuration: {e}"))?;
+            .map_err(usb("set configuration"))?;
     }
     let (number, in_addr, out_addr) = {
-        let cfg = dev
-            .active_configuration()
-            .map_err(|e| format!("configuration: {e}"))?;
-        bulk_pair(&cfg).ok_or("no interface with bulk in and out")?
+        let cfg = dev.active_configuration()?;
+        bulk_pair(&cfg).ok_or(UsbError::NoBulkPair)?
     };
     claim(dev, number, in_addr, out_addr, CLAIM_RETRIES, CLAIM_RETRY).await
 }
@@ -61,17 +78,17 @@ pub async fn claim(
     out_addr: u8,
     tries: usize,
     wait: Duration,
-) -> Result<Pipe, String> {
-    let mut last = String::new();
-    for _ in 0..tries {
+) -> Result<Pipe, UsbError> {
+    let mut tries = tries.max(1);
+    loop {
         match dev.claim_interface(number).await {
             Ok(iface) => {
                 let ep_in = iface
                     .endpoint::<Bulk, In>(in_addr)
-                    .map_err(|e| format!("bulk in: {e}"))?;
+                    .map_err(usb("bulk in"))?;
                 let ep_out = iface
                     .endpoint::<Bulk, Out>(out_addr)
-                    .map_err(|e| format!("bulk out: {e}"))?;
+                    .map_err(usb("bulk out"))?;
                 return Ok(Pipe {
                     iface,
                     ep_in,
@@ -79,13 +96,15 @@ pub async fn claim(
                     zlp: false,
                 });
             }
-            Err(e) => {
-                last = e.to_string();
+            Err(source) => {
+                tries -= 1;
+                if tries == 0 {
+                    return Err(UsbError::Claim { number, source });
+                }
                 tokio::time::sleep(wait).await;
             }
         }
     }
-    Err(format!("claim interface {number}: {last}"))
 }
 
 fn bulk_pair(cfg: &ConfigurationDescriptor<'_>) -> Option<(u8, u8, u8)> {

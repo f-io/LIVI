@@ -17,7 +17,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_util::sync::PollSender;
 
-use crate::backend;
+use crate::{Error, backend};
 
 const P_VERSION: u32 = 0;
 const P_SETUP: u32 = 2;
@@ -172,12 +172,12 @@ fn mux_packet(proto: u32, tx: u16, payload: &[u8]) -> Vec<u8> {
 }
 
 impl MuxHost {
-    pub async fn open(serial: &str) -> Result<Arc<Self>, String> {
+    pub async fn open(serial: &str) -> Result<Arc<Self>, Error> {
         let stream = backend::open_stream(serial).await?;
         let (mut rd, mut wr) = tokio::io::split(stream);
         wr.write_all(&version_packet())
             .await
-            .map_err(|e| format!("usbmux version: {e}"))?;
+            .map_err(Error::io("usbmux version"))?;
         let mut reply = vec![0u8; READ_CHUNK];
         let _ = tokio::time::timeout(VERSION_WAIT, rd.read(&mut reply)).await;
 
@@ -216,7 +216,7 @@ impl MuxHost {
         }
     }
 
-    pub async fn connect(self: &Arc<Self>, dport: u16) -> Result<MuxStream, String> {
+    pub async fn connect(self: &Arc<Self>, dport: u16) -> Result<MuxStream, Error> {
         let sport = self.next_sport.fetch_add(1, Ordering::SeqCst);
         let (up_tx, up) = oneshot::channel();
         let (rx_tx, rx) = mpsc::channel(QUEUED);
@@ -236,7 +236,7 @@ impl MuxHost {
         let sent = self.out.send((P_TCP, syn)).await.is_ok();
         if !sent || !matches!(tokio::time::timeout(CONNECT_WAIT, up).await, Ok(Ok(()))) {
             self.conns.lock().unwrap().remove(&sport);
-            return Err(format!("mux connect to port {dport} failed"));
+            return Err(Error::ConnectFailed(dport));
         }
         Ok(MuxStream {
             host: self.clone(),

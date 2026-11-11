@@ -19,6 +19,7 @@ openssl-sys = "0.9.118"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 socket2 = { workspace = true, features = ["all"] }
+thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "sync", "time"] }
 tokio-openssl = "0.6.5"
 uuid = { workspace = true, features = ["v4"] }

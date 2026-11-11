@@ -42,6 +42,7 @@ serde_json = "1.0.154"
 slint = { version = "1.18.1", default-features = false }
 slint-build = "1.18.1"
 socket2 = "0.6.5"
+thiserror = "2.0.21"
 tokio = "1.54.1"
 tokio-util = "0.7.20"
 uuid = "1.29.2"

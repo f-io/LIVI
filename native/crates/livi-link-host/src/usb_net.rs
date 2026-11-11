@@ -16,21 +16,30 @@ const ETHERTYPE_IPV6: [u8; 2] = [0x86, 0xdd];
 const ASK_EVERY: Duration = Duration::from_secs(2);
 const IDLE: Duration = Duration::from_millis(200);
 
+#[derive(Debug, thiserror::Error)]
+pub enum AttachError {
+    #[error("list devices: {0}")]
+    List(nusb::Error),
+    #[error("no LIVI Link on the bus")]
+    NoLink,
+    #[error("open the LIVI Link: {0}")]
+    Open(nusb::Error),
+    #[error("{0}")]
+    Bridge(String),
+}
+
 pub struct UsbNet {
     _bridge: NcmBridge,
 }
 
-pub fn attach(tunnel: Arc<Tunnel>) -> Result<UsbNet, String> {
+pub fn attach(tunnel: Arc<Tunnel>) -> Result<UsbNet, AttachError> {
     let info = nusb::list_devices()
         .wait()
-        .map_err(|e| format!("list devices: {e}"))?
+        .map_err(AttachError::List)?
         .find(crate::is_livi_link)
-        .ok_or("no LIVI Link on the bus")?;
+        .ok_or(AttachError::NoLink)?;
     let serial = info.serial_number().unwrap_or("").to_owned();
-    let device = info
-        .open()
-        .wait()
-        .map_err(|e| format!("open the LIVI Link: {e}"))?;
+    let device = info.open().wait().map_err(AttachError::Open)?;
     let bridge = NcmBridge::over(&device, &serial, IFNAME, |mac| {
         let owner = tunnel.clone();
         Net {
@@ -41,7 +50,8 @@ pub fn attach(tunnel: Arc<Tunnel>) -> Result<UsbNet, String> {
             port: Mutex::new(None),
             asked: Mutex::new(None),
         }
-    })?;
+    })
+    .map_err(|e| AttachError::Bridge(e.to_string()))?;
     println!("[link] the LIVI Link {serial} is on USB, asking for an address");
     Ok(UsbNet { _bridge: bridge })
 }

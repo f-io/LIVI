@@ -10,7 +10,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use livi_core_proto::helper_requests::CpRequest;
 pub use livi_session_io::line::Feed;
-use livi_session_io::line::LineSock;
+use livi_session_io::line::{LineSock, RequestError};
 use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 use tokio::net::UnixStream;
@@ -28,10 +28,20 @@ pub struct HelperSock {
     targets: Arc<tokio::sync::Mutex<()>>,
 }
 
-fn data_of(res: &Value) -> Result<Vec<u8>, String> {
-    STANDARD
-        .decode(res.get("data").and_then(Value::as_str).unwrap_or(""))
-        .map_err(|e| format!("cp-bt sock bad base64: {e}"))
+#[derive(Debug, thiserror::Error)]
+pub enum HelperError {
+    #[error(transparent)]
+    Request(#[from] RequestError),
+    #[error("{0}")]
+    Refused(String),
+    #[error("cp-bt sock bad base64: {0}")]
+    BadData(#[from] base64::DecodeError),
+    #[error("MFi auth protocol version unknown")]
+    ProtocolUnknown,
+}
+
+fn data_of(res: &Value) -> Result<Vec<u8>, HelperError> {
+    Ok(STANDARD.decode(res.get("data").and_then(Value::as_str).unwrap_or(""))?)
 }
 
 impl HelperSock {
@@ -43,24 +53,25 @@ impl HelperSock {
         }
     }
 
-    async fn request(&self, request: CpRequest) -> Result<Value, String> {
-        self.sock.request(&request.to_string(), TIMEOUT).await
+    async fn request(&self, request: CpRequest) -> Result<Value, HelperError> {
+        Ok(self.sock.request(&request.to_string(), TIMEOUT).await?)
     }
 
-    async fn request_ok(&self, request: CpRequest) -> Result<Value, String> {
+    async fn request_ok(&self, request: CpRequest) -> Result<Value, HelperError> {
         let res = self.request(request).await?;
         if res.get("ok") == Some(&Value::Bool(true)) {
             Ok(res)
         } else {
-            Err(res
-                .get("error")
-                .and_then(Value::as_str)
-                .unwrap_or("refused")
-                .to_string())
+            Err(HelperError::Refused(
+                res.get("error")
+                    .and_then(Value::as_str)
+                    .unwrap_or("refused")
+                    .to_string(),
+            ))
         }
     }
 
-    pub async fn certificate(&self) -> Result<Vec<u8>, String> {
+    pub async fn certificate(&self) -> Result<Vec<u8>, HelperError> {
         let res = self.request_ok(CpRequest::Certificate).await?;
         if let Some(major) = res.get("protocolMajor").and_then(Value::as_u64) {
             *self
@@ -71,7 +82,7 @@ impl HelperSock {
         data_of(&res)
     }
 
-    pub async fn protocol_major(&self) -> Result<u8, String> {
+    pub async fn protocol_major(&self) -> Result<u8, HelperError> {
         let known = || {
             *self
                 .protocol_major
@@ -81,48 +92,48 @@ impl HelperSock {
         if known().is_none() {
             self.certificate().await?;
         }
-        known().ok_or_else(|| "MFi auth protocol version unknown".to_string())
+        known().ok_or(HelperError::ProtocolUnknown)
     }
 
-    pub async fn sign(&self, digest: &[u8]) -> Result<Vec<u8>, String> {
+    pub async fn sign(&self, digest: &[u8]) -> Result<Vec<u8>, HelperError> {
         data_of(&self.request_ok(CpRequest::Sign(digest.to_vec())).await?)
     }
 
-    pub async fn disconnect_bt(&self, mac: &str) -> Result<(), String> {
+    pub async fn disconnect_bt(&self, mac: &str) -> Result<(), HelperError> {
         self.request_ok(CpRequest::Disconnect(mac.to_string()))
             .await
             .map(drop)
     }
 
-    pub async fn drop_iap2(&self) -> Result<(), String> {
+    pub async fn drop_iap2(&self) -> Result<(), HelperError> {
         self.request_ok(CpRequest::DropIap2).await.map(drop)
     }
 
-    pub async fn start_wired(&self, usb_udid: &str) -> Result<(), String> {
+    pub async fn start_wired(&self, usb_udid: &str) -> Result<(), HelperError> {
         self.request_ok(CpRequest::StartWired(usb_udid.to_string()))
             .await
             .map(drop)
     }
 
-    pub async fn reset_wired(&self, usb_udid: &str) -> Result<(), String> {
+    pub async fn reset_wired(&self, usb_udid: &str) -> Result<(), HelperError> {
         self.request_ok(CpRequest::ResetWired(usb_udid.to_string()))
             .await
             .map(drop)
     }
 
-    pub async fn send_location(&self, nmea: &str) -> Result<(), String> {
+    pub async fn send_location(&self, nmea: &str) -> Result<(), HelperError> {
         self.request(CpRequest::Location(nmea.to_string()))
             .await
             .map(drop)
     }
 
-    pub async fn send_vehicle_status(&self, status: &Value) -> Result<(), String> {
+    pub async fn send_vehicle_status(&self, status: &Value) -> Result<(), HelperError> {
         self.request(CpRequest::VehicleStatus(status.clone()))
             .await
             .map(drop)
     }
 
-    pub async fn seek(&self, ms: u32, bt_mac: Option<&str>) -> Result<(), String> {
+    pub async fn seek(&self, ms: u32, bt_mac: Option<&str>) -> Result<(), HelperError> {
         self.request(CpRequest::Seek {
             ms,
             bt_mac: bt_mac.map(str::to_string),
@@ -134,7 +145,7 @@ impl HelperSock {
     pub async fn send_reconnect_targets(
         &self,
         targets: &[(String, Option<String>)],
-    ) -> Result<(), String> {
+    ) -> Result<(), HelperError> {
         let _in_turn = self.targets.lock().await;
         self.request(CpRequest::ReconnectTargets(targets.to_vec()))
             .await
@@ -157,16 +168,16 @@ impl HelperSock {
 }
 
 impl MfiSigner for HelperSock {
-    fn certificate(&self) -> impl Future<Output = Result<Vec<u8>, String>> + Send {
+    fn certificate(&self) -> impl Future<Output = Result<Vec<u8>, HelperError>> + Send {
         HelperSock::certificate(self)
     }
 
-    fn sign(&self, digest: &[u8]) -> impl Future<Output = Result<Vec<u8>, String>> + Send {
+    fn sign(&self, digest: &[u8]) -> impl Future<Output = Result<Vec<u8>, HelperError>> + Send {
         let digest = digest.to_vec();
         async move { HelperSock::sign(self, &digest).await }
     }
 
-    fn protocol_major(&self) -> impl Future<Output = Result<u8, String>> + Send {
+    fn protocol_major(&self) -> impl Future<Output = Result<u8, HelperError>> + Send {
         HelperSock::protocol_major(self)
     }
 }
@@ -240,9 +251,9 @@ pub(crate) mod tests {
             _ => None,
         });
         let helper = HelperSock::new(&path);
-        assert_eq!(helper.protocol_major().await, Ok(3));
-        assert_eq!(helper.certificate().await, Ok(vec![1, 2, 3]));
-        assert_eq!(helper.sign(&[9]).await, Ok(vec![4, 5]));
+        assert_eq!(helper.protocol_major().await.unwrap(), 3);
+        assert_eq!(helper.certificate().await.unwrap(), [1, 2, 3]);
+        assert_eq!(helper.sign(&[9]).await.unwrap(), [4, 5]);
         assert_eq!(
             seen.lock().unwrap().as_slice(),
             ["certificate", "certificate", "sign CQ=="]
@@ -261,17 +272,21 @@ pub(crate) mod tests {
             _ => Some("{\"ok\":true}".into()),
         });
         let helper = HelperSock::new(&path);
-        assert_eq!(helper.drop_iap2().await, Err("busy".into()));
+        assert!(matches!(
+            helper.drop_iap2().await,
+            Err(HelperError::Refused(r)) if r == "busy"
+        ));
         assert_eq!(
-            helper.protocol_major().await,
-            Err("MFi auth protocol version unknown".into())
+            helper.protocol_major().await.unwrap_err().to_string(),
+            "MFi auth protocol version unknown"
         );
-        assert_eq!(helper.send_location("MOV").await, Ok(()));
+        helper.send_location("MOV").await.unwrap();
         assert!(
             helper
                 .disconnect_bt("AA:BB")
                 .await
                 .unwrap_err()
+                .to_string()
                 .contains("bad json")
         );
         let missing = HelperSock::new(dir.0.join("nothing.sock"));
@@ -280,6 +295,7 @@ pub(crate) mod tests {
                 .start_wired("u")
                 .await
                 .unwrap_err()
+                .to_string()
                 .contains("cp-bt sock error")
         );
     }

@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::{FRAME_BUF, POLL, read_within, write_all};
-use crate::Mac;
 use crate::ether::link_local;
+use crate::{Error, Mac};
 
 const LINK_LOCAL_PREFIX: u8 = 64;
 const MTU: u16 = 1500;
@@ -24,7 +24,7 @@ pub struct TunRequest {
     pub mtu: u16,
 }
 
-pub type OpenTun = Arc<dyn Fn(&TunRequest) -> Result<OwnedFd, String> + Send + Sync>;
+pub type OpenTun = Arc<dyn Fn(&TunRequest) -> io::Result<OwnedFd> + Send + Sync>;
 
 // Android gives an app one VPN interface, and opening another closes the first: the iPhone's NCM
 // link and the LIVI Link share it as ports, behind one link-local address of their own.
@@ -84,7 +84,7 @@ impl Tunnel {
         inner.owned.contains(&address)
     }
 
-    pub fn join(self: &Arc<Self>, v4: Option<(Ipv4Addr, u8)>) -> Result<Arc<Port>, String> {
+    pub fn join(self: &Arc<Self>, v4: Option<(Ipv4Addr, u8)>) -> Result<Arc<Port>, Error> {
         let (tx, rx) = sync_channel(QUEUE);
         let port = Arc::new(Port {
             tunnel: self.clone(),
@@ -123,7 +123,7 @@ impl Tunnel {
             .collect()
     }
 
-    fn reopen(&self, inner: &mut Inner) -> Result<(), String> {
+    fn reopen(&self, inner: &mut Inner) -> Result<(), Error> {
         let mut addresses = vec![(IpAddr::V6(self.address), LINK_LOCAL_PREFIX)];
         for port in inner.ports.iter().filter_map(Weak::upgrade) {
             if let Some((address, prefix)) = *port.v4.lock().unwrap() {
@@ -134,9 +134,9 @@ impl Tunnel {
             addresses,
             mtu: MTU,
         };
-        let fd = (self.open)(&request)?;
-        let ifname = super::android::iface_with(self.address)
-            .ok_or_else(|| format!("no interface carries {}", self.address))?;
+        let fd = (self.open)(&request).map_err(Error::OpenTun)?;
+        let ifname =
+            super::android::iface_with(self.address).ok_or(Error::NoInterface(self.address))?;
         if inner.ifname.as_ref().is_some_and(|old| *old != ifname) {
             println!("[tun] the interface moved to {ifname}");
         }
@@ -210,7 +210,7 @@ impl Port {
         self.rx.lock().unwrap().recv_timeout(POLL).ok()
     }
 
-    pub fn set_v4(&self, v4: Option<(Ipv4Addr, u8)>) -> Result<bool, String> {
+    pub fn set_v4(&self, v4: Option<(Ipv4Addr, u8)>) -> Result<bool, Error> {
         {
             let mut ours = self.v4.lock().unwrap();
             if *ours == v4 {

@@ -9,9 +9,9 @@ use std::sync::Arc;
 
 use super::tunnel::{Port, Tunnel};
 use super::{Link, NcmBridge, find_ncm_function, format_mac, host_mac, open_usb};
-use crate::Mac;
 use crate::android::open;
 use crate::ether::{FromPhone, Ip};
+use crate::{Error, Mac};
 
 struct Tun {
     port: Arc<Port>,
@@ -95,23 +95,23 @@ impl NcmBridge {
         serial: &str,
         ifname: &str,
         link: impl FnOnce(Mac) -> L,
-    ) -> Result<Self, String> {
-        let func = find_ncm_function(device).ok_or("no NCM function in the active config")?;
+    ) -> Result<Self, Error> {
+        let func = find_ncm_function(device).ok_or(Error::NoNcmFunction)?;
         let usb = open_usb(device, &func)?;
         let link = link(host_mac(device, &func).unwrap_or_else(|| made_up_mac(serial)));
         Ok(Self::up(ifname.to_string(), usb, link))
     }
 
-    pub fn start(serial: &str, tunnel: &Arc<Tunnel>) -> Result<Self, String> {
+    pub fn start(serial: &str, tunnel: &Arc<Tunnel>) -> Result<Self, Error> {
         let device = open(serial)?;
-        let func = find_ncm_function(&device).ok_or("no NCM function in the active config")?;
+        let func = find_ncm_function(&device).ok_or(Error::NoNcmFunction)?;
         let usb = open_usb(&device, &func)?;
         let mac = host_mac(&device, &func).unwrap_or_else(|| made_up_mac(serial));
         let port = tunnel.join(None)?;
         let ip = Ip::with_address(mac, port.address());
         let ifname = port
             .ifname()
-            .ok_or_else(|| format!("no interface carries {}", ip.address()))?;
+            .ok_or_else(|| Error::NoInterface(ip.address()))?;
         println!(
             "[ncm] up on {ifname}: if{}/{} ep=0x{:02x}/0x{:02x} mac={} ip={}",
             func.control,

@@ -8,6 +8,7 @@ pub mod bonjour;
 pub mod bringup;
 pub mod clock;
 pub mod driver;
+mod error;
 pub mod events;
 pub mod file_transfer;
 pub mod framing;
@@ -30,15 +31,20 @@ pub mod mfi_async;
 
 use std::future::Future;
 
+pub use error::{AuthError, BtError};
+
 pub trait ControlChannel {
     fn send(&mut self, frame: Vec<u8>) -> impl Future<Output = Result<(), ChannelError>> + Send;
     fn recv(&mut self) -> impl Future<Output = Option<Vec<u8>>> + Send;
 }
 
 pub trait AsyncAuth {
-    fn read_certificate(&mut self) -> impl Future<Output = Result<Vec<u8>, String>> + Send;
-    fn sign(&mut self, challenge: Vec<u8>) -> impl Future<Output = Result<Vec<u8>, String>> + Send;
-    fn protocol_major(&mut self) -> impl Future<Output = Result<u8, String>> + Send;
+    fn read_certificate(&mut self) -> impl Future<Output = Result<Vec<u8>, AuthError>> + Send;
+    fn sign(
+        &mut self,
+        challenge: Vec<u8>,
+    ) -> impl Future<Output = Result<Vec<u8>, AuthError>> + Send;
+    fn protocol_major(&mut self) -> impl Future<Output = Result<u8, AuthError>> + Send;
 }
 
 #[derive(Debug)]

@@ -15,6 +15,7 @@ use super::{
     FRAME_BUF, Link, NcmBridge, NcmFunction, find_ncm_function, format_mac, host_mac, open_usb,
     read_within, write_all,
 };
+use crate::Error;
 use crate::linux::{find_iphones, open_by_address};
 
 static TAP_SEQ: AtomicU16 = AtomicU16::new(0);
@@ -53,7 +54,7 @@ fn kernel_ncm_iface(sysfs: &Path) -> Option<String> {
     None
 }
 
-fn open_tap(ifname: &str) -> Result<OwnedFd, String> {
+fn open_tap(ifname: &str) -> Result<OwnedFd, Error> {
     const TUNSETIFF: libc::c_ulong = 0x4004_54CA;
     const IFF_TAP: libc::c_short = 0x0002;
     const IFF_NO_PI: libc::c_short = 0x1000;
@@ -61,10 +62,10 @@ fn open_tap(ifname: &str) -> Result<OwnedFd, String> {
     // SAFETY: the path is a nul-terminated C string literal.
     let fd = unsafe { libc::open(c"/dev/net/tun".as_ptr(), libc::O_RDWR | libc::O_CLOEXEC) };
     if fd < 0 {
-        return Err(format!(
-            "open /dev/net/tun: {}",
-            std::io::Error::last_os_error()
-        ));
+        return Err(Error::Io {
+            what: "open /dev/net/tun".into(),
+            source: std::io::Error::last_os_error(),
+        });
     }
     // SAFETY: an all-zero ifreq is valid, it is plain integers and unions of them.
     let mut ifr: libc::ifreq = unsafe { std::mem::zeroed() };
@@ -77,7 +78,10 @@ fn open_tap(ifname: &str) -> Result<OwnedFd, String> {
         let e = std::io::Error::last_os_error();
         // SAFETY: fd was opened above and is closed once, nothing else owns it.
         unsafe { libc::close(fd) };
-        return Err(format!("TUNSETIFF {ifname}: {e}"));
+        return Err(Error::Io {
+            what: format!("TUNSETIFF {ifname}"),
+            source: e,
+        });
     }
     // SAFETY: fd was opened above and is owned by nothing else.
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
@@ -161,14 +165,14 @@ fn link_local_profile(ifname: &str) {
 }
 
 impl NcmBridge {
-    pub fn start(serial: &str) -> Result<Self, String> {
+    pub fn start(serial: &str) -> Result<Self, Error> {
         let dev = find_iphones()
             .into_iter()
             .find(|d| d.serial == serial)
-            .ok_or_else(|| format!("iphone {serial} not found"))?;
+            .ok_or_else(|| Error::NotFound(serial.to_string()))?;
 
         let device = open_by_address(dev.bus, dev.address)?;
-        let func = find_ncm_function(&device).ok_or("no NCM function in the active config")?;
+        let func = find_ncm_function(&device).ok_or(Error::NoNcmFunction)?;
         Self::bridge(&device, &func).or_else(|e| {
             eprintln!("[ncm] no bridge ({e}), the kernel's interface it is");
             let ifname = kernel_ncm_iface(&dev.sysfs).ok_or(e)?;
@@ -178,7 +182,7 @@ impl NcmBridge {
         })
     }
 
-    fn bridge(device: &Device, func: &NcmFunction) -> Result<Self, String> {
+    fn bridge(device: &Device, func: &NcmFunction) -> Result<Self, Error> {
         let usb = open_usb(device, func)?;
         let host_mac = host_mac(device, func).map(|mac| format_mac(&mac));
 

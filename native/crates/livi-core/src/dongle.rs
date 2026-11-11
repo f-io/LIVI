@@ -134,7 +134,7 @@ fn attached() -> bool {
 }
 
 async fn talk(commands: Vec<String>) -> Result<Status, String> {
-    tokio::task::spawn_blocking(move || ap::talk(&commands, APPLY))
+    tokio::task::spawn_blocking(move || ap::talk(&commands, APPLY).map_err(|e| e.to_string()))
         .await
         .unwrap_or_else(|e| Err(e.to_string()))
 }

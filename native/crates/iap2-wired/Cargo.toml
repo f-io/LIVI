@@ -8,6 +8,7 @@ license.workspace = true
 iap2-usbmux.workspace = true
 idevice = { version = "0.1", features = ["pair", "usbmuxd"] }
 plist = "1"
+thiserror.workspace = true
 uuid = { workspace = true, features = ["v4"] }
 tokio = { workspace = true, features = ["rt", "sync", "io-util", "time", "process"] }
 

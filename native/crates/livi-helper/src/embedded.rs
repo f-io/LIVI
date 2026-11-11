@@ -204,7 +204,9 @@ fn serve(start: HelperStart, host: Host) -> Held {
         LiviSockConfig {
             identity: crate::dongle::wireless_identity(&identity),
             cp: crate::dongle::wireless_config(&cp),
-            disconnect: Some(Arc::new(move |mac: String| dongle.disconnect(&mac))),
+            disconnect: Some(Arc::new(move |mac: String| {
+                dongle.disconnect(&mac).map_err(Into::into)
+            })),
             cp_live: Some(Arc::new(move || crate::dongle::wireless_config(&base))),
             ..sock
         }

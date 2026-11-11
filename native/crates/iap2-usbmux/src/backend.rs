@@ -6,6 +6,7 @@ pub use local::{ensure_carplay_config, find_iphones, open_stream, reset, restore
 
 #[cfg(target_os = "linux")]
 mod local {
+    use crate::Error;
     use crate::pipe::PhoneInfo;
 
     pub use crate::usb_pipe::open_stream;
@@ -21,7 +22,7 @@ mod local {
             .collect()
     }
 
-    pub fn ensure_carplay_config(serial: &str) -> Result<PhoneInfo, String> {
+    pub fn ensure_carplay_config(serial: &str) -> Result<PhoneInfo, Error> {
         crate::linux::ensure_carplay_config(serial).map(|d| PhoneInfo {
             serial: d.serial,
             num_configs: d.num_configs,
@@ -33,7 +34,7 @@ mod local {
         crate::linux::restore_default_config(serial)
     }
 
-    pub fn reset(serial: &str) -> Result<(), String> {
+    pub fn reset(serial: &str) -> Result<(), Error> {
         crate::linux::reset(serial)
     }
 }
@@ -48,25 +49,24 @@ mod local {
 mod local {
     use livi_session_io::usb::UsbStream;
 
+    use crate::Error;
     use crate::pipe::PhoneInfo;
-
-    const NO_LOCAL: &str = "no local USB backend on this platform";
 
     pub fn find_iphones() -> Vec<PhoneInfo> {
         Vec::new()
     }
 
-    pub fn ensure_carplay_config(_serial: &str) -> Result<PhoneInfo, String> {
-        Err(NO_LOCAL.into())
+    pub fn ensure_carplay_config(_serial: &str) -> Result<PhoneInfo, Error> {
+        Err(Error::Unsupported)
     }
 
     pub fn restore_default_config(_serial: &str) {}
 
-    pub fn reset(_serial: &str) -> Result<(), String> {
-        Err(NO_LOCAL.into())
+    pub fn reset(_serial: &str) -> Result<(), Error> {
+        Err(Error::Unsupported)
     }
 
-    pub async fn open_stream(_serial: &str) -> Result<UsbStream, String> {
-        Err(NO_LOCAL.into())
+    pub async fn open_stream(_serial: &str) -> Result<UsbStream, Error> {
+        Err(Error::Unsupported)
     }
 }

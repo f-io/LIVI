@@ -7,6 +7,7 @@ use std::path::Path;
 use openssl::bn::{BigNum, BigNumContext};
 use openssl::ec::{EcKey, EcPoint, PointConversionForm};
 use openssl::ecdsa::EcdsaSig;
+use openssl::error::ErrorStack;
 use openssl::pkey::{PKey, Public};
 use openssl::x509::X509;
 
@@ -55,6 +56,32 @@ const ROOT_PREFIX: &str = "Apple Accessory Root CA - ";
 const AUTHORITY_PREFIX: &str = "Apple Accessory Host Attestation Authority - ";
 const LEAF_UNIT: &str = "Apple Accessory Host Attestations";
 
+#[derive(Debug, thiserror::Error)]
+pub enum CertError {
+    #[error("{0}")]
+    Openssl(#[from] ErrorStack),
+    #[error("the certificate is cut short")]
+    CutShort,
+    #[error("a name that is no text")]
+    NameNotText,
+    #[error("expected a short DER sequence")]
+    NoShortSequence,
+    #[error("unknown certificate kind {0:#04x}")]
+    UnknownKind(u8),
+    #[error("{0} bytes past the certificate")]
+    Trailing(usize),
+    #[error("a point that is no 65 bytes")]
+    PointSize,
+    #[error("a validity time {0:?}")]
+    BadTime(String),
+    #[error("a leaf not held by an Apple device")]
+    NotAppleHeld,
+    #[error("no known issuer {}", upper_hex(.0))]
+    UnknownIssuer([u8; KEY_ID_LEN]),
+    #[error("the issuer did not sign it")]
+    NotSigned,
+}
+
 #[derive(Debug, Clone)]
 pub struct Unpacked {
     pub der: Vec<u8>,
@@ -68,37 +95,34 @@ pub struct Unpacked {
 struct Reader<'a>(&'a [u8]);
 
 impl<'a> Reader<'a> {
-    fn take(&mut self, n: usize) -> Result<&'a [u8], String> {
-        let (head, rest) = self
-            .0
-            .split_at_checked(n)
-            .ok_or("the certificate is cut short")?;
+    fn take(&mut self, n: usize) -> Result<&'a [u8], CertError> {
+        let (head, rest) = self.0.split_at_checked(n).ok_or(CertError::CutShort)?;
         self.0 = rest;
         Ok(head)
     }
 
-    fn array<const N: usize>(&mut self) -> Result<[u8; N], String> {
+    fn array<const N: usize>(&mut self) -> Result<[u8; N], CertError> {
         Ok(self.take(N)?.try_into().expect("taken to length"))
     }
 
-    fn text(&mut self, n: usize) -> Result<&'a str, String> {
-        std::str::from_utf8(self.take(n)?).map_err(|_| "a name that is no text".into())
+    fn text(&mut self, n: usize) -> Result<&'a str, CertError> {
+        std::str::from_utf8(self.take(n)?).map_err(|_| CertError::NameNotText)
     }
 
-    fn sequence(&mut self) -> Result<&'a [u8], String> {
+    fn sequence(&mut self) -> Result<&'a [u8], CertError> {
         match self.0 {
             [0x30, len, ..] if *len < 0x80 => self.take(2 + usize::from(*len)),
-            _ => Err("expected a short DER sequence".into()),
+            _ => Err(CertError::NoShortSequence),
         }
     }
 }
 
-pub fn unpack(compressed: &[u8]) -> Result<Unpacked, String> {
+pub fn unpack(compressed: &[u8]) -> Result<Unpacked, CertError> {
     let mut r = Reader(compressed);
     let kind = r.array::<1>()?[0];
     let leaf = LEAVES.contains(&kind);
     if !leaf && !INTERMEDIATES.contains(&kind) {
-        return Err(format!("unknown certificate kind {kind:#04x}"));
+        return Err(CertError::UnknownKind(kind));
     }
     let issuer = r.text(NAME_LEN)?;
     let not_before = r.text(TIME_LEN)?;
@@ -123,7 +147,7 @@ pub fn unpack(compressed: &[u8]) -> Result<Unpacked, String> {
         None
     };
     if !r.0.is_empty() {
-        return Err(format!("{} bytes past the certificate", r.0.len()));
+        return Err(CertError::Trailing(r.0.len()));
     }
 
     let key_id = sha1(&[&point]);
@@ -205,15 +229,14 @@ pub fn unpack(compressed: &[u8]) -> Result<Unpacked, String> {
     })
 }
 
-fn full_point(compressed: &[u8; POINT]) -> Result<[u8; FULL_POINT], String> {
+fn full_point(compressed: &[u8; POINT]) -> Result<[u8; FULL_POINT], CertError> {
     let group = group();
-    let mut ctx = BigNumContext::new().map_err(|e| e.to_string())?;
-    let point = EcPoint::from_bytes(&group, compressed, &mut ctx).map_err(|e| e.to_string())?;
+    let mut ctx = BigNumContext::new()?;
+    let point = EcPoint::from_bytes(&group, compressed, &mut ctx)?;
     point
-        .to_bytes(&group, PointConversionForm::UNCOMPRESSED, &mut ctx)
-        .map_err(|e| e.to_string())?
+        .to_bytes(&group, PointConversionForm::UNCOMPRESSED, &mut ctx)?
         .try_into()
-        .map_err(|_| "a point that is no 65 bytes".into())
+        .map_err(|_| CertError::PointSize)
 }
 
 fn der(tag: u8, content: &[u8]) -> Vec<u8> {
@@ -265,9 +288,9 @@ fn apple(arc: u8) -> Vec<u8> {
     [OID_APPLE_ACCESSORY, &[arc]].concat()
 }
 
-fn time(digits: &str) -> Result<Vec<u8>, String> {
+fn time(digits: &str) -> Result<Vec<u8>, CertError> {
     if digits.len() != TIME_LEN || !digits.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(format!("a validity time {digits:?}"));
+        return Err(CertError::BadTime(digits.to_string()));
     }
     let year: u32 = digits[..4].parse().expect("digits");
     Ok(if (1950..2050).contains(&year) {
@@ -313,9 +336,9 @@ impl Trust {
         self.issuers.iter().any(|i| i.key_id == cert.authority)
     }
 
-    pub fn check(&self, cert: &Unpacked) -> Result<(), String> {
+    pub fn check(&self, cert: &Unpacked) -> Result<(), CertError> {
         if cert.leaf && cert.property.map(|p| p[PROPERTY_LEN - 1]) != Some(HELD_BY_APPLE_DEVICE) {
-            return Err("a leaf not held by an Apple device".into());
+            return Err(CertError::NotAppleHeld);
         }
         if !self.rooted {
             return Ok(());
@@ -324,15 +347,15 @@ impl Trust {
             .issuers
             .iter()
             .find(|i| i.key_id == cert.authority)
-            .ok_or_else(|| format!("no known issuer {}", upper_hex(&cert.authority)))?;
-        let x509 = X509::from_der(&cert.der).map_err(|e| e.to_string())?;
-        if !x509.verify(&issuer.key).map_err(|e| e.to_string())? {
-            return Err("the issuer did not sign it".into());
+            .ok_or(CertError::UnknownIssuer(cert.authority))?;
+        let x509 = X509::from_der(&cert.der)?;
+        if !x509.verify(&issuer.key)? {
+            return Err(CertError::NotSigned);
         }
         Ok(())
     }
 
-    pub fn admit(&mut self, cert: &Unpacked) -> Result<(), String> {
+    pub fn admit(&mut self, cert: &Unpacked) -> Result<(), CertError> {
         self.check(cert)?;
         self.issuers.push(Issuer {
             key_id: cert.key_id,
@@ -391,22 +414,21 @@ fn pem_blocks(bytes: &[u8]) -> Vec<&[u8]> {
     out
 }
 
-fn public_key(point: &[u8; FULL_POINT]) -> Result<PKey<Public>, String> {
-    PKey::from_ec_key(ec_key(point)?).map_err(|e| e.to_string())
+fn public_key(point: &[u8; FULL_POINT]) -> Result<PKey<Public>, CertError> {
+    Ok(PKey::from_ec_key(ec_key(point)?)?)
 }
 
-fn ec_key(point: &[u8; FULL_POINT]) -> Result<EcKey<Public>, String> {
+fn ec_key(point: &[u8; FULL_POINT]) -> Result<EcKey<Public>, CertError> {
     let group = group();
-    let mut ctx = BigNumContext::new().map_err(|e| e.to_string())?;
-    let point = EcPoint::from_bytes(&group, point, &mut ctx).map_err(|e| e.to_string())?;
-    EcKey::from_public_key(&group, &point).map_err(|e| e.to_string())
+    let mut ctx = BigNumContext::new()?;
+    let point = EcPoint::from_bytes(&group, point, &mut ctx)?;
+    Ok(EcKey::from_public_key(&group, &point)?)
 }
 
-pub fn signed_by(cert: &Unpacked, data: &[u8], signature: &[u8; 64]) -> Result<bool, String> {
-    let r = BigNum::from_slice(&signature[..32]).map_err(|e| e.to_string())?;
-    let s = BigNum::from_slice(&signature[32..]).map_err(|e| e.to_string())?;
-    let sig = EcdsaSig::from_private_components(r, s).map_err(|e| e.to_string())?;
+pub fn signed_by(cert: &Unpacked, data: &[u8], signature: &[u8; 64]) -> Result<bool, CertError> {
+    let r = BigNum::from_slice(&signature[..32])?;
+    let s = BigNum::from_slice(&signature[32..])?;
+    let sig = EcdsaSig::from_private_components(r, s)?;
     let key = ec_key(&cert.point)?;
-    sig.verify(&sha256(&[data]), &key)
-        .map_err(|e| e.to_string())
+    Ok(sig.verify(&sha256(&[data]), &key)?)
 }

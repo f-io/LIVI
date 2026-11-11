@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -9,6 +10,28 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::mpsc;
+
+#[derive(Debug, thiserror::Error)]
+pub enum RequestError {
+    #[error("{label} error: {source}")]
+    Io {
+        label: &'static str,
+        source: io::Error,
+    },
+    #[error("{label} closed without response")]
+    NoAnswer { label: &'static str },
+    #[error("{label} bad json: {line} ({source})")]
+    BadJson {
+        label: &'static str,
+        line: String,
+        source: serde_json::Error,
+    },
+    #[error("{label} timeout after {}ms", within.as_millis())]
+    Timeout {
+        label: &'static str,
+        within: Duration,
+    },
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Feed {
@@ -34,29 +57,32 @@ impl LineSock {
         &self.path
     }
 
-    pub async fn request(&self, line: &str, within: Duration) -> Result<Value, String> {
+    pub async fn request(&self, line: &str, within: Duration) -> Result<Value, RequestError> {
         let label = self.label;
+        let io = |source| RequestError::Io { label, source };
         let exchange = async {
-            let mut sock = UnixStream::connect(&self.path)
-                .await
-                .map_err(|e| format!("{label} error: {e}"))?;
+            let mut sock = UnixStream::connect(&self.path).await.map_err(io)?;
             sock.write_all(format!("{line}\n").as_bytes())
                 .await
-                .map_err(|e| format!("{label} error: {e}"))?;
+                .map_err(io)?;
             let mut answer = String::new();
             BufReader::new(sock)
                 .read_line(&mut answer)
                 .await
-                .map_err(|e| format!("{label} error: {e}"))?;
+                .map_err(io)?;
             if !answer.ends_with('\n') {
-                return Err(format!("{label} closed without response"));
+                return Err(RequestError::NoAnswer { label });
             }
             let json = answer.trim_end();
-            serde_json::from_str(json).map_err(|e| format!("{label} bad json: {json} ({e})"))
+            serde_json::from_str(json).map_err(|source| RequestError::BadJson {
+                label,
+                line: json.to_string(),
+                source,
+            })
         };
         tokio::time::timeout(within, exchange)
             .await
-            .map_err(|_| format!("{label} timeout after {}ms", within.as_millis()))?
+            .map_err(|_| RequestError::Timeout { label, within })?
     }
 
     pub fn subscribe(

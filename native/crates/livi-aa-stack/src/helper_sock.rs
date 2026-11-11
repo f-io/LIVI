@@ -7,11 +7,17 @@ use std::time::Duration;
 
 use livi_core_proto::helper_requests::AaRequest;
 pub use livi_session_io::line::Feed;
-use livi_session_io::line::LineSock;
+use livi_session_io::line::{LineSock, RequestError};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
+
+#[derive(Debug, thiserror::Error)]
+pub enum HelperError {
+    #[error(transparent)]
+    Request(#[from] RequestError),
+}
 
 #[derive(Debug, Clone)]
 pub struct AaHelperSock {
@@ -25,22 +31,22 @@ impl AaHelperSock {
         }
     }
 
-    async fn request(&self, request: AaRequest) -> Result<Value, String> {
-        self.sock.request(&request.to_string(), TIMEOUT).await
+    async fn request(&self, request: AaRequest) -> Result<Value, HelperError> {
+        Ok(self.sock.request(&request.to_string(), TIMEOUT).await?)
     }
 
-    pub async fn set_wired_phones(&self, ids: &[String]) -> Result<Value, String> {
+    pub async fn set_wired_phones(&self, ids: &[String]) -> Result<Value, HelperError> {
         self.request(AaRequest::WiredPhones(ids.to_vec())).await
     }
 
-    pub async fn set_sco_sink(&self, sink: Option<(&str, u32)>) -> Result<Value, String> {
+    pub async fn set_sco_sink(&self, sink: Option<(&str, u32)>) -> Result<Value, HelperError> {
         let sink = sink
             .filter(|(feed, _)| !feed.is_empty())
             .map(|(feed, stream)| (feed.to_string(), stream));
         self.request(AaRequest::ScoSink(sink)).await
     }
 
-    pub async fn restart_usb(&self) -> Result<Value, String> {
+    pub async fn restart_usb(&self) -> Result<Value, HelperError> {
         self.request(AaRequest::RestartUsb(None)).await
     }
 
@@ -118,8 +124,8 @@ pub(crate) mod tests {
         });
         let helper = AaHelperSock::new(&path);
         assert_eq!(
-            helper.restart_usb().await,
-            Ok(serde_json::json!({ "ok": true, "count": 2 }))
+            helper.restart_usb().await.unwrap(),
+            serde_json::json!({ "ok": true, "count": 2 })
         );
         assert_eq!(helper.set_sco_sink(None).await.unwrap()["error"], "no");
         assert_eq!(
@@ -131,6 +137,7 @@ pub(crate) mod tests {
                 .set_sco_sink(Some(("/f", 3)))
                 .await
                 .unwrap_err()
+                .to_string()
                 .contains("bad json")
         );
         helper
@@ -153,6 +160,7 @@ pub(crate) mod tests {
                 .restart_usb()
                 .await
                 .unwrap_err()
+                .to_string()
                 .starts_with("aa sock error")
         );
     }
@@ -166,8 +174,8 @@ pub(crate) mod tests {
         });
         let helper = AaHelperSock::new(&path);
         assert_eq!(
-            helper.restart_usb().await,
-            Err("aa sock closed without response".into())
+            helper.restart_usb().await.unwrap_err().to_string(),
+            "aa sock closed without response"
         );
     }
 
@@ -180,8 +188,8 @@ pub(crate) mod tests {
         let ask = tokio::spawn(async move { helper.restart_usb().await });
         let (_held, _) = listener.accept().await.unwrap();
         assert_eq!(
-            ask.await.unwrap(),
-            Err("aa sock timeout after 5000ms".into())
+            ask.await.unwrap().unwrap_err().to_string(),
+            "aa sock timeout after 5000ms"
         );
     }
 

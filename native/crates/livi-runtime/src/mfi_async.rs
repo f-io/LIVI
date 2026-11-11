@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use iap2_mfi::AuthCoprocessor;
 
-use crate::AsyncAuth;
+use crate::{AsyncAuth, AuthError};
 
 #[derive(Clone)]
 pub struct SharedCoprocessor {
@@ -26,42 +26,24 @@ impl SharedCoprocessor {
 }
 
 impl AsyncAuth for SharedCoprocessor {
-    async fn read_certificate(&mut self) -> Result<Vec<u8>, String> {
+    async fn read_certificate(&mut self) -> Result<Vec<u8>, AuthError> {
         let inner = self.inner.clone();
-        tokio::task::spawn_blocking(move || {
-            inner
-                .lock()
-                .unwrap()
-                .read_certificate()
-                .map_err(|e| e.to_string())
-        })
-        .await
-        .map_err(|e| e.to_string())?
+        Ok(tokio::task::spawn_blocking(move || inner.lock().unwrap().read_certificate()).await??)
     }
 
-    async fn sign(&mut self, challenge: Vec<u8>) -> Result<Vec<u8>, String> {
+    async fn sign(&mut self, challenge: Vec<u8>) -> Result<Vec<u8>, AuthError> {
         let inner = self.inner.clone();
-        tokio::task::spawn_blocking(move || {
+        Ok(tokio::task::spawn_blocking(move || {
             inner
                 .lock()
                 .unwrap()
                 .generate_challenge_response(&challenge)
-                .map_err(|e| e.to_string())
         })
-        .await
-        .map_err(|e| e.to_string())?
+        .await??)
     }
 
-    async fn protocol_major(&mut self) -> Result<u8, String> {
+    async fn protocol_major(&mut self) -> Result<u8, AuthError> {
         let inner = self.inner.clone();
-        tokio::task::spawn_blocking(move || {
-            inner
-                .lock()
-                .unwrap()
-                .protocol_major()
-                .map_err(|e| e.to_string())
-        })
-        .await
-        .map_err(|e| e.to_string())?
+        Ok(tokio::task::spawn_blocking(move || inner.lock().unwrap().protocol_major()).await??)
     }
 }

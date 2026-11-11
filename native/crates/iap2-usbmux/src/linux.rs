@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use nusb::MaybeFuture;
 
 use crate::usb_pipe::await_carplay_configs;
-use crate::{APPLE_VID, CP_CONFIG, DEFAULT_CONFIG};
+use crate::{APPLE_VID, CP_CONFIG, DEFAULT_CONFIG, Error};
 
 const SYSFS_USB: &str = "/sys/bus/usb/devices";
 
@@ -69,8 +69,8 @@ fn find_by_serial(serial: &str) -> Option<IPhoneDev> {
     find_iphones().into_iter().find(|d| d.serial == serial)
 }
 
-pub fn ensure_carplay_config(serial: &str) -> Result<IPhoneDev, String> {
-    let dev = find_by_serial(serial).ok_or_else(|| format!("iphone {serial} not found"))?;
+pub fn ensure_carplay_config(serial: &str) -> Result<IPhoneDev, Error> {
+    let dev = find_by_serial(serial).ok_or_else(|| Error::NotFound(serial.to_string()))?;
 
     if dev.num_configs < CP_CONFIG {
         request_carplay_configs(&dev)?;
@@ -79,12 +79,12 @@ pub fn ensure_carplay_config(serial: &str) -> Result<IPhoneDev, String> {
         })?;
     }
 
-    let dev = find_by_serial(serial).ok_or("iphone gone after config request")?;
+    let dev = find_by_serial(serial).ok_or(Error::Gone("config request"))?;
     if dev.config_value != Some(CP_CONFIG) {
         fs::write(dev.sysfs.join("bConfigurationValue"), CP_CONFIG.to_string())
-            .map_err(|e| format!("set config {CP_CONFIG}: {e}"))?;
+            .map_err(Error::io(format!("set config {CP_CONFIG}")))?;
     }
-    find_by_serial(serial).ok_or_else(|| "iphone gone after config select".to_string())
+    find_by_serial(serial).ok_or(Error::Gone("config select"))
 }
 
 pub fn restore_all_default_config() {
@@ -107,30 +107,30 @@ pub fn restore_default_config(serial: &str) {
     }
 }
 
-pub fn reset(serial: &str) -> Result<(), String> {
-    let dev = find_by_serial(serial).ok_or_else(|| format!("{serial} is not on the bus"))?;
+pub fn reset(serial: &str) -> Result<(), Error> {
+    let dev = find_by_serial(serial).ok_or_else(|| Error::NotOnBus(serial.to_string()))?;
     open_by_address(dev.bus, dev.address)?
         .reset()
         .wait()
-        .map_err(|e| format!("usb reset: {e}"))
+        .map_err(Error::usb("usb reset"))
 }
 
-fn request_carplay_configs(dev: &IPhoneDev) -> Result<(), String> {
+fn request_carplay_configs(dev: &IPhoneDev) -> Result<(), Error> {
     crate::usb_pipe::request_carplay_configs(&open_by_address(dev.bus, dev.address)?)
 }
 
-pub fn open(serial: &str) -> Result<nusb::Device, String> {
-    let dev = find_by_serial(serial).ok_or_else(|| format!("iphone {serial} not found"))?;
+pub fn open(serial: &str) -> Result<nusb::Device, Error> {
+    let dev = find_by_serial(serial).ok_or_else(|| Error::NotFound(serial.to_string()))?;
     open_by_address(dev.bus, dev.address)
 }
 
-pub fn open_by_address(bus: u8, address: u8) -> Result<nusb::Device, String> {
+pub fn open_by_address(bus: u8, address: u8) -> Result<nusb::Device, Error> {
     nusb::list_devices()
         .wait()
-        .map_err(|e| e.to_string())?
+        .map_err(Error::ListDevices)?
         .find(|d| d.busnum() == bus && d.device_address() == address)
-        .ok_or_else(|| format!("usb device {bus}/{address} not found"))?
+        .ok_or(Error::NoUsbDevice { bus, address })?
         .open()
         .wait()
-        .map_err(|e| format!("open usb: {e}"))
+        .map_err(Error::usb("open usb"))
 }

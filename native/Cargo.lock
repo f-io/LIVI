@@ -3062,6 +3062,7 @@ dependencies = [
  "livi-session-io",
  "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-util",
 ]
@@ -3073,6 +3074,7 @@ dependencies = [
  "iap2-usbmux",
  "idevice",
  "plist",
+ "thiserror 2.0.21",
  "tokio",
  "uuid",
 ]
@@ -3824,6 +3826,7 @@ dependencies = [
  "livi-wifi",
  "prost",
  "serde_json",
+ "thiserror 2.0.21",
  "tokio",
 ]
 
@@ -3882,6 +3885,7 @@ version = "10.5.0"
 dependencies = [
  "livi-base",
  "livi-net",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -3982,6 +3986,7 @@ dependencies = [
  "serde",
  "serde_json",
  "socket2",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-openssl",
  "uuid",
@@ -4090,6 +4095,7 @@ dependencies = [
  "livi-wifi",
  "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",
+ "thiserror 2.0.21",
  "tokio",
 ]
 
@@ -4168,6 +4174,7 @@ dependencies = [
  "livi-wifi",
  "serde_json",
  "socket2",
+ "thiserror 2.0.21",
  "tokio",
  "zbus 6.2.1",
 ]
@@ -4192,6 +4199,7 @@ dependencies = [
  "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",
  "serde_json",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-util",
 ]
@@ -4272,6 +4280,7 @@ name = "livi-wifi"
 version = "10.5.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

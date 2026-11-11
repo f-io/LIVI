@@ -10,7 +10,7 @@ use nusb::{Device, DeviceId, MaybeFuture};
 
 use crate::pipe::PhoneInfo;
 use crate::usb_pipe::{await_carplay_configs, request_carplay_configs};
-use crate::{APPLE_VID, CP_CONFIG, DEFAULT_CONFIG};
+use crate::{APPLE_VID, CP_CONFIG, DEFAULT_CONFIG, Error};
 
 const STRING_TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -84,12 +84,12 @@ fn info(serial: String, device: &Device) -> PhoneInfo {
     }
 }
 
-pub fn open(serial: &str) -> Result<Device, String> {
+pub fn open(serial: &str) -> Result<Device, Error> {
     phones()
         .into_iter()
         .find(|(s, _)| s == serial)
         .map(|(_, device)| device)
-        .ok_or_else(|| format!("iphone {serial} not found"))
+        .ok_or_else(|| Error::NotFound(serial.to_string()))
 }
 
 pub fn find_iphones() -> Vec<PhoneInfo> {
@@ -99,7 +99,7 @@ pub fn find_iphones() -> Vec<PhoneInfo> {
         .collect()
 }
 
-pub fn ensure_carplay_config(serial: &str) -> Result<PhoneInfo, String> {
+pub fn ensure_carplay_config(serial: &str) -> Result<PhoneInfo, Error> {
     let device = open(serial)?;
     if device.device_descriptor().num_configurations() < CP_CONFIG {
         request_carplay_configs(&device)?;
@@ -113,7 +113,7 @@ pub fn ensure_carplay_config(serial: &str) -> Result<PhoneInfo, String> {
         device
             .set_configuration(CP_CONFIG)
             .wait()
-            .map_err(|e| format!("set config {CP_CONFIG}: {e}"))?;
+            .map_err(Error::usb(format!("set config {CP_CONFIG}")))?;
     }
     Ok(info(serial.to_string(), &device))
 }
@@ -126,9 +126,9 @@ pub fn restore_default_config(serial: &str) {
     }
 }
 
-pub fn reset(serial: &str) -> Result<(), String> {
+pub fn reset(serial: &str) -> Result<(), Error> {
     open(serial)?
         .reset()
         .wait()
-        .map_err(|e| format!("usb reset: {e}"))
+        .map_err(Error::usb("usb reset"))
 }

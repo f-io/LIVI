@@ -30,8 +30,8 @@ use nusb::transfer::{
 };
 use nusb::{Device, Endpoint, Interface, MaybeFuture};
 
-use crate::Mac;
 use crate::ntb::{build_ntb, parse_ntb};
+use crate::{Error, Mac};
 
 const NCM_CONTROL_CLASS: u8 = 0x02;
 const NCM_CONTROL_SUBCLASS: u8 = 0x0d;
@@ -202,21 +202,21 @@ struct Usb {
     ep_notify: Option<Endpoint<Interrupt, In>>,
 }
 
-fn claim(device: &Device, number: u8) -> Result<Interface, String> {
+fn claim(device: &Device, number: u8) -> Result<Interface, Error> {
     device
         .detach_and_claim_interface(number)
         .wait()
         .or_else(|_| device.claim_interface(number).wait())
-        .map_err(|e| format!("claim NCM interface {number}: {e}"))
+        .map_err(Error::usb(format!("claim NCM interface {number}")))
 }
 
-fn open_usb(device: &Device, func: &NcmFunction) -> Result<Usb, String> {
+fn open_usb(device: &Device, func: &NcmFunction) -> Result<Usb, Error> {
     let control = claim(device, func.control)?;
     let data = claim(device, func.data)?;
     ncm_setup(&control, func.control);
     data.set_alt_setting(1)
         .wait()
-        .map_err(|e| format!("NCM alt setting: {e}"))?;
+        .map_err(Error::usb("NCM alt setting"))?;
     if let Err(e) = class_out(
         &control,
         func.control,
@@ -228,10 +228,10 @@ fn open_usb(device: &Device, func: &NcmFunction) -> Result<Usb, String> {
     }
     let ep_in = data
         .endpoint::<Bulk, In>(func.ep_in)
-        .map_err(|e| format!("NCM in endpoint: {e}"))?;
+        .map_err(Error::usb("NCM in endpoint"))?;
     let ep_out = data
         .endpoint::<Bulk, Out>(func.ep_out)
-        .map_err(|e| format!("NCM out endpoint: {e}"))?;
+        .map_err(Error::usb("NCM out endpoint"))?;
     let ep_notify = func
         .ep_notify
         .and_then(|a| control.endpoint::<Interrupt, In>(a).ok());

@@ -28,6 +28,7 @@ serde_json.workspace = true
 socket2 = { workspace = true, features = ["all"] }
 zbus = { workspace = true, features = ["tokio", "service"] }
 livi-hfp.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros", "time", "sync", "test-util"] }

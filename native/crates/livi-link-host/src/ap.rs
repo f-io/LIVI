@@ -3,7 +3,7 @@
 // Additional terms: see NOTICE
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::time::Duration;
 
 use livi_wifi::{Channel, OnAir, Security};
@@ -13,6 +13,16 @@ use crate::link;
 const TIMEOUT: Duration = Duration::from_secs(3);
 const POLL: Duration = Duration::from_millis(500);
 const WATCH_SILENCE: Duration = Duration::from_secs(15);
+
+#[derive(Debug, thiserror::Error)]
+pub enum TalkError {
+    #[error("dongle: {0}")]
+    Io(#[from] io::Error),
+    #[error("the dongle closed the link")]
+    Closed,
+    #[error("{command}: {reason}")]
+    Refused { command: String, reason: String },
+}
 
 fn ask(command: &str) -> Option<HashMap<String, String>> {
     let mut stream = link::connect(livi_net::port::CONTROL, TIMEOUT).ok()?;
@@ -42,38 +52,34 @@ pub fn rates() -> Option<HashMap<String, String>> {
     ask("rates")
 }
 
-pub fn talk(commands: &[String], within: Duration) -> Result<HashMap<String, String>, String> {
-    let stream =
-        link::connect(livi_net::port::CONTROL, TIMEOUT).map_err(|e| format!("dongle: {e}"))?;
-    stream
-        .set_read_timeout(Some(within))
-        .map_err(|e| format!("dongle: {e}"))?;
+pub fn talk(commands: &[String], within: Duration) -> Result<HashMap<String, String>, TalkError> {
+    let stream = link::connect(livi_net::port::CONTROL, TIMEOUT)?;
+    stream.set_read_timeout(Some(within))?;
     exchange(stream, commands)
 }
 
 fn exchange(
     stream: impl Read + Write,
     commands: &[String],
-) -> Result<HashMap<String, String>, String> {
+) -> Result<HashMap<String, String>, TalkError> {
     let mut reader = BufReader::new(stream);
     let mut fields = HashMap::new();
     for command in commands {
-        writeln!(reader.get_mut(), "{command}").map_err(|e| format!("dongle: {e}"))?;
+        writeln!(reader.get_mut(), "{command}")?;
         loop {
             let mut line = String::new();
-            if reader
-                .read_line(&mut line)
-                .map_err(|e| format!("dongle: {e}"))?
-                == 0
-            {
-                return Err("the dongle closed the link".into());
+            if reader.read_line(&mut line)? == 0 {
+                return Err(TalkError::Closed);
             }
             let line = line.trim_end();
             if line == "ok" {
                 break;
             }
             if let Some(reason) = line.strip_prefix("error ") {
-                return Err(format!("{command}: {reason}"));
+                return Err(TalkError::Refused {
+                    command: command.clone(),
+                    reason: reason.to_string(),
+                });
             }
             if let Some((key, value)) = line.split_once(' ') {
                 fields.insert(key.to_string(), value.trim().to_string());
@@ -241,10 +247,10 @@ mod tests {
         assert_eq!(fields.get("mac").map(String::as_str), Some("aa:bb"));
 
         let refused = exchange(wire("ok\nerror bad ssid\nok\n"), &cmds);
-        assert_eq!(refused, Err("set ssid Car: bad ssid".to_string()));
+        assert_eq!(refused.unwrap_err().to_string(), "set ssid Car: bad ssid");
         assert_eq!(
-            exchange(wire("ok\n"), &cmds),
-            Err("the dongle closed the link".to_string())
+            exchange(wire("ok\n"), &cmds).unwrap_err().to_string(),
+            "the dongle closed the link"
         );
     }
 

@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use livi_net::tunnel::{self, PACKET_MAX};
 
+use crate::Error;
 use crate::hci::{self, Addr, Event, text};
 use crate::keys::Keys;
 use crate::l2cap::{self, Signal};
@@ -920,8 +921,8 @@ fn write_acl(shared: &Shared) {
 }
 
 impl Stack {
-    pub fn start(tunnel: TcpStream, cfg: Config) -> Result<(Stack, Inbox), String> {
-        let reader = tunnel.try_clone().map_err(|e| format!("tunnel: {e}"))?;
+    pub fn start(tunnel: TcpStream, cfg: Config) -> Result<(Stack, Inbox), Error> {
+        let reader = tunnel.try_clone().map_err(Error::Tunnel)?;
         let (incoming, incoming_rx) = mpsc::channel();
         let (calls, calls_rx) = mpsc::channel();
         let (notices, notices_rx) = mpsc::channel();
@@ -971,21 +972,21 @@ impl Stack {
         ))
     }
 
-    fn setup(&self, name: &str) -> Result<(), String> {
+    fn setup(&self, name: &str) -> Result<(), Error> {
         self.command(hci::RESET, &[])?;
         let addr = self.command(hci::READ_BD_ADDR, &[])?;
         let size = self.command(hci::READ_BUFFER_SIZE, &[])?;
         let local: Addr = addr
             .get(1..7)
             .and_then(|a| a.try_into().ok())
-            .ok_or("no address")?;
+            .ok_or(Error::NoAddress)?;
         let field = |at: usize| {
             size.get(at..at + 2)
                 .map(|b| usize::from(u16::from_le_bytes([b[0], b[1]])))
         };
         let (Some(acl_mtu), Some(acl_max), Some(&sco_mtu)) = (field(1), field(4), size.get(3))
         else {
-            return Err("the controller named no buffer sizes".into());
+            return Err(Error::NoBufferSizes);
         };
         {
             let mut st = self.shared.state();
@@ -1013,19 +1014,19 @@ impl Stack {
         &self,
         within: Duration,
         mut done: impl FnMut(&mut State) -> Option<T>,
-    ) -> Result<T, String> {
+    ) -> Result<T, Error> {
         let deadline = Instant::now() + within;
         let mut st = self.shared.state();
         loop {
             if !st.alive {
-                return Err("the dongle is gone".into());
+                return Err(Error::Gone);
             }
             if let Some(value) = done(&mut st) {
                 return Ok(value);
             }
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
-                return Err("no answer in time".into());
+                return Err(Error::Timeout);
             }
             st = self
                 .shared
@@ -1044,19 +1045,25 @@ impl Stack {
         self.shared.changed.notify_all();
     }
 
-    fn command(&self, opcode: u16, params: &[u8]) -> Result<Vec<u8>, String> {
+    fn command(&self, opcode: u16, params: &[u8]) -> Result<Vec<u8>, Error> {
         self.queue(opcode, params);
         let answer = self
             .wait(COMMAND_WAIT, |st| st.answers.remove(&opcode))
-            .map_err(|e| format!("{opcode:#06x}: {e}"))?;
+            .map_err(|e| Error::Unanswered {
+                opcode,
+                source: Box::new(e),
+            })?;
         match answer {
             Ok(ret) if ret.first().is_none_or(|status| *status == 0) => Ok(ret),
-            Ok(ret) => Err(format!("{opcode:#06x} refused: {}", hci::reason(ret[0]))),
-            Err(status) => Err(format!("{opcode:#06x} refused: {}", hci::reason(status))),
+            Ok(ret) => Err(Error::Refused {
+                opcode,
+                status: ret[0],
+            }),
+            Err(status) => Err(Error::Refused { opcode, status }),
         }
     }
 
-    fn announce(&self) -> Result<(), String> {
+    fn announce(&self) -> Result<(), Error> {
         let data = {
             let st = self.shared.state();
             eir(&st.name, &st.offered)
@@ -1077,7 +1084,7 @@ impl Stack {
         self.shared.end();
     }
 
-    pub fn offer(&self, service: Service, on: bool) -> Result<(), String> {
+    pub fn offer(&self, service: Service, on: bool) -> Result<(), Error> {
         let changed = {
             let mut st = self.shared.state();
             if on {
@@ -1127,7 +1134,7 @@ impl Stack {
         self.shared.state().keys.forget(peer);
     }
 
-    pub fn connect(&self, peer: Addr, service: &[u8]) -> Result<UnixStream, String> {
+    pub fn connect(&self, peer: Addr, service: &[u8]) -> Result<UnixStream, Error> {
         let _one = self.shared.paging.lock().unwrap_or_else(|e| e.into_inner());
         let handle = self.link_to(peer)?;
         self.secure(handle)?;
@@ -1136,7 +1143,7 @@ impl Stack {
         self.open_channel(handle, cid, channel)
     }
 
-    fn link_to(&self, peer: Addr) -> Result<u16, String> {
+    fn link_to(&self, peer: Addr) -> Result<u16, Error> {
         {
             let mut st = self.shared.state();
             if let Some(handle) = st.handle_of(&peer) {
@@ -1157,14 +1164,14 @@ impl Stack {
         self.shared.state().pages.remove(&peer);
         match paged? {
             Ok(handle) => Ok(handle),
-            Err(status) => Err(hci::reason(status).into()),
+            Err(status) => Err(Error::PageFailed(status)),
         }
     }
 
-    fn secure(&self, handle: u16) -> Result<(), String> {
+    fn secure(&self, handle: u16) -> Result<(), Error> {
         {
             let mut st = self.shared.state();
-            let link = st.links.get_mut(&handle).ok_or("the link went")?;
+            let link = st.links.get_mut(&handle).ok_or(Error::LinkGone)?;
             if link.encrypted {
                 return Ok(());
             }
@@ -1173,31 +1180,31 @@ impl Stack {
         }
         self.queue(hci::AUTHENTICATION_REQUESTED, &handle.to_le_bytes());
         let auth = self.wait(SECURE_WAIT, |st| match st.links.get(&handle) {
-            None => Some(Err("the link went".to_string())),
+            None => Some(Err(Error::LinkGone)),
             Some(link) => link.auth.map(Ok),
         })??;
         if auth != 0 {
-            return Err(format!("authentication failed: {}", hci::reason(auth)));
+            return Err(Error::AuthenticationFailed(auth));
         }
         self.queue(
             hci::SET_CONNECTION_ENCRYPTION,
             &[&handle.to_le_bytes()[..], &[1]].concat(),
         );
         let encryption = self.wait(STEP_WAIT, |st| match st.links.get(&handle) {
-            None => Some(Err("the link went".to_string())),
+            None => Some(Err(Error::LinkGone)),
             Some(link) if link.encrypted => Some(Ok(0)),
             Some(link) => link.encryption.map(Ok),
         })??;
         if encryption != 0 {
-            return Err(format!("encryption failed: {}", hci::reason(encryption)));
+            return Err(Error::EncryptionFailed(encryption));
         }
         Ok(())
     }
 
-    fn open_l2cap(&self, handle: u16, psm: u16) -> Result<u16, String> {
+    fn open_l2cap(&self, handle: u16, psm: u16) -> Result<u16, Error> {
         let local = {
             let mut st = self.shared.state();
-            let link = st.links.get_mut(&handle).ok_or("the link went")?;
+            let link = st.links.get_mut(&handle).ok_or(Error::LinkGone)?;
             let (local, ask) = link.l2cap.connect(psm);
             st.push(handle, &ask);
             local
@@ -1205,14 +1212,14 @@ impl Stack {
         self.shared.changed.notify_all();
         self.wait(STEP_WAIT, |st| {
             let Some(link) = st.links.get_mut(&handle) else {
-                return Some(Err("the link went".to_string()));
+                return Some(Err(Error::LinkGone));
             };
             if link.opened.remove(&local) {
                 return Some(Ok(local));
             }
             link.refused
                 .remove(&local)
-                .then(|| Err(format!("the phone turned channel {psm} down")))
+                .then_some(Err(Error::ChannelRefused(psm)))
         })?
     }
 
@@ -1229,7 +1236,7 @@ impl Stack {
         self.shared.changed.notify_all();
     }
 
-    fn find_channel(&self, handle: u16, service: &[u8]) -> Result<u8, String> {
+    fn find_channel(&self, handle: u16, service: &[u8]) -> Result<u8, Error> {
         let local = self.open_l2cap(handle, l2cap::PSM_SDP)?;
         {
             let mut st = self.shared.state();
@@ -1241,14 +1248,14 @@ impl Stack {
             Some(link) => link.sdp_replies.remove(&local).map(Some),
         });
         self.close_l2cap(handle, local);
-        let reply = reply?.ok_or("the link went")?;
-        sdp::channel_in(&reply).ok_or_else(|| "the phone offers no such service".into())
+        let reply = reply?.ok_or(Error::LinkGone)?;
+        sdp::channel_in(&reply).ok_or(Error::NoSuchService)
     }
 
-    fn session_on(&self, handle: u16) -> Result<u16, String> {
+    fn session_on(&self, handle: u16) -> Result<u16, Error> {
         {
             let st = self.shared.state();
-            let link = st.links.get(&handle).ok_or("the link went")?;
+            let link = st.links.get(&handle).ok_or(Error::LinkGone)?;
             if let Some((cid, _)) = link.muxes.iter().find(|(_, m)| m.session.is_open()) {
                 return Ok(*cid);
             }
@@ -1256,7 +1263,7 @@ impl Stack {
         let local = self.open_l2cap(handle, l2cap::PSM_RFCOMM)?;
         {
             let mut st = self.shared.state();
-            let link = st.links.get_mut(&handle).ok_or("the link went")?;
+            let link = st.links.get_mut(&handle).ok_or(Error::LinkGone)?;
             let mtu = link
                 .l2cap
                 .channel(local)
@@ -1268,15 +1275,15 @@ impl Stack {
         }
         self.shared.changed.notify_all();
         self.wait(STEP_WAIT, |st| match st.mux(handle, local) {
-            None => Some(Err("the phone refused RFCOMM".to_string())),
+            None => Some(Err(Error::RfcommRefused)),
             Some(mux) => mux.session.is_open().then_some(Ok(local)),
         })?
     }
 
-    fn open_channel(&self, handle: u16, cid: u16, channel: u8) -> Result<UnixStream, String> {
+    fn open_channel(&self, handle: u16, cid: u16, channel: u8) -> Result<UnixStream, Error> {
         let dlci = {
             let mut st = self.shared.state();
-            let mux = st.mux(handle, cid).ok_or("the session went")?;
+            let mux = st.mux(handle, cid).ok_or(Error::SessionGone)?;
             let dlci = mux.session.dlci(channel, true);
             mux.wanted.insert(dlci);
             let ask = mux.session.open(channel);
@@ -1285,14 +1292,14 @@ impl Stack {
         };
         self.shared.changed.notify_all();
         self.wait(STEP_WAIT, |st| match st.mux(handle, cid) {
-            None => Some(Err("the session went".to_string())),
+            None => Some(Err(Error::SessionGone)),
             Some(mux) => {
                 if let Some(stream) = mux.ready.remove(&dlci) {
                     return Some(Ok(stream));
                 }
                 mux.refused
                     .remove(&dlci)
-                    .then(|| Err(format!("the phone turned channel {channel} down")))
+                    .then(|| Err(Error::ChannelRefused(channel.into())))
             }
         })?
     }

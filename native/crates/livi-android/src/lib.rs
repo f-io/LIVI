@@ -14,6 +14,7 @@ mod media;
 mod planes;
 mod update;
 
+use std::io;
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -85,7 +86,7 @@ fn core(app: &AndroidApp) -> Result<PathBuf, String> {
         tunnel: iap2_usbmux::Tunnel::new(Arc::new(tun)),
         phones: Arc::new(bluetooth::phones),
         hotspot: Arc::new(hotspot::open),
-        drop_phone: Arc::new(bluetooth::drop),
+        drop_phone: Arc::new(|mac| bluetooth::drop(mac).map_err(Into::into)),
         page_phone: Arc::new(bluetooth::page),
         bt_keys: files.join("bluetooth-keys"),
     };
@@ -144,7 +145,7 @@ fn pick() {
     }
 }
 
-fn tun(request: &TunRequest) -> Result<OwnedFd, String> {
+fn tun(request: &TunRequest) -> io::Result<OwnedFd> {
     let fd = activity::with(|env, activity| {
         let addresses = request
             .addresses
@@ -164,9 +165,9 @@ fn tun(request: &TunRequest) -> Result<OwnedFd, String> {
         )?
         .i()
     })
-    .map_err(|e| format!("VPN service: {e}"))?;
+    .map_err(|e| io::Error::other(format!("VPN service: {e}")))?;
     if fd < 0 {
-        return Err("the VPN service opened no interface".into());
+        return Err(io::Error::other("the VPN service opened no interface"));
     }
     // SAFETY: Java detached the tun fd and hands its ownership over.
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })

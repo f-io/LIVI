@@ -19,6 +19,7 @@ use crate::bplist::{self, Value, dict};
 use crate::control_cipher::ControlCipher;
 use crate::helper_sock::HelperSock;
 use crate::identity::Identity;
+use crate::mfi4::session::TunnelError;
 use crate::pair_setup::PairSetup;
 use crate::pair_verify::PairVerify;
 use crate::pairings::Pairings;
@@ -499,9 +500,9 @@ impl Conn {
             let mut check = |shown: &[u8]| {
                 let (expected, ours) = pair_verify
                     .transcript_proofs()
-                    .ok_or_else(|| "nothing to bind, pair-verify has not run".to_string())?;
+                    .ok_or(TunnelError::NotVerified)?;
                 if shown.get(..expected.len()) != Some(&expected[..]) {
-                    return Err("the phone's transcript proof does not match".to_string());
+                    return Err(TunnelError::ProofMismatch);
                 }
                 Ok(ours.to_vec())
             };
@@ -510,10 +511,12 @@ impl Conn {
                 .await;
             return octet(result);
         }
-        match auth_setup::handle(&req.body, &self.ctx.helper).await {
-            Ok(Some(body)) => octet(Ok(body)),
-            Ok(None) => status(400),
-            Err(e) => octet(Err(e)),
+        match auth_setup::handle(&req.body, &self.ctx.helper)
+            .await
+            .transpose()
+        {
+            Some(result) => octet(result),
+            None => status(400),
         }
     }
 
@@ -1006,7 +1009,7 @@ fn pairing(body: Vec<u8>) -> Response {
     }
 }
 
-fn octet(result: Result<Vec<u8>, String>) -> Response {
+fn octet(result: Result<Vec<u8>, impl std::fmt::Display>) -> Response {
     match result {
         Ok(body) => Response {
             headers: vec![("Content-Type".into(), "application/octet-stream".into())],

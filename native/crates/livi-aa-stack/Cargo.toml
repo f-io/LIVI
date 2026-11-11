@@ -12,6 +12,7 @@ livi-session-io.workspace = true
 livi-wifi.workspace = true
 prost.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "sync", "time"] }
 
 [dev-dependencies]

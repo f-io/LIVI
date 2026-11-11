@@ -6,15 +6,17 @@ use std::future::Future;
 
 use livi_crypto::{X25519, aes_ctr128, sha1, sha256};
 
+use crate::helper_sock::HelperError;
+
 pub trait MfiSigner {
-    fn certificate(&self) -> impl Future<Output = Result<Vec<u8>, String>> + Send;
-    fn sign(&self, digest: &[u8]) -> impl Future<Output = Result<Vec<u8>, String>> + Send;
-    fn protocol_major(&self) -> impl Future<Output = Result<u8, String>> + Send;
+    fn certificate(&self) -> impl Future<Output = Result<Vec<u8>, HelperError>> + Send;
+    fn sign(&self, digest: &[u8]) -> impl Future<Output = Result<Vec<u8>, HelperError>> + Send;
+    fn protocol_major(&self) -> impl Future<Output = Result<u8, HelperError>> + Send;
 }
 
 const VERSION: u8 = 0x01;
 
-pub async fn handle(body: &[u8], signer: &impl MfiSigner) -> Result<Option<Vec<u8>>, String> {
+pub async fn handle(body: &[u8], signer: &impl MfiSigner) -> Result<Option<Vec<u8>>, HelperError> {
     if body.len() != 33 || body[0] != VERSION {
         println!(
             "[cp] auth-setup: bad request (len {}, version {:?})",
@@ -70,14 +72,14 @@ mod tests {
     }
 
     impl MfiSigner for Chip {
-        async fn certificate(&self) -> Result<Vec<u8>, String> {
+        async fn certificate(&self) -> Result<Vec<u8>, HelperError> {
             Ok(b"CERT".to_vec())
         }
-        async fn sign(&self, digest: &[u8]) -> Result<Vec<u8>, String> {
+        async fn sign(&self, digest: &[u8]) -> Result<Vec<u8>, HelperError> {
             self.digests.lock().unwrap().push(digest.to_vec());
             Ok(vec![0x5a; 64])
         }
-        async fn protocol_major(&self) -> Result<u8, String> {
+        async fn protocol_major(&self) -> Result<u8, HelperError> {
             Ok(self.major)
         }
     }
@@ -139,13 +141,14 @@ mod tests {
             major: 3,
             digests: Mutex::new(Vec::new()),
         };
-        assert_eq!(block_on(handle(&[1; 32], &chip)), Ok(None));
+        assert!(block_on(handle(&[1; 32], &chip)).unwrap().is_none());
         let (_, mut body) = request();
         body[0] = 2;
-        assert_eq!(block_on(handle(&body, &chip)), Ok(None));
-        assert_eq!(
-            block_on(handle(&[&[VERSION][..], &[0; 32]].concat(), &chip)),
-            Ok(None)
+        assert!(block_on(handle(&body, &chip)).unwrap().is_none());
+        assert!(
+            block_on(handle(&[&[VERSION][..], &[0; 32]].concat(), &chip))
+                .unwrap()
+                .is_none()
         );
         assert!(chip.digests.lock().unwrap().is_empty());
     }

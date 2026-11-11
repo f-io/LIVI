@@ -23,7 +23,7 @@ use crate::driver::{ArtworkRx, LinkChannel, spawn_link};
 use crate::ident::Identity;
 use crate::state::HelperState;
 use crate::vehicle::VehicleFeed;
-use crate::{AsyncAuth, events};
+use crate::{AsyncAuth, BtError, events};
 
 #[derive(Clone, Default)]
 pub struct Broadcaster {
@@ -74,12 +74,12 @@ pub struct LiviSockConfig {
     pub cp_live: Option<CpFactory>,
 }
 
-pub type DropLink = Arc<dyn Fn(String) -> Result<(), String> + Send + Sync>;
+pub type DropLink = Arc<dyn Fn(String) -> Result<(), BtError> + Send + Sync>;
 
 pub type CpFactory = Arc<dyn Fn() -> CpConfig + Send + Sync>;
 
 pub type PushTargets =
-    Arc<dyn Fn(Vec<(String, Option<String>)>) -> Result<(), String> + Send + Sync>;
+    Arc<dyn Fn(Vec<(String, Option<String>)>) -> Result<(), BtError> + Send + Sync>;
 
 pub async fn serve<A>(
     cfg: LiviSockConfig,
@@ -185,7 +185,7 @@ where
         }
         CpRequest::Sign(digest) => match auth.sign(digest).await {
             Ok(sig) => format!("{{\"ok\":true,\"data\":\"{}\"}}", STANDARD.encode(&sig)),
-            Err(e) => err_json(&e),
+            Err(e) => err_json(&e.to_string()),
         },
         CpRequest::Disconnect(mac) => match bluez.as_ref() {
             Some(bluez) => answer(device_disconnect(&bluez.bus, &bluez.adapter, &mac).await),
@@ -251,10 +251,10 @@ where
 
 const OK: &str = "{\"ok\":true}";
 
-fn answer(done: Result<(), String>) -> String {
+fn answer(done: Result<(), BtError>) -> String {
     match done {
         Ok(()) => OK.to_string(),
-        Err(e) => err_json(&e),
+        Err(e) => err_json(&e.to_string()),
     }
 }
 
@@ -439,7 +439,7 @@ pub async fn device_disconnect(
     bus: &zbus::Connection,
     adapter: &str,
     mac: &str,
-) -> Result<(), String> {
+) -> Result<(), BtError> {
     let path = format!(
         "/org/bluez/{}/dev_{}",
         adapter,
@@ -452,7 +452,6 @@ pub async fn device_disconnect(
         "Disconnect",
         &(),
     )
-    .await
-    .map(|_| ())
-    .map_err(|e| e.to_string())
+    .await?;
+    Ok(())
 }

@@ -7,12 +7,12 @@ use base64::engine::general_purpose::STANDARD;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
-use livi_runtime::AsyncAuth;
 use livi_runtime::bringup::CpConfig;
 use livi_runtime::ident::{Identity, Transport};
 use livi_runtime::livi_sock::{Bluez, Broadcaster, LiviSockConfig, serve};
 use livi_runtime::state::HelperState;
 use livi_runtime::vehicle::{Fuels, Plugs};
+use livi_runtime::{AsyncAuth, AuthError};
 use std::sync::Arc;
 use tokio::sync::{Notify, watch};
 
@@ -20,13 +20,13 @@ use tokio::sync::{Notify, watch};
 struct MockAuth;
 
 impl AsyncAuth for MockAuth {
-    async fn read_certificate(&mut self) -> Result<Vec<u8>, String> {
+    async fn read_certificate(&mut self) -> Result<Vec<u8>, AuthError> {
         Ok(vec![0xDE, 0xAD, 0xBE, 0xEF])
     }
-    async fn sign(&mut self, challenge: Vec<u8>) -> Result<Vec<u8>, String> {
+    async fn sign(&mut self, challenge: Vec<u8>) -> Result<Vec<u8>, AuthError> {
         Ok(challenge.iter().rev().copied().collect())
     }
-    async fn protocol_major(&mut self) -> Result<u8, String> {
+    async fn protocol_major(&mut self) -> Result<u8, AuthError> {
         Ok(3)
     }
 }

@@ -170,9 +170,9 @@ pub fn bluetooth(page: Page, drop: DropLink, hfp: Option<Hfp>) -> Bluetooth {
             ("connect", Some(HFP_AG_UUID)) if hfp.as_ref().is_some_and(|h| h.linked(&mac)) => {
                 Ok(())
             }
-            ("connect", Some(uuid)) => page(&mac, uuid),
+            ("connect", Some(uuid)) => page(&mac, uuid).map_err(Into::into),
             ("disconnect", _) => drop(mac),
-            _ => Err(format!("{verb} is not available on Android")),
+            _ => Err(format!("{verb} is not available on Android").into()),
         }
     })
 }

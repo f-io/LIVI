@@ -12,13 +12,14 @@ use tokio::net::{UnixListener, UnixStream};
 use zbus::Connection;
 use zbus::OwnedVariant;
 
+use crate::BtError;
 use crate::livi_sock::Broadcaster;
 
 const WAKE_UUID: &str = "0000111f-0000-1000-8000-00805f9b34fb";
 
 type SetPlaybackStatus = Box<dyn Fn(&str) + Send + Sync>;
 
-pub type Bluetooth = Arc<dyn Fn(&str, &str) -> Result<(), String> + Send + Sync>;
+pub type Bluetooth = Arc<dyn Fn(&str, &str) -> Result<(), BtError> + Send + Sync>;
 
 pub struct SharedSockDeps {
     pub adapter: String,
@@ -168,10 +169,10 @@ pub(crate) fn err_json(msg: &str) -> String {
     format!("{{\"ok\":false,\"error\":\"{}\"}}", clean.trim())
 }
 
-fn action(result: Result<(), String>) -> String {
+fn action(result: Result<(), BtError>) -> String {
     match result {
         Ok(()) => ok_json(),
-        Err(e) => err_json(&e),
+        Err(e) => err_json(&e.to_string()),
     }
 }
 
@@ -199,11 +200,11 @@ async fn device_call(
     bus: &Connection,
     adapter: &str,
     mac: &str,
-    method: &str,
+    method: &'static str,
     uuid: Option<&str>,
-) -> Result<(), String> {
+) -> Result<(), BtError> {
     if mac.is_empty() {
-        return Err(format!("{method} requires a MAC"));
+        return Err(BtError::NoMac(method));
     }
     let path = device_path(adapter, mac);
     let result = match uuid {
@@ -228,14 +229,15 @@ async fn device_call(
             .await
         }
     };
-    result.map(|_| ()).map_err(|e| e.to_string())
+    result?;
+    Ok(())
 }
 
-async fn remove_device(bus: &Connection, adapter: &str, mac: &str) -> Result<(), String> {
+async fn remove_device(bus: &Connection, adapter: &str, mac: &str) -> Result<(), BtError> {
     if mac.is_empty() {
-        return Err("remove requires a MAC".into());
+        return Err(BtError::NoMac("remove"));
     }
-    let path = zbus::ObjectPath::try_from(device_path(adapter, mac)).map_err(|e| e.to_string())?;
+    let path = zbus::ObjectPath::try_from(device_path(adapter, mac))?;
     let adapter_path = format!("/org/bluez/{adapter}");
     bus.call_method(
         Some("org.bluez"),
@@ -244,9 +246,8 @@ async fn remove_device(bus: &Connection, adapter: &str, mac: &str) -> Result<(),
         "RemoveDevice",
         &(path,),
     )
-    .await
-    .map(|_| ())
-    .map_err(|e| e.to_string())
+    .await?;
+    Ok(())
 }
 
 async fn get_prop<T>(bus: &Connection, path: &str, prop: &str) -> Option<T>
@@ -267,7 +268,7 @@ where
     T::try_from(value).ok()
 }
 
-async fn list_paired(bus: &Connection, adapter: &str) -> Result<Vec<String>, String> {
+async fn list_paired(bus: &Connection, adapter: &str) -> Result<Vec<String>, BtError> {
     let reply = bus
         .call_method(
             Some("org.bluez"),
@@ -276,12 +277,11 @@ async fn list_paired(bus: &Connection, adapter: &str) -> Result<Vec<String>, Str
             "GetManagedObjects",
             &(),
         )
-        .await
-        .map_err(|e| e.to_string())?;
+        .await?;
     let objects: std::collections::HashMap<
         zbus::OwnedObjectPath,
         std::collections::HashMap<String, std::collections::HashMap<String, OwnedVariant>>,
-    > = reply.body().deserialize().map_err(|e| e.to_string())?;
+    > = reply.body().deserialize()?;
 
     let prefix = format!("/org/bluez/{adapter}/dev_");
     let mut devices: Vec<(bool, String, String, String)> = Vec::new();
@@ -333,7 +333,7 @@ async fn bluez_verb(bus: &Connection, verb: &str, arg: &str, adapter: &str) -> S
     match verb {
         "list_paired" => match list_paired(bus, adapter).await {
             Ok(devices) => format!("{{\"ok\":true,\"devices\":[{}]}}", devices.join(",")),
-            Err(e) => err_json(&e),
+            Err(e) => err_json(&e.to_string()),
         },
         "connect" => {
             let (mac, uuid) = match arg.split_once(' ') {

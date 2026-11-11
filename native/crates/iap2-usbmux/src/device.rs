@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use crate::Error;
 use crate::backend::{ensure_carplay_config, restore_default_config};
 use crate::mux::MuxHost;
 use crate::short;
@@ -20,11 +21,9 @@ pub struct MuxDevice {
 }
 
 impl MuxDevice {
-    pub async fn start(serial: &str) -> Result<Self, String> {
+    pub async fn start(serial: &str) -> Result<Self, Error> {
         let owned = serial.to_string();
-        tokio::task::spawn_blocking(move || ensure_carplay_config(&owned))
-            .await
-            .map_err(|e| e.to_string())??;
+        tokio::task::spawn_blocking(move || ensure_carplay_config(&owned)).await??;
         let host = MuxHost::open(serial).await?;
         Ok(Self {
             serial: serial.to_string(),
@@ -55,7 +54,7 @@ impl MuxRegistry {
         self.devices.lock().unwrap().keys().cloned().collect()
     }
 
-    pub async fn ensure(&self, serial: &str) -> Result<Arc<MuxDevice>, String> {
+    pub async fn ensure(&self, serial: &str) -> Result<Arc<MuxDevice>, Error> {
         if let Some(dev) = self.get(serial) {
             return Ok(dev);
         }
