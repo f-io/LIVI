@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use iap2_mfi::{NcmCoprocessor, NoCoprocessor};
 use livi_core_proto::helper_events::{HelperEvent, HelperKind, StationEvent};
-use livi_runtime::livi_sock::Broadcaster;
-use livi_runtime::mfi_async::SharedCoprocessor;
+use livi_helper_stack::livi_sock::Broadcaster;
+use livi_helper_stack::mfi_async::SharedCoprocessor;
 use tokio::sync::Notify;
 
 const RESOLVE_INTERVAL: Duration = Duration::from_millis(500);
@@ -164,7 +164,7 @@ pub async fn relay_stations(bcast: Broadcaster) {
 }
 
 pub async fn identify_on_link(link: Arc<LinkPresence>, mut auth: SharedCoprocessor) {
-    use livi_runtime::AsyncAuth;
+    use livi_helper_stack::AsyncAuth;
     loop {
         link.wait_until(true).await;
         let mut reported = false;

@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::time::Duration;
 
-use livi_wifid::radio::{self, Radio};
+use livi_link_ap::radio::{self, Radio};
 
 use crate::http::{S_200, S_400, S_500, T_JSON, err_json, js, json_num};
 use crate::{BUILD, VERSION, caps};
@@ -28,7 +28,7 @@ pub(crate) fn bt_json() -> String {
     }
     let mut name = read_trim(&format!("/sys/class/bluetooth/{bt}/name"));
     if name.is_empty() {
-        name = livi_wifid::server::ap_name_from(
+        name = livi_link_ap::server::ap_name_from(
             std::path::Path::new(HOSTAPD_BASE),
             &[
                 std::path::Path::new(HOSTAPD_LIVE[0]),
@@ -73,7 +73,7 @@ pub(crate) fn wifi_json() -> String {
         band = ap.channel.band.to_string();
     }
     if ssid.is_empty() {
-        let cfg = livi_wifid::server::ap_config_from(
+        let cfg = livi_link_ap::server::ap_config_from(
             std::path::Path::new(HOSTAPD_BASE),
             &[
                 std::path::Path::new(HOSTAPD_LIVE[0]),

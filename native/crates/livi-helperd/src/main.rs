@@ -97,7 +97,7 @@ fn run(host: livi_helper::embedded::Host) -> ExitCode {
     println!("[helperd] shutting down");
     drop(helper);
     #[cfg(target_os = "macos")]
-    livi_runtime::bonjour::stop();
+    livi_helper_stack::bonjour::stop();
     ExitCode::SUCCESS
 }
 

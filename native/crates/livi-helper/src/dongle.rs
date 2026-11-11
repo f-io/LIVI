@@ -9,14 +9,14 @@ use std::time::Duration;
 use livi_bt_host::sdp::Service;
 use livi_core_proto::aa_events::AaTransport;
 use livi_core_proto::helper::HelperSockets;
-use livi_runtime::bringup::{AskOnAir, CpConfig};
-use livi_runtime::driver::spawn_link_stream;
-use livi_runtime::hfp::Hfp;
-use livi_runtime::ident::{Identity, Transport};
-use livi_runtime::livi_sock::{Broadcaster, run_bluetooth};
-use livi_runtime::mfi_async::SharedCoprocessor;
-use livi_runtime::sco::ScoSink;
-use livi_runtime::state::HelperState;
+use livi_helper_stack::bringup::{AskOnAir, CpConfig};
+use livi_helper_stack::driver::spawn_link_stream;
+use livi_helper_stack::hfp::Hfp;
+use livi_helper_stack::ident::{Identity, Transport};
+use livi_helper_stack::livi_sock::{Broadcaster, run_bluetooth};
+use livi_helper_stack::mfi_async::SharedCoprocessor;
+use livi_helper_stack::sco::ScoSink;
+use livi_helper_stack::state::HelperState;
 use livi_wifi::Channel;
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
@@ -42,7 +42,7 @@ pub fn wireless_config(base: &CpConfig) -> CpConfig {
         ap_mac: livi_link_host::ap::mac(),
         ssid: livi_link_host::ap::ssid().unwrap_or_else(|| base.ssid.clone()),
         wifi_iface: livi_link_host::link::name()
-            .and_then(|name| livi_runtime::net::iface_facing(&name))
+            .and_then(|name| livi_helper_stack::net::iface_facing(&name))
             .unwrap_or_default(),
         channel: livi_link_host::ap::status_field("channel")
             .and_then(|c| c.parse().ok())

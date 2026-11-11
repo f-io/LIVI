@@ -20,8 +20,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use livi_wifid::hostapd;
-use livi_wifid::radio::{self, Radio};
+use livi_link_ap::hostapd;
+use livi_link_ap::radio::{self, Radio};
 
 const SPI_DEV: &str = "/dev/spidev1.0";
 const HOSTAPD_RETRY: Duration = Duration::from_secs(2);

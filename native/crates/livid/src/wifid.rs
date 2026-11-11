@@ -7,8 +7,8 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use livi_link_ap::server::{Ap, serve};
 use livi_net::port::CONTROL;
-use livi_wifid::server::{Ap, serve};
 
 const BASE: &str = "/tmp/livi/hostapd.conf.saved";
 const LIVE: [&str; 2] = ["/tmp/livi/hostapd.conf", "/tmp/livi/hostapd.alt"];

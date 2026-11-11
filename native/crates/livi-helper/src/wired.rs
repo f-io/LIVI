@@ -15,12 +15,12 @@ use iap2_usbmux::{MuxRegistry, find_iphones};
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use iap2_wired::open_carkit;
 use livi_core_proto::helper_events::{DeviceSource, HelperEvent, HelperKind};
-use livi_runtime::bringup::{CpConfig, run_accessory};
-use livi_runtime::driver::spawn_link_stream;
-use livi_runtime::ident::Identity;
-use livi_runtime::livi_sock::{Broadcaster, SharedTag, pump_artwork, pump_events_for};
-use livi_runtime::mfi_async::SharedCoprocessor;
-use livi_runtime::state::HelperState;
+use livi_helper_stack::bringup::{CpConfig, run_accessory};
+use livi_helper_stack::driver::spawn_link_stream;
+use livi_helper_stack::ident::Identity;
+use livi_helper_stack::livi_sock::{Broadcaster, SharedTag, pump_artwork, pump_events_for};
+use livi_helper_stack::mfi_async::SharedCoprocessor;
+use livi_helper_stack::state::HelperState;
 
 use crate::link::LinkPresence;
 use crate::short;
@@ -355,7 +355,7 @@ async fn forward_starts(
     link: Arc<LinkPresence>,
     mut auth: SharedCoprocessor,
 ) {
-    use livi_runtime::AsyncAuth;
+    use livi_helper_stack::AsyncAuth;
     loop {
         asked.notified().await;
         if !link.is_present() {
@@ -405,7 +405,7 @@ pub(crate) fn announce(
     carplay: bool,
 ) -> Vec<livi_mdns::responder::Responder> {
     use livi_core_proto::helper::MIRROR_NAME;
-    use livi_runtime::bonjour::AIRPLAY_SERVICE;
+    use livi_helper_stack::bonjour::AIRPLAY_SERVICE;
     let carplay = u16::try_from(cp.airplay_port)
         .ok()
         .filter(|&p| carplay && p != 0)

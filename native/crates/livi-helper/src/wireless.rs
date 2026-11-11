@@ -6,16 +6,16 @@ use std::os::fd::OwnedFd;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use livi_helper_stack::bringup::{AskOnAir, CpConfig, OnCable};
+use livi_helper_stack::driver::spawn_link;
+use livi_helper_stack::hfp::Hfp;
+use livi_helper_stack::ident::{Identity, Transport};
+use livi_helper_stack::livi_sock::{Broadcaster, DropLink, run_bluetooth};
+use livi_helper_stack::mfi_async::SharedCoprocessor;
+use livi_helper_stack::reconnect::{self, Paging};
+use livi_helper_stack::shared_sock::Bluetooth;
+use livi_helper_stack::state::HelperState;
 use livi_mdns::responder::Responder;
-use livi_runtime::bringup::{AskOnAir, CpConfig, OnCable};
-use livi_runtime::driver::spawn_link;
-use livi_runtime::hfp::Hfp;
-use livi_runtime::ident::{Identity, Transport};
-use livi_runtime::livi_sock::{Broadcaster, DropLink, run_bluetooth};
-use livi_runtime::mfi_async::SharedCoprocessor;
-use livi_runtime::reconnect::{self, Paging};
-use livi_runtime::shared_sock::Bluetooth;
-use livi_runtime::state::HelperState;
 use livi_wifi::{Channel, OnAir, Security};
 use tokio::sync::Notify;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -215,8 +215,8 @@ fn android_auto_phone(aa: &AndroidAuto, state: Arc<HelperState>, fd: OwnedFd, ma
 
 fn offer() -> Option<Told> {
     let granted = GRANTED.lock().unwrap_or_else(|e| e.into_inner()).clone()?;
-    let ap_ip = livi_runtime::net::ipv4_of(&granted.iface)?.to_string();
-    let bssid = livi_runtime::net::wlan_mac(&granted.iface).unwrap_or_default();
+    let ap_ip = livi_helper_stack::net::ipv4_of(&granted.iface)?.to_string();
+    let bssid = livi_helper_stack::net::wlan_mac(&granted.iface).unwrap_or_default();
     let told = AaConfig {
         channel: Channel::of_freq(granted.frequency)?,
         ssid: granted.ssid,
@@ -327,7 +327,8 @@ async fn on_air_with(
     if !carplay && airplay.mirror.is_none() {
         return Vec::new();
     }
-    let Some(address) = livi_runtime::net::wlan_link_local(&iface).and_then(|a| a.parse().ok())
+    let Some(address) =
+        livi_helper_stack::net::wlan_link_local(&iface).and_then(|a| a.parse().ok())
     else {
         eprintln!("[wireless] {iface} has no link-local address, AirPlay is not announced");
         return Vec::new();

@@ -11,10 +11,10 @@ use livi_aa::usb::Control;
 use livi_aa::wpp;
 use livi_core_proto::aa_events::{AaHelperEvent, AaTransport};
 use livi_core_proto::helper::HelperSockets;
-use livi_runtime::aa_sock::{self, AaSockDeps};
-use livi_runtime::livi_sock::Broadcaster;
-use livi_runtime::sco::ScoSink;
-use livi_runtime::state::HelperState;
+use livi_helper_stack::aa_sock::{self, AaSockDeps};
+use livi_helper_stack::livi_sock::Broadcaster;
+use livi_helper_stack::sco::ScoSink;
+use livi_helper_stack::state::HelperState;
 use livi_wifi::{Channel, Security};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
@@ -77,9 +77,9 @@ fn ip_facing_dongle() -> Option<String> {
     let iface = livi_link_host::link::host_iface();
     #[cfg(not(target_os = "linux"))]
     let iface =
-        livi_link_host::link::name().and_then(|name| livi_runtime::net::iface_facing(&name));
+        livi_link_host::link::name().and_then(|name| livi_helper_stack::net::iface_facing(&name));
     iface
-        .and_then(|iface| livi_runtime::net::ipv4_of(&iface))
+        .and_then(|iface| livi_helper_stack::net::ipv4_of(&iface))
         .map(|a| a.to_string())
 }
 
@@ -89,7 +89,7 @@ pub async fn watch_dongle(
     cfg: AaConfig,
     bcast: Broadcaster,
     wired: WiredPhones,
-    state: Arc<livi_runtime::state::HelperState>,
+    state: Arc<livi_helper_stack::state::HelperState>,
 ) {
     while let Some(arrival) = arrivals.recv().await {
         let (cfg, bcast, wired, state) = (cfg.clone(), bcast.clone(), wired.clone(), state.clone());

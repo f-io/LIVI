@@ -61,7 +61,6 @@ livi-aa-stack = { path = "crates/livi-aa-stack" }
 livi-aaudio = { path = "crates/livi-aaudio" }
 livi-audio = { path = "crates/livi-audio" }
 livi-bt-host = { path = "crates/livi-bt-host" }
-livi-btd = { path = "crates/livi-btd" }
 livi-core = { path = "crates/livi-core" }
 livi-core-client = { path = "crates/livi-core-client" }
 livi-core-proto = { path = "crates/livi-core-proto" }
@@ -71,15 +70,17 @@ livi-dab = { path = "crates/livi-dab" }
 livi-fm = { path = "crates/livi-fm" }
 livi-gst-host = { path = "crates/livi-gst-host" }
 livi-helper = { path = "crates/livi-helper" }
+livi-helper-stack = { path = "crates/livi-helper-stack" }
 livi-hfp = { path = "crates/livi-hfp" }
 livi-host-proto = { path = "crates/livi-host-proto" }
+livi-link-ap = { path = "crates/livi-link-ap" }
+livi-link-hci = { path = "crates/livi-link-hci" }
 livi-link-host = { path = "crates/livi-link-host" }
 livi-link-provision = { path = "crates/livi-link-provision" }
 livi-mdns = { path = "crates/livi-mdns" }
 livi-media = { path = "crates/livi-media" }
 livi-net = { path = "crates/livi-net" }
 livi-rtlsdr = { path = "crates/livi-rtlsdr" }
-livi-runtime = { path = "crates/livi-runtime" }
 livi-screen-stream = { path = "crates/livi-screen-stream" }
 livi-session-io = { path = "crates/livi-session-io" }
 livi-i18n = { path = "crates/livi-i18n" }
@@ -90,7 +91,6 @@ livi-video-player = { path = "crates/livi-video-player" }
 livi-video-view = { path = "crates/livi-video-view" }
 livi-web = { path = "crates/livi-web" }
 livi-wifi = { path = "crates/livi-wifi" }
-livi-wifid = { path = "crates/livi-wifid" }
 
 # The DAB+ and FM receivers demodulate in real time, also in debug builds.
 [profile.dev.package.livi-dab]

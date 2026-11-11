@@ -3880,14 +3880,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "livi-btd"
-version = "10.5.0"
-dependencies = [
- "libc 1.0.0-alpha.5",
- "livi-net",
-]
-
-[[package]]
 name = "livi-compositor"
 version = "10.5.0"
 dependencies = [
@@ -4031,13 +4023,34 @@ dependencies = [
  "livi-aa",
  "livi-bt-host",
  "livi-core-proto",
+ "livi-helper-stack",
  "livi-hfp",
  "livi-link-host",
  "livi-mdns",
  "livi-net",
- "livi-runtime",
  "livi-wifi",
  "tokio",
+]
+
+[[package]]
+name = "livi-helper-stack"
+version = "10.5.0"
+dependencies = [
+ "base64 0.23.1",
+ "iap2-csm",
+ "iap2-link",
+ "iap2-mfi",
+ "libc 1.0.0-alpha.5",
+ "livi-base",
+ "livi-core-proto",
+ "livi-hfp",
+ "livi-host-proto",
+ "livi-wifi",
+ "serde_json",
+ "socket2",
+ "thiserror 2.0.21",
+ "tokio",
+ "zbus 6.2.1",
 ]
 
 [[package]]
@@ -4047,8 +4060,8 @@ dependencies = [
  "libc 1.0.0-alpha.5",
  "livi-core-proto",
  "livi-helper",
+ "livi-helper-stack",
  "livi-link-host",
- "livi-runtime",
  "livi-wifi",
  "serde_json",
  "tokio",
@@ -4073,6 +4086,23 @@ name = "livi-i18n"
 version = "10.5.0"
 dependencies = [
  "serde_json",
+]
+
+[[package]]
+name = "livi-link-ap"
+version = "10.5.0"
+dependencies = [
+ "livi-base",
+ "livi-link-hci",
+ "livi-wifi",
+]
+
+[[package]]
+name = "livi-link-hci"
+version = "10.5.0"
+dependencies = [
+ "libc 1.0.0-alpha.5",
+ "livi-net",
 ]
 
 [[package]]
@@ -4147,27 +4177,6 @@ version = "10.5.0"
 dependencies = [
  "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",
-]
-
-[[package]]
-name = "livi-runtime"
-version = "10.5.0"
-dependencies = [
- "base64 0.23.1",
- "iap2-csm",
- "iap2-link",
- "iap2-mfi",
- "libc 1.0.0-alpha.5",
- "livi-base",
- "livi-core-proto",
- "livi-hfp",
- "livi-host-proto",
- "livi-wifi",
- "serde_json",
- "socket2",
- "thiserror 2.0.21",
- "tokio",
- "zbus 6.2.1",
 ]
 
 [[package]]
@@ -4261,9 +4270,9 @@ version = "10.5.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
  "livi-base",
+ "livi-link-ap",
  "livi-net",
  "livi-wifi",
- "livi-wifid",
 ]
 
 [[package]]
@@ -4275,15 +4284,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "livi-wifid"
-version = "10.5.0"
-dependencies = [
- "livi-base",
- "livi-btd",
- "livi-wifi",
-]
-
-[[package]]
 name = "livid"
 version = "10.5.0"
 dependencies = [
@@ -4291,11 +4291,11 @@ dependencies = [
  "imx6ul-uboot",
  "libc 1.0.0-alpha.5",
  "livi-base",
- "livi-btd",
+ "livi-link-ap",
+ "livi-link-hci",
  "livi-mdns",
  "livi-net",
  "livi-web",
- "livi-wifid",
 ]
 
 [[package]]

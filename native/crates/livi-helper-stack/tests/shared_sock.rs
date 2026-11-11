@@ -8,8 +8,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
 use livi_core_proto::aa_events::{AaHelperEvent, RemoteCommand};
-use livi_runtime::livi_sock::Broadcaster;
-use livi_runtime::shared_sock::{SharedSockDeps, serve};
+use livi_helper_stack::livi_sock::Broadcaster;
+use livi_helper_stack::shared_sock::{SharedSockDeps, serve};
 
 fn deps() -> SharedSockDeps {
     SharedSockDeps {

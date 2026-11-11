@@ -402,7 +402,8 @@ fn off(ap: &mut Ap) {
 fn bluetooth(up: bool) -> Result<(), String> {
     if !up {
         livi_radio("bt-off", "btd would not stop")?;
-        return livi_btd::hci::down(BT_DEV).map_err(|e| format!("{BT} would not go down: {e}"));
+        return livi_link_hci::hci::down(BT_DEV)
+            .map_err(|e| format!("{BT} would not go down: {e}"));
     }
     driver();
     livi_radio("bt", &format!("{BT} would not come up"))
@@ -437,7 +438,7 @@ fn driver() {
 }
 
 fn bt_up() -> bool {
-    livi_btd::hci::is_up(BT_DEV)
+    livi_link_hci::hci::is_up(BT_DEV)
 }
 
 pub fn ap_config_from(base: &std::path::Path, live: &[&std::path::Path]) -> Option<String> {

@@ -11,13 +11,13 @@ use std::time::Duration;
 use iap2_mfi::{AuthCoprocessor, NoCoprocessor};
 use livi_core_proto::helper::{HelperSockets, HelperStart};
 #[cfg(not(target_os = "android"))]
-use livi_runtime::bonjour::Bonjour;
+use livi_helper_stack::bonjour::Bonjour;
 #[cfg(not(target_os = "android"))]
-use livi_runtime::bringup::CpConfig;
-use livi_runtime::ident::Transport;
-use livi_runtime::livi_sock::{self, Broadcaster, LiviSockConfig};
-use livi_runtime::mfi_async::SharedCoprocessor;
-use livi_runtime::state::HelperState;
+use livi_helper_stack::bringup::CpConfig;
+use livi_helper_stack::ident::Transport;
+use livi_helper_stack::livi_sock::{self, Broadcaster, LiviSockConfig};
+use livi_helper_stack::mfi_async::SharedCoprocessor;
+use livi_helper_stack::state::HelperState;
 use tokio::sync::{oneshot, watch};
 
 use crate::link::LinkPresence;
@@ -143,18 +143,18 @@ fn serve(start: HelperStart, host: Host) -> Held {
     let auth = SharedCoprocessor::new(chip.unwrap_or_else(|| Box::new(NoCoprocessor)));
     let (identity, cp) = crate::carplay(&start, Transport::Wired);
     #[cfg(target_os = "linux")]
-    let cp = livi_runtime::bringup::CpConfig {
+    let cp = livi_helper_stack::bringup::CpConfig {
         wifi_iface: crate::bluez::ap_iface(&start.settings.wifi_iface),
         ap_mac: dongle_ap.then(livi_link_host::ap::mac).flatten(),
         ap_on_air: dongle_ap
-            .then_some(livi_link_host::ap::on_air as livi_runtime::bringup::AskOnAir),
+            .then_some(livi_link_host::ap::on_air as livi_helper_stack::bringup::AskOnAir),
         ..cp
     };
     let bcast = Broadcaster::default();
     let state = Arc::new(HelperState::default());
     let (bluez, bluez_later) = watch::channel(None);
     let bluez = Arc::new(bluez);
-    let sco_sink = livi_runtime::sco::ScoSink::default();
+    let sco_sink = livi_helper_stack::sco::ScoSink::default();
     let (aa_events, wired_phones) = crate::aa::serve(&host.sockets, sco_sink.clone(), true);
     #[cfg_attr(not(target_os = "android"), allow(unused_variables))]
     let (carplay, android_auto) = (
@@ -164,11 +164,11 @@ fn serve(start: HelperStart, host: Host) -> Held {
     #[cfg(target_os = "android")]
     let wireless = (!over_dongle && (carplay || android_auto)).then(|| {
         (
-            livi_runtime::ident::Identity {
+            livi_helper_stack::ident::Identity {
                 bt_mac: livi_link_host::ap::address(&start.device_id).unwrap_or(identity.bt_mac),
                 ..identity.clone()
             },
-            livi_runtime::bringup::CpConfig {
+            livi_helper_stack::bringup::CpConfig {
                 transport: Transport::Wireless,
                 ..cp.clone()
             },
@@ -184,12 +184,12 @@ fn serve(start: HelperStart, host: Host) -> Held {
     };
     #[cfg(target_os = "linux")]
     let sock = LiviSockConfig {
-        cp: livi_runtime::bringup::CpConfig {
+        cp: livi_helper_stack::bringup::CpConfig {
             transport: Transport::Wireless,
             ..cp.clone()
         },
         cp_live: dongle_ap.then(|| {
-            let base = livi_runtime::bringup::CpConfig {
+            let base = livi_helper_stack::bringup::CpConfig {
                 transport: Transport::Wireless,
                 ..cp.clone()
             };
@@ -272,8 +272,8 @@ fn serve(start: HelperStart, host: Host) -> Held {
     }
     #[cfg(target_os = "android")]
     let airplay = crate::wired::Airplay {
-        txt: livi_runtime::bonjour::txt_records(
-            &livi_runtime::bringup::accessory_id(&cp).unwrap_or_default(),
+        txt: livi_helper_stack::bonjour::txt_records(
+            &livi_helper_stack::bringup::accessory_id(&cp).unwrap_or_default(),
             &cp.source_version,
             &start.public_key,
             &start.pairing_id,
@@ -308,7 +308,7 @@ fn serve(start: HelperStart, host: Host) -> Held {
                     );
                 },
             ));
-            let hfp = livi_runtime::hfp::Hfp::default();
+            let hfp = livi_helper_stack::hfp::Hfp::default();
             hfp.set_events(aa_events.clone());
             crate::wireless::AndroidAuto {
                 hfp,
@@ -350,14 +350,14 @@ fn serve(start: HelperStart, host: Host) -> Held {
         let (stop, stopped) = watch::channel(false);
         let b = crate::bluez::Bluetooth {
             adapter: start.settings.bt_adapter.clone(),
-            wireless: livi_runtime::bt::Wireless {
+            wireless: livi_helper_stack::bt::Wireless {
                 carplay: start.settings.wireless_carplay,
                 android_auto: start.settings.wireless_android_auto,
             },
             sockets: host.sockets.clone(),
             auth: auth.clone(),
             identity: identity.clone(),
-            cp: livi_runtime::bringup::CpConfig {
+            cp: livi_helper_stack::bringup::CpConfig {
                 transport: Transport::Wireless,
                 ..cp.clone()
             },
@@ -424,7 +424,7 @@ fn announce(cp: &CpConfig, start: &HelperStart, bcast: Broadcaster) -> Option<Bo
         return None;
     }
     match Bonjour::start(
-        livi_runtime::bringup::accessory_id(cp).unwrap_or_default(),
+        livi_helper_stack::bringup::accessory_id(cp).unwrap_or_default(),
         cp.airplay_port as u16,
         cp.source_version.clone(),
         start.public_key.clone(),
@@ -444,7 +444,7 @@ fn announce(cp: &CpConfig, start: &HelperStart, bcast: Broadcaster) -> Option<Bo
 async fn announce_on_link(
     link: Arc<LinkPresence>,
     tunnel: Arc<iap2_usbmux::Tunnel>,
-    cp: livi_runtime::bringup::CpConfig,
+    cp: livi_helper_stack::bringup::CpConfig,
     airplay: crate::wired::Airplay,
     carplay: bool,
 ) {
@@ -515,10 +515,10 @@ fn radios(start: &HelperStart, host: &Host) -> crate::dongle::Radios {
 
 fn serve_shared(
     path: &std::path::Path,
-    bluetooth: Option<livi_runtime::shared_sock::Bluetooth>,
+    bluetooth: Option<livi_helper_stack::shared_sock::Bluetooth>,
     dongle_ap: bool,
 ) {
-    let deps = livi_runtime::shared_sock::SharedSockDeps {
+    let deps = livi_helper_stack::shared_sock::SharedSockDeps {
         adapter: String::new(),
         wifi_iface: String::new(),
         events: Broadcaster::default(),
@@ -528,7 +528,7 @@ fn serve_shared(
     };
     let path = path.to_path_buf();
     tokio::spawn(async move {
-        if let Err(e) = livi_runtime::shared_sock::serve(&path, None, deps).await {
+        if let Err(e) = livi_helper_stack::shared_sock::serve(&path, None, deps).await {
             eprintln!("[helper] shared socket ended: {e}");
         }
     });

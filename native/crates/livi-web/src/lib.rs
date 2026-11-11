@@ -12,7 +12,7 @@ mod update;
 
 use std::sync::OnceLock;
 
-use livi_wifid::radio::Radio;
+use livi_link_ap::radio::Radio;
 
 use flash::{flash_dispatch, flash_status_json, reboot_soon};
 use http::{INDEX_HTML, S_200, S_404, T_HTML, T_JSON, T_TEXT, serve_forever};

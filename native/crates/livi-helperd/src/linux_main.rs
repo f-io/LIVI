@@ -97,7 +97,7 @@ pub fn host() -> Host {
 
 pub fn run_wifi_ap() -> ExitCode {
     let dc = DeviceConfig::load();
-    let cfg = livi_runtime::wifi_ap::ApConfig {
+    let cfg = livi_helper_stack::wifi_ap::ApConfig {
         iface: ap_iface(&dc),
         ssid: dc.string("carName", "LIVI_CP_NAME", DEFAULT_NAME),
         passphrase: dc.string("wifiPassword", "LIVI_PASSPHRASE", DEFAULT_PASSPHRASE),
@@ -106,18 +106,18 @@ pub fn run_wifi_ap() -> ExitCode {
         country: dc.string("country", "LIVI_COUNTRY", "DE"),
         ap_ip: std::env::var("LIVI_AP_IP").unwrap_or_else(|_| "10.10.0.1".into()),
     };
-    livi_runtime::wifi_ap::run(cfg)
+    livi_helper_stack::wifi_ap::run(cfg)
 }
 
 pub fn run_wifi_ap_status() -> ExitCode {
     let dc = DeviceConfig::load();
-    print!("{}", livi_runtime::wifi_ap::status(&ap_iface(&dc)));
+    print!("{}", livi_helper_stack::wifi_ap::status(&ap_iface(&dc)));
     ExitCode::SUCCESS
 }
 
 fn installed(
     what: &str,
-    result: Result<(), livi_runtime::privileged::PrivilegedError>,
+    result: Result<(), livi_helper_stack::privileged::PrivilegedError>,
 ) -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -135,7 +135,7 @@ pub fn run_install_wifi_ap(unit: Option<String>, rule: Option<String>) -> ExitCo
     };
     installed(
         "wifi-ap",
-        livi_runtime::privileged::install_wifi_ap(&unit, &rule),
+        livi_helper_stack::privileged::install_wifi_ap(&unit, &rule),
     )
 }
 
@@ -146,7 +146,7 @@ pub fn run_install_udev_rule(rule: Option<String>, filter: Option<String>) -> Ex
     };
     installed(
         "udev",
-        livi_runtime::privileged::install_udev_rule(&rule, filter.as_deref()),
+        livi_helper_stack::privileged::install_udev_rule(&rule, filter.as_deref()),
     )
 }
 
@@ -155,7 +155,10 @@ pub fn run_install_kiosk_unit(unit: Option<String>) -> ExitCode {
         eprintln!("[kiosk] usage: --install-kiosk-unit <unit file>");
         return ExitCode::FAILURE;
     };
-    installed("kiosk", livi_runtime::privileged::install_kiosk_unit(&unit))
+    installed(
+        "kiosk",
+        livi_helper_stack::privileged::install_kiosk_unit(&unit),
+    )
 }
 
 pub fn run_install_gvfs_guard(script: Option<String>, rule: Option<String>) -> ExitCode {
@@ -165,21 +168,21 @@ pub fn run_install_gvfs_guard(script: Option<String>, rule: Option<String>) -> E
     };
     installed(
         "gvfs",
-        livi_runtime::privileged::install_gvfs_guard(&script, &rule),
+        livi_helper_stack::privileged::install_gvfs_guard(&script, &rule),
     )
 }
 
 pub fn run_wifi_ap_claim() -> ExitCode {
     let dc = DeviceConfig::load();
-    livi_runtime::wifi_ap::release_iface_from_nm(&ap_iface(&dc));
+    livi_helper_stack::wifi_ap::release_iface_from_nm(&ap_iface(&dc));
     ExitCode::SUCCESS
 }
 
 pub fn run_wifi_ap_teardown() -> ExitCode {
-    let iface = livi_runtime::wifi_ap::unmanaged_iface().unwrap_or_else(|| {
+    let iface = livi_helper_stack::wifi_ap::unmanaged_iface().unwrap_or_else(|| {
         DeviceConfig::load().string("wifiInterface", "LIVI_WIFI_IFACE", "wlan0")
     });
-    livi_runtime::wifi_ap::teardown(&iface);
+    livi_helper_stack::wifi_ap::teardown(&iface);
     ExitCode::SUCCESS
 }
 

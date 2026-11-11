@@ -17,9 +17,9 @@ pub mod wired;
 pub mod wireless;
 
 use livi_core_proto::helper::HelperStart;
-use livi_runtime::bringup::CpConfig;
-use livi_runtime::ident::{Identity, Theme, Transport};
-use livi_runtime::vehicle::{Fuels, Plugs};
+use livi_helper_stack::bringup::CpConfig;
+use livi_helper_stack::ident::{Identity, Theme, Transport};
+use livi_helper_stack::vehicle::{Fuels, Plugs};
 use livi_wifi::{Band, Channel};
 
 pub const DEFAULT_NAME: &str = "LIVI";

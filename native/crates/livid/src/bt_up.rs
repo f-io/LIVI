@@ -9,7 +9,7 @@ pub fn run(args: Vec<String>) -> i32 {
 use std::fs;
 use std::io::Write;
 
-use livi_btd::hci;
+use livi_link_hci::hci;
 
 fn livid_main(args: &[String]) -> i32 {
     let dev: u16 = args.first().and_then(|s| s.parse().ok()).unwrap_or(0);

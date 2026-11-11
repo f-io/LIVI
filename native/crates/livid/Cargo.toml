@@ -13,9 +13,9 @@ livi-base.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 livi-mdns.workspace = true
-livi-wifid.workspace = true
+livi-link-ap.workspace = true
 livi-web.workspace = true
-livi-btd.workspace = true
+livi-link-hci.workspace = true
 livi-net.workspace = true
 iap2-mfi.workspace = true
 libc.workspace = true

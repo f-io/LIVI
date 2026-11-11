@@ -66,7 +66,7 @@ jobs:
 
       - name: cargo test shared and dongle crates
         working-directory: native
-        run: cargo test --release --locked -p iap2-mfi -p livi-wifi -p livi-btd -p livi-mdns -p livi-wifid
+        run: cargo test --release --locked -p iap2-mfi -p livi-wifi -p livi-link-hci -p livi-mdns -p livi-link-ap
 
       - name: Save cargo cache
         if: ${{ steps.cargo.outputs.hit != 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') }}

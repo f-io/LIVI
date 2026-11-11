@@ -1,5 +1,5 @@
 [package]
-name = "livi-runtime"
+name = "livi-helper-stack"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

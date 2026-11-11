@@ -11,7 +11,7 @@ path = "src/main.rs"
 [dependencies]
 livi-core-proto.workspace = true
 livi-helper.workspace = true
-livi-runtime.workspace = true
+livi-helper-stack.workspace = true
 livi-wifi.workspace = true
 livi-link-host.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
