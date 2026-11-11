@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use serde_json::{Map, Value, json};
 
-use crate::telemetry::{HTTP_PUSH, PORT};
+use crate::vehicle::telemetry::{HTTP_PUSH, PORT};
 
 const HELP: &str = "\
 livi-core telemetry pushes values into a running LIVI's telemetry.

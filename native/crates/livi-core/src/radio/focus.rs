@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use crate::status_file::Activity;
+use crate::files::status_file::Activity;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Turn {

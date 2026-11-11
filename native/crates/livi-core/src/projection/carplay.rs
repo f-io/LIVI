@@ -25,9 +25,9 @@ use livi_media::gst_host::{self, GstHost, HostEvent};
 use livi_media::planes::VideoPlane;
 use tokio::sync::{broadcast, watch};
 
-use crate::{host, hwaddr};
+use crate::{system::host, system::hwaddr};
 
-const LOGO: &[u8] = include_bytes!("../res/livi-logo.png");
+const LOGO: &[u8] = include_bytes!("../../res/livi-logo.png");
 
 pub struct GstMedia {
     gst: GstHost,

@@ -715,7 +715,7 @@ fn class_of(d: &Value) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config_file::tests::TempDir;
+    use crate::files::config_file::tests::TempDir;
 
     fn seen(bt: &str, wifi: &str, name: &str, wired: bool) -> Seen {
         let opt = |v: &str| (!v.is_empty()).then(|| v.to_string());

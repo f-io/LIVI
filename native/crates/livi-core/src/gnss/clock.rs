@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 
 use super::SET_TIME_HELPER;
 use super::info::{FixMode, GnssInfo};
-use super::nmea::round_half_up;
-use crate::privileged::sudo;
+use crate::system::privileged::sudo;
+use livi_base::num::round_half_up;
 
 pub const CLAIM_FILE: &str = "/tmp/livi-gps-clock";
 
@@ -115,7 +115,7 @@ pub async fn step(step: Step) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config_file::tests::TempDir;
+    use crate::files::config_file::tests::TempDir;
     use crate::gnss::info::FixQuality;
 
     const NOW: i64 = 1_800_000_000_000;

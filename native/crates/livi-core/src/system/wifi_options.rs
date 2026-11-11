@@ -309,7 +309,7 @@ mod tests {
 
     #[test]
     fn a_band_change_takes_a_channel_of_the_new_band() {
-        let mut cfg = crate::config_file::defaults();
+        let mut cfg = crate::files::config_file::defaults();
         (cfg.wifi_type, cfg.wifi_channel) = (WifiBand::Ghz6, 36);
         assert_eq!(snapped(&cfg, &[5, 37]), Some(37));
         assert_eq!(snapped(&cfg, &[5, 21]), Some(5));
@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn a_radio_without_the_band_takes_5_ghz_first() {
-        let mut cfg = crate::config_file::defaults();
+        let mut cfg = crate::files::config_file::defaults();
         (cfg.wifi_type, cfg.wifi_channel) = (WifiBand::Ghz6, 37);
         let two = [WifiBand::Ghz24, WifiBand::Ghz5];
         assert_eq!(

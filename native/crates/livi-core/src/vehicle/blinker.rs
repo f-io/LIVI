@@ -349,7 +349,7 @@ mod tests {
             fm: Default::default(),
             cameras: Vec::new(),
             mfi: Default::default(),
-            config: crate::config_file::defaults(),
+            config: crate::files::config_file::defaults(),
         };
         assert!(!blinking(&s));
         s.telemetry.insert("turnSignal".into(), json!("left"));

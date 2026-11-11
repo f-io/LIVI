@@ -198,7 +198,7 @@ fn copy_lines(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config_file::tests::TempDir;
+    use crate::files::config_file::tests::TempDir;
 
     fn read(dir: &Path, i: usize) -> String {
         fs::read_to_string(dir.join(name(i))).unwrap_or_default()

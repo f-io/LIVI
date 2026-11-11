@@ -11,9 +11,9 @@ use livi_link_host::link::CHOICE;
 use serde_json::{Map, Value};
 use tokio::process::Command;
 
-use crate::privileged::{Privileged, quietly, sudo, sudo_grants, systemctl};
 use crate::server::Core;
-use crate::wifi_options::{band_of, wifi_band};
+use crate::system::privileged::{Privileged, quietly, sudo, sudo_grants, systemctl};
+use crate::system::wifi_options::{band_of, wifi_band};
 
 const UNIT_PATH: &str = "/etc/systemd/system/livi-wifi-ap.service";
 const SERVICE: &str = "livi-wifi-ap.service";
@@ -309,8 +309,8 @@ pub async fn release_for_quit() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config_file::defaults;
-    use crate::config_file::tests::TempDir;
+    use crate::files::config_file::defaults;
+    use crate::files::config_file::tests::TempDir;
 
     #[test]
     fn the_units_copy_counts_only_when_it_is_the_same_binary() {

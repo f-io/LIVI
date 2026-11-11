@@ -17,8 +17,8 @@ use tokio::net::TcpListener;
 use tokio::sync::{mpsc, watch};
 use tower_http::cors::CorsLayer;
 
+use crate::files::state_files::Saved;
 use crate::server::Core;
-use crate::state_files::Saved;
 
 pub type Snapshot = Map<String, Value>;
 
@@ -441,8 +441,8 @@ mod tests {
     use tokio::sync::Notify;
 
     use super::*;
-    use crate::config_file::tests::TempDir;
-    use crate::config_file::{ConfigFile, defaults};
+    use crate::files::config_file::tests::TempDir;
+    use crate::files::config_file::{ConfigFile, defaults};
     use crate::hub::Hub;
 
     fn state(config: Config, telemetry: Snapshot) -> State {
@@ -845,7 +845,7 @@ mod tests {
         let shell = |args: &'static str, to: &str| {
             let mut words: Vec<String> = args.split_whitespace().map(str::to_string).collect();
             words.extend(["--to".into(), to.to_string()]);
-            tokio::task::spawn_blocking(move || crate::telemetry_cli::run(&words))
+            tokio::task::spawn_blocking(move || crate::vehicle::telemetry_cli::run(&words))
         };
 
         assert_eq!(
@@ -857,8 +857,9 @@ mod tests {
             Some(json!({ "gear": "R", "gps": { "lat": 53.59 } }))
         );
         let posted = to.clone();
-        let refused =
-            tokio::task::spawn_blocking(move || crate::telemetry_cli::post(&posted, &json!([1])));
+        let refused = tokio::task::spawn_blocking(move || {
+            crate::vehicle::telemetry_cli::post(&posted, &json!([1]))
+        });
         assert!(refused.await.unwrap().unwrap_err().contains("400"));
         assert!(pushed.try_recv().is_err());
     }

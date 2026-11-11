@@ -7,9 +7,9 @@ use livi_cp::manager::{CpCmd, CpHandle};
 use livi_cp::vehicle_state::{GAUGE_KEYS, Notice};
 use serde_json::{Map, Value};
 
-use crate::aa_telemetry::{LOW_FUEL_PCT, gear};
-use crate::nmea::{self, Position};
-use crate::telemetry::{CLIMATE, NOTIFICATION, SOURCE};
+use crate::gnss::nmea::{self, Position};
+use crate::vehicle::aa_telemetry::{LOW_FUEL_PCT, gear};
+use crate::vehicle::telemetry::{CLIMATE, NOTIFICATION, SOURCE};
 
 pub const FROM_CARPLAY: &str = "carplay";
 
@@ -217,7 +217,7 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::*;
-    use crate::config_file::tests::TempDir;
+    use crate::files::config_file::tests::TempDir;
 
     fn obj(v: Value) -> Map<String, Value> {
         v.as_object().cloned().unwrap_or_default()

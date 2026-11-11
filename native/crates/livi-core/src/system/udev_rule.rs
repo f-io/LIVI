@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use crate::privileged::Privileged;
+use crate::system::privileged::Privileged;
 
 const RULE_FILE: &str = "/etc/udev/rules.d/99-LIVI.rules";
 const TEMPLATE: &str = "99-LIVI.rules.template";

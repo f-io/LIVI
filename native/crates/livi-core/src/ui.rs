@@ -74,7 +74,7 @@ fn command(cmd: &UiCmd, core_socket: &Path, ui: Option<&Ui>) -> Command {
             None => c.env_remove("LIVI_RENDER_NODE"),
         };
     }
-    crate::child::with_lifeline(&mut c)
+    crate::system::child::with_lifeline(&mut c)
         .process_group(0)
         .kill_on_drop(true);
     c
@@ -110,11 +110,11 @@ async fn run(
             }
         };
         println!("[core] UI started");
-        let _lifeline = crate::child::hold_lifeline(&mut child);
+        let _lifeline = crate::system::child::hold_lifeline(&mut child);
         let status = tokio::select! {
             status = child.wait() => status,
             _ = stop.changed() => {
-                crate::child::terminate(&mut child, STOP_GRACE, true).await;
+                crate::system::child::terminate(&mut child, STOP_GRACE, true).await;
                 return;
             }
         };

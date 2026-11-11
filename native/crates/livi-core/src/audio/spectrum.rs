@@ -133,8 +133,8 @@ mod tests {
     use livi_host_proto::ops::{OP_VISUALIZER, REPLY_VISUALIZER};
 
     use super::*;
-    use crate::config_file::defaults;
-    use crate::config_file::tests::TempDir;
+    use crate::files::config_file::defaults;
+    use crate::files::config_file::tests::TempDir;
 
     struct FakeHost {
         stream: UnixStream,

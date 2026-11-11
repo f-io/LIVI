@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 use super::SET_TIME_HELPER;
 use super::tz_data::{PACKED, ZONES};
-use crate::privileged::sudo;
+use crate::system::privileged::sudo;
 
 const ZONEINFO: &str = "/usr/share/zoneinfo";
 

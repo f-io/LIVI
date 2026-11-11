@@ -18,7 +18,7 @@ use livi_media::planes::{ClusterPlanes, Crop, MainPlane, crop_for};
 use tokio::sync::{broadcast, mpsc, watch};
 
 use crate::devices::Shared;
-use crate::hands_free::{Back, Io};
+use crate::projection::hands_free::{Back, Io};
 
 const SCO_RATE: u32 = 8000;
 const SCO_CHANNELS: u32 = 1;
@@ -26,7 +26,7 @@ const CALL_TAG: &str = "call";
 
 pub fn codecs(probe: &Probe) -> Codecs {
     Codecs {
-        hevc: crate::carplay::offers_hevc(probe),
+        hevc: crate::projection::carplay::offers_hevc(probe),
         vp9: probe.get(VideoCodec::Vp9).hw,
         av1: probe.get(VideoCodec::Av1).hw,
     }
@@ -346,7 +346,7 @@ impl AaMedia for GstAaMedia {
             return;
         }
         let cfg = self.state.borrow().config.clone();
-        if crate::carplay::cluster_displayed(&cfg) {
+        if crate::projection::carplay::cluster_displayed(&cfg) {
             self.clusters.set_crop(crop_for(
                 (width, height),
                 (cfg.cluster_width, cfg.cluster_height),
@@ -555,8 +555,8 @@ mod tests {
     };
 
     use super::*;
-    use crate::config_file::defaults;
-    use crate::config_file::tests::TempDir;
+    use crate::files::config_file::defaults;
+    use crate::files::config_file::tests::TempDir;
 
     fn route(kind: u8, target: u32, active: bool) -> Vec<u8> {
         let mut v = vec![kind];

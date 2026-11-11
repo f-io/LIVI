@@ -223,7 +223,7 @@ pub fn accessory_id(wifi_interface: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config_file::tests::TempDir;
+    use crate::files::config_file::tests::TempDir;
 
     fn write(path: &Path, text: &str) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();

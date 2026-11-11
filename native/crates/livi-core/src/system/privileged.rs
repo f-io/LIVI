@@ -160,7 +160,7 @@ impl Privileged {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config_file::tests::TempDir;
+    use crate::files::config_file::tests::TempDir;
 
     fn privileged(dir: &TempDir) -> Privileged {
         Privileged {

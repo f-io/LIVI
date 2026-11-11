@@ -53,7 +53,7 @@ pub fn prepare() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config_file::tests::TempDir;
+    use crate::files::config_file::tests::TempDir;
 
     #[test]
     fn the_roles_are_written_once() {

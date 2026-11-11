@@ -13,74 +13,44 @@ use livi_core_proto::state::{Front, PerScreen, State};
 use tokio::net::UnixListener;
 use tokio::sync::Notify;
 
-mod aa_telemetry;
-mod airplay;
-mod android_auto;
-#[cfg_attr(target_os = "android", path = "audio_devices/android.rs")]
-mod audio_devices;
-mod blinker;
+mod audio;
 mod camera;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-mod car_bridge;
-mod carplay;
-mod child;
-mod config_file;
-mod cp_radio;
-mod cp_telemetry;
 mod devices;
 mod dongle;
+mod files;
 mod fonts;
 mod gnss;
-mod gvfs_guard;
-mod hands_free;
 mod helper;
-mod host;
-mod host_output;
-mod host_setup;
 mod http;
 mod hub;
-mod hwaddr;
-mod kiosk_unit;
-pub mod log_file;
 mod mfi;
-mod nav_text;
-mod nmea;
-pub mod paths;
-pub mod power;
-mod privileged;
 mod projection;
 mod radio;
 pub mod resources;
 mod server;
 mod services;
-mod spectrum;
-mod state_files;
-mod status_file;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-mod system_volume;
-mod telemetry;
-pub mod telemetry_cli;
-mod theme_catalog;
-mod udev_rule;
+mod system;
 mod ui;
 mod update;
-mod wifi_ap;
-mod wifi_options;
+mod vehicle;
 
-use config_file::{CAR_NAME_MAX, ConfigFile, HostFacts};
 use devices::Shared;
+use files::config_file::{CAR_NAME_MAX, ConfigFile, HostFacts};
+pub use files::log_file;
+pub use files::paths::Paths;
 pub use helper::Helper;
-#[cfg(target_os = "android")]
-pub use host::set_screen;
 use hub::Hub;
-#[cfg(target_os = "android")]
-pub use hwaddr::set_bt_mac;
 pub use livi_media::gst_host::{EmbeddedHost, MediaHost};
-pub use paths::Paths;
 pub use resources::Resources;
 use server::Core;
 use services::Services;
+#[cfg(target_os = "android")]
+pub use system::host::set_screen;
+#[cfg(target_os = "android")]
+pub use system::hwaddr::set_bt_mac;
+pub use system::power;
 pub use update::{Install, Installer};
+pub use vehicle::telemetry_cli;
 
 pub enum Exit {
     Quit,
@@ -98,7 +68,7 @@ impl Instance {
         private_dir(&paths.runtime)?;
         let lock = lock_instance(&paths.lock())?;
         if let Some(user_data) = paths.config.parent() {
-            log_file::start(&user_data.join("log"));
+            files::log_file::start(&user_data.join("log"));
         }
         Ok(Self { paths, _lock: lock })
     }
@@ -119,8 +89,8 @@ pub async fn run(
     let paths = &instance.paths;
 
     let host = HostFacts {
-        car_name: host::hostname().and_then(|h| host::car_name(&h, CAR_NAME_MAX)),
-        panel_px: host::panel_native_px(),
+        car_name: system::host::hostname().and_then(|h| system::host::car_name(&h, CAR_NAME_MAX)),
+        panel_px: system::host::panel_native_px(),
     };
     let config_file = ConfigFile::new(paths.config.clone(), paths.config_backup.clone());
     let config = config_file.load(&host);
@@ -129,7 +99,7 @@ pub async fn run(
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_default();
-    let saved = state_files::saved(&user_data);
+    let saved = files::state_files::saved(&user_data);
     let resume_radio = saved.radio;
     let start = projection::start_page(&config, saved.ui_path.as_deref());
     let wants = projection::first_wants(&start);
@@ -176,50 +146,50 @@ pub async fn run(
     println!("[core] listening on {}", socket.display());
 
     tokio::spawn(dongle::run(core.hub.clone(), dongle_asks));
-    tokio::spawn(wifi_options::follow(core.clone()));
+    tokio::spawn(system::wifi_options::follow(core.clone()));
     let (inside, inside_rx) = tokio::sync::mpsc::unbounded_channel();
-    tokio::spawn(telemetry::run(core.clone(), inside_rx, saved));
+    tokio::spawn(vehicle::telemetry::run(core.clone(), inside_rx, saved));
     tokio::spawn(gnss::run(core.clone(), inside.clone()));
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    tokio::spawn(car_bridge::run(core.clone(), inside.clone()));
+    tokio::spawn(vehicle::car_bridge::run(core.clone(), inside.clone()));
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    tokio::spawn(system_volume::follow(core.clone()));
+    tokio::spawn(audio::system_volume::follow(core.clone()));
     tokio::spawn(update::run(
         core.clone(),
         update_asks,
         res.installer.clone(),
     ));
     tokio::spawn(fonts::follow(core.clone(), user_data.join("fonts")));
-    state_files::start(&core, core.activity(), &user_data);
-    tokio::spawn(audio_devices::follow(
+    files::state_files::start(&core, core.activity(), &user_data);
+    tokio::spawn(audio::audio_devices::follow(
         core.hub.clone(),
         res.gstreamer.clone(),
         core.shared.clone(),
     ));
-    host_setup::prepare();
+    system::host_setup::prepare();
     let privileged = res
         .helper_bin()
         .zip(res.templates.clone())
-        .map(|(helper, templates)| privileged::Privileged {
+        .map(|(helper, templates)| system::privileged::Privileged {
             templates,
             helper: helper::resolve_bin(helper, &user_data),
             helper_named: user_data.join("driver/livi-helperd"),
             user_data: user_data.clone(),
         });
     if let Some(privileged) = privileged {
-        if udev_rule::ensure(&privileged).await {
+        if system::udev_rule::ensure(&privileged).await {
             return Ok(Exit::Restart(None));
         }
-        if kiosk_unit::ensure(&privileged).await {
+        if system::kiosk_unit::ensure(&privileged).await {
             return Ok(Exit::Quit);
         }
-        tokio::spawn(gvfs_guard::start(privileged.clone()));
-        if cfg!(target_os = "linux") && wifi_ap::wanted(&core.hub.config()) {
+        tokio::spawn(system::gvfs_guard::start(privileged.clone()));
+        if cfg!(target_os = "linux") && system::wifi_ap::wanted(&core.hub.config()) {
             core.ap_ready().send_replace(false);
         }
-        tokio::spawn(wifi_ap::follow(core.clone(), privileged));
+        tokio::spawn(system::wifi_ap::follow(core.clone(), privileged));
     }
-    host_output::prepare(&core.hub).await;
+    audio::host_output::prepare(&core.hub).await;
     let (settings, mut patches) = tokio::sync::mpsc::unbounded_channel::<serde_json::Value>();
     let saving = core.clone();
     tokio::spawn(async move {
@@ -246,10 +216,10 @@ pub async fn run(
         _ = stop => {}
         _ = quit.notified() => println!("[core] stopping"),
     }
-    let _ = tokio::time::timeout(Duration::from_secs(2), gvfs_guard::stop()).await;
+    let _ = tokio::time::timeout(Duration::from_secs(2), system::gvfs_guard::stop()).await;
     goodbye(&core).await;
     services.stop().await;
-    let _ = tokio::time::timeout(Duration::from_secs(2), wifi_ap::release_for_quit()).await;
+    let _ = tokio::time::timeout(Duration::from_secs(2), system::wifi_ap::release_for_quit()).await;
     let _ = fs::remove_file(&socket);
     Ok(if core.restart.load(Ordering::SeqCst) {
         Exit::Restart(
@@ -258,7 +228,7 @@ pub async fn run(
                 .unwrap_or_else(|e| e.into_inner())
                 .take(),
         )
-    } else if core.quit_asked.load(Ordering::SeqCst) && power::owns_host() {
+    } else if core.quit_asked.load(Ordering::SeqCst) && system::power::owns_host() {
         Exit::PowerOff
     } else {
         Exit::Quit
@@ -288,7 +258,7 @@ fn lock_instance(path: &Path) -> Result<File, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config_file::tests::TempDir;
+    use crate::files::config_file::tests::TempDir;
 
     #[test]
     fn a_second_core_finds_the_lock_taken() {

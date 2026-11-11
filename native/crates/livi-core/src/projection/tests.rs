@@ -13,7 +13,7 @@ use serde_json::json;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use super::*;
-use crate::config_file::tests::TempDir;
+use crate::files::config_file::tests::TempDir;
 
 struct Rig {
     dir: TempDir,

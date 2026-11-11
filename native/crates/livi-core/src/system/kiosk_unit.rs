@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use crate::privileged::Privileged;
+use crate::system::privileged::Privileged;
 
 const UNIT_FILE: &str = "/etc/systemd/system/livi-kiosk.service";
 const TEMPLATE: &str = "livi-kiosk.service.template";

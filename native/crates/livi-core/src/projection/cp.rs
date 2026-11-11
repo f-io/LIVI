@@ -146,7 +146,9 @@ impl Projection {
                 }
             }
             CpEvent::Radio { command, .. } => {
-                if let (Some(radio), Some(ask)) = (&self.radio, crate::cp_radio::ask(command)) {
+                if let (Some(radio), Some(ask)) =
+                    (&self.radio, crate::projection::cp_radio::ask(command))
+                {
                     let _ = radio.send(ask);
                 }
             }

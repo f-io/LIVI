@@ -14,8 +14,8 @@ use livi_link_host::link::CHOICE;
 use tokio::sync::watch;
 
 use crate::hub::Hub;
-use crate::hwaddr;
 use crate::projection::DongleAsks;
+use crate::system::hwaddr;
 
 const POLL: Duration = Duration::from_millis(1500);
 const RATES_EVERY: Duration = Duration::from_secs(5);
@@ -393,7 +393,7 @@ pub async fn run(hub: Arc<Hub>, mut asks: DongleAsks) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config_file::defaults;
+    use crate::files::config_file::defaults;
 
     fn status(pairs: &[(&str, &str)]) -> Status {
         pairs

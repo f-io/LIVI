@@ -13,10 +13,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use tokio::sync::watch;
 
+use crate::files::status_file::{self, Activity};
 use crate::radio::Band;
 use crate::server::Core;
-use crate::status_file::{self, Activity};
-use crate::telemetry::CLIMATE;
+use crate::vehicle::telemetry::CLIMATE;
 
 pub const DIR: &str = "state";
 const MOVED: [&str; 5] = [
@@ -342,8 +342,8 @@ mod tests {
     use livi_core_proto::state::{Front, PerScreen};
 
     use super::*;
-    use crate::config_file::defaults;
-    use crate::config_file::tests::TempDir;
+    use crate::files::config_file::defaults;
+    use crate::files::config_file::tests::TempDir;
 
     fn state(telemetry: Value) -> State {
         State {

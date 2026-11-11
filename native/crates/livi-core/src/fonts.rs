@@ -277,7 +277,7 @@ pub async fn follow(core: Arc<Core>, dir: PathBuf) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config_file::tests::TempDir;
+    use crate::files::config_file::tests::TempDir;
 
     #[test]
     fn every_script_has_a_font() {

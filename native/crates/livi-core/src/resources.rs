@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn a_build_in_a_checkout_finds_the_checkout() {
-        let dir = crate::config_file::tests::TempDir::new();
+        let dir = crate::files::config_file::tests::TempDir::new();
         let release = dir.0.join("out/bin");
         std::fs::create_dir_all(&release).unwrap();
         std::fs::create_dir_all(dir.0.join("native")).unwrap();
@@ -275,7 +275,7 @@ mod tests {
 
     #[test]
     fn the_bundled_libva_only_goes_first_when_asked_for() {
-        let dir = crate::config_file::tests::TempDir::new();
+        let dir = crate::files::config_file::tests::TempDir::new();
         std::fs::create_dir_all(dir.0.join("lib/libva-compat")).unwrap();
         let libs = |compat| {
             gst_env_with(&dir.0, compat)

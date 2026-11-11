@@ -6,7 +6,7 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Stdio;
 
-use crate::privileged::{Privileged, sudo, sudo_grants, username};
+use crate::system::privileged::{Privileged, sudo, sudo_grants, username};
 
 const GUARD: &str = "/usr/local/lib/livi/gvfs-phone-guard.sh";
 const MARKER: &str = "gvfs-guard-v1.installed";
@@ -53,7 +53,7 @@ pub async fn start(p: Privileged) {
         return;
     }
     let rule = rule(&username());
-    if !installed(&p, &rule).await && !crate::power::owns_host() && monitors_present() {
+    if !installed(&p, &rule).await && !crate::system::power::owns_host() && monitors_present() {
         if p.helper_installs("install-gvfs-guard", &[("script", SCRIPT), ("rule", &rule)])
             .await
         {

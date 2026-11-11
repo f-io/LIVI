@@ -3,7 +3,7 @@
 // Additional terms: see NOTICE
 
 mod clock;
-mod nmea;
+pub mod nmea;
 mod port;
 mod receiver;
 pub mod timezone;
@@ -28,11 +28,11 @@ use receiver::{DEFAULT_BAUD_RATE, DEFAULT_DEVICE, Output, Poll, Receiver};
 
 const SET_TIME_HELPER: &str = "/usr/local/lib/livi/livi-set-time.sh";
 
-fn latin1(bytes: &[u8]) -> String {
+pub(crate) fn latin1(bytes: &[u8]) -> String {
     bytes.iter().copied().map(char::from).collect()
 }
 
-fn trim(text: &str) -> &str {
+pub(crate) fn trim(text: &str) -> &str {
     text.trim_matches([' ', '\t', '\n', '\u{b}', '\u{c}', '\r', '\u{a0}'])
 }
 
@@ -347,7 +347,7 @@ mod tests {
     use livi_core_proto::config::defaults;
 
     use super::*;
-    use crate::config_file::tests::TempDir;
+    use crate::files::config_file::tests::TempDir;
     use crate::gnss::info::{FixMode, FixQuality};
 
     const GGA: &[u8] = b"$GPGGA,123519.00,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*69\r\n";

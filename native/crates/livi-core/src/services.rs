@@ -20,15 +20,15 @@ use tokio::net::TcpListener;
 use tokio::process::Child;
 use tokio::sync::{Notify, mpsc, oneshot, watch};
 
-use crate::android_auto::{self, GstAaMedia};
-use crate::carplay::{ConfigSource, GstMedia};
+use crate::audio::spectrum;
 use crate::devices::{Devices, Shared};
+use crate::files::paths::Paths;
 use crate::helper::{self, Helper, HelperSupervisor, Spec};
 use crate::hub::Hub;
-use crate::paths::Paths;
+use crate::projection::android_auto::{self, GstAaMedia};
+use crate::projection::carplay::{ConfigSource, GstMedia};
 use crate::projection::{Drivers, Projection, UiAsks, UiCommand};
 use crate::resources::{Resources, gst_env};
-use crate::spectrum;
 use crate::ui::UiSupervisor;
 use livi_aa_stack::helper_sock::AaHelperSock;
 use livi_media::compositor::{self, CompositorControl, Ui, backdrop_hex};
@@ -53,14 +53,14 @@ struct Watched {
 fn watch_compositor(mut child: Child, quit: Arc<Notify>) -> Watched {
     let (stop, stop_rx) = oneshot::channel();
     let task = tokio::spawn(async move {
-        let _lifeline = crate::child::hold_lifeline(&mut child);
+        let _lifeline = crate::system::child::hold_lifeline(&mut child);
         tokio::select! {
             status = child.wait() => {
                 println!("[core] the compositor closed: {status:?}");
                 quit.notify_one();
             }
             _ = stop_rx => {
-                crate::child::terminate(&mut child, COMPOSITOR_STOP_GRACE, false).await;
+                crate::system::child::terminate(&mut child, COMPOSITOR_STOP_GRACE, false).await;
             }
         }
     });
@@ -86,7 +86,7 @@ async fn follow_displays(
         let cfg = hub.config();
         let kiosk = cfg.kiosk.main || std::env::var("LIVI_KIOSK").is_ok_and(|v| v == "1");
         if kiosk && let Some((connector, current)) = main {
-            crate::host_output::pin(&connector, &current).await;
+            crate::audio::host_output::pin(&connector, &current).await;
         }
     }
 }
@@ -145,7 +145,7 @@ impl Services {
         let accessory = livi_cp::identity::accessory_id(
             &user_data.join("cp/accessory-id"),
             &identity.pairing_id,
-            || crate::hwaddr::accessory_id(&cfg.wifi_interface),
+            || crate::system::hwaddr::accessory_id(&cfg.wifi_interface),
         );
         let airplay = carplay_listener();
         let airplay_port = airplay
@@ -154,7 +154,7 @@ impl Services {
         let receiver = cfg
             .airplay_enabled
             .then(|| {
-                crate::airplay::bind(
+                crate::projection::airplay::bind(
                     &identity,
                     &accessory,
                     match cfg.car_play_source_version.trim() {
@@ -164,7 +164,9 @@ impl Services {
                 )
             })
             .flatten();
-        let mirror = receiver.as_ref().map(crate::airplay::Receiver::mirror);
+        let mirror = receiver
+            .as_ref()
+            .map(crate::projection::airplay::Receiver::mirror);
         let helper_restart = Arc::new(Notify::new());
         let applied = hub.applied();
         let env_identity = identity.clone();
@@ -220,15 +222,15 @@ impl Services {
         let clusters = ClusterPlanes::new(gst.clone(), ctrl.clone());
         let airplay_plane = MainPlane::airplay(gst.clone(), ctrl.clone());
         let (airplay_events_tx, airplay_events) = mpsc::unbounded_channel();
-        let airplay_audio = crate::airplay::ApAudio::new(gst.clone());
+        let airplay_audio = crate::projection::airplay::ApAudio::new(gst.clone());
         if let Some(receiver) = receiver {
-            crate::airplay::start(
+            crate::projection::airplay::start(
                 receiver,
                 user_data,
                 &identity,
                 &paths.helper.carplay,
                 gst.clone(),
-                crate::airplay::Airplay {
+                crate::projection::airplay::Airplay {
                     plane: airplay_plane.clone(),
                     audio: airplay_audio.clone(),
                     events: airplay_events_tx,
@@ -253,7 +255,7 @@ impl Services {
             asks.spectrum.clone(),
             state.clone(),
         ));
-        tokio::spawn(crate::blinker::run(hub.clone(), gst.clone()));
+        tokio::spawn(crate::vehicle::blinker::run(hub.clone(), gst.clone()));
         tokio::spawn(crate::camera::run(
             hub.clone(),
             gst.clone(),
@@ -353,7 +355,7 @@ fn carplay_listener() -> Option<TcpListener> {
 
 struct CarPlay {
     airplay_events: mpsc::UnboundedReceiver<crate::projection::ApEvent>,
-    airplay_audio: Arc<crate::airplay::ApAudio>,
+    airplay_audio: Arc<crate::projection::airplay::ApAudio>,
     listener: Option<TcpListener>,
     identity: livi_cp::identity::Identity,
     accessory: String,
@@ -410,7 +412,7 @@ impl CarPlay {
         });
         let (events_tx, events) = mpsc::unbounded_channel();
         let cp = livi_cp::manager::start(self.listener, ctx, events_tx);
-        tokio::spawn(crate::cp_radio::run(hub.clone(), cp.clone()));
+        tokio::spawn(crate::projection::cp_radio::run(hub.clone(), cp.clone()));
         let wants = *asks.wants.borrow();
         let shared = Shared::new(&self.sockets.shared);
         tokio::spawn(remote_input(shared.clone(), asks.commands_back.clone()));
@@ -435,7 +437,7 @@ impl CarPlay {
         );
         let (phone_io, phone_asks) = mpsc::unbounded_channel();
         let (phone_answers, phone_back) = mpsc::unbounded_channel();
-        tokio::spawn(crate::android_auto::hands_free_io(
+        tokio::spawn(crate::projection::android_auto::hands_free_io(
             phone_asks,
             aa_media.clone(),
             AaHelperSock::new(&self.sockets.android_auto),
@@ -768,7 +770,7 @@ fn place_carplay(plane: &MainPlane, cfg: &Config) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config_file::defaults;
+    use crate::files::config_file::defaults;
 
     #[tokio::test]
     async fn a_bluetooth_remote_reaches_the_phone_in_front() {

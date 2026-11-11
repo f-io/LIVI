@@ -180,7 +180,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::config_file::defaults;
+    use crate::files::config_file::defaults;
 
     fn hub() -> Hub {
         let livi = PerScreen {

@@ -96,7 +96,7 @@ fn settings(cfg: &Config) -> HelperSettings {
         mfi_files: cfg.car_play_mfi_files.clone(),
         wifi_iface: cfg.wifi_interface.clone(),
         passphrase: cfg.wifi_password.clone(),
-        wifi_type: livi_wifi::Band::setting(crate::wifi_options::band_of(cfg.wifi_type))
+        wifi_type: livi_wifi::Band::setting(crate::system::wifi_options::band_of(cfg.wifi_type))
             .to_string(),
         channel: cfg.wifi_channel,
         country: cfg.country.clone(),
@@ -227,7 +227,7 @@ fn spawn(bin: &Path, spec: &Spec) -> io::Result<Child> {
     if let Some(dir) = bin.parent() {
         cmd.current_dir(dir);
     }
-    crate::child::with_lifeline(&mut cmd)
+    crate::system::child::with_lifeline(&mut cmd)
         .envs((spec.start)().to_env())
         .env(USER_DATA, &spec.user_data)
         .stdout(Stdio::piped())
@@ -306,18 +306,18 @@ async fn run_process(bin: &Path, spec: Spec, mut stop: watch::Receiver<bool>) {
                 return;
             }
         };
-        let _lifeline = crate::child::hold_lifeline(&mut child);
+        let _lifeline = crate::system::child::hold_lifeline(&mut child);
         forward_lines(&mut child);
         tokio::select! {
             status = child.wait() => println!("[core] helper exited: {status:?}"),
             _ = spec.restart.notified() => {
                 println!("[core] restarting the helper for new settings");
-                crate::child::terminate(&mut child, STOP_GRACE, false).await;
+                crate::system::child::terminate(&mut child, STOP_GRACE, false).await;
                 restarts = 0;
                 continue;
             }
             _ = stop.changed() => {
-                crate::child::terminate(&mut child, STOP_GRACE, false).await;
+                crate::system::child::terminate(&mut child, STOP_GRACE, false).await;
                 return;
             }
         }
@@ -341,8 +341,8 @@ mod tests {
     use livi_core_proto::config::WifiBand;
 
     use super::*;
-    use crate::config_file::defaults;
-    use crate::config_file::tests::TempDir;
+    use crate::files::config_file::defaults;
+    use crate::files::config_file::tests::TempDir;
 
     fn identity() -> Identity {
         Identity {

@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
-use crate::nav_text::{self, Language};
+use crate::projection::nav_text::{self, Language};
 use crate::server::Core;
 
 const PRODUCT: &str = "LIVI Bridge";
