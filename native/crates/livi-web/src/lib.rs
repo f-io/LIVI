@@ -80,6 +80,7 @@ fn serve_forever() -> std::io::Result<()> {
     let listener = TcpListener::bind(SocketAddr::V6(addr))?;
     eprintln!("[livi-httpd] listening on [::]:{port} (dual-stack)");
 
+    // SAFETY: SIG_IGN installs no handler code.
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_IGN);
     }
@@ -508,6 +509,7 @@ fn write_chunked(path: &str, data: &[u8], node: &str) -> std::io::Result<()> {
         write_progress(node, written, data.len(), "write");
     }
     f.sync_all()?;
+    // SAFETY: sync has no preconditions.
     unsafe {
         libc::sync();
     }
@@ -570,10 +572,12 @@ fn reboot_soon() -> (&'static str, &'static str, Vec<u8>) {
 fn reboot_after(delay: Duration) {
     thread::spawn(move || {
         thread::sleep(delay);
+        // SAFETY: sync has no preconditions.
         unsafe {
             libc::sync();
         }
         let _ = Command::new("/sbin/reboot").arg("-f").status();
+        // SAFETY: reboot takes a plain command value and touches no memory of ours.
         unsafe {
             libc::reboot(libc::LINUX_REBOOT_CMD_RESTART);
         }
@@ -906,6 +910,10 @@ fn kick_ledd() {
     let Ok(pid) = s.trim().parse::<i32>() else {
         return;
     };
+    if pid <= 0 {
+        return;
+    }
+    // SAFETY: kill takes plain ints and touches no memory of ours.
     unsafe {
         libc::kill(pid, libc::SIGHUP);
     }

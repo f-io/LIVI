@@ -28,6 +28,7 @@ pub struct Responder {
 impl Responder {
     pub fn start(ifname: &str, service: Service) -> io::Result<Self> {
         let name = CString::new(ifname).map_err(io::Error::other)?;
+        // SAFETY: name is a nul-terminated string alive for the call.
         let index = unsafe { libc::if_nametoindex(name.as_ptr()) };
         if index == 0 {
             return Err(io::Error::last_os_error());

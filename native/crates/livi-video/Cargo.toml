@@ -6,3 +6,6 @@ license.workspace = true
 
 [dependencies]
 livi-host-proto.workspace = true
+
+[lints]
+workspace = true

@@ -15,6 +15,9 @@ homepage = "https://f-io.dev"
 authors = ["Lasse Heitgres"]
 license = "GPL-3.0-or-later"
 
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "warn"
+
 [workspace.dependencies]
 # Every crate takes libc from here, so all of them follow the 1.0 API.
 libc = "1.0.0-alpha.5"

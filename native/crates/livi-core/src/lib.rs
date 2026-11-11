@@ -114,6 +114,7 @@ pub async fn run(
     res: Resources,
     stop: impl Future<Output = ()>,
 ) -> Result<Exit, String> {
+    // SAFETY: geteuid has no preconditions.
     let uid = unsafe { libc::geteuid() };
     let paths = &instance.paths;
 

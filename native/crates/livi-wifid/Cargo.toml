@@ -10,3 +10,6 @@ livi-base.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 livi-wifi.workspace = true
 livi-btd.workspace = true
+
+[lints]
+workspace = true

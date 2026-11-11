@@ -15,3 +15,6 @@ nusb = { workspace = true, features = ["tokio"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 nusb-android = { workspace = true, features = ["tokio"] }
+
+[lints]
+workspace = true

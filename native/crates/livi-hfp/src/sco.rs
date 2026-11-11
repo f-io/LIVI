@@ -14,6 +14,7 @@ pub struct Link {
 
 impl Link {
     pub fn read(&self, packet: &mut [u8]) -> std::io::Result<usize> {
+        // SAFETY: fd is open for the call and packet is a writable buffer of packet.len() bytes.
         let n = unsafe {
             libc::read(
                 self.fd.as_raw_fd(),
@@ -27,6 +28,7 @@ impl Link {
     pub fn send(&self, pcm: &[u8]) -> usize {
         pcm.chunks(self.mtu)
             .map(|piece| {
+                // SAFETY: fd is open for the call and piece is readable for piece.len() bytes.
                 let sent = unsafe {
                     libc::send(
                         self.fd.as_raw_fd(),
@@ -65,6 +67,7 @@ mod kernel {
             revents: 0,
         };
         loop {
+            // SAFETY: pfd is a valid pollfd and nfds is 1.
             let rc = unsafe { libc::poll(&raw mut pfd, 1, CONNECT_WAIT_MS) };
             if rc < 0 {
                 let e = std::io::Error::last_os_error();
@@ -89,6 +92,7 @@ mod kernel {
         name: libc::c_int,
         value: &T,
     ) -> std::io::Result<()> {
+        // SAFETY: fd is open for the call and value points to size_of::<T>() readable bytes.
         let rc = unsafe {
             libc::setsockopt(
                 fd.as_raw_fd(),
@@ -117,6 +121,7 @@ mod kernel {
     }
 
     pub fn listen() -> std::io::Result<OwnedFd> {
+        // SAFETY: socket has no memory preconditions.
         let raw = unsafe {
             libc::socket(
                 libc::AF_BLUETOOTH,
@@ -127,11 +132,13 @@ mod kernel {
         if raw < 0 {
             return Err(std::io::Error::last_os_error());
         }
+        // SAFETY: raw is a freshly created fd owned by nothing else.
         let fd = unsafe { OwnedFd::from_raw_fd(raw) };
         let addr = SockaddrSco {
             sco_family: libc::AF_BLUETOOTH as libc::sa_family_t,
             sco_bdaddr: [0; 6],
         };
+        // SAFETY: fd is open for the call and addr is a valid SockaddrSco of the given size.
         let rc = unsafe {
             libc::bind(
                 fd.as_raw_fd(),
@@ -143,6 +150,7 @@ mod kernel {
             return Err(std::io::Error::last_os_error());
         }
         set(&fd, SOL_BLUETOOTH, BT_DEFER_SETUP, &1u32)?;
+        // SAFETY: fd is an open socket for the call.
         if unsafe { libc::listen(fd.as_raw_fd(), 1) } != 0 {
             return Err(std::io::Error::last_os_error());
         }
@@ -155,6 +163,7 @@ mod kernel {
             sco_bdaddr: [0; 6],
         };
         let mut size = std::mem::size_of::<SockaddrSco>() as libc::socklen_t;
+        // SAFETY: listen is open for the call; addr and size are valid, size holds addr's size.
         let raw = unsafe {
             libc::accept4(
                 listen.as_raw_fd(),
@@ -166,15 +175,18 @@ mod kernel {
         if raw < 0 {
             return Err(std::io::Error::last_os_error());
         }
+        // SAFETY: raw is a freshly accepted fd owned by nothing else.
         let fd = unsafe { OwnedFd::from_raw_fd(raw) };
         set(&fd, SOL_BLUETOOTH, BT_VOICE, &VOICE_CVSD_16BIT)?;
         let mut first = [0u8; 1];
+        // SAFETY: fd is open for the call and first is a writable buffer of 1 byte.
         if unsafe { libc::read(fd.as_raw_fd(), first.as_mut_ptr().cast(), 1) } < 0 {
             return Err(std::io::Error::last_os_error());
         }
         connected(&fd)?;
         let mut opts = ScoOptions { mtu: 48 };
         let mut len = std::mem::size_of::<ScoOptions>() as libc::socklen_t;
+        // SAFETY: fd is open for the call, opts and len are valid and len holds opts' size.
         unsafe {
             libc::getsockopt(
                 fd.as_raw_fd(),

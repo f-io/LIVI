@@ -92,30 +92,29 @@ fn root_of(surface: &WlSurface) -> WlSurface {
     root
 }
 
-fn shm_alpha(ptr: *const u8, len: usize, data: BufferData, x: i32, y: i32) -> Option<u8> {
+fn shm_alpha(bytes: &[u8], data: BufferData, x: i32, y: i32) -> Option<u8> {
     if x < 0 || y < 0 || x >= data.width || y >= data.height {
         return None;
     }
     match data.format {
         wl_shm::Format::Argb8888 => {
             let at = data.offset as usize + y as usize * data.stride as usize + x as usize * 4 + 3;
-            (at < len).then(|| unsafe { *ptr.add(at) })
+            bytes.get(at).copied()
         }
         wl_shm::Format::Xrgb8888 => Some(u8::MAX),
         _ => None,
     }
 }
 
-fn shm_all_transparent(ptr: *const u8, len: usize, data: BufferData) -> bool {
+fn shm_all_transparent(bytes: &[u8], data: BufferData) -> bool {
     if data.format != wl_shm::Format::Argb8888 || data.width <= 0 || data.height <= 0 {
         return false;
     }
     let row = data.width as usize * 4;
     let end = data.offset as usize + (data.height as usize - 1) * data.stride as usize + row;
-    if end > len {
+    if end > bytes.len() {
         return false;
     }
-    let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
     (0..data.height as usize).all(|y| {
         let start = data.offset as usize + y * data.stride as usize;
         bytes[start..start + row]
@@ -138,7 +137,16 @@ fn alpha_at(
     );
     let shm = with_renderer_surface_state(surface, |s| {
         let buffer = s.buffer()?;
-        with_buffer_contents(buffer, |ptr, len, data| shm_alpha(ptr, len, data, bx, by)).ok()
+        with_buffer_contents(buffer, |ptr, len, data| {
+            // SAFETY: smithay hands out the mapped shm pool, valid for len bytes during the call.
+            shm_alpha(
+                unsafe { std::slice::from_raw_parts(ptr, len) },
+                data,
+                bx,
+                by,
+            )
+        })
+        .ok()
     })
     .flatten();
     if let Some(alpha) = shm {
@@ -185,7 +193,11 @@ pub fn ui_clear(surface: &WlSurface) -> bool {
     }
     with_renderer_surface_state(surface, |s| {
         let buffer = s.buffer()?;
-        with_buffer_contents(buffer, shm_all_transparent).ok()
+        with_buffer_contents(buffer, |ptr, len, data| {
+            // SAFETY: smithay hands out the mapped shm pool, valid for len bytes during the call.
+            shm_all_transparent(unsafe { std::slice::from_raw_parts(ptr, len) }, data)
+        })
+        .ok()
     })
     .flatten()
     .unwrap_or(false)
@@ -336,30 +348,24 @@ mod tests {
             &[[0, 0, 0, 0], [10, 20, 30, 255]],
             2,
         );
-        assert_eq!(shm_alpha(bytes.as_ptr(), bytes.len(), data, 0, 0), Some(0));
-        assert_eq!(
-            shm_alpha(bytes.as_ptr(), bytes.len(), data, 1, 0),
-            Some(255)
-        );
-        assert_eq!(shm_alpha(bytes.as_ptr(), bytes.len(), data, 2, 0), None);
+        assert_eq!(shm_alpha(&bytes, data, 0, 0), Some(0));
+        assert_eq!(shm_alpha(&bytes, data, 1, 0), Some(255));
+        assert_eq!(shm_alpha(&bytes, data, 2, 0), None);
         let (bytes, data) = shm(wl_shm::Format::Xrgb8888, &[[0, 0, 0, 0]], 1);
-        assert_eq!(
-            shm_alpha(bytes.as_ptr(), bytes.len(), data, 0, 0),
-            Some(255)
-        );
+        assert_eq!(shm_alpha(&bytes, data, 0, 0), Some(255));
     }
 
     #[test]
     fn a_ui_is_clear_only_when_every_pixel_is_transparent() {
         let (bytes, data) = shm(wl_shm::Format::Argb8888, &[[0; 4]; 4], 2);
-        assert!(shm_all_transparent(bytes.as_ptr(), bytes.len(), data));
+        assert!(shm_all_transparent(&bytes, data));
         let (bytes, data) = shm(
             wl_shm::Format::Argb8888,
             &[[0; 4], [0; 4], [0; 4], [0, 0, 0, 1]],
             2,
         );
-        assert!(!shm_all_transparent(bytes.as_ptr(), bytes.len(), data));
+        assert!(!shm_all_transparent(&bytes, data));
         let (bytes, data) = shm(wl_shm::Format::Xrgb8888, &[[0; 4]; 4], 2);
-        assert!(!shm_all_transparent(bytes.as_ptr(), bytes.len(), data));
+        assert!(!shm_all_transparent(&bytes, data));
     }
 }

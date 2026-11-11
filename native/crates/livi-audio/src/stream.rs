@@ -457,8 +457,10 @@ pub mod receiver {
     }
 
     fn set_realtime() {
+        // SAFETY: an all-zero sched_param is valid.
         let mut param: libc::sched_param = unsafe { std::mem::zeroed() };
         param.sched_priority = 10;
+        // SAFETY: param is a valid sched_param for the calling thread.
         let rc =
             unsafe { libc::pthread_setschedparam(libc::pthread_self(), libc::SCHED_FIFO, &param) };
         if rc != 0 {

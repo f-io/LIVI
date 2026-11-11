@@ -24,3 +24,6 @@ nusb-android = { workspace = true, features = ["tokio"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "net"] }
+
+[lints]
+workspace = true

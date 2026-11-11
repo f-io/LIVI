@@ -86,6 +86,7 @@ impl std::fmt::Debug for Client {
 }
 
 pub fn socket_path() -> PathBuf {
+    // SAFETY: getuid has no preconditions.
     livi_core_proto::runtime::core_socket(unsafe { libc::getuid() })
 }
 

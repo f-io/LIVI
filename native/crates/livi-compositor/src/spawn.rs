@@ -10,6 +10,7 @@ use nix::unistd::Pid;
 use crate::state::LiviState;
 
 pub fn spawn_startup(state: &mut LiviState) {
+    // SAFETY: SigIgn installs no handler code.
     unsafe {
         let _ = signal(Signal::SIGCHLD, SigHandler::SigIgn);
     }

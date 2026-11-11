@@ -34,6 +34,7 @@ pub fn plane_surface(env: *mut JNIEnv, plane: u64, surface: jobject) {
     let window = if surface.is_null() {
         0
     } else {
+        // SAFETY: env is the calling thread's JNIEnv and surface a non-null Surface.
         unsafe { ANativeWindow_fromSurface(env, surface) as usize }
     };
     let mut held = WINDOWS.lock().unwrap_or_else(|e| e.into_inner());
@@ -47,6 +48,7 @@ pub fn plane_surface(env: *mut JNIEnv, plane: u64, surface: jobject) {
         held.insert(plane, window)
     };
     if let Some(before) = before.filter(|&w| w != 0) {
+        // SAFETY: before was acquired by ANativeWindow_fromSurface and the plane no longer uses it.
         unsafe { ANativeWindow_release(before as *mut c_void) };
     }
 }

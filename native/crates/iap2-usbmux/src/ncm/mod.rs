@@ -391,6 +391,7 @@ fn read_within(fd: &OwnedFd, buf: &mut [u8]) -> io::Result<Option<usize>> {
         events: libc::POLLIN,
         revents: 0,
     };
+    // SAFETY: pfd is one valid pollfd for an fd that stays open for the call.
     let ready = unsafe { libc::poll(&mut pfd, 1, POLL.as_millis() as libc::c_int) };
     if ready < 0 {
         let e = io::Error::last_os_error();
@@ -403,6 +404,7 @@ fn read_within(fd: &OwnedFd, buf: &mut [u8]) -> io::Result<Option<usize>> {
     if ready == 0 {
         return Ok(None);
     }
+    // SAFETY: fd stays open for the call and buf is writable for buf.len() bytes.
     let n = unsafe { libc::read(fd.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
     if n < 0 {
         let e = io::Error::last_os_error();
@@ -415,6 +417,7 @@ fn read_within(fd: &OwnedFd, buf: &mut [u8]) -> io::Result<Option<usize>> {
 }
 
 fn write_all(fd: &OwnedFd, buf: &[u8]) -> io::Result<()> {
+    // SAFETY: fd stays open for the call and buf is readable for buf.len() bytes.
     let n = unsafe { libc::write(fd.as_raw_fd(), buf.as_ptr().cast(), buf.len()) };
     if n < 0 {
         Err(io::Error::last_os_error())

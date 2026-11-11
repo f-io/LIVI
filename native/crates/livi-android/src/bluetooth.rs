@@ -100,6 +100,7 @@ extern "system" fn Java_dev_fio_livi_LiviBluetooth_phone<'caller>(
         2 => Service::AndroidAuto,
         _ => Service::Iap,
     };
+    // SAFETY: Java detached this socket fd and hands its ownership over.
     let fd = unsafe { OwnedFd::from_raw_fd(fd) };
     let peer = env
         .with_env(|env| peer.try_to_string(env))

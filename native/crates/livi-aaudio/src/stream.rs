@@ -44,11 +44,14 @@ pub(crate) struct Stream {
     bpf: usize,
 }
 
+// SAFETY: an AAudioStream is not tied to the thread that opened it.
 unsafe impl Send for Stream {}
+// SAFETY: AAudio allows control calls from any thread; the element reads or writes from one.
 unsafe impl Sync for Stream {}
 
 impl Drop for Stream {
     fn drop(&mut self) {
+        // SAFETY: inner is the open stream this value owns, closed once here.
         unsafe {
             ffi::AAudioStream_requestStop(self.inner);
             ffi::AAudioStream_close(self.inner);
@@ -60,6 +63,7 @@ struct Builder(*mut ffi::AAudioStreamBuilder);
 
 impl Drop for Builder {
     fn drop(&mut self) {
+        // SAFETY: the builder is owned here and deleted once.
         unsafe {
             ffi::AAudioStreamBuilder_delete(self.0);
         }
@@ -71,6 +75,7 @@ fn failed(what: &str, e: impl std::fmt::Debug) -> gst::LoggableError {
 }
 
 fn text(result: ffi::aaudio_result_t) -> String {
+    // SAFETY: AAudio returns a static nul-terminated string for every result.
     let name = unsafe { std::ffi::CStr::from_ptr(ffi::AAudio_convertResultToText(result)) };
     name.to_string_lossy().into_owned()
 }
@@ -104,11 +109,13 @@ impl Stream {
         let rate = i32::try_from(info.rate()).map_err(|e| failed("rate", e))?;
         let channels = i32::try_from(info.channels()).map_err(|e| failed("channels", e))?;
         let mut raw = ptr::null_mut();
+        // SAFETY: raw is a valid out pointer.
         checked("builder", unsafe {
             ffi::AAudio_createStreamBuilder(&mut raw)
         })?;
         let builder = Builder(raw);
         let mut inner = ptr::null_mut();
+        // SAFETY: builder.0 is a live builder and inner a valid out pointer.
         unsafe {
             let side = if sink {
                 ffi::AAUDIO_DIRECTION_OUTPUT
@@ -141,7 +148,9 @@ impl Stream {
             direction,
             bpf: info.bpf() as usize,
         };
+        // SAFETY: inner is the stream openStream just returned.
         checked("start", unsafe { ffi::AAudioStream_requestStart(inner) })?;
+        // SAFETY: inner is an open stream.
         let got = unsafe { ffi::AAudioStream_getDeviceId(inner) };
         if wanted != UNSPECIFIED && got != wanted {
             eprintln!("[aaudio] asked for device {wanted}, Android chose {got}");
@@ -163,6 +172,7 @@ impl Stream {
     }
 
     fn resume(&self) {
+        // SAFETY: inner is an open stream for the life of self.
         let state = unsafe { ffi::AAudioStream_getState(self.inner) } as u32;
         if matches!(
             state,
@@ -173,6 +183,7 @@ impl Stream {
                 | ffi::AAUDIO_STREAM_STATE_STOPPING
                 | ffi::AAUDIO_STREAM_STATE_STOPPED
         ) {
+            // SAFETY: inner is an open stream for the life of self.
             unsafe {
                 ffi::AAudioStream_requestStart(self.inner);
             }
@@ -182,6 +193,7 @@ impl Stream {
     pub(crate) fn write(&self, data: &[u8]) -> Result<usize, Failure> {
         self.resume();
         let frames = self.frames(data.len())?;
+        // SAFETY: data is readable for frames * bpf bytes.
         let result = unsafe {
             ffi::AAudioStream_write(self.inner, data.as_ptr().cast(), frames, TIMEOUT_NS)
         };
@@ -191,6 +203,7 @@ impl Stream {
     pub(crate) fn read(&self, data: &mut [u8]) -> Result<usize, Failure> {
         self.resume();
         let frames = self.frames(data.len())?;
+        // SAFETY: data is writable for frames * bpf bytes.
         let result = unsafe {
             ffi::AAudioStream_read(self.inner, data.as_mut_ptr().cast(), frames, TIMEOUT_NS)
         };
@@ -198,6 +211,7 @@ impl Stream {
     }
 
     pub(crate) fn queued(&self) -> u32 {
+        // SAFETY: inner is an open stream for the life of self.
         let queued = unsafe {
             ffi::AAudioStream_getFramesWritten(self.inner)
                 - ffi::AAudioStream_getFramesRead(self.inner)
@@ -209,6 +223,7 @@ impl Stream {
         let passing = passing as i32;
         let mut state = passing;
         while state == passing {
+            // SAFETY: inner is open and state is a valid out pointer.
             let result = unsafe {
                 ffi::AAudioStream_waitForStateChange(self.inner, passing, &mut state, TIMEOUT_NS)
             };
@@ -219,6 +234,7 @@ impl Stream {
     }
 
     pub(crate) fn drain(&self) {
+        // SAFETY: inner is an open stream for the life of self.
         unsafe {
             match self.direction {
                 Direction::Output => {

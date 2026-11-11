@@ -7,3 +7,6 @@ license.workspace = true
 [dependencies]
 livi-base.workspace = true
 livi-net.workspace = true
+
+[lints]
+workspace = true

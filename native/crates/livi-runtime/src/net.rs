@@ -17,24 +17,29 @@ pub fn wlan_mac(iface: &str) -> Option<String> {
 pub fn wlan_mac(iface: &str) -> Option<String> {
     let want = std::ffi::CString::new(iface).ok()?;
     let mut ifap: *mut libc::ifaddrs = std::ptr::null_mut();
+    // SAFETY: ifap is a valid out-pointer for getifaddrs.
     if unsafe { libc::getifaddrs(&mut ifap) } != 0 {
         return None;
     }
     let mut out = None;
     let mut cur = ifap;
     while !cur.is_null() {
+        // SAFETY: cur is a non-null node of the getifaddrs list, which lives until freeifaddrs.
         let ifa = unsafe { &*cur };
         cur = ifa.ifa_next;
         if ifa.ifa_addr.is_null() || ifa.ifa_name.is_null() {
             continue;
         }
+        // SAFETY: ifa_name was checked non-null and is a NUL-terminated string of the live list.
         if unsafe { std::ffi::CStr::from_ptr(ifa.ifa_name) } != want.as_c_str() {
             continue;
         }
+        // SAFETY: ifa_addr was checked non-null and points to a sockaddr of the live list.
         let sa = unsafe { &*ifa.ifa_addr };
         if i32::from(sa.sa_family) != libc::AF_LINK {
             continue;
         }
+        // SAFETY: sa_family is AF_LINK, so ifa_addr points to a sockaddr_dl.
         let sdl = unsafe { &*(ifa.ifa_addr as *const libc::sockaddr_dl) };
         if sdl.sdl_alen != 6 {
             continue;
@@ -46,6 +51,7 @@ pub fn wlan_mac(iface: &str) -> Option<String> {
         out = Some(mac.join(":"));
         break;
     }
+    // SAFETY: ifap came from a successful getifaddrs and is not used afterwards.
     unsafe { libc::freeifaddrs(ifap) };
     out
 }
@@ -65,25 +71,30 @@ pub fn wlan_link_local(iface: &str) -> Option<String> {
 #[cfg(not(target_os = "linux"))]
 pub fn wlan_link_local(iface: &str) -> Option<String> {
     let mut ifap: *mut libc::ifaddrs = std::ptr::null_mut();
+    // SAFETY: ifap is a valid out-pointer for getifaddrs.
     if unsafe { libc::getifaddrs(&mut ifap) } != 0 {
         return None;
     }
     let mut out = None;
     let mut cur = ifap;
     while !cur.is_null() {
+        // SAFETY: cur is a non-null node of the getifaddrs list, which lives until freeifaddrs.
         let ifa = unsafe { &*cur };
         cur = ifa.ifa_next;
         if ifa.ifa_addr.is_null() || ifa.ifa_name.is_null() {
             continue;
         }
+        // SAFETY: ifa_name was checked non-null and is a NUL-terminated string of the live list.
         let name = unsafe { std::ffi::CStr::from_ptr(ifa.ifa_name) }.to_str();
         if name.map(device) != Ok(iface) {
             continue;
         }
+        // SAFETY: ifa_addr was checked non-null and points to a sockaddr of the live list.
         let sa = unsafe { &*ifa.ifa_addr };
         if i32::from(sa.sa_family) != libc::AF_INET6 {
             continue;
         }
+        // SAFETY: sa_family is AF_INET6, so ifa_addr points to a sockaddr_in6.
         let sin6 = unsafe { &*(ifa.ifa_addr as *const libc::sockaddr_in6) };
         let mut a = sin6.sin6_addr.s6_addr;
         if a[0] == 0xfe && (a[1] & 0xc0) == 0x80 {
@@ -93,6 +104,7 @@ pub fn wlan_link_local(iface: &str) -> Option<String> {
             break;
         }
     }
+    // SAFETY: ifap came from a successful getifaddrs and is not used afterwards.
     unsafe { libc::freeifaddrs(ifap) };
     out
 }
@@ -123,23 +135,28 @@ fn first_ipv4(
     wanted: impl Fn(&str, std::net::Ipv4Addr) -> bool,
 ) -> Option<(String, std::net::Ipv4Addr)> {
     let mut ifap: *mut libc::ifaddrs = std::ptr::null_mut();
+    // SAFETY: ifap is a valid out-pointer for getifaddrs.
     if unsafe { libc::getifaddrs(&mut ifap) } != 0 {
         return None;
     }
     let mut out = None;
     let mut cur = ifap;
     while !cur.is_null() {
+        // SAFETY: cur is a non-null node of the getifaddrs list, which lives until freeifaddrs.
         let ifa = unsafe { &*cur };
         cur = ifa.ifa_next;
         if ifa.ifa_addr.is_null() || ifa.ifa_name.is_null() {
             continue;
         }
+        // SAFETY: ifa_addr was checked non-null and points to a sockaddr of the live list.
         let sa = unsafe { &*ifa.ifa_addr };
         if i32::from(sa.sa_family) != libc::AF_INET {
             continue;
         }
+        // SAFETY: sa_family is AF_INET, so ifa_addr points to a sockaddr_in.
         let sin = unsafe { &*(ifa.ifa_addr as *const libc::sockaddr_in) };
         let own = std::net::Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr));
+        // SAFETY: ifa_name was checked non-null and is a NUL-terminated string of the live list.
         if let Ok(name) = unsafe { std::ffi::CStr::from_ptr(ifa.ifa_name) }
             .to_str()
             .map(device)
@@ -149,6 +166,7 @@ fn first_ipv4(
             break;
         }
     }
+    // SAFETY: ifap came from a successful getifaddrs and is not used afterwards.
     unsafe { libc::freeifaddrs(ifap) };
     out
 }

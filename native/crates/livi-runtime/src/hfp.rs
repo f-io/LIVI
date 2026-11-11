@@ -118,6 +118,7 @@ mod slc {
                 }
             }
             let mut chunk = [0u8; 1024];
+            // SAFETY: fd is open for the call and chunk is writable for chunk.len() bytes.
             let n = unsafe { libc::read(fd.as_raw_fd(), chunk.as_mut_ptr().cast(), chunk.len()) };
             if n <= 0 {
                 println!("[hfp] disconnected");
@@ -156,6 +157,7 @@ mod slc {
             events,
             revents: 0,
         };
+        // SAFETY: pfd is a valid pollfd and nfds is 1.
         let rc = unsafe { libc::poll(&mut pfd, 1, timeout.as_millis() as libc::c_int) };
         rc > 0 && pfd.revents & events != 0
     }
@@ -170,12 +172,14 @@ mod slc {
             events: libc::POLLIN,
             revents: 0,
         };
+        // SAFETY: pfd is a valid pollfd and nfds is 1.
         let rc = unsafe { libc::poll(&mut pfd, 1, 0) };
         rc > 0 && pfd.revents & (libc::POLLHUP | libc::POLLERR) != 0
     }
 
     fn write_all(fd: &OwnedFd, mut data: &[u8]) -> std::io::Result<()> {
         while !data.is_empty() {
+            // SAFETY: fd is open for the call and data is readable for data.len() bytes.
             let n = unsafe { libc::write(fd.as_raw_fd(), data.as_ptr().cast(), data.len()) };
             if n <= 0 {
                 return Err(std::io::Error::last_os_error());

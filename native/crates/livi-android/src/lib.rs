@@ -168,6 +168,7 @@ fn tun(request: &TunRequest) -> Result<OwnedFd, String> {
     if fd < 0 {
         return Err("the VPN service opened no interface".into());
     }
+    // SAFETY: Java detached the tun fd and hands its ownership over.
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }
 

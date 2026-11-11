@@ -97,6 +97,7 @@ static DNS_SD: Mutex<Option<Vec<u32>>> = Mutex::new(Some(Vec::new()));
 #[cfg(target_os = "macos")]
 pub fn stop() {
     for pid in DNS_SD.lock().unwrap().take().unwrap_or_default() {
+        // SAFETY: kill has no memory preconditions.
         unsafe { libc::kill(pid as i32, libc::SIGTERM) };
     }
 }
@@ -424,6 +425,7 @@ fn probe_attempt(ep: &Endpoint, host: &str, is_v6: bool, req: &[u8]) -> std::io:
 
 fn nametoindex(name: &str) -> Option<u32> {
     let cname = std::ffi::CString::new(name).ok()?;
+    // SAFETY: cname is a valid NUL-terminated string for the call.
     let idx = unsafe { libc::if_nametoindex(cname.as_ptr()) };
     if idx == 0 { None } else { Some(idx) }
 }
@@ -495,6 +497,7 @@ fn dns_sd_run(args: &[&str], secs: u64) -> Vec<String> {
         let pid = child.id();
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_secs(secs));
+            // SAFETY: kill has no memory preconditions.
             unsafe { libc::kill(pid as i32, libc::SIGTERM) };
         });
         for line in std::io::BufReader::new(stdout)
@@ -581,10 +584,12 @@ fn ifname_from_index(idx: u32) -> Option<String> {
         return None;
     }
     let mut buf = [0u8; libc::IF_NAMESIZE];
+    // SAFETY: buf holds IF_NAMESIZE bytes as if_indextoname requires.
     let p = unsafe { libc::if_indextoname(idx, buf.as_mut_ptr() as *mut libc::c_char) };
     if p.is_null() {
         return None;
     }
+    // SAFETY: p is non-null and points into buf, NUL-terminated by if_indextoname.
     unsafe { std::ffi::CStr::from_ptr(p) }
         .to_str()
         .ok()

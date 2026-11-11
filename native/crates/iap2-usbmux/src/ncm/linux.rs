@@ -58,6 +58,7 @@ fn open_tap(ifname: &str) -> Result<OwnedFd, String> {
     const IFF_TAP: libc::c_short = 0x0002;
     const IFF_NO_PI: libc::c_short = 0x1000;
 
+    // SAFETY: the path is a nul-terminated C string literal.
     let fd = unsafe { libc::open(c"/dev/net/tun".as_ptr(), libc::O_RDWR | libc::O_CLOEXEC) };
     if fd < 0 {
         return Err(format!(
@@ -65,16 +66,20 @@ fn open_tap(ifname: &str) -> Result<OwnedFd, String> {
             std::io::Error::last_os_error()
         ));
     }
+    // SAFETY: an all-zero ifreq is valid, it is plain integers and unions of them.
     let mut ifr: libc::ifreq = unsafe { std::mem::zeroed() };
     for (i, b) in ifname.as_bytes().iter().take(15).enumerate() {
         ifr.ifr_name[i] = *b as libc::c_char;
     }
     ifr.ifr_ifru.ifru_flags = IFF_TAP | IFF_NO_PI;
+    // SAFETY: fd was opened above and ifr is the ifreq TUNSETIFF expects.
     if unsafe { libc::ioctl(fd, TUNSETIFF as _, &mut ifr) } < 0 {
         let e = std::io::Error::last_os_error();
+        // SAFETY: fd was opened above and is closed once, nothing else owns it.
         unsafe { libc::close(fd) };
         return Err(format!("TUNSETIFF {ifname}: {e}"));
     }
+    // SAFETY: fd was opened above and is owned by nothing else.
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }
 

@@ -108,6 +108,7 @@ fn await_controller() -> bool {
 }
 
 fn claim() -> Result<OwnedFd, String> {
+    // SAFETY: socket takes plain ints.
     let raw = unsafe {
         libc::socket(
             libc::AF_BLUETOOTH,
@@ -118,12 +119,14 @@ fn claim() -> Result<OwnedFd, String> {
     if raw < 0 {
         return Err(format!("socket: {}", std::io::Error::last_os_error()));
     }
+    // SAFETY: raw is a fresh socket fd owned by nothing else.
     let fd = unsafe { OwnedFd::from_raw_fd(raw) };
     let addr = SockaddrHci {
         family: libc::AF_BLUETOOTH as libc::sa_family_t,
         dev: DEV,
         channel: HCI_CHANNEL_USER,
     };
+    // SAFETY: fd is open for the call and addr is a repr(C) sockaddr_hci of the size passed.
     let bound = unsafe {
         libc::bind(
             fd.as_raw_fd(),
@@ -239,5 +242,6 @@ fn readable(fd: RawFd, ms: i32) -> bool {
         events: libc::POLLIN,
         revents: 0,
     };
+    // SAFETY: p is one valid pollfd for the call.
     unsafe { libc::poll(&raw mut p, 1, ms) > 0 }
 }

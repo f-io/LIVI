@@ -24,3 +24,6 @@ livi-video-player.workspace = true
 livi-video-view.workspace = true
 slint = { workspace = true, features = ["backend-android-activity-06"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
+
+[lints]
+workspace = true

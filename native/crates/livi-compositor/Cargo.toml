@@ -34,3 +34,6 @@ tiny-skia = "0.12"
 ab_glyph = "0.2"
 fontdb = "0.24"
 nix = { version = "0.31", features = ["signal", "process", "fs"] }
+
+[lints]
+workspace = true

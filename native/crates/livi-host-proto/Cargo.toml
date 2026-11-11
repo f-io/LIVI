@@ -8,3 +8,6 @@ license.workspace = true
 # exchange.
 [dependencies]
 livi-base.workspace = true
+
+[lints]
+workspace = true

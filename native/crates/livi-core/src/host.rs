@@ -12,6 +12,7 @@ pub fn car_name(hostname: &str, max: usize) -> Option<String> {
 
 pub fn hostname() -> Option<String> {
     let mut buf = [0u8; 256];
+    // SAFETY: buf is writable for buf.len() bytes.
     let rc = unsafe { libc::gethostname(buf.as_mut_ptr().cast(), buf.len()) };
     if rc != 0 {
         return None;
@@ -126,6 +127,7 @@ pub fn screen_panel() -> Option<livi_media::compositor::Panel> {
         fn CGDisplayModeRelease(mode: *mut c_void);
     }
 
+    // SAFETY: plain CoreGraphics queries; the copied mode is checked for null and released once.
     let (mm, px) = unsafe {
         let display = CGMainDisplayID();
         let mm = CGDisplayScreenSize(display);

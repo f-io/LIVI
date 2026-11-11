@@ -14,3 +14,6 @@ livi-link-host.workspace = true
 livi-session-io.workspace = true
 nusb.workspace = true
 tokio = { workspace = true, features = ["rt", "io-util", "time"] }
+
+[lints]
+workspace = true

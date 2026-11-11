@@ -59,6 +59,7 @@ async fn pump(
     in_tx: mpsc::UnboundedSender<Vec<u8>>,
     art_tx: mpsc::UnboundedSender<Vec<u8>>,
 ) -> io::Result<()> {
+    // SAFETY: the AsyncFd owns fd, so it stays open and unchanged for the AsyncFd's lifetime.
     let async_fd =
         unsafe { AsyncFd::register_with_interest(fd, Interest::READABLE | Interest::WRITABLE)? };
     let start = Instant::now();
@@ -282,6 +283,7 @@ where
 }
 
 fn set_nonblocking(fd: RawFd) {
+    // SAFETY: fcntl with F_GETFL/F_SETFL takes no pointers.
     unsafe {
         let flags = libc::fcntl(fd, libc::F_GETFL);
         if flags >= 0 {
@@ -291,6 +293,7 @@ fn set_nonblocking(fd: RawFd) {
 }
 
 fn read_fd(fd: RawFd, buf: &mut [u8]) -> io::Result<usize> {
+    // SAFETY: buf is writable for buf.len() bytes for the call.
     let n = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
     if n < 0 {
         Err(io::Error::last_os_error())
@@ -300,6 +303,7 @@ fn read_fd(fd: RawFd, buf: &mut [u8]) -> io::Result<usize> {
 }
 
 fn write_fd(fd: RawFd, buf: &[u8]) -> io::Result<usize> {
+    // SAFETY: buf is readable for buf.len() bytes for the call.
     let n = unsafe { libc::write(fd, buf.as_ptr() as *const libc::c_void, buf.len()) };
     if n < 0 {
         Err(io::Error::last_os_error())

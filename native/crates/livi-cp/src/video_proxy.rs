@@ -60,6 +60,7 @@ fn psk_index() -> Result<Index<Ssl, Psk>, openssl::error::ErrorStack> {
 }
 
 unsafe fn psk_session(ssl: *mut ffi::SSL, psk: &Psk) -> *mut ffi::SSL_SESSION {
+    // SAFETY: ssl is live per the caller; session is freed on failure, else the caller owns it.
     unsafe {
         let cipher = SSL_CIPHER_find(ssl, SUITE_ID.as_ptr());
         let session = SSL_SESSION_new();
@@ -85,6 +86,7 @@ unsafe extern "C" fn use_session(
     session: *mut *mut ffi::SSL_SESSION,
 ) -> c_int {
     let Ok(index) = psk_index() else { return 0 };
+    // SAFETY: OpenSSL passes a live ssl and writable out pointers; the Psk ex data lives with ssl.
     unsafe {
         let psk = ffi::SSL_get_ex_data(ssl, index.as_raw()) as *const Psk;
         let cipher = SSL_CIPHER_find(ssl, SUITE_ID.as_ptr());
@@ -153,6 +155,7 @@ impl ProxyOffer {
             identity: self.identity.clone(),
         };
         ssl.set_ex_data(psk_index().map_err(io::Error::other)?, psk);
+        // SAFETY: ssl is live and use_session has the callback signature OpenSSL expects.
         unsafe { SSL_set_psk_use_session_callback(ssl.as_ptr(), Some(use_session)) };
         Ok(ssl)
     }
@@ -233,6 +236,7 @@ mod tests {
         id_len: usize,
         session: *mut *mut ffi::SSL_SESSION,
     ) -> c_int {
+        // SAFETY: OpenSSL passes a live ssl, id valid for id_len bytes and a writable session.
         unsafe {
             if std::slice::from_raw_parts(id, id_len) != IDENTITY {
                 *session = std::ptr::null_mut();
@@ -266,6 +270,7 @@ mod tests {
                     ctx.set_min_proto_version(Some(SslVersion::TLS1_3)).unwrap();
                     ctx.set_ciphersuites(SUITE).unwrap();
                     let ssl = Ssl::new(&ctx.build()).unwrap();
+                    // SAFETY: ssl is live and find_session has the signature OpenSSL expects.
                     unsafe { SSL_set_psk_find_session_callback(ssl.as_ptr(), Some(find_session)) };
                     let mut tls = SslStream::new(ssl, tcp).unwrap();
                     if Pin::new(&mut tls).accept().await.is_err() {

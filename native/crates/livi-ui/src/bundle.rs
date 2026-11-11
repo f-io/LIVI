@@ -38,6 +38,7 @@ impl Bundle {
             ),
         ];
         for (name, value) in vars {
+            // SAFETY: called first thing in main, before any other thread exists.
             unsafe { std::env::set_var(name, value) };
         }
     }

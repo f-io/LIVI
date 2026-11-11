@@ -6,3 +6,6 @@ license.workspace = true
 
 [dependencies]
 rustfft = "6.4.1"
+
+[lints]
+workspace = true

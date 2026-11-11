@@ -304,6 +304,7 @@ fn write_blob(blob: &[u8]) -> std::io::Result<()> {
         .open(mtd_dev()?)?;
     f.write_all(blob)?;
     f.sync_all()?;
+    // SAFETY: sync has no preconditions.
     unsafe {
         libc::sync();
     }

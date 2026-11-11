@@ -218,6 +218,7 @@ fn readable(fd: RawFd, ms: i32) -> bool {
         events: libc::POLLIN,
         revents: 0,
     };
+    // SAFETY: p is a valid pollfd and nfds is 1.
     unsafe { libc::poll(&raw mut p, 1, ms) > 0 }
 }
 

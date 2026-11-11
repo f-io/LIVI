@@ -45,6 +45,7 @@ impl WindowView {
             return;
         }
         let mut view = null_mut();
+        // SAFETY: handle is the window's NSView, view is a valid out pointer.
         let overlay = unsafe { livi_attach_view(handle, rank, &mut view) };
         self.view.store(view, Ordering::Release);
         *self.stretched.lock().unwrap_or_else(|e| e.into_inner()) = sink
@@ -54,11 +55,13 @@ impl WindowView {
             return;
         }
         if let Some(o) = sink.and_then(|s| s.dynamic_cast_ref::<gstreamer_video::VideoOverlay>()) {
+            // SAFETY: overlay is the clip view livi_attach_view just created, it outlives the sink.
             unsafe { o.set_window_handle(overlay) };
         }
     }
 
     pub fn set_visible(&self, visible: bool) {
+        // SAFETY: the view is null or one from livi_attach_view; null is ignored.
         unsafe { livi_set_view_hidden(self.view.load(Ordering::Acquire), !visible) };
     }
 
@@ -77,6 +80,7 @@ impl WindowView {
         }
         let view = self.view.load(Ordering::Acquire);
         if !view.is_null() {
+            // SAFETY: view is a live clip view from livi_attach_view.
             unsafe {
                 livi_set_content_region(
                     view,
@@ -99,6 +103,7 @@ impl WindowView {
             .take();
         let view = self.view.swap(null_mut(), Ordering::AcqRel);
         if !view.is_null() {
+            // SAFETY: view came from livi_attach_view and was swapped out, so it is removed once.
             unsafe { livi_remove_view(view) };
         }
     }

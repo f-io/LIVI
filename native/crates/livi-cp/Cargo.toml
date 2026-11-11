@@ -28,3 +28,6 @@ openssl = { version = "0.10.82", features = ["vendored"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "test-util"] }
+
+[lints]
+workspace = true

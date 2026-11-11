@@ -19,12 +19,12 @@ mod imp {
         bdaddr: [u8; 6],
         flags: u32,
         dev_type: u8,
-        _pad: [u8; 7],
         features: [u8; 8],
-        _rest: [u8; 128],
+        _rest: [u8; 135],
     }
 
     fn control_socket() -> io::Result<OwnedFd> {
+        // SAFETY: socket takes plain ints.
         let raw = unsafe {
             libc::socket(
                 libc::AF_BLUETOOTH,
@@ -35,11 +35,13 @@ mod imp {
         if raw < 0 {
             return Err(io::Error::last_os_error());
         }
+        // SAFETY: raw is a fresh socket fd owned by nothing else.
         Ok(unsafe { OwnedFd::from_raw_fd(raw) })
     }
 
     fn dev_ioctl(request: libc::c_ulong, dev: u16, tolerated: Option<i32>) -> io::Result<()> {
         let sock = control_socket()?;
+        // SAFETY: sock is open for the call and these ioctls take the device id by value.
         let r = unsafe { libc::ioctl(sock.as_raw_fd(), request as _, dev as libc::c_int) };
         if r < 0 {
             let e = io::Error::last_os_error();
@@ -60,8 +62,10 @@ mod imp {
 
     fn dev_info(dev: u16) -> io::Result<HciDevInfo> {
         let sock = control_socket()?;
+        // SAFETY: an all-zero HciDevInfo is valid, it is plain integers.
         let mut info: HciDevInfo = unsafe { std::mem::zeroed() };
         info.dev_id = dev;
+        // SAFETY: sock is open for the call and info is at least as large as hci_dev_info.
         let r = unsafe { libc::ioctl(sock.as_raw_fd(), HCIGETDEVINFO as _, &raw mut info) };
         if r < 0 {
             return Err(io::Error::last_os_error());

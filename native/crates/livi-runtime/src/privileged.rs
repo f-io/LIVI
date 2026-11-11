@@ -6,6 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Stdio};
 
 fn require_root() -> Result<(), String> {
+    // SAFETY: geteuid has no preconditions.
     if unsafe { libc::geteuid() } == 0 {
         Ok(())
     } else {

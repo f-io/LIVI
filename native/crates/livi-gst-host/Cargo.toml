@@ -21,3 +21,6 @@ libc.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
 livi-video-view.workspace = true
+
+[lints]
+workspace = true

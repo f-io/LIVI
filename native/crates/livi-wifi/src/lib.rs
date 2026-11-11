@@ -149,6 +149,7 @@ pub fn listing() -> Result<String, String> {
 
 #[cfg(target_os = "linux")]
 fn open() -> Result<OwnedFd, String> {
+    // SAFETY: socket takes plain ints.
     let raw = unsafe {
         libc::socket(
             libc::AF_NETLINK,
@@ -162,9 +163,12 @@ fn open() -> Result<OwnedFd, String> {
             std::io::Error::last_os_error()
         ));
     }
+    // SAFETY: raw is a fresh socket fd owned by nothing else.
     let fd = unsafe { OwnedFd::from_raw_fd(raw) };
+    // SAFETY: an all-zero sockaddr_nl is valid, it is plain integers.
     let mut local: libc::sockaddr_nl = unsafe { std::mem::zeroed() };
     local.nl_family = libc::AF_NETLINK as u16;
+    // SAFETY: fd is open for the call and local is a sockaddr_nl of the size passed.
     let bound = unsafe {
         libc::bind(
             fd.as_raw_fd(),
@@ -179,6 +183,7 @@ fn open() -> Result<OwnedFd, String> {
         tv_sec: 3,
         tv_usec: 0,
     };
+    // SAFETY: fd is open for the call and timeout is a timeval of the size passed.
     unsafe {
         libc::setsockopt(
             fd.as_raw_fd(),
@@ -255,6 +260,7 @@ pub fn stations(iface: &str) -> Stations {
     let Ok(name) = std::ffi::CString::new(iface) else {
         return Stations::default();
     };
+    // SAFETY: name is a nul-terminated C string that outlives the call.
     let index = unsafe { libc::if_nametoindex(name.as_ptr()) };
     if index == 0 {
         return Stations::default();
@@ -466,6 +472,7 @@ const fn align(n: usize) -> usize {
 
 #[cfg(target_os = "linux")]
 fn call(fd: &OwnedFd, request: &[u8]) -> Result<Vec<Vec<u8>>, String> {
+    // SAFETY: fd is open for the call and request is readable for request.len() bytes.
     let sent = unsafe {
         libc::send(
             fd.as_raw_fd(),
@@ -481,6 +488,7 @@ fn call(fd: &OwnedFd, request: &[u8]) -> Result<Vec<Vec<u8>>, String> {
     let mut out = Vec::new();
     let mut buf = vec![0u8; 64 << 10];
     loop {
+        // SAFETY: fd is open for the call and buf is writable for buf.len() bytes.
         let got = unsafe {
             libc::recv(
                 fd.as_raw_fd(),

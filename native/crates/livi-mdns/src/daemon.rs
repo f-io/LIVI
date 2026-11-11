@@ -55,6 +55,7 @@ pub fn run(args: &[String]) -> ExitCode {
             events: libc::POLLIN,
             revents: 0,
         };
+        // SAFETY: poll is a valid pollfd and nfds is 1.
         if unsafe { libc::poll(&raw mut poll, 1, POLL_MS) } <= 0 {
             continue;
         }
@@ -92,10 +93,12 @@ pub fn run(args: &[String]) -> ExitCode {
 }
 
 fn bind_socket() -> Result<OwnedFd, String> {
+    // SAFETY: socket has no memory preconditions.
     let raw = unsafe { libc::socket(libc::AF_INET, libc::SOCK_DGRAM, 0) };
     if raw < 0 {
         return Err(format!("socket: {}", std::io::Error::last_os_error()));
     }
+    // SAFETY: raw is a freshly created fd owned by nothing else.
     let fd = unsafe { OwnedFd::from_raw_fd(raw) };
     let on: libc::c_int = 1;
     set_opt(&fd, libc::SOL_SOCKET, libc::SO_REUSEADDR, &on);
@@ -104,10 +107,12 @@ fn bind_socket() -> Result<OwnedFd, String> {
     let ttl: libc::c_uchar = 255;
     set_opt(&fd, libc::IPPROTO_IP, libc::IP_MULTICAST_TTL, &ttl);
 
+    // SAFETY: an all-zero sockaddr_in is valid.
     let mut local: libc::sockaddr_in = unsafe { std::mem::zeroed() };
     local.sin_family = libc::AF_INET as u16;
     local.sin_port = mdns::PORT.to_be();
     local.sin_addr.s_addr = libc::INADDR_ANY.to_be();
+    // SAFETY: fd is open for the call and local is a valid sockaddr_in of the given size.
     let bound = unsafe {
         libc::bind(
             fd.as_raw_fd(),
@@ -134,6 +139,7 @@ fn join_group(fd: &OwnedFd, via: Ipv4Addr) -> bool {
             s_addr: u32::from(via).to_be(),
         },
     };
+    // SAFETY: fd is open for the call and mreq is a valid ip_mreq of the given size.
     unsafe {
         libc::setsockopt(
             fd.as_raw_fd(),
@@ -146,40 +152,50 @@ fn join_group(fd: &OwnedFd, via: Ipv4Addr) -> bool {
 }
 
 fn receive(fd: &OwnedFd, buf: &mut [u8]) -> Option<(usize, libc::sockaddr_in, libc::c_uint)> {
+    // SAFETY: an all-zero sockaddr_in is valid.
     let mut from: libc::sockaddr_in = unsafe { std::mem::zeroed() };
-    let mut control = [0u8; 256];
+    let mut control = [0u64; 32];
     let mut iov = libc::iovec {
         iov_base: buf.as_mut_ptr() as *mut libc::c_void,
         iov_len: buf.len(),
     };
+    // SAFETY: an all-zero msghdr is valid, all pointers in it are null.
     let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
     msg.msg_name = &raw mut from as *mut libc::c_void;
     msg.msg_namelen = size_of::<libc::sockaddr_in>() as libc::socklen_t;
     msg.msg_iov = &raw mut iov;
     msg.msg_iovlen = 1;
     msg.msg_control = control.as_mut_ptr() as *mut libc::c_void;
-    msg.msg_controllen = control.len() as _;
+    msg.msg_controllen = size_of_val(&control) as _;
 
+    // SAFETY: fd is open and msg points to from, iov over buf, and control, all live and
+    // with matching lengths.
     let n = unsafe { libc::recvmsg(fd.as_raw_fd(), &raw mut msg, 0) };
     if n < 12 {
         return None;
     }
     let mut ifindex = 0;
+    // SAFETY: msg is initialized by recvmsg and its control pointer and length describe control.
     let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(&msg) };
     while !cmsg.is_null() {
+        // SAFETY: cmsg is non-null and lies inside control, which is 8-aligned like cmsghdr.
         let header = unsafe { &*cmsg };
         if header.cmsg_level == libc::IPPROTO_IP && header.cmsg_type == libc::IP_PKTINFO {
+            // SAFETY: cmsg is a non-null IP_PKTINFO header inside control, so its data holds an
+            // in_pktinfo; read_unaligned covers the data offset's alignment.
             let info = unsafe {
                 std::ptr::read_unaligned(libc::CMSG_DATA(cmsg).cast::<libc::in_pktinfo>())
             };
             ifindex = info.ipi_ifindex as libc::c_uint;
         }
+        // SAFETY: cmsg is a valid header of msg, CMSG_NXTHDR stays within msg_controllen.
         cmsg = unsafe { libc::CMSG_NXTHDR(&msg, cmsg) };
     }
     (ifindex != 0).then_some((n as usize, from, ifindex))
 }
 
 fn send_to(fd: &OwnedFd, to: &libc::sockaddr_in, data: &[u8]) {
+    // SAFETY: fd is open, data is readable for data.len() bytes and to is a valid sockaddr_in.
     unsafe {
         libc::sendto(
             fd.as_raw_fd(),
@@ -197,6 +213,7 @@ fn send_multicast(fd: &OwnedFd, via: Ipv4Addr, data: &[u8]) {
         s_addr: u32::from(via).to_be(),
     };
     set_opt(fd, libc::IPPROTO_IP, libc::IP_MULTICAST_IF, &iface);
+    // SAFETY: an all-zero sockaddr_in is valid.
     let mut group: libc::sockaddr_in = unsafe { std::mem::zeroed() };
     group.sin_family = libc::AF_INET as u16;
     group.sin_port = mdns::PORT.to_be();
@@ -205,6 +222,7 @@ fn send_multicast(fd: &OwnedFd, via: Ipv4Addr, data: &[u8]) {
 }
 
 fn set_opt<T>(fd: &OwnedFd, level: libc::c_int, option: libc::c_int, value: &T) {
+    // SAFETY: fd is open for the call and value points to size_of::<T>() readable bytes.
     unsafe {
         libc::setsockopt(
             fd.as_raw_fd(),
@@ -218,17 +236,22 @@ fn set_opt<T>(fd: &OwnedFd, level: libc::c_int, option: libc::c_int, value: &T) 
 
 fn iface_ipv4(name: &str) -> Option<Ipv4Addr> {
     let mut list: *mut libc::ifaddrs = std::ptr::null_mut();
+    // SAFETY: list is a valid out-pointer for getifaddrs.
     if unsafe { libc::getifaddrs(&raw mut list) } != 0 {
         return None;
     }
     let mut found = None;
     let mut entry = list;
     while !entry.is_null() {
+        // SAFETY: entry is a non-null node of the getifaddrs list, which lives until freeifaddrs.
         let addrs = unsafe { &*entry };
         if !addrs.ifa_addr.is_null()
+            // SAFETY: ifa_addr was checked non-null and points to a sockaddr of the live list.
             && unsafe { (*addrs.ifa_addr).sa_family } == libc::AF_INET as u16
+            // SAFETY: ifa_name is a NUL-terminated string owned by the live list.
             && unsafe { CStr::from_ptr(addrs.ifa_name) }.to_str() == Ok(name)
         {
+            // SAFETY: sa_family is AF_INET, so ifa_addr points to a sockaddr_in.
             let sin =
                 unsafe { std::ptr::read_unaligned(addrs.ifa_addr.cast::<libc::sockaddr_in>()) };
             found = Some(Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr)));
@@ -236,16 +259,19 @@ fn iface_ipv4(name: &str) -> Option<Ipv4Addr> {
         }
         entry = addrs.ifa_next;
     }
+    // SAFETY: list came from a successful getifaddrs and is not used afterwards.
     unsafe { libc::freeifaddrs(list) };
     found
 }
 
 fn index_to_name(index: libc::c_uint) -> Option<String> {
     let mut buf: [libc::c_char; libc::IF_NAMESIZE] = [0; libc::IF_NAMESIZE];
+    // SAFETY: buf holds IF_NAMESIZE bytes as if_indextoname requires.
     let name = unsafe { libc::if_indextoname(index, buf.as_mut_ptr()) };
     if name.is_null() {
         return None;
     }
+    // SAFETY: name is non-null and points into buf, NUL-terminated by if_indextoname.
     unsafe { CStr::from_ptr(name) }
         .to_str()
         .ok()

@@ -9,3 +9,6 @@ nusb.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
 nusb-android.workspace = true
+
+[lints]
+workspace = true

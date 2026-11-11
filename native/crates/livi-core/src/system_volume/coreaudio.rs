@@ -282,8 +282,8 @@ impl Watcher {
         let mut listened = self.listened.lock().unwrap_or_else(|e| e.into_inner());
         listened.retain(|id| present.contains(id));
         for id in present {
-            // SAFETY: the client is 'static, the callback reads it as a Watcher.
             if !listened.contains(&id)
+                // SAFETY: the client is 'static, the callback reads it as a Watcher.
                 && unsafe { AudioObjectAddPropertyListener(id, &VOLUME, on_change, self.client()) }
                     == 0
             {

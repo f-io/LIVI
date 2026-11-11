@@ -24,6 +24,7 @@ pub fn with<R>(
         .clone()
         .ok_or(Error::NullPtr("activity"))?;
     JavaVM::singleton()?.attach_current_thread(|env| {
+        // SAFETY: the activity reference lives as long as the AndroidApp held in CURRENT.
         let activity = unsafe { JObject::from_raw(env, app.activity_as_ptr().cast()) };
         call(env, &activity)
     })

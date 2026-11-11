@@ -150,10 +150,12 @@ impl HostState {
 }
 
 struct HostNativeDisplay(*mut std::ffi::c_void);
+// SAFETY: the pointer only goes to EGL, libwayland-client's wl_display is thread-safe.
 unsafe impl Send for HostNativeDisplay {}
 
 pub struct HostEglWindow(pub wayland_egl::WlEglSurface);
 
+// SAFETY: create hands EGL the wl_egl_window this surface owns, which is a valid native window.
 unsafe impl smithay::backend::egl::native::EGLNativeSurface for HostEglWindow {
     unsafe fn create(
         &self,
@@ -165,6 +167,7 @@ unsafe impl smithay::backend::egl::native::EGLNativeSurface for HostEglWindow {
             smithay::backend::egl::ffi::egl::BACK_BUFFER as std::ffi::c_int,
             smithay::backend::egl::ffi::egl::NONE as std::ffi::c_int,
         ];
+        // SAFETY: config_id is valid per create's contract, the wl_egl_window outlives the call.
         smithay::backend::egl::wrap_egl_call_ptr(|| unsafe {
             smithay::backend::egl::ffi::egl::CreatePlatformWindowSurfaceEXT(
                 display.handle,
@@ -269,6 +272,7 @@ pub fn init(state: &mut LiviState, handle: &LoopHandle<'static, LiviState>) {
 
     let display_ptr = conn.backend().display_ptr() as *mut std::ffi::c_void;
     let egl_display =
+        // SAFETY: no other code in this process creates EGL displays, smithay tracks this one.
         unsafe { EGLDisplay::new(HostNativeDisplay(display_ptr)) }.expect("EGLDisplay");
     let egl_context = EGLContext::new_with_config(
         &egl_display,
@@ -281,6 +285,7 @@ pub fn init(state: &mut LiviState, handle: &LoopHandle<'static, LiviState>) {
         smithay::backend::egl::context::PixelFormatRequirements::_8_bit(),
     )
     .expect("EGLContext");
+    // SAFETY: the shared context was just created here and is current on no other thread.
     let renderer = unsafe {
         GlesRenderer::new(
             EGLContext::new_shared_with_config(
@@ -367,6 +372,7 @@ pub fn open_screen(state: &mut LiviState, screen_idx: usize) {
 
     let wl_egl =
         wayland_egl::WlEglSurface::new(window.wl_surface().id(), w, h).expect("wl_egl_window");
+    // SAFETY: config_id comes from egl_context, created on this egl_display.
     let egl_surface = unsafe {
         EGLSurface::new(
             egl_display,

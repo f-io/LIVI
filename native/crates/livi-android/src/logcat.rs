@@ -20,6 +20,7 @@ pub fn write(line: &str) {
     let Ok(text) = CString::new(line.replace('\0', "")) else {
         return;
     };
+    // SAFETY: tag and text are nul-terminated strings alive for the call.
     unsafe {
         __android_log_write(INFO, TAG.as_ptr(), text.as_ptr());
     }
@@ -27,15 +28,18 @@ pub fn write(line: &str) {
 
 pub fn capture() -> std::io::Result<()> {
     let mut fds = [0; 2];
+    // SAFETY: fds has room for the two descriptors pipe writes.
     if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
         return Err(std::io::Error::last_os_error());
     }
     let [read, write_end] = fds;
+    // SAFETY: write_end is our open pipe end, stdout and stderr take copies before it closes.
     unsafe {
         libc::dup2(write_end, 1);
         libc::dup2(write_end, 2);
         libc::close(write_end);
     }
+    // SAFETY: read is an open pipe end owned by nothing else.
     let from = unsafe { File::from_raw_fd(read) };
     thread::Builder::new()
         .name("logcat".into())

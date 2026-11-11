@@ -22,10 +22,12 @@ mod window {
     }
 
     pub fn backdrop(window: usize, [r, g, b]: [f64; 3]) {
+        // SAFETY: window is the UI window's NSView or 0, which is ignored.
         unsafe { livi_set_backdrop(window, r, g, b) };
     }
 
     pub fn prepare(window: usize) {
+        // SAFETY: window is the UI window's NSView or 0, which is ignored.
         unsafe { livi_prepare_window(window) };
     }
 
@@ -36,6 +38,7 @@ mod window {
         } else {
             rgb.as_ptr()
         };
+        // SAFETY: rgb holds 3 * count floats or is null with count 0.
         unsafe { livi_set_window_curves(window, rgb, count) };
     }
 }

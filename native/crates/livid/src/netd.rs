@@ -8,6 +8,7 @@ pub fn run(args: Vec<String>) -> i32 {
 
 use std::io::{self, Result};
 use std::net::Ipv4Addr;
+use std::os::fd::{FromRawFd, OwnedFd};
 use std::process::ExitCode;
 use std::sync::Mutex;
 use std::thread;
@@ -79,11 +80,13 @@ impl Leases {
 }
 
 fn dhcp_server(iface: &str, server_ip: Ipv4Addr, pool_start: u8, pool_end: u8) -> Result<()> {
+    // SAFETY: every pointer passed points to a live local or buffer of the size passed with it.
     unsafe {
         let sock = libc::socket(libc::AF_INET, libc::SOCK_DGRAM, 0);
         if sock < 0 {
             return Err(io::Error::last_os_error());
         }
+        let _owned = OwnedFd::from_raw_fd(sock);
         let one: libc::c_int = 1;
         libc::setsockopt(
             sock,

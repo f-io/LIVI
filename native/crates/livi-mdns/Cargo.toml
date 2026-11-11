@@ -12,3 +12,6 @@ libc.workspace = true
 [target.'cfg(target_os = "android")'.dependencies]
 libc.workspace = true
 socket2.workspace = true
+
+[lints]
+workspace = true

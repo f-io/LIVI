@@ -9,3 +9,6 @@ livi-base.workspace = true
 livi-core-proto.workspace = true
 livi-i18n.workspace = true
 serde_json.workspace = true
+
+[lints]
+workspace = true

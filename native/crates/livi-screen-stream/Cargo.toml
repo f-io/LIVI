@@ -10,3 +10,6 @@ livi-crypto.workspace = true
 glib.workspace = true
 glib-unix.workspace = true
 socket2.workspace = true
+
+[lints]
+workspace = true

@@ -31,3 +31,6 @@ livi-hfp.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros", "time", "sync", "test-util"] }
+
+[lints]
+workspace = true

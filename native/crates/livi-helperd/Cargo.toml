@@ -17,3 +17,6 @@ livi-link-host.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
 serde_json.workspace = true
 libc.workspace = true
+
+[lints]
+workspace = true

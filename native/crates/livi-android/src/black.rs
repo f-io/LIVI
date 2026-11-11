@@ -62,6 +62,7 @@ unsafe extern "C" {
 }
 
 pub fn paint(window: usize) {
+    // SAFETY: window is a live ANativeWindow, the EGL objects made here are destroyed again.
     unsafe {
         let display = eglGetDisplay(ptr::null_mut());
         if display.is_null() || eglInitialize(display, ptr::null_mut(), ptr::null_mut()) == 0 {

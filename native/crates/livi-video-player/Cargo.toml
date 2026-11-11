@@ -20,3 +20,6 @@ gstreamer-video = { workspace = true, features = ["v1_24"] }
 
 [features]
 window-view = ["dep:gstreamer-video"]
+
+[lints]
+workspace = true

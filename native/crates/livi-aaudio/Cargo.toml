@@ -9,3 +9,6 @@ gstreamer = { workspace = true, features = ["v1_24"] }
 gstreamer-audio = { workspace = true, features = ["v1_24"] }
 gstreamer-base = { workspace = true, features = ["v1_24"] }
 ndk-sys = { version = "0.6", features = ["audio"] }
+
+[lints]
+workspace = true

@@ -61,6 +61,7 @@ impl CoreProcess {
         if let Ok(code) = self.ended.try_recv() {
             return code;
         }
+        // SAFETY: plain signal delivery to the child we started.
         unsafe { libc::kill(self.pid, libc::SIGTERM) };
         self.ended.recv_timeout(wait).ok().flatten()
     }

@@ -8,3 +8,6 @@ license.workspace = true
 libc.workspace = true
 livi-core-proto.workspace = true
 serde_json.workspace = true
+
+[lints]
+workspace = true

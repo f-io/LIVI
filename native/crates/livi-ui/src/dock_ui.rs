@@ -49,6 +49,7 @@ pub fn ns_window(ui: &AppWindow) -> Option<Retained<NSWindow>> {
     let RawWindowHandle::AppKit(h) = handle.as_raw() else {
         return None;
     };
+    // SAFETY: an AppKit handle carries a valid NSView that lives as long as the window.
     let view: &NSView = unsafe { h.ns_view.cast().as_ref() };
     view.window()
 }
@@ -71,8 +72,10 @@ fn listen() {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
     };
+    // SAFETY: init is NSObject's initializer, Reopen adds no ivars that need setting.
     let handler: Retained<Reopen> = unsafe { msg_send![Reopen::alloc(mtm), init] };
     let events = NSAppleEventManager::sharedAppleEventManager();
+    // SAFETY: the selector matches Reopen's method, and HANDLER keeps the handler alive.
     let _: () = unsafe {
         msg_send![
             &*events,

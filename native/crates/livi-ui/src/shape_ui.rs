@@ -62,17 +62,20 @@ fn hook(window: &NSWindow) {
     if HOOKED.get() {
         return;
     }
+    // SAFETY: delegate is an NSWindow getter returning an optional object.
     let delegate: Option<Retained<AnyObject>> = unsafe { msg_send![window, delegate] };
     let Some(delegate) = delegate else {
         return;
     };
     let class = delegate.class() as *const AnyClass as *mut AnyClass;
     let resize: extern "C-unwind" fn(&AnyObject, Sel, &NSWindow, NSSize) -> NSSize = will_resize;
+    // SAFETY: Imp is the untyped form of a method implementation; the runtime calls it with this signature.
     let imp = unsafe {
         std::mem::transmute::<extern "C-unwind" fn(&AnyObject, Sel, &NSWindow, NSSize) -> NSSize, Imp>(
             resize,
         )
     };
+    // SAFETY: the type encoding matches will_resize, and class is the delegate's live class.
     let added = unsafe {
         objc2::ffi::class_addMethod(
             class,

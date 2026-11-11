@@ -19,3 +19,6 @@ ureq = { version = "3", default-features = false, features = [
   "rustls-no-provider",
   "rustls-webpki-roots",
 ] }
+
+[lints]
+workspace = true

@@ -13,3 +13,6 @@ libc.workspace = true
 livi-crypto.workspace = true
 livi-host-proto.workspace = true
 socket2.workspace = true
+
+[lints]
+workspace = true

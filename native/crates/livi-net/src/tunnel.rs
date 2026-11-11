@@ -27,6 +27,7 @@ pub fn notice_loss(stream: &TcpStream, give_up: Option<Duration>) -> io::Result<
     let mut failed = None;
     for (level, name, value) in options {
         let value: libc::c_int = value;
+        // SAFETY: stream's fd is open for the call and value is a c_int of the given size.
         let rc = unsafe {
             libc::setsockopt(
                 stream.as_raw_fd(),

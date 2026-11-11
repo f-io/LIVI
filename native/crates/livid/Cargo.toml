@@ -21,3 +21,6 @@ iap2-mfi.workspace = true
 libc.workspace = true
 [target.'cfg(all(target_os = "linux", not(target_arch = "riscv32")))'.dependencies]
 imx6ul-uboot.workspace = true
+
+[lints]
+workspace = true

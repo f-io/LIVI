@@ -45,27 +45,33 @@ fn made_up_mac(serial: &str) -> Mac {
 
 fn ipv6_addresses() -> Vec<(String, Ipv6Addr)> {
     let mut ifap: *mut libc::ifaddrs = std::ptr::null_mut();
+    // SAFETY: ifap is a valid out pointer, freed below.
     if unsafe { libc::getifaddrs(&mut ifap) } != 0 {
         return Vec::new();
     }
     let mut found = Vec::new();
     let mut cur = ifap;
     while !cur.is_null() {
+        // SAFETY: cur is a non-null node of the list getifaddrs returned, alive until freeifaddrs.
         let ifa = unsafe { &*cur };
         cur = ifa.ifa_next;
         if ifa.ifa_addr.is_null() || ifa.ifa_name.is_null() {
             continue;
         }
+        // SAFETY: ifa_addr was checked for null and points into the list.
         if i32::from(unsafe { (*ifa.ifa_addr).sa_family }) != libc::AF_INET6 {
             continue;
         }
+        // SAFETY: an AF_INET6 address is a sockaddr_in6.
         let sin6 = unsafe { &*(ifa.ifa_addr as *const libc::sockaddr_in6) };
+        // SAFETY: ifa_name was checked for null and is nul-terminated.
         if let Ok(label) = unsafe { CStr::from_ptr(ifa.ifa_name) }.to_str() {
             // bionic names IPv6 entries after the interface's IPv4 label ("tun0:1")
             let name = label.split(':').next().unwrap_or(label);
             found.push((name.to_string(), Ipv6Addr::from(sin6.sin6_addr.s6_addr)));
         }
     }
+    // SAFETY: ifap came from getifaddrs and no reference into it outlives this line.
     unsafe { libc::freeifaddrs(ifap) };
     found
 }

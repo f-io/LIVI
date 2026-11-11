@@ -142,8 +142,10 @@ unsafe extern "C" {
 extern "C" fn on_crash(sig: c_int) {
     const HEADER: &[u8] = b"\n=== gst-host CRASH backtrace ===\n";
     let mut frames = [core::ptr::null_mut::<c_void>(); 64];
+    // SAFETY: frames is writable for frames.len() pointers.
     let depth = unsafe { backtrace(frames.as_mut_ptr(), frames.len() as c_int) };
 
+    // SAFETY: HEADER is valid for its length and backtrace filled depth entries of frames.
     let dump = |fd: c_int| unsafe {
         let _ = libc::write(fd, HEADER.as_ptr().cast(), HEADER.len());
         backtrace_symbols_fd(frames.as_ptr(), depth, fd);
@@ -152,6 +154,7 @@ extern "C" fn on_crash(sig: c_int) {
 
     let path = CRASH_PATH.load(Ordering::Relaxed);
     if !path.is_null() {
+        // SAFETY: path is the leaked CString from arm_crash_handler, never freed.
         let fd = unsafe {
             libc::open(
                 path,
@@ -161,10 +164,12 @@ extern "C" fn on_crash(sig: c_int) {
         };
         if fd >= 0 {
             dump(fd);
+            // SAFETY: fd was opened above and is closed once.
             unsafe { libc::close(fd) };
         }
     }
 
+    // SAFETY: restores the default action and re-raises, both take plain ints.
     unsafe {
         signal(sig, SIG_DFL);
         libc::raise(sig);
@@ -177,6 +182,7 @@ fn arm_crash_handler(crash_log: &str) {
     {
         CRASH_PATH.store(path.into_raw(), Ordering::Relaxed);
     }
+    // SAFETY: on_crash is an extern "C" fn(c_int), the handler type signal expects.
     unsafe {
         signal(libc::SIGSEGV, on_crash as *const () as usize);
         signal(libc::SIGABRT, on_crash as *const () as usize);
