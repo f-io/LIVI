@@ -1569,7 +1569,7 @@ fn the_codec_byte_picks_the_pipeline() {
     for (byte, expected) in [
         (0u8, AudioCodec::AacLc),
         (1, AudioCodec::Opus),
-        (2, AudioCodec::Lpcm),
+        (2, AudioCodec::Pcm),
         (4, AudioCodec::AacRaw),
         (6, AudioCodec::Alac),
         (7, AudioCodec::Alac24),

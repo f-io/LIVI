@@ -13,16 +13,7 @@ impl<O: Outside> Host<O> {
         };
         let fed = open.fed;
         let cfg = AudioConfig {
-            codec: match open.codec {
-                audio::AudioCodec::AacLc => AudioCodec::AacLc,
-                audio::AudioCodec::Opus => AudioCodec::Opus,
-                audio::AudioCodec::Pcm => AudioCodec::Lpcm,
-                audio::AudioCodec::PcmLe => AudioCodec::PcmLe,
-                audio::AudioCodec::AacRaw => AudioCodec::AacRaw,
-                audio::AudioCodec::AacEld => AudioCodec::AacEld,
-                audio::AudioCodec::Alac => AudioCodec::Alac,
-                audio::AudioCodec::Alac24 => AudioCodec::Alac24,
-            },
+            codec: open.codec,
             payload_type: open.payload_type,
             clock_rate: open.clock_rate,
             channels: open.channels,

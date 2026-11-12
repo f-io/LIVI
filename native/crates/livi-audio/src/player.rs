@@ -31,7 +31,7 @@ pub struct Config {
 
 fn decoder_chain(codec: Codec) -> Option<&'static str> {
     match codec {
-        Codec::Lpcm | Codec::PcmLe => None,
+        Codec::Pcm | Codec::PcmLe => None,
         Codec::Opus => Some("rtpjitterbuffer latency={latency} ! rtpopusdepay ! opusdec"),
         Codec::AacRaw => Some("aacparse ! faad"),
         Codec::Alac | Codec::Alac24 => Some("avdec_alac"),
@@ -280,7 +280,7 @@ impl Player {
         let packet = match self.codec {
             Codec::AacLc | Codec::AacEld => reframe_aac(rtp, self.payload_type),
             Codec::Opus | Codec::AacRaw => rtp.to_vec(),
-            Codec::Lpcm | Codec::PcmLe | Codec::Alac | Codec::Alac24 => {
+            Codec::Pcm | Codec::PcmLe | Codec::Alac | Codec::Alac24 => {
                 rtp[RTP_HEADER_LEN.min(rtp.len())..].to_vec()
             }
         };
@@ -447,7 +447,7 @@ mod tests {
 
     #[test]
     fn lpcm_goes_straight_from_the_source_to_the_converter() {
-        let desc = pipeline_desc(&cfg(Codec::Lpcm, false));
+        let desc = pipeline_desc(&cfg(Codec::Pcm, false));
         let e = elements(&desc);
 
         assert_eq!(e[0], "appsrc");

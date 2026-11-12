@@ -3,6 +3,7 @@
 // Additional terms: see NOTICE
 
 use livi_crypto::{ChaCha, nonce64};
+pub use livi_output_proto::audio::AudioCodec as Codec;
 
 pub const RTP_HEADER_LEN: usize = 12;
 pub const TAIL_LEN: usize = 24;
@@ -61,18 +62,6 @@ impl AudioStream {
         rtp.extend_from_slice(&payload);
         self.sink.on_rtp(&rtp, sample);
     }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Codec {
-    AacLc,
-    Opus,
-    Lpcm,
-    PcmLe,
-    AacRaw,
-    AacEld,
-    Alac,
-    Alac24,
 }
 
 fn aac_freq_index(clock_rate: u32) -> u16 {
@@ -136,7 +125,7 @@ pub fn aac_raw_caps(asc: &[u8], clock_rate: u32, channels: u8) -> String {
 }
 
 pub fn rtp_caps(codec: Codec, payload_type: u8, clock_rate: u32, channels: u8) -> String {
-    if codec == Codec::Lpcm || codec == Codec::PcmLe {
+    if codec == Codec::Pcm || codec == Codec::PcmLe {
         return lpcm_caps(codec, clock_rate, channels);
     }
     if codec == Codec::Opus {
@@ -356,7 +345,7 @@ mod wire {
 
     #[test]
     fn carplay_samples_are_big_endian_and_handed_over_ones_are_not() {
-        assert!(rtp_caps(Codec::Lpcm, 0, 44100, 2).contains("format=S16BE"));
+        assert!(rtp_caps(Codec::Pcm, 0, 44100, 2).contains("format=S16BE"));
         assert!(rtp_caps(Codec::PcmLe, 0, 44100, 2).contains("format=S16LE"));
     }
 
