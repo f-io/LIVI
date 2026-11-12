@@ -15,21 +15,26 @@ impl FrameReader {
     }
 
     pub fn next_frame(&mut self) -> Option<Vec<u8>> {
-        while self.buf.len() >= 2 && u16::from_be_bytes([self.buf[0], self.buf[1]]) != CSM_START {
-            self.buf.remove(0);
+        loop {
+            let start = self
+                .buf
+                .windows(2)
+                .position(|w| u16::from_be_bytes([w[0], w[1]]) == CSM_START)
+                .unwrap_or(self.buf.len().saturating_sub(1));
+            self.buf.drain(..start);
+            if self.buf.len() < 6 {
+                return None;
+            }
+            let len = u16::from_be_bytes([self.buf[2], self.buf[3]]) as usize;
+            if len < 6 {
+                self.buf.drain(..1);
+                continue;
+            }
+            if self.buf.len() < len {
+                return None;
+            }
+            return Some(self.buf.drain(..len).collect());
         }
-        if self.buf.len() < 6 {
-            return None;
-        }
-        let len = u16::from_be_bytes([self.buf[2], self.buf[3]]) as usize;
-        if len < 6 {
-            self.buf.remove(0);
-            return self.next_frame();
-        }
-        if self.buf.len() < len {
-            return None;
-        }
-        Some(self.buf.drain(..len).collect())
     }
 }
 
@@ -72,5 +77,17 @@ mod tests {
         let mut r = FrameReader::default();
         r.push(&[0x00, 0xFF, 0x40, 0x40, 0x00, 0x06, 0x1D, 0x02]);
         assert_eq!(frame_msg_id(&r.next_frame().unwrap()), Some(0x1D02));
+    }
+
+    #[test]
+    fn skips_a_start_with_a_short_length() {
+        let mut r = FrameReader::default();
+        r.push(&[
+            0x40, 0x40, 0x00, 0x02, 0x40, 0x40, 0x00, 0x06, 0x1D, 0x03, 0x40,
+        ]);
+        assert_eq!(frame_msg_id(&r.next_frame().unwrap()), Some(0x1D03));
+        assert_eq!(r.next_frame(), None);
+        r.push(&[0x40, 0x00, 0x06, 0x1D, 0x04]);
+        assert_eq!(frame_msg_id(&r.next_frame().unwrap()), Some(0x1D04));
     }
 }
