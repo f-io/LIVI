@@ -6,7 +6,7 @@ use livi_aa_proto::{Keycode, TouchAction as TouchEventAction};
 
 use crate::channels::input::TouchPointer;
 use crate::config::Geometry;
-use crate::wire::round_half_up;
+use livi_base::num::round_half_up;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Command {

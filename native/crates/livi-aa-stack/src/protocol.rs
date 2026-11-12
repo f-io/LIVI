@@ -297,6 +297,7 @@ impl Session {
         (session, vec![Out::After(WATCHDOG, Timer::Watchdog)])
     }
 
+    #[cfg(test)]
     pub fn state(&self) -> State {
         self.state
     }
@@ -765,9 +766,6 @@ impl Session {
             ControlEvent::ChannelOpenRequest(_) => {
                 let frame = self.control.channel_open_response(OK);
                 self.send(out, frame);
-            }
-            ControlEvent::AvSetupRequest { ch, payload } => {
-                self.on_av_setup_request(out, ch, &payload);
             }
             ControlEvent::Ping(_) => {}
             ControlEvent::Pong => self.last_pong = Instant::now(),

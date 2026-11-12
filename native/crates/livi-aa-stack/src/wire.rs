@@ -172,8 +172,6 @@ pub fn has_field(buf: &[u8], field: u32) -> bool {
     decode_fields(buf).any(|f| f.field == field)
 }
 
-pub use livi_base::num::round_half_up;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,13 +247,5 @@ mod tests {
         );
         assert!(has_field(&msg, 3));
         assert!(!has_field(&msg, 5));
-    }
-
-    #[test]
-    fn halves_round_up() {
-        assert_eq!(round_half_up(2.5), 3.0);
-        assert_eq!(round_half_up(-2.5), -2.0);
-        assert_eq!(round_half_up(-2.51), -3.0);
-        assert_eq!(round_half_up(0.49999999999999994), 0.0);
     }
 }

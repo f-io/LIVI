@@ -10,7 +10,7 @@ use livi_aa_proto::{
 };
 use prost::Message;
 
-use crate::wire::round_half_up;
+use livi_base::num::round_half_up;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GpsFix {

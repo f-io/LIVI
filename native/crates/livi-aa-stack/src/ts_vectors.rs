@@ -228,9 +228,6 @@ fn control_event_json(e: &ControlEvent) -> Json {
             json!(["service-discovery-request", sdr_request_json(r)])
         }
         ControlEvent::ChannelOpenRequest(id) => json!(["channel-open-request", id]),
-        ControlEvent::AvSetupRequest { ch, payload } => {
-            json!(["av-setup-request", ch, hex(payload)])
-        }
         ControlEvent::Ping(ts) => json!(["ping", ts]),
         ControlEvent::Pong => json!(["pong"]),
         ControlEvent::AudioFocusRequest(t) => json!(["audio-focus-request", t]),

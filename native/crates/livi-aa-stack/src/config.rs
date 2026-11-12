@@ -5,7 +5,7 @@
 use livi_core_proto::config::{CarType, Config, HandDriveType};
 use livi_wifi::{OnAir, Security};
 
-use crate::wire::round_half_up;
+use livi_base::num::round_half_up;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AaConfig {

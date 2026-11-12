@@ -19,10 +19,6 @@ const OK: i32 = MessageStatus::Success as i32;
 pub enum ControlEvent {
     ServiceDiscoveryRequest(ServiceDiscoveryRequest),
     ChannelOpenRequest(i32),
-    AvSetupRequest {
-        ch: u8,
-        payload: Vec<u8>,
-    },
     Ping(i64),
     Pong,
     AudioFocusRequest(u8),
@@ -190,13 +186,6 @@ impl ControlChannel {
             }
         }
         out
-    }
-
-    pub fn handle_av_setup_request(&mut self, ch: u8, payload: &[u8]) -> Vec<ControlOut> {
-        vec![Emit::Event(ControlEvent::AvSetupRequest {
-            ch,
-            payload: payload.to_vec(),
-        })]
     }
 
     pub fn channel_open_response(&self, status: i32) -> Frame {
@@ -386,13 +375,6 @@ mod tests {
         assert_eq!(
             broken,
             [ControlEvent::ServiceDiscoveryRequest(Default::default())]
-        );
-        assert_eq!(
-            c.handle_av_setup_request(4, &[1]),
-            [Emit::Event(ControlEvent::AvSetupRequest {
-                ch: 4,
-                payload: vec![1]
-            })]
         );
         assert_eq!(
             c.channel_open_response(OK),
