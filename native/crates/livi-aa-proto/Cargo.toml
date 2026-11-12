@@ -8,7 +8,7 @@ license.workspace = true
 prost.workspace = true
 
 [build-dependencies]
-prost-build = "0.14.5"
+prost-build = "0.14.6"
 protox = "0.10.0"
 
 [lints]
