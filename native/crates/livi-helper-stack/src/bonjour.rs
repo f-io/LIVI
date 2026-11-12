@@ -11,7 +11,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use livi_core_proto::features::{self, CARPLAY_FEATURES};
-use livi_core_proto::helper::{MIRROR_NAME, Mirror};
+use livi_core_proto::helper::Mirror;
 use livi_core_proto::helper_events::{DeviceSource, HelperEvent, HelperKind};
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -177,16 +177,19 @@ impl Bonjour {
         };
         let publisher = publish(&record, &device_id)?;
         println!("[cp] published {AIRPLAY_SERVICE} port={airplay_port} deviceid={device_id}");
-        let mirror = mirror.and_then(|m| match spawn(MIRROR_NAME, m.port, &m.txt) {
+        let mirror = mirror.and_then(|m| match spawn(&m.name, m.port, &m.txt) {
             Ok(child) => {
                 println!(
-                    "[airplay] published {AIRPLAY_SERVICE} {MIRROR_NAME:?} port={}",
-                    m.port
+                    "[airplay] published {AIRPLAY_SERVICE} {:?} port={}",
+                    m.name, m.port
                 );
                 Some(child)
             }
             Err(e) => {
-                eprintln!("[airplay] {AIRPLAY_SERVICE} {MIRROR_NAME:?} not published: {e}");
+                eprintln!(
+                    "[airplay] {AIRPLAY_SERVICE} {:?} not published: {e}",
+                    m.name
+                );
                 None
             }
         });

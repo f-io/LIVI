@@ -180,9 +180,14 @@ impl Services {
                 helper,
                 start: Box::new(move || {
                     let cfg = applied.borrow().clone();
+                    let start =
+                        helper::helper_start(&cfg, &env_identity, &env_accessory, airplay_port);
                     livi_core_proto::helper::HelperStart {
-                        mirror: mirror.clone(),
-                        ..helper::helper_start(&cfg, &env_identity, &env_accessory, airplay_port)
+                        mirror: mirror.clone().map(|m| livi_core_proto::helper::Mirror {
+                            name: livi_core_proto::helper::mirror_name(&start.settings.car_name),
+                            ..m
+                        }),
+                        ..start
                     }
                 }),
                 restart: helper_restart.clone(),

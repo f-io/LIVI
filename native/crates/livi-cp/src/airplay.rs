@@ -166,6 +166,7 @@ pub trait AirplayMedia: Send + Sync {
     fn metadata(&self, id: u64, meta: AirplayMeta);
     fn volume(&self, db: f64);
     fn volume_db(&self) -> f64;
+    fn name(&self) -> String;
 }
 
 pub struct AirplayCtx {
@@ -174,7 +175,6 @@ pub struct AirplayCtx {
     pub pairings: Pairings,
     pub helper: HelperSock,
     pub device_id: String,
-    pub name: String,
     pub source_version: String,
     pub features: u64,
     pub txt: Vec<String>,
@@ -541,7 +541,7 @@ impl Conn {
             ("statusFlags", Value::Int(68)),
             ("model", Value::String("LIVI".into())),
             ("manufacturer", Value::String("LIVI".into())),
-            ("name", Value::String(ctx.name.clone())),
+            ("name", Value::String(ctx.media.name())),
             ("sourceVersion", Value::String(ctx.source_version.clone())),
             ("protocolVersion", Value::String("1.1".into())),
             ("pk", Value::Data(ctx.identity.public.to_vec())),

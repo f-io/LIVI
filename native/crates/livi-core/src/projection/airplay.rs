@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use livi_core_proto::features::{self, *};
-use livi_core_proto::helper::{MIRROR_NAME, Mirror};
+use livi_core_proto::helper::{Mirror, mirror_name};
 use livi_core_proto::helper_events::NowPlayingPatch;
 use livi_cp::airplay::{
     AirplayCodec, AirplayCommand, AirplayCtx, AirplayFormat, AirplayMedia, AirplayMeta,
@@ -80,6 +80,7 @@ pub struct Receiver {
 impl Receiver {
     pub fn mirror(&self) -> Mirror {
         Mirror {
+            name: mirror_name(""),
             port: self.port,
             txt: self.txt.clone(),
         }
@@ -150,7 +151,6 @@ pub fn start(
         pairings: Pairings::new(user_data.join("cp/airplay-pairings.json")),
         helper: HelperSock::new(helper),
         device_id: receiver.device_id,
-        name: MIRROR_NAME.into(),
         source_version: receiver.source_version,
         features: FEATURES,
         txt: receiver.txt,
@@ -340,6 +340,10 @@ impl AirplayMedia for GstAirplay {
 
     fn volume_db(&self) -> f64 {
         db_of(self.hub.config().hu_volume)
+    }
+
+    fn name(&self) -> String {
+        mirror_name(&self.hub.applied().borrow().car_name)
     }
 
     fn metadata(&self, id: u64, meta: AirplayMeta) {

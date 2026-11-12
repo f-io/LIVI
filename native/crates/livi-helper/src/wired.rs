@@ -404,7 +404,6 @@ pub(crate) fn announce(
     airplay: &Airplay,
     carplay: bool,
 ) -> Vec<livi_mdns::responder::Responder> {
-    use livi_core_proto::helper::MIRROR_NAME;
     use livi_helper_stack::bonjour::AIRPLAY_SERVICE;
     let carplay = u16::try_from(cp.airplay_port)
         .ok()
@@ -413,7 +412,7 @@ pub(crate) fn announce(
     let mirror = airplay
         .mirror
         .as_ref()
-        .map(|m| (MIRROR_NAME, m.port, m.txt.as_slice()));
+        .map(|m| (m.name.as_str(), m.port, m.txt.as_slice()));
     carplay
         .into_iter()
         .chain(mirror)
