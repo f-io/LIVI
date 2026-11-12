@@ -293,21 +293,11 @@ fn serve(start: HelperStart, host: Host) -> Held {
     #[cfg(target_os = "android")]
     let shared_bluetooth = wireless.and_then(|(identity, cp)| {
         let android_auto = android_auto.then(|| {
-            let sessions = host.sockets.sessions.clone();
-            let events = aa_events.clone();
-            tokio::spawn(livi_aa::server::run(
+            crate::aa::serve_wifi(
                 livi_aa::consts::TCP_PORT,
-                sessions,
-                move |socket, peer| {
-                    crate::aa::announce_session(
-                        &events,
-                        socket,
-                        peer,
-                        livi_core_proto::aa_events::AaTransport::Wifi,
-                        None,
-                    );
-                },
-            ));
+                host.sockets.sessions.clone(),
+                aa_events.clone(),
+            );
             let hfp = livi_helper_stack::hfp::Hfp::default();
             hfp.set_events(aa_events.clone());
             crate::wireless::AndroidAuto {

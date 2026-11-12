@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use livi_bt_host::sdp::Service;
-use livi_core_proto::aa_events::AaTransport;
 use livi_core_proto::helper::HelperSockets;
 use livi_helper_stack::bringup::{AskOnAir, CpConfig};
 use livi_helper_stack::driver::spawn_link_stream;
@@ -115,14 +114,7 @@ fn start_android_auto(
     wired: WiredPhones,
     state: Arc<HelperState>,
 ) {
-    let sessions = events.clone();
-    tokio::spawn(livi_aa::server::run(
-        radios.port,
-        radios.sockets.sessions.clone(),
-        move |socket, peer| {
-            crate::aa::announce_session(&sessions, socket, peer, AaTransport::Wifi, None);
-        },
-    ));
+    crate::aa::serve_wifi(radios.port, radios.sockets.sessions.clone(), events.clone());
     let cfg = AaConfig {
         ssid: radios.name.clone(),
         passphrase: radios.passphrase.clone(),

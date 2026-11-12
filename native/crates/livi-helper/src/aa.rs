@@ -294,6 +294,12 @@ fn emit_device(bcast: &Broadcaster, mac: &str, id: &wpp::Identity) {
     bcast.push_json(event.to_line());
 }
 
+pub fn serve_wifi(port: u16, sessions: PathBuf, events: Broadcaster) {
+    tokio::spawn(livi_aa::server::run(port, sessions, move |socket, peer| {
+        announce_session(&events, socket, peer, AaTransport::Wifi, None);
+    }));
+}
+
 pub fn announce_session(
     bcast: &Broadcaster,
     socket: &str,

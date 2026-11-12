@@ -6,7 +6,6 @@ use std::error::Error;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use livi_core_proto::aa_events::AaTransport;
 use livi_core_proto::helper::HelperSockets;
 use livi_helper_stack::bringup::CpConfig;
 use livi_helper_stack::bt;
@@ -146,14 +145,11 @@ pub async fn serve(b: Bluetooth, mut stop: watch::Receiver<bool>) -> Result<(), 
     );
 
     if wireless.android_auto {
-        let events = b.aa_events.clone();
-        tokio::spawn(livi_aa::server::run(
+        crate::aa::serve_wifi(
             livi_aa::consts::TCP_PORT,
             b.sockets.sessions.clone(),
-            move |socket, peer| {
-                crate::aa::announce_session(&events, socket, peer, AaTransport::Wifi, None);
-            },
-        ));
+            b.aa_events.clone(),
+        );
         let android_auto = bt::start_aa(&conn, &adapter)
             .await
             .map_err(|e| e.to_string());
