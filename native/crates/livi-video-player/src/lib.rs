@@ -85,7 +85,7 @@ pub fn log_bus_messages(pipeline: &gst::Pipeline) {
             }
             _ => {}
         }
-        gst::BusSyncReply::Pass
+        gst::BusSyncReply::Drop
     });
 }
 

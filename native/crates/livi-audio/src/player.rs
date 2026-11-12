@@ -229,7 +229,7 @@ impl Player {
                         e.debug().unwrap_or_default()
                     );
                 }
-                gst::BusSyncReply::Pass
+                gst::BusSyncReply::Drop
             });
         }
 
