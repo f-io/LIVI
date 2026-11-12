@@ -6,69 +6,7 @@ use super::Remote;
 use super::arm::imx6ul::shell::md5_hex;
 use super::shell::BindShell;
 
-const MAGIC: &[u8; 4] = b"LFWB";
-const VERSION: u8 = 1;
-const HEADER_LEN: usize = 8;
-const DESC_LEN: usize = 12;
-
-pub fn pack(images: &[(u8, &[u8])]) -> Vec<u8> {
-    let payload: usize = images.iter().map(|(_, data)| data.len()).sum();
-    let mut out = Vec::with_capacity(HEADER_LEN + images.len() * DESC_LEN + payload);
-    out.extend_from_slice(MAGIC);
-    out.push(VERSION);
-    out.push(images.len() as u8);
-    out.extend_from_slice(&[0, 0]);
-    for (typ, data) in images {
-        out.push(*typ);
-        out.push(0);
-        out.extend_from_slice(&[0, 0]);
-        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
-        out.extend_from_slice(&crc32(data).to_le_bytes());
-    }
-    for (_, data) in images {
-        out.extend_from_slice(data);
-    }
-    out
-}
-
-pub fn unpack(bytes: &[u8]) -> Result<Vec<(u8, Vec<u8>)>, String> {
-    if bytes.len() < HEADER_LEN || &bytes[..4] != MAGIC {
-        return Err("not an LFWB bundle".into());
-    }
-    if bytes[4] != VERSION {
-        return Err(format!("unsupported LFWB version {}", bytes[4]));
-    }
-    let count = bytes[5] as usize;
-    let mut off = HEADER_LEN + count * DESC_LEN;
-    if bytes.len() < off {
-        return Err("LFWB bundle is truncated in its descriptor table".into());
-    }
-    let mut images = Vec::with_capacity(count);
-    for i in 0..count {
-        let desc = &bytes[HEADER_LEN + i * DESC_LEN..][..DESC_LEN];
-        let typ = desc[0];
-        let len = u32::from_le_bytes(desc[4..8].try_into().unwrap()) as usize;
-        let crc = u32::from_le_bytes(desc[8..12].try_into().unwrap());
-        let data = bytes
-            .get(off..off + len)
-            .ok_or_else(|| format!("LFWB bundle is truncated in image type {typ}"))?;
-        if crc32(data) != crc {
-            return Err(format!("LFWB image type {typ} does not match its crc32"));
-        }
-        images.push((typ, data.to_vec()));
-        off += len;
-    }
-    Ok(images)
-}
-
-pub fn image(images: &[(u8, Vec<u8>)], typ: u8) -> Option<&[u8]> {
-    images
-        .iter()
-        .find(|(t, _)| *t == typ)
-        .map(|(_, data)| data.as_slice())
-}
-
-pub use livi_base::checksum::crc32;
+pub use livi_base::lfwb::{image, pack, unpack};
 
 pub fn write_mtd(sh: &mut BindShell, node: &str, data: &[u8]) -> Result<(), String> {
     let cmd = format!(
@@ -161,30 +99,5 @@ mod tests {
         assert_eq!(raw_node("/dev/mtdblock12"), "/dev/mtd12");
         assert_eq!(raw_node("/dev/mtd6"), "/dev/mtd6");
         assert_eq!(raw_node("/dev/mtdblock"), "/dev/mtdblock");
-    }
-
-    #[test]
-    fn crc32_is_the_standard_one() {
-        assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
-    }
-
-    #[test]
-    fn a_packed_bundle_unpacks_to_the_same_images() {
-        let boot = vec![7u8; 1000];
-        let rootfs: Vec<u8> = (0..3000u32).map(|i| i as u8).collect();
-        let bundle = pack(&[(3, &boot), (6, &rootfs)]);
-        let images = unpack(&bundle).unwrap();
-        assert_eq!(image(&images, 3), Some(boot.as_slice()));
-        assert_eq!(image(&images, 6), Some(rootfs.as_slice()));
-        assert_eq!(image(&images, 1), None);
-    }
-
-    #[test]
-    fn a_damaged_bundle_is_refused_not_flashed() {
-        let mut bundle = pack(&[(3, &[1, 2, 3, 4])]);
-        assert!(unpack(&bundle[..bundle.len() - 1]).is_err(), "truncated");
-        *bundle.last_mut().unwrap() ^= 1;
-        assert!(unpack(&bundle).is_err(), "flipped bit");
-        assert!(unpack(b"nope").is_err(), "not a bundle");
     }
 }

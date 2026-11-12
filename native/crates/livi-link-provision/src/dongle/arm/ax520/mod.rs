@@ -216,14 +216,14 @@ mtd9: 00070000 00010000 \"UDISK\"
         let boot = vec![1u8; 16];
         let customer = vec![2u8; 16];
         let rootfs = vec![3u8; 16];
-        let link = lfwb::unpack(&lfwb::pack(&[(BOOT_MTD, &boot), (ROOTFS_MTD, &rootfs)])).unwrap();
-        assert!(lfwb::image(&link, CUSTOMER_MTD).is_none());
-        let stock = lfwb::unpack(&lfwb::pack(&[
+        let link = lfwb::pack(&[(BOOT_MTD, &boot), (ROOTFS_MTD, &rootfs)]);
+        assert!(lfwb::image(&lfwb::unpack(&link).unwrap(), CUSTOMER_MTD).is_none());
+        let stock = lfwb::pack(&[
             (BOOT_MTD, &boot),
             (CUSTOMER_MTD, &customer),
             (ROOTFS_MTD, &rootfs),
-        ]))
-        .unwrap();
+        ]);
+        let stock = lfwb::unpack(&stock).unwrap();
         assert_eq!(lfwb::image(&stock, CUSTOMER_MTD), Some(&customer[..]));
         assert_eq!(lfwb::image(&stock, BOOT_MTD), Some(&boot[..]));
         assert_eq!(lfwb::image(&stock, ROOTFS_MTD), Some(&rootfs[..]));

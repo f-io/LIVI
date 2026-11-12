@@ -21,7 +21,7 @@ pub(crate) fn flash_dispatch(
     let Some(data) = body else {
         return (S_400, T_JSON, err_json("empty body"));
     };
-    if data.starts_with(BUNDLE_MAGIC) {
+    if data.starts_with(livi_base::lfwb::MAGIC) {
         return flash_bundle(&c.flash, body, clen);
     }
     (
@@ -29,22 +29,6 @@ pub(crate) fn flash_dispatch(
         T_JSON,
         err_json("not a LIVI Link firmware bundle (.lfwb)"),
     )
-}
-
-pub(crate) const BUNDLE_MAGIC: &[u8; 4] = b"LFWB";
-
-pub(crate) const BUNDLE_VERSION: u8 = 1;
-
-pub(crate) const BUNDLE_HDR_LEN: usize = 8;
-
-pub(crate) const BUNDLE_DESC_LEN: usize = 12;
-
-pub(crate) struct ImageDesc {
-    typ: u8,
-    _flags: u8,
-    length: u32,
-    crc32: u32,
-    payload_offset: usize,
 }
 
 pub(crate) fn flash_bundle(
@@ -58,97 +42,40 @@ pub(crate) fn flash_bundle(
     if clen == 0 || (data.len() as u64) != clen {
         return (S_400, T_JSON, err_json("content-length mismatch"));
     }
-    if data.len() < BUNDLE_HDR_LEN {
-        return (S_400, T_JSON, err_json("bundle too small for header"));
-    }
-    if data[4] != BUNDLE_VERSION {
+    let images = match livi_base::lfwb::unpack(data) {
+        Ok(images) => images,
+        Err(e) => return (S_400, T_JSON, err_json(&e)),
+    };
+    if images.is_empty() || images.len() > 8 {
         return (
             S_400,
             T_JSON,
-            err_json(&format!("bundle version {} not supported", data[4])),
-        );
-    }
-    let count = data[5] as usize;
-    if count == 0 || count > 8 {
-        return (
-            S_400,
-            T_JSON,
-            err_json(&format!("bundle image count {} out of range", count)),
-        );
-    }
-    let descs_end = BUNDLE_HDR_LEN + count * BUNDLE_DESC_LEN;
-    if data.len() < descs_end {
-        return (
-            S_400,
-            T_JSON,
-            err_json("bundle truncated in descriptor table"),
+            err_json(&format!("bundle image count {} out of range", images.len())),
         );
     }
 
-    let mut descs: Vec<ImageDesc> = Vec::with_capacity(count);
-    let mut cursor = descs_end;
-    for i in 0..count {
-        let off = BUNDLE_HDR_LEN + i * BUNDLE_DESC_LEN;
-        let typ = data[off];
-        let flags = data[off + 1];
-        let length =
-            u32::from_le_bytes([data[off + 4], data[off + 5], data[off + 6], data[off + 7]]);
-        let crc =
-            u32::from_le_bytes([data[off + 8], data[off + 9], data[off + 10], data[off + 11]]);
-        if cursor + length as usize > data.len() {
-            return (
-                S_400,
-                T_JSON,
-                err_json(&format!(
-                    "bundle payload short for image {} (type {})",
-                    i, typ
-                )),
-            );
-        }
-        descs.push(ImageDesc {
-            typ,
-            _flags: flags,
-            length,
-            crc32: crc,
-            payload_offset: cursor,
-        });
-        cursor += length as usize;
-    }
-
-    for (i, d) in descs.iter().enumerate() {
-        let slice = &data[d.payload_offset..d.payload_offset + d.length as usize];
-        if crc32(slice) != d.crc32 {
-            return (
-                S_400,
-                T_JSON,
-                err_json(&format!(
-                    "bundle image {} (type {}) CRC mismatch — corrupt upload",
-                    i, d.typ
-                )),
-            );
-        }
-    }
-
-    let mut staged: Vec<(&MtdSlot, Option<Vec<u8>>)> = Vec::with_capacity(descs.len());
-    for d in descs.iter() {
-        let Some(slot) = f.mtd.iter().find(|s| s.typ == d.typ) else {
+    let mut staged: Vec<(&MtdSlot, Option<Vec<u8>>)> = Vec::with_capacity(images.len());
+    for &(typ, slice) in &images {
+        let Some(slot) = f.mtd.iter().find(|s| s.typ == typ) else {
             return (
                 S_400,
                 T_JSON,
                 err_json(&format!(
                     "image type {} is not for this dongle, nothing written",
-                    d.typ
+                    typ
                 )),
             );
         };
-        let slice = &data[d.payload_offset..d.payload_offset + d.length as usize];
-        if (d.length as u64) > slot.size {
+        if slice.len() as u64 > slot.size {
             return (
                 S_400,
                 T_JSON,
                 err_json(&format!(
                     "image type {} ({}) is {} B, exceeds slot {} B, nothing written",
-                    d.typ, slot.node, d.length, slot.size
+                    typ,
+                    slot.node,
+                    slice.len(),
+                    slot.size
                 )),
             );
         }
@@ -158,7 +85,7 @@ pub(crate) fn flash_bundle(
                 T_JSON,
                 err_json(&format!(
                     "image type {} payload magic mismatch for {}, nothing written",
-                    d.typ, slot.node
+                    typ, slot.node
                 )),
             );
         }
@@ -178,7 +105,7 @@ pub(crate) fn flash_bundle(
                     T_JSON,
                     err_json(&format!(
                         "image type {} for {}: {e}, nothing written",
-                        d.typ, slot.node
+                        typ, slot.node
                     )),
                 );
             }
@@ -189,9 +116,8 @@ pub(crate) fn flash_bundle(
 
     let mut wrote_any = false;
     let mut report: Vec<String> = Vec::new();
-    for (d, (slot, staged)) in descs.iter().zip(&staged) {
+    for (&(_, slice), (slot, staged)) in images.iter().zip(&staged) {
         let node = slot.node.as_str();
-        let slice = &data[d.payload_offset..d.payload_offset + d.length as usize];
         let image = staged.as_deref().unwrap_or(slice);
         let len = image.len();
         let path = format!("/dev/{node}");

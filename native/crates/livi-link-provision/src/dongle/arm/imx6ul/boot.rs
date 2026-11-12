@@ -50,8 +50,8 @@ pub fn read_bundle(bytes: &[u8]) -> Result<Bundle, String> {
     };
     for (typ, data) in crate::dongle::lfwb::unpack(bytes)? {
         match typ {
-            TYPE_KERNEL => bundle.kernel = Some(data),
-            TYPE_ROOTFS if data.starts_with(b"hsqs") => bundle.rootfs = Some(data),
+            TYPE_KERNEL => bundle.kernel = Some(data.to_vec()),
+            TYPE_ROOTFS if data.starts_with(b"hsqs") => bundle.rootfs = Some(data.to_vec()),
             TYPE_ROOTFS => return Err("the rootfs image is not a squashfs".into()),
             other => return Err(format!("image type {other} is not for this dongle")),
         }

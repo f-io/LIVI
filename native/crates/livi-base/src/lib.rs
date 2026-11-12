@@ -6,6 +6,7 @@ pub mod checksum;
 pub mod frame;
 pub mod fs;
 pub mod hex;
+pub mod lfwb;
 pub mod num;
 pub mod sys;
 pub mod time;
