@@ -53,7 +53,7 @@ LIVI_GST_DEBUG=1 ./LIVI*.AppImage
 
 | Flag                   | Effect                                                                                  |
 | ---------------------- | --------------------------------------------------------------------------------------- |
-| `LIVI_WLR_DEBUG=1`     | Raise the nested wlroots compositor log level to `WLR_DEBUG`.                           |
+| `LIVI_WLR_DEBUG=1`     | Raise the compositor log level to debug.                                                |
 | `LIVI_DEBUG_BG=1`      | Paint a magenta debug background in the compositor, to see the layout and video planes. |
 | `LIVI_NO_COMPOSITOR=1` | Start without the nested compositor.                                                    |
 
@@ -71,10 +71,9 @@ LIVI_GST_DEBUG=1 ./LIVI*.AppImage
 
 ### CarPlay, Bluetooth and Wi-Fi helper
 
-| Flag               | Effect                                                          |
-| ------------------ | --------------------------------------------------------------- |
-| `LIVI_CP_DEBUG=1`  | Verbose CarPlay and helper logging (also enabled by `DEBUG=1`). |
-| `LIVI_CP_SYSLOG=1` | Tap the CarPlay helper output into syslog.                      |
+| Flag              | Effect                                                          |
+| ----------------- | --------------------------------------------------------------- |
+| `LIVI_CP_DEBUG=1` | Verbose CarPlay and helper logging (also enabled by `DEBUG=1`). |
 
 ## Common workflows
 
