@@ -3059,6 +3059,7 @@ name = "iap2-usbmux"
 version = "10.5.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
+ "livi-base",
  "livi-session-io",
  "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "nusb 0.2.9 (git+https://github.com/f-io/nusb?rev=10895e1a7c762498324cb1c36a4b67cf60083235)",
@@ -3861,6 +3862,7 @@ dependencies = [
  "gstreamer-audio",
  "gstreamer-controller",
  "libc 1.0.0-alpha.5",
+ "livi-base",
  "livi-crypto",
  "livi-output-proto",
  "socket2",
@@ -4005,6 +4007,7 @@ dependencies = [
  "iap2-usbmux",
  "iap2-wired",
  "livi-aa",
+ "livi-base",
  "livi-bt-host",
  "livi-core-proto",
  "livi-helper-stack",
@@ -4088,6 +4091,7 @@ version = "10.5.0"
 dependencies = [
  "iap2-usbmux",
  "libc 1.0.0-alpha.5",
+ "livi-base",
  "livi-net",
  "livi-session-io",
  "livi-wifi",

@@ -86,10 +86,7 @@ pub fn derived_accessory_id(pairing_id: &str) -> String {
     let mut mac = [0u8; 6];
     mac.copy_from_slice(&digest[..6]);
     mac[0] = (mac[0] & 0xfc) | 0x02;
-    mac.iter()
-        .map(|b| format!("{b:02X}"))
-        .collect::<Vec<_>>()
-        .join(":")
+    livi_base::hex::mac(&mac)
 }
 
 pub fn accessory_id(

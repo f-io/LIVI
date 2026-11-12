@@ -28,9 +28,32 @@ pub fn crc32(data: &[u8]) -> u32 {
         .fold(!0u32, |c, &b| CRC32[usize::from(c as u8 ^ b)] ^ (c >> 8))
 }
 
+pub fn inet(parts: &[&[u8]]) -> u16 {
+    let mut sum: u32 = parts
+        .iter()
+        .flat_map(|part| part.chunks(2))
+        .map(|p| u32::from(u16::from_be_bytes([p[0], *p.get(1).unwrap_or(&0)])))
+        .sum();
+    while sum > 0xffff {
+        sum = (sum & 0xffff) + (sum >> 16);
+    }
+    !(sum as u16)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inet_is_the_rfc1071_one() {
+        let header = [
+            0x45, 0x00, 0x00, 0x73, 0x00, 0x00, 0x40, 0x00, 0x40, 0x11, 0x00, 0x00, 0xc0, 0xa8,
+            0x00, 0x01, 0xc0, 0xa8, 0x00, 0xc7,
+        ];
+        assert_eq!(inet(&[&header]), 0xb861);
+        assert_eq!(inet(&[&header[..10], &header[10..]]), 0xb861);
+        assert_eq!(inet(&[&[0x01]]), !0x0100);
+    }
 
     #[test]
     fn crc32_is_the_ieee_one() {

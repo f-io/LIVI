@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+livi-base.workspace = true
 livi-session-io.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "io-util", "time"] }

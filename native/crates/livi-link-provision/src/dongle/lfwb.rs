@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use md5::{Digest, Md5};
-
 use super::Remote;
+use super::arm::imx6ul::shell::md5_hex;
 use super::shell::BindShell;
 
 const MAGIC: &[u8; 4] = b"LFWB";
@@ -70,13 +69,6 @@ pub fn image(images: &[(u8, Vec<u8>)], typ: u8) -> Option<&[u8]> {
 }
 
 pub use livi_base::checksum::crc32;
-
-fn md5_hex(data: &[u8]) -> String {
-    Md5::digest(data)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
 
 pub fn write_mtd(sh: &mut BindShell, node: &str, data: &[u8]) -> Result<(), String> {
     let cmd = format!(

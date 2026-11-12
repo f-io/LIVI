@@ -301,7 +301,7 @@ fn time(digits: &str) -> Result<Vec<u8>, CertError> {
 }
 
 fn upper_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02X}")).collect()
+    livi_base::hex::encode(bytes).to_ascii_uppercase()
 }
 
 struct Issuer {

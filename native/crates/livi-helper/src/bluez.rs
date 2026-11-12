@@ -112,7 +112,7 @@ pub async fn serve(b: Bluetooth, mut stop: watch::Receiver<bool>) -> Result<(), 
     let bt_mac = bt::adapter_address(&conn, &adapter).await?;
     println!(
         "[helper] adapter {} up (RFCOMM ch {})",
-        format_mac(&bt_mac),
+        livi_base::hex::mac(&bt_mac),
         bt::IAP_CHANNEL
     );
     let identity = Identity {
@@ -285,11 +285,4 @@ async fn watch_android_auto(
             }
         });
     }
-}
-
-fn format_mac(mac: &[u8; 6]) -> String {
-    mac.iter()
-        .map(|b| format!("{b:02X}"))
-        .collect::<Vec<_>>()
-        .join(":")
 }

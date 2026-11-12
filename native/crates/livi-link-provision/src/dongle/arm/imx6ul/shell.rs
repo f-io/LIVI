@@ -256,10 +256,7 @@ fn md5_in(out: &str) -> Option<String> {
 
 pub fn md5_hex(data: &[u8]) -> String {
     use md5::{Digest, Md5};
-    Md5::digest(data)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    livi_base::hex::encode(&Md5::digest(data))
 }
 
 fn would_block(e: &std::io::Error) -> bool {

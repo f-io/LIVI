@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 libc.workspace = true
+livi-base.workspace = true
 livi-net.workspace = true
 livi-session-io.workspace = true
 livi-wifi.workspace = true

@@ -220,21 +220,13 @@ fn source_link_address(mut options: &[u8]) -> bool {
 }
 
 fn checksum(source: Ipv6Addr, dest: Ipv6Addr, icmp: &[u8]) -> u16 {
-    let mut sum: u32 = 0;
-    let mut add = |bytes: &[u8]| {
-        for pair in bytes.chunks(2) {
-            sum += u32::from(u16::from_be_bytes([pair[0], *pair.get(1).unwrap_or(&0)]));
-        }
-    };
-    add(&source.octets());
-    add(&dest.octets());
-    add(&(icmp.len() as u32).to_be_bytes());
-    add(&[0, 0, 0, NEXT_ICMPV6]);
-    add(icmp);
-    while sum > 0xffff {
-        sum = (sum & 0xffff) + (sum >> 16);
-    }
-    !(sum as u16)
+    livi_base::checksum::inet(&[
+        &source.octets(),
+        &dest.octets(),
+        &(icmp.len() as u32).to_be_bytes(),
+        &[0, 0, 0, NEXT_ICMPV6],
+        icmp,
+    ])
 }
 
 #[cfg(test)]

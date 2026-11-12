@@ -37,11 +37,9 @@ pub const CONTINUING: u8 = 0x01;
 pub type Addr = [u8; 6];
 
 pub fn text(addr: &Addr) -> String {
-    addr.iter()
-        .rev()
-        .map(|b| format!("{b:02X}"))
-        .collect::<Vec<_>>()
-        .join(":")
+    let mut shown = *addr;
+    shown.reverse();
+    livi_base::hex::mac(&shown)
 }
 
 pub fn parse_addr(text: &str) -> Option<Addr> {

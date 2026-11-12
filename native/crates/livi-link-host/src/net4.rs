@@ -228,17 +228,6 @@ fn ethernet(dest: Mac, source: Mac, ethertype: u16, payload: &[u8]) -> Vec<u8> {
     frame
 }
 
-fn checksum(bytes: &[u8]) -> u16 {
-    let mut sum: u32 = bytes
-        .chunks(2)
-        .map(|p| u32::from(u16::from_be_bytes([p[0], *p.get(1).unwrap_or(&0)])))
-        .sum();
-    while sum > 0xffff {
-        sum = (sum & 0xffff) + (sum >> 16);
-    }
-    !(sum as u16)
-}
-
 fn udp(source: Ipv4Addr, dest: Ipv4Addr, ports: (u16, u16), payload: &[u8]) -> Vec<u8> {
     let total = IPV4_HEADER + UDP_HEADER + payload.len();
     let mut packet = Vec::with_capacity(total);
@@ -247,7 +236,7 @@ fn udp(source: Ipv4Addr, dest: Ipv4Addr, ports: (u16, u16), payload: &[u8]) -> V
     packet.extend_from_slice(&[0, 0, 0, 0, TTL, PROTO_UDP, 0, 0]);
     packet.extend_from_slice(&source.octets());
     packet.extend_from_slice(&dest.octets());
-    let sum = checksum(&packet[..IPV4_HEADER]);
+    let sum = livi_base::checksum::inet(&[&packet[..IPV4_HEADER]]);
     packet[10..12].copy_from_slice(&sum.to_be_bytes());
     packet.extend_from_slice(&ports.0.to_be_bytes());
     packet.extend_from_slice(&ports.1.to_be_bytes());
@@ -443,7 +432,7 @@ mod tests {
         assert_eq!(&frame[0..6], &BROADCAST);
         assert_eq!(&frame[6..12], &OURS);
         let packet = &frame[ETH_HEADER..];
-        assert_eq!(checksum(&packet[..IPV4_HEADER]), 0);
+        assert_eq!(livi_base::checksum::inet(&[&packet[..IPV4_HEADER]]), 0);
         assert_eq!(&packet[16..20], &[255; 4]);
         let bootp = &packet[IPV4_HEADER + UDP_HEADER..];
         assert_eq!(&bootp[4..8], &XID.to_be_bytes());

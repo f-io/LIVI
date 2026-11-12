@@ -128,7 +128,7 @@ pub fn alac_caps(clock_rate: u32, channels: u8, bits: u8) -> String {
 }
 
 pub fn aac_raw_caps(asc: &[u8], clock_rate: u32, channels: u8) -> String {
-    let hex: String = asc.iter().map(|b| format!("{b:02x}")).collect();
+    let hex = livi_base::hex::encode(asc);
     format!(
         "audio/mpeg,mpegversion=(int)4,stream-format=(string)raw,framed=(boolean)true,\
          rate=(int){clock_rate},channels=(int){channels},codec_data=(buffer){hex}"

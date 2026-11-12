@@ -24,6 +24,14 @@ pub fn decode(text: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
+pub fn mac(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|b| format!("{b:02X}"))
+        .collect::<Vec<_>>()
+        .join(":")
+}
+
 fn nibble(c: u8) -> Option<u8> {
     char::from(c).to_digit(16).map(|d| d as u8)
 }
@@ -40,6 +48,15 @@ mod tests {
         assert_eq!(decode("000FA5FF"), Some(bytes.to_vec()));
         assert_eq!(encode(&[]), "");
         assert_eq!(decode(""), Some(Vec::new()));
+    }
+
+    #[test]
+    fn mac_is_uppercase_and_colon_separated() {
+        assert_eq!(
+            mac(&[0x02, 0xab, 0x00, 0x10, 0xff, 0x7c]),
+            "02:AB:00:10:FF:7C"
+        );
+        assert_eq!(mac(&[]), "");
     }
 
     #[test]

@@ -327,7 +327,7 @@ fn describe(message: &[u8]) -> String {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    let shown: String = bytes.iter().take(512).map(|b| format!("{b:02x}")).collect();
+    let shown = livi_base::hex::encode(&bytes[..bytes.len().min(512)]);
     format!("hex {shown}{}", if bytes.len() > 512 { "…" } else { "" })
 }
 
