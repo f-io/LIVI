@@ -322,7 +322,7 @@ pub fn build(cfg: &InfoConfig) -> Value {
             "rightHandDrive".to_string(),
             Value::Bool(cfg.right_hand_drive),
         ),
-        ("keepAliveLowPower".to_string(), Value::Bool(false)),
+        ("keepAliveLowPower".to_string(), Value::Bool(true)),
         ("keepAliveSendStatsAsBody".to_string(), Value::Bool(false)),
         ("modes".to_string(), modes()),
     ];

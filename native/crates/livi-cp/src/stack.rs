@@ -742,7 +742,12 @@ impl<M: Media> Conn<M> {
         let Some(answered) = self.timing.as_ref().and_then(TimingSync::last_heard) else {
             return false;
         };
-        answered.max(self.last_request).elapsed() > PHONE_SILENT
+        let beacon = self.keep_alive.as_ref().and_then(KeepAlive::last_heard);
+        answered
+            .max(self.last_request)
+            .max(beacon.unwrap_or(answered))
+            .elapsed()
+            > PHONE_SILENT
     }
 }
 
