@@ -20,9 +20,9 @@ use livi_cp::airplay::{
 use livi_cp::helper_sock::HelperSock;
 use livi_cp::identity::Identity;
 use livi_cp::pairings::Pairings;
-use livi_host_proto::PLANE_AIRPLAY;
-use livi_media::gst_host::{AudioCodec, AudioOpts, GstHost};
+use livi_media::output::{AudioCodec, AudioOpts, Output};
 use livi_media::planes::MainPlane;
+use livi_output_proto::PLANE_AIRPLAY;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::{Notify, mpsc};
@@ -122,7 +122,7 @@ pub fn start(
     user_data: &Path,
     identity: &Identity,
     helper: &Path,
-    gst: GstHost,
+    gst: Output,
     airplay: Airplay,
 ) {
     let config = airplay.hub.config();
@@ -168,7 +168,7 @@ pub struct Airplay {
 }
 
 struct GstAirplay {
-    gst: GstHost,
+    gst: Output,
     plane: Arc<MainPlane>,
     receiver: Mutex<Option<u32>>,
     audio: Arc<ApAudio>,
@@ -221,13 +221,13 @@ fn db_of(level: f64) -> f64 {
 }
 
 pub struct ApAudio {
-    gst: GstHost,
+    gst: Output,
     stream: Mutex<Option<u32>>,
     duck: Mutex<f64>,
 }
 
 impl ApAudio {
-    pub fn new(gst: GstHost) -> Arc<Self> {
+    pub fn new(gst: Output) -> Arc<Self> {
         Arc::new(Self {
             gst,
             stream: Mutex::new(None),

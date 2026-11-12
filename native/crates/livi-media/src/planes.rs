@@ -5,14 +5,14 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use livi_host_proto::{
+use livi_output_proto::{
     AIRPLAY_TAG, CAMERA_TAG, CLUSTER_PLANE_MIN, CameraOrder, MAIN_TAG, PLANE_AIRPLAY, PLANE_CAMERA,
     PLANE_MAIN, PLANE_VIDEO, SCREENS, VIDEO_TAG,
 };
 use tokio::sync::broadcast;
 
 use crate::compositor::CompositorControl;
-use crate::gst_host::{GstHost, HostEvent, VideoCodec};
+use crate::output::{Output, OutputEvent, VideoCodec};
 
 const SCREEN: &str = SCREENS[0];
 
@@ -69,22 +69,22 @@ struct State {
 pub struct MainPlane {
     id: u32,
     tag: &'static str,
-    gst: GstHost,
+    gst: Output,
     comp: CompositorControl,
     state: Mutex<State>,
     created: broadcast::Sender<()>,
 }
 
 impl MainPlane {
-    pub fn new(gst: GstHost, comp: CompositorControl) -> Arc<Self> {
+    pub fn new(gst: Output, comp: CompositorControl) -> Arc<Self> {
         Self::on(PLANE_MAIN, MAIN_TAG, gst, comp)
     }
 
-    pub fn airplay(gst: GstHost, comp: CompositorControl) -> Arc<Self> {
+    pub fn airplay(gst: Output, comp: CompositorControl) -> Arc<Self> {
         Self::on(PLANE_AIRPLAY, AIRPLAY_TAG, gst, comp)
     }
 
-    fn on(id: u32, tag: &'static str, gst: GstHost, comp: CompositorControl) -> Arc<Self> {
+    fn on(id: u32, tag: &'static str, gst: Output, comp: CompositorControl) -> Arc<Self> {
         let (created, _) = broadcast::channel(8);
         Arc::new(Self {
             id,
@@ -104,7 +104,7 @@ impl MainPlane {
         self.created.subscribe()
     }
 
-    pub fn host_events(&self) -> broadcast::Receiver<HostEvent> {
+    pub fn host_events(&self) -> broadcast::Receiver<OutputEvent> {
         self.gst.subscribe()
     }
 
@@ -174,14 +174,14 @@ impl MainPlane {
 }
 
 pub struct VideoPlane {
-    gst: GstHost,
+    gst: Output,
     comp: CompositorControl,
     stops: AtomicU64,
     shown: AtomicBool,
 }
 
 impl VideoPlane {
-    pub fn new(gst: GstHost, comp: CompositorControl) -> Arc<Self> {
+    pub fn new(gst: Output, comp: CompositorControl) -> Arc<Self> {
         Arc::new(Self {
             gst,
             comp,
@@ -236,13 +236,13 @@ impl VideoPlane {
 }
 
 pub struct CameraPlane {
-    gst: GstHost,
+    gst: Output,
     comp: CompositorControl,
     stops: AtomicU64,
 }
 
 impl CameraPlane {
-    pub fn new(gst: GstHost, comp: CompositorControl) -> Arc<Self> {
+    pub fn new(gst: Output, comp: CompositorControl) -> Arc<Self> {
         Arc::new(Self {
             gst,
             comp,
@@ -280,7 +280,7 @@ impl CameraPlane {
 const CLUSTER_SCREENS: [&str; 3] = SCREENS;
 
 fn cluster_tag(i: usize) -> String {
-    livi_host_proto::cluster_tag(CLUSTER_SCREENS[i])
+    livi_output_proto::cluster_tag(CLUSTER_SCREENS[i])
 }
 
 fn cluster_plane(i: usize) -> u32 {
@@ -304,14 +304,14 @@ struct ClusterState {
 }
 
 pub struct ClusterPlanes {
-    gst: GstHost,
+    gst: Output,
     comp: CompositorControl,
     state: Mutex<ClusterState>,
     created: broadcast::Sender<()>,
 }
 
 impl ClusterPlanes {
-    pub fn new(gst: GstHost, comp: CompositorControl) -> Arc<Self> {
+    pub fn new(gst: Output, comp: CompositorControl) -> Arc<Self> {
         let (created, _) = broadcast::channel(8);
         Arc::new(Self {
             gst,
@@ -509,7 +509,7 @@ mod tests {
     async fn the_player_is_created_after_the_claim_and_only_once() {
         let dir = TempDir::new();
         let comp_listener = UnixListener::bind(dir.0.join("ctrl")).unwrap();
-        let gst = GstHost::new(dir.0.join("gst.sock"));
+        let gst = Output::new(dir.0.join("gst.sock"));
         let plane = MainPlane::new(gst.clone(), CompositorControl::connect(dir.0.join("ctrl")));
         let mut created = plane.player_created();
 
@@ -545,7 +545,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let mut framer = livi_host_proto::Framer::new();
+        let mut framer = livi_output_proto::Framer::new();
         framer.push(&buf[..n]);
         let msg = framer.next_message().unwrap().unwrap();
         assert_eq!((msg.op, msg.id), (1, PLANE_MAIN));
@@ -563,8 +563,8 @@ mod tests {
 
     async fn next_msg(
         host: &mut UnixStream,
-        framer: &mut livi_host_proto::Framer,
-    ) -> livi_host_proto::Message {
+        framer: &mut livi_output_proto::Framer,
+    ) -> livi_output_proto::Message {
         loop {
             if let Some(msg) = framer.next_message() {
                 return msg.unwrap();
@@ -582,7 +582,7 @@ mod tests {
     async fn a_cluster_player_runs_on_each_screen_that_shows_it() {
         let dir = TempDir::new();
         let comp_listener = UnixListener::bind(dir.0.join("ctrl")).unwrap();
-        let gst = GstHost::new(dir.0.join("gst.sock"));
+        let gst = Output::new(dir.0.join("gst.sock"));
         let planes =
             ClusterPlanes::new(gst.clone(), CompositorControl::connect(dir.0.join("ctrl")));
         let mut created = planes.player_created();
@@ -609,7 +609,7 @@ mod tests {
         assert!(seen.contains(&"videoshow cluster-cluster 1".to_string()));
 
         let mut host = UnixStream::connect(dir.0.join("gst.sock")).await.unwrap();
-        let mut framer = livi_host_proto::Framer::new();
+        let mut framer = livi_output_proto::Framer::new();
         let msg = next_msg(&mut host, &mut framer).await;
         assert_eq!((msg.op, msg.id), (1, CLUSTER_PLANE_MIN + 1));
 
@@ -629,7 +629,7 @@ mod tests {
     async fn the_video_plane_lies_over_the_main_screen_until_it_stops() {
         let dir = TempDir::new();
         let comp_listener = UnixListener::bind(dir.0.join("ctrl")).unwrap();
-        let gst = GstHost::new(dir.0.join("gst.sock"));
+        let gst = Output::new(dir.0.join("gst.sock"));
         let plane = VideoPlane::new(gst.clone(), CompositorControl::connect(dir.0.join("ctrl")));
 
         assert!(
@@ -651,11 +651,11 @@ mod tests {
         assert!(seen.contains(&"claim video".to_string()));
 
         let mut host = UnixStream::connect(dir.0.join("gst.sock")).await.unwrap();
-        let mut framer = livi_host_proto::Framer::new();
+        let mut framer = livi_output_proto::Framer::new();
         let msg = next_msg(&mut host, &mut framer).await;
         assert_eq!((msg.op, msg.id), (22, PLANE_VIDEO));
         assert_eq!(
-            livi_host_proto::parse_url_body(&msg.rest),
+            livi_output_proto::parse_url_body(&msg.rest),
             Some(("http://127.0.0.1:9/i.m3u8".into(), "car".into()))
         );
 
@@ -695,7 +695,7 @@ mod tests {
     async fn a_hidden_video_plane_stays_hidden_for_the_next_play() {
         let dir = TempDir::new();
         let comp_listener = UnixListener::bind(dir.0.join("ctrl")).unwrap();
-        let gst = GstHost::new(dir.0.join("gst.sock"));
+        let gst = Output::new(dir.0.join("gst.sock"));
         let plane = VideoPlane::new(gst.clone(), CompositorControl::connect(dir.0.join("ctrl")));
 
         let (ctrl, _) = tokio::time::timeout(Duration::from_secs(5), comp_listener.accept())

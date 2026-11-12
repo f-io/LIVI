@@ -7,7 +7,7 @@
 
 use core::ffi::CStr;
 
-use livi_host_proto::VideoCodec;
+use livi_output_proto::VideoCodec;
 
 pub fn parser_for(codec: VideoCodec) -> &'static CStr {
     match codec {

@@ -28,9 +28,9 @@ use livi_cp::hid::{KnobState, media_button, telephony_button};
 use livi_cp::manager::{CallPhase, CpCmd, CpEvent, CpHandle, HelperPresence, Presence, SessionId};
 use livi_cp::stack::{AudioKind, StackCmd, Touch};
 use livi_cp::ui_sync::{self, Appearance, PhoneChoice};
-use livi_host_proto::{PLANE_AIRPLAY, PLANE_MAIN};
-use livi_media::gst_host::HostEvent;
+use livi_media::output::OutputEvent;
 use livi_media::planes::{ClusterPlanes, Crop, MainPlane};
+use livi_output_proto::{PLANE_AIRPLAY, PLANE_MAIN};
 use serde_json::{Map, Value};
 use tokio::sync::{Notify, broadcast, mpsc, oneshot, watch};
 
@@ -717,17 +717,17 @@ impl Projection {
                     Err(broadcast::error::RecvError::Closed) => created = None,
                 },
                 ev = next_of(&mut host) => match ev {
-                    Ok(HostEvent::Started { plane: PLANE_MAIN }) => {
+                    Ok(OutputEvent::Started { plane: PLANE_MAIN }) => {
                         println!("[core] main video: first frame at the decoder");
                         self.main_video_shown();
                     }
-                    Ok(HostEvent::Started { plane: PLANE_AIRPLAY }) => {
+                    Ok(OutputEvent::Started { plane: PLANE_AIRPLAY }) => {
                         println!("[core] airplay video: first frame at the decoder");
                         self.ap_video_shown();
                     }
                     Ok(_) => {}
                     Err(broadcast::error::RecvError::Lagged(n)) => {
-                        eprintln!("[core] missed {n} gst-host events");
+                        eprintln!("[core] missed {n} output events");
                     }
                     Err(broadcast::error::RecvError::Closed) => host = None,
                 },

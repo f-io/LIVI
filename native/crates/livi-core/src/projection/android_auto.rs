@@ -12,9 +12,9 @@ use livi_aa_stack::helper_sock::AaHelperSock;
 use livi_aa_stack::manager::SessionId;
 use livi_aa_stack::media::{AaMedia, AudioKind, AudioOutput};
 use livi_core_proto::state::State;
-use livi_host_proto::{PLANE_CLUSTER_RECV, PLANE_MAIN, Probe, VideoCodec};
-use livi_media::gst_host::{self, FeedTarget, GstHost};
+use livi_media::output::{self, FeedTarget, Output};
 use livi_media::planes::{ClusterPlanes, Crop, MainPlane, crop_for};
+use livi_output_proto::{PLANE_CLUSTER_RECV, PLANE_MAIN, Probe, VideoCodec};
 use tokio::sync::{broadcast, mpsc, watch};
 
 use crate::devices::Shared;
@@ -102,7 +102,7 @@ fn is_call(o: &AudioOutput) -> bool {
 }
 
 pub struct GstAaMedia {
-    gst: GstHost,
+    gst: Output,
     plane: Arc<MainPlane>,
     clusters: Arc<ClusterPlanes>,
     state: watch::Receiver<State>,
@@ -116,7 +116,7 @@ pub struct GstAaMedia {
 
 impl GstAaMedia {
     pub fn new(
-        gst: GstHost,
+        gst: Output,
         plane: Arc<MainPlane>,
         clusters: Arc<ClusterPlanes>,
         state: watch::Receiver<State>,
@@ -429,8 +429,8 @@ impl AaMedia for GstAaMedia {
             }
             a.opening.push(key.clone());
         }
-        let opts = gst_host::AudioOpts {
-            codec: gst_host::AudioCodec::PcmLe,
+        let opts = output::AudioOpts {
+            codec: output::AudioCodec::PcmLe,
             payload_type: 0,
             clock_rate: sample_rate,
             channels: channels.min(u32::from(u8::MAX)) as u8,
@@ -543,12 +543,12 @@ mod tests {
     use std::time::Duration;
 
     use livi_core_proto::state::{Front, PerScreen};
-    use livi_host_proto::{Framer, encode_reply};
     use livi_media::compositor::CompositorControl;
+    use livi_output_proto::{Framer, encode_reply};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
 
-    use livi_host_proto::ops::{
+    use livi_output_proto::ops::{
         OP_AUDIO_ACTIVE, OP_AUDIO_OPEN, OP_AUDIO_STOP, OP_AUDIO_VOLUME, OP_CREATE, OP_FEED_CLOSE,
         OP_FEED_OPEN, OP_FEED_ROUTE, OP_SET_ACTIVE, OP_TAP_OPEN, OP_TAP_STOP, REPLY_AUDIO_PORTS,
         REPLY_FEED,
@@ -581,7 +581,7 @@ mod tests {
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
-            panic!("core never opened the gst-host socket");
+            panic!("core never opened the output socket");
         }
 
         async fn next(&mut self) -> (u8, u32, Vec<u8>) {
@@ -678,7 +678,7 @@ mod tests {
     async fn a_channel_opens_one_fed_stream_at_its_level_and_follows_the_session() {
         let dir = TempDir::new();
         let sock = dir.0.join("gst.sock");
-        let gst = GstHost::new(sock.clone());
+        let gst = Output::new(sock.clone());
         let ctrl = CompositorControl::connect(dir.0.join("ctrl"));
         let plane = MainPlane::new(gst.clone(), ctrl.clone());
         let clusters = ClusterPlanes::new(gst.clone(), ctrl);
@@ -727,7 +727,7 @@ mod tests {
     async fn every_session_switches_only_its_own_feeds() {
         let dir = TempDir::new();
         let sock = dir.0.join("gst.sock");
-        let gst = GstHost::new(sock.clone());
+        let gst = Output::new(sock.clone());
         let ctrl = CompositorControl::connect(dir.0.join("ctrl"));
         let plane = MainPlane::new(gst.clone(), ctrl.clone());
         let clusters = ClusterPlanes::new(gst.clone(), ctrl);
@@ -782,7 +782,7 @@ mod tests {
     async fn a_session_in_the_background_leaves_the_plane_to_the_front() {
         let dir = TempDir::new();
         let sock = dir.0.join("gst.sock");
-        let gst = GstHost::new(sock.clone());
+        let gst = Output::new(sock.clone());
         let ctrl = CompositorControl::connect(dir.0.join("ctrl"));
         let plane = MainPlane::new(gst.clone(), ctrl.clone());
         let clusters = ClusterPlanes::new(gst.clone(), ctrl);
@@ -825,7 +825,7 @@ mod tests {
     async fn a_call_gets_a_stream_the_helper_feeds_and_a_microphone_tap() {
         let dir = TempDir::new();
         let sock = dir.0.join("gst.sock");
-        let gst = GstHost::new(sock.clone());
+        let gst = Output::new(sock.clone());
         let ctrl = CompositorControl::connect(dir.0.join("ctrl"));
         let plane = MainPlane::new(gst.clone(), ctrl.clone());
         let clusters = ClusterPlanes::new(gst.clone(), ctrl);

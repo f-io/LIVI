@@ -11,7 +11,7 @@ use livi_base::num::round_half_up;
 use livi_core_proto::config::{Config, TouchCalibration};
 use livi_core_proto::input::{Input, Phase, Point};
 use livi_core_proto::state::{Display, Screen};
-use livi_host_proto::ctrl::{Command, Region, TouchCal};
+use livi_output_proto::ctrl::{Command, Region, TouchCal};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use livi_aa_proto::VersionResponseOptions;
-use livi_host_proto::feed as feedproto;
+use livi_output_proto::feed as feedproto;
 use prost::Message as _;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};

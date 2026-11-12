@@ -10,13 +10,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use livi_audio::stream::{AudioSink, Codec as AudioCodec};
 use livi_audio::uplink::UplinkCodec;
-pub use livi_host_proto::UrlStatus;
-use livi_host_proto::{
+pub use livi_output_proto::UrlStatus;
+use livi_output_proto::{
     CLUSTER_PLANE_MAX, CLUSTER_PLANE_MIN, CLUSTER_RECV_ID, Framer, TooLarge, cameras_body,
     feed as feedproto, feeder_of, parse_camera_body, parse_plane_body, parse_url_body,
     url_status_body,
 };
-pub use livi_host_proto::{CameraOrder, CameraSeen, VideoCodec};
+pub use livi_output_proto::{CameraOrder, CameraSeen, VideoCodec};
 use livi_screen_stream::ScreenSink;
 use livi_video::fanout::Fanout;
 use livi_video::nal::CpCodec;
@@ -31,7 +31,7 @@ mod spectrum;
 pub mod ui_plane;
 mod video;
 
-use livi_host_proto::ops::*;
+use livi_output_proto::ops::*;
 use spectrum::Spectrum;
 
 const DELAY_STEP_MS: u32 = 10;

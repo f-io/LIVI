@@ -22,7 +22,7 @@ pub fn play_url(id: u32, url: &str, audio_device: &str) -> Option<Url> {
 }
 
 fn ui_planes_path(id: u32) -> Option<String> {
-    std::env::var(livi_host_proto::ui_planes::PATH_ENV)
-        .inspect_err(|_| eprintln!("[gst-host] no UI to draw plane 0x{id:x} in"))
+    std::env::var(livi_output_proto::ui_planes::PATH_ENV)
+        .inspect_err(|_| eprintln!("[output] no UI to draw plane 0x{id:x} in"))
         .ok()
 }

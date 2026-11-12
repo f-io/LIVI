@@ -19,7 +19,7 @@ use livi_core_proto::message::MediaControl;
 use livi_core_proto::state::{Dab, DabScan, DabStation, Fm, FmStation, Protocol, State};
 use livi_dab::CHANNELS;
 use livi_fm::Rds;
-use livi_media::gst_host::GstHost;
+use livi_media::output::Output;
 use tokio::sync::{mpsc, watch};
 
 use crate::files::state_files::{Sdr, load_sdr, save_sdr};
@@ -162,7 +162,7 @@ impl Found {
 
 pub async fn run(
     hub: Arc<Hub>,
-    gst: GstHost,
+    gst: Output,
     mut asks: RadioAsks,
     mut activity: watch::Receiver<Activity>,
     user_data: PathBuf,
@@ -470,7 +470,7 @@ fn stick_gone(dab: &mut Dab, fm: &mut Fm) {
 
 struct Out {
     hub: Arc<Hub>,
-    gst: GstHost,
+    gst: Output,
     cmds: std_mpsc::Sender<Cmd>,
     user_data: PathBuf,
     own: Sdr,

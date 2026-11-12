@@ -6,7 +6,7 @@ license.workspace = true
 
 [dependencies]
 livi-aa-proto.workspace = true
-livi-host-proto.workspace = true
+livi-output-proto.workspace = true
 livi-session-io.workspace = true
 livi-wifi.workspace = true
 prost.workspace = true

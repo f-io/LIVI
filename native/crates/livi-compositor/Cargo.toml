@@ -28,7 +28,7 @@ smithay-client-toolkit = { version = "0.21", default-features = false, features 
 wayland-egl = "0.32"
 calloop-wayland-source = "0.4"
 log = "0.4"
-livi-host-proto.workspace = true
+livi-output-proto.workspace = true
 env_logger = { version = "0.11", default-features = false }
 tiny-skia = "0.12"
 ab_glyph = "0.2"

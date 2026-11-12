@@ -9,18 +9,18 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use livi_host_proto::ops::*;
-use livi_host_proto::{Framer, encode_reply as frame};
+use livi_output_proto::ops::*;
+use livi_output_proto::{Framer, encode_reply as frame};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixListener;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(4);
 
-pub use livi_host_proto::VideoCodec;
+pub use livi_output_proto::VideoCodec;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum HostEvent {
+pub enum OutputEvent {
     Config {
         plane: u32,
         codec: VideoCodec,
@@ -42,10 +42,10 @@ pub enum HostEvent {
     },
     UrlStatus {
         plane: u32,
-        status: livi_host_proto::UrlStatus,
+        status: livi_output_proto::UrlStatus,
     },
     Cameras {
-        list: Vec<livi_host_proto::CameraSeen>,
+        list: Vec<livi_output_proto::CameraSeen>,
     },
 }
 
@@ -100,15 +100,15 @@ pub struct MicOpts {
     pub device: String,
 }
 
-pub trait EmbeddedHost: Send + Sync {
+pub trait EmbeddedOutput: Send + Sync {
     fn serve(&self, sock: &Path);
-    fn probe(&self) -> livi_host_proto::Probe;
+    fn probe(&self) -> livi_output_proto::Probe;
 }
 
 #[derive(Clone)]
-pub enum MediaHost {
+pub enum OutputBackend {
     Process(PathBuf),
-    Embedded(Arc<dyn EmbeddedHost>),
+    Embedded(Arc<dyn EmbeddedOutput>),
 }
 
 #[derive(Debug, Clone)]
@@ -122,7 +122,7 @@ pub struct Process {
 #[derive(Clone)]
 pub enum Launch {
     Process(Process),
-    Embedded(Arc<dyn EmbeddedHost>),
+    Embedded(Arc<dyn EmbeddedOutput>),
 }
 
 #[derive(Default)]
@@ -147,18 +147,18 @@ struct Inner {
     feed_path: PathBuf,
     launch: Mutex<Option<Launch>>,
     state: Mutex<State>,
-    events: broadcast::Sender<HostEvent>,
+    events: broadcast::Sender<OutputEvent>,
     next_id: AtomicU32,
     next_conn: AtomicU64,
     feed_lock: tokio::sync::Mutex<()>,
 }
 
 #[derive(Clone)]
-pub struct GstHost {
+pub struct Output {
     inner: Arc<Inner>,
 }
 
-impl GstHost {
+impl Output {
     pub fn new(sock_path: PathBuf) -> Self {
         let feed_path = PathBuf::from(format!("{}.feed", sock_path.display()));
         let (events, _) = broadcast::channel(256);
@@ -192,7 +192,7 @@ impl GstHost {
         self.state().held = true;
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<HostEvent> {
+    pub fn subscribe(&self) -> broadcast::Receiver<OutputEvent> {
         self.inner.events.subscribe()
     }
 
@@ -226,7 +226,7 @@ impl GstHost {
         let listener = match UnixListener::bind(&self.inner.sock_path) {
             Ok(l) => l,
             Err(e) => {
-                eprintln!("[core] gst-host socket: {e}");
+                eprintln!("[core] output socket: {e}");
                 self.state().running = false;
                 return;
             }
@@ -240,19 +240,19 @@ impl GstHost {
         }
     }
 
-    fn serve_embedded(&self, embedded: Arc<dyn EmbeddedHost>) {
+    fn serve_embedded(&self, embedded: Arc<dyn EmbeddedOutput>) {
         let host = self.clone();
         let sock = self.inner.sock_path.clone();
         let serving = std::thread::Builder::new()
-            .name("gst-host".into())
+            .name("output".into())
             .spawn(move || {
                 embedded.serve(&sock);
-                eprintln!("[core] gst-host ended");
+                eprintln!("[core] output ended");
                 let mut st = host.state();
                 host.reset(&mut st);
             });
         if let Err(e) = serving {
-            eprintln!("[core] cannot start gst-host, media has nowhere to go: {e}");
+            eprintln!("[core] cannot start output, media has nowhere to go: {e}");
             let mut st = self.state();
             st.unavailable = true;
             self.reset(&mut st);
@@ -286,7 +286,7 @@ impl GstHost {
         let mut child = match child {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("[core] cannot start gst-host, media has nowhere to go: {e}");
+                eprintln!("[core] cannot start output, media has nowhere to go: {e}");
                 let mut st = self.state();
                 st.unavailable = true;
                 self.reset(&mut st);
@@ -296,14 +296,14 @@ impl GstHost {
         let host = self.clone();
         tokio::spawn(async move {
             let status = child.wait().await;
-            eprintln!("[core] gst-host exited: {status:?}");
+            eprintln!("[core] output exited: {status:?}");
             if let Ok(st) = &status {
                 use std::os::unix::process::ExitStatusExt;
                 if st.signal().is_some()
                     && let Ok(trace) = std::fs::read_to_string(&launch.crash)
                 {
                     eprintln!(
-                        "[core] gst-host crash backtrace ({}):\n{trace}",
+                        "[core] output crash backtrace ({}):\n{trace}",
                         launch.crash.display()
                     );
                 }
@@ -408,14 +408,14 @@ impl GstHost {
                     VideoCodec::H264
                 };
                 let atom = rest.get(1..).unwrap_or_default().to_vec();
-                let _ = self.inner.events.send(HostEvent::Config {
+                let _ = self.inner.events.send(OutputEvent::Config {
                     plane: id,
                     codec,
                     atom,
                 });
             }
             REPLY_STARTED => {
-                let _ = self.inner.events.send(HostEvent::Started { plane: id });
+                let _ = self.inner.events.send(OutputEvent::Started { plane: id });
             }
             REPLY_AUDIO_PORTS => {
                 if let Some(w) = self.state().audio_waiters.remove(&id) {
@@ -428,7 +428,7 @@ impl GstHost {
                 }
             }
             REPLY_AUDIO_STARTED => {
-                let _ = self.inner.events.send(HostEvent::AudioStarted {
+                let _ = self.inner.events.send(OutputEvent::AudioStarted {
                     stream: id,
                     first_sample: u32_at(0),
                 });
@@ -440,7 +440,7 @@ impl GstHost {
                     .iter()
                     .map(|b| f32::from_le_bytes(*b))
                     .collect();
-                let _ = self.inner.events.send(HostEvent::Spectrum { bands });
+                let _ = self.inner.events.send(OutputEvent::Spectrum { bands });
             }
             REPLY_FEED => {
                 if let Some(w) = self.state().feed_waiter.take() {
@@ -448,21 +448,21 @@ impl GstHost {
                 }
             }
             REPLY_AUDIO_DELAY => {
-                let _ = self.inner.events.send(HostEvent::AudioDelay {
+                let _ = self.inner.events.send(OutputEvent::AudioDelay {
                     stream: id,
                     ms: u32_at(0),
                 });
             }
             REPLY_CAMERAS => {
-                let list = livi_host_proto::parse_cameras_body(rest);
-                let _ = self.inner.events.send(HostEvent::Cameras { list });
+                let list = livi_output_proto::parse_cameras_body(rest);
+                let _ = self.inner.events.send(OutputEvent::Cameras { list });
             }
             REPLY_URL_STATUS => {
-                if let Some(status) = livi_host_proto::parse_url_status(rest) {
+                if let Some(status) = livi_output_proto::parse_url_status(rest) {
                     let _ = self
                         .inner
                         .events
-                        .send(HostEvent::UrlStatus { plane: id, status });
+                        .send(OutputEvent::UrlStatus { plane: id, status });
                 }
             }
             _ => {}
@@ -592,11 +592,11 @@ impl GstHost {
         }
     }
 
-    pub fn open_camera(&self, plane: u32, order: &livi_host_proto::CameraOrder) {
+    pub fn open_camera(&self, plane: u32, order: &livi_output_proto::CameraOrder) {
         self.send(frame(
             OP_CAMERA_OPEN,
             plane,
-            &livi_host_proto::camera_body(order),
+            &livi_output_proto::camera_body(order),
         ));
     }
 
@@ -661,7 +661,7 @@ impl GstHost {
         self.send(frame(
             OP_CREATE,
             plane,
-            &livi_host_proto::plane_body(codec, codec_data),
+            &livi_output_proto::plane_body(codec, codec_data),
         ));
     }
 
@@ -669,7 +669,7 @@ impl GstHost {
         self.send(frame(
             OP_PLAY_URL,
             plane,
-            &livi_host_proto::url_body(url, audio_device),
+            &livi_output_proto::url_body(url, audio_device),
         ));
     }
 
@@ -695,7 +695,7 @@ fn log_file(path: &std::path::Path) -> Option<std::fs::File> {
     std::fs::File::create(path).ok()
 }
 
-pub async fn probe_codecs(launch: &Launch) -> Option<livi_host_proto::Probe> {
+pub async fn probe_codecs(launch: &Launch) -> Option<livi_output_proto::Probe> {
     let launch = match launch {
         Launch::Process(process) => process,
         Launch::Embedded(embedded) => {
@@ -715,10 +715,10 @@ pub async fn probe_codecs(launch: &Launch) -> Option<livi_host_proto::Probe> {
         Ok(Ok(out)) => String::from_utf8_lossy(&out.stdout)
             .trim()
             .parse()
-            .inspect_err(|e| eprintln!("[core] gst-host codec probe unreadable: {e}"))
+            .inspect_err(|e| eprintln!("[core] output codec probe unreadable: {e}"))
             .ok(),
         _ => {
-            eprintln!("[core] gst-host codec probe failed");
+            eprintln!("[core] output codec probe failed");
             None
         }
     }
@@ -726,7 +726,7 @@ pub async fn probe_codecs(launch: &Launch) -> Option<livi_host_proto::Probe> {
 
 #[cfg(test)]
 mod tests {
-    use livi_host_proto::encode_reply;
+    use livi_output_proto::encode_reply;
     use tokio::net::UnixStream;
 
     use super::*;
@@ -738,7 +738,7 @@ mod tests {
     }
 
     impl FakeHost {
-        async fn connect(host: &GstHost) -> Self {
+        async fn connect(host: &Output) -> Self {
             host.start();
             let stream = UnixStream::connect(&host.inner.sock_path).await.unwrap();
             Self {
@@ -747,7 +747,7 @@ mod tests {
             }
         }
 
-        async fn next(&mut self) -> livi_host_proto::Message {
+        async fn next(&mut self) -> livi_output_proto::Message {
             let mut buf = [0u8; 4096];
             loop {
                 if let Some(m) = self.framer.next_message() {
@@ -770,8 +770,8 @@ mod tests {
         }
     }
 
-    fn host(dir: &TempDir) -> GstHost {
-        GstHost::new(dir.0.join("gst.sock"))
+    fn host(dir: &TempDir) -> Output {
+        Output::new(dir.0.join("gst.sock"))
     }
 
     #[tokio::test]
@@ -808,11 +808,11 @@ mod tests {
         first.reply(REPLY_VISUALIZER, 0, &bands).await;
         assert_eq!(
             events.recv().await.unwrap(),
-            HostEvent::Spectrum {
+            OutputEvent::Spectrum {
                 bands: vec![0.25, 1.0]
             }
         );
-        let status = livi_host_proto::UrlStatus {
+        let status = livi_output_proto::UrlStatus {
             position: Some(2.0),
             ..Default::default()
         };
@@ -820,13 +820,13 @@ mod tests {
             .reply(
                 REPLY_URL_STATUS,
                 0x7a00_0002,
-                &livi_host_proto::url_status_body(&status),
+                &livi_output_proto::url_status_body(&status),
             )
             .await;
         first.reply(REPLY_URL_STATUS, 0x7a00_0002, &[1]).await;
         assert_eq!(
             events.recv().await.unwrap(),
-            HostEvent::UrlStatus {
+            OutputEvent::UrlStatus {
                 plane: 0x7a00_0002,
                 status
             }
@@ -944,7 +944,7 @@ mod tests {
             .await;
         assert_eq!(
             events.recv().await.unwrap(),
-            HostEvent::Config {
+            OutputEvent::Config {
                 plane: 0x7a00_0001,
                 codec: VideoCodec::H265,
                 atom: vec![0xaa, 0xbb]
@@ -952,14 +952,14 @@ mod tests {
         );
         assert_eq!(
             events.recv().await.unwrap(),
-            HostEvent::AudioStarted {
+            OutputEvent::AudioStarted {
                 stream: req.id,
                 first_sample: 5
             }
         );
         assert_eq!(
             events.recv().await.unwrap(),
-            HostEvent::AudioDelay {
+            OutputEvent::AudioDelay {
                 stream: req.id,
                 ms: 120
             }
@@ -1004,7 +1004,7 @@ mod tests {
         gst.set_launch(Launch::Process(Process {
             bin: dir.0.join("no-such-host"),
             env: Vec::new(),
-            log: dir.0.join("log/gst-host.log"),
+            log: dir.0.join("log/output.log"),
             crash: dir.0.join("crash.log"),
         }));
         assert_eq!(gst.open_feed().await, "");
@@ -1013,7 +1013,7 @@ mod tests {
 
     struct EchoFeed;
 
-    impl EmbeddedHost for EchoFeed {
+    impl EmbeddedOutput for EchoFeed {
         fn serve(&self, sock: &Path) {
             use std::io::{Read, Write};
             let mut stream = std::os::unix::net::UnixStream::connect(sock).unwrap();
@@ -1032,7 +1032,7 @@ mod tests {
             while stream.read(&mut buf).is_ok_and(|n| n > 0) {}
         }
 
-        fn probe(&self) -> livi_host_proto::Probe {
+        fn probe(&self) -> livi_output_proto::Probe {
             "h264=hw".parse().unwrap()
         }
     }

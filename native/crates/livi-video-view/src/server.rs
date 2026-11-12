@@ -7,7 +7,7 @@ use std::os::unix::fs::DirBuilderExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 
-use livi_host_proto::ctrl::Command;
+use livi_output_proto::ctrl::Command;
 
 use crate::screens;
 

@@ -35,7 +35,7 @@ pub fn run(arch: Arch) -> Result<(), String> {
     let manifest = root.join("native/Cargo.toml");
     let cross = arch != Arch::host();
 
-    let mut pkgs = vec!["livi-gst-host", "livi-helperd", "livi-core", "livi-ui"];
+    let mut pkgs = vec!["livi-output", "livi-helperd", "livi-core", "livi-ui"];
     if cfg!(target_os = "linux") {
         pkgs.push("livi-compositor");
     }
@@ -69,7 +69,7 @@ pub fn run(arch: Arch) -> Result<(), String> {
         Ok(())
     };
     let bin = root.join("out/bin");
-    place("livi-gst-host", bin.join("livi-gst-host"))?;
+    place("livi-output", bin.join("livi-output"))?;
     place("livi-helperd", bin.join("livi-helperd"))?;
     place("livi-core", bin.join("livi-core"))?;
     place("LIVI", bin.join("LIVI"))?;

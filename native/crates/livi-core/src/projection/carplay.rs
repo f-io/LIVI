@@ -19,10 +19,12 @@ use livi_cp::info::{DisplayConfig, Icon, InfoConfig, Insets, ThemeDisplays, mm_a
 use livi_cp::media::{AudioCodec, AudioRequest, AudioStream, Media, MicRequest, VideoStatus};
 use livi_cp::stack::StackConfig;
 use livi_cp::vehicle_state::{Engines, Rpm};
-use livi_host_proto::{PLANE_CLUSTER_RECV, PLANE_MAIN, PLANE_VIDEO, Probe, UrlStatus, VideoCodec};
 use livi_media::compositor::Panel;
-use livi_media::gst_host::{self, GstHost, HostEvent};
+use livi_media::output::{self, Output, OutputEvent};
 use livi_media::planes::VideoPlane;
+use livi_output_proto::{
+    PLANE_CLUSTER_RECV, PLANE_MAIN, PLANE_VIDEO, Probe, UrlStatus, VideoCodec,
+};
 use tokio::sync::{broadcast, watch};
 
 use crate::{system::host, system::hwaddr};
@@ -30,7 +32,7 @@ use crate::{system::host, system::hwaddr};
 const LOGO: &[u8] = include_bytes!("../../res/livi-logo.png");
 
 pub struct GstMedia {
-    gst: GstHost,
+    gst: Output,
     video: Arc<VideoPlane>,
     started: broadcast::Sender<(u32, u32)>,
     video_status: Arc<Mutex<Option<VideoStatus>>>,
@@ -38,7 +40,7 @@ pub struct GstMedia {
 }
 
 impl GstMedia {
-    pub fn new(gst: GstHost, video: Arc<VideoPlane>) -> Arc<Self> {
+    pub fn new(gst: Output, video: Arc<VideoPlane>) -> Arc<Self> {
         let (started, _) = broadcast::channel(32);
         let mut events = gst.subscribe();
         let tx = started.clone();
@@ -49,19 +51,19 @@ impl GstMedia {
         tokio::spawn(async move {
             loop {
                 match events.recv().await {
-                    Ok(HostEvent::AudioStarted {
+                    Ok(OutputEvent::AudioStarted {
                         stream,
                         first_sample,
                     }) => {
                         let _ = tx.send((stream, first_sample));
                     }
-                    Ok(HostEvent::AudioDelay { stream, ms }) => {
+                    Ok(OutputEvent::AudioDelay { stream, ms }) => {
                         delays
                             .lock()
                             .unwrap_or_else(|e| e.into_inner())
                             .insert(stream, ms);
                     }
-                    Ok(HostEvent::UrlStatus {
+                    Ok(OutputEvent::UrlStatus {
                         plane: PLANE_VIDEO,
                         status,
                     }) => {
@@ -106,11 +108,11 @@ impl Media for GstMedia {
         key: [u8; 32],
         req: AudioRequest,
     ) -> impl Future<Output = AudioStream> + Send {
-        let opts = gst_host::AudioOpts {
+        let opts = output::AudioOpts {
             codec: match req.codec {
-                AudioCodec::AacLc => gst_host::AudioCodec::AacLc,
-                AudioCodec::Opus => gst_host::AudioCodec::Opus,
-                AudioCodec::Pcm => gst_host::AudioCodec::Pcm,
+                AudioCodec::AacLc => output::AudioCodec::AacLc,
+                AudioCodec::Opus => output::AudioCodec::Opus,
+                AudioCodec::Pcm => output::AudioCodec::Pcm,
             },
             payload_type: req.payload_type,
             clock_rate: req.clock_rate,
@@ -153,7 +155,7 @@ impl Media for GstMedia {
     fn open_mic(&self, key: [u8; 32], req: MicRequest) -> u32 {
         self.gst.open_mic(
             &key,
-            &gst_host::MicOpts {
+            &output::MicOpts {
                 pcm: !req.opus,
                 payload_type: req.payload_type,
                 sample_rate: req.sample_rate,

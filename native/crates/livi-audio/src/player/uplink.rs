@@ -316,7 +316,8 @@ impl SocketTap {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_nanos() as u64)
                 .unwrap_or(0);
-            let record = livi_host_proto::feed::encode(livi_host_proto::feed::KIND_MIC, 0, ts, pcm);
+            let record =
+                livi_output_proto::feed::encode(livi_output_proto::feed::KIND_MIC, 0, ts, pcm);
             if std::io::Write::write_all(&mut sock, &record).is_err() {
                 eprintln!("[mic:{tag}] the listener is gone");
                 broken = true;

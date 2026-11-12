@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 
-use livi_host_proto::ctrl::Command;
+use livi_output_proto::ctrl::Command;
 
 use crate::state::LiviState;
 

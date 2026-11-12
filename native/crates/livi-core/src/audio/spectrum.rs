@@ -9,7 +9,7 @@ use std::time::Duration;
 use livi_core_proto::frame::encode;
 use livi_core_proto::message::FromCore;
 use livi_core_proto::state::State;
-use livi_media::gst_host::{GstHost, HostEvent};
+use livi_media::output::{Output, OutputEvent};
 use tokio::sync::{broadcast, watch};
 use tokio::time::Instant;
 
@@ -86,7 +86,7 @@ async fn until(due: Option<Instant>) {
     }
 }
 
-pub async fn follow(gst: GstHost, feed: Arc<Feed>, state: watch::Receiver<State>) {
+pub async fn follow(gst: Output, feed: Arc<Feed>, state: watch::Receiver<State>) {
     let mut viewers = feed.viewers.subscribe();
     let mut events = gst.subscribe();
     let mut queue: VecDeque<(Instant, Vec<f32>)> = VecDeque::new();
@@ -106,7 +106,7 @@ pub async fn follow(gst: GstHost, feed: Arc<Feed>, state: watch::Receiver<State>
                 }
             }
             event = events.recv() => match event {
-                Ok(HostEvent::Spectrum { bands }) if tapping => {
+                Ok(OutputEvent::Spectrum { bands }) if tapping => {
                     let delay = state.borrow().config.visual_audio_delay_ms;
                     queue.push_back((Instant::now() + Duration::from_millis(delay.into()), bands));
                 }
@@ -126,11 +126,11 @@ pub async fn follow(gst: GstHost, feed: Arc<Feed>, state: watch::Receiver<State>
 mod tests {
     use livi_core_proto::frame::Decoder;
     use livi_core_proto::state::{Front, PerScreen};
-    use livi_host_proto::{Framer, encode_reply};
+    use livi_output_proto::{Framer, encode_reply};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
 
-    use livi_host_proto::ops::{OP_VISUALIZER, REPLY_VISUALIZER};
+    use livi_output_proto::ops::{OP_VISUALIZER, REPLY_VISUALIZER};
 
     use super::*;
     use crate::files::config_file::defaults;
@@ -152,7 +152,7 @@ mod tests {
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
-            panic!("core never opened the gst-host socket");
+            panic!("core never opened the output socket");
         }
 
         async fn next(&mut self) -> (u8, Vec<u8>) {
@@ -210,7 +210,7 @@ mod tests {
     async fn the_tap_follows_the_viewers_and_frames_wait_out_the_delay() {
         let dir = TempDir::new();
         let sock = dir.0.join("gst.sock");
-        let gst = GstHost::new(sock.clone());
+        let gst = Output::new(sock.clone());
         let feed = Feed::new();
         let (_state_tx, state_rx) = watch::channel(state(50));
         tokio::spawn(follow(gst.clone(), feed.clone(), state_rx));

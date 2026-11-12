@@ -9,7 +9,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::rc::Rc;
 
 use glib::IOCondition;
-use livi_host_proto::feed::Framer;
+use livi_output_proto::feed::Framer;
 
 use crate::MediaSink;
 

@@ -5,9 +5,9 @@
 use std::sync::Arc;
 
 use livi_core_proto::state::{CameraView, Front, State};
-use livi_host_proto::{CameraOrder, CameraSeen};
-use livi_media::gst_host::{GstHost, HostEvent};
+use livi_media::output::{Output, OutputEvent};
 use livi_media::planes::CameraPlane;
+use livi_output_proto::{CameraOrder, CameraSeen};
 use serde_json::{Value, json};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{mpsc, watch};
@@ -49,7 +49,7 @@ fn wanted(s: &State) -> Option<CameraOrder> {
 
 pub async fn run(
     hub: Arc<Hub>,
-    gst: GstHost,
+    gst: Output,
     plane: Arc<CameraPlane>,
     found: mpsc::UnboundedSender<UiCommand>,
     settings: mpsc::UnboundedSender<Value>,
@@ -65,7 +65,7 @@ pub async fn run(
     loop {
         tokio::select! {
             event = events.recv() => match event {
-                Ok(HostEvent::Cameras { list }) => {
+                Ok(OutputEvent::Cameras { list }) => {
                     let cameras = views(list);
                     let names: Vec<&str> = cameras.iter().map(|c| c.name.as_str()).collect();
                     println!("[core] cameras: {}", if names.is_empty() { "none".into() } else { names.join(", ") });

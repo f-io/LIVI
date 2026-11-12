@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use gstreamer as gst;
 use gstreamer::prelude::*;
-use livi_host_proto::{UrlStatus, VideoCodec};
+use livi_output_proto::{UrlStatus, VideoCodec};
 
 use crate::Say;
 

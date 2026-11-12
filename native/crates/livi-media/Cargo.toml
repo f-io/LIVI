@@ -7,7 +7,7 @@ license.workspace = true
 [dependencies]
 livi-base.workspace = true
 livi-core-proto.workspace = true
-livi-host-proto.workspace = true
+livi-output-proto.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "sync", "time", "process"] }
 
 [dev-dependencies]

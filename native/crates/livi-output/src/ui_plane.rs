@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 
-use livi_host_proto::{
+use livi_output_proto::{
     CameraOrder, Framer, UrlStatus, VideoCodec, camera_body, encode_reply, parse_url_status,
     plane_body, ui_planes, url_body,
 };
@@ -20,7 +20,7 @@ const QUEUE: usize = 1024;
 
 fn connect(path: &str, id: u32, first: Vec<u8>) -> Option<(SyncSender<Vec<u8>>, UnixStream)> {
     let mut sock = UnixStream::connect(path)
-        .inspect_err(|e| eprintln!("[gst-host] no UI for plane 0x{id:x} at {path}: {e}"))
+        .inspect_err(|e| eprintln!("[output] no UI for plane 0x{id:x} at {path}: {e}"))
         .ok()?;
     let back = sock.try_clone().ok()?;
     let (out, queued) = sync_channel::<Vec<u8>>(QUEUE);
@@ -60,7 +60,7 @@ impl UiPlane {
             && !self.lost.swap(true, Ordering::Relaxed)
         {
             eprintln!(
-                "[gst-host] the UI stopped taking plane 0x{:x}, frames are lost",
+                "[output] the UI stopped taking plane 0x{:x}, frames are lost",
                 self.id
             );
         }
@@ -202,7 +202,7 @@ mod tests {
     use std::os::unix::net::UnixListener;
     use std::time::Duration;
 
-    use livi_host_proto::{Framer, Message};
+    use livi_output_proto::{Framer, Message};
 
     use super::*;
 
@@ -323,7 +323,7 @@ mod tests {
         let status = encode_reply(
             ui_planes::STATUS,
             9,
-            &livi_host_proto::url_status_body(&playing),
+            &livi_output_proto::url_status_body(&playing),
         );
         ui.write_all(&encode_reply(
             ui_planes::LOG,

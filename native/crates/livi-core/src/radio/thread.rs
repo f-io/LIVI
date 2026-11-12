@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use livi_core_proto::state::{DabScan, DabSignal, DabStation, FmStation};
 use livi_dab::{CHANNELS, Event, Receiver};
 use livi_fm::Rds;
-use livi_media::gst_host::{AudioCodec, aac_raw_key};
+use livi_media::output::{AudioCodec, aac_raw_key};
 use livi_rtlsdr::RtlSdr;
 use tokio::sync::mpsc;
 

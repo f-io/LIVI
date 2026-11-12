@@ -3,7 +3,7 @@
 // Additional terms: see NOTICE
 
 pub mod compositor;
-pub mod gst_host;
+pub mod output;
 pub mod planes;
 
 #[cfg(test)]

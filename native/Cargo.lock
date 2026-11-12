@@ -3784,7 +3784,7 @@ name = "livi-aa"
 version = "10.5.0"
 dependencies = [
  "livi-aa-proto",
- "livi-host-proto",
+ "livi-output-proto",
  "livi-session-io",
  "livi-wifi",
  "nusb 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -3841,9 +3841,9 @@ dependencies = [
  "livi-aaudio",
  "livi-core",
  "livi-core-client",
- "livi-gst-host",
  "livi-helper",
- "livi-host-proto",
+ "livi-output",
+ "livi-output-proto",
  "livi-ui",
  "livi-ui-model",
  "livi-video-player",
@@ -3862,7 +3862,7 @@ dependencies = [
  "gstreamer-controller",
  "libc 1.0.0-alpha.5",
  "livi-crypto",
- "livi-host-proto",
+ "livi-output-proto",
  "socket2",
 ]
 
@@ -3887,7 +3887,7 @@ dependencies = [
  "calloop-wayland-source 0.4.1",
  "env_logger",
  "fontdb",
- "livi-host-proto",
+ "livi-output-proto",
  "log",
  "nix",
  "smithay",
@@ -3914,11 +3914,11 @@ dependencies = [
  "livi-crypto",
  "livi-dab",
  "livi-fm",
- "livi-host-proto",
  "livi-i18n",
  "livi-link-host",
  "livi-media",
  "livi-net",
+ "livi-output-proto",
  "livi-rtlsdr",
  "livi-session-io",
  "livi-wifi",
@@ -3997,22 +3997,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "livi-gst-host"
-version = "10.5.0"
-dependencies = [
- "glib",
- "glib-unix",
- "libc 1.0.0-alpha.5",
- "livi-audio",
- "livi-host-proto",
- "livi-screen-stream",
- "livi-video",
- "livi-video-player",
- "livi-video-view",
- "realfft",
-]
-
-[[package]]
 name = "livi-helper"
 version = "10.5.0"
 dependencies = [
@@ -4044,7 +4028,7 @@ dependencies = [
  "livi-base",
  "livi-core-proto",
  "livi-hfp",
- "livi-host-proto",
+ "livi-output-proto",
  "livi-wifi",
  "serde_json",
  "socket2",
@@ -4072,13 +4056,6 @@ name = "livi-hfp"
 version = "10.5.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
-]
-
-[[package]]
-name = "livi-host-proto"
-version = "10.5.0"
-dependencies = [
- "livi-base",
 ]
 
 [[package]]
@@ -4160,7 +4137,7 @@ version = "10.5.0"
 dependencies = [
  "livi-base",
  "livi-core-proto",
- "livi-host-proto",
+ "livi-output-proto",
  "tokio",
 ]
 
@@ -4169,6 +4146,29 @@ name = "livi-net"
 version = "10.5.0"
 dependencies = [
  "libc 1.0.0-alpha.5",
+]
+
+[[package]]
+name = "livi-output"
+version = "10.5.0"
+dependencies = [
+ "glib",
+ "glib-unix",
+ "libc 1.0.0-alpha.5",
+ "livi-audio",
+ "livi-output-proto",
+ "livi-screen-stream",
+ "livi-video",
+ "livi-video-player",
+ "livi-video-view",
+ "realfft",
+]
+
+[[package]]
+name = "livi-output-proto"
+version = "10.5.0"
+dependencies = [
+ "livi-base",
 ]
 
 [[package]]
@@ -4239,7 +4239,7 @@ dependencies = [
 name = "livi-video"
 version = "10.5.0"
 dependencies = [
- "livi-host-proto",
+ "livi-output-proto",
 ]
 
 [[package]]
@@ -4250,7 +4250,7 @@ dependencies = [
  "gstreamer-app",
  "gstreamer-base",
  "gstreamer-video",
- "livi-host-proto",
+ "livi-output-proto",
  "livi-video",
 ]
 
@@ -4259,7 +4259,7 @@ name = "livi-video-view"
 version = "10.5.0"
 dependencies = [
  "cc",
- "livi-host-proto",
+ "livi-output-proto",
  "livi-video-player",
  "pkg-config",
 ]

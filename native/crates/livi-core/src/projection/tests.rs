@@ -8,7 +8,7 @@ use livi_core_proto::state::Maneuver;
 use livi_cp::airplay::{AirplayCommand, AirplayRemote, AirplaySender};
 use livi_cp::stack::AudioProfile;
 use livi_media::compositor::CompositorControl;
-use livi_media::gst_host::GstHost;
+use livi_media::output::Output;
 use serde_json::json;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -86,7 +86,7 @@ impl Rig {
         let (tx, cmds) = mpsc::unbounded_channel();
         let (aa_tx, mut aa) = mpsc::unbounded_channel();
         let (crop, aa_crop) = watch::channel(None);
-        let gst = GstHost::new(dir.0.join("gst.sock"));
+        let gst = Output::new(dir.0.join("gst.sock"));
         let ctrl = CompositorControl::connect(dir.0.join("ctrl"));
         let plane = MainPlane::new(gst.clone(), ctrl.clone());
         let clusters = ClusterPlanes::new(gst, ctrl);

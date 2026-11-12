@@ -140,7 +140,7 @@ pub fn run(arch: Arch) -> Result<(), String> {
     copy_exe(&built("LIVI"), &app.join("livi-ui"))?;
     copy_exe(&built("livi-core"), &res.join("core/livi-core"))?;
     copy_exe(&built("livi-helperd"), &res.join("driver/livi-helperd"))?;
-    copy_exe(&built("livi-gst-host"), &res.join("gst-host/livi-gst-host"))?;
+    copy_exe(&built("livi-output"), &res.join("output/livi-output"))?;
     copy_exe(
         &built("livi-compositor"),
         &res.join("compositor/livi-compositor"),

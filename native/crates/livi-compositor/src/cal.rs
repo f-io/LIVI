@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use livi_host_proto::display::Correction;
+use livi_output_proto::display::Correction;
 
 use crate::state::CalState;
 

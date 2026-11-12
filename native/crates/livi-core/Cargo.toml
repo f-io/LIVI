@@ -17,7 +17,7 @@ iap2-mfi = { workspace = true, features = ["files"] }
 livi-aa-stack.workspace = true
 livi-cp.workspace = true
 livi-link-host.workspace = true
-livi-host-proto.workspace = true
+livi-output-proto.workspace = true
 livi-media.workspace = true
 livi-dab.workspace = true
 livi-fm.workspace = true

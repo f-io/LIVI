@@ -32,7 +32,7 @@ impl Wire for SocketWire {
     fn reply(&self, op: u8, id: u32, rest: &[u8]) {
         let _guard = self.write.lock().unwrap_or_else(|e| e.into_inner());
         let mut sock: &UnixStream = &self.sock;
-        let _ = sock.write_all(&livi_host_proto::encode_reply(op, id, rest));
+        let _ = sock.write_all(&livi_output_proto::encode_reply(op, id, rest));
     }
 }
 
@@ -42,7 +42,7 @@ pub fn run(sock_path: &str, crash_log: &str) {
     arm_crash_handler(crash_log);
 
     let Ok(sock) = UnixStream::connect(sock_path) else {
-        eprintln!("[gst-host] connect to {sock_path} failed");
+        eprintln!("[output] connect to {sock_path} failed");
         std::process::exit(1);
     };
     let _sources = attach(sock, || std::process::exit(0));
@@ -54,7 +54,7 @@ pub fn serve(sock_path: &Path) {
     let sock = match UnixStream::connect(sock_path) {
         Ok(sock) => sock,
         Err(e) => {
-            eprintln!("[gst-host] connect to {} failed: {e}", sock_path.display());
+            eprintln!("[output] connect to {} failed: {e}", sock_path.display());
             return;
         }
     };
@@ -92,7 +92,7 @@ fn attach(sock: UnixStream, hung_up: impl Fn() + 'static) -> Vec<SourceId> {
                 Ok(n) => {
                     let fed = reading.borrow_mut().feed(&chunk[..n]);
                     if let Err(e) = fed {
-                        eprintln!("[gst-host] {e}");
+                        eprintln!("[output] {e}");
                         hung_up();
                     }
                 }
@@ -140,7 +140,7 @@ unsafe extern "C" {
 }
 
 extern "C" fn on_crash(sig: c_int) {
-    const HEADER: &[u8] = b"\n=== gst-host CRASH backtrace ===\n";
+    const HEADER: &[u8] = b"\n=== livi-output CRASH backtrace ===\n";
     let mut frames = [core::ptr::null_mut::<c_void>(); 64];
     // SAFETY: frames is writable for frames.len() pointers.
     let depth = unsafe { backtrace(frames.as_mut_ptr(), frames.len() as c_int) };

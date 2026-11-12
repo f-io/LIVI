@@ -40,7 +40,7 @@ pub use files::log_file;
 pub use files::paths::Paths;
 pub use helper::Helper;
 use hub::Hub;
-pub use livi_media::gst_host::{EmbeddedHost, MediaHost};
+pub use livi_media::output::{EmbeddedOutput, OutputBackend};
 pub use resources::Resources;
 use server::Core;
 use services::Services;

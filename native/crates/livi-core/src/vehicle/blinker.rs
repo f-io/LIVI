@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use livi_base::time::unix_ms;
 use livi_core_proto::state::State;
-use livi_media::gst_host::{AudioCodec, AudioOpts, GstHost};
+use livi_media::output::{AudioCodec, AudioOpts, Output};
 use tokio::sync::watch;
 use tokio::time::Instant;
 
@@ -167,7 +167,7 @@ struct Stream {
     clicks: Clicks,
 }
 
-async fn open(gst: &GstHost, device: &str) -> Option<Stream> {
+async fn open(gst: &Output, device: &str) -> Option<Stream> {
     let opts = AudioOpts {
         codec: AudioCodec::PcmLe,
         payload_type: 0,
@@ -190,7 +190,7 @@ async fn open(gst: &GstHost, device: &str) -> Option<Stream> {
     })
 }
 
-pub async fn run(hub: Arc<Hub>, gst: GstHost) {
+pub async fn run(hub: Arc<Hub>, gst: Output) {
     let mut state: watch::Receiver<State> = hub.watch();
     let mut stream: Option<Stream> = None;
     let mut active = false;

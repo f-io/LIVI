@@ -5,7 +5,7 @@
 use livi_audio::player::uplink::{SocketTap, Uplink, UplinkConfig as UplinkPipeline};
 use livi_audio::player::{Config as AudioPipeline, Player as AudioPipelinePlayer};
 use livi_audio::stream::AudioSink;
-use livi_host_proto::{Decoders, Probe};
+use livi_output_proto::{Decoders, Probe};
 use livi_screen_stream::ScreenSink;
 
 use crate::{AudioConfig, MediaSink, Outside, Speaker, TapConfig, UplinkConfig, VideoCodec};

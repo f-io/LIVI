@@ -5,11 +5,11 @@
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|a| a == "--probe") {
-        println!("{}", livi_gst_host::gst::probe());
+        println!("{}", livi_output::gst::probe());
         return;
     }
 
-    livi_gst_host::process::run(
+    livi_output::process::run(
         args.first().map_or("", String::as_str),
         args.get(1).map_or("", String::as_str),
     );

@@ -11,7 +11,7 @@ gstreamer-audio = { workspace = true, features = ["v1_24"] }
 gstreamer-controller.workspace = true
 libc.workspace = true
 livi-crypto.workspace = true
-livi-host-proto.workspace = true
+livi-output-proto.workspace = true
 socket2.workspace = true
 
 [lints]

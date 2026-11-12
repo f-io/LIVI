@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use gstreamer as gst;
 use gstreamer::prelude::*;
-use livi_host_proto::{CameraOrder, CameraSeen, VideoCodec};
+use livi_output_proto::{CameraOrder, CameraSeen, VideoCodec};
 
 use crate::Say;
 

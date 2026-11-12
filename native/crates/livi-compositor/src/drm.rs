@@ -39,7 +39,7 @@ use smithay::reexports::rustix::fs::OFlags;
 use smithay::utils::{DeviceFd, Point, SERIAL_COUNTER, Scale, Size, Transform};
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Stroke};
 
-use livi_host_proto::ctrl::TouchCal;
+use livi_output_proto::ctrl::TouchCal;
 
 use crate::render::LiviElement;
 use crate::state::LiviState;

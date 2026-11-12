@@ -10,7 +10,7 @@ livi-video.workspace = true
 gstreamer = { workspace = true, features = ["v1_24"] }
 gstreamer-app = { workspace = true, features = ["v1_24"] }
 gstreamer-base = { workspace = true, features = ["v1_24"] }
-livi-host-proto.workspace = true
+livi-output-proto.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 gstreamer-video = { workspace = true, features = ["v1_24"], optional = true }

@@ -68,11 +68,9 @@ livi-cp = { path = "crates/livi-cp" }
 livi-crypto = { path = "crates/livi-crypto" }
 livi-dab = { path = "crates/livi-dab" }
 livi-fm = { path = "crates/livi-fm" }
-livi-gst-host = { path = "crates/livi-gst-host" }
 livi-helper = { path = "crates/livi-helper" }
 livi-helper-stack = { path = "crates/livi-helper-stack" }
 livi-hfp = { path = "crates/livi-hfp" }
-livi-host-proto = { path = "crates/livi-host-proto" }
 livi-link-ap = { path = "crates/livi-link-ap" }
 livi-link-hci = { path = "crates/livi-link-hci" }
 livi-link-host = { path = "crates/livi-link-host" }
@@ -80,6 +78,8 @@ livi-link-provision = { path = "crates/livi-link-provision" }
 livi-mdns = { path = "crates/livi-mdns" }
 livi-media = { path = "crates/livi-media" }
 livi-net = { path = "crates/livi-net" }
+livi-output = { path = "crates/livi-output" }
+livi-output-proto = { path = "crates/livi-output-proto" }
 livi-rtlsdr = { path = "crates/livi-rtlsdr" }
 livi-screen-stream = { path = "crates/livi-screen-stream" }
 livi-session-io = { path = "crates/livi-session-io" }

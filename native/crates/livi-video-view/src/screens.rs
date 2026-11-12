@@ -5,10 +5,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 
-use livi_host_proto::CameraOrder;
-use livi_host_proto::ctrl::{Command, Region};
-use livi_host_proto::display::Correction;
-use livi_host_proto::plane_place;
+use livi_output_proto::CameraOrder;
+use livi_output_proto::ctrl::{Command, Region};
+use livi_output_proto::display::Correction;
+use livi_output_proto::plane_place;
 use livi_video_player::{CameraPlayer, Player, Say, UrlPlayer};
 
 use crate::main_thread::on_main;
@@ -205,7 +205,7 @@ pub fn apply(cmd: Command) -> Option<String> {
 
 pub fn create(
     id: u32,
-    codec: livi_host_proto::VideoCodec,
+    codec: livi_output_proto::VideoCodec,
     codec_data: &[u8],
 ) -> Option<Arc<Player>> {
     draw(id, |window| Player::new(codec, window, codec_data))

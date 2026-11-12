@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use livi_core_proto::aa_events::AaHelperEvent;
-use livi_host_proto::feed::{self as feedproto, Framer};
+use livi_output_proto::feed::{self as feedproto, Framer};
 
 const MIC_BACKLOG: usize = 8000 * 2;
 

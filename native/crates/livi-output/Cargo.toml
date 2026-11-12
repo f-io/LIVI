@@ -1,17 +1,17 @@
 [package]
-name = "livi-gst-host"
+name = "livi-output"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "livi-gst-host"
+name = "livi-output"
 path = "src/main.rs"
 
 [dependencies]
 livi-audio.workspace = true
 livi-video.workspace = true
-livi-host-proto.workspace = true
+livi-output-proto.workspace = true
 livi-screen-stream.workspace = true
 livi-video-player.workspace = true
 realfft = "3.5.1"

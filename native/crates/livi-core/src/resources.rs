@@ -4,14 +4,14 @@
 
 use std::path::{Path, PathBuf};
 
-use livi_media::gst_host::MediaHost;
+use livi_media::output::OutputBackend;
 
 use crate::helper::Helper;
 use crate::update::Installer;
 
 pub struct Resources {
     pub helper: Option<Helper>,
-    pub gst_host: Option<MediaHost>,
+    pub output: Option<OutputBackend>,
     pub compositor: Option<PathBuf>,
     pub gstreamer: Option<PathBuf>,
     pub templates: Option<PathBuf>,
@@ -75,9 +75,9 @@ impl Resources {
             helper: env_path("LIVI_HELPER_BIN")
                 .map(Helper::Process)
                 .or(layout.helper),
-            gst_host: env_path("LIVI_GST_HOST_BIN")
-                .map(MediaHost::Process)
-                .or(layout.gst_host),
+            output: env_path("LIVI_OUTPUT_BIN")
+                .map(OutputBackend::Process)
+                .or(layout.output),
             compositor: env_path("LIVI_COMPOSITOR_BIN").or(layout.compositor),
             gstreamer: layout.gstreamer,
             templates: layout.templates,
@@ -89,7 +89,7 @@ impl Resources {
     pub fn embedded() -> Self {
         Self {
             helper: None,
-            gst_host: None,
+            output: None,
             compositor: None,
             gstreamer: None,
             templates: None,
@@ -108,7 +108,7 @@ impl Resources {
     fn installed(res: &Path) -> Self {
         Self {
             helper: Some(Helper::Process(res.join("driver/livi-helperd"))),
-            gst_host: Some(MediaHost::Process(res.join("gst-host/livi-gst-host"))),
+            output: Some(OutputBackend::Process(res.join("output/livi-output"))),
             compositor: Some(res.join("compositor/livi-compositor")),
             gstreamer: platform_dir()
                 .map(|d| res.join("gstreamer").join(d))
@@ -125,7 +125,7 @@ impl Resources {
     fn repo(root: &Path) -> Self {
         Self {
             helper: Some(Helper::Process(root.join("out/bin/livi-helperd"))),
-            gst_host: Some(MediaHost::Process(root.join("out/bin/livi-gst-host"))),
+            output: Some(OutputBackend::Process(root.join("out/bin/livi-output"))),
             compositor: Some(root.join("out/bin/livi-compositor")),
             gstreamer: platform_dir()
                 .map(|d| root.join("assets/gstreamer").join(d))
@@ -233,8 +233,8 @@ mod tests {
             Some(Path::new("/opt/LIVI/resources/driver/livi-helperd"))
         );
         assert!(matches!(
-            &installed.gst_host,
-            Some(MediaHost::Process(bin)) if bin == Path::new("/opt/LIVI/resources/gst-host/livi-gst-host")
+            &installed.output,
+            Some(OutputBackend::Process(bin)) if bin == Path::new("/opt/LIVI/resources/output/livi-output")
         ));
         assert_eq!(installed.gstreamer, None);
         assert_eq!(

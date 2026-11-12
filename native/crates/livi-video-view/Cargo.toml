@@ -5,11 +5,11 @@ edition.workspace = true
 license.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-livi-host-proto.workspace = true
+livi-output-proto.workspace = true
 livi-video-player = { workspace = true, features = ["window-view"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-livi-host-proto.workspace = true
+livi-output-proto.workspace = true
 livi-video-player.workspace = true
 
 [build-dependencies]

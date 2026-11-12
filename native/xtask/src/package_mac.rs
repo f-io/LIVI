@@ -106,7 +106,7 @@ pub fn run(arch: Arch) -> Result<(), String> {
     copy_exe(&built("LIVI"), &contents.join("MacOS/LIVI"))?;
     copy_exe(&built("livi-core"), &res.join("core/livi-core"))?;
     copy_exe(&built("livi-helperd"), &res.join("driver/livi-helperd"))?;
-    copy_exe(&built("livi-gst-host"), &res.join("gst-host/livi-gst-host"))?;
+    copy_exe(&built("livi-output"), &res.join("output/livi-output"))?;
 
     fetch_gstreamer("macos-arm64")?;
     let gst_src = root.join("assets").join(GST);
@@ -165,7 +165,7 @@ pub fn run(arch: Arch) -> Result<(), String> {
         &format!("@executable_path/../Resources/{GST}/lib"),
     )?;
     relink(
-        &res.join("gst-host/livi-gst-host"),
+        &res.join("output/livi-output"),
         &format!("@loader_path/../{GST}/lib"),
     )?;
 

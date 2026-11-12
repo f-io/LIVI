@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
-use livi_host_proto::{
+use livi_output_proto::{
     Framer, UrlStatus, encode_reply, parse_camera_body, parse_plane_body, parse_url_body,
     ui_planes, url_status_body,
 };

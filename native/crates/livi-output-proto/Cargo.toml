@@ -1,10 +1,10 @@
 [package]
-name = "livi-host-proto"
+name = "livi-output-proto"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-# Framing of the gst-host control protocol the main process and the host
+# Framing of the output control protocol the main process and the host
 # exchange.
 [dependencies]
 livi-base.workspace = true

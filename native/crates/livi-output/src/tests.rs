@@ -428,7 +428,7 @@ mod feed_tests {
         f.send(
             OP_CREATE,
             MAIN_PLANE,
-            &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+            &livi_output_proto::plane_body(VideoCodec::H264, &[]),
         );
         f.open_feed("/tmp/x.feed");
         f.feed_in(feedproto::KIND_VIDEO_START, MAIN_PLANE, &[0]);
@@ -470,7 +470,7 @@ mod feed_tests {
         f.send(
             OP_CREATE,
             MAIN_PLANE,
-            &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+            &livi_output_proto::plane_body(VideoCodec::H264, &[]),
         );
         f.open_feed("/tmp/x.feed");
         f.feed_in(feedproto::KIND_VIDEO_START, MAIN_PLANE, &[0]);
@@ -486,7 +486,7 @@ mod feed_tests {
         f.send(
             OP_CREATE,
             MAIN_PLANE,
-            &livi_host_proto::plane_body(VideoCodec::Vp9, &[]),
+            &livi_output_proto::plane_body(VideoCodec::Vp9, &[]),
         );
         f.open_feed("/tmp/x.feed");
         f.feed_in(feedproto::KIND_VIDEO_START, MAIN_PLANE, &[0xff]);
@@ -500,12 +500,12 @@ mod feed_tests {
         f.send(
             OP_CREATE,
             CLUSTER_A,
-            &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+            &livi_output_proto::plane_body(VideoCodec::H264, &[]),
         );
         f.send(
             OP_CREATE,
             CLUSTER_B,
-            &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+            &livi_output_proto::plane_body(VideoCodec::H264, &[]),
         );
         f.open_feed("/tmp/x.feed");
         f.feed_in(feedproto::KIND_VIDEO_START, CLUSTER_RECV_ID, &[0]);
@@ -523,7 +523,7 @@ mod feed_tests {
         f.send(
             OP_CREATE,
             MAIN_PLANE,
-            &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+            &livi_output_proto::plane_body(VideoCodec::H264, &[]),
         );
         assert_eq!(f.plane(0).pushed(), vec![nal(KEYFRAME, 1)]);
     }
@@ -534,7 +534,7 @@ mod feed_tests {
         f.send(
             OP_CREATE,
             MAIN_PLANE,
-            &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+            &livi_output_proto::plane_body(VideoCodec::H264, &[]),
         );
         f.open_feed("/tmp/x.feed");
         f.feed_in(feedproto::KIND_VIDEO_START, MAIN_PLANE, &[0]);
@@ -557,7 +557,7 @@ mod feed_tests {
         f.send(
             OP_CREATE,
             MAIN_PLANE,
-            &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+            &livi_output_proto::plane_body(VideoCodec::H264, &[]),
         );
         f.feeder(42, MAIN_PLANE, false);
         f.config(0, CpCodec::H264, &[1, 2]);
@@ -580,7 +580,7 @@ mod feed_tests {
         f.send(
             OP_CREATE,
             MAIN_PLANE,
-            &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+            &livi_output_proto::plane_body(VideoCodec::H264, &[]),
         );
         f.open_feed("/tmp/x.feed");
         f.send(OP_SET_ACTIVE, MAIN_PLANE, &[0]);
@@ -621,7 +621,7 @@ mod feed_tests {
         f.send(
             OP_CREATE,
             MAIN_PLANE,
-            &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+            &livi_output_proto::plane_body(VideoCodec::H264, &[]),
         );
         f.open_feed("/tmp/x.feed");
         f.send(OP_FEED_ROUTE, OLD, &route(0, MAIN_PLANE, true));
@@ -653,7 +653,7 @@ mod feed_tests {
         f.send(
             OP_CREATE,
             MAIN_PLANE,
-            &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+            &livi_output_proto::plane_body(VideoCodec::H264, &[]),
         );
         f.open_feed("/tmp/x.feed");
         f.send(OP_FEED_ROUTE, NEW, &route(0, MAIN_PLANE, false));
@@ -672,7 +672,7 @@ mod feed_tests {
         f.send(
             OP_CREATE,
             MAIN_PLANE,
-            &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+            &livi_output_proto::plane_body(VideoCodec::H264, &[]),
         );
         f.open_feed("/tmp/x.feed");
         f.send(OP_FEED_ROUTE, NEW, &route(0, MAIN_PLANE, true));
@@ -702,7 +702,7 @@ mod feed_tests {
         f.send(
             OP_CREATE,
             CLUSTER_A,
-            &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+            &livi_output_proto::plane_body(VideoCodec::H264, &[]),
         );
         assert_eq!(f.plane(0).pushed(), vec![nal(KEYFRAME, 1)]);
     }
@@ -715,7 +715,7 @@ mod feed_tests {
         f.send(
             OP_CREATE,
             MAIN_PLANE,
-            &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+            &livi_output_proto::plane_body(VideoCodec::H264, &[]),
         );
         f.open_feed("/tmp/x.feed");
         f.send(OP_FEED_ROUTE, NEW, &route(0, MAIN_PLANE, false));
@@ -743,7 +743,7 @@ mod feed_tests {
         f.send(
             OP_CREATE,
             MAIN_PLANE,
-            &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+            &livi_output_proto::plane_body(VideoCodec::H264, &[]),
         );
         assert_eq!(f.plane(0).pushed(), vec![nal(SPS, 1), nal(KEYFRAME, 2)]);
     }
@@ -831,7 +831,7 @@ fn a_create_message_starts_a_plane_and_data_reaches_it() {
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[9, 9]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[9, 9]),
     );
     f.send(OP_DATA, MAIN_PLANE, &[1, 2, 3]);
 
@@ -850,12 +850,12 @@ fn creating_a_plane_twice_replaces_the_first() {
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H265, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H265, &[]),
     );
     f.send(OP_DATA, MAIN_PLANE, &[7]);
 
@@ -870,7 +870,7 @@ fn a_stop_message_drops_the_plane() {
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
 
     f.send(OP_STOP, MAIN_PLANE, &[]);
@@ -895,15 +895,15 @@ fn a_camera_order_opens_the_camera_and_stop_ends_it() {
     };
     f.send(
         OP_CAMERA_OPEN,
-        livi_host_proto::PLANE_CAMERA,
-        &livi_host_proto::camera_body(&order),
+        livi_output_proto::PLANE_CAMERA,
+        &livi_output_proto::camera_body(&order),
     );
     assert_eq!(
         f.world.0.borrow().cameras,
-        vec![(livi_host_proto::PLANE_CAMERA, order)]
+        vec![(livi_output_proto::PLANE_CAMERA, order)]
     );
     assert_eq!(f.host.cameras.len(), 1);
-    f.send(OP_STOP, livi_host_proto::PLANE_CAMERA, &[]);
+    f.send(OP_STOP, livi_output_proto::PLANE_CAMERA, &[]);
     assert!(f.host.cameras.is_empty());
 }
 
@@ -920,7 +920,7 @@ fn the_camera_list_is_watched_once_and_reported() {
         .collect();
     assert_eq!(reports.len(), 1);
     assert_eq!(
-        livi_host_proto::parse_cameras_body(&reports[0].2)[0].name,
+        livi_output_proto::parse_cameras_body(&reports[0].2)[0].name,
         "USB Cam"
     );
 }
@@ -932,7 +932,7 @@ fn a_play_message_starts_a_player_on_its_url_and_audio_device() {
     f.send(
         OP_PLAY_URL,
         VIDEO_PLANE,
-        &livi_host_proto::url_body("http://h/i.m3u8", "car"),
+        &livi_output_proto::url_body("http://h/i.m3u8", "car"),
     );
 
     assert_eq!(
@@ -948,7 +948,7 @@ fn rate_seek_and_mute_reach_the_player() {
     f.send(
         OP_PLAY_URL,
         VIDEO_PLANE,
-        &livi_host_proto::url_body("http://h/", ""),
+        &livi_output_proto::url_body("http://h/", ""),
     );
 
     f.send(OP_PLAY_RATE, VIDEO_PLANE, &0.0f64.to_le_bytes());
@@ -971,7 +971,7 @@ fn control_messages_short_of_their_value_or_their_player_are_ignored() {
     f.send(
         OP_PLAY_URL,
         VIDEO_PLANE,
-        &livi_host_proto::url_body("http://h/", ""),
+        &livi_output_proto::url_body("http://h/", ""),
     );
 
     f.send(OP_PLAY_RATE, VIDEO_PLANE, &[0; 4]);
@@ -993,7 +993,7 @@ fn every_url_player_reports_its_status() {
     f.send(
         OP_PLAY_URL,
         VIDEO_PLANE,
-        &livi_host_proto::url_body("http://h/", ""),
+        &livi_output_proto::url_body("http://h/", ""),
     );
     let status = UrlStatus {
         position: Some(4.0),
@@ -1017,7 +1017,7 @@ fn a_stop_message_drops_the_player() {
     f.send(
         OP_PLAY_URL,
         VIDEO_PLANE,
-        &livi_host_proto::url_body("http://h/", ""),
+        &livi_output_proto::url_body("http://h/", ""),
     );
 
     f.send(OP_STOP, VIDEO_PLANE, &[]);
@@ -1033,13 +1033,13 @@ fn a_player_and_a_plane_on_one_id_replace_each_other() {
     f.send(
         OP_CREATE,
         VIDEO_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
 
     f.send(
         OP_PLAY_URL,
         VIDEO_PLANE,
-        &livi_host_proto::url_body("http://h/", ""),
+        &livi_output_proto::url_body("http://h/", ""),
     );
     f.send(OP_DATA, VIDEO_PLANE, &[7]);
     assert!(f.plane(0).pushed().is_empty());
@@ -1047,7 +1047,7 @@ fn a_player_and_a_plane_on_one_id_replace_each_other() {
     f.send(
         OP_CREATE,
         VIDEO_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
     assert!(url_log(&f, 0).borrow().dropped);
 }
@@ -1058,13 +1058,13 @@ fn a_play_message_without_a_url_or_a_player_leaves_nothing_behind() {
     f.send(
         OP_PLAY_URL,
         VIDEO_PLANE,
-        &livi_host_proto::url_body("", "car"),
+        &livi_output_proto::url_body("", "car"),
     );
     f.world.0.borrow_mut().refuse_url = true;
     f.send(
         OP_PLAY_URL,
         VIDEO_PLANE,
-        &livi_host_proto::url_body("http://h/", ""),
+        &livi_output_proto::url_body("http://h/", ""),
     );
 
     assert!(f.world.0.borrow().url_logs.is_empty());
@@ -1088,7 +1088,7 @@ fn a_plane_that_cannot_be_built_leaves_nothing_behind() {
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
     f.send(OP_DATA, MAIN_PLANE, &[7]);
 
@@ -1101,7 +1101,7 @@ fn gamma_reaches_the_plane() {
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
 
     f.send(OP_GAMMA, MAIN_PLANE, &gamma_body([1.5, 2.0, 0.5, 0.6, 0.7]));
@@ -1115,7 +1115,7 @@ fn a_gamma_message_short_of_five_values_is_ignored() {
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
 
     f.send(
@@ -1143,7 +1143,7 @@ fn two_messages_in_one_chunk_are_both_acted_on() {
     let mut chunk = frame(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
     chunk.extend(frame(OP_DATA, MAIN_PLANE, &[4]));
 
@@ -1158,7 +1158,7 @@ fn a_message_split_across_chunks_waits_for_the_rest() {
     let msg = frame(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
 
     f.host.feed(&msg[..6]).unwrap();
@@ -1208,7 +1208,7 @@ fn frames_reach_the_plane_the_receiver_serves() {
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
 
     f.config(0, CpCodec::H264, &[1, 2]);
@@ -1225,7 +1225,7 @@ fn frames_before_a_keyframe_are_dropped() {
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
 
     f.config(0, CpCodec::H264, &[1, 2]);
@@ -1241,7 +1241,7 @@ fn a_passive_receiver_feeds_nothing() {
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
 
     f.config(0, CpCodec::H264, &[1, 2]);
@@ -1257,12 +1257,12 @@ fn a_cluster_receiver_feeds_every_cluster_plane() {
     f.send(
         OP_CREATE,
         CLUSTER_PLANE_MIN,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
     f.send(
         OP_CREATE,
         CLUSTER_PLANE_MAX,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
 
     f.config(0, CpCodec::H264, &[1, 2]);
@@ -1283,7 +1283,7 @@ fn a_plane_created_mid_stream_is_primed_with_the_cached_gop() {
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
 
     assert_eq!(f.plane(0).pushed(), vec![nal(KEYFRAME, 1), nal(DELTA, 2)]);
@@ -1299,7 +1299,7 @@ fn a_cluster_plane_is_primed_from_the_cluster_receiver() {
     f.send(
         OP_CREATE,
         CLUSTER_PLANE_MIN,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
 
     assert_eq!(f.plane(0).pushed(), vec![nal(KEYFRAME, 1)]);
@@ -1316,7 +1316,7 @@ fn a_torn_down_receiver_no_longer_primes_new_planes() {
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
 
     assert!(f.plane(0).pushed().is_empty());
@@ -1329,7 +1329,7 @@ fn activating_a_receiver_makes_the_other_one_of_the_plane_passive() {
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
     f.config(0, CpCodec::H264, &[1, 2]);
 
@@ -1348,7 +1348,7 @@ fn a_receiver_made_active_waits_for_the_next_keyframe() {
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
     f.config(0, CpCodec::H264, &[1, 2]);
     f.frame_in(0, &nal(KEYFRAME, 1));
@@ -1371,7 +1371,7 @@ fn a_receiver_of_another_plane_stays_active() {
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
     f.config(0, CpCodec::H264, &[1, 2]);
 
@@ -1388,7 +1388,7 @@ fn deactivating_a_receiver_stops_its_feed() {
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
     f.config(0, CpCodec::H264, &[1, 2]);
 
@@ -1473,7 +1473,7 @@ fn the_first_frame_shown_after_activation_is_reported_once() {
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
     f.config(0, CpCodec::H264, &[1, 2]);
 
@@ -1496,7 +1496,7 @@ fn a_passive_receiver_reports_no_start() {
     f.send(
         OP_CREATE,
         MAIN_PLANE,
-        &livi_host_proto::plane_body(VideoCodec::H264, &[]),
+        &livi_output_proto::plane_body(VideoCodec::H264, &[]),
     );
     f.config(0, CpCodec::H264, &[1, 2]);
 
