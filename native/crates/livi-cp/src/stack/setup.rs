@@ -167,7 +167,7 @@ impl<M: Media> Conn<M> {
             .shared_secret()
             .ok_or("screen SETUP arrived before pair-verify")?;
         let id = id_text(sd.get("streamConnectionID"));
-        let key = stream_key(&shared, &id, "DataStream-Output-Encryption-Key");
+        let key = session_keys::data_stream(&shared, &id, session_keys::DATA_OUT);
         let codec = if self.told(|info| info.hevc) {
             ScreenCodec::H265
         } else {
@@ -221,7 +221,7 @@ impl<M: Media> Conn<M> {
             .unwrap_or(Value::Int(0));
         let id = id_text(sd.get("streamConnectionID"));
         let latency_ms = int(sd.get("audioLatencyMs")) as u32;
-        let key = stream_key(&shared, &id, "DataStream-Output-Encryption-Key");
+        let key = session_keys::data_stream(&shared, &id, session_keys::DATA_OUT);
         let audio_type = sd
             .get("audioType")
             .map_or_else(|| "media".to_string(), text);
@@ -302,7 +302,7 @@ impl<M: Media> Conn<M> {
             .filter(|p| *p > 0)
             .map(|port| {
                 (
-                    stream_key(&shared, &id, "DataStream-Input-Encryption-Key"),
+                    session_keys::data_stream(&shared, &id, session_keys::DATA_IN),
                     MicRequest {
                         opus: is_opus,
                         payload_type: kind as u8,

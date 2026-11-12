@@ -12,7 +12,7 @@ use tokio::task::JoinHandle;
 
 use crate::control_cipher::ControlCipher;
 use crate::net;
-use livi_crypto::hkdf_sha512;
+use crate::session_keys;
 
 const PKG_HEADER: usize = 32;
 const MSG_TYPE_COMM: u32 = 0x636f_6d6d;
@@ -42,7 +42,7 @@ impl IapTunnel {
         seed: &str,
         out: mpsc::Sender<Vec<u8>>,
     ) -> io::Result<Self> {
-        let key = stream_key(shared, seed, b"DataStream-Output-Encryption-Key");
+        let key = session_keys::data_stream(shared, seed, session_keys::DATA_OUT);
         let listener = net::tcp_listener()?;
         let port = net::local_port(listener.local_addr());
         let task = tokio::spawn(async move {
@@ -65,8 +65,8 @@ impl IapTunnel {
         deliver: Deliver,
     ) -> io::Result<(Self, mpsc::UnboundedSender<Vec<u8>>)> {
         let keys = (
-            stream_key(shared, seed, b"DataStream-Output-Encryption-Key"),
-            stream_key(shared, seed, b"DataStream-Input-Encryption-Key"),
+            session_keys::data_stream(shared, seed, session_keys::DATA_OUT),
+            session_keys::data_stream(shared, seed, session_keys::DATA_IN),
         );
         let (to_phone, outgoing) = mpsc::unbounded_channel();
         let outgoing = Arc::new(Mutex::new(outgoing));
@@ -98,10 +98,6 @@ impl Drop for IapTunnel {
     fn drop(&mut self) {
         self.task.abort();
     }
-}
-
-fn stream_key(shared: &[u8; 32], seed: &str, info: &[u8]) -> [u8; 32] {
-    hkdf_sha512(shared, format!("DataStream-Salt{seed}").as_bytes(), info)
 }
 
 struct Package {
@@ -258,6 +254,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use livi_crypto::hkdf_sha512;
 
     fn comm(message_type: u32, body: &[u8]) -> Vec<u8> {
         package(PACKAGE_ASYNC, message_type, 0, body)

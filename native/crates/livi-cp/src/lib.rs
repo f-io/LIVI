@@ -24,6 +24,7 @@ pub mod pair_setup;
 pub mod pair_verify;
 pub mod pairings;
 pub mod rtsp;
+pub mod session_keys;
 pub mod srp;
 pub mod stack;
 pub mod timing;

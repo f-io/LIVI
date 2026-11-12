@@ -24,9 +24,9 @@ use crate::pair_setup::PairSetup;
 use crate::pair_verify::PairVerify;
 use crate::pairings::Pairings;
 use crate::rtsp::{self, Request, Response};
+use crate::session_keys;
 use crate::timing_sync::TimingSync;
 use crate::{auth_setup, mfi4, net, tlv8};
-use livi_crypto::hkdf_sha512;
 
 const TAG: &str = "[airplay]";
 const TLV_FLAGS: u8 = 0x13;
@@ -335,10 +335,8 @@ impl Conn {
                 && req.path.to_lowercase().ends_with("/pair-setup")
                 && let Some(k) = self.pair_setup.session_key()
             {
-                self.cipher = Some(ControlCipher::new(
-                    hkdf_sha512(&k, b"Control-Salt", b"Control-Write-Encryption-Key"),
-                    hkdf_sha512(&k, b"Control-Salt", b"Control-Read-Encryption-Key"),
-                ));
+                let (read, write) = session_keys::control(&k);
+                self.cipher = Some(ControlCipher::new(read, write));
             }
         }
         Ok(())
@@ -563,26 +561,21 @@ impl Conn {
     }
 
     fn event_keys(&self) -> Option<([u8; 32], [u8; 32])> {
-        let key = |k: &[u8]| {
-            (
-                hkdf_sha512(k, b"Events-Salt", b"Events-Read-Encryption-Key"),
-                hkdf_sha512(k, b"Events-Salt", b"Events-Write-Encryption-Key"),
-            )
-        };
         if self.transient {
-            return self.pair_setup.session_key().map(|k| key(&k));
+            return self
+                .pair_setup
+                .session_key()
+                .map(|k| session_keys::events(&k));
         }
-        self.pair_verify.shared_secret().map(|k| key(&k))
+        self.pair_verify
+            .shared_secret()
+            .map(|k| session_keys::events(&k))
     }
 
     fn stream_key(&self, sd: &Value) -> Option<[u8; 32]> {
         let k = self.pair_setup.session_key()?;
         let id = crate::stack::id_text(sd.get("streamConnectionID"));
-        Some(hkdf_sha512(
-            &k,
-            format!("DataStream-Salt{id}").as_bytes(),
-            b"DataStream-Output-Encryption-Key",
-        ))
+        Some(session_keys::data_stream(&k, &id, session_keys::DATA_OUT))
     }
 
     async fn setup(&mut self, req: &Request) -> Response {

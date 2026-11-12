@@ -10,8 +10,7 @@ impl<M: Media> Conn<M> {
         let Some(shared) = self.pair_verify.shared_secret() else {
             return;
         };
-        let write = hkdf_sha512(&shared, b"Events-Salt", b"Events-Write-Encryption-Key");
-        let read = hkdf_sha512(&shared, b"Events-Salt", b"Events-Read-Encryption-Key");
+        let (read, write) = session_keys::events(&shared);
         let (rd, wr) = sock.into_split();
         self.event = Some(EventConn {
             read: rd,

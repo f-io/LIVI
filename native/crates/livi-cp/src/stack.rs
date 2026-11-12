@@ -32,6 +32,7 @@ use crate::pair_setup::PairSetup;
 use crate::pair_verify::PairVerify;
 use crate::pairings::Pairings;
 use crate::rtsp::{self, Request, Response};
+use crate::session_keys;
 use crate::timing::ntp64_now;
 use crate::timing_sync::TimingSync;
 use crate::ui_sync;
@@ -40,7 +41,6 @@ use crate::vehicle_state::{
 };
 use crate::video_playback;
 use crate::video_proxy::ProxyOffer;
-use livi_crypto::hkdf_sha512;
 
 mod commands;
 mod control;
@@ -542,14 +542,6 @@ fn header_number(req: &Request, name: &str) -> Option<u32> {
     } else {
         v.parse().ok()
     }
-}
-
-fn stream_key(shared: &[u8; 32], id: &str, info: &str) -> [u8; 32] {
-    hkdf_sha512(
-        shared,
-        format!("DataStream-Salt{id}").as_bytes(),
-        info.as_bytes(),
-    )
 }
 
 pub async fn run<M: Media>(
