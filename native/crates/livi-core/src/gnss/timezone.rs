@@ -107,8 +107,11 @@ fn offset_minutes(zone: &str, at: jiff::Timestamp) -> Option<i32> {
 }
 
 fn observes_dst(zone: &str) -> bool {
+    let year = jiff::Timestamp::now()
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .year();
     let at = |month| {
-        jiff::civil::date(2026, month, 15)
+        jiff::civil::date(year, month, 15)
             .to_zoned(jiff::tz::TimeZone::UTC)
             .ok()
     };
