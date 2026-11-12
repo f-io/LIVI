@@ -14,7 +14,6 @@ fn main() {
         "../../../assets/livi-link/imx6ul_bcm4354/livi-link-imx6ull-bcm4354.lfwb",
         "assets/bindshell/armv7",
         "assets/bindshell/riscv32",
-        "assets/bindshell/mipsel",
     ];
     for file in embedded {
         let path = Path::new(file);
