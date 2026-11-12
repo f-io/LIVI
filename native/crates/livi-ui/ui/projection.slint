@@ -82,6 +82,7 @@ export component ProjectionPage inherits Rectangle {
         elapsed-ms: root.video-elapsed-ms;
         total-ms: root.video-total-ms;
         can-seek: root.video-can-seek;
+        mirrored: root.mirrored && !root.video-shown;
         shown <=> root.mirror-shown;
         idle <=> root.mirror-idle;
         play-pause => { root.video-play-pause(); }

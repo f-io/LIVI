@@ -25,7 +25,7 @@ pub fn show(ui: &AppWindow, video: Option<VideoPlayback>) {
 pub fn mirrored(ui: &AppWindow, mirrored: bool) {
     ui.set_mirrored(mirrored);
     if mirrored {
-        wake_mirror(ui);
+        ui.set_mirror_shown(false);
     }
 }
 

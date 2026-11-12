@@ -10,6 +10,7 @@ export component VideoControls inherits Rectangle {
     in property <float> elapsed-ms;
     in property <float> total-ms;
     in property <bool> can-seek;
+    in property <bool> mirrored;
     in-out property <bool> shown: true;
     in-out property <int> idle;
     callback play-pause();
@@ -32,7 +33,7 @@ export component VideoControls inherits Rectangle {
 
     Timer {
         interval: 250ms;
-        running: root.shown && root.playing;
+        running: root.shown && (root.playing || root.mirrored);
         triggered => {
             root.idle += 1;
             if (root.idle >= 16) {
