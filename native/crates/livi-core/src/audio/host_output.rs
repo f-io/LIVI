@@ -4,7 +4,6 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::process::Stdio;
 use std::time::Duration;
 
 use zbus::OwnedVariant;
@@ -12,6 +11,7 @@ use zbus::OwnedVariant;
 use livi_core_proto::state::Display;
 
 use crate::hub::Hub;
+use crate::system::privileged;
 
 const TOOL_TIMEOUT: Duration = Duration::from_secs(3);
 const PIN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -98,16 +98,10 @@ pub async fn pin(connector: &str, current: &str) {
         return;
     }
     let pin = pin_arg(connector, current);
-    let run = tokio::process::Command::new("sudo")
-        .args(["-n", VIDEO_MODE_HELPER, &pin])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .kill_on_drop(true)
-        .status();
-    match tokio::time::timeout(PIN_TIMEOUT, run).await {
-        Ok(Ok(status)) if status.success() => println!("[display] cmdline video pin → {pin}"),
-        _ => println!("[display] could not pin {pin} in the cmdline"),
+    if privileged::sudo_within(&[VIDEO_MODE_HELPER, &pin], PIN_TIMEOUT).await {
+        println!("[display] cmdline video pin → {pin}");
+    } else {
+        println!("[display] could not pin {pin} in the cmdline");
     }
 }
 

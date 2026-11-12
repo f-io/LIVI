@@ -4,6 +4,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::system::privileged;
+
 const BT_ROLES: &str = "monitor.bluez.properties = {
   bluez5.roles = [ a2dp_sink a2dp_source ]
 }
@@ -37,11 +39,12 @@ pub fn prepare() {
         Ok(true) => {
             println!("[setup] {} written, restarting wireplumber", file.display());
             tokio::spawn(async {
-                let restart = tokio::process::Command::new("systemctl")
-                    .args(["--user", "restart", "wireplumber"])
-                    .status()
-                    .await;
-                if !restart.is_ok_and(|s| s.success()) {
+                let restart = privileged::quietly(
+                    &privileged::systemctl(),
+                    &["--user", "restart", "wireplumber"],
+                )
+                .await;
+                if !restart {
                     eprintln!("[setup] wireplumber did not restart");
                 }
             });

@@ -52,15 +52,13 @@ fn stamp(content: &str) -> String {
 }
 
 pub async fn sudo(args: &[&str]) -> bool {
-    let run = Command::new("sudo")
-        .arg("-n")
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .kill_on_drop(true)
-        .status();
-    matches!(tokio::time::timeout(SUDO_TIMEOUT, run).await, Ok(Ok(s)) if s.success())
+    sudo_within(args, SUDO_TIMEOUT).await
+}
+
+pub async fn sudo_within(args: &[&str], limit: Duration) -> bool {
+    let mut sudo_args = vec!["-n"];
+    sudo_args.extend_from_slice(args);
+    quietly_within("sudo", &sudo_args, limit).await
 }
 
 pub async fn sudo_grants(needle: &str) -> bool {
@@ -85,14 +83,18 @@ fn grants_all(sudo_list: &str) -> bool {
 }
 
 pub async fn quietly(program: &str, args: &[&str]) -> bool {
-    Command::new(program)
+    quietly_within(program, args, SUDO_TIMEOUT).await
+}
+
+async fn quietly_within(program: &str, args: &[&str], limit: Duration) -> bool {
+    let run = Command::new(program)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()
-        .await
-        .is_ok_and(|s| s.success())
+        .kill_on_drop(true)
+        .status();
+    matches!(tokio::time::timeout(limit, run).await, Ok(Ok(s)) if s.success())
 }
 
 impl Privileged {

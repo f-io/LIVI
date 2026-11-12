@@ -101,7 +101,7 @@ async fn unit_state() -> String {
 async fn release_interface(p: &Privileged) {
     let taken = Path::new(NM_UNMANAGED_CONF).exists()
         || !matches!(unit_state().await.as_str(), "inactive" | "")
-        || quietly("systemctl", &["is-enabled", "--quiet", SERVICE]).await;
+        || quietly(&systemctl(), &["is-enabled", "--quiet", SERVICE]).await;
     if !taken {
         return;
     }

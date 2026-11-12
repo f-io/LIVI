@@ -150,27 +150,28 @@ pub fn resolve_bin(bin: &Path, user_data: &Path) -> PathBuf {
     }
 }
 
-fn stale_running() -> bool {
-    std::process::Command::new("pgrep")
+async fn stale_running() -> bool {
+    let run = tokio::process::Command::new("pgrep")
         .args(["-f", STALE_PATTERN])
-        .output()
-        .is_ok_and(|o| !o.stdout.is_empty())
+        .stdin(Stdio::null())
+        .kill_on_drop(true)
+        .output();
+    matches!(
+        tokio::time::timeout(Duration::from_secs(2), run).await,
+        Ok(Ok(o)) if !o.stdout.is_empty()
+    )
 }
 
 async fn kill_stale() {
-    if !stale_running() {
+    if !stale_running().await {
         return;
     }
     println!("[core] stopping a stale helper");
     for signal in ["-TERM", "-KILL"] {
-        let _ = std::process::Command::new("sudo")
-            .args(["-n", "pkill", signal, "-f", STALE_PATTERN])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        crate::system::privileged::sudo(&["pkill", signal, "-f", STALE_PATTERN]).await;
         for _ in 0..20 {
             tokio::time::sleep(Duration::from_millis(100)).await;
-            if !stale_running() {
+            if !stale_running().await {
                 return;
             }
         }
