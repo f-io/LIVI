@@ -146,10 +146,6 @@ impl Session {
         }
     }
 
-    pub fn proven(&self) -> bool {
-        self.step == Step::Proven
-    }
-
     pub async fn handle(
         &mut self,
         body: &[u8],

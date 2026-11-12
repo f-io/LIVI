@@ -35,6 +35,7 @@ impl PairVerify {
         Self::default()
     }
 
+    #[cfg(test)]
     pub fn verified(&self) -> bool {
         self.keys.is_some()
     }

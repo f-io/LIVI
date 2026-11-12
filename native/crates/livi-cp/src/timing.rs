@@ -92,6 +92,7 @@ impl TimingClock {
         ns_to_ntp(self.mono_ns() + self.offset_ns)
     }
 
+    #[cfg(test)]
     pub fn synced(&self) -> bool {
         self.synced
     }

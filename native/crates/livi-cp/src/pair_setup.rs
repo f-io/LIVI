@@ -40,6 +40,7 @@ impl PairSetup {
         Self::default()
     }
 
+    #[cfg(test)]
     pub fn complete(&self) -> bool {
         self.complete
     }

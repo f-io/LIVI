@@ -3,37 +3,37 @@
 // Additional terms: see NOTICE
 
 pub mod airplay;
-pub mod auth_setup;
-pub mod bplist;
-pub mod control_cipher;
+pub(crate) mod auth_setup;
+pub(crate) mod bplist;
+pub(crate) mod control_cipher;
 pub mod helper_sock;
 pub mod hid;
-pub mod hls;
-pub mod hls_gateway;
-pub mod iap_tunnel;
+pub(crate) mod hls;
+pub(crate) mod hls_gateway;
+pub(crate) mod iap_tunnel;
 pub mod identity;
-pub mod image_archive;
+pub(crate) mod image_archive;
 pub mod info;
-pub mod keep_alive;
+pub(crate) mod keep_alive;
 pub mod manager;
 pub mod media;
-pub mod mfi4;
+pub(crate) mod mfi4;
 pub mod net;
-pub mod opack;
-pub mod pair_setup;
-pub mod pair_verify;
+pub(crate) mod opack;
+pub(crate) mod pair_setup;
+pub(crate) mod pair_verify;
 pub mod pairings;
-pub mod rtsp;
-pub mod session_keys;
-pub mod srp;
+pub(crate) mod rtsp;
+pub(crate) mod session_keys;
+pub(crate) mod srp;
 pub mod stack;
-pub mod timing;
-pub mod timing_sync;
-pub mod tlv8;
+pub(crate) mod timing;
+pub(crate) mod timing_sync;
+pub(crate) mod tlv8;
 pub mod ui_sync;
 pub mod vehicle_state;
-pub mod video_playback;
-pub mod video_proxy;
+pub(crate) mod video_playback;
+pub(crate) mod video_proxy;
 
 #[cfg(test)]
 mod test_tls;
