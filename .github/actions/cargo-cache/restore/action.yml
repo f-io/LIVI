@@ -1,5 +1,5 @@
 name: Restore the cargo cache
-description: Restores the cargo registry, git checkouts and native/target, keyed by toolchain and lockfile.
+description: Restores the cargo registry, git checkouts and native/target, keyed by toolchain, rustc version and lockfile.
 inputs:
   name:
     description: Cache family, one per job kind and target
@@ -17,6 +17,9 @@ outputs:
 runs:
   using: composite
   steps:
+    - id: rustc
+      shell: bash
+      run: echo "version=$(rustc --version 2>/dev/null | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
     - id: restore
       uses: actions/cache/restore@v6
       with:
@@ -25,5 +28,7 @@ runs:
           ~/.cargo/registry/cache
           ~/.cargo/git/db
           native/target
-        key: cargo-${{ inputs.name }}-${{ hashFiles(inputs.toolchain) }}-${{ hashFiles('native/Cargo.lock', 'native/**/Cargo.toml') }}
-        restore-keys: cargo-${{ inputs.name }}-${{ hashFiles(inputs.toolchain) }}-
+        key: cargo-${{ inputs.name }}-${{ hashFiles(inputs.toolchain) }}-${{ steps.rustc.outputs.version }}-${{ hashFiles('native/Cargo.lock', 'native/**/Cargo.toml') }}
+        restore-keys: |
+          cargo-${{ inputs.name }}-${{ hashFiles(inputs.toolchain) }}-${{ steps.rustc.outputs.version }}-
+          cargo-${{ inputs.name }}-${{ hashFiles(inputs.toolchain) }}-

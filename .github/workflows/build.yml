@@ -177,6 +177,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          rustup update stable --no-self-update
           rustup toolchain install
           rustc --version
 

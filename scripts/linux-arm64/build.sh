@@ -21,6 +21,7 @@ podman run --rm \
   -w /src/native \
   "$image" bash -c '
     set -euo pipefail
+    rustup update stable --no-self-update
     rustup toolchain install
     rustup target add aarch64-unknown-linux-gnu
     cargo xtask package-linux --arch arm64

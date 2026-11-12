@@ -52,7 +52,9 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Setup Rust
-        run: rustup toolchain install
+        run: |
+          rustup update stable --no-self-update
+          rustup toolchain install
 
       - name: Restore cargo cache
         id: cargo
@@ -209,6 +211,7 @@ jobs:
           chmod +x /tmp/rustup-init
           /tmp/rustup-init -y --profile minimal --default-toolchain none
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/rustup" update stable --no-self-update
           "$HOME/.cargo/bin/rustup" toolchain install
           "$HOME/.cargo/bin/rustc" --version
 
@@ -607,6 +610,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          rustup update stable --no-self-update
           rustup toolchain install
           if [[ -n "$TARGET" ]]; then rustup target add "$TARGET"; fi
           rustc --version

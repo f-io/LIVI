@@ -320,7 +320,7 @@ Install `LIVI-*-android-arm64.apk` on Android 10 or newer.
 
 Make sure the following packages and tools are installed on your system before building. The lists below cover both building and running, including everything native CarPlay needs:
 
-- **Rust** (via [rustup](https://rustup.rs), which installs the version pinned in `rust-toolchain.toml`): builds everything, the UI included.
+- **Rust** (via [rustup](https://rustup.rs), the latest stable release, `rustup update stable` keeps it current): builds everything, the UI included.
 - **build-essential** (Linux: includes `gcc`, `g++`, `make`, etc.)
 - **libgstreamer1.0-dev** + **libgstreamer-plugins-base1.0-dev** (required to build the `livi-output` binary)
 - **libssl-dev** (Linux only: native CarPlay links OpenSSL)

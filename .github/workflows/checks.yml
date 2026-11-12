@@ -32,6 +32,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          rustup update stable --no-self-update
           rustup toolchain install
           rustup target add armv7-unknown-linux-musleabihf
           rustc --version
@@ -95,6 +96,7 @@ jobs:
       - name: Setup Rust
         run: |
           set -euo pipefail
+          rustup update stable --no-self-update
           rustup toolchain install
           rustc --version
 
@@ -166,6 +168,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          rustup update stable --no-self-update
           rustup toolchain install
           rustc --version
 
