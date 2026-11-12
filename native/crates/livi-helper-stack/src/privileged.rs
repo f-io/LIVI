@@ -48,7 +48,7 @@ pub fn write_root_file(path: &str, content: &[u8], mode: u32) -> Result<(), Priv
 pub fn install_sudoers(file: &str, content: &[u8]) -> Result<(), PrivilegedError> {
     let staged = format!("{file}.livi-tmp");
     write_root_file(&staged, content, 0o440)?;
-    let checked = Command::new(crate::sys::tool("visudo"))
+    let checked = Command::new(livi_base::sys::tool("visudo"))
         .args(["-c", "-f", &staged])
         .stdout(Stdio::null())
         .status()
@@ -62,7 +62,7 @@ pub fn install_sudoers(file: &str, content: &[u8]) -> Result<(), PrivilegedError
 }
 
 fn run(cmd: &str, args: &[&str]) {
-    let _ = Command::new(crate::sys::tool(cmd))
+    let _ = Command::new(livi_base::sys::tool(cmd))
         .args(args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -110,7 +110,7 @@ pub fn install_kiosk_unit(unit_src: &str) -> Result<(), PrivilegedError> {
     }
     write_root_file(KIOSK_UNIT, &read(unit_src)?, 0o644)?;
     run("systemctl", &["daemon-reload"]);
-    let systemctl = crate::sys::tool("systemctl");
+    let systemctl = livi_base::sys::tool("systemctl");
     let switch =
         format!("{systemctl} stop livi-kiosk.service; {systemctl} start livi-kiosk.service");
     run(

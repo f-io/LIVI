@@ -246,10 +246,10 @@ mod linux {
                     "as it was"
                 }
             );
-            let _ = std::process::Command::new(crate::sys::tool("systemctl"))
+            let _ = std::process::Command::new(livi_base::sys::tool("systemctl"))
                 .arg("daemon-reload")
                 .status();
-            let _ = std::process::Command::new(crate::sys::tool("systemctl"))
+            let _ = std::process::Command::new(livi_base::sys::tool("systemctl"))
                 .args(["restart", "bluetooth"])
                 .status();
             std::thread::sleep(std::time::Duration::from_secs(5));

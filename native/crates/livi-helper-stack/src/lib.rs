@@ -21,7 +21,6 @@ pub mod reconnect;
 pub mod sco;
 pub mod shared_sock;
 pub mod state;
-pub mod sys;
 pub mod vehicle;
 pub mod wifi_ap;
 

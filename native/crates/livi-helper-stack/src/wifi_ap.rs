@@ -117,7 +117,7 @@ fn write_dnsmasq_conf(cfg: &ApConfig) -> std::io::Result<()> {
 }
 
 fn run_cmd(cmd: &str, args: &[&str]) {
-    let _ = Command::new(crate::sys::tool(cmd))
+    let _ = Command::new(livi_base::sys::tool(cmd))
         .args(args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -125,7 +125,7 @@ fn run_cmd(cmd: &str, args: &[&str]) {
 }
 
 fn cmd_stdout(cmd: &str, args: &[&str]) -> String {
-    Command::new(crate::sys::tool(cmd))
+    Command::new(livi_base::sys::tool(cmd))
         .args(args)
         .output()
         .ok()
@@ -449,7 +449,7 @@ fn spawn_hostapd() -> std::io::Result<Child> {
         .open(HOSTAPD_LOG)?;
     use std::io::Write as _;
     let _ = writeln!(&log, "--- hostapd start {} ---", chrono_free_stamp());
-    Command::new(crate::sys::tool("hostapd"))
+    Command::new(livi_base::sys::tool("hostapd"))
         .arg(HOST_CONF)
         .stdout(Stdio::from(log.try_clone()?))
         .stderr(Stdio::from(log))
@@ -457,7 +457,7 @@ fn spawn_hostapd() -> std::io::Result<Child> {
 }
 
 fn spawn_dnsmasq() -> std::io::Result<Child> {
-    Command::new(crate::sys::tool("dnsmasq"))
+    Command::new(livi_base::sys::tool("dnsmasq"))
         .args([
             "--keep-in-foreground",
             &format!("--conf-file={DNSMASQ_CONF}"),

@@ -336,7 +336,7 @@ pub async fn start(
         )
         .await?;
     }
-    let _ = std::process::Command::new(crate::sys::tool("rfkill"))
+    let _ = std::process::Command::new(livi_base::sys::tool("rfkill"))
         .args(["unblock", "bluetooth"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())

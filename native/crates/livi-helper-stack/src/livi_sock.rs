@@ -4,14 +4,12 @@
 
 use std::io;
 use std::os::fd::OwnedFd;
-use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{UnixListener, UnixStream};
+use tokio::net::UnixStream;
 use tokio::sync::{Notify, mpsc, watch};
 
 use iap2_link::LinkConfig;
@@ -21,6 +19,7 @@ use livi_core_proto::helper_requests::CpRequest;
 use crate::bringup::{BringupEvent, CpConfig, run_accessory};
 use crate::driver::{ArtworkRx, LinkChannel, spawn_link};
 use crate::ident::Identity;
+use crate::shared_sock::{action, bind, err_json, ok_json, read_line, reply, run_subscriber};
 use crate::state::HelperState;
 use crate::vehicle::VehicleFeed;
 use crate::{AsyncAuth, BtError, events};
@@ -91,10 +90,7 @@ pub async fn serve<A>(
 where
     A: AsyncAuth + Clone + Send + 'static,
 {
-    let _ = std::fs::remove_file(&cfg.path);
-    let listener = UnixListener::bind(&cfg.path)?;
-    std::fs::set_permissions(&cfg.path, std::fs::Permissions::from_mode(0o666))?;
-    println!("[cp-sock] listening on {}", cfg.path.display());
+    let listener = bind(&cfg.path, "cp-sock")?;
 
     loop {
         let (stream, _) = listener.accept().await?;
@@ -111,27 +107,6 @@ where
     }
 }
 
-async fn read_header(stream: &mut UnixStream) -> io::Result<String> {
-    let mut buf = Vec::new();
-    loop {
-        let b = stream.read_u8().await?;
-        if b == b'\n' {
-            break;
-        }
-        buf.push(b);
-        if buf.len() > 4096 {
-            break;
-        }
-    }
-    Ok(String::from_utf8_lossy(&buf).trim().to_string())
-}
-
-async fn reply(stream: &mut UnixStream, json: &str) -> io::Result<()> {
-    stream.write_all(json.as_bytes()).await?;
-    stream.write_all(b"\n").await?;
-    stream.flush().await
-}
-
 async fn handle<A>(
     mut stream: UnixStream,
     mut auth: A,
@@ -143,14 +118,14 @@ async fn handle<A>(
 where
     A: AsyncAuth + Clone + Send + 'static,
 {
-    let line = read_header(&mut stream).await?;
+    let line = read_line(&mut stream).await?;
     let request = match CpRequest::parse(&line) {
         Ok(request) => request,
         Err(e) => return reply(&mut stream, &err_json(&e)).await,
     };
 
     let json = match request {
-        CpRequest::Subscribe => return run_subscriber(stream, bcast).await,
+        CpRequest::Subscribe => return run_subscriber(stream, bcast, "cp-sock").await,
         CpRequest::Tunnel { cid, bt_mac } => {
             let shown = bt_mac.as_deref().unwrap_or("unknown");
             if state.carkit_blocks(bt_mac.as_deref().unwrap_or("")) {
@@ -188,10 +163,10 @@ where
             Err(e) => err_json(&e.to_string()),
         },
         CpRequest::Disconnect(mac) => match bluez.as_ref() {
-            Some(bluez) => answer(device_disconnect(&bluez.bus, &bluez.adapter, &mac).await),
+            Some(bluez) => action(device_disconnect(&bluez.bus, &bluez.adapter, &mac).await),
             None => match cfg.disconnect.clone() {
                 Some(drop) => match tokio::task::spawn_blocking(move || drop(mac)).await {
-                    Ok(done) => answer(done),
+                    Ok(done) => action(done),
                     Err(e) => err_json(&e.to_string()),
                 },
                 None => err_json("nothing here can drop a bluetooth link"),
@@ -210,29 +185,29 @@ where
                     eprintln!("[helperd] the dongle refused the paging list: {e}");
                 }
             }
-            OK.to_string()
+            ok_json()
         }
         CpRequest::Location(nmea) => {
             state.vehicle().push_location(nmea);
-            OK.to_string()
+            ok_json()
         }
         CpRequest::VehicleStatus(status) => {
             state.vehicle().push_status(&status);
-            OK.to_string()
+            ok_json()
         }
         CpRequest::Seek { ms, bt_mac } => {
             state.vehicle().push_seek(ms, bt_mac);
-            OK.to_string()
+            ok_json()
         }
         CpRequest::DropIap2 => {
             let n = state.restart_wired();
             println!("[cp-sock] drop-iap2: {n} wired session(s) end for a fresh start");
-            OK.to_string()
+            ok_json()
         }
         CpRequest::StartWired(udid) => {
             if state.start_wired_again(&udid) {
                 println!("[cp-sock] start-wired: {udid} offers CarPlay again");
-                OK.to_string()
+                ok_json()
             } else {
                 err_json(&format!("no wired session for {udid:?}"))
             }
@@ -240,48 +215,13 @@ where
         CpRequest::ResetWired(udid) => {
             if state.reset_wired(&udid) {
                 println!("[cp-sock] reset-wired: {udid} gets a USB reset");
-                OK.to_string()
+                ok_json()
             } else {
                 err_json(&format!("no wired session for {udid:?}"))
             }
         }
     };
     reply(&mut stream, &json).await
-}
-
-const OK: &str = "{\"ok\":true}";
-
-fn answer(done: Result<(), BtError>) -> String {
-    match done {
-        Ok(()) => OK.to_string(),
-        Err(e) => err_json(&e.to_string()),
-    }
-}
-
-fn err_json(msg: &str) -> String {
-    serde_json::json!({ "ok": false, "error": msg }).to_string()
-}
-
-async fn run_subscriber(mut stream: UnixStream, bcast: Broadcaster) -> io::Result<()> {
-    let mut rx = bcast.subscribe();
-    let mut probe = [0u8; 64];
-    loop {
-        tokio::select! {
-            line = rx.recv() => match line {
-                Some(line) => {
-                    stream.write_all(line.as_bytes()).await?;
-                    stream.write_all(b"\n").await?;
-                    stream.flush().await?;
-                }
-                None => return Ok(()),
-            },
-            read = stream.read(&mut probe) => {
-                if read? == 0 {
-                    return Ok(());
-                }
-            }
-        }
-    }
 }
 
 fn run_tunnel<A>(

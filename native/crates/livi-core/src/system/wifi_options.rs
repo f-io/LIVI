@@ -3,7 +3,6 @@
 // Additional terms: see NOTICE
 
 use std::collections::BTreeSet;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -141,16 +140,8 @@ fn phy_of(iface: &str) -> String {
         .unwrap_or_default()
 }
 
-fn tool(name: &str) -> String {
-    ["/usr/sbin", "/sbin", "/usr/bin", "/bin"]
-        .iter()
-        .map(|dir| format!("{dir}/{name}"))
-        .find(|p| Path::new(p).exists())
-        .unwrap_or_else(|| name.to_string())
-}
-
 async fn countries() -> Vec<String> {
-    let run = tokio::process::Command::new(tool("regdbdump"))
+    let run = tokio::process::Command::new(livi_base::sys::tool("regdbdump"))
         .arg("/lib/firmware/regulatory.db")
         .kill_on_drop(true)
         .output();

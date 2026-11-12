@@ -84,7 +84,7 @@ const PUBLISHER: &str = if cfg!(target_os = "macos") {
 };
 
 fn reap(pattern: &str) {
-    let _ = std::process::Command::new(crate::sys::tool("pkill"))
+    let _ = std::process::Command::new(livi_base::sys::tool("pkill"))
         .args(["-f", pattern])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -128,7 +128,7 @@ fn spawn(name: &str, port: u16, txt: &[String]) -> std::io::Result<Child> {
         let pids = running
             .as_mut()
             .ok_or_else(|| io_err("the helper is stopping"))?;
-        let publisher = Command::new(crate::sys::tool("dns-sd"))
+        let publisher = Command::new(livi_base::sys::tool("dns-sd"))
             .args(&args)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -140,7 +140,7 @@ fn spawn(name: &str, port: u16, txt: &[String]) -> std::io::Result<Child> {
     {
         let mut args = vec![name, AIRPLAY_SERVICE, port.as_str()];
         args.extend(txt.iter().map(String::as_str));
-        Command::new(crate::sys::tool("avahi-publish-service"))
+        Command::new(livi_base::sys::tool("avahi-publish-service"))
             .args(&args)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -265,7 +265,7 @@ async fn browse_once(
     bcast: &Broadcaster,
     seen: &Arc<Mutex<std::collections::HashMap<String, (String, u16)>>>,
 ) -> std::io::Result<()> {
-    let mut child = Command::new(crate::sys::tool("avahi-browse"))
+    let mut child = Command::new(livi_base::sys::tool("avahi-browse"))
         .args(["-r", "-p", "-k", CARPLAY_CTRL])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -482,7 +482,7 @@ fn dns_sd_run(args: &[&str], secs: u64) -> Vec<String> {
         let Some(pids) = running.as_mut() else {
             return out;
         };
-        let Ok(child) = Command::new(crate::sys::tool("dns-sd"))
+        let Ok(child) = Command::new(livi_base::sys::tool("dns-sd"))
             .args(args)
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

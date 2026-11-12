@@ -106,7 +106,7 @@ async fn handle(
 
 async fn deauth_ap(iface: &str) -> usize {
     let cli = |args: &[&str]| {
-        tokio::process::Command::new(crate::sys::tool("hostapd_cli"))
+        tokio::process::Command::new(livi_base::sys::tool("hostapd_cli"))
             .args(["-p", "/var/run/hostapd", "-i", iface])
             .args(args)
             .output()
@@ -168,7 +168,7 @@ pub(crate) fn err_json(msg: &str) -> String {
     serde_json::json!({ "ok": false, "error": msg.trim() }).to_string()
 }
 
-fn action(result: Result<(), BtError>) -> String {
+pub(crate) fn action(result: Result<(), BtError>) -> String {
     match result {
         Ok(()) => ok_json(),
         Err(e) => err_json(&e.to_string()),
