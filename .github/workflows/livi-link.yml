@@ -150,7 +150,7 @@ jobs:
           set -euo pipefail
           ZIG_VER=0.17.0
           ZIG_SHA=1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
-          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "https://ziglang.org/download/${ZIG_VER}/zig-x86_64-linux-${ZIG_VER}.tar.xz" -o /tmp/zig.tar.xz
+          curl -fsSL --connect-timeout 15 --retry 5 --retry-all-errors --retry-delay 5 "https://ziglang.org/download/${ZIG_VER}/zig-x86_64-linux-${ZIG_VER}.tar.xz" -o /tmp/zig.tar.xz
           echo "$ZIG_SHA  /tmp/zig.tar.xz" | sha256sum -c
           mkdir -p "$HOME/zig"
           tar -xJf /tmp/zig.tar.xz -C "$HOME/zig" --strip-components=1
@@ -200,13 +200,28 @@ jobs:
           echo "LIVI_VERSION=$LIVI_VERSION" >> "$GITHUB_ENV"
           echo "LIVI_BUILD=$LIVI_BUILD" >> "$GITHUB_ENV"
 
+      # Sources and firmware survive a failed run, the scripts take what still matches its hash.
+      - name: Restore downloads
+        id: downloads
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            build/${{ matrix.target }}/userspace/src/*.tar.*
+            build/${{ matrix.target }}/linux-*.tar.xz
+            build/${{ matrix.target }}/sha256sums.asc
+            build/${{ matrix.target }}/wireless-regdb-*.tar.xz
+            build/${{ matrix.target }}/firmware
+            build/${{ matrix.target }}/radxa-aic8800
+          key: livi-link-dl-${{ matrix.target }}-${{ hashFiles('scripts/livi-link/**') }}
+          restore-keys: livi-link-dl-${{ matrix.target }}-
+
       - name: Install Rust
         shell: bash
         run: |
           set -euo pipefail
           init=https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init
-          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "$init" -o /tmp/rustup-init
-          init_sha=$(curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "$init.sha256" | cut -d' ' -f1)
+          curl -fsSL --connect-timeout 15 --retry 5 --retry-all-errors --retry-delay 5 "$init" -o /tmp/rustup-init
+          init_sha=$(curl -fsSL --connect-timeout 15 --retry 5 --retry-all-errors --retry-delay 5 "$init.sha256" | cut -d' ' -f1)
           echo "$init_sha  /tmp/rustup-init" | sha256sum -c
           chmod +x /tmp/rustup-init
           /tmp/rustup-init -y --profile minimal --default-toolchain none
@@ -224,7 +239,7 @@ jobs:
           TC_SHA=0d9ee91376785835a10b1631cfc9e4d6d61326c0512da774c012fdac53c2bc3a
           TC_DIR=$HOME/andes
           mkdir -p "$TC_DIR"
-          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "$TC_URL" -o /tmp/andes.txz
+          curl -fsSL --connect-timeout 15 --retry 5 --retry-all-errors --retry-delay 5 "$TC_URL" -o /tmp/andes.txz
           echo "$TC_SHA  /tmp/andes.txz" | sha256sum -c
           tar -xJf /tmp/andes.txz -C "$TC_DIR"
           TC_BIN="$TC_DIR/nds32le-linux-glibc-v5d/bin"
@@ -320,6 +335,19 @@ jobs:
           source scripts/livi-link/version.sh
           livi_firmware_json "assets/livi-link/${{ matrix.target }}/$(basename "$BUNDLE")"
 
+      - name: Save downloads
+        if: always() && steps.downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            build/${{ matrix.target }}/userspace/src/*.tar.*
+            build/${{ matrix.target }}/linux-*.tar.xz
+            build/${{ matrix.target }}/sha256sums.asc
+            build/${{ matrix.target }}/wireless-regdb-*.tar.xz
+            build/${{ matrix.target }}/firmware
+            build/${{ matrix.target }}/radxa-aic8800
+          key: ${{ steps.downloads.outputs.cache-primary-key }}
+
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
@@ -339,7 +367,7 @@ jobs:
     if: |
       always() &&
       needs.targets.result == 'success' &&
-      (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+      needs.build.result != 'cancelled' &&
       (needs.bindshell.result == 'success' || needs.bindshell.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
@@ -351,6 +379,7 @@ jobs:
           ref: ${{ github.ref }}
 
       - name: Download v821b_aic8800d80 artifact
+        continue-on-error: true
         if: contains(needs.targets.outputs.any, 'v821b_aic8800d80')
         uses: actions/download-artifact@v8
         with:
@@ -358,6 +387,7 @@ jobs:
           path: assets/livi-link/v821b_aic8800d80
 
       - name: Download ax520_aic8800d80 artifact
+        continue-on-error: true
         if: contains(needs.targets.outputs.any, 'ax520_aic8800d80')
         uses: actions/download-artifact@v8
         with:
@@ -365,6 +395,7 @@ jobs:
           path: assets/livi-link/ax520_aic8800d80
 
       - name: Download imx6ul_iw416 artifact
+        continue-on-error: true
         if: contains(needs.targets.outputs.any, 'imx6ul_iw416')
         uses: actions/download-artifact@v8
         with:
@@ -372,6 +403,7 @@ jobs:
           path: assets/livi-link/imx6ul_iw416
 
       - name: Download imx6ul_rtl8822cs artifact
+        continue-on-error: true
         if: contains(needs.targets.outputs.any, 'imx6ul_rtl8822cs')
         uses: actions/download-artifact@v8
         with:
@@ -379,6 +411,7 @@ jobs:
           path: assets/livi-link/imx6ul_rtl8822cs
 
       - name: Download imx6ul_rtl8822bs artifact
+        continue-on-error: true
         if: contains(needs.targets.outputs.any, 'imx6ul_rtl8822bs')
         uses: actions/download-artifact@v8
         with:
@@ -386,6 +419,7 @@ jobs:
           path: assets/livi-link/imx6ul_rtl8822bs
 
       - name: Download imx6ul_bcm4354 artifact
+        continue-on-error: true
         if: contains(needs.targets.outputs.any, 'imx6ul_bcm4354')
         uses: actions/download-artifact@v8
         with:
@@ -528,7 +562,7 @@ jobs:
       needs.workspace-tests.result == 'success' &&
       needs.bundle-sanity.result == 'success' &&
       needs.targets.result == 'success' &&
-      (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+      needs.build.result != 'cancelled' &&
       (needs.bindshell.result == 'success' || needs.bindshell.result == 'skipped')
     runs-on: ${{ matrix.runner }}
     env:
@@ -556,6 +590,7 @@ jobs:
         run: sh scripts/assets.sh fetch livi-link
 
       - name: Take the v821b firmware bundle from this run
+        continue-on-error: true
         if: contains(needs.targets.outputs.any, 'v821b_aic8800d80')
         uses: actions/download-artifact@v8
         with:
@@ -563,6 +598,7 @@ jobs:
           path: assets/livi-link/v821b_aic8800d80
 
       - name: Take the ax520 firmware bundle from this run
+        continue-on-error: true
         if: contains(needs.targets.outputs.any, 'ax520_aic8800d80')
         uses: actions/download-artifact@v8
         with:
@@ -570,6 +606,7 @@ jobs:
           path: assets/livi-link/ax520_aic8800d80
 
       - name: Take the imx6ul_iw416 firmware bundle from this run
+        continue-on-error: true
         if: contains(needs.targets.outputs.any, 'imx6ul_iw416')
         uses: actions/download-artifact@v8
         with:
@@ -577,6 +614,7 @@ jobs:
           path: assets/livi-link/imx6ul_iw416
 
       - name: Take the imx6ul_rtl8822cs firmware bundle from this run
+        continue-on-error: true
         if: contains(needs.targets.outputs.any, 'imx6ul_rtl8822cs')
         uses: actions/download-artifact@v8
         with:
@@ -584,6 +622,7 @@ jobs:
           path: assets/livi-link/imx6ul_rtl8822cs
 
       - name: Take the imx6ul_rtl8822bs firmware bundle from this run
+        continue-on-error: true
         if: contains(needs.targets.outputs.any, 'imx6ul_rtl8822bs')
         uses: actions/download-artifact@v8
         with:
@@ -591,6 +630,7 @@ jobs:
           path: assets/livi-link/imx6ul_rtl8822bs
 
       - name: Take the imx6ul_bcm4354 firmware bundle from this run
+        continue-on-error: true
         if: contains(needs.targets.outputs.any, 'imx6ul_bcm4354')
         uses: actions/download-artifact@v8
         with:

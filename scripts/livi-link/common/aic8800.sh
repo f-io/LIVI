@@ -16,7 +16,8 @@ AIC_FW_FILES="aic_powerlimit_8800d80.txt aic_userconfig_8800d80.txt
 # In-tree rather than out-of-tree: the vendor Makefiles' obj-m/obj-y have to read our real Kconfig, and
 # the CFG80211/BT symbols only resolve against Module.symvers of a vmlinux built with them.
 aic8800_install() {
-  if [[ ! -e $AIC_CACHE/$AIC_SUB/aic8800_fdrv/aic_btsdio.c || ! -d $AIC_FW ]]; then
+  if [[ ! -e $AIC_CACHE/$AIC_SUB/aic8800_fdrv/aic_btsdio.c || ! -d $AIC_FW
+        || $(git -C "$AIC_CACHE" rev-parse HEAD 2>/dev/null) != "$AIC_REF" ]]; then
     log "fetch radxa aic8800 driver ($AIC_REF)"
     rm -rf "$AIC_CACHE"
     git clone --filter=blob:none --sparse "$AIC_ORG" "$AIC_CACHE"

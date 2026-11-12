@@ -74,7 +74,7 @@ fetch() {
   fi
   rm -f "$out"
   log "fetch $(basename "$out")"
-  curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "$url" -o "$out"
+  download "$url" -o "$out"
   echo "$sha  $out" | sha256sum -c || {
     rm -f "$out"
     log "$(basename "$out") does not match its hash"

@@ -15,17 +15,23 @@ log(){ printf '\033[1;36m[%s-%s]\033[0m %s\n' "$BOARD" "${LOG_TAG:-build}" "$*";
 
 krelease() { cat "$KDIR/include/config/kernel.release"; }
 
+# A dead server fails after the connect timeout instead of the system's two minutes per try.
+download() { curl -fsSL --connect-timeout 15 --retry 5 --retry-all-errors --retry-delay 5 "$@"; }
+
 # Vanilla kernel.org tarball, checked against kernel.org's own published
 # sha256sums rather than a hash we would have to keep in sync by hand.
 fetch_kernel() {
   [[ -d $KDIR ]] && return 0
-  log "fetch linux-$KVER"
-  curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "$KURL" -o "$TOP/linux-$KVER.tar.xz"
-  curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "https://cdn.kernel.org/pub/linux/kernel/v${KMAJOR}.x/sha256sums.asc" -o "$TOP/sha256sums.asc"
   local expected
-  expected=$(grep " linux-$KVER.tar.xz\$" "$TOP/sha256sums.asc" | awk '{print $1}')
-  [[ -n $expected ]] || { log "linux-$KVER.tar.xz not found in kernel.org sha256sums"; exit 3; }
-  echo "$expected  $TOP/linux-$KVER.tar.xz" | sha256sum -c -
+  expected=$(awk -v f="linux-$KVER.tar.xz" '$2 == f {print $1}' "$TOP/sha256sums.asc" 2>/dev/null || true)
+  if [[ -z $expected ]] || ! echo "$expected  $TOP/linux-$KVER.tar.xz" | sha256sum -c --status 2>/dev/null; then
+    log "fetch linux-$KVER"
+    download "$KURL" -o "$TOP/linux-$KVER.tar.xz"
+    download "https://cdn.kernel.org/pub/linux/kernel/v${KMAJOR}.x/sha256sums.asc" -o "$TOP/sha256sums.asc"
+    expected=$(grep " linux-$KVER.tar.xz\$" "$TOP/sha256sums.asc" | awk '{print $1}')
+    [[ -n $expected ]] || { log "linux-$KVER.tar.xz not found in kernel.org sha256sums"; exit 3; }
+    echo "$expected  $TOP/linux-$KVER.tar.xz" | sha256sum -c -
+  fi
   tar -xJf "$TOP/linux-$KVER.tar.xz" -C "$TOP"
 }
 

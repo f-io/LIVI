@@ -47,6 +47,8 @@ BUNDLE_IMAGES=("2:$KERNEL_IMG" "3:$ROOTFS_IMG")
 # for none. The Wi-Fi driver is built into the kernel and loads its part from the initramfs, the
 # Bluetooth modules theirs from the rootfs.
 LINUX_FIRMWARE=https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain
+# linux-firmware's own mirror, for when git.kernel.org does not answer.
+LINUX_FIRMWARE_MIRROR=https://gitlab.com/kernel-firmware/linux-firmware/-/raw
 ARMBIAN_FIRMWARE=https://raw.githubusercontent.com/armbian/firmware/2e568bc338825be5b36eb888aacf473bb8ffd472
 case $RADIO in
   iw416)
@@ -85,26 +87,36 @@ REGDB_SHA=b22e0901227b820cd1c280abe681a15b773a5103a5e10dc442e94ebb34cbf58d
 REGDB=$TOP/wireless-regdb-$REGDB_VER/regulatory.db
 
 fetch_firmware() {
-  local entry path sha tag as url
+  local entry path sha tag as round src ok
+  local -a srcs
   for entry in "${WIFI_FW[@]}" "${BT_FW[@]}"; do
     read -r path sha tag as <<< "$entry"
     [[ $tag == - ]] && tag=
     as=${as:-$path}
     echo "$sha  $FIRMWARE/$as" | sha256sum -c --status 2>/dev/null && continue
     case $path in
-      https://*) url=$path ;;
-      *) url=$LINUX_FIRMWARE/$path${tag:+?h=$tag} ;;
+      https://*) srcs=("$path") ;;
+      *) srcs=("$LINUX_FIRMWARE/$path${tag:+?h=$tag}" "$LINUX_FIRMWARE_MIRROR/${tag:-main}/$path") ;;
     esac
     log "fetch $as"
     mkdir -p "$(dirname "$FIRMWARE/$as")"
-    curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "$url" -o "$FIRMWARE/$as"
+    ok=
+    for round in 1 2 3; do
+      (( round > 1 )) && sleep 5
+      for src in "${srcs[@]}"; do
+        curl -fsSL --connect-timeout 15 "$src" -o "$FIRMWARE/$as" && ok=1 && break 2
+      done
+    done
+    [[ -n $ok ]] || { log "could not fetch $as"; exit 3; }
     echo "$sha  $FIRMWARE/$as" | sha256sum -c - || { log "$as changed upstream, check it and update its hash"; exit 3; }
   done
   if [[ ! -f $REGDB ]]; then
-    log "fetch wireless-regdb $REGDB_VER"
-    curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "https://cdn.kernel.org/pub/software/network/wireless-regdb/wireless-regdb-$REGDB_VER.tar.xz" \
-      -o "$TOP/wireless-regdb-$REGDB_VER.tar.xz"
-    echo "$REGDB_SHA  $TOP/wireless-regdb-$REGDB_VER.tar.xz" | sha256sum -c -
+    if ! echo "$REGDB_SHA  $TOP/wireless-regdb-$REGDB_VER.tar.xz" | sha256sum -c --status 2>/dev/null; then
+      log "fetch wireless-regdb $REGDB_VER"
+      download "https://cdn.kernel.org/pub/software/network/wireless-regdb/wireless-regdb-$REGDB_VER.tar.xz" \
+        -o "$TOP/wireless-regdb-$REGDB_VER.tar.xz"
+      echo "$REGDB_SHA  $TOP/wireless-regdb-$REGDB_VER.tar.xz" | sha256sum -c -
+    fi
     tar -xJf "$TOP/wireless-regdb-$REGDB_VER.tar.xz" -C "$TOP"
   fi
 }
