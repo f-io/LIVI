@@ -25,10 +25,9 @@ pub enum BtnSym {
     Close,
 }
 
-#[allow(clippy::all)]
 pub fn to_buffer(pixmap: &Pixmap) -> MemoryRenderBuffer {
     let mut data = pixmap.data().to_vec();
-    for px in data.chunks_exact_mut(4) {
+    for px in data.as_chunks_mut::<4>().0 {
         px.swap(0, 2);
     }
     MemoryRenderBuffer::from_slice(

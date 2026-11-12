@@ -16,6 +16,7 @@ authors = ["Lasse Heitgres"]
 license = "GPL-3.0-or-later"
 
 [workspace.lints.clippy]
+dbg_macro = "warn"
 undocumented_unsafe_blocks = "warn"
 
 [workspace.dependencies]

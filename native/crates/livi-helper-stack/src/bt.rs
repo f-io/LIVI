@@ -948,18 +948,18 @@ mod tests {
     #[test]
     fn a_controller_goes_back_the_way_it_was_found() {
         assert_eq!(
-            to_put_back(found("blacky", false), "LIVI blacky"),
-            found("blacky", false)
+            to_put_back(found("host", false), "LIVI host"),
+            found("host", false)
         );
         assert_eq!(
-            to_put_back(found("blacky #2", true), "LIVI blacky"),
-            found("blacky #2", true)
+            to_put_back(found("host #2", true), "LIVI host"),
+            found("host #2", true)
         );
     }
 
     #[test]
     fn livis_name_left_on_a_controller_goes_back_to_the_systems() {
-        let back = to_put_back(found("LIVI blacky", true), "LIVI blacky");
+        let back = to_put_back(found("LIVI host", true), "LIVI host");
         assert_eq!(
             back,
             Found {
