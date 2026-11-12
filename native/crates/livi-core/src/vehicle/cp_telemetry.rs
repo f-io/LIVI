@@ -8,13 +8,10 @@ use livi_cp::vehicle_state::{GAUGE_KEYS, Notice};
 use serde_json::{Map, Value};
 
 use crate::gnss::nmea::{self, Position};
-use crate::vehicle::aa_telemetry::{LOW_FUEL_PCT, gear};
+use crate::vehicle::aa_telemetry::{LOW_FUEL_PCT, NEUTRAL, PARK, gear, num};
 use crate::vehicle::telemetry::{CLIMATE, NOTIFICATION, SOURCE};
 
 pub const FROM_CARPLAY: &str = "carplay";
-
-const NEUTRAL: i64 = 0;
-const PARK: i64 = 101;
 
 pub struct CpTelemetry {
     helper: HelperSock,
@@ -24,10 +21,6 @@ pub struct CpTelemetry {
 
 fn changed(prev: &Map<String, Value>, next: &Map<String, Value>, key: &str) -> bool {
     next.contains_key(key) && prev.get(key) != next.get(key)
-}
-
-fn num(map: &Map<String, Value>, key: &str) -> Option<f64> {
-    map.get(key).and_then(Value::as_f64)
 }
 
 const VEHICLE_STATUS_KEYS: [&str; 10] = [

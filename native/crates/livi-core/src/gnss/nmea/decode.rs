@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use livi_base::time::days_from_civil;
 
+use super::checksum;
 use crate::gnss::{latin1, trim};
 use livi_core_proto::gnss::{Constellation, FixMode, FixQuality, GpsFix, Satellite};
 
@@ -64,10 +65,7 @@ pub fn checksum_valid(sentence: &str) -> bool {
     if want.len() != 2 || !want.chars().all(|c| c.is_ascii_hexdigit()) {
         return false;
     }
-    let sum = body(sentence, Some(star))
-        .chars()
-        .fold(0u32, |sum, c| sum ^ u32::from(c));
-    u32::from_str_radix(&want, 16) == Ok(sum)
+    u8::from_str_radix(&want, 16) == Ok(checksum(body(sentence, Some(star))))
 }
 
 #[derive(Default)]

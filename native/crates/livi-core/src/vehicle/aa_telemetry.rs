@@ -4,6 +4,7 @@
 
 use livi_aa_stack::manager::{AaCmd, AaHandle};
 use livi_aa_stack::sensors::{GpsFix, Sensor};
+use livi_base::num::round_half_up;
 use serde_json::{Map, Value};
 use tokio::time::Instant;
 
@@ -11,6 +12,9 @@ const ENERGY_MODEL_EVERY: std::time::Duration = std::time::Duration::from_secs(1
 
 pub const LOW_FUEL_PCT: f64 = 10.0;
 
+pub const NEUTRAL: i64 = 0;
+pub const DRIVE: i64 = 100;
+pub const PARK: i64 = 101;
 pub const REVERSE: i64 = 102;
 
 const TIRE_PRESSURE: &str = "tirePressure";
@@ -25,17 +29,17 @@ pub fn gear(gear: Option<&Value>, reverse: Option<bool>) -> Option<i64> {
     match gear {
         Some(Value::Number(n)) => match n.as_f64() {
             Some(-1.0) => return Some(REVERSE),
-            Some(0.0) => return Some(0),
+            Some(0.0) => return Some(NEUTRAL),
             Some(g) if (1.0..=10.0).contains(&g) && g.fract() == 0.0 => return Some(g as i64),
             _ => {}
         },
         Some(Value::String(s)) => {
             let g = s.trim().to_uppercase();
             match g.as_str() {
-                "P" => return Some(101),
+                "P" => return Some(PARK),
                 "R" => return Some(REVERSE),
-                "N" => return Some(0),
-                "D" | "S" => return Some(100),
+                "N" => return Some(NEUTRAL),
+                "D" | "S" => return Some(DRIVE),
                 _ => {}
             }
             if let Some(n) = g.strip_prefix('M').filter(|d| (1..=2).contains(&d.len()))
@@ -52,10 +56,10 @@ pub fn gear(gear: Option<&Value>, reverse: Option<bool>) -> Option<i64> {
 }
 
 fn round(v: f64) -> i64 {
-    (v + 0.5).floor() as i64
+    round_half_up(v) as i64
 }
 
-fn num(map: &Map<String, Value>, key: &str) -> Option<f64> {
+pub(crate) fn num(map: &Map<String, Value>, key: &str) -> Option<f64> {
     map.get(key).and_then(Value::as_f64)
 }
 

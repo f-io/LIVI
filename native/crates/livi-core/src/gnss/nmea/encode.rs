@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use livi_base::time::{civil_from_days, unix_ms};
 
-use livi_base::time::civil_from_days;
+use super::checksum;
 
 pub struct Position {
     pub lat: f64,
@@ -17,10 +17,6 @@ pub struct Position {
 }
 
 const KNOTS_PER_MS: f64 = 1.943_844_49;
-
-fn checksum(body: &str) -> String {
-    format!("{:02X}", body.bytes().fold(0u8, |cs, b| cs ^ b))
-}
 
 fn ddmm(deg: f64, lat: bool) -> (String, char) {
     let abs = deg.abs();
@@ -44,11 +40,7 @@ pub fn encode(p: &Position) -> String {
     let ms = p
         .fix_ms
         .filter(|t| t.is_finite() && *t != 0.0)
-        .unwrap_or_else(|| {
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_or(0.0, |d| d.as_millis() as f64)
-        });
+        .unwrap_or_else(unix_ms);
     let secs = (ms / 1000.0).floor() as i64;
     let (days, of_day) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
     let time = format!(
@@ -79,7 +71,11 @@ pub fn encode(p: &Position) -> String {
         .heading
         .map_or_else(|| "0.00".to_string(), |h| format!("{h:.2}"));
     let rmc = format!("GPRMC,{time},A,{lat},{lat_hemi},{lng},{lng_hemi},{speed},{course},{date},,");
-    format!("${gga}*{}\r\n${rmc}*{}\r\n", checksum(&gga), checksum(&rmc))
+    format!(
+        "${gga}*{:02X}\r\n${rmc}*{:02X}\r\n",
+        checksum(&gga),
+        checksum(&rmc)
+    )
 }
 
 #[cfg(test)]

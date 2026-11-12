@@ -7,3 +7,7 @@ mod encode;
 
 pub use decode::Decoder;
 pub use encode::{Position, encode};
+
+fn checksum(body: &str) -> u8 {
+    body.bytes().fold(0, |sum, b| sum ^ b)
+}
