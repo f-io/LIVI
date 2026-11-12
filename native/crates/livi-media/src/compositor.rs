@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
+use livi_base::hex::rgb;
 use livi_base::num::round_half_up;
 use livi_core_proto::config::{Config, TouchCalibration};
 use livi_core_proto::input::{Input, Phase, Point};
@@ -352,10 +353,9 @@ impl CompositorControl {
     }
 
     pub fn backdrop(&self, hex: &str) {
-        let (r, g, b) = rgb(hex);
         let _ = self.tx.send(Cmd::State(
             "__backdrop__".into(),
-            ctrl_line(Command::Backdrop([r, g, b])),
+            ctrl_line(Command::Backdrop(rgb(hex).unwrap_or_default())),
         ));
     }
 
@@ -383,15 +383,6 @@ fn fullscreen_line(role: &str, on: bool) -> String {
         role: role.to_string(),
         on,
     })
-}
-
-fn rgb(hex: &str) -> (u8, u8, u8) {
-    let h = hex.trim().trim_start_matches('#');
-    if h.len() != 6 || !h.chars().all(|c| c.is_ascii_hexdigit()) {
-        return (0, 0, 0);
-    }
-    let n = u32::from_str_radix(h, 16).unwrap_or(0);
-    ((n >> 16) as u8, (n >> 8) as u8, n as u8)
 }
 
 pub fn backdrop_hex(cfg: &Config) -> String {
@@ -988,8 +979,6 @@ mod tests {
         assert_eq!(backdrop_hex(&cfg), "#f5f5f5");
         cfg.background_color_light = Some("#ffffff".into());
         assert_eq!(backdrop_hex(&cfg), "#ffffff");
-        assert_eq!(rgb("#ff8000"), (255, 128, 0));
-        assert_eq!(rgb("nope"), (0, 0, 0));
     }
 
     #[test]

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+use livi_base::hex::rgb;
 use livi_core_proto::config::{Config, HandDriveType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,15 +26,6 @@ pub struct Look {
     pub zoom: f32,
     pub stream: (i32, i32),
     pub language: String,
-}
-
-pub fn hex_color(text: &str) -> Option<[u8; 3]> {
-    let hex = text.trim().trim_start_matches('#');
-    if hex.len() != 6 {
-        return None;
-    }
-    let v = u32::from_str_radix(hex, 16).ok()?;
-    Some([(v >> 16) as u8, (v >> 8) as u8, v as u8])
 }
 
 pub fn tabs(config: &Config) -> Vec<Tab> {
@@ -68,7 +60,7 @@ pub fn look(config: &Config) -> Look {
     let pick = |on_dark: &Option<String>, on_light: &Option<String>| {
         if dark { on_dark } else { on_light }
             .as_deref()
-            .and_then(hex_color)
+            .and_then(rgb)
     };
     let positive = |v: u32, fallback: i32| if v > 0 { v as i32 } else { fallback };
     Look {
@@ -147,6 +139,5 @@ mod tests {
         assert_eq!(l.primary, Some([0, 0xad, 0xad]));
         assert_eq!(l.zoom, 2.0);
         assert!(l.right_hand);
-        assert_eq!(hex_color("nope"), None);
     }
 }

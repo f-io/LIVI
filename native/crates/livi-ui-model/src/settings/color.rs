@@ -2,15 +2,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+pub use livi_base::hex::rgb;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Hsl {
     pub h: f64,
     pub s: f64,
     pub l: f64,
-}
-
-pub fn rgb(hex: &str) -> Option<[u8; 3]> {
-    crate::shell::hex_color(hex)
 }
 
 pub fn hex([r, g, b]: [u8; 3]) -> String {

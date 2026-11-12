@@ -24,6 +24,10 @@ pub fn decode(text: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
+pub fn rgb(text: &str) -> Option<[u8; 3]> {
+    decode(text.trim().trim_start_matches('#'))?.try_into().ok()
+}
+
 pub fn mac(bytes: &[u8]) -> String {
     bytes
         .iter()
@@ -48,6 +52,14 @@ mod tests {
         assert_eq!(decode("000FA5FF"), Some(bytes.to_vec()));
         assert_eq!(encode(&[]), "");
         assert_eq!(decode(""), Some(Vec::new()));
+    }
+
+    #[test]
+    fn rgb_takes_six_digits_with_or_without_hash() {
+        assert_eq!(rgb(" #ff8000 "), Some([255, 128, 0]));
+        assert_eq!(rgb("00adad"), Some([0, 0xad, 0xad]));
+        assert_eq!(rgb("#fff"), None);
+        assert_eq!(rgb("nope!!"), None);
     }
 
     #[test]
