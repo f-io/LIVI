@@ -10,6 +10,7 @@ pub mod hwaddr;
 pub mod kiosk_unit;
 pub mod power;
 pub mod privileged;
+pub mod serial;
 pub mod udev_rule;
 pub mod wifi_ap;
 pub mod wifi_options;

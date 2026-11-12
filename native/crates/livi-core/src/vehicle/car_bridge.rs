@@ -3,10 +3,6 @@
 // Additional terms: see NOTICE
 
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{self, Read, Write};
-use std::os::fd::AsRawFd;
-use std::os::unix::fs::OpenOptionsExt;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,11 +14,13 @@ use tokio::time::Instant;
 
 use crate::projection::nav_text::{self, Language};
 use crate::server::Core;
+use crate::system::serial::Port;
 
 const PRODUCT: &str = "LIVI Bridge";
 const RETRY: Duration = Duration::from_secs(3);
 const MEDIA_BLANK: Duration = Duration::from_secs(4);
 const LINE_MAX: usize = 512;
+const BAUD: u32 = 115_200;
 const MEDIA_TEXTS: [&str; 4] = ["media title", "media artist", "media album", "media app"];
 
 #[derive(Default)]
@@ -161,65 +159,20 @@ fn car(rest: &str) -> Option<Value> {
     })
 }
 
-struct Port {
-    file: File,
-    lines: mpsc::UnboundedReceiver<String>,
-}
-
-impl Port {
-    fn open(path: &str) -> io::Result<Self> {
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .custom_flags(libc::O_NOCTTY)
-            .open(path)?;
-        if let Err(e) = raw_mode(&file) {
-            eprintln!("[bridge] {path} stays cooked: {e}");
-        }
-        let reader = file.try_clone()?;
-        let (tx, lines) = mpsc::unbounded_channel();
-        std::thread::spawn(move || read_lines(reader, tx));
-        Ok(Self { file, lines })
-    }
-}
-
-fn raw_mode(file: &File) -> io::Result<()> {
-    let fd = file.as_raw_fd();
-    // SAFETY: an all-zero termios is valid, tcgetattr fills it.
-    let mut t: libc::termios = unsafe { std::mem::zeroed() };
-    // SAFETY: fd is open for the call and t is a valid termios.
-    unsafe {
-        if libc::tcgetattr(fd, &mut t) != 0 {
-            return Err(io::Error::last_os_error());
-        }
-        libc::cfmakeraw(&mut t);
-        libc::cfsetspeed(&mut t, libc::B115200);
-        if libc::tcsetattr(fd, libc::TCSANOW, &t) != 0 {
-            return Err(io::Error::last_os_error());
+fn split_lines(pending: &mut Vec<u8>, chunk: &[u8]) -> Vec<String> {
+    pending.extend_from_slice(chunk);
+    let mut lines = Vec::new();
+    while let Some(end) = pending.iter().position(|&b| b == b'\n') {
+        let line: Vec<u8> = pending.drain(..=end).collect();
+        let line = String::from_utf8_lossy(&line).trim().to_string();
+        if !line.is_empty() {
+            lines.push(line);
         }
     }
-    Ok(())
-}
-
-fn read_lines(mut reader: File, tx: mpsc::UnboundedSender<String>) {
-    let mut buf = [0u8; 256];
-    let mut pending = Vec::new();
-    while let Ok(n) = reader.read(&mut buf) {
-        if n == 0 {
-            return;
-        }
-        pending.extend_from_slice(&buf[..n]);
-        while let Some(end) = pending.iter().position(|&b| b == b'\n') {
-            let line: Vec<u8> = pending.drain(..=end).collect();
-            let line = String::from_utf8_lossy(&line).trim().to_string();
-            if !line.is_empty() && tx.send(line).is_err() {
-                return;
-            }
-        }
-        if pending.len() > LINE_MAX {
-            pending.drain(..pending.len() - LINE_MAX);
-        }
+    if pending.len() > LINE_MAX {
+        pending.drain(..pending.len() - LINE_MAX);
     }
+    lines
 }
 
 #[cfg(target_os = "linux")]
@@ -275,6 +228,7 @@ pub async fn run(core: Arc<Core>, car_data: mpsc::UnboundedSender<Value>) {
     let mut state = core.hub.watch();
     let mut rows = Rows::default();
     let mut port: Option<Port> = None;
+    let mut pending = Vec::new();
     let mut retry_at = Instant::now();
     let mut blank_at: Option<Instant> = None;
     let mut seen: Option<(NowPlaying, Navigation, String, f64)> = None;
@@ -322,29 +276,37 @@ pub async fn run(core: Arc<Core>, car_data: mpsc::UnboundedSender<Value>) {
                     return;
                 }
             }
-            line = async {
+            chunk = async {
                 match port.as_mut() {
-                    Some(p) => p.lines.recv().await,
+                    Some(p) => p.chunks.recv().await,
                     None => std::future::pending().await,
                 }
-            } => match line {
-                Some(line) => match parse(&line) {
-                    FromBridge::Button(control) => core.media(control),
-                    FromBridge::Car(patch) => {
-                        let _ = car_data.send(patch);
+            } => match chunk {
+                Some(Ok(bytes)) => {
+                    for line in split_lines(&mut pending, &bytes) {
+                        match parse(&line) {
+                            FromBridge::Button(control) => core.media(control),
+                            FromBridge::Car(patch) => {
+                                let _ = car_data.send(patch);
+                            }
+                            FromBridge::Unused => {}
+                        }
                     }
-                    FromBridge::Unused => {}
-                },
-                None => {
+                }
+                gone => {
+                    if let Some(Err(e)) = gone {
+                        eprintln!("[bridge] {e}");
+                    }
                     println!("[bridge] gone");
                     port = None;
+                    pending.clear();
                     retry_at = Instant::now() + RETRY;
                 }
             },
             () = tokio::time::sleep_until(next_retry), if port.is_none() => {
                 retry_at = Instant::now() + RETRY;
                 let Some(path) = find_port().await else { continue };
-                match Port::open(&path) {
+                match Port::open(&path, BAUD) {
                     Ok(p) => {
                         println!("[bridge] connected on {path}");
                         port = Some(p);
@@ -373,7 +335,7 @@ pub async fn run(core: Arc<Core>, car_data: mpsc::UnboundedSender<Value>) {
 fn flush(port: &mut Option<Port>, rows: &mut Rows) {
     let Some(p) = port.as_mut() else { return };
     for line in rows.unsent() {
-        if let Err(e) = p.file.write_all(line.as_bytes()) {
+        if let Err(e) = p.write(line.as_bytes()) {
             eprintln!("[bridge] write failed: {e}");
             *port = None;
             return;
@@ -384,6 +346,19 @@ fn flush(port: &mut Option<Port>, rows: &mut Rows) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lines_are_cut_across_chunks_and_bounded() {
+        let mut pending = Vec::new();
+        assert!(split_lines(&mut pending, b"button ne").is_empty());
+        assert_eq!(
+            split_lines(&mut pending, b"xt\r\n\nspeed 3\n"),
+            vec!["button next".to_string(), "speed 3".to_string()]
+        );
+        assert!(pending.is_empty());
+        split_lines(&mut pending, &[b'x'; LINE_MAX + 10]);
+        assert_eq!(pending.len(), LINE_MAX);
+    }
 
     #[test]
     fn the_bridge_buttons_and_car_data_are_understood() {

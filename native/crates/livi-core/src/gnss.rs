@@ -4,7 +4,6 @@
 
 mod clock;
 pub mod nmea;
-mod port;
 mod receiver;
 pub mod timezone;
 mod tz_data;
@@ -21,9 +20,9 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use crate::server::Core;
+use crate::system::serial::{Chunk, Port};
 use clock::{Clock, Step};
 use info::{GnssInfo, GpsFix};
-use port::{Chunk, Port};
 use receiver::{DEFAULT_BAUD_RATE, DEFAULT_DEVICE, Output, Poll, Receiver};
 
 const SET_TIME_HELPER: &str = "/usr/local/lib/livi/livi-set-time.sh";
