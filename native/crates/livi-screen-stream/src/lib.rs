@@ -271,6 +271,7 @@ pub mod receiver {
         listener: TcpListener,
         sources: Vec<glib::SourceId>,
         client: Rc<RefCell<Option<std::net::TcpStream>>>,
+        client_watch: Rc<RefCell<Option<glib::SourceId>>>,
         stream: Rc<RefCell<ScreenStream>>,
     }
 
@@ -293,6 +294,7 @@ pub mod receiver {
                 listener,
                 sources: Vec::new(),
                 client: Rc::new(RefCell::new(None)),
+                client_watch: Rc::new(RefCell::new(None)),
                 stream: Rc::new(RefCell::new(ScreenStream::new(key, sink))),
             };
             r.watch_listener();
@@ -303,6 +305,7 @@ pub mod receiver {
             let fd = self.listener.as_raw_fd();
             let listener = self.listener.try_clone().expect("dup listener");
             let client = self.client.clone();
+            let client_watch = self.client_watch.clone();
             let stream = self.stream.clone();
 
             let id = glib_unix::unix_fd_add_local(fd, IOCondition::IN, move |_, _| {
@@ -318,7 +321,8 @@ pub mod receiver {
 
                 let cfd = sock.as_raw_fd();
                 *client.borrow_mut() = Some(sock);
-                watch_client(cfd, client.clone(), stream.clone());
+                let id = watch_client(cfd, client.clone(), client_watch.clone(), stream.clone());
+                *client_watch.borrow_mut() = Some(id);
                 eprintln!("[cp_screen] video data connection accepted");
                 glib::ControlFlow::Continue
             });
@@ -329,11 +333,13 @@ pub mod receiver {
     fn watch_client(
         fd: RawFd,
         client: Rc<RefCell<Option<std::net::TcpStream>>>,
+        client_watch: Rc<RefCell<Option<glib::SourceId>>>,
         stream: Rc<RefCell<ScreenStream>>,
-    ) {
+    ) -> glib::SourceId {
         let cond = IOCondition::IN | IOCondition::HUP | IOCondition::ERR;
         glib_unix::unix_fd_add_local(fd, cond, move |_, cond| {
             let drop_client = |stream: &Rc<RefCell<ScreenStream>>| {
+                client_watch.borrow_mut().take();
                 *client.borrow_mut() = None;
                 stream.borrow_mut().reset();
                 glib::ControlFlow::Break
@@ -346,6 +352,7 @@ pub mod receiver {
             let read = {
                 let mut guard = client.borrow_mut();
                 let Some(sock) = guard.as_mut() else {
+                    client_watch.borrow_mut().take();
                     return glib::ControlFlow::Break;
                 };
                 sock.read(&mut chunk)
@@ -360,7 +367,7 @@ pub mod receiver {
                     }
                 },
             }
-        });
+        })
     }
 
     impl Drop for ScreenReceiver {
@@ -368,6 +375,10 @@ pub mod receiver {
             for id in self.sources.drain(..) {
                 id.remove();
             }
+            if let Some(id) = self.client_watch.borrow_mut().take() {
+                id.remove();
+            }
+            self.client.borrow_mut().take();
         }
     }
 }
