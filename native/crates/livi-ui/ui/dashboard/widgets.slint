@@ -3,7 +3,7 @@
 // Additional terms: see NOTICE
 
 import { Theme } from "../theme.slint";
-import { Blink, DashState, Signal } from "state.slint";
+import { Blink, DashState, LampData, Signal } from "state.slint";
 
 export component Lamp inherits Image {
     in property <bool> active;
@@ -97,6 +97,42 @@ export component Dots inherits Rectangle {
             TouchArea {
                 clicked => { DashState.select-page(i); }
             }
+        }
+    }
+}
+
+export component LampRows inherits Rectangle {
+    in property <length> u;
+    in property <length> room;
+    in property <[LampData]> lamps;
+    property <length> cell: 30 * root.u;
+    property <length> step: root.cell * 1.35;
+    property <int> per: max(1, floor((root.room + root.cell * 0.35) / root.step));
+    property <int> rows: ceil(root.lamps.length / root.per);
+    width: max(0px, min(root.lamps.length, root.per) * root.step - root.cell * 0.35);
+    height: max(0px, root.rows * root.step - root.cell * 0.35);
+    for lamp[i] in root.lamps: Rectangle {
+        property <int> line: floor(i / root.per);
+        property <int> in-line: self.line == root.rows - 1 ? root.lamps.length - self.line * root.per : root.per;
+        x: (root.width - (self.in-line * root.step - root.cell * 0.35)) / 2 + mod(i, root.per) * root.step;
+        y: self.line * root.step;
+        width: root.cell;
+        height: root.cell;
+        property <color> tint: lamp.tint == 0 ? Signal.red : lamp.tint == 1 ? Signal.amber : lamp.tint == 2 ? Signal.green : Signal.blue;
+        opacity: !lamp.blink || Blink.on ? 1 : 0;
+        Image {
+            width: root.cell * 0.85;
+            height: root.cell * 0.85;
+            source: lamp.icon;
+            colorize: parent.tint;
+        }
+        if lamp.glyph != "": Text {
+            x: (parent.width - self.width) / 2 + (lamp.glyph == "P" ? root.cell * 0.04 : 0);
+            width: self.preferred-width;
+            text: lamp.glyph;
+            font-size: (lamp.glyph.character-count > 1 ? 6.6 : 9.5) / 24 * 0.85 * root.cell;
+            font-weight: 700;
+            color: parent.tint;
         }
     }
 }

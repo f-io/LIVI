@@ -8,7 +8,7 @@ import { Gauge, Readout } from "dashboard/gauge.slint";
 import { NavFull, NavMini } from "dashboard/nav.slint";
 import { Blink, DashState, Signal } from "dashboard/state.slint";
 import { Strip } from "dashboard/strip.slint";
-import { Dots, Lamp, Level } from "dashboard/widgets.slint";
+import { Dots, Lamp, LampRows, Level } from "dashboard/widgets.slint";
 
 export { CapData, DashState, GaugeData, LabelData, LampData, LaneArrowData, LaneData, TrailData } from "dashboard/state.slint";
 
@@ -134,46 +134,12 @@ export component Dashboard inherits Rectangle {
             active: DashState.turn-right || DashState.hazards;
             blink: true;
         }
-        HorizontalLayout {
-            x: root.left + (640 - 2 * 30 - 1.5 * 21) * root.u;
+        LampRows {
+            u: root.u;
+            room: 640 * root.u;
+            lamps: DashState.light-lamps;
+            x: root.left + 640 * root.u - self.width / 2;
             y: root.top + 12 * root.u;
-            height: 30 * root.u;
-            spacing: 21 * root.u;
-            Lamp {
-                width: 30 * root.u;
-                source: @image-url("icons/TelltaleLowBeam.svg");
-                tint: Signal.green;
-                active: DashState.lights;
-            }
-            Lamp {
-                width: 30 * root.u;
-                source: @image-url("icons/TelltaleHighBeam.svg");
-                tint: Signal.blue;
-                active: DashState.high-beam;
-            }
-            Lamp {
-                width: 30 * root.u;
-                source: @image-url("icons/TelltaleHazard.svg");
-                tint: Signal.red;
-                active: DashState.hazards;
-                blink: true;
-            }
-            Rectangle {
-                width: 30 * root.u;
-                opacity: DashState.parking-brake ? 1 : 0;
-                Image {
-                    width: parent.width;
-                    height: parent.height;
-                    source: @image-url("icons/TelltaleParkingRing.svg");
-                    colorize: Signal.red;
-                }
-                Text {
-                    text: "P";
-                    font-size: 9.5 / 24 * 30 * root.u;
-                    font-weight: 700;
-                    color: Signal.red;
-                }
-            }
         }
         if DashState.ambient != "": Text {
             x: root.left + (1210 - 51 - 42) * root.u - self.width;
@@ -204,6 +170,13 @@ export component Dashboard inherits Rectangle {
             ratio: DashState.fuel / 100;
             value: DashState.fuel + "%";
             warn: DashState.fuel-low;
+        }
+        LampRows {
+            u: root.u;
+            room: 540 * root.u;
+            lamps: DashState.warn-lamps;
+            x: root.left + 640 * root.u - self.width / 2;
+            y: root.top + 687 * root.u - self.height;
         }
     }
 
