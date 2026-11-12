@@ -18,6 +18,7 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(4);
 
 pub use livi_output_proto::VideoCodec;
+pub use livi_output_proto::audio::{AudioCodec, AudioOpts, MicOpts, aac_raw_key};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OutputEvent {
@@ -53,51 +54,6 @@ pub enum OutputEvent {
 pub enum FeedTarget {
     Plane(u32),
     Audio(u32),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AudioCodec {
-    AacLc = 0,
-    Opus = 1,
-    Pcm = 2,
-    PcmLe = 3,
-    AacRaw = 4,
-    AacEld = 5,
-    Alac = 6,
-    Alac24 = 7,
-}
-
-pub fn aac_raw_key(asc: &[u8]) -> [u8; 32] {
-    let mut key = [0u8; 32];
-    let len = asc.len().min(31);
-    key[0] = len as u8;
-    key[1..1 + len].copy_from_slice(&asc[..len]);
-    key
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AudioOpts {
-    pub codec: AudioCodec,
-    pub payload_type: u8,
-    pub clock_rate: u32,
-    pub channels: u8,
-    pub latency_ms: u32,
-    pub realtime: bool,
-    pub fed: bool,
-    pub device: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MicOpts {
-    pub pcm: bool,
-    pub payload_type: u8,
-    pub sample_rate: u32,
-    pub channels: u8,
-    pub bitrate: u32,
-    pub frame_ms: u32,
-    pub port: u16,
-    pub phone: String,
-    pub device: String,
 }
 
 pub trait EmbeddedOutput: Send + Sync {
@@ -543,13 +499,7 @@ impl Output {
         let stream = self.next_id();
         let (tx, rx) = oneshot::channel();
         self.state().audio_waiters.insert(stream, tx);
-        let mut rest = vec![o.codec as u8, o.payload_type];
-        rest.extend_from_slice(&o.clock_rate.to_le_bytes());
-        rest.push(o.channels);
-        rest.extend_from_slice(&o.latency_ms.to_le_bytes());
-        rest.push(u8::from(o.realtime) | (u8::from(o.fed) << 1));
-        rest.extend_from_slice(key);
-        rest.extend_from_slice(o.device.as_bytes());
+        let rest = livi_output_proto::audio::encode_audio_open(key, o);
         self.send(frame(OP_AUDIO_OPEN, stream, &rest));
         let ports = tokio::time::timeout(ANSWER_TIMEOUT, rx)
             .await
@@ -623,17 +573,7 @@ impl Output {
 
     pub fn open_mic(&self, key: &[u8; 32], o: &MicOpts) -> u32 {
         let id = self.next_id();
-        let mut rest = vec![u8::from(o.pcm), o.payload_type];
-        rest.extend_from_slice(&o.sample_rate.to_le_bytes());
-        rest.push(o.channels);
-        rest.extend_from_slice(&o.bitrate.to_le_bytes());
-        rest.extend_from_slice(&o.frame_ms.to_le_bytes());
-        rest.extend_from_slice(&o.port.to_le_bytes());
-        rest.extend_from_slice(key);
-        let phone = o.phone.as_bytes();
-        rest.push(phone.len() as u8);
-        rest.extend_from_slice(phone);
-        rest.extend_from_slice(o.device.as_bytes());
+        let rest = livi_output_proto::audio::encode_mic_open(key, o);
         self.send(frame(OP_MIC_OPEN, id, &rest));
         id
     }

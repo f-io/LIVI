@@ -3,39 +3,35 @@
 // Additional terms: see NOTICE
 
 use super::*;
+use livi_output_proto::audio;
 
 impl<O: Outside> Host<O> {
     pub(super) fn open_audio(&mut self, id: u32, rest: &[u8]) {
-        const FIXED: usize = 44;
-        const KEY_AT: usize = 12;
-        if rest.len() < FIXED {
+        let Some((open, key)) = audio::parse_audio_open(rest) else {
+            eprintln!("livi: audio 0x{id:x} open is malformed");
             return;
-        }
-
+        };
+        let fed = open.fed;
         let cfg = AudioConfig {
-            codec: match rest[0] {
-                1 => AudioCodec::Opus,
-                2 => AudioCodec::Lpcm,
-                3 => AudioCodec::PcmLe,
-                4 => AudioCodec::AacRaw,
-                5 => AudioCodec::AacEld,
-                6 => AudioCodec::Alac,
-                7 => AudioCodec::Alac24,
-                _ => AudioCodec::AacLc,
+            codec: match open.codec {
+                audio::AudioCodec::AacLc => AudioCodec::AacLc,
+                audio::AudioCodec::Opus => AudioCodec::Opus,
+                audio::AudioCodec::Pcm => AudioCodec::Lpcm,
+                audio::AudioCodec::PcmLe => AudioCodec::PcmLe,
+                audio::AudioCodec::AacRaw => AudioCodec::AacRaw,
+                audio::AudioCodec::AacEld => AudioCodec::AacEld,
+                audio::AudioCodec::Alac => AudioCodec::Alac,
+                audio::AudioCodec::Alac24 => AudioCodec::Alac24,
             },
-            payload_type: rest[1],
-            clock_rate: u32::from_le_bytes(rest[2..6].try_into().unwrap()),
-            channels: rest[6],
-            latency_ms: u32::from_le_bytes(rest[7..11].try_into().unwrap()),
-            realtime: rest[11] & 1 != 0,
-            device: match core::str::from_utf8(&rest[FIXED..]) {
-                Ok("") | Err(_) => None,
-                Ok(name) => Some(name.to_owned()),
-            },
-            key: rest[KEY_AT..KEY_AT + 32].try_into().unwrap(),
-            codec_data: if rest[0] == 4 {
-                let len = (rest[KEY_AT] as usize).min(31);
-                rest[KEY_AT + 1..KEY_AT + 1 + len].to_vec()
+            payload_type: open.payload_type,
+            clock_rate: open.clock_rate,
+            channels: open.channels,
+            latency_ms: open.latency_ms,
+            realtime: open.realtime,
+            device: Some(open.device).filter(|d| !d.is_empty()),
+            key,
+            codec_data: if open.codec == audio::AudioCodec::AacRaw {
+                audio::aac_raw_asc(&key).to_vec()
             } else {
                 Vec::new()
             },
@@ -50,7 +46,6 @@ impl<O: Outside> Host<O> {
         }
         let speaker = Output::new(speaker);
 
-        let fed = rest[11] & 2 != 0;
         let active = Arc::new(AtomicBool::new(false));
         let feed = AudioFeed::<O> {
             speaker: speaker.clone(),
@@ -119,35 +114,25 @@ impl<O: Outside> Host<O> {
     }
 
     pub(super) fn open_uplink(&mut self, id: u32, rest: &[u8]) {
-        const FIXED: usize = 50;
-        const KEY_AT: usize = 17;
-        if rest.len() < FIXED {
+        let Some((open, key)) = audio::parse_mic_open(rest) else {
+            eprintln!("livi: microphone 0x{id:x} open is malformed");
             return;
-        }
-        let phone_len = usize::from(rest[FIXED - 1]);
-        if rest.len() < FIXED + phone_len {
-            return;
-        }
-        let (phone, device) = rest[FIXED..].split_at(phone_len);
-
+        };
         let cfg = UplinkConfig {
-            codec: if rest[0] == 1 {
+            codec: if open.pcm {
                 UplinkCodec::Pcm
             } else {
                 UplinkCodec::Opus
             },
-            payload_type: rest[1],
-            sample_rate: u32::from_le_bytes(rest[2..6].try_into().unwrap()),
-            channels: rest[6],
-            bitrate: u32::from_le_bytes(rest[7..11].try_into().unwrap()),
-            frame_ms: u32::from_le_bytes(rest[11..15].try_into().unwrap()),
-            port: u16::from_le_bytes(rest[15..17].try_into().unwrap()),
-            key: rest[KEY_AT..KEY_AT + 32].try_into().unwrap(),
-            phone: String::from_utf8_lossy(phone).into_owned(),
-            device: match core::str::from_utf8(device) {
-                Ok("") | Err(_) => None,
-                Ok(name) => Some(name.to_owned()),
-            },
+            payload_type: open.payload_type,
+            sample_rate: open.sample_rate,
+            channels: open.channels,
+            bitrate: open.bitrate,
+            frame_ms: open.frame_ms,
+            port: open.port,
+            key,
+            phone: open.phone,
+            device: Some(open.device).filter(|d| !d.is_empty()),
         };
 
         match self.outside.open_uplink(cfg) {

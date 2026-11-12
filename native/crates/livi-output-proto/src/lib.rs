@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+pub mod audio;
 pub mod ctrl;
 pub mod display;
 pub mod feed;
