@@ -162,11 +162,15 @@ pub(super) fn show_color(s: &SettingsState, hsl: Hsl, c: [u8; 3], custom: bool) 
 }
 
 pub(super) fn render_screen(c: &mut Controller, s: &SettingsState, state: &Value) {
-    if c.model.screen(&c.stack, state, &c.strings).is_none() {
-        c.stack.clear();
-    }
-    let Some(screen) = c.model.screen(&c.stack, state, &c.strings) else {
-        return;
+    let screen = match c.model.screen(&c.stack, state, &c.strings) {
+        Some(screen) => screen,
+        None => {
+            c.stack.clear();
+            let Some(screen) = c.model.screen(&c.stack, state, &c.strings) else {
+                return;
+            };
+            screen
+        }
     };
     let screen = match &c.browser {
         Some(b) => Screen::List {
