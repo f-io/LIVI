@@ -5,7 +5,7 @@
 import { ViewArea, ViewAreaMask } from "mask.slint";
 import { Theme } from "theme.slint";
 import { Gauge, Readout } from "dashboard/gauge.slint";
-import { NavFull, NavMini } from "dashboard/nav.slint";
+import { NavMini } from "dashboard/nav.slint";
 import { Blink, DashState, Signal } from "dashboard/state.slint";
 import { Strip } from "dashboard/strip.slint";
 import { Dots, Lamp, LampRows, Level } from "dashboard/widgets.slint";
@@ -181,13 +181,6 @@ export component Dashboard inherits Rectangle {
     }
 
     if DashState.enabled && DashState.gauges && DashState.center == 1: NavMini {
-        x: root.left;
-        y: root.top;
-        width: 1280 * root.u;
-        height: 720 * root.u;
-        u: root.u;
-    }
-    if DashState.enabled && DashState.gauges && DashState.center == 2: NavFull {
         x: root.left;
         y: root.top;
         width: 1280 * root.u;

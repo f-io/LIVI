@@ -266,7 +266,6 @@ pub fn fill(d: &DashState<'_>, mut v: DashView) {
     d.set_center(match v.center {
         Center::None => 0,
         Center::NavMini => 1,
-        Center::NavFull => 2,
     });
     if let Some(g) = &v.speed_gauge {
         d.set_speed_gauge(gauge_data(g));
@@ -338,8 +337,6 @@ pub fn fill(d: &DashState<'_>, mut v: DashView) {
     d.set_nav_after_road(s(&n.after_road));
     d.set_nav_time_left(s(&n.time_left));
     d.set_nav_destination_distance(s(&n.destination_distance));
-    d.set_nav_destination(s(&n.destination));
-    d.set_nav_app(s(&n.app));
     d.set_nav_eta(s(&n.eta));
     if let Some(lanes) = v.lanes.take() {
         d.set_nav_lanes(model(

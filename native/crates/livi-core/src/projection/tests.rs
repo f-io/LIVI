@@ -709,7 +709,7 @@ async fn keys_follow_the_bindings() {
         assert_eq!(rig.drain(), [stack(1, cmd)], "{code}");
     }
     rig.p.input(press("KeyC"));
-    assert_eq!(rig.hub.watch().borrow().cluster.layout, "livi.navMini");
+    assert_eq!(rig.hub.watch().borrow().cluster.layout, "livi.clusterOnly");
     rig.p.input(press("KeyS"));
     rig.p.input(press("KeyW"));
     assert!(rig.drain().is_empty());
@@ -725,12 +725,7 @@ async fn the_dashboard_offers_the_layouts_as_arranged() {
     let shown = rig.hub.watch().borrow().cluster.shown.clone();
     assert_eq!(
         shown,
-        [
-            "livi.strip",
-            "livi.navFull",
-            "livi.clusterFull",
-            "livi.clusterOnly"
-        ]
+        ["livi.strip", "livi.clusterOnly", "livi.clusterFull"]
     );
 
     rig.p
@@ -738,7 +733,7 @@ async fn the_dashboard_offers_the_layouts_as_arranged() {
     let patch = rig.patches.try_recv().unwrap();
     assert_eq!(
         patch["dashboardLayouts"]["livi.clusterOnly"],
-        serde_json::json!({ "on": true, "pos": 4 })
+        serde_json::json!({ "on": true, "pos": 2 })
     );
     rig.p
         .arrange_dashboard(rig.p.cluster.moved("livi.clusterOnly", 9));
@@ -801,9 +796,9 @@ async fn the_cluster_follows_the_phone_and_tells_it_livis_own_choice() {
     let cluster = |rig: &Rig| rig.hub.watch().borrow().cluster.clone();
     rig.p.on_event(CpEvent::Cluster {
         id: 1,
-        choice: PhoneChoice::Layout("livi.clusterFull".into()),
+        choice: PhoneChoice::Layout("livi.navMini".into()),
     });
-    assert_eq!(cluster(&rig).layout, "livi.clusterFull");
+    assert_eq!(cluster(&rig).layout, "livi.navMini");
     let dark = PhoneChoice::Appearance(Appearance::Dark);
     rig.p.on_event(CpEvent::Cluster {
         id: 1,
@@ -817,18 +812,18 @@ async fn the_cluster_follows_the_phone_and_tells_it_livis_own_choice() {
 
     rig.p.on_event(CpEvent::Cluster {
         id: 9,
-        choice: PhoneChoice::Layout("livi.navMini".into()),
+        choice: PhoneChoice::Layout("livi.strip".into()),
     });
     assert_eq!(
         cluster(&rig).layout,
-        "livi.clusterFull",
+        "livi.navMini",
         "only the session in front counts"
     );
 
     rig.p.input(press("KeyT"));
-    assert_eq!(cluster(&rig).layout, "livi.clusterOnly");
+    assert_eq!(cluster(&rig).layout, "livi.clusterFull");
     let to_phone = StackCmd::ClusterLayout(ui_sync::Layout {
-        id: "livi.clusterOnly".into(),
+        id: "livi.clusterFull".into(),
         palette: "default".into(),
         active: vec![("map".into(), "map".into())],
     });

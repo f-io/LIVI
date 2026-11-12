@@ -9,7 +9,6 @@ use livi_core_proto::theme::{Cluster, DisplayKind, ThemeLayout};
 pub enum Center {
     None,
     NavMini,
-    NavFull,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,12 +37,6 @@ pub fn spec(layout: &str) -> Spec {
             gauges: true,
             map: false,
             center: Center::NavMini,
-            strip: false,
-        },
-        "livi.navFull" => Spec {
-            gauges: true,
-            map: false,
-            center: Center::NavFull,
             strip: false,
         },
         "livi.clusterOnly" => Spec {
@@ -111,7 +104,7 @@ mod tests {
     fn unknown_layouts_keep_the_gauges_over_the_map() {
         assert_eq!(spec("vendor.x"), MAP_WITH_GAUGES);
         assert!(!spec("livi.clusterOnly").gauges);
-        assert_eq!(spec("livi.navFull").center, Center::NavFull);
+        assert_eq!(spec("livi.navMini").center, Center::NavMini);
         let strip = spec("livi.strip");
         assert!(strip.strip && strip.map && !strip.gauges);
     }
