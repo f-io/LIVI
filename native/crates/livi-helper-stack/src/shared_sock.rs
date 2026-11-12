@@ -165,8 +165,7 @@ pub(crate) fn ok_json() -> String {
 }
 
 pub(crate) fn err_json(msg: &str) -> String {
-    let clean = msg.replace(['"', '\n', '\r'], " ");
-    format!("{{\"ok\":false,\"error\":\"{}\"}}", clean.trim())
+    serde_json::json!({ "ok": false, "error": msg.trim() }).to_string()
 }
 
 fn action(result: Result<(), BtError>) -> String {
