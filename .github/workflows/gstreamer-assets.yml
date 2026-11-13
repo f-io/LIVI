@@ -20,6 +20,10 @@ on:
         description: "Build Android arm64 bundle"
         type: boolean
         default: true
+      ios_arm64:
+        description: "Build iOS arm64 bundle"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -40,6 +44,7 @@ jobs:
           IN_LINUX_X64: ${{ inputs.linux_x64 }}
           IN_LINUX_ARM64: ${{ inputs.linux_arm64 }}
           IN_ANDROID_ARM64: ${{ inputs.android_arm64 }}
+          IN_IOS_ARM64: ${{ inputs.ios_arm64 }}
         run: |
           set -euo pipefail
 
@@ -51,6 +56,7 @@ jobs:
           if [[ "${IN_LINUX_X64,,}" == true ]]; then add linux ubuntu-24.04 x64 linux-x64; fi
           if [[ "${IN_LINUX_ARM64,,}" == true ]]; then add linux ubuntu-24.04-arm arm64 linux-arm64; fi
           if [[ "${IN_ANDROID_ARM64,,}" == true ]]; then add android ubuntu-24.04 arm64 android-arm64; fi
+          if [[ "${IN_IOS_ARM64,,}" == true ]]; then add ios macos-latest arm64 ios-arm64; fi
 
           matrix="{\"include\":[$(IFS=,; echo "${entries[*]-}")]}"
           is_empty=$([[ ${#entries[@]} -eq 0 ]] && echo true || echo false)
@@ -376,6 +382,79 @@ jobs:
           path: ${{ matrix.archive_name }}
           retention-days: 7
 
+      # ----------------------------
+      # iOS arm64
+      # ----------------------------
+      - name: Download GStreamer xcframework [ios-arm64]
+        if: matrix.os == 'ios' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # GStreamer uses GNOME-style versioning: even minor = stable, odd = dev.
+          GST_VERSION=$(curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 https://gstreamer.freedesktop.org/data/pkg/ios/ \
+            | grep -oE 'href="[0-9]+\.[0-9]+\.[0-9]+/"' \
+            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' \
+            | awk -F. '$2 % 2 == 0' \
+            | sort -V \
+            | tail -1)
+          if [[ -z "$GST_VERSION" ]]; then
+            echo "Failed to resolve latest stable GStreamer version from ios listing"
+            exit 1
+          fi
+          echo "Resolved iOS GStreamer: $GST_VERSION"
+          echo "GST_VERSION=$GST_VERSION" >> "$GITHUB_ENV"
+          base="https://gstreamer.freedesktop.org/data/pkg/ios/${GST_VERSION}"
+          xcf="gstreamer-${GST_VERSION}-xcframework.tar.xz"
+          curl -fL -C - --retry 10 --retry-all-errors --retry-delay 5 -o "$xcf" "${base}/${xcf}"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "${base}/${xcf}.sha256sum" | shasum -a 256 -c
+          # the xcframework carries iOS, tvOS and their simulators, only the iOS device slice is unpacked
+          mkdir -p "$RUNNER_TEMP/gst-ios"
+          tar -xJf "$xcf" -C "$RUNNER_TEMP/gst-ios" GStreamer.xcframework/ios-arm64
+          rm -f "$xcf"
+          echo "GST_XCFRAMEWORK=$RUNNER_TEMP/gst-ios/GStreamer.xcframework" >> "$GITHUB_ENV"
+
+      - name: Build patched applemedia (vtdec) [ios-arm64]
+        if: matrix.os == 'ios' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # glib generator tools + build system
+          brew install glib meson ninja
+          chmod +x scripts/gstreamer/build-patched-ios.sh
+          scripts/gstreamer/build-patched-ios.sh "$GST_XCFRAMEWORK" "$RUNNER_TEMP/applemedia"
+          echo "PATCHED_APPLEMEDIA=$RUNNER_TEMP/applemedia/libgstapplemedia.a" >> "$GITHUB_ENV"
+
+      - name: Build bundle [ios-arm64]
+        if: matrix.os == 'ios' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/gstreamer/package-ios.sh
+          scripts/gstreamer/package-ios.sh "$GST_XCFRAMEWORK" "assets/gstreamer/${{ matrix.dir_name }}"
+
+      - name: Smoke test bundle [ios-arm64]
+        if: matrix.os == 'ios' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/gstreamer/smoke-test-ios.sh
+          scripts/gstreamer/smoke-test-ios.sh "assets/gstreamer/${{ matrix.dir_name }}"
+
+      - name: Pack artifact [ios-arm64]
+        if: matrix.os == 'ios' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -C assets/gstreamer -czf "${{ matrix.archive_name }}" "${{ matrix.dir_name }}"
+
+      - name: Upload artifact [ios-arm64]
+        if: matrix.os == 'ios' && matrix.arch == 'arm64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.archive_name }}
+          retention-days: 7
+
   publish:
     name: Publish gstreamer assets
     needs:
@@ -415,7 +494,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          for plat in macos-arm64 linux-x64 linux-arm64 android-arm64; do
+          for plat in macos-arm64 linux-x64 linux-arm64 android-arm64 ios-arm64; do
             archive=".artifacts/gstreamer-${plat}.tar.gz"
             [[ -f "$archive" ]] || continue
             sh scripts/assets.sh publish gstreamer "$plat" "$archive"
@@ -448,7 +527,7 @@ jobs:
 
           # One commit per platform
           changed=false
-          for plat in linux-x64 linux-arm64 macos-arm64 android-arm64; do
+          for plat in linux-x64 linux-arm64 macos-arm64 android-arm64 ios-arm64; do
             dir="assets/gstreamer/${plat}"
             [[ -d "$dir" ]] || continue
             git add -A "$dir"

@@ -1,0 +1,2 @@
+glib-2.0 2.82.4
+gstreamer-xcframework 1.28.9
