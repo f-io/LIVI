@@ -1,0 +1,22 @@
+Description: glwindow_eagl: retain the layer handed to update_layer()
+ gst_gl_context_eagl_update_layer() releases the layer it is given, as
+ gst_gl_window_eagl_get_layer() hands out a retained one. Setting a new window
+ handle passed the window's own layer without a reference, so every handle set
+ dropped one reference too many and the layer was freed while its view still
+ held it, crashing when glimagesink removed the view.
+Origin: vendor
+Author: LIVI
+Forwarded: not-needed
+---
+--- a/gst-libs/gst/gl/eagl/gstglwindow_eagl.m
++++ b/gst-libs/gst/gl/eagl/gstglwindow_eagl.m
+@@ -222,6 +222,9 @@ ensure_window_handle_is_set_unlocked (GstGLWindowEagl 
+     g_cond_wait (&window_eagl->priv->cond, &window_eagl->priv->draw_lock);
+ 
+   GST_INFO_OBJECT (context, "handle set, updating layer");
++  /* update_layer() releases the layer it is given */
++  if (window_eagl->priv->layer)
++    CFRetain (window_eagl->priv->layer);
+   gst_gl_context_eagl_update_layer (context, window_eagl->priv->layer);
+   gst_object_unref (context);
+ 

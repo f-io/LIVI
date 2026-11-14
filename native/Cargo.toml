@@ -56,6 +56,7 @@ iap2-usbmux = { path = "crates/iap2-usbmux" }
 iap2-wired = { path = "crates/iap2-wired" }
 imx6ul-uboot = { path = "crates/imx6ul-uboot" }
 livi-base = { path = "crates/livi-base" }
+livi-cfg = { path = "crates/livi-cfg" }
 livi-aa = { path = "crates/livi-aa" }
 livi-aa-proto = { path = "crates/livi-aa-proto" }
 livi-aa-stack = { path = "crates/livi-aa-stack" }

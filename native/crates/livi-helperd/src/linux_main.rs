@@ -5,7 +5,7 @@
 use std::process::ExitCode;
 
 use livi_core_proto::helper::HelperSockets;
-use livi_helper::embedded::Host;
+use livi_helper::in_process::Host;
 use livi_helper::{DEFAULT_CHANNEL, DEFAULT_NAME, DEFAULT_PASSPHRASE};
 use livi_wifi::{Band, Channel};
 

@@ -8,8 +8,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use livi_base::fs::{SHARED, write_atomic};
 use livi_base::time::civil_from_days;
-use livi_core_proto::state::{DabStation, FmStation, State};
-use serde::{Deserialize, Serialize};
+use livi_core_proto::state::State;
+use serde::Serialize;
 use serde_json::{Map, Value, json};
 use tokio::sync::watch;
 
@@ -64,27 +64,31 @@ const VEHICLE: Kind = Kind {
     version: 1,
     pace: Duration::from_secs(1),
 };
+#[cfg(usb_host)]
 const SDR: Kind = Kind {
     name: "sdr.json",
     version: 1,
     pace: QUICK,
 };
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg(usb_host)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Sdr {
-    pub stations: Vec<DabStation>,
+    pub stations: Vec<livi_core_proto::state::DabStation>,
     pub last_station: Option<u32>,
-    pub fm_stations: Vec<FmStation>,
+    pub fm_stations: Vec<livi_core_proto::state::FmStation>,
     pub last_fm: Option<u32>,
 }
 
+#[cfg(usb_host)]
 pub fn load_sdr(user_data: &Path) -> Sdr {
     payload_of(user_data, &SDR)
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default()
 }
 
+#[cfg(usb_host)]
 pub fn save_sdr(user_data: &Path, sdr: &Sdr) {
     write(
         &user_data.join(DIR).join(SDR.name),
@@ -339,7 +343,7 @@ pub fn saved(user_data: &Path) -> Saved {
 
 #[cfg(test)]
 mod tests {
-    use livi_core_proto::state::{Front, PerScreen};
+    use livi_core_proto::state::{DabStation, FmStation, Front, PerScreen};
 
     use super::*;
     use crate::files::config_file::defaults;

@@ -1,0 +1,62 @@
+[package]
+name = "livi-ios"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "livi"
+path = "src/main.rs"
+
+[target.'cfg(target_os = "ios")'.dependencies]
+dispatch2 = "0.3.1"
+gstreamer.workspace = true
+libc.workspace = true
+livi-core.workspace = true
+livi-core-client.workspace = true
+livi-helper.workspace = true
+livi-output.workspace = true
+livi-output-proto.workspace = true
+livi-ui.workspace = true
+livi-video-player.workspace = true
+livi-video-view.workspace = true
+objc2 = "0.6.5"
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFCGTypes"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "NSArray",
+  "NSNotification",
+  "NSString",
+  "NSURL",
+] }
+objc2-quartz-core = { version = "0.3.2", default-features = false, features = ["std", "CALayer"] }
+objc2-uniform-type-identifiers = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "UTCoreTypes",
+  "UTType",
+] }
+objc2-ui-kit = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "block2",
+  "objc2-core-foundation",
+  "objc2-quartz-core",
+  "objc2-uniform-type-identifiers",
+  "UIApplication",
+  "UIColor",
+  "UIDocumentPickerViewController",
+  "UIResponder",
+  "UIScene",
+  "UIScreen",
+  "UISceneDefinitions",
+  "UISceneOptions",
+  "UISceneSession",
+  "UIView",
+  "UIViewController",
+  "UIWindow",
+  "UIWindowScene",
+] }
+slint.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+
+[lints]
+workspace = true

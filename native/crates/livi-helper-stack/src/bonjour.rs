@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
-#![cfg_attr(target_os = "macos", allow(dead_code))]
+#![cfg_attr(target_vendor = "apple", allow(dead_code))]
 
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
@@ -15,7 +15,7 @@ use livi_core_proto::helper::Mirror;
 use livi_core_proto::helper_events::{DeviceSource, HelperEvent, HelperKind};
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::process::Command;
 use tokio::sync::watch;
 
 use crate::livi_sock::Broadcaster;
@@ -23,9 +23,14 @@ use crate::livi_sock::Broadcaster;
 pub const AIRPLAY_SERVICE: &str = "_airplay._tcp";
 const CARPLAY_CTRL: &str = "_carplay-ctrl._tcp";
 
+#[cfg(not(target_vendor = "apple"))]
+type Publisher = tokio::process::Child;
+#[cfg(target_vendor = "apple")]
+type Publisher = crate::dnssd::Registration;
+
 pub struct Bonjour {
-    publisher: Arc<Mutex<Option<Child>>>,
-    mirror: Option<Child>,
+    publisher: Arc<Mutex<Option<Publisher>>>,
+    mirror: Option<Publisher>,
     device_id: Arc<Mutex<String>>,
     source_version: String,
     bcast: Broadcaster,
@@ -77,12 +82,7 @@ pub fn txt_records(device_id: &str, source_version: &str, pk: &str, pi: &str) ->
     txt
 }
 
-const PUBLISHER: &str = if cfg!(target_os = "macos") {
-    "dns-sd"
-} else {
-    "avahi-publish-service"
-};
-
+#[cfg(not(target_vendor = "apple"))]
 fn reap(pattern: &str) {
     let _ = std::process::Command::new(livi_base::sys::tool("pkill"))
         .args(["-f", pattern])
@@ -91,17 +91,7 @@ fn reap(pattern: &str) {
         .status();
 }
 
-#[cfg(target_os = "macos")]
-static DNS_SD: Mutex<Option<Vec<u32>>> = Mutex::new(Some(Vec::new()));
-
-#[cfg(target_os = "macos")]
-pub fn stop() {
-    for pid in DNS_SD.lock().unwrap().take().unwrap_or_default() {
-        // SAFETY: kill has no memory preconditions.
-        unsafe { libc::kill(pid as i32, libc::SIGTERM) };
-    }
-}
-
+#[cfg(not(target_vendor = "apple"))]
 impl Drop for Bonjour {
     fn drop(&mut self) {
         if let Some(mut publisher) = self.publisher.lock().unwrap().take() {
@@ -113,46 +103,35 @@ impl Drop for Bonjour {
     }
 }
 
-fn publish(record: &Record, device_id: &str) -> std::io::Result<Child> {
+fn publish(record: &Record, device_id: &str) -> std::io::Result<Publisher> {
     let txt = txt_records(device_id, &record.source_version, &record.pk, &record.pi);
     spawn("LIVI", record.airplay_port, &txt)
 }
 
-fn spawn(name: &str, port: u16, txt: &[String]) -> std::io::Result<Child> {
-    let port = port.to_string();
-    #[cfg(target_os = "macos")]
-    {
-        let mut args = vec!["-R", name, AIRPLAY_SERVICE, ".", port.as_str()];
-        args.extend(txt.iter().map(String::as_str));
-        let mut running = DNS_SD.lock().unwrap();
-        let pids = running
-            .as_mut()
-            .ok_or_else(|| io_err("the helper is stopping"))?;
-        let publisher = Command::new(livi_base::sys::tool("dns-sd"))
-            .args(&args)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?;
-        pids.extend(publisher.id());
-        Ok(publisher)
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let mut args = vec![name, AIRPLAY_SERVICE, port.as_str()];
-        args.extend(txt.iter().map(String::as_str));
-        Command::new(livi_base::sys::tool("avahi-publish-service"))
-            .args(&args)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-    }
+#[cfg(target_vendor = "apple")]
+fn spawn(name: &str, port: u16, txt: &[String]) -> std::io::Result<Publisher> {
+    crate::dnssd::register(name, AIRPLAY_SERVICE, port, txt)
 }
 
-async fn retire(mut publisher: Child) {
-    #[cfg(target_os = "macos")]
-    if let (Some(pid), Some(pids)) = (publisher.id(), DNS_SD.lock().unwrap().as_mut()) {
-        pids.retain(|&p| p != pid);
-    }
+#[cfg(not(target_vendor = "apple"))]
+fn spawn(name: &str, port: u16, txt: &[String]) -> std::io::Result<Publisher> {
+    let port = port.to_string();
+    let mut args = vec![name, AIRPLAY_SERVICE, port.as_str()];
+    args.extend(txt.iter().map(String::as_str));
+    Command::new(livi_base::sys::tool("avahi-publish-service"))
+        .args(&args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+}
+
+#[cfg(target_vendor = "apple")]
+async fn retire(publisher: Publisher) {
+    drop(publisher);
+}
+
+#[cfg(not(target_vendor = "apple"))]
+async fn retire(mut publisher: Publisher) {
     let _ = publisher.kill().await;
 }
 
@@ -166,9 +145,8 @@ impl Bonjour {
         mirror: Option<Mirror>,
         bcast: Broadcaster,
     ) -> std::io::Result<Self> {
-        reap(&format!("{PUBLISHER}.*{AIRPLAY_SERVICE}"));
-        #[cfg(target_os = "macos")]
-        reap(&format!("dns-sd.*{CARPLAY_CTRL}"));
+        #[cfg(not(target_vendor = "apple"))]
+        reap(&format!("avahi-publish-service.*{AIRPLAY_SERVICE}"));
         let record = Record {
             airplay_port,
             source_version: source_version.clone(),
@@ -241,7 +219,7 @@ impl Bonjour {
         let seen = self.seen.clone();
         tokio::spawn(async move {
             loop {
-                #[cfg(target_os = "macos")]
+                #[cfg(target_vendor = "apple")]
                 {
                     let (d, s, b, sn) = (
                         device_id.clone(),
@@ -249,10 +227,10 @@ impl Bonjour {
                         bcast.clone(),
                         seen.clone(),
                     );
-                    let _ = tokio::task::spawn_blocking(move || macos_browse_once(&d, &s, &b, &sn))
+                    let _ = tokio::task::spawn_blocking(move || apple_browse_once(&d, &s, &b, &sn))
                         .await;
                 }
-                #[cfg(not(target_os = "macos"))]
+                #[cfg(not(target_vendor = "apple"))]
                 if let Err(e) = browse_once(&device_id, &source_version, &bcast, &seen).await {
                     eprintln!("[cp] carplay-ctrl browse ended: {e}");
                 }
@@ -437,8 +415,8 @@ fn io_err(msg: &str) -> std::io::Error {
     std::io::Error::other(msg)
 }
 
-#[cfg(target_os = "macos")]
-fn macos_browse_once(
+#[cfg(target_vendor = "apple")]
+fn apple_browse_once(
     device_id: &Mutex<String>,
     source_version: &str,
     bcast: &Broadcaster,
@@ -475,99 +453,31 @@ fn macos_browse_once(
     }
 }
 
-#[cfg(target_os = "macos")]
-fn dns_sd_run(args: &[&str], secs: u64) -> Vec<String> {
-    use std::io::BufRead;
-    use std::process::{Command, Stdio};
-    let mut out = Vec::new();
-    let mut child = {
-        let mut running = DNS_SD.lock().unwrap();
-        let Some(pids) = running.as_mut() else {
-            return out;
-        };
-        let Ok(child) = Command::new(livi_base::sys::tool("dns-sd"))
-            .args(args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-        else {
-            return out;
-        };
-        pids.push(child.id());
-        child
-    };
-    if let Some(stdout) = child.stdout.take() {
-        let pid = child.id();
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_secs(secs));
-            // SAFETY: kill has no memory preconditions.
-            unsafe { libc::kill(pid as i32, libc::SIGTERM) };
-        });
-        for line in std::io::BufReader::new(stdout)
-            .lines()
-            .map_while(Result::ok)
-        {
-            out.push(line);
-        }
-    }
-    let _ = child.wait();
-    if let Some(pids) = DNS_SD.lock().unwrap().as_mut() {
-        pids.retain(|&p| p != child.id());
-    }
-    out
-}
-
-#[cfg(target_os = "macos")]
+#[cfg(target_vendor = "apple")]
 fn dns_sd_browse(service: &str) -> Vec<String> {
-    let mut names = Vec::new();
-    for line in dns_sd_run(&["-B", service], 4) {
-        if !line.contains(" Add ") {
-            continue;
-        }
-        if let Some(pos) = line.find("_tcp.") {
-            let inst = line[pos + "_tcp.".len()..].trim().to_string();
-            if !inst.is_empty() && !names.contains(&inst) {
-                names.push(inst);
-            }
-        }
-    }
-    names
+    crate::dnssd::browse(service, Duration::from_secs(4))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(target_vendor = "apple")]
 fn dns_sd_resolve(instance: &str) -> Option<Endpoint> {
+    let found = crate::dnssd::resolve(instance, CARPLAY_CTRL, 0, Duration::from_secs(3))?;
+    let phone_bt = found
+        .txt
+        .iter()
+        .find_map(|t| t.strip_prefix("id="))
+        .map(|id| id.trim().to_lowercase());
+    link_local(&found.host, found.port, phone_bt)
+}
+
+#[cfg(target_vendor = "apple")]
+fn link_local(host: &str, port: u16, phone_bt: Option<String>) -> Option<Endpoint> {
     use std::net::ToSocketAddrs;
-    let mut host = String::new();
-    let mut port = 0u16;
-    let mut phone_bt = None;
-    for line in dns_sd_run(&["-L", instance, CARPLAY_CTRL], 3) {
-        if let Some(pos) = line.find("can be reached at ") {
-            let token = line[pos + "can be reached at ".len()..]
-                .split_whitespace()
-                .next()
-                .unwrap_or("");
-            if let Some(colon) = token.rfind(':') {
-                host = token[..colon].trim_end_matches('.').to_string();
-                port = token[colon + 1..].parse().unwrap_or(0);
-            }
-        }
-        if phone_bt.is_none()
-            && let Some(id) = line
-                .split(&['"', ' '][..])
-                .find_map(|t| t.strip_prefix("id="))
-        {
-            phone_bt = Some(id.trim().to_lowercase());
-        }
-    }
-    if host.is_empty() || port == 0 {
-        return None;
-    }
     let sa = format!("{host}:{port}")
         .to_socket_addrs()
         .ok()?
         .find(|a| matches!(a, SocketAddr::V6(v6) if (v6.ip().segments()[0] & 0xffc0) == 0xfe80))?;
     let SocketAddr::V6(v6) = sa else { return None };
-    let iface = ifname_from_index(v6.scope_id()).unwrap_or_default();
+    let iface = crate::dnssd::ifname(v6.scope_id()).unwrap_or_default();
     let address = if iface.is_empty() {
         v6.ip().to_string()
     } else {
@@ -579,24 +489,6 @@ fn dns_sd_resolve(instance: &str) -> Option<Endpoint> {
         port,
         phone_bt,
     })
-}
-
-#[cfg(target_os = "macos")]
-fn ifname_from_index(idx: u32) -> Option<String> {
-    if idx == 0 {
-        return None;
-    }
-    let mut buf = [0u8; libc::IF_NAMESIZE];
-    // SAFETY: buf holds IF_NAMESIZE bytes as if_indextoname requires.
-    let p = unsafe { libc::if_indextoname(idx, buf.as_mut_ptr() as *mut libc::c_char) };
-    if p.is_null() {
-        return None;
-    }
-    // SAFETY: p is non-null and points into buf, NUL-terminated by if_indextoname.
-    unsafe { std::ffi::CStr::from_ptr(p) }
-        .to_str()
-        .ok()
-        .map(|s| s.to_string())
 }
 
 fn seen_over_bonjour(mac: &str, ip: &str) -> String {

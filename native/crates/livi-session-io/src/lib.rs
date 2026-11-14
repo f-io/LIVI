@@ -6,8 +6,10 @@
 extern crate nusb_android as nusb;
 
 pub mod feed;
+#[cfg(usb_host)]
 pub mod hotplug;
 pub mod line;
 pub mod link;
 pub mod sock;
+#[cfg_attr(not(usb_host), path = "usb_absent.rs")]
 pub mod usb;

@@ -6,14 +6,16 @@ license.workspace = true
 
 [dependencies]
 libc.workspace = true
-livi-base.workspace = true
 livi-net.workspace = true
-livi-session-io.workspace = true
 livi-wifi.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "time", "sync", "io-util", "net"] }
 
-[target.'cfg(not(target_os = "android"))'.dependencies]
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+livi-base.workspace = true
+livi-session-io.workspace = true
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 nusb = { workspace = true, features = ["tokio"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
@@ -22,6 +24,9 @@ nusb-android = { workspace = true, features = ["tokio"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "net", "test-util"] }
+
+[build-dependencies]
+livi-cfg.workspace = true
 
 [lints]
 workspace = true

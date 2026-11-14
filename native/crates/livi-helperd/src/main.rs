@@ -74,9 +74,9 @@ fn leave_with_core() {
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn run(host: livi_helper::embedded::Host) -> ExitCode {
+fn run(host: livi_helper::in_process::Host) -> ExitCode {
     let start = livi_core_proto::helper::HelperStart::from_env();
-    let helper = match livi_helper::embedded::Embedded::start(start, host) {
+    let helper = match livi_helper::in_process::InProcessHelper::start(start, host) {
         Ok(helper) => helper,
         Err(e) => {
             eprintln!("[helperd] runtime: {e}");
@@ -96,8 +96,6 @@ fn run(host: livi_helper::embedded::Host) -> ExitCode {
     signals.block_on(shutdown_signal());
     println!("[helperd] shutting down");
     drop(helper);
-    #[cfg(target_os = "macos")]
-    livi_helper_stack::bonjour::stop();
     ExitCode::SUCCESS
 }
 

@@ -184,7 +184,7 @@ pub type StartHelper = dyn Fn(HelperStart) -> Result<Box<dyn Send>, String> + Se
 #[derive(Clone)]
 pub enum Helper {
     Process(PathBuf),
-    Embedded(Arc<StartHelper>),
+    InProcess(Arc<StartHelper>),
 }
 
 pub struct Spec {
@@ -263,11 +263,11 @@ fn forward_lines(child: &mut Child) {
 async fn run(spec: Spec, stop: watch::Receiver<bool>) {
     match spec.helper.clone() {
         Helper::Process(bin) => run_process(&bin, spec, stop).await,
-        Helper::Embedded(helper) => run_embedded(helper, spec, stop).await,
+        Helper::InProcess(helper) => run_in_process(helper, spec, stop).await,
     }
 }
 
-async fn run_embedded(helper: Arc<StartHelper>, spec: Spec, mut stop: watch::Receiver<bool>) {
+async fn run_in_process(helper: Arc<StartHelper>, spec: Spec, mut stop: watch::Receiver<bool>) {
     loop {
         let running = match helper((spec.start)()) {
             Ok(running) => running,

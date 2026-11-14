@@ -16,7 +16,7 @@ serde_json.workspace = true
 socket2 = { workspace = true, features = ["all"] }
 tokio = { workspace = true, features = ["rt", "macros", "time", "sync", "io-util", "net"] }
 
-[target.'cfg(not(target_os = "android"))'.dependencies]
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 nusb = { workspace = true, features = ["tokio"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
@@ -24,6 +24,9 @@ nusb-android = { workspace = true, features = ["tokio"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "net"] }
+
+[build-dependencies]
+livi-cfg.workspace = true
 
 [lints]
 workspace = true

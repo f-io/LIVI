@@ -19,6 +19,8 @@ pub enum Error {
     Store(#[source] io::Error),
     #[error("write {}: {source}", path.display())]
     Write { path: PathBuf, source: io::Error },
+    #[error("{0}")]
+    Remote(String),
 }
 
 impl Error {

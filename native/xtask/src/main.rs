@@ -4,6 +4,7 @@
 
 mod build_native;
 mod package_android;
+mod package_ios;
 mod package_linux;
 mod package_mac;
 mod util;
@@ -12,7 +13,7 @@ use std::process::ExitCode;
 
 use util::Arch;
 
-const USAGE: &str = "usage: cargo xtask <build-native|package-mac|package-linux> [--arch x64|arm64]\n       cargo xtask <package-android|check-android>";
+const USAGE: &str = "usage: cargo xtask <build-native|package-mac|package-linux> [--arch x64|arm64]\n       cargo xtask <package-android|check-android|package-ios|check-ios>";
 
 fn arch(args: &[String]) -> Result<Arch, String> {
     let mut it = args.iter();
@@ -36,6 +37,8 @@ fn main() -> ExitCode {
         Some("package-linux") => arch(&args[1..]).and_then(package_linux::run),
         Some("package-android") if args.len() == 1 => package_android::run(),
         Some("check-android") if args.len() == 1 => package_android::check(),
+        Some("package-ios") if args.len() == 1 => package_ios::run(),
+        Some("check-ios") if args.len() == 1 => package_ios::check(),
         _ => Err(USAGE.to_string()),
     };
     match result {

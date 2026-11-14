@@ -55,7 +55,7 @@ pub fn decoder_candidates(codec: VideoCodec, sw_only: bool) -> &'static [&'stati
             VideoCodec::H264 => &[c"avdec_h264"],
         };
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(target_vendor = "apple")]
     {
         match codec {
             VideoCodec::H265 => &[c"vtdec", c"avdec_h265"],
@@ -64,7 +64,7 @@ pub fn decoder_candidates(codec: VideoCodec, sw_only: bool) -> &'static [&'stati
             VideoCodec::H264 => &[c"vtdec", c"avdec_h264"],
         }
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(target_vendor = "apple"))]
     {
         match codec {
             VideoCodec::H265 => &[
@@ -125,7 +125,7 @@ pub fn desktop_sink(sink_override: Option<&str>) -> &str {
 }
 
 pub fn sink_chain(sink_override: Option<&str>) -> String {
-    #[cfg(target_os = "macos")]
+    #[cfg(target_vendor = "apple")]
     {
         let _ = sink_override;
         "glimagesink name=sink sync=false qos=false force-aspect-ratio=false".to_owned()
@@ -135,19 +135,19 @@ pub fn sink_chain(sink_override: Option<&str>) -> String {
         let _ = sink_override;
         "glimagesink name=sink sync=false qos=false".to_owned()
     }
-    #[cfg(not(any(target_os = "macos", target_os = "android")))]
+    #[cfg(not(any(target_vendor = "apple", target_os = "android")))]
     {
         format!("{} name=sink sync=false", desktop_sink(sink_override))
     }
 }
 
 pub fn presink(decoder: &str) -> &'static str {
-    #[cfg(target_os = "macos")]
+    #[cfg(target_vendor = "apple")]
     {
         let _ = decoder;
         ""
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(target_vendor = "apple"))]
     {
         if is_hw_decoder(decoder) && !decoder.starts_with("nv") {
             ""
@@ -158,7 +158,7 @@ pub fn presink(decoder: &str) -> &'static str {
 }
 
 pub fn calibration() -> &'static str {
-    if cfg!(target_os = "macos") {
+    if cfg!(target_vendor = "apple") {
         "glupload ! glcolorconvert ! glshader name=cal ! "
     } else {
         ""

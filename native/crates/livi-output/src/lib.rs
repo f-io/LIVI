@@ -25,7 +25,7 @@ mod audio;
 pub mod feed;
 pub mod gst;
 pub mod process;
-#[cfg(target_os = "android")]
+#[cfg(in_process)]
 mod shown;
 mod spectrum;
 pub mod ui_plane;

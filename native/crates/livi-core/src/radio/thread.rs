@@ -13,7 +13,14 @@ use livi_rtlsdr::RtlSdr;
 use tokio::sync::mpsc;
 
 use super::audio::Format;
-use super::{Band, Tuning, dab, fm};
+use super::{Band, dab, fm};
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct Tuning {
+    pub(super) gain: Option<i32>,
+    pub(super) ppm: i32,
+    pub(super) deemphasis_us: u32,
+}
 
 const DAB_BLOCK: usize = 256 * 1024;
 /// About 17 ms of FM, so the audio leaves in small, even steps.

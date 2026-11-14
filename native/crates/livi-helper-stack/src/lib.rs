@@ -7,6 +7,8 @@ pub mod bluetoothd;
 pub mod bonjour;
 pub mod bringup;
 pub mod clock;
+#[cfg(target_vendor = "apple")]
+pub mod dnssd;
 pub mod driver;
 mod error;
 pub mod events;

@@ -25,5 +25,8 @@ livi-hfp.workspace = true
 [target.'cfg(target_os = "android")'.dependencies]
 livi-mdns.workspace = true
 
+[build-dependencies]
+livi-cfg.workspace = true
+
 [lints]
 workspace = true

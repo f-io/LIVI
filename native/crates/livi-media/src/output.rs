@@ -56,7 +56,7 @@ pub enum FeedTarget {
     Audio(u32),
 }
 
-pub trait EmbeddedOutput: Send + Sync {
+pub trait InProcessOutput: Send + Sync {
     fn serve(&self, sock: &Path);
     fn probe(&self) -> livi_output_proto::Probe;
 }
@@ -64,7 +64,7 @@ pub trait EmbeddedOutput: Send + Sync {
 #[derive(Clone)]
 pub enum OutputBackend {
     Process(PathBuf),
-    Embedded(Arc<dyn EmbeddedOutput>),
+    InProcess(Arc<dyn InProcessOutput>),
 }
 
 #[derive(Debug, Clone)]
@@ -78,7 +78,7 @@ pub struct Process {
 #[derive(Clone)]
 pub enum Launch {
     Process(Process),
-    Embedded(Arc<dyn EmbeddedOutput>),
+    InProcess(Arc<dyn InProcessOutput>),
 }
 
 #[derive(Default)]
@@ -191,18 +191,18 @@ impl Output {
         self.state().accept_task = Some(accept);
         match launch {
             Some(Launch::Process(process)) => self.spawn_host(process),
-            Some(Launch::Embedded(embedded)) => self.serve_embedded(embedded),
+            Some(Launch::InProcess(output)) => self.serve_in_process(output),
             None => {}
         }
     }
 
-    fn serve_embedded(&self, embedded: Arc<dyn EmbeddedOutput>) {
+    fn serve_in_process(&self, output: Arc<dyn InProcessOutput>) {
         let host = self.clone();
         let sock = self.inner.sock_path.clone();
         let serving = std::thread::Builder::new()
             .name("output".into())
             .spawn(move || {
-                embedded.serve(&sock);
+                output.serve(&sock);
                 eprintln!("[core] output ended");
                 let mut st = host.state();
                 host.reset(&mut st);
@@ -638,11 +638,9 @@ fn log_file(path: &std::path::Path) -> Option<std::fs::File> {
 pub async fn probe_codecs(launch: &Launch) -> Option<livi_output_proto::Probe> {
     let launch = match launch {
         Launch::Process(process) => process,
-        Launch::Embedded(embedded) => {
-            let embedded = embedded.clone();
-            return tokio::task::spawn_blocking(move || embedded.probe())
-                .await
-                .ok();
+        Launch::InProcess(host) => {
+            let host = host.clone();
+            return tokio::task::spawn_blocking(move || host.probe()).await.ok();
         }
     };
     let run = tokio::process::Command::new(&launch.bin)
@@ -953,7 +951,7 @@ mod tests {
 
     struct EchoFeed;
 
-    impl EmbeddedOutput for EchoFeed {
+    impl InProcessOutput for EchoFeed {
         fn serve(&self, sock: &Path) {
             use std::io::{Read, Write};
             let mut stream = std::os::unix::net::UnixStream::connect(sock).unwrap();
@@ -978,10 +976,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_embedded_host_is_served_over_the_same_socket() {
+    async fn an_in_process_host_is_served_over_the_same_socket() {
         let dir = TempDir::new();
         let gst = host(&dir);
-        gst.set_launch(Launch::Embedded(Arc::new(EchoFeed)));
+        gst.set_launch(Launch::InProcess(Arc::new(EchoFeed)));
         assert!(gst.open_feed().await.ends_with("gst.sock.feed"));
     }
 
@@ -997,13 +995,13 @@ mod tests {
         tokio::task::yield_now().await;
         assert!(!gst.state().running);
         assert!(!gst.inner.sock_path.exists());
-        gst.set_launch(Launch::Embedded(Arc::new(EchoFeed)));
+        gst.set_launch(Launch::InProcess(Arc::new(EchoFeed)));
         assert!(feed.await.unwrap().ends_with("gst.sock.feed"));
     }
 
     #[tokio::test]
-    async fn an_embedded_host_answers_the_probe_itself() {
-        let probe = probe_codecs(&Launch::Embedded(Arc::new(EchoFeed))).await;
+    async fn an_in_process_host_answers_the_probe_itself() {
+        let probe = probe_codecs(&Launch::InProcess(Arc::new(EchoFeed))).await;
         assert_eq!(probe, Some("h264=hw".parse().unwrap()));
     }
 }

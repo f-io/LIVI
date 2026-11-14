@@ -9,7 +9,7 @@ pub mod bluez;
 pub mod bt_dongle;
 #[cfg(not(target_os = "linux"))]
 pub mod dongle;
-pub mod embedded;
+pub mod in_process;
 pub mod link;
 pub mod mfi;
 pub mod wired;
@@ -79,6 +79,7 @@ pub fn carplay(start: &HelperStart, transport: Transport) -> (Identity, CpConfig
     (identity, cp)
 }
 
+#[cfg_attr(not(usb_host), allow(dead_code))]
 pub(crate) fn short(serial: &str) -> &str {
     &serial[..8.min(serial.len())]
 }

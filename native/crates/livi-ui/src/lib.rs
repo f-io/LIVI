@@ -449,11 +449,35 @@ pub fn key(code: &str, down: bool, repeat: bool) {
     });
 }
 
+fn own_panel(ui: &AppWindow) {
+    ui.set_keep_safe_area(false);
+    #[cfg(target_os = "ios")]
+    defer_system_gestures(ui);
+}
+
+// Slint's Skia renderer sends no rendering notifier on iOS, so the winit window is awaited instead.
+#[cfg(target_os = "ios")]
+fn defer_system_gestures(ui: &AppWindow) {
+    use slint::winit_030::WinitWindowAccessor;
+    use slint::winit_030::winit::platform::ios::{ScreenEdge, WindowExtIOS};
+    let weak = ui.as_weak();
+    let _ = slint::spawn_local(async move {
+        let Some(ui) = weak.upgrade() else { return };
+        let Ok(window) = ui.window().winit_window().await else {
+            eprintln!("[ui] no winit window to hide the home indicator in");
+            return;
+        };
+        window.set_prefers_home_indicator_hidden(true);
+        window.set_preferred_screen_edges_deferring_system_gestures(ScreenEdge::ALL);
+    });
+}
+
 pub fn run(
     connect: impl FnOnce() -> std::io::Result<UnixStream>,
     fixture: Option<Value>,
     kiosk: impl Fn(bool) + 'static,
     pick: Option<Pick>,
+    full_panel: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     KIOSK.with_borrow_mut(|k| *k = Some(Box::new(kiosk)));
     PICK.with_borrow_mut(|p| *p = pick);
@@ -479,6 +503,9 @@ pub fn run(
     MAIN.with_borrow_mut(|m| *m = Some(weak.clone()));
     let lang = client.mirror().state.config.language.clone();
     settings_ui::wire(&ui, &client, &lang);
+    if full_panel {
+        own_panel(&ui);
+    }
     #[cfg(not(target_os = "android"))]
     keys_ui::wire(&ui, &client);
     #[cfg(target_os = "android")]

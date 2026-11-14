@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+#[cfg(usb_host)]
 use livi_aa::usb::Control;
 use livi_aa::wpp;
 use livi_core_proto::aa_events::{AaHelperEvent, AaTransport};
@@ -109,9 +110,11 @@ pub async fn watch_dongle(
     }
 }
 
+#[cfg_attr(not(usb_host), allow(unused_variables))]
 pub fn serve(sockets: &HelperSockets, sco_sink: ScoSink, usb: bool) -> (Broadcaster, WiredPhones) {
     let events = Broadcaster::default();
     let wired = WiredPhones::default();
+    #[cfg(usb_host)]
     let control = Control::default();
     let deps = AaSockDeps {
         set_wired_phones: Box::new({
@@ -120,10 +123,13 @@ pub fn serve(sockets: &HelperSockets, sco_sink: ScoSink, usb: bool) -> (Broadcas
         }),
         events: events.clone(),
         set_sco_sink: Box::new(move |target| sco_sink.set(target)),
+        #[cfg(usb_host)]
         restart_usb: Box::new({
             let control = control.clone();
             move |serial| control.restart(serial)
         }),
+        #[cfg(not(usb_host))]
+        restart_usb: Box::new(|_| 0),
     };
     let path = sockets.android_auto.clone();
     tokio::spawn(async move {
@@ -131,6 +137,7 @@ pub fn serve(sockets: &HelperSockets, sco_sink: ScoSink, usb: bool) -> (Broadcas
             eprintln!("[aa-sock] ended: {e}");
         }
     });
+    #[cfg(usb_host)]
     if usb {
         tokio::spawn(watch_usb(control, sockets.sessions.clone(), events.clone()));
         println!("[helper] Android Auto USB watcher started");
@@ -138,6 +145,7 @@ pub fn serve(sockets: &HelperSockets, sco_sink: ScoSink, usb: bool) -> (Broadcas
     (events, wired)
 }
 
+#[cfg(usb_host)]
 async fn watch_usb(control: Control, sessions: PathBuf, events: Broadcaster) {
     let subscribed = events.clone();
     livi_aa::usb::run(

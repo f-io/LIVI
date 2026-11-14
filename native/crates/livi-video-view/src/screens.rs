@@ -43,7 +43,7 @@ mod window {
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(in_process)]
 mod window {
     pub fn backdrop(_window: usize, _rgb: [f64; 3]) {}
 

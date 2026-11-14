@@ -19,8 +19,11 @@ glib.workspace = true
 glib-unix.workspace = true
 libc.workspace = true
 
-[target.'cfg(target_os = "android")'.dependencies]
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 livi-video-view.workspace = true
+
+[build-dependencies]
+livi-cfg.workspace = true
 
 [lints]
 workspace = true
