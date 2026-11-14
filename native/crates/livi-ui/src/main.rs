@@ -72,6 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fixture,
         |_| {},
         None,
+        false,
     )?;
 
     let code = match core {

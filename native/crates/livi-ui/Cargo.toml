@@ -28,13 +28,16 @@ slint = { workspace = true, features = [
   "unstable-fontique-011",
 ] }
 
-[target.'cfg(not(target_os = "android"))'.dependencies]
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 slint = { workspace = true, features = [
   "backend-winit",
   "backend-winit-wayland",
   "renderer-femtovg",
   "unstable-winit-030",
 ] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+slint = { workspace = true, features = ["backend-winit", "renderer-skia", "unstable-winit-030"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 slint = { workspace = true, features = ["backend-android-activity-06"] }

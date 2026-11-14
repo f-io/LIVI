@@ -12,5 +12,6 @@ pub mod frame;
 pub mod server;
 pub mod session;
 pub mod tls;
+#[cfg(usb_host)]
 pub mod usb;
 pub mod wpp;

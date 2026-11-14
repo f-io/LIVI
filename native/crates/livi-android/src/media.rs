@@ -8,11 +8,11 @@ use std::path::Path;
 use std::sync::{LazyLock, Mutex};
 
 use jni::sys::{JNIEnv, jobject};
-use livi_core::EmbeddedOutput;
+use livi_core::InProcessOutput;
 
 pub struct InProcess;
 
-impl EmbeddedOutput for InProcess {
+impl InProcessOutput for InProcess {
     fn serve(&self, sock: &Path) {
         livi_output::process::serve(sock);
     }

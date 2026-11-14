@@ -86,7 +86,7 @@ impl Resources {
         }
     }
 
-    pub fn embedded() -> Self {
+    pub fn in_process() -> Self {
         Self {
             helper: None,
             output: None,

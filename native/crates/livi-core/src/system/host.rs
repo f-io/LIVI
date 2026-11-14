@@ -77,15 +77,15 @@ pub fn panel_native_px() -> Option<(u32, u32)> {
     Some(px)
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "android")))]
+#[cfg(not(any(target_os = "linux", in_process)))]
 pub fn panel_native_px() -> Option<(u32, u32)> {
     None
 }
 
-#[cfg(target_os = "android")]
+#[cfg(in_process)]
 static SCREEN: std::sync::OnceLock<livi_media::compositor::Panel> = std::sync::OnceLock::new();
 
-#[cfg(target_os = "android")]
+#[cfg(in_process)]
 pub fn set_screen(width_mm: f64, height_mm: f64, width_px: usize, height_px: usize) {
     let Some(panel) = screen_panel_from(width_mm, height_mm, width_px, height_px) else {
         println!("[core] the display reported no usable size");
@@ -98,12 +98,12 @@ pub fn set_screen(width_mm: f64, height_mm: f64, width_px: usize, height_px: usi
     let _ = SCREEN.set(panel);
 }
 
-#[cfg(target_os = "android")]
+#[cfg(in_process)]
 pub fn panel_native_px() -> Option<(u32, u32)> {
     SCREEN.get().map(|p| (p.width_px, p.height_px))
 }
 
-#[cfg(target_os = "android")]
+#[cfg(in_process)]
 pub fn screen_panel() -> Option<livi_media::compositor::Panel> {
     SCREEN.get().copied()
 }
@@ -150,12 +150,12 @@ pub fn screen_panel() -> Option<livi_media::compositor::Panel> {
     Some(panel)
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "android")))]
+#[cfg(not(any(target_os = "macos", in_process)))]
 pub fn screen_panel() -> Option<livi_media::compositor::Panel> {
     None
 }
 
-#[cfg(any(target_os = "macos", target_os = "android", test))]
+#[cfg(any(target_os = "macos", in_process, test))]
 fn screen_panel_from(
     width_mm: f64,
     height_mm: f64,

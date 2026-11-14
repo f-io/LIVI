@@ -49,7 +49,7 @@ fn decoder_chain(codec: Codec) -> Option<&'static str> {
 }
 
 const fn audio_sink() -> (&'static str, &'static str) {
-    if cfg!(target_os = "macos") {
+    if cfg!(target_vendor = "apple") {
         ("osxaudiosink", "unique-id")
     } else if cfg!(target_os = "android") {
         ("aaudiosink", "device")

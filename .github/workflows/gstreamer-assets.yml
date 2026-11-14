@@ -413,7 +413,7 @@ jobs:
           rm -f "$xcf"
           echo "GST_XCFRAMEWORK=$RUNNER_TEMP/gst-ios/GStreamer.xcframework" >> "$GITHUB_ENV"
 
-      - name: Build patched applemedia (vtdec) [ios-arm64]
+      - name: Build patched applemedia (vtdec) and EAGL window [ios-arm64]
         if: matrix.os == 'ios' && matrix.arch == 'arm64'
         shell: bash
         run: |
@@ -423,6 +423,7 @@ jobs:
           chmod +x scripts/gstreamer/build-patched-ios.sh
           scripts/gstreamer/build-patched-ios.sh "$GST_XCFRAMEWORK" "$RUNNER_TEMP/applemedia"
           echo "PATCHED_APPLEMEDIA=$RUNNER_TEMP/applemedia/libgstapplemedia.a" >> "$GITHUB_ENV"
+          echo "PATCHED_GL_WINDOW=$RUNNER_TEMP/applemedia/gstglwindow_eagl.o" >> "$GITHUB_ENV"
 
       - name: Build bundle [ios-arm64]
         if: matrix.os == 'ios' && matrix.arch == 'arm64'

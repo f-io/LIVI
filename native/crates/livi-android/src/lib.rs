@@ -26,7 +26,7 @@ use jni::objects::{JClass, JObject, JString};
 use jni::sys::{jboolean, jfloat, jint};
 use jni::{EnvUnowned, JValue, jni_sig, jni_str};
 use livi_core::{Exit, Helper, Installer, Instance, OutputBackend, Paths, Resources};
-use livi_helper::embedded::{Embedded, Host};
+use livi_helper::in_process::{Host, InProcessHelper};
 use slint::android::AndroidApp;
 use slint::android::android_activity::WindowManagerFlags;
 
@@ -59,6 +59,7 @@ fn start(app: AndroidApp) -> Result<(), Box<dyn std::error::Error>> {
             }
         },
         Some(Box::new(pick)),
+        false,
     )?;
     if let Some(&restart) = CORE_EXIT.get() {
         call(jni_str!("exit"), restart)?;
@@ -91,17 +92,17 @@ fn core(app: &AndroidApp) -> Result<PathBuf, String> {
         bt_keys: files.join("bluetooth-keys"),
     };
     let res = Resources {
-        helper: Some(Helper::Embedded(Arc::new(move |start| {
-            Embedded::start(start, host.clone())
+        helper: Some(Helper::InProcess(Arc::new(move |start| {
+            InProcessHelper::start(start, host.clone())
                 .map(|helper| Box::new(helper) as Box<dyn Send>)
                 .map_err(|e| format!("no helper thread: {e}"))
         }))),
-        output: Some(OutputBackend::Embedded(Arc::new(media::InProcess))),
+        output: Some(OutputBackend::InProcess(Arc::new(media::InProcess))),
         installer: Some(Installer {
             downloads: files.join("update"),
             install: Arc::new(update::install),
         }),
-        ..Resources::embedded()
+        ..Resources::in_process()
     };
     let instance = Instance::claim(paths)?;
     let runtime = tokio::runtime::Builder::new_multi_thread()

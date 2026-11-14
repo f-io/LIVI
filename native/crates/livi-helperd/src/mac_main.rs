@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use livi_core_proto::helper::{HelperSockets, USER_DATA};
-use livi_helper::embedded::Host;
+use livi_helper::in_process::Host;
 
 fn user_data() -> PathBuf {
     if let Some(dir) = std::env::var_os(USER_DATA).filter(|d| !d.is_empty()) {

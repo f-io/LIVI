@@ -25,7 +25,7 @@ extern "C" fn run<F: FnOnce() -> R, R>(context: *mut c_void) {
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(in_process)]
 pub fn on_main<F: FnOnce() -> R + Send, R: Send>(f: F) -> R {
     f()
 }

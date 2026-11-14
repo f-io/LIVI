@@ -209,6 +209,139 @@ pub async fn watch_usbmuxd(wired: Wired) {
     }
 }
 
+// iPadOS names the network it brings up with a USB-connected iPhone anri*.
+#[cfg(target_os = "ios")]
+const USB_LINK: &str = "anri";
+#[cfg(target_os = "ios")]
+const REMOTED: &str = "_remoted._tcp";
+#[cfg(target_os = "ios")]
+const REMOTED_CONNECT: Duration = Duration::from_secs(3);
+
+#[cfg(target_os = "ios")]
+struct RemotePhone {
+    cancel: Arc<Notify>,
+    udid: Arc<std::sync::OnceLock<String>>,
+}
+
+#[cfg(target_os = "ios")]
+fn usb_phones() -> Vec<(String, u32)> {
+    use livi_helper_stack::dnssd;
+    dnssd::browse_on(REMOTED, SCAN_INTERVAL)
+        .into_iter()
+        .filter(|(_, iface)| dnssd::ifname(*iface).is_some_and(|n| n.starts_with(USB_LINK)))
+        .collect()
+}
+
+#[cfg(target_os = "ios")]
+pub async fn watch_remote(wired: Wired) {
+    let mut active: HashMap<String, RemotePhone> = HashMap::new();
+    let (ended, mut ends) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(SCAN_INTERVAL) => {}
+            _ = wired.link.changed().notified() => {}
+        }
+        while let Ok(name) = ends.try_recv() {
+            active.remove(&name);
+        }
+
+        let present = tokio::task::spawn_blocking(usb_phones)
+            .await
+            .unwrap_or_default();
+        active.retain(|name, phone| {
+            let keep = present.iter().any(|(n, _)| n == name);
+            if !keep {
+                println!("[wired] {name} unplugged");
+                phone.cancel.notify_one();
+                if let Some(udid) = phone.udid.get() {
+                    announce_gone(&wired.bcast, udid);
+                }
+            }
+            keep
+        });
+        if !wired.link.is_present() {
+            continue;
+        }
+
+        for (name, iface) in present {
+            if active.contains_key(&name) {
+                continue;
+            }
+            let phone = RemotePhone {
+                cancel: Arc::new(Notify::new()),
+                udid: Default::default(),
+            };
+            let (cancel, udid) = (phone.cancel.clone(), phone.udid.clone());
+            active.insert(name.clone(), phone);
+            let (ctx, ended) = (wired.clone(), ended.clone());
+            tokio::spawn(async move {
+                match open_remote(&name, iface, &ctx.lockdown).await {
+                    Ok((carkit, carplay_iface)) => {
+                        println!(
+                            "[wired] {}: carkit up over the USB link, carplay on {}, starting iAP2",
+                            short(&carkit.udid),
+                            carplay_iface.as_deref().unwrap_or("-")
+                        );
+                        let _ = udid.set(carkit.udid.clone());
+                        let ncm = LocalNcm::System(carplay_iface);
+                        run_wired_session(carkit.udid, carkit.stream, ncm, ctx, cancel).await;
+                    }
+                    Err(e) => eprintln!("[wired] {name}: carkit failed: {e}"),
+                }
+                let _ = ended.send(name);
+            });
+        }
+    }
+}
+
+// iPadOS brings up two networks with the iPhone: anri* only carries CoreDevice, carplay
+// runs on the other one. That is where the phone's own host name resolves besides anri*,
+// leaving out the Wi-Fi a shared network adds (iPads have no built-in Ethernet, en0 is Wi-Fi).
+#[cfg(target_os = "ios")]
+const WIFI: &str = "en0";
+
+#[cfg(target_os = "ios")]
+async fn open_remote(
+    name: &str,
+    iface: u32,
+    store: &std::path::Path,
+) -> Result<(iap2_wired::remote::RemoteCarkit, Option<String>), String> {
+    use livi_helper_stack::dnssd;
+    use std::net::{SocketAddr, ToSocketAddrs};
+    let instance = name.to_string();
+    let addrs: Vec<SocketAddr> = tokio::task::spawn_blocking(move || {
+        let found = dnssd::resolve(&instance, REMOTED, iface, SCAN_INTERVAL)?;
+        let addrs = (found.host.as_str(), found.port).to_socket_addrs().ok()?;
+        Some(addrs.filter(SocketAddr::is_ipv6).collect())
+    })
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or_default();
+    let scope = |a: &SocketAddr| match a {
+        SocketAddr::V6(v) => v.scope_id(),
+        SocketAddr::V4(_) => 0,
+    };
+    let carplay = addrs
+        .iter()
+        .map(scope)
+        .filter(|&s| s != 0 && s != iface)
+        .filter_map(dnssd::ifname)
+        .find(|name| name != WIFI);
+    for addr in addrs.into_iter().filter(|a| scope(a) == iface) {
+        if let Ok(Ok(remoted)) =
+            tokio::time::timeout(REMOTED_CONNECT, tokio::net::TcpStream::connect(addr)).await
+        {
+            return iap2_wired::remote::open_carkit(remoted, store)
+                .await
+                .map(|carkit| (carkit, carplay))
+                .map_err(|e| e.to_string());
+        }
+    }
+    Err("remoted unreachable".into())
+}
+
 #[cfg(target_os = "macos")]
 const USB_IFACE_TRIES: u32 = 20;
 #[cfg(target_os = "macos")]
@@ -330,8 +463,8 @@ async fn run_wired_session<S>(
         _ = cancel.notified() => println!("[wired] {}: session cancelled on unplug", short(&serial)),
         _ = restart.notified() => println!("[wired] {}: session ended for a fresh start", short(&serial)),
         _ = reset.notified() => {
-            println!("[wired] {}: no CarPlay session came up, resetting the phone's USB", short(&serial));
-            usb_reset = true;
+            println!("[wired] {}: no CarPlay session came up", short(&serial));
+            usb_reset = cfg!(usb_host);
         }
     }
     forward.abort();
@@ -339,6 +472,7 @@ async fn run_wired_session<S>(
     ctx.state.carkit_ended(&ident);
     drop(ncm);
     if usb_reset {
+        println!("[wired] {}: resetting the phone's USB", short(&serial));
         let target = serial.clone();
         match tokio::task::spawn_blocking(move || iap2_usbmux::reset(&target)).await {
             Ok(Ok(())) => {}

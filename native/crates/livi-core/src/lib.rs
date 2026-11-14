@@ -40,11 +40,11 @@ pub use files::log_file;
 pub use files::paths::Paths;
 pub use helper::Helper;
 use hub::Hub;
-pub use livi_media::output::{EmbeddedOutput, OutputBackend};
+pub use livi_media::output::{InProcessOutput, OutputBackend};
 pub use resources::Resources;
 use server::Core;
 use services::Services;
-#[cfg(target_os = "android")]
+#[cfg(in_process)]
 pub use system::host::set_screen;
 #[cfg(target_os = "android")]
 pub use system::hwaddr::set_bt_mac;

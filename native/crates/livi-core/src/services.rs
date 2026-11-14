@@ -102,7 +102,7 @@ fn crash_log() -> PathBuf {
 fn host_launch(res: &Resources, user_data: &Path, ui: Option<&Ui>) -> Option<Launch> {
     let bin = match res.output.clone()? {
         OutputBackend::Process(bin) => bin,
-        OutputBackend::Embedded(host) => return Some(Launch::Embedded(host)),
+        OutputBackend::InProcess(host) => return Some(Launch::InProcess(host)),
     };
     let mut env = res.gstreamer.as_deref().map(gst_env).unwrap_or_default();
     if cfg!(target_os = "linux") {
@@ -174,7 +174,7 @@ impl Services {
         let helper = res.helper.clone().map(|helper| {
             let helper = match helper {
                 Helper::Process(bin) => Helper::Process(helper::resolve_bin(&bin, user_data)),
-                embedded => embedded,
+                other => other,
             };
             HelperSupervisor::start(Spec {
                 helper,
@@ -279,6 +279,7 @@ impl Services {
             hub.clone(),
             settings.clone(),
         ));
+        #[cfg(usb_host)]
         if let Some(radio_asks) = asks.radio.take() {
             tokio::spawn(crate::radio::run(
                 hub.clone(),
@@ -289,6 +290,8 @@ impl Services {
                 resume_radio,
             ));
         }
+        #[cfg(not(usb_host))]
+        let _ = (asks.radio.take(), resume_radio);
 
         let carplay = CarPlay {
             airplay_events,
@@ -900,6 +903,6 @@ mod tests {
                 .count(),
             0
         );
-        assert!(host_launch(&Resources::embedded(), Path::new("/u"), None).is_none());
+        assert!(host_launch(&Resources::in_process(), Path::new("/u"), None).is_none());
     }
 }

@@ -37,7 +37,8 @@ fn bind(sink: &gst::Element, window: usize) {
     let Some(overlay) = sink.dynamic_cast_ref::<gstreamer_video::VideoOverlay>() else {
         return;
     };
-    // SAFETY: window is 0 or an ANativeWindow that livi-android releases only after rebinding the plane.
+    // SAFETY: window is 0, an ANativeWindow livi-android releases only after rebinding the plane, or
+    // a UIView livi-ios keeps until the plane is closed.
     unsafe { overlay.set_window_handle(window) };
     if window != 0 {
         overlay.expose();

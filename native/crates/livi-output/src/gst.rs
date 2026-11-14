@@ -10,12 +10,9 @@ use livi_screen_stream::ScreenSink;
 
 use crate::{AudioConfig, MediaSink, Outside, Speaker, TapConfig, UplinkConfig, VideoCodec};
 
-#[cfg_attr(target_os = "android", path = "gst/android.rs")]
+#[cfg_attr(in_process, path = "gst/in_process.rs")]
 #[cfg_attr(target_os = "macos", path = "gst/mac.rs")]
-#[cfg_attr(
-    not(any(target_os = "macos", target_os = "android")),
-    path = "gst/linux.rs"
-)]
+#[cfg_attr(not(any(target_os = "macos", in_process)), path = "gst/linux.rs")]
 mod platform;
 #[cfg(not(target_os = "macos"))]
 mod players;

@@ -205,7 +205,7 @@ fn prefer_our_decoders() {
 }
 
 pub(crate) fn video_sink(say: &Say) -> Option<gst::Element> {
-    if cfg!(any(target_os = "macos", target_os = "android")) {
+    if cfg!(any(target_vendor = "apple", target_os = "android")) {
         return gst::ElementFactory::make("glimagesink")
             .build()
             .inspect_err(|e| say(&format!("[gst_video] no glimagesink: {e}")))
@@ -220,7 +220,7 @@ pub(crate) fn video_sink(say: &Say) -> Option<gst::Element> {
 }
 
 fn audio_sink(device: &str) -> Option<gst::Element> {
-    let (element, device_property) = if cfg!(target_os = "macos") {
+    let (element, device_property) = if cfg!(target_vendor = "apple") {
         ("osxaudiosink", "unique-id")
     } else if cfg!(target_os = "android") {
         ("aaudiosink", "device")

@@ -46,7 +46,7 @@ fn phone_target(phone: &str, port: u16) -> Option<SocketAddr> {
 pub(crate) const SOURCE_NAME: &str = "audio-source";
 
 pub(crate) fn source_device_property() -> &'static str {
-    if cfg!(target_os = "macos") {
+    if cfg!(target_vendor = "apple") {
         "unique-id"
     } else {
         "device"
@@ -54,7 +54,7 @@ pub(crate) fn source_device_property() -> &'static str {
 }
 
 const fn source_element() -> &'static str {
-    if cfg!(target_os = "macos") {
+    if cfg!(target_vendor = "apple") {
         "osxaudiosrc"
     } else if cfg!(target_os = "android") {
         "aaudiosrc"

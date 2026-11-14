@@ -102,10 +102,15 @@ export component AppWindow inherits Window {
     min-height: 200px;
     background: transparent;
 
-    out property <length> content-left: self.safe-area-insets.left;
-    out property <length> content-top: self.safe-area-insets.top;
-    out property <length> content-width: self.width - self.safe-area-insets.left - self.safe-area-insets.right;
-    out property <length> content-height: self.height - self.safe-area-insets.top - self.safe-area-insets.bottom;
+    in property <bool> keep-safe-area: true;
+    property <length> inset-left: root.keep-safe-area ? self.safe-area-insets.left : 0px;
+    property <length> inset-top: root.keep-safe-area ? self.safe-area-insets.top : 0px;
+    property <length> inset-right: root.keep-safe-area ? self.safe-area-insets.right : 0px;
+    property <length> inset-bottom: root.keep-safe-area ? self.safe-area-insets.bottom : 0px;
+    out property <length> content-left: root.inset-left;
+    out property <length> content-top: root.inset-top;
+    out property <length> content-width: self.width - root.inset-left - root.inset-right;
+    out property <length> content-height: self.height - root.inset-top - root.inset-bottom;
     property <length> area-left: root.content-left + root.view-area.left * 1phx;
     property <length> area-top: root.content-top + root.view-area.top * 1phx;
     property <length> area-width: max(1px, root.content-width - (root.view-area.left + root.view-area.right) * 1phx);

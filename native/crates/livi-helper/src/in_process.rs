@@ -65,12 +65,12 @@ impl Held {
     }
 }
 
-pub struct Embedded {
+pub struct InProcessHelper {
     stop: Option<oneshot::Sender<()>>,
     thread: Option<JoinHandle<()>>,
 }
 
-impl Embedded {
+impl InProcessHelper {
     pub fn start(start: HelperStart, host: Host) -> io::Result<Self> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -94,7 +94,7 @@ impl Embedded {
     }
 }
 
-impl Drop for Embedded {
+impl Drop for InProcessHelper {
     fn drop(&mut self) {
         if let Some(stop) = self.stop.take() {
             let _ = stop.send(());
@@ -331,7 +331,7 @@ fn serve(start: HelperStart, host: Host) -> Held {
         ));
         bluetooth
     });
-    #[cfg(target_os = "macos")]
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
     let shared_bluetooth = None;
     #[cfg(not(target_os = "linux"))]
     serve_shared(&host.sockets.shared, shared_bluetooth, dongle_ap);
@@ -398,6 +398,8 @@ fn serve(start: HelperStart, host: Host) -> Held {
     tokio::spawn(crate::wired::watch(wired));
     #[cfg(target_os = "macos")]
     tokio::spawn(crate::wired::watch_usbmuxd(wired));
+    #[cfg(target_os = "ios")]
+    tokio::spawn(crate::wired::watch_remote(wired));
     Held {
         _bluez: bluez,
         #[cfg(not(target_os = "android"))]

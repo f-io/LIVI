@@ -50,7 +50,7 @@ impl ConfigFile {
             && file.get("projectionHeight").is_none()
             && let Some((w, h)) = host.panel_px
         {
-            let (w, h) = fit_720p(w.max(h), w.min(h));
+            let (w, h) = (w.max(h) & !1, w.min(h) & !1);
             println!("[core] projection defaults from the panel: {w}x{h}");
             defaults.projection_width = w;
             defaults.projection_height = h;
@@ -168,14 +168,6 @@ fn rename(map: &mut Map<String, Value>, old: &str, new: &str) {
     {
         map.insert(new.to_string(), value);
     }
-}
-
-fn fit_720p(width: u32, height: u32) -> (u32, u32) {
-    let scale = (1280.0 / f64::from(width))
-        .min(720.0 / f64::from(height))
-        .min(1.0);
-    let even = |v: u32| 2 * (f64::from(v) * scale / 2.0).round() as u32;
-    (even(width), even(height))
 }
 
 fn merge(file: &Value, defaults: &Config) -> Config {
@@ -353,9 +345,9 @@ pub mod tests {
         assert_eq!(config.car_name, "golf");
         assert_eq!(
             (config.projection_width, config.projection_height),
-            (1152, 720)
+            (1920, 1200)
         );
-        assert_eq!((config.cluster_width, config.cluster_height), (1152, 720));
+        assert_eq!((config.cluster_width, config.cluster_height), (1920, 1200));
     }
 
     #[test]
@@ -368,7 +360,7 @@ pub mod tests {
         let config = file_in(&dir).load(&host);
         assert_eq!(
             (config.projection_width, config.projection_height),
-            (1280, 576)
+            (2400, 1080)
         );
     }
 
@@ -648,12 +640,5 @@ pub mod tests {
         let day = apply_patch(&light, &json!({ "appearanceMode": "day" })).unwrap();
         assert_eq!(day.night_modes(), [false; 4]);
         assert!(apply_patch(&current, &json!([1])).is_err());
-    }
-
-    #[test]
-    fn fit_720p_keeps_the_aspect_and_even_sizes() {
-        assert_eq!(fit_720p(1920, 1080), (1280, 720));
-        assert_eq!(fit_720p(1024, 600), (1024, 600));
-        assert_eq!(fit_720p(1280, 800), (1152, 720));
     }
 }

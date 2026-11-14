@@ -2,12 +2,13 @@
 set -euo pipefail
 
 # Builds the applemedia plugin (vtdec) statically for arm64 iOS from the gst-plugins-bad source
-# matching the GStreamer.xcframework, with patches/gst-plugins-bad/series-macos applied.
-# Prints the path of the patched libgstapplemedia.a for package-ios.sh.
+# matching the GStreamer.xcframework, with patches/gst-plugins-bad/series-macos applied, and the
+# EAGL GL window from gst-plugins-base with patches/gst-plugins-base/series-ios applied.
+# Leaves libgstapplemedia.a and gstglwindow_eagl.o in OUT_DIR for package-ios.sh.
 #   build-patched-ios.sh GStreamer.xcframework [OUT_DIR]
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PATCHES="$REPO/scripts/gstreamer/patches/gst-plugins-bad"
+PATCHES="$REPO/scripts/gstreamer/patches"
 XCF="$(cd "${1:?GStreamer.xcframework required}" && pwd)"
 OUT="${2:-$(mktemp -d)}"
 MIN_IOS="${MIN_IOS:-15.0}"
@@ -27,6 +28,7 @@ version() {
 GST_VERSION="$(version "$HEADERS/gst/gstversion.h" '^GST_VERSION_(MAJOR|MINOR|MICRO)$')"
 GLIB_VERSION="$(version "$HEADERS/arm64/glibconfig.h" '^GLIB_(MAJOR|MINOR|MICRO)_VERSION$')"
 SRC_URL="https://gstreamer.freedesktop.org/src/gst-plugins-bad/gst-plugins-bad-${GST_VERSION}.tar.xz"
+BASE_URL="https://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-${GST_VERSION}.tar.xz"
 
 echo "Building patched applemedia for iOS GStreamer $GST_VERSION"
 
@@ -62,22 +64,25 @@ for pc in glib-2.0 gobject-2.0 gio-2.0 gmodule-2.0 gmodule-no-export-2.0; do
 done
 
 apply_series() {
-  local series="$1"
+  local dir="$PATCHES/$1"
   while IFS= read -r p; do
     [ -n "$p" ] || continue
-    patch -p1 -i "$PATCHES/$p"
-  done < "$series"
+    patch -p1 -i "$dir/$p"
+  done < "$dir/$2"
+}
+
+fetch() {
+  curl -fsSL -o "$2" "$1"
+  echo "$(curl -fsSL "$1.sha256sum" | cut -d' ' -f1)  $2" | shasum -a 256 -c -
 }
 
 work="$(mktemp -d)"
 (
   cd "$work"
-  curl -fsSL -o src.tar.xz "$SRC_URL"
-  src_sha256=$(curl -fsSL "$SRC_URL.sha256sum" | cut -d' ' -f1)
-  echo "$src_sha256  src.tar.xz" | shasum -a 256 -c -
+  fetch "$SRC_URL" src.tar.xz
   tar -xf src.tar.xz
   cd "gst-plugins-bad-${GST_VERSION}"
-  apply_series "$PATCHES/series-macos"
+  apply_series gst-plugins-bad series-macos
   grep -q "Using HEVC SPS max_num_reorder_pics" sys/applemedia/vtdec.c || {
     echo "0008 did not apply: SPS reorder parsing absent in vtdec.c" >&2
     exit 1
@@ -145,3 +150,23 @@ nm -gU "$PLUGIN" 2>/dev/null | grep "_gst_plugin_applemedia_register" >/dev/null
 }
 
 echo "Patched applemedia: $PLUGIN"
+
+echo "Building patched EAGL GL window for iOS GStreamer $GST_VERSION"
+(
+  cd "$work"
+  fetch "$BASE_URL" base.tar.xz
+  tar -xf base.tar.xz "gst-plugins-base-${GST_VERSION}/gst-libs"
+  cd "gst-plugins-base-${GST_VERSION}"
+  apply_series gst-plugins-base series-ios
+  grep -q "update_layer() releases the layer" gst-libs/gst/gl/eagl/gstglwindow_eagl.m || {
+    echo "0006 did not apply: layer retain absent in gstglwindow_eagl.m" >&2
+    exit 1
+  }
+  # The flags meson gives libgstgl's Objective-C sources.
+  xcrun --sdk iphoneos clang -target "arm64-apple-ios$MIN_IOS" -isysroot "$SDK" \
+    -O2 -fobjc-arc -fvisibility=hidden \
+    -DBUILDING_GST_GL -DGST_USE_UNSTABLE_API '-DG_LOG_DOMAIN="GStreamer-GL"' \
+    -I"$HEADERS" -I"$HEADERS/arm64" -Igst-libs -Igst-libs/gst/gl/eagl \
+    -c gst-libs/gst/gl/eagl/gstglwindow_eagl.m -o "$OUT/gstglwindow_eagl.o"
+)
+echo "Patched EAGL window: $OUT/gstglwindow_eagl.o"

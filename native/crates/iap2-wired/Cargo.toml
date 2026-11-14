@@ -6,11 +6,23 @@ license.workspace = true
 
 [dependencies]
 iap2-usbmux.workspace = true
-idevice = { version = "0.1", features = ["pair", "usbmuxd"] }
 plist = "1"
 thiserror.workspace = true
 uuid = { workspace = true, features = ["v4"] }
 tokio = { workspace = true, features = ["rt", "sync", "io-util", "time", "process"] }
+
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+idevice = { version = "0.1", features = ["pair", "usbmuxd"] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+idevice = { version = "0.1", default-features = false, features = [
+  "pair",
+  "usbmuxd",
+  "rustcrypto",
+  "rsd",
+  "remote_pairing",
+  "tunnel_tcp_stack",
+] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "test-util"] }

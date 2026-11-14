@@ -13,3 +13,6 @@ pub mod usbmuxd;
 
 #[cfg(target_os = "macos")]
 pub mod mac_network;
+
+#[cfg(target_os = "ios")]
+pub mod remote;
