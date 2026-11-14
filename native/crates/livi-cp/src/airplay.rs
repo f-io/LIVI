@@ -43,6 +43,7 @@ const AAC_ELD_48K: u64 = 1 << 25;
 const DISPLAY_UUID: &str = "4c495649-4d49-5252-4f52-000000000001";
 const CONNECT_WITHIN: Duration = Duration::from_secs(60);
 const PROGRESS_EVERY: Duration = Duration::from_secs(1);
+const NO_SCREEN_AFTER: Duration = Duration::from_secs(1);
 const PLIST: &str = "application/x-apple-binary-plist";
 
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
@@ -230,6 +231,7 @@ struct Conn {
     id: u64,
     close: Arc<Notify>,
     started: bool,
+    mirror_since: Option<Instant>,
     sender: AirplaySender,
     remote: AirplayRemote,
     commands: Option<mpsc::UnboundedReceiver<AirplayCommand>>,
@@ -258,6 +260,7 @@ async fn connection(stream: TcpStream, peer: SocketAddr, ctx: Arc<AirplayCtx>) {
         id: NEXT_SESSION.fetch_add(1, Ordering::Relaxed),
         close: Arc::new(Notify::new()),
         started: false,
+        mirror_since: None,
         sender: AirplaySender::default(),
         remote,
         commands: Some(commands),
@@ -273,6 +276,12 @@ async fn connection(stream: TcpStream, peer: SocketAddr, ctx: Arc<AirplayCtx>) {
         let read = tokio::select! {
             read = rd.read(&mut buf) => read,
             _ = ticker.tick() => {
+                // While carplay holds the phone's screen, iOS fails to resume the mirroring stream
+                // of a freshly activated endpoint and only manages on the next activation.
+                if conn.mirror_since.is_some_and(|t| t.elapsed() >= NO_SCREEN_AFTER) {
+                    println!("{TAG} {peer}: mirroring sent no screen, dropping it for a retry");
+                    break;
+                }
                 conn.tick();
                 continue;
             }
@@ -582,6 +591,13 @@ impl Conn {
         let Ok(body) = bplist::decode(&req.body) else {
             return status(400);
         };
+        if body
+            .get("isScreenMirroringSession")
+            .and_then(Value::as_bool)
+            == Some(true)
+        {
+            self.mirror_since = Some(Instant::now());
+        }
         let text = |key: &str| body.get(key).and_then(Value::as_str).map(str::to_string);
         if let Some(name) = text("name") {
             self.sender.name = Some(name);
@@ -606,6 +622,7 @@ impl Conn {
                     continue;
                 };
                 if kind == STREAM_SCREEN {
+                    self.mirror_since = None;
                     let port = screen_proxy(key, self.ctx.media.clone());
                     out.push(dict([
                         ("type", Value::Int(kind)),
