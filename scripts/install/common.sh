@@ -227,19 +227,32 @@ livi_install_video_mode_helper() {
 set -euo pipefail
 CMDLINE="/boot/firmware/cmdline.txt"
 arg="${1:-}"
-case "$arg" in
-  clear) new="" ;;
-  *)
-    [[ "$arg" =~ ^[A-Za-z0-9-]+:[0-9]+x[0-9]+@[0-9]+i?D?$ ]] || {
-      echo "usage: livi-video-mode.sh <CONNECTOR:WxH@Hz>|clear" >&2
-      exit 2
-    }
-    new="video=$arg"
-    ;;
-esac
 line="$(tr -d '\n' < "$CMDLINE")"
-stripped="$(sed -E 's/[[:space:]]*video=[^[:space:]]+//g' <<< "$line")"
-out="$stripped${new:+ $new}"
+read -ra words <<< "$line"
+if [ "$arg" = clear ]; then
+  kept=()
+  for w in "${words[@]}"; do
+    [[ "$w" == video=* ]] || kept+=("$w")
+  done
+  out="${kept[*]-}"
+else
+  [[ "$arg" =~ ^[A-Za-z0-9-]+:[0-9]+x[0-9]+@[0-9]+i?D?$ ]] || {
+    echo "usage: livi-video-mode.sh <CONNECTOR:WxH@Hz>|clear" >&2
+    exit 2
+  }
+  connector="${arg%%:*}"
+  found=""
+  for i in "${!words[@]}"; do
+    w="${words[$i]}"
+    [[ "$w" == "video=$connector:"* ]] || continue
+    options=""
+    [[ "$w" == *,* ]] && options=",${w#*,}"
+    words[$i]="video=$arg$options"
+    found=1
+  done
+  [ -n "$found" ] || words+=("video=$arg")
+  out="${words[*]}"
+fi
 [ "$out" = "$line" ] || echo "$out" > "$CMDLINE"
 EOF
 }
